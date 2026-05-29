@@ -65,6 +65,7 @@ enum GitHubAPI {
     // Stars
     case starredRepos(page: Int, perPage: Int)  // GET /user/starred
     case isStarred(owner: String, repo: String)  // GET /user/starred/{owner}/{repo}
+    case unstar(owner: String, repo: String)     // DELETE /user/starred/{owner}/{repo}
 
     // Repos
     case repo(owner: String, repo: String)       // GET /repos/{owner}/{repo}
@@ -282,6 +283,7 @@ func fetchWithRetry<T>(
 |------|------|---------|
 | 全量同步 | 首次同步，拉取所有 stars | 首次登录 |
 | 增量同步 | 只拉取变化的 | 定期或手动 |
+| 手动刷新 | 用户主动触发完整同步 | 用户点击刷新按钮 |
 | 按需同步 | 只拉取当前需要的 | 用户查看详情 |
 
 ### 4.2 全量同步流程

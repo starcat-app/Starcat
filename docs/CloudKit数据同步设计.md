@@ -425,11 +425,67 @@ func retryWithBackoff<T>(_ operation: () async throws -> T, maxRetries: Int = 3)
 
 ---
 
-## 八、后续完善点
+## 八、Release 订阅通知
+
+### 8.1 Release 监测方案
+
+> **说明**：GitHub 没有 WebSocket 或 Webhook 订阅接口供客户端应用直接使用。使用轮询方案检测 Release 变化。
+
+```swift
+/// Release 订阅通知监测
+/// 使用 BGAppRefreshTask 在后台定期执行（建议每 4-6 小时一次）
+class ReleaseMonitor {
+    private let githubAPI: GitHubAPIClient
+    private let database: DatabaseManager
+
+    /// 检测所有订阅仓库的新 Release
+    func checkForNewReleases() async -> [ReleaseNotification] {
+        let subscriptions = database.getActiveSubscriptions()
+        var notifications: [ReleaseNotification] = []
+
+        for subscription in subscriptions {
+            if let notification = await checkRepo(subscription) {
+                notifications.append(notification)
+            }
+        }
+
+        return notifications
+    }
+}
+```
+
+### 8.2 通知推送
+
+```swift
+/// 使用 UNUserNotificationCenter 推送通知
+func sendReleaseNotification(_ release: ReleaseNotification) async {
+    let content = UNMutableNotificationContent()
+    content.title = "\(release.repo.name) 发布新版本"
+    content.body = "\(release.release.tagName): \(release.release.name ?? "查看详情")"
+    content.sound = .default
+    content.userInfo = [
+        "repoId": release.repo.id,
+        "releaseUrl": release.release.htmlUrl
+    ]
+
+    let request = UNNotificationRequest(
+        identifier: "release-\(release.repo.id)-\(release.release.id)",
+        content: content,
+        trigger: nil
+    )
+
+    try? await UNUserNotificationCenter.current().add(request)
+}
+```
+
+---
+
+## 九、后续完善点
 
 - [ ] 实现完整的 ConflictResolver
 - [ ] 实现 OfflineQueue 的持久化
 - [ ] 实现订阅通知的完整处理
+- [ ] 实现 Release 订阅通知监测
 - [ ] 编写单元测试
 - [ ] 性能测试与优化
 

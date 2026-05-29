@@ -9,31 +9,32 @@
 ### 1.1 最小权限 Scope
 
 ```swift
-// 只需要读取用户 Stars 的权限
+// 只需要读取用户 Stars 的权限（public_repo 已包含 star/unstar 公开仓库的权限）
 let scopes = ["read:user", "public_repo"]
 ```
 
 | Scope | 说明 | 是否必须 |
 |-------|------|---------|
 | `read:user` | 读取用户公开信息（ID、用户名、头像） | ✅ 必须 |
-| `public_repo` | 读取用户 star 的公开仓库 | ✅ 必须 |
+| `public_repo` | 访问公共仓库的 Stars（包含 star/unstar 权限） | ✅ 必须 |
 | `user:email` | 读取用户邮箱 | ❌ 可选 |
 
 ### 1.2 为什么只需要这些
 
 ```
-Starcat 只管理公开的 Stars：
+Starcat 需要以下能力：
 ├── 读取用户的 Star 列表 ✅ (public_repo)
 ├── 读取被 Star 的仓库信息 ✅ (public_repo)
 ├── 读取用户信息 ✅ (read:user)
-└── 写入操作（取消 Star）❌ 不需要，应用只读
+└── 取消 Star ✅ (public_repo) - DELETE /user/starred/{owner}/{repo}
 ```
+
+> **说明**：`public_repo` scope 已包含对公开仓库的 star/unstar 操作权限，不需要 `repo` scope。
 
 ### 1.3 不需要的权限
 
 | Scope | 为什么不需要 |
 |-------|------------|
-| `repo` | 不需要读写私有仓库 |
 | `read:org` | 不需要访问组织 |
 | `gist` | 不需要 Gist |
 | `notifications` | 不需要通知 |
