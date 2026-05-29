@@ -1,0 +1,147 @@
+# Starcat 技术选型方案
+
+## 1. 目标平台
+
+Starcat 计划支持：
+
+- macOS：主力生产力端，承担完整管理、搜索、README 阅读、批量整理、AI 操作。
+- iPhone：移动端快速查找、阅读、打标签、写备注。
+- iPad：接近 macOS 的双栏/三栏体验，适合阅读和整理。
+- watchOS：轻量伴随端，只做最近收藏、快速搜索、查看摘要、打开链接。
+
+技术目标是做一个 UI 精美、流畅、原生感强的 Apple 平台应用，而不是跨平台 Web 套壳。
+
+## 2. 推荐技术栈
+
+### 2.1 客户端
+
+推荐使用原生 Apple 技术栈：
+
+- SwiftUI：统一覆盖 macOS、iOS、iPadOS、watchOS。
+- Swift Concurrency：处理同步、分页、缓存、AI 队列。
+- Observation / Observable：管理界面状态。
+- AppKit bridge：macOS 需要菜单栏、独立窗口、pin 窗口、快捷键等能力时补充使用。
+- WidgetKit / App Intents：后续支持 Spotlight、Shortcuts、快速搜索和系统入口。
+- StoreKit 2：订阅、买断、恢复购买。
+
+不建议第一版使用 Electron / Tauri / Flutter。原因是 Starcat 的核心卖点之一是 Apple 原生体验，多窗口、快捷键、iCloud、Spotlight、watchOS 和系统集成会更依赖原生栈。
+
+### 2.2 数据层
+
+推荐采用「本地数据库 + iCloud 同步元数据」的思路：
+
+- SQLite / GRDB：存储 repo 缓存、README 缓存、搜索索引、同步状态。
+- FTS5：实现本地全文搜索，包括 repo name、description、notes、README。
+- CloudKit：同步用户生成数据，例如 tags、collections、notes、status、saved searches。
+- Keychain：保存 GitHub token 和用户自定义 AI provider key。
+
+不建议所有数据都直接放 SwiftData + CloudKit。SwiftData 上手快，但大量 repo、README 缓存、全文搜索、批量同步和迁移导入时，SQLite/GRDB 的可控性更强。
+
+### 2.3 网络层
+
+- GitHub REST API：stars 同步、repo 元数据、README、releases、issues 概览。
+- GraphQL API：后续需要批量字段、复杂查询时再引入。
+- URLSession：原生网络请求。
+- ETag / Last-Modified：降低 README 和 repo 元数据重复拉取成本。
+- 分页队列和限流：避免 GitHub API rate limit。
+
+## 3. 基础功能实现思路
+
+### 3.1 同步流程
+
+1. GitHub OAuth 登录，token 写入 Keychain。
+2. 首次同步分页拉取 stars，写入本地 SQLite。
+3. 对 repo 元数据、README、图片做缓存。
+4. 后续增量同步，更新新增、取消 star、repo metadata。
+5. 用户数据和 repo 缓存分离：repo 缓存可以重建，标签/备注/状态不能丢。
+
+### 3.2 搜索与过滤
+
+- 普通搜索走 SQLite 查询。
+- 全文搜索走 FTS5。
+- 过滤条件组合为本地查询：语言、标签、状态、archived、fork、license、更新时间。
+- Saved Search 保存查询条件，不保存结果。
+
+### 3.3 README 渲染
+
+macOS / iPad：
+
+- 优先考虑 WebView 渲染 GitHub 风格 Markdown，保证表格、代码块、图片、链接可读。
+- 可用本地 CSS 做 GitHub-like 样式。
+
+iPhone：
+
+- 复用 Markdown 渲染能力，但布局收窄，优先阅读和搜索。
+
+watchOS：
+
+- 不渲染完整 README，只展示标题、摘要、标签、链接和 AI 摘要。
+
+### 3.4 多端同步
+
+- CloudKit 只同步用户生成数据。
+- repo 元数据和 README 在各端按需缓存。
+- 冲突策略需要显式设计：以更新时间合并，删除操作保留 tombstone。
+- 设置页提供恢复路径：合并云端到本地、以本地覆盖云端、清空云端、重新同步。
+
+## 4. AI 功能实现思路
+
+### 4.1 调用模式
+
+建议同时支持两种模式：
+
+- BYOK：用户填写 OpenAI / Anthropic / Gemini / OpenRouter key，适合重度用户和隐私敏感用户。
+- Starcat Pro：内置 AI 配额，通过自有服务转发，适合普通用户。
+
+第一阶段可以先做 BYOK，降低服务端成本和合规复杂度；后续再做订阅内置额度。
+
+### 4.2 AI 数据流
+
+1. 读取 repo 元数据、README、topics、语言、用户备注。
+2. 截断和清洗 README，保留标题、安装、示例、API、license 等关键段落。
+3. 调用模型生成摘要、标签建议、使用场景、风险提示。
+4. 结果先进入建议态，用户确认后写入本地标签/AI 摘要字段。
+5. 批量任务使用队列，支持暂停、失败重试、跳过已处理 repo。
+
+### 4.3 语义搜索
+
+- 为 README、description、notes、AI summary 生成 embedding。
+- 本地保存 embedding 索引。
+- macOS 端优先实现完整语义搜索，iPhone/iPad 查询复用同步后的索引或按需生成。
+- 如果本地向量检索复杂度过高，第一版可以先用服务端向量检索或 SQLite 扩展方案。
+
+### 4.4 AI 功能边界
+
+AI 不应自动污染用户数据：
+
+- 标签推荐需要用户确认。
+- 摘要可以自动缓存，但要允许重新生成。
+- 项目健康度必须展示依据，例如最近 commit、release、issue、archived。
+- 同类项目对比必须列出比较维度，不只给结论。
+
+## 5. 推荐阶段
+
+### 阶段 1：原生基础版
+
+- macOS 优先。
+- GitHub 登录与同步。
+- SQLite 本地缓存。
+- 三栏主界面。
+- 标签、语言、未分类、搜索、README。
+- JSON 导入导出。
+
+### 阶段 2：Apple 多端
+
+- iPhone / iPad 适配。
+- CloudKit 同步用户数据。
+- 快捷键、菜单栏、Spotlight、Shortcuts。
+- watchOS 轻量 companion。
+
+### 阶段 3：AI Pro
+
+- 单仓库摘要和标签建议。
+- 批量整理未分类 repo。
+- 语义搜索。
+- 项目健康度和同类对比。
+- StoreKit 2 订阅。
+
