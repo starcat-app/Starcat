@@ -51,12 +51,9 @@ struct RepoDetailView: View {
             .navigationTitle(repo.name)
             .navigationSubtitle(repo.owner)
             .toolbar {
+                // W4 B3：GitHub 页面快捷入口（替换原单一"在 GitHub 打开"按钮）
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        openOnGitHub(url: repo.htmlUrl)
-                    } label: {
-                        Label("在 GitHub 打开", systemImage: "safari")
-                    }
+                    externalLinksMenu(repo: repo)
                 }
                 // W4 B2：Clone URL 复制
                 ToolbarItem(placement: .primaryAction) {
@@ -85,6 +82,58 @@ struct RepoDetailView: View {
         } else {
             emptyState
         }
+    }
+
+    // MARK: - W4 B3：GitHub 页面快捷入口
+
+    /// 详情页 toolbar "在 GitHub 打开" Menu。
+    ///
+    /// 默认动作：点击主按钮 → 打开 repo 主页（保留 B3 之前的"一键到 GitHub"语义）
+    /// 下拉子项：Issues / Pulls / Releases / Homepage（若有）
+    @ViewBuilder
+    private func externalLinksMenu(repo: Repo) -> some View {
+        Menu {
+            if let issues = RepoExternalLinks.issues(repo) {
+                Button {
+                    NSWorkspace.shared.open(issues)
+                } label: {
+                    Label("Issues", systemImage: "exclamationmark.bubble")
+                }
+            }
+            if let pulls = RepoExternalLinks.pulls(repo) {
+                Button {
+                    NSWorkspace.shared.open(pulls)
+                } label: {
+                    Label("Pull Requests", systemImage: "arrow.triangle.pull")
+                }
+            }
+            if let releases = RepoExternalLinks.releases(repo) {
+                Button {
+                    NSWorkspace.shared.open(releases)
+                } label: {
+                    Label("Releases", systemImage: "tag.circle")
+                }
+            }
+            if let homepage = RepoExternalLinks.homepage(repo) {
+                Divider()
+                Button {
+                    NSWorkspace.shared.open(homepage)
+                } label: {
+                    Label("Homepage", systemImage: "house")
+                    Text(homepage.absoluteString)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } label: {
+            Label("在 GitHub 打开", systemImage: "safari")
+        } primaryAction: {
+            // 点击主按钮（不展开菜单）→ 打开 repo 主页
+            if let url = RepoExternalLinks.repo(repo) {
+                NSWorkspace.shared.open(url)
+            }
+        }
+        .help("点击：打开仓库主页；展开：Issues / Releases / Homepage")
     }
 
     // MARK: - W4 B2：Clone URL 复制 Menu
@@ -299,12 +348,6 @@ struct RepoDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - 外链
-
-    private func openOnGitHub(url: String) {
-        guard let u = URL(string: url) else { return }
-        NSWorkspace.shared.open(u)
-    }
 }
 
 // MARK: - README 状态视图
