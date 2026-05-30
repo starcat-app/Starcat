@@ -162,6 +162,15 @@ final class AppSettings {
         didSet { persistBool(key: Keys.hideForks, value: hideForks) }
     }
 
+    /// W4-4 D3：按阅读状态过滤。`nil` = 全部。
+    /// 落盘用 RawValue("unread"...);为了"无过滤"也能持久化,
+    /// 用空字符串占位代表 nil。
+    var statusFilter: RepoStatus? {
+        didSet {
+            defaults.set(statusFilter?.rawValue ?? "", forKey: Keys.statusFilter)
+        }
+    }
+
     // MARK: - 初始化
 
     private let defaults: UserDefaults
@@ -180,6 +189,10 @@ final class AppSettings {
         // Bool 默认值用 object(forKey:) 判 nil；防止 `bool(forKey:)` 把缺失也当 false
         self.hideArchived = defaults.object(forKey: Keys.hideArchived) as? Bool ?? false
         self.hideForks = defaults.object(forKey: Keys.hideForks) as? Bool ?? false
+
+        // W4-4 D3：空字符串表示 nil(无过滤);非空字符串尝试匹配 RepoStatus,失败也回落 nil
+        let statusRaw = defaults.string(forKey: Keys.statusFilter) ?? ""
+        self.statusFilter = statusRaw.isEmpty ? nil : RepoStatus(rawValue: statusRaw)
     }
 
     // MARK: - 内部
@@ -198,5 +211,6 @@ final class AppSettings {
         static let repoSortOption = "settings.repoSortOption"
         static let hideArchived = "settings.hideArchived"
         static let hideForks = "settings.hideForks"
+        static let statusFilter = "settings.statusFilter"
     }
 }

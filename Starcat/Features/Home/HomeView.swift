@@ -50,16 +50,19 @@ struct HomeView: View {
 
     /// D-01：repository 类型从具体 struct 改为协议，便于 Preview / 测试注入 Mock。
     /// W4 A6：HomeViewModel 也接收 tagRepository / repoTagRepository（Sidebar Tags 段 + 按 tag 过滤）。
+    /// W4-4 D3：新增 repoNoteRepository（按状态过滤需要拉 status map）。
     init(
         repository: any RepoRepositoryProtocol,
         readmeAPI: ReadmeAPI,
         tagRepository: any TagRepositoryProtocol,
-        repoTagRepository: any RepoTagRepositoryProtocol
+        repoTagRepository: any RepoTagRepositoryProtocol,
+        repoNoteRepository: any RepoNoteRepositoryProtocol
     ) {
         _viewModel = State(initialValue: HomeViewModel(
             repository: repository,
             tagRepository: tagRepository,
-            repoTagRepository: repoTagRepository
+            repoTagRepository: repoTagRepository,
+            repoNoteRepository: repoNoteRepository
         ))
         _readmeVM = State(initialValue: ReadmeViewModel(api: readmeAPI))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
@@ -114,6 +117,9 @@ struct HomeView: View {
             if viewModel.hideForks != settings.hideForks {
                 viewModel.hideForks = settings.hideForks
             }
+            if viewModel.statusFilter != settings.statusFilter {
+                viewModel.statusFilter = settings.statusFilter
+            }
             await viewModel.refreshSidebar()
             await viewModel.reloadItems()
         }
@@ -165,8 +171,10 @@ struct HomeView: View {
         .keyboardShortcut("m", modifiers: [.command, .shift])
     }
 
-    /// W4-4 D2：过滤入口。开启任一过滤时图标会切换为"已激活"形态,
+    /// W4-4 D2/D3：过滤入口。开启任一过滤时图标会切换为"已激活"形态,
     /// 提示用户当前列表不是全集。
+    /// - D2：Archived / Fork 两个 Toggle
+    /// - D3：阅读状态 Picker(全部 + 4 状态)
     private var filterMenu: some View {
         @Bindable var vm = viewModel
         return Menu {
@@ -176,6 +184,14 @@ struct HomeView: View {
             Toggle(isOn: $vm.hideForks) {
                 Label("隐藏 Fork", systemImage: "tuningfork")
             }
+            Divider()
+            Picker("阅读状态", selection: $vm.statusFilter) {
+                Text("全部").tag(RepoStatus?.none)
+                ForEach(RepoStatus.allCases, id: \.self) { st in
+                    Text(st.displayName).tag(RepoStatus?.some(st))
+                }
+            }
+            .pickerStyle(.inline)
         } label: {
             Label(
                 "过滤",
@@ -184,12 +200,15 @@ struct HomeView: View {
                     : "line.3.horizontal.decrease.circle"
             )
         }
-        .help(viewModel.hasActiveFilter ? "已启用列表过滤" : "过滤列表(Archived / Fork)")
+        .help(viewModel.hasActiveFilter ? "已启用列表过滤" : "过滤列表(Archived / Fork / 阅读状态)")
         .onChange(of: viewModel.hideArchived) { _, newValue in
             settings.hideArchived = newValue
         }
         .onChange(of: viewModel.hideForks) { _, newValue in
             settings.hideForks = newValue
+        }
+        .onChange(of: viewModel.statusFilter) { _, newValue in
+            settings.statusFilter = newValue
         }
     }
 

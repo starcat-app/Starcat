@@ -62,24 +62,26 @@ struct HomeViewModelFilterSortTests {
         }
     }
 
-    private func makeSUT() throws -> (HomeViewModel, any DatabaseManaging) {
+    private func makeSUT() throws -> (HomeViewModel, any DatabaseManaging, GRDBRepoNoteRepository) {
         let db = try InMemoryDatabaseManager()
         let repo = GRDBRepoRepository(database: db)
         let tagRepo = GRDBTagRepository(database: db)
         let rtRepo = GRDBRepoTagRepository(database: db)
+        let noteRepo = GRDBRepoNoteRepository(database: db)
         let vm = HomeViewModel(
             repository: repo,
             tagRepository: tagRepo,
-            repoTagRepository: rtRepo
+            repoTagRepository: rtRepo,
+            repoNoteRepository: noteRepo
         )
-        return (vm, db)
+        return (vm, db, noteRepo)
     }
 
     // MARK: - D1 排序
 
     @Test("D1: reloadItems 后按默认 starredAtDesc 排序")
     func defaultSortAfterReload() async throws {
-        let (vm, db) = try makeSUT()
+        let (vm, db, _) = try makeSUT()
         try await insertRepo(db, id: 1, fullName: "o/aaa", stars: 100, starredAt: "2026-05-01T00:00:00Z")
         try await insertRepo(db, id: 2, fullName: "o/zzz", stars: 1, starredAt: "2026-05-30T00:00:00Z")
 
@@ -90,7 +92,7 @@ struct HomeViewModelFilterSortTests {
 
     @Test("D1: sortOption 改成 starsDesc → items 立即重排,不重 fetch")
     func switchSortReorders() async throws {
-        let (vm, db) = try makeSUT()
+        let (vm, db, _) = try makeSUT()
         try await insertRepo(db, id: 1, fullName: "o/aaa", stars: 100, starredAt: "2026-05-01T00:00:00Z")
         try await insertRepo(db, id: 2, fullName: "o/zzz", stars: 1, starredAt: "2026-05-30T00:00:00Z")
         await vm.reloadItems()
@@ -104,7 +106,7 @@ struct HomeViewModelFilterSortTests {
 
     @Test("D2: hideArchived = true → 隐藏 archived 仓库")
     func hideArchivedFilters() async throws {
-        let (vm, db) = try makeSUT()
+        let (vm, db, _) = try makeSUT()
         try await insertRepo(db, id: 1, fullName: "o/a", stars: 0, starredAt: "2026-05-01T00:00:00Z", isArchived: true)
         try await insertRepo(db, id: 2, fullName: "o/b", stars: 0, starredAt: "2026-05-02T00:00:00Z", isArchived: false)
         await vm.reloadItems()
@@ -117,7 +119,7 @@ struct HomeViewModelFilterSortTests {
 
     @Test("D2: hideForks = true → 隐藏 fork 仓库")
     func hideForksFilters() async throws {
-        let (vm, db) = try makeSUT()
+        let (vm, db, _) = try makeSUT()
         try await insertRepo(db, id: 1, fullName: "o/x", stars: 0, starredAt: "2026-05-01T00:00:00Z", isFork: true)
         try await insertRepo(db, id: 2, fullName: "o/y", stars: 0, starredAt: "2026-05-02T00:00:00Z", isFork: false)
         await vm.reloadItems()
@@ -129,7 +131,7 @@ struct HomeViewModelFilterSortTests {
 
     @Test("D2: 同时 hideArchived + hideForks → 两类都隐藏")
     func bothFiltersStack() async throws {
-        let (vm, db) = try makeSUT()
+        let (vm, db, _) = try makeSUT()
         try await insertRepo(db, id: 1, fullName: "o/normal", stars: 0, starredAt: "2026-05-01T00:00:00Z")
         try await insertRepo(db, id: 2, fullName: "o/archived", stars: 0, starredAt: "2026-05-02T00:00:00Z", isArchived: true)
         try await insertRepo(db, id: 3, fullName: "o/forked", stars: 0, starredAt: "2026-05-03T00:00:00Z", isFork: true)
@@ -144,7 +146,7 @@ struct HomeViewModelFilterSortTests {
 
     @Test("D2: 过滤掉当前选中行 → selectedRepoID 自动清空")
     func filterClearsSelectionWhenItemHidden() async throws {
-        let (vm, db) = try makeSUT()
+        let (vm, db, _) = try makeSUT()
         try await insertRepo(db, id: 1, fullName: "o/x", stars: 0, starredAt: "2026-05-01T00:00:00Z", isArchived: true)
         try await insertRepo(db, id: 2, fullName: "o/y", stars: 0, starredAt: "2026-05-02T00:00:00Z")
         await vm.reloadItems()
@@ -157,7 +159,7 @@ struct HomeViewModelFilterSortTests {
 
     @Test("D2: 切回 hideArchived = false → 之前被隐藏的恢复显示")
     func toggleFilterOff() async throws {
-        let (vm, db) = try makeSUT()
+        let (vm, db, _) = try makeSUT()
         try await insertRepo(db, id: 1, fullName: "o/x", stars: 0, starredAt: "2026-05-01T00:00:00Z", isArchived: true)
         try await insertRepo(db, id: 2, fullName: "o/y", stars: 0, starredAt: "2026-05-02T00:00:00Z")
         await vm.reloadItems()
@@ -168,6 +170,54 @@ struct HomeViewModelFilterSortTests {
 
         #expect(vm.items.count == 2)
         #expect(vm.hasActiveFilter == false)
+    }
+
+    // MARK: - D3 状态过滤
+
+    @Test("D3: 按 .using 过滤,仅显式标记 using 的 repo 通过")
+    func statusFilterUsing() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/a", stars: 0, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/b", stars: 0, starredAt: "2026-05-02T00:00:00Z")
+        try await insertRepo(db, id: 3, fullName: "o/c", stars: 0, starredAt: "2026-05-03T00:00:00Z")
+        try await noteRepo.updateStatus(repoId: 1, status: .using)
+        try await noteRepo.updateStatus(repoId: 2, status: .reading)
+        // repo 3 无 note → implicit unread
+        await vm.reloadItems()
+
+        vm.statusFilter = .using
+
+        #expect(vm.items.map(\.id) == [1])
+        #expect(vm.hasActiveFilter)
+    }
+
+    @Test("D3: 按 .unread 过滤包含 implicit unread(无 note)与 explicit unread")
+    func statusFilterUnreadIncludesImplicit() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/a", stars: 0, starredAt: "2026-05-03T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/b", stars: 0, starredAt: "2026-05-02T00:00:00Z")
+        try await insertRepo(db, id: 3, fullName: "o/c", stars: 0, starredAt: "2026-05-01T00:00:00Z")
+        try await noteRepo.updateStatus(repoId: 2, status: .unread)
+        try await noteRepo.updateStatus(repoId: 3, status: .using)
+        // repo 1 无 note(implicit unread)
+        await vm.reloadItems()
+
+        vm.statusFilter = .unread
+
+        #expect(Set(vm.items.map(\.id)) == [1, 2], "implicit unread(1) + explicit unread(2) 都应通过")
+    }
+
+    @Test("D3: statusFilter = nil → 不做状态过滤")
+    func statusFilterNilPassesAll() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/a", stars: 0, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/b", stars: 0, starredAt: "2026-05-02T00:00:00Z")
+        try await noteRepo.updateStatus(repoId: 1, status: .deprecated)
+        await vm.reloadItems()
+
+        vm.statusFilter = nil
+
+        #expect(vm.items.count == 2)
     }
 }
 
@@ -200,5 +250,32 @@ struct AppSettingsFilterTests {
         let s2 = AppSettings(defaults: defaults)
         #expect(s2.hideArchived == true)
         #expect(s2.hideForks == true)
+    }
+
+    // MARK: - D3：statusFilter 持久化
+
+    @Test("D3: 默认 statusFilter = nil(全部)")
+    func statusDefault() {
+        let s = AppSettings(defaults: makeIsolatedDefaults())
+        #expect(s.statusFilter == nil)
+    }
+
+    @Test("D3: 设置 statusFilter 后重新读取保持")
+    func statusPersists() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+        s1.statusFilter = .using
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.statusFilter == .using)
+    }
+
+    @Test("D3: 设置 nil 后重新读取也是 nil(清空)")
+    func statusNilPersists() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+        s1.statusFilter = .reading
+        s1.statusFilter = nil
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.statusFilter == nil)
     }
 }

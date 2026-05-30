@@ -132,8 +132,23 @@ final class HomeViewModel {
         }
     }
 
+    // MARK: - 状态过滤（W4-4 D3）
+
+    /// 按状态过滤。`nil` 表示"全部"。
+    /// 与 AppSettings.statusFilter 双向同步，持久化到 UserDefaults。
+    var statusFilter: RepoStatus? = nil {
+        didSet {
+            guard oldValue != statusFilter else { return }
+            applyView()
+        }
+    }
+
+    /// reloadItems 时一并拉的 repo→status 映射。
+    /// 用 dict 而非每行查询避免 N+1;applyView 直接读取做过滤。
+    private var statusMap: [Int64: RepoStatus] = [:]
+
     /// 派生：当前是否有任何过滤器生效（toolbar 显示徽标用）。
-    var hasActiveFilter: Bool { hideArchived || hideForks }
+    var hasActiveFilter: Bool { hideArchived || hideForks || statusFilter != nil }
 
     /// 切换多选模式。
     /// 切入：清空单选 selectedRepoID（避免详情页显示残留）；
@@ -169,6 +184,9 @@ final class HomeViewModel {
     private let tagRepository: any TagRepositoryProtocol
     private let repoTagRepository: any RepoTagRepositoryProtocol
 
+    /// W4-4 D3：按状态过滤需要 repoNoteRepository.fetchStatusMap。
+    private let repoNoteRepository: any RepoNoteRepositoryProtocol
+
     /// D-05：当前 in-flight 的 reloadItems 任务，新调用进来先 cancel 旧的，
     /// 防止"快速切 sidebar 时旧查询结果覆盖新结果"的 race。
     /// 参考 `ReadmeViewModel.currentTask` 的相同模式。
@@ -177,11 +195,13 @@ final class HomeViewModel {
     init(
         repository: any RepoRepositoryProtocol,
         tagRepository: any TagRepositoryProtocol,
-        repoTagRepository: any RepoTagRepositoryProtocol
+        repoTagRepository: any RepoTagRepositoryProtocol,
+        repoNoteRepository: any RepoNoteRepositoryProtocol
     ) {
         self.repository = repository
         self.tagRepository = tagRepository
         self.repoTagRepository = repoTagRepository
+        self.repoNoteRepository = repoNoteRepository
     }
 
     // MARK: - 公开 action
@@ -266,6 +286,14 @@ final class HomeViewModel {
                 // W4-4 D2：fetch 结果存入 rawItems 作为唯一事实源,
                 // items 派生自 applyView() 的 filter + sort 透视。
                 self.rawItems = fetched
+                // W4-4 D3：拉对应的 status map 供状态过滤使用。失败时降级为空 dict
+                // (此时按状态过滤会显示空,与"读取失败"一致;不阻塞主路径)。
+                let ids = fetched.map(\.id)
+                if !ids.isEmpty {
+                    self.statusMap = (try? await self.repoNoteRepository.fetchStatusMap(repoIds: ids)) ?? [:]
+                } else {
+                    self.statusMap = [:]
+                }
                 self.applyView()
             case .failure(let error):
                 self.loadError = error.localizedDescription
@@ -303,6 +331,14 @@ final class HomeViewModel {
         var view = rawItems
         if hideArchived { view.removeAll { $0.isArchived } }
         if hideForks    { view.removeAll { $0.isFork } }
+        // W4-4 D3：状态过滤 — 未在 repo_notes 表登记的视为 implicit "unread"。
+        // 这样新同步进来的 repo 默认被 unread 过滤命中,符合"未读 = 还没看过"的直觉。
+        if let status = statusFilter {
+            view.removeAll { repo in
+                let actual = statusMap[repo.id] ?? .unread
+                return actual != status
+            }
+        }
         view.sort(by: sortOption.comparator)
         items = view
 

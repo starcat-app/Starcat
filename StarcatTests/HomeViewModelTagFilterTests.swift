@@ -23,10 +23,12 @@ struct HomeViewModelTagFilterTests {
         let repo = GRDBRepoRepository(database: db)
         let tagRepo = GRDBTagRepository(database: db)
         let rtRepo = GRDBRepoTagRepository(database: db)
+        let noteRepo = GRDBRepoNoteRepository(database: db)
         let vm = HomeViewModel(
             repository: repo,
             tagRepository: tagRepo,
-            repoTagRepository: rtRepo
+            repoTagRepository: rtRepo,
+            repoNoteRepository: noteRepo
         )
         return (vm, tagRepo, rtRepo, db)
     }

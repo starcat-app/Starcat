@@ -20,10 +20,12 @@ struct HomeViewModelMultiSelectTests {
         let repo = GRDBRepoRepository(database: db)
         let tagRepo = GRDBTagRepository(database: db)
         let rtRepo = GRDBRepoTagRepository(database: db)
+        let noteRepo = GRDBRepoNoteRepository(database: db)
         return HomeViewModel(
             repository: repo,
             tagRepository: tagRepo,
-            repoTagRepository: rtRepo
+            repoTagRepository: rtRepo,
+            repoNoteRepository: noteRepo
         )
     }
 
