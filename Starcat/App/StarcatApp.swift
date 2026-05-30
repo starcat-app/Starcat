@@ -47,14 +47,37 @@ struct StarcatApp: App {
 
     // MARK: - Bootstrap
 
+    /// 是否处于 XCTest / Swift Testing 测试 host 进程内。
+    ///
+    /// 判定依据：
+    /// - `XCTestCase` 类在测试 host 启动时由 XCTest framework 注入到 ObjC runtime
+    /// - `XCTestConfigurationFilePath` 是 xcodebuild 跑测试时必然写入的环境变量
+    /// 任一命中即视为测试环境。
+    ///
+    /// 用途：测试期跳过会触发系统 GUI 授权弹窗 / 阻塞主线程的启动逻辑（如 Keychain.ping），
+    /// 避免测试 host App 因为等待用户输入密码而 hang 导致 testmanagerd 5.5min 超时。
+    private static let isRunningTests: Bool = {
+        NSClassFromString("XCTestCase") != nil
+            || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }()
+
     private static func bootstrap() {
         AppLog.general.info("Starcat starting (bundle=\(AppConstants.bundleIdentifier, privacy: .public))")
         DatabaseManager.bootstrap()
-        do {
-            try KeychainManager.shared.ping()
-        } catch {
-            AppLog.keychain.error("Keychain self-check failed: \(error.localizedDescription, privacy: .public)")
+
+        // 测试期跳过 Keychain 自检：ad-hoc 签名 + ACL 不匹配会触发 GUI 授权弹窗，
+        // 测试 host 主线程被对话框阻塞 → testmanagerd 永远连不上 App。
+        // 详见 docs/工程进度/2026-05-30-Keychain-临时绕过方案.md
+        if isRunningTests {
+            AppLog.general.info("Test host detected, skipping Keychain self-check")
+        } else {
+            do {
+                try KeychainManager.shared.ping()
+            } catch {
+                AppLog.keychain.error("Keychain self-check failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
+
         AppLog.general.info("Starcat bootstrap complete")
     }
 }
