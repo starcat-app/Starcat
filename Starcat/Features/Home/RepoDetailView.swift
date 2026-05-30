@@ -60,6 +60,8 @@ struct RepoDetailView: View {
             descriptionSection(repo)
             statsSection(repo)
             topicsSection(repo)
+            // W4 A3：用户自定义标签段，紧贴 GitHub topics 之后
+            RepoTagsSection(repo: repo)
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
