@@ -116,15 +116,17 @@ actor GitHubAPIClient {
     }
 
     /// DELETE 请求，无返回值。
+    /// D-03：改走 `performNoBody`，避免原 `perform<T>` 用 `EmptyResponse() as! T` 强转的类型不安全路径。
     func delete(path: String) async throws {
         let request = try buildRequest(method: "DELETE", path: path, queryItems: [], accept: "application/vnd.github+json", body: nil)
-        let _: APIResponse<EmptyResponse> = try await perform(request, allowEmptyBody: true)
+        try await performNoBody(request)
     }
 
     /// PUT 请求，无返回值。
+    /// D-03：改走 `performNoBody`，理由同 `delete(path:)`。
     func put(path: String) async throws {
         let request = try buildRequest(method: "PUT", path: path, queryItems: [], accept: "application/vnd.github+json", body: nil)
-        let _: APIResponse<EmptyResponse> = try await perform(request, allowEmptyBody: true)
+        try await performNoBody(request)
     }
 
     /// 发起 GET 请求并返回原始字节，跳过 JSON 解码。
@@ -182,9 +184,11 @@ actor GitHubAPIClient {
     }
 
     /// 真正发起请求并按状态码处理。
+    ///
+    /// D-03：移除原 `allowEmptyBody` 参数及 `as! T` 强转路径。DELETE / PUT 等无 body 端点
+    /// 改走 `performNoBody`，本函数只服务"有响应 body 需要 JSON 解码"的场景。
     private func perform<T: Decodable>(
-        _ request: URLRequest,
-        allowEmptyBody: Bool = false
+        _ request: URLRequest
     ) async throws -> APIResponse<T> {
         var req = request
 
@@ -219,11 +223,6 @@ actor GitHubAPIClient {
 
         switch http.statusCode {
         case 200...299:
-            if allowEmptyBody, data.isEmpty || T.self == EmptyResponse.self {
-                // 强转：T 一定是 EmptyResponse 才会走到这
-                let empty = EmptyResponse() as! T
-                return APIResponse(value: empty, linkHeader: linkHeader, rateLimit: rateLimit, statusCode: http.statusCode)
-            }
             do {
                 let decoded = try decoder.decode(T.self, from: data)
                 return APIResponse(value: decoded, linkHeader: linkHeader, rateLimit: rateLimit, statusCode: http.statusCode)
@@ -339,6 +338,69 @@ actor GitHubAPIClient {
         }
     }
 
+    /// 发起无响应 body 的请求（DELETE / PUT 等 GitHub API），处理 401 / 403 / 404 / Rate Limit / 5xx。
+    ///
+    /// D-03：替代原 `perform<T>(allowEmptyBody:)` 路径，避免 `EmptyResponse() as! T` 强转。
+    /// 与 `perform<T>` 的差异：不做 JSON 解码，2xx 直接 return；其余状态码错误映射与 `perform<T>` 一致。
+    ///
+    /// 重复代码说明：本函数与 `perform<T>` / `performBytes` 在 token 注入 / URLSession / 错误处理
+    /// 三段上有重复，**本次按 "Surgical Changes" 不抽取**；若未来又新增第 4 种 perform 变体，
+    /// 应优先抽取 `executeRequest(_:)` 共享前置层（单独 D-?? 重构项）。
+    private func performNoBody(_ request: URLRequest) async throws {
+        var req = request
+
+        if let token = await tokenProvider.currentToken(), !token.isEmpty {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch is CancellationError {
+            throw NetworkError.cancelled
+        } catch {
+            if (error as NSError).code == NSURLErrorCancelled {
+                throw NetworkError.cancelled
+            }
+            AppLog.network.error("Transport error (no-body): \(error.localizedDescription, privacy: .public)")
+            throw NetworkError.transport(underlying: error)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw NetworkError.invalidResponse
+        }
+
+        let rateLimit = RateLimitInfo.parse(http)
+        AppLog.network.debug("\(req.httpMethod ?? "?", privacy: .public) \(req.url?.path ?? "?", privacy: .public) -> \(http.statusCode, privacy: .public), rl=\(rateLimit.remaining ?? -1, privacy: .public)/\(rateLimit.limit ?? -1, privacy: .public)")
+
+        switch http.statusCode {
+        case 200...299:
+            return // 无 body，成功即返回
+
+        case 401:
+            throw NetworkError.unauthorized
+
+        case 403:
+            if rateLimit.isExhausted {
+                throw NetworkError.rateLimited(retryAfter: rateLimit.retryAfter())
+            }
+            throw NetworkError.clientError(statusCode: 403, message: extractErrorMessage(data))
+
+        case 404:
+            throw NetworkError.notFound
+
+        case 400...499:
+            throw NetworkError.clientError(statusCode: http.statusCode, message: extractErrorMessage(data))
+
+        case 500...599:
+            throw NetworkError.serverError(statusCode: http.statusCode)
+
+        default:
+            throw NetworkError.invalidResponse
+        }
+    }
+
     /// 从错误响应体提取人类可读的 message（GitHub 错误格式：`{"message": "...", "documentation_url": "..."}`）。
     private func extractErrorMessage(_ data: Data) -> String? {
         guard !data.isEmpty,
@@ -349,5 +411,5 @@ actor GitHubAPIClient {
     }
 }
 
-/// 空响应占位（用于 DELETE / PUT 等无 body 的端点）。
-struct EmptyResponse: Decodable {}
+// EmptyResponse 已删（D-03）：原用于 perform<T> 强转 `EmptyResponse() as! T` 占位，
+// 现 DELETE / PUT 走 performNoBody 不再需要。
