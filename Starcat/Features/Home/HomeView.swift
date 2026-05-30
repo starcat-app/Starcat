@@ -165,7 +165,10 @@ struct HomeView: View {
 
     @ViewBuilder
     private var syncButton: some View {
-        if syncManager.isSyncing {
+        // W4-4 C1：state 多了 .rateLimited(retryAt:)，需要单独渲染倒计时 UI 提示
+        // "GitHub 已限流，正在等待配额恢复"，让用户知道这不是卡死。
+        switch syncManager.state {
+        case .syncing:
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
@@ -176,7 +179,26 @@ struct HomeView: View {
                 }
                 .help("取消同步")
             }
-        } else {
+        case .rateLimited(let retryAt):
+            // TimelineView 让倒计时每秒自动刷新而无需主动 setState。
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let remaining = max(0, Int(retryAt.timeIntervalSince(context.date)))
+                HStack(spacing: 6) {
+                    Image(systemName: "hourglass")
+                        .foregroundStyle(.orange)
+                    Text("配额恢复中 \(formatCountdown(seconds: remaining))")
+                        .font(.callout)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                    Button {
+                        syncManager.cancel()
+                    } label: {
+                        Label("取消", systemImage: "xmark")
+                    }
+                    .help("取消等待并停止同步")
+                }
+            }
+        case .idle, .completed, .failed:
             Button {
                 if case .authenticated(let user) = authSession.state {
                     syncManager.performFullSync(userID: user.id)
@@ -185,6 +207,18 @@ struct HomeView: View {
                 Label("同步 Stars", systemImage: "arrow.triangle.2.circlepath")
             }
             .help("拉取 GitHub Stars")
+        }
+    }
+
+    /// 把秒数格式化为 mm:ss / hh:mm:ss（GitHub Rate Limit 重置最长 1 小时）。
+    private func formatCountdown(seconds: Int) -> String {
+        let s = seconds % 60
+        let m = (seconds / 60) % 60
+        let h = seconds / 3600
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        } else {
+            return String(format: "%d:%02d", m, s)
         }
     }
 

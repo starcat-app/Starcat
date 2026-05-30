@@ -11,11 +11,15 @@
 //  - 收尾：标记本地"远端已不在"的 repo 为 unstarred
 //  - 通过 @Observable 暴露进度供 UI 观察
 //
-//  尚未做（Week 3+ 或后续优化）：
-//  - 增量同步：starred_at 时间戳对比
+//  W4-4 C1 新增：
+//  - Rate Limit 主动退避：撞 429/403 自动 sleep 到 reset 时间 + 安全 buffer
+//    再重试同一页（每轮 runSync 最多自动重试 1 次，避免死循环）
+//
+//  尚未做（Week 5+ 或后续优化）：
+//  - 增量同步：starred_at 时间戳对比（W4-4 C3 即将做）
+//  - ETag 缓存（W4-4 C2 即将做）
 //  - 后台定时同步（NSBackgroundActivityScheduler）
 //  - 部分失败的断点续传
-//  - Rate Limit 主动等待（当前依赖 NetworkError.rateLimited 抛出后中止）
 //
 
 import Foundation
@@ -61,15 +65,23 @@ final class SyncManager {
     private let apiClient: any GitHubAPIClientProtocol
     /// D-01：依赖协议而非具体 struct，便于单测注入 Mock。
     private let repository: any RepoRepositoryProtocol
+    /// C1：Rate Limit 退避时额外多等多少秒（吸收时钟漂移）。
+    /// 默认 5；单测里传 0 让重试逻辑近乎瞬时完成。
+    private let rateLimitBufferSeconds: TimeInterval
 
     /// 当前进行中的同步 Task，便于取消。
     private var runningTask: Task<Void, Never>?
 
     // MARK: - 初始化
 
-    init(apiClient: any GitHubAPIClientProtocol, repository: any RepoRepositoryProtocol) {
+    init(
+        apiClient: any GitHubAPIClientProtocol,
+        repository: any RepoRepositoryProtocol,
+        rateLimitBufferSeconds: TimeInterval = 5
+    ) {
         self.apiClient = apiClient
         self.repository = repository
+        self.rateLimitBufferSeconds = rateLimitBufferSeconds
     }
 
     // MARK: - 同步入口
@@ -107,12 +119,26 @@ final class SyncManager {
         var totalSynced = 0
         var allRemoteIDs: Set<Int64> = []
         let syncStartedAt = Date()
+        // C1：本轮 runSync 是否已经为 rate limit 主动等待过一次。
+        // 只允许 1 次自动重试 — 第二次撞墙就抛 rateLimited 让用户决定。
+        // 这样避免"配额估算错误 / 重置时间漂移"导致 sleep 死循环。
+        var rateLimitRetried = false
 
         do {
             while true {
                 try Task.checkCancellation()
 
-                let response = try await apiClient.starredRepos(page: page, perPage: perPage)
+                // C1：单次 fetch 用 inner do-catch 包裹，专门拦 rateLimited 做退避重试。
+                // 退避成功后 `continue` 同一 page 重跑，外层循环 untouched。
+                let response: APIResponse<[StarredRepoDTO]>
+                do {
+                    response = try await apiClient.starredRepos(page: page, perPage: perPage)
+                } catch NetworkError.rateLimited(let retryAfter) where !rateLimitRetried {
+                    rateLimitRetried = true
+                    try await waitForRateLimit(retryAfter: retryAfter)
+                    continue
+                }
+
                 let dtos = response.value
 
                 // 从 Link 头解析总页数 → 估算总数
@@ -183,5 +209,26 @@ final class SyncManager {
         }
 
         runningTask = nil
+    }
+
+    // MARK: - C1：Rate Limit 主动等待
+
+    /// 撞 Rate Limit 后等待到 reset + buffer 再继续。
+    ///
+    /// 行为：
+    /// - state 切到 `.rateLimited(retryAt:)`，UI 据此显示倒计时
+    /// - `Task.sleep` 全程响应 cancel（用户点取消立即抛 CancellationError）
+    /// - 苏醒后 state 切回 `.syncing`，让外层 while 继续重试同一页
+    ///
+    /// buffer 默认 5 秒（init 注入），吸收"客户端 vs GitHub 服务器"的时钟漂移与 reset 时间精度（GitHub 给的是秒级 epoch）。
+    private func waitForRateLimit(retryAfter: TimeInterval) async throws {
+        let waitFor = max(0, retryAfter) + rateLimitBufferSeconds
+        let retryAt = Date().addingTimeInterval(waitFor)
+        AppLog.sync.warning("Rate limited; auto-waiting \(Int(waitFor), privacy: .public)s until \(retryAt, privacy: .public)")
+        state = .rateLimited(retryAt: retryAt)
+        try await Task.sleep(for: .seconds(waitFor))
+        try Task.checkCancellation()
+        state = .syncing
+        AppLog.sync.info("Rate limit window passed; resuming sync")
     }
 }
