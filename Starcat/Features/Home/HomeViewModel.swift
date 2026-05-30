@@ -96,6 +96,19 @@ final class HomeViewModel {
     /// 所以这里必须可写。退出多选模式时由 `exitMultiSelectMode()` 清空。
     var multiSelectedRepoIDs: Set<Int64> = []
 
+    // MARK: - 排序（W4-4 D1）
+
+    /// 列表排序选项。
+    /// 由 RepoListView 通过 onChange 与 AppSettings.repoSortOption 双向同步,
+    /// 持久化在 settings 层；ViewModel 这边只关心"用户选了 → items 立刻按新顺序展示"。
+    /// didSet 触发 in-memory 排序，避免重复访问数据库。
+    var sortOption: RepoSortOption = .starredAtDesc {
+        didSet {
+            guard oldValue != sortOption else { return }
+            sortItems()
+        }
+    }
+
     /// 切换多选模式。
     /// 切入：清空单选 selectedRepoID（避免详情页显示残留）；
     /// 切出：清空 multiSelectedRepoIDs（避免下次切入时出现脏数据）。
@@ -224,7 +237,8 @@ final class HomeViewModel {
 
             switch outcome {
             case .success(let fetched):
-                self.items = fetched
+                // W4-4 D1：fetch 完成后立刻按当前 sortOption 排序。
+                self.items = self.sorted(fetched)
                 // 选中行若已不在新列表，清空详情
                 if let selectedID = self.selectedRepoID,
                    !fetched.contains(where: { $0.id == selectedID }) {
@@ -248,5 +262,18 @@ final class HomeViewModel {
         selection = item
         searchQuery = ""
         selectedRepoID = nil
+    }
+
+    // MARK: - W4-4 D1：内部排序工具
+
+    /// 对当前 items in-place 排序。供 `sortOption` didSet 触发，不重 fetch。
+    private func sortItems() {
+        items = sorted(items)
+    }
+
+    /// 按当前 sortOption 返回新数组（不动入参）。
+    /// 抽成函数便于 reloadItems 一边接 fetched 一边排序，避免触发 sortOption didSet 误循环。
+    private func sorted(_ source: [Repo]) -> [Repo] {
+        source.sorted(by: sortOption.comparator)
     }
 }

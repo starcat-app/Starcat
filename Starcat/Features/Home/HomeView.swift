@@ -85,6 +85,7 @@ struct HomeView: View {
         .searchable(text: $vm.searchQuery, placement: .toolbar, prompt: "搜索仓库")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                sortMenu
                 multiSelectButton
                 tagManagementButton
                 syncButton
@@ -101,6 +102,11 @@ struct HomeView: View {
             TagManagementView(viewModel: tagMgmtVM)
         }
         .task {
+            // W4-4 D1：把持久化的排序偏好同步到 viewModel,避免首次 reloadItems 用默认值
+            // 然后 onAppear 才纠正导致列表抖动一次。
+            if viewModel.sortOption != settings.repoSortOption {
+                viewModel.sortOption = settings.repoSortOption
+            }
             await viewModel.refreshSidebar()
             await viewModel.reloadItems()
         }
@@ -150,6 +156,37 @@ struct HomeView: View {
         }
         .help(viewModel.isMultiSelectMode ? "退出多选模式" : "进入多选模式")
         .keyboardShortcut("m", modifiers: [.command, .shift])
+    }
+
+    /// W4-4 D1：排序入口。Picker 显示当前选中(系统会自动加 ✓ 标记)。
+    /// 与 AppSettings.repoSortOption 双向同步：
+    /// - 用户改 → onChange 写 settings(落盘)
+    /// - settings 变 → onAppear / onChange 同步回 viewModel
+    /// 不在 Picker binding 里直接绑 settings,是因为 viewModel 才是排序的"事实源",
+    /// settings 只负责跨会话恢复。
+    private var sortMenu: some View {
+        @Bindable var vm = viewModel
+        return Menu {
+            Picker("排序", selection: $vm.sortOption) {
+                ForEach(RepoSortOption.allCases) { opt in
+                    Label(opt.displayName, systemImage: opt.systemImage)
+                        .tag(opt)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label("排序", systemImage: "arrow.up.arrow.down")
+        }
+        .help("选择列表排序方式")
+        .onAppear {
+            // 首次进入 / sheet 关闭重建时,把已持久化的偏好同步到 viewModel
+            if viewModel.sortOption != settings.repoSortOption {
+                viewModel.sortOption = settings.repoSortOption
+            }
+        }
+        .onChange(of: viewModel.sortOption) { _, newValue in
+            settings.repoSortOption = newValue
+        }
     }
 
     /// W4 A2：标签管理入口。点击弹 sheet。

@@ -48,4 +48,98 @@ struct AppSettingsTests {
         let s = AppSettings(defaults: defaults)
         #expect(s.listDensity == .card)
     }
+
+    // MARK: - W4-4 D1：排序偏好
+
+    @Test("D1: 默认排序 = starredAtDesc")
+    func defaultSortIsStarredAtDesc() {
+        let s = AppSettings(defaults: makeIsolatedDefaults())
+        #expect(s.repoSortOption == .starredAtDesc)
+    }
+
+    @Test("D1: 设置排序后重新读取应保留")
+    func sortPersists() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+        s1.repoSortOption = .starsDesc
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.repoSortOption == .starsDesc)
+    }
+
+    @Test("D1: 非法 sortOption raw value 回退到默认")
+    func sortInvalidValueFallsBack() {
+        let defaults = makeIsolatedDefaults()
+        defaults.set("not-a-sort", forKey: "settings.repoSortOption")
+        let s = AppSettings(defaults: defaults)
+        #expect(s.repoSortOption == .starredAtDesc)
+    }
+}
+
+// MARK: - W4-4 D1：RepoSortOption comparator 单元测试
+//
+// 把 comparator 独立测试,与 HomeViewModel 解耦 — 排序逻辑是纯函数,
+// 不必走 SwiftUI / DB,几行 sort() 就能覆盖完。
+@Suite("RepoSortOption")
+struct RepoSortOptionTests {
+
+    private func makeRepo(
+        id: Int64,
+        fullName: String = "octo/repo",
+        stars: Int = 0,
+        starredAt: String? = nil,
+        pushedAt: String? = nil
+    ) -> Repo {
+        Repo(
+            id: id, owner: "octo", name: "repo", fullName: fullName,
+            description: nil, language: nil,
+            starsCount: stars, forksCount: 0, watchersCount: 0,
+            topics: nil, license: nil, homepage: nil,
+            htmlUrl: "https://x", cloneUrl: nil, sshUrl: nil,
+            isPrivate: false, isFork: false, isArchived: false, isStarred: true,
+            pushedAt: pushedAt, createdAt: nil, updatedAt: nil,
+            starredAt: starredAt, cachedAt: nil
+        )
+    }
+
+    @Test("starredAtDesc: 最近 star 在前")
+    func starredAtDesc() {
+        let a = makeRepo(id: 1, starredAt: "2026-01-01T00:00:00Z")
+        let b = makeRepo(id: 2, starredAt: "2026-05-01T00:00:00Z")
+        let sorted = [a, b].sorted(by: RepoSortOption.starredAtDesc.comparator)
+        #expect(sorted.map(\.id) == [2, 1])
+    }
+
+    @Test("nameAsc / nameDesc")
+    func nameSort() {
+        let a = makeRepo(id: 1, fullName: "zoo/swift")
+        let b = makeRepo(id: 2, fullName: "Apple/Swift")
+        let c = makeRepo(id: 3, fullName: "ggerganov/llama.cpp")
+
+        let asc = [a, b, c].sorted(by: RepoSortOption.nameAsc.comparator)
+        #expect(asc.map(\.id) == [2, 3, 1], "大小写不敏感升序: Apple < ggerganov < zoo")
+
+        let desc = [a, b, c].sorted(by: RepoSortOption.nameDesc.comparator)
+        #expect(desc.map(\.id) == [1, 3, 2])
+    }
+
+    @Test("starsDesc / starsAsc")
+    func starsSort() {
+        let a = makeRepo(id: 1, stars: 100)
+        let b = makeRepo(id: 2, stars: 5)
+        let c = makeRepo(id: 3, stars: 1000)
+        let desc = [a, b, c].sorted(by: RepoSortOption.starsDesc.comparator)
+        #expect(desc.map(\.id) == [3, 1, 2])
+        let asc = [a, b, c].sorted(by: RepoSortOption.starsAsc.comparator)
+        #expect(asc.map(\.id) == [2, 1, 3])
+    }
+
+    @Test("updatedDesc 用 pushedAt")
+    func updatedSort() {
+        let a = makeRepo(id: 1, pushedAt: "2026-05-01T00:00:00Z")
+        let b = makeRepo(id: 2, pushedAt: "2026-05-30T00:00:00Z")
+        let c = makeRepo(id: 3, pushedAt: nil)
+        let desc = [a, b, c].sorted(by: RepoSortOption.updatedDesc.comparator)
+        #expect(desc.first?.id == 2)
+        #expect(desc.last?.id == 3, "nil pushedAt 应排到末尾")
+    }
 }

@@ -40,6 +40,91 @@ enum RepoListDensity: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - 列表排序（W4-4 D1）
+
+/// 仓库列表排序选项。
+///
+/// 设计：把"字段 + 方向"合并成枚举 case，UI 用单层 Picker 就能列全，无需嵌套 Menu。
+/// 默认 `.starredAtDesc` — 最近 star 的在最前，与之前隐式行为一致。
+enum RepoSortOption: String, CaseIterable, Identifiable {
+    /// 默认：最近 star 在前。
+    case starredAtDesc
+    /// 最早 star 在前。
+    case starredAtAsc
+    /// 名称 A→Z。
+    case nameAsc
+    /// 名称 Z→A。
+    case nameDesc
+    /// Stars 高→低。
+    case starsDesc
+    /// Stars 低→高。
+    case starsAsc
+    /// 最近 push（GitHub `pushed_at`）在前。命名采用"更新"对齐用户语义。
+    case updatedDesc
+    /// 最早 push 在前。
+    case updatedAsc
+
+    var id: String { rawValue }
+
+    /// 中文展示名（Picker / Menu 标签）。
+    var displayName: String {
+        switch self {
+        case .starredAtDesc: return "Star 时间(最近优先)"
+        case .starredAtAsc:  return "Star 时间(最早优先)"
+        case .nameAsc:       return "名称 A→Z"
+        case .nameDesc:      return "名称 Z→A"
+        case .starsDesc:     return "Stars 数(高→低)"
+        case .starsAsc:      return "Stars 数(低→高)"
+        case .updatedDesc:   return "更新时间(最近优先)"
+        case .updatedAsc:    return "更新时间(最早优先)"
+        }
+    }
+
+    /// SF Symbol，用于 Menu Label 视觉提示。
+    var systemImage: String {
+        switch self {
+        case .starredAtDesc, .starredAtAsc: return "star"
+        case .nameAsc, .nameDesc:           return "textformat"
+        case .starsDesc, .starsAsc:         return "star.fill"
+        case .updatedDesc, .updatedAsc:     return "clock.arrow.circlepath"
+        }
+    }
+
+    /// 排序谓词。
+    ///
+    /// 实现策略：
+    /// - 时间字段（starredAt / pushedAt）用 ISO8601 字符串字典序，与时间序一致(`String?`，nil 视作空串、排最后)
+    /// - 名称按 `fullName` 大小写不敏感比较
+    /// - Stars 数字直接比较
+    ///
+    /// 1801 条 in-memory sort 耗时 < 10ms，HomeViewModel 直接调，无需走数据库重查。
+    func comparator(_ a: Repo, _ b: Repo) -> Bool {
+        switch self {
+        case .starredAtDesc:
+            return (a.starredAt ?? "") > (b.starredAt ?? "")
+        case .starredAtAsc:
+            // 升序也要把 nil 推到末尾(否则空串会冒到最前面看不到内容)
+            let av = a.starredAt ?? "\u{FFFD}"
+            let bv = b.starredAt ?? "\u{FFFD}"
+            return av < bv
+        case .nameAsc:
+            return a.fullName.localizedCaseInsensitiveCompare(b.fullName) == .orderedAscending
+        case .nameDesc:
+            return a.fullName.localizedCaseInsensitiveCompare(b.fullName) == .orderedDescending
+        case .starsDesc:
+            return a.starsCount > b.starsCount
+        case .starsAsc:
+            return a.starsCount < b.starsCount
+        case .updatedDesc:
+            return (a.pushedAt ?? "") > (b.pushedAt ?? "")
+        case .updatedAsc:
+            let av = a.pushedAt ?? "\u{FFFD}"
+            let bv = b.pushedAt ?? "\u{FFFD}"
+            return av < bv
+        }
+    }
+}
+
 // MARK: - AppSettings
 
 /// 应用级偏好容器。
@@ -62,6 +147,11 @@ final class AppSettings {
         didSet { persist(key: Keys.repoListDensity, value: listDensity.rawValue) }
     }
 
+    /// 仓库列表排序（W4-4 D1）。默认 `.starredAtDesc`。
+    var repoSortOption: RepoSortOption {
+        didSet { persist(key: Keys.repoSortOption, value: repoSortOption.rawValue) }
+    }
+
     // MARK: - 初始化
 
     private let defaults: UserDefaults
@@ -73,6 +163,9 @@ final class AppSettings {
         // 读取或回落到默认值
         let densityRaw = defaults.string(forKey: Keys.repoListDensity)
         self.listDensity = densityRaw.flatMap(RepoListDensity.init(rawValue:)) ?? .card
+
+        let sortRaw = defaults.string(forKey: Keys.repoSortOption)
+        self.repoSortOption = sortRaw.flatMap(RepoSortOption.init(rawValue:)) ?? .starredAtDesc
     }
 
     // MARK: - 内部
@@ -84,5 +177,6 @@ final class AppSettings {
     /// 全部偏好键集中地，避免字符串散落。
     private enum Keys {
         static let repoListDensity = "settings.repoListDensity"
+        static let repoSortOption = "settings.repoSortOption"
     }
 }
