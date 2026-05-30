@@ -1,0 +1,99 @@
+# Starcat Xcode 工程声明文件
+#
+# 由 xcodegen 解析生成 Starcat.xcodeproj。
+# 所有工程结构变更都改本文件 + 重新跑 `xcodegen generate`，不直接编辑 .xcodeproj。
+#
+# 配套阅读：docs/工程脚手架检查清单.md
+name: Starcat
+
+options:
+  bundleIdPrefix: com.starcat
+  deploymentTarget:
+    macOS: "15.0"
+  developmentLanguage: zh-Hans
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+# 全局 Build Settings：
+# - SWIFT_VERSION = 5.0：使用 Swift 5 语言模式，避开严格并发，渐进迁移（见开发前问题清单 5.x）
+# - SWIFT_STRICT_CONCURRENCY = minimal：编译器只在 @MainActor 等显式标注处检查
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_STYLE: Automatic
+    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.1.0"
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_KEY_CFBundleDisplayName: Starcat
+    INFOPLIST_KEY_LSMinimumSystemVersion: "15.0"
+    INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 Starcat."
+
+# SPM 依赖：与 docs/详细设计/04-技术选型.md 保持一致
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    from: "7.0.0"
+  KeychainAccess:
+    url: https://github.com/kishikawakatsumi/KeychainAccess
+    from: "4.2.0"
+  Kingfisher:
+    url: https://github.com/onevcat/Kingfisher
+    from: "7.0.0"
+
+targets:
+  Starcat:
+    type: application
+    platform: macOS
+    sources:
+      - path: Starcat
+        excludes:
+          - "**/.DS_Store"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app
+        CODE_SIGN_ENTITLEMENTS: Starcat/Starcat.entitlements
+        INFOPLIST_KEY_CFBundleURLTypes: ""  # 由 entitlements + plist 增量在 info 段定义
+    info:
+      path: Starcat/Generated/Info.generated.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: com.starcat.app
+            CFBundleURLSchemes:
+              - starcat
+    dependencies:
+      - package: GRDB
+      - package: KeychainAccess
+      - package: Kingfisher
+
+  StarcatTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: StarcatTests
+    dependencies:
+      - target: Starcat
+    settings:
+      base:
+        BUNDLE_LOADER: $(TEST_HOST)
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Starcat.app/Contents/MacOS/Starcat
+
+schemes:
+  Starcat:
+    build:
+      targets:
+        Starcat: all
+        StarcatTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - StarcatTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

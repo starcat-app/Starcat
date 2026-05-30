@@ -34,7 +34,7 @@ let scopes = ["read:user", "public_repo"]
 │     &code_challenge=xxx                                   │
 │                                                              │
 │  3. GitHub 回调：                                         │
-│     starchat://callback?code=xxx                          │
+│     starcat://callback?code=xxx                           │
 │                                                              │
 │  4. 用 code + code_verifier 换 token（不需要 secret）      │
 │                                                              │
@@ -47,7 +47,7 @@ let scopes = ["read:user", "public_repo"]
 // 存储到 Keychain
 let query: [String: Any] = [
     kSecClass as String: kSecClassGenericPassword,
-    kSecAttrService as String: "com.starchat.app",
+    kSecAttrService as String: "com.starcat.app",
     kSecAttrAccount as String: "github_access_token",
     kSecValueData as String: tokenData,
     kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock

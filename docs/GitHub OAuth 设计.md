@@ -61,7 +61,7 @@ Starcat 需要以下能力：
 │  3. 用户在 GitHub 页面点击授权                              │
 │                                                              │
 │  4. GitHub 回调：                                           │
-│     starchat://callback?code=xxx&state=random_state      │
+│     starcat://callback?code=xxx&state=random_state       │
 │                                                              │
 │  5. App 用 code 换 token：                                 │
 │     POST https://github.com/login/occess_token            │
@@ -83,7 +83,7 @@ let tokenData = KeychainManager.shared.storeToken(accessToken)
 // Keychain 配置
 let query: [String: Any] = [
     kSecClass as String: kSecClassGenericPassword,
-    kSecAttrService as String: "com.starchat.app",
+    kSecAttrService as String: "com.starcat.app",
     kSecAttrAccount as String: "github_access_token",
     kSecValueData as String: tokenData,
     kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
@@ -121,9 +121,9 @@ GitHub OAuth Token 没有 refresh_token！
 
 ```
 Application name: Starcat
-Homepage URL: https://starchat.app
+Homepage URL: https://<your-domain>      # TBD：一级域名待定（候选 starcat.app / starcat.dev 等）
 Description: GitHub Stars Manager with AI
-Authorization callback URL: starchat://callback
+Authorization callback URL: starcat://callback
 ```
 
 ### 3.2 获取凭据

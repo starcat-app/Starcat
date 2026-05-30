@@ -1,242 +1,44 @@
 # macOS
-# ===========
 .DS_Store
-.AppleDouble
-.LSOverride
-._*
 
-# Icon
-Icon
-Icon?
-
-# Thumbnails
-._*
-
-# Files that might appear in the root of a volume
-.DocumentRevisions-V100
-.fseventsd
-.Spotlight-V100
-.TemporaryItems
-.Trashes
-.VolumeIcon.icns
-
-# Xcode
-# ===========
-## User settings
+# Xcode 用户私有
+xcuserdata/
+*.xcuserdatad/
 *.xcuserstate
-*.xcuserdatad
-**/xcuserdata/
+*.xcscmblueprint
+*.xccheckout
 
-## Build/Derived data
-build/
-*.build/
+# Xcode 工程文件由 xcodegen 自动生成，不进 git
+Starcat.xcodeproj/
+
+# SPM
+.swiftpm/
+.build/
+Packages/
+Package.pins
+Package.resolved
+
+# 构建产物
 DerivedData/
+build/
 
-## CocoaPods
-# (NOT using CocoaPods, but if you were:)
-# Pods/
-# *.xcworkspace
+# CocoaPods（不用）
+Pods/
 
-## SPM packages
-# (Handled by Xcode automatically)
-# Package.resolved
+# Carthage（不用）
+Carthage/Build/
 
-## Xcode Archives
-*.dSYM/
-*.xcarchive/
+# fastlane（不用）
+fastlane/report.xml
+fastlane/Preview.html
 
-## Swift Package Manager
-#
-# Packages dependencies are tracked via SPM in Package.resolved
-# Edit inter-project dependencies using xcodeproj or workspace settings
+# IDE
+.vscode/
+.idea/
 
-## Playgrounds
-*.playground/
-*.playgroundlog
-
-## AppCode
-# (If you use AppCode, you may want to add:)
-# .idea/
-
-## VSCode
-# (If you use VSCode, you may want to add:)
-# .vscode/
-
-# Credentials & Secrets
-# ===========
-# DO NOT commit API keys, tokens, certificates, or any secrets
-*.pem
-*.key
-*.p12
-*.mobileprovision
-*.entitlements
-
-# Environment files
-.env
-.env.*
-.env.local
-Secrets/
-
-# Keychain (runtime, do not commit)
-*.keychain-db
-keychain/
-
-# Certificates (runtime)
-*.cer
-*.crt
-*.der
-
-# GitHub Token
-# If you store GitHub PAT in a file, exclude it
-# .gh_token
-# github_token*
-
-# CloudKit / iCloud
-# ===========
-# These directories are generated at runtime
-# They contain sensitive data and should not be committed
-# However, you may want to version control the schema
-# CloudKit/
-# (For schema: keep only the .ckmodel file, exclude the data folder)
-
-# Database
-# ===========
-# SQLite databases (user data, cache)
-*.db
-*.sqlite
-*.sqlite3
-
-# GRDB SQLCipher (if encrypted)
-*.sqlcipher
-
-# Core Data (if used)
-*.xcdatamodeld/*.xcdatamodel
-*.xcdatamodel
-
-# Cache
-# ===========
-# Caches generated at runtime
-Caches/
-**/Caches/
-**/com.apple.Safari/
-**/com.apple.dt.Xcode/
-
-# Logs
-# ===========
-# Runtime logs
-*.log
-logs/
-**/logs/
-
-# Crash reports
-# ===========
-# macOS crash reports (sometimes contain sensitive data)
-*.crash
-**/Reports/
-**/DiagnosticReports/
-
-# Temporary files
-# ===========
-tmp/
-temp/
-*.tmp
-*.temp
+# 临时
 *.swp
 *.swo
 *~
 
-# XcodeGen (if used)
-# ===========
-# Generated Xcode project (do NOT commit if using XcodeGen in CI)
-*.xcodeproj/
-# BUT do commit if the project is XcodeGen-only and no xcodeproj exists
-# Uncomment below if you use XcodeGen
-# *.xcodeproj/
-
-# AppKit specific
-# ===========
-# NIB files (rarely used in SwiftUI, but just in case)
-*.nib
-
-# Fastlane / CI
-# ===========
-# If you use Fastlane for CI/CD:
-# fastlane/report.xml
-# fastlane/Preview.html
-# fastlane/screenshots/**/*.png
-# fastlane/test_output/*.xml
-
-# Mint
-# ===========
-# If you use Mint for Swift package management:
-# .mint/
-
-# Tuist
-# ===========
-# If you use Tuist:
-# *.xcworkspace
-# !default.xcworkspace
-# *.xcodeproj
-# !default.xcodeproj
-
-# SwiftLint (if used)
-# ===========
-# .swiftlint.yml
-# SwiftLint may generate its own .swiftlint-result.json
-# swiftlint-result.json
-
-# Dependencies
-# ===========
-# If you have a dependencies folder for local SPM packages:
-# Dependencies/
-
-# Localization
-# ===========
-# Localized string catalogs
-# *.xcstrings
-
-# Preview files
-# ===========
-# SwiftUI Previews may generate cached data
-**/*.xcpreview/
-**/Preview\ Content/
-
-# Asset Catalogs
-# ===========
-# Asset catalogs are typically committed
-# BUT if they contain large binary assets, consider using Git LFS
-# *.xcassets/**/Metadata/
-
-# Git LFS
-# ===========
-# If using Git LFS for large binary assets:
-# *.png
-# *.jpg
-# *.jpeg
-# *.gif
-# *.mp4
-# *.mov
-# *.pdf
-
-# AI / LLM Generated content
-# ===========
-# If you store AI-generated drafts or embeddings:
-# *.embedding
-# ai_generated/
-# embeddings/
-
-# Misc
-# ===========
-# Backup files
-*.bak
-*.backup
-
-# Archive files
-*.zip
-*.tar
-*.gz
-*.rar
-
-# SSH keys (should never be in a repo)
-*.pub
-!
+notes.md

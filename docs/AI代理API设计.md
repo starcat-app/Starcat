@@ -385,7 +385,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
 ```nginx
 server {
     listen 443 ssl;
-    server_name ai.starchat.example.com;
+    server_name ai.<your-domain>;   # TBD：一级域名待定
 
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
