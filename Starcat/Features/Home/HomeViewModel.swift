@@ -31,7 +31,8 @@ final class HomeViewModel {
 
     /// 当前中栏列表。
     /// 重新加载策略：每次 selection / searchQuery 变化都重算（rebuild 比 diff 简单）。
-    var items: [Repo] = []
+    /// D-04：`private(set)` 收敛——只有 ViewModel 内部 `reloadItems()` 能改，避免外部 View 直接覆写引发状态漂移。
+    private(set) var items: [Repo] = []
 
     /// 当前详情选中的 repo **ID**（不是 Repo 值）。
     ///
@@ -52,11 +53,11 @@ final class HomeViewModel {
         return items.first { $0.id == id }
     }
 
-    /// 中栏列表加载中。
-    var isLoading: Bool = false
+    /// 中栏列表加载中。D-04：`private(set)` 收敛，UI 只读不写。
+    private(set) var isLoading: Bool = false
 
-    /// 列表加载错误信息（短文案）。
-    var loadError: String?
+    /// 列表加载错误信息（短文案）。D-04：`private(set)` 收敛，UI 只读不写。
+    private(set) var loadError: String?
 
     // MARK: - 搜索
 
@@ -71,14 +72,14 @@ final class HomeViewModel {
 
     // MARK: - Sidebar 数据
 
-    /// 全部 stars 数（Sidebar "全部 Stars" 行计数）。
-    var totalCount: Int = 0
+    /// 全部 stars 数（Sidebar "全部 Stars" 行计数）。D-04：`private(set)` 收敛。
+    private(set) var totalCount: Int = 0
 
-    /// 未打标签数（Sidebar "未分类" 行计数）。
-    var untaggedCount: Int = 0
+    /// 未打标签数（Sidebar "未分类" 行计数）。D-04：`private(set)` 收敛。
+    private(set) var untaggedCount: Int = 0
 
-    /// Languages 聚合（Sidebar Languages 组）。
-    var languageStats: [LanguageStat] = []
+    /// Languages 聚合（Sidebar Languages 组）。D-04：`private(set)` 收敛。
+    private(set) var languageStats: [LanguageStat] = []
 
     // MARK: - 依赖
 
