@@ -85,6 +85,11 @@ final class HomeViewModel {
 
     private let repository: RepoRepository
 
+    /// D-05：当前 in-flight 的 reloadItems 任务，新调用进来先 cancel 旧的，
+    /// 防止"快速切 sidebar 时旧查询结果覆盖新结果"的 race。
+    /// 参考 `ReadmeViewModel.currentTask` 的相同模式。
+    private var currentReloadTask: Task<Void, Never>?
+
     init(repository: RepoRepository) {
         self.repository = repository
     }
@@ -108,39 +113,74 @@ final class HomeViewModel {
     }
 
     /// 重新加载中栏列表。
+    ///
     /// 派发逻辑：
     /// - 若有非空 searchQuery → FTS5 搜索（忽略 selection，因为搜索是全局的）
     /// - 否则按 selection 派发到对应查询
+    ///
+    /// D-05：race 防护策略 ——
+    /// 1. 入口先 `cancel()` 旧 task（旧 task 内部的 await 会被标记 isCancelled）
+    /// 2. 启动新 Task 真正发起查询
+    /// 3. 查询返回后 `guard !Task.isCancelled` → 旧 task 直接 return，**完全不动 state**
+    ///    （否则 defer 形式的 `isLoading = false` 会覆盖新 task 刚写的 true，引发 UI 闪烁）
+    /// 4. 用 `Result<[Repo], Error>` 局部变量延迟 throw 处理，让 cancel 检查在 catch 之前发生
+    ///
+    /// 为什么不靠 SwiftUI `.task(id:)` 自动取消？
+    /// SwiftUI 的 task cancel 只能终止外层 await `reloadItems()`，无法穿透到 reloadItems
+    /// 内部 await `repository.fetch...()`。已进入 GRDB 查询的旧调用仍会跑完并写入 state，
+    /// 引发"先 A → 切 B → A 覆盖 B → B 再覆盖"的可见闪烁。本函数自管 currentReloadTask 才能根治。
     func reloadItems() async {
-        isLoading = true
-        loadError = nil
-        defer { isLoading = false }
+        currentReloadTask?.cancel()
 
-        do {
-            let fetched: [Repo]
-            if isSearching {
-                fetched = try await repository.searchFTS(query: searchQuery)
-            } else {
-                switch selection {
-                case .allStars:
-                    fetched = try await repository.fetchAllStarred()
-                case .untagged:
-                    fetched = try await repository.fetchUntagged()
-                case .language(let lang):
-                    fetched = try await repository.fetchByLanguage(lang)
+        let task = Task { [weak self] in
+            guard let self else { return }
+
+            self.isLoading = true
+            self.loadError = nil
+
+            let outcome: Result<[Repo], Error>
+            do {
+                let fetched: [Repo]
+                if self.isSearching {
+                    fetched = try await self.repository.searchFTS(query: self.searchQuery)
+                } else {
+                    switch self.selection {
+                    case .allStars:
+                        fetched = try await self.repository.fetchAllStarred()
+                    case .untagged:
+                        fetched = try await self.repository.fetchUntagged()
+                    case .language(let lang):
+                        fetched = try await self.repository.fetchByLanguage(lang)
+                    }
                 }
+                outcome = .success(fetched)
+            } catch {
+                outcome = .failure(error)
             }
-            self.items = fetched
 
-            // 选中行若已不在新列表，清空详情
-            if let selectedID = selectedRepoID, !fetched.contains(where: { $0.id == selectedID }) {
-                self.selectedRepoID = nil
+            // race 防护：被新一轮 reloadItems 取消的旧 task 直接丢弃结果，
+            // 完全不动 state（否则会覆盖新 task 已写入的 isLoading / items）
+            guard !Task.isCancelled else { return }
+
+            self.isLoading = false
+
+            switch outcome {
+            case .success(let fetched):
+                self.items = fetched
+                // 选中行若已不在新列表，清空详情
+                if let selectedID = self.selectedRepoID,
+                   !fetched.contains(where: { $0.id == selectedID }) {
+                    self.selectedRepoID = nil
+                }
+            case .failure(let error):
+                self.loadError = error.localizedDescription
+                self.items = []
+                AppLog.database.error("reloadItems failed: \(error.localizedDescription, privacy: .public)")
             }
-        } catch {
-            self.loadError = error.localizedDescription
-            self.items = []
-            AppLog.database.error("reloadItems failed: \(error.localizedDescription, privacy: .public)")
         }
+
+        currentReloadTask = task
+        await task.value
     }
 
     /// 切换 Sidebar 选中项。
