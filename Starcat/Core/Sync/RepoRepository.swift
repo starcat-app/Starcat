@@ -17,6 +17,26 @@
 import Foundation
 import GRDB
 
+// MARK: - 查询投影
+
+/// `SELECT language, COUNT(*) FROM ...` 的行映射。
+/// `language` 列在 SQL 里已 COALESCE 为空字符串以避免 NULL 比较坑。
+struct LanguageStat: FetchableRecord, Codable, Equatable, Identifiable {
+    /// 仓库主语言；空字符串表示 GitHub 上无主语言（纯文本/配置项目）。
+    let language: String
+    /// 该语言下已 star 的 repo 数量。
+    let count: Int
+
+    /// Identifiable id：直接用 language（空串也是合法 id）。
+    var id: String { language }
+
+    /// 渲染用：空语言显示为 "Unknown"，其他原样。
+    var displayName: String { language.isEmpty ? "Unknown" : language }
+
+    /// 实际语言筛选用：空串对应数据库里 NULL（fetchByLanguage(nil)）。
+    var languageOrNil: String? { language.isEmpty ? nil : language }
+}
+
 /// Repo Repository。
 struct RepoRepository {
 
@@ -97,6 +117,83 @@ struct RepoRepository {
                 .order(Column("starred_at").desc)
                 .limit(limit)
                 .fetchAll(db)
+        }
+    }
+
+    /// 全部已 star 的 repo，按 starred_at 倒序。
+    /// Week 3 Sidebar "All Stars" 入口使用。
+    /// 列表渲染采用 SwiftUI List 懒加载，1801 条数据一次性返回也无压力；
+    /// 后续 (>10k) 数据量时再考虑游标 / 分页。
+    func fetchAllStarred() async throws -> [Repo] {
+        try await writer.read { db in
+            try Repo.filter(Column("is_starred") == true)
+                .order(Column("starred_at").desc)
+                .fetchAll(db)
+        }
+    }
+
+    /// 未打标签的 repo（Sidebar "Untagged" 入口）。
+    /// 实现：左联 repo_tags 找出无关联记录的 repos。
+    func fetchUntagged() async throws -> [Repo] {
+        try await writer.read { db in
+            try Repo.fetchAll(db, sql: """
+                SELECT r.* FROM repos r
+                LEFT JOIN repo_tags rt ON rt.repo_id = r.id
+                WHERE r.is_starred = 1 AND rt.tag_id IS NULL
+                ORDER BY r.starred_at DESC
+                """)
+        }
+    }
+
+    /// 按语言筛选 repo。
+    /// - Parameter language: nil 表示无语言（GitHub 上的纯文本/配置仓库），传字符串表示精确匹配。
+    func fetchByLanguage(_ language: String?) async throws -> [Repo] {
+        try await writer.read { db in
+            if let language {
+                return try Repo
+                    .filter(Column("is_starred") == true && Column("language") == language)
+                    .order(Column("starred_at").desc)
+                    .fetchAll(db)
+            } else {
+                return try Repo
+                    .filter(Column("is_starred") == true && Column("language") == nil)
+                    .order(Column("starred_at").desc)
+                    .fetchAll(db)
+            }
+        }
+    }
+
+    /// 语言聚合统计，按 count 倒序。
+    /// 用于 Sidebar 的 Languages 分组展示。
+    /// `language IS NULL` 的 repo 也单独统计为一项（caller 用 `("Unknown", count)` 渲染）。
+    func languageStats() async throws -> [LanguageStat] {
+        try await writer.read { db in
+            try LanguageStat.fetchAll(db, sql: """
+                SELECT COALESCE(language, '') AS language, COUNT(*) AS count
+                FROM repos
+                WHERE is_starred = 1
+                GROUP BY language
+                ORDER BY count DESC, language ASC
+                """)
+        }
+    }
+
+    /// FTS5 全文搜索。
+    /// 在 `name / description / language / topics` 四列上搜索；空 query 直接退化为全量。
+    /// 用户输入由 caller 用 `FTSQuery.sanitize` 转义，避免 FTS5 语法错误（如 `"`、`*`、`-` 等元字符）。
+    func searchFTS(query: String) async throws -> [Repo] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return try await fetchAllStarred()
+        }
+        let ftsQuery = FTSQuery.sanitize(trimmed)
+        return try await writer.read { db in
+            try Repo.fetchAll(db, sql: """
+                SELECT r.* FROM repos r
+                JOIN repos_fts ON repos_fts.rowid = r.id
+                WHERE repos_fts MATCH ? AND r.is_starred = 1
+                ORDER BY r.starred_at DESC
+                """, arguments: [ftsQuery])
         }
     }
 

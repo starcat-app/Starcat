@@ -31,12 +31,18 @@ struct StarcatApp: App {
                 .environment(dependencies)
                 .environment(dependencies.authSession)
                 .environment(dependencies.syncManager)
+                .environment(dependencies.settings)
                 .task {
-                    // 启动时尝试用已存 token 恢复登录
                     await dependencies.authSession.restoreSessionIfAvailable()
                 }
         }
         .windowResizability(.contentSize)
+
+        // macOS 原生 Settings 窗口（Cmd+,）
+        Settings {
+            SettingsView()
+                .environment(dependencies.settings)
+        }
     }
 
     // MARK: - Bootstrap

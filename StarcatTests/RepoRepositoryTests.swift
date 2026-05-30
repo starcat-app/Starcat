@@ -20,7 +20,8 @@ struct RepoRepositoryTests {
     }
 
     private func makeDTO(id: Int64, name: String) -> StarredRepoDTO {
-        let user = GitHubUserDTO(id: 1, login: "tester", name: nil, avatarUrl: nil)
+        let user = GitHubUserDTO(id: 1, login: "tester", name: nil, avatarUrl: nil,
+                                 publicRepos: nil, followers: nil, following: nil)
         let repo = GitHubRepoDTO(
             id: id,
             name: name,
@@ -89,7 +90,8 @@ struct RepoRepositoryTests {
     @Test("topStarred 按 starred_at 倒序返回")
     func topStarred() async throws {
         let (repo, _) = try makeRepo()
-        let user = GitHubUserDTO(id: 1, login: "u", name: nil, avatarUrl: nil)
+        let user = GitHubUserDTO(id: 1, login: "u", name: nil, avatarUrl: nil,
+                                 publicRepos: nil, followers: nil, following: nil)
 
         func mkdto(id: Int64, starred: String) -> StarredRepoDTO {
             let r = GitHubRepoDTO(
@@ -115,5 +117,116 @@ struct RepoRepositoryTests {
         #expect(top.count == 2)
         #expect(top.first?.id == 2)
         #expect(top.last?.id == 3)
+    }
+
+    // MARK: - Week 3 查询
+
+    /// 构造一个不同语言/名字的小数据集，便于多个 Week 3 查询复用。
+    private func seedDataset(_ repo: RepoRepository) async throws {
+        let user = GitHubUserDTO(id: 1, login: "u", name: nil, avatarUrl: nil,
+                                 publicRepos: nil, followers: nil, following: nil)
+        func mkdto(id: Int64, name: String, lang: String?, desc: String?) -> StarredRepoDTO {
+            let r = GitHubRepoDTO(
+                id: id, name: name, fullName: "u/\(name)", owner: user,
+                description: desc, language: lang,
+                stargazersCount: 0, forksCount: 0, watchersCount: 0,
+                topics: nil, license: nil, homepage: nil,
+                htmlUrl: "https://github.com/u/\(name)",
+                cloneUrl: nil, sshUrl: nil,
+                isPrivate: false, fork: false, archived: false,
+                pushedAt: nil, createdAt: nil, updatedAt: nil
+            )
+            return StarredRepoDTO(starredAt: "2026-05-29T10:00:00Z", repo: r)
+        }
+        let dtos: [StarredRepoDTO] = [
+            mkdto(id: 1, name: "swift-app",   lang: "Swift",      desc: "ios swift cool"),
+            mkdto(id: 2, name: "rust-cli",    lang: "Rust",       desc: "fast rust cli"),
+            mkdto(id: 3, name: "py-data",     lang: "Python",     desc: "pandas numpy"),
+            mkdto(id: 4, name: "swift-ui",    lang: "Swift",      desc: "another swift project"),
+            mkdto(id: 5, name: "no-lang",     lang: nil,          desc: "config repo")
+        ]
+        try await repo.upsertStarred(dtos, userID: 100, syncedAt: Date())
+    }
+
+    @Test("fetchAllStarred 返回全部 is_starred=1 的 repo，按 starred_at 倒序")
+    func fetchAllStarred_returnsAll() async throws {
+        let (repo, _) = try makeRepo()
+        try await seedDataset(repo)
+
+        let all = try await repo.fetchAllStarred()
+        #expect(all.count == 5)
+    }
+
+    @Test("fetchUntagged 无 tag 时等于全部")
+    func fetchUntagged_returnsAllWhenNoTags() async throws {
+        let (repo, _) = try makeRepo()
+        try await seedDataset(repo)
+
+        let untagged = try await repo.fetchUntagged()
+        #expect(untagged.count == 5)
+    }
+
+    @Test("fetchByLanguage(\"Swift\") 只返回 Swift 仓库")
+    func fetchByLanguage_specific() async throws {
+        let (repo, _) = try makeRepo()
+        try await seedDataset(repo)
+
+        let swift = try await repo.fetchByLanguage("Swift")
+        #expect(swift.count == 2)
+        #expect(swift.allSatisfy { $0.language == "Swift" })
+    }
+
+    @Test("fetchByLanguage(nil) 只返回 language IS NULL 的 repo")
+    func fetchByLanguage_nilMeansNull() async throws {
+        let (repo, _) = try makeRepo()
+        try await seedDataset(repo)
+
+        let noLang = try await repo.fetchByLanguage(nil)
+        #expect(noLang.count == 1)
+        #expect(noLang.first?.language == nil)
+    }
+
+    @Test("languageStats 按 count 倒序，空语言以空串呈现")
+    func languageStats_orderedByCount() async throws {
+        let (repo, _) = try makeRepo()
+        try await seedDataset(repo)
+
+        let stats = try await repo.languageStats()
+        // Swift=2 排第一；其余各 1 按字母序：'' < Python < Rust
+        #expect(stats.count == 4)
+        #expect(stats.first?.language == "Swift")
+        #expect(stats.first?.count == 2)
+        // 空串代表 language NULL，必然包含
+        #expect(stats.contains(where: { $0.language.isEmpty && $0.count == 1 }))
+    }
+
+    @Test("searchFTS 命中 name 关键词")
+    func searchFTS_matchesName() async throws {
+        let (repo, _) = try makeRepo()
+        try await seedDataset(repo)
+
+        let hits = try await repo.searchFTS(query: "swift")
+        // name 含 "swift" 的两条 + description 含 "swift" 的两条（重叠）
+        #expect(hits.count >= 2)
+        #expect(hits.allSatisfy { $0.fullName.contains("swift") || ($0.description?.contains("swift") ?? false) })
+    }
+
+    @Test("searchFTS 空 query 退化为全量")
+    func searchFTS_emptyMeansAll() async throws {
+        let (repo, _) = try makeRepo()
+        try await seedDataset(repo)
+
+        let hits = try await repo.searchFTS(query: "   ")
+        #expect(hits.count == 5)
+    }
+
+    @Test("searchFTS 多词关键词")
+    func searchFTS_multipleTokens() async throws {
+        let (repo, _) = try makeRepo()
+        try await seedDataset(repo)
+
+        let hits = try await repo.searchFTS(query: "rust cli")
+        #expect(hits.count == 1)
+        #expect(hits.first?.name == "rust-cli")
     }
 }

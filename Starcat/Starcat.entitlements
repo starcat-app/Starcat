@@ -13,5 +13,15 @@
     <!-- 用户主动选择文件读写：JSON 导入导出场景 -->
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
+
+    <!--
+      注意：keychain-access-groups 已暂时移除。
+      该 entitlement 需要 Apple ID development signing（Team），ad-hoc 签名会拒绝编译。
+      Apple ID Team 接入后再开启，配套：
+        <key>keychain-access-groups</key>
+        <array>
+            <string>$(AppIdentifierPrefix)com.starcat.app</string>
+        </array>
+    -->
 </dict>
 </plist>

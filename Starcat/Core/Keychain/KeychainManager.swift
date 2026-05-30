@@ -62,6 +62,17 @@ protocol KeychainManaging: Sendable {
 }
 
 /// 默认实现，依赖 KeychainAccess。
+///
+/// ⚠️ DEBUG 编译临时方案：
+/// 在 macOS App Sandbox + ad-hoc 签名下，Keychain item 跨构建经常无法读回
+/// （表现为每次启动都要重新登录）。彻底修复需要 Apple ID Team 签名 + `keychain-access-groups`
+/// entitlement。在那之前，DEBUG 编译走"Keychain + 文件 fallback"双写策略：
+/// - store：先写 Keychain，再写文件（即使 Keychain 失败也继续）
+/// - load：先读 Keychain；miss 再读文件
+/// - delete：两边都清
+///
+/// 详情见 `docs/工程进度/2026-05-30-Keychain-临时绕过方案.md`。
+/// 发布前必须按文档切回纯 Keychain。
 final class KeychainManager: KeychainManaging {
 
     // MARK: - 单例
@@ -91,33 +102,105 @@ final class KeychainManager: KeychainManaging {
             .accessibility(.afterFirstUnlock)
     }
 
+    // MARK: - DEBUG token 文件 fallback
+
+    #if DEBUG
+    /// DEBUG 期 token 落盘路径：沙盒内 Application Support/com.starcat.app/dev-github-token.txt
+    /// 沙盒目录跨 Xcode 构建保持稳定，不受 codesign hash 变化影响。
+    private static let devTokenFileURL: URL? = {
+        let fm = FileManager.default
+        guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let dir = appSupport.appendingPathComponent(AppConstants.bundleIdentifier, isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("dev-github-token.txt")
+    }()
+    #endif
+
     // MARK: - GitHub Token
 
     func storeGithubToken(_ token: String) throws {
+        // Keychain 写入：失败不阻塞，DEBUG 期文件 fallback 兜底
+        var keychainWriteSucceeded = false
         do {
             try keychain.set(token, key: Account.githubToken)
-            AppLog.keychain.info("GitHub token stored")
+            keychainWriteSucceeded = true
+            AppLog.keychain.info("storeGithubToken: keychain write ok")
         } catch {
-            AppLog.keychain.error("Failed to store GitHub token: \(error.localizedDescription, privacy: .public)")
+            AppLog.keychain.warning("storeGithubToken: keychain write failed: \(error.localizedDescription, privacy: .public)")
+            #if !DEBUG
+            // RELEASE 模式下没有文件 fallback，直接报错
             throw KeychainError.writeFailed(underlying: error)
+            #endif
         }
+
+        #if DEBUG
+        // DEBUG 双写：即使 Keychain 成功也写文件，下次启动若 Keychain 不可读会自动回退
+        if let url = Self.devTokenFileURL {
+            do {
+                try token.write(to: url, atomically: true, encoding: .utf8)
+                AppLog.keychain.info("storeGithubToken: [DEBUG] file fallback write ok at \(url.lastPathComponent, privacy: .public)")
+            } catch {
+                AppLog.keychain.error("storeGithubToken: [DEBUG] file fallback write failed: \(error.localizedDescription, privacy: .public)")
+                if !keychainWriteSucceeded {
+                    throw KeychainError.writeFailed(underlying: error)
+                }
+            }
+        }
+        #endif
     }
 
     func loadGithubToken() throws -> String? {
+        // 先试 Keychain
+        let keychainValue: String?
         do {
-            return try keychain.getString(Account.githubToken)
+            keychainValue = try keychain.getString(Account.githubToken)
         } catch {
+            AppLog.keychain.warning("loadGithubToken: keychain read failed: \(error.localizedDescription, privacy: .public)")
+            #if DEBUG
+            // DEBUG 下不抛错，继续走文件 fallback
+            keychainValue = nil
+            #else
             throw KeychainError.readFailed(underlying: error)
+            #endif
         }
+
+        if let value = keychainValue, !value.isEmpty {
+            AppLog.keychain.info("loadGithubToken: keychain hit")
+            return value
+        }
+
+        #if DEBUG
+        // DEBUG fallback：从文件读
+        if let url = Self.devTokenFileURL,
+           let token = try? String(contentsOf: url, encoding: .utf8),
+           !token.isEmpty {
+            AppLog.keychain.warning("loadGithubToken: [DEBUG] keychain miss, fell back to file (跨构建持久化绕过)")
+            return token
+        }
+        #endif
+
+        AppLog.keychain.info("loadGithubToken: miss")
+        return nil
     }
 
     func deleteGithubToken() throws {
+        // Keychain 删除：失败不抛（可能本来就没有）
         do {
             try keychain.remove(Account.githubToken)
-            AppLog.keychain.info("GitHub token removed")
+            AppLog.keychain.info("deleteGithubToken: keychain removed")
         } catch {
-            throw KeychainError.deleteFailed(underlying: error)
+            AppLog.keychain.warning("deleteGithubToken: keychain remove failed: \(error.localizedDescription, privacy: .public)")
         }
+
+        #if DEBUG
+        // DEBUG fallback：清文件
+        if let url = Self.devTokenFileURL {
+            try? FileManager.default.removeItem(at: url)
+            AppLog.keychain.info("deleteGithubToken: [DEBUG] file fallback removed")
+        }
+        #endif
     }
 
     // MARK: - AI API Key

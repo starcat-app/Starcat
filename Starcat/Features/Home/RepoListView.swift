@@ -1,0 +1,110 @@
+//
+//  RepoListView.swift
+//  Starcat
+//
+//  中栏：仓库列表视图。
+//
+//  职责：
+//  - 渲染 HomeViewModel.items，每行调度到 RepoRowView
+//  - 响应行选中 → 写入 HomeViewModel.selectedRepo
+//  - 空 / 加载 / 错误状态友好展示
+//
+//  设计约束：
+//  - 用 SwiftUI List + selection binding，原生体验最佳
+//  - 行密度由 AppSettings 注入，密度切换实时生效（@Observable 通知）
+//
+
+import SwiftUI
+
+struct RepoListView: View {
+
+    @Environment(HomeViewModel.self) private var viewModel
+    @Environment(AppSettings.self) private var settings
+
+    var body: some View {
+        @Bindable var vm = viewModel
+
+        Group {
+            if viewModel.isLoading && viewModel.items.isEmpty {
+                ProgressView().controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = viewModel.loadError, viewModel.items.isEmpty {
+                emptyState(systemImage: "exclamationmark.triangle", title: "加载失败", subtitle: error)
+            } else if viewModel.items.isEmpty {
+                emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
+            } else {
+                listContent($vm.selectedRepo)
+            }
+        }
+        .navigationTitle(navigationTitle)
+        .navigationSubtitle("\(viewModel.items.count) 个仓库")
+    }
+
+    // MARK: - 列表主体
+
+    private func listContent(_ selection: Binding<Repo?>) -> some View {
+        List(selection: selection) {
+            ForEach(viewModel.items) { repo in
+                RepoRowView(repo: repo, density: settings.listDensity)
+                    .tag(Optional(repo))  // List(selection:) 配对 Optional 类型
+            }
+        }
+        .listStyle(.inset)
+        .alternatingRowBackgrounds()
+    }
+
+    // MARK: - 标题派生
+
+    private var navigationTitle: String {
+        if viewModel.isSearching {
+            return "搜索：\(viewModel.searchQuery)"
+        }
+        return viewModel.selection.displayName
+    }
+
+    // MARK: - 空状态
+
+    private var emptyImage: String {
+        if viewModel.isSearching { return "magnifyingglass" }
+        switch viewModel.selection {
+        case .allStars:  return "star"
+        case .untagged:  return "tag.slash"
+        case .language:  return "chevron.left.forwardslash.chevron.right"
+        }
+    }
+
+    private var emptyTitle: String {
+        if viewModel.isSearching { return "无匹配结果" }
+        switch viewModel.selection {
+        case .allStars:        return "还没有 Stars"
+        case .untagged:        return "所有仓库都已分类"
+        case .language:        return "该语言下暂无仓库"
+        }
+    }
+
+    private var emptySubtitle: String {
+        if viewModel.isSearching { return "试试别的关键词" }
+        switch viewModel.selection {
+        case .allStars:        return "点击右上角同步按钮拉取 GitHub Stars"
+        case .untagged:        return "新增 Stars 默认进这里"
+        case .language:        return "刷新或同步后试试"
+        }
+    }
+
+    private func emptyState(systemImage: String, title: String, subtitle: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 36))
+                .foregroundStyle(.tertiary)
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+}

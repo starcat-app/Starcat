@@ -76,23 +76,39 @@ final class AuthSession {
 
     /// 启动期调用。Keychain 有 token 时尝试拉 /user 验证。
     /// 验证失败（401）则视为未登录，清除 token。
+    ///
+    /// 诊断"每次启动都要重新登录"问题：
+    /// 查看 Console.app subsystem `com.starcat.app` 过滤 category `auth`：
+    /// - "restore: keychain miss" → token 没存进/没读出（多半 entitlements 问题）
+    /// - "restore: token invalid (401)" → token 被 GitHub 撤销
+    /// - "restore: network error" → 拉 /user 网络失败，token 仍保留
+    /// - "restore: success" → 正常恢复
     func restoreSessionIfAvailable() async {
+        let tokenOpt: String?
         do {
-            guard let token = try keychain.loadGithubToken(), !token.isEmpty else {
-                AppLog.auth.info("No stored token; starting unauthenticated")
-                return
-            }
-            AppLog.auth.info("Found stored token; verifying...")
+            tokenOpt = try keychain.loadGithubToken()
+        } catch {
+            AppLog.auth.error("restore: keychain read error: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+
+        guard let token = tokenOpt, !token.isEmpty else {
+            AppLog.auth.info("restore: keychain miss (no token); starting unauthenticated")
+            return
+        }
+
+        AppLog.auth.info("restore: keychain hit (token length=\(token.count, privacy: .public)); verifying via /user...")
+
+        do {
             let user = try await apiClient.getCurrentUser()
             self.state = .authenticated(user: user)
-            AppLog.auth.info("Session restored: login=\(user.login, privacy: .public)")
+            AppLog.auth.info("restore: success login=\(user.login, privacy: .public)")
         } catch NetworkError.unauthorized {
-            AppLog.auth.warning("Stored token invalid; clearing")
+            AppLog.auth.warning("restore: token invalid (401); clearing")
             try? keychain.deleteGithubToken()
             self.state = .unauthenticated
         } catch {
-            // 网络错误等不清 token，下次重试
-            AppLog.auth.error("Session restore failed (will retry next launch): \(error.localizedDescription, privacy: .public)")
+            AppLog.auth.error("restore: network error (token retained): \(error.localizedDescription, privacy: .public)")
         }
     }
 

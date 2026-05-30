@@ -16,11 +16,25 @@ import Foundation
 // MARK: - User
 
 /// `GET /user` 响应（也用于 starred_repos 里的 owner 嵌套字段）。
+///
+/// 注意字段可选性：
+/// - `/user` 端点返回全部字段
+/// - `/user/starred` 嵌套的 `owner` 只返回 id/login/avatar_url
+/// 所以 followers/following/publicRepos 必须可选，否则嵌套 owner 解码失败。
 struct GitHubUserDTO: Decodable, Equatable {
     let id: Int64
     let login: String
     let name: String?
     let avatarUrl: String?
+
+    // MARK: - 用户统计（仅 /user 端点返回）
+
+    /// 公开仓库数。
+    let publicRepos: Int?
+    /// 粉丝数。
+    let followers: Int?
+    /// 关注数。
+    let following: Int?
 }
 
 // MARK: - License

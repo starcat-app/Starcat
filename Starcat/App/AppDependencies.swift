@@ -33,20 +33,21 @@ final class AppDependencies {
     let oauthService: any GithubOAuthServiceProtocol
     let authSession: AuthSession
     let syncManager: SyncManager
+    /// Week 3 引入：HomeView 在初始化时需要复用这个 repository 构建 ViewModel。
+    let repoRepository: RepoRepository
+    /// Week 3 引入：用户偏好（列表密度等）。
+    let settings: AppSettings
 
     // MARK: - 初始化
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
     init() {
-        // 1. 数据库（生产单例）
         let db: any DatabaseManaging = DatabaseManager.shared
         self.database = db
 
-        // 2. API 客户端（从 Keychain 取 token）
         let api = GitHubAPIClient()
         self.apiClient = api
 
-        // 3. OAuth Service
         let oauth: any GithubOAuthServiceProtocol
         if Self.useMockOAuth {
             AppLog.auth.info("Using MockGithubOAuthService (DEBUG)")
@@ -57,15 +58,16 @@ final class AppDependencies {
         }
         self.oauthService = oauth
 
-        // 4. AuthSession
         self.authSession = AuthSession(
             oauthService: oauth,
             apiClient: api,
             keychain: KeychainManager.shared
         )
 
-        // 5. SyncManager
+        // Week 3 新增：repository / settings 通过 environment 给 HomeView 用
         let repo = RepoRepository(database: db)
+        self.repoRepository = repo
         self.syncManager = SyncManager(apiClient: api, repository: repo)
+        self.settings = AppSettings.shared
     }
 }

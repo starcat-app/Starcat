@@ -17,7 +17,10 @@ import GRDB
 /// 仓库元数据。
 ///
 /// 该结构 1:1 映射 `repos` 表，字段顺序与 schema 保持一致以便阅读。
-struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, Equatable {
+///
+/// Hashable 实现：用 `id` 作为唯一标识（GitHub repo id 全局唯一），
+/// SwiftUI `List(selection:)` 需要 Hashable，避免对所有字段做散列。
+struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, Equatable, Hashable {
 
     static let databaseTableName = "repos"
 
@@ -103,5 +106,13 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
     var topicsArray: [String] {
         guard let topics, let data = topics.data(using: .utf8) else { return [] }
         return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
+
+    // MARK: - Hashable
+
+    /// 只基于 id 散列（即同一 GitHub repo 即视为相等的 hash key）。
+    /// List(selection:) 用此保证选中行稳定，不受 cachedAt 等字段变化影响。
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
 }

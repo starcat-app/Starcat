@@ -4,9 +4,9 @@
 //
 //  根视图：根据 AuthSession 状态在登录页与主界面之间切换。
 //
-//  Week 2 范围：
+//  Week 3 范围：
 //  - .unauthenticated / .awaitingUserCode → GithubAuthView
-//  - .authenticated → HomePlaceholderView（Week 3 替换为 HomeView 三栏）
+//  - .authenticated → HomeView（三栏布局）
 //
 
 import SwiftUI
@@ -14,11 +14,13 @@ import SwiftUI
 struct ContentView: View {
 
     @Environment(AuthSession.self) private var authSession
+    @Environment(AppDependencies.self) private var dependencies
 
     var body: some View {
         Group {
             if authSession.state.isAuthenticated {
-                HomePlaceholderView()
+                HomeView(repository: dependencies.repoRepository)
+                    .frame(minWidth: 960, minHeight: 600)
             } else {
                 GithubAuthView()
             }
