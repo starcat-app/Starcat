@@ -21,7 +21,9 @@ struct ContentView: View {
             if authSession.state.isAuthenticated {
                 HomeView(
                     repository: dependencies.repoRepository,
-                    readmeAPI: dependencies.readmeAPI
+                    readmeAPI: dependencies.readmeAPI,
+                    tagRepository: dependencies.tagRepository,
+                    repoTagRepository: dependencies.repoTagRepository
                 )
                     .frame(minWidth: 960, minHeight: 600)
             } else {

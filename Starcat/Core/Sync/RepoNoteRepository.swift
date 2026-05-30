@@ -24,7 +24,7 @@
 import Foundation
 import GRDB
 
-struct GRDBRepoNoteRepository {
+struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
 
     private let writer: any DatabaseWriter
 

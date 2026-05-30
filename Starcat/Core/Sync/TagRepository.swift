@@ -19,7 +19,7 @@
 import Foundation
 import GRDB
 
-struct GRDBTagRepository {
+struct GRDBTagRepository: TagRepositoryProtocol {
 
     private let writer: any DatabaseWriter
 

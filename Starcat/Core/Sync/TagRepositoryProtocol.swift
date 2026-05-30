@@ -51,6 +51,6 @@ protocol TagRepositoryProtocol: Sendable {
     func fetchAll() async throws -> [Tag]
 }
 
-// MARK: - Conformance
-
-extension GRDBTagRepository: TagRepositoryProtocol {}
+// 注意：`GRDBTagRepository: TagRepositoryProtocol` 的 conformance 直接写在
+// TagRepository.swift 的 struct 声明上，避免 retroactive conformance 在 Swift 6
+// 语言模式下触发 `'Sendable' must occur in the same source file` 错误。

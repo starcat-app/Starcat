@@ -41,10 +41,26 @@ struct HomeView: View {
     /// 防抖用：跟踪搜索 query 变化，task(id:) 触发延迟搜索。
     @State private var searchDebounceID = UUID()
 
+    /// W4 A2：标签管理 sheet 显示状态。
+    @State private var showTagManagement: Bool = false
+
+    /// W4 A2：TagManagementViewModel 实例，sheet 关掉再开时复用，
+    /// 避免每次 sheet 都 new 导致选择/加载态被打断。
+    @State private var tagMgmtVM: TagManagementViewModel
+
     /// D-01：repository 类型从具体 struct 改为协议，便于 Preview / 测试注入 Mock。
-    init(repository: any RepoRepositoryProtocol, readmeAPI: ReadmeAPI) {
+    init(
+        repository: any RepoRepositoryProtocol,
+        readmeAPI: ReadmeAPI,
+        tagRepository: any TagRepositoryProtocol,
+        repoTagRepository: any RepoTagRepositoryProtocol
+    ) {
         _viewModel = State(initialValue: HomeViewModel(repository: repository))
         _readmeVM = State(initialValue: ReadmeViewModel(api: readmeAPI))
+        _tagMgmtVM = State(initialValue: TagManagementViewModel(
+            tagRepository: tagRepository,
+            repoTagRepository: repoTagRepository
+        ))
     }
 
     var body: some View {
@@ -64,8 +80,12 @@ struct HomeView: View {
         .searchable(text: $vm.searchQuery, placement: .toolbar, prompt: "搜索仓库")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                tagManagementButton
                 syncButton
             }
+        }
+        .sheet(isPresented: $showTagManagement) {
+            TagManagementView(viewModel: tagMgmtVM)
         }
         .task {
             await viewModel.refreshSidebar()
@@ -103,6 +123,17 @@ struct HomeView: View {
     }
 
     // MARK: - Toolbar 子组件
+
+    /// W4 A2：标签管理入口。点击弹 sheet。
+    private var tagManagementButton: some View {
+        Button {
+            showTagManagement = true
+        } label: {
+            Label("标签管理", systemImage: "tag")
+        }
+        .help("管理标签（创建 / 编辑 / 合并 / 删除）")
+        .keyboardShortcut("t", modifiers: [.command, .shift])
+    }
 
     @ViewBuilder
     private var syncButton: some View {
