@@ -2,31 +2,37 @@
 //  ReadmeAPI.swift
 //  Starcat
 //
-//  README 抓取与缓存协调层。
+//  README 抓取与缓存协调层（Phase 2 SWR 拆分版）。
 //
 //  端点：
 //  - GET /repos/{owner}/{repo}/readme
 //    Accept: application/vnd.github.html  → 直接返回 GitHub 服务端渲染好的 HTML 片段
 //
-//  缓存策略（与 readmes 表配合）：
-//  0. 软过期短路（Phase 1，2026-05-30）：
-//     若本地有有效 HTML 且 cached_at 距今 < softTtl（默认 6h）且非 forceRefresh
-//     → 直接返回本地缓存，不发条件请求。
-//     避免用户反复切同一 repo 时浪费 GitHub Rate Limit。
-//     "刷新"按钮 → forceRefresh=true → 跳过本短路。
-//  1. 先 ReadmeRepository.find 取本地缓存
-//  2. 若有 etag/last_modified，带 If-None-Match / If-Modified-Since 请求
-//  3. 304：本地缓存仍有效 → touchCachedAt 仅刷新时间，返回旧 readme
-//  4. 200：拿到新 HTML → upsert 到本地 → 返回新 readme
-//  5. 404：抛 NetworkError.notFound（无 README，由 UI 显示空态）
+//  Phase 2 关键改动（2026-05-30，见 docs/详细设计/readme.md-渲染设计.md §12.2 / §13）：
+//  把原 `fetchHTML(for:forceRefresh:)` 拆为：
+//  - `cachedReadme(repoId:)` 纯读本地（不发网络）
+//  - `refreshReadme(for:)` 走网络刷新（所有错误包到 `.failed`，不抛出）
+//
+//  这样 ViewModel 可以实现 "先读缓存立即 loaded → 判断 softTtl → 后台 fire-and-forget refresh"
+//  的 stale-while-revalidate 模式，不再需要 API 层吃下 softTtl 短路。
+//
+//  refresh 路径详细步骤：
+//  1. 读本地缓存（拿 etag / last_modified）
+//  2. 带 If-None-Match / If-Modified-Since 发条件请求
+//  3. 304 → 仅 touch cached_at，返回 `.notModified(refreshed)`
+//     （refreshed.cachedAt 已被更新为现在，便于 UI 显示"刚刚刷新"）
+//  4. 200 → upsert 新 HTML，返回 `.updated(readme)`
+//  5. 404 → 删本地旧缓存，返回 `.notFound`
+//  6. 边缘：304 + 本地缓存丢失 → 走 `refreshUnconditional` 不带 validator 重拉
+//  7. 任何其他错误（transport / decoding / rate limit / 5xx）→ `.failed(error)`
 //
 //  设计意图：
 //  - 选用 GitHub 服务端渲染的 HTML 而非 raw markdown，理由：
 //    a) 100% GFM 兼容（任务列表 / 表格 / mermaid 等），客户端零渲染负担
 //    b) 减少客户端 markdown 解析器依赖，降低安全攻击面
 //    c) GitHub 已把相对图片 URL 处理成绝对 camo CDN URL，WebView 直接显示
-//  - 缺点：HTML 体积比 raw markdown 略大（GitHub HTML 含 anchor / 类目）
-//    但 README 端点单文件不大，整体可接受
+//  - `refreshReadme` 不抛错而是返回 enum：让调用方能优雅处理"刷新失败但旧缓存还能用"的场景
+//    （SWR 的核心体验：网络挂了也不打扰用户）
 //
 //  线程模型：调用方可在任意 actor 调用，内部所有 IO 都 async
 //
@@ -36,6 +42,22 @@ import Foundation
 /// README HTML 抓取的 Accept 头。
 private let readmeHTMLAccept = "application/vnd.github.html"
 
+/// `refreshReadme` 的返回值。
+///
+/// 用 enum 而非 throws 是为了让调用方在"刷新失败但旧缓存还能用"时静默回退，
+/// 不必把网络错误传到 UI 打扰用户（SWR 模式）。
+enum ReadmeRefreshResult {
+    /// 200：拿到新 HTML，已 upsert 到本地。
+    case updated(Readme)
+    /// 304：本地缓存仍有效，cached_at 已 touch（readme.cachedAt 已是最新）。
+    case notModified(Readme)
+    /// 404：该 repo 没有 README，本地旧缓存（若有）已被删除。
+    case notFound
+    /// 其他错误（transport / decoding / rate limit / 5xx / Repository 写入失败）。
+    /// 调用方应优先复用 `cachedReadme` 拿到的旧值；若没有则展示 error 态。
+    case failed(Error)
+}
+
 /// README API。
 struct ReadmeAPI {
 
@@ -44,13 +66,13 @@ struct ReadmeAPI {
 
     /// 软过期阈值。
     ///
-    /// 本地缓存的 `cached_at` 距今小于该值时，视为"足够新鲜"，
-    /// 跳过条件请求直接返回缓存。
+    /// **Phase 2 后语义变化**：本常量不再被 ReadmeAPI 自身使用，
+    /// 而是供 ViewModel 通过 `isWithinSoftTtl(...)` 判断"本次自动加载是否需要后台刷新"。
+    /// API 层只暴露能力，不再吃缓存决策。
     ///
     /// 选 6h 的理由：
-    /// - 多数仓库 README 一天内不会变化（Trending 也不会）
-    /// - 用户主动"刷新"按钮可绕过（`forceRefresh: true`）
-    /// - 不阻止 ETag 校验路径；只是"6h 内不主动校验"
+    /// - 多数仓库 README 一天内不会变化
+    /// - 用户主动"刷新"按钮可绕过（ViewModel 层 `forceRefresh: true` 时跳过本判断）
     ///
     /// 暂硬编码，Settings 面板调节留到 P2。
     static let softTtl: TimeInterval = 6 * 3600
@@ -60,62 +82,69 @@ struct ReadmeAPI {
         self.repository = repository
     }
 
-    /// 拉取并缓存 README HTML。
-    ///
-    /// 命中缓存（304）时，仅刷新 cached_at 不重写 HTML。
-    /// 命中失败（200）时，覆盖写入。
-    /// - Parameters:
-    ///   - repo: 目标仓库
-    ///   - forceRefresh: 若为 true，跳过 softTtl 短路，无论本地缓存多新都发条件请求。
-    ///     由用户主动"刷新"按钮触发；自动加载场景保持默认 false。
-    /// - Returns: 最新（或缓存命中后的旧）Readme 记录
-    /// - Throws:
-    ///   - `NetworkError.notFound`：该 repo 没有 README
-    ///   - 其他 NetworkError：网络/限流/服务端错误
-    func fetchHTML(for repo: Repo, forceRefresh: Bool = false) async throws -> Readme {
-        let existing = try await repository.find(repoId: repo.id)
+    // MARK: - Public
 
-        // 软过期短路：本地缓存仍新鲜 + 有有效 HTML + 非强制刷新 → 直接返回
-        // 这条短路在 6h 内可消化 90%+ 重复切换 repo 的场景
-        if !forceRefresh,
-           let cached = existing,
-           let html = cached.renderedHtml,
-           !html.isEmpty,
-           Self.isWithinSoftTtl(cachedAt: cached.cachedAt, now: Date(), softTtl: Self.softTtl) {
-            return cached
+    /// 纯读本地缓存，不发网络。
+    ///
+    /// SWR 模式的"第一阶段"：拿到旧 HTML 立即上屏。
+    /// - Returns: 缓存命中返回 Readme；未命中返回 nil
+    func cachedReadme(repoId: Int64) async throws -> Readme? {
+        try await repository.find(repoId: repoId)
+    }
+
+    /// 走网络刷新 README HTML 并同步本地缓存。
+    ///
+    /// 所有错误（含 transport / decoding / rate limit / 5xx / Repository 写入失败）
+    /// 都包到 `.failed(error)` 返回，**不抛出**。
+    /// 这是为了支持 SWR 模式："刷新失败但旧缓存还能用"时静默回退，不打扰用户。
+    ///
+    /// 本方法不做 softTtl 短路 —— 调用方应用 `isWithinSoftTtl` 自己判断是否调本方法。
+    ///
+    /// - Parameter repo: 目标仓库
+    /// - Returns: `ReadmeRefreshResult` —— `.updated` / `.notModified` / `.notFound` / `.failed`
+    func refreshReadme(for repo: Repo) async -> ReadmeRefreshResult {
+        let existing: Readme?
+        do {
+            existing = try await repository.find(repoId: repo.id)
+        } catch {
+            return .failed(error)
         }
 
         let path = "/repos/\(repo.owner)/\(repo.name)/readme"
 
-        let raw: RawAPIResponse
+        let raw: BytesResponse
         do {
-            raw = try await client.getRaw(
+            raw = try await client.getBytes(
                 path: path,
                 accept: readmeHTMLAccept,
                 ifNoneMatch: existing?.etag,
                 ifModifiedSince: existing?.lastModified
             )
         } catch NetworkError.notFound {
-            // GitHub 返回 404 意味着该仓库没有 README；清掉本地旧缓存（防止误显示）
+            // GitHub 返回 404 意味该 repo 没有 README；清掉本地旧缓存（防止误显示）
             if existing != nil {
                 try? await repository.delete(repoId: repo.id)
             }
-            throw NetworkError.notFound
+            return .notFound
+        } catch {
+            return .failed(error)
         }
 
-        // 304 命中 → 用本地缓存返回，只刷新 cached_at
+        // 304 命中 → 仅 touch cached_at，返回更新过时间戳的 readme
         if raw.notModified {
             guard let cached = existing else {
-                // 极端情况：本地缓存被清掉了但条件请求仍返回 304；按照"未命中"重试一次（去掉 etag）
-                AppLog.network.warning("README 304 但本地缓存丢失，重新无条件拉取 \(path, privacy: .public)")
-                return try await fetchHTMLWithoutValidator(repo: repo)
+                // 极端 case：本地缓存被清掉但服务端仍 304 → 兜底无条件重拉
+                AppLog.network.warning("README 304 但本地缓存丢失，无条件重拉 \(path, privacy: .public)")
+                return await refreshUnconditional(repo: repo)
             }
             let now = Date()
             try? await repository.touchCachedAt(repoId: repo.id, at: now)
-            return cached
+            var refreshed = cached
+            refreshed.cachedAt = ISO8601DateFormatter.shared.string(from: now)
+            return .notModified(refreshed)
         }
 
-        // 200：写新缓存
+        // 200 → 写新缓存
         let html = String(data: raw.data, encoding: .utf8) ?? ""
         let now = Date()
         let readme = Readme(
@@ -127,14 +156,29 @@ struct ReadmeAPI {
             cachedAt: ISO8601DateFormatter.shared.string(from: now),
             size: raw.data.count
         )
-        try await repository.upsert(readme)
-        return readme
+        do {
+            try await repository.upsert(readme)
+        } catch {
+            return .failed(error)
+        }
+        return .updated(readme)
     }
 
-    /// 不带 ETag 的强制刷新（304 但本地缓存丢失时的兜底）。
-    private func fetchHTMLWithoutValidator(repo: Repo) async throws -> Readme {
+    // MARK: - Private
+
+    /// 不带 validator 的强制刷新（304 但本地缓存丢失时的兜底）。
+    /// 所有错误同样包到 `.failed`，保持与 `refreshReadme` 一致的语义。
+    private func refreshUnconditional(repo: Repo) async -> ReadmeRefreshResult {
         let path = "/repos/\(repo.owner)/\(repo.name)/readme"
-        let raw = try await client.getRaw(path: path, accept: readmeHTMLAccept)
+        let raw: BytesResponse
+        do {
+            raw = try await client.getBytes(path: path, accept: readmeHTMLAccept)
+        } catch NetworkError.notFound {
+            return .notFound
+        } catch {
+            return .failed(error)
+        }
+
         let html = String(data: raw.data, encoding: .utf8) ?? ""
         let now = Date()
         let readme = Readme(
@@ -146,8 +190,12 @@ struct ReadmeAPI {
             cachedAt: ISO8601DateFormatter.shared.string(from: now),
             size: raw.data.count
         )
-        try await repository.upsert(readme)
-        return readme
+        do {
+            try await repository.upsert(readme)
+        } catch {
+            return .failed(error)
+        }
+        return .updated(readme)
     }
 
     // MARK: - 纯逻辑工具（可独立单测）
@@ -161,6 +209,7 @@ struct ReadmeAPI {
     ///   → 视为命中（不去打扰 GitHub；用户系统时间错也是用户的事）
     ///
     /// 提取为静态函数是为了无依赖单测（不需要 GitHubAPIClient mock）。
+    /// Phase 2 起，本函数由 `ReadmeViewModel` 直接调用决定是否需要后台 refresh。
     static func isWithinSoftTtl(cachedAt: String, now: Date, softTtl: TimeInterval) -> Bool {
         guard let cachedDate = ISO8601DateFormatter.shared.date(from: cachedAt) else {
             return false

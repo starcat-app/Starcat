@@ -50,11 +50,16 @@ struct APIResponse<T> {
     let statusCode: Int
 }
 
-/// 原始字节响应包装。
+/// 裸字节响应包装。
 ///
-/// 用于不走 JSON 解码的端点（README HTML / Raw markdown / 二进制等）。
+/// 用于不走 JSON 解码的端点（README HTML / 原始 markdown / 二进制等）。
 /// 携带 ETag / Last-Modified / 304 判定，由调用方决定缓存命中行为。
-struct RawAPIResponse {
+///
+/// 命名注意：Phase 2 改名（原 `RawAPIResponse` → `BytesResponse`）。
+/// 原 `Raw` 在 GitHub 语境里容易与 `Accept: application/vnd.github.raw`（原始 markdown）
+/// 混淆，而我们的 README 实际拿的是 `Accept: application/vnd.github.html`（已渲染 HTML）。
+/// `Bytes` 更准确表达"不解码 JSON 的字节响应"。
+struct BytesResponse {
     /// 响应体字节。`notModified == true` 时为空。
     let data: Data
     /// 服务端返回的 ETag（含双引号，原样保存原样回传）。
@@ -132,12 +137,12 @@ actor GitHubAPIClient {
     ///   - ifModifiedSince: 上次响应保存的 Last-Modified；与 ifNoneMatch 等效，二选一即可
     /// - Returns: 字节 + ETag / Last-Modified / notModified 标志
     /// - Throws: 与 `get<T>` 同语义的 `NetworkError`（404 / 401 / RateLimit / 5xx）
-    func getRaw(
+    func getBytes(
         path: String,
         accept: String,
         ifNoneMatch: String? = nil,
         ifModifiedSince: String? = nil
-    ) async throws -> RawAPIResponse {
+    ) async throws -> BytesResponse {
         var request = try buildRequest(method: "GET", path: path, queryItems: [], accept: accept, body: nil)
         if let etag = ifNoneMatch, !etag.isEmpty {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
@@ -145,7 +150,7 @@ actor GitHubAPIClient {
         if let since = ifModifiedSince, !since.isEmpty {
             request.setValue(since, forHTTPHeaderField: "If-Modified-Since")
         }
-        return try await performRaw(request)
+        return try await performBytes(request)
     }
 
     // MARK: - Internal
@@ -252,13 +257,13 @@ actor GitHubAPIClient {
         }
     }
 
-    /// 发起原始字节请求（不解码 JSON），处理 304 / 401 / 404 / Rate Limit / 5xx。
+    /// 发起裸字节请求（不解码 JSON），处理 304 / 401 / 404 / Rate Limit / 5xx。
     ///
     /// 与 `perform<T>` 的差异：
     /// - 不做 JSON 解码
-    /// - 把 304 翻译为 `RawAPIResponse(notModified: true)` 而非抛错（调用方需要这个语义来命中缓存）
+    /// - 把 304 翻译为 `BytesResponse(notModified: true)` 而非抛错（调用方需要这个语义来命中缓存）
     /// - 200 时直接返回 data
-    private func performRaw(_ request: URLRequest) async throws -> RawAPIResponse {
+    private func performBytes(_ request: URLRequest) async throws -> BytesResponse {
         var req = request
 
         if let token = await tokenProvider.currentToken(), !token.isEmpty {
@@ -275,7 +280,7 @@ actor GitHubAPIClient {
             if (error as NSError).code == NSURLErrorCancelled {
                 throw NetworkError.cancelled
             }
-            AppLog.network.error("Transport error (raw): \(error.localizedDescription, privacy: .public)")
+            AppLog.network.error("Transport error (bytes): \(error.localizedDescription, privacy: .public)")
             throw NetworkError.transport(underlying: error)
         }
 
@@ -287,11 +292,11 @@ actor GitHubAPIClient {
         let etag = http.value(forHTTPHeaderField: "ETag")
         let lastModified = http.value(forHTTPHeaderField: "Last-Modified")
 
-        AppLog.network.debug("GET-raw \(req.url?.path ?? "?", privacy: .public) -> \(http.statusCode, privacy: .public), bytes=\(data.count, privacy: .public)")
+        AppLog.network.debug("GET-bytes \(req.url?.path ?? "?", privacy: .public) -> \(http.statusCode, privacy: .public), bytes=\(data.count, privacy: .public)")
 
         switch http.statusCode {
         case 200...299:
-            return RawAPIResponse(
+            return BytesResponse(
                 data: data,
                 etag: etag,
                 lastModified: lastModified,
@@ -302,7 +307,7 @@ actor GitHubAPIClient {
 
         case 304:
             // 命中 If-None-Match → 服务端未变化，body 为空，调用方应使用本地缓存
-            return RawAPIResponse(
+            return BytesResponse(
                 data: Data(),
                 etag: etag,
                 lastModified: lastModified,
