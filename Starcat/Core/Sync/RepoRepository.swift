@@ -111,6 +111,23 @@ struct GRDBRepoRepository {
         }
     }
 
+    /// W4 B1：单个 repo unstar。
+    /// 复用 markUnstarredExcept 的同款语义：UPDATE is_starred=0 + DELETE starred_repos 行。
+    /// 不删 repo / 笔记 / 标签关联，给用户保留 re-star 后立刻恢复数据的可能。
+    func markUnstarred(repoId: Int64, userID: Int64) async throws {
+        try await writer.write { db in
+            try db.execute(
+                sql: "UPDATE repos SET is_starred = 0 WHERE id = ?",
+                arguments: [repoId]
+            )
+            try db.execute(
+                sql: "DELETE FROM starred_repos WHERE user_id = ? AND repo_id = ?",
+                arguments: [userID, repoId]
+            )
+            AppLog.sync.info("Marked repo \(repoId, privacy: .public) as unstarred (user=\(userID, privacy: .public))")
+        }
+    }
+
     // MARK: - 查询
 
     /// 当前用户已 star 的 repo 总数（is_starred = 1）。

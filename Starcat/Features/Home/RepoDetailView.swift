@@ -29,6 +29,14 @@ struct RepoDetailView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(ReadmeViewModel.self) private var readmeVM
+    // W4 B1：取消 star 需要的依赖
+    @Environment(AppDependencies.self) private var dependencies
+    @Environment(AuthSession.self) private var authSession
+
+    // W4 B1：取消 star 流程的 UI 状态
+    @State private var showUnstarConfirm: Bool = false
+    @State private var isUnstarring: Bool = false
+    @State private var unstarError: String?
 
     var body: some View {
         if let repo = viewModel.selectedRepo {
@@ -47,10 +55,74 @@ struct RepoDetailView: View {
                         Label("在 GitHub 打开", systemImage: "safari")
                     }
                 }
+                // W4 B1：Unstar 按钮（destructive）
+                ToolbarItem(placement: .primaryAction) {
+                    unstarButton
+                }
+            }
+            .alert("取消 Star？", isPresented: $showUnstarConfirm, presenting: repo) { repo in
+                Button("取消 Star", role: .destructive) {
+                    Task { await performUnstar(repo: repo) }
+                }
+                Button("不取消", role: .cancel) {}
+            } message: { repo in
+                Text("将通过 GitHub API 取消对 \(repo.fullName) 的 star，并从本地列表移除。\n打过的标签和写过的笔记会保留，重新 star 后即可恢复。")
+            }
+            .alert("取消失败", isPresented: errorAlertBinding, presenting: unstarError) { _ in
+                Button("好") { unstarError = nil }
+            } message: { msg in
+                Text(msg)
             }
         } else {
             emptyState
         }
+    }
+
+    // MARK: - W4 B1：Unstar 按钮 + 流程
+
+    @ViewBuilder
+    private var unstarButton: some View {
+        if isUnstarring {
+            ProgressView().controlSize(.small)
+        } else {
+            Button(role: .destructive) {
+                showUnstarConfirm = true
+            } label: {
+                Label("取消 Star", systemImage: "star.slash")
+            }
+            .help("从你的 Stars 列表中移除该仓库")
+        }
+    }
+
+    /// 取消 star 主流程：
+    /// 1. 调 GitHub API 远端解除（失败：alert 报错、不动本地）
+    /// 2. 调本地 markUnstarred（保留 tag / note，给 re-star 留后路）
+    /// 3. 触发 Sidebar + 列表刷新（HomeViewModel 自带 race 防护）
+    private func performUnstar(repo: Repo) async {
+        guard case .authenticated(let user) = authSession.state else {
+            unstarError = "需要登录"
+            return
+        }
+        isUnstarring = true
+        defer { isUnstarring = false }
+        do {
+            try await dependencies.apiClient.unstar(owner: repo.owner, repo: repo.name)
+            try await dependencies.repoRepository.markUnstarred(repoId: repo.id, userID: user.id)
+            // 刷新 Sidebar 计数 + 列表（reloadItems 内部会清掉已不在列表的 selection）
+            await viewModel.refreshSidebar()
+            await viewModel.reloadItems()
+        } catch {
+            unstarError = "取消失败：\(error.localizedDescription)"
+            AppLog.sync.error("unstar failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// 错误 alert 的 isPresented binding —— 让 unstarError 非 nil 时弹窗
+    private var errorAlertBinding: Binding<Bool> {
+        Binding(
+            get: { unstarError != nil },
+            set: { if !$0 { unstarError = nil } }
+        )
     }
 
     /// 元信息区域（不滚动，固定在顶部）。

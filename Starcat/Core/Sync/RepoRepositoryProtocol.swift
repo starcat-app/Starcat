@@ -37,6 +37,11 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 将本地存在但不在远端集合中的 repo 标记为 is_starred = false。
     func markUnstarredExcept(remoteRepoIDs: Set<Int64>, userID: Int64) async throws
 
+    /// W4 B1：把单个 repo 标记为 is_starred = false。
+    /// 同时清理 starred_repos 中对应行。
+    /// 不删除 repo / 笔记 / 标签 —— 用户后续若 re-star 仍能拿回原数据。
+    func markUnstarred(repoId: Int64, userID: Int64) async throws
+
     // MARK: - 查询
 
     /// 当前用户已 star 的 repo 总数。

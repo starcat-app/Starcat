@@ -89,6 +89,29 @@ struct RepoRepositoryTests {
         }
     }
 
+    @Test("markUnstarred 单个 repo：设 is_starred=0 + 删 starred_repos 行")
+    func markUnstarredSingle() async throws {
+        let (repo, db) = try makeRepo()
+        let dtos = (1...3).map { makeDTO(id: Int64($0), name: "r\($0)") }
+        try await repo.upsertStarred(dtos, userID: 100, syncedAt: Date())
+        #expect(try await repo.starredCount() == 3)
+
+        try await repo.markUnstarred(repoId: 2, userID: 100)
+
+        #expect(try await repo.starredCount() == 2)
+        try await db.writer.read { db in
+            let starredRow = try Int.fetchOne(
+                db,
+                sql: "SELECT count(*) FROM starred_repos WHERE user_id = ? AND repo_id = ?",
+                arguments: [100, 2]
+            ) ?? 0
+            #expect(starredRow == 0)
+            // 该 repo 本身仍存在（保留笔记 / 标签）
+            let stillExists = try Int.fetchOne(db, sql: "SELECT count(*) FROM repos WHERE id = 2") ?? 0
+            #expect(stillExists == 1)
+        }
+    }
+
     @Test("topStarred 按 starred_at 倒序返回")
     func topStarred() async throws {
         let (repo, _) = try makeRepo()
