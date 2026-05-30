@@ -43,6 +43,12 @@ final class AppDependencies {
     let readmeRepository: ReadmeRepository
     /// Week 4 引入：README HTML 抓取 + 缓存协调。
     let readmeAPI: ReadmeAPI
+    /// W4 Batch A1 引入：标签 CRUD。
+    let tagRepository: any TagRepositoryProtocol
+    /// W4 Batch A1 引入：repo ↔ tag 关联 + 批量打标签。
+    let repoTagRepository: any RepoTagRepositoryProtocol
+    /// W4 Batch A1 引入：repo 笔记 + 状态管理（同表合并）。
+    let repoNoteRepository: any RepoNoteRepositoryProtocol
 
     // MARK: - 初始化
 
@@ -81,5 +87,10 @@ final class AppDependencies {
         let readmeRepo = ReadmeRepository(database: db)
         self.readmeRepository = readmeRepo
         self.readmeAPI = ReadmeAPI(client: api, repository: readmeRepo)
+
+        // W4 Batch A1：标签 / 关联 / 笔记+状态 Repository
+        self.tagRepository = GRDBTagRepository(database: db)
+        self.repoTagRepository = GRDBRepoTagRepository(database: db)
+        self.repoNoteRepository = GRDBRepoNoteRepository(database: db)
     }
 }
