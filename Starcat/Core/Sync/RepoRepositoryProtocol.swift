@@ -77,6 +77,12 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 这里独立成方法，不与 updateSyncState 合并 — 因为 ETag 写入时机比 stats 早
     /// （拿到响应后立刻保存），合并会迫使 SyncManager 在中间状态持久化"半截 stats"。
     func updateStarsETag(userID: Int64, etag: String?) async throws
+
+    // MARK: - W4-4 C3：增量同步切分点
+
+    /// 上次任何同步成功完成的 ISO8601 时间戳。增量同步用作 `starred_at` 切分点。
+    /// 没有记录或字段为 NULL 时返回 nil（首次同步必走全量路径）。
+    func fetchLastSyncAt(userID: Int64) async throws -> String?
 }
 
 // MARK: - Conformance

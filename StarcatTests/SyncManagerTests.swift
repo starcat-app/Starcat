@@ -85,6 +85,25 @@ struct SyncManagerTests {
         Issue.record("waitForState timed out, state=\(sync.state)")
     }
 
+    /// 等"新的 .completed",与上一次 completion 的 Date 不同才算。
+    /// 解决"上一次同步遗留的 .completed 让 waitForState 立刻返回 → 第二次同步实际未跑"的脆弱性。
+    private func waitForNewCompletion(_ sync: SyncManager, after prev: Date?, timeout: TimeInterval = 5) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if case let .completed(d) = sync.state, d != prev {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        Issue.record("waitForNewCompletion timed out, state=\(sync.state)")
+    }
+
+    /// 提取当前 .completed 的 Date(供 waitForNewCompletion 比较使用)。
+    private func currentCompletionDate(_ sync: SyncManager) -> Date? {
+        if case let .completed(d) = sync.state { return d }
+        return nil
+    }
+
     // MARK: - Tests
 
     @Test("正常无 rate limit → .completed")
@@ -213,6 +232,133 @@ struct SyncManagerTests {
 final class Box<T>: @unchecked Sendable {
     var value: T
     init(_ initial: T) { value = initial }
+}
+
+// MARK: - W4-4 C3 增量同步测试
+
+extension SyncManagerTests {
+
+    /// 构造 starred_at 可控的 DTO,便于做 cutoff 时间比较。
+    private func makeDTO(id: Int64, starredAt: String) -> StarredRepoDTO {
+        let user = GitHubUserDTO(id: 1, login: "tester", name: nil, avatarUrl: nil,
+                                 publicRepos: nil, followers: nil, following: nil)
+        let repo = GitHubRepoDTO(
+            id: id, name: "r\(id)", fullName: "tester/r\(id)", owner: user,
+            description: nil, language: "Swift",
+            stargazersCount: 0, forksCount: 0, watchersCount: 0,
+            topics: [], license: nil, homepage: nil,
+            htmlUrl: "https://github.com/tester/r\(id)", cloneUrl: nil, sshUrl: nil,
+            isPrivate: false, fork: false, archived: false,
+            pushedAt: nil, createdAt: nil, updatedAt: nil
+        )
+        return StarredRepoDTO(starredAt: starredAt, repo: repo)
+    }
+
+    /// 多页响应(允许指定 nextPage)。
+    private func makePageResponse(dtos: [StarredRepoDTO], nextPage: Int?, etag: String? = nil) -> APIResponse<[StarredRepoDTO]> {
+        APIResponse(
+            value: dtos,
+            linkHeader: LinkHeader(nextPage: nextPage, lastPage: nextPage),
+            rateLimit: .empty,
+            statusCode: 200,
+            etag: etag
+        )
+    }
+
+    @Test("C3: 有 lastSyncAt 时,遇到 starred_at <= cutoff 即停止后续页拉取")
+    func incrementalStopsAtCutoff() async throws {
+        let (sync, mock, repo) = try makeSUT()
+        let userID: Int64 = 4242
+
+        // baseline:全量同步建立 lastSyncAt
+        mock.starredReposHandler = { page, _, _ in
+            #expect(page == 1)
+            return self.makePageResponse(dtos: [self.makeDTO(id: 1, starredAt: "2026-05-29T00:00:00Z")], nextPage: nil, etag: "\"v1\"")
+        }
+        sync.performFullSync(userID: userID)
+        try await waitForState(sync) { if case .completed = $0 { return true } else { return false } }
+        #expect(try await repo.starredCount() == 1)
+
+        // 第二次同步,模拟"新增 1 条" + 边界页含 1 条 <= cutoff
+        let attemptCount = Counter()
+        mock.starredReposHandler = { page, _, _ in
+            _ = attemptCount.increment()
+            if page == 1 {
+                return self.makePageResponse(dtos: [
+                    self.makeDTO(id: 2, starredAt: "2099-01-01T00:00:00Z"), // 新
+                    self.makeDTO(id: 1, starredAt: "2026-05-29T00:00:00Z")  // 旧(<= cutoff)
+                ], nextPage: 2, etag: "\"v2\"")
+            }
+            Issue.record("增量模式不应触发 page 2 请求, page=\(page)")
+            return self.makePageResponse(dtos: [], nextPage: nil)
+        }
+        let prev = currentCompletionDate(sync)
+        sync.performFullSync(userID: userID)
+        try await waitForNewCompletion(sync, after: prev)
+
+        #expect(attemptCount.value == 1, "增量模式 page 1 边界后应停止,不再请求 page 2")
+        #expect(try await repo.starredCount() == 2)
+    }
+
+    @Test("C3: 增量模式不调 markUnstarredExcept(本地 unstar 不被覆盖)")
+    func incrementalDoesNotMarkUnstarred() async throws {
+        let (sync, mock, repo) = try makeSUT()
+        let userID: Int64 = 9999
+
+        // baseline:写入 repo 1, 2
+        mock.starredReposHandler = { page, _, _ in
+            #expect(page == 1)
+            return self.makePageResponse(dtos: [
+                self.makeDTO(id: 1, starredAt: "2026-05-29T10:00:00Z"),
+                self.makeDTO(id: 2, starredAt: "2026-05-29T09:00:00Z")
+            ], nextPage: nil, etag: "\"e1\"")
+        }
+        sync.performFullSync(userID: userID)
+        try await waitForState(sync) { if case .completed = $0 { return true } else { return false } }
+        #expect(try await repo.starredCount() == 2)
+
+        // 第二次同步:远端无 repo 2,新增 repo 3。增量模式不调 markUnstarredExcept → repo 2 保留
+        mock.starredReposHandler = { _, _, _ in
+            return self.makePageResponse(dtos: [
+                self.makeDTO(id: 3, starredAt: "2099-12-31T23:59:59Z"),
+                self.makeDTO(id: 1, starredAt: "2026-05-29T10:00:00Z")
+            ], nextPage: nil, etag: "\"e2\"")
+        }
+        let prev = currentCompletionDate(sync)
+        sync.performFullSync(userID: userID)
+        try await waitForNewCompletion(sync, after: prev)
+
+        #expect(try await repo.starredCount() == 3)
+    }
+
+    @Test("C3: force=true 走全量,markUnstarredExcept 会清除消失的 repo")
+    func forceFullSyncMarksUnstarred() async throws {
+        let (sync, mock, repo) = try makeSUT()
+        let userID: Int64 = 1212
+
+        mock.starredReposHandler = { _, _, _ in
+            self.makePageResponse(dtos: [
+                self.makeDTO(id: 1, starredAt: "2026-05-29T10:00:00Z"),
+                self.makeDTO(id: 2, starredAt: "2026-05-29T09:00:00Z")
+            ], nextPage: nil, etag: "\"e1\"")
+        }
+        sync.performFullSync(userID: userID)
+        try await waitForState(sync) { if case .completed = $0 { return true } else { return false } }
+        #expect(try await repo.starredCount() == 2)
+
+        // force=true,远端只返回 repo 1
+        mock.starredReposHandler = { _, _, ifNoneMatch in
+            #expect(ifNoneMatch == nil, "force 时应跳过 If-None-Match")
+            return self.makePageResponse(dtos: [
+                self.makeDTO(id: 1, starredAt: "2026-05-29T10:00:00Z")
+            ], nextPage: nil, etag: "\"e2\"")
+        }
+        let prev = currentCompletionDate(sync)
+        sync.performFullSync(userID: userID, force: true)
+        try await waitForNewCompletion(sync, after: prev)
+
+        #expect(try await repo.starredCount() == 1, "force 全量应清除消失的 repo 2")
+    }
 }
 
 /// 引用类型计数器，让 @Sendable handler 闭包能在不引入 actor 隔离的前提下做自增。

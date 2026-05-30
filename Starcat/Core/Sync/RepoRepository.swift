@@ -259,6 +259,13 @@ struct GRDBRepoRepository {
         }
     }
 
+    /// W4-4 C3：读 `last_sync_at`，供增量同步做 `starred_at` 切分点。
+    func fetchLastSyncAt(userID: Int64) async throws -> String? {
+        try await writer.read { db in
+            try SyncStateRecord.fetchOne(db, key: userID)?.lastSyncAt
+        }
+    }
+
     /// 写 page 1 ETag。
     /// 若 sync_state 行不存在 → 用占位字段先插一行（其余统计字段后续会被 updateSyncState 覆写）。
     func updateStarsETag(userID: Int64, etag: String?) async throws {

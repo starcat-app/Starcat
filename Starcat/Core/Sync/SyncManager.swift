@@ -17,13 +17,20 @@
 //
 //  W4-4 C2 新增：
 //  - Page 1 ETag 早退：首页带 If-None-Match，命中 304 直接结束本次同步
-//  - 已知局限：page 1 内容不变（按 starred_at desc 排序，中间页 unstar 不影响首页）
-//    时无法立刻检测到 unstar；用户手动触发"强制同步"（performFullSync(force: true)）
-//    会跳过 ETag 走全量。后续 C3 增量同步落地后会进一步优化
+//
+//  W4-4 C3 新增：
+//  - 增量同步：非 force 且本地有 lastSyncAt 时，扫描页面遇到 starred_at <= lastSyncAt 即停。
+//    本质上把"全量 1801 条 / 19 页"压缩为"只拉新增的几条"。
+//
+//  unstar 检测策略（C2 + C3 综合）：
+//  - ETag 304 → 整体未变（含 page 1 内容） → 不动 is_starred
+//  - 增量路径 → 只追加新 star，不调 markUnstarredExcept（增量看不到中间页 unstar）
+//  - 全量路径（force=true 或首次同步）→ 完整扫一遍 + markUnstarredExcept 兜底检测 unstar
+//
+//  建议每隔 N 天或用户主动触发 force=true 走一次全量 sweep。当前 UI 暂未暴露 force。
 //
 //  尚未做（Week 5+ 或后续优化）：
-//  - 增量同步：starred_at 时间戳对比（W4-4 C3 即将做）
-//  - 后台定时同步（NSBackgroundActivityScheduler）
+//  - 后台定时同步（NSBackgroundActivityScheduler）+ 周期性 force=true 全量 sweep
 //  - 部分失败的断点续传
 //
 
@@ -120,7 +127,17 @@ final class SyncManager {
     private func runSync(userID: Int64, force: Bool) async {
         state = .syncing
         progress = SyncProgress(current: 0, total: nil, currentPage: 1)
-        AppLog.sync.info("Full sync started (user=\(userID, privacy: .public), force=\(force, privacy: .public))")
+
+        // C3：!force AND 本地有 lastSyncAt → 走增量;否则全量。
+        // force 路径强制全量(供 unstar 兜底检测)。
+        let cutoffStarredAt: String?
+        if force {
+            cutoffStarredAt = nil
+        } else {
+            cutoffStarredAt = (try? await repository.fetchLastSyncAt(userID: userID)) ?? nil
+        }
+        let incrementalMode = (cutoffStarredAt != nil)
+        AppLog.sync.info("Sync started (user=\(userID, privacy: .public), force=\(force, privacy: .public), incremental=\(incrementalMode, privacy: .public))")
 
         var page = 1
         let perPage = 100
@@ -200,6 +217,14 @@ final class SyncManager {
 
                 AppLog.sync.debug("Synced page \(page, privacy: .public): \(dtos.count, privacy: .public) repos (total \(totalSynced, privacy: .public))")
 
+                // C3：增量模式 — 该页"最旧"的一条 starred_at 已 <= cutoff 说明后续页全是已知，停。
+                // 注：本页越界部分也被 upsert 了，幂等无害；优化为"只 upsert > cutoff 的子集"留待后续。
+                if incrementalMode, let cutoff = cutoffStarredAt,
+                   let oldestInPage = dtos.last?.starredAt, oldestInPage <= cutoff {
+                    AppLog.sync.info("Incremental sync stopped at page \(page, privacy: .public): reached cutoff \(cutoff, privacy: .public)")
+                    break
+                }
+
                 // 判断是否还有下一页
                 if response.linkHeader.nextPage == nil {
                     break
@@ -209,14 +234,25 @@ final class SyncManager {
 
             try Task.checkCancellation()
 
-            // 标记本地多出的为 unstarred
-            try await repository.markUnstarredExcept(remoteRepoIDs: allRemoteIDs, userID: userID)
+            // 全量路径才做 unstar 兜底；增量看不到中间页 unstar，跳过避免误删。
+            if !incrementalMode {
+                try await repository.markUnstarredExcept(remoteRepoIDs: allRemoteIDs, userID: userID)
+            }
 
-            // 更新 sync_state
+            // 进度与统计的最终值：
+            // - 全量：totalSynced == 本地 starred 总数
+            // - 增量：totalSynced 只是本次新增 / 边界页的条数，应用本地 starredCount 才反映真实总数
+            let finalCount: Int
+            if incrementalMode {
+                finalCount = (try? await repository.starredCount()) ?? totalSynced
+            } else {
+                finalCount = totalSynced
+            }
+
             try await repository.updateSyncState(
                 userID: userID,
-                starredCount: totalSynced,
-                syncedCount: totalSynced,
+                starredCount: finalCount,
+                syncedCount: finalCount,
                 status: "idle"
             )
 
@@ -224,9 +260,9 @@ final class SyncManager {
             // 注意：GitHub Stars API 的总数靠 Link 头 last 页号估算（lastPage * perPage），
             // 真实最后一页只有 1~perPage 条，所以估算值通常偏大。
             // 同步完成时把 total 校正为实际拉到的数量，避免 UI 显示 "1801 / 1900" 这类残留估算误差。
-            progress = SyncProgress(current: totalSynced, total: totalSynced, currentPage: page)
+            progress = SyncProgress(current: finalCount, total: finalCount, currentPage: page)
             state = .completed(at: Date())
-            AppLog.sync.info("Full sync complete: \(totalSynced, privacy: .public) repos in \(Int(Date().timeIntervalSince(syncStartedAt)), privacy: .public)s")
+            AppLog.sync.info("Sync complete (incremental=\(incrementalMode, privacy: .public)): wrote \(totalSynced, privacy: .public), local total \(finalCount, privacy: .public) in \(Int(Date().timeIntervalSince(syncStartedAt)), privacy: .public)s")
         } catch is CancellationError {
             state = .idle
             AppLog.sync.info("Sync cancelled")
