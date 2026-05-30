@@ -49,13 +49,18 @@ struct HomeView: View {
     @State private var tagMgmtVM: TagManagementViewModel
 
     /// D-01：repository 类型从具体 struct 改为协议，便于 Preview / 测试注入 Mock。
+    /// W4 A6：HomeViewModel 也接收 tagRepository / repoTagRepository（Sidebar Tags 段 + 按 tag 过滤）。
     init(
         repository: any RepoRepositoryProtocol,
         readmeAPI: ReadmeAPI,
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol
     ) {
-        _viewModel = State(initialValue: HomeViewModel(repository: repository))
+        _viewModel = State(initialValue: HomeViewModel(
+            repository: repository,
+            tagRepository: tagRepository,
+            repoTagRepository: repoTagRepository
+        ))
         _readmeVM = State(initialValue: ReadmeViewModel(api: readmeAPI))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
             tagRepository: tagRepository,
@@ -85,7 +90,14 @@ struct HomeView: View {
                 syncButton
             }
         }
-        .sheet(isPresented: $showTagManagement) {
+        .sheet(isPresented: $showTagManagement, onDismiss: {
+            // W4 A6：标签管理 sheet 关闭后 → 刷新 Sidebar Tags 段 + 当前列表
+            // （用户可能在 sheet 里增删 / 合并标签，Sidebar 与列表都要跟着变）
+            Task {
+                await viewModel.refreshSidebar()
+                await viewModel.reloadItems()
+            }
+        }) {
             TagManagementView(viewModel: tagMgmtVM)
         }
         .task {

@@ -22,6 +22,8 @@ struct SidebarView: View {
 
     /// 当前打开/收起 Languages 组的状态。
     @State private var languagesExpanded: Bool = true
+    /// W4 A6：Tags 组展开/收起状态。
+    @State private var tagsExpanded: Bool = true
 
     var body: some View {
         @Bindable var vm = viewModel
@@ -30,6 +32,18 @@ struct SidebarView: View {
             Section("主导航") {
                 row(.allStars, count: viewModel.totalCount)
                 row(.untagged, count: viewModel.untaggedCount)
+            }
+
+            // W4 A6：Tags 段。
+            // 行为：每个用户自定义标签一行，点击 → selection = .tag(id) → 列表过滤
+            if !viewModel.tags.isEmpty {
+                Section(isExpanded: $tagsExpanded) {
+                    ForEach(viewModel.tags) { tag in
+                        tagRow(tag: tag, count: viewModel.tagCounts[tag.id] ?? 0)
+                    }
+                } header: {
+                    Text("Tags")
+                }
             }
 
             if !viewModel.languageStats.isEmpty {
@@ -71,5 +85,27 @@ struct SidebarView: View {
             Image(systemName: item.systemImage)
         }
         .tag(item)
+    }
+
+    /// W4 A6：tag 专属行——
+    /// 用户配色（左侧色块）+ 用户自定义图标（若有）+ 名字 + 计数
+    /// 复用通用 row() 不合适，因为 tag 的图标 / 颜色都是动态的
+    @ViewBuilder
+    private func tagRow(tag: Tag, count: Int) -> some View {
+        Label {
+            HStack {
+                Text(tag.name).lineLimit(1)
+                Spacer()
+                Text(count.formatted())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        } icon: {
+            // 优先 user-defined SF Symbol；否则 fallback "tag.fill"
+            Image(systemName: tag.icon ?? "tag.fill")
+                .foregroundStyle(Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor)
+        }
+        .tag(SidebarItem.tag(tag.id))
     }
 }

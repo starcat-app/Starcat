@@ -18,7 +18,13 @@ struct HomeViewModelMultiSelectTests {
     private func makeVM() throws -> HomeViewModel {
         let db = try InMemoryDatabaseManager()
         let repo = GRDBRepoRepository(database: db)
-        return HomeViewModel(repository: repo)
+        let tagRepo = GRDBTagRepository(database: db)
+        let rtRepo = GRDBRepoTagRepository(database: db)
+        return HomeViewModel(
+            repository: repo,
+            tagRepository: tagRepo,
+            repoTagRepository: rtRepo
+        )
     }
 
     @Test("默认非多选 / 选区空")

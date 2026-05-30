@@ -24,6 +24,9 @@ enum SidebarItem: Hashable, Identifiable {
     case allStars
     case untagged
     case language(String?)
+    /// W4 A6：按 tag id 过滤。tagId 是 Tag.id（UUID 字符串）。
+    /// 显示名/颜色/图标 由 SidebarView 从 HomeViewModel.tags 字典里查。
+    case tag(String)
 
     /// SwiftUI ForEach / List 用的稳定 id。
     var id: String {
@@ -31,16 +34,19 @@ enum SidebarItem: Hashable, Identifiable {
         case .allStars:                return "section.all"
         case .untagged:                return "section.untagged"
         case .language(let lang):      return "language.\(lang ?? "<nil>")"
+        case .tag(let tagId):          return "tag.\(tagId)"
         }
     }
 
     /// 用户可见的中文/英文显示名。
     /// 语言名保持原文（如 "Swift"、"TypeScript"），约定俗成。
+    /// tag 不在此处给名字，由 SidebarView 用 vm.tags 查（避免在 enum 里背业务数据）。
     var displayName: String {
         switch self {
         case .allStars:                return "全部 Stars"
         case .untagged:                return "未分类"
         case .language(let lang):      return lang ?? "Unknown"
+        case .tag(let tagId):          return tagId // fallback：tag 名缺失时显示 id
         }
     }
 
@@ -50,6 +56,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .allStars:                return "star.fill"
         case .untagged:                return "tag.slash"
         case .language:                return "chevron.left.forwardslash.chevron.right"
+        case .tag:                     return "tag.fill"
         }
     }
 }

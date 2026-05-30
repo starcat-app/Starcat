@@ -101,6 +101,7 @@ struct RepoListView: View {
         case .allStars:  return "star"
         case .untagged:  return "tag.slash"
         case .language:  return "chevron.left.forwardslash.chevron.right"
+        case .tag:       return "tag.slash"
         }
     }
 
@@ -110,6 +111,7 @@ struct RepoListView: View {
         case .allStars:        return "还没有 Stars"
         case .untagged:        return "所有仓库都已分类"
         case .language:        return "该语言下暂无仓库"
+        case .tag:             return "该标签下暂无仓库"
         }
     }
 
@@ -119,6 +121,7 @@ struct RepoListView: View {
         case .allStars:        return "点击右上角同步按钮拉取 GitHub Stars"
         case .untagged:        return "新增 Stars 默认进这里"
         case .language:        return "刷新或同步后试试"
+        case .tag:             return "在仓库详情页给它打上该标签"
         }
     }
 

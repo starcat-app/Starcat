@@ -81,6 +81,11 @@ final class HomeViewModel {
     /// Languages 聚合（Sidebar Languages 组）。D-04：`private(set)` 收敛。
     private(set) var languageStats: [LanguageStat] = []
 
+    /// W4 A6：用户自定义标签列表（Sidebar Tags 组）。
+    private(set) var tags: [Tag] = []
+    /// W4 A6：tagId → starred repo count（Sidebar Tags 行右侧计数）。
+    private(set) var tagCounts: [String: Int] = [:]
+
     // MARK: - 多选模式（W4 A5）
 
     /// 是否进入多选模式。开启后中栏 List 切换到多选 selection binding。
@@ -121,13 +126,23 @@ final class HomeViewModel {
     /// D-01：依赖协议而非具体 struct，便于单测注入 Mock。
     private let repository: any RepoRepositoryProtocol
 
+    /// W4 A6：Sidebar Tags 段 + 按 tag 过滤需要这两个 repo。
+    private let tagRepository: any TagRepositoryProtocol
+    private let repoTagRepository: any RepoTagRepositoryProtocol
+
     /// D-05：当前 in-flight 的 reloadItems 任务，新调用进来先 cancel 旧的，
     /// 防止"快速切 sidebar 时旧查询结果覆盖新结果"的 race。
     /// 参考 `ReadmeViewModel.currentTask` 的相同模式。
     private var currentReloadTask: Task<Void, Never>?
 
-    init(repository: any RepoRepositoryProtocol) {
+    init(
+        repository: any RepoRepositoryProtocol,
+        tagRepository: any TagRepositoryProtocol,
+        repoTagRepository: any RepoTagRepositoryProtocol
+    ) {
         self.repository = repository
+        self.tagRepository = tagRepository
+        self.repoTagRepository = repoTagRepository
     }
 
     // MARK: - 公开 action
@@ -139,10 +154,14 @@ final class HomeViewModel {
             async let total = repository.starredCount()
             async let untagged = repository.fetchUntagged().count
             async let langs = repository.languageStats()
+            async let tagsResult = tagRepository.fetchAll()
+            async let tagCountsResult = repoTagRepository.repoCountsByTag()
 
             self.totalCount = try await total
             self.untaggedCount = try await untagged
             self.languageStats = try await langs
+            self.tags = try await tagsResult
+            self.tagCounts = try await tagCountsResult
         } catch {
             AppLog.database.error("refreshSidebar failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -187,6 +206,9 @@ final class HomeViewModel {
                         fetched = try await self.repository.fetchUntagged()
                     case .language(let lang):
                         fetched = try await self.repository.fetchByLanguage(lang)
+                    case .tag(let tagId):
+                        // W4 A6：按 tag 过滤 — fetchRepos(forTag:) 已带 isStarred=true 过滤
+                        fetched = try await self.repoTagRepository.fetchRepos(forTag: tagId)
                     }
                 }
                 outcome = .success(fetched)
