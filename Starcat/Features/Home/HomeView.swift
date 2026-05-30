@@ -30,11 +30,20 @@ struct HomeView: View {
     /// AppDependencies 不构造它，因为 ViewModel 是 view-scoped，没必要塞进全局容器。
     @State private var viewModel: HomeViewModel
 
+    /// README 子视图模型；与 HomeViewModel 同级在 HomeView 持有，
+    /// 通过 .environment(readmeVM) 注入到 RepoDetailView。
+    ///
+    /// 为何提到这一层：早期 RepoDetailView 用 .task 内部赋值 @State 创建 readmeVM，
+    /// 但 @State 写入是异步的，下一行立刻调用 readmeVM?.load(...) 时仍为 nil，
+    /// 导致首次点击 repo 后 README 无法加载。
+    @State private var readmeVM: ReadmeViewModel
+
     /// 防抖用：跟踪搜索 query 变化，task(id:) 触发延迟搜索。
     @State private var searchDebounceID = UUID()
 
-    init(repository: RepoRepository) {
+    init(repository: RepoRepository, readmeAPI: ReadmeAPI) {
         _viewModel = State(initialValue: HomeViewModel(repository: repository))
+        _readmeVM = State(initialValue: ReadmeViewModel(api: readmeAPI))
     }
 
     var body: some View {
@@ -50,6 +59,7 @@ struct HomeView: View {
             RepoDetailView()
         }
         .environment(viewModel)
+        .environment(readmeVM)
         .searchable(text: $vm.searchQuery, placement: .toolbar, prompt: "搜索仓库")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -75,6 +85,18 @@ struct HomeView: View {
             if case .completed = syncManager.state {
                 await viewModel.refreshSidebar()
                 await viewModel.reloadItems()
+            }
+        }
+        // 选中 repo 变化（含 nil）→ 驱动 README 加载 / 重置
+        // 监听 selectedRepoID（Int64?）而非 selectedRepo（Repo? 派生）：
+        // - Int64 是 value type，equality 100% 确定
+        // - readmeVM 在 HomeView 已构造完成，不存在"@State 异步赋值"竞态
+        // - 即便 RepoDetailView 因 nil 走 emptyState 被销毁，本 onChange 仍稳定触发
+        .onChange(of: viewModel.selectedRepoID) { _, _ in
+            if let repo = viewModel.selectedRepo {
+                readmeVM.load(repo: repo)
+            } else {
+                readmeVM.reset()
             }
         }
     }

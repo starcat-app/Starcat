@@ -108,11 +108,22 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
         return (try? JSONDecoder().decode([String].self, from: data)) ?? []
     }
 
-    // MARK: - Hashable
+    // MARK: - Hashable / Equatable
 
     /// 只基于 id 散列（即同一 GitHub repo 即视为相等的 hash key）。
     /// List(selection:) 用此保证选中行稳定，不受 cachedAt 等字段变化影响。
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+    }
+
+    /// **必须与 hash 一致**：Hashable 契约要求 `a == b` ⇔ `hash(a) == hash(b)`。
+    ///
+    /// 早期版本依赖 synthesized 全字段 ==，与上面的 `hash(into:)` 不一致，
+    /// 导致 SwiftUI `List(selection:)` 在 selection binding 写入时
+    /// 找不到匹配 tag（hash 相等但 == 不等），表现为"列表点击没反应、detail 不刷新"。
+    ///
+    /// 仓库 id 在 GitHub 全局唯一，用 id 比较即可覆盖所有合理场景。
+    static func == (lhs: Repo, rhs: Repo) -> Bool {
+        lhs.id == rhs.id
     }
 }

@@ -19,7 +19,10 @@ struct ContentView: View {
     var body: some View {
         Group {
             if authSession.state.isAuthenticated {
-                HomeView(repository: dependencies.repoRepository)
+                HomeView(
+                    repository: dependencies.repoRepository,
+                    readmeAPI: dependencies.readmeAPI
+                )
                     .frame(minWidth: 960, minHeight: 600)
             } else {
                 GithubAuthView()

@@ -33,8 +33,24 @@ final class HomeViewModel {
     /// 重新加载策略：每次 selection / searchQuery 变化都重算（rebuild 比 diff 简单）。
     var items: [Repo] = []
 
-    /// 当前详情选中的 repo。selection 变化时清空。
-    var selectedRepo: Repo?
+    /// 当前详情选中的 repo **ID**（不是 Repo 值）。
+    ///
+    /// 设计：用 `Int64` 作为 SwiftUI `List(selection:)` 的 selection 类型，
+    /// 而不是 `Repo` 本身。理由：
+    /// - `Repo` 同时是 Identifiable + Hashable，hash 用 id；如果 Equatable 用全字段
+    ///   会违反 Hashable 契约 → `List(selection:)` 写不进 binding（行点击没选中）；
+    /// - 即便 == 也只用 id，用 `Int64` selection 仍然更直接：
+    ///   ForEach 默认 id 即 `Repo.id`，selection 类型与 ForEach.id 完全匹配，
+    ///   SwiftUI 不需要再做 tag 匹配，是最稳的写法。
+    /// - selectedRepo（值）通过 computed property 从 items 派生即可。
+    var selectedRepoID: Int64?
+
+    /// 派生：当前详情选中的 Repo 值。
+    /// 找不到（items 已变，旧 selection 还在）时返回 nil；调用方可据此显示空态。
+    var selectedRepo: Repo? {
+        guard let id = selectedRepoID else { return nil }
+        return items.first { $0.id == id }
+    }
 
     /// 中栏列表加载中。
     var isLoading: Bool = false
@@ -116,8 +132,8 @@ final class HomeViewModel {
             self.items = fetched
 
             // 选中行若已不在新列表，清空详情
-            if let selectedID = selectedRepo?.id, !fetched.contains(where: { $0.id == selectedID }) {
-                self.selectedRepo = nil
+            if let selectedID = selectedRepoID, !fetched.contains(where: { $0.id == selectedID }) {
+                self.selectedRepoID = nil
             }
         } catch {
             self.loadError = error.localizedDescription
@@ -132,6 +148,6 @@ final class HomeViewModel {
         guard selection != item else { return }
         selection = item
         searchQuery = ""
-        selectedRepo = nil
+        selectedRepoID = nil
     }
 }

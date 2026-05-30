@@ -33,7 +33,7 @@ struct RepoListView: View {
             } else if viewModel.items.isEmpty {
                 emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
             } else {
-                listContent($vm.selectedRepo)
+                listContent($vm.selectedRepoID)
             }
         }
         .navigationTitle(navigationTitle)
@@ -42,11 +42,14 @@ struct RepoListView: View {
 
     // MARK: - 列表主体
 
-    private func listContent(_ selection: Binding<Repo?>) -> some View {
+    /// 关键写法：`List(selection: Binding<Repo.ID?>)` + `ForEach(items)`，
+    /// 不显式写 `.tag(...)`。ForEach 看到 `Repo: Identifiable` 会自动使用 `repo.id`
+    /// 作为每行的 selection identifier，selection binding 类型 (`Int64?`) 与之严格匹配，
+    /// SwiftUI 内部无需再做 Hashable/Equatable 校对，是 macOS List selection 的最稳写法。
+    private func listContent(_ selection: Binding<Int64?>) -> some View {
         List(selection: selection) {
             ForEach(viewModel.items) { repo in
                 RepoRowView(repo: repo, density: settings.listDensity)
-                    .tag(Optional(repo))  // List(selection:) 配对 Optional 类型
             }
         }
         .listStyle(.inset)

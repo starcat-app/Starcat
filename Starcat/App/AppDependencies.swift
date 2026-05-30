@@ -37,6 +37,10 @@ final class AppDependencies {
     let repoRepository: RepoRepository
     /// Week 3 引入：用户偏好（列表密度等）。
     let settings: AppSettings
+    /// Week 4 引入：README 缓存 Repository。
+    let readmeRepository: ReadmeRepository
+    /// Week 4 引入：README HTML 抓取 + 缓存协调。
+    let readmeAPI: ReadmeAPI
 
     // MARK: - 初始化
 
@@ -69,5 +73,10 @@ final class AppDependencies {
         self.repoRepository = repo
         self.syncManager = SyncManager(apiClient: api, repository: repo)
         self.settings = AppSettings.shared
+
+        // Week 4 新增：README 子系统
+        let readmeRepo = ReadmeRepository(database: db)
+        self.readmeRepository = readmeRepo
+        self.readmeAPI = ReadmeAPI(client: api, repository: readmeRepo)
     }
 }

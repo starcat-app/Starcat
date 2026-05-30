@@ -50,6 +50,23 @@ struct APIResponse<T> {
     let statusCode: Int
 }
 
+/// 原始字节响应包装。
+///
+/// 用于不走 JSON 解码的端点（README HTML / Raw markdown / 二进制等）。
+/// 携带 ETag / Last-Modified / 304 判定，由调用方决定缓存命中行为。
+struct RawAPIResponse {
+    /// 响应体字节。`notModified == true` 时为空。
+    let data: Data
+    /// 服务端返回的 ETag（含双引号，原样保存原样回传）。
+    let etag: String?
+    /// HTTP Last-Modified 头（RFC 1123 格式）。
+    let lastModified: String?
+    let statusCode: Int
+    /// 命中 If-None-Match → 304 时为 true，调用方应使用本地缓存。
+    let notModified: Bool
+    let rateLimit: RateLimitInfo
+}
+
 // MARK: - Client
 
 /// GitHub REST API 通用客户端。
@@ -103,6 +120,32 @@ actor GitHubAPIClient {
     func put(path: String) async throws {
         let request = try buildRequest(method: "PUT", path: path, queryItems: [], accept: "application/vnd.github+json", body: nil)
         let _: APIResponse<EmptyResponse> = try await perform(request, allowEmptyBody: true)
+    }
+
+    /// 发起 GET 请求并返回原始字节，跳过 JSON 解码。
+    ///
+    /// 主要服务于 README HTML 端点（`Accept: application/vnd.github.html`）。
+    /// - Parameters:
+    ///   - path: 端点路径（如 `/repos/{owner}/{repo}/readme`）
+    ///   - accept: Accept 头。README HTML 用 `application/vnd.github.html`
+    ///   - ifNoneMatch: 上次响应保存的 ETag；若服务端未变化会返回 304
+    ///   - ifModifiedSince: 上次响应保存的 Last-Modified；与 ifNoneMatch 等效，二选一即可
+    /// - Returns: 字节 + ETag / Last-Modified / notModified 标志
+    /// - Throws: 与 `get<T>` 同语义的 `NetworkError`（404 / 401 / RateLimit / 5xx）
+    func getRaw(
+        path: String,
+        accept: String,
+        ifNoneMatch: String? = nil,
+        ifModifiedSince: String? = nil
+    ) async throws -> RawAPIResponse {
+        var request = try buildRequest(method: "GET", path: path, queryItems: [], accept: accept, body: nil)
+        if let etag = ifNoneMatch, !etag.isEmpty {
+            request.setValue(etag, forHTTPHeaderField: "If-None-Match")
+        }
+        if let since = ifModifiedSince, !since.isEmpty {
+            request.setValue(since, forHTTPHeaderField: "If-Modified-Since")
+        }
+        return try await performRaw(request)
     }
 
     // MARK: - Internal
@@ -193,6 +236,88 @@ actor GitHubAPIClient {
                 throw NetworkError.rateLimited(retryAfter: rateLimit.retryAfter())
             }
             // 否则按普通客户端错误
+            throw NetworkError.clientError(statusCode: 403, message: extractErrorMessage(data))
+
+        case 404:
+            throw NetworkError.notFound
+
+        case 400...499:
+            throw NetworkError.clientError(statusCode: http.statusCode, message: extractErrorMessage(data))
+
+        case 500...599:
+            throw NetworkError.serverError(statusCode: http.statusCode)
+
+        default:
+            throw NetworkError.invalidResponse
+        }
+    }
+
+    /// 发起原始字节请求（不解码 JSON），处理 304 / 401 / 404 / Rate Limit / 5xx。
+    ///
+    /// 与 `perform<T>` 的差异：
+    /// - 不做 JSON 解码
+    /// - 把 304 翻译为 `RawAPIResponse(notModified: true)` 而非抛错（调用方需要这个语义来命中缓存）
+    /// - 200 时直接返回 data
+    private func performRaw(_ request: URLRequest) async throws -> RawAPIResponse {
+        var req = request
+
+        if let token = await tokenProvider.currentToken(), !token.isEmpty {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch is CancellationError {
+            throw NetworkError.cancelled
+        } catch {
+            if (error as NSError).code == NSURLErrorCancelled {
+                throw NetworkError.cancelled
+            }
+            AppLog.network.error("Transport error (raw): \(error.localizedDescription, privacy: .public)")
+            throw NetworkError.transport(underlying: error)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw NetworkError.invalidResponse
+        }
+
+        let rateLimit = RateLimitInfo.parse(http)
+        let etag = http.value(forHTTPHeaderField: "ETag")
+        let lastModified = http.value(forHTTPHeaderField: "Last-Modified")
+
+        AppLog.network.debug("GET-raw \(req.url?.path ?? "?", privacy: .public) -> \(http.statusCode, privacy: .public), bytes=\(data.count, privacy: .public)")
+
+        switch http.statusCode {
+        case 200...299:
+            return RawAPIResponse(
+                data: data,
+                etag: etag,
+                lastModified: lastModified,
+                statusCode: http.statusCode,
+                notModified: false,
+                rateLimit: rateLimit
+            )
+
+        case 304:
+            // 命中 If-None-Match → 服务端未变化，body 为空，调用方应使用本地缓存
+            return RawAPIResponse(
+                data: Data(),
+                etag: etag,
+                lastModified: lastModified,
+                statusCode: 304,
+                notModified: true,
+                rateLimit: rateLimit
+            )
+
+        case 401:
+            throw NetworkError.unauthorized
+
+        case 403:
+            if rateLimit.isExhausted {
+                throw NetworkError.rateLimited(retryAfter: rateLimit.retryAfter())
+            }
             throw NetworkError.clientError(statusCode: 403, message: extractErrorMessage(data))
 
         case 404:
