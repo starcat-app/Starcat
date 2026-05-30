@@ -35,7 +35,8 @@ final class AppDependencies {
     let authSession: AuthSession
     let syncManager: SyncManager
     /// Week 3 引入：HomeView 在初始化时需要复用这个 repository 构建 ViewModel。
-    let repoRepository: RepoRepository
+    /// D-01：注入类型从 struct 改为协议，便于测试替换为 Mock。
+    let repoRepository: any RepoRepositoryProtocol
     /// Week 3 引入：用户偏好（列表密度等）。
     let settings: AppSettings
     /// Week 4 引入：README 缓存 Repository。
@@ -70,7 +71,8 @@ final class AppDependencies {
         )
 
         // Week 3 新增：repository / settings 通过 environment 给 HomeView 用
-        let repo = RepoRepository(database: db)
+        // D-01：构造时用具体类型 GRDBRepoRepository，字段类型是协议 any RepoRepositoryProtocol
+        let repo = GRDBRepoRepository(database: db)
         self.repoRepository = repo
         self.syncManager = SyncManager(apiClient: api, repository: repo)
         self.settings = AppSettings.shared

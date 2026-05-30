@@ -13,9 +13,11 @@ import GRDB
 @Suite("RepoRepository")
 struct RepoRepositoryTests {
 
-    private func makeRepo() throws -> (RepoRepository, any DatabaseManaging) {
+    /// D-01：原 `RepoRepository` 改名 `GRDBRepoRepository`，测试构造具体实现仍直接 new
+    /// （只在协议方法上验证，等同覆盖协议 conformance）。
+    private func makeRepo() throws -> (GRDBRepoRepository, any DatabaseManaging) {
         let db = try InMemoryDatabaseManager()
-        let repo = RepoRepository(database: db)
+        let repo = GRDBRepoRepository(database: db)
         return (repo, db)
     }
 
@@ -122,7 +124,7 @@ struct RepoRepositoryTests {
     // MARK: - Week 3 查询
 
     /// 构造一个不同语言/名字的小数据集，便于多个 Week 3 查询复用。
-    private func seedDataset(_ repo: RepoRepository) async throws {
+    private func seedDataset(_ repo: GRDBRepoRepository) async throws {
         let user = GitHubUserDTO(id: 1, login: "u", name: nil, avatarUrl: nil,
                                  publicRepos: nil, followers: nil, following: nil)
         func mkdto(id: Int64, name: String, lang: String?, desc: String?) -> StarredRepoDTO {

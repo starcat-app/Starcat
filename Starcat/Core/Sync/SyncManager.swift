@@ -59,14 +59,15 @@ final class SyncManager {
 
     /// D-02：依赖协议而非具体 actor，便于单测注入 Mock。
     private let apiClient: any GitHubAPIClientProtocol
-    private let repository: RepoRepository
+    /// D-01：依赖协议而非具体 struct，便于单测注入 Mock。
+    private let repository: any RepoRepositoryProtocol
 
     /// 当前进行中的同步 Task，便于取消。
     private var runningTask: Task<Void, Never>?
 
     // MARK: - 初始化
 
-    init(apiClient: any GitHubAPIClientProtocol, repository: RepoRepository) {
+    init(apiClient: any GitHubAPIClientProtocol, repository: any RepoRepositoryProtocol) {
         self.apiClient = apiClient
         self.repository = repository
     }

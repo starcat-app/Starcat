@@ -2,7 +2,16 @@
 //  RepoRepository.swift
 //  Starcat
 //
-//  Repo 持久化 Repository。
+//  Repo 持久化 Repository（GRDB 实现）。
+//
+//  ⚠️ 命名注意（D-01）：
+//  - 内部 struct 名为 `GRDBRepoRepository`（实现），协议层抽象为 `RepoRepositoryProtocol`
+//    （定义见 `RepoRepositoryProtocol.swift`）
+//  - 文件名仍叫 `RepoRepository.swift` 是为了避免大幅触动 .pbxproj
+//    （本项目用 xcodegen，文件名变更后下次 `xcodegen generate` 会自动跟随，
+//    但当前会话手改 pbxproj 成本高于收益）
+//  - 调用方应依赖 `any RepoRepositoryProtocol`，仅 AppDependencies / 测试构造时
+//    用具体类型 `GRDBRepoRepository(database:)`
 //
 //  职责：
 //  - 将 GitHubRepoDTO / StarredRepoDTO 转换为本地 Repo / StarredRepo 模型并写库（批量 upsert）
@@ -37,8 +46,9 @@ struct LanguageStat: FetchableRecord, Codable, Equatable, Identifiable {
     var languageOrNil: String? { language.isEmpty ? nil : language }
 }
 
-/// Repo Repository。
-struct RepoRepository {
+/// Repo Repository（GRDB 实现）。D-01：原名 `RepoRepository`，改名 `GRDBRepoRepository`，
+/// 协议抽象 `RepoRepositoryProtocol` 见同目录另一文件。
+struct GRDBRepoRepository {
 
     /// GRDB writer。
     private let writer: any DatabaseWriter

@@ -12,7 +12,7 @@
 //
 //  设计约束：
 //  - @MainActor + @Observable，所有状态变更在主线程
-//  - 不直接持有 GRDB writer，依赖 RepoRepository
+//  - 不直接持有 GRDB writer，依赖 RepoRepositoryProtocol（D-01）
 //  - 不感知 SidebarView 的渲染细节；只暴露数据与 action
 //  - 列表查询是"全量加载"模式，1801 条以内性能完全够；超过 10k 再考虑游标
 //
@@ -83,14 +83,15 @@ final class HomeViewModel {
 
     // MARK: - 依赖
 
-    private let repository: RepoRepository
+    /// D-01：依赖协议而非具体 struct，便于单测注入 Mock。
+    private let repository: any RepoRepositoryProtocol
 
     /// D-05：当前 in-flight 的 reloadItems 任务，新调用进来先 cancel 旧的，
     /// 防止"快速切 sidebar 时旧查询结果覆盖新结果"的 race。
     /// 参考 `ReadmeViewModel.currentTask` 的相同模式。
     private var currentReloadTask: Task<Void, Never>?
 
-    init(repository: RepoRepository) {
+    init(repository: any RepoRepositoryProtocol) {
         self.repository = repository
     }
 

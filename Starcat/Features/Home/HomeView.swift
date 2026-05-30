@@ -41,7 +41,8 @@ struct HomeView: View {
     /// 防抖用：跟踪搜索 query 变化，task(id:) 触发延迟搜索。
     @State private var searchDebounceID = UUID()
 
-    init(repository: RepoRepository, readmeAPI: ReadmeAPI) {
+    /// D-01：repository 类型从具体 struct 改为协议，便于 Preview / 测试注入 Mock。
+    init(repository: any RepoRepositoryProtocol, readmeAPI: ReadmeAPI) {
         _viewModel = State(initialValue: HomeViewModel(repository: repository))
         _readmeVM = State(initialValue: ReadmeViewModel(api: readmeAPI))
     }
