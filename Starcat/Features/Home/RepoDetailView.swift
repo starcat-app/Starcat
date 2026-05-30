@@ -62,6 +62,8 @@ struct RepoDetailView: View {
             topicsSection(repo)
             // W4 A3：用户自定义标签段，紧贴 GitHub topics 之后
             RepoTagsSection(repo: repo)
+            // W4 A4：私有笔记 + 状态段
+            RepoNotesSection(repo: repo)
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
