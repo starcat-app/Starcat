@@ -38,6 +38,9 @@ struct RepoDetailView: View {
     @State private var isUnstarring: Bool = false
     @State private var unstarError: String?
 
+    // W4 B2：Clone URL 复制 → Toast 提示
+    @State private var toastMessage: String?
+
     var body: some View {
         if let repo = viewModel.selectedRepo {
             VStack(alignment: .leading, spacing: 0) {
@@ -55,11 +58,17 @@ struct RepoDetailView: View {
                         Label("在 GitHub 打开", systemImage: "safari")
                     }
                 }
+                // W4 B2：Clone URL 复制
+                ToolbarItem(placement: .primaryAction) {
+                    cloneMenu(repo: repo)
+                }
                 // W4 B1：Unstar 按钮（destructive）
                 ToolbarItem(placement: .primaryAction) {
                     unstarButton
                 }
             }
+            // W4 B2：Toast 浮层（统一复制提示）
+            .toast(message: $toastMessage, icon: "doc.on.clipboard")
             .alert("取消 Star？", isPresented: $showUnstarConfirm, presenting: repo) { repo in
                 Button("取消 Star", role: .destructive) {
                     Task { await performUnstar(repo: repo) }
@@ -76,6 +85,52 @@ struct RepoDetailView: View {
         } else {
             emptyState
         }
+    }
+
+    // MARK: - W4 B2：Clone URL 复制 Menu
+
+    /// 详情页 toolbar 的 "克隆地址" Menu。
+    ///
+    /// 行为：
+    /// - HTTPS 总是可选（GitHub API 必返）
+    /// - SSH 仅当 repo.sshUrl 非空时显示
+    /// - 复制走 NSPasteboard，触发 Toast
+    @ViewBuilder
+    private func cloneMenu(repo: Repo) -> some View {
+        Menu {
+            if let https = repo.cloneUrl, !https.isEmpty {
+                Button {
+                    copy(https, success: "已复制 HTTPS 地址")
+                } label: {
+                    Label("HTTPS", systemImage: "globe")
+                }
+                Text(https)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            if let ssh = repo.sshUrl, !ssh.isEmpty {
+                Button {
+                    copy(ssh, success: "已复制 SSH 地址")
+                } label: {
+                    Label("SSH", systemImage: "terminal")
+                }
+                Text(ssh)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        } label: {
+            Label("克隆地址", systemImage: "doc.on.clipboard")
+        }
+        .help("复制 git clone 地址")
+    }
+
+    /// 写 NSPasteboard + 给 Toast 一个文案。
+    /// 任何复制功能（包括 B3 即将加的项目链接菜单）都复用此函数。
+    private func copy(_ string: String, success: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(string, forType: .string)
+        toastMessage = success
     }
 
     // MARK: - W4 B1：Unstar 按钮 + 流程
