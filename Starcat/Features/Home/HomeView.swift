@@ -85,6 +85,7 @@ struct HomeView: View {
         .searchable(text: $vm.searchQuery, placement: .toolbar, prompt: "搜索仓库")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                filterMenu
                 sortMenu
                 multiSelectButton
                 tagManagementButton
@@ -102,10 +103,16 @@ struct HomeView: View {
             TagManagementView(viewModel: tagMgmtVM)
         }
         .task {
-            // W4-4 D1：把持久化的排序偏好同步到 viewModel,避免首次 reloadItems 用默认值
+            // W4-4 D1/D2:把持久化的视图偏好同步到 viewModel,避免首次 reloadItems 用默认值
             // 然后 onAppear 才纠正导致列表抖动一次。
             if viewModel.sortOption != settings.repoSortOption {
                 viewModel.sortOption = settings.repoSortOption
+            }
+            if viewModel.hideArchived != settings.hideArchived {
+                viewModel.hideArchived = settings.hideArchived
+            }
+            if viewModel.hideForks != settings.hideForks {
+                viewModel.hideForks = settings.hideForks
             }
             await viewModel.refreshSidebar()
             await viewModel.reloadItems()
@@ -156,6 +163,34 @@ struct HomeView: View {
         }
         .help(viewModel.isMultiSelectMode ? "退出多选模式" : "进入多选模式")
         .keyboardShortcut("m", modifiers: [.command, .shift])
+    }
+
+    /// W4-4 D2：过滤入口。开启任一过滤时图标会切换为"已激活"形态,
+    /// 提示用户当前列表不是全集。
+    private var filterMenu: some View {
+        @Bindable var vm = viewModel
+        return Menu {
+            Toggle(isOn: $vm.hideArchived) {
+                Label("隐藏 Archived", systemImage: "archivebox")
+            }
+            Toggle(isOn: $vm.hideForks) {
+                Label("隐藏 Fork", systemImage: "tuningfork")
+            }
+        } label: {
+            Label(
+                "过滤",
+                systemImage: viewModel.hasActiveFilter
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle"
+            )
+        }
+        .help(viewModel.hasActiveFilter ? "已启用列表过滤" : "过滤列表(Archived / Fork)")
+        .onChange(of: viewModel.hideArchived) { _, newValue in
+            settings.hideArchived = newValue
+        }
+        .onChange(of: viewModel.hideForks) { _, newValue in
+            settings.hideForks = newValue
+        }
     }
 
     /// W4-4 D1：排序入口。Picker 显示当前选中(系统会自动加 ✓ 标记)。

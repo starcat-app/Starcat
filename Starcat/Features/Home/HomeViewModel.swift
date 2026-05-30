@@ -29,10 +29,15 @@ final class HomeViewModel {
     /// 当前侧边栏选中项；默认 All Stars。
     var selection: SidebarItem = .allStars
 
-    /// 当前中栏列表。
+    /// 当前中栏列表（经过 filter + sort 后的可见数据）。
     /// 重新加载策略：每次 selection / searchQuery 变化都重算（rebuild 比 diff 简单）。
-    /// D-04：`private(set)` 收敛——只有 ViewModel 内部 `reloadItems()` 能改，避免外部 View 直接覆写引发状态漂移。
+    /// D-04：`private(set)` 收敛——只有 ViewModel 内部 `applyView()` 能改，避免外部 View 直接覆写引发状态漂移。
     private(set) var items: [Repo] = []
+
+    /// W4-4 D2：原始 fetch 结果（未经 filter / sort）。
+    /// `items` 是 rawItems 的派生 — sort / filter 改变时只需重跑 `applyView()` 而不必重 fetch。
+    /// 私有：不暴露给 UI，保持单向流: rawItems → applyView → items → UI。
+    private var rawItems: [Repo] = []
 
     /// 当前详情选中的 repo **ID**（不是 Repo 值）。
     ///
@@ -101,13 +106,34 @@ final class HomeViewModel {
     /// 列表排序选项。
     /// 由 RepoListView 通过 onChange 与 AppSettings.repoSortOption 双向同步,
     /// 持久化在 settings 层；ViewModel 这边只关心"用户选了 → items 立刻按新顺序展示"。
-    /// didSet 触发 in-memory 排序，避免重复访问数据库。
+    /// didSet 触发 in-memory transformation，避免重复访问数据库。
     var sortOption: RepoSortOption = .starredAtDesc {
         didSet {
             guard oldValue != sortOption else { return }
-            sortItems()
+            applyView()
         }
     }
+
+    // MARK: - 过滤（W4-4 D2）
+
+    /// 是否隐藏 Archived 仓库。与 AppSettings.hideArchived 双向同步。
+    var hideArchived: Bool = false {
+        didSet {
+            guard oldValue != hideArchived else { return }
+            applyView()
+        }
+    }
+
+    /// 是否隐藏 Fork 仓库。与 AppSettings.hideForks 双向同步。
+    var hideForks: Bool = false {
+        didSet {
+            guard oldValue != hideForks else { return }
+            applyView()
+        }
+    }
+
+    /// 派生：当前是否有任何过滤器生效（toolbar 显示徽标用）。
+    var hasActiveFilter: Bool { hideArchived || hideForks }
 
     /// 切换多选模式。
     /// 切入：清空单选 selectedRepoID（避免详情页显示残留）；
@@ -237,15 +263,13 @@ final class HomeViewModel {
 
             switch outcome {
             case .success(let fetched):
-                // W4-4 D1：fetch 完成后立刻按当前 sortOption 排序。
-                self.items = self.sorted(fetched)
-                // 选中行若已不在新列表，清空详情
-                if let selectedID = self.selectedRepoID,
-                   !fetched.contains(where: { $0.id == selectedID }) {
-                    self.selectedRepoID = nil
-                }
+                // W4-4 D2：fetch 结果存入 rawItems 作为唯一事实源,
+                // items 派生自 applyView() 的 filter + sort 透视。
+                self.rawItems = fetched
+                self.applyView()
             case .failure(let error):
                 self.loadError = error.localizedDescription
+                self.rawItems = []
                 self.items = []
                 AppLog.database.error("reloadItems failed: \(error.localizedDescription, privacy: .public)")
             }
@@ -264,16 +288,31 @@ final class HomeViewModel {
         selectedRepoID = nil
     }
 
-    // MARK: - W4-4 D1：内部排序工具
+    // MARK: - W4-4 D2：filter + sort 透视层
 
-    /// 对当前 items in-place 排序。供 `sortOption` didSet 触发，不重 fetch。
-    private func sortItems() {
-        items = sorted(items)
-    }
+    /// 把 rawItems 经 filter + sort 后写入 items。
+    ///
+    /// 调用时机：
+    /// - reloadItems 拿到 fetched 数据后
+    /// - sortOption / hideArchived / hideForks didSet 触发
+    ///
+    /// 顺序：先 filter 后 sort，避免 sort 在被过滤掉的元素上浪费比较；
+    /// 1801 条规模下任意顺序都是几 ms，主要是逻辑清晰。
+    /// 也负责"选中行被过滤掉了 → 清空 selectedRepoID"，避免详情页显示残影。
+    private func applyView() {
+        var view = rawItems
+        if hideArchived { view.removeAll { $0.isArchived } }
+        if hideForks    { view.removeAll { $0.isFork } }
+        view.sort(by: sortOption.comparator)
+        items = view
 
-    /// 按当前 sortOption 返回新数组（不动入参）。
-    /// 抽成函数便于 reloadItems 一边接 fetched 一边排序，避免触发 sortOption didSet 误循环。
-    private func sorted(_ source: [Repo]) -> [Repo] {
-        source.sorted(by: sortOption.comparator)
+        if let id = selectedRepoID, !view.contains(where: { $0.id == id }) {
+            selectedRepoID = nil
+        }
+        if isMultiSelectMode {
+            // 多选模式下被过滤掉的 id 也要从选中集合移除
+            let visibleIDs = Set(view.map(\.id))
+            multiSelectedRepoIDs.formIntersection(visibleIDs)
+        }
     }
 }

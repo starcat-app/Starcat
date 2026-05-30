@@ -152,6 +152,16 @@ final class AppSettings {
         didSet { persist(key: Keys.repoSortOption, value: repoSortOption.rawValue) }
     }
 
+    /// W4-4 D2：是否隐藏已 archived 的仓库（默认 false，全部显示）。
+    var hideArchived: Bool {
+        didSet { persistBool(key: Keys.hideArchived, value: hideArchived) }
+    }
+
+    /// W4-4 D2：是否隐藏 fork 的仓库（默认 false，全部显示）。
+    var hideForks: Bool {
+        didSet { persistBool(key: Keys.hideForks, value: hideForks) }
+    }
+
     // MARK: - 初始化
 
     private let defaults: UserDefaults
@@ -166,6 +176,10 @@ final class AppSettings {
 
         let sortRaw = defaults.string(forKey: Keys.repoSortOption)
         self.repoSortOption = sortRaw.flatMap(RepoSortOption.init(rawValue:)) ?? .starredAtDesc
+
+        // Bool 默认值用 object(forKey:) 判 nil；防止 `bool(forKey:)` 把缺失也当 false
+        self.hideArchived = defaults.object(forKey: Keys.hideArchived) as? Bool ?? false
+        self.hideForks = defaults.object(forKey: Keys.hideForks) as? Bool ?? false
     }
 
     // MARK: - 内部
@@ -174,9 +188,15 @@ final class AppSettings {
         defaults.set(value, forKey: key)
     }
 
+    private func persistBool(key: String, value: Bool) {
+        defaults.set(value, forKey: key)
+    }
+
     /// 全部偏好键集中地，避免字符串散落。
     private enum Keys {
         static let repoListDensity = "settings.repoListDensity"
         static let repoSortOption = "settings.repoSortOption"
+        static let hideArchived = "settings.hideArchived"
+        static let hideForks = "settings.hideForks"
     }
 }
