@@ -57,7 +57,8 @@ final class SyncManager {
 
     // MARK: - 依赖
 
-    private let apiClient: GitHubAPIClient
+    /// D-02：依赖协议而非具体 actor，便于单测注入 Mock。
+    private let apiClient: any GitHubAPIClientProtocol
     private let repository: RepoRepository
 
     /// 当前进行中的同步 Task，便于取消。
@@ -65,7 +66,7 @@ final class SyncManager {
 
     // MARK: - 初始化
 
-    init(apiClient: GitHubAPIClient, repository: RepoRepository) {
+    init(apiClient: any GitHubAPIClientProtocol, repository: RepoRepository) {
         self.apiClient = apiClient
         self.repository = repository
     }

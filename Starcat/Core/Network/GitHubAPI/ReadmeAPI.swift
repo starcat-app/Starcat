@@ -39,8 +39,9 @@
 
 import Foundation
 
-/// README HTML 抓取的 Accept 头。
-private let readmeHTMLAccept = "application/vnd.github.html"
+// D-02：README 抓取从直接 `client.getBytes(path: "/repos/...")` 改为业务端点
+// `client.readmeHTML(owner:repo:...)`（实现见 ReadmeHTMLAPI.swift），不再需要本文件持有
+// path / accept 等底层细节。原 `readmeHTMLAccept` 常量已迁移到 ReadmeHTMLAPI.swift。
 
 /// `refreshReadme` 的返回值。
 ///
@@ -61,7 +62,8 @@ enum ReadmeRefreshResult {
 /// README API。
 struct ReadmeAPI {
 
-    let client: GitHubAPIClient
+    /// D-02：依赖协议而非具体 actor 类型，便于单测注入 Mock。
+    let client: any GitHubAPIClientProtocol
     let repository: ReadmeRepository
 
     /// 软过期阈值。
@@ -77,7 +79,7 @@ struct ReadmeAPI {
     /// 暂硬编码，Settings 面板调节留到 P2。
     static let softTtl: TimeInterval = 6 * 3600
 
-    init(client: GitHubAPIClient, repository: ReadmeRepository) {
+    init(client: any GitHubAPIClientProtocol, repository: ReadmeRepository) {
         self.client = client
         self.repository = repository
     }
@@ -110,13 +112,11 @@ struct ReadmeAPI {
             return .failed(error)
         }
 
-        let path = "/repos/\(repo.owner)/\(repo.name)/readme"
-
         let raw: BytesResponse
         do {
-            raw = try await client.getBytes(
-                path: path,
-                accept: readmeHTMLAccept,
+            raw = try await client.readmeHTML(
+                owner: repo.owner,
+                repo: repo.name,
                 ifNoneMatch: existing?.etag,
                 ifModifiedSince: existing?.lastModified
             )
@@ -134,7 +134,7 @@ struct ReadmeAPI {
         if raw.notModified {
             guard let cached = existing else {
                 // 极端 case：本地缓存被清掉但服务端仍 304 → 兜底无条件重拉
-                AppLog.network.warning("README 304 但本地缓存丢失，无条件重拉 \(path, privacy: .public)")
+                AppLog.network.warning("README 304 但本地缓存丢失，无条件重拉 \(repo.fullName, privacy: .public)")
                 return await refreshUnconditional(repo: repo)
             }
             let now = Date()
@@ -169,10 +169,14 @@ struct ReadmeAPI {
     /// 不带 validator 的强制刷新（304 但本地缓存丢失时的兜底）。
     /// 所有错误同样包到 `.failed`，保持与 `refreshReadme` 一致的语义。
     private func refreshUnconditional(repo: Repo) async -> ReadmeRefreshResult {
-        let path = "/repos/\(repo.owner)/\(repo.name)/readme"
         let raw: BytesResponse
         do {
-            raw = try await client.getBytes(path: path, accept: readmeHTMLAccept)
+            raw = try await client.readmeHTML(
+                owner: repo.owner,
+                repo: repo.name,
+                ifNoneMatch: nil,
+                ifModifiedSince: nil
+            )
         } catch NetworkError.notFound {
             return .notFound
         } catch {

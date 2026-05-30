@@ -50,7 +50,8 @@ final class AuthSession {
     // MARK: - 依赖
 
     private let oauthService: any GithubOAuthServiceProtocol
-    private let apiClient: GitHubAPIClient
+    /// D-02：依赖协议而非具体 actor，便于单测注入 Mock。
+    private let apiClient: any GitHubAPIClientProtocol
     private let keychain: any KeychainManaging
 
     /// 当前进行中的 Device Flow 轮询 Task，便于取消。
@@ -64,7 +65,7 @@ final class AuthSession {
     ///   - keychain: token 存储。
     init(
         oauthService: any GithubOAuthServiceProtocol,
-        apiClient: GitHubAPIClient,
+        apiClient: any GitHubAPIClientProtocol,
         keychain: any KeychainManaging = KeychainManager.shared
     ) {
         self.oauthService = oauthService

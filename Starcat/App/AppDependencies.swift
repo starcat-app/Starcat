@@ -29,7 +29,8 @@ final class AppDependencies {
     // MARK: - 依赖实例（顺序敏感）
 
     let database: any DatabaseManaging
-    let apiClient: GitHubAPIClient
+    /// D-02：注入类型从 actor 改为协议，便于 Preview / 测试替换为 Mock。
+    let apiClient: any GitHubAPIClientProtocol
     let oauthService: any GithubOAuthServiceProtocol
     let authSession: AuthSession
     let syncManager: SyncManager
