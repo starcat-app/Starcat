@@ -15,9 +15,14 @@
 //  - Rate Limit 主动退避：撞 429/403 自动 sleep 到 reset 时间 + 安全 buffer
 //    再重试同一页（每轮 runSync 最多自动重试 1 次，避免死循环）
 //
+//  W4-4 C2 新增：
+//  - Page 1 ETag 早退：首页带 If-None-Match，命中 304 直接结束本次同步
+//  - 已知局限：page 1 内容不变（按 starred_at desc 排序，中间页 unstar 不影响首页）
+//    时无法立刻检测到 unstar；用户手动触发"强制同步"（performFullSync(force: true)）
+//    会跳过 ETag 走全量。后续 C3 增量同步落地后会进一步优化
+//
 //  尚未做（Week 5+ 或后续优化）：
 //  - 增量同步：starred_at 时间戳对比（W4-4 C3 即将做）
-//  - ETag 缓存（W4-4 C2 即将做）
 //  - 后台定时同步（NSBackgroundActivityScheduler）
 //  - 部分失败的断点续传
 //
@@ -87,12 +92,15 @@ final class SyncManager {
     // MARK: - 同步入口
 
     /// 触发全量同步。
+    /// - Parameter force: W4-4 C2，true 时跳过 page 1 ETag 条件请求，强制走全量。
+    ///   默认 false（信任 ETag 早退路径）。UI 暂未暴露 force 入口；调用方在
+    ///   "用户希望立即检测 unstar / 怀疑数据不一致" 场景下传 true。
     /// 重复调用：如果已在同步中，直接返回；不排队。
-    func performFullSync(userID: Int64) {
+    func performFullSync(userID: Int64, force: Bool = false) {
         guard !isSyncing else { return }
         runningTask = Task { [weak self] in
             guard let self else { return }
-            await self.runSync(userID: userID)
+            await self.runSync(userID: userID, force: force)
         }
     }
 
@@ -109,10 +117,10 @@ final class SyncManager {
 
     // MARK: - 实现
 
-    private func runSync(userID: Int64) async {
+    private func runSync(userID: Int64, force: Bool) async {
         state = .syncing
         progress = SyncProgress(current: 0, total: nil, currentPage: 1)
-        AppLog.sync.info("Full sync started (user=\(userID, privacy: .public))")
+        AppLog.sync.info("Full sync started (user=\(userID, privacy: .public), force=\(force, privacy: .public))")
 
         var page = 1
         let perPage = 100
@@ -124,19 +132,51 @@ final class SyncManager {
         // 这样避免"配额估算错误 / 重置时间漂移"导致 sleep 死循环。
         var rateLimitRetried = false
 
+        // C2：page 1 ETag。非 force 时读历史值;force 时强制 nil 走全量。
+        let cachedETag: String?
+        if force {
+            cachedETag = nil
+        } else {
+            cachedETag = (try? await repository.fetchStarsETag(userID: userID)) ?? nil
+        }
+
         do {
             while true {
                 try Task.checkCancellation()
+
+                // C2：仅 page 1 带 If-None-Match;其他页正常拉。
+                let ifNoneMatch: String? = (page == 1) ? cachedETag : nil
 
                 // C1：单次 fetch 用 inner do-catch 包裹，专门拦 rateLimited 做退避重试。
                 // 退避成功后 `continue` 同一 page 重跑，外层循环 untouched。
                 let response: APIResponse<[StarredRepoDTO]>
                 do {
-                    response = try await apiClient.starredRepos(page: page, perPage: perPage)
+                    response = try await apiClient.starredRepos(page: page, perPage: perPage, ifNoneMatch: ifNoneMatch)
                 } catch NetworkError.rateLimited(let retryAfter) where !rateLimitRetried {
                     rateLimitRetried = true
                     try await waitForRateLimit(retryAfter: retryAfter)
                     continue
+                } catch NetworkError.notModified {
+                    // C2：page 1 304 → 早退。
+                    // 语义：服务端 page 1 内容未变 → 信任本地，不动 is_starred。
+                    // 注意：中间页 unstar 不会被这条路径检测到（见文件头说明）。
+                    AppLog.sync.info("Stars page 1 not modified (ETag hit), skipping full sync")
+                    let localCount = (try? await repository.starredCount()) ?? 0
+                    try? await repository.updateSyncState(
+                        userID: userID,
+                        starredCount: localCount,
+                        syncedCount: localCount,
+                        status: "idle"
+                    )
+                    progress = SyncProgress(current: localCount, total: localCount, currentPage: 1)
+                    state = .completed(at: Date())
+                    runningTask = nil
+                    return
+                }
+
+                // C2：page 1 拿到新 ETag → 立即持久化，避免后续页失败时丢失这次的 ETag。
+                if page == 1, let newEtag = response.etag, !newEtag.isEmpty {
+                    try? await repository.updateStarsETag(userID: userID, etag: newEtag)
                 }
 
                 let dtos = response.value

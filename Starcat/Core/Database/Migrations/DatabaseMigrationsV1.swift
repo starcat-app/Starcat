@@ -29,7 +29,21 @@ enum DatabaseMigrations {
     /// 调用顺序按版本递增。
     static func registerAll(into migrator: inout DatabaseMigrator) {
         registerV1(into: &migrator)
-        // 未来：registerV2(into: &migrator)
+        registerV2(into: &migrator)
+    }
+
+    // MARK: - v2（W4-4 C2：sync_state 增加 stars_etag 列）
+
+    /// v2：sync_state 增加 `stars_etag TEXT` 列，存 `/user/starred?page=1` 的 ETag。
+    ///
+    /// 设计说明：
+    /// - 用 ALTER TABLE 增加可空列，对历史用户无破坏性
+    /// - 也没必要回填初始值（NULL 即"首次同步"语义）
+    /// - 列位置追加在表尾即可，GRDB / CodingKeys 都按 name 而非 ordinal 取值
+    private static func registerV2(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v2-sync-state-etag") { db in
+            try db.execute(sql: "ALTER TABLE sync_state ADD COLUMN stars_etag TEXT")
+        }
     }
 
     // MARK: - v1

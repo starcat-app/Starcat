@@ -380,7 +380,7 @@ struct GitHubAPIClientTests {
             return (response, json)
         }
 
-        let result = try await client.starredRepos(page: 1, perPage: 100)
+        let result = try await client.starredRepos(page: 1, perPage: 100, ifNoneMatch: nil)
         #expect(result.value.count == 1)
         #expect(result.value.first?.repo.fullName == "alice/foo")
         #expect(result.linkHeader.lastPage == 10)

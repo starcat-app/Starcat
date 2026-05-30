@@ -42,12 +42,17 @@ struct KeychainTokenProvider: GitHubTokenProviding {
 
 // MARK: - Response
 
-/// API 响应包装：业务数据 + 元数据（Link / RateLimit）。
+/// API 响应包装：业务数据 + 元数据（Link / RateLimit / ETag）。
+///
+/// W4-4 C2 新增 `etag`：服务端返回的 ETag（含双引号原样保留），
+/// 上层将其与 If-None-Match 配套使用做条件请求。
+/// 304 响应不会构造 APIResponse —— 会通过 `NetworkError.notModified(etag:)` 抛出。
 struct APIResponse<T> {
     let value: T
     let linkHeader: LinkHeader
     let rateLimit: RateLimitInfo
     let statusCode: Int
+    let etag: String?
 }
 
 /// 裸字节响应包装。
@@ -104,14 +109,20 @@ actor GitHubAPIClient {
     // MARK: - Public API
 
     /// 发起 GET 请求并解码 JSON。
-    /// - Parameter accept: 自定义 Accept 头（例如 Stars API 要 `application/vnd.github.star+json` 才返回 starred_at）。
+    /// - Parameters:
+    ///   - accept: 自定义 Accept 头（例如 Stars API 要 `application/vnd.github.star+json` 才返回 starred_at）。
+    ///   - ifNoneMatch: W4-4 C2，条件请求 ETag。命中(304) 时 perform 抛 `NetworkError.notModified(etag:)`。
     func get<T: Decodable>(
         path: String,
         queryItems: [URLQueryItem] = [],
         accept: String = "application/vnd.github+json",
+        ifNoneMatch: String? = nil,
         as type: T.Type = T.self
     ) async throws -> APIResponse<T> {
-        let request = try buildRequest(method: "GET", path: path, queryItems: queryItems, accept: accept, body: nil)
+        var request = try buildRequest(method: "GET", path: path, queryItems: queryItems, accept: accept, body: nil)
+        if let etag = ifNoneMatch, !etag.isEmpty {
+            request.setValue(etag, forHTTPHeaderField: "If-None-Match")
+        }
         return try await perform(request)
     }
 
@@ -218,6 +229,7 @@ actor GitHubAPIClient {
 
         let linkHeader = LinkHeader.parse(http.value(forHTTPHeaderField: "Link"))
         let rateLimit = RateLimitInfo.parse(http)
+        let etag = http.value(forHTTPHeaderField: "ETag")
 
         AppLog.network.debug("\(req.httpMethod ?? "?", privacy: .public) \(req.url?.path ?? "?", privacy: .public) -> \(http.statusCode, privacy: .public), rl=\(rateLimit.remaining ?? -1, privacy: .public)/\(rateLimit.limit ?? -1, privacy: .public)")
 
@@ -225,11 +237,15 @@ actor GitHubAPIClient {
         case 200...299:
             do {
                 let decoded = try decoder.decode(T.self, from: data)
-                return APIResponse(value: decoded, linkHeader: linkHeader, rateLimit: rateLimit, statusCode: http.statusCode)
+                return APIResponse(value: decoded, linkHeader: linkHeader, rateLimit: rateLimit, statusCode: http.statusCode, etag: etag)
             } catch {
                 AppLog.network.error("Decoding failed for \(String(describing: T.self), privacy: .public): \(error.localizedDescription, privacy: .public)")
                 throw NetworkError.decodingError(underlying: error)
             }
+
+        case 304:
+            // W4-4 C2：条件请求命中。把 ETag 透传给上层做缓存判断；body 为空所以不能构造 APIResponse<T>。
+            throw NetworkError.notModified(etag: etag)
 
         case 401:
             throw NetworkError.unauthorized

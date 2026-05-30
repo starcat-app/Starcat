@@ -227,20 +227,59 @@ struct GRDBRepoRepository {
     // MARK: - 同步状态
 
     /// 更新 sync_state 表中当前用户的统计。
+    ///
+    /// 注意：保留已有的 `stars_etag`（W4-4 C2）— 用 `update` 局部更新，避免 `save` 覆盖
+    /// `nil` 把 ETag 抹掉。
     func updateSyncState(userID: Int64, starredCount: Int, syncedCount: Int, status: String) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
         try await writer.write { db in
+            let existing = try SyncStateRecord.fetchOne(db, key: userID)
             var state = SyncStateRecord(
                 userId: userID,
                 lastSyncAt: nowISO,
-                lastIncrementalAt: nil,
+                lastIncrementalAt: existing?.lastIncrementalAt,
                 starredCount: starredCount,
                 syncedCount: syncedCount,
                 failedCount: 0,
                 syncStatus: status,
-                errorMessage: nil
+                errorMessage: nil,
+                starsEtag: existing?.starsEtag
             )
             try state.save(db)
+        }
+    }
+
+    // MARK: - W4-4 C2：Stars ETag 读写
+
+    /// 读 page 1 ETag。
+    /// 无 sync_state 行或字段为 NULL → 返回 nil（首次同步无条件请求）。
+    func fetchStarsETag(userID: Int64) async throws -> String? {
+        try await writer.read { db in
+            try SyncStateRecord.fetchOne(db, key: userID)?.starsEtag
+        }
+    }
+
+    /// 写 page 1 ETag。
+    /// 若 sync_state 行不存在 → 用占位字段先插一行（其余统计字段后续会被 updateSyncState 覆写）。
+    func updateStarsETag(userID: Int64, etag: String?) async throws {
+        try await writer.write { db in
+            if var existing = try SyncStateRecord.fetchOne(db, key: userID) {
+                existing.starsEtag = etag
+                try existing.update(db)
+            } else {
+                var state = SyncStateRecord(
+                    userId: userID,
+                    lastSyncAt: nil,
+                    lastIncrementalAt: nil,
+                    starredCount: 0,
+                    syncedCount: 0,
+                    failedCount: 0,
+                    syncStatus: "idle",
+                    errorMessage: nil,
+                    starsEtag: etag
+                )
+                try state.insert(db)
+            }
         }
     }
 

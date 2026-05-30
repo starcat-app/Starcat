@@ -24,6 +24,11 @@ enum NetworkError: Error, LocalizedError {
     /// 触发 Rate Limit（403 + X-RateLimit-Remaining=0）。
     case rateLimited(retryAfter: TimeInterval)
 
+    /// W4-4 C2：条件请求命中 304 Not Modified。
+    /// 业务层（SyncManager）捕获此错误代表"内容未变化"，应继续使用本地缓存。
+    /// 携带响应的 ETag（通常与请求时的 If-None-Match 相同，但 GitHub 偶尔会返回更新过的格式 — 原样保留即可）。
+    case notModified(etag: String?)
+
     /// 404。
     case notFound
 
@@ -53,6 +58,8 @@ enum NetworkError: Error, LocalizedError {
         case .rateLimited(let retryAfter):
             let seconds = Int(retryAfter.rounded())
             return "请求过于频繁，请在 \(seconds) 秒后重试"
+        case .notModified:
+            return "内容未变化（304）"
         case .notFound:
             return "资源不存在"
         case .serverError(let code):

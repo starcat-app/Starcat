@@ -33,6 +33,11 @@ struct SyncStateRecord: Codable, FetchableRecord, MutablePersistableRecord, Equa
     /// 上次失败的错误消息（脱敏后）。
     var errorMessage: String?
 
+    /// W4-4 C2：上次同步 `/user/starred?page=1` 时服务端返回的 ETag（含双引号原样保留）。
+    /// 用于下次同步带 `If-None-Match`，命中 304 时早退跳过全量。
+    /// 仅记录 page 1 的 ETag —— 见 SyncManager 头部对 ETag 早退语义的说明。
+    var starsEtag: String?
+
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
         case lastSyncAt = "last_sync_at"
@@ -42,5 +47,6 @@ struct SyncStateRecord: Codable, FetchableRecord, MutablePersistableRecord, Equa
         case failedCount = "failed_count"
         case syncStatus = "sync_status"
         case errorMessage = "error_message"
+        case starsEtag = "stars_etag"
     }
 }

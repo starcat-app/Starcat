@@ -52,12 +52,13 @@ struct SyncManagerTests {
         return StarredRepoDTO(starredAt: "2026-05-29T10:00:00Z", repo: repo)
     }
 
-    private func makeOnePageResponse(dtos: [StarredRepoDTO]) -> APIResponse<[StarredRepoDTO]> {
+    private func makeOnePageResponse(dtos: [StarredRepoDTO], etag: String? = nil) -> APIResponse<[StarredRepoDTO]> {
         APIResponse(
             value: dtos,
             linkHeader: LinkHeader(nextPage: nil, lastPage: 1),
             rateLimit: .empty,
-            statusCode: 200
+            statusCode: 200,
+            etag: etag
         )
     }
 
@@ -90,7 +91,7 @@ struct SyncManagerTests {
     func normalSync() async throws {
         let (sync, mock, repo) = try makeSUT()
         let dtos = [makeDTO(id: 1), makeDTO(id: 2)]
-        mock.starredReposHandler = { page, _ in
+        mock.starredReposHandler = { page, _, _ in
             #expect(page == 1)
             return self.makeOnePageResponse(dtos: dtos)
         }
@@ -111,7 +112,7 @@ struct SyncManagerTests {
         // 注意：actor-isolated mutation 在 @Sendable closure 里需要用 lock 或 atomic；
         // 这里测试单线程跑，直接用引用类型 box 即可。
         let attempts = Counter()
-        mock.starredReposHandler = { page, _ in
+        mock.starredReposHandler = { page, _, _ in
             #expect(page == 1) // 重试时必须还是 page=1
             let n = attempts.increment()
             if n == 1 {
@@ -133,7 +134,7 @@ struct SyncManagerTests {
         let (sync, mock, _) = try makeSUT()
 
         let attempts = Counter()
-        mock.starredReposHandler = { _, _ in
+        mock.starredReposHandler = { _, _, _ in
             _ = attempts.increment()
             throw NetworkError.rateLimited(retryAfter: 0)
         }
@@ -144,6 +145,74 @@ struct SyncManagerTests {
 
         #expect(attempts.value == 2, "应该恰好重试 1 次")
     }
+
+    // MARK: - W4-4 C2 ETag
+
+    @Test("C2: 首次同步不带 ETag,响应 ETag 写入本地")
+    func firstSyncSavesETag() async throws {
+        let (sync, mock, repo) = try makeSUT()
+        let dtos = [makeDTO(id: 100)]
+        mock.starredReposHandler = { _, _, ifNoneMatch in
+            #expect(ifNoneMatch == nil, "首次同步不应带 If-None-Match")
+            return self.makeOnePageResponse(dtos: dtos, etag: "\"abc123\"")
+        }
+
+        sync.performFullSync(userID: 555)
+        try await waitForState(sync) { if case .completed = $0 { return true } else { return false } }
+
+        let savedETag = try await repo.fetchStarsETag(userID: 555)
+        #expect(savedETag == "\"abc123\"")
+    }
+
+    @Test("C2: 第二次同步带上次 ETag,304 早退,不调 upsert")
+    func secondSyncHits304AndEarlyReturns() async throws {
+        let (sync, mock, repo) = try makeSUT()
+        // 预置 ETag
+        try await repo.updateStarsETag(userID: 777, etag: "\"prev-etag\"")
+        // 预置一行老 repo,验证 304 后本地不被改动
+        try await repo.upsertStarred([makeDTO(id: 1)], userID: 777, syncedAt: Date())
+
+        let attempts = Counter()
+        mock.starredReposHandler = { _, _, ifNoneMatch in
+            _ = attempts.increment()
+            #expect(ifNoneMatch == "\"prev-etag\"", "第二次同步应带上次的 ETag")
+            throw NetworkError.notModified(etag: "\"prev-etag\"")
+        }
+
+        sync.performFullSync(userID: 777)
+        try await waitForState(sync) { if case .completed = $0 { return true } else { return false } }
+
+        #expect(attempts.value == 1, "304 应早退,不应触发分页循环额外请求")
+        // 本地数据不应被清空
+        let count = try await repo.starredCount()
+        #expect(count == 1)
+        // ETag 仍是旧值（304 路径未刷新）
+        #expect(try await repo.fetchStarsETag(userID: 777) == "\"prev-etag\"")
+    }
+
+    @Test("C2: force=true 跳过 ETag,即使本地有 ETag 也走全量")
+    func forceTrueSkipsETag() async throws {
+        let (sync, mock, repo) = try makeSUT()
+        try await repo.updateStarsETag(userID: 888, etag: "\"cached\"")
+
+        let observedHeader = Box<String??>(nil)
+        mock.starredReposHandler = { _, _, ifNoneMatch in
+            observedHeader.value = ifNoneMatch
+            return self.makeOnePageResponse(dtos: [self.makeDTO(id: 1)], etag: "\"fresh\"")
+        }
+
+        sync.performFullSync(userID: 888, force: true)
+        try await waitForState(sync) { if case .completed = $0 { return true } else { return false } }
+
+        #expect(observedHeader.value == .some(nil), "force=true 时 If-None-Match 应该是 nil")
+        #expect(try await repo.fetchStarsETag(userID: 888) == "\"fresh\"", "新 ETag 应被持久化")
+    }
+}
+
+/// 引用类型 box,用于 @Sendable handler 闭包里捕获并修改值类型(配合 Counter 一起做测试观察用)。
+final class Box<T>: @unchecked Sendable {
+    var value: T
+    init(_ initial: T) { value = initial }
 }
 
 /// 引用类型计数器，让 @Sendable handler 闭包能在不引入 actor 隔离的前提下做自增。

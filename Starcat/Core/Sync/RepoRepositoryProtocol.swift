@@ -66,6 +66,17 @@ protocol RepoRepositoryProtocol: Sendable {
 
     /// 更新 sync_state 表中当前用户的同步统计。
     func updateSyncState(userID: Int64, starredCount: Int, syncedCount: Int, status: String) async throws
+
+    // MARK: - W4-4 C2：Stars ETag
+
+    /// 读取上次同步保存的 `/user/starred?page=1` ETag。
+    /// 没有记录或字段为 NULL 时返回 nil（首次同步无条件请求）。
+    func fetchStarsETag(userID: Int64) async throws -> String?
+
+    /// 持久化最新一次 page 1 ETag；nil 表示清空。
+    /// 这里独立成方法，不与 updateSyncState 合并 — 因为 ETag 写入时机比 stats 早
+    /// （拿到响应后立刻保存），合并会迫使 SyncManager 在中间状态持久化"半截 stats"。
+    func updateStarsETag(userID: Int64, etag: String?) async throws
 }
 
 // MARK: - Conformance

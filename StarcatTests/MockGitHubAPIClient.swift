@@ -36,7 +36,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
 
     // MARK: - Handlers（每方法一个）
 
-    var starredReposHandler: ((_ page: Int, _ perPage: Int) async throws -> APIResponse<[StarredRepoDTO]>)?
+    /// W4-4 C2：handler 多了 `ifNoneMatch` 参数，便于测试断言"是否带了 ETag"。
+    var starredReposHandler: ((_ page: Int, _ perPage: Int, _ ifNoneMatch: String?) async throws -> APIResponse<[StarredRepoDTO]>)?
     var unstarHandler: ((_ owner: String, _ repo: String) async throws -> Void)?
     var starHandler: ((_ owner: String, _ repo: String) async throws -> Void)?
     var getCurrentUserHandler: (() async throws -> GitHubUserDTO)?
@@ -48,11 +49,11 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
 
     // MARK: - Protocol conformance
 
-    func starredRepos(page: Int, perPage: Int) async throws -> APIResponse<[StarredRepoDTO]> {
+    func starredRepos(page: Int, perPage: Int, ifNoneMatch: String?) async throws -> APIResponse<[StarredRepoDTO]> {
         guard let handler = starredReposHandler else {
             fatalError("MockGitHubAPIClient.starredReposHandler 未设置")
         }
-        return try await handler(page, perPage)
+        return try await handler(page, perPage, ifNoneMatch)
     }
 
     func unstar(owner: String, repo: String) async throws {

@@ -19,7 +19,9 @@ extension GitHubAPIClient {
     /// - Parameters:
     ///   - page: 页码，从 1 开始。
     ///   - perPage: 每页条数，最大 100。
-    func starredRepos(page: Int, perPage: Int = 100) async throws -> APIResponse<[StarredRepoDTO]> {
+    ///   - ifNoneMatch: W4-4 C2，条件请求的 ETag（含双引号原样回传）。
+    ///     若服务端内容未变化，client.perform 会抛 `NetworkError.notModified(etag:)`。
+    func starredRepos(page: Int, perPage: Int = 100, ifNoneMatch: String? = nil) async throws -> APIResponse<[StarredRepoDTO]> {
         precondition(page >= 1, "page must be >= 1")
         precondition(perPage >= 1 && perPage <= 100, "perPage must be in [1, 100]")
 
@@ -32,7 +34,8 @@ extension GitHubAPIClient {
         return try await get(
             path: "/user/starred",
             queryItems: query,
-            accept: "application/vnd.github.star+json"
+            accept: "application/vnd.github.star+json",
+            ifNoneMatch: ifNoneMatch
         )
     }
 

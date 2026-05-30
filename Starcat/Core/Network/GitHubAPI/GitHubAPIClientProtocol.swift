@@ -30,8 +30,9 @@ protocol GitHubAPIClientProtocol: Sendable {
     // MARK: - Stars
 
     /// 拉取一页 starred repos。
-    /// - Returns: APIResponse 含 [StarredRepoDTO] + LinkHeader（分页信息）+ RateLimitInfo
-    func starredRepos(page: Int, perPage: Int) async throws -> APIResponse<[StarredRepoDTO]>
+    /// - Parameter ifNoneMatch: W4-4 C2 条件请求 ETag；命中(304) 时实现方应抛 `NetworkError.notModified(etag:)`。
+    /// - Returns: APIResponse 含 [StarredRepoDTO] + LinkHeader（分页信息）+ RateLimitInfo + ETag
+    func starredRepos(page: Int, perPage: Int, ifNoneMatch: String?) async throws -> APIResponse<[StarredRepoDTO]>
 
     /// 取消 star。
     func unstar(owner: String, repo: String) async throws
