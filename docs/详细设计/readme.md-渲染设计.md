@@ -923,3 +923,220 @@ ReadmeViewModel
 
 
 **Starcat 的 README 预览不应该追求“自己解析 Markdown”，而应该追求“尽可能像 GitHub、尽可能快、尽可能少维护”。你现在的方案正好符合这个目标。**
+
+---
+
+# 12. 评审决策（2026-05-30 by AI 协作者 + dong4j）
+
+> **本节是对 5–9 节优化建议的评估、决策与执行计划。**
+> 评估原则：Simplicity First / Surgical Changes / 不为想象中的灵活性提前做（详见用户全局规则）。
+> 评审日期：2026-05-30 20:00
+> 状态：✅ dong4j 已确认按 §12.2「推荐执行顺序」实施；待 §13 TODO list 二次确认后启动编码。
+
+## 12.1 分级评估
+
+### 第一档：强烈建议做（高 ROI，代码改动小）
+
+#### ⭐ §5.2 软过期 TTL
+
+**为什么做**：当前每次切 repo 都发条件请求，即使刚刚才查过同一个 repo。GitHub README 端点也吃 rate limit（已登录 5000/h 分给所有 endpoint）。
+
+**实现要点**：
+- `ReadmeAPI.fetchHTML` 开头加 `if existing != nil && now - cached_at < softTtl { return existing }` 短路
+- 不需要 schema migration，`cached_at` 已存在
+- softTtl = 6h（MVP 硬编码；Settings 面板留到 P2）
+- **"刷新"按钮必须能绕过 softTtl**：API 加 `forceRefresh: Bool = false` 参数
+
+**预估**：~10 行代码 + 2 个单测。
+
+#### ⭐ §5.1 + §9 打包做：SWR + API 拆分
+
+**为什么打包**：单做 §9 只是改名；单做 §5.1 又不优雅。一起改才有结构红利。
+
+**实现要点**：
+- `ReadmeAPI.cachedReadme(repoId:)` — 纯读本地，不发网络
+- `ReadmeAPI.refreshReadme(for:forceRefresh:)` — 走网络 + 写库，返回 `ReadmeRefreshResult` enum（`.updated / .notModified / .notFound / .failed`）
+- `ReadmeViewModel.load(repo:)` 改为 **「先读缓存立即 loaded → 判断 softTtl → 后台 fire-and-forget refresh」** 两段式
+- **关键保守设计**：`isRefreshing` 状态**先不暴露给 UI**。已显示的 README 被无感替换在用户视角就是"自动更新了"，符合预期。等用户反馈"我想看到正在刷新"再加。
+
+**预估**：~150 行（含单测改动），结构红利可直接消化 §5.2 / §5.3 的所有衍生需求。
+
+---
+
+### 第二档：做但用轻量版（避免过度工程）
+
+#### §5.3 缓存 404 — **不入库，做 per-session 内存缓存**
+
+**为什么不入库**：原文档建议加 `status TEXT` + `error_code TEXT` 字段 + schema migration v2 = 杀鸡用牛刀。
+
+**实际场景**：用户重复点同一个无 README 的 repo，session 内不再次请求就够了。app 冷启动重新试一次没坏处（可能 README 刚被作者补上）。
+
+**实现要点**：
+- `ReadmeViewModel` 加 `private var sessionNotFound: Set<Int64> = []`
+- `load(repo:)` 开头：若 `sessionNotFound.contains(repo.id)`，直接 `state = .empty` 不调 API
+- 404 catch 时塞进 Set
+
+**预估**：3 行代码。不动 schema、不动 `Readme.swift`、不动单测。
+
+#### §7 `getRaw` → `getBytes` 重命名 — **顺带做**
+
+**为什么做**：`getRaw` 在 GitHub 语境里（`Accept: vnd.github.raw` = 原始 markdown）容易误解。实际语义是"不解码 JSON 的裸字节响应"。
+
+**实现要点**：
+- `getRaw` → `getBytes`
+- `RawAPIResponse` → `BytesResponse`
+- 全局重命名，2 个调用点（`ReadmeAPI.fetchHTML` / `fetchHTMLWithoutValidator`）
+- **配合 Phase 2 一起做**，不单独开 PR
+
+---
+
+### 第三档：不做（收益微弱 / 违反 Simplicity First）
+
+| § | 建议 | 不做的理由 |
+|---|---|---|
+| §5.4 | 大 README size 限制 | GitHub 服务端已有 size limit（~1MB）；当前无性能问题；典型的 speculative feature。**折中**：仅加 `AppLog.network.warning` 当 size > 2MB，有数据再决策 |
+| §5.5 | WKWebView 实例池化 | 原文档对 SwiftUI 复用机制有误解：`NSViewRepresentable.updateNSView` 路径下 WebView 是复用的（这正是 `ReadmeKey` 缓存能生效的前提）。真正 makeNSView 重建的场景一个 session 几次而已 |
+| §6 | 删除 `content` 字段 | 当前 `content TEXT NULL` 不写入，占用 = 0；删了 P2 翻译/AI 摘要又要加回来 = 两次 migration。**未删的代价 ≪ 删了再加的代价** |
+| §8 | `cssVersion` + `fragmentHash` | ① CSS 是编译时静态字符串，app 升级必重启，WebView 全部重建，key 不跨版本复用 → 防御不存在的威胁。② SHA256 哈希反而引入每次 update 都算几百 KB 文本的开销 → 纯亏。Swift `String ==` 在长度不等时立即返回 false，已经够快 |
+
+---
+
+## 12.2 推荐执行顺序
+
+| Phase | 内容 | 预估改动量 | 价值 |
+|---|---|---|---|
+| **Phase 1** | softTtl(§5.2) + 404 session 缓存(§5.3 轻量版) | ~50 行，改 ReadmeAPI + ReadmeViewModel + 2-3 个新单测 | 立竿见影降低 90% 重复 API 请求 |
+| **Phase 2** | SWR + API 拆分(§5.1 + §9) + `getRaw → getBytes` 重命名(§7) | ~150 行，涉及 ReadmeAPI / ReadmeViewModel / 单测 | 体验提升 + 结构清晰，为未来 background sync 铺路 |
+| (后续) | §5.4 / §5.5 / §6 / §8 | — | 不做，等遇到具体问题再说 |
+
+**为什么 Phase 1 / Phase 2 拆开**：Phase 1 ROI 最高且改动小，应当独立验证；Phase 2 是结构性改动，需要更仔细的 review，单独评估。
+
+---
+
+## 12.3 对原文档的两点订正
+
+> 以下两点是评审过程中发现原 §5.5 / §8 的论证不准确，记入文档作为团队记录，避免未来基于错误前提再决策。
+
+### 订正 1：§5.5 WKWebView 池化的前提有误
+
+原文档说"如果 `RepoDetailView` 每次销毁重建 `ReadmeWebView`，可能会有额外开销"——但 SwiftUI 的 `NSViewRepresentable` 在 view tree 稳定时**只调用 `updateNSView` 不调用 `makeNSView`**，WKWebView 实例是复用的。我们的 `ReadmeKey` 缓存能正常工作恰好证明了这点（如果 WebView 每次都新建，`Coordinator.lastLoadedKey` 永远是 nil，根本起不到避免白闪的作用）。
+
+真正会触发 `makeNSView` 重建的场景：`RepoDetailView` 从 `nil`（empty state）→ `repo`（详情态）的过渡，这种切换一个 session 也就几次，优化收益 ≈ 0。
+
+### 订正 2：§8 `cssVersion` 防御的是不存在的威胁
+
+原文档说"如果以后 CSS 更新，fragment 没变、isDark 没变，WebView 可能不重新 load"——但：
+- CSS 是 Swift 源码里的 `static let css: String`，更新 = app 升级 = 进程重启
+- 进程重启 → WKWebView 全部销毁重建 → `Coordinator.lastLoadedKey` 是新 nil
+- 不存在"app 运行期 CSS 变更但 ReadmeKey 没变"的物理可能
+
+`cssVersion` 字段挡的是不存在的威胁，纯属过度工程。如果未来真要做主题切换（多套 CSS），那时再加 `themeId`，且必须是运行时可变的状态才有意义。
+
+---
+
+# 13. TODO List（待 dong4j 二次确认后启动）
+
+> 每条 TODO 标注：**修改文件 / 操作 / 验证方式**。
+> 完成后必须勾选 `[x]` + 在 `docs/工程进度/功能实现总览.md` 加 `> 实现：...` 行 + 变更日志加一行（详见 CLAUDE.md / AGENTS.md 工作流约定）。
+
+## Phase 1：softTtl + 404 session 缓存（预估 ~50 行）
+
+### 任务清单
+
+- [ ] **T1.1** `Starcat/Core/Network/GitHubAPI/ReadmeAPI.swift`：新增 `static let softTtl: TimeInterval = 6 * 3600`（注释说明：6h 内同一 repo 不再发条件请求；用户手动刷新可绕过）。
+- [ ] **T1.2** `ReadmeAPI.swift`：`fetchHTML(for:)` 方法签名改为 `fetchHTML(for repo: Repo, forceRefresh: Bool = false) async throws -> Readme`。
+- [ ] **T1.3** `ReadmeAPI.swift`：在 `existing = try await repository.find(...)` 之后立即加 softTtl 短路：
+  ```
+  若 forceRefresh == false && existing 不为 nil
+    && existing.cachedAt 在 softTtl 内
+    && existing.renderedHtml 非空
+  → 直接 return existing，不发网络
+  ```
+  注意 `cachedAt` 是 ISO8601 字符串，要 `parseISO8601` 解析后再比较。
+- [ ] **T1.4** `Starcat/Features/Home/ReadmeViewModel.swift`：新增 `private var sessionNotFound: Set<Int64> = []`。
+- [ ] **T1.5** `ReadmeViewModel.swift`：`load(repo:)` 开头检查 `if sessionNotFound.contains(repo.id) { state = .empty; return }`（注意要在 `currentTask?.cancel()` 之后、`state = .loading` 之前）。
+- [ ] **T1.6** `ReadmeViewModel.swift`：`load(repo:)` 的 `catch NetworkError.notFound` 分支里追加 `self.sessionNotFound.insert(requestedId)`。
+- [ ] **T1.7** `ReadmeViewModel.swift`：`reload(repo:)` 改为调用 `api.fetchHTML(for: repo, forceRefresh: true)`，且开头**移除** `sessionNotFound.remove(repo.id)`（用户主动刷新意味着想再试一次）。
+- [ ] **T1.8** `StarcatTests/`：新建 `ReadmeAPITTLTests.swift`（或挂到现有 `ReadmeRepositoryTests`），覆盖：
+  - 缓存在 softTtl 内 + forceRefresh=false → 直接返回缓存，不调用网络（用一个能记录调用次数的 mock client）
+  - 缓存在 softTtl 内 + forceRefresh=true → 走网络
+  - 缓存过期（cachedAt > softTtl 前）+ forceRefresh=false → 走网络
+- [ ] **T1.9** 编译 + 全量单测全绿（`xcodebuild ... test`）。
+- [ ] **T1.10** 手动验证：app 内连续切 3 次同一个 repo → Console 应只看到 1 次 `GET-raw /repos/.../readme` 网络日志（之前是 3 次）。
+- [ ] **T1.11** 更新 `docs/工程进度/功能实现总览.md`：
+  - 在 3.3 节合适位置新增 `- [x] README 缓存软过期(softTtl) + 404 session 缓存` 条目 + `> 实现：...` 行
+  - 顶部「最近更新」刷新
+  - 「变更日志」追加一行
+
+### 已知风险与约束
+
+- **风险 R1.1**：`sessionNotFound` 在 ViewModel 销毁后丢失。若用户在设置里"清空缓存"或冷启动，404 会重新请求一次——可接受（README 也许被作者补上）。
+- **约束 C1.1**：softTtl 暂不暴露到 Settings，硬编码 6h。Settings 面板在 P2 接入。
+- **约束 C1.2**：ReadmeAPI 单测仍依赖 mock；URLProtocol stub（D-14）不在本期范围。
+
+---
+
+## Phase 2：SWR + API 拆分 + 重命名（预估 ~150 行）
+
+> ⚠️ **触发条件**：Phase 1 上线 + 验证 1-2 天无回归后再启动。两期不要混在一个 PR 里。
+
+### 任务清单
+
+- [ ] **T2.1** `Starcat/Core/Network/GitHubAPI/GitHubAPIClient.swift`：`getRaw` → `getBytes`；`RawAPIResponse` → `BytesResponse`；全局重命名（搜 `getRaw` / `RawAPIResponse` 全部替换，注释也跟着改）。
+- [ ] **T2.2** `Starcat/Core/Network/GitHubAPI/ReadmeAPI.swift`：新增 enum `ReadmeRefreshResult`：
+  ```swift
+  enum ReadmeRefreshResult {
+      case updated(Readme)       // 200，已写入本地
+      case notModified(Readme)   // 304，本地 cached_at 已 touch
+      case notFound              // 404
+      case failed(Error)         // 网络 / 解析错误，未抛出
+  }
+  ```
+- [ ] **T2.3** `ReadmeAPI.swift`：拆 `fetchHTML` 为两个方法：
+  - `func cachedReadme(repoId: Int64) async throws -> Readme?` — 纯读本地，等价于直接调 `repository.find(...)`
+  - `func refreshReadme(for repo: Repo, forceRefresh: Bool = false) async -> ReadmeRefreshResult` — 注意签名是 `async` 不 throws，所有错误包到 `.failed(error)`
+- [ ] **T2.4** `ReadmeAPI.swift`：删除旧 `fetchHTML(for:)`（无调用方了），删除 `fetchHTMLWithoutValidator`（合并进 refreshReadme 内部）。
+- [ ] **T2.5** `Starcat/Features/Home/ReadmeViewModel.swift`：重写 `load(repo:)` 为两段式：
+  ```
+  1. cachedReadme(repoId:) 同步读
+     - 有 cached 且 renderedHtml 非空 → 立即 state = .loaded
+     - 无 cached → state = .loading
+     - 是 sessionNotFound → state = .empty + return
+  2. 判断是否需要后台刷新
+     - 有 cached 且 cachedAt 在 softTtl 内 → 跳过
+     - 否则 → currentTask = Task { 调 refreshReadme → 按结果更新 state }
+  ```
+  - `isRefreshing` 状态**不暴露**给 UI（保持当前 5 态枚举不变）
+- [ ] **T2.6** `ReadmeViewModel.swift`：refreshReadme 返回 `.failed` 时，**只有 cached 不存在才转 .error**；有 cached 就静默保持 .loaded（按 §5.1 表格规则）。
+- [ ] **T2.7** `Starcat/App/AppDependencies.swift`：检查 ReadmeAPI 注入是否需要调整（不应该需要，但确认一下）。
+- [ ] **T2.8** 单测：
+  - 已有 `ReadmeRepositoryTests` 5 项保持不变（Repository 层未改）
+  - 新增 ReadmeAPI 层 mock 单测（与 T1.8 共用 mock client），覆盖 cachedReadme / refreshReadme 各分支
+- [ ] **T2.9** 编译 + 全量单测全绿。
+- [ ] **T2.10** 手动验证：
+  - 切 repo（无缓存）→ skeleton → 加载完成
+  - 切回之前看过的 repo（cached_at < 6h）→ 立即显示，无网络请求
+  - 切到 cached_at > 6h 的 repo → 立即显示旧 HTML + Console 看到后台 refresh 日志 → 新 HTML 无感替换
+  - 后台 refresh 失败（断网模拟）→ 旧 HTML 仍显示，不弹错误
+- [ ] **T2.11** 更新 `docs/工程进度/功能实现总览.md`：
+  - 3.3 节新增 `- [x] README SWR + API 拆分` 条目 + `> 实现：...` 行
+  - 顶部「最近更新」刷新
+  - 「变更日志」追加一行
+
+### 已知风险与约束
+
+- **风险 R2.1**：API 拆分是结构性改动，没有 URLProtocol stub 时单测靠 mock 拼，覆盖率比 Repository 层低。**缓解**：T2.10 的手动验证 4 个场景必须全过。
+- **风险 R2.2**：`refreshReadme` 改为 `async` 不 throws 后，调用方处理逻辑变化大；建议先小范围 review 再合并。
+- **约束 C2.1**：UI 层不引入 `isRefreshing` 显示，保持 5 态状态机。若未来用户反馈"想看到正在刷新"，再加。
+
+---
+
+## 13.1 跨 Phase 共用工作
+
+- [ ] **TX.1** Phase 1 / Phase 2 各自的代码评审 — 由 dong4j 在 PR 阶段把关。
+- [ ] **TX.2** Phase 2 合并后，在 `docs/详细设计/readme.md-渲染设计.md` §10「最终我会采用的版本」对照实际实现做一次校对（确认架构图与代码一致），不一致处更新文档。
+- [ ] **TX.3** 把 §12.3 两点订正同步告知原文档作者（如果是外部评审），避免对方在其他项目里基于同样的误解再做决策。
+
+---
+
+*评审 + TODO 编排完成时间：2026-05-30 20:00。等待 dong4j 二次确认后启动 Phase 1。*
