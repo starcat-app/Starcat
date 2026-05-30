@@ -80,6 +80,7 @@ struct HomeView: View {
         .searchable(text: $vm.searchQuery, placement: .toolbar, prompt: "搜索仓库")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                multiSelectButton
                 tagManagementButton
                 syncButton
             }
@@ -123,6 +124,21 @@ struct HomeView: View {
     }
 
     // MARK: - Toolbar 子组件
+
+    /// W4 A5：多选模式 toggle。开启后列表切换到多选 + 弹出底部操作栏。
+    /// 用 SF Symbol `checklist` 表达"批量操作"语义；按钮在多选模式时强调显示。
+    private var multiSelectButton: some View {
+        Button {
+            viewModel.toggleMultiSelectMode()
+        } label: {
+            Label(
+                viewModel.isMultiSelectMode ? "退出多选" : "多选",
+                systemImage: viewModel.isMultiSelectMode ? "checklist.checked" : "checklist"
+            )
+        }
+        .help(viewModel.isMultiSelectMode ? "退出多选模式" : "进入多选模式")
+        .keyboardShortcut("m", modifiers: [.command, .shift])
+    }
 
     /// W4 A2：标签管理入口。点击弹 sheet。
     private var tagManagementButton: some View {

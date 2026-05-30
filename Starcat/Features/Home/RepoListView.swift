@@ -32,12 +32,21 @@ struct RepoListView: View {
                 emptyState(systemImage: "exclamationmark.triangle", title: "加载失败", subtitle: error)
             } else if viewModel.items.isEmpty {
                 emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
+            } else if viewModel.isMultiSelectMode {
+                // W4 A5：多选模式 List binding 类型不同，必须分开渲染
+                multiSelectList($vm.multiSelectedRepoIDs)
             } else {
                 listContent($vm.selectedRepoID)
             }
         }
         .navigationTitle(navigationTitle)
-        .navigationSubtitle("\(viewModel.items.count) 个仓库")
+        .navigationSubtitle(navigationSubtitle)
+        // W4 A5：多选模式底部浮动操作栏
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if viewModel.isMultiSelectMode {
+                BatchActionBar()
+            }
+        }
     }
 
     // MARK: - 列表主体
@@ -54,6 +63,25 @@ struct RepoListView: View {
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
+    }
+
+    /// W4 A5：多选 List。binding 类型 `Set<Int64>` → SwiftUI 自动启用多选行为。
+    /// macOS 用户用 Cmd / Shift 加选，行级 checkbox 不必显式画。
+    private func multiSelectList(_ selection: Binding<Set<Int64>>) -> some View {
+        List(selection: selection) {
+            ForEach(viewModel.items) { repo in
+                RepoRowView(repo: repo, density: settings.listDensity)
+            }
+        }
+        .listStyle(.inset)
+        .alternatingRowBackgrounds()
+    }
+
+    private var navigationSubtitle: String {
+        if viewModel.isMultiSelectMode {
+            return "已选 \(viewModel.multiSelectedRepoIDs.count) / \(viewModel.items.count)"
+        }
+        return "\(viewModel.items.count) 个仓库"
     }
 
     // MARK: - 标题派生

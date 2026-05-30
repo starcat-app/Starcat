@@ -81,6 +81,41 @@ final class HomeViewModel {
     /// Languages 聚合（Sidebar Languages 组）。D-04：`private(set)` 收敛。
     private(set) var languageStats: [LanguageStat] = []
 
+    // MARK: - 多选模式（W4 A5）
+
+    /// 是否进入多选模式。开启后中栏 List 切换到多选 selection binding。
+    /// D-04 风格：`private(set)`，UI 通过 `toggleMultiSelectMode()` 切换。
+    private(set) var isMultiSelectMode: Bool = false
+
+    /// 多选模式下选中的 repo id 集合。SwiftUI List(selection:) 双向绑定，
+    /// 所以这里必须可写。退出多选模式时由 `exitMultiSelectMode()` 清空。
+    var multiSelectedRepoIDs: Set<Int64> = []
+
+    /// 切换多选模式。
+    /// 切入：清空单选 selectedRepoID（避免详情页显示残留）；
+    /// 切出：清空 multiSelectedRepoIDs（避免下次切入时出现脏数据）。
+    func toggleMultiSelectMode() {
+        if isMultiSelectMode {
+            exitMultiSelectMode()
+        } else {
+            enterMultiSelectMode()
+        }
+    }
+
+    func enterMultiSelectMode() {
+        isMultiSelectMode = true
+        // 把当前单选自动作为多选首项，符合"先选一个再扩选"的直觉
+        if let id = selectedRepoID {
+            multiSelectedRepoIDs = [id]
+        }
+        selectedRepoID = nil
+    }
+
+    func exitMultiSelectMode() {
+        isMultiSelectMode = false
+        multiSelectedRepoIDs = []
+    }
+
     // MARK: - 依赖
 
     /// D-01：依赖协议而非具体 struct，便于单测注入 Mock。
