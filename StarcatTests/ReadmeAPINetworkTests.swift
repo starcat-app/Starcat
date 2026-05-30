@@ -1,0 +1,263 @@
+//
+//  ReadmeAPINetworkTests.swift
+//  StarcatTests
+//
+//  ReadmeAPI 网络路径单测（还 T2.8 延期项 + D-14 配套）。
+//
+//  覆盖 `refreshReadme(for:) async -> ReadmeRefreshResult` 4 个返回分支：
+//  - `.updated(Readme)`     ← 200 → upsert 到本地 + 返回新 Readme
+//  - `.notModified(Readme)` ← 304 → 仅 touch cached_at + 返回旧 Readme
+//  - `.notFound`            ← 404 → 删除本地旧缓存 + 返回 notFound
+//  - `.failed(Error)`       ← transport / 5xx → 包到 .failed 不抛
+//
+//  以及 `cachedReadme(repoId:)` 的本地读路径（命中 / 未命中）。
+//
+//  设计：
+//  - `MockGitHubAPIClient`：实现 `GitHubAPIClientProtocol`，stub `readmeHTML` 返回值（D-02 协议解锁）
+//  - `ReadmeRepository`：真接 GRDB 内存库（行为级测试更可信）
+//  - `Repo` 测试 fixture：通过 `Self.makeRepoAndDb()` 写入一行 + 返回 repoId
+//
+
+import Testing
+import Foundation
+import GRDB
+@testable import Starcat
+
+@Suite("ReadmeAPI 网络路径分支")
+struct ReadmeAPINetworkTests {
+
+    // MARK: - Fixtures
+
+    /// 构造内存数据库 + 写一个 repo 行（满足 readmes.repo_id 外键）+ ReadmeRepository。
+    /// 返回 (api, mock, repo, readmeRepo, db)，调用方按需用。
+    private func makeAPI() async throws -> (
+        ReadmeAPI,
+        MockGitHubAPIClient,
+        Repo,
+        ReadmeRepository,
+        any DatabaseManaging
+    ) {
+        let db = try InMemoryDatabaseManager()
+        let readmeRepo = ReadmeRepository(database: db)
+        let repoId: Int64 = 99
+
+        try await db.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO repos (
+                    id, owner, name, full_name, description, language,
+                    stars_count, forks_count, watchers_count, topics, license,
+                    homepage, html_url, clone_url, ssh_url,
+                    is_private, is_fork, is_archived, is_starred,
+                    pushed_at, created_at, updated_at, starred_at, cached_at
+                ) VALUES (
+                    ?, 'alice', 'foo', 'alice/foo', 'd', 'Swift',
+                    0, 0, 0, '[]', NULL,
+                    NULL, 'https://github.com/alice/foo', NULL, NULL,
+                    0, 0, 0, 1,
+                    NULL, NULL, NULL, NULL, '2026-05-30T00:00:00Z'
+                )
+                """,
+                arguments: [repoId]
+            )
+        }
+
+        // 构造 Repo 实例供 refreshReadme 调用
+        let repo = Repo(
+            id: repoId,
+            owner: "alice",
+            name: "foo",
+            fullName: "alice/foo",
+            description: "d",
+            language: "Swift",
+            starsCount: 0, forksCount: 0, watchersCount: 0,
+            topics: nil, license: nil, homepage: nil,
+            htmlUrl: "https://github.com/alice/foo",
+            cloneUrl: nil, sshUrl: nil,
+            isPrivate: false, isFork: false, isArchived: false, isStarred: true,
+            pushedAt: nil, createdAt: nil, updatedAt: nil, starredAt: nil,
+            cachedAt: "2026-05-30T00:00:00Z"
+        )
+
+        let mock = MockGitHubAPIClient()
+        let api = ReadmeAPI(client: mock, repository: readmeRepo)
+        return (api, mock, repo, readmeRepo, db)
+    }
+
+    private func makeReadme(repoId: Int64, html: String, etag: String? = "\"old-etag\"", cachedAt: String = "2026-05-29T00:00:00Z") -> Readme {
+        Readme(
+            repoId: repoId,
+            content: nil,
+            renderedHtml: html,
+            etag: etag,
+            lastModified: nil,
+            cachedAt: cachedAt,
+            size: html.utf8.count
+        )
+    }
+
+    // MARK: - refreshReadme: 4 个分支
+
+    @Test("refreshReadme: 200 → .updated + 本地 upsert")
+    func refresh200Updated() async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+        let newHTML = "<h1>New README</h1>"
+
+        mock.readmeHTMLHandler = { owner, name, ifNoneMatch, ifModifiedSince in
+            #expect(owner == "alice")
+            #expect(name == "foo")
+            #expect(ifNoneMatch == nil)        // 本地无缓存 → 不带 validator
+            #expect(ifModifiedSince == nil)
+            return BytesResponse.ok(
+                data: newHTML.data(using: .utf8)!,
+                etag: "\"new-etag\""
+            )
+        }
+
+        let result = await api.refreshReadme(for: repo)
+
+        guard case let .updated(updated) = result else {
+            Issue.record("期望 .updated，实际: \(result)")
+            return
+        }
+        #expect(updated.renderedHtml == newHTML)
+        #expect(updated.etag == "\"new-etag\"")
+
+        // 验证落库
+        let cached = try await readmeRepo.find(repoId: repo.id)
+        #expect(cached?.renderedHtml == newHTML)
+        #expect(cached?.etag == "\"new-etag\"")
+    }
+
+    @Test("refreshReadme: 304 + 本地有缓存 → .notModified + cachedAt touch")
+    func refresh304NotModified() async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+        let oldHTML = "<p>Old cached</p>"
+        let oldReadme = makeReadme(repoId: repo.id, html: oldHTML, cachedAt: "2026-01-01T00:00:00Z")
+        try await readmeRepo.upsert(oldReadme)
+
+        mock.readmeHTMLHandler = { owner, name, ifNoneMatch, _ in
+            // 应带上本地 etag 做条件请求
+            #expect(ifNoneMatch == "\"old-etag\"")
+            return BytesResponse.notModified304(etag: "\"old-etag\"")
+        }
+
+        let result = await api.refreshReadme(for: repo)
+
+        guard case let .notModified(touched) = result else {
+            Issue.record("期望 .notModified，实际: \(result)")
+            return
+        }
+        // HTML 没变
+        #expect(touched.renderedHtml == oldHTML)
+        // cachedAt 被 touch（>= 旧值）
+        #expect(touched.cachedAt > "2026-01-01T00:00:00Z")
+
+        // 落库也被 touch
+        let cached = try await readmeRepo.find(repoId: repo.id)
+        #expect(cached?.cachedAt ?? "" > "2026-01-01T00:00:00Z")
+    }
+
+    @Test("refreshReadme: 404 + 本地有旧缓存 → .notFound + 删除旧缓存")
+    func refresh404DeletesCache() async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+        try await readmeRepo.upsert(makeReadme(repoId: repo.id, html: "stale"))
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            throw NetworkError.notFound
+        }
+
+        let result = await api.refreshReadme(for: repo)
+
+        guard case .notFound = result else {
+            Issue.record("期望 .notFound，实际: \(result)")
+            return
+        }
+        // 旧缓存被删
+        let cached = try await readmeRepo.find(repoId: repo.id)
+        #expect(cached == nil)
+    }
+
+    @Test("refreshReadme: 404 + 本地无缓存 → .notFound（无删除噪音）")
+    func refresh404NoCache() async throws {
+        let (api, mock, repo, _, _) = try await makeAPI()
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            throw NetworkError.notFound
+        }
+
+        let result = await api.refreshReadme(for: repo)
+
+        guard case .notFound = result else {
+            Issue.record("期望 .notFound，实际: \(result)")
+            return
+        }
+    }
+
+    @Test("refreshReadme: transport error → .failed（错误不抛，被包到 .failed）")
+    func refreshTransportFailed() async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+        try await readmeRepo.upsert(makeReadme(repoId: repo.id, html: "old"))
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            throw NetworkError.transport(underlying: URLError(.timedOut))
+        }
+
+        let result = await api.refreshReadme(for: repo)
+
+        guard case let .failed(error) = result else {
+            Issue.record("期望 .failed，实际: \(result)")
+            return
+        }
+        // 包的是 transport
+        if case NetworkError.transport = error {
+            // 通过
+        } else {
+            Issue.record("期望 .failed 包 NetworkError.transport，实际: \(error)")
+        }
+
+        // SWR 关键：失败时旧缓存保留（refreshReadme 不删）
+        let cached = try await readmeRepo.find(repoId: repo.id)
+        #expect(cached?.renderedHtml == "old", "失败时旧缓存必须保留，让上层 SWR 兜底显示")
+    }
+
+    @Test("refreshReadme: 5xx → .failed（serverError 包到 .failed）")
+    func refresh500Failed() async throws {
+        let (api, mock, repo, _, _) = try await makeAPI()
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            throw NetworkError.serverError(statusCode: 502)
+        }
+
+        let result = await api.refreshReadme(for: repo)
+        guard case let .failed(error) = result else {
+            Issue.record("期望 .failed，实际: \(result)")
+            return
+        }
+        if case NetworkError.serverError(let code) = error {
+            #expect(code == 502)
+        } else {
+            Issue.record("期望 .failed 包 serverError，实际: \(error)")
+        }
+    }
+
+    // MARK: - cachedReadme（纯本地读路径）
+
+    @Test("cachedReadme: 本地命中 → 返回 Readme")
+    func cachedHit() async throws {
+        let (api, _, repo, readmeRepo, _) = try await makeAPI()
+        let readme = makeReadme(repoId: repo.id, html: "local")
+        try await readmeRepo.upsert(readme)
+
+        let cached = try await api.cachedReadme(repoId: repo.id)
+        #expect(cached?.renderedHtml == "local")
+    }
+
+    @Test("cachedReadme: 本地未命中 → 返回 nil")
+    func cachedMiss() async throws {
+        let (api, _, repo, _, _) = try await makeAPI()
+
+        let cached = try await api.cachedReadme(repoId: repo.id)
+        #expect(cached == nil)
+    }
+}

@@ -1,0 +1,126 @@
+//
+//  MockGitHubAPIClient.swift
+//  StarcatTests
+//
+//  `GitHubAPIClientProtocol` 的纯内存 Mock 实现（D-14 配套，给 ReadmeAPI 等"中层 API
+//  协调器"做单测用）。
+//
+//  设计理由：
+//  - `URLProtocolStub` 适合测 `GitHubAPIClient` 本身的网络层（HTTP 状态码 / Header 解析等）
+//  - 但测 `ReadmeAPI`（依赖 `client.readmeHTML(...)` + `ReadmeRepository`）时，没必要再起 URLSession：
+//    直接 mock 协议方法返回 `BytesResponse` / 错误，路径更短、断言更直接
+//
+//  使用模式：
+//
+//  ```swift
+//  let mock = MockGitHubAPIClient()
+//  mock.readmeHTMLHandler = { owner, repo, etag, lastMod in
+//      return BytesResponse(data: htmlBytes, etag: "\"abc\"", lastModified: nil,
+//                           statusCode: 200, notModified: false, rateLimit: .empty)
+//  }
+//  let api = ReadmeAPI(client: mock, repository: readmeRepo)
+//  let result = await api.refreshReadme(for: someRepo)
+//  ```
+//
+//  没设置 handler 的方法被调用 → 直接 `fatalError`（fail-fast，让测试明确"你忘了 stub"）。
+//
+
+import Foundation
+@testable import Starcat
+
+/// `GitHubAPIClientProtocol` 的可注入 Mock。
+/// 每个方法都对应一个 handler 闭包；未设置的 handler 调用会 fatalError。
+///
+/// `final class` + `@unchecked Sendable`：协议要求 Sendable；mock 假定测试单线程串行使用，不做严格 isolation。
+final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
+
+    // MARK: - Handlers（每方法一个）
+
+    var starredReposHandler: ((_ page: Int, _ perPage: Int) async throws -> APIResponse<[StarredRepoDTO]>)?
+    var unstarHandler: ((_ owner: String, _ repo: String) async throws -> Void)?
+    var starHandler: ((_ owner: String, _ repo: String) async throws -> Void)?
+    var getCurrentUserHandler: (() async throws -> GitHubUserDTO)?
+    var readmeHTMLHandler: ((_ owner: String, _ repo: String, _ ifNoneMatch: String?, _ ifModifiedSince: String?) async throws -> BytesResponse)?
+
+    // MARK: - 调用记录（供断言用）
+
+    private(set) var readmeHTMLCalls: [(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)] = []
+
+    // MARK: - Protocol conformance
+
+    func starredRepos(page: Int, perPage: Int) async throws -> APIResponse<[StarredRepoDTO]> {
+        guard let handler = starredReposHandler else {
+            fatalError("MockGitHubAPIClient.starredReposHandler 未设置")
+        }
+        return try await handler(page, perPage)
+    }
+
+    func unstar(owner: String, repo: String) async throws {
+        guard let handler = unstarHandler else {
+            fatalError("MockGitHubAPIClient.unstarHandler 未设置")
+        }
+        try await handler(owner, repo)
+    }
+
+    func star(owner: String, repo: String) async throws {
+        guard let handler = starHandler else {
+            fatalError("MockGitHubAPIClient.starHandler 未设置")
+        }
+        try await handler(owner, repo)
+    }
+
+    func getCurrentUser() async throws -> GitHubUserDTO {
+        guard let handler = getCurrentUserHandler else {
+            fatalError("MockGitHubAPIClient.getCurrentUserHandler 未设置")
+        }
+        return try await handler()
+    }
+
+    func readmeHTML(
+        owner: String,
+        repo: String,
+        ifNoneMatch: String?,
+        ifModifiedSince: String?
+    ) async throws -> BytesResponse {
+        readmeHTMLCalls.append((owner, repo, ifNoneMatch, ifModifiedSince))
+        guard let handler = readmeHTMLHandler else {
+            fatalError("MockGitHubAPIClient.readmeHTMLHandler 未设置")
+        }
+        return try await handler(owner, repo, ifNoneMatch, ifModifiedSince)
+    }
+}
+
+// MARK: - 构造便利
+
+extension RateLimitInfo {
+    /// 测试用空速率信息（避免 mock 时反复写完整结构）。
+    static var empty: RateLimitInfo {
+        RateLimitInfo(limit: nil, remaining: nil, reset: nil)
+    }
+}
+
+extension BytesResponse {
+    /// 测试便利：构造 200 响应。
+    static func ok(data: Data, etag: String? = nil, lastModified: String? = nil) -> BytesResponse {
+        BytesResponse(
+            data: data,
+            etag: etag,
+            lastModified: lastModified,
+            statusCode: 200,
+            notModified: false,
+            rateLimit: .empty
+        )
+    }
+
+    /// 测试便利：构造 304 响应（空 body）。
+    static func notModified304(etag: String? = nil, lastModified: String? = nil) -> BytesResponse {
+        BytesResponse(
+            data: Data(),
+            etag: etag,
+            lastModified: lastModified,
+            statusCode: 304,
+            notModified: true,
+            rateLimit: .empty
+        )
+    }
+}

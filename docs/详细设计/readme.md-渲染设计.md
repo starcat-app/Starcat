@@ -932,7 +932,7 @@ ReadmeViewModel
 > 评估原则：Simplicity First / Surgical Changes / 不为想象中的灵活性提前做（详见用户全局规则）。
 > 评审日期：2026-05-30 20:00
 > 状态：✅ dong4j 已确认按 §12.2「推荐执行顺序」实施。
-> 进度：Phase 1 + Phase 2 全部完成并通过 dong4j 手动验证（2026-05-30 21:00）。下一步等 D-14 URLProtocol stub 落地后补 ReadmeAPI 网络路径自动化单测（T2.8 延期项）。
+> 进度：Phase 1 + Phase 2 全部完成并通过 dong4j 手动验证（2026-05-30 21:00）。T2.8 延期项已于 2026-05-30 22:07 随 D-14 一并落地（URLProtocolStub + MockGitHubAPIClient + ReadmeAPINetworkTests 8 项分支单测）。**本设计文档进入完全归档态**。
 
 ## 12.1 分级评估
 
@@ -1065,7 +1065,7 @@ ReadmeViewModel
 - [x] **T1.5** `ReadmeViewModel.swift`：load 路径合并为 `loadInternal(repo:forceRefresh:)`；自动加载分支（forceRefresh=false）开头检查 sessionNotFound → 直接 `.empty`。
 - [x] **T1.6** `ReadmeViewModel.swift`：`loadInternal` 的 `catch NetworkError.notFound` 分支追加 `self.sessionNotFound.insert(requestedId)`。
 - [x] **T1.7** `ReadmeViewModel.swift`：`reload(repo:)` 调用 `loadInternal(repo:, forceRefresh: true)`；forceRefresh 路径开头 `sessionNotFound.remove(repo.id)`（给一次重试机会）。
-- [x] **T1.8** `StarcatTests/ReadmeAPITTLTests.swift`：新建文件，覆盖 5 个纯函数 case（within / expired / boundary / invalid string / clock drift）。**未做"是否真的没调 client"的网络路径测试**——`GitHubAPIClient` 是 concrete actor 无协议抽象，要等 D-14 URLProtocol stub 落地后一起补。
+- [x] **T1.8** `StarcatTests/ReadmeAPITTLTests.swift`：新建文件，覆盖 5 个纯函数 case（within / expired / boundary / invalid string / clock drift）。"是否真的没调 client" 的网络路径测试已于 2026-05-30 22:07 随 D-14 + T2.8 落地（`ReadmeAPINetworkTests` 8 项）。
 - [x] **T1.9** 编译 + 全量单测全绿：`TEST SUCCEEDED`，52 tests in 11 suites（新增 1 个 Suite "ReadmeAPI softTtl 短路"，5 项）。
 - [x] **T1.10** Phase 1 手动验证 — **2026-05-30 21:00 通过（T2.10 等价覆盖）**
   > 实现：原始验证项是 "连续切 3 次同一个 repo → Console 只看到 1 次 `GET-raw /repos/.../readme`；点'刷新'按钮 → 1 次 `GET-raw` + ETag 校验"。dong4j 执行的 T2.10 场景 ②（"切回之前看过的 repo, cached_at < 6h → 立即显示, 无网络请求"）和场景 ③（"点刷新 → 看到 304 / 200"）已等价覆盖本验证项。**注意：Phase 2 命名重构后日志字符串从 `GET-raw` 改为 `GET-bytes`**，T1.10 原文未来回看时按新字符串搜即可。
@@ -1075,7 +1075,7 @@ ReadmeViewModel
 
 - **风险 R1.1**：`sessionNotFound` 在 ViewModel 销毁后丢失。若用户在设置里"清空缓存"或冷启动，404 会重新请求一次——可接受（README 也许被作者补上）。
 - **约束 C1.1**：softTtl 暂不暴露到 Settings，硬编码 6h。Settings 面板在 P2 接入。
-- **约束 C1.2**：ReadmeAPI 单测仍依赖 mock；URLProtocol stub（D-14）不在本期范围。
+- **约束 C1.2**（2026-05-30 22:07 已解除）：ReadmeAPI 单测原依赖 mock；D-14 URLProtocol stub + MockGitHubAPIClient + T2.8 已落地。
 - **新增约束 C1.3**（落地后追加）：`sessionNotFound` 行为与 softTtl 短路真实生效路径都未在自动化测试中验证，全靠 T1.10 手动验证 + 代码 review 兜底。Phase 2 在引入 API 拆分时若顺便引入轻量协议抽象，可一并补完整。
 
 ---
@@ -1134,8 +1134,8 @@ ReadmeViewModel
   > 实现：用 `hasUsableCache: Bool` 局部变量在 Task 内传递缓存是否可用。`.failed` 分支判断 `hasUsableCache`：true → `AppLog.network.debug("...保持已显示")` 静默；false → `AppLog.network.error("...")` + `state = .error`。
 - [x] **T2.7** `Starcat/App/AppDependencies.swift`：检查 ReadmeAPI 注入是否需要调整（不应该需要，但确认一下）。— **2026-05-30 21:00 完成**
   > 实现：确认无需改动。`ReadmeAPI(client: api, repository: readmeRepo)` 构造函数签名 Phase 2 没改。
-- [~] **T2.8** 单测：~~新增 ReadmeAPI 层 mock 单测，覆盖 cachedReadme / refreshReadme 各分支~~ — **延期到 D-14**（按 §12.1 决策；不阻塞 Phase 2 收尾）
-  > 实现说明：Phase 2 不新增单测。已有的 5 项 `ReadmeRepositoryTests` + 5 项 `ReadmeAPITTLTests`（`isWithinSoftTtl` 纯函数）继续有效。`cachedReadme` 是 `repository.find` 的转发，trivial 不必单测。`refreshReadme` 的 304/404/200/transport 分支需要 mock 网络层，等 D-14（URLProtocol stub）落地后一起补。**临时缓解（已生效）**：T2.10 4 场景手动验证全部通过。条目标记为 `[~]` 表示 "已主动延期，跟踪在技术债 D-14"。
+- [x] **T2.8** 单测：新增 ReadmeAPI 层 mock 单测，覆盖 cachedReadme / refreshReadme 各分支 — **2026-05-30 22:07 完成（commit `test: add URLProtocolStub + network path tests`，与 D-14 同批）**
+  > 实现：新增 `MockGitHubAPIClient`（实现 `GitHubAPIClientProtocol` 的 stub 实现，每方法 handler 闭包）+ `ReadmeAPINetworkTests`（8 项）。refreshReadme 覆盖 4 个分支：.updated（200+body / upsert）/ .notModified（304 / touch cachedAt）/ .notFound（404 / 删旧缓存）/ .failed（transport error / serverError 500，**关键：旧缓存必须保留**给 SWR 用）；cachedReadme 覆盖命中 / 未命中。MockGitHubAPIClient 用 closure-based stub 而非 protocol witness 子类，灵活性最高、测试代码可读性也最好。已知约束：因 `Readme.size` 是 `Int`，helper 不能传 `Int64(...)`。
 - [x] **T2.9** 编译 + 全量单测全绿。— **2026-05-30 21:00 完成（52 项全绿）**
   > 实现：`xcodebuild -scheme Starcat -destination 'platform=macOS' test` 返回 `Test run with 52 tests in 11 suites passed after 0.387 seconds. ** TEST SUCCEEDED **`。我的改动零警告零错误（项目内已有的 KeychainManager `@preconcurrency` 警告和 `linkd.autoShortcut` 系统噪音不是 Phase 2 引入）。
 - [x] **T2.10** 手动验证 — **2026-05-30 21:00 dong4j 验证通过**
@@ -1153,7 +1153,7 @@ ReadmeViewModel
 
 ### 已知风险与约束
 
-- **风险 R2.1**（已解除，2026-05-30 21:00）：API 拆分是结构性改动，没有 URLProtocol stub 时单测靠 mock 拼，覆盖率比 Repository 层低。**缓解**：T2.10 的手动验证 4 个场景**已全部通过**（dong4j 执行）。后续待 D-14 URLProtocol stub 落地后补 ReadmeAPI 自动化单测，把覆盖率彻底补齐。
+- **风险 R2.1**（已彻底解除，2026-05-30 22:07）：API 拆分是结构性改动，没有 URLProtocol stub 时单测靠 mock 拼，覆盖率比 Repository 层低。**缓解**：T2.10 的手动验证 4 个场景**已全部通过**（dong4j 执行，2026-05-30 21:00）；D-14 URLProtocol stub + T2.8 ReadmeAPI 网络路径单测 8 项**已于 2026-05-30 22:07 全绿**，自动化覆盖完成。
 - **风险 R2.2**（已落地）：`refreshReadme` 改为 `async` 不 throws 后，调用方处理逻辑变化大。**实际落地**：ReadmeViewModel 用 switch + hasUsableCache 局部变量处理 4 个 case，代码清晰度反而比原 throws + catch 更高。
 - **约束 C2.1**（已遵守）：UI 层不引入 `isRefreshing` 显示，保持 5 态状态机。
 - **新增约束 C2.2**（已解除，2026-05-30 21:00）：本次同日合并 Phase 1+Phase 2，未给 Phase 1 完整 1-2 天验证期。~~如果 T2.10 在手动验证中发现回归，需要快速二分定位是 Phase 1 还是 Phase 2 引入的（Phase 1 的核心变化是 softTtl + sessionNotFound；Phase 2 的核心变化是 SWR 三阶段 + API 拆分）。~~ **dong4j T2.10 4 场景手动验证全部通过，叠加风险排除。**
