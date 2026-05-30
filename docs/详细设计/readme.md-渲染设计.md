@@ -931,7 +931,8 @@ ReadmeViewModel
 > **本节是对 5–9 节优化建议的评估、决策与执行计划。**
 > 评估原则：Simplicity First / Surgical Changes / 不为想象中的灵活性提前做（详见用户全局规则）。
 > 评审日期：2026-05-30 20:00
-> 状态：✅ dong4j 已确认按 §12.2「推荐执行顺序」实施；待 §13 TODO list 二次确认后启动编码。
+> 状态：✅ dong4j 已确认按 §12.2「推荐执行顺序」实施。
+> 进度：Phase 1 已完成（2026-05-30 20:30）；Phase 2 待 Phase 1 在生产验证 1–2 天无回归后启动。
 
 ## 12.1 分级评估
 
@@ -1041,38 +1042,35 @@ ReadmeViewModel
 
 ## Phase 1：softTtl + 404 session 缓存（预估 ~50 行）
 
+**✅ Phase 1 已完成（2026-05-30 20:30）**。实际改动 2 文件 + 新增 1 测试文件 + `.pbxproj` 注册；新增 5 项单测；47 → 52 项全绿。
+
 ### 任务清单
 
-- [ ] **T1.1** `Starcat/Core/Network/GitHubAPI/ReadmeAPI.swift`：新增 `static let softTtl: TimeInterval = 6 * 3600`（注释说明：6h 内同一 repo 不再发条件请求；用户手动刷新可绕过）。
-- [ ] **T1.2** `ReadmeAPI.swift`：`fetchHTML(for:)` 方法签名改为 `fetchHTML(for repo: Repo, forceRefresh: Bool = false) async throws -> Readme`。
-- [ ] **T1.3** `ReadmeAPI.swift`：在 `existing = try await repository.find(...)` 之后立即加 softTtl 短路：
+- [x] **T1.1** `Starcat/Core/Network/GitHubAPI/ReadmeAPI.swift`：新增 `static let softTtl: TimeInterval = 6 * 3600`（注释说明：6h 内同一 repo 不再发条件请求；用户手动刷新可绕过）。
+- [x] **T1.2** `ReadmeAPI.swift`：`fetchHTML(for:)` 方法签名改为 `fetchHTML(for repo: Repo, forceRefresh: Bool = false) async throws -> Readme`。
+- [x] **T1.3** `ReadmeAPI.swift`：在 `existing = try await repository.find(...)` 之后立即加 softTtl 短路：
   ```
   若 forceRefresh == false && existing 不为 nil
     && existing.cachedAt 在 softTtl 内
     && existing.renderedHtml 非空
   → 直接 return existing，不发网络
   ```
-  注意 `cachedAt` 是 ISO8601 字符串，要 `parseISO8601` 解析后再比较。
-- [ ] **T1.4** `Starcat/Features/Home/ReadmeViewModel.swift`：新增 `private var sessionNotFound: Set<Int64> = []`。
-- [ ] **T1.5** `ReadmeViewModel.swift`：`load(repo:)` 开头检查 `if sessionNotFound.contains(repo.id) { state = .empty; return }`（注意要在 `currentTask?.cancel()` 之后、`state = .loading` 之前）。
-- [ ] **T1.6** `ReadmeViewModel.swift`：`load(repo:)` 的 `catch NetworkError.notFound` 分支里追加 `self.sessionNotFound.insert(requestedId)`。
-- [ ] **T1.7** `ReadmeViewModel.swift`：`reload(repo:)` 改为调用 `api.fetchHTML(for: repo, forceRefresh: true)`，且开头**移除** `sessionNotFound.remove(repo.id)`（用户主动刷新意味着想再试一次）。
-- [ ] **T1.8** `StarcatTests/`：新建 `ReadmeAPITTLTests.swift`（或挂到现有 `ReadmeRepositoryTests`），覆盖：
-  - 缓存在 softTtl 内 + forceRefresh=false → 直接返回缓存，不调用网络（用一个能记录调用次数的 mock client）
-  - 缓存在 softTtl 内 + forceRefresh=true → 走网络
-  - 缓存过期（cachedAt > softTtl 前）+ forceRefresh=false → 走网络
-- [ ] **T1.9** 编译 + 全量单测全绿（`xcodebuild ... test`）。
-- [ ] **T1.10** 手动验证：app 内连续切 3 次同一个 repo → Console 应只看到 1 次 `GET-raw /repos/.../readme` 网络日志（之前是 3 次）。
-- [ ] **T1.11** 更新 `docs/工程进度/功能实现总览.md`：
-  - 在 3.3 节合适位置新增 `- [x] README 缓存软过期(softTtl) + 404 session 缓存` 条目 + `> 实现：...` 行
-  - 顶部「最近更新」刷新
-  - 「变更日志」追加一行
+  注意 `cachedAt` 是 ISO8601 字符串，已提取 `static func isWithinSoftTtl(cachedAt:now:softTtl:)` 解析比较。
+- [x] **T1.4** `Starcat/Features/Home/ReadmeViewModel.swift`：新增 `private var sessionNotFound: Set<Int64> = []`。
+- [x] **T1.5** `ReadmeViewModel.swift`：load 路径合并为 `loadInternal(repo:forceRefresh:)`；自动加载分支（forceRefresh=false）开头检查 sessionNotFound → 直接 `.empty`。
+- [x] **T1.6** `ReadmeViewModel.swift`：`loadInternal` 的 `catch NetworkError.notFound` 分支追加 `self.sessionNotFound.insert(requestedId)`。
+- [x] **T1.7** `ReadmeViewModel.swift`：`reload(repo:)` 调用 `loadInternal(repo:, forceRefresh: true)`；forceRefresh 路径开头 `sessionNotFound.remove(repo.id)`（给一次重试机会）。
+- [x] **T1.8** `StarcatTests/ReadmeAPITTLTests.swift`：新建文件，覆盖 5 个纯函数 case（within / expired / boundary / invalid string / clock drift）。**未做"是否真的没调 client"的网络路径测试**——`GitHubAPIClient` 是 concrete actor 无协议抽象，要等 D-14 URLProtocol stub 落地后一起补。
+- [x] **T1.9** 编译 + 全量单测全绿：`TEST SUCCEEDED`，52 tests in 11 suites（新增 1 个 Suite "ReadmeAPI softTtl 短路"，5 项）。
+- [ ] **T1.10**（**由 dong4j 在 app 内手动验证**）：连续切 3 次同一个 repo → Console 应只看到 1 次 `GET-raw /repos/.../readme` 网络日志（之前是 3 次）；点底栏"刷新"按钮 → 应能看到一次 `GET-raw` + ETag 校验日志。
+- [x] **T1.11** 更新 `docs/工程进度/功能实现总览.md`：3.3 节追加 `[x] README 缓存软过期 + 404 session 缓存` + 实现说明；顶部「最近更新」+「变更日志」+ 仪表盘（33 → 34，47 → 52）。
 
 ### 已知风险与约束
 
 - **风险 R1.1**：`sessionNotFound` 在 ViewModel 销毁后丢失。若用户在设置里"清空缓存"或冷启动，404 会重新请求一次——可接受（README 也许被作者补上）。
 - **约束 C1.1**：softTtl 暂不暴露到 Settings，硬编码 6h。Settings 面板在 P2 接入。
 - **约束 C1.2**：ReadmeAPI 单测仍依赖 mock；URLProtocol stub（D-14）不在本期范围。
+- **新增约束 C1.3**（落地后追加）：`sessionNotFound` 行为与 softTtl 短路真实生效路径都未在自动化测试中验证，全靠 T1.10 手动验证 + 代码 review 兜底。Phase 2 在引入 API 拆分时若顺便引入轻量协议抽象，可一并补完整。
 
 ---
 
