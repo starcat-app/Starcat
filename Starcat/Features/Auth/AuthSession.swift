@@ -85,6 +85,14 @@ final class AuthSession {
     /// - "restore: network error" → 拉 /user 网络失败，token 仍保留
     /// - "restore: success" → 正常恢复
     func restoreSessionIfAvailable() async {
+        // 测试期跳过：ad-hoc 签名下 keychain.loadGithubToken() 会触发 ACL 授权弹窗，
+        // 测试 host 无窗口接收 → 主线程 hang → testmanagerd 超时。
+        // 详见 docs/工程进度/2026-05-30-Keychain-临时绕过方案.md
+        if TestEnvironment.isRunning {
+            AppLog.auth.info("restore: test host detected, skip session restore")
+            return
+        }
+
         let tokenOpt: String?
         do {
             tokenOpt = try keychain.loadGithubToken()

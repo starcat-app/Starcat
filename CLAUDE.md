@@ -39,6 +39,39 @@
 
 ---
 
+## 🧪 如何跑单测（必读，2026-05-31 起生效）
+
+**先决条件**：跑测前**关闭 Xcode IDE**（Cmd+Q），或者就直接在 IDE 里 Cmd+U 跑——不要并发跑命令行 + IDE，会抢同一个 `testmanagerd`。
+
+### 命令行
+
+```bash
+# 同步 project（每次新增 / 删除 swift 文件后必跑）
+xcodegen generate
+
+# 跑全部
+xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
+
+# 只跑某个 Suite
+xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
+  -only-testing:StarcatTests/TagRepositoryTests test
+```
+
+预期：`✔ Test run with NNN tests in M suites passed after X.X seconds.`
+
+### 三个已知陷阱
+
+1. **测试启动期弹"Keychain 授权"对话框 → testmanagerd 5.5min 超时 hang**
+   - 根因：ad-hoc 签名 + ACL 不匹配
+   - 防护：`TestEnvironment.isRunning` 在 `StarcatApp.bootstrap()` / `AuthSession.restoreSessionIfAvailable()` 顶部跳过 keychain
+   - **新增任何 "启动期主动调 Keychain / 系统授权" 的代码，必须用 `TestEnvironment.isRunning` 门控**
+2. **xcodebuild test 与 Xcode IDE 抢 testmanagerd** → 关 IDE 或只用 IDE
+3. **新增 swift 文件后必须 `xcodegen generate`** → 否则 xcodebuild 看不到
+
+详见 `AGENTS.md` 同名章节（含更详细背景与命令）。
+
+---
+
 ## 项目概述
 
 **Starcat** 是一款面向 Apple 平台的 GitHub Star 管理工具，将扁平的 GitHub 收藏转化为可搜索、AI 驱动的知识库。

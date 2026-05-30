@@ -36,6 +36,69 @@
 
 ---
 
+## 🧪 如何跑单测（必读，2026-05-31 起生效）
+
+**当前最低要求**：跑测前**关闭 Xcode IDE**（Cmd+Q），否则 `xcodebuild test` 与 IDE 抢占同一 `testmanagerd` 实例，可能挂起。
+
+### A. 命令行（CI 友好，推荐 AI Agent 用）
+
+```bash
+# 1) 把 xcodegen 生成的 project 同步到最新（每次新增 / 删除 swift 文件后必跑）
+xcodegen generate
+
+# 2) 跑全部单测
+xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
+
+# 2.1) 只跑某个 Suite（迭代时省时间）
+xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
+  -only-testing:StarcatTests/TagRepositoryTests test
+
+# 2.2) 同时跑多个 Suite
+xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
+  -only-testing:StarcatTests/TagRepositoryTests \
+  -only-testing:StarcatTests/RepoTagRepositoryTests test
+```
+
+预期输出形如：
+
+```
+✔ Test "..." passed after 0.003 seconds.
+...
+✔ Test run with 110 tests in N suites passed after 0.X seconds.
+```
+
+### B. Xcode IDE（人工验证用）
+
+在 Xcode 打开 `Starcat.xcodeproj` → Cmd+U 跑全部，或 ⌃⌥⌘U 选择性跑。
+
+### ⚠️ 已知问题 #1：测试 host 启动期弹"Keychain 授权"对话框
+
+**症状**：
+- 命令行 `xcodebuild test` 5.5min 后报 `The test runner hung before establishing connection.`
+- 屏幕上可能出现 *"Starcat 想要使用你储存在钥匙串的 com.starcat.app 中的机密信息"* 对话框
+
+**根因**：
+- ad-hoc 签名下，每次构建后 App 的 code-signature hash 都变，与历史 keychain item ACL 不匹配
+- 测试 host App 在启动期任何 `Keychain` 调用都会触发 macOS GUI 授权对话框
+- 测试 host 无窗口接收点击 → 主线程死等 → `testmanagerd` 超时
+
+**已加的防护（不要回退）**：
+- `Starcat/Shared/Utilities/TestEnvironment.swift`：单一信息源，`TestEnvironment.isRunning == true` 时为测试 host
+- `StarcatApp.bootstrap()`：测试期跳过 `KeychainManager.shared.ping()`
+- `AuthSession.restoreSessionIfAvailable()`：测试期 no-op
+
+**新增任何 "App 启动期主动调 Keychain / 系统授权" 的代码路径，都必须用 `TestEnvironment.isRunning` 门控。**
+
+### ⚠️ 已知问题 #2：xcodebuild test 与 Xcode IDE 抢 testmanagerd
+
+跑测前请关闭 Xcode IDE，或在 IDE 里直接 Cmd+U。
+
+### ⚠️ 已知问题 #3：新增 Swift 文件后必须 `xcodegen generate`
+
+`Starcat.xcodeproj` 由 xcodegen 从 `project.yml` 自动生成。新增 / 删除 swift 文件后必须先跑 `xcodegen generate`，否则 `xcodebuild` 看不到新文件，会报 `cannot find type ... in scope`。
+
+---
+
 ## 项目概述
 
 **Starcat** 是一款面向 Apple 平台的 GitHub Star 管理工具，将扁平的 GitHub 收藏转化为可搜索、AI 驱动的知识库。
