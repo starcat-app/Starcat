@@ -137,7 +137,8 @@ docs/
 - 全新项目，无历史代码需要维护
 - 用户面向的内容遵循中文文档风格
 - 技术术语保留英文原文，可配中文解释
-- 代码必须添加必要注释
+- 代码必须添加必要注释；**较复杂的代码（actor / Concurrency / WKWebView delegate / URLProtocol / FTS5 / 三阶段 SWR 这类）必须写详细的"为什么 + 关键约束 + 已踩过的坑"级注释**，参考 `Starcat/Features/Home/ReadmeViewModel.swift` / `Starcat/Shared/Components/ReadmeWebView.swift` / `StarcatTests/URLProtocolStub.swift` 三份样板
+- **dong4j 是 Swift 初学者**：写新代码或解释已有代码时，遇到关键 Swift / SwiftUI / Concurrency / WebKit / GRDB 概念应主动提示去查 `docs/Swift 学习索引.md` 对应条目
 - 详细开发规范见 `docs/` 各文档
 
 ---
