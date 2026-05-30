@@ -76,10 +76,27 @@ struct ReadmeRepository {
         }
     }
 
-    /// 全表清空（设置页"清理缓存"用，目前未接入 UI）。
+    /// 全表清空（设置页"清理缓存"用，已在 W4-4 D4 接入）。
     func deleteAll() async throws {
         try await writer.write { db in
             _ = try Readme.deleteAll(db)
+        }
+    }
+
+    // MARK: - W4-4 D4：缓存统计
+
+    /// readmes 表行数（设置页"清理缓存"显示当前缓存条目数用）。
+    func countAll() async throws -> Int {
+        try await writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT count(*) FROM readmes") ?? 0
+        }
+    }
+
+    /// 所有缓存 README 字节总数（基于 `readmes.size` 列）。
+    /// 注：size 是 upsert 时写入的 HTML 字节数，等价于 disk 占用的近似量级。
+    func totalBytes() async throws -> Int64 {
+        try await writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT COALESCE(SUM(size), 0) FROM readmes") ?? 0
         }
     }
 }

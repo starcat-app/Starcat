@@ -41,6 +41,7 @@ struct StarcatApp: App {
         // macOS 原生 Settings 窗口（Cmd+,）
         Settings {
             SettingsView()
+                .environment(dependencies)        // W4-4 D4：StorageSettingsTab 需要 readmeRepository
                 .environment(dependencies.settings)
         }
     }

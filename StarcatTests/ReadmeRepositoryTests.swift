@@ -117,4 +117,113 @@ struct ReadmeRepositoryTests {
         let fetched = try await repo.find(repoId: repoId)
         #expect(fetched == nil)
     }
+
+    // MARK: - W4-4 D4 缓存统计
+
+    @Test("D4: countAll / totalBytes / deleteAll 联动")
+    func cacheStatsAndDeleteAll() async throws {
+        let (repo, db, _) = try await makeRepoAndDb()
+        // 先插另外两条 repo 给 readmes 用
+        try await db.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url, cached_at)
+                VALUES (?, 'o', ?, ?, ?, '2026-05-30T00:00:00Z')
+                """,
+                arguments: [100, "r100", "o/r100", "https://github.com/o/r100"]
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url, cached_at)
+                VALUES (?, 'o', ?, ?, ?, '2026-05-30T00:00:00Z')
+                """,
+                arguments: [101, "r101", "o/r101", "https://github.com/o/r101"]
+            )
+        }
+        try await repo.upsert(makeReadme(repoId: 42,  html: "aaa"))
+        try await repo.upsert(makeReadme(repoId: 100, html: "bbbb"))
+        try await repo.upsert(makeReadme(repoId: 101, html: "ccccc"))
+
+        #expect(try await repo.countAll() == 3)
+        #expect(try await repo.totalBytes() == 12, "3+4+5 = 12 bytes")
+
+        try await repo.deleteAll()
+
+        #expect(try await repo.countAll() == 0)
+        #expect(try await repo.totalBytes() == 0)
+    }
+}
+
+// MARK: - W4-4 D4：CacheCleaner
+
+@MainActor
+@Suite("CacheCleaner (D4)")
+struct CacheCleanerTests {
+
+    /// Kingfisher 部分(图片缓存)不纳入测试 — 它有自己的磁盘 I/O,
+    /// 会污染测试主机的 Kingfisher 默认 disk cache。这里只覆盖 README 路径。
+    private func makeReadmeRepo() async throws -> (ReadmeRepository, any DatabaseManaging) {
+        let db = try InMemoryDatabaseManager()
+        let repo = ReadmeRepository(database: db)
+        // 插 1 个 repo 满足外键
+        try await db.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url, cached_at)
+                VALUES (1, 'o', 'r', 'o/r', 'https://x', '2026-05-30T00:00:00Z')
+                """
+            )
+        }
+        return (repo, db)
+    }
+
+    private func insertReadme(_ repo: ReadmeRepository, html: String) async throws {
+        try await repo.upsert(Readme(
+            repoId: 1, content: nil, renderedHtml: html,
+            etag: nil, lastModified: nil,
+            cachedAt: "2026-05-30T00:00:00Z",
+            size: html.utf8.count
+        ))
+    }
+
+    @Test("loadStatistics 返回 README 计数与字节")
+    func loadStatsReturnsReadmeMetrics() async throws {
+        let (repo, _) = try await makeReadmeRepo()
+        try await insertReadme(repo, html: "hello world")
+
+        let cleaner = CacheCleaner(readmeRepository: repo)
+        let stats = await cleaner.loadStatistics()
+
+        #expect(stats.readmeCount == 1)
+        #expect(stats.readmeBytes == 11)
+    }
+
+    @Test("clearReadmes 后 stats 归零")
+    func clearReadmesEmptiesStats() async throws {
+        let (repo, _) = try await makeReadmeRepo()
+        try await insertReadme(repo, html: "abc")
+        let cleaner = CacheCleaner(readmeRepository: repo)
+
+        await cleaner.clearReadmes()
+        let stats = await cleaner.loadStatistics()
+
+        #expect(stats.readmeCount == 0)
+        #expect(stats.readmeBytes == 0)
+    }
+}
+
+// MARK: - Int64.formattedByteSize
+
+@Suite("Int64.formattedByteSize (D4)")
+struct ByteFormattingTests {
+    @Test("0 字节 → '零字节' 风格(系统本地化)")
+    func zeroBytes() {
+        let s = Int64(0).formattedByteSize
+        #expect(!s.isEmpty)
+    }
+    @Test("1.5 MB 数量级输出非空且含'MB'")
+    func megaByte() {
+        let s = Int64(1_500_000).formattedByteSize
+        #expect(s.contains("MB"))
+    }
 }
