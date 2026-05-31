@@ -31,6 +31,8 @@ struct RepoTagsSection: View {
     /// 从 AppDependencies 读底层 Repository。
     /// 通过 environment 注入，避免 RepoDetailView 修改 init 签名。
     @Environment(AppDependencies.self) private var dependencies
+    /// W4-4 D4：标签变更后刷新 Sidebar 计数。
+    @Environment(HomeViewModel.self) private var homeViewModel
 
     @State private var viewModel: RepoTagsSectionViewModel?
     @State private var showPicker: Bool = false
@@ -52,6 +54,13 @@ struct RepoTagsSection: View {
                     tagRepository: dependencies.tagRepository,
                     repoTagRepository: dependencies.repoTagRepository
                 )
+                // W4-4 D4：标签变更后通知 HomeViewModel 刷新 Sidebar 计数 + 列表
+                viewModel?.onTagsChanged = { [weak homeViewModel] in
+                    Task {
+                        await homeViewModel?.refreshSidebar()
+                        await homeViewModel?.reloadItems()
+                    }
+                }
             }
             await viewModel?.loadFor(repoId: repo.id)
         }
@@ -117,6 +126,10 @@ final class RepoTagsSectionViewModel {
     private(set) var isLoading: Bool = false
     private(set) var errorMessage: String?
 
+    /// W4-4 D4：标签变更后通知 HomeViewModel 刷新 Sidebar 计数。
+    /// 由 RepoDetailView 在创建 VM 时注入，避免直接持有 HomeViewModel（防止循环依赖）。
+    var onTagsChanged: (() -> Void)?
+
     private let tagRepository: any TagRepositoryProtocol
     private let repoTagRepository: any RepoTagRepositoryProtocol
 
@@ -147,6 +160,7 @@ final class RepoTagsSectionViewModel {
         do {
             try await repoTagRepository.removeTag(repoId: repoId, tagId: tagId)
             await loadFor(repoId: repoId)
+            onTagsChanged?()
         } catch {
             errorMessage = "移除失败：\(error.localizedDescription)"
         }
@@ -157,6 +171,7 @@ final class RepoTagsSectionViewModel {
         do {
             try await repoTagRepository.setTags(repoId: repoId, tagIds: Array(tagIds))
             await loadFor(repoId: repoId)
+            onTagsChanged?()
         } catch {
             errorMessage = "保存失败：\(error.localizedDescription)"
         }
