@@ -2,8 +2,8 @@
 
 > 面向重度 GitHub 用户的 Apple 平台 Star 管理与 AI 知识整理工具
 
-[![Platform](https://img.shields.io/badge/platform-macOS%2026+-blue)](https://developer.apple.com)
-[![Swift](https://img.shields.io/badge/Swift-6.0-orange)](https://swift.org)
+[![Platform](https://img.shields.io/badge/platform-macOS%2015+-blue)](https://developer.apple.com)
+[![Swift](https://img.shields.io/badge/Swift-5.0-orange)](https://swift.org)
 [![Design](https://img.shields.io/badge/Design-Liquid%20Glass-ff69b4)](https://www.apple.com/macos)
 
 ## 核心价值
@@ -14,11 +14,11 @@
 
 ### 基础功能
 - GitHub OAuth 登录与增量同步
-- macOS 26 Liquid Glass 三栏布局
+- macOS 15+ 原生三栏布局（macOS 26 Liquid Glass 优先适配）
 - 标签分类与语言筛选
 - FTS5 全文搜索
 - README Markdown 渲染
-- 私有笔记与状态管理
+- 私有笔记与状态管理（未读 / 阅读中 / 已采用 / 已废弃）
 - JSON 导入/导出（OhMyStar/Astral 兼容）
 
 ### AI 功能
@@ -47,7 +47,7 @@
 
 ## 系统要求
 
-- macOS 26 (Tahoe) 或更高版本
+- macOS 15 (Sequoia) 或更高版本
 - Apple Developer Program ($99/年)
 
 ## 开发指南
@@ -66,26 +66,27 @@
 Starcat/
 ├── App/
 │   ├── StarcatApp.swift          # 应用入口
-│   └── AppDelegate.swift          # App 生命周期
+│   ├── ContentView.swift          # 根视图
+│   └── AppDependencies.swift      # 依赖组装
 ├── Features/
 │   ├── Auth/                      # GitHub OAuth
 │   ├── Home/                      # 三栏主界面
-│   ├── Repo/                      # Repo 详情
-│   ├── Search/                    # 搜索功能
-│   ├── AI/                        # AI 功能
-│   └── Explore/                   # 发现页 / Trending
+│   ├── Tags/                      # 标签管理
+│   ├── Notes/                     # 私有笔记与状态
+│   └── Settings/                  # 设置面板
 ├── Core/
 │   ├── Database/                   # GRDB 数据库封装
-│   ├── Network/                   # GitHub API / AI 代理
-│   ├── Sync/                     # 同步逻辑
-│   └── Keychain/                 # 安全存储
+│   ├── Network/                   # GitHub API
+│   ├── Sync/                      # 同步与 Repository
+│   ├── Keychain/                  # 安全存储
+│   ├── Settings/                  # 本地设置
+│   ├── Cache/                     # 缓存清理
+│   └── Models/                    # 领域模型
 ├── Shared/
 │   ├── Components/               # 共享组件
-│   ├── Extensions/               # 扩展
-│   └── Theme/                   # Liquid Glass 主题
+│   └── Utilities/                # 工具与日志
 └── Resources/
-    ├── Assets.xcassets
-    └── Info.plist
+    └── Assets.xcassets
 ```
 
 ### AI 服务配置
@@ -121,9 +122,10 @@ Starcat/
 
 ## 文档
 
-- [功能清单](docs/Starcat-Features.md) - 完整功能规格
-- [Open Design UI 技能](docs/open-design/Starcat-UI-SKILL.md) - UI 设计规范
-- [开发规划](docs/plan/starcat_项目完整开发规划_3ac0c0a2.plan.md) - 项目路线图
+- [功能清单](docs/功能清单.md) - 完整功能规格
+- [功能实现总览](docs/工程进度/功能实现总览.md) - 主进度索引与工程债
+- [详细设计索引](docs/详细设计/README.md) - 技术设计文档入口
+- [Open Design UI 技能](docs/原型设计/Starcat-UI-SKILL.md) - UI 设计规范
 
 ## License
 
