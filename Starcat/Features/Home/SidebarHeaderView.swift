@@ -61,18 +61,12 @@ struct SidebarHeaderView: View {
 
     private func unauthenticatedAvatarRow() -> some View {
         ZStack(alignment: .topTrailing) {
-            Button {
-                showLoginSheet = true
-            } label: {
-                Image(systemName: "person.crop.circle.fill")
-                    .resizable()
-                    .frame(width: 56, height: 56)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("点击登录 GitHub")
+            UserAvatar(
+                isLoggedIn: false,
+                avatarUrl: nil,
+                login: nil,
+                onLoginTapped: { showLoginSheet = true }
+            )
         }
     }
 
@@ -88,17 +82,12 @@ struct SidebarHeaderView: View {
 
     private func avatarRow(user: GitHubUserDTO) -> some View {
         ZStack(alignment: .topTrailing) {
-            // 点击头像直接跳转到 GitHub 主页
-            Button {
-                openGitHubProfile(login: user.login)
-            } label: {
-                RemoteAvatar(urlString: user.avatarUrl, size: 56)
-                    .fixedSize()
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("查看 GitHub 主页")
+            UserAvatar(
+                isLoggedIn: true,
+                avatarUrl: user.avatarUrl,
+                login: user.login,
+                onLoginTapped: { showLoginSheet = true }
+            )
 
             // 右上角账户菜单按钮（使用原生 Menu，获得系统一致样式）
             accountMenu()

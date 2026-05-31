@@ -13,6 +13,7 @@
 
 import SwiftUI
 import Kingfisher
+import AppKit
 
 /// 远程加载的圆形头像。
 ///
@@ -62,5 +63,54 @@ struct RemoteAvatar: View {
             .scaledToFit()
             .foregroundStyle(.tertiary)
             .padding(2)
+    }
+}
+
+/// 用户头像组件
+///
+/// 根据登录状态区分渲染逻辑：
+/// - 未登录：显示默认图标，点击打开登录弹窗
+/// - 已登录：显示远程头像，点击打开 GitHub 用户主页
+struct UserAvatar: View {
+    /// 是否已登录
+    let isLoggedIn: Bool
+    /// 用户头像 URL（已登录时使用）
+    let avatarUrl: String?
+    /// 用户登录名，用于构建主页链接
+    let login: String?
+    /// 点击未登录头像时触发，用于打开登录弹窗
+    let onLoginTapped: () -> Void
+
+    /// 头像大小
+    var size: CGFloat = 56
+
+    var body: some View {
+        Button {
+            if isLoggedIn, let login = login {
+                openGitHubProfile(login: login)
+            } else {
+                onLoginTapped()
+            }
+        } label: {
+            if isLoggedIn {
+                RemoteAvatar(urlString: avatarUrl, size: size)
+                    .fixedSize()
+                    .frame(maxWidth: .infinity)
+            } else {
+                Image(systemName: "person.crop.circle.fill")
+                    .resizable()
+                    .frame(width: size, height: size)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(isLoggedIn ? "查看 GitHub 主页" : "点击登录 GitHub")
+    }
+
+    private func openGitHubProfile(login: String) {
+        guard let url = URL(string: "https://github.com/\(login)") else { return }
+        NSWorkspace.shared.open(url)
     }
 }
