@@ -28,16 +28,21 @@ struct TrendingView: View {
     @State private var showLoginSheet: Bool = false
     @Binding private var selectedLanguage: TrendingLanguage
 
+    /// 当前选中的 Trending repo ID，用于卡片高亮显示。
+    @Binding private var selectedRepoID: String?
+
     init(
         repository: any TrendingRepositoryProtocol,
         githubAPIClient: any GitHubAPIClientProtocol,
-        selectedLanguage: Binding<TrendingLanguage>
+        selectedLanguage: Binding<TrendingLanguage>,
+        selectedRepoID: Binding<String?> = .constant(nil)
     ) {
         _viewModel = State(initialValue: TrendingViewModel(
             repository: repository,
             githubAPIClient: githubAPIClient
         ))
         _selectedLanguage = selectedLanguage
+        _selectedRepoID = selectedRepoID
     }
 
     var body: some View {
@@ -139,6 +144,15 @@ struct TrendingView: View {
                         isSummarizing: viewModel.summarizingRepoIDs.contains(repo.fullName),
                         isSubscribing: viewModel.subscribingRepoIDs.contains(repo.fullName),
                         isSubscribed: viewModel.subscribedRepoIDs.contains(repo.fullName),
+                        isSelected: selectedRepoID == repo.id,
+                        onTap: {
+                            // 选中态切换：点击已选中卡片则取消选中
+                            if selectedRepoID == repo.id {
+                                selectedRepoID = nil
+                            } else {
+                                selectedRepoID = repo.id
+                            }
+                        },
                         onSubscribe: {
                             guard authSession.state.isAuthenticated else {
                                 showLoginSheet = true
@@ -261,6 +275,10 @@ struct TrendingRepoCard: View {
     let isSummarizing: Bool
     let isSubscribing: Bool
     let isSubscribed: Bool
+    /// 是否被选中（高亮显示）
+    let isSelected: Bool
+    /// 点击卡片时的回调（用于切换选中态）
+    let onTap: () -> Void
     let onSubscribe: () -> Void
     let onRequestSummary: () -> Void
 
@@ -292,8 +310,16 @@ struct TrendingRepoCard: View {
             actionButtons
         }
         .padding(16)
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(isSelected ? Color.accentColor.opacity(0.12) : Color(NSColor.controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap()
+        }
     }
 
     private var headerView: some View {

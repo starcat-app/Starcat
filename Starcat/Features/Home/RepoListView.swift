@@ -29,6 +29,8 @@ struct RepoListView: View {
 
     let selectedPage: SidebarRootPage
     @Binding var selectedTrendingLanguage: TrendingLanguage
+    /// 当前选中的 Trending repo ID（用于卡片高亮）。
+    @State private var selectedTrendingRepoID: String?
 
     // 顶部 clone 按钮现在属于中栏 toolbar；复制成功提示也跟着放在列表栏上。
     @State private var toastMessage: String?
@@ -54,7 +56,8 @@ struct RepoListView: View {
                     TrendingView(
                         repository: repo,
                         githubAPIClient: githubAPIClient,
-                        selectedLanguage: $selectedTrendingLanguage
+                        selectedLanguage: $selectedTrendingLanguage,
+                        selectedRepoID: $selectedTrendingRepoID
                     )
                 } else {
                     emptyState(systemImage: "chart.line.uptrend.xyaxis", title: "Trending 数据暂不可用", subtitle: "功能开发中")
