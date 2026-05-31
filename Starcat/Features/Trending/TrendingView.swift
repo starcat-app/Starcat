@@ -90,7 +90,6 @@ struct TrendingView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color(NSColor.windowBackgroundColor))
     }
 
     private var periodPicker: some View {
