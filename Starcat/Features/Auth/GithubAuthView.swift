@@ -67,6 +67,7 @@ struct GithubAuthView: View {
             }
             .controlSize(.large)
             .buttonStyle(.borderedProminent)
+            .focusEffectDisabled()
             .disabled(authSession.isAuthenticating)
         }
     }
@@ -104,11 +105,13 @@ struct GithubAuthView: View {
                 }
                 .controlSize(.large)
                 .buttonStyle(.borderedProminent)
+                .focusEffectDisabled()
 
                 Button("取消") {
                     authSession.cancelSignIn()
                 }
                 .controlSize(.large)
+                .focusEffectDisabled()
             }
 
             ProgressView()
