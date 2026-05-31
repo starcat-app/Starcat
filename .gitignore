@@ -1,5 +1,8 @@
 # macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
 
 # Xcode 用户私有
 xcuserdata/
@@ -7,6 +10,10 @@ xcuserdata/
 *.xcuserstate
 *.xcscmblueprint
 *.xccheckout
+
+# Xcode 测试结果（重要！不要提交测试产生的临时数据）
+*.xcresult
+TestResults.xcresult/
 
 # Xcode 工程文件由 xcodegen 自动生成，不进 git
 Starcat.xcodeproj/
@@ -17,29 +24,180 @@ Starcat.xcodeproj/
 Packages/
 Package.pins
 Package.resolved
+DerivedSources/
 
 # 构建产物
 DerivedData/
 build/
+*.o
+*.dSYM
+*.hmap
+*.ipa
+*.dylib
+*.framework
+*.moved-aside
 
-# CocoaPods（不用）
+# CocoaPods
 Pods/
+Podfile.lock
+Podfile.resolved
 
-# Carthage（不用）
+# Carthage
 Carthage/Build/
+Carthage/Package.resolved
 
-# fastlane（不用）
+# fastlane
 fastlane/report.xml
 fastlane/Preview.html
+fastlane/test_output/
+fastlane/README.md
+fastlane/metadata/
 
 # IDE
 .vscode/
 .idea/
-
-# 临时
 *.swp
 *.swo
 *~
+.DS_Store
 
+# iOS Simulator
+CoreSimulator/
+
+# SnapKit（如果有使用）
+*.xcworkspace
+!*.xcworkspace
+
+# SwiftLint / SwiftFormat
+.swiftlint.yml
+.swiftformat
+
+# CI/CD
+.github/
+BuddyBuild/
+CircleCI/
+Travis/
+
+# Linux
+*~
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+dist/
+build/
+*.whl
+venv/
+ENV/
+.venv/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.logs
+*.log
+
+# Android
+gen/
+.gradle/
+local.properties
+*.apk
+*.aab
+*.dex
+*.bin
+*.ap_
+captures/
+
+# Kotlin
+*.kotlin_module
+
+# Go
+*.exe
+*.test
+*.out
+vendor/
+
+# Rust
+target/
+Cargo.lock
+
+# Ruby / Rails
+.bundle/
+vendor/bundle/
+config/database.yml
+config/secrets.yml
+log/*.log
+tmp/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Unity
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Aa]ssets/External/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.userprefs
+
+# Unreal Engine
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# CryEngine
+*.cryproj
+*.cc_objects.bin
+
+# Godot
+.import/
+
+# Kotlin Multiplatform Mobile (KMM)
+.cxx/
+
+# Swift Package Manager签名（可选，如果需要区分开发机器）
+*.signature
+
+# 加密货币钱包（常见误提交）
+*. keystore
+*.jks
+
+# 环境配置文件（包含敏感信息）
+.env
+.env.local
+.env.*.local
+*.env
+secrets/
+credentials/
+
+# Notes
 notes.md
 refer/
