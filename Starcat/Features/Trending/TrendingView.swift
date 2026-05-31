@@ -23,6 +23,7 @@ struct TrendingView: View {
 
     @Environment(AuthSession.self) private var authSession
     @Environment(HomeViewModel.self) private var homeViewModel
+    @Environment(AppSettings.self) private var settings
     @State private var viewModel: TrendingViewModel
     @State private var showLoginSheet: Bool = false
     @Binding private var selectedLanguage: TrendingLanguage
@@ -100,37 +101,22 @@ struct TrendingView: View {
     private var periodPicker: some View {
         @Bindable var vm = viewModel
 
-        return HStack(spacing: 12) {
+        return Picker("", selection: $vm.selectedPeriod) {
             ForEach(TrendingPeriod.allCases) { period in
-                Button {
-                    vm.selectedPeriod = period
-                } label: {
-                    Text(period.displayName)
-                        .font(.system(size: 14, weight: vm.selectedPeriod == period ? .semibold : .medium))
-                        .frame(minWidth: 64)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .foregroundStyle(vm.selectedPeriod == period ? Color.white : Color.primary)
-                        .background(periodBackground(isSelected: vm.selectedPeriod == period))
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
+                Text(period.displayName)
+                    .font(.headline)
+                    .tag(period)
             }
         }
-    }
-
-    /// 用独立胶囊按钮替代 segmented picker，视觉上对应左侧语言列表的"筛选条件分开"。
-    private func periodBackground(isSelected: Bool) -> some ShapeStyle {
-        isSelected ? Color.accentColor : Color(NSColor.controlBackgroundColor)
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 320)
     }
 
     // MARK: - Content
 
     private var contentView: some View {
         // 使用 List(selection:) 获取原生 macOS selection 样式（蓝色高亮）。
-        // 个性化推荐区块作为 List 的 header row 始终存在但条件隐藏。
-        List {
+        List(selection: $selectedRepoID) {
             if !viewModel.recommendedRepos.isEmpty {
                 personalizedSection
                     .listRowBackground(Color.clear)
@@ -139,46 +125,16 @@ struct TrendingView: View {
 
             // Trending 列表
             ForEach(viewModel.repos) { repo in
-                TrendingRepoCard(
+                TrendingRepoRowView(
                     repo: repo,
-                    score: viewModel.score(for: repo),
-                    isSubscribing: viewModel.subscribingRepoIDs.contains(repo.fullName),
-                    isSubscribed: viewModel.subscribedRepoIDs.contains(repo.fullName),
-                    onSubscribe: {
-                        guard authSession.state.isAuthenticated else {
-                            showLoginSheet = true
-                            return
-                        }
-
-                        Task {
-                            do {
-                                try await viewModel.subscribe(repo: repo)
-                                // 订阅成功后刷新 Stars 列表
-                                await homeViewModel.reloadItems()
-                            } catch {
-                                // 错误文案由 ViewModel 写入 subscriptionError，这里只消费 throwing API。
-                            }
-                        }
-                    }
-                )
-                .listRowBackground(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(NSColor.controlBackgroundColor))
+                    density: settings.listDensity
                 )
                 .listRowInsets(padding)
                 .tag(repo.id)
             }
-
-            if let message = viewModel.subscriptionError {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .listRowBackground(Color.clear)
-            }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .background(Color.clear)
+        .listStyle(.inset)
+        .alternatingRowBackgrounds()
         .refreshable {
             await viewModel.reload()
         }

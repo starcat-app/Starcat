@@ -113,7 +113,7 @@ struct RepoRowCard: View {
 
 /// 语言徽章，带 GitHub 风格的小圆点。
 /// 颜色映射来自 https://github.com/ozh/github-colors（精简集）。
-private struct LanguageBadge: View {
+fileprivate struct LanguageBadge: View {
     let language: String
     let style: BadgeStyle
 
@@ -130,7 +130,7 @@ private struct LanguageBadge: View {
 }
 
 /// stars 计数徽章。
-private struct StarsBadge: View {
+fileprivate struct StarsBadge: View {
     let count: Int
     let style: BadgeStyle
 
@@ -147,7 +147,7 @@ private struct StarsBadge: View {
     }
 }
 
-private enum BadgeStyle {
+fileprivate enum BadgeStyle {
     case compact, full
 }
 
@@ -163,7 +163,7 @@ enum RepoAvatarURL {
 
 /// GitHub 主流语言色卡映射；未命中走 Gray。
 /// 精简集合，覆盖 stars 前 30 语言；未来可改为读 JSON 资源。
-enum LanguageColor {
+fileprivate enum LanguageColor {
     static func color(for language: String) -> Color {
         switch language {
         case "Swift":        return Color(red: 0.94, green: 0.31, blue: 0.20)

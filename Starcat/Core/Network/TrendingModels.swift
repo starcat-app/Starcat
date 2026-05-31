@@ -133,14 +133,9 @@ struct TrendingRepo: Identifiable, Equatable {
         self.forksCount = dto.forks
         self.starsInPeriod = dto.change ?? 0
 
-        // 生成周期文本
-        let periodName: String
-        switch since {
-        case .daily:   periodName = "today"
-        case .weekly:  periodName = "this week"
-        case .monthly: periodName = "this month"
-        }
-        self.periodText = "\(self.starsInPeriod) stars \(periodName)"
+        // 生成周期文本：只显示数字，如 "+321"
+        let prefix = self.starsInPeriod > 0 ? "+" : ""
+        self.periodText = "\(prefix)\(self.starsInPeriod)"
 
         // 转换贡献者
         self.contributors = dto.buildBy.map { c in
