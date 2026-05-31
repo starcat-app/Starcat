@@ -47,6 +47,106 @@ struct RepoListView: View {
                 BatchActionBar()
             }
         }
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                CollapsibleSearchBar(text: $vm.searchQuery)
+                statusFilterMenu
+                sortMenu
+                multiSelectButton
+            }
+        }
+    }
+
+    // MARK: - 顶部操作栏组件
+
+    /// 用 SF Symbol `checklist` 表达"批量操作"语义；按钮在多选模式时强调显示。
+    private var multiSelectButton: some View {
+        Button {
+            viewModel.toggleMultiSelectMode()
+        } label: {
+            Label(
+                viewModel.isMultiSelectMode ? "退出多选" : "多选",
+                systemImage: viewModel.isMultiSelectMode ? "checklist.checked" : "checklist"
+            )
+            .imageScale(.small)
+        }
+        .help(viewModel.isMultiSelectMode ? "退出多选模式" : "进入多选模式")
+        .keyboardShortcut("m", modifiers: [.command, .shift])
+    }
+
+    /// 阅读状态入口，同时保留 D2 的 Archived/Fork 列表过滤。
+    /// 开启任一过滤时图标会切换为"已激活"形态，提示用户当前列表不是全集。
+    /// - D2：Archived / Fork 两个 Toggle
+    /// - D3：阅读状态 Picker(全部 + 4 状态)
+    private var statusFilterMenu: some View {
+        @Bindable var vm = viewModel
+        return Menu {
+            Picker("阅读状态", selection: $vm.statusFilter) {
+                Text("全部").tag(RepoStatus?.none)
+                ForEach(RepoStatus.allCases, id: \.self) { st in
+                    Label(st.displayName, systemImage: statusIcon(for: st))
+                        .tag(RepoStatus?.some(st))
+                }
+            }
+            .pickerStyle(.inline)
+            Divider()
+            Toggle(isOn: $vm.hideArchived) {
+                Label("隐藏 Archived", systemImage: "archivebox")
+            }
+            Toggle(isOn: $vm.hideForks) {
+                Label("隐藏 Fork", systemImage: "tuningfork")
+            }
+        } label: {
+            Label(
+                viewModel.statusFilter?.displayName ?? "阅读状态",
+                systemImage: viewModel.hasActiveFilter
+                    ? "circle.grid.2x1.fill"
+                    : "circle.grid.2x1"
+            )
+            .imageScale(.small)
+        }
+        .help(viewModel.hasActiveFilter ? "已启用阅读状态 / 列表过滤" : "按阅读状态过滤")
+        .onChange(of: viewModel.hideArchived) { _, newValue in
+            settings.hideArchived = newValue
+        }
+        .onChange(of: viewModel.hideForks) { _, newValue in
+            settings.hideForks = newValue
+        }
+        .onChange(of: viewModel.statusFilter) { _, newValue in
+            settings.statusFilter = newValue
+        }
+    }
+
+    /// W4-4 D1：排序入口。Picker 显示当前选中(系统会自动加 ✓ 标记)。
+    /// 与 AppSettings.repoSortOption 双向同步：
+    /// - 用户改 → onChange 写 settings(落盘)
+    /// - settings 变 → onAppear / onChange 同步回 viewModel
+    /// 不在 Picker binding 里直接绑 settings,是因为 viewModel 才是排序的"事实源",
+    /// settings 只负责跨会话恢复。
+    private var sortMenu: some View {
+        @Bindable var vm = viewModel
+        return Menu {
+            Picker("排序", selection: $vm.sortOption) {
+                ForEach(RepoSortOption.allCases) { opt in
+                    Label(opt.displayName, systemImage: opt.systemImage)
+                        .tag(opt)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label("排序", systemImage: "arrow.up.arrow.down")
+                .imageScale(.small)
+        }
+        .help("选择列表排序方式")
+        .onAppear {
+            // 首次进入 / sheet 关闭重建时,把已持久化的偏好同步到 viewModel
+            if viewModel.sortOption != settings.repoSortOption {
+                viewModel.sortOption = settings.repoSortOption
+            }
+        }
+        .onChange(of: viewModel.sortOption) { _, newValue in
+            settings.repoSortOption = newValue
+        }
     }
 
     // MARK: - 列表主体
@@ -126,7 +226,7 @@ struct RepoListView: View {
     private var emptySubtitle: String {
         if viewModel.isSearching { return "试试别的关键词" }
         switch viewModel.selection {
-        case .allStars:        return "点击右上角同步按钮拉取 GitHub Stars"
+        case .allStars:        return "点击侧边栏同步按钮拉取 GitHub Stars"
         case .untagged:        return "新增 Stars 默认进这里"
         case .language:        return "刷新或同步后试试"
         case .tag:             return "在仓库详情页给它打上该标签"
@@ -148,5 +248,14 @@ struct RepoListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+
+    private func statusIcon(for status: RepoStatus) -> String {
+        switch status {
+        case .unread:     return "envelope.badge"
+        case .reading:    return "book"
+        case .using:      return "checkmark.seal"
+        case .deprecated: return "archivebox"
+        }
     }
 }

@@ -7,10 +7,10 @@
 //  布局：
 //  Sidebar（240pt）│  RepoList（300-360pt）│  RepoDetail（剩余）
 //
-//  Toolbar：
-//  - 搜索框：FTS5 搜索（防抖 250ms）
-//  - 同步按钮：触发 SyncManager.performFullSync
-//  - 头像菜单：用户信息 + 退出登录
+//  顶部操作按三栏职责拆分：
+//  - Sidebar：同步、标签管理
+//  - RepoList：搜索、状态筛选、排序、多选
+//  - RepoDetail：打开外链、复制 clone URL
 //
 //  数据生命周期：
 //  - onAppear：刷新 Sidebar + 列表
@@ -22,7 +22,6 @@ import SwiftUI
 
 struct HomeView: View {
 
-    @Environment(AuthSession.self) private var authSession
     @Environment(SyncManager.self) private var syncManager
     @Environment(AppSettings.self) private var settings
 
@@ -37,9 +36,6 @@ struct HomeView: View {
     /// 但 @State 写入是异步的，下一行立刻调用 readmeVM?.load(...) 时仍为 nil，
     /// 导致首次点击 repo 后 README 无法加载。
     @State private var readmeVM: ReadmeViewModel
-
-    /// 防抖用：跟踪搜索 query 变化，task(id:) 触发延迟搜索。
-    @State private var searchDebounceID = UUID()
 
     /// W4 A2：标签管理 sheet 显示状态。
     @State private var showTagManagement: Bool = false
@@ -72,10 +68,8 @@ struct HomeView: View {
     }
 
     var body: some View {
-        @Bindable var vm = viewModel
-
         NavigationSplitView {
-            SidebarView()
+            SidebarView(showTagManagement: $showTagManagement)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
         } content: {
             RepoListView()
@@ -86,16 +80,6 @@ struct HomeView: View {
         .environment(viewModel)
         .environment(readmeVM)
         .mainWindowFrameAutosave()
-        .searchable(text: $vm.searchQuery, placement: .toolbar, prompt: "搜索仓库")
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                filterMenu
-                sortMenu
-                multiSelectButton
-                tagManagementButton
-                syncButton
-            }
-        }
         .sheet(isPresented: $showTagManagement, onDismiss: {
             // W4 A6：标签管理 sheet 关闭后 → 刷新 Sidebar Tags 段 + 当前列表
             // （用户可能在 sheet 里增删 / 合并标签，Sidebar 与列表都要跟着变）
@@ -152,165 +136,6 @@ struct HomeView: View {
             } else {
                 readmeVM.reset()
             }
-        }
-    }
-
-    // MARK: - Toolbar 子组件
-
-    /// W4 A5：多选模式 toggle。开启后列表切换到多选 + 弹出底部操作栏。
-    /// 用 SF Symbol `checklist` 表达"批量操作"语义；按钮在多选模式时强调显示。
-    private var multiSelectButton: some View {
-        Button {
-            viewModel.toggleMultiSelectMode()
-        } label: {
-            Label(
-                viewModel.isMultiSelectMode ? "退出多选" : "多选",
-                systemImage: viewModel.isMultiSelectMode ? "checklist.checked" : "checklist"
-            )
-        }
-        .help(viewModel.isMultiSelectMode ? "退出多选模式" : "进入多选模式")
-        .keyboardShortcut("m", modifiers: [.command, .shift])
-    }
-
-    /// W4-4 D2/D3：过滤入口。开启任一过滤时图标会切换为"已激活"形态,
-    /// 提示用户当前列表不是全集。
-    /// - D2：Archived / Fork 两个 Toggle
-    /// - D3：阅读状态 Picker(全部 + 4 状态)
-    private var filterMenu: some View {
-        @Bindable var vm = viewModel
-        return Menu {
-            Toggle(isOn: $vm.hideArchived) {
-                Label("隐藏 Archived", systemImage: "archivebox")
-            }
-            Toggle(isOn: $vm.hideForks) {
-                Label("隐藏 Fork", systemImage: "tuningfork")
-            }
-            Divider()
-            Picker("阅读状态", selection: $vm.statusFilter) {
-                Text("全部").tag(RepoStatus?.none)
-                ForEach(RepoStatus.allCases, id: \.self) { st in
-                    Text(st.displayName).tag(RepoStatus?.some(st))
-                }
-            }
-            .pickerStyle(.inline)
-        } label: {
-            Label(
-                "过滤",
-                systemImage: viewModel.hasActiveFilter
-                    ? "line.3.horizontal.decrease.circle.fill"
-                    : "line.3.horizontal.decrease.circle"
-            )
-        }
-        .help(viewModel.hasActiveFilter ? "已启用列表过滤" : "过滤列表(Archived / Fork / 阅读状态)")
-        .onChange(of: viewModel.hideArchived) { _, newValue in
-            settings.hideArchived = newValue
-        }
-        .onChange(of: viewModel.hideForks) { _, newValue in
-            settings.hideForks = newValue
-        }
-        .onChange(of: viewModel.statusFilter) { _, newValue in
-            settings.statusFilter = newValue
-        }
-    }
-
-    /// W4-4 D1：排序入口。Picker 显示当前选中(系统会自动加 ✓ 标记)。
-    /// 与 AppSettings.repoSortOption 双向同步：
-    /// - 用户改 → onChange 写 settings(落盘)
-    /// - settings 变 → onAppear / onChange 同步回 viewModel
-    /// 不在 Picker binding 里直接绑 settings,是因为 viewModel 才是排序的"事实源",
-    /// settings 只负责跨会话恢复。
-    private var sortMenu: some View {
-        @Bindable var vm = viewModel
-        return Menu {
-            Picker("排序", selection: $vm.sortOption) {
-                ForEach(RepoSortOption.allCases) { opt in
-                    Label(opt.displayName, systemImage: opt.systemImage)
-                        .tag(opt)
-                }
-            }
-            .pickerStyle(.inline)
-        } label: {
-            Label("排序", systemImage: "arrow.up.arrow.down")
-        }
-        .help("选择列表排序方式")
-        .onAppear {
-            // 首次进入 / sheet 关闭重建时,把已持久化的偏好同步到 viewModel
-            if viewModel.sortOption != settings.repoSortOption {
-                viewModel.sortOption = settings.repoSortOption
-            }
-        }
-        .onChange(of: viewModel.sortOption) { _, newValue in
-            settings.repoSortOption = newValue
-        }
-    }
-
-    /// W4 A2：标签管理入口。点击弹 sheet。
-    private var tagManagementButton: some View {
-        Button {
-            showTagManagement = true
-        } label: {
-            Label("标签管理", systemImage: "tag")
-        }
-        .help("管理标签（创建 / 编辑 / 合并 / 删除）")
-        .keyboardShortcut("t", modifiers: [.command, .shift])
-    }
-
-    @ViewBuilder
-    private var syncButton: some View {
-        // W4-4 C1：state 多了 .rateLimited(retryAt:)，需要单独渲染倒计时 UI 提示
-        // "GitHub 已限流，正在等待配额恢复"，让用户知道这不是卡死。
-        switch syncManager.state {
-        case .syncing:
-            HStack(spacing: 6) {
-                ProgressView()
-                    .controlSize(.small)
-                Button {
-                    syncManager.cancel()
-                } label: {
-                    Label("取消同步", systemImage: "xmark")
-                }
-                .help("取消同步")
-            }
-        case .rateLimited(let retryAt):
-            // TimelineView 让倒计时每秒自动刷新而无需主动 setState。
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let remaining = max(0, Int(retryAt.timeIntervalSince(context.date)))
-                HStack(spacing: 6) {
-                    Image(systemName: "hourglass")
-                        .foregroundStyle(.orange)
-                    Text("配额恢复中 \(formatCountdown(seconds: remaining))")
-                        .font(.callout)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                    Button {
-                        syncManager.cancel()
-                    } label: {
-                        Label("取消", systemImage: "xmark")
-                    }
-                    .help("取消等待并停止同步")
-                }
-            }
-        case .idle, .completed, .failed:
-            Button {
-                if case .authenticated(let user) = authSession.state {
-                    syncManager.performFullSync(userID: user.id)
-                }
-            } label: {
-                Label("同步 Stars", systemImage: "arrow.triangle.2.circlepath")
-            }
-            .help("拉取 GitHub Stars")
-        }
-    }
-
-    /// 把秒数格式化为 mm:ss / hh:mm:ss（GitHub Rate Limit 重置最长 1 小时）。
-    private func formatCountdown(seconds: Int) -> String {
-        let s = seconds % 60
-        let m = (seconds / 60) % 60
-        let h = seconds / 3600
-        if h > 0 {
-            return String(format: "%d:%02d:%02d", h, m, s)
-        } else {
-            return String(format: "%d:%02d", m, s)
         }
     }
 

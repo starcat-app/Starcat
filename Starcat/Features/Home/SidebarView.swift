@@ -25,6 +25,8 @@ struct SidebarView: View {
     /// W4 A6：Tags 组展开/收起状态。
     @State private var tagsExpanded: Bool = true
 
+    @Binding var showTagManagement: Bool
+
     var body: some View {
         @Bindable var vm = viewModel
 
@@ -36,13 +38,26 @@ struct SidebarView: View {
 
             // W4 A6：Tags 段。
             // 行为：每个用户自定义标签一行，点击 → selection = .tag(id) → 列表过滤
-            if !viewModel.tags.isEmpty {
-                Section(isExpanded: $tagsExpanded) {
+            Section(isExpanded: $tagsExpanded) {
+                if !viewModel.tags.isEmpty {
                     ForEach(viewModel.tags) { tag in
                         tagRow(tag: tag, count: viewModel.tagCounts[tag.id] ?? 0)
                     }
-                } header: {
+                }
+            } header: {
+                HStack {
                     Text("Tags")
+                    Spacer()
+                    Button {
+                        showTagManagement = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .imageScale(.small)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("标签管理")
                 }
             }
 
@@ -68,10 +83,16 @@ struct SidebarView: View {
                      displayOverride: String? = nil,
                      count: Int? = nil) -> some View {
         Label {
-            HStack {
+            HStack(spacing: 4) {
                 Text(displayOverride ?? item.displayName)
                     .lineLimit(1)
+
                 Spacer()
+
+                if item == .allStars {
+                    SidebarSyncButton()
+                }
+
                 if let count {
                     Text(count.formatted())
                         .font(.caption)
@@ -133,5 +154,86 @@ struct SidebarView: View {
             }
         }
         .tag(item)
+    }
+}
+
+/// 放置在「全部 Stars」右侧的同步按钮
+private struct SidebarSyncButton: View {
+    @Environment(SyncManager.self) private var syncManager
+    @Environment(AuthSession.self) private var authSession
+    @State private var isHovering = false
+
+    // 我们用单独的 state 追踪动画状态，确保旋转顺滑
+    @State private var rotation: Double = 0
+
+    var body: some View {
+        Button {
+            if syncManager.state == .syncing {
+                syncManager.cancel()
+            } else if case .rateLimited = syncManager.state {
+                syncManager.cancel()
+            } else {
+                if case .authenticated(let user) = authSession.state {
+                    syncManager.performFullSync(userID: user.id)
+                }
+            }
+        } label: {
+            Image(systemName: iconName)
+                .font(.caption)
+                .rotationEffect(.degrees(rotation))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .frame(width: 18, height: 18)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovering = hovering
+        }
+        .onAppear {
+            updateRotation(isSyncing: isSyncing)
+        }
+        .onChange(of: isSyncing) { _, newValue in
+            updateRotation(isSyncing: newValue)
+        }
+        .help(helpText)
+    }
+
+    private var isSyncing: Bool {
+        if case .syncing = syncManager.state { return true }
+        return false
+    }
+
+    private var iconName: String {
+        switch syncManager.state {
+        case .syncing:
+            return isHovering ? "xmark.circle.fill" : "arrow.triangle.2.circlepath"
+        case .rateLimited:
+            return isHovering ? "xmark.circle.fill" : "hourglass"
+        case .idle, .completed, .failed:
+            return "arrow.triangle.2.circlepath"
+        }
+    }
+
+    private var helpText: String {
+        switch syncManager.state {
+        case .syncing:
+            return "取消同步"
+        case .rateLimited:
+            return "配额恢复中，点击取消"
+        case .idle, .completed, .failed:
+            return "拉取 GitHub Stars"
+        }
+    }
+
+    private func updateRotation(isSyncing: Bool) {
+        if isSyncing {
+            withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+                rotation = 360
+            }
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) {
+                rotation = 0
+            }
+        }
     }
 }

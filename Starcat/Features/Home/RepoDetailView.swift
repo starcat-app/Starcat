@@ -70,17 +70,13 @@ struct RepoDetailView: View {
             .navigationTitle(repo.name)
             .navigationSubtitle(repo.owner)
             .toolbar {
-                // W4 B3：GitHub 页面快捷入口（替换原单一"在 GitHub 打开"按钮）
+                // W4 B3：GitHub 页面快捷入口
                 ToolbarItem(placement: .primaryAction) {
                     externalLinksMenu(repo: repo)
                 }
                 // W4 B2：Clone URL 复制
                 ToolbarItem(placement: .primaryAction) {
                     cloneMenu(repo: repo)
-                }
-                // W4 B1：Unstar 按钮（destructive）
-                ToolbarItem(placement: .primaryAction) {
-                    unstarButton
                 }
             }
             // W4 B2：Toast 浮层（统一复制提示）
@@ -151,6 +147,7 @@ struct RepoDetailView: View {
             }
         } label: {
             Label("在 GitHub 打开", systemImage: "safari")
+                .imageScale(.small)
         } primaryAction: {
             // 点击主按钮（不展开菜单）→ 打开 repo 主页
             if let url = RepoExternalLinks.repo(repo) {
@@ -193,6 +190,7 @@ struct RepoDetailView: View {
             }
         } label: {
             Label("克隆地址", systemImage: "doc.on.clipboard")
+                .imageScale(.small)
         }
         .help("复制 git clone 地址")
     }
@@ -206,23 +204,8 @@ struct RepoDetailView: View {
         toastMessage = success
     }
 
-    // MARK: - W4 B1：Unstar 按钮 + 流程
+    // MARK: - W4 B1：Unstar 流程
 
-    @ViewBuilder
-    private var unstarButton: some View {
-        if isUnstarring {
-            ProgressView().controlSize(.small)
-        } else {
-            Button(role: .destructive) {
-                showUnstarConfirm = true
-            } label: {
-                Label("取消 Star", systemImage: "star.slash")
-            }
-            .help("从你的 Stars 列表中移除该仓库")
-        }
-    }
-
-    /// 取消 star 主流程：
     /// 1. 调 GitHub API 远端解除（失败：alert 报错、不动本地）
     /// 2. 调本地 markUnstarred（保留 tag / note，给 re-star 留后路）
     /// 3. 触发 Sidebar + 列表刷新（HomeViewModel 自带 race 防护）
