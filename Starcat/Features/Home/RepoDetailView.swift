@@ -47,20 +47,28 @@ struct RepoDetailView: View {
     /// SwiftUI 重绘；只有跨过阈值时才改变布局。
     @State private var isMetadataPanelHidden: Bool = false
 
+    /// 顶部信息面板的自然高度。
+    ///
+    /// 折叠动画需要从「真实高度」连续压到 0，而不是把 view 直接从树里移除。
+    /// 这个高度由 `MetadataPanelHeightPreferenceKey` 在首次布局后回填。
+    @State private var metadataPanelHeight: CGFloat = 0
+
+    /// 顶部面板折叠/展开动画。
+    ///
+    /// 用轻阻尼 spring 比 easeInOut 更适合这里：面板高度变化会带动 WKWebView 重新分配空间，
+    /// spring 能让读者感觉内容是在跟手让位，而不是突然跳一下。
+    private var metadataPanelAnimation: Animation {
+        .interactiveSpring(response: 0.32, dampingFraction: 0.9, blendDuration: 0.08)
+    }
+
     var body: some View {
         if let repo = viewModel.selectedRepo {
             VStack(alignment: .leading, spacing: 0) {
-                if !isMetadataPanelHidden {
-                    metadataHeader(repo)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    Divider()
-                        .transition(.opacity)
-                }
+                metadataPanel(repo)
                 readmeSection(repo)
             }
             .navigationTitle(repo.name)
             .navigationSubtitle(repo.owner)
-            .animation(.easeInOut(duration: 0.18), value: isMetadataPanelHidden)
             .toolbar {
                 // W4 B3：GitHub 页面快捷入口（替换原单一"在 GitHub 打开"按钮）
                 ToolbarItem(placement: .primaryAction) {
@@ -91,7 +99,9 @@ struct RepoDetailView: View {
                 Text(msg)
             }
             .onChange(of: repo.id) { _, _ in
-                isMetadataPanelHidden = false
+                withAnimation(metadataPanelAnimation) {
+                    isMetadataPanelHidden = false
+                }
             }
         } else {
             emptyState
@@ -243,6 +253,47 @@ struct RepoDetailView: View {
         )
     }
 
+    /// 顶部信息面板容器。
+    ///
+    /// 为什么不继续用 `if !isMetadataPanelHidden { ... }`：
+    /// 直接插拔 view 会让整个 WKWebView 在同一帧拿到新高度，视觉上像“跳变”；
+    /// 这里让面板始终留在 view tree 中，只把外层 frame 从自然高度动画到 0，
+    /// 同时给内容做轻微上移和淡出，WebView 的高度变化会更连续。
+    private func metadataPanel(_ repo: Repo) -> some View {
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                metadataHeader(repo)
+                Divider()
+                    .opacity(isMetadataPanelHidden ? 0 : 1)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: MetadataPanelHeightPreferenceKey.self,
+                        value: proxy.size.height
+                    )
+                }
+            }
+            .opacity(isMetadataPanelHidden ? 0 : 1)
+            .offset(y: isMetadataPanelHidden ? -min(metadataPanelHeight * 0.18, 28) : 0)
+            .allowsHitTesting(!isMetadataPanelHidden)
+            .accessibilityHidden(isMetadataPanelHidden)
+        }
+        .frame(
+            height: isMetadataPanelHidden
+                ? 0
+                : (metadataPanelHeight > 0 ? metadataPanelHeight : nil),
+            alignment: .top
+        )
+        .clipped()
+        .animation(metadataPanelAnimation, value: isMetadataPanelHidden)
+        .onPreferenceChange(MetadataPanelHeightPreferenceKey.self) { height in
+            guard height > 0, abs(height - metadataPanelHeight) > 0.5 else { return }
+            metadataPanelHeight = height
+        }
+    }
+
     /// 元信息区域（不滚动，固定在顶部）。
     private func metadataHeader(_ repo: Repo) -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -280,12 +331,15 @@ struct RepoDetailView: View {
 
     /// WebView 内部滚动位置 → 顶部信息面板显示状态。
     ///
-    /// 24pt 阈值用于避开触控板轻微回弹 / 亚像素抖动：用户明显开始阅读时才折叠，
-    /// 回到 README 顶部附近再展开。
+    /// 使用两个阈值形成 hysteresis：
+    /// - 继续向下读到 32pt 后才隐藏，避免刚滚动一点就抢走上下文；
+    /// - 回到 8pt 内才展开，避免触控板在顶部附近轻微回弹导致反复闪动。
     private func updateMetadataPanelVisibility(offsetY: CGFloat) {
-        let shouldHide = offsetY > 24
+        let shouldHide = isMetadataPanelHidden ? offsetY > 8 : offsetY > 32
         guard shouldHide != isMetadataPanelHidden else { return }
-        isMetadataPanelHidden = shouldHide
+        withAnimation(metadataPanelAnimation) {
+            isMetadataPanelHidden = shouldHide
+        }
     }
 
     // MARK: - 子段
@@ -405,6 +459,14 @@ struct RepoDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+}
+
+private struct MetadataPanelHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
 }
 
 // MARK: - README 状态视图
