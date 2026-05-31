@@ -96,13 +96,29 @@ struct SidebarHeaderView: View {
 
     // MARK: - 三栏统计
 
+    /// 构建三栏统计数据行，每项均可点击并跳转到对应 GitHub 页面。
+    /// - Starred → https://github.com/{username}?tab=stars
+    /// - Followers → https://github.com/{username}?tab=followers
+    /// - Following → https://github.com/{username}?tab=following
     private func statsRow(user: GitHubUserDTO) -> some View {
         HStack(spacing: 0) {
-            StatCell(value: viewModel.totalCount, label: "Starred")
+            StatCell(
+                value: viewModel.totalCount,
+                label: "Starred",
+                url: URL(string: "https://github.com/\(user.login)?tab=stars")
+            )
             Divider().frame(height: 26)
-            StatCell(value: user.followers ?? 0, label: "Followers")
+            StatCell(
+                value: user.followers ?? 0,
+                label: "Followers",
+                url: URL(string: "https://github.com/\(user.login)?tab=followers")
+            )
             Divider().frame(height: 26)
-            StatCell(value: user.following ?? 0, label: "Following")
+            StatCell(
+                value: user.following ?? 0,
+                label: "Following",
+                url: URL(string: "https://github.com/\(user.login)?tab=following")
+            )
         }
         .padding(.top, 4)
     }
@@ -136,17 +152,39 @@ struct SidebarHeaderView: View {
 // MARK: - 子组件
 
 /// 单个统计列（数字 + 标签）。
+///
+/// - Parameters:
+///   - value: 要显示的数字
+///   - label: 统计标签（Starred / Followers / Following）
+///   - url: 可选链接；传入时数字会变为可点击链接，点击后在新标签页打开对应 GitHub 页面
 private struct StatCell: View {
     let value: Int
     let label: String
+    let url: URL?
 
     var body: some View {
         VStack(spacing: 2) {
-            Text(value, format: .number)
-                .font(.system(size: 15, weight: .semibold))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+            if let url = url {
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Text(value, format: .number)
+                        .font(.system(size: 15, weight: .semibold))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .foregroundStyle(Color.accentColor)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("打开 GitHub \(label) 页面")
+            } else {
+                Text(value, format: .number)
+                    .font(.system(size: 15, weight: .semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
