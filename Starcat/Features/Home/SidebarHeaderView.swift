@@ -25,6 +25,8 @@ struct SidebarHeaderView: View {
 
     @Environment(AuthSession.self) private var authSession
     @Environment(HomeViewModel.self) private var viewModel
+    /// 用于打开 macOS 原生设置窗口（SettingsLink 的 programmatic 等效方式）
+    @Environment(\.openSettings) private var openSettings
 
     /// 用户头像旁"…"菜单 popover 显示状态。
     @State private var showAccountMenu: Bool = false
@@ -79,6 +81,8 @@ struct SidebarHeaderView: View {
 
     // MARK: - 显示名 + login
 
+    /// 显示用户身份信息：有 name 时显示 name，无 name 时显示 login
+    /// 避免 name 与 login 相同时显示两个重复项
     @ViewBuilder
     private func identity(user: GitHubUserDTO) -> some View {
         VStack(spacing: 2) {
@@ -86,11 +90,11 @@ struct SidebarHeaderView: View {
                 Text(name)
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
+            } else {
+                Text(user.login)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
             }
-            Text("@\(user.login)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
         }
     }
 
@@ -127,6 +131,21 @@ struct SidebarHeaderView: View {
 
     private func accountPopover() -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            // 设置选项：使用 openSettings 打开 macOS 原生设置窗口
+            Button {
+                showAccountMenu = false
+                openSettings()
+            } label: {
+                Label("设置", systemImage: "gearshape")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+
+            Divider()
+
             Button(role: .destructive) {
                 authSession.signOut()
                 showAccountMenu = false
