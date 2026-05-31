@@ -28,8 +28,7 @@ struct SidebarHeaderView: View {
     /// 用于打开 macOS 原生设置窗口（SettingsLink 的 programmatic 等效方式）
     @Environment(\.openSettings) private var openSettings
 
-    /// 用户头像旁"…"菜单 popover 显示状态。
-    @State private var showAccountMenu: Bool = false
+    /// 登录表单 sheet 显示状态。
     @State private var showLoginSheet: Bool = false
 
     var body: some View {
@@ -101,22 +100,37 @@ struct SidebarHeaderView: View {
             .focusEffectDisabled()
             .help("查看 GitHub 主页")
 
-            // 右上角账户菜单按钮（仅保留退出登录）
-            Button {
-                showAccountMenu.toggle()
-            } label: {
-                Image(systemName: "ellipsis.circle.fill")
-                    .font(.system(size: 16))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("账户")
-            .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
-                accountPopover()
-            }
+            // 右上角账户菜单按钮（使用原生 Menu，获得系统一致样式）
+            accountMenu()
         }
+    }
+
+    /// 账户操作菜单。使用 SwiftUI 原生 Menu 组件，自带圆角、hover 反馈等系统样式。
+    @ViewBuilder
+    private func accountMenu() -> some View {
+        Menu {
+            Button {
+                openSettings()
+            } label: {
+                Label("设置", systemImage: "gearshape")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                authSession.signOut()
+            } label: {
+                Label("登出", systemImage: "rectangle.portrait.and.arrow.right")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle.fill")
+                .font(.system(size: 16))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("账户")
     }
 
     // MARK: - 显示名 + login
@@ -165,41 +179,6 @@ struct SidebarHeaderView: View {
             )
         }
         .padding(.top, 4)
-    }
-
-    // MARK: - Popover 内容（账户操作）
-
-    private func accountPopover() -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // 设置选项：使用 openSettings 打开 macOS 原生设置窗口
-            Button {
-                showAccountMenu = false
-                openSettings()
-            } label: {
-                Label("设置", systemImage: "gearshape")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-
-            Divider()
-
-            Button(role: .destructive) {
-                authSession.signOut()
-                showAccountMenu = false
-            } label: {
-                Label("退出登录", systemImage: "rectangle.portrait.and.arrow.right")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-        }
-        .padding(.vertical, 6)
-        .frame(minWidth: 200)
     }
 
     private func openGitHubProfile(login: String) {
