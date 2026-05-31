@@ -193,6 +193,14 @@ struct SidebarView: View {
             Image(systemName: item.systemImage)
         }
         .tag(item)
+        // HOM-46 优化：鼠标悬停时预取相邻分类数据，降低点击后的感知延迟
+        .onHover { isHovering in
+            if isHovering {
+                for candidate in item.prefetchCandidates {
+                    viewModel.prefetch(selection: candidate)
+                }
+            }
+        }
     }
 
     /// W4 A6：tag 专属行——
@@ -200,6 +208,7 @@ struct SidebarView: View {
     /// 复用通用 row() 不合适，因为 tag 的图标 / 颜色都是动态的
     @ViewBuilder
     private func tagRow(tag: Tag, count: Int) -> some View {
+        let item = SidebarItem.tag(tag.id)
         Label {
             HStack {
                 Text(tag.name).lineLimit(1)
@@ -214,7 +223,15 @@ struct SidebarView: View {
             Image(systemName: tag.icon ?? "tag.fill")
                 .foregroundStyle(Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor)
         }
-        .tag(SidebarItem.tag(tag.id))
+        .tag(item)
+        // HOM-46 优化：hover 时预取相邻分类
+        .onHover { isHovering in
+            if isHovering {
+                for candidate in item.prefetchCandidates {
+                    viewModel.prefetch(selection: candidate)
+                }
+            }
+        }
     }
 
     /// Languages 专属行——
@@ -243,6 +260,14 @@ struct SidebarView: View {
             }
         }
         .tag(item)
+        // HOM-46 优化：hover 时预取相邻分类
+        .onHover { isHovering in
+            if isHovering {
+                for candidate in item.prefetchCandidates {
+                    viewModel.prefetch(selection: candidate)
+                }
+            }
+        }
     }
 }
 

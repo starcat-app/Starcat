@@ -199,6 +199,29 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
 - 遵循现有代码风格
 - 详细规范见各设计文档
 
+### UI 规范：Focus Ring 蓝框
+
+**规则**：所有装饰性/操作性的 Button（尤其是 Login、Auth 页面）必须添加 `.focusEffectDisabled()` 禁用 macOS 默认的蓝色 focus ring。
+
+```swift
+// ✅ 正确写法
+Button { ... }
+    .buttonStyle(.plain)
+    .focusEffectDisabled()  // ← 关键，放在 buttonStyle 之后
+
+// ❌ 错误写法：缺少 focusEffectDisabled
+Button { ... }
+    .buttonStyle(.plain)  // ← 没有禁用 focus ring，会显示蓝框
+```
+
+**适用场景**：
+- 登录/注册页面的所有按钮
+- 右上角关闭按钮（xmark.circle.fill）
+- OAuth 流程中的所有操作按钮
+- 任何使用 `.buttonStyle(.plain)` 的自定义图标按钮
+
+> 注意：`.buttonStyle(.borderedProminent)` 通常已遮挡 focus ring，但安全起见也建议添加。
+
 ### 问题处理
 
 - 发现文档间不一致时，以 `开发前问题清单.md` 中的决策为准

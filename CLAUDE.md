@@ -174,6 +174,23 @@ docs/
 - **dong4j 是 Swift 初学者**：写新代码或解释已有代码时，遇到关键 Swift / SwiftUI / Concurrency / WebKit / GRDB 概念应主动提示去查 `docs/Swift 学习索引.md` 对应条目
 - 详细开发规范见 `docs/` 各文档
 
+### UI 规范：Focus Ring 蓝框
+
+所有装饰性/操作性的 Button（尤其是 Login、Auth 页面）必须添加 `.focusEffectDisabled()` 禁用 macOS 默认的蓝色 focus ring。
+
+```swift
+// ✅ 正确写法
+Button { ... }
+    .buttonStyle(.plain)
+    .focusEffectDisabled()  // ← 关键
+
+// ❌ 错误写法：缺少 focusEffectDisabled
+Button { ... }
+    .buttonStyle(.plain)  // 会显示蓝框
+```
+
+适用场景：登录/注册页面、OAuth 流程、右上角关闭按钮等使用 `.buttonStyle(.plain)` 的自定义图标按钮。
+
 ---
 
 ## 已解决的问题

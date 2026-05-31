@@ -36,6 +36,7 @@ struct GithubAuthView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
             .padding(20)
         }
     }

@@ -113,6 +113,11 @@ struct HomeView: View {
             } else if viewModel.selection == .trending {
                 // If authenticated and somehow still on trending initially, we can leave it
                 // or let the user switch.
+            } else {
+                // App 打开且用户已登录 → 主动触发一次全量同步（后台静默执行）
+                if case .authenticated(let user) = authSession.state {
+                    syncManager.performFullSync(userID: user.id)
+                }
             }
 
             await viewModel.refreshSidebar()

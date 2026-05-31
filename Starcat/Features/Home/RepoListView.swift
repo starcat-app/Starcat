@@ -41,7 +41,8 @@ struct RepoListView: View {
 
         Group {
             if viewModel.isLoading && viewModel.items.isEmpty {
-                ProgressView().controlSize(.small)
+                // HOM-46 骨架屏：首次加载时显示骨架行，提供更好的感知加载速度
+                RepoSkeletonListView(density: settings.listDensity, rowCount: 10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = viewModel.loadError, viewModel.items.isEmpty {
                 emptyState(systemImage: "exclamationmark.triangle", title: "加载失败", subtitle: error)
@@ -316,6 +317,9 @@ struct RepoListView: View {
     private var navigationSubtitle: String {
         if viewModel.isMultiSelectMode {
             return "已选 \(viewModel.multiSelectedRepoIDs.count) / \(viewModel.items.count)"
+        }
+        if viewModel.isRefreshing {
+            return "\(viewModel.items.count) 个仓库 · 刷新中…"
         }
         return "\(viewModel.items.count) 个仓库"
     }

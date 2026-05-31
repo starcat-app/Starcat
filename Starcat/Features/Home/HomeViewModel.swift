@@ -68,11 +68,41 @@ final class HomeViewModel {
         return items.first { $0.id == id }
     }
 
-    /// 中栏列表加载中。D-04：`private(set)` 收敛，UI 只读不写。
+    /// 中栏列表加载中（首次加载，无缓存可用）。
+    /// D-04：`private(set)` 收敛，UI 只读不写。
     private(set) var isLoading: Bool = false
 
     /// 列表加载错误信息（短文案）。D-04：`private(set)` 收敛，UI 只读不写。
     private(set) var loadError: String?
+
+    /// 是否正在后台刷新（stale-while-revalidate 模式：缓存已展示，正在拉新数据）。
+    /// 用于 UI 显示"刷新中"指示（如列表顶部 mini 进度条）。
+    private(set) var isRefreshing: Bool = false
+
+    // MARK: - 列表缓存（HOM-46 优化）
+
+    /// 列表缓存条目：包含原始 repos + statusMap + 缓存时间。
+    /// 用于 stale-while-revalidate：切换到已访问分类时先展示缓存，后台刷新新数据。
+    private struct CacheEntry {
+        let rawItems: [Repo]
+        let statusMap: [Int64: RepoStatus]
+        let cachedAt: Date
+
+        /// 缓存是否过期（5 分钟 TTL）。
+        var isExpired: Bool {
+            Date().timeIntervalSince(cachedAt) > 300
+        }
+    }
+
+    /// 分类列表缓存字典。key = SidebarItem（enum 本身 Hashable）。
+    /// 缓存搜索结果（isSearching=true）单独处理，不进此缓存。
+    private var listCache: [SidebarItem: CacheEntry] = [:]
+
+    /// 派生：给定 selection 是否有可用（未过期）缓存。
+    var hasCachedItems: Bool {
+        guard !isSearching else { return false }
+        return listCache[selection] != nil && !listCache[selection]!.isExpired
+    }
 
     // MARK: - 搜索
 
@@ -202,6 +232,9 @@ final class HomeViewModel {
     /// 参考 `ReadmeViewModel.currentTask` 的相同模式。
     private var currentReloadTask: Task<Void, Never>?
 
+    /// 预取任务：hover 触发，提前加载相邻分类数据。
+    private var prefetchTask: Task<Void, Never>?
+
     init(
         repository: any RepoRepositoryProtocol,
         tagRepository: any TagRepositoryProtocol,
@@ -242,6 +275,11 @@ final class HomeViewModel {
     /// - 若有非空 searchQuery → FTS5 搜索（忽略 selection，因为搜索是全局的）
     /// - 否则按 selection 派发到对应查询
     ///
+    /// HOM-46 优化（stale-while-revalidate）：
+    /// - 切换到已有缓存的分类时，先立即展示缓存（isRefreshing=true 展示后台刷新指示）
+    /// - 后台发起新请求，新数据到达后更新缓存并刷新视图
+    /// - 无缓存时 isLoading=true 显示骨架屏，直到首次数据到达
+    ///
     /// D-05：race 防护策略 ——
     /// 1. 入口先 `cancel()` 旧 task（旧 task 内部的 await 会被标记 isCancelled）
     /// 2. 启动新 Task 真正发起查询
@@ -256,13 +294,29 @@ final class HomeViewModel {
     func reloadItems() async {
         currentReloadTask?.cancel()
 
+        // HOM-46：stale-while-revalidate 优化。
+        // 先检查缓存：若有且未过期，立即展示缓存，后台刷新。
+        // 若无缓存，先显示 isLoading=true 直到首次数据到达。
+        let cached = listCache[selection]
+        let hasStaleCache = cached != nil
+
+        if hasStaleCache {
+            // 有缓存：立即用缓存数据填充 UI，同时后台刷新
+            loadFromCache(cached!)
+            isRefreshing = true
+        } else {
+            // 无缓存：显示加载状态
+            isLoading = true
+            isRefreshing = false
+        }
+        loadError = nil
+
         let task = Task { [weak self] in
             guard let self else { return }
 
-            self.isLoading = true
-            self.loadError = nil
-
             let outcome: Result<[Repo], Error>
+            let fetchedStatusMap: [Int64: RepoStatus]
+
             do {
                 let fetched: [Repo]
                 if self.isSearching {
@@ -282,41 +336,110 @@ final class HomeViewModel {
                         fetched = try await self.repoTagRepository.fetchRepos(forTag: tagId)
                     }
                 }
+
+                // 并行拉取 statusMap（不阻塞主数据返回）
+                let ids = fetched.map(\.id)
+                if !ids.isEmpty {
+                    fetchedStatusMap = (try? await self.repoNoteRepository.fetchStatusMap(repoIds: ids)) ?? [:]
+                } else {
+                    fetchedStatusMap = [:]
+                }
+
                 outcome = .success(fetched)
             } catch {
+                fetchedStatusMap = [:]
                 outcome = .failure(error)
             }
 
-            // race 防护：被新一轮 reloadItems 取消的旧 task 直接丢弃结果，
-            // 完全不动 state（否则会覆盖新 task 已写入的 isLoading / items）
+            // race 防护：被新一轮 reloadItems 取消的旧 task 直接丢弃结果
             guard !Task.isCancelled else { return }
 
             self.isLoading = false
+            self.isRefreshing = false
 
             switch outcome {
             case .success(let fetched):
-                // W4-4 D2：fetch 结果存入 rawItems 作为唯一事实源,
-                // items 派生自 applyView() 的 filter + sort 透视。
+                // 更新缓存
+                self.listCache[self.selection] = CacheEntry(
+                    rawItems: fetched,
+                    statusMap: fetchedStatusMap,
+                    cachedAt: Date()
+                )
+                // 更新主数据
                 self.rawItems = fetched
-                // W4-4 D3：拉对应的 status map 供状态过滤使用。失败时降级为空 dict
-                // (此时按状态过滤会显示空,与"读取失败"一致;不阻塞主路径)。
-                let ids = fetched.map(\.id)
-                if !ids.isEmpty {
-                    self.statusMap = (try? await self.repoNoteRepository.fetchStatusMap(repoIds: ids)) ?? [:]
-                } else {
-                    self.statusMap = [:]
-                }
+                self.statusMap = fetchedStatusMap
                 self.applyView()
             case .failure(let error):
                 self.loadError = error.localizedDescription
-                self.rawItems = []
-                self.items = []
+                // 缓存加载已展示过的数据，失败不清理
+                if self.rawItems.isEmpty {
+                    self.items = []
+                }
                 AppLog.database.error("reloadItems failed: \(error.localizedDescription, privacy: .public)")
             }
         }
 
         currentReloadTask = task
         await task.value
+    }
+
+    /// 从缓存条目加载数据到 UI（立即展示，无加载指示）。
+    private func loadFromCache(_ entry: CacheEntry) {
+        self.rawItems = entry.rawItems
+        self.statusMap = entry.statusMap
+        self.applyView()
+    }
+
+    /// 预取指定分类的列表数据（hover 触发）。
+    /// 仅在有缓存且缓存过期时真正发起请求；未过期直接忽略。
+    func prefetch(selection: SidebarItem) {
+        guard !selection.isTrending else { return } // Trending 无需预取
+
+        prefetchTask?.cancel()
+        prefetchTask = Task { [weak self] in
+            guard let self else { return }
+
+            // 检查缓存是否已存在且未过期
+            if let cached = self.listCache[selection], !cached.isExpired {
+                return // 已缓存且未过期，无需预取
+            }
+
+            // 缓存不存在或已过期，发起预取（静默更新缓存）
+            do {
+                let fetched: [Repo]
+                switch selection {
+                case .trending:
+                    return
+                case .allStars:
+                    fetched = try await self.repository.fetchAllStarred()
+                case .untagged:
+                    fetched = try await self.repository.fetchUntagged()
+                case .language(let lang):
+                    fetched = try await self.repository.fetchByLanguage(lang)
+                case .tag(let tagId):
+                    fetched = try await self.repoTagRepository.fetchRepos(forTag: tagId)
+                }
+
+                guard !Task.isCancelled else { return }
+
+                let ids = fetched.map(\.id)
+                let statusMap: [Int64: RepoStatus]
+                if !ids.isEmpty {
+                    statusMap = (try? await self.repoNoteRepository.fetchStatusMap(repoIds: ids)) ?? [:]
+                } else {
+                    statusMap = [:]
+                }
+
+                guard !Task.isCancelled else { return }
+                self.listCache[selection] = CacheEntry(
+                    rawItems: fetched,
+                    statusMap: statusMap,
+                    cachedAt: Date()
+                )
+            } catch {
+                // 预取失败静默忽略，不影响 UI
+            }
+        }
     }
 
     /// 切换 Sidebar 选中项。
@@ -362,6 +485,33 @@ final class HomeViewModel {
             // 多选模式下被过滤掉的 id 也要从选中集合移除
             let visibleIDs = Set(view.map(\.id))
             multiSelectedRepoIDs.formIntersection(visibleIDs)
+        }
+    }
+}
+
+// MARK: - SidebarItem 扩展
+
+extension SidebarItem {
+    /// 是否为 Trending（预取时跳过）。
+    var isTrending: Bool {
+        if case .trending = self { return true }
+        return false
+    }
+
+    /// 返回"相邻"分类列表，用于 hover 预取建议。
+    /// 不包含当前 item 自身。
+    var prefetchCandidates: [SidebarItem] {
+        switch self {
+        case .trending:
+            return [.allStars, .untagged]
+        case .allStars:
+            return [.untagged]
+        case .untagged:
+            return [.allStars]
+        case .language:
+            return [.allStars, .untagged]
+        case .tag:
+            return [.allStars, .untagged]
         }
     }
 }
