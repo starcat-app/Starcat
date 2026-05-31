@@ -8,10 +8,9 @@
 //  - 日/周/月榜切换
 //  - 按语言筛选（由左侧 Trending 语言列表驱动）
 //  - 展示 Trending 仓库列表
-//  - 显示 AI 摘要按钮
 //  - 显示 AI 评分
 //  - 显示个性化推荐区块
-//  - 支持一键订阅到 Stars
+//  - 点击星标直接订阅到 Stars
 //
 //  设计约束：
 //  - 使用 SwiftUI
@@ -28,7 +27,8 @@ struct TrendingView: View {
     @State private var showLoginSheet: Bool = false
     @Binding private var selectedLanguage: TrendingLanguage
 
-    /// 当前选中的 Trending repo ID，用于卡片高亮显示。
+    /// 当前选中的 Trending repo ID。
+    /// 使用 List(selection:) 原生 selection，selectedRepoID 用于驱动父级刷新等场景。
     @Binding private var selectedRepoID: String?
 
     init(
@@ -120,7 +120,7 @@ struct TrendingView: View {
         }
     }
 
-    /// 用独立胶囊按钮替代 segmented picker，视觉上对应左侧语言列表的“筛选条件分开”。
+    /// 用独立胶囊按钮替代 segmented picker，视觉上对应左侧语言列表的"筛选条件分开"。
     private func periodBackground(isSelected: Bool) -> some ShapeStyle {
         isSelected ? Color.accentColor : Color(NSColor.controlBackgroundColor)
     }
@@ -128,67 +128,65 @@ struct TrendingView: View {
     // MARK: - Content
 
     private var contentView: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                // 个性化推荐区块
-                if !viewModel.recommendedRepos.isEmpty {
-                    personalizedSection
-                }
+        // 使用 List(selection:) 获取原生 macOS selection 样式（蓝色高亮）。
+        // 个性化推荐区块作为 List 的 header row 始终存在但条件隐藏。
+        List {
+            if !viewModel.recommendedRepos.isEmpty {
+                personalizedSection
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
 
-                // Trending 列表
-                ForEach(viewModel.repos) { repo in
-                    TrendingRepoCard(
-                        repo: repo,
-                        score: viewModel.score(for: repo),
-                        summary: viewModel.summaryCache[repo.fullName],
-                        isSummarizing: viewModel.summarizingRepoIDs.contains(repo.fullName),
-                        isSubscribing: viewModel.subscribingRepoIDs.contains(repo.fullName),
-                        isSubscribed: viewModel.subscribedRepoIDs.contains(repo.fullName),
-                        isSelected: selectedRepoID == repo.id,
-                        onTap: {
-                            // 选中态切换：点击已选中卡片则取消选中
-                            if selectedRepoID == repo.id {
-                                selectedRepoID = nil
-                            } else {
-                                selectedRepoID = repo.id
-                            }
-                        },
-                        onSubscribe: {
-                            guard authSession.state.isAuthenticated else {
-                                showLoginSheet = true
-                                return
-                            }
+            // Trending 列表
+            ForEach(viewModel.repos) { repo in
+                TrendingRepoCard(
+                    repo: repo,
+                    score: viewModel.score(for: repo),
+                    isSubscribing: viewModel.subscribingRepoIDs.contains(repo.fullName),
+                    isSubscribed: viewModel.subscribedRepoIDs.contains(repo.fullName),
+                    onSubscribe: {
+                        guard authSession.state.isAuthenticated else {
+                            showLoginSheet = true
+                            return
+                        }
 
-                            Task {
-                                do {
-                                    try await viewModel.subscribe(repo: repo)
-                                } catch {
-                                    // 错误文案由 ViewModel 写入 subscriptionError，这里只消费 throwing API。
-                                }
-                            }
-                        },
-                        onRequestSummary: {
-                            Task {
-                                await viewModel.requestSummary(for: repo)
+                        Task {
+                            do {
+                                try await viewModel.subscribe(repo: repo)
+                                // 订阅成功后刷新 Stars 列表
+                                await homeViewModel.reloadItems()
+                            } catch {
+                                // 错误文案由 ViewModel 写入 subscriptionError，这里只消费 throwing API。
                             }
                         }
-                    )
-                }
-
-                if let message = viewModel.subscriptionError {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 4)
-                }
+                    }
+                )
+                .listRowBackground(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(NSColor.controlBackgroundColor))
+                )
+                .listRowInsets(padding)
+                .tag(repo.id)
             }
-            .padding(16)
+
+            if let message = viewModel.subscriptionError {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .listRowBackground(Color.clear)
+            }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
         .refreshable {
             await viewModel.reload()
         }
+    }
+
+    /// 每个卡片的 list row insets，决定卡片间距。
+    private var padding: EdgeInsets {
+        EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12)
     }
 
     private var personalizedSection: some View {
@@ -267,20 +265,14 @@ struct TrendingView: View {
 // MARK: - TrendingRepoCard
 
 /// Trending 仓库卡片
+/// 使用 List(selection:) 原生 selection 样式，无需自定义选中高亮。
 struct TrendingRepoCard: View {
 
     let repo: TrendingRepo
     let score: TrendingScore
-    let summary: String?
-    let isSummarizing: Bool
     let isSubscribing: Bool
     let isSubscribed: Bool
-    /// 是否被选中（高亮显示）
-    let isSelected: Bool
-    /// 点击卡片时的回调（用于切换选中态）
-    let onTap: () -> Void
     let onSubscribe: () -> Void
-    let onRequestSummary: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -300,26 +292,8 @@ struct TrendingRepoCard: View {
 
             // AI 评分
             scoreView
-
-            // 摘要（如果已生成）
-            if let summary {
-                summaryView(summary)
-            }
-
-            // 操作按钮
-            actionButtons
         }
         .padding(16)
-        .background(isSelected ? Color.accentColor.opacity(0.12) : Color(NSColor.controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onTap()
-        }
     }
 
     private var headerView: some View {
@@ -354,14 +328,30 @@ struct TrendingRepoCard: View {
 
     private var statsView: some View {
         HStack(spacing: 16) {
-            // Stars
-            HStack(spacing: 4) {
-                Image(systemName: "star.fill")
-                    .foregroundStyle(.orange)
-                Text("\(repo.starsCount)")
-                    .font(.caption)
-                    .monospacedDigit()
+            // Stars - 点击直接订阅
+            Button {
+                if !isSubscribed && !isSubscribing {
+                    onSubscribe()
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    if isSubscribing {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                            .frame(width: 12, height: 12)
+                    } else {
+                        Image(systemName: isSubscribed ? "star.fill" : "star")
+                            .foregroundStyle(isSubscribed ? .orange : .secondary)
+                    }
+                    Text("\(repo.starsCount)")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
             }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .disabled(isSubscribing || isSubscribed)
 
             // Forks
             HStack(spacing: 4) {
@@ -370,6 +360,7 @@ struct TrendingRepoCard: View {
                 Text("\(repo.forksCount)")
                     .font(.caption)
                     .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
 
             // 周期增长
@@ -447,70 +438,6 @@ struct TrendingRepoCard: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color.accentColor)
-        }
-    }
-
-    private func summaryView(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Image(systemName: "text.bubble")
-                    .foregroundStyle(.purple)
-                Text("AI 摘要")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                Spacer()
-            }
-
-            Text(text)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(8)
-        .background(Color.purple.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-    }
-
-    private var actionButtons: some View {
-        HStack(spacing: 12) {
-            // AI 摘要按钮
-            Button {
-                onRequestSummary()
-            } label: {
-                HStack(spacing: 4) {
-                    if isSummarizing {
-                        ProgressView()
-                            .scaleEffect(0.6)
-                            .frame(width: 14, height: 14)
-                    } else {
-                        Image(systemName: "text.bubble")
-                    }
-                    Text(summary != nil ? "重新摘要" : "AI 摘要")
-                }
-                .font(.caption)
-            }
-            .buttonStyle(.bordered)
-            .focusEffectDisabled()
-            .disabled(isSummarizing)
-
-            // 订阅按钮
-            Button {
-                onSubscribe()
-            } label: {
-                HStack(spacing: 4) {
-                    if isSubscribing {
-                        ProgressView()
-                            .scaleEffect(0.6)
-                            .frame(width: 14, height: 14)
-                    } else {
-                        Image(systemName: isSubscribed ? "star.fill" : "star")
-                    }
-                    Text(isSubscribed ? "已订阅" : "订阅")
-                }
-                .font(.caption)
-            }
-            .buttonStyle(.borderedProminent)
-            .focusEffectDisabled()
-            .disabled(isSubscribing || isSubscribed)
         }
     }
 

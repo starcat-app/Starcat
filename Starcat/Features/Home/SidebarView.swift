@@ -32,12 +32,18 @@ struct SidebarView: View {
     @Binding var selectedTrendingLanguage: TrendingLanguage
     @Binding var showTagManagement: Bool
 
+    /// HOM-73：控制登录 sheet 的显示。
+    @State private var showLoginSheet: Bool = false
+
     var body: some View {
         VStack(spacing: 0) {
             sidebarFixedHeader
             sidebarList
         }
         .background(.bar)
+        .sheet(isPresented: $showLoginSheet) {
+            GithubAuthView()
+        }
     }
 
     /// Sidebar 固定顶部区：用户卡 + 一级入口。
@@ -161,9 +167,16 @@ struct SidebarView: View {
 
     private func rootNavigationButton(_ page: SidebarRootPage) -> some View {
         let isSelected = selectedPage == page
+        // HOM-73：Manage 和 Search 需要登录才能访问；Trending 是公开数据，始终可用。
+        let needsLogin = !authSession.state.isAuthenticated
+            && (page == .manage || page == .search)
 
         return Button {
-            selectRootPage(page)
+            if needsLogin {
+                showLoginSheet = true
+            } else {
+                selectRootPage(page)
+            }
         } label: {
             VStack(spacing: 6) {
                 Image(systemName: page.systemImage)
@@ -173,13 +186,12 @@ struct SidebarView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(isSelected ? Color.accentColor : Color.primary.opacity(0.75))
+            .foregroundStyle(isSelected ? Color.accentColor : (needsLogin ? Color.primary.opacity(0.3) : Color.primary.opacity(0.75)))
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help(page.title)
     }
 
     private func selectRootPage(_ page: SidebarRootPage) {
