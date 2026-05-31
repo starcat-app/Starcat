@@ -48,4 +48,29 @@ extension GitHubAPIClient {
     func star(owner: String, repo: String) async throws {
         try await put(path: "/user/starred/\(owner)/\(repo)")
     }
+
+    // MARK: - Subscription (Watch)
+
+    /// 获取 Watch 状态
+    func getSubscription(owner: String, repo: String) async throws -> GitHubSubscriptionDTO {
+        let response: APIResponse<GitHubSubscriptionDTO> = try await get(
+            path: "/repos/\(owner)/\(repo)/subscription"
+        )
+        return response.value
+    }
+
+    /// 设置 Watch 状态
+    func putSubscription(owner: String, repo: String, subscribed: Bool, ignored: Bool) async throws -> GitHubSubscriptionDTO {
+        let body = GitHubSubscriptionRequestDTO(subscribed: subscribed, ignored: ignored)
+        let response: APIResponse<GitHubSubscriptionDTO> = try await put(
+            path: "/repos/\(owner)/\(repo)/subscription",
+            body: body
+        )
+        return response.value
+    }
+
+    /// 取消 Watch
+    func deleteSubscription(owner: String, repo: String) async throws {
+        try await delete(path: "/repos/\(owner)/\(repo)/subscription")
+    }
 }

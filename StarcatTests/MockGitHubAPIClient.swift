@@ -89,6 +89,19 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
         }
         return try await handler(owner, repo, ifNoneMatch, ifModifiedSince)
     }
+
+    // MARK: - Subscription (Watch)
+
+    func getSubscription(owner: String, repo: String) async throws -> GitHubSubscriptionDTO {
+        return GitHubSubscriptionDTO(subscribed: false, ignored: false, reason: nil, createdAt: nil, url: nil, repositoryUrl: nil)
+    }
+
+    func putSubscription(owner: String, repo: String, subscribed: Bool, ignored: Bool) async throws -> GitHubSubscriptionDTO {
+        return GitHubSubscriptionDTO(subscribed: subscribed, ignored: ignored, reason: nil, createdAt: nil, url: nil, repositoryUrl: nil)
+    }
+
+    func deleteSubscription(owner: String, repo: String) async throws {
+    }
 }
 
 // MARK: - 构造便利

@@ -363,9 +363,26 @@ struct RepoDetailView: View {
 
     private func statsSection(_ repo: Repo) -> some View {
         HStack(alignment: .center, spacing: 24) {
-            StatItem(label: "Stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
-            StatItem(label: "Forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
-            StatItem(label: "Watchers", value: repo.watchersCount, systemImage: "eye.fill", tint: .secondary)
+            Button {
+                showUnstarConfirm = true
+            } label: {
+                StatItem(label: "Stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
+            }
+            .buttonStyle(.plain)
+            .help("取消 Star")
+
+            Button {
+                if let url = URL(string: "\(repo.htmlUrl)/fork") {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                StatItem(label: "Forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
+            }
+            .buttonStyle(.plain)
+            .help("在浏览器中 Fork")
+
+            WatchersMenu(repo: repo)
+
             DateStatItem(label: "Created", value: repo.createdAt, systemImage: "calendar.badge.plus")
             DateStatItem(label: "Updated", value: repo.updatedAt, systemImage: "clock.arrow.circlepath")
         }
@@ -569,5 +586,128 @@ private struct DateStatItem: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
+    }
+}
+
+struct WatchersMenu: View {
+    let repo: Repo
+    @Environment(AppDependencies.self) private var dependencies
+    
+    enum WatchState: Equatable {
+        case loading
+        case participating // un-watched (default)
+        case allActivity // subscribed: true, ignored: false
+        case ignore // subscribed: false, ignored: true
+        case custom // other states
+        case error
+    }
+    
+    @State private var watchState: WatchState = .loading
+    
+    var body: some View {
+        Menu {
+            switch watchState {
+            case .loading:
+                Text("加载中...")
+            case .error:
+                Button("重试") {
+                    Task { await fetchSubscription() }
+                }
+            default:
+                Button {
+                    Task { await updateSubscription(subscribed: false, ignored: false) }
+                } label: {
+                    if watchState == .participating {
+                        Label("Participating and @mentions", systemImage: "checkmark")
+                    } else {
+                        Text("Participating and @mentions")
+                    }
+                }
+                
+                Button {
+                    Task { await updateSubscription(subscribed: true, ignored: false) }
+                } label: {
+                    if watchState == .allActivity {
+                        Label("All Activity", systemImage: "checkmark")
+                    } else {
+                        Text("All Activity")
+                    }
+                }
+                
+                Button {
+                    Task { await updateSubscription(subscribed: false, ignored: true) }
+                } label: {
+                    if watchState == .ignore {
+                        Label("Ignore", systemImage: "checkmark")
+                    } else {
+                        Text("Ignore")
+                    }
+                }
+                
+                Divider()
+                
+                Button {
+                    if let url = URL(string: "\(repo.htmlUrl)/watchers") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Label("View Watchers on GitHub", systemImage: "safari")
+                }
+            }
+        } label: {
+            StatItem(label: "Watchers", value: repo.watchersCount, systemImage: "eye.fill", tint: .secondary)
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help("管理 Watch 状态")
+        .task(id: repo.id) {
+            await fetchSubscription()
+        }
+    }
+    
+    private func fetchSubscription() async {
+        watchState = .loading
+        do {
+            let dto = try await dependencies.apiClient.getSubscription(owner: repo.owner, repo: repo.name)
+            if dto.subscribed {
+                watchState = .allActivity
+            } else if dto.ignored {
+                watchState = .ignore
+            } else {
+                watchState = .custom
+            }
+        } catch NetworkError.notFound {
+            watchState = .participating
+        } catch {
+            watchState = .error
+        }
+    }
+    
+    private func updateSubscription(subscribed: Bool, ignored: Bool) async {
+        let previousState = watchState
+        watchState = .loading
+        do {
+            if !subscribed && !ignored {
+                try await dependencies.apiClient.deleteSubscription(owner: repo.owner, repo: repo.name)
+                watchState = .participating
+            } else {
+                let dto = try await dependencies.apiClient.putSubscription(
+                    owner: repo.owner,
+                    repo: repo.name,
+                    subscribed: subscribed,
+                    ignored: ignored
+                )
+                if dto.subscribed {
+                    watchState = .allActivity
+                } else if dto.ignored {
+                    watchState = .ignore
+                } else {
+                    watchState = .custom
+                }
+            }
+        } catch {
+            AppLog.sync.error("Update subscription failed: \(error.localizedDescription, privacy: .public)")
+            watchState = previousState
+        }
     }
 }

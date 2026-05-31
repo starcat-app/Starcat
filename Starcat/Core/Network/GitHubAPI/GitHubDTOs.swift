@@ -111,3 +111,17 @@ struct StarredRepoDTO: Decodable, Equatable {
     let starredAt: String
     let repo: GitHubRepoDTO
 }
+
+struct GitHubSubscriptionDTO: Codable, Equatable {
+    let subscribed: Bool
+    let ignored: Bool
+    let reason: String?
+    let createdAt: String?
+    let url: String?
+    let repositoryUrl: String?
+}
+
+struct GitHubSubscriptionRequestDTO: Encodable {
+    let subscribed: Bool
+    let ignored: Bool
+}

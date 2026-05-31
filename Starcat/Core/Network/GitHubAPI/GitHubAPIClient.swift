@@ -140,6 +140,17 @@ actor GitHubAPIClient {
         try await performNoBody(request)
     }
 
+    /// PUT 请求，带 Body 和 返回值
+    func put<T: Encodable, U: Decodable>(
+        path: String,
+        body: T,
+        as type: U.Type = U.self
+    ) async throws -> APIResponse<U> {
+        let bodyData = try JSONEncoder().encode(body)
+        let request = try buildRequest(method: "PUT", path: path, queryItems: [], accept: "application/vnd.github+json", body: bodyData)
+        return try await perform(request)
+    }
+
     /// 发起 GET 请求并返回原始字节，跳过 JSON 解码。
     ///
     /// 主要服务于 README HTML 端点（`Accept: application/vnd.github.html`）。

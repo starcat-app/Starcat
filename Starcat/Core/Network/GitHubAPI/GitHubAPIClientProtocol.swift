@@ -60,6 +60,12 @@ protocol GitHubAPIClientProtocol: Sendable {
         ifNoneMatch: String?,
         ifModifiedSince: String?
     ) async throws -> BytesResponse
+
+    // MARK: - Subscription (Watch)
+
+    func getSubscription(owner: String, repo: String) async throws -> GitHubSubscriptionDTO
+    func putSubscription(owner: String, repo: String, subscribed: Bool, ignored: Bool) async throws -> GitHubSubscriptionDTO
+    func deleteSubscription(owner: String, repo: String) async throws
 }
 
 // MARK: - Conformance
