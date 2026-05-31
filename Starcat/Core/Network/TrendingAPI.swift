@@ -42,27 +42,35 @@ actor TrendingAPI {
 
     // MARK: - Constants
 
-    /// Trending API 基础 URL
-    private static let baseURL = URL(string: "https://trend.doforce.dpdns.org")!
-
     /// 请求超时时间
     private static let timeout: TimeInterval = 30
 
     // MARK: - Properties
 
+    private let baseURL: URL
     private let session: URLSession
     private let decoder: JSONDecoder
 
     // MARK: - Initialization
 
-    init() {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = Self.timeout
-        config.timeoutIntervalForResource = Self.timeout
-        self.session = URLSession(configuration: config)
+    init(
+        baseURL: URL = URL(string: "https://trend.doforce.dpdns.org")!,
+        session: URLSession? = nil
+    ) {
+        self.baseURL = baseURL
+        if let session {
+            self.session = session
+        } else {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = Self.timeout
+            config.timeoutIntervalForResource = Self.timeout
+            self.session = URLSession(configuration: config)
+        }
 
+        // 这个 API 只有一个 snake_case 字段 `build_by`，DTO 已用 CodingKeys 显式映射。
+        // 如果再开 `.convertFromSnakeCase`，JSONDecoder 会先把响应 key 转成 `buildBy`，
+        // 反而匹配不到 `CodingKeys.buildBy = "build_by"`，导致线上响应解码失败。
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         self.decoder = decoder
     }
 
@@ -89,7 +97,7 @@ actor TrendingAPI {
     // MARK: - Private
 
     private func buildURL(since: TrendingPeriod, language: TrendingLanguage) throws -> URL {
-        var components = URLComponents(url: Self.baseURL.appendingPathComponent("repo"), resolvingAgainstBaseURL: false)
+        var components = URLComponents(url: baseURL.appendingPathComponent("repo"), resolvingAgainstBaseURL: false)
         var queryItems: [URLQueryItem] = []
 
         queryItems.append(URLQueryItem(name: "since", value: since.apiValue))

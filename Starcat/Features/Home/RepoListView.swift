@@ -24,6 +24,8 @@ struct RepoListView: View {
 
     /// HOM-54：TrendingRepository，用于渲染 Trending 页面。
     var trendingRepository: (any TrendingRepositoryProtocol)?
+    /// HOM-54：Trending 一键订阅复用 GitHub API 的 star 端点。
+    var githubAPIClient: (any GitHubAPIClientProtocol)?
 
     // 顶部 clone 按钮现在属于中栏 toolbar；复制成功提示也跟着放在列表栏上。
     @State private var toastMessage: String?
@@ -45,8 +47,8 @@ struct RepoListView: View {
         Group {
             if viewModel.selection == .trending {
                 // HOM-54：Trending 页面
-                if let repo = trendingRepository {
-                    TrendingView(repository: repo)
+                if let repo = trendingRepository, let githubAPIClient {
+                    TrendingView(repository: repo, githubAPIClient: githubAPIClient)
                 } else {
                     emptyState(systemImage: "chart.line.uptrend.xyaxis", title: "Trending 数据暂不可用", subtitle: "功能开发中")
                 }

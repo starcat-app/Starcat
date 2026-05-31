@@ -46,6 +46,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     // MARK: - 调用记录（供断言用）
 
     private(set) var readmeHTMLCalls: [(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)] = []
+    private(set) var starCalls: [(owner: String, repo: String)] = []
 
     // MARK: - Protocol conformance
 
@@ -64,6 +65,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
 
     func star(owner: String, repo: String) async throws {
+        starCalls.append((owner, repo))
         guard let handler = starHandler else {
             fatalError("MockGitHubAPIClient.starHandler 未设置")
         }

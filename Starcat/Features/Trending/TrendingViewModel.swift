@@ -34,6 +34,9 @@ final class TrendingViewModel {
     /// 错误信息
     private(set) var loadError: String?
 
+    /// 订阅（GitHub Star）失败信息。
+    private(set) var subscriptionError: String?
+
     // MARK: - 筛选状态
 
     /// 当前时间周期
@@ -60,6 +63,14 @@ final class TrendingViewModel {
     /// 摘要结果缓存：repo fullName -> 摘要文本
     private(set) var summaryCache: [String: String] = [:]
 
+    // MARK: - 订阅状态
+
+    /// 正在订阅的 repo fullName 集合。
+    private(set) var subscribingRepoIDs: Set<String> = []
+
+    /// 本次会话里已经订阅成功的 repo fullName 集合。
+    private(set) var subscribedRepoIDs: Set<String> = []
+
     // MARK: - AI 评分状态
 
     /// AI 评分缓存：repo fullName -> 评分
@@ -76,14 +87,19 @@ final class TrendingViewModel {
     // MARK: - 依赖
 
     private let repository: any TrendingRepositoryProtocol
+    private let githubAPIClient: any GitHubAPIClientProtocol
 
     /// 当前 in-flight 的 reload 任务
     private var currentReloadTask: Task<Void, Never>?
 
     // MARK: - Initialization
 
-    init(repository: any TrendingRepositoryProtocol) {
+    init(
+        repository: any TrendingRepositoryProtocol,
+        githubAPIClient: any GitHubAPIClientProtocol
+    ) {
         self.repository = repository
+        self.githubAPIClient = githubAPIClient
     }
 
     // MARK: - Public Actions
@@ -155,8 +171,58 @@ final class TrendingViewModel {
 
     /// 一键订阅（star 到 GitHub）
     func subscribe(repo: TrendingRepo) async throws {
-        // TODO: 调用 GitHub API star 该仓库
-        AppLog.sync.info("Subscribing to \(repo.fullName, privacy: .public)")
+        guard !subscribingRepoIDs.contains(repo.fullName),
+              !subscribedRepoIDs.contains(repo.fullName)
+        else { return }
+
+        subscribingRepoIDs.insert(repo.fullName)
+        subscriptionError = nil
+        defer { subscribingRepoIDs.remove(repo.fullName) }
+
+        do {
+            try await githubAPIClient.star(owner: repo.owner, repo: repo.name)
+            subscribedRepoIDs.insert(repo.fullName)
+            AppLog.sync.info("Subscribed to \(repo.fullName, privacy: .public)")
+        } catch {
+            subscriptionError = "订阅 \(repo.fullName) 失败：\(error.localizedDescription)"
+            throw error
+        }
+    }
+
+    /// 从本地 Stars 语言分布生成偏好权重。
+    func updateLanguagePreferences(from stats: [LanguageStat]) {
+        let total = stats.reduce(0) { $0 + $1.count }
+        guard total > 0 else {
+            userLanguagePreferences = [:]
+            return
+        }
+
+        userLanguagePreferences = Dictionary(uniqueKeysWithValues: stats.compactMap { stat in
+            guard !stat.language.isEmpty else { return nil }
+            return (stat.language, Double(stat.count) / Double(total))
+        })
+    }
+
+    /// 推荐区使用的仓库列表。
+    ///
+    /// 有本地语言偏好时优先匹配用户常 star 的语言；没有偏好时退化为当前榜单评分最高的项目，
+    /// 这样未登录 / 未同步状态也能展示“发现”价值，而不是让区块永远消失。
+    var recommendedRepos: [TrendingRepo] {
+        let ranked: [TrendingRepo]
+        if userLanguagePreferences.isEmpty {
+            ranked = repos.sorted { score(for: $0).total > score(for: $1).total }
+        } else {
+            ranked = repos.sorted { lhs, rhs in
+                let lhsPreference = userLanguagePreferences[lhs.language ?? ""] ?? 0
+                let rhsPreference = userLanguagePreferences[rhs.language ?? ""] ?? 0
+                if lhsPreference != rhsPreference {
+                    return lhsPreference > rhsPreference
+                }
+                return score(for: lhs).total > score(for: rhs).total
+            }
+        }
+
+        return Array(ranked.prefix(3))
     }
 
     // MARK: - Private

@@ -22,10 +22,17 @@ import SwiftUI
 
 struct TrendingView: View {
 
+    @Environment(HomeViewModel.self) private var homeViewModel
     @State private var viewModel: TrendingViewModel
 
-    init(repository: any TrendingRepositoryProtocol) {
-        _viewModel = State(initialValue: TrendingViewModel(repository: repository))
+    init(
+        repository: any TrendingRepositoryProtocol,
+        githubAPIClient: any GitHubAPIClientProtocol
+    ) {
+        _viewModel = State(initialValue: TrendingViewModel(
+            repository: repository,
+            githubAPIClient: githubAPIClient
+        ))
     }
 
     var body: some View {
@@ -45,7 +52,11 @@ struct TrendingView: View {
             }
         }
         .task {
+            viewModel.updateLanguagePreferences(from: homeViewModel.languageStats)
             await viewModel.reload()
+        }
+        .onChange(of: homeViewModel.languageStats) { _, stats in
+            viewModel.updateLanguagePreferences(from: stats)
         }
     }
 
@@ -129,7 +140,7 @@ struct TrendingView: View {
         ScrollView {
             LazyVStack(spacing: 12) {
                 // 个性化推荐区块
-                if !viewModel.userLanguagePreferences.isEmpty {
+                if !viewModel.recommendedRepos.isEmpty {
                     personalizedSection
                 }
 
@@ -140,9 +151,15 @@ struct TrendingView: View {
                         score: viewModel.score(for: repo),
                         summary: viewModel.summaryCache[repo.fullName],
                         isSummarizing: viewModel.summarizingRepoIDs.contains(repo.fullName),
+                        isSubscribing: viewModel.subscribingRepoIDs.contains(repo.fullName),
+                        isSubscribed: viewModel.subscribedRepoIDs.contains(repo.fullName),
                         onSubscribe: {
                             Task {
-                                try? await viewModel.subscribe(repo: repo)
+                                do {
+                                    try await viewModel.subscribe(repo: repo)
+                                } catch {
+                                    // 错误文案由 ViewModel 写入 subscriptionError，这里只消费 throwing API。
+                                }
                             }
                         },
                         onRequestSummary: {
@@ -151,6 +168,15 @@ struct TrendingView: View {
                             }
                         }
                     )
+                }
+
+                if let message = viewModel.subscriptionError {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
                 }
             }
             .padding(16)
@@ -170,9 +196,21 @@ struct TrendingView: View {
                 Spacer()
             }
 
-            Text("基于你的收藏偏好精选")
+            Text(viewModel.userLanguagePreferences.isEmpty ? "基于当前榜单热度精选" : "基于你的收藏偏好精选")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                ForEach(viewModel.recommendedRepos) { repo in
+                    Text(repo.fullName)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(NSColor.controlBackgroundColor))
+                        .clipShape(Capsule())
+                }
+            }
         }
         .padding(12)
         .background(Color.orange.opacity(0.1))
@@ -230,6 +268,8 @@ struct TrendingRepoCard: View {
     let score: TrendingScore
     let summary: String?
     let isSummarizing: Bool
+    let isSubscribing: Bool
+    let isSubscribed: Bool
     let onSubscribe: () -> Void
     let onRequestSummary: () -> Void
 
@@ -440,13 +480,20 @@ struct TrendingRepoCard: View {
                 onSubscribe()
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "star")
-                    Text("订阅")
+                    if isSubscribing {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                            .frame(width: 14, height: 14)
+                    } else {
+                        Image(systemName: isSubscribed ? "star.fill" : "star")
+                    }
+                    Text(isSubscribed ? "已订阅" : "订阅")
                 }
                 .font(.caption)
             }
             .buttonStyle(.borderedProminent)
             .focusEffectDisabled()
+            .disabled(isSubscribing || isSubscribed)
         }
     }
 

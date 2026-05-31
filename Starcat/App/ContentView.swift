@@ -24,7 +24,8 @@ struct ContentView: View {
                 tagRepository: dependencies.tagRepository,
                 repoTagRepository: dependencies.repoTagRepository,
                 repoNoteRepository: dependencies.repoNoteRepository,
-                trendingRepository: dependencies.trendingRepository
+                trendingRepository: dependencies.trendingRepository,
+                githubAPIClient: dependencies.apiClient
             )
             .frame(minWidth: 800, minHeight: 600)
         }

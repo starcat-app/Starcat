@@ -47,6 +47,8 @@ struct HomeView: View {
 
     /// HOM-54：TrendingRepository 实例，传给 RepoListView 用于渲染 Trending 页面。
     @State private var trendingRepository: any TrendingRepositoryProtocol
+    /// HOM-54：Trending 一键订阅需要调用 GitHub Star API。
+    @State private var githubAPIClient: any GitHubAPIClientProtocol
 
     /// D-01：repository 类型从具体 struct 改为协议，便于 Preview / 测试注入 Mock。
     /// W4 A6：HomeViewModel 也接收 tagRepository / repoTagRepository（Sidebar Tags 段 + 按 tag 过滤）。
@@ -57,7 +59,8 @@ struct HomeView: View {
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
-        trendingRepository: any TrendingRepositoryProtocol
+        trendingRepository: any TrendingRepositoryProtocol,
+        githubAPIClient: any GitHubAPIClientProtocol
     ) {
         _viewModel = State(initialValue: HomeViewModel(
             repository: repository,
@@ -71,6 +74,7 @@ struct HomeView: View {
             repoTagRepository: repoTagRepository
         ))
         _trendingRepository = State(initialValue: trendingRepository)
+        _githubAPIClient = State(initialValue: githubAPIClient)
     }
 
     var body: some View {
@@ -78,7 +82,10 @@ struct HomeView: View {
             SidebarView(showTagManagement: $showTagManagement)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
         } content: {
-            RepoListView(trendingRepository: trendingRepository)
+            RepoListView(
+                trendingRepository: trendingRepository,
+                githubAPIClient: githubAPIClient
+            )
                 .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 480)
         } detail: {
             RepoDetailView()
