@@ -269,6 +269,8 @@ final class HomeViewModel {
                     fetched = try await self.repository.searchFTS(query: self.searchQuery)
                 } else {
                     switch self.selection {
+                    case .trending:
+                        fetched = [] // Placeholder for W7 Trending
                     case .allStars:
                         fetched = try await self.repository.fetchAllStarred()
                     case .untagged:

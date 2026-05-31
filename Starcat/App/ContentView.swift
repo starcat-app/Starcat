@@ -18,18 +18,14 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if authSession.state.isAuthenticated {
-                HomeView(
-                    repository: dependencies.repoRepository,
-                    readmeAPI: dependencies.readmeAPI,
-                    tagRepository: dependencies.tagRepository,
-                    repoTagRepository: dependencies.repoTagRepository,
-                    repoNoteRepository: dependencies.repoNoteRepository
-                )
-                    .frame(minWidth: 800, minHeight: 600)
-            } else {
-                GithubAuthView()
-            }
+            HomeView(
+                repository: dependencies.repoRepository,
+                readmeAPI: dependencies.readmeAPI,
+                tagRepository: dependencies.tagRepository,
+                repoTagRepository: dependencies.repoTagRepository,
+                repoNoteRepository: dependencies.repoNoteRepository
+            )
+            .frame(minWidth: 800, minHeight: 600)
         }
         .animation(.smooth, value: authSession.state)
     }

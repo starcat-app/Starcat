@@ -206,6 +206,7 @@ struct RepoListView: View {
     private var emptyImage: String {
         if viewModel.isSearching { return "magnifyingglass" }
         switch viewModel.selection {
+        case .trending:  return "chart.line.uptrend.xyaxis"
         case .allStars:  return "star"
         case .untagged:  return "tag.slash"
         case .language:  return "chevron.left.forwardslash.chevron.right"
@@ -216,6 +217,7 @@ struct RepoListView: View {
     private var emptyTitle: String {
         if viewModel.isSearching { return "无匹配结果" }
         switch viewModel.selection {
+        case .trending:        return "Trending 数据暂不可用"
         case .allStars:        return "还没有 Stars"
         case .untagged:        return "所有仓库都已分类"
         case .language:        return "该语言下暂无仓库"
@@ -226,6 +228,7 @@ struct RepoListView: View {
     private var emptySubtitle: String {
         if viewModel.isSearching { return "试试别的关键词" }
         switch viewModel.selection {
+        case .trending:        return "功能开发中，敬请期待"
         case .allStars:        return "点击侧边栏同步按钮拉取 GitHub Stars"
         case .untagged:        return "新增 Stars 默认进这里"
         case .language:        return "刷新或同步后试试"

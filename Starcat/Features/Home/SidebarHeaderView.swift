@@ -30,18 +30,58 @@ struct SidebarHeaderView: View {
 
     /// 用户头像旁"…"菜单 popover 显示状态。
     @State private var showAccountMenu: Bool = false
+    @State private var showLoginSheet: Bool = false
 
     var body: some View {
-        if case .authenticated(let user) = authSession.state {
-            VStack(spacing: 10) {
+        VStack(spacing: 10) {
+            switch authSession.state {
+            case .authenticated(let user):
                 avatarRow(user: user)
                 identity(user: user)
                 statsRow(user: user)
+            case .unauthenticated, .awaitingUserCode:
+                unauthenticatedAvatarRow()
+                unauthenticatedIdentity()
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 14)
-            .padding(.bottom, 12)
-            .background(.bar)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+        .background(.bar)
+        .sheet(isPresented: $showLoginSheet) {
+            GithubAuthView()
+        }
+        .onChange(of: authSession.state) { _, newState in
+            if newState.isAuthenticated {
+                showLoginSheet = false
+            }
+        }
+    }
+
+    // MARK: - 未登录态
+
+    private func unauthenticatedAvatarRow() -> some View {
+        ZStack(alignment: .topTrailing) {
+            Button {
+                showLoginSheet = true
+            } label: {
+                Image(systemName: "person.crop.circle.fill")
+                    .resizable()
+                    .frame(width: 56, height: 56)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("点击登录 GitHub")
+        }
+    }
+
+    private func unauthenticatedIdentity() -> some View {
+        VStack(spacing: 2) {
+            Text("未登录")
+                .font(.system(size: 14, weight: .semibold))
+                .lineLimit(1)
         }
     }
 

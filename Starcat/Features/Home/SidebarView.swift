@@ -19,6 +19,7 @@ import SwiftUI
 struct SidebarView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
+    @Environment(AuthSession.self) private var authSession
 
     /// 当前打开/收起 Languages 组的状态。
     @State private var languagesExpanded: Bool = true
@@ -31,34 +32,40 @@ struct SidebarView: View {
         @Bindable var vm = viewModel
 
         List(selection: $vm.selection) {
-            Section("主导航") {
-                row(.allStars, count: viewModel.totalCount)
-                row(.untagged, count: viewModel.untaggedCount)
+            Section("发现") {
+                row(.trending)
             }
 
-            // W4 A6：Tags 段。
-            // 行为：每个用户自定义标签一行，点击 → selection = .tag(id) → 列表过滤
-            // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
-            Section {
-                if tagsExpanded && !viewModel.tags.isEmpty {
-                    ForEach(viewModel.tags) { tag in
-                        tagRow(tag: tag, count: viewModel.tagCounts[tag.id] ?? 0)
-                    }
+            if authSession.state.isAuthenticated {
+                Section("主导航") {
+                    row(.allStars, count: viewModel.totalCount)
+                    row(.untagged, count: viewModel.untaggedCount)
                 }
-            } header: {
-                tagSectionHeader
-            }
 
-            if !viewModel.languageStats.isEmpty {
+                // W4 A6：Tags 段。
+                // 行为：每个用户自定义标签一行，点击 → selection = .tag(id) → 列表过滤
                 // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
                 Section {
-                    if languagesExpanded {
-                        ForEach(viewModel.languageStats) { stat in
-                            languageRow(stat)
+                    if tagsExpanded && !viewModel.tags.isEmpty {
+                        ForEach(viewModel.tags) { tag in
+                            tagRow(tag: tag, count: viewModel.tagCounts[tag.id] ?? 0)
                         }
                     }
                 } header: {
-                    languageSectionHeader
+                    tagSectionHeader
+                }
+
+                if !viewModel.languageStats.isEmpty {
+                    // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
+                    Section {
+                        if languagesExpanded {
+                            ForEach(viewModel.languageStats) { stat in
+                                languageRow(stat)
+                            }
+                        }
+                    } header: {
+                        languageSectionHeader
+                    }
                 }
             }
         }

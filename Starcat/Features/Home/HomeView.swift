@@ -22,6 +22,7 @@ import SwiftUI
 
 struct HomeView: View {
 
+    @Environment(AuthSession.self) private var authSession
     @Environment(SyncManager.self) private var syncManager
     @Environment(AppSettings.self) private var settings
 
@@ -105,6 +106,15 @@ struct HomeView: View {
             if viewModel.statusFilter != settings.statusFilter {
                 viewModel.statusFilter = settings.statusFilter
             }
+            
+            // Default to trending if not authenticated
+            if !authSession.state.isAuthenticated {
+                viewModel.selection = .trending
+            } else if viewModel.selection == .trending {
+                // If authenticated and somehow still on trending initially, we can leave it
+                // or let the user switch.
+            }
+
             await viewModel.refreshSidebar()
             await viewModel.reloadItems()
         }

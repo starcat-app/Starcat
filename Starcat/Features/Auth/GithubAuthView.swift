@@ -16,6 +16,7 @@ import AppKit
 struct GithubAuthView: View {
 
     @Environment(AuthSession.self) private var authSession
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 24) {
@@ -25,6 +26,18 @@ struct GithubAuthView: View {
         }
         .padding(40)
         .frame(minWidth: 480, minHeight: 360)
+        .overlay(alignment: .topTrailing) {
+            Button {
+                authSession.cancelSignIn()
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .padding(20)
+        }
     }
 
     // MARK: - Header
@@ -109,6 +122,7 @@ struct GithubAuthView: View {
 
                 Button("取消") {
                     authSession.cancelSignIn()
+                    dismiss()
                 }
                 .controlSize(.large)
                 .focusEffectDisabled()

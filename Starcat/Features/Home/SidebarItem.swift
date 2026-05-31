@@ -21,6 +21,7 @@ import Foundation
 ///
 /// Week 4+ 会扩展：Tag(id), SavedSearch(id)。
 enum SidebarItem: Hashable, Identifiable {
+    case trending
     case allStars
     case untagged
     case language(String?)
@@ -31,6 +32,7 @@ enum SidebarItem: Hashable, Identifiable {
     /// SwiftUI ForEach / List 用的稳定 id。
     var id: String {
         switch self {
+        case .trending:                return "section.trending"
         case .allStars:                return "section.all"
         case .untagged:                return "section.untagged"
         case .language(let lang):      return "language.\(lang ?? "<nil>")"
@@ -43,6 +45,7 @@ enum SidebarItem: Hashable, Identifiable {
     /// tag 不在此处给名字，由 SidebarView 用 vm.tags 查（避免在 enum 里背业务数据）。
     var displayName: String {
         switch self {
+        case .trending:                return "Trending"
         case .allStars:                return "全部 Stars"
         case .untagged:                return "未分类"
         case .language(let lang):      return lang ?? "Unknown"
@@ -53,6 +56,7 @@ enum SidebarItem: Hashable, Identifiable {
     /// SF Symbol 图标名（用于 Sidebar 行的前置图标）。
     var systemImage: String {
         switch self {
+        case .trending:                return "chart.line.uptrend.xyaxis"
         case .allStars:                return "star.fill"
         case .untagged:                return "tag.slash"
         case .language:                return "chevron.left.forwardslash.chevron.right"
