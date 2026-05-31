@@ -15,11 +15,26 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct RepoListView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(AppSettings.self) private var settings
+
+    // 顶部 clone 按钮现在属于中栏 toolbar；复制成功提示也跟着放在列表栏上。
+    @State private var toastMessage: String?
+
+    /// toolbar 上 SF Symbol 的统一视觉尺寸。
+    ///
+    /// 不同 symbol 的默认 bounding box 差异很大（例如 `doc.on.clipboard` 会显得更高），
+    /// 所以顶部按钮统一走这个 helper，而不是依赖各控件自己的 `imageScale`。
+    private func toolbarIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 16, weight: .regular))
+            .frame(width: 18, height: 18, alignment: .center)
+            .contentShape(Rectangle())
+    }
 
     var body: some View {
         @Bindable var vm = viewModel
@@ -49,26 +64,144 @@ struct RepoListView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                CollapsibleSearchBar(text: $vm.searchQuery)
                 statusFilterMenu
                 sortMenu
                 multiSelectButton
             }
+            ToolbarItemGroup(placement: .primaryAction) {
+                if let repo = viewModel.selectedRepo {
+                    // 这两个动作作用于右侧详情页，但视觉上要贴近最右搜索按钮。
+                    externalLinksMenu(repo: repo)
+                    cloneMenu(repo: repo)
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                // 搜索入口单独作为最后一个 toolbar item，才能在 macOS toolbar 里稳定贴到最右侧。
+                // 展开时输入框向左占位，放大镜按钮本身仍停在最右边。
+                CollapsibleSearchBar(text: $vm.searchQuery)
+            }
         }
+        .toast(message: $toastMessage, icon: "doc.on.clipboard")
     }
 
     // MARK: - 顶部操作栏组件
+
+    /// 顶部 "在 GitHub 打开" 菜单。
+    ///
+    /// 这个按钮从右侧详情页 toolbar 移到中栏 toolbar，是因为 NavigationSplitView 会把
+    /// detail toolbar 渲染在右栏左边；dong4j 期望详情动作靠近最右搜索入口，形成一条统一操作区。
+    @ViewBuilder
+    private func externalLinksMenu(repo: Repo) -> some View {
+        Menu {
+            if let issues = RepoExternalLinks.issues(repo) {
+                Button {
+                    NSWorkspace.shared.open(issues)
+                } label: {
+                    Label("Issues", systemImage: "exclamationmark.bubble")
+                }
+            }
+            if let pulls = RepoExternalLinks.pulls(repo) {
+                Button {
+                    NSWorkspace.shared.open(pulls)
+                } label: {
+                    Label("Pull Requests", systemImage: "arrow.triangle.pull")
+                }
+            }
+            if let releases = RepoExternalLinks.releases(repo) {
+                Button {
+                    NSWorkspace.shared.open(releases)
+                } label: {
+                    Label("Releases", systemImage: "tag.circle")
+                }
+            }
+            if let homepage = RepoExternalLinks.homepage(repo) {
+                Divider()
+                Button {
+                    NSWorkspace.shared.open(homepage)
+                } label: {
+                    Label("Homepage", systemImage: "house")
+                    Text(homepage.absoluteString)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } label: {
+            toolbarIcon("safari")
+                .accessibilityLabel("在 GitHub 打开")
+        } primaryAction: {
+            if let url = RepoExternalLinks.repo(repo) {
+                NSWorkspace.shared.open(url)
+            }
+        }
+        .help("点击：打开仓库主页；展开：Issues / Releases / Homepage")
+    }
+
+    /// 顶部 clone URL 复制菜单。
+    ///
+    /// 地址优先使用 GitHub API 同步回来的字段；旧缓存缺字段时按 GitHub 规则兜底生成，
+    /// 保证选中 repo 后复制按钮稳定可见。
+    @ViewBuilder
+    private func cloneMenu(repo: Repo) -> some View {
+        let https = httpsCloneURL(for: repo)
+        let git = gitCloneURL(for: repo)
+
+        Menu {
+            Button {
+                copy(https, success: "已复制 HTTPS Clone URL")
+            } label: {
+                Label("HTTPS", systemImage: "globe")
+            }
+            Text(https)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            Button {
+                copy(git, success: "已复制 Git Clone URL")
+            } label: {
+                Label("Git / SSH", systemImage: "terminal")
+            }
+            Text(git)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        } label: {
+            toolbarIcon("doc.on.clipboard")
+                .accessibilityLabel("克隆地址")
+        }
+        .help("复制 HTTPS / Git clone 地址")
+    }
+
+    private func httpsCloneURL(for repo: Repo) -> String {
+        let fromAPI = repo.cloneUrl?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let fromAPI, !fromAPI.isEmpty {
+            return fromAPI
+        }
+        return "https://github.com/\(repo.owner)/\(repo.name).git"
+    }
+
+    private func gitCloneURL(for repo: Repo) -> String {
+        let fromAPI = repo.sshUrl?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let fromAPI, !fromAPI.isEmpty {
+            return fromAPI
+        }
+        return "git@github.com:\(repo.owner)/\(repo.name).git"
+    }
+
+    private func copy(_ string: String, success: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(string, forType: .string)
+        toastMessage = success
+    }
 
     /// 用 SF Symbol `checklist` 表达"批量操作"语义；按钮在多选模式时强调显示。
     private var multiSelectButton: some View {
         Button {
             viewModel.toggleMultiSelectMode()
         } label: {
-            Label(
-                viewModel.isMultiSelectMode ? "退出多选" : "多选",
-                systemImage: viewModel.isMultiSelectMode ? "checklist.checked" : "checklist"
-            )
-            .imageScale(.small)
+            toolbarIcon(viewModel.isMultiSelectMode ? "checklist.checked" : "checklist")
+                .accessibilityLabel(viewModel.isMultiSelectMode ? "退出多选" : "多选")
         }
         .help(viewModel.isMultiSelectMode ? "退出多选模式" : "进入多选模式")
         .keyboardShortcut("m", modifiers: [.command, .shift])
@@ -97,13 +230,8 @@ struct RepoListView: View {
                 Label("隐藏 Fork", systemImage: "tuningfork")
             }
         } label: {
-            Label(
-                viewModel.statusFilter?.displayName ?? "阅读状态",
-                systemImage: viewModel.hasActiveFilter
-                    ? "circle.grid.2x1.fill"
-                    : "circle.grid.2x1"
-            )
-            .imageScale(.small)
+            toolbarIcon(viewModel.hasActiveFilter ? "circle.grid.2x1.fill" : "circle.grid.2x1")
+                .accessibilityLabel(viewModel.statusFilter?.displayName ?? "阅读状态")
         }
         .help(viewModel.hasActiveFilter ? "已启用阅读状态 / 列表过滤" : "按阅读状态过滤")
         .onChange(of: viewModel.hideArchived) { _, newValue in
@@ -134,8 +262,8 @@ struct RepoListView: View {
             }
             .pickerStyle(.inline)
         } label: {
-            Label("排序", systemImage: "arrow.up.arrow.down")
-                .imageScale(.small)
+            toolbarIcon("arrow.up.arrow.down")
+                .accessibilityLabel("排序")
         }
         .help("选择列表排序方式")
         .onAppear {

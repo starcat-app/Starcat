@@ -147,6 +147,13 @@ struct HomeView: View {
                 readmeVM.reset()
             }
         }
+        // 监听登录态变化，退出登录时强制切换回 Trending 并清除选择
+        .onChange(of: authSession.state.isAuthenticated) { _, isAuthenticated in
+            if !isAuthenticated {
+                viewModel.selection = .trending
+                viewModel.selectedRepoID = nil
+            }
+        }
     }
 
 }

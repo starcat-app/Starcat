@@ -38,7 +38,7 @@ struct CollapsibleSearchBar: View {
                 }
             } label: {
                 Image(systemName: "magnifyingglass")
-                    .imageScale(.small)
+                    .font(.system(size: 16, weight: .regular))
                     .frame(width: collapsedWidth, height: collapsedWidth)
                     .contentShape(Rectangle())
             }
@@ -49,7 +49,8 @@ struct CollapsibleSearchBar: View {
         .frame(width: isExpanded ? expandedWidth : collapsedWidth, height: collapsedWidth)
         .background {
             RoundedRectangle(cornerRadius: isExpanded ? 7 : collapsedWidth / 2, style: .continuous)
-                .fill(isExpanded ? Color(nsColor: .textBackgroundColor).opacity(0.85) : .clear)
+                // toolbar 本身已经有材质背景；搜索框不再额外填充一层底色，避免和其他按钮胶囊色不一致。
+                .fill(.clear)
                 .overlay {
                     RoundedRectangle(cornerRadius: isExpanded ? 7 : collapsedWidth / 2, style: .continuous)
                         .stroke(isFocused ? Color.accentColor.opacity(0.45) : Color.secondary.opacity(0.2),

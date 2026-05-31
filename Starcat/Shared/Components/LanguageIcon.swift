@@ -1050,8 +1050,9 @@ struct LanguageIconView: View {
         case .localSVG(let assetName):
             Image(assetName)
                 .resizable()
-                .aspectRatio(contentMode: .fit)
+                .scaledToFill()
                 .frame(width: size, height: size)
+                .clipped()
 
         case .badge(let colorHex, _):
             // Fallback: 只显示彩色圆形，不显示字母
