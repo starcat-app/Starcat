@@ -8,7 +8,7 @@
 //  - 头像（圆形，56pt）
 //  - 显示名 + @login
 //  - 三栏统计：本地 Starred / 远程 Followers / 远程 Following
-//  - 头像旁的"…"按钮 → popover：在 GitHub 打开 + 退出登录
+//  - 点击头像 → 跳转 GitHub 主页；右上角"…"按钮 → popover：退出登录
 //
 //  设计约束：
 //  - 用 popover 而非 Menu，避免 macOS 26 toolbar 上 Menu(label: custom view)
@@ -43,16 +43,22 @@ struct SidebarHeaderView: View {
         }
     }
 
-    // MARK: - 头像行（含右上角 popover 入口）
+    // MARK: - 头像行（含账户菜单入口）
 
     private func avatarRow(user: GitHubUserDTO) -> some View {
         ZStack(alignment: .topTrailing) {
-            // 头像本身不响应点击；交互入口放在右上角 ⋯ 按钮
-            RemoteAvatar(urlString: user.avatarUrl, size: 56)
-                .fixedSize()
-                .frame(maxWidth: .infinity)
+            // 点击头像直接跳转到 GitHub 主页
+            Button {
+                openGitHubProfile(login: user.login)
+            } label: {
+                RemoteAvatar(urlString: user.avatarUrl, size: 56)
+                    .fixedSize()
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.plain)
+            .help("查看 GitHub 主页")
 
-            // 右上角"⋯"按钮：弹 popover（账户操作）
+            // 右上角账户菜单按钮（仅保留退出登录）
             Button {
                 showAccountMenu.toggle()
             } label: {
@@ -64,7 +70,7 @@ struct SidebarHeaderView: View {
             .buttonStyle(.plain)
             .help("账户")
             .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
-                accountPopover(user: user)
+                accountPopover()
             }
         }
     }
@@ -101,21 +107,8 @@ struct SidebarHeaderView: View {
 
     // MARK: - Popover 内容（账户操作）
 
-    private func accountPopover(user: GitHubUserDTO) -> some View {
+    private func accountPopover() -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button {
-                openGitHubProfile(login: user.login)
-                showAccountMenu = false
-            } label: {
-                Label("在 GitHub 查看", systemImage: "safari")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-
-            Divider()
-
             Button(role: .destructive) {
                 authSession.signOut()
                 showAccountMenu = false
