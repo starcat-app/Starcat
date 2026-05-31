@@ -61,6 +61,10 @@ struct RepoListView: View {
                 RepoRowView(repo: repo, density: settings.listDensity)
             }
         }
+        .id(viewModel.itemsRevision)
+        .transaction { transaction in
+            transaction.animation = nil
+        }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
     }
@@ -72,6 +76,10 @@ struct RepoListView: View {
             ForEach(viewModel.items) { repo in
                 RepoRowView(repo: repo, density: settings.listDensity)
             }
+        }
+        .id(viewModel.itemsRevision)
+        .transaction { transaction in
+            transaction.animation = nil
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()

@@ -34,6 +34,16 @@ final class HomeViewModel {
     /// D-04：`private(set)` 收敛——只有 ViewModel 内部 `applyView()` 能改，避免外部 View 直接覆写引发状态漂移。
     private(set) var items: [Repo] = []
 
+    /// 当前列表快照版本。
+    ///
+    /// 为什么需要它：排序切换时 `items` 里是同一批 repo，只是顺序大幅变化。
+    /// 如果直接让 SwiftUI `List` 用旧 identity 做 diff，macOS 会尝试把几千行逐个 move，
+    /// 这部分差分 / 隐式动画发生在主线程，表现就是排序菜单点完后 UI 卡住数秒。
+    ///
+    /// `RepoListView` 把这个版本号挂到 `List.id(...)` 上；每次 applyView 产出新快照时
+    /// 版本递增，List 会按"新快照"重建，而不是做大规模 row move diff。
+    private(set) var itemsRevision: Int = 0
+
     /// W4-4 D2：原始 fetch 结果（未经 filter / sort）。
     /// `items` 是 rawItems 的派生 — sort / filter 改变时只需重跑 `applyView()` 而不必重 fetch。
     /// 私有：不暴露给 UI，保持单向流: rawItems → applyView → items → UI。
@@ -341,6 +351,7 @@ final class HomeViewModel {
         }
         view.sort(by: sortOption.comparator)
         items = view
+        itemsRevision += 1
 
         if let id = selectedRepoID, !view.contains(where: { $0.id == id }) {
             selectedRepoID = nil

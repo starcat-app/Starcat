@@ -96,10 +96,12 @@ struct HomeViewModelFilterSortTests {
         try await insertRepo(db, id: 1, fullName: "o/aaa", stars: 100, starredAt: "2026-05-01T00:00:00Z")
         try await insertRepo(db, id: 2, fullName: "o/zzz", stars: 1, starredAt: "2026-05-30T00:00:00Z")
         await vm.reloadItems()
+        let revisionAfterReload = vm.itemsRevision
 
         vm.sortOption = .starsDesc
 
         #expect(vm.items.map(\.id) == [1, 2], "starsDesc: 100 stars 在前")
+        #expect(vm.itemsRevision == revisionAfterReload + 1, "排序切换应发布新的列表快照版本，避免 SwiftUI 对旧 List 做大规模 move diff")
     }
 
     // MARK: - D2 过滤
