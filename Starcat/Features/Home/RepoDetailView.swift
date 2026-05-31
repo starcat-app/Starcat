@@ -362,7 +362,7 @@ struct RepoDetailView: View {
     }
 
     private func statsSection(_ repo: Repo) -> some View {
-        HStack(alignment: .top, spacing: 24) {
+        HStack(alignment: .center, spacing: 24) {
             StatItem(label: "Stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
             StatItem(label: "Forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
             StatItem(label: "Watchers", value: repo.watchersCount, systemImage: "eye.fill", tint: .secondary)
@@ -524,14 +524,17 @@ private struct StatItem: View {
     let tint: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .center, spacing: 2) {
             HStack(spacing: 4) {
-                Image(systemName: systemImage).foregroundStyle(tint)
-                Text(value, format: .number).monospacedDigit()
+                Image(systemName: systemImage)
+                    .foregroundStyle(tint)
+                    .font(.system(size: 14))
+                Text(value, format: .number)
+                    .monospacedDigit()
+                    .font(.system(size: 14, weight: .medium))
             }
-            .font(.system(size: 16, weight: .medium))
             Text(label)
-                .font(.caption2)
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
     }
@@ -543,17 +546,18 @@ private struct DateStatItem: View {
     let systemImage: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .center, spacing: 2) {
             HStack(spacing: 4) {
                 Image(systemName: systemImage)
                     .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
                 Text(formattedDate)
                     .monospacedDigit()
                     .lineLimit(1)
+                    .font(.system(size: 12, weight: .medium))
             }
-            .font(.system(size: 13, weight: .medium))
             Text(label)
-                .font(.caption2)
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
     }
@@ -562,6 +566,8 @@ private struct DateStatItem: View {
         guard let value, let date = ISO8601DateFormatter().date(from: value) else {
             return "-"
         }
-        return date.formatted(.dateTime.year().month().day())
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 }
