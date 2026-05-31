@@ -33,28 +33,49 @@ struct SidebarView: View {
     @Binding var showTagManagement: Bool
 
     var body: some View {
+        VStack(spacing: 0) {
+            sidebarFixedHeader
+            sidebarList
+        }
+        .background(.bar)
+    }
+
+    /// Sidebar 固定顶部区：用户卡 + 一级入口。
+    ///
+    /// 这里不再用 `safeAreaInset`，因为新增一级入口后列表滚动内容会进入 inset 区域下方，
+    /// 视觉上和入口行重叠。固定 header 与下方 List 分开布局，可以让滚动边界由 SwiftUI
+    /// 正常计算，同时统一背景材质，避免统计数据与入口行之间出现色差。
+    private var sidebarFixedHeader: some View {
+        VStack(spacing: 0) {
+            SidebarHeaderView()
+            rootNavigationBar
+                .padding(.horizontal, 8)
+                .padding(.top, 10)
+                .padding(.bottom, 8)
+        }
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private var sidebarList: some View {
         @Bindable var vm = viewModel
 
-        List(selection: $vm.selection) {
-            switch selectedPage {
-            case .manage:
+        switch selectedPage {
+        case .manage:
+            List(selection: $vm.selection) {
                 manageSidebarContent
-            case .trending:
+            }
+            .listStyle(.sidebar)
+        case .trending:
+            List(selection: $selectedTrendingLanguage) {
                 trendingSidebarContent
-            case .search:
+            }
+            .listStyle(.sidebar)
+        case .search:
+            List {
                 searchSidebarContent
             }
-        }
-        .listStyle(.sidebar)
-        // 用 safeAreaInset 把用户卡固定在 Sidebar 顶部，下面的 List 内容仍可滚动
-        .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 0) {
-                SidebarHeaderView()
-                rootNavigationBar
-                    .padding(.horizontal, 8)
-                    .padding(.top, 10)
-                    .padding(.bottom, 8)
-            }
+            .listStyle(.sidebar)
         }
     }
 
@@ -312,29 +333,17 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func trendingLanguageRow(_ language: TrendingLanguage) -> some View {
-        let isSelected = selectedTrendingLanguage == language
-
-        Button {
-            selectedTrendingLanguage = language
-        } label: {
-            Label {
-                Text(language.displayName)
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                    .lineLimit(1)
-            } icon: {
-                if language == .all {
-                    Image(systemName: "chevron.left.forwardslash.chevron.right")
-                } else {
-                    LanguageIconView(language: language.rawValue, size: 14)
-                }
+        Label {
+            Text(language.displayName)
+                .lineLimit(1)
+        } icon: {
+            if language == .all {
+                Image(systemName: "chevron.left.forwardslash.chevron.right")
+            } else {
+                LanguageIconView(language: language.rawValue, size: 14)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .listRowBackground(isSelected ? Color.accentColor : Color.clear)
-        .foregroundStyle(isSelected ? Color.white : Color.primary)
+        .tag(language)
     }
 
     @ViewBuilder

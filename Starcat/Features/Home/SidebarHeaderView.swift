@@ -46,7 +46,6 @@ struct SidebarHeaderView: View {
         .padding(.horizontal, 14)
         .padding(.top, 14)
         .padding(.bottom, 12)
-        .background(.bar)
         .sheet(isPresented: $showLoginSheet) {
             GithubAuthView()
         }
