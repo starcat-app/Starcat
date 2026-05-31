@@ -46,12 +46,15 @@ struct RepoNotesSection: View {
     /// 上一个 repo.id，用于切换前 flush。
     @State private var previousRepoId: Int64? = nil
 
+    /// 私有笔记默认折叠，避免右侧详情页顶部长期占掉大块高度。
+    @State private var isNotesExpanded: Bool = false
+
     enum SaveState { case idle, saving, saved }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             statusRow
-            notesEditor
+            notesDisclosure
         }
         .task(id: repo.id) {
             await onRepoChange(to: repo.id)
@@ -98,8 +101,6 @@ struct RepoNotesSection: View {
                 .frame(maxWidth: 200)
 
                 Spacer()
-
-                SaveIndicator(state: saveState, hasUnsaved: hasUnsavedChanges)
             }
         }
     }
@@ -107,20 +108,38 @@ struct RepoNotesSection: View {
     // MARK: - 笔记 Editor
 
     @ViewBuilder
-    private var notesEditor: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("私有笔记")
+    private var notesDisclosure: some View {
+        DisclosureGroup(isExpanded: $isNotesExpanded) {
+            notesEditor
+                .padding(.top, 4)
+        } label: {
+            HStack(spacing: 8) {
+                Label("私有笔记", systemImage: hasNoteContent ? "note.text" : "note.text.badge.plus")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Spacer()
                 if let edited = viewModel?.note?.editedAt {
                     Text("最近编辑：\(relativeDate(edited))")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
+                Spacer()
+                SaveIndicator(state: saveState, hasUnsaved: hasUnsavedChanges)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    isNotesExpanded.toggle()
+                }
+            }
+            .accessibilityAddTraits(.isButton)
+            .help(isNotesExpanded ? "点击收起私有笔记" : "点击展开私有笔记")
+        }
+        .disclosureGroupStyle(.automatic)
+    }
 
+    private var notesEditor: some View {
+        VStack(alignment: .leading, spacing: 4) {
             TextEditor(text: $editingContent)
                 .font(.system(.body, design: .default))
                 .frame(minHeight: 80, maxHeight: 160)
@@ -161,6 +180,7 @@ struct RepoNotesSection: View {
         editingContent = viewModel?.note?.content ?? ""
         hasUnsavedChanges = false
         saveState = .idle
+        isNotesExpanded = false
     }
 
     private func flushContent() async {
@@ -184,6 +204,10 @@ struct RepoNotesSection: View {
         let f = ISO8601DateFormatter()
         guard let d = f.date(from: iso) else { return iso }
         return d.formatted(.relative(presentation: .named))
+    }
+
+    private var hasNoteContent: Bool {
+        !editingContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
