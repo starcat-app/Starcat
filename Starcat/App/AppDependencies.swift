@@ -50,6 +50,9 @@ final class AppDependencies {
     /// W4 Batch A1 引入：repo 笔记 + 状态管理（同表合并）。
     let repoNoteRepository: any RepoNoteRepositoryProtocol
 
+    /// HOM-54 引入：GitHub Trending 数据仓库。
+    let trendingRepository: any TrendingRepositoryProtocol
+
     // MARK: - 初始化
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
@@ -92,5 +95,8 @@ final class AppDependencies {
         self.tagRepository = GRDBTagRepository(database: db)
         self.repoTagRepository = GRDBRepoTagRepository(database: db)
         self.repoNoteRepository = GRDBRepoNoteRepository(database: db)
+
+        // HOM-54：Trending Repository
+        self.trendingRepository = TrendingRepository()
     }
 }

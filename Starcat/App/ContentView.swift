@@ -23,7 +23,8 @@ struct ContentView: View {
                 readmeAPI: dependencies.readmeAPI,
                 tagRepository: dependencies.tagRepository,
                 repoTagRepository: dependencies.repoTagRepository,
-                repoNoteRepository: dependencies.repoNoteRepository
+                repoNoteRepository: dependencies.repoNoteRepository,
+                trendingRepository: dependencies.trendingRepository
             )
             .frame(minWidth: 800, minHeight: 600)
         }

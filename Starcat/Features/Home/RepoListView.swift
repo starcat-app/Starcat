@@ -22,6 +22,9 @@ struct RepoListView: View {
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(AppSettings.self) private var settings
 
+    /// HOM-54：TrendingRepository，用于渲染 Trending 页面。
+    var trendingRepository: (any TrendingRepositoryProtocol)?
+
     // 顶部 clone 按钮现在属于中栏 toolbar；复制成功提示也跟着放在列表栏上。
     @State private var toastMessage: String?
 
@@ -40,7 +43,14 @@ struct RepoListView: View {
         @Bindable var vm = viewModel
 
         Group {
-            if viewModel.isLoading && viewModel.items.isEmpty {
+            if viewModel.selection == .trending {
+                // HOM-54：Trending 页面
+                if let repo = trendingRepository {
+                    TrendingView(repository: repo)
+                } else {
+                    emptyState(systemImage: "chart.line.uptrend.xyaxis", title: "Trending 数据暂不可用", subtitle: "功能开发中")
+                }
+            } else if viewModel.isLoading && viewModel.items.isEmpty {
                 // HOM-46 骨架屏：首次加载时显示骨架行，提供更好的感知加载速度
                 RepoSkeletonListView(density: settings.listDensity, rowCount: 10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

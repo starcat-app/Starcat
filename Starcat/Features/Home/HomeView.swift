@@ -45,6 +45,9 @@ struct HomeView: View {
     /// 避免每次 sheet 都 new 导致选择/加载态被打断。
     @State private var tagMgmtVM: TagManagementViewModel
 
+    /// HOM-54：TrendingRepository 实例，传给 RepoListView 用于渲染 Trending 页面。
+    @State private var trendingRepository: any TrendingRepositoryProtocol
+
     /// D-01：repository 类型从具体 struct 改为协议，便于 Preview / 测试注入 Mock。
     /// W4 A6：HomeViewModel 也接收 tagRepository / repoTagRepository（Sidebar Tags 段 + 按 tag 过滤）。
     /// W4-4 D3：新增 repoNoteRepository（按状态过滤需要拉 status map）。
@@ -53,7 +56,8 @@ struct HomeView: View {
         readmeAPI: ReadmeAPI,
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
-        repoNoteRepository: any RepoNoteRepositoryProtocol
+        repoNoteRepository: any RepoNoteRepositoryProtocol,
+        trendingRepository: any TrendingRepositoryProtocol
     ) {
         _viewModel = State(initialValue: HomeViewModel(
             repository: repository,
@@ -66,6 +70,7 @@ struct HomeView: View {
             tagRepository: tagRepository,
             repoTagRepository: repoTagRepository
         ))
+        _trendingRepository = State(initialValue: trendingRepository)
     }
 
     var body: some View {
@@ -73,7 +78,7 @@ struct HomeView: View {
             SidebarView(showTagManagement: $showTagManagement)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
         } content: {
-            RepoListView()
+            RepoListView(trendingRepository: trendingRepository)
                 .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 480)
         } detail: {
             RepoDetailView()

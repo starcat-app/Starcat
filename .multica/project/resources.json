@@ -1,0 +1,15 @@
+{
+  "project_id": "4739d7e5-194c-481f-a7ce-63d31a796435",
+  "project_title": "Starcat",
+  "resources": [
+    {
+      "id": "be1ceadb-ded8-4357-a551-6955bed4621c",
+      "resource_type": "local_directory",
+      "resource_ref": {
+        "label": "Starcat",
+        "daemon_id": "019e2472-67dc-7217-9a3d-b5b99779d180",
+        "local_path": "/Users/dong4j/Developer/1.AI/ai-incubator/Starcat"
+      }
+    }
+  ]
+}
