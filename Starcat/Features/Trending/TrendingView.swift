@@ -22,8 +22,10 @@ import SwiftUI
 
 struct TrendingView: View {
 
+    @Environment(AuthSession.self) private var authSession
     @Environment(HomeViewModel.self) private var homeViewModel
     @State private var viewModel: TrendingViewModel
+    @State private var showLoginSheet: Bool = false
 
     init(
         repository: any TrendingRepositoryProtocol,
@@ -57,6 +59,14 @@ struct TrendingView: View {
         }
         .onChange(of: homeViewModel.languageStats) { _, stats in
             viewModel.updateLanguagePreferences(from: stats)
+        }
+        .sheet(isPresented: $showLoginSheet) {
+            GithubAuthView()
+        }
+        .onChange(of: authSession.state.isAuthenticated) { _, isAuthenticated in
+            if isAuthenticated {
+                showLoginSheet = false
+            }
         }
     }
 
@@ -144,6 +154,11 @@ struct TrendingView: View {
                         isSubscribing: viewModel.subscribingRepoIDs.contains(repo.fullName),
                         isSubscribed: viewModel.subscribedRepoIDs.contains(repo.fullName),
                         onSubscribe: {
+                            guard authSession.state.isAuthenticated else {
+                                showLoginSheet = true
+                                return
+                            }
+
                             Task {
                                 do {
                                     try await viewModel.subscribe(repo: repo)
