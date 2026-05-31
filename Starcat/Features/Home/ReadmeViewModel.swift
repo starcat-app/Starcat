@@ -70,6 +70,7 @@ final class ReadmeViewModel {
     }
 
     private(set) var state: LoadState = .idle
+    private(set) var isRefreshing: Bool = false
 
     private let api: ReadmeAPI
 
@@ -150,6 +151,9 @@ final class ReadmeViewModel {
 
         currentTask = Task { [weak self] in
             guard let self else { return }
+            
+            self.isRefreshing = true
+            defer { self.isRefreshing = false }
 
             // 第一阶段：读本地缓存
             let cached: Readme?

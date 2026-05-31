@@ -399,6 +399,8 @@ struct RepoDetailView: View {
 /// - 重试按钮的回调通过闭包传入，保持本组件无副作用
 private struct ReadmeStateView: View {
 
+    @Environment(ReadmeViewModel.self) private var readmeVM
+
     let state: ReadmeViewModel.LoadState
     let baseURL: URL?
     /// 仓库 owner / name —— 透传给 ReadmeWebView 用于图片相对路径重写
@@ -472,10 +474,22 @@ private struct ReadmeStateView: View {
             Text("缓存于 \(cachedAt.formatted(.relative(presentation: .named)))")
                 .font(.caption2)
             Spacer()
-            Button("刷新", action: onRetry)
-                .buttonStyle(.borderless)
-                .focusEffectDisabled()
-                .font(.caption2)
+            Button {
+                onRetry()
+            } label: {
+                if readmeVM.isRefreshing {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption2)
+                        .symbolEffect(.variableColor.iterative, options: .repeating)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption2)
+                }
+            }
+            .buttonStyle(.borderless)
+            .focusEffectDisabled()
+            .disabled(readmeVM.isRefreshing)
+            .help("刷新内容")
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 6)

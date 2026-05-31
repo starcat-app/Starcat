@@ -8,7 +8,9 @@
 //  1. 输入 = GitHub `Accept: application/vnd.github.html` 返回的纯 HTML 片段
 //     （已是渲染好的 GFM，含 anchor / code block / table / mermaid / 任务列表等）
 //  2. 包装一层带 GFM 主题 CSS 的完整 HTML（亮/暗自适应 prefers-color-scheme）
-//  3. 禁用 JavaScript：GitHub HTML 不需要 JS，关闭可减小攻击面
+//  3. 禁止页面自带 JavaScript：GitHub HTML 不需要页面脚本，关闭可减小攻击面。
+//     例外：注入一个 app-owned isolated user script，只用于把 window.scrollY 回传给 SwiftUI，
+//     让详情页能在 README 滚动时折叠顶部信息面板。
 //  4. 图片相对路径重写（rewriteAssetURLs）：
 //     - GitHub 的 HTML render 端点对 Markdown `![]()` 会做 camo 代理重写，
 //       但对原生 HTML `<img src="./xx">` 不重写，原样吐回相对路径
@@ -79,13 +81,16 @@ struct ReadmeWebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        // 关闭 JS（GitHub README HTML 已是静态结构，无需 JS）
+        // GitHub README HTML 已是静态结构，不需要页面脚本。这里仍允许 WebKit 执行
+        // app-owned user script（见 installScrollReportingScript），页面脚本由我们注入的
+        // CSP `script-src 'none'` 禁掉，兼顾滚动回调和攻击面控制。
         let prefs = WKPreferences()
         prefs.javaScriptCanOpenWindowsAutomatically = false
         config.preferences = prefs
         let pagePrefs = WKWebpagePreferences()
-        pagePrefs.allowsContentJavaScript = false
+        pagePrefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = pagePrefs
+        config.userContentController = context.coordinator.makeUserContentController()
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -93,7 +98,6 @@ struct ReadmeWebView: NSViewRepresentable {
 
         context.coordinator.webView = webView
         context.coordinator.onScrollOffsetChange = onScrollOffsetChange
-        context.coordinator.installScrollObserver(for: webView)
         loadIfNeeded(into: webView, context: context)
         return webView
     }
@@ -131,6 +135,7 @@ struct ReadmeWebView: NSViewRepresentable {
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'; base-uri 'none';">
         <style>\(css)</style>
         </head>
         <body class="\(bodyClass)">
@@ -207,12 +212,12 @@ struct ReadmeWebView: NSViewRepresentable {
 
     /// 同时负责导航委托 + 记录上次加载的 HTML（避免重复 load 触发白闪）。
     @MainActor
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
 
         weak var webView: WKWebView?
         var lastLoadedKey: ReadmeKey?
         var onScrollOffsetChange: (CGFloat) -> Void = { _ in }
-        private var scrollObserver: NSObjectProtocol?
+        private weak var userContentController: WKUserContentController?
 
         /// 由 `loadIfNeeded` 在调用 `loadHTMLString` 前置 true，
         /// 用于放行紧接而来的那一次主框架导航；放行后立即置 false。
@@ -220,53 +225,71 @@ struct ReadmeWebView: NSViewRepresentable {
         var expectsInitialLoad: Bool = false
 
         deinit {
-            if let scrollObserver {
-                NotificationCenter.default.removeObserver(scrollObserver)
-            }
+            userContentController?.removeScriptMessageHandler(forName: Self.scrollMessageName)
         }
 
-        /// 监听 WKWebView 内部 NSScrollView 的 contentView bounds 变化。
-        ///
-        /// 为什么不用 SwiftUI ScrollView：README 滚动发生在 WebKit 进程管理的 NSScrollView 里，
-        /// 外层 SwiftUI 不参与布局 offset 计算。`NSView.boundsDidChangeNotification`
-        /// 是 macOS 上读取 NSScrollView 滚动位置的标准轻量入口。
-        ///
-        /// 注意：macOS 的 WKWebView 没有 iOS 那种公开 `scrollView` 属性，只能从 NSView 子树
-        /// 找内部 NSScrollView。这里把这个 WebKit 细节封在包装层里，只向外传 CGFloat。
-        func installScrollObserver(for webView: WKWebView) {
-            if let scrollObserver {
-                NotificationCenter.default.removeObserver(scrollObserver)
-            }
+        private static let scrollMessageName = "readmeScroll"
 
-            guard let scrollView = findScrollView(in: webView) else {
-                AppLog.ui.warning("ReadmeWebView could not find internal NSScrollView for scroll tracking")
-                return
-            }
-
-            let clipView = scrollView.contentView
-            clipView.postsBoundsChangedNotifications = true
-            scrollObserver = NotificationCenter.default.addObserver(
-                forName: NSView.boundsDidChangeNotification,
-                object: clipView,
-                queue: .main
-            ) { [weak self, weak clipView] _ in
-                Task { @MainActor [weak self, weak clipView] in
-                    guard let self, let clipView else { return }
-                    self.onScrollOffsetChange(clipView.bounds.origin.y)
-                }
-            }
+        /// 构造带滚动上报脚本的 content controller。
+        ///
+        /// 为什么不用 NSScrollView 观察：macOS `WKWebView` 没有公开 `scrollView` 属性，
+        /// 并且不同 WebKit 版本的内部 NSView 子树并不稳定。直接从文档里监听 `scroll`
+        /// 事件拿 `window.scrollY` 更接近真实阅读位置，也不会依赖私有 view class。
+        ///
+        /// 安全边界：
+        /// - user script 只读 `scrollY` 并 postMessage 一个数字，不读 README 内容。
+        /// - HTML 文档里加了 CSP `script-src 'none'`，页面自带 `<script>` / inline handler 不执行。
+        /// - message handler 只接收 Number，其余 body 直接忽略。
+        func makeUserContentController() -> WKUserContentController {
+            let controller = WKUserContentController()
+            let script = WKUserScript(
+                source: Self.scrollReportingScript,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            )
+            controller.addUserScript(script)
+            controller.add(self, name: Self.scrollMessageName)
+            userContentController = controller
+            return controller
         }
 
-        private func findScrollView(in view: NSView) -> NSScrollView? {
-            if let scrollView = view as? NSScrollView {
-                return scrollView
+        private static let scrollReportingScript = """
+        (function() {
+            var lastY = -1;
+            var ticking = false;
+
+            function currentY() {
+                return window.scrollY ||
+                    document.documentElement.scrollTop ||
+                    document.body.scrollTop ||
+                    0;
             }
-            for subview in view.subviews {
-                if let found = findScrollView(in: subview) {
-                    return found
-                }
+
+            function report() {
+                ticking = false;
+                var y = currentY();
+                if (Math.abs(y - lastY) < 2) { return; }
+                lastY = y;
+                window.webkit.messageHandlers.\(scrollMessageName).postMessage(y);
             }
-            return nil
+
+            function schedule() {
+                if (ticking) { return; }
+                ticking = true;
+                window.requestAnimationFrame(report);
+            }
+
+            window.addEventListener('scroll', schedule, { passive: true });
+            window.addEventListener('load', report);
+            setTimeout(report, 0);
+        })();
+        """
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == Self.scrollMessageName else { return }
+            if let value = message.body as? NSNumber {
+                onScrollOffsetChange(CGFloat(truncating: value))
+            }
         }
 
         func webView(

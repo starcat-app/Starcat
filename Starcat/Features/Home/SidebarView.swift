@@ -49,9 +49,7 @@ struct SidebarView: View {
             if !viewModel.languageStats.isEmpty {
                 Section(isExpanded: $languagesExpanded) {
                     ForEach(viewModel.languageStats) { stat in
-                        row(.language(stat.languageOrNil),
-                            displayOverride: stat.displayName,
-                            count: stat.count)
+                        languageRow(stat)
                     }
                 } header: {
                     Text("Languages")
@@ -107,5 +105,33 @@ struct SidebarView: View {
                 .foregroundStyle(Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor)
         }
         .tag(SidebarItem.tag(tag.id))
+    }
+
+    /// Languages 专属行——
+    /// 每个语言显示对应的彩色圆形图标（与 GitHub 语言点风格一致）+ 语言名 + 计数
+    @ViewBuilder
+    private func languageRow(_ stat: LanguageStat) -> some View {
+        let item = SidebarItem.language(stat.languageOrNil)
+        Label {
+            HStack {
+                Text(stat.displayName)
+                    .lineLimit(1)
+                Spacer()
+                Text(stat.count.formatted())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        } icon: {
+            // 使用语言对应的彩色圆形图标
+            if let lang = stat.languageOrNil, !lang.isEmpty {
+                LanguageIconView(language: lang, size: 14)
+            } else {
+                // 无主语言（nil / Unknown）显示问号占位
+                Image(systemName: "questionmark.circle")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .tag(item)
     }
 }
