@@ -25,8 +25,8 @@ final class TrendingViewModel {
 
     // MARK: - 数据状态
 
-    /// 当前 Trending 列表
-    private(set) var repos: [TrendingRepo] = []
+    /// 当前 Trending 列表（可变，用于 star 操作后更新本地计数）
+    var repos: [TrendingRepo] = []
 
     /// 加载中状态
     private(set) var isLoading: Bool = false
@@ -182,6 +182,12 @@ final class TrendingViewModel {
         do {
             try await githubAPIClient.star(owner: repo.owner, repo: repo.name)
             subscribedRepoIDs.insert(repo.fullName)
+
+            // 本地 stars 计数 +1（UI 即时反馈）
+            if let index = repos.firstIndex(where: { $0.fullName == repo.fullName }) {
+                repos[index].starsCount += 1
+            }
+
             AppLog.sync.info("Subscribed to \(repo.fullName, privacy: .public)")
         } catch {
             subscriptionError = "订阅 \(repo.fullName) 失败：\(error.localizedDescription)"
@@ -201,6 +207,13 @@ final class TrendingViewModel {
             guard !stat.language.isEmpty else { return nil }
             return (stat.language, Double(stat.count) / Double(total))
         })
+    }
+
+    /// 更新指定 repo 的本地 stars 计数（star 操作成功后调用）。
+    func incrementStarsCount(fullName: String) {
+        if let index = repos.firstIndex(where: { $0.fullName == fullName }) {
+            repos[index].starsCount += 1
+        }
     }
 
     /// 推荐区使用的仓库列表。

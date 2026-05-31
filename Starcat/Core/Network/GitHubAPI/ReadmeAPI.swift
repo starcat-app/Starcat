@@ -164,6 +164,45 @@ struct ReadmeAPI {
         return .updated(readme)
     }
 
+    /// Trending repo 的 README 刷新（不走本地数据库缓存，适用于未入库的 Trending 仓库）。
+    ///
+    /// 与 `refreshReadme(for:)` 的差异：
+    /// - 不读写本地数据库缓存，结果直接返回
+    /// - 用于 TrendingRepo 等本地无持久化记录的场景
+    func refreshTrendingReadme(owner: String, repo: String) async -> ReadmeRefreshResult {
+        let raw: BytesResponse
+        do {
+            raw = try await client.readmeHTML(
+                owner: owner,
+                repo: repo,
+                ifNoneMatch: nil,
+                ifModifiedSince: nil
+            )
+        } catch NetworkError.notFound {
+            return .notFound
+        } catch {
+            return .failed(error)
+        }
+
+        if raw.notModified {
+            // 理论上不应该发生（无条件请求不会有 304）
+            return .notFound
+        }
+
+        let html = String(data: raw.data, encoding: .utf8) ?? ""
+        let now = Date()
+        let readme = Readme(
+            repoId: 0, // Trending repo 无真实 repoId，置 0 占位
+            content: nil,
+            renderedHtml: html,
+            etag: raw.etag,
+            lastModified: raw.lastModified,
+            cachedAt: ISO8601DateFormatter.shared.string(from: now),
+            size: raw.data.count
+        )
+        return .updated(readme)
+    }
+
     // MARK: - Private
 
     /// 不带 validator 的强制刷新（304 但本地缓存丢失时的兜底）。

@@ -100,8 +100,8 @@ struct TrendingRepo: Identifiable, Equatable {
     /// 主要编程语言
     let language: String?
 
-    /// 当前总 stars
-    let starsCount: Int
+    /// 当前总 stars（可变，用于本地 star 操作后 +1）
+    var starsCount: Int
 
     /// 当前 forks
     let forksCount: Int

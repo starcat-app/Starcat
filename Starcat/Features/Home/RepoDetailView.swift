@@ -32,11 +32,17 @@ struct RepoDetailView: View {
     // W4 B1：取消 star 需要的依赖
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
+    // Trending 页面 ViewModel（用于更新 stars 计数）
+    @Environment(\.trendingViewModel) private var trendingViewModel
 
     // W4 B1：取消 star 流程的 UI 状态
     @State private var showUnstarConfirm: Bool = false
     @State private var isUnstarring: Bool = false
     @State private var unstarError: String?
+
+    /// Trending repo 一键 star 的 UI 状态
+    @State private var isStarringTrending: Bool = false
+    @State private var trendingStarError: String?
 
     /// README 向下滚动时折叠顶部信息面板。
     ///
@@ -56,6 +62,13 @@ struct RepoDetailView: View {
     /// spring 能让读者感觉内容是在跟手让位，而不是突然跳一下。
     private var metadataPanelAnimation: Animation {
         .interactiveSpring(response: 0.32, dampingFraction: 0.9, blendDuration: 0.08)
+    }
+
+    /// Trending repo 的元信息（当从 Trending 列表选中时非 nil）。
+    var selectedTrendingRepo: TrendingRepo?
+
+    init(selectedTrendingRepo: TrendingRepo? = nil) {
+        self.selectedTrendingRepo = selectedTrendingRepo
     }
 
     var body: some View {
@@ -84,6 +97,14 @@ struct RepoDetailView: View {
                     isMetadataPanelHidden = false
                 }
             }
+        } else if let trending = selectedTrendingRepo {
+            // Trending repo 详情页（无本地数据，只显示 README）
+            VStack(alignment: .leading, spacing: 0) {
+                trendingMetadataPanel(trending)
+                trendingReadmeSection(trending)
+            }
+            .navigationTitle(trending.name)
+            .navigationSubtitle(trending.owner)
         } else {
             emptyState
         }
@@ -207,6 +228,161 @@ struct RepoDetailView: View {
         guard shouldHide != isMetadataPanelHidden else { return }
         withAnimation(metadataPanelAnimation) {
             isMetadataPanelHidden = shouldHide
+        }
+    }
+
+    // MARK: - Trending Repo 支持
+
+    /// Trending repo 顶部信息面板。
+    private func trendingMetadataPanel(_ repo: TrendingRepo) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            trendingHeader(repo)
+            trendingStatsSection(repo)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 16)
+        .padding(.bottom, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Trending repo 头部信息。
+    private func trendingHeader(_ repo: TrendingRepo) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            RemoteAvatar(
+                urlString: TrendingRepoAvatarURL.from(owner: repo.owner),
+                size: 64
+            )
+            VStack(alignment: .leading, spacing: 5) {
+                Text(repo.fullName)
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .textSelection(.enabled)
+                    .help(repo.fullName)
+
+                if let desc = repo.description, !desc.isEmpty {
+                    Text(desc)
+                        .font(.body)
+                        .textSelection(.enabled)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer()
+        }
+    }
+
+    /// Trending repo 统计信息。
+    private func trendingStatsSection(_ repo: TrendingRepo) -> some View {
+        HStack(alignment: .center, spacing: 24) {
+            Button {
+                Task { await starTrending(repo: repo) }
+            } label: {
+                if isStarringTrending {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                } else {
+                    StatItem(label: "Stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isStarringTrending)
+            .help("Star 到我的 Stars")
+
+            StatItem(label: "Forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
+
+            if let language = repo.language, !language.isEmpty {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(LanguageColor.color(for: language))
+                        .frame(width: 8, height: 8)
+                    Text(language)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 2) {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.green)
+                Text(repo.periodText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.green)
+            }
+
+            Link(destination: repo.url) {
+                HStack(spacing: 4) {
+                    Image(systemName: "safari")
+                    Text("在 GitHub 查看")
+                }
+                .font(.caption)
+            }
+            .buttonStyle(.bordered)
+            .focusEffectDisabled()
+
+            Spacer()
+        }
+    }
+
+    /// 执行 Trending repo 的 star 操作。
+    private func starTrending(repo: TrendingRepo) async {
+        guard authSession.state.isAuthenticated else {
+            trendingStarError = "需要先登录 GitHub 账号"
+            return
+        }
+
+        isStarringTrending = true
+        trendingStarError = nil
+
+        do {
+            try await dependencies.apiClient.star(owner: repo.owner, repo: repo.name)
+            // 成功：本地 stars 计数 +1
+            trendingViewModel?.incrementStarsCount(fullName: repo.fullName)
+            // 刷新用户 Stars 列表
+            await viewModel.reloadItems()
+        } catch {
+            trendingStarError = "Star 失败：\(error.localizedDescription)"
+        }
+
+        isStarringTrending = false
+    }
+
+    /// Trending repo README 区域。
+    private func trendingReadmeSection(_ repo: TrendingRepo) -> some View {
+        ReadmeStateView(
+            state: readmeVM.state,
+            baseURL: repo.url,
+            owner: repo.owner,
+            repo: repo.name,
+            onScrollOffsetChange: { _ in }
+        ) {
+            // Trending README 刷新：直接调用 loadTrending
+            readmeVM.loadTrending(owner: repo.owner, repo: repo.name)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Trending repo 头像 URL。
+    private enum TrendingRepoAvatarURL {
+        static func from(owner: String) -> String {
+            "https://github.com/\(owner).png?size=80"
+        }
+    }
+
+    /// Trending repo 语言颜色。
+    private enum LanguageColor {
+        static func color(for language: String) -> Color {
+            switch language {
+            case "Swift":        return Color(red: 0.94, green: 0.31, blue: 0.20)
+            case "Python":       return Color(red: 0.23, green: 0.46, blue: 0.69)
+            case "JavaScript":   return Color(red: 0.94, green: 0.86, blue: 0.32)
+            case "TypeScript":   return Color(red: 0.18, green: 0.46, blue: 0.78)
+            case "Go":           return Color(red: 0.00, green: 0.68, blue: 0.84)
+            case "Rust":         return Color(red: 0.86, green: 0.41, blue: 0.27)
+            case "Java":         return Color(red: 0.69, green: 0.38, blue: 0.12)
+            default:             return Color.gray
+            }
         }
     }
 

@@ -19,6 +19,19 @@
 
 import SwiftUI
 
+// MARK: - Environment Key
+
+private struct TrendingViewModelKey: EnvironmentKey {
+    static let defaultValue: TrendingViewModel? = nil
+}
+
+extension EnvironmentValues {
+    var trendingViewModel: TrendingViewModel? {
+        get { self[TrendingViewModelKey.self] }
+        set { self[TrendingViewModelKey.self] = newValue }
+    }
+}
+
 struct TrendingView: View {
 
     @Environment(AuthSession.self) private var authSession
@@ -28,15 +41,18 @@ struct TrendingView: View {
     @State private var showLoginSheet: Bool = false
     @Binding private var selectedLanguage: TrendingLanguage
 
-    /// 当前选中的 Trending repo ID。
-    /// 使用 List(selection:) 原生 selection，selectedRepoID 用于驱动父级刷新等场景。
+    /// 当前选中的 Trending repo ID（驱动 README 加载）。
     @Binding private var selectedRepoID: String?
+
+    /// 当前选中的 Trending repo 完整数据（用于右侧详情页元信息展示）。
+    @Binding private var selectedTrendingRepo: TrendingRepo?
 
     init(
         repository: any TrendingRepositoryProtocol,
         githubAPIClient: any GitHubAPIClientProtocol,
         selectedLanguage: Binding<TrendingLanguage>,
-        selectedRepoID: Binding<String?> = .constant(nil)
+        selectedRepoID: Binding<String?> = .constant(nil),
+        selectedTrendingRepo: Binding<TrendingRepo?> = .constant(nil)
     ) {
         _viewModel = State(initialValue: TrendingViewModel(
             repository: repository,
@@ -44,6 +60,7 @@ struct TrendingView: View {
         ))
         _selectedLanguage = selectedLanguage
         _selectedRepoID = selectedRepoID
+        _selectedTrendingRepo = selectedTrendingRepo
     }
 
     var body: some View {
@@ -84,6 +101,15 @@ struct TrendingView: View {
                 showLoginSheet = false
             }
         }
+        // 选中 repo 变化时，同步更新 selectedTrendingRepo 供右侧详情页使用
+        .onChange(of: selectedRepoID) { _, newID in
+            if let id = newID {
+                selectedTrendingRepo = viewModel.repos.first { $0.id == id }
+            } else {
+                selectedTrendingRepo = nil
+            }
+        }
+        .environment(\.trendingViewModel, viewModel)
     }
 
     // MARK: - Toolbar

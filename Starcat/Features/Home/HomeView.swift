@@ -50,6 +50,12 @@ struct HomeView: View {
     /// Trending 页从左侧语言列表驱动的语言筛选。
     @State private var selectedTrendingLanguage: TrendingLanguage = .all
 
+    /// Trending 当前选中的 repo ID（用于驱动 README 加载）。
+    @State private var selectedTrendingRepoID: String?
+
+    /// Trending 当前选中的 repo 完整数据（用于右侧详情页展示元信息）。
+    @State private var selectedTrendingRepo: TrendingRepo?
+
     /// W4 A2：TagManagementViewModel 实例，sheet 关掉再开时复用，
     /// 避免每次 sheet 都 new 导致选择/加载态被打断。
     @State private var tagMgmtVM: TagManagementViewModel
@@ -99,11 +105,15 @@ struct HomeView: View {
                 trendingRepository: trendingRepository,
                 githubAPIClient: githubAPIClient,
                 selectedPage: selectedSidebarPage,
-                selectedTrendingLanguage: $selectedTrendingLanguage
+                selectedTrendingLanguage: $selectedTrendingLanguage,
+                selectedTrendingRepoID: $selectedTrendingRepoID,
+                selectedTrendingRepo: $selectedTrendingRepo
             )
                 .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 480)
         } detail: {
-            RepoDetailView()
+            RepoDetailView(
+                selectedTrendingRepo: selectedTrendingRepo
+            )
         }
         .environment(viewModel)
         .environment(readmeVM)
@@ -176,6 +186,18 @@ struct HomeView: View {
         .onChange(of: viewModel.selectedRepoID) { _, _ in
             if let repo = viewModel.selectedRepo {
                 readmeVM.load(repo: repo)
+            } else {
+                readmeVM.reset()
+            }
+        }
+        // Trending repo 选中变化 → 驱动 Trending README 加载
+        .onChange(of: selectedTrendingRepoID) { _, newID in
+            if let id = newID {
+                // id 格式是 "owner/repo"，需要拆分成 owner 和 repo
+                let parts = id.split(separator: "/", maxSplits: 1)
+                if parts.count == 2 {
+                    readmeVM.loadTrending(owner: String(parts[0]), repo: String(parts[1]))
+                }
             } else {
                 readmeVM.reset()
             }

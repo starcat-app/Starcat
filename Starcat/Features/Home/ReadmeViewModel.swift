@@ -112,7 +112,58 @@ final class ReadmeViewModel {
     func reset() {
         currentTask?.cancel()
         currentRepoId = nil
+        currentTrendingKey = nil
         state = .idle
+    }
+
+    // MARK: - Trending Repo 支持
+
+    /// 当前 Trending repo 的标识（owner/repo），用于判断是否切换了 repo。
+    private var currentTrendingKey: String?
+
+    /// 加载 Trending repo 的 README（不走本地数据库缓存）。
+    ///
+    /// 用于 TrendingRepo 等本地无持久化记录的仓库。
+    func loadTrending(owner: String, repo: String) {
+        currentTask?.cancel()
+
+        let key = "\(owner)/\(repo)"
+
+        // 切到新 repo 时立即同步设 .loading 占位
+        let isSameRepo = (currentTrendingKey == key)
+        currentTrendingKey = key
+
+        if !isSameRepo {
+            state = .loading
+        }
+
+        currentTask = Task { [weak self] in
+            guard let self else { return }
+
+            self.isRefreshing = true
+            defer { self.isRefreshing = false }
+
+            // 直接走网络获取（Trenging repo 无本地缓存）
+            let result = await self.api.refreshTrendingReadme(owner: owner, repo: repo)
+            guard !Task.isCancelled, self.currentTrendingKey == key else { return }
+
+            switch result {
+            case .updated(let readme):
+                if let html = readme.renderedHtml, !html.isEmpty {
+                    let cachedAt = Self.parseISO8601(readme.cachedAt) ?? Date()
+                    self.state = .loaded(html: html, cachedAt: cachedAt)
+                } else {
+                    self.state = .empty
+                }
+
+            case .notModified, .notFound:
+                self.state = .empty
+
+            case .failed(let error):
+                AppLog.network.error("Trending README 加载失败 owner=\(owner, privacy: .public) repo=\(repo, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                self.state = .error(message: error.localizedDescription)
+            }
+        }
     }
 
     // MARK: - 内部
