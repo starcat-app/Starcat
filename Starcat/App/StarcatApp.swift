@@ -36,7 +36,6 @@ struct StarcatApp: App {
                     await dependencies.authSession.restoreSessionIfAvailable()
                 }
         }
-        .windowResizability(.contentSize)
 
         // macOS 原生 Settings 窗口（Cmd+,）
         Settings {

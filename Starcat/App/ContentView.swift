@@ -26,7 +26,7 @@ struct ContentView: View {
                     repoTagRepository: dependencies.repoTagRepository,
                     repoNoteRepository: dependencies.repoNoteRepository
                 )
-                    .frame(minWidth: 960, minHeight: 600)
+                    .frame(minWidth: 800, minHeight: 600)
             } else {
                 GithubAuthView()
             }

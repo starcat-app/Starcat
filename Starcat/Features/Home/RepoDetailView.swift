@@ -8,8 +8,8 @@
 //  Week 4：接入 README WebView 渲染 + ETag 缓存。
 //
 //  布局策略：
-//  - 元信息卡片固定在顶部（不滚动），README 区域占满剩余高度独立滚动
-//  - 这样长 README 不会把 stats 推到屏幕外，用户始终能看到 stars 数等关键指标
+//  - 元信息卡片默认在顶部展示，README 区域占满剩余高度独立滚动
+//  - README 向下滚动后收起元信息卡片，把阅读空间还给内容；回到顶部再展开
 //
 //  设计约束：
 //  - 无选中行时显示空态
@@ -41,15 +41,26 @@ struct RepoDetailView: View {
     // W4 B2：Clone URL 复制 → Toast 提示
     @State private var toastMessage: String?
 
+    /// README 向下滚动时折叠顶部信息面板。
+    ///
+    /// 这里用 Bool 而不是把 offset 存成状态，是为了避免 WebView 每个滚动像素都触发
+    /// SwiftUI 重绘；只有跨过阈值时才改变布局。
+    @State private var isMetadataPanelHidden: Bool = false
+
     var body: some View {
         if let repo = viewModel.selectedRepo {
             VStack(alignment: .leading, spacing: 0) {
-                metadataHeader(repo)
-                Divider()
+                if !isMetadataPanelHidden {
+                    metadataHeader(repo)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    Divider()
+                        .transition(.opacity)
+                }
                 readmeSection(repo)
             }
             .navigationTitle(repo.name)
             .navigationSubtitle(repo.owner)
+            .animation(.easeInOut(duration: 0.18), value: isMetadataPanelHidden)
             .toolbar {
                 // W4 B3：GitHub 页面快捷入口（替换原单一"在 GitHub 打开"按钮）
                 ToolbarItem(placement: .primaryAction) {
@@ -78,6 +89,9 @@ struct RepoDetailView: View {
                 Button("好") { unstarError = nil }
             } message: { msg in
                 Text(msg)
+            }
+            .onChange(of: repo.id) { _, _ in
+                isMetadataPanelHidden = false
             }
         } else {
             emptyState
@@ -231,12 +245,11 @@ struct RepoDetailView: View {
 
     /// 元信息区域（不滚动，固定在顶部）。
     private func metadataHeader(_ repo: Repo) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             header(repo)
             descriptionSection(repo)
             statsSection(repo)
-            topicsSection(repo)
-            // W4 A3：用户自定义标签段，紧贴 GitHub topics 之后
+            // W4 A3：用户自定义标签段；GitHub topics 已收进 header 的单行信息。
             RepoTagsSection(repo: repo)
             // W4 A4：私有笔记 + 状态段
             RepoNotesSection(repo: repo)
@@ -257,11 +270,22 @@ struct RepoDetailView: View {
             state: readmeVM.state,
             baseURL: URL(string: repo.htmlUrl),
             owner: repo.owner,
-            repo: repo.name
+            repo: repo.name,
+            onScrollOffsetChange: updateMetadataPanelVisibility
         ) {
             readmeVM.reload(repo: repo)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// WebView 内部滚动位置 → 顶部信息面板显示状态。
+    ///
+    /// 24pt 阈值用于避开触控板轻微回弹 / 亚像素抖动：用户明显开始阅读时才折叠，
+    /// 回到 README 顶部附近再展开。
+    private func updateMetadataPanelVisibility(offsetY: CGFloat) {
+        let shouldHide = offsetY > 24
+        guard shouldHide != isMetadataPanelHidden else { return }
+        isMetadataPanelHidden = shouldHide
     }
 
     // MARK: - 子段
@@ -269,28 +293,63 @@ struct RepoDetailView: View {
     private func header(_ repo: Repo) -> some View {
         HStack(alignment: .top, spacing: 16) {
             RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: 64)
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(repo.fullName)
                     .font(.title2)
                     .fontWeight(.semibold)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .textSelection(.enabled)
-                HStack(spacing: 10) {
-                    if repo.isArchived {
-                        BadgeChip(text: "Archived", systemImage: "archivebox", tint: .orange)
-                    }
-                    if repo.isFork {
-                        BadgeChip(text: "Fork", systemImage: "tuningfork", tint: .gray)
-                    }
-                    if repo.isPrivate {
-                        BadgeChip(text: "Private", systemImage: "lock.fill", tint: .purple)
-                    }
-                    if let license = repo.license {
-                        BadgeChip(text: license, systemImage: "scale.3d", tint: .secondary)
-                    }
-                }
+                    .help(repo.fullName)
+                badgeRow(repo)
+                inlineTopicsRow(repo)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Spacer()
         }
+    }
+
+    @ViewBuilder
+    private func badgeRow(_ repo: Repo) -> some View {
+        HStack(spacing: 10) {
+            if repo.isArchived {
+                BadgeChip(text: "Archived", systemImage: "archivebox", tint: .orange)
+            }
+            if repo.isFork {
+                BadgeChip(text: "Fork", systemImage: "tuningfork", tint: .gray)
+            }
+            if repo.isPrivate {
+                BadgeChip(text: "Private", systemImage: "lock.fill", tint: .purple)
+            }
+            BadgeChip(
+                text: repo.license.flatMap { value in
+                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return trimmed.isEmpty ? nil : trimmed
+                } ?? "N/A",
+                systemImage: "scale.3d",
+                tint: .secondary
+            )
+        }
+        .lineLimit(1)
+        .frame(minHeight: 18, maxHeight: 18, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func inlineTopicsRow(_ repo: Repo) -> some View {
+        let topics = repo.topicsArray
+        let topicText = topics.isEmpty ? "N/A" : topics.joined(separator: "  ·  ")
+        HStack(spacing: 6) {
+            Text("Topics")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(topicText)
+                .font(.caption)
+                .foregroundStyle(topics.isEmpty ? Color.secondary : Color.blue)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(topics.isEmpty ? "N/A" : topics.joined(separator: ", "))
+        }
+        .frame(maxWidth: .infinity, minHeight: 18, maxHeight: 18, alignment: .leading)
     }
 
     @ViewBuilder
@@ -303,31 +362,12 @@ struct RepoDetailView: View {
     }
 
     private func statsSection(_ repo: Repo) -> some View {
-        HStack(spacing: 24) {
+        HStack(alignment: .top, spacing: 24) {
             StatItem(label: "Stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
             StatItem(label: "Forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
             StatItem(label: "Watchers", value: repo.watchersCount, systemImage: "eye.fill", tint: .secondary)
-        }
-    }
-
-    @ViewBuilder
-    private func topicsSection(_ repo: Repo) -> some View {
-        let topics = repo.topicsArray
-        if !topics.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Topics")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                FlowLayout(spacing: 6) {
-                    ForEach(topics, id: \.self) { topic in
-                        Text(topic)
-                            .font(.caption)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(.blue.opacity(0.12), in: Capsule())
-                            .foregroundStyle(.blue)
-                    }
-                }
-            }
+            DateStatItem(label: "Created", value: repo.createdAt, systemImage: "calendar.badge.plus")
+            DateStatItem(label: "Updated", value: repo.updatedAt, systemImage: "clock.arrow.circlepath")
         }
     }
 
@@ -364,6 +404,7 @@ private struct ReadmeStateView: View {
     /// 仓库 owner / name —— 透传给 ReadmeWebView 用于图片相对路径重写
     let owner: String
     let repo: String
+    let onScrollOffsetChange: (CGFloat) -> Void
     let onRetry: () -> Void
 
     var body: some View {
@@ -383,7 +424,8 @@ private struct ReadmeStateView: View {
                     htmlFragment: html,
                     baseURL: baseURL,
                     owner: owner,
-                    repo: repo
+                    repo: repo,
+                    onScrollOffsetChange: onScrollOffsetChange
                 )
                 cacheFooter(cachedAt: cachedAt)
             }
@@ -481,50 +523,31 @@ private struct StatItem: View {
     }
 }
 
-// MARK: - FlowLayout（Topics 自动换行）
+private struct DateStatItem: View {
+    let label: String
+    let value: String?
+    let systemImage: String
 
-/// 简易 Flow 布局：左到右排列，超出宽度换行。
-/// 用 SwiftUI 原生 `Layout` 协议实现，避免依赖第三方。
-private struct FlowLayout: Layout {
-    var spacing: CGFloat = 6
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxWidth = proposal.width ?? .infinity
-        var rowWidth: CGFloat = 0
-        var totalHeight: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if rowWidth + size.width > maxWidth {
-                totalHeight += rowHeight + spacing
-                rowWidth = size.width + spacing
-                rowHeight = size.height
-            } else {
-                rowWidth += size.width + spacing
-                rowHeight = max(rowHeight, size.height)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .foregroundStyle(.secondary)
+                Text(formattedDate)
+                    .monospacedDigit()
+                    .lineLimit(1)
             }
+            .font(.system(size: 13, weight: .medium))
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
-        totalHeight += rowHeight
-        return CGSize(width: maxWidth.isFinite ? maxWidth : rowWidth, height: totalHeight)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let maxWidth = bounds.width
-        var x: CGFloat = bounds.minX
-        var y: CGFloat = bounds.minY
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > bounds.minX + maxWidth {
-                x = bounds.minX
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
+    private var formattedDate: String {
+        guard let value, let date = ISO8601DateFormatter().date(from: value) else {
+            return "-"
         }
+        return date.formatted(.dateTime.year().month().day())
     }
 }

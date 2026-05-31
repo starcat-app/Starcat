@@ -85,6 +85,7 @@ struct HomeView: View {
         }
         .environment(viewModel)
         .environment(readmeVM)
+        .mainWindowFrameAutosave()
         .searchable(text: $vm.searchQuery, placement: .toolbar, prompt: "搜索仓库")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {

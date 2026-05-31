@@ -64,6 +64,13 @@ struct ReadmeWebView: NSViewRepresentable {
     /// 仓库 name（同上）。
     let repo: String?
 
+    /// README 内部滚动位置变化回调。
+    ///
+    /// 背景：README 由 WKWebView 自己滚动，外层 SwiftUI 看不到 ScrollView offset。
+    /// 详情页需要在用户阅读时收起顶部元信息面板，所以这里把 WebView 的 scroll offset
+    /// 作为一个窄回调往外透出；不把 WKWebView / NSScrollView 暴露给业务层。
+    var onScrollOffsetChange: (CGFloat) -> Void = { _ in }
+
     @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator {
@@ -85,11 +92,14 @@ struct ReadmeWebView: NSViewRepresentable {
         webView.setValue(false, forKey: "drawsBackground") // 透明背景，跟随系统主题底色
 
         context.coordinator.webView = webView
+        context.coordinator.onScrollOffsetChange = onScrollOffsetChange
+        context.coordinator.installScrollObserver(for: webView)
         loadIfNeeded(into: webView, context: context)
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        context.coordinator.onScrollOffsetChange = onScrollOffsetChange
         loadIfNeeded(into: webView, context: context)
     }
 
@@ -201,11 +211,63 @@ struct ReadmeWebView: NSViewRepresentable {
 
         weak var webView: WKWebView?
         var lastLoadedKey: ReadmeKey?
+        var onScrollOffsetChange: (CGFloat) -> Void = { _ in }
+        private var scrollObserver: NSObjectProtocol?
 
         /// 由 `loadIfNeeded` 在调用 `loadHTMLString` 前置 true，
         /// 用于放行紧接而来的那一次主框架导航；放行后立即置 false。
         /// 之后任何主框架导航（reload / meta refresh / 页内 location）都会被 cancel。
         var expectsInitialLoad: Bool = false
+
+        deinit {
+            if let scrollObserver {
+                NotificationCenter.default.removeObserver(scrollObserver)
+            }
+        }
+
+        /// 监听 WKWebView 内部 NSScrollView 的 contentView bounds 变化。
+        ///
+        /// 为什么不用 SwiftUI ScrollView：README 滚动发生在 WebKit 进程管理的 NSScrollView 里，
+        /// 外层 SwiftUI 不参与布局 offset 计算。`NSView.boundsDidChangeNotification`
+        /// 是 macOS 上读取 NSScrollView 滚动位置的标准轻量入口。
+        ///
+        /// 注意：macOS 的 WKWebView 没有 iOS 那种公开 `scrollView` 属性，只能从 NSView 子树
+        /// 找内部 NSScrollView。这里把这个 WebKit 细节封在包装层里，只向外传 CGFloat。
+        func installScrollObserver(for webView: WKWebView) {
+            if let scrollObserver {
+                NotificationCenter.default.removeObserver(scrollObserver)
+            }
+
+            guard let scrollView = findScrollView(in: webView) else {
+                AppLog.ui.warning("ReadmeWebView could not find internal NSScrollView for scroll tracking")
+                return
+            }
+
+            let clipView = scrollView.contentView
+            clipView.postsBoundsChangedNotifications = true
+            scrollObserver = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification,
+                object: clipView,
+                queue: .main
+            ) { [weak self, weak clipView] _ in
+                Task { @MainActor [weak self, weak clipView] in
+                    guard let self, let clipView else { return }
+                    self.onScrollOffsetChange(clipView.bounds.origin.y)
+                }
+            }
+        }
+
+        private func findScrollView(in view: NSView) -> NSScrollView? {
+            if let scrollView = view as? NSScrollView {
+                return scrollView
+            }
+            for subview in view.subviews {
+                if let found = findScrollView(in: subview) {
+                    return found
+                }
+            }
+            return nil
+        }
 
         func webView(
             _ webView: WKWebView,
