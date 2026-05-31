@@ -201,3 +201,7 @@ credentials/
 # Notes
 notes.md
 refer/
+
+# Multica
+.agent_context/
+.multica/
