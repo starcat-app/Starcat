@@ -102,4 +102,22 @@ struct RepoTagsSectionViewModelTests {
         await vm.loadFor(repoId: 1)
         #expect(vm.assigned.isEmpty)
     }
+
+    // MARK: - Callback
+
+    @Test("onTagsChanged: removeTag 和 commit 都会触发回调")
+    func callbackTriggered() async throws {
+        let (vm, tagRepo, _, db) = try makeVM()
+        try await db.insertRepoFixture(id: 1)
+        try await tagRepo.create(.fixture(id: "t-1"))
+
+        var callCount = 0
+        vm.onTagsChanged = { callCount += 1 }
+
+        await vm.removeTag(repoId: 1, tagId: "t-1")
+        #expect(callCount == 1)
+
+        await vm.commit(repoId: 1, tagIds: ["t-1"])
+        #expect(callCount == 2)
+    }
 }

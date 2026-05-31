@@ -64,6 +64,11 @@ struct BatchActionBar: View {
                 onCompleted: {
                     showTagSheet = false
                     viewModel.exitMultiSelectMode()
+                    // W4-4 D4：批量打标签后，刷新 Sidebar 计数 + 列表
+                    Task {
+                        await viewModel.refreshSidebar()
+                        await viewModel.reloadItems()
+                    }
                 }
             )
         }
