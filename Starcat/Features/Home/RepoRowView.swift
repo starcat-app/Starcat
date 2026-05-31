@@ -67,7 +67,7 @@ struct RepoRowCard: View {
     let repo: Repo
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: 40)
 
             VStack(alignment: .leading, spacing: 4) {

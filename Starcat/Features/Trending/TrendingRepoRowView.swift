@@ -178,7 +178,7 @@ struct TrendingRepoRowCard: View {
     let repo: TrendingRepo
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             RemoteAvatar(
                 urlString: TrendingRepoAvatarURL.from(owner: repo.owner),
                 size: 40
