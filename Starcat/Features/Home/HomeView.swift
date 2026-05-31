@@ -41,6 +41,15 @@ struct HomeView: View {
     /// W4 A2：标签管理 sheet 显示状态。
     @State private var showTagManagement: Bool = false
 
+    /// Sidebar 顶部三入口的当前页。
+    ///
+    /// 这层状态只描述“左栏正在展示哪组导航结构”，和 `HomeViewModel.selection`
+    /// 分开维护，避免 Trending / Search 后续扩展时污染 repo 管理筛选模型。
+    @State private var selectedSidebarPage: SidebarRootPage = .manage
+
+    /// Trending 页从左侧语言列表驱动的语言筛选。
+    @State private var selectedTrendingLanguage: TrendingLanguage = .all
+
     /// W4 A2：TagManagementViewModel 实例，sheet 关掉再开时复用，
     /// 避免每次 sheet 都 new 导致选择/加载态被打断。
     @State private var tagMgmtVM: TagManagementViewModel
@@ -79,12 +88,18 @@ struct HomeView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(showTagManagement: $showTagManagement)
+            SidebarView(
+                selectedPage: $selectedSidebarPage,
+                selectedTrendingLanguage: $selectedTrendingLanguage,
+                showTagManagement: $showTagManagement
+            )
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
         } content: {
             RepoListView(
                 trendingRepository: trendingRepository,
-                githubAPIClient: githubAPIClient
+                githubAPIClient: githubAPIClient,
+                selectedPage: selectedSidebarPage,
+                selectedTrendingLanguage: $selectedTrendingLanguage
             )
                 .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 480)
         } detail: {
@@ -121,6 +136,7 @@ struct HomeView: View {
             
             // Default to trending if not authenticated
             if !authSession.state.isAuthenticated {
+                selectedSidebarPage = .trending
                 viewModel.selection = .trending
             } else if viewModel.selection == .trending {
                 // If authenticated and somehow still on trending initially, we can leave it
@@ -167,6 +183,7 @@ struct HomeView: View {
         // 监听登录态变化，退出登录时强制切换回 Trending 并清除选择
         .onChange(of: authSession.state.isAuthenticated) { _, isAuthenticated in
             if !isAuthenticated {
+                selectedSidebarPage = .trending
                 viewModel.selection = .trending
                 viewModel.selectedRepoID = nil
             }

@@ -6,7 +6,7 @@
 //
 //  功能：
 //  - 日/周/月榜切换
-//  - 按语言筛选
+//  - 按语言筛选（由左侧 Trending 语言列表驱动）
 //  - 展示 Trending 仓库列表
 //  - 显示 AI 摘要按钮
 //  - 显示 AI 评分
@@ -26,15 +26,18 @@ struct TrendingView: View {
     @Environment(HomeViewModel.self) private var homeViewModel
     @State private var viewModel: TrendingViewModel
     @State private var showLoginSheet: Bool = false
+    @Binding private var selectedLanguage: TrendingLanguage
 
     init(
         repository: any TrendingRepositoryProtocol,
-        githubAPIClient: any GitHubAPIClientProtocol
+        githubAPIClient: any GitHubAPIClientProtocol,
+        selectedLanguage: Binding<TrendingLanguage>
     ) {
         _viewModel = State(initialValue: TrendingViewModel(
             repository: repository,
             githubAPIClient: githubAPIClient
         ))
+        _selectedLanguage = selectedLanguage
     }
 
     var body: some View {
@@ -55,10 +58,17 @@ struct TrendingView: View {
         }
         .task {
             viewModel.updateLanguagePreferences(from: homeViewModel.languageStats)
-            await viewModel.reload()
+            if viewModel.selectedLanguage != selectedLanguage {
+                viewModel.selectedLanguage = selectedLanguage
+            } else {
+                await viewModel.reload()
+            }
         }
         .onChange(of: homeViewModel.languageStats) { _, stats in
             viewModel.updateLanguagePreferences(from: stats)
+        }
+        .onChange(of: selectedLanguage) { _, language in
+            viewModel.selectedLanguage = language
         }
         .sheet(isPresented: $showLoginSheet) {
             GithubAuthView()
@@ -73,14 +83,10 @@ struct TrendingView: View {
     // MARK: - Toolbar
 
     private var toolbarView: some View {
-        HStack(spacing: 16) {
-            // 时间周期切换
-            periodPicker
-
+        HStack {
             Spacer()
-
-            // 语言筛选
-            languagePicker
+            periodPicker
+            Spacer()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -90,48 +96,29 @@ struct TrendingView: View {
     private var periodPicker: some View {
         @Bindable var vm = viewModel
 
-        return Picker("榜单周期", selection: $vm.selectedPeriod) {
+        return HStack(spacing: 12) {
             ForEach(TrendingPeriod.allCases) { period in
-                Text(period.displayName)
-                    .tag(period)
+                Button {
+                    vm.selectedPeriod = period
+                } label: {
+                    Text(period.displayName)
+                        .font(.system(size: 14, weight: vm.selectedPeriod == period ? .semibold : .medium))
+                        .frame(minWidth: 64)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .foregroundStyle(vm.selectedPeriod == period ? Color.white : Color.primary)
+                        .background(periodBackground(isSelected: vm.selectedPeriod == period))
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
             }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .controlSize(.small)
-        .frame(width: 168)
     }
 
-    private var languagePicker: some View {
-        @Bindable var vm = viewModel
-
-        return Menu {
-            ForEach(TrendingLanguage.allCases) { lang in
-                Button {
-                    vm.selectedLanguage = lang
-                } label: {
-                    HStack {
-                        Text(lang.displayName)
-                        if vm.selectedLanguage == lang {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .font(.subheadline)
-                Text(vm.selectedLanguage.displayName)
-                    .font(.subheadline)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color(NSColor.controlBackgroundColor))
-            .clipShape(Capsule())
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
+    /// 用独立胶囊按钮替代 segmented picker，视觉上对应左侧语言列表的“筛选条件分开”。
+    private func periodBackground(isSelected: Bool) -> some ShapeStyle {
+        isSelected ? Color.accentColor : Color(NSColor.controlBackgroundColor)
     }
 
     // MARK: - Content

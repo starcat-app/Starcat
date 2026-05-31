@@ -12,6 +12,35 @@
 
 import Foundation
 
+/// Sidebar 顶部的一级入口。
+///
+/// 这个层级不等同于 `SidebarItem`：前者决定左栏下面展示哪一组导航结构，
+/// 后者才是 repo 列表真正用来查询数据的筛选项。把两者拆开，可以避免后续
+/// Search / Trending 各自扩展子结构时继续挤进同一个列表分组。
+enum SidebarRootPage: String, CaseIterable, Identifiable {
+    case manage
+    case trending
+    case search
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .manage:   return "Manage"
+        case .trending: return "Trending"
+        case .search:   return "Search"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .manage:   return "folder"
+        case .trending: return "chart.line.uptrend.xyaxis"
+        case .search:   return "magnifyingglass"
+        }
+    }
+}
+
 /// 侧边栏可选择的导航项。
 ///
 /// Week 3 提供三类：

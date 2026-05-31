@@ -27,6 +27,9 @@ struct RepoListView: View {
     /// HOM-54：Trending 一键订阅复用 GitHub API 的 star 端点。
     var githubAPIClient: (any GitHubAPIClientProtocol)?
 
+    let selectedPage: SidebarRootPage
+    @Binding var selectedTrendingLanguage: TrendingLanguage
+
     // 顶部 clone 按钮现在属于中栏 toolbar；复制成功提示也跟着放在列表栏上。
     @State private var toastMessage: String?
 
@@ -45,13 +48,19 @@ struct RepoListView: View {
         @Bindable var vm = viewModel
 
         Group {
-            if viewModel.selection == .trending {
+            if selectedPage == .trending {
                 // HOM-54：Trending 页面
                 if let repo = trendingRepository, let githubAPIClient {
-                    TrendingView(repository: repo, githubAPIClient: githubAPIClient)
+                    TrendingView(
+                        repository: repo,
+                        githubAPIClient: githubAPIClient,
+                        selectedLanguage: $selectedTrendingLanguage
+                    )
                 } else {
                     emptyState(systemImage: "chart.line.uptrend.xyaxis", title: "Trending 数据暂不可用", subtitle: "功能开发中")
                 }
+            } else if selectedPage == .search {
+                searchPlaceholder
             } else if viewModel.isLoading && viewModel.items.isEmpty {
                 // HOM-46 骨架屏：首次加载时显示骨架行，提供更好的感知加载速度
                 RepoSkeletonListView(density: settings.listDensity, rowCount: 10)
@@ -76,22 +85,24 @@ struct RepoListView: View {
             }
         }
         .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                statusFilterMenu
-                sortMenu
-                multiSelectButton
-            }
-            ToolbarItemGroup(placement: .primaryAction) {
-                if let repo = viewModel.selectedRepo {
-                    // 这两个动作作用于右侧详情页，但视觉上要贴近最右搜索按钮。
-                    externalLinksMenu(repo: repo)
-                    cloneMenu(repo: repo)
+            if selectedPage == .manage {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    statusFilterMenu
+                    sortMenu
+                    multiSelectButton
                 }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                // 搜索入口单独作为最后一个 toolbar item，才能在 macOS toolbar 里稳定贴到最右侧。
-                // 展开时输入框向左占位，放大镜按钮本身仍停在最右边。
-                CollapsibleSearchBar(text: $vm.searchQuery)
+                ToolbarItemGroup(placement: .primaryAction) {
+                    if let repo = viewModel.selectedRepo {
+                        // 这两个动作作用于右侧详情页，但视觉上要贴近最右搜索按钮。
+                        externalLinksMenu(repo: repo)
+                        cloneMenu(repo: repo)
+                    }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    // 搜索入口单独作为最后一个 toolbar item，才能在 macOS toolbar 里稳定贴到最右侧。
+                    // 展开时输入框向左占位，放大镜按钮本身仍停在最右边。
+                    CollapsibleSearchBar(text: $vm.searchQuery)
+                }
             }
         }
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
@@ -327,6 +338,12 @@ struct RepoListView: View {
     }
 
     private var navigationSubtitle: String {
+        if selectedPage == .trending {
+            return selectedTrendingLanguage.displayName
+        }
+        if selectedPage == .search {
+            return "入口结构已预留"
+        }
         if viewModel.isMultiSelectMode {
             return "已选 \(viewModel.multiSelectedRepoIDs.count) / \(viewModel.items.count)"
         }
@@ -339,6 +356,12 @@ struct RepoListView: View {
     // MARK: - 标题派生
 
     private var navigationTitle: String {
+        if selectedPage == .trending {
+            return "Trending"
+        }
+        if selectedPage == .search {
+            return "Search"
+        }
         if viewModel.isSearching {
             return "搜索：\(viewModel.searchQuery)"
         }
@@ -395,6 +418,14 @@ struct RepoListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+
+    private var searchPlaceholder: some View {
+        emptyState(
+            systemImage: "magnifyingglass",
+            title: "Search 入口已建立",
+            subtitle: "搜索历史、保存搜索和高级筛选会在后续接入。"
+        )
     }
 
     private func statusIcon(for status: RepoStatus) -> String {

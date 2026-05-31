@@ -187,26 +187,34 @@ enum TrendingPeriod: String, CaseIterable, Identifiable {
 
 // MARK: - Language
 
-/// 支持的语言筛选选项。
-enum TrendingLanguage: String, CaseIterable, Identifiable {
-    case all = ""
-    case swift = "Swift"
-    case python = "Python"
-    case typescript = "TypeScript"
-    case javascript = "JavaScript"
-    case go = "Go"
-    case rust = "Rust"
-    case java = "Java"
-    case kotlin = "Kotlin"
-    case dart = "Dart"
+/// Trending 语言筛选项。
+///
+/// 这里故意用 struct 而不是固定 enum：左侧 Trending 入口会复用用户本地
+/// `Languages` 聚合结果，语言集合随用户 stars 变化，不应该被硬编码 case 限住。
+struct TrendingLanguage: Hashable, Identifiable, Sendable {
+    let rawValue: String
 
-    var id: String { rawValue }
-
-    var displayName: String {
-        if self == .all { return "全部语言" }
-        return rawValue
+    init(_ rawValue: String) {
+        self.rawValue = rawValue
     }
 
-    /// API 参数值（空字符串表示全部）
+    var id: String { rawValue.isEmpty ? "<all>" : rawValue }
+
+    var displayName: String {
+        rawValue.isEmpty ? "All languages" : rawValue
+    }
+
+    /// API 参数值（空字符串表示全部）。
     var apiValue: String { rawValue }
+
+    static let all = TrendingLanguage("")
+    static let swift = TrendingLanguage("Swift")
+    static let python = TrendingLanguage("Python")
+    static let typescript = TrendingLanguage("TypeScript")
+    static let javascript = TrendingLanguage("JavaScript")
+    static let go = TrendingLanguage("Go")
+    static let rust = TrendingLanguage("Rust")
+    static let java = TrendingLanguage("Java")
+    static let kotlin = TrendingLanguage("Kotlin")
+    static let dart = TrendingLanguage("Dart")
 }

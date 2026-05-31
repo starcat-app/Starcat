@@ -25,54 +25,156 @@ struct SidebarView: View {
     @State private var languagesExpanded: Bool = true
     /// W4 A6：Tags 组展开/收起状态。
     @State private var tagsExpanded: Bool = true
+    /// Trending 语言列表展开/收起状态。和 Manage 的 Languages 分开，避免互相影响。
+    @State private var trendingLanguagesExpanded: Bool = true
 
+    @Binding var selectedPage: SidebarRootPage
+    @Binding var selectedTrendingLanguage: TrendingLanguage
     @Binding var showTagManagement: Bool
 
     var body: some View {
         @Bindable var vm = viewModel
 
         List(selection: $vm.selection) {
-            Section("发现") {
-                row(.trending)
-            }
-
-            if authSession.state.isAuthenticated {
-                Section("主导航") {
-                    row(.allStars, count: viewModel.totalCount)
-                    row(.untagged, count: viewModel.untaggedCount)
-                }
-
-                // W4 A6：Tags 段。
-                // 行为：每个用户自定义标签一行，点击 → selection = .tag(id) → 列表过滤
-                // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
-                Section {
-                    if tagsExpanded && !viewModel.tags.isEmpty {
-                        ForEach(viewModel.tags) { tag in
-                            tagRow(tag: tag, count: viewModel.tagCounts[tag.id] ?? 0)
-                        }
-                    }
-                } header: {
-                    tagSectionHeader
-                }
-
-                if !viewModel.languageStats.isEmpty {
-                    // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
-                    Section {
-                        if languagesExpanded {
-                            ForEach(viewModel.languageStats) { stat in
-                                languageRow(stat)
-                            }
-                        }
-                    } header: {
-                        languageSectionHeader
-                    }
-                }
+            switch selectedPage {
+            case .manage:
+                manageSidebarContent
+            case .trending:
+                trendingSidebarContent
+            case .search:
+                searchSidebarContent
             }
         }
         .listStyle(.sidebar)
         // 用 safeAreaInset 把用户卡固定在 Sidebar 顶部，下面的 List 内容仍可滚动
         .safeAreaInset(edge: .top, spacing: 0) {
-            SidebarHeaderView()
+            VStack(spacing: 0) {
+                SidebarHeaderView()
+                rootNavigationBar
+                    .padding(.horizontal, 8)
+                    .padding(.top, 10)
+                    .padding(.bottom, 8)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var manageSidebarContent: some View {
+        if authSession.state.isAuthenticated {
+            Section("主导航") {
+                row(.allStars, count: viewModel.totalCount)
+                row(.untagged, count: viewModel.untaggedCount)
+            }
+
+            // W4 A6：Tags 段。
+            // 行为：每个用户自定义标签一行，点击 → selection = .tag(id) → 列表过滤
+            // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
+            Section {
+                if tagsExpanded && !viewModel.tags.isEmpty {
+                    ForEach(viewModel.tags) { tag in
+                        tagRow(tag: tag, count: viewModel.tagCounts[tag.id] ?? 0)
+                    }
+                }
+            } header: {
+                tagSectionHeader
+            }
+
+            if !viewModel.languageStats.isEmpty {
+                // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
+                Section {
+                    if languagesExpanded {
+                        ForEach(viewModel.languageStats) { stat in
+                            languageRow(stat)
+                        }
+                    }
+                } header: {
+                    languageSectionHeader
+                }
+            }
+        } else {
+            Section {
+                Text("登录后可管理全部 Stars、未分类仓库和标签。")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var trendingSidebarContent: some View {
+        Section {
+            trendingLanguageRow(.all)
+
+            if trendingLanguagesExpanded {
+                ForEach(trendingLanguages) { language in
+                    trendingLanguageRow(language)
+                }
+            }
+        } header: {
+            trendingLanguageSectionHeader
+        }
+    }
+
+    @ViewBuilder
+    private var searchSidebarContent: some View {
+        Section {
+            Text("搜索入口已预留，后续会在这里放搜索历史、保存搜索和筛选结构。")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 8)
+        }
+    }
+
+    /// 头像 / 统计数据下方的三入口切换。
+    ///
+    /// 使用独立按钮而不是 `Picker`，是为了匹配参考图里“图标在上、文字在下”的入口形态。
+    private var rootNavigationBar: some View {
+        HStack(spacing: 0) {
+            ForEach(SidebarRootPage.allCases) { page in
+                rootNavigationButton(page)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private func rootNavigationButton(_ page: SidebarRootPage) -> some View {
+        let isSelected = selectedPage == page
+
+        return Button {
+            selectRootPage(page)
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: page.systemImage)
+                    .font(.system(size: 24, weight: .regular))
+                    .frame(height: 28)
+                Text(page.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isSelected ? Color.accentColor : Color.primary.opacity(0.75))
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(page.title)
+    }
+
+    private func selectRootPage(_ page: SidebarRootPage) {
+        guard selectedPage != page else { return }
+        selectedPage = page
+        viewModel.selectedRepoID = nil
+
+        switch page {
+        case .manage:
+            if viewModel.selection.isTrending {
+                viewModel.selectSidebar(.allStars)
+            }
+        case .trending:
+            viewModel.selectSidebar(.trending)
+        case .search:
+            viewModel.searchQuery = ""
         }
     }
 
@@ -147,6 +249,34 @@ struct SidebarView: View {
         .help(languagesExpanded ? "折叠 Languages" : "展开 Languages")
     }
 
+    private var trendingLanguageSectionHeader: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                trendingLanguagesExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text("Languages")
+                    .font(.headline)
+
+                Spacer(minLength: 8)
+
+                Text(trendingLanguages.count.formatted())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+
+                disclosureChevron(isExpanded: trendingLanguagesExpanded)
+                    .frame(width: 20, height: 20)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(trendingLanguagesExpanded ? "折叠 Trending 语言" : "展开 Trending 语言")
+    }
+
     private func disclosureChevron(isExpanded: Bool) -> some View {
         Image(systemName: "chevron.right")
             .font(.caption)
@@ -165,6 +295,46 @@ struct SidebarView: View {
         withAnimation(.easeInOut(duration: 0.2)) {
             languagesExpanded.toggle()
         }
+    }
+
+    /// Trending 语言优先来自本地 Stars 的语言聚合；未登录或尚未同步时给一组常用语言兜底，
+    /// 保证 Trending 入口第一次打开也有可探索的分类。
+    private var trendingLanguages: [TrendingLanguage] {
+        let localLanguages = viewModel.languageStats.compactMap(\.languageOrNil)
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        let names = localLanguages.isEmpty
+            ? ["JavaScript", "Java", "Python", "CSS", "PHP", "Ruby", "C++", "C", "Shell", "Objective-C", "R", "Go", "Swift"]
+            : localLanguages
+
+        return names.map { TrendingLanguage($0) }
+    }
+
+    @ViewBuilder
+    private func trendingLanguageRow(_ language: TrendingLanguage) -> some View {
+        let isSelected = selectedTrendingLanguage == language
+
+        Button {
+            selectedTrendingLanguage = language
+        } label: {
+            Label {
+                Text(language.displayName)
+                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                    .lineLimit(1)
+            } icon: {
+                if language == .all {
+                    Image(systemName: "chevron.left.forwardslash.chevron.right")
+                } else {
+                    LanguageIconView(language: language.rawValue, size: 14)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .listRowBackground(isSelected ? Color.accentColor : Color.clear)
+        .foregroundStyle(isSelected ? Color.white : Color.primary)
     }
 
     @ViewBuilder
