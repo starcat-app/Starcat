@@ -38,36 +38,27 @@ struct SidebarView: View {
 
             // W4 A6：Tags 段。
             // 行为：每个用户自定义标签一行，点击 → selection = .tag(id) → 列表过滤
-            Section(isExpanded: $tagsExpanded) {
-                if !viewModel.tags.isEmpty {
+            // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
+            Section {
+                if tagsExpanded && !viewModel.tags.isEmpty {
                     ForEach(viewModel.tags) { tag in
                         tagRow(tag: tag, count: viewModel.tagCounts[tag.id] ?? 0)
                     }
                 }
             } header: {
-                HStack {
-                    Text("Tags")
-                    Spacer()
-                    Button {
-                        showTagManagement = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .imageScale(.small)
-                            .frame(width: 20, height: 20)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("标签管理")
-                }
+                tagSectionHeader
             }
 
             if !viewModel.languageStats.isEmpty {
-                Section(isExpanded: $languagesExpanded) {
-                    ForEach(viewModel.languageStats) { stat in
-                        languageRow(stat)
+                // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
+                Section {
+                    if languagesExpanded {
+                        ForEach(viewModel.languageStats) { stat in
+                            languageRow(stat)
+                        }
                     }
                 } header: {
-                    Text("Languages")
+                    languageSectionHeader
                 }
             }
         }
@@ -75,6 +66,97 @@ struct SidebarView: View {
         // 用 safeAreaInset 把用户卡固定在 Sidebar 顶部，下面的 List 内容仍可滚动
         .safeAreaInset(edge: .top, spacing: 0) {
             SidebarHeaderView()
+        }
+    }
+
+    /// HOM-43：Tags header 需要同时有“整行可折叠”和独立的标签管理按钮。
+    /// 避免把 `Button` 嵌在另一个 `Button` 里，否则 SwiftUI 事件命中会不稳定。
+    private var tagSectionHeader: some View {
+        HStack(spacing: 6) {
+            Button {
+                toggleTags()
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Tags")
+                        .font(.headline)
+                    Spacer(minLength: 8)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tagsExpanded ? "折叠 Tags" : "展开 Tags")
+
+            Button {
+                showTagManagement = true
+            } label: {
+                Image(systemName: "plus")
+                    .imageScale(.small)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("标签管理")
+
+            Button {
+                toggleTags()
+            } label: {
+                disclosureChevron(isExpanded: tagsExpanded)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tagsExpanded ? "折叠 Tags" : "展开 Tags")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.trailing, 6)
+    }
+
+    /// HOM-43：Languages 数字是“语言类别数量”，放在右侧 accessory 区域，
+    /// 与 Tags header 的 `+` 按钮占位一致，而不是紧跟标题。
+    private var languageSectionHeader: some View {
+        Button {
+            toggleLanguages()
+        } label: {
+            HStack(spacing: 6) {
+                Text("Languages")
+                    .font(.headline)
+
+                Spacer(minLength: 8)
+
+                Text(viewModel.languageStats.count.formatted())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+
+                disclosureChevron(isExpanded: languagesExpanded)
+                    .frame(width: 20, height: 20)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(languagesExpanded ? "折叠 Languages" : "展开 Languages")
+    }
+
+    private func disclosureChevron(isExpanded: Bool) -> some View {
+        Image(systemName: "chevron.right")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            .animation(.easeInOut(duration: 0.2), value: isExpanded)
+    }
+
+    private func toggleTags() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            tagsExpanded.toggle()
+        }
+    }
+
+    private func toggleLanguages() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            languagesExpanded.toggle()
         }
     }
 
