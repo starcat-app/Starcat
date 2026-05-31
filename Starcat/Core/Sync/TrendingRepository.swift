@@ -11,7 +11,7 @@
 //
 //  设计约束：
 //  - 不做持久化存储，Trending 数据由 API 提供
-//  - 缓存 TTL：daily 5分钟，weekly 15分钟，monthly 30分钟
+//  - 缓存 TTL：daily 1小时，weekly 6小时，monthly 12小时
 //
 
 import Foundation
@@ -28,12 +28,15 @@ actor TrendingRepository: TrendingRepositoryProtocol {
 
     // MARK: - Cache
 
+    private struct CacheKey: Hashable {
+        let period: TrendingPeriod
+        let language: TrendingLanguage
+    }
+
     /// 缓存条目
     private struct CacheEntry {
         let repos: [TrendingRepo]
         let cachedAt: Date
-        let period: TrendingPeriod
-        let language: TrendingLanguage
 
         /// 缓存是否过期
         func isExpired(ttl: TimeInterval) -> Bool {
@@ -44,17 +47,17 @@ actor TrendingRepository: TrendingRepositoryProtocol {
     // MARK: - Properties
 
     private let api: TrendingAPI
-    /// 内存缓存
-    private var cache: CacheEntry?
+    /// 内存缓存。按 period + language 分桶，避免切换筛选项时把刚拉到的数据覆盖掉。
+    private var cache: [CacheKey: CacheEntry] = [:]
 
     // MARK: - TTL
 
     /// 根据周期返回缓存 TTL（秒）
-    private func ttl(for period: TrendingPeriod) -> TimeInterval {
+    static func ttl(for period: TrendingPeriod) -> TimeInterval {
         switch period {
-        case .daily:   return 300    // 5 分钟
-        case .weekly:  return 900    // 15 分钟
-        case .monthly: return 1800   // 30 分钟
+        case .daily:   return 60 * 60       // 1 小时
+        case .weekly:  return 6 * 60 * 60   // 6 小时
+        case .monthly: return 12 * 60 * 60  // 12 小时
         }
     }
 
@@ -76,11 +79,11 @@ actor TrendingRepository: TrendingRepositoryProtocol {
         since: TrendingPeriod,
         language: TrendingLanguage
     ) async throws -> [TrendingRepo] {
+        let key = CacheKey(period: since, language: language)
+
         // 检查缓存
-        if let cached = cache,
-           cached.period == since,
-           cached.language == language,
-           !cached.isExpired(ttl: ttl(for: since)) {
+        if let cached = cache[key],
+           !cached.isExpired(ttl: Self.ttl(for: since)) {
             AppLog.network.debug("Trending cache hit: \(since.rawValue)/\(language.rawValue)")
             return cached.repos
         }
@@ -90,11 +93,9 @@ actor TrendingRepository: TrendingRepositoryProtocol {
         let repos = try await api.fetchTrending(since: since, language: language)
 
         // 更新缓存
-        cache = CacheEntry(
+        cache[key] = CacheEntry(
             repos: repos,
-            cachedAt: Date(),
-            period: since,
-            language: language
+            cachedAt: Date()
         )
 
         return repos

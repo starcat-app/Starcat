@@ -78,53 +78,42 @@ struct TrendingView: View {
     }
 
     private var periodPicker: some View {
-        HStack(spacing: 4) {
+        @Bindable var vm = viewModel
+
+        return Picker("榜单周期", selection: $vm.selectedPeriod) {
             ForEach(TrendingPeriod.allCases) { period in
-                Button {
-                    viewModel.selectedPeriod = period
-                } label: {
-                    Text(period.displayName)
-                        .font(.subheadline)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            viewModel.selectedPeriod == period
-                                ? Color.accentColor
-                                : Color.clear
-                        )
-                        .foregroundStyle(
-                            viewModel.selectedPeriod == period
-                                ? Color.white
-                                : Color.primary
-                        )
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
+                Text(period.displayName)
+                    .tag(period)
             }
         }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.small)
+        .frame(width: 168)
     }
 
     private var languagePicker: some View {
-        Menu {
+        @Bindable var vm = viewModel
+
+        return Menu {
             ForEach(TrendingLanguage.allCases) { lang in
                 Button {
-                    viewModel.selectedLanguage = lang
+                    vm.selectedLanguage = lang
                 } label: {
                     HStack {
                         Text(lang.displayName)
-                        if viewModel.selectedLanguage == lang {
+                        if vm.selectedLanguage == lang {
                             Image(systemName: "checkmark")
                         }
                     }
                 }
             }
         } label: {
-            HStack(spacing: 4) {
-                Text(viewModel.selectedLanguage.displayName)
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
                     .font(.subheadline)
-                Image(systemName: "chevron.down")
-                    .font(.caption)
+                Text(vm.selectedLanguage.displayName)
+                    .font(.subheadline)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -132,6 +121,7 @@ struct TrendingView: View {
             .clipShape(Capsule())
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
     }
 
     // MARK: - Content

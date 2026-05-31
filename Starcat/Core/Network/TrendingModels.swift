@@ -35,6 +35,35 @@ struct TrendingResponseDTO: Decodable {
         case buildBy = "build_by"
         case change
     }
+
+    init(
+        repo: String,
+        desc: String?,
+        lang: String?,
+        stars: Int,
+        forks: Int,
+        buildBy: [TrendingContributorDTO],
+        change: Int?
+    ) {
+        self.repo = repo
+        self.desc = desc
+        self.lang = lang
+        self.stars = stars
+        self.forks = forks
+        self.buildBy = buildBy
+        self.change = change
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.repo = try container.decode(String.self, forKey: .repo)
+        self.desc = try container.decodeIfPresent(String.self, forKey: .desc)
+        self.lang = try container.decodeIfPresent(String.self, forKey: .lang)
+        self.stars = try container.decodeIfPresent(Int.self, forKey: .stars) ?? 0
+        self.forks = try container.decodeIfPresent(Int.self, forKey: .forks) ?? 0
+        self.buildBy = try container.decodeIfPresent([TrendingContributorDTO].self, forKey: .buildBy) ?? []
+        self.change = try container.decodeIfPresent(Int.self, forKey: .change)
+    }
 }
 
 /// 贡献者 DTO。

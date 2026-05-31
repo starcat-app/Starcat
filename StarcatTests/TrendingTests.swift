@@ -101,6 +101,44 @@ struct TrendingTests {
         #expect(repo.starsInPeriod == 108)
     }
 
+    @Test("TrendingAPI: missing optional upstream fields do not drop the whole list")
+    func apiDecodesMissingOptionalFields() async throws {
+        URLProtocolStub.reset()
+        let api = TrendingAPI(
+            baseURL: URL(string: "https://trend.test.invalid")!,
+            session: URLProtocolStub.ephemeralSession()
+        )
+
+        URLProtocolStub.requestHandler = { request in
+            let body = #"""
+            [
+              {
+                "repo": "/owner/minimal",
+                "desc": null,
+                "lang": "",
+                "stars": 42
+              }
+            ]
+            """#.data(using: .utf8)!
+            return (trendingHTTPResponse(200, request.url!), body)
+        }
+
+        let repos = try await api.fetchTrending(since: .daily, language: .all)
+
+        let repo = try #require(repos.first)
+        #expect(repo.fullName == "owner/minimal")
+        #expect(repo.forksCount == 0)
+        #expect(repo.contributors.isEmpty)
+        #expect(repo.starsInPeriod == 0)
+    }
+
+    @Test("TrendingRepository: cache TTL matches slow-changing Trending data")
+    func cacheTTLIsLonger() {
+        #expect(TrendingRepository.ttl(for: .daily) == 60 * 60)
+        #expect(TrendingRepository.ttl(for: .weekly) == 6 * 60 * 60)
+        #expect(TrendingRepository.ttl(for: .monthly) == 12 * 60 * 60)
+    }
+
     @MainActor
     @Test("TrendingViewModel: subscribe calls GitHub star endpoint")
     func subscribeCallsGitHubStar() async throws {
