@@ -79,6 +79,7 @@ struct SFSymbolGridPicker: View {
                 )
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .help(icon)
     }
 }

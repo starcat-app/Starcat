@@ -118,6 +118,7 @@ struct TagEditorView: View {
                                         .font(.caption)
                                 }
                                 .buttonStyle(.plain)
+                .focusEffectDisabled()
                                 .foregroundStyle(editingIcon == nil ? .primary : .secondary)
                                 Spacer()
                             }
@@ -194,6 +195,7 @@ struct TagEditorView: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .focusEffectDisabled()
                 .help(preset.name)
             }
         }

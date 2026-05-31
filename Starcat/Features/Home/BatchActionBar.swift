@@ -190,6 +190,7 @@ private struct BatchTagSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
     }
 }
 

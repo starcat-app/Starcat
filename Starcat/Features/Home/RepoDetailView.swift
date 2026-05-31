@@ -416,6 +416,7 @@ private struct ReadmeStateView: View {
                     .padding(.horizontal, 32)
                 Button("重试", action: onRetry)
                     .controlSize(.small)
+                    .focusEffectDisabled()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -431,6 +432,7 @@ private struct ReadmeStateView: View {
             Spacer()
             Button("刷新", action: onRetry)
                 .buttonStyle(.borderless)
+                .focusEffectDisabled()
                 .font(.caption2)
         }
         .padding(.horizontal, 24)

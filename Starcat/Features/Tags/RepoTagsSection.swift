@@ -86,6 +86,7 @@ struct RepoTagsSection: View {
                 .font(.caption)
         }
         .buttonStyle(.borderless)
+        .focusEffectDisabled()
         .popover(isPresented: $showPicker, arrowEdge: .top) {
             if let vm = viewModel {
                 TagPickerView(
@@ -275,6 +276,7 @@ struct TagPickerView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
     }
 }
 
@@ -315,6 +317,7 @@ struct TagChip: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .focusEffectDisabled()
             }
         }
         .padding(.horizontal, 8)

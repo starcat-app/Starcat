@@ -56,6 +56,7 @@ struct SidebarHeaderView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
             .help("查看 GitHub 主页")
 
             // 右上角账户菜单按钮（仅保留退出登录）
@@ -68,6 +69,7 @@ struct SidebarHeaderView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
             .help("账户")
             .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
                 accountPopover()
@@ -117,6 +119,7 @@ struct SidebarHeaderView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
         }

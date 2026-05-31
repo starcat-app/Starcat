@@ -91,6 +91,7 @@ struct GithubAuthView: View {
                 } label: {
                     Image(systemName: "doc.on.doc")
                 }
+                .focusEffectDisabled()
                 .help("复制 code")
             }
 

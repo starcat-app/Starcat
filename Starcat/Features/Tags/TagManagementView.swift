@@ -120,6 +120,7 @@ struct TagManagementView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
             .keyboardShortcut(.cancelAction)
             .help("关闭")
         }
@@ -194,6 +195,7 @@ struct TagManagementView: View {
                             .font(.caption2)
                     }
                     .buttonStyle(.plain)
+            .focusEffectDisabled()
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
@@ -295,6 +297,7 @@ private struct NewTagSheet: View {
                                 )
                         }
                         .buttonStyle(.plain)
+            .focusEffectDisabled()
                         .help(preset.name)
                     }
                 }
