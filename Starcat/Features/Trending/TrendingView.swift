@@ -190,9 +190,16 @@ struct TrendingView: View {
         )
     }
 
+    /// 单选列表使用手动 selection，而不是 `List(selection:)`。
+    ///
+    /// 原因（与 Manage `RepoListView.listContent(_:)` 对齐）：`List(selection:)` 会强制
+    /// 绘制 macOS 系统蓝色选中底色，把 `TrendingRepoRowSurface` 自定义的语言色
+    /// accent bar / 轻 accent 底 / 细 accent 边框完全压住，导致两个列表视觉割裂
+    /// （Trending 卡片像一整块强蓝色，Manage 卡片是克制的语言色）。
+    /// 改用 plain Button 写 `selectedRepoID`，仍触发 HomeView 的
+    /// `.onChange(of: selectedRepoID)` 加载详情，但选中外观完全交给 `TrendingRepoRowView`。
     private var contentView: some View {
-        // 使用 List(selection:) 获取原生 macOS selection 样式（蓝色高亮）。
-        List(selection: $selectedRepoID) {
+        List {
             // "为你推荐"卡片暂时隐藏（dong4j 2026-06-01）：当前推荐质量还不稳定，先关掉。
             // 重新启用：把 showsRecommendations 改回 true 即可，逻辑与 UI 均保留。
             if Self.showsRecommendations, !viewModel.recommendedRepos.isEmpty {
@@ -201,16 +208,25 @@ struct TrendingView: View {
                     .listRowSeparator(.hidden)
             }
 
-            // Trending 列表
+            // Trending 列表：plain Button 包裹 row，点击写 selectedRepoID。
+            // 不用 `.tag(repo.id)`，selection 完全由 isSelected 入参驱动。
             ForEach(indexedRepos) { item in
                 let repo = item.repo
-                TrendingRepoRowView(
-                    repo: repo,
-                    density: settings.listDensity
-                )
+                Button {
+                    selectedRepoID = repo.id
+                } label: {
+                    TrendingRepoRowView(
+                        repo: repo,
+                        density: settings.listDensity,
+                        isSelected: selectedRepoID == repo.id
+                    )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
                 .listRowReveal(index: item.index, snapshotID: viewModel.reposRevision)
                 .listRowInsets(padding)
-                .tag(repo.id)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
         }
         .id(viewModel.reposRevision)

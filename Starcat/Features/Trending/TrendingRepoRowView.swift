@@ -162,14 +162,24 @@ private extension Int {
 // MARK: - 入口
 
 /// TrendingRepo 行视图入口：根据密度参数选子视图。
+///
+/// `isSelected` 由外层 `TrendingView` 的手写 selection（plain Button + selectedRepoID）
+/// 驱动；不再依赖 `List(selection:)` 的系统蓝色高亮，避免与 Manage 列表视觉不一致。
 struct TrendingRepoRowView: View {
     let repo: TrendingRepo
     let density: RepoListDensity
+    let isSelected: Bool
+
+    init(repo: TrendingRepo, density: RepoListDensity, isSelected: Bool = false) {
+        self.repo = repo
+        self.density = density
+        self.isSelected = isSelected
+    }
 
     var body: some View {
         switch density {
-        case .compact: TrendingRepoRowCompact(repo: repo)
-        case .card:    TrendingRepoRowCard(repo: repo)
+        case .compact: TrendingRepoRowCompact(repo: repo, isSelected: isSelected)
+        case .card:    TrendingRepoRowCard(repo: repo, isSelected: isSelected)
         }
     }
 }
@@ -179,9 +189,10 @@ struct TrendingRepoRowView: View {
 /// 紧凑行：1 行高，扫读优先。
 struct TrendingRepoRowCompact: View {
     let repo: TrendingRepo
+    let isSelected: Bool
 
     var body: some View {
-        TrendingRepoRowSurface(repo: repo, density: .compact) {
+        TrendingRepoRowSurface(repo: repo, isSelected: isSelected, density: .compact) {
             HStack(spacing: 10) {
                 RemoteAvatar(
                     urlString: TrendingRepoAvatarURL.from(owner: repo.owner),
@@ -189,8 +200,10 @@ struct TrendingRepoRowCompact: View {
                     showBorder: false
                 )
 
+                // 与 Manage Compact 行对齐：选中态字重升到 .semibold，
+                // 让选中行在密度高的紧凑模式下多一个强调维度（除 accent bar 之外）。
                 Text(repo.fullName)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
                     .lineLimit(1)
                     .truncationMode(.middle)
 
@@ -213,9 +226,10 @@ struct TrendingRepoRowCompact: View {
 /// 卡片行：3-4 行高，包含描述、属性条、周期增长和贡献者。
 struct TrendingRepoRowCard: View {
     let repo: TrendingRepo
+    let isSelected: Bool
 
     var body: some View {
-        TrendingRepoRowSurface(repo: repo, density: .card) {
+        TrendingRepoRowSurface(repo: repo, isSelected: isSelected, density: .card) {
             HStack(alignment: .center, spacing: 12) {
                 RemoteAvatar(
                     urlString: TrendingRepoAvatarURL.from(owner: repo.owner),
@@ -289,17 +303,31 @@ struct TrendingRepoRowCard: View {
 // MARK: - 视觉容器
 
 /// TrendingRepo 行的统一视觉容器。
-/// 同步自 RepoRowView.RepoRowSurface。
+///
+/// 同步自 `RepoRowView.RepoRowSurface`，让 Manage / Trending 两份列表共用同一套
+/// "选中态视觉语言"：语言色驱动的左侧 accent bar + 轻 accent 底 + 细 accent 边框，
+/// 完全不依赖 macOS `List(selection:)` 的系统蓝色高亮。
+///
+/// 关键约束（与 Manage 一致，复制时不要回退）：
+/// - 选中态由外部 `isSelected` 入参驱动，本视图不持有 selection 状态，便于 caller
+///   用 plain Button + 手写 selectedRepoID 替代 `List(selection:)`。
+/// - 普通态 / hover 态 / 选中态的 backgroundOpacity / borderOpacity 三档曲线必须与
+///   `RepoRowSurface` 对齐，否则两边列表会出现细微视觉漂移。
+/// - 选中态 `padding(.leading, 5)` 给 3pt 左侧 accent bar 让出绘制空间。
+/// - 不在这里叠加 `DragGesture(minimumDistance: 0)` 做 pressed 反馈，外层 plain
+///   Button 的点击事件已足够；引入零距离 drag 会抢走 List 行手势。
 private struct TrendingRepoRowSurface<Content: View>: View {
     let repo: TrendingRepo
+    let isSelected: Bool
     let density: RepoListDensity
     private let content: Content
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
-    init(repo: TrendingRepo, density: RepoListDensity, @ViewBuilder content: () -> Content) {
+    init(repo: TrendingRepo, isSelected: Bool, density: RepoListDensity, @ViewBuilder content: () -> Content) {
         self.repo = repo
+        self.isSelected = isSelected
         self.density = density
         self.content = content()
     }
@@ -324,11 +352,13 @@ private struct TrendingRepoRowSurface<Content: View>: View {
     }
 
     private var backgroundOpacity: Double {
+        if isSelected { return 0.18 }
         if isHovered { return 0.08 }
         return density == .card ? 0.045 : 0.0
     }
 
     private var borderOpacity: Double {
+        if isSelected { return 0.42 }
         if isHovered { return 0.18 }
         return density == .card ? 0.10 : 0.0
     }
@@ -337,14 +367,22 @@ private struct TrendingRepoRowSurface<Content: View>: View {
         content
             .padding(.vertical, verticalPadding)
             .padding(.horizontal, horizontalPadding)
+            .padding(.leading, isSelected ? 5 : 0)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(accentColor.opacity(backgroundOpacity))
                     .background {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(Color(nsColor: .controlBackgroundColor).opacity(isHovered ? 0.40 : 0.0))
+                            .fill(Color(nsColor: .controlBackgroundColor).opacity(isSelected || isHovered ? 0.40 : 0.0))
                     }
+            }
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(accentColor)
+                    .frame(width: isSelected ? 3 : 0)
+                    .padding(.vertical, 8)
+                    .opacity(isSelected ? 1 : 0)
             }
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -356,5 +394,6 @@ private struct TrendingRepoRowSurface<Content: View>: View {
                     isHovered = hovering
                 }
             }
+            .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.82), value: isSelected)
     }
 }
