@@ -144,6 +144,7 @@
 | `Coordinator` 模式 | `ReadmeWebView.Coordinator` 持有 delegate | "NSViewRepresentable Coordinator" |
 | `makeNSView` / `updateNSView` | 同上 | "NSViewRepresentable lifecycle" |
 | `NSView` → `NSWindow` 桥接 | `MainWindowFrameModifier` 通过不可见 NSView 拿主窗口 | "SwiftUI access NSWindow from NSViewRepresentable" |
+| `NSHostingController` | `AboutWindowController` 把 `AboutView` 嵌进 AppKit `NSWindow` | "NSHostingController SwiftUI AppKit" |
 
 ---
 
@@ -244,6 +245,7 @@
 | 关键词 | 用法点 | 搜索词 |
 |---|---|---|
 | `NSWorkspace.shared.open(url)` | `ReadmeWebView.Coordinator` 把外链跳系统浏览器 | "NSWorkspace open URL" |
+| `NSWindowController` | `AboutWindowController` 管理单例关于窗口，重复 Cmd+I 复用同一个窗口 | "NSWindowController showWindow" |
 | `NSWindow.setFrameAutosaveName` | `MainWindowFrameModifier` 保存 / 恢复主窗口尺寸与位置 | "NSWindow setFrameAutosaveName setFrameUsingName" |
 | Keychain | `KeychainManager`（**有 DEBUG 临时 fallback，D-16 待还**） | "Keychain Services API macOS" |
 | App Sandbox / Entitlements | `Starcat.entitlements` | "App Sandbox macOS entitlements" |

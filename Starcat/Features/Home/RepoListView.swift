@@ -286,7 +286,7 @@ struct RepoListView: View {
         return Menu {
             Picker("list.sort", selection: $vm.sortOption) {
                 ForEach(RepoSortOption.allCases) { opt in
-                    Label(opt.displayNameKey, systemImage: opt.systemImage)
+                    Label(opt.displayName, systemImage: opt.systemImage)
                         .tag(opt)
                 }
             }

@@ -364,8 +364,13 @@ struct SidebarView: View {
                      count: Int? = nil) -> some View {
         Label {
             HStack(spacing: 4) {
-                Text(displayOverride ?? item.displayNameKey)
-                    .lineLimit(1)
+                if let override = displayOverride {
+                    Text(override)
+                        .lineLimit(1)
+                } else {
+                    Text(item.displayName)
+                        .lineLimit(1)
+                }
 
                 Spacer()
 

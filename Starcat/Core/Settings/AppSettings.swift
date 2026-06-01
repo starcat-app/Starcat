@@ -18,6 +18,7 @@
 //
 
 import Foundation
+import SwiftUI
 import Observation
 
 // MARK: - 列表密度
@@ -31,8 +32,8 @@ enum RepoListDensity: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// String Catalog 键名，用于本地化显示名。
-    var displayNameKey: String {
+    /// 本地化显示名。
+    var displayName: LocalizedStringKey {
         switch self {
         case .compact: return "settings.listDensity.compact"
         case .card:    return "settings.listDensity.card"
@@ -66,8 +67,8 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// String Catalog 键名，用于本地化显示名。
-    var displayNameKey: String {
+    /// 本地化显示名。
+    var displayName: LocalizedStringKey {
         switch self {
         case .starredAtDesc: return "settings.sort.starredAtDesc"
         case .starredAtAsc:  return "settings.sort.starredAtAsc"

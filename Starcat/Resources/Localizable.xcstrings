@@ -507,6 +507,9 @@
         }
       }
     },
+    "batch.applyToRepos %@" : {
+
+    },
     "batch.exitMultiSelect" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -626,6 +629,9 @@
         }
       }
     },
+    "batch.selectedCount %@" : {
+
+    },
     "clone.copiedGit" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -710,6 +716,9 @@
           }
         }
       }
+    },
+    "Copyright © 2026 Starcat." : {
+
     },
     "empty.allTagged" : {
       "extractionState" : "stale",
@@ -1455,6 +1464,9 @@
         }
       }
     },
+    "readme.cachedAt %@" : {
+
+    },
     "readme.empty" : {
       "localizations" : {
         "en" : {
@@ -2027,6 +2039,9 @@
           }
         }
       }
+    },
+    "repo.unstar.message %@" : {
+
     },
     "repo.updated" : {
       "extractionState" : "stale",
@@ -2838,6 +2853,12 @@
         }
       }
     },
+    "Starcat" : {
+
+    },
+    "Starcat 将扁平的 GitHub 收藏转化为可搜索、可打标签、可写私有笔记的知识库。MVP 阶段优先保证本地数据可靠、阅读体验顺滑，再逐步接入 AI 摘要与标签推荐。" : {
+
+    },
     "tagManagement.color" : {
       "localizations" : {
         "en" : {
@@ -2888,6 +2909,9 @@
         }
       }
     },
+    "tagManagement.deleteMessage %@" : {
+
+    },
     "tagManagement.icon" : {
       "localizations" : {
         "en" : {
@@ -2934,6 +2958,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "将把其它 %{others} 个标签合并到「%{target}」。被合并标签关联的仓库会自动转挂到「%{target}」名下。此操作不可撤销。"
+          }
+        }
+      }
+    },
+    "tagManagement.mergeMessage %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "tagManagement.mergeMessage %1$@ %2$@"
           }
         }
       }
@@ -2986,6 +3020,9 @@
           }
         }
       }
+    },
+    "tagManagement.tagCount %@" : {
+
     },
     "tagManagement.tagName" : {
       "extractionState" : "stale",
@@ -3151,6 +3188,15 @@
 
     },
     "已选 %@ 个" : {
+
+    },
+    "建议反馈问题时附上：Starcat 版本、macOS 版本、是否刚完成同步、可复现的操作路径。" : {
+
+    },
+    "感谢所有开源维护者。Starcat 只列出当前工程直接依赖；如果后续新增 SPM package，请同步更新这里。" : {
+
+    },
+    "把 GitHub Stars 变成可搜索、可整理、可长期维护的开发者知识库。" : {
 
     },
     "查看" : {

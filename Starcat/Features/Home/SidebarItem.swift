@@ -11,6 +11,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 /// Sidebar 顶部的一级入口。
 ///
@@ -24,8 +25,9 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// String Catalog 键名，用于本地化显示名。
-    var titleKey: String {
+    /// 本地化 key，用于 SwiftUI Text 自动查找翻译。
+    /// 使用 LocalizedStringKey 类型，Text() 才会正确查找 catalog 中的翻译。
+    var titleKey: LocalizedStringKey {
         switch self {
         case .manage:   return "nav.manage"
         case .trending: return "nav.trending"
@@ -70,16 +72,26 @@ enum SidebarItem: Hashable, Identifiable {
         }
     }
 
-    /// String Catalog 键名，用于本地化显示名。
-    /// 语言名保持原文（如 "Swift"、"TypeScript"），约定俗成。
-    /// tag 不在此处给名字，由 SidebarView 用 vm.tags 查（避免在 enum 里背业务数据）。
+    /// 本地化显示名，用于 SwiftUI Text 自动查找翻译。
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .trending:                return "trending.title"
+        case .allStars:                return "sidebar.allRepos"
+        case .untagged:                return "sidebar.untagged"
+        case .language(let lang):      return LocalizedStringKey(lang ?? "Unknown")
+        case .tag(let tagId):          return LocalizedStringKey(tagId)
+        }
+    }
+
+    /// 用于返回 String 类型的属性（如 navigationTitle）。
+    /// 返回的是翻译 key，实际翻译由使用处处理。
     var displayNameKey: String {
         switch self {
         case .trending:                return "trending.title"
         case .allStars:                return "sidebar.allRepos"
         case .untagged:                return "sidebar.untagged"
         case .language(let lang):      return lang ?? "Unknown"
-        case .tag(let tagId):          return tagId // fallback：tag 名缺失时显示 id
+        case .tag(let tagId):          return tagId
         }
     }
 

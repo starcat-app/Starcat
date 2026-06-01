@@ -46,7 +46,7 @@ struct SettingsView: View {
             Section("settings.general.appearance") {
                 Picker("settings.general.listDensity", selection: $settings.listDensity) {
                     ForEach(RepoListDensity.allCases) { density in
-                        Text(density.displayNameKey).tag(density)
+                        Text(density.displayName).tag(density)
                     }
                 }
                 .pickerStyle(.segmented)

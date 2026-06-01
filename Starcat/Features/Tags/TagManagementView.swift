@@ -86,7 +86,7 @@ struct TagManagementView: View {
             Button("general.cancel", role: .cancel) {}
         } message: {
             let n = viewModel.selection.count
-            Text(String(localized: "tagManagement.deleteMessage \(n)"))
+            Text("tagManagement.deleteMessage \(n)")
         }
         .alert("合并标签？", isPresented: $showMergeAlert, presenting: mergeTargetId) { targetId in
             Button("action.merge", role: .destructive) {
@@ -98,7 +98,7 @@ struct TagManagementView: View {
         } message: { targetId in
             let targetName = viewModel.tags.first { $0.id == targetId }?.name ?? "?"
             let others = viewModel.selection.count - 1
-            Text(String(localized: "tagManagement.mergeMessage \(others) \(targetName)"))
+            Text("tagManagement.mergeMessage \(others) \(targetName)")
         }
     }
 
@@ -229,7 +229,7 @@ struct TagManagementView: View {
 
                 Spacer()
 
-                Text(String(localized: "tagManagement.tagCount \(viewModel.tags.count)"))
+                Text("tagManagement.tagCount \(viewModel.tags.count)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -30,7 +30,7 @@ struct BatchActionBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(String(localized: "batch.selectedCount \(viewModel.multiSelectedRepoIDs.count)"))
+            Text("batch.selectedCount \(viewModel.multiSelectedRepoIDs.count)")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -96,7 +96,7 @@ private struct BatchTagSheet: View {
                 Text("batch.addTags")
                     .font(.headline)
                 Spacer()
-                Text(String(localized: "batch.applyToRepos \(repoIds.count)"))
+                Text("batch.applyToRepos \(repoIds.count)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
