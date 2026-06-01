@@ -106,3 +106,41 @@ enum SidebarItem: Hashable, Identifiable {
         }
     }
 }
+
+// MARK: - 持久化编解码
+
+extension SidebarItem {
+
+    /// 用于落盘到 UserDefaults 的字符串编码。
+    ///
+    /// 关键约束：
+    /// - `SidebarItem` 含关联值，无法直接用 Swift RawValue，这里用 `"type:payload"` 手编。
+    /// - `.language(nil)`（GitHub 无主语言）编码成空 payload `"language:"`，解码时还原回 nil。
+    /// - `.trending` 不是 Manage 分类，不应被持久化为"上次分类"，这里防御性折叠成 allStars。
+    var persistedRawValue: String {
+        switch self {
+        case .trending, .allStars: return "allStars"
+        case .untagged:            return "untagged"
+        case .language(let lang):  return "language:\(lang ?? "")"
+        case .tag(let tagId):      return "tag:\(tagId)"
+        }
+    }
+
+    /// 从 `persistedRawValue` 解码。
+    ///
+    /// 任何无法识别的旧值 / 空串 都回落到 `.allStars`，对应需求里
+    /// "获取不到之前的分类 → 默认选中 allStars"。
+    init(persistedRawValue raw: String) {
+        if raw == "untagged" {
+            self = .untagged
+        } else if raw.hasPrefix("language:") {
+            let lang = String(raw.dropFirst("language:".count))
+            // 空 payload 代表 GitHub 无主语言（.language(nil)）
+            self = .language(lang.isEmpty ? nil : lang)
+        } else if raw.hasPrefix("tag:") {
+            self = .tag(String(raw.dropFirst("tag:".count)))
+        } else {
+            self = .allStars
+        }
+    }
+}

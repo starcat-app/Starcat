@@ -172,6 +172,17 @@ final class AppSettings {
         }
     }
 
+    /// 用户在 Manage 页最后选中的分类，用于跨启动恢复。
+    ///
+    /// 为什么存字符串而非 `SidebarItem`：
+    /// - `SidebarItem` 含关联值（`.language(String?)` / `.tag(String)`），无法直接当 RawValue 落盘；
+    /// - 为避免 AppSettings（Core 层）反向依赖 Home 功能层的 enum，这里只存"已编码字符串"，
+    ///   具体编/解码由 `SidebarItem.persistedRawValue` / `init(persistedRawValue:)` 负责（Home 层）。
+    /// - 空串表示"无记录"，解码时回落 `.allStars`。
+    var lastManageSelectionRaw: String {
+        didSet { persist(key: Keys.lastManageSelection, value: lastManageSelectionRaw) }
+    }
+
     // MARK: - 初始化
 
     private let defaults: UserDefaults
@@ -194,6 +205,9 @@ final class AppSettings {
         // W4-4 D3：空字符串表示 nil(无过滤);非空字符串尝试匹配 RepoStatus,失败也回落 nil
         let statusRaw = defaults.string(forKey: Keys.statusFilter) ?? ""
         self.statusFilter = statusRaw.isEmpty ? nil : RepoStatus(rawValue: statusRaw)
+
+        // 上次 Manage 分类：缺失则空串，由 SidebarItem 解码时回落 allStars
+        self.lastManageSelectionRaw = defaults.string(forKey: Keys.lastManageSelection) ?? ""
     }
 
     // MARK: - 内部
@@ -213,5 +227,6 @@ final class AppSettings {
         static let hideArchived = "settings.hideArchived"
         static let hideForks = "settings.hideForks"
         static let statusFilter = "settings.statusFilter"
+        static let lastManageSelection = "settings.lastManageSelection"
     }
 }

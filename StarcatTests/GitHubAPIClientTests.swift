@@ -108,16 +108,18 @@ struct GitHubAPIClientTests {
         }
     }
 
-    @Test("get<T>: 403 + remaining=0 → NetworkError.rateLimited")
+    @Test("get<T>: 403 + remaining=0 + 消息含'rate limit' → NetworkError.rateLimited")
     func get403RateLimited() async throws {
         let client = makeClient()
         URLProtocolStub.requestHandler = { request in
+            // 真实 GitHub rate limit 响应会包含 "rate limit" 关键词
+            let body = #"{"message":"You have exceeded a secondary rate limit. Please wait before retrying."}"#.data(using: .utf8)!
             let response = httpResponse(403, request.url!, [
                 "X-RateLimit-Limit": "5000",
                 "X-RateLimit-Remaining": "0",
                 "X-RateLimit-Reset": "\(Int(Date().addingTimeInterval(60).timeIntervalSince1970))"
             ])
-            return (response, Data())
+            return (response, body)
         }
 
         do {
@@ -127,6 +129,30 @@ struct GitHubAPIClientTests {
             #expect(retryAfter > 0)
         } catch {
             Issue.record("期望 rateLimited，实际: \(error)")
+        }
+    }
+
+    @Test("get<T>: 403 + remaining=0 + 消息不含'rate limit' → NetworkError.unauthorized")
+    func get403UnauthorizedWithoutRateLimitMessage() async throws {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            // 未登录/无效 token 时 GitHub 返回 403 + remaining=0，但消息是 "Forbidden"
+            let body = #"{"message":"Forbidden"}"#.data(using: .utf8)!
+            let response = httpResponse(403, request.url!, [
+                "X-RateLimit-Limit": "5000",
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": "\(Int(Date().addingTimeInterval(60).timeIntervalSince1970))"
+            ])
+            return (response, body)
+        }
+
+        do {
+            _ = try await client.getCurrentUser()
+            Issue.record("期望抛 unauthorized 但成功返回")
+        } catch NetworkError.unauthorized {
+            // 通过
+        } catch {
+            Issue.record("期望 unauthorized，实际: \(error)")
         }
     }
 

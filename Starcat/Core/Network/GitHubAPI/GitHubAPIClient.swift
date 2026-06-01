@@ -262,12 +262,19 @@ actor GitHubAPIClient {
             throw NetworkError.unauthorized
 
         case 403:
-            // Rate Limit 用 403 + X-RateLimit-Remaining=0 表示
-            if rateLimit.isExhausted {
+            // 双重校验：只有当 rate limit 确实耗尽 AND 响应消息确实是 rate limit 相关，才按 rate limit 处理。
+            // 原因：未登录/无效 token 时 GitHub 可能对某些 API 返回 403 + X-RateLimit-Remaining: 0，
+            // 此时错误消息通常是 "Forbidden" 而不是 "rate limit"，应按认证失败处理。
+            let errorMessage = extractErrorMessage(data) ?? ""
+            if rateLimit.isExhausted && errorMessage.lowercased().contains("rate limit") {
                 throw NetworkError.rateLimited(retryAfter: rateLimit.retryAfter())
             }
-            // 否则按普通客户端错误
-            throw NetworkError.clientError(statusCode: 403, message: extractErrorMessage(data))
+            // 403 + remaining > 0：其他客户端错误（如 ACL 禁止）
+            // 403 + remaining = 0 但消息不含 "rate limit"：认证失败（未登录 / token 无效 / 权限不足）
+            if rateLimit.remaining != 0 {
+                throw NetworkError.clientError(statusCode: 403, message: errorMessage.isEmpty ? nil : errorMessage)
+            }
+            throw NetworkError.unauthorized
 
         case 404:
             throw NetworkError.notFound
@@ -346,10 +353,19 @@ actor GitHubAPIClient {
             throw NetworkError.unauthorized
 
         case 403:
-            if rateLimit.isExhausted {
+            // 双重校验：只有当 rate limit 确实耗尽 AND 响应消息确实是 rate limit 相关，才按 rate limit 处理。
+            // 原因：未登录/无效 token 时 GitHub 可能对某些 API 返回 403 + X-RateLimit-Remaining: 0，
+            // 此时错误消息通常是 "Forbidden" 而不是 "rate limit"，应按认证失败处理。
+            let errorMessage = extractErrorMessage(data) ?? ""
+            if rateLimit.isExhausted && errorMessage.lowercased().contains("rate limit") {
                 throw NetworkError.rateLimited(retryAfter: rateLimit.retryAfter())
             }
-            throw NetworkError.clientError(statusCode: 403, message: extractErrorMessage(data))
+            // 403 + remaining > 0：其他客户端错误（如 ACL 禁止）
+            // 403 + remaining = 0 但消息不含 "rate limit"：认证失败（未登录 / token 无效 / 权限不足）
+            if rateLimit.remaining != 0 {
+                throw NetworkError.clientError(statusCode: 403, message: errorMessage.isEmpty ? nil : errorMessage)
+            }
+            throw NetworkError.unauthorized
 
         case 404:
             throw NetworkError.notFound
@@ -409,10 +425,19 @@ actor GitHubAPIClient {
             throw NetworkError.unauthorized
 
         case 403:
-            if rateLimit.isExhausted {
+            // 双重校验：只有当 rate limit 确实耗尽 AND 响应消息确实是 rate limit 相关，才按 rate limit 处理。
+            // 原因：未登录/无效 token 时 GitHub 可能对某些 API 返回 403 + X-RateLimit-Remaining: 0，
+            // 此时错误消息通常是 "Forbidden" 而不是 "rate limit"，应按认证失败处理。
+            let errorMessage = extractErrorMessage(data) ?? ""
+            if rateLimit.isExhausted && errorMessage.lowercased().contains("rate limit") {
                 throw NetworkError.rateLimited(retryAfter: rateLimit.retryAfter())
             }
-            throw NetworkError.clientError(statusCode: 403, message: extractErrorMessage(data))
+            // 403 + remaining > 0：其他客户端错误（如 ACL 禁止）
+            // 403 + remaining = 0 但消息不含 "rate limit"：认证失败（未登录 / token 无效 / 权限不足）
+            if rateLimit.remaining != 0 {
+                throw NetworkError.clientError(statusCode: 403, message: errorMessage.isEmpty ? nil : errorMessage)
+            }
+            throw NetworkError.unauthorized
 
         case 404:
             throw NetworkError.notFound

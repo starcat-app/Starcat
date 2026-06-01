@@ -152,21 +152,35 @@ struct HomeView: View {
                 viewModel.statusFilter = settings.statusFilter
             }
             
-            // Default to trending if not authenticated
-            if !authSession.state.isAuthenticated {
-                selectedSidebarPage = .trending
-                viewModel.selection = .trending
-            } else if viewModel.selection == .trending {
-                // If authenticated and somehow still on trending initially, we can leave it
-                // or let the user switch.
-            } else {
-                // App 打开且用户已登录 → 主动触发一次全量同步（后台静默执行）
+            // 恢复上次保存的 Manage 分类（跨启动）。无记录时 persistedRawValue 解码回落 allStars。
+            savedManageSelection = SidebarItem(persistedRawValue: settings.lastManageSelectionRaw)
+
+            // 决定初始页面：
+            // - 已登录 → Manage + 上次分类，并触发一次后台全量同步
+            // - 未登录 → Trending
+            //
+            // 注意：启动期 Keychain 恢复登录是异步的（见 AuthSession.restoreSessionIfAvailable），
+            // 多数情况下这里跑到时 state 还是 .unauthenticated（恢复未完成）→ 先进 Trending，
+            // 待恢复完成由下方 onChange(of: authSession.state) 纠正到 Manage。
+            if authSession.state.isAuthenticated {
+                selectedSidebarPage = .manage
+                viewModel.selection = savedManageSelection
                 if case .authenticated(let user) = authSession.state {
                     syncManager.performFullSync(userID: user.id)
                 }
+            } else {
+                selectedSidebarPage = .trending
+                viewModel.selection = .trending
             }
 
             await viewModel.refreshSidebar()
+
+            // 校验恢复的分类是否仍存在（如 tag / language 已被删 / 无 repo）→ 回落 allStars。
+            // refreshSidebar 已把 tags / languageStats 从本地库加载完毕，可安全校验。
+            if selectedSidebarPage == .manage, !isManageSelectionValid(viewModel.selection) {
+                viewModel.selection = .allStars
+            }
+
             await viewModel.reloadItems()
         }
         // selection 变化 → 重新加载列表
@@ -210,15 +224,33 @@ struct HomeView: View {
                 readmeVM.reset()
             }
         }
-        // 监听登录态变化，退出登录时强制切换回 Trending 并清除选择
-        .onChange(of: authSession.state.isAuthenticated) { _, isAuthenticated in
-            if !isAuthenticated {
-                // 保存当前 Manage 页的 selection，避免重新登录后丢失
+        // 监听完整登录态变化：任何登录都立刻切 Manage、登出时回 Trending。
+        //
+        // 为什么监听整个 state 而非 isAuthenticated（Bool）：
+        // - 同时覆盖"启动期从 Keychain 异步恢复登录"与"用户手动 Device Flow 登录"两条路径，
+        //   两者都把页面切到 Manage 并恢复上次分类（不存在则回落 allStars）。
+        // - 用 oldState.isAuthenticated 判断登出，避免 .unauthenticated → .awaitingUserCode
+        //   等中间态被误判。
+        .onChange(of: authSession.state) { oldState, newState in
+            if newState.isAuthenticated {
+                // 任何登录（启动恢复 / 手动登录）→ 默认 Manage + 上次分类
+                selectedSidebarPage = .manage
+                let restored = savedManageSelection
+                viewModel.selection = isManageSelectionValid(restored) ? restored : .allStars
+            } else if oldState.isAuthenticated {
+                // 登出：保存当前 Manage selection，强制切回 Trending 并清除选择
                 savedManageSelection = viewModel.selection
                 selectedSidebarPage = .trending
                 viewModel.selection = .trending
                 viewModel.selectedRepoID = nil
             }
+        }
+        // Manage 页分类变化 → 持久化为"上次分类"，供下次启动恢复。
+        // 仅在 Manage 页且非 Trending 时记录，避免把 Trending 写成 Manage 分类。
+        .onChange(of: viewModel.selection) { _, newSelection in
+            guard selectedSidebarPage == .manage, !newSelection.isTrending else { return }
+            savedManageSelection = newSelection
+            settings.lastManageSelectionRaw = newSelection.persistedRawValue
         }
         // Manage ↔ Trending 切换时，记住各自的上次选择，切换回来时恢复
         .onChange(of: selectedSidebarPage) { oldPage, newPage in
@@ -252,6 +284,26 @@ struct HomeView: View {
             case .search:
                 viewModel.searchQuery = ""
             }
+        }
+    }
+
+    // MARK: - 辅助
+
+    /// 校验一个 Manage 分类当前是否仍然有效（用于跨启动恢复时兜底）。
+    ///
+    /// - `.allStars` / `.untagged` / `.trending` 恒有效（不依赖具体数据）。
+    /// - `.language` / `.tag` 依赖本地库现状：tag 被删、或某语言已无 repo（如缓存被清）时视为无效。
+    ///   调用方应在 `refreshSidebar()` 之后调用，确保 `viewModel.tags` / `languageStats` 已加载。
+    /// 无效时调用方回落到 `.allStars`，对应需求"获取不到之前的分类 → allStars"。
+    private func isManageSelectionValid(_ item: SidebarItem) -> Bool {
+        switch item {
+        case .trending, .allStars, .untagged:
+            return true
+        case .language(let lang):
+            // SidebarItem.language(nil) 对应 LanguageStat.language == ""（GitHub 无主语言）
+            return viewModel.languageStats.contains { $0.language == (lang ?? "") }
+        case .tag(let tagId):
+            return viewModel.tags.contains { $0.id == tagId }
         }
     }
 
