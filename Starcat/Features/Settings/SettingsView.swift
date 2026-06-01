@@ -28,11 +28,11 @@ struct SettingsView: View {
         TabView {
             generalTab
                 .tabItem {
-                    Label("通用", systemImage: "gearshape")
+                    Label("settings.general.title", systemImage: "gearshape")
                 }
             StorageSettingsTab(readmeRepository: dependencies.readmeRepository)
                 .tabItem {
-                    Label("存储", systemImage: "internaldrive")
+                    Label("settings.storage.title", systemImage: "internaldrive")
                 }
         }
         .frame(width: 520, height: 360)
@@ -43,15 +43,15 @@ struct SettingsView: View {
         @Bindable var settings = settings
 
         return Form {
-            Section("外观") {
-                Picker("列表密度", selection: $settings.listDensity) {
+            Section("settings.general.appearance") {
+                Picker("settings.general.listDensity", selection: $settings.listDensity) {
                     ForEach(RepoListDensity.allCases) { density in
-                        Text(density.displayName).tag(density)
+                        Text(density.displayNameKey).tag(density)
                     }
                 }
                 .pickerStyle(.segmented)
 
-                Text("紧凑：单行显示更多仓库；卡片：每行带头像与描述。")
+                Text("settings.general.listDensity.description")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -88,18 +88,18 @@ private struct StorageSettingsTab: View {
             case .all:    return "all"
             }
         }
-        var confirmTitle: String {
+        var confirmTitleKey: String {
             switch self {
-            case .readme: return "清空 README 缓存?"
-            case .image:  return "清空图片缓存?"
-            case .all:    return "清空全部缓存?"
+            case .readme: return "settings.storage.clearReadme.confirm"
+            case .image:  return "settings.storage.clearImage.confirm"
+            case .all:    return "settings.storage.clearAll.confirm"
             }
         }
-        var confirmMessage: String {
+        var confirmMessageKey: String {
             switch self {
-            case .readme: return "下次浏览仓库时会重新从 GitHub 抓取。"
-            case .image:  return "头像与缩略图会在列表滚动时重新下载。"
-            case .all:    return "等同于同时清 README + 图片。"
+            case .readme: return "settings.storage.clearReadme.message"
+            case .image:  return "settings.storage.clearImage.message"
+            case .all:    return "settings.storage.clearAll.message"
             }
         }
     }
@@ -107,31 +107,31 @@ private struct StorageSettingsTab: View {
     var body: some View {
         let cleaner = CacheCleaner(readmeRepository: readmeRepository)
         return Form {
-            Section("缓存用量") {
-                LabeledContent("README 缓存") {
+            Section("settings.storage.cacheUsage") {
+                LabeledContent("settings.storage.readme") {
                     Text("\(stats.readmeCount) 条 · \(stats.readmeBytes.formattedByteSize)")
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
-                LabeledContent("图片缓存(Kingfisher)") {
+                LabeledContent("settings.storage.image") {
                     Text(Int64(stats.imageDiskBytes).formattedByteSize)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
-                LabeledContent("日志") {
-                    Text("由系统(Console.app)管理")
+                LabeledContent("settings.storage.log") {
+                    Text("settings.storage.logDescription")
                         .foregroundStyle(.tertiary)
                         .font(.callout)
                 }
                 .help("Starcat 通过 OSLog 写日志,清理与查询请用 macOS 自带的 Console.app")
             }
 
-            Section("清理操作") {
-                Button("清理 README 缓存") { pendingAction = .readme }
+            Section("settings.storage.clear") {
+                Button("settings.storage.clearReadme") { pendingAction = .readme }
                     .disabled(isWorking || stats.readmeCount == 0)
-                Button("清理图片缓存") { pendingAction = .image }
+                Button("settings.storage.clearImage") { pendingAction = .image }
                     .disabled(isWorking || stats.imageDiskBytes == 0)
-                Button("清理全部缓存", role: .destructive) { pendingAction = .all }
+                Button("settings.storage.clearAll", role: .destructive) { pendingAction = .all }
                     .disabled(isWorking || stats.totalBytes == 0)
             }
 
@@ -139,7 +139,7 @@ private struct StorageSettingsTab: View {
                 Section {
                     HStack {
                         ProgressView().controlSize(.small)
-                        Text("正在清理…")
+                        Text("settings.storage.clearing")
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -150,7 +150,7 @@ private struct StorageSettingsTab: View {
             stats = await cleaner.loadStatistics()
         }
         .confirmationDialog(
-            pendingAction?.confirmTitle ?? "",
+            pendingAction?.confirmTitleKey ?? "",
             isPresented: Binding(
                 get: { pendingAction != nil },
                 set: { if !$0 { pendingAction = nil } }
@@ -158,12 +158,12 @@ private struct StorageSettingsTab: View {
             titleVisibility: .visible,
             presenting: pendingAction
         ) { action in
-            Button("清空", role: .destructive) {
+            Button("general.clear", role: .destructive) {
                 Task { await perform(action: action, using: cleaner) }
             }
-            Button("取消", role: .cancel) { pendingAction = nil }
+            Button("general.cancel", role: .cancel) { pendingAction = nil }
         } message: { action in
-            Text(action.confirmMessage)
+            Text(action.confirmMessageKey)
         }
     }
 

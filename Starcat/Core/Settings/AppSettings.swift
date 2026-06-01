@@ -31,11 +31,11 @@ enum RepoListDensity: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// 用户可见的中文显示名。
-    var displayName: String {
+    /// String Catalog 键名，用于本地化显示名。
+    var displayNameKey: String {
         switch self {
-        case .compact: return "紧凑"
-        case .card:    return "卡片"
+        case .compact: return "settings.listDensity.compact"
+        case .card:    return "settings.listDensity.card"
         }
     }
 }
@@ -66,17 +66,17 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// 中文展示名（Picker / Menu 标签）。
-    var displayName: String {
+    /// String Catalog 键名，用于本地化显示名。
+    var displayNameKey: String {
         switch self {
-        case .starredAtDesc: return "Star 时间(最近优先)"
-        case .starredAtAsc:  return "Star 时间(最早优先)"
-        case .nameAsc:       return "名称 A→Z"
-        case .nameDesc:      return "名称 Z→A"
-        case .starsDesc:     return "Stars 数(高→低)"
-        case .starsAsc:      return "Stars 数(低→高)"
-        case .updatedDesc:   return "更新时间(最近优先)"
-        case .updatedAsc:    return "更新时间(最早优先)"
+        case .starredAtDesc: return "settings.sort.starredAtDesc"
+        case .starredAtAsc:  return "settings.sort.starredAtAsc"
+        case .nameAsc:       return "settings.sort.nameAsc"
+        case .nameDesc:      return "settings.sort.nameDesc"
+        case .starsDesc:     return "settings.sort.starsDesc"
+        case .starsAsc:      return "settings.sort.starsAsc"
+        case .updatedDesc:   return "settings.sort.updatedDesc"
+        case .updatedAsc:    return "settings.sort.updatedAsc"
         }
     }
 

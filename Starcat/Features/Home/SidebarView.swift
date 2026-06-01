@@ -120,7 +120,7 @@ struct SidebarView: View {
             }
         } else {
             Section {
-                Text("登录后可管理全部 Stars、未分类仓库和标签。")
+                Text("sidebar.loginPrompt")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)
@@ -146,7 +146,7 @@ struct SidebarView: View {
     @ViewBuilder
     private var searchSidebarContent: some View {
         Section {
-            Text("搜索入口已预留，后续会在这里放搜索历史、保存搜索和筛选结构。")
+            Text("empty.searchPlaceholder")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .padding(.vertical, 8)
@@ -155,7 +155,7 @@ struct SidebarView: View {
 
     /// 头像 / 统计数据下方的三入口切换。
     ///
-    /// 使用独立按钮而不是 `Picker`，是为了匹配参考图里“图标在上、文字在下”的入口形态。
+    /// 使用独立按钮而不是 `Picker`，是为了匹配参考图里"图标在上、文字在下"的入口形态。
     private var rootNavigationBar: some View {
         HStack(spacing: 0) {
             ForEach(SidebarRootPage.allCases) { page in
@@ -182,7 +182,7 @@ struct SidebarView: View {
                 Image(systemName: page.systemImage)
                     .font(.system(size: 24, weight: .regular))
                     .frame(height: 28)
-                Text(page.title)
+                Text(page.titleKey)
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
             }
@@ -211,7 +211,7 @@ struct SidebarView: View {
         }
     }
 
-    /// HOM-43：Tags header 需要同时有“整行可折叠”和独立的标签管理按钮。
+    /// HOM-43：Tags header 需要同时有"整行可折叠"和独立的标签管理按钮。
     /// 避免把 `Button` 嵌在另一个 `Button` 里，否则 SwiftUI 事件命中会不稳定。
     private var tagSectionHeader: some View {
         HStack(spacing: 6) {
@@ -219,7 +219,7 @@ struct SidebarView: View {
                 toggleTags()
             } label: {
                 HStack(spacing: 4) {
-                    Text("Tags")
+                    Text("sidebar.tags")
                         .font(.headline)
                     Spacer(minLength: 8)
                 }
@@ -227,7 +227,7 @@ struct SidebarView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(tagsExpanded ? "折叠 Tags" : "展开 Tags")
+            .help(tagsExpanded ? "sidebar.collapse" : "sidebar.expand")
 
             Button {
                 showTagManagement = true
@@ -238,7 +238,7 @@ struct SidebarView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("标签管理")
+            .help("sidebar.tagManagement")
 
             Button {
                 toggleTags()
@@ -248,20 +248,20 @@ struct SidebarView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(tagsExpanded ? "折叠 Tags" : "展开 Tags")
+            .help(tagsExpanded ? "sidebar.collapse" : "sidebar.expand")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 6)
     }
 
-    /// HOM-43：Languages 数字是“语言类别数量”，放在右侧 accessory 区域，
+    /// HOM-43：Languages 数字是"语言类别数量"，放在右侧 accessory 区域，
     /// 与 Tags header 的 `+` 按钮占位一致，而不是紧跟标题。
     private var languageSectionHeader: some View {
         Button {
             toggleLanguages()
         } label: {
             HStack(spacing: 6) {
-                Text("Languages")
+                Text("sidebar.languages")
                     .font(.headline)
 
                 Spacer(minLength: 8)
@@ -279,7 +279,7 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(languagesExpanded ? "折叠 Languages" : "展开 Languages")
+        .help(languagesExpanded ? "sidebar.collapse" : "sidebar.expand")
     }
 
     private var trendingLanguageSectionHeader: some View {
@@ -289,7 +289,7 @@ struct SidebarView: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Text("Languages")
+                Text("sidebar.languages")
                     .font(.headline)
 
                 Spacer(minLength: 8)
@@ -307,7 +307,7 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(trendingLanguagesExpanded ? "折叠 Trending 语言" : "展开 Trending 语言")
+        .help(trendingLanguagesExpanded ? "sidebar.collapse" : "sidebar.expand")
     }
 
     private func disclosureChevron(isExpanded: Bool) -> some View {
@@ -364,7 +364,7 @@ struct SidebarView: View {
                      count: Int? = nil) -> some View {
         Label {
             HStack(spacing: 4) {
-                Text(displayOverride ?? item.displayName)
+                Text(displayOverride ?? item.displayNameKey)
                     .lineLimit(1)
 
                 Spacer()
@@ -522,11 +522,11 @@ private struct SidebarSyncButton: View {
     private var helpText: String {
         switch syncManager.state {
         case .syncing:
-            return "取消同步"
+            return "action.cancelSync"
         case .rateLimited:
-            return "配额恢复中，点击取消"
+            return "action.syncRateLimited"
         case .idle, .completed, .failed:
-            return "拉取 GitHub Stars"
+            return "action.syncInProgress"
         }
     }
 

@@ -24,11 +24,12 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    /// String Catalog 键名，用于本地化显示名。
+    var titleKey: String {
         switch self {
-        case .manage:   return "Manage"
-        case .trending: return "Trending"
-        case .search:   return "Search"
+        case .manage:   return "nav.manage"
+        case .trending: return "nav.trending"
+        case .search:   return "nav.search"
         }
     }
 
@@ -69,14 +70,14 @@ enum SidebarItem: Hashable, Identifiable {
         }
     }
 
-    /// 用户可见的中文/英文显示名。
+    /// String Catalog 键名，用于本地化显示名。
     /// 语言名保持原文（如 "Swift"、"TypeScript"），约定俗成。
     /// tag 不在此处给名字，由 SidebarView 用 vm.tags 查（避免在 enum 里背业务数据）。
-    var displayName: String {
+    var displayNameKey: String {
         switch self {
-        case .trending:                return "Trending"
-        case .allStars:                return "全部 Stars"
-        case .untagged:                return "未分类"
+        case .trending:                return "trending.title"
+        case .allStars:                return "sidebar.allRepos"
+        case .untagged:                return "sidebar.untagged"
         case .language(let lang):      return lang ?? "Unknown"
         case .tag(let tagId):          return tagId // fallback：tag 名缺失时显示 id
         }

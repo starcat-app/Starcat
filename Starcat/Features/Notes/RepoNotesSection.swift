@@ -82,7 +82,7 @@ struct RepoNotesSection: View {
     private var statusRow: some View {
         if let vm = viewModel {
             HStack(spacing: 10) {
-                Text("状态")
+                Text("repo.status")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -114,11 +114,11 @@ struct RepoNotesSection: View {
                 .padding(.top, 4)
         } label: {
             HStack(spacing: 8) {
-                Label("私有笔记", systemImage: hasNoteContent ? "note.text" : "note.text.badge.plus")
+                Label("repo.privateNotes", systemImage: hasNoteContent ? "note.text" : "note.text.badge.plus")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let edited = viewModel?.note?.editedAt {
-                    Text("最近编辑：\(relativeDate(edited))")
+                    Text("repo.lastEdited \(relativeDate(edited))", bundle: .main)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -154,7 +154,7 @@ struct RepoNotesSection: View {
                 )
                 .overlay(alignment: .topLeading) {
                     if editingContent.isEmpty {
-                        Text("写点笔记，例如：为什么 star 它、何时复用、踩过哪些坑…")
+                        Text("repo.notesPlaceholder")
                             .font(.body)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 14)
@@ -241,7 +241,7 @@ final class RepoNotesSectionViewModel {
             errorMessage = nil
         } catch {
             note = nil
-            errorMessage = "加载笔记失败：\(error.localizedDescription)"
+            errorMessage = "repo.notes.loadFailed"
         }
     }
 
@@ -251,7 +251,7 @@ final class RepoNotesSectionViewModel {
             try await repoNoteRepository.updateStatus(repoId: repoId, status: status)
             await loadFor(repoId: repoId)
         } catch {
-            errorMessage = "状态保存失败：\(error.localizedDescription)"
+            errorMessage = "repo.notes.saveStatusFailed"
         }
     }
 
@@ -263,7 +263,7 @@ final class RepoNotesSectionViewModel {
             try await repoNoteRepository.updateContent(repoId: repoId, content: normalized)
             await loadFor(repoId: repoId)
         } catch {
-            errorMessage = "笔记保存失败：\(error.localizedDescription)"
+            errorMessage = "repo.notes.saveContentFailed"
         }
     }
 }
@@ -304,9 +304,9 @@ private struct SaveIndicator: View {
 
     private var text: String {
         switch state {
-        case .idle:    return hasUnsaved ? "未保存" : ""
-        case .saving:  return "保存中…"
-        case .saved:   return "已保存"
+        case .idle:    return hasUnsaved ? "repo.notes.saveIdle" : ""
+        case .saving:  return "repo.notes.saving"
+        case .saved:   return "repo.notes.saved"
         }
     }
 }

@@ -80,25 +80,25 @@ struct TagManagementView: View {
             }
         }
         .alert("删除标签？", isPresented: $showDeleteAlert) {
-            Button("删除", role: .destructive) {
+            Button("action.delete", role: .destructive) {
                 Task { await viewModel.delete(ids: viewModel.selection) }
             }
-            Button("取消", role: .cancel) {}
+            Button("general.cancel", role: .cancel) {}
         } message: {
             let n = viewModel.selection.count
-            Text("将删除 \(n) 个标签。被打过此标签的仓库本身不会被删除，仅解除标签关联。此操作不可撤销。")
+            Text(String(localized: "tagManagement.deleteMessage \(n)"))
         }
         .alert("合并标签？", isPresented: $showMergeAlert, presenting: mergeTargetId) { targetId in
-            Button("合并", role: .destructive) {
+            Button("action.merge", role: .destructive) {
                 Task {
                     await viewModel.merge(sources: viewModel.selection, into: targetId)
                 }
             }
-            Button("取消", role: .cancel) {}
+            Button("general.cancel", role: .cancel) {}
         } message: { targetId in
             let targetName = viewModel.tags.first { $0.id == targetId }?.name ?? "?"
             let others = viewModel.selection.count - 1
-            Text("将把其它 \(others) 个标签合并到「\(targetName)」。被合并标签关联的仓库会自动转挂到「\(targetName)」名下。此操作不可撤销。")
+            Text(String(localized: "tagManagement.mergeMessage \(others) \(targetName)"))
         }
     }
 
@@ -108,7 +108,7 @@ struct TagManagementView: View {
         HStack {
             Image(systemName: "tag.fill")
                 .foregroundStyle(.tint)
-            Text("标签管理")
+            Text("tagManagement.title")
                 .font(.headline)
             Spacer()
             Button {
@@ -122,7 +122,7 @@ struct TagManagementView: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .keyboardShortcut(.cancelAction)
-            .help("关闭")
+            .help("action.close")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -132,7 +132,7 @@ struct TagManagementView: View {
         @Bindable var vm = viewModel
         return List(selection: $vm.selection) {
             if viewModel.tags.isEmpty && !viewModel.isLoading {
-                Text("还没有任何标签。点击下方「+」创建第一个。")
+                Text("tagManagement.noTags")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)
@@ -174,7 +174,7 @@ struct TagManagementView: View {
             Button {
                 Task { await viewModel.delete(ids: [tag.id]) }
             } label: {
-                Label("删除", systemImage: "trash")
+                Label("action.delete", systemImage: "trash")
             }
         }
     }
@@ -207,7 +207,7 @@ struct TagManagementView: View {
                 Button {
                     showNewSheet = true
                 } label: {
-                    Label("新建", systemImage: "plus")
+                    Label("action.new", systemImage: "plus")
                 }
 
                 Button {
@@ -215,7 +215,7 @@ struct TagManagementView: View {
                     mergeTargetId = pickDefaultMergeTarget()
                     showMergeAlert = (mergeTargetId != nil)
                 } label: {
-                    Label("合并", systemImage: "arrow.triangle.merge")
+                    Label("action.merge", systemImage: "arrow.triangle.merge")
                 }
                 .disabled(!viewModel.canMerge)
                 .help("合并选中的多个标签（≥2）")
@@ -223,13 +223,13 @@ struct TagManagementView: View {
                 Button {
                     showDeleteAlert = true
                 } label: {
-                    Label("删除", systemImage: "trash")
+                    Label("action.delete", systemImage: "trash")
                 }
                 .disabled(viewModel.selection.isEmpty)
 
                 Spacer()
 
-                Text("共 \(viewModel.tags.count) 个标签")
+                Text(String(localized: "tagManagement.tagCount \(viewModel.tags.count)"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -271,14 +271,14 @@ private struct NewTagSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("新建标签")
+            Text("tagManagement.newTag")
                 .font(.headline)
 
-            TextField("标签名", text: $name)
+            TextField("tagManagement.tagName", text: $name)
                 .textFieldStyle(.roundedBorder)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("颜色")
+                Text("tagManagement.color")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 HStack(spacing: 6) {
@@ -304,7 +304,7 @@ private struct NewTagSheet: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("图标")
+                Text("tagManagement.icon")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 SFSymbolGridPicker(selection: $icon, columns: 8)
@@ -312,9 +312,9 @@ private struct NewTagSheet: View {
 
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
+                Button("general.cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("创建") {
+                Button("action.create") {
                     submitting = true
                     Task {
                         await onSubmit(name, color, icon)

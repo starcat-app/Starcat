@@ -191,6 +191,62 @@ Button { ... }
 
 适用场景：登录/注册页面、OAuth 流程、右上角关闭按钮等使用 `.buttonStyle(.plain)` 的自定义图标按钮。
 
+### 国际化规范（i18n）
+
+**所有用户可见文本必须使用 String Catalog 本地化键**，禁止硬编码。
+
+#### 键命名规范
+格式：`{section}.{subsection}.{component}`，使用 `.` 分隔，禁止使用 `_`。
+
+#### 代码规范
+```swift
+// ✅ 正确：SwiftUI 自动解析字符串字面量
+Text("settings.general.title")
+Label("sidebar.allRepos", systemImage: "star.fill")
+
+// ✅ 正确：带参数的本地化字符串
+Text("batch.selectedCount", args: ["count": viewModel.multiSelectedRepoIDs.count])
+
+// ❌ 错误：硬编码
+Text("设置")
+Text("已选 \(count) 个")
+```
+
+#### 枚举 displayName 规范
+枚举的本地化显示名应使用 `displayNameKey` 属性返回 String Catalog 键名：
+```swift
+enum RepoListDensity: String, CaseIterable, Identifiable {
+    case compact
+    case card
+
+    var displayNameKey: String {
+        switch self {
+        case .compact: return "settings.listDensity.compact"
+        case .card:    return "settings.listDensity.card"
+        }
+    }
+}
+```
+
+#### 资源文件
+- 字符串目录：`Starcat/Resources/Localizable.xcstrings`
+- 新增字符串时需同时添加 en 和 zh-Hans 翻译
+- SF Symbols 无需本地化（系统已处理）
+
+#### 多语言预览
+使用 `.environment(\.locale, _)` 在 #Preview 中预览不同语言：
+```swift
+#Preview("English") {
+    SettingsView()
+        .environment(\.locale, Locale(identifier: "en"))
+}
+
+#Preview("简体中文") {
+    SettingsView()
+        .environment(\.locale, Locale(identifier: "zh-Hans"))
+}
+```
+
 ---
 
 ## 已解决的问题

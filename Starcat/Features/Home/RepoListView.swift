@@ -63,7 +63,7 @@ struct RepoListView: View {
                         selectedTrendingRepo: $selectedTrendingRepo
                     )
                 } else {
-                    emptyState(systemImage: "chart.line.uptrend.xyaxis", title: "Trending 数据暂不可用", subtitle: "功能开发中")
+                    emptyState(systemImage: "chart.line.uptrend.xyaxis", title: "empty.trendingUnavailable", subtitle: "empty.trendingComingSoon")
                 }
             } else if selectedPage == .search {
                 searchPlaceholder
@@ -72,7 +72,7 @@ struct RepoListView: View {
                 RepoSkeletonListView(density: settings.listDensity, rowCount: 10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = viewModel.loadError, viewModel.items.isEmpty {
-                emptyState(systemImage: "exclamationmark.triangle", title: "加载失败", subtitle: error)
+                emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitle: error)
             } else if viewModel.items.isEmpty {
                 emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
             } else if viewModel.isMultiSelectMode {
@@ -127,21 +127,21 @@ struct RepoListView: View {
                 Button {
                     NSWorkspace.shared.open(issues)
                 } label: {
-                    Label("Issues", systemImage: "exclamationmark.bubble")
+                    Label("externalLinks.issues", systemImage: "exclamationmark.bubble")
                 }
             }
             if let pulls = RepoExternalLinks.pulls(repo) {
                 Button {
                     NSWorkspace.shared.open(pulls)
                 } label: {
-                    Label("Pull Requests", systemImage: "arrow.triangle.pull")
+                    Label("externalLinks.pullRequests", systemImage: "arrow.triangle.pull")
                 }
             }
             if let releases = RepoExternalLinks.releases(repo) {
                 Button {
                     NSWorkspace.shared.open(releases)
                 } label: {
-                    Label("Releases", systemImage: "tag.circle")
+                    Label("externalLinks.releases", systemImage: "tag.circle")
                 }
             }
             if let homepage = RepoExternalLinks.homepage(repo) {
@@ -149,7 +149,7 @@ struct RepoListView: View {
                 Button {
                     NSWorkspace.shared.open(homepage)
                 } label: {
-                    Label("Homepage", systemImage: "house")
+                    Label("externalLinks.homepage", systemImage: "house")
                     Text(homepage.absoluteString)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -157,13 +157,13 @@ struct RepoListView: View {
             }
         } label: {
             toolbarIcon("safari")
-                .accessibilityLabel("在 GitHub 打开")
+                .accessibilityLabel("externalLinks.openOnGithub")
         } primaryAction: {
             if let url = RepoExternalLinks.repo(repo) {
                 NSWorkspace.shared.open(url)
             }
         }
-        .help("点击：打开仓库主页；展开：Issues / Releases / Homepage")
+        .help("externalLinks.hint")
     }
 
     /// 顶部 clone URL 复制菜单。
@@ -177,9 +177,9 @@ struct RepoListView: View {
 
         Menu {
             Button {
-                copy(https, success: "已复制 HTTPS Clone URL")
+                copy(https, success: "clone.copiedHttps")
             } label: {
-                Label("HTTPS", systemImage: "globe")
+                Label("clone.https", systemImage: "globe")
             }
             Text(https)
                 .font(.caption2)
@@ -188,18 +188,18 @@ struct RepoListView: View {
             Divider()
 
             Button {
-                copy(git, success: "已复制 Git Clone URL")
+                copy(git, success: "clone.copiedGit")
             } label: {
-                Label("Git / SSH", systemImage: "terminal")
+                Label("clone.git", systemImage: "terminal")
             }
             Text(git)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         } label: {
             toolbarIcon("doc.on.clipboard")
-                .accessibilityLabel("克隆地址")
+                .accessibilityLabel("clone.hint")
         }
-        .help("复制 HTTPS / Git clone 地址")
+        .help("clone.hint")
     }
 
     private func httpsCloneURL(for repo: Repo) -> String {
@@ -231,9 +231,9 @@ struct RepoListView: View {
             viewModel.toggleMultiSelectMode()
         } label: {
             toolbarIcon(viewModel.isMultiSelectMode ? "checklist.checked" : "checklist")
-                .accessibilityLabel(viewModel.isMultiSelectMode ? "退出多选" : "多选")
+                .accessibilityLabel(viewModel.isMultiSelectMode ? "batch.exitMultiSelect" : "batch.multiSelect")
         }
-        .help(viewModel.isMultiSelectMode ? "退出多选模式" : "进入多选模式")
+        .help(viewModel.isMultiSelectMode ? "list.exitMultiSelectMode" : "list.multiSelectMode")
         .keyboardShortcut("m", modifiers: [.command, .shift])
     }
 
@@ -244,8 +244,8 @@ struct RepoListView: View {
     private var statusFilterMenu: some View {
         @Bindable var vm = viewModel
         return Menu {
-            Picker("阅读状态", selection: $vm.statusFilter) {
-                Text("全部").tag(RepoStatus?.none)
+            Picker("list.filter.status", selection: $vm.statusFilter) {
+                Text("general.all").tag(RepoStatus?.none)
                 ForEach(RepoStatus.allCases, id: \.self) { st in
                     Label(st.displayName, systemImage: statusIcon(for: st))
                         .tag(RepoStatus?.some(st))
@@ -254,16 +254,16 @@ struct RepoListView: View {
             .pickerStyle(.inline)
             Divider()
             Toggle(isOn: $vm.hideArchived) {
-                Label("隐藏 Archived", systemImage: "archivebox")
+                Label("settings.general.hideArchived", systemImage: "archivebox")
             }
             Toggle(isOn: $vm.hideForks) {
-                Label("隐藏 Fork", systemImage: "tuningfork")
+                Label("settings.general.hideForks", systemImage: "tuningfork")
             }
         } label: {
             toolbarIcon(viewModel.hasActiveFilter ? "circle.grid.2x1.fill" : "circle.grid.2x1")
-                .accessibilityLabel(viewModel.statusFilter?.displayName ?? "阅读状态")
+                .accessibilityLabel(viewModel.statusFilter?.displayName ?? "list.filter.status")
         }
-        .help(viewModel.hasActiveFilter ? "已启用阅读状态 / 列表过滤" : "按阅读状态过滤")
+        .help(viewModel.hasActiveFilter ? "list.filter.active" : "list.filter.hint")
         .onChange(of: viewModel.hideArchived) { _, newValue in
             settings.hideArchived = newValue
         }
@@ -284,18 +284,18 @@ struct RepoListView: View {
     private var sortMenu: some View {
         @Bindable var vm = viewModel
         return Menu {
-            Picker("排序", selection: $vm.sortOption) {
+            Picker("list.sort", selection: $vm.sortOption) {
                 ForEach(RepoSortOption.allCases) { opt in
-                    Label(opt.displayName, systemImage: opt.systemImage)
+                    Label(opt.displayNameKey, systemImage: opt.systemImage)
                         .tag(opt)
                 }
             }
             .pickerStyle(.inline)
         } label: {
             toolbarIcon("arrow.up.arrow.down")
-                .accessibilityLabel("排序")
+                .accessibilityLabel("list.sort")
         }
-        .help("选择列表排序方式")
+        .help("list.sortHint")
         .onAppear {
             // 首次进入 / sheet 关闭重建时,把已持久化的偏好同步到 viewModel
             if viewModel.sortOption != settings.repoSortOption {
@@ -348,30 +348,30 @@ struct RepoListView: View {
             return selectedTrendingLanguage.displayName
         }
         if selectedPage == .search {
-            return "入口结构已预留"
+            return "empty.searchPlaceholder"
         }
         if viewModel.isMultiSelectMode {
-            return "已选 \(viewModel.multiSelectedRepoIDs.count) / \(viewModel.items.count)"
+            return "list.selectedCount"
         }
         if viewModel.isRefreshing {
-            return "\(viewModel.items.count) 个仓库 · 刷新中…"
+            return "list.refreshing"
         }
-        return "\(viewModel.items.count) 个仓库"
+        return "list.repoCount"
     }
 
     // MARK: - 标题派生
 
     private var navigationTitle: String {
         if selectedPage == .trending {
-            return "Trending"
+            return "trending.title"
         }
         if selectedPage == .search {
-            return "Search"
+            return "search.title"
         }
         if viewModel.isSearching {
-            return "搜索：\(viewModel.searchQuery)"
+            return "search.searching"
         }
-        return viewModel.selection.displayName
+        return viewModel.selection.displayNameKey
     }
 
     // MARK: - 空状态
@@ -388,21 +388,21 @@ struct RepoListView: View {
     }
 
     private var emptyTitle: String {
-        if viewModel.isSearching { return "无匹配结果" }
+        if viewModel.isSearching { return "empty.noResults" }
         switch viewModel.selection {
-        case .trending:        return "Trending 数据暂不可用"
-        case .allStars:        return "还没有 Stars"
-        case .untagged:        return "所有仓库都已分类"
-        case .language:        return "该语言下暂无仓库"
-        case .tag:             return "该标签下暂无仓库"
+        case .trending:        return "empty.trendingUnavailable"
+        case .allStars:        return "empty.noStars"
+        case .untagged:        return "empty.allTagged"
+        case .language:        return "empty.noReposInLanguage"
+        case .tag:             return "empty.noReposInTag"
         }
     }
 
     private var emptySubtitle: String {
-        if viewModel.isSearching { return "试试别的关键词" }
+        if viewModel.isSearching { return "empty.tryAnother" }
         switch viewModel.selection {
-        case .trending:        return "功能开发中，敬请期待"
-        case .allStars:        return "点击侧边栏同步按钮拉取 GitHub Stars"
+        case .trending:        return "empty.trendingComingSoon"
+        case .allStars:        return "empty.syncPrompt"
         case .untagged:        return "新增 Stars 默认进这里"
         case .language:        return "刷新或同步后试试"
         case .tag:             return "在仓库详情页给它打上该标签"
@@ -429,8 +429,8 @@ struct RepoListView: View {
     private var searchPlaceholder: some View {
         emptyState(
             systemImage: "magnifyingglass",
-            title: "Search 入口已建立",
-            subtitle: "搜索历史、保存搜索和高级筛选会在后续接入。"
+            title: "search.title",
+            subtitle: "empty.searchPlaceholder"
         )
     }
 

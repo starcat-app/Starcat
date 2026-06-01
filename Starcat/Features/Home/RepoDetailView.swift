@@ -79,16 +79,16 @@ struct RepoDetailView: View {
             }
             .navigationTitle(repo.name)
             .navigationSubtitle(repo.owner)
-            .alert("取消 Star？", isPresented: $showUnstarConfirm, presenting: repo) { repo in
-                Button("取消 Star", role: .destructive) {
+            .alert("repo.unstar.confirm", isPresented: $showUnstarConfirm, presenting: repo) { repo in
+                Button("repo.unstar.action", role: .destructive) {
                     Task { await performUnstar(repo: repo) }
                 }
-                Button("不取消", role: .cancel) {}
+                Button("repo.unstar.dontUnstar", role: .cancel) {}
             } message: { repo in
-                Text("将通过 GitHub API 取消对 \(repo.fullName) 的 star，并从本地列表移除。\n打过的标签和写过的笔记会保留，重新 star 后即可恢复。")
+                Text(String(localized: "repo.unstar.message \(repo.fullName)"))
             }
-            .alert("取消失败", isPresented: errorAlertBinding, presenting: unstarError) { _ in
-                Button("好") { unstarError = nil }
+            .alert("repo.unstar.failed", isPresented: errorAlertBinding, presenting: unstarError) { _ in
+                Button("general.ok") { unstarError = nil }
             } message: { msg in
                 Text(msg)
             }
@@ -117,7 +117,7 @@ struct RepoDetailView: View {
     /// 3. 触发 Sidebar + 列表刷新（HomeViewModel 自带 race 防护）
     private func performUnstar(repo: Repo) async {
         guard case .authenticated(let user) = authSession.state else {
-            unstarError = "需要登录"
+            unstarError = "auth.needLogin"
             return
         }
         isUnstarring = true
@@ -129,7 +129,7 @@ struct RepoDetailView: View {
             await viewModel.refreshSidebar()
             await viewModel.reloadItems()
         } catch {
-            unstarError = "取消失败：\(error.localizedDescription)"
+            unstarError = "repo.unstar.actionFailed"
             AppLog.sync.error("unstar failed: \(error.localizedDescription, privacy: .public)")
         }
     }
@@ -282,14 +282,14 @@ struct RepoDetailView: View {
                     ProgressView()
                         .scaleEffect(0.6)
                 } else {
-                    StatItem(label: "Stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
+                    StatItem(label: "repo.stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
                 }
             }
             .buttonStyle(.plain)
             .disabled(isStarringTrending)
-            .help("Star 到我的 Stars")
+            .help("trending.star")
 
-            StatItem(label: "Forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
+            StatItem(label: "repo.forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
 
             if let language = repo.language, !language.isEmpty {
                 HStack(spacing: 4) {
@@ -314,7 +314,7 @@ struct RepoDetailView: View {
             Link(destination: repo.url) {
                 HStack(spacing: 4) {
                     Image(systemName: "safari")
-                    Text("在 GitHub 查看")
+                    Text("repo.openOnGithub")
                 }
                 .font(.caption)
             }
@@ -328,7 +328,7 @@ struct RepoDetailView: View {
     /// 执行 Trending repo 的 star 操作。
     private func starTrending(repo: TrendingRepo) async {
         guard authSession.state.isAuthenticated else {
-            trendingStarError = "需要先登录 GitHub 账号"
+            trendingStarError = "auth.needLogin"
             return
         }
 
@@ -342,7 +342,7 @@ struct RepoDetailView: View {
             // 刷新用户 Stars 列表
             await viewModel.reloadItems()
         } catch {
-            trendingStarError = "Star 失败：\(error.localizedDescription)"
+            trendingStarError = "repo.star.failed"
         }
 
         isStarringTrending = false
@@ -464,25 +464,25 @@ struct RepoDetailView: View {
             Button {
                 showUnstarConfirm = true
             } label: {
-                StatItem(label: "Stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
+                StatItem(label: "repo.stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
             }
             .buttonStyle(.plain)
-            .help("取消 Star")
+            .help("repo.unstar")
 
             Button {
                 if let url = URL(string: "\(repo.htmlUrl)/fork") {
                     NSWorkspace.shared.open(url)
                 }
             } label: {
-                StatItem(label: "Forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
+                StatItem(label: "repo.forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
             }
             .buttonStyle(.plain)
-            .help("在浏览器中 Fork")
+            .help("repo.forkAction")
 
             WatchersMenu(repo: repo)
 
-            DateStatItem(label: "Created", value: repo.createdAt, systemImage: "calendar.badge.plus")
-            DateStatItem(label: "Updated", value: repo.updatedAt, systemImage: "clock.arrow.circlepath")
+            DateStatItem(label: "repo.created", value: repo.createdAt, systemImage: "calendar.badge.plus")
+            DateStatItem(label: "repo.updated", value: repo.updatedAt, systemImage: "clock.arrow.circlepath")
         }
     }
 
@@ -493,10 +493,10 @@ struct RepoDetailView: View {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 56))
                 .foregroundStyle(.tertiary)
-            Text("未选中仓库")
+            Text("empty.noSelection")
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            Text("从左侧列表选择一个查看详情")
+            Text("empty.selectFromList")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
@@ -537,7 +537,7 @@ private struct ReadmeStateView: View {
         case .idle, .loading:
             VStack(spacing: 10) {
                 ProgressView()
-                Text("加载 README…")
+                Text("readme.loading")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -560,10 +560,10 @@ private struct ReadmeStateView: View {
                 Image(systemName: "doc.text")
                     .font(.system(size: 36))
                     .foregroundStyle(.tertiary)
-                Text("该仓库没有 README")
+                Text("readme.empty")
                     .font(.headline)
                     .foregroundStyle(.secondary)
-                Text("仓库作者可能尚未添加 README.md")
+                Text("readme.emptyDescription")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -574,14 +574,14 @@ private struct ReadmeStateView: View {
                 Image(systemName: "exclamationmark.triangle")
                     .font(.system(size: 36))
                     .foregroundStyle(.orange)
-                Text("加载 README 失败")
+                Text("readme.failed")
                     .font(.headline)
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
-                Button("重试", action: onRetry)
+                Button("action.retry", action: onRetry)
                     .controlSize(.small)
                     .focusEffectDisabled()
             }
@@ -594,7 +594,7 @@ private struct ReadmeStateView: View {
         HStack {
             Image(systemName: "clock")
                 .font(.caption2)
-            Text("缓存于 \(cachedAt.formatted(.relative(presentation: .named)))")
+            Text(String(localized: "readme.cachedAt \(cachedAt.formatted(.relative(presentation: .named)))"))
                 .font(.caption2)
             Spacer()
             Button {
@@ -612,7 +612,7 @@ private struct ReadmeStateView: View {
             .buttonStyle(.borderless)
             .focusEffectDisabled()
             .disabled(readmeVM.isRefreshing)
-            .help("刷新内容")
+            .help("readme.refresh")
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 6)
@@ -714,9 +714,9 @@ struct WatchersMenu: View {
         Menu {
             switch watchState {
             case .loading:
-                Text("加载中...")
+                Text("watch.loading")
             case .error:
-                Button("重试") {
+                Button("action.retry") {
                     Task { await fetchSubscription() }
                 }
             default:
@@ -724,48 +724,48 @@ struct WatchersMenu: View {
                     Task { await updateSubscription(subscribed: false, ignored: false) }
                 } label: {
                     if watchState == .participating {
-                        Label("Participating and @mentions", systemImage: "checkmark")
+                        Label("watch.participating", systemImage: "checkmark")
                     } else {
-                        Text("Participating and @mentions")
+                        Text("watch.participating")
                     }
                 }
-                
+
                 Button {
                     Task { await updateSubscription(subscribed: true, ignored: false) }
                 } label: {
                     if watchState == .allActivity {
-                        Label("All Activity", systemImage: "checkmark")
+                        Label("watch.allActivity", systemImage: "checkmark")
                     } else {
-                        Text("All Activity")
+                        Text("watch.allActivity")
                     }
                 }
-                
+
                 Button {
                     Task { await updateSubscription(subscribed: false, ignored: true) }
                 } label: {
                     if watchState == .ignore {
-                        Label("Ignore", systemImage: "checkmark")
+                        Label("watch.ignore", systemImage: "checkmark")
                     } else {
-                        Text("Ignore")
+                        Text("watch.ignore")
                     }
                 }
-                
+
                 Divider()
-                
+
                 Button {
                     if let url = URL(string: "\(repo.htmlUrl)/watchers") {
                         NSWorkspace.shared.open(url)
                     }
                 } label: {
-                    Label("View Watchers on GitHub", systemImage: "safari")
+                    Label("watch.viewOnGithub", systemImage: "safari")
                 }
             }
         } label: {
-            StatItem(label: "Watchers", value: repo.watchersCount, systemImage: "eye.fill", tint: .secondary)
+            StatItem(label: "repo.watchers", value: repo.watchersCount, systemImage: "eye.fill", tint: .secondary)
         }
         .buttonStyle(.plain)
         .fixedSize()
-        .help("管理 Watch 状态")
+        .help("repo.watch")
         .task(id: repo.id) {
             await fetchSubscription()
         }

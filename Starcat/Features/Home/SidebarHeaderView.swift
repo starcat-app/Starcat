@@ -71,7 +71,7 @@ struct SidebarHeaderView: View {
 
     private func unauthenticatedIdentity() -> some View {
         VStack(spacing: 2) {
-            Text("未登录")
+            Text("auth.unauthenticated")
                 .font(.system(size: 14, weight: .semibold))
                 .lineLimit(1)
         }
@@ -100,7 +100,7 @@ struct SidebarHeaderView: View {
             Button {
                 openSettings()
             } label: {
-                Label("设置", systemImage: "gearshape")
+                Label("settings.general.title", systemImage: "gearshape")
             }
 
             Divider()
@@ -108,7 +108,7 @@ struct SidebarHeaderView: View {
             Button(role: .destructive) {
                 authSession.signOut()
             } label: {
-                Label("登出", systemImage: "rectangle.portrait.and.arrow.right")
+                Label("auth.signOut", systemImage: "rectangle.portrait.and.arrow.right")
             }
         } label: {
             Image(systemName: "ellipsis.circle.fill")

@@ -89,7 +89,7 @@ struct RepoRowCard: View {
                     }
                     StarsBadge(count: repo.starsCount, style: .full)
                     if repo.isArchived {
-                        Text("Archived")
+                        Text("repo.archived")
                             .font(.caption2)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(.orange.opacity(0.15), in: Capsule())

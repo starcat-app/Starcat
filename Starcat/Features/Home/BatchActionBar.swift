@@ -30,7 +30,7 @@ struct BatchActionBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text("已选 \(viewModel.multiSelectedRepoIDs.count) 个")
+            Text(String(localized: "batch.selectedCount \(viewModel.multiSelectedRepoIDs.count)"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -40,7 +40,7 @@ struct BatchActionBar: View {
             Button {
                 showTagSheet = true
             } label: {
-                Label("批量打标签", systemImage: "tag.fill")
+                Label("batch.addTags", systemImage: "tag.fill")
             }
             .disabled(viewModel.multiSelectedRepoIDs.isEmpty)
             .help("给所有选中的仓库添加同一个标签")
@@ -48,7 +48,7 @@ struct BatchActionBar: View {
             Button {
                 viewModel.exitMultiSelectMode()
             } label: {
-                Label("退出多选", systemImage: "xmark.circle")
+                Label("batch.exitMultiSelect", systemImage: "xmark.circle")
             }
             .keyboardShortcut(.cancelAction)
         }
@@ -93,17 +93,17 @@ private struct BatchTagSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("批量打标签")
+                Text("batch.addTags")
                     .font(.headline)
                 Spacer()
-                Text("将应用到 \(repoIds.count) 个仓库")
+                Text(String(localized: "batch.applyToRepos \(repoIds.count)"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("搜索标签", text: $query)
+                TextField("batch.searchTags", text: $query)
                     .textFieldStyle(.plain)
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
@@ -115,7 +115,7 @@ private struct BatchTagSheet: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         let tags = filteredTags(vm.tags)
                         if tags.isEmpty {
-                            Text(vm.tags.isEmpty ? "还没有任何标签，先去标签管理创建。" : "未找到匹配标签")
+                            Text(vm.tags.isEmpty ? "batch.noTags" : "batch.noMatch")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .padding(.vertical, 12)
@@ -140,9 +140,9 @@ private struct BatchTagSheet: View {
 
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
+                Button("general.cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("应用") {
+                Button("action.apply") {
                     Task {
                         guard let tid = selectedTagId else { return }
                         let ok = await vm?.apply(repoIds: repoIds, tagId: tid) ?? false
@@ -225,7 +225,7 @@ final class BatchTagSheetViewModel {
             tags = try await tagRepository.fetchAll()
             errorMessage = nil
         } catch {
-            errorMessage = "加载标签失败：\(error.localizedDescription)"
+            errorMessage = "batch.loadTagsFailed"
         }
     }
 
@@ -240,7 +240,7 @@ final class BatchTagSheetViewModel {
             errorMessage = nil
             return true
         } catch {
-            errorMessage = "批量打标签失败：\(error.localizedDescription)"
+            errorMessage = "batch.addTagsFailed"
             return false
         }
     }

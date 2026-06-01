@@ -48,10 +48,10 @@ struct GithubAuthView: View {
             Image(systemName: "star.circle.fill")
                 .font(.system(size: 56))
                 .foregroundStyle(.tint)
-            Text("Starcat")
+            Text("auth.title")
                 .font(.title)
                 .fontWeight(.semibold)
-            Text("整理、理解、找回、评估你的 GitHub Stars")
+            Text("auth.subtitle")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -76,7 +76,7 @@ struct GithubAuthView: View {
             Button {
                 authSession.signIn()
             } label: {
-                Label("使用 GitHub 登录", systemImage: "person.crop.circle.badge.checkmark")
+                Label("auth.signIn", systemImage: "person.crop.circle.badge.checkmark")
                     .frame(maxWidth: 240)
             }
             .controlSize(.large)
@@ -88,7 +88,7 @@ struct GithubAuthView: View {
 
     private func awaitingUserCodeView(_ info: OAuthDeviceCodeInfo) -> some View {
         VStack(spacing: 16) {
-            Text("请在浏览器中输入以下 code")
+            Text("auth.enterCode")
                 .font(.headline)
 
             HStack(spacing: 12) {
@@ -107,21 +107,21 @@ struct GithubAuthView: View {
                     Image(systemName: "doc.on.doc")
                 }
                 .focusEffectDisabled()
-                .help("复制 code")
+                .help("auth.copyCode")
             }
 
             HStack(spacing: 12) {
                 Button {
                     NSWorkspace.shared.open(info.verificationURI)
                 } label: {
-                    Label("打开 GitHub", systemImage: "safari")
+                    Label("auth.openGithub", systemImage: "safari")
                         .frame(maxWidth: 160)
                 }
                 .controlSize(.large)
                 .buttonStyle(.borderedProminent)
                 .focusEffectDisabled()
 
-                Button("取消") {
+                Button("general.cancel") {
                     authSession.cancelSignIn()
                     dismiss()
                 }
@@ -131,7 +131,7 @@ struct GithubAuthView: View {
 
             ProgressView()
                 .controlSize(.small)
-            Text("等待授权中…")
+            Text("auth.waiting")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -142,7 +142,7 @@ struct GithubAuthView: View {
     @ViewBuilder
     private var errorBanner: some View {
         if let error = authSession.lastError {
-            Text(error.errorDescription ?? "登录失败")
+            Text(error.errorDescription ?? "auth.failed")
                 .font(.footnote)
                 .foregroundStyle(.red)
                 .padding(.horizontal)
