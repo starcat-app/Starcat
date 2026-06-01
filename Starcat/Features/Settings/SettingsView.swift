@@ -30,6 +30,10 @@ struct SettingsView: View {
                 .tabItem {
                     Label("settings.general.title", systemImage: "gearshape")
                 }
+            AISettingsTab()
+                .tabItem {
+                    Label("settings.ai.title", systemImage: "sparkles")
+                }
             StorageSettingsTab(readmeRepository: dependencies.readmeRepository)
                 .tabItem {
                     Label("settings.storage.title", systemImage: "internaldrive")
