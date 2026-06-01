@@ -24,7 +24,7 @@ private enum AboutPage: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var displayNameKey: String {
+    var displayNameKey: LocalizedStringKey {
         switch self {
         case .overview: return "about.nav.overview"
         case .support: return "about.nav.support"
@@ -73,6 +73,7 @@ struct AboutView: View {
                 }
                 .background(Color(nsColor: .textBackgroundColor).opacity(0.52))
             }
+            .frame(width: 461)
         }
         .frame(width: 680, height: 520)
         .background(.regularMaterial)
@@ -172,7 +173,7 @@ private struct AboutBrandPanel: View {
 
 /// 品牌区的小徽章。
 private struct AboutBadge: View {
-    let title: String
+    let title: LocalizedStringKey
     let systemImage: String
 
     var body: some View {
@@ -342,8 +343,8 @@ private struct PrivacyPage: View {
 // MARK: - 共享组件
 
 private struct AboutSection<Content: View>: View {
-    let title: String
-    let subtitle: String
+    let title: LocalizedStringKey
+    let subtitle: LocalizedStringKey
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -362,8 +363,8 @@ private struct AboutSection<Content: View>: View {
 }
 
 private struct AboutFeatureCard: View {
-    let title: String
-    let detail: String
+    let title: LocalizedStringKey
+    let detail: LocalizedStringKey
     let systemImage: String
 
     var body: some View {
@@ -393,8 +394,8 @@ private struct AboutFeatureCard: View {
 }
 
 private struct SupportRow: View {
-    let title: String
-    let detail: String
+    let title: LocalizedStringKey
+    let detail: LocalizedStringKey
     let systemImage: String
     let url: URL?
 
@@ -429,9 +430,9 @@ private struct SupportRow: View {
 }
 
 private struct AboutParagraph: View {
-    let text: String
+    let text: LocalizedStringKey
 
-    init(_ text: String) {
+    init(_ text: LocalizedStringKey) {
         self.text = text
     }
 
@@ -446,8 +447,8 @@ private struct AboutParagraph: View {
 
 private struct NumberedTerm: View {
     let number: String
-    let title: String
-    let text: String
+    let title: LocalizedStringKey
+    let text: LocalizedStringKey
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -471,8 +472,8 @@ private struct NumberedTerm: View {
 
 private struct PrivacyPoint: View {
     let systemImage: String
-    let title: String
-    let text: String
+    let title: LocalizedStringKey
+    let text: LocalizedStringKey
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -507,7 +508,7 @@ private struct DependencyRow: View {
                 HStack(spacing: 8) {
                     Text(dependency.name)
                         .font(.headline)
-                    Text(dependency.license)
+                    Text(verbatim: dependency.license)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 7)
@@ -515,7 +516,7 @@ private struct DependencyRow: View {
                         .background(.thinMaterial, in: Capsule())
                 }
 
-                Text(dependency.copyright)
+                Text(verbatim: dependency.copyright)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -534,7 +535,7 @@ private struct DependencyRow: View {
 ///
 /// 这里只接受调用方传入的 URL，内部统一用 NSWorkspace 打开，便于后续加 URL 白名单或埋点。
 private struct SafeExternalLink: View {
-    let title: String
+    let title: LocalizedStringKey
     let systemImage: String
     let url: URL?
 

@@ -135,6 +135,7 @@
 | `.searchable(text:)` | `HomeView` 顶部搜索框 | "SwiftUI searchable" |
 | `.toolbar` / `ToolbarItem` | 顶栏同步按钮 | "SwiftUI toolbar" |
 | `.confirmationDialog` / `.alert` | 取消 Star 确认（W4 待做） | "SwiftUI confirmationDialog macOS" |
+| `LocalizedStringKey` vs `String` | `AboutView` 的组件参数用 `LocalizedStringKey`，否则 `Text(titleString)` 会把 key 当普通文本显示 | "SwiftUI LocalizedStringKey Text String variable" |
 
 ### 3.4 跨 AppKit 桥接
 
