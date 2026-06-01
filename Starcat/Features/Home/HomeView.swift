@@ -238,8 +238,10 @@ struct HomeView: View {
                 let restored = savedManageSelection
                 viewModel.selection = isManageSelectionValid(restored) ? restored : .allStars
             } else if oldState.isAuthenticated {
-                // 登出：保存当前 Manage selection，强制切回 Trending 并清除选择
-                savedManageSelection = viewModel.selection
+                // 登出：保存当前 Manage selection（排除 trending），强制切回 Trending 并清除选择
+                if !viewModel.selection.isTrending {
+                    savedManageSelection = viewModel.selection
+                }
                 selectedSidebarPage = .trending
                 viewModel.selection = .trending
                 viewModel.selectedRepoID = nil
@@ -257,7 +259,11 @@ struct HomeView: View {
             // 保存旧页面的状态
             switch oldPage {
             case .manage:
-                savedManageSelection = viewModel.selection
+                // 只记录真实的 Manage 分类。启动期 default(.manage) → .task 改成 .trending
+                // 会让这里读到 .trending，必须排除，否则污染"上次分类"导致登录后恢复成 trending。
+                if !viewModel.selection.isTrending {
+                    savedManageSelection = viewModel.selection
+                }
             case .trending:
                 savedTrendingLanguage = selectedTrendingLanguage
             case .search:
@@ -297,7 +303,10 @@ struct HomeView: View {
     /// 无效时调用方回落到 `.allStars`，对应需求"获取不到之前的分类 → allStars"。
     private func isManageSelectionValid(_ item: SidebarItem) -> Bool {
         switch item {
-        case .trending, .allStars, .untagged:
+        case .trending:
+            // .trending 不是合法的 Manage 分类（属于 Trending 页），恢复时应回落 allStars
+            return false
+        case .allStars, .untagged:
             return true
         case .language(let lang):
             // SidebarItem.language(nil) 对应 LanguageStat.language == ""（GitHub 无主语言）
