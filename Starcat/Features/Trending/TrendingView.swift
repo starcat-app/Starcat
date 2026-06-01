@@ -34,6 +34,9 @@ extension EnvironmentValues {
 
 struct TrendingView: View {
 
+    /// "为你推荐"卡片开关。暂时关闭（dong4j 2026-06-01），需要时改回 true 即可。
+    private static let showsRecommendations = false
+
     @Environment(AuthSession.self) private var authSession
     @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(AppSettings.self) private var settings
@@ -148,7 +151,9 @@ struct TrendingView: View {
     private var contentView: some View {
         // 使用 List(selection:) 获取原生 macOS selection 样式（蓝色高亮）。
         List(selection: $selectedRepoID) {
-            if !viewModel.recommendedRepos.isEmpty {
+            // "为你推荐"卡片暂时隐藏（dong4j 2026-06-01）：当前推荐质量还不稳定，先关掉。
+            // 重新启用：把 showsRecommendations 改回 true 即可，逻辑与 UI 均保留。
+            if Self.showsRecommendations, !viewModel.recommendedRepos.isEmpty {
                 personalizedSection
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -430,6 +435,7 @@ struct TrendingRepoCard: View {
                 .font(.caption)
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
             .foregroundStyle(Color.accentColor)
         }
     }

@@ -43,6 +43,7 @@ struct CollapsibleSearchBar: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
             .help("search.hint")
         }
         .padding(.horizontal, isExpanded ? 8 : 0)

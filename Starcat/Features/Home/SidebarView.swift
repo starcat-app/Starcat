@@ -215,6 +215,7 @@ struct SidebarView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
             .help(disclosureHelp(isExpanded: tagsExpanded))
 
             Button {
@@ -226,6 +227,7 @@ struct SidebarView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
             .help(Text("sidebar.tagManagement"))
 
             Button {
@@ -498,6 +500,7 @@ private struct SidebarSyncButton: View {
                 .foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .frame(width: 18, height: 18)
         .contentShape(Rectangle())
         .onHover { hovering in

@@ -193,4 +193,33 @@ final class AuthSession {
         lastError = nil
         AppLog.auth.info("Signed out")
     }
+
+    // MARK: - 会话被动失效（集中式 401 处理入口）
+
+    /// token 在使用中失效（被 GitHub 吊销 / 改密码 / 权限变更）时调用。
+    ///
+    /// 与 `signOut()` 的区别：
+    /// - `signOut()` 是用户主动登出，不留错误提示；
+    /// - 本方法是**被动失效**，会保留一条 `lastError`（"未授权，请重新登录"）给登录页展示。
+    ///
+    /// 调用来源：`GitHubAPIClient` 的集中式 401 回调（见 `AppDependencies` 接线）。
+    /// 所有端点的 401 都汇聚到这里，避免每个调用点各写一套"清 token + 回登录"逻辑。
+    ///
+    /// 关键约束（防误伤 + 幂等）：
+    /// - 仅当当前为"已登录"态才处理。登录流程中（`.unauthenticated` / `.awaitingUserCode`）
+    ///   出现的 401 由各自流程处理，这里跳过，避免把进行中的 Device Flow 误判为失效。
+    /// - 并发的多个 401 会重复调用本方法，首个把状态切走后，后续因 guard 直接 no-op。
+    /// - `@MainActor`：状态变更只在主线程，由回调侧负责 hop 到主线程。
+    func invalidateSession() {
+        guard state.isAuthenticated else { return }
+        AppLog.auth.warning("Session invalidated (401/unauthorized in use); clearing token")
+        do {
+            try keychain.deleteGithubToken()
+        } catch {
+            AppLog.auth.error("invalidateSession: failed to delete token: \(error.localizedDescription, privacy: .public)")
+        }
+        state = .unauthenticated
+        // 复用 network.error.unauthorized 文案（"未授权，请重新登录。"）在登录页提示用户。
+        lastError = NetworkError.unauthorized
+    }
 }

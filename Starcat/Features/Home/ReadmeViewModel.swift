@@ -165,9 +165,8 @@ final class ReadmeViewModel {
                 self.state = .empty
 
             case .failed(let error):
-                // 判断是否为"未登录导致的 403"，如果是则显示友好的登录提示
-                if !isLoggedIn, let networkError = error as? NetworkError,
-                   case .clientError(statusCode: 403, _) = networkError {
+                // 未登录被 GitHub 拒绝（匿名配额耗尽 403→rateLimited / 401 / clientError 403）→ 引导登录
+                if !isLoggedIn, Self.isUnauthenticatedBlock(error) {
                     self.state = .requiresLogin
                     return
                 }
@@ -294,9 +293,8 @@ final class ReadmeViewModel {
                 self.state = .empty
 
             case .failed(let error):
-                // 判断是否为"未登录导致的 403"，如果是则显示友好的登录提示
-                if !isLoggedIn, let networkError = error as? NetworkError,
-                   case .clientError(statusCode: 403, _) = networkError {
+                // 未登录被 GitHub 拒绝（匿名配额耗尽 403→rateLimited / 401 / clientError 403）→ 引导登录
+                if !isLoggedIn, Self.isUnauthenticatedBlock(error) {
                     self.state = .requiresLogin
                     return
                 }
@@ -313,6 +311,29 @@ final class ReadmeViewModel {
     }
 
     // MARK: - Helpers
+
+    /// 判断"未登录时 GitHub 拒绝请求"的错误——若是，UI 应引导登录而非展示原始报错。
+    ///
+    /// 为什么不只看 403/clientError：
+    /// 未登录用户请求公开 README 走的是 GitHub **匿名配额 60 次/小时**。配额耗尽后 GitHub
+    /// 返回 `403 + X-RateLimit-Remaining: 0 + "API rate limit exceeded"`，被 `GitHubAPIClient`
+    /// 映射成 **`.rateLimited`**（不是 `.clientError(403)`）——这正是之前"未登录还报『请求过于频繁』"
+    /// 的根因。另外 403 也可能映射成 `.unauthorized`（消息不含 rate limit）或 `.clientError(403)`。
+    /// 对未登录用户而言，这三种的解法**都是登录**（配额升到 5000/h 或获得授权），故统一引导登录。
+    ///
+    /// 已登录用户的同类错误不会走到这里——调用方用 `!isLoggedIn` 作前置门控，
+    /// 已登录的 `.rateLimited` 仍应如实展示"请求过于频繁"。
+    private static func isUnauthenticatedBlock(_ error: Error) -> Bool {
+        guard let networkError = error as? NetworkError else { return false }
+        switch networkError {
+        case .unauthorized, .rateLimited:
+            return true
+        case .clientError(statusCode: 403, _):
+            return true
+        default:
+            return false
+        }
+    }
 
     /// 把 readmes.cached_at 的 ISO8601 字符串解析回 Date，便于 UI 格式化显示。
     private static func parseISO8601(_ s: String) -> Date? {

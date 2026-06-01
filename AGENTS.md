@@ -199,26 +199,35 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
 - 遵循现有代码风格
 - 详细规范见各设计文档
 
-### UI 规范：Focus Ring 蓝框
+### UI 规范：Focus Ring 蓝框（强制）
 
-**规则**：所有装饰性/操作性的 Button（尤其是 Login、Auth 页面）必须添加 `.focusEffectDisabled()` 禁用 macOS 默认的蓝色 focus ring。
+**所有**使用 `.buttonStyle(.plain)` 的 Button **必须**添加 `.focusEffectDisabled()`，禁用 macOS 默认的蓝色 focus ring。
+
+> ⚠️ 这是强制规则。任何新建或修改的 Button 若遗漏 `.focusEffectDisabled()`，必须补上。
 
 ```swift
 // ✅ 正确写法
 Button { ... }
     .buttonStyle(.plain)
-    .focusEffectDisabled()  // ← 关键，放在 buttonStyle 之后
+    .focusEffectDisabled()  // ← 强制，放在 buttonStyle 之后
 
-// ❌ 错误写法：缺少 focusEffectDisabled
+// ❌ 错误写法：缺少 focusEffectDisabled（会显示蓝框）
 Button { ... }
-    .buttonStyle(.plain)  // ← 没有禁用 focus ring，会显示蓝框
+    .buttonStyle(.plain)
 ```
 
-**适用场景**：
-- 登录/注册页面的所有按钮
+**适用场景**（包括但不限于）：
+- 侧边栏折叠/展开按钮（chevron）
+- 登录/注册页面、OAuth 流程所有按钮
 - 右上角关闭按钮（xmark.circle.fill）
-- OAuth 流程中的所有操作按钮
-- 任何使用 `.buttonStyle(.plain)` 的自定义图标按钮
+- 搜索栏展开/收起按钮
+- 工具栏图标按钮（sync、filter、sort 等）
+- Tags 管理相关按钮（+、编辑、删除）
+- 任何自定义图标的装饰性/操作性按钮
+
+**新增 Button 时的检查流程**：
+1. 若使用 `.buttonStyle(.plain)` → 必须紧跟 `.focusEffectDisabled()`
+2. 提交前用 `grep -n "buttonStyle.plain" --include="*.swift" .` 检查该文件是否遗漏
 
 > 注意：`.buttonStyle(.borderedProminent)` 通常已遮挡 focus ring，但安全起见也建议添加。
 
@@ -229,7 +238,7 @@ Button { ... }
 
 ---
 
-*最后更新：2026-05-29*
+*最后更新：2026-06-01*
 
 
 <claude-mem-context>

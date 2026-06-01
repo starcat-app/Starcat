@@ -89,6 +89,13 @@ actor GitHubAPIClient {
     private let tokenProvider: any GitHubTokenProviding
     private let decoder: JSONDecoder
 
+    /// 集中式 401 回调。
+    ///
+    /// 任何请求被映射成 401（含 403 鉴权失败）时触发一次，由 `AppDependencies` 接线到
+    /// `AuthSession.invalidateSession()`，实现"使用中 token 失效 → 自动回登录页"。
+    /// actor 隔离，通过 `setUnauthorizedHandler` 在依赖装配阶段异步设置。
+    private var onUnauthorized: (@Sendable () -> Void)?
+
     // MARK: - 初始化
 
     init(
@@ -104,6 +111,21 @@ actor GitHubAPIClient {
         // GitHub 返回 snake_case，DTO 用 camelCase
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         self.decoder = decoder
+    }
+
+    // MARK: - 集中式 401 处理
+
+    /// 设置 401 回调（依赖装配阶段调用一次）。
+    func setUnauthorizedHandler(_ handler: @escaping @Sendable () -> Void) {
+        self.onUnauthorized = handler
+    }
+
+    /// 统一的"抛 401"出口：先触发集中式回调，再返回 `.unauthorized`。
+    ///
+    /// 所有 `perform*` 方法里映射出 401 的分支都走这里，保证回调只有一个出口、不会漏触发也不会重复实现。
+    private func unauthorized() -> NetworkError {
+        onUnauthorized?()
+        return .unauthorized
     }
 
     // MARK: - Public API
@@ -259,7 +281,7 @@ actor GitHubAPIClient {
             throw NetworkError.notModified(etag: etag)
 
         case 401:
-            throw NetworkError.unauthorized
+            throw unauthorized()
 
         case 403:
             // 双重校验：只有当 rate limit 确实耗尽 AND 响应消息确实是 rate limit 相关，才按 rate limit 处理。
@@ -274,7 +296,7 @@ actor GitHubAPIClient {
             if rateLimit.remaining != 0 {
                 throw NetworkError.clientError(statusCode: 403, message: errorMessage.isEmpty ? nil : errorMessage)
             }
-            throw NetworkError.unauthorized
+            throw unauthorized()
 
         case 404:
             throw NetworkError.notFound
@@ -350,7 +372,7 @@ actor GitHubAPIClient {
             )
 
         case 401:
-            throw NetworkError.unauthorized
+            throw unauthorized()
 
         case 403:
             // 双重校验：只有当 rate limit 确实耗尽 AND 响应消息确实是 rate limit 相关，才按 rate limit 处理。
@@ -365,7 +387,7 @@ actor GitHubAPIClient {
             if rateLimit.remaining != 0 {
                 throw NetworkError.clientError(statusCode: 403, message: errorMessage.isEmpty ? nil : errorMessage)
             }
-            throw NetworkError.unauthorized
+            throw unauthorized()
 
         case 404:
             throw NetworkError.notFound
@@ -422,7 +444,7 @@ actor GitHubAPIClient {
             return // 无 body，成功即返回
 
         case 401:
-            throw NetworkError.unauthorized
+            throw unauthorized()
 
         case 403:
             // 双重校验：只有当 rate limit 确实耗尽 AND 响应消息确实是 rate limit 相关，才按 rate limit 处理。
@@ -437,7 +459,7 @@ actor GitHubAPIClient {
             if rateLimit.remaining != 0 {
                 throw NetworkError.clientError(statusCode: 403, message: errorMessage.isEmpty ? nil : errorMessage)
             }
-            throw NetworkError.unauthorized
+            throw unauthorized()
 
         case 404:
             throw NetworkError.notFound

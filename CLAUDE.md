@@ -174,22 +174,35 @@ docs/
 - **dong4j 是 Swift 初学者**：写新代码或解释已有代码时，遇到关键 Swift / SwiftUI / Concurrency / WebKit / GRDB 概念应主动提示去查 `docs/Swift 学习索引.md` 对应条目
 - 详细开发规范见 `docs/` 各文档
 
-### UI 规范：Focus Ring 蓝框
+### UI 规范：Focus Ring 蓝框（强制）
 
-所有装饰性/操作性的 Button（尤其是 Login、Auth 页面）必须添加 `.focusEffectDisabled()` 禁用 macOS 默认的蓝色 focus ring。
+**所有**使用 `.buttonStyle(.plain)` 的 Button **必须**添加 `.focusEffectDisabled()`，禁用 macOS 默认的蓝色 focus ring。
+
+> ⚠️ 这是强制规则。任何新建或修改的 Button若遗漏 `.focusEffectDisabled()`，必须补上。
 
 ```swift
 // ✅ 正确写法
 Button { ... }
     .buttonStyle(.plain)
-    .focusEffectDisabled()  // ← 关键
+    .focusEffectDisabled()  // ← 强制，放在 buttonStyle 之后
 
-// ❌ 错误写法：缺少 focusEffectDisabled
+// ❌ 错误写法：缺少 focusEffectDisabled（会显示蓝框）
 Button { ... }
-    .buttonStyle(.plain)  // 会显示蓝框
+    .buttonStyle(.plain)
 ```
 
-适用场景：登录/注册页面、OAuth 流程、右上角关闭按钮等使用 `.buttonStyle(.plain)` 的自定义图标按钮。
+**适用场景**（包括但不限于）：
+- 侧边栏折叠/展开按钮（chevron）
+- 登录/注册页面、OAuth 流程所有按钮
+- 右上角关闭按钮（xmark.circle.fill）
+- 搜索栏展开/收起按钮
+- 工具栏图标按钮（sync、filter、sort 等）
+- Tags 管理相关按钮（+、编辑、删除）
+- 任何自定义图标的装饰性/操作性按钮
+
+**新增 Button 时的检查流程**：
+1. 若使用 `.buttonStyle(.plain)` → 必须紧跟 `.focusEffectDisabled()`
+2. 提交前用 `grep -n "buttonStyle.plain" --include="*.swift" .` 检查该文件是否遗漏
 
 ### 国际化规范（i18n）
 
@@ -262,4 +275,4 @@ enum RepoListDensity: String, CaseIterable, Identifiable {
 
 ---
 
-*最后更新：2026-05-29*
+*最后更新：2026-06-01*

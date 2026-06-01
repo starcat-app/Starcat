@@ -73,11 +73,23 @@ final class AppDependencies {
         }
         self.oauthService = oauth
 
-        self.authSession = AuthSession(
+        let session = AuthSession(
             oauthService: oauth,
             apiClient: api,
             keychain: KeychainManager.shared
         )
+        self.authSession = session
+
+        // 集中式 401 处理：任何 GitHub API 调用映射出 401 → 失效会话 → 自动回登录页。
+        // api 是 actor，回调通过 Task 异步注入；首个真实网络请求发生在启动恢复（.task）之后，
+        // 注入早已完成，不会漏。弱引用 session 避免 api ↔ authSession 之间的循环强引用。
+        Task { [weak session] in
+            await api.setUnauthorizedHandler {
+                Task { @MainActor in
+                    session?.invalidateSession()
+                }
+            }
+        }
 
         // Week 3 新增：repository / settings 通过 environment 给 HomeView 用
         // D-01：构造时用具体类型 GRDBRepoRepository，字段类型是协议 any RepoRepositoryProtocol
