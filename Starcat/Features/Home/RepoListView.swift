@@ -10,7 +10,8 @@
 //  - 空 / 加载 / 错误状态友好展示
 //
 //  设计约束：
-//  - 用 SwiftUI List + selection binding，原生体验最佳
+//  - 普通单选用 plain Button 手动写 selectedRepoID，避免系统蓝色选中底色压过自定义样式
+//  - 多选模式仍用 SwiftUI List selection binding，保留 Cmd / Shift 原生多选体验
 //  - 行密度由 AppSettings 注入，密度切换实时生效（@Observable 通知）
 //
 
@@ -309,14 +310,31 @@ struct RepoListView: View {
 
     // MARK: - 列表主体
 
-    /// 关键写法：`List(selection: Binding<Repo.ID?>)` + `ForEach(items)`，
-    /// 不显式写 `.tag(...)`。ForEach 看到 `Repo: Identifiable` 会自动使用 `repo.id`
-    /// 作为每行的 selection identifier，selection binding 类型 (`Int64?`) 与之严格匹配，
-    /// SwiftUI 内部无需再做 Hashable/Equatable 校对，是 macOS List selection 的最稳写法。
+    /// 单选列表使用手动 selection，而不是 `List(selection:)`。
+    ///
+    /// 原因：`List(selection:)` 会强制绘制 macOS 系统蓝色选中底色，和 UI 升级后的
+    /// 自定义左侧 accent 条叠加后视觉过重。这里用 plain Button 写入 `selectedRepoID`，
+    /// 仍触发 HomeView 的 `.onChange(of: selectedRepoID)` 加载详情，但选中外观完全交给
+    /// `RepoRowView` 控制。
     private func listContent(_ selection: Binding<Int64?>) -> some View {
-        List(selection: selection) {
+        List {
             ForEach(viewModel.items) { repo in
-                RepoRowView(repo: repo, density: settings.listDensity)
+                // UI 视觉升级：单选态不再使用 `List(selection:)`。
+                // macOS 会强制绘制系统蓝色选中底色，和自定义左侧色条叠加后过重；
+                // 改为 plain Button 手动写 selectedRepoID，保留点击打开详情，但视觉只由 RepoRowView 控制。
+                Button {
+                    selection.wrappedValue = repo.id
+                } label: {
+                    RepoRowView(
+                        repo: repo,
+                        density: settings.listDensity,
+                        isSelected: selection.wrappedValue == repo.id
+                    )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
         }
         .id(viewModel.itemsRevision)
@@ -332,7 +350,13 @@ struct RepoListView: View {
     private func multiSelectList(_ selection: Binding<Set<Int64>>) -> some View {
         List(selection: selection) {
             ForEach(viewModel.items) { repo in
-                RepoRowView(repo: repo, density: settings.listDensity)
+                RepoRowView(
+                    repo: repo,
+                    density: settings.listDensity,
+                    isSelected: selection.wrappedValue.contains(repo.id)
+                )
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
         }
         .id(viewModel.itemsRevision)

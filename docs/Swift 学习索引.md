@@ -114,6 +114,7 @@
 | `@State` | `HomeView` 持有 `ReadmeViewModel` | "SwiftUI State property wrapper" |
 | `@Binding` | `$vm.selectedRepoID` 传给子 View | "SwiftUI Binding two-way" |
 | `@Environment(\.colorScheme)` | `ReadmeWebView` 切深浅色 | "SwiftUI Environment values" |
+| `@Environment(\.accessibilityReduceMotion)` | `RepoRowSurface` 尊重系统"减少动态效果"设置，关闭非必要缩放/动画 | "SwiftUI accessibilityReduceMotion" |
 | `.environment(_:)` | `AppDependencies` 注入到 View 树 | "SwiftUI environment object injection" |
 | `@Bindable` | Observation 框架配套，传 binding 给 child | "Swift Bindable property wrapper" |
 
@@ -122,9 +123,11 @@
 | 关键词 | 用法点 | 搜索词 |
 |---|---|---|
 | `NavigationSplitView` | `HomeView` 三栏布局 | "SwiftUI NavigationSplitView macOS" |
-| `List(selection:)` | 中栏 repo 列表 | "SwiftUI List selection binding" |
+| `List(selection:)` | 中栏多选 repo 列表；普通单选已改用 plain `Button` 手动写 `selectedRepoID` 以避开系统蓝色选中底色 | "SwiftUI List selection binding macOS" |
+| `Button` + `.buttonStyle(.plain)` | 普通 repo 行点击选择；使用后必须跟 `.focusEffectDisabled()` | "SwiftUI plain button macOS focusEffectDisabled" |
 | `ForEach(items)` | 配 `Identifiable` 自动 id 匹配 | "SwiftUI ForEach Identifiable" |
 | `Section` / `DisclosureGroup` | Sidebar 分组 | "SwiftUI Section List sidebar" |
+| `.listRowBackground` / `.listRowSeparator` | `RepoListView` 清掉系统 row 背景 / 分割线，让 `RepoRowView` 自己表达卡片选中态 | "SwiftUI listRowBackground listRowSeparator macOS" |
 
 ### 3.3 修饰符
 
@@ -135,6 +138,8 @@
 | `.searchable(text:)` | `HomeView` 顶部搜索框 | "SwiftUI searchable" |
 | `.toolbar` / `ToolbarItem` | 顶栏同步按钮 | "SwiftUI toolbar" |
 | `.confirmationDialog` / `.alert` | 取消 Star 确认（W4 待做） | "SwiftUI confirmationDialog macOS" |
+| `.onHover` | `RepoRowSurface` 鼠标悬停时增强背景 / 边框，是 macOS 指针体验的基础反馈 | "SwiftUI onHover macOS" |
+| `@ViewBuilder` | `RepoRowSurface` 用 builder 接收 compact / card 两套 row 内容，复用同一视觉容器 | "SwiftUI ViewBuilder custom container" |
 | `LocalizedStringKey` vs `String` | `AboutView` / `RepoListView` / `SidebarView` / `SettingsView` 等用户可见文案：静态 key 用 `LocalizedStringKey`，动态仓库名、标签名、URL 用 `Text(verbatim:)` 或先 `String(localized:)`，否则 `Text(titleString)` / `.help(titleString)` 会把 key 当普通文本显示 | "SwiftUI LocalizedStringKey Text String variable String localized" |
 
 ### 3.4 跨 AppKit 桥接

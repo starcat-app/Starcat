@@ -9,7 +9,7 @@
 //  - card：多行，头像 + full_name + description + 属性条，信息更丰富
 //
 //  设计约束：
-//  - 行视图本身无状态，纯函数式渲染
+//  - 行视图只持有 hover / press 这类局部视觉状态，不参与业务数据流
 //  - 头像 owner URL 不在 Repo 模型里（owner 只是字符串）；用 GitHub 约定 URL
 //    https://avatars.githubusercontent.com/u/{user_id}?v=4 取不到（缺 owner.id），
 //    所以用 https://github.com/{owner}.png 这个 GitHub 公开重定向作为头像源
@@ -23,11 +23,18 @@ import SwiftUI
 struct RepoRowView: View {
     let repo: Repo
     let density: RepoListDensity
+    let isSelected: Bool
+
+    init(repo: Repo, density: RepoListDensity, isSelected: Bool = false) {
+        self.repo = repo
+        self.density = density
+        self.isSelected = isSelected
+    }
 
     var body: some View {
         switch density {
-        case .compact: RepoRowCompact(repo: repo)
-        case .card:    RepoRowCard(repo: repo)
+        case .compact: RepoRowCompact(repo: repo, isSelected: isSelected)
+        case .card:    RepoRowCard(repo: repo, isSelected: isSelected)
         }
     }
 }
@@ -37,26 +44,27 @@ struct RepoRowView: View {
 /// 紧凑行：1 行高，扫读优先。
 struct RepoRowCompact: View {
     let repo: Repo
+    let isSelected: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: 22, showBorder: false)
+        RepoRowSurface(repo: repo, isSelected: isSelected, density: .compact) {
+            HStack(spacing: 10) {
+                RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: 22, showBorder: false)
 
-            Text(repo.fullName)
-                .font(.system(size: 13, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
+                Text(repo.fullName)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
 
-            Spacer(minLength: 8)
+                Spacer(minLength: 8)
 
-            if let language = repo.language, !language.isEmpty {
-                LanguageBadge(language: language, style: .compact)
+                if let language = repo.language, !language.isEmpty {
+                    LanguageBadge(language: language, style: .compact)
+                }
+
+                StarsBadge(count: repo.starsCount, style: .compact)
             }
-
-            StarsBadge(count: repo.starsCount, style: .compact)
         }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
     }
 }
 
@@ -65,51 +73,144 @@ struct RepoRowCompact: View {
 /// 卡片行：3-4 行高，包含描述、属性条。
 struct RepoRowCard: View {
     let repo: Repo
+    let isSelected: Bool
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: 40)
+        RepoRowSurface(repo: repo, isSelected: isSelected, density: .card) {
+            HStack(alignment: .center, spacing: 12) {
+                RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: 40)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(repo.fullName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text(repo.fullName)
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
 
-                if let description = repo.description, !description.isEmpty {
-                    Text(description)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        if repo.isFork {
+                            MetaBadge(systemImage: "tuningfork", text: "Fork", tint: .secondary)
+                        }
+                    }
+
+                    if let description = repo.description, !description.isEmpty {
+                        Text(description)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+
+                    HStack(spacing: 8) {
+                        if let language = repo.language, !language.isEmpty {
+                            LanguageBadge(language: language, style: .full)
+                        }
+                        StarsBadge(count: repo.starsCount, style: .full)
+                        MetaBadge(systemImage: "tuningfork", text: repo.forksCount.formattedShort, tint: .secondary)
+                        if repo.isArchived {
+                            ArchivedBadge()
+                        }
+                        if let starredAt = repo.starredAt, let date = ISO8601DateFormatter.shared.date(from: starredAt) {
+                            RelativeDateBadge(date: date)
+                        }
+                    }
                 }
-
-                HStack(spacing: 8) {
-                    if let language = repo.language, !language.isEmpty {
-                        LanguageBadge(language: language, style: .full)
-                    }
-                    StarsBadge(count: repo.starsCount, style: .full)
-                    if repo.isArchived {
-                        Text("repo.archived")
-                            .font(.caption2)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(.orange.opacity(0.15), in: Capsule())
-                            .foregroundStyle(.orange)
-                    }
-                    if let starredAt = repo.starredAt, let date = ISO8601DateFormatter.shared.date(from: starredAt) {
-                        Text(date, style: .relative)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
         }
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
     }
 }
 
 // MARK: - 子组件
+
+/// Repo 行的统一视觉容器。
+///
+/// 这里把 hover / selected 局部视觉状态限制在 row 内部，避免污染 HomeViewModel。
+/// 选中态不依赖系统蓝色高亮，而是用语言色或 accent 生成左侧色条和轻背景，
+/// 普通单选列表由外层 plain Button 写 selection；多选列表才保留 macOS List selection。
+///
+/// 注意：不要在这里叠加 `DragGesture(minimumDistance: 0)` 做 pressed 反馈。
+/// macOS `List(selection:)` 的行点击依赖系统内部手势，零距离 drag 会抢事件，
+/// 导致部分 repo 点击后不更新 selection，右侧详情无法打开。
+private struct RepoRowSurface<Content: View>: View {
+    let repo: Repo
+    let isSelected: Bool
+    let density: RepoListDensity
+    private let content: Content
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
+
+    init(repo: Repo, isSelected: Bool, density: RepoListDensity, @ViewBuilder content: () -> Content) {
+        self.repo = repo
+        self.isSelected = isSelected
+        self.density = density
+        self.content = content()
+    }
+
+    private var accentColor: Color {
+        if let language = repo.language, !language.isEmpty {
+            return LanguageColor.color(for: language)
+        }
+        return .accentColor
+    }
+
+    private var cornerRadius: CGFloat {
+        density == .card ? 10 : 8
+    }
+
+    private var verticalPadding: CGFloat {
+        density == .card ? 8 : 4
+    }
+
+    private var horizontalPadding: CGFloat {
+        density == .card ? 10 : 8
+    }
+
+    private var backgroundOpacity: Double {
+        if isSelected { return 0.18 }
+        if isHovered { return 0.08 }
+        return density == .card ? 0.045 : 0.0
+    }
+
+    private var borderOpacity: Double {
+        if isSelected { return 0.42 }
+        if isHovered { return 0.18 }
+        return density == .card ? 0.10 : 0.0
+    }
+
+    var body: some View {
+        content
+            .padding(.vertical, verticalPadding)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.leading, isSelected ? 5 : 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(accentColor.opacity(backgroundOpacity))
+                    .background {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(Color(nsColor: .controlBackgroundColor).opacity(isSelected || isHovered ? 0.40 : 0.0))
+                    }
+            }
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(accentColor)
+                    .frame(width: isSelected ? 3 : 0)
+                    .padding(.vertical, 8)
+                    .opacity(isSelected ? 1 : 0)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(accentColor.opacity(borderOpacity), lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
+                    isHovered = hovering
+                }
+            }
+            .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.82), value: isSelected)
+    }
+}
 
 /// 语言徽章，带 GitHub 风格的小圆点。
 /// 颜色映射来自 https://github.com/ozh/github-colors（精简集）。
@@ -124,7 +225,15 @@ fileprivate struct LanguageBadge: View {
                 .frame(width: 8, height: 8)
             Text(language)
                 .font(style == .full ? .caption : .caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(style == .full ? .primary : .secondary)
+        }
+        .padding(.horizontal, style == .full ? 7 : 0)
+        .padding(.vertical, style == .full ? 3 : 0)
+        .background {
+            if style == .full {
+                Capsule()
+                    .fill(LanguageColor.color(for: language).opacity(0.13))
+            }
         }
     }
 }
@@ -144,6 +253,71 @@ fileprivate struct StarsBadge: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         }
+        .padding(.horizontal, style == .full ? 7 : 0)
+        .padding(.vertical, style == .full ? 3 : 0)
+        .background {
+            if style == .full {
+                Capsule()
+                    .fill(.yellow.opacity(0.12))
+            }
+        }
+    }
+}
+
+/// 通用小型信息徽章，用于 fork / archived / forks count 等次要元数据。
+fileprivate struct MetaBadge: View {
+    let systemImage: String
+    let text: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: systemImage)
+                .font(.system(size: 9, weight: .medium))
+            Text(text)
+                .font(.caption2)
+                .lineLimit(1)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(tint.opacity(0.12), in: Capsule())
+    }
+}
+
+/// Archived 是本地化 key，用独立组件保留 `Text("repo.archived")` 的静态 key 形态，
+/// 避免把本地化字符串先转成 `String` 后失去 SwiftUI 的自动提取语义。
+fileprivate struct ArchivedBadge: View {
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "archivebox")
+                .font(.system(size: 9, weight: .medium))
+            Text("repo.archived")
+                .font(.caption2)
+                .lineLimit(1)
+        }
+        .foregroundStyle(.orange)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(.orange.opacity(0.12), in: Capsule())
+    }
+}
+
+/// 相对时间徽章。单独抽出是为了后续统一替换为更完整的同步 / star 时间表达。
+fileprivate struct RelativeDateBadge: View {
+    let date: Date
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "clock")
+                .font(.system(size: 9, weight: .medium))
+            Text(date, style: .relative)
+                .font(.caption2)
+        }
+        .foregroundStyle(.tertiary)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(.primary.opacity(0.06), in: Capsule())
     }
 }
 
