@@ -40,6 +40,7 @@ struct AISettingsTab: View {
     @State private var openaiBaseURL: String = "https://api.openai.com/v1"
     @State private var openaiAPIKey: String = ""
     @State private var selectedModel: String = "gpt-4o"
+    @State private var customModelName: String = ""
     
     var body: some View {
         Form {
@@ -102,6 +103,11 @@ struct AISettingsTab: View {
                 Text("gpt-3.5-turbo").tag("gpt-3.5-turbo")
                 Divider()
                 Text("settings.ai.customModel").tag("custom")
+            }
+            
+            if selectedModel == "custom" {
+                TextField("settings.ai.openai.customModelName", text: $customModelName)
+                    .textFieldStyle(.roundedBorder)
             }
         } header: {
             Text("settings.ai.openai.config")
