@@ -67,7 +67,11 @@ struct GithubAuthView: View {
         case .awaitingUserCode(let info):
             awaitingUserCodeView(info)
         case .authenticated:
-            ProgressView()  // 转场过渡用，理论上 ContentView 已经切到主界面
+            // 登录完成，显示短暂过渡动画后自动关闭 sheet
+            ProgressView()
+                .onAppear {
+                    dismiss()
+                }
         }
     }
 

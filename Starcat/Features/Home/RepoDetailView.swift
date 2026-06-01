@@ -213,7 +213,9 @@ struct RepoDetailView: View {
             repo: repo.name,
             onScrollOffsetChange: updateMetadataPanelVisibility
         ) {
-            readmeVM.reload(repo: repo)
+            readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
+        } onLogin: {
+            authSession.signIn()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -358,7 +360,9 @@ struct RepoDetailView: View {
             onScrollOffsetChange: { _ in }
         ) {
             // Trending README 刷新：直接调用 loadTrending
-            readmeVM.loadTrending(owner: repo.owner, repo: repo.name)
+            readmeVM.loadTrending(owner: repo.owner, repo: repo.name, isLoggedIn: authSession.state.isAuthenticated)
+        } onLogin: {
+            authSession.signIn()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -531,6 +535,8 @@ private struct ReadmeStateView: View {
     let repo: String
     let onScrollOffsetChange: (CGFloat) -> Void
     let onRetry: () -> Void
+    /// 未登录用户点击"登录"按钮时的回调
+    let onLogin: () -> Void
 
     var body: some View {
         switch state {
@@ -566,6 +572,26 @@ private struct ReadmeStateView: View {
                 Text("readme.emptyDescription")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        case .requiresLogin:
+            VStack(spacing: 12) {
+                Image(systemName: "person.crop.circle.badge.questionmark")
+                    .font(.system(size: 36))
+                    .foregroundStyle(.blue)
+                Text("readme.requiresLogin")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text("readme.requiresLoginDescription")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                Button("action.login", action: onLogin)
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+                    .focusEffectDisabled()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 

@@ -193,7 +193,7 @@ struct HomeView: View {
         // - 即便 RepoDetailView 因 nil 走 emptyState 被销毁，本 onChange 仍稳定触发
         .onChange(of: viewModel.selectedRepoID) { _, _ in
             if let repo = viewModel.selectedRepo {
-                readmeVM.load(repo: repo)
+                readmeVM.load(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
             } else {
                 readmeVM.reset()
             }
@@ -204,7 +204,7 @@ struct HomeView: View {
                 // id 格式是 "owner/repo"，需要拆分成 owner 和 repo
                 let parts = id.split(separator: "/", maxSplits: 1)
                 if parts.count == 2 {
-                    readmeVM.loadTrending(owner: String(parts[0]), repo: String(parts[1]))
+                    readmeVM.loadTrending(owner: String(parts[0]), repo: String(parts[1]), isLoggedIn: authSession.state.isAuthenticated)
                 }
             } else {
                 readmeVM.reset()
@@ -213,6 +213,8 @@ struct HomeView: View {
         // 监听登录态变化，退出登录时强制切换回 Trending 并清除选择
         .onChange(of: authSession.state.isAuthenticated) { _, isAuthenticated in
             if !isAuthenticated {
+                // 保存当前 Manage 页的 selection，避免重新登录后丢失
+                savedManageSelection = viewModel.selection
                 selectedSidebarPage = .trending
                 viewModel.selection = .trending
                 viewModel.selectedRepoID = nil

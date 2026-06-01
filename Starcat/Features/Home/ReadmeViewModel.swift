@@ -66,6 +66,8 @@ final class ReadmeViewModel {
         /// `cachedAt`：本地缓存写入时间，UI 可显示"缓存于..."
         case loaded(html: String, cachedAt: Date)
         case empty
+        /// 需要登录才能查看（403 且用户未登录）。
+        case requiresLogin
         case error(message: String)
     }
 
@@ -93,8 +95,9 @@ final class ReadmeViewModel {
 
     /// 加载指定 repo 的 README（SWR 模式：有缓存立即上屏 + 后台条件刷新）。
     /// - Parameter repo: 目标仓库；nil 表示重置到 idle
-    func load(repo: Repo?) {
-        loadInternal(repo: repo, forceRefresh: false)
+    /// - Parameter isLoggedIn: 用户是否已登录（用于判断 403 是否因未授权）
+    func load(repo: Repo?, isLoggedIn: Bool) {
+        loadInternal(repo: repo, forceRefresh: false, isLoggedIn: isLoggedIn)
     }
 
     /// 重新加载当前 repo（用户点击"重试" / 详情底栏"刷新"时调用）。
@@ -104,8 +107,9 @@ final class ReadmeViewModel {
     /// - `forceRefresh: true` → 即使 cached 仍在 softTtl 内也走网络
     /// - 同一 repo + 当前是 .error → 同步转为 .loading 给反馈
     /// - 同一 repo + 当前是 .loaded → 保持显示，后台静默 refresh（SWR 体验）
-    func reload(repo: Repo) {
-        loadInternal(repo: repo, forceRefresh: true)
+    /// - Parameter isLoggedIn: 用户是否已登录（用于判断 403 是否因未授权）
+    func reload(repo: Repo, isLoggedIn: Bool) {
+        loadInternal(repo: repo, forceRefresh: true, isLoggedIn: isLoggedIn)
     }
 
     /// 重置到 idle（视图从 selected → unselected 时调用）。
@@ -124,7 +128,8 @@ final class ReadmeViewModel {
     /// 加载 Trending repo 的 README（不走本地数据库缓存）。
     ///
     /// 用于 TrendingRepo 等本地无持久化记录的仓库。
-    func loadTrending(owner: String, repo: String) {
+    /// - Parameter isLoggedIn: 用户是否已登录。用于判断 403 是否因未授权（应显示"请登录"而非"加载失败"）。
+    func loadTrending(owner: String, repo: String, isLoggedIn: Bool) {
         currentTask?.cancel()
 
         let key = "\(owner)/\(repo)"
@@ -160,6 +165,12 @@ final class ReadmeViewModel {
                 self.state = .empty
 
             case .failed(let error):
+                // 判断是否为"未登录导致的 403"，如果是则显示友好的登录提示
+                if !isLoggedIn, let networkError = error as? NetworkError,
+                   case .clientError(statusCode: 403, _) = networkError {
+                    self.state = .requiresLogin
+                    return
+                }
                 AppLog.network.error("Trending README 加载失败 owner=\(owner, privacy: .public) repo=\(repo, privacy: .public): \(error.localizedDescription, privacy: .public)")
                 self.state = .error(message: error.localizedDescription)
             }
@@ -169,7 +180,8 @@ final class ReadmeViewModel {
     // MARK: - 内部
 
     /// load / reload 的统一实现（两段式 SWR）。
-    private func loadInternal(repo: Repo?, forceRefresh: Bool) {
+    /// - Parameter isLoggedIn: 用户是否已登录。用于判断 403 是否因未授权（应显示"请登录"而非"加载失败"）。
+    private func loadInternal(repo: Repo?, forceRefresh: Bool, isLoggedIn: Bool) {
         currentTask?.cancel()
         guard let repo else {
             currentRepoId = nil
@@ -282,6 +294,13 @@ final class ReadmeViewModel {
                 self.state = .empty
 
             case .failed(let error):
+                // 判断是否为"未登录导致的 403"，如果是则显示友好的登录提示
+                if !isLoggedIn, let networkError = error as? NetworkError,
+                   case .clientError(statusCode: 403, _) = networkError {
+                    self.state = .requiresLogin
+                    return
+                }
+
                 if hasUsableCache {
                     // SWR 兜底：有缓存就静默，不打扰用户。debug 日志方便排查
                     AppLog.network.debug("README 后台刷新失败但本地有缓存，保持已显示 repo=\(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
