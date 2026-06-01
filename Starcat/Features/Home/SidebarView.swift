@@ -236,6 +236,7 @@ struct SidebarView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
             .help(disclosureHelp(isExpanded: tagsExpanded))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -267,6 +268,7 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .help(disclosureHelp(isExpanded: languagesExpanded))
     }
 
@@ -295,6 +297,7 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .help(disclosureHelp(isExpanded: trendingLanguagesExpanded))
     }
 

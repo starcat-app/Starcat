@@ -159,7 +159,7 @@ final class AuthSession {
             // 阶段 2：轮询 token
             let token = try await oauthService.awaitAccessToken()
             try keychain.storeGithubToken(token)
-            AppLog.auth.info("Token stored to Keychain")
+            AppLog.auth.info("Token stored to local file")
 
             // 阶段 3：拉 /user 验证 + 取信息
             let user = try await apiClient.getCurrentUser()
