@@ -79,7 +79,7 @@ struct TagManagementView: View {
                 if ok { showNewSheet = false }
             }
         }
-        .alert("删除标签？", isPresented: $showDeleteAlert) {
+        .alert("tagManagement.deleteTitle", isPresented: $showDeleteAlert) {
             Button("action.delete", role: .destructive) {
                 Task { await viewModel.delete(ids: viewModel.selection) }
             }
@@ -88,7 +88,7 @@ struct TagManagementView: View {
             let n = viewModel.selection.count
             Text("tagManagement.deleteMessage \(n)")
         }
-        .alert("合并标签？", isPresented: $showMergeAlert, presenting: mergeTargetId) { targetId in
+        .alert("tagManagement.mergeTitle", isPresented: $showMergeAlert, presenting: mergeTargetId) { targetId in
             Button("action.merge", role: .destructive) {
                 Task {
                     await viewModel.merge(sources: viewModel.selection, into: targetId)
@@ -218,7 +218,7 @@ struct TagManagementView: View {
                     Label("action.merge", systemImage: "arrow.triangle.merge")
                 }
                 .disabled(!viewModel.canMerge)
-                .help("合并选中的多个标签（≥2）")
+                .help("tagEditor.mergeTooltip")
 
                 Button {
                     showDeleteAlert = true

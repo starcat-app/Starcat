@@ -176,12 +176,12 @@ struct TrendingView: View {
             HStack {
                 Image(systemName: "sparkles")
                     .foregroundStyle(.orange)
-                Text("为你推荐")
+                Text("trending.recommendTitle")
                     .font(.headline)
                 Spacer()
             }
 
-            Text(viewModel.userLanguagePreferences.isEmpty ? "基于当前榜单热度精选" : "基于你的收藏偏好精选")
+            Text(viewModel.userLanguagePreferences.isEmpty ? "trending.basedOnTrending" : "trending.basedOnPrefs")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -208,7 +208,7 @@ struct TrendingView: View {
         VStack(spacing: 16) {
             ProgressView()
                 .scaleEffect(1.2)
-            Text("加载中...")
+            Text("trending.loading")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -223,7 +223,7 @@ struct TrendingView: View {
                 .font(.largeTitle)
                 .foregroundStyle(.orange)
 
-            Text("加载失败")
+            Text("trending.loadFailed")
                 .font(.headline)
 
             Text(message)
@@ -231,7 +231,7 @@ struct TrendingView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            Button("重试") {
+            Button("trending.retry") {
                 Task {
                     await viewModel.reload()
                 }
@@ -390,7 +390,7 @@ struct TrendingRepoCard: View {
         HStack(spacing: 8) {
             // AI 评分
             HStack(spacing: 4) {
-                Text("AI 评分")
+                Text("trending.aiScore")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -414,7 +414,7 @@ struct TrendingRepoCard: View {
             Link(destination: repo.url) {
                 HStack(spacing: 4) {
                     Image(systemName: "link")
-                    Text("查看")
+                    Text("trending.view")
                 }
                 .font(.caption)
             }

@@ -15,14 +15,25 @@ import SwiftUI
 
 /// 关于窗口的页面选择。
 private enum AboutPage: String, CaseIterable, Identifiable {
-    case overview = "概览"
-    case support = "支持"
-    case copyright = "版权"
-    case eula = "EULA"
-    case credits = "致谢"
-    case privacy = "隐私"
+    case overview
+    case support
+    case copyright
+    case eula
+    case credits
+    case privacy
 
     var id: String { rawValue }
+
+    var displayNameKey: String {
+        switch self {
+        case .overview: return "about.nav.overview"
+        case .support: return "about.nav.support"
+        case .copyright: return "about.nav.copyright"
+        case .eula: return "about.nav.eula"
+        case .credits: return "about.nav.credits"
+        case .privacy: return "about.nav.privacy"
+        }
+    }
 
     var systemImage: String {
         switch self {
@@ -69,9 +80,9 @@ struct AboutView: View {
 
     /// 用 Picker 保留 macOS 原生 segmented control 的键盘与无障碍行为。
     private var pagePicker: some View {
-        Picker("关于页面", selection: $selectedPage) {
+        Picker("", selection: $selectedPage) {
             ForEach(AboutPage.allCases) { page in
-                Label(page.rawValue, systemImage: page.systemImage)
+                Label(page.displayNameKey, systemImage: page.systemImage)
                     .tag(page)
             }
         }
@@ -103,7 +114,7 @@ private struct AboutBrandPanel: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("把 GitHub Stars 变成可搜索、可整理、可长期维护的开发者知识库。")
+            Text("about.brand.slogan")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -111,7 +122,7 @@ private struct AboutBrandPanel: View {
                 .padding(.horizontal, 18)
 
             SafeExternalLink(
-                title: "获取支持",
+                title: "about.brand.getSupport",
                 systemImage: "lifepreserver",
                 url: URL(string: "https://starcat.app/support")
             )
@@ -119,15 +130,15 @@ private struct AboutBrandPanel: View {
             .focusEffectDisabled()
 
             VStack(spacing: 8) {
-                AboutBadge(title: "macOS 15+", systemImage: "desktopcomputer")
-                AboutBadge(title: "Local First", systemImage: "internaldrive")
-                AboutBadge(title: "SwiftUI Native", systemImage: "swift")
+                AboutBadge(title: "about.brand.badge.macos", systemImage: "desktopcomputer")
+                AboutBadge(title: "about.brand.badge.localFirst", systemImage: "internaldrive")
+                AboutBadge(title: "about.brand.badge.swiftNative", systemImage: "swift")
             }
             .padding(.top, 6)
 
             Spacer()
 
-            Text("Copyright © 2026 Starcat.")
+            Text("about.brand.copyright")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 20)
@@ -203,18 +214,18 @@ private struct AboutPageContent: View {
 
 private struct OverviewPage: View {
     var body: some View {
-        AboutSection(title: "Starcat 是什么", subtitle: "一个本地优先的 GitHub Star 管理工具") {
+        AboutSection(title: "about.overview.title", subtitle: "about.overview.subtitle") {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Starcat 将扁平的 GitHub 收藏转化为可搜索、可打标签、可写私有笔记的知识库。MVP 阶段优先保证本地数据可靠、阅读体验顺滑，再逐步接入 AI 摘要与标签推荐。")
+                Text("about.overview.description")
                     .font(.body)
                     .foregroundStyle(.primary)
                     .lineSpacing(4)
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    AboutFeatureCard(title: "本地优先", detail: "Tags、Notes、Status 写入本地 SQLite，repo 缓存可重建。", systemImage: "externaldrive")
-                    AboutFeatureCard(title: "GitHub 原生", detail: "同步 Stars、README、Release 与仓库元数据。", systemImage: "star.circle")
-                    AboutFeatureCard(title: "搜索找回", detail: "FTS5 全文检索，按语言、标签和状态过滤。", systemImage: "magnifyingglass")
-                    AboutFeatureCard(title: "AI 预留", detail: "摘要、标签建议和语义搜索都采用用户确认后写入。", systemImage: "brain")
+                    AboutFeatureCard(title: "about.overview.feature.localFirst.title", detail: "about.overview.feature.localFirst.detail", systemImage: "externaldrive")
+                    AboutFeatureCard(title: "about.overview.feature.githubNative.title", detail: "about.overview.feature.githubNative.detail", systemImage: "star.circle")
+                    AboutFeatureCard(title: "about.overview.feature.searchFind.title", detail: "about.overview.feature.searchFind.detail", systemImage: "magnifyingglass")
+                    AboutFeatureCard(title: "about.overview.feature.aiReserved.title", detail: "about.overview.feature.aiReserved.detail", systemImage: "brain")
                 }
             }
         }
@@ -223,30 +234,30 @@ private struct OverviewPage: View {
 
 private struct SupportPage: View {
     var body: some View {
-        AboutSection(title: "获取帮助", subtitle: "遇到问题时优先保留现场信息，便于快速定位") {
+        AboutSection(title: "about.support.title", subtitle: "about.support.subtitle") {
             VStack(alignment: .leading, spacing: 12) {
                 SupportRow(
-                    title: "邮件支持",
-                    detail: "support@starcat.app",
+                    title: "about.support.email.title",
+                    detail: "about.support.email.detail",
                     systemImage: "envelope",
                     url: URL(string: "mailto:support@starcat.app")
                 )
                 SupportRow(
-                    title: "GitHub Issues",
-                    detail: "提交复现步骤、截图和 Console 日志",
+                    title: "about.support.issues.title",
+                    detail: "about.support.issues.detail",
                     systemImage: "exclamationmark.bubble",
                     url: URL(string: "https://github.com/dong4j/starcat/issues")
                 )
                 SupportRow(
-                    title: "产品主页",
-                    detail: "查看更新说明与帮助文档",
+                    title: "about.support.website.title",
+                    detail: "about.support.website.detail",
                     systemImage: "safari",
                     url: URL(string: "https://starcat.app")
                 )
 
                 Divider().padding(.vertical, 4)
 
-                Text("建议反馈问题时附上：Starcat 版本、macOS 版本、是否刚完成同步、可复现的操作路径。")
+                Text("about.support.feedbackHint")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineSpacing(3)
@@ -257,11 +268,11 @@ private struct SupportPage: View {
 
 private struct CopyrightPage: View {
     var body: some View {
-        AboutSection(title: "版权声明", subtitle: "Starcat 与相关服务的权利归属") {
+        AboutSection(title: "about.copyright.title", subtitle: "about.copyright.subtitle") {
             VStack(alignment: .leading, spacing: 12) {
-                AboutParagraph("Copyright © 2026 Starcat. All rights reserved.")
-                AboutParagraph("Starcat 名称、图标和界面设计受版权和商标相关法律保护。未经明确书面授权，不得复制、分发、出售或以其它方式重新发布本软件。")
-                AboutParagraph("GitHub 是 GitHub, Inc. 的注册商标。Apple、macOS 和 Swift 是 Apple Inc. 的商标。Starcat 与上述公司不存在从属或背书关系。")
+                AboutParagraph("about.copyright.paragraph1")
+                AboutParagraph("about.copyright.paragraph2")
+                AboutParagraph("about.copyright.paragraph3")
             }
         }
     }
@@ -269,14 +280,14 @@ private struct CopyrightPage: View {
 
 private struct EULAPage: View {
     var body: some View {
-        AboutSection(title: "最终用户许可协议", subtitle: "这里展示摘要，正式分发前应补齐完整法律文本") {
+        AboutSection(title: "about.eula.title", subtitle: "about.eula.subtitle") {
             VStack(alignment: .leading, spacing: 12) {
-                NumberedTerm(number: "1", title: "许可授予", text: "Starcat 授予您有限、非独占、不可转让的许可，用于在您拥有或控制的 Apple 设备上安装和使用本软件。")
-                NumberedTerm(number: "2", title: "限制", text: "除适用法律明确允许外，您不得反向工程、再分发、出租、出售或移除本软件中的版权与许可声明。")
-                NumberedTerm(number: "3", title: "数据责任", text: "GitHub token、标签、笔记和缓存数据属于用户数据。请在清理缓存、取消 Star 或导入导出前自行确认操作影响。")
+                NumberedTerm(number: "1", title: "about.eula.term1.title", text: "about.eula.term1.text")
+                NumberedTerm(number: "2", title: "about.eula.term2.title", text: "about.eula.term2.text")
+                NumberedTerm(number: "3", title: "about.eula.term3.title", text: "about.eula.term3.text")
 
                 SafeExternalLink(
-                    title: "查看完整协议",
+                    title: "about.eula.viewFull",
                     systemImage: "arrow.up.right.square",
                     url: URL(string: "https://starcat.app/eula")
                 )
@@ -290,7 +301,7 @@ private struct EULAPage: View {
 
 private struct CreditsPage: View {
     var body: some View {
-        AboutSection(title: "开源致谢", subtitle: "Starcat 建立在这些优秀的 Swift 生态项目之上") {
+        AboutSection(title: "about.credits.title", subtitle: "about.credits.subtitle") {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(AboutDependency.all) { dependency in
                     DependencyRow(dependency: dependency)
@@ -298,7 +309,7 @@ private struct CreditsPage: View {
 
                 Divider().padding(.vertical, 4)
 
-                Text("感谢所有开源维护者。Starcat 只列出当前工程直接依赖；如果后续新增 SPM package，请同步更新这里。")
+                Text("about.credits.dependencyHint")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineSpacing(3)
@@ -309,14 +320,14 @@ private struct CreditsPage: View {
 
 private struct PrivacyPage: View {
     var body: some View {
-        AboutSection(title: "隐私政策", subtitle: "本地优先是 Starcat 的核心边界") {
+        AboutSection(title: "about.privacy.title", subtitle: "about.privacy.subtitle") {
             VStack(alignment: .leading, spacing: 12) {
-                PrivacyPoint(systemImage: "checkmark.shield", title: "我们会存储什么", text: "GitHub OAuth token、仓库缓存、标签、私有笔记和阅读状态。MVP 阶段这些数据保存在本机。")
-                PrivacyPoint(systemImage: "xmark.shield", title: "我们不会做什么", text: "不会出售个人信息，不会把本地笔记用于广告，也不会在未经确认时自动把 AI 建议写回用户数据。")
-                PrivacyPoint(systemImage: "icloud", title: "未来云同步", text: "CloudKit 同步只用于用户自己的 iCloud 容器，发布前会在设置页提供明确开关与数据管理入口。")
+                PrivacyPoint(systemImage: "checkmark.shield", title: "about.privacy.whatWeStore.title", text: "about.privacy.whatWeStore.text")
+                PrivacyPoint(systemImage: "xmark.shield", title: "about.privacy.whatWeWontDo.title", text: "about.privacy.whatWeWontDo.text")
+                PrivacyPoint(systemImage: "icloud", title: "about.privacy.futureCloud.title", text: "about.privacy.futureCloud.text")
 
                 SafeExternalLink(
-                    title: "查看完整隐私政策",
+                    title: "about.privacy.viewFull",
                     systemImage: "arrow.up.right.square",
                     url: URL(string: "https://starcat.app/privacy")
                 )
@@ -404,7 +415,7 @@ private struct SupportRow: View {
 
             Spacer()
 
-            SafeExternalLink(title: "打开", systemImage: "arrow.up.right", url: url)
+            SafeExternalLink(title: "about.externalLink.open", systemImage: "arrow.up.right", url: url)
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
         }
@@ -511,7 +522,7 @@ private struct DependencyRow: View {
 
             Spacer()
 
-            SafeExternalLink(title: "源码", systemImage: "arrow.up.right", url: dependency.url)
+            SafeExternalLink(title: "about.externalLink.source", systemImage: "arrow.up.right", url: dependency.url)
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
         }

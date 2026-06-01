@@ -437,7 +437,7 @@ struct RepoDetailView: View {
         let topics = repo.topicsArray
         let topicText = topics.isEmpty ? "N/A" : topics.joined(separator: "  ·  ")
         HStack(spacing: 6) {
-            Text("Topics")
+            Text("repoTopics.label")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             Text(topicText)

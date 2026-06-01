@@ -40,7 +40,7 @@ struct RepoTagsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("标签")
+                Text("repoTags.label")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -79,7 +79,7 @@ struct RepoTagsSection: View {
                 }
             }
         } else {
-            Text("尚未打标签")
+            Text("repoTags.noTags")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
@@ -91,7 +91,7 @@ struct RepoTagsSection: View {
         Button {
             showPicker = true
         } label: {
-            Label("添加 / 修改", systemImage: "plus.circle")
+            Label("tagPicker.addOrModify", systemImage: "plus.circle")
                 .font(.caption)
         }
         .buttonStyle(.borderless)
@@ -201,7 +201,7 @@ struct TagPickerView: View {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("搜索标签", text: $query)
+                TextField("tagPicker.placeholder", text: $query)
                     .textFieldStyle(.plain)
             }
             .padding(.horizontal, 10)
@@ -213,7 +213,7 @@ struct TagPickerView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if filteredTags.isEmpty {
-                        Text(allTags.isEmpty ? "还没有任何标签，先去标签管理创建。" : "未找到匹配标签")
+                        Text(allTags.isEmpty ? "tagPicker.noTags" : "tagPicker.noMatch")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 12)
@@ -233,14 +233,14 @@ struct TagPickerView: View {
 
             HStack {
                 if !selected.isEmpty {
-                    Text("已选 \(selected.count) 个")
+                    Text("tagPicker.selectedCount \(selected.count)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("取消") { onCancel() }
+                Button("general.cancel") { onCancel() }
                     .keyboardShortcut(.cancelAction)
-                Button("应用") { onCommit(selected) }
+                Button("action.apply") { onCommit(selected) }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.return)
             }

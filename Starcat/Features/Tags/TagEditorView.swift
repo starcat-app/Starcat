@@ -46,14 +46,14 @@ struct TagEditorView: View {
             } else if selectionCount > 1 {
                 emptyState(
                     icon: "checklist",
-                    title: "已选 \(selectionCount) 个标签",
-                    detail: "多选状态下不可编辑单个字段；可执行「删除」或「合并」。"
+                    titleKey: "tagEditor.selectedMultiple",
+                    detailKey: "tagEditor.multiSelectHint"
                 )
             } else {
                 emptyState(
                     icon: "tag",
-                    title: "选择一个标签开始编辑",
-                    detail: "或点击左下角「+」创建新标签。"
+                    titleKey: "tagEditor.selectOneHint",
+                    detailKey: "tagEditor.orCreateHint"
                 )
             }
         }
@@ -87,17 +87,17 @@ struct TagEditorView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     // 名字
-                    section(title: "名称") {
-                        TextField("标签名", text: $editingName)
+                    section(title: String(localized: "tagEditor.sectionName", defaultValue: "NAME")) {
+                        TextField("tagEditor.tagNamePlaceholder", text: $editingName)
                             .textFieldStyle(.roundedBorder)
                     }
 
                     // 颜色：预设 swatch + 自定义
-                    section(title: "颜色") {
+                    section(title: String(localized: "tagEditor.sectionColor", defaultValue: "COLOR")) {
                         VStack(alignment: .leading, spacing: 8) {
                             colorSwatches
                             HStack {
-                                ColorPicker("自定义", selection: customColorBinding, supportsOpacity: false)
+                                ColorPicker(String(localized: "tagEditor.customColor", defaultValue: "Custom"), selection: customColorBinding, supportsOpacity: false)
                                     .labelsHidden()
                                 Text(editingColor.uppercased())
                                     .font(.system(.caption, design: .monospaced))
@@ -108,13 +108,13 @@ struct TagEditorView: View {
                     }
 
                     // 图标
-                    section(title: "图标") {
+                    section(title: String(localized: "tagEditor.sectionIcon", defaultValue: "ICON")) {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Button {
                                     editingIcon = nil
                                 } label: {
-                                    Label("无图标", systemImage: "circle.slash")
+                                    Label("tagEditor.noIcon", systemImage: "circle.slash")
                                         .font(.caption)
                                 }
                                 .buttonStyle(.plain)
@@ -139,7 +139,7 @@ struct TagEditorView: View {
                 Button(role: .destructive) {
                     onRequestDelete()
                 } label: {
-                    Label("删除", systemImage: "trash")
+                    Label("action.delete", systemImage: "trash")
                 }
 
                 Spacer()
@@ -224,14 +224,14 @@ struct TagEditorView: View {
 
     // MARK: - 空态
 
-    private func emptyState(icon: String, title: String, detail: String) -> some View {
+    private func emptyState(icon: String, titleKey: String, detailKey: String) -> some View {
         VStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.system(size: 32))
                 .foregroundStyle(.tertiary)
-            Text(title)
+            Text(titleKey)
                 .font(.headline)
-            Text(detail)
+            Text(detailKey)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

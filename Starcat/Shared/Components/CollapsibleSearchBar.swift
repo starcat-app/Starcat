@@ -20,7 +20,7 @@ struct CollapsibleSearchBar: View {
     var body: some View {
         HStack(spacing: 6) {
             if isExpanded {
-                TextField("搜索仓库", text: $text)
+                TextField("search.repoPlaceholder", text: $text)
                     .textFieldStyle(.plain)
                     .focused($isFocused)
                     .frame(maxWidth: .infinity)
@@ -43,7 +43,7 @@ struct CollapsibleSearchBar: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("搜索")
+            .help("search.hint")
         }
         .padding(.horizontal, isExpanded ? 8 : 0)
         .frame(width: isExpanded ? expandedWidth : collapsedWidth, height: collapsedWidth)
