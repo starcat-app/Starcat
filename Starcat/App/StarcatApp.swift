@@ -36,6 +36,15 @@ struct StarcatApp: App {
                     await dependencies.authSession.restoreSessionIfAvailable()
                 }
         }
+        .commands {
+            // 替换系统默认的"关于 Starcat"菜单项，使用自定义 credits 的关于面板
+            CommandGroup(replacing: .appInfo) {
+                Button("关于 Starcat") {
+                    AboutPanelController.show()
+                }
+                .keyboardShortcut("I", modifiers: .command)
+            }
+        }
 
         // macOS 原生 Settings 窗口（Cmd+,）
         Settings {
