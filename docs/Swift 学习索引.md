@@ -135,10 +135,13 @@
 |---|---|---|
 | `.task(id:)` | View 出现时拉数据，id 变化时重跑 | "SwiftUI task modifier id" |
 | `.onChange(of:)` | `HomeView.onChange(selectedRepoID)` 驱动 ReadmeViewModel | "SwiftUI onChange iOS 17" |
+| `.onAppear` | `ListRowRevealModifier` 利用 List 懒创建，在 Manage / Trending row 进入可视区域时触发渐进式入场 | "SwiftUI onAppear List row lazy loading" |
 | `.searchable(text:)` | `HomeView` 顶部搜索框 | "SwiftUI searchable" |
 | `.toolbar` / `ToolbarItem` | 顶栏同步按钮 | "SwiftUI toolbar" |
 | `.confirmationDialog` / `.alert` | 取消 Star 确认（W4 待做） | "SwiftUI confirmationDialog macOS" |
+| `.transition` / `.animation(_:value:)` | `RepoListView` / `TrendingView` 中栏内容切换用整块轻过渡；row 入场用显式 `withAnimation` | "SwiftUI transition animation value" |
 | `.onHover` | `RepoRowSurface` 鼠标悬停时增强背景 / 边框，是 macOS 指针体验的基础反馈 | "SwiftUI onHover macOS" |
+| `ViewModifier` | `ListRowRevealModifier` 抽取 row 渐进式入场，避免把动画状态散落在业务 row 中 | "SwiftUI custom ViewModifier" |
 | `@ViewBuilder` | `RepoRowSurface` 用 builder 接收 compact / card 两套 row 内容，复用同一视觉容器 | "SwiftUI ViewBuilder custom container" |
 | `LocalizedStringKey` vs `String` | `AboutView` / `RepoListView` / `SidebarView` / `SettingsView` 等用户可见文案：静态 key 用 `LocalizedStringKey`，动态仓库名、标签名、URL 用 `Text(verbatim:)` 或先 `String(localized:)`，否则 `Text(titleString)` / `.help(titleString)` 会把 key 当普通文本显示 | "SwiftUI LocalizedStringKey Text String variable String localized" |
 

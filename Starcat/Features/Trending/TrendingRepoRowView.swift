@@ -2,7 +2,7 @@
 //  TrendingRepoRowView.swift
 //  Starcat
 //
-//  Trending 列表行视图，遵循 RepoRowView 的设计模式。
+//  Trending 列表行视图，遵循 RepoRowView 的设计模式并根据 UI 优化指导手册进行增强。
 //
 //  提供两种密度，由 AppSettings.listDensity 切换：
 //  - compact：单行，name / lang / stars / periodText
@@ -10,7 +10,7 @@
 //
 //  设计约束：
 //  - 行视图本身无状态，纯函数式渲染
-//  - 头像使用 GitHub 公开重定向 URL
+//  - 样式与 RepoRowView 保持高度一致，形成统一的 Starcat 卡片语言
 //
 
 import SwiftUI
@@ -33,7 +33,15 @@ private struct LanguageBadge: View {
                 .frame(width: 8, height: 8)
             Text(language)
                 .font(style == .full ? .caption : .caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(style == .full ? .primary : .secondary)
+        }
+        .padding(.horizontal, style == .full ? 7 : 0)
+        .padding(.vertical, style == .full ? 3 : 0)
+        .background {
+            if style == .full {
+                Capsule()
+                    .fill(LanguageColor.color(for: language).opacity(0.13))
+            }
         }
     }
 }
@@ -52,6 +60,39 @@ private struct StarsBadge: View {
                 .font(style == .full ? .caption : .caption2)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+        }
+        .padding(.horizontal, style == .full ? 7 : 0)
+        .padding(.vertical, style == .full ? 3 : 0)
+        .background {
+            if style == .full {
+                Capsule()
+                    .fill(.yellow.opacity(0.12))
+            }
+        }
+    }
+}
+
+/// Trending 周期增长徽章。
+private struct TrendingPeriodBadge: View {
+    let text: String
+    let style: BadgeStyle
+    
+    var body: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "arrow.up.right")
+                .font(.system(size: style == .full ? 10 : 9))
+            Text(text)
+                .font(style == .full ? .caption : .caption2)
+                .monospacedDigit()
+        }
+        .foregroundStyle(.green)
+        .padding(.horizontal, style == .full ? 7 : 0)
+        .padding(.vertical, style == .full ? 3 : 0)
+        .background {
+            if style == .full {
+                Capsule()
+                    .fill(Color.green.opacity(0.12))
+            }
         }
     }
 }
@@ -140,34 +181,30 @@ struct TrendingRepoRowCompact: View {
     let repo: TrendingRepo
 
     var body: some View {
-        HStack(spacing: 10) {
-            RemoteAvatar(
-                urlString: TrendingRepoAvatarURL.from(owner: repo.owner),
-                size: 22,
-                showBorder: false
-            )
+        TrendingRepoRowSurface(repo: repo, density: .compact) {
+            HStack(spacing: 10) {
+                RemoteAvatar(
+                    urlString: TrendingRepoAvatarURL.from(owner: repo.owner),
+                    size: 22,
+                    showBorder: false
+                )
 
-            Text(repo.fullName)
-                .font(.system(size: 13, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
+                Text(repo.fullName)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
 
-            Spacer(minLength: 8)
+                Spacer(minLength: 8)
 
-            if let language = repo.language, !language.isEmpty {
-                LanguageBadge(language: language, style: .compact)
+                if let language = repo.language, !language.isEmpty {
+                    LanguageBadge(language: language, style: .compact)
+                }
+
+                StarsBadge(count: repo.starsCount, style: .compact)
+
+                TrendingPeriodBadge(text: repo.periodText, style: .compact)
             }
-
-            StarsBadge(count: repo.starsCount, style: .compact)
-
-            // Trending 特有：周期增长数字
-            Text(repo.periodText)
-                .font(.caption2)
-                .foregroundStyle(.green)
-                .monospacedDigit()
         }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
     }
 }
 
@@ -178,53 +215,45 @@ struct TrendingRepoRowCard: View {
     let repo: TrendingRepo
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            RemoteAvatar(
-                urlString: TrendingRepoAvatarURL.from(owner: repo.owner),
-                size: 40
-            )
+        TrendingRepoRowSurface(repo: repo, density: .card) {
+            HStack(alignment: .center, spacing: 12) {
+                RemoteAvatar(
+                    urlString: TrendingRepoAvatarURL.from(owner: repo.owner),
+                    size: 40
+                )
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(repo.fullName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(repo.fullName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
 
-                if let description = repo.description, !description.isEmpty {
-                    Text(description)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-
-                HStack(spacing: 8) {
-                    if let language = repo.language, !language.isEmpty {
-                        LanguageBadge(language: language, style: .full)
+                    if let description = repo.description, !description.isEmpty {
+                        Text(description)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
                     }
 
-                    StarsBadge(count: repo.starsCount, style: .full)
+                    HStack(spacing: 8) {
+                        if let language = repo.language, !language.isEmpty {
+                            LanguageBadge(language: language, style: .full)
+                        }
 
-                    // Trending 特有：周期增长数字
-                    HStack(spacing: 2) {
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.green)
-                        Text(repo.periodText)
-                            .font(.caption2)
-                            .foregroundStyle(.green)
-                    }
+                        StarsBadge(count: repo.starsCount, style: .full)
 
-                    // 贡献者头像（最多显示 3 个）
-                    if !repo.contributors.isEmpty {
-                        contributorsView
+                        TrendingPeriodBadge(text: repo.periodText, style: .full)
+
+                        // 贡献者头像（最多显示 3 个）
+                        if !repo.contributors.isEmpty {
+                            contributorsView
+                        }
                     }
                 }
+
+                Spacer(minLength: 0)
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
     }
 
     /// 贡献者头像列表
@@ -243,15 +272,89 @@ struct TrendingRepoRowCard: View {
                 .clipShape(Circle())
                 .overlay(
                     Circle()
-                        .stroke(Color(NSColor.windowBackgroundColor), lineWidth: 1)
+                        .stroke(Color(NSColor.controlBackgroundColor).opacity(0.8), lineWidth: 1)
                 )
             }
 
             if repo.contributors.count > 3 {
                 Text("+\(repo.contributors.count - 3)")
-                    .font(.caption2)
+                    .font(.system(size: 9))
                     .foregroundStyle(.secondary)
+                    .padding(.leading, 2)
             }
         }
+    }
+}
+
+// MARK: - 视觉容器
+
+/// TrendingRepo 行的统一视觉容器。
+/// 同步自 RepoRowView.RepoRowSurface。
+private struct TrendingRepoRowSurface<Content: View>: View {
+    let repo: TrendingRepo
+    let density: RepoListDensity
+    private let content: Content
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
+
+    init(repo: TrendingRepo, density: RepoListDensity, @ViewBuilder content: () -> Content) {
+        self.repo = repo
+        self.density = density
+        self.content = content()
+    }
+
+    private var accentColor: Color {
+        if let language = repo.language, !language.isEmpty {
+            return LanguageColor.color(for: language)
+        }
+        return .accentColor
+    }
+
+    private var cornerRadius: CGFloat {
+        density == .card ? 10 : 8
+    }
+
+    private var verticalPadding: CGFloat {
+        density == .card ? 8 : 4
+    }
+
+    private var horizontalPadding: CGFloat {
+        density == .card ? 10 : 8
+    }
+
+    private var backgroundOpacity: Double {
+        if isHovered { return 0.08 }
+        return density == .card ? 0.045 : 0.0
+    }
+
+    private var borderOpacity: Double {
+        if isHovered { return 0.18 }
+        return density == .card ? 0.10 : 0.0
+    }
+
+    var body: some View {
+        content
+            .padding(.vertical, verticalPadding)
+            .padding(.horizontal, horizontalPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(accentColor.opacity(backgroundOpacity))
+                    .background {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(Color(nsColor: .controlBackgroundColor).opacity(isHovered ? 0.40 : 0.0))
+                    }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(accentColor.opacity(borderOpacity), lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
+                    isHovered = hovering
+                }
+            }
     }
 }

@@ -154,6 +154,7 @@ Starcat 是工具型应用，应该长期使用不疲劳。动效要让状态变
 - pressed：Repo List row 暂不做按压缩放，避免手势与 macOS List selection / Button 点击竞争。
 - selected：稳定高亮，不依赖系统蓝色；使用左侧 2-3pt accent indicator + 轻背景 / 细边框。
 - loading skeleton：继续保留现有骨架屏思路。
+- reveal：切换分类或滚动到新 row 时，可对可视 row 做 120-220ms 的 opacity + 轻微 y-offset 入场；这属于视觉渐进，不等同于数据库分页。Manage repo list 与 Trending repo list 应复用同一套 `ListRowRevealModifier`。
 
 建议展示：
 
@@ -164,7 +165,8 @@ Starcat 是工具型应用，应该长期使用不疲劳。动效要让状态变
 约束：
 
 - Sidebar 不做大卡片。Repo List 可以做卡片。
-- 排序或过滤导致大规模重排时，不做逐行 move 动画，避免复现此前卡顿问题。
+- 排序或过滤导致大规模重排时，不做 SwiftUI row move diff 动画，避免复现此前卡顿问题；如需逐行效果，只对当前可视 row 做短 reveal。
+- 真正分页 / 无限滚动只在仓库量明显超过当前规模（例如 1 万以上）时再做，因为它会牵涉 Repository cursor、排序一致性、搜索和缓存策略。
 
 ### 5.2 Repo Detail Header
 
@@ -232,7 +234,7 @@ Toast 用于“复制成功、保存成功、订阅成功”这类短反馈。
 | 等级 | 场景 | 建议 |
 |---|---|---|
 | S | hover、button press、chip appear | 120-180ms |
-| M | row selection、filter change、panel collapse | 180-260ms spring / ease |
+| M | row selection、filter change、row reveal、panel collapse | 180-260ms spring / ease |
 | L | empty state、AI analysis、onboarding | 400-800ms，可分阶段 |
 
 ### 6.2 SwiftUI 优先 API
@@ -316,7 +318,7 @@ Starcat 当前最低版本是 macOS 15。Liquid Glass 属于未来增强，不�
 
 范围建议：
 
-1. Repo List row：hover、selected、语言/状态/tag chip。（2026-06-01 已完成首版样板：语言色 accent + metadata chips；普通单选态已移除系统蓝色底色）
+1. Repo List row：hover、selected、语言/状态/tag chip、可视 row reveal。（2026-06-01 已完成首版样板：语言色 accent + metadata chips；普通单选态已移除系统蓝色底色；Manage / Trending 分类切换与滚动新 row 支持渐进式入场）
 2. Repo Detail header：hero header + metric cards。
 3. Empty / error / requires login state：统一状态页组件。
 

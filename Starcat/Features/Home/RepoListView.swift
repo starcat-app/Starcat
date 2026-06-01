@@ -35,6 +35,8 @@ struct RepoListView: View {
     /// 当前选中的 Trending repo 完整数据（用于右侧详情页元信息展示）。
     @Binding var selectedTrendingRepo: TrendingRepo?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     // 顶部 clone 按钮现在属于中栏 toolbar；复制成功提示也跟着放在列表栏上。
     @State private var toastMessage: String?
 
@@ -52,37 +54,10 @@ struct RepoListView: View {
     var body: some View {
         @Bindable var vm = viewModel
 
-        Group {
-            if selectedPage == .trending {
-                // HOM-54：Trending 页面
-                if let repo = trendingRepository, let githubAPIClient {
-                    TrendingView(
-                        repository: repo,
-                        githubAPIClient: githubAPIClient,
-                        selectedLanguage: $selectedTrendingLanguage,
-                        selectedRepoID: $selectedTrendingRepoID,
-                        selectedTrendingRepo: $selectedTrendingRepo
-                    )
-                } else {
-                    emptyState(systemImage: "chart.line.uptrend.xyaxis", title: "empty.trendingUnavailable", subtitle: "empty.trendingComingSoon")
-                }
-            } else if selectedPage == .search {
-                searchPlaceholder
-            } else if viewModel.isLoading && viewModel.items.isEmpty {
-                // HOM-46 骨架屏：首次加载时显示骨架行，提供更好的感知加载速度
-                RepoSkeletonListView(density: settings.listDensity, rowCount: 10)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = viewModel.loadError, viewModel.items.isEmpty {
-                emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitleText: error)
-            } else if viewModel.items.isEmpty {
-                emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
-            } else if viewModel.isMultiSelectMode {
-                // W4 A5：多选模式 List binding 类型不同，必须分开渲染
-                multiSelectList($vm.multiSelectedRepoIDs)
-            } else {
-                listContent($vm.selectedRepoID)
-            }
-        }
+        contentBody
+        .id(contentAnimationID)
+        .transition(contentTransition)
+        .animation(contentAnimation, value: contentAnimationID)
         .navigationTitle(navigationTitle)
         .navigationSubtitle(navigationSubtitle)
         // W4 A5：多选模式底部浮动操作栏
@@ -113,6 +88,93 @@ struct RepoListView: View {
             }
         }
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
+    }
+
+    /// 中栏主体内容。
+    ///
+    /// 单独抽出是为了让外层用 `contentAnimationID` 给整块内容做过渡动画；
+    /// `List` 本身仍用 `itemsRevision` 重建快照，避免排序/过滤时几千行逐个 move；
+    /// row 只做可视区域内的轻量 reveal。
+    @ViewBuilder
+    private var contentBody: some View {
+        @Bindable var vm = viewModel
+
+        Group {
+            if selectedPage == .trending {
+                // HOM-54：Trending 页面
+                if let repo = trendingRepository, let githubAPIClient {
+                    TrendingView(
+                        repository: repo,
+                        githubAPIClient: githubAPIClient,
+                        selectedLanguage: $selectedTrendingLanguage,
+                        selectedRepoID: $selectedTrendingRepoID,
+                        selectedTrendingRepo: $selectedTrendingRepo
+                    )
+                } else {
+                    emptyState(systemImage: "chart.line.uptrend.xyaxis", title: "empty.trendingUnavailable", subtitle: "empty.trendingComingSoon")
+                }
+            } else if selectedPage == .search {
+                searchPlaceholder
+            } else if viewModel.isLoading {
+                // HOM-46：无缓存分类加载时直接切到骨架屏，避免旧分类列表停留在中栏造成"没反应"的错觉。
+                RepoSkeletonListView(density: settings.listDensity, rowCount: 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = viewModel.loadError, viewModel.items.isEmpty {
+                emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitleText: error)
+            } else if viewModel.items.isEmpty {
+                emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
+            } else if viewModel.isMultiSelectMode {
+                // W4 A5：多选模式 List binding 类型不同，必须分开渲染
+                multiSelectList($vm.multiSelectedRepoIDs)
+            } else {
+                listContent($vm.selectedRepoID)
+            }
+        }
+    }
+
+    /// 给 `ForEach` 使用的带下标 repo。
+    ///
+    /// SwiftUI `List` 本身会按可视区域懒创建 row；这里补一个 index 只用于计算短暂
+    /// stagger delay，让切分类后首屏 row 依次轻入场，滚动到新 row 时也能有渐进出现效果。
+    private var indexedItems: [IndexedRepo] {
+        viewModel.items.enumerated().map { IndexedRepo(index: $0.offset, repo: $0.element) }
+    }
+
+    /// 中栏内容切换动画的身份键。
+    ///
+    /// 用 selection / page / itemsRevision 组合，而不是让 List 自己做行级 diff：
+    /// - 切分类：loading skeleton → 新列表会有完整过渡；
+    /// - 命中缓存：缓存列表立即轻入场，后台刷新完成后再用新快照替换；
+    /// - 排序/过滤：仍是整块快照替换，不触发几千行逐个 move。
+    private var contentAnimationID: String {
+        if selectedPage == .trending {
+            return "trending-\(selectedTrendingLanguage.id)"
+        }
+        if selectedPage == .search {
+            return "search"
+        }
+        let mode = viewModel.isMultiSelectMode ? "multi" : "single"
+        if viewModel.isLoading {
+            return "loading-\(viewModel.selection.id)-\(mode)"
+        }
+        if let error = viewModel.loadError, viewModel.items.isEmpty {
+            return "error-\(viewModel.selection.id)-\(error)"
+        }
+        if viewModel.items.isEmpty {
+            return "empty-\(viewModel.selection.id)-\(viewModel.itemsRevision)-\(mode)"
+        }
+        return "repos-\(viewModel.selection.id)-\(viewModel.itemsRevision)-\(mode)"
+    }
+
+    private var contentAnimation: Animation? {
+        reduceMotion ? nil : .easeOut(duration: 0.22)
+    }
+
+    private var contentTransition: AnyTransition {
+        reduceMotion ? .identity : .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: 8)),
+            removal: .opacity
+        )
     }
 
     // MARK: - 顶部操作栏组件
@@ -318,7 +380,8 @@ struct RepoListView: View {
     /// `RepoRowView` 控制。
     private func listContent(_ selection: Binding<Int64?>) -> some View {
         List {
-            ForEach(viewModel.items) { repo in
+            ForEach(indexedItems) { item in
+                let repo = item.repo
                 // UI 视觉升级：单选态不再使用 `List(selection:)`。
                 // macOS 会强制绘制系统蓝色选中底色，和自定义左侧色条叠加后过重；
                 // 改为 plain Button 手动写 selectedRepoID，保留点击打开详情，但视觉只由 RepoRowView 控制。
@@ -333,14 +396,12 @@ struct RepoListView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             }
         }
         .id(viewModel.itemsRevision)
-        .transaction { transaction in
-            transaction.animation = nil
-        }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
     }
@@ -349,20 +410,19 @@ struct RepoListView: View {
     /// macOS 用户用 Cmd / Shift 加选，行级 checkbox 不必显式画。
     private func multiSelectList(_ selection: Binding<Set<Int64>>) -> some View {
         List(selection: selection) {
-            ForEach(viewModel.items) { repo in
+            ForEach(indexedItems) { item in
+                let repo = item.repo
                 RepoRowView(
                     repo: repo,
                     density: settings.listDensity,
                     isSelected: selection.wrappedValue.contains(repo.id)
                 )
+                .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             }
         }
         .id(viewModel.itemsRevision)
-        .transaction { transaction in
-            transaction.animation = nil
-        }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
     }
@@ -509,4 +569,15 @@ struct RepoListView: View {
         case .deprecated: return "archivebox"
         }
     }
+}
+
+/// 带可见顺序的 repo 包装。
+///
+/// `id` 仍然来自 repo.id，保证 SwiftUI row identity 不受下标影响；index 只用于计算
+/// 入场 delay，避免排序后因为下标变化破坏选中 / 复用语义。
+private struct IndexedRepo: Identifiable {
+    let index: Int
+    let repo: Repo
+
+    var id: Int64 { repo.id }
 }
