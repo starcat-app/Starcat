@@ -228,7 +228,7 @@ struct TagPickerView: View {
 
             HStack {
                 if !selected.isEmpty {
-                    Text("tagPicker.selectedCount \(selected.count)")
+                    Text(String(format: String(localized: "tagPicker.selectedCountFormat"), selected.count))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

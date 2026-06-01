@@ -118,7 +118,7 @@ struct RepoNotesSection: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let edited = viewModel?.note?.editedAt {
-                    Text("repo.lastEdited \(relativeDate(edited))", bundle: .main)
+                    Text(String(format: String(localized: "repo.lastEditedFormat"), relativeDate(edited)))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

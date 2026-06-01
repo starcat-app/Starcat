@@ -1072,23 +1072,6 @@
         }
       }
     },
-    "action.clone" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clone"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "克隆"
-          }
-        }
-      }
-    },
     "action.close" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1102,40 +1085,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭"
-          }
-        }
-      }
-    },
-    "action.confirm" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Confirm"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "确认"
-          }
-        }
-      }
-    },
-    "action.copy" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copy"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "复制"
           }
         }
       }
@@ -1225,23 +1174,6 @@
         }
       }
     },
-    "action.refresh" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Refresh"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刷新"
-          }
-        }
-      }
-    },
     "action.retry" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1272,23 +1204,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存"
-          }
-        }
-      }
-    },
-    "action.sync" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sync"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "同步"
           }
         }
       }
@@ -1740,35 +1655,19 @@
         }
       }
     },
-    "batch.applyToRepos" : {
+    "batch.applyToReposFormat" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Will apply to %{count} repos"
+            "value" : "Will apply to %d repos"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将应用到 %{count} 个仓库"
-          }
-        }
-      }
-    },
-    "batch.applyToRepos %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Will apply to %@ repos"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将应用到 %@ 个仓库"
+            "value" : "将应用到 %d 个仓库"
           }
         }
       }
@@ -1873,35 +1772,19 @@
         }
       }
     },
-    "batch.selectedCount" : {
+    "batch.selectedCountFormat" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} selected"
+            "value" : "%d selected"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已选 %{count} 个"
-          }
-        }
-      }
-    },
-    "batch.selectedCount %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ selected"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已选 %@ 个"
+            "value" : "已选 %d 个"
           }
         }
       }
@@ -2311,57 +2194,6 @@
         }
       }
     },
-    "error.network" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Network Error"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网络错误"
-          }
-        }
-      }
-    },
-    "error.operationFailed" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Operation Failed"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "操作失败"
-          }
-        }
-      }
-    },
-    "error.unknown" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unknown Error"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未知错误"
-          }
-        }
-      }
-    },
     "externalLinks.hint" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2514,40 +2346,6 @@
         }
       }
     },
-    "general.done" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Done"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完成"
-          }
-        }
-      }
-    },
-    "general.loading" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loading…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加载中…"
-          }
-        }
-      }
-    },
     "general.ok" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2561,40 +2359,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "好"
-          }
-        }
-      }
-    },
-    "general.search" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜索"
-          }
-        }
-      }
-    },
-    "general.searchPlaceholder" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜索…"
           }
         }
       }
@@ -2748,23 +2512,6 @@
         }
       }
     },
-    "list.refreshing" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%{count} repos · Refreshing…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%{count} 个仓库 · 刷新中…"
-          }
-        }
-      }
-    },
     "list.refreshingFormat" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2782,23 +2529,6 @@
         }
       }
     },
-    "list.repoCount" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%{count} repos"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%{count} 个仓库"
-          }
-        }
-      }
-    },
     "list.repoCountFormat" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2812,23 +2542,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d 个仓库"
-          }
-        }
-      }
-    },
-    "list.selectedCount" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%{selected} / %{total}"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已选 %{selected} / %{total}"
           }
         }
       }
@@ -3173,24 +2886,8 @@
         }
       }
     },
-    "readme.cachedAt" : {
+    "readme.cachedAtFormat" : {
       "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cached %{date}"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "缓存于 %{date}"
-          }
-        }
-      }
-    },
-    "readme.cachedAt %@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3403,24 +3100,8 @@
         }
       }
     },
-    "repo.lastEdited" : {
+    "repo.lastEditedFormat" : {
       "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Last edited: %{date}"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近编辑：%{date}"
-          }
-        }
-      }
-    },
-    "repo.lastEdited %@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3432,23 +3113,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最近编辑：%@"
-          }
-        }
-      }
-    },
-    "repo.noLicense" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "N/A"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "N/A"
           }
         }
       }
@@ -3599,23 +3263,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "写点笔记，例如：为什么 star 它、何时复用、踩过哪些坑…"
-          }
-        }
-      }
-    },
-    "repo.noTopics" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "N/A"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "N/A"
           }
         }
       }
@@ -3788,23 +3435,6 @@
         }
       }
     },
-    "repo.topics" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Topics"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Topics"
-          }
-        }
-      }
-    },
     "repo.unstar" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3907,24 +3537,8 @@
         }
       }
     },
-    "repo.unstar.message" : {
+    "repo.unstar.messageFormat" : {
       "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Will unstar %{repo} via GitHub API and remove from local list. Tags and notes will be kept and restored when you star again."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将通过 GitHub API 取消对 %{repo} 的 star，并从本地列表移除。\n打过的标签和写过的笔记会保留，重新 star 后即可恢复。"
-          }
-        }
-      }
-    },
-    "repo.unstar.message %@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4238,40 +3852,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "紧凑：单行显示更多仓库；卡片：每行带头像与描述。"
-          }
-        }
-      }
-    },
-    "settings.general.sort" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sort"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "排序"
-          }
-        }
-      }
-    },
-    "settings.general.statusFilter" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Status Filter"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "阅读状态"
           }
         }
       }
@@ -5509,52 +5089,19 @@
         }
       }
     },
-    "tagManagement.deleteConfirm" : {
+    "tagManagement.deleteMessageFormat" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Delete tags?"
+            "value" : "Will delete %d tag(s). Repos with these tags will not be deleted, only the tag associations will be removed. This cannot be undone."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "删除标签?"
-          }
-        }
-      }
-    },
-    "tagManagement.deleteMessage" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Will delete %{count} tag(s). Repos with these tags will not be deleted, only the tag associations will be removed. This cannot be undone."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将删除 %{count} 个标签。被打过此标签的仓库本身不会被删除，仅解除标签关联。此操作不可撤销。"
-          }
-        }
-      }
-    },
-    "tagManagement.deleteMessage %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Will delete %@ tag(s). Repos with these tags will not be deleted, only the tag associations will be removed. This cannot be undone."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将删除 %@ 个标签。被打过此标签的仓库本身不会被删除，仅解除标签关联。此操作不可撤销。"
+            "value" : "将删除 %d 个标签。被打过此标签的仓库本身不会被删除，仅解除标签关联。此操作不可撤销。"
           }
         }
       }
@@ -5711,52 +5258,19 @@
         }
       }
     },
-    "tagManagement.mergeConfirm" : {
+    "tagManagement.mergeMessageFormat" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Merge tags?"
+            "value" : "Will merge %1$d other tag(s) into \"%2$@\". Repos with merged tags will be moved to \"%2$@\". This cannot be undone."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "合并标签?"
-          }
-        }
-      }
-    },
-    "tagManagement.mergeMessage" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Will merge %{others} other tag(s) into 「%{target}」. Repos with merged tags will be moved to 「%{target}」. This cannot be undone."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将把其它 %{others} 个标签合并到「%{target}」。被合并标签关联的仓库会自动转挂到「%{target}」名下。此操作不可撤销。"
-          }
-        }
-      }
-    },
-    "tagManagement.mergeMessage %@ %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Will merge %1$@ other tag(s) into \"%2$@\". Repos with merged tags will be moved to \"%2$@\". This cannot be undone."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将把其它 %1$@ 个标签合并到「%2$@」。被合并标签关联的仓库会自动转挂到「%2$@」名下。此操作不可撤销。"
+            "value" : "将把其它 %1$d 个标签合并到「%2$@」。被合并标签关联的仓库会自动转挂到「%2$@」名下。此操作不可撤销。"
           }
         }
       }
@@ -5810,35 +5324,19 @@
         }
       }
     },
-    "tagManagement.tagCount" : {
+    "tagManagement.tagCountFormat" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} tags total"
+            "value" : "%d tags total"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "共 %{count} 个标签"
-          }
-        }
-      }
-    },
-    "tagManagement.tagCount %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ tags total"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "共 %@ 个标签"
+            "value" : "共 %d 个标签"
           }
         }
       }
@@ -5944,35 +5442,19 @@
         }
       }
     },
-    "tagPicker.selectedCount" : {
+    "tagPicker.selectedCountFormat" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} selected"
+            "value" : "%d selected"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已选 %{count} 个"
-          }
-        }
-      }
-    },
-    "tagPicker.selectedCount %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ selected"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已选 %@ 个"
+            "value" : "已选 %d 个"
           }
         }
       }

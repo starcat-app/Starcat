@@ -85,7 +85,7 @@ struct RepoDetailView: View {
                 }
                 Button("repo.unstar.dontUnstar", role: .cancel) {}
             } message: { repo in
-                Text("repo.unstar.message \(repo.fullName)")
+                Text(String(format: String(localized: "repo.unstar.messageFormat"), repo.fullName))
             }
             .alert("repo.unstar.failed", isPresented: errorAlertBinding, presenting: unstarError) { _ in
                 Button("general.ok") { unstarError = nil }
@@ -620,7 +620,7 @@ private struct ReadmeStateView: View {
         HStack {
             Image(systemName: "clock")
                 .font(.caption2)
-            Text("readme.cachedAt \(cachedAt.formatted(.relative(presentation: .named)))")
+            Text(String(format: String(localized: "readme.cachedAtFormat"), cachedAt.formatted(.relative(presentation: .named))))
                 .font(.caption2)
             Spacer()
             Button {
