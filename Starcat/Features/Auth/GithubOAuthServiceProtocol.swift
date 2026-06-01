@@ -49,15 +49,15 @@ enum GithubOAuthError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .configurationMissing(let reason):
-            return "OAuth 配置缺失：\(reason)"
+            return String(format: String(localized: "auth.error.configurationMissingFormat"), reason)
         case .userDeclined:
-            return "用户已拒绝授权"
+            return String(localized: "auth.error.userDeclined")
         case .codeExpired:
-            return "授权 code 已过期，请重新发起登录"
+            return String(localized: "auth.error.codeExpired")
         case .network(let error):
-            return "OAuth 网络错误：\(error.localizedDescription)"
+            return String(format: String(localized: "auth.error.networkFormat"), error.localizedDescription)
         case .unexpectedResponse(let msg):
-            return "GitHub 返回异常：\(msg)"
+            return String(format: String(localized: "auth.error.unexpectedResponseFormat"), msg)
         }
     }
 }

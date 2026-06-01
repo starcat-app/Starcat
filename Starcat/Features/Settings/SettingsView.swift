@@ -88,14 +88,14 @@ private struct StorageSettingsTab: View {
             case .all:    return "all"
             }
         }
-        var confirmTitleKey: String {
+        var confirmTitle: String {
             switch self {
-            case .readme: return "settings.storage.clearReadme.confirm"
-            case .image:  return "settings.storage.clearImage.confirm"
-            case .all:    return "settings.storage.clearAll.confirm"
+            case .readme: return String(localized: "settings.storage.clearReadme.confirm")
+            case .image:  return String(localized: "settings.storage.clearImage.confirm")
+            case .all:    return String(localized: "settings.storage.clearAll.confirm")
             }
         }
-        var confirmMessageKey: String {
+        var confirmMessageKey: LocalizedStringKey {
             switch self {
             case .readme: return "settings.storage.clearReadme.message"
             case .image:  return "settings.storage.clearImage.message"
@@ -109,7 +109,7 @@ private struct StorageSettingsTab: View {
         return Form {
             Section("settings.storage.cacheUsage") {
                 LabeledContent("settings.storage.readme") {
-                    Text("\(stats.readmeCount) 条 · \(stats.readmeBytes.formattedByteSize)")
+                    Text(readmeUsageText)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
@@ -123,7 +123,7 @@ private struct StorageSettingsTab: View {
                         .foregroundStyle(.tertiary)
                         .font(.callout)
                 }
-                .help("Starcat 通过 OSLog 写日志,清理与查询请用 macOS 自带的 Console.app")
+                .help(Text("settings.storage.logHelp"))
             }
 
             Section("settings.storage.clear") {
@@ -150,7 +150,7 @@ private struct StorageSettingsTab: View {
             stats = await cleaner.loadStatistics()
         }
         .confirmationDialog(
-            pendingAction?.confirmTitleKey ?? "",
+            pendingAction?.confirmTitle ?? "",
             isPresented: Binding(
                 get: { pendingAction != nil },
                 set: { if !$0 { pendingAction = nil } }
@@ -179,5 +179,13 @@ private struct StorageSettingsTab: View {
         stats = await cleaner.loadStatistics()
         isWorking = false
         pendingAction = nil
+    }
+
+    private var readmeUsageText: String {
+        String(
+            format: String(localized: "settings.storage.readmeUsageFormat"),
+            stats.readmeCount,
+            stats.readmeBytes.formattedByteSize
+        )
     }
 }

@@ -162,7 +162,7 @@ struct TagManagementView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 14)
             }
-            Text(tag.name)
+            Text(verbatim: tag.name)
                 .lineLimit(1)
             Spacer()
             Text((viewModel.counts[tag.id] ?? 0).formatted())
@@ -185,7 +185,7 @@ struct TagManagementView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
-                    Text(err)
+                    Text(verbatim: err)
                         .font(.caption)
                     Spacer()
                     Button {
@@ -297,8 +297,8 @@ private struct NewTagSheet: View {
                                 )
                         }
                         .buttonStyle(.plain)
-            .focusEffectDisabled()
-                        .help(preset.name)
+                        .focusEffectDisabled()
+                        .help(Text(LocalizedStringKey(preset.name)))
                     }
                 }
             }

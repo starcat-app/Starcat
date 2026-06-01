@@ -118,7 +118,7 @@ struct TagEditorView: View {
                                         .font(.caption)
                                 }
                                 .buttonStyle(.plain)
-                .focusEffectDisabled()
+                                .focusEffectDisabled()
                                 .foregroundStyle(editingIcon == nil ? .primary : .secondary)
                                 Spacer()
                             }
@@ -144,7 +144,7 @@ struct TagEditorView: View {
 
                 Spacer()
 
-                Button("保存") {
+                Button("action.save") {
                     Task {
                         await onSave(editingName, editingColor, editingIcon)
                     }
@@ -196,7 +196,7 @@ struct TagEditorView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .help(preset.name)
+                .help(Text(LocalizedStringKey(preset.name)))
             }
         }
     }
@@ -224,7 +224,7 @@ struct TagEditorView: View {
 
     // MARK: - 空态
 
-    private func emptyState(icon: String, titleKey: String, detailKey: String) -> some View {
+    private func emptyState(icon: String, titleKey: LocalizedStringKey, detailKey: LocalizedStringKey) -> some View {
         VStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.system(size: 32))

@@ -18,20 +18,20 @@ import SwiftUI
 
 enum TagColorPalette {
 
-    /// 预设 12 色板（label, hex）。Apple HIG 系统色为底，覆盖典型分类需求。
+    /// 预设 12 色板（localization key, hex）。Apple HIG 系统色为底，覆盖典型分类需求。
     static let presets: [(name: String, hex: String)] = [
-        ("Red",    "#FF453A"),
-        ("Orange", "#FF9F0A"),
-        ("Yellow", "#FFD60A"),
-        ("Green",  "#30D158"),
-        ("Mint",   "#66D4CF"),
-        ("Teal",   "#40C8E0"),
-        ("Cyan",   "#64D2FF"),
-        ("Blue",   "#0A84FF"),
-        ("Indigo", "#5E5CE6"),
-        ("Purple", "#BF5AF2"),
-        ("Pink",   "#FF375F"),
-        ("Brown",  "#AC8E68"),
+        ("tagColor.red",    "#FF453A"),
+        ("tagColor.orange", "#FF9F0A"),
+        ("tagColor.yellow", "#FFD60A"),
+        ("tagColor.green",  "#30D158"),
+        ("tagColor.mint",   "#66D4CF"),
+        ("tagColor.teal",   "#40C8E0"),
+        ("tagColor.cyan",   "#64D2FF"),
+        ("tagColor.blue",   "#0A84FF"),
+        ("tagColor.indigo", "#5E5CE6"),
+        ("tagColor.purple", "#BF5AF2"),
+        ("tagColor.pink",   "#FF375F"),
+        ("tagColor.brown",  "#AC8E68"),
     ]
 
     /// 默认色（未设置 color 字段时）。

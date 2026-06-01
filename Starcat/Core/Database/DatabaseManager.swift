@@ -26,11 +26,11 @@ enum DatabaseError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .applicationSupportNotFound:
-            return "无法定位 Application Support 目录"
+            return String(localized: "database.error.applicationSupportNotFound")
         case .migrationFailed(let error):
-            return "数据库迁移失败：\(error.localizedDescription)"
+            return String(format: String(localized: "database.error.migrationFailedFormat"), error.localizedDescription)
         case .openFailed(let error):
-            return "数据库打开失败：\(error.localizedDescription)"
+            return String(format: String(localized: "database.error.openFailedFormat"), error.localizedDescription)
         }
     }
 }

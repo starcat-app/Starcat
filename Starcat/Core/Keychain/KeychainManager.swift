@@ -32,13 +32,13 @@ enum KeychainError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .writeFailed(let error):
-            return "Keychain 写入失败：\(error.localizedDescription)"
+            return String(format: String(localized: "keychain.error.writeFailedFormat"), error.localizedDescription)
         case .readFailed(let error):
-            return "Keychain 读取失败：\(error.localizedDescription)"
+            return String(format: String(localized: "keychain.error.readFailedFormat"), error.localizedDescription)
         case .deleteFailed(let error):
-            return "Keychain 删除失败：\(error.localizedDescription)"
+            return String(format: String(localized: "keychain.error.deleteFailedFormat"), error.localizedDescription)
         case .selfCheckMismatch:
-            return "Keychain 自检失败：写入与读出值不一致"
+            return String(localized: "keychain.error.selfCheckMismatch")
         }
     }
 }

@@ -39,8 +39,8 @@ struct LanguageStat: FetchableRecord, Codable, Equatable, Identifiable {
     /// Identifiable id：直接用 language（空串也是合法 id）。
     var id: String { language }
 
-    /// 渲染用：空语言显示为 "Unknown"，其他原样。
-    var displayName: String { language.isEmpty ? "Unknown" : language }
+    /// 渲染用：空语言显示为本地化的 Unknown，真实语言名按 GitHub 返回值原样显示。
+    var displayName: String { language.isEmpty ? String(localized: "sidebar.unknownLanguage") : language }
 
     /// 实际语言筛选用：空串对应数据库里 NULL（fetchByLanguage(nil)）。
     var languageOrNil: String? { language.isEmpty ? nil : language }

@@ -83,9 +83,14 @@ struct TrendingView: View {
             viewModel.updateLanguagePreferences(from: homeViewModel.languageStats)
             if viewModel.selectedLanguage != selectedLanguage {
                 viewModel.selectedLanguage = selectedLanguage
-            } else {
-                await viewModel.reload()
             }
+            // 切换语言或页面时，列表数据变化，清除之前的 repo 选中状态
+            // 避免详情页显示不属于当前列表的 repo
+            if selectedRepoID != nil {
+                selectedRepoID = nil
+                selectedTrendingRepo = nil
+            }
+            await viewModel.reload()
         }
         .onChange(of: homeViewModel.languageStats) { _, stats in
             viewModel.updateLanguagePreferences(from: stats)
@@ -181,9 +186,15 @@ struct TrendingView: View {
                 Spacer()
             }
 
-            Text(viewModel.userLanguagePreferences.isEmpty ? "trending.basedOnTrending" : "trending.basedOnPrefs")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if viewModel.userLanguagePreferences.isEmpty {
+                Text("trending.basedOnTrending")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("trending.basedOnPrefs")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             HStack(spacing: 8) {
                 ForEach(viewModel.recommendedRepos) { repo in
@@ -226,7 +237,7 @@ struct TrendingView: View {
             Text("trending.loadFailed")
                 .font(.headline)
 
-            Text(message)
+            Text(verbatim: message)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -399,7 +410,7 @@ struct TrendingRepoCard: View {
                     .fontWeight(.medium)
                     .foregroundStyle(scoreColor)
 
-                Text(score.level.rawValue)
+                Text(score.level.displayName)
                     .font(.caption2)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)

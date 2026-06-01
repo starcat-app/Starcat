@@ -274,7 +274,7 @@ final class SyncManager {
             state = .rateLimited(retryAt: retryAt)
             AppLog.sync.warning("Rate limited; retry at \(retryAt, privacy: .public)")
         } catch NetworkError.unauthorized {
-            state = .failed(message: "Token 失效，请重新登录")
+            state = .failed(message: String(localized: "sync.error.tokenExpired"))
             AppLog.sync.error("Unauthorized during sync")
         } catch let error as LocalizedError {
             state = .failed(message: error.localizedDescription)

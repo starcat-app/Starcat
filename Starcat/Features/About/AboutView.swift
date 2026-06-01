@@ -506,7 +506,7 @@ private struct DependencyRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text(dependency.name)
+                    Text(verbatim: dependency.name)
                         .font(.headline)
                     Text(verbatim: dependency.license)
                         .font(.caption.weight(.medium))
@@ -554,7 +554,7 @@ private struct SafeExternalLink: View {
                 }
         }
         .disabled(url == nil)
-        .help(url?.absoluteString ?? "")
+        .help(Text(verbatim: url?.absoluteString ?? ""))
     }
 }
 
@@ -574,7 +574,7 @@ private struct AboutVersion {
     }
 
     var fullText: String {
-        "Version \(marketing) (Build \(build))"
+        String(format: String(localized: "about.version.fullFormat"), marketing, build)
     }
 }
 

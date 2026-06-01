@@ -151,7 +151,7 @@ final class RepoTagsSectionViewModel {
             allTags = try await allTask
             errorMessage = nil
         } catch {
-            errorMessage = "加载标签失败：\(error.localizedDescription)"
+            errorMessage = String(format: String(localized: "repoTags.error.loadFailedFormat"), error.localizedDescription)
         }
     }
 
@@ -162,7 +162,7 @@ final class RepoTagsSectionViewModel {
             await loadFor(repoId: repoId)
             onTagsChanged?()
         } catch {
-            errorMessage = "移除失败：\(error.localizedDescription)"
+            errorMessage = String(format: String(localized: "repoTags.error.removeFailedFormat"), error.localizedDescription)
         }
     }
 
@@ -173,7 +173,7 @@ final class RepoTagsSectionViewModel {
             await loadFor(repoId: repoId)
             onTagsChanged?()
         } catch {
-            errorMessage = "保存失败：\(error.localizedDescription)"
+            errorMessage = String(format: String(localized: "repoTags.error.saveFailedFormat"), error.localizedDescription)
         }
     }
 }
@@ -213,12 +213,7 @@ struct TagPickerView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if filteredTags.isEmpty {
-                        Text(allTags.isEmpty ? "tagPicker.noTags" : "tagPicker.noMatch")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 16)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        emptyPickerMessage
                     } else {
                         ForEach(filteredTags) { tag in
                             pickerRow(tag: tag)
@@ -258,6 +253,16 @@ struct TagPickerView: View {
         }
     }
 
+    private var emptyPickerMessage: some View {
+        let message: LocalizedStringKey = allTags.isEmpty ? "tagPicker.noTags" : "tagPicker.noMatch"
+        return Text(message)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     /// 大小写不敏感前缀+包含匹配。
     private var filteredTags: [Tag] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -282,7 +287,7 @@ struct TagPickerView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 14)
                 }
-                Text(tag.name)
+                Text(verbatim: tag.name)
                     .lineLimit(1)
                 Spacer()
             }
@@ -320,7 +325,7 @@ struct TagChip: View {
                 Image(systemName: icon)
                     .font(.system(size: 10))
             }
-            Text(tag.name)
+            Text(verbatim: tag.name)
                 .font(.caption)
                 .lineLimit(1)
             if removable, let onRemove {

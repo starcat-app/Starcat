@@ -13,6 +13,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 // MARK: - API Response
 
@@ -167,12 +168,21 @@ enum TrendingPeriod: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// 用户可见的显示名称
-    var displayName: String {
+    /// SwiftUI 控件里展示的本地化周期名称。
+    var displayName: LocalizedStringKey {
         switch self {
-        case .daily:   return "今日"
-        case .weekly:  return "本周"
-        case .monthly: return "本月"
+        case .daily:   return "trending.period.daily"
+        case .weekly:  return "trending.period.weekly"
+        case .monthly: return "trending.period.monthly"
+        }
+    }
+
+    /// 需要 plain String 的 API 使用，例如 navigationSubtitle。
+    var localizedDisplayName: String {
+        switch self {
+        case .daily:   return String(localized: "trending.period.daily")
+        case .weekly:  return String(localized: "trending.period.weekly")
+        case .monthly: return String(localized: "trending.period.monthly")
         }
     }
 
@@ -195,8 +205,9 @@ struct TrendingLanguage: Hashable, Identifiable, Sendable {
 
     var id: String { rawValue.isEmpty ? "<all>" : rawValue }
 
-    var displayName: String {
-        rawValue.isEmpty ? "All languages" : rawValue
+    /// 语言名称来自 API / 本地聚合，非空值必须按原样显示；只有“全部语言”走本地化。
+    var localizedDisplayName: String {
+        rawValue.isEmpty ? String(localized: "trending.allLanguages") : rawValue
     }
 
     /// API 参数值（空字符串表示全部）。

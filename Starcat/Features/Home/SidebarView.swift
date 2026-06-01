@@ -88,7 +88,7 @@ struct SidebarView: View {
     @ViewBuilder
     private var manageSidebarContent: some View {
         if authSession.state.isAuthenticated {
-            Section("主导航") {
+            Section("sidebar.mainNavigation") {
                 row(.allStars, count: viewModel.totalCount)
                 row(.untagged, count: viewModel.untaggedCount)
             }
@@ -197,18 +197,6 @@ struct SidebarView: View {
     private func selectRootPage(_ page: SidebarRootPage) {
         guard selectedPage != page else { return }
         selectedPage = page
-        viewModel.selectedRepoID = nil
-
-        switch page {
-        case .manage:
-            if viewModel.selection.isTrending {
-                viewModel.selectSidebar(.allStars)
-            }
-        case .trending:
-            viewModel.selectSidebar(.trending)
-        case .search:
-            viewModel.searchQuery = ""
-        }
     }
 
     /// HOM-43：Tags header 需要同时有"整行可折叠"和独立的标签管理按钮。
@@ -227,7 +215,7 @@ struct SidebarView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(tagsExpanded ? "sidebar.collapse" : "sidebar.expand")
+            .help(disclosureHelp(isExpanded: tagsExpanded))
 
             Button {
                 showTagManagement = true
@@ -238,7 +226,7 @@ struct SidebarView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("sidebar.tagManagement")
+            .help(Text("sidebar.tagManagement"))
 
             Button {
                 toggleTags()
@@ -248,7 +236,7 @@ struct SidebarView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(tagsExpanded ? "sidebar.collapse" : "sidebar.expand")
+            .help(disclosureHelp(isExpanded: tagsExpanded))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 6)
@@ -279,7 +267,7 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(languagesExpanded ? "sidebar.collapse" : "sidebar.expand")
+        .help(disclosureHelp(isExpanded: languagesExpanded))
     }
 
     private var trendingLanguageSectionHeader: some View {
@@ -307,7 +295,11 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(trendingLanguagesExpanded ? "sidebar.collapse" : "sidebar.expand")
+        .help(disclosureHelp(isExpanded: trendingLanguagesExpanded))
+    }
+
+    private func disclosureHelp(isExpanded: Bool) -> Text {
+        isExpanded ? Text("sidebar.collapse") : Text("sidebar.expand")
     }
 
     private func disclosureChevron(isExpanded: Bool) -> some View {
@@ -346,7 +338,7 @@ struct SidebarView: View {
     @ViewBuilder
     private func trendingLanguageRow(_ language: TrendingLanguage) -> some View {
         Label {
-            Text(language.displayName)
+            trendingLanguageTitle(language)
                 .lineLimit(1)
         } icon: {
             if language == .all {
@@ -359,13 +351,22 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
+    private func trendingLanguageTitle(_ language: TrendingLanguage) -> some View {
+        if language == .all {
+            Text("trending.allLanguages")
+        } else {
+            Text(verbatim: language.rawValue)
+        }
+    }
+
+    @ViewBuilder
     private func row(_ item: SidebarItem,
                      displayOverride: String? = nil,
                      count: Int? = nil) -> some View {
         Label {
             HStack(spacing: 4) {
                 if let override = displayOverride {
-                    Text(override)
+                    Text(verbatim: override)
                         .lineLimit(1)
                 } else {
                     Text(item.displayName)
@@ -407,7 +408,7 @@ struct SidebarView: View {
         let item = SidebarItem.tag(tag.id)
         Label {
             HStack {
-                Text(tag.name).lineLimit(1)
+                Text(verbatim: tag.name).lineLimit(1)
                 Spacer()
                 Text(count.formatted())
                     .font(.caption)
@@ -437,7 +438,7 @@ struct SidebarView: View {
         let item = SidebarItem.language(stat.languageOrNil)
         Label {
             HStack {
-                Text(stat.displayName)
+                Text(verbatim: stat.displayName)
                     .lineLimit(1)
                 Spacer()
                 Text(stat.count.formatted())
@@ -524,14 +525,14 @@ private struct SidebarSyncButton: View {
         }
     }
 
-    private var helpText: String {
+    private var helpText: Text {
         switch syncManager.state {
         case .syncing:
-            return "action.cancelSync"
+            return Text("action.cancelSync")
         case .rateLimited:
-            return "action.syncRateLimited"
+            return Text("action.syncRateLimited")
         case .idle, .completed, .failed:
-            return "action.syncInProgress"
+            return Text("action.syncInProgress")
         }
     }
 

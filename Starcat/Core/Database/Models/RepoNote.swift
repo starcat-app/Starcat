@@ -11,6 +11,7 @@
 
 import Foundation
 import GRDB
+import SwiftUI
 
 struct RepoNote: Codable, FetchableRecord, MutablePersistableRecord, Equatable {
 
@@ -49,12 +50,26 @@ enum RepoStatus: String, CaseIterable, Codable {
     case using      // 已采用
     case deprecated // 已废弃
 
-    var displayName: String {
+    /// SwiftUI 控件里展示的本地化标题。
+    ///
+    /// 这里保留 rawValue 作为落库值，显示文案单独走 localization key，
+    /// 避免把中文 UI 文案写进数据库枚举协议里。
+    var displayName: LocalizedStringKey {
         switch self {
-        case .unread: return "未读"
-        case .reading: return "阅读中"
-        case .using: return "已采用"
-        case .deprecated: return "已废弃"
+        case .unread: return "repo.status.unread"
+        case .reading: return "repo.status.reading"
+        case .using: return "repo.status.using"
+        case .deprecated: return "repo.status.deprecated"
+        }
+    }
+
+    /// 需要 plain String 的 API（例如 accessibilityLabel / navigationSubtitle）使用。
+    var localizedDisplayName: String {
+        switch self {
+        case .unread: return String(localized: "repo.status.unread")
+        case .reading: return String(localized: "repo.status.reading")
+        case .using: return String(localized: "repo.status.using")
+        case .deprecated: return String(localized: "repo.status.deprecated")
         }
     }
 }

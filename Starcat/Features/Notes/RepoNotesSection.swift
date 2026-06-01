@@ -133,7 +133,7 @@ struct RepoNotesSection: View {
                 }
             }
             .accessibilityAddTraits(.isButton)
-            .help(isNotesExpanded ? "点击收起私有笔记" : "点击展开私有笔记")
+            .help(isNotesExpanded ? Text("repo.notesCollapse") : Text("repo.notesExpand"))
         }
         .disclosureGroupStyle(.automatic)
     }
@@ -302,7 +302,7 @@ private struct SaveIndicator: View {
         }
     }
 
-    private var text: String {
+    private var text: LocalizedStringKey {
         switch state {
         case .idle:    return hasUnsaved ? "repo.notes.saveIdle" : ""
         case .saving:  return "repo.notes.saving"

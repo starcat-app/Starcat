@@ -46,7 +46,7 @@ final class AboutWindowController: NSWindowController, NSWindowDelegate {
         let hostingController = NSHostingController(rootView: AboutView())
         let window = NSWindow(contentViewController: hostingController)
 
-        window.title = "关于 Starcat"
+        window.title = String(localized: "app.about")
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.setContentSize(NSSize(width: 680, height: 520))
         window.minSize = NSSize(width: 680, height: 520)

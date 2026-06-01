@@ -74,7 +74,7 @@ final class TagManagementViewModel {
             counts = try await countsTask
             errorMessage = nil
         } catch {
-            errorMessage = "加载标签失败：\(error.localizedDescription)"
+            errorMessage = String(format: String(localized: "tagManagement.error.loadFailedFormat"), error.localizedDescription)
         }
     }
 
@@ -86,13 +86,13 @@ final class TagManagementViewModel {
     func create(name: String, color: String?, icon: String?) async -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            errorMessage = "标签名不能为空"
+            errorMessage = String(localized: "tagManagement.error.emptyName")
             return false
         }
         do {
             // UNIQUE 唯一性先查，UI 友好（避免直接抛 GRDB 错）
             if try await tagRepository.findByName(trimmed) != nil {
-                errorMessage = "已存在同名标签：\(trimmed)"
+                errorMessage = String(format: String(localized: "tagManagement.error.duplicateNameFormat"), trimmed)
                 return false
             }
             let now = ISO8601DateFormatter.shared.string(from: Date())
@@ -113,7 +113,7 @@ final class TagManagementViewModel {
             selection = [tag.id]
             return true
         } catch {
-            errorMessage = "创建失败：\(error.localizedDescription)"
+            errorMessage = String(format: String(localized: "tagManagement.error.createFailedFormat"), error.localizedDescription)
             return false
         }
     }
@@ -126,14 +126,14 @@ final class TagManagementViewModel {
     func update(_ tag: Tag, name: String, color: String?, icon: String?) async -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            errorMessage = "标签名不能为空"
+            errorMessage = String(localized: "tagManagement.error.emptyName")
             return false
         }
         do {
             // 名字变化时才查重；保持原名直接放行
             if trimmed != tag.name,
                try await tagRepository.findByName(trimmed) != nil {
-                errorMessage = "已存在同名标签：\(trimmed)"
+                errorMessage = String(format: String(localized: "tagManagement.error.duplicateNameFormat"), trimmed)
                 return false
             }
             var updated = tag
@@ -146,7 +146,7 @@ final class TagManagementViewModel {
             errorMessage = nil
             return true
         } catch {
-            errorMessage = "更新失败：\(error.localizedDescription)"
+            errorMessage = String(format: String(localized: "tagManagement.error.updateFailedFormat"), error.localizedDescription)
             return false
         }
     }
@@ -164,7 +164,7 @@ final class TagManagementViewModel {
             selection.subtract(ids)
             errorMessage = nil
         } catch {
-            errorMessage = "删除失败：\(error.localizedDescription)"
+            errorMessage = String(format: String(localized: "tagManagement.error.deleteFailedFormat"), error.localizedDescription)
         }
     }
 
@@ -182,7 +182,7 @@ final class TagManagementViewModel {
             selection = [target]
             errorMessage = nil
         } catch {
-            errorMessage = "合并失败：\(error.localizedDescription)"
+            errorMessage = String(format: String(localized: "tagManagement.error.mergeFailedFormat"), error.localizedDescription)
         }
     }
 

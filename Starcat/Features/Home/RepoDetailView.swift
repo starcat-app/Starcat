@@ -90,7 +90,7 @@ struct RepoDetailView: View {
             .alert("repo.unstar.failed", isPresented: errorAlertBinding, presenting: unstarError) { _ in
                 Button("general.ok") { unstarError = nil }
             } message: { msg in
-                Text(msg)
+                Text(LocalizedStringKey(msg))
             }
             .onChange(of: repo.id) { _, _ in
                 withAnimation(metadataPanelAnimation) {
@@ -411,15 +411,15 @@ struct RepoDetailView: View {
     private func badgeRow(_ repo: Repo) -> some View {
         HStack(spacing: 10) {
             if repo.isArchived {
-                BadgeChip(text: "Archived", systemImage: "archivebox", tint: .orange)
+                BadgeChip(text: "repo.archived", systemImage: "archivebox", tint: .orange)
             }
             if repo.isFork {
-                BadgeChip(text: "Fork", systemImage: "tuningfork", tint: .gray)
+                BadgeChip(text: "repo.fork", systemImage: "tuningfork", tint: .gray)
             }
             if repo.isPrivate {
-                BadgeChip(text: "Private", systemImage: "lock.fill", tint: .purple)
+                BadgeChip(text: "repo.private", systemImage: "lock.fill", tint: .purple)
             }
-            BadgeChip(
+            RawBadgeChip(
                 text: repo.license.flatMap { value in
                     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
                     return trimmed.isEmpty ? nil : trimmed
@@ -445,7 +445,7 @@ struct RepoDetailView: View {
                 .foregroundStyle(topics.isEmpty ? Color.secondary : Color.blue)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .help(topics.isEmpty ? "N/A" : topics.joined(separator: ", "))
+                .help(Text(verbatim: topics.isEmpty ? "N/A" : topics.joined(separator: ", ")))
         }
         .frame(maxWidth: .infinity, minHeight: 18, maxHeight: 18, alignment: .leading)
     }
@@ -576,7 +576,7 @@ private struct ReadmeStateView: View {
                     .foregroundStyle(.orange)
                 Text("readme.failed")
                     .font(.headline)
-                Text(message)
+                Text(verbatim: message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -625,7 +625,7 @@ private struct ReadmeStateView: View {
 
 /// 通用胶囊徽章；命名避开 `Tag`（与 Core/Database/Models/Tag 冲突）。
 private struct BadgeChip: View {
-    let text: String
+    let text: LocalizedStringKey
     let systemImage: String
     let tint: Color
 
@@ -640,8 +640,24 @@ private struct BadgeChip: View {
     }
 }
 
+private struct RawBadgeChip: View {
+    let text: String
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: systemImage).font(.caption2)
+            Text(verbatim: text).font(.caption2)
+        }
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(tint.opacity(0.15), in: Capsule())
+        .foregroundStyle(tint)
+    }
+}
+
 private struct StatItem: View {
-    let label: String
+    let label: LocalizedStringKey
     let value: Int
     let systemImage: String
     let tint: Color
@@ -664,7 +680,7 @@ private struct StatItem: View {
 }
 
 private struct DateStatItem: View {
-    let label: String
+    let label: LocalizedStringKey
     let value: String?
     let systemImage: String
 

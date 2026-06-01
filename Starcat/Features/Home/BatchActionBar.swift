@@ -43,7 +43,7 @@ struct BatchActionBar: View {
                 Label("batch.addTags", systemImage: "tag.fill")
             }
             .disabled(viewModel.multiSelectedRepoIDs.isEmpty)
-            .help("给所有选中的仓库添加同一个标签")
+            .help(Text("batch.addTags.help"))
 
             Button {
                 viewModel.exitMultiSelectMode()
@@ -115,11 +115,7 @@ private struct BatchTagSheet: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         let tags = filteredTags(vm.tags)
                         if tags.isEmpty {
-                            Text(vm.tags.isEmpty ? "batch.noTags" : "batch.noMatch")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 12)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            emptyTagsMessage(isInitialEmpty: vm.tags.isEmpty)
                         } else {
                             ForEach(tags) { tag in
                                 row(tag: tag)
@@ -133,9 +129,13 @@ private struct BatchTagSheet: View {
             }
 
             if let err = vm?.errorMessage {
-                Label(err, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
+                Label {
+                    Text(err)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .font(.caption)
+                .foregroundStyle(.orange)
             }
 
             HStack {
@@ -173,6 +173,15 @@ private struct BatchTagSheet: View {
         return tags.filter { $0.name.lowercased().contains(q) }
     }
 
+    private func emptyTagsMessage(isInitialEmpty: Bool) -> some View {
+        let message: LocalizedStringKey = isInitialEmpty ? "batch.noTags" : "batch.noMatch"
+        return Text(message)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private func row(tag: Tag) -> some View {
         let selected = (selectedTagId == tag.id)
         return Button {
@@ -187,7 +196,7 @@ private struct BatchTagSheet: View {
                 if let icon = tag.icon {
                     Image(systemName: icon).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
-                Text(tag.name).lineLimit(1)
+                Text(verbatim: tag.name).lineLimit(1)
                 Spacer()
             }
             .padding(.horizontal, 10)
@@ -207,7 +216,7 @@ final class BatchTagSheetViewModel {
 
     private(set) var tags: [Tag] = []
     private(set) var isApplying: Bool = false
-    private(set) var errorMessage: String?
+    private(set) var errorMessage: LocalizedStringKey?
 
     private let tagRepository: any TagRepositoryProtocol
     private let repoTagRepository: any RepoTagRepositoryProtocol

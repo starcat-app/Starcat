@@ -55,7 +55,7 @@ actor GithubDeviceFlowService: GithubOAuthServiceProtocol {
 
     func beginDeviceFlow() async throws -> OAuthDeviceCodeInfo {
         guard !clientID.isEmpty, !clientID.hasPrefix("<") else {
-            throw GithubOAuthError.configurationMissing(reason: "GitHub OAuth Client ID 未配置（仍为占位值）")
+            throw GithubOAuthError.configurationMissing(reason: String(localized: "auth.error.clientIdMissing"))
         }
 
         let url = oauthBaseURL.appendingPathComponent("/login/device/code")
@@ -116,10 +116,10 @@ actor GithubDeviceFlowService: GithubOAuthServiceProtocol {
 
     func awaitAccessToken() async throws -> String {
         guard let deviceCode = self.deviceCode else {
-            throw GithubOAuthError.configurationMissing(reason: "未调用 beginDeviceFlow")
+            throw GithubOAuthError.configurationMissing(reason: String(localized: "auth.error.deviceFlowNotStarted"))
         }
         guard let expiresAt = self.expiresAt else {
-            throw GithubOAuthError.configurationMissing(reason: "expires_at 未初始化")
+            throw GithubOAuthError.configurationMissing(reason: String(localized: "auth.error.expiresAtMissing"))
         }
 
         while true {

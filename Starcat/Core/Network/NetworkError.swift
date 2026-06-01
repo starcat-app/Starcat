@@ -50,31 +50,31 @@ enum NetworkError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "URL 无效"
+            return String(localized: "network.error.invalidURL")
         case .invalidResponse:
-            return "响应格式无效"
+            return String(localized: "network.error.invalidResponse")
         case .unauthorized:
-            return "未授权，请重新登录"
+            return String(localized: "network.error.unauthorized")
         case .rateLimited(let retryAfter):
             let seconds = Int(retryAfter.rounded())
-            return "请求过于频繁，请在 \(seconds) 秒后重试"
+            return String(format: String(localized: "network.error.rateLimitedFormat"), seconds)
         case .notModified:
-            return "内容未变化（304）"
+            return String(localized: "network.error.notModified")
         case .notFound:
-            return "资源不存在"
+            return String(localized: "network.error.notFound")
         case .serverError(let code):
-            return "GitHub 服务器错误（\(code)）"
+            return String(format: String(localized: "network.error.serverFormat"), code)
         case .clientError(let code, let message):
             if let message {
-                return "请求失败（\(code)）：\(message)"
+                return String(format: String(localized: "network.error.clientWithMessageFormat"), code, message)
             }
-            return "请求失败（\(code)）"
+            return String(format: String(localized: "network.error.clientFormat"), code)
         case .decodingError(let error):
-            return "响应解析失败：\(error.localizedDescription)"
+            return String(format: String(localized: "network.error.decodingFormat"), error.localizedDescription)
         case .transport(let error):
-            return "网络错误：\(error.localizedDescription)"
+            return String(format: String(localized: "network.error.transportFormat"), error.localizedDescription)
         case .cancelled:
-            return "已取消"
+            return String(localized: "network.error.cancelled")
         }
     }
 }

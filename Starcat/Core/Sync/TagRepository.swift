@@ -63,7 +63,7 @@ struct GRDBTagRepository: TagRepositoryProtocol {
                 throw DatabaseError.openFailed(underlying: NSError(
                     domain: "TagRepository",
                     code: -1,
-                    userInfo: [NSLocalizedDescriptionKey: "merge 目标标签不存在: \(target)"]
+                    userInfo: [NSLocalizedDescriptionKey: String(format: String(localized: "tagRepository.error.mergeTargetMissingFormat"), target)]
                 ))
             }
 

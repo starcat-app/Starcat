@@ -106,7 +106,7 @@ struct UserAvatar: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help(isLoggedIn ? "查看 GitHub 主页" : "点击登录 GitHub")
+        .help(isLoggedIn ? Text("avatar.openGithubProfile") : Text("avatar.loginGithub"))
     }
 
     private func openGitHubProfile(login: String) {

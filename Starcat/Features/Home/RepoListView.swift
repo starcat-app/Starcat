@@ -72,7 +72,7 @@ struct RepoListView: View {
                 RepoSkeletonListView(density: settings.listDensity, rowCount: 10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = viewModel.loadError, viewModel.items.isEmpty {
-                emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitle: error)
+                emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitleText: error)
             } else if viewModel.items.isEmpty {
                 emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
             } else if viewModel.isMultiSelectMode {
@@ -231,9 +231,9 @@ struct RepoListView: View {
             viewModel.toggleMultiSelectMode()
         } label: {
             toolbarIcon(viewModel.isMultiSelectMode ? "checklist.checked" : "checklist")
-                .accessibilityLabel(viewModel.isMultiSelectMode ? "batch.exitMultiSelect" : "batch.multiSelect")
+                .accessibilityLabel(viewModel.isMultiSelectMode ? Text("batch.exitMultiSelect") : Text("batch.multiSelect"))
         }
-        .help(viewModel.isMultiSelectMode ? "list.exitMultiSelectMode" : "list.multiSelectMode")
+        .help(viewModel.isMultiSelectMode ? Text("list.exitMultiSelectMode") : Text("list.multiSelectMode"))
         .keyboardShortcut("m", modifiers: [.command, .shift])
     }
 
@@ -261,9 +261,9 @@ struct RepoListView: View {
             }
         } label: {
             toolbarIcon(viewModel.hasActiveFilter ? "circle.grid.2x1.fill" : "circle.grid.2x1")
-                .accessibilityLabel(viewModel.statusFilter?.displayName ?? "list.filter.status")
+                .accessibilityLabel(viewModel.statusFilter?.localizedDisplayName ?? String(localized: "list.filter.status"))
         }
-        .help(viewModel.hasActiveFilter ? "list.filter.active" : "list.filter.hint")
+        .help(viewModel.hasActiveFilter ? Text("list.filter.active") : Text("list.filter.hint"))
         .onChange(of: viewModel.hideArchived) { _, newValue in
             settings.hideArchived = newValue
         }
@@ -345,33 +345,59 @@ struct RepoListView: View {
 
     private var navigationSubtitle: String {
         if selectedPage == .trending {
-            return selectedTrendingLanguage.displayName
+            return selectedTrendingLanguage.localizedDisplayName
         }
         if selectedPage == .search {
-            return "empty.searchPlaceholder"
+            return String(localized: "empty.searchPlaceholder")
         }
         if viewModel.isMultiSelectMode {
-            return "list.selectedCount"
+            return String(
+                format: String(localized: "list.selectedCountFormat"),
+                viewModel.multiSelectedRepoIDs.count,
+                viewModel.items.count
+            )
         }
         if viewModel.isRefreshing {
-            return "list.refreshing"
+            return String(
+                format: String(localized: "list.refreshingFormat"),
+                viewModel.items.count
+            )
         }
-        return "list.repoCount"
+        return String(
+            format: String(localized: "list.repoCountFormat"),
+            viewModel.items.count
+        )
     }
 
     // MARK: - 标题派生
 
     private var navigationTitle: String {
         if selectedPage == .trending {
-            return "trending.title"
+            return String(localized: "trending.title")
         }
         if selectedPage == .search {
-            return "search.title"
+            return String(localized: "search.title")
         }
         if viewModel.isSearching {
-            return "search.searching"
+            return String(localized: "search.searching")
         }
-        return viewModel.selection.displayNameKey
+        return localizedTitle(for: viewModel.selection)
+    }
+
+    /// Navigation title 需要 plain String；静态入口走 localization，用户标签/语言按原样显示。
+    private func localizedTitle(for item: SidebarItem) -> String {
+        switch item {
+        case .trending:
+            return String(localized: "trending.title")
+        case .allStars:
+            return String(localized: "sidebar.allRepos")
+        case .untagged:
+            return String(localized: "sidebar.untagged")
+        case .language(let language):
+            return language ?? String(localized: "sidebar.unknownLanguage")
+        case .tag(let id):
+            return viewModel.tags.first { $0.id == id }?.name ?? String(localized: "sidebar.tagFallback")
+        }
     }
 
     // MARK: - 空状态
@@ -387,7 +413,7 @@ struct RepoListView: View {
         }
     }
 
-    private var emptyTitle: String {
+    private var emptyTitle: LocalizedStringKey {
         if viewModel.isSearching { return "empty.noResults" }
         switch viewModel.selection {
         case .trending:        return "empty.trendingUnavailable"
@@ -398,18 +424,18 @@ struct RepoListView: View {
         }
     }
 
-    private var emptySubtitle: String {
+    private var emptySubtitle: LocalizedStringKey {
         if viewModel.isSearching { return "empty.tryAnother" }
         switch viewModel.selection {
         case .trending:        return "empty.trendingComingSoon"
         case .allStars:        return "empty.syncPrompt"
-        case .untagged:        return "新增 Stars 默认进这里"
-        case .language:        return "刷新或同步后试试"
-        case .tag:             return "在仓库详情页给它打上该标签"
+        case .untagged:        return "empty.untaggedHint"
+        case .language:        return "empty.languageHint"
+        case .tag:             return "empty.tagHint"
         }
     }
 
-    private func emptyState(systemImage: String, title: String, subtitle: String) -> some View {
+    private func emptyState(systemImage: String, title: LocalizedStringKey, subtitle: LocalizedStringKey) -> some View {
         VStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.system(size: 36))
@@ -418,6 +444,23 @@ struct RepoListView: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
             Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    private func emptyState(systemImage: String, title: LocalizedStringKey, subtitleText: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 36))
+                .foregroundStyle(.tertiary)
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Text(verbatim: subtitleText)
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)

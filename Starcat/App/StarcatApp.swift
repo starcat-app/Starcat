@@ -39,7 +39,7 @@ struct StarcatApp: App {
         .commands {
             // 替换系统默认的"关于 Starcat"菜单项，打开自定义 SwiftUI 关于窗口。
             CommandGroup(replacing: .appInfo) {
-                Button("关于 Starcat") {
+                Button("app.about") {
                     AboutPanelController.show()
                 }
                 .keyboardShortcut("I", modifiers: .command)

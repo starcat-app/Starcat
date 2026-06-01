@@ -24,13 +24,13 @@ enum TrendingAPIError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "无效的 URL"
+            return String(localized: "network.error.invalidURL")
         case .transport(let error):
-            return "网络错误：\(error.localizedDescription)"
+            return String(format: String(localized: "network.error.transportFormat"), error.localizedDescription)
         case .decodingError(let error):
-            return "响应解析失败：\(error.localizedDescription)"
+            return String(format: String(localized: "network.error.decodingFormat"), error.localizedDescription)
         case .serverError(let message):
-            return message ?? "服务器错误"
+            return message ?? String(localized: "network.error.serverGeneric")
         }
     }
 }
@@ -143,7 +143,7 @@ actor TrendingAPI {
             let message = String(data: data, encoding: .utf8)
             throw TrendingAPIError.serverError(message: message)
         case 500...599:
-            throw TrendingAPIError.serverError(message: "服务器错误 (\(http.statusCode))")
+            throw TrendingAPIError.serverError(message: String(format: String(localized: "network.error.serverStatusFormat"), http.statusCode))
         default:
             throw TrendingAPIError.transport(underlying: URLError(.badServerResponse))
         }

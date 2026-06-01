@@ -56,6 +56,14 @@ struct HomeView: View {
     /// Trending 当前选中的 repo 完整数据（用于右侧详情页展示元信息）。
     @State private var selectedTrendingRepo: TrendingRepo?
 
+    /// Manage 页面记住上次选择的分类（language / tag / allStars / untagged）。
+    /// 切换到 Trending 再回来时恢复，避免用户丢失浏览上下文。
+    @State private var savedManageSelection: SidebarItem = .allStars
+
+    /// Trending 页面记住上次选择的语言。
+    /// 切换到 Manage 再回来时恢复，避免用户丢失浏览上下文。
+    @State private var savedTrendingLanguage: TrendingLanguage = .all
+
     /// W4 A2：TagManagementViewModel 实例，sheet 关掉再开时复用，
     /// 避免每次 sheet 都 new 导致选择/加载态被打断。
     @State private var tagMgmtVM: TagManagementViewModel
@@ -208,6 +216,39 @@ struct HomeView: View {
                 selectedSidebarPage = .trending
                 viewModel.selection = .trending
                 viewModel.selectedRepoID = nil
+            }
+        }
+        // Manage ↔ Trending 切换时，记住各自的上次选择，切换回来时恢复
+        .onChange(of: selectedSidebarPage) { oldPage, newPage in
+            // 保存旧页面的状态
+            switch oldPage {
+            case .manage:
+                savedManageSelection = viewModel.selection
+            case .trending:
+                savedTrendingLanguage = selectedTrendingLanguage
+            case .search:
+                break
+            }
+
+            // 清除所有 repo 选中状态，避免详情页显示残留
+            viewModel.selectedRepoID = nil
+            selectedTrendingRepoID = nil
+            selectedTrendingRepo = nil
+
+            // 恢复新页面的状态
+            switch newPage {
+            case .manage:
+                // 如果当前 selection 是 .trending（从 Trending 页切过来时设置的），
+                // 恢复 Manage 上次的分类选择
+                if viewModel.selection.isTrending {
+                    viewModel.selection = savedManageSelection
+                }
+            case .trending:
+                // 确保 selection 标记为 trending，并恢复上次的语言选择
+                viewModel.selection = .trending
+                selectedTrendingLanguage = savedTrendingLanguage
+            case .search:
+                viewModel.searchQuery = ""
             }
         }
     }

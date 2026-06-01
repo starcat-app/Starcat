@@ -8,7 +8,7 @@
 //      @State private var toast: String?
 //      VStack { ... }
 //          .toast(message: $toast, icon: "doc.on.clipboard")
-//      // 触发：toast = "已复制 HTTPS"
+//      // 触发：toast = "clone.copiedHttps"（message 存 localization key）
 //
 //  设计取舍：
 //  - 不引第三方 Toast 库；SwiftUI overlay + 自动消失 50 行搞定
@@ -30,7 +30,7 @@ private struct ToastModifier: ViewModifier {
             if let message {
                 HStack(spacing: 6) {
                     Image(systemName: icon)
-                    Text(message)
+                    Text(LocalizedStringKey(message))
                         .font(.system(size: 13, weight: .medium))
                 }
                 .padding(.horizontal, 14)

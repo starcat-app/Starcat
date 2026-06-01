@@ -27,7 +27,18 @@ final class HomeViewModel {
     // MARK: - 数据状态
 
     /// 当前侧边栏选中项；默认 All Stars。
-    var selection: SidebarItem = .allStars
+    var selection: SidebarItem = .allStars {
+        didSet {
+            // 分类切换时清除 repo 选中状态，避免详情页显示残留数据。
+            // 这覆盖了所有 selection 变化路径：
+            // - 用户点击 Sidebar 行（language / tag / allStars / untagged）
+            // - 代码调用 selectSidebar()
+            // - Manage ↔ Trending 页面切换
+            guard oldValue != selection else { return }
+            selectedRepoID = nil
+            searchQuery = ""
+        }
+    }
 
     /// 当前中栏列表（经过 filter + sort 后的可见数据）。
     /// 重新加载策略：每次 selection / searchQuery 变化都重算（rebuild 比 diff 简单）。
@@ -446,9 +457,7 @@ final class HomeViewModel {
     /// 默认会清空搜索（"切到 Untagged 但保留搜索"语义混乱，干脆清掉）。
     func selectSidebar(_ item: SidebarItem) {
         guard selection != item else { return }
-        selection = item
-        searchQuery = ""
-        selectedRepoID = nil
+        selection = item  // didSet 会处理 selectedRepoID = nil 和 searchQuery = ""
     }
 
     // MARK: - W4-4 D2：filter + sort 透视层

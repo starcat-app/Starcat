@@ -142,11 +142,20 @@ struct GithubAuthView: View {
     @ViewBuilder
     private var errorBanner: some View {
         if let error = authSession.lastError {
-            Text(error.errorDescription ?? "auth.failed")
+            errorText(description: error.errorDescription)
                 .font(.footnote)
                 .foregroundStyle(.red)
                 .padding(.horizontal)
                 .multilineTextAlignment(.center)
+        }
+    }
+
+    @ViewBuilder
+    private func errorText(description: String?) -> some View {
+        if let description {
+            Text(verbatim: description)
+        } else {
+            Text("auth.failed")
         }
     }
 }

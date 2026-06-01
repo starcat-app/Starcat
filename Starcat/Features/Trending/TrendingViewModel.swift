@@ -18,6 +18,7 @@
 
 import Foundation
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -152,7 +153,11 @@ final class TrendingViewModel {
         // 临时模拟：2 秒后返回占位文本
         try? await Task.sleep(nanoseconds: 2_000_000_000)
 
-        summaryCache[repo.fullName] = "这是一个关于 \(repo.language ?? "开源") 项目的简要摘要..."
+        let language = repo.language ?? String(localized: "trending.summary.openSource")
+        summaryCache[repo.fullName] = String(
+            format: String(localized: "trending.summary.placeholderFormat"),
+            language
+        )
 
         summarizingRepoIDs.remove(repo.fullName)
     }
@@ -190,7 +195,11 @@ final class TrendingViewModel {
 
             AppLog.sync.info("Subscribed to \(repo.fullName, privacy: .public)")
         } catch {
-            subscriptionError = "订阅 \(repo.fullName) 失败：\(error.localizedDescription)"
+            subscriptionError = String(
+                format: String(localized: "trending.subscription.failedFormat"),
+                repo.fullName,
+                error.localizedDescription
+            )
             throw error
         }
     }
@@ -315,11 +324,11 @@ struct TrendingScore: Equatable {
 }
 
 /// 评分等级
-enum ScoreLevel: String {
-    case excellent = "优秀"
-    case good = "良好"
-    case average = "一般"
-    case low = "较低"
+enum ScoreLevel {
+    case excellent
+    case good
+    case average
+    case low
 
     var color: String {
         switch self {
@@ -327,6 +336,16 @@ enum ScoreLevel: String {
         case .good: return "blue"
         case .average: return "orange"
         case .low: return "gray"
+        }
+    }
+
+    /// UI 里展示的评分等级名称；rawValue 仅保留为内部稳定标识。
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .excellent: return "trending.score.excellent"
+        case .good: return "trending.score.good"
+        case .average: return "trending.score.average"
+        case .low: return "trending.score.low"
         }
     }
 }

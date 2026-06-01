@@ -118,7 +118,7 @@ struct SidebarHeaderView: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help("账户")
+        .help(Text("sidebar.account"))
     }
 
     // MARK: - 显示名 + login
@@ -150,19 +150,22 @@ struct SidebarHeaderView: View {
         HStack(spacing: 0) {
             StatCell(
                 value: viewModel.totalCount,
-                label: "Starred",
+                label: "sidebar.stats.starred",
+                helpText: String(localized: "sidebar.openGithubStarred"),
                 url: URL(string: "https://github.com/\(user.login)?tab=stars")
             )
             Divider().frame(height: 26)
             StatCell(
                 value: user.followers ?? 0,
-                label: "Followers",
+                label: "sidebar.stats.followers",
+                helpText: String(localized: "sidebar.openGithubFollowers"),
                 url: URL(string: "https://github.com/\(user.login)?tab=followers")
             )
             Divider().frame(height: 26)
             StatCell(
                 value: user.following ?? 0,
-                label: "Following",
+                label: "sidebar.stats.following",
+                helpText: String(localized: "sidebar.openGithubFollowing"),
                 url: URL(string: "https://github.com/\(user.login)?tab=following")
             )
         }
@@ -185,7 +188,8 @@ struct SidebarHeaderView: View {
 ///   - url: 可选链接；传入时数字会变为可点击链接，点击后在新标签页打开对应 GitHub 页面
 private struct StatCell: View {
     let value: Int
-    let label: String
+    let label: LocalizedStringKey
+    let helpText: String
     let url: URL?
 
     var body: some View {
@@ -203,7 +207,7 @@ private struct StatCell: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .help("打开 GitHub \(label) 页面")
+                .help(helpText)
             } else {
                 Text(value, format: .number)
                     .font(.system(size: 15, weight: .semibold))
