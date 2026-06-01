@@ -3883,6 +3883,7 @@
       }
     },
     "settings.ai.openai.customModelName" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3899,6 +3900,7 @@
       }
     },
     "settings.ai.openai.customModelName.help" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
