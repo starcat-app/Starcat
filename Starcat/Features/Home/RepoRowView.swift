@@ -212,6 +212,17 @@ private struct RepoRowSurface<Content: View>: View {
     }
 }
 
+// MARK: - Chip 抗压缩约定（Step 1 救火补丁，2026-06-02）
+//
+// 所有 chip 必须满足：
+// 1. 内部 `Text` 加 `.lineLimit(1)` —— 文字永远单行，不允许竖向换行（窗口压窄时 SwiftUI 会把
+//    "Python" 拆成 "P\ny\nt\nh\no\nn" 撑高 Capsule，变成竖立彩色胶囊）。
+// 2. 整个 chip 外层加 `.fixedSize(horizontal: true, vertical: false)` —— chip 保持自然宽度，
+//    宁可整行被 List 的水平裁剪带走最后一个 chip，也不让 chip 自己被压扁/拉高。
+//
+// 当前 Trending 列表已经显式碰过这个 bug；Manage 列表暂时因 chip 总数少没暴露，但属于同源风险，
+// 同步加固避免后续再写新 chip 时漏防护。详见 docs/工程进度/功能实现总览.md §7.4 同日变更日志。
+
 /// 语言徽章，带 GitHub 风格的小圆点。
 /// 颜色映射来自 https://github.com/ozh/github-colors（精简集）。
 fileprivate struct LanguageBadge: View {
@@ -226,6 +237,7 @@ fileprivate struct LanguageBadge: View {
             Text(language)
                 .font(style == .full ? .caption : .caption2)
                 .foregroundStyle(style == .full ? .primary : .secondary)
+                .lineLimit(1)
         }
         .padding(.horizontal, style == .full ? 7 : 0)
         .padding(.vertical, style == .full ? 3 : 0)
@@ -235,6 +247,7 @@ fileprivate struct LanguageBadge: View {
                     .fill(LanguageColor.color(for: language).opacity(0.13))
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -252,6 +265,7 @@ fileprivate struct StarsBadge: View {
                 .font(style == .full ? .caption : .caption2)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+                .lineLimit(1)
         }
         .padding(.horizontal, style == .full ? 7 : 0)
         .padding(.vertical, style == .full ? 3 : 0)
@@ -261,6 +275,7 @@ fileprivate struct StarsBadge: View {
                     .fill(.yellow.opacity(0.12))
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -282,6 +297,7 @@ fileprivate struct MetaBadge: View {
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
         .background(tint.opacity(0.12), in: Capsule())
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -300,6 +316,7 @@ fileprivate struct ArchivedBadge: View {
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
         .background(.orange.opacity(0.12), in: Capsule())
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -313,11 +330,13 @@ fileprivate struct RelativeDateBadge: View {
                 .font(.system(size: 9, weight: .medium))
             Text(date, style: .relative)
                 .font(.caption2)
+                .lineLimit(1)
         }
         .foregroundStyle(.tertiary)
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
         .background(.primary.opacity(0.06), in: Capsule())
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 

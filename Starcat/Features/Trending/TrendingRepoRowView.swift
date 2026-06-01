@@ -21,6 +21,16 @@ private enum BadgeStyle {
     case compact, full
 }
 
+// MARK: - Chip 抗压缩约定（Step 1 救火补丁，2026-06-02）
+//
+// 所有 chip 必须满足：
+// 1. 内部 `Text` 加 `.lineLimit(1)` —— 文字永远单行，不允许竖向换行（图 3 那种"竖立彩色胶囊"
+//    就是因为没加 lineLimit，窗口压窄时 SwiftUI 把 "Python" 拆成 "P\ny\nt\nh\no\nn" 撑高 Capsule）。
+// 2. 整个 chip 外层加 `.fixedSize(horizontal: true, vertical: false)` —— chip 保持自然宽度，
+//    宁可整行被 List 的水平裁剪带走最后一个 chip，也不让 chip 自己被压扁/拉高。
+//
+// 详见 docs/工程进度/功能实现总览.md §7.4 同日变更日志。
+
 /// 语言徽章，带 GitHub 风格的小圆点。
 private struct LanguageBadge: View {
     let language: String
@@ -34,6 +44,7 @@ private struct LanguageBadge: View {
             Text(language)
                 .font(style == .full ? .caption : .caption2)
                 .foregroundStyle(style == .full ? .primary : .secondary)
+                .lineLimit(1)
         }
         .padding(.horizontal, style == .full ? 7 : 0)
         .padding(.vertical, style == .full ? 3 : 0)
@@ -43,6 +54,7 @@ private struct LanguageBadge: View {
                     .fill(LanguageColor.color(for: language).opacity(0.13))
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -60,6 +72,7 @@ private struct StarsBadge: View {
                 .font(style == .full ? .caption : .caption2)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+                .lineLimit(1)
         }
         .padding(.horizontal, style == .full ? 7 : 0)
         .padding(.vertical, style == .full ? 3 : 0)
@@ -69,6 +82,7 @@ private struct StarsBadge: View {
                     .fill(.yellow.opacity(0.12))
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -76,7 +90,7 @@ private struct StarsBadge: View {
 private struct TrendingPeriodBadge: View {
     let text: String
     let style: BadgeStyle
-    
+
     var body: some View {
         HStack(spacing: 2) {
             Image(systemName: "arrow.up.right")
@@ -84,6 +98,7 @@ private struct TrendingPeriodBadge: View {
             Text(text)
                 .font(style == .full ? .caption : .caption2)
                 .monospacedDigit()
+                .lineLimit(1)
         }
         .foregroundStyle(.green)
         .padding(.horizontal, style == .full ? 7 : 0)
@@ -94,6 +109,7 @@ private struct TrendingPeriodBadge: View {
                     .fill(Color.green.opacity(0.12))
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
