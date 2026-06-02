@@ -4,7 +4,7 @@
 //
 //  登录后的主界面：NavigationSplitView 三栏。
 //
-//  布局（2026-06-02 调整 v7，三栏展开默认 1410×763，折叠态硬下限 1190×763）：
+//  布局（2026-06-02 调整 v8，三栏展开默认 1410×763，折叠态硬下限 1190×763）：
 //  Sidebar（220-320pt, ideal 260）│ RepoList（420-520pt, ideal 420）│ RepoDetail（minWidth 770pt）
 //  - 三栏展开 min 累加 = **1410pt** → HomeView 首次进入默认 1410×763
 //  - sidebar 被系统自动折叠后，可见列 min 累加 = **1190pt**（RepoList 420 + Detail 770）
@@ -18,9 +18,9 @@
 //  - **首次启动尺寸 != 硬下限**：defaultSize 是三栏展开态 1410×763；contentMinSize
 //    是 sidebar 折叠态 1190×763。这样既允许系统自然折叠 sidebar，又不让窗口缩到
 //    旧 ContentView 800×600 下限导致列表裁切。
-//  - **重新展开 sidebar 要主动扩窗**：用户先收起 sidebar、拖到 1190 最小窗口后，
-//    再展开 sidebar 时，SwiftUI 不会自动把 NSWindow 放回 1410。HomeView 监听
-//    columnVisibility 回到 `.all`，通知 `MainWindowFrameModifier` 做一次 AppKit 扩容。
+//  - **硬下限必须跟 columnVisibility 绑定**：三栏 `.all` 可见时，窗口不能直接拖到
+//    1190，否则 sidebar 还没真正离开布局就会被裁切；只有 sidebar 已被系统/用户收起
+//    后，硬下限才降到 1190。重新展开 `.all` 时再一次性扩回 1410。
 //  - RepoList 的 min == ideal == 420：默认贴 min 启动，往大可拖到 520，往小拖不动
 //  - Detail 770pt：GitHub README 80 字符代码块 + 边距的可读宽度，hero / chip / topics
 //    行不挤压换行；放弃 GitHub 原站 1012pt 阅读容器宽度
@@ -72,9 +72,21 @@ struct HomeView: View {
 
     /// sidebar 从折叠态重新展开时递增，交给 AppKit 窗口桥接层扩回三栏默认宽度。
     ///
-    /// 这里不用把 `.all` 状态直接当作动态 minSize：否则用户从展开态拖窄窗口时，
-    /// AppKit 会被 1410 下限卡住，失去“收起 sidebar 后可缩到 1190”的能力。
+    /// 动态 minSize 只能阻止“直接拖窄导致裁切”；它不会自动把已经缩到 1190 的
+    /// 折叠态窗口放回 1410。所以重新展开 `.all` 时仍需要这个一次性扩窗请求。
     @State private var expandedLayoutRequestID = 0
+
+    /// 当前窗口内容区硬下限。
+    ///
+    /// 关键约束：`.all` 时必须使用三栏展开态 1410，不能继续沿用折叠态 1190。
+    /// 直接拖窄窗口时，SwiftUI 可能还没把 sidebar 从布局树里移走；如果 AppKit
+    /// 已经允许缩到 1190，就会出现左栏抽屉 / 裁切。只有 columnVisibility 明确不再是
+    /// `.all`，才说明可以进入“中栏 + 右栏”的折叠态下限。
+    private var currentContentMinSize: CGSize {
+        columnVisibility == .all
+            ? MainWindowFrameDefaults.defaultSize
+            : MainWindowFrameDefaults.contentMinSize
+    }
 
     /// Sidebar 顶部三入口的当前页。
     ///
@@ -142,7 +154,7 @@ struct HomeView: View {
                 selectedTrendingLanguage: $selectedTrendingLanguage,
                 showTagManagement: $showTagManagement
             )
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+                .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
         } content: {
             RepoListView(
                 trendingRepository: trendingRepository,
@@ -160,7 +172,10 @@ struct HomeView: View {
         }
         .environment(viewModel)
         .environment(readmeVM)
-        .mainWindowFrameAutosave(expandedLayoutRequestID: expandedLayoutRequestID)
+        .mainWindowFrameAutosave(
+            contentMinSize: currentContentMinSize,
+            expandedLayoutRequestID: expandedLayoutRequestID
+        )
         // 调试用：右上角浮动 W×H 胶囊，仅 DEBUG 包 + 设了 launch arg `-DebugLayoutOverlay YES` 时显示。
         // 详见 `Shared/Utilities/DebugFlags.swift` 的类型文档（含 Xcode Scheme / LLDB / defaults 三种切换方式）。
         .overlay(alignment: .topTrailing) {

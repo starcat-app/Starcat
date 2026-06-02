@@ -17,8 +17,10 @@
 //  正确做法：在 AppKit 层用 `contentMinSize` 设硬下限（这是 NSWindow 的"内容区
 //  最小尺寸"属性，含义就是 SwiftUI contentView 不能小于这个值，到达后用户拖不动）。
 //
-//  当前数值（2026-06-02 v7）：启动默认强制回三栏展开态 1410×763；运行期窗口
-//  硬下限是 sidebar 折叠后仍可用的 1190×763（RepoList 420 + Detail 770）。
+//  当前数值（2026-06-02 v8）：启动默认强制回三栏展开态 1410×763；运行期窗口
+//  硬下限跟 `NavigationSplitViewVisibility` 绑定：三栏 `.all` 时是 1410×763，
+//  sidebar 已折叠 / 隐藏后才降到 1190×763（RepoList 420 + Detail 770）。
+//  这样可以避免用户从初始化大小直接拖窄时，sidebar 还没真正离开布局就被裁切。
 //  如果用户先收起 sidebar 再把窗口缩到 1190，之后重新展开 sidebar 时，需要主动
 //  把窗口内容区扩回 1410，否则 `NavigationSplitView` 只会把 sidebar 塞回当前窄窗口，
 //  形成左栏抽屉 / 裁切状态。
@@ -44,8 +46,8 @@ enum MainWindowFrameDefaults {
     /// - 高度 763 是 dong4j 实测，刚好够 Sidebar 完整渲染（头像 + 统计 + 主导航 +
     ///   Tags + Languages 前 ~10 个语言项），低于这个高度 Languages 区域开始被截断
     ///
-    /// 已知约束：屏幕分辨率 < 1410×763 的设备首次启动时会优先按 1190×763
-    /// 折叠态硬下限兜底，避免默认窗口完全不可用；需要三栏全部展开时再手动拉宽。
+    /// 已知约束：屏幕分辨率 < 1410×763 的设备首次启动时仍会优先保证三栏展开态，
+    /// 窗口可能略超出可视区域；用户主动收起 sidebar 后，硬下限才会降到 1190×763。
     static let defaultSize = CGSize(width: 1410, height: 763)
 
     /// Sidebar 被系统自动折叠后的窗口硬下限。
@@ -56,8 +58,8 @@ enum MainWindowFrameDefaults {
     ///
     /// **RepoList 420 + Detail 770 = 1190pt**
     ///
-    /// 这里用 1190×763 作为 `NSWindow.contentMinSize`，让系统可以自然折叠左栏，
-    /// 但折叠后不能继续缩到 800pt 左右把中栏列表裁掉。
+    /// 这里用 1190×763 作为 sidebar 已折叠后的 `NSWindow.contentMinSize`，
+    /// 但 `.all` 三栏可见时不能提前使用它，否则左栏会在直接拖窄时被裁切。
     static let contentMinSize = CGSize(width: 1190, height: 763)
 
     /// AppKit 保存窗口 frame 的 UserDefaults key 约定。
@@ -153,8 +155,8 @@ private struct MainWindowFrameReader: NSViewRepresentable {
             //
             // contentMinSize 不能小于"当前可见列"的 min 累加值，否则用户能拖到比
             // SwiftUI 设计下限更小，视图会被裁切。展开态是 220+420+770=1410；
-            // sidebar 被 NavigationSplitView 折叠后，可见列变成 420+770=1190。
-            // 因此窗口硬下限设为 1190×763，而默认展开尺寸仍是 1410×763。
+            // sidebar 折叠后可见列才变成 420+770=1190。HomeView 会按
+            // columnVisibility 动态传入这两个值。
             //
             // **特殊情况**：autosave 恢复出的尺寸如果**小于** contentMinSize（例如
             // 用户在更小窗口下限版本里拖小过窗口，新版本提高了下限），AppKit 不会
@@ -221,8 +223,8 @@ private struct MainWindowFrameReader: NSViewRepresentable {
             lastHandledExpandedLayoutRequestID = expandedLayoutRequestID
 
             // 请求只来自 HomeView 观察到 `NavigationSplitViewVisibility` 重新变成 `.all`。
-            // 这里不要改长期 minSize；运行期硬下限仍是折叠态 1190，保证用户收起
-            // sidebar 后还能把窗口缩小。只在“重新展开”这一刻做一次内容区扩容。
+            // HomeView 已经把当前硬下限切回 1410；这里额外负责把已缩到 1190 的
+            // 折叠态窗口真正扩回去，而不是只改 minSize 后留下抽屉 / 裁切状态。
             growToExpandedLayoutIfNeeded(window: window)
         }
 
@@ -265,8 +267,8 @@ private struct MainWindowFrameReader: NSViewRepresentable {
             // `contentMinSize` 是推荐表达：下限以 SwiftUI contentView 为准。
             // 同时显式设置 `minSize` 是为了抵抗 SwiftUI / NavigationSplitView 在
             // sidebar 折叠过程中重算窗口约束时把 AppKit minSize 回写成较小值。
-            // 两个属性保持同一个物理下限：content 1190×763，对应 window frame
-            // 需要额外包含 titlebar / toolbar 的高度。
+            // 两个属性保持同一个物理下限：content 1410×763 或 1190×763，
+            // 对应 window frame 需要额外包含 titlebar / toolbar 的高度。
             window.contentMinSize = contentMinSize
             window.minSize = windowFrameSize(forContentMinSize: contentMinSize, in: window)
         }
@@ -365,7 +367,7 @@ extension View {
     /// - Parameters:
     ///   - defaultSize: 首次启动（无 autosave 记录时）的默认窗口尺寸。
     ///   - contentMinSize: NSWindow.contentMinSize 硬下限。**必须**不小于三栏 SwiftUI
-    ///     视图 min 累加值；否则用户能拖到比子视图设计下限更小，视图被裁切。
+    ///     视图 min 累加值；HomeView 会根据 columnVisibility 在 1410 与 1190 之间切换。
     ///   - expandedLayoutRequestID: 每次 sidebar 从折叠态重新展开时递增一次，用于
     ///     触发窗口内容区扩回 defaultSize；不要拿它当长期 minSize 开关。
     func mainWindowFrameAutosave(

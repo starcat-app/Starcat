@@ -129,7 +129,7 @@ struct RepoDetailView: View {
                 emptyState
             }
         }
-        .frame(minWidth: 770)
+//        .frame(minWidth: 770)
     }
 
     // MARK: - W4 B1：Unstar 流程

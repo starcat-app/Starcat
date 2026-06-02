@@ -260,7 +260,7 @@
 | `NSWorkspace.shared.open(url)` | `ReadmeWebView.Coordinator` 把外链跳系统浏览器 | "NSWorkspace open URL" |
 | `NSWindowController` | `AboutWindowController` 管理单例关于窗口，重复 Cmd+I 复用同一个窗口 | "NSWindowController showWindow" |
 | `NSWindow.setFrameAutosaveName` | `MainWindowFrameModifier` 保存 / 恢复主窗口尺寸与位置 | "NSWindow setFrameAutosaveName setFrameUsingName" |
-| `NSWindow.contentMinSize` / `minSize` | `MainWindowFrameModifier` 设置主窗口硬下限：三栏展开默认 1410×763，sidebar 折叠后硬下限 1190×763；重新展开 sidebar 时通过 `expandedLayoutRequestID` 触发一次 AppKit 扩窗，避免把 1410 做成永久下限而破坏折叠态缩窗能力 | "NSWindow contentMinSize minSize setFrame" |
+| `NSWindow.contentMinSize` / `minSize` | `MainWindowFrameModifier` 设置主窗口硬下限：`.all` 三栏可见时是 1410×763，sidebar 已折叠后才降到 1190×763；重新展开 sidebar 时通过 `expandedLayoutRequestID` 触发一次 AppKit 扩窗 | "NSWindow contentMinSize minSize setFrame" |
 | Keychain | `KeychainManager`（**有 DEBUG 临时 fallback，D-16 待还**） | "Keychain Services API macOS" |
 | App Sandbox / Entitlements | `Starcat.entitlements` | "App Sandbox macOS entitlements" |
 | `NSBackgroundActivityScheduler` | W6 Release 轮询会用 | "NSBackgroundActivityScheduler macOS" |
