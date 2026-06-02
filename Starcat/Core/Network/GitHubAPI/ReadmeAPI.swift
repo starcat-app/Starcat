@@ -65,6 +65,9 @@ struct ReadmeAPI {
     /// D-02：依赖协议而非具体 actor 类型，便于单测注入 Mock。
     let client: any GitHubAPIClientProtocol
     let repository: ReadmeRepository
+    /// W7+ 引入：Trending README 持久化（与 manage 路径独立的 `trending_readmes` 表）。
+    /// 用 owner/repo 作 PK，与 manage 的 `repo_id` PK 路径互不污染。
+    let trendingRepository: TrendingReadmeRepository
 
     /// 软过期阈值。
     ///
@@ -79,9 +82,14 @@ struct ReadmeAPI {
     /// 暂硬编码，Settings 面板调节留到 P2。
     static let softTtl: TimeInterval = 6 * 3600
 
-    init(client: any GitHubAPIClientProtocol, repository: ReadmeRepository) {
+    init(
+        client: any GitHubAPIClientProtocol,
+        repository: ReadmeRepository,
+        trendingRepository: TrendingReadmeRepository
+    ) {
         self.client = client
         self.repository = repository
+        self.trendingRepository = trendingRepository
     }
 
     // MARK: - Public
@@ -164,43 +172,99 @@ struct ReadmeAPI {
         return .updated(readme)
     }
 
-    /// Trending repo 的 README 刷新（不走本地数据库缓存，适用于未入库的 Trending 仓库）。
+    /// 纯读本地 trending README 缓存（SWR 第一阶段：立即上屏）。
     ///
-    /// 与 `refreshReadme(for:)` 的差异：
-    /// - 不读写本地数据库缓存，结果直接返回
-    /// - 用于 TrendingRepo 等本地无持久化记录的场景
+    /// - Parameter fullName: `owner/repo` 格式
+    /// - Returns: 缓存命中返回 `Readme`（用 repoId=0 占位以复用 ReadmeViewModel 的 SWR 模板）；
+    ///   未命中或读失败返回 nil
+    ///
+    /// 注意：返回类型仍是 `Readme`（manage 路径的模型），是为了让 `ReadmeViewModel.loadTrending`
+    /// 与 `loadInternal` 的 SWR 状态机共用 `LoadState.loaded(html:cachedAt:)` 渲染分支，
+    /// `repoId` 这个字段 ViewModel 完全不读，置 0 不影响。
+    func cachedTrendingReadme(fullName: String) async -> Readme? {
+        do {
+            guard let cached = try await trendingRepository.find(fullName: fullName) else {
+                return nil
+            }
+            return Self.bridgeToReadme(cached)
+        } catch {
+            AppLog.network.warning("Trending README cache read failed for \(fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// 走网络刷新 Trending README HTML 并同步本地缓存（SWR 第二阶段：后台覆盖）。
+    ///
+    /// 与 manage 路径的 `refreshReadme(for:)` 行为一致：
+    /// - 带本地 `etag` / `last_modified` 做条件请求 → 304 仅 touch cached_at
+    /// - 200 → upsert 新 HTML
+    /// - 404 → 删本地旧缓存 + 返回 `.notFound`
+    /// - 其他错误 → 包到 `.failed(error)` 不抛出（SWR 模式下 ViewModel 层做"刷新失败但缓存还能用"兜底）
+    ///
+    /// 与 manage 路径的差异：
+    /// - 走 `TrendingReadmeRepository`（PK = full_name）而非 `ReadmeRepository`（PK = repo_id）
+    /// - 返回 `Readme`（repoId=0 占位）让 ReadmeViewModel 的 SWR 模板能复用
     func refreshTrendingReadme(owner: String, repo: String) async -> ReadmeRefreshResult {
+        let fullName = "\(owner)/\(repo)"
+
+        // 第一步：取本地缓存的 ETag / Last-Modified 做条件请求
+        let existing: TrendingReadme?
+        do {
+            existing = try await trendingRepository.find(fullName: fullName)
+        } catch {
+            return .failed(error)
+        }
+
+        // 第二步：发 HTTP 请求（带 If-None-Match / If-Modified-Since）
         let raw: BytesResponse
         do {
             raw = try await client.readmeHTML(
                 owner: owner,
                 repo: repo,
-                ifNoneMatch: nil,
-                ifModifiedSince: nil
+                ifNoneMatch: existing?.etag,
+                ifModifiedSince: existing?.lastModified
             )
         } catch NetworkError.notFound {
+            // GitHub 返回 404 → 该 repo 没有 README；清掉本地旧缓存避免误显示
+            if existing != nil {
+                try? await trendingRepository.delete(fullName: fullName)
+            }
             return .notFound
         } catch {
             return .failed(error)
         }
 
+        // 第三步：304 → 仅 touch cached_at，返回更新过时间戳的 Readme
         if raw.notModified {
-            // 理论上不应该发生（无条件请求不会有 304）
-            return .notFound
+            guard let cached = existing else {
+                // 极端 case：本地缓存被清掉但服务端仍 304 → 兜底无条件重拉
+                AppLog.network.warning("Trending README 304 但本地缓存丢失，无条件重拉 \(fullName, privacy: .public)")
+                return await refreshTrendingUnconditional(owner: owner, repo: repo)
+            }
+            let now = Date()
+            try? await trendingRepository.touchCachedAt(fullName: fullName, at: now)
+            var refreshed = cached
+            refreshed.cachedAt = ISO8601DateFormatter.shared.string(from: now)
+            return .updated(Self.bridgeToReadme(refreshed))
         }
 
+        // 第四步：200 → 写新缓存
         let html = String(data: raw.data, encoding: .utf8) ?? ""
         let now = Date()
-        let readme = Readme(
-            repoId: 0, // Trending repo 无真实 repoId，置 0 占位
-            content: nil,
+        let record = TrendingReadme(
+            fullName: fullName,
             renderedHtml: html,
             etag: raw.etag,
             lastModified: raw.lastModified,
             cachedAt: ISO8601DateFormatter.shared.string(from: now),
             size: raw.data.count
         )
-        return .updated(readme)
+        do {
+            try await trendingRepository.upsert(record)
+        } catch {
+            return .failed(error)
+        }
+        return .updated(Self.bridgeToReadme(record))
     }
 
     // MARK: - Private
@@ -239,6 +303,58 @@ struct ReadmeAPI {
             return .failed(error)
         }
         return .updated(readme)
+    }
+
+    /// Trending README 不带 validator 的强制刷新（304 但本地缓存丢失时的兜底）。
+    private func refreshTrendingUnconditional(owner: String, repo: String) async -> ReadmeRefreshResult {
+        let fullName = "\(owner)/\(repo)"
+        let raw: BytesResponse
+        do {
+            raw = try await client.readmeHTML(
+                owner: owner,
+                repo: repo,
+                ifNoneMatch: nil,
+                ifModifiedSince: nil
+            )
+        } catch NetworkError.notFound {
+            return .notFound
+        } catch {
+            return .failed(error)
+        }
+
+        let html = String(data: raw.data, encoding: .utf8) ?? ""
+        let now = Date()
+        let record = TrendingReadme(
+            fullName: fullName,
+            renderedHtml: html,
+            etag: raw.etag,
+            lastModified: raw.lastModified,
+            cachedAt: ISO8601DateFormatter.shared.string(from: now),
+            size: raw.data.count
+        )
+        do {
+            try await trendingRepository.upsert(record)
+        } catch {
+            return .failed(error)
+        }
+        return .updated(Self.bridgeToReadme(record))
+    }
+
+    /// 把 trending 路径的 `TrendingReadme` 桥接到 manage 路径的 `Readme`，
+    /// 让 ReadmeViewModel 的 SWR 模板（`LoadState.loaded(html:cachedAt:)`）能直接消费。
+    ///
+    /// 注：repoId 置 0（trending 没真实 GitHub repo id），ViewModel 不读这字段。
+    /// content 置 nil（trending 链路不缓存原始 markdown，与 manage 同款）。
+    private static func bridgeToReadme(_ trending: TrendingReadme) -> Readme {
+        Readme(
+            repoId: 0,
+            content: nil,
+            renderedHtml: trending.renderedHtml,
+            etag: trending.etag,
+            lastModified: trending.lastModified,
+            cachedAt: trending.cachedAt,
+            size: trending.size
+        )
     }
 
     // MARK: - 纯逻辑工具（可独立单测）

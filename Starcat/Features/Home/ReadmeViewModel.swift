@@ -125,18 +125,29 @@ final class ReadmeViewModel {
     /// 当前 Trending repo 的标识（owner/repo），用于判断是否切换了 repo。
     private var currentTrendingKey: String?
 
-    /// 加载 Trending repo 的 README（不走本地数据库缓存）。
+    /// 加载 Trending repo 的 README（W7+ 起：SWR 模式，与 manage `loadInternal` 同构）。
     ///
-    /// 用于 TrendingRepo 等本地无持久化记录的仓库。
+    /// 流程（与 `loadInternal` 完全对齐，只是缓存路径走 `cachedTrendingReadme(fullName:)`）：
+    /// 1. 切到新 repo → 同步设 `.loading` 占位（避免 await 期间显示上一个 repo 的 README）
+    /// 2. 读 `trending_readmes` 表（按 `owner/repo` PK）→ 命中立即上屏 `.loaded`
+    /// 3. 不论缓存是否命中，都强制走网络刷新（dong4j 决策 ttl_c：trending 不设 TTL）
+    /// 4. 200 / 304 → 覆盖或 touch cached_at；404 → 删本地 + `.empty`；其他错误 → 有缓存就静默
+    ///
+    /// 与 `loadInternal` 的差异：
+    /// - 缓存读写 PK 是 `full_name`（owner/repo）而非 `repo_id`
+    /// - 没有 manage 的 session 404 集合（trending repo 切换频繁，没必要在 session 内禁止重试）
+    /// - 没有 forceRefresh 参数：调用方每次都希望走 SWR（无 TTL 短路）
+    ///
     /// - Parameter isLoggedIn: 用户是否已登录。用于判断 403 是否因未授权（应显示"请登录"而非"加载失败"）。
     func loadTrending(owner: String, repo: String, isLoggedIn: Bool) {
         currentTask?.cancel()
 
         let key = "\(owner)/\(repo)"
 
-        // 切到新 repo 时立即同步设 .loading 占位
+        // 切到新 repo 时立即同步设 .loading 占位（race 防护）
         let isSameRepo = (currentTrendingKey == key)
         currentTrendingKey = key
+        currentRepoId = nil // 进 trending 路径时清掉 manage 路径的 race key
 
         if !isSameRepo {
             state = .loading
@@ -148,7 +159,26 @@ final class ReadmeViewModel {
             self.isRefreshing = true
             defer { self.isRefreshing = false }
 
-            // 直接走网络获取（Trenging repo 无本地缓存）
+            // 第一阶段：读本地缓存（trending_readmes 表，PK = full_name）
+            let cached = await self.api.cachedTrendingReadme(fullName: key)
+            guard !Task.isCancelled, self.currentTrendingKey == key else { return }
+
+            // 用缓存立即上屏（如果有有效内容）
+            let hasUsableCache: Bool
+            if let c = cached, let html = c.renderedHtml, !html.isEmpty {
+                let cachedAt = Self.parseISO8601(c.cachedAt) ?? Date()
+                self.state = .loaded(html: html, cachedAt: cachedAt)
+                hasUsableCache = true
+            } else {
+                if case .loading = self.state {
+                    // 已是 loading，不变
+                } else {
+                    self.state = .loading
+                }
+                hasUsableCache = false
+            }
+
+            // 第二阶段：强制走网络刷新（dong4j 决策 ttl_c：trending 不设 TTL，每次都拉网络覆盖）
             let result = await self.api.refreshTrendingReadme(owner: owner, repo: repo)
             guard !Task.isCancelled, self.currentTrendingKey == key else { return }
 
@@ -161,7 +191,15 @@ final class ReadmeViewModel {
                     self.state = .empty
                 }
 
-            case .notModified, .notFound:
+            case .notModified(let readme):
+                // 304：html 没变，cachedAt 已被 touched。更新 state 让 UI 的 "缓存于 ..." 刷新到"刚刚"。
+                if let html = readme.renderedHtml, !html.isEmpty {
+                    let cachedAt = Self.parseISO8601(readme.cachedAt) ?? Date()
+                    self.state = .loaded(html: html, cachedAt: cachedAt)
+                }
+                // html 为空的 304 理论上不该发生（refreshTrendingUnconditional 会兜底），防御性不动 state
+
+            case .notFound:
                 self.state = .empty
 
             case .failed(let error):
@@ -170,8 +208,14 @@ final class ReadmeViewModel {
                     self.state = .requiresLogin
                     return
                 }
-                AppLog.network.error("Trending README 加载失败 owner=\(owner, privacy: .public) repo=\(repo, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                self.state = .error(message: error.localizedDescription)
+
+                if hasUsableCache {
+                    // SWR 兜底：有缓存就静默，不打扰用户。debug 日志方便排查
+                    AppLog.network.debug("Trending README 后台刷新失败但本地有缓存，保持已显示 owner=\(owner, privacy: .public) repo=\(repo, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                } else {
+                    AppLog.network.error("Trending README 加载失败 owner=\(owner, privacy: .public) repo=\(repo, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                    self.state = .error(message: error.localizedDescription)
+                }
             }
         }
     }

@@ -80,7 +80,10 @@ struct ReadmeAPINetworkTests {
         )
 
         let mock = MockGitHubAPIClient()
-        let api = ReadmeAPI(client: mock, repository: readmeRepo)
+        // W7+：ReadmeAPI 新增 trendingRepository 必填参数，本套测试只验 manage 路径，
+        // 用同一个内存库装一个 TrendingReadmeRepository 即可（不会被本套用例触达）。
+        let trendingReadmeRepo = TrendingReadmeRepository(database: db)
+        let api = ReadmeAPI(client: mock, repository: readmeRepo, trendingRepository: trendingReadmeRepo)
         return (api, mock, repo, readmeRepo, db)
     }
 

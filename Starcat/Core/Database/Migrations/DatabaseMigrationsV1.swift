@@ -31,6 +31,93 @@ enum DatabaseMigrations {
         registerV1(into: &migrator)
         registerV2(into: &migrator)
         registerV3(into: &migrator)
+        registerV4(into: &migrator)
+    }
+
+    // MARK: - v4（Trending 列表 + README 持久化）
+
+    /// v4：新增 Trending 缓存两张表（与 manage 路径完全隔离）。
+    ///
+    /// **背景**：原 `TrendingRepository` 仅在 actor 内用 Dictionary 做内存缓存，
+    /// 进程退出即丢；`ReadmeAPI.refreshTrendingReadme` 也完全不读写本地数据库。
+    /// 用户进入 Trending → 切日/周/月榜 / 切语言 / 杀进程后重开 都要重新从外部
+    /// API 拉一次，离线场景什么都看不到，且每次首屏要等到网络回来才有内容。
+    ///
+    /// 决策（dong4j 2026-06-02）：scope_b + schema_a + readme_pk_c + ttl_c。
+    /// - scope_b：列表 + README 两块都做持久化
+    /// - schema_a：独立 `trending_repos` / `trending_readmes` 表，与 `repos` /
+    ///   `readmes` 完全隔离（trending 没有真实 GitHub repo id，强制复用 `repos.id`
+    ///   PK 会触发"何时从外部 API 补 id"的链式问题；与 manage 路径解耦最干净）
+    /// - readme_pk_c：`trending_readmes` 用 `full_name` 作 PK（trending 只有 `owner/repo`，
+    ///   没 Int64 id；与 `readmes.repo_id` 保持隔离）
+    /// - ttl_c：列表与 README 都不设 TTL，每次进 Trending 都强制走网络重拉，本地
+    ///   缓存只承担"离线兜底 + 快速首屏 SWR"角色（先把缓存立即上屏，再后台拉网络覆盖）
+    ///
+    /// **`trending_repos` 表设计**：
+    /// - 复合 PK `(period, language_filter, rank)`：同一榜单（period+language_filter）内
+    ///   按 `rank` 排序定位每行；同一 repo 出现在不同榜单（如 daily Swift 第 3 + weekly Swift 第 5）
+    ///   各算一行，互不覆盖。
+    /// - `language_filter` 用空串 `""` 表示"全部语言"（与 `TrendingLanguage.all.apiValue == ""` 对齐）。
+    /// - `contributors_json` 存 JSON 数组字符串，避免再开一张明细表（trending 贡献者数量稳定 ≤ 5，
+    ///   且只读不查询单个贡献者）。
+    /// - `cached_at` 仅用于"缓存于 X 时间前"展示，不参与 TTL 判断。
+    /// - 索引 `(full_name)`：将来如做"该 repo 在哪些榜单出现过"反查时复用，当前未启用。
+    ///
+    /// **`trending_readmes` 表设计**：
+    /// - PK `full_name`（TEXT）：trending 没有真实 repo id，用 `owner/name` 唯一标识。
+    /// - 字段语义与 `readmes` 表完全对齐：`rendered_html` / `etag` / `last_modified` /
+    ///   `cached_at` / `size`，让 `ReadmeAPI` 复用同一套 SWR + ETag 304 + 大小统计逻辑。
+    ///
+    /// **保留的差异（与 readmes / repos 表对比）**：
+    /// - 不挂 FTS5 触发器：trending 列表是榜单切换型，不需要全文搜索。
+    /// - 不与 `starred_repos` / `repo_tags` 等用户数据表关联：trending 是临时榜单，
+    ///   不应该有 cascade 删除影响用户数据的可能。
+    private static func registerV4(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v4-trending-cache") { db in
+            try createTrendingRepos(db)
+            try createTrendingReadmes(db)
+        }
+    }
+
+    private static func createTrendingRepos(_ db: Database) throws {
+        try db.create(table: "trending_repos") { t in
+            // 榜单维度
+            t.column("period", .text).notNull()                  // daily / weekly / monthly
+            t.column("language_filter", .text).notNull()         // "" 表示全部语言
+            t.column("rank", .integer).notNull()                 // 在该 (period, language_filter) 列表里的排名（0-based）
+
+            // repo 维度
+            t.column("full_name", .text).notNull()
+            t.column("owner", .text).notNull()
+            t.column("name", .text).notNull()
+            t.column("description", .text)
+            t.column("language", .text)
+            t.column("stars_count", .integer).notNull().defaults(to: 0)
+            t.column("forks_count", .integer).notNull().defaults(to: 0)
+            t.column("stars_in_period", .integer).notNull().defaults(to: 0)
+            t.column("contributors_json", .text)                 // JSON [{username, avatarURL, profileURL}]
+
+            // 缓存维度
+            t.column("cached_at", .text).notNull()
+
+            t.primaryKey(["period", "language_filter", "rank"])
+        }
+
+        // full_name 反查索引（可选；先建好避免后续 ALTER）
+        try db.create(index: "idx_trending_repos_full_name", on: "trending_repos", columns: ["full_name"])
+    }
+
+    private static func createTrendingReadmes(_ db: Database) throws {
+        try db.create(table: "trending_readmes") { t in
+            t.column("full_name", .text).primaryKey()
+            t.column("rendered_html", .text)
+            t.column("etag", .text)
+            t.column("last_modified", .text)
+            t.column("cached_at", .text).notNull()
+            t.column("size", .integer).notNull().defaults(to: 0)
+        }
+
+        try db.create(index: "idx_trending_readmes_cached", on: "trending_readmes", columns: ["cached_at"])
     }
 
     // MARK: - v3（HOM-46 性能优化：列表查询复合索引）

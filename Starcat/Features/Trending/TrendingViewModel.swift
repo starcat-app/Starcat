@@ -111,7 +111,20 @@ final class TrendingViewModel {
 
     // MARK: - Public Actions
 
-    /// 刷新 Trending 列表
+    /// 刷新 Trending 列表（W7+ 起：SWR 模式，与 manage HomeViewModel 同构）。
+    ///
+    /// 流程：
+    /// 1. 第一阶段：读 `trending_repos` 表本地缓存 → 命中立即上屏（不阻塞，没 isLoading）
+    /// 2. 第二阶段：强制走网络刷新（dong4j 决策 ttl_c：trending 不设 TTL）→ 成功覆盖 / 失败保留缓存
+    ///
+    /// 与原版差异：
+    /// - 进入 reload 后**不再立刻 isLoading=true 清空 repos**：缓存命中时直接展示快照，
+    ///   网络成功后无感替换；只有"没缓存 + 网络在跑"才需要 isLoading 占位
+    /// - 失败处理也分两种：有缓存就静默保留 + 设 loadError（UI 可选展示重试条）；
+    ///   没缓存才把 repos 置空显示 errorView（与原行为对齐）
+    ///
+    /// 注意：网络成功时 fetchTrending 已经 race-free（actor 内的 DB 写入是顺序的），
+    /// 这里 ViewModel 层用 currentReloadTask 取消老任务即可。
     func reload() async {
         // 取消旧任务
         currentReloadTask?.cancel()
@@ -119,29 +132,51 @@ final class TrendingViewModel {
         let task = Task { [weak self] in
             guard let self else { return }
 
-            self.isLoading = true
-            self.loadError = nil
+            // 第一阶段：读本地缓存（立即上屏，不进 isLoading）
+            let cached = await self.repository.cachedTrending(
+                since: self.selectedPeriod,
+                language: self.selectedLanguage
+            )
+            guard !Task.isCancelled else { return }
 
+            let hasUsableCache = !cached.isEmpty
+            if hasUsableCache {
+                self.repos = cached
+                self.reposRevision += 1
+                self.precomputeScores()
+                self.loadError = nil
+                self.isLoading = false
+            } else {
+                // 没缓存 → 进 loading 让 UI 显示 ProgressView
+                self.repos = []
+                self.isLoading = true
+                self.loadError = nil
+            }
+
+            // 第二阶段：强制走网络刷新（不论有无缓存都拉，对应 ttl_c 决策）
             do {
                 let fetched = try await self.repository.fetchTrending(
                     since: self.selectedPeriod,
                     language: self.selectedLanguage
                 )
-
-                // race 防护
                 guard !Task.isCancelled else { return }
 
                 self.repos = fetched
                 self.reposRevision += 1
-
-                // 预计算 AI 评分
                 self.precomputeScores()
-
+                self.loadError = nil
             } catch {
                 guard !Task.isCancelled else { return }
-                self.loadError = error.localizedDescription
-                self.repos = []
-                self.reposRevision += 1
+                if hasUsableCache {
+                    // 缓存还能用 → 保持已上屏，仅记录错误（UI 可选地展示"刷新失败"提示条；当前未实现）
+                    self.loadError = error.localizedDescription
+                    AppLog.network.warning("Trending 后台刷新失败但本地有缓存，保持已显示: \(error.localizedDescription, privacy: .public)")
+                } else {
+                    // 没缓存又拉失败 → 走原 errorView 流程
+                    self.loadError = error.localizedDescription
+                    self.repos = []
+                    self.reposRevision += 1
+                }
             }
 
             self.isLoading = false

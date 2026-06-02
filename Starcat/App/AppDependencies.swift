@@ -52,6 +52,8 @@ final class AppDependencies {
 
     /// HOM-54 引入：GitHub Trending 数据仓库。
     let trendingRepository: any TrendingRepositoryProtocol
+    /// W7+ 引入：Trending README 持久化（与 manage 路径独立的 `trending_readmes` 表）。
+    let trendingReadmeRepository: TrendingReadmeRepository
 
     // MARK: - 初始化
 
@@ -101,14 +103,21 @@ final class AppDependencies {
         // Week 4 新增：README 子系统
         let readmeRepo = ReadmeRepository(database: db)
         self.readmeRepository = readmeRepo
-        self.readmeAPI = ReadmeAPI(client: api, repository: readmeRepo)
+        // W7+ 新增：Trending README 持久化（trending_readmes 表，PK = full_name）
+        let trendingReadmeRepo = TrendingReadmeRepository(database: db)
+        self.trendingReadmeRepository = trendingReadmeRepo
+        self.readmeAPI = ReadmeAPI(
+            client: api,
+            repository: readmeRepo,
+            trendingRepository: trendingReadmeRepo
+        )
 
         // W4 Batch A1：标签 / 关联 / 笔记+状态 Repository
         self.tagRepository = GRDBTagRepository(database: db)
         self.repoTagRepository = GRDBRepoTagRepository(database: db)
         self.repoNoteRepository = GRDBRepoNoteRepository(database: db)
 
-        // HOM-54：Trending Repository
-        self.trendingRepository = TrendingRepository()
+        // HOM-54：Trending Repository（W7+ 起接入 GRDB 持久化）
+        self.trendingRepository = TrendingRepository(database: db)
     }
 }
