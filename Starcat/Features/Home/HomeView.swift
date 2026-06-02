@@ -4,20 +4,19 @@
 //
 //  登录后的主界面：NavigationSplitView 三栏。
 //
-//  布局（2026-06-02 调整 v9，三栏展开默认 1410×763，运行期硬下限 1190×763）：
+//  布局（2026-06-02 调整 v10，三栏展开默认和运行期硬下限统一为 1440×763）：
 //  Sidebar（240-320pt, ideal 260）│ RepoList（420-520pt, ideal 420）│ RepoDetail（自适应）
-//  - HomeView 首次进入默认 1410×763，保留 dong4j 实测的初始化视觉尺寸
-//  - 运行期 `NSWindow.contentMinSize` / `window.minSize` 固定为 1190×763
+//  - HomeView 首次进入默认 1440×763
+//  - 运行期 `NSWindow.contentMinSize` / `window.minSize` 固定为 1440×763
 //    （见 `MainWindowFrameModifier.swift`，AppKit 层卡死，用户不能继续压缩中栏/右栏）
 //  - **关键经验**：SwiftUI 的 `.navigationSplitViewColumnWidth(min:)` 和
 //    `.frame(minWidth:)` 只是子视图布局提示，**不会反向约束 NSWindow 拖动下限**。
 //    要真正卡死窗口最小尺寸必须走 `NSWindow.contentMinSize`（AppKit 层）。
 //    2026-06-02 之前 v2 错误地以为 SwiftUI minWidth 能反向约束，dong4j 拖窗口拖到
 //    ~920pt 后 sidebar 被压成不可见、列表行被裁掉，截图反馈后才发现此事。
-//  - **首次启动尺寸 != 硬下限**：defaultSize 是启动视觉尺寸 1410×763；
-//    contentMinSize 是运行期唯一硬下限 1190×763。RepoDetail 不再设置 770pt
-//    `.frame(minWidth:)`，否则它会和 NavigationSplitView / AppKit 下限竞争，
-//    在窄窗口折叠、展开 sidebar 时诱发左栏抽屉和窗口宽度跳变。
+//  - **启动尺寸 == 硬下限**：1190 折叠态下限在重新展开 sidebar 时会让右上角
+//    短暂出现 `>>` toolbar overflow；dong4j 手动拉到 1440 后问题消失，所以
+//    直接把 AppKit 硬下限提升到 1440，不再做展开时扩窗或动态 minSize。
 //  - RepoList 的 min == ideal == 420：默认贴 min 启动，往大可拖到 520，往小拖不动
 //  - 高度 763pt：刚好够 Sidebar 完整渲染（头像+统计+主导航+Tags+Languages 前 ~10 项）
 //  - 小屏限制：MacBook 13" 1280×800 仍差 130pt，需主屏横放或外接显示器
