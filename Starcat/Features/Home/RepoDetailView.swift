@@ -1099,6 +1099,9 @@ struct WatchersMenu: View {
                 watchState = .custom
             }
         } catch NetworkError.notFound {
+            // 404 在 GitHub Watch API 是预期行为：表示用户对这个 repo 没有显式
+            // 订阅记录、保持默认 Participating 级别（不是"repo 不存在"）。
+            // 完整语义见 `StarsAPI.getSubscription` 的 doc comment。
             watchState = .participating
         } catch {
             watchState = .error
