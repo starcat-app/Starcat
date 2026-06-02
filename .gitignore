@@ -207,3 +207,6 @@ refer/
 # Multica
 .agent_context/
 .multica/
+
+# CodeGraph 运行时数据
+.codegraph/
