@@ -17,10 +17,10 @@ import SwiftUI
 private enum AboutPage: String, CaseIterable, Identifiable {
     case overview
     case support
-    case copyright
     case eula
     case credits
     case privacy
+    case copyright
 
     var id: String { rawValue }
 
@@ -60,22 +60,23 @@ struct AboutView: View {
 
             VStack(spacing: 0) {
                 pagePicker
-                    .padding(.horizontal, 22)
-                    .padding(.top, 24)
-                    .padding(.bottom, 14)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 18)
+                    .padding(.bottom, 12)
 
                 Divider()
 
                 ScrollView {
                     AboutPageContent(page: selectedPage)
                         .padding(24)
+                        .frame(minHeight: 328, alignment: .topLeading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .background(Color(nsColor: .textBackgroundColor).opacity(0.52))
             }
-            .frame(width: 461)
+            .frame(minWidth: 461, maxWidth: .infinity)
         }
-        .frame(width: 680, height: 520)
+        .frame(minWidth: 680, minHeight: 450)
         .background(.regularMaterial)
     }
 
@@ -83,11 +84,14 @@ struct AboutView: View {
     private var pagePicker: some View {
         Picker("", selection: $selectedPage) {
             ForEach(AboutPage.allCases) { page in
-                Label(page.displayNameKey, systemImage: page.systemImage)
+                // 这里刻意只放文字：macOS segmented control 放图标后会显得更像自绘 tab，
+                // 也更容易撑高 About 窗口顶部 chrome。
+                Text(page.displayNameKey)
                     .tag(page)
             }
         }
         .pickerStyle(.segmented)
+        .controlSize(.regular)
         .labelsHidden()
     }
 }
@@ -100,9 +104,7 @@ private struct AboutBrandPanel: View {
     private let version = AboutVersion.current
 
     var body: some View {
-        VStack(spacing: 18) {
-            Spacer(minLength: 8)
-
+        VStack(spacing: 16) {
             appIcon
 
             VStack(spacing: 6) {
@@ -130,44 +132,101 @@ private struct AboutBrandPanel: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
 
-            VStack(spacing: 8) {
+            VStack(spacing: 9) {
                 AboutBadge(title: "about.brand.badge.macos", systemImage: "desktopcomputer")
                 AboutBadge(title: "about.brand.badge.localFirst", systemImage: "internaldrive")
                 AboutBadge(title: "about.brand.badge.swiftNative", systemImage: "swift")
             }
-            .padding(.top, 6)
-
-            Spacer()
-
-            Text("about.brand.copyright")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .padding(.bottom, 20)
+            .padding(.top, 4)
         }
         .frame(width: 218)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color.accentColor.opacity(0.16),
-                    Color(nsColor: .windowBackgroundColor).opacity(0.58)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .frame(maxHeight: .infinity, alignment: .top)
+        .padding(.top, 38)
+        .background(AboutBrandAnimatedBackground())
     }
 
     private var appIcon: some View {
         Image(nsImage: NSApp.applicationIconImage)
             .resizable()
             .aspectRatio(contentMode: .fit)
-            .frame(width: 110, height: 110)
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .frame(width: 128, height: 120)
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
             .shadow(color: .black.opacity(0.18), radius: 18, x: 0, y: 10)
-            .overlay {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(.white.opacity(0.34), lineWidth: 1)
+    }
+}
+
+/// 左侧品牌区的淡渐变背景。
+///
+/// 这层以 App Icon 附近为中心做低透明度黄色柔光，而不是整块线性渐变。
+/// 这样四周会自然衰减，不会在窗口顶部形成明显色彩分隔线。
+/// 开启“减少动态效果”时退化为静态背景。
+private struct AboutBrandAnimatedBackground: View {
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @State private var isAnimating = false
+
+    private let starGold = Color(red: 1.0, green: 0.74, blue: 0.28)
+
+    var body: some View {
+        ZStack {
+            Color(nsColor: .windowBackgroundColor)
+                .opacity(0.62)
+
+            GeometryReader { proxy in
+                let size = proxy.size
+                let iconCenterOffsetY = min(size.height * 0.24, 98) - size.height * 0.5
+
+                ZStack {
+                    animatedGlow(
+                        color: starGold.opacity(0.13),
+                        diameter: size.width * 1.9,
+                        offset: CGPoint(
+                            x: isAnimating ? 10 : -8,
+                            y: iconCenterOffsetY + (isAnimating ? 8 : -10)
+                        )
+                    )
+
+                    animatedGlow(
+                        color: starGold.opacity(0.08),
+                        diameter: size.width * 2.35,
+                        offset: CGPoint(
+                            x: isAnimating ? -16 : 14,
+                            y: iconCenterOffsetY + (isAnimating ? -12 : 10)
+                        )
+                    )
+                }
+                .blur(radius: 34)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 9).repeatForever(autoreverses: true), value: isAnimating)
+                .onAppear {
+                    guard !reduceMotion else { return }
+                    isAnimating = true
+                }
+                .onChange(of: reduceMotion) { _, newValue in
+                    isAnimating = !newValue
+                }
             }
+        }
+        .clipped()
+        .allowsHitTesting(false)
+    }
+
+    private func animatedGlow(color: Color, diameter: CGFloat, offset: CGPoint) -> some View {
+        Circle()
+            .fill(
+                RadialGradient(
+                    colors: [
+                        color,
+                        color.opacity(0.45),
+                        color.opacity(0)
+                    ],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: diameter * 0.5
+                )
+            )
+            .frame(width: diameter, height: diameter)
+            .offset(x: offset.x, y: offset.y)
     }
 }
 
@@ -180,9 +239,7 @@ private struct AboutBadge: View {
         Label(title, systemImage: systemImage)
             .font(.caption)
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(.thinMaterial, in: Capsule())
+            .labelStyle(.titleAndIcon)
     }
 }
 
@@ -216,13 +273,13 @@ private struct AboutPageContent: View {
 private struct OverviewPage: View {
     var body: some View {
         AboutSection(title: "about.overview.title", subtitle: "about.overview.subtitle") {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text("about.overview.description")
                     .font(.body)
                     .foregroundStyle(.primary)
-                    .lineSpacing(4)
+                    .lineSpacing(3)
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     AboutFeatureCard(title: "about.overview.feature.localFirst.title", detail: "about.overview.feature.localFirst.detail", systemImage: "externaldrive")
                     AboutFeatureCard(title: "about.overview.feature.githubNative.title", detail: "about.overview.feature.githubNative.detail", systemImage: "star.circle")
                     AboutFeatureCard(title: "about.overview.feature.searchFind.title", detail: "about.overview.feature.searchFind.detail", systemImage: "magnifyingglass")
@@ -287,13 +344,17 @@ private struct EULAPage: View {
                 NumberedTerm(number: "2", title: "about.eula.term2.title", text: "about.eula.term2.text")
                 NumberedTerm(number: "3", title: "about.eula.term3.title", text: "about.eula.term3.text")
 
-                SafeExternalLink(
-                    title: "about.eula.viewFull",
-                    systemImage: "arrow.up.right.square",
-                    url: URL(string: "https://starcat.app/eula")
-                )
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
+                HStack {
+                    Spacer()
+
+                    SafeExternalLink(
+                        title: "about.eula.viewFull",
+                        systemImage: "arrow.up.right.square",
+                        url: URL(string: "https://starcat.app/eula")
+                    )
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                }
                 .padding(.top, 4)
             }
         }
@@ -304,9 +365,7 @@ private struct CreditsPage: View {
     var body: some View {
         AboutSection(title: "about.credits.title", subtitle: "about.credits.subtitle") {
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(AboutDependency.all) { dependency in
-                    DependencyRow(dependency: dependency)
-                }
+                AutoScrollingCreditsList(dependencies: AboutDependency.all)
 
                 Divider().padding(.vertical, 4)
 
@@ -327,13 +386,17 @@ private struct PrivacyPage: View {
                 PrivacyPoint(systemImage: "xmark.shield", title: "about.privacy.whatWeWontDo.title", text: "about.privacy.whatWeWontDo.text")
                 PrivacyPoint(systemImage: "icloud", title: "about.privacy.futureCloud.title", text: "about.privacy.futureCloud.text")
 
-                SafeExternalLink(
-                    title: "about.privacy.viewFull",
-                    systemImage: "arrow.up.right.square",
-                    url: URL(string: "https://starcat.app/privacy")
-                )
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
+                HStack {
+                    Spacer()
+
+                    SafeExternalLink(
+                        title: "about.privacy.viewFull",
+                        systemImage: "arrow.up.right.square",
+                        url: URL(string: "https://starcat.app/privacy")
+                    )
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                }
                 .padding(.top, 4)
             }
         }
@@ -348,10 +411,10 @@ private struct AboutSection<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 25, weight: .bold, design: .rounded))
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
                 Text(subtitle)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -368,27 +431,28 @@ private struct AboutFeatureCard: View {
     let systemImage: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Image(systemName: systemImage)
-                .font(.title3)
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 26, height: 26, alignment: .leading)
-
-            Text(title)
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: systemImage)
                 .font(.headline)
+                .foregroundStyle(.primary)
+                .labelStyle(.titleAndIcon)
+                .symbolRenderingMode(.hierarchical)
+                .tint(.accentColor)
 
             Text(detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(2)
+                // 四个卡片固定同高：短文案也预留两行高度，避免左右列底部不齐。
+                .frame(minHeight: 32, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, minHeight: 124, alignment: .topLeading)
-        .padding(13)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 104, maxHeight: 104, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(.quaternary, lineWidth: 1)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 1)
         }
     }
 }
@@ -498,11 +562,12 @@ private struct DependencyRow: View {
     let dependency: AboutDependency
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             Image(systemName: "shippingbox")
-                .font(.title3)
+                .font(.title2)
                 .foregroundStyle(Color.accentColor)
-                .frame(width: 28)
+                // 固定 36pt 图标槽，后续替换成真实项目 logo 时仍能保持上下居中。
+                .frame(width: 36, height: 36)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
@@ -527,7 +592,56 @@ private struct DependencyRow: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
         }
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+}
+
+/// 致谢页中部的依赖列表。
+///
+/// 后续依赖变多后，这块会成为主要信息区，因此列表自己滚动，而不是依赖整页滚动。
+/// 鼠标停在列表上时暂停自动滚动，方便用户复制名称或点击 source 链接。
+private struct AutoScrollingCreditsList: View {
+    let dependencies: [AboutDependency]
+
+    @State private var focusedIndex = 0
+    @State private var isHovering = false
+
+    private let timer = Timer.publish(every: 2.4, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(dependencies.enumerated()), id: \.element.id) { index, dependency in
+                        DependencyRow(dependency: dependency)
+                            .id(index)
+
+                        if index != dependencies.count - 1 {
+                            Divider()
+                        }
+                    }
+                }
+            }
+            .frame(height: 168)
+            .scrollIndicators(.visible)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 1)
+            }
+            .onHover { hovering in
+                isHovering = hovering
+            }
+            .onReceive(timer) { _ in
+                guard !isHovering, dependencies.count > 1 else { return }
+                focusedIndex = (focusedIndex + 1) % dependencies.count
+
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    proxy.scrollTo(focusedIndex, anchor: .top)
+                }
+            }
+        }
     }
 }
 

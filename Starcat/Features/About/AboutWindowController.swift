@@ -13,6 +13,14 @@
 import AppKit
 import SwiftUI
 
+/// 关于窗口的尺寸策略。
+///
+/// 宽度沿用 dong4j 截图里确认过的紧凑宽度；高度从 520pt 收到 450pt，
+/// 因为当前 6 个 tab 的内容都不需要更高的默认窗口。
+private enum AboutWindowMetrics {
+    static let defaultContentSize = NSSize(width: 680, height: 450)
+}
+
 /// Starcat 自定义关于窗口控制器。
 final class AboutWindowController: NSWindowController, NSWindowDelegate {
 
@@ -48,9 +56,11 @@ final class AboutWindowController: NSWindowController, NSWindowDelegate {
 
         window.title = String(localized: "app.about")
         window.styleMask = [.titled, .closable, .miniaturizable]
-        window.setContentSize(NSSize(width: 680, height: 520))
-        window.minSize = NSSize(width: 680, height: 520)
-        window.maxSize = NSSize(width: 680, height: 520)
+        window.setContentSize(AboutWindowMetrics.defaultContentSize)
+        // AboutView 只声明最小可用布局，固定尺寸边界必须由 AppKit 窗口层控制。
+        window.contentMinSize = AboutWindowMetrics.defaultContentSize
+        window.minSize = AboutWindowMetrics.defaultContentSize
+        window.maxSize = AboutWindowMetrics.defaultContentSize
         window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
