@@ -108,11 +108,21 @@ struct RepoDetailView: View {
             } else if let trending = selectedTrendingRepo {
                 // Trending repo 详情页（无本地数据，只显示 README）
                 VStack(alignment: .leading, spacing: 0) {
-                    trendingMetadataPanel(trending)
+                    collapsibleMetadataContainer {
+                        trendingMetadataHeader(trending)
+                    }
                     trendingReadmeSection(trending)
                 }
                 .navigationTitle(trending.name)
                 .navigationSubtitle(trending.owner)
+                .onChange(of: trending.id) { _, _ in
+                    // 切换 Trending repo 时把折叠状态重置回展开，与 Manage 侧
+                    // `.onChange(of: repo.id)` 行为完全对齐，避免上一条 repo 的
+                    // 折叠态污染下一条的首次展示。
+                    withAnimation(metadataPanelAnimation) {
+                        isMetadataPanelHidden = false
+                    }
+                }
             } else {
                 emptyState
             }
@@ -151,16 +161,37 @@ struct RepoDetailView: View {
         )
     }
 
-    /// 顶部信息面板容器。
+    /// 顶部信息面板容器（Manage）。
+    ///
+    /// 实际的折叠 / 测高 / 动画逻辑都在 `collapsibleMetadataContainer` 通用 helper 里，
+    /// Manage 这层只负责把"内容"（`metadataHeader`）塞进去。
+    private func metadataPanel(_ repo: Repo) -> some View {
+        collapsibleMetadataContainer {
+            metadataHeader(repo)
+        }
+    }
+
+    /// 顶部信息面板的通用折叠容器（Manage / Trending 共用）。
     ///
     /// 为什么不继续用 `if !isMetadataPanelHidden { ... }`：
-    /// 直接插拔 view 会让整个 WKWebView 在同一帧拿到新高度，视觉上像“跳变”；
+    /// 直接插拔 view 会让整个 WKWebView 在同一帧拿到新高度，视觉上像"跳变"；
     /// 这里让面板始终留在 view tree 中，只把外层 frame 从自然高度动画到 0，
     /// 同时给内容做轻微上移和淡出，WebView 的高度变化会更连续。
-    private func metadataPanel(_ repo: Repo) -> some View {
+    ///
+    /// 抽成 helper 的理由：折叠逻辑（hide / height / preference / animation）跟
+    /// 内容（Manage 的 `metadataHeader` 或 Trending 的 `trendingMetadataHeader`）
+    /// 完全解耦，两边共用一个 helper 避免 25 行 view modifier chain 复制粘贴漂移
+    /// （前车之鉴 06-02 00:48 Chip 抽公共组件）。
+    /// 共享状态来自外层的 `isMetadataPanelHidden` / `metadataPanelHeight` `@State`，
+    /// 上报通道是统一的 `MetadataPanelHeightPreferenceKey`，所以 Manage 切 Trending
+    /// （或反之）时折叠状态会被 `body` 里的 `.onChange(of: id)` 重置一次。
+    @ViewBuilder
+    private func collapsibleMetadataContainer<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         ZStack(alignment: .top) {
             VStack(spacing: 0) {
-                metadataHeader(repo)
+                content()
                 Divider()
                     .opacity(isMetadataPanelHidden ? 0 : 1)
             }
@@ -193,6 +224,12 @@ struct RepoDetailView: View {
     }
 
     /// 元信息区域（不滚动，固定在顶部）。
+    ///
+    /// 背景：顶部叠一层"语言色 → 透明"的线性渐变，让详情页 hero 区视觉权重更高，
+    /// 同时与列表 row 的着色规则保持单一信任源（都走 `LanguageColor`，避免新规则）。
+    /// 渐变在 metadataHeader 层内加，不会染到下方的 README WebView 区。
+    /// 折叠状态由外层 `metadataPanel` 的 `.frame(height: 0).clipped()` 整体裁掉，
+    /// 这里不需要为折叠态特殊处理渐变。
     private func metadataHeader(_ repo: Repo) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             header(repo)
@@ -207,6 +244,42 @@ struct RepoDetailView: View {
         .padding(.top, 16)
         .padding(.bottom, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(alignment: .top) {
+            metadataGradientBackground(language: repo.language)
+        }
+    }
+
+    /// 详情页元信息面板的强调色（取色规则与列表 `RepoRowSurface.accentColor` 完全一致）。
+    ///
+    /// 选用语言色而不是"头像取色"的理由：① 零依赖，无需异步算色 / 缓存 / 边界情况兜底
+    /// （透明 PNG / 单色 logo）；② 与列表视觉规则统一，用户认知不割裂。
+    /// 无语言时回退 `.accentColor`（系统蓝），与列表逻辑保持一致。
+    ///
+    /// 接收 `String?` 而非具体 model（`Repo` / `TrendingRepo`），让 Manage 详情页
+    /// 和 Trending 详情页能共用同一个 helper 与同一段渐变实现，避免两份复制粘贴漂移。
+    private func metadataAccentColor(for language: String?) -> Color {
+        if let language, !language.isEmpty {
+            return LanguageColor.color(for: language)
+        }
+        return .accentColor
+    }
+
+    /// 详情页 hero 区"语言色 → 透明"线性渐变背景。
+    ///
+    /// 复用于 Manage `metadataHeader` 与 Trending `trendingMetadataPanel` 两处，
+    /// 渐变形态、不透明度、命中测试规则均一致——以"详情页 hero 区有统一视觉语言"
+    /// 为目标，不要为某一边单独调参。
+    /// - opacity 0.18 顶部 → 0.0 底部，与列表 row 选中态强度对齐
+    /// - `.allowsHitTesting(false)` 不挡上层 Button / Link 点击
+    @ViewBuilder
+    private func metadataGradientBackground(language: String?) -> some View {
+        let tint = metadataAccentColor(for: language)
+        LinearGradient(
+            colors: [tint.opacity(0.18), tint.opacity(0.0)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .allowsHitTesting(false)
     }
 
     /// README 区域。占据剩余高度，由 WebView 自己处理滚动。
@@ -244,8 +317,17 @@ struct RepoDetailView: View {
 
     // MARK: - Trending Repo 支持
 
-    /// Trending repo 顶部信息面板。
-    private func trendingMetadataPanel(_ repo: TrendingRepo) -> some View {
+    /// Trending repo 顶部信息内容（命名对齐 Manage 的 `metadataHeader`）。
+    ///
+    /// 折叠机制（向下滚 README 自动收起、回顶展开）走与 Manage 完全相同的链路：
+    /// 由外层 `collapsibleMetadataContainer` 接收 content、`trendingReadmeSection`
+    /// 通过 `onScrollOffsetChange: updateMetadataPanelVisibility` 上报 scrollY，
+    /// hysteresis 阈值（32pt 折叠 / 8pt 展开）也共用同一函数；本函数只关心内容渲染。
+    ///
+    /// 背景渐变也走共享 `metadataGradientBackground(language:)`，保持详情页 hero 区
+    /// 统一视觉语言。`TrendingRepo.language` 是 `String?`，与 `Repo.language`
+    /// 类型完全一致，直接复用 helper 无需为 Trending 单独写一份。
+    private func trendingMetadataHeader(_ repo: TrendingRepo) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             trendingHeader(repo)
             trendingStatsSection(repo)
@@ -260,6 +342,9 @@ struct RepoDetailView: View {
         .padding(.top, 16)
         .padding(.bottom, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(alignment: .top) {
+            metadataGradientBackground(language: repo.language)
+        }
     }
 
     /// Trending repo 贡献者头像组。
@@ -474,13 +559,17 @@ struct RepoDetailView: View {
     }
 
     /// Trending repo README 区域。
+    ///
+    /// `onScrollOffsetChange` 接通共享的 `updateMetadataPanelVisibility`：
+    /// 与 Manage `readmeSection` 走同一条 hysteresis 链路（32pt 折叠 / 8pt 展开），
+    /// 让 Trending 详情页也具备"向下滚 README 自动收起 hero、回顶展开"的体验。
     private func trendingReadmeSection(_ repo: TrendingRepo) -> some View {
         ReadmeStateView(
             state: readmeVM.state,
             baseURL: repo.url,
             owner: repo.owner,
             repo: repo.name,
-            onScrollOffsetChange: { _ in }
+            onScrollOffsetChange: updateMetadataPanelVisibility
         ) {
             // Trending README 刷新：直接调用 loadTrending
             readmeVM.loadTrending(owner: repo.owner, repo: repo.name, isLoggedIn: authSession.state.isAuthenticated)
