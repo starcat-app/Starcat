@@ -12,81 +12,28 @@
 //  - 行视图本身无状态，纯函数式渲染
 //  - 样式与 RepoRowView 保持高度一致，形成统一的 Starcat 卡片语言
 //
+//  共享组件（2026-06-02 Step 2 抽取）：
+//  - chip 视图（`LanguageBadge` / `StarsBadge` / `MetaBadge`）、`BadgeStyle` /
+//    `LanguageColor` / `RepoAvatarURL` / `Int.formattedShort` 已统一搬到
+//    `Shared/Components/RepoRowComponents.swift`，与 Manage `RepoRowView` /
+//    `RepoDetailView` 共享同一份定义。
+//  - 仅 `TrendingPeriodBadge`（Trending 独有的 "+N 周期增长" 徽章）保留在本文件，
+//    它不在 Manage / Detail 中使用，没有抽出的必要。
+//
+//  chip 排列顺序对齐 Manage Card：
+//    Language → Stars → Forks（共享 MetaBadge）→ TrendingPeriod → Contributors
+//  让两侧列表的"基础 chip 集"完全一致，Trending 独有的"+N + 贡献者"作为后缀附加。
+//
 
 import SwiftUI
 
-// MARK: - 共享组件
+// MARK: - Trending 独有 chip
 
-private enum BadgeStyle {
-    case compact, full
-}
-
-// MARK: - Chip 抗压缩约定（Step 1 救火补丁，2026-06-02）
-//
-// 所有 chip 必须满足：
-// 1. 内部 `Text` 加 `.lineLimit(1)` —— 文字永远单行，不允许竖向换行（图 3 那种"竖立彩色胶囊"
-//    就是因为没加 lineLimit，窗口压窄时 SwiftUI 把 "Python" 拆成 "P\ny\nt\nh\no\nn" 撑高 Capsule）。
-// 2. 整个 chip 外层加 `.fixedSize(horizontal: true, vertical: false)` —— chip 保持自然宽度，
-//    宁可整行被 List 的水平裁剪带走最后一个 chip，也不让 chip 自己被压扁/拉高。
-//
-// 详见 docs/工程进度/功能实现总览.md §7.4 同日变更日志。
-
-/// 语言徽章，带 GitHub 风格的小圆点。
-private struct LanguageBadge: View {
-    let language: String
-    let style: BadgeStyle
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(LanguageColor.color(for: language))
-                .frame(width: 8, height: 8)
-            Text(language)
-                .font(style == .full ? .caption : .caption2)
-                .foregroundStyle(style == .full ? .primary : .secondary)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, style == .full ? 7 : 0)
-        .padding(.vertical, style == .full ? 3 : 0)
-        .background {
-            if style == .full {
-                Capsule()
-                    .fill(LanguageColor.color(for: language).opacity(0.13))
-            }
-        }
-        .fixedSize(horizontal: true, vertical: false)
-    }
-}
-
-/// stars 计数徽章。
-private struct StarsBadge: View {
-    let count: Int
-    let style: BadgeStyle
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: "star.fill")
-                .font(.system(size: style == .full ? 10 : 9))
-                .foregroundStyle(.yellow)
-            Text(count.formattedShort)
-                .font(style == .full ? .caption : .caption2)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .lineLimit(1)
-        }
-        .padding(.horizontal, style == .full ? 7 : 0)
-        .padding(.vertical, style == .full ? 3 : 0)
-        .background {
-            if style == .full {
-                Capsule()
-                    .fill(.yellow.opacity(0.12))
-            }
-        }
-        .fixedSize(horizontal: true, vertical: false)
-    }
-}
-
-/// Trending 周期增长徽章。
+/// Trending 周期增长徽章（"↗ +3086" 等）。
+/// 只在 Trending 列表使用，不抽到 Shared/Components/RepoRowComponents.swift。
+///
+/// 抗压缩约定：内部 `Text` 加 `.lineLimit(1)`、外层加 `.fixedSize(horizontal: true)`，
+/// 与共享 chip 保持一致行为。详见 `RepoRowComponents.swift` 顶部注释。
 private struct TrendingPeriodBadge: View {
     let text: String
     let style: BadgeStyle
@@ -110,68 +57,6 @@ private struct TrendingPeriodBadge: View {
             }
         }
         .fixedSize(horizontal: true, vertical: false)
-    }
-}
-
-/// GitHub 主流语言色卡映射；未命中走 Gray。
-private enum LanguageColor {
-    static func color(for language: String) -> Color {
-        switch language {
-        case "Swift":        return Color(red: 0.94, green: 0.31, blue: 0.20)
-        case "Objective-C":  return Color(red: 0.27, green: 0.50, blue: 0.92)
-        case "Kotlin":       return Color(red: 0.62, green: 0.42, blue: 0.99)
-        case "Java":         return Color(red: 0.69, green: 0.38, blue: 0.12)
-        case "Go":           return Color(red: 0.00, green: 0.68, blue: 0.84)
-        case "Rust":         return Color(red: 0.86, green: 0.41, blue: 0.27)
-        case "Python":       return Color(red: 0.23, green: 0.46, blue: 0.69)
-        case "JavaScript":   return Color(red: 0.94, green: 0.86, blue: 0.32)
-        case "TypeScript":   return Color(red: 0.18, green: 0.46, blue: 0.78)
-        case "C":            return Color(red: 0.33, green: 0.34, blue: 0.36)
-        case "C++":          return Color(red: 0.95, green: 0.21, blue: 0.41)
-        case "C#":           return Color(red: 0.10, green: 0.55, blue: 0.20)
-        case "Ruby":         return Color(red: 0.84, green: 0.12, blue: 0.18)
-        case "PHP":          return Color(red: 0.30, green: 0.34, blue: 0.59)
-        case "Shell":        return Color(red: 0.55, green: 0.85, blue: 0.31)
-        case "HTML":         return Color(red: 0.90, green: 0.32, blue: 0.13)
-        case "CSS":          return Color(red: 0.34, green: 0.46, blue: 0.78)
-        case "Vue":          return Color(red: 0.25, green: 0.72, blue: 0.51)
-        case "Lua":          return Color(red: 0.00, green: 0.00, blue: 0.50)
-        case "Dart":         return Color(red: 0.00, green: 0.71, blue: 0.83)
-        case "R":            return Color(red: 0.12, green: 0.39, blue: 0.65)
-        case "Scala":        return Color(red: 0.76, green: 0.20, blue: 0.16)
-        case "Elixir":       return Color(red: 0.42, green: 0.30, blue: 0.51)
-        case "Haskell":      return Color(red: 0.36, green: 0.41, blue: 0.66)
-        case "Zig":          return Color(red: 0.94, green: 0.65, blue: 0.10)
-        case "Solidity":     return Color(red: 0.67, green: 0.67, blue: 0.67)
-        case "MDX":          return Color(red: 0.99, green: 0.66, blue: 0.32)
-        case "Markdown":     return Color(red: 0.32, green: 0.32, blue: 0.32)
-        case "Jupyter Notebook": return Color(red: 0.86, green: 0.49, blue: 0.16)
-        case "Vim Script":   return Color(red: 0.10, green: 0.62, blue: 0.16)
-        default:             return Color.gray.opacity(0.7)
-        }
-    }
-}
-
-/// owner login 转头像 URL。
-private enum TrendingRepoAvatarURL {
-    static func from(owner: String) -> String {
-        "https://github.com/\(owner).png?size=80"
-    }
-}
-
-/// 数字短格式格式化。
-private extension Int {
-    var formattedShort: String {
-        let n = Double(self)
-        if n >= 1_000_000 {
-            return String(format: "%.1fM", n / 1_000_000)
-        } else if n >= 10_000 {
-            return "\(self / 1_000)k"
-        } else if n >= 1_000 {
-            return String(format: "%.1fk", n / 1_000)
-        } else {
-            return "\(self)"
-        }
     }
 }
 
@@ -211,7 +96,7 @@ struct TrendingRepoRowCompact: View {
         TrendingRepoRowSurface(repo: repo, isSelected: isSelected, density: .compact) {
             HStack(spacing: 10) {
                 RemoteAvatar(
-                    urlString: TrendingRepoAvatarURL.from(owner: repo.owner),
+                    urlString: RepoAvatarURL.from(owner: repo.owner),
                     size: 22,
                     showBorder: false
                 )
@@ -248,7 +133,7 @@ struct TrendingRepoRowCard: View {
         TrendingRepoRowSurface(repo: repo, isSelected: isSelected, density: .card) {
             HStack(alignment: .center, spacing: 12) {
                 RemoteAvatar(
-                    urlString: TrendingRepoAvatarURL.from(owner: repo.owner),
+                    urlString: RepoAvatarURL.from(owner: repo.owner),
                     size: 40
                 )
 
@@ -265,6 +150,11 @@ struct TrendingRepoRowCard: View {
                             .lineLimit(2)
                     }
 
+                    // chip 排列顺序与 Manage Card 完全对齐：
+                    //   Language → Stars → Forks → TrendingPeriod
+                    // Contributors 头像组在 2026-06-02 移到详情页 trendingContributorsSection
+                    // （dong4j 反馈：窄宽度下贡献者头像会先被 List 水平裁剪，体验差；
+                    // 详情页空间更宽裕，头像放大 + 可点击跳 GitHub profile 更有价值）。
                     HStack(spacing: 8) {
                         if let language = repo.language, !language.isEmpty {
                             LanguageBadge(language: language, style: .full)
@@ -272,45 +162,17 @@ struct TrendingRepoRowCard: View {
 
                         StarsBadge(count: repo.starsCount, style: .full)
 
-                        TrendingPeriodBadge(text: repo.periodText, style: .full)
+                        MetaBadge(
+                            systemImage: "tuningfork",
+                            text: repo.forksCount.formattedShort,
+                            tint: .secondary
+                        )
 
-                        // 贡献者头像（最多显示 3 个）
-                        if !repo.contributors.isEmpty {
-                            contributorsView
-                        }
+                        TrendingPeriodBadge(text: repo.periodText, style: .full)
                     }
                 }
 
                 Spacer(minLength: 0)
-            }
-        }
-    }
-
-    /// 贡献者头像列表
-    private var contributorsView: some View {
-        HStack(spacing: -4) {
-            ForEach(repo.contributors.prefix(3)) { contributor in
-                AsyncImage(url: contributor.avatarURL) { image in
-                    image
-                        .resizable()
-                        .scaledToFit()
-                } placeholder: {
-                    Circle()
-                        .fill(Color.gray.opacity(0.3))
-                }
-                .frame(width: 16, height: 16)
-                .clipShape(Circle())
-                .overlay(
-                    Circle()
-                        .stroke(Color(NSColor.controlBackgroundColor).opacity(0.8), lineWidth: 1)
-                )
-            }
-
-            if repo.contributors.count > 3 {
-                Text("+\(repo.contributors.count - 3)")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 2)
             }
         }
     }

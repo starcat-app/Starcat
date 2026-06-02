@@ -123,11 +123,13 @@
 | 关键词 | 用法点 | 搜索词 |
 |---|---|---|
 | `NavigationSplitView` | `HomeView` 三栏布局 | "SwiftUI NavigationSplitView macOS" |
+| `NavigationSplitViewVisibility` | `HomeView` 显式持有三栏可见性；启动时重置 `.all`，避免上次窄窗口导致 sidebar 折叠态污染下一次启动 | "SwiftUI NavigationSplitViewVisibility" |
 | `List(selection:)` | 中栏多选 repo 列表；普通单选已改用 plain `Button` 手动写 `selectedRepoID` 以避开系统蓝色选中底色 | "SwiftUI List selection binding macOS" |
 | `Button` + `.buttonStyle(.plain)` | 普通 repo 行点击选择；使用后必须跟 `.focusEffectDisabled()` | "SwiftUI plain button macOS focusEffectDisabled" |
 | `ForEach(items)` | 配 `Identifiable` 自动 id 匹配 | "SwiftUI ForEach Identifiable" |
 | `Section` / `DisclosureGroup` | Sidebar 分组 | "SwiftUI Section List sidebar" |
 | `.listRowBackground` / `.listRowSeparator` | `RepoListView` 清掉系统 row 背景 / 分割线，让 `RepoRowView` 自己表达卡片选中态 | "SwiftUI listRowBackground listRowSeparator macOS" |
+| `GeometryReader` | `LayoutDebugOverlay` 的 SwiftUI fallback；真实窗口尺寸已改由 `NSViewRepresentable` 读取 `NSWindow.contentView.bounds`，避免 NavigationSplitView 折叠 sidebar 后误读局部容器 | "SwiftUI GeometryReader proxy size" |
 
 ### 3.3 修饰符
 
@@ -141,6 +143,8 @@
 | `.confirmationDialog` / `.alert` | 取消 Star 确认（W4 待做） | "SwiftUI confirmationDialog macOS" |
 | `.transition` / `.animation(_:value:)` | `RepoListView` / `TrendingView` 中栏内容切换用整块轻过渡；row 入场用显式 `withAnimation` | "SwiftUI transition animation value" |
 | `.onHover` | `RepoRowSurface` 鼠标悬停时增强背景 / 边框，是 macOS 指针体验的基础反馈 | "SwiftUI onHover macOS" |
+| `.allowsHitTesting(false)` | `LayoutDebugOverlay` 调试胶囊不拦截下方鼠标事件，覆盖层标准配置 | "SwiftUI allowsHitTesting" |
+| `.overlay(alignment:)` | `HomeView` 用 `.overlay(alignment: .topTrailing)` 在右上角接入 `LayoutDebugOverlay` —— overlay 不影响下方视图的布局，仅"覆盖"绘制，是调试视图 / Toast / 角标的标配 | "SwiftUI overlay alignment" |
 | `ViewModifier` | `ListRowRevealModifier` 抽取 row 渐进式入场，避免把动画状态散落在业务 row 中 | "SwiftUI custom ViewModifier" |
 | `@ViewBuilder` | `RepoRowSurface` 用 builder 接收 compact / card 两套 row 内容，复用同一视觉容器 | "SwiftUI ViewBuilder custom container" |
 | `LocalizedStringKey` vs `String` | `AboutView` / `RepoListView` / `SidebarView` / `SettingsView` 等用户可见文案：静态 key 用 `LocalizedStringKey`，动态仓库名、标签名、URL 用 `Text(verbatim:)` 或先 `String(localized:)`，否则 `Text(titleString)` / `.help(titleString)` 会把 key 当普通文本显示 | "SwiftUI LocalizedStringKey Text String variable String localized" |
@@ -256,11 +260,15 @@
 | `NSWorkspace.shared.open(url)` | `ReadmeWebView.Coordinator` 把外链跳系统浏览器 | "NSWorkspace open URL" |
 | `NSWindowController` | `AboutWindowController` 管理单例关于窗口，重复 Cmd+I 复用同一个窗口 | "NSWindowController showWindow" |
 | `NSWindow.setFrameAutosaveName` | `MainWindowFrameModifier` 保存 / 恢复主窗口尺寸与位置 | "NSWindow setFrameAutosaveName setFrameUsingName" |
+| `NSWindow.contentMinSize` / `minSize` | `MainWindowFrameModifier` 设置主窗口硬下限：三栏展开默认 1410×763，sidebar 折叠后硬下限 1190×763；重新展开 sidebar 时通过 `expandedLayoutRequestID` 触发一次 AppKit 扩窗，避免把 1410 做成永久下限而破坏折叠态缩窗能力 | "NSWindow contentMinSize minSize setFrame" |
 | Keychain | `KeychainManager`（**有 DEBUG 临时 fallback，D-16 待还**） | "Keychain Services API macOS" |
 | App Sandbox / Entitlements | `Starcat.entitlements` | "App Sandbox macOS entitlements" |
 | `NSBackgroundActivityScheduler` | W6 Release 轮询会用 | "NSBackgroundActivityScheduler macOS" |
 | `os.Logger` / `os_log` | 项目自包装为 `AppLog.*`（见 `Core/Logging/AppLog.swift`） | "Apple Unified Logging Logger" |
 | `OS_ACTIVITY_MODE=disable` 环境变量 | 屏蔽系统 os_log 噪音的开发期技巧 | "Xcode scheme environment variables OS_ACTIVITY_MODE" |
+| `UserDefaults` | `AppSettings`（产品级用户偏好，`@Observable` 包装）/ `MainWindowFrameModifier`（间接经 `NSWindow.setFrameAutosaveName`）/ `DebugFlags`（debug-only 开关）。本质是个自动持久化的 plist 文件，路径 `~/Library/Containers/<bundle-id>/Data/Library/Preferences/<bundle-id>.plist` | "Foundation UserDefaults overview" |
+| "Command-line preferences" | Apple 内置约定：**Xcode Scheme launch args `-Key Value` 自动注册到 `UserDefaults.standard`**。`DebugFlags` 利用这点，不写一行解析代码就能用 Scheme 切调试开关。详见 `docs/调试工具.md` §1.1 | "NSUserDefaults command-line preferences" |
+| `defaults` 命令 | macOS shell 命令，操作 UserDefaults plist。如 `defaults write com.starcat.app DebugLayoutOverlay -bool YES` | "macOS defaults command" |
 
 ---
 
@@ -272,7 +280,8 @@
 | `project.yml` | xcodegen 配置入口（`sources: path: Starcat` 全扫描） | "xcodegen sources options" |
 | Build Phases / Build Settings | 一般 xcodegen 管理；手改前先看 `project.yml` | "Xcode Build Phases overview" |
 | Schemes | Run / Test / Profile / Archive | "Xcode Schemes overview" |
-| `#if DEBUG` 条件编译 | `KeychainManager` DEBUG fallback 块 | "Swift conditional compilation DEBUG" |
+| Scheme → Arguments → Arguments Passed On Launch | 给 App 传命令行参数；`-Key Value` 形式会自动进 UserDefaults。`DebugFlags` 用这个开调试 overlay，详见 `docs/调试工具.md` §3.1 | "Xcode scheme arguments launch" |
+| `#if DEBUG` 条件编译 | `DebugFlags`（Release 硬关调试开关） + `KeychainManager` 历史 DEBUG fallback 块 | "Swift conditional compilation DEBUG" |
 | `xcodebuild -scheme Starcat -destination 'platform=macOS' test` | CLI 跑测试 | "xcodebuild test command line" |
 
 ---
@@ -290,6 +299,8 @@
 | `DatabaseManaging` | `Core/Database/DatabaseManager.swift` | GRDB writer 抽象协议，便于内存测试 |
 | `RepoRepositoryProtocol` / `GitHubAPIClientProtocol` | D-01 / D-02 引入 | 业务抽象层，单测用 Mock 替换 |
 | `URLProtocolStub` / `MockGitHubAPIClient` | `StarcatTests/` | D-14 测试基础设施 |
+| `DebugFlags` | `Shared/Utilities/DebugFlags.swift` | 所有 debug-only 开关的中央枚举；`#if DEBUG` + UserDefaults 双保险（Release 包硬关）。新增调试能力一律加在这里，不允许散落 |
+| `LayoutDebugOverlay` | `Shared/Components/LayoutDebugOverlay.swift` | 第一个调试视图：`NSViewRepresentable` 读 `NSWindow.contentView.bounds` + 右上角 `regularMaterial` 胶囊显示 `W × H`，受 `DebugFlags.layoutOverlay` 控制 |
 
 ---
 
@@ -307,6 +318,7 @@
 | "URLProtocol 是什么巫术？" | §5 + 读 `URLProtocolStub.swift` 全文（顶部注释 + override 三方法） |
 | "Swift Testing vs XCTest？" | §9 → Apple WWDC 2024 "Meet Swift Testing" |
 | "什么是 capture list 丢 default value？" | §1.6 + 看 `GitHubAPIClientTests.swift` 第 24-39 行（解决方案是用 file-level free function） |
+| "Swift 怎么读配置文件 / 调试开关怎么加？" | §10 `UserDefaults` / "Command-line preferences" + §11 launch arguments → **完整使用指南见 `docs/调试工具.md`**（A/B/C 三种切换方式 + 双保险 + 新增 SOP） |
 
 ---
 

@@ -224,7 +224,6 @@ struct TrendingView: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .listRowReveal(index: item.index, snapshotID: viewModel.reposRevision)
-                .listRowInsets(padding)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             }
@@ -236,11 +235,11 @@ struct TrendingView: View {
             await viewModel.reload()
         }
     }
-
-    /// 每个卡片的 list row insets，决定卡片间距。
-    private var padding: EdgeInsets {
-        EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12)
-    }
+    //
+    // 历史：原本这里有 `.listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))`
+    // 配合 `private var padding`，多塞了一层 12pt 左右内边距，造成 Trending 卡片整体比 Manage
+    // 列表的卡片多缩一圈（dong4j 2026-06-02 反馈）。已移除——现在 Trending 和 Manage 共用
+    // 系统 `.inset` listStyle 的默认行距 / 边距，两边视觉宽度对齐。
 
     private var personalizedSection: some View {
         VStack(alignment: .leading, spacing: 8) {
