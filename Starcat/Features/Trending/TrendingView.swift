@@ -182,8 +182,9 @@ struct TrendingView: View {
 
     /// 刷新 icon Button：常驻显示，isRefreshing 时图标旋转。
     /// hover 时 tooltip 显示"刷新榜单"或"上次刷新于 X 月 Y 日 HH:MM"。
+    /// 使用共享 `SyncIconButton`（与详情页 cacheFooter 同款图标 + 旋转动画）。
     private var refreshButton: some View {
-        RefreshIconButton(
+        SyncIconButton(
             isRefreshing: viewModel.isRefreshing,
             disabled: viewModel.isRefreshing || viewModel.isLoading,
             tooltip: refreshButtonHelpText
@@ -408,46 +409,6 @@ struct TrendingView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-// MARK: - RefreshIconButton（toolbar 刷新按钮，自带 hover + 旋转动画）
-
-/// 通用刷新按钮：
-/// - `isRefreshing`：true 时 icon 旋转动画
-/// - `disabled`：禁用点击（loading / refreshing 期间）
-/// - `tooltip`：hover 时显示文案（精确时间 / "正在刷新…" / 默认 "刷新榜单"）
-///
-/// hover 反馈：opacity 0.78 + scale 1.06（与项目其他可点击元素一致），
-/// `accessibilityReduceMotion` 时降级为瞬切无动画。
-private struct RefreshIconButton: View {
-    let isRefreshing: Bool
-    let disabled: Bool
-    let tooltip: String
-    let action: () -> Void
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isHovered: Bool = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: 13, weight: .medium))
-                .symbolEffect(.rotate, options: .repeating, value: isRefreshing)
-                .foregroundStyle(isRefreshing ? Color.accentColor : Color.secondary)
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .opacity(isHovered ? 0.7 : 1.0)
-        .scaleEffect(isHovered ? 1.06 : 1.0)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isHovered)
-        .onHover { hovering in
-            isHovered = hovering && !disabled
-        }
-        .disabled(disabled)
-        .help(tooltip)
     }
 }
 
