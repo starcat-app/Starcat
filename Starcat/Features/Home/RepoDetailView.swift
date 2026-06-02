@@ -315,6 +315,9 @@ struct RepoDetailView: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            // 2026-06-02 dong4j 要求统一 hover 反馈：跟 hero logo / stats Button
+            // 用同一套 `.pressableHover()`，让用户能感知贡献者头像可点击跳 profile。
+            .pressableHover()
             .help(contributor.username)
         } else {
             contributorAvatarImage(contributor)
@@ -372,6 +375,8 @@ struct RepoDetailView: View {
     /// Trending repo 统计信息。
     private func trendingStatsSection(_ repo: TrendingRepo) -> some View {
         HStack(alignment: .center, spacing: 24) {
+            // 2026-06-02 dong4j 要求统一 hover 反馈：Stars 加 `.pressableHover()`，
+            // 跟 Manage 详情页保持一致。详见 `Shared/Components/PressableHover.swift`。
             Button {
                 Task { await starTrending(repo: repo) }
             } label: {
@@ -383,10 +388,33 @@ struct RepoDetailView: View {
                 }
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
             .disabled(isStarringTrending)
+            .pressableHover()
             .help("trending.star")
 
-            StatItem(label: "repo.forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
+            // 2026-06-02 dong4j 新增：Forks 从静态 `StatItem` 改为可点击 Button，
+            // 点击跳 GitHub fork 页（与 Manage 详情页同款逻辑：`/fork` 不是 `/forks`，
+            // 跟 Manage `statsSection` 行为对齐，由用户决策不自作主张）。
+            // URL 拼接：`TrendingRepo.url` 是 URL 类型，用 `appendingPathComponent`
+            // 比字符串拼接更安全（自动处理末尾斜杠）。
+            //
+            // 未登录校验（dong4j 2026-06-02 追加）：fork 操作需要 GitHub 账号，
+            // 未登录时不跳 GitHub 网页登录（用户会脱离 App 流程），而是调
+            // `authSession.signIn()` 触发 App 内 Device Flow，登录完用户可以重新点击。
+            Button {
+                guard authSession.state.isAuthenticated else {
+                    authSession.signIn()
+                    return
+                }
+                NSWorkspace.shared.open(repo.url.appendingPathComponent("fork"))
+            } label: {
+                StatItem(label: "repo.forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pressableHover()
+            .help("repo.forkAction")
 
             if let language = repo.language, !language.isEmpty {
                 HStack(spacing: 4) {
@@ -417,9 +445,15 @@ struct RepoDetailView: View {
     }
 
     /// 执行 Trending repo 的 star 操作。
+    ///
+    /// 未登录处理（dong4j 2026-06-02 修复隐藏 bug）：
+    /// 旧版赋值 `trendingStarError = "auth.needLogin"` 但该状态从未在任何 UI 被渲染
+    /// （grep 全项目确认是 dead write），导致未登录用户点击 Star 静默无反应。
+    /// 现在改为调 `authSession.signIn()` 触发 App 内 Device Flow 登录，
+    /// 与 Trending Forks Button 的未登录处理保持一致。
     private func starTrending(repo: TrendingRepo) async {
         guard authSession.state.isAuthenticated else {
-            trendingStarError = "auth.needLogin"
+            authSession.signIn()
             return
         }
 
@@ -465,7 +499,9 @@ struct RepoDetailView: View {
 
     private func header(_ repo: Repo) -> some View {
         HStack(alignment: .top, spacing: 16) {
-            RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: 64)
+            // 2026-06-02 dong4j 调整：logo 改为可点击跳 GitHub 主页，与 Trending
+            // 详情页 `TrendingHeroAvatarButton` 保持一致的交互模式。
+            RepoHeroAvatarButton(repo: repo)
             VStack(alignment: .leading, spacing: 5) {
                 Text(repo.fullName)
                     .font(.title2)
@@ -536,12 +572,17 @@ struct RepoDetailView: View {
 
     private func statsSection(_ repo: Repo) -> some View {
         HStack(alignment: .center, spacing: 24) {
+            // 2026-06-02 dong4j 要求统一 hover 反馈：所有可点击的 stat（Stars /
+            // Forks / Watchers）都加 `.pressableHover()`，让用户能感知"这是可点击的"。
+            // 详见 `Shared/Components/PressableHover.swift`。
             Button {
                 showUnstarConfirm = true
             } label: {
                 StatItem(label: "repo.stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pressableHover()
             .help("repo.unstar")
 
             Button {
@@ -552,6 +593,8 @@ struct RepoDetailView: View {
                 StatItem(label: "repo.forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pressableHover()
             .help("repo.forkAction")
 
             WatchersMenu(repo: repo)
@@ -877,7 +920,11 @@ struct WatchersMenu: View {
             StatItem(label: "repo.watchers", value: repo.watchersCount, systemImage: "eye.fill", tint: .secondary)
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .fixedSize()
+        // 2026-06-02 dong4j 要求统一 hover 反馈：跟 Stars / Forks 一样加
+        // `.pressableHover()`，让用户感知 Watchers 数字是可点击的（点开下拉菜单）。
+        .pressableHover()
         .help("repo.watch")
         .task(id: repo.id) {
             await fetchSubscription()
@@ -956,9 +1003,6 @@ struct WatchersMenu: View {
 private struct TrendingHeroAvatarButton: View {
     let repo: TrendingRepo
 
-    @State private var isHovered = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
         Button {
             NSWorkspace.shared.open(repo.url)
@@ -967,15 +1011,44 @@ private struct TrendingHeroAvatarButton: View {
                 urlString: RepoAvatarURL.from(owner: repo.owner),
                 size: 64
             )
-            .opacity(isHovered ? 0.78 : 1.0)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.15)) {
-                isHovered = hovering
+        .pressableHover()
+        .help("repo.openOnGithub")
+    }
+}
+
+// MARK: - Repo Hero Avatar Button (Manage)
+
+/// Manage repo 详情页左上角的项目 logo 按钮（hero 元素）。
+///
+/// 2026-06-02 dong4j 要求：Manage 详情页 logo 也要可点击跳 GitHub 主页，
+/// 跟 Trending 详情页保持一致的交互模式。
+///
+/// 与 `TrendingHeroAvatarButton` 几乎一样，差异只是接收的 model 类型不同
+/// （`Repo` vs `TrendingRepo`），URL 来源不同（`RepoExternalLinks.repo(repo)` vs
+/// `repo.url`）。**没抽通用 `ClickableAvatar`**：两个 hero button 强绑各自的
+/// model 类型，强行参数化反而要传 URL + tooltipKey 抹平差异；共享 hover 反馈
+/// 已通过 `.pressableHover()` modifier 解决了重复，结构层面不需要再抽。
+/// 如未来真出现第 3 个 hero avatar 用例再抽通用版（YAGNI）。
+private struct RepoHeroAvatarButton: View {
+    let repo: Repo
+
+    var body: some View {
+        Button {
+            if let url = RepoExternalLinks.repo(repo) {
+                NSWorkspace.shared.open(url)
             }
+        } label: {
+            RemoteAvatar(
+                urlString: RepoAvatarURL.from(owner: repo.owner),
+                size: 64
+            )
         }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pressableHover()
         .help("repo.openOnGithub")
     }
 }

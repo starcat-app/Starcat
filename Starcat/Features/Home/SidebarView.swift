@@ -192,6 +192,12 @@ struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        // 2026-06-02 dong4j 要求统一 hover 反馈：sidebar 三入口（Manage / Trending / Search）
+        // 加 `.pressableHover()`，与详情页 / sidebar 头像 / Stats 保持同款交互反馈。
+        // 关键约束：scale 1.06 + opacity 0.7 是临时反馈，鼠标移开恢复，不影响 isSelected
+        // 的 accent color 视觉表达；needsLogin 的灰态按钮（点击会触发登录 sheet）也加 hover，
+        // 因为它仍然是可点击元素。
+        .pressableHover()
     }
 
     private func selectRootPage(_ page: SidebarRootPage) {
