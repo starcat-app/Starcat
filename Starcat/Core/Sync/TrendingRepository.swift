@@ -39,6 +39,16 @@ protocol TrendingRepositoryProtocol: Sendable {
     /// - 网络成功：覆盖该 (period, language_filter) 的本地缓存，返回新数据
     /// - 网络失败：回退到本地缓存（非空则返回缓存，等价于"上次成功的快照"）；缓存为空才把错误抛出
     func fetchTrending(since: TrendingPeriod, language: TrendingLanguage) async throws -> [TrendingRepo]
+
+    /// 读取该 (period, language_filter) 桶的最近一次成功写入时间。
+    ///
+    /// 实现层取该桶下所有行的 `max(cached_at)`（同一次 fetch 的所有行 cached_at 一致，
+    /// 取 max 与取 min 等价；为防御未来跨次部分写入，约定取 max）。
+    /// 没缓存时返回 `nil`。永不抛错（DB 读失败仅记录日志后返回 nil）。
+    ///
+    /// 用途：UI 展示"上次刷新 X 分钟前"新鲜度提示；ViewModel 判断是否要在
+    /// 进入页面时主动拉网络（首次入场策略）。
+    func lastRefreshedAt(since: TrendingPeriod, language: TrendingLanguage) async -> Date?
 }
 
 /// Trending 数据仓库实现。
@@ -147,5 +157,34 @@ actor TrendingRepository: TrendingRepositoryProtocol {
         }
 
         return repos
+    }
+
+    /// 读取该桶最近一次成功写入时间（trending_repos.cached_at 的 max）。
+    ///
+    /// 实现要点：
+    /// - `cached_at` 在 schema 里是 `TEXT`，存的是 ISO8601 字符串（见 `TrendingRepoRecord.from(...)`
+    ///   里调用 `ISO8601DateFormatter.shared.string(from:)`）。ISO8601 格式按字符串字典序与时间序一致，
+    ///   所以可以直接 `ORDER BY cached_at DESC LIMIT 1` 拿最近一行
+    /// - 走 GRDB FetchableRecord 拿到 record 后把 `cachedAt: String` 反解为 `Date?`，
+    ///   解析失败时降级返回 nil（保持"永不抛错"语义）
+    func lastRefreshedAt(
+        since: TrendingPeriod,
+        language: TrendingLanguage
+    ) async -> Date? {
+        let period = since.rawValue
+        let langFilter = language.apiValue
+        do {
+            let record = try await writer.read { db in
+                try TrendingRepoRecord
+                    .filter(Column("period") == period && Column("language_filter") == langFilter)
+                    .order(Column("cached_at").desc)
+                    .fetchOne(db)
+            }
+            guard let str = record?.cachedAt else { return nil }
+            return ISO8601DateFormatter.shared.date(from: str)
+        } catch {
+            AppLog.network.warning("Trending lastRefreshedAt read failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 }

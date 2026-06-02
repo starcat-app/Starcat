@@ -192,6 +192,55 @@ struct TrendingRepositoryPersistenceTests {
             _ = try await repo.fetchTrending(since: .daily, language: .swift)
         }
     }
+
+    // MARK: - lastRefreshedAt（2026-06-02 新增，配合"消除二次入场动画"改造）
+
+    @Test("lastRefreshedAt: 空表返回 nil")
+    func lastRefreshedAtEmpty() async throws {
+        URLProtocolStub.reset()
+        let db = try InMemoryDatabaseManager()
+        let repo = TrendingRepository(database: db)
+
+        let date = await repo.lastRefreshedAt(since: .daily, language: .all)
+        #expect(date == nil)
+    }
+
+    @Test("lastRefreshedAt: 写入后返回接近当前时间的时间戳")
+    func lastRefreshedAtAfterFetch() async throws {
+        let (repo, _) = try makeRepository { request in
+            let body = trendingFixtureBody([
+                ("/owner/a", "Swift", 100, 10, 5),
+            ])
+            return (trendingPersistResponse(200, request.url!), body)
+        }
+
+        let before = Date()
+        _ = try await repo.fetchTrending(since: .daily, language: .swift)
+        let after = Date()
+
+        let date = await repo.lastRefreshedAt(since: .daily, language: .swift)
+        let unwrapped = try #require(date)
+        #expect(unwrapped >= before.addingTimeInterval(-1), "lastRefreshedAt should be >= fetch start time")
+        #expect(unwrapped <= after.addingTimeInterval(1), "lastRefreshedAt should be <= fetch end time")
+    }
+
+    @Test("lastRefreshedAt: 多桶隔离，每个桶独立时间戳")
+    func lastRefreshedAtPerBucket() async throws {
+        let (repo, _) = try makeRepository { request in
+            let body = trendingFixtureBody([
+                ("/owner/a", "Swift", 100, 10, 5),
+            ])
+            return (trendingPersistResponse(200, request.url!), body)
+        }
+
+        // 只写入 daily/Swift 桶
+        _ = try await repo.fetchTrending(since: .daily, language: .swift)
+
+        let dailySwift = await repo.lastRefreshedAt(since: .daily, language: .swift)
+        let weeklyAll = await repo.lastRefreshedAt(since: .weekly, language: .all)
+        #expect(dailySwift != nil)
+        #expect(weeklyAll == nil, "未写入的桶应该返回 nil")
+    }
 }
 
 // MARK: - TrendingReadmeRepository CRUD
