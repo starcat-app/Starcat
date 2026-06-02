@@ -341,12 +341,14 @@ struct RepoDetailView: View {
     }
 
     /// Trending repo 头部信息。
+    ///
+    /// 2026-06-02 dong4j 调整：原 `trendingStatsSection` 末尾的 `.buttonStyle(.bordered)`
+    /// "在 GitHub 查看"独立 CTA 视觉太重、不协调；改为把跳转动作落到左上角项目 logo 上
+    /// （`TrendingHeroAvatarButton`）—— logo 本来就指代仓库，点击它跳 GitHub 符合直觉，
+    /// stats 行同时变得更干净（只剩 Stars / Forks / Language / +N 周期增长）。
     private func trendingHeader(_ repo: TrendingRepo) -> some View {
         HStack(alignment: .top, spacing: 16) {
-            RemoteAvatar(
-                urlString: RepoAvatarURL.from(owner: repo.owner),
-                size: 64
-            )
+            TrendingHeroAvatarButton(repo: repo)
             VStack(alignment: .leading, spacing: 5) {
                 Text(repo.fullName)
                     .font(.title2)
@@ -406,15 +408,9 @@ struct RepoDetailView: View {
                     .foregroundStyle(.green)
             }
 
-            Link(destination: repo.url) {
-                HStack(spacing: 4) {
-                    Image(systemName: "safari")
-                    Text("repo.openOnGithub")
-                }
-                .font(.caption)
-            }
-            .buttonStyle(.bordered)
-            .focusEffectDisabled()
+            // 2026-06-02 dong4j 删除原 `Link "在 GitHub 查看"` 按钮（`.buttonStyle(.bordered)`
+            // 在 plain 风格 stats 行里视觉权重过重，像独立 CTA 显得突兀）；跳转动作下沉到
+            // `trendingHeader` 的左上角 logo（`TrendingHeroAvatarButton`）。
 
             Spacer()
         }
@@ -932,5 +928,54 @@ struct WatchersMenu: View {
             AppLog.sync.error("Update subscription failed: \(error.localizedDescription, privacy: .public)")
             watchState = previousState
         }
+    }
+}
+
+// MARK: - Trending Hero Avatar Button
+
+/// Trending repo 详情页左上角的项目 logo 按钮（hero 元素）。
+///
+/// 2026-06-02 由 dong4j 主导的 UX 调整：原 stats 行末尾有一个独立的
+/// `Link "在 GitHub 查看"` 按钮（`.buttonStyle(.bordered)`），在 plain 风格 stats 行里
+/// 视觉权重过重显得突兀；改为删除按钮 + 把跳转动作落到本组件（项目 logo）上。
+/// logo 本来就指代仓库，点击它跳 GitHub 符合直觉。
+///
+/// 设计要点：
+/// - **沿用 18:35 修好的"Button + NSWorkspace"模式**，不用 `Link(destination:)`——
+///   后者外层 `.help()` toolTip 在 macOS 上传不进 Link 内部，hover 不弹 tooltip
+///   （详见 `contributorAvatar` 内的注释）
+/// - **hover 视觉反馈必要**：logo 包成 Button 后视觉上跟静态图无异，用户无法感知
+///   "这是可点击的"。加 `.opacity(0.78)` 的轻微变暗（不加 scale 避免太花），
+///   是 macOS 经典 image-button 模式（系统 Preview.app / Finder 同款）
+/// - **尊重 accessibilityReduceMotion**：reduceMotion 用户不做 0.15s 缓动，避免动效
+/// - `.help("repo.openOnGithub")` 直接复用原按钮的本地化文案，无需新增 i18n key
+///
+/// 没抽到 `Shared/Components/RemoteAvatar.swift`：本组件强绑 `TrendingRepo` 模型 +
+/// 详情页 hero 语义，复用面窄；如未来 Manage detail 也需要"可点击 owner avatar"，
+/// 再抽通用版（接受 `URL` + `tooltipKey` 参数）。
+private struct TrendingHeroAvatarButton: View {
+    let repo: TrendingRepo
+
+    @State private var isHovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button {
+            NSWorkspace.shared.open(repo.url)
+        } label: {
+            RemoteAvatar(
+                urlString: RepoAvatarURL.from(owner: repo.owner),
+                size: 64
+            )
+            .opacity(isHovered ? 0.78 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.15)) {
+                isHovered = hovering
+            }
+        }
+        .help("repo.openOnGithub")
     }
 }

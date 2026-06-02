@@ -3290,6 +3290,7 @@
       }
     },
     "repo.openOnGithub" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
