@@ -31,6 +31,10 @@
 //  - WKWebView 在 NSViewRepresentable 里复用：updateNSView 只在 html 真正变化时 reload
 //    （避免列表切换 repo 时白闪）
 //  - baseURL 传 repo htmlUrl（如 https://github.com/owner/repo），用于解析极少数遗漏的相对路径
+//  - **背景透明**：`drawsBackground = false` + CSS `html, body { background: transparent }`
+//    是必须成对存在的。任一缺失就会在暗色下看到色差
+//    （GitHub `#0d1117` 与 SwiftUI 宿主 `NSColor.windowBackgroundColor` 不同色）。
+//    亮色下虽然两者都接近 `#ffffff`，看不出差异，但同样要保留 transparent。
 //
 //  已知系统噪音（**不是 Bug，不要排查**）：
 //  macOS App Sandbox 下 WKWebView 加载新内容时，WebContent 进程会向 RunningBoard /
@@ -394,10 +398,18 @@ enum ReadmeCSS {
         --blockquote-fg: #8b949e;
         --blockquote-border: #30363d;
     }
+    /*
+     * 背景刻意设为 transparent：
+     * 配合 WKWebView 的 `drawsBackground = false`（见 ReadmeWebView.makeNSView），
+     * 让 SwiftUI 宿主（详情页系统暗灰 `NSColor.windowBackgroundColor`）的底色透上来，
+     * 避免 README 区与上方元信息卡片之间出现色差（GitHub `#0d1117` ↔ macOS 系统暗灰）。
+     * 亮色下系统底色 ≈ 纯白，效果也一致。
+     * `--bg` 变量保留给后续可能用到的局部组件，不在此处画背景。
+     */
     html, body {
         margin: 0;
         padding: 0;
-        background: var(--bg);
+        background: transparent;
         color: var(--fg);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
         font-size: 14px;
