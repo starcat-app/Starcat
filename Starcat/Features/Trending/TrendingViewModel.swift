@@ -29,14 +29,43 @@ final class TrendingViewModel {
     /// 当前 Trending 列表（可变，用于 star 操作后更新本地计数）
     var repos: [TrendingRepo] = []
 
-    /// 当前 Trending 列表快照版本。
+    /// 当前 Trending 列表"身份快照"版本。
     ///
-    /// 只在 reload 产出新榜单时递增，用于驱动中栏内容过渡和 row reveal；
-    /// 本地 star 成功导致的 starsCount +1 不递增，避免用户点 star 后整列重播动画。
+    /// **只在榜单"身份序列"变化时递增**（即 fullName 列表或顺序发生变化）。
+    /// 数值字段变化（stars / forks / starsInPeriod / contributors）即使被网络刷新覆盖，
+    /// 也不递增 revision —— SwiftUI `List + ForEach + Identifiable` 会自然 in-place diff，
+    /// row 不重播入场动画，stars 数等会"悄悄"更新。
+    ///
+    /// 不递增的场景：
+    /// - 缓存命中后再次走网络拿到完全相同的榜单（最常见）
+    /// - 网络回来发现 stars / forks 变化但 fullName 顺序不变
+    /// - 本地 star 成功导致的 starsCount +1
+    ///
+    /// 递增的场景：
+    /// - 周期切换（如 daily → weekly）后第一次有数据
+    /// - 语言切换后第一次有数据
+    /// - 真实换榜：榜单成员或顺序发生变化
+    /// - 进入页面 + 缓存命中（首屏入场需要 row reveal 动画）
     private(set) var reposRevision: Int = 0
+
+    /// 当前 (period, language) 桶最近一次成功刷新时间。
+    ///
+    /// 来源：① reload 开始时从 repository 读 trending_repos.cached_at 的 max；
+    /// ② 网络成功后更新为 `Date()`（避免再 query 一次 DB）。
+    ///
+    /// UI 用法：toolbar 显示"X 分钟前"新鲜度提示；超过 1 小时（`isStale`）变橙色。
+    /// 没缓存 / 还没刷新过返回 nil，UI 隐藏新鲜度提示。
+    private(set) var lastRefreshedAt: Date?
 
     /// 加载中状态
     private(set) var isLoading: Bool = false
+
+    /// 后台刷新中状态。
+    ///
+    /// 与 `isLoading` 区分：`isLoading` 是"无缓存 + 网络在跑"的全屏 loading；
+    /// `isRefreshing` 是"有缓存 + 网络在跑"的轻量后台刷新（toolbar 刷新 icon 旋转）。
+    /// 同一时间至多一个为 true。
+    private(set) var isRefreshing: Bool = false
 
     /// 错误信息
     private(set) var loadError: String?
@@ -50,7 +79,8 @@ final class TrendingViewModel {
     var selectedPeriod: TrendingPeriod = .daily {
         didSet {
             guard oldValue != selectedPeriod else { return }
-            Task { await reload() }
+            // 周期切换 = 用户主动选择"换榜单"，强制走网络拿最新数据
+            Task { await reload(forceNetwork: true) }
         }
     }
 
@@ -58,7 +88,8 @@ final class TrendingViewModel {
     var selectedLanguage: TrendingLanguage = .all {
         didSet {
             guard oldValue != selectedLanguage else { return }
-            Task { await reload() }
+            // 语言切换同样视为"换榜单"，强制刷新
+            Task { await reload(forceNetwork: true) }
         }
     }
 
@@ -111,28 +142,50 @@ final class TrendingViewModel {
 
     // MARK: - Public Actions
 
-    /// 刷新 Trending 列表（W7+ 起：SWR 模式，与 manage HomeViewModel 同构）。
+    /// 刷新 Trending 列表（智能 revision 升级版，2026-06-02 改造）。
     ///
-    /// 流程：
-    /// 1. 第一阶段：读 `trending_repos` 表本地缓存 → 命中立即上屏（不阻塞，没 isLoading）
-    /// 2. 第二阶段：强制走网络刷新（dong4j 决策 ttl_c：trending 不设 TTL）→ 成功覆盖 / 失败保留缓存
+    /// **核心设计变更**（相比 W7+ 初版无脑 SWR）：
+    /// - 引入 `forceNetwork` 参数区分"主动刷新"vs"进入页面"
+    /// - 第二阶段拿到 fresh 数据后，对比 fullName 序列，**只在身份变化时** bump reposRevision；
+    ///   stars/forks 等数值变化让 SwiftUI 自然 in-place diff，**避免每次进页面都重播入场动画**
     ///
-    /// 与原版差异：
-    /// - 进入 reload 后**不再立刻 isLoading=true 清空 repos**：缓存命中时直接展示快照，
-    ///   网络成功后无感替换；只有"没缓存 + 网络在跑"才需要 isLoading 占位
-    /// - 失败处理也分两种：有缓存就静默保留 + 设 loadError（UI 可选展示重试条）；
-    ///   没缓存才把 repos 置空显示 errorView（与原行为对齐）
+    /// 行为矩阵：
+    /// | 入口 | forceNetwork | 缓存空 | 缓存有 |
+    /// |------|--------------|--------|--------|
+    /// | 进入页面 (.task) | false | 走网络 + isLoading | 上屏缓存 + 不走网络 |
+    /// | 周期/语言切换 | true | 走网络 + isLoading | 上屏缓存 + 后台刷新 + isRefreshing |
+    /// | 主动刷新按钮 | true | 走网络 + isLoading | 上屏缓存 + 后台刷新 + isRefreshing |
+    /// | 错误重试 | true | 走网络 + isLoading | 上屏缓存 + 后台刷新 + isRefreshing |
+    ///
+    /// SWR 关键约束：
+    /// - 缓存命中 + forceNetwork=false → **完全不走网络**（首次进页面零打扰，关键）
+    /// - 缓存命中 + forceNetwork=true → 上屏缓存 → 后台拉网络 → 智能 revision 决定动画
+    /// - 缓存空 → 必拉网络（不管 forceNetwork），isLoading=true
+    /// - 网络失败 + 有缓存 → 保留已显示，仅 loadError 记录
+    /// - 网络失败 + 无缓存 → errorView
+    ///
+    /// 智能 revision 规则（关键）：
+    /// - 缓存上屏总是 bump revision（首屏入场动画）
+    /// - 网络回来对比 oldIDs vs newIDs：身份序列变化才 bump
+    /// - "身份序列" = `repos.map(\.fullName)` ordered list，stars/forks 等数值不算
     ///
     /// 注意：网络成功时 fetchTrending 已经 race-free（actor 内的 DB 写入是顺序的），
     /// 这里 ViewModel 层用 currentReloadTask 取消老任务即可。
-    func reload() async {
+    func reload(forceNetwork: Bool = false) async {
         // 取消旧任务
         currentReloadTask?.cancel()
 
         let task = Task { [weak self] in
             guard let self else { return }
 
-            // 第一阶段：读本地缓存（立即上屏，不进 isLoading）
+            // ① 拿"上次刷新时间"放出来（toolbar 新鲜度提示首屏可见）
+            self.lastRefreshedAt = await self.repository.lastRefreshedAt(
+                since: self.selectedPeriod,
+                language: self.selectedLanguage
+            )
+            guard !Task.isCancelled else { return }
+
+            // ② 第一阶段：读本地缓存
             let cached = await self.repository.cachedTrending(
                 since: self.selectedPeriod,
                 language: self.selectedLanguage
@@ -142,18 +195,34 @@ final class TrendingViewModel {
             let hasUsableCache = !cached.isEmpty
             if hasUsableCache {
                 self.repos = cached
-                self.reposRevision += 1
+                self.reposRevision += 1   // 缓存上屏 = 首屏入场，需要 row reveal 动画
                 self.precomputeScores()
                 self.loadError = nil
                 self.isLoading = false
             } else {
-                // 没缓存 → 进 loading 让 UI 显示 ProgressView
+                // 没缓存 → 进 isLoading 让 UI 显示 ProgressView
                 self.repos = []
                 self.isLoading = true
                 self.loadError = nil
             }
 
-            // 第二阶段：强制走网络刷新（不论有无缓存都拉，对应 ttl_c 决策）
+            // ③ 第二阶段：是否走网络？
+            //   缓存空 → 必走（无脑拉）
+            //   缓存有 + forceNetwork=true → 走（用户主动 / 周期切换 / 重试）
+            //   缓存有 + forceNetwork=false → 跳过（首次进页面零打扰）
+            let shouldFetchNetwork = !hasUsableCache || forceNetwork
+            guard shouldFetchNetwork else {
+                AppLog.network.debug("Trending cache hit, skip network (forceNetwork=false)")
+                self.isLoading = false
+                self.isRefreshing = false
+                return
+            }
+
+            // 后台刷新指示器：仅在"有缓存 + 走网络"时点亮（避免与全屏 isLoading 重复）
+            if hasUsableCache {
+                self.isRefreshing = true
+            }
+
             do {
                 let fetched = try await self.repository.fetchTrending(
                     since: self.selectedPeriod,
@@ -161,14 +230,29 @@ final class TrendingViewModel {
                 )
                 guard !Task.isCancelled else { return }
 
-                self.repos = fetched
-                self.reposRevision += 1
+                // ④ 智能 revision：对比身份序列，变化才 bump
+                let oldIDs = self.repos.map(\.fullName)
+                let newIDs = fetched.map(\.fullName)
+                let identityChanged = oldIDs != newIDs
+
+                self.repos = fetched   // 不管是否 bump revision，都要赋值（让 SwiftUI 自然 diff 数值字段）
+                if identityChanged {
+                    self.reposRevision += 1
+                    AppLog.network.debug("Trending identity changed (\(oldIDs.count) → \(newIDs.count)), bumped revision")
+                } else {
+                    AppLog.network.debug("Trending identity unchanged, in-place update only")
+                }
+
                 self.precomputeScores()
                 self.loadError = nil
+                self.lastRefreshedAt = Date()   // 网络成功后立即更新（避免再 query DB）
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    self.isRefreshing = false
+                    return
+                }
                 if hasUsableCache {
-                    // 缓存还能用 → 保持已上屏，仅记录错误（UI 可选地展示"刷新失败"提示条；当前未实现）
+                    // 缓存还能用 → 保持已上屏，仅记录错误（UI 在 toolbar 显示刷新失败提示）
                     self.loadError = error.localizedDescription
                     AppLog.network.warning("Trending 后台刷新失败但本地有缓存，保持已显示: \(error.localizedDescription, privacy: .public)")
                 } else {
@@ -180,10 +264,48 @@ final class TrendingViewModel {
             }
 
             self.isLoading = false
+            self.isRefreshing = false
         }
 
         currentReloadTask = task
         await task.value
+    }
+
+    // MARK: - Freshness（新鲜度展示）
+
+    /// 当前桶距上次刷新经过的秒数；从未刷新过返回 nil。
+    var secondsSinceLastRefresh: TimeInterval? {
+        guard let date = lastRefreshedAt else { return nil }
+        return Date().timeIntervalSince(date)
+    }
+
+    /// 当前桶数据是否陈旧（>1 小时）。
+    /// 超过此阈值 UI 会用橙色提示陈旧（不强制刷新，仅视觉信号）。
+    var isStale: Bool {
+        guard let secs = secondsSinceLastRefresh else { return false }
+        return secs > 3600
+    }
+
+    /// 当前桶可用的"刷新提示"文本（如"刚刚" / "12 分钟前" / "1 小时前" / "1 天前"）。
+    /// 没有 lastRefreshedAt 返回 nil，UI 隐藏新鲜度提示。
+    var formattedFreshness: String? {
+        guard let secs = secondsSinceLastRefresh else { return nil }
+        if secs < 30 {
+            return String(localized: "trending.freshness.justNow")
+        }
+        if secs < 60 {
+            return String(localized: "trending.freshness.lessThanMinute")
+        }
+        let minutes = Int(secs / 60)
+        if minutes < 60 {
+            return String(format: String(localized: "trending.freshness.minutesAgoFormat"), minutes)
+        }
+        let hours = Int(secs / 3600)
+        if hours < 24 {
+            return String(format: String(localized: "trending.freshness.hoursAgoFormat"), hours)
+        }
+        let days = Int(secs / 86400)
+        return String(format: String(localized: "trending.freshness.daysAgoFormat"), days)
     }
 
     /// 请求 AI 摘要

@@ -25,10 +25,28 @@ private func trendingHTTPResponse(
 private actor StubTrendingRepository: TrendingRepositoryProtocol {
     var repos: [TrendingRepo]
     var cached: [TrendingRepo]
+    var lastRefreshedAtValue: Date?
+    var fetchCallCount: Int = 0
 
-    init(repos: [TrendingRepo] = [], cached: [TrendingRepo] = []) {
+    /// 用于测试可注入的 fetch 行为（默认返回 self.repos，可重写为抛错或动态返回）。
+    var fetchHandler: (@Sendable (_ since: TrendingPeriod, _ language: TrendingLanguage) async throws -> [TrendingRepo])?
+
+    init(
+        repos: [TrendingRepo] = [],
+        cached: [TrendingRepo] = [],
+        lastRefreshedAt: Date? = nil
+    ) {
         self.repos = repos
         self.cached = cached
+        self.lastRefreshedAtValue = lastRefreshedAt
+    }
+
+    func setRepos(_ value: [TrendingRepo]) {
+        self.repos = value
+    }
+
+    func setFetchHandler(_ handler: @escaping @Sendable (_ since: TrendingPeriod, _ language: TrendingLanguage) async throws -> [TrendingRepo]) {
+        self.fetchHandler = handler
     }
 
     func cachedTrending(since: TrendingPeriod, language: TrendingLanguage) async -> [TrendingRepo] {
@@ -36,7 +54,15 @@ private actor StubTrendingRepository: TrendingRepositoryProtocol {
     }
 
     func fetchTrending(since: TrendingPeriod, language: TrendingLanguage) async throws -> [TrendingRepo] {
-        repos
+        fetchCallCount += 1
+        if let handler = fetchHandler {
+            return try await handler(since, language)
+        }
+        return repos
+    }
+
+    func lastRefreshedAt(since: TrendingPeriod, language: TrendingLanguage) async -> Date? {
+        lastRefreshedAtValue
     }
 }
 
@@ -160,6 +186,172 @@ struct TrendingTests {
         #expect(mock.starCalls.first?.owner == "owner")
         #expect(mock.starCalls.first?.repo == "project")
         #expect(vm.subscribedRepoIDs.contains("owner/project"))
+    }
+
+    // MARK: - 智能 revision 行为（2026-06-02 新增，配合"消除二次入场动画"改造）
+
+    @MainActor
+    @Test("TrendingViewModel.reload(forceNetwork: false): cache hit skips network call")
+    func reloadCacheHitSkipsNetworkWhenForceFalse() async throws {
+        let cachedRepos = [
+            makeTrendingRepo(fullName: "owner/a"),
+            makeTrendingRepo(fullName: "owner/b")
+        ]
+        let stub = StubTrendingRepository(repos: cachedRepos, cached: cachedRepos)
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(forceNetwork: false)
+
+        #expect(vm.repos.count == 2)
+        let count = await stub.fetchCallCount
+        #expect(count == 0, "cache hit + forceNetwork=false should skip network entirely")
+        #expect(vm.reposRevision == 1, "cache surface should still bump revision once for first-paint reveal")
+    }
+
+    @MainActor
+    @Test("TrendingViewModel.reload(forceNetwork: true): cache hit still calls network")
+    func reloadCacheHitFetchesWhenForceTrue() async throws {
+        let cachedRepos = [
+            makeTrendingRepo(fullName: "owner/a"),
+            makeTrendingRepo(fullName: "owner/b")
+        ]
+        let stub = StubTrendingRepository(repos: cachedRepos, cached: cachedRepos)
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(forceNetwork: true)
+
+        let count = await stub.fetchCallCount
+        #expect(count == 1, "forceNetwork=true should always fetch")
+    }
+
+    @MainActor
+    @Test("TrendingViewModel.reload: fresh data with same identity does NOT bump revision")
+    func reloadDoesNotBumpRevisionWhenIdentityUnchanged() async throws {
+        let cached = [
+            makeTrendingRepo(fullName: "owner/a", stars: 100),
+            makeTrendingRepo(fullName: "owner/b", stars: 200)
+        ]
+        // 网络返回的数据：相同 fullName 列表，但 stars 数变了
+        let fresh = [
+            makeTrendingRepo(fullName: "owner/a", stars: 150),
+            makeTrendingRepo(fullName: "owner/b", stars: 250)
+        ]
+        let stub = StubTrendingRepository(repos: fresh, cached: cached)
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(forceNetwork: true)
+
+        // 第一阶段缓存上屏 bump revision (revision=1)
+        // 第二阶段网络回来发现 fullName 序列相同 → NOT bump (revision stays 1)
+        #expect(vm.reposRevision == 1, "identity unchanged means in-place update only, no extra revision bump")
+        // 但 stars 数应该已经被网络数据覆盖（in-place diff）
+        #expect(vm.repos.first?.starsCount == 150, "stars count should be updated in-place")
+    }
+
+    @MainActor
+    @Test("TrendingViewModel.reload: fresh data with different identity bumps revision")
+    func reloadBumpsRevisionWhenIdentityChanged() async throws {
+        let cached = [
+            makeTrendingRepo(fullName: "owner/a"),
+            makeTrendingRepo(fullName: "owner/b")
+        ]
+        // 网络返回完全不同的列表
+        let fresh = [
+            makeTrendingRepo(fullName: "owner/c"),
+            makeTrendingRepo(fullName: "owner/d")
+        ]
+        let stub = StubTrendingRepository(repos: fresh, cached: cached)
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(forceNetwork: true)
+
+        // 第一阶段缓存上屏 +1，第二阶段身份变化 +1，共 2
+        #expect(vm.reposRevision == 2, "identity changed should bump revision again")
+        #expect(vm.repos.map(\.fullName) == ["owner/c", "owner/d"])
+    }
+
+    @MainActor
+    @Test("TrendingViewModel.reload: empty cache forces network even when forceNetwork=false")
+    func reloadEmptyCacheForcesNetwork() async throws {
+        let fresh = [makeTrendingRepo(fullName: "owner/a")]
+        let stub = StubTrendingRepository(repos: fresh, cached: [])
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(forceNetwork: false)
+
+        let count = await stub.fetchCallCount
+        #expect(count == 1, "empty cache must always fetch, regardless of forceNetwork")
+        #expect(vm.repos.count == 1)
+    }
+
+    @MainActor
+    @Test("TrendingViewModel: lastRefreshedAt populated from repository on reload")
+    func lastRefreshedAtPopulated() async throws {
+        let timestamp = Date(timeIntervalSinceNow: -120)   // 2 分钟前
+        let stub = StubTrendingRepository(
+            repos: [makeTrendingRepo(fullName: "owner/a")],
+            cached: [makeTrendingRepo(fullName: "owner/a")],
+            lastRefreshedAt: timestamp
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(forceNetwork: false)
+
+        // 缓存命中 + forceNetwork=false：lastRefreshedAt 应该来自 repository（120s 前）
+        #expect(vm.lastRefreshedAt != nil)
+        let secs = vm.secondsSinceLastRefresh ?? 0
+        #expect(secs >= 100 && secs <= 200, "should be roughly 120s ago")
+        #expect(vm.formattedFreshness != nil)
+    }
+
+    @MainActor
+    @Test("TrendingViewModel: isStale true when last refresh > 1 hour ago")
+    func isStaleAfterOneHour() async throws {
+        let timestamp = Date(timeIntervalSinceNow: -7200)  // 2 小时前
+        let stub = StubTrendingRepository(
+            repos: [],
+            cached: [makeTrendingRepo(fullName: "owner/a")],
+            lastRefreshedAt: timestamp
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(forceNetwork: false)
+
+        #expect(vm.isStale == true)
+    }
+
+    @MainActor
+    @Test("TrendingViewModel: isStale false when last refresh < 1 hour ago")
+    func isStaleFalseWhenRecent() async throws {
+        let timestamp = Date(timeIntervalSinceNow: -300)   // 5 分钟前
+        let stub = StubTrendingRepository(
+            repos: [],
+            cached: [makeTrendingRepo(fullName: "owner/a")],
+            lastRefreshedAt: timestamp
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(forceNetwork: false)
+
+        #expect(vm.isStale == false)
+    }
+
+    @MainActor
+    @Test("TrendingViewModel: lastRefreshedAt updated to now after successful network fetch")
+    func lastRefreshedAtUpdatedAfterFetch() async throws {
+        let oldTimestamp = Date(timeIntervalSinceNow: -3600)
+        let stub = StubTrendingRepository(
+            repos: [makeTrendingRepo(fullName: "owner/a")],
+            cached: [makeTrendingRepo(fullName: "owner/a")],
+            lastRefreshedAt: oldTimestamp
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(forceNetwork: true)
+
+        // 网络成功 → lastRefreshedAt 应该被更新为 Date()（接近 now）
+        let secs = vm.secondsSinceLastRefresh ?? Double.greatestFiniteMagnitude
+        #expect(secs < 5, "lastRefreshedAt should be very recent after successful fetch")
     }
 
     @MainActor

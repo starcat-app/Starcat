@@ -91,7 +91,10 @@ struct TrendingView: View {
                 selectedRepoID = nil
                 selectedTrendingRepo = nil
             }
-            await viewModel.reload()
+            // 首次进入页面：有缓存就不自动拉（forceNetwork=false）
+            // 这是消除"二次入场动画"的关键：原版在缓存命中后还会盲目走网络再 bump 一次 revision
+            // 现在缓存命中时直接上屏完事，让用户主动按刷新按钮决定何时拉新
+            await viewModel.reload(forceNetwork: false)
         }
         .onChange(of: homeViewModel.languageStats) { _, stats in
             viewModel.updateLanguagePreferences(from: stats)
@@ -120,11 +123,31 @@ struct TrendingView: View {
 
     // MARK: - Toolbar
 
+    /// 三段布局：周期 picker **真居中** / 刷新组（freshness 文本 + 刷新 icon）右上角浮动。
+    ///
+    /// 设计要点（2026-06-02 dong4j 反馈"应该固定周期切换组件"调整）：
+    /// - **周期 picker 真居中**（左右 Spacer 各占一半），与 toolbar 整体宽度对齐，
+    ///   不会因左右两侧内容长度变化而漂移位置
+    /// - **刷新组用 `.overlay(alignment: .trailing)` 浮动**：与 picker 布局**完全解耦**，
+    ///   新鲜度文本从"刚刚"变到"12 小时前"再到"3 天前"，picker 视觉位置岿然不动
+    /// - 新鲜度文字常驻显示，>1 小时变橙色提示陈旧（`isStale`），无缓存时整组隐藏
+    /// - 刷新 icon 单独一个 Button，isRefreshing 时图标旋转动画
+    /// - 整组用 `.help()` 显示完整 tooltip "上次刷新于 X 月 Y 日 HH:MM"（精确时间，hover 才看）
+    ///
+    /// 为什么不用 HStack + Spacer：HStack 里 Spacer 与右侧组件协商空间会反向影响 picker 的
+    /// 视觉中心（picker 占满 maxWidth: 320 后 Spacer 才生效，但右侧组宽度变化时整体对齐方式
+    /// 仍跟着变）；用 ZStack/overlay 让两者**走两个独立 layout pass**，picker 永远居中。
     private var toolbarView: some View {
         HStack {
             Spacer()
             periodPicker
             Spacer()
+        }
+        .overlay(alignment: .trailing) {
+            HStack(spacing: 8) {
+                freshnessIndicator
+                refreshButton
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -142,6 +165,68 @@ struct TrendingView: View {
         }
         .pickerStyle(.segmented)
         .frame(maxWidth: 320)
+    }
+
+    /// "12 分钟前" 新鲜度提示。
+    /// - 没有 lastRefreshedAt 时整组隐藏（`formattedFreshness == nil`）
+    /// - >1 小时（`isStale`）变橙色提示陈旧，但不强制刷新
+    @ViewBuilder
+    private var freshnessIndicator: some View {
+        if let text = viewModel.formattedFreshness {
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(viewModel.isStale ? Color.orange : Color.secondary)
+                .help(absoluteFreshnessHelpText)
+        }
+    }
+
+    /// 刷新 icon Button：常驻显示，isRefreshing 时图标旋转。
+    /// hover 时 tooltip 显示"刷新榜单"或"上次刷新于 X 月 Y 日 HH:MM"。
+    private var refreshButton: some View {
+        RefreshIconButton(
+            isRefreshing: viewModel.isRefreshing,
+            disabled: viewModel.isRefreshing || viewModel.isLoading,
+            tooltip: refreshButtonHelpText
+        ) {
+            Task {
+                await viewModel.reload(forceNetwork: true)
+            }
+        }
+    }
+
+    /// hover tooltip：精确显示"上次刷新于 X 月 Y 日 HH:MM"（绝对时间）。
+    /// 没有 lastRefreshedAt 时显示"还未刷新过"。
+    private var absoluteFreshnessHelpText: String {
+        guard let date = viewModel.lastRefreshedAt else {
+            return String(localized: "trending.freshness.neverRefreshed")
+        }
+        return String(
+            format: String(localized: "trending.freshness.lastRefreshedAtFormat"),
+            absoluteTimeFormatter.string(from: date)
+        )
+    }
+
+    /// 刷新按钮 tooltip：根据状态切换文案。
+    private var refreshButtonHelpText: String {
+        if viewModel.isRefreshing {
+            return String(localized: "trending.refresh.inProgress")
+        }
+        if let date = viewModel.lastRefreshedAt {
+            return String(
+                format: String(localized: "trending.refresh.tooltipWithLastFormat"),
+                absoluteTimeFormatter.string(from: date)
+            )
+        }
+        return String(localized: "trending.refresh.tooltip")
+    }
+
+    /// 绝对时间格式化器（"6 月 2 日 22:48" 简洁形式）。
+    private var absoluteTimeFormatter: DateFormatter {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        f.locale = Locale.current
+        return f
     }
 
     // MARK: - Content
@@ -210,6 +295,13 @@ struct TrendingView: View {
 
             // Trending 列表：plain Button 包裹 row，点击写 selectedRepoID。
             // 不用 `.tag(repo.id)`，selection 完全由 isSelected 入参驱动。
+            //
+            // 关键：**不**给 List 加 `.id(viewModel.reposRevision)`！
+            // 给 List 绑定 id 会强制销毁重建整个 List 视图树，
+            // 让 stars/forks 等数值字段变化也触发"全量重建"，导致用户感知"列表又重新加载了一次"。
+            // 现在让 SwiftUI 走 ForEach + Identifiable 的天然 diff：
+            // - 同 fullName 的 row 留在原地，stars 数等字段 in-place 更新（无动画）
+            // - 新增/删除/换序的 row 才有动画（由 row reveal 处理）
             ForEach(indexedRepos) { item in
                 let repo = item.repo
                 Button {
@@ -228,11 +320,10 @@ struct TrendingView: View {
                 .listRowBackground(Color.clear)
             }
         }
-        .id(viewModel.reposRevision)
         .listStyle(.inset)
         .alternatingRowBackgrounds()
         .refreshable {
-            await viewModel.reload()
+            await viewModel.reload(forceNetwork: true)
         }
     }
     //
@@ -309,7 +400,7 @@ struct TrendingView: View {
 
             Button("trending.retry") {
                 Task {
-                    await viewModel.reload()
+                    await viewModel.reload(forceNetwork: true)
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -317,6 +408,46 @@ struct TrendingView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - RefreshIconButton（toolbar 刷新按钮，自带 hover + 旋转动画）
+
+/// 通用刷新按钮：
+/// - `isRefreshing`：true 时 icon 旋转动画
+/// - `disabled`：禁用点击（loading / refreshing 期间）
+/// - `tooltip`：hover 时显示文案（精确时间 / "正在刷新…" / 默认 "刷新榜单"）
+///
+/// hover 反馈：opacity 0.78 + scale 1.06（与项目其他可点击元素一致），
+/// `accessibilityReduceMotion` 时降级为瞬切无动画。
+private struct RefreshIconButton: View {
+    let isRefreshing: Bool
+    let disabled: Bool
+    let tooltip: String
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 13, weight: .medium))
+                .symbolEffect(.rotate, options: .repeating, value: isRefreshing)
+                .foregroundStyle(isRefreshing ? Color.accentColor : Color.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .opacity(isHovered ? 0.7 : 1.0)
+        .scaleEffect(isHovered ? 1.06 : 1.0)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering && !disabled
+        }
+        .disabled(disabled)
+        .help(tooltip)
     }
 }
 
