@@ -265,13 +265,21 @@ struct RepoDetailView: View {
     /// Trending repo 贡献者头像组。
     ///
     /// 设计要点（与原卡片版差异）：
-    /// - 头像 24pt（卡片版 16pt），详情页有空间显示更清晰的脸
+    /// - 头像 32pt（卡片版 16pt / 旧版 24pt），与上方 `.title3` Stars/Forks 数字
+    ///   视觉权重对齐；旧版 24pt 在大字号统计旁显得太弱，dong4j 2026-06-02 反馈
     /// - 最多显示 6 个（卡片版 3），溢出用 "+N" 提示
-    /// - 每个头像包在 `Link(destination: profileURL)` 里，点击跳 GitHub profile
+    /// - 每个头像包在 `Button { NSWorkspace.open(profileURL) }` 里，点击跳 GitHub profile
+    ///   （不用 `Link(destination:)`，原因见 `contributorAvatar` 内的详细注释）
     /// - `.help(username)` 鼠标 hover 显示用户名，比卡片头像更有信息密度
-    /// - 头像之间负 spacing 实现 GitHub PR 卡片风格的重叠效果
+    /// - 头像之间负 spacing -10 实现 GitHub PR 卡片风格的重叠效果
+    ///   （随头像放大同步从 -6 增到 -10，保持视觉重叠比例）
+    ///
+    /// 关于"贡献者非常多"的兜底：当前数据源是 GitHub Trending 页面的 `buildBy`，
+    /// 上限实测就是 5 人，所以 `prefix(6)` 在当前数据下永远不会触发裁切。
+    /// 保留 `prefix(6)` + "+N" 仅作防御性兜底，不为未发生的场景过度设计。
+    /// 未来若接入 GitHub `/contributors` API（可能上百人），届时再加 Popover 展开。
     private func trendingContributorsSection(_ repo: TrendingRepo) -> some View {
-        HStack(spacing: -6) {
+        HStack(spacing: -10) {
             ForEach(repo.contributors.prefix(6)) { contributor in
                 contributorAvatar(contributor)
             }
@@ -280,18 +288,29 @@ struct RepoDetailView: View {
                 Text(verbatim: "+\(repo.contributors.count - 6)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.leading, 8)
+                    .padding(.leading, 10)
             }
         }
     }
 
     /// 单个贡献者头像。
-    /// - 有 profileURL 时包 Link 让头像可点击跳 GitHub
+    /// - 有 profileURL 时包 Button + NSWorkspace.open 让头像可点击跳 GitHub
     /// - 无 profileURL 时退化为静态图（容错路径，正常不会触发）
+    ///
+    /// **为什么用 Button 而不是 `Link(destination:)`**：
+    /// SwiftUI 的 `Link` 在 macOS 上有个已知问题——外层 `.help()` 的 NSView.toolTip
+    /// 传不到 Link 内部，hover 不会弹 tooltip。项目内其他能正常弹 tooltip 的圆形头像
+    /// （`Shared/Components/RemoteAvatar.swift` 的 `OwnerAvatarButton`、
+    /// `Features/Tags/SFSymbolPicker.swift`、`Features/Tags/TagEditorView.swift` 等）
+    /// 全部用 `Button { NSWorkspace.shared.open(url) }` 模式，已验证 tooltip 可正常弹。
+    /// 此处对齐同款实现，避免重蹈 `Link` 的 tooltip 失效坑。
+    /// 2026-06-02 dong4j 反馈"hover 没弹 username"，根因即是上一版用了 `Link`。
     @ViewBuilder
     private func contributorAvatar(_ contributor: TrendingRepo.Contributor) -> some View {
         if let profileURL = contributor.profileURL {
-            Link(destination: profileURL) {
+            Button {
+                NSWorkspace.shared.open(profileURL)
+            } label: {
                 contributorAvatarImage(contributor)
             }
             .buttonStyle(.plain)
@@ -304,17 +323,20 @@ struct RepoDetailView: View {
     }
 
     /// 贡献者头像图片本体（带边框 + 圆形裁切）。
+    ///
+    /// 尺寸 32pt：与详情页 `.title3` 量级 Stars/Forks 数字视觉权重对齐。
+    /// 边框 2pt：头像放大后 1.5pt 边框显瘦，2pt 才能撑起"叠片"分隔感。
     private func contributorAvatarImage(_ contributor: TrendingRepo.Contributor) -> some View {
         AsyncImage(url: contributor.avatarURL) { image in
             image.resizable().scaledToFit()
         } placeholder: {
             Circle().fill(Color.gray.opacity(0.3))
         }
-        .frame(width: 24, height: 24)
+        .frame(width: 32, height: 32)
         .clipShape(Circle())
         .overlay(
             Circle()
-                .stroke(Color(NSColor.controlBackgroundColor).opacity(0.9), lineWidth: 1.5)
+                .stroke(Color(NSColor.controlBackgroundColor).opacity(0.9), lineWidth: 2)
         )
     }
 
