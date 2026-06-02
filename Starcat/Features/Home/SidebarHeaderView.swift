@@ -151,17 +151,29 @@ struct SidebarHeaderView: View {
     ///
     /// 30 FPS 对这种慢呼吸足够流畅；TimelineView 在 window 不在前台时自动暂停，无后台耗电。
     /// 振幅刻意保守（中心点 ±18%、半径 ±60pt），让色块"飘"而不是"飞"，不抢 sidebar 列表注意力。
-    /// 第一层 mask：顶亮底淡的纵向淡出（保留 v1 形态：色块顶部最饱和，向下衰减到完全透明）。
+    /// 第一层 mask：中部最饱和、上下都淡出的纵向 vignette。
     ///
-    /// reduceMotion → 静态 stops；动效模式下 peakPosition 在 [0.18, 0.42] 漂移（约 16s 周期），
-    /// 让"高亮区"在头像上下缓慢游走，形成呼吸感。底部 1.0 处始终 alpha=0，
-    /// 保证下边界淡出干净（无硬切）。
+    /// **22:27 改动**（dong4j 反馈"顶部分界线还是太明显"）：
+    /// 之前顶部 stop 是 `Color.black, location: 0.00`（alpha=1.0），意味着视图顶部
+    /// 就是 100% 满饱和——直接和 titlebar 形成硬色边。修复：把顶部 stop 改为
+    /// `Color.black.opacity(0.00)`，让 `0.00 → peakPosition` 这段成为"线性淡入区"。
+    /// 按头像区 ~200pt 高度算，淡入区覆盖 36~84pt（视 peakPosition 飘移而定），
+    /// 顶部 30pt 内 alpha 从 0 缓慢爬升，肉眼不再有硬分界。
+    ///
+    /// 设计权衡：损失一点"顶部色块感"（前 30pt 几乎看不到 tint），但换来与 titlebar
+    /// 的无缝过渡，符合"四周都渐变"的需求。如果以后又想加强顶部，可以把 0.00 处的
+    /// opacity 从 0 调到 0.10~0.15 之间——保留极弱底色但仍无硬边。
+    ///
+    /// reduceMotion → 静态 stops（peakPosition 固定 0.30）；动效模式下 peakPosition
+    /// 在 [0.18, 0.42] 漂移（约 16s 周期），让"高亮区"在头像上下缓慢游走，形成呼吸感。
+    /// 顶部 0.0 和底部 1.0 处始终 alpha=0，保证上下边界淡出干净（无硬切）。
     @ViewBuilder
     private var verticalFadeMask: some View {
         if reduceMotion {
             LinearGradient(
                 gradient: Gradient(stops: [
-                    .init(color: Color.black, location: 0.00),
+                    // 22:27 改：顶部从 alpha=1.0 改为 0.00，消除与 titlebar 的硬分界
+                    .init(color: Color.black.opacity(0.00), location: 0.00),
                     .init(color: Color.black, location: 0.30),
                     .init(color: Color.black.opacity(0.30), location: 0.80),
                     .init(color: Color.black.opacity(0.00), location: 1.00)
@@ -174,7 +186,8 @@ struct SidebarHeaderView: View {
                 let peakPosition = 0.30 + sin(t * 0.38) * 0.12
                 LinearGradient(
                     gradient: Gradient(stops: [
-                        .init(color: Color.black, location: 0.00),
+                        // 22:27 改：顶部从 alpha=1.0 改为 0.00，消除与 titlebar 的硬分界
+                        .init(color: Color.black.opacity(0.00), location: 0.00),
                         .init(color: Color.black, location: peakPosition),
                         .init(color: Color.black.opacity(0.30), location: 0.80),
                         .init(color: Color.black.opacity(0.00), location: 1.00)

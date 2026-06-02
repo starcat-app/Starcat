@@ -24,9 +24,15 @@ private func trendingHTTPResponse(
 
 private actor StubTrendingRepository: TrendingRepositoryProtocol {
     var repos: [TrendingRepo]
+    var cached: [TrendingRepo]
 
-    init(repos: [TrendingRepo] = []) {
+    init(repos: [TrendingRepo] = [], cached: [TrendingRepo] = []) {
         self.repos = repos
+        self.cached = cached
+    }
+
+    func cachedTrending(since: TrendingPeriod, language: TrendingLanguage) async -> [TrendingRepo] {
+        cached
     }
 
     func fetchTrending(since: TrendingPeriod, language: TrendingLanguage) async throws -> [TrendingRepo] {
@@ -132,12 +138,10 @@ struct TrendingTests {
         #expect(repo.starsInPeriod == 0)
     }
 
-    @Test("TrendingRepository: cache TTL matches slow-changing Trending data")
-    func cacheTTLIsLonger() {
-        #expect(TrendingRepository.ttl(for: .daily) == 60 * 60)
-        #expect(TrendingRepository.ttl(for: .weekly) == 6 * 60 * 60)
-        #expect(TrendingRepository.ttl(for: .monthly) == 12 * 60 * 60)
-    }
+    // 注：原 `TrendingRepository.ttl(for:)` 静态 TTL 表已随 W7+ "trending 持久化（ttl_c：不设 TTL）"
+    // 重构删除（dong4j 决策：每次进 Trending 都强制走网络重拉，本地缓存只承担"离线兜底 + 快速首屏 SWR"角色）。
+    // 对应单测改为验证持久化分桶（cachedTrending / fetchTrending）行为，见
+    // `TrendingRepositoryPersistenceTests` 套件。
 
     @MainActor
     @Test("TrendingViewModel: subscribe calls GitHub star endpoint")
