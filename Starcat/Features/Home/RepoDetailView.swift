@@ -886,6 +886,11 @@ private struct ReadmeStateView: View {
     }
 
     /// 缓存时间脚注，便于用户判断是否需要手动刷新。
+    ///
+    /// 右下角刷新按钮使用共享 `SyncIconButton`（与 Trending toolbar 同款图标 + 旋转动画）。
+    /// 2026-06-02 替换前用的是 `arrow.clockwise` + `.symbolEffect(.variableColor.iterative)`，
+    /// 视觉是颜色脉动而非旋转，与 dong4j 期望的"刷新中应该转圈"不符；统一为 `SyncIconButton` 后，
+    /// manage / trending 两个详情页（共用 ReadmeStateView）+ Trending toolbar 三处行为完全一致。
     private func cacheFooter(cachedAt: Date) -> some View {
         HStack {
             Image(systemName: "clock")
@@ -893,22 +898,14 @@ private struct ReadmeStateView: View {
             Text(String(format: String(localized: "readme.cachedAtFormat"), cachedAt.formatted(.relative(presentation: .named))))
                 .font(.caption2)
             Spacer()
-            Button {
-                onRetry()
-            } label: {
-                if readmeVM.isRefreshing {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.caption2)
-                        .symbolEffect(.variableColor.iterative, options: .repeating)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.caption2)
-                }
-            }
-            .buttonStyle(.borderless)
-            .focusEffectDisabled()
-            .disabled(readmeVM.isRefreshing)
-            .help("readme.refresh")
+            SyncIconButton(
+                isRefreshing: readmeVM.isRefreshing,
+                disabled: readmeVM.isRefreshing,
+                font: .caption2,
+                frameSize: 18,
+                tooltip: String(localized: "readme.refresh"),
+                action: onRetry
+            )
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 6)
