@@ -180,13 +180,25 @@ private struct ShimmerModifier: ViewModifier {
                 let phase = (t + phaseOffset).truncatingRemainder(dividingBy: 1.0)
 
                 // gradient 中心从 -0.3 扫到 1.3，留出进出余量保证高光带平滑划过整个 frame。
+                // center 本身可以越界 [0, 1]（视觉上代表"高光带在屏幕外"），
+                // 但 SwiftUI 要求 gradient stop locations **必须在 [0, 1] 且单调非降**，
+                // 否则会抛 "Gradient stop locations must be ordered." 警告（每帧刷屏）。
+                //
+                // 解决：三个 stop 的 location 都 clamp 到 [0, 1]。因为
+                //   center - 0.25 < center < center + 0.25
+                // 本身单调，clamp 是单调操作，clamp 后依然单调（允许相等）。
+                // 当 center 越界时，多个 stop 会塌缩到同一边界（0 或 1），
+                // 视觉表现是"高光带已完全离开 frame"，正是预期。
                 let center = phase * 1.6 - 0.3
+                let leftLoc  = min(max(center - 0.25, 0), 1)
+                let midLoc   = min(max(center,        0), 1)
+                let rightLoc = min(max(center + 0.25, 0), 1)
 
                 LinearGradient(
                     stops: [
-                        .init(color: .clear,                       location: max(0, center - 0.25)),
-                        .init(color: Color.skeletonHighlight,      location: center),
-                        .init(color: .clear,                       location: min(1, center + 0.25))
+                        .init(color: .clear,                  location: leftLoc),
+                        .init(color: Color.skeletonHighlight, location: midLoc),
+                        .init(color: .clear,                  location: rightLoc)
                     ],
                     startPoint: .leading,
                     endPoint: .trailing
