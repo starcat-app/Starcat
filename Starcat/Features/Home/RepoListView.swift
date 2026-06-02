@@ -54,6 +54,13 @@ struct RepoListView: View {
     var body: some View {
         @Bindable var vm = viewModel
 
+        #if DEBUG
+        // ⏱️ 切分类性能诊断：body 重算是性能瓶颈的重灾区，记录每次重算的时机和距 T0 的 elapsed。
+        // body 是 computed property，print 会在每次 SwiftUI 决定调用 body 时打一次。
+        // 用 .notice 保证 Xcode console 实时可见（.debug / .info 在 macOS 上会被吞）。
+        let _ = AppLog.ui.notice("[switch-cat] RepoListView.body recomputed (items=\(self.viewModel.items.count), itemsRev=\(self.viewModel.itemsRevision), animID=\(self.contentAnimationID, privacy: .public))  +\(HomeViewModel.msSinceT0, format: .fixed(precision: 1))ms")
+        #endif
+
         contentBody
         .id(contentAnimationID)
         .transition(contentTransition)
@@ -140,10 +147,16 @@ struct RepoListView: View {
 
     /// 中栏内容切换动画的身份键。
     ///
-    /// 用 selection / page / itemsRevision 组合，而不是让 List 自己做行级 diff：
-    /// - 切分类：loading skeleton → 新列表会有完整过渡；
-    /// - 命中缓存：缓存列表立即轻入场，后台刷新完成后再用新快照替换；
-    /// - 排序/过滤：仍是整块快照替换，不触发几千行逐个 move。
+    /// 外层 `.id(contentAnimationID)` 控制 contentBody 何时被销毁重建 + 何时跑外层 transition。
+    /// 内层 `List.id(viewModel.itemsRevision)` 单独控制 List 快照重建（排序/过滤后避免几千行逐个 move diff）。
+    ///
+    /// **HOM-46 性能补丁 #2（2026-06-02）**：移除 `repos-` / `empty-` 状态里的 `itemsRevision`。
+    /// - 之前包含 itemsRevision 会让"数据刷新"也触发外层 transition：
+    ///   切分类（cache HIT）→ 第一次 body 渲（items 仍是旧分类）→ applyView 跑完 → itemsRev++ → animID 又变
+    ///   → 外层 transition **再启动一次**（同一次切换叠两次 0.22s 动画）。
+    /// - 现在外层 transition 只在**视图状态层级**（loading / empty / error / has-data）或 **selection**
+    ///   切换时跑；同一分类内的"数据刷新"由内层 List `.id(itemsRevision)` 单独处理（List 自己重建 + listRowReveal 入场）。
+    /// - 用户感受：切分类只跑**一次**外层动画，配合 didSet 急切缓存加载，第一次 body 渲染就是新数据。
     private var contentAnimationID: String {
         if selectedPage == .trending {
             return "trending-\(selectedTrendingLanguage.id)"
@@ -159,9 +172,9 @@ struct RepoListView: View {
             return "error-\(viewModel.selection.id)-\(error)"
         }
         if viewModel.items.isEmpty {
-            return "empty-\(viewModel.selection.id)-\(viewModel.itemsRevision)-\(mode)"
+            return "empty-\(viewModel.selection.id)-\(mode)"
         }
-        return "repos-\(viewModel.selection.id)-\(viewModel.itemsRevision)-\(mode)"
+        return "repos-\(viewModel.selection.id)-\(mode)"
     }
 
     private var contentAnimation: Animation? {

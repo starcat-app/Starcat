@@ -27,6 +27,17 @@ protocol RepoNoteRepositoryProtocol: Sendable {
     /// 批量找一组 repo 的状态映射（用于列表角标，避免 N+1）。
     func fetchStatusMap(repoIds: [Int64]) async throws -> [Int64: RepoStatus]
 
+    /// 全表 status 映射（HOM-46 性能优化，2026-06-02）。
+    ///
+    /// 设计理由：HomeViewModel.reloadItems 之前先 fetch repos，再用 fetched.map(\.id)
+    /// 调 `fetchStatusMap(repoIds:)`，串行依赖导致两次 IO 不能并行。
+    /// `repo_notes` 表只在「用户主动标过状态 / 写过笔记」时才有行（通常几十到几百条），
+    /// 全表查的成本远低于一次 `IN (1810 个参数)` 的解析 + 串行 round-trip。
+    ///
+    /// 改用本方法后调用方可以 `async let` 与 repo fetch 真正并行。
+    /// 多余的 mapping（非 starred 仓库的 status）在 caller 端按 repo.id 查找时天然忽略，无副作用。
+    func fetchAllStatusMap() async throws -> [Int64: RepoStatus]
+
     /// 按状态查询 repo（用于 §3.5 按状态过滤）。
     /// - 仅返回 is_starred=1 的 repo
     /// - 按 starred_at desc 排序

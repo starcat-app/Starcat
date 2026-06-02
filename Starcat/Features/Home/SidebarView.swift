@@ -32,6 +32,11 @@ struct SidebarView: View {
     @Binding var selectedTrendingLanguage: TrendingLanguage
     @Binding var showTagManagement: Bool
 
+    /// 当前在 Trending 页面选中的 repo，仅用于透传给 `SidebarHeaderView` 让头像背景的
+    /// 语言色在 Trending 页也能联动（2026-06-02 21:38 接入）。Manage 页面应为 nil。
+    /// 真源在 `HomeView.@State selectedTrendingRepo`，通过普通参数（非 binding）透传。
+    var currentTrendingRepo: TrendingRepo?
+
     /// HOM-73：控制登录 sheet 的显示。
     @State private var showLoginSheet: Bool = false
 
@@ -53,7 +58,7 @@ struct SidebarView: View {
     /// 正常计算，同时统一背景材质，避免统计数据与入口行之间出现色差。
     private var sidebarFixedHeader: some View {
         VStack(spacing: 0) {
-            SidebarHeaderView()
+            SidebarHeaderView(trendingRepo: currentTrendingRepo)
             rootNavigationBar
                 .padding(.horizontal, 8)
                 .padding(.top, 10)

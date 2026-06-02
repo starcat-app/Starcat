@@ -112,4 +112,45 @@ struct DatabaseMigrationsV1Tests {
             #expect(count == 0, "repo_notes should cascade delete")
         }
     }
+
+    // MARK: - v3 性能索引（HOM-46，2026-06-02）
+
+    @Test("v3：复合索引 (is_starred, starred_at) 与 (is_starred, language, starred_at) 已建立")
+    func v3PerfIndexesCreated() throws {
+        let db = try makeDB()
+        try db.read { db in
+            // 查 SQLite 元表，确认两个性能索引都已建出
+            let indexes = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT name FROM sqlite_master
+                    WHERE type = 'index' AND tbl_name = 'repos'
+                    ORDER BY name
+                    """
+            )
+            #expect(indexes.contains("idx_repos_is_starred_starred_at"),
+                    "v3 should create composite index for (is_starred, starred_at)")
+            #expect(indexes.contains("idx_repos_is_starred_language_starred_at"),
+                    "v3 should create composite index for (is_starred, language, starred_at)")
+        }
+    }
+
+    @Test("v3：fetchAllStarred 类查询能用上新复合索引（query plan 验证）")
+    func v3IndexUsedByQueryPlan() throws {
+        let db = try makeDB()
+        // EXPLAIN QUERY PLAN 返回的 detail 列里包含 "USING INDEX <name>" 这样的描述。
+        // 空表也能拿到 plan，足够验证 planner 把索引选进来。
+        try db.read { db in
+            let plans = try Row.fetchAll(
+                db,
+                sql: """
+                    EXPLAIN QUERY PLAN
+                    SELECT * FROM repos WHERE is_starred = 1 ORDER BY starred_at DESC
+                    """
+            )
+            let details = plans.compactMap { $0["detail"] as String? }.joined(separator: " | ")
+            #expect(details.contains("idx_repos_is_starred_starred_at"),
+                    "WHERE is_starred=1 ORDER BY starred_at DESC 应该走 idx_repos_is_starred_starred_at，实际计划：\(details)")
+        }
+    }
 }

@@ -34,6 +34,8 @@ struct RepoDetailView: View {
     @Environment(AuthSession.self) private var authSession
     // Trending 页面 ViewModel（用于更新 stars 计数）
     @Environment(\.trendingViewModel) private var trendingViewModel
+    /// 系统级"减少动效"开关，开启时详情页切换退化为仅 opacity 淡入（不再上滑）。
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // W4 B1：取消 star 流程的 UI 状态
     @State private var showUnstarConfirm: Bool = false
@@ -79,12 +81,28 @@ struct RepoDetailView: View {
         // 满足左栏、列表和 detail 的下限，容易出现左栏抽屉或窗口宽度跳动。
         // 运行期硬下限统一交给 `MainWindowFrameModifier` 的 AppKit `contentMinSize`，
         // detail 在这个边界内自适应。
-        Group {
+        // 用 ZStack(alignment: .topLeading) 包裹三分支，而不是 Group。
+        //
+        // 关键差别（21:44 排查后修正）：
+        // - Group 是 transparent container，不在 view tree 创建节点；
+        //   `.transition` 落在各分支 view 上时，跨分支切换缺少"容器宿主"
+        //   把 old view 的 removal 和 new view 的 insertion 同帧协调起来，
+        //   实际表现是 "旧 view 直接被替换、新 view 直接出现"，几乎看不到动画。
+        // - ZStack 是真正的 layout container；切换时 SwiftUI 会先把 new view
+        //   叠加进 ZStack（触发 insertion transition），再把 old view 移除
+        //   （触发 removal transition），两份内容在同一帧里完成进出，
+        //   `.transition` 才能稳定触发。
+        // alignment 选 `.topLeading` 是为了和 detail 内容固有的"从左上展开"
+        // 布局一致（VStack(alignment: .leading) + 顶对齐），避免切换瞬间
+        // 内容在 Z 轴上突然居中再回到左上。
+        ZStack(alignment: .topLeading) {
             if let repo = viewModel.selectedRepo {
                 VStack(alignment: .leading, spacing: 0) {
                     metadataPanel(repo)
                     readmeSection(repo)
                 }
+                .id(repo.id)                                // 强制 view 在 repo 变化时被识别为"新 view"，触发 transition
+                .transition(detailContentTransition)        // 淡入 + 下移 8pt 滑入；reduceMotion 退化为纯 opacity
                 .navigationTitle(repo.name)
                 .navigationSubtitle(repo.owner)
                 .alert("repo.unstar.confirm", isPresented: $showUnstarConfirm, presenting: repo) { repo in
@@ -113,6 +131,8 @@ struct RepoDetailView: View {
                     }
                     trendingReadmeSection(trending)
                 }
+                .id(trending.id)                            // 同 Manage 分支：强制 view 重建触发 transition
+                .transition(detailContentTransition)
                 .navigationTitle(trending.name)
                 .navigationSubtitle(trending.owner)
                 .onChange(of: trending.id) { _, _ in
@@ -125,8 +145,55 @@ struct RepoDetailView: View {
                 }
             } else {
                 emptyState
+                    .id("empty")
+                    .transition(detailContentTransition)
             }
         }
+        // 监听"当前显示的 detail 内容标识"变化，触发 .transition 动效。
+        //
+        // 严格只看 `detailContentID`（基于 selectedRepo.id / trending.id / "empty" 计算），
+        // 避免让 .animation 把详情页内部的状态变化（编辑标签、输入笔记、折叠 hero
+        // 等）也吃进 implicit 动画，那会引起意外的全局 fade/move 副作用。
+        //
+        // duration 0.4s（21:44 从 0.28s 调大）：
+        // README WebView 启动有 100~200ms 白屏 → 加载 HTML → 渲染的延迟。
+        // 之前 0.28s 太快，transition 在 WebView 还没出内容时就结束了，肉眼几乎
+        // 看不见"轻轻落下"。0.4s 是经验值，比 README 首帧渲染稍慢一点，让用户
+        // 能明确感受到内容从上方滑入。
+        .animation(.easeOut(duration: 0.4), value: detailContentID)
+    }
+
+    /// 当前 detail 内容的标识符，用作 `.animation(_:value:)` 的触发 key。
+    ///
+    /// 三种状态：Manage repo（id 形如 "12345"）/ Trending repo（id 形如 "owner/name"）
+    /// / 空态（"empty"）。任意一种切换到另一种 → 触发 view transition；同状态内
+    /// 重新选同一条 → id 不变 → 无动画。
+    private var detailContentID: String {
+        if let id = viewModel.selectedRepo?.id { return "manage-\(id)" }
+        if let id = selectedTrendingRepo?.id { return "trending-\(id)" }
+        return "empty"
+    }
+
+    /// 详情页内容切换时的 view transition。
+    ///
+    /// **非对称设计**（重要）：
+    /// - insertion 新内容：opacity 0→1 + offset y:8→0 滑入，让用户感觉"新内容轻轻落下"。
+    /// - removal 旧内容：仅 opacity 1→0 直接淡出，**不滑动**——否则新旧两份内容同时
+    ///   在 view tree 里漂移，视觉上很乱，特别是 README WebView 切换时容易显得抖动。
+    ///
+    /// reduceMotion 兜底：完全去掉 offset，只保留 opacity 淡入淡出，避免前庭不适。
+    ///
+    /// 14pt 的 offset（21:44 从 8pt 调大）：经验值，让"轻轻落下"明显可感知；
+    /// 8pt 在 macOS 大屏 + WebView 渲染延迟下太微弱，肉眼几乎看不出来。
+    /// 再大（>20pt）就像"页面跳"，14pt 是平衡点。
+    private var detailContentTransition: AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: 14)),
+            removal: .opacity
+        )
     }
 
     // MARK: - W4 B1：Unstar 流程

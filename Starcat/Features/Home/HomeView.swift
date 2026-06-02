@@ -128,7 +128,9 @@ struct HomeView: View {
             SidebarView(
                 selectedPage: $selectedSidebarPage,
                 selectedTrendingLanguage: $selectedTrendingLanguage,
-                showTagManagement: $showTagManagement
+                showTagManagement: $showTagManagement,
+                // 2026-06-02 21:38：透传给 SidebarHeaderView 让头像背景的语言色在 Trending 页也能联动
+                currentTrendingRepo: selectedTrendingRepo
             )
                 .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
         } content: {

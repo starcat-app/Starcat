@@ -62,6 +62,27 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
         }
     }
 
+    /// 全表 status 映射。
+    ///
+    /// 性能特征：
+    /// - 无参数 → 调用方不必先拿到 fetched ids，可与 repo fetch 真正并行（`async let`）。
+    /// - 无 `IN (...)` → 省掉 1800+ 个占位符的 SQL 解析 + 参数绑定（之前是这部分让 fetchStatusMap 慢 50~100ms）。
+    /// - `repo_notes` 表通常很小（只在用户主动标记状态 / 写笔记时建行），全表扫描成本远低于带参 IN 查询。
+    func fetchAllStatusMap() async throws -> [Int64: RepoStatus] {
+        try await writer.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT repo_id, status FROM repo_notes")
+            var map: [Int64: RepoStatus] = [:]
+            for row in rows {
+                let id: Int64 = row["repo_id"]
+                let raw: String = row["status"]
+                if let status = RepoStatus(rawValue: raw) {
+                    map[id] = status
+                }
+            }
+            return map
+        }
+    }
+
     func fetchRepos(byStatus status: RepoStatus) async throws -> [Repo] {
         try await writer.read { db in
             try Repo.fetchAll(db, sql: """

@@ -16,14 +16,17 @@ extension View {
     /// 列表 row 的轻量渐进式入场动画。
     ///
     /// 这不是数据分页：数据仍由对应 ViewModel 按原策略加载。SwiftUI `List` 会懒创建
-    /// 当前可视区域附近的 row，因此 `.onAppear` 可覆盖“首屏逐行出现”和
-    /// “滚动到新 row 时再出现”两个体验点，成本远低于真正分页。
+    /// 当前可视区域附近的 row，因此 `.onAppear` 可覆盖"首屏逐行出现"和
+    /// "滚动到新 row 时再出现"两个体验点，成本远低于真正分页。
     ///
     /// - Parameters:
     ///   - index: row 在当前快照中的顺序，只用于计算短 stagger delay。
     ///   - snapshotID: 列表快照版本；快照变化时重新播放 reveal。
-    func listRowReveal(index: Int, snapshotID: Int) -> some View {
-        modifier(ListRowRevealModifier(index: index, snapshotID: snapshotID))
+    ///   - skipAnimation: 当前数据来自缓存（用户已看过该分类）时传 true，
+    ///     行直接显现不跑入场动画，避免"切到已访问分类还要等 0.22s 动画"的卡顿感。
+    ///     默认 false，保留首次加载 / 排序切换的渐进入场体验。
+    func listRowReveal(index: Int, snapshotID: Int, skipAnimation: Bool = false) -> some View {
+        modifier(ListRowRevealModifier(index: index, snapshotID: snapshotID, skipAnimation: skipAnimation))
     }
 }
 
@@ -33,17 +36,23 @@ extension View {
 /// - 用取模 delay，而不是 `index * delay`，避免滚动到很靠后的 row 时出现长时间等待。
 /// - 只做 opacity + 小幅 y-offset，不参与 layout 大小变化，降低 List 重排风险。
 /// - 不做数据库层分页；真正 pagination 需要单独设计 cursor / 排序 / 搜索 / 缓存一致性。
+/// - `skipAnimation` 旁路：缓存命中时直接显现，把"切已访问分类"的体验做到瞬切。
+///   逻辑等价于 reduceMotion，但语义不同——这是性能优化，不是无障碍诉求。
 private struct ListRowRevealModifier: ViewModifier {
     let index: Int
     let snapshotID: Int
+    let skipAnimation: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isVisible = false
 
+    /// 是否跳过动画。reduceMotion(无障碍)与 skipAnimation(缓存命中)任意一个为真即跳过。
+    private var bypassAnimation: Bool { reduceMotion || skipAnimation }
+
     func body(content: Content) -> some View {
         content
-            .opacity(isVisible || reduceMotion ? 1 : 0)
-            .offset(y: isVisible || reduceMotion ? 0 : 7)
+            .opacity(isVisible || bypassAnimation ? 1 : 0)
+            .offset(y: isVisible || bypassAnimation ? 0 : 7)
             .onAppear(perform: reveal)
             .onChange(of: snapshotID) { _, _ in
                 reveal()
@@ -51,7 +60,7 @@ private struct ListRowRevealModifier: ViewModifier {
     }
 
     private func reveal() {
-        guard !reduceMotion else {
+        guard !bypassAnimation else {
             isVisible = true
             return
         }
