@@ -14,6 +14,8 @@ xcuserdata/
 # Xcode 测试结果（重要！不要提交测试产生的临时数据）
 *.xcresult
 TestResults.xcresult/
+test_output.txt
+test_output*.txt
 
 # Xcode 工程文件由 xcodegen 自动生成，不进 git
 Starcat.xcodeproj/
