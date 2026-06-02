@@ -1253,9 +1253,6 @@
         }
       }
     },
-    "AI" : {
-
-    },
     "app.about" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2668,7 +2665,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trending"
+            "value" : "趋势"
           }
         }
       }
@@ -3293,6 +3290,7 @@
       }
     },
     "repo.openOnGithub" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3781,7 +3779,6 @@
       }
     },
     "search.repoPlaceholder" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

@@ -106,6 +106,10 @@ struct UserAvatar: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        // 2026-06-02 dong4j 要求统一 hover 反馈：sidebar 用户头像加 `.pressableHover()`，
+        // 与详情页 hero logo / Stats / Contributors 头像保持同款交互反馈。
+        // 详见 `Shared/Components/PressableHover.swift`。
+        .pressableHover()
         .help(isLoggedIn ? Text("avatar.openGithubProfile") : Text("avatar.loginGithub"))
     }
 

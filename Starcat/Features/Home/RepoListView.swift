@@ -80,13 +80,11 @@ struct RepoListView: View {
                         cloneMenu(repo: repo)
                     }
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    // 搜索入口单独作为最后一个 toolbar item，才能在 macOS toolbar 里稳定贴到最右侧。
-                    // 展开时输入框向左占位，放大镜按钮本身仍停在最右边。
-                    CollapsibleSearchBar(text: $vm.searchQuery)
-                }
             }
         }
+        // 使用系统 toolbar search item，而不是把自定义输入框塞进 primaryAction 图标组。
+        // 这样搜索入口会按 Finder 的方式独立成组，避免和状态 / 排序 / 多选按钮共用一个 capsule。
+        .repoToolbarSearch(enabled: selectedPage == .manage, text: $vm.searchQuery)
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
     }
 
@@ -580,4 +578,91 @@ private struct IndexedRepo: Identifiable {
     let repo: Repo
 
     var id: Int64 { repo.id }
+}
+
+private extension View {
+    @ViewBuilder
+    func repoToolbarSearch(enabled: Bool, text: Binding<String>) -> some View {
+        if enabled {
+            self.searchable(text: text, placement: .toolbar, prompt: Text("search.repoPlaceholder"))
+                .background(ToolbarSearchFocusRingDisabler())
+        } else {
+            self
+        }
+    }
+}
+
+/// 关闭系统 toolbar 搜索框的外层蓝色 focus ring。
+///
+/// 这里仍然使用 SwiftUI `.searchable(..., placement: .toolbar)` 生成 Finder 风格搜索项，
+/// 只通过一个不可见 AppKit 探针做窄范围修正。原因是 `.searchable` 没有暴露 macOS
+/// `NSSearchField.focusRingType`，但 dong4j 需要保留当前系统搜索形态，同时去掉截图里的
+/// 外层蓝色光圈。探针必须等视图进入 `NSWindow` 后再查找，因为 toolbar search field 是
+/// SwiftUI / AppKit 在 window 层级里后置创建的，不在 `RepoListView` 自己的子树中。
+private struct ToolbarSearchFocusRingDisabler: NSViewRepresentable {
+    func makeNSView(context: Context) -> FocusRingDisablerView {
+        FocusRingDisablerView()
+    }
+
+    func updateNSView(_ nsView: FocusRingDisablerView, context: Context) {
+        nsView.scheduleFocusRingUpdate()
+    }
+
+    final class FocusRingDisablerView: NSView {
+        private var updateScheduled = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            scheduleFocusRingUpdate()
+        }
+
+        /// 延迟到下一轮 run loop，并额外补一次短延迟。
+        ///
+        /// `.searchable` 对应的 toolbar search field 不是和内容视图同步创建的；如果只在
+        /// `viewDidMoveToWindow` 立即遍历，偶尔会早于系统控件完成挂载。
+        func scheduleFocusRingUpdate() {
+            guard !updateScheduled else { return }
+            updateScheduled = true
+
+            DispatchQueue.main.async { [weak self] in
+                self?.disableFocusRingIfNeeded()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                self?.disableFocusRingIfNeeded()
+            }
+        }
+
+        private func disableFocusRingIfNeeded() {
+            updateScheduled = false
+
+            guard let window else { return }
+
+            for searchField in window.toolbarSearchFields {
+                searchField.focusRingType = .none
+            }
+        }
+    }
+}
+
+private extension NSWindow {
+    /// 从 window frame view 开始查找，而不是只查 `contentView`。
+    ///
+    /// macOS toolbar 不属于 SwiftUI 内容区；系统 `.searchable` 生成的 `NSSearchField`
+    /// 通常挂在 `contentView.superview` 这棵 AppKit frame tree 下。
+    var toolbarSearchFields: [NSSearchField] {
+        let roots = [contentView?.superview, contentView].compactMap { $0 }
+        return roots.flatMap { $0.descendants(of: NSSearchField.self) }
+    }
+}
+
+private extension NSView {
+    func descendants<T: NSView>(of type: T.Type) -> [T] {
+        subviews.flatMap { subview -> [T] in
+            var matches = subview.descendants(of: type)
+            if let typedSubview = subview as? T {
+                matches.insert(typedSubview, at: 0)
+            }
+            return matches
+        }
+    }
 }

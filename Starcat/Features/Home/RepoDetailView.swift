@@ -265,13 +265,21 @@ struct RepoDetailView: View {
     /// Trending repo 贡献者头像组。
     ///
     /// 设计要点（与原卡片版差异）：
-    /// - 头像 24pt（卡片版 16pt），详情页有空间显示更清晰的脸
+    /// - 头像 32pt（卡片版 16pt / 旧版 24pt），与上方 `.title3` Stars/Forks 数字
+    ///   视觉权重对齐；旧版 24pt 在大字号统计旁显得太弱，dong4j 2026-06-02 反馈
     /// - 最多显示 6 个（卡片版 3），溢出用 "+N" 提示
-    /// - 每个头像包在 `Link(destination: profileURL)` 里，点击跳 GitHub profile
+    /// - 每个头像包在 `Button { NSWorkspace.open(profileURL) }` 里，点击跳 GitHub profile
+    ///   （不用 `Link(destination:)`，原因见 `contributorAvatar` 内的详细注释）
     /// - `.help(username)` 鼠标 hover 显示用户名，比卡片头像更有信息密度
-    /// - 头像之间负 spacing 实现 GitHub PR 卡片风格的重叠效果
+    /// - 头像之间负 spacing -10 实现 GitHub PR 卡片风格的重叠效果
+    ///   （随头像放大同步从 -6 增到 -10，保持视觉重叠比例）
+    ///
+    /// 关于"贡献者非常多"的兜底：当前数据源是 GitHub Trending 页面的 `buildBy`，
+    /// 上限实测就是 5 人，所以 `prefix(6)` 在当前数据下永远不会触发裁切。
+    /// 保留 `prefix(6)` + "+N" 仅作防御性兜底，不为未发生的场景过度设计。
+    /// 未来若接入 GitHub `/contributors` API（可能上百人），届时再加 Popover 展开。
     private func trendingContributorsSection(_ repo: TrendingRepo) -> some View {
-        HStack(spacing: -6) {
+        HStack(spacing: -10) {
             ForEach(repo.contributors.prefix(6)) { contributor in
                 contributorAvatar(contributor)
             }
@@ -280,22 +288,36 @@ struct RepoDetailView: View {
                 Text(verbatim: "+\(repo.contributors.count - 6)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.leading, 8)
+                    .padding(.leading, 10)
             }
         }
     }
 
     /// 单个贡献者头像。
-    /// - 有 profileURL 时包 Link 让头像可点击跳 GitHub
+    /// - 有 profileURL 时包 Button + NSWorkspace.open 让头像可点击跳 GitHub
     /// - 无 profileURL 时退化为静态图（容错路径，正常不会触发）
+    ///
+    /// **为什么用 Button 而不是 `Link(destination:)`**：
+    /// SwiftUI 的 `Link` 在 macOS 上有个已知问题——外层 `.help()` 的 NSView.toolTip
+    /// 传不到 Link 内部，hover 不会弹 tooltip。项目内其他能正常弹 tooltip 的圆形头像
+    /// （`Shared/Components/RemoteAvatar.swift` 的 `OwnerAvatarButton`、
+    /// `Features/Tags/SFSymbolPicker.swift`、`Features/Tags/TagEditorView.swift` 等）
+    /// 全部用 `Button { NSWorkspace.shared.open(url) }` 模式，已验证 tooltip 可正常弹。
+    /// 此处对齐同款实现，避免重蹈 `Link` 的 tooltip 失效坑。
+    /// 2026-06-02 dong4j 反馈"hover 没弹 username"，根因即是上一版用了 `Link`。
     @ViewBuilder
     private func contributorAvatar(_ contributor: TrendingRepo.Contributor) -> some View {
         if let profileURL = contributor.profileURL {
-            Link(destination: profileURL) {
+            Button {
+                NSWorkspace.shared.open(profileURL)
+            } label: {
                 contributorAvatarImage(contributor)
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            // 2026-06-02 dong4j 要求统一 hover 反馈：跟 hero logo / stats Button
+            // 用同一套 `.pressableHover()`，让用户能感知贡献者头像可点击跳 profile。
+            .pressableHover()
             .help(contributor.username)
         } else {
             contributorAvatarImage(contributor)
@@ -304,27 +326,32 @@ struct RepoDetailView: View {
     }
 
     /// 贡献者头像图片本体（带边框 + 圆形裁切）。
+    ///
+    /// 尺寸 32pt：与详情页 `.title3` 量级 Stars/Forks 数字视觉权重对齐。
+    /// 边框 2pt：头像放大后 1.5pt 边框显瘦，2pt 才能撑起"叠片"分隔感。
     private func contributorAvatarImage(_ contributor: TrendingRepo.Contributor) -> some View {
         AsyncImage(url: contributor.avatarURL) { image in
             image.resizable().scaledToFit()
         } placeholder: {
             Circle().fill(Color.gray.opacity(0.3))
         }
-        .frame(width: 24, height: 24)
+        .frame(width: 32, height: 32)
         .clipShape(Circle())
         .overlay(
             Circle()
-                .stroke(Color(NSColor.controlBackgroundColor).opacity(0.9), lineWidth: 1.5)
+                .stroke(Color(NSColor.controlBackgroundColor).opacity(0.9), lineWidth: 2)
         )
     }
 
     /// Trending repo 头部信息。
+    ///
+    /// 2026-06-02 dong4j 调整：原 `trendingStatsSection` 末尾的 `.buttonStyle(.bordered)`
+    /// "在 GitHub 查看"独立 CTA 视觉太重、不协调；改为把跳转动作落到左上角项目 logo 上
+    /// （`TrendingHeroAvatarButton`）—— logo 本来就指代仓库，点击它跳 GitHub 符合直觉，
+    /// stats 行同时变得更干净（只剩 Stars / Forks / Language / +N 周期增长）。
     private func trendingHeader(_ repo: TrendingRepo) -> some View {
         HStack(alignment: .top, spacing: 16) {
-            RemoteAvatar(
-                urlString: RepoAvatarURL.from(owner: repo.owner),
-                size: 64
-            )
+            TrendingHeroAvatarButton(repo: repo)
             VStack(alignment: .leading, spacing: 5) {
                 Text(repo.fullName)
                     .font(.title2)
@@ -348,6 +375,8 @@ struct RepoDetailView: View {
     /// Trending repo 统计信息。
     private func trendingStatsSection(_ repo: TrendingRepo) -> some View {
         HStack(alignment: .center, spacing: 24) {
+            // 2026-06-02 dong4j 要求统一 hover 反馈：Stars 加 `.pressableHover()`，
+            // 跟 Manage 详情页保持一致。详见 `Shared/Components/PressableHover.swift`。
             Button {
                 Task { await starTrending(repo: repo) }
             } label: {
@@ -359,10 +388,33 @@ struct RepoDetailView: View {
                 }
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
             .disabled(isStarringTrending)
+            .pressableHover()
             .help("trending.star")
 
-            StatItem(label: "repo.forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
+            // 2026-06-02 dong4j 新增：Forks 从静态 `StatItem` 改为可点击 Button，
+            // 点击跳 GitHub fork 页（与 Manage 详情页同款逻辑：`/fork` 不是 `/forks`，
+            // 跟 Manage `statsSection` 行为对齐，由用户决策不自作主张）。
+            // URL 拼接：`TrendingRepo.url` 是 URL 类型，用 `appendingPathComponent`
+            // 比字符串拼接更安全（自动处理末尾斜杠）。
+            //
+            // 未登录校验（dong4j 2026-06-02 追加）：fork 操作需要 GitHub 账号，
+            // 未登录时不跳 GitHub 网页登录（用户会脱离 App 流程），而是调
+            // `authSession.signIn()` 触发 App 内 Device Flow，登录完用户可以重新点击。
+            Button {
+                guard authSession.state.isAuthenticated else {
+                    authSession.signIn()
+                    return
+                }
+                NSWorkspace.shared.open(repo.url.appendingPathComponent("fork"))
+            } label: {
+                StatItem(label: "repo.forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pressableHover()
+            .help("repo.forkAction")
 
             if let language = repo.language, !language.isEmpty {
                 HStack(spacing: 4) {
@@ -384,24 +436,24 @@ struct RepoDetailView: View {
                     .foregroundStyle(.green)
             }
 
-            Link(destination: repo.url) {
-                HStack(spacing: 4) {
-                    Image(systemName: "safari")
-                    Text("repo.openOnGithub")
-                }
-                .font(.caption)
-            }
-            .buttonStyle(.bordered)
-            .focusEffectDisabled()
+            // 2026-06-02 dong4j 删除原 `Link "在 GitHub 查看"` 按钮（`.buttonStyle(.bordered)`
+            // 在 plain 风格 stats 行里视觉权重过重，像独立 CTA 显得突兀）；跳转动作下沉到
+            // `trendingHeader` 的左上角 logo（`TrendingHeroAvatarButton`）。
 
             Spacer()
         }
     }
 
     /// 执行 Trending repo 的 star 操作。
+    ///
+    /// 未登录处理（dong4j 2026-06-02 修复隐藏 bug）：
+    /// 旧版赋值 `trendingStarError = "auth.needLogin"` 但该状态从未在任何 UI 被渲染
+    /// （grep 全项目确认是 dead write），导致未登录用户点击 Star 静默无反应。
+    /// 现在改为调 `authSession.signIn()` 触发 App 内 Device Flow 登录，
+    /// 与 Trending Forks Button 的未登录处理保持一致。
     private func starTrending(repo: TrendingRepo) async {
         guard authSession.state.isAuthenticated else {
-            trendingStarError = "auth.needLogin"
+            authSession.signIn()
             return
         }
 
@@ -447,7 +499,9 @@ struct RepoDetailView: View {
 
     private func header(_ repo: Repo) -> some View {
         HStack(alignment: .top, spacing: 16) {
-            RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: 64)
+            // 2026-06-02 dong4j 调整：logo 改为可点击跳 GitHub 主页，与 Trending
+            // 详情页 `TrendingHeroAvatarButton` 保持一致的交互模式。
+            RepoHeroAvatarButton(repo: repo)
             VStack(alignment: .leading, spacing: 5) {
                 Text(repo.fullName)
                     .font(.title2)
@@ -518,12 +572,17 @@ struct RepoDetailView: View {
 
     private func statsSection(_ repo: Repo) -> some View {
         HStack(alignment: .center, spacing: 24) {
+            // 2026-06-02 dong4j 要求统一 hover 反馈：所有可点击的 stat（Stars /
+            // Forks / Watchers）都加 `.pressableHover()`，让用户能感知"这是可点击的"。
+            // 详见 `Shared/Components/PressableHover.swift`。
             Button {
                 showUnstarConfirm = true
             } label: {
                 StatItem(label: "repo.stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pressableHover()
             .help("repo.unstar")
 
             Button {
@@ -534,6 +593,8 @@ struct RepoDetailView: View {
                 StatItem(label: "repo.forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pressableHover()
             .help("repo.forkAction")
 
             WatchersMenu(repo: repo)
@@ -859,7 +920,11 @@ struct WatchersMenu: View {
             StatItem(label: "repo.watchers", value: repo.watchersCount, systemImage: "eye.fill", tint: .secondary)
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .fixedSize()
+        // 2026-06-02 dong4j 要求统一 hover 反馈：跟 Stars / Forks 一样加
+        // `.pressableHover()`，让用户感知 Watchers 数字是可点击的（点开下拉菜单）。
+        .pressableHover()
         .help("repo.watch")
         .task(id: repo.id) {
             await fetchSubscription()
@@ -910,5 +975,80 @@ struct WatchersMenu: View {
             AppLog.sync.error("Update subscription failed: \(error.localizedDescription, privacy: .public)")
             watchState = previousState
         }
+    }
+}
+
+// MARK: - Trending Hero Avatar Button
+
+/// Trending repo 详情页左上角的项目 logo 按钮（hero 元素）。
+///
+/// 2026-06-02 由 dong4j 主导的 UX 调整：原 stats 行末尾有一个独立的
+/// `Link "在 GitHub 查看"` 按钮（`.buttonStyle(.bordered)`），在 plain 风格 stats 行里
+/// 视觉权重过重显得突兀；改为删除按钮 + 把跳转动作落到本组件（项目 logo）上。
+/// logo 本来就指代仓库，点击它跳 GitHub 符合直觉。
+///
+/// 设计要点：
+/// - **沿用 18:35 修好的"Button + NSWorkspace"模式**，不用 `Link(destination:)`——
+///   后者外层 `.help()` toolTip 在 macOS 上传不进 Link 内部，hover 不弹 tooltip
+///   （详见 `contributorAvatar` 内的注释）
+/// - **hover 视觉反馈必要**：logo 包成 Button 后视觉上跟静态图无异，用户无法感知
+///   "这是可点击的"。加 `.opacity(0.78)` 的轻微变暗（不加 scale 避免太花），
+///   是 macOS 经典 image-button 模式（系统 Preview.app / Finder 同款）
+/// - **尊重 accessibilityReduceMotion**：reduceMotion 用户不做 0.15s 缓动，避免动效
+/// - `.help("repo.openOnGithub")` 直接复用原按钮的本地化文案，无需新增 i18n key
+///
+/// 没抽到 `Shared/Components/RemoteAvatar.swift`：本组件强绑 `TrendingRepo` 模型 +
+/// 详情页 hero 语义，复用面窄；如未来 Manage detail 也需要"可点击 owner avatar"，
+/// 再抽通用版（接受 `URL` + `tooltipKey` 参数）。
+private struct TrendingHeroAvatarButton: View {
+    let repo: TrendingRepo
+
+    var body: some View {
+        Button {
+            NSWorkspace.shared.open(repo.url)
+        } label: {
+            RemoteAvatar(
+                urlString: RepoAvatarURL.from(owner: repo.owner),
+                size: 64
+            )
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pressableHover()
+        .help("repo.openOnGithub")
+    }
+}
+
+// MARK: - Repo Hero Avatar Button (Manage)
+
+/// Manage repo 详情页左上角的项目 logo 按钮（hero 元素）。
+///
+/// 2026-06-02 dong4j 要求：Manage 详情页 logo 也要可点击跳 GitHub 主页，
+/// 跟 Trending 详情页保持一致的交互模式。
+///
+/// 与 `TrendingHeroAvatarButton` 几乎一样，差异只是接收的 model 类型不同
+/// （`Repo` vs `TrendingRepo`），URL 来源不同（`RepoExternalLinks.repo(repo)` vs
+/// `repo.url`）。**没抽通用 `ClickableAvatar`**：两个 hero button 强绑各自的
+/// model 类型，强行参数化反而要传 URL + tooltipKey 抹平差异；共享 hover 反馈
+/// 已通过 `.pressableHover()` modifier 解决了重复，结构层面不需要再抽。
+/// 如未来真出现第 3 个 hero avatar 用例再抽通用版（YAGNI）。
+private struct RepoHeroAvatarButton: View {
+    let repo: Repo
+
+    var body: some View {
+        Button {
+            if let url = RepoExternalLinks.repo(repo) {
+                NSWorkspace.shared.open(url)
+            }
+        } label: {
+            RemoteAvatar(
+                urlString: RepoAvatarURL.from(owner: repo.owner),
+                size: 64
+            )
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pressableHover()
+        .help("repo.openOnGithub")
     }
 }
