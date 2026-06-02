@@ -138,11 +138,10 @@
 | `.task(id:)` | View 出现时拉数据，id 变化时重跑 | "SwiftUI task modifier id" |
 | `.onChange(of:)` | `HomeView.onChange(selectedRepoID)` 驱动 ReadmeViewModel | "SwiftUI onChange iOS 17" |
 | `.onAppear` | `ListRowRevealModifier` 利用 List 懒创建，在 Manage / Trending row 进入可视区域时触发渐进式入场 | "SwiftUI onAppear List row lazy loading" |
-| `@FocusState` | `CollapsibleSearchBar` 展开后自动聚焦 TextField，`Esc` 时清空或收起 | "SwiftUI FocusState TextField macOS" |
-| `.onExitCommand` | `CollapsibleSearchBar` 处理 `Esc`：有搜索词时清空，无搜索词时收起 | "SwiftUI onExitCommand" |
-| `.toolbar` / `ToolbarItem` | 顶栏同步按钮、右上角自定义搜索入口 | "SwiftUI toolbar ToolbarItem primaryAction macOS" |
+| `.toolbar` / `ToolbarItem` | 顶栏同步、状态、排序、多选按钮；搜索入口已改用系统 `.searchable(..., placement: .toolbar)`，避免混入 `primaryAction` 按钮组 | "SwiftUI toolbar ToolbarItem primaryAction macOS" |
+| `.searchable(text:placement:prompt:)` | `RepoListView` 右上角 Finder 风格系统搜索入口，绑定 `HomeViewModel.searchQuery` | "SwiftUI searchable placement toolbar macOS" |
 | `.confirmationDialog` / `.alert` | 取消 Star 确认（W4 待做） | "SwiftUI confirmationDialog macOS" |
-| `.transition` / `.animation(_:value:)` | `RepoListView` / `TrendingView` 中栏内容切换用整块轻过渡；`CollapsibleSearchBar` 展开收起在 Reduce Motion 下禁用动画 | "SwiftUI transition animation value accessibilityReduceMotion" |
+| `.transition` / `.animation(_:value:)` | `RepoListView` / `TrendingView` 中栏内容切换用整块轻过渡；自定义动效需尊重 `accessibilityReduceMotion` | "SwiftUI transition animation value accessibilityReduceMotion" |
 | `.onHover` | `RepoRowSurface` 鼠标悬停时增强背景 / 边框，是 macOS 指针体验的基础反馈 | "SwiftUI onHover macOS" |
 | `.allowsHitTesting(false)` | `LayoutDebugOverlay` 调试胶囊不拦截下方鼠标事件，覆盖层标准配置 | "SwiftUI allowsHitTesting" |
 | `.overlay(alignment:)` | `HomeView` 用 `.overlay(alignment: .topTrailing)` 在右上角接入 `LayoutDebugOverlay` —— overlay 不影响下方视图的布局，仅"覆盖"绘制，是调试视图 / Toast / 角标的标配 | "SwiftUI overlay alignment" |
@@ -154,11 +153,12 @@
 
 | 关键词 | 用法点 | 搜索词 |
 |---|---|---|
-| `NSViewRepresentable` | `ReadmeWebView` 包装 `WKWebView` | "SwiftUI NSViewRepresentable" |
+| `NSViewRepresentable` | `ReadmeWebView` 包装 `WKWebView`；`ToolbarSearchFocusRingDisabler` 放置不可见 AppKit 探针修正系统 toolbar search field | "SwiftUI NSViewRepresentable" |
 | `Coordinator` 模式 | `ReadmeWebView.Coordinator` 持有 delegate | "NSViewRepresentable Coordinator" |
 | `makeNSView` / `updateNSView` | 同上 | "NSViewRepresentable lifecycle" |
 | `NSView` → `NSWindow` 桥接 | `MainWindowFrameModifier` 通过不可见 NSView 拿主窗口 | "SwiftUI access NSWindow from NSViewRepresentable" |
 | `NSHostingController` | `AboutWindowController` 把 `AboutView` 嵌进 AppKit `NSWindow` | "NSHostingController SwiftUI AppKit" |
+| `NSSearchField.focusRingType` | `RepoListView.ToolbarSearchFocusRingDisabler` 禁用系统搜索框外层蓝色 focus ring | "NSSearchField focusRingType NSFocusRingType" |
 
 ---
 
