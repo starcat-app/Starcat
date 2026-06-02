@@ -29,6 +29,12 @@ final class TrendingViewModel {
     /// 当前 Trending 列表（可变，用于 star 操作后更新本地计数）
     var repos: [TrendingRepo] = []
 
+    /// 当前 Trending 列表快照版本。
+    ///
+    /// 只在 reload 产出新榜单时递增，用于驱动中栏内容过渡和 row reveal；
+    /// 本地 star 成功导致的 starsCount +1 不递增，避免用户点 star 后整列重播动画。
+    private(set) var reposRevision: Int = 0
+
     /// 加载中状态
     private(set) var isLoading: Bool = false
 
@@ -126,6 +132,7 @@ final class TrendingViewModel {
                 guard !Task.isCancelled else { return }
 
                 self.repos = fetched
+                self.reposRevision += 1
 
                 // 预计算 AI 评分
                 self.precomputeScores()
@@ -134,6 +141,7 @@ final class TrendingViewModel {
                 guard !Task.isCancelled else { return }
                 self.loadError = error.localizedDescription
                 self.repos = []
+                self.reposRevision += 1
             }
 
             self.isLoading = false

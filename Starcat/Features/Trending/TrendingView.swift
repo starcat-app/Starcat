@@ -40,6 +40,7 @@ struct TrendingView: View {
     @Environment(AuthSession.self) private var authSession
     @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(AppSettings.self) private var settings
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var viewModel: TrendingViewModel
     @State private var showLoginSheet: Bool = false
     @Binding private var selectedLanguage: TrendingLanguage
@@ -74,13 +75,10 @@ struct TrendingView: View {
             Divider()
 
             // 主要内容
-            if viewModel.isLoading && viewModel.repos.isEmpty {
-                loadingView
-            } else if let error = viewModel.loadError, viewModel.repos.isEmpty {
-                errorView(message: error)
-            } else {
-                contentView
-            }
+            mainContentView
+                .id(contentAnimationID)
+                .transition(contentTransition)
+                .animation(contentAnimation, value: contentAnimationID)
         }
         .task {
             viewModel.updateLanguagePreferences(from: homeViewModel.languageStats)
@@ -148,9 +146,60 @@ struct TrendingView: View {
 
     // MARK: - Content
 
+    @ViewBuilder
+    private var mainContentView: some View {
+        if viewModel.isLoading && viewModel.repos.isEmpty {
+            loadingView
+        } else if let error = viewModel.loadError, viewModel.repos.isEmpty {
+            errorView(message: error)
+        } else {
+            contentView
+        }
+    }
+
+    /// Trending repo 的带下标快照。
+    ///
+    /// index 只用于 row reveal 的短 stagger；id 仍来自 repo.id，保证 selection 与 row
+    /// identity 跟原先 TrendingRepo.fullName 保持一致。
+    private var indexedRepos: [IndexedTrendingRepo] {
+        viewModel.repos.enumerated().map { IndexedTrendingRepo(index: $0.offset, repo: $0.element) }
+    }
+
+    /// 中栏 Trending 内容过渡身份键。
+    ///
+    /// 与 Manage 列表保持同一策略：分类 / 周期 / reload 结果变化时做整块轻过渡，
+    /// row 本身只做可视区域内 reveal，不引入真正分页。
+    private var contentAnimationID: String {
+        if viewModel.isLoading && viewModel.repos.isEmpty {
+            return "trending-loading-\(viewModel.selectedPeriod.id)-\(viewModel.selectedLanguage.id)"
+        }
+        if let error = viewModel.loadError, viewModel.repos.isEmpty {
+            return "trending-error-\(viewModel.selectedPeriod.id)-\(viewModel.selectedLanguage.id)-\(error)"
+        }
+        return "trending-repos-\(viewModel.selectedPeriod.id)-\(viewModel.selectedLanguage.id)-\(viewModel.reposRevision)"
+    }
+
+    private var contentAnimation: Animation? {
+        reduceMotion ? nil : .easeOut(duration: 0.22)
+    }
+
+    private var contentTransition: AnyTransition {
+        reduceMotion ? .identity : .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: 8)),
+            removal: .opacity
+        )
+    }
+
+    /// 单选列表使用手动 selection，而不是 `List(selection:)`。
+    ///
+    /// 原因（与 Manage `RepoListView.listContent(_:)` 对齐）：`List(selection:)` 会强制
+    /// 绘制 macOS 系统蓝色选中底色，把 `TrendingRepoRowSurface` 自定义的语言色
+    /// accent bar / 轻 accent 底 / 细 accent 边框完全压住，导致两个列表视觉割裂
+    /// （Trending 卡片像一整块强蓝色，Manage 卡片是克制的语言色）。
+    /// 改用 plain Button 写 `selectedRepoID`，仍触发 HomeView 的
+    /// `.onChange(of: selectedRepoID)` 加载详情，但选中外观完全交给 `TrendingRepoRowView`。
     private var contentView: some View {
-        // 使用 List(selection:) 获取原生 macOS selection 样式（蓝色高亮）。
-        List(selection: $selectedRepoID) {
+        List {
             // "为你推荐"卡片暂时隐藏（dong4j 2026-06-01）：当前推荐质量还不稳定，先关掉。
             // 重新启用：把 showsRecommendations 改回 true 即可，逻辑与 UI 均保留。
             if Self.showsRecommendations, !viewModel.recommendedRepos.isEmpty {
@@ -159,27 +208,38 @@ struct TrendingView: View {
                     .listRowSeparator(.hidden)
             }
 
-            // Trending 列表
-            ForEach(viewModel.repos) { repo in
-                TrendingRepoRowView(
-                    repo: repo,
-                    density: settings.listDensity
-                )
-                .listRowInsets(padding)
-                .tag(repo.id)
+            // Trending 列表：plain Button 包裹 row，点击写 selectedRepoID。
+            // 不用 `.tag(repo.id)`，selection 完全由 isSelected 入参驱动。
+            ForEach(indexedRepos) { item in
+                let repo = item.repo
+                Button {
+                    selectedRepoID = repo.id
+                } label: {
+                    TrendingRepoRowView(
+                        repo: repo,
+                        density: settings.listDensity,
+                        isSelected: selectedRepoID == repo.id
+                    )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .listRowReveal(index: item.index, snapshotID: viewModel.reposRevision)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
         }
+        .id(viewModel.reposRevision)
         .listStyle(.inset)
         .alternatingRowBackgrounds()
         .refreshable {
             await viewModel.reload()
         }
     }
-
-    /// 每个卡片的 list row insets，决定卡片间距。
-    private var padding: EdgeInsets {
-        EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12)
-    }
+    //
+    // 历史：原本这里有 `.listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))`
+    // 配合 `private var padding`，多塞了一层 12pt 左右内边距，造成 Trending 卡片整体比 Manage
+    // 列表的卡片多缩一圈（dong4j 2026-06-02 反馈）。已移除——现在 Trending 和 Manage 共用
+    // 系统 `.inset` listStyle 的默认行距 / 边距，两边视觉宽度对齐。
 
     private var personalizedSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -258,6 +318,17 @@ struct TrendingView: View {
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
+
+/// 带可见顺序的 Trending repo 包装。
+///
+/// `id` 仍使用 repo.id，确保 `List(selection:)` 与 `.tag(repo.id)` 继续匹配；
+/// index 只参与渐进式入场 delay 计算，不改变业务身份。
+private struct IndexedTrendingRepo: Identifiable {
+    let index: Int
+    let repo: TrendingRepo
+
+    var id: String { repo.id }
 }
 
 // MARK: - TrendingRepoCard
