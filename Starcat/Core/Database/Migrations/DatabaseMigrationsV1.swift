@@ -30,6 +30,43 @@ enum DatabaseMigrations {
     static func registerAll(into migrator: inout DatabaseMigrator) {
         registerV1(into: &migrator)
         registerV2(into: &migrator)
+        registerV3(into: &migrator)
+    }
+
+    // MARK: - v3（HOM-46 性能优化：列表查询复合索引）
+
+    /// v3：为中栏 sidebar 列表查询补复合索引。
+    ///
+    /// **背景**：HOM-46 性能排查发现，1810 条 starred repos 的列表查询耗时 400~700ms。
+    /// 主因是 v1 schema 没有覆盖最常见的查询模式：
+    ///   - `WHERE is_starred = 1 ORDER BY starred_at DESC`（fetchAllStarred / fetchUntagged）
+    ///   - `WHERE is_starred = 1 AND language = ? ORDER BY starred_at DESC`（fetchByLanguage）
+    ///
+    /// 现有 `idx_repos_language` / `idx_repos_starred_at` 都是单列索引，SQLite
+    /// query planner 在带 WHERE 多列 + ORDER BY 时往往退化到「单列扫描 + 内存排序 + filter」。
+    ///
+    /// **方案**：加两个复合索引
+    ///   - `(is_starred, starred_at)` — 覆盖通用 starred 列表查询
+    ///   - `(is_starred, language, starred_at)` — 覆盖按语言筛选
+    ///
+    /// SQLite 索引列顺序：等值条件列在前（is_starred / language），范围 / 排序列在后（starred_at）。
+    /// SQLite 默认可以反向扫描索引（无需 DESC 关键字），所以 `ORDER BY starred_at DESC` 无需 DESC 标记。
+    ///
+    /// **风险**：
+    /// - 写放大：每次 upsert 1 条 repo 多更新 2 个 B-tree。对 sync 影响 < 5%（写本来就批量事务）。
+    /// - 空间开销：2 个索引 × 1810 行 × ~16 字节 ≈ 60KB，可忽略。
+    /// - IF NOT EXISTS：兼容已经手动加过索引的调试库。
+    private static func registerV3(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v3-repos-perf-indexes") { db in
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_repos_is_starred_starred_at
+                ON repos(is_starred, starred_at)
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_repos_is_starred_language_starred_at
+                ON repos(is_starred, language, starred_at)
+                """)
+        }
     }
 
     // MARK: - v2（W4-4 C2：sync_state 增加 stars_etag 列）
