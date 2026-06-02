@@ -4,8 +4,22 @@
 //
 //  登录后的主界面：NavigationSplitView 三栏。
 //
-//  布局：
-//  Sidebar（240pt）│  RepoList（300-360pt）│  RepoDetail（剩余）
+//  布局（2026-06-02 调整 v10，三栏展开默认和运行期硬下限统一为 1440×763）：
+//  Sidebar（240-320pt, ideal 260）│ RepoList（420-520pt, ideal 420）│ RepoDetail（自适应）
+//  - HomeView 首次进入默认 1440×763
+//  - 运行期 `NSWindow.contentMinSize` / `window.minSize` 固定为 1440×763
+//    （见 `MainWindowFrameModifier.swift`，AppKit 层卡死，用户不能继续压缩中栏/右栏）
+//  - **关键经验**：SwiftUI 的 `.navigationSplitViewColumnWidth(min:)` 和
+//    `.frame(minWidth:)` 只是子视图布局提示，**不会反向约束 NSWindow 拖动下限**。
+//    要真正卡死窗口最小尺寸必须走 `NSWindow.contentMinSize`（AppKit 层）。
+//    2026-06-02 之前 v2 错误地以为 SwiftUI minWidth 能反向约束，dong4j 拖窗口拖到
+//    ~920pt 后 sidebar 被压成不可见、列表行被裁掉，截图反馈后才发现此事。
+//  - **启动尺寸 == 硬下限**：1190 折叠态下限在重新展开 sidebar 时会让右上角
+//    短暂出现 `>>` toolbar overflow；dong4j 手动拉到 1440 后问题消失，所以
+//    直接把 AppKit 硬下限提升到 1440，不再做展开时扩窗或动态 minSize。
+//  - RepoList 的 min == ideal == 420：默认贴 min 启动，往大可拖到 520，往小拖不动
+//  - 高度 763pt：刚好够 Sidebar 完整渲染（头像+统计+主导航+Tags+Languages 前 ~10 项）
+//  - 小屏限制：MacBook 13" 1280×800 仍差 130pt，需主屏横放或外接显示器
 //
 //  顶部操作按三栏职责拆分：
 //  - Sidebar：同步、标签管理
@@ -40,6 +54,15 @@ struct HomeView: View {
 
     /// W4 A2：标签管理 sheet 显示状态。
     @State private var showTagManagement: Bool = false
+
+    /// 三栏显示状态。
+    ///
+    /// 为什么显式持有：
+    /// `NavigationSplitView` 在窗口缩窄时会自动折叠 sidebar，并把可见性状态改成
+    /// detail/content 优先。如果 AppKit autosave 曾保存过窄窗口，下次启动即使我们
+    /// 立即把窗口放大回 1410×763，SplitView 也可能停留在折叠可见性，导致左栏以
+    /// 抽屉/半截形态出现。启动时把它重置为 `.all`，让默认状态始终是三栏展开。
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     /// Sidebar 顶部三入口的当前页。
     ///
@@ -101,13 +124,13 @@ struct HomeView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(
                 selectedPage: $selectedSidebarPage,
                 selectedTrendingLanguage: $selectedTrendingLanguage,
                 showTagManagement: $showTagManagement
             )
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
+                .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
         } content: {
             RepoListView(
                 trendingRepository: trendingRepository,
@@ -117,7 +140,7 @@ struct HomeView: View {
                 selectedTrendingRepoID: $selectedTrendingRepoID,
                 selectedTrendingRepo: $selectedTrendingRepo
             )
-                .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 480)
+                .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
         } detail: {
             RepoDetailView(
                 selectedTrendingRepo: selectedTrendingRepo
@@ -126,6 +149,13 @@ struct HomeView: View {
         .environment(viewModel)
         .environment(readmeVM)
         .mainWindowFrameAutosave()
+        // 调试用：右上角浮动 W×H 胶囊，仅 DEBUG 包 + 设了 launch arg `-DebugLayoutOverlay YES` 时显示。
+        // 详见 `Shared/Utilities/DebugFlags.swift` 的类型文档（含 Xcode Scheme / LLDB / defaults 三种切换方式）。
+        .overlay(alignment: .topTrailing) {
+            if DebugFlags.layoutOverlay {
+                LayoutDebugOverlay()
+            }
+        }
         .sheet(isPresented: $showTagManagement, onDismiss: {
             // W4 A6：标签管理 sheet 关闭后 → 刷新 Sidebar Tags 段 + 当前列表
             // （用户可能在 sheet 里增删 / 合并标签，Sidebar 与列表都要跟着变）
@@ -137,6 +167,10 @@ struct HomeView: View {
             TagManagementView(viewModel: tagMgmtVM)
         }
         .task {
+            // 启动 / 重新进入 HomeView 时默认回三栏展开。运行期用户手动缩窗时，
+            // 系统仍可按窗口宽度自动折叠 sidebar；这里只负责启动态保真。
+            columnVisibility = .all
+
             // W4-4 D1/D2:把持久化的视图偏好同步到 viewModel,避免首次 reloadItems 用默认值
             // 然后 onAppear 才纠正导致列表抖动一次。
             if viewModel.sortOption != settings.repoSortOption {

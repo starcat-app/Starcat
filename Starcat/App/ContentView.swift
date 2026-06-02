@@ -36,7 +36,14 @@ struct ContentView: View {
             trendingRepository: dependencies.trendingRepository,
             githubAPIClient: dependencies.apiClient
         )
-        .frame(minWidth: 800, minHeight: 600)
+        // 这里的 SwiftUI root minWidth 会参与系统窗口约束。
+        // 旧值 800×600 会在 NavigationSplitView 自动折叠 sidebar 后重新成为窗口下限，
+        // 导致中栏 420 + 右栏 770 被继续压缩。改成 AppKit 硬下限同源常量，
+        // 保证折叠态也至少保住 RepoList + Detail 两列。
+        .frame(
+            minWidth: MainWindowFrameDefaults.contentMinSize.width,
+            minHeight: MainWindowFrameDefaults.contentMinSize.height
+        )
         .animation(.smooth, value: authSession.state)
         .sheet(isPresented: showAuthViewBinding) {
             GithubAuthView()

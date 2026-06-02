@@ -72,41 +72,50 @@ struct RepoDetailView: View {
     }
 
     var body: some View {
-        if let repo = viewModel.selectedRepo {
-            VStack(alignment: .leading, spacing: 0) {
-                metadataPanel(repo)
-                readmeSection(repo)
-            }
-            .navigationTitle(repo.name)
-            .navigationSubtitle(repo.owner)
-            .alert("repo.unstar.confirm", isPresented: $showUnstarConfirm, presenting: repo) { repo in
-                Button("repo.unstar.action", role: .destructive) {
-                    Task { await performUnstar(repo: repo) }
+        // 当前不要给 detail 再加 `.frame(minWidth:)`。
+        //
+        // 之前尝试用 770pt 固定 detail 可读宽度，但它会和 NavigationSplitView 的
+        // sidebar 折叠/展开协商叠加：窗口缩到 1190 后再展开左栏时，SwiftUI 需要同时
+        // 满足左栏、列表和 detail 的下限，容易出现左栏抽屉或窗口宽度跳动。
+        // 运行期硬下限统一交给 `MainWindowFrameModifier` 的 AppKit `contentMinSize`，
+        // detail 在这个边界内自适应。
+        Group {
+            if let repo = viewModel.selectedRepo {
+                VStack(alignment: .leading, spacing: 0) {
+                    metadataPanel(repo)
+                    readmeSection(repo)
                 }
-                Button("repo.unstar.dontUnstar", role: .cancel) {}
-            } message: { repo in
-                Text(String(format: String(localized: "repo.unstar.messageFormat"), repo.fullName))
-            }
-            .alert("repo.unstar.failed", isPresented: errorAlertBinding, presenting: unstarError) { _ in
-                Button("general.ok") { unstarError = nil }
-            } message: { msg in
-                Text(LocalizedStringKey(msg))
-            }
-            .onChange(of: repo.id) { _, _ in
-                withAnimation(metadataPanelAnimation) {
-                    isMetadataPanelHidden = false
+                .navigationTitle(repo.name)
+                .navigationSubtitle(repo.owner)
+                .alert("repo.unstar.confirm", isPresented: $showUnstarConfirm, presenting: repo) { repo in
+                    Button("repo.unstar.action", role: .destructive) {
+                        Task { await performUnstar(repo: repo) }
+                    }
+                    Button("repo.unstar.dontUnstar", role: .cancel) {}
+                } message: { repo in
+                    Text(String(format: String(localized: "repo.unstar.messageFormat"), repo.fullName))
                 }
+                .alert("repo.unstar.failed", isPresented: errorAlertBinding, presenting: unstarError) { _ in
+                    Button("general.ok") { unstarError = nil }
+                } message: { msg in
+                    Text(LocalizedStringKey(msg))
+                }
+                .onChange(of: repo.id) { _, _ in
+                    withAnimation(metadataPanelAnimation) {
+                        isMetadataPanelHidden = false
+                    }
+                }
+            } else if let trending = selectedTrendingRepo {
+                // Trending repo 详情页（无本地数据，只显示 README）
+                VStack(alignment: .leading, spacing: 0) {
+                    trendingMetadataPanel(trending)
+                    trendingReadmeSection(trending)
+                }
+                .navigationTitle(trending.name)
+                .navigationSubtitle(trending.owner)
+            } else {
+                emptyState
             }
-        } else if let trending = selectedTrendingRepo {
-            // Trending repo 详情页（无本地数据，只显示 README）
-            VStack(alignment: .leading, spacing: 0) {
-                trendingMetadataPanel(trending)
-                trendingReadmeSection(trending)
-            }
-            .navigationTitle(trending.name)
-            .navigationSubtitle(trending.owner)
-        } else {
-            emptyState
         }
     }
 
@@ -240,6 +249,12 @@ struct RepoDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             trendingHeader(repo)
             trendingStatsSection(repo)
+            // Contributors 头像组（2026-06-02 从卡片移过来）。
+            // 卡片窄宽度下贡献者头像会被 List 水平裁剪，详情页空间更宽裕，
+            // 用稍大的 24pt 头像 + 可点击跳 GitHub profile + hover 显示 username。
+            if !repo.contributors.isEmpty {
+                trendingContributorsSection(repo)
+            }
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
@@ -247,11 +262,67 @@ struct RepoDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Trending repo 贡献者头像组。
+    ///
+    /// 设计要点（与原卡片版差异）：
+    /// - 头像 24pt（卡片版 16pt），详情页有空间显示更清晰的脸
+    /// - 最多显示 6 个（卡片版 3），溢出用 "+N" 提示
+    /// - 每个头像包在 `Link(destination: profileURL)` 里，点击跳 GitHub profile
+    /// - `.help(username)` 鼠标 hover 显示用户名，比卡片头像更有信息密度
+    /// - 头像之间负 spacing 实现 GitHub PR 卡片风格的重叠效果
+    private func trendingContributorsSection(_ repo: TrendingRepo) -> some View {
+        HStack(spacing: -6) {
+            ForEach(repo.contributors.prefix(6)) { contributor in
+                contributorAvatar(contributor)
+            }
+
+            if repo.contributors.count > 6 {
+                Text(verbatim: "+\(repo.contributors.count - 6)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 8)
+            }
+        }
+    }
+
+    /// 单个贡献者头像。
+    /// - 有 profileURL 时包 Link 让头像可点击跳 GitHub
+    /// - 无 profileURL 时退化为静态图（容错路径，正常不会触发）
+    @ViewBuilder
+    private func contributorAvatar(_ contributor: TrendingRepo.Contributor) -> some View {
+        if let profileURL = contributor.profileURL {
+            Link(destination: profileURL) {
+                contributorAvatarImage(contributor)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(contributor.username)
+        } else {
+            contributorAvatarImage(contributor)
+                .help(contributor.username)
+        }
+    }
+
+    /// 贡献者头像图片本体（带边框 + 圆形裁切）。
+    private func contributorAvatarImage(_ contributor: TrendingRepo.Contributor) -> some View {
+        AsyncImage(url: contributor.avatarURL) { image in
+            image.resizable().scaledToFit()
+        } placeholder: {
+            Circle().fill(Color.gray.opacity(0.3))
+        }
+        .frame(width: 24, height: 24)
+        .clipShape(Circle())
+        .overlay(
+            Circle()
+                .stroke(Color(NSColor.controlBackgroundColor).opacity(0.9), lineWidth: 1.5)
+        )
+    }
+
     /// Trending repo 头部信息。
     private func trendingHeader(_ repo: TrendingRepo) -> some View {
         HStack(alignment: .top, spacing: 16) {
             RemoteAvatar(
-                urlString: TrendingRepoAvatarURL.from(owner: repo.owner),
+                urlString: RepoAvatarURL.from(owner: repo.owner),
                 size: 64
             )
             VStack(alignment: .leading, spacing: 5) {
@@ -367,28 +438,10 @@ struct RepoDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Trending repo 头像 URL。
-    private enum TrendingRepoAvatarURL {
-        static func from(owner: String) -> String {
-            "https://github.com/\(owner).png?size=80"
-        }
-    }
-
-    /// Trending repo 语言颜色。
-    private enum LanguageColor {
-        static func color(for language: String) -> Color {
-            switch language {
-            case "Swift":        return Color(red: 0.94, green: 0.31, blue: 0.20)
-            case "Python":       return Color(red: 0.23, green: 0.46, blue: 0.69)
-            case "JavaScript":   return Color(red: 0.94, green: 0.86, blue: 0.32)
-            case "TypeScript":   return Color(red: 0.18, green: 0.46, blue: 0.78)
-            case "Go":           return Color(red: 0.00, green: 0.68, blue: 0.84)
-            case "Rust":         return Color(red: 0.86, green: 0.41, blue: 0.27)
-            case "Java":         return Color(red: 0.69, green: 0.38, blue: 0.12)
-            default:             return Color.gray
-            }
-        }
-    }
+    // 头像 URL 与语言色：统一使用 Shared/Components/RepoRowComponents.swift
+    // 中的 `RepoAvatarURL` 和 `LanguageColor`。后者从原来 7 种语言扩展到 30+ 种，
+    // 详情页的语言色覆盖范围与列表行保持一致（顺手修：原 fallback 是纯 gray，
+    // 现在与列表用同一个 30 色精简集，少数语言不再退化为灰色）。
 
     // MARK: - 子段
 

@@ -23,19 +23,6 @@
 
 ---
 
-## ⚠️ 临时技术债提醒（必读，2026-05-30 起生效）
-
-当前 `KeychainManager.swift` 在 **DEBUG 编译下启用了"Keychain + 沙盒文件双写"绕过方案**，
-用于解决 ad-hoc 签名 + App Sandbox 导致 token 跨构建无法持久化的问题。
-
-**发布前必须执行完整切换流程**，详见 `docs/工程进度/2026-05-30-Keychain-临时绕过方案.md`。
-
-切换的触发条件：用户完成 Xcode Apple ID Team 配置 → 重新启用 `keychain-access-groups` entitlement → 删除 `#if DEBUG` 块。
-
-> 当本段提醒还在时，意味着这个技术债没还。任何 release 前的工程审查都必须检查这一项。
-
----
-
 ## 🧪 如何跑单测（必读，2026-05-31 起生效）
 
 **当前最低要求**：跑测前**关闭 Xcode IDE**（Cmd+Q），否则 `xcodebuild test` 与 IDE 抢占同一 `testmanagerd` 实例，可能挂起。
