@@ -195,6 +195,9 @@ private struct StatCell: View {
     var body: some View {
         VStack(spacing: 2) {
             if let url = url {
+                // 2026-06-02 dong4j 要求统一 hover 反馈：sidebar 三栏统计数据
+                // （Starred / Followers / Following）加 `.pressableHover()`，
+                // 与详情页 Stats 按钮保持同款交互反馈。
                 Button {
                     NSWorkspace.shared.open(url)
                 } label: {
@@ -207,6 +210,7 @@ private struct StatCell: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .pressableHover()
                 .help(helpText)
             } else {
                 Text(value, format: .number)
