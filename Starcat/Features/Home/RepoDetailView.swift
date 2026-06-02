@@ -72,25 +72,13 @@ struct RepoDetailView: View {
     }
 
     var body: some View {
-        // 外层 Group + `.frame(minWidth: 770)` 是给整个 detail 栏设 SwiftUI 层最小宽度。
+        // 当前不要给 detail 再加 `.frame(minWidth:)`。
         //
-        // **重要**：这层 `.frame(minWidth:)` **不会** 反向约束 NSWindow 的拖动下限。
-        // 真正卡死窗口最小尺寸的是 `MainWindowFrameModifier` 里 `NSWindow.contentMinSize`
-        // 的硬约束（AppKit 层，sidebar 折叠态整窗内容区 1190×763）。本 frame 仅在窗口已被卡死、
-        // 三栏 SwiftUI 布局算分配时告诉 NavigationSplitView "detail 区不要小于 770"。
-        //
-        // 770pt 选择依据（2026-06-02 v4，dong4j 实测 1410×763 反推）：
-        //   - 三栏 min 累加 = 1410：Sidebar 220 + RepoList 420 + Detail **770**
-        //   - 770pt 容纳 GitHub 默认 80 字符代码块 + 边距，hero header / metadata chip
-        //     行 / topics 行不挤压换行
-        //   - 牺牲：放弃 GitHub 原站 1012pt 阅读容器宽度，宽 README 中的大图 / 长表格
-        //     仍可能被压缩，但 80 字符代码块完整可读已覆盖 95% 阅读场景
-        //   - trade-off：三栏展开默认 1410pt 宽；sidebar 折叠后硬下限为 1190pt，
-        //     13" 内屏也能保住中栏 + 右栏的最低可读宽度
-        //
-        // 历史：`NavigationSplitView` 的 `detail` 不能用 `.navigationSplitViewColumnWidth(...)`
-        //（系统只允许 sidebar/content 用），所以最小宽度只能在 detail 视图本身用
-        // `.frame(minWidth:)` 实现。
+        // 之前尝试用 770pt 固定 detail 可读宽度，但它会和 NavigationSplitView 的
+        // sidebar 折叠/展开协商叠加：窗口缩到 1190 后再展开左栏时，SwiftUI 需要同时
+        // 满足左栏、列表和 detail 的下限，容易出现左栏抽屉或窗口宽度跳动。
+        // 运行期硬下限统一交给 `MainWindowFrameModifier` 的 AppKit `contentMinSize`，
+        // detail 在这个边界内自适应。
         Group {
             if let repo = viewModel.selectedRepo {
                 VStack(alignment: .leading, spacing: 0) {
@@ -129,7 +117,6 @@ struct RepoDetailView: View {
                 emptyState
             }
         }
-//        .frame(minWidth: 770)
     }
 
     // MARK: - W4 B1：Unstar 流程

@@ -17,13 +17,10 @@
 //  正确做法：在 AppKit 层用 `contentMinSize` 设硬下限（这是 NSWindow 的"内容区
 //  最小尺寸"属性，含义就是 SwiftUI contentView 不能小于这个值，到达后用户拖不动）。
 //
-//  当前数值（2026-06-02 v8）：启动默认强制回三栏展开态 1410×763；运行期窗口
-//  硬下限跟 `NavigationSplitViewVisibility` 绑定：三栏 `.all` 时是 1410×763，
-//  sidebar 已折叠 / 隐藏后才降到 1190×763（RepoList 420 + Detail 770）。
-//  这样可以避免用户从初始化大小直接拖窄时，sidebar 还没真正离开布局就被裁切。
-//  如果用户先收起 sidebar 再把窗口缩到 1190，之后重新展开 sidebar 时，需要主动
-//  把窗口内容区扩回 1410，否则 `NavigationSplitView` 只会把 sidebar 塞回当前窄窗口，
-//  形成左栏抽屉 / 裁切状态。
+//  当前数值（2026-06-02 v9）：启动默认强制回三栏展开态 1410×763；运行期窗口
+//  硬下限固定为 1190×763。RepoDetail 不再额外设置 `.frame(minWidth: 770)` 后，
+//  `NavigationSplitView` 能自然协商窄窗口布局；这里不再根据 sidebar 折叠/展开主动
+//  `setFrame`，避免用户在 1190 最小尺寸下展开左栏时看到窗口宽度乱跳。
 //
 
 import AppKit
@@ -34,10 +31,8 @@ enum MainWindowFrameDefaults {
 
     /// HomeView 启动时的展开态默认尺寸：**1410×763**（2026-06-02 v4，dong4j 实测确认）。
     ///
-    /// 1410 × 763 是 dong4j 在 LayoutDebugOverlay 下亲自测出来的"理想初始化尺寸"，
-    /// 也是三栏全部展开时的最紧凑可用尺寸。
-    ///
-    /// 三栏宽度拆分：**Sidebar 220 + RepoList 420 + Detail 770 = 1410pt**
+    /// 1410 × 763 是 dong4j 在 LayoutDebugOverlay 下亲自测出来的"理想初始化尺寸"。
+    /// 这个值现在只用于启动 / 恢复时的视觉默认，不再作为运行期三栏 minWidth 公式。
     ///
     /// 设计意图：
     /// - 每次进入 HomeView 时都避免从"sidebar 已折叠"的 autosave frame 启动；
@@ -47,19 +42,16 @@ enum MainWindowFrameDefaults {
     ///   Tags + Languages 前 ~10 个语言项），低于这个高度 Languages 区域开始被截断
     ///
     /// 已知约束：屏幕分辨率 < 1410×763 的设备首次启动时仍会优先保证三栏展开态，
-    /// 窗口可能略超出可视区域；用户主动收起 sidebar 后，硬下限才会降到 1190×763。
+    /// 窗口可能略超出可视区域；运行期拖拽下限固定为 1190×763。
     static let defaultSize = CGSize(width: 1410, height: 763)
 
-    /// Sidebar 被系统自动折叠后的窗口硬下限。
+    /// 运行期窗口硬下限。
     ///
-    /// 根因：`NavigationSplitView` 在窗口变窄时会把 sidebar 折叠到工具栏按钮里；
-    /// 这时左栏的 220pt 不再参与可见布局，如果还只考虑"三栏展开态"会漏掉折叠态。
-    /// 折叠态仍必须保住中栏和右栏：
-    ///
-    /// **RepoList 420 + Detail 770 = 1190pt**
-    ///
-    /// 这里用 1190×763 作为 sidebar 已折叠后的 `NSWindow.contentMinSize`，
-    /// 但 `.all` 三栏可见时不能提前使用它，否则左栏会在直接拖窄时被裁切。
+    /// 根因：`NavigationSplitView` 会在窄窗口内自行协商 sidebar 折叠 / 展开。
+    /// 这里不要再跟随 `columnVisibility` 动态切换 1410 / 1190，也不要在展开时
+    /// 主动 `setFrame`；否则和 SwiftUI 的列协商叠加后会出现窗口宽度跳动。
+    /// 1190×763 是当前交互验证后保留下来的 AppKit 层硬下限，防止窗口回退到
+    /// 旧 ContentView 800×600 下限导致中栏 / 右栏继续被裁切。
     static let contentMinSize = CGSize(width: 1190, height: 763)
 
     /// AppKit 保存窗口 frame 的 UserDefaults key 约定。
@@ -75,15 +67,13 @@ enum MainWindowFrameDefaults {
 private struct MainWindowFrameModifier: ViewModifier {
     let defaultSize: CGSize
     let contentMinSize: CGSize
-    let expandedLayoutRequestID: Int
 
     func body(content: Content) -> some View {
         content
             .background {
                 MainWindowFrameReader(
                     defaultSize: defaultSize,
-                    contentMinSize: contentMinSize,
-                    expandedLayoutRequestID: expandedLayoutRequestID
+                    contentMinSize: contentMinSize
                 )
                 .frame(width: 0, height: 0)
             }
@@ -97,13 +87,11 @@ private struct MainWindowFrameModifier: ViewModifier {
 private struct MainWindowFrameReader: NSViewRepresentable {
     let defaultSize: CGSize
     let contentMinSize: CGSize
-    let expandedLayoutRequestID: Int
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             defaultSize: defaultSize,
-            contentMinSize: contentMinSize,
-            expandedLayoutRequestID: expandedLayoutRequestID
+            contentMinSize: contentMinSize
         )
     }
 
@@ -118,22 +106,17 @@ private struct MainWindowFrameReader: NSViewRepresentable {
     func updateNSView(_ nsView: WindowReaderView, context: Context) {
         context.coordinator.defaultSize = defaultSize
         context.coordinator.contentMinSize = contentMinSize
-        context.coordinator.expandedLayoutRequestID = expandedLayoutRequestID
         context.coordinator.configure(window: nsView.window)
     }
 
     final class Coordinator {
         var defaultSize: CGSize
         var contentMinSize: CGSize
-        var expandedLayoutRequestID: Int
         private var didConfigure = false
-        private var lastHandledExpandedLayoutRequestID: Int
 
-        init(defaultSize: CGSize, contentMinSize: CGSize, expandedLayoutRequestID: Int) {
+        init(defaultSize: CGSize, contentMinSize: CGSize) {
             self.defaultSize = defaultSize
             self.contentMinSize = contentMinSize
-            self.expandedLayoutRequestID = expandedLayoutRequestID
-            self.lastHandledExpandedLayoutRequestID = expandedLayoutRequestID
         }
 
         func configure(window: NSWindow?) {
@@ -145,7 +128,6 @@ private struct MainWindowFrameReader: NSViewRepresentable {
             applyMinimumSize(to: window)
 
             guard !didConfigure else {
-                applyExpandedLayoutRequestIfNeeded(to: window)
                 enforceMinSize(window: window)
                 return
             }
@@ -153,10 +135,9 @@ private struct MainWindowFrameReader: NSViewRepresentable {
 
             // 先设硬下限，再做 autosave 恢复。
             //
-            // contentMinSize 不能小于"当前可见列"的 min 累加值，否则用户能拖到比
-            // SwiftUI 设计下限更小，视图会被裁切。展开态是 220+420+770=1410；
-            // sidebar 折叠后可见列才变成 420+770=1190。HomeView 会按
-            // columnVisibility 动态传入这两个值。
+            // contentMinSize 是运行期唯一硬下限。它只负责阻止窗口被拖回旧的
+            // ContentView 800×600 一类过小尺寸；sidebar 是否折叠、展开交给
+            // NavigationSplitView 自己协商，避免这里二次 setFrame 造成视觉跳动。
             //
             // **特殊情况**：autosave 恢复出的尺寸如果**小于** contentMinSize（例如
             // 用户在更小窗口下限版本里拖小过窗口，新版本提高了下限），AppKit 不会
@@ -173,10 +154,10 @@ private struct MainWindowFrameReader: NSViewRepresentable {
             if hasSavedFrame, window.setFrameUsingName(MainWindowFrameDefaults.autosaveName) {
                 // 启动期只信任"三栏展开态及以上"的 autosave。
                 //
-                // v5 允许运行期缩到 sidebar 折叠态 1190×763 后，AppKit 会把这个
-                // 折叠 frame 保存下来；如果下次启动继续恢复它，首页就直接变成
-                // sidebar 半折叠 / 内容被挤压的状态。这里把"启动默认"和"运行期
-                // 可拖拽下限"分开：启动至少 1410×763，运行时才允许缩到 1190×763。
+                // 允许运行期缩到 1190×763 后，AppKit 会把这个 frame 保存下来；
+                // 如果下次启动继续恢复它，首页就可能直接进入窄布局。这里把
+                // "启动视觉尺寸"和"运行期可拖拽下限"分开：启动至少 1410×763，
+                // 运行时才允许缩到 1190×763。
                 if restoredContentSize(in: window).isAtLeast(defaultSize) {
                     enforceMinSize(window: window)
                     return
@@ -218,34 +199,6 @@ private struct MainWindowFrameReader: NSViewRepresentable {
             )
         }
 
-        private func applyExpandedLayoutRequestIfNeeded(to window: NSWindow) {
-            guard expandedLayoutRequestID != lastHandledExpandedLayoutRequestID else { return }
-            lastHandledExpandedLayoutRequestID = expandedLayoutRequestID
-
-            // 请求只来自 HomeView 观察到 `NavigationSplitViewVisibility` 重新变成 `.all`。
-            // HomeView 已经把当前硬下限切回 1410；这里额外负责把已缩到 1190 的
-            // 折叠态窗口真正扩回去，而不是只改 minSize 后留下抽屉 / 裁切状态。
-            growToExpandedLayoutIfNeeded(window: window)
-        }
-
-        private func growToExpandedLayoutIfNeeded(window: NSWindow) {
-            let currentContentSize = restoredContentSize(in: window)
-            guard currentContentSize.width < defaultSize.width || currentContentSize.height < defaultSize.height else {
-                return
-            }
-
-            let visibleFrame = visibleFrame(for: window)
-            let targetContentSize = defaultContentSize(visibleFrame: visibleFrame)
-            let targetWindowSize = windowFrameSize(forContentMinSize: targetContentSize, in: window)
-            let targetFrame = clampedFrame(
-                keepingTopLeftOf: window.frame,
-                targetSize: targetWindowSize,
-                visibleFrame: visibleFrame
-            )
-
-            window.setFrame(targetFrame, display: true, animate: false)
-        }
-
         private func enforceMinSize(window: NSWindow) {
             let frame = window.frame
             let minWindowSize = windowFrameSize(forContentMinSize: contentMinSize, in: window)
@@ -267,8 +220,8 @@ private struct MainWindowFrameReader: NSViewRepresentable {
             // `contentMinSize` 是推荐表达：下限以 SwiftUI contentView 为准。
             // 同时显式设置 `minSize` 是为了抵抗 SwiftUI / NavigationSplitView 在
             // sidebar 折叠过程中重算窗口约束时把 AppKit minSize 回写成较小值。
-            // 两个属性保持同一个物理下限：content 1410×763 或 1190×763，
-            // 对应 window frame 需要额外包含 titlebar / toolbar 的高度。
+            // 两个属性保持同一个物理下限：content 1190×763；对应 window frame
+            // 需要额外包含 titlebar / toolbar 的高度。
             window.contentMinSize = contentMinSize
             window.minSize = windowFrameSize(forContentMinSize: contentMinSize, in: window)
         }
@@ -296,41 +249,6 @@ private struct MainWindowFrameReader: NSViewRepresentable {
             window.screen?.visibleFrame
                 ?? NSScreen.main?.visibleFrame
                 ?? window.frame
-        }
-
-        private func clampedFrame(
-            keepingTopLeftOf currentFrame: CGRect,
-            targetSize: CGSize,
-            visibleFrame: CGRect
-        ) -> CGRect {
-            var frame = CGRect(
-                x: currentFrame.minX,
-                y: currentFrame.maxY - targetSize.height,
-                width: targetSize.width,
-                height: targetSize.height
-            )
-
-            // 展开 sidebar 时优先保持窗口左上角稳定：用户刚看到左栏从左侧展开，
-            // 右侧内容自然向右获得空间。若靠近屏幕边缘，则只在能完整容纳时做边界回收。
-            if frame.width <= visibleFrame.width {
-                if frame.maxX > visibleFrame.maxX {
-                    frame.origin.x = visibleFrame.maxX - frame.width
-                }
-                if frame.minX < visibleFrame.minX {
-                    frame.origin.x = visibleFrame.minX
-                }
-            }
-
-            if frame.height <= visibleFrame.height {
-                if frame.maxY > visibleFrame.maxY {
-                    frame.origin.y = visibleFrame.maxY - frame.height
-                }
-                if frame.minY < visibleFrame.minY {
-                    frame.origin.y = visibleFrame.minY
-                }
-            }
-
-            return frame
         }
 
         private func windowFrameSize(forContentMinSize contentMinSize: CGSize, in window: NSWindow) -> CGSize {
@@ -366,19 +284,15 @@ extension View {
     ///
     /// - Parameters:
     ///   - defaultSize: 首次启动（无 autosave 记录时）的默认窗口尺寸。
-    ///   - contentMinSize: NSWindow.contentMinSize 硬下限。**必须**不小于三栏 SwiftUI
-    ///     视图 min 累加值；HomeView 会根据 columnVisibility 在 1410 与 1190 之间切换。
-    ///   - expandedLayoutRequestID: 每次 sidebar 从折叠态重新展开时递增一次，用于
-    ///     触发窗口内容区扩回 defaultSize；不要拿它当长期 minSize 开关。
+    ///   - contentMinSize: NSWindow.contentMinSize 硬下限。当前固定为 1190×763，
+    ///     sidebar 折叠 / 展开不再触发主动扩窗。
     func mainWindowFrameAutosave(
         defaultSize: CGSize = MainWindowFrameDefaults.defaultSize,
-        contentMinSize: CGSize = MainWindowFrameDefaults.contentMinSize,
-        expandedLayoutRequestID: Int = 0
+        contentMinSize: CGSize = MainWindowFrameDefaults.contentMinSize
     ) -> some View {
         modifier(MainWindowFrameModifier(
             defaultSize: defaultSize,
-            contentMinSize: contentMinSize,
-            expandedLayoutRequestID: expandedLayoutRequestID
+            contentMinSize: contentMinSize
         ))
     }
 }

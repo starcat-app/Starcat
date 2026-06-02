@@ -4,26 +4,21 @@
 //
 //  登录后的主界面：NavigationSplitView 三栏。
 //
-//  布局（2026-06-02 调整 v8，三栏展开默认 1410×763，折叠态硬下限 1190×763）：
-//  Sidebar（220-320pt, ideal 260）│ RepoList（420-520pt, ideal 420）│ RepoDetail（minWidth 770pt）
-//  - 三栏展开 min 累加 = **1410pt** → HomeView 首次进入默认 1410×763
-//  - sidebar 被系统自动折叠后，可见列 min 累加 = **1190pt**（RepoList 420 + Detail 770）
-//    → `NSWindow.contentMinSize` / `window.minSize` 硬约束 1190×763
+//  布局（2026-06-02 调整 v9，三栏展开默认 1410×763，运行期硬下限 1190×763）：
+//  Sidebar（240-320pt, ideal 260）│ RepoList（420-520pt, ideal 420）│ RepoDetail（自适应）
+//  - HomeView 首次进入默认 1410×763，保留 dong4j 实测的初始化视觉尺寸
+//  - 运行期 `NSWindow.contentMinSize` / `window.minSize` 固定为 1190×763
 //    （见 `MainWindowFrameModifier.swift`，AppKit 层卡死，用户不能继续压缩中栏/右栏）
 //  - **关键经验**：SwiftUI 的 `.navigationSplitViewColumnWidth(min:)` 和
 //    `.frame(minWidth:)` 只是子视图布局提示，**不会反向约束 NSWindow 拖动下限**。
 //    要真正卡死窗口最小尺寸必须走 `NSWindow.contentMinSize`（AppKit 层）。
 //    2026-06-02 之前 v2 错误地以为 SwiftUI minWidth 能反向约束，dong4j 拖窗口拖到
 //    ~920pt 后 sidebar 被压成不可见、列表行被裁掉，截图反馈后才发现此事。
-//  - **首次启动尺寸 != 硬下限**：defaultSize 是三栏展开态 1410×763；contentMinSize
-//    是 sidebar 折叠态 1190×763。这样既允许系统自然折叠 sidebar，又不让窗口缩到
-//    旧 ContentView 800×600 下限导致列表裁切。
-//  - **硬下限必须跟 columnVisibility 绑定**：三栏 `.all` 可见时，窗口不能直接拖到
-//    1190，否则 sidebar 还没真正离开布局就会被裁切；只有 sidebar 已被系统/用户收起
-//    后，硬下限才降到 1190。重新展开 `.all` 时再一次性扩回 1410。
+//  - **首次启动尺寸 != 硬下限**：defaultSize 是启动视觉尺寸 1410×763；
+//    contentMinSize 是运行期唯一硬下限 1190×763。RepoDetail 不再设置 770pt
+//    `.frame(minWidth:)`，否则它会和 NavigationSplitView / AppKit 下限竞争，
+//    在窄窗口折叠、展开 sidebar 时诱发左栏抽屉和窗口宽度跳变。
 //  - RepoList 的 min == ideal == 420：默认贴 min 启动，往大可拖到 520，往小拖不动
-//  - Detail 770pt：GitHub README 80 字符代码块 + 边距的可读宽度，hero / chip / topics
-//    行不挤压换行；放弃 GitHub 原站 1012pt 阅读容器宽度
 //  - 高度 763pt：刚好够 Sidebar 完整渲染（头像+统计+主导航+Tags+Languages 前 ~10 项）
 //  - 小屏限制：MacBook 13" 1280×800 仍差 130pt，需主屏横放或外接显示器
 //
@@ -69,24 +64,6 @@ struct HomeView: View {
     /// 立即把窗口放大回 1410×763，SplitView 也可能停留在折叠可见性，导致左栏以
     /// 抽屉/半截形态出现。启动时把它重置为 `.all`，让默认状态始终是三栏展开。
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-
-    /// sidebar 从折叠态重新展开时递增，交给 AppKit 窗口桥接层扩回三栏默认宽度。
-    ///
-    /// 动态 minSize 只能阻止“直接拖窄导致裁切”；它不会自动把已经缩到 1190 的
-    /// 折叠态窗口放回 1410。所以重新展开 `.all` 时仍需要这个一次性扩窗请求。
-    @State private var expandedLayoutRequestID = 0
-
-    /// 当前窗口内容区硬下限。
-    ///
-    /// 关键约束：`.all` 时必须使用三栏展开态 1410，不能继续沿用折叠态 1190。
-    /// 直接拖窄窗口时，SwiftUI 可能还没把 sidebar 从布局树里移走；如果 AppKit
-    /// 已经允许缩到 1190，就会出现左栏抽屉 / 裁切。只有 columnVisibility 明确不再是
-    /// `.all`，才说明可以进入“中栏 + 右栏”的折叠态下限。
-    private var currentContentMinSize: CGSize {
-        columnVisibility == .all
-            ? MainWindowFrameDefaults.defaultSize
-            : MainWindowFrameDefaults.contentMinSize
-    }
 
     /// Sidebar 顶部三入口的当前页。
     ///
@@ -172,10 +149,7 @@ struct HomeView: View {
         }
         .environment(viewModel)
         .environment(readmeVM)
-        .mainWindowFrameAutosave(
-            contentMinSize: currentContentMinSize,
-            expandedLayoutRequestID: expandedLayoutRequestID
-        )
+        .mainWindowFrameAutosave()
         // 调试用：右上角浮动 W×H 胶囊，仅 DEBUG 包 + 设了 launch arg `-DebugLayoutOverlay YES` 时显示。
         // 详见 `Shared/Utilities/DebugFlags.swift` 的类型文档（含 Xcode Scheme / LLDB / defaults 三种切换方式）。
         .overlay(alignment: .topTrailing) {
@@ -260,12 +234,6 @@ struct HomeView: View {
                 await viewModel.refreshSidebar()
                 await viewModel.reloadItems()
             }
-        }
-        // 用户在窄窗口里重新展开 sidebar 时，NavigationSplitView 只会恢复列可见性，
-        // 不会主动扩大 NSWindow；这里把“展开意图”转交给 AppKit 层做一次扩窗。
-        .onChange(of: columnVisibility) { oldVisibility, newVisibility in
-            guard oldVisibility != .all, newVisibility == .all else { return }
-            expandedLayoutRequestID += 1
         }
         // 选中 repo 变化（含 nil）→ 驱动 README 加载 / 重置
         // 监听 selectedRepoID（Int64?）而非 selectedRepo（Repo? 派生）：
