@@ -1253,6 +1253,9 @@
         }
       }
     },
+    "AI" : {
+
+    },
     "app.about" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3726,6 +3729,40 @@
         }
       }
     },
+    "search.clear" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清空搜索"
+          }
+        }
+      }
+    },
+    "search.close" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭搜索"
+          }
+        }
+      }
+    },
     "search.hint" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3749,13 +3786,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search repos"
+            "value" : "Search repos, tags, notes..."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜索仓库"
+            "value" : "搜索仓库、标签、笔记..."
           }
         }
       }

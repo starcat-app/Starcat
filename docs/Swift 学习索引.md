@@ -138,10 +138,11 @@
 | `.task(id:)` | View 出现时拉数据，id 变化时重跑 | "SwiftUI task modifier id" |
 | `.onChange(of:)` | `HomeView.onChange(selectedRepoID)` 驱动 ReadmeViewModel | "SwiftUI onChange iOS 17" |
 | `.onAppear` | `ListRowRevealModifier` 利用 List 懒创建，在 Manage / Trending row 进入可视区域时触发渐进式入场 | "SwiftUI onAppear List row lazy loading" |
-| `.searchable(text:)` | `HomeView` 顶部搜索框 | "SwiftUI searchable" |
-| `.toolbar` / `ToolbarItem` | 顶栏同步按钮 | "SwiftUI toolbar" |
+| `@FocusState` | `CollapsibleSearchBar` 展开后自动聚焦 TextField，`Esc` 时清空或收起 | "SwiftUI FocusState TextField macOS" |
+| `.onExitCommand` | `CollapsibleSearchBar` 处理 `Esc`：有搜索词时清空，无搜索词时收起 | "SwiftUI onExitCommand" |
+| `.toolbar` / `ToolbarItem` | 顶栏同步按钮、右上角自定义搜索入口 | "SwiftUI toolbar ToolbarItem primaryAction macOS" |
 | `.confirmationDialog` / `.alert` | 取消 Star 确认（W4 待做） | "SwiftUI confirmationDialog macOS" |
-| `.transition` / `.animation(_:value:)` | `RepoListView` / `TrendingView` 中栏内容切换用整块轻过渡；row 入场用显式 `withAnimation` | "SwiftUI transition animation value" |
+| `.transition` / `.animation(_:value:)` | `RepoListView` / `TrendingView` 中栏内容切换用整块轻过渡；`CollapsibleSearchBar` 展开收起在 Reduce Motion 下禁用动画 | "SwiftUI transition animation value accessibilityReduceMotion" |
 | `.onHover` | `RepoRowSurface` 鼠标悬停时增强背景 / 边框，是 macOS 指针体验的基础反馈 | "SwiftUI onHover macOS" |
 | `.allowsHitTesting(false)` | `LayoutDebugOverlay` 调试胶囊不拦截下方鼠标事件，覆盖层标准配置 | "SwiftUI allowsHitTesting" |
 | `.overlay(alignment:)` | `HomeView` 用 `.overlay(alignment: .topTrailing)` 在右上角接入 `LayoutDebugOverlay` —— overlay 不影响下方视图的布局，仅"覆盖"绘制，是调试视图 / Toast / 角标的标配 | "SwiftUI overlay alignment" |
