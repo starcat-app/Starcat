@@ -133,13 +133,20 @@ struct CollapsibleSearchBar: View {
         .padding(.trailing, 8)
         .background {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(isFocused || hasQuery ? 0.96 : 0.86))
+                // 搜索栏位于系统 toolbar 上，不能使用不透明 controlBackgroundColor；
+                // 否则暗色模式会显得像一块突兀的深色输入底。这里用 material 跟随
+                // toolbar 底色，再叠一层很轻的 tint 保证输入区域仍可辨识。
+                .fill(.thinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(searchSurfaceTint)
+                }
                 .overlay {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .stroke(borderColor, lineWidth: 1)
                 }
         }
-        .shadow(color: shadowColor, radius: isFocused ? 5 : 0, x: 0, y: isFocused ? 1 : 0)
+        .shadow(color: shadowColor, radius: isAIModeActive && isFocused ? 5 : 0, x: 0, y: isAIModeActive && isFocused ? 1 : 0)
         .transition(.opacity.combined(with: .move(edge: .trailing)))
     }
 
@@ -158,19 +165,32 @@ struct CollapsibleSearchBar: View {
             return Color.purple.opacity(isFocused ? 0.70 : 0.45)
         }
         if isFocused {
-            return Color.accentColor.opacity(0.42)
+            return Color.accentColor.opacity(0.26)
         }
         if hasQuery {
-            return Color.accentColor.opacity(0.24)
+            return Color.accentColor.opacity(0.16)
         }
-        return Color.primary.opacity(isHovered ? 0.16 : 0.10)
+        return Color.primary.opacity(isHovered ? 0.12 : 0.08)
+    }
+
+    private var searchSurfaceTint: Color {
+        if isAIModeActive {
+            return Color.purple.opacity(isFocused ? 0.09 : 0.06)
+        }
+        if isFocused {
+            return Color.accentColor.opacity(0.045)
+        }
+        if hasQuery {
+            return Color.accentColor.opacity(0.032)
+        }
+        return Color.primary.opacity(isHovered ? 0.040 : 0.028)
     }
 
     private var shadowColor: Color {
         if isAIModeActive {
             return Color.purple.opacity(0.16)
         }
-        return Color.accentColor.opacity(0.10)
+        return .clear
     }
 
     private var trailingButtonHelp: LocalizedStringKey {
