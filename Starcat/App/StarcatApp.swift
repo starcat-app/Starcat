@@ -9,9 +9,11 @@
 //  2. 跑 KeychainManager 自检
 //  3. 构造 AppDependencies（API / OAuth / AuthSession / SyncManager）
 //  4. 尝试从 Keychain 恢复登录态
+//  5. 应用用户主题偏好（NSApp.appearance）
 //
 
 import SwiftUI
+import AppKit  // W4-5 D1 follow-up：NSApp.appearance 控制主题（preferredColorScheme 在 macOS 有 nil-restore bug）
 
 @main
 struct StarcatApp: App {
@@ -23,6 +25,17 @@ struct StarcatApp: App {
         Self.bootstrap()
         // 注意：AppDependencies 是 @MainActor，App init 已在 main thread
         _dependencies = State(initialValue: AppDependencies())
+
+        // ⚠️ 不要在这里调 `Self.applyAppearance(...)` / `NSApp.appearance = ...`！
+        // `NSApp` 是 implicitly unwrapped optional，`@main App.init()` 阶段
+        // `NSApplication.shared` 还没被初始化 (NSApp == nil)，访问 `NSApp.appearance`
+        // 会立即崩 "Unexpectedly found nil while implicitly unwrapping an Optional"。
+        // 2026-06-03 23:43 dong4j 截图验证。
+        //
+        // 主题应用走 ContentView 的 `.onAppear` + `.onChange` 路径 —— 那时候
+        // NSApp 已经初始化完成，访问 .appearance 安全。代价：冷启动 → 第一帧
+        // 之间几十 ms 窗口可能闪一下系统默认外观，再切到用户选择 —— 这是
+        // 可接受的权衡，不要为了消除这点闪烁再回到 init() 里调 NSApp。
     }
 
     var body: some Scene {
@@ -32,18 +45,39 @@ struct StarcatApp: App {
                 .environment(dependencies.authSession)
                 .environment(dependencies.syncManager)
                 .environment(dependencies.settings)
-                // W4-5 D1：用户主题偏好应用到主窗口。
-                // dependencies / settings 都是 @Observable，appearanceMode 变化
-                // 会自动触发本 scene body 重新计算 → preferredColorScheme 即时切换。
-                .preferredColorScheme(dependencies.settings.appearanceMode.colorScheme)
-                // W4-5 D1 follow-up：隐式动画兜底。SettingsView 的 Picker 已经在 setter
-                // 里包了 `withAnimation(.easeInOut(0.3))`，但如果以后从其他入口（菜单 /
-                // 快捷键 / URL scheme）切主题，那条路径不会带 transaction，这里挂一道
-                // `.animation(_:value:)` 让 colorScheme 相关的视图重渲染都自动 0.3s 淡变。
+                // W4-5 D1 follow-up（2026-06-03 23:26）：用户主题应用到全 App。
                 //
-                // 注意：macOS NSWindow titlebar / chrome 由 AppKit 即时切换，SwiftUI
-                // 动画系统覆盖不到，所以 titlebar 仍是瞬切；视图内容区（动态色 / 材质 /
-                // 文字色）会跟随过渡。这是系统级约束，不可避免。
+                // 为什么不用 SwiftUI `.preferredColorScheme(_:)` 而用 AppKit 的
+                // `NSApp.appearance` ——
+                // dong4j 验收（截图：light → system 时主窗口左半浅色 / 右半深色）
+                // 暴露 SwiftUI on macOS 的已知 bug：`.preferredColorScheme(nil)`
+                // 不能可靠地"撤销"之前强制过的非 nil 值，导致内部 view tree 的
+                // colorScheme state 部分卡住、部分更新（截图里 sidebar / 列表
+                // 浅色但右侧详情区深色就是 SwiftUI 没完成传播的中间态）。
+                //
+                // AppKit 标准做法：`NSApp.appearance = nil` 干净地撤销强制外观，
+                // 所有 NSWindow（主窗口 + Settings + About）的 effectiveAppearance
+                // 自动跟随系统切换；SwiftUI 通过 environment(\.colorScheme) 接收
+                // NSWindow.effectiveAppearance 也会同步更新视图层。
+                //
+                // 实现：① `.onAppear` 启动时根据当前 settings 应用一次（处理冷启动
+                // 恢复 + Window 重建场景）② `.onChange` 监听 settings.appearanceMode
+                // 变化（兜底所有切主题入口，无论从 Picker / 菜单 / 快捷键还是未来的
+                // URL scheme，只要 settings 改了就触发应用）。
+                .onAppear {
+                    applyAppearance(dependencies.settings.appearanceMode)
+                }
+                .onChange(of: dependencies.settings.appearanceMode) { _, newMode in
+                    applyAppearance(newMode)
+                }
+                // W4-5 D1 follow-up：隐式动画兜底。SettingsView 的 Picker 已经在
+                // setter 里包了 `withAnimation(.easeInOut(0.3))`，这里再挂一道
+                // `.animation(_:value:)` 让 colorScheme 相关的视图重渲染都自动
+                // 0.3s 淡变，覆盖未来其他入口（菜单 / 快捷键 / URL scheme）。
+                //
+                // 关键约束：macOS NSWindow titlebar / chrome 由 AppKit 即时切换
+                // effectiveAppearance，SwiftUI 动画系统覆盖不到，所以 titlebar
+                // 仍是瞬切；视图内容区（动态色 / 材质 / 文字色）会跟随过渡。
                 .animation(.easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
                 .task {
                     await dependencies.authSession.restoreSessionIfAvailable()
@@ -64,13 +98,39 @@ struct StarcatApp: App {
             SettingsView()
                 .environment(dependencies)        // W4-4 D4：StorageSettingsTab 需要 readmeRepository
                 .environment(dependencies.settings)
-                // W4-5 D1：Settings 窗口也要同步主题，否则用户切了主题后
-                // Settings 窗口跟主窗口主题不一致，会非常诡异。
-                .preferredColorScheme(dependencies.settings.appearanceMode.colorScheme)
-                // W4-5 D1 follow-up：Settings 窗口本身的内容区也带过渡，
-                // 跟主窗口节奏一致（0.3s easeInOut），避免出现"主窗口在淡变、
-                // Settings 窗口瞬切"的视觉撕裂。
+                // W4-5 D1 follow-up：Settings 窗口不需要再调 NSApp.appearance —
+                // 主窗口的 onAppear / onChange 已经设置了**全局** NSApp.appearance，
+                // Settings 窗口是 NSApp 的子窗口，effectiveAppearance 自动跟随。
+                // 但还是挂一道 `.animation(_:value:)` 让 Settings 内部视图
+                // 颜色变化跟主窗口节奏一致（0.3s easeInOut）。
                 .animation(.easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
+        }
+    }
+
+    // MARK: - 主题应用
+
+    /// 把 `AppearanceMode` 写到 `NSApp.appearance`。
+    ///
+    /// 设计：
+    /// - `.system` → `nil`：AppKit 标准的"清除强制外观"，所有 NSWindow 回退跟随系统
+    /// - `.light` → `NSAppearance(named: .aqua)`：强制浅色
+    /// - `.dark` → `NSAppearance(named: .darkAqua)`：强制深色
+    ///
+    /// 为什么放在 @MainActor func 而不是 AppearanceMode 的 computed property：
+    /// - `AppearanceMode` 在 `AppSettings.swift` 中只 import SwiftUI，
+    ///   保持平台无关；NSAppearance 是 AppKit 类型，放在使用点（StarcatApp）
+    ///   更符合分层
+    /// - 集中在一个 helper，未来如果切到不同主题机制（如自定义 NSAppearance bundle）
+    ///   只改这一处
+    @MainActor
+    private func applyAppearance(_ mode: AppearanceMode) {
+        switch mode {
+        case .system:
+            NSApp.appearance = nil
+        case .light:
+            NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            NSApp.appearance = NSAppearance(named: .darkAqua)
         }
     }
 
