@@ -30,6 +30,7 @@ struct AIClientConfiguration: Equatable, Sendable {
 protocol AIClientProtocol: Sendable {
     func chat(systemPrompt: String, userPrompt: String, model: String?) async throws -> String
     func embedding(input: String, model: String?) async throws -> [Float]
+    func embeddings(inputs: [String], model: String?) async throws -> [[Float]]
     func testConnection() async throws
 }
 
@@ -50,4 +51,3 @@ enum AIClientError: Error, LocalizedError, Equatable {
         }
     }
 }
-

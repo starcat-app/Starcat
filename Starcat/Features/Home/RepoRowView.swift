@@ -33,17 +33,19 @@ struct RepoRowView: View {
     let repo: Repo
     let density: RepoListDensity
     let isSelected: Bool
+    let semanticHit: SemanticSearchHit?
 
-    init(repo: Repo, density: RepoListDensity, isSelected: Bool = false) {
+    init(repo: Repo, density: RepoListDensity, isSelected: Bool = false, semanticHit: SemanticSearchHit? = nil) {
         self.repo = repo
         self.density = density
         self.isSelected = isSelected
+        self.semanticHit = semanticHit
     }
 
     var body: some View {
         switch density {
-        case .compact: RepoRowCompact(repo: repo, isSelected: isSelected)
-        case .card:    RepoRowCard(repo: repo, isSelected: isSelected)
+        case .compact: RepoRowCompact(repo: repo, isSelected: isSelected, semanticHit: semanticHit)
+        case .card:    RepoRowCard(repo: repo, isSelected: isSelected, semanticHit: semanticHit)
         }
     }
 }
@@ -54,6 +56,7 @@ struct RepoRowView: View {
 struct RepoRowCompact: View {
     let repo: Repo
     let isSelected: Bool
+    let semanticHit: SemanticSearchHit?
 
     var body: some View {
         RepoRowSurface(repo: repo, isSelected: isSelected, density: .compact) {
@@ -70,6 +73,9 @@ struct RepoRowCompact: View {
                 if let language = repo.language, !language.isEmpty {
                     LanguageBadge(language: language, style: .compact)
                 }
+                if let semanticHit {
+                    SemanticScoreBadge(hit: semanticHit)
+                }
 
                 StarsBadge(count: repo.starsCount, style: .compact)
             }
@@ -83,6 +89,7 @@ struct RepoRowCompact: View {
 struct RepoRowCard: View {
     let repo: Repo
     let isSelected: Bool
+    let semanticHit: SemanticSearchHit?
 
     var body: some View {
         RepoRowSurface(repo: repo, isSelected: isSelected, density: .card) {
@@ -121,10 +128,29 @@ struct RepoRowCard: View {
                             RelativeDateBadge(date: date)
                         }
                     }
+
+                    if let semanticHit {
+                        HStack(spacing: 6) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(semanticHit.reason)
+                                .font(.system(size: 11))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 0)
+                            Text(Self.scoreText(semanticHit.score))
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    private static func scoreText(_ score: Double) -> String {
+        "\(Int((max(0, min(score, 1)) * 100).rounded()))%"
     }
 }
 
@@ -222,3 +248,28 @@ private struct RepoRowSurface<Content: View>: View {
 }
 
 // 共享 chip / 工具已搬到 Shared/Components/RepoRowComponents.swift。
+
+private struct SemanticScoreBadge: View {
+    let hit: SemanticSearchHit
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 9, weight: .bold))
+            Text(scoreText)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        }
+        .foregroundStyle(.purple)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background {
+            Capsule(style: .continuous)
+                .fill(Color.purple.opacity(0.12))
+        }
+        .help(hit.reason)
+    }
+
+    private var scoreText: String {
+        "\(Int((max(0, min(hit.score, 1)) * 100).rounded()))%"
+    }
+}

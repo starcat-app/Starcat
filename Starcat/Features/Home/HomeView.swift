@@ -105,6 +105,7 @@ struct HomeView: View {
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
+        semanticSearchService: SemanticSearchService? = nil,
         trendingRepository: any TrendingRepositoryProtocol,
         githubAPIClient: any GitHubAPIClientProtocol
     ) {
@@ -112,7 +113,8 @@ struct HomeView: View {
             repository: repository,
             tagRepository: tagRepository,
             repoTagRepository: repoTagRepository,
-            repoNoteRepository: repoNoteRepository
+            repoNoteRepository: repoNoteRepository,
+            semanticSearchService: semanticSearchService
         ))
         _readmeVM = State(initialValue: ReadmeViewModel(api: readmeAPI))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
@@ -187,6 +189,9 @@ struct HomeView: View {
             if viewModel.statusFilter != settings.statusFilter {
                 viewModel.statusFilter = settings.statusFilter
             }
+            if viewModel.smartSearchMode != settings.smartSearchMode {
+                viewModel.smartSearchMode = settings.smartSearchMode
+            }
             
             // 恢复上次保存的 Manage 分类（跨启动）。无记录时 persistedRawValue 解码回落 allStars。
             savedManageSelection = SidebarItem(persistedRawValue: settings.lastManageSelectionRaw)
@@ -228,6 +233,13 @@ struct HomeView: View {
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
             await viewModel.reloadItems()
+        }
+        // 搜索模式变化时复用当前搜索框内容重查；空搜索只刷新 UI 状态，不触发 AI 调用。
+        .task(id: viewModel.smartSearchMode) {
+            settings.smartSearchMode = viewModel.smartSearchMode
+            if viewModel.isSearching {
+                await viewModel.reloadItems()
+            }
         }
         // 同步完成 → 刷新 Sidebar + 当前列表
         .task(id: syncManager.state) {
@@ -289,6 +301,11 @@ struct HomeView: View {
             guard selectedSidebarPage == .manage, !newSelection.isTrending else { return }
             savedManageSelection = newSelection
             settings.lastManageSelectionRaw = newSelection.persistedRawValue
+        }
+        .onChange(of: settings.smartSearchMode) { _, newMode in
+            if viewModel.smartSearchMode != newMode {
+                viewModel.smartSearchMode = newMode
+            }
         }
         // Manage ↔ Trending 切换时，记住各自的上次选择，切换回来时恢复
         .onChange(of: selectedSidebarPage) { oldPage, newPage in

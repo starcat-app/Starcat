@@ -183,6 +183,23 @@ final class HomeViewModel {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// 搜索模式由 AppSettings 持久化，HomeView 启动时同步进来。
+    ///
+    /// 放在 ViewModel 内部的原因：reloadItems 需要根据模式选择 FTS5 或 semantic 分支；
+    /// Settings 仍是持久化事实源，ViewModel 只保存当前渲染会话的查询模式。
+    var smartSearchMode: SmartSearchMode = .keyword
+
+    /// 是否正在构建 / 刷新语义索引。
+    private(set) var isSemanticIndexing: Bool = false
+
+    /// 最近一次语义搜索结果的 repo id → 命中信息。
+    /// UI 行只通过 `semanticHit(for:)` 读取，不直接操作字典，避免把语义搜索状态扩散到 View。
+    private var semanticHitMap: [Int64: SemanticSearchHit] = [:]
+
+    var isSemanticSearching: Bool {
+        isSearching && smartSearchMode == .semantic
+    }
+
     // MARK: - Sidebar 数据
 
     /// 全部 stars 数（Sidebar "全部 Stars" 行计数）。D-04：`private(set)` 收敛。
@@ -295,6 +312,9 @@ final class HomeViewModel {
     /// W4-4 D3：按状态过滤需要 repoNoteRepository.fetchStatusMap。
     private let repoNoteRepository: any RepoNoteRepositoryProtocol
 
+    /// W6 AI：语义搜索服务。测试可传 nil，生产由 AppDependencies 注入。
+    private let semanticSearchService: SemanticSearchService?
+
     /// D-05：当前 in-flight 的 reloadItems 任务，新调用进来先 cancel 旧的，
     /// 防止"快速切 sidebar 时旧查询结果覆盖新结果"的 race。
     /// 参考 `ReadmeViewModel.currentTask` 的相同模式。
@@ -307,12 +327,14 @@ final class HomeViewModel {
         repository: any RepoRepositoryProtocol,
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
-        repoNoteRepository: any RepoNoteRepositoryProtocol
+        repoNoteRepository: any RepoNoteRepositoryProtocol,
+        semanticSearchService: SemanticSearchService? = nil
     ) {
         self.repository = repository
         self.tagRepository = tagRepository
         self.repoTagRepository = repoTagRepository
         self.repoNoteRepository = repoNoteRepository
+        self.semanticSearchService = semanticSearchService
     }
 
     // MARK: - 公开 action
@@ -368,7 +390,8 @@ final class HomeViewModel {
         // HOM-46：stale-while-revalidate 优化。
         // 先检查缓存：若有且未过期，立即展示缓存，后台刷新。
         // 若无缓存，先显示 isLoading=true 直到首次数据到达。
-        let cached = listCache[selection]
+        let shouldUseListCache = !isSearching
+        let cached = shouldUseListCache ? listCache[selection] : nil
         let hasStaleCache = cached != nil
 
         if hasStaleCache {
@@ -395,7 +418,7 @@ final class HomeViewModel {
         let task = Task { [weak self] in
             guard let self else { return }
 
-            let outcome: Result<[Repo], Error>
+            let outcome: Result<(repos: [Repo], semanticHitMap: [Int64: SemanticSearchHit]), Error>
             let fetchedStatusMap: [Int64: RepoStatus]
 
             do {
@@ -412,26 +435,43 @@ final class HomeViewModel {
                 //   - async let 是结构化并发，作用域结束自动等待 / 传播取消
                 //   - 与现有 race 防护（外层 Task.isCancelled 检查）天然兼容
                 //   - 不需要额外 cancel 管理
-                let fetchedTask: () async throws -> [Repo] = {
+                let fetchedTask: () async throws -> (repos: [Repo], semanticHitMap: [Int64: SemanticSearchHit]) = {
                     if self.isSearching {
-                        return try await self.repository.searchFTS(query: self.searchQuery)
+                        if self.smartSearchMode == .semantic {
+                            guard let semanticSearchService = self.semanticSearchService else {
+                                throw SemanticSearchError.missingAPIKey
+                            }
+                            let candidates = try await self.repository.fetchAllStarred()
+                            let hits = try await semanticSearchService.search(
+                                query: self.searchQuery,
+                                candidates: candidates
+                            )
+                            return (
+                                repos: hits.map(\.repo),
+                                semanticHitMap: Dictionary(uniqueKeysWithValues: hits.map { ($0.repo.id, $0) })
+                            )
+                        } else {
+                            return (repos: try await self.repository.searchFTS(query: self.searchQuery), semanticHitMap: [:])
+                        }
                     } else {
+                        let repos: [Repo]
                         switch self.selection {
                         case .trending:
-                            return [] // Placeholder for W7 Trending
+                            repos = [] // Placeholder for W7 Trending
                         case .allStars:
-                            return try await self.repository.fetchAllStarred()
+                            repos = try await self.repository.fetchAllStarred()
                         case .untagged:
-                            return try await self.repository.fetchUntagged()
+                            repos = try await self.repository.fetchUntagged()
                         case .language(let lang):
-                            return try await self.repository.fetchByLanguage(lang)
+                            repos = try await self.repository.fetchByLanguage(lang)
                         case .tag(let tagId):
-                            return try await self.repoTagRepository.fetchRepos(forTag: tagId)
+                            repos = try await self.repoTagRepository.fetchRepos(forTag: tagId)
                         }
+                        return (repos: repos, semanticHitMap: [:])
                     }
                 }
 
-                async let fetchedAsync: [Repo] = fetchedTask()
+                async let fetchedAsync = fetchedTask()
                 async let statusMapAsync: [Int64: RepoStatus] = self.repoNoteRepository.fetchAllStatusMap()
 
                 let fetched = try await fetchedAsync
@@ -454,14 +494,18 @@ final class HomeViewModel {
             self.isRefreshing = false
 
             switch outcome {
-            case .success(let fetched):
+            case .success(let result):
+                let fetched = result.repos
+                self.semanticHitMap = result.semanticHitMap
                 // 更新缓存（无论 UI 是否需要重渲染，都用最新数据替换 cache entry，
                 // 让下次切回这个分类时拿到 freshest 数据）
-                self.listCache[self.selection] = CacheEntry(
-                    rawItems: fetched,
-                    statusMap: fetchedStatusMap,
-                    cachedAt: Date()
-                )
+                if shouldUseListCache {
+                    self.listCache[self.selection] = CacheEntry(
+                        rawItems: fetched,
+                        statusMap: fetchedStatusMap,
+                        cachedAt: Date()
+                    )
+                }
 
                 // ⚡ HOM-46 性能补丁（2026-06-02）：
                 // SWR 后台 fetch 完成后，如果拉到的数据与已显示数据**完全一致**（同一批 ID + 同一份
@@ -504,6 +548,7 @@ final class HomeViewModel {
                     #endif
                 }
             case .failure(let error):
+                self.semanticHitMap = [:]
                 self.loadError = error.localizedDescription
                 // 缓存加载已展示过的数据，失败不清理
                 if self.rawItems.isEmpty {
@@ -518,6 +563,32 @@ final class HomeViewModel {
         AppLog.ui.info("[switch-cat] T4 bg task started, await begins +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
         #endif
         await task.value
+    }
+
+    func semanticHit(for repoID: Int64) -> SemanticSearchHit? {
+        semanticHitMap[repoID]
+    }
+
+    /// 手动刷新全部 starred repo 的语义索引。
+    ///
+    /// 入口放在列表 toolbar；适合用户刚切换 embedding model 或大量同步后主动更新。
+    func refreshSemanticIndex() async {
+        guard let semanticSearchService else {
+            loadError = SemanticSearchError.missingAPIKey.localizedDescription
+            return
+        }
+        isSemanticIndexing = true
+        defer { isSemanticIndexing = false }
+        do {
+            let repos = try await repository.fetchAllStarred()
+            try await semanticSearchService.refreshIndex(for: repos)
+            if isSemanticSearching {
+                await reloadItems()
+            }
+        } catch {
+            loadError = error.localizedDescription
+            AppLog.database.error("refreshSemanticIndex failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// 从缓存条目加载数据到 UI（立即展示，无加载指示）。
@@ -627,7 +698,10 @@ final class HomeViewModel {
                 return actual != status
             }
         }
-        view.sort(by: sortOption.comparator)
+        // 语义搜索结果的排序来自 cosine similarity；再套用户的 stars/name 排序会破坏 AI 排名。
+        if !isSemanticSearching {
+            view.sort(by: sortOption.comparator)
+        }
 
         // no-op 短路：id 序列完全一致就不动 items / itemsRevision
         let viewIdentical = view.count == items.count &&

@@ -58,13 +58,23 @@ struct OpenAIClient: AIClientProtocol {
     }
 
     func embedding(input: String, model: String?) async throws -> [Float] {
+        let vectors = try await embeddings(inputs: [input], model: model)
+        guard let first = vectors.first else { throw AIClientError.emptyResponse }
+        return first
+    }
+
+    func embeddings(inputs: [String], model: String?) async throws -> [[Float]] {
+        guard !inputs.isEmpty else { return [] }
         let resolvedModel = model?.nilIfBlank ?? configuration.embeddingModel
-        let query = EmbeddingsQuery(input: .string(input), model: resolvedModel)
+        let query = EmbeddingsQuery(input: .stringList(inputs), model: resolvedModel)
         let result = try await client.embeddings(query: query)
-        guard let embedding = result.data.first?.embedding, !embedding.isEmpty else {
+        let vectors = result.data
+            .sorted { $0.index < $1.index }
+            .map { $0.embedding.map(Float.init) }
+        guard vectors.count == inputs.count, vectors.allSatisfy({ !$0.isEmpty }) else {
             throw AIClientError.emptyResponse
         }
-        return embedding.map(Float.init)
+        return vectors
     }
 
     /// 连接测试使用 embeddings 而不是 chat：

@@ -12,8 +12,8 @@
 //  - tokenize = 'unicode61 remove_diacritics 2'，中文友好，不用 porter
 //
 //  后续版本：
-//  - v2：ai_summaries / repo_embeddings（AI 功能上线时）
-//  - v3：release_subscriptions / releases（Release 订阅功能上线时）
+//  - v5：repo_embeddings / ai_summaries（AI 功能上线时）
+//  - v6：release_subscriptions / releases（Release 订阅功能上线时）
 //
 
 import Foundation
@@ -32,6 +32,60 @@ enum DatabaseMigrations {
         registerV2(into: &migrator)
         registerV3(into: &migrator)
         registerV4(into: &migrator)
+        registerV5(into: &migrator)
+    }
+
+    // MARK: - v5（AI 语义搜索 + 单仓智能化缓存）
+
+    /// v5：新增 AI 语义搜索与单仓智能化需要的两张本地缓存表。
+    ///
+    /// **repo_embeddings**
+    /// - 采用 SQLite BLOB 保存 Float32 向量，不依赖 sqlite-vss / sqlite-vec 动态扩展。
+    ///   原因：macOS 沙盒分发动态 SQLite extension 会引入签名、加载路径和 App Review 风险；
+    ///   Starcat MVP 规模在几千条 starred repo 内，Swift 内存 cosine 排名足够稳定。
+    /// - `content_hash` 记录参与向量化的 repo 文本指纹；repo 描述 / topics 变更后自动重建。
+    /// - `(model, content_hash)` 与 `dimensions` 让后续换 embedding model 时不会误用旧向量。
+    ///
+    /// **ai_summaries**
+    /// - 单仓智能化结果只缓存 AI 输出 JSON，不自动写标签；标签应用仍由用户显式确认。
+    /// - `source_hash` 与 `model` 用于判断 README / repo 元数据变更后是否需要重新生成。
+    private static func registerV5(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v5-ai-cache") { db in
+            try createRepoEmbeddings(db)
+            try createAISummaries(db)
+        }
+    }
+
+    private static func createRepoEmbeddings(_ db: Database) throws {
+        try db.create(table: "repo_embeddings") { t in
+            t.column("repo_id", .integer).notNull()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("model", .text).notNull()
+            t.column("content_hash", .text).notNull()
+            t.column("dimensions", .integer).notNull()
+            t.column("embedding", .blob).notNull()
+            t.column("indexed_text", .text).notNull()
+            t.column("updated_at", .text).notNull()
+
+            t.primaryKey(["repo_id", "model"])
+        }
+
+        try db.create(index: "idx_repo_embeddings_model_hash", on: "repo_embeddings", columns: ["model", "content_hash"])
+    }
+
+    private static func createAISummaries(_ db: Database) throws {
+        try db.create(table: "ai_summaries") { t in
+            t.column("repo_id", .integer).notNull()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("model", .text).notNull()
+            t.column("source_hash", .text).notNull()
+            t.column("summary_json", .text).notNull()
+            t.column("generated_at", .text).notNull()
+
+            t.primaryKey(["repo_id", "model"])
+        }
+
+        try db.create(index: "idx_ai_summaries_repo", on: "ai_summaries", columns: ["repo_id"])
     }
 
     // MARK: - v4（Trending 列表 + README 持久化）
