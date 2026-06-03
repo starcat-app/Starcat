@@ -41,6 +41,9 @@ packages:
   Kingfisher:
     url: https://github.com/onevcat/Kingfisher
     from: "7.0.0"
+  OpenAI:
+    url: https://github.com/MacPaw/OpenAI.git
+    branch: main
 
 targets:
   Starcat:
@@ -66,6 +69,7 @@ targets:
       - package: GRDB
       - package: KeychainAccess
       - package: Kingfisher
+      - package: OpenAI
 
   StarcatTests:
     type: bundle.unit-test

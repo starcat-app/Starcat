@@ -73,6 +73,47 @@ struct AppSettingsTests {
         let s = AppSettings(defaults: defaults)
         #expect(s.repoSortOption == .starredAtDesc)
     }
+
+    // MARK: - AI BYOK 设置
+
+    @Test("AI: 默认使用 OpenAI-compatible + keyword 搜索")
+    func aiDefaults() {
+        let s = AppSettings(defaults: makeIsolatedDefaults())
+        #expect(s.aiProvider == .openAICompatible)
+        #expect(s.aiBaseURL == "https://api.openai.com/v1")
+        #expect(s.aiChatModel == "gpt-4o-mini")
+        #expect(s.aiEmbeddingModel == "text-embedding-3-small")
+        #expect(s.smartSearchMode == .keyword)
+    }
+
+    @Test("AI: 设置后重新读取应保留")
+    func aiSettingsPersist() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+        s1.aiProvider = .ollama
+        s1.aiBaseURL = "http://localhost:11434/v1"
+        s1.aiChatModel = "llama3.2"
+        s1.aiEmbeddingModel = "nomic-embed-text"
+        s1.smartSearchMode = .semantic
+
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.aiProvider == .ollama)
+        #expect(s2.aiBaseURL == "http://localhost:11434/v1")
+        #expect(s2.aiChatModel == "llama3.2")
+        #expect(s2.aiEmbeddingModel == "nomic-embed-text")
+        #expect(s2.smartSearchMode == .semantic)
+    }
+
+    @Test("AI: 非法 provider / search mode 回退到默认")
+    func aiInvalidRawValuesFallback() {
+        let defaults = makeIsolatedDefaults()
+        defaults.set("bad-provider", forKey: "settings.ai.provider")
+        defaults.set("bad-mode", forKey: "settings.search.mode")
+
+        let s = AppSettings(defaults: defaults)
+        #expect(s.aiProvider == .openAICompatible)
+        #expect(s.smartSearchMode == .keyword)
+    }
 }
 
 // MARK: - W4-4 D1：RepoSortOption comparator 单元测试
