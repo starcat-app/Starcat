@@ -21,6 +21,57 @@ import Foundation
 import SwiftUI
 import Observation
 
+// MARK: - 外观主题(W4-5 D1,dong4j 2026-06-03 需求)
+
+/// 应用外观主题。
+///
+/// 设计选型:
+/// - 不强制走系统 — Starcat 整体视觉(暖橙 code 卡 + 卡片式 sheet)在深色下层次更分明,
+///   所以默认 `.dark`,但保留 `.system` / `.light` 让用户自由切换
+/// - 对应到 SwiftUI 的 `ColorScheme?`:`.system` → nil(跟随系统),其余 → 强制
+/// - icon 用 SF Symbol 跟 macOS 系统"外观"设置的图标语言保持一致,
+///   降低用户认知成本
+enum AppearanceMode: String, CaseIterable, Identifiable {
+    /// 跟随系统(macOS 系统设置切换"外观"时 Starcat 自动同步)
+    case system
+    /// 强制浅色
+    case light
+    /// 强制深色 — Starcat 默认值
+    case dark
+
+    var id: String { rawValue }
+
+    /// 本地化显示名(供 Picker / Label 使用)。
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .system: return "settings.appearance.system"
+        case .light:  return "settings.appearance.light"
+        case .dark:   return "settings.appearance.dark"
+        }
+    }
+
+    /// SF Symbol 图标。
+    var systemImage: String {
+        switch self {
+        case .system: return "circle.lefthalf.filled"
+        case .light:  return "sun.max"
+        case .dark:   return "moon.fill"
+        }
+    }
+
+    /// 映射到 SwiftUI 的 `ColorScheme?`。
+    ///
+    /// - `.system` → `nil`:`.preferredColorScheme(nil)` 即"不强制",回退到系统设置
+    /// - `.light` → `.light` / `.dark` → `.dark`:强制覆盖系统外观
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light:  return .light
+        case .dark:   return .dark
+        }
+    }
+}
+
 // MARK: - 列表密度
 
 /// 仓库列表的视觉密度。
@@ -142,6 +193,14 @@ final class AppSettings {
 
     // MARK: - 偏好项
 
+    /// 应用外观主题(W4-5 D1,dong4j 2026-06-03 需求)。
+    /// 默认 `.dark` — Starcat 主视觉为深色,见 `AppearanceMode` 设计注释。
+    /// 写入即落盘;UI 通过 @Observable 自动响应,
+    /// `StarcatApp` 的 WindowGroup / Settings scene 各挂一个 `.preferredColorScheme(_:)` 应用。
+    var appearanceMode: AppearanceMode {
+        didSet { persist(key: Keys.appearanceMode, value: appearanceMode.rawValue) }
+    }
+
     /// 仓库列表行密度。
     /// 写入即落盘；UI 通过 @Observable 自动响应。
     var listDensity: RepoListDensity {
@@ -191,6 +250,11 @@ final class AppSettings {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
 
+        // W4-5 D1:外观主题。dong4j 2026-06-03 决定默认深色(`.dark`),
+        // 历史用户(首次升级到本版)若无落盘值,也会落到 `.dark`,跟新用户一致。
+        let appearanceRaw = defaults.string(forKey: Keys.appearanceMode)
+        self.appearanceMode = appearanceRaw.flatMap(AppearanceMode.init(rawValue:)) ?? .dark
+
         // 读取或回落到默认值
         let densityRaw = defaults.string(forKey: Keys.repoListDensity)
         self.listDensity = densityRaw.flatMap(RepoListDensity.init(rawValue:)) ?? .card
@@ -222,6 +286,7 @@ final class AppSettings {
 
     /// 全部偏好键集中地，避免字符串散落。
     private enum Keys {
+        static let appearanceMode = "settings.appearanceMode"  // W4-5 D1
         static let repoListDensity = "settings.repoListDensity"
         static let repoSortOption = "settings.repoSortOption"
         static let hideArchived = "settings.hideArchived"
