@@ -177,6 +177,92 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - AI 设置
+
+/// AI 服务商类型。
+///
+/// 设计选择：
+/// - 当前第一阶段只落地 OpenAI-compatible 路线，OpenAI / DeepSeek / OpenRouter /
+///   Ollama / LM Studio 都可以通过 Base URL + API Key 表达。
+/// - 保留具体 provider 枚举不是为了锁死 SDK，而是为了给设置页提供合理默认值。
+enum AIServiceProvider: String, CaseIterable, Identifiable {
+    case openAICompatible
+    case deepSeek
+    case openRouter
+    case ollama
+    case lmStudio
+
+    var id: String { rawValue }
+
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .openAICompatible: return "OpenAI Compatible"
+        case .deepSeek:         return "DeepSeek"
+        case .openRouter:       return "OpenRouter"
+        case .ollama:           return "Ollama"
+        case .lmStudio:         return "LM Studio"
+        }
+    }
+
+    var defaultBaseURL: String {
+        switch self {
+        case .openAICompatible: return "https://api.openai.com/v1"
+        case .deepSeek:         return "https://api.deepseek.com/v1"
+        case .openRouter:       return "https://openrouter.ai/api/v1"
+        case .ollama:           return "http://localhost:11434/v1"
+        case .lmStudio:         return "http://localhost:1234/v1"
+        }
+    }
+
+    var defaultChatModel: String {
+        switch self {
+        case .openAICompatible: return "gpt-4o-mini"
+        case .deepSeek:         return "deepseek-chat"
+        case .openRouter:       return "openai/gpt-4o-mini"
+        case .ollama:           return "llama3.2"
+        case .lmStudio:         return "local-model"
+        }
+    }
+
+    var defaultEmbeddingModel: String {
+        switch self {
+        case .openAICompatible, .openRouter:
+            return "text-embedding-3-small"
+        case .deepSeek:
+            return "text-embedding-3-small"
+        case .ollama:
+            return "nomic-embed-text"
+        case .lmStudio:
+            return "text-embedding-nomic-embed-text-v1.5"
+        }
+    }
+}
+
+/// 全局搜索模式。
+///
+/// 放在 Settings 层是因为该选择既影响 toolbar 的视觉状态，也影响 HomeViewModel
+/// 的查询分支；后续 Search 工作区复用同一枚举即可。
+enum SmartSearchMode: String, CaseIterable, Identifiable {
+    case keyword
+    case semantic
+
+    var id: String { rawValue }
+
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .keyword:  return "search.mode.keyword"
+        case .semantic: return "search.mode.semantic"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .keyword:  return "magnifyingglass"
+        case .semantic: return "sparkles"
+        }
+    }
+}
+
 // MARK: - AppSettings
 
 /// 应用级偏好容器。
@@ -242,6 +328,31 @@ final class AppSettings {
         didSet { persist(key: Keys.lastManageSelection, value: lastManageSelectionRaw) }
     }
 
+    /// AI 服务商配置。API Key 不进 UserDefaults，单独走 KeychainManager 的加密文件。
+    var aiProvider: AIServiceProvider {
+        didSet { persist(key: Keys.aiProvider, value: aiProvider.rawValue) }
+    }
+
+    /// OpenAI-compatible Base URL，要求包含 `/v1`，如 `https://api.openai.com/v1`。
+    var aiBaseURL: String {
+        didSet { persist(key: Keys.aiBaseURL, value: aiBaseURL) }
+    }
+
+    /// 摘要 / 标签推荐使用的聊天模型。
+    var aiChatModel: String {
+        didSet { persist(key: Keys.aiChatModel, value: aiChatModel) }
+    }
+
+    /// 语义搜索向量化使用的 embedding 模型。
+    var aiEmbeddingModel: String {
+        didSet { persist(key: Keys.aiEmbeddingModel, value: aiEmbeddingModel) }
+    }
+
+    /// 搜索栏当前模式。默认 keyword，避免用户未配置 AI 时误触发付费 API。
+    var smartSearchMode: SmartSearchMode {
+        didSet { persist(key: Keys.smartSearchMode, value: smartSearchMode.rawValue) }
+    }
+
     // MARK: - 初始化
 
     private let defaults: UserDefaults
@@ -272,6 +383,15 @@ final class AppSettings {
 
         // 上次 Manage 分类：缺失则空串，由 SidebarItem 解码时回落 allStars
         self.lastManageSelectionRaw = defaults.string(forKey: Keys.lastManageSelection) ?? ""
+
+        let aiProviderRaw = defaults.string(forKey: Keys.aiProvider)
+        let resolvedAIProvider = aiProviderRaw.flatMap(AIServiceProvider.init(rawValue:)) ?? .openAICompatible
+        self.aiProvider = resolvedAIProvider
+        self.aiBaseURL = defaults.string(forKey: Keys.aiBaseURL) ?? resolvedAIProvider.defaultBaseURL
+        self.aiChatModel = defaults.string(forKey: Keys.aiChatModel) ?? resolvedAIProvider.defaultChatModel
+        self.aiEmbeddingModel = defaults.string(forKey: Keys.aiEmbeddingModel) ?? resolvedAIProvider.defaultEmbeddingModel
+        let searchModeRaw = defaults.string(forKey: Keys.smartSearchMode)
+        self.smartSearchMode = searchModeRaw.flatMap(SmartSearchMode.init(rawValue:)) ?? .keyword
     }
 
     // MARK: - 内部
@@ -293,5 +413,10 @@ final class AppSettings {
         static let hideForks = "settings.hideForks"
         static let statusFilter = "settings.statusFilter"
         static let lastManageSelection = "settings.lastManageSelection"
+        static let aiProvider = "settings.ai.provider"
+        static let aiBaseURL = "settings.ai.baseURL"
+        static let aiChatModel = "settings.ai.chatModel"
+        static let aiEmbeddingModel = "settings.ai.embeddingModel"
+        static let smartSearchMode = "settings.search.mode"
     }
 }
