@@ -58,6 +58,11 @@ struct RepoDetailView: View {
     /// 这个高度由 `MetadataPanelHeightPreferenceKey` 在首次布局后回填。
     @State private var metadataPanelHeight: CGFloat = 0
 
+    /// 右侧详情内容 Tab。
+    ///
+    /// 默认保留 README，AI 摘要作为第二个 tab 进入，避免用户每次选仓库时被 AI 面板抢走阅读路径。
+    @State private var selectedContentTab: RepoDetailContentTab = .readme
+
     /// 顶部面板折叠/展开动画。
     ///
     /// 用轻阻尼 spring 比 easeInOut 更适合这里：面板高度变化会带动 WKWebView 重新分配空间，
@@ -99,7 +104,7 @@ struct RepoDetailView: View {
             if let repo = viewModel.selectedRepo {
                 VStack(alignment: .leading, spacing: 0) {
                     metadataPanel(repo)
-                    readmeSection(repo)
+                    repoContentSection(repo)
                 }
                 .id(repo.id)                                // 强制 view 在 repo 变化时被识别为"新 view"，触发 transition
                 .transition(detailContentTransition)        // 淡入 + 下移 8pt 滑入；reduceMotion 退化为纯 opacity
@@ -122,6 +127,7 @@ struct RepoDetailView: View {
                     withAnimation(metadataPanelAnimation) {
                         isMetadataPanelHidden = false
                     }
+                    selectedContentTab = .readme
                 }
             } else if let trending = selectedTrendingRepo {
                 // Trending repo 详情页（无本地数据，只显示 README）
@@ -347,6 +353,35 @@ struct RepoDetailView: View {
             endPoint: .bottom
         )
         .allowsHitTesting(false)
+    }
+
+    /// Repo 详情主内容区：README / AI 摘要。
+    ///
+    /// 这里没有把 AI 摘要塞进顶部 metadata panel：
+    /// - metadata panel 会随 README 滚动折叠，AI 摘要如果放里面会在阅读时消失；
+    /// - README 与 AI 摘要都是“详情正文”，更适合并列为内容 tab；
+    /// - 默认 tab 仍是 README，AI 不抢占原有详情页心智。
+    private func repoContentSection(_ repo: Repo) -> some View {
+        VStack(spacing: 0) {
+            Picker("", selection: $selectedContentTab) {
+                ForEach(RepoDetailContentTab.allCases) { tab in
+                    Label(tab.title, systemImage: tab.systemImage)
+                        .tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 24)
+            .padding(.vertical, 8)
+            .background(.bar)
+
+            switch selectedContentTab {
+            case .readme:
+                readmeSection(repo)
+            case .ai:
+                RepoAIInsightPanel(repo: repo)
+            }
+        }
     }
 
     /// README 区域。占据剩余高度，由 WebView 自己处理滚动。
@@ -777,6 +812,27 @@ struct RepoDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+}
+
+private enum RepoDetailContentTab: String, CaseIterable, Identifiable {
+    case readme
+    case ai
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .readme: return "README"
+        case .ai:     return "AI 摘要"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .readme: return "doc.text"
+        case .ai:     return "sparkles"
+        }
+    }
 }
 
 private struct MetadataPanelHeightPreferenceKey: PreferenceKey {

@@ -53,6 +53,10 @@ final class AppDependencies {
     let repoEmbeddingRepository: any RepoEmbeddingRepositoryProtocol
     /// W6 AI：语义搜索服务，使用 BYOK 设置 + SQLite 向量缓存。
     let semanticSearchService: SemanticSearchService
+    /// W6 AI：单仓 AI 摘要缓存。
+    let aiSummaryRepository: any AISummaryRepositoryProtocol
+    /// W6 AI：单仓 AI 摘要与标签推荐服务。
+    let repoAIInsightService: RepoAIInsightService
 
     /// HOM-54 引入：GitHub Trending 数据仓库。
     let trendingRepository: any TrendingRepositoryProtocol
@@ -114,6 +118,14 @@ final class AppDependencies {
             client: api,
             repository: readmeRepo,
             trendingRepository: trendingReadmeRepo
+        )
+
+        let summaryRepo = GRDBAISummaryRepository(database: db)
+        self.aiSummaryRepository = summaryRepo
+        self.repoAIInsightService = RepoAIInsightService(
+            summaryRepository: summaryRepo,
+            readmeRepository: readmeRepo,
+            settings: self.settings
         )
 
         // W4 Batch A1：标签 / 关联 / 笔记+状态 Repository
