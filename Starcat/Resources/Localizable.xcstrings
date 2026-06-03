@@ -1775,13 +1775,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in with GitHub to organize, search, and rediscover your stars."
+            "value" : "Sign in with GitHub to rediscover every project you've starred."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登录 GitHub，重新整理与找回你的收藏。"
+            "value" : "登录 GitHub，重新认识你 Star 过的每个项目。"
           }
         }
       }
