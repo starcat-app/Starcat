@@ -48,6 +48,23 @@ struct SettingsView: View {
 
         return Form {
             Section("settings.general.appearance") {
+                // W4-5 D1:主题切换(dong4j 2026-06-03 需求,默认 .dark)。
+                // 用 Label + segmented 让 3 个选项的图标可见(circle.lefthalf / sun.max / moon.fill),
+                // 跟 macOS "系统设置 → 外观" 的视觉语言一致,降低用户认知成本。
+                Picker("settings.general.appearanceMode", selection: $settings.appearanceMode) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Label(mode.displayName, systemImage: mode.systemImage)
+                            .tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text("settings.general.appearanceMode.description")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Divider()
+
                 Picker("settings.general.listDensity", selection: $settings.listDensity) {
                     ForEach(RepoListDensity.allCases) { density in
                         Text(density.displayName).tag(density)

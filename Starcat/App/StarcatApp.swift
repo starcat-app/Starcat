@@ -32,6 +32,10 @@ struct StarcatApp: App {
                 .environment(dependencies.authSession)
                 .environment(dependencies.syncManager)
                 .environment(dependencies.settings)
+                // W4-5 D1：用户主题偏好应用到主窗口。
+                // dependencies / settings 都是 @Observable，appearanceMode 变化
+                // 会自动触发本 scene body 重新计算 → preferredColorScheme 即时切换。
+                .preferredColorScheme(dependencies.settings.appearanceMode.colorScheme)
                 .task {
                     await dependencies.authSession.restoreSessionIfAvailable()
                 }
@@ -51,6 +55,9 @@ struct StarcatApp: App {
             SettingsView()
                 .environment(dependencies)        // W4-4 D4：StorageSettingsTab 需要 readmeRepository
                 .environment(dependencies.settings)
+                // W4-5 D1：Settings 窗口也要同步主题，否则用户切了主题后
+                // Settings 窗口跟主窗口主题不一致，会非常诡异。
+                .preferredColorScheme(dependencies.settings.appearanceMode.colorScheme)
         }
     }
 
