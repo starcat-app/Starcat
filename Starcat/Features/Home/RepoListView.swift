@@ -76,6 +76,10 @@ struct RepoListView: View {
         .toolbar {
             if selectedPage == .manage {
                 ToolbarItemGroup(placement: .primaryAction) {
+                    smartSearchMenu
+                    if viewModel.smartSearchMode == .semantic {
+                        semanticIndexButton
+                    }
                     statusFilterMenu
                     sortMenu
                     multiSelectButton
@@ -189,6 +193,59 @@ struct RepoListView: View {
     }
 
     // MARK: - 顶部操作栏组件
+
+    /// 搜索模式切换：复用现有 toolbar 搜索框，只在旁边提供 Keyword / AI 模式选择。
+    ///
+    /// 这是本阶段的最佳取舍：
+    /// - 不弹独立结果窗口，避免搜索结果脱离三栏选择 / README 详情工作流；
+    /// - 模式切换本身持久化到 AppSettings，用户下次打开仍保留偏好；
+    /// - AI 模式下中栏行展示相似度与命中说明，右栏继续显示仓库详情。
+    private var smartSearchMenu: some View {
+        @Bindable var vm = viewModel
+        return Menu {
+            Picker("search.mode", selection: $vm.smartSearchMode) {
+                ForEach(SmartSearchMode.allCases) { mode in
+                    Label(mode.displayName, systemImage: mode.systemImage)
+                        .tag(mode)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            toolbarIcon(viewModel.smartSearchMode.systemImage)
+                .accessibilityLabel(Text(viewModel.smartSearchMode.displayName))
+        }
+        .help("search.mode.hint")
+        .onAppear {
+            if viewModel.smartSearchMode != settings.smartSearchMode {
+                viewModel.smartSearchMode = settings.smartSearchMode
+            }
+        }
+        .onChange(of: viewModel.smartSearchMode) { _, newValue in
+            settings.smartSearchMode = newValue
+        }
+    }
+
+    /// 手动刷新语义索引。
+    ///
+    /// 搜索时会自动补缺失索引；这里给用户一个显式入口，用于切换 embedding model、
+    /// 大量同步后、或想提前把索引构建完的场景。
+    private var semanticIndexButton: some View {
+        Button {
+            Task { await viewModel.refreshSemanticIndex() }
+        } label: {
+            if viewModel.isSemanticIndexing {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 18, height: 18)
+                    .accessibilityLabel("search.semantic.indexing")
+            } else {
+                toolbarIcon("arrow.triangle.2.circlepath")
+                    .accessibilityLabel("search.semantic.refreshIndex")
+            }
+        }
+        .disabled(viewModel.isSemanticIndexing)
+        .help("search.semantic.refreshIndex.hint")
+    }
 
     /// 顶部 "在 GitHub 打开" 菜单。
     ///
@@ -402,7 +459,8 @@ struct RepoListView: View {
                     RepoRowView(
                         repo: repo,
                         density: settings.listDensity,
-                        isSelected: selection.wrappedValue == repo.id
+                        isSelected: selection.wrappedValue == repo.id,
+                        semanticHit: viewModel.semanticHit(for: repo.id)
                     )
                 }
                 .buttonStyle(.plain)
@@ -426,7 +484,8 @@ struct RepoListView: View {
                 RepoRowView(
                     repo: repo,
                     density: settings.listDensity,
-                    isSelected: selection.wrappedValue.contains(repo.id)
+                    isSelected: selection.wrappedValue.contains(repo.id),
+                    semanticHit: viewModel.semanticHit(for: repo.id)
                 )
                 .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision)
                 .listRowSeparator(.hidden)
@@ -453,8 +512,20 @@ struct RepoListView: View {
             )
         }
         if viewModel.isRefreshing {
+            if viewModel.isSemanticSearching {
+                return String(
+                    format: String(localized: "search.semantic.refreshingFormat"),
+                    viewModel.items.count
+                )
+            }
             return String(
                 format: String(localized: "list.refreshingFormat"),
+                viewModel.items.count
+            )
+        }
+        if viewModel.isSemanticSearching {
+            return String(
+                format: String(localized: "search.semantic.resultCountFormat"),
                 viewModel.items.count
             )
         }

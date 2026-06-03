@@ -49,6 +49,10 @@ final class AppDependencies {
     let repoTagRepository: any RepoTagRepositoryProtocol
     /// W4 Batch A1 引入：repo 笔记 + 状态管理（同表合并）。
     let repoNoteRepository: any RepoNoteRepositoryProtocol
+    /// W6 AI：repo embedding SQLite 缓存。
+    let repoEmbeddingRepository: any RepoEmbeddingRepositoryProtocol
+    /// W6 AI：语义搜索服务，使用 BYOK 设置 + SQLite 向量缓存。
+    let semanticSearchService: SemanticSearchService
 
     /// HOM-54 引入：GitHub Trending 数据仓库。
     let trendingRepository: any TrendingRepositoryProtocol
@@ -116,6 +120,12 @@ final class AppDependencies {
         self.tagRepository = GRDBTagRepository(database: db)
         self.repoTagRepository = GRDBRepoTagRepository(database: db)
         self.repoNoteRepository = GRDBRepoNoteRepository(database: db)
+        let embeddingRepo = GRDBRepoEmbeddingRepository(database: db)
+        self.repoEmbeddingRepository = embeddingRepo
+        self.semanticSearchService = SemanticSearchService(
+            embeddingRepository: embeddingRepo,
+            settings: self.settings
+        )
 
         // HOM-54：Trending Repository（W7+ 起接入 GRDB 持久化）
         self.trendingRepository = TrendingRepository(database: db)

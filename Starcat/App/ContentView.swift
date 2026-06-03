@@ -33,6 +33,7 @@ struct ContentView: View {
             tagRepository: dependencies.tagRepository,
             repoTagRepository: dependencies.repoTagRepository,
             repoNoteRepository: dependencies.repoNoteRepository,
+            semanticSearchService: dependencies.semanticSearchService,
             trendingRepository: dependencies.trendingRepository,
             githubAPIClient: dependencies.apiClient
         )
