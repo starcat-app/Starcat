@@ -51,7 +51,23 @@ struct SettingsView: View {
                 // W4-5 D1:主题切换(dong4j 2026-06-03 需求,默认 .dark)。
                 // 用 Label + segmented 让 3 个选项的图标可见(circle.lefthalf / sun.max / moon.fill),
                 // 跟 macOS "系统设置 → 外观" 的视觉语言一致,降低用户认知成本。
-                Picker("settings.general.appearanceMode", selection: $settings.appearanceMode) {
+                //
+                // 过渡动画(W4-5 D1 follow-up,2026-06-03):用自定义 binding 把 setter 包到
+                // `withAnimation(.easeInOut(0.3))` transaction 里,让依赖 colorScheme 计算的
+                // SwiftUI 视图(动态颜色 / 材质 / 文字色)切换时带 0.3s 淡变,而非瞬切。
+                //
+                // 关键约束:① macOS NSWindow titlebar / chrome 由 AppKit 即时切换,SwiftUI 动画
+                // 系统覆盖不到,所以 titlebar 仍是瞬切;② 视图内容区(.background / .foregroundStyle
+                // 走动态色的)会跟随 transaction 平滑过渡;③ `@Observable` 属性在 withAnimation
+                // 块内修改会被收进 transaction,这与 `@Published` 的行为一致,验证过。
+                Picker("settings.general.appearanceMode", selection: Binding(
+                    get: { settings.appearanceMode },
+                    set: { newValue in
+                        withAnimation(.easeInOut(duration: 0.6)) {
+                            settings.appearanceMode = newValue
+                        }
+                    }
+                )) {
                     ForEach(AppearanceMode.allCases) { mode in
                         Label(mode.displayName, systemImage: mode.systemImage)
                             .tag(mode)

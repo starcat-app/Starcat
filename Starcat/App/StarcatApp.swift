@@ -36,6 +36,15 @@ struct StarcatApp: App {
                 // dependencies / settings 都是 @Observable，appearanceMode 变化
                 // 会自动触发本 scene body 重新计算 → preferredColorScheme 即时切换。
                 .preferredColorScheme(dependencies.settings.appearanceMode.colorScheme)
+                // W4-5 D1 follow-up：隐式动画兜底。SettingsView 的 Picker 已经在 setter
+                // 里包了 `withAnimation(.easeInOut(0.3))`，但如果以后从其他入口（菜单 /
+                // 快捷键 / URL scheme）切主题，那条路径不会带 transaction，这里挂一道
+                // `.animation(_:value:)` 让 colorScheme 相关的视图重渲染都自动 0.3s 淡变。
+                //
+                // 注意：macOS NSWindow titlebar / chrome 由 AppKit 即时切换，SwiftUI
+                // 动画系统覆盖不到，所以 titlebar 仍是瞬切；视图内容区（动态色 / 材质 /
+                // 文字色）会跟随过渡。这是系统级约束，不可避免。
+                .animation(.easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
                 .task {
                     await dependencies.authSession.restoreSessionIfAvailable()
                 }
@@ -58,6 +67,10 @@ struct StarcatApp: App {
                 // W4-5 D1：Settings 窗口也要同步主题，否则用户切了主题后
                 // Settings 窗口跟主窗口主题不一致，会非常诡异。
                 .preferredColorScheme(dependencies.settings.appearanceMode.colorScheme)
+                // W4-5 D1 follow-up：Settings 窗口本身的内容区也带过渡，
+                // 跟主窗口节奏一致（0.3s easeInOut），避免出现"主窗口在淡变、
+                // Settings 窗口瞬切"的视觉撕裂。
+                .animation(.easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
         }
     }
 
