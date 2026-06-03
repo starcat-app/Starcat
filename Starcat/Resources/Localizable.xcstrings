@@ -1605,18 +1605,17 @@
       }
     },
     "authV2.codeHint" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Click to copy and auto-open GitHub"
+            "value" : "Click to open the authorization page"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点击复制并自动打开 GitHub"
+            "value" : "点击打开授权页面"
           }
         }
       }

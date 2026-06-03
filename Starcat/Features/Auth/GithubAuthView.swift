@@ -56,6 +56,13 @@ struct GithubAuthView: View {
     private let heroHeight: CGFloat = 200
     /// hero 内缩 padding：四周留出卡片底色，让 hero 看起来是浮在卡片里的独立插画卡。
     private let heroInset: CGFloat = 16
+    /// sheet 外圈空白（card 到 sheet 边界的距离）。dong4j 2026-06-03 10:38 收紧：32 → 20。
+    /// 同时控制 sheet minWidth 和上下 Spacer，保持四周对称留白。
+    private let sheetOuterPadding: CGFloat = 20
+    /// 关闭按钮相对 card 右上角的"外溢"距离（按钮中心比 card 右上角偏外 N pt，悬浮观感）。
+    /// dong4j 设计：8pt 让按钮明显悬浮在 card 外角但又不显得游离。
+    /// 必须 ≤ sheetOuterPadding，否则按钮会跑出 sheet 边界。
+    private let closeButtonOffset: CGFloat = 8
 
     // MARK: - Body
 
@@ -64,20 +71,23 @@ struct GithubAuthView: View {
             Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
 
             VStack(spacing: 0) {
-                Spacer().frame(height: 32)
+                Spacer().frame(height: sheetOuterPadding)
                 card.frame(width: cardWidth)
-                // 底部 32pt 上下对称留白。
+                // 上下 sheetOuterPadding 对称留白。
                 // 用固定 Spacer 而非 Spacer(minLength:) 让 sheet 高度按 card 高度自适应——
-                // idle 态 sheet ~480pt / awaitingCode 态 sheet ~560pt，
+                // idle 态 sheet ~440pt / awaitingCode 态 sheet ~540pt，
                 // 状态切换时 sheet 整体高度平滑增减，不会有大块底部空白。
-                Spacer().frame(height: 32)
+                Spacer().frame(height: sheetOuterPadding)
             }
         }
         // ⚠️ 只锁 minWidth，不锁 minHeight：让 sheet 高度跟 card 实际高度走，
         // 避免历史遗留的固定 minHeight 在 card 高度变化后造成大块底部留白。
-        .frame(minWidth: cardWidth + 64)
+        .frame(minWidth: cardWidth + sheetOuterPadding * 2)
+        // 关闭按钮:`sheetOuterPadding - closeButtonOffset` = 按钮距 sheet 边距，
+        // 必须 ≥ 0 才不会溢出 sheet 边界（否则会被裁切）。
+        // 当前 sheetOuterPadding=20, closeButtonOffset=8 → 按钮距 sheet 边 12pt，安全。
         .overlay(alignment: .topTrailing) {
-            closeButton.padding(20)
+            closeButton.padding(sheetOuterPadding - closeButtonOffset)
         }
     }
 
@@ -221,38 +231,29 @@ struct GithubAuthView: View {
     /// - 右独立图标（`doc.on.doc`）：点击 → **仅复制不开浏览器**（`copyCodeOnly`）
     /// - 中间一根半透明白色 1pt 分隔条勾出两 hit target 边界
     ///
+    /// **布局关键（dong4j 2026-06-03 10:29 反馈)**：
+    /// code/hint 文字必须居中在**整张卡片宽度**（不是左主区宽度），才能跟下方 Cancel 按钮文字
+    /// 上下垂直对齐——如果包在左主 Button label 里居中，右侧 41pt 图标占位会让视觉中心偏左 ~20pt。
+    /// 解决方案：
+    /// - 左主 Button label 改成透明 `Color.clear`，只承担 hit area（不放视觉内容）
+    /// - 视觉内容（code / hint / ✓ 已复制）抽到 codeButton 最外层 `.overlay(alignment: .center)`，
+    ///   自然居中在 HStack(= 整张卡片)正中
+    /// - overlay 内容加 `.allowsHitTesting(false)`，点击事件穿透到下面的两个 Button
+    ///
     /// **副流程不切换 code 主区域显示**（dong4j 2026-06-03 反馈）：
-    /// 避免「主区域文字 + 图标 + hint 文字」3 处同义反馈视觉重复，副流程下整张卡片静态，
-    /// 唯一反馈在右侧 hint 文字。
+    /// 避免「主区域文字 + 图标 + hint 文字」3 处同义反馈视觉重复，副流程下整张卡片静态。
     private func codeButton(info: OAuthDeviceCodeInfo) -> some View {
         HStack(spacing: 0) {
-            // 主区域：复制 + 自动开浏览器
+            // 主区域：透明 hit area，撑满左侧除分隔条 + 图标外的全部空间
             Button {
                 copyAndOpenBrowser(info: info)
             } label: {
-                ZStack {
-                    Text(info.userCode)
-                        .font(.system(.body, design: .monospaced))
-                        .fontWeight(.semibold)
-                        .opacity(copyFeedback.isCopied ? 0 : 1)
-
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark")
-                        Text("authV2.codeCopied")
-                    }
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    // 深森林绿：在暖橙背景上对比度足够且不刺眼，保留"操作成功"的语义识别度
-                    .foregroundStyle(Color(red: 0.12, green: 0.42, blue: 0.18))
-                    .opacity(copyFeedback.isCopied ? 1 : 0)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .contentShape(Rectangle())
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .help("authV2.codeHint")
 
             // 视觉分隔条：半透明白色 1pt × 30pt。
             // ⚠️ 必须显式给 height！Rectangle 是无限形状，只设 width 会让 HStack
@@ -262,20 +263,54 @@ struct GithubAuthView: View {
                 .frame(width: 1, height: 30)
 
             // 独立复制图标按钮：只复制不开浏览器
-            // 图标**固定显示 doc.on.doc，不切到 ✓**：副流程的"已复制"语义反馈完全由右侧
-            // codeHintText（"代码已复制到剪贴板"）承担，避免按钮自身做切换造成视觉跳动。
+            // 图标**固定显示 doc.on.doc，不切到 ✓**：避免按钮自身做切换造成视觉跳动。
             Button {
                 copyCodeOnly(info: info)
             } label: {
                 Image(systemName: "doc.on.doc")
                     .font(.system(size: 14, weight: .semibold))
                     .frame(width: 40)
-                    .padding(.vertical, 14)
+                    .frame(maxHeight: .infinity)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help("authV2.copyOnly")
+        }
+        // 固定高度 56pt = code(~18) + spacing(2) + hint(~12) + 上下 padding ~24 的视觉等效。
+        // 用固定 height 而非 minHeight 是因为：overlay 视觉内容（高度由其内部决定）跟 HStack
+        // hit area 解耦，HStack 必须自己确定高度，否则 Color.clear hit area 会塌缩为 0×0。
+        .frame(height: 56)
+        // 视觉层：浮在整张 HStack（= 整张卡片）正中。
+        // ⚠️ `.allowsHitTesting(false)`：让点击事件穿透到下面的 Button，
+        //    否则 overlay 会拦截所有 click 导致主 Button / 图标 Button 都点不到。
+        .overlay(alignment: .center) {
+            ZStack {
+                // 默认态：code 数字（主）+ "点击打开授权页面"提示（辅）
+                // ⚠️ hint 仅 UI 展示,不会被复制——`copyToClipboard` 只收 `info.userCode` String 参数,
+                //    跟 SwiftUI Text label 完全解耦,加多少行 hint 都不影响剪贴板内容。
+                VStack(spacing: 2) {
+                    Text(info.userCode)
+                        .font(.system(.body, design: .monospaced))
+                        .fontWeight(.semibold)
+
+                    Text("authV2.codeHint")
+                        .font(.caption2)
+                        .opacity(0.65)
+                }
+                .opacity(copyFeedback.isCopied ? 0 : 1)
+
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark")
+                    Text("authV2.codeCopied")
+                }
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                // 深森林绿：在暖橙背景上对比度足够且不刺眼，保留"操作成功"的语义识别度
+                .foregroundStyle(Color(red: 0.12, green: 0.42, blue: 0.18))
+                .opacity(copyFeedback.isCopied ? 1 : 0)
+            }
+            .allowsHitTesting(false)
         }
         .foregroundStyle(BigButtonStyle.codeWarm.foreground)
         .background(
