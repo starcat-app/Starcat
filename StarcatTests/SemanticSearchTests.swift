@@ -36,3 +36,33 @@ struct SemanticSearchTests {
         #expect(abs(opposite + 1.0) < 0.0001)
     }
 }
+
+@Suite("Repo AI Insight")
+struct RepoAIInsightTests {
+
+    @Test("AI Insight: 可从包裹在 markdown fence 中的 JSON 解码")
+    func decodeFencedJSON() throws {
+        let raw = """
+        ```json
+        {
+          "oneLiner": "一个 Swift 网络库",
+          "summary": "用于测试 JSON 解码。",
+          "platforms": ["Swift"],
+          "suitableFor": ["macOS App"],
+          "strengths": ["轻量"],
+          "risks": ["维护状态未知"],
+          "minimalExample": null,
+          "suggestedTags": [
+            {"name": "Swift", "confidence": 0.9, "reason": "主要语言"}
+          ],
+          "model": "",
+          "generatedAt": ""
+        }
+        ```
+        """
+
+        let insight = try RepoAIInsightService.decodeInsight(json: raw)
+        #expect(insight.oneLiner == "一个 Swift 网络库")
+        #expect(insight.suggestedTags.first?.name == "Swift")
+    }
+}
