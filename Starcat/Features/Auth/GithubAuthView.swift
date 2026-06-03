@@ -2,12 +2,33 @@
 //  GithubAuthView.swift
 //  Starcat
 //
-//  GitHub 登录页（Device Flow）。
+//  GitHub 登录页（Device Flow） · V2 视觉升级版（2026-06-03 上线）。
 //
-//  UI 状态：
-//  - 未登录态：展示 GitHub 图标 + "使用 GitHub 登录"按钮 + DEBUG 下额外提供"开发模式跳过"按钮
-//  - awaitingUserCode：展示 user_code（可复制）+ "打开 GitHub" 按钮 + 取消按钮 + 等待动画
-//  - 错误态：lastError 显示在按钮上方
+//  设计参考 dong4j 提供的 Radian 风格截图：卡片式布局 + 顶部 hero 视觉插图 +
+//  标题 / 副标题 + 全宽主按钮 + 暖色渐变 user_code 卡片。
+//
+//  与 Legacy 版（`GithubAuthViewLegacy.swift`）的差异：
+//  - 视觉：卡片 / 圆角 / 暖色渐变 code 卡，旧版是平铺式系统控件
+//  - awaitingCode 交互：点 code 主区 → 复制 + 1.5s 后自动开浏览器；点右侧图标 → 仅复制
+//  - 5 个状态：idle / connecting / awaitingCode / authenticated / error，过渡有 smooth 动画
+//  - authenticated 态显示 0.6s 成功反馈再 dismiss，避免"瞬间消失"的迷惑感
+//
+//  状态映射（AuthSession.state + isAuthenticating + lastError → 5 个 UI 态）：
+//  ┌───────────────────────────────────────────────────────────┬──────────────┐
+//  │ .unauthenticated  &&  !isAuthenticating  &&  lastError=nil│ idle         │
+//  │ .unauthenticated  &&  !isAuthenticating  &&  lastError≠nil│ error        │
+//  │ .unauthenticated  &&  isAuthenticating                    │ connecting   │
+//  │ .awaitingUserCode(info)                                   │ awaitingCode │
+//  │ .authenticated                                            │ authenticated│
+//  └───────────────────────────────────────────────────────────┴──────────────┘
+//
+//  按钮统一样式：所有大按钮走 `bigButton(...)` helper，统一圆角 8 + 14pt 垂直 padding，
+//  避免系统 borderedProminent / bordered 圆角不一致的视觉割裂。
+//
+//  关键约束：
+//  - 所有用户可见文本走 String Catalog `authV2.*` 键（保留 V2 前缀避免跟 Legacy 的 `auth.*` 冲突）
+//  - 所有 `.buttonStyle(.plain)` 必须紧跟 `.focusEffectDisabled()`（项目强制规则）
+//  - `copyResetTask` 必须在所有"关闭 / 取消 / 切换"场景 cancel，避免野 Task 1.5s 后误开浏览器
 //
 
 import SwiftUI
@@ -18,148 +39,523 @@ struct GithubAuthView: View {
     @Environment(AuthSession.self) private var authSession
     @Environment(\.dismiss) private var dismiss
 
+    /// awaitingCode 态 code 卡片的复制反馈状态机。
+    /// - `.idle`：等待用户操作
+    /// - `.copiedAndOpening`：点了主区域，已复制，1.5s 后会自动开浏览器
+    /// - `.copiedSilent`：点了右侧独立图标，已复制但不会开浏览器
+    @State private var copyFeedback: CopyFeedback = .idle
+
+    /// 反馈复位的延时 task（主流程 1.5s 后开浏览器并复位 / 副流程 1.5s 后仅复位）。
+    /// 任意新点击都会 cancel 上一个 task，让两种反馈互斥（用户改主意时不会再触发跳浏览器）。
+    @State private var copyResetTask: Task<Void, Never>?
+
+    /// 卡片宽度。参考图比例约 380pt 宽；macOS sheet 留外圈 padding 后给到 460pt 视觉舒适。
+    private let cardWidth: CGFloat = 460
+    /// hero 区高度。4 角圆角"独立插画卡"后做 horizontal 16pt 内缩，
+    /// 可视宽度 ~428pt，保持 ~2.14:1 的宽屏视觉比例 → 高度 200pt 最协调。
+    private let heroHeight: CGFloat = 200
+    /// hero 内缩 padding：四周留出卡片底色，让 hero 看起来是浮在卡片里的独立插画卡。
+    private let heroInset: CGFloat = 16
+
+    // MARK: - Body
+
     var body: some View {
-        VStack(spacing: 24) {
-            header
-            content
-            errorBanner
-        }
-        .padding(40)
-        .frame(minWidth: 480, minHeight: 360)
-        .overlay(alignment: .topTrailing) {
-            Button {
-                authSession.cancelSignIn()
-                dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.secondary)
+        ZStack {
+            Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                Spacer().frame(height: 32)
+                card.frame(width: cardWidth)
+                // 底部 32pt 上下对称留白。
+                // 用固定 Spacer 而非 Spacer(minLength:) 让 sheet 高度按 card 高度自适应——
+                // idle 态 sheet ~480pt / awaitingCode 态 sheet ~560pt，
+                // 状态切换时 sheet 整体高度平滑增减，不会有大块底部空白。
+                Spacer().frame(height: 32)
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .padding(20)
+        }
+        // ⚠️ 只锁 minWidth，不锁 minHeight：让 sheet 高度跟 card 实际高度走，
+        // 避免历史遗留的固定 minHeight 在 card 高度变化后造成大块底部留白。
+        .frame(minWidth: cardWidth + 64)
+        .overlay(alignment: .topTrailing) {
+            closeButton.padding(20)
         }
     }
 
-    // MARK: - Header
+    // MARK: - Card
 
-    private var header: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "star.circle.fill")
-                .font(.system(size: 56))
-                .foregroundStyle(.tint)
-            Text("auth.title")
-                .font(.title)
-                .fontWeight(.semibold)
-            Text("auth.subtitle")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+    /// 卡片整体：白底 / 圆角 18 / 轻微阴影。
+    /// `.animation(.smooth, value:)` 让状态切换有平滑 fade / size 过渡。
+    private var card: some View {
+        VStack(spacing: 0) {
+            heroSection
+            contentSection
         }
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.background)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.08), radius: 18, x: 0, y: 8)
+        .animation(.smooth(duration: 0.28), value: derivedState)
+    }
+
+    // MARK: - Hero
+
+    /// hero 视觉区：5 张图片自动轮播 + 平滑淡入淡出（dong4j 2026-06-03 09:55 需求）。
+    /// 4 角圆角（cornerRadius: 14，比卡片外圈的 18 小一档，符合"外大内小"嵌套层级），
+    /// 四周用 `heroInset` 留白让 hero 作为独立"插画卡"浮在卡片里。
+    ///
+    /// 轮播细节（每次打开随机起始 + 5s 间隔 + 1.2s 淡入淡出 + sheet 关时 timer 自动清理）
+    /// 见 `AuthHeroCarouselView.swift`。
+    private var heroSection: some View {
+        AuthHeroCarouselView()
+            .frame(height: heroHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, heroInset)
+            .padding(.top, heroInset)
     }
 
     // MARK: - Content
 
+    /// 卡片下半部分：标题 / 副标题 / 状态分支区。
+    private var contentSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("authV2.welcome")
+                    .font(.title2).fontWeight(.semibold)
+
+                Text("authV2.subtitle")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            stateSection
+
+            if case .error = derivedState {
+                errorBanner
+            }
+        }
+        .padding(.horizontal, 28)
+        // hero 自带 16pt 上 padding，content 顶部 20pt → hero 底到正文顶距离 20pt（视觉协调）
+        .padding(.top, 20)
+        .padding(.bottom, 28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 按 derivedState 切换：CTA / 连接中 / 等待授权 / 已登录 / 错误占位。
     @ViewBuilder
-    private var content: some View {
-        switch authSession.state {
-        case .unauthenticated:
-            unauthenticatedView
-        case .awaitingUserCode(let info):
-            awaitingUserCodeView(info)
+    private var stateSection: some View {
+        switch derivedState {
+        case .idle, .error:
+            continueWithGitHubButton
+        case .connecting:
+            connectingView
+        case .awaitingCode(let info):
+            awaitingUserCodeView(info: info)
         case .authenticated:
-            // 登录完成，显示短暂过渡动画后自动关闭 sheet
-            ProgressView()
-                .onAppear {
-                    dismiss()
-                }
+            authenticatedView
         }
     }
 
-    private var unauthenticatedView: some View {
-        VStack(spacing: 12) {
-            Button {
-                authSession.signIn()
-            } label: {
-                Label("auth.signIn", systemImage: "person.crop.circle.badge.checkmark")
-                    .frame(maxWidth: 240)
-            }
-            .controlSize(.large)
-            .buttonStyle(.borderedProminent)
-            .focusEffectDisabled()
-            .disabled(authSession.isAuthenticating)
+    // MARK: - 状态视图
+
+    /// idle / error 态：全宽蓝色主按钮。
+    private var continueWithGitHubButton: some View {
+        bigButton(style: .primary, action: triggerContinue) {
+            Text("authV2.continueWithGitHub")
+                .fontWeight(.semibold)
         }
     }
 
-    private func awaitingUserCodeView(_ info: OAuthDeviceCodeInfo) -> some View {
-        VStack(spacing: 16) {
-            Text("auth.enterCode")
-                .font(.headline)
-
-            HStack(spacing: 12) {
-                Text(info.userCode)
-                    .font(.system(.title, design: .monospaced))
-                    .fontWeight(.semibold)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-                    .textSelection(.enabled)
-
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(info.userCode, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                }
-                .focusEffectDisabled()
-                .help("auth.copyCode")
-            }
-
-            HStack(spacing: 12) {
-                Button {
-                    NSWorkspace.shared.open(info.verificationURI)
-                } label: {
-                    Label("auth.openGithub", systemImage: "safari")
-                        .frame(maxWidth: 160)
-                }
-                .controlSize(.large)
-                .buttonStyle(.borderedProminent)
-                .focusEffectDisabled()
-
-                Button("general.cancel") {
-                    authSession.cancelSignIn()
-                    dismiss()
-                }
-                .controlSize(.large)
-                .focusEffectDisabled()
-            }
-
-            ProgressView()
-                .controlSize(.small)
-            Text("auth.waiting")
-                .font(.caption)
+    /// connecting 瞬时态：与按钮等高的灰底占位，spinner + 文案。
+    /// AuthSession.signIn() 之后到 .awaitingUserCode 之前的过渡（拿 user_code 网络耗时）。
+    private var connectingView: some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            Text("authV2.connecting")
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.secondary.opacity(0.08))
+        )
     }
 
-    // MARK: - Error
+    /// awaitingCode 态：两个全宽按钮 + 一行底部 spinner 提示。
+    /// - 第 1 行：暖色渐变 code 卡片（全宽，左主区点击 = 复制 + 1.5s 后自动开浏览器；右独立图标 = 仅复制）
+    /// - 第 2 行：[ Cancel ] 全宽
+    /// - 第 3 行：spinner + "等待浏览器完成授权..." 提示
+    ///
+    /// 设计取舍（dong4j 2026-06-03 09:07 反馈）：
+    /// - 删除右侧引导文字（之前的"点击复制并自动打开 GitHub" / "正在为你打开 GitHub…" / "代码已复制到剪贴板"）：
+    ///   主流程已经有 code 主区 ZStack 切到 "已复制 ✓" 的反馈 + 底部 spinner + "等待授权" 提示，
+    ///   右侧 hint 属于第 4 处同义提示，删掉减少视觉噪音
+    /// - code 卡片改全宽（与 cancel 按钮齐平），不再固定 248pt + 右侧 flex hint 双列布局
+    private func awaitingUserCodeView(info: OAuthDeviceCodeInfo) -> some View {
+        VStack(spacing: 24) {
+            VStack(spacing: 10) {
+                codeButton(info: info)
+                cancelButton
+            }
 
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("authV2.waitingHint")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    /// awaitingCode 第一行左侧：暖色渐变 code 卡片（复合按钮）。
+    ///
+    /// **两个独立 hit target，共用同一张渐变背景**：
+    /// - 左主区（大块）：点击 → 复制 + 1.5s 后**自动开浏览器**（`copyAndOpenBrowser`）
+    /// - 右独立图标（`doc.on.doc`）：点击 → **仅复制不开浏览器**（`copyCodeOnly`）
+    /// - 中间一根半透明白色 1pt 分隔条勾出两 hit target 边界
+    ///
+    /// **副流程不切换 code 主区域显示**（dong4j 2026-06-03 反馈）：
+    /// 避免「主区域文字 + 图标 + hint 文字」3 处同义反馈视觉重复，副流程下整张卡片静态，
+    /// 唯一反馈在右侧 hint 文字。
+    private func codeButton(info: OAuthDeviceCodeInfo) -> some View {
+        HStack(spacing: 0) {
+            // 主区域：复制 + 自动开浏览器
+            Button {
+                copyAndOpenBrowser(info: info)
+            } label: {
+                ZStack {
+                    Text(info.userCode)
+                        .font(.system(.body, design: .monospaced))
+                        .fontWeight(.semibold)
+                        .opacity(copyFeedback.isCopied ? 0 : 1)
+
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark")
+                        Text("authV2.codeCopied")
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    // 深森林绿：在暖橙背景上对比度足够且不刺眼，保留"操作成功"的语义识别度
+                    .foregroundStyle(Color(red: 0.12, green: 0.42, blue: 0.18))
+                    .opacity(copyFeedback.isCopied ? 1 : 0)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("authV2.codeHint")
+
+            // 视觉分隔条：半透明白色 1pt × 30pt。
+            // ⚠️ 必须显式给 height！Rectangle 是无限形状，只设 width 会让 HStack
+            // 跟着撑成无限高（实测会把 code 卡片拉成 280pt 的方块挤掉 hero）。
+            Rectangle()
+                .fill(Color.white.opacity(0.45))
+                .frame(width: 1, height: 30)
+
+            // 独立复制图标按钮：只复制不开浏览器
+            // 图标**固定显示 doc.on.doc，不切到 ✓**：副流程的"已复制"语义反馈完全由右侧
+            // codeHintText（"代码已复制到剪贴板"）承担，避免按钮自身做切换造成视觉跳动。
+            Button {
+                copyCodeOnly(info: info)
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 40)
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("authV2.copyOnly")
+        }
+        .foregroundStyle(BigButtonStyle.codeWarm.foreground)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(BigButtonStyle.codeWarm.background)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(BigButtonStyle.codeWarm.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        // 全宽：跟下方 cancel 按钮齐平，视觉上下对齐
+    }
+
+    /// awaitingCode 第二行：Cancel 按钮（独占一行全宽）。
+    private var cancelButton: some View {
+        bigButton(style: .secondary, action: triggerCancel) {
+            Text("general.cancel")
+        }
+    }
+
+    /// authenticated 态：绿色 ✅ + 文案 0.6s 后 dismiss sheet。
+    /// 比"瞬间消失"的旧版更友好，让用户清晰感知"我刚才登录成功了"。
+    private var authenticatedView: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.seal.fill")
+                .foregroundStyle(.green)
+                .font(.title3)
+            Text("authV2.signedIn")
+                .font(.subheadline)
+                .fontWeight(.medium)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.green.opacity(0.10))
+        )
+        .task {
+            // 0.6s 让用户看清"登录成功"状态再 dismiss
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            dismiss()
+        }
+    }
+
+    /// error 态附加：CTA 下方红色 banner，复用 `auth.failed` 兜底文案。
     @ViewBuilder
     private var errorBanner: some View {
         if let error = authSession.lastError {
-            errorText(description: error.errorDescription)
-                .font(.footnote)
-                .foregroundStyle(.red)
-                .padding(.horizontal)
-                .multilineTextAlignment(.center)
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                errorBannerText(error: error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.red.opacity(0.08))
+            )
         }
     }
 
     @ViewBuilder
-    private func errorText(description: String?) -> some View {
-        if let description {
+    private func errorBannerText(error: any LocalizedError) -> some View {
+        if let description = error.errorDescription {
             Text(verbatim: description)
         } else {
             Text("auth.failed")
         }
     }
+
+    // MARK: - 右上角关闭按钮
+
+    private var closeButton: some View {
+        Button {
+            copyResetTask?.cancel()
+            authSession.cancelSignIn()
+            dismiss()
+        } label: {
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 20))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+
+    // MARK: - 统一按钮 helper
+
+    /// 卡片内所有大按钮（主 / 次 / 三态）共用的样式。
+    /// 锁定高度（14pt 垂直 padding）+ 圆角 8 + 等宽伸展，确保水平并排时尺寸完全一致。
+    @ViewBuilder
+    private func bigButton<Label: View>(
+        style: BigButtonStyle,
+        action: @escaping () -> Void,
+        @ViewBuilder label: () -> Label
+    ) -> some View {
+        Button(action: action) {
+            label()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .foregroundStyle(style.foreground)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(style.background)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(style.border, lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+
+    // MARK: - 状态派生
+
+    /// 从 AuthSession.state + isAuthenticating + lastError 派生 5 个 UI 态。
+    /// 把"3 个互相关联的源"映射到"1 个 UI enum"，让 stateSection 的 switch 写起来干净。
+    private var derivedState: DerivedState {
+        switch authSession.state {
+        case .unauthenticated:
+            if authSession.isAuthenticating {
+                return .connecting
+            } else if authSession.lastError != nil {
+                return .error
+            } else {
+                return .idle
+            }
+        case .awaitingUserCode(let info):
+            return .awaitingCode(info)
+        case .authenticated:
+            return .authenticated
+        }
+    }
+
+    // MARK: - 交互
+
+    /// 点 Continue：调 AuthSession 发起 Device Flow。
+    /// state 切换到 .awaitingUserCode 由 AuthSession 异步推送，UI 自动重渲染。
+    private func triggerContinue() {
+        authSession.signIn()
+    }
+
+    /// 点 Cancel：取消进行中的 Device Flow + 复位本地 copy 反馈状态。
+    /// AuthSession.cancelSignIn() 把 state 切回 .unauthenticated，
+    /// ContentView 检测 isAuthenticating = false 后 sheet 自动 dismiss。
+    private func triggerCancel() {
+        copyResetTask?.cancel()
+        copyFeedback = .idle
+        authSession.cancelSignIn()
+    }
+
+    /// 点 code 主区域：一键登录流程
+    /// 1. 立即复制 user_code 到剪贴板，code 按钮切到 "已复制 ✓"，hint 切到 "正在为你打开 GitHub…"
+    /// 2. 1.5s 后自动 `NSWorkspace.shared.open(info.verificationURI)` 打开 GitHub 设备登录页
+    /// 3. 复位到 idle 态，按钮 / 提示文字回到等待下次点击
+    private func copyAndOpenBrowser(info: OAuthDeviceCodeInfo) {
+        copyToClipboard(info.userCode)
+        copyResetTask?.cancel()
+        copyFeedback = .copiedAndOpening
+        copyResetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            NSWorkspace.shared.open(info.verificationURI)
+            copyFeedback = .idle
+        }
+    }
+
+    /// 点 code 右侧独立复制图标：仅复制，不开浏览器，**不做任何 UI 反馈**。
+    ///
+    /// 关键副作用：取消主流程的倒计时 task。
+    /// 用户场景：用户先点 code 主区进入 1.5s 倒计时（即将开浏览器），中途改主意点图标只复制 →
+    /// `copyResetTask?.cancel()` 阻止"开浏览器"被触发，`copyFeedback = .idle` 让 ZStack
+    /// 立刻从 "已复制 ✓" 切回数字显示。
+    ///
+    /// 反馈策略（dong4j 2026-06-03 09:07）：副流程无可见 hint，靠 macOS Button 默认按下高亮
+    /// + 用户后续粘贴动作即可感知复制成功，避免视觉噪音。
+    private func copyCodeOnly(info: OAuthDeviceCodeInfo) {
+        copyToClipboard(info.userCode)
+        copyResetTask?.cancel()
+        copyFeedback = .idle
+    }
+
+    /// 复制 user_code 到系统剪贴板（两种复制场景共用）。
+    private func copyToClipboard(_ code: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(code, forType: .string)
+    }
+}
+
+// MARK: - Button Style
+
+/// `bigButton(...)` 的四种 visual。
+private enum BigButtonStyle {
+    case primary    // 蓝色实心，主操作（Continue with GitHub）
+    case secondary  // 灰色弱化，次操作（Cancel）
+    case tertiary   // 白底带边框，通用三态（暂未使用）
+    case codeWarm   // 暖色渐变（日落桃黄 → 暖橙），专用于 awaitingCode 态的 user_code 按钮
+
+    var background: AnyShapeStyle {
+        switch self {
+        case .primary:
+            AnyShapeStyle(Color.accentColor)
+        case .secondary:
+            AnyShapeStyle(Color.secondary.opacity(0.18))
+        case .tertiary:
+            AnyShapeStyle(Color(nsColor: .textBackgroundColor))
+        case .codeWarm:
+            // 日落桃黄 → 暖橙渐变：把 user_code 这个"关键信息"做成全卡片最暖最亮的视觉焦点，
+            // 区别于卡片其他冷色（蓝色 hero / 蓝色 primary 按钮 / 灰色 secondary），
+            // 引导用户注意力直奔"点这里 → 完成登录"。
+            AnyShapeStyle(LinearGradient(
+                colors: [
+                    Color(red: 1.00, green: 0.82, blue: 0.52),   // 桃黄
+                    Color(red: 0.99, green: 0.62, blue: 0.36)    // 暖橙
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ))
+        }
+    }
+
+    var foreground: AnyShapeStyle {
+        switch self {
+        case .primary:
+            AnyShapeStyle(Color.white)
+        case .secondary, .tertiary:
+            AnyShapeStyle(Color.primary)
+        case .codeWarm:
+            // 深棕色文字在暖色渐变上对比度足够（≥ WCAG AA），保留 user_code 的可读性。
+            AnyShapeStyle(Color(red: 0.38, green: 0.16, blue: 0.04))
+        }
+    }
+
+    var border: AnyShapeStyle {
+        switch self {
+        case .primary:
+            AnyShapeStyle(Color.clear)
+        case .secondary:
+            AnyShapeStyle(Color.clear)
+        case .tertiary:
+            AnyShapeStyle(Color.primary.opacity(0.12))
+        case .codeWarm:
+            // 极浅的描边，把按钮在暗色背景下勾出清晰边界（无描边在暗色 sheet 上会模糊融化）。
+            AnyShapeStyle(Color(red: 0.85, green: 0.50, blue: 0.20).opacity(0.35))
+        }
+    }
+}
+
+// MARK: - Copy Feedback
+
+/// awaitingCode 态 code 卡片的复制反馈状态机（两态）。
+/// - `.idle`：code 主区域显示 user_code 数字
+/// - `.copiedAndOpening`：仅主流程触发 → code 主区切到 "已复制 ✓" + 1.5s 后自动开浏览器
+///
+/// 副流程（点右侧图标）仅做"复制 + 取消倒计时"，**不切换 copyFeedback 状态**，
+/// 整张 code 卡片视觉保持不变（dong4j 2026-06-03 09:07 反馈：删除右侧 hint，无需额外提示）。
+private enum CopyFeedback: Equatable {
+    case idle
+    case copiedAndOpening
+
+    /// 是否需要把 code 主区域文字切到 "已复制 ✓"。
+    var isCopied: Bool {
+        self == .copiedAndOpening
+    }
+}
+
+// MARK: - Derived State
+
+/// AuthSession 三个源（state / isAuthenticating / lastError）派生的 5 个 UI 态。
+/// 让 `stateSection` 的 switch 写起来干净 + `animation(value:)` 有干净的依赖源。
+private enum DerivedState: Equatable {
+    case idle
+    case connecting
+    case awaitingCode(OAuthDeviceCodeInfo)
+    case authenticated
+    case error
 }

@@ -114,7 +114,7 @@
 | `@State` | `HomeView` 持有 `ReadmeViewModel` | "SwiftUI State property wrapper" |
 | `@Binding` | `$vm.selectedRepoID` 传给子 View | "SwiftUI Binding two-way" |
 | `@Environment(\.colorScheme)` | `ReadmeWebView` 切深浅色 | "SwiftUI Environment values" |
-| `@Environment(\.accessibilityReduceMotion)` | `RepoRowSurface` 尊重系统"减少动态效果"设置，关闭非必要缩放/动画 | "SwiftUI accessibilityReduceMotion" |
+| `@Environment(\.accessibilityReduceMotion)` | `RepoRowSurface` / `AboutBrandAnimatedBackground` 尊重系统"减少动态效果"设置，关闭非必要缩放 / 背景流动动画 | "SwiftUI accessibilityReduceMotion" |
 | `.environment(_:)` | `AppDependencies` 注入到 View 树 | "SwiftUI environment object injection" |
 | `@Bindable` | Observation 框架配套，传 binding 给 child | "Swift Bindable property wrapper" |
 
@@ -126,6 +126,8 @@
 | `NavigationSplitViewVisibility` | `HomeView` 显式持有三栏可见性；启动时重置 `.all`，避免上次窄窗口导致 sidebar 折叠态污染下一次启动 | "SwiftUI NavigationSplitViewVisibility" |
 | `List(selection:)` | 中栏多选 repo 列表；普通单选已改用 plain `Button` 手动写 `selectedRepoID` 以避开系统蓝色选中底色 | "SwiftUI List selection binding macOS" |
 | `Button` + `.buttonStyle(.plain)` | 普通 repo 行点击选择；使用后必须跟 `.focusEffectDisabled()` | "SwiftUI plain button macOS focusEffectDisabled" |
+| `Picker` + `.pickerStyle(.segmented)` | `AboutView` 顶部页面切换使用 macOS 原生 segmented control；为保持系统感，只放文本 segment，不在 segment 里塞 SF Symbol | "SwiftUI Picker segmented macOS" |
+| `ScrollViewReader` | `AboutView` 致谢页中部依赖列表自动滚动时，用 `scrollTo` 定位当前依赖；鼠标 hover 列表时暂停滚动 | "SwiftUI ScrollViewReader scrollTo" |
 | `ForEach(items)` | 配 `Identifiable` 自动 id 匹配 | "SwiftUI ForEach Identifiable" |
 | `Section` / `DisclosureGroup` | Sidebar 分组 | "SwiftUI Section List sidebar" |
 | `.listRowBackground` / `.listRowSeparator` | `RepoListView` 清掉系统 row 背景 / 分割线，让 `RepoRowView` 自己表达卡片选中态 | "SwiftUI listRowBackground listRowSeparator macOS" |
@@ -143,8 +145,10 @@
 | `.confirmationDialog` / `.alert` | 取消 Star 确认（W4 待做） | "SwiftUI confirmationDialog macOS" |
 | `.transition` / `.animation(_:value:)` | `RepoListView` / `TrendingView` 中栏内容切换用整块轻过渡；自定义动效需尊重 `accessibilityReduceMotion` | "SwiftUI transition animation value accessibilityReduceMotion" |
 | `.onHover` | `RepoRowSurface` 鼠标悬停时增强背景 / 边框，是 macOS 指针体验的基础反馈 | "SwiftUI onHover macOS" |
+| `.onReceive(Timer.publish(...).autoconnect())` | `AboutView` 致谢页依赖列表自动滚动的轻量定时器；只在 hover 之外推进当前 index | "SwiftUI Timer publisher onReceive" |
 | `.allowsHitTesting(false)` | `LayoutDebugOverlay` 调试胶囊不拦截下方鼠标事件，覆盖层标准配置 | "SwiftUI allowsHitTesting" |
 | `.overlay(alignment:)` | `HomeView` 用 `.overlay(alignment: .topTrailing)` 在右上角接入 `LayoutDebugOverlay` —— overlay 不影响下方视图的布局，仅"覆盖"绘制，是调试视图 / Toast / 角标的标配 | "SwiftUI overlay alignment" |
+| `RadialGradient` | `AboutBrandAnimatedBackground` 用以 App Icon 为中心的低透明度黄色径向光斑做左侧品牌区淡渐变动效，避免顶部出现明显色彩分隔线 | "SwiftUI RadialGradient animated background" |
 | `ViewModifier` | `ListRowRevealModifier` 抽取 row 渐进式入场，避免把动画状态散落在业务 row 中 | "SwiftUI custom ViewModifier" |
 | `@ViewBuilder` | `RepoRowSurface` 用 builder 接收 compact / card 两套 row 内容，复用同一视觉容器 | "SwiftUI ViewBuilder custom container" |
 | `LocalizedStringKey` vs `String` | `AboutView` / `RepoListView` / `SidebarView` / `SettingsView` 等用户可见文案：静态 key 用 `LocalizedStringKey`，动态仓库名、标签名、URL 用 `Text(verbatim:)` 或先 `String(localized:)`，否则 `Text(titleString)` / `.help(titleString)` 会把 key 当普通文本显示 | "SwiftUI LocalizedStringKey Text String variable String localized" |
@@ -260,8 +264,9 @@
 |---|---|---|
 | `NSWorkspace.shared.open(url)` | `ReadmeWebView.Coordinator` 把外链跳系统浏览器 | "NSWorkspace open URL" |
 | `NSWindowController` | `AboutWindowController` 管理单例关于窗口，重复 Cmd+I 复用同一个窗口 | "NSWindowController showWindow" |
+| `NSWindow.StyleMask` | `AboutWindowController` 通过不包含 `.resizable` 固定关于窗口尺寸；窗口是否能拖拽调整必须由 AppKit styleMask 控制 | "NSWindow styleMask resizable SwiftUI hosting" |
 | `NSWindow.setFrameAutosaveName` | `MainWindowFrameModifier` 保存 / 恢复主窗口尺寸与位置 | "NSWindow setFrameAutosaveName setFrameUsingName" |
-| `NSWindow.contentMinSize` / `minSize` | `MainWindowFrameModifier` 设置主窗口硬下限：启动默认和运行期硬下限统一为 1440×763；不做 sidebar 展开时主动扩窗，也不做动态 minSize，直接让用户拖拽停在稳定宽度 | "NSWindow contentMinSize minSize setFrame" |
+| `NSWindow.contentMinSize` / `minSize` / `maxSize` | `MainWindowFrameModifier` 设置主窗口硬下限；`AboutWindowController` 用同一个 680×450 同时设置关于窗口 min/max，固定尺寸并避免默认底部空白过多 | "NSWindow contentMinSize minSize maxSize setFrame" |
 | Keychain | `KeychainManager`（**有 DEBUG 临时 fallback，D-16 待还**） | "Keychain Services API macOS" |
 | App Sandbox / Entitlements | `Starcat.entitlements` | "App Sandbox macOS entitlements" |
 | `NSBackgroundActivityScheduler` | W6 Release 轮询会用 | "NSBackgroundActivityScheduler macOS" |

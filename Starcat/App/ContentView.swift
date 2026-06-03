@@ -5,7 +5,7 @@
 //  根视图：根据 AuthSession 状态在登录页与主界面之间切换。
 //
 //  Week 3 范围：
-//  - .unauthenticated / .awaitingUserCode → GithubAuthView
+//  - .unauthenticated / .awaitingUserCode → GithubAuthView（V2 视觉升级版，2026-06-03 上线）
 //  - .authenticated → HomeView（三栏布局）
 //
 
