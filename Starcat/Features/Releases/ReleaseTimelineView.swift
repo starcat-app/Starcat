@@ -37,10 +37,14 @@ struct ReleaseTimelineView: View {
             Divider()
             content
         }
-        // 2026-06-04 dong4j 反馈：宽度减小 1/3 —— 原 720/880 → 480/587。
-        // sheet 是非主交互窗口，更窄能配合 macOS 多窗口布局把屏幕让给主窗口。
-        .frame(minWidth: 480, minHeight: 520)
-        .frame(idealWidth: 587, idealHeight: 640)
+        // 2026-06-04 宽度迭代：
+        //   - 第一版 720/880 偏宽，挤主窗口
+        //   - 第二版 480/587 窄，但 header 在中文 / 英文环境里"时间线 + 过滤框 + 检查 +
+        //     全部已读 + 关闭"五件套都要塞进去 → 文字换行 (dong4j 截图反馈)
+        //   - 现在 540/620：在第二版基础上加 60pt，刚好够容纳 header 五件套+
+        //     英文 "Mark all read" / "Check" 也不再 truncation；高度不变
+        .frame(minWidth: 540, minHeight: 520)
+        .frame(idealWidth: 620, idealHeight: 640)
         .task {
             if viewModel == nil {
                 viewModel = ReleaseTimelineViewModel(
@@ -320,18 +324,32 @@ private struct ReleaseTimelineRow: View {
             // 改造：加 22pt 圆形头像 + repo 名称从 subheadline 升到 body.semibold，
             // 视觉权重接近 RepoRowView 的 compact 模式，保证用户在时间线扫读时
             // 能优先识别"这是哪个仓库的发布"。
+            //
+            // 2026-06-04 dong4j 反馈：原方案在头像前面留了一个 8x8 圆点位（已读时
+            // `Color.clear` 仍占布局空间），所以 read 行的头像前莫名空一块。
+            // 改成把未读小红点 overlay 到头像右上角（不占主轴空间），头像直接顶左
+            // 缘对齐；read 行因为没 overlay，视觉上也没有 8pt 空白。
             HStack(spacing: 8) {
-                // 未读 / 已读圆点（保持最左侧的状态指示位置不变）
-                Circle()
-                    .fill(entry.release.isRead ? Color.clear : Color.accentColor)
-                    .frame(width: 8, height: 8)
-
                 // 仓库头像（22pt 与 RepoRowView compact 行一致；不描边避免视觉嘈杂）
+                // overlay 一个未读小红点（accent 色 8x8 + 1pt 白描边模拟"通知红点"），
+                // 已读时 overlay 整个被条件渲染掉，不影响布局
                 RemoteAvatar(
                     urlString: RepoAvatarURL.from(owner: entry.repo.owner),
                     size: 22,
                     showBorder: false
                 )
+                .overlay(alignment: .topTrailing) {
+                    if !entry.release.isRead {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 8, height: 8)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5)
+                            )
+                            .offset(x: 2, y: -2)
+                    }
+                }
 
                 // repo 名称：升到 body.semibold，比 tag / 时间这些副信息明显大一档
                 Text(verbatim: entry.repo.fullName)

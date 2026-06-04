@@ -28,9 +28,10 @@ struct RepoReleaseSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             // 标题行：与 Tags / Notes 段保持一致——
-            // "Releases" Title 后面紧贴 Subscribe / Unsubscribe 按钮（不右对齐），
-            // 通知静默开关与右端 ProgressView 用 Spacer 推到行尾，
-            // 让"添加 / 修改"类的主操作（订阅）始终贴在 label 旁边。
+            // "Releases" Title 后面紧贴 Subscribe / Unsubscribe 按钮，
+            // 通知静默开关 (notifyToggle) 紧跟订阅按钮后面（dong4j 2026-06-04 反馈：
+            // 原版把它甩到行尾产生孤儿图标 + 视线跳跃，与"主操作的修饰符"语义不符），
+            // ProgressView 用 Spacer 推到行尾继续承担"加载中"指示。
             HStack(spacing: 8) {
                 Label("releases.section.title", systemImage: "shippingbox")
                     .font(.caption)
@@ -38,18 +39,16 @@ struct RepoReleaseSection: View {
 
                 if let vm = viewModel {
                     subscribeButton(vm: vm)
+                    if vm.subscription?.isSubscribed == true {
+                        notifyToggle(vm: vm)
+                    }
                 }
 
                 Spacer()
 
-                if let vm = viewModel {
-                    if vm.isLoading {
-                        ProgressView()
-                            .controlSize(.mini)
-                    }
-                    if vm.subscription?.isSubscribed == true {
-                        notifyToggle(vm: vm)
-                    }
+                if viewModel?.isLoading == true {
+                    ProgressView()
+                        .controlSize(.mini)
                 }
             }
 
