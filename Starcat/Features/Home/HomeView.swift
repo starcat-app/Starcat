@@ -28,7 +28,7 @@
 //
 //  数据生命周期：
 //  - onAppear：刷新 Sidebar + 列表
-//  - 当 selection / searchQuery 变 → 自动 reload
+//  - 当 selection 变化或搜索框显式提交时 → 自动 reload
 //  - 当 SyncManager.state 变为 completed → 刷新 Sidebar + 列表
 //
 
@@ -228,18 +228,13 @@ struct HomeView: View {
         .task(id: viewModel.selection) {
             await viewModel.reloadItems()
         }
-        // searchQuery 变化 → 防抖 250ms → 重新加载
-        .task(id: viewModel.searchQuery) {
-            try? await Task.sleep(for: .milliseconds(250))
-            guard !Task.isCancelled else { return }
+        // 搜索框按 Return / 清空后才提交搜索；普通 FTS5 与 AI 语义搜索都不再逐字符实时查询。
+        .task(id: viewModel.searchSubmissionID) {
             await viewModel.reloadItems()
         }
-        // 搜索模式变化时复用当前搜索框内容重查；空搜索只刷新 UI 状态，不触发 AI 调用。
+        // 搜索模式变化只更新持久化偏好，不立刻发起查询；用户按 Return 后才用新模式搜索。
         .task(id: viewModel.smartSearchMode) {
             settings.smartSearchMode = viewModel.smartSearchMode
-            if viewModel.isSearching {
-                await viewModel.reloadItems()
-            }
         }
         // 同步完成 → 刷新 Sidebar + 当前列表
         .task(id: syncManager.state) {
