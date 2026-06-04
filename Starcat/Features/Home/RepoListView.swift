@@ -34,6 +34,10 @@ struct RepoListView: View {
     @Binding var selectedTrendingRepoID: String?
     /// 当前选中的 Trending repo 完整数据（用于右侧详情页元信息展示）。
     @Binding var selectedTrendingRepo: TrendingRepo?
+    /// Activity 页当前分类。
+    @Binding var selectedActivityCategory: ActivityCategory
+    /// Activity 页当前选中项，驱动右侧详情。
+    @Binding var selectedActivityItem: ActivityItem?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -118,8 +122,11 @@ struct RepoListView: View {
                 } else {
                     emptyState(systemImage: "chart.line.uptrend.xyaxis", title: "empty.trendingUnavailable", subtitle: "empty.trendingComingSoon")
                 }
-            } else if selectedPage == .search {
-                searchPlaceholder
+            } else if selectedPage == .activity {
+                ActivityView(
+                    selectedCategory: $selectedActivityCategory,
+                    selectedItem: $selectedActivityItem
+                )
             } else if viewModel.isLoading {
                 // HOM-46：无缓存分类加载时直接切到骨架屏，避免旧分类列表停留在中栏造成"没反应"的错觉。
                 RepoSkeletonListView(density: settings.listDensity, rowCount: 10)
@@ -161,8 +168,8 @@ struct RepoListView: View {
         if selectedPage == .trending {
             return "trending-\(selectedTrendingLanguage.id)"
         }
-        if selectedPage == .search {
-            return "search"
+        if selectedPage == .activity {
+            return "activity-\(selectedActivityCategory.id)"
         }
         let mode = viewModel.isMultiSelectMode ? "multi" : "single"
         if viewModel.isLoading {
@@ -472,8 +479,8 @@ struct RepoListView: View {
         if selectedPage == .trending {
             return selectedTrendingLanguage.localizedDisplayName
         }
-        if selectedPage == .search {
-            return String(localized: "empty.searchPlaceholder")
+        if selectedPage == .activity {
+            return selectedActivityCategory.localizedTitle
         }
         if viewModel.isMultiSelectMode {
             return String(
@@ -512,8 +519,8 @@ struct RepoListView: View {
         if selectedPage == .trending {
             return String(localized: "trending.title")
         }
-        if selectedPage == .search {
-            return String(localized: "search.title")
+        if selectedPage == .activity {
+            return String(localized: "activity.title")
         }
         if viewModel.isSearching {
             return String(format: String(localized: "search.searching"), viewModel.searchQuery)
@@ -604,14 +611,6 @@ struct RepoListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
-    }
-
-    private var searchPlaceholder: some View {
-        emptyState(
-            systemImage: "magnifyingglass",
-            title: "search.title",
-            subtitle: "empty.searchPlaceholder"
-        )
     }
 
     private func statusIcon(for status: RepoStatus) -> String {

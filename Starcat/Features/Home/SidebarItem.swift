@@ -21,7 +21,7 @@ import SwiftUI
 enum SidebarRootPage: String, CaseIterable, Identifiable {
     case manage
     case trending
-    case search
+    case activity
 
     var id: String { rawValue }
 
@@ -31,7 +31,7 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
         switch self {
         case .manage:   return "nav.manage"
         case .trending: return "nav.trending"
-        case .search:   return "nav.search"
+        case .activity: return "nav.activity"
         }
     }
 
@@ -39,7 +39,7 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
         switch self {
         case .manage:   return "folder"
         case .trending: return "chart.line.uptrend.xyaxis"
-        case .search:   return "magnifyingglass"
+        case .activity: return "bell.badge"
         }
     }
 }

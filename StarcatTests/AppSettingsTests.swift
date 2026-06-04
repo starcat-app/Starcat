@@ -74,6 +74,20 @@ struct AppSettingsTests {
         #expect(s.repoSortOption == .starredAtDesc)
     }
 
+    // MARK: - Activity 分类偏好
+
+    @Test("Activity: 默认分类 raw 为空，设置后重新读取应保留")
+    func activityCategoryRawPersists() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+        #expect(s1.lastActivityCategoryRaw == "")
+
+        s1.lastActivityCategoryRaw = "release"
+
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.lastActivityCategoryRaw == "release")
+    }
+
     // MARK: - AI BYOK 设置
 
     @Test("AI: 默认使用 OpenAI-compatible + keyword 搜索")
