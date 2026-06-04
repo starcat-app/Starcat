@@ -716,7 +716,7 @@ struct RepoDetailView: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pressableHover()
-        .help("打开 AI 助手（摘要 + 对话）")
+        .help("ai.assistant.openButton.help")
     }
 
     @ViewBuilder

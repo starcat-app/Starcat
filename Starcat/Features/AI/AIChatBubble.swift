@@ -110,12 +110,19 @@ struct AIChatBubble: View {
                     // 已足够传达"在思考"，配文字辅助语义即可。
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
-                        Text("思考中…")
+                        Text("ai.assistant.chat.thinking")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 } else {
-                    RepoAISummaryMarkdownView(markdown: message.content)
+                    // dong4j 2026-06-04 16:05 反馈：助手回复 Markdown 里若有 H1/H2
+                    // 会与角色标头 `## 🤖 AI (HH:mm)` 撞同级。`MarkdownHeadingDemoter`
+                    // 先扫一遍最高级别，仅当 ≤ H2 时整体平移到 H3 起步（≥ H3 原样
+                    // 返回，不浪费 String 拷贝；流式中每个 token 重渲也只是几 KB
+                    // markdown，O(n) 扫描完全可接受）。
+                    RepoAISummaryMarkdownView(
+                        markdown: MarkdownHeadingDemoter.demoteToH3(message.content)
+                    )
                     if message.isStreaming {
                         streamingIndicator
                     }
@@ -151,7 +158,7 @@ struct AIChatBubble: View {
                     options: .repeating,
                     isActive: true
                 )
-            Text("生成中")
+            Text("ai.assistant.chat.generating")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -167,7 +174,7 @@ struct AIChatBubble: View {
             timestampLabel
             CopyFeedbackButton(
                 providesContent: { message.content },
-                tooltip: "复制此回复 Markdown 到剪贴板"
+                tooltip: "ai.assistant.chat.copyReply.tooltip"
             ) { didCopy in
                 Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
                     .font(.caption2)

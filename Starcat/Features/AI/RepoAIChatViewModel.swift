@@ -143,9 +143,13 @@ final class RepoAIChatViewModel {
             errorMessage = error.localizedDescription
             if messages.indices.contains(assistantIndex) {
                 // 不留空占位（避免 UI 上看到一条"灰色光标但无文字"的助手消息）。
+                // 失败占位文案走 i18n：英文 / 中文用户都能看懂自己语言的失败提示。
                 let prefix = messages[assistantIndex].content
                 messages[assistantIndex].content = prefix.isEmpty
-                    ? "（生成失败：\(error.localizedDescription)）"
+                    ? String(
+                        format: String(localized: "ai.assistant.chat.failureFormat"),
+                        error.localizedDescription
+                    )
                     : prefix
                 messages[assistantIndex].isStreaming = false
             }
@@ -231,22 +235,36 @@ final class RepoAIChatViewModel {
         timeFormatter.locale = Locale(identifier: "en_US_POSIX")
         timeFormatter.dateFormat = "HH:mm"
 
-        // GitHub 用户名兜底：未登录或 login 为空时退化成"你"，与旧版行为一致，
+        // GitHub 用户名兜底：未登录或 login 为空时退化成 "You" / "你"
+        // （走本地化 key `ai.assistant.chat.export.userFallback`，跟 UI 语言一致）。
         // 避免导出出现 `## 👤  (15:30)` 这种空名词的尴尬格式。
         let userDisplayName: String = {
             if let login = userLogin?.trimmingCharacters(in: .whitespacesAndNewlines),
                !login.isEmpty {
                 return login
             }
-            return "你"
+            return String(localized: "ai.assistant.chat.export.userFallback")
         }()
 
+        // 全套导出模板都走本地化（HOM-150 dong4j 2026-06-04 16:05 反馈：
+        // "有很多都没有做国际化配置"）。英文用户复制粘贴出去的 Markdown 应该
+        // 是英文版"Starcat AI Chat · ... / Repo: / Exported: / Messages:"，
+        // 而不是夹杂中英文的混合体。模板里 `%@` 由 `String(format:)` 注入。
+        let docTitle = String(
+            format: String(localized: "ai.assistant.chat.export.docTitleFormat"),
+            repo.fullName
+        )
+        let repoLabel = String(localized: "ai.assistant.chat.export.repoLabel")
+        let exportedAtLabel = String(localized: "ai.assistant.chat.export.exportedAtLabel")
+        let messageCountLabel = String(localized: "ai.assistant.chat.export.messageCountLabel")
+        let emptyContentPlaceholder = String(localized: "ai.assistant.chat.export.emptyContent")
+
         var lines: [String] = []
-        lines.append("# Starcat AI Chat · \(repo.fullName)")
+        lines.append("# \(docTitle)")
         lines.append("")
-        lines.append("- **仓库**: [\(repo.fullName)](\(repo.htmlUrl))")
-        lines.append("- **导出时间**: \(exportedAt)")
-        lines.append("- **消息数**: \(messages.count)")
+        lines.append("- **\(repoLabel)**: [\(repo.fullName)](\(repo.htmlUrl))")
+        lines.append("- **\(exportedAtLabel)**: \(exportedAt)")
+        lines.append("- **\(messageCountLabel)**: \(messages.count)")
         lines.append("")
         lines.append("---")
         lines.append("")
@@ -268,12 +286,18 @@ final class RepoAIChatViewModel {
             }
             lines.append("")
 
-            let content = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
-            if content.isEmpty {
+            let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
                 // 流式还没开始 / 错误占位：给一个 placeholder 比留空白行友好。
-                lines.append("_（未生成内容）_")
+                lines.append(emptyContentPlaceholder)
+            } else if message.role == .assistant {
+                // dong4j 2026-06-04 16:05 反馈：助手 Markdown 里若有 H1/H2 会与
+                // 角色标头 `## 🤖 AI` 撞同级，需要按需降级到 H3 起步。
+                // user 消息纯文本，没有 markdown 标题，不需要降级（也避免万一用户
+                // 输入 `# 帮我看下` 被错改）。
+                lines.append(MarkdownHeadingDemoter.demoteToH3(trimmed))
             } else {
-                lines.append(content)
+                lines.append(trimmed)
             }
             lines.append("")
         }
@@ -283,9 +307,13 @@ final class RepoAIChatViewModel {
         // 这种诡异情况——虽然 UI 流程上空对话也不会触发复制按钮，但 API 层
         // 多一道保险）。
         if !messages.isEmpty {
+            let generatedBy = String(
+                format: String(localized: "ai.assistant.chat.export.generatedByFormat"),
+                service.resolvedChatModelName
+            )
             lines.append("---")
             lines.append("")
-            lines.append("> 由 \(service.resolvedChatModelName) 生成")
+            lines.append("> \(generatedBy)")
             lines.append("")
         }
 

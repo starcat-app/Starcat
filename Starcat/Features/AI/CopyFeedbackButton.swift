@@ -72,7 +72,7 @@ struct CopyFeedbackButton<Label: View>: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help(didCopy ? "已复制 ✓" : tooltip)
+        .help(didCopy ? "ai.assistant.copy.copied" : tooltip)
     }
 
     /// 实际执行复制 + 切反馈态 + 排复位。

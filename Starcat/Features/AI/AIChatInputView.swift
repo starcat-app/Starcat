@@ -23,7 +23,7 @@ struct AIChatInputView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            TextField("问问关于这个仓库的问题…", text: $text)
+            TextField("ai.assistant.input.placeholder", text: $text)
                 .textFieldStyle(.plain)
                 .font(.body)
                 .padding(.horizontal, 12)
@@ -74,7 +74,7 @@ struct AIChatInputView: View {
         .focusEffectDisabled()
         // 输入为空 / 发送中 → 禁用；SwiftUI 自动把按钮置灰，无需手写 opacity。
         .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
-        .help(isSending ? "正在发送…" : "发送（Return）")
+        .help(isSending ? "ai.assistant.input.sending.help" : "ai.assistant.input.send.help")
     }
 
     private func trySend() {

@@ -174,7 +174,7 @@ struct RepoAIWindowContentView: View {
                             if vm.isLoading {
                                 HStack(spacing: 8) {
                                     ProgressView().controlSize(.small)
-                                    Text("正在读取本地 AI 缓存…")
+                                    Text("ai.assistant.summary.loadingCache")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -206,7 +206,7 @@ struct RepoAIWindowContentView: View {
         } else {
             HStack {
                 ProgressView().controlSize(.small)
-                Text("初始化中…")
+                Text("ai.assistant.summary.initializing")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -218,7 +218,7 @@ struct RepoAIWindowContentView: View {
 
     private func summaryHeader(vm: RepoAIInsightViewModel) -> some View {
         HStack(alignment: .center, spacing: 10) {
-            Label("AI 摘要", systemImage: "sparkles")
+            Label("ai.assistant.summary.title", systemImage: "sparkles")
                 .font(.headline)
                 .labelStyle(.titleAndIcon)
                 .foregroundStyle(.primary)
@@ -231,12 +231,12 @@ struct RepoAIWindowContentView: View {
                 Button {
                     Task { await vm.generate(repo: repo) }
                 } label: {
-                    Label("重新生成", systemImage: "arrow.clockwise")
+                    Label("ai.assistant.summary.regenerate", systemImage: "arrow.clockwise")
                         .labelStyle(.iconOnly)
                 }
                 .buttonStyle(.borderless)
                 .focusEffectDisabled()
-                .help("重新生成摘要（不影响对话）")
+                .help("ai.assistant.summary.regenerate.help")
             } else if vm.isGenerating {
                 ProgressView().controlSize(.small)
             }
@@ -254,7 +254,7 @@ struct RepoAIWindowContentView: View {
     private func copyButton(insight: RepoAIInsight) -> some View {
         CopyFeedbackButton(
             providesContent: { insight.summaryMarkdown ?? insight.summary },
-            tooltip: "复制摘要到剪贴板"
+            tooltip: "ai.assistant.summary.copy.tooltip"
         ) { didCopy in
             Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
                 .foregroundStyle(didCopy ? Color.green : Color.primary)
@@ -265,9 +265,9 @@ struct RepoAIWindowContentView: View {
     @ViewBuilder
     private func emptySummaryState(vm: RepoAIInsightViewModel) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("尚未生成 AI 摘要")
+            Text("ai.assistant.summary.empty.title")
                 .font(.subheadline.weight(.semibold))
-            Text("可以直接在下方对话区追问；如需结构化摘要，点击右侧「生成摘要」。摘要会读取本仓库的元数据、README、topics 并以 Markdown 输出。")
+            Text("ai.assistant.summary.empty.description")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button {
@@ -276,7 +276,7 @@ struct RepoAIWindowContentView: View {
                 if vm.isGenerating {
                     ProgressView().controlSize(.small)
                 } else {
-                    Label("生成摘要", systemImage: "sparkles")
+                    Label("ai.assistant.summary.generate", systemImage: "sparkles")
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -289,7 +289,7 @@ struct RepoAIWindowContentView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text("正在生成 AI 摘要…")
+                Text("ai.assistant.summary.streaming")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -307,7 +307,12 @@ struct RepoAIWindowContentView: View {
         }
 
         if let tagError = vm.tagErrorMessage {
-            errorBanner(message: "推荐标签解析失败：\(tagError)")
+            errorBanner(
+                message: String(
+                    format: String(localized: "ai.assistant.tags.parseErrorFormat"),
+                    tagError
+                )
+            )
         }
 
         footer(insight)
@@ -318,10 +323,10 @@ struct RepoAIWindowContentView: View {
     private func tagSuggestionsBlock(_ tags: [AITagSuggestion], vm: RepoAIInsightViewModel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("推荐标签")
+                Text("ai.assistant.tags.title")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                Button("全部应用") {
+                Button("ai.assistant.tags.applyAll") {
                     Task { await vm.applyAllTags(repo: repo) }
                 }
                 .controlSize(.small)
@@ -342,7 +347,9 @@ struct RepoAIWindowContentView: View {
                     Text("\(Int((max(0, min(tag.confidence, 1)) * 100).rounded()))%")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
-                    Button(isApplied ? "已应用" : "应用") {
+                    // tag.name / tag.reason 是后端 / 模型返回的原始字符串，无需本地化
+                    // （内容本身就是 i18n-中立的、给当前用户语言生成的）。
+                    Button(isApplied ? "ai.assistant.tags.applied" : "ai.assistant.tags.apply") {
                         Task { await vm.applyTag(tag, repo: repo) }
                     }
                     .controlSize(.small)
@@ -355,7 +362,16 @@ struct RepoAIWindowContentView: View {
     private func footer(_ insight: RepoAIInsight) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "checkmark.seal")
-            Text("由 \(insight.model) 生成 · \(formattedDate(insight.generatedAt))")
+            // "由 X 生成 · 时间" 含两个动态占位，走 String(format:) + 本地化模板，
+            // 比直接 `Text("由 \(...) 生成")` 让 Xcode 自动抽 key 更可控、key 名也
+            // 不会被改文案时连带破坏（key 名是稳定 identifier）。
+            Text(
+                String(
+                    format: String(localized: "ai.assistant.summary.footer.generatedByFormat"),
+                    insight.model,
+                    formattedDate(insight.generatedAt)
+                )
+            )
         }
         .font(.caption2)
         .foregroundStyle(.tertiary)
@@ -381,15 +397,15 @@ struct RepoAIWindowContentView: View {
     private var panelToggleBar: some View {
         HStack(spacing: 0) {
             Picker("", selection: $panelMode.animation(.easeInOut(duration: 0.28))) {
-                Label("AI 摘要", systemImage: "sparkles").tag(AIPanelMode.summary)
-                Label("AI 对话", systemImage: "bubble.left.and.bubble.right").tag(AIPanelMode.chat)
+                Label("ai.assistant.toggle.summary", systemImage: "sparkles").tag(AIPanelMode.summary)
+                Label("ai.assistant.toggle.chat", systemImage: "bubble.left.and.bubble.right").tag(AIPanelMode.chat)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             // 限宽避免在大窗口下 segmented 被拉成超长条带；居中通过外层
             // `.frame(maxWidth: .infinity)` + Picker 自身有限宽实现。
             .frame(maxWidth: 280)
-            .help("切换 AI 摘要 / AI 对话面板（互斥）")
+            .help("ai.assistant.toggle.help")
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 12)
@@ -527,13 +543,13 @@ struct RepoAIWindowContentView: View {
             Spacer()
             CopyFeedbackButton(
                 providesContent: { chat.markdownExport(repo: repo, userLogin: currentUserLogin) },
-                tooltip: "复制全部对话为 Markdown 到剪贴板"
+                tooltip: "ai.assistant.chat.copyAll.tooltip"
             ) { didCopy in
                 HStack(spacing: 6) {
                     Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
                         .font(.caption)
                         .contentTransition(.symbolEffect(.replace))
-                    Text(didCopy ? "已复制 ✓" : "复制完整对话")
+                    Text(didCopy ? "ai.assistant.copy.copied" : "ai.assistant.chat.copyAll.label")
                         .font(.caption)
                 }
                 .foregroundStyle(didCopy ? Color.green : .secondary)
@@ -560,10 +576,10 @@ struct RepoAIWindowContentView: View {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 36))
                 .foregroundStyle(.tertiary)
-            Text("开始与 AI 聊聊这个仓库")
+            Text("ai.assistant.chat.empty.title")
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            Text("AI 已带上仓库元数据与 README 上下文；你可以追问适用场景、对比方案、读源码线索等。")
+            Text("ai.assistant.chat.empty.description")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
