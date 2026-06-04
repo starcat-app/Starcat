@@ -19,6 +19,7 @@ import Foundation
 struct RepoAIInsight: Codable, Equatable, Sendable {
     var oneLiner: String
     var summary: String
+    var summaryMarkdown: String?
     var platforms: [String]
     var suitableFor: [String]
     var strengths: [String]

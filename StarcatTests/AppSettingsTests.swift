@@ -83,10 +83,15 @@ struct AppSettingsTests {
         #expect(s.aiBaseURL == "https://api.openai.com/v1")
         #expect(s.aiChatModel == "gpt-4o-mini")
         #expect(s.aiEmbeddingModel == "text-embedding-3-small")
+        #expect(s.aiProviderProfiles.count == 1)
+        #expect(s.aiSummaryTask.providerID == s.aiProviderProfiles[0].id)
+        #expect(s.aiTagsTask.providerID == s.aiProviderProfiles[0].id)
+        #expect(s.aiEmbeddingTask.providerID == s.aiProviderProfiles[0].id)
+        #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{context}"))
         #expect(s.smartSearchMode == .keyword)
     }
 
-    @Test("AI: 设置后重新读取应保留")
+    @Test("AI: 旧版设置后重新读取应保留")
     func aiSettingsPersist() {
         let defaults = makeIsolatedDefaults()
         let s1 = AppSettings(defaults: defaults)
@@ -102,6 +107,44 @@ struct AppSettingsTests {
         #expect(s2.aiChatModel == "llama3.2")
         #expect(s2.aiEmbeddingModel == "nomic-embed-text")
         #expect(s2.smartSearchMode == .semantic)
+    }
+
+    @Test("AI: 多服务商 profile 与任务配置应持久化")
+    func aiProviderProfilesPersist() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+        let remote = AIProviderProfile(
+            id: "remote-openai",
+            provider: .openAICompatible,
+            displayName: "OpenAI Remote",
+            baseURL: "https://api.openai.com/v1",
+            models: [
+                AIModelDescriptor(providerID: "remote-openai", name: "gpt-4o-mini", capability: .chat),
+                AIModelDescriptor(providerID: "remote-openai", name: "text-embedding-3-small", capability: .embedding)
+            ]
+        )
+        let local = AIProviderProfile(
+            id: "local-lmstudio",
+            provider: .lmStudio,
+            displayName: "LM Studio",
+            baseURL: "http://localhost:1234/v1",
+            models: [
+                AIModelDescriptor(providerID: "local-lmstudio", name: "qwen/qwen3.5-9b", capability: .chat)
+            ]
+        )
+        s1.aiProviderProfiles = [remote, local]
+        s1.aiSummaryTask.providerID = local.id
+        s1.aiSummaryTask.modelID = "qwen/qwen3.5-9b"
+        s1.aiTagsTask.providerID = remote.id
+        s1.aiTagsTask.modelID = "gpt-4o-mini"
+        s1.aiEmbeddingTask.providerID = remote.id
+        s1.aiEmbeddingTask.modelID = "text-embedding-3-small"
+
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.aiProviderProfiles.map(\.id) == ["remote-openai", "local-lmstudio"])
+        #expect(s2.aiSummaryTask.providerID == "local-lmstudio")
+        #expect(s2.aiTagsTask.modelID == "gpt-4o-mini")
+        #expect(s2.aiEmbeddingTask.modelID == "text-embedding-3-small")
     }
 
     @Test("AI: 非法 provider / search mode 回退到默认")

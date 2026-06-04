@@ -92,7 +92,7 @@ enum AIDebugLogger {
     }
 
     private static func chatSummary(_ result: ChatResult, reason: String) -> String {
-        let choiceLines = result.choices.map { choice in
+        let choiceLines: String = result.choices.map { choice -> String in
             let message = choice.message
             return """
             choice[\(choice.index)] role=\(message.role) finishReason=\(choice.finishReason) contentChars=\(message.content?.count ?? 0) refusalChars=\(message.refusal?.count ?? 0) reasoningChars=\(message.reasoning?.count ?? 0) toolCalls=\(message.toolCalls?.count ?? 0)

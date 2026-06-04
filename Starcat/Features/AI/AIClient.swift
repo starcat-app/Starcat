@@ -19,6 +19,8 @@ import Foundation
 
 /// AI 调用配置。
 struct AIClientConfiguration: Equatable, Sendable {
+    var providerID: String = "legacy-openAICompatible"
+    var provider: AIServiceProvider = .openAICompatible
     var apiKey: String
     var baseURL: String
     var chatModel: String
@@ -26,11 +28,42 @@ struct AIClientConfiguration: Equatable, Sendable {
     var timeoutInterval: TimeInterval = 300
 }
 
+/// Chat 返回格式要求。
+enum AIChatResponseFormat: Equatable, Sendable {
+    case text
+    case jsonObject
+}
+
+/// 参数化 Chat 请求。
+struct AIChatRequest: Equatable, Sendable {
+    var systemPrompt: String
+    var userPrompt: String
+    var model: String
+    var parameters: AIModelParameters
+    var responseFormat: AIChatResponseFormat = .text
+}
+
+/// 非流式 Chat 响应。
+struct AIChatResponse: Equatable, Sendable {
+    var content: String
+    var model: String
+    var finishReason: String?
+}
+
+/// 流式 Chat 事件。
+enum AIChatStreamEvent: Equatable, Sendable {
+    case delta(String)
+    case completed(AIChatResponse)
+}
+
 /// 业务层依赖的最小 AI 能力集。
 protocol AIClientProtocol: Sendable {
+    func chat(request: AIChatRequest) async throws -> AIChatResponse
+    func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error>
     func chat(systemPrompt: String, userPrompt: String, model: String?) async throws -> String
     func embedding(input: String, model: String?) async throws -> [Float]
     func embeddings(inputs: [String], model: String?) async throws -> [[Float]]
+    func listModels() async throws -> [AIModelDescriptor]
     func testConnection() async throws
 }
 
@@ -39,6 +72,8 @@ enum AIClientError: Error, LocalizedError, Equatable {
     case missingAPIKey
     case invalidBaseURL(String)
     case emptyResponse
+    case responseTruncated
+    case modelListRequestFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -48,6 +83,10 @@ enum AIClientError: Error, LocalizedError, Equatable {
             return "Base URL 无效：\(url)"
         case .emptyResponse:
             return "AI 服务返回了空内容。"
+        case .responseTruncated:
+            return "AI 服务输出达到最大 token 限制，请调大最大 token 或缩短输入内容。"
+        case .modelListRequestFailed(let message):
+            return "获取模型列表失败：\(message)"
         }
     }
 }
