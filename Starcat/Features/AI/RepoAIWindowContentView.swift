@@ -58,6 +58,10 @@ struct RepoAIWindowContentView: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var homeViewModel
+    /// 读取当前登录用户的 GitHub username，供"复制完整对话"导出 Markdown 时
+    /// 把角色标头里的 "你" 替换成真实 login（HOM-150 dong4j 2026-06-04 15:48）。
+    /// 控制器创建 hosting 时已 `.environment(dependencies.authSession)` 注入。
+    @Environment(AuthSession.self) private var authSession
 
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
@@ -522,7 +526,7 @@ struct RepoAIWindowContentView: View {
         HStack {
             Spacer()
             CopyFeedbackButton(
-                providesContent: { chat.markdownExport(repo: repo) },
+                providesContent: { chat.markdownExport(repo: repo, userLogin: currentUserLogin) },
                 tooltip: "复制全部对话为 Markdown 到剪贴板"
             ) { didCopy in
                 HStack(spacing: 6) {
@@ -573,6 +577,18 @@ struct RepoAIWindowContentView: View {
             get: { chatVM?.inputText ?? "" },
             set: { chatVM?.inputText = $0 }
         )
+    }
+
+    /// 当前登录用户的 GitHub username（如 `dong4j`）。
+    ///
+    /// 用于"复制完整对话"导出的 Markdown 文档里替换角色标头的 "你"。未登录
+    /// 或 state 不是 `.authenticated` 时返回 nil，markdownExport 内部会兜底
+    /// 回退为 "你"，保留旧行为。
+    private var currentUserLogin: String? {
+        if case .authenticated(let user) = authSession.state {
+            return user.login
+        }
+        return nil
     }
 
     /// 发送当前输入。

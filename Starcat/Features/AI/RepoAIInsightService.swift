@@ -66,6 +66,17 @@ final class RepoAIInsightService {
         self.keychain = keychain
     }
 
+    /// 当前对话流式所用的模型名。
+    ///
+    /// 与 `chatStream` / `makeClient` 中的解析顺序完全一致——优先用 `aiSummaryTask`
+    /// 的 `resolvedModelName`，空则 fallback 到全局 `aiChatModel`。给"复制完整对话"
+    /// 导出的 Markdown 末尾署名「由 X 生成」时使用。
+    /// HOM-150 dong4j 2026-06-04 15:48 反馈："markdown 的最后应该加上由什么模型生成
+    /// 的，就像 AI 摘要生成最后也添加了由什么模型生成的"。
+    var resolvedChatModelName: String {
+        settings.aiSummaryTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
+    }
+
     func cachedInsight(for repo: Repo) async throws -> RepoAIInsight? {
         let source = try await makeSource(for: repo)
         guard let record = try await summaryRepository.find(repoId: repo.id, model: cacheModelKey()),

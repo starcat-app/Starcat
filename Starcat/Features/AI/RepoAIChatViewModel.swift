@@ -167,51 +167,79 @@ final class RepoAIChatViewModel {
     }
 
     /// 把当前对话历史拼成可粘贴到外部 Markdown 渲染器（Obsidian / Notion / 飞书
-    /// 文档 / Bear / GitHub 等）的友好文档（HOM-150 dong4j 2026-06-04 15:13 反馈）。
+    /// 文档 / Bear / GitHub 等）的友好文档。
     ///
-    /// 文档结构（设计目标：粘贴到主流 Markdown 渲染器都能看到清晰的层级 + 角色
-    /// 分隔，且不与助手回答内部的标题层级"撞车"）：
+    /// 演进历史：
+    /// - HOM-150 dong4j 2026-06-04 15:13：初版用 `####`（H4）做角色标头。
+    /// - HOM-150 dong4j 2026-06-04 15:48 反馈：改 H2、加 GitHub 用户名 + HH:mm 时间
+    ///   戳到角色标头、末尾追加「由 {model} 生成」署名。
     ///
+    /// 文档结构（新版）：
     /// ```
     /// # Starcat AI Chat · {owner/name}
     ///
     /// - **仓库**: [owner/name](https://github.com/owner/name)
-    /// - **导出时间**: 2026-06-04 15:13:42
+    /// - **导出时间**: 2026-06-04 15:48:21
     /// - **消息数**: N
     ///
     /// ---
     ///
-    /// #### 👤 你
+    /// ## 👤 dong4j (15:30)
     ///
     /// {user 消息原文}
     ///
-    /// #### 🤖 AI
+    /// ## 🤖 AI (15:30)
     ///
     /// {assistant 消息原 Markdown}
     ///
     /// ---
     ///
-    /// #### 👤 你
+    /// ## 👤 dong4j (15:35)
     /// ...
+    ///
+    /// ---
+    ///
+    /// > 由 qwen3.5-omni-flash-2026-03-15 生成
     /// ```
     ///
+    /// 参数：
+    /// - `userLogin`：当前登录的 GitHub username（如 `dong4j`）；nil 时回退为
+    ///   "你"，保留旧行为，单测 / 未登录场景仍能跑通。
+    ///
     /// 设计取舍：
-    /// - 标题用 `####`（H4）而不是更高的 `##`/`###`：助手回答里通常自带 `##`/`###`
-    ///   章节，用 H4 当角色标头能保证助手内部层级保持自然显示，不会被角色标头
-    ///   "压扁"。
-    /// - 角色标头加 emoji（👤 / 🤖）：渲染器普遍支持，扫一眼就能区分发言人，
-    ///   不依赖颜色 / 缩进。
-    /// - 相邻 turn（上一轮 assistant → 下一轮 user）之间用 `---` 分隔，单轮内
-    ///   user → assistant 不加分隔，让"问 + 答"在视觉上成对。
-    /// - 助手内容原样输出，不二次转义/包裹代码块：助手返回的 Markdown 本身就是
-    ///   合法 Markdown（包含 fenced code、链接、列表等），任何包裹都会破坏渲染。
-    /// - 流式中的消息也包含进去（按当前累积的 content 写），用户中途想"分段
-    ///   保存"也能用。
-    func markdownExport(repo: Repo) -> String {
+    /// - H2 标头（dong4j 明确要求）：注意助手回答内部如果用了 `##` 会和角色标头
+    ///   同级，但 dong4j 的需求是"标头层级要够分量"，权衡后服从用户决定。
+    /// - 标头时间戳用 `HH:mm` 24h 格式（en_US_POSIX 强制英文 locale，避免不同
+    ///   系统语言下输出"15:30"vs"下午 3:30"）。
+    /// - 末尾署名走 blockquote `>`：渲染器普遍支持，且与正文形成弱视觉分隔，
+    ///   与 AI 摘要 footer "由 X 生成 · date" 的视觉权重对齐。
+    /// - 助手内容原样输出，不二次转义/包裹：助手返回的 Markdown 本身就是合法
+    ///   Markdown（包含 fenced code、链接、列表等），任何包裹都会破坏渲染。
+    /// - 流式中的消息也包含进去（按当前累积的 content 写），用户中途想"分段保
+    ///   存"也能用。
+    /// - 模型名取 `service.resolvedChatModelName`：与 `chatStream` 内部模型解析
+    ///   逻辑完全一致，保证用户看到的"由 X 生成"就是真实跑回答的模型。
+    func markdownExport(repo: Repo, userLogin: String? = nil) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let exportedAt = formatter.string(from: Date())
+
+        // 角色标头里的 HH:mm 短时间戳。用独立 formatter，与导出时间格式解耦，
+        // 便于将来需要"角色用 12h 显示、导出时间保留 24h"等独立调整。
+        let timeFormatter = DateFormatter()
+        timeFormatter.locale = Locale(identifier: "en_US_POSIX")
+        timeFormatter.dateFormat = "HH:mm"
+
+        // GitHub 用户名兜底：未登录或 login 为空时退化成"你"，与旧版行为一致，
+        // 避免导出出现 `## 👤  (15:30)` 这种空名词的尴尬格式。
+        let userDisplayName: String = {
+            if let login = userLogin?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !login.isEmpty {
+                return login
+            }
+            return "你"
+        }()
 
         var lines: [String] = []
         lines.append("# Starcat AI Chat · \(repo.fullName)")
@@ -231,11 +259,12 @@ final class RepoAIChatViewModel {
                 lines.append("")
             }
 
+            let timeStr = timeFormatter.string(from: message.timestamp)
             switch message.role {
             case .user:
-                lines.append("#### 👤 你")
+                lines.append("## 👤 \(userDisplayName) (\(timeStr))")
             case .assistant:
-                lines.append("#### 🤖 AI")
+                lines.append("## 🤖 AI (\(timeStr))")
             }
             lines.append("")
 
@@ -246,6 +275,17 @@ final class RepoAIChatViewModel {
             } else {
                 lines.append(content)
             }
+            lines.append("")
+        }
+
+        // 末尾署名（dong4j 2026-06-04 15:48）：与 AI 摘要 footer 对齐。仅在有
+        // 真实消息时输出（空对话不署名，避免出现"由 X 生成"却没有任何内容
+        // 这种诡异情况——虽然 UI 流程上空对话也不会触发复制按钮，但 API 层
+        // 多一道保险）。
+        if !messages.isEmpty {
+            lines.append("---")
+            lines.append("")
+            lines.append("> 由 \(service.resolvedChatModelName) 生成")
             lines.append("")
         }
 
