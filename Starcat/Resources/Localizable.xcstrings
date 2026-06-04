@@ -4682,6 +4682,7 @@
       }
     },
     "search.mode.hint" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4698,6 +4699,7 @@
       }
     },
     "search.mode.keyword" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4714,6 +4716,7 @@
       }
     },
     "search.mode.semantic" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4730,6 +4733,7 @@
       }
     },
     "search.mode.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4757,6 +4761,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜索仓库、标签、笔记..."
+          }
+        }
+      }
+    },
+    "search.searching" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Searching: %{query}"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索：%{query}"
           }
         }
       }
@@ -4810,6 +4831,7 @@
       }
     },
     "search.semantic.refreshIndex.hint" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4821,23 +4843,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "为全部已 Star 仓库重新生成向量索引"
-          }
-        }
-      }
-    },
-    "search.searching" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Searching: %{query}"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜索：%{query}"
           }
         }
       }

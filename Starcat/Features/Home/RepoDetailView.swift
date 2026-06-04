@@ -42,6 +42,12 @@ struct RepoDetailView: View {
     @State private var isUnstarring: Bool = false
     @State private var unstarError: String?
 
+    // HOM-148：分享流程状态
+    @State private var isSharing: Bool = false
+    @State private var showSharePopup: Bool = false
+    @State private var shareUrl: String?
+    @State private var shareError: String?
+
     /// Trending repo 一键 star 的 UI 状态
     @State private var isStarringTrending: Bool = false
     @State private var trendingStarError: String?
@@ -117,6 +123,32 @@ struct RepoDetailView: View {
                     Button("general.ok") { unstarError = nil }
                 } message: { msg in
                     Text(LocalizedStringKey(msg))
+                }
+                .alert("分享成功", isPresented: $showSharePopup) {
+                    Button("复制链接") {
+                        if let url = shareUrl {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(url, forType: .string)
+                        }
+                    }
+                    Button("在浏览器打开") {
+                        if let urlString = shareUrl, let url = URL(string: urlString) {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    Button("关闭", role: .cancel) {}
+                } message: {
+                    Text(shareUrl ?? "")
+                }
+                .alert("分享失败", isPresented: Binding(get: { shareError != nil }, set: { if !$0 { shareError = nil } })) {
+                    Button("重试") {
+                        if let repo = viewModel.selectedRepo {
+                            Task { await shareRepo(repo) }
+                        }
+                    }
+                    Button("取消", role: .cancel) {}
+                } message: {
+                    if let error = shareError { Text(error) }
                 }
                 .onChange(of: repo.id) { _, _ in
                     withAnimation(metadataPanelAnimation) {
@@ -671,6 +703,8 @@ struct RepoDetailView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Spacer()
+            // HOM-148：分享按钮
+            shareButton(repo)
             // HOM-150：右上角 AI 入口。点开浮动窗口同时承载 AI 摘要 + Chat 对话。
             // 紫蓝渐变胶囊 + sparkles 与窗口内"助手头像"/"发送按钮"视觉呼应，让用户
             // 把"AI 助手"识别为一个统一的视觉概念，而不是散落的功能点。
@@ -760,6 +794,89 @@ struct RepoDetailView: View {
                 .help(Text(verbatim: topics.isEmpty ? "N/A" : topics.joined(separator: ", ")))
         }
         .frame(maxWidth: .infinity, minHeight: 18, maxHeight: 18, alignment: .leading)
+    }
+
+    // MARK: - 分享逻辑 (HOM-148)
+
+    @ViewBuilder
+    private func shareButton(_ repo: Repo) -> some View {
+        Button {
+            Task { await shareRepo(repo) }
+        } label: {
+            HStack(spacing: 6) {
+                if isSharing {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 14, height: 14)
+                } else {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                Text("分享")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .foregroundStyle(.primary)
+            .background(
+                Capsule()
+                    .strokeBorder(Color.secondary.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pressableHover()
+        .disabled(isSharing)
+        .help("分享 Repo")
+    }
+
+    private func shareRepo(_ repo: Repo) async {
+        isSharing = true
+        shareError = nil
+        defer { isSharing = false }
+
+        do {
+            var aiInsight: RepoAIInsight?
+            aiInsight = try await dependencies.repoAIInsightService.cachedInsight(for: repo)
+            if aiInsight == nil {
+                let result = try await dependencies.repoAIInsightService.generateInsight(for: repo)
+                aiInsight = result.insight
+            }
+
+            guard let insight = aiInsight else { return }
+
+            let shareRepoDTO = ShareRepoDTO(
+                fullName: repo.fullName,
+                description: repo.description,
+                language: repo.language,
+                starsCount: repo.starsCount,
+                forksCount: repo.forksCount,
+                topics: repo.topicsArray,
+                homepage: repo.homepage,
+                url: repo.htmlUrl
+            )
+
+            let shareTagDTOs = insight.suggestedTags.map { ShareTagDTO(name: $0.name, confidence: $0.confidence) }
+            let shareAISummaryDTO = ShareAISummaryDTO(
+                oneLiner: insight.oneLiner,
+                summary: insight.summary,
+                platforms: insight.platforms,
+                suitableFor: insight.suitableFor,
+                strengths: insight.strengths,
+                risks: insight.risks,
+                suggestedTags: shareTagDTOs
+            )
+
+            let request = ShareRepoRequest(repo: shareRepoDTO, aiSummary: shareAISummaryDTO)
+            let shareAPI = ShareAPI()
+            let response = try await shareAPI.shareRepo(request: request)
+
+            self.shareUrl = response.shareUrl
+            self.showSharePopup = true
+
+        } catch {
+            self.shareError = error.localizedDescription
+        }
     }
 
     @ViewBuilder
