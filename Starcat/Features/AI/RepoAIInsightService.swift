@@ -252,10 +252,7 @@ final class RepoAIInsightService {
         generatedAt: String
     ) -> RepoAIInsight {
         let normalized = summaryText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let firstLine = normalized
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .first
-            .map(String.init) ?? String(normalized.prefix(80))
+        let firstLine = firstMeaningfulMarkdownLine(from: normalized) ?? String(normalized.prefix(80))
         return RepoAIInsight(
             oneLiner: firstLine,
             summary: normalized,
@@ -269,6 +266,22 @@ final class RepoAIInsightService {
             model: model,
             generatedAt: generatedAt
         )
+    }
+
+    /// 从 Markdown 摘要中提取缓存用的一句话。
+    ///
+    /// 默认 Prompt 会把第一行写成 `## 一句话总结`，如果直接取首行会让缓存旧字段失去意义。
+    /// 这里跳过标题、列表符号和代码围栏，取第一段真正正文，供旧 UI / 旧缓存字段兼容。
+    private nonisolated static func firstMeaningfulMarkdownLine(from markdown: String) -> String? {
+        markdown
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { line in
+                !line.isEmpty
+                    && !line.hasPrefix("#")
+                    && !line.hasPrefix("```")
+                    && line != "---"
+            }
     }
 
     private nonisolated static func extractJSONObject(from raw: String) -> String {

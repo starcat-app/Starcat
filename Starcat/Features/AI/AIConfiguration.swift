@@ -254,18 +254,43 @@ enum AIDefaultPrompts {
         systemPrompt: """
         You are Starcat's repository summary assistant.
         Write the final answer in message.content only.
-        Do not write reasoning, analysis traces, markdown fences, or JSON.
+        Return Markdown only.
+        Do not write reasoning, analysis traces, outer markdown fences, or JSON.
         Use Simplified Chinese.
         Do not invent facts not present in the provided metadata or README.
         """,
         userPromptTemplate: """
-        请阅读下面的 GitHub 仓库上下文，生成一段适合开发者快速判断价值的中文摘要。
+        请阅读下面的 GitHub 仓库上下文，生成一份适合开发者快速判断价值的中文 Markdown 摘要。
 
         输出要求：
-        - 先用一句话说明这个项目是什么。
-        - 再用 2-4 个短段落说明核心用途、适合场景、亮点和风险。
-        - 如果 README 中有明确的最小使用示例，可以提炼一个简短示例。
-        - 不要输出 JSON，不要使用 markdown 代码围栏。
+        - 必须按下面的二级标题顺序输出，不要新增其它顶级章节。
+        - 每个章节都要有内容；如果上下文无法确认，请明确写“未从 README 或元数据中确认”。
+        - 保留技术英文名、命令名和框架名。
+        - “最小示例”只有在 README 或元数据中能确认时才写代码块；不能确认时写一句说明，不要编造示例。
+        - 不要输出 JSON，不要用 markdown 代码围栏包裹整篇内容。
+
+        必须包含的 Markdown 结构：
+
+        ## 一句话总结
+        用 1 句话说明这个项目是什么，以及它解决什么问题。
+
+        ## 这个项目是什么
+        用 2-4 个短段落说明核心用途、主要能力、和同类工具相比的定位。
+
+        ## 平台 / 生态
+        - 列出语言、框架、运行平台、依赖生态或集成对象。
+
+        ## 适合场景
+        - 列出 3-6 个适合使用这个项目的场景。
+
+        ## 优点
+        - 列出 3-6 个优点或亮点。
+
+        ## 风险与注意点
+        - 列出 2-5 个风险、限制、维护状态、学习成本或接入成本。
+
+        ## 最小示例
+        给出 README 中能确认的最小使用方式；如无可靠信息，写“未从 README 或元数据中确认”。
 
         Repository context:
         {context}

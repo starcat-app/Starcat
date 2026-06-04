@@ -170,11 +170,7 @@ struct RepoAIInsightPanel: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("AI 摘要")
                 .font(.subheadline.weight(.semibold))
-            Text(text)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            RepoAISummaryMarkdownView(markdown: text)
         }
     }
 
