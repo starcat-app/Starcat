@@ -27,6 +27,8 @@ struct SidebarView: View {
     @State private var tagsExpanded: Bool = true
     /// Trending 语言列表展开/收起状态。和 Manage 的 Languages 分开，避免互相影响。
     @State private var trendingLanguagesExpanded: Bool = true
+    /// Activity 分类列表展开/收起状态。Activity 是独立 root，不能复用 Trending 的展开态。
+    @State private var activityCategoriesExpanded: Bool = true
 
     @Binding var selectedPage: SidebarRootPage
     @Binding var selectedTrendingLanguage: TrendingLanguage
@@ -156,10 +158,62 @@ struct SidebarView: View {
     @ViewBuilder
     private var activitySidebarContent: some View {
         Section {
-            ForEach(ActivityCategory.allCases) { category in
-                activityCategoryRow(category)
+            activityCategoryRow(.all)
+
+            if activityCategoriesExpanded {
+                ForEach(activityLeafCategories) { category in
+                    activityCategoryRow(category)
+                }
             }
+        } header: {
+            activityCategorySectionHeader
         }
+    }
+
+    private var activityCategorySectionHeader: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                activityCategoriesExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text("activity.category.section")
+                    .font(.headline)
+
+                Spacer(minLength: 8)
+
+                Text(activityLeafCategories.count.formatted())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+
+                disclosureChevron(isExpanded: activityCategoriesExpanded)
+                    .frame(width: 20, height: 20)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(disclosureHelp(isExpanded: activityCategoriesExpanded))
+    }
+
+    /// Activity 的 All 行常驻在 section 顶部，header 计数只统计可展开的具体分类；
+    /// 这个口径与 Trending 的 Languages header 一致：`全部语言` 不计入右侧数字。
+    private var activityLeafCategories: [ActivityCategory] {
+        ActivityCategory.allCases.filter { $0 != .all }
+    }
+
+    @ViewBuilder
+    private func activityCategoryRow(_ category: ActivityCategory) -> some View {
+        Label {
+            Text(category.titleKey)
+                .lineLimit(1)
+        } icon: {
+            LanguageIconView(language: category.iconLanguage, size: 14)
+        }
+        .tag(category)
     }
 
     /// 头像 / 统计数据下方的三入口切换。
@@ -377,17 +431,6 @@ struct SidebarView: View {
         } else {
             Text(verbatim: language.rawValue)
         }
-    }
-
-    @ViewBuilder
-    private func activityCategoryRow(_ category: ActivityCategory) -> some View {
-        Label {
-            Text(category.titleKey)
-                .lineLimit(1)
-        } icon: {
-            LanguageIconView(language: category.iconLanguage, size: 14)
-        }
-        .tag(category)
     }
 
     @ViewBuilder

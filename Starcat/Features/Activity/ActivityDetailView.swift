@@ -14,42 +14,45 @@ import AppKit
 
 struct ActivityDetailView: View {
 
+    @Environment(AppDependencies.self) private var dependencies
+    @Environment(AuthSession.self) private var authSession
+
     let item: ActivityItem?
 
-    @State private var copyToast: String?
+    /// Activity 详情页自持一个 README ViewModel。
+    ///
+    /// 不复用 HomeView 注入给 Manage / Trending 的 ReadmeViewModel，是为了避免
+    /// Activity 里点星标 / 仓库 / 建议活动时污染右侧主详情页的 README 状态。
+    @State private var readmeVM: ReadmeViewModel?
 
     var body: some View {
         Group {
             if let item {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        header(item)
-                        Divider()
-                        detailBody(item)
-                    }
-                    .padding(18)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .overlay(alignment: .bottom) {
-                    if let copyToast {
-                        Text(copyToast)
-                            .font(.caption)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(.regularMaterial, in: Capsule())
-                            .padding(.bottom, 16)
-                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                if shouldShowReadme(for: item), item.repo != nil {
+                    repoBackedDetailPage(item)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            header(item)
+                            Divider()
+                            detailBody(item)
+                        }
+                        .padding(18)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             } else {
                 emptyState
             }
         }
+        .task(id: readmeLoadKey(for: item)) {
+            await loadReadmeIfNeeded(for: item)
+        }
     }
 
     private func header(_ item: ActivityItem) -> some View {
         HStack(alignment: .top, spacing: 14) {
-            leadingIcon(item, size: 48)
+            leadingIconButton(item, size: 48)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(verbatim: item.title)
@@ -77,18 +80,6 @@ struct ActivityDetailView: View {
             }
 
             Spacer(minLength: 0)
-
-            if let url = item.htmlURL {
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Image(systemName: "arrow.up.right.square")
-                        .font(.title3)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("activity.openOnGitHub")
-            }
         }
     }
 
@@ -197,6 +188,55 @@ struct ActivityDetailView: View {
         }
     }
 
+    private func repoBackedDetailPage(_ item: ActivityItem) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    header(item)
+                    Divider()
+                    detailBody(item)
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 260)
+
+            Divider()
+
+            if let repo = item.repo {
+                activityReadmeSection(repo)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private func activityReadmeSection(_ repo: Repo) -> some View {
+        if let readmeVM {
+            ReadmeStateView(
+                state: readmeVM.state,
+                baseURL: URL(string: repo.htmlUrl),
+                owner: repo.owner,
+                repo: repo.name,
+                onScrollOffsetChange: { _ in }
+            ) {
+                readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
+            } onLogin: {
+                authSession.signIn()
+            }
+            .environment(readmeVM)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            VStack(spacing: 10) {
+                ProgressView()
+                Text("readme.loading")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
     private func assetRow(_ asset: ReleaseAsset) -> some View {
         HStack(spacing: 8) {
             Image(systemName: assetIcon(asset.name))
@@ -212,14 +252,14 @@ struct ActivityDetailView: View {
                     .foregroundStyle(.tertiary)
             }
             Spacer()
-            Button {
-                copy(asset.browserDownloadUrl)
-            } label: {
-                Image(systemName: "doc.on.clipboard")
+            CopyFeedbackButton(
+                providesContent: { asset.browserDownloadUrl },
+                tooltip: "releases.copyDownloadLink"
+            ) { didCopy in
+                Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.clipboard")
+                    .foregroundStyle(didCopy ? Color.green : Color.primary)
+                    .contentTransition(.symbolEffect(.replace))
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("releases.copyDownloadLink")
 
             if let url = URL(string: asset.browserDownloadUrl) {
                 Button {
@@ -252,7 +292,24 @@ struct ActivityDetailView: View {
     }
 
     @ViewBuilder
-    private func leadingIcon(_ item: ActivityItem, size: CGFloat) -> some View {
+    private func leadingIconButton(_ item: ActivityItem, size: CGFloat) -> some View {
+        if let url = targetURL(for: item) {
+            Button {
+                NSWorkspace.shared.open(url)
+            } label: {
+                leadingIconImage(item, size: size)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pressableHover()
+            .help("activity.openOnGitHub")
+        } else {
+            leadingIconImage(item, size: size)
+        }
+    }
+
+    @ViewBuilder
+    private func leadingIconImage(_ item: ActivityItem, size: CGFloat) -> some View {
         if let repo = item.repo {
             RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: size)
         } else {
@@ -267,18 +324,47 @@ struct ActivityDetailView: View {
         }
     }
 
-    private func copy(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-        withAnimation(.easeOut(duration: 0.18)) {
-            copyToast = String(localized: "releases.assetCopied")
+    private func targetURL(for item: ActivityItem) -> URL? {
+        if let url = item.htmlURL {
+            return url
         }
-        Task {
-            try? await Task.sleep(for: .seconds(1.5))
-            withAnimation(.easeOut(duration: 0.18)) {
-                copyToast = nil
-            }
+        if let repo = item.repo {
+            return RepoExternalLinks.repo(repo)
         }
+        return nil
+    }
+
+    private func shouldShowReadme(for item: ActivityItem) -> Bool {
+        switch item.kind {
+        case .star, .repository, .suggestion:
+            return true
+        case .announcement, .release, .following:
+            return false
+        }
+    }
+
+    private func readmeLoadKey(for item: ActivityItem?) -> String {
+        guard let item, shouldShowReadme(for: item), let repo = item.repo else {
+            return "none"
+        }
+        return "\(item.kind.rawValue):\(repo.id):\(authSession.state.isAuthenticated)"
+    }
+
+    private func ensureReadmeViewModel() -> ReadmeViewModel {
+        if let readmeVM {
+            return readmeVM
+        }
+        let model = ReadmeViewModel(api: dependencies.readmeAPI)
+        readmeVM = model
+        return model
+    }
+
+    private func loadReadmeIfNeeded(for item: ActivityItem?) async {
+        guard let item, shouldShowReadme(for: item), let repo = item.repo else {
+            readmeVM?.reset()
+            return
+        }
+        ensureReadmeViewModel().load(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
     }
 
     private func assetIcon(_ name: String) -> String {
