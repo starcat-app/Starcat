@@ -63,6 +63,19 @@ final class AppDependencies {
     /// W7+ 引入：Trending README 持久化（与 manage 路径独立的 `trending_readmes` 表）。
     let trendingReadmeRepository: TrendingReadmeRepository
 
+    // MARK: - HOM-47 Release 订阅追踪
+
+    /// Release 订阅记录 Repository。
+    let releaseSubscriptionRepository: any ReleaseSubscriptionRepositoryProtocol
+    /// Release 元数据缓存 Repository。
+    let releaseRepository: any ReleaseRepositoryProtocol
+    /// Release 巡检协调器：拉一页 Releases → 比对游标 → 写库 → 推通知。
+    let releaseMonitor: ReleaseMonitor
+    /// Release 系统通知封装（UNUserNotificationCenter）。
+    let releaseNotificationService: ReleaseNotificationService
+    /// Release 后台轮询调度器（NSBackgroundActivityScheduler）。
+    let releasePoller: ReleasePoller
+
     // MARK: - 初始化
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
@@ -141,5 +154,23 @@ final class AppDependencies {
 
         // HOM-54：Trending Repository（W7+ 起接入 GRDB 持久化）
         self.trendingRepository = TrendingRepository(database: db)
+
+        // HOM-47：Release 订阅追踪。
+        // 装配顺序：Repository → Monitor（依赖 API + Repository + RepoRepository）
+        //         → NotificationService → Poller（依赖 Monitor + NotificationService）。
+        let releaseSubRepo = GRDBReleaseSubscriptionRepository(database: db)
+        self.releaseSubscriptionRepository = releaseSubRepo
+        let releaseRecordRepo = GRDBReleaseRepository(database: db)
+        self.releaseRepository = releaseRecordRepo
+        let monitor = ReleaseMonitor(
+            apiClient: api,
+            subscriptionRepo: releaseSubRepo,
+            releaseRepo: releaseRecordRepo,
+            repoRepo: repo
+        )
+        self.releaseMonitor = monitor
+        let notificationService = ReleaseNotificationService()
+        self.releaseNotificationService = notificationService
+        self.releasePoller = ReleasePoller(monitor: monitor, notificationService: notificationService)
     }
 }

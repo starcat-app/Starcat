@@ -159,6 +159,13 @@ struct GRDBRepoRepository {
         }
     }
 
+    /// HOM-47：按 GitHub repo id 找单条记录（含 is_starred=0 的"曾经 star 过"行）。
+    func findById(_ repoId: Int64) async throws -> Repo? {
+        try await writer.read { db in
+            try Repo.fetchOne(db, key: repoId)
+        }
+    }
+
     /// 未打标签的 repo（Sidebar "Untagged" 入口）。
     /// 实现：左联 repo_tags 找出无关联记录的 repos。
     func fetchUntagged() async throws -> [Repo] {
