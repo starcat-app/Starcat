@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "·" : {
+
+    },
     "%@" : {
 
     },
@@ -3765,6 +3768,7 @@
       }
     },
     "general.close" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4470,6 +4474,7 @@
       }
     },
     "releases.action.subscribe" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4486,6 +4491,7 @@
       }
     },
     "releases.action.unsubscribe" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4502,6 +4508,7 @@
       }
     },
     "releases.assetCopied" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4518,6 +4525,7 @@
       }
     },
     "releases.assetFilter.help" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4534,6 +4542,7 @@
       }
     },
     "releases.assetFilter.placeholder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4550,6 +4559,7 @@
       }
     },
     "releases.copyDownloadLink" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4566,6 +4576,7 @@
       }
     },
     "releases.downloadAsset" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4582,6 +4593,7 @@
       }
     },
     "releases.error.loadFailed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4598,6 +4610,7 @@
       }
     },
     "releases.error.subscribeFailed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4614,6 +4627,7 @@
       }
     },
     "releases.error.toggleNotifyFailed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4630,6 +4644,7 @@
       }
     },
     "releases.error.unsubscribeFailed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4678,6 +4693,7 @@
       }
     },
     "releases.openOnGitHub" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4694,6 +4710,7 @@
       }
     },
     "releases.row.assetsCountFormat" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4790,6 +4807,7 @@
       }
     },
     "releases.section.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4810,13 +4828,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Check now"
+            "value" : "Check"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "立即检查"
+            "value" : "检查"
           }
         }
       }
@@ -4854,6 +4872,7 @@
       }
     },
     "releases.timeline.error.loadFailed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4870,6 +4889,7 @@
       }
     },
     "releases.timeline.error.markAllReadFailed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4886,6 +4906,7 @@
       }
     },
     "releases.timeline.error.markReadFailed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4902,6 +4923,7 @@
       }
     },
     "releases.timeline.markAllRead" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4918,17 +4940,18 @@
       }
     },
     "releases.timeline.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Release Timeline"
+            "value" : "Timeline"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Release 时间线"
+            "value" : "时间线"
           }
         }
       }
@@ -7024,13 +7047,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Release Timeline"
+            "value" : "Release"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Release 时间线"
+            "value" : "Release"
           }
         }
       }
@@ -8208,12 +8231,11 @@
       }
     },
     "trending.period.daily" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Today"
+            "value" : "Day"
           }
         },
         "zh-Hans" : {
@@ -8225,12 +8247,11 @@
       }
     },
     "trending.period.monthly" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This Month"
+            "value" : "Month"
           }
         },
         "zh-Hans" : {
@@ -8242,12 +8263,11 @@
       }
     },
     "trending.period.weekly" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This Week"
+            "value" : "Week"
           }
         },
         "zh-Hans" : {
