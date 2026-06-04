@@ -208,11 +208,28 @@ struct OpenAIClient: AIClientProtocol {
         resolvedModel: String,
         stream: Bool
     ) -> ChatQuery {
-        ChatQuery(
-            messages: [
-                .system(.init(content: .textContent(request.systemPrompt))),
-                .user(.init(content: .string(request.userPrompt)))
-            ],
+        // 顺序：system → [history...] → user。
+        //
+        // 历史里的 .user / .assistant 各自映射到 MacPaw 的对应 case。
+        // 这里**不**把 history 的 system 角色透传给 SDK：
+        // 多 system 消息在不少 OpenAI-compatible 服务端会被合并或报错，
+        // Starcat 自己也只在数组开头放一条 systemPrompt 表达"全局指令"，
+        // 历史只用来承载真实对话轮次（HOM-150）。
+        var messages: [ChatQuery.ChatCompletionMessageParam] = [
+            .system(.init(content: .textContent(request.systemPrompt)))
+        ]
+        for message in request.history {
+            switch message.role {
+            case .user:
+                messages.append(.user(.init(content: .string(message.content))))
+            case .assistant:
+                messages.append(.assistant(.init(content: .textContent(message.content))))
+            }
+        }
+        messages.append(.user(.init(content: .string(request.userPrompt))))
+
+        return ChatQuery(
+            messages: messages,
             model: resolvedModel,
             maxCompletionTokens: request.parameters.maxCompletionTokens > 0 ? request.parameters.maxCompletionTokens : nil,
             responseFormat: request.responseFormat == .jsonObject ? .jsonObject : nil,

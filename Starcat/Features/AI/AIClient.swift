@@ -34,10 +34,35 @@ enum AIChatResponseFormat: Equatable, Sendable {
     case jsonObject
 }
 
+/// 多轮对话用的单条消息。
+///
+/// 设计动机（HOM-150）：
+/// - 原 `AIChatRequest` 只能表达"单轮 system + user prompt"，无法承载详情页 AI
+///   助手窗口里的多轮对话（用户连续追问 → 模型基于上下文回答）。
+/// - 这里只加最小够用的字段（role + content），不引入 tool_call / refusal /
+///   audio 等高级特性。Starcat 的 chat UI 目前只展示文本气泡，更多字段会被静默丢弃，
+///   等真有需求再扩展。
+struct AIChatMessage: Equatable, Sendable {
+    enum Role: String, Sendable {
+        case user
+        case assistant
+    }
+
+    var role: Role
+    var content: String
+}
+
 /// 参数化 Chat 请求。
 struct AIChatRequest: Equatable, Sendable {
     var systemPrompt: String
     var userPrompt: String
+    /// 历史轮次（按时间顺序排列，最后一条早于 `userPrompt`）。
+    ///
+    /// 为什么单独拆出来而不是把整段历史拼进 `userPrompt`：
+    /// - 走原生 messages 数组让模型识别 role，质量明显优于"all-in-one user 字符串"；
+    /// - 流式响应和非流式响应都能复用同一份历史，不需要在两条路径上重复字符串拼接；
+    /// - 旧调用方（摘要、标签）传空数组即可，保持二进制兼容。
+    var history: [AIChatMessage] = []
     var model: String
     var parameters: AIModelParameters
     var responseFormat: AIChatResponseFormat = .text
