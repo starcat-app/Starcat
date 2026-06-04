@@ -14,6 +14,9 @@
         }
       }
     },
+    "%@ 个模型" : {
+
+    },
     "%@%%" : {
 
     },
@@ -1257,10 +1260,10 @@
         }
       }
     },
-    "AI 服务" : {
+    "AI 摘要" : {
 
     },
-    "API Key 仅保存在本机加密文件中；不会写入 UserDefaults，也不会随日志输出。" : {
+    "AI 服务商" : {
 
     },
     "app.about" : {
@@ -2041,9 +2044,6 @@
           }
         }
       }
-    },
-    "BYOK API Key" : {
-
     },
     "clone.copiedGit" : {
       "extractionState" : "stale",
@@ -3140,6 +3140,9 @@
           }
         }
       }
+    },
+    "Prompt" : {
+
     },
     "readme.cachedAtFormat" : {
       "extractionState" : "stale",
@@ -5327,10 +5330,7 @@
     "Starcat" : {
 
     },
-    "Starcat 不经过自建服务器转发 AI 请求。摘要、标签推荐和语义搜索会把必要的仓库元数据 / README 摘要发送给你配置的 Provider。" : {
-
-    },
-    "Starcat 第一阶段使用 OpenAI-compatible 协议；DeepSeek、OpenRouter、Ollama、LM Studio 都通过 Base URL 适配。" : {
+    "Starcat 不经过自建服务器转发 AI 请求。摘要、推荐标签和语义搜索会把必要的仓库元数据 / README 摘要发送给你选择的 Provider。" : {
 
     },
     "sync.error.tokenExpired" : {
@@ -5349,6 +5349,9 @@
           }
         }
       }
+    },
+    "System Prompt" : {
+
     },
     "tagColor.blue" : {
       "extractionState" : "stale",
@@ -6144,6 +6147,9 @@
         }
       }
     },
+    "Top K 不是 OpenAI Chat Completions 标准字段，当前仅保存配置；后续针对 LM Studio / Ollama 原生扩展时再发送。" : {
+
+    },
     "trending.aiScore" : {
       "localizations" : {
         "en" : {
@@ -6663,6 +6669,12 @@
         }
       }
     },
+    "User Prompt Template" : {
+
+    },
+    "User Prompt 中的 {context} 会在运行时替换为仓库元数据和 README 摘要。" : {
+
+    },
     "watch.allActivity" : {
       "localizations" : {
         "en" : {
@@ -6744,10 +6756,13 @@
         }
       }
     },
-    "例如：https://api.openai.com/v1、https://api.deepseek.com/v1、http://localhost:11434/v1" : {
+    "下拉框只展示已启用模型；如果服务商暂时无法列出模型，可以打开自定义模型名手动输入。" : {
 
     },
     "最小示例" : {
+
+    },
+    "匹配 %@ 个" : {
 
     },
     "将读取 repo 元数据、README、topics，并生成摘要、适用场景、优缺点、风险和推荐标签。" : {
@@ -6756,19 +6771,43 @@
     "尚未生成 AI 摘要" : {
 
     },
+    "已发现模型" : {
+
+    },
     "推荐标签" : {
 
     },
-    "模型" : {
+    "推荐标签解析失败：%@" : {
+
+    },
+    "暂无推荐标签。" : {
+
+    },
+    "暂无模型。点击“测试并获取模型”，或在模型设置中使用自定义模型名。" : {
+
+    },
+    "模型列表在组件内滚动，避免服务商返回大量模型时撑高整个设置页。" : {
+
+    },
+    "模型参数" : {
+
+    },
+    "模型设置" : {
+
+    },
+    "正在生成 AI 摘要…" : {
 
     },
     "正在读取本地 AI 缓存…" : {
 
     },
-    "测试会向配置的 Provider 发起一次极短 embedding 请求，用于验证 Key、Base URL 和 Embedding 模型。" : {
+    "没有匹配的模型。" : {
 
     },
-    "测试连接" : {
+    "测试会调用模型列表接口；如果服务商返回的模型能力不完整，可在下方手动修正 Chat / Embedding 类型。" : {
+
+    },
+    "测试并获取模型" : {
 
     },
     "由 %@ 生成 · %@" : {
@@ -6780,12 +6819,6 @@
           }
         }
       }
-    },
-    "聊天模型用于单仓摘要和标签推荐；Embedding 模型用于本地 SQLite 语义搜索索引。" : {
-
-    },
-    "连接" : {
-
     },
     "预计消耗 1 次 AI Chat 调用；标签不会自动写入，需你确认。" : {
 
