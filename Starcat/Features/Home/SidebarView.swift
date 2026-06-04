@@ -211,7 +211,12 @@ struct SidebarView: View {
             Text(category.titleKey)
                 .lineLimit(1)
         } icon: {
-            LanguageIconView(language: category.iconLanguage, size: 14)
+            // 分类色点：故意不复用 LanguageIconView，因为后者会优先匹配 Devicon SVG，
+            // 渲染出 Swift / JS / Go 这类语言 logo，与"分类"语义冲突。
+            // 这里直接画 14pt 实心圆，与 Manage / Trending 的语言图标视觉尺寸保持一致。
+            Circle()
+                .fill(category.iconColor)
+                .frame(width: 14, height: 14)
         }
         .tag(category)
     }

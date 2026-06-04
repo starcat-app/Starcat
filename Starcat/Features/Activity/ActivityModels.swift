@@ -15,8 +15,12 @@ import SwiftUI
 
 /// Activity 左栏固定分类。
 ///
-/// 分类数量第一版固定，因此颜色图标用固定语言名映射到 `LanguageIconView`，
-/// 与 Manage 的 Languages 行保持同一套视觉语义。
+/// 分类数量第一版固定，每个分类直接挑选一个 GitHub Linguist 调色板里的颜色作为色点，
+/// 不再走"分类 → 语言名 → Devicon SVG"链路。这样可以避免侧边栏出现 Swift / JS / Go
+/// 这类语言图标干扰用户对分类语义的判断（dong4j 在 2026-06-05 反馈：分类不应使用语言图标）。
+///
+/// 选色策略：从 Linguist 颜色表里挑七个高对比度、足够区分的颜色，
+/// 与 Tags / Trending / Manage 现有色块共存时不冲突。
 enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
     case all
     case announcement
@@ -52,17 +56,23 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// 固定复用语言色，不新增分类色板。
-    var iconLanguage: String {
+    /// 分类色点的 hex（取自 GitHub Linguist 调色板）。
+    /// 取值思路：同时也是 selection / hover 时整行 accent 的源色。
+    var iconColorHex: String {
         switch self {
-        case .all:          return "Swift"
-        case .announcement: return "JavaScript"
-        case .release:      return "Go"
-        case .star:         return "Python"
-        case .repository:   return "Rust"
-        case .following:    return "Java"
-        case .suggestion:   return "TypeScript"
+        case .all:          return "#F05138" // Swift orange-red
+        case .announcement: return "#f1e05a" // JavaScript yellow
+        case .release:      return "#00ADD8" // Go cyan
+        case .star:         return "#41b883" // Vue green
+        case .repository:   return "#A97BFF" // Kotlin purple
+        case .following:    return "#701516" // Ruby deep red
+        case .suggestion:   return "#3178c6" // TypeScript blue
         }
+    }
+
+    /// `iconColorHex` 解析后的 SwiftUI Color；hex 非法时回退到系统强调色。
+    var iconColor: Color {
+        Color(hex: iconColorHex) ?? .accentColor
     }
 
     var systemImage: String {
@@ -115,7 +125,15 @@ struct ActivityItem: Identifiable, Equatable {
     let release: ReleaseRecord?
     let isRead: Bool
 
-    var accentLanguage: String {
-        repo?.language ?? category.iconLanguage
+    /// 行 / 详情头部 accent 配色：
+    /// - 若卡片关联到具体 repo 且 repo 有主语言，复用语言色，维持与 RepoRowView 一致的视觉
+    /// - 否则回退到分类自身的色点
+    /// 返回 `Color` 而不是语言名，避免每个调用点再绕一次 `LanguageColor.color(for:)`，
+    /// 也让"分类色"与"语言色"在调用点完全等价。
+    var accentColor: Color {
+        if let language = repo?.language, !language.isEmpty {
+            return LanguageColor.color(for: language)
+        }
+        return category.iconColor
     }
 }
