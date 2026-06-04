@@ -20,30 +20,44 @@ import SwiftUI
 
 /// Starcat 主 toolbar 使用的智能搜索输入框。
 ///
-/// 折叠与聚焦属于局部 UI 状态，因此留在组件内部；搜索词、搜索模式和索引状态来自
-/// 调用方，保证业务逻辑仍集中在 `HomeViewModel` / `AppSettings`。
+/// 折叠、聚焦和输入草稿属于局部 UI 状态，因此留在组件内部；提交后的搜索词、搜索模式和
+/// 索引状态来自调用方，保证业务逻辑仍集中在 `HomeViewModel` / `AppSettings`。
 struct SmartSearchField: View {
+    /// 已提交的搜索词。
+    ///
+    /// 组件内部 `draftText` 随键盘输入实时变化，但不会直接写入这里；只有用户按 Return
+    /// 或点击清空时才提交，避免每个字符都触发 FTS5 / AI 语义搜索。
     @Binding var text: String
     @Binding var mode: SmartSearchMode
 
     let isIndexing: Bool
+    let onSubmitSearch: (String) -> Void
     let onRefreshSemanticIndex: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    @State private var draftText = ""
     @State private var isExpanded = false
     @FocusState private var isTextFieldFocused: Bool
     @FocusState private var isCollapsedIconFocused: Bool
 
     private let collapsedWidth: CGFloat = 42
-    private let expandedWidth: CGFloat = 440
+    private let expandedWidth: CGFloat = 300
     private let height: CGFloat = 38
 
     private var isSemantic: Bool { mode == .semantic }
 
+    private var hasDraftText: Bool {
+        !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var hasCommittedText: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// 空输入但仍聚焦时保持展开；有输入时即便失焦也保持展开，避免用户看不见当前筛选条件。
     private var shouldExpand: Bool {
-        isExpanded || isTextFieldFocused || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        isExpanded || isTextFieldFocused || hasDraftText || hasCommittedText
     }
 
     var body: some View {
@@ -71,6 +85,15 @@ struct SmartSearchField: View {
         }
         .onChange(of: mode) { _, _ in
             expandAndFocusInput()
+        }
+        .onAppear {
+            draftText = text
+            isExpanded = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        .onChange(of: text) { _, newValue in
+            guard draftText != newValue else { return }
+            draftText = newValue
+            isExpanded = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isTextFieldFocused
         }
     }
 
@@ -102,12 +125,15 @@ struct SmartSearchField: View {
         HStack(spacing: 8) {
             modeMenu
 
-            TextField(promptKey, text: $text)
+            TextField(promptKey, text: $draftText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.primary)
                 .focused($isTextFieldFocused)
                 .submitLabel(.search)
+                .onSubmit {
+                    commitSearch()
+                }
 
             if isSemantic {
                 Divider()
@@ -116,12 +142,12 @@ struct SmartSearchField: View {
                 semanticRefreshButton
             }
 
-            if !text.isEmpty {
+            if !draftText.isEmpty || hasCommittedText {
                 clearButton
             }
         }
         .padding(.leading, 8)
-        .padding(.trailing, text.isEmpty ? 10 : 7)
+        .padding(.trailing, draftText.isEmpty ? 10 : 7)
         .frame(height: height)
         .background(searchBackground)
         .overlay(searchBorder)
@@ -187,7 +213,8 @@ struct SmartSearchField: View {
 
     private var clearButton: some View {
         Button {
-            text = ""
+            draftText = ""
+            onSubmitSearch("")
             expandAndFocusInput()
         } label: {
             Image(systemName: "xmark.circle.fill")
@@ -225,9 +252,16 @@ struct SmartSearchField: View {
     @ViewBuilder
     private var aiGlow: some View {
         if isSemantic {
-            SmartSearchAIGlow(isActive: isTextFieldFocused || !text.isEmpty || isIndexing)
+            SmartSearchAIGlow(isActive: isTextFieldFocused || hasDraftText || hasCommittedText || isIndexing)
                 .allowsHitTesting(false)
         }
+    }
+
+    private func commitSearch() {
+        let submitted = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
+        draftText = submitted
+        onSubmitSearch(submitted)
+        isExpanded = true
     }
 
     private func expandAndFocusInput() {
@@ -238,9 +272,9 @@ struct SmartSearchField: View {
     }
 
     private func collapseIfPossible() {
-        guard text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !hasDraftText, !hasCommittedText else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            if !isTextFieldFocused && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if !isTextFieldFocused && !hasDraftText && !hasCommittedText {
                 isExpanded = false
             }
         }
