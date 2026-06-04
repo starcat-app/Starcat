@@ -14,7 +14,10 @@
         }
       }
     },
-    "%@ Coming Soon" : {
+    "%@%%" : {
+
+    },
+    "• %@" : {
 
     },
     "+%@" : {
@@ -1254,6 +1257,12 @@
         }
       }
     },
+    "AI 服务" : {
+
+    },
+    "API Key 仅保存在本机加密文件中；不会写入 UserDefaults，也不会随日志输出。" : {
+
+    },
     "app.about" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2033,6 +2042,9 @@
         }
       }
     },
+    "BYOK API Key" : {
+
+    },
     "clone.copiedGit" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2605,15 +2617,6 @@
           }
         }
       }
-    },
-    "gpt-3.5-turbo" : {
-
-    },
-    "gpt-4o" : {
-
-    },
-    "gpt-4o-mini" : {
-
     },
     "keychain.error.deleteFailedFormat" : {
       "extractionState" : "stale",
@@ -4059,6 +4062,7 @@
       }
     },
     "settings.ai.connection" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4075,6 +4079,7 @@
       }
     },
     "settings.ai.customModel" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4125,6 +4130,7 @@
       }
     },
     "settings.ai.openai.baseUrl.help" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4141,6 +4147,7 @@
       }
     },
     "settings.ai.openai.config" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4208,6 +4215,7 @@
       }
     },
     "settings.ai.provider" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4224,6 +4232,7 @@
       }
     },
     "settings.ai.provider.description" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4240,6 +4249,7 @@
       }
     },
     "settings.ai.provider.notImplemented" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4256,6 +4266,7 @@
       }
     },
     "settings.ai.serviceConfig" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4289,6 +4300,7 @@
       }
     },
     "settings.ai.status.notConfigured" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5313,6 +5325,12 @@
       }
     },
     "Starcat" : {
+
+    },
+    "Starcat 不经过自建服务器转发 AI 请求。摘要、标签推荐和语义搜索会把必要的仓库元数据 / README 摘要发送给你配置的 Provider。" : {
+
+    },
+    "Starcat 第一阶段使用 OpenAI-compatible 协议；DeepSeek、OpenRouter、Ollama、LM Studio 都通过 Base URL 适配。" : {
 
     },
     "sync.error.tokenExpired" : {
@@ -6725,6 +6743,52 @@
           }
         }
       }
+    },
+    "例如：https://api.openai.com/v1、https://api.deepseek.com/v1、http://localhost:11434/v1" : {
+
+    },
+    "最小示例" : {
+
+    },
+    "将读取 repo 元数据、README、topics，并生成摘要、适用场景、优缺点、风险和推荐标签。" : {
+
+    },
+    "尚未生成 AI 摘要" : {
+
+    },
+    "推荐标签" : {
+
+    },
+    "模型" : {
+
+    },
+    "正在读取本地 AI 缓存…" : {
+
+    },
+    "测试会向配置的 Provider 发起一次极短 embedding 请求，用于验证 Key、Base URL 和 Embedding 模型。" : {
+
+    },
+    "测试连接" : {
+
+    },
+    "由 %@ 生成 · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "由 %1$@ 生成 · %2$@"
+          }
+        }
+      }
+    },
+    "聊天模型用于单仓摘要和标签推荐；Embedding 模型用于本地 SQLite 语义搜索索引。" : {
+
+    },
+    "连接" : {
+
+    },
+    "预计消耗 1 次 AI Chat 调用；标签不会自动写入，需你确认。" : {
+
     }
   },
   "version" : "1.0"

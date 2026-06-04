@@ -23,7 +23,7 @@ struct AIClientConfiguration: Equatable, Sendable {
     var baseURL: String
     var chatModel: String
     var embeddingModel: String
-    var timeoutInterval: TimeInterval = 60
+    var timeoutInterval: TimeInterval = 300
 }
 
 /// 业务层依赖的最小 AI 能力集。
