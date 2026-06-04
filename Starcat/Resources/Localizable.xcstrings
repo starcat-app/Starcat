@@ -4765,6 +4765,23 @@
         }
       }
     },
+    "search.searching" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Searching: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索：%@"
+          }
+        }
+      }
+    },
     "search.semantic.indexing" : {
       "localizations" : {
         "en" : {
@@ -4831,6 +4848,7 @@
       }
     },
     "search.semantic.refreshingFormat" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4847,6 +4865,7 @@
       }
     },
     "search.semantic.resultCountFormat" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4858,23 +4877,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d 个语义结果"
-          }
-        }
-      }
-    },
-    "search.searching" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Searching: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜索：%@"
           }
         }
       }
@@ -7589,6 +7591,9 @@
       }
     },
     "下拉框只展示已启用模型；如果服务商暂时无法列出模型，可以打开自定义模型名手动输入。" : {
+
+    },
+    "分享" : {
 
     },
     "匹配 %@ 个" : {
