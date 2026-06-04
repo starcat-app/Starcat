@@ -21,6 +21,16 @@ struct StarcatApp: App {
     /// 应用级依赖容器，必须在 init 中创建并通过 environment 传给 ContentView。
     @State private var dependencies: AppDependencies
 
+    // MARK: - DEBUG-only: 运行时语言切换
+    //
+    // dong4j 2026-06-04 需求：测试 i18n 是否完全覆盖时，希望不重启 App 也能切语言。
+    // 用一个 `@State` 持有 `DebugLocaleStore.shared`（@Observable 单例），下面的
+    // `WindowGroup` 通过 `.environment(\.locale, _)` 应用，菜单项在 `.commands` 里注册。
+    // 整段包在 `#if DEBUG`：Release 包不存在这个状态、不显示这个菜单，零成本。
+    #if DEBUG
+    @State private var debugLocaleStore = DebugLocaleStore.shared
+    #endif
+
     init() {
         Self.bootstrap()
         // 注意：AppDependencies 是 @MainActor，App init 已在 main thread
@@ -40,7 +50,7 @@ struct StarcatApp: App {
 
     var body: some Scene {
         WindowGroup("Starcat") {
-            ContentView()
+            contentRoot
                 .environment(dependencies)
                 .environment(dependencies.authSession)
                 .environment(dependencies.syncManager)
@@ -91,6 +101,14 @@ struct StarcatApp: App {
                 }
                 .keyboardShortcut("I", modifiers: .command)
             }
+
+            // DEBUG-only 菜单：当前只承载语言切换，未来可继续追加其他调试入口
+            // （例如清缓存、强制制造网络错误、Dump 数据库等）。
+            // Release 包整段不存在；菜单本身的标题 / 选项标签都用 verbatim 文本，
+            // 不进入 String Catalog——避免"切到英文后调试菜单也变英文"的循环噩梦。
+            #if DEBUG
+            DebugMenuCommands(localeStore: debugLocaleStore)
+            #endif
         }
 
         // macOS 原生 Settings 窗口（Cmd+,）
@@ -105,6 +123,29 @@ struct StarcatApp: App {
                 // 颜色变化跟主窗口节奏一致（0.3s easeInOut）。
                 .animation(.easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
         }
+    }
+
+    // MARK: - 内容根视图
+
+    /// 包了一层 builder 是为了让 DEBUG-only 的 `.environment(\.locale, _)` 修饰符
+    /// 不污染 Release 构建——`#if DEBUG` 在 ViewBuilder 内部合法，但放在 `.modifier`
+    /// 链上不行。
+    ///
+    /// 语义：DEBUG 时按 `debugLocaleStore.selection.effectiveLocale` 覆盖 environment
+    /// locale；`.system` 选项对应 `Locale.autoupdatingCurrent`，与不设置等价。
+    @ViewBuilder
+    private var contentRoot: some View {
+        #if DEBUG
+        ContentView()
+            .environment(\.locale, debugLocaleStore.selection.effectiveLocale)
+            // 给 SwiftUI 一个 identity 提示：当 selection 改变时强制重建 ContentView
+            // 视图层级，避免某些缓存了 Locale 的子视图（例如 RelativeDateTimeFormatter）
+            // 在不重启 App 的情况下也能立刻刷新。代价是切语言时整个 ContentView
+            // 重新渲染一次——dong4j 截图反馈"切语言后部分时间格式没变"就是少了这一行。
+            .id(debugLocaleStore.selection)
+        #else
+        ContentView()
+        #endif
     }
 
     // MARK: - 主题应用
@@ -156,3 +197,56 @@ struct StarcatApp: App {
         AppLog.general.info("Starcat bootstrap complete")
     }
 }
+
+// MARK: - DEBUG-only 菜单
+
+#if DEBUG
+/// DEBUG 菜单聚合（顶部菜单栏出现一个 `Debug` 入口）。
+///
+/// 设计：
+/// - 用 `Commands` 协议而不是直接写在 `.commands` 里——把所有调试入口聚拢到一个
+///   独立类型，未来要加新调试项（清数据库 / Dump 偏好 / 强制限流等）就在这个
+///   类型里加 `CommandGroup` / `CommandMenu`，主 `StarcatApp.body` 不会被撑大
+/// - `CommandMenu("Debug")` 在 menubar 上插入一个顶级菜单（位置由 SwiftUI 决定，
+///   一般在 View 菜单之后），不与系统标准菜单冲突
+/// - 语言切换走 SwiftUI 原生 `Picker` —— SwiftUI 会自动把它渲染成菜单内的
+///   一组可勾选项（带 checkmark），不需要手动维护选中态
+struct DebugMenuCommands: Commands {
+
+    /// 直接拿 store 而不是再包一层 binding——`@Bindable` 在 macOS 15 SwiftUI
+    /// commands 上下文里可用（Commands 内部能正确订阅 @Observable）。
+    @Bindable var localeStore: DebugLocaleStore
+
+    var body: some Commands {
+        // 第一个菜单：Debug
+        // 注意菜单标题用 verbatim 字面量（避免被 String Catalog 提取后跟随
+        // .environment(\.locale, _) 切换），保证不管当前 locale 是什么，开发者
+        // 都能在菜单栏看到固定的"Debug"字样找到入口。
+        CommandMenu("Debug") {
+            languageSubmenu
+            // 占位：未来追加其他调试入口（清缓存 / Dump DB / 强制 429 等）
+        }
+    }
+
+    /// 语言切换子菜单——用 `Picker` 让 SwiftUI 自动渲染成"radio 组"。
+    ///
+    /// Picker 在 CommandMenu 里的行为：菜单项前会出现一个 ✓ 标记表示选中项；
+    /// 点击其他项立即触发 `selection` 写入。比手写多个 Button + checkmark 简洁。
+    ///
+    /// `pickerStyle(.inline)` 让选项平铺在 Debug 菜单第一层，而不是嵌套子菜单——
+    /// 调试场景下"少一次点击"比"菜单整洁"更重要。
+    @ViewBuilder
+    private var languageSubmenu: some View {
+        Section("Language / 语言") {
+            Picker(selection: $localeStore.selection) {
+                ForEach(DebugLocale.allCases) { option in
+                    Text(verbatim: option.displayName).tag(option)
+                }
+            } label: {
+                Text(verbatim: "Locale Override")
+            }
+            .pickerStyle(.inline)
+        }
+    }
+}
+#endif

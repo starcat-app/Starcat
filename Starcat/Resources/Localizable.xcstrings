@@ -7719,12 +7719,11 @@
       }
     },
     "trending.period.daily" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Today"
+            "value" : "Day"
           }
         },
         "zh-Hans" : {
@@ -7736,12 +7735,11 @@
       }
     },
     "trending.period.monthly" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This Month"
+            "value" : "Month"
           }
         },
         "zh-Hans" : {
@@ -7753,12 +7751,11 @@
       }
     },
     "trending.period.weekly" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This Week"
+            "value" : "Week"
           }
         },
         "zh-Hans" : {
