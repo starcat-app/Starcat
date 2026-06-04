@@ -958,7 +958,7 @@ private struct MetadataPanelHeightPreferenceKey: PreferenceKey {
 /// 拆成独立 View 的好处：
 /// - 状态切换造成的 view tree 重建只影响这一块，元信息区不受波及
 /// - 重试按钮的回调通过闭包传入，保持本组件无副作用
-private struct ReadmeStateView: View {
+struct ReadmeStateView: View {
 
     @Environment(ReadmeViewModel.self) private var readmeVM
 
