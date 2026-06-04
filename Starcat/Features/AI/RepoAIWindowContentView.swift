@@ -69,17 +69,6 @@ struct RepoAIWindowContentView: View {
     /// 由用户手势驱动的事件才允许翻折叠状态（详细说明见 `handleChatScroll`）。
     @State private var lastChatScrollPhase: ScrollPhase = .idle
 
-    /// 复制按钮"已复制"反馈态。1.5s 后自动复位。
-    @State private var didCopySummary: Bool = false
-
-    /// 复位 didCopySummary 的延迟任务句柄。
-    ///
-    /// 用 `Task` 而不是 `DispatchQueue.main.asyncAfter`：
-    /// ① 用户可能快速连点复制按钮，需要把上一次延迟任务 cancel 掉再起新的，
-    ///    Task 自带 cancel 比 dispatch 简单干净；
-    /// ② 整个 View 是 SwiftUI，Task 完成回到 MainActor 不需要额外 Dispatch hop。
-    @State private var copyResetTask: Task<Void, Never>?
-
     /// 摘要展开时的最大高度。
     ///
     /// 与 dong4j 优化 5 的诉求一致：有摘要时优先展示摘要 → 给 360pt 而不是原先的
@@ -250,43 +239,18 @@ struct RepoAIWindowContentView: View {
 
     /// 复制按钮（含点击反馈，HOM-150 dong4j 优化 2）。
     ///
-    /// 状态机：
-    /// - 默认：icon = `doc.on.doc`，tooltip = "复制摘要到剪贴板"
-    /// - 点击后：icon 切 `checkmark.circle.fill`、tooltip 切"已复制 ✓"，1.5s 自动复位
-    /// - 复位用 `Task.sleep` + cancel 旧任务，连点不会出现"刚切完又被旧任务复位"
+    /// 直接复用 `CopyFeedbackButton`，与气泡复制按钮 / 对话底部"复制全部"同源；
+    /// 内容只取摘要 Markdown（`summaryMarkdown ?? summary`），不带对话 / 推荐
+    /// 标签，与 HOM-150 验收要求一致。
     private func copyButton(insight: RepoAIInsight) -> some View {
-        Button {
-            copySummaryToClipboard(insight)
-            // 切到反馈态并起 1.5s 复位任务；旧任务先 cancel 掉。
-            copyResetTask?.cancel()
-            withAnimation(.easeOut(duration: 0.15)) {
-                didCopySummary = true
-            }
-            copyResetTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeIn(duration: 0.2)) {
-                    didCopySummary = false
-                }
-            }
-        } label: {
-            Image(systemName: didCopySummary ? "checkmark.circle.fill" : "doc.on.doc")
-                .foregroundStyle(didCopySummary ? Color.green : Color.primary)
-                // contentTransition 让 SF Symbol 在两个 icon 之间柔性过渡，
-                // 不是硬切，反馈感更明显。
+        CopyFeedbackButton(
+            providesContent: { insight.summaryMarkdown ?? insight.summary },
+            tooltip: "复制摘要到剪贴板"
+        ) { didCopy in
+            Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                .foregroundStyle(didCopy ? Color.green : Color.primary)
                 .contentTransition(.symbolEffect(.replace))
         }
-        .buttonStyle(.borderless)
-        .focusEffectDisabled()
-        .help(didCopySummary ? "已复制 ✓" : "复制摘要到剪贴板")
-    }
-
-    /// 只复制摘要 markdown，不带对话 / 推荐标签，与 HOM-150 验收要求一致。
-    private func copySummaryToClipboard(_ insight: RepoAIInsight) {
-        let content = (insight.summaryMarkdown ?? insight.summary)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(content, forType: .string)
     }
 
     @ViewBuilder
@@ -472,6 +436,14 @@ struct RepoAIWindowContentView: View {
                                 AIChatBubble(message: message)
                                     .id(message.id)
                             }
+
+                            // 对话底部"复制全部"区域（HOM-150 dong4j 2026-06-04
+                            // 15:13 反馈）：流式中（chat.isSending）暂时隐藏，避免
+                            // 用户在 token 还在流时复制到半截 Markdown。
+                            if !chat.isSending {
+                                conversationCopyRow(chat: chat)
+                            }
+
                             // 锚点：scrollTo 用，让"新消息追加后自动滚到最底部"。
                             // 单独留一个 0 高度 anchor 比 scrollTo 最后一条 message.id
                             // 更稳：流式中助手 message 不断改 content，scrollTo 同一个
@@ -580,6 +552,50 @@ struct RepoAIWindowContentView: View {
         withAnimation(.easeInOut(duration: 0.25)) {
             isSummaryCollapsed = shouldCollapse
         }
+    }
+
+    /// 对话底部"复制全部对话"区域（HOM-150 dong4j 2026-06-04 15:13 反馈）。
+    ///
+    /// 设计：
+    /// - 居中放置一颗带文字的胶囊按钮，与摘要 / 对话之间的折叠条视觉同源
+    ///   （都是 capsule + 边框 + secondary 字色），不抢戏；
+    /// - 复用 `CopyFeedbackButton`，反馈机制与其余两个复制按钮完全一致：
+    ///   icon 切 ✓ + 绿色 + tooltip 切「已复制 ✓」+ 1.5s 复位；
+    /// - 调用 `chat.markdownExport(repo:)` 拼完整 Markdown 文档（结构见
+    ///   `RepoAIChatViewModel.markdownExport` 注释）；
+    /// - `providesContent` 是 closure，按下瞬间才拼字符串，避免每次 view 重绘
+    ///   都做 N 条消息的字符串拼接。
+    private func conversationCopyRow(chat: RepoAIChatViewModel) -> some View {
+        HStack {
+            Spacer()
+            CopyFeedbackButton(
+                providesContent: { chat.markdownExport(repo: repo) },
+                tooltip: "复制全部对话为 Markdown 到剪贴板"
+            ) { didCopy in
+                HStack(spacing: 6) {
+                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(.caption)
+                        .contentTransition(.symbolEffect(.replace))
+                    Text(didCopy ? "已复制 ✓" : "复制完整对话")
+                        .font(.caption)
+                }
+                .foregroundStyle(didCopy ? Color.green : .secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
+                        )
+                )
+                .pressableHover(opacity: 0.75, scale: 1.04)
+            }
+            Spacer()
+        }
+        .padding(.top, 12)
+        .padding(.bottom, 4)
     }
 
     private var chatEmptyState: some View {
