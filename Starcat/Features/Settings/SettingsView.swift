@@ -24,23 +24,50 @@ struct SettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(AppDependencies.self) private var dependencies
 
+    @State private var selectedTab: SettingsTab = .general
+
+    /// Settings 各 Tab 的内容尺寸。
+    ///
+    /// AI 服务页已经从单 Provider 表单升级成“服务商 / 模型列表 / 任务模型 / 参数 / Prompt”
+    /// 的复合配置面板。继续沿用 520×360 会让横向控件和 Prompt 编辑区明显被裁切；
+    /// 但把所有 Settings Tab 永久放大会让通用 / 存储页显得空。这里按 Tab 动态给内容尺寸，
+    /// 让 AI 页获得更大的默认空间，其它页保持 macOS 设置窗口的紧凑感。
+    private enum SettingsTab: Hashable {
+        case general
+        case ai
+        case storage
+
+        var contentSize: CGSize {
+            switch self {
+            case .general, .storage:
+                return CGSize(width: 520, height: 360)
+            case .ai:
+                return CGSize(width: 760, height: 760)
+            }
+        }
+    }
+
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             generalTab
                 .tabItem {
                     Label("settings.general.title", systemImage: "gearshape")
                 }
+                .tag(SettingsTab.general)
             AISettingsTab()
                 .tabItem {
                     Label("settings.ai.title", systemImage: "sparkles")
                 }
+                .tag(SettingsTab.ai)
             StorageSettingsTab(readmeRepository: dependencies.readmeRepository)
                 .tabItem {
                     Label("settings.storage.title", systemImage: "internaldrive")
                 }
+                .tag(SettingsTab.storage)
         }
-        .frame(width: 520, height: 360)
+        .frame(width: selectedTab.contentSize.width, height: selectedTab.contentSize.height)
         .scenePadding()
+        .animation(.easeInOut(duration: 0.18), value: selectedTab)
     }
 
     private var generalTab: some View {
