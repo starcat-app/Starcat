@@ -88,6 +88,12 @@ struct AIChatBubble: View {
     /// - 左侧 sparkles 头像保留（user / assistant 一眼可区分）；
     /// - 头像与正文之间用 12pt 文字大小 + 行高自然撑出节奏；
     /// - 流式末尾仍保留"生成中…"小提示，让用户感知 token 还在流。
+    ///
+    /// 时间戳右侧的复制按钮（HOM-150 dong4j 2026-06-04 15:13 反馈）：
+    /// - 仅 assistant 气泡有（user 消息不需要）；
+    /// - 流式中 / 内容为空时隐藏：避免复制到不完整的 Markdown；
+    /// - 复用 `CopyFeedbackButton`，与摘要 header 复制按钮 / 对话底部"复制全部"
+    ///   同款反馈（icon 切 ✓ + 绿色 + tooltip 切「已复制 ✓」+ 1.5s 复位）。
     private var assistantBubble: some View {
         VStack(alignment: .leading, spacing: 4) {
             VStack(alignment: .leading, spacing: 6) {
@@ -116,7 +122,25 @@ struct AIChatBubble: View {
             }
             .padding(.vertical, 2)
 
+            assistantFooter
+        }
+    }
+
+    /// 助手气泡底部行：时间戳 + 复制按钮（流式中 / 空内容时不显示复制按钮）。
+    private var assistantFooter: some View {
+        HStack(spacing: 6) {
             timestampLabel
+            if !message.isStreaming, !message.content.isEmpty {
+                CopyFeedbackButton(
+                    providesContent: { message.content },
+                    tooltip: "复制此回复 Markdown 到剪贴板"
+                ) { didCopy in
+                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(.caption2)
+                        .foregroundStyle(didCopy ? Color.green : .secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+            }
         }
     }
 

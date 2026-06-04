@@ -165,4 +165,90 @@ final class RepoAIChatViewModel {
         messages.removeAll()
         errorMessage = nil
     }
+
+    /// 把当前对话历史拼成可粘贴到外部 Markdown 渲染器（Obsidian / Notion / 飞书
+    /// 文档 / Bear / GitHub 等）的友好文档（HOM-150 dong4j 2026-06-04 15:13 反馈）。
+    ///
+    /// 文档结构（设计目标：粘贴到主流 Markdown 渲染器都能看到清晰的层级 + 角色
+    /// 分隔，且不与助手回答内部的标题层级"撞车"）：
+    ///
+    /// ```
+    /// # Starcat AI Chat · {owner/name}
+    ///
+    /// - **仓库**: [owner/name](https://github.com/owner/name)
+    /// - **导出时间**: 2026-06-04 15:13:42
+    /// - **消息数**: N
+    ///
+    /// ---
+    ///
+    /// #### 👤 你
+    ///
+    /// {user 消息原文}
+    ///
+    /// #### 🤖 AI
+    ///
+    /// {assistant 消息原 Markdown}
+    ///
+    /// ---
+    ///
+    /// #### 👤 你
+    /// ...
+    /// ```
+    ///
+    /// 设计取舍：
+    /// - 标题用 `####`（H4）而不是更高的 `##`/`###`：助手回答里通常自带 `##`/`###`
+    ///   章节，用 H4 当角色标头能保证助手内部层级保持自然显示，不会被角色标头
+    ///   "压扁"。
+    /// - 角色标头加 emoji（👤 / 🤖）：渲染器普遍支持，扫一眼就能区分发言人，
+    ///   不依赖颜色 / 缩进。
+    /// - 相邻 turn（上一轮 assistant → 下一轮 user）之间用 `---` 分隔，单轮内
+    ///   user → assistant 不加分隔，让"问 + 答"在视觉上成对。
+    /// - 助手内容原样输出，不二次转义/包裹代码块：助手返回的 Markdown 本身就是
+    ///   合法 Markdown（包含 fenced code、链接、列表等），任何包裹都会破坏渲染。
+    /// - 流式中的消息也包含进去（按当前累积的 content 写），用户中途想"分段
+    ///   保存"也能用。
+    func markdownExport(repo: Repo) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let exportedAt = formatter.string(from: Date())
+
+        var lines: [String] = []
+        lines.append("# Starcat AI Chat · \(repo.fullName)")
+        lines.append("")
+        lines.append("- **仓库**: [\(repo.fullName)](\(repo.htmlUrl))")
+        lines.append("- **导出时间**: \(exportedAt)")
+        lines.append("- **消息数**: \(messages.count)")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+        for (index, message) in messages.enumerated() {
+            // 在每个 user 消息前（除第一条）插 `---`，划分新一轮 turn 起点。
+            // 这样视觉上"问 + 答"成对，turn 之间有明显边界。
+            if index > 0, message.role == .user {
+                lines.append("---")
+                lines.append("")
+            }
+
+            switch message.role {
+            case .user:
+                lines.append("#### 👤 你")
+            case .assistant:
+                lines.append("#### 🤖 AI")
+            }
+            lines.append("")
+
+            let content = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if content.isEmpty {
+                // 流式还没开始 / 错误占位：给一个 placeholder 比留空白行友好。
+                lines.append("_（未生成内容）_")
+            } else {
+                lines.append(content)
+            }
+            lines.append("")
+        }
+
+        return lines.joined(separator: "\n")
+    }
 }
