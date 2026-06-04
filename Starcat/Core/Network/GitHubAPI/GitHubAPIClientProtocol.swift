@@ -66,6 +66,11 @@ protocol GitHubAPIClientProtocol: Sendable {
     func getSubscription(owner: String, repo: String) async throws -> GitHubSubscriptionDTO
     func putSubscription(owner: String, repo: String, subscribed: Bool, ignored: Bool) async throws -> GitHubSubscriptionDTO
     func deleteSubscription(owner: String, repo: String) async throws
+
+    // MARK: - Releases (HOM-47)
+
+    /// 拉取一页 Releases（按 GitHub 默认排序，最新在前）。
+    func releases(owner: String, repo: String, perPage: Int) async throws -> APIResponse<[GitHubReleaseDTO]>
 }
 
 // MARK: - Conformance

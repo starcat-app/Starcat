@@ -39,6 +39,11 @@ struct HomeView: View {
     @Environment(AuthSession.self) private var authSession
     @Environment(SyncManager.self) private var syncManager
     @Environment(AppSettings.self) private var settings
+    /// HOM-47：拿到 ReleasePoller 启动后台调度。
+    @Environment(AppDependencies.self) private var dependencies
+
+    /// HOM-47：Release 时间线 sheet 显示状态。
+    @State private var showReleaseTimeline: Bool = false
 
     /// HomeViewModel 在 HomeView 内部持有；用 @State 让生命周期与该视图绑定。
     /// AppDependencies 不构造它，因为 ViewModel 是 view-scoped，没必要塞进全局容器。
@@ -131,6 +136,7 @@ struct HomeView: View {
                 selectedPage: $selectedSidebarPage,
                 selectedTrendingLanguage: $selectedTrendingLanguage,
                 showTagManagement: $showTagManagement,
+                showReleaseTimeline: $showReleaseTimeline,
                 // 2026-06-02 21:38：透传给 SidebarHeaderView 让头像背景的语言色在 Trending 页也能联动
                 currentTrendingRepo: selectedTrendingRepo
             )
@@ -169,6 +175,21 @@ struct HomeView: View {
             }
         }) {
             TagManagementView(viewModel: tagMgmtVM)
+        }
+        // HOM-47：Release 时间线 sheet（独立窗口承载，不污染三栏布局）
+        .sheet(isPresented: $showReleaseTimeline) {
+            ReleaseTimelineView()
+                .environment(dependencies)
+        }
+        // HOM-47：登录后启动后台 Release 轮询；登出时停。
+        // 与 SyncManager 不同：Release Poller 自调度（NSBackgroundActivityScheduler），
+        // 启动一次后由系统在后台触发；这里只负责启停门控。
+        .onChange(of: authSession.state) { _, newState in
+            if newState.isAuthenticated {
+                dependencies.releasePoller.start()
+            } else {
+                dependencies.releasePoller.stop()
+            }
         }
         .task {
             // 启动 / 重新进入 HomeView 时默认回三栏展开。运行期用户手动缩窗时，

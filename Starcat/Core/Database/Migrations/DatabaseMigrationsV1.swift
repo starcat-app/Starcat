@@ -33,6 +33,75 @@ enum DatabaseMigrations {
         registerV3(into: &migrator)
         registerV4(into: &migrator)
         registerV5(into: &migrator)
+        registerV6(into: &migrator)
+    }
+
+    // MARK: - v6（HOM-47 Release 订阅追踪）
+
+    /// v6：Release 订阅追踪需要的两张表。
+    ///
+    /// **release_subscriptions**：用户对某仓库的 Release 订阅设置。
+    /// - 主键 `repo_id`：一个 repo 至多一条订阅记录
+    /// - `is_subscribed`：用户当前是否订阅
+    /// - `notify_enabled`：是否在新 Release 出现时弹系统通知（与 `is_subscribed` 解耦，
+    ///   未来可支持"订阅但静默"——MVP 默认 true）
+    /// - `last_known_release_id` / `last_known_tag_name`：上次轮询见过的最新 Release
+    ///   游标。用于在下次轮询时判断"出现了哪些新 Release 需要通知"
+    /// - `created_at` / `modified_at`：CloudKit 同步时按 Last-Write-Wins 比较 modifiedAt
+    ///
+    /// **releases**：拉到的 Release 元数据缓存。
+    /// - 主键 `id`：GitHub Release 的全局 id，跨 repo 唯一
+    /// - `repo_id` 外键 → repos.id ON DELETE CASCADE：repo 取消 star 时联级清理
+    /// - `assets_json`：把资产数组直接存 JSON 字符串。理由——assets 数量稳定 ≤ 10 条，
+    ///   只在时间线展示时需要，没有"按平台筛选所有 release 资产"的查询场景；
+    ///   开一张 release_assets 关联表会引入 N+1 与 cascade，性价比低
+    /// - `is_read`：用户已读状态。与 `repo_notes.status` 类似，UI 端默认未读
+    /// - `body_truncated`：Release notes 截取首段（最多 600 字符），用于时间线行展示
+    private static func registerV6(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v6-release-subscriptions") { db in
+            try createReleaseSubscriptions(db)
+            try createReleases(db)
+        }
+    }
+
+    private static func createReleaseSubscriptions(_ db: Database) throws {
+        try db.create(table: "release_subscriptions") { t in
+            t.column("repo_id", .integer).primaryKey()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("is_subscribed", .boolean).notNull().defaults(to: true)
+            t.column("notify_enabled", .boolean).notNull().defaults(to: true)
+            t.column("last_known_release_id", .integer)
+            t.column("last_known_tag_name", .text)
+            t.column("last_polled_at", .text)
+            t.column("created_at", .text).notNull()
+            t.column("modified_at", .text).notNull()
+        }
+
+        // 时间线视图查询路径："所有 is_subscribed = 1 的订阅"
+        try db.create(index: "idx_release_subscriptions_active", on: "release_subscriptions", columns: ["is_subscribed"])
+    }
+
+    private static func createReleases(_ db: Database) throws {
+        try db.create(table: "releases") { t in
+            t.column("id", .integer).primaryKey()
+            t.column("repo_id", .integer).notNull()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("tag_name", .text).notNull()
+            t.column("name", .text)
+            t.column("body_truncated", .text)
+            t.column("html_url", .text).notNull()
+            t.column("is_prerelease", .boolean).notNull().defaults(to: false)
+            t.column("is_draft", .boolean).notNull().defaults(to: false)
+            t.column("published_at", .text)
+            t.column("created_at_remote", .text)
+            t.column("assets_json", .text)
+            t.column("is_read", .boolean).notNull().defaults(to: false)
+            t.column("fetched_at", .text).notNull()
+        }
+
+        // 时间线主查询：按 published_at desc 排序所有订阅 repo 的 releases
+        try db.create(index: "idx_releases_repo_published", on: "releases", columns: ["repo_id", "published_at"])
+        try db.create(index: "idx_releases_published", on: "releases", columns: ["published_at"])
     }
 
     // MARK: - v5（AI 语义搜索 + 单仓智能化缓存）

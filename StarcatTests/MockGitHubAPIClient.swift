@@ -42,11 +42,15 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var starHandler: ((_ owner: String, _ repo: String) async throws -> Void)?
     var getCurrentUserHandler: (() async throws -> GitHubUserDTO)?
     var readmeHTMLHandler: ((_ owner: String, _ repo: String, _ ifNoneMatch: String?, _ ifModifiedSince: String?) async throws -> BytesResponse)?
+    /// HOM-47：Releases API mock handler。
+    var releasesHandler: ((_ owner: String, _ repo: String, _ perPage: Int) async throws -> APIResponse<[GitHubReleaseDTO]>)?
 
     // MARK: - 调用记录（供断言用）
 
     private(set) var readmeHTMLCalls: [(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)] = []
     private(set) var starCalls: [(owner: String, repo: String)] = []
+    /// HOM-47：releases 调用日志，便于断言"是否拉过 / 拉了几次"。
+    private(set) var releasesCalls: [(owner: String, repo: String, perPage: Int)] = []
 
     // MARK: - Protocol conformance
 
@@ -103,6 +107,14 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
 
     func deleteSubscription(owner: String, repo: String) async throws {
+    }
+
+    func releases(owner: String, repo: String, perPage: Int) async throws -> APIResponse<[GitHubReleaseDTO]> {
+        releasesCalls.append((owner, repo, perPage))
+        guard let handler = releasesHandler else {
+            fatalError("MockGitHubAPIClient.releasesHandler 未设置")
+        }
+        return try await handler(owner, repo, perPage)
     }
 }
 
