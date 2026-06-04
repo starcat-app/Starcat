@@ -27,10 +27,18 @@ struct RepoReleaseSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // 标题行：与 Tags / Notes 段保持一致——
+            // "Releases" Title 后面紧贴 Subscribe / Unsubscribe 按钮（不右对齐），
+            // 通知静默开关与右端 ProgressView 用 Spacer 推到行尾，
+            // 让"添加 / 修改"类的主操作（订阅）始终贴在 label 旁边。
             HStack(spacing: 8) {
                 Label("releases.section.title", systemImage: "shippingbox")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                if let vm = viewModel {
+                    subscribeButton(vm: vm)
+                }
 
                 Spacer()
 
@@ -39,7 +47,6 @@ struct RepoReleaseSection: View {
                         ProgressView()
                             .controlSize(.mini)
                     }
-                    subscribeButton(vm: vm)
                     if vm.subscription?.isSubscribed == true {
                         notifyToggle(vm: vm)
                     }
@@ -68,9 +75,23 @@ struct RepoReleaseSection: View {
                 Image(systemName: "tag.fill")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                Text(verbatim: latest.tagName)
-                    .font(.caption)
-                    .fontWeight(.medium)
+                // tag 本身就是跳转入口：蓝色 accent 颜色暗示可点击，配 `.pressableHover()`
+                // 与 Stars / Forks 等 Stat Item 一致的 opacity + scale 反馈，
+                // 替代原先额外的 `arrow.up.right.square` 跳转图标按钮（dong4j 反馈交互冗余）。
+                Button {
+                    if let url = URL(string: latest.htmlUrl) {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Text(verbatim: latest.tagName)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.accentColor)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .pressableHover()
+                .help("releases.openOnGitHub")
                 if let date = relativeDate(latest.publishedAt) {
                     Text("·")
                         .font(.caption)
@@ -79,17 +100,6 @@ struct RepoReleaseSection: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Button {
-                    if let url = URL(string: latest.htmlUrl) {
-                        NSWorkspace.shared.open(url)
-                    }
-                } label: {
-                    Image(systemName: "arrow.up.right.square")
-                        .font(.caption)
-                }
-                .buttonStyle(.borderless)
-                .focusEffectDisabled()
-                .help("releases.openOnGitHub")
             }
         } else if let vm = viewModel, vm.errorMessage != nil {
             Text(vm.errorMessage ?? "")

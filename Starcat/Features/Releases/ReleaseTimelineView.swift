@@ -37,8 +37,10 @@ struct ReleaseTimelineView: View {
             Divider()
             content
         }
-        .frame(minWidth: 720, minHeight: 520)
-        .frame(idealWidth: 880, idealHeight: 640)
+        // 2026-06-04 dong4j 反馈：宽度减小 1/3 —— 原 720/880 → 480/587。
+        // sheet 是非主交互窗口，更窄能配合 macOS 多窗口布局把屏幕让给主窗口。
+        .frame(minWidth: 480, minHeight: 520)
+        .frame(idealWidth: 587, idealHeight: 640)
         .task {
             if viewModel == nil {
                 viewModel = ReleaseTimelineViewModel(
@@ -76,15 +78,12 @@ struct ReleaseTimelineView: View {
             }
             Spacer()
             assetFilterField
-            Button {
+            // 立即检查：图标与 SidebarSyncButton（"全部仓库"右侧刷新图标）保持一致——
+            // `arrow.triangle.2.circlepath` + 进行中线性 1s repeatForever 转圈，
+            // dong4j 反馈"图标也要保持统一"。
+            ReleaseCheckNowButton(isChecking: viewModel?.isChecking == true) {
                 Task { await viewModel?.checkNow() }
-            } label: {
-                Label("releases.timeline.checkNow", systemImage: "arrow.clockwise")
-                    .font(.caption)
             }
-            .buttonStyle(.borderless)
-            .focusEffectDisabled()
-            .disabled(viewModel?.isChecking == true)
             Button {
                 Task { await viewModel?.markAllRead() }
             } label: {
@@ -181,6 +180,57 @@ struct ReleaseTimelineView: View {
             try? await Task.sleep(for: .seconds(1.5))
             withAnimation(.easeOut(duration: 0.18)) {
                 copyToast = nil
+            }
+        }
+    }
+}
+
+// MARK: - 立即检查按钮
+
+/// 与 `SidebarSyncButton`（"全部仓库"右侧刷新图标）视觉一致的立即检查按钮：
+/// `arrow.triangle.2.circlepath` 图标，进行中时线性 1s repeatForever 旋转，
+/// 完成后 0.2s easeOut 回正。dong4j 反馈刷新类按钮在 App 内必须图标 + 动效统一，
+/// 否则用户在不同界面看到不同 spinner 形态会产生认知负担。
+private struct ReleaseCheckNowButton: View {
+
+    let isChecking: Bool
+    let action: () -> Void
+
+    /// 用 `@State` 单独追踪 rotation，配 `withAnimation` repeatForever 才能保持
+    /// 转圈顺滑——直接对 `isChecking` 做 .rotationEffect 动画在状态切换瞬间会跳。
+    @State private var rotation: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: action) {
+            Label {
+                Text("releases.timeline.checkNow").font(.caption)
+            } icon: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .rotationEffect(.degrees(rotation))
+            }
+            .font(.caption)
+        }
+        .buttonStyle(.borderless)
+        .focusEffectDisabled()
+        .disabled(isChecking)
+        .onAppear { updateRotation(isChecking: isChecking) }
+        .onChange(of: isChecking) { _, newValue in
+            updateRotation(isChecking: newValue)
+        }
+    }
+
+    /// 与 `SidebarSyncButton.updateRotation` 同款：进行中无限转，完成后回正。
+    /// reduceMotion 时跳过 repeatForever（保留可访问性）。
+    private func updateRotation(isChecking: Bool) {
+        if isChecking {
+            if reduceMotion { return }
+            withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+                rotation = 360
+            }
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) {
+                rotation = 0
             }
         }
     }
