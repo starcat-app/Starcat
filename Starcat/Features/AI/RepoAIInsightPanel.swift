@@ -85,7 +85,15 @@ struct RepoAIInsightPanel: View {
             Label("AI 摘要", systemImage: "sparkles")
                 .font(.headline)
             Spacer()
-            if vm.insight != nil {
+            if let insight = vm.insight {
+                Button {
+                    copySummaryToClipboard(insight)
+                } label: {
+                    Label("复制", systemImage: "doc.on.doc")
+                }
+                .controlSize(.small)
+                .pressableHover()
+
                 Button {
                     Task { await vm.generate(repo: repo) }
                 } label: {
@@ -100,6 +108,36 @@ struct RepoAIInsightPanel: View {
                 .controlSize(.small)
             }
         }
+    }
+
+    private func copySummaryToClipboard(_ insight: RepoAIInsight) {
+        var content = ""
+        if !insight.oneLiner.isEmpty {
+            content += "**一句话总结**\n\(insight.oneLiner)\n\n"
+        }
+        if !insight.summary.isEmpty {
+            content += "**摘要**\n\(insight.summary)\n\n"
+        }
+        if !insight.platforms.isEmpty {
+            content += "**平台/生态**\n\(insight.platforms.joined(separator: ", "))\n\n"
+        }
+        if !insight.suitableFor.isEmpty {
+            content += "**适用场景**\n\(insight.suitableFor.map { "• \($0)" }.joined(separator: "\n"))\n\n"
+        }
+        if !insight.strengths.isEmpty {
+            content += "**优点**\n\(insight.strengths.map { "• \($0)" }.joined(separator: "\n"))\n\n"
+        }
+        if !insight.risks.isEmpty {
+            content += "**风险/注意点**\n\(insight.risks.map { "• \($0)" }.joined(separator: "\n"))\n\n"
+        }
+        if let example = insight.minimalExample, !example.isEmpty {
+            content += "**最小示例**\n\(example)"
+        }
+
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(content.trimmingCharacters(in: .whitespacesAndNewlines), forType: .string)
+        #endif
     }
 
     private var loadingState: some View {
