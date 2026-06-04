@@ -22,11 +22,16 @@ import AppKit
 import SwiftUI
 
 /// 默认窗口尺寸与下限，集中在一处便于以后整体调优。
+///
+/// HOM-150 dong4j 2026-06-04 15:30 反馈："调整为更适合对话框的尺寸——宽度减少，
+/// 高度增加"。两面板互斥布局下不再需要同时容纳摘要 + 对话两段，反而细长形
+/// （类似 ChatGPT 浮窗 / Telegram 桌面端）更贴合"逐条 Markdown 气泡"的阅读节奏。
 private enum RepoAIWindowMetrics {
-    /// 800 x 600 比典型聊天窗口稍大：摘要 + 对话两段共存需要垂直空间。
-    static let defaultContentSize = NSSize(width: 800, height: 600)
-    /// 最小尺寸：低于 600 宽 / 400 高时输入条 + 气泡换行会显得很拥挤。
-    static let minContentSize = NSSize(width: 600, height: 400)
+    /// 620 x 800：细长形，约 3:4 宽高比，匹配单面板 + 输入框的 chat 形态。
+    static let defaultContentSize = NSSize(width: 620, height: 800)
+    /// 最小尺寸：低于 480 宽 / 600 高时输入条 + 气泡 + segmented toggle bar
+    /// 会显得很拥挤。
+    static let minContentSize = NSSize(width: 480, height: 600)
 }
 
 /// 详情页 AI 助手窗口的控制器。
