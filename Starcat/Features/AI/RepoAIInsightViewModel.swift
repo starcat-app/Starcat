@@ -26,6 +26,8 @@ final class RepoAIInsightViewModel {
     private(set) var isLoading: Bool = false
     private(set) var isGenerating: Bool = false
     private(set) var errorMessage: String?
+    private(set) var tagErrorMessage: String?
+    private(set) var streamingSummaryText: String?
     private(set) var appliedTagNames: Set<String> = []
 
     private let service: RepoAIInsightService
@@ -52,6 +54,8 @@ final class RepoAIInsightViewModel {
             let currentTags = try await repoTagRepository.fetchTags(forRepo: repo.id)
             appliedTagNames = Set(currentTags.map { $0.name.normalizedTagName })
             errorMessage = nil
+            tagErrorMessage = nil
+            streamingSummaryText = nil
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -59,9 +63,17 @@ final class RepoAIInsightViewModel {
 
     func generate(repo: Repo) async {
         isGenerating = true
-        defer { isGenerating = false }
+        streamingSummaryText = ""
+        defer {
+            isGenerating = false
+            streamingSummaryText = nil
+        }
         do {
-            insight = try await service.generateInsight(for: repo)
+            let result = try await service.generateInsight(for: repo) { [weak self] partial in
+                self?.streamingSummaryText = partial
+            }
+            insight = result.insight
+            tagErrorMessage = result.tagErrorMessage
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription

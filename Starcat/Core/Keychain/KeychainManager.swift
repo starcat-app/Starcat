@@ -53,6 +53,9 @@ protocol KeychainManaging: Sendable {
     func storeAIKey(_ key: String) throws
     func loadAIKey() throws -> String?
     func deleteAIKey() throws
+    func storeAIKey(_ key: String, forProvider providerID: String) throws
+    func loadAIKey(forProvider providerID: String) throws -> String?
+    func deleteAIKey(forProvider providerID: String) throws
 
     func ping() throws
 }
@@ -66,6 +69,10 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
         static let githubToken = "github_access_token"
         static let aiKey = "ai_api_key"
         static let selfCheck = "self_check_canary"
+
+        static func aiKey(providerID: String) -> String {
+            "ai_api_key::\(providerID)"
+        }
     }
 
     private static let selfCheckCanary = "hello-secure-store"
@@ -186,6 +193,21 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
         AppLog.keychain.info("AI key removed")
     }
 
+    func storeAIKey(_ key: String, forProvider providerID: String) throws {
+        try setValue(key, forAccount: Account.aiKey(providerID: providerID))
+        AppLog.keychain.info("AI provider key stored securely")
+    }
+
+    func loadAIKey(forProvider providerID: String) throws -> String? {
+        // 迁移兼容：如果新 profile 维度还没有 Key，回退读取旧版全局 AI Key。
+        value(forAccount: Account.aiKey(providerID: providerID)) ?? value(forAccount: Account.aiKey)
+    }
+
+    func deleteAIKey(forProvider providerID: String) throws {
+        try setValue(nil, forAccount: Account.aiKey(providerID: providerID))
+        AppLog.keychain.info("AI provider key removed")
+    }
+
     func ping() throws {
         let canary = Self.selfCheckCanary
         try setValue(canary, forAccount: Account.selfCheck)
@@ -211,4 +233,3 @@ private extension JSONEncoder {
         return try encoder.encode(value)
     }
 }
-

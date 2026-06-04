@@ -6,14 +6,14 @@
 //
 //  模块职责：
 //  - 读取 repo 元数据与本地 README 缓存，组装 LLM 上下文；
-//  - 使用 BYOK 配置调用 OpenAI-compatible chat model；
-//  - 将结构化 AI 输出缓存到 SQLite；
-//  - 提供缓存读取与强制重新生成两种路径。
+//  - 按 Settings 中的任务配置分别调用摘要模型与标签模型；
+//  - 摘要优先使用流式响应，标签保持 JSON 解析；
+//  - 将最终可展示结果缓存到 SQLite。
 //
 //  关键约束：
 //  - 不自动触发批量生成；只有用户在详情页点击生成 / 重新生成才调用 chat。
 //  - 不自动写标签；标签推荐只进入 UI 确认流。
-//  - Prompt 要求返回严格 JSON，解析失败直接报错，避免把不可预测文本塞进 UI。
+//  - 摘要和标签是两个独立 AI 任务。标签 JSON 失败不应让已生成的摘要文本丢失。
 //
 
 import CryptoKit
@@ -21,20 +21,33 @@ import Foundation
 
 enum RepoAIInsightError: Error, LocalizedError, Equatable {
     case missingAPIKey
+    case missingProvider(String)
     case invalidJSON
 
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return "请先在 Settings → AI 填写 API Key，再生成 AI 摘要。"
+            return "请先在 Settings → AI 配置对应 Provider 的 API Key，再生成 AI 摘要。"
+        case .missingProvider(let task):
+            return "AI 任务 \(task) 没有可用的 Provider 配置。"
         case .invalidJSON:
             return "AI 返回内容不是可解析的结构化 JSON。"
         }
     }
 }
 
+struct RepoAIInsightGeneration: Equatable, Sendable {
+    var insight: RepoAIInsight
+    var tagErrorMessage: String?
+}
+
 @MainActor
 final class RepoAIInsightService {
+
+    private struct Source {
+        let text: String
+        let hash: String
+    }
 
     private let summaryRepository: any AISummaryRepositoryProtocol
     private let readmeRepository: ReadmeRepository
@@ -55,7 +68,7 @@ final class RepoAIInsightService {
 
     func cachedInsight(for repo: Repo) async throws -> RepoAIInsight? {
         let source = try await makeSource(for: repo)
-        guard let record = try await summaryRepository.find(repoId: repo.id, model: settings.aiChatModel),
+        guard let record = try await summaryRepository.find(repoId: repo.id, model: cacheModelKey()),
               record.sourceHash == source.hash
         else {
             return nil
@@ -63,48 +76,135 @@ final class RepoAIInsightService {
         return try Self.decodeInsight(json: record.summaryJson)
     }
 
-    func generateInsight(for repo: Repo) async throws -> RepoAIInsight {
+    func generateInsight(
+        for repo: Repo,
+        onSummaryDelta: (@MainActor (String) -> Void)? = nil
+    ) async throws -> RepoAIInsightGeneration {
         let source = try await makeSource(for: repo)
-        let client = try makeClient()
-        let model = settings.aiChatModel
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
-        let response = try await client.chat(
-            systemPrompt: Self.systemPrompt,
-            userPrompt: Self.userPrompt(repo: repo, sourceText: source.text),
-            model: model
+
+        async let tagResult = tagSuggestionsResult(source: source)
+        let summaryText = try await generateSummary(source: source, onDelta: onSummaryDelta)
+        let resolvedTagResult = await tagResult
+        let suggestions = (try? resolvedTagResult.get()) ?? []
+        let tagErrorMessage: String? = {
+            if case .failure(let error) = resolvedTagResult {
+                return error.localizedDescription
+            }
+            return nil
+        }()
+
+        let summaryModel = settings.aiSummaryTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
+        var insight = Self.makeInsight(
+            summaryText: summaryText,
+            tags: suggestions,
+            model: summaryModel,
+            generatedAt: generatedAt
         )
-        var insight = try Self.decodeInsight(json: response)
-        insight.model = model
-        insight.generatedAt = generatedAt
+
+        // 保留旧字段的同时把新摘要正文写进 summaryMarkdown，UI 优先读该字段。
+        insight.summaryMarkdown = summaryText
 
         let jsonData = try JSONEncoder().encode(insight)
         let record = AISummaryRecord(
             repoId: repo.id,
-            model: model,
+            model: cacheModelKey(),
             sourceHash: source.hash,
             summaryJson: String(decoding: jsonData, as: UTF8.self),
             generatedAt: generatedAt
         )
         try await summaryRepository.upsert(record)
-        return insight
+        return RepoAIInsightGeneration(insight: insight, tagErrorMessage: tagErrorMessage)
     }
 
-    private func makeClient() throws -> any AIClientProtocol {
-        guard let apiKey = try keychain.loadAIKey()?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !apiKey.isEmpty
-        else {
+    private func tagSuggestionsResult(source: Source) async -> Result<[AITagSuggestion], Error> {
+        do {
+            return .success(try await generateTags(source: source))
+        } catch {
+            AppLog.ai.error("AI tag generation failed: \(error.localizedDescription, privacy: .public)")
+            return .failure(error)
+        }
+    }
+
+    private func generateSummary(
+        source: Source,
+        onDelta: (@MainActor (String) -> Void)?
+    ) async throws -> String {
+        let task = settings.aiSummaryTask
+        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "摘要")
+        let request = AIChatRequest(
+            systemPrompt: task.prompt.systemPrompt,
+            userPrompt: task.prompt.renderedUserPrompt(context: source.text),
+            model: model,
+            parameters: task.parameters,
+            responseFormat: .text
+        )
+
+        if task.parameters.streamEnabled {
+            var accumulated = ""
+            for try await event in client.chatStream(request: request) {
+                switch event {
+                case .delta(let delta):
+                    accumulated += delta
+                    onDelta?(accumulated)
+                case .completed(let response):
+                    return response.content
+                }
+            }
+            guard let final = accumulated.nilIfBlank else { throw AIClientError.emptyResponse }
+            return final
+        } else {
+            let response = try await client.chat(request: request)
+            return response.content
+        }
+    }
+
+    private func generateTags(source: Source) async throws -> [AITagSuggestion] {
+        let task = settings.aiTagsTask
+        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "推荐标签")
+        let response = try await client.chat(request: AIChatRequest(
+            systemPrompt: task.prompt.systemPrompt,
+            userPrompt: task.prompt.renderedUserPrompt(context: source.text),
+            model: model,
+            parameters: task.parameters,
+            responseFormat: .jsonObject
+        ))
+        return try Self.decodeTagSuggestions(json: response.content)
+    }
+
+    private func makeClient(
+        task: AIModelTaskConfiguration,
+        fallbackModel: String,
+        taskName: String
+    ) throws -> (any AIClientProtocol, String) {
+        guard let profile = settings.aiProviderProfiles.first(where: { $0.id == task.providerID }) else {
+            throw RepoAIInsightError.missingProvider(taskName)
+        }
+        let apiKey = try keychain.loadAIKey(forProvider: profile.id)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !apiKey.isEmpty || profile.provider.allowsEmptyAPIKey else {
             throw RepoAIInsightError.missingAPIKey
         }
+        let model = task.resolvedModelName.nilIfBlank ?? fallbackModel
 
-        return try OpenAIClient(configuration: AIClientConfiguration(
+        return (try OpenAIClient(configuration: AIClientConfiguration(
+            providerID: profile.id,
+            provider: profile.provider,
             apiKey: apiKey,
-            baseURL: settings.aiBaseURL,
-            chatModel: settings.aiChatModel,
-            embeddingModel: settings.aiEmbeddingModel
-        ))
+            baseURL: profile.baseURL,
+            chatModel: model,
+            embeddingModel: settings.aiEmbeddingTask.resolvedModelName,
+            timeoutInterval: task.parameters.timeoutSeconds
+        )), model)
     }
 
-    private func makeSource(for repo: Repo) async throws -> (text: String, hash: String) {
+    private func cacheModelKey() -> String {
+        let summaryModel = settings.aiSummaryTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
+        let tagsModel = settings.aiTagsTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
+        return "summary:\(settings.aiSummaryTask.providerID)/\(summaryModel)|tags:\(settings.aiTagsTask.providerID)/\(tagsModel)"
+    }
+
+    private func makeSource(for repo: Repo) async throws -> Source {
         let readme = try await readmeRepository.find(repoId: repo.id)
         let readmeText = Self.stripHTML(readme?.renderedHtml ?? readme?.content ?? "")
         let source = [
@@ -119,7 +219,7 @@ final class RepoAIInsightService {
             "README:",
             String(readmeText.prefix(12_000))
         ].joined(separator: "\n")
-        return (source, Self.hash(source))
+        return Source(text: source, hash: Self.hash(source))
     }
 
     nonisolated static func decodeInsight(json raw: String) throws -> RepoAIInsight {
@@ -130,6 +230,45 @@ final class RepoAIInsightService {
         } catch {
             throw RepoAIInsightError.invalidJSON
         }
+    }
+
+    nonisolated static func decodeTagSuggestions(json raw: String) throws -> [AITagSuggestion] {
+        let json = extractJSONObject(from: raw)
+        guard let data = json.data(using: .utf8) else { throw RepoAIInsightError.invalidJSON }
+        do {
+            if let envelope = try? JSONDecoder().decode(AITagSuggestionEnvelope.self, from: data) {
+                return envelope.suggestedTags
+            }
+            return try JSONDecoder().decode([AITagSuggestion].self, from: data)
+        } catch {
+            throw RepoAIInsightError.invalidJSON
+        }
+    }
+
+    private nonisolated static func makeInsight(
+        summaryText: String,
+        tags: [AITagSuggestion],
+        model: String,
+        generatedAt: String
+    ) -> RepoAIInsight {
+        let normalized = summaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let firstLine = normalized
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .first
+            .map(String.init) ?? String(normalized.prefix(80))
+        return RepoAIInsight(
+            oneLiner: firstLine,
+            summary: normalized,
+            summaryMarkdown: normalized,
+            platforms: [],
+            suitableFor: [],
+            strengths: [],
+            risks: [],
+            minimalExample: nil,
+            suggestedTags: tags,
+            model: model,
+            generatedAt: generatedAt
+        )
     }
 
     private nonisolated static func extractJSONObject(from raw: String) -> String {
@@ -160,40 +299,15 @@ final class RepoAIInsightService {
         let digest = SHA256.hash(data: Data(text.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
+}
 
-    private static let systemPrompt = """
-    You are Starcat's repository analysis assistant. Return strict JSON only.
-    Analyze the repository for a developer who manages GitHub stars.
-    Do not invent facts not present in the provided metadata or README.
-    Suggested tags must be short, reusable, and suitable for a local tag system.
-    """
+private struct AITagSuggestionEnvelope: Codable {
+    var suggestedTags: [AITagSuggestion]
+}
 
-    private static func userPrompt(repo: Repo, sourceText: String) -> String {
-        """
-        Analyze this GitHub repository and return JSON matching exactly:
-        {
-          "oneLiner": "中文一句话总结",
-          "summary": "中文说明这个项目是什么，控制在 120 字内",
-          "platforms": ["平台或生态，如 macOS, Swift, CLI"],
-          "suitableFor": ["适合场景 1", "适合场景 2"],
-          "strengths": ["优点 1", "优点 2"],
-          "risks": ["风险或注意点 1"],
-          "minimalExample": "如果 README 中有清晰示例，提炼一个最小示例；没有则为 null",
-          "suggestedTags": [
-            {"name": "Swift", "confidence": 0.91, "reason": "为什么推荐这个标签"}
-          ],
-          "model": "",
-          "generatedAt": ""
-        }
-
-        Rules:
-        - Use Simplified Chinese.
-        - suggestedTags: 3 to 8 items, confidence between 0 and 1.
-        - model and generatedAt must be empty strings; Starcat fills them locally.
-        - JSON only, no markdown fences.
-
-        Repository context:
-        \(sourceText)
-        """
+private extension String {
+    var nilIfBlank: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

@@ -26,7 +26,7 @@ struct OpenAIClient: AIClientProtocol {
     private let client: OpenAIProtocol
 
     init(configuration: AIClientConfiguration) throws {
-        let trimmedKey = configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedKey = Self.effectiveAPIKey(for: configuration)
         guard !trimmedKey.isEmpty else { throw AIClientError.missingAPIKey }
 
         let sdkConfig = try Self.makeSDKConfiguration(from: configuration, apiKey: trimmedKey)
@@ -47,23 +47,17 @@ struct OpenAIClient: AIClientProtocol {
         self.client = client
     }
 
-    func chat(systemPrompt: String, userPrompt: String, model: String?) async throws -> String {
-        let resolvedModel = model?.nilIfBlank ?? configuration.chatModel
+    func chat(request: AIChatRequest) async throws -> AIChatResponse {
+        let resolvedModel = request.model.nilIfBlank ?? configuration.chatModel
         #if DEBUG
         AIDebugLogger.logChatRequest(
             baseURL: configuration.baseURL,
             model: resolvedModel,
-            systemPromptLength: systemPrompt.count,
-            userPromptLength: userPrompt.count
+            systemPromptLength: request.systemPrompt.count,
+            userPromptLength: request.userPrompt.count
         )
         #endif
-        let query = ChatQuery(
-            messages: [
-                .system(.init(content: .textContent(systemPrompt))),
-                .user(.init(content: .string(userPrompt)))
-            ],
-            model: resolvedModel
-        )
+        let query = makeChatQuery(request: request, resolvedModel: resolvedModel, stream: false)
 
         let result = try await client.chats(query: query)
         #if DEBUG
@@ -77,7 +71,72 @@ struct OpenAIClient: AIClientProtocol {
             #endif
             throw AIClientError.emptyResponse
         }
-        return content
+        if result.choices.first?.finishReason == ChatResult.Choice.FinishReason.length.rawValue {
+            throw AIClientError.responseTruncated
+        }
+        return AIChatResponse(
+            content: content,
+            model: result.model,
+            finishReason: result.choices.first?.finishReason
+        )
+    }
+
+    func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let resolvedModel = request.model.nilIfBlank ?? configuration.chatModel
+                    #if DEBUG
+                    AIDebugLogger.logChatRequest(
+                        baseURL: configuration.baseURL,
+                        model: resolvedModel,
+                        systemPromptLength: request.systemPrompt.count,
+                        userPromptLength: request.userPrompt.count
+                    )
+                    #endif
+                    let query = makeChatQuery(request: request, resolvedModel: resolvedModel, stream: true)
+                    var content = ""
+                    var finishReason: String?
+                    for try await chunk in client.chatsStream(query: query) {
+                        for choice in chunk.choices {
+                            if let delta = choice.delta.content, !delta.isEmpty {
+                                content += delta
+                                continuation.yield(.delta(delta))
+                            }
+                            if let reason = choice.finishReason {
+                                finishReason = reason.rawValue
+                            }
+                        }
+                    }
+                    guard let final = content.nilIfBlank else {
+                        continuation.finish(throwing: AIClientError.emptyResponse)
+                        return
+                    }
+                    if finishReason == ChatResult.Choice.FinishReason.length.rawValue {
+                        continuation.finish(throwing: AIClientError.responseTruncated)
+                        return
+                    }
+                    continuation.yield(.completed(AIChatResponse(
+                        content: final,
+                        model: resolvedModel,
+                        finishReason: finishReason
+                    )))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    func chat(systemPrompt: String, userPrompt: String, model: String?) async throws -> String {
+        let response = try await chat(request: AIChatRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            model: model?.nilIfBlank ?? configuration.chatModel,
+            parameters: .summaryDefault
+        ))
+        return response.content
     }
 
     func embedding(input: String, model: String?) async throws -> [Float] {
@@ -100,12 +159,67 @@ struct OpenAIClient: AIClientProtocol {
         return vectors
     }
 
+    func listModels() async throws -> [AIModelDescriptor] {
+        let url = try Self.modelsURL(baseURL: configuration.baseURL, provider: configuration.provider)
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = configuration.timeoutInterval
+        let key = Self.effectiveAPIKey(for: configuration)
+        if !key.isEmpty {
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw AIClientError.modelListRequestFailed("无 HTTP 响应")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw AIClientError.modelListRequestFailed("HTTP \(http.statusCode) \(body.prefix(240))")
+        }
+        do {
+            let decoded = try JSONDecoder().decode(ProviderModelsResponse.self, from: data)
+            return decoded.data.map {
+                AIModelDescriptor(
+                    providerID: configuration.providerID,
+                    name: $0.id,
+                    ownedBy: $0.ownedBy,
+                    capability: AIModelCapability.inferred(from: "\($0.id) \($0.name ?? "")"),
+                    isEnabled: true,
+                    isCustom: false
+                )
+            }
+        } catch {
+            throw AIClientError.modelListRequestFailed(error.localizedDescription)
+        }
+    }
+
     /// 连接测试使用 embeddings 而不是 chat：
     /// - token / Base URL / model 三项都能被验证；
     /// - 输入极短，成本比让模型生成文本更低；
     /// - embedding 是语义搜索的硬依赖，设置页优先验证它更贴近第一版功能闭环。
     func testConnection() async throws {
-        _ = try await embedding(input: "starcat connection test", model: configuration.embeddingModel)
+        _ = try await listModels()
+    }
+
+    private func makeChatQuery(
+        request: AIChatRequest,
+        resolvedModel: String,
+        stream: Bool
+    ) -> ChatQuery {
+        ChatQuery(
+            messages: [
+                .system(.init(content: .textContent(request.systemPrompt))),
+                .user(.init(content: .string(request.userPrompt)))
+            ],
+            model: resolvedModel,
+            maxCompletionTokens: request.parameters.maxCompletionTokens > 0 ? request.parameters.maxCompletionTokens : nil,
+            responseFormat: request.responseFormat == .jsonObject ? .jsonObject : nil,
+            temperature: request.parameters.temperature,
+            topP: request.parameters.topP,
+            stream: stream
+        )
     }
 
     /// 将用户输入的 OpenAI-compatible Base URL 拆给 MacPaw/OpenAI。
@@ -137,6 +251,41 @@ struct OpenAIClient: AIClientProtocol {
         )
     }
 
+    private static func effectiveAPIKey(for configuration: AIClientConfiguration) -> String {
+        let trimmed = configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            return trimmed
+        }
+        return configuration.provider.fallbackAPIKey
+    }
+
+    private static func modelsURL(baseURL: String, provider: AIServiceProvider) throws -> URL {
+        guard let url = URL(string: baseURL),
+              let scheme = url.scheme,
+              let host = url.host
+        else {
+            throw AIClientError.invalidBaseURL(baseURL)
+        }
+
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = host
+        components.port = url.port
+
+        let trimmedPath = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        switch provider {
+        case .deepSeek:
+            components.path = "/models"
+        default:
+            components.path = trimmedPath.isEmpty ? "/v1/models" : "/\(trimmedPath)/models"
+        }
+
+        guard let finalURL = components.url else {
+            throw AIClientError.invalidBaseURL(baseURL)
+        }
+        return finalURL
+    }
+
     #if DEBUG
     /// 构造 Debug 期可插拔的 URLSession。
     ///
@@ -153,6 +302,22 @@ struct OpenAIClient: AIClientProtocol {
         return URLSession(configuration: configuration)
     }
     #endif
+}
+
+private struct ProviderModelsResponse: Decodable {
+    var data: [ProviderModel]
+}
+
+private struct ProviderModel: Decodable {
+    var id: String
+    var name: String?
+    var ownedBy: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case ownedBy = "owned_by"
+    }
 }
 
 private extension String {

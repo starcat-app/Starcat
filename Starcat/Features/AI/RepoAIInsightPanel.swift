@@ -66,6 +66,8 @@ struct RepoAIInsightPanel: View {
 
                 if vm.isLoading {
                     loadingState
+                } else if let draft = vm.streamingSummaryText, !draft.isEmpty {
+                    streamingSummary(draft, vm: vm)
                 } else if let insight = vm.insight {
                     insightContent(insight, vm: vm)
                 } else {
@@ -138,22 +140,41 @@ struct RepoAIInsightPanel: View {
 
     private func insightContent(_ insight: RepoAIInsight, vm: RepoAIInsightViewModel) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(insight.oneLiner)
-                .font(.title3.weight(.semibold))
-                .textSelection(.enabled)
-
-            section(title: "这个项目是什么？", items: [insight.summary])
-            if !insight.platforms.isEmpty {
-                chips(title: "平台 / 生态", values: insight.platforms)
-            }
-            section(title: "适合场景", items: insight.suitableFor)
-            section(title: "优点", items: insight.strengths)
-            section(title: "风险与注意点", items: insight.risks)
-            if let example = insight.minimalExample, !example.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                codeSection(example)
-            }
+            summaryText(insight.summaryMarkdown ?? insight.summary)
             tagSuggestions(insight.suggestedTags, vm: vm)
+            if let tagError = vm.tagErrorMessage {
+                tagErrorBanner(tagError)
+            }
             footer(insight)
+        }
+    }
+
+    private func streamingSummary(_ text: String, vm: RepoAIInsightViewModel) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("正在生成 AI 摘要…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            summaryText(text)
+            Divider()
+            Label("推荐标签正在并行解析，完成后会出现在下方。", systemImage: "tag")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func summaryText(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("AI 摘要")
+                .font(.subheadline.weight(.semibold))
+            Text(text)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -210,31 +231,37 @@ struct RepoAIInsightPanel: View {
                 Button("全部应用") {
                     Task { await vm.applyAllTags(repo: repo) }
                 }
-                .disabled(tags.allSatisfy { vm.appliedTagNames.contains($0.name.trimmingCharacters(in: .whitespacesAndNewlines)) })
+                .disabled(tags.isEmpty || tags.allSatisfy { vm.appliedTagNames.contains($0.name.trimmingCharacters(in: .whitespacesAndNewlines)) })
                 .controlSize(.small)
             }
 
-            ForEach(tags) { tag in
-                HStack(alignment: .top, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(tag.name)
-                            .font(.body.weight(.medium))
-                        Text(tag.reason)
-                            .font(.caption)
+            if tags.isEmpty {
+                Text("暂无推荐标签。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(tags) { tag in
+                    HStack(alignment: .top, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(tag.name)
+                                .font(.body.weight(.medium))
+                            Text(tag.reason)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("\(Int((max(0, min(tag.confidence, 1)) * 100).rounded()))%")
+                            .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
+                        Button(vm.appliedTagNames.contains(tag.name.trimmingCharacters(in: .whitespacesAndNewlines)) ? "已应用" : "应用") {
+                            Task { await vm.applyTag(tag, repo: repo) }
+                        }
+                        .disabled(vm.appliedTagNames.contains(tag.name.trimmingCharacters(in: .whitespacesAndNewlines)))
+                        .controlSize(.small)
                     }
-                    Spacer()
-                    Text("\(Int((max(0, min(tag.confidence, 1)) * 100).rounded()))%")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    Button(vm.appliedTagNames.contains(tag.name.trimmingCharacters(in: .whitespacesAndNewlines)) ? "已应用" : "应用") {
-                        Task { await vm.applyTag(tag, repo: repo) }
-                    }
-                    .disabled(vm.appliedTagNames.contains(tag.name.trimmingCharacters(in: .whitespacesAndNewlines)))
-                    .controlSize(.small)
+                    .padding(.vertical, 6)
+                    Divider()
                 }
-                .padding(.vertical, 6)
-                Divider()
             }
         }
     }
@@ -252,6 +279,17 @@ struct RepoAIInsightPanel: View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
             Text(message)
+                .font(.caption)
+        }
+        .foregroundStyle(.orange)
+        .padding(10)
+        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func tagErrorBanner(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "tag.slash")
+            Text("推荐标签解析失败：\(message)")
                 .font(.caption)
         }
         .foregroundStyle(.orange)

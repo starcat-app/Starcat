@@ -1,0 +1,328 @@
+//
+//  AIConfiguration.swift
+//  Starcat
+//
+//  AI 配置领域模型。
+//
+//  模块职责：
+//  - 描述 Starcat 设置页里的多个 AI provider profile；
+//  - 描述 provider 下可启用 / 禁用的模型列表；
+//  - 描述摘要、推荐标签、Embedding 三类任务各自使用的模型、参数和 Prompt。
+//
+//  关键约束：
+//  - 这些模型只保存非敏感配置。API Key 由 `KeychainManager` 按 profile ID 单独加密保存。
+//  - 第一版继续使用 OpenAI-compatible 协议；不同 provider 的差异通过默认值和模型列表解析收口。
+//  - Prompt 使用 `{context}` 占位符，运行时由业务层替换为 repo 元数据 / README 上下文。
+//
+
+import Foundation
+
+/// AI 模型能力。
+enum AIModelCapability: String, Codable, CaseIterable, Identifiable, Sendable {
+    case chat
+    case embedding
+    case unknown
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .chat:      return "Chat"
+        case .embedding: return "Embedding"
+        case .unknown:   return "Unknown"
+        }
+    }
+
+    /// 根据模型名做保守推断。
+    ///
+    /// OpenAI-compatible 的 `/models` 返回没有统一 capability schema，OpenRouter 会给
+    /// architecture，LM Studio / Ollama 又只返回本地模型名。这里仅用于初始填充 UI，
+    /// 用户仍可在设置页手动修正。
+    static func inferred(from modelName: String) -> AIModelCapability {
+        let lower = modelName.localizedLowercase
+        if lower.contains("embedding")
+            || lower.contains("embed")
+            || lower.contains("nomic")
+            || lower.contains("bge")
+            || lower.contains("text-embedding") {
+            return .embedding
+        }
+        return .chat
+    }
+}
+
+/// Provider 测试状态。
+enum AIProviderTestStatus: Codable, Equatable, Sendable {
+    case notTested
+    case success(modelCount: Int)
+    case failed(String)
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case modelCount
+        case message
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let kind = try container.decode(String.self, forKey: .kind)
+        switch kind {
+        case "success":
+            self = .success(modelCount: try container.decode(Int.self, forKey: .modelCount))
+        case "failed":
+            self = .failed(try container.decode(String.self, forKey: .message))
+        default:
+            self = .notTested
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .notTested:
+            try container.encode("notTested", forKey: .kind)
+        case .success(let modelCount):
+            try container.encode("success", forKey: .kind)
+            try container.encode(modelCount, forKey: .modelCount)
+        case .failed(let message):
+            try container.encode("failed", forKey: .kind)
+            try container.encode(message, forKey: .message)
+        }
+    }
+
+    var displayText: String {
+        switch self {
+        case .notTested:
+            return "未测试"
+        case .success(let modelCount):
+            return "连接正常，发现 \(modelCount) 个模型"
+        case .failed(let message):
+            return message
+        }
+    }
+}
+
+/// Provider 下的模型描述。
+struct AIModelDescriptor: Codable, Identifiable, Equatable, Sendable {
+    var id: String
+    var providerID: String
+    var name: String
+    var ownedBy: String?
+    var capability: AIModelCapability
+    var isEnabled: Bool
+    var isCustom: Bool
+
+    init(
+        id: String? = nil,
+        providerID: String,
+        name: String,
+        ownedBy: String? = nil,
+        capability: AIModelCapability? = nil,
+        isEnabled: Bool = true,
+        isCustom: Bool = false
+    ) {
+        self.providerID = providerID
+        self.name = name
+        self.id = id ?? "\(providerID)::\(name)"
+        self.ownedBy = ownedBy
+        self.capability = capability ?? AIModelCapability.inferred(from: name)
+        self.isEnabled = isEnabled
+        self.isCustom = isCustom
+    }
+}
+
+/// 一个可调用的 AI 服务商配置。
+struct AIProviderProfile: Codable, Identifiable, Equatable, Sendable {
+    var id: String
+    var provider: AIServiceProvider
+    var displayName: String
+    var baseURL: String
+    var isEnabled: Bool
+    var models: [AIModelDescriptor]
+    var lastTestedAt: String?
+    var lastTestStatus: AIProviderTestStatus
+
+    init(
+        id: String = UUID().uuidString,
+        provider: AIServiceProvider,
+        displayName: String? = nil,
+        baseURL: String? = nil,
+        isEnabled: Bool = true,
+        models: [AIModelDescriptor] = [],
+        lastTestedAt: String? = nil,
+        lastTestStatus: AIProviderTestStatus = .notTested
+    ) {
+        self.id = id
+        self.provider = provider
+        self.displayName = displayName ?? provider.defaultProfileName
+        self.baseURL = baseURL ?? provider.defaultBaseURL
+        self.isEnabled = isEnabled
+        self.models = models
+        self.lastTestedAt = lastTestedAt
+        self.lastTestStatus = lastTestStatus
+    }
+}
+
+/// Starcat 内置 AI 任务。
+enum AIModelTask: String, Codable, CaseIterable, Identifiable, Sendable {
+    case summary
+    case tags
+    case embedding
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .summary:   return "AI 摘要"
+        case .tags:      return "推荐标签"
+        case .embedding: return "Embedding"
+        }
+    }
+
+    var requiredCapability: AIModelCapability {
+        switch self {
+        case .summary, .tags: return .chat
+        case .embedding:      return .embedding
+        }
+    }
+}
+
+/// 单个 AI 任务的模型参数。
+struct AIModelParameters: Codable, Equatable, Sendable {
+    var temperature: Double
+    var topP: Double
+    var topK: Int
+    var maxCompletionTokens: Int
+    var timeoutSeconds: Double
+    var streamEnabled: Bool
+
+    static let summaryDefault = AIModelParameters(
+        temperature: 0.2,
+        topP: 0.9,
+        topK: 40,
+        maxCompletionTokens: 2_048,
+        timeoutSeconds: 300,
+        streamEnabled: true
+    )
+
+    static let tagsDefault = AIModelParameters(
+        temperature: 0.1,
+        topP: 0.8,
+        topK: 40,
+        maxCompletionTokens: 1_024,
+        timeoutSeconds: 180,
+        streamEnabled: false
+    )
+
+    static let embeddingDefault = AIModelParameters(
+        temperature: 0,
+        topP: 1,
+        topK: 0,
+        maxCompletionTokens: 0,
+        timeoutSeconds: 300,
+        streamEnabled: false
+    )
+}
+
+/// Prompt 配置。
+struct AIPromptConfiguration: Codable, Equatable, Sendable {
+    var systemPrompt: String
+    var userPromptTemplate: String
+
+    func renderedUserPrompt(context: String) -> String {
+        userPromptTemplate.replacingOccurrences(of: "{context}", with: context)
+    }
+}
+
+/// 单个任务的 provider/model/prompt/参数配置。
+struct AIModelTaskConfiguration: Codable, Equatable, Sendable {
+    var providerID: String
+    var modelID: String
+    var customModelName: String
+    var useCustomModel: Bool
+    var parameters: AIModelParameters
+    var prompt: AIPromptConfiguration
+
+    var resolvedModelName: String {
+        useCustomModel ? customModelName : modelID
+    }
+}
+
+/// AI Prompt 默认值集中地。
+enum AIDefaultPrompts {
+    static let summary = AIPromptConfiguration(
+        systemPrompt: """
+        You are Starcat's repository summary assistant.
+        Write the final answer in message.content only.
+        Do not write reasoning, analysis traces, markdown fences, or JSON.
+        Use Simplified Chinese.
+        Do not invent facts not present in the provided metadata or README.
+        """,
+        userPromptTemplate: """
+        请阅读下面的 GitHub 仓库上下文，生成一段适合开发者快速判断价值的中文摘要。
+
+        输出要求：
+        - 先用一句话说明这个项目是什么。
+        - 再用 2-4 个短段落说明核心用途、适合场景、亮点和风险。
+        - 如果 README 中有明确的最小使用示例，可以提炼一个简短示例。
+        - 不要输出 JSON，不要使用 markdown 代码围栏。
+
+        Repository context:
+        {context}
+        """
+    )
+
+    static let tags = AIPromptConfiguration(
+        systemPrompt: """
+        You are Starcat's repository tagging assistant.
+        Return strict JSON only in message.content.
+        Do not write reasoning, analysis traces, markdown fences, or explanations.
+        Suggested tags must be short, reusable, and suitable for a local tag system.
+        """,
+        userPromptTemplate: """
+        请基于下面的 GitHub 仓库上下文推荐 3 到 8 个中文或技术英文标签。
+
+        只返回 JSON，结构必须匹配：
+        {
+          "suggestedTags": [
+            {"name": "Swift", "confidence": 0.91, "reason": "为什么推荐这个标签"}
+          ]
+        }
+
+        规则：
+        - confidence 必须在 0 到 1 之间。
+        - name 必须短，可复用，适合本地标签系统。
+        - 不要返回 markdown。
+
+        Repository context:
+        {context}
+        """
+    )
+
+    static let embedding = AIPromptConfiguration(systemPrompt: "", userPromptTemplate: "{context}")
+}
+
+extension AIServiceProvider {
+    var defaultProfileName: String {
+        switch self {
+        case .openAICompatible: return "OpenAI Compatible"
+        case .deepSeek:         return "DeepSeek"
+        case .openRouter:       return "OpenRouter"
+        case .ollama:           return "Ollama Local"
+        case .lmStudio:         return "LM Studio Local"
+        }
+    }
+
+    var allowsEmptyAPIKey: Bool {
+        switch self {
+        case .ollama, .lmStudio:
+            return true
+        case .openAICompatible, .deepSeek, .openRouter:
+            return false
+        }
+    }
+
+    var fallbackAPIKey: String {
+        allowsEmptyAPIKey ? "local-ai" : ""
+    }
+}

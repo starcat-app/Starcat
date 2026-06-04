@@ -185,7 +185,7 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
 /// - 当前第一阶段只落地 OpenAI-compatible 路线，OpenAI / DeepSeek / OpenRouter /
 ///   Ollama / LM Studio 都可以通过 Base URL + API Key 表达。
 /// - 保留具体 provider 枚举不是为了锁死 SDK，而是为了给设置页提供合理默认值。
-enum AIServiceProvider: String, CaseIterable, Identifiable {
+enum AIServiceProvider: String, CaseIterable, Identifiable, Codable, Sendable {
     case openAICompatible
     case deepSeek
     case openRouter
@@ -207,7 +207,7 @@ enum AIServiceProvider: String, CaseIterable, Identifiable {
     var defaultBaseURL: String {
         switch self {
         case .openAICompatible: return "https://api.openai.com/v1"
-        case .deepSeek:         return "https://api.deepseek.com/v1"
+        case .deepSeek:         return "https://api.deepseek.com"
         case .openRouter:       return "https://openrouter.ai/api/v1"
         case .ollama:           return "http://localhost:11434/v1"
         case .lmStudio:         return "http://localhost:1234/v1"
@@ -348,6 +348,31 @@ final class AppSettings {
         didSet { persist(key: Keys.aiEmbeddingModel, value: aiEmbeddingModel) }
     }
 
+    /// 多服务商 AI 配置。
+    ///
+    /// 为什么放 UserDefaults JSON：
+    /// - profile / 模型启用状态 / Prompt 都属于本机偏好，不需要 SQLite 查询能力；
+    /// - 第一版先避免数据库迁移风险；
+    /// - API Key 不在这里，按 profile ID 存在 `KeychainManager` 的本地加密文件。
+    var aiProviderProfiles: [AIProviderProfile] {
+        didSet { persistJSON(key: Keys.aiProviderProfiles, value: aiProviderProfiles) }
+    }
+
+    /// 摘要任务模型配置。摘要与标签拆开，避免 JSON 标签失败拖垮摘要。
+    var aiSummaryTask: AIModelTaskConfiguration {
+        didSet { persistJSON(key: Keys.aiSummaryTask, value: aiSummaryTask) }
+    }
+
+    /// 推荐标签任务模型配置。
+    var aiTagsTask: AIModelTaskConfiguration {
+        didSet { persistJSON(key: Keys.aiTagsTask, value: aiTagsTask) }
+    }
+
+    /// Embedding 任务模型配置。
+    var aiEmbeddingTask: AIModelTaskConfiguration {
+        didSet { persistJSON(key: Keys.aiEmbeddingTask, value: aiEmbeddingTask) }
+    }
+
     /// 搜索栏当前模式。默认 keyword，避免用户未配置 AI 时误触发付费 API。
     var smartSearchMode: SmartSearchMode {
         didSet { persist(key: Keys.smartSearchMode, value: smartSearchMode.rawValue) }
@@ -386,10 +411,39 @@ final class AppSettings {
 
         let aiProviderRaw = defaults.string(forKey: Keys.aiProvider)
         let resolvedAIProvider = aiProviderRaw.flatMap(AIServiceProvider.init(rawValue:)) ?? .openAICompatible
+        let resolvedAIBaseURL = defaults.string(forKey: Keys.aiBaseURL) ?? resolvedAIProvider.defaultBaseURL
+        let resolvedAIChatModel = defaults.string(forKey: Keys.aiChatModel) ?? resolvedAIProvider.defaultChatModel
+        let resolvedAIEmbeddingModel = defaults.string(forKey: Keys.aiEmbeddingModel) ?? resolvedAIProvider.defaultEmbeddingModel
         self.aiProvider = resolvedAIProvider
-        self.aiBaseURL = defaults.string(forKey: Keys.aiBaseURL) ?? resolvedAIProvider.defaultBaseURL
-        self.aiChatModel = defaults.string(forKey: Keys.aiChatModel) ?? resolvedAIProvider.defaultChatModel
-        self.aiEmbeddingModel = defaults.string(forKey: Keys.aiEmbeddingModel) ?? resolvedAIProvider.defaultEmbeddingModel
+        self.aiBaseURL = resolvedAIBaseURL
+        self.aiChatModel = resolvedAIChatModel
+        self.aiEmbeddingModel = resolvedAIEmbeddingModel
+        let defaultProfile = Self.makeDefaultAIProviderProfile(
+            provider: resolvedAIProvider,
+            baseURL: resolvedAIBaseURL,
+            chatModel: resolvedAIChatModel,
+            embeddingModel: resolvedAIEmbeddingModel
+        )
+        let profiles = Self.decodeJSON([AIProviderProfile].self, key: Keys.aiProviderProfiles, defaults: defaults) ?? []
+        self.aiProviderProfiles = profiles.isEmpty ? [defaultProfile] : profiles
+        let defaultSummaryTask = Self.makeDefaultTask(
+            task: .summary,
+            profileID: defaultProfile.id,
+            modelName: resolvedAIChatModel
+        )
+        let defaultTagsTask = Self.makeDefaultTask(
+            task: .tags,
+            profileID: defaultProfile.id,
+            modelName: resolvedAIChatModel
+        )
+        let defaultEmbeddingTask = Self.makeDefaultTask(
+            task: .embedding,
+            profileID: defaultProfile.id,
+            modelName: resolvedAIEmbeddingModel
+        )
+        self.aiSummaryTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiSummaryTask, defaults: defaults) ?? defaultSummaryTask
+        self.aiTagsTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiTagsTask, defaults: defaults) ?? defaultTagsTask
+        self.aiEmbeddingTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiEmbeddingTask, defaults: defaults) ?? defaultEmbeddingTask
         let searchModeRaw = defaults.string(forKey: Keys.smartSearchMode)
         self.smartSearchMode = searchModeRaw.flatMap(SmartSearchMode.init(rawValue:)) ?? .keyword
     }
@@ -402,6 +456,93 @@ final class AppSettings {
 
     private func persistBool(key: String, value: Bool) {
         defaults.set(value, forKey: key)
+    }
+
+    private func persistJSON<T: Encodable>(key: String, value: T) {
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = try encoder.encode(value)
+            defaults.set(String(decoding: data, as: UTF8.self), forKey: key)
+        } catch {
+            AppLog.general.error("persistJSON failed for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private static func decodeJSON<T: Decodable>(
+        _ type: T.Type,
+        key: String,
+        defaults: UserDefaults
+    ) -> T? {
+        guard let raw = defaults.string(forKey: key),
+              let data = raw.data(using: .utf8)
+        else {
+            return nil
+        }
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            AppLog.general.error("decodeJSON failed for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    private static func makeDefaultAIProviderProfile(
+        provider: AIServiceProvider,
+        baseURL: String,
+        chatModel: String,
+        embeddingModel: String
+    ) -> AIProviderProfile {
+        let profileID = "legacy-\(provider.rawValue)"
+        return AIProviderProfile(
+            id: profileID,
+            provider: provider,
+            displayName: provider.defaultProfileName,
+            baseURL: baseURL,
+            models: [
+                AIModelDescriptor(
+                    providerID: profileID,
+                    name: chatModel,
+                    capability: .chat,
+                    isEnabled: true,
+                    isCustom: true
+                ),
+                AIModelDescriptor(
+                    providerID: profileID,
+                    name: embeddingModel,
+                    capability: .embedding,
+                    isEnabled: true,
+                    isCustom: true
+                )
+            ]
+        )
+    }
+
+    private static func makeDefaultTask(
+        task: AIModelTask,
+        profileID: String,
+        modelName: String
+    ) -> AIModelTaskConfiguration {
+        AIModelTaskConfiguration(
+            providerID: profileID,
+            modelID: modelName,
+            customModelName: modelName,
+            useCustomModel: false,
+            parameters: {
+                switch task {
+                case .summary:   return .summaryDefault
+                case .tags:      return .tagsDefault
+                case .embedding: return .embeddingDefault
+                }
+            }(),
+            prompt: {
+                switch task {
+                case .summary:   return AIDefaultPrompts.summary
+                case .tags:      return AIDefaultPrompts.tags
+                case .embedding: return AIDefaultPrompts.embedding
+                }
+            }()
+        )
     }
 
     /// 全部偏好键集中地，避免字符串散落。
@@ -417,6 +558,10 @@ final class AppSettings {
         static let aiBaseURL = "settings.ai.baseURL"
         static let aiChatModel = "settings.ai.chatModel"
         static let aiEmbeddingModel = "settings.ai.embeddingModel"
+        static let aiProviderProfiles = "settings.ai.providerProfiles.v2"
+        static let aiSummaryTask = "settings.ai.task.summary.v2"
+        static let aiTagsTask = "settings.ai.task.tags.v2"
+        static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
         static let smartSearchMode = "settings.search.mode"
     }
 }

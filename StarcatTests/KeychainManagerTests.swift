@@ -54,4 +54,25 @@ struct KeychainManagerTests {
         let afterDelete = try mgr.loadAIKey()
         #expect(afterDelete == nil)
     }
+
+    @Test("AI provider key 按 profile 隔离")
+    func aiProviderKeyRoundTrip() throws {
+        let mgr = KeychainManager.shared
+        let profileA = "test-provider-a-\(UUID().uuidString)"
+        let profileB = "test-provider-b-\(UUID().uuidString)"
+        defer {
+            try? mgr.deleteAIKey(forProvider: profileA)
+            try? mgr.deleteAIKey(forProvider: profileB)
+        }
+
+        try mgr.storeAIKey("key-a", forProvider: profileA)
+        try mgr.storeAIKey("key-b", forProvider: profileB)
+
+        #expect(try mgr.loadAIKey(forProvider: profileA) == "key-a")
+        #expect(try mgr.loadAIKey(forProvider: profileB) == "key-b")
+
+        try mgr.deleteAIKey(forProvider: profileA)
+        #expect(try mgr.loadAIKey(forProvider: profileA) == nil)
+        #expect(try mgr.loadAIKey(forProvider: profileB) == "key-b")
+    }
 }

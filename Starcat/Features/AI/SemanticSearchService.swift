@@ -68,8 +68,7 @@ final class SemanticSearchService {
         guard !trimmed.isEmpty else { return [] }
         guard !candidates.isEmpty else { return [] }
 
-        let client = try makeClient()
-        let model = settings.aiEmbeddingModel
+        let (client, model) = try makeClient(task: settings.aiEmbeddingTask)
         try await ensureIndexed(candidates, model: model, client: client)
 
         let stored = try await embeddingRepository.fetchEmbeddingsByRepoID(
@@ -100,23 +99,30 @@ final class SemanticSearchService {
     /// UI 工具栏按钮会调用这里；搜索时也会自动补缺失索引。
     func refreshIndex(for repos: [Repo]) async throws {
         guard !repos.isEmpty else { return }
-        let client = try makeClient()
-        try await ensureIndexed(repos, model: settings.aiEmbeddingModel, client: client, force: true)
+        let (client, model) = try makeClient(task: settings.aiEmbeddingTask)
+        try await ensureIndexed(repos, model: model, client: client, force: true)
     }
 
-    private func makeClient() throws -> any AIClientProtocol {
-        guard let apiKey = try keychain.loadAIKey()?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !apiKey.isEmpty
-        else {
+    private func makeClient(task: AIModelTaskConfiguration) throws -> (any AIClientProtocol, String) {
+        guard let profile = settings.aiProviderProfiles.first(where: { $0.id == task.providerID }) else {
             throw SemanticSearchError.missingAPIKey
         }
+        let apiKey = try keychain.loadAIKey(forProvider: profile.id)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !apiKey.isEmpty || profile.provider.allowsEmptyAPIKey else {
+            throw SemanticSearchError.missingAPIKey
+        }
+        let model = task.resolvedModelName.nilIfBlank ?? settings.aiEmbeddingModel
 
-        return try OpenAIClient(configuration: AIClientConfiguration(
+        return (try OpenAIClient(configuration: AIClientConfiguration(
+            providerID: profile.id,
+            provider: profile.provider,
             apiKey: apiKey,
-            baseURL: settings.aiBaseURL,
-            chatModel: settings.aiChatModel,
-            embeddingModel: settings.aiEmbeddingModel
-        ))
+            baseURL: profile.baseURL,
+            chatModel: settings.aiSummaryTask.resolvedModelName,
+            embeddingModel: model,
+            timeoutInterval: task.parameters.timeoutSeconds
+        )), model)
     }
 
     private func ensureIndexed(
@@ -216,6 +222,13 @@ private struct SemanticIndexRecord {
     private static func hash(_ text: String) -> String {
         let digest = SHA256.hash(data: Data(text.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

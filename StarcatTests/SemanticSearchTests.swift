@@ -65,4 +65,19 @@ struct RepoAIInsightTests {
         #expect(insight.oneLiner == "一个 Swift 网络库")
         #expect(insight.suggestedTags.first?.name == "Swift")
     }
+
+    @Test("AI Tags: 可解析 suggestedTags envelope")
+    func decodeTagEnvelope() throws {
+        let raw = """
+        {
+          "suggestedTags": [
+            {"name": "local-ai", "confidence": 0.82, "reason": "本地模型相关"}
+          ]
+        }
+        """
+
+        let tags = try RepoAIInsightService.decodeTagSuggestions(json: raw)
+        #expect(tags.count == 1)
+        #expect(tags[0].name == "local-ai")
+    }
 }
