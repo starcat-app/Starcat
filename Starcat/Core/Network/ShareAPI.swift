@@ -38,7 +38,7 @@ actor ShareAPI {
     private let decoder: JSONDecoder
 
     init(
-        baseURL: URL = URL(string: "https://starcat.app/api")!,
+        baseURL: URL = URL(string: "http://127.0.0.1:8080/api")!,
         session: URLSession? = nil
     ) {
         self.baseURL = baseURL
