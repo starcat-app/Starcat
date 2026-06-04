@@ -31,7 +31,14 @@ struct OpenAIClient: AIClientProtocol {
 
         let sdkConfig = try Self.makeSDKConfiguration(from: configuration, apiKey: trimmedKey)
         self.configuration = configuration
+        #if DEBUG
+        self.client = OpenAI(
+            configuration: sdkConfig,
+            session: Self.makeDebuggableSession(timeoutInterval: configuration.timeoutInterval)
+        )
+        #else
         self.client = OpenAI(configuration: sdkConfig)
+        #endif
     }
 
     /// 生产代码注入真实 MacPaw client；单元测试可用 mock OpenAIProtocol 走这里。
@@ -42,6 +49,14 @@ struct OpenAIClient: AIClientProtocol {
 
     func chat(systemPrompt: String, userPrompt: String, model: String?) async throws -> String {
         let resolvedModel = model?.nilIfBlank ?? configuration.chatModel
+        #if DEBUG
+        AIDebugLogger.logChatRequest(
+            baseURL: configuration.baseURL,
+            model: resolvedModel,
+            systemPromptLength: systemPrompt.count,
+            userPromptLength: userPrompt.count
+        )
+        #endif
         let query = ChatQuery(
             messages: [
                 .system(.init(content: .textContent(systemPrompt))),
@@ -51,7 +66,15 @@ struct OpenAIClient: AIClientProtocol {
         )
 
         let result = try await client.chats(query: query)
+        #if DEBUG
+        if DebugFlags.aiHTTPLogging {
+            AIDebugLogger.dumpDecodedChatResult(result, reason: "chat-success")
+        }
+        #endif
         guard let content = result.choices.first?.message.content?.nilIfBlank else {
+            #if DEBUG
+            AIDebugLogger.dumpDecodedChatResult(result, reason: "empty-message-content")
+            #endif
             throw AIClientError.emptyResponse
         }
         return content
@@ -113,6 +136,23 @@ struct OpenAIClient: AIClientProtocol {
             parsingOptions: [.relaxed]
         )
     }
+
+    #if DEBUG
+    /// 构造 Debug 期可插拔的 URLSession。
+    ///
+    /// MacPaw/OpenAI 允许注入 `URLSession`。这里仅在 `DebugAIHTTPLogging` 打开时
+    /// 插入 `AIHTTPDebugURLProtocol`，这样能看到 LM Studio 原始 JSON，同时不影响
+    /// 默认开发体验；Release 构建完全走普通 SDK 初始化路径。
+    private static func makeDebuggableSession(timeoutInterval: TimeInterval) -> URLSession {
+        guard DebugFlags.aiHTTPLogging else { return .shared }
+
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = timeoutInterval
+        configuration.timeoutIntervalForResource = timeoutInterval
+        configuration.protocolClasses = [AIHTTPDebugURLProtocol.self] + (configuration.protocolClasses ?? [])
+        return URLSession(configuration: configuration)
+    }
+    #endif
 }
 
 private extension String {

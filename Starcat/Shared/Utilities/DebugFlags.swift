@@ -32,6 +32,10 @@ import Foundation
 ///
 ///        -DebugLayoutOverlay YES
 ///
+/// 或按需新增其他 key，例如调试 AI HTTP 响应时：
+///
+///        -DebugAIHTTPLogging YES
+///
 /// 4. 关闭弹窗，重新 Run。**注意**：Scheme 设置不会跟着 git 提交（默认 .gitignore
 ///    `xcuserdata/`），所以是每个开发者自己的本地配置，不污染团队。
 ///
@@ -64,6 +68,20 @@ enum DebugFlags {
         return UserDefaults.standard.bool(forKey: "DebugLayoutOverlay")
         #else
         // Release 包永远关闭，即使有人传了 launch argument 也不开。
+        return false
+        #endif
+    }
+
+    /// 是否打印 OpenAI-compatible chat completion 的 HTTP 原始响应。
+    ///
+    /// 用途：排查 LM Studio / Ollama / OpenRouter 等 OpenAI-compatible provider
+    /// 返回格式与 MacPaw/OpenAI SDK 解码结果不一致的问题。该开关只拦截
+    /// `/chat/completions`，不会打印 embedding 向量，避免日志被大数组刷屏。
+    static var aiHTTPLogging: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "DebugAIHTTPLogging")
+        #else
+        // Release 包永远关闭，避免把 AI 原始响应写入用户环境日志。
         return false
         #endif
     }
