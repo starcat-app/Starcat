@@ -111,28 +111,7 @@ struct RepoAIInsightPanel: View {
     }
 
     private func copySummaryToClipboard(_ insight: RepoAIInsight) {
-        var content = ""
-        if !insight.oneLiner.isEmpty {
-            content += "**一句话总结**\n\(insight.oneLiner)\n\n"
-        }
-        if !insight.summary.isEmpty {
-            content += "**摘要**\n\(insight.summary)\n\n"
-        }
-        if !insight.platforms.isEmpty {
-            content += "**平台/生态**\n\(insight.platforms.joined(separator: ", "))\n\n"
-        }
-        if !insight.suitableFor.isEmpty {
-            content += "**适用场景**\n\(insight.suitableFor.map { "• \($0)" }.joined(separator: "\n"))\n\n"
-        }
-        if !insight.strengths.isEmpty {
-            content += "**优点**\n\(insight.strengths.map { "• \($0)" }.joined(separator: "\n"))\n\n"
-        }
-        if !insight.risks.isEmpty {
-            content += "**风险/注意点**\n\(insight.risks.map { "• \($0)" }.joined(separator: "\n"))\n\n"
-        }
-        if let example = insight.minimalExample, !example.isEmpty {
-            content += "**最小示例**\n\(example)"
-        }
+        let content = insight.summaryMarkdown ?? insight.summary
 
         #if os(macOS)
         NSPasteboard.general.clearContents()
@@ -209,50 +188,6 @@ struct RepoAIInsightPanel: View {
             Text("AI 摘要")
                 .font(.subheadline.weight(.semibold))
             RepoAISummaryMarkdownView(markdown: text)
-        }
-    }
-
-    private func section(title: String, items: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-            ForEach(items.filter { !$0.isEmpty }, id: \.self) { item in
-                Text("• \(item)")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-        }
-    }
-
-    private func chips(title: String, values: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(values, id: \.self) { value in
-                        Text(value)
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.quaternary, in: Capsule())
-                    }
-                }
-            }
-        }
-    }
-
-    private func codeSection(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("最小示例")
-                .font(.subheadline.weight(.semibold))
-            Text(text)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }
 
