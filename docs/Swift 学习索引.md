@@ -143,6 +143,7 @@
 | `.toolbar` / `ToolbarItem` | 顶栏同步、状态、排序、多选按钮；`RepoListView` 右上角接入自定义 `SmartSearchField` 作为独立 toolbar item | "SwiftUI toolbar ToolbarItem primaryAction macOS" |
 | `@FocusState` | `SmartSearchField` 折叠态图标聚焦后自动展开，输入框聚焦时保持展开 | "SwiftUI FocusState macOS TextField" |
 | `TimelineView(.animation)` | `SmartSearchAIGlow` 用 display-link 风格时间源驱动 AI 搜索框边缘轻量动态光晕 | "SwiftUI TimelineView animation gradient" |
+| `.onSubmit` / `.submitLabel(.search)` | `SmartSearchField` 输入草稿只在 Return 后提交，避免逐字符触发 FTS5 / AI 语义搜索 | "SwiftUI TextField onSubmit submitLabel search" |
 | `.searchable(text:placement:prompt:)` | 曾用于 Finder 风格系统搜索入口；2026-06-04 起因折叠 / 模式内嵌 / AI 光晕需求改为 `SmartSearchField` | "SwiftUI searchable placement toolbar macOS" |
 | `.confirmationDialog` / `.alert` | 取消 Star 确认（W4 待做） | "SwiftUI confirmationDialog macOS" |
 | `.transition` / `.animation(_:value:)` | `RepoListView` / `TrendingView` 中栏内容切换用整块轻过渡；自定义动效需尊重 `accessibilityReduceMotion` | "SwiftUI transition animation value accessibilityReduceMotion" |
