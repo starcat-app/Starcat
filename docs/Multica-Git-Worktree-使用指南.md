@@ -277,13 +277,80 @@ Multica 本身不强制要求特定的目录结构。
 
 ---
 
-## 7. 最佳实践总结
+## 7. Multica 标准工作流程
+
+### 7.1 完整生命周期
+
+```
+main 分支
+    │
+    ├── 每个新任务 = 新分支（如 agent/claude/xxx）
+    │       │
+    │       └── Agent 在该分支开发 → 推送 → 创建 PR
+    │
+    └── 人工审阅 → 合并到 main
+```
+
+### 7.2 分支与 Worktree 清理
+
+**问题：本地分支会被主动删除吗？**
+
+**不会**。Multica 不会自动删除已完成的分支和 worktree。PR 合并后，分支和 worktree 仍然保留在本地。
+
+**什么时候应该删除？**
+
+建议在 PR 合并后手动清理：
+
+```bash
+# 1. 删除 worktree（目录）
+git worktree remove 2a1cccfe/workdir/Starcat
+
+# 2. 删除远程分支（可选）
+git push origin --delete agent/claude/2a1cccfe
+
+# 3. 删除本地分支
+git branch -D agent/claude/2a1cccfe
+```
+
+> ⚠️ **注意**：由于 `multica repo checkout` 创建的 worktree 路径是 `2a1cccfe/workdir/Starcat`，删除这个 worktree 后，该任务的工作目录就没了。如果想保留代码备份，可以只删除 worktree 引用，保留目录。
+
+### 7.3 PR 审核中继续修改
+
+**问题：PR 审核中需要继续修改，用新分支还是原分支？**
+
+**继续用原分支**，原因：
+- PR 已经建立，原分支的 commits 会自动追加到现有 PR
+- 避免创建多个 PR 导致混乱
+
+操作方式：
+```bash
+# 在原 worktree 中继续工作
+cd 2a1cccfe/workdir/Starcat
+git pull origin agent/claude/2a1cccfe  # 拉取最新（如果有其他改动）
+# ... 继续修改 ...
+git add . && git commit -m "fix: 审核反馈修改 (HOM-155)"
+git push origin agent/claude/2a1cccfe
+```
+
+### 7.4 当前仓库结构示意
+
+```
+bare repo (bare)
+    │
+    └── worktree: ./2a1cccfe/workdir/Starcat
+            └── 分支: agent/claude/2a1cccfe (已合并到 main)
+```
+
+---
+
+## 8. 最佳实践总结
 
 1. **日常任务**：直接使用 `multica repo checkout`，无需手动管理 worktree
 2. **并行开发**：通过 `git worktree add` 在主仓库外创建额外的 worktree
 3. **及时清理**：任务完成后立即删除不再需要的 worktree
 4. **命名规范**：使用有意义的目录和分支名，便于识别
 5. **commit 习惯**：确保每次 commit 包含任务编号（如 HOM-155），便于追溯
+6. **审核期间**：继续在原分支修改，commits 会自动追加到已有 PR
 
 ---
 
