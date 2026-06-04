@@ -201,6 +201,9 @@ struct RepoListView: View {
             text: $vm.searchQuery,
             mode: $vm.smartSearchMode,
             isIndexing: viewModel.isSemanticIndexing,
+            onSubmitSearch: { query in
+                viewModel.submitSearch(query)
+            },
             onRefreshSemanticIndex: {
                 Task { await viewModel.refreshSemanticIndex() }
             }
@@ -513,7 +516,7 @@ struct RepoListView: View {
             return String(localized: "search.title")
         }
         if viewModel.isSearching {
-            return String(localized: "search.searching")
+            return String(format: String(localized: "search.searching"), viewModel.searchQuery)
         }
         return localizedTitle(for: viewModel.selection)
     }
