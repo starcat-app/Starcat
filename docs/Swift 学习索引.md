@@ -140,8 +140,10 @@
 | `.task(id:)` | View 出现时拉数据，id 变化时重跑 | "SwiftUI task modifier id" |
 | `.onChange(of:)` | `HomeView.onChange(selectedRepoID)` 驱动 ReadmeViewModel | "SwiftUI onChange iOS 17" |
 | `.onAppear` | `ListRowRevealModifier` 利用 List 懒创建，在 Manage / Trending row 进入可视区域时触发渐进式入场 | "SwiftUI onAppear List row lazy loading" |
-| `.toolbar` / `ToolbarItem` | 顶栏同步、状态、排序、多选按钮；搜索入口已改用系统 `.searchable(..., placement: .toolbar)`，避免混入 `primaryAction` 按钮组 | "SwiftUI toolbar ToolbarItem primaryAction macOS" |
-| `.searchable(text:placement:prompt:)` | `RepoListView` 右上角 Finder 风格系统搜索入口，绑定 `HomeViewModel.searchQuery` | "SwiftUI searchable placement toolbar macOS" |
+| `.toolbar` / `ToolbarItem` | 顶栏同步、状态、排序、多选按钮；`RepoListView` 右上角接入自定义 `SmartSearchField` 作为独立 toolbar item | "SwiftUI toolbar ToolbarItem primaryAction macOS" |
+| `@FocusState` | `SmartSearchField` 折叠态图标聚焦后自动展开，输入框聚焦时保持展开 | "SwiftUI FocusState macOS TextField" |
+| `TimelineView(.animation)` | `SmartSearchAIGlow` 用 display-link 风格时间源驱动 AI 搜索框边缘轻量动态光晕 | "SwiftUI TimelineView animation gradient" |
+| `.searchable(text:placement:prompt:)` | 曾用于 Finder 风格系统搜索入口；2026-06-04 起因折叠 / 模式内嵌 / AI 光晕需求改为 `SmartSearchField` | "SwiftUI searchable placement toolbar macOS" |
 | `.confirmationDialog` / `.alert` | 取消 Star 确认（W4 待做） | "SwiftUI confirmationDialog macOS" |
 | `.transition` / `.animation(_:value:)` | `RepoListView` / `TrendingView` 中栏内容切换用整块轻过渡；自定义动效需尊重 `accessibilityReduceMotion` | "SwiftUI transition animation value accessibilityReduceMotion" |
 | `.onHover` | `RepoRowSurface` 鼠标悬停时增强背景 / 边框，是 macOS 指针体验的基础反馈 | "SwiftUI onHover macOS" |
