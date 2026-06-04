@@ -90,6 +90,22 @@
         }
       }
     },
+    "activity.category.section" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activity Categories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "活动分类"
+          }
+        }
+      }
+    },
     "activity.category.announcement" : {
       "localizations" : {
         "en" : {
