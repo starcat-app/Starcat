@@ -338,6 +338,8 @@ struct RepoDetailView: View {
             RepoTagsSection(repo: repo)
             // W4 A4：私有笔记 + 状态段
             RepoNotesSection(repo: repo)
+            // HOM-47：Release 订阅段（订阅按钮 + 最新版本一行）
+            RepoReleaseSection(repo: repo)
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)

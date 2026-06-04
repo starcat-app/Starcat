@@ -125,3 +125,35 @@ struct GitHubSubscriptionRequestDTO: Encodable {
     let subscribed: Bool
     let ignored: Bool
 }
+
+// MARK: - Release（HOM-47）
+
+/// `GET /repos/{owner}/{repo}/releases` 单条响应。
+///
+/// 字段映射：
+/// - GitHub `id`：Release 全局唯一 id（与 tag_name 不同，tag 可重命名 / 删除重建）
+/// - GitHub `assets`：资产数组（dmg / pkg / zip 等）
+/// - 不解码 `author` / `tarball_url` / `zipball_url`：MVP 不展示，少一份解码负担
+struct GitHubReleaseDTO: Decodable, Equatable {
+    let id: Int64
+    let tagName: String
+    let name: String?
+    let body: String?
+    let htmlUrl: String
+    let prerelease: Bool
+    let draft: Bool
+    let publishedAt: String?
+    let createdAt: String?
+    let assets: [GitHubReleaseAssetDTO]?
+}
+
+/// Release 单个资产（一个可下载的构件）。
+struct GitHubReleaseAssetDTO: Decodable, Equatable {
+    let id: Int64
+    let name: String
+    let contentType: String?
+    let size: Int
+    let browserDownloadUrl: String
+    let downloadCount: Int
+    let createdAt: String?
+}

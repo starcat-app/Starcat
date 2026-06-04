@@ -31,6 +31,8 @@ struct SidebarView: View {
     @Binding var selectedPage: SidebarRootPage
     @Binding var selectedTrendingLanguage: TrendingLanguage
     @Binding var showTagManagement: Bool
+    /// HOM-47：触发 Release 时间线 sheet。
+    @Binding var showReleaseTimeline: Bool
 
     /// 当前在 Trending 页面选中的 repo，仅用于透传给 `SidebarHeaderView` 让头像背景的
     /// 语言色在 Trending 页也能联动（2026-06-02 21:38 接入）。Manage 页面应为 nil。
@@ -96,6 +98,8 @@ struct SidebarView: View {
             Section("sidebar.mainNavigation") {
                 row(.allStars, count: viewModel.totalCount)
                 row(.untagged, count: viewModel.untaggedCount)
+                // HOM-47：Release 时间线入口（独立 sheet 承载，避免与三栏导航 selection 冲突）
+                releaseTimelineRow
             }
 
             // W4 A6：Tags 段。
@@ -414,6 +418,30 @@ struct SidebarView: View {
                 }
             }
         }
+    }
+
+    /// HOM-47：Release 时间线入口行。
+    ///
+    /// 设计取舍：把入口放在 Manage 的"主导航"段而不是单独的根页（`SidebarRootPage`），
+    /// 是因为 Release 时间线属于 Stars 数据的衍生视图，跟 All Stars / Untagged 同源；
+    /// 用 `Button` + sheet 而不是 `selection` 行，避免插入新 case 牵动 HomeViewModel
+    /// reload 路径。
+    @ViewBuilder
+    private var releaseTimelineRow: some View {
+        Button {
+            showReleaseTimeline = true
+        } label: {
+            Label {
+                Text("sidebar.releaseTimeline")
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } icon: {
+                Image(systemName: "shippingbox.fill")
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
     }
 
     /// W4 A6：tag 专属行——
