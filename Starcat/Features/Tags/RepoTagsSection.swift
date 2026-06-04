@@ -43,7 +43,6 @@ struct RepoTagsSection: View {
                 Text("repoTags.label")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Spacer()
                 addButton
             }
             chipsRow
