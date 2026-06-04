@@ -58,11 +58,6 @@ struct RepoDetailView: View {
     /// 这个高度由 `MetadataPanelHeightPreferenceKey` 在首次布局后回填。
     @State private var metadataPanelHeight: CGFloat = 0
 
-    /// 右侧详情内容 Tab。
-    ///
-    /// 默认保留 README，AI 摘要作为第二个 tab 进入，避免用户每次选仓库时被 AI 面板抢走阅读路径。
-    @State private var selectedContentTab: RepoDetailContentTab = .readme
-
     /// 顶部面板折叠/展开动画。
     ///
     /// 用轻阻尼 spring 比 easeInOut 更适合这里：面板高度变化会带动 WKWebView 重新分配空间，
@@ -104,7 +99,7 @@ struct RepoDetailView: View {
             if let repo = viewModel.selectedRepo {
                 VStack(alignment: .leading, spacing: 0) {
                     metadataPanel(repo)
-                    repoContentSection(repo)
+                    readmeSection(repo)
                 }
                 .id(repo.id)                                // 强制 view 在 repo 变化时被识别为"新 view"，触发 transition
                 .transition(detailContentTransition)        // 淡入 + 下移 8pt 滑入；reduceMotion 退化为纯 opacity
@@ -127,7 +122,6 @@ struct RepoDetailView: View {
                     withAnimation(metadataPanelAnimation) {
                         isMetadataPanelHidden = false
                     }
-                    selectedContentTab = .readme
                 }
             } else if let trending = selectedTrendingRepo {
                 // Trending repo 详情页（无本地数据，只显示 README）
@@ -353,35 +347,6 @@ struct RepoDetailView: View {
             endPoint: .bottom
         )
         .allowsHitTesting(false)
-    }
-
-    /// Repo 详情主内容区：README / AI 摘要。
-    ///
-    /// 这里没有把 AI 摘要塞进顶部 metadata panel：
-    /// - metadata panel 会随 README 滚动折叠，AI 摘要如果放里面会在阅读时消失；
-    /// - README 与 AI 摘要都是“详情正文”，更适合并列为内容 tab；
-    /// - 默认 tab 仍是 README，AI 不抢占原有详情页心智。
-    private func repoContentSection(_ repo: Repo) -> some View {
-        VStack(spacing: 0) {
-            Picker("", selection: $selectedContentTab) {
-                ForEach(RepoDetailContentTab.allCases) { tab in
-                    Label(tab.title, systemImage: tab.systemImage)
-                        .tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 24)
-            .padding(.vertical, 8)
-            .background(.bar)
-
-            switch selectedContentTab {
-            case .readme:
-                readmeSection(repo)
-            case .ai:
-                RepoAIInsightPanel(repo: repo)
-            }
-        }
     }
 
     /// README 区域。占据剩余高度，由 WebView 自己处理滚动。
@@ -706,7 +671,52 @@ struct RepoDetailView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Spacer()
+            // HOM-150：右上角 AI 入口。点开浮动窗口同时承载 AI 摘要 + Chat 对话。
+            // 紫蓝渐变胶囊 + sparkles 与窗口内"助手头像"/"发送按钮"视觉呼应，让用户
+            // 把"AI 助手"识别为一个统一的视觉概念，而不是散落的功能点。
+            aiOpenButton(repo)
         }
+    }
+
+    /// 详情页右上角 AI 入口按钮（HOM-150）。
+    ///
+    /// 设计要点：
+    /// - 紫→蓝渐变 + sparkles + 文字 "AI"，与 `RepoAIWindowContentView` 内 assistant
+    ///   头像 / 发送按钮的视觉语言一致；
+    /// - `.pressableHover()` 与详情页其他可点击元素保持同款 hover 反馈；
+    /// - `RepoAIWindowController.show(...)` 按 repo.id 单例：同一 repo 重复点击不开
+    ///   多窗口，不同 repo 各自独立。
+    @ViewBuilder
+    private func aiOpenButton(_ repo: Repo) -> some View {
+        Button {
+            RepoAIWindowController.show(
+                repo: repo,
+                dependencies: dependencies,
+                homeViewModel: viewModel
+            )
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("AI")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .foregroundStyle(.white)
+            .background(
+                LinearGradient(
+                    colors: [.purple.opacity(0.85), .blue.opacity(0.85)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: Capsule()
+            )
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pressableHover()
+        .help("打开 AI 助手（摘要 + 对话）")
     }
 
     @ViewBuilder
@@ -812,27 +822,6 @@ struct RepoDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-}
-
-private enum RepoDetailContentTab: String, CaseIterable, Identifiable {
-    case readme
-    case ai
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .readme: return "README"
-        case .ai:     return "AI 摘要"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .readme: return "doc.text"
-        case .ai:     return "sparkles"
-        }
-    }
 }
 
 private struct MetadataPanelHeightPreferenceKey: PreferenceKey {

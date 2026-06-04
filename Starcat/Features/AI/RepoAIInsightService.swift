@@ -117,6 +117,67 @@ final class RepoAIInsightService {
         return RepoAIInsightGeneration(insight: insight, tagErrorMessage: tagErrorMessage)
     }
 
+    /// 与仓库对话（HOM-150）。
+    ///
+    /// 与 `generateInsight` 的区别：
+    /// - 走"多轮 chat"路径：system prompt 注入 repo 元数据 + README，
+    ///   `history` 承载之前的用户/助手轮次，本轮发的内容放 `userMessage`；
+    /// - **强制流式**，忽略 `aiSummaryTask.parameters.streamEnabled`——
+    ///   chat 体验对"打字机式增量出字"非常敏感，非流式整段返回会让窗口长时间空白；
+    /// - **不写 SQLite 缓存**：对话上下文是临时的，下次打开窗口重新开始；持久化要等
+    ///   后续真的有"历史会话回看"需求再设计表结构；
+    /// - **不解析 JSON / 不限制结构**：模型可以自由用 Markdown 回答（含代码块）。
+    ///
+    /// 复用 `aiSummaryTask` 的 provider / model / 参数（temperature 0.2、maxToken 2048）。
+    /// 后续若发现"摘要适合低温度、对话需要更高 temperature"，再独立 `aiChatTask` 配置。
+    /// 同 `generateInsight` 一样，复用 `makeSource(for:)` 拼出的"repo 元数据 + README"
+    /// 上下文，避免对 README WebView 缓存路径出现两份取数逻辑。
+    func chatStream(
+        for repo: Repo,
+        history: [AIChatMessage],
+        userMessage: String,
+        onDelta: (@MainActor (String) -> Void)? = nil
+    ) async throws -> String {
+        let source = try await makeSource(for: repo)
+        let task = settings.aiSummaryTask
+        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "对话")
+
+        let systemPrompt = """
+        You are Starcat's repository chat assistant.
+        Reply in Simplified Chinese only.
+        Stay grounded in the provided repository context (metadata + README).
+        If a question cannot be answered from that context, say "未从 README 或仓库元数据中确认" — do not invent APIs, commands, links, or version numbers.
+        Markdown is allowed (including fenced code blocks); keep replies focused on what the user asked, no padding.
+
+        Repository context:
+        \(source.text)
+        """
+
+        let request = AIChatRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userMessage,
+            history: history,
+            model: model,
+            parameters: task.parameters,
+            responseFormat: .text
+        )
+
+        var accumulated = ""
+        for try await event in client.chatStream(request: request) {
+            switch event {
+            case .delta(let delta):
+                accumulated += delta
+                onDelta?(accumulated)
+            case .completed(let response):
+                return response.content
+            }
+        }
+        // 部分服务端在 stream 结束时不发 `completed` 事件，只靠 chunk 累积。
+        // 这里兜底用累积值；若仍为空才抛 emptyResponse。
+        guard let final = accumulated.nilIfBlank else { throw AIClientError.emptyResponse }
+        return final
+    }
+
     private func tagSuggestionsResult(source: Source) async -> Result<[AITagSuggestion], Error> {
         do {
             return .success(try await generateTags(source: source))
