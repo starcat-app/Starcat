@@ -140,31 +140,17 @@ struct AISettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(profile.models) { model in
-                        HStack {
-                            Toggle(isOn: modelEnabledBinding(profile.id, model.id)) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(model.name)
-                                    if let ownedBy = model.ownedBy, !ownedBy.isEmpty {
-                                        Text(ownedBy)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                            Picker("", selection: modelCapabilityBinding(profile.id, model.id)) {
-                                ForEach(AIModelCapability.allCases) { capability in
-                                    Text(capability.displayName).tag(capability)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 130)
-                        }
-                    }
+                    AIModelListView(
+                        profile: profile,
+                        enabledBinding: { model in modelEnabledBinding(profile.id, model.id) },
+                        capabilityBinding: { model in modelCapabilityBinding(profile.id, model.id) }
+                    )
                 }
             }
         } header: {
             Text("已发现模型")
+        } footer: {
+            Text("模型列表在组件内滚动，避免服务商返回大量模型时撑高整个设置页。")
         }
     }
 

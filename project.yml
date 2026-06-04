@@ -41,6 +41,9 @@ packages:
   Kingfisher:
     url: https://github.com/onevcat/Kingfisher
     from: "7.0.0"
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: "2.4.1"
   OpenAI:
     url: https://github.com/MacPaw/OpenAI.git
     branch: main
@@ -69,6 +72,7 @@ targets:
       - package: GRDB
       - package: KeychainAccess
       - package: Kingfisher
+      - package: MarkdownUI
       - package: OpenAI
 
   StarcatTests:

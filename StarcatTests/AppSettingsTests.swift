@@ -88,6 +88,8 @@ struct AppSettingsTests {
         #expect(s.aiTagsTask.providerID == s.aiProviderProfiles[0].id)
         #expect(s.aiEmbeddingTask.providerID == s.aiProviderProfiles[0].id)
         #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{context}"))
+        #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("## 一句话总结"))
+        #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("## 风险与注意点"))
         #expect(s.smartSearchMode == .keyword)
     }
 
