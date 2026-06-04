@@ -328,6 +328,14 @@ final class AppSettings {
         didSet { persist(key: Keys.lastManageSelection, value: lastManageSelectionRaw) }
     }
 
+    /// 用户在 Activity 页最后选中的分类，用于跨启动恢复。
+    ///
+    /// 和 `lastManageSelectionRaw` 一样只存字符串：ActivityCategory 属于 Feature 层，
+    /// Core/Settings 不反向依赖具体 enum，编解码留给 Activity 模块处理。
+    var lastActivityCategoryRaw: String {
+        didSet { persist(key: Keys.lastActivityCategory, value: lastActivityCategoryRaw) }
+    }
+
     /// AI 服务商配置。API Key 不进 UserDefaults，单独走 KeychainManager 的加密文件。
     var aiProvider: AIServiceProvider {
         didSet { persist(key: Keys.aiProvider, value: aiProvider.rawValue) }
@@ -408,6 +416,9 @@ final class AppSettings {
 
         // 上次 Manage 分类：缺失则空串，由 SidebarItem 解码时回落 allStars
         self.lastManageSelectionRaw = defaults.string(forKey: Keys.lastManageSelection) ?? ""
+
+        // 上次 Activity 分类：缺失则空串，由 ActivityCategory 解码时回落 all
+        self.lastActivityCategoryRaw = defaults.string(forKey: Keys.lastActivityCategory) ?? ""
 
         let aiProviderRaw = defaults.string(forKey: Keys.aiProvider)
         let resolvedAIProvider = aiProviderRaw.flatMap(AIServiceProvider.init(rawValue:)) ?? .openAICompatible
@@ -554,6 +565,7 @@ final class AppSettings {
         static let hideForks = "settings.hideForks"
         static let statusFilter = "settings.statusFilter"
         static let lastManageSelection = "settings.lastManageSelection"
+        static let lastActivityCategory = "settings.lastActivityCategory"
         static let aiProvider = "settings.ai.provider"
         static let aiBaseURL = "settings.ai.baseURL"
         static let aiChatModel = "settings.ai.chatModel"

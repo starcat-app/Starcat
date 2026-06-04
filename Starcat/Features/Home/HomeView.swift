@@ -92,6 +92,16 @@ struct HomeView: View {
     /// 切换到 Manage 再回来时恢复，避免用户丢失浏览上下文。
     @State private var savedTrendingLanguage: TrendingLanguage = .all
 
+    /// Activity 页面当前分类。
+    @State private var selectedActivityCategory: ActivityCategory = .all
+
+    /// Activity 页面记住上次选择的分类。
+    /// 与 Manage / Trending 的恢复策略一致：切走保存，切回恢复。
+    @State private var savedActivityCategory: ActivityCategory = .all
+
+    /// Activity 中栏当前选中的活动项，用于右侧详情页按类型分发。
+    @State private var selectedActivityItem: ActivityItem?
+
     /// W4 A2：TagManagementViewModel 实例，sheet 关掉再开时复用，
     /// 避免每次 sheet 都 new 导致选择/加载态被打断。
     @State private var tagMgmtVM: TagManagementViewModel
@@ -135,6 +145,7 @@ struct HomeView: View {
             SidebarView(
                 selectedPage: $selectedSidebarPage,
                 selectedTrendingLanguage: $selectedTrendingLanguage,
+                selectedActivityCategory: $selectedActivityCategory,
                 showTagManagement: $showTagManagement,
                 showReleaseTimeline: $showReleaseTimeline,
                 // 2026-06-02 21:38：透传给 SidebarHeaderView 让头像背景的语言色在 Trending 页也能联动
@@ -148,13 +159,19 @@ struct HomeView: View {
                 selectedPage: selectedSidebarPage,
                 selectedTrendingLanguage: $selectedTrendingLanguage,
                 selectedTrendingRepoID: $selectedTrendingRepoID,
-                selectedTrendingRepo: $selectedTrendingRepo
+                selectedTrendingRepo: $selectedTrendingRepo,
+                selectedActivityCategory: $selectedActivityCategory,
+                selectedActivityItem: $selectedActivityItem
             )
                 .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
         } detail: {
-            RepoDetailView(
-                selectedTrendingRepo: selectedTrendingRepo
-            )
+            if selectedSidebarPage == .activity {
+                ActivityDetailView(item: selectedActivityItem)
+            } else {
+                RepoDetailView(
+                    selectedTrendingRepo: selectedTrendingRepo
+                )
+            }
         }
         .environment(viewModel)
         .environment(readmeVM)
@@ -216,6 +233,7 @@ struct HomeView: View {
             
             // 恢复上次保存的 Manage 分类（跨启动）。无记录时 persistedRawValue 解码回落 allStars。
             savedManageSelection = SidebarItem(persistedRawValue: settings.lastManageSelectionRaw)
+            savedActivityCategory = ActivityCategory(persistedRawValue: settings.lastActivityCategoryRaw)
 
             // 决定初始页面：
             // - 已登录 → Manage + 上次分类，并触发一次后台全量同步
@@ -335,14 +353,15 @@ struct HomeView: View {
                 }
             case .trending:
                 savedTrendingLanguage = selectedTrendingLanguage
-            case .search:
-                break
+            case .activity:
+                savedActivityCategory = selectedActivityCategory
             }
 
             // 清除所有 repo 选中状态，避免详情页显示残留
             viewModel.selectedRepoID = nil
             selectedTrendingRepoID = nil
             selectedTrendingRepo = nil
+            selectedActivityItem = nil
 
             // 恢复新页面的状态
             switch newPage {
@@ -356,9 +375,14 @@ struct HomeView: View {
                 // 确保 selection 标记为 trending，并恢复上次的语言选择
                 viewModel.selection = .trending
                 selectedTrendingLanguage = savedTrendingLanguage
-            case .search:
-                viewModel.searchQuery = ""
+            case .activity:
+                selectedActivityCategory = savedActivityCategory
             }
+        }
+        .onChange(of: selectedActivityCategory) { _, newCategory in
+            guard selectedSidebarPage == .activity else { return }
+            savedActivityCategory = newCategory
+            settings.lastActivityCategoryRaw = newCategory.persistedRawValue
         }
     }
 

@@ -30,6 +30,7 @@ struct SidebarView: View {
 
     @Binding var selectedPage: SidebarRootPage
     @Binding var selectedTrendingLanguage: TrendingLanguage
+    @Binding var selectedActivityCategory: ActivityCategory
     @Binding var showTagManagement: Bool
     /// HOM-47：触发 Release 时间线 sheet。
     @Binding var showReleaseTimeline: Bool
@@ -84,9 +85,9 @@ struct SidebarView: View {
                 trendingSidebarContent
             }
             .listStyle(.sidebar)
-        case .search:
-            List {
-                searchSidebarContent
+        case .activity:
+            List(selection: $selectedActivityCategory) {
+                activitySidebarContent
             }
             .listStyle(.sidebar)
         }
@@ -153,12 +154,11 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
-    private var searchSidebarContent: some View {
+    private var activitySidebarContent: some View {
         Section {
-            Text("empty.searchPlaceholder")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .padding(.vertical, 8)
+            ForEach(ActivityCategory.allCases) { category in
+                activityCategoryRow(category)
+            }
         }
     }
 
@@ -176,9 +176,9 @@ struct SidebarView: View {
 
     private func rootNavigationButton(_ page: SidebarRootPage) -> some View {
         let isSelected = selectedPage == page
-        // HOM-73：Manage 和 Search 需要登录才能访问；Trending 是公开数据，始终可用。
+        // HOM-73：Manage 需要登录才能访问；Trending 和 Activity 都有公开/本地空态，始终可打开。
         let needsLogin = !authSession.state.isAuthenticated
-            && (page == .manage || page == .search)
+            && page == .manage
 
         return Button {
             if needsLogin {
@@ -377,6 +377,17 @@ struct SidebarView: View {
         } else {
             Text(verbatim: language.rawValue)
         }
+    }
+
+    @ViewBuilder
+    private func activityCategoryRow(_ category: ActivityCategory) -> some View {
+        Label {
+            Text(category.titleKey)
+                .lineLimit(1)
+        } icon: {
+            LanguageIconView(language: category.iconLanguage, size: 14)
+        }
+        .tag(category)
     }
 
     @ViewBuilder
