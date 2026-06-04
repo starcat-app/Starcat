@@ -174,9 +174,17 @@ final class HomeViewModel {
 
     // MARK: - 搜索
 
-    /// 用户原始输入。
-    /// 防抖逻辑在 View 层做（task(id:) + sleep 250ms），ViewModel 这边纯响应。
+    /// 已提交的搜索词。
+    ///
+    /// `SmartSearchField` 内部保存实时输入草稿；只有用户按 Return 或点击清空时，才通过
+    /// `submitSearch(_:)` 写入这里。这样普通 FTS5 和 AI 语义搜索都不会在每个字符输入时触发。
     var searchQuery: String = ""
+
+    /// 搜索提交序号。
+    ///
+    /// 即便用户用同一个 query 切换搜索模式后再次按 Return，`searchQuery` 字符串本身可能没变。
+    /// 用单调递增 id 作为 HomeView `.task(id:)` 的触发源，确保“提交动作”才是搜索的真实边界。
+    var searchSubmissionID: Int = 0
 
     /// 是否当前正在搜索（非空 + 非全空白）。
     var isSearching: Bool {
@@ -338,6 +346,12 @@ final class HomeViewModel {
     }
 
     // MARK: - 公开 action
+
+    func submitSearch(_ query: String) {
+        searchQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        semanticHitMap = [:]
+        searchSubmissionID += 1
+    }
 
     /// 刷新 Sidebar 数据（counts + language stats）。
     /// 通常在 onAppear 或 sync 完成后调用。

@@ -4765,23 +4765,6 @@
         }
       }
     },
-    "search.searching" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Searching: %{query}"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜索：%{query}"
-          }
-        }
-      }
-    },
     "search.semantic.indexing" : {
       "localizations" : {
         "en" : {
@@ -4843,6 +4826,55 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "为全部已 Star 仓库重新生成向量索引"
+          }
+        }
+      }
+    },
+    "search.semantic.refreshingFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d semantic results · Refreshing..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个语义结果 · 刷新中..."
+          }
+        }
+      }
+    },
+    "search.semantic.resultCountFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d semantic results"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个语义结果"
+          }
+        }
+      }
+    },
+    "search.searching" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Searching: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索：%@"
           }
         }
       }
