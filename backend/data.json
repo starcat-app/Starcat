@@ -1,0 +1,58 @@
+{
+  "GIokoeWN": {
+    "id": "GIokoeWN",
+    "request": {
+      "repo": {
+        "fullName": "datawhalechina/hello-agents",
+        "description": "📚 《从零开始构建智能体》——从零开始的智能体原理与实践教程",
+        "language": "Python",
+        "starsCount": 56317,
+        "forksCount": 6878,
+        "topics": [
+          "agent",
+          "llm",
+          "rag",
+          "tutorial"
+        ],
+        "homepage": "https://hello-agents.datawhale.cc",
+        "url": "https://github.com/datawhalechina/hello-agents"
+      },
+      "aiSummary": {
+        "oneLiner": "Hello-Agents 是 Datawhale 社区推出的系统性 Python 智能体教程，旨在通过从理论到实战的全流程指导，帮助开发者从零构建真正的 AI Native Agent。",
+        "summary": "## 一句话总结\nHello-Agents 是 Datawhale 社区推出的系统性 Python 智能体教程，旨在通过从理论到实战的全流程指导，帮助开发者从零构建真正的 AI Native Agent。\n\n## 这个项目是什么\nHello-Agents 是一本涵盖智能体原理与实践的开源教程，聚焦于“AI 原生”智能体的构建，区别于仅将 LLM 作为后端处理器的流程驱动型工具（如 Dify、Coze）。项目内容贯穿基础理论、经典范式实现、主流框架应用、自研框架开发以及高级技能（如记忆系统、上下文工程、Agentic RL）和综合案例。\n\n该项目定位为连接大语言模型使用者与智能体系统构建者的桥梁，强调动手实践，提供配套代码供学习者运行、调试和修改，适合希望深入理解并掌握多智能体系统设计与开发全流程的开发者。\n\n## 平台 / 生态\n- **语言**：Python\n- **核心主题**：Agent、LLM、RAG、Tutorial\n- **集成/依赖框架**：AutoGen、AgentScope、LangGraph、Coze、Dify、n8n、OpenAI API\n- **运行环境**：支持本地阅读与贡献，需具备基础 Python 编程能力及 LLM API 调用概念\n- **协议支持**：MCP、A2A、ANP 等智能体通信协议\n\n## 适合场景\n- 学习智能体基本原理与经典范式（如 ReAct、Plan-and-Solve）\n- 使用低代码平台搭建智能体应用\n- 掌握主流智能体开发框架（AutoGen、LangGraph 等）\n- 从零构建自定义智能体框架（HelloAgents）\n- 进阶学习记忆系统、上下文工程、智能体训练与评估\n- 参与真实项目实战（如智能旅行助手、赛博小镇）\n\n## 优点\n- 完全免费且由 Datawhale 社区维护，内容系统性强\n- 兼顾理论与实战，提供完整代码与 PDF 教程\n- 覆盖从入门到高级的全栈技能，包括 Agentic RL 和面试准备\n- 鼓励社区贡献，持续更新视频课程与额外章节\n- 强调“造轮子”能力，培养独立构建智能体系统的思维\n\n## 风险与注意点\n- 项目处于快速发展阶段，部分功能可能随版本迭代而变化\n- 需要一定的 Python 基础和 LLM 概念认知才能有效学习\n- 无明确许可证声明（License: NOASSERTION），需注意潜在使用限制\n- 部分内容依赖外部 API（如 OpenAI），可能存在成本或访问限制\n- 社区活跃度高但贡献门槛未明确说明，新人参与需主动沟通\n\n## 最小示例\n未从 README 或元数据中确认具体最小代码示例；建议参考 GitHub 仓库中的 code 文件夹获取配套代码并进行实践。",
+        "platforms": [],
+        "suitableFor": [],
+        "strengths": [],
+        "risks": [],
+        "suggestedTags": [
+          {
+            "name": "智能体",
+            "confidence": 0.98
+          },
+          {
+            "name": "LLM",
+            "confidence": 0.95
+          },
+          {
+            "name": "RAG",
+            "confidence": 0.87
+          },
+          {
+            "name": "Python",
+            "confidence": 0.92
+          },
+          {
+            "name": "教程",
+            "confidence": 0.94
+          },
+          {
+            "name": "多智能体",
+            "confidence": 0.89
+          }
+        ]
+      }
+    },
+    "createdAt": "2026-06-04T18:49:17.942502+08:00",
+    "expiresAt": "2026-07-04T18:49:17.9425+08:00"
+  }
+}
