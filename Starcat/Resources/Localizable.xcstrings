@@ -1396,6 +1396,23 @@
         }
       }
     },
+    "activity.category.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Categories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分类"
+          }
+        }
+      }
+    },
     "activity.category.star" : {
       "extractionState" : "stale",
       "localizations" : {
