@@ -4681,6 +4681,70 @@
         }
       }
     },
+    "search.mode.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch search mode"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换搜索模式"
+          }
+        }
+      }
+    },
+    "search.mode.keyword" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keyword Search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关键词搜索"
+          }
+        }
+      }
+    },
+    "search.mode.semantic" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Semantic Search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 语义搜索"
+          }
+        }
+      }
+    },
+    "search.mode.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Mode"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索模式"
+          }
+        }
+      }
+    },
     "search.repoPlaceholder" : {
       "localizations" : {
         "en" : {
@@ -4693,6 +4757,70 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜索仓库、标签、笔记..."
+          }
+        }
+      }
+    },
+    "search.semantic.indexing" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refreshing semantic index..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在刷新语义索引..."
+          }
+        }
+      }
+    },
+    "search.semantic.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search project capabilities in natural language..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用自然语言搜索项目能力..."
+          }
+        }
+      }
+    },
+    "search.semantic.refreshIndex" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh semantic index"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新语义索引"
+          }
+        }
+      }
+    },
+    "search.semantic.refreshIndex.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regenerate embeddings for all starred repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为全部已 Star 仓库重新生成向量索引"
           }
         }
       }
