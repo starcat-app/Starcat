@@ -1257,7 +1257,14 @@
         }
       }
     },
+    "AI" : {
+
+    },
+    "AI 服务商" : {
+
+    },
     "ai.assistant.chat.copyAll.label" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1274,6 +1281,7 @@
       }
     },
     "ai.assistant.chat.copyAll.tooltip" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1290,6 +1298,7 @@
       }
     },
     "ai.assistant.chat.copyReply.tooltip" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1338,6 +1347,7 @@
       }
     },
     "ai.assistant.chat.export.docTitleFormat" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1354,6 +1364,7 @@
       }
     },
     "ai.assistant.chat.export.emptyContent" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1370,6 +1381,7 @@
       }
     },
     "ai.assistant.chat.export.exportedAtLabel" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1386,6 +1398,7 @@
       }
     },
     "ai.assistant.chat.export.generatedByFormat" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1402,6 +1415,7 @@
       }
     },
     "ai.assistant.chat.export.messageCountLabel" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1418,6 +1432,7 @@
       }
     },
     "ai.assistant.chat.export.repoLabel" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1434,6 +1449,7 @@
       }
     },
     "ai.assistant.chat.export.userFallback" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1450,6 +1466,7 @@
       }
     },
     "ai.assistant.chat.failureFormat" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1498,6 +1515,7 @@
       }
     },
     "ai.assistant.copy.copied" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1514,6 +1532,7 @@
       }
     },
     "ai.assistant.input.placeholder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1530,6 +1549,7 @@
       }
     },
     "ai.assistant.input.send.help" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1546,6 +1566,7 @@
       }
     },
     "ai.assistant.input.sending.help" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1562,6 +1583,7 @@
       }
     },
     "ai.assistant.openButton.help" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1578,6 +1600,7 @@
       }
     },
     "ai.assistant.summary.copy.tooltip" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1626,6 +1649,7 @@
       }
     },
     "ai.assistant.summary.footer.generatedByFormat" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1642,6 +1666,7 @@
       }
     },
     "ai.assistant.summary.generate" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1690,6 +1715,7 @@
       }
     },
     "ai.assistant.summary.regenerate" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1706,6 +1732,7 @@
       }
     },
     "ai.assistant.summary.regenerate.help" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1738,6 +1765,7 @@
       }
     },
     "ai.assistant.summary.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1753,7 +1781,25 @@
         }
       }
     },
+    "ai.assistant.tags.applied" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已应用"
+          }
+        }
+      }
+    },
     "ai.assistant.tags.apply" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1770,6 +1816,7 @@
       }
     },
     "ai.assistant.tags.applyAll" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1785,23 +1832,8 @@
         }
       }
     },
-    "ai.assistant.tags.applied" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Applied"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已应用"
-          }
-        }
-      }
-    },
     "ai.assistant.tags.parseErrorFormat" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1834,6 +1866,7 @@
       }
     },
     "ai.assistant.toggle.chat" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1850,6 +1883,7 @@
       }
     },
     "ai.assistant.toggle.help" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1866,6 +1900,7 @@
       }
     },
     "ai.assistant.toggle.summary" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1882,6 +1917,7 @@
       }
     },
     "ai.assistant.window.titleFormat" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1896,15 +1932,6 @@
           }
         }
       }
-    },
-    "AI" : {
-
-    },
-    "AI 已带上仓库元数据与 README 上下文；你可以追问适用场景、对比方案、读源码线索等。" : {
-
-    },
-    "AI 服务商" : {
-
     },
     "app.about" : {
       "extractionState" : "stale",
@@ -7399,28 +7426,10 @@
     "下拉框只展示已启用模型；如果服务商暂时无法列出模型，可以打开自定义模型名手动输入。" : {
 
     },
-    "初始化中…" : {
-
-    },
     "匹配 %@ 个" : {
 
     },
-    "可以直接在下方对话区追问；如需结构化摘要，点击右侧「生成摘要」。摘要会读取本仓库的元数据、README、topics 并以 Markdown 输出。" : {
-
-    },
-    "尚未生成 AI 摘要" : {
-
-    },
     "已发现模型" : {
-
-    },
-    "开始与 AI 聊聊这个仓库" : {
-
-    },
-    "思考中…" : {
-
-    },
-    "推荐标签" : {
 
     },
     "暂无模型。点击“测试并获取模型”，或在模型设置中使用自定义模型名。" : {
@@ -7435,12 +7444,6 @@
     "模型设置" : {
 
     },
-    "正在生成 AI 摘要…" : {
-
-    },
-    "正在读取本地 AI 缓存…" : {
-
-    },
     "没有匹配的模型。" : {
 
     },
@@ -7449,19 +7452,6 @@
     },
     "测试并获取模型" : {
 
-    },
-    "生成中" : {
-
-    },
-    "由 %@ 生成 · %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "由 %1$@ 生成 · %2$@"
-          }
-        }
-      }
     }
   },
   "version" : "1.0"
