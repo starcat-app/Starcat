@@ -316,15 +316,27 @@ private struct ReleaseTimelineRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // 仓库标识行（dong4j 反馈：原版没显示头像 + 字号偏小看不清是哪个仓库）
+            // 改造：加 22pt 圆形头像 + repo 名称从 subheadline 升到 body.semibold，
+            // 视觉权重接近 RepoRowView 的 compact 模式，保证用户在时间线扫读时
+            // 能优先识别"这是哪个仓库的发布"。
             HStack(spacing: 8) {
-                // 未读 / 已读圆点
+                // 未读 / 已读圆点（保持最左侧的状态指示位置不变）
                 Circle()
                     .fill(entry.release.isRead ? Color.clear : Color.accentColor)
                     .frame(width: 8, height: 8)
 
-                // repo 名称
+                // 仓库头像（22pt 与 RepoRowView compact 行一致；不描边避免视觉嘈杂）
+                RemoteAvatar(
+                    urlString: RepoAvatarURL.from(owner: entry.repo.owner),
+                    size: 22,
+                    showBorder: false
+                )
+
+                // repo 名称：升到 body.semibold，比 tag / 时间这些副信息明显大一档
                 Text(verbatim: entry.repo.fullName)
-                    .font(.subheadline.weight(.medium))
+                    .font(.body.weight(.semibold))
+                    .lineLimit(1)
 
                 // tag
                 Text(verbatim: entry.release.tagName)
