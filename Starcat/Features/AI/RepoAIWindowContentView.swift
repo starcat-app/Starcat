@@ -52,6 +52,23 @@ struct RepoAIWindowContentView: View {
     /// 用 Bool 而不是把 scroll offset 存成状态，避免 SwiftUI 每像素重新布局。
     @State private var isSummaryCollapsed: Bool = false
 
+    /// 对话区 ScrollView 最近一次的滚动 phase。
+    ///
+    /// 用于把"用户主动手势"和"程序化 / 布局抖动"区分开（详见 `handleChatScroll`
+    /// 的注释）。HOM-150 反馈：原实现直接拿 `contentOffset.y` 做 hysteresis 会
+    /// 出现两个反馈循环：
+    ///
+    /// 1. **流式回答时来回闪烁折叠 / 展开**：每个 token 都会触发
+    ///    `proxy.scrollTo(.bottom)`（phase = .animating），contentOffset 跟着跳变，
+    ///    旧实现把这个程序化跳变当成"用户在滚"，于是反复 collapse ⇄ expand。
+    /// 2. **手动点折叠按钮立刻又被弹开**：fold 之后摘要 frame 从 360 → 0，
+    ///    chat 视口被动放大 360pt；如果对话内容不长，contentOffset 会被 SwiftUI
+    ///    内部布局调整推向 0（phase 仍是 .idle），旧实现读到 < 8 立马 expand。
+    ///
+    /// 解决：用 phase 门控，只有 `.tracking / .interacting / .decelerating` 这三类
+    /// 由用户手势驱动的事件才允许翻折叠状态（详细说明见 `handleChatScroll`）。
+    @State private var lastChatScrollPhase: ScrollPhase = .idle
+
     /// 复制按钮"已复制"反馈态。1.5s 后自动复位。
     @State private var didCopySummary: Bool = false
 
@@ -428,10 +445,11 @@ struct RepoAIWindowContentView: View {
 
     /// 手动折叠 / 展开切换。
     ///
-    /// 与"对话滚动驱动的自动折叠"互不冲突：本函数只翻 `isSummaryCollapsed`，
-    /// 下一次 scroll geometry 进来时滚动 hysteresis 仍会按当前真实 offsetY 计算
-    /// 并相应覆盖。用户在 chat 中段位置手动展开后再继续向下滚，会再次被折叠——
-    /// 这是有意的"动作连续"，避免维护"用户最近一次手动状态"这种隐藏 state。
+    /// 与滚动自动折叠通过 `handleChatScroll` 的 phase 门控解耦：本函数翻
+    /// `isSummaryCollapsed` 后，chat 视口被动 resize 触发的 contentOffset 变化
+    /// 会落进 phase = .idle 分支被门住，不会再"立刻折叠后秒回展开"。
+    /// 之后用户主动用触控板向下滚（phase 进 .interacting/.decelerating）时，
+    /// hysteresis 才会根据新偏移再次评估。
     private func toggleSummaryCollapseManually() {
         withAnimation(.easeInOut(duration: 0.25)) {
             isSummaryCollapsed.toggle()
@@ -482,11 +500,22 @@ struct RepoAIWindowContentView: View {
                 }
                 // 优化 4：监听对话区滚动偏移，hysteresis 折叠摘要面板。
                 // `onScrollGeometryChange` 是 macOS 15+ 新 API；本工程 deploymentTarget
-                // 15.0，可以直接用。把 contentOffset.y 截下来交给 hysteresis 逻辑。
+                // 15.0，可以直接用。
+                //
+                // 同时挂 `onScrollPhaseChange`（同一 macOS 15+ API 家族）记录最近一次
+                // 滚动相位——这是 dong4j 2026-06-04 14:50 反馈的两个 bug 的关键修复
+                // 入口（详见 `lastChatScrollPhase` / `handleChatScroll` 的注释）。
+                .onScrollPhaseChange { _, newPhase in
+                    lastChatScrollPhase = newPhase
+                }
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
                     geometry.contentOffset.y
                 } action: { _, newOffset in
-                    handleChatScroll(offsetY: newOffset, hasMessages: !chat.messages.isEmpty)
+                    handleChatScroll(
+                        offsetY: newOffset,
+                        hasMessages: !chat.messages.isEmpty,
+                        isStreaming: chat.isSending
+                    )
                 }
 
                 if let err = chat.errorMessage {
@@ -504,16 +533,48 @@ struct RepoAIWindowContentView: View {
 
     private static let chatBottomAnchorID = "chat-bottom-anchor"
 
-    /// 对话区滚动偏移 → 摘要折叠状态（HOM-150 优化 4）。
+    /// 对话区滚动偏移 → 摘要折叠状态（HOM-150 优化 4 + 2026-06-04 14:50 bugfix）。
     ///
-    /// 复用 `RepoDetailView.updateMetadataPanelVisibility` 同款 hysteresis 阈值：
-    /// - 滚下越过 32pt 才触发折叠：避免触控板"轻点"就把摘要藏掉；
-    /// - 回到 8pt 内再恢复展开：避免顶部附近来回弹动反复闪动。
+    /// 阈值复用 `RepoDetailView.updateMetadataPanelVisibility`：
+    /// - 滚下越过 32pt 才触发折叠（避免触控板"轻点"就把摘要藏掉）
+    /// - 回到 8pt 内再恢复展开（避免顶部附近来回弹动反复闪动）
     ///
-    /// `hasMessages` 守门：空对话不参与自动折叠——空状态下 chat 区的 offset 通常是
-    /// 0，但 LazyVStack 偶尔布局抖动会越过阈值，没有内容时折叠摘要是反直觉的。
-    private func handleChatScroll(offsetY: CGFloat, hasMessages: Bool) {
+    /// **关键的两道闸**（缺一不可，否则会出现 dong4j 反馈的两类抖动）：
+    ///
+    /// 1. **流式期间完全跳过**（`isStreaming` 守门）。
+    ///    流式回答时，`onChange(of: chat.messages.last?.content)` 每个 token 都会
+    ///    程序化调 `proxy.scrollTo(.bottom)`，contentOffset 一直在跳。即使后面有
+    ///    phase 门控，phase 在 .animating 和 .idle 之间快速翻动也可能漏判。
+    ///    最简单可靠的办法：流式期间彻底不管 hysteresis——反正用户这时大概率不
+    ///    在改变面板布局意图。
+    ///
+    /// 2. **只允许用户手势驱动的滚动改状态**（`lastChatScrollPhase` 门控）。
+    ///    SwiftUI `ScrollPhase` 有 5 种：
+    ///    - `.tracking / .interacting / .decelerating` ：用户手势 / 触控板滑动 / 惯性
+    ///    - `.animating`：`proxy.scrollTo` 触发的程序化动画
+    ///    - `.idle`：无动作 / 由 view layout 变化引起的被动调整
+    ///    后两类必须排除：
+    ///    - .animating：流式以外的 scrollTo（新消息追加）也会触发，不该当作"用户在滚"
+    ///    - .idle：手动点折叠按钮后，chat 视口被动放大，contentOffset 可能被布局
+    ///      系统推到 0，phase 仍是 .idle；若不门控这里，会立刻"折叠后秒回展开"
+    ///      （正是 dong4j 反馈 #2 的现象）。
+    ///
+    /// 已知取舍：少数 macOS 外接鼠标的滚轮事件可能不报 user-driven phase，这类
+    /// 用户失去"滚动自动折叠"功能，但顶部的胶囊折叠按钮仍可用，且不会再被反向
+    /// 触发——这比"反复跳"好得多。触控板 / Magic Mouse 都能正确触发 phase。
+    private func handleChatScroll(offsetY: CGFloat, hasMessages: Bool, isStreaming: Bool) {
         guard hasMessages else { return }
+        guard !isStreaming else { return }
+
+        switch lastChatScrollPhase {
+        case .interacting, .decelerating, .tracking:
+            break
+        case .idle, .animating:
+            return
+        @unknown default:
+            return
+        }
+
         let shouldCollapse = isSummaryCollapsed ? offsetY > 8 : offsetY > 32
         guard shouldCollapse != isSummaryCollapsed else { return }
         withAnimation(.easeInOut(duration: 0.25)) {
