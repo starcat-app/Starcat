@@ -7,34 +7,50 @@
 //  模块职责：
 //  - 把"AI 摘要"和"AI 对话"放在同一个浮动窗口里，但状态完全独立：
 //    重新生成摘要不会清空对话；发送消息不会丢失摘要。
-//  - 三段布局：顶部摘要（可折叠 / 限高 + 内部滚动）→ 可点击折叠条 → 中部对话列表
-//    （撑满剩余高度）→ 分隔线 → 底部输入条。
+//  - 单面板模式（HOM-150 dong4j 2026-06-04 15:30 重设计）：
+//    任一时刻只展示「摘要」**或**「对话」之一，中间一根 segmented toggle bar 切换。
 //  - 摘要部分复用既有的 `RepoAIInsightViewModel`（生成 / 缓存 / 标签推荐三段），
 //    对话部分由新的 `RepoAIChatViewModel` 承担。
 //
-//  关键约束（HOM-150 + 2026-06-04 14:30 dong4j 5 项优化反馈）：
-//  - 摘要"重新生成"和"复制"按钮复用 `RepoAIInsightViewModel`（VM 不动），UI 把
-//    两个动作单独拎到顶部 header 右上角，让对话区域不被它们盖住。
+//  关键约束（HOM-150 累计 4 轮 dong4j 反馈整合）：
+//  - **单面板互斥**（dong4j 2026-06-04 15:30）：用 `AIPanelMode` 枚举控制当前激活
+//    哪一边，另一边折叠到 height = 0；segmented bar 用户可主动切换；初始默认
+//    `.summary`（最大化摘要），用户发送任何消息后自动切到 `.chat`（最大化对话）。
+//  - **顶部下拉展开摘要**（dong4j 2026-06-04 15:30）：在 `.chat` 模式下，用户把
+//    对话滚到顶部后再下拉到 -60pt overscroll → 切回 `.summary`；这是替代旧 32/8pt
+//    hysteresis 的新交互——边界更清晰，不再在普通滚动里反复抖动。
 //  - 流式生成摘要时摘要内部 ScrollView 必须**实时滚到底部**（ScrollViewReader +
-//    底锚 + onChange of streamingSummaryText）。否则用户看不到正在生成的内容，
-//    必须等生成结束再拖滚动条。
-//  - 复制按钮点击后给即时反馈：icon 切 `checkmark.circle.fill`、tooltip 切"已复制"，
-//    1.5s 自动复位；用 Task 而不是 DispatchQueue 让 @MainActor 链路稳定。
-//  - 对话 ScrollView 背景不再是 `underPageBackgroundColor`（明亮主题下会显灰），
-//    改用窗口主题色 `.windowBackgroundColor`；AI 气泡也去掉自身背景色，让明暗
-//    主题切换时整片对话区颜色一致。
-//  - 顶部摘要面板与对话之间是 **可点击的折叠条**（chevron + 文字胶囊）：
-//    ① 用户主动点击折叠 / 展开；② 对话向下滚到一定阈值时（>32pt）自动折叠摘要，
-//    回滚到 8pt 内自动展开——与 `RepoDetailView.metadataPanel` 同款 hysteresis；
-//    ③ 用户发送第一条消息时也自动折叠，把对话区让到最大。
-//  - 错误条采用克制橙色样式；两个 VM 各自的 errorMessage 都留位置（chat 失败不应
-//    隐藏摘要错误，反之亦然）。
+//    底锚 + onChange of streamingSummaryText）。
+//  - 复制按钮（摘要 header / 气泡时间戳 / 对话底部"复制全部"）统一走
+//    `CopyFeedbackButton`：icon 切 ✓ + 绿色 + tooltip 切「已复制」+ 1.5s 复位。
+//  - 对话 ScrollView 与窗口背景统一用 `.windowBackgroundColor`，AI 气泡无背景，
+//    明暗主题切换下视觉一体。
+//  - 摘要 "重新生成"/"复制" 按钮放在 header 右上角，与对话区互不抢位。
+//  - 错误条采用克制橙色样式；两个 VM 各自的 errorMessage 都留位置。
 //
-//  历史背景：本视图是 HOM-150 引入的新交互；旧的"详情页内嵌 AI tab"
-//  （RepoAIInsightPanel.swift）已被替换并随该迭代删除。
+//  历史背景：本视图随 HOM-150 累计 4 轮迭代——
+//  v1 内嵌 segmented tab，v2 浮窗 + 三段布局 + 旧 hysteresis 折叠，v3 phase 门控
+//  修反馈循环，**v4 (本版)** 完全删掉滚动 hysteresis、改单面板互斥 + top overscroll
+//  + segmented toggle bar，把"滚动控制布局"这条不直觉的交互彻底剥离。
 //
 
 import SwiftUI
+
+/// AI 助手窗口当前激活的面板（互斥）。
+///
+/// 设计：单面板互斥而非"两边都能 0~1 范围调节"，因为：
+/// 1. 任意时刻用户都有一个明确的关注焦点（看摘要 / 跟 AI 聊）；
+/// 2. 互斥设计省掉"两边都折叠看到空白"这种边界状态，UI 状态机更简洁；
+/// 3. 与 dong4j 2026-06-04 15:30 的明确要求一致：「打开默认最大化摘要，
+///    输入后切对话」。
+enum AIPanelMode: String, CaseIterable, Identifiable, Hashable {
+    /// 摘要面板撑满，对话面板折叠到 0。
+    case summary
+    /// 对话面板撑满，摘要面板折叠到 0。
+    case chat
+
+    var id: String { rawValue }
+}
 
 struct RepoAIWindowContentView: View {
 
@@ -46,52 +62,49 @@ struct RepoAIWindowContentView: View {
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
 
-    /// 顶部摘要面板是否折叠（高度 → 0）。
+    /// 当前激活的面板（摘要 / 对话）。
     ///
-    /// 与 `RepoDetailView.isMetadataPanelHidden` 相同的设计动机：
-    /// 用 Bool 而不是把 scroll offset 存成状态，避免 SwiftUI 每像素重新布局。
-    @State private var isSummaryCollapsed: Bool = false
+    /// 初始 `.summary`——dong4j 2026-06-04 15:30 要求"打开默认最大化摘要面板"。
+    /// 用户发送任何消息后 `sendChatMessage` 自动切到 `.chat`；在 `.chat` 状态下
+    /// 对话区顶部下拉超过 -60pt（overscroll）会切回 `.summary`，作为"主动看回
+    /// 摘要"的快捷手势。两个方向都靠中间的 segmented toggle bar 主动切换兜底。
+    @State private var panelMode: AIPanelMode = .summary
 
     /// 对话区 ScrollView 最近一次的滚动 phase。
     ///
-    /// 用于把"用户主动手势"和"程序化 / 布局抖动"区分开（详见 `handleChatScroll`
-    /// 的注释）。HOM-150 反馈：原实现直接拿 `contentOffset.y` 做 hysteresis 会
-    /// 出现两个反馈循环：
-    ///
-    /// 1. **流式回答时来回闪烁折叠 / 展开**：每个 token 都会触发
-    ///    `proxy.scrollTo(.bottom)`（phase = .animating），contentOffset 跟着跳变，
-    ///    旧实现把这个程序化跳变当成"用户在滚"，于是反复 collapse ⇄ expand。
-    /// 2. **手动点折叠按钮立刻又被弹开**：fold 之后摘要 frame 从 360 → 0，
-    ///    chat 视口被动放大 360pt；如果对话内容不长，contentOffset 会被 SwiftUI
-    ///    内部布局调整推向 0（phase 仍是 .idle），旧实现读到 < 8 立马 expand。
-    ///
-    /// 解决：用 phase 门控，只有 `.tracking / .interacting / .decelerating` 这三类
-    /// 由用户手势驱动的事件才允许翻折叠状态（详细说明见 `handleChatScroll`）。
+    /// 仅用于 `handleChatOverscroll` 守门：overscroll 必须由用户手势 phase
+    /// (`.tracking / .interacting / .decelerating`) 触发，程序化 scrollTo（流式
+    /// 自动滚底，phase = `.animating`）和布局抖动（phase = `.idle`）一律忽略。
     @State private var lastChatScrollPhase: ScrollPhase = .idle
 
-    /// 摘要展开时的最大高度。
+    /// Top overscroll 触发摘要展开的阈值（pt）。
     ///
-    /// 与 dong4j 优化 5 的诉求一致：有摘要时优先展示摘要 → 给 360pt 而不是原先的
-    /// 280pt（够 4~5 行 + 标签推荐头）；内部 ScrollView 兜底超长内容。发送第一条
-    /// 消息后自动折叠（不靠这个值控制，靠 isSummaryCollapsed）。
-    private let summaryExpandedMaxHeight: CGFloat = 360
+    /// macOS ScrollView 默认 bouncing 行为：滚到顶部后继续下拉，contentOffset.y
+    /// 会进入负值区域。-60pt 是经验阈值——比"无意 bounce"幅度大（一次轻拉
+    /// 大致在 -10 ~ -25），又比"触控板用力下拉"小（容易做到 -80 以上），不
+    /// 误触也不难触发。
+    private let overscrollExpandThreshold: CGFloat = -60
 
     var body: some View {
         VStack(spacing: 0) {
             summarySection
                 .frame(maxWidth: .infinity, alignment: .top)
-                .frame(maxHeight: isSummaryCollapsed ? 0 : summaryExpandedMaxHeight)
+                // 单面板互斥：当前不激活的面板 maxHeight 切到 0。另一面板会撑
+                // 满 VStack 的全部剩余空间。clipped 防止 0 高度时内部 padding
+                // 溢出顶到下方面板。
+                .frame(maxHeight: panelMode == .summary ? .infinity : 0)
                 .clipped()
-                .allowsHitTesting(!isSummaryCollapsed)
-                // easeInOut 0.25s：跟 RepoDetailView.metadataPanelAnimation 同节奏
-                // （0.32s spring）相近但稍快，因为这里只折叠一段 UI，不像详情页
-                // 还要 WebView 跟着重新分配高度。
-                .animation(.easeInOut(duration: 0.25), value: isSummaryCollapsed)
+                .allowsHitTesting(panelMode == .summary)
+                .animation(.easeInOut(duration: 0.28), value: panelMode)
 
-            summaryCollapseDivider
+            panelToggleBar
 
             chatSection
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, alignment: .top)
+                .frame(maxHeight: panelMode == .chat ? .infinity : 0)
+                .clipped()
+                .allowsHitTesting(panelMode == .chat)
+                .animation(.easeInOut(duration: 0.28), value: panelMode)
 
             Divider()
 
@@ -101,7 +114,6 @@ struct RepoAIWindowContentView: View {
                 onSend: sendChatMessage
             )
         }
-        .frame(minWidth: 600, minHeight: 400)
         .background(Color(nsColor: .windowBackgroundColor))
         .task(id: repo.id) {
             await initializeViewModelsIfNeeded()
@@ -147,8 +159,7 @@ struct RepoAIWindowContentView: View {
                 summaryHeader(vm: vm)
 
                 // ScrollViewReader 内嵌 ScrollView，让流式 token 进来时能 `scrollTo`
-                // 底部锚点——核心修复 dong4j 反馈 1：之前 ScrollView 无 reader，
-                // 生成时内容长出 280pt 后 SwiftUI 不会自动跟随，用户只能等结束再手滚。
+                // 底部锚点（dong4j 优化 1：现在像 ChatGPT 一样实时滚字）。
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
@@ -171,9 +182,6 @@ struct RepoAIWindowContentView: View {
                                 emptySummaryState(vm: vm)
                             }
 
-                            // 摘要底部锚点：流式 / 完成两种状态都用同一个，scrollTo 时只
-                            // 改 anchor 参考点不改 id。`.frame(height: 1)` 透明占位
-                            // 是为了在 SwiftUI diff 上稳定存在，不会被空内容优化掉。
                             Color.clear
                                 .frame(height: 1)
                                 .id(Self.summaryBottomAnchorID)
@@ -182,12 +190,10 @@ struct RepoAIWindowContentView: View {
                         .padding(.vertical, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    // 流式增量：每个 token 进来都把摘要滚到底，让用户看到"打字机"效果。
                     .onChange(of: vm.streamingSummaryText ?? "") { _, newValue in
                         guard !newValue.isEmpty else { return }
                         proxy.scrollTo(Self.summaryBottomAnchorID, anchor: .bottom)
                     }
-                    // 生成完成切到 insight 渲染：再补一次滚动，避免最后一行卡在折叠处。
                     .onChange(of: vm.insight?.summaryMarkdown ?? "") { _, _ in
                         proxy.scrollTo(Self.summaryBottomAnchorID, anchor: .bottom)
                     }
@@ -215,7 +221,6 @@ struct RepoAIWindowContentView: View {
 
             Spacer()
 
-            // "重新生成"/"复制"按钮只在已有 insight 且非加载中时显示，避免重复触发。
             if let insight = vm.insight, !vm.isGenerating {
                 copyButton(insight: insight)
 
@@ -357,66 +362,44 @@ struct RepoAIWindowContentView: View {
         return date.formatted(date: .abbreviated, time: .shortened)
     }
 
-    // MARK: - 折叠分隔条（HOM-150 dong4j 优化 4）
+    // MARK: - 面板切换条（HOM-150 dong4j 2026-06-04 15:30 重设计）
 
-    /// 摘要 / 对话之间的可点击折叠条。
+    /// 摘要 / 对话之间的 segmented 切换条。
     ///
     /// 设计要点：
-    /// - 横向贯穿（与 `Divider()` 视觉一致），中间露一个**圆角胶囊 chevron + 文字**，
-    ///   足够显眼又不抢戏；
-    /// - 鼠标 hover 给胶囊加 `.pressableHover()` 的同款变暗 + 微放大反馈，
-    ///   让"这是一个可点击的控件"立刻被感知；
-    /// - 文字会随状态切换：展开时显示"折叠 AI 摘要"、折叠时显示"展开 AI 摘要"，
-    ///   完全不依赖用户去猜 chevron 方向语义；
-    /// - 整条都是 button hit area（`contentShape(Rectangle())`），用户瞄不准胶囊
-    ///   也能点中。
-    private var summaryCollapseDivider: some View {
-        Button {
-            toggleSummaryCollapseManually()
-        } label: {
-            ZStack {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.06))
-                    .frame(height: 1)
-
-                HStack(spacing: 6) {
-                    Image(systemName: isSummaryCollapsed ? "chevron.down" : "chevron.up")
-                        .font(.system(size: 9, weight: .semibold))
-                    Text(isSummaryCollapsed ? "展开 AI 摘要" : "折叠 AI 摘要")
-                        .font(.system(size: 10))
-                }
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 3)
-                .background(
-                    Capsule()
-                        .fill(Color(nsColor: .controlBackgroundColor))
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
-                        )
-                )
-                .pressableHover(opacity: 0.75, scale: 1.04)
+    /// - 用原生 `Picker(.segmented)`：macOS 上渲染为 `NSSegmentedControl` 风格，
+    ///   与系统视觉一致，不抢戏；
+    /// - icon + 文字双标识："✨ AI 摘要" / "💬 AI 对话"，扫一眼即可分辨；
+    /// - selection 绑定 `panelMode` 并带 0.28s easeInOut 动画，与上下两段
+    ///   `frame(maxHeight: ...)` 的折叠动画完全同节奏；
+    /// - bar 自带细分隔线（`.bar` 材质 + Divider 上下），视觉上是上下两段
+    ///   面板的边界，无需额外加 `Divider()`。
+    private var panelToggleBar: some View {
+        HStack(spacing: 0) {
+            Picker("", selection: $panelMode.animation(.easeInOut(duration: 0.28))) {
+                Label("AI 摘要", systemImage: "sparkles").tag(AIPanelMode.summary)
+                Label("AI 对话", systemImage: "bubble.left.and.bubble.right").tag(AIPanelMode.chat)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 22)
-            .contentShape(Rectangle())
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            // 限宽避免在大窗口下 segmented 被拉成超长条带；居中通过外层
+            // `.frame(maxWidth: .infinity)` + Picker 自身有限宽实现。
+            .frame(maxWidth: 280)
+            .help("切换 AI 摘要 / AI 对话面板（互斥）")
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .help(isSummaryCollapsed ? "展开 AI 摘要面板" : "折叠 AI 摘要面板")
-    }
-
-    /// 手动折叠 / 展开切换。
-    ///
-    /// 与滚动自动折叠通过 `handleChatScroll` 的 phase 门控解耦：本函数翻
-    /// `isSummaryCollapsed` 后，chat 视口被动 resize 触发的 contentOffset 变化
-    /// 会落进 phase = .idle 分支被门住，不会再"立刻折叠后秒回展开"。
-    /// 之后用户主动用触控板向下滚（phase 进 .interacting/.decelerating）时，
-    /// hysteresis 才会根据新偏移再次评估。
-    private func toggleSummaryCollapseManually() {
-        withAnimation(.easeInOut(duration: 0.25)) {
-            isSummaryCollapsed.toggle()
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.bar)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.06))
+                .frame(height: 0.5)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.06))
+                .frame(height: 0.5)
         }
     }
 
@@ -437,9 +420,8 @@ struct RepoAIWindowContentView: View {
                                     .id(message.id)
                             }
 
-                            // 对话底部"复制全部"区域（HOM-150 dong4j 2026-06-04
-                            // 15:13 反馈）：流式中（chat.isSending）暂时隐藏，避免
-                            // 用户在 token 还在流时复制到半截 Markdown。
+                            // 对话底部"复制全部"区域：流式中（chat.isSending）暂时
+                            // 隐藏，避免用户在 token 还在流时复制到半截 Markdown。
                             if !chat.isSending {
                                 conversationCopyRow(chat: chat)
                             }
@@ -455,11 +437,6 @@ struct RepoAIWindowContentView: View {
                     }
                     .padding(.vertical, 16)
                 }
-                // 优化 3：换用窗口主题色（`.windowBackgroundColor`），明暗主题下都跟
-                // 窗口背景统一，不再像 `.underPageBackgroundColor` 那样在浅色主题下
-                // 偏灰显得"AI 对话区是另一块卡片"。
-                // 当前 body 的最外层已经挂了同色 background，这里再显式声明一遍是为了
-                // 让 LazyVStack 内部任何透明边界都不会露出窗口陈年默认色。
                 .background(Color(nsColor: .windowBackgroundColor))
                 .onChange(of: chat.messages.count) { _, _ in
                     withAnimation(.easeOut(duration: 0.15)) {
@@ -470,23 +447,17 @@ struct RepoAIWindowContentView: View {
                     // 流式 token 进来时也滚一下，否则长回答会被滚动条卡在中间。
                     proxy.scrollTo(Self.chatBottomAnchorID, anchor: .bottom)
                 }
-                // 优化 4：监听对话区滚动偏移，hysteresis 折叠摘要面板。
-                // `onScrollGeometryChange` 是 macOS 15+ 新 API；本工程 deploymentTarget
-                // 15.0，可以直接用。
-                //
-                // 同时挂 `onScrollPhaseChange`（同一 macOS 15+ API 家族）记录最近一次
-                // 滚动相位——这是 dong4j 2026-06-04 14:50 反馈的两个 bug 的关键修复
-                // 入口（详见 `lastChatScrollPhase` / `handleChatScroll` 的注释）。
+                // dong4j 2026-06-04 15:30 重设计：不再用滚动 hysteresis 切折叠，
+                // 改为只识别"顶部下拉 overscroll"这一种明确的 scroll-driven 手势。
                 .onScrollPhaseChange { _, newPhase in
                     lastChatScrollPhase = newPhase
                 }
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
                     geometry.contentOffset.y
                 } action: { _, newOffset in
-                    handleChatScroll(
+                    handleChatOverscroll(
                         offsetY: newOffset,
-                        hasMessages: !chat.messages.isEmpty,
-                        isStreaming: chat.isSending
+                        hasMessages: !chat.messages.isEmpty
                     )
                 }
 
@@ -505,38 +476,25 @@ struct RepoAIWindowContentView: View {
 
     private static let chatBottomAnchorID = "chat-bottom-anchor"
 
-    /// 对话区滚动偏移 → 摘要折叠状态（HOM-150 优化 4 + 2026-06-04 14:50 bugfix）。
+    /// 对话区"顶部下拉 overscroll"检测（HOM-150 dong4j 2026-06-04 15:30 新设计）。
     ///
-    /// 阈值复用 `RepoDetailView.updateMetadataPanelVisibility`：
-    /// - 滚下越过 32pt 才触发折叠（避免触控板"轻点"就把摘要藏掉）
-    /// - 回到 8pt 内再恢复展开（避免顶部附近来回弹动反复闪动）
+    /// 触发条件（全部成立才切换）：
+    /// 1. `panelMode == .chat`：当前在对话模式（在摘要模式下这个 handler 没意义）；
+    /// 2. `hasMessages`：对话非空（空状态下 contentOffset 抖动语义不明确）；
+    /// 3. 用户手势驱动相位（`.tracking / .interacting / .decelerating`）：排除
+    ///    流式 `proxy.scrollTo` 程序化滚动（phase = `.animating`）和布局抖动
+    ///    （phase = `.idle`）触发的偏移变化——同 v3 修反馈循环时的门控逻辑；
+    /// 4. `offsetY < overscrollExpandThreshold` (默认 -60pt)：macOS bouncing 区
+    ///    需要明显下拉幅度，避免误触；
+    /// 5. `panelMode == .chat` 守门防止在动画切到 `.summary` 后又被 layout 抖动
+    ///    再次触发（虽然 phase 门控基本兜住，多一道守门更稳）。
     ///
-    /// **关键的两道闸**（缺一不可，否则会出现 dong4j 反馈的两类抖动）：
-    ///
-    /// 1. **流式期间完全跳过**（`isStreaming` 守门）。
-    ///    流式回答时，`onChange(of: chat.messages.last?.content)` 每个 token 都会
-    ///    程序化调 `proxy.scrollTo(.bottom)`，contentOffset 一直在跳。即使后面有
-    ///    phase 门控，phase 在 .animating 和 .idle 之间快速翻动也可能漏判。
-    ///    最简单可靠的办法：流式期间彻底不管 hysteresis——反正用户这时大概率不
-    ///    在改变面板布局意图。
-    ///
-    /// 2. **只允许用户手势驱动的滚动改状态**（`lastChatScrollPhase` 门控）。
-    ///    SwiftUI `ScrollPhase` 有 5 种：
-    ///    - `.tracking / .interacting / .decelerating` ：用户手势 / 触控板滑动 / 惯性
-    ///    - `.animating`：`proxy.scrollTo` 触发的程序化动画
-    ///    - `.idle`：无动作 / 由 view layout 变化引起的被动调整
-    ///    后两类必须排除：
-    ///    - .animating：流式以外的 scrollTo（新消息追加）也会触发，不该当作"用户在滚"
-    ///    - .idle：手动点折叠按钮后，chat 视口被动放大，contentOffset 可能被布局
-    ///      系统推到 0，phase 仍是 .idle；若不门控这里，会立刻"折叠后秒回展开"
-    ///      （正是 dong4j 反馈 #2 的现象）。
-    ///
-    /// 已知取舍：少数 macOS 外接鼠标的滚轮事件可能不报 user-driven phase，这类
-    /// 用户失去"滚动自动折叠"功能，但顶部的胶囊折叠按钮仍可用，且不会再被反向
-    /// 触发——这比"反复跳"好得多。触控板 / Magic Mouse 都能正确触发 phase。
-    private func handleChatScroll(offsetY: CGFloat, hasMessages: Bool, isStreaming: Bool) {
+    /// 为什么不用 `.refreshable {}`：那个 modifier 会在 ScrollView 顶部加一个
+    /// pull-to-refresh ProgressView 圆圈，视觉上像"加载指示"而不是"展开面板"，
+    /// 容易引起用户误解。手动监听 contentOffset 的负值区间更纯粹。
+    private func handleChatOverscroll(offsetY: CGFloat, hasMessages: Bool) {
+        guard panelMode == .chat else { return }
         guard hasMessages else { return }
-        guard !isStreaming else { return }
 
         switch lastChatScrollPhase {
         case .interacting, .decelerating, .tracking:
@@ -547,24 +505,19 @@ struct RepoAIWindowContentView: View {
             return
         }
 
-        let shouldCollapse = isSummaryCollapsed ? offsetY > 8 : offsetY > 32
-        guard shouldCollapse != isSummaryCollapsed else { return }
-        withAnimation(.easeInOut(duration: 0.25)) {
-            isSummaryCollapsed = shouldCollapse
+        guard offsetY < overscrollExpandThreshold else { return }
+        withAnimation(.easeInOut(duration: 0.3)) {
+            panelMode = .summary
         }
     }
 
-    /// 对话底部"复制全部对话"区域（HOM-150 dong4j 2026-06-04 15:13 反馈）。
+    /// 对话底部"复制全部对话"区域。
     ///
-    /// 设计：
-    /// - 居中放置一颗带文字的胶囊按钮，与摘要 / 对话之间的折叠条视觉同源
-    ///   （都是 capsule + 边框 + secondary 字色），不抢戏；
-    /// - 复用 `CopyFeedbackButton`，反馈机制与其余两个复制按钮完全一致：
-    ///   icon 切 ✓ + 绿色 + tooltip 切「已复制 ✓」+ 1.5s 复位；
-    /// - 调用 `chat.markdownExport(repo:)` 拼完整 Markdown 文档（结构见
-    ///   `RepoAIChatViewModel.markdownExport` 注释）；
-    /// - `providesContent` 是 closure，按下瞬间才拼字符串，避免每次 view 重绘
-    ///   都做 N 条消息的字符串拼接。
+    /// 复用 `CopyFeedbackButton`，反馈机制与摘要 / 气泡复制按钮完全一致：
+    /// icon 切 ✓ + 绿色 + tooltip 切「已复制 ✓」+ 1.5s 复位。
+    /// 调用 `chat.markdownExport(repo:)` 拼完整 Markdown 文档（结构见
+    /// `RepoAIChatViewModel.markdownExport` 注释）；providesContent 是 closure，
+    /// 按下瞬间才拼字符串，避免每次 view 重绘都做 N 条消息的字符串拼接。
     private func conversationCopyRow(chat: RepoAIChatViewModel) -> some View {
         HStack {
             Spacer()
@@ -624,17 +577,16 @@ struct RepoAIWindowContentView: View {
 
     /// 发送当前输入。
     ///
-    /// 优化 5：发送**第一条**消息时自动折叠摘要面板，把对话区让到最大——
-    /// 实现上判断"发送前 messages 是否为空"，是则在动画里翻 isSummaryCollapsed。
-    /// 之后的消息不会再触发折叠（用户可能手动展开过摘要，不应被覆盖）。
+    /// dong4j 2026-06-04 15:30 反馈："用户输入对话时折叠 AI 摘要，展开 AI 对话框
+    /// 面板"——所以发送时如果当前不在 `.chat` 模式则切过去，并不区分"是不是第
+    /// 一条"。若已经在 `.chat`，跳过切换避免无谓动画。
     private func sendChatMessage() {
         guard let chatVM else { return }
-        let wasFirstMessage = chatVM.messages.isEmpty
         let repoSnapshot = repo
         Task { await chatVM.sendMessage(repo: repoSnapshot) }
-        if wasFirstMessage, !isSummaryCollapsed {
+        if panelMode != .chat {
             withAnimation(.easeInOut(duration: 0.3)) {
-                isSummaryCollapsed = true
+                panelMode = .chat
             }
         }
     }
