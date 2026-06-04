@@ -80,7 +80,14 @@ struct AIChatBubble: View {
         }
     }
 
-    /// 助手消息气泡：左对齐 + 卡片底 + Markdown 渲染。
+    /// 助手消息气泡：左对齐 + **无背景** + Markdown 渲染（HOM-150 dong4j 2026-06-04
+    /// 反馈：AI 回复不要加背景色，主题色由窗口承担，避免明暗主题切换时"卡片色"和
+    /// 窗口色对不上）。
+    ///
+    /// 为了在没有 fill 的情况下保留"这是 AI 回复"的视觉锚点：
+    /// - 左侧 sparkles 头像保留（user / assistant 一眼可区分）；
+    /// - 头像与正文之间用 12pt 文字大小 + 行高自然撑出节奏；
+    /// - 流式末尾仍保留"生成中…"小提示，让用户感知 token 还在流。
     private var assistantBubble: some View {
         VStack(alignment: .leading, spacing: 4) {
             VStack(alignment: .leading, spacing: 6) {
@@ -107,12 +114,7 @@ struct AIChatBubble: View {
                     }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                Color(nsColor: .controlBackgroundColor),
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-            )
+            .padding(.vertical, 2)
 
             timestampLabel
         }
