@@ -67,6 +67,7 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
     ) {
         if let existing = instances[repo.id] {
             existing.showWindow(nil)
+            alignWindow(existing.window)
             existing.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -79,8 +80,27 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         )
         instances[repo.id] = controller
         controller.showWindow(nil)
-        controller.window?.center()
+        alignWindow(controller.window)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @MainActor
+    private static func alignWindow(_ window: NSWindow?) {
+        guard let aiWindow = window,
+              let mainWindow = NSApp.windows.first(where: { $0.frameAutosaveName == MainWindowFrameDefaults.autosaveName }) else {
+            window?.center()
+            return
+        }
+        
+        let toolbarHeight = mainWindow.frame.height - mainWindow.contentLayoutRect.height
+        let targetHeight = MainWindowFrameDefaults.defaultSize.height - toolbarHeight
+        
+        var newFrame = aiWindow.frame
+        newFrame.size.height = targetHeight
+        newFrame.origin.x = mainWindow.frame.maxX - newFrame.size.width
+        newFrame.origin.y = mainWindow.frame.maxY - toolbarHeight - targetHeight
+        
+        aiWindow.setFrame(newFrame, display: true)
     }
 
     private init(
