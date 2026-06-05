@@ -169,7 +169,7 @@ final class RepoAIInsightService {
             userPrompt: userMessage,
             history: history,
             model: model,
-            parameters: task.parameters,
+            parameters: settings.effectiveParameters(for: task),
             responseFormat: .text
         )
 
@@ -204,15 +204,16 @@ final class RepoAIInsightService {
     ) async throws -> String {
         let task = settings.aiSummaryTask
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "摘要")
+        let params = settings.effectiveParameters(for: task)
         let request = AIChatRequest(
             systemPrompt: task.prompt.systemPrompt,
             userPrompt: task.prompt.renderedUserPrompt(context: source.text),
             model: model,
-            parameters: task.parameters,
+            parameters: params,
             responseFormat: .text
         )
 
-        if task.parameters.streamEnabled {
+        if params.streamEnabled {
             var accumulated = ""
             for try await event in client.chatStream(request: request) {
                 switch event {
@@ -238,7 +239,7 @@ final class RepoAIInsightService {
             systemPrompt: task.prompt.systemPrompt,
             userPrompt: task.prompt.renderedUserPrompt(context: source.text),
             model: model,
-            parameters: task.parameters,
+            parameters: settings.effectiveParameters(for: task),
             responseFormat: .jsonObject
         ))
         return try Self.decodeTagSuggestions(json: response.content)
@@ -266,7 +267,7 @@ final class RepoAIInsightService {
             baseURL: profile.baseURL,
             chatModel: model,
             embeddingModel: settings.aiEmbeddingTask.resolvedModelName,
-            timeoutInterval: task.parameters.timeoutSeconds
+            timeoutInterval: settings.effectiveParameters(for: task).timeoutSeconds
         )), model)
     }
 
