@@ -272,7 +272,7 @@ struct ReadmeWebView: NSViewRepresentable {
             function report() {
                 ticking = false;
                 var y = currentY();
-                if (Math.abs(y - lastY) < 2) { return; }
+                if (Math.abs(y - lastY) < 1) { return; }
                 lastY = y;
                 window.webkit.messageHandlers.\(scrollMessageName).postMessage(y);
             }

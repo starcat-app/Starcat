@@ -168,29 +168,30 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 /// 关键约束：内容始终留在 view tree 中，只动画外层 frame 高度，避免 WKWebView 在同一帧
 /// 突然重新分配高度造成跳变。
 struct CollapsibleRepoMetadataPanel<Content: View>: View {
-    @Binding var isHidden: Bool
+    @Binding var collapseProgress: CGFloat
     @Binding var panelHeight: CGFloat
-    let animation: Animation
     private let content: Content
 
     init(
-        isHidden: Binding<Bool>,
+        collapseProgress: Binding<CGFloat>,
         panelHeight: Binding<CGFloat>,
-        animation: Animation,
         @ViewBuilder content: () -> Content
     ) {
-        _isHidden = isHidden
+        _collapseProgress = collapseProgress
         _panelHeight = panelHeight
-        self.animation = animation
         self.content = content()
     }
 
     var body: some View {
+        let progress = normalizedProgress
+        let measuredHeight = panelHeight > 0 ? panelHeight : nil
+        let visibleHeight = measuredHeight.map { $0 * (1 - progress) }
+
         ZStack(alignment: .top) {
             VStack(spacing: 0) {
                 content
                 Divider()
-                    .opacity(isHidden ? 0 : 1)
+                    .opacity(1 - progress)
             }
             .fixedSize(horizontal: false, vertical: true)
             .background {
@@ -201,23 +202,28 @@ struct CollapsibleRepoMetadataPanel<Content: View>: View {
                     )
                 }
             }
-            .opacity(isHidden ? 0 : 1)
-            .offset(y: isHidden ? -min(panelHeight * 0.18, 28) : 0)
-            .allowsHitTesting(!isHidden)
-            .accessibilityHidden(isHidden)
+            .opacity(1 - progress)
+            .offset(y: -min(panelHeight * 0.18, 28) * progress)
+            .allowsHitTesting(progress < 0.98)
+            .accessibilityHidden(progress >= 0.98)
         }
         .frame(
-            height: isHidden
-                ? 0
-                : (panelHeight > 0 ? panelHeight : nil),
+            height: visibleHeight,
             alignment: .top
         )
         .clipped()
-        .animation(animation, value: isHidden)
         .onPreferenceChange(RepoMetadataPanelHeightPreferenceKey.self) { height in
             guard height > 0, abs(height - panelHeight) > 0.5 else { return }
             panelHeight = height
         }
+    }
+
+    /// 折叠进度由 WebView scroll offset 连续驱动，必须在容器内再 clamp 一次。
+    ///
+    /// 原因：外部调用方会在 repo 切换、滚动回弹、测试注入等路径写入状态；这里兜底可避免
+    /// frame 高度出现负数或超过自然高度，保证 WKWebView 重新分配空间时没有异常跳变。
+    private var normalizedProgress: CGFloat {
+        min(max(collapseProgress, 0), 1)
     }
 }
 
