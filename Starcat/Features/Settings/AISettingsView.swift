@@ -299,8 +299,19 @@ struct AISettingsTab: View {
                     disabled: false
                 )
 
-                Toggle("优先使用流式响应", isOn: parameterBoolBinding(parameterTask, \.streamEnabled))
-                    .disabled(parameterTask == .embedding || parameterTask == .tags)
+                // HOM-68 follow-up v6 (dong4j 反馈 2026-06-05 23:10)：
+                // 之前 Toggle 占满整行，开关控件在行的最右边——比 TextField
+                // 多出 44pt 单位列宽度，跟上面 5 行参数对不齐。改成手动 HStack：
+                // 文字 label 左对齐，Spacer 把开关推到右侧，最后塞 44pt Color.clear
+                // 把开关左移 44pt，让开关右边缘对齐 TextField 右边缘。
+                HStack {
+                    Text("优先使用流式响应")
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: parameterBoolBinding(parameterTask, \.streamEnabled))
+                        .labelsHidden()
+                        .disabled(parameterTask == .embedding || parameterTask == .tags)
+                    Color.clear.frame(width: 44)
+                }
             } label: {
                 disclosureLabel("模型参数", isExpanded: $isParametersExpanded)
             }
@@ -385,10 +396,15 @@ struct AISettingsTab: View {
             .multilineTextAlignment(.trailing)
             .disabled(disabled)
             if let unit {
+                // HOM-68 follow-up v6 (dong4j 反馈 2026-06-05 23:10)：
+                // 单位列改右对齐——之前 `.leading` 时 "K" / "秒" 这种 1-2 字符
+                // 会贴在 44pt 列的左边、距离右边缘还有一大段空白，竖向看 3 个
+                // 单位不在一条线上，对齐感差。改 `.trailing` 后 "K" / "秒" 都
+                // 紧贴右边缘，竖向形成统一的对齐线。
                 Text(unit)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .frame(width: 44, alignment: .leading)
+                    .frame(width: 44, alignment: .trailing)
             } else {
                 // 占位与有单位行对齐，避免输入框宽度跳变（同 Slider 行右侧 44pt 值列）。
                 Color.clear.frame(width: 44)
