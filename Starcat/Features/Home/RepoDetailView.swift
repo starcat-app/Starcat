@@ -325,7 +325,10 @@ struct RepoDetailView: View {
     private func readmeSection(_ repo: Repo) -> some View {
         ReadmeStateView(
             state: readmeVM.state,
-            baseURL: URL(string: repo.htmlUrl),
+            // 拼接 blob/HEAD：GitHub HTML 渲染 API 返回的相对链接是相对于仓库根目录解析的，
+            // 缺少 blob/{branch} 前缀；补上后相对链接（如 README-en.md）才能正确解析为
+            // https://github.com/owner/repo/blob/HEAD/README-en.md。
+            baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
             owner: repo.owner,
             repo: repo.name,
             onScrollOffsetChange: updateMetadataPanelVisibility
@@ -612,7 +615,9 @@ struct RepoDetailView: View {
     private func trendingReadmeSection(_ repo: TrendingRepo) -> some View {
         ReadmeStateView(
             state: readmeVM.state,
-            baseURL: repo.url,
+            // 拼接 blob/HEAD：同上，Trending 的 repo.url 是仓库根 URL，
+            // 补上 blob/HEAD 使相对链接正确解析。
+            baseURL: URL(string: "\(repo.url.absoluteString)/blob/HEAD"),
             owner: repo.owner,
             repo: repo.name,
             onScrollOffsetChange: updateMetadataPanelVisibility
