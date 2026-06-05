@@ -42,6 +42,12 @@ struct AIModelParametersPopover: View {
         }
         .padding(20)
         .frame(width: 420)
+        // HOM-68 follow-up v10 (dong4j 反馈 2026-06-05 23:55)：
+        // 项目强制规则 docs/详细设计/07-UI交互设计.md §3.1——Popover 打开时 macOS
+        // 会把焦点自动放到内部第一个可聚焦元素上，TextField / 按钮都会套蓝色
+        // focus ring。在 popover 根加一次 .focusEffectDisabled() 让所有子视图
+        // 都遵循"不显示 focus ring"的视觉约定。
+        .focusEffectDisabled()
     }
 
     private var header: some View {

@@ -204,27 +204,27 @@ struct AISettingsTab: View {
     // MARK: - Tasks
 
     private var taskModelsSection: some View {
-        // HOM-68 follow-up v7 (dong4j 反馈 2026-06-05 23:20)：
-        // 之前 4 个任务竖向铺开 4 行，每行重复 "Provider + 模型 + 自定义" 三件套，
-        // 占整页 1/3 高度。改成 tab 样式（与"模型参数" / "Prompt" 一致）：
-        //   1. 顶部 segmented Picker 选任务（summary / tags / embedding / translation）；
-        //   2. 下面只渲染当前选中任务那一行；
-        //   3. 整段 DisclosureGroup 默认折叠。
-        //
-        // 标题改"默认设置"——这里配置的是"每类任务默认用哪个 provider 的哪个模型"，
-        // 与"已发现模型"区（模型清单 + chat/embedding 能力标注）职责分离。
+        // HOM-68 follow-up v7：tab 样式（segmented Picker + 单行 Provider/模型/自定义），
+        // 与"模型参数" / "Prompt" 一致；DisclosureGroup 默认折叠。
+        // HOM-68 follow-up v8：标题从"默认设置"改成"模型配置"。
+        // HOM-68 follow-up v10 (dong4j 反馈 2026-06-05 23:55)：tab 与下面的
+        // Provider/模型/自定义 行原本只隔默认 VStack 间距（≈ 4pt），视觉黏连。
+        // 用 VStack(spacing: 14) 显式给开 14pt，与 Prompt 区"任务行 → System
+        // Prompt 标签"的呼吸感对齐，让 tab 切换后"现在配的是哪个任务"边界清晰。
         Section {
             DisclosureGroup(isExpanded: $isTaskModelsExpanded) {
-                Picker("任务", selection: $taskModelTask) {
-                    ForEach(AIModelTask.allCases) { task in
-                        Text(task.displayName).tag(task)
+                VStack(spacing: 14) {
+                    Picker("任务", selection: $taskModelTask) {
+                        ForEach(AIModelTask.allCases) { task in
+                            Text(task.displayName).tag(task)
+                        }
                     }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
 
-                taskModelRow(taskModelTask)
+                    taskModelRow(taskModelTask)
+                }
             } label: {
                 disclosureLabel("模型配置", isExpanded: $isTaskModelsExpanded)
             }
@@ -326,6 +326,11 @@ struct AISettingsTab: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // HOM-68 follow-up v10 (dong4j 反馈 2026-06-05 23:55)：项目强制规则
+        // (docs/详细设计/07-UI交互设计.md §1.2 + CLAUDE.md §UI Focus Ring)——
+        // 所有 .buttonStyle(.plain) Button 必须紧跟 .focusEffectDisabled()，否则
+        // macOS 15+ 会在聚焦时套一个蓝色 focus ring，与项目暗色面板视觉冲突。
+        .focusEffectDisabled()
     }
 
     // MARK: - Prompt
