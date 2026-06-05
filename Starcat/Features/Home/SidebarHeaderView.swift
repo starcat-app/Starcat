@@ -387,7 +387,10 @@ private struct StatCell: View {
     let url: URL?
 
     var body: some View {
-        VStack(spacing: 2) {
+        // 2026-06-05 dong4j 反馈：数字与 label 字号差太小，视觉上几乎一样大。
+        // 改为数字 19pt/.bold（约为 caption2 的 ~1.7x），形成明显的"主-辅"层级。
+        // 间距 2 → 3：字号放大后保持 baseline 视觉呼吸。
+        VStack(spacing: 3) {
             if let url = url {
                 // 2026-06-02 dong4j 要求统一 hover 反馈：sidebar 三栏统计数据
                 // （Starred / Followers / Following）加 `.pressableHover()`，
@@ -396,7 +399,7 @@ private struct StatCell: View {
                     NSWorkspace.shared.open(url)
                 } label: {
                     Text(value, format: .number)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 19, weight: .bold))
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -408,7 +411,7 @@ private struct StatCell: View {
                 .help(helpText)
             } else {
                 Text(value, format: .number)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 19, weight: .bold))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
