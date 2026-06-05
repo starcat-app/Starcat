@@ -1,120 +1,478 @@
+<!--
+  Starcat AI · Share Page Template
+  ─────────────────────────────────────────────────────────────────────
+  · 用途：服务端 (Go html/template) 渲染单个仓库 AI 摘要的对外分享页
+  · 后端：保持 backend/main.go 现有 ShareData 结构与字段不变
+  · 设计：参考 GitHub / Vercel / Linear / Notion 的现代卡片风格，
+          自动跟随系统明暗模式 (prefers-color-scheme)
+  · 关键约束：
+    1. AI Summary 字段是 Markdown 文本，必须在前端做安全渲染，
+       否则用户会看到原始 `##` `**` 符号；
+       使用 marked.js + DOMPurify 进行 Markdown → 净化 HTML 转换。
+    2. Markdown 源文本通过 `<template>` 标签内嵌（HTML 字符串上下文，
+       由 Go html/template 自动 HTML 转义，再用 textContent 反转义读出），
+       这样既安全又不需要服务端 JSON 编码逻辑。
+    3. 任何外链统一加 target=_blank + noopener，避免分享页被钓鱼利用。
+    4. CDN 字体 / 脚本均带 SRI 不强制，因 backend 走外网且非金融场景，
+       但加载使用 defer/异步以避免阻塞首屏。
+-->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ .Request.Repo.FullName }} - Starcat AI</title>
+    <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
+    <title>{{ .Request.Repo.FullName }} · Starcat AI</title>
+
+    <!-- SEO & 社交分享元信息：转发到 X / Telegram / 微信时能渲染卡片 -->
+    {{ if .Request.AISummary.OneLiner }}
+    <meta name="description" content="{{ .Request.AISummary.OneLiner }}">
+    <meta property="og:description" content="{{ .Request.AISummary.OneLiner }}">
+    <meta name="twitter:description" content="{{ .Request.AISummary.OneLiner }}">
+    {{ end }}
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="{{ .Request.Repo.FullName }} · Starcat AI">
+    <meta property="og:site_name" content="Starcat AI">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ .Request.Repo.FullName }} · Starcat AI">
+
+    <!-- Inline SVG favicon：避免额外 HTTP 请求 -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop offset='0' stop-color='%237c3aed'/%3E%3Cstop offset='1' stop-color='%233b82f6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M9 8l4 5h6l4-5v9a7 7 0 11-14 0V8z' fill='white'/%3E%3Ccircle cx='13' cy='17' r='1.4' fill='%230a0a0a'/%3E%3Ccircle cx='19' cy='17' r='1.4' fill='%230a0a0a'/%3E%3C/svg%3E">
+
+    <!-- Tailwind CDN：沿用项目现有选型，仅扩展自定义字体族 -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        darkMode: 'media',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'sans-serif'],
+              mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+            },
+          }
+        }
+      };
+    </script>
+
+    <!-- Inter (正文) + JetBrains Mono (代码) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- 安全的 Markdown 渲染：marked + DOMPurify -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js" defer></script>
+
     <style>
-        body { background-color: #f9fafb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
-        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(0, 0, 0, 0.05); }
-        .gradient-text { background: linear-gradient(to right, #8b5cf6, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        /* ── 排版基线：开启 OpenType 替代字形让 Inter 更接近正版 ── */
+        html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+        body { font-feature-settings: "cv02","cv03","cv04","cv11","ss01"; }
+        ::selection { background: rgba(124, 58, 237, 0.25); }
+        @media (prefers-color-scheme: dark) {
+            ::selection { background: rgba(167, 139, 250, 0.30); }
+        }
+
+        /* ── 背景：左右两簇柔和的径向光晕，模拟 Linear / Vercel 风格 ── */
+        .bg-orbit {
+            background-image:
+                radial-gradient(at 18% -10%, hsla(258, 90%, 66%, 0.10) 0px, transparent 50%),
+                radial-gradient(at 82% -10%, hsla(217, 91%, 60%, 0.10) 0px, transparent 50%),
+                radial-gradient(at 50% 110%, hsla(280, 90%, 66%, 0.05) 0px, transparent 50%);
+        }
+        @media (prefers-color-scheme: dark) {
+            .bg-orbit {
+                background-image:
+                    radial-gradient(at 18% -10%, hsla(258, 90%, 66%, 0.18) 0px, transparent 50%),
+                    radial-gradient(at 82% -10%, hsla(217, 91%, 60%, 0.14) 0px, transparent 50%),
+                    radial-gradient(at 50% 110%, hsla(280, 90%, 66%, 0.10) 0px, transparent 50%);
+            }
+        }
+
+        /* ── 渐变文字：用于品牌名 / AI 小标题 ── */
+        .gradient-text {
+            background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 50%, #3b82f6 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
+        }
+
+        /* ── Markdown 渲染样式 (.prose-ai) ──
+             marked.js 输出的 HTML 套用这一组样式。
+             与 Tailwind Typography 类似但更克制，匹配主卡片视觉。 */
+        .prose-ai { color: #404040; font-size: 15px; line-height: 1.78; word-break: break-word; }
+        .prose-ai > :first-child { margin-top: 0 !important; }
+        .prose-ai > :last-child  { margin-bottom: 0 !important; }
+        .prose-ai h1, .prose-ai h2 {
+            font-size: 1.05rem; font-weight: 700; color: #171717;
+            margin: 1.8em 0 0.6em; display: flex; align-items: center; gap: .6rem;
+            letter-spacing: -0.005em;
+        }
+        .prose-ai h1::before, .prose-ai h2::before {
+            content: ''; width: 3px; height: 16px;
+            background: linear-gradient(180deg, #7c3aed, #3b82f6);
+            border-radius: 2px; display: inline-block; flex-shrink: 0;
+        }
+        .prose-ai h3 { font-size: 0.95rem; font-weight: 600; color: #262626; margin: 1.3em 0 0.45em; }
+        .prose-ai h4 { font-size: 0.9rem;  font-weight: 600; color: #404040; margin: 1.1em 0 0.4em; }
+        .prose-ai p  { margin: 0.65em 0; }
+        .prose-ai ul, .prose-ai ol { margin: 0.6em 0; padding-left: 1.4rem; }
+        .prose-ai ul { list-style: disc; }
+        .prose-ai ol { list-style: decimal; }
+        .prose-ai li { margin: 0.3em 0; }
+        .prose-ai li::marker { color: #a78bfa; }
+        .prose-ai strong { color: #171717; font-weight: 600; }
+        .prose-ai em { color: #525252; }
+        .prose-ai hr { border: none; border-top: 1px solid #e5e5e5; margin: 1.5em 0; }
+        .prose-ai code {
+            background: rgba(124, 58, 237, 0.08); color: #6d28d9;
+            padding: 1px 6px; border-radius: 4px;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 0.86em; word-break: break-word;
+        }
+        .prose-ai pre {
+            background: #fafafa; border: 1px solid #ececec;
+            padding: 0.9rem 1rem; border-radius: 10px;
+            overflow-x: auto; margin: 1em 0;
+            font-size: 0.86em; line-height: 1.65;
+        }
+        .prose-ai pre code { background: transparent; color: #1f2937; padding: 0; }
+        .prose-ai a {
+            color: #6d28d9; text-decoration: none;
+            border-bottom: 1px dashed rgba(124, 58, 237, 0.35);
+        }
+        .prose-ai a:hover { border-bottom-style: solid; }
+        .prose-ai blockquote {
+            border-left: 3px solid #c4b5fd;
+            padding: 0.4em 1em; margin: 1em 0;
+            background: rgba(124, 58, 237, 0.05); color: #525252;
+            border-radius: 0 8px 8px 0;
+        }
+        .prose-ai table {
+            border-collapse: collapse; width: 100%;
+            margin: 1em 0; font-size: 0.92em;
+            border: 1px solid #e5e5e5; border-radius: 8px; overflow: hidden;
+        }
+        .prose-ai th, .prose-ai td { border-bottom: 1px solid #f0f0f0; padding: 9px 13px; text-align: left; }
+        .prose-ai tr:last-child td { border-bottom: none; }
+        .prose-ai th { background: #fafafa; font-weight: 600; color: #171717; }
+
+        @media (prefers-color-scheme: dark) {
+            .prose-ai { color: #d4d4d4; }
+            .prose-ai h1, .prose-ai h2 { color: #fafafa; }
+            .prose-ai h3 { color: #e5e5e5; }
+            .prose-ai h4 { color: #d4d4d4; }
+            .prose-ai strong { color: #ffffff; }
+            .prose-ai em { color: #a3a3a3; }
+            .prose-ai hr { border-top-color: #27272a; }
+            .prose-ai code { background: rgba(167, 139, 250, 0.14); color: #c4b5fd; }
+            .prose-ai pre { background: #0f0f10; border-color: #26262a; }
+            .prose-ai pre code { color: #e5e7eb; }
+            .prose-ai a { color: #a78bfa; border-bottom-color: rgba(167, 139, 250, 0.45); }
+            .prose-ai blockquote { border-left-color: #7c3aed; background: rgba(124, 58, 237, 0.08); color: #a3a3a3; }
+            .prose-ai table { border-color: #27272a; }
+            .prose-ai th, .prose-ai td { border-bottom-color: #1f1f22; }
+            .prose-ai th { background: #131316; color: #fafafa; }
+        }
+
+        /* ── 入场淡入动画 (尊重 prefers-reduced-motion) ── */
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-up { animation: fadeUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+        .delay-1 { animation-delay: 0.06s; }
+        .delay-2 { animation-delay: 0.14s; }
+        .delay-3 { animation-delay: 0.22s; }
+        .delay-4 { animation-delay: 0.30s; }
+        .delay-5 { animation-delay: 0.38s; }
+        @media (prefers-reduced-motion: reduce) {
+            .fade-up { animation: none; }
+        }
+
+        /* Markdown 容器在脚本未就绪前先隐藏，避免源文本闪一下 */
+        .md-pending { opacity: 0; }
+        .md-ready   { opacity: 1; transition: opacity .25s ease; }
     </style>
 </head>
-<body class="min-h-screen flex items-center justify-center p-4">
-    <div class="max-w-2xl w-full glass-card rounded-2xl shadow-xl overflow-hidden relative">
-        <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-purple-500 to-blue-500"></div>
-        
-        <div class="p-8">
-            <!-- Header -->
-            <div class="flex items-start justify-between mb-6">
-                <div>
-                    <h1 class="text-3xl font-bold text-gray-900 mb-2">
-                        <i class="fa-solid fa-book-bookmark text-gray-400 mr-2 text-xl"></i>
-                        {{ .Request.Repo.FullName }}
-                    </h1>
-                    {{ if .Request.Repo.Description }}
-                    <p class="text-gray-600 text-lg">{{ .Request.Repo.Description }}</p>
-                    {{ end }}
-                </div>
-            </div>
+<body class="font-sans bg-orbit min-h-screen bg-[#fafafa] text-[#171717] dark:bg-[#0a0a0a] dark:text-[#fafafa]">
 
-            <!-- Stats & Meta -->
-            <div class="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-8 border-b border-gray-100 pb-6">
+<main class="min-h-screen flex items-start sm:items-center justify-center px-4 py-8 sm:py-14">
+    <article class="max-w-3xl w-full">
+
+        <!-- ── 顶部品牌条 ── -->
+        <div class="flex items-center justify-between mb-5 fade-up">
+            <a href="/" class="inline-flex items-center gap-2 text-sm font-semibold text-neutral-700 dark:text-neutral-200 hover:opacity-80 transition-opacity">
+                <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 text-white shadow-sm">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M5 5l3 4h8l3-4v9a8 8 0 11-14 0V5z"/>
+                        <circle cx="9.5" cy="13" r="1" fill="#0a0a0a"/>
+                        <circle cx="14.5" cy="13" r="1" fill="#0a0a0a"/>
+                    </svg>
+                </span>
+                Starcat AI
+            </a>
+            <span class="text-xs text-neutral-500 dark:text-neutral-400">
+                AI 摘要 · {{ .CreatedAt.Format "2006-01-02" }}
+            </span>
+        </div>
+
+        <!-- ── 主卡片 ── -->
+        <div class="relative rounded-2xl border border-neutral-200/80 dark:border-neutral-800/80 bg-white/85 dark:bg-neutral-950/70 backdrop-blur-xl shadow-[0_8px_40px_-12px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_40px_-8px_rgba(0,0,0,0.5)] overflow-hidden fade-up delay-1">
+            <!-- 顶部细装饰线 -->
+            <div class="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-500/70 to-transparent"></div>
+
+            <!-- Hero -->
+            <header class="px-6 sm:px-10 pt-9 pb-6">
                 {{ if .Request.Repo.Language }}
-                <div class="flex items-center gap-1">
-                    <span class="w-3 h-3 rounded-full bg-yellow-400"></span>
-                    <span class="font-medium">{{ .Request.Repo.Language }}</span>
+                <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800/70 text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-4">
+                    <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                    {{ .Request.Repo.Language }}
                 </div>
                 {{ end }}
-                <div class="flex items-center gap-1">
-                    <i class="fa-solid fa-star text-yellow-400"></i>
-                    <span class="font-medium">{{ .Request.Repo.StarsCount }}</span>
-                </div>
-                <div class="flex items-center gap-1">
-                    <i class="fa-solid fa-code-fork"></i>
-                    <span class="font-medium">{{ .Request.Repo.ForksCount }}</span>
-                </div>
-            </div>
 
-            <!-- AI Insight Section -->
-            <div class="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl p-6 mb-8 border border-indigo-100">
-                <div class="flex items-center gap-2 mb-4">
-                    <i class="fa-solid fa-wand-magic-sparkles text-purple-500"></i>
-                    <h2 class="text-lg font-semibold gradient-text">AI 摘要</h2>
-                </div>
-                
-                <h3 class="text-xl font-bold text-gray-900 mb-3">{{ .Request.AISummary.OneLiner }}</h3>
-                <p class="text-gray-700 leading-relaxed mb-6 whitespace-pre-line">{{ .Request.AISummary.Summary }}</p>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {{ if .Request.AISummary.Strengths }}
-                    <div>
-                        <h4 class="font-semibold text-green-700 mb-2 flex items-center gap-2"><i class="fa-solid fa-circle-check"></i> 亮点</h4>
-                        <ul class="space-y-1 text-sm text-gray-700">
-                            {{ range .Request.AISummary.Strengths }}
-                            <li class="flex items-start gap-2"><span class="text-green-500 mt-1">•</span> {{ . }}</li>
-                            {{ end }}
-                        </ul>
-                    </div>
-                    {{ end }}
-                    
-                    {{ if .Request.AISummary.Risks }}
-                    <div>
-                        <h4 class="font-semibold text-red-700 mb-2 flex items-center gap-2"><i class="fa-solid fa-circle-exclamation"></i> 风险/不足</h4>
-                        <ul class="space-y-1 text-sm text-gray-700">
-                            {{ range .Request.AISummary.Risks }}
-                            <li class="flex items-start gap-2"><span class="text-red-500 mt-1">•</span> {{ . }}</li>
-                            {{ end }}
-                        </ul>
-                    </div>
-                    {{ end }}
-                </div>
-            </div>
+                <h1 class="text-2xl sm:text-[28px] font-bold tracking-tight text-neutral-900 dark:text-white leading-tight">
+                    {{ .Request.Repo.FullName }}
+                </h1>
 
-            <!-- Tags -->
-            <div class="mb-8">
-                <div class="flex flex-wrap gap-2">
+                {{ if .Request.Repo.Description }}
+                <p class="mt-3 text-base sm:text-lg text-neutral-600 dark:text-neutral-300 leading-relaxed">
+                    {{ .Request.Repo.Description }}
+                </p>
+                {{ end }}
+
+                <!-- Stats Row -->
+                <div class="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-neutral-700 dark:text-neutral-300">
+                    <span class="inline-flex items-center gap-1.5">
+                        <svg class="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <strong class="font-semibold tabular-nums">{{ .Request.Repo.StarsCount }}</strong>
+                        <span class="text-neutral-500 dark:text-neutral-500">Stars</span>
+                    </span>
+                    <span class="inline-flex items-center gap-1.5">
+                        <svg class="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/>
+                            <path d="M6 8v3a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8M12 13v3"/>
+                        </svg>
+                        <strong class="font-semibold tabular-nums">{{ .Request.Repo.ForksCount }}</strong>
+                        <span class="text-neutral-500 dark:text-neutral-500">Forks</span>
+                    </span>
+                </div>
+            </header>
+
+            <div class="px-6 sm:px-10"><div class="border-t border-neutral-200/70 dark:border-neutral-800/70"></div></div>
+
+            <!-- AI Insight -->
+            <section class="px-6 sm:px-10 py-8 fade-up delay-2">
+                {{ if .Request.AISummary.OneLiner }}
+                <div class="relative pl-5 mb-7">
+                    <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-full bg-gradient-to-b from-violet-500 via-indigo-500 to-blue-500"></span>
+                    <div class="inline-flex items-center gap-1.5 mb-2 text-[11px] uppercase tracking-[0.14em] font-semibold gradient-text">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1l2.5 5 5.5.8-4 3.9.9 5.5L10 13.6 5.1 16.2 6 10.7 2 6.8l5.5-.8L10 1z"/></svg>
+                        AI 一句话总结
+                    </div>
+                    <p class="text-lg sm:text-[19px] font-medium leading-relaxed text-neutral-900 dark:text-neutral-100">
+                        {{ .Request.AISummary.OneLiner }}
+                    </p>
+                </div>
+                {{ end }}
+
+                {{ if .Request.AISummary.Summary }}
+                <!-- Markdown 源：放在 <template> 中，浏览器不会渲染，
+                     但 textContent 能正确取到反转义后的原文 -->
+                <template id="md-source">{{ .Request.AISummary.Summary }}</template>
+                <div id="md-render" class="prose-ai md-pending" aria-live="polite"></div>
+                <noscript>
+                    <pre class="prose-ai whitespace-pre-wrap text-sm bg-neutral-50 dark:bg-neutral-900 p-4 rounded-lg border border-neutral-200 dark:border-neutral-800">{{ .Request.AISummary.Summary }}</pre>
+                </noscript>
+                {{ end }}
+            </section>
+
+            <!-- 可选信息：亮点 / 风险 / 平台 / 适合场景 -->
+            {{ if or .Request.AISummary.Strengths .Request.AISummary.Risks .Request.AISummary.Platforms .Request.AISummary.SuitableFor }}
+            <div class="px-6 sm:px-10"><div class="border-t border-neutral-200/70 dark:border-neutral-800/70"></div></div>
+            <section class="px-6 sm:px-10 py-8 grid grid-cols-1 md:grid-cols-2 gap-4 fade-up delay-3">
+
+                {{ if .Request.AISummary.Strengths }}
+                <div class="rounded-xl p-5 bg-emerald-50/70 dark:bg-emerald-500/[0.06] border border-emerald-200/70 dark:border-emerald-500/15">
+                    <h3 class="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300 mb-3">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.7-9.3a1 1 0 00-1.4-1.4L9 10.6 7.7 9.3a1 1 0 00-1.4 1.4l2 2a1 1 0 001.4 0l4-4z" clip-rule="evenodd"/></svg>
+                        亮点
+                    </h3>
+                    <ul class="space-y-1.5 text-sm text-neutral-700 dark:text-neutral-300">
+                        {{ range .Request.AISummary.Strengths }}
+                        <li class="flex items-start gap-2"><span class="text-emerald-500 mt-1.5 leading-none">•</span><span>{{ . }}</span></li>
+                        {{ end }}
+                    </ul>
+                </div>
+                {{ end }}
+
+                {{ if .Request.AISummary.Risks }}
+                <div class="rounded-xl p-5 bg-rose-50/70 dark:bg-rose-500/[0.06] border border-rose-200/70 dark:border-rose-500/15">
+                    <h3 class="flex items-center gap-2 text-sm font-semibold text-rose-700 dark:text-rose-300 mb-3">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.518 11.59c.75 1.335-.213 2.98-1.743 2.98H3.482c-1.53 0-2.493-1.645-1.743-2.98L8.257 3.1zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                        风险 / 不足
+                    </h3>
+                    <ul class="space-y-1.5 text-sm text-neutral-700 dark:text-neutral-300">
+                        {{ range .Request.AISummary.Risks }}
+                        <li class="flex items-start gap-2"><span class="text-rose-500 mt-1.5 leading-none">•</span><span>{{ . }}</span></li>
+                        {{ end }}
+                    </ul>
+                </div>
+                {{ end }}
+
+                {{ if .Request.AISummary.Platforms }}
+                <div class="rounded-xl p-5 bg-sky-50/70 dark:bg-sky-500/[0.06] border border-sky-200/70 dark:border-sky-500/15">
+                    <h3 class="flex items-center gap-2 text-sm font-semibold text-sky-700 dark:text-sky-300 mb-3">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 4a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2h-3l1 3h2a1 1 0 110 2H6a1 1 0 110-2h2l1-3H4a2 2 0 01-2-2V4zm2 0v8h12V4H4z"/></svg>
+                        支持平台
+                    </h3>
+                    <div class="flex flex-wrap gap-1.5">
+                        {{ range .Request.AISummary.Platforms }}
+                        <span class="px-2.5 py-1 rounded-md bg-white/70 dark:bg-sky-500/10 text-xs font-medium text-sky-700 dark:text-sky-300 border border-sky-200/70 dark:border-sky-500/20">{{ . }}</span>
+                        {{ end }}
+                    </div>
+                </div>
+                {{ end }}
+
+                {{ if .Request.AISummary.SuitableFor }}
+                <div class="rounded-xl p-5 bg-violet-50/70 dark:bg-violet-500/[0.06] border border-violet-200/70 dark:border-violet-500/15">
+                    <h3 class="flex items-center gap-2 text-sm font-semibold text-violet-700 dark:text-violet-300 mb-3">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
+                        适合场景
+                    </h3>
+                    <ul class="space-y-1.5 text-sm text-neutral-700 dark:text-neutral-300">
+                        {{ range .Request.AISummary.SuitableFor }}
+                        <li class="flex items-start gap-2"><span class="text-violet-500 mt-1.5 leading-none">•</span><span>{{ . }}</span></li>
+                        {{ end }}
+                    </ul>
+                </div>
+                {{ end }}
+            </section>
+            {{ end }}
+
+            <!-- 标签云 -->
+            {{ if or .Request.Repo.Topics .Request.AISummary.SuggestedTags }}
+            <div class="px-6 sm:px-10"><div class="border-t border-neutral-200/70 dark:border-neutral-800/70"></div></div>
+            <section class="px-6 sm:px-10 py-7 fade-up delay-4">
+                <h3 class="text-[11px] uppercase tracking-[0.14em] font-semibold text-neutral-500 dark:text-neutral-400 mb-3">
+                    主题标签
+                </h3>
+                <div class="flex flex-wrap gap-1.5">
                     {{ range .Request.Repo.Topics }}
-                    <span class="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-medium border border-gray-200">{{ . }}</span>
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-neutral-100 hover:bg-neutral-200/80 dark:bg-neutral-800/70 dark:hover:bg-neutral-800 text-xs font-medium text-neutral-700 dark:text-neutral-300 transition-colors">
+                        {{ . }}
+                    </span>
                     {{ end }}
-                    
                     {{ range .Request.AISummary.SuggestedTags }}
-                    <span class="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-medium border border-indigo-200 border-dashed" title="AI Confidence: {{ if .Confidence }}{{ .Confidence }}{{ else }}N/A{{ end }}">
-                        <i class="fa-solid fa-sparkles mr-1 text-[10px]"></i>{{ .Name }}
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-violet-50 to-blue-50 dark:from-violet-500/10 dark:to-blue-500/10 text-xs font-medium text-violet-700 dark:text-violet-300 border border-violet-200/60 dark:border-violet-500/20"
+                          {{ with .Confidence }}title="AI 置信度 {{ printf "%.2f" . }}"{{ end }}>
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1l1.5 4.5L16 7l-4.5 1.5L10 13l-1.5-4.5L4 7l4.5-1.5L10 1z"/></svg>
+                        {{ .Name }}
                     </span>
                     {{ end }}
                 </div>
-            </div>
+            </section>
+            {{ end }}
 
             <!-- Actions -->
-            <div class="flex flex-col sm:flex-row items-center gap-4 justify-between pt-6 border-t border-gray-100">
-                <div class="flex items-center gap-2 text-gray-400 text-sm font-medium">
-                    <i class="fa-solid fa-cat"></i> Starcat AI
+            <footer class="px-6 sm:px-10 pb-8 pt-2 fade-up delay-5">
+                <div class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <button type="button" id="copyBtn" onclick="copyShareUrl()"
+                            class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800/70 dark:hover:bg-neutral-800 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="9" y="9" width="13" height="13" rx="2"/>
+                            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                        </svg>
+                        <span id="copyText">复制分享链接</span>
+                    </button>
+                    <div class="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                        {{ if .Request.Repo.Homepage }}
+                        <a href="{{ .Request.Repo.Homepage }}" target="_blank" rel="noopener noreferrer"
+                           class="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-semibold text-neutral-700 dark:text-neutral-200 bg-white hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-800 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                            </svg>
+                            官网
+                        </a>
+                        {{ end }}
+                        <a href="{{ .Request.Repo.URL }}" target="_blank" rel="noopener noreferrer"
+                           class="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-neutral-900 hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors shadow-sm">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.78 1.19 1.78 1.19 1.03 1.77 2.71 1.26 3.37.96.11-.75.41-1.26.74-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.18 1.18.92-.26 1.91-.39 2.89-.39.98 0 1.97.13 2.89.39 2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.4-5.25 5.68.42.36.79 1.07.79 2.17 0 1.57-.02 2.83-.02 3.21 0 .31.21.67.8.55 4.56-1.52 7.85-5.83 7.85-10.91C23.5 5.65 18.35.5 12 .5z"/>
+                            </svg>
+                            查看仓库
+                        </a>
+                    </div>
                 </div>
-                <div class="flex items-center gap-3 w-full sm:w-auto">
-                    {{ if .Request.Repo.Homepage }}
-                    <a href="{{ .Request.Repo.Homepage }}" target="_blank" rel="noopener noreferrer" class="flex-1 sm:flex-none text-center px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200">
-                        官方网站
-                    </a>
-                    {{ end }}
-                    <a href="{{ .Request.Repo.URL }}" target="_blank" rel="noopener noreferrer" class="flex-1 sm:flex-none text-center px-6 py-2.5 bg-gray-900 hover:bg-black text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200">
-                        <i class="fa-brands fa-github mr-2"></i>在 GitHub 上查看
-                    </a>
-                </div>
-            </div>
+            </footer>
         </div>
-    </div>
+
+        <!-- 底部小字署名 -->
+        <p class="mt-6 text-center text-xs text-neutral-500 dark:text-neutral-500 fade-up delay-5">
+            由 <a href="/" class="font-semibold gradient-text">Starcat AI</a> 生成的智能项目摘要
+            {{ if .ExpiresAt }} · 链接将于 {{ .ExpiresAt.Format "2006-01-02" }} 过期{{ end }}
+        </p>
+    </article>
+</main>
+
+<script>
+/**
+ * renderMarkdown
+ * ------------------------------------------------------------------
+ * 在 marked.js + DOMPurify 都就绪后，把 <template id="md-source"> 内的
+ * Markdown 文本渲染到 #md-render。
+ * - 使用 textContent 读取，保证特殊字符 (如 <、&) 已被浏览器反转义；
+ * - DOMPurify 净化掉任何潜在的 XSS（script、on* 事件、javascript: 协议等）；
+ * - 给所有外链补 target=_blank + rel=noopener，避免分享页被钓鱼利用。
+ */
+function renderMarkdown() {
+    if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+        return setTimeout(renderMarkdown, 50);
+    }
+    const tpl = document.getElementById('md-source');
+    const out = document.getElementById('md-render');
+    if (!tpl || !out) return;
+
+    // 取 textContent 而不是 innerHTML：textContent 给出的是 DOM 文本节点的字面值
+    // (Go html/template 转义过的 &lt; 已被浏览器还原成 <)，innerHTML 会再次序列化为实体
+    const raw = (tpl.content || tpl).textContent || '';
+    let html;
+    try {
+        marked.setOptions({ gfm: true, breaks: false, mangle: false, headerIds: false });
+        html = marked.parse(raw);
+    } catch (e) {
+        out.textContent = raw;
+        out.classList.replace('md-pending', 'md-ready');
+        return;
+    }
+
+    out.innerHTML = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+    out.querySelectorAll('a[href]').forEach(a => {
+        a.setAttribute('target', '_blank');
+        a.setAttribute('rel', 'noopener noreferrer');
+    });
+    out.classList.replace('md-pending', 'md-ready');
+}
+
+/**
+ * copyShareUrl
+ * ------------------------------------------------------------------
+ * 复制当前分享页 URL 到剪贴板；若 Clipboard API 不可用则降级提示。
+ */
+async function copyShareUrl() {
+    const txt = document.getElementById('copyText');
+    const prev = txt.textContent;
+    try {
+        await navigator.clipboard.writeText(window.location.href);
+        txt.textContent = '已复制 ✓';
+    } catch (e) {
+        txt.textContent = '复制失败';
+    }
+    setTimeout(() => { txt.textContent = prev; }, 1600);
+}
+
+document.addEventListener('DOMContentLoaded', renderMarkdown);
+</script>
+
 </body>
 </html>
