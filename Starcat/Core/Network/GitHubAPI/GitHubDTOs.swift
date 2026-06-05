@@ -21,6 +21,11 @@ import Foundation
 /// - `/user` 端点返回全部字段
 /// - `/user/starred` 嵌套的 `owner` 只返回 id/login/avatar_url
 /// 所以 followers/following/publicRepos 必须可选，否则嵌套 owner 解码失败。
+///
+/// HOM-PROFILE (2026-06-05)：新增个人主页字段（bio / company / location / email /
+/// blog / twitterUsername / htmlUrl）。全部可选，配合 `/user/starred` 嵌套 owner 解码兼容。
+/// 字段直接对应 GitHub `/user` 端点的 snake_case 同名字段（decoder 已开启
+/// `convertFromSnakeCase`），仅 `htmlUrl` 是为了对齐其它 DTO（如 Repo.htmlUrl）的命名约定。
 struct GitHubUserDTO: Decodable, Equatable {
     let id: Int64
     let login: String
@@ -35,6 +40,23 @@ struct GitHubUserDTO: Decodable, Equatable {
     let followers: Int?
     /// 关注数。
     let following: Int?
+
+    // MARK: - 个人主页字段（仅 /user 端点返回；HOM-PROFILE 2026-06-05）
+
+    /// 个人简介，纯文本，可含 @mention（GitHub 不渲染，原样返回）。
+    let bio: String?
+    /// 公司，如 "@apple" 或 "Apple Inc."（GitHub 不强制格式）。
+    let company: String?
+    /// 地理位置（用户自填）。
+    let location: String?
+    /// 公开邮箱；用户在 Settings → Profile 勾选"Display email" 才会返回。
+    let email: String?
+    /// 个人网站 URL；GitHub 不保证带 scheme（可能是 `dong4j.github.io`）。
+    let blog: String?
+    /// Twitter / X 用户名（不含 @），用户在 Profile Settings 配置。
+    let twitterUsername: String?
+    /// GitHub 主页完整 URL（`https://github.com/{login}`）。
+    let htmlUrl: String?
 }
 
 // MARK: - License

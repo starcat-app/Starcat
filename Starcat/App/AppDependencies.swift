@@ -76,6 +76,16 @@ final class AppDependencies {
     /// Release 后台轮询调度器（NSBackgroundActivityScheduler）。
     let releasePoller: ReleasePoller
 
+    // MARK: - HOM-PROFILE 贡献草坪（2026-06-05）
+
+    /// 用户贡献草坪服务（GraphQL + 3h 缓存 + UserDefaults 持久化）。
+    ///
+    /// 单实例随 AppDependencies 生命周期：sidebar 显示时调 `load(login:)`，命中 TTL 直接返回，
+    /// 不会重复发请求。登出时 SidebarView 触发 `reset(login:)` 清缓存。
+    /// 注意持有的是具体 actor 类型 `GitHubAPIClient` 而非 protocol——因为 `graphql<T>` 是
+    /// 泛型方法，未挂在 `GitHubAPIClientProtocol` 上以保持 mock 简单。
+    let contributionService: ContributionService
+
     // MARK: - 初始化
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
@@ -172,5 +182,10 @@ final class AppDependencies {
         let notificationService = ReleaseNotificationService()
         self.releaseNotificationService = notificationService
         self.releasePoller = ReleasePoller(monitor: monitor, notificationService: notificationService)
+
+        // HOM-PROFILE 2026-06-05：贡献草坪服务。
+        // 直接持有具体 GitHubAPIClient（actor），不走 protocol——因为 graphql<T> 是泛型方法，
+        // 未挂在协议上以保持 Mock 简单（详见 ContributionService.swift 注释）。
+        self.contributionService = ContributionService(apiClient: api)
     }
 }

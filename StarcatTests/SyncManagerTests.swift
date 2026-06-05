@@ -25,7 +25,9 @@ struct SyncManagerTests {
 
     private func makeDTO(id: Int64) -> StarredRepoDTO {
         let user = GitHubUserDTO(id: 1, login: "tester", name: nil, avatarUrl: nil,
-                                 publicRepos: nil, followers: nil, following: nil)
+                                 publicRepos: nil, followers: nil, following: nil,
+                                 bio: nil, company: nil, location: nil, email: nil,
+                                 blog: nil, twitterUsername: nil, htmlUrl: nil)
         let repo = GitHubRepoDTO(
             id: id,
             name: "r\(id)",
@@ -241,7 +243,9 @@ extension SyncManagerTests {
     /// 构造 starred_at 可控的 DTO,便于做 cutoff 时间比较。
     private func makeDTO(id: Int64, starredAt: String) -> StarredRepoDTO {
         let user = GitHubUserDTO(id: 1, login: "tester", name: nil, avatarUrl: nil,
-                                 publicRepos: nil, followers: nil, following: nil)
+                                 publicRepos: nil, followers: nil, following: nil,
+                                 bio: nil, company: nil, location: nil, email: nil,
+                                 blog: nil, twitterUsername: nil, htmlUrl: nil)
         let repo = GitHubRepoDTO(
             id: id, name: "r\(id)", fullName: "tester/r\(id)", owner: user,
             description: nil, language: "Swift",

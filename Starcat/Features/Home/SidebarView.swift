@@ -20,6 +20,8 @@ struct SidebarView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(AuthSession.self) private var authSession
+    /// HOM-PROFILE 2026-06-05：贡献草坪数据来源。@Observable，payload 变化时 sidebar 自动重渲染。
+    @Environment(ContributionService.self) private var contributionService
 
     /// 当前打开/收起 Languages 组的状态。
     @State private var languagesExpanded: Bool = true
@@ -56,14 +58,37 @@ struct SidebarView: View {
         }
     }
 
-    /// Sidebar 固定顶部区：用户卡 + 一级入口。
+    /// Sidebar 固定顶部区：用户卡 + 贡献草坪 + 一级入口。
     ///
     /// 这里不再用 `safeAreaInset`，因为新增一级入口后列表滚动内容会进入 inset 区域下方，
     /// 视觉上和入口行重叠。固定 header 与下方 List 分开布局，可以让滚动边界由 SwiftUI
     /// 正常计算，同时统一背景材质，避免统计数据与入口行之间出现色差。
+    ///
+    /// HOM-PROFILE 2026-06-05：在 rootNavigationBar 上方插入贡献草坪。
+    /// 仅当已登录时显示（未登录拿不到 user.login，也没必要展示）。
     private var sidebarFixedHeader: some View {
         VStack(spacing: 0) {
             SidebarHeaderView(trendingRepo: currentTrendingRepo)
+
+            // 贡献草坪：登录后才有效；首次显示触发 .task 拉取（命中 TTL 自动 no-op）。
+            // 2026-06-05 follow-up：透传 `lastFetchedAt` 给草坪显示"更新于 X 分前"。
+            if case .authenticated(let user) = authSession.state {
+                ContributionGraphView(
+                    payload: contributionService.payload,
+                    isLoading: contributionService.isLoading,
+                    lastFetchedAt: contributionService.lastFetchedAt,
+                    login: user.login
+                )
+                .padding(.horizontal, 14)
+                .padding(.top, 4)
+                .padding(.bottom, 8)
+                .task(id: user.login) {
+                    // 用 user.login 作为 task id：账号切换时自动重新加载。
+                    // ContributionService 内部已做 TTL 与 inflight 互斥，重复调用安全。
+                    contributionService.load(login: user.login)
+                }
+            }
+
             rootNavigationBar
                 .padding(.horizontal, 8)
                 .padding(.top, 10)
