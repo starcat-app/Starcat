@@ -41,6 +41,10 @@ struct SidebarView: View {
     /// 语言色在 Trending 页也能联动（2026-06-02 21:38 接入）。Manage 页面应为 nil。
     /// 真源在 `HomeView.@State selectedTrendingRepo`，通过普通参数（非 binding）透传。
     var currentTrendingRepo: TrendingRepo?
+    /// 当前 Activity 选中卡片的强调色，透传给顶部头像卡背景。
+    ///
+    /// 只传最终颜色而不传 `ActivityItem`，避免 Sidebar 需要理解 Activity 的详情模型。
+    var currentActivityTintColor: Color?
 
     /// HOM-73：控制登录 sheet 的显示。
     @State private var showLoginSheet: Bool = false
@@ -63,7 +67,10 @@ struct SidebarView: View {
     /// 正常计算，同时统一背景材质，避免统计数据与入口行之间出现色差。
     private var sidebarFixedHeader: some View {
         VStack(spacing: 0) {
-            SidebarHeaderView(trendingRepo: currentTrendingRepo)
+            SidebarHeaderView(
+                trendingRepo: currentTrendingRepo,
+                activityTintColor: currentActivityTintColor
+            )
             rootNavigationBar
                 .padding(.horizontal, 8)
                 .padding(.top, 10)
