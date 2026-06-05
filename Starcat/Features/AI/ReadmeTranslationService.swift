@@ -150,19 +150,23 @@ final class ReadmeTranslationService {
         // 翻译走 chat 协议。复用 summary 的 temperature / maxToken / timeout，
         // 但**强制 text 响应**（不能要求 JSON）——README 翻译输出必须保留 HTML，
         // 包裹一层 JSON 等于二次序列化逃逸字符。
+        // HOM-68 follow-up v9：从 model descriptor 拿覆盖参数（若设过），
+        // 否则按 capability 默认；任务粒度的 task.parameters 仅做最终兜底。
+        let effectiveParams = settings.effectiveParameters(for: task)
+
         let aiRequest = AIChatRequest(
             systemPrompt: systemPrompt,
             userPrompt: userPrompt,
             history: [],
             model: model,
-            parameters: task.parameters,
+            parameters: effectiveParams,
             responseFormat: .text
         )
 
         let translatedHtml = try await runChat(
             client: client,
             request: aiRequest,
-            preferStream: task.parameters.streamEnabled,
+            preferStream: effectiveParams.streamEnabled,
             onDelta: onDelta
         )
 
@@ -211,7 +215,7 @@ final class ReadmeTranslationService {
             baseURL: profile.baseURL,
             chatModel: model,
             embeddingModel: settings.aiEmbeddingTask.resolvedModelName,
-            timeoutInterval: task.parameters.timeoutSeconds
+            timeoutInterval: settings.effectiveParameters(for: task).timeoutSeconds
         ))
         return (client, model)
     }

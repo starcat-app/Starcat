@@ -111,6 +111,11 @@ struct AIModelDescriptor: Codable, Identifiable, Equatable, Sendable {
     var capability: AIModelCapability
     var isEnabled: Bool
     var isCustom: Bool
+    /// HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
+    /// 模型粒度的参数覆盖。`nil` 表示走 `AIModelParameters.defaults(for: capability)`，
+    /// 非 `nil` 时这份覆盖会被 `AppSettings.effectiveParameters(for:)` 在任务调用时
+    /// 拉取使用。可空 + 默认 nil 让 Codable 解码老版本数据自动落到"未覆盖"状态。
+    var parameters: AIModelParameters?
 
     init(
         id: String? = nil,
@@ -119,7 +124,8 @@ struct AIModelDescriptor: Codable, Identifiable, Equatable, Sendable {
         ownedBy: String? = nil,
         capability: AIModelCapability? = nil,
         isEnabled: Bool = true,
-        isCustom: Bool = false
+        isCustom: Bool = false,
+        parameters: AIModelParameters? = nil
     ) {
         self.providerID = providerID
         self.name = name
@@ -128,6 +134,7 @@ struct AIModelDescriptor: Codable, Identifiable, Equatable, Sendable {
         self.capability = capability ?? AIModelCapability.inferred(from: name)
         self.isEnabled = isEnabled
         self.isCustom = isCustom
+        self.parameters = parameters
     }
 }
 
@@ -253,6 +260,20 @@ struct AIModelParameters: Codable, Equatable, Sendable {
         timeoutSeconds: 600,
         streamEnabled: true
     )
+
+    /// HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：模型粒度参数引入后，
+    /// `AIModelDescriptor.parameters == nil` 时需要一份"按能力分类"的默认参数兜底。
+    /// chat / unknown 用 summaryDefault（128K maxToken / 0.2 温度 / 300s 超时 / 流式 on），
+    /// embedding 用 embeddingDefault（不需要温度 / maxToken 等 chat 字段）。
+    ///
+    /// 历史的 `AIModelTaskConfiguration.parameters` 仍保留（作为 effectiveParameters
+    /// 找不到 descriptor 时的二级 fallback），但 UI 已不再暴露任务粒度的参数编辑。
+    static func defaults(for capability: AIModelCapability) -> AIModelParameters {
+        switch capability {
+        case .embedding: return .embeddingDefault
+        case .chat, .unknown: return .summaryDefault
+        }
+    }
 }
 
 /// Prompt 配置。

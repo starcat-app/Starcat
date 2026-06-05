@@ -584,6 +584,25 @@ final class AppSettings {
         }
     }
 
+    /// HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
+    /// 解析一个任务在调用时实际生效的 AI 参数。
+    ///
+    /// 解析顺序（先命中即返回）：
+    /// 1. 任务绑定的 (providerID, modelID) descriptor 找到了 → 用 descriptor.parameters，
+    ///    若 descriptor.parameters 为 nil 走 `AIModelParameters.defaults(for: capability)`；
+    /// 2. 找不到 descriptor（model 被删 / providerID 不再存在 / 老 build 升级中途）→
+    ///    回退到 task 持久化的 legacy parameters，保住老用户的体验不被破坏。
+    ///
+    /// UI 已不再暴露任务粒度的"模型参数"编辑（v9 改成模型粒度的齿轮按钮），
+    /// 但 task.parameters 字段保留作为 二级 fallback，避免数据迁移阻塞发布。
+    func effectiveParameters(for task: AIModelTaskConfiguration) -> AIModelParameters {
+        if let profile = aiProviderProfiles.first(where: { $0.id == task.providerID }),
+           let model = profile.models.first(where: { $0.name == task.modelID }) {
+            return model.parameters ?? AIModelParameters.defaults(for: model.capability)
+        }
+        return task.parameters
+    }
+
     private static func makeDefaultAIProviderProfile(
         provider: AIServiceProvider,
         baseURL: String,

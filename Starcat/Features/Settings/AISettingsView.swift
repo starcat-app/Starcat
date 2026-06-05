@@ -29,7 +29,6 @@ struct AISettingsTab: View {
     @State private var apiKeys: [String: String] = [:]
     @State private var isTestingProfileID: String?
     @State private var keyError: String?
-    @State private var parameterTask: AIModelTask = .summary
     @State private var promptTask: AIModelTask = .summary
 
     /// HOM-68 follow-up v7 (dong4j 反馈 2026-06-05 23:20)：
@@ -40,10 +39,12 @@ struct AISettingsTab: View {
     @State private var taskModelTask: AIModelTask = .summary
 
     // HOM-68 follow-up v2 (2026-06-05 22:30 dong4j 反馈)：
-    // 模型参数 / Prompt 不是首次配置必填项，默认收起来减小视觉噪音，需要时再展开。
+    // Prompt 不是首次配置必填项，默认收起来减小视觉噪音，需要时再展开。
     // 用 SceneStorage 而不是 @State，让用户的展开偏好跨设置页打开持久化，
     // 但保持"应用首次启动默认折叠"语义。
-    @SceneStorage("settings.ai.parameters.expanded") private var isParametersExpanded: Bool = false
+    //
+    // HOM-68 follow-up v9：原"模型参数"区已迁到"已发现模型"每行的齿轮 popover
+    // （模型粒度，不再按任务），不再需要 isParametersExpanded SceneStorage。
     @SceneStorage("settings.ai.prompt.expanded") private var isPromptExpanded: Bool = false
 
     // HOM-68 follow-up v7：把"已发现模型" / "默认设置" 也变成可折叠，
@@ -55,11 +56,15 @@ struct AISettingsTab: View {
     @SceneStorage("settings.ai.taskModels.expanded") private var isTaskModelsExpanded: Bool = false
 
     var body: some View {
+        // HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
+        // 删除独立的"模型参数"区。原因：参数与"任务"绑定有歧义——同一模型被
+        // 摘要 / 标签 / 翻译复用时，按任务调参数会出现"在'模型参数 → 摘要'调
+        // temperature 只对'用 X 模型的摘要任务'生效，其它任务用 X 模型还是默认值"
+        // 的反直觉行为。改成每行模型一个齿轮按钮 + popover，参数与"模型"绑定。
         Form {
             providerSection
             enabledModelsSection
             taskModelsSection
-            parametersSection
             promptSection
             privacySection
         }
@@ -185,7 +190,8 @@ struct AISettingsTab: View {
                         AIModelListView(
                             profile: profile,
                             enabledBinding: { model in modelEnabledBinding(profile.id, model.id) },
-                            capabilityBinding: { model in modelCapabilityBinding(profile.id, model.id) }
+                            capabilityBinding: { model in modelCapabilityBinding(profile.id, model.id) },
+                            parametersBinding: { model in modelParametersBinding(profile.id, model.id) }
                         )
                     }
                 }
@@ -284,78 +290,17 @@ struct AISettingsTab: View {
         }
     }
 
-    // MARK: - Parameters
+    // MARK: - Parameters (已迁移到 AIModelListView 的齿轮 popover)
 
-    /// HOM-68 follow-up v3 (dong4j 反馈 2026-06-05 22:40)：
-    /// 任务 picker 之前与 "Temperature/Top P/..." 同列在 DisclosureGroup 里，
-    /// `pickerStyle(.segmented)` 自带的"任务"label 会占掉一段固定宽度，加上
-    /// DisclosureGroup 的左侧缩进，4 个任务按钮容易被挤到只剩两字符宽度（截图）。
-    /// 改法：
-    ///   1. 任务 picker `.labelsHidden()`，去掉左侧 "任务" label；
-    ///   2. `.frame(maxWidth: .infinity)` 让 picker 占满折叠组的可用宽度；
-    ///   3. Top K / 最大 Token / 超时时间 由 Stepper 改 TextField（带 NumberFormatter
-    ///      + 阈值钳制），用户可以直接键入数字，不再点 100 次 Stepper；
-    ///   4. "最大 Token" 单位换成 K（内部仍存原始 token 数），默认 128 K；
-    ///   5. 删除底部 "Top K 不是 OpenAI..." 备注——保留在代码注释里给开发者看就够了。
-    ///
-    /// 实现注记：Top K 在 OpenAI Chat Completions 不是标准字段，当前 AIClient 仅
-    /// 把它保存到配置里，未来对接 LM Studio / Ollama 原生 API 时再发送。
-    private var parametersSection: some View {
-        Section {
-            DisclosureGroup(isExpanded: $isParametersExpanded) {
-                Picker("任务", selection: $parameterTask) {
-                    ForEach(AIModelTask.allCases) { task in
-                        Text(task.displayName).tag(task)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
-
-                let isEmbedding = parameterTask == .embedding
-                parameterSlider("Temperature", value: parameterDoubleBinding(parameterTask, \.temperature), range: 0...2, disabled: isEmbedding)
-                parameterSlider("Top P", value: parameterDoubleBinding(parameterTask, \.topP), range: 0...1, disabled: isEmbedding)
-
-                parameterIntField(
-                    "Top K",
-                    binding: parameterIntBinding(parameterTask, \.topK),
-                    range: 0...500,
-                    unit: nil,
-                    disabled: isEmbedding
-                )
-                parameterIntField(
-                    "最大 Token",
-                    binding: parameterMaxTokensKBinding(parameterTask),
-                    range: 1...512,
-                    unit: "K",
-                    disabled: isEmbedding
-                )
-                parameterIntField(
-                    "超时时间",
-                    binding: parameterTimeoutSecondsBinding(parameterTask),
-                    range: 30...3_600,
-                    unit: "秒",
-                    disabled: false
-                )
-
-                // HOM-68 follow-up v6 (dong4j 反馈 2026-06-05 23:10)：
-                // 之前 Toggle 占满整行，开关控件在行的最右边——比 TextField
-                // 多出 44pt 单位列宽度，跟上面 5 行参数对不齐。改成手动 HStack：
-                // 文字 label 左对齐，Spacer 把开关推到右侧，最后塞 44pt Color.clear
-                // 把开关左移 44pt，让开关右边缘对齐 TextField 右边缘。
-                HStack {
-                    Text("优先使用流式响应")
-                    Spacer(minLength: 8)
-                    Toggle("", isOn: parameterBoolBinding(parameterTask, \.streamEnabled))
-                        .labelsHidden()
-                        .disabled(parameterTask == .embedding || parameterTask == .tags)
-                    Color.clear.frame(width: 44)
-                }
-            } label: {
-                disclosureLabel("模型参数", isExpanded: $isParametersExpanded)
-            }
-        }
-    }
+    // HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
+    // 原本独立的 `parametersSection`（按任务调 Temperature/Top P/Top K/MaxToken/
+    // Timeout/Stream）已删除。参数现在与"模型"绑定，编辑入口在"已发现模型"列表
+    // 每行最右侧的齿轮按钮 → popover（`AIModelParametersPopover`）。
+    //
+    // 删除的辅助函数：parametersSection / parameterSlider / parameterIntField /
+    // parameterDoubleBinding / parameterIntBinding / parameterBoolBinding /
+    // parameterMaxTokensKBinding / parameterTimeoutSecondsBinding——这些都是
+    // "task → AIModelParameters" 路径上的辅助，迁移后 popover 内部自带等价控件。
 
     /// HOM-68 follow-up v5 (dong4j 反馈 2026-06-05 23:00)：
     /// v4 用 `Text + onTapGesture` 不生效——SwiftUI 在 `Form(.grouped)` 里给
@@ -381,74 +326,6 @@ struct AISettingsTab: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private func parameterSlider(
-        _ title: String,
-        value: Binding<Double>,
-        range: ClosedRange<Double>,
-        disabled: Bool
-    ) -> some View {
-        HStack {
-            Text(title)
-                .frame(width: 90, alignment: .leading)
-            Slider(value: value, in: range)
-                .disabled(disabled)
-            Text(value.wrappedValue.formatted(.number.precision(.fractionLength(2))))
-                .font(.caption.monospacedDigit())
-                .frame(width: 44, alignment: .trailing)
-        }
-    }
-
-    /// 整数参数输入行：90pt 标题列 + 中段 TextField 占满（与 Slider 同宽）+ 44pt 单位列。
-    ///
-    /// HOM-68 follow-up v5 (dong4j 反馈 2026-06-05 23:00)：之前 TextField 固定
-    /// 90pt 靠右，比同一组里的 Slider 短一大截，竖向看像断行。改为 TextField
-    /// 不指定 width 让它吃满中段（与 Slider 同样的"中段填充"行为），右侧 44pt
-    /// 单位列与 Slider 的"当前值"列对齐，三种参数（Top K / Token / 超时）从此
-    /// 与 Temperature / Top P 在视觉上形成统一栅格。
-    ///
-    /// 钳制策略：值只在用户提交（失焦 / 回车）时才写回 binding，写回时再做
-    /// `clamp(into: range)`。这样在键入过程中不会出现"输入到 12 就立刻变成 100"
-    /// 的反人类体验。
-    private func parameterIntField(
-        _ title: String,
-        binding: Binding<Int>,
-        range: ClosedRange<Int>,
-        unit: String?,
-        disabled: Bool
-    ) -> some View {
-        HStack {
-            Text(title)
-                .frame(width: 90, alignment: .leading)
-            TextField(
-                "",
-                value: Binding(
-                    get: { binding.wrappedValue },
-                    set: { newValue in
-                        binding.wrappedValue = min(max(newValue, range.lowerBound), range.upperBound)
-                    }
-                ),
-                format: .number
-            )
-            .textFieldStyle(.roundedBorder)
-            .multilineTextAlignment(.trailing)
-            .disabled(disabled)
-            if let unit {
-                // HOM-68 follow-up v6 (dong4j 反馈 2026-06-05 23:10)：
-                // 单位列改右对齐——之前 `.leading` 时 "K" / "秒" 这种 1-2 字符
-                // 会贴在 44pt 列的左边、距离右边缘还有一大段空白，竖向看 3 个
-                // 单位不在一条线上，对齐感差。改 `.trailing` 后 "K" / "秒" 都
-                // 紧贴右边缘，竖向形成统一的对齐线。
-                Text(unit)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, alignment: .trailing)
-            } else {
-                // 占位与有单位行对齐，避免输入框宽度跳变（同 Slider 行右侧 44pt 值列）。
-                Color.clear.frame(width: 44)
-            }
-        }
     }
 
     // MARK: - Prompt
@@ -774,59 +651,17 @@ struct AISettingsTab: View {
         )
     }
 
-    private func parameterDoubleBinding(
-        _ task: AIModelTask,
-        _ keyPath: WritableKeyPath<AIModelParameters, Double>
-    ) -> Binding<Double> {
+    /// HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
+    /// 模型粒度参数 binding。包给 `AIModelListView` 让齿轮按钮 popover 写回。
+    /// 返回的是可空 binding——`nil` 表示"未覆盖，走 capability 默认"，popover
+    /// 内部会在第一次实际改值时把它 materialize 成非 nil 值。
+    private func modelParametersBinding(_ profileID: String, _ modelID: String) -> Binding<AIModelParameters?> {
         Binding(
-            get: { taskConfig(task).parameters[keyPath: keyPath] },
-            set: { value in updateTask(task) { $0.parameters[keyPath: keyPath] = value } }
-        )
-    }
-
-    private func parameterIntBinding(
-        _ task: AIModelTask,
-        _ keyPath: WritableKeyPath<AIModelParameters, Int>
-    ) -> Binding<Int> {
-        Binding(
-            get: { taskConfig(task).parameters[keyPath: keyPath] },
-            set: { value in updateTask(task) { $0.parameters[keyPath: keyPath] = value } }
-        )
-    }
-
-    private func parameterBoolBinding(
-        _ task: AIModelTask,
-        _ keyPath: WritableKeyPath<AIModelParameters, Bool>
-    ) -> Binding<Bool> {
-        Binding(
-            get: { taskConfig(task).parameters[keyPath: keyPath] },
-            set: { value in updateTask(task) { $0.parameters[keyPath: keyPath] = value } }
-        )
-    }
-
-    /// "最大 Token" 的 K 单位 binding：getter / setter 在 1024 倍数与原始 token 数之间转换。
-    /// 之前 UI 直接显示 token 数（如 128000），现在按 K 显示（128），输入更直观。
-    /// 内部仍以原始 token 数 persist，保证调 OpenAI / 通义千问等 API 时不需要换算。
-    private func parameterMaxTokensKBinding(_ task: AIModelTask) -> Binding<Int> {
-        Binding(
-            get: {
-                let tokens = taskConfig(task).parameters.maxCompletionTokens
-                return max(0, tokens / 1024)
-            },
-            set: { kValue in
-                updateTask(task) { $0.parameters.maxCompletionTokens = max(0, kValue) * 1024 }
-            }
-        )
-    }
-
-    /// 超时时间 binding：底层是 Double 秒，UI 整数秒输入。
-    /// timeoutSeconds 历史上是 Double 是为了将来支持亚秒级（如 0.5s），但用户层面
-    /// 只用整数秒，所以 binding 在两侧做 Int <-> Double 转换。
-    private func parameterTimeoutSecondsBinding(_ task: AIModelTask) -> Binding<Int> {
-        Binding(
-            get: { Int(taskConfig(task).parameters.timeoutSeconds.rounded()) },
-            set: { seconds in
-                updateTask(task) { $0.parameters.timeoutSeconds = Double(max(0, seconds)) }
+            get: { model(profileID: profileID, modelID: modelID)?.parameters },
+            set: { newParameters in
+                updateModel(profileID: profileID, modelID: modelID) { model in
+                    model.parameters = newParameters
+                }
             }
         )
     }
