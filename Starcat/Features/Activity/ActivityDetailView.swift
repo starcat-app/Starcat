@@ -25,10 +25,10 @@ struct ActivityDetailView: View {
     /// 不复用 HomeView 注入给 Manage / Trending 的 ReadmeViewModel，是为了避免
     /// Activity 里点星标 / 仓库 / 建议活动时污染右侧主详情页的 README 状态。
     @State private var readmeVM: ReadmeViewModel?
-    /// repo-backed Activity 使用与 Manage 详情页同款“README 滚动隐藏顶部面板”。
+    /// repo-backed Activity 使用与 Manage 详情页同款“README 滚动收缩顶部面板”。
     ///
     /// 独立持有状态是为了避免 Activity 的折叠态污染 Manage / Trending 详情页。
-    @State private var isRepoMetadataPanelHidden: Bool = false
+    @State private var repoMetadataPanelCollapseProgress: CGFloat = 0
     @State private var repoMetadataPanelHeight: CGFloat = 0
     @State private var showUnstarConfirm: Bool = false
     @State private var unstarError: String?
@@ -47,6 +47,7 @@ struct ActivityDetailView: View {
                     ScrollView {
                         activityMetadataPanel(item)
                     }
+                    .detailScrollViewStyle()
                 }
             } else {
                 emptyState
@@ -57,7 +58,7 @@ struct ActivityDetailView: View {
         }
         .onChange(of: item?.id) { _, _ in
             withAnimation(metadataPanelAnimation) {
-                isRepoMetadataPanelHidden = false
+                repoMetadataPanelCollapseProgress = 0
             }
         }
         .alert("repo.unstar.confirm", isPresented: $showUnstarConfirm, presenting: item?.repo) { repo in
@@ -250,9 +251,8 @@ struct ActivityDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             if let repo = item.repo {
                 CollapsibleRepoMetadataPanel(
-                    isHidden: $isRepoMetadataPanelHidden,
-                    panelHeight: $repoMetadataPanelHeight,
-                    animation: metadataPanelAnimation
+                    collapseProgress: $repoMetadataPanelCollapseProgress,
+                    panelHeight: $repoMetadataPanelHeight
                 ) {
                     RepoMetadataHeaderView(
                         repo: repo,
@@ -299,15 +299,14 @@ struct ActivityDetailView: View {
         }
     }
 
-    /// Activity repo-backed 详情与 Manage 详情页保持同款滚动隐藏策略。
+    /// Activity repo-backed 详情与 Manage / Trending 详情页保持同款滚动收缩策略。
     ///
-    /// 只在跨过阈值时改变 Bool，避免 WebView 每个滚动像素都触发 SwiftUI 重新布局。
+    /// 这里复用 `RepoDetailView.metadataCollapseProgress(for:)`，确保所有 repo-backed
+    /// 右侧详情页的起步距离、收缩行程和顶部抖动过滤完全一致。
     private func updateRepoMetadataPanelVisibility(offsetY: CGFloat) {
-        let shouldHide = isRepoMetadataPanelHidden ? offsetY > 8 : offsetY > 32
-        guard shouldHide != isRepoMetadataPanelHidden else { return }
-        withAnimation(metadataPanelAnimation) {
-            isRepoMetadataPanelHidden = shouldHide
-        }
+        let progress = RepoDetailView.metadataCollapseProgress(for: offsetY)
+        guard abs(progress - repoMetadataPanelCollapseProgress) > 0.01 else { return }
+        repoMetadataPanelCollapseProgress = progress
     }
 
     private func assetRow(_ asset: ReleaseAsset) -> some View {
@@ -462,7 +461,7 @@ struct ActivityDetailView: View {
             try await dependencies.apiClient.unstar(owner: repo.owner, repo: repo.name)
             try await dependencies.repoRepository.markUnstarred(repoId: repo.id, userID: user.id)
             await homeViewModel.refreshSidebar()
-            await homeViewModel.reloadItems()
+            await homeViewModel.reloadItems(forceRefresh: true)
         } catch {
             unstarError = "repo.unstar.actionFailed"
             AppLog.sync.error("activity unstar failed: \(error.localizedDescription, privacy: .public)")

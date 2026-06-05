@@ -22,9 +22,8 @@ extension View {
     /// - Parameters:
     ///   - index: row 在当前快照中的顺序，只用于计算短 stagger delay。
     ///   - snapshotID: 列表快照版本；快照变化时重新播放 reveal。
-    ///   - skipAnimation: 当前数据来自缓存（用户已看过该分类）时传 true，
-    ///     行直接显现不跑入场动画，避免"切到已访问分类还要等 0.22s 动画"的卡顿感。
-    ///     默认 false，保留首次加载 / 排序切换的渐进入场体验。
+    ///   - skipAnimation: 少数调用方可显式跳过行动画（例如 Reduce Motion 之外的特殊性能兜底）。
+    ///     默认 false，保留首次加载 / 切分类 / 排序切换的渐进入场体验。
     func listRowReveal(index: Int, snapshotID: Int, skipAnimation: Bool = false) -> some View {
         modifier(ListRowRevealModifier(index: index, snapshotID: snapshotID, skipAnimation: skipAnimation))
     }
@@ -36,8 +35,8 @@ extension View {
 /// - 用取模 delay，而不是 `index * delay`，避免滚动到很靠后的 row 时出现长时间等待。
 /// - 只做 opacity + 小幅 y-offset，不参与 layout 大小变化，降低 List 重排风险。
 /// - 不做数据库层分页；真正 pagination 需要单独设计 cursor / 排序 / 搜索 / 缓存一致性。
-/// - `skipAnimation` 旁路：缓存命中时直接显现，把"切已访问分类"的体验做到瞬切。
-///   逻辑等价于 reduceMotion，但语义不同——这是性能优化，不是无障碍诉求。
+/// - `skipAnimation` 旁路只留给明确不应播放行动画的调用方；普通列表切换继续保留 reveal。
+///   逻辑等价于 reduceMotion，但语义不同——这是性能兜底，不是无障碍诉求。
 private struct ListRowRevealModifier: ViewModifier {
     let index: Int
     let snapshotID: Int

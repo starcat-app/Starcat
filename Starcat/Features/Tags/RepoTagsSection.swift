@@ -57,7 +57,7 @@ struct RepoTagsSection: View {
                 viewModel?.onTagsChanged = { [weak homeViewModel] in
                     Task {
                         await homeViewModel?.refreshSidebar()
-                        await homeViewModel?.reloadItems()
+                        await homeViewModel?.reloadItems(forceRefresh: true)
                     }
                 }
             }
