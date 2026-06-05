@@ -20,6 +20,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 /// 模型粒度参数编辑 popover 内容。
 struct AIModelParametersPopover: View {
@@ -43,11 +44,23 @@ struct AIModelParametersPopover: View {
         .padding(20)
         .frame(width: 420)
         // HOM-68 follow-up v10 (dong4j 反馈 2026-06-05 23:55)：
-        // 项目强制规则 docs/详细设计/07-UI交互设计.md §3.1——Popover 打开时 macOS
-        // 会把焦点自动放到内部第一个可聚焦元素上，TextField / 按钮都会套蓝色
-        // focus ring。在 popover 根加一次 .focusEffectDisabled() 让所有子视图
-        // 都遵循"不显示 focus ring"的视觉约定。
+        // docs/详细设计/07-UI交互设计.md §3.1——Popover 打开时 macOS 会把焦点自动
+        // 放到内部第一个可聚焦元素上。在 popover 根加 .focusEffectDisabled()，
+        // 让 plain Button / Toggle / TextField 等 SwiftUI 一等控件不画 focus ring。
         .focusEffectDisabled()
+        // HOM-68 follow-up v11 (dong4j 反馈 2026-06-06 00:14)：
+        // .focusEffectDisabled() 对 Slider 内部的 NSSlider 不生效——popover 出现时
+        // 系统仍把第一个 Slider（Temperature）设为首响应者，NSSlider 会自己画出
+        // thumb 周围那圈蓝色 focus halo（截图里的圆形蓝圈），SwiftUI 没暴露关闭
+        // NSSlider focus ring 的开关。沿用项目既有"AppKit 窄范围修正"思路（见
+        // 已废弃的 ToolbarSearchFocusRingDisabler 模式），在 popover 出现的下一
+        // 个 runloop 把首响应者清回 nil，让 popover 以"无焦点"状态出现，从根上
+        // 避免 thumb 蓝 halo。
+        .onAppear {
+            DispatchQueue.main.async {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+            }
+        }
     }
 
     private var header: some View {
