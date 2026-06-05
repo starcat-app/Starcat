@@ -250,10 +250,13 @@ final class ReadmeTranslationService {
     // MARK: - Prompt 构造（HOM-68 follow-up v2）
 
     /// 占位符：将被替换为 `ReadmeTranslationLanguage.promptName`（如 `Simplified Chinese`）。
-    static let targetLanguagePlaceholder = "{targetLanguage}"
+    ///
+    /// 标 `nonisolated` 与下面 `renderTemplate` 一致：纯字符串常量，无任何 actor
+    /// 状态依赖，在 Swift 6 严格隔离下，被 `nonisolated` 函数引用必须是 nonisolated。
+    nonisolated static let targetLanguagePlaceholder = "{targetLanguage}"
 
     /// 占位符：将被替换为源 README HTML 片段。与 summary / tags 保持一致。
-    static let contextPlaceholder = "{context}"
+    nonisolated static let contextPlaceholder = "{context}"
 
     /// 替换 prompt 模板里的 `{targetLanguage}` / `{context}` 占位符。
     ///

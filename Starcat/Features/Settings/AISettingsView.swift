@@ -191,7 +191,23 @@ struct AISettingsTab: View {
     }
 
     private func taskModelRow(_ task: AIModelTask) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // HOM-68 follow-up v3 (dong4j 反馈 #2)：
+        // 之前模型下拉用 `groupedEnabledModels(for:)` 汇总所有 provider 的模型，
+        // 按 `Text(model.name).tag(model.name)` 绑定。如果两个 provider 都有
+        // 同名模型（如 通义千问 / DeepSeek 都提供 `deepseek-v4-pro`），string tag
+        // 冲突会让两边都显示"已勾选"。
+        //
+        // 修复：模型下拉只列出**当前选中 provider** 的模型，从根上消除同名冲突。
+        // Provider 切换由 `taskProviderBinding` 兜底——切 provider 时自动把
+        // modelID 重置为新 provider 的第一个 chat/embedding 模型。
+        // 这也让 "Provider + 模型" 形成一个完整的"任务 → 服务商 → 模型"三段选择，
+        // 阅读顺序更线性，对用户更友好。
+        let currentProviderID = taskConfig(task).providerID
+        let availableModels = enabledModels(
+            providerID: currentProviderID,
+            capability: task.requiredCapability
+        )
+        return VStack(alignment: .leading, spacing: 8) {
             Text(task.displayName)
                 .font(.subheadline.weight(.semibold))
 
@@ -205,11 +221,12 @@ struct AISettingsTab: View {
                 .frame(width: 180)
 
                 Picker("模型", selection: taskModelBinding(task)) {
-                    ForEach(groupedEnabledModels(for: task), id: \.profile.id) { group in
-                        Section(group.profile.displayName) {
-                            ForEach(group.models) { model in
-                                Text(model.name).tag(model.name)
-                            }
+                    if availableModels.isEmpty {
+                        Text("（无可用模型，请测试并获取模型，或勾选「自定义」）")
+                            .tag("")
+                    } else {
+                        ForEach(availableModels) { model in
+                            Text(model.name).tag(model.name)
                         }
                     }
                 }
@@ -230,10 +247,20 @@ struct AISettingsTab: View {
 
     // MARK: - Parameters
 
-    /// HOM-68 follow-up v2 (dong4j 反馈 #6)：
-    /// 模型参数不是首次配置必填项（每个任务都有合理默认值），DisclosureGroup 默认折叠，
-    /// 用户需要微调时再展开。`isParametersExpanded` 用 SceneStorage 让用户展开偏好跨次
-    /// 打开设置页持久化，但保持"应用首次启动默认折叠"语义。
+    /// HOM-68 follow-up v3 (dong4j 反馈 2026-06-05 22:40)：
+    /// 任务 picker 之前与 "Temperature/Top P/..." 同列在 DisclosureGroup 里，
+    /// `pickerStyle(.segmented)` 自带的"任务"label 会占掉一段固定宽度，加上
+    /// DisclosureGroup 的左侧缩进，4 个任务按钮容易被挤到只剩两字符宽度（截图）。
+    /// 改法：
+    ///   1. 任务 picker `.labelsHidden()`，去掉左侧 "任务" label；
+    ///   2. `.frame(maxWidth: .infinity)` 让 picker 占满折叠组的可用宽度；
+    ///   3. Top K / 最大 Token / 超时时间 由 Stepper 改 TextField（带 NumberFormatter
+    ///      + 阈值钳制），用户可以直接键入数字，不再点 100 次 Stepper；
+    ///   4. "最大 Token" 单位换成 K（内部仍存原始 token 数），默认 128 K；
+    ///   5. 删除底部 "Top K 不是 OpenAI..." 备注——保留在代码注释里给开发者看就够了。
+    ///
+    /// 实现注记：Top K 在 OpenAI Chat Completions 不是标准字段，当前 AIClient 仅
+    /// 把它保存到配置里，未来对接 LM Studio / Ollama 原生 API 时再发送。
     private var parametersSection: some View {
         Section {
             DisclosureGroup("模型参数", isExpanded: $isParametersExpanded) {
@@ -243,21 +270,37 @@ struct AISettingsTab: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
 
                 let isEmbedding = parameterTask == .embedding
                 parameterSlider("Temperature", value: parameterDoubleBinding(parameterTask, \.temperature), range: 0...2, disabled: isEmbedding)
                 parameterSlider("Top P", value: parameterDoubleBinding(parameterTask, \.topP), range: 0...1, disabled: isEmbedding)
-                Stepper("Top K：\(taskConfig(parameterTask).parameters.topK)", value: parameterIntBinding(parameterTask, \.topK), in: 0...200)
-                    .disabled(isEmbedding)
-                Stepper("最大 Token：\(taskConfig(parameterTask).parameters.maxCompletionTokens)", value: parameterIntBinding(parameterTask, \.maxCompletionTokens), in: 0...32_000, step: 256)
-                    .disabled(isEmbedding)
-                Stepper("超时时间：\(Int(taskConfig(parameterTask).parameters.timeoutSeconds)) 秒", value: parameterDoubleBinding(parameterTask, \.timeoutSeconds), in: 30...900, step: 30)
+
+                parameterIntField(
+                    "Top K",
+                    binding: parameterIntBinding(parameterTask, \.topK),
+                    range: 0...500,
+                    unit: nil,
+                    disabled: isEmbedding
+                )
+                parameterIntField(
+                    "最大 Token",
+                    binding: parameterMaxTokensKBinding(parameterTask),
+                    range: 1...512,
+                    unit: "K",
+                    disabled: isEmbedding
+                )
+                parameterIntField(
+                    "超时时间",
+                    binding: parameterTimeoutSecondsBinding(parameterTask),
+                    range: 30...3_600,
+                    unit: "秒",
+                    disabled: false
+                )
+
                 Toggle("优先使用流式响应", isOn: parameterBoolBinding(parameterTask, \.streamEnabled))
                     .disabled(parameterTask == .embedding || parameterTask == .tags)
-
-                Text("Top K 不是 OpenAI Chat Completions 标准字段，当前仅保存配置；后续针对 LM Studio / Ollama 原生扩展时再发送。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -279,47 +322,112 @@ struct AISettingsTab: View {
         }
     }
 
+    /// 整数参数输入行：左侧 90pt 标签，右侧固定宽度 TextField + 可选单位。
+    ///
+    /// 与 `parameterSlider` 的 90pt 标签宽对齐，让 Temperature / Top P / Top K /
+    /// 最大 Token / 超时时间 视觉上形成竖直一列。
+    ///
+    /// 钳制策略：值只在用户提交（失焦 / 回车）时才写回 binding，写回时再做
+    /// `clamp(into: range)`。这样在键入过程中不会出现"输入到 12 就立刻变成 100"
+    /// 的反人类体验。
+    private func parameterIntField(
+        _ title: String,
+        binding: Binding<Int>,
+        range: ClosedRange<Int>,
+        unit: String?,
+        disabled: Bool
+    ) -> some View {
+        HStack {
+            Text(title)
+                .frame(width: 90, alignment: .leading)
+            Spacer(minLength: 0)
+            TextField(
+                "",
+                value: Binding(
+                    get: { binding.wrappedValue },
+                    set: { newValue in
+                        binding.wrappedValue = min(max(newValue, range.lowerBound), range.upperBound)
+                    }
+                ),
+                format: .number
+            )
+            .textFieldStyle(.roundedBorder)
+            .multilineTextAlignment(.trailing)
+            .frame(width: 90)
+            .disabled(disabled)
+            if let unit {
+                Text(unit)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, alignment: .leading)
+            } else {
+                // 占位与有单位行对齐，避免输入框宽度跳变。
+                Color.clear.frame(width: 24)
+            }
+        }
+    }
+
     // MARK: - Prompt
 
-    /// HOM-68 follow-up v2 (dong4j 反馈 #7 + prompt 抽出来诉求)：
-    /// - Prompt 区改成 DisclosureGroup，默认折叠（与"模型参数"区一致语义）；
-    /// - 任务 tab 加入 `.translation`，与摘要 / 标签共用同一套编辑流程；
-    /// - "恢复默认 Prompt" 按钮移到任务 picker 同行右侧，按钮的"修复式"性质
-    ///   靠近任务选择更直觉。
+    /// HOM-68 follow-up v3 (dong4j 反馈 2026-06-05 22:40)：
+    /// - 任务 picker + "恢复默认" 之前同行抢宽度，picker 被挤；改成 picker
+    ///   `.labelsHidden().frame(maxWidth: .infinity)` 优先吃满宽度，按钮固定
+    ///   尺寸跟在右边；
+    /// - "User Prompt Template" 改名 "User Prompt"，与 "System Prompt" 对齐
+    ///   命名；两个标题用 `.frame(maxWidth: .infinity, alignment: .leading)`
+    ///   显式左对齐，避免 Form grouped 样式把它居中显示；
+    /// - 两个 TextEditor 改为固定高度（System 100 / User 160），TextEditor 在
+    ///   macOS 上内置垂直滚动，超出高度自动出现滚动条，不再让长 prompt 撑大
+    ///   整个设置面板。
     private var promptSection: some View {
         Section {
             DisclosureGroup("Prompt", isExpanded: $isPromptExpanded) {
-                HStack {
+                HStack(spacing: 12) {
                     Picker("任务", selection: $promptTask) {
                         ForEach([AIModelTask.summary, .tags, .translation]) { task in
                             Text(task.displayName).tag(task)
                         }
                     }
                     .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
 
                     Button {
                         restoreDefaultPrompt(promptTask)
                     } label: {
                         Label("恢复默认", systemImage: "arrow.counterclockwise")
+                            .labelStyle(.titleAndIcon)
                     }
                     .help("恢复 \(promptTask.displayName) 的默认 Prompt")
+                    .fixedSize()
                 }
 
                 Text("System Prompt")
                     .font(.caption.weight(.semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 TextEditor(text: promptSystemBinding(promptTask))
                     .font(.system(.caption, design: .monospaced))
-                    .frame(minHeight: 86)
+                    .frame(height: 100)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
+                    )
 
-                Text("User Prompt Template")
+                Text("User Prompt")
                     .font(.caption.weight(.semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 TextEditor(text: promptUserBinding(promptTask))
                     .font(.system(.caption, design: .monospaced))
-                    .frame(minHeight: 150)
+                    .frame(height: 160)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
+                    )
 
                 Text(promptPlaceholderHint)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -600,6 +708,33 @@ struct AISettingsTab: View {
         )
     }
 
+    /// "最大 Token" 的 K 单位 binding：getter / setter 在 1024 倍数与原始 token 数之间转换。
+    /// 之前 UI 直接显示 token 数（如 128000），现在按 K 显示（128），输入更直观。
+    /// 内部仍以原始 token 数 persist，保证调 OpenAI / 通义千问等 API 时不需要换算。
+    private func parameterMaxTokensKBinding(_ task: AIModelTask) -> Binding<Int> {
+        Binding(
+            get: {
+                let tokens = taskConfig(task).parameters.maxCompletionTokens
+                return max(0, tokens / 1024)
+            },
+            set: { kValue in
+                updateTask(task) { $0.parameters.maxCompletionTokens = max(0, kValue) * 1024 }
+            }
+        )
+    }
+
+    /// 超时时间 binding：底层是 Double 秒，UI 整数秒输入。
+    /// timeoutSeconds 历史上是 Double 是为了将来支持亚秒级（如 0.5s），但用户层面
+    /// 只用整数秒，所以 binding 在两侧做 Int <-> Double 转换。
+    private func parameterTimeoutSecondsBinding(_ task: AIModelTask) -> Binding<Int> {
+        Binding(
+            get: { Int(taskConfig(task).parameters.timeoutSeconds.rounded()) },
+            set: { seconds in
+                updateTask(task) { $0.parameters.timeoutSeconds = Double(max(0, seconds)) }
+            }
+        )
+    }
+
     private func promptSystemBinding(_ task: AIModelTask) -> Binding<String> {
         Binding(
             get: { taskConfig(task).prompt.systemPrompt },
@@ -671,13 +806,9 @@ struct AISettingsTab: View {
         }
     }
 
-    private func groupedEnabledModels(for task: AIModelTask) -> [(profile: AIProviderProfile, models: [AIModelDescriptor])] {
-        settings.aiProviderProfiles.compactMap { profile in
-            let models = enabledModels(providerID: profile.id, capability: task.requiredCapability)
-            return models.isEmpty ? nil : (profile, models)
-        }
-    }
-
+    // `groupedEnabledModels(for:)` 已删除：HOM-68 follow-up v3 把"任务 → 模型"下拉
+    // 收紧到只列当前 provider 的模型（见 `taskModelRow`），消除跨 provider 同名模型
+    // 同时选中的视觉 bug。
     private func enabledModels(providerID: String, capability: AIModelCapability) -> [AIModelDescriptor] {
         profile(providerID)?.models.filter {
             $0.isEnabled && ($0.capability == capability || $0.capability == .unknown)

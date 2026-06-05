@@ -203,11 +203,19 @@ struct AIModelParameters: Codable, Equatable, Sendable {
     var timeoutSeconds: Double
     var streamEnabled: Bool
 
+    // HOM-68 follow-up v3 (dong4j 反馈 2026-06-05 22:40)：把所有 chat 任务的
+    // maxCompletionTokens 默认值统一上调到 128K（= 128 * 1024 = 131_072 tokens）。
+    // 设置 UI 已经把"最大 Token"按 K 显示输入（131_072 / 1024 = 128 K），上限按
+    // 现代 long-context 模型给到 512K，避免用户在 OpenAI / 通义千问 / Gemini 等
+    // 不同 provider 间频繁手调。
+    //
+    // 这只影响首次启动的 seed 值，已有用户的 persisted 配置不会被覆盖。
+
     static let summaryDefault = AIModelParameters(
         temperature: 0.2,
         topP: 0.9,
         topK: 40,
-        maxCompletionTokens: 2_048,
+        maxCompletionTokens: 128 * 1024,
         timeoutSeconds: 300,
         streamEnabled: true
     )
@@ -216,7 +224,7 @@ struct AIModelParameters: Codable, Equatable, Sendable {
         temperature: 0.1,
         topP: 0.8,
         topK: 40,
-        maxCompletionTokens: 1_024,
+        maxCompletionTokens: 128 * 1024,
         timeoutSeconds: 180,
         streamEnabled: false
     )
@@ -232,16 +240,16 @@ struct AIModelParameters: Codable, Equatable, Sendable {
 
     /// HOM-68：README 翻译默认参数。
     /// - temperature 0.1：翻译需要稳定输出，不要"创造性发挥"；比摘要的 0.2 再低一档。
-    /// - maxCompletionTokens 4_096：README 译文体积可能比原文大 20-50%（中→英尤其明显），
-    ///   2048 容易被截断；翻译截断会破坏 HTML 结构（assertStructureNotBroken 直接拦截，
-    ///   用户会看到失败），所以给个较大值兜底。
+    /// - maxCompletionTokens 128K：README 译文体积可能比原文大 20-50%（中→英尤其明显），
+    ///   翻译截断会破坏 HTML 结构（assertStructureNotBroken 直接拦截，用户会看到失败），
+    ///   所以默认就给到 long-context 模型的上限段，避免按需手调。
     /// - timeoutSeconds 600：长 README 流式翻译可能超过 5 分钟，特别是本地 LM Studio / Ollama。
     /// - streamEnabled true：与摘要一致，给用户进度反馈，避免长时间无响应。
     static let translationDefault = AIModelParameters(
         temperature: 0.1,
         topP: 0.9,
         topK: 40,
-        maxCompletionTokens: 4_096,
+        maxCompletionTokens: 128 * 1024,
         timeoutSeconds: 600,
         streamEnabled: true
     )

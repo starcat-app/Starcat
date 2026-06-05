@@ -48,22 +48,25 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        // HOM-68 follow-up v3 (2026-06-05 22:40 dong4j 反馈)：
+        // 把 AI Tab 放到 Storage 之后。AI 是配置项最复杂、最不常碰的 Tab，
+        // 放在最后符合"常用在前、复杂在后"的设置面板惯例。
         TabView(selection: $selectedTab) {
             generalTab
                 .tabItem {
                     Label("settings.general.title", systemImage: "gearshape")
                 }
                 .tag(SettingsTab.general)
-            AISettingsTab()
-                .tabItem {
-                    Label("settings.ai.title", systemImage: "sparkles")
-                }
-                .tag(SettingsTab.ai)
             StorageSettingsTab(readmeRepository: dependencies.readmeRepository)
                 .tabItem {
                     Label("settings.storage.title", systemImage: "internaldrive")
                 }
                 .tag(SettingsTab.storage)
+            AISettingsTab()
+                .tabItem {
+                    Label("settings.ai.title", systemImage: "sparkles")
+                }
+                .tag(SettingsTab.ai)
         }
         .frame(width: selectedTab.contentSize.width, height: selectedTab.contentSize.height)
         .scenePadding()
