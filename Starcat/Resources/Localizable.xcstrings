@@ -4601,6 +4601,214 @@
         }
       }
     },
+    "readme.translate.action" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translate"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译"
+          }
+        }
+      }
+    },
+    "readme.translate.error.dismiss" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to dismiss"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击关闭"
+          }
+        }
+      }
+    },
+    "readme.translate.error.emptySource" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No README to translate."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无 README 可翻译。"
+          }
+        }
+      }
+    },
+    "readme.translate.error.missingAPIKey" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configure an API key for the selected AI provider, then try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先为所选 AI 服务配置 API Key 后再翻译。"
+          }
+        }
+      }
+    },
+    "readme.translate.error.missingProvider" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No AI provider is bound to the summary task. Open Settings → AI to fix it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未给摘要任务绑定 AI 服务，请到 设置 → AI 配置。"
+          }
+        }
+      }
+    },
+    "readme.translate.error.structureBroken" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The model returned a malformed translation. The original README is kept; try again or switch model."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型返回的译文破坏了 HTML 结构，已保留原文，请重试或切换模型。"
+          }
+        }
+      }
+    },
+    "readme.translate.menu.language" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Target Language"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目标语言"
+          }
+        }
+      }
+    },
+    "readme.translate.menu.regenerate" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translate Again"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新翻译"
+          }
+        }
+      }
+    },
+    "readme.translate.menu.tooltip" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translation options"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译选项"
+          }
+        }
+      }
+    },
+    "readme.translate.showOriginal" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Original"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原文"
+          }
+        }
+      }
+    },
+    "readme.translate.staleAction" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translate (README updated)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译（README 已更新）"
+          }
+        }
+      }
+    },
+    "readme.translate.tooltip.showOriginal" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the original README"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切回原始 README"
+          }
+        }
+      }
+    },
+    "readme.translate.tooltip.translate" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translate the README with AI (cached locally)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 AI 翻译 README，结果会缓存到本地"
+          }
+        }
+      }
+    },
     "readme.requiresLoginDescription" : {
       "localizations" : {
         "en" : {

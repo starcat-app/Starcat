@@ -35,7 +35,8 @@ struct ContentView: View {
             repoNoteRepository: dependencies.repoNoteRepository,
             semanticSearchService: dependencies.semanticSearchService,
             trendingRepository: dependencies.trendingRepository,
-            githubAPIClient: dependencies.apiClient
+            githubAPIClient: dependencies.apiClient,
+            readmeTranslationService: dependencies.readmeTranslationService
         )
         // 这里的 SwiftUI root minWidth 会参与系统窗口约束。
         // 旧值 800×600 会在 NavigationSplitView 自动折叠 sidebar 后重新成为窗口下限，

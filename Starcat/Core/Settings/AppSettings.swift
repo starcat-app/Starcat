@@ -263,6 +263,52 @@ enum SmartSearchMode: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - README 翻译目标语言（HOM-68）
+
+/// README AI 翻译目标语言。
+///
+/// 设计：
+/// - **raw 用 BCP-47 标签**（`zh-Hans` / `en` / `ja` 等）：与 `Locale.identifier` 兼容，
+///   后续如果要做"按系统语言自动选默认目标"或写日志时可以直接传给 Locale；
+/// - 默认 `.simplifiedChinese`：HOM-68 明确要求默认中文；
+/// - 第一版只列 5 个主流语言；后续按用户反馈追加。
+/// - `displayName` 走本地化（菜单显示的是「简体中文 / English / 日本語」之类用户母语标签）；
+/// - `promptName` 是发给 LLM 的目标语言名称，固定走英文（`Simplified Chinese`），
+///   避免不同 provider 对中文 prompt 关键词的解析差异，提示词中明确语言能更稳定。
+enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sendable {
+    case simplifiedChinese = "zh-Hans"
+    case traditionalChinese = "zh-Hant"
+    case english = "en"
+    case japanese = "ja"
+    case korean = "ko"
+
+    var id: String { rawValue }
+
+    /// 菜单显示文案（本地化）。
+    /// 直接返回原生语言名而不是走 xcstrings：菜单里通常用「目标语言的母语写法」
+    /// 比"Simplified Chinese / 简体中文"双语对照更短更清晰。
+    var displayName: String {
+        switch self {
+        case .simplifiedChinese:  return "简体中文"
+        case .traditionalChinese: return "繁體中文"
+        case .english:            return "English"
+        case .japanese:           return "日本語"
+        case .korean:             return "한국어"
+        }
+    }
+
+    /// 发给 LLM 的目标语言名（固定英文，跨 provider 最稳定）。
+    var promptName: String {
+        switch self {
+        case .simplifiedChinese:  return "Simplified Chinese"
+        case .traditionalChinese: return "Traditional Chinese"
+        case .english:            return "English"
+        case .japanese:           return "Japanese"
+        case .korean:             return "Korean"
+        }
+    }
+}
+
 // MARK: - AppSettings
 
 /// 应用级偏好容器。
@@ -393,6 +439,13 @@ final class AppSettings {
         didSet { persist(key: Keys.snakeStyle, value: snakeStyle.rawValue) }
     }
 
+    /// README 翻译目标语言（HOM-68）。
+    /// 默认简体中文，符合 HOM-68 验收要求；用户可在详情页翻译按钮的下拉菜单里切换，
+    /// 选择后即时落盘，下次进入详情页直接命中本地翻译缓存（按 `(repo_id, language)` 查表）。
+    var readmeTranslationLanguage: ReadmeTranslationLanguage {
+        didSet { persist(key: Keys.readmeTranslationLanguage, value: readmeTranslationLanguage.rawValue) }
+    }
+
     // MARK: - 初始化
 
     private let defaults: UserDefaults
@@ -467,6 +520,11 @@ final class AppSettings {
 
         let snakeStyleRaw = defaults.string(forKey: Keys.snakeStyle)
         self.snakeStyle = snakeStyleRaw.flatMap(SnakeStyle.init(rawValue:)) ?? SnakeStyle.default
+
+        // HOM-68：README 翻译目标语言。默认简体中文。
+        let translationLangRaw = defaults.string(forKey: Keys.readmeTranslationLanguage)
+        self.readmeTranslationLanguage = translationLangRaw
+            .flatMap(ReadmeTranslationLanguage.init(rawValue:)) ?? .simplifiedChinese
     }
 
     // MARK: - 内部
@@ -586,5 +644,6 @@ final class AppSettings {
         static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
         static let smartSearchMode = "settings.search.mode"
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
+        static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
     }
 }

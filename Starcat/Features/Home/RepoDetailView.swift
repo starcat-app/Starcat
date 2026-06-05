@@ -29,6 +29,10 @@ struct RepoDetailView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(ReadmeViewModel.self) private var readmeVM
+    /// HOM-68：README 翻译 VM（由 HomeView 持有 + environment 透传）。
+    @Environment(ReadmeTranslationViewModel.self) private var translationVM
+    /// 翻译目标语言 / 语言菜单 / 错误提示文案都依赖 AppSettings。
+    @Environment(AppSettings.self) private var settings
     // W4 B1：取消 star 需要的依赖
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
@@ -322,6 +326,8 @@ struct RepoDetailView: View {
     /// 把 `owner` / `name` 透传给 ReadmeWebView 用于图片相对路径重写
     /// （GitHub HTML render 端点对原生 `<img src="./xx">` 不做绝对化，
     /// 必须客户端补一次 raw URL 改写）。
+    /// HOM-68：附带 `translationControl` —— Manage repo 详情才提供翻译入口
+    /// （Trending 没有本地 repo_id，不接翻译缓存）。
     private func readmeSection(_ repo: Repo) -> some View {
         ReadmeStateView(
             state: readmeVM.state,
@@ -331,7 +337,12 @@ struct RepoDetailView: View {
             baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
             owner: repo.owner,
             repo: repo.name,
-            onScrollOffsetChange: updateMetadataPanelVisibility
+            onScrollOffsetChange: updateMetadataPanelVisibility,
+            translationControl: ReadmeTranslationControl(
+                repo: repo,
+                translationVM: translationVM,
+                settings: settings
+            )
         ) {
             readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
         } onLogin: {
@@ -620,7 +631,10 @@ struct RepoDetailView: View {
             baseURL: URL(string: "\(repo.url.absoluteString)/blob/HEAD"),
             owner: repo.owner,
             repo: repo.name,
-            onScrollOffsetChange: updateMetadataPanelVisibility
+            onScrollOffsetChange: updateMetadataPanelVisibility,
+            // HOM-68：Trending 没有本地 Repo.id，不接翻译入口；传 nil 让 footer
+            // 跳过翻译控件，保持 trending 侧的简洁。
+            translationControl: nil
         ) {
             // Trending README 刷新：直接调用 loadTrending
             readmeVM.loadTrending(owner: repo.owner, repo: repo.name, isLoggedIn: authSession.state.isAuthenticated)
@@ -668,9 +682,32 @@ struct ReadmeStateView: View {
     let owner: String
     let repo: String
     let onScrollOffsetChange: (CGFloat) -> Void
+    /// HOM-68：可选的 README 翻译控件描述。nil 时不渲染翻译入口
+    /// （Trending 详情页不接翻译，传 nil；Manage 详情页传具体值）。
+    let translationControl: ReadmeTranslationControl?
     let onRetry: () -> Void
     /// 未登录用户点击"登录"按钮时的回调
     let onLogin: () -> Void
+
+    init(
+        state: ReadmeViewModel.LoadState,
+        baseURL: URL?,
+        owner: String,
+        repo: String,
+        onScrollOffsetChange: @escaping (CGFloat) -> Void,
+        translationControl: ReadmeTranslationControl? = nil,
+        onRetry: @escaping () -> Void,
+        onLogin: @escaping () -> Void
+    ) {
+        self.state = state
+        self.baseURL = baseURL
+        self.owner = owner
+        self.repo = repo
+        self.onScrollOffsetChange = onScrollOffsetChange
+        self.translationControl = translationControl
+        self.onRetry = onRetry
+        self.onLogin = onLogin
+    }
 
     var body: some View {
         switch state {
@@ -685,14 +722,18 @@ struct ReadmeStateView: View {
 
         case .loaded(let html, let cachedAt):
             VStack(spacing: 0) {
+                // HOM-68：当翻译已就绪且用户选择展示译文时，喂给 WebView 的就是
+                // `translatedHtml`。源 `html` 仍由翻译 VM 之外的逻辑保留——切回
+                // 原文不需要重新拉网络，只是 displayMode 切回 .showingOriginal。
+                let renderedHtml = translationControl?.activeHtml(originalHtml: html) ?? html
                 ReadmeWebView(
-                    htmlFragment: html,
+                    htmlFragment: renderedHtml,
                     baseURL: baseURL,
                     owner: owner,
                     repo: repo,
                     onScrollOffsetChange: onScrollOffsetChange
                 )
-                cacheFooter(cachedAt: cachedAt)
+                cacheFooter(cachedAt: cachedAt, sourceHtml: html)
             }
 
         case .empty:
@@ -755,13 +796,23 @@ struct ReadmeStateView: View {
     /// 2026-06-02 替换前用的是 `arrow.clockwise` + `.symbolEffect(.variableColor.iterative)`，
     /// 视觉是颜色脉动而非旋转，与 dong4j 期望的"刷新中应该转圈"不符；统一为 `SyncIconButton` 后，
     /// manage / trending 两个详情页（共用 ReadmeStateView）+ Trending toolbar 三处行为完全一致。
-    private func cacheFooter(cachedAt: Date) -> some View {
-        HStack {
+    ///
+    /// HOM-68：右下角追加翻译入口（仅 Manage 详情页传入 translationControl 时显示）。
+    /// 把 `sourceHtml` 透给翻译按钮——按钮调 LLM 时需要把当前源 HTML 作为输入。
+    private func cacheFooter(cachedAt: Date, sourceHtml: String) -> some View {
+        HStack(spacing: 12) {
             Image(systemName: "clock")
                 .font(.caption2)
             Text(String(format: String(localized: "readme.cachedAtFormat"), cachedAt.formatted(.relative(presentation: .named))))
                 .font(.caption2)
             Spacer()
+            if let control = translationControl {
+                ReadmeTranslationFooterButton(
+                    control: control,
+                    sourceHtml: sourceHtml
+                )
+                Divider().frame(height: 14)
+            }
             SyncIconButton(
                 isRefreshing: readmeVM.isRefreshing,
                 disabled: readmeVM.isRefreshing,
@@ -775,6 +826,164 @@ struct ReadmeStateView: View {
         .padding(.vertical, 6)
         .foregroundStyle(.secondary)
         .background(.bar)
+    }
+}
+
+// MARK: - HOM-68 翻译控件
+
+/// 详情页注入 `ReadmeStateView` 的翻译控件描述（值类型 + closure 传递必要依赖）。
+///
+/// 不让 ReadmeStateView 直接依赖 `ReadmeTranslationViewModel` / `AppSettings` 的好处：
+/// - ReadmeStateView 是个无副作用的状态视图，多个详情页（Manage / Trending）都在共用，
+///   Trending 路径暂不接翻译；用可选值表达"是否需要翻译入口"比把环境注入条件化更直接；
+/// - 单元测试 / Preview 可以传 nil 跳过翻译控件，不需要 mock 翻译 VM。
+@MainActor
+struct ReadmeTranslationControl {
+    let repo: Repo
+    let translationVM: ReadmeTranslationViewModel
+    let settings: AppSettings
+
+    /// 当前 WebView 应渲染的 HTML：用户选择展示译文时返回译文，否则 nil（外层使用原文）。
+    ///
+    /// 这里访问的 `translationVM.displayMode` 是 `@MainActor` 隔离的 `@Observable` 状态，
+    /// 因此整个 control 必须标 `@MainActor`，否则 SwiftUI 在重新渲染时会从非隔离上下文调用，
+    /// Swift 6 编译期就会报错。控件本身只在 View body 中读取，所以这条约束不会增加运行成本。
+    func activeHtml(originalHtml: String) -> String? {
+        if case .showingTranslation(let html, _, _) = translationVM.displayMode {
+            return html
+        }
+        return nil
+    }
+}
+
+/// README cacheFooter 区域的翻译入口按钮。
+///
+/// 设计：
+/// - 一次点击 = toggle：未显示译文时点击触发翻译（命中缓存即时上屏，否则调 LLM），
+///   已显示译文时点击切回原文，符合 dong4j Coding Style 里"最少操作即可完成任务"。
+/// - 旁边的下拉菜单负责"选择目标语言"+"重新翻译"+"清除当前译文"，避免在 footer 里
+///   堆出多个按钮抢空间。
+/// - 翻译进行中切换为 ProgressView + 禁用，复用与同列其它按钮（SyncIconButton）一致的视觉。
+/// - 错误条放在 footer 上方独立一行，避免压缩 footer 宽度；用户可主动 dismiss。
+struct ReadmeTranslationFooterButton: View {
+
+    let control: ReadmeTranslationControl
+    let sourceHtml: String
+
+    private var translationVM: ReadmeTranslationViewModel { control.translationVM }
+    private var settings: AppSettings { control.settings }
+
+    /// 判断当前是否展示译文，用于按钮文字 / icon 切换。
+    private var isShowingTranslation: Bool {
+        if case .showingTranslation = translationVM.displayMode { return true }
+        return false
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let message = translationVM.errorMessage {
+                Button {
+                    translationVM.dismissError()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                        Text(verbatim: message)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("readme.translate.error.dismiss")
+            }
+
+            Button {
+                translationVM.toggleTranslation(
+                    repo: control.repo,
+                    sourceHtml: sourceHtml,
+                    targetLanguage: settings.readmeTranslationLanguage
+                )
+            } label: {
+                HStack(spacing: 4) {
+                    if translationVM.isTranslating {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 12, height: 12)
+                    } else {
+                        Image(systemName: isShowingTranslation
+                              ? "character.bubble.fill"
+                              : "character.bubble")
+                            .font(.caption2)
+                    }
+                    Text(buttonTitle)
+                        .font(.caption2)
+                }
+                .foregroundStyle(isShowingTranslation ? .blue : .secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .disabled(translationVM.isTranslating || sourceHtml.isEmpty)
+            .help(buttonTooltip)
+
+            languageMenu
+        }
+    }
+
+    /// 主按钮文案：未翻译 → "翻译"；已翻译 → "原文"。
+    /// 缓存与当前源不匹配时给 "翻译" 一个 stale 标记，引导用户主动 regenerate。
+    private var buttonTitle: LocalizedStringKey {
+        if isShowingTranslation { return "readme.translate.showOriginal" }
+        if translationVM.cacheIsStale { return "readme.translate.staleAction" }
+        return "readme.translate.action"
+    }
+
+    private var buttonTooltip: LocalizedStringKey {
+        if isShowingTranslation { return "readme.translate.tooltip.showOriginal" }
+        return "readme.translate.tooltip.translate"
+    }
+
+    /// 右侧 chevron 下拉菜单：切换目标语言、重新翻译。
+    /// 不放更多按钮：footer 已足够小，再加按钮会和右边的刷新图标抢空间。
+    private var languageMenu: some View {
+        Menu {
+            Picker(selection: Binding(
+                get: { settings.readmeTranslationLanguage },
+                set: { settings.readmeTranslationLanguage = $0 }
+            )) {
+                ForEach(ReadmeTranslationLanguage.allCases) { lang in
+                    Text(verbatim: lang.displayName).tag(lang)
+                }
+            } label: {
+                Text("readme.translate.menu.language")
+            }
+            .pickerStyle(.inline)
+
+            Divider()
+
+            Button {
+                translationVM.regenerate(
+                    repo: control.repo,
+                    sourceHtml: sourceHtml,
+                    targetLanguage: settings.readmeTranslationLanguage
+                )
+            } label: {
+                Label("readme.translate.menu.regenerate", systemImage: "arrow.clockwise")
+            }
+            .disabled(translationVM.isTranslating || sourceHtml.isEmpty)
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(width: 14, height: 14)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .frame(width: 16)
+        .focusEffectDisabled()
+        .help("readme.translate.menu.tooltip")
     }
 }
 
