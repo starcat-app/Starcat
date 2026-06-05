@@ -164,25 +164,32 @@ struct AIProviderProfile: Codable, Identifiable, Equatable, Sendable {
 }
 
 /// Starcat 内置 AI 任务。
+///
+/// HOM-68 (2026-06-05) 追加 `.translation`：dong4j 反馈"摘要 / 推荐标签 / 向量 三类
+/// 模型分别配置，那 README 翻译也需要独立一栏，让用户可选不同 provider/model"。
+/// 翻译复用 chat capability，但参数（temperature / maxToken / timeout）独立于摘要，
+/// 因为译文质量需要更低温度 + 更高 max tokens（长 README 翻译后体积可能涨 20–50%）。
 enum AIModelTask: String, Codable, CaseIterable, Identifiable, Sendable {
     case summary
     case tags
     case embedding
+    case translation
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .summary:   return "AI 摘要"
-        case .tags:      return "推荐标签"
-        case .embedding: return "Embedding"
+        case .summary:     return "AI 摘要"
+        case .tags:        return "推荐标签"
+        case .embedding:   return "Embedding"
+        case .translation: return "README 翻译"
         }
     }
 
     var requiredCapability: AIModelCapability {
         switch self {
-        case .summary, .tags: return .chat
-        case .embedding:      return .embedding
+        case .summary, .tags, .translation: return .chat
+        case .embedding:                    return .embedding
         }
     }
 }
@@ -221,6 +228,22 @@ struct AIModelParameters: Codable, Equatable, Sendable {
         maxCompletionTokens: 0,
         timeoutSeconds: 300,
         streamEnabled: false
+    )
+
+    /// HOM-68：README 翻译默认参数。
+    /// - temperature 0.1：翻译需要稳定输出，不要"创造性发挥"；比摘要的 0.2 再低一档。
+    /// - maxCompletionTokens 4_096：README 译文体积可能比原文大 20-50%（中→英尤其明显），
+    ///   2048 容易被截断；翻译截断会破坏 HTML 结构（assertStructureNotBroken 直接拦截，
+    ///   用户会看到失败），所以给个较大值兜底。
+    /// - timeoutSeconds 600：长 README 流式翻译可能超过 5 分钟，特别是本地 LM Studio / Ollama。
+    /// - streamEnabled true：与摘要一致，给用户进度反馈，避免长时间无响应。
+    static let translationDefault = AIModelParameters(
+        temperature: 0.1,
+        topP: 0.9,
+        topK: 40,
+        maxCompletionTokens: 4_096,
+        timeoutSeconds: 600,
+        streamEnabled: true
     )
 }
 
@@ -325,6 +348,19 @@ enum AIDefaultPrompts {
     )
 
     static let embedding = AIPromptConfiguration(systemPrompt: "", userPromptTemplate: "{context}")
+
+    /// HOM-68：README 翻译占位 Prompt。
+    ///
+    /// 故意留空：`ReadmeTranslationService` 不读 `AIModelTaskConfiguration.prompt`，
+    /// 它的 system / user prompt 是按目标语言 `ReadmeTranslationLanguage.promptName`
+    /// 现场拼装的（见 `ReadmeTranslationService.systemPrompt(targetLanguage:)`）。
+    /// 把 prompt 暴露给用户编辑会破坏"保留 HTML 结构"的强约束，
+    /// 因此 AISettingsView 的 Prompt 编辑区也只保留 summary / tags，不包含 translation。
+    /// 这里的占位值仅用于 `AIModelTaskConfiguration` 的 Codable 完整性。
+    static let translation = AIPromptConfiguration(
+        systemPrompt: "",
+        userPromptTemplate: "{context}"
+    )
 }
 
 extension AIServiceProvider {

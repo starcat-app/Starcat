@@ -161,10 +161,11 @@ struct AISettingsTab: View {
             taskModelRow(.summary)
             taskModelRow(.tags)
             taskModelRow(.embedding)
+            taskModelRow(.translation)
         } header: {
             Text("模型设置")
         } footer: {
-            Text("下拉框只展示已启用模型；如果服务商暂时无法列出模型，可以打开自定义模型名手动输入。")
+            Text("下拉框只展示已启用模型；如果服务商暂时无法列出模型，可以打开自定义模型名手动输入。README 翻译任务可独立选择 provider 与模型，参数在下方「模型参数」区。")
         }
     }
 
@@ -226,7 +227,7 @@ struct AISettingsTab: View {
                 .disabled(isEmbedding)
             Stepper("超时时间：\(Int(taskConfig(parameterTask).parameters.timeoutSeconds)) 秒", value: parameterDoubleBinding(parameterTask, \.timeoutSeconds), in: 30...900, step: 30)
             Toggle("优先使用流式响应", isOn: parameterBoolBinding(parameterTask, \.streamEnabled))
-                .disabled(parameterTask != .summary)
+                .disabled(parameterTask == .embedding || parameterTask == .tags)
         } header: {
             Text("模型参数")
         } footer: {
@@ -397,6 +398,11 @@ struct AISettingsTab: View {
                 config.prompt = AIDefaultPrompts.tags
             case .embedding:
                 config.prompt = AIDefaultPrompts.embedding
+            case .translation:
+                // README 翻译的 Prompt 由 ReadmeTranslationService 按目标语言动态拼装，
+                // 不读 task.prompt；这里仅为 switch 穷举性兜底，UI 已经把 translation
+                // 从 Prompt 编辑区排除（见 promptSection）。
+                config.prompt = AIDefaultPrompts.translation
             }
         }
     }
@@ -592,9 +598,10 @@ struct AISettingsTab: View {
 
     private func taskConfig(_ task: AIModelTask) -> AIModelTaskConfiguration {
         switch task {
-        case .summary:   return settings.aiSummaryTask
-        case .tags:      return settings.aiTagsTask
-        case .embedding: return settings.aiEmbeddingTask
+        case .summary:     return settings.aiSummaryTask
+        case .tags:        return settings.aiTagsTask
+        case .embedding:   return settings.aiEmbeddingTask
+        case .translation: return settings.aiTranslationTask
         }
     }
 
@@ -608,6 +615,8 @@ struct AISettingsTab: View {
             settings.aiTagsTask = config
         case .embedding:
             settings.aiEmbeddingTask = config
+        case .translation:
+            settings.aiTranslationTask = config
         }
     }
 

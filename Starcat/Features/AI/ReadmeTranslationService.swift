@@ -23,12 +23,16 @@
 //  3. **翻译失败保留原文**：本 service 失败抛错即可，UI 端 ViewModel 在错误分支
 //     不切换显示状态，README 区域继续渲染原文。
 //
-//  **复用 RepoAIInsightService 的 chat client 构造逻辑**：
-//  - 都需要按 `aiSummaryTask.providerID` 查 profile、按 profile 取 keychain API Key；
-//  - 都需要尊重 timeoutSeconds / temperature / streamEnabled 等用户设置；
-//  - 但 RepoAIInsightService 已经把 makeClient 设为 private，且其 system prompt
-//    完全是"摘要专用"——这里没办法直接复用，所以独立一份 makeClient + system prompt，
-//    实现量小可控；后续若两边演进出更多通用逻辑再抽 helper。
+//  **任务配置独立于摘要**（HOM-68 follow-up 2026-06-05）：
+//  - 用户在设置页里可以为「README 翻译」单独选择 provider + model + 参数（与摘要 /
+//    推荐标签 / 向量 三类并列），所以本 service 读 `settings.aiTranslationTask`，
+//    而不是把摘要任务的配置二次借用；
+//  - 首次升级时 AppSettings.init 会把翻译任务的默认 provider/model 与摘要对齐
+//    （但参数走 `AIModelParameters.translationDefault` —— 更低温度 + 更大 maxToken，
+//    适合"保结构、不发挥"的翻译场景）；
+//  - chat client 构造仍与 RepoAIInsightService 同一套（按 providerID 查 profile +
+//    按 profile 取 keychain API Key），但 RepoAIInsightService 把 makeClient 设为
+//    private 且 system prompt 完全是"摘要专用"，所以这里维持独立实现。
 //
 
 import CryptoKit
@@ -124,7 +128,8 @@ final class ReadmeTranslationService {
         let trimmedSource = request.sourceHtml.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedSource.isEmpty else { throw ReadmeTranslationError.emptySource }
 
-        let task = settings.aiSummaryTask
+        // HOM-68 follow-up：翻译任务有独立配置，不再借用摘要任务。
+        let task = settings.aiTranslationTask
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel)
 
         let systemPrompt = Self.systemPrompt(targetLanguage: request.targetLanguage)

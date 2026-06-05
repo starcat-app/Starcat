@@ -427,6 +427,16 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.aiEmbeddingTask, value: aiEmbeddingTask) }
     }
 
+    /// README 翻译任务模型配置（HOM-68 follow-up 2026-06-05）。
+    ///
+    /// 独立于 `aiSummaryTask`：摘要追求"通顺 + 结构化"（中温度 + 中 max tokens），
+    /// 翻译追求"低温度 + 结构保真 + 大上下文"，两类参数差异明显，所以拆开存储 +
+    /// 拆开在设置页配置。首次升级时 `init` 兜底逻辑会用与摘要相同的 provider+model 作
+    /// 默认值，但参数走 `AIModelParameters.translationDefault`，用户可在设置页改。
+    var aiTranslationTask: AIModelTaskConfiguration {
+        didSet { persistJSON(key: Keys.aiTranslationTask, value: aiTranslationTask) }
+    }
+
     /// 搜索栏当前模式。默认 keyword，避免用户未配置 AI 时误触发付费 API。
     var smartSearchMode: SmartSearchMode {
         didSet { persist(key: Keys.smartSearchMode, value: smartSearchMode.rawValue) }
@@ -515,6 +525,14 @@ final class AppSettings {
         self.aiSummaryTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiSummaryTask, defaults: defaults) ?? defaultSummaryTask
         self.aiTagsTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiTagsTask, defaults: defaults) ?? defaultTagsTask
         self.aiEmbeddingTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiEmbeddingTask, defaults: defaults) ?? defaultEmbeddingTask
+        // HOM-68 follow-up：翻译任务首次升级时与摘要使用同一 provider+model，
+        // 参数走 translationDefault（低温度 + 高 maxToken），用户可在设置页改。
+        let defaultTranslationTask = Self.makeDefaultTask(
+            task: .translation,
+            profileID: defaultProfile.id,
+            modelName: resolvedAIChatModel
+        )
+        self.aiTranslationTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiTranslationTask, defaults: defaults) ?? defaultTranslationTask
         let searchModeRaw = defaults.string(forKey: Keys.smartSearchMode)
         self.smartSearchMode = searchModeRaw.flatMap(SmartSearchMode.init(rawValue:)) ?? .keyword
 
@@ -609,16 +627,18 @@ final class AppSettings {
             useCustomModel: false,
             parameters: {
                 switch task {
-                case .summary:   return .summaryDefault
-                case .tags:      return .tagsDefault
-                case .embedding: return .embeddingDefault
+                case .summary:     return .summaryDefault
+                case .tags:        return .tagsDefault
+                case .embedding:   return .embeddingDefault
+                case .translation: return .translationDefault
                 }
             }(),
             prompt: {
                 switch task {
-                case .summary:   return AIDefaultPrompts.summary
-                case .tags:      return AIDefaultPrompts.tags
-                case .embedding: return AIDefaultPrompts.embedding
+                case .summary:     return AIDefaultPrompts.summary
+                case .tags:        return AIDefaultPrompts.tags
+                case .embedding:   return AIDefaultPrompts.embedding
+                case .translation: return AIDefaultPrompts.translation
                 }
             }()
         )
@@ -642,6 +662,7 @@ final class AppSettings {
         static let aiSummaryTask = "settings.ai.task.summary.v2"
         static let aiTagsTask = "settings.ai.task.tags.v2"
         static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
+        static let aiTranslationTask = "settings.ai.task.translation.v2"  // HOM-68 follow-up
         static let smartSearchMode = "settings.search.mode"
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68

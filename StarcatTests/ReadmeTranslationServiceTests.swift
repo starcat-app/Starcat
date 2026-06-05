@@ -195,6 +195,73 @@ struct ReadmeTranslationServiceCacheTests {
     }
 }
 
+// MARK: - HOM-68 follow-up：翻译任务独立配置
+
+@MainActor
+@Suite("AppSettings.aiTranslationTask（HOM-68 follow-up）")
+struct AppSettingsTranslationTaskTests {
+
+    /// 给每个用例单独的 UserDefaults suite，避免相互污染或读到磁盘上的真实偏好。
+    private func makeSettings(_ suite: String = UUID().uuidString) -> AppSettings {
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        return AppSettings(defaults: defaults)
+    }
+
+    @Test("首次升级：未持久化时 aiTranslationTask 默认值与 aiSummaryTask 共享 provider+model")
+    func defaultsAlignWithSummaryProviderAndModel() {
+        let settings = makeSettings()
+        let summary = settings.aiSummaryTask
+        let translation = settings.aiTranslationTask
+
+        #expect(translation.providerID == summary.providerID, "翻译默认 provider 应与摘要一致")
+        #expect(translation.modelID == summary.modelID, "翻译默认 model 应与摘要一致")
+    }
+
+    @Test("首次升级：aiTranslationTask 默认参数 = AIModelParameters.translationDefault（低温度 + 大 maxToken）")
+    func defaultParametersUseTranslationDefault() {
+        let settings = makeSettings()
+        let params = settings.aiTranslationTask.parameters
+
+        #expect(params.temperature == AIModelParameters.translationDefault.temperature)
+        #expect(params.maxCompletionTokens == AIModelParameters.translationDefault.maxCompletionTokens)
+        #expect(params.timeoutSeconds == AIModelParameters.translationDefault.timeoutSeconds)
+        #expect(params.streamEnabled == AIModelParameters.translationDefault.streamEnabled)
+        // 翻译应当比摘要更低温度（保结构 vs 通顺）
+        #expect(params.temperature < settings.aiSummaryTask.parameters.temperature)
+    }
+
+    @Test("aiTranslationTask 写入后再 init 同 suite 能正确读回（独立 UserDefaults 键）")
+    func translationTaskIsPersistedIndependently() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let first = AppSettings(defaults: defaults)
+
+        var mutated = first.aiTranslationTask
+        mutated.providerID = "test-profile-id"
+        mutated.modelID = "gpt-4o-translation"
+        mutated.customModelName = "gpt-4o-translation"
+        mutated.parameters.temperature = 0.05
+        first.aiTranslationTask = mutated
+
+        // 摘要任务不应受影响（独立键）
+        #expect(first.aiSummaryTask.providerID != "test-profile-id")
+
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.aiTranslationTask.providerID == "test-profile-id")
+        #expect(reloaded.aiTranslationTask.modelID == "gpt-4o-translation")
+        #expect(reloaded.aiTranslationTask.parameters.temperature == 0.05)
+    }
+
+    @Test("AIModelTask.translation 暴露 chat capability + 非空 displayName")
+    func translationTaskEnumShape() {
+        #expect(AIModelTask.translation.requiredCapability == .chat)
+        #expect(!AIModelTask.translation.displayName.isEmpty)
+        #expect(AIModelTask.allCases.contains(.translation))
+    }
+}
+
 // MARK: - ReadmeTranslationLanguage 偏好枚举
 
 @Suite("ReadmeTranslationLanguage")
