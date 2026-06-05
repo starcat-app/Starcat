@@ -108,6 +108,12 @@ command -v xcodebuild >/dev/null 2>&1 || {
 }
 log_ok "xcodebuild 可用"
 
+command -v create-dmg >/dev/null 2>&1 || {
+    log_warn "create-dmg 未安装,将用 hdiutil 出裸 DMG"
+    log_dim "→ brew install create-dmg"
+    log_dim "→ 项目: https://github.com/create-dmg/create-dmg"
+}
+
 # create-dmg 可选: 有则生成带 Applications 拖拽箭头的专业 DMG,无则 hdiutil 兜底
 USE_CREATE_DMG=0
 if command -v create-dmg >/dev/null 2>&1; then
@@ -181,16 +187,35 @@ APP_SIZE=$(du -sh "$APP_PATH" | awk '{print $1}')
 log_ok "Starcat.app 生成成功 ($APP_SIZE)"
 
 # ============================================================================
-# 3. Strip debug symbols (减体积)
+# 3. Strip debug symbols + Ad-hoc codesign
 # ============================================================================
-log_step "Strip debug symbols"
+log_step "Strip debug symbols + Ad-hoc codesign"
+
 STARCAT_BIN="$APP_PATH/Contents/MacOS/Starcat"
-if [ -f "$STARCAT_BIN" ]; then
-    # -x: 保留全局符号,只删除非全局 (Swift unwinding 信息需要保留,所以不能用 strip -S)
-    strip -x "$STARCAT_BIN" 2>/dev/null || log_warn "strip 失败 (不影响功能,继续)"
-    APP_SIZE_AFTER=$(du -sh "$APP_PATH" | awk '{print $1}')
-    log_ok "体积: $APP_SIZE → $APP_SIZE_AFTER"
+
+if [ ! -f "$STARCAT_BIN" ]; then
+    log_err "主程序不存在: $STARCAT_BIN"
+    exit 1
 fi
+
+APP_SIZE_BEFORE=$(du -sh "$APP_PATH" | awk '{print $1}')
+
+# 确保主程序可执行
+chmod +x "$STARCAT_BIN"
+
+# strip 会修改 Mach-O 文件，因此必须发生在 codesign 之前
+strip -x "$STARCAT_BIN" 2>/dev/null || log_warn "strip 失败，不影响功能，继续"
+
+APP_SIZE_AFTER=$(du -sh "$APP_PATH" | awk '{print $1}')
+log_ok "体积: $APP_SIZE_BEFORE → $APP_SIZE_AFTER"
+
+# 关键：strip 之后重新做 ad-hoc 签名
+codesign --force --deep --sign - --timestamp=none "$APP_PATH"
+
+# 验证签名是否完整
+codesign --verify --deep --strict --verbose=4 "$APP_PATH"
+
+log_ok "ad-hoc codesign 验证通过"
 
 # ============================================================================
 # 4. DMG staging (拷贝 .app + Applications 符号链接)
@@ -206,6 +231,11 @@ log_ok "staging 完成"
 # ============================================================================
 # 5. 打 DMG
 # ============================================================================
+log_step "签名诊断"
+codesign -dv --verbose=4 "$APP_PATH" 2>&1 | sed 's/^/  /'
+codesign --verify --deep --strict --verbose=4 "$APP_PATH"
+log_ok "签名诊断通过"
+
 log_step "打 DMG"
 rm -f "$DMG_PATH"
 
