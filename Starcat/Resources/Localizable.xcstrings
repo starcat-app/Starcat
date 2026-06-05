@@ -1402,13 +1402,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Categories"
+            "value" : "Activity Categories"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "分类"
+            "value" : "活动分类"
           }
         }
       }

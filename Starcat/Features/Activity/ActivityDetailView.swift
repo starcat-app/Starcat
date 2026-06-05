@@ -16,6 +16,7 @@ struct ActivityDetailView: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
+    @Environment(HomeViewModel.self) private var homeViewModel
 
     let item: ActivityItem?
 
@@ -24,6 +25,18 @@ struct ActivityDetailView: View {
     /// 不复用 HomeView 注入给 Manage / Trending 的 ReadmeViewModel，是为了避免
     /// Activity 里点星标 / 仓库 / 建议活动时污染右侧主详情页的 README 状态。
     @State private var readmeVM: ReadmeViewModel?
+    /// repo-backed Activity 使用与 Manage 详情页同款“README 滚动隐藏顶部面板”。
+    ///
+    /// 独立持有状态是为了避免 Activity 的折叠态污染 Manage / Trending 详情页。
+    @State private var isRepoMetadataPanelHidden: Bool = false
+    @State private var repoMetadataPanelHeight: CGFloat = 0
+    @State private var showUnstarConfirm: Bool = false
+    @State private var unstarError: String?
+    @State private var isUnstarring: Bool = false
+
+    private var metadataPanelAnimation: Animation {
+        .interactiveSpring(response: 0.32, dampingFraction: 0.9, blendDuration: 0.08)
+    }
 
     var body: some View {
         Group {
@@ -32,13 +45,7 @@ struct ActivityDetailView: View {
                     repoBackedDetailPage(item)
                 } else {
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            header(item)
-                            Divider()
-                            detailBody(item)
-                        }
-                        .padding(18)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        activityMetadataPanel(item)
                     }
                 }
             } else {
@@ -48,6 +55,57 @@ struct ActivityDetailView: View {
         .task(id: readmeLoadKey(for: item)) {
             await loadReadmeIfNeeded(for: item)
         }
+        .onChange(of: item?.id) { _, _ in
+            withAnimation(metadataPanelAnimation) {
+                isRepoMetadataPanelHidden = false
+            }
+        }
+        .alert("repo.unstar.confirm", isPresented: $showUnstarConfirm, presenting: item?.repo) { repo in
+            Button("repo.unstar.action", role: .destructive) {
+                Task { await performUnstar(repo: repo) }
+            }
+            Button("repo.unstar.dontUnstar", role: .cancel) {}
+        } message: { repo in
+            Text(String(format: String(localized: "repo.unstar.messageFormat"), repo.fullName))
+        }
+        .alert("repo.unstar.failed", isPresented: errorAlertBinding, presenting: unstarError) { _ in
+            Button("general.ok") { unstarError = nil }
+        } message: { msg in
+            Text(LocalizedStringKey(msg))
+        }
+    }
+
+    /// Activity 详情顶部面板。
+    ///
+    /// Manage / Trending 详情页顶部都有“语言色 → 透明”的 hero 背景，用来让当前选择
+    /// 和右侧详情形成同一视觉锚点。Activity 没有统一的 repo 模型，因此直接使用
+    /// `ActivityItem.accentColor`：有 repo 主语言时取语言色，没有语言标识时回退分类色。
+    private func activityMetadataPanel(_ item: ActivityItem) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header(item)
+            Divider()
+            detailBody(item)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(alignment: .top) {
+            activityGradientBackground(for: item)
+        }
+    }
+
+    /// Activity 详情 hero 区渐变背景。
+    ///
+    /// 透明度与 `RepoDetailView.metadataGradientBackground(language:)` 保持一致：
+    /// 顶部 0.18、底部 0，既能表达当前卡片的 accent，又不会干扰正文 / README 阅读。
+    @ViewBuilder
+    private func activityGradientBackground(for item: ActivityItem) -> some View {
+        let tint = item.accentColor
+        LinearGradient(
+            colors: [tint.opacity(0.18), tint.opacity(0.0)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .allowsHitTesting(false)
     }
 
     private func header(_ item: ActivityItem) -> some View {
@@ -190,20 +248,24 @@ struct ActivityDetailView: View {
 
     private func repoBackedDetailPage(_ item: ActivityItem) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    header(item)
-                    Divider()
-                    detailBody(item)
-                }
-                .padding(18)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 260)
-
-            Divider()
-
             if let repo = item.repo {
+                CollapsibleRepoMetadataPanel(
+                    isHidden: $isRepoMetadataPanelHidden,
+                    panelHeight: $repoMetadataPanelHeight,
+                    animation: metadataPanelAnimation
+                ) {
+                    RepoMetadataHeaderView(
+                        repo: repo,
+                        fallbackAccentColor: item.category.iconColor,
+                        onStarTapped: { showUnstarConfirm = true }
+                    ) {
+                        HStack(spacing: 8) {
+                            RepoShareButton(repo: repo)
+                            RepoAIOpenButton(repo: repo)
+                        }
+                    }
+                }
+
                 activityReadmeSection(repo)
             }
         }
@@ -218,7 +280,7 @@ struct ActivityDetailView: View {
                 baseURL: URL(string: repo.htmlUrl),
                 owner: repo.owner,
                 repo: repo.name,
-                onScrollOffsetChange: { _ in }
+                onScrollOffsetChange: updateRepoMetadataPanelVisibility
             ) {
                 readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
             } onLogin: {
@@ -234,6 +296,17 @@ struct ActivityDetailView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// Activity repo-backed 详情与 Manage 详情页保持同款滚动隐藏策略。
+    ///
+    /// 只在跨过阈值时改变 Bool，避免 WebView 每个滚动像素都触发 SwiftUI 重新布局。
+    private func updateRepoMetadataPanelVisibility(offsetY: CGFloat) {
+        let shouldHide = isRepoMetadataPanelHidden ? offsetY > 8 : offsetY > 32
+        guard shouldHide != isRepoMetadataPanelHidden else { return }
+        withAnimation(metadataPanelAnimation) {
+            isRepoMetadataPanelHidden = shouldHide
         }
     }
 
@@ -365,6 +438,35 @@ struct ActivityDetailView: View {
             return
         }
         ensureReadmeViewModel().load(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
+    }
+
+    private var errorAlertBinding: Binding<Bool> {
+        Binding(
+            get: { unstarError != nil },
+            set: { if !$0 { unstarError = nil } }
+        )
+    }
+
+    /// 与 Manage 详情页 stars stat 保持同一动作：点击 stars 后确认取消 Star。
+    ///
+    /// Activity 详情页没有自己的列表 ViewModel，但仍处在 HomeView 的 environment 中，
+    /// 因此远端 / 本地取消成功后复用 HomeViewModel 刷新 sidebar 与当前列表。
+    private func performUnstar(repo: Repo) async {
+        guard case .authenticated(let user) = authSession.state else {
+            unstarError = "auth.needLogin"
+            return
+        }
+        isUnstarring = true
+        defer { isUnstarring = false }
+        do {
+            try await dependencies.apiClient.unstar(owner: repo.owner, repo: repo.name)
+            try await dependencies.repoRepository.markUnstarred(repoId: repo.id, userID: user.id)
+            await homeViewModel.refreshSidebar()
+            await homeViewModel.reloadItems()
+        } catch {
+            unstarError = "repo.unstar.actionFailed"
+            AppLog.sync.error("activity unstar failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func assetIcon(_ name: String) -> String {

@@ -36,8 +36,13 @@ struct SidebarHeaderView: View {
     /// - Manage 页面：用 `viewModel.selectedRepo?.language`
     /// - Trending 页面：用 `trendingRepo?.language`
     /// `HomeView` 持有真源 `@State selectedTrendingRepo`，通过 `SidebarView` 透传到这里。
-    /// 取色优先级：Manage 选中 > Trending 选中 > `.accentColor`（系统蓝兜底）。
+    /// 取色优先级：Manage 选中 > Trending 选中 > Activity 选中 > `.accentColor`（系统蓝兜底）。
     var trendingRepo: TrendingRepo?
+    /// 当前在 Activity 页面选中卡片的强调色。
+    ///
+    /// `ActivityItem.accentColor` 已经把“repo 主语言色优先、无语言时分类色兜底”的规则收口，
+    /// 这里只消费最终颜色，避免 SidebarHeaderView 反向理解 Activity 的分类 / repo 细节。
+    var activityTintColor: Color?
 
     /// 登录表单 sheet 显示状态。
     @State private var showLoginSheet: Bool = false
@@ -78,7 +83,8 @@ struct SidebarHeaderView: View {
     /// 取色优先级（沿用 `LanguageColor.color(for:)` 单一信任源，与列表 row / 详情页 hero 同源）：
     /// 1. Manage 页面选中 repo 的 `language`（`viewModel.selectedRepo?.language`）
     /// 2. Trending 页面选中 repo 的 `language`（`trendingRepo?.language`，2026-06-02 21:38 接入）
-    /// 3. 都没选中 → `.accentColor`（系统蓝兜底）
+    /// 3. Activity 页面选中卡片的 `accentColor`（2026-06-05 接入；repo 语言色优先，分类色兜底）
+    /// 4. 都没选中 → `.accentColor`（系统蓝兜底）
     ///
     /// 设计上 Manage / Trending 同时只能有一个选中：
     /// - 切到 Trending 页面时 `HomeView.onChange(of: selectedSidebarPage)` 会清掉 Manage 选中
@@ -90,6 +96,9 @@ struct SidebarHeaderView: View {
         }
         if let language = trendingRepo?.language, !language.isEmpty {
             return LanguageColor.color(for: language)
+        }
+        if let activityTintColor {
+            return activityTintColor
         }
         return .accentColor
     }

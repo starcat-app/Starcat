@@ -42,12 +42,6 @@ struct RepoDetailView: View {
     @State private var isUnstarring: Bool = false
     @State private var unstarError: String?
 
-    // HOM-148：分享流程状态
-    @State private var isSharing: Bool = false
-    @State private var showSharePopup: Bool = false
-    @State private var shareUrl: String?
-    @State private var shareError: String?
-
     /// Trending repo 一键 star 的 UI 状态
     @State private var isStarringTrending: Bool = false
     @State private var trendingStarError: String?
@@ -61,7 +55,7 @@ struct RepoDetailView: View {
     /// 顶部信息面板的自然高度。
     ///
     /// 折叠动画需要从「真实高度」连续压到 0，而不是把 view 直接从树里移除。
-    /// 这个高度由 `MetadataPanelHeightPreferenceKey` 在首次布局后回填。
+    /// 这个高度由 `CollapsibleRepoMetadataPanel` 内部测量后回填。
     @State private var metadataPanelHeight: CGFloat = 0
 
     /// 顶部面板折叠/展开动画。
@@ -123,32 +117,6 @@ struct RepoDetailView: View {
                     Button("general.ok") { unstarError = nil }
                 } message: { msg in
                     Text(LocalizedStringKey(msg))
-                }
-                .alert("分享成功", isPresented: $showSharePopup) {
-                    Button("复制链接") {
-                        if let url = shareUrl {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(url, forType: .string)
-                        }
-                    }
-                    Button("在浏览器打开") {
-                        if let urlString = shareUrl, let url = URL(string: urlString) {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    Button("关闭", role: .cancel) {}
-                } message: {
-                    Text(shareUrl ?? "")
-                }
-                .alert("分享失败", isPresented: Binding(get: { shareError != nil }, set: { if !$0 { shareError = nil } })) {
-                    Button("重试") {
-                        if let repo = viewModel.selectedRepo {
-                            Task { await shareRepo(repo) }
-                        }
-                    }
-                    Button("取消", role: .cancel) {}
-                } message: {
-                    if let error = shareError { Text(error) }
                 }
                 .onChange(of: repo.id) { _, _ in
                     withAnimation(metadataPanelAnimation) {
@@ -282,43 +250,18 @@ struct RepoDetailView: View {
     /// 完全解耦，两边共用一个 helper 避免 25 行 view modifier chain 复制粘贴漂移
     /// （前车之鉴 06-02 00:48 Chip 抽公共组件）。
     /// 共享状态来自外层的 `isMetadataPanelHidden` / `metadataPanelHeight` `@State`，
-    /// 上报通道是统一的 `MetadataPanelHeightPreferenceKey`，所以 Manage 切 Trending
+    /// 上报通道由 `CollapsibleRepoMetadataPanel` 内部统一处理，所以 Manage 切 Trending
     /// （或反之）时折叠状态会被 `body` 里的 `.onChange(of: id)` 重置一次。
     @ViewBuilder
     private func collapsibleMetadataContainer<Content: View>(
         @ViewBuilder content: () -> Content
     ) -> some View {
-        ZStack(alignment: .top) {
-            VStack(spacing: 0) {
-                content()
-                Divider()
-                    .opacity(isMetadataPanelHidden ? 0 : 1)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: MetadataPanelHeightPreferenceKey.self,
-                        value: proxy.size.height
-                    )
-                }
-            }
-            .opacity(isMetadataPanelHidden ? 0 : 1)
-            .offset(y: isMetadataPanelHidden ? -min(metadataPanelHeight * 0.18, 28) : 0)
-            .allowsHitTesting(!isMetadataPanelHidden)
-            .accessibilityHidden(isMetadataPanelHidden)
-        }
-        .frame(
-            height: isMetadataPanelHidden
-                ? 0
-                : (metadataPanelHeight > 0 ? metadataPanelHeight : nil),
-            alignment: .top
-        )
-        .clipped()
-        .animation(metadataPanelAnimation, value: isMetadataPanelHidden)
-        .onPreferenceChange(MetadataPanelHeightPreferenceKey.self) { height in
-            guard height > 0, abs(height - metadataPanelHeight) > 0.5 else { return }
-            metadataPanelHeight = height
+        CollapsibleRepoMetadataPanel(
+            isHidden: $isMetadataPanelHidden,
+            panelHeight: $metadataPanelHeight,
+            animation: metadataPanelAnimation
+        ) {
+            content()
         }
     }
 
@@ -330,23 +273,14 @@ struct RepoDetailView: View {
     /// 折叠状态由外层 `metadataPanel` 的 `.frame(height: 0).clipped()` 整体裁掉，
     /// 这里不需要为折叠态特殊处理渐变。
     private func metadataHeader(_ repo: Repo) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header(repo)
-            descriptionSection(repo)
-            statsSection(repo)
-            // W4 A3：用户自定义标签段；GitHub topics 已收进 header 的单行信息。
-            RepoTagsSection(repo: repo)
-            // W4 A4：私有笔记 + 状态段
-            RepoNotesSection(repo: repo)
-            // HOM-47：Release 订阅段（订阅按钮 + 最新版本一行）
-            RepoReleaseSection(repo: repo)
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 16)
-        .padding(.bottom, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(alignment: .top) {
-            metadataGradientBackground(language: repo.language)
+        RepoMetadataHeaderView(
+            repo: repo,
+            onStarTapped: { showUnstarConfirm = true }
+        ) {
+            HStack(spacing: 8) {
+                RepoShareButton(repo: repo)
+                RepoAIOpenButton(repo: repo)
+            }
         }
     }
 
@@ -581,7 +515,7 @@ struct RepoDetailView: View {
 
             // 2026-06-02 dong4j 新增：Forks 从静态 `StatItem` 改为可点击 Button，
             // 点击跳 GitHub fork 页（与 Manage 详情页同款逻辑：`/fork` 不是 `/forks`，
-            // 跟 Manage `statsSection` 行为对齐，由用户决策不自作主张）。
+            // 跟 Manage stats 行为对齐，由用户决策不自作主张）。
             // URL 拼接：`TrendingRepo.url` 是 URL 类型，用 `appendingPathComponent`
             // 比字符串拼接更安全（自动处理末尾斜杠）。
             //
@@ -680,249 +614,7 @@ struct RepoDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // 头像 URL 与语言色：统一使用 Shared/Components/RepoRowComponents.swift
-    // 中的 `RepoAvatarURL` 和 `LanguageColor`。后者从原来 7 种语言扩展到 30+ 种，
-    // 详情页的语言色覆盖范围与列表行保持一致（顺手修：原 fallback 是纯 gray，
-    // 现在与列表用同一个 30 色精简集，少数语言不再退化为灰色）。
-
-    // MARK: - 子段
-
-    private func header(_ repo: Repo) -> some View {
-        HStack(alignment: .top, spacing: 16) {
-            // 2026-06-02 dong4j 调整：logo 改为可点击跳 GitHub 主页，与 Trending
-            // 详情页 `TrendingHeroAvatarButton` 保持一致的交互模式。
-            RepoHeroAvatarButton(repo: repo)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(repo.fullName)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .textSelection(.enabled)
-                    .help(repo.fullName)
-                badgeRow(repo)
-                inlineTopicsRow(repo)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer()
-            // HOM-148：分享按钮
-            shareButton(repo)
-            // HOM-150：右上角 AI 入口。点开浮动窗口同时承载 AI 摘要 + Chat 对话。
-            // 紫蓝渐变胶囊 + sparkles 与窗口内"助手头像"/"发送按钮"视觉呼应，让用户
-            // 把"AI 助手"识别为一个统一的视觉概念，而不是散落的功能点。
-            aiOpenButton(repo)
-        }
-    }
-
-    /// 详情页右上角 AI 入口按钮（HOM-150）。
-    ///
-    /// 设计要点：
-    /// - 紫→蓝渐变 + sparkles + 文字 "AI"，与 `RepoAIWindowContentView` 内 assistant
-    ///   头像 / 发送按钮的视觉语言一致；
-    /// - `.pressableHover()` 与详情页其他可点击元素保持同款 hover 反馈；
-    /// - `RepoAIWindowController.show(...)` 按 repo.id 单例：同一 repo 重复点击不开
-    ///   多窗口，不同 repo 各自独立。
-    @ViewBuilder
-    private func aiOpenButton(_ repo: Repo) -> some View {
-        Button {
-            RepoAIWindowController.show(
-                repo: repo,
-                dependencies: dependencies,
-                homeViewModel: viewModel
-            )
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("AI")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .foregroundStyle(.white)
-            .background(
-                LinearGradient(
-                    colors: [.purple.opacity(0.85), .blue.opacity(0.85)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                in: Capsule()
-            )
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .pressableHover()
-        .help("ai.assistant.openButton.help")
-    }
-
-    @ViewBuilder
-    private func badgeRow(_ repo: Repo) -> some View {
-        HStack(spacing: 10) {
-            if repo.isArchived {
-                BadgeChip(text: "repo.archived", systemImage: "archivebox", tint: .orange)
-            }
-            if repo.isFork {
-                BadgeChip(text: "repo.fork", systemImage: "tuningfork", tint: .gray)
-            }
-            if repo.isPrivate {
-                BadgeChip(text: "repo.private", systemImage: "lock.fill", tint: .purple)
-            }
-            RawBadgeChip(
-                text: repo.license.flatMap { value in
-                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                    return trimmed.isEmpty ? nil : trimmed
-                } ?? "N/A",
-                systemImage: "scale.3d",
-                tint: .secondary
-            )
-        }
-        .lineLimit(1)
-        .frame(minHeight: 18, maxHeight: 18, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private func inlineTopicsRow(_ repo: Repo) -> some View {
-        let topics = repo.topicsArray
-        let topicText = topics.isEmpty ? "N/A" : topics.joined(separator: "  ·  ")
-        HStack(spacing: 6) {
-            Text("repoTopics.label")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Text(topicText)
-                .font(.caption)
-                .foregroundStyle(topics.isEmpty ? Color.secondary : Color.blue)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(Text(verbatim: topics.isEmpty ? "N/A" : topics.joined(separator: ", ")))
-        }
-        .frame(maxWidth: .infinity, minHeight: 18, maxHeight: 18, alignment: .leading)
-    }
-
-    // MARK: - 分享逻辑 (HOM-148)
-
-    @ViewBuilder
-    private func shareButton(_ repo: Repo) -> some View {
-        Button {
-            Task { await shareRepo(repo) }
-        } label: {
-            HStack(spacing: 6) {
-                if isSharing {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(width: 14, height: 14)
-                } else {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 13, weight: .semibold))
-                }
-                Text("分享")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .foregroundStyle(.primary)
-            .background(
-                Capsule()
-                    .strokeBorder(Color.secondary.opacity(0.3), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .pressableHover()
-        .disabled(isSharing)
-        .help("分享 Repo")
-    }
-
-    private func shareRepo(_ repo: Repo) async {
-        isSharing = true
-        shareError = nil
-        defer { isSharing = false }
-
-        do {
-            var aiInsight: RepoAIInsight?
-            aiInsight = try await dependencies.repoAIInsightService.cachedInsight(for: repo)
-            if aiInsight == nil {
-                let result = try await dependencies.repoAIInsightService.generateInsight(for: repo)
-                aiInsight = result.insight
-            }
-
-            guard let insight = aiInsight else { return }
-
-            let shareRepoDTO = ShareRepoDTO(
-                fullName: repo.fullName,
-                description: repo.description,
-                language: repo.language,
-                starsCount: repo.starsCount,
-                forksCount: repo.forksCount,
-                topics: repo.topicsArray,
-                homepage: repo.homepage,
-                url: repo.htmlUrl
-            )
-
-            let shareTagDTOs = insight.suggestedTags.map { ShareTagDTO(name: $0.name, confidence: $0.confidence) }
-            let shareAISummaryDTO = ShareAISummaryDTO(
-                oneLiner: insight.oneLiner,
-                summary: insight.summary,
-                platforms: insight.platforms,
-                suitableFor: insight.suitableFor,
-                strengths: insight.strengths,
-                risks: insight.risks,
-                suggestedTags: shareTagDTOs
-            )
-
-            let request = ShareRepoRequest(repo: shareRepoDTO, aiSummary: shareAISummaryDTO)
-            let shareAPI = ShareAPI()
-            let response = try await shareAPI.shareRepo(request: request)
-
-            self.shareUrl = response.shareUrl
-            self.showSharePopup = true
-
-        } catch {
-            self.shareError = error.localizedDescription
-        }
-    }
-
-    @ViewBuilder
-    private func descriptionSection(_ repo: Repo) -> some View {
-        if let desc = repo.description, !desc.isEmpty {
-            Text(desc)
-                .font(.body)
-                .textSelection(.enabled)
-        }
-    }
-
-    private func statsSection(_ repo: Repo) -> some View {
-        HStack(alignment: .center, spacing: 24) {
-            // 2026-06-02 dong4j 要求统一 hover 反馈：所有可点击的 stat（Stars /
-            // Forks / Watchers）都加 `.pressableHover()`，让用户能感知"这是可点击的"。
-            // 详见 `Shared/Components/PressableHover.swift`。
-            Button {
-                showUnstarConfirm = true
-            } label: {
-                StatItem(label: "repo.stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .pressableHover()
-            .help("repo.unstar")
-
-            Button {
-                if let url = URL(string: "\(repo.htmlUrl)/fork") {
-                    NSWorkspace.shared.open(url)
-                }
-            } label: {
-                StatItem(label: "repo.forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .pressableHover()
-            .help("repo.forkAction")
-
-            WatchersMenu(repo: repo)
-
-            DateStatItem(label: "repo.created", value: repo.createdAt, systemImage: "calendar.badge.plus")
-            DateStatItem(label: "repo.updated", value: repo.updatedAt, systemImage: "clock.arrow.circlepath")
-        }
-    }
+    // Repo 元信息面板已抽到 `RepoMetadataHeaderView.swift`，Manage / Activity 共用。
 
     // MARK: - 空态
 
@@ -941,14 +633,6 @@ struct RepoDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-}
-
-private struct MetadataPanelHeightPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
 }
 
 // MARK: - README 状态视图
@@ -1079,39 +763,6 @@ struct ReadmeStateView: View {
 }
 
 // MARK: - 小组件
-
-/// 通用胶囊徽章；命名避开 `Tag`（与 Core/Database/Models/Tag 冲突）。
-private struct BadgeChip: View {
-    let text: LocalizedStringKey
-    let systemImage: String
-    let tint: Color
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: systemImage).font(.caption2)
-            Text(text).font(.caption2)
-        }
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .background(tint.opacity(0.15), in: Capsule())
-        .foregroundStyle(tint)
-    }
-}
-
-private struct RawBadgeChip: View {
-    let text: String
-    let systemImage: String
-    let tint: Color
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: systemImage).font(.caption2)
-            Text(verbatim: text).font(.caption2)
-        }
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .background(tint.opacity(0.15), in: Capsule())
-        .foregroundStyle(tint)
-    }
-}
 
 private struct StatItem: View {
     let label: LocalizedStringKey
@@ -1326,40 +977,6 @@ private struct TrendingHeroAvatarButton: View {
     var body: some View {
         Button {
             NSWorkspace.shared.open(repo.url)
-        } label: {
-            RemoteAvatar(
-                urlString: RepoAvatarURL.from(owner: repo.owner),
-                size: 64
-            )
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .pressableHover()
-        .help("repo.openOnGithub")
-    }
-}
-
-// MARK: - Repo Hero Avatar Button (Manage)
-
-/// Manage repo 详情页左上角的项目 logo 按钮（hero 元素）。
-///
-/// 2026-06-02 dong4j 要求：Manage 详情页 logo 也要可点击跳 GitHub 主页，
-/// 跟 Trending 详情页保持一致的交互模式。
-///
-/// 与 `TrendingHeroAvatarButton` 几乎一样，差异只是接收的 model 类型不同
-/// （`Repo` vs `TrendingRepo`），URL 来源不同（`RepoExternalLinks.repo(repo)` vs
-/// `repo.url`）。**没抽通用 `ClickableAvatar`**：两个 hero button 强绑各自的
-/// model 类型，强行参数化反而要传 URL + tooltipKey 抹平差异；共享 hover 反馈
-/// 已通过 `.pressableHover()` modifier 解决了重复，结构层面不需要再抽。
-/// 如未来真出现第 3 个 hero avatar 用例再抽通用版（YAGNI）。
-private struct RepoHeroAvatarButton: View {
-    let repo: Repo
-
-    var body: some View {
-        Button {
-            if let url = RepoExternalLinks.repo(repo) {
-                NSWorkspace.shared.open(url)
-            }
         } label: {
             RemoteAvatar(
                 urlString: RepoAvatarURL.from(owner: repo.owner),
