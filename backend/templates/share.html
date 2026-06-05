@@ -1,478 +1,850 @@
 <!--
-  Starcat AI · Share Page Template
-  ─────────────────────────────────────────────────────────────────────
-  · 用途：服务端 (Go html/template) 渲染单个仓库 AI 摘要的对外分享页
-  · 后端：保持 backend/main.go 现有 ShareData 结构与字段不变
-  · 设计：参考 GitHub / Vercel / Linear / Notion 的现代卡片风格，
-          自动跟随系统明暗模式 (prefers-color-scheme)
-  · 关键约束：
-    1. AI Summary 字段是 Markdown 文本，必须在前端做安全渲染，
-       否则用户会看到原始 `##` `**` 符号；
-       使用 marked.js + DOMPurify 进行 Markdown → 净化 HTML 转换。
-    2. Markdown 源文本通过 `<template>` 标签内嵌（HTML 字符串上下文，
-       由 Go html/template 自动 HTML 转义，再用 textContent 反转义读出），
-       这样既安全又不需要服务端 JSON 编码逻辑。
-    3. 任何外链统一加 target=_blank + noopener，避免分享页被钓鱼利用。
-    4. CDN 字体 / 脚本均带 SRI 不强制，因 backend 走外网且非金融场景，
-       但加载使用 defer/异步以避免阻塞首屏。
+  Starcat Share Card Template
+  ---------------------------------------------------------------------
+  模块说明：
+  这个文件由 Go html/template 渲染，用固定 JSON 数据生成单页分享卡片。
+
+  设计约束：
+  1. 页面是“可截图、可转发的内容卡片 deck”，不是 AI 产品落地页。
+  2. 用户可见文案避免 AI 味儿，不出现“AI 摘要 / 智能分析”等包装感词汇。
+  3. backend/main.go 的 ShareData 结构与 API 不变，只改模板表现层。
+  4. Markdown 正文由前端拆成多个卡片，再用 marked.js + DOMPurify 安全渲染。
 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
-    <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
-    <title>{{ .Request.Repo.FullName }} · Starcat AI</title>
+    <meta name="theme-color" content="#f4f1ea">
+    <title>{{ .Request.Repo.FullName }} · Starcat</title>
 
-    <!-- SEO & 社交分享元信息：转发到 X / Telegram / 微信时能渲染卡片 -->
     {{ if .Request.AISummary.OneLiner }}
     <meta name="description" content="{{ .Request.AISummary.OneLiner }}">
     <meta property="og:description" content="{{ .Request.AISummary.OneLiner }}">
     <meta name="twitter:description" content="{{ .Request.AISummary.OneLiner }}">
     {{ end }}
     <meta property="og:type" content="article">
-    <meta property="og:title" content="{{ .Request.Repo.FullName }} · Starcat AI">
-    <meta property="og:site_name" content="Starcat AI">
+    <meta property="og:title" content="{{ .Request.Repo.FullName }} · Starcat">
+    <meta property="og:site_name" content="Starcat">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="{{ .Request.Repo.FullName }} · Starcat AI">
+    <meta name="twitter:title" content="{{ .Request.Repo.FullName }} · Starcat">
 
-    <!-- Inline SVG favicon：避免额外 HTTP 请求 -->
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop offset='0' stop-color='%237c3aed'/%3E%3Cstop offset='1' stop-color='%233b82f6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M9 8l4 5h6l4-5v9a7 7 0 11-14 0V8z' fill='white'/%3E%3Ccircle cx='13' cy='17' r='1.4' fill='%230a0a0a'/%3E%3Ccircle cx='19' cy='17' r='1.4' fill='%230a0a0a'/%3E%3C/svg%3E">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c1a16'/%3E%3Cpath d='M8 8l4 5h8l4-5v9a8 8 0 0 1-16 0V8z' fill='%23f5c542'/%3E%3Ccircle cx='13' cy='17' r='1.3' fill='%231c1a16'/%3E%3Ccircle cx='19' cy='17' r='1.3' fill='%231c1a16'/%3E%3C/svg%3E">
 
-    <!-- Tailwind CDN：沿用项目现有选型，仅扩展自定义字体族 -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        darkMode: 'media',
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'sans-serif'],
-              mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
-            },
-          }
-        }
-      };
-    </script>
-
-    <!-- Inter (正文) + JetBrains Mono (代码) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-
-    <!-- 安全的 Markdown 渲染：marked + DOMPurify -->
     <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js" defer></script>
 
     <style>
-        /* ── 排版基线：开启 OpenType 替代字形让 Inter 更接近正版 ── */
-        html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
-        body { font-feature-settings: "cv02","cv03","cv04","cv11","ss01"; }
-        ::selection { background: rgba(124, 58, 237, 0.25); }
-        @media (prefers-color-scheme: dark) {
-            ::selection { background: rgba(167, 139, 250, 0.30); }
+        :root {
+            color-scheme: light;
+            --paper: #f4f1ea;
+            --ink: #1c1a16;
+            --muted: #756f64;
+            --soft: #e8e1d3;
+            --line: #d8cfbd;
+            --card: #fffaf0;
+            --card-alt: #efe7d8;
+            --accent: #f5c542;
+            --accent-ink: #2d2408;
+            --green: #59745a;
+            --red: #9a4c3f;
+            --shadow: 0 20px 60px rgba(52, 42, 25, 0.12);
+            --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+            --display: "Avenir Next", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+            --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         }
 
-        /* ── 背景：左右两簇柔和的径向光晕，模拟 Linear / Vercel 风格 ── */
-        .bg-orbit {
-            background-image:
-                radial-gradient(at 18% -10%, hsla(258, 90%, 66%, 0.10) 0px, transparent 50%),
-                radial-gradient(at 82% -10%, hsla(217, 91%, 60%, 0.10) 0px, transparent 50%),
-                radial-gradient(at 50% 110%, hsla(280, 90%, 66%, 0.05) 0px, transparent 50%);
+        * { box-sizing: border-box; }
+
+        html {
+            min-height: 100%;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
         }
-        @media (prefers-color-scheme: dark) {
-            .bg-orbit {
-                background-image:
-                    radial-gradient(at 18% -10%, hsla(258, 90%, 66%, 0.18) 0px, transparent 50%),
-                    radial-gradient(at 82% -10%, hsla(217, 91%, 60%, 0.14) 0px, transparent 50%),
-                    radial-gradient(at 50% 110%, hsla(280, 90%, 66%, 0.10) 0px, transparent 50%);
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: var(--sans);
+            color: var(--ink);
+            background:
+                radial-gradient(circle at 18% -10%, rgba(245, 197, 66, 0.22), transparent 34%),
+                linear-gradient(135deg, rgba(28, 26, 22, 0.035) 25%, transparent 25%) 0 0 / 18px 18px,
+                var(--paper);
+        }
+
+        a { color: inherit; }
+        ::selection { background: rgba(245, 197, 66, 0.45); }
+
+        .page {
+            width: min(1120px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 46px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--ink);
+            text-decoration: none;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+
+        .brand-mark {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border-radius: 10px;
+            background: var(--ink);
+            color: var(--accent);
+            box-shadow: 0 2px 0 rgba(0, 0, 0, 0.08);
+        }
+
+        .share-date {
+            color: var(--muted);
+            font: 650 12px/1 var(--mono);
+            white-space: nowrap;
+        }
+
+        .sheet {
+            position: relative;
+            overflow: clip;
+            border: 1px solid var(--line);
+            border-radius: 28px;
+            background: color-mix(in srgb, var(--card) 92%, white);
+            box-shadow: var(--shadow);
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 300px;
+            gap: 0;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .hero-main {
+            padding: clamp(28px, 5vw, 54px);
+        }
+
+        .kicker-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 9px;
+            margin-bottom: 22px;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            min-height: 30px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 0 12px;
+            background: rgba(255, 255, 255, 0.46);
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 760;
+        }
+
+        .chip.language::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            margin-right: 8px;
+            border-radius: 999px;
+            background: var(--accent);
+            box-shadow: 0 0 0 3px rgba(245, 197, 66, 0.22);
+        }
+
+        h1 {
+            max-width: 760px;
+            margin: 0;
+            font-family: var(--display);
+            font-size: clamp(42px, 7.4vw, 88px);
+            line-height: 0.92;
+            letter-spacing: -0.065em;
+            overflow-wrap: anywhere;
+        }
+
+        .description {
+            max-width: 700px;
+            margin: 24px 0 0;
+            color: var(--muted);
+            font-size: clamp(16px, 2vw, 20px);
+            line-height: 1.62;
+        }
+
+        .summary-strip {
+            max-width: 760px;
+            margin-top: 34px;
+            padding: 22px 24px;
+            border-radius: 20px;
+            background: var(--ink);
+            color: #fff7df;
+        }
+
+        .summary-strip p {
+            margin: 0;
+            font-family: var(--display);
+            font-size: clamp(19px, 2.4vw, 28px);
+            line-height: 1.36;
+            letter-spacing: -0.025em;
+            font-weight: 760;
+        }
+
+        .hero-side {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 24px;
+            padding: 32px;
+            border-left: 1px solid var(--line);
+            background:
+                linear-gradient(180deg, rgba(245, 197, 66, 0.28), transparent 52%),
+                var(--card-alt);
+        }
+
+        .metric-grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .metric {
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 18px;
+            background: rgba(255, 255, 255, 0.58);
+        }
+
+        .metric-value {
+            display: block;
+            font-family: var(--display);
+            font-size: 34px;
+            line-height: 1;
+            letter-spacing: -0.045em;
+            font-weight: 860;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .metric-label {
+            display: block;
+            margin-top: 8px;
+            color: var(--muted);
+            font: 750 12px/1 var(--mono);
+        }
+
+        .actions {
+            display: grid;
+            gap: 10px;
+        }
+
+        .button {
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 0 15px;
+            background: rgba(255, 255, 255, 0.68);
+            color: var(--ink);
+            text-decoration: none;
+            font: 780 14px/1 var(--sans);
+            cursor: pointer;
+            transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+        }
+
+        .button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 18px rgba(52, 42, 25, 0.11);
+        }
+
+        .button.primary {
+            border-color: var(--ink);
+            background: var(--accent);
+            color: var(--accent-ink);
+        }
+
+        .button svg {
+            width: 16px;
+            height: 16px;
+            flex: 0 0 auto;
+        }
+
+        .cards-section {
+            padding: clamp(22px, 4vw, 42px);
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(12, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .content-card {
+            grid-column: span 6;
+            min-height: 220px;
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            padding: 24px;
+            background: rgba(255, 255, 255, 0.58);
+            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45) inset;
+        }
+
+        .content-card.featured {
+            grid-column: span 7;
+            background: var(--ink);
+            color: #fff7df;
+        }
+
+        .content-card.compact {
+            grid-column: span 5;
+            min-height: 160px;
+        }
+
+        .content-card.full {
+            grid-column: 1 / -1;
+            min-height: auto;
+        }
+
+        .content-card.good { border-color: color-mix(in srgb, var(--green) 45%, var(--line)); }
+        .content-card.risk { border-color: color-mix(in srgb, var(--red) 45%, var(--line)); }
+
+        .card-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 18px;
+            color: var(--muted);
+            font: 760 12px/1 var(--mono);
+        }
+
+        .featured .card-label { color: rgba(255, 247, 223, 0.62); }
+
+        .card-label::before {
+            content: "";
+            width: 9px;
+            height: 9px;
+            border-radius: 99px;
+            background: var(--accent);
+        }
+
+        .content-card h2,
+        .array-card h2 {
+            margin: 0 0 14px;
+            font-family: var(--display);
+            font-size: clamp(24px, 3vw, 38px);
+            line-height: 1.05;
+            letter-spacing: -0.045em;
+        }
+
+        .content-card.compact h2 { font-size: clamp(22px, 2.4vw, 30px); }
+
+        .card-body {
+            color: var(--muted);
+            font-size: 15px;
+            line-height: 1.7;
+        }
+
+        .featured .card-body { color: rgba(255, 247, 223, 0.82); }
+
+        .card-body > :first-child { margin-top: 0 !important; }
+        .card-body > :last-child { margin-bottom: 0 !important; }
+        .card-body p { margin: 0.7em 0; }
+        .card-body ul, .card-body ol { margin: 0.7em 0; padding-left: 1.25rem; }
+        .card-body li { margin: 0.32em 0; }
+        .card-body strong { color: var(--ink); font-weight: 820; }
+        .featured .card-body strong { color: #fff7df; }
+        .card-body code {
+            padding: 2px 6px;
+            border-radius: 6px;
+            background: rgba(28, 26, 22, 0.08);
+            color: var(--ink);
+            font-family: var(--mono);
+            font-size: 0.88em;
+        }
+        .featured .card-body code {
+            background: rgba(255, 247, 223, 0.12);
+            color: #fff7df;
+        }
+
+        .fallback-report {
+            display: none;
+            grid-column: 1 / -1;
+        }
+
+        .array-card ul {
+            display: grid;
+            gap: 10px;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            color: var(--muted);
+            font-size: 15px;
+            line-height: 1.55;
+        }
+
+        .array-card li {
+            position: relative;
+            padding-left: 18px;
+        }
+
+        .array-card li::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0.72em;
+            width: 6px;
+            height: 6px;
+            border-radius: 999px;
+            background: var(--accent);
+        }
+
+        .array-card.good li::before { background: var(--green); }
+        .array-card.risk li::before { background: var(--red); }
+
+        .tag-cloud {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 9px;
+        }
+
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            min-height: 32px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 0 12px;
+            background: rgba(255, 255, 255, 0.62);
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 760;
+        }
+
+        .tag.suggested {
+            border-color: rgba(28, 26, 22, 0.2);
+            background: var(--accent);
+            color: var(--accent-ink);
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            gap: 14px;
+            margin-top: 18px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .footer a {
+            color: var(--ink);
+            font-weight: 800;
+            text-decoration: none;
+        }
+
+        @keyframes liftIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .topbar, .sheet, .footer {
+            animation: liftIn 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .sheet { animation-delay: 70ms; }
+        .footer { animation-delay: 130ms; }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
             }
         }
 
-        /* ── 渐变文字：用于品牌名 / AI 小标题 ── */
-        .gradient-text {
-            background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 50%, #3b82f6 100%);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            color: transparent;
+        @media (max-width: 900px) {
+            .hero {
+                grid-template-columns: 1fr;
+            }
+
+            .hero-side {
+                border-left: 0;
+                border-top: 1px solid var(--line);
+            }
+
+            .metric-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .content-card,
+            .content-card.featured,
+            .content-card.compact {
+                grid-column: 1 / -1;
+            }
         }
 
-        /* ── Markdown 渲染样式 (.prose-ai) ──
-             marked.js 输出的 HTML 套用这一组样式。
-             与 Tailwind Typography 类似但更克制，匹配主卡片视觉。 */
-        .prose-ai { color: #404040; font-size: 15px; line-height: 1.78; word-break: break-word; }
-        .prose-ai > :first-child { margin-top: 0 !important; }
-        .prose-ai > :last-child  { margin-bottom: 0 !important; }
-        .prose-ai h1, .prose-ai h2 {
-            font-size: 1.05rem; font-weight: 700; color: #171717;
-            margin: 1.8em 0 0.6em; display: flex; align-items: center; gap: .6rem;
-            letter-spacing: -0.005em;
-        }
-        .prose-ai h1::before, .prose-ai h2::before {
-            content: ''; width: 3px; height: 16px;
-            background: linear-gradient(180deg, #7c3aed, #3b82f6);
-            border-radius: 2px; display: inline-block; flex-shrink: 0;
-        }
-        .prose-ai h3 { font-size: 0.95rem; font-weight: 600; color: #262626; margin: 1.3em 0 0.45em; }
-        .prose-ai h4 { font-size: 0.9rem;  font-weight: 600; color: #404040; margin: 1.1em 0 0.4em; }
-        .prose-ai p  { margin: 0.65em 0; }
-        .prose-ai ul, .prose-ai ol { margin: 0.6em 0; padding-left: 1.4rem; }
-        .prose-ai ul { list-style: disc; }
-        .prose-ai ol { list-style: decimal; }
-        .prose-ai li { margin: 0.3em 0; }
-        .prose-ai li::marker { color: #a78bfa; }
-        .prose-ai strong { color: #171717; font-weight: 600; }
-        .prose-ai em { color: #525252; }
-        .prose-ai hr { border: none; border-top: 1px solid #e5e5e5; margin: 1.5em 0; }
-        .prose-ai code {
-            background: rgba(124, 58, 237, 0.08); color: #6d28d9;
-            padding: 1px 6px; border-radius: 4px;
-            font-family: 'JetBrains Mono', ui-monospace, monospace;
-            font-size: 0.86em; word-break: break-word;
-        }
-        .prose-ai pre {
-            background: #fafafa; border: 1px solid #ececec;
-            padding: 0.9rem 1rem; border-radius: 10px;
-            overflow-x: auto; margin: 1em 0;
-            font-size: 0.86em; line-height: 1.65;
-        }
-        .prose-ai pre code { background: transparent; color: #1f2937; padding: 0; }
-        .prose-ai a {
-            color: #6d28d9; text-decoration: none;
-            border-bottom: 1px dashed rgba(124, 58, 237, 0.35);
-        }
-        .prose-ai a:hover { border-bottom-style: solid; }
-        .prose-ai blockquote {
-            border-left: 3px solid #c4b5fd;
-            padding: 0.4em 1em; margin: 1em 0;
-            background: rgba(124, 58, 237, 0.05); color: #525252;
-            border-radius: 0 8px 8px 0;
-        }
-        .prose-ai table {
-            border-collapse: collapse; width: 100%;
-            margin: 1em 0; font-size: 0.92em;
-            border: 1px solid #e5e5e5; border-radius: 8px; overflow: hidden;
-        }
-        .prose-ai th, .prose-ai td { border-bottom: 1px solid #f0f0f0; padding: 9px 13px; text-align: left; }
-        .prose-ai tr:last-child td { border-bottom: none; }
-        .prose-ai th { background: #fafafa; font-weight: 600; color: #171717; }
+        @media (max-width: 620px) {
+            .page {
+                width: min(100% - 20px, 1120px);
+                padding-top: 16px;
+            }
 
-        @media (prefers-color-scheme: dark) {
-            .prose-ai { color: #d4d4d4; }
-            .prose-ai h1, .prose-ai h2 { color: #fafafa; }
-            .prose-ai h3 { color: #e5e5e5; }
-            .prose-ai h4 { color: #d4d4d4; }
-            .prose-ai strong { color: #ffffff; }
-            .prose-ai em { color: #a3a3a3; }
-            .prose-ai hr { border-top-color: #27272a; }
-            .prose-ai code { background: rgba(167, 139, 250, 0.14); color: #c4b5fd; }
-            .prose-ai pre { background: #0f0f10; border-color: #26262a; }
-            .prose-ai pre code { color: #e5e7eb; }
-            .prose-ai a { color: #a78bfa; border-bottom-color: rgba(167, 139, 250, 0.45); }
-            .prose-ai blockquote { border-left-color: #7c3aed; background: rgba(124, 58, 237, 0.08); color: #a3a3a3; }
-            .prose-ai table { border-color: #27272a; }
-            .prose-ai th, .prose-ai td { border-bottom-color: #1f1f22; }
-            .prose-ai th { background: #131316; color: #fafafa; }
-        }
+            .topbar {
+                align-items: flex-start;
+                flex-direction: column;
+            }
 
-        /* ── 入场淡入动画 (尊重 prefers-reduced-motion) ── */
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        .fade-up { animation: fadeUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
-        .delay-1 { animation-delay: 0.06s; }
-        .delay-2 { animation-delay: 0.14s; }
-        .delay-3 { animation-delay: 0.22s; }
-        .delay-4 { animation-delay: 0.30s; }
-        .delay-5 { animation-delay: 0.38s; }
-        @media (prefers-reduced-motion: reduce) {
-            .fade-up { animation: none; }
-        }
+            .share-date {
+                white-space: normal;
+            }
 
-        /* Markdown 容器在脚本未就绪前先隐藏，避免源文本闪一下 */
-        .md-pending { opacity: 0; }
-        .md-ready   { opacity: 1; transition: opacity .25s ease; }
+            .sheet {
+                border-radius: 22px;
+            }
+
+            .hero-main,
+            .hero-side,
+            .cards-section {
+                padding: 24px;
+            }
+
+            h1 {
+                font-size: clamp(32px, 10.4vw, 44px);
+                line-height: 1.02;
+                letter-spacing: -0.055em;
+            }
+
+            .summary-strip {
+                margin-top: 24px;
+                padding: 18px;
+                border-radius: 18px;
+            }
+
+            .summary-strip p {
+                font-size: 18px;
+            }
+
+            .metric-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .content-card {
+                min-height: auto;
+                padding: 20px;
+                border-radius: 20px;
+            }
+
+            .footer {
+                flex-direction: column;
+            }
+        }
     </style>
 </head>
-<body class="font-sans bg-orbit min-h-screen bg-[#fafafa] text-[#171717] dark:bg-[#0a0a0a] dark:text-[#fafafa]">
-
-<main class="min-h-screen flex items-start sm:items-center justify-center px-4 py-8 sm:py-14">
-    <article class="max-w-3xl w-full">
-
-        <!-- ── 顶部品牌条 ── -->
-        <div class="flex items-center justify-between mb-5 fade-up">
-            <a href="/" class="inline-flex items-center gap-2 text-sm font-semibold text-neutral-700 dark:text-neutral-200 hover:opacity-80 transition-opacity">
-                <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 text-white shadow-sm">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                        <path d="M5 5l3 4h8l3-4v9a8 8 0 11-14 0V5z"/>
-                        <circle cx="9.5" cy="13" r="1" fill="#0a0a0a"/>
-                        <circle cx="14.5" cy="13" r="1" fill="#0a0a0a"/>
-                    </svg>
-                </span>
-                Starcat AI
-            </a>
-            <span class="text-xs text-neutral-500 dark:text-neutral-400">
-                AI 摘要 · {{ .CreatedAt.Format "2006-01-02" }}
+<body>
+<main class="page">
+    <nav class="topbar" aria-label="分享页信息">
+        <a class="brand" href="/">
+            <span class="brand-mark" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M5 5l3 4h8l3-4v9a8 8 0 1 1-16 0V5z"></path>
+                    <circle cx="9.5" cy="13" r="1" fill="currentColor"></circle>
+                    <circle cx="14.5" cy="13" r="1" fill="currentColor"></circle>
+                </svg>
             </span>
-        </div>
+            <span>Starcat</span>
+        </a>
+        <span class="share-date">{{ .CreatedAt.Format "2006-01-02" }}</span>
+    </nav>
 
-        <!-- ── 主卡片 ── -->
-        <div class="relative rounded-2xl border border-neutral-200/80 dark:border-neutral-800/80 bg-white/85 dark:bg-neutral-950/70 backdrop-blur-xl shadow-[0_8px_40px_-12px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_40px_-8px_rgba(0,0,0,0.5)] overflow-hidden fade-up delay-1">
-            <!-- 顶部细装饰线 -->
-            <div class="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-500/70 to-transparent"></div>
-
-            <!-- Hero -->
-            <header class="px-6 sm:px-10 pt-9 pb-6">
-                {{ if .Request.Repo.Language }}
-                <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800/70 text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-4">
-                    <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                    {{ .Request.Repo.Language }}
+    <article class="sheet">
+        <header class="hero">
+            <section class="hero-main">
+                <div class="kicker-row">
+                    {{ if .Request.Repo.Language }}
+                    <span class="chip language">{{ .Request.Repo.Language }}</span>
+                    {{ end }}
+                    {{ if .ExpiresAt }}
+                    <span class="chip">有效至 {{ .ExpiresAt.Format "2006-01-02" }}</span>
+                    {{ end }}
                 </div>
-                {{ end }}
 
-                <h1 class="text-2xl sm:text-[28px] font-bold tracking-tight text-neutral-900 dark:text-white leading-tight">
-                    {{ .Request.Repo.FullName }}
-                </h1>
+                <h1>{{ .Request.Repo.FullName }}</h1>
 
                 {{ if .Request.Repo.Description }}
-                <p class="mt-3 text-base sm:text-lg text-neutral-600 dark:text-neutral-300 leading-relaxed">
-                    {{ .Request.Repo.Description }}
-                </p>
+                <p class="description">{{ .Request.Repo.Description }}</p>
                 {{ end }}
 
-                <!-- Stats Row -->
-                <div class="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-neutral-700 dark:text-neutral-300">
-                    <span class="inline-flex items-center gap-1.5">
-                        <svg class="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                        <strong class="font-semibold tabular-nums">{{ .Request.Repo.StarsCount }}</strong>
-                        <span class="text-neutral-500 dark:text-neutral-500">Stars</span>
-                    </span>
-                    <span class="inline-flex items-center gap-1.5">
-                        <svg class="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                            <circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/>
-                            <path d="M6 8v3a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8M12 13v3"/>
-                        </svg>
-                        <strong class="font-semibold tabular-nums">{{ .Request.Repo.ForksCount }}</strong>
-                        <span class="text-neutral-500 dark:text-neutral-500">Forks</span>
-                    </span>
-                </div>
-            </header>
-
-            <div class="px-6 sm:px-10"><div class="border-t border-neutral-200/70 dark:border-neutral-800/70"></div></div>
-
-            <!-- AI Insight -->
-            <section class="px-6 sm:px-10 py-8 fade-up delay-2">
                 {{ if .Request.AISummary.OneLiner }}
-                <div class="relative pl-5 mb-7">
-                    <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-full bg-gradient-to-b from-violet-500 via-indigo-500 to-blue-500"></span>
-                    <div class="inline-flex items-center gap-1.5 mb-2 text-[11px] uppercase tracking-[0.14em] font-semibold gradient-text">
-                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1l2.5 5 5.5.8-4 3.9.9 5.5L10 13.6 5.1 16.2 6 10.7 2 6.8l5.5-.8L10 1z"/></svg>
-                        AI 一句话总结
-                    </div>
-                    <p class="text-lg sm:text-[19px] font-medium leading-relaxed text-neutral-900 dark:text-neutral-100">
-                        {{ .Request.AISummary.OneLiner }}
-                    </p>
+                <div class="summary-strip">
+                    <p>{{ .Request.AISummary.OneLiner }}</p>
                 </div>
-                {{ end }}
-
-                {{ if .Request.AISummary.Summary }}
-                <!-- Markdown 源：放在 <template> 中，浏览器不会渲染，
-                     但 textContent 能正确取到反转义后的原文 -->
-                <template id="md-source">{{ .Request.AISummary.Summary }}</template>
-                <div id="md-render" class="prose-ai md-pending" aria-live="polite"></div>
-                <noscript>
-                    <pre class="prose-ai whitespace-pre-wrap text-sm bg-neutral-50 dark:bg-neutral-900 p-4 rounded-lg border border-neutral-200 dark:border-neutral-800">{{ .Request.AISummary.Summary }}</pre>
-                </noscript>
                 {{ end }}
             </section>
 
-            <!-- 可选信息：亮点 / 风险 / 平台 / 适合场景 -->
-            {{ if or .Request.AISummary.Strengths .Request.AISummary.Risks .Request.AISummary.Platforms .Request.AISummary.SuitableFor }}
-            <div class="px-6 sm:px-10"><div class="border-t border-neutral-200/70 dark:border-neutral-800/70"></div></div>
-            <section class="px-6 sm:px-10 py-8 grid grid-cols-1 md:grid-cols-2 gap-4 fade-up delay-3">
+            <aside class="hero-side" aria-label="仓库操作">
+                <div class="metric-grid">
+                    <div class="metric">
+                        <span class="metric-value">{{ .Request.Repo.StarsCount }}</span>
+                        <span class="metric-label">Stars</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-value">{{ .Request.Repo.ForksCount }}</span>
+                        <span class="metric-label">Forks</span>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <a class="button primary" href="{{ .Request.Repo.URL }}" target="_blank" rel="noopener noreferrer">
+                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.78 1.19 1.78 1.19 1.03 1.77 2.71 1.26 3.37.96.11-.75.41-1.26.74-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.18 1.18.92-.26 1.91-.39 2.89-.39.98 0 1.97.13 2.89.39 2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.4-5.25 5.68.42.36.79 1.07.79 2.17 0 1.57-.02 2.83-.02 3.21 0 .31.21.67.8.55 4.56-1.52 7.85-5.83 7.85-10.91C23.5 5.65 18.35.5 12 .5z"></path>
+                        </svg>
+                        查看仓库
+                    </a>
+                    {{ if .Request.Repo.Homepage }}
+                    <a class="button" href="{{ .Request.Repo.Homepage }}" target="_blank" rel="noopener noreferrer">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                        </svg>
+                        项目主页
+                    </a>
+                    {{ end }}
+                    <button class="button" type="button" onclick="copyShareUrl()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                        <span id="copyText">复制链接</span>
+                    </button>
+                </div>
+            </aside>
+        </header>
+
+        <section class="cards-section" aria-label="分享卡片">
+            <template id="summary-source">{{ .Request.AISummary.Summary }}</template>
+            <div id="generated-cards" class="card-grid">
+                <span id="card-anchor" hidden></span>
 
                 {{ if .Request.AISummary.Strengths }}
-                <div class="rounded-xl p-5 bg-emerald-50/70 dark:bg-emerald-500/[0.06] border border-emerald-200/70 dark:border-emerald-500/15">
-                    <h3 class="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300 mb-3">
-                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.7-9.3a1 1 0 00-1.4-1.4L9 10.6 7.7 9.3a1 1 0 00-1.4 1.4l2 2a1 1 0 001.4 0l4-4z" clip-rule="evenodd"/></svg>
-                        亮点
-                    </h3>
-                    <ul class="space-y-1.5 text-sm text-neutral-700 dark:text-neutral-300">
+                <article class="content-card compact array-card good">
+                    <span class="card-label">highlights</span>
+                    <h2>亮点</h2>
+                    <ul>
                         {{ range .Request.AISummary.Strengths }}
-                        <li class="flex items-start gap-2"><span class="text-emerald-500 mt-1.5 leading-none">•</span><span>{{ . }}</span></li>
+                        <li>{{ . }}</li>
                         {{ end }}
                     </ul>
-                </div>
+                </article>
                 {{ end }}
 
                 {{ if .Request.AISummary.Risks }}
-                <div class="rounded-xl p-5 bg-rose-50/70 dark:bg-rose-500/[0.06] border border-rose-200/70 dark:border-rose-500/15">
-                    <h3 class="flex items-center gap-2 text-sm font-semibold text-rose-700 dark:text-rose-300 mb-3">
-                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.518 11.59c.75 1.335-.213 2.98-1.743 2.98H3.482c-1.53 0-2.493-1.645-1.743-2.98L8.257 3.1zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
-                        风险 / 不足
-                    </h3>
-                    <ul class="space-y-1.5 text-sm text-neutral-700 dark:text-neutral-300">
+                <article class="content-card compact array-card risk">
+                    <span class="card-label">watch</span>
+                    <h2>注意点</h2>
+                    <ul>
                         {{ range .Request.AISummary.Risks }}
-                        <li class="flex items-start gap-2"><span class="text-rose-500 mt-1.5 leading-none">•</span><span>{{ . }}</span></li>
+                        <li>{{ . }}</li>
                         {{ end }}
                     </ul>
-                </div>
-                {{ end }}
-
-                {{ if .Request.AISummary.Platforms }}
-                <div class="rounded-xl p-5 bg-sky-50/70 dark:bg-sky-500/[0.06] border border-sky-200/70 dark:border-sky-500/15">
-                    <h3 class="flex items-center gap-2 text-sm font-semibold text-sky-700 dark:text-sky-300 mb-3">
-                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 4a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2h-3l1 3h2a1 1 0 110 2H6a1 1 0 110-2h2l1-3H4a2 2 0 01-2-2V4zm2 0v8h12V4H4z"/></svg>
-                        支持平台
-                    </h3>
-                    <div class="flex flex-wrap gap-1.5">
-                        {{ range .Request.AISummary.Platforms }}
-                        <span class="px-2.5 py-1 rounded-md bg-white/70 dark:bg-sky-500/10 text-xs font-medium text-sky-700 dark:text-sky-300 border border-sky-200/70 dark:border-sky-500/20">{{ . }}</span>
-                        {{ end }}
-                    </div>
-                </div>
+                </article>
                 {{ end }}
 
                 {{ if .Request.AISummary.SuitableFor }}
-                <div class="rounded-xl p-5 bg-violet-50/70 dark:bg-violet-500/[0.06] border border-violet-200/70 dark:border-violet-500/15">
-                    <h3 class="flex items-center gap-2 text-sm font-semibold text-violet-700 dark:text-violet-300 mb-3">
-                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
-                        适合场景
-                    </h3>
-                    <ul class="space-y-1.5 text-sm text-neutral-700 dark:text-neutral-300">
+                <article class="content-card array-card">
+                    <span class="card-label">use cases</span>
+                    <h2>适合场景</h2>
+                    <ul>
                         {{ range .Request.AISummary.SuitableFor }}
-                        <li class="flex items-start gap-2"><span class="text-violet-500 mt-1.5 leading-none">•</span><span>{{ . }}</span></li>
+                        <li>{{ . }}</li>
                         {{ end }}
                     </ul>
-                </div>
+                </article>
                 {{ end }}
-            </section>
-            {{ end }}
 
-            <!-- 标签云 -->
-            {{ if or .Request.Repo.Topics .Request.AISummary.SuggestedTags }}
-            <div class="px-6 sm:px-10"><div class="border-t border-neutral-200/70 dark:border-neutral-800/70"></div></div>
-            <section class="px-6 sm:px-10 py-7 fade-up delay-4">
-                <h3 class="text-[11px] uppercase tracking-[0.14em] font-semibold text-neutral-500 dark:text-neutral-400 mb-3">
-                    主题标签
-                </h3>
-                <div class="flex flex-wrap gap-1.5">
-                    {{ range .Request.Repo.Topics }}
-                    <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-neutral-100 hover:bg-neutral-200/80 dark:bg-neutral-800/70 dark:hover:bg-neutral-800 text-xs font-medium text-neutral-700 dark:text-neutral-300 transition-colors">
-                        {{ . }}
-                    </span>
-                    {{ end }}
-                    {{ range .Request.AISummary.SuggestedTags }}
-                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-violet-50 to-blue-50 dark:from-violet-500/10 dark:to-blue-500/10 text-xs font-medium text-violet-700 dark:text-violet-300 border border-violet-200/60 dark:border-violet-500/20"
-                          {{ with .Confidence }}title="AI 置信度 {{ printf "%.2f" . }}"{{ end }}>
-                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1l1.5 4.5L16 7l-4.5 1.5L10 13l-1.5-4.5L4 7l4.5-1.5L10 1z"/></svg>
-                        {{ .Name }}
-                    </span>
-                    {{ end }}
-                </div>
-            </section>
-            {{ end }}
-
-            <!-- Actions -->
-            <footer class="px-6 sm:px-10 pb-8 pt-2 fade-up delay-5">
-                <div class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <button type="button" id="copyBtn" onclick="copyShareUrl()"
-                            class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800/70 dark:hover:bg-neutral-800 transition-colors">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                            <rect x="9" y="9" width="13" height="13" rx="2"/>
-                            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-                        </svg>
-                        <span id="copyText">复制分享链接</span>
-                    </button>
-                    <div class="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
-                        {{ if .Request.Repo.Homepage }}
-                        <a href="{{ .Request.Repo.Homepage }}" target="_blank" rel="noopener noreferrer"
-                           class="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-semibold text-neutral-700 dark:text-neutral-200 bg-white hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-800 transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                            </svg>
-                            官网
-                        </a>
+                {{ if .Request.AISummary.Platforms }}
+                <article class="content-card compact">
+                    <span class="card-label">platform</span>
+                    <h2>平台</h2>
+                    <div class="tag-cloud">
+                        {{ range .Request.AISummary.Platforms }}
+                        <span class="tag">{{ . }}</span>
                         {{ end }}
-                        <a href="{{ .Request.Repo.URL }}" target="_blank" rel="noopener noreferrer"
-                           class="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-neutral-900 hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors shadow-sm">
-                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.78 1.19 1.78 1.19 1.03 1.77 2.71 1.26 3.37.96.11-.75.41-1.26.74-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.18 1.18.92-.26 1.91-.39 2.89-.39.98 0 1.97.13 2.89.39 2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.4-5.25 5.68.42.36.79 1.07.79 2.17 0 1.57-.02 2.83-.02 3.21 0 .31.21.67.8.55 4.56-1.52 7.85-5.83 7.85-10.91C23.5 5.65 18.35.5 12 .5z"/>
-                            </svg>
-                            查看仓库
-                        </a>
                     </div>
-                </div>
-            </footer>
-        </div>
+                </article>
+                {{ end }}
 
-        <!-- 底部小字署名 -->
-        <p class="mt-6 text-center text-xs text-neutral-500 dark:text-neutral-500 fade-up delay-5">
-            由 <a href="/" class="font-semibold gradient-text">Starcat AI</a> 生成的智能项目摘要
-            {{ if .ExpiresAt }} · 链接将于 {{ .ExpiresAt.Format "2006-01-02" }} 过期{{ end }}
-        </p>
+                {{ if or .Request.Repo.Topics .Request.AISummary.SuggestedTags }}
+                <article class="content-card full">
+                    <span class="card-label">tags</span>
+                    <h2>标签</h2>
+                    <div class="tag-cloud">
+                        {{ range .Request.Repo.Topics }}
+                        <span class="tag">{{ . }}</span>
+                        {{ end }}
+                        {{ range .Request.AISummary.SuggestedTags }}
+                        <span class="tag suggested" {{ with .Confidence }}title="置信度 {{ printf "%.2f" . }}"{{ end }}>{{ .Name }}</span>
+                        {{ end }}
+                    </div>
+                </article>
+                {{ end }}
+
+                <article id="fallback-report" class="content-card fallback-report">
+                    <span class="card-label">notes</span>
+                    <h2>项目速记</h2>
+                    <div id="fallback-body" class="card-body"></div>
+                </article>
+            </div>
+        </section>
     </article>
+
+    <footer class="footer">
+        <span>由 <a href="/">Starcat</a> 生成的开源项目卡片</span>
+        {{ if .ExpiresAt }}<span>链接将在 {{ .ExpiresAt.Format "2006-01-02" }} 过期</span>{{ end }}
+    </footer>
 </main>
 
 <script>
 /**
- * renderMarkdown
+ * splitMarkdownSections
  * ------------------------------------------------------------------
- * 在 marked.js + DOMPurify 都就绪后，把 <template id="md-source"> 内的
- * Markdown 文本渲染到 #md-render。
- * - 使用 textContent 读取，保证特殊字符 (如 <、&) 已被浏览器反转义；
- * - DOMPurify 净化掉任何潜在的 XSS（script、on* 事件、javascript: 协议等）；
- * - 给所有外链补 target=_blank + rel=noopener，避免分享页被钓鱼利用。
+ * 固定 JSON 中的 summary 通常按 Markdown 二级标题组织。这里把每个
+ * `## 标题` 拆成一张分享卡片；如果模型没有给标题，则退化为单张速记卡。
+ * 这样不同仓库的数据会生成不同数量和重点的内容卡片。
  */
-function renderMarkdown() {
-    if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
-        return setTimeout(renderMarkdown, 50);
-    }
-    const tpl = document.getElementById('md-source');
-    const out = document.getElementById('md-render');
-    if (!tpl || !out) return;
+function splitMarkdownSections(markdown) {
+    const lines = markdown.split(/\r?\n/);
+    const sections = [];
+    let current = null;
 
-    // 取 textContent 而不是 innerHTML：textContent 给出的是 DOM 文本节点的字面值
-    // (Go html/template 转义过的 &lt; 已被浏览器还原成 <)，innerHTML 会再次序列化为实体
-    const raw = (tpl.content || tpl).textContent || '';
-    let html;
-    try {
-        marked.setOptions({ gfm: true, breaks: false, mangle: false, headerIds: false });
-        html = marked.parse(raw);
-    } catch (e) {
-        out.textContent = raw;
-        out.classList.replace('md-pending', 'md-ready');
-        return;
+    for (const line of lines) {
+        const match = line.match(/^##\s+(.+?)\s*$/);
+        if (match) {
+            if (current && current.body.join('\n').trim()) {
+                sections.push(current);
+            }
+            current = { title: match[1].trim(), body: [] };
+            continue;
+        }
+        if (!current) {
+            current = { title: '项目速记', body: [] };
+        }
+        current.body.push(line);
     }
 
-    out.innerHTML = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
-    out.querySelectorAll('a[href]').forEach(a => {
-        a.setAttribute('target', '_blank');
-        a.setAttribute('rel', 'noopener noreferrer');
-    });
-    out.classList.replace('md-pending', 'md-ready');
+    if (current && current.body.join('\n').trim()) {
+        sections.push(current);
+    }
+    return sections;
 }
 
 /**
- * copyShareUrl
+ * sectionKind
  * ------------------------------------------------------------------
- * 复制当前分享页 URL 到剪贴板；若 Clipboard API 不可用则降级提示。
+ * 给常见标题分配卡片形态。这里不改变内容，只决定视觉节奏。
  */
-async function copyShareUrl() {
-    const txt = document.getElementById('copyText');
-    const prev = txt.textContent;
-    try {
-        await navigator.clipboard.writeText(window.location.href);
-        txt.textContent = '已复制 ✓';
-    } catch (e) {
-        txt.textContent = '复制失败';
-    }
-    setTimeout(() => { txt.textContent = prev; }, 1600);
+function sectionKind(title, index) {
+    if (/一句话|总结|速记/.test(title)) return 'featured';
+    if (/风险|注意|限制|不足/.test(title)) return 'compact risk';
+    if (/优点|亮点|优势/.test(title)) return 'compact good';
+    if (/示例|代码|最小/.test(title)) return 'full';
+    return index % 3 === 1 ? 'compact' : '';
 }
 
-document.addEventListener('DOMContentLoaded', renderMarkdown);
-</script>
+function renderMarkdown(markdown) {
+    if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+        return null;
+    }
+    marked.setOptions({ gfm: true, breaks: false, mangle: false, headerIds: false });
+    return DOMPurify.sanitize(marked.parse(markdown), { USE_PROFILES: { html: true } });
+}
 
+function renderCards() {
+    if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+        return setTimeout(renderCards, 50);
+    }
+
+    const source = document.getElementById('summary-source');
+    const grid = document.getElementById('generated-cards');
+    const anchor = document.getElementById('card-anchor');
+    const fallback = document.getElementById('fallback-report');
+    const fallbackBody = document.getElementById('fallback-body');
+    if (!source || !grid) return;
+
+    const raw = (source.content || source).textContent.trim();
+    if (!raw) {
+        if (fallback) fallback.style.display = 'block';
+        if (fallbackBody) fallbackBody.textContent = '这张卡片暂时只有仓库基础信息。';
+        return;
+    }
+
+    const sections = splitMarkdownSections(raw)
+        .filter((section) => section.body.join('\n').trim())
+        .filter((section) => !/^一句话总结$/.test(section.title));
+
+    if (!sections.length) {
+        if (fallback && fallbackBody) {
+            fallback.style.display = 'block';
+            fallbackBody.innerHTML = renderMarkdown(raw) || raw;
+        }
+        return;
+    }
+
+    let cursor = anchor;
+    sections.forEach((section, index) => {
+        const article = document.createElement('article');
+        article.className = `content-card ${sectionKind(section.title, index)}`.trim();
+
+        const label = document.createElement('span');
+        label.className = 'card-label';
+        label.textContent = String(index + 1).padStart(2, '0');
+
+        const heading = document.createElement('h2');
+        heading.textContent = section.title;
+
+        const body = document.createElement('div');
+        body.className = 'card-body';
+        body.innerHTML = renderMarkdown(section.body.join('\n')) || section.body.join('\n');
+        body.querySelectorAll('a[href]').forEach((anchor) => {
+            anchor.setAttribute('target', '_blank');
+            anchor.setAttribute('rel', 'noopener noreferrer');
+        });
+
+        article.append(label, heading, body);
+        cursor.after(article);
+        cursor = article;
+    });
+}
+
+async function copyShareUrl() {
+    const text = document.getElementById('copyText');
+    const previous = text.textContent;
+    try {
+        await navigator.clipboard.writeText(window.location.href);
+        text.textContent = '已复制';
+    } catch (error) {
+        text.textContent = '复制失败';
+    }
+    setTimeout(() => { text.textContent = previous; }, 1500);
+}
+
+document.addEventListener('DOMContentLoaded', renderCards);
+</script>
 </body>
 </html>
