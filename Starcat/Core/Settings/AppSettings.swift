@@ -263,6 +263,52 @@ enum SmartSearchMode: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - README 翻译目标语言（HOM-68）
+
+/// README AI 翻译目标语言。
+///
+/// 设计：
+/// - **raw 用 BCP-47 标签**（`zh-Hans` / `en` / `ja` 等）：与 `Locale.identifier` 兼容，
+///   后续如果要做"按系统语言自动选默认目标"或写日志时可以直接传给 Locale；
+/// - 默认 `.simplifiedChinese`：HOM-68 明确要求默认中文；
+/// - 第一版只列 5 个主流语言；后续按用户反馈追加。
+/// - `displayName` 走本地化（菜单显示的是「简体中文 / English / 日本語」之类用户母语标签）；
+/// - `promptName` 是发给 LLM 的目标语言名称，固定走英文（`Simplified Chinese`），
+///   避免不同 provider 对中文 prompt 关键词的解析差异，提示词中明确语言能更稳定。
+enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sendable {
+    case simplifiedChinese = "zh-Hans"
+    case traditionalChinese = "zh-Hant"
+    case english = "en"
+    case japanese = "ja"
+    case korean = "ko"
+
+    var id: String { rawValue }
+
+    /// 菜单显示文案（本地化）。
+    /// 直接返回原生语言名而不是走 xcstrings：菜单里通常用「目标语言的母语写法」
+    /// 比"Simplified Chinese / 简体中文"双语对照更短更清晰。
+    var displayName: String {
+        switch self {
+        case .simplifiedChinese:  return "简体中文"
+        case .traditionalChinese: return "繁體中文"
+        case .english:            return "English"
+        case .japanese:           return "日本語"
+        case .korean:             return "한국어"
+        }
+    }
+
+    /// 发给 LLM 的目标语言名（固定英文，跨 provider 最稳定）。
+    var promptName: String {
+        switch self {
+        case .simplifiedChinese:  return "Simplified Chinese"
+        case .traditionalChinese: return "Traditional Chinese"
+        case .english:            return "English"
+        case .japanese:           return "Japanese"
+        case .korean:             return "Korean"
+        }
+    }
+}
+
 // MARK: - AppSettings
 
 /// 应用级偏好容器。
@@ -381,6 +427,16 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.aiEmbeddingTask, value: aiEmbeddingTask) }
     }
 
+    /// README 翻译任务模型配置（HOM-68 follow-up 2026-06-05）。
+    ///
+    /// 独立于 `aiSummaryTask`：摘要追求"通顺 + 结构化"（中温度 + 中 max tokens），
+    /// 翻译追求"低温度 + 结构保真 + 大上下文"，两类参数差异明显，所以拆开存储 +
+    /// 拆开在设置页配置。首次升级时 `init` 兜底逻辑会用与摘要相同的 provider+model 作
+    /// 默认值，但参数走 `AIModelParameters.translationDefault`，用户可在设置页改。
+    var aiTranslationTask: AIModelTaskConfiguration {
+        didSet { persistJSON(key: Keys.aiTranslationTask, value: aiTranslationTask) }
+    }
+
     /// 搜索栏当前模式。默认 keyword，避免用户未配置 AI 时误触发付费 API。
     var smartSearchMode: SmartSearchMode {
         didSet { persist(key: Keys.smartSearchMode, value: smartSearchMode.rawValue) }
@@ -391,6 +447,13 @@ final class AppSettings {
     /// 修改时 `ContributionGraphView` 会通过 `.onChange` 重建 animator。
     var snakeStyle: SnakeStyle {
         didSet { persist(key: Keys.snakeStyle, value: snakeStyle.rawValue) }
+    }
+
+    /// README 翻译目标语言（HOM-68）。
+    /// 默认简体中文，符合 HOM-68 验收要求；用户可在详情页翻译按钮的下拉菜单里切换，
+    /// 选择后即时落盘，下次进入详情页直接命中本地翻译缓存（按 `(repo_id, language)` 查表）。
+    var readmeTranslationLanguage: ReadmeTranslationLanguage {
+        didSet { persist(key: Keys.readmeTranslationLanguage, value: readmeTranslationLanguage.rawValue) }
     }
 
     // MARK: - 初始化
@@ -462,11 +525,24 @@ final class AppSettings {
         self.aiSummaryTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiSummaryTask, defaults: defaults) ?? defaultSummaryTask
         self.aiTagsTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiTagsTask, defaults: defaults) ?? defaultTagsTask
         self.aiEmbeddingTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiEmbeddingTask, defaults: defaults) ?? defaultEmbeddingTask
+        // HOM-68 follow-up：翻译任务首次升级时与摘要使用同一 provider+model，
+        // 参数走 translationDefault（低温度 + 高 maxToken），用户可在设置页改。
+        let defaultTranslationTask = Self.makeDefaultTask(
+            task: .translation,
+            profileID: defaultProfile.id,
+            modelName: resolvedAIChatModel
+        )
+        self.aiTranslationTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiTranslationTask, defaults: defaults) ?? defaultTranslationTask
         let searchModeRaw = defaults.string(forKey: Keys.smartSearchMode)
         self.smartSearchMode = searchModeRaw.flatMap(SmartSearchMode.init(rawValue:)) ?? .keyword
 
         let snakeStyleRaw = defaults.string(forKey: Keys.snakeStyle)
         self.snakeStyle = snakeStyleRaw.flatMap(SnakeStyle.init(rawValue:)) ?? SnakeStyle.default
+
+        // HOM-68：README 翻译目标语言。默认简体中文。
+        let translationLangRaw = defaults.string(forKey: Keys.readmeTranslationLanguage)
+        self.readmeTranslationLanguage = translationLangRaw
+            .flatMap(ReadmeTranslationLanguage.init(rawValue:)) ?? .simplifiedChinese
     }
 
     // MARK: - 内部
@@ -506,6 +582,25 @@ final class AppSettings {
             AppLog.general.error("decodeJSON failed for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
             return nil
         }
+    }
+
+    /// HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
+    /// 解析一个任务在调用时实际生效的 AI 参数。
+    ///
+    /// 解析顺序（先命中即返回）：
+    /// 1. 任务绑定的 (providerID, modelID) descriptor 找到了 → 用 descriptor.parameters，
+    ///    若 descriptor.parameters 为 nil 走 `AIModelParameters.defaults(for: capability)`；
+    /// 2. 找不到 descriptor（model 被删 / providerID 不再存在 / 老 build 升级中途）→
+    ///    回退到 task 持久化的 legacy parameters，保住老用户的体验不被破坏。
+    ///
+    /// UI 已不再暴露任务粒度的"模型参数"编辑（v9 改成模型粒度的齿轮按钮），
+    /// 但 task.parameters 字段保留作为 二级 fallback，避免数据迁移阻塞发布。
+    func effectiveParameters(for task: AIModelTaskConfiguration) -> AIModelParameters {
+        if let profile = aiProviderProfiles.first(where: { $0.id == task.providerID }),
+           let model = profile.models.first(where: { $0.name == task.modelID }) {
+            return model.parameters ?? AIModelParameters.defaults(for: model.capability)
+        }
+        return task.parameters
     }
 
     private static func makeDefaultAIProviderProfile(
@@ -551,16 +646,18 @@ final class AppSettings {
             useCustomModel: false,
             parameters: {
                 switch task {
-                case .summary:   return .summaryDefault
-                case .tags:      return .tagsDefault
-                case .embedding: return .embeddingDefault
+                case .summary:     return .summaryDefault
+                case .tags:        return .tagsDefault
+                case .embedding:   return .embeddingDefault
+                case .translation: return .translationDefault
                 }
             }(),
             prompt: {
                 switch task {
-                case .summary:   return AIDefaultPrompts.summary
-                case .tags:      return AIDefaultPrompts.tags
-                case .embedding: return AIDefaultPrompts.embedding
+                case .summary:     return AIDefaultPrompts.summary
+                case .tags:        return AIDefaultPrompts.tags
+                case .embedding:   return AIDefaultPrompts.embedding
+                case .translation: return AIDefaultPrompts.translation
                 }
             }()
         )
@@ -584,7 +681,9 @@ final class AppSettings {
         static let aiSummaryTask = "settings.ai.task.summary.v2"
         static let aiTagsTask = "settings.ai.task.tags.v2"
         static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
+        static let aiTranslationTask = "settings.ai.task.translation.v2"  // HOM-68 follow-up
         static let smartSearchMode = "settings.search.mode"
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
+        static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
     }
 }

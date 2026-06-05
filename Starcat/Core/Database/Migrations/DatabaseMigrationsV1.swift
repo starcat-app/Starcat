@@ -14,6 +14,7 @@
 //  后续版本：
 //  - v5：repo_embeddings / ai_summaries（AI 功能上线时）
 //  - v6：release_subscriptions / releases（Release 订阅功能上线时）
+//  - v7：readme_translations（HOM-68 README 翻译缓存）
 //
 
 import Foundation
@@ -34,6 +35,60 @@ enum DatabaseMigrations {
         registerV4(into: &migrator)
         registerV5(into: &migrator)
         registerV6(into: &migrator)
+        registerV7(into: &migrator)
+    }
+
+    // MARK: - v7（HOM-68 README 翻译缓存）
+
+    /// v7：README AI 翻译结果缓存。
+    ///
+    /// **背景**：HOM-68 在 README 详情区新增"翻译 README"入口，调用 AI 把原 HTML
+    /// 翻译成目标语言（默认简体中文）。翻译消耗 AI 配额、耗时显著，必须落地缓存
+    /// 避免用户每次切回详情页都重复消耗——这是验收标准之一。
+    ///
+    /// **设计要点**：
+    /// - **PK `(repo_id, target_language)`**：同一仓库每种目标语言保留最新一份
+    ///   翻译，覆盖式 upsert。第一版不保留历史版本（用户可手动重新翻译触发覆盖）。
+    /// - **`source_hash`**：对参与翻译的 README HTML 做 SHA256 指纹；README 被
+    ///   作者更新（远端 ETag 改变 → 本地 readmes 表 upsert 新内容）后旧翻译
+    ///   `source_hash` 不再匹配，调用方按需重新生成而不是误用旧译文。
+    /// - **`model`**：记录当时使用的 LLM 模型名，便于排查"为什么这份翻译质量
+    ///   不如另一份"，第二版若做多模型对比也能复用。
+    /// - **`translated_html`**：保存模型回填后的 HTML 片段，与 `readmes.rendered_html`
+    ///   结构对齐，UI 端可直接喂给 `ReadmeWebView` 渲染，无需重新组装。
+    /// - **`size` 字段**：与 `readmes` 对齐，便于后续缓存清理按字节排序。
+    /// - 外键 `repo_id → repos.id ON DELETE CASCADE`：取消 star → 本地 repo 行
+    ///   被删 → 联级清理翻译，避免孤立缓存膨胀。
+    ///
+    /// **为什么独立表而不是把翻译塞进 `readmes` 表**：
+    /// - `readmes` 是"GitHub 原 README 缓存"，由 ReadmeAPI 的 ETag 流程独占管理；
+    ///   塞翻译会让 ETag 304 命中时既要 touchCachedAt 又要保留 translation 字段，
+    ///   写入逻辑容易踩进"翻译被原 README 304 路径误清"之类的坑。
+    /// - 一个 repo 可能存多个目标语言（中/英/日同时缓存），独立表用复合 PK 更直观。
+    /// - 翻译表 schema 完全独立于 ETag/Last-Modified 流程，未来要加分块翻译进度
+    ///   或质量评分字段时不影响 readmes。
+    private static func registerV7(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v7-readme-translations") { db in
+            try createReadmeTranslations(db)
+        }
+    }
+
+    private static func createReadmeTranslations(_ db: Database) throws {
+        try db.create(table: "readme_translations") { t in
+            t.column("repo_id", .integer).notNull()
+                .references("repos", column: "id", onDelete: .cascade)
+            // 目标语言用 BCP-47 风格的 raw（如 `zh-Hans` / `en` / `ja`）
+            t.column("target_language", .text).notNull()
+            t.column("model", .text).notNull()
+            t.column("source_hash", .text).notNull()
+            t.column("translated_html", .text).notNull()
+            t.column("size", .integer).notNull().defaults(to: 0)
+            t.column("created_at", .text).notNull()
+
+            t.primaryKey(["repo_id", "target_language"])
+        }
+
+        try db.create(index: "idx_readme_translations_repo", on: "readme_translations", columns: ["repo_id"])
     }
 
     // MARK: - v6（HOM-47 Release 订阅追踪）

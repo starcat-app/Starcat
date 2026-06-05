@@ -163,6 +163,103 @@ struct AppSettingsTests {
         #expect(s2.aiEmbeddingTask.modelID == "text-embedding-3-small")
     }
 
+    // MARK: - HOM-68 follow-up v9: 模型粒度参数
+
+    @Test("AI: AIModelParameters.defaults(for:) 按 capability 返回正确默认")
+    func aiCapabilityDefaults() {
+        #expect(AIModelParameters.defaults(for: .chat) == AIModelParameters.summaryDefault)
+        #expect(AIModelParameters.defaults(for: .embedding) == AIModelParameters.embeddingDefault)
+        // unknown 当 chat 用——大多数 OpenAI-compatible /models 接口返回 owned_by
+        // 推不出能力时落到 unknown，UI 还能让用户手改成 chat / embedding。
+        #expect(AIModelParameters.defaults(for: .unknown) == AIModelParameters.summaryDefault)
+    }
+
+    @Test("AI: effectiveParameters 优先用模型粒度覆盖")
+    func effectiveParametersUsesModelOverride() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        var overridden = AIModelParameters.summaryDefault
+        overridden.temperature = 0.77
+        overridden.maxCompletionTokens = 7 * 1024
+
+        let profile = AIProviderProfile(
+            id: "p1",
+            provider: .openAICompatible,
+            displayName: "P1",
+            baseURL: "https://example.com/v1",
+            models: [
+                AIModelDescriptor(
+                    providerID: "p1",
+                    name: "gpt-test",
+                    capability: .chat,
+                    parameters: overridden
+                )
+            ]
+        )
+        settings.aiProviderProfiles = [profile]
+        settings.aiSummaryTask.providerID = "p1"
+        settings.aiSummaryTask.modelID = "gpt-test"
+
+        let resolved = settings.effectiveParameters(for: settings.aiSummaryTask)
+        #expect(resolved.temperature == 0.77)
+        #expect(resolved.maxCompletionTokens == 7 * 1024)
+    }
+
+    @Test("AI: descriptor.parameters == nil 时回退到 capability 默认")
+    func effectiveParametersFallsBackToCapabilityDefault() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        let profile = AIProviderProfile(
+            id: "p2",
+            provider: .openAICompatible,
+            displayName: "P2",
+            baseURL: "https://example.com/v1",
+            models: [
+                AIModelDescriptor(providerID: "p2", name: "txt-embed", capability: .embedding)
+                // parameters 不传 → nil
+            ]
+        )
+        settings.aiProviderProfiles = [profile]
+        settings.aiEmbeddingTask.providerID = "p2"
+        settings.aiEmbeddingTask.modelID = "txt-embed"
+
+        let resolved = settings.effectiveParameters(for: settings.aiEmbeddingTask)
+        #expect(resolved == AIModelParameters.embeddingDefault)
+    }
+
+    @Test("AI: 模型不存在时回退到 task.parameters")
+    func effectiveParametersFallsBackToLegacyTask() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        var legacy = AIModelParameters.summaryDefault
+        legacy.temperature = 0.42
+        settings.aiSummaryTask.providerID = "ghost-provider"
+        settings.aiSummaryTask.modelID = "ghost-model"
+        settings.aiSummaryTask.parameters = legacy
+
+        let resolved = settings.effectiveParameters(for: settings.aiSummaryTask)
+        #expect(resolved.temperature == 0.42)
+    }
+
+    @Test("AI: 老版本 descriptor JSON 缺少 parameters 字段时解码为 nil")
+    func descriptorParametersDecodesOptional() throws {
+        // 模拟老版本（v8 之前）persisted 数据：descriptor JSON 里没有 parameters 字段。
+        let legacyJSON = """
+        {
+          "id": "p::m",
+          "providerID": "p",
+          "name": "m",
+          "capability": "chat",
+          "isEnabled": true,
+          "isCustom": false
+        }
+        """
+        let decoded = try JSONDecoder().decode(AIModelDescriptor.self, from: Data(legacyJSON.utf8))
+        #expect(decoded.parameters == nil)
+        #expect(decoded.name == "m")
+        #expect(decoded.capability == .chat)
+    }
+
     @Test("AI: 非法 provider / search mode 回退到默认")
     func aiInvalidRawValuesFallback() {
         let defaults = makeIsolatedDefaults()

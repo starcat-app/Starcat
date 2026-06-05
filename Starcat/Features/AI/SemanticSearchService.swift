@@ -121,7 +121,7 @@ final class SemanticSearchService {
             baseURL: profile.baseURL,
             chatModel: settings.aiSummaryTask.resolvedModelName,
             embeddingModel: model,
-            timeoutInterval: task.parameters.timeoutSeconds
+            timeoutInterval: settings.effectiveParameters(for: task).timeoutSeconds
         )), model)
     }
 

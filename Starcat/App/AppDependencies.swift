@@ -58,6 +58,13 @@ final class AppDependencies {
     /// W6 AI：单仓 AI 摘要与标签推荐服务。
     let repoAIInsightService: RepoAIInsightService
 
+    // MARK: - HOM-68 README 翻译
+
+    /// README AI 翻译缓存 Repository。
+    let readmeTranslationRepository: any ReadmeTranslationRepositoryProtocol
+    /// README AI 翻译服务（AI 调用 + 缓存协调）。
+    let readmeTranslationService: ReadmeTranslationService
+
     /// HOM-54 引入：GitHub Trending 数据仓库。
     let trendingRepository: any TrendingRepositoryProtocol
     /// W7+ 引入：Trending README 持久化（与 manage 路径独立的 `trending_readmes` 表）。
@@ -148,6 +155,15 @@ final class AppDependencies {
         self.repoAIInsightService = RepoAIInsightService(
             summaryRepository: summaryRepo,
             readmeRepository: readmeRepo,
+            settings: self.settings
+        )
+
+        // HOM-68：README 翻译。复用 AppSettings.aiSummaryTask 的 provider/model 选择
+        // 与 Keychain API Key，独立 Service 承载严格保结构的翻译 prompt + 本地 SQLite 缓存。
+        let translationRepo = GRDBReadmeTranslationRepository(database: db)
+        self.readmeTranslationRepository = translationRepo
+        self.readmeTranslationService = ReadmeTranslationService(
+            translationRepository: translationRepo,
             settings: self.settings
         )
 

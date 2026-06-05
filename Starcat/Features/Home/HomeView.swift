@@ -57,6 +57,11 @@ struct HomeView: View {
     /// 导致首次点击 repo 后 README 无法加载。
     @State private var readmeVM: ReadmeViewModel
 
+    /// HOM-68：README 翻译子视图模型。
+    /// 持有理由与 `readmeVM` 一致——同步 init 注入 + 通过 environment 透传到详情页，
+    /// 避免在 RepoDetailView 内部用 .task 异步 @State 赋值引发的"首次点击没初始化"问题。
+    @State private var translationVM: ReadmeTranslationViewModel
+
     /// W4 A2：标签管理 sheet 显示状态。
     @State private var showTagManagement: Bool = false
 
@@ -122,7 +127,8 @@ struct HomeView: View {
         repoNoteRepository: any RepoNoteRepositoryProtocol,
         semanticSearchService: SemanticSearchService? = nil,
         trendingRepository: any TrendingRepositoryProtocol,
-        githubAPIClient: any GitHubAPIClientProtocol
+        githubAPIClient: any GitHubAPIClientProtocol,
+        readmeTranslationService: ReadmeTranslationService
     ) {
         _viewModel = State(initialValue: HomeViewModel(
             repository: repository,
@@ -132,6 +138,7 @@ struct HomeView: View {
             semanticSearchService: semanticSearchService
         ))
         _readmeVM = State(initialValue: ReadmeViewModel(api: readmeAPI))
+        _translationVM = State(initialValue: ReadmeTranslationViewModel(service: readmeTranslationService))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
             tagRepository: tagRepository,
             repoTagRepository: repoTagRepository
@@ -177,6 +184,7 @@ struct HomeView: View {
         }
         .environment(viewModel)
         .environment(readmeVM)
+        .environment(translationVM)
         .mainWindowFrameAutosave()
         // 调试用：右上角浮动 W×H 胶囊，仅 DEBUG 包 + 设了 launch arg `-DebugLayoutOverlay YES` 时显示。
         // 详见 `Shared/Utilities/DebugFlags.swift` 的类型文档（含 Xcode Scheme / LLDB / defaults 三种切换方式）。
@@ -301,8 +309,21 @@ struct HomeView: View {
         .onChange(of: viewModel.selectedRepoID) { _, _ in
             if let repo = viewModel.selectedRepo {
                 readmeVM.load(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
+                // HOM-68：repo 变化时重置翻译态。源 HTML 尚未拿到，这里只重置 UI
+                // 占位；下方监听 `readmeVM.state` 会在 .loaded 时再补一次 prepare
+                // 让 cacheIsStale 计算到位。
+                translationVM.prepare(
+                    repo: repo,
+                    sourceHtml: nil,
+                    targetLanguage: settings.readmeTranslationLanguage
+                )
             } else {
                 readmeVM.reset()
+                translationVM.prepare(
+                    repo: nil,
+                    sourceHtml: nil,
+                    targetLanguage: settings.readmeTranslationLanguage
+                )
             }
         }
         // Trending repo 选中变化 → 驱动 Trending README 加载
@@ -316,6 +337,39 @@ struct HomeView: View {
             } else {
                 readmeVM.reset()
             }
+            // Trending repo 没有本地 Repo.id，HOM-68 第一版不为 trending 提供翻译入口
+            // （翻译缓存需要 repo_id 外键，trending 走独立 trending_readmes 表，
+            //  避免引入复杂的双写路径；用户切到 Manage 后再翻译即可）。这里只清状态。
+            translationVM.prepare(
+                repo: nil,
+                sourceHtml: nil,
+                targetLanguage: settings.readmeTranslationLanguage
+            )
+        }
+        // HOM-68：README 加载完成后把源 HTML 喂给翻译 VM，用于刷新 cacheIsStale。
+        // 仅 Manage 详情页（selectedRepo 非 nil）需要，Trending 路径不接翻译入口。
+        .onChange(of: readmeStateSignature) { _, _ in
+            guard let repo = viewModel.selectedRepo else { return }
+            if case .loaded(let html, _) = readmeVM.state {
+                translationVM.prepare(
+                    repo: repo,
+                    sourceHtml: html,
+                    targetLanguage: settings.readmeTranslationLanguage
+                )
+            }
+        }
+        // 用户在详情页切换目标语言 → 重新预载缓存并复位显示。
+        .onChange(of: settings.readmeTranslationLanguage) { _, newLanguage in
+            guard let repo = viewModel.selectedRepo else { return }
+            let html: String? = {
+                if case .loaded(let value, _) = readmeVM.state { return value }
+                return nil
+            }()
+            translationVM.changeLanguage(
+                to: newLanguage,
+                repo: repo,
+                sourceHtml: html
+            )
         }
         // 监听完整登录态变化：任何登录都立刻切 Manage、登出时回 Trending。
         //
@@ -398,6 +452,24 @@ struct HomeView: View {
     }
 
     // MARK: - 辅助
+
+    /// README 加载状态的纯文本签名，用于驱动 `.onChange` 在 .loaded 切换时刷新翻译 VM。
+    ///
+    /// 不直接 `.onChange(of: readmeVM.state)`：`LoadState.loaded(html, cachedAt)` 的
+    /// `html` 字段在 SWR 后台刷新 304 时会保留不变但 `cachedAt` 会变；用 html 的
+    /// 长度 + 状态 case 名做签名即可在「真正拿到新 HTML」时触发一次回调，避免
+    /// 304 时再做一遍 hash 比对。
+    private var readmeStateSignature: String {
+        switch readmeVM.state {
+        case .idle:           return "idle"
+        case .loading:        return "loading"
+        case .empty:          return "empty"
+        case .requiresLogin:  return "requires-login"
+        case .error:          return "error"
+        case .loaded(let html, _):
+            return "loaded:\(html.count)"
+        }
+    }
 
     /// 校验一个 Manage 分类当前是否仍然有效（用于跨启动恢复时兜底）。
     ///
