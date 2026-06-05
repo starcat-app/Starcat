@@ -220,40 +220,37 @@ struct AISettingsTab: View {
 
                 taskModelRow(taskModelTask)
             } label: {
-                disclosureLabel("默认设置", isExpanded: $isTaskModelsExpanded)
+                disclosureLabel("模型配置", isExpanded: $isTaskModelsExpanded)
             }
         }
     }
 
     private func taskModelRow(_ task: AIModelTask) -> some View {
-        // HOM-68 follow-up v3 (dong4j 反馈 #2)：
-        // 之前模型下拉用 `groupedEnabledModels(for:)` 汇总所有 provider 的模型，
-        // 按 `Text(model.name).tag(model.name)` 绑定。如果两个 provider 都有
-        // 同名模型（如 通义千问 / DeepSeek 都提供 `deepseek-v4-pro`），string tag
-        // 冲突会让两边都显示"已勾选"。
+        // HOM-68 follow-up v3：模型下拉只列**当前选中 provider** 的模型，
+        // 消除跨 provider 同名模型同时勾选的 bug；provider 切换由
+        // `taskProviderBinding` setter 自动把 modelID 重置为新 provider 的第一个
+        // 匹配能力的模型。
         //
-        // 修复：模型下拉只列出**当前选中 provider** 的模型，从根上消除同名冲突。
-        // Provider 切换由 `taskProviderBinding` 兜底——切 provider 时自动把
-        // modelID 重置为新 provider 的第一个 chat/embedding 模型。
-        // 这也让 "Provider + 模型" 形成一个完整的"任务 → 服务商 → 模型"三段选择，
-        // 阅读顺序更线性，对用户更友好。
+        // HOM-68 follow-up v8 (dong4j 反馈 2026-06-05 23:30)：
+        // 1. 删行首 `Text(task.displayName)`——外层 segmented tab 已经在显示
+        //    当前任务名，再写一次是冗余；
+        // 2. Provider / 模型 / 自定义 改 `.frame(maxWidth: .infinity)` 三等分。
+        //    之前 Provider 固定 180pt、模型 picker 吃剩下大头、Toggle 极窄，
+        //    视觉非常碎。1/3 + 1/3 + 1/3 形成稳定栅格。
         let currentProviderID = taskConfig(task).providerID
         let availableModels = enabledModels(
             providerID: currentProviderID,
             capability: task.requiredCapability
         )
         return VStack(alignment: .leading, spacing: 8) {
-            Text(task.displayName)
-                .font(.subheadline.weight(.semibold))
-
-            HStack {
+            HStack(spacing: 12) {
                 Picker("Provider", selection: taskProviderBinding(task)) {
                     ForEach(settings.aiProviderProfiles.filter(\.isEnabled)) { profile in
                         Text(profile.displayName).tag(profile.id)
                     }
                 }
                 .pickerStyle(.menu)
-                .frame(width: 180)
+                .frame(maxWidth: .infinity)
 
                 Picker("模型", selection: taskModelBinding(task)) {
                     if availableModels.isEmpty {
@@ -266,9 +263,17 @@ struct AISettingsTab: View {
                     }
                 }
                 .pickerStyle(.menu)
+                .frame(maxWidth: .infinity)
 
-                Toggle("自定义", isOn: taskCustomEnabledBinding(task))
-                    .toggleStyle(.checkbox)
+                // Toggle intrinsic 宽度很窄；HStack + 末尾 Spacer 把 1/3 列撑开，
+                // checkbox 左对齐到自己 1/3 区域开头，与 Provider/模型 picker 形
+                // 成同步左缘的三栏栅格。
+                HStack {
+                    Toggle("自定义", isOn: taskCustomEnabledBinding(task))
+                        .toggleStyle(.checkbox)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity)
             }
 
             if taskConfig(task).useCustomModel {
@@ -277,7 +282,6 @@ struct AISettingsTab: View {
                     .disableAutocorrection(true)
             }
         }
-        .padding(.vertical, 4)
     }
 
     // MARK: - Parameters
