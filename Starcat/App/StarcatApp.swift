@@ -55,6 +55,8 @@ struct StarcatApp: App {
                 .environment(dependencies.authSession)
                 .environment(dependencies.syncManager)
                 .environment(dependencies.settings)
+                // HOM-PROFILE 2026-06-05：贡献草坪服务，Sidebar 直接消费 @Observable 实例。
+                .environment(dependencies.contributionService)
                 // W4-5 D1 follow-up（2026-06-03 23:26）：用户主题应用到全 App。
                 //
                 // 为什么不用 SwiftUI `.preferredColorScheme(_:)` 而用 AppKit 的

@@ -23,7 +23,9 @@ struct RepoRepositoryTests {
 
     private func makeDTO(id: Int64, name: String) -> StarredRepoDTO {
         let user = GitHubUserDTO(id: 1, login: "tester", name: nil, avatarUrl: nil,
-                                 publicRepos: nil, followers: nil, following: nil)
+                                 publicRepos: nil, followers: nil, following: nil,
+                                 bio: nil, company: nil, location: nil, email: nil,
+                                 blog: nil, twitterUsername: nil, htmlUrl: nil)
         let repo = GitHubRepoDTO(
             id: id,
             name: name,
@@ -116,7 +118,9 @@ struct RepoRepositoryTests {
     func topStarred() async throws {
         let (repo, _) = try makeRepo()
         let user = GitHubUserDTO(id: 1, login: "u", name: nil, avatarUrl: nil,
-                                 publicRepos: nil, followers: nil, following: nil)
+                                 publicRepos: nil, followers: nil, following: nil,
+                                 bio: nil, company: nil, location: nil, email: nil,
+                                 blog: nil, twitterUsername: nil, htmlUrl: nil)
 
         func mkdto(id: Int64, starred: String) -> StarredRepoDTO {
             let r = GitHubRepoDTO(
@@ -149,7 +153,9 @@ struct RepoRepositoryTests {
     /// 构造一个不同语言/名字的小数据集，便于多个 Week 3 查询复用。
     private func seedDataset(_ repo: GRDBRepoRepository) async throws {
         let user = GitHubUserDTO(id: 1, login: "u", name: nil, avatarUrl: nil,
-                                 publicRepos: nil, followers: nil, following: nil)
+                                 publicRepos: nil, followers: nil, following: nil,
+                                 bio: nil, company: nil, location: nil, email: nil,
+                                 blog: nil, twitterUsername: nil, htmlUrl: nil)
         func mkdto(id: Int64, name: String, lang: String?, desc: String?) -> StarredRepoDTO {
             let r = GitHubRepoDTO(
                 id: id, name: name, fullName: "u/\(name)", owner: user,

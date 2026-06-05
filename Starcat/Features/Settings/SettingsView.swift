@@ -119,6 +119,29 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            // HOM-SNAKE-MODES 2026-06-05：贡献草坪贪吃蛇玩法。
+            // 用 Menu 风格 Picker 而非 segmented——6 个选项 segmented 会过宽，
+            // 而且每项都带 SF Symbol，菜单展开形态视觉信息密度更高。
+            // 设计取舍：把贪吃蛇配置放在 General 而非新建 "Sidebar" Tab，是因为
+            // 当前 Sidebar 可配置项只有这一个，单独开 Tab 显得空；后续若新增
+            // sidebar 偏好（如折叠默认态、密度）再拆分。
+            Section("settings.snakeStyle.section") {
+                Picker(selection: $settings.snakeStyle) {
+                    ForEach(SnakeStyle.allCases) { style in
+                        Label(LocalizedStringKey(style.displayNameKey),
+                              systemImage: style.systemImage)
+                            .tag(style)
+                    }
+                } label: {
+                    Text("settings.snakeStyle.title")
+                }
+                .pickerStyle(.menu)
+
+                Text("settings.snakeStyle.description")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }

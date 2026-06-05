@@ -173,6 +173,59 @@ actor GitHubAPIClient {
         return try await perform(request)
     }
 
+    /// 发起 GraphQL POST 请求（HOM-PROFILE 2026-06-05 引入）。
+    ///
+    /// 设计动机：GitHub 贡献草坪数据只能通过 GraphQL `contributionsCollection.contributionCalendar`
+    /// 拿到，REST API 不暴露。我们不想引入 Apollo 或重型 GraphQL client：单一查询场景下，
+    /// 手写 `{ "query": "...", "variables": {...} }` JSON 体 + 让上层解码 `{ data: T }` 包装更直接。
+    ///
+    /// 路径写死 `/graphql`，base URL 沿用 REST 的 `https://api.github.com`。
+    /// - Parameters:
+    ///   - query: GraphQL 查询字符串（多行 raw string 即可）
+    ///   - variables: 变量字典；只接受 JSONSerialization 兼容类型（String/Int/Bool/[String: Any]/[Any]）
+    ///   - type: 顶层期望解码类型；返回的真实 JSON 是 `{ "data": T, "errors": [...] }`，
+    ///     本方法自动剥 `data` 包装，failure 时把 `errors[].message` 拼成 `NetworkError.clientError`。
+    /// - Returns: 解码后的 `T`（已剥 `data` 包装）
+    /// - Throws: 与 REST `perform` 同语义的 `NetworkError`；GraphQL 业务错误归入 `clientError(400)`
+    ///
+    /// 关键约束：GraphQL 始终 POST 到 `/graphql`，与 REST 的 GET 端点不同；
+    /// 返回的 `errors` 数组即使 HTTP 200 也代表查询失败（GraphQL 业务错误约定）。
+    func graphql<T: Decodable>(
+        query: String,
+        variables: [String: Any] = [:],
+        as type: T.Type = T.self
+    ) async throws -> T {
+        // GraphQL 请求体格式：{ "query": "...", "variables": {...} }。
+        // 用 JSONSerialization 而不是 Encodable，因为 variables 是异构字典（值类型混合）。
+        var bodyDict: [String: Any] = ["query": query]
+        if !variables.isEmpty {
+            bodyDict["variables"] = variables
+        }
+        let bodyData = try JSONSerialization.data(withJSONObject: bodyDict, options: [])
+
+        var request = try buildRequest(
+            method: "POST",
+            path: "/graphql",
+            queryItems: [],
+            accept: "application/json",
+            body: bodyData
+        )
+        // GraphQL 端点必须显式设 Content-Type，否则 GitHub 返回 400。
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let envelope: APIResponse<GraphQLEnvelope<T>> = try await perform(request)
+
+        if let errs = envelope.value.errors, !errs.isEmpty {
+            let combined = errs.map(\.message).joined(separator: "; ")
+            AppLog.network.error("GraphQL errors: \(combined, privacy: .public)")
+            throw NetworkError.clientError(statusCode: 400, message: combined)
+        }
+        guard let payload = envelope.value.data else {
+            throw NetworkError.invalidResponse
+        }
+        return payload
+    }
+
     /// 发起 GET 请求并返回原始字节，跳过 JSON 解码。
     ///
     /// 主要服务于 README HTML 端点（`Accept: application/vnd.github.html`）。
@@ -487,3 +540,20 @@ actor GitHubAPIClient {
 
 // EmptyResponse 已删（D-03）：原用于 perform<T> 强转 `EmptyResponse() as! T` 占位，
 // 现 DELETE / PUT 走 performNoBody 不再需要。
+
+// MARK: - GraphQL Envelope
+
+/// GraphQL 响应包装层（HOM-PROFILE 2026-06-05 引入）。
+///
+/// GitHub GraphQL 端点（POST /graphql）即使 HTTP 200 也可能返回 `errors` 数组，
+/// 调用方需要先剥 `data` 再判 `errors`。挪到文件顶层而非 `graphql<T>` 方法局部，
+/// 是因为 Swift 不支持在方法体内声明含泛型参数的嵌套类型（actor 隔离 + generic
+/// 局部 struct 会编译报错 "Generic parameters cannot be ..."）。
+struct GraphQLEnvelope<T: Decodable>: Decodable {
+    let data: T?
+    let errors: [GraphQLError]?
+}
+
+struct GraphQLError: Decodable {
+    let message: String
+}
