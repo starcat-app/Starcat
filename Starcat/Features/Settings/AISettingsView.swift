@@ -237,12 +237,17 @@ struct AISettingsTab: View {
         // `taskProviderBinding` setter 自动把 modelID 重置为新 provider 的第一个
         // 匹配能力的模型。
         //
-        // HOM-68 follow-up v8 (dong4j 反馈 2026-06-05 23:30)：
-        // 1. 删行首 `Text(task.displayName)`——外层 segmented tab 已经在显示
-        //    当前任务名，再写一次是冗余；
-        // 2. Provider / 模型 / 自定义 改 `.frame(maxWidth: .infinity)` 三等分。
-        //    之前 Provider 固定 180pt、模型 picker 吃剩下大头、Toggle 极窄，
-        //    视觉非常碎。1/3 + 1/3 + 1/3 形成稳定栅格。
+        // HOM-68 follow-up v8：删行首 `Text(task.displayName)`——外层 segmented
+        // tab 已经在显示当前任务名，再写一次是冗余。
+        //
+        // HOM-68 follow-up v13 (dong4j 反馈 2026-06-06 00:43)：
+        // 1. Provider picker 加 `.labelsHidden()` 去掉行首"Provider"文字。该
+        //    标签冗余——外层 tab 已说明这是哪个任务的配置，第一个 picker 是
+        //    Provider 不言自明。保留"模型"label，作为两个 picker 之间的视觉
+        //    分隔标识（用户明确只点名"Provider"要删，模型不动）；
+        // 2. "自定义" 改 `.fixedSize()` 只占 intrinsic 宽度，并放在 HStack 末尾
+        //    （无 trailing Spacer），自然右对齐——为 Provider / 模型 两个下拉
+        //    腾出最大水平空间，避免长 Provider/模型名被截断成"De..." / "deeps..."。
         let currentProviderID = taskConfig(task).providerID
         let availableModels = enabledModels(
             providerID: currentProviderID,
@@ -256,6 +261,7 @@ struct AISettingsTab: View {
                     }
                 }
                 .pickerStyle(.menu)
+                .labelsHidden()
                 .frame(maxWidth: .infinity)
 
                 Picker("模型", selection: taskModelBinding(task)) {
@@ -271,15 +277,9 @@ struct AISettingsTab: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: .infinity)
 
-                // Toggle intrinsic 宽度很窄；HStack + 末尾 Spacer 把 1/3 列撑开，
-                // checkbox 左对齐到自己 1/3 区域开头，与 Provider/模型 picker 形
-                // 成同步左缘的三栏栅格。
-                HStack {
-                    Toggle("自定义", isOn: taskCustomEnabledBinding(task))
-                        .toggleStyle(.checkbox)
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity)
+                Toggle("自定义", isOn: taskCustomEnabledBinding(task))
+                    .toggleStyle(.checkbox)
+                    .fixedSize()
             }
 
             if taskConfig(task).useCustomModel {
