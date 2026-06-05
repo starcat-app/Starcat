@@ -32,12 +32,27 @@ struct AISettingsTab: View {
     @State private var parameterTask: AIModelTask = .summary
     @State private var promptTask: AIModelTask = .summary
 
+    /// HOM-68 follow-up v7 (dong4j 反馈 2026-06-05 23:20)：
+    /// "默认设置"（原"模型设置"）也改成 tab 样式，4 个任务（summary/tags/
+    /// embedding/translation）共用一行 Provider+模型 picker。和 parameterTask /
+    /// promptTask 分开，让用户在不同区切换任务时互不干扰（设默认时看的是
+    /// summary，但调参数时可能在调 tags，强同步会反直觉）。
+    @State private var taskModelTask: AIModelTask = .summary
+
     // HOM-68 follow-up v2 (2026-06-05 22:30 dong4j 反馈)：
     // 模型参数 / Prompt 不是首次配置必填项，默认收起来减小视觉噪音，需要时再展开。
     // 用 SceneStorage 而不是 @State，让用户的展开偏好跨设置页打开持久化，
     // 但保持"应用首次启动默认折叠"语义。
     @SceneStorage("settings.ai.parameters.expanded") private var isParametersExpanded: Bool = false
     @SceneStorage("settings.ai.prompt.expanded") private var isPromptExpanded: Bool = false
+
+    // HOM-68 follow-up v7：把"已发现模型" / "默认设置" 也变成可折叠，
+    // 与"模型参数" / "Prompt" 折叠风格统一。默认折叠以减小首次进入设置页的
+    // 视觉噪音。"已发现模型" 在用户点击"测试并获取模型"且成功获取到 ≥1 个
+    // 模型时自动展开（见 `testAndFetchModels`），这样新用户走"配置 → 测试 →
+    // 选模型"完整路径时不需要手动展开折叠组。
+    @SceneStorage("settings.ai.discoveredModels.expanded") private var isDiscoveredModelsExpanded: Bool = false
+    @SceneStorage("settings.ai.taskModels.expanded") private var isTaskModelsExpanded: Bool = false
 
     var body: some View {
         Form {
@@ -154,39 +169,59 @@ struct AISettingsTab: View {
     }
 
     private var enabledModelsSection: some View {
-        // HOM-68 follow-up v2 (dong4j 反馈 #3 #4)：
-        // 删掉 footer "模型列表在组件内滚动…" 调试式说明；
-        // 模型列表高度由 AIModelListView 内压到 ~4 条可见（见 modelScroll.frame(height:)）。
+        // HOM-68 follow-up v7 (dong4j 反馈 2026-06-05 23:20)：
+        // 改成 DisclosureGroup 默认折叠，与"模型参数" / "Prompt" 折叠风格统一。
+        // 自动展开时机：用户点"测试并获取模型"成功且 ≥1 个模型时，自动 expand
+        // 一次（见 `testAndFetchModels`），让"配置 → 测试 → 看模型"的完整路径
+        // 不需要手动展开折叠组。
         Section {
-            if let profile = selectedProfile {
-                if profile.models.isEmpty {
-                    Text("暂无模型。点击“测试并获取模型”，或在模型设置中使用自定义模型名。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    AIModelListView(
-                        profile: profile,
-                        enabledBinding: { model in modelEnabledBinding(profile.id, model.id) },
-                        capabilityBinding: { model in modelCapabilityBinding(profile.id, model.id) }
-                    )
+            DisclosureGroup(isExpanded: $isDiscoveredModelsExpanded) {
+                if let profile = selectedProfile {
+                    if profile.models.isEmpty {
+                        Text("暂无模型。点击“测试并获取模型”，或在默认设置中使用自定义模型名。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        AIModelListView(
+                            profile: profile,
+                            enabledBinding: { model in modelEnabledBinding(profile.id, model.id) },
+                            capabilityBinding: { model in modelCapabilityBinding(profile.id, model.id) }
+                        )
+                    }
                 }
+            } label: {
+                disclosureLabel("已发现模型", isExpanded: $isDiscoveredModelsExpanded)
             }
-        } header: {
-            Text("已发现模型")
         }
     }
 
     // MARK: - Tasks
 
     private var taskModelsSection: some View {
-        // HOM-68 follow-up v2 (dong4j 反馈 #5)：删 footer 说明文字（"下拉框只展示已启用模型..."）。
+        // HOM-68 follow-up v7 (dong4j 反馈 2026-06-05 23:20)：
+        // 之前 4 个任务竖向铺开 4 行，每行重复 "Provider + 模型 + 自定义" 三件套，
+        // 占整页 1/3 高度。改成 tab 样式（与"模型参数" / "Prompt" 一致）：
+        //   1. 顶部 segmented Picker 选任务（summary / tags / embedding / translation）；
+        //   2. 下面只渲染当前选中任务那一行；
+        //   3. 整段 DisclosureGroup 默认折叠。
+        //
+        // 标题改"默认设置"——这里配置的是"每类任务默认用哪个 provider 的哪个模型"，
+        // 与"已发现模型"区（模型清单 + chat/embedding 能力标注）职责分离。
         Section {
-            taskModelRow(.summary)
-            taskModelRow(.tags)
-            taskModelRow(.embedding)
-            taskModelRow(.translation)
-        } header: {
-            Text("模型设置")
+            DisclosureGroup(isExpanded: $isTaskModelsExpanded) {
+                Picker("任务", selection: $taskModelTask) {
+                    ForEach(AIModelTask.allCases) { task in
+                        Text(task.displayName).tag(task)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+
+                taskModelRow(taskModelTask)
+            } label: {
+                disclosureLabel("默认设置", isExpanded: $isTaskModelsExpanded)
+            }
         }
     }
 
@@ -587,6 +622,16 @@ struct AISettingsTab: View {
                 current.lastTestStatus = .success(modelCount: current.models.count)
             }
             repairTasksAfterProfileChange()
+            // HOM-68 follow-up v7 (dong4j 反馈 2026-06-05 23:20)：
+            // 测试成功且抓到 ≥1 个模型时，自动把"已发现模型"折叠组展开。
+            // 用户路径："配置 provider → 点测试 → 看到模型列表" 一气呵成，
+            // 不用手动去展开折叠组。withAnimation 与 disclosureLabel 的展开动画
+            // 走同一条曲线（easeInOut 0.18），视觉一致。
+            if !models.isEmpty {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isDiscoveredModelsExpanded = true
+                }
+            }
         } catch {
             updateProfile(profile.id) { current in
                 current.lastTestedAt = ISO8601DateFormatter.shared.string(from: Date())
