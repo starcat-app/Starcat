@@ -46,11 +46,12 @@ struct RepoDetailView: View {
     @State private var isStarringTrending: Bool = false
     @State private var trendingStarError: String?
 
-    /// README 向下滚动时折叠顶部信息面板。
+    /// README 向下滚动时折叠顶部信息面板的连续进度。
     ///
-    /// 这里用 Bool 而不是把 offset 存成状态，是为了避免 WebView 每个滚动像素都触发
-    /// SwiftUI 重绘；只有跨过阈值时才改变布局。
-    @State private var isMetadataPanelHidden: Bool = false
+    /// 旧实现是 32pt / 8pt 两个阈值切 Bool，数据写入少，但视觉上会像“突然收起”。
+    /// 这里改为 0...1 进度：滚动 8pt 后开始跟手压缩，72pt 左右完全收起。
+    /// SwiftUI 只重排这一块顶部面板和 README 宿主高度，换取更顺滑的滚动反馈。
+    @State private var metadataPanelCollapseProgress: CGFloat = 0
 
     /// 顶部信息面板的自然高度。
     ///
@@ -120,7 +121,7 @@ struct RepoDetailView: View {
                 }
                 .onChange(of: repo.id) { _, _ in
                     withAnimation(metadataPanelAnimation) {
-                        isMetadataPanelHidden = false
+                        metadataPanelCollapseProgress = 0
                     }
                 }
             } else if let trending = selectedTrendingRepo {
@@ -140,7 +141,7 @@ struct RepoDetailView: View {
                     // `.onChange(of: repo.id)` 行为完全对齐，避免上一条 repo 的
                     // 折叠态污染下一条的首次展示。
                     withAnimation(metadataPanelAnimation) {
-                        isMetadataPanelHidden = false
+                        metadataPanelCollapseProgress = 0
                     }
                 }
             } else {
@@ -213,7 +214,7 @@ struct RepoDetailView: View {
             try await dependencies.repoRepository.markUnstarred(repoId: repo.id, userID: user.id)
             // 刷新 Sidebar 计数 + 列表（reloadItems 内部会清掉已不在列表的 selection）
             await viewModel.refreshSidebar()
-            await viewModel.reloadItems()
+            await viewModel.reloadItems(forceRefresh: true)
         } catch {
             unstarError = "repo.unstar.actionFailed"
             AppLog.sync.error("unstar failed: \(error.localizedDescription, privacy: .public)")
@@ -240,7 +241,7 @@ struct RepoDetailView: View {
 
     /// 顶部信息面板的通用折叠容器（Manage / Trending 共用）。
     ///
-    /// 为什么不继续用 `if !isMetadataPanelHidden { ... }`：
+    /// 为什么不继续用 `if collapseProgress < 1 { ... }`：
     /// 直接插拔 view 会让整个 WKWebView 在同一帧拿到新高度，视觉上像"跳变"；
     /// 这里让面板始终留在 view tree 中，只把外层 frame 从自然高度动画到 0，
     /// 同时给内容做轻微上移和淡出，WebView 的高度变化会更连续。
@@ -249,7 +250,7 @@ struct RepoDetailView: View {
     /// 内容（Manage 的 `metadataHeader` 或 Trending 的 `trendingMetadataHeader`）
     /// 完全解耦，两边共用一个 helper 避免 25 行 view modifier chain 复制粘贴漂移
     /// （前车之鉴 06-02 00:48 Chip 抽公共组件）。
-    /// 共享状态来自外层的 `isMetadataPanelHidden` / `metadataPanelHeight` `@State`，
+    /// 共享状态来自外层的 `metadataPanelCollapseProgress` / `metadataPanelHeight` `@State`，
     /// 上报通道由 `CollapsibleRepoMetadataPanel` 内部统一处理，所以 Manage 切 Trending
     /// （或反之）时折叠状态会被 `body` 里的 `.onChange(of: id)` 重置一次。
     @ViewBuilder
@@ -257,9 +258,8 @@ struct RepoDetailView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         CollapsibleRepoMetadataPanel(
-            isHidden: $isMetadataPanelHidden,
-            panelHeight: $metadataPanelHeight,
-            animation: metadataPanelAnimation
+            collapseProgress: $metadataPanelCollapseProgress,
+            panelHeight: $metadataPanelHeight
         ) {
             content()
         }
@@ -337,17 +337,28 @@ struct RepoDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// WebView 内部滚动位置 → 顶部信息面板显示状态。
+    /// WebView 内部滚动位置 → 顶部信息面板折叠进度。
     ///
-    /// 使用两个阈值形成 hysteresis：
-    /// - 继续向下读到 32pt 后才隐藏，避免刚滚动一点就抢走上下文；
-    /// - 回到 8pt 内才展开，避免触控板在顶部附近轻微回弹导致反复闪动。
+    /// 旧版只在 32pt / 8pt 两个阈值切换 Bool，布局更新少但手感偏硬。
+    /// 现在用 8pt 起步、64pt 行程的连续进度：
+    /// - 0...8pt：保留完整上下文，过滤触控板顶部轻微抖动；
+    /// - 8...72pt：跟随滚动连续压缩卡片；
+    /// - 72pt 以后：完全收起，README 获得最大阅读空间。
     private func updateMetadataPanelVisibility(offsetY: CGFloat) {
-        let shouldHide = isMetadataPanelHidden ? offsetY > 8 : offsetY > 32
-        guard shouldHide != isMetadataPanelHidden else { return }
-        withAnimation(metadataPanelAnimation) {
-            isMetadataPanelHidden = shouldHide
-        }
+        let progress = Self.metadataCollapseProgress(for: offsetY)
+        guard abs(progress - metadataPanelCollapseProgress) > 0.01 else { return }
+        metadataPanelCollapseProgress = progress
+    }
+
+    /// 将 scroll offset 映射为顶部元信息面板的折叠进度。
+    ///
+    /// 抽成静态 helper 是为了让 Manage / Trending / Activity 保持同一参数口径；
+    /// 后续如果 dong4j 继续调手感，只需要改这里这一处。
+    static func metadataCollapseProgress(for offsetY: CGFloat) -> CGFloat {
+        let normalizedOffset = max(offsetY, 0)
+        let collapseStart: CGFloat = 8
+        let collapseDistance: CGFloat = 64
+        return min(max((normalizedOffset - collapseStart) / collapseDistance, 0), 1)
     }
 
     // MARK: - Trending Repo 支持
@@ -585,7 +596,7 @@ struct RepoDetailView: View {
             // 成功：本地 stars 计数 +1
             trendingViewModel?.incrementStarsCount(fullName: repo.fullName)
             // 刷新用户 Stars 列表
-            await viewModel.reloadItems()
+            await viewModel.reloadItems(forceRefresh: true)
         } catch {
             trendingStarError = "repo.star.failed"
         }
