@@ -2,17 +2,20 @@
 //  ContributionGraphView.swift
 //  Starcat
 //
-//  GitHub 贡献草坪 SwiftUI 原生渲染（53 周 × 7 天）+ 贪吃蛇动画。
+//  GitHub 贡献草坪 SwiftUI 原生渲染（53 周 × 7 天）+ 可插拔贪吃蛇动画。
 //  HOM-PROFILE 2026-06-05 引入，2026-06-05 v2 加贪吃蛇，
-//  2026-06-05 v3 修复"草坪太窄"（格子改 10×14 矩形 + aspectRatio 自适应消除空白）。
+//  2026-06-05 v3 修复"草坪太窄"，
+//  HOM-SNAKE-MODES 2026-06-05 v4 把蛇玩法抽成 SnakeAnimator 协议，
+//  支持 dong4j 在 Settings 切换 6 种玩法（off / zigzag / greedy / multiMode /
+//  foodChase / hilbert / multiSnake）。
 //
 //  设计动机：
 //  - dong4j 希望"零第三方依赖、自动适配明暗主题"。
 //  - 比 Platane/snk 输出 SVG 再渲染更优：原生 Canvas 一次绘制完成、矢量缩放、
 //    `Color` 自动响应 colorScheme，无需备双 SVG。
-//  - **贪吃蛇模仿 snk 视觉**：蛇沿 zigzag 路径遍历 53×7 = 371 个格子，
-//    蛇头经过的格子被"吃掉"变成 NONE 颜色（暂时性，下一轮重启时恢复）；
-//    snk 的"最优蛇路径"是 NP-hard，我们用 zigzag 简化——视觉效果接近，工程零负担。
+//  - **贪吃蛇可插拔**（v4）：本 View 不再写死 zigzag 路径，改用 `SnakeAnimator`
+//    协议；切换 settings.snakeStyle 后通过 onChange 重建 animator 即可。
+//    各玩法实现见 `Features/Profile/SnakeAnimator/*.swift`。
 //
 //  布局：
 //  - 53 列 × 7 行 = 一年草坪。每格 10pt 宽 × 14pt 高（矩形，非 GitHub 同款正方形），
@@ -28,14 +31,13 @@
 //  - light 模式：#ebedf0 / #9be9a8 / #40c463 / #30a14e / #216e39
 //  - dark  模式：#161b22 / #0e4429 / #006d32 / #26a641 / #39d353
 //
-//  贪吃蛇渲染细节（snk 同款视觉）：
-//  - **路径**：zigzag 横扫——奇数列从下到上，偶数列从上到下；GitHub 主页是
-//    "最旧在左、最新在右"，蛇从最左侧 col 0 row 0 开始向右移动。
-//  - **节奏**：每格 80ms，371 格约 30 秒走一轮，结束后 pause 1.5s 重启。
-//  - **蛇身**：5 节，头部最饱和（用调色板 l4 色），尾部按 0.85 / 0.65 / 0.45 / 0.25
-//    alpha 衰减；蛇头比格子稍大 (1.2x) 让它"包住"目标格子，符合 snk 视觉。
-//  - **吃格**：蛇头到达过的格子（index < snakeHead）渲染为 NONE 色，
-//    模拟"被吃掉"。下一轮 timeline 回到 phase 0 时，所有格子瞬时复原。
+//  蛇渲染细节：
+//  - **蛇身**：每节 head 在前，尾部按 alpha 阶梯衰减；蛇头比格子稍大 1.2x 让它
+//    "包住"目标格子，符合 snk 视觉。多条蛇并发时各自独立渲染。
+//  - **吃格**：animator 返回的 eatenCells 集合内的格子渲染为 NONE 色，
+//    模拟"被吃掉"。每轮重启时由 animator 自己控制是否清空（zigzag/greedy 等不清，
+//    新一轮通过 currentStep nil → 完整草坪回归）。
+//  - **食物**（FoodChase 专属）：在 foodCells 集合的格子叠一层脉冲高亮圆环。
 //  - **reduceMotion**：完全跳过蛇，只静态显示草坪——前庭敏感用户优先。
 //
 //  关键约束：
@@ -74,6 +76,13 @@ struct ContributionGraphView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// HOM-SNAKE-MODES：读取用户选的玩法。
+    @Environment(AppSettings.self) private var settings
+
+    /// 当前绑定的 animator。`@State` 让 onChange 重建 animator 时 SwiftUI 自动重渲染。
+    /// nil 表示 `.off` 玩法或数据未到位——只画静态草坪。
+    /// 用 `(any SnakeAnimator)?` 而非具体类型，让协议替换零负担。
+    @State private var animator: (any SnakeAnimator)?
 
     /// 每格宽度（pt）。
     ///
@@ -96,14 +105,11 @@ struct ContributionGraphView: View {
     /// 圆角（pt）。GitHub 是直角，但 macOS 视觉风格圆一点更柔和。
     private let cellCornerRadius: CGFloat = 2
 
-    // MARK: - 贪吃蛇参数
+    // MARK: - 蛇身渲染常量
 
-    /// 蛇身段数；snk 默认 4，我们取 5 让尾迹更长更明显。
-    private let snakeLength: Int = 5
-    /// 每个格子停留多少秒；80ms 是节奏舒适区——肉眼能看清单格、又不至于太慢一直没走完。
-    private let stepDuration: Double = 0.08
-    /// 一轮结束后暂停多久再开始下一轮（让用户能短暂看到"完整草坪"形态）。
-    private let pauseDuration: Double = 1.5
+    /// 蛇身最多展示几节（在多节 alpha 渐淡之外的硬上限）。FoodChase 蛇可能变得很长，
+    /// 这个上限只影响"渲染时画几节"，不影响 animator 内部状态。
+    private let maxRenderedSegments: Int = 16
 
     /// 整图固有尺寸（不考虑 aspectRatio 缩放）。
     /// width = 53 × 10 + 52 × 2 = 634pt
@@ -135,6 +141,19 @@ struct ContributionGraphView: View {
         }
         .help(payload != nil ? Text("contribution.hoverHint") : Text("contribution.loading"))
         .opacity(isLoading && payload == nil ? 0.6 : 1.0)
+        // v4 HOM-SNAKE-MODES：根据玩法 / 数据变化重建 animator
+        .onAppear { rebuildAnimator() }
+        .onChange(of: settings.snakeStyle) { _, _ in rebuildAnimator() }
+        // payload 从 nil → 有数据时也要重建，让 greedy / foodChase / multiSnake 拿到真实 weeks
+        .onChange(of: payload?.totalContributions) { _, _ in rebuildAnimator() }
+    }
+
+    /// 根据当前 settings.snakeStyle + payload 重建 animator。
+    /// 频次很低（用户切换 / 数据到位），每次 init 可能要做几十毫秒的预计算（greedy 最重），
+    /// 但仍在主线程能容忍范围；避免在 frame(at:) 这种每帧路径上做重活。
+    private func rebuildAnimator() {
+        animator = SnakeAnimatorFactory.make(style: settings.snakeStyle,
+                                             weeks: payload?.weeks)
     }
 
     // MARK: - Header
@@ -180,56 +199,44 @@ struct ContributionGraphView: View {
 
     /// 草坪 + 蛇身合成视图。
     ///
-    /// reduceMotion 开启 → 仅画静态草坪（不绘蛇，避免前庭不适）。
-    /// 否则 `TimelineView(.animation)` 驱动每帧重绘，由 elapsed time 算 snake head index。
+    /// reduceMotion 开启或 animator nil（off 玩法 / 数据未到）→ 仅画静态草坪；
+    /// 否则 `TimelineView(.animation)` 驱动每帧重绘，由 elapsed time 算 step。
     ///
     /// **scale 由 Canvas 内部算**：Canvas closure 的 `size` 参数就是实际渲染尺寸；
     /// 外层 aspectRatio 保证 size 与 intrinsicSize 等比，所以 scale = size.width / intrinsicSize.width
     /// 即可（scaleX == scaleY，取 width 即可）。
     @ViewBuilder
     private var gridContent: some View {
-        if reduceMotion {
+        if reduceMotion || animator == nil {
             Canvas { ctx, size in
                 let scale = size.width / intrinsicSize.width
-                drawGrid(ctx: ctx, scale: scale, snakeHeadIdx: -1)
+                drawGrid(ctx: ctx, scale: scale, frame: .empty)
             }
         } else {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
-                let snakeHeadIdx = currentSnakeHeadIdx(at: context.date)
+                let frame = currentFrame(at: context.date)
                 Canvas { ctx, size in
                     let scale = size.width / intrinsicSize.width
-                    drawGrid(ctx: ctx, scale: scale, snakeHeadIdx: snakeHeadIdx)
-                    drawSnake(ctx: ctx, scale: scale, headIdx: snakeHeadIdx)
+                    drawGrid(ctx: ctx, scale: scale, frame: frame)
+                    drawSnakes(ctx: ctx, scale: scale, snakes: frame.snakes)
+                    drawFood(ctx: ctx, scale: scale, food: frame.foodCells, time: context.date)
                 }
             }
         }
     }
 
-    /// 根据当前时间算蛇头在 path 上的 step index（[-1, pathCount)）。
-    ///
-    /// 返回 -1 表示当前处于"轮间暂停"，蛇暂时消失（草坪完整显示）。
-    /// 否则返回 [0, pathCount) 中的某一格——蛇头正在的位置。
-    ///
-    /// 用 `truncatingRemainder` 实现循环；timeline 起始锚定 `timeIntervalSinceReferenceDate`
-    /// 是稳定值，组件多次重建蛇仍能"接着上次走"，看不出突变。
-    private func currentSnakeHeadIdx(at date: Date) -> Int {
-        let pathCount = Self.snakePath.count
-        let totalDuration = Double(pathCount) * stepDuration + pauseDuration
-        let t = date.timeIntervalSinceReferenceDate
-        let phase = t.truncatingRemainder(dividingBy: totalDuration)
-        // phase 末尾 pauseDuration 秒进入暂停区，蛇消失
-        let activeDuration = Double(pathCount) * stepDuration
-        if phase >= activeDuration {
-            return -1
-        }
-        return min(Int(phase / stepDuration), pathCount - 1)
+    /// 把当前时间映射到 animator 的当前帧。
+    /// nil → animator 在"轮间暂停"或没数据，返回 empty frame（草坪完整、不画蛇）。
+    private func currentFrame(at date: Date) -> AnimationFrame {
+        guard let animator else { return .empty }
+        guard let step = animator.currentStep(at: date) else { return .empty }
+        return animator.frame(at: step)
     }
 
     /// 在 Canvas 上绘制 53×7 草坪。
     /// - Parameters:
-    ///   - snakeHeadIdx: 当前蛇头位置；该位置及之前的格子被视为"已吃"，渲染 NONE 色。
-    ///     传 -1 表示暂停区（蛇消失），所有格子按原始 level 渲染。
-    private func drawGrid(ctx: GraphicsContext, scale: CGFloat, snakeHeadIdx: Int) {
+    ///   - frame: 当前帧；`frame.eatenCells` 内的格子渲染为 NONE 色。
+    private func drawGrid(ctx: GraphicsContext, scale: CGFloat, frame: AnimationFrame) {
         let palette = ContributionPalette.palette(for: colorScheme)
         let scaledCellW = cellWidth * scale
         let scaledCellH = cellHeight * scale
@@ -258,8 +265,9 @@ struct ContributionGraphView: View {
                 let rect = CGRect(x: x, y: y, width: scaledCellW, height: scaledCellH)
                 let path = Path(roundedRect: rect, cornerRadius: scaledCorner)
 
-                // 关键：判断该格是否在蛇头已走过的路径内
-                let level = isEaten(col: col, row: row, snakeHeadIdx: snakeHeadIdx)
+                // 关键：判断该格是否在已吃集合内
+                let pos = GridPosition(col: col, row: row)
+                let level = frame.eatenCells.contains(pos)
                     ? .none
                     : day.contributionLevel
                 ctx.fill(path, with: .color(palette.color(for: level)))
@@ -285,22 +293,15 @@ struct ContributionGraphView: View {
         }
     }
 
-    /// 判断 (col, row) 是否在蛇头已走过的路径内（即"被吃掉"）。
-    ///
-    /// O(1) 查表 —— 用预构造的 `snakePathIndex` 反向映射，避免每格 O(N) 扫描 path。
-    private func isEaten(col: Int, row: Int, snakeHeadIdx: Int) -> Bool {
-        guard snakeHeadIdx >= 0 else { return false }
-        let stepIdx = Self.snakePathIndex[col][row]
-        // 蛇头自己也算被吃（蛇身覆盖了那格），所以是 <=
-        return stepIdx <= snakeHeadIdx
-    }
-
-    /// 绘制蛇身（5 节，从蛇头往尾部 alpha 渐淡）。
+    /// 绘制 N 条蛇（每节从蛇头往尾部 alpha 渐淡）。
     ///
     /// 蛇头比格子稍大（1.2x），向中心扩展——视觉上"咬"住目标格子，符合 snk 风格；
-    /// 后续节按格子原尺寸 + alpha 渐淡画出尾迹。
-    private func drawSnake(ctx: GraphicsContext, scale: CGFloat, headIdx: Int) {
-        guard headIdx >= 0 else { return }
+    /// 后续节按格子原尺寸 + alpha 渐淡画出尾迹。多条蛇并发时各自独立渲染、互不干涉。
+    ///
+    /// **alpha 阶梯**：head 100%、第 2 节 85%、之后线性衰减到 25%，最多渲染
+    /// `maxRenderedSegments` 节（FoodChase 蛇可能很长）。
+    private func drawSnakes(ctx: GraphicsContext, scale: CGFloat, snakes: [[GridPosition]]) {
+        guard !snakes.isEmpty else { return }
         let palette = ContributionPalette.palette(for: colorScheme)
         let snakeColor = palette.color(for: .fourthQuartile)
         let scaledCellW = cellWidth * scale
@@ -308,70 +309,72 @@ struct ContributionGraphView: View {
         let scaledSpacing = cellSpacing * scale
         let scaledCorner = cellCornerRadius * scale
 
-        // alpha 衰减表：head 100% / 第2节 85% / 第3节 65% / 第4节 45% / 第5节 25%
-        let alphas: [Double] = [1.0, 0.85, 0.65, 0.45, 0.25]
+        for body in snakes {
+            let segCount = min(body.count, maxRenderedSegments)
+            for i in 0..<segCount {
+                let pos = body[i]
+                let baseX = CGFloat(pos.col) * (scaledCellW + scaledSpacing)
+                let baseY = CGFloat(pos.row) * (scaledCellH + scaledSpacing)
 
-        for i in 0..<snakeLength {
-            let segIdx = headIdx - i
-            guard segIdx >= 0, segIdx < Self.snakePath.count else { continue }
-            let (col, row) = Self.snakePath[segIdx]
-            let baseX = CGFloat(col) * (scaledCellW + scaledSpacing)
-            let baseY = CGFloat(row) * (scaledCellH + scaledSpacing)
+                // alpha 阶梯：head 1.0；之后每节线性衰减至 0.2，避免长蛇尾部消失太突兀
+                let alpha: Double = (i == 0) ? 1.0 :
+                    max(0.2, 0.85 - Double(i - 1) * (0.65 / Double(max(1, segCount - 1))))
 
-            let alpha = alphas[i]
-            // 蛇头放大到 1.2x，向中心展开（横纵各按各的格子尺寸算 inflate，
-            // 保证矩形格子下蛇头依旧"贴边咬住"格子，不会变成奇怪的纵横比）。
-            let inflate: CGFloat = (i == 0) ? 0.2 : 0.0
-            let segW = scaledCellW * (1.0 + inflate)
-            let segH = scaledCellH * (1.0 + inflate)
-            let offsetX = (segW - scaledCellW) / 2
-            let offsetY = (segH - scaledCellH) / 2
-            let rect = CGRect(
-                x: baseX - offsetX,
-                y: baseY - offsetY,
-                width: segW,
-                height: segH
-            )
-            let segCorner = scaledCorner * (1.0 + inflate)
-            let path = Path(roundedRect: rect, cornerRadius: segCorner)
-            ctx.fill(path, with: .color(snakeColor.opacity(alpha)))
+                // 蛇头放大到 1.2x，向中心展开
+                let inflate: CGFloat = (i == 0) ? 0.2 : 0.0
+                let segW = scaledCellW * (1.0 + inflate)
+                let segH = scaledCellH * (1.0 + inflate)
+                let offsetX = (segW - scaledCellW) / 2
+                let offsetY = (segH - scaledCellH) / 2
+                let rect = CGRect(
+                    x: baseX - offsetX,
+                    y: baseY - offsetY,
+                    width: segW,
+                    height: segH
+                )
+                let segCorner = scaledCorner * (1.0 + inflate)
+                let path = Path(roundedRect: rect, cornerRadius: segCorner)
+                ctx.fill(path, with: .color(snakeColor.opacity(alpha)))
+            }
         }
     }
 
-    // MARK: - 蛇路径（静态预构造）
+    /// 绘制食物（仅 FoodChase 玩法非空）。
+    ///
+    /// 视觉：在格子上叠一个金黄色脉冲圆环，1Hz 频率呼吸——让用户一眼看出"目标"。
+    /// 圆环用 `.color.opacity(脉冲)` 走 stroke 而非 fill，与蛇头（fill）形成对比。
+    private func drawFood(ctx: GraphicsContext, scale: CGFloat,
+                          food: Set<GridPosition>, time: Date) {
+        guard !food.isEmpty else { return }
+        let scaledCellW = cellWidth * scale
+        let scaledCellH = cellHeight * scale
+        let scaledSpacing = cellSpacing * scale
 
-    /// zigzag 路径：53 列 × 7 行 = 371 步。
-    ///
-    /// 列向横扫：偶数列从上到下（row 0 → 6），奇数列从下到上（row 6 → 0），
-    /// 起点 (col=0, row=0)，终点 (col=52, row=0)。
-    /// snk 的"最优蛇路径"是 NP-hard 优化，我们用 zigzag 简化——
-    /// 视觉效果接近 snk（蛇从左到右把草坪吃光），实现 0 复杂度。
-    ///
-    /// `static` 让所有 view 实例共享一份，App 生命周期内只构造一次。
-    static let snakePath: [(col: Int, row: Int)] = {
-        var path: [(Int, Int)] = []
-        path.reserveCapacity(53 * 7)
-        for col in 0..<53 {
-            if col % 2 == 0 {
-                for row in 0..<7 { path.append((col, row)) }
-            } else {
-                for row in (0..<7).reversed() { path.append((col, row)) }
-            }
-        }
-        return path
-    }()
+        // 1Hz 呼吸：sin(2π·t) 映射到 [0.4, 1.0]
+        let phase = time.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.0)
+        let pulse = 0.7 + 0.3 * sin(phase * 2 * .pi)
 
-    /// `snakePath` 的反向映射：`snakePathIndex[col][row] = step`。
-    ///
-    /// `drawGrid` 要 O(1) 判断"某个 (col, row) 是否被蛇头吃过"，O(N) 扫描 path
-    /// 在 371 格 × 30 FPS 下会成为瓶颈；反向映射查表是常数时间。
-    static let snakePathIndex: [[Int]] = {
-        var m: [[Int]] = Array(repeating: Array(repeating: -1, count: 7), count: 53)
-        for (idx, (col, row)) in snakePath.enumerated() {
-            m[col][row] = idx
+        let foodColor = Color(.sRGB, red: 1.0, green: 0.78, blue: 0.2, opacity: 1.0)  // 金黄
+
+        for pos in food {
+            let baseX = CGFloat(pos.col) * (scaledCellW + scaledSpacing)
+            let baseY = CGFloat(pos.row) * (scaledCellH + scaledSpacing)
+            // 比格子稍大的圆环，强调"目标"
+            let inflate: CGFloat = 0.4
+            let segW = scaledCellW * (1.0 + inflate)
+            let segH = scaledCellH * (1.0 + inflate)
+            let rect = CGRect(
+                x: baseX - (segW - scaledCellW) / 2,
+                y: baseY - (segH - scaledCellH) / 2,
+                width: segW, height: segH
+            )
+            ctx.stroke(
+                Path(ellipseIn: rect),
+                with: .color(foodColor.opacity(pulse)),
+                lineWidth: 1.5 * scale
+            )
         }
-        return m
-    }()
+    }
 }
 
 // MARK: - 颜色调色板
@@ -461,12 +464,14 @@ private extension Color {
         .environment(\.colorScheme, .dark)
     }
     .padding()
+    .environment(AppSettings.shared)
 }
 
 #Preview("Contribution Graph - 加载中") {
     ContributionGraphView(payload: nil, isLoading: true, login: nil)
         .frame(width: 260)
         .padding()
+        .environment(AppSettings.shared)
 }
 
 /// 生成一份近似真实的 mock payload（53 周 × 7 天，随机分级），仅供 Preview 用。

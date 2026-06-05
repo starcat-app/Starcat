@@ -6565,6 +6565,174 @@
         }
       }
     },
+    "settings.snakeStyle.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose how the snake traverses the contribution graph. Greedy (snk-style) follows your contribution data."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择贪吃蛇遍历草坪的方式。贪心（snk 同款）会跟随你的贡献分布动态规划路径。"
+          }
+        }
+      }
+    },
+    "settings.snakeStyle.foodChase" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "True Snake (Food Chase)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "真·贪吃蛇（追食物）"
+          }
+        }
+      }
+    },
+    "settings.snakeStyle.greedy" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Greedy (snk-style)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "贪心吃绿（snk 同款）"
+          }
+        }
+      }
+    },
+    "settings.snakeStyle.hilbert" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hilbert Curve (Maze)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hilbert 曲线（迷宫）"
+          }
+        }
+      }
+    },
+    "settings.snakeStyle.multiMode" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Multi-mode (Rotating)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "多模式轮换"
+          }
+        }
+      }
+    },
+    "settings.snakeStyle.multiSnake" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dual Snake (Race)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "双蛇并发（左右开吃）"
+          }
+        }
+      }
+    },
+    "settings.snakeStyle.off" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        }
+      }
+    },
+    "settings.snakeStyle.section" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contribution Snake"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "贡献草坪贪吃蛇"
+          }
+        }
+      }
+    },
+    "settings.snakeStyle.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Animation Style"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "动画玩法"
+          }
+        }
+      }
+    },
+    "settings.snakeStyle.zigzag" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zigzag (Classic)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回字横扫（经典）"
+          }
+        }
+      }
+    },
     "settings.sort.nameAsc" : {
       "extractionState" : "stale",
       "localizations" : {

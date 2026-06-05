@@ -81,7 +81,10 @@ struct SidebarView: View {
                 )
                 .padding(.horizontal, 14)
                 .padding(.top, 4)
-                .padding(.bottom, 8)
+                // 2026-06-05 v3 follow-up：dong4j 反馈"管理/趋势/活动 再上移 1/3"。
+                // 原 .bottom 8 + rootNavigationBar.top 10 = 18pt 间距，减 1/3 → 12pt。
+                // 拆成 bottom 4 + top 8 = 12pt，对称收缩、视觉更聚拢。
+                .padding(.bottom, 4)
                 .task(id: user.login) {
                     // 用 user.login 作为 task id：账号切换时自动重新加载。
                     // ContributionService 内部已做 TTL 与 inflight 互斥，重复调用安全。
@@ -91,7 +94,7 @@ struct SidebarView: View {
 
             rootNavigationBar
                 .padding(.horizontal, 8)
-                .padding(.top, 10)
+                .padding(.top, 8)
                 .padding(.bottom, 8)
         }
         .background(.bar)
