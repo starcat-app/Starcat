@@ -386,6 +386,13 @@ final class AppSettings {
         didSet { persist(key: Keys.smartSearchMode, value: smartSearchMode.rawValue) }
     }
 
+    /// 贡献草坪贪吃蛇玩法（HOM-SNAKE-MODES 2026-06-05）。
+    /// 默认 `.greedy`（snk 同款），让"草坪 + 蛇"的卖点立刻直观可感。
+    /// 修改时 `ContributionGraphView` 会通过 `.onChange` 重建 animator。
+    var snakeStyle: SnakeStyle {
+        didSet { persist(key: Keys.snakeStyle, value: snakeStyle.rawValue) }
+    }
+
     // MARK: - 初始化
 
     private let defaults: UserDefaults
@@ -457,6 +464,9 @@ final class AppSettings {
         self.aiEmbeddingTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiEmbeddingTask, defaults: defaults) ?? defaultEmbeddingTask
         let searchModeRaw = defaults.string(forKey: Keys.smartSearchMode)
         self.smartSearchMode = searchModeRaw.flatMap(SmartSearchMode.init(rawValue:)) ?? .keyword
+
+        let snakeStyleRaw = defaults.string(forKey: Keys.snakeStyle)
+        self.snakeStyle = snakeStyleRaw.flatMap(SnakeStyle.init(rawValue:)) ?? SnakeStyle.default
     }
 
     // MARK: - 内部
@@ -575,5 +585,6 @@ final class AppSettings {
         static let aiTagsTask = "settings.ai.task.tags.v2"
         static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
         static let smartSearchMode = "settings.search.mode"
+        static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
     }
 }
