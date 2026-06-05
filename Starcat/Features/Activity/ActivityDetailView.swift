@@ -277,7 +277,10 @@ struct ActivityDetailView: View {
         if let readmeVM {
             ReadmeStateView(
                 state: readmeVM.state,
-                baseURL: URL(string: repo.htmlUrl),
+                // 拼接 blob/HEAD：GitHub HTML 渲染 API 返回的相对链接缺少 blob/HEAD 前缀，
+                // 补上后相对链接才能正确解析为 https://github.com/owner/repo/blob/HEAD/xxx。
+                // 与 RepoDetailView.readmeSection / trendingReadmeSection 保持一致。
+                baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
                 owner: repo.owner,
                 repo: repo.name,
                 onScrollOffsetChange: updateRepoMetadataPanelVisibility
