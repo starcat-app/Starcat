@@ -47,6 +47,7 @@ struct ActivityDetailView: View {
                     ScrollView {
                         activityMetadataPanel(item)
                     }
+                    .detailScrollViewStyle()
                 }
             } else {
                 emptyState

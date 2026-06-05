@@ -67,22 +67,22 @@ final class HomeViewModel {
                 self.rawItems = cached.rawItems
                 self.statusMap = cached.statusMap
                 self.applyView()             // items / itemsRevision 同步就位
-                self.isLoading = false
-                self.isRefreshing = false    // 只用缓存瞬切；真实变更路径再显式 force refresh。
-                self.loadError = nil
+                if self.isLoading { self.isLoading = false }
+                if self.isRefreshing { self.isRefreshing = false }    // 只用缓存瞬切；真实变更路径再显式 force refresh。
+                if self.loadError != nil { self.loadError = nil }
                 #if DEBUG
                 AppLog.ui.notice("[switch-cat] T0' eager cache load done (items=\(self.items.count)) +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
                 #endif
             } else {
                 // 无缓存或过期 → 切到骨架屏，等 reloadItems 拉新数据。
                 // 这里同步设 isLoading=true，避免「先渲列表壳一帧再渲骨架屏」的闪烁。
-                self.isLoading = true
-                self.isRefreshing = false
-                self.loadError = nil
+                if !self.isLoading { self.isLoading = true }
+                if self.isRefreshing { self.isRefreshing = false }
+                if self.loadError != nil { self.loadError = nil }
             }
 
-            selectedRepoID = nil
-            searchQuery = ""
+            if selectedRepoID != nil { selectedRepoID = nil }
+            if !searchQuery.isEmpty { searchQuery = "" }
         }
     }
 
@@ -420,8 +420,8 @@ final class HomeViewModel {
                 // 700ms 级别的 DB 重查，并在结束时因为 isRefreshing=false 触发第二次整栏 body 重算。
                 // 过期缓存不走这个分支，仍按 SWR 继续后台刷新，保证 5 分钟 TTL 有效。
                 // 数据真实变化路径（同步完成、标签/状态修改、取消 Star）统一传 forceRefresh=true。
-                isRefreshing = false
-                loadError = nil
+                if isRefreshing { isRefreshing = false }
+                if loadError != nil { loadError = nil }
                 #if DEBUG
                 AppLog.ui.notice("[switch-cat] T3 cache fresh, skip bg fetch +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
                 #endif

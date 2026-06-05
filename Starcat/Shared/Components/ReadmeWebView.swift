@@ -523,11 +523,15 @@ enum ReadmeCSS {
         background: var(--code-bg);
         border-radius: 4px;
     }
-    /* 滚动条美化（webkit only） */
-    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    /*
+     * 滚动条美化（webkit only）。
+     * WKWebView 不走 SwiftUI / NSScrollView 的滚动条样式；这里用 8px 贴近 repo List
+     * 原生 overlay scroller 的视觉厚度，避免详情页 README 比中栏列表显得更粗。
+     */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-thumb {
         background: var(--border);
-        border-radius: 5px;
+        border-radius: 4px;
     }
     """
 }

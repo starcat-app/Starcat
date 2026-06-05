@@ -263,14 +263,23 @@ struct HomeView: View {
                 viewModel.selection = .allStars
             }
 
-            await viewModel.reloadItems()
+            if selectedSidebarPage == .manage {
+                await viewModel.reloadItems()
+            }
         }
         // selection 变化 → 重新加载列表
         .task(id: viewModel.selection) {
+            // HOM-46：selection.didSet 已经把未过期缓存同步上屏。
+            // 这里如果再进 reloadItems()，即便最终命中 cache early-return，也会创建一次
+            // 无意义的异步任务并触发若干同值状态写入；这条路径在 1 条 repo 的分类上也会被用户感知为顿挫。
+            // 过期缓存 / 无缓存仍继续 reload，保留首次加载和 SWR 刷新语义。
+            guard selectedSidebarPage == .manage, !viewModel.hasCachedItems else { return }
             await viewModel.reloadItems()
         }
         // 搜索框按 Return / 清空后才提交搜索；普通 FTS5 与 AI 语义搜索都不再逐字符实时查询。
         .task(id: viewModel.searchSubmissionID) {
+            // Trending / Activity 有自己的数据模型；这里不应触发 Manage reload。
+            guard selectedSidebarPage == .manage else { return }
             await viewModel.reloadItems()
         }
         // 搜索模式变化只更新持久化偏好，不立刻发起查询；用户按 Return 后才用新模式搜索。

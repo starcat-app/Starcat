@@ -103,7 +103,8 @@ struct RepoListView: View {
     ///
     /// 单独抽出是为了让外层用 `contentAnimationID` 给整块内容做过渡动画；
     /// `List` 本身仍用 `itemsRevision` 重建快照，避免排序/过滤时几千行逐个 move；
-    /// row 只做可视区域内的轻量 reveal。
+    /// row 只做可视区域内的轻量 reveal。缓存命中分类不再跳过 row reveal：
+    /// 外层 transition 已稳定，保留行级 0.22s 动画不会回到整栏卡顿，同时能恢复列表加载的生命感。
     @ViewBuilder
     private var contentBody: some View {
         @Bindable var vm = viewModel
@@ -443,7 +444,7 @@ struct RepoListView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision, skipAnimation: viewModel.hasCachedItems)
+                .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             }
@@ -465,7 +466,7 @@ struct RepoListView: View {
                     isSelected: selection.wrappedValue.contains(repo.id),
                     semanticHit: viewModel.semanticHit(for: repo.id)
                 )
-                .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision, skipAnimation: viewModel.hasCachedItems)
+                .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             }
