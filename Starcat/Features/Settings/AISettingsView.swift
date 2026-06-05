@@ -263,7 +263,7 @@ struct AISettingsTab: View {
     /// 把它保存到配置里，未来对接 LM Studio / Ollama 原生 API 时再发送。
     private var parametersSection: some View {
         Section {
-            DisclosureGroup("模型参数", isExpanded: $isParametersExpanded) {
+            DisclosureGroup(isExpanded: $isParametersExpanded) {
                 Picker("任务", selection: $parameterTask) {
                     ForEach(AIModelTask.allCases) { task in
                         Text(task.displayName).tag(task)
@@ -301,8 +301,28 @@ struct AISettingsTab: View {
 
                 Toggle("优先使用流式响应", isOn: parameterBoolBinding(parameterTask, \.streamEnabled))
                     .disabled(parameterTask == .embedding || parameterTask == .tags)
+            } label: {
+                disclosureLabel("模型参数", isExpanded: $isParametersExpanded)
             }
         }
+    }
+
+    /// HOM-68 follow-up v4 (dong4j 反馈 2026-06-05 22:53)：
+    /// SwiftUI 默认的 `DisclosureGroup` 只对左侧 ▶/▽ chevron 命中，标题文字区
+    /// 是死区，点不动。给标签文字加 `.contentShape(Rectangle()) + onTapGesture`
+    /// 把整行变成可点击区域，与 macOS Finder / Xcode 的折叠 group 行为一致。
+    ///
+    /// 用 withAnimation 让展开/折叠跟 chevron 旋转走同一条动画曲线，避免"点标题
+    /// 瞬切、点 chevron 平滑"的不一致体感。
+    private func disclosureLabel(_ title: String, isExpanded: Binding<Bool>) -> some View {
+        Text(title)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isExpanded.wrappedValue.toggle()
+                }
+            }
     }
 
     private func parameterSlider(
@@ -381,7 +401,7 @@ struct AISettingsTab: View {
     ///   整个设置面板。
     private var promptSection: some View {
         Section {
-            DisclosureGroup("Prompt", isExpanded: $isPromptExpanded) {
+            DisclosureGroup(isExpanded: $isPromptExpanded) {
                 HStack(spacing: 12) {
                     Picker("任务", selection: $promptTask) {
                         ForEach([AIModelTask.summary, .tags, .translation]) { task in
@@ -428,6 +448,8 @@ struct AISettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                disclosureLabel("Prompt", isExpanded: $isPromptExpanded)
             }
         }
     }
