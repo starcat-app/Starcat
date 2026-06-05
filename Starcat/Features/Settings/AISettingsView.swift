@@ -307,22 +307,30 @@ struct AISettingsTab: View {
         }
     }
 
-    /// HOM-68 follow-up v4 (dong4j 反馈 2026-06-05 22:53)：
-    /// SwiftUI 默认的 `DisclosureGroup` 只对左侧 ▶/▽ chevron 命中，标题文字区
-    /// 是死区，点不动。给标签文字加 `.contentShape(Rectangle()) + onTapGesture`
-    /// 把整行变成可点击区域，与 macOS Finder / Xcode 的折叠 group 行为一致。
+    /// HOM-68 follow-up v5 (dong4j 反馈 2026-06-05 23:00)：
+    /// v4 用 `Text + onTapGesture` 不生效——SwiftUI 在 `Form(.grouped)` 里给
+    /// `DisclosureGroup` label 套了一层非交互容器，会吞掉 `onTapGesture`，
+    /// 只有 chevron 内置的 hit area 才能触发。
     ///
-    /// 用 withAnimation 让展开/折叠跟 chevron 旋转走同一条动画曲线，避免"点标题
-    /// 瞬切、点 chevron 平滑"的不一致体感。
+    /// 改用 `Button(action:) + .buttonStyle(.plain)`：Button 在 Form 里是
+    /// SwiftUI 一等公民，永远拿到点击事件；plain style 抹掉默认按钮装饰，
+    /// 视觉上仍是普通标题文字。
+    ///
+    /// 用 withAnimation 让展开/折叠跟 chevron 旋转走同一条动画曲线，避免"点
+    /// 标题瞬切、点 chevron 平滑"的不一致体感。
     private func disclosureLabel(_ title: String, isExpanded: Binding<Bool>) -> some View {
-        Text(title)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    isExpanded.wrappedValue.toggle()
-                }
+        Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                isExpanded.wrappedValue.toggle()
             }
+        } label: {
+            HStack {
+                Text(title)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func parameterSlider(
@@ -342,10 +350,13 @@ struct AISettingsTab: View {
         }
     }
 
-    /// 整数参数输入行：左侧 90pt 标签，右侧固定宽度 TextField + 可选单位。
+    /// 整数参数输入行：90pt 标题列 + 中段 TextField 占满（与 Slider 同宽）+ 44pt 单位列。
     ///
-    /// 与 `parameterSlider` 的 90pt 标签宽对齐，让 Temperature / Top P / Top K /
-    /// 最大 Token / 超时时间 视觉上形成竖直一列。
+    /// HOM-68 follow-up v5 (dong4j 反馈 2026-06-05 23:00)：之前 TextField 固定
+    /// 90pt 靠右，比同一组里的 Slider 短一大截，竖向看像断行。改为 TextField
+    /// 不指定 width 让它吃满中段（与 Slider 同样的"中段填充"行为），右侧 44pt
+    /// 单位列与 Slider 的"当前值"列对齐，三种参数（Top K / Token / 超时）从此
+    /// 与 Temperature / Top P 在视觉上形成统一栅格。
     ///
     /// 钳制策略：值只在用户提交（失焦 / 回车）时才写回 binding，写回时再做
     /// `clamp(into: range)`。这样在键入过程中不会出现"输入到 12 就立刻变成 100"
@@ -360,7 +371,6 @@ struct AISettingsTab: View {
         HStack {
             Text(title)
                 .frame(width: 90, alignment: .leading)
-            Spacer(minLength: 0)
             TextField(
                 "",
                 value: Binding(
@@ -373,16 +383,15 @@ struct AISettingsTab: View {
             )
             .textFieldStyle(.roundedBorder)
             .multilineTextAlignment(.trailing)
-            .frame(width: 90)
             .disabled(disabled)
             if let unit {
                 Text(unit)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .frame(width: 24, alignment: .leading)
+                    .frame(width: 44, alignment: .leading)
             } else {
-                // 占位与有单位行对齐，避免输入框宽度跳变。
-                Color.clear.frame(width: 24)
+                // 占位与有单位行对齐，避免输入框宽度跳变（同 Slider 行右侧 44pt 值列）。
+                Color.clear.frame(width: 44)
             }
         }
     }
