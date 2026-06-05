@@ -272,10 +272,10 @@ private struct ActivityRowView: View {
         } else {
             ZStack {
                 Circle()
-                    .fill(LanguageColor.color(for: item.accentLanguage).opacity(0.18))
+                    .fill(item.accentColor.opacity(0.18))
                 Image(systemName: item.category.systemImage)
                     .font(.system(size: size > 24 ? 17 : 11, weight: .semibold))
-                    .foregroundStyle(LanguageColor.color(for: item.accentLanguage))
+                    .foregroundStyle(item.accentColor)
             }
             .frame(width: size, height: size)
         }
@@ -299,7 +299,7 @@ private struct ActivityRowSurface<Content: View>: View {
     }
 
     private var accentColor: Color {
-        LanguageColor.color(for: item.accentLanguage)
+        item.accentColor
     }
 
     private var backgroundOpacity: Double {
