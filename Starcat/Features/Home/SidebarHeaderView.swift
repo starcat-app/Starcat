@@ -48,6 +48,9 @@ struct SidebarHeaderView: View {
             case .authenticated(let user):
                 avatarRow(user: user)
                 identity(user: user)
+                // HOM-PROFILE 2026-06-05：bio + 个人主页快捷链接图标行；
+                // 全部字段为空时该 view 自身不渲染内容，不会浪费垂直空间。
+                ProfileLinksRow(user: user)
                 statsRow(user: user)
             case .unauthenticated, .awaitingUserCode:
                 unauthenticatedAvatarRow()
@@ -164,18 +167,25 @@ struct SidebarHeaderView: View {
     /// 的无缝过渡，符合"四周都渐变"的需求。如果以后又想加强顶部，可以把 0.00 处的
     /// opacity 从 0 调到 0.10~0.15 之间——保留极弱底色但仍无硬边。
     ///
-    /// reduceMotion → 静态 stops（peakPosition 固定 0.30）；动效模式下 peakPosition
-    /// 在 [0.18, 0.42] 漂移（约 16s 周期），让"高亮区"在头像上下缓慢游走，形成呼吸感。
+    /// reduceMotion → 静态 stops（peakPosition 固定 0.18）；动效模式下 peakPosition
+    /// 在 [0.10, 0.26] 漂移（约 16s 周期），让"高亮区"在头像上下缓慢游走，形成呼吸感。
     /// 顶部 0.0 和底部 1.0 处始终 alpha=0，保证上下边界淡出干净（无硬切）。
+    ///
+    /// **2026-06-05 调整**（HOM-PROFILE follow-up，dong4j 反馈）：
+    /// 新增 `ProfileLinksRow` 后整个 header view 高度从 ~170pt 涨到 ~210pt，
+    /// 之前 peakPosition 0.30 在新高度下落到 ~63pt（identity 行附近，已经过头像底部），
+    /// 视觉上"渐变背景偏下了"。把 peakPosition 从 0.30 → 0.18（约 38pt 位置，
+    /// 落在头像中部）；同时让中段衰减 stop 提前（0.80 → 0.62），让色块上移聚焦头像，
+    /// 链接行和 stats 区域所在的下半部分尽量透明，不与下方草坪/导航栏抢色。
+    /// 漂移振幅相应收窄 0.12 → 0.08，避免下移时又落到 identity 行。
     @ViewBuilder
     private var verticalFadeMask: some View {
         if reduceMotion {
             LinearGradient(
                 gradient: Gradient(stops: [
-                    // 22:27 改：顶部从 alpha=1.0 改为 0.00，消除与 titlebar 的硬分界
                     .init(color: Color.black.opacity(0.00), location: 0.00),
-                    .init(color: Color.black, location: 0.30),
-                    .init(color: Color.black.opacity(0.30), location: 0.80),
+                    .init(color: Color.black, location: 0.18),
+                    .init(color: Color.black.opacity(0.30), location: 0.62),
                     .init(color: Color.black.opacity(0.00), location: 1.00)
                 ]),
                 startPoint: .top, endPoint: .bottom
@@ -183,13 +193,12 @@ struct SidebarHeaderView: View {
         } else {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
                 let t = context.date.timeIntervalSinceReferenceDate
-                let peakPosition = 0.30 + sin(t * 0.38) * 0.12
+                let peakPosition = 0.18 + sin(t * 0.38) * 0.08
                 LinearGradient(
                     gradient: Gradient(stops: [
-                        // 22:27 改：顶部从 alpha=1.0 改为 0.00，消除与 titlebar 的硬分界
                         .init(color: Color.black.opacity(0.00), location: 0.00),
                         .init(color: Color.black, location: peakPosition),
-                        .init(color: Color.black.opacity(0.30), location: 0.80),
+                        .init(color: Color.black.opacity(0.30), location: 0.62),
                         .init(color: Color.black.opacity(0.00), location: 1.00)
                     ]),
                     startPoint: .top, endPoint: .bottom
