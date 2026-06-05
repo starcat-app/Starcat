@@ -132,10 +132,19 @@ final class ReadmeTranslationService {
         let task = settings.aiTranslationTask
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel)
 
-        let systemPrompt = Self.systemPrompt(targetLanguage: request.targetLanguage)
-        let userPrompt = Self.userPrompt(
-            sourceHtml: trimmedSource,
-            targetLanguage: request.targetLanguage
+        // HOM-68 follow-up v2 (2026-06-05 22:30)：prompt 从 task 配置读，
+        // 用户可在 设置 → AI → Prompt 区改；service 只负责按目标语言渲染占位符
+        // + 结构校验 / fence 剥离等后处理，承担"安全网"角色。
+        let prompt = Self.effectivePromptConfiguration(task.prompt)
+        let systemPrompt = Self.renderTemplate(
+            prompt.systemPrompt,
+            targetLanguage: request.targetLanguage,
+            sourceHtml: trimmedSource
+        )
+        let userPrompt = Self.renderTemplate(
+            prompt.userPromptTemplate,
+            targetLanguage: request.targetLanguage,
+            sourceHtml: trimmedSource
         )
 
         // 翻译走 chat 协议。复用 summary 的 temperature / maxToken / timeout，
@@ -238,47 +247,51 @@ final class ReadmeTranslationService {
         }
     }
 
-    // MARK: - Prompt 构造
+    // MARK: - Prompt 构造（HOM-68 follow-up v2）
 
-    /// 翻译用 system prompt。
+    /// 占位符：将被替换为 `ReadmeTranslationLanguage.promptName`（如 `Simplified Chinese`）。
+    static let targetLanguagePlaceholder = "{targetLanguage}"
+
+    /// 占位符：将被替换为源 README HTML 片段。与 summary / tags 保持一致。
+    static let contextPlaceholder = "{context}"
+
+    /// 替换 prompt 模板里的 `{targetLanguage}` / `{context}` 占位符。
     ///
-    /// 设计：
-    /// - **角色明确**：「README 翻译专用」，让模型知道任务是翻译而非总结/重写；
-    /// - **结构约束** 用 5 条最高优先级 negative 指令，覆盖最常见的破坏点
-    ///   （改 tag / 翻译属性 / 翻译代码 / 翻译 URL / 加包裹 fence）；
-    /// - **少即是多**：第一版不试图教模型怎么处理「锚点 link 文本应翻译但 href 不动」
-    ///   这种微妙边界——给一条「保留所有 HTML 标签和属性原样」就够覆盖 95% 场景。
-    /// - 必须用英文写：跨 provider（DeepSeek / OpenRouter / Ollama / LM Studio）
-    ///   对中文 prompt 的解析差异比英文 prompt 大；翻译目标语言通过 `promptName` 传入。
-    nonisolated static func systemPrompt(targetLanguage: ReadmeTranslationLanguage) -> String {
-        """
-        You are Starcat's README translation engine.
-        Translate the provided GitHub README HTML fragment into \(targetLanguage.promptName).
-
-        STRICT RULES (failure to follow renders the output unusable):
-        - Output the translated HTML fragment ONLY. Do not add prose, comments, or explanations before or after.
-        - Do NOT wrap the result in markdown fences such as ```html ... ``` or ``` ... ```.
-        - Preserve every HTML tag, attribute, attribute value, id, class, href, src exactly as-is. Do not rename, reorder, or remove tags.
-        - Do NOT translate text inside <code>, <pre>, or anything that looks like source code, shell commands, file paths, environment variables, or URLs.
-        - Do NOT translate proper nouns: project names, library names, API endpoints, branch names, version strings.
-        - Translate ONLY user-visible natural language text nodes (paragraphs, headings, list items, table cells, blockquotes, captions, button labels).
-        - Keep emoji and inline icons untouched.
-        - Keep the total number of HTML tags identical to the source.
-        """
+    /// 与 `AIPromptConfiguration.renderedUserPrompt(context:)` 同等地位，
+    /// 但翻译比摘要 / 标签多一个目标语言变量，所以这里独立一份 renderer。
+    /// 故意不写到 `AIPromptConfiguration` 上：那样会污染摘要 / 标签的 API，
+    /// 而它们根本没有目标语言概念。
+    nonisolated static func renderTemplate(
+        _ template: String,
+        targetLanguage: ReadmeTranslationLanguage,
+        sourceHtml: String
+    ) -> String {
+        template
+            .replacingOccurrences(of: targetLanguagePlaceholder, with: targetLanguage.promptName)
+            .replacingOccurrences(of: contextPlaceholder, with: sourceHtml)
     }
 
-    /// 用户消息正文：直接附原 HTML 片段。
+    /// 从用户设置中取出有效 prompt 配置，必要时回退到 `AIDefaultPrompts.translation`。
     ///
-    /// 不再重复语言要求（system prompt 已强调），避免模型把指令和待翻译内容混淆。
-    nonisolated static func userPrompt(sourceHtml: String, targetLanguage: ReadmeTranslationLanguage) -> String {
-        """
-        Translate the README fragment below into \(targetLanguage.promptName).
-        Return the translated HTML fragment only.
-
-        <README_FRAGMENT>
-        \(sourceHtml)
-        </README_FRAGMENT>
-        """
+    /// 触发回退的两类情况：
+    /// 1. **老版本兼容**：HOM-68 follow-up v1（commit 97f1b5c）把 translation 默认
+    ///    `AIPromptConfiguration` 设为 `("" , "{context}")` 占位，老用户的 UserDefaults
+    ///    里仍然存着这份占位；如果不兜底，翻译会以"空 system prompt + 只发原文"
+    ///    的方式调用 LLM，输出几乎一定会破坏结构（被 `assertStructureNotBroken` 拦）。
+    /// 2. **用户误清空**：若用户在设置页把 system 或 user prompt 改成空白，
+    ///    回退到默认能让翻译继续可用，符合"安全网"语义。
+    ///
+    /// 判定为"未配置"的条件：system 或 user 任一为空（trim 后），
+    /// 或 user prompt 退化为裸 `{context}`（无目标语言指令、无包裹标签）。
+    nonisolated static func effectivePromptConfiguration(
+        _ prompt: AIPromptConfiguration
+    ) -> AIPromptConfiguration {
+        let trimmedSystem = prompt.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedUser = prompt.userPromptTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedSystem.isEmpty || trimmedUser.isEmpty || trimmedUser == "{context}" {
+            return AIDefaultPrompts.translation
+        }
+        return prompt
     }
 
     // MARK: - 输出清洗 / 结构校验

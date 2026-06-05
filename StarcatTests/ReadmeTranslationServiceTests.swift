@@ -88,28 +88,75 @@ struct ReadmeTranslationServiceStaticTests {
         try ReadmeTranslationService.assertStructureNotBroken(source: src, translated: translated)
     }
 
-    // MARK: - Prompt 拼装
+    // MARK: - Prompt 模板渲染（HOM-68 follow-up v2）
 
-    @Test("systemPrompt：包含目标语言 promptName 与硬约束关键字")
-    func systemPromptContainsLanguageAndRules() {
-        let prompt = ReadmeTranslationService.systemPrompt(targetLanguage: .simplifiedChinese)
-        #expect(prompt.contains(ReadmeTranslationLanguage.simplifiedChinese.promptName))
-        #expect(prompt.contains("STRICT RULES"))
-        #expect(prompt.contains("Do NOT translate"))
-        #expect(prompt.contains("HTML"))
+    @Test("renderTemplate：替换 {targetLanguage} 与 {context} 占位符")
+    func renderTemplateSubstitutesPlaceholders() {
+        let rendered = ReadmeTranslationService.renderTemplate(
+            "Translate into {targetLanguage}: {context}",
+            targetLanguage: .japanese,
+            sourceHtml: "<p>hi</p>"
+        )
+        #expect(rendered == "Translate into Japanese: <p>hi</p>")
     }
 
-    @Test("userPrompt：包含 <README_FRAGMENT> 包裹与目标语言")
-    func userPromptWrapsSource() {
-        let html = "<h1>Hello</h1>"
-        let prompt = ReadmeTranslationService.userPrompt(
-            sourceHtml: html,
-            targetLanguage: .japanese
+    @Test("renderTemplate：同一占位符出现多次都被替换")
+    func renderTemplateReplacesAllOccurrences() {
+        let rendered = ReadmeTranslationService.renderTemplate(
+            "lang={targetLanguage}; again={targetLanguage}; body={context}{context}",
+            targetLanguage: .english,
+            sourceHtml: "X"
         )
-        #expect(prompt.contains(html))
-        #expect(prompt.contains("<README_FRAGMENT>"))
-        #expect(prompt.contains("</README_FRAGMENT>"))
-        #expect(prompt.contains(ReadmeTranslationLanguage.japanese.promptName))
+        #expect(rendered == "lang=English; again=English; body=XX")
+    }
+
+    @Test("AIDefaultPrompts.translation：system 与 user 模板都包含必要占位符与硬约束")
+    func defaultTranslationPromptShape() {
+        let prompt = AIDefaultPrompts.translation
+        // system 含语言占位 + STRICT RULES
+        #expect(prompt.systemPrompt.contains(ReadmeTranslationService.targetLanguagePlaceholder))
+        #expect(prompt.systemPrompt.contains("STRICT RULES"))
+        #expect(prompt.systemPrompt.contains("HTML"))
+        // user 含 context + 包裹标签
+        #expect(prompt.userPromptTemplate.contains(ReadmeTranslationService.contextPlaceholder))
+        #expect(prompt.userPromptTemplate.contains("<README_FRAGMENT>"))
+        #expect(prompt.userPromptTemplate.contains("</README_FRAGMENT>"))
+    }
+
+    // MARK: - effectivePromptConfiguration 回退兜底
+
+    @Test("effectivePromptConfiguration：完整自定义 prompt 原样返回")
+    func effectivePromptKeepsCustom() {
+        let custom = AIPromptConfiguration(
+            systemPrompt: "Custom system into {targetLanguage}",
+            userPromptTemplate: "Custom user: {context}"
+        )
+        let effective = ReadmeTranslationService.effectivePromptConfiguration(custom)
+        #expect(effective.systemPrompt == custom.systemPrompt)
+        #expect(effective.userPromptTemplate == custom.userPromptTemplate)
+    }
+
+    @Test("effectivePromptConfiguration：老版本占位（空 system + 裸 {context}）回退到 default")
+    func effectivePromptFallsBackForLegacyPlaceholder() {
+        let legacy = AIPromptConfiguration(systemPrompt: "", userPromptTemplate: "{context}")
+        let effective = ReadmeTranslationService.effectivePromptConfiguration(legacy)
+        #expect(effective.systemPrompt == AIDefaultPrompts.translation.systemPrompt)
+        #expect(effective.userPromptTemplate == AIDefaultPrompts.translation.userPromptTemplate)
+    }
+
+    @Test("effectivePromptConfiguration：用户误清空 system / user 任一时也回退")
+    func effectivePromptFallsBackForEmptyEither() {
+        let emptySystem = AIPromptConfiguration(systemPrompt: "   ", userPromptTemplate: "Custom user {context}")
+        let emptyUser = AIPromptConfiguration(systemPrompt: "Custom system", userPromptTemplate: " ")
+
+        #expect(
+            ReadmeTranslationService.effectivePromptConfiguration(emptySystem).systemPrompt
+                == AIDefaultPrompts.translation.systemPrompt
+        )
+        #expect(
+            ReadmeTranslationService.effectivePromptConfiguration(emptyUser).userPromptTemplate
+                == AIDefaultPrompts.translation.userPromptTemplate
+        )
     }
 }
 

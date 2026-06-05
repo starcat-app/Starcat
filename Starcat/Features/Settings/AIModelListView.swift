@@ -83,7 +83,10 @@ struct AIModelListView: View {
                 }
             }
         }
-        .frame(height: 260)
+        // HOM-68 follow-up v2 (2026-06-05 22:30 dong4j 反馈)：原 260pt 高度太占空间，
+        // 压到约能完整展示 4 条模型行的高度。每条 modelRow ≈ 36pt（content 22pt +
+        // vertical padding 14pt）+ Divider 1pt，4 行 ≈ 148pt，给点缓冲取 160pt。
+        .frame(height: 160)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)

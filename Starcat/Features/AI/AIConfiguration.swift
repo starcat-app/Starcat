@@ -349,17 +349,43 @@ enum AIDefaultPrompts {
 
     static let embedding = AIPromptConfiguration(systemPrompt: "", userPromptTemplate: "{context}")
 
-    /// HOM-68：README 翻译占位 Prompt。
+    /// HOM-68 follow-up（2026-06-05 22:30）：README 翻译默认 Prompt。
     ///
-    /// 故意留空：`ReadmeTranslationService` 不读 `AIModelTaskConfiguration.prompt`，
-    /// 它的 system / user prompt 是按目标语言 `ReadmeTranslationLanguage.promptName`
-    /// 现场拼装的（见 `ReadmeTranslationService.systemPrompt(targetLanguage:)`）。
-    /// 把 prompt 暴露给用户编辑会破坏"保留 HTML 结构"的强约束，
-    /// 因此 AISettingsView 的 Prompt 编辑区也只保留 summary / tags，不包含 translation。
-    /// 这里的占位值仅用于 `AIModelTaskConfiguration` 的 Codable 完整性。
+    /// 之前这套 prompt 写死在 `ReadmeTranslationService.systemPrompt(targetLanguage:)` /
+    /// `userPrompt(...)` 静态函数里，导致用户无法在设置页调整。本次按摘要 / 标签的
+    /// 模式抽到这里，统一通过 `AIModelTaskConfiguration.prompt` 走，运行时 Service
+    /// 负责把 `{targetLanguage}` 替换为 `ReadmeTranslationLanguage.promptName`、
+    /// `{context}` 替换为源 README HTML 片段。
+    ///
+    /// 设计上仍然保留"结构保真"的强约束（5 条 STRICT RULES + `assertStructureNotBroken`
+    /// + `stripFenceWrapping` 后处理）—— 即便用户改坏了 prompt，service 的结构校验
+    /// 仍会拦截大幅破坏结构的输出并保留原 README，不会污染缓存。占位符约定：
+    /// - `{targetLanguage}` 必须出现在 system 或 user prompt 至少一处（否则模型不知道
+    ///   要翻译成哪种语言）；service 不强校验，但运行时如果两处都缺，等于让模型自己猜。
+    /// - `{context}` 只能出现在 user prompt（system prompt 出现也会被替换，但语义错误）。
     static let translation = AIPromptConfiguration(
-        systemPrompt: "",
-        userPromptTemplate: "{context}"
+        systemPrompt: """
+        You are Starcat's README translation engine.
+        Translate the provided GitHub README HTML fragment into {targetLanguage}.
+
+        STRICT RULES (failure to follow renders the output unusable):
+        - Output the translated HTML fragment ONLY. Do not add prose, comments, or explanations before or after.
+        - Do NOT wrap the result in markdown fences such as ```html ... ``` or ``` ... ```.
+        - Preserve every HTML tag, attribute, attribute value, id, class, href, src exactly as-is. Do not rename, reorder, or remove tags.
+        - Do NOT translate text inside <code>, <pre>, or anything that looks like source code, shell commands, file paths, environment variables, or URLs.
+        - Do NOT translate proper nouns: project names, library names, API endpoints, branch names, version strings.
+        - Translate ONLY user-visible natural language text nodes (paragraphs, headings, list items, table cells, blockquotes, captions, button labels).
+        - Keep emoji and inline icons untouched.
+        - Keep the total number of HTML tags identical to the source.
+        """,
+        userPromptTemplate: """
+        Translate the README fragment below into {targetLanguage}.
+        Return the translated HTML fragment only.
+
+        <README_FRAGMENT>
+        {context}
+        </README_FRAGMENT>
+        """
     )
 }
 

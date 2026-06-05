@@ -32,6 +32,13 @@ struct AISettingsTab: View {
     @State private var parameterTask: AIModelTask = .summary
     @State private var promptTask: AIModelTask = .summary
 
+    // HOM-68 follow-up v2 (2026-06-05 22:30 dong4j 反馈)：
+    // 模型参数 / Prompt 不是首次配置必填项，默认收起来减小视觉噪音，需要时再展开。
+    // 用 SceneStorage 而不是 @State，让用户的展开偏好跨设置页打开持久化，
+    // 但保持"应用首次启动默认折叠"语义。
+    @SceneStorage("settings.ai.parameters.expanded") private var isParametersExpanded: Bool = false
+    @SceneStorage("settings.ai.prompt.expanded") private var isPromptExpanded: Bool = false
+
     var body: some View {
         Form {
             providerSection
@@ -52,25 +59,32 @@ struct AISettingsTab: View {
 
     private var providerSection: some View {
         Section {
-            Picker("服务商配置", selection: selectedProfileBinding) {
-                ForEach(settings.aiProviderProfiles) { profile in
-                    Text(profile.displayName).tag(Optional(profile.id))
-                }
-            }
-            .pickerStyle(.menu)
-
+            // HOM-68 follow-up v2 (dong4j 反馈 #1)：
+            // "新增服务商" / "删除当前" 按钮移到 picker 同一行的右侧，
+            // 紧凑且符合设置面板"次要操作贴近主控件"的常见 macOS 布局。
             HStack {
+                Picker("服务商配置", selection: selectedProfileBinding) {
+                    ForEach(settings.aiProviderProfiles) { profile in
+                        Text(profile.displayName).tag(Optional(profile.id))
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Spacer(minLength: 12)
+
                 Button {
                     addProfile()
                 } label: {
-                    Label("新增服务商", systemImage: "plus")
+                    Label("新增", systemImage: "plus")
                 }
+                .help("新增服务商")
 
                 Button(role: .destructive) {
                     deleteSelectedProfile()
                 } label: {
-                    Label("删除当前", systemImage: "trash")
+                    Label("删除", systemImage: "trash")
                 }
+                .help("删除当前服务商")
                 .disabled(settings.aiProviderProfiles.count <= 1)
             }
 
@@ -92,7 +106,19 @@ struct AISettingsTab: View {
                 SecureField(profile.provider.allowsEmptyAPIKey ? "API Key（本地服务可留空）" : "API Key", text: apiKeyBinding(profile.id))
                     .textFieldStyle(.roundedBorder)
 
+                // HOM-68 follow-up v2 (dong4j 反馈 #2)：
+                // 状态提示（测试成功/失败/未测试）在左侧，"保存 Key" / "测试并获取模型"
+                // 两个按钮在右侧。这样阅读顺序与"看到提示 → 决定操作"的认知顺序一致，
+                // 且操作按钮聚成一组更容易点击。
                 HStack {
+                    Text(profile.lastTestStatus.displayText)
+                        .font(.caption)
+                        .foregroundStyle(statusTint(profile.lastTestStatus))
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+
+                    Spacer(minLength: 12)
+
                     Button {
                         saveAPIKey(profileID: profile.id)
                     } label: {
@@ -103,7 +129,7 @@ struct AISettingsTab: View {
                         Task { await testAndFetchModels(profile) }
                     } label: {
                         if isTestingProfileID == profile.id {
-                            HStack {
+                            HStack(spacing: 4) {
                                 ProgressView().controlSize(.small)
                                 Text("测试并获取模型")
                             }
@@ -112,11 +138,6 @@ struct AISettingsTab: View {
                         }
                     }
                     .disabled(isTestingProfileID != nil || (!profile.provider.allowsEmptyAPIKey && apiKeys[profile.id, default: ""].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
-
-                    Spacer()
-                    Text(profile.lastTestStatus.displayText)
-                        .font(.caption)
-                        .foregroundStyle(statusTint(profile.lastTestStatus))
                 }
 
                 if let keyError {
@@ -133,6 +154,9 @@ struct AISettingsTab: View {
     }
 
     private var enabledModelsSection: some View {
+        // HOM-68 follow-up v2 (dong4j 反馈 #3 #4)：
+        // 删掉 footer "模型列表在组件内滚动…" 调试式说明；
+        // 模型列表高度由 AIModelListView 内压到 ~4 条可见（见 modelScroll.frame(height:)）。
         Section {
             if let profile = selectedProfile {
                 if profile.models.isEmpty {
@@ -149,14 +173,13 @@ struct AISettingsTab: View {
             }
         } header: {
             Text("已发现模型")
-        } footer: {
-            Text("模型列表在组件内滚动，避免服务商返回大量模型时撑高整个设置页。")
         }
     }
 
     // MARK: - Tasks
 
     private var taskModelsSection: some View {
+        // HOM-68 follow-up v2 (dong4j 反馈 #5)：删 footer 说明文字（"下拉框只展示已启用模型..."）。
         Section {
             taskModelRow(.summary)
             taskModelRow(.tags)
@@ -164,8 +187,6 @@ struct AISettingsTab: View {
             taskModelRow(.translation)
         } header: {
             Text("模型设置")
-        } footer: {
-            Text("下拉框只展示已启用模型；如果服务商暂时无法列出模型，可以打开自定义模型名手动输入。README 翻译任务可独立选择 provider 与模型，参数在下方「模型参数」区。")
         }
     }
 
@@ -209,29 +230,35 @@ struct AISettingsTab: View {
 
     // MARK: - Parameters
 
+    /// HOM-68 follow-up v2 (dong4j 反馈 #6)：
+    /// 模型参数不是首次配置必填项（每个任务都有合理默认值），DisclosureGroup 默认折叠，
+    /// 用户需要微调时再展开。`isParametersExpanded` 用 SceneStorage 让用户展开偏好跨次
+    /// 打开设置页持久化，但保持"应用首次启动默认折叠"语义。
     private var parametersSection: some View {
         Section {
-            Picker("任务", selection: $parameterTask) {
-                ForEach(AIModelTask.allCases) { task in
-                    Text(task.displayName).tag(task)
+            DisclosureGroup("模型参数", isExpanded: $isParametersExpanded) {
+                Picker("任务", selection: $parameterTask) {
+                    ForEach(AIModelTask.allCases) { task in
+                        Text(task.displayName).tag(task)
+                    }
                 }
-            }
-            .pickerStyle(.segmented)
+                .pickerStyle(.segmented)
 
-            let isEmbedding = parameterTask == .embedding
-            parameterSlider("Temperature", value: parameterDoubleBinding(parameterTask, \.temperature), range: 0...2, disabled: isEmbedding)
-            parameterSlider("Top P", value: parameterDoubleBinding(parameterTask, \.topP), range: 0...1, disabled: isEmbedding)
-            Stepper("Top K：\(taskConfig(parameterTask).parameters.topK)", value: parameterIntBinding(parameterTask, \.topK), in: 0...200)
-                .disabled(isEmbedding)
-            Stepper("最大 Token：\(taskConfig(parameterTask).parameters.maxCompletionTokens)", value: parameterIntBinding(parameterTask, \.maxCompletionTokens), in: 0...32_000, step: 256)
-                .disabled(isEmbedding)
-            Stepper("超时时间：\(Int(taskConfig(parameterTask).parameters.timeoutSeconds)) 秒", value: parameterDoubleBinding(parameterTask, \.timeoutSeconds), in: 30...900, step: 30)
-            Toggle("优先使用流式响应", isOn: parameterBoolBinding(parameterTask, \.streamEnabled))
-                .disabled(parameterTask == .embedding || parameterTask == .tags)
-        } header: {
-            Text("模型参数")
-        } footer: {
-            Text("Top K 不是 OpenAI Chat Completions 标准字段，当前仅保存配置；后续针对 LM Studio / Ollama 原生扩展时再发送。")
+                let isEmbedding = parameterTask == .embedding
+                parameterSlider("Temperature", value: parameterDoubleBinding(parameterTask, \.temperature), range: 0...2, disabled: isEmbedding)
+                parameterSlider("Top P", value: parameterDoubleBinding(parameterTask, \.topP), range: 0...1, disabled: isEmbedding)
+                Stepper("Top K：\(taskConfig(parameterTask).parameters.topK)", value: parameterIntBinding(parameterTask, \.topK), in: 0...200)
+                    .disabled(isEmbedding)
+                Stepper("最大 Token：\(taskConfig(parameterTask).parameters.maxCompletionTokens)", value: parameterIntBinding(parameterTask, \.maxCompletionTokens), in: 0...32_000, step: 256)
+                    .disabled(isEmbedding)
+                Stepper("超时时间：\(Int(taskConfig(parameterTask).parameters.timeoutSeconds)) 秒", value: parameterDoubleBinding(parameterTask, \.timeoutSeconds), in: 30...900, step: 30)
+                Toggle("优先使用流式响应", isOn: parameterBoolBinding(parameterTask, \.streamEnabled))
+                    .disabled(parameterTask == .embedding || parameterTask == .tags)
+
+                Text("Top K 不是 OpenAI Chat Completions 标准字段，当前仅保存配置；后续针对 LM Studio / Ollama 原生扩展时再发送。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -254,36 +281,60 @@ struct AISettingsTab: View {
 
     // MARK: - Prompt
 
+    /// HOM-68 follow-up v2 (dong4j 反馈 #7 + prompt 抽出来诉求)：
+    /// - Prompt 区改成 DisclosureGroup，默认折叠（与"模型参数"区一致语义）；
+    /// - 任务 tab 加入 `.translation`，与摘要 / 标签共用同一套编辑流程；
+    /// - "恢复默认 Prompt" 按钮移到任务 picker 同行右侧，按钮的"修复式"性质
+    ///   靠近任务选择更直觉。
     private var promptSection: some View {
         Section {
-            Picker("任务", selection: $promptTask) {
-                ForEach([AIModelTask.summary, .tags]) { task in
-                    Text(task.displayName).tag(task)
+            DisclosureGroup("Prompt", isExpanded: $isPromptExpanded) {
+                HStack {
+                    Picker("任务", selection: $promptTask) {
+                        ForEach([AIModelTask.summary, .tags, .translation]) { task in
+                            Text(task.displayName).tag(task)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Button {
+                        restoreDefaultPrompt(promptTask)
+                    } label: {
+                        Label("恢复默认", systemImage: "arrow.counterclockwise")
+                    }
+                    .help("恢复 \(promptTask.displayName) 的默认 Prompt")
                 }
+
+                Text("System Prompt")
+                    .font(.caption.weight(.semibold))
+                TextEditor(text: promptSystemBinding(promptTask))
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(minHeight: 86)
+
+                Text("User Prompt Template")
+                    .font(.caption.weight(.semibold))
+                TextEditor(text: promptUserBinding(promptTask))
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(minHeight: 150)
+
+                Text(promptPlaceholderHint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .pickerStyle(.segmented)
+        }
+    }
 
-            Text("System Prompt")
-                .font(.caption.weight(.semibold))
-            TextEditor(text: promptSystemBinding(promptTask))
-                .font(.system(.caption, design: .monospaced))
-                .frame(minHeight: 86)
-
-            Text("User Prompt Template")
-                .font(.caption.weight(.semibold))
-            TextEditor(text: promptUserBinding(promptTask))
-                .font(.system(.caption, design: .monospaced))
-                .frame(minHeight: 150)
-
-            Button {
-                restoreDefaultPrompt(promptTask)
-            } label: {
-                Label("恢复默认 Prompt", systemImage: "arrow.counterclockwise")
-            }
-        } header: {
-            Text("Prompt")
-        } footer: {
-            Text("User Prompt 中的 {context} 会在运行时替换为仓库元数据和 README 摘要。")
+    /// 当前任务的占位符提示文案。
+    /// - summary / tags：仅 `{context}` 表示仓库元数据 + README 摘要；
+    /// - translation：额外支持 `{targetLanguage}` 表示当前目标语言名（如 `Simplified Chinese`）。
+    private var promptPlaceholderHint: String {
+        switch promptTask {
+        case .summary, .tags:
+            return "User Prompt 中的 {context} 会在运行时替换为仓库元数据和 README 摘要。"
+        case .translation:
+            return "支持两个占位符：{targetLanguage} 替换为当前目标语言名（如 Simplified Chinese / English / Japanese），{context} 替换为源 README HTML 片段。"
+        case .embedding:
+            return ""
         }
     }
 
