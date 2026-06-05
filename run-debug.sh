@@ -10,4 +10,4 @@ xcodebuild \
   -derivedDataPath build/DerivedData \
   build
 
-open build/DerivedData/Build/Products/Debug/Starcat.appd
+open build/DerivedData/Build/Products/Debug/Starcat.app
