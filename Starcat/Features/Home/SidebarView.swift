@@ -270,9 +270,9 @@ struct SidebarView: View {
 
     private func rootNavigationButton(_ page: SidebarRootPage) -> some View {
         let isSelected = selectedPage == page
-        // HOM-73：Manage 需要登录才能访问；Trending 和 Activity 都有公开/本地空态，始终可打开。
+        // HOM-73 / HOM-163：Manage 和 Activity 需要登录才能访问；Trending 有公开/本地空态，始终可打开。
         let needsLogin = !authSession.state.isAuthenticated
-            && page == .manage
+            && (page == .manage || page == .activity)
 
         return Button {
             if needsLogin {
