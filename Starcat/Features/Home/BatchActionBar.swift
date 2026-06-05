@@ -67,7 +67,7 @@ struct BatchActionBar: View {
                     // W4-4 D4：批量打标签后，刷新 Sidebar 计数 + 列表
                     Task {
                         await viewModel.refreshSidebar()
-                        await viewModel.reloadItems()
+                        await viewModel.reloadItems(forceRefresh: true)
                     }
                 }
             )

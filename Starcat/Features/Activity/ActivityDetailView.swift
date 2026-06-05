@@ -462,7 +462,7 @@ struct ActivityDetailView: View {
             try await dependencies.apiClient.unstar(owner: repo.owner, repo: repo.name)
             try await dependencies.repoRepository.markUnstarred(repoId: repo.id, userID: user.id)
             await homeViewModel.refreshSidebar()
-            await homeViewModel.reloadItems()
+            await homeViewModel.reloadItems(forceRefresh: true)
         } catch {
             unstarError = "repo.unstar.actionFailed"
             AppLog.sync.error("activity unstar failed: \(error.localizedDescription, privacy: .public)")

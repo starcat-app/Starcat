@@ -213,7 +213,7 @@ struct RepoDetailView: View {
             try await dependencies.repoRepository.markUnstarred(repoId: repo.id, userID: user.id)
             // 刷新 Sidebar 计数 + 列表（reloadItems 内部会清掉已不在列表的 selection）
             await viewModel.refreshSidebar()
-            await viewModel.reloadItems()
+            await viewModel.reloadItems(forceRefresh: true)
         } catch {
             unstarError = "repo.unstar.actionFailed"
             AppLog.sync.error("unstar failed: \(error.localizedDescription, privacy: .public)")
@@ -585,7 +585,7 @@ struct RepoDetailView: View {
             // 成功：本地 stars 计数 +1
             trendingViewModel?.incrementStarsCount(fullName: repo.fullName)
             // 刷新用户 Stars 列表
-            await viewModel.reloadItems()
+            await viewModel.reloadItems(forceRefresh: true)
         } catch {
             trendingStarError = "repo.star.failed"
         }

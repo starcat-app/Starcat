@@ -104,6 +104,24 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.itemsRevision == revisionAfterReload + 1, "排序切换应发布新的列表快照版本，避免 SwiftUI 对旧 List 做大规模 move diff")
     }
 
+    @Test("HOM-46: 普通 reload 命中未过期缓存,forceRefresh 才重查数据库")
+    func cacheHitSkipsDatabaseUntilForced() async throws {
+        let (vm, db, _) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/old", stars: 1, starredAt: "2026-05-01T00:00:00Z")
+        await vm.reloadItems()
+        #expect(vm.items.map(\.id) == [1])
+
+        try await insertRepo(db, id: 2, fullName: "o/new", stars: 1, starredAt: "2026-05-02T00:00:00Z")
+
+        // 普通分类切换路径复用未过期缓存，避免刚上屏又做一次 DB 重查造成末尾卡顿。
+        await vm.reloadItems()
+        #expect(vm.items.map(\.id) == [1])
+
+        // 同步完成、标签/状态变更等真实数据变化路径必须强制刷新，不能被缓存挡住。
+        await vm.reloadItems(forceRefresh: true)
+        #expect(vm.items.map(\.id) == [2, 1])
+    }
+
     // MARK: - D2 过滤
 
     @Test("D2: hideArchived = true → 隐藏 archived 仓库")

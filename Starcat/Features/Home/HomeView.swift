@@ -190,7 +190,7 @@ struct HomeView: View {
             // （用户可能在 sheet 里增删 / 合并标签，Sidebar 与列表都要跟着变）
             Task {
                 await viewModel.refreshSidebar()
-                await viewModel.reloadItems()
+                await viewModel.reloadItems(forceRefresh: true)
             }
         }) {
             TagManagementView(viewModel: tagMgmtVM)
@@ -281,7 +281,7 @@ struct HomeView: View {
         .task(id: syncManager.state) {
             if case .completed = syncManager.state {
                 await viewModel.refreshSidebar()
-                await viewModel.reloadItems()
+                await viewModel.reloadItems(forceRefresh: true)
             }
         }
         // 选中 repo 变化（含 nil）→ 驱动 README 加载 / 重置

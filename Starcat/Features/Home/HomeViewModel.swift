@@ -51,7 +51,8 @@ final class HomeViewModel {
             //   两次 List 重建 + 两次外层 transition，是用户感受到"卡卡"的核心来源。
             //
             // 修复：在 didSet 里**同步**完成 cache 命中路径。SwiftUI 看到的下一次 body 重算就直接拿到新 items，
-            //   无需"先渲一遍旧数据再修正"。后台 SWR fetch 仍走 reloadItems 异步路径。
+            //   无需"先渲一遍旧数据再修正"。普通分类切换不再立刻做后台 DB 重查；
+            //   同步完成 / 标签状态变更等真实数据变动路径会用 reloadItems(forceRefresh: true) 强制刷新。
             //
             // 顺序要求：
             //   1) 先 cache 加载（applyView 设置 items / itemsRev），让数据先就位
@@ -67,7 +68,7 @@ final class HomeViewModel {
                 self.statusMap = cached.statusMap
                 self.applyView()             // items / itemsRevision 同步就位
                 self.isLoading = false
-                self.isRefreshing = true     // 后台 fetch 即将开始，nav subtitle 显示"刷新中..."
+                self.isRefreshing = false    // 只用缓存瞬切；真实变更路径再显式 force refresh。
                 self.loadError = nil
                 #if DEBUG
                 AppLog.ui.notice("[switch-cat] T0' eager cache load done (items=\(self.items.count)) +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
@@ -395,7 +396,7 @@ final class HomeViewModel {
     /// SwiftUI 的 task cancel 只能终止外层 await `reloadItems()`，无法穿透到 reloadItems
     /// 内部 await `repository.fetch...()`。已进入 GRDB 查询的旧调用仍会跑完并写入 state，
     /// 引发"先 A → 切 B → A 覆盖 B → B 再覆盖"的可见闪烁。本函数自管 currentReloadTask 才能根治。
-    func reloadItems() async {
+    func reloadItems(forceRefresh: Bool = false) async {
         #if DEBUG
         AppLog.ui.notice("[switch-cat] T1 reloadItems entered  +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
         #endif
@@ -414,6 +415,18 @@ final class HomeViewModel {
             #endif
             // 有缓存：立即用缓存数据填充 UI，同时后台刷新
             loadFromCache(cached!)
+            if !forceRefresh && !cached!.isExpired {
+                // 普通 Manage 分类切换的事实源就是内存缓存。这里直接返回，避免马上再跑一次
+                // 700ms 级别的 DB 重查，并在结束时因为 isRefreshing=false 触发第二次整栏 body 重算。
+                // 过期缓存不走这个分支，仍按 SWR 继续后台刷新，保证 5 分钟 TTL 有效。
+                // 数据真实变化路径（同步完成、标签/状态修改、取消 Star）统一传 forceRefresh=true。
+                isRefreshing = false
+                loadError = nil
+                #if DEBUG
+                AppLog.ui.notice("[switch-cat] T3 cache fresh, skip bg fetch +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
+                #endif
+                return
+            }
             isRefreshing = true
         } else {
             #if DEBUG
@@ -597,7 +610,7 @@ final class HomeViewModel {
             let repos = try await repository.fetchAllStarred()
             try await semanticSearchService.refreshIndex(for: repos)
             if isSemanticSearching {
-                await reloadItems()
+                await reloadItems(forceRefresh: true)
             }
         } catch {
             loadError = error.localizedDescription

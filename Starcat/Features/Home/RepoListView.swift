@@ -157,13 +157,13 @@ struct RepoListView: View {
     /// 外层 `.id(contentAnimationID)` 控制 contentBody 何时被销毁重建 + 何时跑外层 transition。
     /// 内层 `List.id(viewModel.itemsRevision)` 单独控制 List 快照重建（排序/过滤后避免几千行逐个 move diff）。
     ///
-    /// **HOM-46 性能补丁 #2（2026-06-02）**：移除 `repos-` / `empty-` 状态里的 `itemsRevision`。
+    /// **HOM-46 性能补丁 #2（2026-06-02）**：移除 has-data 稳定态里的 selection / itemsRevision。
     /// - 之前包含 itemsRevision 会让"数据刷新"也触发外层 transition：
     ///   切分类（cache HIT）→ 第一次 body 渲（items 仍是旧分类）→ applyView 跑完 → itemsRev++ → animID 又变
     ///   → 外层 transition **再启动一次**（同一次切换叠两次 0.22s 动画）。
-    /// - 现在外层 transition 只在**视图状态层级**（loading / empty / error / has-data）或 **selection**
-    ///   切换时跑；同一分类内的"数据刷新"由内层 List `.id(itemsRevision)` 单独处理（List 自己重建 + listRowReveal 入场）。
-    /// - 用户感受：切分类只跑**一次**外层动画，配合 didSet 急切缓存加载，第一次 body 渲染就是新数据。
+    /// - 现在外层 transition 只在**视图状态层级**（loading / empty / error / has-data）切换时跑；
+    ///   已有缓存的分类之间切换保持同一个 `"repos-\(mode)"` 身份，交给内层 List 快照更新。
+    /// - 用户感受：缓存命中时没有外层 transition，配合 didSet 急切缓存加载，第一次 body 渲染就是新数据。
     private var contentAnimationID: String {
         if selectedPage == .trending {
             return "trending-\(selectedTrendingLanguage.id)"
@@ -181,7 +181,7 @@ struct RepoListView: View {
         if viewModel.items.isEmpty {
             return "empty-\(viewModel.selection.id)-\(mode)"
         }
-        return "repos-\(viewModel.selection.id)-\(mode)"
+        return "repos-\(mode)"
     }
 
     private var contentAnimation: Animation? {
@@ -443,7 +443,7 @@ struct RepoListView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision)
+                .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision, skipAnimation: viewModel.hasCachedItems)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             }
@@ -465,7 +465,7 @@ struct RepoListView: View {
                     isSelected: selection.wrappedValue.contains(repo.id),
                     semanticHit: viewModel.semanticHit(for: repo.id)
                 )
-                .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision)
+                .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision, skipAnimation: viewModel.hasCachedItems)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             }
