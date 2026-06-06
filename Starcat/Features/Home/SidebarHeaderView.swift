@@ -29,6 +29,8 @@ struct SidebarHeaderView: View {
     @Environment(\.openSettings) private var openSettings
     /// 系统级"减少动效"开关，开启时把"渐变流动"退化为静态版（仍保留四周淡出 + 颜色切换补间）。
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// HOM-173：分享卡需要消费贡献草坪 payload；ContributionService 已在 AppDependencies 注入。
+    @Environment(ContributionService.self) private var contributionService
 
     /// 当前在 Trending 页面选中的 repo（仅在 Trending 页面有效，Manage 页面为 nil）。
     ///
@@ -46,6 +48,10 @@ struct SidebarHeaderView: View {
 
     /// 登录表单 sheet 显示状态。
     @State private var showLoginSheet: Bool = false
+
+    /// HOM-173：分享卡 sheet 显示状态。
+    /// 点击头像左侧分享图标时打开；sheet 关闭回调置回 false。
+    @State private var showShareCardSheet: Bool = false
 
     var body: some View {
         VStack(spacing: 10) {
@@ -69,9 +75,25 @@ struct SidebarHeaderView: View {
         .sheet(isPresented: $showLoginSheet) {
             GithubAuthView()
         }
+        // HOM-173：分享卡 sheet。仅在登录态可触发（按钮本身只在 authenticated 行渲染）。
+        // 闭包里取 user 是为了避开 SwiftUI sheet 闭包捕获 outer state 的延迟问题——
+        // sheet 内部不再读 authSession.state，避免登出态飘进卡片导致空内容。
+        .sheet(isPresented: $showShareCardSheet) {
+            if case .authenticated(let user) = authSession.state {
+                ShareCardSheet(
+                    user: user,
+                    starredCount: viewModel.totalCount,
+                    contribution: contributionService.payload,
+                    onClose: { showShareCardSheet = false }
+                )
+            }
+        }
         .onChange(of: authSession.state) { _, newState in
             if newState.isAuthenticated {
                 showLoginSheet = false
+            } else {
+                // 登出时强制关闭分享卡（防止后台 sheet 残留显示旧用户信息）
+                showShareCardSheet = false
             }
         }
     }
@@ -274,7 +296,16 @@ struct SidebarHeaderView: View {
     // MARK: - 头像行（含账户菜单入口）
 
     private func avatarRow(user: GitHubUserDTO) -> some View {
-        ZStack(alignment: .topTrailing) {
+        // 头像 + 左右两个浮动按钮。
+        // - 左上角：分享卡按钮（HOM-173 新增）
+        // - 右上角：账户菜单（原有）
+        // 两按钮垂直对齐，share 与 ellipsis 都用 16pt SF Symbol 保持高度一致。
+        // 之所以用 ZStack 而非把按钮塞在 UserAvatar 内：
+        // ① UserAvatar 是 Button（点击跳 GitHub 主页），把另一个 Button 嵌进它的 label 里
+        //    会产生嵌套 Button 的命中冲突；外层 ZStack 让两个按钮各自独立可点。
+        // ② 与右上角已有的 accountMenu() 处理方式保持一致。
+        ZStack {
+            // 头像（最底层）
             UserAvatar(
                 isLoggedIn: true,
                 avatarUrl: user.avatarUrl,
@@ -282,9 +313,44 @@ struct SidebarHeaderView: View {
                 onLoginTapped: { showLoginSheet = true }
             )
 
-            // 右上角账户菜单按钮（使用原生 Menu，获得系统一致样式）
-            accountMenu()
+            // 左上角：分享卡入口
+            VStack {
+                HStack {
+                    shareCardButton()
+                    Spacer()
+                }
+                Spacer()
+            }
+
+            // 右上角：账户菜单
+            VStack {
+                HStack {
+                    Spacer()
+                    accountMenu()
+                }
+                Spacer()
+            }
         }
+    }
+
+    /// HOM-173：分享卡入口按钮。
+    /// 头像左侧的浮动图标，与右侧"…"账户菜单图标垂直对齐（同样 16pt）。
+    /// 点击打开 `ShareCardSheet`，导出当前登录用户的"星际杂志卡 v2"。
+    @ViewBuilder
+    private func shareCardButton() -> some View {
+        Button {
+            showShareCardSheet = true
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 14, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(Text("sharecard.button.help"))
+        .accessibilityLabel(Text("sharecard.button.help"))
     }
 
     /// 账户操作菜单。使用 SwiftUI 原生 Menu 组件，自带圆角、hover 反馈等系统样式。
