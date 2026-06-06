@@ -216,34 +216,49 @@ struct ShareCardSheet: View {
     // MARK: - 动作按钮
 
     /// HOM-174 follow-up：底部按钮与卡片宽度一致。
+    ///
+    /// **v6 调整（dong4j 2026-06-06）**：
+    /// - 顺序调换："分享到 X"上移到第一行（主行动），保存/导出下移到第二行
+    /// - 三个按钮统一高度：`actionButtonHeight = 32`，使用 frame(height:) 强制
+    ///   （macOS 系统按钮高度受 controlSize 自动决定，自定义渐变按钮必须显式
+    ///   给数值才能与系统按钮对齐基线）
+    /// - 圆角统一 8：macOS 系统按钮原生圆角约 6-8，渐变按钮跟随；之前 22 偏激
     @ViewBuilder
     private var actionButtons: some View {
         VStack(spacing: 10) {
-            // 第一行：保存 + 导出 Starred
+            // 第一行：分享到 X（主行动，独占一行）
+            shareToXButton
+                .frame(width: 400)
+
+            // 第二行：保存 + 导出 Starred
             HStack(spacing: 10) {
                 Button {
                     Task { await performSave() }
                 } label: {
                     Label("sharecard.action.save", systemImage: "square.and.arrow.down")
                         .frame(maxWidth: .infinity)
+                        .frame(height: actionButtonHeight)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .buttonBorderShape(.roundedRectangle(radius: actionButtonCornerRadius))
                 .disabled(isExporting)
                 .keyboardShortcut("s", modifiers: .command)
 
                 exportStarredButton
             }
             .frame(width: 400)
-
-            // 第二行：分享到 X（独占一行）
-            shareToXButton
-                .frame(width: 400)
         }
     }
 
+    /// 三个按钮统一高度（pt）。32 是 macOS large control 的典型视觉高度。
+    private var actionButtonHeight: CGFloat { 32 }
+    /// 三个按钮统一圆角（pt）。8 与 macOS 系统 borderedProminent 默认圆角接近。
+    private var actionButtonCornerRadius: CGFloat { 8 }
+
     /// 导出 Starred 记录按钮（下拉菜单）。
     /// HOM-174 新增：支持导出 Markdown 和 HTML 格式。
+    /// v6：统一高度 / 圆角，与第一行的"分享到 X"和同行的"保存为图片"基线对齐。
     @ViewBuilder
     private var exportStarredButton: some View {
         Menu {
@@ -261,10 +276,11 @@ struct ShareCardSheet: View {
         } label: {
             Label("sharecard.action.exportStarred", systemImage: "square.and.arrow.up.on.square")
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
+                .frame(height: actionButtonHeight)
         }
         .buttonStyle(.bordered)
         .controlSize(.large)
+        .buttonBorderShape(.roundedRectangle(radius: actionButtonCornerRadius))
         .disabled(isExporting)
     }
 
@@ -275,30 +291,39 @@ struct ShareCardSheet: View {
     /// 视觉一致、亮度足够、辨识度高；同时跳出"另一个白卡片"的同质化感受。
     /// - 渐变两端取色：左 `#4FC3F7`（Material Light Blue 300）/ 右 `#76FF03`（Light Green A700）
     /// - 文字 + logo 强制 `.black`：因为渐变两端都是亮色，黑字在 dark/light 主题下都能看清
-    /// - 圆角加大到 22：贴合参考图的视觉调性（原 16 偏方）
-    /// - 去掉 separator 边框：渐变本身有视觉边界，边框会破坏色彩纯度
-    /// - 保留轻 shadow：让按钮在亮背景下仍有"浮起"感
+    ///
+    /// **v6 调整（dong4j 2026-06-06）**：
+    /// - 圆角 22 → `actionButtonCornerRadius`（8），与同行的保存/导出系统按钮一致
+    /// - 内部布局改为：xLogo + 主文案（"分享到 X"） + Spacer + hint 文案右对齐
+    ///   （hint = "把图片粘贴到推文里"，告诉用户操作流程：先复制图，再去 X 粘贴）
+    /// - 显式 `frame(height: actionButtonHeight)` 与系统按钮等高
     @ViewBuilder
     private var shareToXButton: some View {
         Button {
             Task { await performShareToX() }
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 xLogo
 
                 Text("sharecard.action.shareToX")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.black)
 
                 Spacer()
+
+                // hint 文案：右对齐告诉用户操作流程（"把图片粘贴到推文里"）。
+                // 半透明黑（opacity 0.65）让 hint 视觉权重低于主文案，但在亮渐变上仍可读。
+                Text("sharecard.action.shareToX.hint")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.black.opacity(0.65))
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
             .frame(maxWidth: .infinity)
+            .frame(height: actionButtonHeight)
             .background(
-                RoundedRectangle(cornerRadius: 22)
+                RoundedRectangle(cornerRadius: actionButtonCornerRadius)
                     .fill(shareToXGradient)
-                    .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+                    .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
             )
         }
         .buttonStyle(.plain)
@@ -320,15 +345,16 @@ struct ShareCardSheet: View {
         )
     }
 
-    /// X 品牌 logo 的本地拼写。20pt 黑色加粗 X。
+    /// X 品牌 logo 的本地拼写。
     /// v5：背景改渐变后，logo 固定 `.black`（亮色渐变上黑字 / 黑 logo 始终可读，
     /// 不再需要 `.primary` 跟随主题切换）。
+    /// v6：按钮整体高度收为 32pt，logo 从 18pt/26x26 缩到 14pt/20x20，避免撑高按钮。
     @ViewBuilder
     private var xLogo: some View {
         Text("𝕏")
-            .font(.system(size: 18, weight: .black, design: .default))
+            .font(.system(size: 14, weight: .black, design: .default))
             .foregroundStyle(.black)
-            .frame(width: 26, height: 26)
+            .frame(width: 20, height: 20)
             .accessibilityLabel(Text("X"))
     }
 
