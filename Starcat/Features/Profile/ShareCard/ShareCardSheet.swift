@@ -239,32 +239,19 @@ struct ShareCardSheet: View {
         case html
     }
 
-    /// "分享到 X"按钮，按 issue 设计图样式实现：
-    /// - 圆角 16pt 胶囊
-    /// - 黑底白字（X 品牌色），自适配深色模式
-    /// - 左侧 X 图标 + "分享到 X" 主文案
-    /// - 右侧灰色提示"把图片粘贴到推文里"
+    /// "分享到 X"按钮。
     @ViewBuilder
     private var shareToXButton: some View {
         Button {
             Task { await performShareToX() }
         } label: {
             HStack(spacing: 12) {
-                // X 没有 SF Symbol 官方版本（旧 Twitter logo 还在 SF Symbols 里但是
-                // 蓝色小鸟，与品牌不符）。这里用 Text("X") 加粗加方框近似 X 当前 logo——
-                // 视觉上比挂三方 SVG 资源更克制；后续如果 SF Symbols 更新出 `xmark` 风格的
-                // X，可以一行替换。
                 xLogo
 
                 Text("sharecard.action.shareToX")
                     .font(.system(size: 14, weight: .semibold))
 
                 Spacer()
-
-                Text("sharecard.action.shareToX.hint")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
