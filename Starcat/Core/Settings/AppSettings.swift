@@ -637,6 +637,16 @@ final class AppSettings {
         didSet { persist(key: Keys.readmeTranslationLanguage, value: readmeTranslationLanguage.rawValue) }
     }
 
+    /// Pro 订阅模拟状态（HOM-151）。
+    ///
+    /// 真实 Apple 订阅接入前，设置页的"开通 Pro"按钮先写本地状态，用于串联：
+    /// - 开通成功反馈（彩纸动画 + 成功提示）
+    /// - 用户头像右下角 PRO 标识
+    /// 后续接入 StoreKit 后，只需要把订阅校验结果同步到这个状态入口。
+    var isProUser: Bool {
+        didSet { persistBool(key: Keys.isProUser, value: isProUser) }
+    }
+
     // MARK: - 初始化
 
     private let defaults: UserDefaults
@@ -724,6 +734,8 @@ final class AppSettings {
         let translationLangRaw = defaults.string(forKey: Keys.readmeTranslationLanguage)
         self.readmeTranslationLanguage = translationLangRaw
             .flatMap(ReadmeTranslationLanguage.init(rawValue:)) ?? .simplifiedChinese
+
+        self.isProUser = defaults.object(forKey: Keys.isProUser) as? Bool ?? false
     }
 
     // MARK: - 内部
@@ -866,5 +878,6 @@ final class AppSettings {
         static let smartSearchMode = "settings.search.mode"
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
+        static let isProUser = "settings.pro.isProUser"  // HOM-151
     }
 }

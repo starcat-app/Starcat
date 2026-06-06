@@ -40,6 +40,18 @@ struct AppSettingsTests {
         #expect(s2.listDensity == .compact)
     }
 
+    @Test("Pro: 默认非 Pro，设置后重新读取应保留")
+    func proStatusPersists() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+        #expect(s1.isProUser == false)
+
+        s1.isProUser = true
+
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.isProUser == true)
+    }
+
     @Test("非法 raw value 回退到默认")
     func invalidValueFallsBack() {
         let defaults = makeIsolatedDefaults()

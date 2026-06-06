@@ -37,6 +37,7 @@ struct SettingsView: View {
     /// 不会被裁切。
     private enum SettingsTab: Hashable {
         case general
+        case pro
         case ai
         case storage
     }
@@ -59,6 +60,11 @@ struct SettingsView: View {
                     Label("settings.storage.title", systemImage: "internaldrive")
                 }
                 .tag(SettingsTab.storage)
+            ProSettingsTab()
+                .tabItem {
+                    Label("Pro", systemImage: "crown.fill")
+                }
+                .tag(SettingsTab.pro)
             AISettingsTab()
                 .tabItem {
                     Label("settings.ai.title", systemImage: "sparkles")
