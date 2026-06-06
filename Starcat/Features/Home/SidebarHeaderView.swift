@@ -72,6 +72,12 @@ struct SidebarHeaderView: View {
         .padding(.top, 14)
         .padding(.bottom, 12)
         .background(alignment: .top) { sidebarTintBackground }
+        // HOM-175：防御性兜底，强制整张头像卡严格按内容尺寸（垂直方向不被拉伸）。
+        // 即便未来子视图（avatarRow / ProfileLinksRow / statsRow）再次引入垂直
+        // flexible 元素（Spacer / .frame(maxHeight: .infinity) 等），SidebarHeaderView
+        // 整体高度依然由 ideal size 决定，不会与同栏的 sidebarList 抢占可用高度。
+        // 水平方向继续随父级宽度扩展（保持 sidebar 240~320pt 范围内填满）。
+        .fixedSize(horizontal: false, vertical: true)
         .sheet(isPresented: $showLoginSheet) {
             GithubAuthView()
         }
@@ -304,7 +310,26 @@ struct SidebarHeaderView: View {
         // ① UserAvatar 是 Button（点击跳 GitHub 主页），把另一个 Button 嵌进它的 label 里
         //    会产生嵌套 Button 的命中冲突；外层 ZStack 让两个按钮各自独立可点。
         // ② 与右上角已有的 accountMenu() 处理方式保持一致。
-        ZStack {
+        //
+        // **HOM-175 2026-06-06 修复（dong4j 反馈：窗口最大化时头像区域被拉长）**：
+        // 之前用两个 `VStack { HStack {...}; Spacer() }` 把按钮推到顶部。
+        // `Spacer()` 在垂直方向是无限灵活的（min 0、max ∞），
+        // 让两个 VStack 的 ideal 高度变成"想要无限大"，
+        // 进而让 ZStack 的 ideal 高度也变成"想要无限大"。
+        // 这条灵活性传染到外层 `VStack(spacing: 10)`、`SidebarHeaderView`、
+        // `SidebarView` 最外层 `VStack(spacing: 0) { sidebarFixedHeader; sidebarList }`，
+        // 与 `sidebarList`（List 本身也 flexible）一起变成"按比例分配可用高度"，
+        // 窗口越高 → sidebarFixedHeader 越被拉长 → ZStack 内 UserAvatar 居中显示，
+        // profile links 行和 stats 区域之间凭空多出一段空白。
+        //
+        // 修复：用 `ZStack(alignment: .top)` 让所有子项顶部对齐，
+        // 并把两个独立 VStack 合并成一条 HStack（左按钮 + Spacer + 右按钮）。
+        // 此时 ZStack ideal 高度 = max(UserAvatar 高 62pt, HStack 高 22pt) = 62pt，
+        // 不再含 Spacer → 不再 flexible → 不再传染拉伸。
+        // HStack 内部水平方向上的 `Spacer()` 不影响垂直 ideal 高度，是合法用法。
+        //
+        // 视觉上完全等效：原方案中按钮也是顶对齐（VStack 顶部 = ZStack 顶部 = 头像顶部）。
+        ZStack(alignment: .top) {
             // 头像（最底层）
             UserAvatar(
                 isLoggedIn: true,
@@ -313,22 +338,11 @@ struct SidebarHeaderView: View {
                 onLoginTapped: { showLoginSheet = true }
             )
 
-            // 左上角：分享卡入口
-            VStack {
-                HStack {
-                    shareCardButton()
-                    Spacer()
-                }
+            // 顶部浮动按钮行：左侧分享卡入口、右侧账户菜单。
+            HStack {
+                shareCardButton()
                 Spacer()
-            }
-
-            // 右上角：账户菜单
-            VStack {
-                HStack {
-                    Spacer()
-                    accountMenu()
-                }
-                Spacer()
+                accountMenu()
             }
         }
     }
