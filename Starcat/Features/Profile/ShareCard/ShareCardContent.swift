@@ -368,7 +368,7 @@ struct ShareCardContent: View {
             // 绿色背景图标
             ZStack {
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.green.opacity(0.15))
+                    .fill(Color.green.opacity(0.2))
                     .frame(width: 20, height: 20)
                 Image(systemName: link.symbolName)
                     .font(.system(size: 10, weight: .medium))
