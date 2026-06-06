@@ -72,6 +72,8 @@ struct RemoteAvatar: View {
 /// - 未登录：显示默认图标，点击打开登录弹窗
 /// - 已登录：显示远程头像，点击打开 GitHub 用户主页
 struct UserAvatar: View {
+    @Environment(AppSettings.self) private var settings
+
     /// 是否已登录
     let isLoggedIn: Bool
     /// 用户头像 URL（已登录时使用）
@@ -93,9 +95,17 @@ struct UserAvatar: View {
             }
         } label: {
             if isLoggedIn {
-                RemoteAvatar(urlString: avatarUrl, size: size)
-                    .fixedSize()
-                    .frame(maxWidth: .infinity)
+                ZStack(alignment: .bottomTrailing) {
+                    RemoteAvatar(urlString: avatarUrl, size: size)
+                        .fixedSize()
+
+                    if settings.isProUser {
+                        AvatarProBadge()
+                            .offset(x: 5, y: 3)
+                    }
+                }
+                .frame(width: size + 10, height: size + 6)
+                .frame(maxWidth: .infinity)
             } else {
                 Image(systemName: "person.crop.circle.fill")
                     .resizable()
@@ -116,5 +126,31 @@ struct UserAvatar: View {
     private func openGitHubProfile(login: String) {
         guard let url = URL(string: "https://github.com/\(login)") else { return }
         NSWorkspace.shared.open(url)
+    }
+}
+
+private struct AvatarProBadge: View {
+    var body: some View {
+        Text("PRO")
+            .font(.system(size: 8, weight: .black))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background {
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [.yellow, .orange, .pink],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+            }
+            .overlay {
+                Capsule()
+                    .stroke(.white.opacity(0.75), lineWidth: 0.7)
+            }
+            .accessibilityLabel(Text("Pro"))
     }
 }
