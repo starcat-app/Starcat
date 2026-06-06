@@ -1,0 +1,165 @@
+//
+//  DotsFlowBackground.swift
+//  Starcat
+//
+//  从 ShipSwift（`refer/ShipSwift/ShipSwift/SWPackage/SWAnimation/SWMetal/SWDots.swift`）
+//  移植，**仅保留 `.flow` 平面网格样式**，作为页面 / sheet 装饰背景使用。
+//  配套 Metal stitchable shader 在同目录的 `DotsFlowBackground.metal`，函数名
+//  保持原 `swDotsFlow`，因为 `ShaderLibrary.default` 是按函数名查找的——
+//  Swift 端类型名可改，但 Metal 端导出符号一旦改了 Swift 端就找不到。
+//
+//  **为什么放在 Shared/Components/Backgrounds/**：
+//      Metal shader 背景是跨 feature 可复用的视觉装饰，等级与 `ToastOverlay` /
+//      `RemoteAvatar` 同。首批调用方是 `ShareCardSheet`，后续可能扩展到其它
+//      sheet / onboarding / paywall。新建 `Backgrounds/` 子目录是因为
+//      Metal 组件天然是 .swift + .metal 文件对，扁平放在 Shared/Components/ 会乱。
+//
+//  **相对 ShipSwift 原版精简了什么**：
+//      - 7 种 style 只保留 `.flow`（其余 6 个需要再移植对应 .metal）
+//      - 删去 `showsControls` 调参 sheet 路径（demo only：`SWDotsControlled` /
+//        `SWDotsControlsSheet` / `SliderRow` 共 ~150 行）
+//      - 删去 iOS-only 分支（项目 macOS-only，少一层 `#if os(iOS)`）
+//      - `background` 默认改 `.clear`（ShipSwift 原默认 `.black`，做"页面背景"时
+//        默认 `.black` 会盖住底层卡片色，是最容易踩的坑——给一个安全默认）
+//
+//  **关键约束 / 已踩过的坑**：
+//      1. **最低 macOS 14**：依赖 SwiftUI `ShaderLibrary` / `Shader` /
+//         Metal `[[ stitchable ]]`。Starcat 部署 macOS 15.0（project.yml）满足。
+//      2. **.metal 文件必须进 Compile Sources**：xcodegen 默认按 `sources: Starcat`
+//         扫所有文件，所以新增后 **必须 `xcodegen generate`** 重生 .xcodeproj，
+//         否则 `default.metallib` 里没有 `swDotsFlow` 符号，运行时 `colorEffect`
+//         会**静默无效**（不抛错、不打日志、就是看不到效果）——历史踩坑首位。
+//      3. **`background: .clear` 这个默认必须保留**：内部走
+//         `background.colorEffect(...)`，传 `.black` 会先铺满底色再覆盖 shader，
+//         "做页面背景"语义就废了；只有"独立全屏装饰"才传非透明色。
+//      4. **持续 60fps 重渲染**：内部 `TimelineView(.animation)` 每帧重画。
+//         GPU 占用 ~ 1-3%（M1 实测），sheet 关闭后 SwiftUI 自动停掉 TimelineView，
+//         不需要手动管理生命周期。**别叠多个实例**，一个 view 一份就够。
+//      5. **ImageRenderer 截不出 Metal shader 帧**：SwiftUI snapshot 不渲染 GPU
+//         shader。所以这个组件**不要**放进 `ShareCardContent` 期望"出现在导出图
+//         里"；它只能作为 sheet / view 的 **运行时装饰**。
+//
+//  Usage:
+//      VStack { ... }
+//          .frame(width: 480, height: 820)
+//          .background {
+//              DotsFlowBackground(
+//                  tint: .accentColor,
+//                  speed: 0.35,
+//                  brightness: 0.7,
+//                  vignette: 0.0
+//              )
+//              .opacity(0.45)
+//          }
+//
+
+import SwiftUI
+
+/// 平面网格 flow 样式 Metal 背景，可作为 sheet / 页面装饰背景。
+///
+/// 调用方负责限定大小（通常通过 `.background { ... }` 让其撑满宿主 view 的 bounds），
+/// 本组件不主动 `ignoresSafeArea`，避免在 sheet 这种"模态无 safe area"语境下做无用功。
+struct DotsFlowBackground: View {
+
+    /// 点和高光的颜色。
+    /// 做 sheet 背景时建议用 `.accentColor` 或品牌色（暗亮模式都能识别），
+    /// 纯白 / 纯黑 在对应模式下会几乎看不见。
+    var tint: Color = .accentColor
+
+    /// 底色。**默认 `.clear` 是有意的**——见文件头第 3 条约束。
+    var background: Color = .clear
+
+    /// 时间倍率。默认 1.0；做背景时 0.3–0.5 更舒服（太快抢前景注意力）。
+    var speed: Float = 1.0
+
+    /// 整体亮度倍率。默认 1.0；做背景配 `opacity(0.4)` 时此值可保 0.6-0.8 保留对比。
+    var brightness: Float = 1.0
+
+    /// 点直径倍率。默认 1.0。
+    var dotSize: Float = 1.0
+
+    /// 网格密度倍率。默认 1.0；越大点越密。
+    var gridDensity: Float = 1.0
+
+    /// 空间频率倍率。默认 1.0；控制 flow 纹路的疏密。
+    var patternScale: Float = 1.0
+
+    /// 四角晕影强度。默认 1.0；做 sheet 背景建议 0.0 关掉（sheet 自身有边界，
+    /// 再叠 vignette 会显得画面"塌"在中间）。
+    var vignette: Float = 1.0
+
+    /// shader 时间起点。`TimelineView` 每帧用 `Date().timeIntervalSince(start)`
+    /// 喂给 shader 做 wave 动画。
+    @State private var start: Date = .now
+
+    var body: some View {
+        TimelineView(.animation) { ctx in
+            let elapsed = Float(ctx.date.timeIntervalSince(start))
+            background
+                .colorEffect(
+                    Shader(
+                        function: ShaderFunction(library: .default, name: "swDotsFlow"),
+                        arguments: [
+                            .boundingRect,
+                            .float(elapsed),
+                            .float(speed),
+                            .float(brightness),
+                            .color(tint),
+                            .color(background),
+                            .float(dotSize),
+                            .float(gridDensity),
+                            .float(patternScale),
+                            .float(vignette),
+                            // horizon / amplitude / depthFade 在 .flow 样式下被
+                            // shader 端 `(void)x;` 显式忽略，但 stitchable 函数
+                            // 签名固定 13 参，必须传齐——传 0 即可。
+                            .float(0),
+                            .float(0),
+                            .float(0)
+                        ]
+                    )
+                )
+        }
+    }
+}
+
+// MARK: - Preview
+
+#Preview("Flow on dark") {
+    ZStack {
+        Color.black
+        DotsFlowBackground(
+            tint: .accentColor,
+            background: .clear,
+            speed: 0.4,
+            brightness: 0.8,
+            vignette: 0.0
+        )
+        Text("DotsFlowBackground")
+            .font(.largeTitle.weight(.bold))
+            .foregroundStyle(.white)
+    }
+    .frame(width: 480, height: 820)
+}
+
+#Preview("Flow on sheet (HOM-173 v3 拟态)") {
+    VStack(spacing: 16) {
+        Text("分享卡片")
+            .font(.headline)
+        RoundedRectangle(cornerRadius: 12)
+            .fill(.background)
+            .frame(width: 400, height: 560)
+            .overlay(Text("Card preview").foregroundStyle(.secondary))
+        Spacer()
+    }
+    .frame(width: 480, height: 820)
+    .background {
+        DotsFlowBackground(
+            tint: .accentColor,
+            speed: 0.35,
+            brightness: 0.7,
+            vignette: 0.0
+        )
+        .opacity(0.45)
+    }
+}
