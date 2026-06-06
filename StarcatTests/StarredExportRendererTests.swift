@@ -229,6 +229,63 @@ final class StarredExportRendererTests: XCTestCase {
                       "vapor 的 ownerAvatar 应原样嵌入 JSON")
     }
 
+    // MARK: - HTML v4（hero 数字千分位 + light 黑条修复 + scroll 按钮）
+
+    /// v4：修了 `htmlFormatted()` POSIX locale bug —— hero 大数字必须带千分位逗号。
+    /// 用真实 1822 starsCount 验证：output 必须含 `1,822` 而不是 `1822`。
+    func testHTMLHeroNumbersUseThousandsSeparator() {
+        // 构造 starsCount = 29,477,450 与 forksCount = 1,822 的 repo 让 hero 总和落到容易区分的数
+        let repos = (1...10).map { i in
+            Repo(
+                id: Int64(i), owner: "owner\(i)", name: "repo\(i)", fullName: "owner\(i)/repo\(i)",
+                description: nil, language: "Swift",
+                starsCount: 2_947_745,  // 10 个 → 总 29,477,450
+                forksCount: 0, watchersCount: 0,
+                topics: nil, license: nil, homepage: nil,
+                htmlUrl: "https://github.com/owner\(i)/repo\(i)",
+                cloneUrl: nil, sshUrl: nil,
+                isPrivate: false, isFork: false, isArchived: false, isStarred: true,
+                pushedAt: nil, createdAt: nil, updatedAt: nil, starredAt: nil, cachedAt: nil
+            )
+        }
+        let html = StarredHTMLRenderer.render(repos: repos, user: makeUser())
+        XCTAssertTrue(html.contains("29,477,450"),
+                      "hero upstream stars 应渲染为千分位 29,477,450（修了 POSIX locale 分组分隔符 bug）")
+        XCTAssertFalse(html.contains(">29477450<"),
+                       "hero 不应出现无逗号的 29477450")
+    }
+
+    /// v4：light 主题 CSS 选择器修复——避免 html 元素背景仍是 dark 导致顶部/底部黑条。
+    /// 关键断言：`:root[data-theme="light"]` 必须出现在 CSS 中。
+    func testHTMLLightThemeAppliesToRootElement() {
+        let html = StarredHTMLRenderer.render(repos: makeRepos(), user: makeUser())
+        XCTAssertTrue(html.contains(":root[data-theme=\"light\"]"),
+                      "light 主题必须同时通过 :root 选择器作用于 html 元素，否则页面顶/底露出黑条")
+        XCTAssertTrue(html.contains("<html lang=\"en\" data-theme=\"dark\">"),
+                      "<html> 标签必须带 data-theme=\"dark\" 默认值，防止 FOUC + JS 同步设到 html 元素")
+    }
+
+    /// v4：右下角浮动 scroll 按钮。
+    /// - 顶部按钮默认 hidden（滚动 > 400px 时 JS 显示）
+    /// - 底部按钮始终可见
+    /// - CSS 定义 .scroll-controls / .scroll-btn
+    /// - JS 用原生 window.scrollTo({behavior:'smooth'})
+    func testHTMLHasScrollNavigationButtons() {
+        let html = StarredHTMLRenderer.render(repos: makeRepos(), user: makeUser())
+        XCTAssertTrue(html.contains("id=\"scroll-top\""),
+                      "应有 scroll-top 按钮")
+        XCTAssertTrue(html.contains("id=\"scroll-bottom\""),
+                      "应有 scroll-bottom 按钮")
+        XCTAssertTrue(html.contains(".scroll-controls"),
+                      "CSS 应定义 .scroll-controls 容器样式")
+        XCTAssertTrue(html.contains("window.scrollTo({ top: 0, behavior: 'smooth' })"),
+                      "JS 应用原生平滑滚动")
+        // 顶部按钮带 hidden 属性，等待 JS 按滚动距离切换显隐
+        XCTAssertTrue(html.contains("id=\"scroll-top\" class=\"scroll-btn\" type=\"button\"\n                  aria-label=\"Scroll to top\" title=\"Scroll to top\" hidden")
+                      || html.contains("aria-label=\"Scroll to top\" title=\"Scroll to top\" hidden"),
+                      "scroll-top 应默认 hidden（页面顶部时不显示）")
+    }
+
     /// toolbar 对齐修复：v2 把 `.select` label 从"上下两行"改成"水平 row"，并加 `.select-label` class。
     func testHTMLToolbarUsesHorizontalSelectLayout() {
         let html = StarredHTMLRenderer.render(repos: makeRepos(), user: makeUser())

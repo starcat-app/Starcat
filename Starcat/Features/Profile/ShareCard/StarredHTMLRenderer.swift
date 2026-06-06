@@ -85,7 +85,7 @@ enum StarredHTMLRenderer {
 
         return """
         <!DOCTYPE html>
-        <html lang="en">
+        <html lang="en" data-theme="dark">
         \(buildHead(user: user))
         <body data-theme="dark">
           <div class="app-shell">
@@ -96,6 +96,8 @@ enum StarredHTMLRenderer {
           </div>
 
           \(buildAISummaryModal())
+
+          \(buildScrollControls())
 
           <script type="application/json" id="starred-data">\(dataJSON)</script>
           <script>\(buildClientScript())</script>
@@ -200,7 +202,7 @@ enum StarredHTMLRenderer {
                 <span class="stat-label">Upstream stars</span>
               </div>
               <div class="stat-card">
-                <span class="stat-value">\(langCount)</span>
+                <span class="stat-value">\(langCount.htmlFormatted())</span>
                 <span class="stat-label">Languages</span>
               </div>
               <div class="stat-card">
@@ -323,6 +325,29 @@ enum StarredHTMLRenderer {
           Crafted with <a href="https://github.com/dong4j/Starcat" target="_blank" rel="noopener">Starcat</a>
           · Single-file export · Works fully offline · No tracking
         </footer>
+        """
+    }
+
+    // MARK: - Scroll controls（HOM-174 v4）
+
+    /// 右下角悬浮的"回到顶部 / 跳到底部"按钮组。
+    ///
+    /// 设计目的：长列表（500+ 个 repo）下用户向下浏览到中段后，无法快速回到 toolbar 重置过滤；
+    /// 同理，从顶部一键直达列表底部也是常见需求。
+    ///
+    /// 实现要点：
+    /// - `position: fixed; right: 24px; bottom: 24px` 永远停留在视窗右下角
+    /// - 默认带 `hidden` 属性的"回到顶部"——只在滚动距离 > 400px 时由 JS 显示，避免页面顶部时
+    ///   出现冗余按钮
+    /// - 按钮 aria-label 完备，键盘可达
+    private static func buildScrollControls() -> String {
+        return """
+        <div class="scroll-controls" aria-label="Page navigation">
+          <button id="scroll-top" class="scroll-btn" type="button"
+                  aria-label="Scroll to top" title="Scroll to top" hidden>↑</button>
+          <button id="scroll-bottom" class="scroll-btn" type="button"
+                  aria-label="Scroll to bottom" title="Scroll to bottom">↓</button>
+        </div>
         """
     }
 
@@ -481,6 +506,14 @@ enum StarredHTMLRenderer {
           --mono-stack: ui-monospace, SFMono-Regular, 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
         }
 
+        /* v4 修复（dong4j 2026-06-06）：light 主题选择器必须同时匹配 :root（html）
+           才能让 html 元素自身的 --bg 解析到白色。
+           原 `body[data-theme="light"]` 单一选择器只覆盖 body 子树，html 元素的
+           `background: var(--bg)` 始终拿到 :root 默认 #0d1117（dark），导致页面
+           顶部/底部超出 body 高度的部分露出黑条。
+           注意：保留 body 选择器是为了让后代选择器（.repo-tag / .ai-modal-backdrop 等）
+           能继续按 body[data-theme] 命中——历史代码已写了若干这样的选择器。 */
+        :root[data-theme="light"],
         body[data-theme="light"] {
           --bg: #ffffff;
           --bg-elevated: #f6f8fa;
@@ -860,6 +893,36 @@ enum StarredHTMLRenderer {
           color: var(--text-faint);
         }
 
+        /* ---------- Scroll controls（v4：右下角"回到顶部 / 跳到底部"按钮组）---------- */
+        .scroll-controls {
+          position: fixed;
+          right: 24px; bottom: 24px;
+          display: flex; flex-direction: column; gap: 8px;
+          z-index: 20;
+        }
+        .scroll-btn {
+          width: 40px; height: 40px;
+          border-radius: 50%;
+          border: 1px solid var(--border);
+          background: var(--bg-elevated);
+          color: var(--text);
+          font-size: 18px; line-height: 1;
+          cursor: pointer;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.16);
+          display: flex; align-items: center; justify-content: center;
+          transition: transform 0.15s ease, background 0.15s ease,
+                      opacity 0.2s ease, box-shadow 0.15s ease;
+          font-family: var(--mono-stack);
+        }
+        .scroll-btn:hover {
+          background: var(--bg-card-hover);
+          transform: translateY(-1px);
+          box-shadow: 0 6px 16px rgba(0,0,0,0.22);
+        }
+        .scroll-btn:active { transform: translateY(0); }
+        /* hidden 属性 native = display:none —— 滚动距离 < 400px 时"回到顶部"按钮不显示 */
+        .scroll-btn[hidden] { display: none; }
+
         /* ---------- v2：卡片标签 + AI 按钮 ---------- */
 
         /* 用户标签条：放在 topics 之后；视觉上比 topics 更"内部"，用色块 + tag icon 强调"自定义标签"语义。*/
@@ -1097,15 +1160,49 @@ enum StarredHTMLRenderer {
           const themeToggle = document.getElementById('theme-toggle');
 
           // 主题：默认 dark；持久化到 localStorage（如可用）。
+          // v4 修复（dong4j 2026-06-06）：data-theme 必须同时设在 documentElement (html) 和 body 上。
+          // 因为 :root[data-theme="light"] 选择器只匹配 html 元素，html 的 --bg 解析必须查到
+          // light 变量；只设 body 会让 html 始终用 :root 默认 dark --bg，导致页面顶部/底部露出黑条。
+          function applyTheme(theme) {
+            document.documentElement.dataset.theme = theme;
+            document.body.dataset.theme = theme;
+          }
           try {
             const saved = localStorage.getItem('starcat-export-theme');
-            if (saved === 'light') document.body.dataset.theme = 'light';
-          } catch (_) {}
+            if (saved === 'light') applyTheme('light');
+            else applyTheme('dark');  // 显式 dark 也走一次，确保两个元素都同步
+          } catch (_) { applyTheme('dark'); }
           themeToggle.addEventListener('click', () => {
             const next = document.body.dataset.theme === 'light' ? 'dark' : 'light';
-            document.body.dataset.theme = next;
+            applyTheme(next);
             try { localStorage.setItem('starcat-export-theme', next); } catch (_) {}
           });
+
+          // v4：右下角"回到顶部 / 跳到底部"按钮。
+          // 顶部按钮在滚动 > 400px 时才显示，避免页面顶部冗余；
+          // 用 scroll() smooth 走原生平滑滚动，性能比 requestAnimationFrame 手撸更好。
+          const scrollTopBtn = document.getElementById('scroll-top');
+          const scrollBottomBtn = document.getElementById('scroll-bottom');
+          if (scrollTopBtn && scrollBottomBtn) {
+            const updateScrollTopVisibility = () => {
+              const shouldShow = (window.scrollY || document.documentElement.scrollTop) > 400;
+              if (shouldShow) scrollTopBtn.removeAttribute('hidden');
+              else scrollTopBtn.setAttribute('hidden', '');
+            };
+            // 滚动监听 + passive 提示浏览器无需阻塞主线程
+            window.addEventListener('scroll', updateScrollTopVisibility, { passive: true });
+            updateScrollTopVisibility();
+
+            scrollTopBtn.addEventListener('click', () => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+            scrollBottomBtn.addEventListener('click', () => {
+              window.scrollTo({
+                top: document.documentElement.scrollHeight,
+                behavior: 'smooth'
+              });
+            });
+          }
 
           // 语言下拉填充
           const langCounts = new Map();
@@ -1594,11 +1691,19 @@ private extension String {
 
 private extension Int {
     /// `1234567` → `1,234,567`，HTML hero stats 用。
+    ///
+    /// **HOM-174 v4 修复（dong4j 2026-06-06）**：
+    /// 原实现用 `en_US_POSIX` locale，**POSIX locale 规范上禁用分组分隔符**
+    /// （即使手动 `groupingSeparator = ","`），导致 1822 输出仍是 "1822"。
+    /// 修复：显式 `usesGroupingSeparator = true` + `groupingSize = 3` 强制启用，
+    /// 并改用普通 `en_US` locale（POSIX 是给"不本地化"的场景用的，分组本就该走 en_US）。
     func htmlFormatted() -> String {
         let f = NumberFormatter()
         f.numberStyle = .decimal
-        f.locale = Locale(identifier: "en_US_POSIX")
+        f.locale = Locale(identifier: "en_US")
+        f.usesGroupingSeparator = true
         f.groupingSeparator = ","
+        f.groupingSize = 3
         return f.string(from: NSNumber(value: self)) ?? "\(self)"
     }
 }
