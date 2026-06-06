@@ -210,3 +210,4 @@ refer/
 
 # CodeGraph 运行时数据
 .codegraph/
+supports/
