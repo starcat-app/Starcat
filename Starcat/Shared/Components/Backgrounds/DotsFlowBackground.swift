@@ -19,8 +19,8 @@
 //      - 删去 `showsControls` 调参 sheet 路径（demo only：`SWDotsControlled` /
 //        `SWDotsControlsSheet` / `SliderRow` 共 ~150 行）
 //      - 删去 iOS-only 分支（项目 macOS-only，少一层 `#if os(iOS)`）
-//      - `background` 默认改 `.clear`（ShipSwift 原默认 `.black`，做"页面背景"时
-//        默认 `.black` 会盖住底层卡片色，是最容易踩的坑——给一个安全默认）
+//      - **`background` 保持 ShipSwift 原默认 `.black`**（曾经尝试改 `.clear`
+//        以为是更安全的"页面背景默认"，实测踩坑——见下方第 3 条约束）
 //
 //  **关键约束 / 已踩过的坑**：
 //      1. **最低 macOS 14**：依赖 SwiftUI `ShaderLibrary` / `Shader` /
@@ -29,9 +29,14 @@
 //         扫所有文件，所以新增后 **必须 `xcodegen generate`** 重生 .xcodeproj，
 //         否则 `default.metallib` 里没有 `swDotsFlow` 符号，运行时 `colorEffect`
 //         会**静默无效**（不抛错、不打日志、就是看不到效果）——历史踩坑首位。
-//      3. **`background: .clear` 这个默认必须保留**：内部走
-//         `background.colorEffect(...)`，传 `.black` 会先铺满底色再覆盖 shader，
-//         "做页面背景"语义就废了；只有"独立全屏装饰"才传非透明色。
+//      3. **`background` 必须传不透明色（默认 `.black`），不要传 `.clear`**：
+//         内部走 `background.colorEffect(Shader)`，**SwiftUI `.colorEffect` 要求
+//         source view 有像素才会触发 fragment shader 调用**——`Color.clear`
+//         在 SwiftUI 里被优化为"不绘制"，shader 根本不会被调用，结果是整片
+//         什么都看不到（**dong4j 2026-06-06 实测踩坑、灯下黑半小时**）。
+//         **做"半透明叠加"的正确做法：传不透明色（如 `.black`），然后调用方
+//         在外面套 `.blendMode(.plusLighter)` 或 `.blendMode(.screen)`**——
+//         黑色部分会"加 0 = 不变"自动消失，只留亮点叠加到底层 material 上。
 //      4. **持续 60fps 重渲染**：内部 `TimelineView(.animation)` 每帧重画。
 //         GPU 占用 ~ 1-3%（M1 实测），sheet 关闭后 SwiftUI 自动停掉 TimelineView，
 //         不需要手动管理生命周期。**别叠多个实例**，一个 view 一份就够。
@@ -39,18 +44,23 @@
 //         shader。所以这个组件**不要**放进 `ShareCardContent` 期望"出现在导出图
 //         里"；它只能作为 sheet / view 的 **运行时装饰**。
 //
-//  Usage:
+//  Usage（"亮点叠加在 sheet 原 material 上"标准做法）：
 //      VStack { ... }
 //          .frame(width: 480, height: 820)
 //          .background {
 //              DotsFlowBackground(
 //                  tint: .accentColor,
+//                  background: .black,  // 不能传 .clear，见约束 3
 //                  speed: 0.35,
-//                  brightness: 0.7,
+//                  brightness: 0.9,
 //                  vignette: 0.0
 //              )
-//              .opacity(0.45)
+//              .blendMode(.plusLighter)  // 黑底消失，只留亮点叠加到底层
 //          }
+//
+//  Usage（"独立全屏装饰"）：
+//      DotsFlowBackground(tint: .accentColor, background: .black)
+//          .ignoresSafeArea()
 //
 
 import SwiftUI
@@ -66,8 +76,10 @@ struct DotsFlowBackground: View {
     /// 纯白 / 纯黑 在对应模式下会几乎看不见。
     var tint: Color = .accentColor
 
-    /// 底色。**默认 `.clear` 是有意的**——见文件头第 3 条约束。
-    var background: Color = .clear
+    /// 底色。**必须传不透明色，默认 `.black`**——见文件头第 3 条约束
+    /// （SwiftUI `.colorEffect` 对 `Color.clear` 不触发 shader，会整片不可见）。
+    /// 做半透明叠加请保持不透明底 + 外层 `.blendMode(.plusLighter)`。
+    var background: Color = .black
 
     /// 时间倍率。默认 1.0；做背景时 0.3–0.5 更舒服（太快抢前景注意力）。
     var speed: Float = 1.0
@@ -125,14 +137,13 @@ struct DotsFlowBackground: View {
 
 // MARK: - Preview
 
-#Preview("Flow on dark") {
+#Preview("Flow on solid (full-screen decor)") {
     ZStack {
-        Color.black
         DotsFlowBackground(
             tint: .accentColor,
-            background: .clear,
+            background: .black,
             speed: 0.4,
-            brightness: 0.8,
+            brightness: 1.0,
             vignette: 0.0
         )
         Text("DotsFlowBackground")
@@ -142,7 +153,7 @@ struct DotsFlowBackground: View {
     .frame(width: 480, height: 820)
 }
 
-#Preview("Flow on sheet (HOM-173 v3 拟态)") {
+#Preview("Flow over sheet material (additive overlay)") {
     VStack(spacing: 16) {
         Text("分享卡片")
             .font(.headline)
@@ -156,10 +167,11 @@ struct DotsFlowBackground: View {
     .background {
         DotsFlowBackground(
             tint: .accentColor,
+            background: .black,
             speed: 0.35,
-            brightness: 0.7,
+            brightness: 0.9,
             vignette: 0.0
         )
-        .opacity(0.45)
+        .blendMode(.plusLighter)
     }
 }

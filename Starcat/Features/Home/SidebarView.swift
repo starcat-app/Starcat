@@ -56,6 +56,35 @@ struct SidebarView: View {
     /// HOM-73：控制登录 sheet 的显示。
     @State private var showLoginSheet: Bool = false
 
+    /// row() / tagRow() 内 trailing 区域（sync icon + count）的**整体固定宽度**（pt）。
+    ///
+    /// 2026-06-06 抖动**三次**修复（这次彻底）：
+    ///
+    /// 演进史：
+    /// - v1：count Text 没保护 → 数字溢出 sidebar 右沿
+    /// - v2：count Text 加 `.fixedSize(horizontal: true)` + trailing HStack 整体 `.fixedSize`
+    ///   → 修了溢出和同位数同步累加抖动，但**漏掉跨位数（9 → 10、999 → 1000）抖动**
+    /// - v3：count Text 改 `.frame(minWidth: 40, alignment: .trailing)` 配合外层
+    ///   `.fixedSize` → 跨位数不抖了，**但** List selection 切换时 SwiftUI 在
+    ///   `fixedSize`+`minWidth` 的双约束下做 layout 重测，反复在 ideal 和 minimum
+    ///   之间插值，引发"切到 Languages 后 All Stars 数字闪烁 / 切回 All Stars 后
+    ///   数字从右往左反复移动"的新现象（dong4j 2026-06-06 21:09 反馈）
+    /// - **v4（当前）**：放弃 `fixedSize` + `minWidth` 的组合，直接把 trailing 整体
+    ///   用 `.frame(width:, alignment: .trailing)` 锁死。内部用 `Spacer` 把 sync icon
+    ///   推到左、count 推到右；不管 count 几位、不管 sync icon 是否显示，trailing
+    ///   容器对外宽度永远是这个常量值，外部 layout 完全感知不到内部变化 → 100% 不抖。
+    ///
+    /// 关键 lesson：`fixedSize` 在 List 内不可靠——List 会因 selection / inset / scroll
+    /// 等多种原因在 row 上反复发起 layout 测量，`fixedSize` 子树的"ideal width"
+    /// 每次测量都会被重新求值，如果该 ideal 不是真正常量（如依赖 Text 内容长度）
+    /// 就会反复插值。**真正常量化的方式只有 `.frame(width:)` 锁死整个外层容器。**
+    ///
+    /// 数值 60 的取值依据：sync icon(18) + spacing(4) + count Text 预留宽度(38) ≈ 60pt。
+    /// 38pt 在 `.caption` + `monospacedDigit` 下能容纳 "99,999" 等 6 字符（5 位数 + 千分位
+    /// 逗号），对绝大多数 starred 数都够。超过时 Text 会被截到 60pt 容器内，但实际
+    /// 用户超过 100,000 stars 概率极低，不需要为此牺牲稳定性。
+    private static let trailingFixedWidth: CGFloat = 60
+
     var body: some View {
         VStack(spacing: 0) {
             sidebarFixedHeader
@@ -338,8 +367,15 @@ struct SidebarView: View {
             Button {
                 showTagManagement = true
             } label: {
-                Image(systemName: "plus")
-                    .imageScale(.small)
+                // 2026-06-06 dong4j 反馈：原来的细线 `plus`(.small) 在 sidebar headline
+                // 字号下视觉过弱，与右侧 chevron 几乎齐平，看不出是个可点击按钮。
+                // 换成 `plus.circle.fill` + hierarchical + .secondary，14pt medium。
+                // 与 SidebarHeaderView 的 ellipsis.circle.fill / square.and.arrow.up
+                // 保持同款"填充圆形 hierarchical"语言，加强 affordance 同时不喧宾夺主。
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 14, weight: .medium))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
@@ -486,26 +522,34 @@ struct SidebarView: View {
                      displayOverride: String? = nil,
                      count: Int? = nil) -> some View {
         Label {
-            // Sidebar count 溢出 + 同步抖动 bugfix（dong4j 2026-06-06 反馈）：
-            // 「All Stars 数字溢出 sidebar 右沿 + 同步过程左右抖动」根因有两个：
-            // ① trailing 的 count Text 没加 `.lineLimit(1)` / `.fixedSize()` —— SwiftUI
-            //    HStack 把它当 "可压缩+可换行" view，ideal width 优先级低于 leading
-            //    的 displayName(lineLimit 1)，宽度紧张时 layout 算法**不会**优先截断
-            //    name，反而让 count 留 ideal 宽度 → 总宽溢出 row → 渲染超出 sidebar 右沿。
-            // ② syncManager 同步中 totalCount 持续递增 + SidebarSyncButton iconName
-            //    在 arrow.triangle.2.circlepath ⇄ xmark.circle.fill ⇄ hourglass 之间
-            //    切换（不同 SF Symbol intrinsic size 不同），每次状态变 SwiftUI 重测
-            //    HStack 各 child 的 ideal width → trailing 区域微抖。`monospacedDigit`
-            //    只在「数字位数相同」时等宽，对上述 intrinsic 重测无能为力。
+            // Sidebar count 溢出 + 抖动 bugfix（dong4j 2026-06-06 三次修复，演进史见
+            // `trailingFixedWidth` 常量上方的大注释）。
             //
-            // 修复策略：
-            //  - count Text 加 `.lineLimit(1)` + `.fixedSize(horizontal: true, vertical: false)`
-            //    → 强制 intrinsic width 不可压缩，HStack 永远先满足它再算 Spacer
-            //  - displayName 用 `.truncationMode(.tail)`（lineLimit(1) 默认行为，显式
-            //    化更醒目，避免之后有人改成 .middle 之类）
-            //  - sync icon + count 包成 trailing HStack 并整体 fixedSize → 视为一个
-            //    "不可拆分的右侧 group"，避免 sync icon 切换时数字位置抖动
-            //  - Spacer 给 minLength: 4 → name 与 trailing 之间永远留 4pt，防止贴死
+            // 当前 v4 策略：trailing 整体用 `.frame(width: trailingFixedWidth, alignment: .trailing)`
+            // 锁死宽度，**完全放弃** `.fixedSize` + `.minWidth` 的组合（在 List 内不可靠，
+            // selection 切换时 SwiftUI 反复发起 layout 测量、在 ideal/minimum 之间插值，
+            // 引发"切 Languages 后数字闪烁 + 切 All Stars 后数字从右往左反复"的新现象）。
+            //
+            // 新 trailing 内部结构：
+            //   [sync icon(18×18, 仅 .allStars)] [Spacer(0)] [count Text 右对齐]
+            //
+            // - 有 sync icon：icon 贴左、count 贴右、中间 Spacer 自动撑开
+            // - 无 sync icon：Spacer 占满左半部，count 仍紧贴右边
+            // - count 位数变化（9 → 10 → 100）：仅在 Text intrinsic 内部伸缩，对外宽度不变
+            // - sync icon SF Symbol 切换：外层 18×18 frame 锁死，对外宽度不变
+            //
+            // trailing 容器对外宽度永远 = trailingFixedWidth = 60pt，外层 HStack 看到的
+            // layout 完全恒定 → 真正"零抖动"。
+            //
+            // 三个**关键**约束（已踩坑）：
+            //  1. **不要**给 trailing HStack 用 `.fixedSize(horizontal: true)`——在 List 内
+            //     SwiftUI 会反复测量 ideal width，若 ideal 依赖 Text 内容长度就会反复插值
+            //  2. **不要**给 count Text 用 `.frame(minWidth:, alignment:)`——同上原因
+            //  3. **必须**用 `.frame(width:)` 显式锁死外层容器宽度——这是 List 内**唯一**
+            //     可靠的"对外宽度恒定"方式
+            //
+            // 副作用：60pt 对所有 row 生效，count 较小时右侧留空白；这其实让所有 sidebar row
+            // 的数字纵向严格对齐，视觉反而更整齐——有意保留。
             HStack(spacing: 4) {
                 if let override = displayOverride {
                     Text(verbatim: override)
@@ -524,16 +568,17 @@ struct SidebarView: View {
                         SidebarSyncButton()
                     }
 
+                    Spacer(minLength: 0)
+
                     if let count {
                         Text(count.formatted())
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                             .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
                     }
                 }
-                .fixedSize(horizontal: true, vertical: false)
+                .frame(width: Self.trailingFixedWidth, alignment: .trailing)
             }
         } icon: {
             Image(systemName: item.systemImage)
@@ -580,18 +625,24 @@ struct SidebarView: View {
     private func tagRow(tag: Tag, count: Int) -> some View {
         let item = SidebarItem.tag(tag.id)
         Label {
-            // Sidebar count bugfix：与 row() 同款保护——count 加 lineLimit/fixedSize 防溢出
+            // Sidebar count bugfix v4：与 row() 同款保护——trailing 容器整体用
+            // `.frame(width: trailingFixedWidth)` 锁死，避免 List selection 切换时
+            // SwiftUI 反复发起 layout 测量引起的"数字反复移动 / 闪烁"。
+            // 详细根因 + 演进史见 `trailingFixedWidth` 常量上方的大注释。
             HStack {
                 Text(verbatim: tag.name)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 4)
-                Text(count.formatted())
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+                HStack(spacing: 4) {
+                    Spacer(minLength: 0)
+                    Text(count.formatted())
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+                .frame(width: Self.trailingFixedWidth, alignment: .trailing)
             }
         } icon: {
             // 优先 user-defined SF Symbol；否则 fallback "tag.fill"
@@ -615,18 +666,22 @@ struct SidebarView: View {
     private func languageRow(_ stat: LanguageStat) -> some View {
         let item = SidebarItem.language(stat.languageOrNil)
         Label {
-            // Sidebar count bugfix：与 row() 同款保护——count 加 lineLimit/fixedSize 防溢出
+            // Sidebar count bugfix v4：与 row() 同款保护——trailing 容器整体 fixed width 锁死。
+            // 详细根因见 `trailingFixedWidth` 常量上方的大注释。
             HStack {
                 Text(verbatim: stat.displayName)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 4)
-                Text(stat.count.formatted())
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+                HStack(spacing: 4) {
+                    Spacer(minLength: 0)
+                    Text(stat.count.formatted())
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+                .frame(width: Self.trailingFixedWidth, alignment: .trailing)
             }
         } icon: {
             // 使用语言对应的彩色圆形图标
@@ -671,6 +726,13 @@ private struct SidebarSyncButton: View {
                 }
             }
         } label: {
+            // 注：曾尝试给 Image 加 `.frame(width: 16, height: 16)` 解决"不同 SF Symbol
+            // 几何中心在 18×18 容器内居中渲染时视觉位置偏移"的问题；但实测发现：
+            // ① 主要抖动其实来自 List selection 切换时 trailing 容器 layout 重测（已通过
+            //    外层 `.frame(width: trailingFixedWidth)` 在 row()/tagRow()/languageRow()
+            //    侧统一锁死解决）
+            // ② 加内层 frame 会在 selection 切换时增加 layout 工作量，反而可能加剧抖动
+            // 所以保持最简：Image 不加 frame，由外层 .frame(18, 18) 锁 Button 容器即可。
             Image(systemName: iconName)
                 .font(.caption)
                 .rotationEffect(.degrees(rotation))

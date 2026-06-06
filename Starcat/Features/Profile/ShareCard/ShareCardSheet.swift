@@ -71,6 +71,23 @@ struct ShareCardSheet: View {
     /// progress pill，结束后自动让位给"已导出至 …"反馈 pill；视觉零侵入。
     @State private var exportProgressMessage: String?
 
+    // MARK: - 按钮 hover 状态（v8 follow-up：行动按钮 hover 反馈）
+    //
+    // 转自定义实现后失去了 native button 的 hover 高亮，必须手动补——给每个按钮
+    // 独立的 @State 跟踪 hover，hover 时按钮背景叠一层 10% 白色提亮（mimic
+    // macOS native button 标准 hover 反馈，无论 light/dark 都能看到"准备点击"感）。
+    //
+    // **为什么不用 .pressableHover()**：`PressableHover` 是给"图标 / 头像 / 文字按钮"
+    // 设计的（opacity 0.7 + scale 1.06）——行动按钮 400pt 宽、40pt 高的大块，scale
+    // 1.06 会撞到周围，opacity 0.7 让按钮"消失感"反而不像可点击。
+    @State private var shareToXHovered: Bool = false
+    @State private var saveImageHovered: Bool = false
+    @State private var exportStarredHovered: Bool = false
+
+    /// 行动按钮 hover 反馈的动画时长（秒）。reduceMotion 模式下归零。
+    /// 抽出来是为了三个按钮的 hover 动画时长保持一致。
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -98,6 +115,14 @@ struct ShareCardSheet: View {
                 .padding(.vertical, 4)
             }
             .scrollIndicators(.hidden)
+            // HOM-173 v3 关键修复：macOS 上 ScrollView 默认有不透明的
+            // `.controlBackgroundColor` 背景，会把外层 VStack `.background` 加的
+            // DotsFlowBackground 完全盖住——这就是 dong4j 首次截图看不到 flow 的
+            // 根因。iOS 上 ScrollView 默认透明所以 ShipSwift 原 demo 没踩到，
+            // 移植到 macOS 时必须显式 hide ScrollView 自己的内容背景，让底层
+            // 的 Metal shader 能透上来。
+            // macOS 13+ API；Starcat macOS 15 满足。
+            .scrollContentBackground(.hidden)
         }
         .frame(width: 480, height: 820)
         .background {
@@ -124,14 +149,29 @@ struct ShareCardSheet: View {
             // 注意：导出图（performSave / performShareToX 经 ImageRenderer）不会包含
             // 此背景——SwiftUI snapshot 不渲染 Metal shader 帧。这是预期行为：
             // 导出的卡片图保持纯卡片本体，背景仅作为 sheet 浏览时的视觉装饰。
+            // HOM-173 v3 最终版（dong4j 2026-06-06 20:42 诊断 B 后修复）：
+            //
+            // 诊断结果：红色看得见（.background modifier + ScrollView 透明都 OK），
+            // 但完全没流动点 → 证明 Metal shader 没被调用。
+            // 根因：原版 DotsFlowBackground 默认 `background: .clear`，但 SwiftUI
+            // `.colorEffect` 对 `Color.clear` 这种"无像素 view"不触发 fragment
+            // shader——必须给一个不透明色才能让 shader 跑起来。详见
+            // DotsFlowBackground.swift 文件头第 3 条约束（已踩过的坑 #1）。
+            //
+            // 修复方案：传不透明 `.black` 底让 shader 正常渲染 → 用
+            // `.blendMode(.plusLighter)` 让黑色像素"加 0 = 不变"自动消失，
+            // 只把亮的 dot 加到 sheet 原 material 上，形成"亮点流动"叠加效果。
+            //
+            // 视觉效果：sheet 自身的 macOS material 灰色保持不变，
+            // 上面浮现 accentColor 流动小点，是"装饰背景"的最佳实现方式。
             DotsFlowBackground(
                 tint: .accentColor,
-                background: .clear,
+                background: .black,
                 speed: 0.35,
-                brightness: 0.7,
+                brightness: 0.9,
                 vignette: 0.0
             )
-            .opacity(0.45)
+            .blendMode(.plusLighter)
         }
         .animation(.easeInOut(duration: 0.18), value: exportProgressMessage)
         .task {
@@ -174,6 +214,15 @@ struct ShareCardSheet: View {
 
     /// 主题选择 Picker：gacha 风格的卡片式选择器。
     /// HOM-174 follow-up：只显示主题卡片，移除标签文字。
+    ///
+    /// **2026-06-06 性能修复（dong4j 反馈切主题卡顿）**：原来这里的 onTap 用
+    /// `withAnimation(.easeInOut(duration: 0.18)) { theme = t }` 包了一层动画
+    /// transaction，而 `cardPreview` 上又挂了一份 `.animation(_, value: theme)`。
+    /// 两条动画路径会在 magazine ↔ idCard 切换（layout 完全不同）时互相打架——
+    /// transaction A 还在跑，用户点下一个主题进入 transaction B，SwiftUI 把它合并
+    /// 成 noop，外观就是「点了但没反应」。
+    /// 修复：这里直接赋值不包 withAnimation，让 `cardPreview.animation` 那一处
+    /// 单点驱动主题切换动画即可。
     @ViewBuilder
     private var themePicker: some View {
         HStack(spacing: 10) {
@@ -182,9 +231,7 @@ struct ShareCardSheet: View {
                     theme: t,
                     isSelected: theme == t
                 ) {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        theme = t
-                    }
+                    theme = t
                 }
             }
         }
@@ -252,10 +299,31 @@ struct ShareCardSheet: View {
     ///
     /// **v6 调整（dong4j 2026-06-06）**：
     /// - 顺序调换："分享到 X"上移到第一行（主行动），保存/导出下移到第二行
-    /// - 三个按钮统一高度：`actionButtonHeight = 32`，使用 frame(height:) 强制
-    ///   （macOS 系统按钮高度受 controlSize 自动决定，自定义渐变按钮必须显式
-    ///   给数值才能与系统按钮对齐基线）
     /// - 圆角统一 8：macOS 系统按钮原生圆角约 6-8，渐变按钮跟随；之前 22 偏激
+    ///
+    /// **v7 调整（dong4j 2026-06-06 20:48 反馈 X 按钮明显比保存按钮矮）**：
+    /// - `actionButtonHeight` 从 32 提到 40：v6 注释里写"frame(height:32) 强制"
+    ///   是误以为对所有按钮有效，**实测对 native button 只是建议**——SwiftUI
+    ///   `.controlSize(.large)` 的 native button intrinsic height ~ 36-38pt，
+    ///   会盖过 frame(32) 撑到 38 左右；X 按钮是纯自定义 view 严格遵守 frame
+    ///   32 → 视觉上 X 按钮比另两个矮一截。
+    /// - v7 修复策略：把 `actionButtonHeight` 提到 40 包络 `.controlSize(.large)`
+    ///   实际渲染高度——**结果失败**，见 v8 注释。
+    ///
+    /// **v8 调整（dong4j 2026-06-06 20:52 反馈 v7 后保存按钮反而最高 ~50pt）**：
+    /// v7 提到 40 还是没解决——`.borderedProminent` + `.controlSize(.large)` 在
+    /// macOS 上 min padding 是硬规则，`.frame(height:40)` 对 native button **不能
+    /// 强制压缩**只能撑大；`.bordered` 与 `.borderedProminent` 的 padding 又不同
+    /// → 导出 / 保存看着也不齐。**用 native button 不同 style 永远做不到三按钮
+    /// 等高**，根治办法只能全部转自定义。
+    /// - 全部三个按钮转 `buttonStyle(.plain)` + HStack + RoundedRectangle 背景，
+    ///   `frame(height: actionButtonHeight)` 真正生效（plain style 不带内 padding）。
+    /// - 视觉层次靠**填色差异**而不是 padding：主行动（保存为图片）实色
+    ///   `Color.accentColor` 填充；次行动（导出 Starred）`.regularMaterial` 半
+    ///   透明 + 细边框；X 按钮保留蓝绿渐变。
+    /// - 代价：失去 native button 的键盘焦点环 / hover 高亮 / system blue 主题
+    ///   联动——分享卡 sheet 主要鼠标操作，影响可接受；按 CLAUDE.md UI 规范
+    ///   `.buttonStyle(.plain)` 必须紧跟 `.focusEffectDisabled()`，已遵守。
     @ViewBuilder
     private var actionButtons: some View {
         VStack(spacing: 10) {
@@ -265,33 +333,74 @@ struct ShareCardSheet: View {
 
             // 第二行：保存 + 导出 Starred
             HStack(spacing: 10) {
-                Button {
-                    Task { await performSave() }
-                } label: {
-                    Label("sharecard.action.save", systemImage: "square.and.arrow.down")
-                        .frame(maxWidth: .infinity)
-                        .frame(height: actionButtonHeight)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .buttonBorderShape(.roundedRectangle(radius: actionButtonCornerRadius))
-                .disabled(isExporting)
-                .keyboardShortcut("s", modifiers: .command)
-
+                saveImageButton
                 exportStarredButton
             }
             .frame(width: 400)
         }
     }
 
-    /// 三个按钮统一高度（pt）。32 是 macOS large control 的典型视觉高度。
-    private var actionButtonHeight: CGFloat { 32 }
+    /// 保存为图片按钮（v8：从 `.borderedProminent` 改为自定义实现）。
+    /// accentColor 实色填充表达"主行动"，与 X 渐变按钮同一视觉层级（plain style
+    /// + frame(actionButtonHeight) 严格等高 40pt）。
+    ///
+    /// **v8.1（dong4j 2026-06-06 20:59）**：加 hover 反馈，背景叠 10% 白色提亮。
+    @ViewBuilder
+    private var saveImageButton: some View {
+        Button {
+            Task { await performSave() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "square.and.arrow.down")
+                    .font(.system(size: 13, weight: .medium))
+                Text("sharecard.action.save")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: actionButtonHeight)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: actionButtonCornerRadius)
+                        .fill(Color.accentColor)
+                    // hover 高亮层：叠在实色 fill 之上、文字之下；
+                    // 用条件 fill 而不是 if-then-else 让动画过渡平滑。
+                    RoundedRectangle(cornerRadius: actionButtonCornerRadius)
+                        .fill(Color.white.opacity(saveImageHovered ? 0.10 : 0))
+                }
+                .shadow(color: .black.opacity(saveImageHovered ? 0.20 : 0.12), radius: 4, y: 1)
+            )
+            .opacity(isExporting ? 0.5 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(isExporting)
+        .keyboardShortcut("s", modifiers: .command)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.12)) {
+                saveImageHovered = hovering
+            }
+        }
+    }
+
+    /// 三个按钮统一高度（pt）。
+    /// **40 是经验值**：包络 `.controlSize(.large)` native button 实际渲染高度
+    /// （~ 36-38pt，因 borderedProminent / bordered padding 略不同），既保证
+    /// native button 不被压缩，又能让自定义 X 按钮的 frame(40) 与之等高。
+    /// 详见 `actionButtons` v7 注释。
+    private var actionButtonHeight: CGFloat { 40 }
     /// 三个按钮统一圆角（pt）。8 与 macOS 系统 borderedProminent 默认圆角接近。
     private var actionButtonCornerRadius: CGFloat { 8 }
 
     /// 导出 Starred 记录按钮（下拉菜单）。
     /// HOM-174 新增：支持导出 Markdown 和 HTML 格式。
-    /// v6：统一高度 / 圆角，与第一行的"分享到 X"和同行的"保存为图片"基线对齐。
+    ///
+    /// **v8 调整（dong4j 2026-06-06 20:52）**：与 saveImageButton 同款重写为
+    /// `Menu` + 自定义 label（HStack + RoundedRectangle `.regularMaterial` 半
+    /// 透明背景 + `.secondary.opacity(0.3)` 细边框），表达"次行动"视觉层级；
+    /// `.menuStyle(.borderlessButton)` 让 Menu 不画自己的背景，`.menuIndicator
+    /// (.hidden)` 隐藏 Menu 默认的下拉箭头改用自绘的 chevron.down（与 native
+    /// 按钮风格一致但严格遵守 frame(height: actionButtonHeight)）。
     @ViewBuilder
     private var exportStarredButton: some View {
         Menu {
@@ -307,14 +416,44 @@ struct ShareCardSheet: View {
                 Label("sharecard.action.export.html", systemImage: "doc.richtext")
             }
         } label: {
-            Label("sharecard.action.exportStarred", systemImage: "square.and.arrow.up.on.square")
-                .frame(maxWidth: .infinity)
-                .frame(height: actionButtonHeight)
+            HStack(spacing: 6) {
+                Image(systemName: "square.and.arrow.up.on.square")
+                    .font(.system(size: 13, weight: .medium))
+                Text("sharecard.action.exportStarred")
+                    .font(.system(size: 13, weight: .medium))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .padding(.leading, 2)
+            }
+            .foregroundStyle(.primary)
+            .frame(maxWidth: .infinity)
+            .frame(height: actionButtonHeight)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: actionButtonCornerRadius)
+                        .fill(.regularMaterial)
+                    // hover 高亮层：material 上叠 primary 颜色 8% 提亮
+                    // （material 已经是半透明，再叠白色不明显；用 primary 在
+                    // light 模式提到深灰、dark 模式提到浅灰，都能看到反馈）
+                    RoundedRectangle(cornerRadius: actionButtonCornerRadius)
+                        .fill(Color.primary.opacity(exportStarredHovered ? 0.08 : 0))
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: actionButtonCornerRadius)
+                        .stroke(Color.secondary.opacity(exportStarredHovered ? 0.5 : 0.3), lineWidth: 0.5)
+                )
+            )
+            .opacity(isExporting ? 0.5 : 1.0)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
-        .buttonBorderShape(.roundedRectangle(radius: actionButtonCornerRadius))
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .focusEffectDisabled()
         .disabled(isExporting)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.12)) {
+                exportStarredHovered = hovering
+            }
+        }
     }
 
     /// "分享到 X"按钮。
@@ -330,6 +469,10 @@ struct ShareCardSheet: View {
     /// - 内部布局改为：xLogo + 主文案（"分享到 X"） + Spacer + hint 文案右对齐
     ///   （hint = "把图片粘贴到推文里"，告诉用户操作流程：先复制图，再去 X 粘贴）
     /// - 显式 `frame(height: actionButtonHeight)` 与系统按钮等高
+    ///
+    /// **v7 调整（dong4j 2026-06-06 20:48）**：actionButtonHeight 32 → 40，
+    /// 让 X 按钮真正与 `.controlSize(.large)` native button 同高（详见
+    /// `actionButtons` 上的 v7 注释）。
     @ViewBuilder
     private var shareToXButton: some View {
         Button {
@@ -354,15 +497,25 @@ struct ShareCardSheet: View {
             .frame(maxWidth: .infinity)
             .frame(height: actionButtonHeight)
             .background(
-                RoundedRectangle(cornerRadius: actionButtonCornerRadius)
-                    .fill(shareToXGradient)
-                    .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
+                ZStack {
+                    RoundedRectangle(cornerRadius: actionButtonCornerRadius)
+                        .fill(shareToXGradient)
+                    // hover 高亮层：渐变之上叠 10% 白色提亮
+                    RoundedRectangle(cornerRadius: actionButtonCornerRadius)
+                        .fill(Color.white.opacity(shareToXHovered ? 0.12 : 0))
+                }
+                .shadow(color: .black.opacity(shareToXHovered ? 0.20 : 0.12), radius: 4, y: 1)
             )
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .disabled(isExporting)
         .help(Text("sharecard.action.shareToX.help"))
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.12)) {
+                shareToXHovered = hovering
+            }
+        }
     }
 
     /// "分享到 X"按钮的渐变背景。水平方向，左清亮蓝 → 右亮绿。

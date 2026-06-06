@@ -8,7 +8,7 @@
 //  - 头像（圆形，56pt）
 //  - 显示名 + @login
 //  - 三栏统计：本地 Starred / 远程 Followers / 远程 Following
-//  - 点击头像 → 跳转 GitHub 主页；右上角"…"按钮 → popover：退出登录
+//  - 点击头像 → 跳转 GitHub 主页；左上角"…"按钮 → popover：退出登录；右上角分享按钮 → 分享卡 sheet
 //
 //  设计约束：
 //  - 用 popover 而非 Menu，避免 macOS 26 toolbar 上 Menu(label: custom view)
@@ -309,8 +309,8 @@ struct SidebarHeaderView: View {
 
     private func avatarRow(user: GitHubUserDTO) -> some View {
         // 头像 + 左右两个浮动按钮。
-        // - 左上角：分享卡按钮（HOM-173 新增）
-        // - 右上角：账户菜单（原有）
+        // - 左上角：账户菜单（2026-06-06 由右侧调换过来）
+        // - 右上角：分享卡按钮（HOM-173 新增，2026-06-06 由左侧调换过来）
         // 两按钮垂直对齐，share 与 ellipsis 都用 16pt SF Symbol 保持高度一致。
         // 之所以用 ZStack 而非把按钮塞在 UserAvatar 内：
         // ① UserAvatar 是 Button（点击跳 GitHub 主页），把另一个 Button 嵌进它的 label 里
@@ -344,17 +344,20 @@ struct SidebarHeaderView: View {
                 onLoginTapped: { showLoginSheet = true }
             )
 
-            // 顶部浮动按钮行：左侧分享卡入口、右侧账户菜单。
+            // 顶部浮动按钮行：左侧账户菜单、右侧分享卡入口。
+            // 2026-06-06 dong4j 反馈：将"分享"与"…"位置对换，
+            // 让账户菜单（更高频的入口）落到左侧，分享卡按钮放到右侧。
             HStack {
-                shareCardButton()
-                Spacer()
                 accountMenu()
+                Spacer()
+                shareCardButton()
             }
         }
     }
 
     /// HOM-173：分享卡入口按钮。
-    /// 头像左侧的浮动图标，与右侧"…"账户菜单图标垂直对齐（同样 16pt）。
+    /// 头像右侧的浮动图标（2026-06-06 由左侧调换至右侧），
+    /// 与左侧"…"账户菜单图标垂直对齐（同样 16pt）。
     /// 点击打开 `ShareCardSheet`，导出当前登录用户的"星际杂志卡 v2"。
     @ViewBuilder
     private func shareCardButton() -> some View {

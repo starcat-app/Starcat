@@ -517,25 +517,31 @@ struct ShareCardContent: View {
 
     /// 头像填充视图。设计图里头像几乎覆盖卡片上半部分，需要"方形填充"——
     /// 不能用 `RemoteAvatar`（强制 Circle clip 会丢四角），改直接用 KFImage scaledToFill。
+    ///
+    /// **2026-06-06 性能修复（dong4j 反馈 idCard 主题之间切换偶尔卡顿）**：
+    /// idCard 布局这块头像是 360×280 的大图，原写法把 KFImage 直接放在 `avatarFillView`
+    /// computed property 里——主题切换时 palette 中任意 Color 字段变化都让外层
+    /// `ShareCardContent.body` 重算，KFImage 这棵子树会被重新构造（SwiftUI 视图
+    /// 是值类型 struct，每次 body 都生成新实例）。Kingfisher 内存缓存命中所以
+    /// 不会重新下载，但**重新走 resample 把 cache 里的源图缩到 360×280** 仍然
+    /// 是同步主线程工作，叠加 0.18s 主题切换动画期间会让主线程卡顿。
+    ///
+    /// 修复：把 KFImage 那一支抽成 `Equatable` 子视图（仅按 url 判等，不比较
+    /// palette 占位色）。SwiftUI diff 看到 url 没变就直接跳过重渲染，KFImage
+    /// 内部 ImageBinder 状态保留，零 resample。占位渐变那一支保留原写法
+    /// （只在 `user.avatarUrl == nil` 时走，几乎走不到）。
     @ViewBuilder
     private var avatarFillView: some View {
         if let urlString = user.avatarUrl,
            !urlString.isEmpty,
            let url = URL(string: urlString) {
-            // KFImage：与 sidebar / Magazine 卡同一份 Kingfisher 缓存，命中率近 100%
-            KFImage(url)
-                .resizable()
-                .placeholder {
-                    Rectangle()
-                        .fill(palette.cardBackgroundSecondary)
-                        .overlay(
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 60))
-                                .foregroundStyle(palette.tertiaryText)
-                        )
-                }
-                .fade(duration: 0.15)
-                .scaledToFill()
+            // 用 EquatableView wrapper：urlString 不变 → SwiftUI 跳过重渲染。
+            CachedShareCardAvatar(
+                url: url,
+                placeholderBg: palette.cardBackgroundSecondary,
+                placeholderFg: palette.tertiaryText
+            )
+            .equatable()
         } else {
             // 无 avatarUrl：渐变占位 + person 图标
             ZStack {
@@ -686,6 +692,51 @@ private struct ShareCardLinkItem: Identifiable {
     let displayText: String
 
     var id: String { displayText }
+}
+
+// MARK: - ID 卡大头像（Equatable 缓存）
+
+/// idCard 布局的 360×280 大头像 KFImage 容器，**仅按 URL 判等**。
+///
+/// 为什么需要单独包一层：
+/// - 主题切换时 palette 中所有 Color 字段会变（cardBackgroundSecondary、
+///   tertiaryText 等），外层 `ShareCardContent.body` 整棵 view tree 重新构造。
+/// - SwiftUI struct 视图本身重建是廉价的，但 KFImage 在 body 重算时会让内部
+///   `ImageBinder` 重新对 cache 命中的源图做 resample 缩到 360×280——这是
+///   主线程同步工作，叠加主题切换动画时帧抖动明显。
+/// - 用 `Equatable` + `.equatable()` 让 SwiftUI 在 url 没变时跳过整棵子树
+///   diff，KFImage 状态保留 → 零 resample。
+///
+/// 占位色（`placeholderBg` / `placeholderFg`）虽然存了但**不参与 ==**：
+/// - 只在 Kingfisher cache miss + 首次解码期间出现一瞬间
+/// - 之后画面就是已解码的头像图，占位色与否用户看不到
+/// - 用户切主题想"改色"→ 等图加载好之后切是预期路径；首次切（cache 还没好）
+///   即使占位不变也只闪一帧，体感无感
+private struct CachedShareCardAvatar: View, Equatable {
+    let url: URL
+    let placeholderBg: Color
+    let placeholderFg: Color
+
+    /// 仅比较 URL：palette 颜色变化不触发重渲染（占位色滞后是可接受代价）。
+    static func == (lhs: CachedShareCardAvatar, rhs: CachedShareCardAvatar) -> Bool {
+        lhs.url == rhs.url
+    }
+
+    var body: some View {
+        KFImage(url)
+            .resizable()
+            .placeholder {
+                Rectangle()
+                    .fill(placeholderBg)
+                    .overlay(
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(placeholderFg)
+                    )
+            }
+            .fade(duration: 0.15)
+            .scaledToFill()
+    }
 }
 
 // MARK: - 静态草坪绘制（Canvas）

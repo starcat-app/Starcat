@@ -27,7 +27,27 @@ import CoreImage.CIFilterBuiltins
 import AppKit
 
 /// QR 码生成器。无状态，方法即工具。
+///
+/// **2026-06-06 性能修复（dong4j 反馈分享卡切主题卡顿）**：
+/// 加了进程级 NSCache。原版每次 `ShareCardContent` body 重渲染都会同步跑一次
+/// CIFilter + CIContext.createCGImage，在主题切换的 0.18s 动画期间会被调用
+/// 多次（SwiftUI 在 palette 之间插值时每帧都可能 reflow）；CIFilter 单次不算
+/// 特别慢，但叠加 idCard 布局 360×280 KFImage 重建 + Metal 背景 60fps 渲染后，
+/// 主线程一抖就丢帧，体验上就是「点了主题不切」。
+///
+/// 缓存键：`{text}|{size}`（同一 GitHub URL + 同一 sizePoints → 永远是同一张
+/// QR NSImage），NSCache 容量 16 张足够覆盖分享卡所有主题 + 不同 sizePoints
+/// 调用方。NSImage 本身约 64×64×4 = 16KB，16 张约 256KB，内存代价可忽略。
+/// NSCache 自带线程安全 + 内存压力下自动清理，不必手动管理生命周期。
 enum QRCodeGenerator {
+
+    /// 进程级 QR 图缓存。
+    /// countLimit = 16 是经验值：分享卡 5 主题各 1 张 + 导出图 @3x 1 张 + 余量。
+    private static let cache: NSCache<NSString, NSImage> = {
+        let c = NSCache<NSString, NSImage>()
+        c.countLimit = 16
+        return c
+    }()
 
     /// 把字符串编码为 NSImage QR。
     ///
@@ -39,6 +59,13 @@ enum QRCodeGenerator {
     /// - Returns: 黑色 QR + 透明背景的 NSImage；编码失败返回 nil。
     static func generate(text: String, sizePoints: CGFloat = 72) -> NSImage? {
         guard !text.isEmpty else { return nil }
+
+        // 缓存命中直接返回。同一 text+size 永远是同一张 QR，无需重算。
+        let cacheKey = "\(text)|\(sizePoints)" as NSString
+        if let cached = cache.object(forKey: cacheKey) {
+            return cached
+        }
+
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(text.utf8)
         // M = ~15% 错误恢复。L=7%、Q=25%、H=30%。
@@ -64,6 +91,7 @@ enum QRCodeGenerator {
         }
 
         let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: sizePoints, height: sizePoints))
+        cache.setObject(nsImage, forKey: cacheKey)
         return nsImage
     }
 }
