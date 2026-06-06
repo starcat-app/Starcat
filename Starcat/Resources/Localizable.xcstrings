@@ -3618,7 +3618,55 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "取消"
+            "value" : "终止"
+          }
+        }
+      }
+    },
+    "batchAI.panel.cancelledByUser" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelled by user"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用户已取消"
+          }
+        }
+      }
+    },
+    "batchAI.panel.cancelling" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelling"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在终止"
+          }
+        }
+      }
+    },
+    "batchAI.panel.cancellingDetail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for the current AI call to finish before stopping..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待当前 AI 调用结束后停止..."
           }
         }
       }

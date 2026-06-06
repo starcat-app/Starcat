@@ -77,6 +77,8 @@ struct BatchAIQueuePanel: View {
                         .labelStyle(.iconOnly)
                 }
                 .help("batchAI.panel.cancel")
+                // 用户已经点过取消但 in-flight job 还没跑完时禁用，避免重复点击让人困惑。
+                .disabled(service.isCancelling)
             }
             Button {
                 if service.isFinished {
@@ -102,7 +104,14 @@ struct BatchAIQueuePanel: View {
                 Text(String(format: String(localized: "batchAI.panel.progressFormat"), service.finishedCount, service.totalCount))
                     .font(.subheadline.weight(.medium))
                     .monospacedDigit()
-                if service.isPaused {
+                if service.isCancelling {
+                    Text("batchAI.panel.cancelling")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.red.opacity(0.18), in: Capsule())
+                        .foregroundStyle(.red)
+                } else if service.isPaused {
                     Text("batchAI.panel.paused")
                         .font(.caption)
                         .padding(.horizontal, 6)
@@ -134,7 +143,17 @@ struct BatchAIQueuePanel: View {
 
     @ViewBuilder
     private var currentJobLabel: some View {
-        if let currentId = service.currentJobId,
+        if service.isCancelling {
+            // 取消已生效但当前 AI 调用未结束：明确告诉用户在等什么。
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("batchAI.panel.cancellingDetail")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+            }
+        } else if let currentId = service.currentJobId,
            let currentJob = service.jobs.first(where: { $0.repoId == currentId }) {
             HStack(spacing: 6) {
                 ProgressView()

@@ -149,13 +149,33 @@ final class BatchAIQueueService {
         Task { await runLoop() }
     }
 
-    /// 取消整批：标记 cancel → 不杀当前 in-flight job → 标记 isRunning = false。
+    /// 取消整批。
+    ///
+    /// 用户反馈（HOM-52 2026-06-06 17:26 dong4j）：原版本只设标志位，
+    /// AI 调用可能要 5-10 秒，用户看不到任何视觉反馈以为"按钮没效果"。
+    ///
+    /// 改进后的行为：
+    /// 1. **立即清空所有 queued jobs** —— 列表长度立刻下降，给用户可见反馈。
+    /// 2. **设置 cancelRequested 标志**，runLoop 在当前 await 完成后立刻 break。
+    /// 3. **派生 isCancelling 状态**供 UI 显示"正在终止..."提示，按钮 disable。
+    /// 4. **当前 in-flight 的 AI 调用不强制中断**：OpenAIClient 没有 cancel 通道，
+    ///    且强中断后的 partial response 处理代价大；当前 job 跑完即丢弃结果。
+    /// 5. **runLoop 退出时**把残留 processing 状态的 job 标记为 failed("用户取消")，
+    ///    避免 UI 上留下"永远在 processing"的孤儿行。
     func cancel() {
         guard isRunning else { return }
         cancelRequested = true
         isPaused = false
-        AppLog.ai.notice("[batch-ai] cancel requested")
+        // 立即清空所有未开始的 job，给用户立即可见的反馈。
+        // 已完成 / 已忽略 / 已失败 / processing 的 job 保留，不破坏历史记录。
+        let removed = jobs.filter { $0.status == .queued }.count
+        jobs.removeAll { $0.status == .queued }
+        AppLog.ai.notice("[batch-ai] cancel requested, cleared \(removed, privacy: .public) queued jobs")
     }
+
+    /// UI 派生：true 时显示"正在终止当前 AI 调用..."提示。
+    /// 触发后 runLoop 仍在等 in-flight job 跑完（最多几十秒），需要给用户解释。
+    var isCancelling: Bool { cancelRequested && isRunning }
 
     /// 重置：清空全部 jobs / options / 进度。
     /// 调用方场景：用户点 panel 的"关闭"按钮且已 finished，或新开一批整理前。
@@ -232,8 +252,11 @@ final class BatchAIQueueService {
 
             do {
                 let result = try await processSingle(jobId: jobSnapshot.repoId, options: options)
+                // 用户在 AI 调用期间点了取消 → 丢弃结果，循环顶部下一轮会 break。
+                if cancelRequested { break }
                 await applyResult(jobId: jobSnapshot.repoId, result: result, options: options)
             } catch {
+                if cancelRequested { break }
                 handleFailure(jobId: jobSnapshot.repoId, error: error, options: options)
             }
 
@@ -245,6 +268,16 @@ final class BatchAIQueueService {
 
         // 循环退出：若全部终态则关掉 isRunning；否则保留状态等用户 resume / cancel。
         if isFinished || cancelRequested || jobs.allSatisfy({ $0.status != .queued }) {
+            // 用户取消时，把可能停在 .processing 的孤儿 job 收尾，避免 UI 留"永远转圈"行。
+            if cancelRequested {
+                let now = Date()
+                let reason = String(localized: "batchAI.panel.cancelledByUser")
+                for idx in jobs.indices where jobs[idx].status == .processing {
+                    jobs[idx].status = .failed
+                    jobs[idx].errorMessage = reason
+                    jobs[idx].finishedAt = now
+                }
+            }
             isRunning = false
             currentJobId = nil
             if isFinished {
