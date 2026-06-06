@@ -18,6 +18,7 @@
 //  - `topK` 当前仅保存配置，不发送到标准 OpenAI Chat Completions，原因见详细设计文档。
 //
 
+import AppKit
 import SwiftUI
 
 /// AI 设置 Tab 页面。
@@ -136,46 +137,7 @@ struct AISettingsTab: View {
                 }
                 .pickerStyle(.menu)
 
-                // HOM-AIPROVIDERS-2026-06-06 layout follow-up v3（dong4j 第三次反馈
-                // "现在还是没看到输入框变长,而且 baseURL 超长的时候还会换行显示"）：
-                //
-                // 根因(看 Cloudflare 那张截图发现的)：
-                // 前一版用 `LabeledContent("xxx") { TextField... }` 仍然换行——因为
-                // **`LabeledContent` 在 macOS 15 `.formStyle(.grouped)` 下是 responsive 的**,
-                // 当 control 自身内容(如 Cloudflare 的 `{YOUR_ACCOUNT_ID}` 占位 URL)宽度
-                // 超过 row 可用宽度时,SwiftUI 会自动把 label 拉到上面、control 撑满
-                // 整行(竖排 fallback)。这是 SwiftUI 内置行为,加 `.frame(maxWidth:.infinity)`
-                // 都拦不住——`.frame` 只影响最小/最大尺寸申请,不能阻止 responsive layout 切换。
-                //
-                // 唯一可靠的解法:**完全弃用 LabeledContent,用 HStack 手控 label 宽度**。
-                // HStack 是死板的横向容器,内部子 view 不会因为容器宽度不足而切换布局,
-                // 只会按 layout priority 压缩;给 label 固定 130pt(目测与上面 Picker
-                // 行 LabeledContent 自动算出的 label 列宽度对齐),TextField `.frame(maxWidth:
-                // .infinity)` 撑满剩余宽度;长 URL 自然走 NSTextField 默认的"字段内
-                // 横向滚动"——光标处可见,字段右边缘外被裁掉,永远不会撑高整行也不会
-                // 把 layout 切成竖排。
-                //
-                // 抽 `inlineLongInputRow(label:field:)` helper 是为了把这套模式收口——
-                // 后续任何"label + 长内容输入"的行都用它,不允许直接写 LabeledContent。
-                inlineLongInputRow(label: "显示名称") {
-                    TextField("", text: profileTextBinding(profile.id, keyPath: \.displayName))
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(1)
-                }
-
-                inlineLongInputRow(label: "Base URL") {
-                    TextField("", text: profileTextBinding(profile.id, keyPath: \.baseURL))
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(1)
-                        .disableAutocorrection(true)
-                        .textContentType(.URL)
-                }
-
-                inlineLongInputRow(label: "API Key") {
-                    SecureField(profile.provider.allowsEmptyAPIKey ? "本地服务可留空" : "", text: apiKeyBinding(profile.id))
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(1)
-                }
+                providerInputRows(profile)
 
                 // HOM-68 follow-up v2 (dong4j 反馈 #2)：
                 // 状态提示（测试成功/失败/未测试）在左侧，"保存 Key" / "测试并获取模型"
@@ -362,6 +324,64 @@ struct AISettingsTab: View {
     // parameterMaxTokensKBinding / parameterTimeoutSecondsBinding——这些都是
     // "task → AIModelParameters" 路径上的辅助，迁移后 popover 内部自带等价控件。
 
+    /// AI 服务商三个长输入项的自定义表格块。
+    ///
+    /// 这里不再让 `Form(.grouped)` 分别布局三条 `TextField` row。macOS 的 Form 会
+    /// 对每个 row 单独测量，短文本输入框、长 URL 输入框、聚焦态输入框得到的
+    /// proposed width 可能不同；单行内 `GeometryReader` 也只能读到该 row 自己的
+    /// 宽度，无法保证三行一致。
+    ///
+    /// 把三行收进同一个 `VStack` 后，Form 只测量一次这个块；块内部再用固定
+    /// `labelWidth + columnSpacing + fieldWidth` 列定义，三个输入框自然共享同一
+    /// 左边界和右边界。输入控件使用 AppKit `NSTextField` 包装，而不是 SwiftUI
+    /// `.textFieldStyle(.roundedBorder)`，原因是后者在 Form 内仍可能按内容参与测量。
+    @ViewBuilder
+    private func providerInputRows(_ profile: AIProviderProfile) -> some View {
+        let labelWidth: CGFloat = 96
+        let columnSpacing: CGFloat = 14
+        let fieldWidth: CGFloat = 350
+        let rowHeight: CGFloat = 52
+
+        VStack(spacing: 0) {
+            providerInputRow(label: "显示名称", labelWidth: labelWidth, columnSpacing: columnSpacing, fieldWidth: fieldWidth, rowHeight: rowHeight) {
+                ProviderSingleLineTextField(text: profileTextBinding(profile.id, keyPath: \.displayName))
+            }
+            Divider()
+            providerInputRow(label: "Base URL", labelWidth: labelWidth, columnSpacing: columnSpacing, fieldWidth: fieldWidth, rowHeight: rowHeight) {
+                ProviderSingleLineTextField(text: profileTextBinding(profile.id, keyPath: \.baseURL))
+            }
+            Divider()
+            providerInputRow(label: "API Key", labelWidth: labelWidth, columnSpacing: columnSpacing, fieldWidth: fieldWidth, rowHeight: rowHeight) {
+                ProviderSingleLineTextField(
+                    placeholder: profile.provider.allowsEmptyAPIKey ? "本地服务可留空" : "",
+                    text: apiKeyBinding(profile.id),
+                    isSecure: true
+                )
+            }
+        }
+        .frame(width: labelWidth + columnSpacing + fieldWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: rowHeight * 3 + 2)
+    }
+
+    private func providerInputRow<Field: View>(
+        label: LocalizedStringKey,
+        labelWidth: CGFloat,
+        columnSpacing: CGFloat,
+        fieldWidth: CGFloat,
+        rowHeight: CGFloat,
+        @ViewBuilder field: () -> Field
+    ) -> some View {
+        HStack(alignment: .center, spacing: columnSpacing) {
+            Text(label)
+                .frame(width: labelWidth, alignment: .leading)
+                .lineLimit(1)
+            field()
+                .frame(width: fieldWidth)
+        }
+        .frame(height: rowHeight)
+    }
+
     /// HOM-68 follow-up v5 (dong4j 反馈 2026-06-05 23:00)：
     /// v4 用 `Text + onTapGesture` 不生效——SwiftUI 在 `Form(.grouped)` 里给
     /// `DisclosureGroup` label 套了一层非交互容器，会吞掉 `onTapGesture`，
@@ -373,41 +393,6 @@ struct AISettingsTab: View {
     ///
     /// 用 withAnimation 让展开/折叠跟 chevron 旋转走同一条动画曲线，避免"点
     /// 标题瞬切、点 chevron 平滑"的不一致体感。
-    /// 长内容输入行的标准布局：label 左、TextField 右、强制水平、TextField 占满
-    /// label 后所有空间、长内容字段内横向截断不换行。
-    ///
-    /// 为什么不用 `LabeledContent`(dong4j 2026-06-06 连续三次截图反馈才搞清楚)：
-    /// macOS 15 `.formStyle(.grouped)` 下,`LabeledContent` 是 **responsive** 的——
-    /// 当 control 内容宽度超过 row 可用宽度时,SwiftUI 自动把 layout 切成"label 上、
-    /// control 下"的竖排,即使在 control 上加 `.frame(maxWidth: .infinity)` 也拦不住
-    /// (`.frame` 只影响最小/最大尺寸申请,不能阻止 layout 切换)。Cloudflare 的
-    /// `{YOUR_ACCOUNT_ID}` 占位 URL 是典型触发点。
-    ///
-    /// HStack 是**死板**的横向容器,不会自动切布局,只按 layout priority 压缩。
-    /// 配合"label 固定 130pt + TextField `.frame(maxWidth: .infinity)`"组合,效果：
-    /// - label 始终在左,宽度恒定 130pt(与上面 Picker 行的 LabeledContent 自动列宽
-    ///   目测对齐,视觉一致)
-    /// - TextField 撑满 label 后所有剩余宽度
-    /// - 长 URL 走 NSTextField 默认的"字段内横向滚动"——光标处可见,超出右边缘的
-    ///   字符被裁掉,永远不撑高整行,永远不竖排
-    ///
-    /// 130pt 是经验值:目测能容纳"服务商配置"(4 个中文字符 ≈ 64pt)、"Base URL"
-    /// (8 个英文字符 ≈ 80pt)、"显示名称"(4 中文 ≈ 64pt)三个标签 + 一定富余。
-    /// 未来若需要更长的 label(如"OAuth Redirect URI"),提升此常量或抽成参数。
-    @ViewBuilder
-    private func inlineLongInputRow<Field: View>(
-        label: LocalizedStringKey,
-        @ViewBuilder field: () -> Field
-    ) -> some View {
-        HStack(alignment: .center, spacing: 16) {
-            Text(label)
-                .frame(width: 130, alignment: .leading)
-                .lineLimit(1)
-            field()
-                .frame(maxWidth: .infinity)
-        }
-    }
-
     private func disclosureLabel(_ title: String, isExpanded: Binding<Bool>) -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.18)) {
@@ -880,4 +865,62 @@ struct AISettingsTab: View {
     AISettingsTab()
         .environment(AppSettings(defaults: .standard))
         .frame(width: 720, height: 860)
+}
+
+/// Provider 配置区专用的单行输入框。
+///
+/// 为什么不用 SwiftUI `TextField + .textFieldStyle(.roundedBorder)`：
+/// 在 `Form(.grouped)` 里，SwiftUI 默认 TextField 仍会把内容长度、焦点态和 row
+/// 测量混进布局，长 Base URL 容易影响整行宽度。这里直接包一层 AppKit
+/// `NSTextField` / `NSSecureTextField`，明确要求单行、不可换行、内容超出时在字段内
+/// 横向滚动；外部列宽由 `providerInputRows` 固定，输入内容不再参与布局。
+private struct ProviderSingleLineTextField: NSViewRepresentable {
+
+    var placeholder: String = ""
+    @Binding var text: String
+    var isSecure: Bool = false
+
+    func makeNSView(context: Context) -> NSTextField {
+        let textField: NSTextField = isSecure ? NSSecureTextField() : NSTextField()
+        textField.delegate = context.coordinator
+        textField.isBordered = true
+        textField.isBezeled = true
+        textField.bezelStyle = .roundedBezel
+        textField.drawsBackground = true
+        textField.usesSingleLineMode = true
+        textField.lineBreakMode = .byClipping
+        textField.cell?.wraps = false
+        textField.cell?.isScrollable = true
+        textField.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textField.controlSize = .regular
+        textField.placeholderString = placeholder
+        textField.stringValue = text
+        return textField
+    }
+
+    func updateNSView(_ textField: NSTextField, context: Context) {
+        if textField.stringValue != text {
+            textField.stringValue = text
+        }
+        if textField.placeholderString != placeholder {
+            textField.placeholderString = placeholder
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        @Binding private var text: String
+
+        init(text: Binding<String>) {
+            _text = text
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let textField = notification.object as? NSTextField else { return }
+            text = textField.stringValue
+        }
+    }
 }
