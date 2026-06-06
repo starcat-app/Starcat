@@ -53,7 +53,8 @@ import Kingfisher
 ///     user: user,
 ///     starredCount: viewModel.totalCount,
 ///     contribution: contributionService.payload,
-///     theme: .githubGreen
+///     theme: .githubGreen,
+///     isProUser: settings.isProUser
 /// )
 /// .frame(width: 400, height: 560)
 /// ```
@@ -71,6 +72,9 @@ struct ShareCardContent: View {
 
     /// 当前主题。
     let theme: ShareCardTheme
+
+    /// 当前用户是否为 Pro 用户。Pro 用户头像显示 Pro 标识。
+    var isProUser: Bool = false
 
     /// 卡片宽度。固定 400pt，导出时通过 `ImageRenderer.scale` 放大到 @3x。
     static let canvasWidth: CGFloat = 400
@@ -118,15 +122,18 @@ struct ShareCardContent: View {
 
     // MARK: - Magazine 布局（HOM-173 v1，既有主题）
 
-    /// 杂志卡布局：顶栏 + 头像 + 三栏统计 + 草坪 + 注脚。
-    /// 保持 v1 实现，仅在外层 body 用 switch 转发，确保零回归。
+    /// 杂志卡布局：顶栏 + 头像 + 链接行（含QR） + 三栏统计 + 草坪 + 注脚。
+    /// HOM-174 follow-up：链接区域右侧添加 QR 码。
     @ViewBuilder
     private var magazineBody: some View {
         VStack(spacing: 0) {
             topBar
             avatarSection
                 .padding(.top, 18)
-                .padding(.bottom, 18)
+                .padding(.bottom, 14)
+            // HOM-174：链接行 + QR 码
+            magazineLinksSection
+                .padding(.bottom, 14)
             divider
             statsSection
                 .padding(.vertical, 18)
@@ -138,6 +145,18 @@ struct ShareCardContent: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 20)
+    }
+
+    /// Magazine 布局的链接行：左侧链接列表 + 右侧 QR 码。
+    @ViewBuilder
+    private var magazineLinksSection: some View {
+        HStack(alignment: .top, spacing: 12) {
+            // 左侧链接列表
+            profileLinksSection
+
+            // 右侧 QR 码
+            qrCodeView
+        }
     }
 
     // MARK: - 顶栏
@@ -163,16 +182,44 @@ struct ShareCardContent: View {
 
     // MARK: - 头像 + 身份区
 
-    /// 头像（96pt 圆形）+ 显示名 + @login + Bio。
+    /// 头像（96pt 圆形）+ 显示名 + @login + Bio + Pro 标识。
     /// Bio 最多 2 行；nil/空串时省略不留空白。
+    /// Pro 用户在头像右下角显示 Pro 徽章。
     @ViewBuilder
     private var avatarSection: some View {
         VStack(spacing: 10) {
-            // 96pt 头像 + 描边（用 accent 色 2pt 描边强化主题感）
-            RemoteAvatar(urlString: user.avatarUrl, size: 96, showBorder: false)
-                .overlay(
-                    Circle().stroke(palette.accent, lineWidth: 2)
-                )
+            ZStack(alignment: .bottomTrailing) {
+                // 96pt 头像 + 描边（用 accent 色 2pt 描边强化主题感）
+                RemoteAvatar(urlString: user.avatarUrl, size: 96, showBorder: false)
+                    .overlay(
+                        Circle().stroke(palette.accent, lineWidth: 2)
+                    )
+
+                // Pro 用户标识：彩虹渐变徽章
+                if isProUser {
+                    Text("PRO")
+                        .font(.system(size: 8, weight: .black))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background {
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [.yellow, .orange, .pink],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+                        }
+                        .overlay {
+                            Capsule()
+                                .stroke(.white.opacity(0.75), lineWidth: 0.7)
+                        }
+                        .offset(x: 8, y: 0)
+                }
+            }
 
             VStack(spacing: 2) {
                 // 显示名（name 优先，缺失 fallback login）
@@ -182,10 +229,13 @@ struct ShareCardContent: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
 
-                Text("@\(user.login)")
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(palette.secondaryText)
-                    .lineLimit(1)
+                // HOM-174：仅在 name 与 login 不同时显示 @login，避免重复（如 "dong4j" + "@dong4j"）
+                if user.name?.lowercased() != user.login.lowercased() {
+                    Text("@\(user.login)")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                }
             }
 
             // Bio：非空才渲染。Bio 中 GitHub 不渲染 @mention/markdown，原样平文本展示。
@@ -291,6 +341,76 @@ struct ShareCardContent: View {
         }
     }
 
+    // MARK: - 链接行（HOM-174 新增）
+
+    /// 个人主页链接行：GitHub 主页、blog、email 等。
+    /// HOM-174 follow-up：
+    /// - 链接改成每行一个（VStack 布局）
+    /// - 图标带绿色背景
+    /// - 最多显示 3 个链接
+    @ViewBuilder
+    private var profileLinksSection: some View {
+        let links = Array(makeProfileLinks().prefix(3))
+        if !links.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(links) { link in
+                    profileLinkItem(link: link)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// 单个链接项：绿色背景图标 + 文字。
+    @ViewBuilder
+    private func profileLinkItem(link: ShareCardLinkItem) -> some View {
+        HStack(spacing: 6) {
+            // 绿色背景图标
+            ZStack {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.green.opacity(0.2))
+                    .frame(width: 20, height: 20)
+                Image(systemName: link.symbolName)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.green)
+            }
+            Text(link.displayText)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(1)
+        }
+    }
+
+    /// 构建链接列表（用于分享卡导出图的静态展示）。
+    private func makeProfileLinks() -> [ShareCardLinkItem] {
+        var items: [ShareCardLinkItem] = []
+
+        // GitHub 主页（始终显示）
+        items.append(ShareCardLinkItem(
+            symbolName: "link",
+            displayText: user.htmlUrl ?? "github.com/\(user.login)"
+        ))
+
+        // blog / homepage
+        if let blog = user.blog?.trimmingCharacters(in: .whitespacesAndNewlines), !blog.isEmpty {
+            let displayText = blog.hasPrefix("http") ? blog : "https://\(blog)"
+            items.append(ShareCardLinkItem(
+                symbolName: "globe",
+                displayText: displayText
+            ))
+        }
+
+        // email
+        if let email = user.email?.trimmingCharacters(in: .whitespacesAndNewlines), !email.isEmpty {
+            items.append(ShareCardLinkItem(
+                symbolName: "envelope",
+                displayText: email
+            ))
+        }
+
+        return items
+    }
+
     // MARK: - 通用元素
 
     /// 全宽细分隔线（顶/中/底分区用）。
@@ -318,33 +438,47 @@ struct ShareCardContent: View {
 
     // MARK: - ID Card 布局（HOM-173 v2，2026-06-06 新增）
 
-    /// ID 卡布局：大圆角头像主图 + 用户名 + Bio + 底部（左 stats + 右 QR）。
-    /// 不渲染草坪、不渲染 followers/following。
+    /// ID 卡布局：大圆角头像主图 + 用户名 + Bio + 链接行 + 底部（stats + QR + footer）。
+    /// HOM-174 follow-up：
+    /// - 添加链接行（每行一个，带绿色背景图标）
+    /// - 底部添加 Generated by Starcat
+    /// - 优化垂直间距减少空白
     ///
-    /// 布局结构（参考 dong4j 提供的设计图）：
+    /// 布局结构：
     /// - 顶部：大圆角矩形头像（卡片宽度减边距），底部加渐变带过渡到下方文字
     /// - 中部：用户名 + verified 勾 + Bio（最多 2 行，nil/空 时省略）
-    /// - 底部：左侧 2 个 pill stat（⭐ Starred + 📦 Public Repos），右侧 QR 码（64pt）
+    /// - 链接行（GitHub / homepage / email，每行一个）
+    /// - 底部：3 个 pill stat（⭐ Starred + 👥 Followers + 👥 Following）+ QR 码
+    /// - 底部注脚：Generated by Starcat
     @ViewBuilder
     private var idCardBody: some View {
         VStack(spacing: 0) {
             idCardAvatar
-                .padding(.top, 20)
-                .padding(.horizontal, 20)
+                .padding(.top, 16)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 idCardIdentity
                 idCardBio
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 24)
-            .padding(.top, 18)
+            .padding(.top, 14)
 
-            Spacer(minLength: 12)
+            // 链接行
+            profileLinksSection
+                .padding(.horizontal, 24)
+                .padding(.top, 10)
+
+            Spacer(minLength: 8)
 
             idCardBottomRow
                 .padding(.horizontal, 24)
-                .padding(.bottom, 22)
+
+            // HOM-174：底部注脚
+            idCardFooter
+                .padding(.horizontal, 24)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
         }
     }
 
@@ -446,11 +580,10 @@ struct ShareCardContent: View {
         }
     }
 
-    /// ID 卡底部行：左侧 2 个 pill stats，右侧 QR 码。
+    /// ID 卡底部行：左侧 3 个 pill stats，右侧 QR 码。
     ///
-    /// 数据替换决策：dong4j 明确"不需要 follow"——
-    /// 把 followers / following 改为对 Starcat 用户更有意义的 ⭐ Starred（本地 totalCount）+
-    /// 📦 Public Repos（`/user.publicRepos`，登录返回数据，无额外请求）。
+    /// HOM-174 follow-up：改为 3 个 stat（Starred + Followers + Following），
+    /// 与 magazine 布局的前 3 个主题保持一致。
     @ViewBuilder
     private var idCardBottomRow: some View {
         HStack(alignment: .center) {
@@ -458,9 +591,12 @@ struct ShareCardContent: View {
                 idCardStatPill(symbol: "star.fill",
                                value: starredCount,
                                labelKey: "sharecard.stats.starred")
-                idCardStatPill(symbol: "shippingbox.fill",
-                               value: user.publicRepos ?? 0,
-                               labelKey: "sharecard.stats.repos")
+                idCardStatPill(symbol: "person.2.fill",
+                               value: user.followers ?? 0,
+                               labelKey: "sharecard.stats.followers")
+                idCardStatPill(symbol: "person.fill",
+                               value: user.following ?? 0,
+                               labelKey: "sharecard.stats.following")
             }
 
             Spacer()
@@ -497,6 +633,9 @@ struct ShareCardContent: View {
     ///
     /// 视觉：64pt QR + 6pt 容器内边距 = 76pt 容器；容器底色 = onAccent（与 stats pill 反色一致）。
     /// 白卡：黑容器 + 白 QR；黑卡：白容器 + 黑 QR——两种模式都保证扫码对比度。
+    ///
+    /// HOM-174 follow-up：QR 码不使用 template rendering，直接显示原生黑白图像
+    /// （QR 需要高对比度，template tinting 会导致扫码失败）。
     @ViewBuilder
     private var qrCodeView: some View {
         let url = "https://github.com/\(user.login)"
@@ -508,13 +647,11 @@ struct ShareCardContent: View {
                 .frame(width: 76, height: 76)
 
             if let qrImage {
-                // QR 默认黑模块 + 透明背景；用 template + accent 色让 QR 反成主题色
+                // QR码直接显示，不使用template模式以保持高对比度
                 Image(nsImage: qrImage)
                     .interpolation(.none)
                     .resizable()
-                    .renderingMode(.template)
                     .frame(width: 64, height: 64)
-                    .foregroundStyle(palette.accent)
             } else {
                 // 极端兜底：QR 生成失败时显示 SF Symbol qrcode 图标
                 Image(systemName: "qrcode")
@@ -524,6 +661,31 @@ struct ShareCardContent: View {
         }
         .accessibilityLabel(Text(verbatim: url))
     }
+
+    /// ID 卡底部注脚：Generated by Starcat · starcat.app
+    @ViewBuilder
+    private var idCardFooter: some View {
+        HStack {
+            Text("> Generated by Starcat")
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundStyle(palette.tertiaryText)
+                .tracking(0.5)
+            Spacer()
+            Text("starcat.app")
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundStyle(.green)
+        }
+    }
+}
+
+// MARK: - 链接数据模型
+
+/// 分享卡链接项（用于导出图片的静态展示）。
+private struct ShareCardLinkItem: Identifiable {
+    let symbolName: String
+    let displayText: String
+
+    var id: String { displayText }
 }
 
 // MARK: - 静态草坪绘制（Canvas）
