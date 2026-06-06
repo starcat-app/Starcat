@@ -70,11 +70,11 @@ struct ShareCardSheet: View {
                     actionButtons
                 }
                 .padding(.horizontal, 24)
-                .padding(.vertical, 10)
+                .padding(.vertical, 4)
             }
             .scrollIndicators(.hidden)
         }
-        .frame(width: 480, height: 900)
+        .frame(width: 480, height: 820)
     }
 
     // MARK: - 顶部标题栏
