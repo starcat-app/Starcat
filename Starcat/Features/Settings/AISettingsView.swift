@@ -26,7 +26,26 @@ struct AISettingsTab: View {
 
     @Environment(AppSettings.self) private var settings
 
-    @State private var selectedProfileID: String?
+    /// HOM-AIPROVIDERS-PERSIST-2026-06-06 (dong4j 反馈)：
+    /// 之前用 `@State private var selectedProfileID: String?` 保存当前选中的服务商
+    /// profile，关掉 Settings 窗口再打开就会被 SwiftUI 销毁重建，`selectedProfileID`
+    /// 重置为 nil，`ensureSelection()` 强制把它落回 `verifiedProfiles.first`。
+    /// 多 profile 场景（DeepSeek + OpenAI 都已验证、用户最后选的是 OpenAI）下，
+    /// 用户每次进入 AI 设置都会被强行切回 DeepSeek（第一个），第二行 Provider
+    /// picker 也跟着回到 DeepSeek，违反"进页面时显示当前选中的已配好服务商"诉求。
+    ///
+    /// 改成 `@AppStorage` 跨 Settings 窗口和 app 启动都持久化，空串当 nil 哨兵
+    /// （`@AppStorage` 不直接支持 `String?`）。`ensureSelection()` 仍保留兜底逻辑：
+    /// 持久化的 ID 在当前已验证列表里找不到（profile 被删 / 升级后改了 ID）时
+    /// 降级到 `verifiedProfiles.first?.id`，避免"指向幽灵 profile"。
+    @AppStorage("settings.ai.lastSelectedProfileID") private var lastSelectedProfileIDStorage: String = ""
+
+    /// 当前选中的服务商 profile ID。空串持久化值视为 nil。
+    /// 真正的写入入口走 `setSelectedProfileID(_:)`，避免散落的赋值绕过空串哨兵。
+    private var selectedProfileID: String? {
+        lastSelectedProfileIDStorage.isEmpty ? nil : lastSelectedProfileIDStorage
+    }
+
     @State private var draftProfile: AIProviderProfile?
     @State private var draftAPIKey: String = ""
     @State private var apiKeys: [String: String] = [:]
@@ -76,6 +95,28 @@ struct AISettingsTab: View {
             ensureSelection()
             loadAPIKeys()
         }
+        // HOM-AIPROVIDERS-DRAFT-DISCARD-2026-06-06 (dong4j 反馈):
+        // SwiftUI macOS Settings scene 关闭窗口后不一定销毁 view 树,
+        // `@State` 的 `draftProfile` 会残留——用户点 "+" 号生成空草稿、
+        // 没改没测就关闭 Settings,下次再开 Settings 仍看到这个空草稿,
+        // 违反"未完成配置在关闭设置后不保存"原则。
+        //
+        // 修法:监听 `NSWindow.willCloseNotification`,在 Settings 窗口真正
+        // 关闭时丢弃 draft 三件套(profile / API key / keyError)。
+        // **不用 `.onDisappear`**:macOS TabView 切 Tab 时 onDisappear 触发
+        // 行为不一致(macOS 15 实测可能误触发),会误清用户在 AI Tab 半改完
+        // 切到 General Tab 又切回来时的输入。`NSWindow.willCloseNotification`
+        // 只在窗口真正关闭时触发,切 Tab 不动 NSWindow 生命周期,精准。
+        .background(SettingsWindowCloseListener {
+            // 只清未通过测试的 draft;通过测试的 draft 在 testAndFetchModels
+            // 成功路径里已被晋升为 verified profile 并把 draftProfile 置 nil,
+            // 这里看到的 draftProfile != nil 全是"未完成"草稿。
+            if draftProfile != nil {
+                draftProfile = nil
+                draftAPIKey = ""
+                keyError = nil
+            }
+        })
     }
 
     // MARK: - Provider
@@ -506,9 +547,16 @@ struct AISettingsTab: View {
 
     // MARK: - Actions
 
+    /// 写入 `selectedProfileID` 的统一入口。
+    /// nil → 持久化层写空串哨兵；非 nil → 直接写入 ID。
+    /// 集中走这个 helper 是为了让"空串 ↔ nil"语义不要散落到 4 个赋值点。
+    private func setSelectedProfileID(_ id: String?) {
+        lastSelectedProfileIDStorage = id ?? ""
+    }
+
     private func ensureSelection() {
         if selectedProfileID == nil || verifiedProfiles.allSatisfy({ $0.id != selectedProfileID }) {
-            selectedProfileID = verifiedProfiles.first?.id
+            setSelectedProfileID(verifiedProfiles.first?.id)
         }
     }
 
@@ -543,7 +591,7 @@ struct AISettingsTab: View {
         settings.aiProviderProfiles.removeAll { $0.id == id }
         try? KeychainManager.shared.deleteAIKey(forProvider: id)
         apiKeys.removeValue(forKey: id)
-        selectedProfileID = verifiedProfiles.first?.id
+        setSelectedProfileID(verifiedProfiles.first?.id)
         repairTasksAfterProfileChange()
     }
 
@@ -578,7 +626,7 @@ struct AISettingsTab: View {
                 profiles.removeAll { $0.id == profile.id }
                 profiles.append(verified)
                 settings.aiProviderProfiles = profiles
-                selectedProfileID = profile.id
+                setSelectedProfileID(profile.id)
                 draftProfile = nil
                 draftAPIKey = ""
             } else {
@@ -683,7 +731,7 @@ struct AISettingsTab: View {
                 // draftProfile，就会出现“输入任意字符后草稿 provider 跳回 DeepSeek”。
                 // 只有用户真正切到另一个已验证配置时，才丢弃草稿。
                 guard newSelection != selectedProfileID else { return }
-                selectedProfileID = newSelection
+                setSelectedProfileID(newSelection)
                 draftProfile = nil
                 draftAPIKey = ""
                 keyError = nil
@@ -1013,6 +1061,73 @@ private struct ProviderSingleLineTextField: NSViewRepresentable {
         func controlTextDidChange(_ notification: Notification) {
             guard let textField = notification.object as? NSTextField else { return }
             text = textField.stringValue
+        }
+    }
+}
+
+/// HOM-AIPROVIDERS-DRAFT-DISCARD-2026-06-06 (dong4j 反馈):
+/// SwiftUI 桥接 `NSWindow.willCloseNotification` 的窄范围监听器。
+///
+/// 用途:在 Settings 窗口真正关闭时通知 AI Tab 丢弃未完成草稿。
+///
+/// 关键约束 / 已踩过的坑:
+/// - **必须把 observer 的 `object` 限定为 self.window**,而不是 nil。
+///   nil 会让 observer 监听到 app 任意 NSWindow 关闭事件——主窗口关闭也会
+///   误清掉 AI Tab 的 draft,把"打开 Starcat → 配 AI → 关主窗 → 重开 App"
+///   的草稿连续性弄丢。
+/// - **必须在 `viewDidMoveToWindow` 注册/反注册** 而不是 init / makeNSView:
+///   NSViewRepresentable 创建 NSView 时尚未挂到窗口,self.window 是 nil;
+///   `viewDidMoveToWindow` 在 view 加入 / 离开 window hierarchy 时都会触发,
+///   是注册 window-scoped observer 的正确时机。
+/// - **`[weak self]`** 防止 observer 强引用 self 造成 ListenerView 在窗口
+///   关闭后还活着、漏掉 deinit。
+/// - **不会被切 Tab 触发**:NSTabView 切 tab 是 NSTabView 内部行为,不动
+///   NSWindow 生命周期,所以这个 observer 在 Settings 内部切 Tab 时静默不工作,
+///   不会误清 draft。这是为什么这里坚持用 NSWindow 通知而不是 SwiftUI
+///   `.onDisappear`(macOS 15 上 onDisappear 切 Tab 触发行为不一致)。
+private struct SettingsWindowCloseListener: NSViewRepresentable {
+
+    let onClose: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = ListenerView()
+        view.onClose = onClose
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        // SwiftUI 每次 body 重新执行时会创建新的 onClose 闭包(它捕获的是
+        // 当前 body 调用时的 self snapshot,确保闭包内访问 @State 拿到的
+        // 是最新存储引用),这里把新闭包刷新到 ListenerView。
+        (nsView as? ListenerView)?.onClose = onClose
+    }
+
+    private final class ListenerView: NSView {
+        var onClose: (() -> Void)?
+        private var observer: NSObjectProtocol?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            removeObserver()
+            guard let window else { return }
+            observer = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.onClose?()
+            }
+        }
+
+        deinit {
+            removeObserver()
+        }
+
+        private func removeObserver() {
+            if let observer {
+                NotificationCenter.default.removeObserver(observer)
+                self.observer = nil
+            }
         }
     }
 }
