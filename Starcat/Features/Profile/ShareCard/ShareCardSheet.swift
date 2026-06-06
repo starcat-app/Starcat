@@ -36,8 +36,15 @@ struct ShareCardSheet: View {
     /// 贡献草坪 payload（可能为 nil；nil 时分享卡显示空网格但仍可分享）。
     let contribution: ContributionCalendarPayload?
 
+    /// 当前用户是否为 Pro 用户。Pro 用户头像显示 Pro 标识。
+    let isProUser: Bool
+
     /// 关闭回调。由调用方持有 `@State var showShareSheet`，这里只负责发信号。
     let onClose: () -> Void
+
+    /// HOM-174：导出 Starred 记录需要访问 RepoRepository。
+    /// 通过 `@Environment(AppDependencies.self)` 注入（root 在 StarcatApp 已挂上 dependencies）。
+    @Environment(AppDependencies.self) private var dependencies
 
     /// 当前选中的主题。默认 GitHub Green（最贴合 GitHub 用户群体）。
     @State private var theme: ShareCardTheme = .githubGreen
@@ -54,12 +61,10 @@ struct ShareCardSheet: View {
             header
 
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 12) {
                     themePicker
-                        .padding(.top, 4)
 
                     cardPreview
-                        .padding(.top, 4)
 
                     if let feedback = lastActionFeedback {
                         feedbackPill(text: feedback)
@@ -67,37 +72,23 @@ struct ShareCardSheet: View {
                     }
 
                     actionButtons
-                        .padding(.top, 4)
-
-                    starcatFooter
-                        .padding(.top, 8)
-                        .padding(.bottom, 4)
                 }
                 .padding(.horizontal, 24)
-                .padding(.vertical, 12)
+                .padding(.vertical, 4)
             }
             .scrollIndicators(.hidden)
         }
-        .frame(width: 480, height: 760)
-        .background(.regularMaterial)
+        .frame(width: 480, height: 820)
     }
 
     // MARK: - 顶部标题栏
 
     /// 顶部标题栏：标题 + 关闭按钮。
-    /// 关闭按钮 macOS 习惯用左上角红绿黄，但 sheet 没有 traffic light，
-    /// 这里用右上角 `xmark.circle.fill` 灰色按钮——与项目内其他 sheet
-    /// （如 GithubAuthView）保持一致的关闭习惯。
     @ViewBuilder
     private var header: some View {
         HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("sharecard.title")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("sharecard.subtitle")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
+            Text("sharecard.title")
+                .font(.system(size: 16, weight: .semibold))
             Spacer()
             Button {
                 onClose()
@@ -110,33 +101,67 @@ struct ShareCardSheet: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(Text("sharecard.close"))
-            .keyboardShortcut(.cancelAction)  // Esc 触发关闭
+            .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 24)
-        .padding(.vertical, 14)
+        .padding(.vertical, 10)
         .background(.bar)
     }
 
     // MARK: - 主题选择
 
-    /// 主题选择 Picker：3 段式 segmented，每段图标 + 名称。
-    /// 用 `.segmented` 让三个主题永远可见、对比清晰；不用 `.menu`（弹下拉对预览不直观）。
+    /// 主题选择 Picker：gacha 风格的卡片式选择器。
+    /// HOM-174 follow-up：只显示主题卡片，移除标签文字。
     @ViewBuilder
     private var themePicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("sharecard.theme.label")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .tracking(0.5)
-
-            Picker("sharecard.theme.label", selection: $theme) {
-                ForEach(ShareCardTheme.allCases) { t in
-                    Label(t.localizationKey, systemImage: t.symbolName)
-                        .tag(t)
+        HStack(spacing: 10) {
+            ForEach(ShareCardTheme.allCases) { t in
+                ThemeCardButton(
+                    theme: t,
+                    isSelected: theme == t
+                ) {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        theme = t
+                    }
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+        }
+    }
+
+    /// 单个主题卡片按钮。
+    /// 只包含主题预览色块，无文字。
+    private struct ThemeCardButton: View {
+        let theme: ShareCardTheme
+        let isSelected: Bool
+        let action: () -> Void
+
+        var body: some View {
+            Button(action: action) {
+                // 主题预览色块
+                themePreview
+                    .frame(width: 36, height: 28)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                    )
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
+                    )
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+        }
+
+        /// 主题预览色块：显示主题的主要配色。
+        private var themePreview: some View {
+            HStack(spacing: 1) {
+                Rectangle()
+                    .fill(theme.palette.cardBackground)
+                Rectangle()
+                    .fill(theme.palette.accent)
+            }
         }
     }
 
@@ -150,7 +175,8 @@ struct ShareCardSheet: View {
             user: user,
             starredCount: starredCount,
             contribution: contribution,
-            theme: theme
+            theme: theme,
+            isProUser: isProUser
         )
         // 主题切换时给一点淡入淡出动画，让预览过渡不生硬
         .animation(.easeInOut(duration: 0.18), value: theme)
@@ -160,69 +186,72 @@ struct ShareCardSheet: View {
 
     // MARK: - 动作按钮
 
-    /// 三个并排按钮：保存为图片 / 分享到 X / 关闭。
-    /// 保存按钮是 `.borderedProminent` 主操作；分享是 X 品牌色（黑/白）次操作；
-    /// 关闭是 `.bordered` 灰色第三操作。
+    /// HOM-174 follow-up：底部按钮与卡片宽度一致。
     @ViewBuilder
     private var actionButtons: some View {
         VStack(spacing: 10) {
-            // 第一行：保存 + 关闭
+            // 第一行：保存 + 导出 Starred
             HStack(spacing: 10) {
                 Button {
                     Task { await performSave() }
                 } label: {
                     Label("sharecard.action.save", systemImage: "square.and.arrow.down")
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(isExporting)
                 .keyboardShortcut("s", modifiers: .command)
 
-                Button {
-                    onClose()
-                } label: {
-                    Label("sharecard.action.close", systemImage: "xmark")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
+                exportStarredButton
             }
+            .frame(width: 400)
 
-            // 第二行：分享到 X（独占一行，强调它是新增的核心入口）
-            // 配合 issue 设计图——左侧 X 图标，"分享到 X"文字，右侧"把图片粘贴到推文里"提示
+            // 第二行：分享到 X（独占一行）
             shareToXButton
+                .frame(width: 400)
         }
     }
 
-    /// "分享到 X"按钮，按 issue 设计图样式实现：
-    /// - 圆角 16pt 胶囊
-    /// - 黑底白字（X 品牌色），自适配深色模式
-    /// - 左侧 X 图标 + "分享到 X" 主文案
-    /// - 右侧灰色提示"把图片粘贴到推文里"
+    /// 导出 Starred 记录按钮（下拉菜单）。
+    /// HOM-174 新增：支持导出 Markdown 和 HTML 格式。
+    @ViewBuilder
+    private var exportStarredButton: some View {
+        Menu {
+            Button {
+                Task { await performExportStarred(format: .markdown) }
+            } label: {
+                Label("sharecard.action.export.markdown", systemImage: "doc.text")
+            }
+
+            Button {
+                Task { await performExportStarred(format: .html) }
+            } label: {
+                Label("sharecard.action.export.html", systemImage: "doc.richtext")
+            }
+        } label: {
+            Label("sharecard.action.exportStarred", systemImage: "square.and.arrow.up.on.square")
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .disabled(isExporting)
+    }
+
+    /// "分享到 X"按钮。
     @ViewBuilder
     private var shareToXButton: some View {
         Button {
             Task { await performShareToX() }
         } label: {
             HStack(spacing: 12) {
-                // X 没有 SF Symbol 官方版本（旧 Twitter logo 还在 SF Symbols 里但是
-                // 蓝色小鸟，与品牌不符）。这里用 Text("X") 加粗加方框近似 X 当前 logo——
-                // 视觉上比挂三方 SVG 资源更克制；后续如果 SF Symbols 更新出 `xmark` 风格的
-                // X，可以一行替换。
                 xLogo
 
                 Text("sharecard.action.shareToX")
                     .font(.system(size: 14, weight: .semibold))
 
                 Spacer()
-
-                Text("sharecard.action.shareToX.hint")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -272,25 +301,7 @@ struct ShareCardSheet: View {
             RoundedRectangle(cornerRadius: 10)
                 .fill(.background.tertiary)
         )
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    // MARK: - 底部品牌注脚
-
-    /// 品牌注脚："由 Starcat 生成"——可点击跳 starcat.app。
-    /// 与卡片内底部的 "Generated by Starcat" 互为呼应；卡片本体的注脚是图片的一部分，
-    /// 这里的注脚是 sheet 上的可点击链接（导出后不会出现在图里）。
-    @ViewBuilder
-    private var starcatFooter: some View {
-        HStack(spacing: 4) {
-            Spacer()
-            Text("sharecard.footer.poweredBy")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-            Link("Starcat", destination: URL(string: "https://starcat.app")!)
-                .font(.system(size: 11, weight: .semibold))
-            Spacer()
-        }
+        .frame(width: 400)
     }
 
     // MARK: - 动作执行
@@ -324,13 +335,49 @@ struct ShareCardSheet: View {
         }
     }
 
+    /// 执行导出 Starred 记录。
+    /// HOM-174 新增：支持 Markdown 和 HTML 两种格式。
+    ///
+    /// 流程：
+    /// 1. fetch 全部 isStarred = true 的 repos（按 starred_at desc）
+    /// 2. 走 `StarredExporter.export` 渲染 + NSSavePanel + 写文件
+    /// 3. 成功 → 显示反馈；失败 / 用户取消 → 沉默（不打扰）
+    ///
+    /// 失败原因（DB 读异常）映射为 `sharecard.feedback.exportFailed` 提示，
+    /// 而不是 alert——分享卡 sheet 体验上沿用 toast-like feedback。
+    @MainActor
+    private func performExportStarred(format: StarredExportFormat) async {
+        isExporting = true
+        defer { isExporting = false }
+
+        let repos: [Repo]
+        do {
+            repos = try await dependencies.repoRepository.fetchAllStarred()
+        } catch {
+            AppLog.ui.error("performExportStarred: fetchAllStarred failed: \(error.localizedDescription, privacy: .public)")
+            showFeedback(String(localized: "sharecard.feedback.exportFailed"))
+            return
+        }
+
+        guard !repos.isEmpty else {
+            showFeedback(String(localized: "sharecard.feedback.exportEmpty"))
+            return
+        }
+
+        if let url = StarredExporter.export(repos: repos, user: user, format: format) {
+            showFeedback(String(format: String(localized: "sharecard.feedback.exported"), url.lastPathComponent))
+        }
+        // 用户取消保存面板 → 不弹反馈，保持沉默体验，对齐 `performSave` 的同款行为
+    }
+
     /// 当前要渲染的卡片内容（主题切换不重新构造卡片实例，但导出时要用最新值）。
     private var currentContent: ShareCardContent {
         ShareCardContent(
             user: user,
             starredCount: starredCount,
             contribution: contribution,
-            theme: theme
+            theme: theme,
+            isProUser: isProUser
         )
     }
 
@@ -352,6 +399,8 @@ struct ShareCardSheet: View {
 
 // MARK: - Preview
 
+// 注：此 preview 不注入 AppDependencies；导出 Starred 按钮在 preview 中点击会触发 @Environment
+// 未注入 fatal——这是有意的，preview 用于 UI 排版调试，导出路径要在 app 实际运行时才验证。
 #Preview {
     let mockUser = GitHubUserDTO(
         id: 1, login: "dong4j", name: "DONG Jianjun",
@@ -365,6 +414,8 @@ struct ShareCardSheet: View {
         user: mockUser,
         starredCount: 4823,
         contribution: nil,
+        isProUser: false,
         onClose: {}
     )
+    .environment(AppDependencies())
 }
