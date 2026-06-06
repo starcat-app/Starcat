@@ -19,6 +19,7 @@
 //
 
 import AppKit
+import OSLog
 import SwiftUI
 
 /// AI 设置 Tab 页面。
@@ -111,6 +112,7 @@ struct AISettingsTab: View {
             // 只清未通过测试的 draft;通过测试的 draft 在 testAndFetchModels
             // 成功路径里已被晋升为 verified profile 并把 draftProfile 置 nil,
             // 这里看到的 draftProfile != nil 全是"未完成"草稿。
+            AppLog.ai.debug("[AISettings] SettingsWindowCloseListener.onClose fired draftID=\(self.draftProfile?.id ?? "nil", privacy: .public)")
             if draftProfile != nil {
                 draftProfile = nil
                 draftAPIKey = ""
@@ -384,17 +386,17 @@ struct AISettingsTab: View {
 
         VStack(spacing: 0) {
             providerInputRow(label: "显示名称", labelWidth: labelWidth, columnSpacing: columnSpacing, rowHeight: rowHeight) {
-                ProviderSingleLineTextField(text: profileTextBinding(profile.id, keyPath: \.displayName))
+                ProviderSingleLineTextField(text: editableProfileTextBinding(keyPath: \.displayName))
                     .accessibilityLabel("显示名称")
             }
             Divider()
             providerInputRow(label: "Base URL", labelWidth: labelWidth, columnSpacing: columnSpacing, rowHeight: rowHeight) {
-                ProviderSingleLineTextField(text: profileTextBinding(profile.id, keyPath: \.baseURL))
+                ProviderSingleLineTextField(text: editableProfileTextBinding(keyPath: \.baseURL))
                     .accessibilityLabel("Base URL")
             }
             Divider()
             providerInputRow(label: "API Key", labelWidth: labelWidth, columnSpacing: columnSpacing, rowHeight: rowHeight) {
-                ProviderSingleLineTextField(text: apiKeyBinding(profile.id), isSecure: true)
+                ProviderSingleLineTextField(text: editableAPIKeyBinding(), isSecure: true)
                     .accessibilityLabel("API Key")
             }
         }
@@ -551,6 +553,7 @@ struct AISettingsTab: View {
     /// nil → 持久化层写空串哨兵；非 nil → 直接写入 ID。
     /// 集中走这个 helper 是为了让"空串 ↔ nil"语义不要散落到 4 个赋值点。
     private func setSelectedProfileID(_ id: String?) {
+        AppLog.ai.debug("[AISettings] setSelectedProfileID(\(id ?? "nil", privacy: .public)) prev=\(self.lastSelectedProfileIDStorage, privacy: .public)")
         lastSelectedProfileIDStorage = id ?? ""
     }
 
@@ -567,6 +570,7 @@ struct AISettingsTab: View {
     }
 
     private func beginDraft(provider: AIServiceProvider) {
+        AppLog.ai.debug("[AISettings] beginDraft(provider:) called provider=\(provider.rawValue, privacy: .public) prevDraftID=\(self.draftProfile?.id ?? "nil", privacy: .public)")
         var profile = AIProviderProfile(provider: provider)
         // 草稿默认不启用，防止它在测试通过前进入任务模型选择或真实 AI 调用链。
         profile.isEnabled = false
@@ -576,6 +580,7 @@ struct AISettingsTab: View {
     }
 
     private func beginDraft(from profile: AIProviderProfile) {
+        AppLog.ai.debug("[AISettings] beginDraft(from:) called fromID=\(profile.id, privacy: .public) prevDraftID=\(self.draftProfile?.id ?? "nil", privacy: .public)")
         var copy = profile
         // 编辑已验证配置时也先变成草稿，同 ID 测试通过后覆盖原配置。这样用户改 Base URL
         // 或 API Key 时，不会让未验证的新值直接进入真实 AI 调用链。
@@ -730,7 +735,34 @@ struct AISettingsTab: View {
                 // 新增草稿时第一行仍显示原已验证配置（如 DeepSeek），如果重复写回也清空
                 // draftProfile，就会出现“输入任意字符后草稿 provider 跳回 DeepSeek”。
                 // 只有用户真正切到另一个已验证配置时，才丢弃草稿。
-                guard newSelection != selectedProfileID else { return }
+                //
+                // HOM-AIPROVIDERS-NIL-WRITEBACK-2026-06-06 (dong4j 反馈"+号后输入
+                // 任意内容、Provider 立马跳到第一个已配置好的服务商"):
+                // 13:18 的修复处理了"同值写回"(`newSelection == selectedProfileID`),
+                // 但 macOS SwiftUI Picker 在某些刷新时机会把 selection 写回 **nil**——
+                // 典型场景:用户点 + 后 draftProfile 一直是非 verified(`isEnabled=false`),
+                // Form 内每次输入触发 body 重算时 NSPopUpButton 的内部 selectedIndex 与
+                // 我们 binding 短暂不一致,SwiftUI 当作"找不到匹配 tag"主动写 nil 回来。
+                // `nil != selectedProfileID(=A.id)` 让旧 guard 失守,setSelectedProfileID(nil)
+                // 把持久化清空 + 把 draftProfile 也一并清掉,导致 activeProfile 回退到
+                // verifiedProfiles.first(DeepSeek),Picker 2 跟着跳。
+                //
+                // 防御:Picker 1 的所有 tag 都是非 nil 的 verified profile ID,经过它的
+                // `newSelection == nil` 100% 不是用户主动操作(用户没法选 nil tag),而是
+                // SwiftUI 内部 sync 副作用。直接忽略,不让它清掉 draft。
+                // 真正需要把 selectedProfileID 置 nil 的路径(deleteSelectedProfile 后
+                // 没有 verified profile)走 setSelectedProfileID(nil) 直接调用,不经过此
+                // binding,所以这个 guard 不会误伤合法的 nil 写入。
+                AppLog.ai.debug("[AISettings] selectedProfileBinding.set newSelection=\(newSelection ?? "nil", privacy: .public) currentSelectedProfileID=\(self.selectedProfileID ?? "nil", privacy: .public) draftID=\(self.draftProfile?.id ?? "nil", privacy: .public)")
+                guard let newSelection else {
+                    AppLog.ai.debug("[AISettings] selectedProfileBinding.set: nil write blocked")
+                    return
+                }
+                guard newSelection != selectedProfileID else {
+                    AppLog.ai.debug("[AISettings] selectedProfileBinding.set: same-value write blocked")
+                    return
+                }
+                AppLog.ai.debug("[AISettings] selectedProfileBinding.set: APPLYING — clearing draft")
                 setSelectedProfileID(newSelection)
                 draftProfile = nil
                 draftAPIKey = ""
@@ -750,49 +782,71 @@ struct AISettingsTab: View {
         )
     }
 
-    private func apiKeyBinding(_ profileID: String) -> Binding<String> {
+    // HOM-AIPROVIDERS-COORDINATOR-STALE-BINDING-2026-06-06
+    // (dong4j 反馈"+号后输入框打字会跳回 verified profile" — log 抓到关键证据:
+    //  beginDraft(from:) 被错误调用 fromID=verifiedA prevDraftID=newDraft).
+    //
+    // 根因:`ProviderSingleLineTextField` 是 NSViewRepresentable,Coordinator 在
+    // makeCoordinator() 时持有当时的 binding。binding closure 之前 capture 了
+    // **当时**的 `profileID`(verified A 的 id)。SwiftUI re-render 创建新 binding
+    // (新的 profileID = draft.id),但 NSViewRepresentable 不会重建 Coordinator,
+    // 它继续用最初的 binding。用户在 NSTextField 打字时,Coordinator 调旧 setter,
+    // 闭包内的 profileID 仍是旧 verified A 的 id,走 isActiveProfileDraft FALSE 分支,
+    // → beginDraft(from: A) → draft 被替换成 A 的 copy → UI 跳回 verified profile。
+    //
+    // 修复:binding closure **不依赖 captured profileID**,而是通过 `draftProfile` /
+    // `selectedProfileID` 这两个 @State / @AppStorage 直接动态查最新状态。
+    // SwiftUI @State 通过 wrapper 间接引用 SwiftUI 内部 storage,即使 self 是旧的
+    // struct value,property wrapper 内部访问到的还是 latest storage,从而绕过
+    // "Coordinator 持有 stale binding" 这个 NSViewRepresentable 的固有问题。
+    //
+    // 副作用:这两个 binding 的语义从"按 profileID 编辑"变成"按当前 active profile
+    // 编辑"。view body 不再传 profileID。
+
+    private func editableAPIKeyBinding() -> Binding<String> {
         Binding(
             get: {
-                if isActiveProfileDraft(profileID) {
+                if draftProfile != nil {
                     return draftAPIKey
                 }
-                return apiKeys[profileID, default: ""]
+                if let id = selectedProfileID {
+                    return apiKeys[id, default: ""]
+                }
+                return ""
             },
             set: { newValue in
-                if isActiveProfileDraft(profileID) {
+                if draftProfile != nil {
                     draftAPIKey = newValue
-                } else {
-                    if let current = profile(profileID) {
-                        beginDraft(from: current)
-                        draftAPIKey = newValue
-                    } else {
-                        apiKeys[profileID] = newValue
-                    }
+                } else if let id = selectedProfileID, let current = profile(id) {
+                    AppLog.ai.debug("[AISettings] editableAPIKeyBinding.set: promoting verified \(id, privacy: .public) to draft")
+                    beginDraft(from: current)
+                    draftAPIKey = newValue
                 }
             }
         )
     }
 
-    private func profileTextBinding(
-        _ profileID: String,
+    private func editableProfileTextBinding(
         keyPath: WritableKeyPath<AIProviderProfile, String>
     ) -> Binding<String> {
         Binding(
             get: {
-                if isActiveProfileDraft(profileID) {
-                    return draftProfile?[keyPath: keyPath] ?? ""
+                if let draft = draftProfile {
+                    return draft[keyPath: keyPath]
                 }
-                return profile(profileID)?[keyPath: keyPath] ?? ""
+                if let id = selectedProfileID, let p = profile(id) {
+                    return p[keyPath: keyPath]
+                }
+                return ""
             },
             set: { newValue in
-                if isActiveProfileDraft(profileID) {
+                if draftProfile != nil {
                     draftProfile?[keyPath: keyPath] = newValue
                     draftProfile?.lastTestStatus = .notTested
-                } else {
-                    if let current = profile(profileID) {
-                        beginDraft(from: current)
-                        draftProfile?[keyPath: keyPath] = newValue
-                    }
+                } else if let id = selectedProfileID, let current = profile(id) {
+                    AppLog.ai.debug("[AISettings] editableProfileTextBinding.set: promoting verified \(id, privacy: .public) to draft")
+                    beginDraft(from: current)
+                    draftProfile?[keyPath: keyPath] = newValue
                 }
             }
         )
