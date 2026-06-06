@@ -27,6 +27,8 @@ struct AISettingsTab: View {
     @Environment(AppSettings.self) private var settings
 
     @State private var selectedProfileID: String?
+    @State private var draftProfile: AIProviderProfile?
+    @State private var draftAPIKey: String = ""
     @State private var apiKeys: [String: String] = [:]
     @State private var isTestingProfileID: String?
     @State private var keyError: String?
@@ -89,60 +91,62 @@ struct AISettingsTab: View {
                 // DeepSeek 翻译 + Ollama embedding"）场景下一眼分辨。
                 // SwiftUI Picker 的 menu style 会把 Label 内的 Image 一起渲染到下拉
                 // 菜单和已选 caption 区，无需为下拉 / 当前选中分别画。
-                Picker("服务商配置", selection: selectedProfileBinding) {
-                    ForEach(settings.aiProviderProfiles) { profile in
-                        Label {
-                            Text(profile.displayName)
-                        } icon: {
-                            AIProviderIconView(provider: profile.provider, size: 14)
+                if verifiedProfiles.isEmpty {
+                    Text("暂无已验证服务商")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Picker("服务商配置", selection: selectedProfileBinding) {
+                        ForEach(verifiedProfiles) { profile in
+                            Label {
+                                Text(profile.displayName)
+                            } icon: {
+                                AIProviderIconView(provider: profile.provider, size: 14)
+                            }
+                            .tag(Optional(profile.id))
                         }
-                        .tag(Optional(profile.id))
                     }
+                    .pickerStyle(.menu)
                 }
-                .pickerStyle(.menu)
 
                 Spacer(minLength: 12)
 
                 Button {
-                    addProfile()
+                    beginDraft(provider: .openAICompatible)
                 } label: {
                     Label("新增", systemImage: "plus")
+                        .labelStyle(.iconOnly)
                 }
                 .help("新增服务商")
+                .disabled(draftProfile != nil)
 
                 Button(role: .destructive) {
                     deleteSelectedProfile()
                 } label: {
                     Label("删除", systemImage: "trash")
+                        .labelStyle(.iconOnly)
                 }
                 .help("删除当前服务商")
-                .disabled(settings.aiProviderProfiles.count <= 1)
+                .disabled(selectedProfile == nil)
             }
 
-            if let profile = selectedProfile {
-                // HOM-AIPROVIDERS-2026-06-06：Provider picker（"切换底层服务商类型"）
-                // 列表里每一项都带 logo + 本地化名称，便于在 23 种服务商之间快速识别。
-                // 注意 displayName 是 LocalizedStringKey，所以 Label 的 title 直接传它，
-                // SwiftUI 会按当前 locale 自动解析；中文服务商（豆包/混元/通义/智谱/硅基）
-                // 走 `ai.provider.*` xcstrings key，英文服务商保留 String literal 原名。
-                Picker("Provider", selection: profileProviderBinding(profile.id)) {
-                    ForEach(AIServiceProvider.allCases) { provider in
-                        Label {
-                            Text(provider.displayName)
-                        } icon: {
-                            AIProviderIconView(provider: provider, size: 14)
-                        }
-                        .tag(provider)
+            // 第二行展示 Starcat 当前支持的全部服务商。选择一个服务商不会立刻写入
+            // `aiProviderProfiles`；它只会创建/更新草稿，测试通过后才晋升为正式配置。
+            Picker("Provider", selection: supportedProviderBinding) {
+                ForEach(AIServiceProvider.allCases) { provider in
+                    Label {
+                        Text(provider.displayName)
+                    } icon: {
+                        AIProviderIconView(provider: provider, size: 14)
                     }
+                    .tag(provider)
                 }
-                .pickerStyle(.menu)
+            }
+            .pickerStyle(.menu)
 
+            if let profile = activeProfile {
                 providerInputRows(profile)
 
-                // HOM-68 follow-up v2 (dong4j 反馈 #2)：
-                // 状态提示（测试成功/失败/未测试）在左侧，"保存 Key" / "测试并获取模型"
-                // 两个按钮在右侧。这样阅读顺序与"看到提示 → 决定操作"的认知顺序一致，
-                // 且操作按钮聚成一组更容易点击。
                 HStack {
                     Text(profile.lastTestStatus.displayText)
                         .font(.caption)
@@ -151,12 +155,6 @@ struct AISettingsTab: View {
                         .truncationMode(.tail)
 
                     Spacer(minLength: 12)
-
-                    Button {
-                        saveAPIKey(profileID: profile.id)
-                    } label: {
-                        Label("保存 Key", systemImage: "key.fill")
-                    }
 
                     Button {
                         Task { await testAndFetchModels(profile) }
@@ -170,7 +168,7 @@ struct AISettingsTab: View {
                             Label("测试并获取模型", systemImage: "network")
                         }
                     }
-                    .disabled(isTestingProfileID != nil || (!profile.provider.allowsEmptyAPIKey && apiKeys[profile.id, default: ""].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                    .disabled(isTestingProfileID != nil || !canTest(profile))
                 }
 
                 if let keyError {
@@ -182,7 +180,7 @@ struct AISettingsTab: View {
         } header: {
             Text("AI 服务商")
         } footer: {
-            Text("测试会调用模型列表接口；如果服务商返回的模型能力不完整，可在下方手动修正 Chat / Embedding 类型。")
+            Text("测试会调用模型列表接口；Ollama / LM Studio 等本地服务 API Key 可留空；如果服务商返回的模型能力不完整，可在下方手动修正 Chat / Embedding 类型。")
         }
     }
 
@@ -273,7 +271,7 @@ struct AISettingsTab: View {
                 // 时不需要靠 displayName 区分（部分 profile 名是用户自定义的，可能与
                 // 实际底层服务商不一致，logo 比文字更可靠）。
                 Picker("Provider", selection: taskProviderBinding(task)) {
-                    ForEach(settings.aiProviderProfiles.filter(\.isEnabled)) { profile in
+                    ForEach(verifiedProfiles) { profile in
                         Label {
                             Text(profile.displayName)
                         } icon: {
@@ -331,35 +329,34 @@ struct AISettingsTab: View {
     /// proposed width 可能不同；单行内 `GeometryReader` 也只能读到该 row 自己的
     /// 宽度，无法保证三行一致。
     ///
-    /// 把三行收进同一个 `VStack` 后，Form 只测量一次这个块；块内部再用固定
-    /// `labelWidth + columnSpacing + fieldWidth` 列定义，三个输入框自然共享同一
-    /// 左边界和右边界。输入控件使用 AppKit `NSTextField` 包装，而不是 SwiftUI
-    /// `.textFieldStyle(.roundedBorder)`，原因是后者在 Form 内仍可能按内容参与测量。
+    /// 把三行收进同一个 `VStack` 后，Form 只测量一次这个块；块内部固定 label 列宽，
+    /// 右侧输入框吃满剩余宽度，三个输入框自然共享同一左边界和右边界。
+    ///
+    /// 输入控件不能用 SwiftUI 原生 `TextField`：在 macOS `Form(.grouped)` 里，超长
+    /// Base URL 仍可能参与 row 测量并把布局顶成换行。这里用 AppKit `NSTextField`
+    /// 包装，明确要求单行、不可换行、内容超出时在字段内横向滚动。
     @ViewBuilder
     private func providerInputRows(_ profile: AIProviderProfile) -> some View {
         let labelWidth: CGFloat = 96
         let columnSpacing: CGFloat = 14
-        let fieldWidth: CGFloat = 350
         let rowHeight: CGFloat = 52
 
         VStack(spacing: 0) {
-            providerInputRow(label: "显示名称", labelWidth: labelWidth, columnSpacing: columnSpacing, fieldWidth: fieldWidth, rowHeight: rowHeight) {
+            providerInputRow(label: "显示名称", labelWidth: labelWidth, columnSpacing: columnSpacing, rowHeight: rowHeight) {
                 ProviderSingleLineTextField(text: profileTextBinding(profile.id, keyPath: \.displayName))
+                    .accessibilityLabel("显示名称")
             }
             Divider()
-            providerInputRow(label: "Base URL", labelWidth: labelWidth, columnSpacing: columnSpacing, fieldWidth: fieldWidth, rowHeight: rowHeight) {
+            providerInputRow(label: "Base URL", labelWidth: labelWidth, columnSpacing: columnSpacing, rowHeight: rowHeight) {
                 ProviderSingleLineTextField(text: profileTextBinding(profile.id, keyPath: \.baseURL))
+                    .accessibilityLabel("Base URL")
             }
             Divider()
-            providerInputRow(label: "API Key", labelWidth: labelWidth, columnSpacing: columnSpacing, fieldWidth: fieldWidth, rowHeight: rowHeight) {
-                ProviderSingleLineTextField(
-                    placeholder: profile.provider.allowsEmptyAPIKey ? "本地服务可留空" : "",
-                    text: apiKeyBinding(profile.id),
-                    isSecure: true
-                )
+            providerInputRow(label: "API Key", labelWidth: labelWidth, columnSpacing: columnSpacing, rowHeight: rowHeight) {
+                ProviderSingleLineTextField(text: apiKeyBinding(profile.id), isSecure: true)
+                    .accessibilityLabel("API Key")
             }
         }
-        .frame(width: labelWidth + columnSpacing + fieldWidth, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: rowHeight * 3 + 2)
     }
@@ -368,7 +365,6 @@ struct AISettingsTab: View {
         label: LocalizedStringKey,
         labelWidth: CGFloat,
         columnSpacing: CGFloat,
-        fieldWidth: CGFloat,
         rowHeight: CGFloat,
         @ViewBuilder field: () -> Field
     ) -> some View {
@@ -377,8 +373,9 @@ struct AISettingsTab: View {
                 .frame(width: labelWidth, alignment: .leading)
                 .lineLimit(1)
             field()
-                .frame(width: fieldWidth)
+                .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: rowHeight)
     }
 
@@ -510,8 +507,8 @@ struct AISettingsTab: View {
     // MARK: - Actions
 
     private func ensureSelection() {
-        if selectedProfileID == nil || settings.aiProviderProfiles.allSatisfy({ $0.id != selectedProfileID }) {
-            selectedProfileID = settings.aiProviderProfiles.first?.id
+        if selectedProfileID == nil || verifiedProfiles.allSatisfy({ $0.id != selectedProfileID }) {
+            selectedProfileID = verifiedProfiles.first?.id
         }
     }
 
@@ -521,36 +518,32 @@ struct AISettingsTab: View {
         }
     }
 
-    private func saveAPIKey(profileID: String) {
+    private func beginDraft(provider: AIServiceProvider) {
+        var profile = AIProviderProfile(provider: provider)
+        // 草稿默认不启用，防止它在测试通过前进入任务模型选择或真实 AI 调用链。
+        profile.isEnabled = false
+        draftProfile = profile
+        draftAPIKey = ""
         keyError = nil
-        do {
-            let trimmed = apiKeys[profileID, default: ""].trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-                try KeychainManager.shared.deleteAIKey(forProvider: profileID)
-            } else {
-                try KeychainManager.shared.storeAIKey(trimmed, forProvider: profileID)
-                apiKeys[profileID] = trimmed
-            }
-        } catch {
-            keyError = error.localizedDescription
-        }
     }
 
-    private func addProfile() {
-        var profiles = settings.aiProviderProfiles
-        let profile = AIProviderProfile(provider: .openAICompatible)
-        profiles.append(profile)
-        settings.aiProviderProfiles = profiles
-        selectedProfileID = profile.id
-        apiKeys[profile.id] = ""
+    private func beginDraft(from profile: AIProviderProfile) {
+        var copy = profile
+        // 编辑已验证配置时也先变成草稿，同 ID 测试通过后覆盖原配置。这样用户改 Base URL
+        // 或 API Key 时，不会让未验证的新值直接进入真实 AI 调用链。
+        copy.isEnabled = false
+        copy.lastTestStatus = .notTested
+        draftProfile = copy
+        draftAPIKey = apiKeys[profile.id, default: ""]
+        keyError = nil
     }
 
     private func deleteSelectedProfile() {
-        guard let id = selectedProfileID, settings.aiProviderProfiles.count > 1 else { return }
+        guard let id = selectedProfileID else { return }
         settings.aiProviderProfiles.removeAll { $0.id == id }
         try? KeychainManager.shared.deleteAIKey(forProvider: id)
         apiKeys.removeValue(forKey: id)
-        selectedProfileID = settings.aiProviderProfiles.first?.id
+        selectedProfileID = verifiedProfiles.first?.id
         repairTasksAfterProfileChange()
     }
 
@@ -560,33 +553,40 @@ struct AISettingsTab: View {
         keyError = nil
         defer { isTestingProfileID = nil }
 
-        saveAPIKey(profileID: profile.id)
+        let testingKey = apiKey(for: profile)
         do {
             let models = try await OpenAIClient(configuration: AIClientConfiguration(
                 providerID: profile.id,
                 provider: profile.provider,
-                apiKey: apiKeys[profile.id, default: ""],
+                apiKey: testingKey,
                 baseURL: profile.baseURL,
                 chatModel: profile.models.first(where: { $0.capability == .chat })?.name ?? profile.provider.defaultChatModel,
                 embeddingModel: profile.models.first(where: { $0.capability == .embedding })?.name ?? profile.provider.defaultEmbeddingModel,
                 timeoutInterval: 60
             )).listModels()
 
-            updateProfile(profile.id) { current in
-                let oldByName = Dictionary(uniqueKeysWithValues: current.models.map { ($0.name, $0) })
-                current.models = models.map { incoming in
-                    if var old = oldByName[incoming.name] {
-                        old.ownedBy = incoming.ownedBy
-                        if old.capability == .unknown {
-                            old.capability = incoming.capability
-                        }
-                        return old
-                    }
-                    return incoming
+            var verified = profile
+            mergeModels(models, into: &verified)
+            verified.isEnabled = true
+            verified.lastTestedAt = ISO8601DateFormatter.shared.string(from: Date())
+            verified.lastTestStatus = .success(modelCount: verified.models.count)
+
+            try persistAPIKey(testingKey, forProvider: profile.id, allowsEmpty: profile.provider.allowsEmptyAPIKey)
+
+            if isActiveProfileDraft(profile.id) {
+                var profiles = settings.aiProviderProfiles
+                profiles.removeAll { $0.id == profile.id }
+                profiles.append(verified)
+                settings.aiProviderProfiles = profiles
+                selectedProfileID = profile.id
+                draftProfile = nil
+                draftAPIKey = ""
+            } else {
+                updateProfile(profile.id) { current in
+                    current = verified
                 }
-                current.lastTestedAt = ISO8601DateFormatter.shared.string(from: Date())
-                current.lastTestStatus = .success(modelCount: current.models.count)
             }
+            apiKeys[profile.id] = testingKey
             repairTasksAfterProfileChange()
             // HOM-68 follow-up v7 (dong4j 反馈 2026-06-05 23:20)：
             // 测试成功且抓到 ≥1 个模型时，自动把"已发现模型"折叠组展开。
@@ -599,11 +599,59 @@ struct AISettingsTab: View {
                 }
             }
         } catch {
-            updateProfile(profile.id) { current in
-                current.lastTestedAt = ISO8601DateFormatter.shared.string(from: Date())
-                current.lastTestStatus = .failed(error.localizedDescription)
+            if isActiveProfileDraft(profile.id) {
+                draftProfile?.lastTestedAt = ISO8601DateFormatter.shared.string(from: Date())
+                draftProfile?.lastTestStatus = .failed(error.localizedDescription)
+            } else {
+                updateProfile(profile.id) { current in
+                    current.lastTestedAt = ISO8601DateFormatter.shared.string(from: Date())
+                    current.lastTestStatus = .failed(error.localizedDescription)
+                }
             }
         }
+    }
+
+    private func mergeModels(_ models: [AIModelDescriptor], into profile: inout AIProviderProfile) {
+        let oldByName = Dictionary(uniqueKeysWithValues: profile.models.map { ($0.name, $0) })
+        profile.models = models.map { incoming in
+            if var old = oldByName[incoming.name] {
+                old.ownedBy = incoming.ownedBy
+                if old.capability == .unknown {
+                    old.capability = incoming.capability
+                }
+                return old
+            }
+            return incoming
+        }
+    }
+
+    private func persistAPIKey(_ rawKey: String, forProvider profileID: String, allowsEmpty: Bool) throws {
+        let trimmed = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty && !allowsEmpty {
+            throw AIClientError.missingAPIKey
+        }
+        if trimmed.isEmpty {
+            try KeychainManager.shared.deleteAIKey(forProvider: profileID)
+        } else {
+            try KeychainManager.shared.storeAIKey(trimmed, forProvider: profileID)
+        }
+    }
+
+    private func canTest(_ profile: AIProviderProfile) -> Bool {
+        let hasBaseURL = !profile.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasKey = !apiKey(for: profile).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return hasBaseURL && (profile.provider.allowsEmptyAPIKey || hasKey)
+    }
+
+    private func apiKey(for profile: AIProviderProfile) -> String {
+        if isActiveProfileDraft(profile.id) {
+            return draftAPIKey
+        }
+        return apiKeys[profile.id, default: ""]
+    }
+
+    private func isActiveProfileDraft(_ profileID: String) -> Bool {
+        draftProfile?.id == profileID
     }
 
     private func restoreDefaultPrompt(_ task: AIModelTask) {
@@ -629,26 +677,44 @@ struct AISettingsTab: View {
     private var selectedProfileBinding: Binding<String?> {
         Binding(
             get: { selectedProfileID },
-            set: { selectedProfileID = $0 }
+            set: {
+                selectedProfileID = $0
+                draftProfile = nil
+                draftAPIKey = ""
+                keyError = nil
+            }
+        )
+    }
+
+    private var supportedProviderBinding: Binding<AIServiceProvider> {
+        Binding(
+            get: { activeProfile?.provider ?? .openAICompatible },
+            set: { provider in
+                if draftProfile == nil || draftProfile?.provider != provider {
+                    beginDraft(provider: provider)
+                }
+            }
         )
     }
 
     private func apiKeyBinding(_ profileID: String) -> Binding<String> {
         Binding(
-            get: { apiKeys[profileID, default: ""] },
-            set: { apiKeys[profileID] = $0 }
-        )
-    }
-
-    private func profileProviderBinding(_ profileID: String) -> Binding<AIServiceProvider> {
-        Binding(
-            get: { profile(profileID)?.provider ?? .openAICompatible },
-            set: { provider in
-                updateProfile(profileID) { profile in
-                    profile.provider = provider
-                    profile.displayName = provider.defaultProfileName
-                    profile.baseURL = provider.defaultBaseURL
-                    profile.lastTestStatus = .notTested
+            get: {
+                if isActiveProfileDraft(profileID) {
+                    return draftAPIKey
+                }
+                return apiKeys[profileID, default: ""]
+            },
+            set: { newValue in
+                if isActiveProfileDraft(profileID) {
+                    draftAPIKey = newValue
+                } else {
+                    if let current = profile(profileID) {
+                        beginDraft(from: current)
+                        draftAPIKey = newValue
+                    } else {
+                        apiKeys[profileID] = newValue
+                    }
                 }
             }
         )
@@ -659,11 +725,21 @@ struct AISettingsTab: View {
         keyPath: WritableKeyPath<AIProviderProfile, String>
     ) -> Binding<String> {
         Binding(
-            get: { profile(profileID)?[keyPath: keyPath] ?? "" },
+            get: {
+                if isActiveProfileDraft(profileID) {
+                    return draftProfile?[keyPath: keyPath] ?? ""
+                }
+                return profile(profileID)?[keyPath: keyPath] ?? ""
+            },
             set: { newValue in
-                updateProfile(profileID) { profile in
-                    profile[keyPath: keyPath] = newValue
-                    profile.lastTestStatus = .notTested
+                if isActiveProfileDraft(profileID) {
+                    draftProfile?[keyPath: keyPath] = newValue
+                    draftProfile?.lastTestStatus = .notTested
+                } else {
+                    if let current = profile(profileID) {
+                        beginDraft(from: current)
+                        draftProfile?[keyPath: keyPath] = newValue
+                    }
                 }
             }
         )
@@ -767,9 +843,17 @@ struct AISettingsTab: View {
 
     // MARK: - State helpers
 
+    private var verifiedProfiles: [AIProviderProfile] {
+        settings.aiProviderProfiles.filter(\.isVerifiedConfiguration)
+    }
+
+    private var activeProfile: AIProviderProfile? {
+        draftProfile ?? selectedProfile
+    }
+
     private var selectedProfile: AIProviderProfile? {
-        guard let selectedProfileID else { return settings.aiProviderProfiles.first }
-        return profile(selectedProfileID)
+        guard let selectedProfileID else { return verifiedProfiles.first }
+        return verifiedProfiles.first { $0.id == selectedProfileID }
     }
 
     private func profile(_ id: String) -> AIProviderProfile? {
@@ -826,23 +910,29 @@ struct AISettingsTab: View {
     // 收紧到只列当前 provider 的模型（见 `taskModelRow`），消除跨 provider 同名模型
     // 同时选中的视觉 bug。
     private func enabledModels(providerID: String, capability: AIModelCapability) -> [AIModelDescriptor] {
-        profile(providerID)?.models.filter {
+        guard let profile = profile(providerID), profile.isVerifiedConfiguration else { return [] }
+        return profile.models.filter {
             $0.isEnabled && ($0.capability == capability || $0.capability == .unknown)
-        } ?? []
+        }
     }
 
     private func repairTasksAfterProfileChange() {
         for task in AIModelTask.allCases {
             let config = taskConfig(task)
             let models = enabledModels(providerID: config.providerID, capability: task.requiredCapability)
-            if profile(config.providerID) == nil || (!config.useCustomModel && models.allSatisfy { $0.name != config.modelID }) {
-                let fallbackProfile = settings.aiProviderProfiles.first
+            let currentProfile = profile(config.providerID)
+            if currentProfile?.isVerifiedConfiguration != true || (!config.useCustomModel && models.allSatisfy { $0.name != config.modelID }) {
+                let fallbackProfile = verifiedProfiles.first
                 updateTask(task) { updated in
                     updated.providerID = fallbackProfile?.id ?? ""
                     if let first = fallbackProfile.flatMap({ enabledModels(providerID: $0.id, capability: task.requiredCapability).first }) {
                         updated.modelID = first.name
                         updated.customModelName = first.name
                         updated.useCustomModel = false
+                    } else {
+                        updated.modelID = ""
+                        updated.customModelName = ""
+                        updated.useCustomModel = true
                     }
                 }
             }
@@ -867,16 +957,15 @@ struct AISettingsTab: View {
         .frame(width: 720, height: 860)
 }
 
-/// Provider 配置区专用的单行输入框。
+/// Provider 配置区专用单行输入框。
 ///
-/// 为什么不用 SwiftUI `TextField + .textFieldStyle(.roundedBorder)`：
-/// 在 `Form(.grouped)` 里，SwiftUI 默认 TextField 仍会把内容长度、焦点态和 row
-/// 测量混进布局，长 Base URL 容易影响整行宽度。这里直接包一层 AppKit
-/// `NSTextField` / `NSSecureTextField`，明确要求单行、不可换行、内容超出时在字段内
-/// 横向滚动；外部列宽由 `providerInputRows` 固定，输入内容不再参与布局。
+/// 为什么不用 SwiftUI 原生 `TextField`：
+/// macOS `Form(.grouped)` 会把原生 TextField 的内容长度纳入布局协商，Cloudflare
+/// 这类超长 Base URL 容易把行顶成换行或让三行输入框宽度不一致。这里窄范围桥接
+/// AppKit，强制单行、禁 wrap、允许字段内部横向滚动；外层 SwiftUI 仍用
+/// `.frame(maxWidth: .infinity)` 控制三行等宽和右侧铺满。
 private struct ProviderSingleLineTextField: NSViewRepresentable {
 
-    var placeholder: String = ""
     @Binding var text: String
     var isSecure: Bool = false
 
@@ -893,17 +982,15 @@ private struct ProviderSingleLineTextField: NSViewRepresentable {
         textField.cell?.isScrollable = true
         textField.font = .systemFont(ofSize: NSFont.systemFontSize)
         textField.controlSize = .regular
-        textField.placeholderString = placeholder
         textField.stringValue = text
+        textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return textField
     }
 
     func updateNSView(_ textField: NSTextField, context: Context) {
         if textField.stringValue != text {
             textField.stringValue = text
-        }
-        if textField.placeholderString != placeholder {
-            textField.placeholderString = placeholder
         }
     }
 
