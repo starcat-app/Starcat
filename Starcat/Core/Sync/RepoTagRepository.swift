@@ -133,6 +133,33 @@ struct GRDBRepoTagRepository: RepoTagRepositoryProtocol {
         }
     }
 
+    /// 一次性返回所有 starred repo 的标签关联。
+    ///
+    /// JOIN repos 仅保留 `is_starred = 1` 的 repo，避免被 unstar 但保留标签的"幽灵关联"
+    /// 出现在导出文件里；外排序按 `repo_id, tag.sort_order, tag.name` 让相同 repo 的标签连续，
+    /// 应用层只需顺序 append 不必再排。
+    func fetchAllTagAssignments() async throws -> [Int64: [Tag]] {
+        try await writer.read { db in
+            // 选出 t.* + rt.repo_id；Tag 自己只解码 `t.*` 那部分列，repo_id 单独取。
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT t.*, rt.repo_id AS repo_id_alias
+                FROM repo_tags rt
+                JOIN tags t  ON t.id = rt.tag_id
+                JOIN repos r ON r.id = rt.repo_id
+                WHERE r.is_starred = 1
+                ORDER BY rt.repo_id, t.sort_order ASC, t.name ASC
+                """)
+            var result: [Int64: [Tag]] = [:]
+            for row in rows {
+                let repoId: Int64 = row["repo_id_alias"]
+                // GRDB 8 起 `Tag(row:)` 标记为 throws（Codable 解码失败会抛），所以必须 try。
+                let tag = try Tag(row: row)
+                result[repoId, default: []].append(tag)
+            }
+            return result
+        }
+    }
+
     /// 一次 group by 拉全部标签的 starred-repo count。
     /// Sidebar Tags 渲染时只调一次，比 N 次 `repoCount` 高效。
     func repoCountsByTag() async throws -> [String: Int] {

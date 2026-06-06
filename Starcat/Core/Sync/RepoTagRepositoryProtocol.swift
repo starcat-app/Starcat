@@ -53,6 +53,13 @@ protocol RepoTagRepositoryProtocol: Sendable {
     /// 一次性返回所有标签的 repo 计数（Sidebar Tags 渲染一次拉全部）。
     /// 返回 dict：tagId → count。
     func repoCountsByTag() async throws -> [String: Int]
+
+    /// 一次性返回所有 starred repo 的标签关联，按 (repo_id, tag.sort_order, tag.name) 排序。
+    ///
+    /// 给"导出 Starred 列表为 HTML"这类一次性把全部 repo 的标签都取走的场景用，
+    /// 避免 N+1（N 个 repo 各调一次 `fetchTags(forRepo:)`）。返回 dict：repoId → [Tag]。
+    /// 无标签的 repo 不在 dict 中（调用方需自行兜底空数组语义）。
+    func fetchAllTagAssignments() async throws -> [Int64: [Tag]]
 }
 
 // 注意：`GRDBRepoTagRepository: RepoTagRepositoryProtocol` 的 conformance 直接写在
