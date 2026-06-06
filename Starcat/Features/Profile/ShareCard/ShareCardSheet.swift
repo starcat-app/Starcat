@@ -42,6 +42,10 @@ struct ShareCardSheet: View {
     /// 关闭回调。由调用方持有 `@State var showShareSheet`，这里只负责发信号。
     let onClose: () -> Void
 
+    /// HOM-174：导出 Starred 记录需要访问 RepoRepository。
+    /// 通过 `@Environment(AppDependencies.self)` 注入（root 在 StarcatApp 已挂上 dependencies）。
+    @Environment(AppDependencies.self) private var dependencies
+
     /// 当前选中的主题。默认 GitHub Green（最贴合 GitHub 用户群体）。
     @State private var theme: ShareCardTheme = .githubGreen
 
@@ -235,12 +239,6 @@ struct ShareCardSheet: View {
         .disabled(isExporting)
     }
 
-    /// 导出格式枚举。
-    private enum ExportFormat {
-        case markdown
-        case html
-    }
-
     /// "分享到 X"按钮。
     @ViewBuilder
     private var shareToXButton: some View {
@@ -339,16 +337,37 @@ struct ShareCardSheet: View {
 
     /// 执行导出 Starred 记录。
     /// HOM-174 新增：支持 Markdown 和 HTML 两种格式。
+    ///
+    /// 流程：
+    /// 1. fetch 全部 isStarred = true 的 repos（按 starred_at desc）
+    /// 2. 走 `StarredExporter.export` 渲染 + NSSavePanel + 写文件
+    /// 3. 成功 → 显示反馈；失败 / 用户取消 → 沉默（不打扰）
+    ///
+    /// 失败原因（DB 读异常）映射为 `sharecard.feedback.exportFailed` 提示，
+    /// 而不是 alert——分享卡 sheet 体验上沿用 toast-like feedback。
     @MainActor
-    private func performExportStarred(format: ExportFormat) async {
+    private func performExportStarred(format: StarredExportFormat) async {
         isExporting = true
         defer { isExporting = false }
 
-        // TODO: 实现真正的导出功能
-        // 需要访问 StarredRepository 获取所有 starred repos
-        // 然后格式化为 Markdown 或 HTML 并保存到文件
-        let formatName = format == .markdown ? "Markdown" : "HTML"
-        showFeedback("导出 \(formatName) 功能开发中…")
+        let repos: [Repo]
+        do {
+            repos = try await dependencies.repoRepository.fetchAllStarred()
+        } catch {
+            AppLog.ui.error("performExportStarred: fetchAllStarred failed: \(error.localizedDescription, privacy: .public)")
+            showFeedback(String(localized: "sharecard.feedback.exportFailed"))
+            return
+        }
+
+        guard !repos.isEmpty else {
+            showFeedback(String(localized: "sharecard.feedback.exportEmpty"))
+            return
+        }
+
+        if let url = StarredExporter.export(repos: repos, user: user, format: format) {
+            showFeedback(String(format: String(localized: "sharecard.feedback.exported"), url.lastPathComponent))
+        }
+        // 用户取消保存面板 → 不弹反馈，保持沉默体验，对齐 `performSave` 的同款行为
     }
 
     /// 当前要渲染的卡片内容（主题切换不重新构造卡片实例，但导出时要用最新值）。
@@ -380,6 +399,8 @@ struct ShareCardSheet: View {
 
 // MARK: - Preview
 
+// 注：此 preview 不注入 AppDependencies；导出 Starred 按钮在 preview 中点击会触发 @Environment
+// 未注入 fatal——这是有意的，preview 用于 UI 排版调试，导出路径要在 app 实际运行时才验证。
 #Preview {
     let mockUser = GitHubUserDTO(
         id: 1, login: "dong4j", name: "DONG Jianjun",
@@ -396,4 +417,5 @@ struct ShareCardSheet: View {
         isProUser: false,
         onClose: {}
     )
+    .environment(AppDependencies())
 }

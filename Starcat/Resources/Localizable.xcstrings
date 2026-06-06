@@ -7708,6 +7708,86 @@
         }
       }
     },
+    "sharecard.feedback.exported" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exported to %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已导出至 %@"
+          }
+        }
+      }
+    },
+    "sharecard.feedback.exportFailed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export failed. Please try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出失败，请稍后重试。"
+          }
+        }
+      }
+    },
+    "sharecard.feedback.exportEmpty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No starred repositories to export yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有可导出的 Starred 仓库。"
+          }
+        }
+      }
+    },
+    "sharecard.exportStarred.savePanel.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Starred Repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出 Starred 仓库"
+          }
+        }
+      }
+    },
+    "sharecard.exportStarred.savePanel.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a location to save your starred repositories."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 Starred 仓库列表的保存位置。"
+          }
+        }
+      }
+    },
     "sharecard.feedback.sharedToX" : {
       "localizations" : {
         "en" : {
