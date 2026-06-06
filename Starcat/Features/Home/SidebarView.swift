@@ -22,6 +22,11 @@ struct SidebarView: View {
     @Environment(AuthSession.self) private var authSession
     /// HOM-PROFILE 2026-06-05：贡献草坪数据来源。@Observable，payload 变化时 sidebar 自动重渲染。
     @Environment(ContributionService.self) private var contributionService
+    /// 2026-06-06 A 方案：用户 profile 缓存服务。Sidebar `.task(id: user.login)`
+    /// 会调 `load(login:force: false)` 让 30min TTL 到期后自动后台刷新。
+    /// 数据通过 service 拉到后反向 push 给 `AuthSession.acceptRefreshedUser` →
+    /// sidebar 观察 `authSession.state` 自动更新，本视图不直接读 service.profile。
+    @Environment(UserProfileService.self) private var userProfileService
 
     /// 当前打开/收起 Languages 组的状态。
     @State private var languagesExpanded: Bool = true
@@ -94,8 +99,11 @@ struct SidebarView: View {
                 .padding(.bottom, 4)
                 .task(id: user.login) {
                     // 用 user.login 作为 task id：账号切换时自动重新加载。
-                    // ContributionService 内部已做 TTL 与 inflight 互斥，重复调用安全。
+                    // ContributionService / UserProfileService 内部各自做 TTL 与 inflight 互斥，重复调用安全。
                     contributionService.load(login: user.login)
+                    // 2026-06-06 A 方案：profile TTL 到期后自动后台刷新（30min）；
+                    // 命中 TTL 直接 no-op，无网络。
+                    userProfileService.load(login: user.login)
                 }
             }
 

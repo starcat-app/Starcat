@@ -93,6 +93,19 @@ final class AppDependencies {
     /// 泛型方法，未挂在 `GitHubAPIClientProtocol` 上以保持 mock 简单。
     let contributionService: ContributionService
 
+    // MARK: - 用户 profile 缓存（2026-06-06 A 方案）
+
+    /// 当前登录用户 profile 的离线缓存 + 后台刷新协调器。
+    ///
+    /// 解决三个问题（详见 `UserProfileService.swift` 文件头）：
+    /// ① 启动期 sidebar 200-800ms 空白 → primeFromCache 秒显
+    /// ② profile 字段 App 内不会刷新 → 30min TTL + ShareCardSheet onAppear force refresh
+    /// ③ 内存快照丢失 → UserDefaults 持久化
+    ///
+    /// 装配顺序约束：service 必须在 AuthSession 之后建（service.authSession = session 反向 weak 引用）；
+    /// 同时 session.userProfileService = service（强引用，session 持有 service）。
+    let userProfileService: UserProfileService
+
     // MARK: - 初始化
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
@@ -203,5 +216,13 @@ final class AppDependencies {
         // 直接持有具体 GitHubAPIClient（actor），不走 protocol——因为 graphql<T> 是泛型方法，
         // 未挂在协议上以保持 Mock 简单（详见 ContributionService.swift 注释）。
         self.contributionService = ContributionService(apiClient: api)
+
+        // 2026-06-06 A 方案：用户 profile 缓存。
+        // 装配三步：① 建 service；② 接到 session（双向，session 强持 service / service weak 反向 → session）；
+        // ③ AuthSession.restoreSessionIfAvailable 启动时会用 service.primeFromCache 秒显 sidebar。
+        let userProfileSvc = UserProfileService(apiClient: api)
+        userProfileSvc.authSession = session
+        session.userProfileService = userProfileSvc
+        self.userProfileService = userProfileSvc
     }
 }

@@ -26,7 +26,10 @@ import Foundation
 /// blog / twitterUsername / htmlUrl）。全部可选，配合 `/user/starred` 嵌套 owner 解码兼容。
 /// 字段直接对应 GitHub `/user` 端点的 snake_case 同名字段（decoder 已开启
 /// `convertFromSnakeCase`），仅 `htmlUrl` 是为了对齐其它 DTO（如 Repo.htmlUrl）的命名约定。
-struct GitHubUserDTO: Decodable, Equatable {
+// 2026-06-06 UserProfileService（A 方案）：从 `Decodable` 升级为 `Codable`，
+// 让 service 可以把整个 DTO 直接落 UserDefaults（与 ContributionService 同款落盘范式）。
+// 13 个字段全部 `let` + 标量类型，Encodable 自动合成，无需手写 CodingKeys。
+struct GitHubUserDTO: Codable, Equatable {
     let id: Int64
     let login: String
     let name: String?
