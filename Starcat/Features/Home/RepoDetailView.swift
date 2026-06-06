@@ -525,11 +525,24 @@ struct RepoDetailView: View {
             Button {
                 Task { await starTrending(repo: repo) }
             } label: {
-                if isStarringTrending {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                } else {
+                // ZStack 而非 if/else：
+                // 1) 消除 NSProgressIndicator 警告
+                //    `<AppKitProgressView ...> has an maximum length (32.403423) that doesn't satisfy min (32.403423) <= max (32.403423).`
+                //    旧写法 `ProgressView().scaleEffect(0.6)` 中 scaleEffect 只在渲染层缩放、不改 layout intrinsic
+                //    size（仍是 ~32pt），父 stats `HStack(spacing: 24)` 又按相邻 StatItem 高度紧逼，
+                //    导致 NSProgressIndicator 内部 min==max==32.403423 浮点等值 → NSLog 警告。
+                //    显式给 ProgressView `.frame(width:height:)` 后 layout 不再被外部紧逼，警告消失。
+                //    （项目内 RepoShareButton / ReadmeTranslationFooterButton 已是这个 pattern。）
+                // 2) 消除 button 高度抖动：StatItem 始终占位决定 button 自然高度，
+                //    star 切换时 ProgressView 只在原位淡入，stats 行宽不再跳变。
+                ZStack {
                     StatItem(label: "repo.stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
+                        .opacity(isStarringTrending ? 0 : 1)
+                    if isStarringTrending {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 16, height: 16)
+                    }
                 }
             }
             .buttonStyle(.plain)
