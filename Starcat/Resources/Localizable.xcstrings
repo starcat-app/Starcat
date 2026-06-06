@@ -7628,6 +7628,54 @@
         }
       }
     },
+    "sharecard.export.loading.html" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporting HTML… fetching summaries, tags and avatars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在导出 HTML… 拉取摘要、标签和头像"
+          }
+        }
+      }
+    },
+    "sharecard.export.loading.markdown" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporting Markdown…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在导出 Markdown…"
+          }
+        }
+      }
+    },
+    "sharecard.export.loading.fetching" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading starred repositories…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取已 star 的仓库…"
+          }
+        }
+      }
+    },
     "sharecard.button.help" : {
       "localizations" : {
         "en" : {

@@ -62,6 +62,12 @@ struct ShareCardSheet: View {
     /// 当前正在执行的动作（"保存中…" / "导出中…"），用于禁用按钮防止重复点击。
     @State private var isExporting: Bool = false
 
+    /// HOM-174 v4：导出进行时显示的进度文案；nil 表示无活动导出。
+    /// HTML 导出会经历"读 starred → 拉摘要/标签/头像 → 渲染"几个阶段，单纯禁用按钮
+    /// 用户没有可视反馈（尤其 Kingfisher cache miss 时 owner 头像批量下载耗时数秒）。
+    /// 用 overlay + ProgressView 给出明确的"正在做某事"反馈。
+    @State private var exportProgressMessage: String?
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -85,6 +91,17 @@ struct ShareCardSheet: View {
             .scrollIndicators(.hidden)
         }
         .frame(width: 480, height: 820)
+        .overlay(alignment: .center) {
+            // HOM-174 v4：导出进度 overlay。出现条件：exportProgressMessage != nil
+            // 设计取舍：用半透明 backdrop 覆盖全 sheet（含按钮区），让用户看到一个明确
+            // "处理中"状态而不是按钮变灰的隐式反馈；ProgressView + 文案让用户知道
+            // App 没卡死、还在做事；按钮区 isExporting 已禁用，overlay 只是视觉强化。
+            if let msg = exportProgressMessage {
+                exportLoadingOverlay(message: msg)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: exportProgressMessage)
         .task {
             // sheet 打开时强制刷一次 profile（D5-B 决策）。
             // 沉默执行：UserProfileService 内部 inflight 互斥；TTL 内的复用不会阻塞。
@@ -361,7 +378,14 @@ struct ShareCardSheet: View {
     @MainActor
     private func performExportStarred(format: StarredExportFormat) async {
         isExporting = true
-        defer { isExporting = false }
+        // HOM-174 v4：进度文案分阶段更新，给用户清晰的"App 在做什么"反馈。
+        // 阶段一：fetching → 阶段二：渲染（HTML 含拉摘要/标签/头像，最耗时；
+        // markdown 渲染瞬时）。defer 兜底确保任何返回路径都清掉 overlay。
+        exportProgressMessage = String(localized: "sharecard.export.loading.fetching")
+        defer {
+            isExporting = false
+            exportProgressMessage = nil
+        }
 
         let repos: [Repo]
         do {
@@ -377,6 +401,12 @@ struct ShareCardSheet: View {
             return
         }
 
+        // 阶段二文案：按格式区分（HTML 显式提示有摘要/标签/头像拉取，
+        // 防止用户在数秒内以为 App 卡死；Markdown 文案简短）
+        exportProgressMessage = String(localized: format == .html
+            ? "sharecard.export.loading.html"
+            : "sharecard.export.loading.markdown")
+
         if let url = await StarredExporter.export(
             repos: repos,
             user: user,
@@ -386,6 +416,45 @@ struct ShareCardSheet: View {
             showFeedback(String(format: String(localized: "sharecard.feedback.exported"), url.lastPathComponent))
         }
         // 用户取消保存面板 → 不弹反馈，保持沉默体验，对齐 `performSave` 的同款行为
+    }
+
+    // MARK: - 导出 loading overlay（HOM-174 v4）
+
+    /// 全 sheet 覆盖的"正在导出"指示器：半透明 backdrop + 居中 card 含菊花 + 文案。
+    /// 视觉上模仿系统 sheet 的 inline loading，但用 sheet 内部空间，不脱离当前 sheet 上下文。
+    @ViewBuilder
+    private func exportLoadingOverlay(message: String) -> some View {
+        ZStack {
+            // 半透明 backdrop：阻挡点击 + 视觉强调
+            Color.black.opacity(0.18)
+                .ignoresSafeArea()
+                .allowsHitTesting(true)
+                .contentShape(Rectangle())  // 拦截所有点击
+
+            VStack(spacing: 14) {
+                ProgressView()
+                    .controlSize(.large)
+                    .scaleEffect(1.1)
+
+                Text(message)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 320)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 28)
+            .padding(.vertical, 22)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(.regularMaterial)
+                    .shadow(color: .black.opacity(0.15), radius: 16, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(.separator, lineWidth: 0.5)
+            )
+        }
     }
 
     /// 当前要渲染的卡片内容（主题切换不重新构造卡片实例，但导出时要用最新值）。
