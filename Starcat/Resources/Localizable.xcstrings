@@ -8076,6 +8076,22 @@
         }
       }
     },
+    "sidebar.account.refreshProfile" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh Profile"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新个人信息"
+          }
+        }
+      }
+    },
     "sidebar.allRepos" : {
       "extractionState" : "stale",
       "localizations" : {

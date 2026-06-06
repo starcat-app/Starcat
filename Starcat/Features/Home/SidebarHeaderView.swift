@@ -33,6 +33,9 @@ struct SidebarHeaderView: View {
     @Environment(ContributionService.self) private var contributionService
     /// HOM-174：Pro 用户标识需要从 AppSettings 获取。
     @Environment(AppSettings.self) private var appSettings
+    /// 2026-06-06 A 方案：accountMenu 中"刷新个人信息"项触发 `load(force: true)`，
+    /// 同时让贡献草坪也跟着刷一下（用户主动刷新时一并更新）。
+    @Environment(UserProfileService.self) private var userProfileService
 
     /// 当前在 Trending 页面选中的 repo（仅在 Trending 页面有效，Manage 页面为 nil）。
     ///
@@ -378,6 +381,18 @@ struct SidebarHeaderView: View {
                 openSettings()
             } label: {
                 Label("settings.general.title", systemImage: "gearshape")
+            }
+
+            // 2026-06-06 A 方案 D5-B：手动刷新个人信息入口。
+            // 触发 UserProfileService 与 ContributionService 同时 force refresh。
+            // 拉到后 service 反向 push 给 AuthSession.state，sidebar 自然更新。
+            if let login = authSession.state.user?.login {
+                Button {
+                    userProfileService.load(login: login, force: true)
+                    contributionService.load(login: login, force: true)
+                } label: {
+                    Label("sidebar.account.refreshProfile", systemImage: "arrow.clockwise")
+                }
             }
 
             Divider()

@@ -46,6 +46,12 @@ struct ShareCardSheet: View {
     /// 通过 `@Environment(AppDependencies.self)` 注入（root 在 StarcatApp 已挂上 dependencies）。
     @Environment(AppDependencies.self) private var dependencies
 
+    /// 2026-06-06 A 方案：sheet 打开时静默 force refresh 一次，
+    /// 让分享卡 / HTML 导出拿到的 user profile（followers / bio / 头像）尽量新鲜。
+    /// 后台拉到后通过 AuthSession.acceptRefreshedUser 反向 emit，
+    /// 上层 sidebar 传给 `user: GitHubUserDTO` 参数会自然更新（SwiftUI re-init）。
+    @Environment(UserProfileService.self) private var userProfileService
+
     /// 当前选中的主题。默认 GitHub Green（最贴合 GitHub 用户群体）。
     @State private var theme: ShareCardTheme = .githubGreen
 
@@ -79,6 +85,13 @@ struct ShareCardSheet: View {
             .scrollIndicators(.hidden)
         }
         .frame(width: 480, height: 820)
+        .task {
+            // sheet 打开时强制刷一次 profile（D5-B 决策）。
+            // 沉默执行：UserProfileService 内部 inflight 互斥；TTL 内的复用不会阻塞。
+            // 拿到新数据后通过 acceptRefreshedUser 回写 AuthSession.state，
+            // 调用方 SidebarHeaderView.onChange(of: authSession.state) 会重建 sheet 透传新的 user。
+            userProfileService.load(login: user.login, force: true)
+        }
     }
 
     // MARK: - 顶部标题栏

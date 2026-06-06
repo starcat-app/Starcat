@@ -29,6 +29,14 @@ enum AuthState: Equatable {
         if case .authenticated = self { return true }
         return false
     }
+
+    /// 已登录态下的 user；未登录返回 nil。
+    /// 2026-06-06 加入：UserProfileService 整合后，reset / accept 路径
+    /// 需要从当前 state 拿 login，避免重复用 `case let ...` 解构。
+    var user: GitHubUserDTO? {
+        if case .authenticated(let user) = self { return user }
+        return nil
+    }
 }
 
 /// 登录态视图模型，全局唯一。
@@ -53,6 +61,16 @@ final class AuthSession {
     /// D-02：依赖协议而非具体 actor，便于单测注入 Mock。
     private let apiClient: any GitHubAPIClientProtocol
     private let keychain: any KeychainManaging
+
+    /// 2026-06-06 UserProfileService（A 方案）：可选注入，便于：
+    /// ① 启动期从磁盘缓存 prime 出 user → state 秒显（消除 sidebar 200-800ms 空白）；
+    /// ② OAuth 登录成功 / restore 成功后把 user 顺手 push 给 service 持久化；
+    /// ③ signOut / invalidate 时清 service。
+    ///
+    /// 用 var + 外部注入而非构造器参数：装配时 AppDependencies 先建 AuthSession，
+    /// 再建 UserProfileService（持有 AuthSession weak 反向引用），最后回填 `session.userProfileService = svc`。
+    /// 这样避免两者构造器循环依赖。
+    var userProfileService: UserProfileService?
 
     /// 当前进行中的 Device Flow 轮询 Task，便于取消。
     private var pollingTask: Task<Void, Never>?
@@ -108,15 +126,28 @@ final class AuthSession {
 
         AppLog.auth.info("restore: keychain hit (token length=\(token.count, privacy: .public)); verifying via /user...")
 
+        // ① UserProfileService prime：磁盘上有 cached profile 时立刻 emit state，
+        //    让 sidebar / detail 0 ms 就能渲染出内容，避免启动期 200-800ms 空白窗。
+        //    随后 ② 路径异步拉 /user 校验 token + 刷新数据，期间 sidebar 已经渲染好了。
+        if let cached = userProfileService?.primeFromCache() {
+            self.state = .authenticated(user: cached)
+            AppLog.auth.info("restore: primed from cache login=\(cached.login, privacy: .public); verifying via /user...")
+        }
+
         do {
             let user = try await apiClient.getCurrentUser()
             self.state = .authenticated(user: user)
+            // ② 用真实数据覆盖 prime 出来的快照，并让 service 写盘
+            userProfileService?.acceptFromAuth(user)
             AppLog.auth.info("restore: success login=\(user.login, privacy: .public)")
         } catch NetworkError.unauthorized {
             AppLog.auth.warning("restore: token invalid (401); clearing")
             try? keychain.deleteGithubToken()
+            // 401 时清掉 cached profile，避免下次启动 prime 出错误账号的数据
+            userProfileService?.reset(login: state.user?.login)
             self.state = .unauthenticated
         } catch {
+            // 网络错误：token 保留 + cached state 也保留（避免离线时把刚 prime 的快照擦掉）
             AppLog.auth.error("restore: network error (token retained): \(error.localizedDescription, privacy: .public)")
         }
     }
@@ -164,6 +195,8 @@ final class AuthSession {
             // 阶段 3：拉 /user 验证 + 取信息
             let user = try await apiClient.getCurrentUser()
             self.state = .authenticated(user: user)
+            // 让 UserProfileService 持久化这次 user，下次启动可以秒显
+            userProfileService?.acceptFromAuth(user)
             AppLog.auth.info("Sign-in complete: login=\(user.login, privacy: .public)")
         } catch is CancellationError {
             AppLog.auth.info("Sign-in cancelled by user")
@@ -184,11 +217,14 @@ final class AuthSession {
     // MARK: - 登出
 
     func signOut() {
+        let currentLogin = state.user?.login
         do {
             try keychain.deleteGithubToken()
         } catch {
             AppLog.auth.error("Logout: failed to delete token: \(error.localizedDescription, privacy: .public)")
         }
+        // 清掉 cached profile（含磁盘 + lastLogin），下次启动是干净的未登录态
+        userProfileService?.reset(login: currentLogin)
         state = .unauthenticated
         lastError = nil
         AppLog.auth.info("Signed out")
@@ -213,13 +249,44 @@ final class AuthSession {
     func invalidateSession() {
         guard state.isAuthenticated else { return }
         AppLog.auth.warning("Session invalidated (401/unauthorized in use); clearing token")
+        let currentLogin = state.user?.login
         do {
             try keychain.deleteGithubToken()
         } catch {
             AppLog.auth.error("invalidateSession: failed to delete token: \(error.localizedDescription, privacy: .public)")
         }
+        userProfileService?.reset(login: currentLogin)
         state = .unauthenticated
         // 复用 network.error.unauthorized 文案（"未授权，请重新登录。"）在登录页提示用户。
         lastError = NetworkError.unauthorized
+    }
+
+    // MARK: - 接收 service 推送的最新 user（反向 push）
+
+    /// `UserProfileService` 在后台拉到新 user（TTL 到期 / 用户手动刷新）后调用本方法，
+    /// 把新数据写回 `state.user`，让所有观察 `authSession.state` 的视图自然重渲染。
+    ///
+    /// 与 `signIn` / `restoreSessionIfAvailable` 的区别：
+    /// - 那两条路径是"从未登录 → 已登录"的状态迁移，可能伴随 token 落 Keychain；
+    /// - 本方法是"已登录态内的 profile 字段刷新"，**仅替换 user，不动 token / lastError**。
+    ///
+    /// 关键约束（防误伤）：
+    /// - 仅在当前是 `.authenticated` 且 **user.id 匹配**时替换。否则视为：
+    ///   ① 已登出（state == .unauthenticated）—— 拉到的过期结果直接丢；
+    ///   ② 切账号（user.id 不同）—— 也丢，避免把旧账号数据覆盖新账号视图。
+    /// - 用 `Equatable` 判等：字段无变化时不重新 emit `state`，避免无意义 SwiftUI diff。
+    func acceptRefreshedUser(_ user: GitHubUserDTO) {
+        guard case .authenticated(let cur) = state else {
+            AppLog.auth.debug("acceptRefreshedUser: not authenticated; ignore")
+            return
+        }
+        guard cur.id == user.id else {
+            AppLog.auth.info("acceptRefreshedUser: id mismatch (cur=\(cur.id, privacy: .public), got=\(user.id, privacy: .public)); ignore")
+            return
+        }
+        if cur != user {
+            state = .authenticated(user: user)
+            AppLog.auth.debug("acceptRefreshedUser: state updated for login=\(user.login, privacy: .public)")
+        }
     }
 }
