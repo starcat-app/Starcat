@@ -486,27 +486,54 @@ struct SidebarView: View {
                      displayOverride: String? = nil,
                      count: Int? = nil) -> some View {
         Label {
+            // Sidebar count 溢出 + 同步抖动 bugfix（dong4j 2026-06-06 反馈）：
+            // 「All Stars 数字溢出 sidebar 右沿 + 同步过程左右抖动」根因有两个：
+            // ① trailing 的 count Text 没加 `.lineLimit(1)` / `.fixedSize()` —— SwiftUI
+            //    HStack 把它当 "可压缩+可换行" view，ideal width 优先级低于 leading
+            //    的 displayName(lineLimit 1)，宽度紧张时 layout 算法**不会**优先截断
+            //    name，反而让 count 留 ideal 宽度 → 总宽溢出 row → 渲染超出 sidebar 右沿。
+            // ② syncManager 同步中 totalCount 持续递增 + SidebarSyncButton iconName
+            //    在 arrow.triangle.2.circlepath ⇄ xmark.circle.fill ⇄ hourglass 之间
+            //    切换（不同 SF Symbol intrinsic size 不同），每次状态变 SwiftUI 重测
+            //    HStack 各 child 的 ideal width → trailing 区域微抖。`monospacedDigit`
+            //    只在「数字位数相同」时等宽，对上述 intrinsic 重测无能为力。
+            //
+            // 修复策略：
+            //  - count Text 加 `.lineLimit(1)` + `.fixedSize(horizontal: true, vertical: false)`
+            //    → 强制 intrinsic width 不可压缩，HStack 永远先满足它再算 Spacer
+            //  - displayName 用 `.truncationMode(.tail)`（lineLimit(1) 默认行为，显式
+            //    化更醒目，避免之后有人改成 .middle 之类）
+            //  - sync icon + count 包成 trailing HStack 并整体 fixedSize → 视为一个
+            //    "不可拆分的右侧 group"，避免 sync icon 切换时数字位置抖动
+            //  - Spacer 给 minLength: 4 → name 与 trailing 之间永远留 4pt，防止贴死
             HStack(spacing: 4) {
                 if let override = displayOverride {
                     Text(verbatim: override)
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 } else {
                     Text(item.displayName)
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 }
 
-                Spacer()
+                Spacer(minLength: 4)
 
-                if item == .allStars {
-                    SidebarSyncButton()
-                }
+                HStack(spacing: 4) {
+                    if item == .allStars {
+                        SidebarSyncButton()
+                    }
 
-                if let count {
-                    Text(count.formatted())
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                    if let count {
+                        Text(count.formatted())
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
                 }
+                .fixedSize(horizontal: true, vertical: false)
             }
         } icon: {
             Image(systemName: item.systemImage)
@@ -553,13 +580,18 @@ struct SidebarView: View {
     private func tagRow(tag: Tag, count: Int) -> some View {
         let item = SidebarItem.tag(tag.id)
         Label {
+            // Sidebar count bugfix：与 row() 同款保护——count 加 lineLimit/fixedSize 防溢出
             HStack {
-                Text(verbatim: tag.name).lineLimit(1)
-                Spacer()
+                Text(verbatim: tag.name)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
                 Text(count.formatted())
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
         } icon: {
             // 优先 user-defined SF Symbol；否则 fallback "tag.fill"
@@ -583,14 +615,18 @@ struct SidebarView: View {
     private func languageRow(_ stat: LanguageStat) -> some View {
         let item = SidebarItem.language(stat.languageOrNil)
         Label {
+            // Sidebar count bugfix：与 row() 同款保护——count 加 lineLimit/fixedSize 防溢出
             HStack {
                 Text(verbatim: stat.displayName)
                     .lineLimit(1)
-                Spacer()
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
                 Text(stat.count.formatted())
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
         } icon: {
             // 使用语言对应的彩色圆形图标
