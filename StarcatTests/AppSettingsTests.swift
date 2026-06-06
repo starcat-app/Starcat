@@ -175,6 +175,36 @@ struct AppSettingsTests {
         #expect(s2.aiEmbeddingTask.modelID == "text-embedding-3-small")
     }
 
+    @Test("AI: provider 只有测试成功且启用后才算正式配置")
+    func aiProviderProfileVerifiedState() {
+        let draft = AIProviderProfile(
+            id: "draft",
+            provider: .deepSeek,
+            lastTestStatus: .notTested
+        )
+        let failed = AIProviderProfile(
+            id: "failed",
+            provider: .deepSeek,
+            lastTestStatus: .failed("401")
+        )
+        let disabled = AIProviderProfile(
+            id: "disabled",
+            provider: .deepSeek,
+            isEnabled: false,
+            lastTestStatus: .success(modelCount: 3)
+        )
+        let verified = AIProviderProfile(
+            id: "verified",
+            provider: .deepSeek,
+            lastTestStatus: .success(modelCount: 3)
+        )
+
+        #expect(!draft.isVerifiedConfiguration)
+        #expect(!failed.isVerifiedConfiguration)
+        #expect(!disabled.isVerifiedConfiguration)
+        #expect(verified.isVerifiedConfiguration)
+    }
+
     // MARK: - HOM-68 follow-up v9: 模型粒度参数
 
     @Test("AI: AIModelParameters.defaults(for:) 按 capability 返回正确默认")

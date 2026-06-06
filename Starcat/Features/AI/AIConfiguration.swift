@@ -100,6 +100,15 @@ enum AIProviderTestStatus: Codable, Equatable, Sendable {
             return message
         }
     }
+
+    /// 是否已经通过连接测试。
+    ///
+    /// 设置页把“支持的服务商草稿”和“已配置好的可调用服务商”分开展示；只有测试成功
+    /// 的 profile 才能进入正式列表和任务模型选择，避免未验证配置污染真实 AI 调用链。
+    var isSuccess: Bool {
+        if case .success = self { return true }
+        return false
+    }
 }
 
 /// Provider 下的模型描述。
@@ -167,6 +176,14 @@ struct AIProviderProfile: Codable, Identifiable, Equatable, Sendable {
         self.models = models
         self.lastTestedAt = lastTestedAt
         self.lastTestStatus = lastTestStatus
+    }
+
+    /// 是否可作为正式 AI 服务商使用。
+    ///
+    /// `isEnabled` 表示用户是否启用该配置；`lastTestStatus.isSuccess` 表示这份配置至少
+    /// 通过过一次模型列表测试。两者同时满足才进入第一行“已配置服务商”和任务模型下拉。
+    var isVerifiedConfiguration: Bool {
+        isEnabled && lastTestStatus.isSuccess
     }
 }
 
