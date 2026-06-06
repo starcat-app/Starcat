@@ -97,21 +97,39 @@ final class RepoAIInsightService {
         let source = try await makeSource(for: repo)
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
 
-        // HOM-52：批量整理路径会在 source 文本末尾追加"现有标签提示"。
-        // 详情页单仓路径默认传 [] / true / true，行为完全不变。
+        // HOM-52：标签生成路径在 source 末尾追加两段强制约束：
+        //   (1) Tag format rules —— 限制中英文标签长度 / 风格，覆盖所有用户 prompt（含自定义）
+        //   (2) Existing user tags —— 批量路径传入时引导 AI 优先复用
+        //
+        // 为何不写进 default prompt：用户可能已经在 Settings 改过 prompt（持久化在 UserDefaults），
+        // 改 default 对老用户不生效。注入到 {context} 末尾走的是同一个 prompt template 替换路径，
+        // 无论用户怎么改 system / user prompt 都会拿到这两段规则。
+        // includeTags == false 时不注入，避免摘要任务的 prompt 被无关规则污染。
         let augmentedSource: Source = {
-            guard !existingTagHints.isEmpty, includeTags else { return source }
+            guard includeTags else { return source }
+
+            var appendix = """
+
+            Tag format rules (必须遵守):
+            - 中文标签：长度 ≤ 4 字（如「向量检索」「编辑器」「机器学习」），名词或简短术语，不要句子。
+            - 英文标签：单个领域词、专业缩写或常见技术术语（如 RAG / LLM / Vector / DevOps / WebRTC / Editor），不要复合短语。
+            - 中英文混用时每个标签独立判断；同一仓库的标签风格保持一致。
+            """
+
             let trimmedHints = existingTagHints
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
                 .prefix(50)
-            guard !trimmedHints.isEmpty else { return source }
-            let hintBlock = """
+            if !trimmedHints.isEmpty {
+                appendix += """
 
-            Existing user tags (优先复用，无法归类的才新增；避免标签数量爆炸):
-            \(trimmedHints.joined(separator: ", "))
-            """
-            let merged = source.text + hintBlock
+
+                Existing user tags (优先复用，无法归类的才新增；避免标签数量爆炸):
+                \(trimmedHints.joined(separator: ", "))
+                """
+            }
+
+            let merged = source.text + appendix
             return Source(text: merged, hash: Self.hash(merged))
         }()
 

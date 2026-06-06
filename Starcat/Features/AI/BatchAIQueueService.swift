@@ -398,11 +398,12 @@ final class BatchAIQueueService {
             return existing
         }
         let now = ISO8601DateFormatter.shared.string(from: Date())
+        let visual = Self.visualForNewTag(name: name)
         let tag = Tag(
             id: UUID().uuidString,
             name: name,
-            color: nil,
-            icon: "tag",
+            color: visual.colorHex,
+            icon: visual.iconName,
             sortOrder: 0,
             isPreset: false,
             parentId: nil,
@@ -411,6 +412,26 @@ final class BatchAIQueueService {
         )
         try await tagRepository.create(tag)
         return tag
+    }
+
+    /// 为新建的标签挑一个颜色 + 图标。
+    ///
+    /// 用户反馈（HOM-52 2026-06-06 17:43 dong4j）：批量创建的标签全是蓝色，
+    /// 同名标签每次创建应保持视觉一致——所以用**稳定哈希**而非 randomElement()。
+    ///
+    /// 算法：FNV-1a 32-bit。`hashValue` 不能用，Swift 文档明确每次进程启动 seed 会变，
+    /// 这会导致今天新建「Swift」是红色、明天重启再新建「SwiftUI」时哈希分布完全不同。
+    /// FNV-1a 实现简单且跨进程稳定，对 12 色 / 30 图标这种小桶足够均匀。
+    private static func visualForNewTag(name: String) -> (colorHex: String, iconName: String) {
+        var hash: UInt32 = 2_166_136_261
+        for byte in name.utf8 {
+            hash ^= UInt32(byte)
+            hash = hash &* 16_777_619
+        }
+        // 颜色和图标用不同的位段，避免两者同步变化导致组合多样性下降。
+        let colorIdx = Int(hash % UInt32(TagColorPalette.presets.count))
+        let iconIdx = Int((hash >> 8) % UInt32(SFSymbolPreset.icons.count))
+        return (TagColorPalette.presets[colorIdx].hex, SFSymbolPreset.icons[iconIdx])
     }
 
     /// 处理单个 job 的失败：分流"重试" vs "终态失败"。
