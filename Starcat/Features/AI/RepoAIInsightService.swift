@@ -89,14 +89,50 @@ final class RepoAIInsightService {
 
     func generateInsight(
         for repo: Repo,
+        existingTagHints: [String] = [],
+        includeSummary: Bool = true,
+        includeTags: Bool = true,
         onSummaryDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> RepoAIInsightGeneration {
         let source = try await makeSource(for: repo)
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
 
-        async let tagResult = tagSuggestionsResult(source: source)
-        let summaryText = try await generateSummary(source: source, onDelta: onSummaryDelta)
-        let resolvedTagResult = await tagResult
+        // HOM-52：批量整理路径会在 source 文本末尾追加"现有标签提示"。
+        // 详情页单仓路径默认传 [] / true / true，行为完全不变。
+        let augmentedSource: Source = {
+            guard !existingTagHints.isEmpty, includeTags else { return source }
+            let trimmedHints = existingTagHints
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .prefix(50)
+            guard !trimmedHints.isEmpty else { return source }
+            let hintBlock = """
+
+            Existing user tags (优先复用，无法归类的才新增；避免标签数量爆炸):
+            \(trimmedHints.joined(separator: ", "))
+            """
+            let merged = source.text + hintBlock
+            return Source(text: merged, hash: Self.hash(merged))
+        }()
+
+        // 两者都需要时并发跑（与原实现一致）；任一关闭则串行 / 短路，避免无意义 AI 调用。
+        let summaryText: String
+        let resolvedTagResult: Result<[AITagSuggestion], Error>
+        if includeSummary, includeTags {
+            async let tagResult = tagSuggestionsResult(source: augmentedSource)
+            summaryText = try await generateSummary(source: augmentedSource, onDelta: onSummaryDelta)
+            resolvedTagResult = await tagResult
+        } else if includeSummary {
+            summaryText = try await generateSummary(source: augmentedSource, onDelta: onSummaryDelta)
+            resolvedTagResult = .success([])
+        } else if includeTags {
+            summaryText = ""
+            resolvedTagResult = await tagSuggestionsResult(source: augmentedSource)
+        } else {
+            // 调用方两者都关：返回空 insight，避免无意义网络调用。
+            summaryText = ""
+            resolvedTagResult = .success([])
+        }
         let suggestions = (try? resolvedTagResult.get()) ?? []
         let tagErrorMessage: String? = {
             if case .failure(let error) = resolvedTagResult {
@@ -116,15 +152,19 @@ final class RepoAIInsightService {
         // 保留旧字段的同时把新摘要正文写进 summaryMarkdown，UI 优先读该字段。
         insight.summaryMarkdown = summaryText
 
-        let jsonData = try JSONEncoder().encode(insight)
-        let record = AISummaryRecord(
-            repoId: repo.id,
-            model: cacheModelKey(),
-            sourceHash: source.hash,
-            summaryJson: String(decoding: jsonData, as: UTF8.self),
-            generatedAt: generatedAt
-        )
-        try await summaryRepository.upsert(record)
+        // HOM-52：只跑标签（includeSummary == false）时不写 ai_summaries 缓存——
+        // 否则会用空 summaryText 覆盖已有的有效摘要缓存。调用方仍能拿到 suggestions。
+        if includeSummary {
+            let jsonData = try JSONEncoder().encode(insight)
+            let record = AISummaryRecord(
+                repoId: repo.id,
+                model: cacheModelKey(),
+                sourceHash: source.hash,
+                summaryJson: String(decoding: jsonData, as: UTF8.self),
+                generatedAt: generatedAt
+            )
+            try await summaryRepository.upsert(record)
+        }
         return RepoAIInsightGeneration(insight: insight, tagErrorMessage: tagErrorMessage)
     }
 
