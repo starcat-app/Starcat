@@ -31,6 +31,8 @@ struct SidebarHeaderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// HOM-173：分享卡需要消费贡献草坪 payload；ContributionService 已在 AppDependencies 注入。
     @Environment(ContributionService.self) private var contributionService
+    /// HOM-174：Pro 用户标识需要从 AppSettings 获取。
+    @Environment(AppSettings.self) private var appSettings
 
     /// 当前在 Trending 页面选中的 repo（仅在 Trending 页面有效，Manage 页面为 nil）。
     ///
@@ -84,6 +86,7 @@ struct SidebarHeaderView: View {
                     user: user,
                     starredCount: viewModel.totalCount,
                     contribution: contributionService.payload,
+                    isProUser: appSettings.isProUser,
                     onClose: { showShareCardSheet = false }
                 )
             }

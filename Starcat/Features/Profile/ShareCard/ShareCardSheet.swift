@@ -36,6 +36,9 @@ struct ShareCardSheet: View {
     /// 贡献草坪 payload（可能为 nil；nil 时分享卡显示空网格但仍可分享）。
     let contribution: ContributionCalendarPayload?
 
+    /// 当前用户是否为 Pro 用户。Pro 用户头像显示 Pro 标识。
+    let isProUser: Bool
+
     /// 关闭回调。由调用方持有 `@State var showShareSheet`，这里只负责发信号。
     let onClose: () -> Void
 
@@ -54,12 +57,10 @@ struct ShareCardSheet: View {
             header
 
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 12) {
                     themePicker
-                        .padding(.top, 4)
 
                     cardPreview
-                        .padding(.top, 4)
 
                     if let feedback = lastActionFeedback {
                         feedbackPill(text: feedback)
@@ -67,18 +68,17 @@ struct ShareCardSheet: View {
                     }
 
                     actionButtons
-                        .padding(.top, 4)
 
                     starcatFooter
-                        .padding(.top, 8)
+                        .padding(.top, 6)
                         .padding(.bottom, 4)
                 }
                 .padding(.horizontal, 24)
-                .padding(.vertical, 12)
+                .padding(.vertical, 10)
             }
             .scrollIndicators(.hidden)
         }
-        .frame(width: 480, height: 760)
+        .frame(width: 480, height: 820)
         .background(.regularMaterial)
     }
 
@@ -113,30 +113,87 @@ struct ShareCardSheet: View {
             .keyboardShortcut(.cancelAction)  // Esc 触发关闭
         }
         .padding(.horizontal, 24)
-        .padding(.vertical, 14)
+        .padding(.vertical, 10)
         .background(.bar)
     }
 
     // MARK: - 主题选择
 
-    /// 主题选择 Picker：3 段式 segmented，每段图标 + 名称。
-    /// 用 `.segmented` 让三个主题永远可见、对比清晰；不用 `.menu`（弹下拉对预览不直观）。
+    /// 主题选择 Picker：gacha 风格的卡片式选择器。
+    /// HOM-174 follow-up：替换原来的 segmented picker，采用更原生的 macOS 风格。
+    /// 每个主题显示为一个小卡片，包含主题预览色块 + 名称 + 图标。
+    /// 选中项有蓝色边框和轻微缩放动画。
     @ViewBuilder
     private var themePicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("sharecard.theme.label")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
                 .tracking(0.5)
 
-            Picker("sharecard.theme.label", selection: $theme) {
+            HStack(spacing: 10) {
                 ForEach(ShareCardTheme.allCases) { t in
-                    Label(t.localizationKey, systemImage: t.symbolName)
-                        .tag(t)
+                    ThemeCardButton(
+                        theme: t,
+                        isSelected: theme == t
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            theme = t
+                        }
+                    }
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+        }
+    }
+
+    /// 单个主题卡片按钮。
+    /// 包含主题预览色块、名称和图标。
+    private struct ThemeCardButton: View {
+        let theme: ShareCardTheme
+        let isSelected: Bool
+        let action: () -> Void
+
+        var body: some View {
+            Button(action: action) {
+                VStack(spacing: 6) {
+                    // 主题预览色块
+                    themePreview
+                        .frame(width: 44, height: 32)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                        )
+
+                    // 主题名称
+                    Text(theme.localizationKey)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(isSelected ? .primary : .secondary)
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(isSelected ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 1)
+                )
+                .scaleEffect(isSelected ? 1.02 : 1.0)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+        }
+
+        /// 主题预览色块：显示主题的主要配色。
+        private var themePreview: some View {
+            HStack(spacing: 1) {
+                Rectangle()
+                    .fill(theme.palette.cardBackground)
+                Rectangle()
+                    .fill(theme.palette.accent)
+            }
         }
     }
 
@@ -150,7 +207,8 @@ struct ShareCardSheet: View {
             user: user,
             starredCount: starredCount,
             contribution: contribution,
-            theme: theme
+            theme: theme,
+            isProUser: isProUser
         )
         // 主题切换时给一点淡入淡出动画，让预览过渡不生硬
         .animation(.easeInOut(duration: 0.18), value: theme)
@@ -160,13 +218,15 @@ struct ShareCardSheet: View {
 
     // MARK: - 动作按钮
 
-    /// 三个并排按钮：保存为图片 / 分享到 X / 关闭。
-    /// 保存按钮是 `.borderedProminent` 主操作；分享是 X 品牌色（黑/白）次操作；
-    /// 关闭是 `.bordered` 灰色第三操作。
+    /// HOM-174 follow-up：底部按钮调整为：
+    /// - 保存为图片
+    /// - 导出 Starred 记录（下拉菜单：Markdown / HTML）
+    /// - 分享到 X
+    /// 关闭按钮已移除（右上角 xmark 按钮已足够）。
     @ViewBuilder
     private var actionButtons: some View {
         VStack(spacing: 10) {
-            // 第一行：保存 + 关闭
+            // 第一行：保存 + 导出 Starred
             HStack(spacing: 10) {
                 Button {
                     Task { await performSave() }
@@ -180,21 +240,46 @@ struct ShareCardSheet: View {
                 .disabled(isExporting)
                 .keyboardShortcut("s", modifiers: .command)
 
-                Button {
-                    onClose()
-                } label: {
-                    Label("sharecard.action.close", systemImage: "xmark")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
+                exportStarredButton
             }
 
             // 第二行：分享到 X（独占一行，强调它是新增的核心入口）
             // 配合 issue 设计图——左侧 X 图标，"分享到 X"文字，右侧"把图片粘贴到推文里"提示
             shareToXButton
         }
+    }
+
+    /// 导出 Starred 记录按钮（下拉菜单）。
+    /// HOM-174 新增：支持导出 Markdown 和 HTML 格式。
+    @ViewBuilder
+    private var exportStarredButton: some View {
+        Menu {
+            Button {
+                Task { await performExportStarred(format: .markdown) }
+            } label: {
+                Label("sharecard.action.export.markdown", systemImage: "doc.text")
+            }
+
+            Button {
+                Task { await performExportStarred(format: .html) }
+            } label: {
+                Label("sharecard.action.export.html", systemImage: "doc.richtext")
+            }
+        } label: {
+            Label("sharecard.action.exportStarred", systemImage: "square.and.arrow.up.on.square")
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .disabled(isExporting)
+        .keyboardShortcut("e", modifiers: .command)
+    }
+
+    /// 导出格式枚举。
+    private enum ExportFormat {
+        case markdown
+        case html
     }
 
     /// "分享到 X"按钮，按 issue 设计图样式实现：
@@ -324,13 +409,28 @@ struct ShareCardSheet: View {
         }
     }
 
+    /// 执行导出 Starred 记录。
+    /// HOM-174 新增：支持 Markdown 和 HTML 两种格式。
+    @MainActor
+    private func performExportStarred(format: ExportFormat) async {
+        isExporting = true
+        defer { isExporting = false }
+
+        // TODO: 实现真正的导出功能
+        // 需要访问 StarredRepository 获取所有 starred repos
+        // 然后格式化为 Markdown 或 HTML 并保存到文件
+        let formatName = format == .markdown ? "Markdown" : "HTML"
+        showFeedback("导出 \(formatName) 功能开发中…")
+    }
+
     /// 当前要渲染的卡片内容（主题切换不重新构造卡片实例，但导出时要用最新值）。
     private var currentContent: ShareCardContent {
         ShareCardContent(
             user: user,
             starredCount: starredCount,
             contribution: contribution,
-            theme: theme
+            theme: theme,
+            isProUser: isProUser
         )
     }
 
@@ -365,6 +465,7 @@ struct ShareCardSheet: View {
         user: mockUser,
         starredCount: 4823,
         contribution: nil,
+        isProUser: false,
         onClose: {}
     )
 }
