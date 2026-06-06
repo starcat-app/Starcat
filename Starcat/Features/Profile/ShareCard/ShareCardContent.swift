@@ -122,9 +122,8 @@ struct ShareCardContent: View {
 
     // MARK: - Magazine 布局（HOM-173 v1，既有主题）
 
-    /// 杂志卡布局：顶栏 + 头像 + 链接行 + 三栏统计 + 草坪 + 注脚。
-    /// 保持 v1 实现，仅在外层 body 用 switch 转发，确保零回归。
-    /// HOM-174：新增链接行（GitHub 链接、homepage、邮箱），与前3个主题保持一致。
+    /// 杂志卡布局：顶栏 + 头像 + 链接行（含QR） + 三栏统计 + 草坪 + 注脚。
+    /// HOM-174 follow-up：链接区域右侧添加 QR 码。
     @ViewBuilder
     private var magazineBody: some View {
         VStack(spacing: 0) {
@@ -132,8 +131,8 @@ struct ShareCardContent: View {
             avatarSection
                 .padding(.top, 18)
                 .padding(.bottom, 14)
-            // HOM-174：链接行（GitHub / homepage / email 等）
-            profileLinksSection
+            // HOM-174：链接行 + QR 码
+            magazineLinksSection
                 .padding(.bottom, 14)
             divider
             statsSection
@@ -146,6 +145,18 @@ struct ShareCardContent: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 20)
+    }
+
+    /// Magazine 布局的链接行：左侧链接列表 + 右侧 QR 码。
+    @ViewBuilder
+    private var magazineLinksSection: some View {
+        HStack(alignment: .top, spacing: 12) {
+            // 左侧链接列表
+            profileLinksSection
+
+            // 右侧 QR 码
+            qrCodeView
+        }
     }
 
     // MARK: - 顶栏
@@ -333,11 +344,13 @@ struct ShareCardContent: View {
     // MARK: - 链接行（HOM-174 新增）
 
     /// 个人主页链接行：GitHub 主页、blog、email 等。
-    /// HOM-174 follow-up：链接改成每行一个（VStack 布局），图标带绿色背景。
-    /// 非空字段才显示，避免出现空白占位。
+    /// HOM-174 follow-up：
+    /// - 链接改成每行一个（VStack 布局）
+    /// - 图标带绿色背景
+    /// - 最多显示 3 个链接
     @ViewBuilder
     private var profileLinksSection: some View {
-        let links = makeProfileLinks()
+        let links = Array(makeProfileLinks().prefix(3))
         if !links.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(links) { link in

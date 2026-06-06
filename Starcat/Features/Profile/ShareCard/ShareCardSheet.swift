@@ -120,26 +120,17 @@ struct ShareCardSheet: View {
     // MARK: - 主题选择
 
     /// 主题选择 Picker：gacha 风格的卡片式选择器。
-    /// HOM-174 follow-up：替换原来的 segmented picker，采用更原生的 macOS 风格。
-    /// 每个主题显示为一个小卡片，包含主题预览色块 + 名称 + 图标。
-    /// 选中项有蓝色边框和轻微缩放动画。
+    /// HOM-174 follow-up：只显示主题卡片，移除标签文字。
     @ViewBuilder
     private var themePicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("sharecard.theme.label")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .tracking(0.5)
-
-            HStack(spacing: 10) {
-                ForEach(ShareCardTheme.allCases) { t in
-                    ThemeCardButton(
-                        theme: t,
-                        isSelected: theme == t
-                    ) {
-                        withAnimation(.easeInOut(duration: 0.18)) {
-                            theme = t
-                        }
+        HStack(spacing: 10) {
+            ForEach(ShareCardTheme.allCases) { t in
+                ThemeCardButton(
+                    theme: t,
+                    isSelected: theme == t
+                ) {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        theme = t
                     }
                 }
             }
