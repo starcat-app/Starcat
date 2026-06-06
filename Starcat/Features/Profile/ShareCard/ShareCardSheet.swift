@@ -100,6 +100,39 @@ struct ShareCardSheet: View {
             .scrollIndicators(.hidden)
         }
         .frame(width: 480, height: 820)
+        .background {
+            // HOM-173 v3：sheet 整体动态背景（Metal `swDotsFlow` 流场）。
+            //
+            // 为什么这么挂：
+            // - 放在 sheet 根 VStack 的 `.background { ... }` 而不是 `cardPreview`
+            //   内部——dong4j 明确要求是"窗口背景"，不是卡片背景。
+            // - 顶部 `header` 用了 `.background(.bar)` 半透明 material，会透出 flow
+            //   细节，是想要的效果；`cardPreview` 的 ShareCardContent 自带不透明
+            //   palette 背景，会盖住中间一块矩形（保证卡片本身可读性）；ScrollView
+            //   外层无 background，flow 在卡片四周空白处正常流动。
+            // - `tint: .accentColor` 让背景跟随系统强调色（且分享卡 5 套主题色相不一，
+            //   用品牌色比绑定某一主题色更协调）；`opacity(0.45)` 是经验值——再高
+            //   会抢卡片视觉权重，再低基本看不见。
+            // - `vignette: 0` 必须关掉，sheet 自身已限定 480×820 边界，再叠 vignette
+            //   会让画面塌成中心一团。
+            // - `background: .clear` 不传也是默认值，但显式写出来便于排查
+            //   "为什么背景被盖住了"——见 DotsFlowBackground.swift 文件头第 3 条约束。
+            //
+            // 性能：单实例 60fps 重绘，M1 GPU 占用 ~ 1-3%；sheet 关闭后
+            // `TimelineView` 自动停。不要叠多个。
+            //
+            // 注意：导出图（performSave / performShareToX 经 ImageRenderer）不会包含
+            // 此背景——SwiftUI snapshot 不渲染 Metal shader 帧。这是预期行为：
+            // 导出的卡片图保持纯卡片本体，背景仅作为 sheet 浏览时的视觉装饰。
+            DotsFlowBackground(
+                tint: .accentColor,
+                background: .clear,
+                speed: 0.35,
+                brightness: 0.7,
+                vignette: 0.0
+            )
+            .opacity(0.45)
+        }
         .animation(.easeInOut(duration: 0.18), value: exportProgressMessage)
         .task {
             // sheet 打开时强制刷一次 profile（D5-B 决策）。
