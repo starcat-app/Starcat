@@ -79,20 +79,10 @@ struct ShareCardSheet: View {
 
     // MARK: - 顶部标题栏
 
-    /// 顶部标题栏：标题 + 关闭按钮。
-    /// 关闭按钮 macOS 习惯用左上角红绿黄，但 sheet 没有 traffic light，
-    /// 这里用右上角 `xmark.circle.fill` 灰色按钮——与项目内其他 sheet
-    /// （如 GithubAuthView）保持一致的关闭习惯。
+    /// 顶部标题栏：仅关闭按钮。
     @ViewBuilder
     private var header: some View {
         HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("sharecard.title")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("sharecard.subtitle")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
             Spacer()
             Button {
                 onClose()
@@ -105,7 +95,7 @@ struct ShareCardSheet: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(Text("sharecard.close"))
-            .keyboardShortcut(.cancelAction)  // Esc 触发关闭
+            .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 10)
@@ -133,7 +123,7 @@ struct ShareCardSheet: View {
     }
 
     /// 单个主题卡片按钮。
-    /// 包含主题预览色块、名称和图标。
+    /// 只包含主题预览色块，无文字。
     private struct ThemeCardButton: View {
         let theme: ShareCardTheme
         let isSelected: Bool
@@ -141,32 +131,18 @@ struct ShareCardSheet: View {
 
         var body: some View {
             Button(action: action) {
-                VStack(spacing: 6) {
-                    // 主题预览色块
-                    themePreview
-                        .frame(width: 44, height: 32)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
-                        )
-
-                    // 主题名称
-                    Text(theme.localizationKey)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(isSelected ? .primary : .secondary)
-                }
-                .padding(.vertical, 8)
-                .padding(.horizontal, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(isSelected ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 1)
-                )
-                .scaleEffect(isSelected ? 1.02 : 1.0)
+                // 主题预览色块
+                themePreview
+                    .frame(width: 36, height: 28)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                    )
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
+                    )
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
@@ -204,11 +180,7 @@ struct ShareCardSheet: View {
 
     // MARK: - 动作按钮
 
-    /// HOM-174 follow-up：底部按钮调整为：
-    /// - 保存为图片
-    /// - 导出 Starred 记录（下拉菜单：Markdown / HTML）
-    /// - 分享到 X
-    /// 关闭按钮已移除（右上角 xmark 按钮已足够）。
+    /// HOM-174 follow-up：底部按钮与卡片宽度一致。
     @ViewBuilder
     private var actionButtons: some View {
         VStack(spacing: 10) {
@@ -219,7 +191,6 @@ struct ShareCardSheet: View {
                 } label: {
                     Label("sharecard.action.save", systemImage: "square.and.arrow.down")
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -228,10 +199,11 @@ struct ShareCardSheet: View {
 
                 exportStarredButton
             }
+            .frame(width: 400)
 
-            // 第二行：分享到 X（独占一行，强调它是新增的核心入口）
-            // 配合 issue 设计图——左侧 X 图标，"分享到 X"文字，右侧"把图片粘贴到推文里"提示
+            // 第二行：分享到 X（独占一行）
             shareToXButton
+                .frame(width: 400)
         }
     }
 
