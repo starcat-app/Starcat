@@ -270,6 +270,15 @@ struct ShareCardSheet: View {
     }
 
     /// "分享到 X"按钮。
+    ///
+    /// HOM-174 v5（dong4j 2026-06-06）：按用户提供的参考图改为水平蓝→绿渐变背景。
+    /// 设计动机：相比原来的 `.background`（深浅主题各自一片纯色），渐变在两种主题下
+    /// 视觉一致、亮度足够、辨识度高；同时跳出"另一个白卡片"的同质化感受。
+    /// - 渐变两端取色：左 `#4FC3F7`（Material Light Blue 300）/ 右 `#76FF03`（Light Green A700）
+    /// - 文字 + logo 强制 `.black`：因为渐变两端都是亮色，黑字在 dark/light 主题下都能看清
+    /// - 圆角加大到 22：贴合参考图的视觉调性（原 16 偏方）
+    /// - 去掉 separator 边框：渐变本身有视觉边界，边框会破坏色彩纯度
+    /// - 保留轻 shadow：让按钮在亮背景下仍有"浮起"感
     @ViewBuilder
     private var shareToXButton: some View {
         Button {
@@ -280,6 +289,7 @@ struct ShareCardSheet: View {
 
                 Text("sharecard.action.shareToX")
                     .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.black)
 
                 Spacer()
             }
@@ -287,13 +297,9 @@ struct ShareCardSheet: View {
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.background)
-                    .shadow(color: .black.opacity(0.06), radius: 4, y: 1)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(.separator, lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: 22)
+                    .fill(shareToXGradient)
+                    .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
             )
         }
         .buttonStyle(.plain)
@@ -302,13 +308,27 @@ struct ShareCardSheet: View {
         .help(Text("sharecard.action.shareToX.help"))
     }
 
-    /// X 品牌 logo 的本地拼写。20pt 黑色加粗 X，包在白底圆角方框里。
-    /// 自适应深色模式：底色用 primary 反转（`.primary` 在亮色 = 黑、深色 = 白）。
+    /// "分享到 X"按钮的渐变背景。水平方向，左清亮蓝 → 右亮绿。
+    /// 取色参考 dong4j 2026-06-06 提供的截图。
+    private var shareToXGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(red: 79.0/255.0,  green: 195.0/255.0, blue: 247.0/255.0),  // #4FC3F7
+                Color(red: 118.0/255.0, green: 255.0/255.0, blue: 3.0/255.0)     // #76FF03
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
+
+    /// X 品牌 logo 的本地拼写。20pt 黑色加粗 X。
+    /// v5：背景改渐变后，logo 固定 `.black`（亮色渐变上黑字 / 黑 logo 始终可读，
+    /// 不再需要 `.primary` 跟随主题切换）。
     @ViewBuilder
     private var xLogo: some View {
         Text("𝕏")
             .font(.system(size: 18, weight: .black, design: .default))
-            .foregroundStyle(.primary)
+            .foregroundStyle(.black)
             .frame(width: 26, height: 26)
             .accessibilityLabel(Text("X"))
     }
