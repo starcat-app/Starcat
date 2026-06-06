@@ -1,0 +1,370 @@
+//
+//  ShareCardSheet.swift
+//  Starcat
+//
+//  HOM-173 用户分享卡片：sheet 容器视图。
+//
+//  这是用户点击 sidebar 头像左侧分享按钮后看到的整个面板，包含：
+//  - 顶部标题栏（标题 + 关闭按钮）
+//  - 主题选择 segmented Picker（极简黑白 / 热力橙 / GitHub Green）
+//  - 卡片预览区（实时跟随主题切换）
+//  - 三个动作按钮：保存为图片 / 分享到 X / 关闭
+//  - 底部品牌注脚（"由 Starcat 生成"，可点击跳到 starcat.app）
+//
+//  设计权衡：
+//  - 把"主题选择 + 预览 + 动作"放在 sheet 而不是 popover：
+//    分享卡需要 ~520pt 高度做完整预览，popover 在 sidebar 旁会被裁切；
+//    sheet 居中浮在主窗口上层，体验更接近"导出图前最后确认"的语义。
+//  - 主题切换不持久化：每次打开默认 `.githubGreen`（最贴合 GitHub 用户群体），
+//    避免引入额外 AppSettings 字段；用户 365 天里调整一次主题的概率远低于
+//    "每次都按当前心情选"。
+//  - "分享到 X" 按钮触发后**保留 sheet 不关闭**：因为该路径会唤起浏览器，
+//    用户可能想回来再点"保存为图片"备份；显式让用户点关闭。
+//
+
+import SwiftUI
+
+/// 分享卡 sheet 主视图。
+struct ShareCardSheet: View {
+
+    /// 当前登录用户。从 sidebar 调用方传入（已确保 authenticated）。
+    let user: GitHubUserDTO
+
+    /// 本地 starred 数量（与 sidebar 同源）。
+    let starredCount: Int
+
+    /// 贡献草坪 payload（可能为 nil；nil 时分享卡显示空网格但仍可分享）。
+    let contribution: ContributionCalendarPayload?
+
+    /// 关闭回调。由调用方持有 `@State var showShareSheet`，这里只负责发信号。
+    let onClose: () -> Void
+
+    /// 当前选中的主题。默认 GitHub Green（最贴合 GitHub 用户群体）。
+    @State private var theme: ShareCardTheme = .githubGreen
+
+    /// 最近一次操作的反馈文案（"已保存到 …" / "已复制到剪贴板…"）。
+    /// 不弹系统 alert，仅在 sheet 内顶部 toast-like 提示，3 秒后自动隐藏。
+    @State private var lastActionFeedback: String?
+
+    /// 当前正在执行的动作（"保存中…" / "导出中…"），用于禁用按钮防止重复点击。
+    @State private var isExporting: Bool = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+
+            ScrollView {
+                VStack(spacing: 16) {
+                    themePicker
+                        .padding(.top, 4)
+
+                    cardPreview
+                        .padding(.top, 4)
+
+                    if let feedback = lastActionFeedback {
+                        feedbackPill(text: feedback)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+
+                    actionButtons
+                        .padding(.top, 4)
+
+                    starcatFooter
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .frame(width: 480, height: 760)
+        .background(.regularMaterial)
+    }
+
+    // MARK: - 顶部标题栏
+
+    /// 顶部标题栏：标题 + 关闭按钮。
+    /// 关闭按钮 macOS 习惯用左上角红绿黄，但 sheet 没有 traffic light，
+    /// 这里用右上角 `xmark.circle.fill` 灰色按钮——与项目内其他 sheet
+    /// （如 GithubAuthView）保持一致的关闭习惯。
+    @ViewBuilder
+    private var header: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("sharecard.title")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("sharecard.subtitle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                onClose()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 18))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(Text("sharecard.close"))
+            .keyboardShortcut(.cancelAction)  // Esc 触发关闭
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+        .background(.bar)
+    }
+
+    // MARK: - 主题选择
+
+    /// 主题选择 Picker：3 段式 segmented，每段图标 + 名称。
+    /// 用 `.segmented` 让三个主题永远可见、对比清晰；不用 `.menu`（弹下拉对预览不直观）。
+    @ViewBuilder
+    private var themePicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("sharecard.theme.label")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .tracking(0.5)
+
+            Picker("sharecard.theme.label", selection: $theme) {
+                ForEach(ShareCardTheme.allCases) { t in
+                    Label(t.localizationKey, systemImage: t.symbolName)
+                        .tag(t)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+    }
+
+    // MARK: - 卡片预览
+
+    /// 卡片预览区。直接渲染 `ShareCardContent`（与导出图同源），缩放后嵌在 sheet 里。
+    /// sheet 宽 480 - 24×2 padding = 432pt 可用，卡片本体 400pt，自然居中。
+    @ViewBuilder
+    private var cardPreview: some View {
+        ShareCardContent(
+            user: user,
+            starredCount: starredCount,
+            contribution: contribution,
+            theme: theme
+        )
+        // 主题切换时给一点淡入淡出动画，让预览过渡不生硬
+        .animation(.easeInOut(duration: 0.18), value: theme)
+        // 卡片下方加柔和阴影区分 sheet material
+        .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+    }
+
+    // MARK: - 动作按钮
+
+    /// 三个并排按钮：保存为图片 / 分享到 X / 关闭。
+    /// 保存按钮是 `.borderedProminent` 主操作；分享是 X 品牌色（黑/白）次操作；
+    /// 关闭是 `.bordered` 灰色第三操作。
+    @ViewBuilder
+    private var actionButtons: some View {
+        VStack(spacing: 10) {
+            // 第一行：保存 + 关闭
+            HStack(spacing: 10) {
+                Button {
+                    Task { await performSave() }
+                } label: {
+                    Label("sharecard.action.save", systemImage: "square.and.arrow.down")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(isExporting)
+                .keyboardShortcut("s", modifiers: .command)
+
+                Button {
+                    onClose()
+                } label: {
+                    Label("sharecard.action.close", systemImage: "xmark")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            }
+
+            // 第二行：分享到 X（独占一行，强调它是新增的核心入口）
+            // 配合 issue 设计图——左侧 X 图标，"分享到 X"文字，右侧"把图片粘贴到推文里"提示
+            shareToXButton
+        }
+    }
+
+    /// "分享到 X"按钮，按 issue 设计图样式实现：
+    /// - 圆角 16pt 胶囊
+    /// - 黑底白字（X 品牌色），自适配深色模式
+    /// - 左侧 X 图标 + "分享到 X" 主文案
+    /// - 右侧灰色提示"把图片粘贴到推文里"
+    @ViewBuilder
+    private var shareToXButton: some View {
+        Button {
+            Task { await performShareToX() }
+        } label: {
+            HStack(spacing: 12) {
+                // X 没有 SF Symbol 官方版本（旧 Twitter logo 还在 SF Symbols 里但是
+                // 蓝色小鸟，与品牌不符）。这里用 Text("X") 加粗加方框近似 X 当前 logo——
+                // 视觉上比挂三方 SVG 资源更克制；后续如果 SF Symbols 更新出 `xmark` 风格的
+                // X，可以一行替换。
+                xLogo
+
+                Text("sharecard.action.shareToX")
+                    .font(.system(size: 14, weight: .semibold))
+
+                Spacer()
+
+                Text("sharecard.action.shareToX.hint")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.background)
+                    .shadow(color: .black.opacity(0.06), radius: 4, y: 1)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(.separator, lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(isExporting)
+        .help(Text("sharecard.action.shareToX.help"))
+    }
+
+    /// X 品牌 logo 的本地拼写。20pt 黑色加粗 X，包在白底圆角方框里。
+    /// 自适应深色模式：底色用 primary 反转（`.primary` 在亮色 = 黑、深色 = 白）。
+    @ViewBuilder
+    private var xLogo: some View {
+        Text("𝕏")
+            .font(.system(size: 18, weight: .black, design: .default))
+            .foregroundStyle(.primary)
+            .frame(width: 26, height: 26)
+            .accessibilityLabel(Text("X"))
+    }
+
+    /// 反馈提示气泡（"已保存到 …" / "已复制图片到剪贴板…"）。
+    /// 浅胶囊，带绿色对勾——3 秒后自动消失。
+    @ViewBuilder
+    private func feedbackPill(text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            Text(text)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.background.tertiary)
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - 底部品牌注脚
+
+    /// 品牌注脚："由 Starcat 生成"——可点击跳 starcat.app。
+    /// 与卡片内底部的 "Generated by Starcat" 互为呼应；卡片本体的注脚是图片的一部分，
+    /// 这里的注脚是 sheet 上的可点击链接（导出后不会出现在图里）。
+    @ViewBuilder
+    private var starcatFooter: some View {
+        HStack(spacing: 4) {
+            Spacer()
+            Text("sharecard.footer.poweredBy")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Link("Starcat", destination: URL(string: "https://starcat.app")!)
+                .font(.system(size: 11, weight: .semibold))
+            Spacer()
+        }
+    }
+
+    // MARK: - 动作执行
+
+    /// 执行保存。
+    /// 主线程同步走 NSSavePanel；用户取消时静默返回，不显示反馈。
+    @MainActor
+    private func performSave() async {
+        isExporting = true
+        defer { isExporting = false }
+        let content = currentContent
+        if let url = ShareCardExporter.saveImage(
+            content: content,
+            userLogin: user.login,
+            theme: theme
+        ) {
+            showFeedback(String(format: String(localized: "sharecard.feedback.saved"), url.lastPathComponent))
+        }
+    }
+
+    /// 执行分享到 X。
+    /// 复制到剪贴板 + 打开 X 推文撰写页（用户在浏览器里 Cmd+V）。
+    @MainActor
+    private func performShareToX() async {
+        isExporting = true
+        defer { isExporting = false }
+        let content = currentContent
+        let ok = ShareCardExporter.shareToX(content: content, userLogin: user.login)
+        if ok {
+            showFeedback(String(localized: "sharecard.feedback.sharedToX"))
+        }
+    }
+
+    /// 当前要渲染的卡片内容（主题切换不重新构造卡片实例，但导出时要用最新值）。
+    private var currentContent: ShareCardContent {
+        ShareCardContent(
+            user: user,
+            starredCount: starredCount,
+            contribution: contribution,
+            theme: theme
+        )
+    }
+
+    /// 显示反馈提示，3 秒后自动隐藏。
+    /// 用 Task.sleep 在主线程异步隐藏；多次调用以最近一次为准（旧 task 自动 cancel
+    /// 不会发生，因为我们没存它——但反馈语义本就是"显示最新"，覆盖即可）。
+    private func showFeedback(_ text: String) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            lastActionFeedback = text
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            withAnimation(.easeInOut(duration: 0.2)) {
+                lastActionFeedback = nil
+            }
+        }
+    }
+}
+
+// MARK: - Preview
+
+#Preview {
+    let mockUser = GitHubUserDTO(
+        id: 1, login: "dong4j", name: "DONG Jianjun",
+        avatarUrl: "https://avatars.githubusercontent.com/u/3380083?v=4",
+        publicRepos: 48, followers: 236, following: 100,
+        bio: "用代码解决真正的问题。", company: nil,
+        location: "Shanghai", email: nil, blog: nil,
+        twitterUsername: nil, htmlUrl: "https://github.com/dong4j"
+    )
+    return ShareCardSheet(
+        user: mockUser,
+        starredCount: 4823,
+        contribution: nil,
+        onClose: {}
+    )
+}

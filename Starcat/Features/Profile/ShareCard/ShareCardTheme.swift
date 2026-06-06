@@ -1,0 +1,224 @@
+//
+//  ShareCardTheme.swift
+//  Starcat
+//
+//  HOM-173 用户分享卡片：三种封面主题的色彩 / 调色板定义。
+//
+//  设计动机（来自 issue HOM-173 dong4j 最终方案）：
+//  - 卡片布局必须三套主题保持一致（Magazine v2），仅切换配色。
+//  - 既能表达"我是 GitHub 玩家"（绿色草坪），也能切到品牌中性色（黑白）或
+//    传播向暖色（橙），让用户在不同社交平台都能选到合适的封面。
+//
+//  把"主题色板"独立成数据结构而不是散落在 View 里，是为了：
+//  ① 主题枚举可在 Picker / 单测 / 持久化里复用（rawValue: String）
+//  ② 草坪格子色与主标题色严格对齐——避免在 View 里手算配色丢失对照关系
+//  ③ 未来加新主题（赛博紫 / 樱花粉…）只在这个文件加一个 case，不动 View 代码
+//
+//  与现有 `ContributionPalette`（草坪色板）解耦：本文件不引用 light/dark 系统
+//  调色板，而是为分享卡专门定义"导出到图片"的固定色——分享图要在任何设备上看
+//  起来都一样，不能跟着系统 colorScheme 飘。
+//
+
+import SwiftUI
+
+/// 分享卡封面主题枚举。
+///
+/// `rawValue` 写中文是为了 Picker 直接显示——分享卡是国内为主的功能，
+/// `Localizable.xcstrings` 也用 `sharecard.theme.minimal` 等 key 走 i18n。
+enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
+    /// 极简黑白：纯黑底 + 白字 + 灰阶草坪。中性、克制，适合 LinkedIn / 简历类传播。
+    case minimal = "minimal"
+    /// 热力橙：深炭底 + 橙金高光。暖色驱动情绪，适合朋友圈 / 小红书。
+    case heatOrange = "heatOrange"
+    /// GitHub Green：深绿底 + GitHub 经典草坪绿。"我是 GitHub 玩家"的最直接表达。
+    case githubGreen = "githubGreen"
+
+    var id: String { rawValue }
+
+    /// Picker 显示用的 i18n key。
+    var localizationKey: LocalizedStringKey {
+        switch self {
+        case .minimal:      return "sharecard.theme.minimal"
+        case .heatOrange:   return "sharecard.theme.heatOrange"
+        case .githubGreen:  return "sharecard.theme.githubGreen"
+        }
+    }
+
+    /// 主题对应的 SF Symbol（Picker 选项前缀图标）。
+    var symbolName: String {
+        switch self {
+        case .minimal:      return "circle.lefthalf.filled"
+        case .heatOrange:   return "flame.fill"
+        case .githubGreen:  return "leaf.fill"
+        }
+    }
+
+    /// 取出该主题的实际色板。
+    var palette: ShareCardPalette {
+        switch self {
+        case .minimal:      return .minimalPalette
+        case .heatOrange:   return .heatOrangePalette
+        case .githubGreen:  return .githubGreenPalette
+        }
+    }
+}
+
+/// 分享卡色板。
+///
+/// 字段命名按"功能位置"而非"色相"，目的是写 View 时按位置取色不用反查色相。
+/// 例如 `accent` 永远是用于品牌强调（数字、标题装饰线、分享按钮底色），
+/// 实际色相在不同主题下可能是橙、绿、白——但调用点的语义不变。
+struct ShareCardPalette {
+    /// 卡片整体背景色（卡片不再用渐变叠加用户头像主色，因为分享出去是固定图，
+    /// 跟随头像主色会让"同一个人发不同主题"配色还是一样，失去主题切换的意义）。
+    let cardBackground: Color
+    /// 卡片背景的副色，用作渐变第二点（让深色背景有一点呼吸感而不是死黑死绿）。
+    let cardBackgroundSecondary: Color
+    /// 卡片描边（极细描边，区分卡片与外层 sheet 背景）。
+    let cardBorder: Color
+
+    /// 主文字色（用户名 / 大标题）。
+    let primaryText: Color
+    /// 次级文字色（@login / Bio / 标签）。
+    let secondaryText: Color
+    /// 三级文字色（提示、品牌注脚）。
+    let tertiaryText: Color
+
+    /// 品牌强调色：数字、装饰线、"分享到 X" 主按钮底色。
+    let accent: Color
+    /// accent 之上的前景色（按钮文字 / 数字内文）。
+    let onAccent: Color
+
+    /// 分隔线颜色（统计栏分隔条 / 顶部底部装饰横线）。
+    let divider: Color
+
+    /// 草坪 5 档色（none / l1 / l2 / l3 / l4），与 GitHub 主页同结构。
+    /// 之所以独立一份而不是复用 `ContributionPalette`：
+    /// - 极简主题需要灰阶草坪（none → 4 档不同灰度）
+    /// - 热力橙主题需要橙色梯度
+    /// - GitHub Green 主题才用经典绿
+    /// 三套都自己持有，View 渲染时直接 `palette.contribution.color(for: level)`，
+    /// 不再跟系统 colorScheme 绑定。
+    let contribution: ContributionPalette
+}
+
+extension ShareCardPalette {
+
+    // MARK: - 极简黑白
+
+    /// 极简黑白：纯黑底 + 灰阶草坪。
+    ///
+    /// 配色逻辑：
+    /// - 背景：#0B0B0F（近黑微蓝）→ #15151A（顶部稍亮一点形成柔和渐变）
+    /// - 草坪：5 档纯灰梯度，none 用 #1F1F24（与背景区分但不抢眼），
+    ///   l4 是 #FFFFFF（最贡献日 = 高光纯白），形成"贡献越多越亮"的极简观感。
+    /// - 强调色：纯白 #FFFFFF。"分享到 X" 按钮也是白底黑字，呼应 X.com 的极简品牌。
+    static let minimalPalette = ShareCardPalette(
+        cardBackground: Color.fromHex6(0x0B0B0F),
+        cardBackgroundSecondary: Color.fromHex6(0x15151A),
+        cardBorder: Color.fromHex6(0x2A2A30),
+
+        primaryText: Color.fromHex6(0xFFFFFF),
+        secondaryText: Color.fromHex6(0xB8B8BE),
+        tertiaryText: Color.fromHex6(0x6E6E76),
+
+        accent: Color.fromHex6(0xFFFFFF),
+        onAccent: Color.fromHex6(0x0B0B0F),
+
+        divider: Color.fromHex6(0x2A2A30),
+
+        contribution: ContributionPalette(
+            none: Color.fromHex6(0x1F1F24),
+            l1:   Color.fromHex6(0x4A4A52),
+            l2:   Color.fromHex6(0x7A7A82),
+            l3:   Color.fromHex6(0xB0B0B6),
+            l4:   Color.fromHex6(0xFFFFFF)
+        )
+    )
+
+    // MARK: - 热力橙
+
+    /// 热力橙：深炭底 + 橙金高光。
+    ///
+    /// 配色逻辑：
+    /// - 背景：#1A0F0A（深棕红）→ #2A1810（顶部淡棕），暗示"火光"。
+    /// - 草坪：5 档橙金梯度 #2D1F15 → #FFB44D → #FF7A0F，从干柴到火焰。
+    /// - 强调色：#FF7A0F（GitHub commit 火焰橙），用在数字、连续提交进度条、
+    ///   "分享到 X"按钮底色——按钮选 onAccent=黑保证对比度（橙底白字眩光）。
+    static let heatOrangePalette = ShareCardPalette(
+        cardBackground: Color.fromHex6(0x1A0F0A),
+        cardBackgroundSecondary: Color.fromHex6(0x2A1810),
+        cardBorder: Color.fromHex6(0x4A2818),
+
+        primaryText: Color.fromHex6(0xFFF6E8),
+        secondaryText: Color.fromHex6(0xE6BFA0),
+        tertiaryText: Color.fromHex6(0x9E7350),
+
+        accent: Color.fromHex6(0xFF7A0F),
+        onAccent: Color.fromHex6(0x1A0F0A),
+
+        divider: Color.fromHex6(0x4A2818),
+
+        contribution: ContributionPalette(
+            none: Color.fromHex6(0x2D1F15),
+            l1:   Color.fromHex6(0x7A3F0A),
+            l2:   Color.fromHex6(0xC56716),
+            l3:   Color.fromHex6(0xFFB44D),
+            l4:   Color.fromHex6(0xFF7A0F)
+        )
+    )
+
+    // MARK: - GitHub Green
+
+    /// GitHub Green：深绿底 + GitHub 经典草坪绿。
+    ///
+    /// 配色逻辑：
+    /// - 背景：#0D1117（GitHub dark mode 底色）→ #161B22（GitHub canvas-default
+    ///   sidebar 色），让用过 GitHub 的人一眼觉得熟悉。
+    /// - 草坪：直接复用 ContributionPalette.dark 的官方 5 档色——
+    ///   #161b22 / #0e4429 / #006d32 / #26a641 / #39d353。
+    /// - 强调色：#39D353（GitHub 草坪 l4 的最亮绿）。"分享到 X"按钮也用这个色，
+    ///   配 onAccent=深绿黑（#0D1117）保证可读。
+    static let githubGreenPalette = ShareCardPalette(
+        cardBackground: Color.fromHex6(0x0D1117),
+        cardBackgroundSecondary: Color.fromHex6(0x161B22),
+        cardBorder: Color.fromHex6(0x30363D),
+
+        primaryText: Color.fromHex6(0xF0F6FC),
+        secondaryText: Color.fromHex6(0x8B949E),
+        tertiaryText: Color.fromHex6(0x6E7681),
+
+        accent: Color.fromHex6(0x39D353),
+        onAccent: Color.fromHex6(0x0D1117),
+
+        divider: Color.fromHex6(0x30363D),
+
+        contribution: ContributionPalette(
+            none: Color.fromHex6(0x161B22),
+            l1:   Color.fromHex6(0x0E4429),
+            l2:   Color.fromHex6(0x006D32),
+            l3:   Color.fromHex6(0x26A641),
+            l4:   Color.fromHex6(0x39D353)
+        )
+    )
+}
+
+// MARK: - hex int → Color 便捷构造
+
+/// 6 位 RGB hex int 构造 Color。
+///
+/// **为什么不用 `Color(hex6:)` 这个名字**：`ContributionGraphView.swift` 已经有
+/// 一个 `private extension Color { init(hex6: UInt32) }`，虽然 fileprivate，
+/// 但 Swift 编译器在 module 维度仍会拦"两个相同 signature 的 init"，导致
+/// `invalid redeclaration of 'init(hex6:)'`。这里改用全局 `Color.fromHex6(_:)`
+/// 静态工厂，避开 init 冲突，同时让本目录文件能共享同一份转换逻辑。
+extension Color {
+    /// 6 位 RGB hex int → Color（sRGB，全不透明）。
+    /// 例：`Color.fromHex6(0xFF7A0F)` → 火焰橙。
+    static func fromHex6(_ hex: UInt32) -> Color {
+        let r = Double((hex >> 16) & 0xFF) / 255.0
+        let g = Double((hex >> 8) & 0xFF) / 255.0
+        let b = Double(hex & 0xFF) / 255.0
+        return Color(.sRGB, red: r, green: g, blue: b, opacity: 1.0)
+    }
+}
