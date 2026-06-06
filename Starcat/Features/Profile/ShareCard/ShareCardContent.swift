@@ -43,6 +43,7 @@
 //
 
 import SwiftUI
+import Kingfisher
 
 /// 分享卡片本体（纯视觉，无任何交互）。
 ///
@@ -93,6 +94,34 @@ struct ShareCardContent: View {
     }
 
     var body: some View {
+        // **HOM-173 follow-up（2026-06-06）**：按 theme.layout 走两条独立渲染路径——
+        // - magazine：既有 3 个主题（minimal / heatOrange / githubGreen），保持原版本
+        // - idCard：新增白卡 / 黑卡，去掉草坪 + follow stats，右下角换 QR 码
+        // 两条路径完全分离，对既有主题零影响。
+        Group {
+            switch theme.layout {
+            case .magazine:
+                magazineBody
+            case .idCard:
+                idCardBody
+            }
+        }
+        .frame(width: Self.canvasWidth, height: Self.canvasHeight)
+        .background(backgroundGradient)
+        .overlay(
+            // 极细 1pt 描边让卡片边界与外层 sheet 背景区分
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(palette.cardBorder, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+    }
+
+    // MARK: - Magazine 布局（HOM-173 v1，既有主题）
+
+    /// 杂志卡布局：顶栏 + 头像 + 三栏统计 + 草坪 + 注脚。
+    /// 保持 v1 实现，仅在外层 body 用 switch 转发，确保零回归。
+    @ViewBuilder
+    private var magazineBody: some View {
         VStack(spacing: 0) {
             topBar
             avatarSection
@@ -109,14 +138,6 @@ struct ShareCardContent: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 20)
-        .frame(width: Self.canvasWidth, height: Self.canvasHeight)
-        .background(backgroundGradient)
-        .overlay(
-            // 极细 1pt 描边让卡片边界与外层 sheet 背景区分
-            RoundedRectangle(cornerRadius: 24)
-                .stroke(palette.cardBorder, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 24))
     }
 
     // MARK: - 顶栏
@@ -293,6 +314,215 @@ struct ShareCardContent: View {
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .foregroundStyle(palette.accent)
         }
+    }
+
+    // MARK: - ID Card 布局（HOM-173 v2，2026-06-06 新增）
+
+    /// ID 卡布局：大圆角头像主图 + 用户名 + Bio + 底部（左 stats + 右 QR）。
+    /// 不渲染草坪、不渲染 followers/following。
+    ///
+    /// 布局结构（参考 dong4j 提供的设计图）：
+    /// - 顶部：大圆角矩形头像（卡片宽度减边距），底部加渐变带过渡到下方文字
+    /// - 中部：用户名 + verified 勾 + Bio（最多 2 行，nil/空 时省略）
+    /// - 底部：左侧 2 个 pill stat（⭐ Starred + 📦 Public Repos），右侧 QR 码（64pt）
+    @ViewBuilder
+    private var idCardBody: some View {
+        VStack(spacing: 0) {
+            idCardAvatar
+                .padding(.top, 20)
+                .padding(.horizontal, 20)
+
+            VStack(alignment: .leading, spacing: 6) {
+                idCardIdentity
+                idCardBio
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.top, 18)
+
+            Spacer(minLength: 12)
+
+            idCardBottomRow
+                .padding(.horizontal, 24)
+                .padding(.bottom, 22)
+        }
+    }
+
+    /// ID 卡顶部头像区。
+    /// 圆角矩形头像（不是圆形）+ 底部渐变虚化，模拟设计图里头像填充上半部分的视觉。
+    @ViewBuilder
+    private var idCardAvatar: some View {
+        // 卡片宽 400 - 左右 padding 20 = 360pt 头像方块；高度按 0.78 比例避免太占垂直空间
+        let avatarSide: CGFloat = Self.canvasWidth - 40
+        let avatarHeight: CGFloat = avatarSide * 0.78
+        ZStack(alignment: .bottom) {
+            avatarFillView
+                .frame(width: avatarSide, height: avatarHeight)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(palette.cardBorder, lineWidth: 0.5)
+                )
+
+            // 头像底部 → 卡片底色的淡入渐变带，让头像和下方文字区无硬边过渡
+            LinearGradient(
+                colors: [palette.cardBackground.opacity(0.0),
+                         palette.cardBackground.opacity(0.55)],
+                startPoint: .top, endPoint: .bottom
+            )
+            .frame(width: avatarSide, height: 60)
+            .clipShape(
+                UnevenRoundedRectangle(
+                    bottomLeadingRadius: 18,
+                    bottomTrailingRadius: 18
+                )
+            )
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// 头像填充视图。设计图里头像几乎覆盖卡片上半部分，需要"方形填充"——
+    /// 不能用 `RemoteAvatar`（强制 Circle clip 会丢四角），改直接用 KFImage scaledToFill。
+    @ViewBuilder
+    private var avatarFillView: some View {
+        if let urlString = user.avatarUrl,
+           !urlString.isEmpty,
+           let url = URL(string: urlString) {
+            // KFImage：与 sidebar / Magazine 卡同一份 Kingfisher 缓存，命中率近 100%
+            KFImage(url)
+                .resizable()
+                .placeholder {
+                    Rectangle()
+                        .fill(palette.cardBackgroundSecondary)
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 60))
+                                .foregroundStyle(palette.tertiaryText)
+                        )
+                }
+                .fade(duration: 0.15)
+                .scaledToFill()
+        } else {
+            // 无 avatarUrl：渐变占位 + person 图标
+            ZStack {
+                LinearGradient(
+                    colors: [palette.cardBackgroundSecondary, palette.cardBackground],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
+                Image(systemName: "person.fill")
+                    .font(.system(size: 80, weight: .light))
+                    .foregroundStyle(palette.tertiaryText)
+            }
+        }
+    }
+
+    /// ID 卡身份行：用户名 + verified 勾。
+    @ViewBuilder
+    private var idCardIdentity: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Text(user.name?.isEmpty == false ? user.name! : user.login)
+                .font(.system(size: 26, weight: .bold, design: .rounded))
+                .foregroundStyle(palette.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+
+            // verified 勾——白卡用黑勾、黑卡用白勾，与设计图视觉等价
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(palette.accent)
+        }
+    }
+
+    /// ID 卡 Bio 行。空 / nil 时不渲染。
+    @ViewBuilder
+    private var idCardBio: some View {
+        if let bio = user.bio, !bio.isEmpty {
+            Text(bio)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// ID 卡底部行：左侧 2 个 pill stats，右侧 QR 码。
+    ///
+    /// 数据替换决策：dong4j 明确"不需要 follow"——
+    /// 把 followers / following 改为对 Starcat 用户更有意义的 ⭐ Starred（本地 totalCount）+
+    /// 📦 Public Repos（`/user.publicRepos`，登录返回数据，无额外请求）。
+    @ViewBuilder
+    private var idCardBottomRow: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 8) {
+                idCardStatPill(symbol: "star.fill",
+                               value: starredCount,
+                               labelKey: "sharecard.stats.starred")
+                idCardStatPill(symbol: "shippingbox.fill",
+                               value: user.publicRepos ?? 0,
+                               labelKey: "sharecard.stats.repos")
+            }
+
+            Spacer()
+
+            qrCodeView
+        }
+    }
+
+    /// 单个 stat pill：圆形 accent 底图标 + 数字 + 小标签。
+    @ViewBuilder
+    private func idCardStatPill(symbol: String, value: Int, labelKey: LocalizedStringKey) -> some View {
+        HStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(palette.accent)
+                    .frame(width: 22, height: 22)
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(palette.onAccent)
+            }
+            Text(formatCompact(value))
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundStyle(palette.primaryText)
+                .monospacedDigit()
+            Text(labelKey)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(palette.tertiaryText)
+                .textCase(.uppercase)
+                .tracking(0.5)
+        }
+    }
+
+    /// QR 码视图。内容：用户 GitHub 主页 URL（`https://github.com/{login}`）。
+    ///
+    /// 视觉：64pt QR + 6pt 容器内边距 = 76pt 容器；容器底色 = onAccent（与 stats pill 反色一致）。
+    /// 白卡：黑容器 + 白 QR；黑卡：白容器 + 黑 QR——两种模式都保证扫码对比度。
+    @ViewBuilder
+    private var qrCodeView: some View {
+        let url = "https://github.com/\(user.login)"
+        let qrImage = QRCodeGenerator.generate(text: url, sizePoints: 64)
+
+        ZStack {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(palette.onAccent)
+                .frame(width: 76, height: 76)
+
+            if let qrImage {
+                // QR 默认黑模块 + 透明背景；用 template + accent 色让 QR 反成主题色
+                Image(nsImage: qrImage)
+                    .interpolation(.none)
+                    .resizable()
+                    .renderingMode(.template)
+                    .frame(width: 64, height: 64)
+                    .foregroundStyle(palette.accent)
+            } else {
+                // 极端兜底：QR 生成失败时显示 SF Symbol qrcode 图标
+                Image(systemName: "qrcode")
+                    .font(.system(size: 36, weight: .regular))
+                    .foregroundStyle(palette.accent)
+            }
+        }
+        .accessibilityLabel(Text(verbatim: url))
     }
 }
 

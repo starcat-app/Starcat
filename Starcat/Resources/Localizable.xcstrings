@@ -7772,6 +7772,22 @@
         }
       }
     },
+    "sharecard.stats.repos" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repos"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repos"
+          }
+        }
+      }
+    },
     "sharecard.stats.starred" : {
       "localizations" : {
         "en" : {
@@ -7804,6 +7820,22 @@
         }
       }
     },
+    "sharecard.theme.darkCard" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Night Card"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "极夜黑卡"
+          }
+        }
+      }
+    },
     "sharecard.theme.githubGreen" : {
       "localizations" : {
         "en" : {
@@ -7832,6 +7864,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "热力橙"
+          }
+        }
+      }
+    },
+    "sharecard.theme.lightCard" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pure Card"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "简约白卡"
           }
         }
       }

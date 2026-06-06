@@ -23,15 +23,31 @@ import SwiftUI
 
 /// 分享卡封面主题枚举。
 ///
-/// `rawValue` 写中文是为了 Picker 直接显示——分享卡是国内为主的功能，
-/// `Localizable.xcstrings` 也用 `sharecard.theme.minimal` 等 key 走 i18n。
+/// `rawValue` 写英文（minimal / heatOrange / lightCard …）便于持久化与单测稳定，
+/// 显示文案走 `Localizable.xcstrings` 的 `sharecard.theme.*` key（中英双语）。
+///
+/// **HOM-173 follow-up（2026-06-06）**：新增 `.lightCard` / `.darkCard` 两个 ID 卡风格主题——
+/// dong4j 反馈"前 3 个杂志卡都好，但希望加个 ID 卡风：去掉草坪、去掉 follow，右下角是二维码"。
+/// 为了不动既有 3 个主题的渲染路径，引入 `layout` 维度区分 magazine / idCard 两种布局。
 enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
+
+    // MARK: - Magazine 布局（既有 3 个，HOM-173 v1）
+
     /// 极简黑白：纯黑底 + 白字 + 灰阶草坪。中性、克制，适合 LinkedIn / 简历类传播。
     case minimal = "minimal"
     /// 热力橙：深炭底 + 橙金高光。暖色驱动情绪，适合朋友圈 / 小红书。
     case heatOrange = "heatOrange"
     /// GitHub Green：深绿底 + GitHub 经典草坪绿。"我是 GitHub 玩家"的最直接表达。
     case githubGreen = "githubGreen"
+
+    // MARK: - ID Card 布局（HOM-173 v2，2026-06-06 新增）
+
+    /// 简约白卡：纯白底 + 黑字 + 大圆角头像 + 右下角 QR。
+    /// 灵感来自 dong4j 提供的 ID 卡设计图（左侧白卡形态）。
+    case lightCard = "lightCard"
+    /// 极夜黑卡：纯黑底 + 白字 + 大圆角头像 + 右下角 QR。
+    /// 灵感来自 dong4j 提供的 ID 卡设计图（右侧黑卡形态）。
+    case darkCard = "darkCard"
 
     var id: String { rawValue }
 
@@ -41,6 +57,8 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
         case .minimal:      return "sharecard.theme.minimal"
         case .heatOrange:   return "sharecard.theme.heatOrange"
         case .githubGreen:  return "sharecard.theme.githubGreen"
+        case .lightCard:    return "sharecard.theme.lightCard"
+        case .darkCard:     return "sharecard.theme.darkCard"
         }
     }
 
@@ -50,6 +68,8 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
         case .minimal:      return "circle.lefthalf.filled"
         case .heatOrange:   return "flame.fill"
         case .githubGreen:  return "leaf.fill"
+        case .lightCard:    return "person.text.rectangle"
+        case .darkCard:     return "person.text.rectangle.fill"
         }
     }
 
@@ -59,8 +79,32 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
         case .minimal:      return .minimalPalette
         case .heatOrange:   return .heatOrangePalette
         case .githubGreen:  return .githubGreenPalette
+        case .lightCard:    return .lightCardPalette
+        case .darkCard:     return .darkCardPalette
         }
     }
+
+    /// 卡片整体布局——magazine（既有杂志卡）或 idCard（新增 ID 卡）。
+    ///
+    /// 引入这个维度是为了让 `ShareCardContent` 在 body 里走两条独立渲染路径——
+    /// **既有 3 个主题（minimal/heatOrange/githubGreen）零改动**，新主题独立加渲染分支，
+    /// 把"加新主题"的影响半径锁在新文件 / 新分支内，避免回归。
+    var layout: ShareCardLayout {
+        switch self {
+        case .minimal, .heatOrange, .githubGreen:
+            return .magazine
+        case .lightCard, .darkCard:
+            return .idCard
+        }
+    }
+}
+
+/// 卡片布局类型。
+enum ShareCardLayout {
+    /// 杂志卡：顶栏 + 头像 + 三栏统计 + 草坪 + 注脚。HOM-173 v1。
+    case magazine
+    /// ID 卡：大圆角头像主图 + 用户名 + Bio + 底部（左 stats + 右 QR）。HOM-173 v2。
+    case idCard
 }
 
 /// 分享卡色板。
@@ -199,6 +243,73 @@ extension ShareCardPalette {
             l2:   Color.fromHex6(0x006D32),
             l3:   Color.fromHex6(0x26A641),
             l4:   Color.fromHex6(0x39D353)
+        )
+    )
+
+    // MARK: - 简约白卡（ID Card 布局）
+
+    /// 简约白卡：纯白底 + 黑字 + 浅灰描边。
+    ///
+    /// 配色逻辑（参考 dong4j 提供的设计图左侧白卡）：
+    /// - 背景：#FFFFFF 纯白；secondary 给一点不可见的 #FAFAFA 让外层渐变路径不报错。
+    /// - 卡片描边：#E5E7EB（与系统 separator 接近的浅灰），描出实体名片的"边"。
+    /// - 主文字：#0A0A0A 近黑（不死黑，避免印刷感太重）。
+    /// - 强调色：#0A0A0A 黑——`accent` 在 ID 卡布局里用作"verified 徽章背景"和"stats pill 背景"。
+    /// - 草坪色板：白卡不渲染草坪，但 palette 字段必须填——给一份纯灰梯度兜底，
+    ///   防止未来不小心用 `palette.contribution` 时出现透明色。
+    static let lightCardPalette = ShareCardPalette(
+        cardBackground: Color.fromHex6(0xFFFFFF),
+        cardBackgroundSecondary: Color.fromHex6(0xFAFAFA),
+        cardBorder: Color.fromHex6(0xE5E7EB),
+
+        primaryText: Color.fromHex6(0x0A0A0A),
+        secondaryText: Color.fromHex6(0x4B5563),
+        tertiaryText: Color.fromHex6(0x9CA3AF),
+
+        accent: Color.fromHex6(0x0A0A0A),
+        onAccent: Color.fromHex6(0xFFFFFF),
+
+        divider: Color.fromHex6(0xE5E7EB),
+
+        contribution: ContributionPalette(
+            none: Color.fromHex6(0xF3F4F6),
+            l1:   Color.fromHex6(0xD1D5DB),
+            l2:   Color.fromHex6(0x9CA3AF),
+            l3:   Color.fromHex6(0x4B5563),
+            l4:   Color.fromHex6(0x0A0A0A)
+        )
+    )
+
+    // MARK: - 极夜黑卡（ID Card 布局）
+
+    /// 极夜黑卡：纯黑底 + 白字 + 微亮描边。
+    ///
+    /// 配色逻辑（参考 dong4j 提供的设计图右侧黑卡）：
+    /// - 背景：#0A0A0A 近黑（不死黑保留少量"墨黑"质感）；secondary 略亮 #141414 给外层渐变。
+    /// - 卡片描边：#262626（dark-mode separator 量级），勾出卡片轮廓避免与外层 sheet 融成一片。
+    /// - 主文字：#FAFAFA（不死白，更柔和）。
+    /// - 强调色：白 #FFFFFF——黑卡上"verified 徽章 / stats pill"反色，与白卡互为镜像。
+    /// - 草坪色板：黑卡也不渲染草坪，给一份反向灰梯度（none 最暗 / l4 最亮）兜底。
+    static let darkCardPalette = ShareCardPalette(
+        cardBackground: Color.fromHex6(0x0A0A0A),
+        cardBackgroundSecondary: Color.fromHex6(0x141414),
+        cardBorder: Color.fromHex6(0x262626),
+
+        primaryText: Color.fromHex6(0xFAFAFA),
+        secondaryText: Color.fromHex6(0xA3A3A3),
+        tertiaryText: Color.fromHex6(0x6B7280),
+
+        accent: Color.fromHex6(0xFFFFFF),
+        onAccent: Color.fromHex6(0x0A0A0A),
+
+        divider: Color.fromHex6(0x262626),
+
+        contribution: ContributionPalette(
+            none: Color.fromHex6(0x171717),
+            l1:   Color.fromHex6(0x404040),
+            l2:   Color.fromHex6(0x737373),
+            l3:   Color.fromHex6(0xA3A3A3),
+            l4:   Color.fromHex6(0xFAFAFA)
         )
     )
 }
