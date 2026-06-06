@@ -84,6 +84,46 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
+    /// Picker 预览专用的色板对（background / accent 两色）。
+    ///
+    /// **为什么不直接复用 `palette.cardBackground` / `palette.accent`**
+    /// （2026-06-06 dong4j 反馈："黑色卡片在明亮模式下太刺眼、暗黑模式下不明显，
+    /// 换成更协调的颜色"）：
+    /// - `palette` 是"导出图"的固定色，必然出现纯黑 `#0A0A0A` / 纯白 `#FFFFFF`
+    /// - 在 picker 36×28pt 的小色块里：
+    ///   * 纯黑在 light 模式下像"挖了个洞"过于刺眼
+    ///   * 纯黑在 dark 模式下又与 sheet 背景融成一片
+    ///   * 纯白在 light 模式下同样会融合（反向问题）
+    /// - 这里返回 picker 专用色，特性：
+    ///   1) 避开 #0A 以下和 #F5 以上的极端值
+    ///   2) 保留每个主题的"色相记忆点"（橙的暖、绿的草、黑卡的灰、白卡的米）
+    ///   3) 5 个主题相互之间视觉上仍可区分（避免 minimal vs darkCard 撞色）
+    /// - 不影响导出图：导出走 `palette`，picker 走 `pickerSwatch`，两条独立路径。
+    var pickerSwatch: (background: Color, accent: Color) {
+        switch self {
+        case .minimal:
+            // 极简：深石墨 + 近白。比纯黑 #0B0B0F 柔一档，保留"克制中性"语义。
+            return (Color.fromHex6(0x2C2C2E), Color.fromHex6(0xF5F5F7))
+        case .heatOrange:
+            // 热力橙：深暖棕 + 火焰橙。背景从 #1A0F0A 提亮到 #3A201A，
+            // 减少"黑感"突出"棕暖"，accent 维持 palette 取色保持火焰识别度。
+            return (Color.fromHex6(0x3A201A), Color.fromHex6(0xFF7A0F))
+        case .githubGreen:
+            // GitHub Green：墨绿 + 草坪绿。背景从 GitHub 蓝黑 #0D1117 提亮到 #0F2A1A，
+            // 让"绿主题"在 picker 里更绿少黑，accent 维持草坪 #39D353。
+            return (Color.fromHex6(0x0F2A1A), Color.fromHex6(0x39D353))
+        case .lightCard:
+            // 白卡：近白 + 深石墨。背景从纯白 #FFFFFF 微调到 #F5F5F7（macOS systemGray6），
+            // 在 light sheet 里仍能与 sheet 背景区分；accent 从纯黑 #0A0A0A 提到 #3A3A3C
+            // 让"白卡 + 黑徽章"对比柔和不刺眼。
+            return (Color.fromHex6(0xF5F5F7), Color.fromHex6(0x3A3A3C))
+        case .darkCard:
+            // 黑卡：中度石墨 + 近白。比 minimal 浅整整一档（#48484A vs #2C2C2E），
+            // 用"中灰 vs 深灰"双卡区分 minimal vs darkCard；accent 维持近白。
+            return (Color.fromHex6(0x48484A), Color.fromHex6(0xF5F5F7))
+        }
+    }
+
     /// 卡片整体布局——magazine（既有杂志卡）或 idCard（新增 ID 卡）。
     ///
     /// 引入这个维度是为了让 `ShareCardContent` 在 body 里走两条独立渲染路径——

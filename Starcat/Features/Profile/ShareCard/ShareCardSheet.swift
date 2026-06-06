@@ -251,17 +251,16 @@ struct ShareCardSheet: View {
                     .frame(width: 36, height: 28)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .overlay(
-                        // 双层 stroke 的设计动机（2026-06-06 dong4j 反馈适配深浅主题）：
-                        // - 选中态：用 `Color.accentColor` 加粗 2pt 描边，强表达"选中"。
-                        // - 未选中态：用 `Color.primary.opacity(0.25)` 描 0.8pt 细边。
-                        //   `Color.primary` 在 light 模式解析为黑、dark 模式解析为白——
-                        //   这样 lightCard（纯白）在 light 模式下、minimal/darkCard（纯黑）在
-                        //   dark 模式下，色块边缘都能与 sheet 背景区分开，不会"融成一片"。
-                        // - 0.25 透明度是经验值：太重抢视觉，太淡仍融背景。
+                        // 描边策略（2026-06-06 dong4j 反馈适配深浅主题）：
+                        // - 选中态：`Color.accentColor` 2pt 加粗描边，强表达"选中"。
+                        // - 未选中态：`Color.primary.opacity(0.18)` 描 0.5pt 极细边。
+                        //   `Color.primary` 在 light 模式→黑、dark 模式→白，自动适配。
+                        //   由于色块已通过 `pickerSwatch` 避开纯黑/纯白，0.5pt 极细
+                        //   "提示线"足够勾出边缘而不会抢视觉权重。
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(
-                                isSelected ? Color.accentColor : Color.primary.opacity(0.25),
-                                lineWidth: isSelected ? 2 : 0.8
+                                isSelected ? Color.accentColor : Color.primary.opacity(0.18),
+                                lineWidth: isSelected ? 2 : 0.5
                             )
                     )
                     .background(
@@ -274,12 +273,17 @@ struct ShareCardSheet: View {
         }
 
         /// 主题预览色块：显示主题的主要配色。
+        ///
+        /// 用 `theme.pickerSwatch` 而**不是** `theme.palette` 的 cardBackground/accent
+        /// （见 `ShareCardTheme.pickerSwatch` 的详细注释）：导出图色板可能出现纯黑/纯白，
+        /// 在 picker 36×28 小色块里会刺眼或融背景；pickerSwatch 是为 picker 单独调过的
+        /// 柔和色对，保留色相记忆点同时兼容 light/dark 两种主题。
         private var themePreview: some View {
             HStack(spacing: 1) {
                 Rectangle()
-                    .fill(theme.palette.cardBackground)
+                    .fill(theme.pickerSwatch.background)
                 Rectangle()
-                    .fill(theme.palette.accent)
+                    .fill(theme.pickerSwatch.accent)
             }
         }
     }
