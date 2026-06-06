@@ -677,8 +677,13 @@ struct AISettingsTab: View {
     private var selectedProfileBinding: Binding<String?> {
         Binding(
             get: { selectedProfileID },
-            set: {
-                selectedProfileID = $0
+            set: { newSelection in
+                // macOS Picker 在 Form 刷新时可能把当前 selection 原样写回一次。
+                // 新增草稿时第一行仍显示原已验证配置（如 DeepSeek），如果重复写回也清空
+                // draftProfile，就会出现“输入任意字符后草稿 provider 跳回 DeepSeek”。
+                // 只有用户真正切到另一个已验证配置时，才丢弃草稿。
+                guard newSelection != selectedProfileID else { return }
+                selectedProfileID = newSelection
                 draftProfile = nil
                 draftAPIKey = ""
                 keyError = nil
