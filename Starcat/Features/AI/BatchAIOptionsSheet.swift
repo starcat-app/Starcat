@@ -11,8 +11,15 @@
 //
 //  关键约束：
 //  - 默认值与 dong4j 2026-06-06 评审决议一致：actions=[summary,tags]、autoApply=false、threshold=0.90。
-//  - 置信度滑条仅在 autoApplyTags 打开时显示，避免无谓配置项干扰。
 //  - 启动按钮在 actions 为空 / repo 数为 0 时禁用，避免误触发。
+//
+//  UI 设计（2026-06-06 17:51 dong4j 反馈"系统 toggle 太丑"重做）：
+//  - 抛弃 `Toggle(...).toggleStyle(.switch)`：macOS 26 的系统 switch 颗粒粗、
+//    放在小窗口里视觉权重过大，让 sheet 看着像"安卓系统设置"。
+//  - 改用 **可点击卡片 + 圆形 checkmark**：整行点击切换，圆形勾选标记替代 toggle，
+//    视觉重量更轻。选中态用 tint 淡色背景 + 描边明确反馈。
+//  - hover 反馈复用项目共享 `PressableHover`，与详情页可点击元素一致。
+//  - 自动应用 / 阈值滑条作为"标签"的子设置缩进展示，依赖关系清晰。
 //
 
 import SwiftUI
@@ -29,121 +36,158 @@ struct BatchAIOptionsSheet: View {
     private static let avgSecondsPerRepo: Double = 8.0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 18) {
             header
-
-            Divider()
-
             actionsSection
-
-            autoApplySection
-
-            Divider()
-
+            autoApplyCard
             footer
         }
         .padding(20)
-        .frame(width: 460)
+        .frame(width: 480)
     }
 
-    // MARK: - 子视图
+    // MARK: - Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.tint.opacity(0.12))
                 Image(systemName: "sparkles")
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.tint)
+            }
+            .frame(width: 36, height: 36)
+
+            VStack(alignment: .leading, spacing: 2) {
                 Text("batchAI.options.title")
                     .font(.headline)
+                Text(String(format: String(localized: "batchAI.options.subtitleFormat"), pendingCount))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
-            Text(String(format: String(localized: "batchAI.options.subtitleFormat"), pendingCount))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            estimateLabel
+
+            Spacer()
+
+            estimateChip
         }
     }
 
-    @ViewBuilder
-    private var estimateLabel: some View {
+    private var estimateChip: some View {
         let seconds = Double(pendingCount) * Self.avgSecondsPerRepo
         let minutes = max(1, Int((seconds / 60).rounded(.up)))
-        Text(String(format: String(localized: "batchAI.options.estimateFormat"), minutes))
-            .font(.caption)
-            .foregroundStyle(.tertiary)
+        return HStack(spacing: 4) {
+            Image(systemName: "clock")
+                .font(.caption2)
+            Text(String(format: String(localized: "batchAI.options.estimateFormat"), minutes))
+                .font(.caption.monospacedDigit())
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.secondary.opacity(0.08), in: Capsule())
     }
+
+    // MARK: - Actions Section（两个操作卡片）
 
     private var actionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("batchAI.options.actionsLabel")
-                .font(.subheadline.weight(.medium))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
 
-            ToggleRow(
-                isOn: actionBinding(for: .summary),
-                title: "batchAI.options.action.summary",
-                subtitle: "batchAI.options.action.summary.desc",
-                systemImage: "doc.text"
-            )
-            ToggleRow(
-                isOn: actionBinding(for: .tags),
-                title: "batchAI.options.action.tags",
-                subtitle: "batchAI.options.action.tags.desc",
-                systemImage: "tag"
-            )
+            VStack(spacing: 8) {
+                OptionCard(
+                    icon: "doc.text",
+                    title: "batchAI.options.action.summary",
+                    subtitle: "batchAI.options.action.summary.desc",
+                    isSelected: options.actions.contains(.summary),
+                    onToggle: { toggleAction(.summary) }
+                )
+                OptionCard(
+                    icon: "tag",
+                    title: "batchAI.options.action.tags",
+                    subtitle: "batchAI.options.action.tags.desc",
+                    isSelected: options.actions.contains(.tags),
+                    onToggle: { toggleAction(.tags) }
+                )
+            }
         }
     }
 
-    @ViewBuilder
-    private var autoApplySection: some View {
+    // MARK: - Auto-apply Card（带子设置：阈值滑条）
+
+    private var autoApplyCard: some View {
         let tagsEnabled = options.actions.contains(.tags)
 
-        VStack(alignment: .leading, spacing: 8) {
-            Toggle(isOn: $options.autoApplyTags) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("batchAI.options.autoApply")
-                        .font(.subheadline.weight(.medium))
-                    Text("batchAI.options.autoApply.desc")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        return VStack(alignment: .leading, spacing: 10) {
+            OptionCard(
+                icon: "checkmark.seal",
+                title: "batchAI.options.autoApply",
+                subtitle: "batchAI.options.autoApply.desc",
+                isSelected: options.autoApplyTags,
+                isDisabled: !tagsEnabled,
+                onToggle: {
+                    guard tagsEnabled else { return }
+                    options.autoApplyTags.toggle()
                 }
-            }
-            .toggleStyle(.switch)
-            .disabled(!tagsEnabled)
+            )
 
             if options.autoApplyTags, tagsEnabled {
                 thresholdSlider
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .animation(.easeInOut(duration: 0.18), value: options.autoApplyTags)
     }
 
     private var thresholdSlider: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
                 Text("batchAI.options.threshold")
-                    .font(.caption)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Text(verbatim: percentString(options.confidenceThreshold))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(.tint.opacity(0.15), in: Capsule())
+                    .foregroundStyle(.tint)
             }
+
             Slider(value: $options.confidenceThreshold, in: 0.5...1.0, step: 0.05)
+                .controlSize(.mini)
+                .tint(.accentColor)
+
             Text(String(format: String(localized: "batchAI.options.threshold.hintFormat"), percentString(options.confidenceThreshold)))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
-        .padding(.leading, 28)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.secondary.opacity(0.06))
+        )
+        .padding(.leading, 36)  // 视觉上缩进，体现"自动应用"的子设置层级
     }
+
+    // MARK: - Footer
 
     private var footer: some View {
         HStack {
             Spacer()
             Button("general.cancel", action: onCancel)
                 .keyboardShortcut(.cancelAction)
+                .controlSize(.large)
             Button {
                 onStart()
             } label: {
                 Text(String(format: String(localized: "batchAI.options.startFormat"), pendingCount))
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .keyboardShortcut(.defaultAction)
             .disabled(!options.isValidForStart || pendingCount == 0)
         }
@@ -151,19 +195,12 @@ struct BatchAIOptionsSheet: View {
 
     // MARK: - 辅助
 
-    /// 把 actions Set 投影成单个 Action 的 Toggle binding。
-    /// Toggle 切换时 add/remove 即可，逻辑短小不抽函数。
-    private func actionBinding(for action: BatchAIAction) -> Binding<Bool> {
-        Binding(
-            get: { options.actions.contains(action) },
-            set: { newValue in
-                if newValue {
-                    options.actions.insert(action)
-                } else {
-                    options.actions.remove(action)
-                }
-            }
-        )
+    private func toggleAction(_ action: BatchAIAction) {
+        if options.actions.contains(action) {
+            options.actions.remove(action)
+        } else {
+            options.actions.insert(action)
+        }
     }
 
     private func percentString(_ v: Double) -> String {
@@ -171,31 +208,116 @@ struct BatchAIOptionsSheet: View {
     }
 }
 
-// MARK: - ToggleRow
+// MARK: - OptionCard
 
-/// "操作选择 Sheet"内复用的 Toggle 行：左图标 + 标题 + 副标题 + 右开关。
-/// 不外迁到 Components/，因为只在本 sheet 使用且语义紧耦合。
-private struct ToggleRow: View {
-    let isOn: Binding<Bool>
+/// 可点击卡片，代替 system Toggle.switch。
+///
+/// 视觉规范：
+/// - 圆角 10pt、内边距 12pt、最小高度 56pt
+/// - 左侧图标固定 28×28 圆角容器，selected 时填充 tint，unselected 时浅灰
+/// - 右侧 18pt 圆形 checkmark，selected = tint 实心 + 白勾，unselected = 描边空心圆
+/// - 选中态：背景 `tint.opacity(0.08)` + 描边 `tint.opacity(0.35)`
+/// - 未选中态：背景透明 + 描边 `secondary.opacity(0.18)`
+/// - hover：背景叠加 `secondary.opacity(0.05)`
+/// - disabled：整卡 opacity 0.45，不响应点击
+///
+/// 比起 `.toggleStyle(.switch)` 的好处：
+/// - macOS 26 的 system switch 颗粒粗（~30×18pt），三个堆在一起视觉很重；
+///   圆形 checkmark 仅 18pt，视觉重量是 switch 的 1/3。
+/// - 整卡可点击，命中区域大；用户不必精准点中右侧那个小开关。
+/// - 选中态用背景色 + 描边表达，比 switch 的"半截绿条"更明显。
+private struct OptionCard: View {
+
+    let icon: String
     let title: LocalizedStringKey
     let subtitle: LocalizedStringKey
-    let systemImage: String
+    let isSelected: Bool
+    var isDisabled: Bool = false
+    let onToggle: () -> Void
+
+    @State private var isHovered: Bool = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Toggle(isOn: isOn) {
-            HStack(spacing: 10) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 16))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22)
+        Button {
+            onToggle()
+        } label: {
+            HStack(spacing: 12) {
+                iconBadge
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.subheadline)
+                    Text(title)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                Spacer(minLength: 8)
+                checkmark
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(cardBackground)
+            .overlay(cardBorder)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.45 : 1.0)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.12)) {
+                isHovered = hovering && !isDisabled
             }
         }
-        .toggleStyle(.switch)
+    }
+
+    private var iconBadge: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12))
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+        }
+        .frame(width: 28, height: 28)
+    }
+
+    @ViewBuilder
+    private var checkmark: some View {
+        if isSelected {
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 18, height: 18)
+            .transition(.scale.combined(with: .opacity))
+        } else {
+            Circle()
+                .strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1.2)
+                .frame(width: 18, height: 18)
+        }
+    }
+
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(
+                isSelected
+                    ? Color.accentColor.opacity(0.08)
+                    : (isHovered ? Color.secondary.opacity(0.06) : Color.clear)
+            )
+    }
+
+    private var cardBorder: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .strokeBorder(
+                isSelected ? Color.accentColor.opacity(0.35) : Color.secondary.opacity(0.18),
+                lineWidth: 1
+            )
     }
 }
