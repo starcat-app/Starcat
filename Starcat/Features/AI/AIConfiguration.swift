@@ -419,6 +419,12 @@ enum AIDefaultPrompts {
 }
 
 extension AIServiceProvider {
+    /// 创建新 profile 时的默认显示名（用户可在设置页改）。
+    ///
+    /// 注意：与 `AIServiceProvider.displayName` 区别——前者是 LocalizedStringKey，
+    /// 用于 picker 自动 i18n；这里返回纯 `String`，是 profile 持久化字段的初始值，
+    /// 故走非本地化版本（已存在配置不会因为 App 系统语言切换而改变）。
+    /// 中文服务商在中文 build / 用户场景里出现概率高，名称就直接给中文；英文服务商保留品牌原名。
     var defaultProfileName: String {
         switch self {
         case .openAICompatible: return "OpenAI Compatible"
@@ -426,14 +432,33 @@ extension AIServiceProvider {
         case .openRouter:       return "OpenRouter"
         case .ollama:           return "Ollama Local"
         case .lmStudio:         return "LM Studio Local"
+        case .freeai:           return "FreeAI"
+        case .nvidia:           return "NVIDIA"
+        case .huggingface:      return "HuggingFace"
+        case .cloudflare:       return "Cloudflare Workers AI"
+        case .bedrock:          return "Amazon Bedrock"
+        case .azureOpenAI:      return "Azure OpenAI"
+        case .githubModels:     return "GitHub Models"
+        case .mistral:          return "Mistral AI"
+        case .doubao:           return "豆包"
+        case .grok:             return "Grok"
+        case .hunyuan:          return "混元"
+        case .moonshot:         return "Moonshot"
+        case .qianwen:          return "通义千问"
+        case .siliconflow:      return "硅基流动"
+        case .iflow:            return "IFlow"
+        case .modelscope:       return "ModelScope"
+        case .zhipu:            return "智谱 AI"
+        case .zai:              return "Z.AI"
         }
     }
 
+    /// 是否允许 API Key 为空（本地服务用）。
     var allowsEmptyAPIKey: Bool {
         switch self {
         case .ollama, .lmStudio:
             return true
-        case .openAICompatible, .deepSeek, .openRouter:
+        default:
             return false
         }
     }
