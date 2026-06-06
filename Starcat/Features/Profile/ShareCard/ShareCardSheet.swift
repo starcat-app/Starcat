@@ -301,7 +301,7 @@ struct ShareCardSheet: View {
             RoundedRectangle(cornerRadius: 10)
                 .fill(.background.tertiary)
         )
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(width: 400)
     }
 
     // MARK: - 动作执行
