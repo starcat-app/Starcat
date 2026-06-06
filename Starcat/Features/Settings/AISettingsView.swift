@@ -83,9 +83,19 @@ struct AISettingsTab: View {
             // "新增服务商" / "删除当前" 按钮移到 picker 同一行的右侧，
             // 紧凑且符合设置面板"次要操作贴近主控件"的常见 macOS 布局。
             HStack {
+                // HOM-AIPROVIDERS-2026-06-06：服务商配置 picker 在每个 profile 行
+                // 前面挂当前 provider 的 logo，让用户在多 profile（"OpenAI 摘要 +
+                // DeepSeek 翻译 + Ollama embedding"）场景下一眼分辨。
+                // SwiftUI Picker 的 menu style 会把 Label 内的 Image 一起渲染到下拉
+                // 菜单和已选 caption 区，无需为下拉 / 当前选中分别画。
                 Picker("服务商配置", selection: selectedProfileBinding) {
                     ForEach(settings.aiProviderProfiles) { profile in
-                        Text(profile.displayName).tag(Optional(profile.id))
+                        Label {
+                            Text(profile.displayName)
+                        } icon: {
+                            AIProviderIconView(provider: profile.provider, size: 14)
+                        }
+                        .tag(Optional(profile.id))
                     }
                 }
                 .pickerStyle(.menu)
@@ -109,22 +119,63 @@ struct AISettingsTab: View {
             }
 
             if let profile = selectedProfile {
+                // HOM-AIPROVIDERS-2026-06-06：Provider picker（"切换底层服务商类型"）
+                // 列表里每一项都带 logo + 本地化名称，便于在 23 种服务商之间快速识别。
+                // 注意 displayName 是 LocalizedStringKey，所以 Label 的 title 直接传它，
+                // SwiftUI 会按当前 locale 自动解析；中文服务商（豆包/混元/通义/智谱/硅基）
+                // 走 `ai.provider.*` xcstrings key，英文服务商保留 String literal 原名。
                 Picker("Provider", selection: profileProviderBinding(profile.id)) {
                     ForEach(AIServiceProvider.allCases) { provider in
-                        Text(provider.defaultProfileName).tag(provider)
+                        Label {
+                            Text(provider.displayName)
+                        } icon: {
+                            AIProviderIconView(provider: provider, size: 14)
+                        }
+                        .tag(provider)
                     }
                 }
                 .pickerStyle(.menu)
 
-                TextField("显示名称", text: profileTextBinding(profile.id, keyPath: \.displayName))
-                    .textFieldStyle(.roundedBorder)
+                // HOM-AIPROVIDERS-2026-06-06 layout follow-up v3（dong4j 第三次反馈
+                // "现在还是没看到输入框变长,而且 baseURL 超长的时候还会换行显示"）：
+                //
+                // 根因(看 Cloudflare 那张截图发现的)：
+                // 前一版用 `LabeledContent("xxx") { TextField... }` 仍然换行——因为
+                // **`LabeledContent` 在 macOS 15 `.formStyle(.grouped)` 下是 responsive 的**,
+                // 当 control 自身内容(如 Cloudflare 的 `{YOUR_ACCOUNT_ID}` 占位 URL)宽度
+                // 超过 row 可用宽度时,SwiftUI 会自动把 label 拉到上面、control 撑满
+                // 整行(竖排 fallback)。这是 SwiftUI 内置行为,加 `.frame(maxWidth:.infinity)`
+                // 都拦不住——`.frame` 只影响最小/最大尺寸申请,不能阻止 responsive layout 切换。
+                //
+                // 唯一可靠的解法:**完全弃用 LabeledContent,用 HStack 手控 label 宽度**。
+                // HStack 是死板的横向容器,内部子 view 不会因为容器宽度不足而切换布局,
+                // 只会按 layout priority 压缩;给 label 固定 130pt(目测与上面 Picker
+                // 行 LabeledContent 自动算出的 label 列宽度对齐),TextField `.frame(maxWidth:
+                // .infinity)` 撑满剩余宽度;长 URL 自然走 NSTextField 默认的"字段内
+                // 横向滚动"——光标处可见,字段右边缘外被裁掉,永远不会撑高整行也不会
+                // 把 layout 切成竖排。
+                //
+                // 抽 `inlineLongInputRow(label:field:)` helper 是为了把这套模式收口——
+                // 后续任何"label + 长内容输入"的行都用它,不允许直接写 LabeledContent。
+                inlineLongInputRow(label: "显示名称") {
+                    TextField("", text: profileTextBinding(profile.id, keyPath: \.displayName))
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1)
+                }
 
-                TextField("Base URL", text: profileTextBinding(profile.id, keyPath: \.baseURL))
-                    .textFieldStyle(.roundedBorder)
-                    .disableAutocorrection(true)
+                inlineLongInputRow(label: "Base URL") {
+                    TextField("", text: profileTextBinding(profile.id, keyPath: \.baseURL))
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1)
+                        .disableAutocorrection(true)
+                        .textContentType(.URL)
+                }
 
-                SecureField(profile.provider.allowsEmptyAPIKey ? "API Key（本地服务可留空）" : "API Key", text: apiKeyBinding(profile.id))
-                    .textFieldStyle(.roundedBorder)
+                inlineLongInputRow(label: "API Key") {
+                    SecureField(profile.provider.allowsEmptyAPIKey ? "本地服务可留空" : "", text: apiKeyBinding(profile.id))
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1)
+                }
 
                 // HOM-68 follow-up v2 (dong4j 反馈 #2)：
                 // 状态提示（测试成功/失败/未测试）在左侧，"保存 Key" / "测试并获取模型"
@@ -255,9 +306,18 @@ struct AISettingsTab: View {
         )
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
+                // HOM-AIPROVIDERS-2026-06-06：任务 → provider picker 同样给每一项
+                // 挂上 provider logo，使用户在切换"摘要走哪个服务"、"翻译走哪个服务"
+                // 时不需要靠 displayName 区分（部分 profile 名是用户自定义的，可能与
+                // 实际底层服务商不一致，logo 比文字更可靠）。
                 Picker("Provider", selection: taskProviderBinding(task)) {
                     ForEach(settings.aiProviderProfiles.filter(\.isEnabled)) { profile in
-                        Text(profile.displayName).tag(profile.id)
+                        Label {
+                            Text(profile.displayName)
+                        } icon: {
+                            AIProviderIconView(provider: profile.provider, size: 14)
+                        }
+                        .tag(profile.id)
                     }
                 }
                 .pickerStyle(.menu)
@@ -313,6 +373,41 @@ struct AISettingsTab: View {
     ///
     /// 用 withAnimation 让展开/折叠跟 chevron 旋转走同一条动画曲线，避免"点
     /// 标题瞬切、点 chevron 平滑"的不一致体感。
+    /// 长内容输入行的标准布局：label 左、TextField 右、强制水平、TextField 占满
+    /// label 后所有空间、长内容字段内横向截断不换行。
+    ///
+    /// 为什么不用 `LabeledContent`(dong4j 2026-06-06 连续三次截图反馈才搞清楚)：
+    /// macOS 15 `.formStyle(.grouped)` 下,`LabeledContent` 是 **responsive** 的——
+    /// 当 control 内容宽度超过 row 可用宽度时,SwiftUI 自动把 layout 切成"label 上、
+    /// control 下"的竖排,即使在 control 上加 `.frame(maxWidth: .infinity)` 也拦不住
+    /// (`.frame` 只影响最小/最大尺寸申请,不能阻止 layout 切换)。Cloudflare 的
+    /// `{YOUR_ACCOUNT_ID}` 占位 URL 是典型触发点。
+    ///
+    /// HStack 是**死板**的横向容器,不会自动切布局,只按 layout priority 压缩。
+    /// 配合"label 固定 130pt + TextField `.frame(maxWidth: .infinity)`"组合,效果：
+    /// - label 始终在左,宽度恒定 130pt(与上面 Picker 行的 LabeledContent 自动列宽
+    ///   目测对齐,视觉一致)
+    /// - TextField 撑满 label 后所有剩余宽度
+    /// - 长 URL 走 NSTextField 默认的"字段内横向滚动"——光标处可见,超出右边缘的
+    ///   字符被裁掉,永远不撑高整行,永远不竖排
+    ///
+    /// 130pt 是经验值:目测能容纳"服务商配置"(4 个中文字符 ≈ 64pt)、"Base URL"
+    /// (8 个英文字符 ≈ 80pt)、"显示名称"(4 中文 ≈ 64pt)三个标签 + 一定富余。
+    /// 未来若需要更长的 label(如"OAuth Redirect URI"),提升此常量或抽成参数。
+    @ViewBuilder
+    private func inlineLongInputRow<Field: View>(
+        label: LocalizedStringKey,
+        @ViewBuilder field: () -> Field
+    ) -> some View {
+        HStack(alignment: .center, spacing: 16) {
+            Text(label)
+                .frame(width: 130, alignment: .leading)
+                .lineLimit(1)
+            field()
+                .frame(maxWidth: .infinity)
+        }
+    }
+
     private func disclosureLabel(_ title: String, isExpanded: Binding<Bool>) -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.18)) {

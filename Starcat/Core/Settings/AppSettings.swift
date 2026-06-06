@@ -182,18 +182,55 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
 /// AI 服务商类型。
 ///
 /// 设计选择：
-/// - 当前第一阶段只落地 OpenAI-compatible 路线，OpenAI / DeepSeek / OpenRouter /
-///   Ollama / LM Studio 都可以通过 Base URL + API Key 表达。
-/// - 保留具体 provider 枚举不是为了锁死 SDK，而是为了给设置页提供合理默认值。
+/// - 当前第一阶段只落地 OpenAI-compatible 路线，**所有 case 都假定走 OpenAI Chat
+///   Completions 协议**，由 `OpenAIClient` 统一适配。Anthropic Messages API（Claude
+///   官方、`*_anthropic` 系列入口）暂未支持，故未列入；未来若新增 Anthropic 客户端
+///   再扩展。
+/// - 保留具体 provider 枚举不是为了锁死 SDK，而是给设置页提供"一键填好 base URL +
+///   chat / embedding 默认值 + logo"的快捷选项。dong4j 仍然可以选 `.openAICompatible`
+///   + 自填 URL 接入任何 OpenAI 兼容服务。
+/// - 提供商清单与图标资源同步自 zeka-idea-plugin `AIProviderType.java`（2026-06-06
+///   一次性导入），新增任何 case 必须同时：
+///   1) 在 `Resources/Assets.xcassets/AIProviders` 新建对应 imageset（与 `iconAssetName`
+///      返回值同名）；
+///   2) 同步更新 `displayName` / `defaultBaseURL` / `defaultChatModel` /
+///      `defaultEmbeddingModel` / `allowsEmptyAPIKey` / `iconAssetName`；
+///   3) `AIProviderIconView` 自动按 `iconAssetName` 渲染，无需额外注册。
+///
+/// 已有用户偏好兼容性：早期版本仅有 5 个 case（`openAICompatible` / `deepSeek` /
+/// `openRouter` / `ollama` / `lmStudio`），新增枚举值都追加在后面，原 rawValue 不动，
+/// 老用户升级后已选 provider 仍然可正确解码。
 enum AIServiceProvider: String, CaseIterable, Identifiable, Codable, Sendable {
+    // MARK: - 早期已有（不改 rawValue 以兼容旧持久化）
     case openAICompatible
     case deepSeek
     case openRouter
     case ollama
     case lmStudio
 
+    // MARK: - 2026-06-06 批量新增（OpenAI Chat Completions 兼容）
+    case freeai
+    case nvidia
+    case huggingface
+    case cloudflare
+    case bedrock
+    case azureOpenAI
+    case githubModels
+    case mistral
+    case doubao
+    case grok
+    case hunyuan
+    case moonshot
+    case qianwen
+    case siliconflow
+    case iflow
+    case modelscope
+    case zhipu
+    case zai
+
     var id: String { rawValue }
 
+    /// 设置页 picker 显示的服务商名（i18n key 复用 LocalizedStringKey 自动解析）。
     var displayName: LocalizedStringKey {
         switch self {
         case .openAICompatible: return "OpenAI Compatible"
@@ -201,9 +238,81 @@ enum AIServiceProvider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .openRouter:       return "OpenRouter"
         case .ollama:           return "Ollama"
         case .lmStudio:         return "LM Studio"
+        case .freeai:           return "FreeAI"
+        case .nvidia:           return "NVIDIA"
+        case .huggingface:      return "HuggingFace"
+        case .cloudflare:       return "Cloudflare Workers AI"
+        case .bedrock:          return "Amazon Bedrock"
+        case .azureOpenAI:      return "Azure OpenAI"
+        case .githubModels:     return "GitHub Models"
+        case .mistral:          return "Mistral AI"
+        case .doubao:           return "ai.provider.doubao"
+        case .grok:             return "Grok"
+        case .hunyuan:          return "ai.provider.hunyuan"
+        case .moonshot:         return "Moonshot"
+        case .qianwen:          return "ai.provider.qianwen"
+        case .siliconflow:      return "ai.provider.siliconflow"
+        case .iflow:            return "IFlow"
+        case .modelscope:       return "ModelScope"
+        case .zhipu:            return "ai.provider.zhipu"
+        case .zai:              return "Z.AI"
         }
     }
 
+    /// 对应 `Assets.xcassets/AIProviders` 下的 imageset 名（SVG 矢量图）。
+    ///
+    /// 命名规则：直接借用 zeka-idea-plugin `intelli-ai-engine/icons` 已有的图标 stem，
+    /// 部分服务商共享视觉资源（如 OpenAI Compatible 复用 `chatgpt`，智谱 `chatglm`，
+    /// 通义千问 `qwen`，Azure OpenAI `azureai`）。
+    var iconAssetName: String {
+        switch self {
+        case .openAICompatible: return "chatgpt"   // OpenAI Compatible 复用 ChatGPT logo 作视觉代表
+        case .deepSeek:         return "deepseek"
+        case .openRouter:       return "openrouter"
+        case .ollama:           return "ollama"
+        case .lmStudio:         return "lmstudio"
+        case .freeai:           return "freeai"
+        case .nvidia:           return "nvidia"
+        case .huggingface:      return "huggingface"
+        case .cloudflare:       return "cloudflare"
+        case .bedrock:          return "bedrock"
+        case .azureOpenAI:      return "azureai"
+        case .githubModels:     return "github"
+        case .mistral:          return "mistral"
+        case .doubao:           return "doubao"
+        case .grok:             return "grok"
+        case .hunyuan:          return "hunyuan"
+        case .moonshot:         return "moonshot"
+        case .qianwen:          return "qwen"
+        case .siliconflow:      return "siliconflow"
+        case .iflow:            return "iflow"
+        case .modelscope:       return "modelscope"
+        case .zhipu:            return "chatglm"
+        case .zai:              return "zai"
+        }
+    }
+
+    /// 是否是"纯白单色 logo"——这些 SVG 的 `fill` 全部是 `#ffffff`，
+    /// 直接渲染会有"明亮主题下完全不可见"的问题（dong4j 2026-06-06 截图反馈）。
+    ///
+    /// 设计：
+    /// - `true` 的 provider，UI 层走 `.renderingMode(.template) + .foregroundStyle(.primary)`，
+    ///   把非透明像素当 alpha mask 用，颜色由系统跟随 colorScheme 决定
+    /// - `false` 的 provider（含彩色 / 渐变 logo）走 `.renderingMode(.original)` 保留品牌色
+    ///
+    /// 新增 provider 时如果引入的也是单色白 SVG（zeka 的 `*_32.svg` 以 `#ffffff` 居多），
+    /// 必须在此 case 里追加；否则在 light mode 下用户看到一片空白。
+    /// 判定来源：`rg -o 'fill="[^"]*"' Resources/Assets.xcassets/AIProviders/*/*.svg`。
+    var iconIsMonochromeWhite: Bool {
+        switch self {
+        case .openAICompatible, .ollama, .lmStudio, .grok, .moonshot:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// 默认 Base URL（与 `AIProviderType.java` 对齐；含 `{YOUR_*}` 占位的需用户手填）。
     var defaultBaseURL: String {
         switch self {
         case .openAICompatible: return "https://api.openai.com/v1"
@@ -211,9 +320,28 @@ enum AIServiceProvider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .openRouter:       return "https://openrouter.ai/api/v1"
         case .ollama:           return "http://localhost:11434/v1"
         case .lmStudio:         return "http://localhost:1234/v1"
+        case .freeai:           return "https://zekastack.dong4j.site/freeai/v1"
+        case .nvidia:           return "https://integrate.api.nvidia.com/v1"
+        case .huggingface:      return "https://router.huggingface.co/v1"
+        case .cloudflare:       return "https://api.cloudflare.com/client/v4/accounts/{YOUR_ACCOUNT_ID}/ai/v1"
+        case .bedrock:          return "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1"
+        case .azureOpenAI:      return "https://{YOUR_RESOURCE_NAME}.openai.azure.com/openai/deployments/{YOUR_DEPLOYMENT_NAME}"
+        case .githubModels:     return "https://models.github.ai/inference"
+        case .mistral:          return "https://api.mistral.ai/v1"
+        case .doubao:           return "https://ark.cn-beijing.volces.com/api/v3"
+        case .grok:             return "https://api.x.ai/v1"
+        case .hunyuan:          return "https://api.hunyuan.cloud.tencent.com/v1"
+        case .moonshot:         return "https://api.moonshot.cn/v1"
+        case .qianwen:          return "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        case .siliconflow:      return "https://api.siliconflow.cn/v1"
+        case .iflow:            return "https://apis.iflow.cn/v1"
+        case .modelscope:       return "https://api-inference.modelscope.cn/v1"
+        case .zhipu:            return "https://open.bigmodel.cn/api/paas/v4"
+        case .zai:              return "https://api.z.ai/api/coding/paas/v4"
         }
     }
 
+    /// 设置页“新增 provider”后预填的默认 chat 模型名（仅作占位提示，用户应改成自己开通的模型）。
     var defaultChatModel: String {
         switch self {
         case .openAICompatible: return "gpt-4o-mini"
@@ -221,12 +349,31 @@ enum AIServiceProvider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .openRouter:       return "openai/gpt-4o-mini"
         case .ollama:           return "llama3.2"
         case .lmStudio:         return "local-model"
+        case .freeai:           return "glm-4.6"
+        case .nvidia:           return "meta/llama-3.1-8b-instruct"
+        case .huggingface:      return "meta-llama/Meta-Llama-3.1-8B-Instruct"
+        case .cloudflare:       return "@cf/meta/llama-3.1-8b-instruct"
+        case .bedrock:          return "openai.gpt-oss-120b-1:0"
+        case .azureOpenAI:      return "gpt-4o-mini"
+        case .githubModels:     return "openai/gpt-4o-mini"
+        case .mistral:          return "mistral-small-latest"
+        case .doubao:           return "doubao-1-5-pro-32k-250115"
+        case .grok:             return "grok-3-mini"
+        case .hunyuan:          return "hunyuan-pro"
+        case .moonshot:         return "kimi-k2-0905-preview"
+        case .qianwen:          return "qwen-plus"
+        case .siliconflow:      return "Qwen/Qwen3-8B"
+        case .iflow:            return "kimi-k2-0905"
+        case .modelscope:       return "ZhipuAI/GLM-4.6"
+        case .zhipu:            return "glm-4.6"
+        case .zai:              return "glm-4.6"
         }
     }
 
+    /// 默认 embedding 模型；不暴露 embedding 的本地 / 远端 provider 此处仍给一个常见名占位。
     var defaultEmbeddingModel: String {
         switch self {
-        case .openAICompatible, .openRouter:
+        case .openAICompatible, .openRouter, .githubModels, .azureOpenAI:
             return "text-embedding-3-small"
         case .deepSeek:
             return "text-embedding-3-small"
@@ -234,6 +381,40 @@ enum AIServiceProvider: String, CaseIterable, Identifiable, Codable, Sendable {
             return "nomic-embed-text"
         case .lmStudio:
             return "text-embedding-nomic-embed-text-v1.5"
+        case .freeai:
+            return "BAAI/bge-m3"
+        case .nvidia:
+            return "nvidia/nv-embed-v1"
+        case .huggingface:
+            return "BAAI/bge-large-en-v1.5"
+        case .cloudflare:
+            return "@cf/baai/bge-base-en-v1.5"
+        case .bedrock:
+            return "amazon.titan-embed-text-v2:0"
+        case .mistral:
+            return "mistral-embed"
+        case .doubao:
+            return "doubao-embedding-text-240715"
+        case .grok:
+            // xAI 目前未公开 embedding 模型，仍按 OpenAI 命名占位，由用户改写
+            return "text-embedding-3-small"
+        case .hunyuan:
+            return "hunyuan-embedding"
+        case .moonshot:
+            // Moonshot 暂未提供 embedding，占位 OpenAI 命名
+            return "text-embedding-3-small"
+        case .qianwen:
+            return "text-embedding-v3"
+        case .siliconflow:
+            return "BAAI/bge-m3"
+        case .iflow:
+            return "bge-m3"
+        case .modelscope:
+            return "iic/nlp_gte_sentence-embedding_chinese-base"
+        case .zhipu:
+            return "embedding-3"
+        case .zai:
+            return "embedding-3"
         }
     }
 }
