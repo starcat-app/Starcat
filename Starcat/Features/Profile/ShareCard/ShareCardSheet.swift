@@ -65,7 +65,10 @@ struct ShareCardSheet: View {
     /// HOM-174 v4：导出进行时显示的进度文案；nil 表示无活动导出。
     /// HTML 导出会经历"读 starred → 拉摘要/标签/头像 → 渲染"几个阶段，单纯禁用按钮
     /// 用户没有可视反馈（尤其 Kingfisher cache miss 时 owner 头像批量下载耗时数秒）。
-    /// 用 overlay + ProgressView 给出明确的"正在做某事"反馈。
+    ///
+    /// **v4 设计迭代（dong4j 2026-06-06 反馈）**：原来用全 sheet 半透明 overlay 太重，
+    /// 改为内联 pill —— 与 `lastActionFeedback` 共用反馈区位置，进行时显示带菊花的
+    /// progress pill，结束后自动让位给"已导出至 …"反馈 pill；视觉零侵入。
     @State private var exportProgressMessage: String?
 
     var body: some View {
@@ -78,7 +81,13 @@ struct ShareCardSheet: View {
 
                     cardPreview
 
-                    if let feedback = lastActionFeedback {
+                    // 反馈区：进行中（progress pill 带菊花）优先级高于已完成（feedback pill）。
+                    // 同位置切换：用同一胶囊外观+尺寸，只换内容（菊花 ↔ 对勾），视觉上是
+                    // "在做事 → 做完了"的连续过渡，无位移、无突兀的 overlay。
+                    if let msg = exportProgressMessage {
+                        progressPill(text: msg)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    } else if let feedback = lastActionFeedback {
                         feedbackPill(text: feedback)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
@@ -91,16 +100,6 @@ struct ShareCardSheet: View {
             .scrollIndicators(.hidden)
         }
         .frame(width: 480, height: 820)
-        .overlay(alignment: .center) {
-            // HOM-174 v4：导出进度 overlay。出现条件：exportProgressMessage != nil
-            // 设计取舍：用半透明 backdrop 覆盖全 sheet（含按钮区），让用户看到一个明确
-            // "处理中"状态而不是按钮变灰的隐式反馈；ProgressView + 文案让用户知道
-            // App 没卡死、还在做事；按钮区 isExporting 已禁用，overlay 只是视觉强化。
-            if let msg = exportProgressMessage {
-                exportLoadingOverlay(message: msg)
-                    .transition(.opacity)
-            }
-        }
         .animation(.easeInOut(duration: 0.18), value: exportProgressMessage)
         .task {
             // sheet 打开时强制刷一次 profile（D5-B 决策）。
@@ -438,43 +437,35 @@ struct ShareCardSheet: View {
         // 用户取消保存面板 → 不弹反馈，保持沉默体验，对齐 `performSave` 的同款行为
     }
 
-    // MARK: - 导出 loading overlay（HOM-174 v4）
+    // MARK: - 导出进度 pill（HOM-174 v4，dong4j 反馈后改 inline）
 
-    /// 全 sheet 覆盖的"正在导出"指示器：半透明 backdrop + 居中 card 含菊花 + 文案。
-    /// 视觉上模仿系统 sheet 的 inline loading，但用 sheet 内部空间，不脱离当前 sheet 上下文。
+    /// 导出进行中的内联指示器：与 `feedbackPill` 同款胶囊外观，只是把对勾换成菊花。
+    ///
+    /// 设计取舍（dong4j 2026-06-06 反馈"全屏 overlay 太重"后调整）：
+    /// - 不再用全 sheet 的半透明 backdrop（按钮已 `disabled(isExporting)`，无需视觉
+    ///   再次强调"禁用"）；
+    /// - 完全沿用 feedbackPill 的尺寸 / 圆角 / 背景，让"进行中 → 完成"是同位置同形态
+    ///   的内容切换，视觉零位移；
+    /// - 仅用菊花 + 文案，3 行高度上限，足够说明"App 在做事不是卡死了"。
     @ViewBuilder
-    private func exportLoadingOverlay(message: String) -> some View {
-        ZStack {
-            // 半透明 backdrop：阻挡点击 + 视觉强调
-            Color.black.opacity(0.18)
-                .ignoresSafeArea()
-                .allowsHitTesting(true)
-                .contentShape(Rectangle())  // 拦截所有点击
-
-            VStack(spacing: 14) {
-                ProgressView()
-                    .controlSize(.large)
-                    .scaleEffect(1.1)
-
-                Text(message)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 320)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 22)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(.regularMaterial)
-                    .shadow(color: .black.opacity(0.15), radius: 16, y: 4)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(.separator, lineWidth: 0.5)
-            )
+    private func progressPill(text: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+                .scaleEffect(0.7)  // 把 small ProgressView 再压小一点，与对勾视觉权重持平
+                .frame(width: 16, height: 16)
+            Text(text)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.background.tertiary)
+        )
+        .frame(width: 400)
     }
 
     /// 当前要渲染的卡片内容（主题切换不重新构造卡片实例，但导出时要用最新值）。
