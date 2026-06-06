@@ -364,7 +364,12 @@ struct ShareCardSheet: View {
             return
         }
 
-        if let url = StarredExporter.export(repos: repos, user: user, format: format) {
+        if let url = await StarredExporter.export(
+            repos: repos,
+            user: user,
+            format: format,
+            dependencies: dependencies
+        ) {
             showFeedback(String(format: String(localized: "sharecard.feedback.exported"), url.lastPathComponent))
         }
         // 用户取消保存面板 → 不弹反馈，保持沉默体验，对齐 `performSave` 的同款行为
