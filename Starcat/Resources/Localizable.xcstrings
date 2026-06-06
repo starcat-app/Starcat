@@ -4,6 +4,9 @@
     "·" : {
 
     },
+    "（无可用模型，请测试并获取模型，或勾选「自定义」）" : {
+
+    },
     "%@" : {
 
     },
@@ -2477,6 +2480,7 @@
       }
     },
     "ai.provider.doubao" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2493,6 +2497,7 @@
       }
     },
     "ai.provider.hunyuan" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2509,6 +2514,7 @@
       }
     },
     "ai.provider.qianwen" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2525,6 +2531,7 @@
       }
     },
     "ai.provider.siliconflow" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2541,6 +2548,7 @@
       }
     },
     "ai.provider.zhipu" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4564,7 +4572,10 @@
         }
       }
     },
-    "Prompt" : {
+    "Pro" : {
+
+    },
+    "PRO" : {
 
     },
     "readme.cachedAtFormat" : {
@@ -4681,7 +4692,24 @@
         }
       }
     },
+    "readme.requiresLoginDescription" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You need to sign in with your GitHub account to view repository details."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看仓库详情需要登录 GitHub 账号"
+          }
+        }
+      }
+    },
     "readme.translate.action" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4698,6 +4726,7 @@
       }
     },
     "readme.translate.error.dismiss" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4714,6 +4743,7 @@
       }
     },
     "readme.translate.error.emptySource" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4730,6 +4760,7 @@
       }
     },
     "readme.translate.error.missingAPIKey" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4746,6 +4777,7 @@
       }
     },
     "readme.translate.error.missingProvider" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4762,6 +4794,7 @@
       }
     },
     "readme.translate.error.structureBroken" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4794,6 +4827,7 @@
       }
     },
     "readme.translate.menu.regenerate" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4810,6 +4844,7 @@
       }
     },
     "readme.translate.menu.tooltip" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4826,6 +4861,7 @@
       }
     },
     "readme.translate.showOriginal" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4842,6 +4878,7 @@
       }
     },
     "readme.translate.staleAction" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4858,6 +4895,7 @@
       }
     },
     "readme.translate.tooltip.showOriginal" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4874,6 +4912,7 @@
       }
     },
     "readme.translate.tooltip.translate" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4885,22 +4924,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用 AI 翻译 README，结果会缓存到本地"
-          }
-        }
-      }
-    },
-    "readme.requiresLoginDescription" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You need to sign in with your GitHub account to view repository details."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "查看仓库详情需要登录 GitHub 账号"
           }
         }
       }
@@ -7795,6 +7818,9 @@
     "Starcat" : {
 
     },
+    "Starcat Pro" : {
+
+    },
     "Starcat 不经过自建服务器转发 AI 请求。摘要、推荐标签和语义搜索会把必要的仓库元数据 / README 摘要发送给你选择的 Provider。" : {
 
     },
@@ -8612,9 +8638,6 @@
         }
       }
     },
-    "Top K 不是 OpenAI Chat Completions 标准字段，当前仅保存配置；后续针对 LM Studio / Ollama 原生扩展时再发送。" : {
-
-    },
     "trending.aiScore" : {
       "localizations" : {
         "en" : {
@@ -9134,10 +9157,7 @@
         }
       }
     },
-    "User Prompt Template" : {
-
-    },
-    "User Prompt 中的 {context} 会在运行时替换为仓库元数据和 README 摘要。" : {
+    "User Prompt" : {
 
     },
     "watch.allActivity" : {
@@ -9221,7 +9241,7 @@
         }
       }
     },
-    "下拉框只展示已启用模型；如果服务商暂时无法列出模型，可以打开自定义模型名手动输入。" : {
+    "优先使用流式响应" : {
 
     },
     "分享" : {
@@ -9230,19 +9250,13 @@
     "匹配 %@ 个" : {
 
     },
-    "已发现模型" : {
+    "已自定义" : {
 
     },
-    "暂无模型。点击“测试并获取模型”，或在模型设置中使用自定义模型名。" : {
+    "当前为前端模拟流程，不会发起 Apple 订阅或扣费。真实订阅接入后将复用同一套成功反馈。" : {
 
     },
-    "模型列表在组件内滚动，避免服务商返回大量模型时撑高整个设置页。" : {
-
-    },
-    "模型参数" : {
-
-    },
-    "模型设置" : {
+    "暂无模型。点击“测试并获取模型”，或在默认设置中使用自定义模型名。" : {
 
     },
     "没有匹配的模型。" : {

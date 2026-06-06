@@ -101,7 +101,13 @@ struct UserAvatar: View {
 
                     if settings.isProUser {
                         AvatarProBadge()
-                            .offset(x: 5, y: 3)
+                            // 2026-06-06 dong4j 反馈：原 (x:5, y:3) 导致
+                            //   ① 徽章底部超出头像圆底 ~3pt（y:3 把它往下推了）
+                            //   ② 整体偏左，需要往右再挪一点
+                            // 修复：y 改为 0（与 ZStack bottomTrailing 自然底对齐，
+                            // 徽章 Capsule 底部与头像圆 bounding box 底部齐平）；
+                            // x 从 5 增到 8（视觉上像"嵌"在头像右下角而不是压住下沿）。
+                            .offset(x: 8, y: 0)
                     }
                 }
                 .frame(width: size + 10, height: size + 6)
