@@ -79,10 +79,12 @@ struct ShareCardSheet: View {
 
     // MARK: - 顶部标题栏
 
-    /// 顶部标题栏：仅关闭按钮。
+    /// 顶部标题栏：标题 + 关闭按钮。
     @ViewBuilder
     private var header: some View {
         HStack(alignment: .center) {
+            Text("sharecard.title")
+                .font(.system(size: 16, weight: .semibold))
             Spacer()
             Button {
                 onClose()
