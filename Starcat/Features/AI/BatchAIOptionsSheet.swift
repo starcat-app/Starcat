@@ -19,7 +19,9 @@
 //  - 改用 **可点击卡片 + 圆形 checkmark**：整行点击切换，圆形勾选标记替代 toggle，
 //    视觉重量更轻。选中态用 tint 淡色背景 + 描边明确反馈。
 //  - hover 反馈复用项目共享 `PressableHover`，与详情页可点击元素一致。
-//  - 自动应用 / 阈值滑条作为"标签"的子设置缩进展示，依赖关系清晰。
+//  - 自动应用作为"标签"的子设置：未选标签时整卡 disabled；阈值滑条仅在
+//    autoApply 打开时显示，与上方 OptionCard 左右对齐（不再额外缩进，避免
+//    左缘错落破坏视觉节奏）。
 //
 
 import SwiftUI
@@ -170,7 +172,10 @@ struct BatchAIOptionsSheet: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.secondary.opacity(0.06))
         )
-        .padding(.leading, 36)  // 视觉上缩进，体现"自动应用"的子设置层级
+        // 2026-06-07 dong4j 反馈：之前 .padding(.leading, 36) 缩进导致与上方
+        // OptionCard 左缘不齐，看着像"漏了一块"。改为左右对齐。
+        // 父子层级靠"出现时机（autoApply 开了才显示）+ 浅灰圆角背景 + 紧贴上方"
+        // 已经能让用户理解依赖关系，不必再靠物理缩进强调。
     }
 
     // MARK: - Footer
