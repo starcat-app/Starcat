@@ -47,6 +47,10 @@ protocol RepoTagRepositoryProtocol: Sendable {
     /// 某标签下的所有 repo（join repos，按 starred_at desc，仅 is_starred=1）。
     func fetchRepos(forTag tagId: String) async throws -> [Repo]
 
+    /// 多标签 AND 查询：返回同时拥有所有指定标签的 repo。
+    /// 用于标签墙多选场景。
+    func fetchRepos(forTags tagIds: Set<String>) async throws -> [Repo]
+
     /// 某标签下的 repo 数量（用于 Sidebar Tags 行显示计数）。
     func repoCount(forTag tagId: String) async throws -> Int
 
