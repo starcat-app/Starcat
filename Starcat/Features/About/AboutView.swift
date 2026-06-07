@@ -675,24 +675,50 @@ private struct SafeExternalLink: View {
 // MARK: - 数据模型
 
 /// About 页展示的版本信息。
+///
+/// 三个字段全部来自 `Info.plist`，由 `scripts/bump-version.sh`（postBuildScripts）从 git 元数据动态写入：
+///   - `marketing`  ← `CFBundleShortVersionString`：最新 git tag（无 tag 时退到 project.yml 兜底 `0.1.0`）
+///   - `build`      ← `CFBundleVersion`：git commit 总数（纯整数，符合 App Store 规范）
+///   - `gitHash`    ← `GitCommitHash`：7 位短 hash（项目自定义 key，App Review 不审）
+///
+/// UI 展示规则：拿到 hash 时拼成 `Version 0.1.0 (Build 201.f09a499)`，缺 hash 时降级到 `Version 0.1.0 (Build 201)`，
+/// 让脚本未跑 / 非 git 仓库等异常路径仍能展示出可读版本号。
 private struct AboutVersion {
     let marketing: String
     let build: String
+    let gitHash: String?
 
     static var current: AboutVersion {
         let dictionary = Bundle.main.infoDictionary
+        let rawHash = dictionary?["GitCommitHash"] as? String
+        // 空串视为缺失（脚本退化路径或老 build），统一走降级分支。
+        let normalizedHash = rawHash?.trimmingCharacters(in: .whitespaces).isEmpty == false ? rawHash : nil
         return AboutVersion(
             marketing: dictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0",
-            build: dictionary?["CFBundleVersion"] as? String ?? "1"
+            build: dictionary?["CFBundleVersion"] as? String ?? "1",
+            gitHash: normalizedHash
         )
     }
 
+    /// 关于页展示用的完整 build 字符串：有 hash 拼 `<count>.<hash>`，没有就只显示 `<count>`。
+    /// 这样本地化字符串 `about.version.fullFormat`（仍是 `Version %@ (Build %@)`）无需修改，
+    /// 拼接逻辑全部收敛在 Swift 侧，便于以后加 `.dirty` 后缀等扩展时只动这一处。
+    var displayBuild: String {
+        guard let hash = gitHash, !hash.isEmpty else { return build }
+        return "\(build).\(hash)"
+    }
+
     var fullText: String {
-        String(format: String(localized: "about.version.fullFormat"), marketing, build)
+        String(format: String(localized: "about.version.fullFormat"), marketing, displayBuild)
     }
 }
 
 /// 第三方依赖展示项。
+///
+/// 维护规则（强制，2026-06-07 起生效）：
+/// 凡是 Starcat 集成的外部开源项目（SPM 依赖 / 嵌入式资源 / 通过脚本嵌入的代码或数据），
+/// 都必须在这里追加一条记录，确保关于页 → 开源致谢列表与实际工程一一对应。
+/// 详细规则见 `AGENTS.md` / `CLAUDE.md` 的「开源致谢同步规则」章节。
 private struct AboutDependency: Identifiable {
     let name: String
     let license: String
@@ -702,16 +728,18 @@ private struct AboutDependency: Identifiable {
     var id: String { name }
 
     static let all: [AboutDependency] = [
+        // MARK: SPM 依赖（与 project.yml `packages` 一一对应）
+
         AboutDependency(
             name: "GRDB.swift",
             license: "MIT",
-            copyright: "Copyright (c) 2015-2024 Gwendal Rouard",
+            copyright: "Copyright (c) 2015-2026 Gwendal Roué",
             url: URL(string: "https://github.com/groue/GRDB.swift")
         ),
         AboutDependency(
             name: "KeychainAccess",
             license: "MIT",
-            copyright: "Copyright (c) 2014-2024 Kishikawa Katsumi",
+            copyright: "Copyright (c) 2014-2026 Kishikawa Katsumi",
             url: URL(string: "https://github.com/kishikawakatsumi/KeychainAccess")
         ),
         AboutDependency(
@@ -719,6 +747,39 @@ private struct AboutDependency: Identifiable {
             license: "MIT",
             copyright: "Copyright (c) 2019 Wei Wang",
             url: URL(string: "https://github.com/onevcat/Kingfisher")
+        ),
+        AboutDependency(
+            name: "swift-markdown-ui",
+            license: "MIT",
+            copyright: "Copyright (c) 2020 Guillermo Gonzalez",
+            url: URL(string: "https://github.com/gonzalezreal/swift-markdown-ui")
+        ),
+        AboutDependency(
+            name: "OpenAI",
+            license: "MIT",
+            copyright: "Copyright (c) 2023 MacPaw Inc.",
+            url: URL(string: "https://github.com/MacPaw/OpenAI")
+        ),
+        AboutDependency(
+            name: "ConfettiSwiftUI",
+            license: "MIT",
+            copyright: "Copyright (c) 2020 Simon Bachmann",
+            url: URL(string: "https://github.com/simibac/ConfettiSwiftUI")
+        ),
+
+        // MARK: 嵌入式资源 / 生成代码（非 SPM，但同样属于第三方开源）
+
+        AboutDependency(
+            name: "Devicon",
+            license: "MIT",
+            copyright: "Copyright (c) 2015 konpa",
+            url: URL(string: "https://github.com/devicons/devicon")
+        ),
+        AboutDependency(
+            name: "GitHub Linguist",
+            license: "MIT",
+            copyright: "Copyright (c) 2017 GitHub, Inc.",
+            url: URL(string: "https://github.com/github/linguist")
         )
     ]
 }
