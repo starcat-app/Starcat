@@ -60,6 +60,10 @@ struct StarcatApp: App {
                 // 2026-06-06 A 方案：用户 profile 缓存服务。Sidebar / ShareCardSheet 会调
                 // userProfileService.load(force:) 主动触发 TTL 刷新或 force refresh。
                 .environment(dependencies.userProfileService)
+                // HOM-126：自动后台 AI 整理调度器。Sidebar 直接观察 `isAutoTidyRunning`
+                // 决定是否展示「AI 自动整理中 N/M」轻量行；设置页观察其触发结果展示
+                // 「运行状态」。调度器的 `start()` 由 HomeView 在 .task 里调。
+                .environment(dependencies.autoTidyScheduler)
                 // W4-5 D1 follow-up（2026-06-03 23:26）：用户主题应用到全 App。
                 //
                 // 为什么不用 SwiftUI `.preferredColorScheme(_:)` 而用 AppKit 的
@@ -121,6 +125,10 @@ struct StarcatApp: App {
             SettingsView()
                 .environment(dependencies)        // W4-4 D4：StorageSettingsTab 需要 readmeRepository
                 .environment(dependencies.settings)
+                // HOM-126：AI 设置「自动整理」分组的「立刻手动触发一次」按钮直接
+                // 调 scheduler.triggerManually()。不依赖 AppDependencies 间接路径，
+                // 让 Settings tab 与 scheduler 解耦但显式可见。
+                .environment(dependencies.autoTidyScheduler)
                 // W4-5 D1 follow-up：Settings 窗口不需要再调 NSApp.appearance —
                 // 主窗口的 onAppear / onChange 已经设置了**全局** NSApp.appearance，
                 // Settings 窗口是 NSApp 的子窗口，effectiveAppearance 自动跟随。
