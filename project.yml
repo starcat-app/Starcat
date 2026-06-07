@@ -23,6 +23,11 @@ settings:
     SWIFT_STRICT_CONCURRENCY: minimal
     ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_STYLE: Automatic
+    # 注意：这两个值仅作 build settings 兜底，实际产物 Info.plist 会被
+    # `scripts/bump-version.sh`（postBuildScripts）覆盖：
+    #   - CFBundleVersion              = git commit count + 短 hash（每次 build 自动更新）
+    #   - CFBundleShortVersionString   = 最新 git tag 去掉 v 前缀（无 tag 时保留这里的兜底值）
+    # 发版流程：`git tag v0.x.y && git push --tags` 后 build，关于页 / Finder 简介就会自动跟上。
     CURRENT_PROJECT_VERSION: "1"
     MARKETING_VERSION: "0.1.0"
     GENERATE_INFOPLIST_FILE: YES
@@ -78,6 +83,17 @@ targets:
       - package: MarkdownUI
       - package: OpenAI
       - package: ConfettiSwiftUI
+    # 在所有 build phase 跑完之后、codesign 之前执行：
+    # 用 git 元数据改写产物 Info.plist 的 CFBundleVersion / CFBundleShortVersionString。
+    # 详见 scripts/bump-version.sh 文件头注释。
+    postBuildScripts:
+      - name: "Auto Bump Version (from git)"
+        script: '"${SRCROOT}/scripts/bump-version.sh"'
+        # 不声明 inputFiles / outputFiles：希望每次 build 都跑（hash 可能变），
+        # 脚本本身极快（~50ms），不写依赖避免 Xcode incremental cache 跳过执行。
+        runOnlyWhenInstalling: false
+        showEnvVarsInLog: false
+        basedOnDependencyAnalysis: false
 
   StarcatTests:
     type: bundle.unit-test

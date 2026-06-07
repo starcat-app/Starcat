@@ -81,6 +81,7 @@ docs/
 ├── CloudKit数据同步设计.md
 ├── AI代理API设计.md
 ├── GitHub OAuth 设计.md
+├── 发版流程.md          # ⭐ 发版 SOP（git tag 自动驱动版本号）
 ├── 工程进度/
 │   ├── 功能实现总览.md                          # ⭐ 主进度索引（活文档）
 │   ├── 2026-05-30-代码评审与进度清单.md
@@ -191,6 +192,40 @@ Button { ... }
 1. 若使用 `.buttonStyle(.plain)` → 必须紧跟 `.focusEffectDisabled()`
 2. 提交前用 `grep -n "buttonStyle.plain" --include="*.swift" .` 检查该文件是否遗漏
 
+### 开源致谢同步规则（强制，2026-06-07 起生效）
+
+**任何**集成进 Starcat 的外部开源项目，**必须**在「关于页 → 开源致谢（Credits）」列表中追加一条对应的引用。
+
+> ⚠️ 这是强制规则。少加 / 漏加都视为不合规，提交前必须补齐。
+
+**适用范围**（只要满足任一条就算「集成」，必须登记）：
+1. **SPM 依赖**：在 `project.yml` 的 `packages:` 里新增的任何 package。
+2. **嵌入式资源**：把第三方仓库里的 SVG / 图标 / 图片 / 字体等素材复制进 `Starcat/Resources/Assets.xcassets/` 或其它资源目录。
+3. **生成代码**：用脚本（如 `scripts/generate_*.py`）从第三方数据源生成的 Swift 文件（典型例子：`LinguistLanguages.generated.swift` 来源 GitHub Linguist）。
+4. **Vendored 源码**：把第三方源码片段直接拷贝进 `Starcat/Shared/` 等目录使用（即便只用了一两个文件）。
+
+**登记位置**：`Starcat/Features/About/AboutView.swift` → `private struct AboutDependency` → `static let all`
+
+**单条记录必填字段**：
+- `name`：项目名（与官方仓库一致，如 `swift-markdown-ui`）
+- `license`：许可证名（`MIT` / `Apache 2.0` / `BSD-3-Clause` 等）
+- `copyright`：版权声明文本（保留官方 `LICENSE` 文件里的原文版权行）
+- `url`：项目源仓库地址（GitHub / GitLab 等）
+
+**新增第三方依赖时的检查流程**：
+1. 修改 `project.yml` 或新增嵌入资源 / 生成脚本之后，**立即**打开 `AboutView.swift` 追加 `AboutDependency` 条目。
+2. 验证许可证：从依赖仓库的 `LICENSE` 文件复制 `Copyright (c) ...` 那一行到 `copyright` 字段。
+3. 如果该依赖不允许商用 / 闭源分发（GPL / AGPL / SSPL 等 copyleft），先评估再集成，必要时记录到 `docs/开发前问题清单.md`。
+4. 跑一次 Starcat → About → 致谢页，肉眼确认列表里能看到、能点开源链接。
+
+**反例（必须避免）**：
+- ❌ 在 `project.yml` 加了新 SPM package，但忘了同步 `AboutDependency.all`
+- ❌ 把 Devicon / Linguist 这种「资源型开源项目」拷贝进 Assets，却不登记，因为它不在 SPM 里
+- ❌ 写了一份 `Foo.generated.swift` 数据来自第三方仓库，却不登记数据源
+- ❌ `copyright` 字段编造或留空 —— 必须取自上游 `LICENSE`
+
+> 与之配套的常驻提醒已在 `AboutView.swift` 顶部 `AboutDependency` 注释中复述，避免后续协作者只看代码不看文档时漏登记。
+
 ### 国际化规范（i18n）
 
 **所有用户可见文本必须使用 String Catalog 本地化键**，禁止硬编码。
@@ -262,4 +297,4 @@ enum RepoListDensity: String, CaseIterable, Identifiable {
 
 ---
 
-*最后更新：2026-06-01*
+*最后更新：2026-06-07*
