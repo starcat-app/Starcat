@@ -201,12 +201,15 @@ enum AIModelTask: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    /// HOM-126 follow-up (dong4j 反馈 2026-06-07，「模型配置」/「Prompt」segmented picker 显得拥挤)：
+    /// 任务名收紧为单字/双字，避免在 4 个 tab 横排的 segmented picker 里被截断。
+    /// 业务语义对齐：摘要 = 仓库 AI 摘要；标签 = 自动推荐 + 应用标签；向量化 = embedding 索引；翻译 = README 翻译。
     var displayName: String {
         switch self {
-        case .summary:     return "AI 摘要"
-        case .tags:        return "推荐标签"
-        case .embedding:   return "Embedding"
-        case .translation: return "README 翻译"
+        case .summary:     return "摘要"
+        case .tags:        return "标签"
+        case .embedding:   return "向量化"
+        case .translation: return "翻译"
         }
     }
 

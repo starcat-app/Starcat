@@ -90,15 +90,32 @@ struct AIModelListView: View {
                 }
             }
         }
-        // HOM-68 follow-up v2 (2026-06-05 22:30 dong4j 反馈)：原 260pt 高度太占空间，
-        // 压到约能完整展示 4 条模型行的高度。每条 modelRow ≈ 36pt（content 22pt +
-        // vertical padding 14pt）+ Divider 1pt，4 行 ≈ 148pt，给点缓冲取 160pt。
-        .frame(height: 160)
+        .frame(height: modelScrollHeight)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(.quaternary)
         }
+    }
+
+    /// HOM-126 follow-up (dong4j 反馈 2026-06-07，截图：2 个模型 → 列表底部留大片空白)：
+    /// 列表高度自适应——按当前可见行数算出实际所需高度，行数不超过 4 时正好贴合内容、
+    /// 不留空白；超过 4 时锁定为 4 行高度并出现滚动。
+    ///
+    /// 行高估算：modelRow 默认是双行 label（name + owner）
+    ///   - Text(name) body ≈ 13pt
+    ///   - Text(owner) caption ≈ 11pt
+    ///   - VStack spacing 2pt
+    ///   - .padding(.vertical, 7) 上下各 7pt = 14pt
+    ///   - 单行 row 高度 ≈ 13 + 2 + 11 + 14 ≈ 40pt
+    /// 加上行间 Divider 1pt 和少量缓冲，取 `perRowHeight = 44pt`，能稳定容纳"双行 label"
+    /// 不被裁切；单行 label（无 owner）row 会稍显富余，但视觉留白与双行 row 协调。
+    private var modelScrollHeight: CGFloat {
+        // 空状态（无匹配）也给一行高度，避免折叠成 0 让 ScrollView 完全消失
+        let visibleRows = filteredModels.isEmpty ? 1 : min(filteredModels.count, 4)
+        let perRowHeight: CGFloat = 44
+        let dividerHeight: CGFloat = 1
+        return CGFloat(visibleRows) * perRowHeight + CGFloat(max(0, visibleRows - 1)) * dividerHeight
     }
 
     private func modelRow(_ model: AIModelDescriptor) -> some View {

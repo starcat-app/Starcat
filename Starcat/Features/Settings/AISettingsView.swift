@@ -26,6 +26,8 @@ import SwiftUI
 struct AISettingsTab: View {
 
     @Environment(AppSettings.self) private var settings
+    /// HOM-126：「立刻手动触发一次」按钮直接调度。@Environment 注入自 StarcatApp。
+    @Environment(AutoTidyScheduler.self) private var autoTidyScheduler
 
     /// HOM-AIPROVIDERS-PERSIST-2026-06-06 (dong4j 反馈)：
     /// 之前用 `@State private var selectedProfileID: String?` 保存当前选中的服务商
@@ -77,6 +79,9 @@ struct AISettingsTab: View {
     // 选模型"完整路径时不需要手动展开折叠组。
     @SceneStorage("settings.ai.discoveredModels.expanded") private var isDiscoveredModelsExpanded: Bool = false
     @SceneStorage("settings.ai.taskModels.expanded") private var isTaskModelsExpanded: Bool = false
+    /// HOM-126：「自动整理」分组的展开偏好。默认展开——这是 HOM-126 的核心新增，
+    /// 用户第一次进入 AI 设置时希望直接看到开关，而不是再点一次折叠组。
+    @SceneStorage("settings.ai.autoTidy.expanded") private var isAutoTidyExpanded: Bool = true
 
     var body: some View {
         // HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
@@ -89,6 +94,10 @@ struct AISettingsTab: View {
             enabledModelsSection
             taskModelsSection
             promptSection
+            // HOM-126 follow-up (dong4j 反馈 2026-06-07)：
+            // 自动整理分类放到 Prompt 之后——按"配置链路从上到下"顺序排：
+            // Provider → 模型 → 模型配置 → Prompt → 自动化（消费上面所有配置）→ 隐私说明。
+            autoTidySection
             privacySection
         }
         .formStyle(.grouped)
@@ -233,20 +242,26 @@ struct AISettingsTab: View {
         // 自动展开时机：用户点"测试并获取模型"成功且 ≥1 个模型时，自动 expand
         // 一次（见 `testAndFetchModels`），让"配置 → 测试 → 看模型"的完整路径
         // 不需要手动展开折叠组。
+        //
+        // HOM-126 follow-up (dong4j 反馈 2026-06-07)：折叠组内层加 VStack(spacing: 14) 收紧
+        // 上下内边距与「模型配置」/「Prompt」一致——折叠组展开后视觉对齐。
         Section {
             DisclosureGroup(isExpanded: $isDiscoveredModelsExpanded) {
-                if let profile = selectedProfile {
-                    if profile.models.isEmpty {
-                        Text("暂无模型。点击“测试并获取模型”，或在默认设置中使用自定义模型名。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        AIModelListView(
-                            profile: profile,
-                            enabledBinding: { model in modelEnabledBinding(profile.id, model.id) },
-                            capabilityBinding: { model in modelCapabilityBinding(profile.id, model.id) },
-                            parametersBinding: { model in modelParametersBinding(profile.id, model.id) }
-                        )
+                VStack(spacing: 14) {
+                    if let profile = selectedProfile {
+                        if profile.models.isEmpty {
+                            Text("暂无模型。点击“测试并获取模型”，或在默认设置中使用自定义模型名。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            AIModelListView(
+                                profile: profile,
+                                enabledBinding: { model in modelEnabledBinding(profile.id, model.id) },
+                                capabilityBinding: { model in modelCapabilityBinding(profile.id, model.id) },
+                                parametersBinding: { model in modelParametersBinding(profile.id, model.id) }
+                            )
+                        }
                     }
                 }
             } label: {
@@ -453,6 +468,263 @@ struct AISettingsTab: View {
         .focusEffectDisabled()
     }
 
+    // MARK: - Auto Tidy (HOM-126)
+
+    /// HOM-126：「自动整理」分组。
+    ///
+    /// 设计：
+    /// - 用 DisclosureGroup 默认展开（与其他折叠组的"默认收起"不同）：自动整理是
+    ///   本期主推功能，第一次进 AI 设置应直接看到开关而不是再点一次折叠组。
+    /// - 总开关 OFF 时下面所有子项 `.disabled(true)` + `.opacity(0.5)`，符合 HOM-126
+    ///   验收"总开关关闭时所有子项 disabled"。
+    /// - 触发时机用三个独立 Toggle（启动 / 同步 / 定时），UI 简单直接；不用 Picker
+    ///   是因为三者可同时开（"启动后跑一次 + 同步后增量 + 每天定时"）。
+    /// - 处理范围用 Stepper（5...500，步进 5）+ 排序 Picker。
+    /// - 阈值用 Slider（与 BatchAIOptionsSheet 的阈值滑条视觉一致），范围 0.5...1.0
+    ///   步进 0.05；显示百分比。
+    /// - 运行状态用只读 LabeledContent + 「立刻手动触发一次」按钮。
+    private var autoTidySection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $isAutoTidyExpanded) {
+                autoTidyContent
+            } label: {
+                disclosureLabel(String(localized: "settings.autoTidy.section"), isExpanded: $isAutoTidyExpanded)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var autoTidyContent: some View {
+        // 总开关
+        //
+        // HOM-126 follow-up v2 (dong4j 反馈 2026-06-07，截图仍显示开关 thumb 被裁)：
+        // v1 用 `LabeledContent { Toggle().labelsHidden() } label: { VStack { title + description } }`，
+        // 两行 VStack label 把 row 撑高、把横向空间吃宽，macOS Form 仍把 trailing Toggle 挤到
+        // Section 右内边距，`.switch` 的 thumb 圆点贴边被裁。dong4j 提示"往下移动一点"——
+        // 真正的修法是：让 toggle 行只承载单行标题（让 toggle 有充足右侧空间），description
+        // 独立作为下一行普通 Text 显示。这样开关就和「触发时机」下面那几个单行 toggle 一样
+        // 自然右对齐、thumb 完整。
+        Toggle("settings.autoTidy.enabled.title", isOn: autoTidyBinding(\.enabled))
+            .toggleStyle(.switch)
+        Text("settings.autoTidy.enabled.description")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 4)
+
+        // 子项总开关：用 group `.disabled(!enabled)` 一刀切，省去每个 Toggle 单独写
+        Group {
+            triggerGroup
+            rangeGroup
+            actionsGroup
+            statusGroup
+        }
+        .disabled(!settings.autoTidySettings.enabled)
+        // disabled 后整体淡化，给用户"这一段被锁住"的视觉信号
+        .opacity(settings.autoTidySettings.enabled ? 1.0 : 0.5)
+    }
+
+    /// HOM-126 follow-up (dong4j 反馈 2026-06-07，截图："间距拥挤、不一致")：
+    /// 共用的子分组标题样式 helper，统一垂直 padding（上 14 / 下 4）让 section header
+    /// 与上下 row 之间有一致呼吸感。原本各 group 用 `Divider() + Text` 的写法让 Divider
+    /// 自己占一行，反而让间距更不一致——SwiftUI Form 内 Divider 高度小、Toggle 行高度
+    /// 大，混在一起视觉节奏跳。删 Divider 改用 `Text` + padding，所有分组间距统一。
+    private func autoTidySectionHeader(_ key: LocalizedStringKey) -> some View {
+        Text(key)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 14)
+            .padding(.bottom, 4)
+    }
+
+    /// 触发时机：启动后延迟 / 同步后增量 / 定时 24h。
+    @ViewBuilder
+    private var triggerGroup: some View {
+        autoTidySectionHeader("settings.autoTidy.triggers.label")
+
+        Toggle("settings.autoTidy.trigger.onLaunch", isOn: autoTidyBinding(\.triggerOnLaunch))
+        Toggle("settings.autoTidy.trigger.onSync", isOn: autoTidyBinding(\.triggerOnSync))
+        Toggle("settings.autoTidy.trigger.scheduled", isOn: autoTidyBinding(\.triggerScheduled))
+    }
+
+    /// 处理范围：最多一次处理多少个 + 排序口径。
+    @ViewBuilder
+    private var rangeGroup: some View {
+        autoTidySectionHeader("settings.autoTidy.range.label")
+
+        // HOM-126 follow-up (dong4j 反馈 2026-06-07)：Stepper → TextField + 数字校验。
+        // SwiftUI `TextField(value:format: .number)` 内置只接受数字输入（非数字字符被吃掉），
+        // setter 在 `maxPerRunBinding` 内已 clamp 到 5...500，超范围 / 失焦后 binding 把值约束回区间。
+        // 用 `IntegerFormatStyle.number.grouping(.never)` 关掉千位分隔符，避免显示 "1,000"。
+        // 输入框右对齐 + 80pt 固定宽度，与其他「数字配置项」视觉对齐。
+        LabeledContent {
+            TextField(
+                "",
+                value: maxPerRunBinding,
+                format: .number.grouping(.never)
+            )
+            .textFieldStyle(.roundedBorder)
+            .multilineTextAlignment(.trailing)
+            .frame(width: 80)
+            .help("5 - 500")
+        } label: {
+            Text("settings.autoTidy.range.maxPerRun")
+        }
+
+        Picker("settings.autoTidy.range.sortOrder", selection: autoTidyBinding(\.sortOrder)) {
+            ForEach(AutoTidySortOrder.allCases) { order in
+                Text(order.displayNameKey).tag(order)
+            }
+        }
+        .pickerStyle(.menu)
+    }
+
+    /// 执行操作：摘要 / 标签 + 置信度阈值。
+    @ViewBuilder
+    private var actionsGroup: some View {
+        autoTidySectionHeader("settings.autoTidy.actions.label")
+
+        Toggle("settings.autoTidy.actions.generateTags", isOn: autoTidyBinding(\.generateTags))
+        Toggle("settings.autoTidy.actions.generateSummary", isOn: autoTidyBinding(\.generateSummary))
+
+        // HOM-126 follow-up (dong4j 反馈 2026-06-07，截图：阈值 label 没有独立开关)：
+        // 阈值区两层 disable：
+        //   - 外层（整组）：`generateTags = false` → 阈值 Toggle 和滑块全 disable（标签都关了阈值无意义）；
+        //   - 内层（仅滑块）：`useConfidenceThreshold = false` → 阈值 Toggle 行还能点开，但滑块 disable，
+        //     `makeBatchOptions` 把下游阈值降级为 0（不过滤，所有标签都自动应用）。
+        // 用 `Group { ... }` 收住 Toggle + 滑块两个子视图，让外层 `.disabled(!generateTags)` 能同时作用于两者。
+        Group {
+            Toggle("settings.autoTidy.threshold.enabled", isOn: autoTidyBinding(\.useConfidenceThreshold))
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("settings.autoTidy.threshold.label")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(verbatim: thresholdPercentString)
+                        .font(.callout.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.tint)
+                }
+                Slider(value: autoTidyBinding(\.confidenceThreshold), in: 0.5...1.0, step: 0.05)
+                    .controlSize(.mini)
+                Text(String(format: String(localized: "settings.autoTidy.threshold.hintFormat"), thresholdPercentString))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .disabled(!settings.autoTidySettings.useConfidenceThreshold)
+            .opacity(settings.autoTidySettings.useConfidenceThreshold ? 1.0 : 0.5)
+        }
+        .disabled(!settings.autoTidySettings.generateTags)
+        .opacity(settings.autoTidySettings.generateTags ? 1.0 : 0.5)
+    }
+
+    /// 运行状态只读 + 手动触发按钮。
+    /// 即使总开关关着，「立刻手动触发一次」也保持可点（用户可能想"现在跑一次试试效果再决定要不要开总开关"）。
+    /// 但 disabled group 把这里也锁住了——为了避免特殊化处理破坏 disabled 整体语义，
+    /// 我们干脆把状态区也放在 disabled 范围内；用户必须先开总开关才能手动触发。
+    ///
+    /// HOM-126 follow-up (dong4j 反馈 2026-06-07)：
+    /// 整个状态卡片改右对齐——「运行状态」label、「上次自动跑 xxx」icon+text、
+    /// 「立刻手动触发一次」按钮 + 运行进度文字，全部贴右侧。实现方式：在每行的
+    /// HStack 开头放 `Spacer()`，把元素挤到右端；不再用 `.frame(maxWidth: .infinity,
+    /// alignment: .leading)`。这样跟 dong4j 截图里 macOS Settings 标准右侧操作列
+    /// 的视觉一致。
+    @ViewBuilder
+    private var statusGroup: some View {
+        // 状态分组的 header 走右对齐而不是 left（与下面"上次自动跑/按钮"右对齐保持一致），
+        // 所以不复用 autoTidySectionHeader（那个是 left + bottom padding 4）。
+        HStack {
+            Spacer()
+            Text("settings.autoTidy.status.label")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.top, 14)
+        .padding(.bottom, 4)
+
+        // 上次运行时间 + 计数（贴右对齐）
+        HStack(spacing: 6) {
+            Spacer()
+            Image(systemName: "clock.arrow.circlepath")
+                .foregroundStyle(.secondary)
+            Text(lastRunSummaryText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+        // 手动触发按钮 + 当前是否在跑的轻量提示（按钮贴右对齐）
+        HStack(spacing: 8) {
+            Spacer()
+            if autoTidyScheduler.isAutoTidyRunning {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text(verbatim: autoTidyScheduler.autoTidyProgressText)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Button {
+                autoTidyScheduler.triggerManually()
+            } label: {
+                Label("settings.autoTidy.triggerNow", systemImage: "play.fill")
+            }
+            // 已经在跑就 disable，避免重复触发；调度器内部也有 `batchService.isRunning` 检查兜底
+            .disabled(autoTidyScheduler.isAutoTidyRunning || !settings.autoTidySettings.hasAnyAction)
+        }
+    }
+
+    /// 「上次自动跑：X 分钟前 · 应用 12 / 忽略 3 / 失败 1」。
+    /// 没有记录时给"尚未运行"文案。
+    private var lastRunSummaryText: String {
+        guard let last = settings.autoTidySettings.lastRunAt,
+              let stats = settings.autoTidySettings.lastRunStats else {
+            return String(localized: "settings.autoTidy.status.neverRun")
+        }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        let timeAgo = formatter.localizedString(for: last, relativeTo: Date())
+        return String(
+            format: String(localized: "settings.autoTidy.status.lastRunFormat"),
+            timeAgo, stats.applied, stats.ignored, stats.failed
+        )
+    }
+
+    private var thresholdPercentString: String {
+        "\(Int((settings.autoTidySettings.confidenceThreshold * 100).rounded()))%"
+    }
+
+    // MARK: - Auto Tidy Bindings
+
+    /// 通用 binding helper：把 `AutoTidySettings` 的某个 keyPath 绑成可写 Binding。
+    /// 写入时整段 settings 重新赋值，触发 `AppSettings.autoTidySettings.didSet` 持久化。
+    private func autoTidyBinding<T>(_ keyPath: WritableKeyPath<AutoTidySettings, T>) -> Binding<T> {
+        Binding(
+            get: { self.settings.autoTidySettings[keyPath: keyPath] },
+            set: { newValue in
+                var s = self.settings.autoTidySettings
+                s[keyPath: keyPath] = newValue
+                self.settings.autoTidySettings = s
+            }
+        )
+    }
+
+    /// `maxPerRun` 的独立 binding：Stepper 已经限定 5...500，但 binding 仍 clamp 一道
+    /// 防御性兜底（避免外部按钮 / 快捷键 / 程序化路径写入越界值）。
+    private var maxPerRunBinding: Binding<Int> {
+        Binding(
+            get: { self.settings.autoTidySettings.maxPerRun },
+            set: { newValue in
+                let clamped = max(5, min(500, newValue))
+                var s = self.settings.autoTidySettings
+                s.maxPerRun = clamped
+                self.settings.autoTidySettings = s
+            }
+        )
+    }
+
     // MARK: - Prompt
 
     /// HOM-68 follow-up v3 (dong4j 反馈 2026-06-05 22:40)：
@@ -466,54 +738,64 @@ struct AISettingsTab: View {
     ///   macOS 上内置垂直滚动，超出高度自动出现滚动条，不再让长 prompt 撑大
     ///   整个设置面板。
     private var promptSection: some View {
+        // HOM-126 follow-up (dong4j 反馈 2026-06-07，"Prompt/模型配置/已发现模型 面板间距")：
+        // 用 `VStack(spacing: 14)` 显式给开 14pt（与 `taskModelsSection` 同款），
+        // 避免 Form 默认让 Text(header) → TextEditor → Text(header) → TextEditor 之间
+        // 黏连。System/User Prompt 两组之间 14pt 是正合适的呼吸感（更大会显得空）。
         Section {
             DisclosureGroup(isExpanded: $isPromptExpanded) {
-                HStack(spacing: 12) {
-                    Picker("任务", selection: $promptTask) {
-                        ForEach([AIModelTask.summary, .tags, .translation]) { task in
-                            Text(task.displayName).tag(task)
+                VStack(spacing: 14) {
+                    HStack(spacing: 12) {
+                        Picker("任务", selection: $promptTask) {
+                            ForEach([AIModelTask.summary, .tags, .translation]) { task in
+                                Text(task.displayName).tag(task)
+                            }
                         }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity)
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(maxWidth: .infinity)
 
-                    Button {
-                        restoreDefaultPrompt(promptTask)
-                    } label: {
-                        Label("恢复默认", systemImage: "arrow.counterclockwise")
-                            .labelStyle(.titleAndIcon)
+                        // HOM-126 follow-up (dong4j 反馈 2026-06-07)：「恢复默认」按钮去掉文字只保留 icon
+                        // （扫一眼就懂 = 旋转箭头），节省横向空间让左侧 segmented picker 不被挤；语义留在 tooltip。
+                        Button {
+                            restoreDefaultPrompt(promptTask)
+                        } label: {
+                            Image(systemName: "arrow.counterclockwise")
+                        }
+                        .help("恢复 \(promptTask.displayName) 的默认 Prompt")
                     }
-                    .help("恢复 \(promptTask.displayName) 的默认 Prompt")
-                    .fixedSize()
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("System Prompt")
+                            .font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        TextEditor(text: promptSystemBinding(promptTask))
+                            .font(.system(.caption, design: .monospaced))
+                            .frame(height: 100)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
+                            )
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("User Prompt")
+                            .font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        TextEditor(text: promptUserBinding(promptTask))
+                            .font(.system(.caption, design: .monospaced))
+                            .frame(height: 160)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
+                            )
+                    }
+
+                    Text(promptPlaceholderHint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-
-                Text("System Prompt")
-                    .font(.caption.weight(.semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                TextEditor(text: promptSystemBinding(promptTask))
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(height: 100)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
-                    )
-
-                Text("User Prompt")
-                    .font(.caption.weight(.semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                TextEditor(text: promptUserBinding(promptTask))
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(height: 160)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
-                    )
-
-                Text(promptPlaceholderHint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
                 disclosureLabel("Prompt", isExpanded: $isPromptExpanded)
             }
