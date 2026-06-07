@@ -65,6 +65,13 @@ struct HomeView: View {
     /// W4 A2：标签管理 sheet 显示状态。
     @State private var showTagManagement: Bool = false
 
+    /// HOM-52：批量 AI 整理"操作选择" sheet 显示状态。
+    @State private var showBatchAIOptions: Bool = false
+    /// HOM-52：批量 AI 整理进度面板 sheet 显示状态。
+    @State private var showBatchAIPanel: Bool = false
+    /// HOM-52：当前正在编辑的 Options（启动 sheet 时初始化，跨 sheet 关闭保留以记住上次选择）。
+    @State private var batchAIOptions: BatchAIQueueOptions = BatchAIQueueOptions()
+
     /// 三栏显示状态。
     ///
     /// 为什么显式持有：
@@ -170,7 +177,15 @@ struct HomeView: View {
                 selectedTrendingRepoID: $selectedTrendingRepoID,
                 selectedTrendingRepo: $selectedTrendingRepo,
                 selectedActivityCategory: $selectedActivityCategory,
-                selectedActivityItem: $selectedActivityItem
+                selectedActivityItem: $selectedActivityItem,
+                onStartBatchAI: {
+                    // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
+                    // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
+                    showBatchAIOptions = true
+                },
+                onShowBatchAIPanel: {
+                    showBatchAIPanel = true
+                }
             )
                 .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
         } detail: {
@@ -208,6 +223,29 @@ struct HomeView: View {
             ReleaseTimelineView()
                 .environment(dependencies)
         }
+        // HOM-52：批量 AI 整理"操作选择" sheet
+        .sheet(isPresented: $showBatchAIOptions) {
+            BatchAIOptionsSheet(
+                pendingCount: viewModel.untaggedCount,
+                options: $batchAIOptions,
+                onCancel: {
+                    showBatchAIOptions = false
+                },
+                onStart: {
+                    showBatchAIOptions = false
+                    Task {
+                        await startBatchAIIntegration()
+                    }
+                }
+            )
+        }
+        // HOM-52：批量 AI 整理进度面板
+        .sheet(isPresented: $showBatchAIPanel) {
+            BatchAIQueuePanel(
+                service: dependencies.batchAIQueueService,
+                onClose: { showBatchAIPanel = false }
+            )
+        }
         // HOM-47：登录后启动后台 Release 轮询；登出时停。
         // 与 SyncManager 不同：Release Poller 自调度（NSBackgroundActivityScheduler），
         // 启动一次后由系统在后台触发；这里只负责启停门控。
@@ -222,6 +260,15 @@ struct HomeView: View {
             // 启动 / 重新进入 HomeView 时默认回三栏展开。运行期用户手动缩窗时，
             // 系统仍可按窗口宽度自动折叠 sidebar；这里只负责启动态保真。
             columnVisibility = .all
+
+            // HOM-52：批量整理服务挂接 Sidebar 刷新回调。
+            // 每应用一批标签就 refreshSidebar，让 Sidebar Tags 段计数实时跟随；
+            // 不在 viewModel.reloadItems()——避免大批次每个 repo 都全量重拉列表。
+            dependencies.batchAIQueueService.onTagsChanged = {
+                Task { @MainActor in
+                    await viewModel.refreshSidebar()
+                }
+            }
 
             // W4-4 D1/D2:把持久化的视图偏好同步到 viewModel,避免首次 reloadItems 用默认值
             // 然后 onAppear 才纠正导致列表抖动一次。
@@ -469,6 +516,29 @@ struct HomeView: View {
         case .loaded(let html, _):
             return "loaded:\(html.count)"
         }
+    }
+
+    /// HOM-52：用户点击 banner"开始整理"后的真正启动入口。
+    ///
+    /// 流程：
+    /// 1. 从 RepoRepository 拉取 fetchUntagged() 作为本次整理输入集（不依赖 viewModel.items，
+    ///    避免搜索过滤后的子集被误处理）。
+    /// 2. 调 BatchAIQueueService.start 启动队列。
+    /// 3. 立刻打开进度面板让用户看到第一帧。
+    ///
+    /// 错误处理：fetchUntagged 失败仅记日志，不弹错——这是用户主动触发的场景，
+    /// 失败时按钮仍可继续点（dependencies 状态未变，第二次点击会重试）。
+    private func startBatchAIIntegration() async {
+        let untagged: [Repo]
+        do {
+            untagged = try await dependencies.repoRepository.fetchUntagged()
+        } catch {
+            AppLog.ai.error("[batch-ai] fetchUntagged failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        guard !untagged.isEmpty else { return }
+        dependencies.batchAIQueueService.start(repos: untagged, options: batchAIOptions)
+        showBatchAIPanel = true
     }
 
     /// 校验一个 Manage 分类当前是否仍然有效（用于跨启动恢复时兜底）。

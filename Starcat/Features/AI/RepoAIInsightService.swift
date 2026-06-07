@@ -89,14 +89,68 @@ final class RepoAIInsightService {
 
     func generateInsight(
         for repo: Repo,
+        existingTagHints: [String] = [],
+        includeSummary: Bool = true,
+        includeTags: Bool = true,
         onSummaryDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> RepoAIInsightGeneration {
         let source = try await makeSource(for: repo)
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
 
-        async let tagResult = tagSuggestionsResult(source: source)
-        let summaryText = try await generateSummary(source: source, onDelta: onSummaryDelta)
-        let resolvedTagResult = await tagResult
+        // HOM-52：标签生成路径在 source 末尾追加两段强制约束：
+        //   (1) Tag format rules —— 限制中英文标签长度 / 风格，覆盖所有用户 prompt（含自定义）
+        //   (2) Existing user tags —— 批量路径传入时引导 AI 优先复用
+        //
+        // 为何不写进 default prompt：用户可能已经在 Settings 改过 prompt（持久化在 UserDefaults），
+        // 改 default 对老用户不生效。注入到 {context} 末尾走的是同一个 prompt template 替换路径，
+        // 无论用户怎么改 system / user prompt 都会拿到这两段规则。
+        // includeTags == false 时不注入，避免摘要任务的 prompt 被无关规则污染。
+        let augmentedSource: Source = {
+            guard includeTags else { return source }
+
+            var appendix = """
+
+            Tag format rules (必须遵守):
+            - 中文标签：长度 ≤ 4 字（如「向量检索」「编辑器」「机器学习」），名词或简短术语，不要句子。
+            - 英文标签：单个领域词、专业缩写或常见技术术语（如 RAG / LLM / Vector / DevOps / WebRTC / Editor），不要复合短语。
+            - 中英文混用时每个标签独立判断；同一仓库的标签风格保持一致。
+            """
+
+            let trimmedHints = existingTagHints
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .prefix(50)
+            if !trimmedHints.isEmpty {
+                appendix += """
+
+
+                Existing user tags (优先复用，无法归类的才新增；避免标签数量爆炸):
+                \(trimmedHints.joined(separator: ", "))
+                """
+            }
+
+            let merged = source.text + appendix
+            return Source(text: merged, hash: Self.hash(merged))
+        }()
+
+        // 两者都需要时并发跑（与原实现一致）；任一关闭则串行 / 短路，避免无意义 AI 调用。
+        let summaryText: String
+        let resolvedTagResult: Result<[AITagSuggestion], Error>
+        if includeSummary, includeTags {
+            async let tagResult = tagSuggestionsResult(source: augmentedSource)
+            summaryText = try await generateSummary(source: augmentedSource, onDelta: onSummaryDelta)
+            resolvedTagResult = await tagResult
+        } else if includeSummary {
+            summaryText = try await generateSummary(source: augmentedSource, onDelta: onSummaryDelta)
+            resolvedTagResult = .success([])
+        } else if includeTags {
+            summaryText = ""
+            resolvedTagResult = await tagSuggestionsResult(source: augmentedSource)
+        } else {
+            // 调用方两者都关：返回空 insight，避免无意义网络调用。
+            summaryText = ""
+            resolvedTagResult = .success([])
+        }
         let suggestions = (try? resolvedTagResult.get()) ?? []
         let tagErrorMessage: String? = {
             if case .failure(let error) = resolvedTagResult {
@@ -116,15 +170,19 @@ final class RepoAIInsightService {
         // 保留旧字段的同时把新摘要正文写进 summaryMarkdown，UI 优先读该字段。
         insight.summaryMarkdown = summaryText
 
-        let jsonData = try JSONEncoder().encode(insight)
-        let record = AISummaryRecord(
-            repoId: repo.id,
-            model: cacheModelKey(),
-            sourceHash: source.hash,
-            summaryJson: String(decoding: jsonData, as: UTF8.self),
-            generatedAt: generatedAt
-        )
-        try await summaryRepository.upsert(record)
+        // HOM-52：只跑标签（includeSummary == false）时不写 ai_summaries 缓存——
+        // 否则会用空 summaryText 覆盖已有的有效摘要缓存。调用方仍能拿到 suggestions。
+        if includeSummary {
+            let jsonData = try JSONEncoder().encode(insight)
+            let record = AISummaryRecord(
+                repoId: repo.id,
+                model: cacheModelKey(),
+                sourceHash: source.hash,
+                summaryJson: String(decoding: jsonData, as: UTF8.self),
+                generatedAt: generatedAt
+            )
+            try await summaryRepository.upsert(record)
+        }
         return RepoAIInsightGeneration(insight: insight, tagErrorMessage: tagErrorMessage)
     }
 

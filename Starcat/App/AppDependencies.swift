@@ -58,6 +58,13 @@ final class AppDependencies {
     /// W6 AI：单仓 AI 摘要与标签推荐服务。
     let repoAIInsightService: RepoAIInsightService
 
+    /// HOM-52：批量未分类仓库 AI 整理队列服务（会话级单例）。
+    ///
+    /// 单例理由：同时只允许跑一批整理任务，避免 AI 配额尖刺，且 panel/banner 多处订阅
+    /// 同一份状态。装在 AppDependencies 让 HomeView 通过 environment 注入到 RepoListView /
+    /// BatchAIQueuePanel / BatchAIUntaggedBanner，无需多余的 @State 传参。
+    let batchAIQueueService: BatchAIQueueService
+
     // MARK: - HOM-68 README 翻译
 
     /// README AI 翻译缓存 Repository。
@@ -165,11 +172,12 @@ final class AppDependencies {
 
         let summaryRepo = GRDBAISummaryRepository(database: db)
         self.aiSummaryRepository = summaryRepo
-        self.repoAIInsightService = RepoAIInsightService(
+        let aiInsight = RepoAIInsightService(
             summaryRepository: summaryRepo,
             readmeRepository: readmeRepo,
             settings: self.settings
         )
+        self.repoAIInsightService = aiInsight
 
         // HOM-68：README 翻译。复用 AppSettings.aiSummaryTask 的 provider/model 选择
         // 与 Keychain API Key，独立 Service 承载严格保结构的翻译 prompt + 本地 SQLite 缓存。
@@ -181,9 +189,20 @@ final class AppDependencies {
         )
 
         // W4 Batch A1：标签 / 关联 / 笔记+状态 Repository
-        self.tagRepository = GRDBTagRepository(database: db)
-        self.repoTagRepository = GRDBRepoTagRepository(database: db)
+        let tagRepo = GRDBTagRepository(database: db)
+        let repoTagRepo = GRDBRepoTagRepository(database: db)
+        self.tagRepository = tagRepo
+        self.repoTagRepository = repoTagRepo
         self.repoNoteRepository = GRDBRepoNoteRepository(database: db)
+
+        // HOM-52：批量整理服务装在 AI insight + 标签 + 标签关联 + AI 摘要 Repo 之后。
+        // 注：onTagsChanged 由 HomeView 在 environment 注入后挂接，刷新 Sidebar 计数。
+        self.batchAIQueueService = BatchAIQueueService(
+            insightService: aiInsight,
+            tagRepository: tagRepo,
+            repoTagRepository: repoTagRepo,
+            aiSummaryRepository: summaryRepo
+        )
         let embeddingRepo = GRDBRepoEmbeddingRepository(database: db)
         self.repoEmbeddingRepository = embeddingRepo
         self.semanticSearchService = SemanticSearchService(
