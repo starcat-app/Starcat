@@ -3140,6 +3140,54 @@
         }
       }
     },
+    "autoTidy.sort.earliestStarred" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Earliest starred"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最早 star"
+          }
+        }
+      }
+    },
+    "autoTidy.sort.random" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Random"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "随机"
+          }
+        }
+      }
+    },
+    "autoTidy.sort.recentlyStarred" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Most recently starred"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近 star"
+          }
+        }
+      }
+    },
     "avatar.loginGithub" : {
       "localizations" : {
         "en" : {
@@ -7443,6 +7491,326 @@
         }
       }
     },
+    "settings.autoTidy.actions.generateSummary" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generate AI summaries"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成 AI 摘要"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.actions.generateTags" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommend & apply tags"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推荐并自动应用标签"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.actions.label" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ACTIONS"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "执行操作"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.enabled.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat will quietly tidy untagged stars in the background—no manual click needed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启后 Starcat 会在后台静默整理未分类 stars，无需手动点击。"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.enabled.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable service"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启服务"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.range.label" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RANGE"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "处理范围"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.range.maxPerRun" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Max per run"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每轮最多处理"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.range.sortOrder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Order"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优先排序"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.section" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-tidy & Categorize"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动整理分类"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.status.label" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STATUS"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行状态"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.status.lastRunFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last run %1$@ · applied %2$d / ignored %3$d / failed %4$d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次自动跑：%1$@ · 应用 %2$d / 忽略 %3$d / 失败 %4$d"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.status.neverRun" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Never run yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未自动运行过"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.threshold.hintFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tags with confidence below %@ will not be applied automatically."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "置信度低于 %@ 的标签不会被自动应用。"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.threshold.enabled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply confidence threshold"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用置信度阈值"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.threshold.label" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confidence threshold"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "置信度阈值"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.trigger.onLaunch" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60s after app launch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 启动后延迟 60 秒"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.trigger.onSync" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After star sync detects new repos"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同步完成检测到新 star 时增量触发"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.trigger.scheduled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every 24 hours"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每 24 小时一次"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.triggerNow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run once now"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立刻手动触发一次"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.triggers.label" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TRIGGERS"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "触发时机"
+          }
+        }
+      }
+    },
     "settings.general.appearance" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8918,6 +9286,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "全部仓库"
+          }
+        }
+      }
+    },
+    "sidebar.autoTidy.runningFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI auto-tidying %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 自动整理中 %@"
+          }
+        }
+      }
+    },
+    "sidebar.autoTidy.tooltip" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-tidy is processing untagged repositories in the background."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动整理正在后台处理未分类仓库。"
           }
         }
       }

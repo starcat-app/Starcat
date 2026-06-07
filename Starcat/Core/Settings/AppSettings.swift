@@ -647,6 +647,22 @@ final class AppSettings {
         didSet { persistBool(key: Keys.isProUser, value: isProUser) }
     }
 
+    /// HOM-126：自动后台 AI 整理偏好 + 运行态。
+    ///
+    /// 走 UserDefaults JSON 持久化（与 `aiSummaryTask` 同款）；任何字段变更（开关、阈值、
+    /// 排序、运行结果回写）触发整体重写。设计取舍：
+    /// - **不拆字段**：自动整理是一个高度耦合的小集合（开关 + 触发 + 范围 + 操作 + 阈值
+    ///   + 运行态），把它们拆成 10 个独立 didSet 字段会让 `AutoTidyScheduler` 与 UI
+    ///   订阅路径凌乱；统一在 `AutoTidySettings` 结构体里，写入一次完成同步。
+    /// - **每次 didSet 都写整段 JSON**：偏好结构体很小（几十字节），重写代价可忽略；
+    ///   换来的好处是任何字段变更都不会与并发写入产生半截状态。
+    ///
+    /// 调度器 `AutoTidyScheduler` 在结束一轮时也走这个 setter 回写 `lastRunAt /
+    /// lastRunStats`，让设置页「运行状态」只读区实时更新。
+    var autoTidySettings: AutoTidySettings {
+        didSet { persistJSON(key: Keys.autoTidySettings, value: autoTidySettings) }
+    }
+
     // MARK: - 初始化
 
     private let defaults: UserDefaults
@@ -736,6 +752,10 @@ final class AppSettings {
             .flatMap(ReadmeTranslationLanguage.init(rawValue:)) ?? .simplifiedChinese
 
         self.isProUser = defaults.object(forKey: Keys.isProUser) as? Bool ?? false
+
+        // HOM-126：自动整理偏好。缺失时回落到 `AutoTidySettings.default`（总开关关 +
+        // 启动/同步触发 + 50 个 + 最近 star + 仅标签 + 90% 阈值），与任务描述一致。
+        self.autoTidySettings = Self.decodeJSON(AutoTidySettings.self, key: Keys.autoTidySettings, defaults: defaults) ?? .default
     }
 
     // MARK: - 内部
@@ -879,5 +899,6 @@ final class AppSettings {
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
         static let isProUser = "settings.pro.isProUser"  // HOM-151
+        static let autoTidySettings = "settings.ai.autoTidy.v1"  // HOM-126
     }
 }

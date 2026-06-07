@@ -270,6 +270,13 @@ struct HomeView: View {
                 }
             }
 
+            // HOM-126：启动自动后台 AI 整理调度器。
+            // - `start()` 内部幂等，HomeView 多次进入只装一次。
+            // - 启动后挂启动延迟（60s 后触发一次）+ 24h 定时器 + onBatchFinished 回调。
+            // - 同步完成事件由下方 `.onChange(of: syncManager.state)` 转发给调度器
+            //   （理由见 AutoTidyScheduler.notifySyncStateChanged 文档）。
+            dependencies.autoTidyScheduler.start()
+
             // W4-4 D1/D2:把持久化的视图偏好同步到 viewModel,避免首次 reloadItems 用默认值
             // 然后 onAppear 才纠正导致列表抖动一次。
             if viewModel.sortOption != settings.repoSortOption {
@@ -347,6 +354,20 @@ struct HomeView: View {
                 await viewModel.refreshSidebar()
                 await viewModel.reloadItems(forceRefresh: true)
             }
+        }
+        // HOM-126：把同步状态变化转发给 AutoTidyScheduler，让它做"同步完成 → 自动整理"
+        // 边沿触发判定。scheduler 内部会先 guard `autoTidySettings.triggerOnSync`，
+        // 用户关掉同步触发后这里仍调用但 scheduler no-op，避免 view 端再加 guard。
+        // 用 .onChange 而非 .task(id:)：.task 会在 view 重建时也跑一次 if-completed
+        // 分支，造成"切窗口/重进 HomeView 触发 N 次自动整理"。.onChange 只在
+        // syncManager.state 真正变化的边沿触发。
+        .onChange(of: syncManager.state) { _, newState in
+            dependencies.autoTidyScheduler.notifySyncStateChanged(newState)
+        }
+        // HOM-126：用户在 Settings 切换「定时」/触发开关后，让 scheduler 重新装载
+        // 定时器与监听。settings.autoTidySettings 是结构体，赋值替换即触发 .onChange。
+        .onChange(of: settings.autoTidySettings) { _, _ in
+            dependencies.autoTidyScheduler.reconfigure()
         }
         // 选中 repo 变化（含 nil）→ 驱动 README 加载 / 重置
         // 监听 selectedRepoID（Int64?）而非 selectedRepo（Repo? 派生）：
