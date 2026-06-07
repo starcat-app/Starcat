@@ -4,7 +4,7 @@
 //
 //  GitHub Trending API 响应 DTO。
 //
-//  数据源：https://trend.doforce.dpdns.org/repo
+//  数据源：https://starcat-trending-api.fly.dev/repo
 //  API 参数：since (daily/weekly/monthly), lang (语言筛选)
 //
 //  设计约束：
