@@ -211,3 +211,5 @@ refer/
 # CodeGraph 运行时数据
 .codegraph/
 supports/
+
+!.claude/skills/macos-app-skills/build
