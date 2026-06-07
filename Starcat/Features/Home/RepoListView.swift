@@ -22,6 +22,8 @@ struct RepoListView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(AppSettings.self) private var settings
+    /// HOM-52：批量 AI 整理入口横幅需要查询队列状态。
+    @Environment(AppDependencies.self) private var dependencies
 
     /// HOM-54：TrendingRepository，用于渲染 Trending 页面。
     var trendingRepository: (any TrendingRepositoryProtocol)?
@@ -38,6 +40,11 @@ struct RepoListView: View {
     @Binding var selectedActivityCategory: ActivityCategory
     /// Activity 页当前选中项，驱动右侧详情。
     @Binding var selectedActivityItem: ActivityItem?
+
+    /// HOM-52：Untagged 视图顶部 banner 的"启动整理 / 查看进度"回调。
+    /// 这两个动作产生 sheet 由 HomeView 统一承载（避免 RepoListView 多持一个 @State）。
+    var onStartBatchAI: (() -> Void)?
+    var onShowBatchAIPanel: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -138,10 +145,34 @@ struct RepoListView: View {
                 emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
             } else if viewModel.isMultiSelectMode {
                 // W4 A5：多选模式 List binding 类型不同，必须分开渲染
-                multiSelectList($vm.multiSelectedRepoIDs)
+                listWithOptionalBanner { multiSelectList($vm.multiSelectedRepoIDs) }
             } else {
-                listContent($vm.selectedRepoID)
+                listWithOptionalBanner { listContent($vm.selectedRepoID) }
             }
+        }
+    }
+
+    /// HOM-52：仅在 Untagged 视图非空时，在列表顶部插入"批量 AI 整理"入口横幅。
+    ///
+    /// 之所以包成 ViewBuilder + closure 而不是把 banner 塞进每个 list view：
+    /// listContent / multiSelectList 都是带泛型 selection 的 List，加 banner 会破坏 List 滚动语义；
+    /// 在外层 VStack 拼接更稳，且 banner 也参与 contentAnimationID 触发的过渡动画。
+    @ViewBuilder
+    private func listWithOptionalBanner<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        if selectedPage == .manage, viewModel.selection == .untagged {
+            VStack(spacing: 0) {
+                BatchAIUntaggedBanner(
+                    // 用 untaggedCount 而非 items.count：搜索过滤后 items 会少，
+                    // 但 banner 反映的是"全部未分类仓库"总量，与"开始整理"动作语义一致。
+                    untaggedCount: viewModel.untaggedCount,
+                    service: dependencies.batchAIQueueService,
+                    onStart: { onStartBatchAI?() },
+                    onShowPanel: { onShowBatchAIPanel?() }
+                )
+                content()
+            }
+        } else {
+            content()
         }
     }
 
