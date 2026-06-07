@@ -225,6 +225,36 @@ final class HomeViewModel {
     /// W4 A6：tagId → starred repo count（Sidebar Tags 行右侧计数）。
     private(set) var tagCounts: [String: Int] = [:]
 
+    // MARK: - HOM-179：标签墙多选过滤
+
+    /// HOM-179：标签墙多选过滤（OR 逻辑）。
+    ///
+    /// 与 `selection` 的关系（用户口径，2026-06-07）：
+    /// - **selectedTagIds 内部多个标签**：OR —— 命中任意一个即保留
+    ///   （示例：选 tag1 + tag2 → 显示 tag1 或 tag2 的 repo）
+    /// - **selectedTagIds 与 selection（Languages / All Stars / Untagged）**：AND
+    ///   （示例：Java + tag1 + tag2 → 必须是 Java 且至少有 tag1 或 tag2）
+    ///
+    /// 实现方式：
+    /// - 不入 `selection`，独立成 filter；selection 仍然只决定 base set
+    /// - `applyView()` 在 base set 上做 OR 过滤（用 `repoTagsMap` 查 repo→tagIds）
+    /// - 这样切 Languages 也保持已选 tags（AND 组合自然成立）
+    /// - didSet 触发 `applyView()` 而非 `reloadItems()`，因为 base set 没变，只是过滤结果变了
+    var selectedTagIds: Set<String> = [] {
+        didSet {
+            guard oldValue != selectedTagIds else { return }
+            applyView()
+        }
+    }
+
+    /// HOM-179：repo → 它拥有的 tagIds。
+    /// `applyView()` 用这张表做 OR 过滤；`refreshSidebar()` 一次拉全量并刷新。
+    /// 之所以走"全量内存映射 + 客户端过滤"而非"为每次切换查 IN/OR SQL"：
+    /// - 总量 1801 repos × 平均 ~3 tags = 几千条映射，内存占用可忽略（<100KB）
+    /// - 切 Languages / 勾 / 取消标签时不发起 DB 查询，UI 即时响应
+    /// - 与现有 `statusMap` 走的"全表加载到字典 + applyView 过滤"路径完全一致
+    private var repoTagsMap: [Int64: Set<String>] = [:]
+
     // MARK: - 多选模式（W4 A5）
 
     /// 是否进入多选模式。开启后中栏 List 切换到多选 selection binding。
@@ -363,15 +393,71 @@ final class HomeViewModel {
             async let langs = repository.languageStats()
             async let tagsResult = tagRepository.fetchAll()
             async let tagCountsResult = repoTagRepository.repoCountsByTag()
+            // HOM-179：一并刷新 repo→tagIds 映射，让 selectedTagIds 多选过滤实时生效。
+            // 与 sidebar 其他统计同步刷新，避免新增/删除 tag 后 wall 多选还按旧映射过滤。
+            async let tagAssignmentsResult = repoTagRepository.fetchAllTagAssignments()
 
             self.totalCount = try await total
             self.untaggedCount = try await untagged
             self.languageStats = try await langs
             self.tags = try await tagsResult
             self.tagCounts = try await tagCountsResult
+            let assignments = try await tagAssignmentsResult
+            self.repoTagsMap = assignments.mapValues { Set($0.map(\.id)) }
+
+            // 标签被删除后，如果还在 selectedTagIds 里，过滤会变空集；这里主动收敛。
+            let validTagIds = Set(self.tags.map(\.id))
+            let stale = self.selectedTagIds.subtracting(validTagIds)
+            if !stale.isEmpty {
+                self.selectedTagIds.subtract(stale) // didSet 会触发 applyView
+            } else if !self.selectedTagIds.isEmpty {
+                // 即使 id 没变，repoTagsMap 内容可能变（刚刚打/卸标签）→ 主动 applyView
+                self.applyView()
+            }
         } catch {
             AppLog.database.error("refreshSidebar failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    // MARK: - HOM-179：标签墙多选 actions
+
+    /// 切换某个 tag 在多选集合中的勾选状态。
+    ///
+    /// 实现顺序很关键：**先**修正 selection、**再**写 selectedTagIds，让最终
+    /// 一次 applyView 同时拿到对的 base set 和对的 filter，避免 SwiftUI 短暂渲染
+    /// "untagged + selectedTagIds={tag1}"这种永远空集的过渡态。
+    /// 关键约束：`Set.insert/remove` 走值语义；写回 `selectedTagIds` 时整个 Set
+    /// 被替换，didSet 一定触发。
+    func toggleSelectedTag(_ tagId: String) {
+        var next = selectedTagIds
+        if next.contains(tagId) {
+            next.remove(tagId)
+        } else {
+            next.insert(tagId)
+        }
+
+        // 选中至少一个 tag 时，强制把 selection 退回到 .allStars，避免和 .tag(legacy) /
+        // .untagged 形成"自相矛盾"组合：
+        // - .untagged + selectedTagIds 永远空集，UX 反直觉
+        // - .tag(legacy) + selectedTagIds 语义重叠（旧的单标签等价于 selectedTagIds = {legacy}）
+        // 用户后续可显式切到 .language(...) 形成 AND 组合。
+        if !next.isEmpty {
+            switch selection {
+            case .untagged, .tag:
+                selection = .allStars
+            case .allStars, .language, .trending:
+                break
+            }
+        }
+
+        selectedTagIds = next
+    }
+
+    /// 一键清空所有已选 tag。
+    /// `Set` 已为空时 didSet 会被自身 guard 阻断，不会触发不必要的 applyView。
+    func clearSelectedTags() {
+        guard !selectedTagIds.isEmpty else { return }
+        selectedTagIds = []
     }
 
     /// 重新加载中栏列表。
@@ -481,7 +567,7 @@ final class HomeViewModel {
                             return (repos: try await self.repository.searchFTS(query: self.searchQuery), semanticHitMap: [:])
                         }
                     } else {
-                        let repos: [Repo]
+                        var repos: [Repo]
                         switch self.selection {
                         case .trending:
                             repos = [] // Placeholder for W7 Trending
@@ -494,6 +580,7 @@ final class HomeViewModel {
                         case .tag(let tagId):
                             repos = try await self.repoTagRepository.fetchRepos(forTag: tagId)
                         }
+
                         return (repos: repos, semanticHitMap: [:])
                     }
                 }
@@ -723,6 +810,18 @@ final class HomeViewModel {
             view.removeAll { repo in
                 let actual = statusMap[repo.id] ?? .unread
                 return actual != status
+            }
+        }
+        // HOM-179：标签墙多选 OR 过滤。
+        // 用户口径：
+        //   - 多个 tag 之间 OR：命中任意一个就保留
+        //   - 与 selection（Languages 等）AND：因为 `view` 此时已是 selection 派生的 base set
+        // 实现：用 repoTagsMap 查每个 repo 的 tagIds，看与 selectedTagIds 是否有交集。
+        // 没有交集（即"没有任何已选 tag"）→ 移除。
+        if !selectedTagIds.isEmpty {
+            view.removeAll { repo in
+                let tagsOfRepo = repoTagsMap[repo.id] ?? []
+                return tagsOfRepo.isDisjoint(with: selectedTagIds)
             }
         }
         // 语义搜索结果的排序来自 cosine similarity；再套用户的 stars/name 排序会破坏 AI 排名。

@@ -178,13 +178,18 @@ struct SidebarView: View {
             }
 
             // W4 A6：Tags 段。
-            // 行为：每个用户自定义标签一行，点击 → selection = .tag(id) → 列表过滤
+            // HOM-179：改为标签墙形式，横向排列自动换行；多选 OR 过滤。
             // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
             Section {
                 if tagsExpanded && !viewModel.tags.isEmpty {
-                    ForEach(viewModel.tags) { tag in
-                        tagRow(tag: tag, count: viewModel.tagCounts[tag.id] ?? 0)
-                    }
+                    TagWallView(
+                        tags: viewModel.tags,
+                        tagCounts: viewModel.tagCounts,
+                        selectedTagIds: viewModel.selectedTagIds,
+                        onTagTap: { tagId in
+                            viewModel.toggleSelectedTag(tagId)
+                        }
+                    )
                 }
             } header: {
                 tagSectionHeader
@@ -363,6 +368,24 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(disclosureHelp(isExpanded: tagsExpanded))
+
+            // HOM-179：仅当有 tag 被选中时显示"清除"按钮，避免空状态下噪声。
+            // 与 `+` / chevron 同款 14pt hierarchical 语言，hover 反馈复用 pressableHover。
+            if !viewModel.selectedTagIds.isEmpty {
+                Button {
+                    viewModel.clearSelectedTags()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14, weight: .medium))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(Text("sidebar.clearSelectedTags"))
+            }
 
             Button {
                 showTagManagement = true
