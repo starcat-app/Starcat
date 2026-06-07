@@ -4,7 +4,7 @@
 //
 //  GitHub Trending REST API 客户端。
 //
-//  数据源：https://trend.doforce.dpdns.org/repo
+//  数据源：https://starcat-trending-api.fly.dev/repo
 //
 //  设计约束：
 //  - 独立于 GitHubAPIClient，直接使用 URLSession（无需 GitHub token）
@@ -54,7 +54,7 @@ actor TrendingAPI {
     // MARK: - Initialization
 
     init(
-        baseURL: URL = URL(string: "https://trend.doforce.dpdns.org")!,
+        baseURL: URL = URL(string: "https://starcat-trending-api.fly.dev")!,
         session: URLSession? = nil
     ) {
         self.baseURL = baseURL

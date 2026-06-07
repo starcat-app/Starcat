@@ -38,7 +38,7 @@ actor ShareAPI {
     private let decoder: JSONDecoder
 
     init(
-        baseURL: URL = URL(string: "http://127.0.0.1:8080/api")!,
+        baseURL: URL = URL(string: "https://starcat-sharing-api.fly.dev/api")!,
         session: URLSession? = nil
     ) {
         self.baseURL = baseURL
