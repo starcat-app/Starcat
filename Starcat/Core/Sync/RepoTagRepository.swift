@@ -123,6 +123,28 @@ struct GRDBRepoTagRepository: RepoTagRepositoryProtocol {
         }
     }
 
+    /// 多标签 AND 查询：返回同时拥有所有指定标签的 repo。
+    func fetchRepos(forTags tagIds: Set<String>) async throws -> [Repo] {
+        guard !tagIds.isEmpty else { return [] }
+        return try await writer.read { db in
+            // 使用 HAVING COUNT 确保 repo 同时拥有所有指定标签
+            let tagArray = Array(tagIds)
+            let placeholders = tagArray.map { _ in "?" }.joined(separator: ", ")
+            let sql = """
+                SELECT r.* FROM repos r
+                JOIN repo_tags rt ON rt.repo_id = r.id
+                WHERE rt.tag_id IN (\(placeholders)) AND r.is_starred = 1
+                GROUP BY r.id
+                HAVING COUNT(DISTINCT rt.tag_id) = ?
+                ORDER BY r.starred_at DESC
+                """
+            // 构建参数：前 N 个是 tagId，最后一个是 tagIds.count
+            var arguments: [DatabaseValueConvertible] = tagArray
+            arguments.append(tagArray.count)
+            return try Repo.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+        }
+    }
+
     func repoCount(forTag tagId: String) async throws -> Int {
         try await writer.read { db in
             try Int.fetchOne(db, sql: """

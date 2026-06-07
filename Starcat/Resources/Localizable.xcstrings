@@ -9154,6 +9154,22 @@
         }
       }
     },
+    "sidebar.clearSelectedTags" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Selected Tags"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除已选标签"
+          }
+        }
+      }
+    },
     "sidebar.tags" : {
       "localizations" : {
         "en" : {
