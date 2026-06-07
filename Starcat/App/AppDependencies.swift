@@ -65,6 +65,14 @@ final class AppDependencies {
     /// BatchAIQueuePanel / BatchAIUntaggedBanner，无需多余的 @State 传参。
     let batchAIQueueService: BatchAIQueueService
 
+    /// HOM-126：自动后台 AI 整理调度器（会话级单例）。
+    ///
+    /// 依赖装配顺序：必须晚于 settings / repoRepository / batchAIQueueService / syncManager。
+    /// HomeView 在 `.task` 里 `scheduler.start()` 启动，让"启动后 60s 触发"以 HomeView
+    /// 进入后开始计时；不在 init 里 start 是因为 AppDependencies 在 `@main` init 阶段
+    /// 构造，那时 SwiftUI scene 还没装好，过早启动延迟意义不大且更难追踪。
+    let autoTidyScheduler: AutoTidyScheduler
+
     // MARK: - HOM-68 README 翻译
 
     /// README AI 翻译缓存 Repository。
@@ -197,11 +205,22 @@ final class AppDependencies {
 
         // HOM-52：批量整理服务装在 AI insight + 标签 + 标签关联 + AI 摘要 Repo 之后。
         // 注：onTagsChanged 由 HomeView 在 environment 注入后挂接，刷新 Sidebar 计数。
-        self.batchAIQueueService = BatchAIQueueService(
+        let batchSvc = BatchAIQueueService(
             insightService: aiInsight,
             tagRepository: tagRepo,
             repoTagRepository: repoTagRepo,
             aiSummaryRepository: summaryRepo
+        )
+        self.batchAIQueueService = batchSvc
+
+        // HOM-126：自动后台 AI 整理调度器。
+        // 装配顺序：必须晚于 settings / repoRepository / batchService / syncManager。
+        // 注：start() 由 HomeView 在 .task 里调，让"启动延迟"以 SwiftUI scene 进入为起点。
+        self.autoTidyScheduler = AutoTidyScheduler(
+            settings: self.settings,
+            repoRepository: repo,
+            batchService: batchSvc,
+            syncManager: self.syncManager
         )
         let embeddingRepo = GRDBRepoEmbeddingRepository(database: db)
         self.repoEmbeddingRepository = embeddingRepo

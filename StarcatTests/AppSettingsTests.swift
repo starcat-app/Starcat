@@ -382,3 +382,155 @@ struct RepoSortOptionTests {
         #expect(desc.last?.id == 3, "nil pushedAt 应排到末尾")
     }
 }
+
+// MARK: - HOM-126：AutoTidySettings 持久化 + 排序
+//
+// 验证 AutoTidySettings 的默认值、持久化往返、`sortOrder.pick` 行为，
+// 以及 Codable forward-compat（缺字段 fallback）。
+// 这些都是纯函数 / UserDefaults，无需 SwiftUI / DB / AI 调用。
+@MainActor
+@Suite("AutoTidySettings")
+struct AutoTidySettingsTests {
+
+    private func makeIsolatedDefaults() -> UserDefaults {
+        let suiteName = "test.starcat.autotidy.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
+    }
+
+    private func makeRepo(id: Int64, starredAt: String? = nil) -> Repo {
+        Repo(
+            id: id, owner: "octo", name: "repo", fullName: "octo/r\(id)",
+            description: nil, language: nil,
+            starsCount: 0, forksCount: 0, watchersCount: 0,
+            topics: nil, license: nil, homepage: nil,
+            htmlUrl: "https://x", cloneUrl: nil, sshUrl: nil,
+            isPrivate: false, isFork: false, isArchived: false, isStarred: true,
+            pushedAt: nil, createdAt: nil, updatedAt: nil,
+            starredAt: starredAt, cachedAt: nil
+        )
+    }
+
+    @Test("默认值与 HOM-126 任务描述一致（开关关 + 启动/同步触发 + 50 + 最近 star + 仅标签 + 90%）")
+    func defaultMatchesTaskSpec() {
+        let s = AppSettings(defaults: makeIsolatedDefaults())
+        let t = s.autoTidySettings
+        #expect(t.enabled == false, "总开关默认关")
+        #expect(t.triggerOnLaunch == true)
+        #expect(t.triggerOnSync == true)
+        #expect(t.triggerScheduled == false, "定时默认关，避免新手烧 quota")
+        #expect(t.maxPerRun == 50)
+        #expect(t.sortOrder == .recentlyStarred)
+        #expect(t.generateSummary == false, "默认只跑标签，摘要烧 token 更多")
+        #expect(t.generateTags == true)
+        #expect(t.useConfidenceThreshold == true, "默认启用阈值过滤，保险地只应用高置信度标签")
+        #expect(t.confidenceThreshold == 0.90)
+        #expect(t.lastRunAt == nil)
+        #expect(t.lastRunStats == nil)
+    }
+
+    @Test("设置后重新读取应保留全部字段")
+    func roundTripPersists() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+
+        var t = s1.autoTidySettings
+        t.enabled = true
+        t.triggerScheduled = true
+        t.maxPerRun = 200
+        t.sortOrder = .random
+        t.generateSummary = true
+        t.useConfidenceThreshold = false
+        t.confidenceThreshold = 0.75
+        t.lastRunAt = Date(timeIntervalSince1970: 1_700_000_000)
+        t.lastRunStats = AutoTidyLastRunStats(total: 50, applied: 40, ignored: 5, failed: 5)
+        s1.autoTidySettings = t
+
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.autoTidySettings.enabled == true)
+        #expect(s2.autoTidySettings.triggerScheduled == true)
+        #expect(s2.autoTidySettings.maxPerRun == 200)
+        #expect(s2.autoTidySettings.sortOrder == .random)
+        #expect(s2.autoTidySettings.generateSummary == true)
+        #expect(s2.autoTidySettings.useConfidenceThreshold == false)
+        #expect(s2.autoTidySettings.confidenceThreshold == 0.75, "用户值在 toggle 关掉时也应保留，便于再次开启时还原")
+        #expect(s2.autoTidySettings.lastRunAt?.timeIntervalSince1970 == 1_700_000_000)
+        #expect(s2.autoTidySettings.lastRunStats?.applied == 40)
+        #expect(s2.autoTidySettings.lastRunStats?.failed == 5)
+    }
+
+    @Test("Codable: 缺字段时回落到 default 字段值")
+    func decodeForwardCompat() throws {
+        // 模拟未来某个老 build 写的 JSON：只含部分字段，缺新字段也不应失败
+        let partialJSON = #"{"enabled":true,"maxPerRun":123}"#
+        let decoded = try JSONDecoder().decode(AutoTidySettings.self, from: Data(partialJSON.utf8))
+        #expect(decoded.enabled == true)
+        #expect(decoded.maxPerRun == 123)
+        // 缺字段走 default
+        #expect(decoded.sortOrder == .recentlyStarred)
+        #expect(decoded.confidenceThreshold == 0.90)
+        #expect(decoded.useConfidenceThreshold == true, "老 build 没写本字段，应该回落到 default = true（保持 v1 行为）")
+        #expect(decoded.generateTags == true)
+        #expect(decoded.generateSummary == false)
+    }
+
+    @Test("makeBatchOptions: 只勾摘要 → actions={summary}, autoApply=false")
+    func batchOptionsSummaryOnly() {
+        var t = AutoTidySettings.default
+        t.generateSummary = true
+        t.generateTags = false
+        let opts = t.makeBatchOptions()
+        #expect(opts.actions == [.summary])
+        #expect(opts.autoApplyTags == false)
+    }
+
+    @Test("makeBatchOptions: 勾了标签 → autoApplyTags=true（自动模式明示同意）")
+    func batchOptionsAutoApply() {
+        let opts = AutoTidySettings.default.makeBatchOptions()
+        #expect(opts.actions == [.tags])
+        #expect(opts.autoApplyTags == true)
+        #expect(opts.confidenceThreshold == 0.90)
+    }
+
+    @Test("makeBatchOptions: useConfidenceThreshold=false 时把 confidenceThreshold 降级为 0（不过滤）")
+    func batchOptionsThresholdDisabled() {
+        var t = AutoTidySettings.default
+        t.useConfidenceThreshold = false
+        t.confidenceThreshold = 0.75  // 用户历史值，should be preserved in settings but not passed down
+        let opts = t.makeBatchOptions()
+        #expect(opts.confidenceThreshold == 0, "toggle 关掉后下游收到 0，等价于不过滤、所有 AI 建议都应用")
+        // 用户值未被破坏（仍保留在 settings 字段中），便于再次开启时还原
+        #expect(t.confidenceThreshold == 0.75)
+    }
+
+    @Test("pick(recentlyStarred): 取最近 star 在前的 N 条")
+    func pickRecentlyStarred() {
+        let repos = [
+            makeRepo(id: 1, starredAt: "2026-01-01T00:00:00Z"),
+            makeRepo(id: 2, starredAt: "2026-05-01T00:00:00Z"),
+            makeRepo(id: 3, starredAt: "2026-03-01T00:00:00Z"),
+        ]
+        let picked = AutoTidySortOrder.recentlyStarred.pick(from: repos, limit: 2)
+        #expect(picked.map(\.id) == [2, 3])
+    }
+
+    @Test("pick(earliestStarred): 取最早 star 在前的 N 条，nil 排末")
+    func pickEarliestStarred() {
+        let repos = [
+            makeRepo(id: 1, starredAt: "2026-01-01T00:00:00Z"),
+            makeRepo(id: 2, starredAt: nil),
+            makeRepo(id: 3, starredAt: "2026-03-01T00:00:00Z"),
+        ]
+        let picked = AutoTidySortOrder.earliestStarred.pick(from: repos, limit: 3)
+        // 1 (earliest), 3 (later), 2 (nil → 末)
+        #expect(picked.map(\.id) == [1, 3, 2])
+    }
+
+    @Test("pick(limit=0): 返回空")
+    func pickZeroLimit() {
+        let repos = [makeRepo(id: 1)]
+        let picked = AutoTidySortOrder.recentlyStarred.pick(from: repos, limit: 0)
+        #expect(picked.isEmpty)
+    }
+}
