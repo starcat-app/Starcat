@@ -27,6 +27,9 @@ struct SidebarView: View {
     /// 数据通过 service 拉到后反向 push 给 `AuthSession.acceptRefreshedUser` →
     /// sidebar 观察 `authSession.state` 自动更新，本视图不直接读 service.profile。
     @Environment(UserProfileService.self) private var userProfileService
+    /// HOM-126：自动整理调度器。Sidebar 底部观察 `isAutoTidyRunning` 决定是否
+    /// 显示「AI 自动整理中 N/M」轻量行。这是该功能的唯一可视入口（不弹 sheet / panel）。
+    @Environment(AutoTidyScheduler.self) private var autoTidyScheduler
 
     /// 当前打开/收起 Languages 组的状态。
     @State private var languagesExpanded: Bool = true
@@ -89,10 +92,53 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             sidebarFixedHeader
             sidebarList
+            // HOM-126：自动整理底部轻量指示。仅当调度器正在跑「自动模式」时显示，
+            // 跑完自动消失。视觉权重故意做小（10pt 字 + 浅灰背景 + 单行）—
+            // 自动整理本意是"用户感知不到地完成"，强提示反而违反设计。
+            autoTidyFooter
         }
         .background(.bar)
         .sheet(isPresented: $showLoginSheet) {
             GithubAuthView()
+        }
+    }
+
+    // MARK: - HOM-126：自动整理底部指示
+
+    /// 自动整理"占位行 + 实时进度"。
+    ///
+    /// 设计：
+    /// - 仅在 `autoTidyScheduler.isAutoTidyRunning == true` 时挂入，跑完整体消失。
+    ///   零进度时也立刻消失而非保留"上次跑了 X"残留——那是设置页「运行状态」区的
+    ///   职责，sidebar 只反映"当前是否在跑"。
+    /// - 不接 hover popover、不接点击跳转：HOM-126 任务描述写"hover 显示 popover
+    ///   看详情，点击进入设置「运行状态」区域"，但 macOS Settings scene 缺乏程序化
+    ///   切换到指定 Tab 的标准入口（NSApplication.shared.sendAction(#selector:Settings 
+    ///   缺自定义 selector）。第一版只放静态指示行，hover/click 留 P2。
+    /// - 没有 .padding(.bottom) 是因为 background(.bar) 已经画到底；放在 VStack
+    ///   末尾天然贴底，与 sidebarList 之间有 4pt 视觉间隙（通过 padding(.top, 4) 实现）。
+    @ViewBuilder
+    private var autoTidyFooter: some View {
+        if autoTidyScheduler.isAutoTidyRunning {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.mini)
+                    // 让 indeterminate spinner 与文字基线对齐（macOS 默认会偏高 1-2pt）
+                    .frame(width: 12, height: 12)
+                Text(String(format: String(localized: "sidebar.autoTidy.runningFormat"),
+                            autoTidyScheduler.autoTidyProgressText))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(Color.secondary.opacity(0.06))
+            .help(Text("sidebar.autoTidy.tooltip"))
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .animation(.easeInOut(duration: 0.2), value: autoTidyScheduler.isAutoTidyRunning)
         }
     }
 

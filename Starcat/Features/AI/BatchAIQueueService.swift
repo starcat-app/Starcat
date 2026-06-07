@@ -45,6 +45,17 @@ final class BatchAIQueueService {
     /// 是否被用户暂停。`isRunning && !isPaused` 才会拉下一个 job。
     private(set) var isPaused: Bool = false
 
+    /// HOM-126：本轮是否是「自动后台整理」触发（区别于 HOM-52 用户手动整理）。
+    ///
+    /// 用途：
+    /// - UI 侧观察该标志，决定是否要弹浮动面板 / 强提示横幅。
+    ///   静默模式下 HomeView 不自动 `showBatchAIPanel = true`、不弹任何 sheet；
+    ///   Sidebar 改用「AI 自动整理中 N/M」轻量行展示进度。
+    /// - 服务自身不主动唤起 UI（本来就不持有 UI），所以"静默"语义全部由订阅方实现。
+    ///
+    /// 生命周期：在 `start(...)` 时设置，`reset()` 清回 false。
+    private(set) var silent: Bool = false
+
     /// 当前正在处理的 job repoId（用于 UI 高亮当前行）。
     private(set) var currentJobId: Int64?
 
@@ -64,6 +75,16 @@ final class BatchAIQueueService {
     /// 标签应用后通知外部刷新 Sidebar 计数 / 当前列表。
     /// 设计上用闭包而非 NotificationCenter，避免跨模块字符串通知名飘移。
     var onTagsChanged: (() -> Void)?
+
+    /// HOM-126：本轮（自动 / 手动皆触发）全部进入终态后回调。
+    ///
+    /// `AutoTidyScheduler` 用它把结果（应用/忽略/失败计数）写回 `AutoTidySettings`
+    /// 的「运行状态」字段，让设置页只读区展示最近一次自动跑的成果。
+    /// 用闭包而非 NotificationCenter 的理由同 `onTagsChanged`。
+    ///
+    /// 闭包参数：本次结束时的 (completed, ignored, failed, total) 快照。
+    /// 仅在 isFinished 触发，cancel 路径不触发（避免污染"上次运行结果"）。
+    var onBatchFinished: ((_ completed: Int, _ ignored: Int, _ failed: Int, _ total: Int) -> Void)?
 
     init(
         insightService: RepoAIInsightService,
@@ -113,7 +134,12 @@ final class BatchAIQueueService {
     ///
     /// 行为：清掉上一批次的 jobs（即使是已完成的）→ 把传入 repos 全部入队 → 启动循环。
     /// 如果当前正在跑且未结束，会被拒绝（调用方应先 cancel）。
-    func start(repos: [Repo], options: BatchAIQueueOptions) {
+    ///
+    /// - Parameter silent: HOM-126 新增。`true` 表示由自动调度器触发，
+    ///   订阅方（HomeView / 浮动面板 / Banner）应避免主动弹任何 sheet / 强提示；
+    ///   Sidebar 改用「AI 自动整理中 N/M」轻量行展示进度。默认 `false` 维持 HOM-52
+    ///   手动模式行为不变。
+    func start(repos: [Repo], options: BatchAIQueueOptions, silent: Bool = false) {
         guard !isRunning else {
             AppLog.ai.warning("[batch-ai] start() ignored: already running")
             return
@@ -123,6 +149,7 @@ final class BatchAIQueueService {
             return
         }
         self.options = options
+        self.silent = silent
         self.jobs = repos.map { BatchAIJob(repoId: $0.id, repoFullName: $0.fullName) }
         self.repoCache = Dictionary(uniqueKeysWithValues: repos.map { ($0.id, $0) })
         self.isPaused = false
@@ -130,7 +157,7 @@ final class BatchAIQueueService {
         self.cancelRequested = false
         self.startedAt = Date()
         self.currentJobId = nil
-        AppLog.ai.notice("[batch-ai] start: count=\(repos.count, privacy: .public), autoApplyTags=\(options.autoApplyTags, privacy: .public), threshold=\(options.confidenceThreshold, privacy: .public)")
+        AppLog.ai.notice("[batch-ai] start: count=\(repos.count, privacy: .public), autoApplyTags=\(options.autoApplyTags, privacy: .public), threshold=\(options.confidenceThreshold, privacy: .public), silent=\(silent, privacy: .public)")
         Task { await runLoop() }
     }
 
@@ -186,6 +213,7 @@ final class BatchAIQueueService {
         startedAt = nil
         currentJobId = nil
         cancelRequested = false
+        silent = false
     }
 
     /// 重试单个失败的 job。
@@ -282,6 +310,10 @@ final class BatchAIQueueService {
             currentJobId = nil
             if isFinished {
                 AppLog.ai.notice("[batch-ai] finished: completed=\(self.completedCount, privacy: .public), ignored=\(self.ignoredCount, privacy: .public), failed=\(self.failedCount, privacy: .public)")
+                // HOM-126：仅在自然 finished（不是 cancel）时通知订阅方写回结果，
+                // 让"上次运行状态"反映用户**完整跑完**的成果。cancel 时不触发，
+                // 避免半截结果污染 AutoTidySettings.lastRunStats。
+                onBatchFinished?(completedCount, ignoredCount, failedCount, totalCount)
             }
         }
     }
