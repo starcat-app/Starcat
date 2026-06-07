@@ -26,7 +26,11 @@ struct ActivityView: View {
 
     var body: some View {
         Group {
-            if let viewModel {
+            // MUL-176：weekly 分类是远端分页数据，与本地聚合的其它分类完全不同源，
+            // 所以这里整体切到 `WeeklyContentView`，绕开 ActivityViewModel 的本地路径。
+            if selectedCategory == .weekly {
+                WeeklyContentView()
+            } else if let viewModel {
                 content(viewModel)
             } else {
                 ProgressView()
@@ -34,6 +38,9 @@ struct ActivityView: View {
             }
         }
         .task(id: selectedCategory) {
+            // weekly 分类的数据加载由 WeeklyContentView 自行 .task 触发，
+            // 这里不该再去走 ActivityViewModel.load，否则会做无意义的本地聚合。
+            guard selectedCategory != .weekly else { return }
             let model = ensureViewModel()
             await model.load(category: selectedCategory)
             restoreSelection(from: model.items)
