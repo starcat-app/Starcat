@@ -44,6 +44,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var readmeHTMLHandler: ((_ owner: String, _ repo: String, _ ifNoneMatch: String?, _ ifModifiedSince: String?) async throws -> BytesResponse)?
     /// HOM-47：Releases API mock handler。
     var releasesHandler: ((_ owner: String, _ repo: String, _ perPage: Int) async throws -> APIResponse<[GitHubReleaseDTO]>)?
+    /// 2026-06-08：单仓库元数据 API mock handler（Weekly 详情页本地缓存未命中时调）。
+    var repoHandler: ((_ owner: String, _ repo: String) async throws -> GitHubRepoDTO)?
 
     // MARK: - 调用记录（供断言用）
 
@@ -115,6 +117,13 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
             fatalError("MockGitHubAPIClient.releasesHandler 未设置")
         }
         return try await handler(owner, repo, perPage)
+    }
+
+    func repo(owner: String, repo: String) async throws -> GitHubRepoDTO {
+        guard let handler = repoHandler else {
+            fatalError("MockGitHubAPIClient.repoHandler 未设置")
+        }
+        return try await handler(owner, repo)
     }
 }
 

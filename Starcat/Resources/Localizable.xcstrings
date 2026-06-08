@@ -1785,6 +1785,40 @@
         }
       }
     },
+    "weekly.detail.loadingRepo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fetching repository details from GitHub…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在从 GitHub 获取仓库详情…"
+          }
+        }
+      }
+    },
+    "weekly.detail.openStargazers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Stargazers on GitHub"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 上查看 Stargazers"
+          }
+        }
+      }
+    },
     "weekly.detail.emptySubtitle" : {
       "extractionState" : "manual",
       "localizations" : {

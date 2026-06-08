@@ -111,7 +111,13 @@ final class UserProfileService {
     /// 上次成功登录的 login 名；OAuth 成功 / accept 时写，登出 / 401 时清。
     /// 启动期 prime 时拿这个去找磁盘缓存。
     /// D3-A 决策：单独一个 UserDefaults key，不污染 Keychain。
-    static let lastLoginKey = "auth.lastLogin"
+    ///
+    /// `nonisolated`：本类整体 `@MainActor`，但 `loadLastLogin / saveLastLogin /
+    /// clearLastLogin` 三个静态方法标了 `nonisolated`（只调线程安全的 UserDefaults），
+    /// 它们引用本常量时若 key 仍是 main-actor isolated 会触发 Swift 6 报错
+    /// "main actor-isolated static property cannot be referenced from a nonisolated
+    /// context"。常量本身不可变、读取无副作用，标 `nonisolated` 是最干净的对齐方式。
+    nonisolated static let lastLoginKey = "auth.lastLogin"
 
     /// 读取上次登录的 login（启动期 prime 入口）。
     nonisolated static func loadLastLogin() -> String? {
