@@ -110,7 +110,8 @@ actor TrendingAPI {
     // MARK: - Private
 
     private func buildURL(since: TrendingPeriod, language: TrendingLanguage) throws -> URL {
-        var components = URLComponents(url: baseURL.appendingPathComponent("repo"), resolvingAgainstBaseURL: false)
+        let endpoint = AppEndpoints.appendPath(AppEndpoints.Trending.Paths.repos, to: baseURL)
+        var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
         var queryItems: [URLQueryItem] = []
 
         queryItems.append(URLQueryItem(name: "since", value: since.apiValue))

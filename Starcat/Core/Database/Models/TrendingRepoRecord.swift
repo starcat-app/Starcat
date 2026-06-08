@@ -94,9 +94,11 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
     /// 转回 UI 模型 `TrendingRepo`。
     ///
     /// 注：`TrendingRepo.url` 是必需字段，从 fullName 重建为 `https://github.com/owner/name`，
-    /// 与 `TrendingRepo(dto:since:)` 初始化路径一致。
+    /// 与 `TrendingRepo(dto:since:)` 初始化路径一致。URL 拼接走 `GitHubURLs.repo(fullName:)`
+    /// 集中目录（2026-06-08 起），原 `URL(string:)` 失败返回 nil 的防御性 guard 移除——
+    /// fullName 是 PK 列、入库前已校验非空，URL.init 对 ASCII fullName 不可能失败。
     func toDomain() -> TrendingRepo? {
-        guard let url = URL(string: "https://github.com/\(fullName)") else { return nil }
+        let url = GitHubURLs.repo(fullName: fullName)
 
         let starsInPeriodValue = self.starsInPeriod
         let prefix = starsInPeriodValue > 0 ? "+" : ""

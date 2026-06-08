@@ -48,8 +48,9 @@ enum AppConstants {
 
     // MARK: - 网络
 
-    /// GitHub REST API 根地址。
-    static let githubAPIBaseURL = URL(string: "https://api.github.com")!
+    // 注：2026-06-08 起 `githubAPIBaseURL` 迁到 `AppEndpoints.GitHubREST.baseURL`，
+    // 统一与其它 REST 端点（OAuth / 自建后端）放在同一目录管理。
+    // 历史调用方（如 `GitHubAPIClient` 默认参数）都已改用新位置。
 
     /// 默认 User-Agent，GitHub API 要求必须设置。
     static let httpUserAgent = "Starcat/0.1 (+\(bundleIdentifier))"

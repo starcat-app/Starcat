@@ -104,7 +104,7 @@ struct WeeklyProject: Identifiable, Equatable {
     init(dto: WeeklyProjectDTO) {
         self.owner = dto.owner
         self.name = dto.repo
-        self.url = URL(string: dto.url) ?? URL(string: "https://github.com/\(dto.owner)/\(dto.repo)")!
+        self.url = URL(string: dto.url) ?? GitHubURLs.repo(owner: dto.owner, repo: dto.repo)
         self.description = dto.description
         self.stars = dto.stars
         self.language = dto.language
