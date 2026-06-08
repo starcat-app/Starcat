@@ -30,6 +30,9 @@ struct SidebarView: View {
     /// HOM-126：自动整理调度器。Sidebar 底部观察 `isAutoTidyRunning` 决定是否
     /// 显示「AI 自动整理中 N/M」轻量行。这是该功能的唯一可视入口（不弹 sheet / panel）。
     @Environment(AutoTidyScheduler.self) private var autoTidyScheduler
+    /// MUL-176 followup：周刊分类计数徽章数据源。
+    /// 仅在 Activity 选中 .weekly 时使用，其余路径完全不读，开销可忽略。
+    @Environment(AppDependencies.self) private var dependencies
 
     /// 当前打开/收起 Languages 组的状态。
     @State private var languagesExpanded: Bool = true
@@ -331,8 +334,29 @@ struct SidebarView: View {
     @ViewBuilder
     private func activityCategoryRow(_ category: ActivityCategory) -> some View {
         Label {
-            Text(category.titleKey)
-                .lineLimit(1)
+            // MUL-176 followup：周刊分类右侧带计数徽章（仿 Trending Languages 同款样式）。
+            // 计数来自 `WeeklySelectionService.total`，由 `WeeklyContentViewModel`
+            // 拉取分页结果时回写。total 为 nil 时（首次进入还没拉过）只显示分类名，
+            // 不预占位、不显示 0，避免新用户首屏看到 "0 项" 误以为列表为空。
+            if category == .weekly, let total = dependencies.weeklySelectionService.total, total > 0 {
+                HStack {
+                    Text(category.titleKey)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    HStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        Text(total.formatted())
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
+                    .frame(width: Self.trailingFixedWidth, alignment: .trailing)
+                }
+            } else {
+                Text(category.titleKey)
+                    .lineLimit(1)
+            }
         } icon: {
             // 分类色点：故意不复用 LanguageIconView，因为后者会优先匹配 Devicon SVG，
             // 渲染出 Swift / JS / Go 这类语言 logo，与"分类"语义冲突。

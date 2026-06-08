@@ -99,6 +99,10 @@ final class AppDependencies {
     /// 独立 actor，无需 GitHub OAuth；Activity 页 `weekly` 分类直接消费。
     let weeklyAPI: WeeklyAPI
 
+    /// Weekly UI 共享状态：sidebar 计数徽章 + HomeView 详情页路由共用。
+    /// 详见 `WeeklySelectionService` 文件头注释。
+    let weeklySelectionService: WeeklySelectionService
+
     // MARK: - HOM-173 分享卡
 
     /// AI 分享卡后端 API 客户端。
@@ -273,6 +277,9 @@ final class AppDependencies {
         // 用户在设置页改地址 → AppDependencies.setServiceURL 推送到本 actor 的
         // updateBaseURL，无需重启 App。
         self.weeklyAPI = WeeklyAPI(baseURL: AppEndpoints.Weekly.baseURL)
+
+        // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
+        self.weeklySelectionService = WeeklySelectionService()
 
         // HOM-173：分享卡 API 客户端。端点走 `AppEndpoints.Sharing.baseURL`（保留 /api 后缀）。
         self.shareAPI = ShareAPI(baseURL: AppEndpoints.Sharing.baseURL)
