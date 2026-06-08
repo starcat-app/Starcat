@@ -196,9 +196,18 @@ ok "PR #$PR_NUM merged"
 # 8. 删除远端 dev
 # =============================================================================
 # 远端 dev 使命完成, 下轮开发从 origin/main 重建本地 dev
+# 容错: GitHub PR 合并时可能自动删 head 分支:
+#   - 仓库 Settings → General → "Automatically delete head branches" 勾选
+#   - 或者用户点过 PR 页面 "Delete branch" 按钮
+# 此时 origin/dev 已不存在, 必须先 ls-remote 检查, 否则 push --delete 会报
+# "unable to resolve reference 'refs/heads/dev'"
 info "deleting remote dev..."
-git push origin --delete dev
-ok "remote dev deleted"
+if git ls-remote --heads origin dev 2>/dev/null | grep -q 'refs/heads/dev'; then
+    git push origin --delete dev
+    ok "remote dev deleted"
+else
+    warn "remote dev already deleted (skipped, likely auto-deleted by GitHub on PR merge)"
+fi
 
 # =============================================================================
 # 9. 重置本地 dev 到 origin/main (新一轮开发开始)
