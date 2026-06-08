@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# scripts/pr-helper.sh — Starcat 项目 dev → main PR 自动化脚本
+# scripts/pr-helper.sh — Starcat 项目 PR 自动化脚本
 # =============================================================================
 #
 # 用法:
@@ -15,18 +15,25 @@
 #   1. 校验: 在 git 仓库
 #   2. 校验: 当前分支是 dev
 #   3. 校验: 工作区干净 (无 uncommitted / untracked)
-#   4. 校验: 当前分支没有未推送的 commit
-#   5. 校验: gh CLI 已认证
-#   6. 推送 dev 到 origin
-#   7. 创建 PR (dev → main)
-#   8. 自动合并 PR
-#   9. 切回 dev (终态明确)
+#   4. 校验: gh CLI 已认证
+#   5. 推送 dev 到 origin (远端无 dev 自动创建, -u 设 upstream)
+#   6. 创建 PR (dev → main)
+#   7. 自动合并 PR (失败 = 冲突 / 分支保护, 退出并提示)
+#   8. 删除远端 dev
+#   9. 从 origin/main 拉取最新, 重置本地 dev 到 origin/main
+#      (新一轮开发周期开始)
+#
+# 工作流模型:
+#   - 本地 dev 是常驻开发分支, 用户一直在 dev 上 commit
+#   - 每轮开发 = [dev 开发 → 跑脚本 PR+合并 → 删远端 dev → 本地 dev 重置为 origin/main]
+#   - 远端 dev 仅作为 PR head 临时存在, PR 合并后删除
 #
 # 关键约束 (踩过的坑):
-#   - 必须从 dev 分支运行, 不支持 feature 分支
-#   - main / master 上禁止运行 (会 PR 自己到自己, 无意义)
+#   - 必须从 dev 分支运行, 不支持其他分支
 #   - 合并策略: --merge (保留 dev 历史, 不 squash)
-#   - 不删 dev 分支: Starcat 简化流程, dev 是常驻集成分支
+#   - 合并失败 (exit code != 0) = 冲突 / 分支保护 / CI 未通过, 脚本立即退出
+#   - 步骤 8 / 9 顺序不能颠倒: 必须先删远端 dev 再重置本地,
+#     否则远端残留 dev ref 会让协作者/CI 误以为 dev 还在用
 #   - 不打 tag: Starcat 暂不维护语义化版本
 #
 # 失败处理: set -e + 任意一步 exit 1 都会停止
@@ -102,22 +109,7 @@ fi
 ok "working tree clean"
 
 # =============================================================================
-# 4. 当前分支没有未推送的 commit
-# =============================================================================
-# 防止本地有 commit 没推, PR 创建后 origin 还少这些 commit
-if git rev-parse --abbrev-ref "@{u}" >/dev/null 2>&1; then
-    UNPUSHED=$(git log --oneline "@{u}..HEAD" 2>/dev/null || true)
-    if [[ -n "$UNPUSHED" ]]; then
-        die "current branch has unpushed commits, push first:
-$UNPUSHED"
-    fi
-    ok "no unpushed commits on dev"
-else
-    warn "dev has no upstream tracking — assuming local is the source of truth"
-fi
-
-# =============================================================================
-# 5. gh CLI 已认证
+# 4. gh CLI 已认证
 # =============================================================================
 if ! gh auth status >/dev/null 2>&1; then
     die "gh CLI not authenticated, run: gh auth login"
@@ -125,19 +117,21 @@ fi
 ok "gh CLI authenticated"
 
 # =============================================================================
-# 6. 推送 dev 到 origin
+# 5. 推送 dev 到 origin (远端无 dev 自动创建)
 # =============================================================================
+# git push -u 处理两种情况:
+#   - 远端无 dev: 自动创建并设 upstream
+#   - 远端有 dev: 仅推送 (本地需是 fast-forward, 否则失败 → 提示用户先 pull --rebase)
 info "pushing dev to origin..."
-git push origin dev
+git push -u origin dev
 ok "pushed dev"
 
 # =============================================================================
-# 7. 创建 PR (dev → main)
+# 6. 创建 PR (dev → main)
 # =============================================================================
 info "creating PR dev → main..."
 
 # PR body 按 .github/PULL_REQUEST_TEMPLATE.md 规范填
-# Starcat 是 SwiftUI 项目, 去掉 Go 相关 checklist, 改用 Xcode/build 维度
 PR_BODY=$(cat <<'EOF'
 ## 变更说明
 
@@ -177,15 +171,53 @@ PR_NUM=$(echo "$PR_URL" | grep -oE '/pull/[0-9]+$' | grep -oE '[0-9]+')
 ok "PR created: $PR_URL (PR #$PR_NUM)"
 
 # =============================================================================
-# 8. 合并 PR
+# 7. 自动合并 PR
 # =============================================================================
+# gh pr merge 失败场景 (exit code != 0):
+#   - PR 标记为 "无法自动合并" (merge 冲突)
+#   - main 分支保护规则要求 review / CI 通过
+#   - 远端权限不足
+# 失败时脚本立即退出, 提示用户去 GitHub 手动处理
 info "merging PR #$PR_NUM..."
-gh pr merge "$PR_NUM" --merge
+
+if ! gh pr merge "$PR_NUM" --merge; then
+    die "PR #$PR_NUM cannot be auto-merged (likely merge conflict or branch protection).
+Resolve manually:
+  1. Go to $PR_URL
+  2. Resolve the conflict (rebase dev on main / merge main into dev / edit on GitHub)
+  3. After manual merge, run cleanup manually:
+     git push origin --delete dev
+     git fetch origin main
+     git checkout -B dev origin/main"
+fi
 ok "PR #$PR_NUM merged"
 
 # =============================================================================
-# 9. 切回 dev (终态明确)
+# 8. 删除远端 dev
 # =============================================================================
-info "switching back to dev..."
-git checkout dev
-ok "switched to dev, done ✓"
+# 远端 dev 使命完成, 下轮开发从 origin/main 重建本地 dev
+info "deleting remote dev..."
+git push origin --delete dev
+ok "remote dev deleted"
+
+# =============================================================================
+# 9. 重置本地 dev 到 origin/main (新一轮开发开始)
+# =============================================================================
+# 关键约束: 步骤 8 / 9 顺序不能颠倒
+# (若先重置本地, 远端残留 dev ref 会让协作者 / CI 误以为 dev 还在用)
+# 用 -B 强制重置 (不依赖当前分支, 语义明确)
+# 不打 tag, fetch 不加 --tags
+info "resetting local dev to origin/main..."
+git fetch origin main
+git checkout -B dev origin/main
+ok "local dev reset to origin/main ✓"
+
+echo ""
+echo -e "${GREEN}=========================================${NC}"
+echo -e "${GREEN}  本轮开发完成, 下一轮就绪 ✓${NC}"
+echo -e "${GREEN}=========================================${NC}"
+echo ""
+echo "  - PR:     $PR_URL"
+echo "  - Actions: https://github.com/dong4j/Starcat/actions"
+echo ""
+echo "  下一步: 在 dev 上开始下一轮开发"
