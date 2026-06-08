@@ -37,8 +37,12 @@ actor ShareAPI {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
+    /// - Parameters:
+    ///   - baseURL: 后端域名；默认走 `AppEndpoints.sharing`（生产 = fly.io，DEBUG 期可被
+    ///     `STARCAT_SHARING_API_URL` 环境变量覆盖到本地，详见 `AppEndpoints.swift`）。
+    ///   - session: 注入自定义 URLSession（一般用于单测 mock）；为 nil 走默认配置。
     init(
-        baseURL: URL = URL(string: "https://starcat-sharing-api.fly.dev/api")!,
+        baseURL: URL = AppEndpoints.sharing,
         session: URLSession? = nil
     ) {
         self.baseURL = baseURL

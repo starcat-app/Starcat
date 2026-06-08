@@ -61,11 +61,11 @@ actor WeeklyAPI {
     // MARK: - Initialization
 
     /// - Parameters:
-    ///   - baseURL: 后端域名；默认走 fly.io 生产环境，命名与 `starcat-trending-api`
-    ///     保持一致的子域前缀，部署时只需把 `weekly` 子域挂上即可。
+    ///   - baseURL: 后端域名；默认走 `AppEndpoints.weekly`（生产 = fly.io，DEBUG 期可被
+    ///     `STARCAT_WEEKLY_API_URL` 环境变量覆盖到本地，详见 `AppEndpoints.swift`）。
     ///   - session: 注入自定义 URLSession（一般用于单测 mock）；为 nil 走默认配置。
     init(
-        baseURL: URL = URL(string: "https://starcat-weekly-api.fly.dev")!,
+        baseURL: URL = AppEndpoints.weekly,
         session: URLSession? = nil
     ) {
         self.baseURL = baseURL

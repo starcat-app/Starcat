@@ -53,8 +53,12 @@ actor TrendingAPI {
 
     // MARK: - Initialization
 
+    /// - Parameters:
+    ///   - baseURL: 后端域名；默认走 `AppEndpoints.trending`（生产 = fly.io，DEBUG 期可被
+    ///     `STARCAT_TRENDING_API_URL` 环境变量覆盖到本地，详见 `AppEndpoints.swift`）。
+    ///   - session: 注入自定义 URLSession（一般用于单测 mock）；为 nil 走默认配置。
     init(
-        baseURL: URL = URL(string: "https://starcat-trending-api.fly.dev")!,
+        baseURL: URL = AppEndpoints.trending,
         session: URLSession? = nil
     ) {
         self.baseURL = baseURL
