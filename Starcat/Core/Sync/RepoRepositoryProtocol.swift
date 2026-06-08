@@ -54,6 +54,18 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 不存在返回 nil（不抛错），调用方决定后续行为（如跳过该次巡检）。
     func findById(_ repoId: Int64) async throws -> Repo?
 
+    /// 按 owner / name 查找单条 repo 记录。
+    ///
+    /// 用途：Weekly 详情页（2026-06-08）需要"先查本地，命中则直接用本地 Repo 走 Manage 同款详情面板，
+    /// 没命中再调 GitHub API 拉一份临时 Repo"。同样可用于"判断这个仓库是不是已经 star 过"等场景。
+    ///
+    /// 实现约束：
+    /// - 查询命中"该 fullName 在 repos 表里有行"即返回，不限制 `is_starred = true`——
+    ///   用户可能 star 过又取消，本地仍保留行；调用方根据 `repo.isStarred` 决定 UI 行为。
+    /// - 用 `full_name` 列匹配（已建唯一索引），效率比 owner+name 两列 AND 高。
+    /// - 不存在返回 nil，不抛错。
+    func findByOwnerName(owner: String, name: String) async throws -> Repo?
+
     /// 未打标签的 repo。
     func fetchUntagged() async throws -> [Repo]
 

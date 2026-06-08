@@ -43,8 +43,13 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     func fetchStatusMap(repoIds: [Int64]) async throws -> [Int64: RepoStatus] {
         guard !repoIds.isEmpty else { return [:] }
         let placeholders = Array(repeating: "?", count: repoIds.count).joined(separator: ",")
-        let args = repoIds.map { $0 as DatabaseValueConvertible }
+        // 注意：`args` 必须在闭包内构造。GRDB 的 `writer.read { ... }` 闭包是 `@Sendable`，
+        // 但 `[any DatabaseValueConvertible]` 是非 Sendable（GRDB 的协议未标 Sendable）。
+        // 若在闭包外构造 args 然后被捕获，会触发 Swift 6 严格模式的 "non-Sendable type
+        // captured in @Sendable closure" 报错。改为闭包内构造后，跨 actor 边界的只有
+        // `[Int64]`（天然 Sendable）和 `placeholders`（String，Sendable），安全。
         return try await writer.read { db in
+            let args = repoIds.map { $0 as DatabaseValueConvertible }
             let rows = try Row.fetchAll(
                 db,
                 sql: "SELECT repo_id, status FROM repo_notes WHERE repo_id IN (\(placeholders))",
