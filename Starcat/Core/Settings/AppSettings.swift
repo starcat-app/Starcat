@@ -663,6 +663,55 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.autoTidySettings, value: autoTidySettings) }
     }
 
+    // MARK: - 第三方服务自定义 URL（2026-06-08 新增）
+
+    /// 第三方后端服务（Trending / Weekly / Sharing）的用户自定义 URL 字典。
+    ///
+    /// 设计要点：
+    /// - 键 = `ThirdPartyService.rawValue`（"trending" / "weekly" / "sharing"）。
+    ///   用字符串而非直接用枚举做键是为了兼容 `Codable` 持久化 + 让 UserDefaults 直接吃
+    ///   `[String: String]`；同时未来新增 service 不需要做迁移。
+    /// - 值 = 用户填入的 URL 原始字符串（已通过 `ThirdPartyService.validate` 校验）。
+    ///   存原始字符串而不是 `URL` 是因为：① UserDefaults 不直接支持 URL 字典；
+    ///   ② 用户填的可能在写入时合法、未来某次升级 URL 解析规则变严就读不出来——
+    ///   存原始字符串至少能让设置页"显示出原值给用户修复"。
+    /// - **缺省 / 空字符串 / 不存在键 = 走 production 默认 URL**（见 `AppEndpoints`）。
+    ///
+    /// 任何写入都触发整段 JSON 重写——字典本身极小（3-5 条 KV），重写成本可忽略。
+    /// 写入路径只走 `setCustomURL(_:for:)` / `resetCustomURL(for:)` 两个方法，**不要**
+    /// 直接 mutate 字典（didSet 会触发，但语义不直观）。
+    private(set) var customServiceURLs: [String: String] {
+        didSet { persistJSON(key: Keys.customServiceURLs, value: customServiceURLs) }
+    }
+
+    /// 读取某服务当前的用户自定义 URL 字符串；未配置返回 nil（让上层回退到默认）。
+    func customServiceURL(for service: ThirdPartyService) -> String? {
+        let raw = customServiceURLs[service.rawValue]
+        // 把空字符串也当作未配置——避免"用户把输入清空但 didSet 留下个空串"留下歧义。
+        return (raw?.isEmpty == false) ? raw : nil
+    }
+
+    /// 写入某服务的自定义 URL。传 nil 或空字符串等价于调 `resetCustomURL(for:)`。
+    ///
+    /// 调用方应该是 `AppDependencies.setServiceURL(_:for:)`，它会同时：
+    /// ① 把字符串写到这里持久化；② 把规范化后的 `URL` 推送到对应 API actor 的
+    /// `updateBaseURL`，让"修改即生效"无需重启。
+    func setCustomURL(_ url: String?, for service: ThirdPartyService) {
+        let trimmed = url?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var copy = customServiceURLs
+        if let trimmed, !trimmed.isEmpty {
+            copy[service.rawValue] = trimmed
+        } else {
+            copy.removeValue(forKey: service.rawValue)
+        }
+        customServiceURLs = copy
+    }
+
+    /// 清空某服务的自定义 URL（回退到 production 默认）。
+    func resetCustomURL(for service: ThirdPartyService) {
+        setCustomURL(nil, for: service)
+    }
+
     // MARK: - 初始化
 
     private let defaults: UserDefaults
@@ -756,6 +805,10 @@ final class AppSettings {
         // HOM-126：自动整理偏好。缺失时回落到 `AutoTidySettings.default`（总开关关 +
         // 启动/同步触发 + 50 个 + 最近 star + 仅标签 + 90% 阈值），与任务描述一致。
         self.autoTidySettings = Self.decodeJSON(AutoTidySettings.self, key: Keys.autoTidySettings, defaults: defaults) ?? .default
+
+        // 第三方服务自定义 URL（2026-06-08）：缺失或解码失败时为空字典，
+        // 所有服务都走 `AppEndpoints.production(for:)` 默认值。
+        self.customServiceURLs = Self.decodeJSON([String: String].self, key: Keys.customServiceURLs, defaults: defaults) ?? [:]
     }
 
     // MARK: - 内部
@@ -900,5 +953,6 @@ final class AppSettings {
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
         static let isProUser = "settings.pro.isProUser"  // HOM-151
         static let autoTidySettings = "settings.ai.autoTidy.v1"  // HOM-126
+        static let customServiceURLs = "settings.services.customURLs.v1"  // 2026-06-08
     }
 }
