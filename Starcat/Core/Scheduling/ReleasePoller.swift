@@ -33,10 +33,17 @@ final class ReleasePoller {
     /// 选 4 而不是 6 小时是平衡 "及时性 vs 配额 vs 功耗"：
     /// - GitHub 5000/h 配额够支撑 ~80 个订阅 × 6 次/天的查询
     /// - 大多数 Release 发布的"被发现 4h 内"对用户体验已足够
-    static let defaultInterval: TimeInterval = 4 * 60 * 60
+    ///
+    /// `nonisolated`：本类整体 `@MainActor`，但 `start(interval:tolerance:)` 的
+    /// 默认参数值表达式（`= ReleasePoller.defaultInterval`）在 Swift 6 严格模式下
+    /// 默认是 `nonisolated` 上下文求值的，引用 `@MainActor`-isolated static 会报
+    /// "main actor-isolated static property cannot be referenced from a nonisolated
+    /// context"。常量本身不可变 + 值类型，标 `nonisolated` 完全安全。
+    nonisolated static let defaultInterval: TimeInterval = 4 * 60 * 60
 
     /// scheduler 容差：允许系统在 [interval-tolerance, interval+tolerance] 任意时间点触发。
-    static let defaultTolerance: TimeInterval = 30 * 60
+    /// `nonisolated` 同 `defaultInterval`，原因见上。
+    nonisolated static let defaultTolerance: TimeInterval = 30 * 60
 
     // MARK: - 状态
 

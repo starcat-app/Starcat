@@ -19,20 +19,48 @@ import AppKit
 /// 这个组件只负责渲染“自然高度”的元信息面板；是否折叠、如何测高、何时隐藏由
 /// `CollapsibleRepoMetadataPanel` 处理。Activity 可以传入分类色作为 fallback，从而在
 /// repo 没有主语言时仍保持“活动分类色 → 透明”的详情背景。
+///
+/// ### `showLocalSections` 开关（2026-06-08 引入，Weekly 详情页用）
+///
+/// 默认 `true`：渲染 `RepoTagsSection` / `RepoNotesSection` / `RepoReleaseSection` 这三个
+/// **强依赖本地 `repo.id`** 的区块（用 id 查 tags / notes / release_subscriptions）。
+///
+/// Weekly 详情页**未命中本地**时（用户没 star 过这个项目），会传入一个 `id=0` 的临时 Repo，
+/// 此时必须显式把 `showLocalSections` 设为 `false`，否则：
+/// - `RepoTagsSection` / `RepoNotesSection` 会用 id=0 去查 DB → 拿不到任何数据，但会显示空 section
+///   占位（"添加标签" / "无笔记"等），误导用户以为可以操作；
+/// - `RepoReleaseSection` 的"订阅"按钮会用 id=0 注册订阅，破坏 release_subscriptions 表的语义。
+///
+/// 调用方约定：
+/// - Manage 详情页（`RepoDetailView.metadataHeader`）→ 不传，走默认 `true`；
+/// - Activity-Suggestion/Repo/Star 详情页（`ActivityDetailView.repoBackedDetailPage`）→ 不传，走默认 `true`；
+/// - Weekly 详情页 → 本地命中传 `true`、未命中传 `false`。
 struct RepoMetadataHeaderView<TrailingActions: View>: View {
     let repo: Repo
     let fallbackAccentColor: Color
     let onStarTapped: () -> Void
+    /// 是否渲染需要本地 `repo.id` 的三个区块（Tags / Notes / Release）。详见类型级注释。
+    let showLocalSections: Bool
+    /// Stars stat 按钮的 tooltip 本地化键。
+    ///
+    /// Manage / Activity 详情页：默认 `"repo.unstar"`（用户已 star，点击取消）。
+    /// Weekly 详情页未命中本地（用户未 star）：传 `"weekly.detail.openStargazers"`（点击跳 stargazers 页面）。
+    /// 这是为了让 tooltip 与实际 `onStarTapped` 闭包做的事保持一致，避免误导。
+    let starHelpKey: LocalizedStringKey
     private let trailingActions: TrailingActions
 
     init(
         repo: Repo,
         fallbackAccentColor: Color = .accentColor,
+        showLocalSections: Bool = true,
+        starHelpKey: LocalizedStringKey = "repo.unstar",
         onStarTapped: @escaping () -> Void,
         @ViewBuilder trailingActions: () -> TrailingActions
     ) {
         self.repo = repo
         self.fallbackAccentColor = fallbackAccentColor
+        self.showLocalSections = showLocalSections
+        self.starHelpKey = starHelpKey
         self.onStarTapped = onStarTapped
         self.trailingActions = trailingActions()
     }
@@ -42,9 +70,11 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
             header
             descriptionSection
             statsSection
-            RepoTagsSection(repo: repo)
-            RepoNotesSection(repo: repo)
-            RepoReleaseSection(repo: repo)
+            if showLocalSections {
+                RepoTagsSection(repo: repo)
+                RepoNotesSection(repo: repo)
+                RepoReleaseSection(repo: repo)
+            }
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
@@ -140,7 +170,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .pressableHover()
-            .help("repo.unstar")
+            .help(starHelpKey)
 
             Button {
                 if let url = URL(string: "\(repo.htmlUrl)/fork") {

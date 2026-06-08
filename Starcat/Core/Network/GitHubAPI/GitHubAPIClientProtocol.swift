@@ -45,6 +45,15 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// 获取当前授权用户信息（同时充当 token 健康检查 — 401 即代表 token 失效）。
     func getCurrentUser() async throws -> GitHubUserDTO
 
+    // MARK: - Repo
+
+    /// 获取单个仓库完整元数据（2026-06-08 引入，Weekly 详情页本地缓存未命中时回源用）。
+    ///
+    /// - Returns: 完整的 `GitHubRepoDTO`（含 description / language / stargazers_count /
+    ///   topics / license / created_at / updated_at / pushed_at 等字段）。
+    /// - Throws: 网络层 `NetworkError`（404 / 401 / RateLimit 等）。
+    func repo(owner: String, repo: String) async throws -> GitHubRepoDTO
+
     // MARK: - Readme
 
     /// 拉取 README（GitHub 服务端渲染的 HTML 片段）。

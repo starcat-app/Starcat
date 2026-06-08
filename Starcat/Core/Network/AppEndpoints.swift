@@ -171,6 +171,13 @@ enum AppEndpoints {
             }
 
             // —— 仓库 ——
+            /// `GET /repos/{owner}/{repo}` —— 单仓库完整元数据（含 description / language /
+            /// stargazers_count / topics / license / created_at / updated_at / pushed_at 等）。
+            /// 用途：Weekly 详情页（2026-06-08）在本地缓存未命中时拉一份完整 repo 数据，
+            /// 拼装临时 Repo 让 UI 复用 `RepoMetadataHeaderView` 渲染。
+            static func repo(owner: String, repo: String) -> String {
+                "/repos/\(owner)/\(repo)"
+            }
             /// `GET /repos/{owner}/{repo}/readme` —— README 内容。
             static func repoReadme(owner: String, repo: String) -> String {
                 "/repos/\(owner)/\(repo)/readme"
