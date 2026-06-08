@@ -91,6 +91,17 @@ final class AppDependencies {
     /// 独立 actor，无需 GitHub OAuth；Activity 页 `weekly` 分类直接消费。
     let weeklyAPI: WeeklyAPI
 
+    // MARK: - HOM-173 分享卡
+
+    /// AI 分享卡后端 API 客户端。
+    ///
+    /// 2026-06-08 之前是在 `RepoMetadataHeaderView.shareRepo()` 里每次分享 new 一个
+    /// `ShareAPI()`——既无法注入测试 mock，也没法与 trending / weekly 共享同一份"端点
+    /// 配置/本地切换"语义。统一收进 DI 之后：① 复用 `AppEndpoints.sharing` 解析逻辑，
+    /// 本地联调改 env 即可；② `RepoMetadataHeaderView` 通过 environment 拿到这个实例，
+    /// 不再 new；③ 未来要做 ShareAPI 单测，从 environment 注入 mock 即可。
+    let shareAPI: ShareAPI
+
     // MARK: - HOM-47 Release 订阅追踪
 
     /// Release 订阅记录 Repository。
@@ -131,6 +142,11 @@ final class AppDependencies {
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
     init() {
+        // 启动期记录三个自建后端 API 的实际 baseURL（DEBUG 会标 `[DEV]`，方便确认
+        // 当前到底打的是 fly.dev 生产端点还是 127.0.0.1 本地端点）。
+        // 详见 `AppEndpoints.swift` 头注释里的"使用方式"。
+        AppEndpoints.logResolvedEndpoints()
+
         let db: any DatabaseManaging = DatabaseManager.shared
         self.database = db
 
@@ -235,13 +251,23 @@ final class AppDependencies {
             settings: self.settings
         )
 
-        // HOM-54：Trending Repository（W7+ 起接入 GRDB 持久化）
-        self.trendingRepository = TrendingRepository(database: db)
+        // HOM-54：Trending Repository（W7+ 起接入 GRDB 持久化）。
+        // 显式传入 `TrendingAPI(baseURL: AppEndpoints.trending)` 让"端点配置"在
+        // DI 装配处一目了然——虽然 `TrendingAPI()` 默认参数也读 AppEndpoints，
+        // 但 grep "AppEndpoints" 时希望能直接在 AppDependencies 看到完整接线。
+        self.trendingRepository = TrendingRepository(
+            api: TrendingAPI(baseURL: AppEndpoints.trending),
+            database: db
+        )
 
         // MUL-176：阮一峰周刊 API 客户端。
-        // 默认走生产域名 starcat-weekly-api.fly.dev，需要 mock 或本地联调时
-        // 在测试 / Preview 路径里改造为传入自定义 baseURL。
-        self.weeklyAPI = WeeklyAPI()
+        // 端点解析逻辑见 `AppEndpoints.weekly`：DEBUG 默认走 http://127.0.0.1:5003，
+        // 设 `STARCAT_USE_PRODUCTION_API=1` 或对应 `STARCAT_WEEKLY_API_URL` env 可覆盖。
+        self.weeklyAPI = WeeklyAPI(baseURL: AppEndpoints.weekly)
+
+        // HOM-173：分享卡 API 客户端。
+        // 同上，端点走 `AppEndpoints.sharing`（保留 /api 后缀，与生产语义一致）。
+        self.shareAPI = ShareAPI(baseURL: AppEndpoints.sharing)
 
         // HOM-47：Release 订阅追踪。
         // 装配顺序：Repository → Monitor（依赖 API + Repository + RepoRepository）
