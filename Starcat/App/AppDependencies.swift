@@ -266,23 +266,23 @@ final class AppDependencies {
         // HOM-54：Trending Repository（W7+ 起接入 GRDB 持久化）。
         // 把 TrendingAPI 提到顶层 `self.trendingAPI`，让设置页 → 服务 Tab 改地址后
         // 可以直接拿到这个实例 `await trendingAPI.updateBaseURL(_:)` 热更新。
-        let trendingAPIInstance = TrendingAPI(baseURL: AppEndpoints.trending)
+        let trendingAPIInstance = TrendingAPI(baseURL: AppEndpoints.Trending.baseURL)
         self.trendingAPI = trendingAPIInstance
         self.trendingRepository = TrendingRepository(
             api: trendingAPIInstance,
             database: db
         )
 
-        // MUL-176：阮一峰周刊 API 客户端。端点走 `AppEndpoints.weekly`。
+        // MUL-176：阮一峰周刊 API 客户端。端点走 `AppEndpoints.Weekly.baseURL`。
         // 用户在设置页改地址 → AppDependencies.setServiceURL 推送到本 actor 的
         // updateBaseURL，无需重启 App。
-        self.weeklyAPI = WeeklyAPI(baseURL: AppEndpoints.weekly)
+        self.weeklyAPI = WeeklyAPI(baseURL: AppEndpoints.Weekly.baseURL)
 
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
 
-        // HOM-173：分享卡 API 客户端。端点走 `AppEndpoints.sharing`（保留 /api 后缀）。
-        self.shareAPI = ShareAPI(baseURL: AppEndpoints.sharing)
+        // HOM-173：分享卡 API 客户端。端点走 `AppEndpoints.Sharing.baseURL`（保留 /api 后缀）。
+        self.shareAPI = ShareAPI(baseURL: AppEndpoints.Sharing.baseURL)
 
         // 2026-06-08：第三方服务健康检查 actor。独立 ephemeral session + 5s 超时。
         self.serviceHealthChecker = ServiceHealthChecker()

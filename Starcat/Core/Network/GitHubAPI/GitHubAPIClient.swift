@@ -5,7 +5,7 @@
 //  通用 GitHub REST API 客户端。
 //
 //  职责：
-//  - 拼 URL（基于 AppConstants.githubAPIBaseURL）
+//  - 拼 URL（基于 AppEndpoints.GitHubREST.baseURL）
 //  - 注入 Authorization / Accept / User-Agent 头
 //  - 解码 JSON
 //  - 把 HTTP 状态码映射成 NetworkError
@@ -99,7 +99,7 @@ actor GitHubAPIClient {
     // MARK: - 初始化
 
     init(
-        baseURL: URL = AppConstants.githubAPIBaseURL,
+        baseURL: URL = AppEndpoints.GitHubREST.baseURL,
         session: URLSession = .shared,
         tokenProvider: any GitHubTokenProviding = KeychainTokenProvider()
     ) {
@@ -205,7 +205,7 @@ actor GitHubAPIClient {
 
         var request = try buildRequest(
             method: "POST",
-            path: "/graphql",
+            path: AppEndpoints.GitHubREST.Paths.graphql,
             queryItems: [],
             accept: "application/json",
             body: bodyData

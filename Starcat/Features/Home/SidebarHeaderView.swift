@@ -447,29 +447,28 @@ struct SidebarHeaderView: View {
                 value: viewModel.totalCount,
                 label: "sidebar.stats.starred",
                 helpText: String(localized: "sidebar.openGithubStarred"),
-                url: URL(string: "https://github.com/\(user.login)?tab=stars")
+                url: GitHubURLs.userStarsTab(login: user.login)
             )
             Divider().frame(height: 26)
             StatCell(
                 value: user.followers ?? 0,
                 label: "sidebar.stats.followers",
                 helpText: String(localized: "sidebar.openGithubFollowers"),
-                url: URL(string: "https://github.com/\(user.login)?tab=followers")
+                url: GitHubURLs.userFollowersTab(login: user.login)
             )
             Divider().frame(height: 26)
             StatCell(
                 value: user.following ?? 0,
                 label: "sidebar.stats.following",
                 helpText: String(localized: "sidebar.openGithubFollowing"),
-                url: URL(string: "https://github.com/\(user.login)?tab=following")
+                url: GitHubURLs.userFollowingTab(login: user.login)
             )
         }
         .padding(.top, 4)
     }
 
     private func openGitHubProfile(login: String) {
-        guard let url = URL(string: "https://github.com/\(login)") else { return }
-        NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(GitHubURLs.userProfile(login: login))
     }
 }
 

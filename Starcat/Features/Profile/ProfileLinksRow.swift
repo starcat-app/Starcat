@@ -78,7 +78,7 @@ struct ProfileLinksRow: View {
         if let company = user.company?.trimmed, !company.isEmpty {
             // company 形如 "@apple" 或 "Apple Inc."。以 @ 开头的视为组织名，可跳 GitHub 主页。
             let trimmed = company.hasPrefix("@") ? String(company.dropFirst()) : company
-            let url = company.hasPrefix("@") ? URL(string: "https://github.com/\(trimmed)") : nil
+            let url = company.hasPrefix("@") ? GitHubURLs.userProfile(login: trimmed) : nil
             items.append(.init(
                 kind: .company,
                 systemImage: "building.2",

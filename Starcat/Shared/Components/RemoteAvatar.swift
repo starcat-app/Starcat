@@ -130,8 +130,7 @@ struct UserAvatar: View {
     }
 
     private func openGitHubProfile(login: String) {
-        guard let url = URL(string: "https://github.com/\(login)") else { return }
-        NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(GitHubURLs.userProfile(login: login))
     }
 }
 

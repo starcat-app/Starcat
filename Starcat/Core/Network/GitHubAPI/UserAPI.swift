@@ -13,7 +13,7 @@ extension GitHubAPIClient {
 
     /// 获取当前授权用户。
     func getCurrentUser() async throws -> GitHubUserDTO {
-        let response: APIResponse<GitHubUserDTO> = try await get(path: "/user")
+        let response: APIResponse<GitHubUserDTO> = try await get(path: AppEndpoints.GitHubREST.Paths.currentUser)
         return response.value
     }
 }
