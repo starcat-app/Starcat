@@ -47,18 +47,20 @@ actor TrendingAPI {
 
     // MARK: - Properties
 
-    private let baseURL: URL
+    /// 当前 baseURL；通过 `updateBaseURL(_:)` 热更新（设置页改地址后立即生效）。
+    /// actor 串行化保证写入与下一次 build URL 的读之间不会撕裂。
+    private var baseURL: URL
     private let session: URLSession
     private let decoder: JSONDecoder
 
     // MARK: - Initialization
 
     /// - Parameters:
-    ///   - baseURL: 后端域名；默认走 `AppEndpoints.trending`（生产 = fly.io，DEBUG 期可被
-    ///     `STARCAT_TRENDING_API_URL` 环境变量覆盖到本地，详见 `AppEndpoints.swift`）。
+    ///   - baseURL: 后端域名；DI 装配处由 `AppDependencies` 从 `AppEndpoints.trending` 注入，
+    ///     用户在设置页改地址后 `updateBaseURL(_:)` 热更新。
     ///   - session: 注入自定义 URLSession（一般用于单测 mock）；为 nil 走默认配置。
     init(
-        baseURL: URL = AppEndpoints.trending,
+        baseURL: URL,
         session: URLSession? = nil
     ) {
         self.baseURL = baseURL
@@ -79,6 +81,13 @@ actor TrendingAPI {
     }
 
     // MARK: - Public API
+
+    /// 热更新 baseURL（用户在设置页改地址后由 `AppDependencies` 推送进来）。
+    /// actor 串行化让 URL 切换无需重启 App。
+    func updateBaseURL(_ url: URL) {
+        AppLog.network.info("TrendingAPI baseURL updated to \(url.absoluteString, privacy: .public)")
+        self.baseURL = url
+    }
 
     /// 获取热门仓库列表。
     ///

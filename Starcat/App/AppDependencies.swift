@@ -84,6 +84,14 @@ final class AppDependencies {
     let trendingRepository: any TrendingRepositoryProtocol
     /// W7+ 引入：Trending README 持久化（与 manage 路径独立的 `trending_readmes` 表）。
     let trendingReadmeRepository: TrendingReadmeRepository
+    /// HOM-54 内部 API actor，2026-06-08 起从 `TrendingRepository` 提到顶层暴露，
+    /// 让设置页 → 服务 Tab 改地址后可以直接 `await trendingAPI.updateBaseURL(_:)` 热更新。
+    let trendingAPI: TrendingAPI
+
+    /// 第三方后端服务健康检查 actor（2026-06-08）。
+    /// 设置页"测试连接"按钮 → `await serviceHealthChecker.check(service:baseURL:)`。
+    /// 独立 actor + 短超时（5s），不复用业务 API session。
+    let serviceHealthChecker: ServiceHealthChecker
 
     // MARK: - MUL-176 Weekly（阮一峰周刊）
 
@@ -252,22 +260,25 @@ final class AppDependencies {
         )
 
         // HOM-54：Trending Repository（W7+ 起接入 GRDB 持久化）。
-        // 显式传入 `TrendingAPI(baseURL: AppEndpoints.trending)` 让"端点配置"在
-        // DI 装配处一目了然——虽然 `TrendingAPI()` 默认参数也读 AppEndpoints，
-        // 但 grep "AppEndpoints" 时希望能直接在 AppDependencies 看到完整接线。
+        // 把 TrendingAPI 提到顶层 `self.trendingAPI`，让设置页 → 服务 Tab 改地址后
+        // 可以直接拿到这个实例 `await trendingAPI.updateBaseURL(_:)` 热更新。
+        let trendingAPIInstance = TrendingAPI(baseURL: AppEndpoints.trending)
+        self.trendingAPI = trendingAPIInstance
         self.trendingRepository = TrendingRepository(
-            api: TrendingAPI(baseURL: AppEndpoints.trending),
+            api: trendingAPIInstance,
             database: db
         )
 
-        // MUL-176：阮一峰周刊 API 客户端。
-        // 端点解析逻辑见 `AppEndpoints.weekly`：DEBUG 默认走 http://127.0.0.1:5003，
-        // 设 `STARCAT_USE_PRODUCTION_API=1` 或对应 `STARCAT_WEEKLY_API_URL` env 可覆盖。
+        // MUL-176：阮一峰周刊 API 客户端。端点走 `AppEndpoints.weekly`。
+        // 用户在设置页改地址 → AppDependencies.setServiceURL 推送到本 actor 的
+        // updateBaseURL，无需重启 App。
         self.weeklyAPI = WeeklyAPI(baseURL: AppEndpoints.weekly)
 
-        // HOM-173：分享卡 API 客户端。
-        // 同上，端点走 `AppEndpoints.sharing`（保留 /api 后缀，与生产语义一致）。
+        // HOM-173：分享卡 API 客户端。端点走 `AppEndpoints.sharing`（保留 /api 后缀）。
         self.shareAPI = ShareAPI(baseURL: AppEndpoints.sharing)
+
+        // 2026-06-08：第三方服务健康检查 actor。独立 ephemeral session + 5s 超时。
+        self.serviceHealthChecker = ServiceHealthChecker()
 
         // HOM-47：Release 订阅追踪。
         // 装配顺序：Repository → Monitor（依赖 API + Repository + RepoRepository）
@@ -299,5 +310,33 @@ final class AppDependencies {
         userProfileSvc.authSession = session
         session.userProfileService = userProfileSvc
         self.userProfileService = userProfileSvc
+    }
+
+    // MARK: - 第三方服务热更新（2026-06-08 新增）
+
+    /// 设置页 → 服务 Tab 调用入口：把用户填的 URL 既写入 `AppSettings` 持久化，
+    /// 又推送到对应 API actor 的 `updateBaseURL`，让"修改即生效"不需要重启。
+    ///
+    /// 参数 `url` 已经过 `ThirdPartyService.validate(_:)` 校验为合法 URL。
+    /// 传入 nil → 等价于 `resetServiceURL(for:)`：清空持久化、actor 回退到 production。
+    ///
+    /// 异步是因为 actor 方法要 `await`；UI 侧（@MainActor SwiftUI）调用时 `Task {}` 包一下。
+    func setServiceURL(_ url: URL?, for service: ThirdPartyService) async {
+        let target: URL = url ?? AppEndpoints.production(for: service)
+
+        // 1) 持久化用户输入（nil/空串 → 删 key，回退默认）
+        settings.setCustomURL(url?.absoluteString, for: service)
+
+        // 2) 推送到对应 actor 热更新
+        switch service {
+        case .trending: await trendingAPI.updateBaseURL(target)
+        case .weekly:   await weeklyAPI.updateBaseURL(target)
+        case .sharing:  await shareAPI.updateBaseURL(target)
+        }
+    }
+
+    /// 清空某服务的自定义 URL，等价于 `setServiceURL(nil, for:)`。
+    func resetServiceURL(for service: ThirdPartyService) async {
+        await setServiceURL(nil, for: service)
     }
 }

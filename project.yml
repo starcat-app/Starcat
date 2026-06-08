@@ -115,26 +115,9 @@ schemes:
         StarcatTests: [test]
     run:
       config: Debug
-      # 本地后端 API 端点切换开关（仅 Debug 生效；Release 产物里这些 env 完全无效）。
-      # 详见 Starcat/Core/Network/AppEndpoints.swift 头注释。
-      #
-      # 默认 `isEnabled: false`——预填条目让 dong4j 在 Xcode → Edit Scheme →
-      # Arguments → Environment Variables 里勾选即可切到本地，无需手输 URL。
-      # 想全部切回生产时统一取消勾选；想"默认本地、临时回生产" 时改勾
-      # STARCAT_USE_PRODUCTION_API（注意 env 单条覆盖优先级更高）。
-      environmentVariables:
-        - variable: STARCAT_WEEKLY_API_URL
-          value: http://127.0.0.1:5003
-          isEnabled: false
-        - variable: STARCAT_TRENDING_API_URL
-          value: http://127.0.0.1:5002
-          isEnabled: false
-        - variable: STARCAT_SHARING_API_URL
-          value: http://127.0.0.1:5001/api
-          isEnabled: false
-        - variable: STARCAT_USE_PRODUCTION_API
-          value: "1"
-          isEnabled: true
+      # 注：2026-06-08 删除了 STARCAT_*_API_URL 系列 env vars。
+      # 后端 API 端点改为在「设置 → 服务」Tab 里直接配置（用户可见、运行时热生效），
+      # 不再需要 Xcode scheme 勾选切换。详见 docs/工程进度/功能实现总览.md D-19。
     test:
       config: Debug
       targets:

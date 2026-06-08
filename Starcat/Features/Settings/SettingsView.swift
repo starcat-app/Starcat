@@ -40,15 +40,20 @@ struct SettingsView: View {
         case pro
         case ai
         case storage
+        /// 2026-06-08 新增：第三方 / 自建后端服务的 URL 配置。
+        case services
     }
 
     /// 统一的内容尺寸——所有 Tab 共用，避免切 Tab 时窗口尺寸跳变。
-    private static let contentSize = CGSize(width: 520, height: 360)
+    /// 2026-06-08 调整：Services Tab 含 3 个服务卡片（每张约 130pt），加 intro 段后
+    /// 360pt 已经放不下，提到 460；其它 Tab 在 460 高度下 Form 仍正常显示。
+    private static let contentSize = CGSize(width: 540, height: 460)
 
     var body: some View {
         // HOM-68 follow-up v3 (2026-06-05 22:40 dong4j 反馈)：
         // 把 AI Tab 放到 Storage 之后。AI 是配置项最复杂、最不常碰的 Tab，
         // 放在最后符合"常用在前、复杂在后"的设置面板惯例。
+        // 2026-06-08：「服务」Tab 放在最后——也属于"较少调整的进阶配置"类。
         TabView(selection: $selectedTab) {
             generalTab
                 .tabItem {
@@ -70,6 +75,11 @@ struct SettingsView: View {
                     Label("settings.ai.title", systemImage: "sparkles")
                 }
                 .tag(SettingsTab.ai)
+            ServicesSettingsTab()
+                .tabItem {
+                    Label("settings.services.title", systemImage: "network")
+                }
+                .tag(SettingsTab.services)
         }
         .frame(width: Self.contentSize.width, height: Self.contentSize.height)
         .scenePadding()
