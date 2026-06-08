@@ -85,6 +85,12 @@ final class AppDependencies {
     /// W7+ 引入：Trending README 持久化（与 manage 路径独立的 `trending_readmes` 表）。
     let trendingReadmeRepository: TrendingReadmeRepository
 
+    // MARK: - MUL-176 Weekly（阮一峰周刊）
+
+    /// 阮一峰周刊后端 API 客户端。
+    /// 独立 actor，无需 GitHub OAuth；Activity 页 `weekly` 分类直接消费。
+    let weeklyAPI: WeeklyAPI
+
     // MARK: - HOM-47 Release 订阅追踪
 
     /// Release 订阅记录 Repository。
@@ -231,6 +237,11 @@ final class AppDependencies {
 
         // HOM-54：Trending Repository（W7+ 起接入 GRDB 持久化）
         self.trendingRepository = TrendingRepository(database: db)
+
+        // MUL-176：阮一峰周刊 API 客户端。
+        // 默认走生产域名 starcat-weekly-api.fly.dev，需要 mock 或本地联调时
+        // 在测试 / Preview 路径里改造为传入自定义 baseURL。
+        self.weeklyAPI = WeeklyAPI()
 
         // HOM-47：Release 订阅追踪。
         // 装配顺序：Repository → Monitor（依赖 API + Repository + RepoRepository）

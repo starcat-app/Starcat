@@ -29,6 +29,12 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
     case repository
     case following
     case suggestion
+    /// MUL-176：阮一峰周刊（ruanyf/weekly）推荐 GitHub 项目聚合。
+    ///
+    /// 与其他分类不同，weekly 的数据源不是本地 Repo 缓存，而是独立的远端 REST API
+    /// （starcat-weekly-api）。因此 ActivityView 在选中此分类时会切换到
+    /// `WeeklyContentView`，不复用 ActivityViewModel 的本地聚合逻辑。
+    case weekly
 
     var id: String { rawValue }
 
@@ -41,6 +47,7 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .repository:   return "activity.category.repository"
         case .following:    return "activity.category.following"
         case .suggestion:   return "activity.category.suggestion"
+        case .weekly:       return "activity.category.weekly"
         }
     }
 
@@ -53,6 +60,7 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .repository:   return String(localized: "activity.category.repository")
         case .following:    return String(localized: "activity.category.following")
         case .suggestion:   return String(localized: "activity.category.suggestion")
+        case .weekly:       return String(localized: "activity.category.weekly")
         }
     }
 
@@ -67,6 +75,7 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .repository:   return "#A97BFF" // Kotlin purple
         case .following:    return "#701516" // Ruby deep red
         case .suggestion:   return "#3178c6" // TypeScript blue
+        case .weekly:       return "#dea584" // Rust beige —— 与上面 7 色都不撞，且与"周刊"温和气质相符
         }
     }
 
@@ -84,6 +93,7 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .repository:   return "folder"
         case .following:    return "person.2"
         case .suggestion:   return "sparkles"
+        case .weekly:       return "newspaper"
         }
     }
 }
