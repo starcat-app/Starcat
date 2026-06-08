@@ -61,7 +61,12 @@ actor TrendingRepository: TrendingRepositoryProtocol {
 
     // MARK: - Initialization
 
-    init(api: TrendingAPI = TrendingAPI(), database: any DatabaseManaging) {
+    /// - Parameters:
+    ///   - api: 注入的 TrendingAPI 实例。**没有默认参数**——上层（`AppDependencies` /
+    ///     测试）必须显式传入，因为 `TrendingAPI()` 已经移除默认 baseURL，强制让
+    ///     "端点决策"在调用处可见。
+    ///   - database: 共享数据库句柄。
+    init(api: TrendingAPI, database: any DatabaseManaging) {
         self.api = api
         self.writer = database.writer
     }

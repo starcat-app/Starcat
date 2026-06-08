@@ -77,7 +77,9 @@ struct TrendingRepositoryPersistenceTests {
     func cachedEmpty() async throws {
         URLProtocolStub.reset()
         let db = try InMemoryDatabaseManager()
-        let repo = TrendingRepository(database: db)
+        // TrendingAPI 已移除默认 baseURL，纯读测试也得显式传一个假地址（永不被使用）。
+        let api = TrendingAPI(baseURL: URL(string: "https://trend.test.invalid")!)
+        let repo = TrendingRepository(api: api, database: db)
 
         let cached = await repo.cachedTrending(since: .daily, language: .all)
         #expect(cached.isEmpty)
@@ -199,7 +201,8 @@ struct TrendingRepositoryPersistenceTests {
     func lastRefreshedAtEmpty() async throws {
         URLProtocolStub.reset()
         let db = try InMemoryDatabaseManager()
-        let repo = TrendingRepository(database: db)
+        let api = TrendingAPI(baseURL: URL(string: "https://trend.test.invalid")!)
+        let repo = TrendingRepository(api: api, database: db)
 
         let date = await repo.lastRefreshedAt(since: .daily, language: .all)
         #expect(date == nil)
