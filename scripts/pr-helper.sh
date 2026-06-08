@@ -196,17 +196,18 @@ ok "PR #$PR_NUM merged"
 # 8. 删除远端 dev
 # =============================================================================
 # 远端 dev 使命完成, 下轮开发从 origin/main 重建本地 dev
-# 容错: GitHub PR 合并时可能自动删 head 分支:
+# 容错: GitHub PR 合并时可能自动删 head 分支 (有多种触发路径):
 #   - 仓库 Settings → General → "Automatically delete head branches" 勾选
-#   - 或者用户点过 PR 页面 "Delete branch" 按钮
-# 此时 origin/dev 已不存在, 必须先 ls-remote 检查, 否则 push --delete 会报
-# "unable to resolve reference 'refs/heads/dev'"
+#   - 用户点过 PR 页面 "Delete branch" 按钮
+#   - GitHub 异步删除存在 race condition, ls-remote 紧跟查可能还看得到 dev
+#   - 设置仓库自动删除 PR 分支: gh repo edit dong4j/Starcat --delete-branch-on-merge
+# 采用"先试再容错"模式: 直接 push --delete, 失败就 warn 但不退出
+# (失败原因主要是 dev 已不存在, 本地 ref 不感知, 后续 step 9 会重置本地 dev)
 info "deleting remote dev..."
-if git ls-remote --heads origin dev 2>/dev/null | grep -q 'refs/heads/dev'; then
-    git push origin --delete dev
+if git push origin --delete dev 2>/dev/null; then
     ok "remote dev deleted"
 else
-    warn "remote dev already deleted (skipped, likely auto-deleted by GitHub on PR merge)"
+    warn "remote dev may already be deleted (skipped, likely auto-deleted by GitHub on PR merge)"
 fi
 
 # =============================================================================
