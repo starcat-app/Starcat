@@ -132,22 +132,9 @@ struct ServicesSettingsTab: View {
             // 校验失败 / 当前生效 / 测试结果 caption
             captionRow(for: service, validation: validation)
 
-            // 测试连接按钮（独立行，左对齐）
+            // 测试连接按钮：状态左 + Spacer + 按钮右（按钮统一右对齐，与设置面板内
+            // 操作型按钮的视觉惯例一致；状态文本贴近左侧 URL 输入框便于关联阅读）。
             HStack {
-                Button {
-                    Task { await testConnection(for: service) }
-                } label: {
-                    HStack(spacing: 4) {
-                        if isProbing {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "network")
-                        }
-                        Text("settings.services.testConnection")
-                    }
-                }
-                .disabled(isProbing || !validation.canPersist)
-
                 if let outcome = healthResults[service.id], !isProbing {
                     HStack(spacing: 4) {
                         Image(systemName: outcome.systemImage)
@@ -163,6 +150,19 @@ struct ServicesSettingsTab: View {
                     }
                 }
                 Spacer()
+                Button {
+                    Task { await testConnection(for: service) }
+                } label: {
+                    HStack(spacing: 4) {
+                        if isProbing {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "network")
+                        }
+                        Text("settings.services.testConnection")
+                    }
+                }
+                .disabled(isProbing || !validation.canPersist)
             }
         }
     }
@@ -209,7 +209,15 @@ struct ServicesSettingsTab: View {
     }
 
     /// 保存当前草稿。`validation` 必须是 `.valid` 或 `.empty`，调用方已检查 `canPersist`。
-    private func save(service: ThirdPartyService, validation: ServiceURLValidation) async {
+    ///
+    /// - Parameter clearHealthResult: 显式 "保存" 按钮触发的保存（默认 true）会清掉
+    ///   旧的健康检查结果——因为 URL 已变，旧结果与新 URL 无关，留着误导。
+    ///   "测试连接 → ok → 自动保存"路径传 false，保留刚拿到的成功结果给用户看到。
+    private func save(
+        service: ThirdPartyService,
+        validation: ServiceURLValidation,
+        clearHealthResult: Bool = true
+    ) async {
         guard validation.canPersist else { return }
         savingServiceID = service.id
         defer { savingServiceID = nil }
@@ -222,8 +230,9 @@ struct ServicesSettingsTab: View {
         }
 
         await dependencies.setServiceURL(urlToPersist, for: service)
-        // 保存后清掉旧的健康检查结果——URL 已变，旧结果与新 URL 无关，留着误导。
-        healthResults[service.id] = nil
+        if clearHealthResult {
+            healthResults[service.id] = nil
+        }
     }
 
     /// 重置某服务的 URL（清持久化 + actor 回 production）。同时清空草稿。
@@ -237,6 +246,11 @@ struct ServicesSettingsTab: View {
 
     /// 测试连接。用当前**草稿**的 URL（如果合法），否则用"当前生效"URL（已保存的或默认）。
     /// 这样用户即使没点保存，也能先测一下新地址是否通。
+    ///
+    /// **测试通过 + 草稿与持久化值不一致 → 自动保存**（2026-06-08 dong4j 反馈）。
+    /// 省去用户"测一下 → 点保存"的二次点击；空 URL（用默认）测试通过时不触发保存
+    /// （本来就和持久化默认一致，没东西可写）。`save` 传 `clearHealthResult: false`
+    /// 保留刚拿到的 ✓ Reachable 状态。
     private func testConnection(for service: ThirdPartyService) async {
         probingServiceID = service.id
         defer { probingServiceID = nil }
@@ -251,6 +265,14 @@ struct ServicesSettingsTab: View {
 
         let outcome = await dependencies.serviceHealthChecker.check(service: service, baseURL: baseURL)
         healthResults[service.id] = outcome
+
+        // 自动保存路径：仅当通过测试 + 用户填了自定义 URL + 草稿与持久化值不同时触发。
+        // `.empty` 状态测的是 production，不需要保存（持久化为空 = 用默认，本就一致）。
+        if case .ok = outcome,
+           case .valid = validation,
+           isDraftDirty(for: service) {
+            await save(service: service, validation: validation, clearHealthResult: false)
+        }
     }
 
     // MARK: - Helpers

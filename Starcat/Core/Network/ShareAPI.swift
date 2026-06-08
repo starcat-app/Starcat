@@ -68,7 +68,7 @@ actor ShareAPI {
     }
 
     func shareRepo(request: ShareRepoRequest) async throws -> ShareResponseDTO {
-        let url = baseURL.appendingPathComponent("share")
+        let url = AppEndpoints.appendPath(AppEndpoints.Sharing.Paths.share, to: baseURL)
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")

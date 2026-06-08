@@ -26,7 +26,7 @@ extension GitHubAPIClient {
         ifModifiedSince: String? = nil
     ) async throws -> BytesResponse {
         try await getBytes(
-            path: "/repos/\(owner)/\(repo)/readme",
+            path: AppEndpoints.GitHubREST.Paths.repoReadme(owner: owner, repo: repo),
             accept: "application/vnd.github.html",
             ifNoneMatch: ifNoneMatch,
             ifModifiedSince: ifModifiedSince

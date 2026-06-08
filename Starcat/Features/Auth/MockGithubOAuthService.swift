@@ -36,7 +36,7 @@ final class MockGithubOAuthService: GithubOAuthServiceProtocol, @unchecked Senda
         AppLog.auth.info("MockGithubOAuthService.beginDeviceFlow")
         return OAuthDeviceCodeInfo(
             userCode: "MOCK-DEV",
-            verificationURI: URL(string: "https://github.com/login/device")!,
+            verificationURI: AppEndpoints.GitHubOAuth.url(AppEndpoints.GitHubOAuth.Paths.deviceVerification),
             expiresIn: 600,
             pollInterval: 1
         )
