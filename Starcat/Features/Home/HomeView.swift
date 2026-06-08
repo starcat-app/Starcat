@@ -190,7 +190,14 @@ struct HomeView: View {
                 .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
         } detail: {
             if selectedSidebarPage == .activity {
-                ActivityDetailView(item: selectedActivityItem)
+                if selectedActivityCategory == .weekly {
+                    // MUL-176 followup：weekly 分类右侧详情独立路由到 WeeklyDetailView，
+                    // 不复用 ActivityDetailView——weekly 项目没有本地 Repo 缓存，且要展示
+                    // 期号 / 周刊原文等专属字段（详情数据来自 WeeklySelectionService）。
+                    WeeklyDetailView(project: dependencies.weeklySelectionService.selectedProject)
+                } else {
+                    ActivityDetailView(item: selectedActivityItem)
+                }
             } else {
                 RepoDetailView(
                     selectedTrendingRepo: selectedTrendingRepo
@@ -495,6 +502,9 @@ struct HomeView: View {
             selectedTrendingRepoID = nil
             selectedTrendingRepo = nil
             selectedActivityItem = nil
+            // MUL-176 followup：切走 Activity 时一并清掉周刊选中，避免下次回 Activity
+            // 时右侧详情停留在上次的周刊项目上。
+            dependencies.weeklySelectionService.clearSelection()
 
             // 恢复新页面的状态
             switch newPage {
@@ -516,6 +526,10 @@ struct HomeView: View {
             guard selectedSidebarPage == .activity else { return }
             savedActivityCategory = newCategory
             settings.lastActivityCategoryRaw = newCategory.persistedRawValue
+            // 切走 weekly 分类时清掉周刊详情选中；切到 weekly 时不动（首次进入由列表点击触发）。
+            if newCategory != .weekly {
+                dependencies.weeklySelectionService.clearSelection()
+            }
         }
     }
 
