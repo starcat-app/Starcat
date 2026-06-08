@@ -166,6 +166,18 @@ struct GRDBRepoRepository {
         }
     }
 
+    /// 按 owner / name 找单条 repo 记录（2026-06-08 引入，Weekly 详情页用）。
+    ///
+    /// 用 `full_name` 列（已建唯一索引）一次定位，效率比 `owner = ? AND name = ?` 复合过滤高；
+    /// 调用方传入 owner / name 由本方法内部拼 `owner/name` 字符串，避免散落拼接出错。
+    /// 不限制 `is_starred = true`：用户 star 后取消的"墓碑行"也会命中，调用方按 `repo.isStarred` 决定 UI。
+    func findByOwnerName(owner: String, name: String) async throws -> Repo? {
+        let fullName = "\(owner)/\(name)"
+        return try await writer.read { db in
+            try Repo.filter(Column("full_name") == fullName).fetchOne(db)
+        }
+    }
+
     /// 未打标签的 repo（Sidebar "Untagged" 入口）。
     /// 实现：左联 repo_tags 找出无关联记录的 repos。
     func fetchUntagged() async throws -> [Repo] {
@@ -299,9 +311,18 @@ struct GRDBRepoRepository {
 
     // MARK: - DTO → Model 映射
 
-    /// 把 GitHubRepoDTO 映射为本地 Repo 模型。
-    /// topics 数组序列化为 JSON 字符串入库。
-    static func repoFromDTO(_ dto: GitHubRepoDTO, starredAt: String?, cachedAt: String) -> Repo {
+    /// 把 GitHubRepoDTO 映射为本地 Repo 模型（**不入库** / 入库通用 builder）。
+    ///
+    /// ⚠️ 2026-06-08 起函数语义扩展：
+    /// 旧版（HOM-47 之前）仅用于"starred 同步入库"路径，调用方一定走 `upsertStarred`，所以
+    /// `isStarred` 写死为 `true`。
+    /// 新增 `isStarred: Bool = true` 可选参数：Weekly 详情页（D-21 候选）需要把 `repo(owner:repo:)`
+    /// 拉回的 DTO 转成一个"用于 UI 展示但不入库"的临时 `Repo`——这种场景 `isStarred=false`、
+    /// `starredAt=nil`，避免误造成"已 star"的视觉假象。
+    /// 默认 `true` 让旧调用点（`upsertStarred`）完全不动；新场景显式传 `false`。
+    ///
+    /// topics 数组序列化为 JSON 字符串（与 GRDB 行映射保持一致；UI 侧 `Repo.topicsArray` 反序列化）。
+    static func repoFromDTO(_ dto: GitHubRepoDTO, starredAt: String?, cachedAt: String, isStarred: Bool = true) -> Repo {
         let topicsJSON: String? = {
             guard let topics = dto.topics, !topics.isEmpty else { return nil }
             guard let data = try? JSONEncoder().encode(topics),
@@ -330,7 +351,7 @@ struct GRDBRepoRepository {
             isPrivate: dto.isPrivate,
             isFork: dto.fork,
             isArchived: dto.archived,
-            isStarred: true,
+            isStarred: isStarred,
             pushedAt: dto.pushedAt,
             createdAt: dto.createdAt,
             updatedAt: dto.updatedAt,
@@ -339,6 +360,17 @@ struct GRDBRepoRepository {
         )
     }
 }
+
+// MARK: - Sendable
+
+/// `Sendable` conformance 必须与 `GRDBRepoRepository` 定义同文件（Swift 6 严格模式约束，
+/// 跨文件 conformance 会触发 "conformance to 'Sendable' must occur in the same source
+/// file" 警告）。所以即便 `RepoRepositoryProtocol`（继承 `Sendable`）的实现声明保留在
+/// `RepoRepositoryProtocol.swift`（D-01 决策），`Sendable` 这一条仍要单独在这里声明。
+///
+/// 安全性：本 struct 唯一存储属性 `writer: any DatabaseWriter` —— GRDB 的 `DatabaseWriter`
+/// 协议本身就是 `Sendable` 的，所以编译器可自动合成 Sendable（不需要 `@unchecked`）。
+extension GRDBRepoRepository: Sendable {}
 
 // MARK: - ISO8601 helper
 
