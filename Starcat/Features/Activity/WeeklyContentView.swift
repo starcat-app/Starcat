@@ -10,11 +10,15 @@
 //  设计约束：
 //  - 不复用 ActivityViewModel 的本地聚合逻辑：weekly 是远端分页 + 筛选 + 排序，
 //    塞进 ActivityViewModel 会污染其"本地缓存聚合"语义。
-//  - 列表点击 → 直接外链跳转 GitHub（用 NSWorkspace），不进右侧 detail pane，
-//    因为这些项目都是用户没 star 过的远端项目，本地 Repo 缓存里没有对应记录，
-//    复用 ActivityDetailView 会撞空，反而误导用户。
+//  - 列表点击 → 写入 `WeeklySelectionService.selectedProject`，由 HomeView 详情区
+//    路由到 `WeeklyDetailView`（不再直接外链）。详情页内才提供"在 GitHub 打开"按钮。
+//    这次改动前是 `NSWorkspace.open(project.url)` 直接跳浏览器，被反馈无法预览所以
+//    重新接回 detail pane；新建 `WeeklyDetailView` 而非复用 `ActivityDetailView`，
+//    因为 weekly 还要展示期号 / 周刊原文等专属字段。
 //  - 分页是"无限滚动"：到达列表底部时自动加载下一页；不放手动"加载更多"按钮，
 //    与 macOS 上 List 的自然滚动体验一致。
+//  - 列表顶部 toolbar 只保留"筛选 + 刷新"，移除了"x 项"文本——计数挪到 sidebar 的
+//    周刊分类右侧徽章（仿 manage Languages 计数样式），见 `WeeklySelectionService`。
 //
 
 import SwiftUI
@@ -29,6 +33,10 @@ struct WeeklyContentView: View {
     @Environment(AppSettings.self) private var settings
 
     @State private var viewModel: WeeklyContentViewModel?
+
+    /// 刷新按钮转圈用的 spinning 角度（reduceMotion 时直接显示 ProgressView 替代）。
+    @State private var refreshAngle: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
@@ -108,22 +116,37 @@ struct WeeklyContentView: View {
 
             Spacer()
 
-            if let total = viewModel.totalText {
-                Text(total)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            refreshButton(viewModel)
+        }
+    }
 
-            Button {
-                Task { await viewModel.reload() }
-            } label: {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.caption)
+    /// 顶部刷新按钮。
+    ///
+    /// 视觉与 ActivityView 同款：常态显示 `arrow.triangle.2.circlepath`；
+    /// 触发后整图按 0.9s 一圈匀速旋转，loading 结束角度归零。
+    /// reduceMotion 时不做旋转，仅置灰禁用，避免对前庭敏感用户造成不适。
+    @ViewBuilder
+    private func refreshButton(_ viewModel: WeeklyContentViewModel) -> some View {
+        Button {
+            Task { await viewModel.reload() }
+        } label: {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.caption)
+                .rotationEffect(.degrees(refreshAngle))
+                .animation(reduceMotion ? nil : .linear(duration: 0.9).repeatForever(autoreverses: false), value: refreshAngle)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(viewModel.isLoading)
+        .help("weekly.refresh")
+        .onChange(of: viewModel.isLoading) { _, isLoading in
+            // isLoading→true 时把角度从 0 推到 360 触发 repeatForever 循环；
+            // 结束时回到 0 让动画安静收尾（隐式过渡也用同一 linear 曲线避免卡顿）。
+            if isLoading {
+                refreshAngle = 360
+            } else {
+                refreshAngle = 0
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .disabled(viewModel.isLoading)
-            .help("weekly.refresh")
         }
     }
 
@@ -137,12 +160,17 @@ struct WeeklyContentView: View {
     // MARK: - Project List
 
     private func projectList(_ viewModel: WeeklyContentViewModel) -> some View {
-        List {
+        let selection = dependencies.weeklySelectionService
+        return List {
             ForEach(Array(viewModel.items.enumerated()), id: \.element.id) { index, project in
                 Button {
-                    open(project.url)
+                    selection.select(project)
                 } label: {
-                    WeeklyProjectRow(project: project, density: settings.listDensity)
+                    WeeklyProjectRow(
+                        project: project,
+                        density: settings.listDensity,
+                        isSelected: selection.selectedProject?.id == project.id
+                    )
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
@@ -191,7 +219,10 @@ struct WeeklyContentView: View {
 
     private func ensureViewModel() -> WeeklyContentViewModel {
         if let viewModel { return viewModel }
-        let model = WeeklyContentViewModel(api: dependencies.weeklyAPI)
+        let model = WeeklyContentViewModel(
+            api: dependencies.weeklyAPI,
+            selectionService: dependencies.weeklySelectionService
+        )
         viewModel = model
         return model
     }
@@ -250,6 +281,13 @@ struct WeeklyContentView: View {
 private struct WeeklyProjectRow: View {
     let project: WeeklyProject
     let density: RepoListDensity
+    /// 当前行是否处于"详情页选中态"。配合 ActivityRow 的视觉语言：
+    /// - 背景透明度从 0.045/0.0 抬到 0.18；
+    /// - 左侧加 3pt accent 竖条 + 内容向右挪 5pt；
+    /// - 标题加粗。整套样式与 `ActivityRowSurface` 对齐，给用户一致的"被选中"感知。
+    let isSelected: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var accentColor: Color {
         if let language = project.language, !language.isEmpty {
@@ -259,12 +297,15 @@ private struct WeeklyProjectRow: View {
     }
 
     var body: some View {
-        switch density {
-        case .compact:
-            compact
-        case .card:
-            card
+        Group {
+            switch density {
+            case .compact:
+                compact
+            case .card:
+                card
+            }
         }
+        .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.82), value: isSelected)
     }
 
     private var compact: some View {
@@ -276,7 +317,7 @@ private struct WeeklyProjectRow: View {
             )
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: project.fullName)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if let desc = project.description, !desc.isEmpty {
@@ -292,6 +333,17 @@ private struct WeeklyProjectRow: View {
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
+        .padding(.leading, isSelected ? 5 : 0)
+        .background {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(accentColor.opacity(isSelected ? 0.18 : 0.0))
+        }
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(accentColor)
+                .frame(width: isSelected ? 3 : 0)
+                .padding(.vertical, 6)
+        }
     }
 
     private var card: some View {
@@ -329,13 +381,20 @@ private struct WeeklyProjectRow: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
+        .padding(.leading, isSelected ? 5 : 0)
         .background {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(accentColor.opacity(0.045))
+                .fill(accentColor.opacity(isSelected ? 0.18 : 0.045))
+        }
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(accentColor)
+                .frame(width: isSelected ? 3 : 0)
+                .padding(.vertical, 8)
         }
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(accentColor.opacity(0.10), lineWidth: 1)
+                .stroke(accentColor.opacity(isSelected ? 0.42 : 0.10), lineWidth: 1)
         }
     }
 }
@@ -393,12 +452,17 @@ final class WeeklyContentViewModel {
     // MARK: - Dependencies
 
     private let api: WeeklyAPI
+    /// 把 total 推到外部 sidebar 计数徽章 / detail pane 路由的共享状态。
+    /// 解耦 sidebar 与列表 ViewModel：sidebar 不直接持有 ViewModel，避免双向依赖。
+    private let selectionService: WeeklySelectionService?
+
     /// 标记当前 in-flight 请求的代次；切换筛选 / reload 时 bump，
     /// 旧请求即便回来也会因为代次不匹配而被丢弃，避免顺序错乱。
     private var generation: Int = 0
 
-    init(api: WeeklyAPI) {
+    init(api: WeeklyAPI, selectionService: WeeklySelectionService? = nil) {
         self.api = api
+        self.selectionService = selectionService
     }
 
     // MARK: - Public
@@ -430,6 +494,7 @@ final class WeeklyContentViewModel {
             page = result.page
             hasMore = result.hasMore
             itemsRevision += 1
+            selectionService?.applyTotal(result.total)
         } catch {
             guard myGen == generation else { return }
             loadError = error.localizedDescription
@@ -470,6 +535,7 @@ final class WeeklyContentViewModel {
             page = result.page
             total = result.total
             hasMore = result.hasMore
+            selectionService?.applyTotal(result.total)
         } catch {
             guard myGen == generation else { return }
             loadError = error.localizedDescription
@@ -496,12 +562,6 @@ final class WeeklyContentViewModel {
         guard hasMore, !isLoading, !isLoadingMore else { return false }
         let threshold = max(items.count - 3, 0)
         return index >= threshold
-    }
-
-    /// 顶部右侧显示"x 项"的友好文本；total 为 0 时返回 nil 让 UI 隐藏。
-    var totalText: String? {
-        guard total > 0 else { return nil }
-        return String(format: String(localized: "weekly.totalCountFormat"), total)
     }
 
     // MARK: - Private
