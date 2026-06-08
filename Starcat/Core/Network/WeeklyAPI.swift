@@ -54,18 +54,22 @@ actor WeeklyAPI {
 
     // MARK: - Properties
 
-    private let baseURL: URL
+    /// 当前 baseURL；通过 `updateBaseURL(_:)` 热更新（设置页改地址后立即生效）。
+    /// 之所以是 `var`：用户在 ServicesSettingsTab 改地址会触发 `AppDependencies`
+    /// 调本 actor 的 `updateBaseURL`，actor 串行化保证写入与下一次 build URL 的读
+    /// 之间不会撕裂。
+    private var baseURL: URL
     private let session: URLSession
     private let decoder: JSONDecoder
 
     // MARK: - Initialization
 
     /// - Parameters:
-    ///   - baseURL: 后端域名；默认走 `AppEndpoints.weekly`（生产 = fly.io，DEBUG 期可被
-    ///     `STARCAT_WEEKLY_API_URL` 环境变量覆盖到本地，详见 `AppEndpoints.swift`）。
+    ///   - baseURL: 后端域名；DI 装配处由 `AppDependencies` 从 `AppEndpoints.weekly` 注入，
+    ///     用户在设置页改地址后 `updateBaseURL(_:)` 热更新。
     ///   - session: 注入自定义 URLSession（一般用于单测 mock）；为 nil 走默认配置。
     init(
-        baseURL: URL = AppEndpoints.weekly,
+        baseURL: URL,
         session: URLSession? = nil
     ) {
         self.baseURL = baseURL
@@ -86,6 +90,15 @@ actor WeeklyAPI {
     }
 
     // MARK: - Public API
+
+    /// 热更新 baseURL（用户在设置页改地址后由 `AppDependencies` 推送进来）。
+    ///
+    /// 不需要重启 App：actor 串行化让"更新 URL"与"用新 URL 发请求"按调用顺序执行。
+    /// 已经在飞行中的请求（用旧 URL 发出去的）按旧 URL 跑完，不会被中途打断。
+    func updateBaseURL(_ url: URL) {
+        AppLog.network.info("WeeklyAPI baseURL updated to \(url.absoluteString, privacy: .public)")
+        self.baseURL = url
+    }
 
     /// 拉取周刊项目分页列表。
     ///
