@@ -127,7 +127,7 @@ struct TrendingRepo: Identifiable, Equatable {
         self.owner = parts.count > 0 ? String(parts[0]) : ""
         self.name = parts.count > 1 ? String(parts[1]) : cleanPath
 
-        self.url = URL(string: "https://github.com/\(cleanPath)")!
+        self.url = GitHubURLs.repo(fullName: cleanPath)
         self.description = dto.desc
         self.language = dto.lang
         self.starsCount = dto.stars
@@ -144,7 +144,7 @@ struct TrendingRepo: Identifiable, Equatable {
             return Contributor(
                 username: username,
                 avatarURL: URL(string: c.avatar),
-                profileURL: URL(string: "https://github.com/\(username)")
+                profileURL: GitHubURLs.userProfile(login: username)
             )
         }
     }

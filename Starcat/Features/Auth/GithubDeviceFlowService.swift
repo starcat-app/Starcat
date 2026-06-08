@@ -28,7 +28,9 @@ actor GithubDeviceFlowService: GithubOAuthServiceProtocol {
     private let clientID: String
     private let scopes: [String]
     private let session: URLSession
-    private let oauthBaseURL: URL = URL(string: "https://github.com")!
+    /// OAuth 主域 root。2026-06-08 起改为引用 `AppEndpoints.GitHubOAuth.baseURL`
+    /// 集中管理，不再保留本地 hardcoded URL。
+    private let oauthBaseURL: URL = AppEndpoints.GitHubOAuth.baseURL
 
     // MARK: - 流程状态
 
@@ -58,7 +60,7 @@ actor GithubDeviceFlowService: GithubOAuthServiceProtocol {
             throw GithubOAuthError.configurationMissing(reason: String(localized: "auth.error.clientIdMissing"))
         }
 
-        let url = oauthBaseURL.appendingPathComponent("/login/device/code")
+        let url = AppEndpoints.appendPath(AppEndpoints.GitHubOAuth.Paths.deviceCode, to: oauthBaseURL)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -171,7 +173,7 @@ actor GithubDeviceFlowService: GithubOAuthServiceProtocol {
     }
 
     private func pollOnce(deviceCode: String) async throws -> PollResult {
-        let url = oauthBaseURL.appendingPathComponent("/login/oauth/access_token")
+        let url = AppEndpoints.appendPath(AppEndpoints.GitHubOAuth.Paths.accessToken, to: oauthBaseURL)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")

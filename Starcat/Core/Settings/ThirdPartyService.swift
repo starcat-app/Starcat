@@ -102,27 +102,24 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// 健康检查路径（拼接到 baseURL 后面，构造 `GET <baseURL>/healthz`）。
-    /// 三个服务约定都暴露这个端点，返回 200 即视为可用。
-    ///
-    /// 注意 `sharing` 的 baseURL 含 `/api` 后缀，但 `/healthz` 通常挂在根路径，
-    /// 所以这里走 `healthCheckURL(for:base:)` 时会**剥掉** `/api` 后再拼。
-    var healthCheckPath: String { "/healthz" }
-
     /// 给定生效 baseURL 构造健康检查 URL。
     ///
-    /// 处理 `sharing` 的特殊情况：baseURL 是 `https://.../api`，`/healthz` 挂在根路径。
-    /// 实现：如果 baseURL path 以 `/api` 结尾，则去掉再拼 `/healthz`；否则直接拼。
-    /// 这样 trending（baseURL 无 path）/ weekly（无）/ sharing（`/api`）三种约定都能命中。
+    /// healthz path 由各自命名空间下的 `Paths.healthz` 提供（sharing 例外，见下）。
+    /// 调用方一般是 `ServiceHealthChecker`，传入"当前生效"或"用户草稿"的 baseURL，
+    /// 让"测试连接"按钮不依赖已持久化的值，能预先验证草稿。
+    ///
+    /// **sharing 的特殊处理**：sharing 的 baseURL 含 `/api` 后缀（业务请求语义），
+    /// 而 `/healthz` 挂在根路径，所以走 `AppEndpoints.Sharing.healthzURL(over:)` 单独
+    /// 处理（内部会剥掉 `/api` 再拼）。weekly / trending 无此特例，直接 appendPath。
     func healthCheckURL(base: URL) -> URL {
-        let trimmedBase: URL
-        if base.path.hasSuffix("/api") {
-            // 去掉 `/api` 后缀。`deletingLastPathComponent` 会把它当作 path component 移除。
-            trimmedBase = base.deletingLastPathComponent()
-        } else {
-            trimmedBase = base
+        switch self {
+        case .weekly:
+            return AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.healthz, to: base)
+        case .trending:
+            return AppEndpoints.appendPath(AppEndpoints.Trending.Paths.healthz, to: base)
+        case .sharing:
+            return AppEndpoints.Sharing.healthzURL(over: base)
         }
-        return trimmedBase.appendingPathComponent(healthCheckPath.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
     }
 }
 
