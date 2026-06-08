@@ -141,7 +141,8 @@ actor WeeklyAPI {
         language: String?,
         sort: WeeklySort
     ) throws -> URL {
-        var components = URLComponents(url: baseURL.appendingPathComponent("api/weekly/projects"), resolvingAgainstBaseURL: false)
+        let endpoint = AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.projects, to: baseURL)
+        var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "page", value: String(page)),
             URLQueryItem(name: "page_size", value: String(pageSize)),

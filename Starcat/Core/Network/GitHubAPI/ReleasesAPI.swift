@@ -31,6 +31,9 @@ extension GitHubAPIClient {
             URLQueryItem(name: "per_page", value: String(perPage)),
             URLQueryItem(name: "page", value: "1"),
         ]
-        return try await get(path: "/repos/\(owner)/\(repo)/releases", queryItems: query)
+        return try await get(
+            path: AppEndpoints.GitHubREST.Paths.repoReleases(owner: owner, repo: repo),
+            queryItems: query
+        )
     }
 }

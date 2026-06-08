@@ -32,7 +32,7 @@ extension GitHubAPIClient {
             URLQueryItem(name: "direction", value: "desc")
         ]
         return try await get(
-            path: "/user/starred",
+            path: AppEndpoints.GitHubREST.Paths.userStarred,
             queryItems: query,
             accept: "application/vnd.github.star+json",
             ifNoneMatch: ifNoneMatch
@@ -41,12 +41,12 @@ extension GitHubAPIClient {
 
     /// 取消 star。
     func unstar(owner: String, repo: String) async throws {
-        try await delete(path: "/user/starred/\(owner)/\(repo)")
+        try await delete(path: AppEndpoints.GitHubREST.Paths.starRepo(owner: owner, repo: repo))
     }
 
     /// 重新 star（仅作为接口完备性提供，UI 暂不调用）。
     func star(owner: String, repo: String) async throws {
-        try await put(path: "/user/starred/\(owner)/\(repo)")
+        try await put(path: AppEndpoints.GitHubREST.Paths.starRepo(owner: owner, repo: repo))
     }
 
     // MARK: - Subscription (Watch)
@@ -72,7 +72,7 @@ extension GitHubAPIClient {
     /// 配额信息 `rl=4983/5000` 表示当前 1 小时窗口内 API 配额还剩多少。
     func getSubscription(owner: String, repo: String) async throws -> GitHubSubscriptionDTO {
         let response: APIResponse<GitHubSubscriptionDTO> = try await get(
-            path: "/repos/\(owner)/\(repo)/subscription"
+            path: AppEndpoints.GitHubREST.Paths.repoSubscription(owner: owner, repo: repo)
         )
         return response.value
     }
@@ -81,7 +81,7 @@ extension GitHubAPIClient {
     func putSubscription(owner: String, repo: String, subscribed: Bool, ignored: Bool) async throws -> GitHubSubscriptionDTO {
         let body = GitHubSubscriptionRequestDTO(subscribed: subscribed, ignored: ignored)
         let response: APIResponse<GitHubSubscriptionDTO> = try await put(
-            path: "/repos/\(owner)/\(repo)/subscription",
+            path: AppEndpoints.GitHubREST.Paths.repoSubscription(owner: owner, repo: repo),
             body: body
         )
         return response.value
@@ -89,6 +89,6 @@ extension GitHubAPIClient {
 
     /// 取消 Watch
     func deleteSubscription(owner: String, repo: String) async throws {
-        try await delete(path: "/repos/\(owner)/\(repo)/subscription")
+        try await delete(path: AppEndpoints.GitHubREST.Paths.repoSubscription(owner: owner, repo: repo))
     }
 }
