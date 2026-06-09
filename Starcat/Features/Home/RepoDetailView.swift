@@ -170,20 +170,9 @@ struct RepoDetailView: View {
     // trendingStatsSection / trendingContributorsSection / contributorAvatar /
     // trendingReadmeSection / starTrending / TrendingHeroAvatarButton）已全部删除。
 
-    /// 将 scroll offset 映射为顶部元信息面板的折叠进度。
-    ///
-    /// 抽成静态 helper 是为了让 Manage / Trending / Activity 保持同一参数口径；
-    /// 后续如果 dong4j 继续调手感，只需要改这里这一处。
-    ///
-    /// **保留位置**：`RepoDetailScaffold` 内部已经 inline 同款算法；本静态 helper
-    /// 仅供 `WeeklyDetailView`（仍未迁移到 Scaffold）调用。Phase B5 把 Weekly 也迁
-    /// 到 Scaffold 后即可彻底删除。
-    static func metadataCollapseProgress(for offsetY: CGFloat) -> CGFloat {
-        let normalizedOffset = max(offsetY, 0)
-        let collapseStart: CGFloat = 8
-        let collapseDistance: CGFloat = 64
-        return min(max((normalizedOffset - collapseStart) / collapseDistance, 0), 1)
-    }
+    // R-01 §3.2.3 Phase B5（2026-06-10）：原 `metadataCollapseProgress(for:)` 静态
+    // helper 已删除——Manage / Trending / Weekly / Activity-repo-backed 全部走
+    // `RepoDetailScaffold.metadataCollapseProgress(for:)`，单点维护折叠手感。
 
     // MARK: - 空态
 
