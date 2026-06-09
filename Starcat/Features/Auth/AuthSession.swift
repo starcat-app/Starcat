@@ -72,6 +72,16 @@ final class AuthSession {
     /// 这样避免两者构造器循环依赖。
     var userProfileService: UserProfileService?
 
+    /// R-01（2026-06-09）：登出 / 会话失效时的回调。
+    ///
+    /// 注入方：`AppDependencies` 用此 hook 让 `StarredRegistryBootstrapper.clearOnSignOut()`
+    /// 在 token 被清除的瞬间把 registry 也清空，避免下个用户登录后看到上个用户的
+    /// star 状态（registry 与 token 必须同步）。
+    ///
+    /// 调用时机：① `signOut()` 主动登出末尾；② `invalidateSession()` 401 被动失效末尾。
+    /// 仅在状态成功切到 `.unauthenticated` 之后调用。
+    var onSignOut: (@MainActor () -> Void)?
+
     /// 当前进行中的 Device Flow 轮询 Task，便于取消。
     private var pollingTask: Task<Void, Never>?
 
@@ -227,6 +237,8 @@ final class AuthSession {
         userProfileService?.reset(login: currentLogin)
         state = .unauthenticated
         lastError = nil
+        // R-01：清空 StarredRegistry，避免下个用户登录看到上个用户的 star 状态
+        onSignOut?()
         AppLog.auth.info("Signed out")
     }
 
@@ -259,6 +271,8 @@ final class AuthSession {
         state = .unauthenticated
         // 复用 network.error.unauthorized 文案（"未授权，请重新登录。"）在登录页提示用户。
         lastError = NetworkError.unauthorized
+        // R-01：清空 StarredRegistry（与 token 同步失效）
+        onSignOut?()
     }
 
     // MARK: - 接收 service 推送的最新 user（反向 push）
