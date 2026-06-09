@@ -84,22 +84,27 @@ struct TrendingDetailContent: View {
 /// - 头像 32pt，与 `.title3` Stars/Forks 视觉权重对齐
 /// - 最多显示 6 个，溢出用 "+N"
 /// - 每个头像包在 `Button { NSWorkspace.open(profileURL) }`，点击跳 GitHub profile
-/// - `.help(login)` hover 显示 username
+/// - `.help(username)` hover 显示 username
 /// - 头像之间负 spacing -10 实现重叠效果
 ///
 /// **为什么不用 `Link(destination:)`**：
 /// macOS 上 `Link` 外层 `.help()` 的 NSView.toolTip 传不到 Link 内部，hover 不会
 /// 弹 tooltip。详见 `RepoDetailView.swift` 的 `contributorAvatar` 注释。
+///
+/// **入参为什么是 `TrendingRepo.Contributor` 而非 DTO 类型**：
+/// R-01 v1.2 Phase B（2026-06-10）：trending 列表 row 已经走 `TrendingRepo.asCardData(...)`
+/// 转 `RepoCardViewData`，详情页也直接消费 `TrendingRepo` 模型；上游 DTO 在 ViewModel
+/// 解析阶段就已被映射成 `TrendingRepo.Contributor`，本视图无需再依赖 DTO 类型。
 struct TrendingContributorsSection: View {
 
-    let contributors: [StarcatRepoCardDTO.TrendingContributor]
+    let contributors: [TrendingRepo.Contributor]
 
     var body: some View {
         if contributors.isEmpty {
             EmptyView()
         } else {
             HStack(spacing: -10) {
-                ForEach(contributors.prefix(6), id: \.login) { contributor in
+                ForEach(contributors.prefix(6)) { contributor in
                     contributorAvatar(contributor)
                 }
                 if contributors.count > 6 {
@@ -116,23 +121,25 @@ struct TrendingContributorsSection: View {
     }
 
     @ViewBuilder
-    private func contributorAvatar(_ contributor: StarcatRepoCardDTO.TrendingContributor) -> some View {
-        Button {
-            // GitHub profile URL 用 login 拼接（与原 trending 一致）。
-            if let url = URL(string: "https://github.com/\(contributor.login)") {
-                NSWorkspace.shared.open(url)
+    private func contributorAvatar(_ contributor: TrendingRepo.Contributor) -> some View {
+        if let profileURL = contributor.profileURL {
+            Button {
+                NSWorkspace.shared.open(profileURL)
+            } label: {
+                avatarImage(contributor)
             }
-        } label: {
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pressableHover()
+            .help(contributor.username)
+        } else {
             avatarImage(contributor)
+                .help(contributor.username)
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .pressableHover()
-        .help(contributor.login)
     }
 
-    private func avatarImage(_ contributor: StarcatRepoCardDTO.TrendingContributor) -> some View {
-        AsyncImage(url: contributor.avatar) { image in
+    private func avatarImage(_ contributor: TrendingRepo.Contributor) -> some View {
+        AsyncImage(url: contributor.avatarURL) { image in
             image.resizable().scaledToFit()
         } placeholder: {
             Circle().fill(Color.gray.opacity(0.3))

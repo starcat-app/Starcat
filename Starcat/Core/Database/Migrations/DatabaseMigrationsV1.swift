@@ -39,6 +39,7 @@ enum DatabaseMigrations {
         registerV6(into: &migrator)
         registerV7(into: &migrator)
         registerV8(into: &migrator)
+        registerV9(into: &migrator)
     }
 
     // MARK: - v8（R-01 StarcatRepoCardDTO v1.2 新字段消化）
@@ -86,6 +87,31 @@ enum DatabaseMigrations {
             try db.execute(sql: "ALTER TABLE trending_repos ADD COLUMN subscribers_count INTEGER")
             try db.execute(sql: "ALTER TABLE trending_repos ADD COLUMN default_branch TEXT")
             try db.execute(sql: "ALTER TABLE trending_repos ADD COLUMN open_issues_count INTEGER")
+        }
+    }
+
+    // MARK: - v9（R-01 v1.2 trending_repos.gh_repo_id 跨场景标记 PK）
+
+    /// v9：`trending_repos` 表加 `gh_repo_id` 列（R-01 v1.2 跨场景 ✓ 标记必备）。
+    ///
+    /// **背景**：R-01 §3.1.2 跨场景标记设计要求：trending row 通过
+    /// `StarredRegistry.contains(ghRepoId:)` 判断当前用户是否已 star。
+    /// `RepoCardViewData.id = Int64 (ghRepoId)` 是稳定主键（rename 不漂移）。
+    ///
+    /// **为什么 v8 没一并加**：v8 落地（2026-06-10 早些时）时仅消化 4 个最常用
+    /// hero 字段（owner_avatar / subscribers_count / default_branch /
+    /// open_issues_count）。`gh_repo_id` 当时被列入「v1.2 边界内但 trending UI
+    /// 暂不需要」清单——因为 trending 列表 row 还在用旧 `TrendingRepoRowView`，
+    /// 列表诊断键用 fullName 不依赖 ghRepoId。R-01 v1.2 Phase B 切到 UnifiedRepoRow
+    /// 后，跨场景 ✓ 标记必须 ghRepoId，所以单独提一次 v9 解锁。
+    ///
+    /// **NULL 兼容**：`gh_repo_id INTEGER`（无 NOT NULL），v8 之前的行迁移到 v9 后
+    /// 该列为 NULL；下次 `fetchTrending` 网络回来整批替换时被填实（trending v1.2
+    /// envelope 永远返回 ghRepoId）。`TrendingRepoRecord.toDomain()` 把 NULL 当 0
+    /// 处理，UI 看到 0 哨兵 = 过渡 row（registry 永远不命中 → ✓ 标记不出现，可接受）。
+    private static func registerV9(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v9-trending-gh-repo-id") { db in
+            try db.execute(sql: "ALTER TABLE trending_repos ADD COLUMN gh_repo_id INTEGER")
         }
     }
 

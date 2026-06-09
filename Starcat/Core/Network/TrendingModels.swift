@@ -31,6 +31,14 @@ struct TrendingRepo: Identifiable, Equatable {
     /// 唯一标识（使用 fullName 作为 id）
     var id: String { fullName }
 
+    /// GitHub repo 数字 id。
+    ///
+    /// R-01 v1.2（2026-06-10）：从 `StarcatRepoCardDTO.ghRepoId` 透传。trending 列表
+    /// 内部 SwiftUI diff 仍用 `fullName`（兼容旧 selection binding）；`ghRepoId` 主要
+    /// 给 `RepoCardViewData.id`（UnifiedRepoRow row diff key）+ `StarredRegistry.contains`
+    /// 使用——后者是设计 §3.1.2 跨场景标记的核心入口。
+    let ghRepoId: Int64
+
     /// owner/repo 格式完整名
     let fullName: String
 
@@ -98,6 +106,7 @@ struct TrendingRepo: Identifiable, Equatable {
     ///   `watchers` / `topics` / `homepage` / `license_spdx` /
     ///   `is_archived` / `is_fork` / `is_private` / `pushed_at` / `updated_at` / `created_at`
     init(card: StarcatRepoCardDTO, since: TrendingPeriod) {
+        self.ghRepoId = card.ghRepoId
         self.fullName = card.fullName
         self.owner = card.owner
         self.name = card.repo

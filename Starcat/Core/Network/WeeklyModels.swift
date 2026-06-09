@@ -34,6 +34,14 @@ struct WeeklyProject: Identifiable, Equatable {
     /// 用 owner/repo 作 id：同一仓库不论在多少期出现，UI 都按"项目"维度去重展示。
     var id: String { fullName }
 
+    /// GitHub repo 数字 id（R-01 v1.2，2026-06-10）。
+    ///
+    /// 来自 `StarcatRepoCardDTO.ghRepoId`（后端 enricher 必填，`N5` 决策保证 N6 后
+    /// trending / weekly 列表 100% 携带 ghRepoId）。0 留作历史 / 故障 fallback 哨兵——
+    /// 走到 0 时跨场景 `StarredRegistry.contains(ghRepoId: 0)` 永远命中不到，UI 上等同
+    /// 「此 row 不显示 ✓」，可接受。
+    let ghRepoId: Int64
+
     let owner: String
     let name: String
     let url: URL
@@ -44,6 +52,36 @@ struct WeeklyProject: Identifiable, Equatable {
     let firstIssue: Int
     /// 第一次收录的原始 md URL，方便用户跳到周刊原文上下文。
     let issueURL: URL?
+
+    // MARK: R-01 v1.2 v8 字段（来自 StarcatRepoCardDTO）
+
+    /// 仓库所有者头像 URL（GitHub `owner.avatar_url`）。RepoCardViewData / Hero 直接
+    /// 渲染；缺失时 UI 走 `RepoAvatarURL.from(owner:)` fallback。
+    let ownerAvatar: URL?
+
+    /// Forks 数；后端 enricher 未补全时为 nil（UI 显示 0 / 隐藏）。
+    let forks: Int?
+
+    /// Watchers / subscribers / open_issues / default_branch — Weekly 详情 hero 区
+    /// 复用 Manage / Trending 同款 RepoMetadataHeaderView，必须填齐这些字段。缺失
+    /// 字段以 nil 透传，由 hero 渲染层判断「显示 / 隐藏」。
+    let watchers: Int?
+    let subscribers: Int?
+    let openIssues: Int?
+    let defaultBranch: String?
+
+    let topics: [String]?
+    let homepage: URL?
+    let licenseSpdx: String?
+
+    let isArchived: Bool?
+    let isFork: Bool?
+    let isPrivate: Bool?
+
+    /// 时间戳（ISO8601 字符串），用于 hero 区的 "更新于 X 日" / "创建于 Y 日" 展示。
+    let pushedAt: String?
+    let updatedAt: String?
+    let createdAt: String?
 
     var fullName: String { "\(owner)/\(name)" }
 
@@ -56,12 +94,13 @@ struct WeeklyProject: Identifiable, Equatable {
     ///   - `card.stars` → `stars`
     ///   - `card.weekly?.firstIssue` → `firstIssue`（缺扩展段时退化为 0）
     ///   - `card.weekly?.issueUrl` → `issueURL`（缺扩展段时 nil）
-    ///
-    /// 已知 v1.2 后端**未利用**字段（TODO P5b 升 GRDB schema 时一并消化）：
-    ///   `gh_repo_id` / `forks` / `watchers` / `subscribers` / `topics` / `homepage` /
-    ///   `license_spdx` / `is_archived` / `is_fork` / `is_private` / `default_branch` /
-    ///   `open_issues` / `pushed_at` / `updated_at` / `created_at`。
+    ///   - **R-01 v1.2 v8**：`ghRepoId` / `ownerAvatar` / `forks` / `watchers` /
+    ///     `subscribers` / `openIssues` / `defaultBranch` / `topics` / `homepage` /
+    ///     `licenseSpdx` / `isArchived` / `isFork` / `isPrivate` / `pushedAt` /
+    ///     `updatedAt` / `createdAt` 全部从 DTO 直透传（DTO 也已透传 GitHub
+    ///     `/repos/{owner}/{repo}` 全部主字段）。
     init(card: StarcatRepoCardDTO) {
+        self.ghRepoId = card.ghRepoId
         self.owner = card.owner
         self.name = card.repo
         self.url = card.htmlUrl ?? GitHubURLs.repo(owner: card.owner, repo: card.repo)
@@ -70,6 +109,23 @@ struct WeeklyProject: Identifiable, Equatable {
         self.language = card.language
         self.firstIssue = card.weekly?.firstIssue ?? 0
         self.issueURL = card.weekly?.issueUrl
+
+        // v1.2 v8 字段透传
+        self.ownerAvatar = card.ownerAvatar
+        self.forks = card.forks
+        self.watchers = card.watchers
+        self.subscribers = card.subscribers
+        self.openIssues = card.openIssues
+        self.defaultBranch = card.defaultBranch
+        self.topics = card.topics
+        self.homepage = card.homepage
+        self.licenseSpdx = card.licenseSpdx
+        self.isArchived = card.isArchived
+        self.isFork = card.isFork
+        self.isPrivate = card.isPrivate
+        self.pushedAt = card.pushedAt
+        self.updatedAt = card.updatedAt
+        self.createdAt = card.createdAt
     }
 }
 
