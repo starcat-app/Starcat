@@ -19,10 +19,22 @@ import Foundation
 import SwiftUI
 
 /// 健康检查结果。文案走 i18n key，UI 用 `LocalizedStringKey` 渲染。
+///
+/// **R-01 v1.2 2026-06-10 扩展**：现在分两步检测——`/healthz`（不鉴权）确认服务可达，
+/// `/api/v1` 任意端点（带 Bearer）确认鉴权配置正确。新增 `unauthorized` 态专门表达
+/// 「服务可达但 API Key 错」，让用户知道改 Key 而不是改服务地址。
 enum HealthCheckOutcome: Equatable {
-    /// 2xx 响应。`statusCode` 一般是 200。
+    /// 健康检查 + 鉴权探测都通过（healthz 2xx + /api/v1 200/2xx）。
+    /// `statusCode` 是 healthz 的状态码（一般是 200）。
     case ok(statusCode: Int)
-    /// 收到响应但状态码非 2xx（404 / 5xx / 等）。说明服务跑着但 /healthz 没接通。
+    /// healthz 通过但 /api/v1 探测返回 401。
+    /// 服务地址正确，但 API Key 错（或者过期/被吊销）。
+    case unauthorized
+    /// healthz 通过但 /api/v1 探测返回非 401 的非 2xx 状态码（404 / 5xx / 等）。
+    /// 服务跑着但鉴权 endpoint 行为异常，可能是后端版本太旧 / 配置错。
+    case authProbeError(statusCode: Int)
+    /// healthz 收到响应但状态码非 2xx。说明服务跑着但 /healthz 接错（罕见，一般是
+    /// 用户填了一个跑着完全不同的 web 服务的 URL）。
     case reachableButError(statusCode: Int)
     /// 完全连不上（DNS 失败 / 拒绝连接 / 超时 / SSL 握手失败 等）。
     /// `localizedReason` 已是终端用户可读的字符串（来自 URLError.localizedDescription）。
@@ -32,7 +44,8 @@ enum HealthCheckOutcome: Equatable {
     var systemImage: String {
         switch self {
         case .ok: return "checkmark.circle.fill"
-        case .reachableButError: return "exclamationmark.triangle.fill"
+        case .unauthorized: return "lock.trianglebadge.exclamationmark.fill"
+        case .authProbeError, .reachableButError: return "exclamationmark.triangle.fill"
         case .unreachable: return "xmark.octagon.fill"
         }
     }
@@ -41,6 +54,8 @@ enum HealthCheckOutcome: Equatable {
     var titleKey: LocalizedStringKey {
         switch self {
         case .ok: return "settings.services.health.ok"
+        case .unauthorized: return "settings.services.health.unauthorized"
+        case .authProbeError: return "settings.services.health.authProbeError"
         case .reachableButError: return "settings.services.health.error"
         case .unreachable: return "settings.services.health.unreachable"
         }
@@ -50,6 +65,8 @@ enum HealthCheckOutcome: Equatable {
     var subtitle: String {
         switch self {
         case .ok(let code): return "HTTP \(code)"
+        case .unauthorized: return "HTTP 401"
+        case .authProbeError(let code): return "HTTP \(code)"
         case .reachableButError(let code): return "HTTP \(code)"
         case .unreachable(let reason): return reason
         }
@@ -90,33 +107,89 @@ actor ServiceHealthChecker {
 
     // MARK: - Public API
 
-    /// 对 `service` 在给定 `baseURL` 上执行一次 `GET /healthz`。
+    /// 对 `service` 在给定 `baseURL` 执行两步探测：
+    ///  1. `GET <base>/healthz`（不鉴权）—— 验证服务可达
+    ///  2. `GET <base>/api/v1/<probe-path>`（带 Bearer Token）—— 验证鉴权配置
     ///
     /// - Parameters:
-    ///   - service: 用于决定 /healthz 路径拼接策略（sharing 的 /api 后缀需要剥掉）。
-    ///   - baseURL: 当前生效的 baseURL（一般就是 `AppEndpoints.X` 或用户在设置页正在编辑的值）。
-    /// - Returns: 探测结果。**永不抛错**——任何异常都映射成 `.unreachable`。
-    func check(service: ThirdPartyService, baseURL: URL) async -> HealthCheckOutcome {
-        let url = service.healthCheckURL(base: baseURL)
+    ///   - service: 用于决定 /healthz + /api/v1 探测路径拼接策略。
+    ///   - baseURL: 当前生效的 baseURL（持久化值或用户草稿）。
+    ///   - apiKey: BYOK API Key 草稿值；nil 表示「不带 Authorization 头」（让后端 401 → unauthorized）。
+    ///     如果调用方想测「production 默认 Key」，传 `StarcatAPIKeyDefaults.productionKeyOrNil`。
+    /// - Returns: 探测结果。**永不抛错**——任何异常都映射成 `.unreachable` / `.authProbeError`。
+    ///
+    /// 状态机：
+    /// ```
+    /// healthz 网络错 → unreachable
+    /// healthz 非 2xx → reachableButError
+    /// healthz 2xx →
+    ///   auth-probe 网络错 → unreachable（罕见，healthz 通了网络应该没问题）
+    ///   auth-probe 401 → unauthorized
+    ///   auth-probe 5xx → authProbeError
+    ///   auth-probe 其他（包括 200 / 404 / 405）→ ok
+    /// ```
+    /// 之所以 404 / 405 也算 ok：sharing 的鉴权探测用 GET /api/v1/share（业务是 POST，
+    /// authMiddleware 先于路由匹配），有效 token → 路由 404/405；无效 token → 401。
+    func check(
+        service: ThirdPartyService,
+        baseURL: URL,
+        apiKey: String? = nil
+    ) async -> HealthCheckOutcome {
+        // 第一步：healthz
+        let healthURL = service.healthCheckURL(base: baseURL)
+        let healthOutcome = await probe(url: healthURL, apiKey: nil)
+        switch healthOutcome {
+        case .networkError(let reason):
+            return .unreachable(reason: reason)
+        case .response(let code) where !(200...299).contains(code):
+            return .reachableButError(statusCode: code)
+        case .response:
+            break // 走第二步
+        }
 
+        // 第二步：auth probe
+        let probeURL = service.authProbeURL(base: baseURL)
+        let probeOutcome = await probe(url: probeURL, apiKey: apiKey)
+        switch probeOutcome {
+        case .networkError(let reason):
+            return .unreachable(reason: reason)
+        case .response(401):
+            return .unauthorized
+        case .response(let code) where (500...599).contains(code):
+            return .authProbeError(statusCode: code)
+        case .response(let code):
+            // 200 / 2xx / 404 / 405 等：authMiddleware 放行（鉴权通过），handler 返回什么都算 ok
+            return .ok(statusCode: code)
+        }
+    }
+
+    // MARK: - 私有探测原语
+
+    /// 探测单个 URL 的低层结果（response 状态码 / 网络错），不解读业务语义。
+    private enum ProbeResult {
+        case response(Int)
+        case networkError(reason: String)
+    }
+
+    private func probe(url: URL, apiKey: String?) async -> ProbeResult {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Starcat/1.0 (health-check)", forHTTPHeaderField: "User-Agent")
+        if let apiKey, !apiKey.isEmpty {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
 
         do {
             let (_, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
-                return .unreachable(reason: String(localized: "network.error.serverGeneric"))
+                return .networkError(reason: String(localized: "network.error.serverGeneric"))
             }
-            switch http.statusCode {
-            case 200...299: return .ok(statusCode: http.statusCode)
-            default:        return .reachableButError(statusCode: http.statusCode)
-            }
+            return .response(http.statusCode)
         } catch let urlError as URLError {
-            return .unreachable(reason: urlError.localizedDescription)
+            return .networkError(reason: urlError.localizedDescription)
         } catch {
-            return .unreachable(reason: error.localizedDescription)
+            return .networkError(reason: error.localizedDescription)
         }
     }
 }

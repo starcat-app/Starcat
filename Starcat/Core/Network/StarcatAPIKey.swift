@@ -87,15 +87,21 @@ enum StarcatAPIKeyResolver {
     /// 解析当前生效的 API Key。
     ///
     /// - Parameter service: 目标服务（trending / weekly / sharing）。
-    /// - Parameter settings: BYOK 来源；默认 `AppSettings.shared`，测试可注入隔离实例。
+    /// - Parameter settings: BYOK 来源；默认 nil 时函数内部走 `AppSettings.shared`。
+    ///   测试可注入隔离实例（同时避免 `AppSettings.shared` 是 `@MainActor` 隔离属性
+    ///   被作为 default expression 引用产生的 Swift 6 跨 actor 引用警告）。
     ///
     /// `@MainActor` 是因为读 `AppSettings`（`@Observable @MainActor` 类型）。
     @MainActor
     static func resolve(
         for service: ThirdPartyService,
-        settings: AppSettings = .shared
+        settings: AppSettings? = nil
     ) -> String? {
-        if let custom = settings.customServiceAPIKey(for: service),
+        // 默认参数不能直接是 .shared（Swift 6 报错：main actor-isolated property 不能在
+        // nonisolated default expression 求值上下文里访问）。改用 nil 占位，进入函数内
+        // @MainActor 上下文后再解析。
+        let resolvedSettings = settings ?? AppSettings.shared
+        if let custom = resolvedSettings.customServiceAPIKey(for: service),
            !custom.isEmpty {
             return custom
         }
