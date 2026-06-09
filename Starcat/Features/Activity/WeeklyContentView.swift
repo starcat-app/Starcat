@@ -34,9 +34,8 @@ struct WeeklyContentView: View {
 
     @State private var viewModel: WeeklyContentViewModel?
 
-    /// 刷新按钮转圈用的 spinning 角度（reduceMotion 时直接显示 ProgressView 替代）。
-    @State private var refreshAngle: Double = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // R-01 §3.1.4 Step 7.3：refreshAngle / reduceMotion 已无外层用途，统一由 SyncIconButton 内部处理。
+    // WeeklyProjectRow 内部仍保留自己的 reduceMotion env 处理 isSelected 动画。
 
     var body: some View {
         Group {
@@ -122,31 +121,17 @@ struct WeeklyContentView: View {
 
     /// 顶部刷新按钮。
     ///
-    /// 视觉与 ActivityView 同款：常态显示 `arrow.triangle.2.circlepath`；
-    /// 触发后整图按 0.9s 一圈匀速旋转，loading 结束角度归零。
-    /// reduceMotion 时不做旋转，仅置灰禁用，避免对前庭敏感用户造成不适。
+    /// R-01 §3.1.4 Step 7.3：自写 rotationEffect + 0.9s repeatForever 改用统一的
+    /// SyncIconButton（图标 / 旋转动画 / hover / disabled / reduceMotion 全套统一）。
+    /// 节奏从 0.9s 改为 1.0s（与 SidebarSyncButton / TrendingView toolbar / cacheFooter 对齐）。
     @ViewBuilder
     private func refreshButton(_ viewModel: WeeklyContentViewModel) -> some View {
-        Button {
+        SyncIconButton(
+            isRefreshing: viewModel.isLoading,
+            disabled: viewModel.isLoading,
+            tooltip: String(localized: "weekly.refresh")
+        ) {
             Task { await viewModel.reload() }
-        } label: {
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.caption)
-                .rotationEffect(.degrees(refreshAngle))
-                .animation(reduceMotion ? nil : .linear(duration: 0.9).repeatForever(autoreverses: false), value: refreshAngle)
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .disabled(viewModel.isLoading)
-        .help("weekly.refresh")
-        .onChange(of: viewModel.isLoading) { _, isLoading in
-            // isLoading→true 时把角度从 0 推到 360 触发 repeatForever 循环；
-            // 结束时回到 0 让动画安静收尾（隐式过渡也用同一 linear 曲线避免卡顿）。
-            if isLoading {
-                refreshAngle = 360
-            } else {
-                refreshAngle = 0
-            }
         }
     }
 
