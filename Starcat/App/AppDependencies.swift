@@ -150,6 +150,21 @@ final class AppDependencies {
     /// 同时 session.userProfileService = service（强引用，session 持有 service）。
     let userProfileService: UserProfileService
 
+    // MARK: - R-01 三场景共用架构（2026-06-09）
+
+    /// 全局已 star 仓库 id 集合（@Observable）。
+    /// 所有列表 / 详情通过 `registry.contains(ghRepoId:)` 判断 star 状态，跨场景自动同步。
+    let starredRegistry: StarredRegistry
+
+    /// star / unstar 唯一权威服务（写入 registry 的唯一路径）。
+    let starActionService: StarActionService
+
+    /// StarredRegistry 启动 / 同步完成后的全量重建 helper。
+    let starredRegistryBootstrapper: StarredRegistryBootstrapper
+
+    /// 详情页 Repo 解析链（Local → Hint → BackendAggregate(占位) → GitHub → Minimal）。
+    let repoResolver: RepoResolver
+
     // MARK: - 初始化
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
@@ -317,6 +332,61 @@ final class AppDependencies {
         userProfileSvc.authSession = session
         session.userProfileService = userProfileSvc
         self.userProfileService = userProfileSvc
+
+        // ────────────────────────────────────────────────────────────────────
+        // R-01「三场景共用架构」装配（2026-06-09）
+        // ────────────────────────────────────────────────────────────────────
+
+        let registry = StarredRegistry()
+        self.starredRegistry = registry
+
+        // userIDProvider 闭包：从 authSession 取当前用户 id（未登录时 nil）
+        // weak self 不需要 —— closure 只引用 session（已经是 self.authSession 强持），
+        // 但避免 closure 长期持有可能导致的延迟释放，明确 capture session。
+        let starActionSvc = StarActionService(
+            apiClient: api,
+            repoRepository: repo,
+            registry: registry,
+            userIDProvider: { [weak session] in
+                session?.state.user?.id
+            },
+            homeRefresher: nil           // HomeView 在 .task 时通过 attachHomeRefresher 挂接
+        )
+        self.starActionService = starActionSvc
+
+        let bootstrapper = StarredRegistryBootstrapper(registry: registry, repoRepository: repo)
+        self.starredRegistryBootstrapper = bootstrapper
+
+        // RepoResolver chain：5 个 source 按优先级顺序
+        self.repoResolver = RepoResolver(chain: [
+            LocalRepoSource(repository: repo),
+            BackendHintRepoSource(),
+            BackendAggregateRepoSource(),     // R-01 占位：永远返 nil
+            GitHubFallbackRepoSource(apiClient: api),
+            MinimalRepoSource()              // 永远命中兜底
+        ])
+
+        // ────────────────────────────────────────────────────────────────────
+        // R-01 钩子注入：SyncManager 同步完成 + AuthSession 登出
+        // ────────────────────────────────────────────────────────────────────
+
+        // SyncManager 全量 / 增量同步成功完成 → bootstrapper.reload() 同步 registry 到 DB
+        // 注：weak 不需要，bootstrapper 与 syncManager 都由 self 强持（生命周期一致）
+        self.syncManager.onSyncCompleted = { [bootstrapper] in
+            await bootstrapper.reload()
+        }
+
+        // AuthSession 登出 / 失效 → bootstrapper.clearOnSignOut() 清空 registry
+        session.onSignOut = { [bootstrapper] in
+            bootstrapper.clearOnSignOut()
+        }
+
+        // 启动期 reload：异步 Task，不阻塞 init。测试 host 跳过避免触发 DB 启动期成本。
+        if !TestEnvironment.isRunning {
+            Task { [bootstrapper] in
+                await bootstrapper.reload()
+            }
+        }
     }
 
     // MARK: - 第三方服务热更新（2026-06-08 新增）

@@ -118,12 +118,60 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
 
     /// **必须与 hash 一致**：Hashable 契约要求 `a == b` ⇔ `hash(a) == hash(b)`。
     ///
-    /// 早期版本依赖 synthesized 全字段 ==，与上面的 `hash(into:)` 不一致，
+    /// 早期版本依赖 synthesized 全字段 ==，与上面的 `hash(into:)` 不一致,
     /// 导致 SwiftUI `List(selection:)` 在 selection binding 写入时
     /// 找不到匹配 tag（hash 相等但 == 不等），表现为"列表点击没反应、detail 不刷新"。
     ///
     /// 仓库 id 在 GitHub 全局唯一，用 id 比较即可覆盖所有合理场景。
     static func == (lhs: Repo, rhs: Repo) -> Bool {
         lhs.id == rhs.id
+    }
+}
+
+// MARK: - R-01 Minimal Fallback 工厂
+
+extension Repo {
+
+    /// R-01：构造一个**最小可用**的 in-memory Repo，给 `MinimalRepoSource` 在
+    /// 整条 source chain 全部 throws 或 nil 时兜底使用，避免详情页白屏。
+    ///
+    /// 如果有 hint DTO（trending / weekly 列表已经拉过的字段），优先复用 hint
+    /// 字段；否则只有 owner / name 能用。`id` 来自 hint 的 `ghRepoId`，否则
+    /// 用 0（非合法 GitHub id）；调用方应通过 `id == 0` 判断「无法 star/unstar」
+    /// 而禁用对应交互。
+    ///
+    /// **不要**把这个 Repo 落 DB —— 字段大量缺失，落库会污染本地数据。
+    /// 用途仅限「详情页 hero / readme 区域不至于完全空着」。
+    static func makeMinimal(owner: String, name: String, hint: StarcatRepoCardDTO? = nil) -> Repo {
+        if let hint {
+            return hint.toEphemeralRepo()
+        }
+        let fallbackHtmlUrl = GitHubURLs.repo(owner: owner, repo: name).absoluteString
+        return Repo(
+            id: 0,                              // ⚠️ 非合法 id；调用方需检查
+            owner: owner,
+            name: name,
+            fullName: "\(owner)/\(name)",
+            description: nil,
+            language: nil,
+            starsCount: 0,
+            forksCount: 0,
+            watchersCount: 0,
+            topics: nil,
+            license: nil,
+            homepage: nil,
+            htmlUrl: fallbackHtmlUrl,
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            isFork: false,
+            isArchived: false,
+            isStarred: false,
+            pushedAt: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            starredAt: nil,
+            cachedAt: nil
+        )
     }
 }
