@@ -41,10 +41,9 @@ struct RepoDetailView: View {
     /// 系统级"减少动效"开关，开启时详情页切换退化为仅 opacity 淡入（不再上滑）。
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    // W4 B1：取消 star 流程的 UI 状态
-    @State private var showUnstarConfirm: Bool = false
-    @State private var isUnstarring: Bool = false
-    @State private var unstarError: String?
+    // R-01 §3.2.3 决策：unstar 即点即生效，不再有 confirm alert / unstarError 弹窗。
+    // 失败由 StarActionService 内部记日志，UI 仅靠 hero ⭐ chip 抖动 + 短暂红色提示
+    // （chip 抖动效果在 RepoMetadataHeaderView 内未来扩展；R-01 阶段先打日志即可）。
 
     /// Trending repo 一键 star 的 UI 状态
     @State private var isStarringTrending: Bool = false
@@ -102,32 +101,32 @@ struct RepoDetailView: View {
         // 内容在 Z 轴上突然居中再回到左上。
         ZStack(alignment: .topLeading) {
             if let repo = viewModel.selectedRepo {
-                VStack(alignment: .leading, spacing: 0) {
-                    metadataPanel(repo)
-                    readmeSection(repo)
-                }
-                .id(repo.id)                                // 强制 view 在 repo 变化时被识别为"新 view"，触发 transition
-                .transition(detailContentTransition)        // 淡入 + 下移 8pt 滑入；reduceMotion 退化为纯 opacity
-                .navigationTitle(repo.name)
-                .navigationSubtitle(repo.owner)
-                .alert("repo.unstar.confirm", isPresented: $showUnstarConfirm, presenting: repo) { repo in
-                    Button("repo.unstar.action", role: .destructive) {
-                        Task { await performUnstar(repo: repo) }
+                // R-01 §3.2.3：Manage 详情迁移到 RepoDetailScaffold + ManageDetailContent。
+                // - 删除原 `showUnstarConfirm` / `isUnstarring` / `unstarError` 三个 @State + 对应 alert
+                //   （dong4j Q5-A 决策：unstar 即点即生效，无 confirm；失败时 chip 抖动 + 红色 ~600ms，不弹 toast）
+                // - star/unstar 调用统一走 `dependencies.starActionService.unstar(repo:)`
+                //   （由 StarringSubsystem 单点维护 registry / DB / 远端三方一致性）
+                RepoDetailScaffold(
+                    repo: repo,
+                    viewData: RepoDetailViewData(
+                        hero: RepoDetailHero(repo: repo),
+                        trailingActions: [.share, .ai],
+                        translation: ReadmeTranslationContext(fullName: repo.fullName),
+                        backendHint: nil
+                    ),
+                    onStarTapped: {
+                        Task {
+                            do {
+                                try await dependencies.starActionService.unstar(repo: repo)
+                            } catch {
+                                AppLog.sync.error("manage detail unstar failed: \(error.localizedDescription, privacy: .public)")
+                            }
+                        }
                     }
-                    Button("repo.unstar.dontUnstar", role: .cancel) {}
-                } message: { repo in
-                    Text(String(format: String(localized: "repo.unstar.messageFormat"), repo.fullName))
+                ) { onScrollOffset in
+                    ManageDetailContent(repo: repo, onScrollOffset: onScrollOffset)
                 }
-                .alert("repo.unstar.failed", isPresented: errorAlertBinding, presenting: unstarError) { _ in
-                    Button("general.ok") { unstarError = nil }
-                } message: { msg in
-                    Text(LocalizedStringKey(msg))
-                }
-                .onChange(of: repo.id) { _, _ in
-                    withAnimation(metadataPanelAnimation) {
-                        metadataPanelCollapseProgress = 0
-                    }
-                }
+                .transition(detailContentTransition)
             } else if let trending = selectedTrendingRepo {
                 // Trending repo 详情页（无本地数据，只显示 README）
                 VStack(alignment: .leading, spacing: 0) {
@@ -201,49 +200,10 @@ struct RepoDetailView: View {
         )
     }
 
-    // MARK: - W4 B1：Unstar 流程
+    // R-01 §3.2.3：performUnstar / errorAlertBinding 已迁移到 StarActionService 单点维护
+    // （RepoDetailView 不再持有 unstar 业务逻辑）。
 
-    /// 1. 调 GitHub API 远端解除（失败：alert 报错、不动本地）
-    /// 2. 调本地 markUnstarred（保留 tag / note，给 re-star 留后路）
-    /// 3. 触发 Sidebar + 列表刷新（HomeViewModel 自带 race 防护）
-    private func performUnstar(repo: Repo) async {
-        guard case .authenticated(let user) = authSession.state else {
-            unstarError = "auth.needLogin"
-            return
-        }
-        isUnstarring = true
-        defer { isUnstarring = false }
-        do {
-            try await dependencies.apiClient.unstar(owner: repo.owner, repo: repo.name)
-            try await dependencies.repoRepository.markUnstarred(repoId: repo.id, userID: user.id)
-            // 刷新 Sidebar 计数 + 列表（reloadItems 内部会清掉已不在列表的 selection）
-            await viewModel.refreshSidebar()
-            await viewModel.reloadItems(forceRefresh: true)
-        } catch {
-            unstarError = "repo.unstar.actionFailed"
-            AppLog.sync.error("unstar failed: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    /// 错误 alert 的 isPresented binding —— 让 unstarError 非 nil 时弹窗
-    private var errorAlertBinding: Binding<Bool> {
-        Binding(
-            get: { unstarError != nil },
-            set: { if !$0 { unstarError = nil } }
-        )
-    }
-
-    /// 顶部信息面板容器（Manage）。
-    ///
-    /// 实际的折叠 / 测高 / 动画逻辑都在 `collapsibleMetadataContainer` 通用 helper 里，
-    /// Manage 这层只负责把"内容"（`metadataHeader`）塞进去。
-    private func metadataPanel(_ repo: Repo) -> some View {
-        collapsibleMetadataContainer {
-            metadataHeader(repo)
-        }
-    }
-
-    /// 顶部信息面板的通用折叠容器（Manage / Trending 共用）。
+    /// 顶部信息面板的通用折叠容器（Trending 分支用，Manage 已迁移到 RepoDetailScaffold）。
     ///
     /// 为什么不继续用 `if collapseProgress < 1 { ... }`：
     /// 直接插拔 view 会让整个 WKWebView 在同一帧拿到新高度，视觉上像"跳变"；
@@ -269,24 +229,8 @@ struct RepoDetailView: View {
         }
     }
 
-    /// 元信息区域（不滚动，固定在顶部）。
-    ///
-    /// 背景：顶部叠一层"语言色 → 透明"的线性渐变，让详情页 hero 区视觉权重更高，
-    /// 同时与列表 row 的着色规则保持单一信任源（都走 `LanguageColor`，避免新规则）。
-    /// 渐变在 metadataHeader 层内加，不会染到下方的 README WebView 区。
-    /// 折叠状态由外层 `metadataPanel` 的 `.frame(height: 0).clipped()` 整体裁掉，
-    /// 这里不需要为折叠态特殊处理渐变。
-    private func metadataHeader(_ repo: Repo) -> some View {
-        RepoMetadataHeaderView(
-            repo: repo,
-            onStarTapped: { showUnstarConfirm = true }
-        ) {
-            HStack(spacing: 8) {
-                RepoShareButton(repo: repo)
-                RepoAIOpenButton(repo: repo)
-            }
-        }
-    }
+    // R-01 §3.2.3：metadataHeader / metadataPanel 已废弃——Manage 走 RepoDetailScaffold 内置 hero。
+    // Trending / Activity 仍在用 collapsibleMetadataContainer 等下方 helper（待后续 step 替换）。
 
     /// 详情页元信息面板的强调色（取色规则与列表 `RepoRowSurface.accentColor` 完全一致）。
     ///
@@ -323,33 +267,8 @@ struct RepoDetailView: View {
 
     /// README 区域。占据剩余高度，由 WebView 自己处理滚动。
     ///
-    /// 把 `owner` / `name` 透传给 ReadmeWebView 用于图片相对路径重写
-    /// （GitHub HTML render 端点对原生 `<img src="./xx">` 不做绝对化，
-    /// 必须客户端补一次 raw URL 改写）。
-    /// HOM-68：附带 `translationControl` —— Manage repo 详情才提供翻译入口
-    /// （Trending 没有本地 repo_id，不接翻译缓存）。
-    private func readmeSection(_ repo: Repo) -> some View {
-        ReadmeStateView(
-            state: readmeVM.state,
-            // 拼接 blob/HEAD：GitHub HTML 渲染 API 返回的相对链接是相对于仓库根目录解析的，
-            // 缺少 blob/{branch} 前缀；补上后相对链接（如 README-en.md）才能正确解析为
-            // https://github.com/owner/repo/blob/HEAD/README-en.md。
-            baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
-            owner: repo.owner,
-            repo: repo.name,
-            onScrollOffsetChange: updateMetadataPanelVisibility,
-            translationControl: ReadmeTranslationControl(
-                repo: repo,
-                translationVM: translationVM,
-                settings: settings
-            )
-        ) {
-            readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
-        } onLogin: {
-            authSession.signIn()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
+    // R-01 §3.2.3：readmeSection (Manage) 已迁移到 ManageDetailContent。
+    // Trending 分支仍用下方 trendingReadmeSection（待 Step 6.2 替换）。
 
     /// WebView 内部滚动位置 → 顶部信息面板折叠进度。
     ///

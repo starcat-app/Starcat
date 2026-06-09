@@ -78,6 +78,79 @@ struct RepoDetailHero: Sendable {
     let homepage: URL?
 }
 
+// MARK: - Repo → RepoDetailHero
+
+extension RepoDetailHero {
+
+    /// 从本地 `Repo` 构造 view-ready hero 数据（Manage / Activity-repo-backed 路径）。
+    ///
+    /// 解析时间字段时容错：上游 `Repo.updatedAt/createdAt/pushedAt` 是 ISO8601 字符串，
+    /// 解析失败时回退为 nil（hero UI 已经为 nil 时间字段做了 fallback 渲染）。
+    init(repo: Repo) {
+        self.ghRepoId = repo.id
+        self.fullName = repo.fullName
+        self.owner = repo.owner
+        self.repo = repo.name
+        self.avatarURL = URL(string: RepoAvatarURL.from(owner: repo.owner))
+        self.description = repo.description
+        self.language = repo.language
+        self.starsCount = repo.starsCount
+        self.forksCount = repo.forksCount
+        self.watchersCount = repo.watchersCount
+        // Repo 当前无 subscribersCount 字段（GitHub watchers/subscribers 字段名混淆历史问题）；
+        // hero 渲染时此 chip 为 nil 即不显示，与现状一致。
+        self.subscribersCount = nil
+        self.topics = repo.topicsArray
+        self.licenseSpdx = repo.license
+        self.updatedAt = Self.parseISO8601(repo.updatedAt)
+        self.createdAt = Self.parseISO8601(repo.createdAt)
+        self.pushedAt = Self.parseISO8601(repo.pushedAt)
+        self.isArchived = repo.isArchived
+        self.isFork = repo.isFork
+        self.isPrivate = repo.isPrivate
+        self.isStarred = repo.isStarred
+        self.htmlUrl = URL(string: repo.htmlUrl)
+        self.homepage = repo.homepage.flatMap { URL(string: $0) }
+    }
+
+    /// 从 `StarcatRepoCardDTO` 构造 hero 数据（Trending / Weekly 路径，资源未命中本地）。
+    init(dto: StarcatRepoCardDTO, isStarred: Bool) {
+        self.ghRepoId = dto.ghRepoId
+        self.fullName = dto.fullName
+        self.owner = dto.owner
+        self.repo = dto.repo
+        self.avatarURL = dto.ownerAvatar ?? URL(string: RepoAvatarURL.from(owner: dto.owner))
+        self.description = dto.description
+        self.language = dto.language
+        self.starsCount = dto.stars
+        self.forksCount = dto.forks
+        self.watchersCount = dto.watchers
+        self.subscribersCount = dto.subscribers
+        self.topics = dto.topics
+        self.licenseSpdx = dto.licenseSpdx
+        self.updatedAt = Self.parseISO8601(dto.updatedAt)
+        self.createdAt = Self.parseISO8601(dto.createdAt)
+        self.pushedAt = Self.parseISO8601(dto.pushedAt)
+        self.isArchived = dto.isArchived
+        self.isFork = dto.isFork
+        self.isPrivate = dto.isPrivate
+        self.isStarred = isStarred
+        self.htmlUrl = dto.htmlUrl ?? GitHubURLs.repo(owner: dto.owner, repo: dto.repo)
+        self.homepage = dto.homepage
+    }
+
+    /// ISO8601 字符串 → Date。解析失败返回 nil。
+    /// 与 `Repo` 内部时间解析行为对齐——`.withInternetDateTime` 包含 `Z`/offset 处理。
+    private static func parseISO8601(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: raw) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: raw)
+    }
+}
+
 // MARK: - RepoDetailAction
 
 /// 详情页右上 trailing actions（按渲染顺序排）。

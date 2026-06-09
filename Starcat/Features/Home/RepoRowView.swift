@@ -251,7 +251,7 @@ private struct LegacyRepoRowSurface<Content: View>: View {
 
 // 共享 chip / 工具已搬到 Shared/Components/RepoRowComponents.swift。
 
-private struct SemanticScoreBadge: View {
+struct SemanticScoreBadge: View {
     let hit: SemanticSearchHit
 
     var body: some View {

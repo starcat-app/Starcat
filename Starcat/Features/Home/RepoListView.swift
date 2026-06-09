@@ -466,9 +466,8 @@ struct RepoListView: View {
                 Button {
                     selection.wrappedValue = repo.id
                 } label: {
-                    RepoRowView(
-                        repo: repo,
-                        density: settings.listDensity,
+                    UnifiedRepoRow(
+                        card: repo.asCardData(),
                         isSelected: selection.wrappedValue == repo.id,
                         semanticHit: viewModel.semanticHit(for: repo.id)
                     )
@@ -491,9 +490,8 @@ struct RepoListView: View {
         List(selection: selection) {
             ForEach(indexedItems) { item in
                 let repo = item.repo
-                RepoRowView(
-                    repo: repo,
-                    density: settings.listDensity,
+                UnifiedRepoRow(
+                    card: repo.asCardData(),
                     isSelected: selection.wrappedValue.contains(repo.id),
                     semanticHit: viewModel.semanticHit(for: repo.id)
                 )
