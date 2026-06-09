@@ -260,24 +260,10 @@ struct TrendingTests {
     // 对应单测改为验证持久化分桶（cachedTrending / fetchTrending）行为，见
     // `TrendingRepositoryPersistenceTests` 套件。
 
-    @MainActor
-    @Test("TrendingViewModel: subscribe calls GitHub star endpoint")
-    func subscribeCallsGitHubStar() async throws {
-        let mock = MockGitHubAPIClient()
-        mock.starHandler = { _, _ in }
-        let vm = TrendingViewModel(
-            repository: StubTrendingRepository(),
-            githubAPIClient: mock
-        )
-        let repo = makeTrendingRepo(fullName: "owner/project")
-
-        try await vm.subscribe(repo: repo)
-
-        #expect(mock.starCalls.count == 1)
-        #expect(mock.starCalls.first?.owner == "owner")
-        #expect(mock.starCalls.first?.repo == "project")
-        #expect(vm.subscribedRepoIDs.contains("owner/project"))
-    }
+    // 注：原 `subscribeCallsGitHubStar` 单测已随 R-01 v1.2（2026-06-10）一并删除。
+    // 删除背景：TrendingViewModel 不再持有会话级 `subscribedRepoIDs` 与 `subscribe(repo:)`；
+    // star 操作走 `StarActionService.star(owner:repo:)` 单点（跨场景一致），由
+    // `StarActionServiceTests` 套件统一覆盖（包含 stub apiClient.star 调用 + Registry add）。
 
     // MARK: - 智能 revision 行为（2026-06-02 新增，配合"消除二次入场动画"改造）
 
