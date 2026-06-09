@@ -23,12 +23,16 @@ struct StarcatAPIKeyTests {
 
     // MARK: - 测试 fixtures
 
-    /// 给每个测试一个独立 UserDefaults suite，避免相互污染。
+    /// 给每个测试一个独立 UserDefaults suite + 独立 InMemoryKeychain，
+    /// 避免污染开发者本地的真实 credentials.json（位于 ~/Library/Application Support/com.starcat.app/）。
+    ///
+    /// **关键**：默认参数 `keychain: KeychainManager.shared` 会写本地加密文件，所以测试**必须**
+    /// 传 InMemoryKeychain。否则跑 setCustomAPIKey 会真的把测试 key 持久化到真实 credentials.json。
     private func makeIsolatedSettings() -> AppSettings {
         let suiteName = "test.starcat.apikey.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
-        return AppSettings(defaults: defaults)
+        return AppSettings(defaults: defaults, keychain: InMemoryKeychain())
     }
 
     // MARK: - StarcatAPIKeyDefaults
