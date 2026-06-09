@@ -17,7 +17,8 @@ struct ActivityView: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // R-01 §3.1.4 Step 7.3：refreshRow 改用 SyncIconButton 后顶层 reduceMotion 已不需要。
+    // ActivityRowView 内部仍保留自己的 reduceMotion env 处理 isSelected 动画。
 
     @Binding var selectedCategory: ActivityCategory
     @Binding var selectedItem: ActivityItem?
@@ -82,6 +83,8 @@ struct ActivityView: View {
     }
 
     private func refreshRow(_ viewModel: ActivityViewModel) -> some View {
+        // R-01 §3.1.4 Step 7.3：自写 rotationEffect + repeatForever 改用统一的
+        // SyncIconButton（图标 / 旋转动画 / hover / disabled / reduceMotion 一并统一）。
         HStack {
             if let last = viewModel.lastRefreshedAt {
                 Text(String(format: String(localized: "activity.lastRefreshedFormat"), Self.relativeDate(last)))
@@ -89,21 +92,16 @@ struct ActivityView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button {
+            SyncIconButton(
+                isRefreshing: viewModel.isRefreshing,
+                disabled: viewModel.isRefreshing,
+                tooltip: String(localized: "activity.refresh")
+            ) {
                 Task {
                     await viewModel.refresh(category: selectedCategory)
                     restoreSelection(from: viewModel.items)
                 }
-            } label: {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.caption)
-                    .rotationEffect(.degrees(viewModel.isRefreshing && !reduceMotion ? 360 : 0))
-                    .animation(viewModel.isRefreshing && !reduceMotion ? .linear(duration: 1).repeatForever(autoreverses: false) : .easeOut(duration: 0.2), value: viewModel.isRefreshing)
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .disabled(viewModel.isRefreshing)
-            .help("activity.refresh")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
