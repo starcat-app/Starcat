@@ -32,10 +32,12 @@ struct RepoResolverChainTests {
         try await repoRepo.upsertStarred([dto], userID: 100, syncedAt: Date())
 
         let countingApi = CountingMockClient()
+        // R-01 v1.2 后 BackendAggregateRepoSource 接 WeeklyAPI 真实网络调用了；
+        // 本套件测的是 chain 行为而非 aggregate，故把它从测试链里去掉
+        // （aggregate 单独测试见 BackendAggregateRepoSourceTests）。
         let resolver = RepoResolver(chain: [
             LocalRepoSource(repository: repoRepo),
             BackendHintRepoSource(),
-            BackendAggregateRepoSource(),
             GitHubFallbackRepoSource(apiClient: countingApi),
             MinimalRepoSource()
         ])
@@ -59,7 +61,7 @@ struct RepoResolverChainTests {
         let resolver = RepoResolver(chain: [
             LocalRepoSource(repository: repoRepo),
             BackendHintRepoSource(),
-            BackendAggregateRepoSource(),
+
             GitHubFallbackRepoSource(apiClient: countingApi),
             MinimalRepoSource()
         ])
@@ -87,7 +89,7 @@ struct RepoResolverChainTests {
         let resolver = RepoResolver(chain: [
             LocalRepoSource(repository: repoRepo),
             BackendHintRepoSource(),
-            BackendAggregateRepoSource(),
+
             GitHubFallbackRepoSource(apiClient: countingApi),
             MinimalRepoSource()
         ])
@@ -116,7 +118,7 @@ struct RepoResolverChainTests {
         let resolver = RepoResolver(chain: [
             LocalRepoSource(repository: repoRepo),
             BackendHintRepoSource(),
-            BackendAggregateRepoSource(),
+
             GitHubFallbackRepoSource(apiClient: countingApi),
             MinimalRepoSource()
         ])
@@ -144,13 +146,14 @@ struct RepoResolverChainTests {
         let resolver = RepoResolver(chain: [
             LocalRepoSource(repository: repoRepo),
             BackendHintRepoSource(),
-            BackendAggregateRepoSource(),
+
             GitHubFallbackRepoSource(apiClient: countingApi),
             MinimalRepoSource()
         ])
 
         let resolution = await resolver.resolve(owner: "ghost", name: "vanished", hint: nil)
-        // 没有 hint、本地没有、aggregate 占位返 nil、GitHub 抛 Boom → MinimalRepoSource 兜底
+        // 没有 hint、本地没有、GitHub 抛 Boom → MinimalRepoSource 兜底
+        // （注：R-01 v1.2 后 aggregate 已从本套件测试链剔除，单独测试见 BackendAggregateRepoSourceTests）
         #expect(resolution.sourceName == "MinimalRepoSource")
         #expect(resolution.isMinimal == true)
         #expect(resolution.isLocalHit == false)

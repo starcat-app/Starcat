@@ -119,6 +119,10 @@ actor WeeklyAPI {
 
     /// 拉取周刊项目分页列表。
     ///
+    /// R-01 v1.2：响应 envelope 化 —— `data: [StarcatRepoCardDTO]` + `meta: {page, page_size, total, ...}`。
+    /// 内部把卡片转成 `WeeklyProject` UI 模型 + 从 meta 取分页信息构造 `WeeklyProjectListResult`，
+    /// 让 ViewModel 调用层零变更。
+    ///
     /// - Parameters:
     ///   - page: 页码，从 1 开始。
     ///   - pageSize: 每页大小。
@@ -134,19 +138,97 @@ actor WeeklyAPI {
         sort: WeeklySort = .firstIssueDesc
     ) async throws -> WeeklyProjectListResult {
         let url = try buildProjectsURL(page: page, pageSize: pageSize, issue: issue, language: language, sort: sort)
-        let data = try await performRequest(url: url)
-        let dto: WeeklyProjectListDTO
+        let (data, response) = try await performRequestWithResponse(url: url)
+
+        // envelope 解码：直接走 helper，让 schema_version warning / error envelope / 401 都自动处理。
+        // 但本 endpoint 还需要拿 meta 段的分页信息，所以解码出 envelope 整体后再拆 data + meta。
         do {
-            dto = try decoder.decode(WeeklyProjectListDTO.self, from: data)
+            let envelope = try decoder.decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: data)
+
+            // 复用 helper 的 schema_version / 错误判断逻辑：先扔进去转一次（成功路径会返回 data，
+            // 但本方法需要 envelope.meta），所以这里仅手工执行同款步骤：
+            // 1) 错误响应（envelope.go 里 4xx/5xx 也是 envelope 形态）→ helper 自动识别
+            //    这里先直接判 status code，再走错误路径
+            guard let http = response as? HTTPURLResponse else {
+                throw WeeklyAPIError.transport(underlying: URLError(.badServerResponse))
+            }
+            guard (200...299).contains(http.statusCode) else {
+                if let envelopeError = try? decoder.decode(StarcatErrorEnvelope.self, from: data) {
+                    throw WeeklyAPIError.serverError(
+                        message: "[\(envelopeError.error.code)] \(envelopeError.error.message)"
+                    )
+                }
+                let raw = String(data: data, encoding: .utf8)
+                throw WeeklyAPIError.serverError(message: raw)
+            }
+
+            // 2) schema_version warning（与 StarcatEnvelopeDecoder 同款语义）
+            if !envelope.isSupported {
+                AppLog.network.warning(
+                    "weekly envelope schema_version=\(envelope.schemaVersion, privacy: .public) > supported=\(StarcatEnvelopeSchema.supported, privacy: .public); 部分新字段可能未识别，建议升级 Starcat"
+                )
+            }
+
+            // 3) 拼装 WeeklyProjectListResult：items 从 cards 转，分页信息从 meta 取（meta 缺失走传入参数兜底）
+            let items = envelope.data.map(WeeklyProject.init(card:))
+            let meta = envelope.meta
+            return WeeklyProjectListResult(
+                items: items,
+                total: meta?.total ?? items.count,
+                page: meta?.page ?? page,
+                pageSize: meta?.pageSize ?? pageSize
+            )
+        } catch let error as WeeklyAPIError {
+            throw error
         } catch {
             throw WeeklyAPIError.decodingError(underlying: error)
         }
-        return WeeklyProjectListResult(
-            items: dto.items.map(WeeklyProject.init(dto:)),
-            total: dto.total,
-            page: dto.page,
-            pageSize: dto.pageSize
+    }
+
+    /// 拉取单 repo 聚合详情（用于 `BackendAggregateRepoSource` / 详情页）。
+    ///
+    /// R-01 v1.2 后端新增 `GET /api/v1/projects/{owner}/{repo}` endpoint，返回该项目的最新
+    /// `StarcatRepoCardDTO`（含 weekly 扩展段 + 后端 enricher 补的所有元数据）。
+    ///
+    /// **不**做任何 UI 转换：直接返回 DTO，由调用方（`BackendAggregateRepoSource` /
+    /// `Repo.makeMinimal(card:)` 等）决定如何用。
+    ///
+    /// 错误：
+    /// - 404（项目不在周刊收录列表里）→ `WeeklyAPIError.serverError`，调用方应当 catch
+    ///   并退化为 nil（让 RepoResolver 链继续询问下一个 source）
+    /// - 401（鉴权失败）→ `WeeklyAPIError.serverError(message: "[UNAUTHORIZED] ...")`
+    func fetchProject(owner: String, repo: String) async throws -> StarcatRepoCardDTO {
+        let endpoint = AppEndpoints.appendPath(
+            "\(AppEndpoints.Weekly.Paths.projectsByOwnerRepo)/\(owner)/\(repo)",
+            to: baseURL
         )
+        let (data, response) = try await performRequestWithResponse(url: endpoint)
+
+        // 2xx 走 envelope success path；非 2xx 拆 ErrorEnvelope 报错。
+        guard let http = response as? HTTPURLResponse else {
+            throw WeeklyAPIError.transport(underlying: URLError(.badServerResponse))
+        }
+        guard (200...299).contains(http.statusCode) else {
+            if let envelopeError = try? decoder.decode(StarcatErrorEnvelope.self, from: data) {
+                throw WeeklyAPIError.serverError(
+                    message: "[\(envelopeError.error.code)] \(envelopeError.error.message)"
+                )
+            }
+            let raw = String(data: data, encoding: .utf8)
+            throw WeeklyAPIError.serverError(message: raw)
+        }
+
+        do {
+            let envelope = try decoder.decode(StarcatEnvelope<StarcatRepoCardDTO>.self, from: data)
+            if !envelope.isSupported {
+                AppLog.network.warning(
+                    "weekly project envelope schema_version=\(envelope.schemaVersion, privacy: .public) > supported=\(StarcatEnvelopeSchema.supported, privacy: .public)"
+                )
+            }
+            return envelope.data
+        } catch {
+            throw WeeklyAPIError.decodingError(underlying: error)
+        }
     }
 
     // MARK: - Private
@@ -178,44 +260,24 @@ actor WeeklyAPI {
         return url
     }
 
-    private func performRequest(url: URL) async throws -> Data {
+    /// 走 GET + 注入 Bearer + 拿到 (data, response)，**不解析 status code**——
+    /// 由调用方接管成功 / 错误判定（v1.2 envelope 时代非 2xx 也是 envelope 形态）。
+    private func performRequestWithResponse(url: URL) async throws -> (Data, URLResponse) {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Starcat/1.0", forHTTPHeaderField: "User-Agent")
 
         // R-01 v1.2：后端强制 Bearer Auth；apiKey 为 nil/空时不发头（后端会 401，
-        // 由 envelope 解码层翻译成 isUnauthorized 错误，UI 引导去设置页配置 key）。
+        // envelope 错误识别后翻译成 WeeklyAPIError.serverError，UI 引导去设置页配置 key）。
         if let key = apiKey, !key.isEmpty {
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         }
 
         do {
-            let (data, response) = try await session.data(for: request)
-            return try validateResponse(data: data, response: response)
-        } catch let error as WeeklyAPIError {
-            throw error
+            return try await session.data(for: request)
         } catch {
             throw WeeklyAPIError.transport(underlying: error)
-        }
-    }
-
-    private func validateResponse(data: Data, response: URLResponse) throws -> Data {
-        guard let http = response as? HTTPURLResponse else {
-            throw WeeklyAPIError.transport(underlying: URLError(.badServerResponse))
-        }
-        switch http.statusCode {
-        case 200...299:
-            return data
-        case 400...499:
-            let message = String(data: data, encoding: .utf8)
-            throw WeeklyAPIError.serverError(message: message)
-        case 500...599:
-            throw WeeklyAPIError.serverError(
-                message: String(format: String(localized: "network.error.serverStatusFormat"), http.statusCode)
-            )
-        default:
-            throw WeeklyAPIError.transport(underlying: URLError(.badServerResponse))
         }
     }
 }
