@@ -57,6 +57,16 @@ protocol KeychainManaging: Sendable {
     func loadAIKey(forProvider providerID: String) throws -> String?
     func deleteAIKey(forProvider providerID: String) throws
 
+    // R-01 v1.2 新增（2026-06-10）：自建后端服务 API Key（trending / weekly / sharing）。
+    // BYOK 模式下用户在「设置 → 服务」Tab 填的 Key 走加密本地文件持久化，
+    // 与 GitHub Token / AI Key 同等安全级别（AES-GCM）。
+    //
+    // serviceID 参数：用 `ThirdPartyService.rawValue`（"trending" / "weekly" / "sharing"），
+    // 调用方负责传字符串 ID（避免 KeychainManaging 反向依赖业务枚举类型）。
+    func storeServiceAPIKey(_ key: String, forService serviceID: String) throws
+    func loadServiceAPIKey(forService serviceID: String) throws -> String?
+    func deleteServiceAPIKey(forService serviceID: String) throws
+
     func ping() throws
 }
 
@@ -72,6 +82,13 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
 
         static func aiKey(providerID: String) -> String {
             "ai_api_key::\(providerID)"
+        }
+
+        /// R-01 v1.2：自建后端服务 API Key 命名空间（与 aiKey 解耦，避免 ID 冲突）。
+        ///
+        /// 形如 `service_api_key::trending` / `service_api_key::weekly` / `service_api_key::sharing`。
+        static func serviceAPIKey(serviceID: String) -> String {
+            "service_api_key::\(serviceID)"
         }
     }
 
@@ -206,6 +223,22 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
     func deleteAIKey(forProvider providerID: String) throws {
         try setValue(nil, forAccount: Account.aiKey(providerID: providerID))
         AppLog.keychain.info("AI provider key removed")
+    }
+
+    // MARK: - R-01 自建后端服务 API Key（trending / weekly / sharing）
+
+    func storeServiceAPIKey(_ key: String, forService serviceID: String) throws {
+        try setValue(key, forAccount: Account.serviceAPIKey(serviceID: serviceID))
+        AppLog.keychain.info("Service API key stored: \(serviceID, privacy: .public)")
+    }
+
+    func loadServiceAPIKey(forService serviceID: String) throws -> String? {
+        value(forAccount: Account.serviceAPIKey(serviceID: serviceID))
+    }
+
+    func deleteServiceAPIKey(forService serviceID: String) throws {
+        try setValue(nil, forAccount: Account.serviceAPIKey(serviceID: serviceID))
+        AppLog.keychain.info("Service API key removed: \(serviceID, privacy: .public)")
     }
 
     func ping() throws {
