@@ -41,6 +41,13 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
 
     // MARK: - repo 维度
 
+    /// GitHub repo 数字 id（R-01 v1.2 GRDB v9，2026-06-10）。
+    ///
+    /// **NULL 容忍**：v9 ALTER TABLE ADD COLUMN 时未指定 NOT NULL，老缓存行该列
+    /// 为 NULL；toDomain() 时退化为 `0`（哨兵），新行（下次 fetchTrending 整批替换）
+    /// 永远填实。
+    var ghRepoId: Int64?
+
     var fullName: String
     var owner: String
     var name: String
@@ -73,6 +80,8 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
         case period
         case languageFilter = "language_filter"
         case rank
+        // R-01 v1.2 GRDB v9 新增（2026-06-10）
+        case ghRepoId = "gh_repo_id"
         case fullName = "full_name"
         case owner
         case name
@@ -120,6 +129,7 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
         let periodText = "\(prefix)\(starsInPeriodValue)"
 
         return TrendingRepo(
+            ghRepoId: ghRepoId ?? 0,
             fullName: fullName,
             owner: owner,
             name: name,
@@ -176,6 +186,8 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
             period: period.rawValue,
             languageFilter: languageFilter.apiValue,
             rank: rank,
+            // R-01 v1.2 GRDB v9：ghRepoId 持久化以支撑 RepoCardViewData.id + 跨场景 ✓
+            ghRepoId: repo.ghRepoId,
             fullName: repo.fullName,
             owner: repo.owner,
             name: repo.name,
@@ -213,6 +225,7 @@ extension TrendingRepo {
     /// defaultBranch / openIssuesCount）；调用方（`TrendingRepoRecord.toDomain()`）已
     /// 同步更新。所有 4 字段都 Optional，老缓存行 NULL 不影响构造。
     init(
+        ghRepoId: Int64,
         fullName: String,
         owner: String,
         name: String,
@@ -229,6 +242,7 @@ extension TrendingRepo {
         defaultBranch: String? = nil,
         openIssuesCount: Int? = nil
     ) {
+        self.ghRepoId = ghRepoId
         self.fullName = fullName
         self.owner = owner
         self.name = name

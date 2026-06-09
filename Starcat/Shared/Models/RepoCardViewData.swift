@@ -166,3 +166,85 @@ extension StarcatRepoCardDTO {
         )
     }
 }
+
+// MARK: - TrendingRepo → RepoCardViewData
+
+extension TrendingRepo {
+
+    /// 把 Trending 领域模型转为卡片视图数据。
+    ///
+    /// 由 `TrendingView` 列表 row 在每次重渲染时调用。`isStarred` 通过 registry 查询，
+    /// 让 row 上的 ✓ 标记在用户 star/unstar 后即时同步（registry 是 `@Observable`，
+    /// SwiftUI 监听变更后触发整个 List 重渲染，本扩展会被重新调用）。
+    ///
+    /// - Parameters:
+    ///   - registry: 全局已 star 集合
+    ///   - badge: 通常传 `.trendingChange(repo.starsInPeriod)` 复刻 +N chip。
+    ///            外部如需特殊场景可传 nil（暂无此需求）。
+    /// - Returns: 视图数据
+    @MainActor
+    func asCardData(
+        registry: StarredRegistry,
+        badge: CardBadge? = nil
+    ) -> RepoCardViewData {
+        let resolvedBadge = badge ?? .trendingChange(self.starsInPeriod)
+        return RepoCardViewData(
+            ghRepoId: self.ghRepoId,
+            fullName: self.fullName,
+            owner: self.owner,
+            repo: self.name,
+            avatarURL: self.ownerAvatar,
+            description: self.description,
+            language: self.language,
+            starsCount: self.starsCount,
+            forksCount: self.forksCount,
+            isArchived: false,
+            isFork: false,
+            isPrivate: false,
+            isStarred: registry.contains(ghRepoId: self.ghRepoId),
+            badge: resolvedBadge
+        )
+    }
+}
+
+// MARK: - WeeklyProject → RepoCardViewData
+
+extension WeeklyProject {
+
+    /// 把 Weekly 领域模型转为卡片视图数据。
+    ///
+    /// `firstIssue == 0`（Trending hint 缺周刊扩展段时退化为 0）时不挂 weeklyIssue
+    /// 徽章——0 不是合法期号，UI 显示 "# 0" 视觉上很突兀。
+    ///
+    /// - Parameters:
+    ///   - registry: 全局已 star 集合（决定 ✓ 标记）
+    ///   - badge: 通常传 `nil` 让本扩展按 `firstIssue` 自动决定 weeklyIssue 徽章；
+    ///            如需自定义可显式覆盖
+    /// - Returns: 视图数据
+    @MainActor
+    func asCardData(
+        registry: StarredRegistry,
+        badge: CardBadge? = nil
+    ) -> RepoCardViewData {
+        let resolvedBadge: CardBadge? = {
+            if let badge { return badge }
+            return self.firstIssue > 0 ? .weeklyIssue(self.firstIssue) : nil
+        }()
+        return RepoCardViewData(
+            ghRepoId: self.ghRepoId,
+            fullName: self.fullName,
+            owner: self.owner,
+            repo: self.name,
+            avatarURL: self.ownerAvatar,
+            description: self.description,
+            language: self.language,
+            starsCount: self.stars,
+            forksCount: self.forks ?? 0,
+            isArchived: self.isArchived ?? false,
+            isFork: self.isFork ?? false,
+            isPrivate: self.isPrivate ?? false,
+            isStarred: registry.contains(ghRepoId: self.ghRepoId),
+            badge: resolvedBadge
+        )
+    }
+}
