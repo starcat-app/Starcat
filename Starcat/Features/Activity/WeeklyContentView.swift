@@ -146,14 +146,17 @@ struct WeeklyContentView: View {
 
     private func projectList(_ viewModel: WeeklyContentViewModel) -> some View {
         let selection = dependencies.weeklySelectionService
+        let registry = dependencies.starredRegistry
         return List {
             ForEach(Array(viewModel.items.enumerated()), id: \.element.id) { index, project in
                 Button {
                     selection.select(project)
                 } label: {
-                    WeeklyProjectRow(
-                        project: project,
-                        density: settings.listDensity,
+                    // R-01 v1.2 Phase B4（2026-06-10）：weekly row 切到 UnifiedRepoRow，
+                    // 与 manage / trending 视觉同款；周刊期号通过 `CardBadge.weeklyIssue`
+                    // 在 chip 行显示，星标 ✓ 由 `StarredRegistry` 驱动联动。
+                    UnifiedRepoRow(
+                        card: project.asCardData(registry: registry),
                         isSelected: selection.selectedProject?.id == project.id
                     )
                 }
@@ -261,89 +264,10 @@ struct WeeklyContentView: View {
     }
 }
 
-// MARK: - Row
-
-private struct WeeklyProjectRow: View {
-    let project: WeeklyProject
-    let density: RepoListDensity
-    /// 当前行是否处于"详情页选中态"。配合 ActivityRow 的视觉语言：
-    /// - 背景透明度从 0.045/0.0 抬到 0.18；
-    /// - 左侧加 3pt accent 竖条 + 内容向右挪 5pt；
-    /// - 标题加粗。整套样式与 `ActivityRowSurface` 对齐，给用户一致的"被选中"感知。
-    let isSelected: Bool
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var accentColor: Color {
-        if let language = project.language, !language.isEmpty {
-            return LanguageColor.color(for: language)
-        }
-        return ActivityCategory.weekly.iconColor
-    }
-
-    var body: some View {
-        // R-01 §3.1.1：仅 .card 单 case 保留，紧凑布局已删。
-        Group {
-            switch density {
-            case .card:
-                card
-            }
-        }
-        .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.82), value: isSelected)
-    }
-
-    private var card: some View {
-        HStack(alignment: .top, spacing: 12) {
-            RemoteAvatar(
-                urlString: RepoAvatarURL.from(owner: project.owner),
-                size: 40
-            )
-            VStack(alignment: .leading, spacing: 6) {
-                Text(verbatim: project.fullName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if let desc = project.description, !desc.isEmpty {
-                    Text(verbatim: desc)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                HStack(spacing: 8) {
-                    if let language = project.language, !language.isEmpty {
-                        LanguageBadge(language: language, style: .full)
-                    }
-                    StarsBadge(count: project.stars, style: .full)
-                    if project.firstIssue > 0 {
-                        MetaBadge(
-                            systemImage: "newspaper",
-                            text: String(format: String(localized: "weekly.issueLabelFormat"), project.firstIssue),
-                            tint: accentColor
-                        )
-                    }
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 10)
-        .padding(.leading, isSelected ? 5 : 0)
-        .background {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(accentColor.opacity(isSelected ? 0.18 : 0.045))
-        }
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(accentColor)
-                .frame(width: isSelected ? 3 : 0)
-                .padding(.vertical, 8)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(accentColor.opacity(isSelected ? 0.42 : 0.10), lineWidth: 1)
-        }
-    }
-}
+// R-01 v1.2 Phase B4（2026-06-10）：原 `WeeklyProjectRow` 已删除，
+// row 视觉统一由 `UnifiedRepoRow + project.asCardData(registry:)` 承接。
+// 周刊期号徽章通过 `CardBadge.weeklyIssue` 在 chip 行展示，accent 颜色由
+// `RepoCardViewData.accentColor` 计算（语言色优先 → 系统强调色，与列表统一）。
 
 // MARK: - ViewModel
 
