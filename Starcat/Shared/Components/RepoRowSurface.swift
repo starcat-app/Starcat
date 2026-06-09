@@ -10,9 +10,9 @@
 //
 //  替代原本散落 4 处、视觉 95% 相同但无法复用的 row surface 实现：
 //    1. `RepoRowSurface` (Features/Home/RepoRowView.swift) ← Manage 详情页
-//    2. `TrendingRepoRowSurface` (Features/Trending/TrendingRepoRowView.swift)
+//    2. `TrendingRepoRowSurface` (Features/Trending/TrendingRepoRowView.swift) ← 已删除（R-01 v1.2 Phase B2）
 //    3. `ActivityRowSurface` (Features/Activity/ActivityView.swift)
-//    4. `WeeklyProjectRow` 内嵌容器 (Features/Activity/WeeklyContentView.swift)
+//    4. `WeeklyProjectRow` 内嵌容器 (Features/Activity/WeeklyContentView.swift) ← 待删（R-01 v1.2 Phase B4）
 //
 //  这 4 处都重新实现了「accent 边框 / hover / selected / 圆角 / 左侧 bar」逻辑，
 //  数值一致但代码不一致——任何一处微调都漏改其他，是典型 D-17 漂移点。
