@@ -15,69 +15,17 @@
 import Foundation
 import SwiftUI
 
-// MARK: - API Response
-
-/// Trending API 响应包装。
-struct TrendingResponseDTO: Decodable {
-    let repo: String          // "/owner/repo" 格式
-    let desc: String?         // 仓库描述
-    let lang: String?         // 编程语言
-    let stars: Int            // 当前总 stars
-    let forks: Int            // 当前 forks
-    let buildBy: [TrendingContributorDTO]  // 贡献者列表
-    let change: Int?          // 周期内新增 stars（对应 starsInPeriod）
-
-    enum CodingKeys: String, CodingKey {
-        case repo
-        case desc
-        case lang
-        case stars
-        case forks
-        case buildBy = "build_by"
-        case change
-    }
-
-    init(
-        repo: String,
-        desc: String?,
-        lang: String?,
-        stars: Int,
-        forks: Int,
-        buildBy: [TrendingContributorDTO],
-        change: Int?
-    ) {
-        self.repo = repo
-        self.desc = desc
-        self.lang = lang
-        self.stars = stars
-        self.forks = forks
-        self.buildBy = buildBy
-        self.change = change
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.repo = try container.decode(String.self, forKey: .repo)
-        self.desc = try container.decodeIfPresent(String.self, forKey: .desc)
-        self.lang = try container.decodeIfPresent(String.self, forKey: .lang)
-        self.stars = try container.decodeIfPresent(Int.self, forKey: .stars) ?? 0
-        self.forks = try container.decodeIfPresent(Int.self, forKey: .forks) ?? 0
-        self.buildBy = try container.decodeIfPresent([TrendingContributorDTO].self, forKey: .buildBy) ?? []
-        self.change = try container.decodeIfPresent(Int.self, forKey: .change)
-    }
-}
-
-/// 贡献者 DTO。
-struct TrendingContributorDTO: Decodable {
-    let avatar: String   // 头像 URL
-    let by: String       // GitHub 用户名（格式 "/username"）
-}
+// MARK: - API Response（已删，R-01 v1.2 走 envelope）
+//
+// 旧的非 envelope `TrendingResponseDTO` / `TrendingContributorDTO` 在 R-01 v1.2 改造后已废。
+// 新数据流：API 响应 envelope → `StarcatEnvelope<[StarcatRepoCardDTO]>` → 由 `TrendingRepo.init(card:since:)`
+// 转 UI 模型。后端字段集见 `Starcat/Core/Network/StarcatRepoCardDTO.swift`。
 
 // MARK: - Domain Model
 
 /// Trending 仓库领域模型。
 ///
-/// 从 TrendingResponseDTO 转换而来，用于 UI 展示。
+/// R-01 v1.2 起从 `StarcatRepoCardDTO + TrendingExtension` 转换而来（见 `init(card:since:)`）。
 /// 包含计算属性用于格式化显示。
 struct TrendingRepo: Identifiable, Equatable {
     /// 唯一标识（使用 fullName 作为 id）
@@ -116,35 +64,41 @@ struct TrendingRepo: Identifiable, Equatable {
     /// 贡献者列表
     let contributors: [Contributor]
 
-    /// 初始化。
-    /// - Parameter dto: API 响应 DTO
-    init(dto: TrendingResponseDTO, since: TrendingPeriod) {
-        // 解析 fullName："/owner/repo" -> "owner/repo"
-        let cleanPath = dto.repo.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        self.fullName = cleanPath
+    /// R-01 v1.2 初始化：从 envelope 化的 `StarcatRepoCardDTO` + 周期信息构造。
+    ///
+    /// 字段映射：
+    ///   - `card.fullName` / `card.owner` / `card.repo` → `fullName` / `owner` / `name`
+    ///   - `card.htmlUrl` 优先；缺失时 fallback 用 `GitHubURLs.repo(owner:repo:)` 重建
+    ///   - `card.description` / `card.language` → `description` / `language`
+    ///   - `card.stars` / `card.forks` → `starsCount` / `forksCount`
+    ///   - `card.trending?.change` → `starsInPeriod`（缺扩展段时退化为 0）
+    ///   - `card.trending?.contributors` → `contributors` 数组（缺扩展段时空数组）
+    ///
+    /// 已知 v1.2 后端**未利用**字段（TODO P5b 升 GRDB schema 时一并消化）：
+    ///   `gh_repo_id` / `watchers` / `subscribers` / `topics` / `homepage` / `license_spdx`
+    ///   / `is_archived` / `is_fork` / `is_private` / `default_branch` / `open_issues`
+    ///   / `pushed_at` / `updated_at` / `created_at`。
+    init(card: StarcatRepoCardDTO, since: TrendingPeriod) {
+        self.fullName = card.fullName
+        self.owner = card.owner
+        self.name = card.repo
+        self.url = card.htmlUrl ?? GitHubURLs.repo(owner: card.owner, repo: card.repo)
+        self.description = card.description
+        self.language = card.language
+        self.starsCount = card.stars
+        self.forksCount = card.forks
+        self.starsInPeriod = card.trending?.change ?? 0
 
-        let parts = cleanPath.split(separator: "/", maxSplits: 1)
-        self.owner = parts.count > 0 ? String(parts[0]) : ""
-        self.name = parts.count > 1 ? String(parts[1]) : cleanPath
-
-        self.url = GitHubURLs.repo(fullName: cleanPath)
-        self.description = dto.desc
-        self.language = dto.lang
-        self.starsCount = dto.stars
-        self.forksCount = dto.forks
-        self.starsInPeriod = dto.change ?? 0
-
-        // 生成周期文本：只显示数字，如 "+321"
+        // 周期文本：只显示数字，如 "+321" / "0"。
         let prefix = self.starsInPeriod > 0 ? "+" : ""
         self.periodText = "\(prefix)\(self.starsInPeriod)"
 
-        // 转换贡献者
-        self.contributors = dto.buildBy.map { c in
-            let username = c.by.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            return Contributor(
-                username: username,
-                avatarURL: URL(string: c.avatar),
-                profileURL: GitHubURLs.userProfile(login: username)
+        // 后端 contributors 已是「avatar URL + login」结构化字段，前端零字符串处理。
+        self.contributors = (card.trending?.contributors ?? []).map { c in
+            Contributor(
+                username: c.login,
+                avatarURL: c.avatar,
+                profileURL: GitHubURLs.userProfile(login: c.login)
             )
         }
     }

@@ -371,10 +371,12 @@ final class AppDependencies {
         self.starredRegistryBootstrapper = bootstrapper
 
         // RepoResolver chain：5 个 source 按优先级顺序
+        // R-01 v1.2（2026-06-09）：BackendAggregateRepoSource 已填实，接 weekly 的
+        // GET /api/v1/projects/{owner}/{repo}；详细见 BackendAggregateRepoSource.swift。
         self.repoResolver = RepoResolver(chain: [
             LocalRepoSource(repository: repo),
             BackendHintRepoSource(),
-            BackendAggregateRepoSource(),     // R-01 占位：永远返 nil
+            BackendAggregateRepoSource(weeklyAPI: self.weeklyAPI),
             GitHubFallbackRepoSource(apiClient: api),
             MinimalRepoSource()              // 永远命中兜底
         ])

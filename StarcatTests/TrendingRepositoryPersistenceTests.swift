@@ -36,22 +36,47 @@ private func trendingPersistResponse(
     )!
 }
 
+/// 构造 trending v1.2 envelope wire fixture body。
+///
+/// R-01 v1.2 后 TrendingAPI 走 `StarcatEnvelope<[StarcatRepoCardDTO]>`，旧的非 envelope
+/// `[TrendingResponseDTO]` 数组格式已废。fullName 字段从输入 tuple 第 1 项的 "/owner/repo" 解析。
 private func trendingFixtureBody(_ items: [(String, String?, Int, Int, Int)]) -> Data {
-    // [(repo, lang, stars, forks, change)]
-    let arr = items.map { tuple -> [String: Any] in
-        var dict: [String: Any] = [
-            "repo": tuple.0,
+    // [(repo path, lang, stars, forks, change)]
+    let cards = items.enumerated().map { (idx, tuple) -> [String: Any] in
+        let cleanPath = tuple.0.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let parts = cleanPath.split(separator: "/", maxSplits: 1)
+        let owner = parts.count > 0 ? String(parts[0]) : ""
+        let repo = parts.count > 1 ? String(parts[1]) : cleanPath
+
+        var card: [String: Any] = [
+            "gh_repo_id": Int64(1000 + idx),
+            "full_name": cleanPath,
+            "owner": owner,
+            "repo": repo,
             "stars": tuple.2,
             "forks": tuple.3,
-            "change": tuple.4,
-            "build_by": []
+            "watchers": tuple.2,
+            "subscribers": 0,
+            "topics": [],
+            "is_archived": false,
+            "is_fork": false,
+            "is_private": false,
+            "open_issues": 0,
+            "trending": [
+                "change": tuple.4,
+                "contributors": []
+            ]
         ]
         if let lang = tuple.1 {
-            dict["lang"] = lang
+            card["language"] = lang
         }
-        return dict
+        return card
     }
-    return try! JSONSerialization.data(withJSONObject: arr, options: [])
+    let envelope: [String: Any] = [
+        "schema_version": 1,
+        "data": cards
+    ]
+    return try! JSONSerialization.data(withJSONObject: envelope, options: [])
 }
 
 @Suite("TrendingRepository 持久化", .serialized)

@@ -62,7 +62,7 @@ struct StarcatRepoCardDTOTests {
         }
         """#.data(using: .utf8)!
 
-        let response = try JSONDecoder().decode(StarcatRepoCardResponse.self, from: json)
+        let response = try JSONDecoder().decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: json)
         #expect(response.schemaVersion == 1)
         #expect(response.isSupported == true)
         #expect(response.data.count == 1)
@@ -112,7 +112,7 @@ struct StarcatRepoCardDTOTests {
         }
         """#.data(using: .utf8)!
 
-        let response = try JSONDecoder().decode(StarcatRepoCardResponse.self, from: json)
+        let response = try JSONDecoder().decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: json)
         let card = response.data[0]
         #expect(card.weekly?.firstIssue == 399)
         #expect(card.weekly?.issueUrl.absoluteString.contains("issue-399.md") == true)
@@ -130,7 +130,7 @@ struct StarcatRepoCardDTOTests {
         }
         """#.data(using: .utf8)!
 
-        let response = try JSONDecoder().decode(StarcatRepoCardResponse.self, from: json)
+        let response = try JSONDecoder().decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: json)
         #expect(response.schemaVersion == 2)
         // R-01 客户端 supportedSchemaVersion = 1，遇到 2 应认为不支持但仍能解码（向后兼容）。
         #expect(response.isSupported == false)
@@ -164,7 +164,7 @@ struct StarcatRepoCardDTOTests {
         }
         """#.data(using: .utf8)!
 
-        let response = try JSONDecoder().decode(StarcatRepoCardResponse.self, from: json)
+        let response = try JSONDecoder().decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: json)
         let card = response.data[0]
         #expect(card.trending == nil)
         #expect(card.weekly == nil)
@@ -199,7 +199,7 @@ struct StarcatRepoCardDTOTests {
         """#.data(using: .utf8)!
 
         #expect(throws: DecodingError.self) {
-            _ = try JSONDecoder().decode(StarcatRepoCardResponse.self, from: json)
+            _ = try JSONDecoder().decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: json)
         }
     }
 
@@ -210,7 +210,7 @@ struct StarcatRepoCardDTOTests {
         """#.data(using: .utf8)!
 
         #expect(throws: DecodingError.self) {
-            _ = try JSONDecoder().decode(StarcatRepoCardResponse.self, from: json)
+            _ = try JSONDecoder().decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: json)
         }
     }
 

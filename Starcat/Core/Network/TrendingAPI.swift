@@ -109,20 +109,33 @@ actor TrendingAPI {
 
     /// 获取热门仓库列表。
     ///
+    /// R-01 v1.2：响应改 envelope（`StarcatEnvelope<[StarcatRepoCardDTO]>`）。
+    /// 内部仍把 DTO 转成 `TrendingRepo` UI 模型返回，让 ViewModel / GRDB 持久化层零改动。
+    ///
     /// - Parameters:
     ///   - since: 时间周期（daily/weekly/monthly）
     ///   - language: 编程语言筛选（空字符串表示全部）
-    /// - Returns: Trending 仓库数组
+    /// - Returns: Trending 仓库数组（已从 DTO 转换为 UI 模型）
     func fetchTrending(
         since: TrendingPeriod,
         language: TrendingLanguage = .all
     ) async throws -> [TrendingRepo] {
         let url = try buildURL(since: since, language: language)
-        let data = try await performRequest(url: url)
-        let dtos = try decoder.decode([TrendingResponseDTO].self, from: data)
+        let (data, response) = try await performRequestWithResponse(url: url)
 
-        // 转换为领域模型，带上当前周期用于 periodText
-        return dtos.map { TrendingRepo(dto: $0, since: since) }
+        // envelope 解码 + schema_version warning + 401 / 4xx / 5xx 错误识别
+        do {
+            let cards = try StarcatEnvelopeDecoder.decode(
+                [StarcatRepoCardDTO].self,
+                data: data,
+                response: response,
+                decoder: decoder
+            )
+            return cards.map { TrendingRepo(card: $0, since: since) }
+        } catch let error as StarcatEnvelopeNetworkError {
+            // 把 envelope 错误翻译成本地的 TrendingAPIError，让 ViewModel 调用层零变更
+            throw error.asTrendingAPIError
+        }
     }
 
     // MARK: - Private
@@ -147,7 +160,12 @@ actor TrendingAPI {
         return url
     }
 
-    private func performRequest(url: URL) async throws -> Data {
+    /// 走 GET + 注入 Bearer + 拿到 (data, response)，**不解析 status code**——
+    /// 由 `StarcatEnvelopeDecoder.decode` 接管成功 / 错误判定（v1.2 后端非 2xx 也是 envelope）。
+    ///
+    /// 老的 `performRequest` / `validateResponse` 已合并到这里，因为 envelope 时代不再需要前端单独
+    /// 把 4xx / 5xx 翻译成 TrendingAPIError —— envelope decoder 里能拿到 ErrorEnvelope 的 code+message。
+    private func performRequestWithResponse(url: URL) async throws -> (Data, URLResponse) {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -160,30 +178,32 @@ actor TrendingAPI {
         }
 
         do {
-            let (data, response) = try await session.data(for: request)
-            return try validateResponse(data: data, response: response)
-        } catch let error as TrendingAPIError {
-            throw error
+            return try await session.data(for: request)
         } catch {
             throw TrendingAPIError.transport(underlying: error)
         }
     }
+}
 
-    private func validateResponse(data: Data, response: URLResponse) throws -> Data {
-        guard let http = response as? HTTPURLResponse else {
-            throw TrendingAPIError.transport(underlying: URLError(.badServerResponse))
-        }
+// MARK: - Envelope 错误 → TrendingAPIError 翻译
 
-        switch http.statusCode {
-        case 200...299:
-            return data
-        case 400...499:
-            let message = String(data: data, encoding: .utf8)
-            throw TrendingAPIError.serverError(message: message)
-        case 500...599:
-            throw TrendingAPIError.serverError(message: String(format: String(localized: "network.error.serverStatusFormat"), http.statusCode))
-        default:
-            throw TrendingAPIError.transport(underlying: URLError(.badServerResponse))
+private extension StarcatEnvelopeNetworkError {
+    /// 把统一的 envelope 错误翻译成本地化的 TrendingAPIError，让 ViewModel 调用层零变更。
+    /// R-01 v1.2 兼容措施：后续可考虑把 ViewModel 也直接用 StarcatEnvelopeNetworkError，省去本翻译。
+    var asTrendingAPIError: TrendingAPIError {
+        switch self {
+        case .invalidURL:
+            return .invalidURL
+        case .transport(let err):
+            return .transport(underlying: err)
+        case .decoding(let err):
+            return .decodingError(underlying: err)
+        case .serverError(_, let code, let message):
+            // 把 code + message 拼成可读的字符串塞 serverError，UI 直接展示
+            if let code, !code.isEmpty {
+                return .serverError(message: "[\(code)] \(message)")
+            }
+            return .serverError(message: message)
         }
     }
 }
