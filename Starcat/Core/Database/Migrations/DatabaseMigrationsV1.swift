@@ -101,9 +101,9 @@ enum DatabaseMigrations {
     /// **为什么 v8 没一并加**：v8 落地（2026-06-10 早些时）时仅消化 4 个最常用
     /// hero 字段（owner_avatar / subscribers_count / default_branch /
     /// open_issues_count）。`gh_repo_id` 当时被列入「v1.2 边界内但 trending UI
-    /// 暂不需要」清单——因为 trending 列表 row 还在用旧 `TrendingRepoRowView`，
-    /// 列表诊断键用 fullName 不依赖 ghRepoId。R-01 v1.2 Phase B 切到 UnifiedRepoRow
-    /// 后，跨场景 ✓ 标记必须 ghRepoId，所以单独提一次 v9 解锁。
+    /// 暂不需要」清单——因为 trending 列表 row 还在用旧的独立 row 视图，列表 diff
+    /// 键用 fullName 不依赖 ghRepoId。R-01 v1.2 Phase B 切到 UnifiedRepoRow 后，
+    /// 跨场景 ✓ 标记必须 ghRepoId，所以单独提一次 v9 解锁。
     ///
     /// **NULL 兼容**：`gh_repo_id INTEGER`（无 NOT NULL），v8 之前的行迁移到 v9 后
     /// 该列为 NULL；下次 `fetchTrending` 网络回来整批替换时被填实（trending v1.2
