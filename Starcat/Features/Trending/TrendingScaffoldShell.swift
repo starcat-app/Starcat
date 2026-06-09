@@ -1,0 +1,226 @@
+//
+//  TrendingScaffoldShell.swift
+//  Starcat
+//
+//  R-01「三场景共用架构」Trending 详情页外壳。
+//
+//  ────────────────────────────────────────────────────────────────────────────
+//  设计意图（详细设计 §3.2.3 / §5.2 + R-01 v1.2 Phase B3 落地，2026-06-10）
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  本 view 是 Trending 详情页的「外壳 + 解析层」：
+//
+//  - 输入：`TrendingRepo`（来自 trending row 选中）
+//  - 解析：先查本地 DB（`findByOwnerName`）→ 命中即用本地真值（`isLocalHit = true`），
+//    保留 tags / notes / release 三段；未命中退化到 `trending.makeEphemeralRepo()`
+//    （`isLocalHit = false`，三段隐藏，star chip 走"重新 star"分支）。
+//  - 输出：`RepoDetailScaffold` 渲染 hero + heroExtension（贡献者列）+ trailing
+//    actions [.share, .ai] + body slot（`TrendingDetailContent` 的 README）。
+//
+//  关键约束：
+//
+//  1. **不与 Manage 主路径污染 README**：`TrendingDetailContent` 使用环境注入的
+//     `ReadmeViewModel`（HomeView 持有，Trending / Manage 共用同一实例），但触发
+//     `loadTrending()` 走 trending 缓存路径（gh_readmes_trending 而非 gh_readmes），
+//     PK = owner/repo 而非 repo_id，不会撞坏 Manage 详情页 SWR 状态。
+//
+//  2. **Star chip 行为切换**：本地命中 + 已 star → unstar；本地命中 + 未 star（墓碑
+//     行）→ 重新 star；未命中 → ephemeral repo 直接 star（成功后 StarActionService
+//     会写 DB + 加入 registry，下次重渲染就走"已 star"分支）。
+//
+//  3. **登录态门控**：未登录用户点击 star chip 走 `authSession.signIn()` 触发设备
+//     流登录，不直接跳 GitHub 网页（避免脱离 App）。
+//
+//  4. **重渲染时机**：`task(id: trending.id)` 保证切换 row 时重新解析；
+//     `StarredRegistry` 是 `@Observable`，star/unstar 后整个 view tree 自动刷新，
+//     `displayRepo` 会在下一次 onChange 中切换到本地真值。
+//
+
+import SwiftUI
+import AppKit
+
+/// Trending 场景的详情页外壳。
+///
+/// - Note: 本 view 单独抽到一个文件而非塞进 `RepoDetailView.swift`，是为了让
+///   Trending 详情的解析逻辑（local hit vs ephemeral）与 Manage 详情解耦——
+///   `RepoDetailView` 内 trending 分支只负责 `TrendingScaffoldShell(trending:)`
+///   一行调用，剩下全交给本 shell。
+struct TrendingScaffoldShell: View {
+
+    let trending: TrendingRepo
+
+    @Environment(AppDependencies.self) private var dependencies
+    @Environment(AuthSession.self) private var authSession
+    @Environment(HomeViewModel.self) private var homeViewModel
+
+    /// 当前展示用的 `Repo`：本地命中 → 真值；未命中 → ephemeral（id 可能为 0）。
+    @State private var displayRepo: Repo?
+    /// 是否本地命中（驱动 hero 三段渲染、star chip 行为）。
+    @State private var isLocalHit: Bool = false
+
+    // —— Manage 详情页同款 unstar 流程（仅本地命中分支会用到）——
+    @State private var showUnstarConfirm: Bool = false
+    @State private var unstarError: String?
+
+    var body: some View {
+        Group {
+            if let displayRepo {
+                scaffold(for: displayRepo)
+            } else {
+                // 解析中（极短，loadAll 内同步把 ephemeral repo 推上来；
+                // 极端情况下展示 ProgressView，避免空白）。
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .task(id: trending.id) {
+            await resolveRepo()
+        }
+        .alert("repo.unstar.confirm", isPresented: $showUnstarConfirm, presenting: displayRepo) { repo in
+            Button("repo.unstar.action", role: .destructive) {
+                Task { await performUnstar(repo: repo) }
+            }
+            Button("repo.unstar.dontUnstar", role: .cancel) {}
+        } message: { repo in
+            Text(String(format: String(localized: "repo.unstar.messageFormat"), repo.fullName))
+        }
+        .alert("repo.unstar.failed", isPresented: errorAlertBinding, presenting: unstarError) { _ in
+            Button("general.ok") { unstarError = nil }
+        } message: { msg in
+            Text(LocalizedStringKey(msg))
+        }
+    }
+
+    // MARK: - Scaffold 装配
+
+    @ViewBuilder
+    private func scaffold(for repo: Repo) -> some View {
+        RepoDetailScaffold(
+            repo: repo,
+            viewData: RepoDetailViewData(
+                hero: RepoDetailHero(repo: repo),
+                trailingActions: trailingActions(for: repo),
+                // R-01 v1.2 Phase B3：trending 详情**仅本地命中（id != 0）才接翻译入口**。
+                // 翻译 VM 用 `repo.id` 作缓存键，ephemeral repo（id=0）会撞坏缓存命名空间。
+                translation: repo.id != 0 ? ReadmeTranslationContext(fullName: repo.fullName) : nil,
+                backendHint: nil
+            ),
+            // 本地命中 → 三段（tags / notes / release）渲染；未命中 → 隐藏。
+            heroShowsLocalSections: isLocalHit,
+            // tooltip 与 onStarTapped 行为对齐：已 star 显示「取消 star」；
+            // 未 star（无论本地墓碑行还是 ephemeral）显示「star」。
+            starHelpKey: repo.isStarred ? "repo.unstar" : "trending.star",
+            onStarTapped: {
+                handleStarTapped(repo: repo)
+            },
+            heroExtension: {
+                TrendingContributorsSection(contributors: trending.contributors)
+            },
+            body: { onScrollOffset in
+                TrendingDetailContent(repo: repo, onScrollOffset: onScrollOffset)
+            }
+        )
+    }
+
+    /// trailing actions：
+    /// - 本地命中（id != 0）→ `[.share, .ai]`（与 Manage 详情页对齐，share / ai 都依赖 repo.id）
+    /// - 未命中（ephemeral, id == 0）→ 空数组（share 走 AI 摘要缓存键 = repo.id，ephemeral
+    ///   会撞坏；ai 也类似。trending hero 上方已有「在 GitHub 查看」入口承接外链需求）。
+    private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
+        repo.id != 0 ? [.share, .ai] : []
+    }
+
+    // MARK: - Repo 解析
+
+    /// 决定 `displayRepo` 与 `isLocalHit`。
+    ///
+    /// 步骤：
+    /// 1. 查本地 DB（`findByOwnerName`）→ 命中返回 `(local, true)`，三段段渲染；
+    /// 2. 未命中 → 退化到 `trending.makeEphemeralRepo()`，`isLocalHit = false`；
+    ///
+    /// **不调 GitHub `/repos`**：与 `WeeklyDetailView.resolveRepo` 不同，trending
+    /// row 自带 v1.2 14 字段（owner_avatar / subscribers / default_branch /
+    /// open_issues 等），构造 ephemeral repo 已能让 hero 完整渲染。再调 API 既冗
+    /// 余也消耗 rate limit。后续若需要更多字段（如 license），把字段补到
+    /// `StarcatRepoCardDTO` v1.x 而非在视图层 fetch。
+    private func resolveRepo() async {
+        do {
+            if let local = try await dependencies.repoRepository.findByOwnerName(
+                owner: trending.owner,
+                name: trending.name
+            ) {
+                displayRepo = local
+                isLocalHit = true
+                return
+            }
+        } catch {
+            AppLog.sync.error("trending: local repo lookup failed: \(error.localizedDescription, privacy: .public)")
+            // 继续 fallback，不阻塞
+        }
+
+        displayRepo = trending.makeEphemeralRepo()
+        isLocalHit = false
+    }
+
+    // MARK: - Star / Unstar 协调
+
+    /// hero ⭐/☆ chip 点击：
+    /// - 本地命中 + 已 star：弹 unstar 确认 alert（与 Manage / Activity / Weekly 对齐）；
+    /// - 本地命中 + 未 star（墓碑行）：调 GitHub API 重新 star；
+    /// - 未命中（ephemeral, id == 0）：调 GitHub API 直接 star，成功后 StarActionService
+    ///   会写 DB + 加入 registry，下次重渲染本 view 走「本地命中 + 已 star」分支。
+    private func handleStarTapped(repo: Repo) {
+        guard authSession.state.isAuthenticated else {
+            authSession.signIn()
+            return
+        }
+
+        if isLocalHit {
+            if repo.isStarred {
+                showUnstarConfirm = true
+            } else {
+                Task { await performStar(repo: repo) }
+            }
+        } else {
+            Task { await performStar(repo: repo) }
+        }
+    }
+
+    /// 调 StarActionService 单点 star。
+    /// 服务内部完成 GitHub `PUT /user/starred/...` + `GET /repos/{o}/{r}` 拉最新
+    /// 字段 + DB upsert + StarredRegistry add。
+    private func performStar(repo: Repo) async {
+        do {
+            _ = try await dependencies.starActionService.star(owner: repo.owner, repo: repo.name)
+            // Star 后强制刷一次 sidebar / list，确保 manage 列表 row 状态同步。
+            await homeViewModel.refreshSidebar()
+            await homeViewModel.reloadItems(forceRefresh: true)
+            // 本 view 重新解析一次 → 切到本地真值，hero 三段开启。
+            await resolveRepo()
+        } catch {
+            unstarError = "repo.star.failed"
+            AppLog.sync.error("trending star failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// 与 Manage / Weekly 详情页 unstar 流程对齐。
+    private func performUnstar(repo: Repo) async {
+        do {
+            try await dependencies.starActionService.unstar(repo: repo)
+            await homeViewModel.refreshSidebar()
+            await homeViewModel.reloadItems(forceRefresh: true)
+            // unstar 后 Repo.isStarred 改为 false（保留行作墓碑），重新解析以拿最新值。
+            await resolveRepo()
+        } catch {
+            unstarError = "repo.unstar.actionFailed"
+            AppLog.sync.error("trending unstar failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private var errorAlertBinding: Binding<Bool> {
+        Binding(
+            get: { unstarError != nil },
+            set: { if !$0 { unstarError = nil } }
+        )
+    }
+}

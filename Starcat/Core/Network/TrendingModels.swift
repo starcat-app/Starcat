@@ -144,6 +144,63 @@ struct TrendingRepo: Identifiable, Equatable {
         let avatarURL: URL?
         let profileURL: URL?
     }
+
+    // MARK: - Ephemeral Repo 构造（详情页 hero 兜底）
+
+    /// 把 `TrendingRepo` 转为 in-memory 临时 `Repo`，用于详情页 hero 渲染。
+    ///
+    /// **使用场景**：用户点开一个**未本地 star** 的 trending row 时，详情页 hero
+    /// 区需要立即拿到 `Repo` 渲染（fullName / stars / forks / language / topics
+    /// / 创建时间 / 更新时间 等）。R-01 v1.2 Phase B3（2026-06-10）切到
+    /// `RepoDetailScaffold` 后，trending 分支不再手写 hero —— 必须把 trending 模型
+    /// 转为 `Repo` 才能喂给 Scaffold。
+    ///
+    /// **关键约束**：
+    /// - `id = ghRepoId`（v9 起 trending row 必填）；ghRepoId 为 0 退化代表「过渡 row」，
+    ///   调用方应通过 `id == 0` 判断「无法 star/unstar」。
+    /// - **不要落 DB**：本 Repo 的 `topics / watchers / created_at / updated_at` 等字段
+    ///   trending 模型本就没有，落库会污染本地数据。仅限「详情页 hero 区域不至于
+    ///   完全空着」。
+    /// - **isStarred 永远 false**：trending 模型不知道当前用户的 star 状态，调用方应
+    ///   通过 `StarredRegistry.contains(ghRepoId:)` 判断真实 star 状态后覆盖。
+    /// - 缺失字段（watchers / created_at / updated_at / topics / homepage / license / pushedAt）
+    ///   全部填默认值（0 / nil）。Hero 视图层应有能力 graceful 处理 0 / nil 情况。
+    ///
+    /// **本地命中优先**：调用方应**先**通过 `repoRepository.findByOwnerName(owner:name:)`
+    /// 查本地真值；只有未命中时才退化到本方法。本地真值含完整 v1.2 14 字段。
+    func makeEphemeralRepo() -> Repo {
+        let resolvedHtmlUrl = self.url.absoluteString
+        return Repo(
+            id: self.ghRepoId,                      // v9 之后 trending row 必填；为 0 时调用方需检查
+            owner: self.owner,
+            name: self.name,
+            fullName: self.fullName,
+            description: self.description,
+            language: self.language,
+            starsCount: self.starsCount,
+            forksCount: self.forksCount,
+            watchersCount: 0,                       // trending 模型没有；hero 显示 0 / 隐藏
+            topics: nil,                            // trending 模型没有；topics 段在 hero 隐藏
+            license: nil,
+            homepage: nil,
+            htmlUrl: resolvedHtmlUrl,
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            isFork: false,
+            isArchived: false,
+            isStarred: false,                       // ephemeral；调用方按 registry 真值覆盖
+            pushedAt: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            starredAt: nil,
+            cachedAt: nil,
+            ownerAvatar: self.ownerAvatar?.absoluteString,
+            subscribersCount: self.subscribersCount,
+            defaultBranch: self.defaultBranch,
+            openIssuesCount: self.openIssuesCount
+        )
+    }
 }
 
 // MARK: - Period

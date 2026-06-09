@@ -28,47 +28,18 @@ import AppKit
 struct RepoDetailView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
-    @Environment(ReadmeViewModel.self) private var readmeVM
-    /// HOM-68：README 翻译 VM（由 HomeView 持有 + environment 透传）。
-    @Environment(ReadmeTranslationViewModel.self) private var translationVM
-    /// 翻译目标语言 / 语言菜单 / 错误提示文案都依赖 AppSettings。
-    @Environment(AppSettings.self) private var settings
     // W4 B1：取消 star 需要的依赖
     @Environment(AppDependencies.self) private var dependencies
-    @Environment(AuthSession.self) private var authSession
-    // Trending 页面 ViewModel（用于更新 stars 计数）
-    @Environment(\.trendingViewModel) private var trendingViewModel
     /// 系统级"减少动效"开关，开启时详情页切换退化为仅 opacity 淡入（不再上滑）。
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // R-01 §3.2.3 决策：unstar 即点即生效，不再有 confirm alert / unstarError 弹窗。
     // 失败由 StarActionService 内部记日志，UI 仅靠 hero ⭐ chip 抖动 + 短暂红色提示
     // （chip 抖动效果在 RepoMetadataHeaderView 内未来扩展；R-01 阶段先打日志即可）。
-
-    /// Trending repo 一键 star 的 UI 状态
-    @State private var isStarringTrending: Bool = false
-    @State private var trendingStarError: String?
-
-    /// README 向下滚动时折叠顶部信息面板的连续进度。
-    ///
-    /// 旧实现是 32pt / 8pt 两个阈值切 Bool，数据写入少，但视觉上会像“突然收起”。
-    /// 这里改为 0...1 进度：滚动 8pt 后开始跟手压缩，72pt 左右完全收起。
-    /// SwiftUI 只重排这一块顶部面板和 README 宿主高度，换取更顺滑的滚动反馈。
-    @State private var metadataPanelCollapseProgress: CGFloat = 0
-
-    /// 顶部信息面板的自然高度。
-    ///
-    /// 折叠动画需要从「真实高度」连续压到 0，而不是把 view 直接从树里移除。
-    /// 这个高度由 `CollapsibleRepoMetadataPanel` 内部测量后回填。
-    @State private var metadataPanelHeight: CGFloat = 0
-
-    /// 顶部面板折叠/展开动画。
-    ///
-    /// 用轻阻尼 spring 比 easeInOut 更适合这里：面板高度变化会带动 WKWebView 重新分配空间，
-    /// spring 能让读者感觉内容是在跟手让位，而不是突然跳一下。
-    private var metadataPanelAnimation: Animation {
-        .interactiveSpring(response: 0.32, dampingFraction: 0.9, blendDuration: 0.08)
-    }
+    //
+    // R-01 v1.2 Phase B3（2026-06-10）：trending 详情页全部交给 `TrendingScaffoldShell`
+    // 自治，本 view 不再持有 `isStarringTrending` / `trendingStarError` 等任何 trending
+    // 相关状态；折叠面板状态由 `RepoDetailScaffold` 内部持有，本 view 也不再维护。
 
     /// Trending repo 的元信息（当从 Trending 列表选中时非 nil）。
     var selectedTrendingRepo: TrendingRepo?
@@ -128,25 +99,13 @@ struct RepoDetailView: View {
                 }
                 .transition(detailContentTransition)
             } else if let trending = selectedTrendingRepo {
-                // Trending repo 详情页（无本地数据，只显示 README）
-                VStack(alignment: .leading, spacing: 0) {
-                    collapsibleMetadataContainer {
-                        trendingMetadataHeader(trending)
-                    }
-                    trendingReadmeSection(trending)
-                }
-                .id(trending.id)                            // 同 Manage 分支：强制 view 重建触发 transition
-                .transition(detailContentTransition)
-                .navigationTitle(trending.name)
-                .navigationSubtitle(trending.owner)
-                .onChange(of: trending.id) { _, _ in
-                    // 切换 Trending repo 时把折叠状态重置回展开，与 Manage 侧
-                    // `.onChange(of: repo.id)` 行为完全对齐，避免上一条 repo 的
-                    // 折叠态污染下一条的首次展示。
-                    withAnimation(metadataPanelAnimation) {
-                        metadataPanelCollapseProgress = 0
-                    }
-                }
+                // R-01 §3.2.3 Phase B3（2026-06-10）：trending 详情切到 RepoDetailScaffold
+                // + TrendingDetailContent 共用骨架。`TrendingScaffoldShell` 内部维护
+                // `displayRepo` / `isLocalHit` 状态机，先查本地（已 star 拿真值，三段
+                // 跟着渲染），未命中退化到 ephemeral Repo（id=0，三段隐藏）。
+                TrendingScaffoldShell(trending: trending)
+                    .id(trending.id)
+                    .transition(detailContentTransition)
             } else {
                 emptyState
                     .id("empty")
@@ -203,385 +162,28 @@ struct RepoDetailView: View {
     // R-01 §3.2.3：performUnstar / errorAlertBinding 已迁移到 StarActionService 单点维护
     // （RepoDetailView 不再持有 unstar 业务逻辑）。
 
-    /// 顶部信息面板的通用折叠容器（Trending 分支用，Manage 已迁移到 RepoDetailScaffold）。
-    ///
-    /// 为什么不继续用 `if collapseProgress < 1 { ... }`：
-    /// 直接插拔 view 会让整个 WKWebView 在同一帧拿到新高度，视觉上像"跳变"；
-    /// 这里让面板始终留在 view tree 中，只把外层 frame 从自然高度动画到 0，
-    /// 同时给内容做轻微上移和淡出，WebView 的高度变化会更连续。
-    ///
-    /// 抽成 helper 的理由：折叠逻辑（hide / height / preference / animation）跟
-    /// 内容（Manage 的 `metadataHeader` 或 Trending 的 `trendingMetadataHeader`）
-    /// 完全解耦，两边共用一个 helper 避免 25 行 view modifier chain 复制粘贴漂移
-    /// （前车之鉴 06-02 00:48 Chip 抽公共组件）。
-    /// 共享状态来自外层的 `metadataPanelCollapseProgress` / `metadataPanelHeight` `@State`，
-    /// 上报通道由 `CollapsibleRepoMetadataPanel` 内部统一处理，所以 Manage 切 Trending
-    /// （或反之）时折叠状态会被 `body` 里的 `.onChange(of: id)` 重置一次。
-    @ViewBuilder
-    private func collapsibleMetadataContainer<Content: View>(
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        CollapsibleRepoMetadataPanel(
-            collapseProgress: $metadataPanelCollapseProgress,
-            panelHeight: $metadataPanelHeight
-        ) {
-            content()
-        }
-    }
-
-    // R-01 §3.2.3：metadataHeader / metadataPanel 已废弃——Manage 走 RepoDetailScaffold 内置 hero。
-    // Trending / Activity 仍在用 collapsibleMetadataContainer 等下方 helper（待后续 step 替换）。
-
-    /// 详情页元信息面板的强调色（取色规则与列表 `RepoRowSurface.accentColor` 完全一致）。
-    ///
-    /// 选用语言色而不是"头像取色"的理由：① 零依赖，无需异步算色 / 缓存 / 边界情况兜底
-    /// （透明 PNG / 单色 logo）；② 与列表视觉规则统一，用户认知不割裂。
-    /// 无语言时回退 `.accentColor`（系统蓝），与列表逻辑保持一致。
-    ///
-    /// 接收 `String?` 而非具体 model（`Repo` / `TrendingRepo`），让 Manage 详情页
-    /// 和 Trending 详情页能共用同一个 helper 与同一段渐变实现，避免两份复制粘贴漂移。
-    private func metadataAccentColor(for language: String?) -> Color {
-        if let language, !language.isEmpty {
-            return LanguageColor.color(for: language)
-        }
-        return .accentColor
-    }
-
-    /// 详情页 hero 区"语言色 → 透明"线性渐变背景。
-    ///
-    /// 复用于 Manage `metadataHeader` 与 Trending `trendingMetadataPanel` 两处，
-    /// 渐变形态、不透明度、命中测试规则均一致——以"详情页 hero 区有统一视觉语言"
-    /// 为目标，不要为某一边单独调参。
-    /// - opacity 0.18 顶部 → 0.0 底部，与列表 row 选中态强度对齐
-    /// - `.allowsHitTesting(false)` 不挡上层 Button / Link 点击
-    @ViewBuilder
-    private func metadataGradientBackground(language: String?) -> some View {
-        let tint = metadataAccentColor(for: language)
-        LinearGradient(
-            colors: [tint.opacity(0.18), tint.opacity(0.0)],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .allowsHitTesting(false)
-    }
-
-    /// README 区域。占据剩余高度，由 WebView 自己处理滚动。
-    ///
-    // R-01 §3.2.3：readmeSection (Manage) 已迁移到 ManageDetailContent。
-    // Trending 分支仍用下方 trendingReadmeSection（待 Step 6.2 替换）。
-
-    /// WebView 内部滚动位置 → 顶部信息面板折叠进度。
-    ///
-    /// 旧版只在 32pt / 8pt 两个阈值切换 Bool，布局更新少但手感偏硬。
-    /// 现在用 8pt 起步、64pt 行程的连续进度：
-    /// - 0...8pt：保留完整上下文，过滤触控板顶部轻微抖动；
-    /// - 8...72pt：跟随滚动连续压缩卡片；
-    /// - 72pt 以后：完全收起，README 获得最大阅读空间。
-    private func updateMetadataPanelVisibility(offsetY: CGFloat) {
-        let progress = Self.metadataCollapseProgress(for: offsetY)
-        guard abs(progress - metadataPanelCollapseProgress) > 0.01 else { return }
-        metadataPanelCollapseProgress = progress
-    }
+    // R-01 §3.2.3 Phase B3（2026-06-10）：本 view 的 trending 分支全部交给
+    // `TrendingScaffoldShell`（同 module 平级文件）+ `RepoDetailScaffold` +
+    // `TrendingDetailContent` + `TrendingContributorsSection` 共用骨架；
+    // 历史 helper（collapsibleMetadataContainer / metadataAccentColor /
+    // metadataGradientBackground / updateMetadataPanelVisibility / trendingHeader /
+    // trendingStatsSection / trendingContributorsSection / contributorAvatar /
+    // trendingReadmeSection / starTrending / TrendingHeroAvatarButton）已全部删除。
 
     /// 将 scroll offset 映射为顶部元信息面板的折叠进度。
     ///
     /// 抽成静态 helper 是为了让 Manage / Trending / Activity 保持同一参数口径；
     /// 后续如果 dong4j 继续调手感，只需要改这里这一处。
+    ///
+    /// **保留位置**：`RepoDetailScaffold` 内部已经 inline 同款算法；本静态 helper
+    /// 仅供 `WeeklyDetailView`（仍未迁移到 Scaffold）调用。Phase B5 把 Weekly 也迁
+    /// 到 Scaffold 后即可彻底删除。
     static func metadataCollapseProgress(for offsetY: CGFloat) -> CGFloat {
         let normalizedOffset = max(offsetY, 0)
         let collapseStart: CGFloat = 8
         let collapseDistance: CGFloat = 64
         return min(max((normalizedOffset - collapseStart) / collapseDistance, 0), 1)
     }
-
-    // MARK: - Trending Repo 支持
-
-    /// Trending repo 顶部信息内容（命名对齐 Manage 的 `metadataHeader`）。
-    ///
-    /// 折叠机制（向下滚 README 自动收起、回顶展开）走与 Manage 完全相同的链路：
-    /// 由外层 `collapsibleMetadataContainer` 接收 content、`trendingReadmeSection`
-    /// 通过 `onScrollOffsetChange: updateMetadataPanelVisibility` 上报 scrollY，
-    /// hysteresis 阈值（32pt 折叠 / 8pt 展开）也共用同一函数；本函数只关心内容渲染。
-    ///
-    /// 背景渐变也走共享 `metadataGradientBackground(language:)`，保持详情页 hero 区
-    /// 统一视觉语言。`TrendingRepo.language` 是 `String?`，与 `Repo.language`
-    /// 类型完全一致，直接复用 helper 无需为 Trending 单独写一份。
-    private func trendingMetadataHeader(_ repo: TrendingRepo) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            trendingHeader(repo)
-            trendingStatsSection(repo)
-            // Contributors 头像组（2026-06-02 从卡片移过来）。
-            // 卡片窄宽度下贡献者头像会被 List 水平裁剪，详情页空间更宽裕，
-            // 用稍大的 24pt 头像 + 可点击跳 GitHub profile + hover 显示 username。
-            if !repo.contributors.isEmpty {
-                trendingContributorsSection(repo)
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 16)
-        .padding(.bottom, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(alignment: .top) {
-            metadataGradientBackground(language: repo.language)
-        }
-    }
-
-    /// Trending repo 贡献者头像组。
-    ///
-    /// 设计要点（与原卡片版差异）：
-    /// - 头像 32pt（卡片版 16pt / 旧版 24pt），与上方 `.title3` Stars/Forks 数字
-    ///   视觉权重对齐；旧版 24pt 在大字号统计旁显得太弱，dong4j 2026-06-02 反馈
-    /// - 最多显示 6 个（卡片版 3），溢出用 "+N" 提示
-    /// - 每个头像包在 `Button { NSWorkspace.open(profileURL) }` 里，点击跳 GitHub profile
-    ///   （不用 `Link(destination:)`，原因见 `contributorAvatar` 内的详细注释）
-    /// - `.help(username)` 鼠标 hover 显示用户名，比卡片头像更有信息密度
-    /// - 头像之间负 spacing -10 实现 GitHub PR 卡片风格的重叠效果
-    ///   （随头像放大同步从 -6 增到 -10，保持视觉重叠比例）
-    ///
-    /// 关于"贡献者非常多"的兜底：当前数据源是 GitHub Trending 页面的 `buildBy`，
-    /// 上限实测就是 5 人，所以 `prefix(6)` 在当前数据下永远不会触发裁切。
-    /// 保留 `prefix(6)` + "+N" 仅作防御性兜底，不为未发生的场景过度设计。
-    /// 未来若接入 GitHub `/contributors` API（可能上百人），届时再加 Popover 展开。
-    private func trendingContributorsSection(_ repo: TrendingRepo) -> some View {
-        HStack(spacing: -10) {
-            ForEach(repo.contributors.prefix(6)) { contributor in
-                contributorAvatar(contributor)
-            }
-
-            if repo.contributors.count > 6 {
-                Text(verbatim: "+\(repo.contributors.count - 6)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 10)
-            }
-        }
-    }
-
-    /// 单个贡献者头像。
-    /// - 有 profileURL 时包 Button + NSWorkspace.open 让头像可点击跳 GitHub
-    /// - 无 profileURL 时退化为静态图（容错路径，正常不会触发）
-    ///
-    /// **为什么用 Button 而不是 `Link(destination:)`**：
-    /// SwiftUI 的 `Link` 在 macOS 上有个已知问题——外层 `.help()` 的 NSView.toolTip
-    /// 传不到 Link 内部，hover 不会弹 tooltip。项目内其他能正常弹 tooltip 的圆形头像
-    /// （`Shared/Components/RemoteAvatar.swift` 的 `OwnerAvatarButton`、
-    /// `Features/Tags/SFSymbolPicker.swift`、`Features/Tags/TagEditorView.swift` 等）
-    /// 全部用 `Button { NSWorkspace.shared.open(url) }` 模式，已验证 tooltip 可正常弹。
-    /// 此处对齐同款实现，避免重蹈 `Link` 的 tooltip 失效坑。
-    /// 2026-06-02 dong4j 反馈"hover 没弹 username"，根因即是上一版用了 `Link`。
-    @ViewBuilder
-    private func contributorAvatar(_ contributor: TrendingRepo.Contributor) -> some View {
-        if let profileURL = contributor.profileURL {
-            Button {
-                NSWorkspace.shared.open(profileURL)
-            } label: {
-                contributorAvatarImage(contributor)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            // 2026-06-02 dong4j 要求统一 hover 反馈：跟 hero logo / stats Button
-            // 用同一套 `.pressableHover()`，让用户能感知贡献者头像可点击跳 profile。
-            .pressableHover()
-            .help(contributor.username)
-        } else {
-            contributorAvatarImage(contributor)
-                .help(contributor.username)
-        }
-    }
-
-    /// 贡献者头像图片本体（带边框 + 圆形裁切）。
-    ///
-    /// 尺寸 32pt：与详情页 `.title3` 量级 Stars/Forks 数字视觉权重对齐。
-    /// 边框 2pt：头像放大后 1.5pt 边框显瘦，2pt 才能撑起"叠片"分隔感。
-    private func contributorAvatarImage(_ contributor: TrendingRepo.Contributor) -> some View {
-        AsyncImage(url: contributor.avatarURL) { image in
-            image.resizable().scaledToFit()
-        } placeholder: {
-            Circle().fill(Color.gray.opacity(0.3))
-        }
-        .frame(width: 32, height: 32)
-        .clipShape(Circle())
-        .overlay(
-            Circle()
-                .stroke(Color(NSColor.controlBackgroundColor).opacity(0.9), lineWidth: 2)
-        )
-    }
-
-    /// Trending repo 头部信息。
-    ///
-    /// 2026-06-02 dong4j 调整：原 `trendingStatsSection` 末尾的 `.buttonStyle(.bordered)`
-    /// "在 GitHub 查看"独立 CTA 视觉太重、不协调；改为把跳转动作落到左上角项目 logo 上
-    /// （`TrendingHeroAvatarButton`）—— logo 本来就指代仓库，点击它跳 GitHub 符合直觉，
-    /// stats 行同时变得更干净（只剩 Stars / Forks / Language / +N 周期增长）。
-    private func trendingHeader(_ repo: TrendingRepo) -> some View {
-        HStack(alignment: .top, spacing: 16) {
-            TrendingHeroAvatarButton(repo: repo)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(repo.fullName)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .textSelection(.enabled)
-                    .help(repo.fullName)
-
-                if let desc = repo.description, !desc.isEmpty {
-                    Text(desc)
-                        .font(.body)
-                        .textSelection(.enabled)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer()
-        }
-    }
-
-    /// Trending repo 统计信息。
-    private func trendingStatsSection(_ repo: TrendingRepo) -> some View {
-        HStack(alignment: .center, spacing: 24) {
-            // 2026-06-02 dong4j 要求统一 hover 反馈：Stars 加 `.pressableHover()`，
-            // 跟 Manage 详情页保持一致。详见 `Shared/Components/PressableHover.swift`。
-            Button {
-                Task { await starTrending(repo: repo) }
-            } label: {
-                // ZStack 而非 if/else：
-                // 1) 消除 NSProgressIndicator 警告
-                //    `<AppKitProgressView ...> has an maximum length (32.403423) that doesn't satisfy min (32.403423) <= max (32.403423).`
-                //    旧写法 `ProgressView().scaleEffect(0.6)` 中 scaleEffect 只在渲染层缩放、不改 layout intrinsic
-                //    size（仍是 ~32pt），父 stats `HStack(spacing: 24)` 又按相邻 StatItem 高度紧逼，
-                //    导致 NSProgressIndicator 内部 min==max==32.403423 浮点等值 → NSLog 警告。
-                //    显式给 ProgressView `.frame(width:height:)` 后 layout 不再被外部紧逼，警告消失。
-                //    （项目内 RepoShareButton / ReadmeTranslationFooterButton 已是这个 pattern。）
-                // 2) 消除 button 高度抖动：StatItem 始终占位决定 button 自然高度，
-                //    star 切换时 ProgressView 只在原位淡入，stats 行宽不再跳变。
-                ZStack {
-                    StatItem(label: "repo.stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
-                        .opacity(isStarringTrending ? 0 : 1)
-                    if isStarringTrending {
-                        ProgressView()
-                            .controlSize(.small)
-                            .frame(width: 16, height: 16)
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .disabled(isStarringTrending)
-            .pressableHover()
-            .help("trending.star")
-
-            // 2026-06-02 dong4j 新增：Forks 从静态 `StatItem` 改为可点击 Button，
-            // 点击跳 GitHub fork 页（与 Manage 详情页同款逻辑：`/fork` 不是 `/forks`，
-            // 跟 Manage stats 行为对齐，由用户决策不自作主张）。
-            // URL 拼接：`TrendingRepo.url` 是 URL 类型，用 `appendingPathComponent`
-            // 比字符串拼接更安全（自动处理末尾斜杠）。
-            //
-            // 未登录校验（dong4j 2026-06-02 追加）：fork 操作需要 GitHub 账号，
-            // 未登录时不跳 GitHub 网页登录（用户会脱离 App 流程），而是调
-            // `authSession.signIn()` 触发 App 内 Device Flow，登录完用户可以重新点击。
-            Button {
-                guard authSession.state.isAuthenticated else {
-                    authSession.signIn()
-                    return
-                }
-                NSWorkspace.shared.open(repo.url.appendingPathComponent("fork"))
-            } label: {
-                StatItem(label: "repo.forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .pressableHover()
-            .help("repo.forkAction")
-
-            if let language = repo.language, !language.isEmpty {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(LanguageColor.color(for: language))
-                        .frame(width: 8, height: 8)
-                    Text(language)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            HStack(spacing: 2) {
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.green)
-                Text(repo.periodText)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.green)
-            }
-
-            // 2026-06-02 dong4j 删除原 `Link "在 GitHub 查看"` 按钮（`.buttonStyle(.bordered)`
-            // 在 plain 风格 stats 行里视觉权重过重，像独立 CTA 显得突兀）；跳转动作下沉到
-            // `trendingHeader` 的左上角 logo（`TrendingHeroAvatarButton`）。
-
-            Spacer()
-        }
-    }
-
-    /// 执行 Trending repo 的 star 操作。
-    ///
-    /// 未登录处理（dong4j 2026-06-02 修复隐藏 bug）：
-    /// 旧版赋值 `trendingStarError = "auth.needLogin"` 但该状态从未在任何 UI 被渲染
-    /// （grep 全项目确认是 dead write），导致未登录用户点击 Star 静默无反应。
-    /// 现在改为调 `authSession.signIn()` 触发 App 内 Device Flow 登录，
-    /// 与 Trending Forks Button 的未登录处理保持一致。
-    ///
-    /// R-01 v1.2（2026-06-10）：star 操作走 `StarActionService` 单点。
-    /// 服务内部完成 GitHub `PUT /user/starred/...` + `GET /repos/{o}/{r}` 拉最新
-    /// 字段 + DB upsert + StarredRegistry add。Registry 是 `@Observable`，所有列表
-    /// 卡片（含 trending row 的 ✓ 标记）会自动响应；不再需要手动 `incrementStarsCount`
-    /// 维护 trending 列表的本地 stars 计数 +1（trending 列表数字下次刷新自然同步）。
-    private func starTrending(repo: TrendingRepo) async {
-        guard authSession.state.isAuthenticated else {
-            authSession.signIn()
-            return
-        }
-
-        isStarringTrending = true
-        trendingStarError = nil
-
-        do {
-            _ = try await dependencies.starActionService.star(owner: repo.owner, repo: repo.name)
-            // StarActionService 内部已 add 进 StarredRegistry；HomeView 通过注入的
-            // HomeRefreshing 钩子触发 `reloadItems`，trending 列表 row 通过 registry
-            // 联动出现 ✓ 标记。本路径不需要再手动 reloadItems。
-        } catch {
-            trendingStarError = "repo.star.failed"
-        }
-
-        isStarringTrending = false
-    }
-
-    /// Trending repo README 区域。
-    ///
-    /// `onScrollOffsetChange` 接通共享的 `updateMetadataPanelVisibility`：
-    /// 与 Manage `readmeSection` 走同一条 hysteresis 链路（32pt 折叠 / 8pt 展开），
-    /// 让 Trending 详情页也具备"向下滚 README 自动收起 hero、回顶展开"的体验。
-    private func trendingReadmeSection(_ repo: TrendingRepo) -> some View {
-        ReadmeStateView(
-            state: readmeVM.state,
-            // 拼接 blob/HEAD：同上，Trending 的 repo.url 是仓库根 URL，
-            // 补上 blob/HEAD 使相对链接正确解析。
-            baseURL: URL(string: "\(repo.url.absoluteString)/blob/HEAD"),
-            owner: repo.owner,
-            repo: repo.name,
-            onScrollOffsetChange: updateMetadataPanelVisibility,
-            // HOM-68：Trending 没有本地 Repo.id，不接翻译入口；传 nil 让 footer
-            // 跳过翻译控件，保持 trending 侧的简洁。
-            translationControl: nil
-        ) {
-            // Trending README 刷新：直接调用 loadTrending
-            readmeVM.loadTrending(owner: repo.owner, repo: repo.name, isLoggedIn: authSession.state.isAuthenticated)
-        } onLogin: {
-            authSession.signIn()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    // Repo 元信息面板已抽到 `RepoMetadataHeaderView.swift`，Manage / Activity 共用。
 
     // MARK: - 空态
 
@@ -1111,43 +713,6 @@ struct WatchersMenu: View {
     }
 }
 
-// MARK: - Trending Hero Avatar Button
-
-/// Trending repo 详情页左上角的项目 logo 按钮（hero 元素）。
-///
-/// 2026-06-02 由 dong4j 主导的 UX 调整：原 stats 行末尾有一个独立的
-/// `Link "在 GitHub 查看"` 按钮（`.buttonStyle(.bordered)`），在 plain 风格 stats 行里
-/// 视觉权重过重显得突兀；改为删除按钮 + 把跳转动作落到本组件（项目 logo）上。
-/// logo 本来就指代仓库，点击它跳 GitHub 符合直觉。
-///
-/// 设计要点：
-/// - **沿用 18:35 修好的"Button + NSWorkspace"模式**，不用 `Link(destination:)`——
-///   后者外层 `.help()` toolTip 在 macOS 上传不进 Link 内部，hover 不弹 tooltip
-///   （详见 `contributorAvatar` 内的注释）
-/// - **hover 视觉反馈必要**：logo 包成 Button 后视觉上跟静态图无异，用户无法感知
-///   "这是可点击的"。加 `.opacity(0.78)` 的轻微变暗（不加 scale 避免太花），
-///   是 macOS 经典 image-button 模式（系统 Preview.app / Finder 同款）
-/// - **尊重 accessibilityReduceMotion**：reduceMotion 用户不做 0.15s 缓动，避免动效
-/// - `.help("repo.openOnGithub")` 直接复用原按钮的本地化文案，无需新增 i18n key
-///
-/// 没抽到 `Shared/Components/RemoteAvatar.swift`：本组件强绑 `TrendingRepo` 模型 +
-/// 详情页 hero 语义，复用面窄；如未来 Manage detail 也需要"可点击 owner avatar"，
-/// 再抽通用版（接受 `URL` + `tooltipKey` 参数）。
-private struct TrendingHeroAvatarButton: View {
-    let repo: TrendingRepo
-
-    var body: some View {
-        Button {
-            NSWorkspace.shared.open(repo.url)
-        } label: {
-            RemoteAvatar(
-                urlString: RepoAvatarURL.from(owner: repo.owner),
-                size: 64
-            )
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .pressableHover()
-        .help("repo.openOnGithub")
-    }
-}
+// R-01 §3.2.3 Phase B3（2026-06-10）：原 `TrendingHeroAvatarButton` 已删除。
+// Trending 详情页左上角项目 logo 改由 `RepoMetadataHeaderView` 内置 hero 头像承接，
+// 与 Manage / Weekly / Activity 视觉统一；外链跳转入口由 hero「在 GitHub 查看」chip 提供。
