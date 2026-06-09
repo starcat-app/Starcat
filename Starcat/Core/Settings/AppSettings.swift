@@ -714,6 +714,53 @@ final class AppSettings {
         setCustomURL(nil, for: service)
     }
 
+    // MARK: - 第三方服务 API Key（R-01 v1.2 新增 2026-06-09）
+    //
+    // 三个自建后端（trending / weekly / sharing）改造后强制 Bearer Token 鉴权，前端
+    // 必须在 Authorization 头里塞 `Bearer <api-key>`，否则任何 /api/v1/* 请求 401。
+    //
+    // ⚠️ 当前实现是 P1a「最小可工作」版：
+    //   - 用 UserDefaults 持久化（明文，仅本地用户可读）
+    //   - 后续 Phase B（BYOK 完整 UX）会迁到 Keychain（KeychainManager 现已有 OAuth token 存取）
+    //   - 迁移时修 `customServiceAPIKey(for:)` / `setCustomAPIKey(_:for:)` 两个方法即可，
+    //     调用方（AppDependencies / API actor）无感
+    //
+    // 设计参照：customServiceURLs 完全同款 dict + rawValue 键 + 空字符串 = 未配置。
+
+    /// 各服务用户配置的自定义 API Key 字符串字典（rawValue → key）。
+    ///
+    /// - 缺省 / 空字符串 / 不存在键 = 走 production 默认 Key（`StarcatAPIKeyDefaults`）
+    /// - 写入路径只走 `setCustomAPIKey(_:for:)` / `resetCustomAPIKey(for:)`，**不要**直接 mutate
+    ///
+    /// TODO(P1b)：迁移到 Keychain，避免 UserDefaults 明文（虽然 macOS 沙盒下其他 App
+    /// 读不到本 App 的 prefs，但 Time Machine / iCloud Sync 备份可能落到云端）。
+    private(set) var customServiceAPIKeys: [String: String] {
+        didSet { persistJSON(key: Keys.customServiceAPIKeys, value: customServiceAPIKeys) }
+    }
+
+    /// 读取某服务当前的用户自定义 API Key；未配置返回 nil（让上层回退到 production 默认）。
+    func customServiceAPIKey(for service: ThirdPartyService) -> String? {
+        let raw = customServiceAPIKeys[service.rawValue]
+        return (raw?.isEmpty == false) ? raw : nil
+    }
+
+    /// 写入某服务的自定义 API Key。传 nil 或空字符串等价于调 `resetCustomAPIKey(for:)`。
+    func setCustomAPIKey(_ key: String?, for service: ThirdPartyService) {
+        let trimmed = key?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var copy = customServiceAPIKeys
+        if let trimmed, !trimmed.isEmpty {
+            copy[service.rawValue] = trimmed
+        } else {
+            copy.removeValue(forKey: service.rawValue)
+        }
+        customServiceAPIKeys = copy
+    }
+
+    /// 清空某服务的自定义 API Key（回退到 production 默认）。
+    func resetCustomAPIKey(for service: ThirdPartyService) {
+        setCustomAPIKey(nil, for: service)
+    }
+
     // MARK: - 初始化
 
     private let defaults: UserDefaults
@@ -811,6 +858,9 @@ final class AppSettings {
         // 第三方服务自定义 URL（2026-06-08）：缺失或解码失败时为空字典，
         // 所有服务都走 `AppEndpoints.production(for:)` 默认值。
         self.customServiceURLs = Self.decodeJSON([String: String].self, key: Keys.customServiceURLs, defaults: defaults) ?? [:]
+
+        // 第三方服务自定义 API Key（R-01 v1.2 2026-06-09）：缺失即走 production 默认 Key。
+        self.customServiceAPIKeys = Self.decodeJSON([String: String].self, key: Keys.customServiceAPIKeys, defaults: defaults) ?? [:]
     }
 
     // MARK: - 内部
@@ -956,5 +1006,6 @@ final class AppSettings {
         static let isProUser = "settings.pro.isProUser"  // HOM-151
         static let autoTidySettings = "settings.ai.autoTidy.v1"  // HOM-126
         static let customServiceURLs = "settings.services.customURLs.v1"  // 2026-06-08
+        static let customServiceAPIKeys = "settings.services.customAPIKeys.v1"  // R-01 v1.2 2026-06-09
     }
 }

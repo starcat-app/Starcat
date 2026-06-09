@@ -281,7 +281,14 @@ final class AppDependencies {
         // HOM-54：Trending Repository（W7+ 起接入 GRDB 持久化）。
         // 把 TrendingAPI 提到顶层 `self.trendingAPI`，让设置页 → 服务 Tab 改地址后
         // 可以直接拿到这个实例 `await trendingAPI.updateBaseURL(_:)` 热更新。
-        let trendingAPIInstance = TrendingAPI(baseURL: AppEndpoints.Trending.baseURL)
+        //
+        // R-01 v1.2（2026-06-09）：后端强制 Bearer Auth，apiKey 由 `StarcatAPIKeyResolver`
+        // 解析当前生效的 key（设置页覆盖 → production 默认），由 AppDependencies.setServiceAPIKey
+        // 在用户改 key 后推送到 actor 的 updateAPIKey 热更新。
+        let trendingAPIInstance = TrendingAPI(
+            baseURL: AppEndpoints.Trending.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .trending)
+        )
         self.trendingAPI = trendingAPIInstance
         self.trendingRepository = TrendingRepository(
             api: trendingAPIInstance,
@@ -291,13 +298,19 @@ final class AppDependencies {
         // MUL-176：阮一峰周刊 API 客户端。端点走 `AppEndpoints.Weekly.baseURL`。
         // 用户在设置页改地址 → AppDependencies.setServiceURL 推送到本 actor 的
         // updateBaseURL，无需重启 App。
-        self.weeklyAPI = WeeklyAPI(baseURL: AppEndpoints.Weekly.baseURL)
+        self.weeklyAPI = WeeklyAPI(
+            baseURL: AppEndpoints.Weekly.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .weekly)
+        )
 
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
 
         // HOM-173：分享卡 API 客户端。端点走 `AppEndpoints.Sharing.baseURL`（保留 /api 后缀）。
-        self.shareAPI = ShareAPI(baseURL: AppEndpoints.Sharing.baseURL)
+        self.shareAPI = ShareAPI(
+            baseURL: AppEndpoints.Sharing.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .sharing)
+        )
 
         // 2026-06-08：第三方服务健康检查 actor。独立 ephemeral session + 5s 超时。
         self.serviceHealthChecker = ServiceHealthChecker()
@@ -415,5 +428,36 @@ final class AppDependencies {
     /// 清空某服务的自定义 URL，等价于 `setServiceURL(nil, for:)`。
     func resetServiceURL(for service: ThirdPartyService) async {
         await setServiceURL(nil, for: service)
+    }
+
+    // MARK: - 第三方服务 API Key 热更新（R-01 v1.2 2026-06-09 新增）
+
+    /// 设置页 → 服务 Tab 调用入口：把用户填的 API Key 既写入 `AppSettings` 持久化，
+    /// 又推送到对应 API actor 的 `updateAPIKey`，让"修改即生效"不需要重启。
+    ///
+    /// 传入 nil / 空字符串 → 等价于 `resetServiceAPIKey(for:)`：清空用户配置，
+    /// actor 回退到 `StarcatAPIKeyDefaults.productionKey`（production 默认 key）。
+    ///
+    /// 异步是因为 actor 方法要 `await`；UI 侧（@MainActor SwiftUI）调用时 `Task {}` 包一下。
+    func setServiceAPIKey(_ key: String?, for service: ThirdPartyService) async {
+        // 1) 持久化用户输入（nil/空串 → 删 key，回退默认）
+        settings.setCustomAPIKey(key, for: service)
+
+        // 2) 解析新的生效 key（用户填了 → 用用户的；没填 → 用 production 默认）
+        //    StarcatAPIKeyResolver.resolve 内部会读 AppSettings 最新状态。
+        //    @MainActor hop 是为了拿 AppSettings.shared，但本方法已经在 @MainActor 上下文。
+        let resolved = StarcatAPIKeyResolver.resolve(for: service)
+
+        // 3) 推送到对应 actor 热更新
+        switch service {
+        case .trending: await trendingAPI.updateAPIKey(resolved)
+        case .weekly:   await weeklyAPI.updateAPIKey(resolved)
+        case .sharing:  await shareAPI.updateAPIKey(resolved)
+        }
+    }
+
+    /// 清空某服务的自定义 API Key（回退到 production 默认）。
+    func resetServiceAPIKey(for service: ThirdPartyService) async {
+        await setServiceAPIKey(nil, for: service)
     }
 }
