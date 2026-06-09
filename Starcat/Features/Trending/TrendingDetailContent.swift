@@ -66,9 +66,19 @@ struct TrendingDetailContent: View {
                 settings: settings
             ) : nil
         ) {
-            // README 重新加载：调用 reload 而非 loadTrending——R-01 后 Trending 也用
-            // 解析后的 Repo（可能是本地 / ephemeral），统一走 reload 链路减少分支。
-            readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
+            // README 重新加载走 trending 链路。
+            //
+            // **为什么不调 readmeVM.reload(repo:)**：reload 内部走 manage 缓存表（PK
+            // = repo_id），用 ephemeral repo（id=0）会撞坏外键。trending 场景永远
+            // 走 trending_readmes 表（PK = owner/repo），即便本地命中（id != 0）的
+            // 已 star 仓库也用 trending 入口刷 readme，保证 Trending 页面体验一致——
+            // 用户在 trending row 点开看到的 README 永远来自 trending API 路径，
+            // 不与 manage 详情页的 SWR 状态机相互污染。
+            readmeVM.loadTrending(
+                owner: repo.owner,
+                repo: repo.name,
+                isLoggedIn: authSession.state.isAuthenticated
+            )
         } onLogin: {
             authSession.signIn()
         }
