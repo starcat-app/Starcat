@@ -70,6 +70,33 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
     /// 本地缓存时间，与 GitHub 字段无关。
     var cachedAt: String?
 
+    // MARK: - R-01 v1.2 StarcatRepoCardDTO 新字段（GRDB v8 schema，2026-06-10）
+    //
+    // 4 字段全部 Optional：老用户从 v7 升级时 SQLite 把这些列填 NULL；新拉的 repo
+    // 通过 toEphemeralRepo() / GitHub /repos API 写入实际值。
+
+    /// 仓库所有者头像 URL（GitHub /repos.owner.avatar_url）。
+    /// UI hero 区直接渲染，免去额外 GitHub user API 调用。
+    ///
+    /// **默认 nil 的目的**：Swift memberwise init 会把"有默认值"的字段省略为可选参数，
+    /// 这样 v8 之前已存在的 24+ 处 `Repo(...)` 调用方不必逐个补 `ownerAvatar: nil`。
+    /// 老的 GitHub 同步路径（`StarsAPI` → `GitHubRepoDTO` → `Repo`）暂不消化此字段；
+    /// 仅 Trending / Weekly / Sharing 三场景由 `StarcatRepoCardDTO.toEphemeralRepo()`
+    /// 直填实值。后续若要让 Stars 同步也填，需扩 `GitHubRepoDTO`。
+    var ownerAvatar: String? = nil
+
+    /// 订阅者数（GitHub `subscribers_count`，与 watchers 不同）。发现型场景排序参考。
+    /// 默认 nil 同上：兼容老 callsite。
+    var subscribersCount: Int? = nil
+
+    /// 默认分支（如 `main` / `master`）。README 与文件浏览路径展开依赖此字段。
+    /// 默认 nil 同上：兼容老 callsite。
+    var defaultBranch: String? = nil
+
+    /// 未关闭 issue 数（GitHub `open_issues_count`）。UI hero 区与 stars/forks 并列展示。
+    /// 默认 nil 同上：兼容老 callsite。
+    var openIssuesCount: Int? = nil
+
     // MARK: - Codable Keys（snake_case 与表列对齐）
 
     enum CodingKeys: String, CodingKey {
@@ -97,6 +124,11 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
         case updatedAt = "updated_at"
         case starredAt = "starred_at"
         case cachedAt = "cached_at"
+        // R-01 v1.2 GRDB v8 新增（2026-06-10）
+        case ownerAvatar = "owner_avatar"
+        case subscribersCount = "subscribers_count"
+        case defaultBranch = "default_branch"
+        case openIssuesCount = "open_issues_count"
     }
 
     // MARK: - 派生属性
@@ -171,7 +203,11 @@ extension Repo {
             createdAt: nil,
             updatedAt: nil,
             starredAt: nil,
-            cachedAt: nil
+            cachedAt: nil,
+            ownerAvatar: nil,
+            subscribersCount: nil,
+            defaultBranch: nil,
+            openIssuesCount: nil
         )
     }
 }

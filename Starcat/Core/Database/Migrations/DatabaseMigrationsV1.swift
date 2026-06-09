@@ -15,6 +15,8 @@
 //  - v5：repo_embeddings / ai_summaries（AI 功能上线时）
 //  - v6：release_subscriptions / releases（Release 订阅功能上线时）
 //  - v7：readme_translations（HOM-68 README 翻译缓存）
+//  - v8：repos / trending_repos 新增 4 列 owner_avatar / subscribers_count /
+//        default_branch / open_issues_count（R-01 v1.2 StarcatRepoCardDTO 14 新字段消化）
 //
 
 import Foundation
@@ -36,6 +38,55 @@ enum DatabaseMigrations {
         registerV5(into: &migrator)
         registerV6(into: &migrator)
         registerV7(into: &migrator)
+        registerV8(into: &migrator)
+    }
+
+    // MARK: - v8（R-01 StarcatRepoCardDTO v1.2 新字段消化）
+
+    /// v8：repos / trending_repos 表加 4 列消化 `StarcatRepoCardDTO` v1.2 新增字段。
+    ///
+    /// **背景**：R-01 三场景共用架构（`docs/详细设计/18-三场景共用架构.md` v1.2 §6.1）
+    /// 引入统一后端 DTO `StarcatRepoCardDTO`，相对 v1 schema 多了 4 个核心字段：
+    /// - `owner_avatar`（owner 头像 URL，UI hero 区直接渲染，免去额外 GitHub user API 调用）
+    /// - `subscribers_count`（GitHub `subscribers_count`，发现型场景排序参考）
+    /// - `default_branch`（默认分支，如 `main` / `master`，README 和文件浏览的入口）
+    /// - `open_issues_count`（未关闭 issue 数，UI hero 区与 stars/forks 并列展示）
+    ///
+    /// 在 v8 之前，`Repo.toEphemeralRepo()` 把 DTO 转 in-memory `Repo` 时丢弃这 4 字段
+    /// （Repo 没字段承载，落 DB 也落不进去），导致：
+    /// - 详情页拿不到 owner 头像、必须走另一次 GitHub avatar URL 拼接
+    /// - 不能展示 subscribers / open issues 数（虽然 hero 区已有 placeholder UI）
+    /// - 默认分支信息丢失（影响后续接 README + commits/{branch}/{path} 路径展开）
+    ///
+    /// **决策**：
+    /// - **加列而非新建表**：4 字段全部与 GitHub Repo metadata 原生语义对齐，与 `repos`
+    ///   表已有的 stars/forks/topics 等是同一抽象层级；新建子表会让查询变 JOIN，得不偿失
+    /// - **NULL 而非默认值**：所有 4 字段都标 nullable，老用户 `repos` 表的历史行迁过来
+    ///   全部为 NULL；新拉的 repo（GitHub /repos API 或 StarcatRepoCardDTO）会写入实际值
+    /// - **同步加到 `trending_repos`**：trending 缓存也来自 DTO，让 trending 离线模式
+    ///   也能看到 owner 头像和默认分支等信息（不强制要求 owner_avatar 命中，但能命中就用）
+    /// - 不加索引：这 4 字段都不参与 sidebar / 搜索路径的查询条件
+    ///
+    /// **风险**：
+    /// - SQLite ALTER TABLE ADD COLUMN 是 O(1) 的（不 rewrite 表），对 1810 行
+    ///   `repos` 表完全无感
+    /// - GRDB Codable 行映射按字段名匹配；`Repo` struct 同步加 4 字段后历史 SELECT
+    ///   能把新列读为 NULL → 模型 Optional 字段；写入路径用 `MutablePersistableRecord`
+    ///   默认 upsert 全字段，新列从 model 取（写 NULL or 实际值）
+    private static func registerV8(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v8-starcat-card-fields") { db in
+            // repos 表：加 4 列
+            try db.execute(sql: "ALTER TABLE repos ADD COLUMN owner_avatar TEXT")
+            try db.execute(sql: "ALTER TABLE repos ADD COLUMN subscribers_count INTEGER")
+            try db.execute(sql: "ALTER TABLE repos ADD COLUMN default_branch TEXT")
+            try db.execute(sql: "ALTER TABLE repos ADD COLUMN open_issues_count INTEGER")
+
+            // trending_repos 表：加同样 4 列
+            try db.execute(sql: "ALTER TABLE trending_repos ADD COLUMN owner_avatar TEXT")
+            try db.execute(sql: "ALTER TABLE trending_repos ADD COLUMN subscribers_count INTEGER")
+            try db.execute(sql: "ALTER TABLE trending_repos ADD COLUMN default_branch TEXT")
+            try db.execute(sql: "ALTER TABLE trending_repos ADD COLUMN open_issues_count INTEGER")
+        }
     }
 
     // MARK: - v7（HOM-68 README 翻译缓存）

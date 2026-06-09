@@ -52,6 +52,16 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
     /// JSON 数组字符串：`[{"username":..., "avatarURL":..., "profileURL":...}]`
     var contributorsJSON: String?
 
+    // MARK: - R-01 v1.2 GRDB v8 新字段（2026-06-10）
+    //
+    // 与 `repos` 表的对应字段同名同语义（owner_avatar / subscribers_count /
+    // default_branch / open_issues_count），全部 Optional 兼容老缓存行 NULL。
+
+    var ownerAvatar: String?
+    var subscribersCount: Int?
+    var defaultBranch: String?
+    var openIssuesCount: Int?
+
     // MARK: - 缓存维度
 
     /// ISO8601 字符串。仅用于"缓存于 X 前"展示，不参与 TTL 判断（dong4j 决策 ttl_c：不设 TTL）。
@@ -72,6 +82,11 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
         case forksCount = "forks_count"
         case starsInPeriod = "stars_in_period"
         case contributorsJSON = "contributors_json"
+        // R-01 v1.2 GRDB v8 新增（2026-06-10）
+        case ownerAvatar = "owner_avatar"
+        case subscribersCount = "subscribers_count"
+        case defaultBranch = "default_branch"
+        case openIssuesCount = "open_issues_count"
         case cachedAt = "cached_at"
     }
 
@@ -115,7 +130,12 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
             forksCount: forksCount,
             starsInPeriod: starsInPeriodValue,
             periodText: periodText,
-            contributors: contributorsArray
+            contributors: contributorsArray,
+            // R-01 v1.2 GRDB v8 4 字段透传（持久化 → 内存领域模型）
+            ownerAvatar: ownerAvatar.flatMap(URL.init(string:)),
+            subscribersCount: subscribersCount,
+            defaultBranch: defaultBranch,
+            openIssuesCount: openIssuesCount
         )
     }
 
@@ -165,6 +185,11 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
             forksCount: repo.forksCount,
             starsInPeriod: repo.starsInPeriod,
             contributorsJSON: contributorsJSON,
+            // R-01 v1.2 GRDB v8 4 字段（领域模型 → 持久化）
+            ownerAvatar: repo.ownerAvatar?.absoluteString,
+            subscribersCount: repo.subscribersCount,
+            defaultBranch: repo.defaultBranch,
+            openIssuesCount: repo.openIssuesCount,
             cachedAt: ISO8601DateFormatter.shared.string(from: cachedAt)
         )
     }
@@ -183,6 +208,10 @@ private struct ContributorJSON: Codable {
 
 extension TrendingRepo {
     /// 从持久化字段直接构造（GRDB 行 → 业务模型），与 DTO 初始化路径并存。
+    ///
+    /// R-01 v1.2 GRDB v8（2026-06-10）：扩 4 字段（ownerAvatar / subscribersCount /
+    /// defaultBranch / openIssuesCount）；调用方（`TrendingRepoRecord.toDomain()`）已
+    /// 同步更新。所有 4 字段都 Optional，老缓存行 NULL 不影响构造。
     init(
         fullName: String,
         owner: String,
@@ -194,7 +223,11 @@ extension TrendingRepo {
         forksCount: Int,
         starsInPeriod: Int,
         periodText: String,
-        contributors: [Contributor]
+        contributors: [Contributor],
+        ownerAvatar: URL? = nil,
+        subscribersCount: Int? = nil,
+        defaultBranch: String? = nil,
+        openIssuesCount: Int? = nil
     ) {
         self.fullName = fullName
         self.owner = owner
@@ -207,5 +240,9 @@ extension TrendingRepo {
         self.starsInPeriod = starsInPeriod
         self.periodText = periodText
         self.contributors = contributors
+        self.ownerAvatar = ownerAvatar
+        self.subscribersCount = subscribersCount
+        self.defaultBranch = defaultBranch
+        self.openIssuesCount = openIssuesCount
     }
 }
