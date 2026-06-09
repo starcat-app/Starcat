@@ -292,4 +292,89 @@ struct StarcatRepoCardDTOTests {
         #expect(repo.topics == nil)
         #expect(repo.topicsArray.isEmpty)
     }
+
+    // MARK: - R-01 v1.2 GRDB v8 4 字段消化（2026-06-10）
+    //
+    // 验证 owner_avatar / subscribers_count / default_branch / open_issues_count
+    // 在 JSON → DTO → Repo 全链路上零字段丢失，且老 fixture（缺这 4 字段）按预期退化。
+
+    @Test("v8 解码：4 字段全填实值时 → 进 DTO 不变形")
+    func v8DecodeAllFieldsPresent() throws {
+        let json = """
+        {
+            "gh_repo_id": 12345,
+            "full_name": "foo/bar",
+            "owner": "foo",
+            "repo": "bar",
+            "owner_avatar": "https://avatars.githubusercontent.com/foo.png",
+            "subscribers": 42,
+            "default_branch": "main",
+            "open_issues": 7
+        }
+        """.data(using: .utf8)!
+
+        let dto = try JSONDecoder().decode(StarcatRepoCardDTO.self, from: json)
+        #expect(dto.ownerAvatar?.absoluteString == "https://avatars.githubusercontent.com/foo.png")
+        #expect(dto.subscribers == 42)
+        #expect(dto.defaultBranch == "main")
+        #expect(dto.openIssues == 7)
+    }
+
+    @Test("v8 toEphemeralRepo：4 字段从 DTO 透传到 Repo")
+    func v8EphemeralRepoCarriesAllFields() {
+        let dto = StarcatRepoCardDTO(
+            ghRepoId: 99,
+            fullName: "alice/cool",
+            owner: "alice",
+            repo: "cool",
+            ownerAvatar: URL(string: "https://avatars.githubusercontent.com/alice.png")!,
+            stars: 1000,
+            subscribers: 88,
+            defaultBranch: "develop",
+            openIssues: 12
+        )
+        let repo = dto.toEphemeralRepo()
+        #expect(repo.id == 99)
+        #expect(repo.ownerAvatar == "https://avatars.githubusercontent.com/alice.png")
+        #expect(repo.subscribersCount == 88)
+        #expect(repo.defaultBranch == "develop")
+        #expect(repo.openIssuesCount == 12)
+    }
+
+    @Test("v8 toEphemeralRepo：DTO 缺 ownerAvatar / defaultBranch → Repo 对应字段 nil；计数字段缺失退化为 0")
+    func v8EphemeralRepoMissingFieldsFallBack() {
+        let dto = StarcatRepoCardDTO(
+            ghRepoId: 1,
+            fullName: "a/b",
+            owner: "a",
+            repo: "b"
+        )
+        let repo = dto.toEphemeralRepo()
+        #expect(repo.ownerAvatar == nil)
+        #expect(repo.defaultBranch == nil)
+        // 计数字段 DTO 默认 0（容错解码 ?? 0），Repo 也是 0 而不是 nil
+        #expect(repo.subscribersCount == 0)
+        #expect(repo.openIssuesCount == 0)
+    }
+
+    @Test("v8 TrendingRepo.init(card:since:)：4 字段从 DTO 透传到领域模型")
+    func v8TrendingRepoInitCarriesAllFields() {
+        let dto = StarcatRepoCardDTO(
+            ghRepoId: 7,
+            fullName: "x/y",
+            owner: "x",
+            repo: "y",
+            ownerAvatar: URL(string: "https://avatars.githubusercontent.com/x.png")!,
+            stars: 200,
+            subscribers: 33,
+            defaultBranch: "main",
+            openIssues: 5,
+            trending: StarcatRepoCardDTO.TrendingExtension(change: 50)
+        )
+        let trending = TrendingRepo(card: dto, since: .daily)
+        #expect(trending.ownerAvatar?.absoluteString == "https://avatars.githubusercontent.com/x.png")
+        #expect(trending.subscribersCount == 33)
+        #expect(trending.defaultBranch == "main")
+        #expect(trending.openIssuesCount == 5)
+    }
 }

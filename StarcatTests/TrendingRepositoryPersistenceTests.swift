@@ -252,6 +252,70 @@ struct TrendingRepositoryPersistenceTests {
         #expect(unwrapped <= after.addingTimeInterval(1), "lastRefreshedAt should be <= fetch end time")
     }
 
+    // MARK: - R-01 v1.2 GRDB v8 4 字段持久化（2026-06-10）
+
+    @Test("v8 4 字段：DTO → trending_repos 表 → cachedTrending 域模型 全链路透传")
+    func v8FieldsPersistedAndReadBack() async throws {
+        let (repo, db) = try makeRepository { request in
+            // 构造一个所有 v8 字段都填实值的 fixture（不走默认 fixture，因为它没填新字段）
+            let card: [String: Any] = [
+                "gh_repo_id": Int64(2024),
+                "full_name": "owner/v8repo",
+                "owner": "owner",
+                "repo": "v8repo",
+                "owner_avatar": "https://avatars.githubusercontent.com/owner.png",
+                "stars": 100,
+                "forks": 10,
+                "watchers": 100,
+                "subscribers": 55,
+                "topics": [],
+                "default_branch": "develop",
+                "open_issues": 9,
+                "is_archived": false,
+                "is_fork": false,
+                "is_private": false,
+                "trending": [
+                    "change": 5,
+                    "contributors": []
+                ]
+            ]
+            let envelope: [String: Any] = ["schema_version": 1, "data": [card]]
+            let body = try! JSONSerialization.data(withJSONObject: envelope, options: [])
+            return (trendingPersistResponse(200, request.url!), body)
+        }
+
+        // 1. fetch → 写库
+        let fetched = try await repo.fetchTrending(since: .daily, language: .all)
+        #expect(fetched.count == 1)
+        let mem = try #require(fetched.first)
+        #expect(mem.ownerAvatar?.absoluteString == "https://avatars.githubusercontent.com/owner.png")
+        #expect(mem.subscribersCount == 55)
+        #expect(mem.defaultBranch == "develop")
+        #expect(mem.openIssuesCount == 9)
+
+        // 2. SQL 直读，验证 4 列真的写进表
+        try await db.writer.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: "SELECT * FROM trending_repos WHERE full_name = ?",
+                arguments: ["owner/v8repo"]
+            )
+            #expect(row?["owner_avatar"] as String? == "https://avatars.githubusercontent.com/owner.png")
+            #expect(row?["subscribers_count"] as Int? == 55)
+            #expect(row?["default_branch"] as String? == "develop")
+            #expect(row?["open_issues_count"] as Int? == 9)
+        }
+
+        // 3. cachedTrending → toDomain 时 4 字段被还原回 TrendingRepo
+        let cached = await repo.cachedTrending(since: .daily, language: .all)
+        #expect(cached.count == 1)
+        let cachedFirst = try #require(cached.first)
+        #expect(cachedFirst.ownerAvatar?.absoluteString == "https://avatars.githubusercontent.com/owner.png")
+        #expect(cachedFirst.subscribersCount == 55)
+        #expect(cachedFirst.defaultBranch == "develop")
+        #expect(cachedFirst.openIssuesCount == 9)
+    }
+
     @Test("lastRefreshedAt: 多桶隔离，每个桶独立时间戳")
     func lastRefreshedAtPerBucket() async throws {
         let (repo, _) = try makeRepository { request in

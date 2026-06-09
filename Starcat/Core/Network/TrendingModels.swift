@@ -64,6 +64,21 @@ struct TrendingRepo: Identifiable, Equatable {
     /// 贡献者列表
     let contributors: [Contributor]
 
+    // MARK: - R-01 v1.2 GRDB v8 新字段（2026-06-10 落地）
+    //
+    // 这 4 字段从 `StarcatRepoCardDTO` 透传过来，对应 trending_repos 表 v8 新加 4 列。
+    // 全部 Optional：trending API 返回的 DTO 不一定填满（enricher 可能没补全
+    // owner_avatar 等字段；离线缓存 v8 之前的行也是 NULL）。
+
+    /// 仓库所有者头像 URL（GitHub `owner.avatar_url`），UI hero 区直接渲染。
+    let ownerAvatar: URL?
+    /// 订阅者数（GitHub `subscribers_count`），与 watchers 不同。
+    let subscribersCount: Int?
+    /// 默认分支（如 `main` / `master`）。
+    let defaultBranch: String?
+    /// 未关闭 issue 数（GitHub `open_issues_count`）。
+    let openIssuesCount: Int?
+
     /// R-01 v1.2 初始化：从 envelope 化的 `StarcatRepoCardDTO` + 周期信息构造。
     ///
     /// 字段映射：
@@ -74,10 +89,14 @@ struct TrendingRepo: Identifiable, Equatable {
     ///   - `card.trending?.change` → `starsInPeriod`（缺扩展段时退化为 0）
     ///   - `card.trending?.contributors` → `contributors` 数组（缺扩展段时空数组）
     ///
-    /// 已知 v1.2 后端**未利用**字段（TODO P5b 升 GRDB schema 时一并消化）：
-    ///   `gh_repo_id` / `watchers` / `subscribers` / `topics` / `homepage` / `license_spdx`
-    ///   / `is_archived` / `is_fork` / `is_private` / `default_branch` / `open_issues`
-    ///   / `pushed_at` / `updated_at` / `created_at`。
+    /// **R-01 v1.2 GRDB v8 新增（2026-06-10）**：
+    ///   `card.ownerAvatar` / `card.subscribers` / `card.defaultBranch` / `card.openIssues`
+    ///   → `ownerAvatar` / `subscribersCount` / `defaultBranch` / `openIssuesCount`
+    ///
+    /// 仍未利用的 DTO 字段（v1.2 边界内但 trending UI 暂不需要）：
+    ///   `gh_repo_id`（trending 用 fullName 作 PK，不依赖 GitHub id）/
+    ///   `watchers` / `topics` / `homepage` / `license_spdx` /
+    ///   `is_archived` / `is_fork` / `is_private` / `pushed_at` / `updated_at` / `created_at`
     init(card: StarcatRepoCardDTO, since: TrendingPeriod) {
         self.fullName = card.fullName
         self.owner = card.owner
@@ -101,6 +120,12 @@ struct TrendingRepo: Identifiable, Equatable {
                 profileURL: GitHubURLs.userProfile(login: c.login)
             )
         }
+
+        // R-01 v1.2 GRDB v8 4 字段透传（DTO 对应字段直接拿）
+        self.ownerAvatar = card.ownerAvatar
+        self.subscribersCount = card.subscribers
+        self.defaultBranch = card.defaultBranch
+        self.openIssuesCount = card.openIssues
     }
 
     /// 贡献者模型。
