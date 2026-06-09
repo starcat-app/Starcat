@@ -184,3 +184,37 @@ struct UnifiedRepoRow: View {
         }
     }
 }
+
+// MARK: - SemanticScoreBadge
+
+/// 语义搜索命中分数 chip。
+///
+/// 紫色 capsule + sparkles + 百分比，悬停 tooltip 显示命中原因（reason）。
+/// 仅在 Manage 场景的 RepoListView 通过 `viewModel.semanticHit(for:)` 注入。
+///
+/// R-01 §3.1.5 之前定义在 `Features/Home/RepoRowView.swift`，Step 7.2 删除该旧文件后
+/// 一并迁移到 UnifiedRepoRow.swift（唯一调用方），保持单一真源。
+struct SemanticScoreBadge: View {
+    let hit: SemanticSearchHit
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 9, weight: .bold))
+            Text(scoreText)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        }
+        .foregroundStyle(.purple)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background {
+            Capsule(style: .continuous)
+                .fill(Color.purple.opacity(0.12))
+        }
+        .help(hit.reason)
+    }
+
+    private var scoreText: String {
+        "\(Int((max(0, min(hit.score, 1)) * 100).rounded()))%"
+    }
+}
