@@ -59,7 +59,7 @@ struct RepoRowCompact: View {
     let semanticHit: SemanticSearchHit?
 
     var body: some View {
-        RepoRowSurface(repo: repo, isSelected: isSelected, density: .compact) {
+        LegacyRepoRowSurface(repo: repo, isSelected: isSelected, density: .compact) {
             HStack(spacing: 10) {
                 RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: 22, showBorder: false)
 
@@ -92,7 +92,7 @@ struct RepoRowCard: View {
     let semanticHit: SemanticSearchHit?
 
     var body: some View {
-        RepoRowSurface(repo: repo, isSelected: isSelected, density: .card) {
+        LegacyRepoRowSurface(repo: repo, isSelected: isSelected, density: .card) {
             HStack(alignment: .center, spacing: 12) {
                 RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: 40)
 
@@ -165,7 +165,9 @@ struct RepoRowCard: View {
 /// 注意：不要在这里叠加 `DragGesture(minimumDistance: 0)` 做 pressed 反馈。
 /// macOS `List(selection:)` 的行点击依赖系统内部手势，零距离 drag 会抢事件，
 /// 导致部分 repo 点击后不更新 selection，右侧详情无法打开。
-private struct RepoRowSurface<Content: View>: View {
+/// R-01 过渡期遗留命名（原 `RepoRowSurface`）。Step 7.2 删除整个旧 row surface 后会一并删除本类型。
+/// 临时改名是为了与 Shared/Components/RepoRowSurface.swift 中的新统一容器避免符号冲突。
+private struct LegacyRepoRowSurface<Content: View>: View {
     let repo: Repo
     let isSelected: Bool
     let density: RepoListDensity

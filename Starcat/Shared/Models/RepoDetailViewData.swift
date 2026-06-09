@@ -93,10 +93,15 @@ struct RepoDetailHero: Sendable {
 enum RepoDetailAction: Identifiable {
 
     /// 分享按钮（→ AI 摘要 + 分享卡）。
-    case share(handler: @MainActor () -> Void)
+    ///
+    /// Scaffold 内部用 `RepoShareButton(repo:)` 渲染，业务状态（progress / alert）
+    /// 由该组件自治。各场景**不需要**自己提供 handler——分享行为对所有 repo 一致。
+    case share
 
     /// AI 窗口按钮（摘要 / 标签 / 对话三段）。
-    case ai(handler: @MainActor () -> Void)
+    ///
+    /// Scaffold 内部用 `RepoAIOpenButton(repo:)` 渲染，复用现有 AI 窗口控制器。
+    case ai
 
     /// Weekly 场景独有：跳到该期周刊原文。
     case weeklyIssue(number: Int, url: URL)
