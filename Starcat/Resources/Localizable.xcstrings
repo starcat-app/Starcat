@@ -8269,39 +8269,6 @@
         }
       }
     },
-    "settings.general.listDensity" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "List Density"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "列表密度"
-          }
-        }
-      }
-    },
-    "settings.general.listDensity.description" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Compact: single line for more repos. Card: avatar + description per row."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "紧凑：单行显示更多仓库；卡片：每行带头像与描述。"
-          }
-        }
-      }
-    },
     "settings.general.title" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8336,7 +8303,7 @@
         }
       }
     },
-    "settings.listDensity.compact" : {
+    "settings.listDensity.compact_REMOVED_R01" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {

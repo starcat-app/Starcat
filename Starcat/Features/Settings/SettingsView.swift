@@ -121,18 +121,8 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Divider()
-
-                Picker("settings.general.listDensity", selection: $settings.listDensity) {
-                    ForEach(RepoListDensity.allCases) { density in
-                        Text(density.displayName).tag(density)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Text("settings.general.listDensity.description")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                // R-01 §3.1.1：列表密度 Picker 已移除（仅保留 .card 卡片密度）。
+                // 用户 reset 后 listDensity 持久化值会被默认初始化为 .card。
             }
 
             // HOM-SNAKE-MODES 2026-06-05：贡献草坪贪吃蛇玩法。

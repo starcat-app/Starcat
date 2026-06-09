@@ -43,42 +43,9 @@ struct RepoRowView: View {
     }
 
     var body: some View {
+        // R-01 §3.1.1：仅 .card 单 case 保留，紧凑密度已删。
         switch density {
-        case .compact: RepoRowCompact(repo: repo, isSelected: isSelected, semanticHit: semanticHit)
-        case .card:    RepoRowCard(repo: repo, isSelected: isSelected, semanticHit: semanticHit)
-        }
-    }
-}
-
-// MARK: - Compact
-
-/// 紧凑行：1 行高，扫读优先。
-struct RepoRowCompact: View {
-    let repo: Repo
-    let isSelected: Bool
-    let semanticHit: SemanticSearchHit?
-
-    var body: some View {
-        LegacyRepoRowSurface(repo: repo, isSelected: isSelected, density: .compact) {
-            HStack(spacing: 10) {
-                RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: 22, showBorder: false)
-
-                Text(repo.fullName)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                Spacer(minLength: 8)
-
-                if let language = repo.language, !language.isEmpty {
-                    LanguageBadge(language: language, style: .compact)
-                }
-                if let semanticHit {
-                    SemanticScoreBadge(hit: semanticHit)
-                }
-
-                StarsBadge(count: repo.starsCount, style: .compact)
-            }
+        case .card: RepoRowCard(repo: repo, isSelected: isSelected, semanticHit: semanticHit)
         }
     }
 }
