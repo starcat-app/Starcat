@@ -40,9 +40,14 @@ struct UnifiedRepoRow: View {
     /// 是否选中（驱动 RepoRowSurface 视觉变化）。
     let isSelected: Bool
 
-    init(card: RepoCardViewData, isSelected: Bool = false) {
+    /// 语义搜索命中（仅 Manage 场景非 nil；其它场景一律 nil）。
+    /// chip 行右侧紧跟 SemanticScoreBadge 显示相似度分数。
+    let semanticHit: SemanticSearchHit?
+
+    init(card: RepoCardViewData, isSelected: Bool = false, semanticHit: SemanticSearchHit? = nil) {
         self.card = card
         self.isSelected = isSelected
+        self.semanticHit = semanticHit
     }
 
     var body: some View {
@@ -100,6 +105,9 @@ struct UnifiedRepoRow: View {
                             ArchivedBadge()
                         }
                         sceneBadgeChip
+                        if let semanticHit {
+                            SemanticScoreBadge(hit: semanticHit)
+                        }
                         Spacer(minLength: 0)
                     }
                 }
