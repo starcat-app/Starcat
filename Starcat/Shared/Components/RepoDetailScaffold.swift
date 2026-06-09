@@ -43,7 +43,16 @@
 import SwiftUI
 
 /// R-01 详情页通用骨架。
-struct RepoDetailScaffold<Body: View>: View {
+///
+/// body slot 接受一个 `(CGFloat) -> Void` 闭包参数 —— body 里的 ReadmeStateView 等
+/// 滚动型组件应该把 scroll offset 通过这个闭包回传，Scaffold 内部把它换算成顶部
+/// 折叠面板的 collapse progress（0...1）。
+///
+/// 这样设计的理由（vs PreferenceKey）：
+/// - PreferenceKey 需要在 body 里手动叠 `.preference(...)`，对调用方不友好
+/// - closure 入参显式契约，VS Code 跳定义时一眼看出"是要我把 scroll offset 喂进来"
+/// - Scaffold 内部 progress 状态保持 private，body 完全无感
+struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
 
     /// 当前 repo（驱动 Hero header 视觉）。
     let repo: Repo
@@ -63,7 +72,11 @@ struct RepoDetailScaffold<Body: View>: View {
     /// ContentView 自己决定渲染位置）。
     let heroShowsLocalSections: Bool
 
-    private let body_: () -> Body
+    /// Stars stat chip 的 tooltip 本地化键（透传给 RepoMetadataHeaderView）。
+    let starHelpKey: LocalizedStringKey
+
+    private let heroExtension_: () -> HeroExt
+    private let body_: (@escaping (CGFloat) -> Void) -> Body
 
     /// 顶部面板折叠进度（0 = 完全展开，1 = 完全折叠）。
     @State private var metadataPanelCollapseProgress: CGFloat = 0
@@ -83,21 +96,47 @@ struct RepoDetailScaffold<Body: View>: View {
         viewData: RepoDetailViewData,
         fallbackAccentColor: Color = .accentColor,
         heroShowsLocalSections: Bool = false,
+        starHelpKey: LocalizedStringKey = "repo.unstar",
         onStarTapped: @escaping () -> Void,
-        @ViewBuilder body: @escaping () -> Body
+        @ViewBuilder heroExtension: @escaping () -> HeroExt,
+        @ViewBuilder body: @escaping (@escaping (CGFloat) -> Void) -> Body
     ) {
         self.repo = repo
         self.viewData = viewData
         self.fallbackAccentColor = fallbackAccentColor
         self.heroShowsLocalSections = heroShowsLocalSections
+        self.starHelpKey = starHelpKey
         self.onStarTapped = onStarTapped
+        self.heroExtension_ = heroExtension
         self.body_ = body
+    }
+
+    /// 便捷构造：无 heroExtension 的常用场景（Manage / Weekly / Activity-repo-backed）。
+    init(
+        repo: Repo,
+        viewData: RepoDetailViewData,
+        fallbackAccentColor: Color = .accentColor,
+        heroShowsLocalSections: Bool = false,
+        starHelpKey: LocalizedStringKey = "repo.unstar",
+        onStarTapped: @escaping () -> Void,
+        @ViewBuilder body: @escaping (@escaping (CGFloat) -> Void) -> Body
+    ) where HeroExt == EmptyView {
+        self.init(
+            repo: repo,
+            viewData: viewData,
+            fallbackAccentColor: fallbackAccentColor,
+            heroShowsLocalSections: heroShowsLocalSections,
+            starHelpKey: starHelpKey,
+            onStarTapped: onStarTapped,
+            heroExtension: { EmptyView() },
+            body: body
+        )
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             metadataPanel
-            body_()
+            body_(updateScrollOffset)
         }
         .id(repo.id)
         .navigationTitle(repo.name)
@@ -109,20 +148,47 @@ struct RepoDetailScaffold<Body: View>: View {
         }
     }
 
-    /// 顶部信息面板（折叠容器 + Hero 元信息）。
+    /// 接收 body 内部上报的 scroll offset，换算成顶部面板折叠 progress。
+    ///
+    /// 与现有 `RepoDetailView.updateMetadataPanelVisibility` 函数一致的算法（8pt 起步、
+    /// 64pt 行程、变化 < 0.01 跳过避免过密 SwiftUI 重排）。
+    private func updateScrollOffset(_ offsetY: CGFloat) {
+        let progress = Self.metadataCollapseProgress(for: offsetY)
+        guard abs(progress - metadataPanelCollapseProgress) > 0.01 else { return }
+        metadataPanelCollapseProgress = progress
+    }
+
+    /// 将 scroll offset 映射为顶部元信息面板的折叠进度。
+    /// 0...8pt 保留上下文，8...72pt 跟随压缩，72pt+ 完全收起。
+    static func metadataCollapseProgress(for offsetY: CGFloat) -> CGFloat {
+        let normalizedOffset = max(offsetY, 0)
+        let collapseStart: CGFloat = 8
+        let collapseDistance: CGFloat = 64
+        return min(max((normalizedOffset - collapseStart) / collapseDistance, 0), 1)
+    }
+
+    /// 顶部信息面板（折叠容器 + Hero 元信息 + heroExtension slot）。
+    ///
+    /// `heroExtension` 出现在 RepoMetadataHeaderView 之后、折叠面板之内，会跟着
+    /// hero 一起折叠收起。**调用方需自行处理 horizontal padding**——RepoMetadataHeaderView
+    /// 内部用 `.padding(.horizontal, 24)`，extension 也应保持这个值以视觉对齐。
     @ViewBuilder
     private var metadataPanel: some View {
         CollapsibleRepoMetadataPanel(
             collapseProgress: $metadataPanelCollapseProgress,
             panelHeight: $metadataPanelHeight
         ) {
-            RepoMetadataHeaderView(
-                repo: repo,
-                fallbackAccentColor: fallbackAccentColor,
-                showLocalSections: heroShowsLocalSections,
-                onStarTapped: onStarTapped
-            ) {
-                trailingActionsView
+            VStack(alignment: .leading, spacing: 0) {
+                RepoMetadataHeaderView(
+                    repo: repo,
+                    fallbackAccentColor: fallbackAccentColor,
+                    showLocalSections: heroShowsLocalSections,
+                    starHelpKey: starHelpKey,
+                    onStarTapped: onStarTapped
+                ) {
+                    trailingActionsView
+                }
+                heroExtension_()
             }
         }
     }
