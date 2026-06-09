@@ -45,50 +45,9 @@ struct RepoRowSkeletonView: View {
     }
 
     var body: some View {
+        // R-01 §3.1.1：仅 .card 单 case 保留，紧凑骨架已删。
         switch density {
-        case .compact: RepoRowSkeletonCompact(phaseOffset: phaseOffset)
-        case .card:    RepoRowSkeletonCard(phaseOffset: phaseOffset)
-        }
-    }
-}
-
-// MARK: - Compact 骨架行
-
-private struct RepoRowSkeletonCompact: View {
-    let phaseOffset: Double
-    @State private var pulse = false
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(Color.skeletonBase)
-                .frame(width: 22, height: 22)
-                .shimmer(phaseOffset: phaseOffset)
-
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Color.skeletonBase)
-                .frame(width: 120, height: 13)
-                .shimmer(phaseOffset: phaseOffset)
-
-            Spacer()
-
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Color.skeletonBase)
-                .frame(width: 50, height: 13)
-                .shimmer(phaseOffset: phaseOffset)
-
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Color.skeletonBase)
-                .frame(width: 40, height: 13)
-                .shimmer(phaseOffset: phaseOffset)
-        }
-        .padding(.vertical, 2)
-        // 整行做温和的呼吸（opacity 0.85 ↔ 1.0），与 shimmer 高光叠加加强"加载中"感知。
-        // 用 .animation(_:value:) 而非 withAnimation，确保 repeatForever 不被父层 transition 吞掉。
-        .opacity(pulse ? 0.85 : 1.0)
-        .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulse)
-        .task {
-            pulse = true
+        case .card: RepoRowSkeletonCard(phaseOffset: phaseOffset)
         }
     }
 }

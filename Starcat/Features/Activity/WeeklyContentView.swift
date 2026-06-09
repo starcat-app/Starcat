@@ -297,53 +297,14 @@ private struct WeeklyProjectRow: View {
     }
 
     var body: some View {
+        // R-01 §3.1.1：仅 .card 单 case 保留，紧凑布局已删。
         Group {
             switch density {
-            case .compact:
-                compact
             case .card:
                 card
             }
         }
         .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.82), value: isSelected)
-    }
-
-    private var compact: some View {
-        HStack(spacing: 10) {
-            RemoteAvatar(
-                urlString: RepoAvatarURL.from(owner: project.owner),
-                size: 22,
-                showBorder: false
-            )
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: project.fullName)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if let desc = project.description, !desc.isEmpty {
-                    Text(verbatim: desc)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-            Spacer(minLength: 8)
-            StarsBadge(count: project.stars, style: .compact)
-        }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
-        .padding(.leading, isSelected ? 5 : 0)
-        .background {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(accentColor.opacity(isSelected ? 0.18 : 0.0))
-        }
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(accentColor)
-                .frame(width: isSelected ? 3 : 0)
-                .padding(.vertical, 6)
-        }
     }
 
     private var card: some View {

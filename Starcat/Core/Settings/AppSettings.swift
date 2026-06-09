@@ -72,12 +72,15 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - 列表密度
+// MARK: - 列表密度（R-01 后仅 .card；compact 已移除）
 
 /// 仓库列表的视觉密度。
+///
+/// R-01 §3.1.1 决策（2026-06-09）：删除 `.compact` 紧凑密度。
+/// 仅保留 `.card` 单 case 是为了让 row 视图签名（含 `density:` 参数）保持稳定，
+/// 等 Step 6.2/6.3 trending/weekly 数据层迁移完成后再一次性把 enum + 所有引用彻底删除。
+/// 当前阶段所有 `density: RepoListDensity` 入参实际只接收 `.card`。
 enum RepoListDensity: String, CaseIterable, Identifiable {
-    /// 单行紧凑：一行内显示 name / lang / stars。
-    case compact
     /// 卡片多行：头像 + full_name + description + 属性条。
     case card
 
@@ -86,8 +89,7 @@ enum RepoListDensity: String, CaseIterable, Identifiable {
     /// 本地化显示名。
     var displayName: LocalizedStringKey {
         switch self {
-        case .compact: return "settings.listDensity.compact"
-        case .card:    return "settings.listDensity.card"
+        case .card: return "settings.listDensity.card"
         }
     }
 }

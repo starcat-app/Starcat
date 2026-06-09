@@ -191,35 +191,11 @@ private struct ActivityRowView: View {
     let isSelected: Bool
 
     var body: some View {
+        // R-01 §3.1.1：仅 .card 单 case 保留，紧凑布局已删。
         ActivityRowSurface(item: item, density: density, isSelected: isSelected) {
             switch density {
-            case .compact:
-                compact
             case .card:
                 card
-            }
-        }
-    }
-
-    private var compact: some View {
-        HStack(spacing: 10) {
-            leadingIcon(size: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: item.title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if let subtitle = item.subtitle {
-                    Text(verbatim: subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            Spacer(minLength: 8)
-            if let date = item.createdAt {
-                RelativeDateBadge(date: date)
             }
         }
     }

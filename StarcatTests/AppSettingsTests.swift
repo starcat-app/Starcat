@@ -31,13 +31,15 @@ struct AppSettingsTests {
 
     @Test("设置后从同 suite 重新读取应保留值")
     func densityPersists() {
+        // R-01 §3.1.1：listDensity 仅 .card 单 case，无可切换的「设置后保留」语义；
+        // 测试改为验证默认值即为 .card 且持久化后仍为 .card。
         let defaults = makeIsolatedDefaults()
 
         let s1 = AppSettings(defaults: defaults)
-        s1.listDensity = .compact
+        s1.listDensity = .card
 
         let s2 = AppSettings(defaults: defaults)
-        #expect(s2.listDensity == .compact)
+        #expect(s2.listDensity == .card)
     }
 
     @Test("Pro: 默认非 Pro，设置后重新读取应保留")
