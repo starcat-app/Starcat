@@ -528,6 +528,12 @@ struct RepoDetailView: View {
     /// （grep 全项目确认是 dead write），导致未登录用户点击 Star 静默无反应。
     /// 现在改为调 `authSession.signIn()` 触发 App 内 Device Flow 登录，
     /// 与 Trending Forks Button 的未登录处理保持一致。
+    ///
+    /// R-01 v1.2（2026-06-10）：star 操作走 `StarActionService` 单点。
+    /// 服务内部完成 GitHub `PUT /user/starred/...` + `GET /repos/{o}/{r}` 拉最新
+    /// 字段 + DB upsert + StarredRegistry add。Registry 是 `@Observable`，所有列表
+    /// 卡片（含 trending row 的 ✓ 标记）会自动响应；不再需要手动 `incrementStarsCount`
+    /// 维护 trending 列表的本地 stars 计数 +1（trending 列表数字下次刷新自然同步）。
     private func starTrending(repo: TrendingRepo) async {
         guard authSession.state.isAuthenticated else {
             authSession.signIn()
@@ -538,11 +544,10 @@ struct RepoDetailView: View {
         trendingStarError = nil
 
         do {
-            try await dependencies.apiClient.star(owner: repo.owner, repo: repo.name)
-            // 成功：本地 stars 计数 +1
-            trendingViewModel?.incrementStarsCount(fullName: repo.fullName)
-            // 刷新用户 Stars 列表
-            await viewModel.reloadItems(forceRefresh: true)
+            _ = try await dependencies.starActionService.star(owner: repo.owner, repo: repo.name)
+            // StarActionService 内部已 add 进 StarredRegistry；HomeView 通过注入的
+            // HomeRefreshing 钩子触发 `reloadItems`，trending 列表 row 通过 registry
+            // 联动出现 ✓ 标记。本路径不需要再手动 reloadItems。
         } catch {
             trendingStarError = "repo.star.failed"
         }
