@@ -7,80 +7,98 @@
 //  对应文档：`docs/详细设计/18-三场景共用架构.md` v1.2 §6.4（Bearer Auth 注入）
 //
 //  ────────────────────────────────────────────────────────────────────────────
-//  ⚠️ Production 默认 Key 设计取舍（dong4j 2026-06-09 拍板待定）
-//  ────────────────────────────────────────────────────────────────────────────
-//  后端三个 API（trending/weekly/sharing）改造后强制 `API_KEYS` env，前端必须发
-//  `Authorization: Bearer <key>` 否则 401。前端目前有三种方案在权衡：
-//
-//  方案 A（baked-in）：编译期把 production key 写在 xcconfig / Info.plist；
-//                     用户零感知；公开 repo 反编译易暴露但后端可做 IP-level rate limit
-//  方案 B（BYOK）：    设置页让用户填，写 Keychain；production 不内置任何 key；
-//                     首次进 trending/weekly tab 引导用户去填
-//  方案 C（hybrid）：   baked-in production 默认 + 设置页可覆盖（自建后端时填自己的 key）
-//
-//  当前 P1a 阶段实现：
-//   - 实现 C 的"骨架"：本文件提供 production 默认 key 占位常量
-//   - 用户在设置页可覆盖（走 AppSettings.customServiceAPIKey(for:)）
-//   - **占位常量目前是 placeholder 字符串**，等 dong4j 拍板后只需修改 `productionDefault`
-//     一个常量即可发版
-//   - 如果决定走 B 方案：把 `productionDefault` 改回空字符串，让前端在 key 未配置时
-//     发请求不带 Authorization 头（后端会 401，UI 上提示「请配置 API Key」）
+//  API Key 生效优先级（hybrid 模型）
 //  ────────────────────────────────────────────────────────────────────────────
 //
-//  TODO(P1b)：完整 BYOK UX
-//   - KeychainManager 添加 service-keyed API key 存取
-//   - AppSettings.customServiceAPIKeys 字段从 UserDefaults 迁到 Keychain
-//   - 设置页加 SecureField 字段 + 测试连接含鉴权
-//   - 实现 Phase 2 时本文件几乎不变，只换 `StarcatAPIKeyResolver.resolve` 的源
+//  解析顺序（先命中即返回非空字符串）：
+//    1. 用户在「设置 → 服务」Tab 填的 BYOK Key
+//       → 持久化在 KeychainManager 加密本地文件（`Starcat/Core/Keychain/KeychainManager.swift`）
+//       → AppSettings.customServiceAPIKey(for:) 读取
+//    2. xcconfig 注入的 baked-in production 默认 Key
+//       → `Configs/Secrets.xcconfig` 里的 `STARCAT_PRODUCTION_API_KEY` 字段
+//       → 经 project.yml `info.properties` 写入 `Info.plist`
+//       → 本文件 `StarcatAPIKeyDefaults.productionKey` 读 Bundle.main.infoDictionary
+//    3. 都没填 → nil（API actor 不会注入 `Authorization: Bearer` 头，后端必返 401，
+//       UI 应在收到 401 时引导用户去设置页填 Key）
+//
+//  设计取舍（dong4j 2026-06-10 拍板）：
+//   - **不**走纯 BYOK：默认要让用户开箱即用 production 服务，否则下载完点开 trending tab
+//     就被 401 错误页拍脸劝退
+//   - **不**走纯 baked-in：本仓 public 后真实 Key 反编译可见，必须给用户「换成自己 Key」的逃生口
+//   - **走 hybrid**：xcconfig 注入 baked-in（不进 git，dong4j 本地填）+ 设置页 BYOK（覆盖默认）
+//
+//  与 README 配套阅读：
+//   - 配置首次发版：`Configs/Secrets.xcconfig.template` 顶部注释
+//   - BYOK UI：`Starcat/Features/Settings/ServicesSettingsView.swift`
+//   - 持久化迁移：`Starcat/Core/Settings/AppSettings.swift` `setCustomAPIKey(_:for:)`
+//  ────────────────────────────────────────────────────────────────────────────
 //
 
 import Foundation
 
-// MARK: - Production 默认 API Key
+// MARK: - Production 默认 API Key（编译期 baked-in）
 
-/// production 后端 fly.io 部署的默认 API Key 占位。
+/// production 后端 fly.io 部署的默认 API Key，从 `Info.plist` 读取（来源是
+/// `Configs/Secrets.xcconfig` 的 `STARCAT_PRODUCTION_API_KEY` 字段）。
 ///
-/// **当前状态**：placeholder 占位字符串，**未投入 production**。
-/// dong4j 拍板方案后只需替换 `productionKey` 常量值。
+/// **当 `Secrets.xcconfig` 不存在或字段为空时**：
+///   - `productionKey` 解析为 `nil`
+///   - App 运行期表现为「BYOK-only 模式」：用户必须在「设置 → 服务」Tab 填自己的 Key
+///     否则任何 trending / weekly / sharing 请求都会被后端拒 401
 ///
-/// 替换示例（baked-in 方案）：
-/// ```swift
-/// static let productionKey = "sk_starcat_prod_2026_xxxx"  // 实际 production key
-/// ```
+/// **当 `Secrets.xcconfig` 填了真实 Key 时**：
+///   - `productionKey` 解析为该 Key
+///   - 用户首次启动可零配置直接用 production 服务（BYOK 仍可在设置页覆盖）
 ///
-/// 替换示例（BYOK-only 方案）：
-/// ```swift
-/// static let productionKey = ""  // 强制用户在设置页填，否则请求 401
-/// ```
+/// 替换方式：见 `Configs/Secrets.xcconfig.template` 文件头说明。
 enum StarcatAPIKeyDefaults {
-    /// 占位 key，**不要在 production 用**——后端会拒绝。
-    /// 等用户拍板 baked-in / BYOK 决策后替换。
-    static let productionKey = "STARCAT_PROD_KEY_PLACEHOLDER"
+
+    /// `Info.plist` 里 production 默认 Key 的 key 名（与 project.yml `info.properties` 对齐）。
+    private static let infoPlistKey = "STARCAT_PRODUCTION_API_KEY"
+
+    /// production 默认 Key（可能为 nil 或空字符串，调用方需进一步判空）。
+    ///
+    /// 读取 `Bundle.main.infoDictionary[infoPlistKey] as? String`：
+    /// - 缺失（key 不在 Info.plist）→ nil
+    /// - 空字符串（xcconfig 未填值，Xcode 会保留空字符串）→ ""
+    /// - 真实 Key → "sk-starcat-..."
+    ///
+    /// 调用方应通过 `productionKeyOrNil` 一步走，避免重复判空。
+    static var productionKeyOrNil: String? {
+        let raw = Bundle.main.infoDictionary?[infoPlistKey] as? String
+        guard let raw, !raw.isEmpty else { return nil }
+        // 防御性 trim：xcconfig 编辑器易混入末尾空白
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }
 
 // MARK: - Resolver
 
-/// 给定一个服务，解析出当前应当使用的 API Key（设置页覆盖优先 → production 默认）。
+/// 给定一个服务，解析出当前应当使用的 API Key（设置页 BYOK 覆盖优先 → production 默认）。
 ///
-/// 解析顺序（先命中即返回）：
-/// 1. `AppSettings.shared.customServiceAPIKey(for: service)` —— 用户在设置页配置过
-/// 2. `StarcatAPIKeyDefaults.productionKey` —— production 默认 key（占位，待拍板）
+/// 解析顺序见文件头「API Key 生效优先级」段。
 ///
 /// 返回 `String?`：
 /// - 非 nil 且非空 → 调用方应在请求头加 `Authorization: Bearer <returned>`
-/// - nil 或空字符串 → 调用方**不发** Authorization 头；后端返回 401 时 UI 提示「请配置 API Key」
+/// - nil → 调用方**不发** Authorization 头；后端返回 401 时 UI 提示「请配置 API Key」
 enum StarcatAPIKeyResolver {
 
     /// 解析当前生效的 API Key。
     ///
-    /// @MainActor 是因为读 `AppSettings.shared`。
+    /// - Parameter service: 目标服务（trending / weekly / sharing）。
+    /// - Parameter settings: BYOK 来源；默认 `AppSettings.shared`，测试可注入隔离实例。
+    ///
+    /// `@MainActor` 是因为读 `AppSettings`（`@Observable @MainActor` 类型）。
     @MainActor
-    static func resolve(for service: ThirdPartyService) -> String? {
-        if let custom = AppSettings.shared.customServiceAPIKey(for: service),
+    static func resolve(
+        for service: ThirdPartyService,
+        settings: AppSettings = .shared
+    ) -> String? {
+        if let custom = settings.customServiceAPIKey(for: service),
            !custom.isEmpty {
             return custom
         }
-        let prod = StarcatAPIKeyDefaults.productionKey
-        return prod.isEmpty ? nil : prod
+        return StarcatAPIKeyDefaults.productionKeyOrNil
     }
 }
