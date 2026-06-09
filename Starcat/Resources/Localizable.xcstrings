@@ -11826,6 +11826,23 @@
           }
         }
       }
+    },
+    "starAction.error.notAuthenticated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please sign in to GitHub before starring or unstarring repositories."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先登录 GitHub 后再 star / unstar 仓库。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
