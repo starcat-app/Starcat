@@ -36,54 +36,19 @@
 //  - 后端 trending / weekly / 未来发现型服务遵循同一份 schema，前端零适配
 //  - URL 版本化（`/api/v1/*`）+ 顶层 `schema_version` 字段双保险，防止后端
 //    schema 演进时拖死前端解码
-//  - DTO 解码本身不校验 schema_version（只解码字段），调用方拿到 response 后
-//    查 `isSupported` 决定是否打 warning / 弹「请升级」
+//  - DTO 解码本身不校验 schema_version（只解码字段）；envelope 包装与 schema_version
+//    校验由 `StarcatEnvelope.swift` 的 `StarcatEnvelopeDecoder.decode` 统一处理
 //
 //  Sendable：DTO 全部值类型 + 不可变 let，天然满足 Sendable 要求。
 //
 
 import Foundation
 
-// MARK: - Envelope（顶层包装）
-
-/// `/api/v1/repos` / `/api/v1/projects` 等接口的顶层响应。
-///
-/// 字段约定（v1.2 §6.1.2）：
-///   {
-///     "schema_version": 1,                            // ← 当前 schema 版本（必填）
-///     "data": [ { ... StarcatRepoCardDTO ... }, ... ] // ← 卡片数组
-///   }
-///
-/// schema 演进 SOP：
-/// - **同版本内只允许加字段**（不破坏向后兼容）；老客户端忽略未知字段
-/// - **改字段语义 / 删字段**（不兼容）→ 升 schema_version 或升 URL 版本（`/api/v2/*`）
-/// - 客户端解码时 `schema_version > supportedSchemaVersion` 应打 warning + 继续尝试
-///   解码兼容字段（不直接抛错，避免老客户端完全瘫痪）
-struct StarcatRepoCardResponse: Decodable, Sendable {
-    /// 后端返回的 schema 版本号。必填字段，缺失会抛 DecodingError。
-    let schemaVersion: Int
-
-    /// 卡片数据数组。
-    let data: [StarcatRepoCardDTO]
-
-    /// 当前客户端能完全理解的最高 schema 版本。
-    ///
-    /// 后端升级 schema_version 时（通常加非破坏性字段），客户端版本上线前应
-    /// 同步把本常量 +1。
-    static let supportedSchemaVersion: Int = 1
-
-    /// schema_version 是否在客户端能完全理解的范围内。
-    ///
-    /// `true`：可放心使用所有字段。
-    /// `false`：客户端可能不识别新字段；调用方应打 warning（如 `AppLog.network.warning`）
-    /// 或弹「请升级 Starcat」提示，但仍可尝试解码已知字段（向后兼容）。
-    var isSupported: Bool { schemaVersion <= Self.supportedSchemaVersion }
-
-    enum CodingKeys: String, CodingKey {
-        case schemaVersion = "schema_version"
-        case data
-    }
-}
+// MARK: - Envelope（统一顶层包装见 StarcatEnvelope.swift）
+//
+// `/api/v1/repos` / `/api/v1/projects` 端点的顶层响应统一走 `StarcatEnvelope<[StarcatRepoCardDTO]>`，
+// 单 repo 聚合 endpoint 走 `StarcatEnvelope<StarcatRepoCardDTO>`，定义在 StarcatEnvelope.swift 里。
+// 旧的非泛型 `StarcatRepoCardResponse` 已删除（R-01 数据层接通时统一用 `StarcatEnvelopeDecoder.decode`）。
 
 // MARK: - Repo Card DTO（卡片主体）
 

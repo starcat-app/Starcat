@@ -59,6 +59,11 @@ actor WeeklyAPI {
     /// 调本 actor 的 `updateBaseURL`，actor 串行化保证写入与下一次 build URL 的读
     /// 之间不会撕裂。
     private var baseURL: URL
+
+    /// 当前 API Key（Bearer Token）；通过 `updateAPIKey(_:)` 热更新。
+    /// R-01 v1.2 后端强制 Bearer Auth；nil 或空字符串 = 不带 Authorization 头（后端会 401）。
+    private var apiKey: String?
+
     private let session: URLSession
     private let decoder: JSONDecoder
 
@@ -67,12 +72,16 @@ actor WeeklyAPI {
     /// - Parameters:
     ///   - baseURL: 后端域名；DI 装配处由 `AppDependencies` 从 `AppEndpoints.weekly` 注入，
     ///     用户在设置页改地址后 `updateBaseURL(_:)` 热更新。
+    ///   - apiKey: Bearer Token；DI 装配处由 `AppDependencies` 从 `StarcatAPIKeyResolver`
+    ///     解析后注入；用户在设置页改 key 后 `updateAPIKey(_:)` 热更新。
     ///   - session: 注入自定义 URLSession（一般用于单测 mock）；为 nil 走默认配置。
     init(
         baseURL: URL,
+        apiKey: String? = nil,
         session: URLSession? = nil
     ) {
         self.baseURL = baseURL
+        self.apiKey = apiKey
         if let session {
             self.session = session
         } else {
@@ -98,6 +107,14 @@ actor WeeklyAPI {
     func updateBaseURL(_ url: URL) {
         AppLog.network.info("WeeklyAPI baseURL updated to \(url.absoluteString, privacy: .public)")
         self.baseURL = url
+    }
+
+    /// 热更新 API Key（用户在设置页改 key 后由 `AppDependencies` 推送进来）。
+    /// 出于日志安全考虑不打印 key 本体，只打 prefix。
+    func updateAPIKey(_ key: String?) {
+        let preview = key.flatMap { $0.isEmpty ? nil : String($0.prefix(7)) } ?? "<nil>"
+        AppLog.network.info("WeeklyAPI apiKey updated (prefix=\(preview, privacy: .public)****)")
+        self.apiKey = key
     }
 
     /// 拉取周刊项目分页列表。
@@ -166,6 +183,12 @@ actor WeeklyAPI {
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Starcat/1.0", forHTTPHeaderField: "User-Agent")
+
+        // R-01 v1.2：后端强制 Bearer Auth；apiKey 为 nil/空时不发头（后端会 401，
+        // 由 envelope 解码层翻译成 isUnauthorized 错误，UI 引导去设置页配置 key）。
+        if let key = apiKey, !key.isEmpty {
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        }
 
         do {
             let (data, response) = try await session.data(for: request)
