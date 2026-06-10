@@ -124,11 +124,12 @@ struct WeeklyDetailView: View {
                 ),
                 fallbackAccentColor: ActivityCategory.weekly.iconColor,
                 // R-01 v1.5：三段渲染已下沉到 RepoDetailScaffold metadataPanel
-                // (RepoLocalSections),v1.7 起守卫绑 `starredRegistry.contains` 单一信任源。
+                // (RepoLocalSections),**v2.0 起守卫绑 `repo.isStarred` 单一信任源**
+                // (从 v1.7 的 `starredRegistry.contains(...)` 回归,详见
+                // `RepoLocalSections.swift` v2.0 修订段)。
                 //
-                // tooltip 同步切换(v1.7)：已 star 显示「取消 star」,未 star 显示「Star」,
-                // 与 onStarTapped(toggle) 行为对齐。删旧「打开 Stargazers 页面」case
-                // (v1.7 已删跳页面妥协逻辑,未命中也走 toggle 直接 star)。
+                // tooltip 同步切换(**v2.0**):已 star 显示「取消 star」,未 star 显示「Star」,
+                // 与 onStarTapped(toggle) 行为对齐。
                 starHelpKey: starHelpKey(repo: displayRepo),
                 onStarTapped: { try await handleStarTapped(repo: displayRepo) },
                 body: { onScrollOffset in
@@ -156,11 +157,12 @@ struct WeeklyDetailView: View {
         }
     }
 
-    /// 计算 trailingActions(v1.7 修订, 2026-06-10):
+    /// 计算 trailingActions(**v2.0 修订**, 2026-06-10):
     /// - `.weeklyIssue`(周刊期号外链):仅依赖 `firstIssue + issueURL`,与登录态/star 态无关
     ///   (公开 GitHub issue 页面),**保持独立**;
-    /// - `.share` / `.ai`:守卫绑 `isAuthenticated && registry.contains(ghRepoId:)`,
-    ///   与 4 详情页同构(理由见 §3.2.4 v1.7 修订段)。
+    /// - `.share` / `.ai`:守卫绑 `isAuthenticated && repo.isStarred`,与 4 详情页同构
+    ///   (从 v1.7 的 `registry.contains(ghRepoId:)` 回归,理由见
+    ///   `RepoLocalSections.swift` v2.0 修订段)。
     /// - 已登录 + 已 star → `[.weeklyIssue, .share, .ai]`(与 Manage 详情对齐 + 周刊期号入口);
     /// - 已登录 + 未 star → `[.weeklyIssue]`(share / ai 守卫拦下);
     /// - 未登录 → 仅 `[.weeklyIssue]`(若有 firstIssue);
@@ -170,25 +172,19 @@ struct WeeklyDetailView: View {
         if project.firstIssue > 0, let issueURL = project.issueURL {
             actions.append(.weeklyIssue(number: project.firstIssue, url: issueURL))
         }
-        if authSession.state.isAuthenticated,
-           dependencies.starredRegistry.contains(ghRepoId: repo.id) {
+        if authSession.state.isAuthenticated, repo.isStarred {
             actions.append(.share)
             actions.append(.ai)
         }
         return actions
     }
 
-    /// hero ⭐/☆ chip 的 tooltip 本地化键(v1.7 修订)。
-    /// 与 onStarTapped(`StarActionService.toggle`)行为对齐:
+    /// hero ⭐/☆ chip 的 tooltip 本地化键(**v2.0 修订**)。
+    /// 与 onStarTapped(`StarActionService.toggle`)行为对齐,直接派生自 `repo.isStarred`:
     /// - 已 star → 「取消 star」
     /// - 未 star → 「Star」
-    /// 删旧 weekly 独有的「打开 Stargazers 页面」case(v1.7 已删跳页面妥协逻辑)。
     private func starHelpKey(repo: Repo) -> LocalizedStringKey {
-        if dependencies.starredRegistry.contains(ghRepoId: repo.id) {
-            return "repo.unstar"
-        } else {
-            return "trending.star"
-        }
+        repo.isStarred ? "repo.unstar" : "trending.star"
     }
 
     // MARK: - Empty

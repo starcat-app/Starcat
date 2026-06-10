@@ -228,9 +228,11 @@ struct ActivityDetailView: View {
     /// - `fallbackAccentColor` 用 activity category 色（无语言时回退分类色，与 Manage 不同）
     /// - star/unstar 失败仅打日志，UI 不弹 alert（dong4j Q5-A 决策）
     /// - 旧 `repoMetadataPanelCollapseProgress/Height` 状态不再使用——Scaffold 自管
-    /// - **v1.7 修订**(2026-06-10)：trailingActions / starHelpKey / onStarTapped 全部
-    ///   与 manage / trending / weekly 同构,可见性绑 `StarredRegistry.contains(...)`
-    ///   单一信任源,star/unstar 走 `StarActionService.toggle(repo:)`。
+    /// - **v2.0 修订**(2026-06-10):trailingActions / starHelpKey / onStarTapped 全部
+    ///   与 manage / trending / weekly 同构,可见性绑 `Repo.isStarred`(本地 DB 列
+    ///   的内存镜像)单一信任源,star/unstar 走 `StarActionService.toggle(repo:)`。
+    ///   从 v1.7 的 `StarredRegistry.contains(...)` 回归(详见
+    ///   `RepoLocalSections.swift` v2.0 修订段)。
     @ViewBuilder
     private func repoBackedDetailPage(_ item: ActivityItem) -> some View {
         if let repo = item.repo, let readmeVM {
@@ -238,17 +240,17 @@ struct ActivityDetailView: View {
                 repo: repo,
                 viewData: RepoDetailViewData(
                     hero: RepoDetailHero(repo: repo),
-                    // v1.7 修订: 守卫绑 starredRegistry 单一信任源(与 4 详情页同构)。
-                    // activity 列表 ViewModel 已 `.filter { $0.isStarred }` 过滤,理论
-                    // 永远已 star,守卫纯防御 + 取消 star 后即时收起视觉反馈。
+                    // **v2.0**: 守卫绑 `repo.isStarred` 单一信任源(与 4 详情页同构)。
+                    // Activity 列表 row 来自 ActivityRepository 的 Repo 表查询,
+                    // `repo.isStarred` 是 DB `is_starred` 列的真值,守卫纯防御 +
+                    // 取消 star 后即时收起视觉反馈。
                     trailingActions: trailingActions(for: repo),
                     translation: ReadmeTranslationContext(fullName: repo.fullName),
                     backendHint: nil
                 ),
                 fallbackAccentColor: item.category.iconColor,
-                // v1.7: tooltip 与 toggle 行为对齐(由 StarredRegistry 派生)。
-                starHelpKey: dependencies.starredRegistry.contains(ghRepoId: repo.id)
-                    ? "repo.unstar" : "repo.star",
+                // **v2.0**: tooltip 与 toggle 行为对齐,由 `repo.isStarred` 直接派生。
+                starHelpKey: repo.isStarred ? "repo.unstar" : "repo.star",
                 onStarTapped: {
                     // §3.2.3 状态机:throws 让 StarStatChipButton 抖动 + 短暂红色(不弹 alert)
                     try await handleStarTapped(repo: repo)
@@ -406,28 +408,33 @@ struct ActivityDetailView: View {
     //（onStarTapped 闭包内调 `dependencies.starActionService.toggle(repo:)`,
     //  无 confirm,失败仅日志）。
 
-    // MARK: - Star toggle / 私人面板可见性（v1.7 修订, 2026-06-10）
+    // MARK: - Star toggle / 私人面板可见性(**v2.0 修订**, 2026-06-10)
 
     /// trailingActions 守卫——与 manage / trending / weekly 4 详情页同构,
-    /// 守卫绑 `StarredRegistry`(R-01 v1.2 §4.3 写权限锁死的单一信任源)。
+    /// 守卫绑 `Repo.isStarred`(本地 DB `is_starred` 列的内存镜像)。
     ///
     /// 业务上 ActivityViewModel 已 `.filter { $0.isStarred }`,所以 `item.repo`
-    /// 永远是已 star 的 repo;但守卫照样用 registry 派生,目的:
+    /// 永远是已 star 的 repo;但守卫照样保留,目的:
     /// 1. 与其他 3 个详情页 100% 同构,4 处守卫语义统一,后续新加场景不漏检;
-    /// 2. corner case 防御:用户在 activity 详情页点 unstar 后 registry 立即剔除
-    ///    → 三段 / AI / share 自动收起 → 视觉反馈即时(否则等列表 reload 才收)。
+    /// 2. corner case 防御:用户在 activity 详情页点 unstar 后,toggle 内部会更新
+    ///    DB `is_starred=false` + registry 剔除,activity row reload 后 repo
+    ///    对象拿新真值 → 三段 / AI / share 收起。
+    ///
+    /// **v2.0 从 v1.7 的 `starredRegistry.contains(...)` 回归**:registry async
+    /// bootstrap + SyncManager 304 早退会让 contains 在启动期返 false,改用
+    /// `Repo.isStarred` 直接读本地 DB 列。
     private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
-        guard authSession.state.isAuthenticated,
-              dependencies.starredRegistry.contains(ghRepoId: repo.id) else {
+        guard authSession.state.isAuthenticated, repo.isStarred else {
             return []
         }
         return [.share, .ai]
     }
 
-    /// hero ⭐/☆ chip 点击(v1.7 修订)。
+    /// hero ⭐/☆ chip 点击(**v2.0 修订**)。
     ///
     /// 与 manage / trending / weekly 同构——`StarActionService.toggle(repo:)`
-    /// 内部按 `StarredRegistry.contains` 派生 star / unstar 分支。
+    /// 内部按 `repo.isStarred || registry.contains(...)` 任一为 true 派生
+    /// star / unstar 分支(详见 `StarringSubsystem.swift` v2.0 修订段)。
     /// 失败抛错让 `StarStatChipButton` 触发抖动 + 短暂红色 600ms。
     private func handleStarTapped(repo: Repo) async throws {
         guard authSession.state.isAuthenticated else {

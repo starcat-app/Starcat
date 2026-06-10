@@ -86,18 +86,19 @@ struct RepoDetailView: View {
                     repo: repo,
                     viewData: RepoDetailViewData(
                         hero: RepoDetailHero(repo: repo),
-                        // v1.7 修订 (2026-06-10)：分享/AI 等私人功能可见性绑「已 star」
-                        // 单一信任源（StarredRegistry）。manage 场景理论 selectedRepo 永远
-                        // 已 star,加守卫与 trending/weekly/activity 一致 + 防御 corner case
-                        // （unstar 后 repos 表留墓碑行,但 registry 已剔除）。
+                        // **v2.0 修订** (2026-06-10):分享/AI 等私人功能可见性绑「已 star」
+                        // 单一信任源 = `Repo.isStarred`(本地 DB `is_starred` 列的内存镜像)。
+                        // 从 v1.7 的 `StarredRegistry.contains(...)` 回归,因为 registry 异步
+                        // bootstrap + SyncManager 304 早退不触发 hook 会让 Manage 启动期
+                        // registry 为空 → 私人面板全部不显。`Repo.isStarred` 在 4 场景全部
+                        // 可信(详见 `StarringSubsystem.swift` v2.0 修订段)。
                         trailingActions: trailingActions(for: repo),
                         translation: ReadmeTranslationContext(fullName: repo.fullName),
                         backendHint: nil
                     ),
-                    // v1.7 修订：tooltip 与 toggle 行为对齐——已 star 显示「取消 star」,
-                    // 未 star 显示「star」。registry 是 @Observable,star/unstar 后自动重渲染。
-                    starHelpKey: dependencies.starredRegistry.contains(ghRepoId: repo.id)
-                        ? "repo.unstar" : "repo.star",
+                    // **v2.0 修订**:tooltip 与 toggle 行为对齐——已 star 显示「取消 star」,
+                    // 未 star 显示「star」。从 `Repo.isStarred` 直接派生(同 trailingActions)。
+                    starHelpKey: repo.isStarred ? "repo.unstar" : "repo.star",
                     onStarTapped: {
                         // §3.2.3 状态机：throws 让 StarStatChipButton 抖动 + 短暂红色（不弹 alert）
                         try await handleStarTapped(repo: repo)
@@ -175,33 +176,30 @@ struct RepoDetailView: View {
     // R-01 §3.2.3：performUnstar / errorAlertBinding 已迁移到 StarActionService 单点维护
     // （RepoDetailView 不再持有 unstar 业务逻辑）。
 
-    // MARK: - Star toggle / 私人面板可见性（v1.7 修订, 2026-06-10）
+    // MARK: - Star toggle / 私人面板可见性（**v2.0 修订**, 2026-06-10）
 
-    /// trailingActions 守卫（与 trending / weekly / activity 4 详情页同构）：
-    /// 已登录 + 已 star → `[.share, .ai]`,否则空数组。可见性由 `StarredRegistry`
-    /// （R-01 v1.2 §4.3 写权限锁死的单一信任源）派生,star/unstar 后所有详情页
-    /// 自动响应（registry @Observable）。
+    /// trailingActions 守卫(与 trending / weekly / activity 4 详情页同构):
+    /// 已登录 + `repo.isStarred == true` → `[.share, .ai]`,否则空数组。
     ///
-    /// **为什么 manage 也需要 starredRegistry 守卫**（业务上 selectedRepo 永远
-    /// 已 star,但仍加守卫的理由）：
-    /// 1. 与 trending / weekly / activity 完全同构,4 详情页守卫语义统一,
-    ///    后续新加场景不必担心漏检;
-    /// 2. corner case 防御：用户在 manage 详情页点 unstar 后,registry 立即
-    ///    `_remove(repo.id)` → 三段 / AI / share 自动收起 → 用户取消 star 的
-    ///    瞬间得到一致的视觉反馈,而不是等 list reload 后才收起。
+    /// **v2.0 从 v1.7 的 `starredRegistry.contains(...)` 回归到 `repo.isStarred`**:
+    /// 直接读 `Repo.isStarred`(本地 DB `is_starred` 列的内存镜像)避免依赖
+    /// 异步 bootstrap 的 registry。Manage 场景 `selectedRepo.isStarred` 永远 true
+    /// (因为 selectedRepo 来自 `fetchAllStarred`),unstar 后 viewModel 会刷新
+    /// 列表 → selectedRepo 切到 nil 或新 repo → 这个 detail view 自动重渲染。
+    /// 4 场景同构 + 不依赖 registry async 时序,详见 `RepoLocalSections.swift` 文件头。
     private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
-        guard authSession.state.isAuthenticated,
-              dependencies.starredRegistry.contains(ghRepoId: repo.id) else {
+        guard authSession.state.isAuthenticated, repo.isStarred else {
             return []
         }
         return [.share, .ai]
     }
 
-    /// hero ⭐/☆ chip 点击（v1.7 修订）：
+    /// hero ⭐/☆ chip 点击(**v2.0 修订**):
     ///
     /// 与 trending / weekly / activity 完全同构——`StarActionService.toggle(repo:)`
-    /// 内部按 `StarredRegistry.contains` 派生 star / unstar 分支,4 处调用方都是
-    /// 这 6 行模板。失败抛错让 `StarStatChipButton` 触发抖动 + 短暂红色 600ms。
+    /// 内部按 `repo.isStarred || registry.contains(...)` 任一为 true 走 unstar 分支,
+    /// 4 处调用方都是这 6 行模板。失败抛错让 `StarStatChipButton` 触发抖动 +
+    /// 短暂红色 600ms。
     ///
     /// 未登录 → `authSession.signIn()` 触发设备流后**不抛错 return**(chip 不抖,
     /// 这不是失败语义)。
