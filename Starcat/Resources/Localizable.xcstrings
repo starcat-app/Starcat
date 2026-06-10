@@ -6601,6 +6601,22 @@
         }
       }
     },
+    "repo.detail.refresh" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新详情"
+          }
+        }
+      }
+    },
     "repo.fork" : {
       "extractionState" : "stale",
       "localizations" : {

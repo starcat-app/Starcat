@@ -88,6 +88,11 @@ struct RepoDetailView: View {
                     onStarTapped: {
                         // §3.2.3 状态机：throws 让 StarStatChipButton 抖动 + 短暂红色（不弹 alert）
                         try await dependencies.starActionService.unstar(repo: repo)
+                    },
+                    onRefresh: {
+                        // §3.2.9：右下浮动刷新按钮触发 → 强制刷当前 repo 视图数据
+                        // （重拉缓存 repo + tags + notes + release 计数等）
+                        await viewModel.reloadItems(forceRefresh: true)
                     }
                 ) { onScrollOffset in
                     ManageDetailContent(repo: repo, onScrollOffset: onScrollOffset)
