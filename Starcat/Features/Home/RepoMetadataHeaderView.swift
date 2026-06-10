@@ -35,8 +35,9 @@ import AppKit
 ///   `RepoDetailScaffold.metadataPanel` 跟随折叠（4 场景同构事实推翻 v1.2 P0
 ///   原则;详见 `Starcat/Shared/Components/RepoDetailScaffold.swift` 文件头）
 ///
-/// 三段的可见性由 `RepoLocalSections` 内部根据 `isAuthenticated && repo.id != 0`
-/// 自动判定（v1.4 守卫）,ContentView / Scaffold 都不需要再传 isLocalHit 等开关参数。
+/// 三段的可见性由 `RepoLocalSections` 内部根据
+/// `isAuthenticated && starredRegistry.contains(ghRepoId: repo.id)` 自动判定
+/// (v1.7 修订, 2026-06-10),ContentView / Scaffold 都不需要再传 isLocalHit 等开关参数。
 struct RepoMetadataHeaderView<TrailingActions: View>: View {
     let repo: Repo
     let fallbackAccentColor: Color
@@ -51,9 +52,12 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     let onStarTapped: () async throws -> Void
     /// Stars stat 按钮的 tooltip 本地化键。
     ///
-    /// Manage / Activity 详情页：默认 `"repo.unstar"`（用户已 star，点击取消）。
-    /// Weekly 详情页未命中本地（用户未 star）：传 `"weekly.detail.openStargazers"`（点击跳 stargazers 页面）。
-    /// 这是为了让 tooltip 与实际 `onStarTapped` 闭包做的事保持一致，避免误导。
+    /// 4 详情页(v1.7 起同构):调用方按 `StarredRegistry.contains(ghRepoId:)` 派生:
+    /// - 已 star → `"repo.unstar"`(点击 unstar)
+    /// - 未 star → `"trending.star"` 或 `"repo.star"`(点击 star)
+    ///
+    /// 这是为了让 tooltip 与实际 `onStarTapped` 闭包(`StarActionService.toggle`)
+    /// 行为对齐,避免误导用户。
     let starHelpKey: LocalizedStringKey
     private let trailingActions: TrailingActions
 

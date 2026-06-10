@@ -80,22 +80,27 @@ struct RepoDetailView: View {
                 // R-01 §3.2.3：Manage 详情迁移到 RepoDetailScaffold + ManageDetailContent。
                 // - 删除原 `showUnstarConfirm` / `isUnstarring` / `unstarError` 三个 @State + 对应 alert
                 //   （dong4j Q5-A 决策：unstar 即点即生效，无 confirm；失败时 chip 抖动 + 红色 ~600ms，不弹 toast）
-                // - star/unstar 调用统一走 `dependencies.starActionService.unstar(repo:)`
-                //   （由 StarringSubsystem 单点维护 registry / DB / 远端三方一致性）
+                // - star/unstar 调用统一走 `dependencies.starActionService.toggle(repo:)`
+                //   （v1.7 修订：4 详情页同构,toggle 内部按 StarredRegistry 派生 star/unstar）
                 RepoDetailScaffold(
                     repo: repo,
                     viewData: RepoDetailViewData(
                         hero: RepoDetailHero(repo: repo),
-                        // v1.4 修订 (2026-06-10)：未登录时不展示分享/AI（语义上「分享我的
-                        // 收藏」「AI 摘要」都是登录后的功能）。manage 场景理论必登录,
-                        // 加守卫纯防御 + 与 trending/weekly 一致。
-                        trailingActions: authSession.state.isAuthenticated ? [.share, .ai] : [],
+                        // v1.7 修订 (2026-06-10)：分享/AI 等私人功能可见性绑「已 star」
+                        // 单一信任源（StarredRegistry）。manage 场景理论 selectedRepo 永远
+                        // 已 star,加守卫与 trending/weekly/activity 一致 + 防御 corner case
+                        // （unstar 后 repos 表留墓碑行,但 registry 已剔除）。
+                        trailingActions: trailingActions(for: repo),
                         translation: ReadmeTranslationContext(fullName: repo.fullName),
                         backendHint: nil
                     ),
+                    // v1.7 修订：tooltip 与 toggle 行为对齐——已 star 显示「取消 star」,
+                    // 未 star 显示「star」。registry 是 @Observable,star/unstar 后自动重渲染。
+                    starHelpKey: dependencies.starredRegistry.contains(ghRepoId: repo.id)
+                        ? "repo.unstar" : "repo.star",
                     onStarTapped: {
                         // §3.2.3 状态机：throws 让 StarStatChipButton 抖动 + 短暂红色（不弹 alert）
-                        try await dependencies.starActionService.unstar(repo: repo)
+                        try await handleStarTapped(repo: repo)
                     },
                     onRefresh: {
                         // §3.2.9：右下浮动刷新按钮触发 → 强制刷当前 repo 视图数据
@@ -169,6 +174,46 @@ struct RepoDetailView: View {
 
     // R-01 §3.2.3：performUnstar / errorAlertBinding 已迁移到 StarActionService 单点维护
     // （RepoDetailView 不再持有 unstar 业务逻辑）。
+
+    // MARK: - Star toggle / 私人面板可见性（v1.7 修订, 2026-06-10）
+
+    /// trailingActions 守卫（与 trending / weekly / activity 4 详情页同构）：
+    /// 已登录 + 已 star → `[.share, .ai]`,否则空数组。可见性由 `StarredRegistry`
+    /// （R-01 v1.2 §4.3 写权限锁死的单一信任源）派生,star/unstar 后所有详情页
+    /// 自动响应（registry @Observable）。
+    ///
+    /// **为什么 manage 也需要 starredRegistry 守卫**（业务上 selectedRepo 永远
+    /// 已 star,但仍加守卫的理由）：
+    /// 1. 与 trending / weekly / activity 完全同构,4 详情页守卫语义统一,
+    ///    后续新加场景不必担心漏检;
+    /// 2. corner case 防御：用户在 manage 详情页点 unstar 后,registry 立即
+    ///    `_remove(repo.id)` → 三段 / AI / share 自动收起 → 用户取消 star 的
+    ///    瞬间得到一致的视觉反馈,而不是等 list reload 后才收起。
+    private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
+        guard authSession.state.isAuthenticated,
+              dependencies.starredRegistry.contains(ghRepoId: repo.id) else {
+            return []
+        }
+        return [.share, .ai]
+    }
+
+    /// hero ⭐/☆ chip 点击（v1.7 修订）：
+    ///
+    /// 与 trending / weekly / activity 完全同构——`StarActionService.toggle(repo:)`
+    /// 内部按 `StarredRegistry.contains` 派生 star / unstar 分支,4 处调用方都是
+    /// 这 6 行模板。失败抛错让 `StarStatChipButton` 触发抖动 + 短暂红色 600ms。
+    ///
+    /// 未登录 → `authSession.signIn()` 触发设备流后**不抛错 return**(chip 不抖,
+    /// 这不是失败语义)。
+    private func handleStarTapped(repo: Repo) async throws {
+        guard authSession.state.isAuthenticated else {
+            authSession.signIn()
+            return
+        }
+        try await dependencies.starActionService.toggle(repo: repo)
+        await viewModel.refreshSidebar()
+        await viewModel.reloadItems(forceRefresh: true)
+    }
 
     // R-01 §3.2.3 Phase B3（2026-06-10）：本 view 的 trending 分支全部交给
     // `TrendingScaffoldShell`（同 module 平级文件）+ `RepoDetailScaffold` +

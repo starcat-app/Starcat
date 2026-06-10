@@ -34,35 +34,44 @@
 //  即可,确保动画规格、隐藏逻辑、padding、登录守卫全场景一致。
 //
 //  ────────────────────────────────────────────────────────────────────────────
-//  isVisible 判定语义（v1.4 修订,2026-06-10）
+//  isVisible 判定语义（**v1.7 修订, 2026-06-10**, dong4j bug 反馈）
 //  ────────────────────────────────────────────────────────────────────────────
 //
-//  本组件**内部**用 `isAuthenticated && repo.id != 0` 判定是否渲染三段：
+//  本组件**内部**用 `isAuthenticated && starredRegistry.contains(ghRepoId: repo.id)`
+//  判定是否渲染三段。**核心思想：以「是否 star」作为单一信任源**。
 //
-//  1. **`repo.id != 0`（本地命中）**：
-//     - Trending / Weekly 未命中本地 → `makeEphemeralRepo()` 构造 id=0 临时
-//       Repo,三段没法用 id 关联 `repo_tags` / `repo_notes` /
-//       `release_subscriptions`,必须隐藏;
-//     - 用户在详情页点 ⭐ → StarActionService 写 DB 拿到真 id → 外层 view
-//       （TrendingScaffoldShell.resolveRepo / WeeklyDetailView.resolveRepo）
-//       切到本地真值,传入新 repo（id != 0）→ 三段 spring 0.25s 展开。
+//  v1.4 旧守卫 `isAuthenticated && repo.id != 0` 的硬伤：v9 schema 之后,
+//  trending row 自带 ghRepoId（非 0）→ `TrendingRepo.makeEphemeralRepo()` 用
+//  ghRepoId 作 `Repo.id` → 用户**没 star 过**的 trending repo 进详情页时
+//  `repo.id != 0` 仍然成立 → 三段被错误展示 + AI 摘要按钮可点 → 点 AI 摘要
+//  时 `INSERT INTO ai_summaries(repo_id=...)` FK 失败（ghRepoId 不在 repos 表）。
 //
-//  2. **`authSession.state.isAuthenticated`（已登录）（v1.4 新增）**：
-//     - Tags / Notes（含阅读状态）/ Release 订阅在语义上是**用户的私人配置**,
-//       未登录态根本不存在「我的标签 / 我的笔记 / 我的订阅」概念——这些功能
-//       的入口必须先登录;
-//     - corner case：用户曾登录过 → 本地 DB 留有 repo_tags / repo_notes
-//       数据 → 登出后 `signOut()` 不会清这些表（合理：保护用户数据,重新
-//       登录后还在）→ 但 trending 详情页 resolveRepo 仍可能命中
-//       `repo.id != 0`,单看 id 守卫会泄漏私人数据到登录页之外。
-//       加 `isAuthenticated` 守卫消除此泄漏路径;
-//     - 一致性：与「⭐/☆ chip 未登录点击触发 signIn() 引导」对齐——三段都是
-//       已登录后的功能,未登录入口该藏就藏。
+//  v1.7 守卫直接绑「真正的 starred 信号」：
 //
-//  调用方**不需要**传 isLocalHit / isAuthenticated 等开关——只要保证传入
-//  的 repo 对象是「最新已解析」的真实状态,本组件读 `@Environment(AuthSession)`
-//  自动响应登录态变化。v1.5 起调用方收口为唯一一处（Scaffold metadataPanel）,
-//  4 个 ContentView 不再各自调用,彻底消除分散判断的不一致风险。
+//  1. **`starredRegistry.contains(ghRepoId: repo.id)`（已 star）**：
+//     - StarredRegistry 是 R-01 v1.2 §4.3 的「写权限 fileprivate 锁死」单一
+//       信任源,内容 = 当前用户已 star 的所有 ghRepoId 集合;
+//     - 三段都是「已 star repo 的私人配置」（tags / notes / release 订阅）,
+//       未 star 不应该展示;
+//     - registry 是 `@Observable`,star/unstar 后所有详情页面板自动响应,
+//       不需要 view 层手动 reload。
+//
+//  2. **`authSession.state.isAuthenticated`（已登录）**：
+//     - 双保险——理论上 registry 在登出时会被 `clearAll()` 清空,但加这个
+//       守卫让「未登录」语义在 view 层一眼看出,且与「⭐/☆ chip 未登录点击
+//       触发 signIn() 引导」对齐;
+//     - corner case：登出瞬间 registry 还没清 → 这一守卫兜住;登入瞬间
+//       registry 还没 bootstrap → 守卫保持收起直到 bootstrap 完成。
+//
+//  v1.4 旧守卫语义对比：
+//  - 旧：`isAuthenticated && repo.id != 0` ← 含义「本地有 row」≠「已 star」
+//  - 新：`isAuthenticated && contains(ghRepoId)` ← 含义「真已 star」
+//
+//  调用方**不需要**传 isLocalHit / isAuthenticated / isStarred 等开关——只要
+//  保证传入的 repo 对象是「最新已解析」的真实状态,本组件读
+//  `@Environment(AuthSession / AppDependencies)` 自动响应登录态 + star 态变化。
+//  v1.5 起调用方收口为唯一一处（Scaffold metadataPanel）,4 个 ContentView 不再
+//  各自调用,彻底消除分散判断的不一致风险。
 //
 
 import SwiftUI
@@ -83,8 +92,8 @@ import SwiftUI
 /// }
 /// ```
 ///
-/// 可见性：`isAuthenticated && repo.id != 0` 时三段 spring 展开;
-/// 任一条件不满足时收起（包括登出 / 切到 ephemeral repo）。
+/// 可见性：`isAuthenticated && starredRegistry.contains(ghRepoId: repo.id)` 时
+/// 三段 spring 展开;任一条件不满足时收起（包括登出 / 未 star / 切到 ephemeral repo）。
 struct RepoLocalSections: View {
 
     let repo: Repo
@@ -93,15 +102,29 @@ struct RepoLocalSections: View {
     /// 语义对齐。通过 Environment 注入,4 个 ContentView 调用方零改动。
     @Environment(AuthSession.self) private var authSession
 
+    /// AppDependencies 注入（v1.7 修订）：访问 `starredRegistry` 派生 isVisible。
+    /// 用 dependencies 而非直接注 `StarredRegistry`,因为后者不是单独的环境对象,
+    /// 与 `RepoMetadataHeaderView` / `Scaffold` 注入约定保持一致。
+    @Environment(AppDependencies.self) private var dependencies
+
     /// horizontal padding：与 `RepoMetadataHeaderView` 保持一致 24pt,让三段视觉
     /// 边距与 hero 严格对齐（避免读者察觉 hero / body 区分）。
     private let horizontalPadding: CGFloat = 24
 
-    /// 三段是否可见。两条件 AND：
+    /// 三段是否可见。两条件 AND（v1.7 修订）：
     /// - `authSession.state.isAuthenticated`：登录是「我的标签/笔记/订阅」的语义前提
-    /// - `repo.id != 0`：非 ephemeral,能用 id 关联本地表
+    /// - `starredRegistry.contains(ghRepoId: repo.id)`：当前用户已 star
+    ///   （registry 是 R-01 v1.2 §4.3 写权限锁死的单一信任源,@Observable 让
+    ///    star/unstar 触发自动重渲染）
+    ///
+    /// **为什么不再用 `repo.id != 0`**：v9 schema 后 trending row 自带 ghRepoId
+    /// （非 0）,`TrendingRepo.makeEphemeralRepo` 用它作 `Repo.id` → 未 star 的
+    /// trending repo 也满足 `repo.id != 0` → 三段被错误展示 + AI 按钮可点导致
+    /// `ai_summaries` FK 失败。改用 `registry.contains(ghRepoId:)` 把守卫绑到
+    /// 真正的 starred 信号,根治此 corner case。
     private var isVisible: Bool {
-        authSession.state.isAuthenticated && repo.id != 0
+        authSession.state.isAuthenticated
+            && dependencies.starredRegistry.contains(ghRepoId: repo.id)
     }
 
     var body: some View {
