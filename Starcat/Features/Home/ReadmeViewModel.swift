@@ -144,6 +144,22 @@ final class ReadmeViewModel {
 
         let key = "\(owner)/\(repo)"
 
+        // v1.6 修订（2026-06-10, dong4j bug 反馈）：未登录态下禁用 README 渲染。
+        //
+        // 与 `loadInternal` 同义（详见该函数 v1.6 修订段长注释）：trending 路径同样
+        // 是 SWR 两段式,未登录用户也会出现「闪现 stale cache → 跳登录提示」的跳帧。
+        // 入口同步覆盖 state 为 .requiresLogin,跳过所有缓存读取与网络刷新。
+        //
+        // 注意:trending 路径的 currentTrendingKey **仍要更新**,否则用户登录后
+        // selectedTrendingRepoID 不变 → onChange 不重触发 loadTrending,但内部 key
+        // 还是上一个 repo,后续命中"同 repo 不变 state"的快速路径会出错。
+        guard isLoggedIn else {
+            currentTrendingKey = key
+            currentRepoId = nil
+            state = .requiresLogin
+            return
+        }
+
         // 切到新 repo 时立即同步设 .loading 占位（race 防护）
         let isSameRepo = (currentTrendingKey == key)
         currentTrendingKey = key
@@ -229,6 +245,36 @@ final class ReadmeViewModel {
         guard let repo else {
             currentRepoId = nil
             state = .idle
+            return
+        }
+
+        // ────────────────────────────────────────────────────────────────────
+        // v1.6 修订（2026-06-10, dong4j bug 反馈）：未登录态下禁用 README 渲染
+        // ────────────────────────────────────────────────────────────────────
+        //
+        // 问题：未登录用户点 repo 详情页时,会出现「先闪现已缓存 README → 跳到
+        // 登录提示」的视觉跳帧。
+        //
+        // 根因：原 SWR 路径下,未登录用户的请求流：
+        //   1. 第一阶段读 cached → 命中（曾登录用户留下的缓存）→ state = .loaded
+        //      → WebView 渲染 stale 缓存（用户看到 README 内容）
+        //   2. 第二阶段强制走网络 refresh → GitHub 401/403/匿名配额耗尽
+        //   3. catch error → `if !isLoggedIn { state = .requiresLogin }` →
+        //      WebView 切到登录提示（用户看到"跳帧"到登录页）
+        //
+        // dong4j 产品决策：未登录用户**根本不能看 README**（即便本地有缓存或匿名
+        // 配额够用）→ 入口立即同步设 .requiresLogin,跳过所有 SWR 路径,既消除
+        // 跳帧又明确引导登录。
+        //
+        // 关键约束：
+        // - 必须**同步**设 state（不能 await）—— SwiftUI 一帧 commit 即生效;
+        // - 必须**强制覆盖** state（即便上一个 repo 是 .loaded）——`currentTask?.cancel()`
+        //   只能阻止 future write,不会回滚已写的 state;
+        // - 放在 `guard let repo else` 之后,nil repo 仍走 .idle（取消选择不弹登录）;
+        // - 不影响登录用户的 SWR 体验——已登录用户分支完全没动。
+        guard isLoggedIn else {
+            currentRepoId = repo.id
+            state = .requiresLogin
             return
         }
 
