@@ -316,7 +316,8 @@ struct TrendingView: View {
                 } label: {
                     UnifiedRepoRow(
                         card: repo.asCardData(registry: dependencies.starredRegistry),
-                        isSelected: selectedRepoID == repo.id
+                        isSelected: selectedRepoID == repo.id,
+                        showStarredCheckmark: true
                     )
                 }
                 .buttonStyle(.plain)

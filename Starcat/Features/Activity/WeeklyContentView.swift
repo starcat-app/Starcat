@@ -157,7 +157,8 @@ struct WeeklyContentView: View {
                     // 在 chip 行显示，星标 ✓ 由 `StarredRegistry` 驱动联动。
                     UnifiedRepoRow(
                         card: project.asCardData(registry: registry),
-                        isSelected: selection.selectedProject?.id == project.id
+                        isSelected: selection.selectedProject?.id == project.id,
+                        showStarredCheckmark: true
                     )
                 }
                 .buttonStyle(.plain)
