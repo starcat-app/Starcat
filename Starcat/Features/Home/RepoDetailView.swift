@@ -32,6 +32,11 @@ struct RepoDetailView: View {
     @Environment(AppDependencies.self) private var dependencies
     /// 系统级"减少动效"开关，开启时详情页切换退化为仅 opacity 淡入（不再上滑）。
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// v1.4 修订 (2026-06-10)：trailingActions(.share/.ai) 加 isAuthenticated 守卫的依赖。
+    /// Manage 场景业务上必须登录才能看到 repo 列表（HomeViewModel 从本地 starred_repos
+    /// 拉数据,登出会清 token + StarredRegistry,但本地 starred_repos 表不清,理论上多账号
+    /// 切换时仍可能短暂看到已登出用户的数据）→ 加防御性守卫,与 trending/weekly 全场景一致。
+    @Environment(AuthSession.self) private var authSession
 
     // R-01 §3.2.3 决策：unstar 即点即生效，不再有 confirm alert / unstarError 弹窗。
     // 失败由 StarActionService 内部记日志，UI 仅靠 hero ⭐ chip 抖动 + 短暂红色提示
@@ -81,7 +86,10 @@ struct RepoDetailView: View {
                     repo: repo,
                     viewData: RepoDetailViewData(
                         hero: RepoDetailHero(repo: repo),
-                        trailingActions: [.share, .ai],
+                        // v1.4 修订 (2026-06-10)：未登录时不展示分享/AI（语义上「分享我的
+                        // 收藏」「AI 摘要」都是登录后的功能）。manage 场景理论必登录,
+                        // 加守卫纯防御 + 与 trending/weekly 一致。
+                        trailingActions: authSession.state.isAuthenticated ? [.share, .ai] : [],
                         translation: ReadmeTranslationContext(fullName: repo.fullName),
                         backendHint: nil
                     ),
