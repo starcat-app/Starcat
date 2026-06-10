@@ -10,6 +10,30 @@
 //  - ViewModel 由本视图按 Environment 里的 AppDependencies 构造，避免把 Activity 专属依赖
 //    继续透传进 RepoListView 的初始化参数。
 //
+//  ────────────────────────────────────────────────────────────────────────────
+//  v1.9 修订（2026-06-10, dong4j「四场景统一 row」遗留 bug）：repo-backed kind 切 UnifiedRepoRow
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  R-01「四个场景统一 row」原本只统一了 3 个（Manage / Trending / Weekly），Activity 全
+//  走独立的 `ActivityRowView` —— Activity 的 `star` / `repository` / `suggestion` 这三
+//  种**纯仓库型**卡片视觉与其它场景割裂。
+//
+//  v1.9 把这三种 kind 切到 `UnifiedRepoRow`，复用 `Repo.asCardData(badge: .activityKind(...))`：
+//    - 头像角自带 kind icon 圆角标（UnifiedRepoRow.avatarWithKindBadge 已有逻辑）；
+//    - 右上自带 RelativeDateBadge（UnifiedRepoRow.body 已有逻辑）；
+//    - chip 行 Lang / Stars / Forks 与 Manage / Trending / Weekly 完全对齐。
+//
+//  保留 `ActivityRowView` 渲染的两类（dong4j 决策）：
+//    - `release`：title = release name(主位)+ subtitle = repo.fullName + body = release notes
+//      摘录 + 未读 chip。视觉上「以 release 为主体」，与 UnifiedRepoRow「以仓库为主体」
+//      语义冲突，强行切会丢 release name 视觉权重 + 未读 chip 渲染槽。
+//    - `announcement`：item.repo == nil，根本无法构造 `RepoCardViewData`（必填 fullName /
+//      owner / repo / ghRepoId）。视觉差异本就该有 —— 让用户一眼看出这是 GitHub 公告。
+//    - `following`：当前 ActivityViewModel 未生产此 kind；预留入口，行为同 announcement。
+//
+//  `showStarredCheckmark` 不传 → 默认 false，与 Manage 同策略 ——`ActivityViewModel.filter {
+//  $0.isStarred }` 已过滤 100% starred，挂 ✓ 视觉冗余。
+//
 
 import SwiftUI
 
@@ -64,10 +88,7 @@ struct ActivityView: View {
                     Button {
                         selectedItem = item
                     } label: {
-                        ActivityRowView(
-                            item: item,
-                            isSelected: selectedItem?.id == item.id
-                        )
+                        rowContent(for: item)
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
@@ -78,6 +99,51 @@ struct ActivityView: View {
             }
             .listStyle(.inset)
             .alternatingRowBackgrounds()
+        }
+    }
+
+    /// 按 `item.kind` 派发到 `UnifiedRepoRow`（v1.9：纯仓库型 kind）或 `ActivityRowView`
+    /// （release / announcement / following）。
+    ///
+    /// **派发规则**（设计 §3.1.5 + v1.9 dong4j 拍板）：
+    /// - `star` / `repository` / `suggestion` → `UnifiedRepoRow` 与 Manage/Trending/Weekly
+    ///   100% 视觉同构（badge 走 `.activityKind(category, createdAt)`，
+    ///   头像角 kind icon + 右上相对时间均由 UnifiedRepoRow 已有逻辑承担）；
+    /// - 其它 kind（release 主体 = release name 而非 repo / announcement 无 repo）走老路径。
+    ///
+    /// `item.repo` 为 nil 的 corner case（announcement、未来的 following）一律退化到老视觉，
+    /// 因为 `RepoCardViewData` 必填 fullName / owner / repo / ghRepoId。
+    @ViewBuilder
+    private func rowContent(for item: ActivityItem) -> some View {
+        if let repo = item.repo, isUnifiedRowKind(item.kind) {
+            // v1.9：纯仓库型 kind 走 UnifiedRepoRow。`showStarredCheckmark` 不传（默认 false）
+            // —— ActivityViewModel.filter { $0.isStarred } 已过滤 100% starred，挂 ✓ 视觉冗余。
+            UnifiedRepoRow(
+                card: repo.asCardData(
+                    badge: .activityKind(item.category, item.createdAt ?? Date.distantPast)
+                ),
+                isSelected: selectedItem?.id == item.id
+            )
+        } else {
+            ActivityRowView(
+                item: item,
+                isSelected: selectedItem?.id == item.id
+            )
+        }
+    }
+
+    /// 判定一个 kind 是否能用 UnifiedRepoRow 渲染（v1.9）。
+    ///
+    /// 出参为 false 的两类：
+    /// - `release`：以 release name 为主标题 + 未读 chip，与 UnifiedRepoRow「以仓库为主体」
+    ///   语义冲突；
+    /// - `announcement` / `following`：无 `item.repo`，无法构造 `RepoCardViewData`。
+    private func isUnifiedRowKind(_ kind: ActivityKind) -> Bool {
+        switch kind {
+        case .star, .repository, .suggestion:
+            return true
+        case .release, .announcement, .following:
+            return false
         }
     }
 

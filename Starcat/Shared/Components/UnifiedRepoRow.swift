@@ -48,6 +48,25 @@
 //  渲染不再单独以它为唯一条件,而是 `showStarredCheckmark && card.isStarred`
 //  双条件 AND。
 //
+//  ────────────────────────────────────────────────────────────────────────────
+//  v1.9 修订（2026-06-10, dong4j「四场景统一 row」遗留 bug 反馈）：Activity 接入完成
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  R-01 设计意图本就包含「Activity-repo-backed 卡片」（见上面 line 14 替代列表），
+//  但 P0 落地时 Activity 全走 `ActivityRowView` 老路径 —— `UnifiedRepoRow` 的
+//  `case .activityKind(category, date) = card.badge` 分支（avatarWithKindBadge
+//  头像角圆角标 + 右上 RelativeDateBadge）一直没真正被消费。
+//
+//  v1.9 在 `Features/Activity/ActivityView.rowContent(for:)` 按 `item.kind` 派发：
+//  - `star` / `repository` / `suggestion`（**纯仓库型**）→ UnifiedRepoRow，
+//    视觉与 Manage / Trending / Weekly 100% 一致；
+//  - `release` / `announcement` / `following` → 保留 `ActivityRowView`：
+//    release 主体是 release name + 未读 chip（与 UnifiedRepoRow「以仓库为主体」
+//    语义冲突）；announcement / following 无 `item.repo` 无法构造 RepoCardViewData。
+//
+//  Activity row 不传 `showStarredCheckmark`（默认 false）—— `ActivityViewModel.filter
+//  { $0.isStarred }` 已过滤 100% starred,挂 ✓ 视觉冗余,与 Manage 同策略。
+//
 
 import SwiftUI
 
