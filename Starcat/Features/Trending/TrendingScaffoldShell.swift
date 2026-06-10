@@ -92,13 +92,15 @@ struct TrendingScaffoldShell: View {
                 translation: repo.id != 0 ? ReadmeTranslationContext(fullName: repo.fullName) : nil,
                 backendHint: nil
             ),
-            // R-01 v1.2 P0：三段渲染已下沉到 ContentView (RepoLocalSections)，
-            // hero 不再持有 showLocalSections 概念；可见性由 RepoLocalSections
-            // 内部根据 repo.id != 0 自动判定。
+            // R-01 v1.2 P0：三段渲染已下沉到 Scaffold metadataPanel (RepoLocalSections),
+            // hero 不再持有 showLocalSections 概念；v1.7 修订后可见性绑 starredRegistry。
             //
-            // tooltip 与 onStarTapped 行为对齐：已 star 显示「取消 star」；
-            // 未 star（无论本地墓碑行还是 ephemeral）显示「star」。
-            starHelpKey: repo.isStarred ? "repo.unstar" : "trending.star",
+            // tooltip 与 onStarTapped 行为对齐(v1.7 修订)：用 starredRegistry 派生
+            // 而非 `repo.isStarred`——避免 ephemeral repo 与 registry 不同步的 corner
+            // case(本地查 → 墓碑行 isStarred=false 但 registry 还没刷新等)。已 star
+            // 显示「取消 star」;未 star 显示「star」。
+            starHelpKey: dependencies.starredRegistry.contains(ghRepoId: repo.id)
+                ? "repo.unstar" : "trending.star",
             onStarTapped: {
                 try await handleStarTapped(repo: repo)
             },
@@ -111,17 +113,24 @@ struct TrendingScaffoldShell: View {
         )
     }
 
-    /// trailing actions：
-    /// - **未登录**（v1.4 修订, 2026-06-10）→ 空数组（dong4j 决策：未登录态下分享/AI
-    ///   都不应展示——分享/AI 都是用户登录后的付费/绑定功能,与 RepoLocalSections 三段
-    ///   守卫语义对齐）；
-    /// - 已登录 + 本地命中（id != 0）→ `[.share, .ai]`（与 Manage 详情页对齐, share / ai
-    ///   都依赖 repo.id）；
-    /// - 已登录 + 未命中（ephemeral, id == 0）→ 空数组（share 走 AI 摘要缓存键 = repo.id,
-    ///   ephemeral 会撞坏；ai 也类似。trending hero 上方已有「在 GitHub 查看」入口承接
-    ///   外链需求）。
+    /// trailing actions（v1.7 修订, 2026-06-10）：
+    /// - **未登录** → 空数组（dong4j 决策：未登录态下分享/AI 都不应展示）;
+    /// - 已登录 + **未 star** → 空数组（**新逻辑**：v9 之后 trending row 自带 ghRepoId,
+    ///   ephemeral repo 也满足 `repo.id != 0`,旧守卫失效会让未 star 的 trending repo
+    ///   出现 AI 按钮 → 点 AI 摘要时 `ai_summaries(repo_id=ghRepoId)` FK 失败,因为
+    ///   repos 表里没有这条。改绑 `starredRegistry.contains(...)` 把守卫绑到真正的
+    ///   starred 信号根治）;
+    /// - 已登录 + **已 star** → `[.share, .ai]`(share / ai 都依赖 repos 表里有 repo.id,
+    ///   已 star 即保证 repos 表里已写入)。
+    ///
+    /// `StarredRegistry` 是 R-01 v1.2 §4.3 写权限 fileprivate 锁死的单一信任源,
+    /// `@Observable` 让 star/unstar 后 trailingActions 自动重计算,share/AI 按钮
+    /// 立即出现/消失。
     private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
-        guard authSession.state.isAuthenticated, repo.id != 0 else { return [] }
+        guard authSession.state.isAuthenticated,
+              dependencies.starredRegistry.contains(ghRepoId: repo.id) else {
+            return []
+        }
         return [.share, .ai]
     }
 
@@ -159,31 +168,34 @@ struct TrendingScaffoldShell: View {
 
     // MARK: - Star / Unstar 协调
 
-    /// hero ⭐/☆ chip 点击（**严格按 R-01 §3.2.3 / Q1 / Q2 / N1 / N2 决策**）：
+    /// hero ⭐/☆ chip 点击（**v1.7 修订, 2026-06-10**, R-01 §3.2.3 / Q1 / Q2 / N1 / N2）：
     ///
-    /// - 已 star（本地命中且 isStarred = true）→ **直接 unstar，不弹 confirm**
-    /// - 未 star（本地墓碑行 / 本地未命中 ephemeral）→ 直接 star
-    /// - 未登录 → `authSession.signIn()` 触发设备流后**不抛错 return**（chip
-    ///   不抖动，因为这不是失败语义）
-    /// - API 抛错 → 直接重新抛出让 `StarStatChipButton` 触发抖动 + 短暂红色
-    ///   600ms（不弹 toast / alert）
+    /// 与 manage / weekly / activity 完全同构——`StarActionService.toggle(repo:)`
+    /// 内部按 `StarredRegistry.contains` 派生 star / unstar 分支。
     ///
-    /// 注意签名是 `async throws`：throws 不再 catch 写日志，由 chip 统一处理
-    /// 失败反馈（chip 内部 catch 后会调 AppLog.sync.error）。
+    /// - 已 star → 直接 unstar(不弹 confirm,§3.2.3 / Q2)
+    /// - 未 star → 直接 star(`star(owner:repo:)` 内部完成 PUT + GET /repos + DB upsert,
+    ///   ephemeral repo / 本地墓碑行 / 完全未命中三种情形通吃)
+    /// - 未登录 → `authSession.signIn()` 触发设备流后**不抛错 return**(chip
+    ///   不抖动,这不是失败语义)
+    /// - API 抛错 → 直接重新抛出让 `StarStatChipButton` 触发抖动 + 短暂红色 600ms
+    ///   (不弹 toast / alert)
+    ///
+    /// 旧实现按 `repo.isStarred` 二分,在 ephemeral repo 与 registry 不同步的瞬间
+    /// (例如刚 star 完 registry 已 add 但 displayRepo 还是 ephemeral isStarred=false)
+    /// 会误判;v1.7 改用 toggle 内部 registry 派生,自然对齐。
+    ///
+    /// 注意签名是 `async throws`:throws 不再 catch 写日志,由 chip 统一处理失败反馈
+    /// (chip 内部 catch 后会调 AppLog.sync.error)。
     private func handleStarTapped(repo: Repo) async throws {
         guard authSession.state.isAuthenticated else {
             authSession.signIn()
             return
         }
+        try await dependencies.starActionService.toggle(repo: repo)
 
-        if repo.isStarred {
-            try await dependencies.starActionService.unstar(repo: repo)
-        } else {
-            _ = try await dependencies.starActionService.star(owner: repo.owner, repo: repo.name)
-        }
-
-        // 成功后强制刷 sidebar / list，让 manage 列表 row 状态同步；
-        // 本 view 重新解析一次切到本地真值（hero 三段开启 / 关闭）。
+        // 成功后强制刷 sidebar / list,让 manage 列表 row 状态同步;
+        // 本 view 重新解析一次切到本地真值(hero 三段开启 / 关闭)。
         await homeViewModel.refreshSidebar()
         await homeViewModel.reloadItems(forceRefresh: true)
         await resolveRepo()

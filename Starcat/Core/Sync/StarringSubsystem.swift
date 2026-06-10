@@ -251,6 +251,50 @@ final class StarActionService {
 
         AppLog.sync.info("Unstar OK \(repo.fullName, privacy: .public) (id=\(repo.id, privacy: .public))")
     }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // v1.7 修订（2026-06-10, dong4j bug 反馈）：4 详情页统一 toggle 入口
+    // ────────────────────────────────────────────────────────────────────────
+    //
+    // 背景：v1.4 / v1.5 修订前 4 个详情页（Manage / Trending / Weekly / Activity）
+    // 各自实现 `onStarTapped`：
+    //   - Manage / Activity：写死 `unstar(repo:)`（假定永远已 star）；
+    //   - Trending：按 `repo.isStarred` 二分；
+    //   - Weekly：按 `repo.isStarred` + `isLocalHit` 三段（未命中跳 stargazers 页面）。
+    //
+    // 这种「行为契约」散落在场景层导致：
+    //   ① 4 处同构代码（除妥协路径外）维护成本高；
+    //   ② 场景方决策 `repo.isStarred` 时,可能用 ephemeral repo 的 stale 值
+    //      （未 reload 前 repo.isStarred 还是 false,但 registry 已经 add 了）;
+    //   ③ Weekly 跳 stargazers 是当时 R-01 §3.2.6 妥协方案,其实
+    //      `star(owner:repo:)` 内部已包含 GET /repos + DB upsert,完全可以直接走。
+    //
+    // 本方法把决策收口到 service 层,以 `StarredRegistry`（运行时单一信任源）派生
+    // star / unstar 分支:
+    //   - registry.contains(ghRepoId: repo.id) → unstar
+    //   - 否则 → star(owner: repo.owner, repo: repo.name)
+    //
+    // 调用方（4 个详情页）的 onStarTapped 都缩成同样的 6 行模板:
+    // ```swift
+    // guard isAuthenticated else { signIn(); return }
+    // try await dependencies.starActionService.toggle(repo: repo)
+    // await homeViewModel.refreshSidebar()
+    // await homeViewModel.reloadItems(forceRefresh: true)
+    // ```
+    //
+    // 关键约束:
+    //   - `repo.id` 等价于 `ghRepoId`(R-01 终稿后 repos.id == GitHub repo id),
+    //     trending / weekly ephemeral repo 也走同一字段;
+    //   - registry 是**写入路径单一信任源**(fileprivate 锁死),用 contains 派生不会
+    //     与"已 star"语义错位;
+    //   - 失败语义不变(任意一步抛错都直接上抛,UI 层 chip 抖动 + 短暂红色)。
+    func toggle(repo: Repo) async throws {
+        if registry.contains(ghRepoId: repo.id) {
+            try await unstar(repo: repo)
+        } else {
+            _ = try await star(owner: repo.owner, repo: repo.name)
+        }
+    }
 }
 
 /// `StarActionService` 抛出的领域错误。

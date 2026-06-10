@@ -13,36 +13,54 @@
 //      `RepoDetailScaffold` (Hero + heroExtension + trailingActions + body slot)
 //
 //  Weekly 场景下：
-//  - **trailingActions**：`[.weeklyIssue, .share, .ai]`（Scaffold 内置 weeklyIssue
-//    case 渲染 capsule + secondary 描边的「第 N 期」按钮）；本地未命中时只剩
-//    weeklyIssue 一项（share / ai 都依赖 repo.id）。
-//  - **body slot**：`WeeklyDetailContent` 渲染 README WebView（走 trending 缓存路径）
-//  - **不接 heroExtension**：weekly 没有 contributors 字段
+//  - **trailingActions**：`[.weeklyIssue, .share, .ai]`(Scaffold 内置 weeklyIssue
+//    case 渲染 capsule + secondary 描边的「第 N 期」按钮);未 star 时只剩
+//    weeklyIssue 一项(share / ai 守卫绑 `StarredRegistry.contains`,见 v1.7 修订)。
+//  - **body slot**:`WeeklyDetailContent` 渲染 README WebView(走 trending 缓存路径)
+//  - **不接 heroExtension**:weekly 没有 contributors 字段
 //
 //  ────────────────────────────────────────────────────────────────────────────
-//  Repo 解析策略（与 B5 重写前保持一致，逻辑搬到 Scaffold 外）
+//  Repo 解析策略(与 B5 重写前保持一致,逻辑搬到 Scaffold 外)
 //  ────────────────────────────────────────────────────────────────────────────
 //
-//  1. 本地命中（findByOwnerName）→ 用本地真值，hero 三段（tags/notes/release）开启；
-//  2. 未命中 → 调 `GET /repos/{owner}/{repo}` 拉完整字段构造临时 Repo（id=0,
-//     isStarred=false, **不入库**）；
-//  3. API 失败 → 用 WeeklyProject 现有字段构造最小 Repo（保证 hero 不白屏）。
+//  1. 本地命中(findByOwnerName)→ 用本地真值,hero 三段(tags/notes/release)开启;
+//  2. 未命中 → 调 `GET /repos/{owner}/{repo}` 拉完整字段构造临时 Repo(id=0,
+//     isStarred=false, **不入库**);
+//  3. API 失败 → 用 WeeklyProject 现有字段构造最小 Repo(保证 hero 不白屏)。
 //
 //  与 B5 之前版本的差异：原 `WeeklyDetailView` 自己持有 `metadataPanelCollapseProgress`
 //  / `metadataPanelHeight` + 自写 `CollapsibleRepoMetadataPanel + RepoMetadataHeaderView`
-//  的"半骨架"；现在折叠 / hero / trailing 全部交给 `RepoDetailScaffold`，本 view 仅
+//  的"半骨架";现在折叠 / hero / trailing 全部交给 `RepoDetailScaffold`,本 view 仅
 //  保留「Repo 解析 + readmeVM 局部持有 + star/unstar 协调」三块。
 //
 //  ────────────────────────────────────────────────────────────────────────────
 //  关键约束
 //  ────────────────────────────────────────────────────────────────────────────
 //
-//  - **不复用 HomeView 全局 readmeVM**：与 Activity / Trending Shell 同款做法，本地
-//    `@State` 持有，避免周刊详情污染主路径的 README 状态。
-//  - **未命中时的 onStarTapped**：传"打开 stargazers 页面"而非 unstar/star，避免误
-//    操作；tooltip 通过 `starHelpKey` 显式说明。本地命中走 Manage 同款 unstar 流程。
-//  - **API 调用失败兜底**：网络失败 / 404 时 fallback 到一份"最小 Repo"，UI 仍能
-//    渲染但部分字段空缺，不至于详情页直接白屏。
+//  - **不复用 HomeView 全局 readmeVM**:与 Activity / Trending Shell 同款做法,本地
+//    `@State` 持有,避免周刊详情污染主路径的 README 状态。
+//  - **API 调用失败兜底**:网络失败 / 404 时 fallback 到一份"最小 Repo",UI 仍能
+//    渲染但部分字段空缺,不至于详情页直接白屏。
+//
+//  ────────────────────────────────────────────────────────────────────────────
+//  v1.7 修订(2026-06-10, dong4j bug 反馈)
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  原 `handleStarTapped` 三段式(本地命中-star/unstar / 未命中-跳 stargazers 页面)
+//  存在两个问题:
+//  ① 与 manage / trending / activity 4 详情页不同构,各家维护一套行为契约;
+//  ② 未命中跳 stargazers 是当时 §3.2.6 的妥协方案,但 `StarActionService.star(...)`
+//     内部已包含 `PUT /user/starred` + `GET /repos/{o}/{r}` + DB upsert,
+//     完全可以直接 star 入自己账户(与 trending 路径相同)。
+//
+//  v1.7 把 4 详情页的行为契约统一收口到 `StarActionService.toggle(repo:)` +
+//  `StarredRegistry.contains(ghRepoId:)`:
+//  - **trailingActions**:守卫 `isAuthenticated && registry.contains(...)` 派生
+//    `.share` / `.ai` 可见性,与 4 详情页同构;
+//  - **starHelpKey**:tooltip 由 registry 派生,删 weekly 独有的「打开 Stargazers
+//    页面」case;
+//  - **onStarTapped**:无论命中与否都走 toggle,删跳 stargazers 妥协逻辑,
+//    weekly 也能直接 star 入自己账户。
 //
 
 import SwiftUI
@@ -105,12 +123,12 @@ struct WeeklyDetailView: View {
                     backendHint: nil
                 ),
                 fallbackAccentColor: ActivityCategory.weekly.iconColor,
-                // R-01 v1.2 P0：三段渲染已下沉到 WeeklyDetailContent (RepoLocalSections)，
-                // hero 不再持有 showLocalSections 概念；可见性由 RepoLocalSections
-                // 内部根据 repo.id != 0 自动判定。
+                // R-01 v1.5：三段渲染已下沉到 RepoDetailScaffold metadataPanel
+                // (RepoLocalSections),v1.7 起守卫绑 `starredRegistry.contains` 单一信任源。
                 //
-                // tooltip 同步切换：本地命中 + 已 star 显示「取消 Star」，未 star 显示「重新 star」，
-                // 未命中时显示「打开 Stargazers 页面」，避免与下方 onStarTapped 闭包做的事不一致。
+                // tooltip 同步切换(v1.7)：已 star 显示「取消 star」,未 star 显示「Star」,
+                // 与 onStarTapped(toggle) 行为对齐。删旧「打开 Stargazers 页面」case
+                // (v1.7 已删跳页面妥协逻辑,未命中也走 toggle 直接 star)。
                 starHelpKey: starHelpKey(repo: displayRepo),
                 onStarTapped: { try await handleStarTapped(repo: displayRepo) },
                 body: { onScrollOffset in
@@ -138,36 +156,38 @@ struct WeeklyDetailView: View {
         }
     }
 
-    /// 计算 trailingActions：
-    /// - `.weeklyIssue`（周刊期号外链）：仅依赖 `firstIssue + issueURL`,与登录态无关
-    ///   （公开 GitHub issue 页面）,**保持登录态独立**;
-    /// - `.share` / `.ai`：v1.4 修订 (2026-06-10) 起,要求 `isAuthenticated && repo.id != 0`
-    ///   双条件——未登录态下隐藏（dong4j 决策：分享/AI 都是用户登录后才有意义的功能,
-    ///   与 RepoLocalSections 三段守卫语义对齐）。
-    /// - 已登录 + 本地命中（id != 0）→ `[.weeklyIssue, .share, .ai]`（与 Manage 详情对齐 +
-    ///   周刊期号入口）;
-    /// - 已登录 + 未命中（ephemeral, id == 0）→ `[.weeklyIssue]`(share / ai 都依赖 repo.id);
+    /// 计算 trailingActions(v1.7 修订, 2026-06-10):
+    /// - `.weeklyIssue`(周刊期号外链):仅依赖 `firstIssue + issueURL`,与登录态/star 态无关
+    ///   (公开 GitHub issue 页面),**保持独立**;
+    /// - `.share` / `.ai`:守卫绑 `isAuthenticated && registry.contains(ghRepoId:)`,
+    ///   与 4 详情页同构(理由见 §3.2.4 v1.7 修订段)。
+    /// - 已登录 + 已 star → `[.weeklyIssue, .share, .ai]`(与 Manage 详情对齐 + 周刊期号入口);
+    /// - 已登录 + 未 star → `[.weeklyIssue]`(share / ai 守卫拦下);
     /// - 未登录 → 仅 `[.weeklyIssue]`(若有 firstIssue);
-    /// - 无 firstIssue 时（极端：trending hint 缺扩展段）→ 移除 `.weeklyIssue` case。
+    /// - 无 firstIssue 时(极端:trending hint 缺扩展段)→ 移除 `.weeklyIssue` case。
     private func trailingActions(for project: WeeklyProject, repo: Repo) -> [RepoDetailAction] {
         var actions: [RepoDetailAction] = []
         if project.firstIssue > 0, let issueURL = project.issueURL {
             actions.append(.weeklyIssue(number: project.firstIssue, url: issueURL))
         }
-        if authSession.state.isAuthenticated, repo.id != 0 {
+        if authSession.state.isAuthenticated,
+           dependencies.starredRegistry.contains(ghRepoId: repo.id) {
             actions.append(.share)
             actions.append(.ai)
         }
         return actions
     }
 
-    /// hero ⭐/☆ chip 的 tooltip 本地化键。
-    /// 与 onStarTapped 实际行为对齐，避免误导用户。
+    /// hero ⭐/☆ chip 的 tooltip 本地化键(v1.7 修订)。
+    /// 与 onStarTapped(`StarActionService.toggle`)行为对齐:
+    /// - 已 star → 「取消 star」
+    /// - 未 star → 「Star」
+    /// 删旧 weekly 独有的「打开 Stargazers 页面」case(v1.7 已删跳页面妥协逻辑)。
     private func starHelpKey(repo: Repo) -> LocalizedStringKey {
-        if isLocalHit {
-            return repo.isStarred ? "repo.unstar" : "trending.star"
+        if dependencies.starredRegistry.contains(ghRepoId: repo.id) {
+            return "repo.unstar"
         } else {
-            return "weekly.detail.openStargazers"
+            return "trending.star"
         }
     }
 
@@ -310,55 +330,30 @@ struct WeeklyDetailView: View {
         return model
     }
 
-    // MARK: - Star / Unstar 协调
+    // MARK: - Star / Unstar 协调（v1.7 修订, 2026-06-10）
 
-    /// Star stat 按钮点击（**严格按 R-01 §3.2.3 / Q1 / Q2 / N1 / N2 决策**）：
+    /// Star stat 按钮点击——与 manage / trending / activity 4 详情页**完全同构**。
     ///
-    /// - **本地命中 + 已 star** → 直接 unstar（不弹 confirm，§3.2.3 / Q2）
-    /// - **本地命中 + 未 star**（墓碑行）→ 调 GitHub API 重新 star
-    /// - **未命中**（临时 Repo）→ 打开 GitHub stargazers 页面（不抛错，chip 不抖）
-    /// - **未登录** → `authSession.signIn()` 触发设备流，return（chip 不抖）
-    /// - **API 抛错** → throw 让 `StarStatChipButton` 触发抖动 + 短暂红色 600ms
+    /// `StarActionService.toggle(repo:)` 内部按 `StarredRegistry.contains` 派生 star /
+    /// unstar 分支。本地命中 / 未命中 / ephemeral repo 三种情形通吃:
+    /// - 已 star(registry 命中)→ unstar
+    /// - 未 star(registry 未命中)→ `star(owner:repo:)` 内部完成 PUT + GET /repos +
+    ///   DB upsert,即便是未命中的 ephemeral repo 也能直接入自己账户(weekly 也能 star)。
     ///
-    /// 注意签名是 `async throws`：失败由 chip 统一处理（抖动 + 日志），本方法
-    /// 不再 catch 写日志。
+    /// **v1.7 删除妥协逻辑**:原"未命中跳 stargazers 页面"是当时担心 ephemeral repo
+    /// (id=0) 写入污染 starred 集合的妥协;但 `StarActionService.star` 拉 GitHub
+    /// `/repos/{o}/{r}` 后用真实 ghRepoId 写库,与 trending 完全同路径,妥协无必要。
+    ///
+    /// - 未登录 → `authSession.signIn()` 触发设备流,return(chip 不抖)
+    /// - API 抛错 → throw 让 `StarStatChipButton` 触发抖动 + 短暂红色 600ms
+    ///
+    /// 失败由 chip 统一处理(抖动 + 日志),本方法不再 catch 写日志。
     private func handleStarTapped(repo: Repo) async throws {
         guard authSession.state.isAuthenticated else {
             authSession.signIn()
             return
         }
-
-        if isLocalHit {
-            if repo.isStarred {
-                try await performUnstar(repo: repo)
-            } else {
-                try await performStar(repo: repo)
-            }
-        } else {
-            let url = URL(string: "\(repo.htmlUrl)/stargazers") ?? URL(string: repo.htmlUrl)!
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    /// 与 Manage / Trending / Activity 详情页 unstar 流程**完全对齐**：直接调
-    /// `StarActionService.unstar(repo:)`，**不弹 confirm**。
-    ///
-    /// 服务内部完成 ① GitHub `DELETE /user/starred/{o}/{r}` ② DB markUnstarred 写
-    /// 墓碑行 ③ StarredRegistry remove。失败抛错让 chip 处理，本方法只在成功
-    /// 后刷一次 sidebar / list + `resolveRepo` 重读本地真值。
-    private func performUnstar(repo: Repo) async throws {
-        try await dependencies.starActionService.unstar(repo: repo)
-        await homeViewModel.refreshSidebar()
-        await homeViewModel.reloadItems(forceRefresh: true)
-        if let project { await resolveRepo(for: project) }
-    }
-
-    /// 本地命中但已取消 star（墓碑行）→ 重新 star。
-    /// 走 `StarActionService.star(owner:repo:)` 单点：服务内部完成 GitHub
-    /// `PUT /user/starred/{o}/{r}` + `GET /repos/{o}/{r}` 拉最新字段 + DB upsert
-    /// + `StarredRegistry.add`。失败抛错让 chip 处理。
-    private func performStar(repo: Repo) async throws {
-        _ = try await dependencies.starActionService.star(owner: repo.owner, repo: repo.name)
+        try await dependencies.starActionService.toggle(repo: repo)
         await homeViewModel.refreshSidebar()
         await homeViewModel.reloadItems(forceRefresh: true)
         if let project { await resolveRepo(for: project) }
