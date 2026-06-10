@@ -8,7 +8,7 @@
 //  R-01 v1.2 实现（2026-06-09）
 //  ────────────────────────────────────────────────────────────────────────────
 //
-//  接 weekly 后端的 `GET /api/v1/projects/{owner}/{repo}` 端点，拿到完整聚合的
+//  接 weekly 后端的 `GET /api/v1/weekly/{owner}/{repo}` 端点，拿到完整聚合的
 //  `StarcatRepoCardDTO`（含 weekly 扩展段 + 后端 enricher 补的最新元数据），转
 //  ephemeral `Repo` 返回。
 //

@@ -372,7 +372,7 @@ final class AppDependencies {
 
         // RepoResolver chain：5 个 source 按优先级顺序
         // R-01 v1.2（2026-06-09）：BackendAggregateRepoSource 已填实，接 weekly 的
-        // GET /api/v1/projects/{owner}/{repo}；详细见 BackendAggregateRepoSource.swift。
+        // GET /api/v1/weekly/{owner}/{repo}（v0.5.2 dong4j 重命名）；详细见 BackendAggregateRepoSource.swift。
         self.repoResolver = RepoResolver(chain: [
             LocalRepoSource(repository: repo),
             BackendHintRepoSource(),

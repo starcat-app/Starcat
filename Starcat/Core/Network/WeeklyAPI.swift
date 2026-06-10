@@ -46,7 +46,7 @@ actor WeeklyAPI {
     // MARK: - Constants
 
     /// 列表请求超时；后端首次启动时会 git clone ruanyf/weekly（可能数十秒），
-    /// 但这只影响 `/internal/sync`，正常列表查询是本地 SQLite 命中，30s 充裕。
+    /// 但这只影响 `/internal/sync/weekly`，正常列表查询是本地 SQLite 命中，30s 充裕。
     private static let timeout: TimeInterval = 30
 
     /// 默认每页大小，与后端 README 默认值保持一致；UI 层不复写。
@@ -187,7 +187,8 @@ actor WeeklyAPI {
 
     /// 拉取单 repo 聚合详情（用于 `BackendAggregateRepoSource` / 详情页）。
     ///
-    /// R-01 v1.2 后端新增 `GET /api/v1/projects/{owner}/{repo}` endpoint，返回该项目的最新
+    /// R-01 v1.2 后端新增 `GET /api/v1/projects/{owner}/{repo}` endpoint（v0.5.2 dong4j 重命名为
+    /// `GET /api/v1/weekly/{owner}/{repo}`），返回该项目的最新
     /// `StarcatRepoCardDTO`（含 weekly 扩展段 + 后端 enricher 补的所有元数据）。
     ///
     /// **不**做任何 UI 转换：直接返回 DTO，由调用方（`BackendAggregateRepoSource` /
