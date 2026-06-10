@@ -22,6 +22,9 @@
 | 15 | [AI 设置与调用链重构方案](15-AI设置与调用链重构方案.md) | 多服务商 BYOK、任务模型选择、参数、Prompt、流式摘要 |
 | 16 | [活动页设计](16-活动页设计.md) | Activity 聚合页、Release / Events / 本地推荐、三栏接入 |
 | 17 | [项目健康度与维护活跃度设计](17-项目健康度与维护活跃度设计.md) | 规则评分 + AI 解释、Community Profile / Stats / Advisories 缓存、Insights UI、License 风险分类 |
+| 18 | [三场景共用架构](18-三场景共用架构.md) | Manage / Trending / Weekly / Activity 4 场景的 UI 骨架 + 行为契约共用架构（R-01 v1.2~v2.0） |
+| 19 | [wiki 集成](19-wiki集成.md) | starcat-wiki-api 服务端设计（v0.1~v0.5 五次翻转历史 + 4 场景接入 + zread 接入评估）|
+| 20 | [starcat-wiki-api 客户端对接](20-wiki-api-对接.md) | wiki-api 客户端对接手册 v1.0：端点契约 + DTO + 详情页 UI 集成 + 8 项技术债 + 13 项落地 checklist |
 
 ---
 
@@ -56,6 +59,9 @@
 
 | 日期 | 更新内容 |
 |------|---------|
+| 2026-06-11 | 添加 starcat-wiki-api 客户端对接文档 v1.0（20-wiki-api-对接.md ~580 行 14 节,e2e 11/11 全绿,8 项技术债 + 13 项客户端落地 checklist）;同时把已存在但漏登的 18-三场景共用架构 + 19-wiki集成 补入索引 |
+| 2026-06-10 | （R-02 改造期）19-wiki集成.md 经历 v0.5 翻转(zread 周 trending 从 trending-api 迁出 + 并入 weekly-api + 4 项决策同步确认) |
+| 2026-06-10 | 18-三场景共用架构.md 持续迭代至 R-01 v2.0 修订(registry 信任源问题根治) |
 | 2026-06-05 | 添加项目健康度与维护活跃度设计文档（HOM-92） |
 | 2026-06-04 | 添加活动页设计文档 |
 | 2026-06-04 | 添加 AI 设置与调用链重构方案 |

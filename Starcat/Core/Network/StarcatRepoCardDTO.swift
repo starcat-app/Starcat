@@ -46,7 +46,7 @@ import Foundation
 
 // MARK: - Envelope（统一顶层包装见 StarcatEnvelope.swift）
 //
-// `/api/v1/repos` / `/api/v1/projects` 端点的顶层响应统一走 `StarcatEnvelope<[StarcatRepoCardDTO]>`，
+// `/api/v1/repos` / `/api/v1/weekly` 端点的顶层响应统一走 `StarcatEnvelope<[StarcatRepoCardDTO]>`，
 // 单 repo 聚合 endpoint 走 `StarcatEnvelope<StarcatRepoCardDTO>`，定义在 StarcatEnvelope.swift 里。
 // 旧的非泛型 `StarcatRepoCardResponse` 已删除（R-01 数据层接通时统一用 `StarcatEnvelopeDecoder.decode`）。
 

@@ -32,8 +32,8 @@ struct BackendAggregateRepoSourceTests {
         )
 
         URLProtocolStub.requestHandler = { request in
-            // 验证 path = /api/v1/projects/alice/foo
-            #expect(request.url?.path == "/api/v1/projects/alice/foo")
+            // 验证 path = /api/v1/weekly/alice/foo（v0.5.2 dong4j 重命名从 /api/v1/projects/）
+            #expect(request.url?.path == "/api/v1/weekly/alice/foo")
             // 验证 Bearer header
             #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-key")
 
