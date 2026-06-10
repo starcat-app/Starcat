@@ -11,11 +11,12 @@
 //  Manage 详情 = `RepoDetailScaffold` (Hero) + `ManageDetailContent` (body slot)
 //
 //  本 ContentView 负责 body slot 内容：
+//  - `RepoLocalSections`：Tags / Notes / Release 三段（v1.2 P0 起从 hero 下沉到此处）
 //  - `ReadmeStateView`：README WebView + 内嵌 cacheFooter（翻译/刷新按钮）
 //
-//  注意：`tags / notes / release` 三段已经在 `RepoMetadataHeaderView`（Hero）里
-//  渲染（`showLocalSections=true` 默认值）——Manage 路径所有 repo 都已 star，本地
-//  数据完整可用。本 ContentView 不重复渲染。
+//  R-01 v1.2 P0（2026-06-10）：tags / notes / release 三段从 hero 下沉到
+//  ContentView，统一由 `RepoLocalSections` 渲染（带 spring 0.25s 转场动画）。
+//  Manage 路径所有 repo 都已 star，三段总会渲染（repo.id != 0）。
 //
 //  滚动 → 折叠：把 ReadmeStateView 的 `onScrollOffsetChange` 上报到 Scaffold
 //  传入的 `onScrollOffset` closure，由 Scaffold 内部换算成 collapse progress。
@@ -46,25 +47,31 @@ struct ManageDetailContent: View {
     @Environment(AuthSession.self) private var authSession
 
     var body: some View {
-        ReadmeStateView(
-            state: readmeVM.state,
-            // 拼接 blob/HEAD：GitHub HTML 渲染 API 返回的相对链接是相对于仓库根目录解析的，
-            // 缺少 blob/{branch} 前缀；补上后相对链接（如 README-en.md）才能正确解析为
-            // https://github.com/owner/repo/blob/HEAD/README-en.md。
-            baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
-            owner: repo.owner,
-            repo: repo.name,
-            onScrollOffsetChange: onScrollOffset,
-            translationControl: ReadmeTranslationControl(
-                repo: repo,
-                translationVM: translationVM,
-                settings: settings
-            )
-        ) {
-            readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
-        } onLogin: {
-            authSession.signIn()
+        VStack(alignment: .leading, spacing: 0) {
+            // R-01 §3.2.4：三段（tags / notes / release）从 hero 下沉到 ContentView，
+            // 内置 spring 0.25s 转场（repo.id 切换时触发动画）。
+            RepoLocalSections(repo: repo)
+
+            ReadmeStateView(
+                state: readmeVM.state,
+                // 拼接 blob/HEAD：GitHub HTML 渲染 API 返回的相对链接是相对于仓库根目录解析的，
+                // 缺少 blob/{branch} 前缀；补上后相对链接（如 README-en.md）才能正确解析为
+                // https://github.com/owner/repo/blob/HEAD/README-en.md。
+                baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
+                owner: repo.owner,
+                repo: repo.name,
+                onScrollOffsetChange: onScrollOffset,
+                translationControl: ReadmeTranslationControl(
+                    repo: repo,
+                    translationVM: translationVM,
+                    settings: settings
+                )
+            ) {
+                readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
+            } onLogin: {
+                authSession.signIn()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

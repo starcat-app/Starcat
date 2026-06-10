@@ -73,10 +73,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// Activity 等场景的 fallback 颜色（无语言时 Hero 渐变使用）。
     let fallbackAccentColor: Color
 
-    /// Hero 是否渲染 tags / notes / release 三段（默认 false —— Step 6 接入时由
-    /// ContentView 自己决定渲染位置）。
-    let heroShowsLocalSections: Bool
-
     /// Stars stat chip 的 tooltip 本地化键（透传给 RepoMetadataHeaderView）。
     let starHelpKey: LocalizedStringKey
 
@@ -100,7 +96,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         repo: Repo,
         viewData: RepoDetailViewData,
         fallbackAccentColor: Color = .accentColor,
-        heroShowsLocalSections: Bool = false,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder heroExtension: @escaping () -> HeroExt,
@@ -109,7 +104,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         self.repo = repo
         self.viewData = viewData
         self.fallbackAccentColor = fallbackAccentColor
-        self.heroShowsLocalSections = heroShowsLocalSections
         self.starHelpKey = starHelpKey
         self.onStarTapped = onStarTapped
         self.heroExtension_ = heroExtension
@@ -121,7 +115,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         repo: Repo,
         viewData: RepoDetailViewData,
         fallbackAccentColor: Color = .accentColor,
-        heroShowsLocalSections: Bool = false,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder body: @escaping (@escaping (CGFloat) -> Void) -> Body
@@ -130,7 +123,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             repo: repo,
             viewData: viewData,
             fallbackAccentColor: fallbackAccentColor,
-            heroShowsLocalSections: heroShowsLocalSections,
             starHelpKey: starHelpKey,
             onStarTapped: onStarTapped,
             heroExtension: { EmptyView() },
@@ -187,7 +179,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 RepoMetadataHeaderView(
                     repo: repo,
                     fallbackAccentColor: fallbackAccentColor,
-                    showLocalSections: heroShowsLocalSections,
                     starHelpKey: starHelpKey,
                     onStarTapped: onStarTapped
                 ) {
