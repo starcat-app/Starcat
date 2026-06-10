@@ -23,8 +23,30 @@
 //  - chip 行：Lang → Stars → Forks → archived（如有）→ 场景独有徽章 (badge)
 //  - 不渲染 star/unstar 按钮（设计 §3.1.6 决策：交互入口仅在详情页 hero stats 行）
 //
-//  - 「已 star ✓」 标记紧贴 fullName 是关键视觉（让用户在 trending / weekly 列表
-//    一眼能认出哪些已 star，无需打开详情）—— 这是 R-01「跨场景标记」设计的核心收益
+//  ────────────────────────────────────────────────────────────────────────────
+//  v1.8 修订（2026-06-10, dong4j bug 反馈）：✓ 标记可见性 view 层显式控制
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  设计意图：「已 star ✓」标记紧贴 fullName 让用户在 **trending / weekly 列表**
+//  一眼能认出哪些已 star,无需打开详情 —— 这是 R-01「跨场景标记」设计的核心收益。
+//
+//  R-01 P0 落地时,实现把 ✓ 渲染条件挂在 `card.isStarred` 上,但 `Repo.asCardData()`
+//  直接读 `self.isStarred`,Manage 列表所有 row 来自本地 `repos.is_starred=1` 表
+//  → 永远 isStarred=true → **Manage 列表 row 全显 ✓ → 视觉冗余**(Manage 本就是
+//  已 star 列表,挂 ✓ 没意义)。
+//
+//  v1.8 修订:加入参 `showStarredCheckmark: Bool = false`(默认不显)。调用方按
+//  场景显式传:
+//  - **Manage** (`RepoListView`):不传 → 默认 false → 全部不显 ✓(因为本就已 star)
+//  - **Trending** (`TrendingView`):传 `true` → 已 star 的 row 显 ✓
+//  - **Weekly** (`WeeklyContentView`):传 `true` → 已 star 的 row 显 ✓
+//
+//  默认 false 的语义是「除非显式声明,否则不显」—— 安全策略:后续新加场景
+//  必须显式决定,避免再次出现「全显 ✓」式的实现疏忽。
+//
+//  `RepoCardViewData.isStarred` 字段保留(详情页 / 跨页同步可能用),只是 row
+//  渲染不再单独以它为唯一条件,而是 `showStarredCheckmark && card.isStarred`
+//  双条件 AND。
 //
 
 import SwiftUI
@@ -44,10 +66,27 @@ struct UnifiedRepoRow: View {
     /// chip 行右侧紧跟 SemanticScoreBadge 显示相似度分数。
     let semanticHit: SemanticSearchHit?
 
-    init(card: RepoCardViewData, isSelected: Bool = false, semanticHit: SemanticSearchHit? = nil) {
+    /// 是否在 row 上显示「已 star ✓」标记(v1.8 修订, 2026-06-10)。
+    ///
+    /// **默认 false** —— 调用方必须显式按场景决定:
+    /// - Manage:不传(默认 false),Manage 本就是已 star 列表,挂 ✓ 视觉冗余;
+    /// - Trending / Weekly:传 `true`,让用户在列表里一眼认出哪些已 star;
+    /// - 后续新场景:必须显式决定,避免「全显 ✓」式实现疏忽。
+    ///
+    /// 渲染条件是 `showStarredCheckmark && card.isStarred` 双条件 AND——
+    /// `card.isStarred` 仍由调用方派生(Manage 读 self,Trending/Weekly 走 registry)。
+    let showStarredCheckmark: Bool
+
+    init(
+        card: RepoCardViewData,
+        isSelected: Bool = false,
+        semanticHit: SemanticSearchHit? = nil,
+        showStarredCheckmark: Bool = false
+    ) {
         self.card = card
         self.isSelected = isSelected
         self.semanticHit = semanticHit
+        self.showStarredCheckmark = showStarredCheckmark
     }
 
     var body: some View {
@@ -67,8 +106,10 @@ struct UnifiedRepoRow: View {
                             .truncationMode(.middle)
                             .layoutPriority(1)
 
-                        if card.isStarred {
+                        if showStarredCheckmark && card.isStarred {
                             // 紧贴 fullName 右侧 4pt（设计 §3.1.2 表格：图标 = checkmark.circle.fill / systemGreen / 11pt）
+                            // v1.8 修订(2026-06-10):双条件 AND——Manage 不传 showStarredCheckmark
+                            // 默认 false 即不显;Trending / Weekly 显式传 true,再由 card.isStarred 决定单 row。
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(Color.green)
