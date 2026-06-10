@@ -14,15 +14,24 @@
 //  隐藏,否则会用 id=0 误命中 / 误写入墓碑数据。
 //
 //  设计 §3.2.4 + §3.2.6 明文要求：
-//  1. **三段渲染位置**：ContentView 内部（不在 hero）—— 因为各场景的 section
-//     集合不同,hero 不该知道有几段要展开。
+//  1. **三段渲染位置**（**v1.5 修订, 2026-06-10**）：**RepoDetailScaffold metadataPanel
+//     内**（hero + heroExtension 之后）—— 跟随折叠面板整段收起,让 README 滚动时
+//     有完整阅读空间。
+//
+//     v1.2 P0 原放置在 ContentView 内（理由「各场景 section 集合不同,hero 不该
+//     知道有几段要展开」）;但实际落地 4 场景的 RepoLocalSections 调用 100% 同构,
+//     抽象层灵活性未被使用。dong4j 在 v1.5 反馈滚动 README 时三段挤压阅读区 →
+//     方案 A：内置到 Scaffold 跟随折叠（折叠一致性 > 抽象灵活性）。
+//     详见 `Starcat/Shared/Components/RepoDetailScaffold.swift` 文件头 v1.5 修订段。
 //  2. **转场动画**：API 200 后切到本地命中（isStarred 变化或 repo.id 从 0→非零）
 //     时,三段以 `.spring(response: 0.25, dampingFraction: 0.85)` + transition
 //     `.move(edge: .top).combined(with: .opacity)` 平滑展开/收起。
+//     与折叠面板的 PreferenceKey 高度测量协同 —— 三段加入后 panelHeight 自然
+//     增长,折叠面板与 spring 转场两层动画都是 short-duration spring,叠加视觉 OK。
 //  3. **数据就位才展开**：不在 loading 中先展开占位（避免空 section 闪烁）。
 //
-//  本组件把三段 + transition + animation 一次封装,4 个 ContentView 都直接
-//  调用即可,确保动画规格、隐藏逻辑、padding 全场景一致。
+//  本组件把三段 + transition + animation + 登录守卫一次封装,Scaffold 直接挂载
+//  即可,确保动画规格、隐藏逻辑、padding、登录守卫全场景一致。
 //
 //  ────────────────────────────────────────────────────────────────────────────
 //  isVisible 判定语义（v1.4 修订,2026-06-10）
@@ -52,22 +61,24 @@
 //
 //  调用方**不需要**传 isLocalHit / isAuthenticated 等开关——只要保证传入
 //  的 repo 对象是「最新已解析」的真实状态,本组件读 `@Environment(AuthSession)`
-//  自动响应登录态变化。这避免了 4 个 ContentView 各自判断、各自传参导致的
-//  不一致。
+//  自动响应登录态变化。v1.5 起调用方收口为唯一一处（Scaffold metadataPanel）,
+//  4 个 ContentView 不再各自调用,彻底消除分散判断的不一致风险。
 //
 
 import SwiftUI
 
 /// repo 详情页三段（Tags / Notes / Release）渲染容器,内置 spring 0.25s 转场。
 ///
-/// 调用契约：
+/// **v1.5 调用契约（2026-06-10 起）**：仅由 `RepoDetailScaffold.metadataPanel`
+/// 单点挂载,4 场景 ContentView 不再调用。
 ///
 /// ```swift
-/// // 在 4 个 ContentView 的 body 顶部直接挂载
-/// var body: some View {
+/// // RepoDetailScaffold.metadataPanel 内
+/// CollapsibleRepoMetadataPanel { ... } content: {
 ///     VStack(spacing: 0) {
-///         RepoLocalSections(repo: repo)
-///         ReadmeStateView(...)
+///         RepoMetadataHeaderView(repo: repo, ...) { trailingActions }
+///         heroExtension_()
+///         RepoLocalSections(repo: repo)   // ← 唯一调用点
 ///     }
 /// }
 /// ```

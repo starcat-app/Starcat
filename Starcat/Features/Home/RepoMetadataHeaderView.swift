@@ -20,17 +20,23 @@ import AppKit
 /// `CollapsibleRepoMetadataPanel` 处理。Activity 可以传入分类色作为 fallback，从而在
 /// repo 没有主语言时仍保持“活动分类色 → 透明”的详情背景。
 ///
-/// ### R-01 v1.2 设计 §3.2.4 / §3.2.6（2026-06-10 P0 落地）
+/// ### R-01 v1.5 设计 §3.2.4 / §3.2.6（2026-06-10 修订）
 ///
-/// **本组件不再渲染 Tags / Notes / Release 三段**。三段已迁出到独立组件
-/// `RepoLocalSections`，由 4 个 ContentView 自行渲染（Manage / Trending /
-/// Weekly / Activity-repo-backed）。
+/// **本组件只渲染 hero 元信息**（avatar / 名字 / topics / desc / stats / chip /
+/// trailingActions）—— Tags / Notes / Release 三段在独立组件 `RepoLocalSections`,
+/// 由 **`RepoDetailScaffold.metadataPanel`** 单点挂载（紧跟在 `heroExtension`
+/// 之后,跟随折叠面板整段折叠）。
 ///
-/// 这是设计 §3.2.4 / §3.2.6 的明文要求——「各场景的 section 集合不同，hero
-/// 不该知道有几段要展开」+「转场动画在 ContentView 内部而非 hero」。
+/// **演化轨迹**：
+/// - 早期：三段塞在 `RepoMetadataHeaderView` 内（god view）
+/// - v1.2 P0（2026-06-10 上午）：三段下沉到 4 个 ContentView 内（理由「各场景的
+///   section 集合不同,hero 不该知道有几段要展开」）
+/// - v1.5（2026-06-10 下午）：dong4j 反馈滚动 README 时三段挤压阅读区,内置回
+///   `RepoDetailScaffold.metadataPanel` 跟随折叠（4 场景同构事实推翻 v1.2 P0
+///   原则;详见 `Starcat/Shared/Components/RepoDetailScaffold.swift` 文件头）
 ///
-/// 三段的可见性由 `RepoLocalSections` 内部根据 `repo.id != 0` 自动判定，
-/// ContentView / Scaffold 都不需要再传 isLocalHit 等开关参数。
+/// 三段的可见性由 `RepoLocalSections` 内部根据 `isAuthenticated && repo.id != 0`
+/// 自动判定（v1.4 守卫）,ContentView / Scaffold 都不需要再传 isLocalHit 等开关参数。
 struct RepoMetadataHeaderView<TrailingActions: View>: View {
     let repo: Repo
     let fallbackAccentColor: Color
