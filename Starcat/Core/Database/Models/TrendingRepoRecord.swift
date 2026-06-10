@@ -41,6 +41,13 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
 
     // MARK: - repo 维度
 
+    /// GitHub repo 数字 id（R-01 v1.2 GRDB v9，2026-06-10）。
+    ///
+    /// **NULL 容忍**：v9 ALTER TABLE ADD COLUMN 时未指定 NOT NULL，老缓存行该列
+    /// 为 NULL；toDomain() 时退化为 `0`（哨兵），新行（下次 fetchTrending 整批替换）
+    /// 永远填实。
+    var ghRepoId: Int64?
+
     var fullName: String
     var owner: String
     var name: String
@@ -51,6 +58,16 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
     var starsInPeriod: Int
     /// JSON 数组字符串：`[{"username":..., "avatarURL":..., "profileURL":...}]`
     var contributorsJSON: String?
+
+    // MARK: - R-01 v1.2 GRDB v8 新字段（2026-06-10）
+    //
+    // 与 `repos` 表的对应字段同名同语义（owner_avatar / subscribers_count /
+    // default_branch / open_issues_count），全部 Optional 兼容老缓存行 NULL。
+
+    var ownerAvatar: String?
+    var subscribersCount: Int?
+    var defaultBranch: String?
+    var openIssuesCount: Int?
 
     // MARK: - 缓存维度
 
@@ -63,6 +80,8 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
         case period
         case languageFilter = "language_filter"
         case rank
+        // R-01 v1.2 GRDB v9 新增（2026-06-10）
+        case ghRepoId = "gh_repo_id"
         case fullName = "full_name"
         case owner
         case name
@@ -72,6 +91,11 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
         case forksCount = "forks_count"
         case starsInPeriod = "stars_in_period"
         case contributorsJSON = "contributors_json"
+        // R-01 v1.2 GRDB v8 新增（2026-06-10）
+        case ownerAvatar = "owner_avatar"
+        case subscribersCount = "subscribers_count"
+        case defaultBranch = "default_branch"
+        case openIssuesCount = "open_issues_count"
         case cachedAt = "cached_at"
     }
 
@@ -94,7 +118,7 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
     /// 转回 UI 模型 `TrendingRepo`。
     ///
     /// 注：`TrendingRepo.url` 是必需字段，从 fullName 重建为 `https://github.com/owner/name`，
-    /// 与 `TrendingRepo(dto:since:)` 初始化路径一致。URL 拼接走 `GitHubURLs.repo(fullName:)`
+    /// 与 `TrendingRepo(card:since:)` 初始化路径一致。URL 拼接走 `GitHubURLs.repo(fullName:)`
     /// 集中目录（2026-06-08 起），原 `URL(string:)` 失败返回 nil 的防御性 guard 移除——
     /// fullName 是 PK 列、入库前已校验非空，URL.init 对 ASCII fullName 不可能失败。
     func toDomain() -> TrendingRepo? {
@@ -105,6 +129,7 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
         let periodText = "\(prefix)\(starsInPeriodValue)"
 
         return TrendingRepo(
+            ghRepoId: ghRepoId ?? 0,
             fullName: fullName,
             owner: owner,
             name: name,
@@ -115,7 +140,12 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
             forksCount: forksCount,
             starsInPeriod: starsInPeriodValue,
             periodText: periodText,
-            contributors: contributorsArray
+            contributors: contributorsArray,
+            // R-01 v1.2 GRDB v8 4 字段透传（持久化 → 内存领域模型）
+            ownerAvatar: ownerAvatar.flatMap(URL.init(string:)),
+            subscribersCount: subscribersCount,
+            defaultBranch: defaultBranch,
+            openIssuesCount: openIssuesCount
         )
     }
 
@@ -156,6 +186,8 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
             period: period.rawValue,
             languageFilter: languageFilter.apiValue,
             rank: rank,
+            // R-01 v1.2 GRDB v9：ghRepoId 持久化以支撑 RepoCardViewData.id + 跨场景 ✓
+            ghRepoId: repo.ghRepoId,
             fullName: repo.fullName,
             owner: repo.owner,
             name: repo.name,
@@ -165,6 +197,11 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
             forksCount: repo.forksCount,
             starsInPeriod: repo.starsInPeriod,
             contributorsJSON: contributorsJSON,
+            // R-01 v1.2 GRDB v8 4 字段（领域模型 → 持久化）
+            ownerAvatar: repo.ownerAvatar?.absoluteString,
+            subscribersCount: repo.subscribersCount,
+            defaultBranch: repo.defaultBranch,
+            openIssuesCount: repo.openIssuesCount,
             cachedAt: ISO8601DateFormatter.shared.string(from: cachedAt)
         )
     }
@@ -183,7 +220,12 @@ private struct ContributorJSON: Codable {
 
 extension TrendingRepo {
     /// 从持久化字段直接构造（GRDB 行 → 业务模型），与 DTO 初始化路径并存。
+    ///
+    /// R-01 v1.2 GRDB v8（2026-06-10）：扩 4 字段（ownerAvatar / subscribersCount /
+    /// defaultBranch / openIssuesCount）；调用方（`TrendingRepoRecord.toDomain()`）已
+    /// 同步更新。所有 4 字段都 Optional，老缓存行 NULL 不影响构造。
     init(
+        ghRepoId: Int64,
         fullName: String,
         owner: String,
         name: String,
@@ -194,8 +236,13 @@ extension TrendingRepo {
         forksCount: Int,
         starsInPeriod: Int,
         periodText: String,
-        contributors: [Contributor]
+        contributors: [Contributor],
+        ownerAvatar: URL? = nil,
+        subscribersCount: Int? = nil,
+        defaultBranch: String? = nil,
+        openIssuesCount: Int? = nil
     ) {
+        self.ghRepoId = ghRepoId
         self.fullName = fullName
         self.owner = owner
         self.name = name
@@ -207,5 +254,9 @@ extension TrendingRepo {
         self.starsInPeriod = starsInPeriod
         self.periodText = periodText
         self.contributors = contributors
+        self.ownerAvatar = ownerAvatar
+        self.subscribersCount = subscribersCount
+        self.defaultBranch = defaultBranch
+        self.openIssuesCount = openIssuesCount
     }
 }

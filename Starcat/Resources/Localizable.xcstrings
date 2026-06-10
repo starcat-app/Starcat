@@ -6601,6 +6601,22 @@
         }
       }
     },
+    "repo.detail.refresh" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新详情"
+          }
+        }
+      }
+    },
     "repo.fork" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8269,39 +8285,6 @@
         }
       }
     },
-    "settings.general.listDensity" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "List Density"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "列表密度"
-          }
-        }
-      }
-    },
-    "settings.general.listDensity.description" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Compact: single line for more repos. Card: avatar + description per row."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "紧凑：单行显示更多仓库；卡片：每行带头像与描述。"
-          }
-        }
-      }
-    },
     "settings.general.title" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8336,7 +8319,7 @@
         }
       }
     },
-    "settings.listDensity.compact" : {
+    "settings.listDensity.compact_REMOVED_R01" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
@@ -11731,6 +11714,118 @@
         }
       }
     },
+    "settings.services.health.unauthorized" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key invalid"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key 无效"
+          }
+        }
+      }
+    },
+    "settings.services.health.authProbeError" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auth probe error"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "鉴权探测异常"
+          }
+        }
+      }
+    },
+    "settings.services.apiKey" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key"
+          }
+        }
+      }
+    },
+    "settings.services.apiKey.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leave empty to use the production default"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "留空使用 production 默认 Key"
+          }
+        }
+      }
+    },
+    "settings.services.apiKey.reveal" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show API key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明文显示 API Key"
+          }
+        }
+      }
+    },
+    "settings.services.apiKey.hide" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide API key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "遮蔽 API Key"
+          }
+        }
+      }
+    },
+    "settings.services.apiKey.save.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save the API key to the encrypted local store and push to the running API actor."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把 API Key 写入加密本地存储并热推送到运行中的 API actor。"
+          }
+        }
+      }
+    },
     "settings.services.trending.title" : {
       "localizations" : {
         "en" : {
@@ -11823,6 +11918,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "把仓库与 AI 摘要打包成可公开访问的分享链接。"
+          }
+        }
+      }
+    },
+    "starAction.error.notAuthenticated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please sign in to GitHub before starring or unstarring repositories."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先登录 GitHub 后再 star / unstar 仓库。"
           }
         }
       }

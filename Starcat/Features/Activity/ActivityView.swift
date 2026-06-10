@@ -17,7 +17,8 @@ struct ActivityView: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // R-01 §3.1.4 Step 7.3：refreshRow 改用 SyncIconButton 后顶层 reduceMotion 已不需要。
+    // ActivityRowView 内部仍保留自己的 reduceMotion env 处理 isSelected 动画。
 
     @Binding var selectedCategory: ActivityCategory
     @Binding var selectedItem: ActivityItem?
@@ -50,7 +51,7 @@ struct ActivityView: View {
     @ViewBuilder
     private func content(_ viewModel: ActivityViewModel) -> some View {
         if viewModel.isLoading {
-            RepoSkeletonListView(density: settings.listDensity, rowCount: 8)
+            RepoSkeletonListView(rowCount: 8)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = viewModel.loadError, viewModel.items.isEmpty {
             emptyState(systemImage: "exclamationmark.triangle", title: "activity.error.title", subtitleText: error)
@@ -65,7 +66,6 @@ struct ActivityView: View {
                     } label: {
                         ActivityRowView(
                             item: item,
-                            density: settings.listDensity,
                             isSelected: selectedItem?.id == item.id
                         )
                     }
@@ -82,6 +82,8 @@ struct ActivityView: View {
     }
 
     private func refreshRow(_ viewModel: ActivityViewModel) -> some View {
+        // R-01 §3.1.4 Step 7.3：自写 rotationEffect + repeatForever 改用统一的
+        // SyncIconButton（图标 / 旋转动画 / hover / disabled / reduceMotion 一并统一）。
         HStack {
             if let last = viewModel.lastRefreshedAt {
                 Text(String(format: String(localized: "activity.lastRefreshedFormat"), Self.relativeDate(last)))
@@ -89,21 +91,16 @@ struct ActivityView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button {
+            SyncIconButton(
+                isRefreshing: viewModel.isRefreshing,
+                disabled: viewModel.isRefreshing,
+                tooltip: String(localized: "activity.refresh")
+            ) {
                 Task {
                     await viewModel.refresh(category: selectedCategory)
                     restoreSelection(from: viewModel.items)
                 }
-            } label: {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.caption)
-                    .rotationEffect(.degrees(viewModel.isRefreshing && !reduceMotion ? 360 : 0))
-                    .animation(viewModel.isRefreshing && !reduceMotion ? .linear(duration: 1).repeatForever(autoreverses: false) : .easeOut(duration: 0.2), value: viewModel.isRefreshing)
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .disabled(viewModel.isRefreshing)
-            .help("activity.refresh")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
@@ -187,40 +184,12 @@ struct ActivityView: View {
 
 private struct ActivityRowView: View {
     let item: ActivityItem
-    let density: RepoListDensity
     let isSelected: Bool
 
     var body: some View {
-        ActivityRowSurface(item: item, density: density, isSelected: isSelected) {
-            switch density {
-            case .compact:
-                compact
-            case .card:
-                card
-            }
-        }
-    }
-
-    private var compact: some View {
-        HStack(spacing: 10) {
-            leadingIcon(size: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: item.title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if let subtitle = item.subtitle {
-                    Text(verbatim: subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            Spacer(minLength: 8)
-            if let date = item.createdAt {
-                RelativeDateBadge(date: date)
-            }
+        // R-01 §3.1.1（2026-06-10 P1）：RepoListDensity 已删，直接渲染 card。
+        ActivityRowSurface(item: item, isSelected: isSelected) {
+            card
         }
     }
 
@@ -291,16 +260,14 @@ private struct ActivityRowView: View {
 
 private struct ActivityRowSurface<Content: View>: View {
     let item: ActivityItem
-    let density: RepoListDensity
     let isSelected: Bool
     private let content: Content
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
-    init(item: ActivityItem, density: RepoListDensity, isSelected: Bool, @ViewBuilder content: () -> Content) {
+    init(item: ActivityItem, isSelected: Bool, @ViewBuilder content: () -> Content) {
         self.item = item
-        self.density = density
         self.isSelected = isSelected
         self.content = content()
     }
@@ -312,17 +279,20 @@ private struct ActivityRowSurface<Content: View>: View {
     private var backgroundOpacity: Double {
         if isSelected { return 0.18 }
         if isHovered { return 0.08 }
-        return density == .card ? 0.045 : 0.0
+        // R-01 §3.1.1：RepoListDensity 已删，统一使用 card 密度的非 hover/selected 透明度。
+        return 0.045
     }
 
     var body: some View {
+        // R-01 §3.1.1（2026-06-10 P1）：RepoListDensity 已删，全部走 card 密度
+        // 的视觉常量（vertical 8 / horizontal 10 / cornerRadius 10）。
         content
-            .padding(.vertical, density == .card ? 8 : 4)
-            .padding(.horizontal, density == .card ? 10 : 8)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
             .padding(.leading, isSelected ? 5 : 0)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
-                RoundedRectangle(cornerRadius: density == .card ? 10 : 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(accentColor.opacity(backgroundOpacity))
             }
             .overlay(alignment: .leading) {
@@ -332,10 +302,10 @@ private struct ActivityRowSurface<Content: View>: View {
                     .padding(.vertical, 8)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: density == .card ? 10 : 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(accentColor.opacity(isSelected ? 0.42 : (isHovered ? 0.18 : 0.10)), lineWidth: 1)
             }
-            .contentShape(RoundedRectangle(cornerRadius: density == .card ? 10 : 8, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .onHover { hovering in
                 withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
                     isHovered = hovering

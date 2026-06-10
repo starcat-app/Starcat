@@ -22,23 +22,10 @@ struct AppSettingsTests {
         return defaults
     }
 
-    @Test("默认密度为 card")
-    func defaultDensity() {
-        let defaults = makeIsolatedDefaults()
-        let settings = AppSettings(defaults: defaults)
-        #expect(settings.listDensity == .card)
-    }
-
-    @Test("设置后从同 suite 重新读取应保留值")
-    func densityPersists() {
-        let defaults = makeIsolatedDefaults()
-
-        let s1 = AppSettings(defaults: defaults)
-        s1.listDensity = .compact
-
-        let s2 = AppSettings(defaults: defaults)
-        #expect(s2.listDensity == .compact)
-    }
+    // R-01 §3.1.1（2026-06-10 P1）：RepoListDensity 枚举 + AppSettings.listDensity
+    // 属性已彻底删除。原 defaultDensity / densityPersists / invalidValueFallsBack
+    // 三个测试随之失效（之前为保签名稳定保留单 case 是「自留技术债」，现在所有
+    // row / skeleton 视图直接用 card 密度）。
 
     @Test("Pro: 默认非 Pro，设置后重新读取应保留")
     func proStatusPersists() {
@@ -50,15 +37,6 @@ struct AppSettingsTests {
 
         let s2 = AppSettings(defaults: defaults)
         #expect(s2.isProUser == true)
-    }
-
-    @Test("非法 raw value 回退到默认")
-    func invalidValueFallsBack() {
-        let defaults = makeIsolatedDefaults()
-        defaults.set("invalid-density", forKey: "settings.repoListDensity")
-
-        let s = AppSettings(defaults: defaults)
-        #expect(s.listDensity == .card)
     }
 
     // MARK: - W4-4 D1：排序偏好

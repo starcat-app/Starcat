@@ -99,6 +99,31 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 上次任何同步成功完成的 ISO8601 时间戳。增量同步用作 `starred_at` 切分点。
     /// 没有记录或字段为 NULL 时返回 nil（首次同步必走全量路径）。
     func fetchLastSyncAt(userID: Int64) async throws -> String?
+
+    // MARK: - R-01：StarredRegistry 派生 + 单 repo star 写入
+
+    /// R-01：一次性拉取「当前已 star」的所有 GitHub repo id（is_starred = 1）。
+    ///
+    /// 用途：`StarredRegistryBootstrapper.reload()` 启动 / 全量同步完成后重建内存 Set。
+    /// 当前规模（< 2K starred）下 SELECT 应在 < 10ms 完成；> 5000 时按 §4.3.2
+    /// Snapshot 扩展点占位实现 `~/Library/Application Support/Starcat/registry.snapshot`。
+    func fetchStarredRepoIDs() async throws -> [Int64]
+
+    /// R-01：单个 repo 「重新 / 首次 star」时把字段写入 `repos` + `starred_repos`。
+    ///
+    /// 与 `upsertStarred(_ dtos:userID:syncedAt:)` 的区别：批量版在 SyncManager 全量同步走，
+    /// 此处单次版给 `StarActionService.star(owner:repo:)` 调用——用户在详情页点 ☆ 后，
+    /// 拉一次 GitHub `/repos/{o}/{r}` 拿完整字段，立刻落地。
+    ///
+    /// - 复用 `repoFromDTO(_:starredAt:cachedAt:isStarred:)` 静态工厂；`isStarred` 必为 true
+    /// - 维护 `starred_repos` 行（user-repo 关系，便于后续 SyncManager 增量同步识别）
+    /// - 返回写入后的 `Repo`，调用方拿 `repo.id` 直接喂 `StarredRegistry._add`
+    func upsertSingleStarred(
+        repoDTO: GitHubRepoDTO,
+        starredAt: String?,
+        userID: Int64,
+        syncedAt: Date
+    ) async throws -> Repo
 }
 
 // MARK: - Conformance

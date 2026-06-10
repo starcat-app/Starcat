@@ -128,6 +128,56 @@ struct GRDBRepoRepository {
         }
     }
 
+    // MARK: - R-01：StarredRegistry 派生 + 单 repo star 写入
+
+    /// R-01：拉取当前所有「已 star」的 GitHub repo id（is_starred = 1）。
+    ///
+    /// 用 `Int64.fetchAll(... ORDER BY id)` 单列返回，避免实例化 `Repo` 行（节省内存 + 反序列化）。
+    /// 1.8K starred 的项目实测 ~5ms 内完成。
+    func fetchStarredRepoIDs() async throws -> [Int64] {
+        try await writer.read { db in
+            try Int64.fetchAll(db, sql: "SELECT id FROM repos WHERE is_starred = 1 ORDER BY id")
+        }
+    }
+
+    /// R-01：单个 repo star 时写入 `repos` + `starred_repos`。
+    ///
+    /// 调用链：`StarActionService.star(owner:repo:)`
+    ///   1. PUT /user/starred/{o}/{r}（GitHub）
+    ///   2. GET /repos/{o}/{r}（拉完整字段）
+    ///   3. **本方法**：upsert + isStarred=1 + 写 starred_repos
+    ///   4. registry._add(saved.id)
+    ///
+    /// `starredAt` 来源：GitHub `PUT /user/starred` 没有响应体，手动用「调用时刻」作为 starredAt
+    /// （格式与 SyncManager 全量同步保持一致：ISO8601 带 Z），后续 SyncManager 增量同步会
+    /// 用 GitHub 真值覆盖。
+    func upsertSingleStarred(
+        repoDTO: GitHubRepoDTO,
+        starredAt: String?,
+        userID: Int64,
+        syncedAt: Date
+    ) async throws -> Repo {
+        let cachedAtISO = ISO8601DateFormatter.shared.string(from: syncedAt)
+        let resolvedStarredAt = starredAt ?? cachedAtISO
+
+        return try await writer.write { db in
+            var repo = Self.repoFromDTO(repoDTO, starredAt: resolvedStarredAt, cachedAt: cachedAtISO, isStarred: true)
+            try repo.save(db)
+
+            var starred = StarredRepo(
+                repoId: repoDTO.id,
+                userId: userID,
+                starredAt: resolvedStarredAt,
+                syncStatus: "synced",
+                lastSyncAt: cachedAtISO
+            )
+            try starred.save(db)
+
+            AppLog.sync.info("Upserted starred repo \(repoDTO.id, privacy: .public) (\(repoDTO.fullName, privacy: .public))")
+            return repo
+        }
+    }
+
     // MARK: - 查询
 
     /// 当前用户已 star 的 repo 总数（is_starred = 1）。

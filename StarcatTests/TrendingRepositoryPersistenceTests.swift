@@ -36,22 +36,47 @@ private func trendingPersistResponse(
     )!
 }
 
+/// 构造 trending v1.2 envelope wire fixture body。
+///
+/// R-01 v1.2 后 TrendingAPI 走 `StarcatEnvelope<[StarcatRepoCardDTO]>`，旧的非 envelope
+/// `[TrendingResponseDTO]` 数组格式已废。fullName 字段从输入 tuple 第 1 项的 "/owner/repo" 解析。
 private func trendingFixtureBody(_ items: [(String, String?, Int, Int, Int)]) -> Data {
-    // [(repo, lang, stars, forks, change)]
-    let arr = items.map { tuple -> [String: Any] in
-        var dict: [String: Any] = [
-            "repo": tuple.0,
+    // [(repo path, lang, stars, forks, change)]
+    let cards = items.enumerated().map { (idx, tuple) -> [String: Any] in
+        let cleanPath = tuple.0.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let parts = cleanPath.split(separator: "/", maxSplits: 1)
+        let owner = parts.count > 0 ? String(parts[0]) : ""
+        let repo = parts.count > 1 ? String(parts[1]) : cleanPath
+
+        var card: [String: Any] = [
+            "gh_repo_id": Int64(1000 + idx),
+            "full_name": cleanPath,
+            "owner": owner,
+            "repo": repo,
             "stars": tuple.2,
             "forks": tuple.3,
-            "change": tuple.4,
-            "build_by": []
+            "watchers": tuple.2,
+            "subscribers": 0,
+            "topics": [],
+            "is_archived": false,
+            "is_fork": false,
+            "is_private": false,
+            "open_issues": 0,
+            "trending": [
+                "change": tuple.4,
+                "contributors": []
+            ]
         ]
         if let lang = tuple.1 {
-            dict["lang"] = lang
+            card["language"] = lang
         }
-        return dict
+        return card
     }
-    return try! JSONSerialization.data(withJSONObject: arr, options: [])
+    let envelope: [String: Any] = [
+        "schema_version": 1,
+        "data": cards
+    ]
+    return try! JSONSerialization.data(withJSONObject: envelope, options: [])
 }
 
 @Suite("TrendingRepository 持久化", .serialized)
@@ -225,6 +250,70 @@ struct TrendingRepositoryPersistenceTests {
         let unwrapped = try #require(date)
         #expect(unwrapped >= before.addingTimeInterval(-1), "lastRefreshedAt should be >= fetch start time")
         #expect(unwrapped <= after.addingTimeInterval(1), "lastRefreshedAt should be <= fetch end time")
+    }
+
+    // MARK: - R-01 v1.2 GRDB v8 4 字段持久化（2026-06-10）
+
+    @Test("v8 4 字段：DTO → trending_repos 表 → cachedTrending 域模型 全链路透传")
+    func v8FieldsPersistedAndReadBack() async throws {
+        let (repo, db) = try makeRepository { request in
+            // 构造一个所有 v8 字段都填实值的 fixture（不走默认 fixture，因为它没填新字段）
+            let card: [String: Any] = [
+                "gh_repo_id": Int64(2024),
+                "full_name": "owner/v8repo",
+                "owner": "owner",
+                "repo": "v8repo",
+                "owner_avatar": "https://avatars.githubusercontent.com/owner.png",
+                "stars": 100,
+                "forks": 10,
+                "watchers": 100,
+                "subscribers": 55,
+                "topics": [],
+                "default_branch": "develop",
+                "open_issues": 9,
+                "is_archived": false,
+                "is_fork": false,
+                "is_private": false,
+                "trending": [
+                    "change": 5,
+                    "contributors": []
+                ]
+            ]
+            let envelope: [String: Any] = ["schema_version": 1, "data": [card]]
+            let body = try! JSONSerialization.data(withJSONObject: envelope, options: [])
+            return (trendingPersistResponse(200, request.url!), body)
+        }
+
+        // 1. fetch → 写库
+        let fetched = try await repo.fetchTrending(since: .daily, language: .all)
+        #expect(fetched.count == 1)
+        let mem = try #require(fetched.first)
+        #expect(mem.ownerAvatar?.absoluteString == "https://avatars.githubusercontent.com/owner.png")
+        #expect(mem.subscribersCount == 55)
+        #expect(mem.defaultBranch == "develop")
+        #expect(mem.openIssuesCount == 9)
+
+        // 2. SQL 直读，验证 4 列真的写进表
+        try await db.writer.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: "SELECT * FROM trending_repos WHERE full_name = ?",
+                arguments: ["owner/v8repo"]
+            )
+            #expect(row?["owner_avatar"] as String? == "https://avatars.githubusercontent.com/owner.png")
+            #expect(row?["subscribers_count"] as Int? == 55)
+            #expect(row?["default_branch"] as String? == "develop")
+            #expect(row?["open_issues_count"] as Int? == 9)
+        }
+
+        // 3. cachedTrending → toDomain 时 4 字段被还原回 TrendingRepo
+        let cached = await repo.cachedTrending(since: .daily, language: .all)
+        #expect(cached.count == 1)
+        let cachedFirst = try #require(cached.first)
+        #expect(cachedFirst.ownerAvatar?.absoluteString == "https://avatars.githubusercontent.com/owner.png")
+        #expect(cachedFirst.subscribersCount == 55)
+        #expect(cachedFirst.defaultBranch == "develop")
+        #expect(cachedFirst.openIssuesCount == 9)
     }
 
     @Test("lastRefreshedAt: 多桶隔离，每个桶独立时间戳")

@@ -8,12 +8,17 @@
 //  - 维护 Trending 列表数据
 //  - 处理日/周/月榜切换
 //  - 处理语言筛选
-//  - 处理 AI 摘要请求
-//  - 处理一键订阅到 Stars
+//  - 处理 AI 摘要请求（轻量本地占位 + 评分计算）
 //
 //  设计约束：
 //  - @MainActor + @Observable，所有状态变更在主线程
 //  - 依赖 TrendingRepositoryProtocol，便于测试注入 Mock
+//
+//  R-01 v1.2（2026-06-10）：删除会话级 star 集合（`subscribedRepoIDs` /
+//  `subscribe(repo:)` / `incrementStarsCount` / `subscriptionError`）。
+//  Star/unstar 跨场景状态由 `StarredRegistry`（@Observable 单例）统一驱动；
+//  trending row 的 ✓ 标记通过 `RepoCardViewData.isStarred = registry.contains(...)`
+//  自动响应。详情页 star 操作改走 `StarActionService.star(owner:repo:)` 单点。
 //
 
 import Foundation
@@ -70,9 +75,6 @@ final class TrendingViewModel {
     /// 错误信息
     private(set) var loadError: String?
 
-    /// 订阅（GitHub Star）失败信息。
-    private(set) var subscriptionError: String?
-
     // MARK: - 筛选状态
 
     /// 当前时间周期
@@ -100,14 +102,6 @@ final class TrendingViewModel {
 
     /// 摘要结果缓存：repo fullName -> 摘要文本
     private(set) var summaryCache: [String: String] = [:]
-
-    // MARK: - 订阅状态
-
-    /// 正在订阅的 repo fullName 集合。
-    private(set) var subscribingRepoIDs: Set<String> = []
-
-    /// 本次会话里已经订阅成功的 repo fullName 集合。
-    private(set) var subscribedRepoIDs: Set<String> = []
 
     // MARK: - AI 评分状态
 
@@ -339,36 +333,6 @@ final class TrendingViewModel {
         return score
     }
 
-    /// 一键订阅（star 到 GitHub）
-    func subscribe(repo: TrendingRepo) async throws {
-        guard !subscribingRepoIDs.contains(repo.fullName),
-              !subscribedRepoIDs.contains(repo.fullName)
-        else { return }
-
-        subscribingRepoIDs.insert(repo.fullName)
-        subscriptionError = nil
-        defer { subscribingRepoIDs.remove(repo.fullName) }
-
-        do {
-            try await githubAPIClient.star(owner: repo.owner, repo: repo.name)
-            subscribedRepoIDs.insert(repo.fullName)
-
-            // 本地 stars 计数 +1（UI 即时反馈）
-            if let index = repos.firstIndex(where: { $0.fullName == repo.fullName }) {
-                repos[index].starsCount += 1
-            }
-
-            AppLog.sync.info("Subscribed to \(repo.fullName, privacy: .public)")
-        } catch {
-            subscriptionError = String(
-                format: String(localized: "trending.subscription.failedFormat"),
-                repo.fullName,
-                error.localizedDescription
-            )
-            throw error
-        }
-    }
-
     /// 从本地 Stars 语言分布生成偏好权重。
     func updateLanguagePreferences(from stats: [LanguageStat]) {
         let total = stats.reduce(0) { $0 + $1.count }
@@ -381,13 +345,6 @@ final class TrendingViewModel {
             guard !stat.language.isEmpty else { return nil }
             return (stat.language, Double(stat.count) / Double(total))
         })
-    }
-
-    /// 更新指定 repo 的本地 stars 计数（star 操作成功后调用）。
-    func incrementStarsCount(fullName: String) {
-        if let index = repos.firstIndex(where: { $0.fullName == fullName }) {
-            repos[index].starsCount += 1
-        }
     }
 
     /// 推荐区使用的仓库列表。

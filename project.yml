@@ -64,6 +64,12 @@ targets:
       - path: Starcat
         excludes:
           - "**/.DS_Store"
+    # configFiles：把 Configs/Build.xcconfig 注入到所有 build configuration（Debug + Release）。
+    # Build.xcconfig 内部用 `#include? "Secrets.xcconfig"` 拉本地私密配置；缺失时静默跳过，CI 仍可编译。
+    # 详见 Configs/Build.xcconfig 文件头注释。
+    configFiles:
+      Debug: Configs/Build.xcconfig
+      Release: Configs/Build.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app
@@ -76,6 +82,11 @@ targets:
           - CFBundleURLName: com.starcat.app
             CFBundleURLSchemes:
               - starcat
+        # R-01 v1.2 私密配置注入：xcconfig 变量 `$(STARCAT_PRODUCTION_API_KEY)` 在 build
+        # 期会被 Xcode 替换为 Configs/Build.xcconfig（或它包含的 Secrets.xcconfig）里的值。
+        # 缺失时被替换为空字符串，App 运行期表现为 BYOK-only 模式。
+        # 读取入口：`Starcat/Core/Network/StarcatAPIKey.swift` 的 `StarcatAPIKeyDefaults.productionKey`。
+        STARCAT_PRODUCTION_API_KEY: $(STARCAT_PRODUCTION_API_KEY)
     dependencies:
       - package: GRDB
       - package: KeychainAccess

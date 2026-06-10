@@ -75,4 +75,49 @@ struct KeychainManagerTests {
         #expect(try mgr.loadAIKey(forProvider: profileA) == nil)
         #expect(try mgr.loadAIKey(forProvider: profileB) == "key-b")
     }
+
+    // MARK: - R-01 Service API Key（trending / weekly / sharing）
+
+    @Test("Service API key 按 serviceID 隔离 + 写读删")
+    func serviceAPIKeyRoundTrip() throws {
+        let mgr = KeychainManager.shared
+        // UUID 后缀防与 production 真实 service ID（trending/weekly/sharing）冲突
+        let svcA = "test-svc-a-\(UUID().uuidString)"
+        let svcB = "test-svc-b-\(UUID().uuidString)"
+        defer {
+            try? mgr.deleteServiceAPIKey(forService: svcA)
+            try? mgr.deleteServiceAPIKey(forService: svcB)
+        }
+
+        // 写不同 key
+        try mgr.storeServiceAPIKey("sk-svcA-key", forService: svcA)
+        try mgr.storeServiceAPIKey("sk-svcB-key", forService: svcB)
+
+        // 各自隔离读
+        #expect(try mgr.loadServiceAPIKey(forService: svcA) == "sk-svcA-key")
+        #expect(try mgr.loadServiceAPIKey(forService: svcB) == "sk-svcB-key")
+
+        // 删 A 不影响 B
+        try mgr.deleteServiceAPIKey(forService: svcA)
+        #expect(try mgr.loadServiceAPIKey(forService: svcA) == nil)
+        #expect(try mgr.loadServiceAPIKey(forService: svcB) == "sk-svcB-key")
+    }
+
+    @Test("Service API key 命名空间与 AI key 解耦（同 ID 互不影响）")
+    func serviceAPIKeyNamespaceIsolatedFromAIKey() throws {
+        let mgr = KeychainManager.shared
+        let sharedID = "ambiguous-id-\(UUID().uuidString)"
+        defer {
+            try? mgr.deleteServiceAPIKey(forService: sharedID)
+            try? mgr.deleteAIKey(forProvider: sharedID)
+        }
+
+        // 同一字符串 ID 同时往 service / AI 命名空间存
+        try mgr.storeServiceAPIKey("svc-value", forService: sharedID)
+        try mgr.storeAIKey("ai-value", forProvider: sharedID)
+
+        // 各自命名空间读到各自值，互不串
+        #expect(try mgr.loadServiceAPIKey(forService: sharedID) == "svc-value")
+        #expect(try mgr.loadAIKey(forProvider: sharedID) == "ai-value")
+    }
 }

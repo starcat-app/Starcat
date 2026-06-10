@@ -72,26 +72,6 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - 列表密度
-
-/// 仓库列表的视觉密度。
-enum RepoListDensity: String, CaseIterable, Identifiable {
-    /// 单行紧凑：一行内显示 name / lang / stars。
-    case compact
-    /// 卡片多行：头像 + full_name + description + 属性条。
-    case card
-
-    var id: String { rawValue }
-
-    /// 本地化显示名。
-    var displayName: LocalizedStringKey {
-        switch self {
-        case .compact: return "settings.listDensity.compact"
-        case .card:    return "settings.listDensity.card"
-        }
-    }
-}
-
 // MARK: - 列表排序（W4-4 D1）
 
 /// 仓库列表排序选项。
@@ -514,12 +494,6 @@ final class AppSettings {
         didSet { persist(key: Keys.appearanceMode, value: appearanceMode.rawValue) }
     }
 
-    /// 仓库列表行密度。
-    /// 写入即落盘；UI 通过 @Observable 自动响应。
-    var listDensity: RepoListDensity {
-        didSet { persist(key: Keys.repoListDensity, value: listDensity.rawValue) }
-    }
-
     /// 仓库列表排序（W4-4 D1）。默认 `.starredAtDesc`。
     var repoSortOption: RepoSortOption {
         didSet { persist(key: Keys.repoSortOption, value: repoSortOption.rawValue) }
@@ -712,22 +686,107 @@ final class AppSettings {
         setCustomURL(nil, for: service)
     }
 
+    // MARK: - 第三方服务 API Key（R-01 v1.2 2026-06-09 引入 / 2026-06-10 迁 Keychain）
+    //
+    // 三个自建后端（trending / weekly / sharing）改造后强制 Bearer Token 鉴权，前端
+    // 必须在 Authorization 头里塞 `Bearer <api-key>`，否则任何 /api/v1/* 请求 401。
+    //
+    // 持久化方式（**2026-06-10 已迁 Keychain**）：
+    //   - **真值**：`KeychainManaging.storeServiceAPIKey(_:forService:)` 加密本地文件
+    //     （`Starcat/Core/Keychain/KeychainManager.swift`，AES-GCM）
+    //   - **内存缓存**：`customServiceAPIKeysCache` 字典让 `customServiceAPIKey(for:)`
+    //     同步读不抛错（@Observable 字段 + 高频调用：API actor 注入 / Resolver 解析 /
+    //     UI 设置页 binding 双向都需要同步访问）
+    //   - **启动期一次性迁移**：init 时检测 UserDefaults 旧 key（`Keys.customServiceAPIKeys`），
+    //     如有值则逐个写入 Keychain → 删 UserDefaults 旧 key → 内存缓存填充
+    //
+    // 设计要点：
+    //   - 新写入路径绝不再走 UserDefaults（`persistJSON` 调用已删除）
+    //   - 读取顺序：内存缓存优先 → 缓存 miss 时回退 Keychain（迁移完成后理论上不会 miss，
+    //     但保险起见保留以应对「测试期手动写 Keychain 后未刷缓存」场景）
+
+    /// 内存缓存：service rawValue → API key（已 trim 后非空字符串；空字符串等价不存在键）。
+    ///
+    /// `@Observable` 触发：本字段是 var 但不直接赋值，由 `setCustomAPIKey` 内部走 mutating
+    /// 路径触发观察者。读取入口是 `customServiceAPIKey(for:)`（同步方法）。
+    private var customServiceAPIKeysCache: [String: String] = [:]
+
+    /// 读取某服务当前的用户自定义 API Key；未配置返回 nil（让上层回退到 production 默认）。
+    ///
+    /// - 内存缓存命中 → 直接返回（典型路径，零 keychain I/O）
+    /// - 内存缓存 miss → 尝试从 Keychain 读，命中即填回缓存（应付测试期外部直接写 Keychain
+    ///   或 init 期迁移失败的边角场景）
+    func customServiceAPIKey(for service: ThirdPartyService) -> String? {
+        if let cached = customServiceAPIKeysCache[service.rawValue], !cached.isEmpty {
+            return cached
+        }
+        // miss 路径：从 keychain 拉 + 回填缓存。任何 throw / nil 都视为「未配置」。
+        guard let raw = try? keychain.loadServiceAPIKey(forService: service.rawValue),
+              !raw.isEmpty else {
+            return nil
+        }
+        customServiceAPIKeysCache[service.rawValue] = raw
+        return raw
+    }
+
+    /// 写入某服务的自定义 API Key。传 nil 或空字符串等价于调 `resetCustomAPIKey(for:)`。
+    ///
+    /// 双写：先更新 Keychain（持久化），再更新内存缓存（让本 @Observable 字段触发 view 更新）。
+    /// Keychain 写失败 → 缓存不变 + 走 AppLog 记录；UI 侧仍能从旧值读到，避免「点击保存看似成功
+    /// 但下次启动消失」的更糟体验。
+    func setCustomAPIKey(_ key: String?, for service: ThirdPartyService) {
+        let trimmed = key?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let trimmed, !trimmed.isEmpty {
+            do {
+                try keychain.storeServiceAPIKey(trimmed, forService: service.rawValue)
+                customServiceAPIKeysCache[service.rawValue] = trimmed
+            } catch {
+                AppLog.keychain.error("setCustomAPIKey store failed for \(service.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        } else {
+            do {
+                try keychain.deleteServiceAPIKey(forService: service.rawValue)
+                customServiceAPIKeysCache.removeValue(forKey: service.rawValue)
+            } catch {
+                AppLog.keychain.error("setCustomAPIKey delete failed for \(service.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// 清空某服务的自定义 API Key（回退到 production 默认）。
+    func resetCustomAPIKey(for service: ThirdPartyService) {
+        setCustomAPIKey(nil, for: service)
+    }
+
+    /// 全部已配置 BYOK 服务 ID 列表（仅供 UI 调试 / 设置页快速浏览用）。
+    var configuredCustomAPIKeyServiceIDs: [String] {
+        Array(customServiceAPIKeysCache.keys)
+    }
+
     // MARK: - 初始化
 
     private let defaults: UserDefaults
+    private let keychain: any KeychainManaging
 
-    /// - Parameter defaults: 注入点，便于测试用 UserDefaults(suiteName:) 隔离。
-    init(defaults: UserDefaults = .standard) {
+    /// - Parameters:
+    ///   - defaults: 注入点，便于测试用 `UserDefaults(suiteName:)` 隔离。
+    ///   - keychain: 安全存储后端，用于持久化 BYOK API Key（R-01 v1.2 2026-06-10 引入）。
+    ///     默认 `KeychainManager.shared`；测试可注入 `InMemoryKeychain` 避免污染本地文件。
+    init(
+        defaults: UserDefaults = .standard,
+        keychain: any KeychainManaging = KeychainManager.shared
+    ) {
         self.defaults = defaults
+        self.keychain = keychain
 
         // W4-5 D1:外观主题。dong4j 2026-06-03 决定默认深色(`.dark`),
         // 历史用户(首次升级到本版)若无落盘值,也会落到 `.dark`,跟新用户一致。
         let appearanceRaw = defaults.string(forKey: Keys.appearanceMode)
         self.appearanceMode = appearanceRaw.flatMap(AppearanceMode.init(rawValue:)) ?? .dark
 
-        // 读取或回落到默认值
-        let densityRaw = defaults.string(forKey: Keys.repoListDensity)
-        self.listDensity = densityRaw.flatMap(RepoListDensity.init(rawValue:)) ?? .card
+        // R-01 §3.1.1（2026-06-10 P1）：RepoListDensity 已删除，无需读取
+        // settings.repoListDensity（旧持久化值在升级后会被 UserDefaults 自然忽略）。
 
         let sortRaw = defaults.string(forKey: Keys.repoSortOption)
         self.repoSortOption = sortRaw.flatMap(RepoSortOption.init(rawValue:)) ?? .starredAtDesc
@@ -809,6 +868,36 @@ final class AppSettings {
         // 第三方服务自定义 URL（2026-06-08）：缺失或解码失败时为空字典，
         // 所有服务都走 `AppEndpoints.production(for:)` 默认值。
         self.customServiceURLs = Self.decodeJSON([String: String].self, key: Keys.customServiceURLs, defaults: defaults) ?? [:]
+
+        // 第三方服务自定义 API Key（R-01 v1.2 2026-06-09 引入 / 2026-06-10 迁 Keychain）：
+        //   1. 先尝试一次性迁移：UserDefaults 旧字典 → Keychain → 删 UserDefaults 旧 key
+        //   2. 然后从 Keychain 把所有已知 service ID 的值预加载到内存缓存
+        //
+        // 迁移只跑一次：UserDefaults 旧 key 删除后，下次启动 legacyDict 为 nil 走 else 分支。
+        // 测试场景：mock keychain + 隔离 UserDefaults，迁移路径 / 纯 Keychain 路径都走得通。
+        if let legacyDict = Self.decodeJSON([String: String].self, key: Keys.customServiceAPIKeys, defaults: defaults),
+           !legacyDict.isEmpty {
+            // 迁移：把 UserDefaults 字典逐项写入 Keychain
+            for (serviceID, apiKey) in legacyDict where !apiKey.isEmpty {
+                do {
+                    try keychain.storeServiceAPIKey(apiKey, forService: serviceID)
+                    customServiceAPIKeysCache[serviceID] = apiKey
+                } catch {
+                    AppLog.keychain.error("Migrate customServiceAPIKey to keychain failed for \(serviceID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                }
+            }
+            // 删 UserDefaults 旧 key（迁移完成标志，下次启动跳过本分支）
+            defaults.removeObject(forKey: Keys.customServiceAPIKeys)
+            AppLog.keychain.info("Migrated customServiceAPIKeys to Keychain: \(legacyDict.count, privacy: .public) keys")
+        } else {
+            // 纯 Keychain 模式：迭代已知 ThirdPartyService case 预热缓存
+            for service in ThirdPartyService.allCases {
+                if let key = try? keychain.loadServiceAPIKey(forService: service.rawValue),
+                   !key.isEmpty {
+                    customServiceAPIKeysCache[service.rawValue] = key
+                }
+            }
+        }
     }
 
     // MARK: - 内部
@@ -930,9 +1019,13 @@ final class AppSettings {
     }
 
     /// 全部偏好键集中地，避免字符串散落。
-    private enum Keys {
+    /// UserDefaults key 命名空间。
+    ///
+    /// 暴露为 internal（去掉 private）让 @testable 测试访问 `Keys.customServiceAPIKeys`
+    /// 验证迁移路径。生产代码外部不应引用本枚举（语义对齐 SPM target 的 internal）。
+    enum Keys {
         static let appearanceMode = "settings.appearanceMode"  // W4-5 D1
-        static let repoListDensity = "settings.repoListDensity"
+        // R-01 §3.1.1（2026-06-10 P1）：repoListDensity key 已删除（RepoListDensity 枚举随 P1 整体清零）
         static let repoSortOption = "settings.repoSortOption"
         static let hideArchived = "settings.hideArchived"
         static let hideForks = "settings.hideForks"
@@ -954,5 +1047,9 @@ final class AppSettings {
         static let isProUser = "settings.pro.isProUser"  // HOM-151
         static let autoTidySettings = "settings.ai.autoTidy.v1"  // HOM-126
         static let customServiceURLs = "settings.services.customURLs.v1"  // 2026-06-08
+        // R-01 v1.2 2026-06-09 引入；2026-06-10 迁 Keychain。
+        // 本 key 仅作「启动期一次性迁移识别」用，迁移完成后会被 init 内的 removeObject 清空。
+        // 新写入路径不再走 UserDefaults，详见 setCustomAPIKey(_:for:) 注释。
+        static let customServiceAPIKeys = "settings.services.customAPIKeys.v1"
     }
 }
