@@ -112,11 +112,17 @@ struct TrendingScaffoldShell: View {
     }
 
     /// trailing actions：
-    /// - 本地命中（id != 0）→ `[.share, .ai]`（与 Manage 详情页对齐，share / ai 都依赖 repo.id）
-    /// - 未命中（ephemeral, id == 0）→ 空数组（share 走 AI 摘要缓存键 = repo.id，ephemeral
-    ///   会撞坏；ai 也类似。trending hero 上方已有「在 GitHub 查看」入口承接外链需求）。
+    /// - **未登录**（v1.4 修订, 2026-06-10）→ 空数组（dong4j 决策：未登录态下分享/AI
+    ///   都不应展示——分享/AI 都是用户登录后的付费/绑定功能,与 RepoLocalSections 三段
+    ///   守卫语义对齐）；
+    /// - 已登录 + 本地命中（id != 0）→ `[.share, .ai]`（与 Manage 详情页对齐, share / ai
+    ///   都依赖 repo.id）；
+    /// - 已登录 + 未命中（ephemeral, id == 0）→ 空数组（share 走 AI 摘要缓存键 = repo.id,
+    ///   ephemeral 会撞坏；ai 也类似。trending hero 上方已有「在 GitHub 查看」入口承接
+    ///   外链需求）。
     private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
-        repo.id != 0 ? [.share, .ai] : []
+        guard authSession.state.isAuthenticated, repo.id != 0 else { return [] }
+        return [.share, .ai]
     }
 
     // MARK: - Repo 解析

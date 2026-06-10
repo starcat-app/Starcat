@@ -139,16 +139,22 @@ struct WeeklyDetailView: View {
     }
 
     /// 计算 trailingActions：
-    /// - 本地命中（id != 0）→ `[.weeklyIssue, .share, .ai]`（与 Manage 详情对齐 + 周刊期号入口）
-    /// - 未命中（ephemeral, id == 0）→ `[.weeklyIssue]`（share / ai 都依赖 repo.id，
-    ///   未命中时不接，避免撞坏 AI 摘要 / 分享缓存键）
-    /// - 无 firstIssue 时（极端：trending hint 缺扩展段）→ 移除 `.weeklyIssue` case
+    /// - `.weeklyIssue`（周刊期号外链）：仅依赖 `firstIssue + issueURL`,与登录态无关
+    ///   （公开 GitHub issue 页面）,**保持登录态独立**;
+    /// - `.share` / `.ai`：v1.4 修订 (2026-06-10) 起,要求 `isAuthenticated && repo.id != 0`
+    ///   双条件——未登录态下隐藏（dong4j 决策：分享/AI 都是用户登录后才有意义的功能,
+    ///   与 RepoLocalSections 三段守卫语义对齐）。
+    /// - 已登录 + 本地命中（id != 0）→ `[.weeklyIssue, .share, .ai]`（与 Manage 详情对齐 +
+    ///   周刊期号入口）;
+    /// - 已登录 + 未命中（ephemeral, id == 0）→ `[.weeklyIssue]`(share / ai 都依赖 repo.id);
+    /// - 未登录 → 仅 `[.weeklyIssue]`(若有 firstIssue);
+    /// - 无 firstIssue 时（极端：trending hint 缺扩展段）→ 移除 `.weeklyIssue` case。
     private func trailingActions(for project: WeeklyProject, repo: Repo) -> [RepoDetailAction] {
         var actions: [RepoDetailAction] = []
         if project.firstIssue > 0, let issueURL = project.issueURL {
             actions.append(.weeklyIssue(number: project.firstIssue, url: issueURL))
         }
-        if repo.id != 0 {
+        if authSession.state.isAuthenticated, repo.id != 0 {
             actions.append(.share)
             actions.append(.ai)
         }

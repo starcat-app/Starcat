@@ -235,7 +235,10 @@ struct ActivityDetailView: View {
                 repo: repo,
                 viewData: RepoDetailViewData(
                     hero: RepoDetailHero(repo: repo),
-                    trailingActions: [.share, .ai],
+                    // v1.4 修订 (2026-06-10)：未登录时不展示分享/AI（与 trending/weekly/manage
+                    // 全场景一致）。activity 场景必登录才能产生（push/star/release 事件全部
+                    // 走 GitHub events API）,加守卫纯防御 + 一致性。
+                    trailingActions: authSession.state.isAuthenticated ? [.share, .ai] : [],
                     translation: ReadmeTranslationContext(fullName: repo.fullName),
                     backendHint: nil
                 ),
