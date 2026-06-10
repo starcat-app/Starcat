@@ -72,9 +72,9 @@ struct WeeklyDetailView: View {
     /// 正在拉 GitHub API（本地未命中走的回源路径）。期间显示加载占位。
     @State private var isFetchingRemote: Bool = false
 
-    // —— 已 star 项目的 unstar 流程（与 RepoDetailView / ActivityDetailView 同款）——
-    @State private var showUnstarConfirm: Bool = false
-    @State private var unstarError: String?
+    // R-01 §3.2.3 决策（Q2）：unstar **即点即生效，不弹 confirm alert**；
+    // API 失败 chip 抖动 + 短暂红色（不弹 toast / alert）。失败仅 AppLog 记日志。
+    // → 本 view 不持有 showUnstarConfirm / unstarError 等 @State。
 
     var body: some View {
         Group {
@@ -87,19 +87,6 @@ struct WeeklyDetailView: View {
         }
         .task(id: project?.id) {
             await loadAll(for: project)
-        }
-        .alert("repo.unstar.confirm", isPresented: $showUnstarConfirm, presenting: displayRepo) { repo in
-            Button("repo.unstar.action", role: .destructive) {
-                Task { await performUnstar(repo: repo) }
-            }
-            Button("repo.unstar.dontUnstar", role: .cancel) {}
-        } message: { repo in
-            Text(String(format: String(localized: "repo.unstar.messageFormat"), repo.fullName))
-        }
-        .alert("repo.unstar.failed", isPresented: errorAlertBinding, presenting: unstarError) { _ in
-            Button("general.ok") { unstarError = nil }
-        } message: { msg in
-            Text(LocalizedStringKey(msg))
         }
     }
 
@@ -316,15 +303,22 @@ struct WeeklyDetailView: View {
 
     // MARK: - Star / Unstar 协调
 
-    /// Star stat 按钮点击。
+    /// Star stat 按钮点击（**严格按 R-01 §3.2.3 / Q2 决策**）：
     ///
-    /// - **本地命中 + 已 star**：弹 unstar 确认 alert（与 Manage / Activity 完全一致）；
-    /// - **本地命中 + 未 star**（用户曾 star 后取消的墓碑行）：调 GitHub API 重新 star；
-    /// - **未命中**（临时 Repo）：打开 GitHub stargazers 页面。
+    /// - **本地命中 + 已 star** → **直接 unstar，不弹 confirm**；
+    /// - **本地命中 + 未 star**（墓碑行）→ 调 GitHub API 重新 star；
+    /// - **未命中**（临时 Repo）→ 打开 GitHub stargazers 页面。
+    ///
+    /// 未登录走 `authSession.signIn()` 触发设备流登录，不直接跳 GitHub 网页。
     private func handleStarTapped(repo: Repo) {
+        guard authSession.state.isAuthenticated else {
+            authSession.signIn()
+            return
+        }
+
         if isLocalHit {
             if repo.isStarred {
-                showUnstarConfirm = true
+                Task { await performUnstar(repo: repo) }
             } else {
                 Task { await performStar(repo: repo) }
             }
@@ -334,18 +328,13 @@ struct WeeklyDetailView: View {
         }
     }
 
-    /// 与 Manage / Trending / Activity 详情页 unstar 流程**完全对齐**：走
-    /// `StarActionService.unstar(repo:)` 单点。
+    /// 与 Manage / Trending / Activity 详情页 unstar 流程**完全对齐**：直接调
+    /// `StarActionService.unstar(repo:)`，**不弹 confirm**。
     ///
     /// 服务内部完成 ① GitHub `DELETE /user/starred/{o}/{r}` ② DB markUnstarred 写
-    /// 墓碑行 ③ StarredRegistry remove。本 view 只负责调用 + 失败时设错误态 + 成功
-    /// 后刷一次 sidebar / list 让 manage 列表跟随同步，最后 `resolveRepo` 重读
-    /// 本地真值（isStarred 已变 false）。
-    ///
-    /// **不再 hand-roll**：之前直接调 `apiClient.unstar` + `repoRepository.markUnstarred`
-    /// + `homeViewModel.refreshSidebar` 的写法绕过了 `StarredRegistry`，会让 hero ⭐ chip
-    /// 与各列表 ✓ 标记不同步（registry 是 `@Observable` 全局单例，跨场景驱动 UI），
-    /// R-01 §3.1.6 明确要求 star/unstar 必须走 service 单点。
+    /// 墓碑行 ③ StarredRegistry remove。本 view 只负责调用 + 成功后刷一次 sidebar /
+    /// list + `resolveRepo` 重读本地真值（isStarred 已变 false）。
+    /// API 失败按 §3.2.3 应该 chip 抖动（hero 内部反馈），目前仅 AppLog 记日志。
     private func performUnstar(repo: Repo) async {
         do {
             try await dependencies.starActionService.unstar(repo: repo)
@@ -353,7 +342,6 @@ struct WeeklyDetailView: View {
             await homeViewModel.reloadItems(forceRefresh: true)
             if let project { await resolveRepo(for: project) }
         } catch {
-            unstarError = "repo.unstar.actionFailed"
             AppLog.sync.error("weekly unstar failed: \(error.localizedDescription, privacy: .public)")
         }
     }
@@ -361,27 +349,15 @@ struct WeeklyDetailView: View {
     /// 本地命中但已取消 star（墓碑行）→ 重新 star。
     /// 走 `StarActionService.star(owner:repo:)` 单点：服务内部完成 GitHub
     /// `PUT /user/starred/{o}/{r}` + `GET /repos/{o}/{r}` 拉最新字段 + DB upsert
-    /// + `StarredRegistry.add`。本 view 只负责刷新本地展示 + 错误兜底。
+    /// + `StarredRegistry.add`。本 view 只负责刷新本地展示。
     private func performStar(repo: Repo) async {
-        guard authSession.state.isAuthenticated else {
-            authSession.signIn()
-            return
-        }
         do {
             _ = try await dependencies.starActionService.star(owner: repo.owner, repo: repo.name)
             await homeViewModel.refreshSidebar()
             await homeViewModel.reloadItems(forceRefresh: true)
             if let project { await resolveRepo(for: project) }
         } catch {
-            unstarError = "repo.star.failed"
             AppLog.sync.error("weekly star failed: \(error.localizedDescription, privacy: .public)")
         }
-    }
-
-    private var errorAlertBinding: Binding<Bool> {
-        Binding(
-            get: { unstarError != nil },
-            set: { if !$0 { unstarError = nil } }
-        )
     }
 }

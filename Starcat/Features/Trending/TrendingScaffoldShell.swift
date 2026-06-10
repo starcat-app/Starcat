@@ -58,9 +58,9 @@ struct TrendingScaffoldShell: View {
     /// 是否本地命中（驱动 hero 三段渲染、star chip 行为）。
     @State private var isLocalHit: Bool = false
 
-    // —— Manage 详情页同款 unstar 流程（仅本地命中分支会用到）——
-    @State private var showUnstarConfirm: Bool = false
-    @State private var unstarError: String?
+    // R-01 §3.2.3 决策（Q2）：unstar **即点即生效，不弹 confirm alert**；
+    // API 失败 chip 抖动 + 短暂红色（不弹 toast / alert）。失败仅 AppLog 记日志。
+    // → 本 view 不持有 showUnstarConfirm / unstarError 等 @State。
 
     var body: some View {
         Group {
@@ -75,19 +75,6 @@ struct TrendingScaffoldShell: View {
         }
         .task(id: trending.id) {
             await resolveRepo()
-        }
-        .alert("repo.unstar.confirm", isPresented: $showUnstarConfirm, presenting: displayRepo) { repo in
-            Button("repo.unstar.action", role: .destructive) {
-                Task { await performUnstar(repo: repo) }
-            }
-            Button("repo.unstar.dontUnstar", role: .cancel) {}
-        } message: { repo in
-            Text(String(format: String(localized: "repo.unstar.messageFormat"), repo.fullName))
-        }
-        .alert("repo.unstar.failed", isPresented: errorAlertBinding, presenting: unstarError) { _ in
-            Button("general.ok") { unstarError = nil }
-        } message: { msg in
-            Text(LocalizedStringKey(msg))
         }
     }
 
@@ -164,23 +151,22 @@ struct TrendingScaffoldShell: View {
 
     // MARK: - Star / Unstar 协调
 
-    /// hero ⭐/☆ chip 点击：
-    /// - 本地命中 + 已 star：弹 unstar 确认 alert（与 Manage / Activity / Weekly 对齐）；
-    /// - 本地命中 + 未 star（墓碑行）：调 GitHub API 重新 star；
-    /// - 未命中（ephemeral, id == 0）：调 GitHub API 直接 star，成功后 StarActionService
-    ///   会写 DB + 加入 registry，下次重渲染本 view 走「本地命中 + 已 star」分支。
+    /// hero ⭐/☆ chip 点击（**严格按 R-01 §3.2.3 / Q2 决策**）：
+    ///
+    /// - 已 star（本地命中且 isStarred = true）→ **直接 unstar，不弹 confirm**；
+    /// - 未 star（本地墓碑行 / 本地未命中 ephemeral）→ 直接 star。
+    ///
+    /// API 失败时按 §3.2.3 应该 chip 抖动 + 短暂红色（不弹 toast / alert），目前
+    /// chip 内部反馈尚未实现（hero stats chip 是 Scaffold 内部组件），失败仅
+    /// `AppLog.sync.error` 记日志。
     private func handleStarTapped(repo: Repo) {
         guard authSession.state.isAuthenticated else {
             authSession.signIn()
             return
         }
 
-        if isLocalHit {
-            if repo.isStarred {
-                showUnstarConfirm = true
-            } else {
-                Task { await performStar(repo: repo) }
-            }
+        if repo.isStarred {
+            Task { await performUnstar(repo: repo) }
         } else {
             Task { await performStar(repo: repo) }
         }
@@ -198,12 +184,12 @@ struct TrendingScaffoldShell: View {
             // 本 view 重新解析一次 → 切到本地真值，hero 三段开启。
             await resolveRepo()
         } catch {
-            unstarError = "repo.star.failed"
             AppLog.sync.error("trending star failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
-    /// 与 Manage / Weekly 详情页 unstar 流程对齐。
+    /// 与 Manage / Activity / Weekly 详情页 unstar 流程对齐：直接调
+    /// `StarActionService.unstar(repo:)`，**不弹 confirm**。
     private func performUnstar(repo: Repo) async {
         do {
             try await dependencies.starActionService.unstar(repo: repo)
@@ -212,15 +198,7 @@ struct TrendingScaffoldShell: View {
             // unstar 后 Repo.isStarred 改为 false（保留行作墓碑），重新解析以拿最新值。
             await resolveRepo()
         } catch {
-            unstarError = "repo.unstar.actionFailed"
             AppLog.sync.error("trending unstar failed: \(error.localizedDescription, privacy: .public)")
         }
-    }
-
-    private var errorAlertBinding: Binding<Bool> {
-        Binding(
-            get: { unstarError != nil },
-            set: { if !$0 { unstarError = nil } }
-        )
     }
 }
