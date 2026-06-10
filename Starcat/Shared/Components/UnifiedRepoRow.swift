@@ -68,8 +68,8 @@ struct UnifiedRepoRow: View {
                             .layoutPriority(1)
 
                         if card.isStarred {
-                            // 紧贴 fullName 右侧 4pt（设计 §3.1.5）
-                            Image(systemName: "checkmark.seal.fill")
+                            // 紧贴 fullName 右侧 4pt（设计 §3.1.2 表格：图标 = checkmark.circle.fill / systemGreen / 11pt）
+                            Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(Color.green)
                                 .accessibilityLabel(Text("repo.card.alreadyStarred"))
