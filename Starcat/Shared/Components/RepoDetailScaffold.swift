@@ -15,16 +15,51 @@
 //    4. `body` view-builder（ContentView 插槽，自由渲染 ScrollView + sections + README）
 //
 //  Scaffold 负责：
-//    - Hero header（复用 `RepoMetadataHeaderView`，传 `showLocalSections=false`
-//      让 Hero 仅渲染元信息——三段 section 由 ContentView 自己决定是否渲染）
+//    - Hero header（复用 `RepoMetadataHeaderView`,渲染元信息 + ⭐/☆ chip + trailing actions）
 //    - 折叠面板（复用 `CollapsibleRepoMetadataPanel`）
+//    - heroExtension slot（场景特化的 hero 后内容,如 Trending Contributors）
+//    - **RepoLocalSections（v1.5 修订, 2026-06-10）**：Tags / Notes (含阅读状态) /
+//      Releases 订阅三段内置渲染在 metadataPanel 内,跟随 hero **整段折叠**;
+//      4 场景同构（Manage / Trending / Weekly / Activity-repo-backed 都是同样
+//      `RepoLocalSections(repo: repo)` 调用）,内置消除 4 场景重复 + 解决「滚动
+//      README 时三段挤压阅读区」bug。详见下方 v1.5 修订段。
 //    - trailingActions 渲染（按 `RepoDetailAction` enum 派发）
 //
 //  Scaffold **不**负责：
-//    - body 内部布局（ContentView 自己持有 ScrollView + sections + Readme）
+//    - body 内部布局（ContentView 自己持有 ScrollView + Readme）
 //    - star/unstar 业务逻辑（由 onStarTapped 上层处理）
-//    - 翻译浮动按钮 / 刷新浮动按钮（这两个是 ReadmeStateView 的内嵌 cacheFooter，
-//      ContentView 渲染 ReadmeStateView 时已经包含；Scaffold 不重复渲染）
+//    - 翻译浮动按钮 / 刷新浮动按钮（这两个是 ReadmeStateView 的内嵌 cacheFooter,
+//      ContentView 渲染 ReadmeStateView 时已经包含;Scaffold 不重复渲染）
+//
+//  ────────────────────────────────────────────────────────────────────────────
+//  v1.5 修订（2026-06-10, dong4j bug 反馈）：RepoLocalSections 迁回折叠面板内
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  v1.2 P0（2026-06-10 上午）把 RepoLocalSections 三段从 hero 下沉到 ContentView,
+//  理由是「各场景的 section 集合不同,hero 不该知道有几段要展开」。但实际落地后
+//  4 场景的 ContentView body 里 RepoLocalSections 调用 100% 一致（`RepoLocalSections(repo: repo)`
+//  无任何场景特化参数）—— 抽象层"灵活性"在事实上没有被使用。
+//
+//  v1.5 上午用户反馈：滚动 README 时只有 hero 一段折叠,中间三段仍占据屏幕中部
+//  挤压 README 阅读区。根因 = 三段在 ContentView body 里、不在折叠面板（CollapsibleRepoMetadataPanel）
+//  内 → scroll progress 驱不动它。
+//
+//  权衡：方案 A（Scaffold 内置 RepoLocalSections,跟随折叠）vs 方案 B（slot 化,
+//  调用方传 RepoLocalSections）vs 方案 C（透传 progress 自己衰减）。dong4j 拍板
+//  方案 A —— 折叠一致性 > 抽象灵活性,4 场景同构事实推翻了原 v1.2 P0「Scaffold
+//  不该知道有几段」原则。
+//
+//  v1.5 实现：本组件直接挂 `RepoLocalSections(repo: repo)` 在 metadataPanel 内
+//  hero + heroExtension 之后,跟随 `CollapsibleRepoMetadataPanel` 的 progress
+//  自然折叠（panel 按 PreferenceKey 测三段加入后的高度,visibleHeight = panelHeight ×
+//  (1 - progress) 同步衰减,opacity / offset 也同步）。
+//
+//  4 个 ContentView body 删去自己的 `RepoLocalSections(repo:)` 调用,只剩 ReadmeStateView。
+//
+//  RepoLocalSections 内部的 v1.4 守卫（`isAuthenticated && repo.id != 0`）+ spring
+//  0.25s star 后展开转场动画都保留 —— 用户在 trending/weekly 详情点 star 后,
+//  panelHeight 会随三段加入而增长,折叠面板与 spring 转场协同（两层动画都是
+//  short-duration spring,叠加视觉 OK）。
 //
 //  ────────────────────────────────────────────────────────────────────────────
 //  与现有 RepoDetailView (Manage / Trending) 的迁移路径
@@ -202,11 +237,24 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         return min(max((normalizedOffset - collapseStart) / collapseDistance, 0), 1)
     }
 
-    /// 顶部信息面板（折叠容器 + Hero 元信息 + heroExtension slot）。
+    /// 顶部信息面板（折叠容器 + Hero 元信息 + heroExtension slot + RepoLocalSections）。
     ///
-    /// `heroExtension` 出现在 RepoMetadataHeaderView 之后、折叠面板之内，会跟着
-    /// hero 一起折叠收起。**调用方需自行处理 horizontal padding**——RepoMetadataHeaderView
-    /// 内部用 `.padding(.horizontal, 24)`，extension 也应保持这个值以视觉对齐。
+    /// 渲染顺序（自上而下）：
+    /// 1. `RepoMetadataHeaderView` —— Hero 元信息 + ⭐/☆ chip + trailingActions
+    /// 2. `heroExtension_()` —— 场景特化扩展（如 Trending Contributors）
+    /// 3. `RepoLocalSections(repo:)` —— **v1.5 内置（2026-06-10）**：Tags / Notes /
+    ///    Releases 订阅三段。**4 场景同构**,内置消除 4 个 ContentView 重复 + 解决
+    ///    「滚动 README 时三段挤压阅读区」bug —— 三段现在跟随面板整段折叠。
+    ///    可见性由 RepoLocalSections 内部 `isAuthenticated && repo.id != 0` 守卫
+    ///    自动判定（v1.4 决策）,Scaffold 无条件挂载即可。
+    ///
+    /// 全部内容包在 `CollapsibleRepoMetadataPanel` 里,内部 PreferenceKey 测自然
+    /// 高度 → 按 `metadataPanelCollapseProgress` (0...1) 同步衰减 visibleHeight /
+    /// opacity / offset,实现「滚动 README 时整段面板折叠让位阅读」体验。
+    ///
+    /// **调用方 / heroExtension 需自行处理 horizontal padding**——RepoMetadataHeaderView
+    /// 与 RepoLocalSections 内部都用 `.padding(.horizontal, 24)`,extension 也应保持
+    /// 这个值以视觉对齐。
     @ViewBuilder
     private var metadataPanel: some View {
         CollapsibleRepoMetadataPanel(
@@ -223,6 +271,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     trailingActionsView
                 }
                 heroExtension_()
+                // v1.5（2026-06-10）：RepoLocalSections 内置渲染,跟随面板整段折叠。
+                // 可见性 + spring 0.25s star 后展开转场都由组件内部自治,Scaffold 无脑挂。
+                RepoLocalSections(repo: repo)
             }
         }
     }

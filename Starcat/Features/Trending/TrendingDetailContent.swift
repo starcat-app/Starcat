@@ -8,17 +8,20 @@
 //  设计意图（详细设计 §3.2 & §5.2）
 //  ────────────────────────────────────────────────────────────────────────────
 //
-//  Trending 详情 = `RepoDetailScaffold` (Hero + heroExtension=Contributors) + body slot
+//  Trending 详情 = `RepoDetailScaffold` (Hero + heroExtension=Contributors + RepoLocalSections) + body slot
 //
 //  本 ContentView 同时提供两块内容：
 //  - **heroExtension**：`TrendingContributorsSection`（GitHub Trending 页面顶部贡献者列）
 //    跟着 hero 一起折叠收起。需要外部通过 `RepoDetailScaffold(heroExtension:)` 接入。
 //  - **body slot**：`ReadmeStateView`（README WebView + 翻译入口可选）
 //
-//  R-01 v1.2 P0（2026-06-10）决策（§3.2.4 / §3.2.6）：
-//  - **未 star（ephemeral, repo.id == 0）** 时 RepoLocalSections 自动隐藏三段；
-//  - **已 star（本地命中, repo.id != 0）** 时 RepoLocalSections 渲染三段，
-//    且用户从未 star → star 后 spring 0.25s 平滑展开。
+//  R-01 v1.5 修订（2026-06-10 下午, dong4j bug 反馈）：
+//  - tags / notes / release 三段（`RepoLocalSections`）**从 ContentView 迁回 Scaffold
+//    metadataPanel 内**,跟随 hero 整段折叠让位 README 阅读区;
+//  - 本 ContentView 不再渲染 `RepoLocalSections`,body 仅剩 `ReadmeStateView`;
+//  - 三段可见性逻辑（v1.4 守卫 `isAuthenticated && repo.id != 0`）+ spring 0.25s
+//    star 后展开转场都由 `RepoLocalSections` 内部自治,Scaffold / ContentView 无感
+//    （详见 `RepoDetailScaffold.swift` 文件头 v1.5 修订段）。
 //
 //  ────────────────────────────────────────────────────────────────────────────
 //  数据驱动
@@ -51,44 +54,39 @@ struct TrendingDetailContent: View {
     @Environment(AuthSession.self) private var authSession
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // R-01 §3.2.4：三段在 ContentView 渲染（repo.id != 0 才显示），
-            // 用户在 trending 详情点 star → resolveRepo 切到本地真值（id != 0）
-            // → 三段 spring 0.25s 平滑展开。
-            RepoLocalSections(repo: repo)
-
-            ReadmeStateView(
-                state: readmeVM.state,
-                baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
-                owner: repo.owner,
-                repo: repo.name,
-                onScrollOffsetChange: onScrollOffset,
-                // R-01：仅本地命中（id != 0）的 repo 才提供翻译入口。
-                // 避免 ephemeral repo 用 id=0 走翻译缓存造成串扰。
-                translationControl: repo.id != 0 ? ReadmeTranslationControl(
-                    repo: repo,
-                    translationVM: translationVM,
-                    settings: settings
-                ) : nil
-            ) {
+        // v1.5 修订（2026-06-10）：RepoLocalSections 已迁回 Scaffold metadataPanel,
+        // 本 ContentView body 仅剩 ReadmeStateView,无需再包 VStack。
+        ReadmeStateView(
+            state: readmeVM.state,
+            baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
+            owner: repo.owner,
+            repo: repo.name,
+            onScrollOffsetChange: onScrollOffset,
+            // R-01：仅本地命中（id != 0）的 repo 才提供翻译入口。
+            // 避免 ephemeral repo 用 id=0 走翻译缓存造成串扰。
+            translationControl: repo.id != 0 ? ReadmeTranslationControl(
+                repo: repo,
+                translationVM: translationVM,
+                settings: settings
+            ) : nil
+        ) {
             // README 重新加载走 trending 链路。
             //
             // **为什么不调 readmeVM.reload(repo:)**：reload 内部走 manage 缓存表（PK
-            // = repo_id），用 ephemeral repo（id=0）会撞坏外键。trending 场景永远
-            // 走 trending_readmes 表（PK = owner/repo），即便本地命中（id != 0）的
-            // 已 star 仓库也用 trending 入口刷 readme，保证 Trending 页面体验一致——
-            // 用户在 trending row 点开看到的 README 永远来自 trending API 路径，
+            // = repo_id）,用 ephemeral repo（id=0）会撞坏外键。trending 场景永远
+            // 走 trending_readmes 表（PK = owner/repo）,即便本地命中（id != 0）的
+            // 已 star 仓库也用 trending 入口刷 readme,保证 Trending 页面体验一致——
+            // 用户在 trending row 点开看到的 README 永远来自 trending API 路径,
             // 不与 manage 详情页的 SWR 状态机相互污染。
             readmeVM.loadTrending(
                 owner: repo.owner,
                 repo: repo.name,
                 isLoggedIn: authSession.state.isAuthenticated
             )
-            } onLogin: {
-                authSession.signIn()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } onLogin: {
+            authSession.signIn()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
