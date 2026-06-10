@@ -61,7 +61,13 @@ final class RepoAIInsightViewModel {
         }
     }
 
-    func generate(repo: Repo) async {
+    /// 触发生成 AI 摘要（含可选的标签推荐）。
+    ///
+    /// R-01 §3.2.7 Step 8：`includeTags` 由调用方根据「窗口打开瞬间冻结的 star 状态」决定。
+    /// - 已 star（`includeTags == true`，默认）：摘要 + 标签推荐 一同生成
+    /// - 未 star（`includeTags == false`）：仅摘要，**不发**标签生成请求
+    ///   （未 star 的 repo 没有"绑定标签"语义，强行让 AI 生成无意义且浪费 token）
+    func generate(repo: Repo, includeTags: Bool = true) async {
         isGenerating = true
         streamingSummaryText = ""
         defer {
@@ -69,7 +75,10 @@ final class RepoAIInsightViewModel {
             streamingSummaryText = nil
         }
         do {
-            let result = try await service.generateInsight(for: repo) { [weak self] partial in
+            let result = try await service.generateInsight(
+                for: repo,
+                includeTags: includeTags
+            ) { [weak self] partial in
                 self?.streamingSummaryText = partial
             }
             insight = result.insight

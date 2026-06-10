@@ -58,9 +58,17 @@ enum AppEndpoints {
         }
 
         /// Path 常量目录。新增端点时在此追加。
+        ///
+        /// R-01 v1.2（2026-06-09）：旧的 `/api/weekly/*` 已统一迁到 `/api/v1/*`
+        /// （后端要求 Bearer Auth，详见 supports/starcat-weekly-api/cmd/server/main.go）。
         enum Paths {
-            /// `GET /api/weekly/projects?page=&page_size=` —— 分页拉项目列表。
-            static let projects = "/api/weekly/projects"
+            /// `GET /api/v1/projects?page=&page_size=&issue=&lang=&sort=` —— 分页拉项目列表（envelope 包装）。
+            static let projects = "/api/v1/projects"
+            /// `GET /api/v1/projects/{owner}/{repo}` —— 单 repo 聚合详情（用于 BackendAggregateRepoSource）。
+            /// 不是常量，调用方拼字符串：`projectsByOwnerRepo + "/owner/repo"`。
+            static let projectsByOwnerRepo = "/api/v1/projects"
+            /// `GET /api/v1/issues` —— 周刊期号列表。
+            static let issues = "/api/v1/issues"
             /// `GET /healthz` —— 健康检查（与业务 path 同级，无需特殊处理）。
             static let healthz = "/healthz"
         }
@@ -84,13 +92,15 @@ enum AppEndpoints {
             AppEndpoints.resolve(production: productionURL, service: .trending)
         }
 
+        /// R-01 v1.2（2026-06-09）：旧的 `/repo` `/lang` `/user` 已统一迁到 `/api/v1/*`
+        /// （后端要求 Bearer Auth，详见 supports/starcat-trending-api/cmd/server/main.go）。
         enum Paths {
-            /// `GET /repo?lang=&since=daily/weekly/monthly` —— Trending 仓库列表。
-            static let repos = "/repo"
-            /// `GET /user?lang=&since=&sponsorable=1` —— Trending 开发者列表（P1+ 预留）。
-            static let users = "/user"
-            /// `GET /lang` —— 支持的语言字典（启动时缓存）。
-            static let languages = "/lang"
+            /// `GET /api/v1/repos?lang=&since=daily/weekly/monthly&limit=` —— Trending 仓库列表（envelope 包装）。
+            static let repos = "/api/v1/repos"
+            /// `GET /api/v1/users?lang=&since=&sponsorable=1` —— Trending 开发者列表（P1+ 预留）。
+            static let users = "/api/v1/users"
+            /// `GET /api/v1/languages` —— 支持的语言字典（启动时缓存）。
+            static let languages = "/api/v1/languages"
             /// `GET /healthz` —— 健康检查。
             static let healthz = "/healthz"
         }
@@ -117,9 +127,12 @@ enum AppEndpoints {
             AppEndpoints.resolve(production: productionURL, service: .sharing)
         }
 
+        /// R-01 v1.2（2026-06-09）：旧的 `/share` 已迁到 `/v1/share`（baseURL 含 `/api`，
+        /// 拼接后绝对路径 `/api/v1/share`，envelope 包装 + Bearer Auth；详见
+        /// supports/starcat-sharing-api/cmd/server/main.go）。
         enum Paths {
-            /// `POST /share` —— 相对 `baseURL`，即 `<base>/api/share`。
-            static let share = "/share"
+            /// `POST /v1/share` —— 相对 `baseURL`，即 `<base>/api/v1/share`。
+            static let share = "/v1/share"
             // 注意：故意不放 healthz 在 Paths 里。healthz 走根路径，参见 `healthzURL` getter。
         }
 

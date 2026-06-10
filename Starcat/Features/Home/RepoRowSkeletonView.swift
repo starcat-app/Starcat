@@ -5,9 +5,12 @@
 //  骨架屏行视图，RepoListView 加载中时替代真实行显示。
 //
 //  设计约束：
-//  - 骨架行尺寸严格匹配 RepoRowView（compact / card 两种密度）
+//  - 骨架行尺寸严格匹配 RepoRowView 的 card 密度
 //  - shimmer 动画必须穿越父层 `.transition` / `.animation(_:value:)` 不被吞掉
 //  - 不持有任何业务数据，纯展示型组件
+//
+//  R-01 §3.1.1（2026-06-10 P1）：`RepoListDensity` 枚举已彻底删除（之前为
+//  保签名稳定保留单 case 是「自留技术债」）；本组件不再有 density 入参。
 //
 //  ⚠️ 实现踩坑（2026-06-02 修复）
 //  ------------------------------------------------------------------
@@ -30,66 +33,19 @@
 
 import SwiftUI
 
-/// 骨架屏行视图入口：根据密度参数选子视图。
+/// 骨架屏行视图入口：渲染 card 密度骨架（紧凑骨架已在 R-01 删除）。
 ///
 /// - Parameters:
-///   - density: 列表密度，决定子视图布局（compact 单行 / card 多行）
 ///   - phaseOffset: 0...1 的相位偏移；同一时刻不同行用不同 offset，shimmer 会形成波浪效果
 struct RepoRowSkeletonView: View {
-    let density: RepoListDensity
     let phaseOffset: Double
 
-    init(density: RepoListDensity, phaseOffset: Double = 0) {
-        self.density = density
+    init(phaseOffset: Double = 0) {
         self.phaseOffset = phaseOffset
     }
 
     var body: some View {
-        switch density {
-        case .compact: RepoRowSkeletonCompact(phaseOffset: phaseOffset)
-        case .card:    RepoRowSkeletonCard(phaseOffset: phaseOffset)
-        }
-    }
-}
-
-// MARK: - Compact 骨架行
-
-private struct RepoRowSkeletonCompact: View {
-    let phaseOffset: Double
-    @State private var pulse = false
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(Color.skeletonBase)
-                .frame(width: 22, height: 22)
-                .shimmer(phaseOffset: phaseOffset)
-
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Color.skeletonBase)
-                .frame(width: 120, height: 13)
-                .shimmer(phaseOffset: phaseOffset)
-
-            Spacer()
-
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Color.skeletonBase)
-                .frame(width: 50, height: 13)
-                .shimmer(phaseOffset: phaseOffset)
-
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Color.skeletonBase)
-                .frame(width: 40, height: 13)
-                .shimmer(phaseOffset: phaseOffset)
-        }
-        .padding(.vertical, 2)
-        // 整行做温和的呼吸（opacity 0.85 ↔ 1.0），与 shimmer 高光叠加加强"加载中"感知。
-        // 用 .animation(_:value:) 而非 withAnimation，确保 repeatForever 不被父层 transition 吞掉。
-        .opacity(pulse ? 0.85 : 1.0)
-        .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulse)
-        .task {
-            pulse = true
-        }
+        RepoRowSkeletonCard(phaseOffset: phaseOffset)
     }
 }
 
@@ -230,15 +186,13 @@ private extension Color {
 // MARK: - 骨架列表视图
 
 /// 骨架屏列表入口，供 RepoListView 在加载中时渲染。
-/// 渲染 N 行（默认 8 行）与当前列表密度匹配。
+/// 渲染 N 行（默认 8 行）。
 ///
 /// 行间 `phaseOffset` 按 index 错峰，shimmer 会形成"波浪传递"，避免所有行齐刷刷亮灭。
 struct RepoSkeletonListView: View {
-    let density: RepoListDensity
     let rowCount: Int
 
-    init(density: RepoListDensity = .card, rowCount: Int = 8) {
-        self.density = density
+    init(rowCount: Int = 8) {
         self.rowCount = rowCount
     }
 
@@ -248,7 +202,7 @@ struct RepoSkeletonListView: View {
                 ForEach(0..<rowCount, id: \.self) { index in
                     // 每行相位错开 0.08 周期，10 行刚好分布在 0.8 个周期内，视觉上呈现传递感。
                     let offset = Double(index) * 0.08
-                    RepoRowSkeletonView(density: density, phaseOffset: offset)
+                    RepoRowSkeletonView(phaseOffset: offset)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
 

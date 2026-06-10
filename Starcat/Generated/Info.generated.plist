@@ -29,5 +29,7 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>STARCAT_PRODUCTION_API_KEY</key>
+	<string>$(STARCAT_PRODUCTION_API_KEY)</string>
 </dict>
 </plist>

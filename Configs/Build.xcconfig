@@ -1,0 +1,36 @@
+// Build.xcconfig —— Starcat 工程公共构建配置入口（进 git）
+//
+// 设计意图：
+// - 该文件是「公开」配置：所有人 clone 仓库后能立即编译 / 测试；
+// - 私密变量（如 production API Key）走 `Secrets.xcconfig`，由开发者本地自行 cp
+//   `Secrets.xcconfig.template` → `Secrets.xcconfig` 填值；该文件**不进 git**（已加 .gitignore）。
+//
+// 工作机制：
+// - 下面的 `#include? "Secrets.xcconfig"` 是 Xcode xcconfig 的「可选包含」语法（带问号）：
+//   - 文件存在 → 用其中变量覆盖本文件的同名变量
+//   - 文件不存在 → 静默跳过，不报错（让 CI / 新 contributor 零配置即可编译）
+// - Secrets.xcconfig 缺失时，本文件的默认值（多数为空字符串）生效，App 在运行期表现为
+//   「production 默认 Key 未配置 → BYOK-only 模式」
+//
+// 添加新私密变量的步骤：
+// 1. 本文件加 `MY_NEW_SECRET = `（空字符串默认值，保证编译能过）
+// 2. `Secrets.xcconfig.template` 加同名变量 + 注释说明
+// 3. project.yml `info.properties` 段加 `MY_NEW_SECRET: $(MY_NEW_SECRET)` 让值进 Info.plist
+// 4. 代码里通过 `Bundle.main.infoDictionary["MY_NEW_SECRET"] as? String` 读取
+
+// MARK: - R-01 自建后端 production 默认 API Key（占位，dong4j 在 Secrets.xcconfig 覆盖）
+//
+// 三个自建后端（trending / weekly / sharing）改造后强制 Bearer Token 鉴权（详见
+// docs/详细设计/18-三场景共用架构.md §6.4）。本字段为编译期 baked-in 的 production
+// 默认 Key（让用户零感知开箱即用）；BYOK 用户可以在「设置 → 服务」Tab 填自己的 Key
+// 覆盖本默认值（走 KeychainManager 加密本地文件存储）。
+//
+// 默认空字符串：BYOK-only 模式（用户必须自己填 Key 否则任何 trending / weekly / sharing
+// 请求都会被后端拒 401）。要走 baked-in 模式：cp Secrets.xcconfig.template → Secrets.xcconfig
+// 后填入 production 真实 key，**不要 commit Secrets.xcconfig**（已 gitignore）。
+STARCAT_PRODUCTION_API_KEY =
+
+// MARK: - 引入私密配置（可选）
+//
+// `?` 让 include 在文件缺失时静默跳过；新 contributor / CI 不需要 Secrets.xcconfig 也能编译。
+#include? "Secrets.xcconfig"

@@ -2,55 +2,72 @@
 //  WeeklyDTOTests.swift
 //  StarcatTests
 //
-//  验证 WeeklyProjectListDTO / WeeklyProjectDTO 能正确解码 starcat-weekly-api
-//  约定的响应格式，并能转换成 UI 消费的 `WeeklyProject` 领域模型。
+//  R-01 v1.2 后：验证 envelope 化的 weekly 响应能正确解码到 `StarcatRepoCardDTO + WeeklyExtension`，
+//  并能转换成 UI 消费的 `WeeklyProject` 领域模型。
 //
 //  关键约束：
-//  - DTO 不开 `.convertFromSnakeCase`，所有 snake_case 字段都通过 CodingKeys 显式映射；
-//    本测试确保即便后端返回严格 snake_case，仍能正确解出 firstIssue / issueUrl。
-//  - description / language 可缺；缺字段时默认值要落到 UI 友好的回退值。
+//  - 后端响应顶层走 `StarcatEnvelope<[StarcatRepoCardDTO]>`（schema_version + data + meta）
+//  - 周刊场景独有字段（`first_issue` / `issue_url`）放在 `weekly` 扩展段下
+//  - description / language / weekly 段都可缺；缺字段时默认值要落到 UI 友好的回退值
 //
 
 import Testing
 import Foundation
 @testable import Starcat
 
-@Suite("Weekly DTO 解码")
+@Suite("Weekly Envelope 解码")
 struct WeeklyDTOTests {
 
     private var decoder: JSONDecoder { JSONDecoder() }
 
-    @Test("完整响应解码到 WeeklyProject")
-    func decodeFullList() throws {
+    @Test("完整 envelope 响应解码到 WeeklyProject")
+    func decodeFullEnvelope() throws {
         let json = #"""
         {
-          "items": [
+          "schema_version": 1,
+          "data": [
             {
+              "gh_repo_id": 100001,
+              "full_name": "alice/awesome-tool",
               "owner": "alice",
               "repo": "awesome-tool",
-              "url": "https://github.com/alice/awesome-tool",
               "description": "An awesome tool",
-              "stars": 1234,
               "language": "Go",
-              "first_issue": 399,
-              "issue_url": "https://github.com/ruanyf/weekly/blob/master/docs/issue-399.md"
+              "stars": 1234,
+              "forks": 100,
+              "watchers": 1234,
+              "subscribers": 50,
+              "topics": [],
+              "is_archived": false,
+              "is_fork": false,
+              "is_private": false,
+              "open_issues": 5,
+              "html_url": "https://github.com/alice/awesome-tool",
+              "weekly": {
+                "first_issue": 399,
+                "issue_url": "https://github.com/ruanyf/weekly/blob/master/docs/issue-399.md"
+              }
             }
           ],
-          "total": 1,
-          "page": 1,
-          "page_size": 20
+          "meta": {
+            "page": 1,
+            "page_size": 20,
+            "total": 1
+          }
         }
         """#
 
         let data = try #require(json.data(using: .utf8))
-        let dto = try decoder.decode(WeeklyProjectListDTO.self, from: data)
+        let envelope = try decoder.decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: data)
 
-        #expect(dto.items.count == 1)
-        #expect(dto.total == 1)
-        #expect(dto.page == 1)
-        #expect(dto.pageSize == 20)
+        #expect(envelope.schemaVersion == 1)
+        #expect(envelope.isSupported == true)
+        #expect(envelope.data.count == 1)
+        #expect(envelope.meta?.total == 1)
+        #expect(envelope.meta?.page == 1)
+        #expect(envelope.meta?.pageSize == 20)
 
-        let project = WeeklyProject(dto: dto.items[0])
+        let project = WeeklyProject(card: envelope.data[0])
         #expect(project.owner == "alice")
         #expect(project.name == "awesome-tool")
         #expect(project.fullName == "alice/awesome-tool")
@@ -61,45 +78,61 @@ struct WeeklyDTOTests {
         #expect(project.issueURL?.absoluteString == "https://github.com/ruanyf/weekly/blob/master/docs/issue-399.md")
     }
 
-    @Test("description / language / issue_url 缺失时使用回退")
+    @Test("description / language / weekly 缺失时使用回退")
     func decodeWithMissingOptionalFields() throws {
+        // weekly 扩展段缺失（弱关联场景：项目暂未在周刊收录但仍在卡片列表里出现，
+        // 后端返回时会省略 weekly 段；前端应能优雅退化）。
         let json = #"""
         {
-          "items": [
+          "schema_version": 1,
+          "data": [
             {
+              "gh_repo_id": 100002,
+              "full_name": "bob/tiny",
               "owner": "bob",
               "repo": "tiny",
-              "url": "https://github.com/bob/tiny",
               "stars": 0,
-              "first_issue": 0,
-              "issue_url": ""
+              "forks": 0,
+              "watchers": 0,
+              "subscribers": 0,
+              "topics": [],
+              "is_archived": false,
+              "is_fork": false,
+              "is_private": false,
+              "open_issues": 0
             }
           ],
-          "total": 1,
-          "page": 1,
-          "page_size": 20
+          "meta": {
+            "page": 1,
+            "page_size": 20,
+            "total": 1
+          }
         }
         """#
 
         let data = try #require(json.data(using: .utf8))
-        let dto = try decoder.decode(WeeklyProjectListDTO.self, from: data)
-        let project = WeeklyProject(dto: dto.items[0])
+        let envelope = try decoder.decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: data)
+        let project = WeeklyProject(card: envelope.data[0])
 
         #expect(project.description == nil)
         #expect(project.language == nil)
         #expect(project.firstIssue == 0)
-        #expect(project.issueURL == nil, "issue_url 空串时不应该构造出 URL")
+        #expect(project.issueURL == nil, "缺 weekly 段时 issueURL 应为 nil")
     }
 
-    @Test("空 items 不报错")
-    func decodeEmptyList() throws {
+    @Test("空 data 数组不报错")
+    func decodeEmptyEnvelope() throws {
         let json = #"""
-        { "items": [], "total": 0, "page": 1, "page_size": 20 }
+        {
+          "schema_version": 1,
+          "data": [],
+          "meta": { "page": 1, "page_size": 20, "total": 0 }
+        }
         """#
         let data = try #require(json.data(using: .utf8))
-        let dto = try decoder.decode(WeeklyProjectListDTO.self, from: data)
-        #expect(dto.items.isEmpty)
-        #expect(dto.total == 0)
+        let envelope = try decoder.decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: data)
+        #expect(envelope.data.isEmpty)
+        #expect(envelope.meta?.total == 0)
     }
 }
 

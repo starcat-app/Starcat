@@ -20,27 +20,29 @@ import AppKit
 /// `CollapsibleRepoMetadataPanel` 处理。Activity 可以传入分类色作为 fallback，从而在
 /// repo 没有主语言时仍保持“活动分类色 → 透明”的详情背景。
 ///
-/// ### `showLocalSections` 开关（2026-06-08 引入，Weekly 详情页用）
+/// ### R-01 v1.2 设计 §3.2.4 / §3.2.6（2026-06-10 P0 落地）
 ///
-/// 默认 `true`：渲染 `RepoTagsSection` / `RepoNotesSection` / `RepoReleaseSection` 这三个
-/// **强依赖本地 `repo.id`** 的区块（用 id 查 tags / notes / release_subscriptions）。
+/// **本组件不再渲染 Tags / Notes / Release 三段**。三段已迁出到独立组件
+/// `RepoLocalSections`，由 4 个 ContentView 自行渲染（Manage / Trending /
+/// Weekly / Activity-repo-backed）。
 ///
-/// Weekly 详情页**未命中本地**时（用户没 star 过这个项目），会传入一个 `id=0` 的临时 Repo，
-/// 此时必须显式把 `showLocalSections` 设为 `false`，否则：
-/// - `RepoTagsSection` / `RepoNotesSection` 会用 id=0 去查 DB → 拿不到任何数据，但会显示空 section
-///   占位（"添加标签" / "无笔记"等），误导用户以为可以操作；
-/// - `RepoReleaseSection` 的"订阅"按钮会用 id=0 注册订阅，破坏 release_subscriptions 表的语义。
+/// 这是设计 §3.2.4 / §3.2.6 的明文要求——「各场景的 section 集合不同，hero
+/// 不该知道有几段要展开」+「转场动画在 ContentView 内部而非 hero」。
 ///
-/// 调用方约定：
-/// - Manage 详情页（`RepoDetailView.metadataHeader`）→ 不传，走默认 `true`；
-/// - Activity-Suggestion/Repo/Star 详情页（`ActivityDetailView.repoBackedDetailPage`）→ 不传，走默认 `true`；
-/// - Weekly 详情页 → 本地命中传 `true`、未命中传 `false`。
+/// 三段的可见性由 `RepoLocalSections` 内部根据 `repo.id != 0` 自动判定，
+/// ContentView / Scaffold 都不需要再传 isLocalHit 等开关参数。
 struct RepoMetadataHeaderView<TrailingActions: View>: View {
     let repo: Repo
     let fallbackAccentColor: Color
-    let onStarTapped: () -> Void
-    /// 是否渲染需要本地 `repo.id` 的三个区块（Tags / Notes / Release）。详见类型级注释。
-    let showLocalSections: Bool
+
+    /// hero ⭐/☆ chip 触发的异步动作。
+    ///
+    /// 设计 §3.2.3 状态机要求 chip 内部能感知 loading / 失败这两个临时状态，
+    /// 所以闭包签名是 `() async throws -> Void`：
+    /// - 成功（不抛错）→ `StarStatChipButton` 内部 isLoading 复位，UI 由外层
+    ///   数据流（StarredRegistry @Observable）驱动重渲染（API 200 才变 UI）
+    /// - 抛错 → chip 抖动 + 短暂红色 600ms（不弹 toast / alert，§3.2.3 / Q2）
+    let onStarTapped: () async throws -> Void
     /// Stars stat 按钮的 tooltip 本地化键。
     ///
     /// Manage / Activity 详情页：默认 `"repo.unstar"`（用户已 star，点击取消）。
@@ -52,14 +54,12 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     init(
         repo: Repo,
         fallbackAccentColor: Color = .accentColor,
-        showLocalSections: Bool = true,
         starHelpKey: LocalizedStringKey = "repo.unstar",
-        onStarTapped: @escaping () -> Void,
+        onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder trailingActions: () -> TrailingActions
     ) {
         self.repo = repo
         self.fallbackAccentColor = fallbackAccentColor
-        self.showLocalSections = showLocalSections
         self.starHelpKey = starHelpKey
         self.onStarTapped = onStarTapped
         self.trailingActions = trailingActions()
@@ -70,11 +70,6 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
             header
             descriptionSection
             statsSection
-            if showLocalSections {
-                RepoTagsSection(repo: repo)
-                RepoNotesSection(repo: repo)
-                RepoReleaseSection(repo: repo)
-            }
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
@@ -164,13 +159,15 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 
     private var statsSection: some View {
         HStack(alignment: .center, spacing: 24) {
-            Button(action: onStarTapped) {
-                RepoStatItem(label: "repo.stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .pressableHover()
-            .help(starHelpKey)
+            // R-01 §3.2.3 状态机：StarStatChipButton 封装 idle / loading /
+            // shake / error-flash 4 状态。已 star → ⭐ 实心黄；未 star →
+            // ☆ 空心灰；API 进行中 → ProgressView；失败 → 抖动 + 短暂红色。
+            StarStatChipButton(
+                isStarred: repo.isStarred,
+                count: repo.starsCount,
+                helpKey: starHelpKey,
+                action: onStarTapped
+            )
 
             Button {
                 if let url = URL(string: "\(repo.htmlUrl)/fork") {

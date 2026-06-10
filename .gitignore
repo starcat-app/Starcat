@@ -200,6 +200,11 @@ Saved/
 secrets/
 credentials/
 
+# Starcat 私密 xcconfig（进 git 的是 Build.xcconfig 公共配置 + Secrets.xcconfig.template 模板）
+# 真实 Secrets.xcconfig 由开发者本地 cp template + 填值，**绝不 commit**
+# （含 production API Key 等敏感信息；缺失时 Build.xcconfig 用空字符串默认值兜底，CI 仍可编译）
+Configs/Secrets.xcconfig
+
 # Notes
 notes.md
 refer/

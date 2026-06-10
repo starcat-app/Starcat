@@ -40,6 +40,7 @@ struct TrendingView: View {
     @Environment(AuthSession.self) private var authSession
     @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(AppSettings.self) private var settings
+    @Environment(AppDependencies.self) private var dependencies
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var viewModel: TrendingViewModel
     @State private var showLoginSheet: Bool = false
@@ -279,11 +280,16 @@ struct TrendingView: View {
     /// 单选列表使用手动 selection，而不是 `List(selection:)`。
     ///
     /// 原因（与 Manage `RepoListView.listContent(_:)` 对齐）：`List(selection:)` 会强制
-    /// 绘制 macOS 系统蓝色选中底色，把 `TrendingRepoRowSurface` 自定义的语言色
-    /// accent bar / 轻 accent 底 / 细 accent 边框完全压住，导致两个列表视觉割裂
-    /// （Trending 卡片像一整块强蓝色，Manage 卡片是克制的语言色）。
-    /// 改用 plain Button 写 `selectedRepoID`，仍触发 HomeView 的
-    /// `.onChange(of: selectedRepoID)` 加载详情，但选中外观完全交给 `TrendingRepoRowView`。
+    /// 绘制 macOS 系统蓝色选中底色，把 `RepoRowSurface` 自定义的语言色 accent bar /
+    /// 轻 accent 底 / 细 accent 边框完全压住，导致两个列表视觉割裂。改用 plain Button
+    /// 写 `selectedRepoID`，仍触发 HomeView 的 `.onChange(of: selectedRepoID)` 加载详情，
+    /// 选中外观完全交给 `UnifiedRepoRow.isSelected` 驱动。
+    ///
+    /// **R-01 v1.2 Phase B2（2026-06-10）**：row 视图从 `TrendingRepoRowView` 切到
+    /// `UnifiedRepoRow(card:isSelected:)`，与 Manage / Weekly / Activity-repo-backed
+    /// 共用同一份卡片骨架。`StarredRegistry.contains(ghRepoId:)` 自动驱动 row 上的 ✓
+    /// 标记：用户在详情页 star / unstar 后无需手动 reload，registry 是 `@Observable`，
+    /// SwiftUI 会重新调用 `repo.asCardData(registry:)` 让 row 同步刷新。
     private var contentView: some View {
         List {
             // "为你推荐"卡片暂时隐藏（dong4j 2026-06-01）：当前推荐质量还不稳定，先关掉。
@@ -294,7 +300,7 @@ struct TrendingView: View {
                     .listRowSeparator(.hidden)
             }
 
-            // Trending 列表：plain Button 包裹 row，点击写 selectedRepoID。
+            // Trending 列表：plain Button 包裹 UnifiedRepoRow，点击写 selectedRepoID。
             // 不用 `.tag(repo.id)`，selection 完全由 isSelected 入参驱动。
             //
             // 关键：**不**给 List 加 `.id(viewModel.reposRevision)`！
@@ -308,9 +314,8 @@ struct TrendingView: View {
                 Button {
                     selectedRepoID = repo.id
                 } label: {
-                    TrendingRepoRowView(
-                        repo: repo,
-                        density: settings.listDensity,
+                    UnifiedRepoRow(
+                        card: repo.asCardData(registry: dependencies.starredRegistry),
                         isSelected: selectedRepoID == repo.id
                     )
                 }
@@ -423,207 +428,9 @@ private struct IndexedTrendingRepo: Identifiable {
     var id: String { repo.id }
 }
 
-// MARK: - TrendingRepoCard
-
-/// Trending 仓库卡片
-/// 使用 List(selection:) 原生 selection 样式，无需自定义选中高亮。
-struct TrendingRepoCard: View {
-
-    let repo: TrendingRepo
-    let score: TrendingScore
-    let isSubscribing: Bool
-    let isSubscribed: Bool
-    let onSubscribe: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // 头部：名称 + 语言
-            headerView
-
-            // 描述
-            if let desc = repo.description, !desc.isEmpty {
-                Text(desc)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-
-            // 统计信息
-            statsView
-
-            // AI 评分
-            scoreView
-        }
-        .padding(16)
-    }
-
-    private var headerView: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(repo.name)
-                    .font(.headline)
-
-                Text(repo.owner)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            if let lang = repo.language {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(languageColor(for: lang))
-                        .frame(width: 8, height: 8)
-                    Text(lang)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color(NSColor.quaternaryLabelColor))
-                .clipShape(Capsule())
-            }
-        }
-    }
-
-    private var statsView: some View {
-        HStack(spacing: 16) {
-            // Stars - 点击直接订阅
-            Button {
-                if !isSubscribed && !isSubscribing {
-                    onSubscribe()
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    if isSubscribing {
-                        ProgressView()
-                            .scaleEffect(0.6)
-                            .frame(width: 12, height: 12)
-                    } else {
-                        Image(systemName: isSubscribed ? "star.fill" : "star")
-                            .foregroundStyle(isSubscribed ? .orange : .secondary)
-                    }
-                    Text("\(repo.starsCount)")
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .disabled(isSubscribing || isSubscribed)
-
-            // Forks
-            HStack(spacing: 4) {
-                Image(systemName: "tuningfork")
-                    .foregroundStyle(.secondary)
-                Text("\(repo.forksCount)")
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-
-            // 周期增长
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.up.right")
-                    .foregroundStyle(.green)
-                Text(repo.periodText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            // 贡献者头像
-            if !repo.contributors.isEmpty {
-                HStack(spacing: -6) {
-                    ForEach(repo.contributors.prefix(5)) { contributor in
-                        AsyncImage(url: contributor.avatarURL) { image in
-                            image
-                                .resizable()
-                                .scaledToFit()
-                        } placeholder: {
-                            Circle()
-                                .fill(Color.gray.opacity(0.3))
-                        }
-                        .frame(width: 20, height: 20)
-                        .clipShape(Circle())
-                        .overlay(
-                            Circle()
-                                .stroke(Color(NSColor.windowBackgroundColor), lineWidth: 1)
-                        )
-                    }
-
-                    if repo.contributors.count > 5 {
-                        Text("+\(repo.contributors.count - 5)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-    }
-
-    private var scoreView: some View {
-        HStack(spacing: 8) {
-            // AI 评分
-            HStack(spacing: 4) {
-                Text("trending.aiScore")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Text("\(score.total)")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(scoreColor)
-
-                Text(score.level.displayName)
-                    .font(.caption2)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(scoreColor.opacity(0.2))
-                    .foregroundStyle(scoreColor)
-                    .clipShape(Capsule())
-            }
-
-            Spacer()
-
-            // GitHub 链接
-            Link(destination: repo.url) {
-                HStack(spacing: 4) {
-                    Image(systemName: "link")
-                    Text("trending.view")
-                }
-                .font(.caption)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .foregroundStyle(Color.accentColor)
-        }
-    }
-
-    private var scoreColor: Color {
-        switch score.level {
-        case .excellent: return .green
-        case .good: return .blue
-        case .average: return .orange
-        case .low: return .gray
-        }
-    }
-
-    private func languageColor(for language: String) -> Color {
-        // 常用语言颜色映射
-        switch language.lowercased() {
-        case "swift": return .red
-        case "python": return .blue
-        case "typescript", "javascript": return .yellow
-        case "go": return .cyan
-        case "rust": return .orange
-        case "java": return .brown
-        case "kotlin": return .purple
-        case "dart": return .teal
-        default: return .gray
-        }
-    }
-}
+// MARK: - TrendingRepoCard 已删除（R-01 v1.2 Phase B2，2026-06-10）
+//
+// 该结构体作为 Trending 列表 row 的早期实现长期未被引用（grep 全项目零调用方），
+// row 视图链路实际是 TrendingRepoRowView → R-01 切换到 UnifiedRepoRow。
+// 删除以保持单一真源，避免后续协作者误读为「现行实现」。
+// 历史代码仍可在 git blame / commit `TrendingRepoCard 死代码删除` 之前的版本里找回。

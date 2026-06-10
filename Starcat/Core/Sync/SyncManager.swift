@@ -84,6 +84,16 @@ final class SyncManager {
     /// 当前进行中的同步 Task，便于取消。
     private var runningTask: Task<Void, Never>?
 
+    /// R-01（2026-06-09）：每次全量 / 增量同步「成功完成」后的回调。
+    ///
+    /// 注入方：`AppDependencies` 用此 hook 让 `StarredRegistryBootstrapper.reload()`
+    /// 在 SyncManager 写入新 starred 后立刻把 registry 同步到 DB。
+    ///
+    /// 调用时机：runSync 主路径成功结束（state = .completed 之前）；失败 / 取消路径
+    /// 不调用。`weak self` 由调用方在闭包内自行处理（registry / bootstrapper 都是
+    /// long-lived，正常无循环引用风险）。
+    var onSyncCompleted: (@MainActor () async -> Void)?
+
     // MARK: - 初始化
 
     init(
@@ -261,6 +271,14 @@ final class SyncManager {
             // 真实最后一页只有 1~perPage 条，所以估算值通常偏大。
             // 同步完成时把 total 校正为实际拉到的数量，避免 UI 显示 "1801 / 1900" 这类残留估算误差。
             progress = SyncProgress(current: finalCount, total: finalCount, currentPage: page)
+
+            // R-01：同步完成 hook —— 让 AppDependencies 注入的 bootstrapper.reload()
+            // 把 registry 同步到刚写入的 DB 状态。失败 / 取消路径不调，避免 registry
+            // 漂移（DB 半截写入）。
+            if let hook = onSyncCompleted {
+                await hook()
+            }
+
             state = .completed(at: Date())
             AppLog.sync.info("Sync complete (incremental=\(incrementalMode, privacy: .public)): wrote \(totalSynced, privacy: .public), local total \(finalCount, privacy: .public) in \(Int(Date().timeIntervalSince(syncStartedAt)), privacy: .public)s")
         } catch is CancellationError {

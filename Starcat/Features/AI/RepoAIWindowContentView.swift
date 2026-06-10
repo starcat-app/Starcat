@@ -66,6 +66,17 @@ struct RepoAIWindowContentView: View {
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
 
+    /// AI 窗口打开瞬间冻结的 star 状态（R-01 §3.2.7 Step 8）。
+    ///
+    /// 设计动机：用户打开 AI 窗口后，可能在主窗 / 详情页 star/unstar 同一 repo。
+    /// 如果 AI 窗口的标签段（"AI 推荐标签 + 应用按钮"）跟随 `StarredRegistry.ids`
+    /// 实时变化，会出现「窗口打开后标签段突然消失 / 突然冒出」的诡异交互。
+    ///
+    /// 决策：窗口打开时**捕获一次**当前 star 状态，本轮窗口生命周期内**不响应**
+    /// `registry.ids` 的后续变化。关闭窗口再重新打开时按新状态重新决定。
+    /// `nil` = 还未捕获（首次 .task 时初始化）；其后只读不写。
+    @State private var starredAtOpen: Bool?
+
     /// 当前激活的面板（摘要 / 对话）。
     ///
     /// 初始 `.summary`——dong4j 2026-06-04 15:30 要求"打开默认最大化摘要面板"。
@@ -120,6 +131,11 @@ struct RepoAIWindowContentView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .task(id: repo.id) {
+            // R-01 §3.2.7 Step 8：第一次 task 触发时冻结 star 状态。
+            // 窗口可能在 task 期间被切换 repo（id 变化触发 task 重跑），那种情况
+            // 我们也重新捕获一次（视为"等价于关闭再打开"）——通过 nil-check 之后
+            // 直接覆盖式赋值实现，每次 task 重跑都重新读取当前 registry。
+            starredAtOpen = dependencies.starredRegistry.contains(ghRepoId: repo.id)
             await initializeViewModelsIfNeeded()
             await insightVM?.load(repo: repo)
         }
@@ -229,7 +245,8 @@ struct RepoAIWindowContentView: View {
                 copyButton(insight: insight)
 
                 Button {
-                    Task { await vm.generate(repo: repo) }
+                    // R-01 §3.2.7 Step 8：includeTags 由窗口打开瞬间冻结的 star 状态决定。
+                    Task { await vm.generate(repo: repo, includeTags: starredAtOpen == true) }
                 } label: {
                     Label("ai.assistant.summary.regenerate", systemImage: "arrow.clockwise")
                         .labelStyle(.iconOnly)
@@ -271,7 +288,8 @@ struct RepoAIWindowContentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button {
-                Task { await vm.generate(repo: repo) }
+                // R-01 §3.2.7 Step 8：includeTags 由窗口打开瞬间冻结的 star 状态决定。
+                Task { await vm.generate(repo: repo, includeTags: starredAtOpen == true) }
             } label: {
                 if vm.isGenerating {
                     ProgressView().controlSize(.small)
@@ -301,12 +319,15 @@ struct RepoAIWindowContentView: View {
     private func insightContent(_ insight: RepoAIInsight, vm: RepoAIInsightViewModel) -> some View {
         RepoAISummaryMarkdownView(markdown: insight.summaryMarkdown ?? insight.summary)
 
-        if !insight.suggestedTags.isEmpty {
+        // R-01 §3.2.7 Step 8：未 star 时**不渲染**标签段（即便 insight.suggestedTags
+        // 来自历史缓存有内容，也按窗口打开瞬间冻结的 star 状态决定，避免奇怪的"未
+        // star 却能应用标签"逻辑漏洞）。已 star 才渲染，保持对历史摘要缓存兼容。
+        if starredAtOpen == true, !insight.suggestedTags.isEmpty {
             Divider()
             tagSuggestionsBlock(insight.suggestedTags, vm: vm)
         }
 
-        if let tagError = vm.tagErrorMessage {
+        if starredAtOpen == true, let tagError = vm.tagErrorMessage {
             errorBanner(
                 message: String(
                     format: String(localized: "ai.assistant.tags.parseErrorFormat"),

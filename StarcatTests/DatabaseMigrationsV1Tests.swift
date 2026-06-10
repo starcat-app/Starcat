@@ -135,6 +135,57 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
+    // MARK: - v8 StarcatRepoCardDTO 4 字段消化（R-01 v1.2，2026-06-10）
+
+    @Test("v8：repos 表新增 4 列（owner_avatar / subscribers_count / default_branch / open_issues_count）")
+    func v8ReposNewColumnsCreated() throws {
+        let db = try makeDB()
+        try db.read { db in
+            let cols = try Row.fetchAll(db, sql: "PRAGMA table_info(repos)")
+            let names = cols.compactMap { $0["name"] as String? }
+            #expect(names.contains("owner_avatar"))
+            #expect(names.contains("subscribers_count"))
+            #expect(names.contains("default_branch"))
+            #expect(names.contains("open_issues_count"))
+        }
+    }
+
+    @Test("v8：trending_repos 表新增同名 4 列")
+    func v8TrendingReposNewColumnsCreated() throws {
+        let db = try makeDB()
+        try db.read { db in
+            let cols = try Row.fetchAll(db, sql: "PRAGMA table_info(trending_repos)")
+            let names = cols.compactMap { $0["name"] as String? }
+            #expect(names.contains("owner_avatar"))
+            #expect(names.contains("subscribers_count"))
+            #expect(names.contains("default_branch"))
+            #expect(names.contains("open_issues_count"))
+        }
+    }
+
+    @Test("v8：往 repos 表写入 4 字段后能正确读出（GRDB ↔ schema 字段对齐）")
+    func v8ReposRoundTripNewColumns() throws {
+        let db = try makeDB()
+        try db.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (
+                    id, owner, name, full_name, html_url,
+                    owner_avatar, subscribers_count, default_branch, open_issues_count
+                ) VALUES (
+                    100, 'foo', 'bar', 'foo/bar', 'https://github.com/foo/bar',
+                    'https://avatars.githubusercontent.com/foo.png', 42, 'main', 7
+                )
+                """)
+        }
+        try db.read { db in
+            let row = try Row.fetchOne(db, sql: "SELECT * FROM repos WHERE id = 100")
+            #expect(row?["owner_avatar"] as String? == "https://avatars.githubusercontent.com/foo.png")
+            #expect(row?["subscribers_count"] as Int? == 42)
+            #expect(row?["default_branch"] as String? == "main")
+            #expect(row?["open_issues_count"] as Int? == 7)
+        }
+    }
+
     @Test("v3：fetchAllStarred 类查询能用上新复合索引（query plan 验证）")
     func v3IndexUsedByQueryPlan() throws {
         let db = try makeDB()

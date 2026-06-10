@@ -25,18 +25,11 @@ struct ActivityDetailView: View {
     /// 不复用 HomeView 注入给 Manage / Trending 的 ReadmeViewModel，是为了避免
     /// Activity 里点星标 / 仓库 / 建议活动时污染右侧主详情页的 README 状态。
     @State private var readmeVM: ReadmeViewModel?
-    /// repo-backed Activity 使用与 Manage 详情页同款“README 滚动收缩顶部面板”。
-    ///
-    /// 独立持有状态是为了避免 Activity 的折叠态污染 Manage / Trending 详情页。
-    @State private var repoMetadataPanelCollapseProgress: CGFloat = 0
-    @State private var repoMetadataPanelHeight: CGFloat = 0
-    @State private var showUnstarConfirm: Bool = false
-    @State private var unstarError: String?
-    @State private var isUnstarring: Bool = false
 
-    private var metadataPanelAnimation: Animation {
-        .interactiveSpring(response: 0.32, dampingFraction: 0.9, blendDuration: 0.08)
-    }
+    // R-01 §3.2.3 / §5.4：原 `repoMetadataPanelCollapseProgress` / `repoMetadataPanelHeight`
+    // / `showUnstarConfirm` / `unstarError` / `isUnstarring` 状态已迁移：
+    // - Hero 折叠由 `RepoDetailScaffold` 内部状态管理
+    // - star/unstar 走 `StarActionService`（无 confirm，失败仅日志）
 
     var body: some View {
         Group {
@@ -55,24 +48,6 @@ struct ActivityDetailView: View {
         }
         .task(id: readmeLoadKey(for: item)) {
             await loadReadmeIfNeeded(for: item)
-        }
-        .onChange(of: item?.id) { _, _ in
-            withAnimation(metadataPanelAnimation) {
-                repoMetadataPanelCollapseProgress = 0
-            }
-        }
-        .alert("repo.unstar.confirm", isPresented: $showUnstarConfirm, presenting: item?.repo) { repo in
-            Button("repo.unstar.action", role: .destructive) {
-                Task { await performUnstar(repo: repo) }
-            }
-            Button("repo.unstar.dontUnstar", role: .cancel) {}
-        } message: { repo in
-            Text(String(format: String(localized: "repo.unstar.messageFormat"), repo.fullName))
-        }
-        .alert("repo.unstar.failed", isPresented: errorAlertBinding, presenting: unstarError) { _ in
-            Button("general.ok") { unstarError = nil }
-        } message: { msg in
-            Text(LocalizedStringKey(msg))
         }
     }
 
@@ -247,51 +222,37 @@ struct ActivityDetailView: View {
         }
     }
 
-    private func repoBackedDetailPage(_ item: ActivityItem) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let repo = item.repo {
-                CollapsibleRepoMetadataPanel(
-                    collapseProgress: $repoMetadataPanelCollapseProgress,
-                    panelHeight: $repoMetadataPanelHeight
-                ) {
-                    RepoMetadataHeaderView(
-                        repo: repo,
-                        fallbackAccentColor: item.category.iconColor,
-                        onStarTapped: { showUnstarConfirm = true }
-                    ) {
-                        HStack(spacing: 8) {
-                            RepoShareButton(repo: repo)
-                            RepoAIOpenButton(repo: repo)
-                        }
-                    }
-                }
-
-                activityReadmeSection(repo)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
+    /// R-01 §5.4：Activity-repo-backed 详情迁移到 RepoDetailScaffold + ActivityRepoDetailContent。
+    ///
+    /// 关键差异（vs Manage 详情）：
+    /// - `fallbackAccentColor` 用 activity category 色（无语言时回退分类色，与 Manage 不同）
+    /// - star/unstar 失败仅打日志，UI 不弹 alert（dong4j Q5-A 决策）
+    /// - 旧 `repoMetadataPanelCollapseProgress/Height` 状态不再使用——Scaffold 自管
     @ViewBuilder
-    private func activityReadmeSection(_ repo: Repo) -> some View {
-        if let readmeVM {
-            ReadmeStateView(
-                state: readmeVM.state,
-                // 拼接 blob/HEAD：GitHub HTML 渲染 API 返回的相对链接缺少 blob/HEAD 前缀，
-                // 补上后相对链接才能正确解析为 https://github.com/owner/repo/blob/HEAD/xxx。
-                // 与 RepoDetailView.readmeSection / trendingReadmeSection 保持一致。
-                baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
-                owner: repo.owner,
-                repo: repo.name,
-                onScrollOffsetChange: updateRepoMetadataPanelVisibility
-            ) {
-                readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
-            } onLogin: {
-                authSession.signIn()
+    private func repoBackedDetailPage(_ item: ActivityItem) -> some View {
+        if let repo = item.repo, let readmeVM {
+            RepoDetailScaffold(
+                repo: repo,
+                viewData: RepoDetailViewData(
+                    hero: RepoDetailHero(repo: repo),
+                    trailingActions: [.share, .ai],
+                    translation: ReadmeTranslationContext(fullName: repo.fullName),
+                    backendHint: nil
+                ),
+                fallbackAccentColor: item.category.iconColor,
+                onStarTapped: {
+                    // §3.2.3 状态机：throws 让 StarStatChipButton 抖动 + 短暂红色（不弹 alert）
+                    try await dependencies.starActionService.unstar(repo: repo)
+                }
+            ) { onScrollOffset in
+                ActivityRepoDetailContent(
+                    repo: repo,
+                    onScrollOffset: onScrollOffset
+                )
+                .environment(readmeVM)
             }
-            .environment(readmeVM)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
+        } else if item.repo != nil {
+            // readmeVM 还没异步初始化好（loadReadmeIfNeeded 需要一帧建出来）→ 占位
             VStack(spacing: 10) {
                 ProgressView()
                 Text("readme.loading")
@@ -300,16 +261,6 @@ struct ActivityDetailView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-    }
-
-    /// Activity repo-backed 详情与 Manage / Trending 详情页保持同款滚动收缩策略。
-    ///
-    /// 这里复用 `RepoDetailView.metadataCollapseProgress(for:)`，确保所有 repo-backed
-    /// 右侧详情页的起步距离、收缩行程和顶部抖动过滤完全一致。
-    private func updateRepoMetadataPanelVisibility(offsetY: CGFloat) {
-        let progress = RepoDetailView.metadataCollapseProgress(for: offsetY)
-        guard abs(progress - repoMetadataPanelCollapseProgress) > 0.01 else { return }
-        repoMetadataPanelCollapseProgress = progress
     }
 
     private func assetRow(_ asset: ReleaseAsset) -> some View {
@@ -442,34 +393,9 @@ struct ActivityDetailView: View {
         ensureReadmeViewModel().load(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
     }
 
-    private var errorAlertBinding: Binding<Bool> {
-        Binding(
-            get: { unstarError != nil },
-            set: { if !$0 { unstarError = nil } }
-        )
-    }
-
-    /// 与 Manage 详情页 stars stat 保持同一动作：点击 stars 后确认取消 Star。
-    ///
-    /// Activity 详情页没有自己的列表 ViewModel，但仍处在 HomeView 的 environment 中，
-    /// 因此远端 / 本地取消成功后复用 HomeViewModel 刷新 sidebar 与当前列表。
-    private func performUnstar(repo: Repo) async {
-        guard case .authenticated(let user) = authSession.state else {
-            unstarError = "auth.needLogin"
-            return
-        }
-        isUnstarring = true
-        defer { isUnstarring = false }
-        do {
-            try await dependencies.apiClient.unstar(owner: repo.owner, repo: repo.name)
-            try await dependencies.repoRepository.markUnstarred(repoId: repo.id, userID: user.id)
-            await homeViewModel.refreshSidebar()
-            await homeViewModel.reloadItems(forceRefresh: true)
-        } catch {
-            unstarError = "repo.unstar.actionFailed"
-            AppLog.sync.error("activity unstar failed: \(error.localizedDescription, privacy: .public)")
-        }
-    }
+    // R-01 §3.2.3：performUnstar / errorAlertBinding 已迁移到 StarActionService 单点
+    //（onStarTapped 闭包内调 `dependencies.starActionService.unstar(repo:)`，
+    //  无 confirm，失败仅日志）。
 
     private func assetIcon(_ name: String) -> String {
         let lower = name.lowercased()

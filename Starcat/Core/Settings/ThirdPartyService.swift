@@ -121,6 +121,32 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
             return AppEndpoints.Sharing.healthzURL(over: base)
         }
     }
+
+    /// R-01 v1.2 2026-06-10：构造「鉴权探测」URL，用于在 healthz 通过后追加一次轻量
+    /// `/api/v1/*` GET 探测，验证 Bearer Token 是否被后端 authMiddleware 接受。
+    ///
+    /// 每服务选最便宜 / 副作用最小的 GET 端点：
+    /// - trending: `/api/v1/languages` —— 启动期会缓存的语言字典（~几 KB），开销最低
+    /// - weekly: `/api/v1/issues` —— 周刊期号列表（轻量 GET）
+    /// - sharing: `/api/v1/share` —— GET 方法在后端无注册（业务是 POST），但 authMiddleware
+    ///   先于路由匹配执行：无 / 错 token → 401；有正确 token → 404 或 405（路由不匹配）。
+    ///   ServiceHealthChecker 把「401 = unauthorized；其他 = 鉴权通过（即便路由 404/405）」。
+    ///
+    /// **sharing 与 healthz 同款剥 /api 处理**：sharing 的 baseURL 已经含 `/api` 后缀
+    /// （业务请求拼出 `<base>/v1/share`，等价于 `<host>/api/v1/share`）；这里 authProbeURL
+    /// 走 `AppEndpoints.Sharing.url(_:)` 拼出 `<host>/api/v1/share`，与 baseURL 形态一致。
+    func authProbeURL(base: URL) -> URL {
+        switch self {
+        case .weekly:
+            return AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.issues, to: base)
+        case .trending:
+            return AppEndpoints.appendPath(AppEndpoints.Trending.Paths.languages, to: base)
+        case .sharing:
+            // sharing 的 base 含 /api；业务拼 <base>/v1/share；这里也拼 <base>/v1/share
+            // 即 <host>/api/v1/share，让 authMiddleware 鉴权后路由到 GET（未注册 → 404/405）。
+            return AppEndpoints.appendPath(AppEndpoints.Sharing.Paths.share, to: base)
+        }
+    }
 }
 
 // MARK: - URL 校验

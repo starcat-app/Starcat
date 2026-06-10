@@ -150,6 +150,21 @@ final class AppDependencies {
     /// 同时 session.userProfileService = service（强引用，session 持有 service）。
     let userProfileService: UserProfileService
 
+    // MARK: - R-01 三场景共用架构（2026-06-09）
+
+    /// 全局已 star 仓库 id 集合（@Observable）。
+    /// 所有列表 / 详情通过 `registry.contains(ghRepoId:)` 判断 star 状态，跨场景自动同步。
+    let starredRegistry: StarredRegistry
+
+    /// star / unstar 唯一权威服务（写入 registry 的唯一路径）。
+    let starActionService: StarActionService
+
+    /// StarredRegistry 启动 / 同步完成后的全量重建 helper。
+    let starredRegistryBootstrapper: StarredRegistryBootstrapper
+
+    /// 详情页 Repo 解析链（Local → Hint → BackendAggregate(占位) → GitHub → Minimal）。
+    let repoResolver: RepoResolver
+
     // MARK: - 初始化
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
@@ -266,7 +281,14 @@ final class AppDependencies {
         // HOM-54：Trending Repository（W7+ 起接入 GRDB 持久化）。
         // 把 TrendingAPI 提到顶层 `self.trendingAPI`，让设置页 → 服务 Tab 改地址后
         // 可以直接拿到这个实例 `await trendingAPI.updateBaseURL(_:)` 热更新。
-        let trendingAPIInstance = TrendingAPI(baseURL: AppEndpoints.Trending.baseURL)
+        //
+        // R-01 v1.2（2026-06-09）：后端强制 Bearer Auth，apiKey 由 `StarcatAPIKeyResolver`
+        // 解析当前生效的 key（设置页覆盖 → production 默认），由 AppDependencies.setServiceAPIKey
+        // 在用户改 key 后推送到 actor 的 updateAPIKey 热更新。
+        let trendingAPIInstance = TrendingAPI(
+            baseURL: AppEndpoints.Trending.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .trending)
+        )
         self.trendingAPI = trendingAPIInstance
         self.trendingRepository = TrendingRepository(
             api: trendingAPIInstance,
@@ -276,13 +298,19 @@ final class AppDependencies {
         // MUL-176：阮一峰周刊 API 客户端。端点走 `AppEndpoints.Weekly.baseURL`。
         // 用户在设置页改地址 → AppDependencies.setServiceURL 推送到本 actor 的
         // updateBaseURL，无需重启 App。
-        self.weeklyAPI = WeeklyAPI(baseURL: AppEndpoints.Weekly.baseURL)
+        self.weeklyAPI = WeeklyAPI(
+            baseURL: AppEndpoints.Weekly.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .weekly)
+        )
 
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
 
         // HOM-173：分享卡 API 客户端。端点走 `AppEndpoints.Sharing.baseURL`（保留 /api 后缀）。
-        self.shareAPI = ShareAPI(baseURL: AppEndpoints.Sharing.baseURL)
+        self.shareAPI = ShareAPI(
+            baseURL: AppEndpoints.Sharing.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .sharing)
+        )
 
         // 2026-06-08：第三方服务健康检查 actor。独立 ephemeral session + 5s 超时。
         self.serviceHealthChecker = ServiceHealthChecker()
@@ -317,6 +345,63 @@ final class AppDependencies {
         userProfileSvc.authSession = session
         session.userProfileService = userProfileSvc
         self.userProfileService = userProfileSvc
+
+        // ────────────────────────────────────────────────────────────────────
+        // R-01「三场景共用架构」装配（2026-06-09）
+        // ────────────────────────────────────────────────────────────────────
+
+        let registry = StarredRegistry()
+        self.starredRegistry = registry
+
+        // userIDProvider 闭包：从 authSession 取当前用户 id（未登录时 nil）
+        // weak self 不需要 —— closure 只引用 session（已经是 self.authSession 强持），
+        // 但避免 closure 长期持有可能导致的延迟释放，明确 capture session。
+        let starActionSvc = StarActionService(
+            apiClient: api,
+            repoRepository: repo,
+            registry: registry,
+            userIDProvider: { [weak session] in
+                session?.state.user?.id
+            },
+            homeRefresher: nil           // HomeView 在 .task 时通过 attachHomeRefresher 挂接
+        )
+        self.starActionService = starActionSvc
+
+        let bootstrapper = StarredRegistryBootstrapper(registry: registry, repoRepository: repo)
+        self.starredRegistryBootstrapper = bootstrapper
+
+        // RepoResolver chain：5 个 source 按优先级顺序
+        // R-01 v1.2（2026-06-09）：BackendAggregateRepoSource 已填实，接 weekly 的
+        // GET /api/v1/projects/{owner}/{repo}；详细见 BackendAggregateRepoSource.swift。
+        self.repoResolver = RepoResolver(chain: [
+            LocalRepoSource(repository: repo),
+            BackendHintRepoSource(),
+            BackendAggregateRepoSource(weeklyAPI: self.weeklyAPI),
+            GitHubFallbackRepoSource(apiClient: api),
+            MinimalRepoSource()              // 永远命中兜底
+        ])
+
+        // ────────────────────────────────────────────────────────────────────
+        // R-01 钩子注入：SyncManager 同步完成 + AuthSession 登出
+        // ────────────────────────────────────────────────────────────────────
+
+        // SyncManager 全量 / 增量同步成功完成 → bootstrapper.reload() 同步 registry 到 DB
+        // 注：weak 不需要，bootstrapper 与 syncManager 都由 self 强持（生命周期一致）
+        self.syncManager.onSyncCompleted = { [bootstrapper] in
+            await bootstrapper.reload()
+        }
+
+        // AuthSession 登出 / 失效 → bootstrapper.clearOnSignOut() 清空 registry
+        session.onSignOut = { [bootstrapper] in
+            bootstrapper.clearOnSignOut()
+        }
+
+        // 启动期 reload：异步 Task，不阻塞 init。测试 host 跳过避免触发 DB 启动期成本。
+        if !TestEnvironment.isRunning {
+            Task { [bootstrapper] in
+                await bootstrapper.reload()
+            }
+        }
     }
 
     // MARK: - 第三方服务热更新（2026-06-08 新增）
@@ -345,5 +430,36 @@ final class AppDependencies {
     /// 清空某服务的自定义 URL，等价于 `setServiceURL(nil, for:)`。
     func resetServiceURL(for service: ThirdPartyService) async {
         await setServiceURL(nil, for: service)
+    }
+
+    // MARK: - 第三方服务 API Key 热更新（R-01 v1.2 2026-06-09 新增）
+
+    /// 设置页 → 服务 Tab 调用入口：把用户填的 API Key 既写入 `AppSettings` 持久化，
+    /// 又推送到对应 API actor 的 `updateAPIKey`，让"修改即生效"不需要重启。
+    ///
+    /// 传入 nil / 空字符串 → 等价于 `resetServiceAPIKey(for:)`：清空用户配置，
+    /// actor 回退到 `StarcatAPIKeyDefaults.productionKey`（production 默认 key）。
+    ///
+    /// 异步是因为 actor 方法要 `await`；UI 侧（@MainActor SwiftUI）调用时 `Task {}` 包一下。
+    func setServiceAPIKey(_ key: String?, for service: ThirdPartyService) async {
+        // 1) 持久化用户输入（nil/空串 → 删 key，回退默认）
+        settings.setCustomAPIKey(key, for: service)
+
+        // 2) 解析新的生效 key（用户填了 → 用用户的；没填 → 用 production 默认）
+        //    StarcatAPIKeyResolver.resolve 内部会读 AppSettings 最新状态。
+        //    @MainActor hop 是为了拿 AppSettings.shared，但本方法已经在 @MainActor 上下文。
+        let resolved = StarcatAPIKeyResolver.resolve(for: service)
+
+        // 3) 推送到对应 actor 热更新
+        switch service {
+        case .trending: await trendingAPI.updateAPIKey(resolved)
+        case .weekly:   await weeklyAPI.updateAPIKey(resolved)
+        case .sharing:  await shareAPI.updateAPIKey(resolved)
+        }
+    }
+
+    /// 清空某服务的自定义 API Key（回退到 production 默认）。
+    func resetServiceAPIKey(for service: ThirdPartyService) async {
+        await setServiceAPIKey(nil, for: service)
     }
 }

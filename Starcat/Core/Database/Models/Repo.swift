@@ -70,6 +70,33 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
     /// 本地缓存时间，与 GitHub 字段无关。
     var cachedAt: String?
 
+    // MARK: - R-01 v1.2 StarcatRepoCardDTO 新字段（GRDB v8 schema，2026-06-10）
+    //
+    // 4 字段全部 Optional：老用户从 v7 升级时 SQLite 把这些列填 NULL；新拉的 repo
+    // 通过 toEphemeralRepo() / GitHub /repos API 写入实际值。
+
+    /// 仓库所有者头像 URL（GitHub /repos.owner.avatar_url）。
+    /// UI hero 区直接渲染，免去额外 GitHub user API 调用。
+    ///
+    /// **默认 nil 的目的**：Swift memberwise init 会把"有默认值"的字段省略为可选参数，
+    /// 这样 v8 之前已存在的 24+ 处 `Repo(...)` 调用方不必逐个补 `ownerAvatar: nil`。
+    /// 老的 GitHub 同步路径（`StarsAPI` → `GitHubRepoDTO` → `Repo`）暂不消化此字段；
+    /// 仅 Trending / Weekly / Sharing 三场景由 `StarcatRepoCardDTO.toEphemeralRepo()`
+    /// 直填实值。后续若要让 Stars 同步也填，需扩 `GitHubRepoDTO`。
+    var ownerAvatar: String? = nil
+
+    /// 订阅者数（GitHub `subscribers_count`，与 watchers 不同）。发现型场景排序参考。
+    /// 默认 nil 同上：兼容老 callsite。
+    var subscribersCount: Int? = nil
+
+    /// 默认分支（如 `main` / `master`）。README 与文件浏览路径展开依赖此字段。
+    /// 默认 nil 同上：兼容老 callsite。
+    var defaultBranch: String? = nil
+
+    /// 未关闭 issue 数（GitHub `open_issues_count`）。UI hero 区与 stars/forks 并列展示。
+    /// 默认 nil 同上：兼容老 callsite。
+    var openIssuesCount: Int? = nil
+
     // MARK: - Codable Keys（snake_case 与表列对齐）
 
     enum CodingKeys: String, CodingKey {
@@ -97,6 +124,11 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
         case updatedAt = "updated_at"
         case starredAt = "starred_at"
         case cachedAt = "cached_at"
+        // R-01 v1.2 GRDB v8 新增（2026-06-10）
+        case ownerAvatar = "owner_avatar"
+        case subscribersCount = "subscribers_count"
+        case defaultBranch = "default_branch"
+        case openIssuesCount = "open_issues_count"
     }
 
     // MARK: - 派生属性
@@ -118,12 +150,64 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
 
     /// **必须与 hash 一致**：Hashable 契约要求 `a == b` ⇔ `hash(a) == hash(b)`。
     ///
-    /// 早期版本依赖 synthesized 全字段 ==，与上面的 `hash(into:)` 不一致，
+    /// 早期版本依赖 synthesized 全字段 ==，与上面的 `hash(into:)` 不一致,
     /// 导致 SwiftUI `List(selection:)` 在 selection binding 写入时
     /// 找不到匹配 tag（hash 相等但 == 不等），表现为"列表点击没反应、detail 不刷新"。
     ///
     /// 仓库 id 在 GitHub 全局唯一，用 id 比较即可覆盖所有合理场景。
     static func == (lhs: Repo, rhs: Repo) -> Bool {
         lhs.id == rhs.id
+    }
+}
+
+// MARK: - R-01 Minimal Fallback 工厂
+
+extension Repo {
+
+    /// R-01：构造一个**最小可用**的 in-memory Repo，给 `MinimalRepoSource` 在
+    /// 整条 source chain 全部 throws 或 nil 时兜底使用，避免详情页白屏。
+    ///
+    /// 如果有 hint DTO（trending / weekly 列表已经拉过的字段），优先复用 hint
+    /// 字段；否则只有 owner / name 能用。`id` 来自 hint 的 `ghRepoId`，否则
+    /// 用 0（非合法 GitHub id）；调用方应通过 `id == 0` 判断「无法 star/unstar」
+    /// 而禁用对应交互。
+    ///
+    /// **不要**把这个 Repo 落 DB —— 字段大量缺失，落库会污染本地数据。
+    /// 用途仅限「详情页 hero / readme 区域不至于完全空着」。
+    static func makeMinimal(owner: String, name: String, hint: StarcatRepoCardDTO? = nil) -> Repo {
+        if let hint {
+            return hint.toEphemeralRepo()
+        }
+        let fallbackHtmlUrl = GitHubURLs.repo(owner: owner, repo: name).absoluteString
+        return Repo(
+            id: 0,                              // ⚠️ 非合法 id；调用方需检查
+            owner: owner,
+            name: name,
+            fullName: "\(owner)/\(name)",
+            description: nil,
+            language: nil,
+            starsCount: 0,
+            forksCount: 0,
+            watchersCount: 0,
+            topics: nil,
+            license: nil,
+            homepage: nil,
+            htmlUrl: fallbackHtmlUrl,
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            isFork: false,
+            isArchived: false,
+            isStarred: false,
+            pushedAt: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            starredAt: nil,
+            cachedAt: nil,
+            ownerAvatar: nil,
+            subscribersCount: nil,
+            defaultBranch: nil,
+            openIssuesCount: nil
+        )
     }
 }

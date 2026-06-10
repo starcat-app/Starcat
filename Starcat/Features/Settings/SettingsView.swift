@@ -121,18 +121,9 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Divider()
-
-                Picker("settings.general.listDensity", selection: $settings.listDensity) {
-                    ForEach(RepoListDensity.allCases) { density in
-                        Text(density.displayName).tag(density)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Text("settings.general.listDensity.description")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                // R-01 §3.1.1（2026-06-10 P1）：列表密度 Picker 已彻底移除——
+                // RepoListDensity 枚举本身也已删除（之前为保签名稳定保留单 case
+                // 是「自留技术债」，现在所有 row / skeleton 视图直接用 card 密度）。
             }
 
             // HOM-SNAKE-MODES 2026-06-05：贡献草坪贪吃蛇玩法。

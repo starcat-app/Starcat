@@ -15,73 +15,29 @@
 import Foundation
 import SwiftUI
 
-// MARK: - API Response
-
-/// Trending API 响应包装。
-struct TrendingResponseDTO: Decodable {
-    let repo: String          // "/owner/repo" 格式
-    let desc: String?         // 仓库描述
-    let lang: String?         // 编程语言
-    let stars: Int            // 当前总 stars
-    let forks: Int            // 当前 forks
-    let buildBy: [TrendingContributorDTO]  // 贡献者列表
-    let change: Int?          // 周期内新增 stars（对应 starsInPeriod）
-
-    enum CodingKeys: String, CodingKey {
-        case repo
-        case desc
-        case lang
-        case stars
-        case forks
-        case buildBy = "build_by"
-        case change
-    }
-
-    init(
-        repo: String,
-        desc: String?,
-        lang: String?,
-        stars: Int,
-        forks: Int,
-        buildBy: [TrendingContributorDTO],
-        change: Int?
-    ) {
-        self.repo = repo
-        self.desc = desc
-        self.lang = lang
-        self.stars = stars
-        self.forks = forks
-        self.buildBy = buildBy
-        self.change = change
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.repo = try container.decode(String.self, forKey: .repo)
-        self.desc = try container.decodeIfPresent(String.self, forKey: .desc)
-        self.lang = try container.decodeIfPresent(String.self, forKey: .lang)
-        self.stars = try container.decodeIfPresent(Int.self, forKey: .stars) ?? 0
-        self.forks = try container.decodeIfPresent(Int.self, forKey: .forks) ?? 0
-        self.buildBy = try container.decodeIfPresent([TrendingContributorDTO].self, forKey: .buildBy) ?? []
-        self.change = try container.decodeIfPresent(Int.self, forKey: .change)
-    }
-}
-
-/// 贡献者 DTO。
-struct TrendingContributorDTO: Decodable {
-    let avatar: String   // 头像 URL
-    let by: String       // GitHub 用户名（格式 "/username"）
-}
+// MARK: - API Response（已删，R-01 v1.2 走 envelope）
+//
+// 旧的非 envelope `TrendingResponseDTO` / `TrendingContributorDTO` 在 R-01 v1.2 改造后已废。
+// 新数据流：API 响应 envelope → `StarcatEnvelope<[StarcatRepoCardDTO]>` → 由 `TrendingRepo.init(card:since:)`
+// 转 UI 模型。后端字段集见 `Starcat/Core/Network/StarcatRepoCardDTO.swift`。
 
 // MARK: - Domain Model
 
 /// Trending 仓库领域模型。
 ///
-/// 从 TrendingResponseDTO 转换而来，用于 UI 展示。
+/// R-01 v1.2 起从 `StarcatRepoCardDTO + TrendingExtension` 转换而来（见 `init(card:since:)`）。
 /// 包含计算属性用于格式化显示。
 struct TrendingRepo: Identifiable, Equatable {
     /// 唯一标识（使用 fullName 作为 id）
     var id: String { fullName }
+
+    /// GitHub repo 数字 id。
+    ///
+    /// R-01 v1.2（2026-06-10）：从 `StarcatRepoCardDTO.ghRepoId` 透传。trending 列表
+    /// 内部 SwiftUI diff 仍用 `fullName`（兼容旧 selection binding）；`ghRepoId` 主要
+    /// 给 `RepoCardViewData.id`（UnifiedRepoRow row diff key）+ `StarredRegistry.contains`
+    /// 使用——后者是设计 §3.1.2 跨场景标记的核心入口。
+    let ghRepoId: Int64
 
     /// owner/repo 格式完整名
     let fullName: String
@@ -116,37 +72,69 @@ struct TrendingRepo: Identifiable, Equatable {
     /// 贡献者列表
     let contributors: [Contributor]
 
-    /// 初始化。
-    /// - Parameter dto: API 响应 DTO
-    init(dto: TrendingResponseDTO, since: TrendingPeriod) {
-        // 解析 fullName："/owner/repo" -> "owner/repo"
-        let cleanPath = dto.repo.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        self.fullName = cleanPath
+    // MARK: - R-01 v1.2 GRDB v8 新字段（2026-06-10 落地）
+    //
+    // 这 4 字段从 `StarcatRepoCardDTO` 透传过来，对应 trending_repos 表 v8 新加 4 列。
+    // 全部 Optional：trending API 返回的 DTO 不一定填满（enricher 可能没补全
+    // owner_avatar 等字段；离线缓存 v8 之前的行也是 NULL）。
 
-        let parts = cleanPath.split(separator: "/", maxSplits: 1)
-        self.owner = parts.count > 0 ? String(parts[0]) : ""
-        self.name = parts.count > 1 ? String(parts[1]) : cleanPath
+    /// 仓库所有者头像 URL（GitHub `owner.avatar_url`），UI hero 区直接渲染。
+    let ownerAvatar: URL?
+    /// 订阅者数（GitHub `subscribers_count`），与 watchers 不同。
+    let subscribersCount: Int?
+    /// 默认分支（如 `main` / `master`）。
+    let defaultBranch: String?
+    /// 未关闭 issue 数（GitHub `open_issues_count`）。
+    let openIssuesCount: Int?
 
-        self.url = GitHubURLs.repo(fullName: cleanPath)
-        self.description = dto.desc
-        self.language = dto.lang
-        self.starsCount = dto.stars
-        self.forksCount = dto.forks
-        self.starsInPeriod = dto.change ?? 0
+    /// R-01 v1.2 初始化：从 envelope 化的 `StarcatRepoCardDTO` + 周期信息构造。
+    ///
+    /// 字段映射：
+    ///   - `card.fullName` / `card.owner` / `card.repo` → `fullName` / `owner` / `name`
+    ///   - `card.htmlUrl` 优先；缺失时 fallback 用 `GitHubURLs.repo(owner:repo:)` 重建
+    ///   - `card.description` / `card.language` → `description` / `language`
+    ///   - `card.stars` / `card.forks` → `starsCount` / `forksCount`
+    ///   - `card.trending?.change` → `starsInPeriod`（缺扩展段时退化为 0）
+    ///   - `card.trending?.contributors` → `contributors` 数组（缺扩展段时空数组）
+    ///
+    /// **R-01 v1.2 GRDB v8 新增（2026-06-10）**：
+    ///   `card.ownerAvatar` / `card.subscribers` / `card.defaultBranch` / `card.openIssues`
+    ///   → `ownerAvatar` / `subscribersCount` / `defaultBranch` / `openIssuesCount`
+    ///
+    /// 仍未利用的 DTO 字段（v1.2 边界内但 trending UI 暂不需要）：
+    ///   `gh_repo_id`（trending 用 fullName 作 PK，不依赖 GitHub id）/
+    ///   `watchers` / `topics` / `homepage` / `license_spdx` /
+    ///   `is_archived` / `is_fork` / `is_private` / `pushed_at` / `updated_at` / `created_at`
+    init(card: StarcatRepoCardDTO, since: TrendingPeriod) {
+        self.ghRepoId = card.ghRepoId
+        self.fullName = card.fullName
+        self.owner = card.owner
+        self.name = card.repo
+        self.url = card.htmlUrl ?? GitHubURLs.repo(owner: card.owner, repo: card.repo)
+        self.description = card.description
+        self.language = card.language
+        self.starsCount = card.stars
+        self.forksCount = card.forks
+        self.starsInPeriod = card.trending?.change ?? 0
 
-        // 生成周期文本：只显示数字，如 "+321"
+        // 周期文本：只显示数字，如 "+321" / "0"。
         let prefix = self.starsInPeriod > 0 ? "+" : ""
         self.periodText = "\(prefix)\(self.starsInPeriod)"
 
-        // 转换贡献者
-        self.contributors = dto.buildBy.map { c in
-            let username = c.by.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            return Contributor(
-                username: username,
-                avatarURL: URL(string: c.avatar),
-                profileURL: GitHubURLs.userProfile(login: username)
+        // 后端 contributors 已是「avatar URL + login」结构化字段，前端零字符串处理。
+        self.contributors = (card.trending?.contributors ?? []).map { c in
+            Contributor(
+                username: c.login,
+                avatarURL: c.avatar,
+                profileURL: GitHubURLs.userProfile(login: c.login)
             )
         }
+
+        // R-01 v1.2 GRDB v8 4 字段透传（DTO 对应字段直接拿）
+        self.ownerAvatar = card.ownerAvatar
+        self.subscribersCount = card.subscribers
+        self.defaultBranch = card.defaultBranch
+        self.openIssuesCount = card.openIssues
     }
 
     /// 贡献者模型。
@@ -155,6 +143,63 @@ struct TrendingRepo: Identifiable, Equatable {
         let username: String
         let avatarURL: URL?
         let profileURL: URL?
+    }
+
+    // MARK: - Ephemeral Repo 构造（详情页 hero 兜底）
+
+    /// 把 `TrendingRepo` 转为 in-memory 临时 `Repo`，用于详情页 hero 渲染。
+    ///
+    /// **使用场景**：用户点开一个**未本地 star** 的 trending row 时，详情页 hero
+    /// 区需要立即拿到 `Repo` 渲染（fullName / stars / forks / language / topics
+    /// / 创建时间 / 更新时间 等）。R-01 v1.2 Phase B3（2026-06-10）切到
+    /// `RepoDetailScaffold` 后，trending 分支不再手写 hero —— 必须把 trending 模型
+    /// 转为 `Repo` 才能喂给 Scaffold。
+    ///
+    /// **关键约束**：
+    /// - `id = ghRepoId`（v9 起 trending row 必填）；ghRepoId 为 0 退化代表「过渡 row」，
+    ///   调用方应通过 `id == 0` 判断「无法 star/unstar」。
+    /// - **不要落 DB**：本 Repo 的 `topics / watchers / created_at / updated_at` 等字段
+    ///   trending 模型本就没有，落库会污染本地数据。仅限「详情页 hero 区域不至于
+    ///   完全空着」。
+    /// - **isStarred 永远 false**：trending 模型不知道当前用户的 star 状态，调用方应
+    ///   通过 `StarredRegistry.contains(ghRepoId:)` 判断真实 star 状态后覆盖。
+    /// - 缺失字段（watchers / created_at / updated_at / topics / homepage / license / pushedAt）
+    ///   全部填默认值（0 / nil）。Hero 视图层应有能力 graceful 处理 0 / nil 情况。
+    ///
+    /// **本地命中优先**：调用方应**先**通过 `repoRepository.findByOwnerName(owner:name:)`
+    /// 查本地真值；只有未命中时才退化到本方法。本地真值含完整 v1.2 14 字段。
+    func makeEphemeralRepo() -> Repo {
+        let resolvedHtmlUrl = self.url.absoluteString
+        return Repo(
+            id: self.ghRepoId,                      // v9 之后 trending row 必填；为 0 时调用方需检查
+            owner: self.owner,
+            name: self.name,
+            fullName: self.fullName,
+            description: self.description,
+            language: self.language,
+            starsCount: self.starsCount,
+            forksCount: self.forksCount,
+            watchersCount: 0,                       // trending 模型没有；hero 显示 0 / 隐藏
+            topics: nil,                            // trending 模型没有；topics 段在 hero 隐藏
+            license: nil,
+            homepage: nil,
+            htmlUrl: resolvedHtmlUrl,
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            isFork: false,
+            isArchived: false,
+            isStarred: false,                       // ephemeral；调用方按 registry 真值覆盖
+            pushedAt: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            starredAt: nil,
+            cachedAt: nil,
+            ownerAvatar: self.ownerAvatar?.absoluteString,
+            subscribersCount: self.subscribersCount,
+            defaultBranch: self.defaultBranch,
+            openIssuesCount: self.openIssuesCount
+        )
     }
 }
 
