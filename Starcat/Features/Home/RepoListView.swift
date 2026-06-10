@@ -137,7 +137,7 @@ struct RepoListView: View {
                 )
             } else if viewModel.isLoading {
                 // HOM-46：无缓存分类加载时直接切到骨架屏，避免旧分类列表停留在中栏造成"没反应"的错觉。
-                RepoSkeletonListView(density: settings.listDensity, rowCount: 10)
+                RepoSkeletonListView(rowCount: 10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = viewModel.loadError, viewModel.items.isEmpty {
                 emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitleText: error)

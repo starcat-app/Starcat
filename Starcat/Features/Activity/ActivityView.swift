@@ -51,7 +51,7 @@ struct ActivityView: View {
     @ViewBuilder
     private func content(_ viewModel: ActivityViewModel) -> some View {
         if viewModel.isLoading {
-            RepoSkeletonListView(density: settings.listDensity, rowCount: 8)
+            RepoSkeletonListView(rowCount: 8)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = viewModel.loadError, viewModel.items.isEmpty {
             emptyState(systemImage: "exclamationmark.triangle", title: "activity.error.title", subtitleText: error)
@@ -66,7 +66,6 @@ struct ActivityView: View {
                     } label: {
                         ActivityRowView(
                             item: item,
-                            density: settings.listDensity,
                             isSelected: selectedItem?.id == item.id
                         )
                     }
@@ -185,16 +184,12 @@ struct ActivityView: View {
 
 private struct ActivityRowView: View {
     let item: ActivityItem
-    let density: RepoListDensity
     let isSelected: Bool
 
     var body: some View {
-        // R-01 §3.1.1：仅 .card 单 case 保留，紧凑布局已删。
-        ActivityRowSurface(item: item, density: density, isSelected: isSelected) {
-            switch density {
-            case .card:
-                card
-            }
+        // R-01 §3.1.1（2026-06-10 P1）：RepoListDensity 已删，直接渲染 card。
+        ActivityRowSurface(item: item, isSelected: isSelected) {
+            card
         }
     }
 
@@ -265,16 +260,14 @@ private struct ActivityRowView: View {
 
 private struct ActivityRowSurface<Content: View>: View {
     let item: ActivityItem
-    let density: RepoListDensity
     let isSelected: Bool
     private let content: Content
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
-    init(item: ActivityItem, density: RepoListDensity, isSelected: Bool, @ViewBuilder content: () -> Content) {
+    init(item: ActivityItem, isSelected: Bool, @ViewBuilder content: () -> Content) {
         self.item = item
-        self.density = density
         self.isSelected = isSelected
         self.content = content()
     }
@@ -286,17 +279,20 @@ private struct ActivityRowSurface<Content: View>: View {
     private var backgroundOpacity: Double {
         if isSelected { return 0.18 }
         if isHovered { return 0.08 }
-        return density == .card ? 0.045 : 0.0
+        // R-01 §3.1.1：RepoListDensity 已删，统一使用 card 密度的非 hover/selected 透明度。
+        return 0.045
     }
 
     var body: some View {
+        // R-01 §3.1.1（2026-06-10 P1）：RepoListDensity 已删，全部走 card 密度
+        // 的视觉常量（vertical 8 / horizontal 10 / cornerRadius 10）。
         content
-            .padding(.vertical, density == .card ? 8 : 4)
-            .padding(.horizontal, density == .card ? 10 : 8)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
             .padding(.leading, isSelected ? 5 : 0)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
-                RoundedRectangle(cornerRadius: density == .card ? 10 : 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(accentColor.opacity(backgroundOpacity))
             }
             .overlay(alignment: .leading) {
@@ -306,10 +302,10 @@ private struct ActivityRowSurface<Content: View>: View {
                     .padding(.vertical, 8)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: density == .card ? 10 : 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(accentColor.opacity(isSelected ? 0.42 : (isHovered ? 0.18 : 0.10)), lineWidth: 1)
             }
-            .contentShape(RoundedRectangle(cornerRadius: density == .card ? 10 : 8, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .onHover { hovering in
                 withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
                     isHovered = hovering

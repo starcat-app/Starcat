@@ -63,7 +63,7 @@ struct WeeklyContentView: View {
             Divider()
 
             if viewModel.isLoading && viewModel.items.isEmpty {
-                RepoSkeletonListView(density: settings.listDensity, rowCount: 8)
+                RepoSkeletonListView(rowCount: 8)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = viewModel.loadError, viewModel.items.isEmpty {
                 emptyState(systemImage: "exclamationmark.triangle", title: "activity.error.title", subtitleText: error) {

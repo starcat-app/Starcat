@@ -72,28 +72,6 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - 列表密度（R-01 后仅 .card；compact 已移除）
-
-/// 仓库列表的视觉密度。
-///
-/// R-01 §3.1.1 决策（2026-06-09）：删除 `.compact` 紧凑密度。
-/// 仅保留 `.card` 单 case 是为了让 row 视图签名（含 `density:` 参数）保持稳定，
-/// 等 Step 6.2/6.3 trending/weekly 数据层迁移完成后再一次性把 enum + 所有引用彻底删除。
-/// 当前阶段所有 `density: RepoListDensity` 入参实际只接收 `.card`。
-enum RepoListDensity: String, CaseIterable, Identifiable {
-    /// 卡片多行：头像 + full_name + description + 属性条。
-    case card
-
-    var id: String { rawValue }
-
-    /// 本地化显示名。
-    var displayName: LocalizedStringKey {
-        switch self {
-        case .card: return "settings.listDensity.card"
-        }
-    }
-}
-
 // MARK: - 列表排序（W4-4 D1）
 
 /// 仓库列表排序选项。
@@ -516,12 +494,6 @@ final class AppSettings {
         didSet { persist(key: Keys.appearanceMode, value: appearanceMode.rawValue) }
     }
 
-    /// 仓库列表行密度。
-    /// 写入即落盘；UI 通过 @Observable 自动响应。
-    var listDensity: RepoListDensity {
-        didSet { persist(key: Keys.repoListDensity, value: listDensity.rawValue) }
-    }
-
     /// 仓库列表排序（W4-4 D1）。默认 `.starredAtDesc`。
     var repoSortOption: RepoSortOption {
         didSet { persist(key: Keys.repoSortOption, value: repoSortOption.rawValue) }
@@ -813,9 +785,8 @@ final class AppSettings {
         let appearanceRaw = defaults.string(forKey: Keys.appearanceMode)
         self.appearanceMode = appearanceRaw.flatMap(AppearanceMode.init(rawValue:)) ?? .dark
 
-        // 读取或回落到默认值
-        let densityRaw = defaults.string(forKey: Keys.repoListDensity)
-        self.listDensity = densityRaw.flatMap(RepoListDensity.init(rawValue:)) ?? .card
+        // R-01 §3.1.1（2026-06-10 P1）：RepoListDensity 已删除，无需读取
+        // settings.repoListDensity（旧持久化值在升级后会被 UserDefaults 自然忽略）。
 
         let sortRaw = defaults.string(forKey: Keys.repoSortOption)
         self.repoSortOption = sortRaw.flatMap(RepoSortOption.init(rawValue:)) ?? .starredAtDesc
@@ -1054,7 +1025,7 @@ final class AppSettings {
     /// 验证迁移路径。生产代码外部不应引用本枚举（语义对齐 SPM target 的 internal）。
     enum Keys {
         static let appearanceMode = "settings.appearanceMode"  // W4-5 D1
-        static let repoListDensity = "settings.repoListDensity"
+        // R-01 §3.1.1（2026-06-10 P1）：repoListDensity key 已删除（RepoListDensity 枚举随 P1 整体清零）
         static let repoSortOption = "settings.repoSortOption"
         static let hideArchived = "settings.hideArchived"
         static let hideForks = "settings.hideForks"
