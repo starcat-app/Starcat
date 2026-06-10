@@ -163,23 +163,35 @@ extension RepoDetailHero {
 ///
 /// **不**在这里加 `.star` —— star/unstar 触发点是 hero stats 行的 ⭐/☆ chip
 /// （v1.0 §3.2.3 决策：避免 trailing actions 与 hero chip 双重入口造成混乱）。
+///
+/// **v1.3 设计修订（详见 docs/详细设计/18-三场景共用架构.md §3.2.2 amendment）**：
+/// 原设计 `.share(handler: () -> Void)` / `.ai(handler: () -> Void)` 携带 handler 入参，
+/// 但实现落地后 handler 是 dead 参数（4 个场景全传 `{}`），且 Scaffold 内部直接渲染
+/// `RepoShareButton(repo:)` / `RepoAIOpenButton(repo:)` 自治组件，没有外部注入点。
+/// 决策：把 `.share` / `.ai` 修订为无参 case；若需场景特化，用 `.custom` 显式注入。
 enum RepoDetailAction: Identifiable {
 
     /// 分享按钮（→ AI 摘要 + 分享卡）。
     ///
     /// Scaffold 内部用 `RepoShareButton(repo:)` 渲染，业务状态（progress / alert）
-    /// 由该组件自治。各场景**不需要**自己提供 handler——分享行为对所有 repo 一致。
+    /// 由该组件自治。**不带 handler**——分享行为对所有 repo 一致，无场景特化点。
+    /// 若未来需要特化（如 Activity-announcement 想跳别处），改用 `.custom` 显式注入。
     case share
 
     /// AI 窗口按钮（摘要 / 标签 / 对话三段）。
     ///
     /// Scaffold 内部用 `RepoAIOpenButton(repo:)` 渲染，复用现有 AI 窗口控制器。
+    /// **不带 handler**——同 `.share` 决策，AI 窗口行为对所有 repo 一致。
     case ai
 
     /// Weekly 场景独有：跳到该期周刊原文。
     case weeklyIssue(number: Int, url: URL)
 
-    /// 自定义 action（未来扩展用）。
+    /// 自定义 action（场景特化扩展点）。
+    ///
+    /// 当 `.share` / `.ai` 默认行为不能满足场景需求时（例如 Activity-announcement
+    /// 想自定义 share 流程），用本 case 显式注入：handler 闭包定义点击行为，label /
+    /// systemImage 决定按钮外观。这才是 handler 入参的合理归属。
     case custom(id: String, label: String, systemImage: String, handler: @MainActor () -> Void)
 
     var id: String {
