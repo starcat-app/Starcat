@@ -34,44 +34,63 @@
 //  即可,确保动画规格、隐藏逻辑、padding、登录守卫全场景一致。
 //
 //  ────────────────────────────────────────────────────────────────────────────
-//  isVisible 判定语义（**v1.7 修订, 2026-06-10**, dong4j bug 反馈）
+//  isVisible 判定语义（**v2.0 修订, 2026-06-10**, dong4j 真机验证后回归）
 //  ────────────────────────────────────────────────────────────────────────────
 //
-//  本组件**内部**用 `isAuthenticated && starredRegistry.contains(ghRepoId: repo.id)`
-//  判定是否渲染三段。**核心思想：以「是否 star」作为单一信任源**。
+//  本组件**内部**用 `isAuthenticated && repo.isStarred` 判定是否渲染三段。
+//  **核心思想：以本地 DB `is_starred` 列的内存镜像作单一信任源**。
 //
-//  v1.4 旧守卫 `isAuthenticated && repo.id != 0` 的硬伤：v9 schema 之后,
-//  trending row 自带 ghRepoId（非 0）→ `TrendingRepo.makeEphemeralRepo()` 用
-//  ghRepoId 作 `Repo.id` → 用户**没 star 过**的 trending repo 进详情页时
-//  `repo.id != 0` 仍然成立 → 三段被错误展示 + AI 摘要按钮可点 → 点 AI 摘要
-//  时 `INSERT INTO ai_summaries(repo_id=...)` FK 失败（ghRepoId 不在 repos 表）。
+//  ## 演进路径（重要历史避坑）
 //
-//  v1.7 守卫直接绑「真正的 starred 信号」：
+//  - **v1.4** 守卫 `isAuthenticated && repo.id != 0`：v9 schema 之后 trending row
+//    自带 ghRepoId(非 0)→ `TrendingRepo.makeEphemeralRepo()` 用 ghRepoId 作
+//    `Repo.id` → 用户**没 star 过**的 trending repo 进详情页时 `repo.id != 0`
+//    仍然成立 → 三段被错误展示 + AI 摘要按钮可点 → 点 AI 摘要时
+//    `INSERT INTO ai_summaries(repo_id=...)` FK 失败(ghRepoId 不在 repos 表)。
 //
-//  1. **`starredRegistry.contains(ghRepoId: repo.id)`（已 star）**：
-//     - StarredRegistry 是 R-01 v1.2 §4.3 的「写权限 fileprivate 锁死」单一
-//       信任源,内容 = 当前用户已 star 的所有 ghRepoId 集合;
-//     - 三段都是「已 star repo 的私人配置」（tags / notes / release 订阅）,
-//       未 star 不应该展示;
-//     - registry 是 `@Observable`,star/unstar 后所有详情页面板自动响应,
-//       不需要 view 层手动 reload。
+//  - **v1.7** 改为 `isAuthenticated && starredRegistry.contains(ghRepoId: repo.id)`：
+//    本意是绑「写权限 fileprivate 锁死」的单一信任源；但 dong4j 真机回归发现
+//    Manage 详情页**所有已 star repo 都不显**三段 + 点 ⭐ 走 star 而非 unstar。
+//    根因：`StarredRegistry.reload()` 是异步的(`AppDependencies.init` 末尾
+//    `Task { await bootstrapper.reload() }`),且 `SyncManager` 304 ETag 命中
+//    早退路径直接 `return`,**不触发 `onSyncCompleted` hook**(v2.0 已补上),
+//    任一路径未跑完 registry.ids 就是空集 → contains 永远返 false。
 //
-//  2. **`authSession.state.isAuthenticated`（已登录）**：
-//     - 双保险——理论上 registry 在登出时会被 `clearAll()` 清空,但加这个
-//       守卫让「未登录」语义在 view 层一眼看出,且与「⭐/☆ chip 未登录点击
-//       触发 signIn() 引导」对齐;
-//     - corner case：登出瞬间 registry 还没清 → 这一守卫兜住;登入瞬间
-//       registry 还没 bootstrap → 守卫保持收起直到 bootstrap 完成。
+//  - **v2.0** 回归 `repo.isStarred`(本提交):
+//    1. `Repo.isStarred` 是本地 DB `is_starred` 列的内存镜像,在 4 场景全部可信:
+//       - Manage:`fetchAllStarred` 已 filter `is_starred == true` → 真值
+//       - Trending 本地命中:`findByOwnerName` 返回的 Repo 含 isStarred 真值
+//       - Trending ephemeral:`makeEphemeralRepo()` 显式 `isStarred = false`
+//       - Activity:基于 Repo 表查询 → 真值
+//       - Weekly:同 Trending(三段降级 resolveRepo)
+//    2. **不依赖异步生效的 registry**,Manage 启动时无论 registry 是否 reload 完
+//       都能正确判定;
+//    3. 同时根治 v1.4 corner case：trending ephemeral 的 isStarred=false 直接
+//       拦住三段 / AI 按钮显示,不会再触发 FK 失败。
 //
-//  v1.4 旧守卫语义对比：
-//  - 旧：`isAuthenticated && repo.id != 0` ← 含义「本地有 row」≠「已 star」
-//  - 新：`isAuthenticated && contains(ghRepoId)` ← 含义「真已 star」
+//  ## 与 `StarActionService.toggle` 的关系
+//
+//  view 层用 `repo.isStarred`(同步 DB 真值)是稳的;但 `StarActionService.toggle`
+//  内部仍补充 registry corner case:`repo.isStarred || registry.contains(...)`
+//  任一为 true 即 unstar —— 解决「刚 star 完 displayRepo 还是 ephemeral
+//  isStarred=false 但 registry 已 add」的瞬间 stale 问题(详见
+//  `StarringSubsystem.swift` v2.0 修订段)。
+//
+//  ## 双条件 AND 守卫语义
+//
+//  - **`authSession.state.isAuthenticated`(已登录)**：未登录用户没有「我的标签 /
+//    笔记 / 订阅」概念。`AuthSession.signOut()` 出于「保护用户数据,重新登录后
+//    不丢笔记」**不**清空 `repo_tags` / `repo_notes` / `release_subscriptions`
+//    表 → 单 isStarred 守卫无法防住「已登出 + 本地有历史数据」corner case;
+//    必须显式加 isAuthenticated 兜住。
+//  - **`repo.isStarred`(已 star)**：三段都是「已 star repo 的私人配置」,
+//    未 star 不应该展示。
 //
 //  调用方**不需要**传 isLocalHit / isAuthenticated / isStarred 等开关——只要
 //  保证传入的 repo 对象是「最新已解析」的真实状态,本组件读
-//  `@Environment(AuthSession / AppDependencies)` 自动响应登录态 + star 态变化。
-//  v1.5 起调用方收口为唯一一处（Scaffold metadataPanel）,4 个 ContentView 不再
-//  各自调用,彻底消除分散判断的不一致风险。
+//  `@Environment(AuthSession.self)` 自动响应登录态 + 由 SwiftUI Identity
+//  在 repo 切换时重渲染。v1.5 起调用方收口为唯一一处（Scaffold metadataPanel）,
+//  4 个 ContentView 不再各自调用,彻底消除分散判断的不一致风险。
 //
 
 import SwiftUI
@@ -92,8 +111,8 @@ import SwiftUI
 /// }
 /// ```
 ///
-/// 可见性：`isAuthenticated && starredRegistry.contains(ghRepoId: repo.id)` 时
-/// 三段 spring 展开;任一条件不满足时收起（包括登出 / 未 star / 切到 ephemeral repo）。
+/// 可见性：`isAuthenticated && repo.isStarred` 时三段 spring 展开;任一条件不满足时
+/// 收起(包括登出 / 未 star / 切到 ephemeral repo / Manage 后已 unstar 但视图未刷新)。
 struct RepoLocalSections: View {
 
     let repo: Repo
@@ -102,29 +121,32 @@ struct RepoLocalSections: View {
     /// 语义对齐。通过 Environment 注入,4 个 ContentView 调用方零改动。
     @Environment(AuthSession.self) private var authSession
 
-    /// AppDependencies 注入（v1.7 修订）：访问 `starredRegistry` 派生 isVisible。
-    /// 用 dependencies 而非直接注 `StarredRegistry`,因为后者不是单独的环境对象,
-    /// 与 `RepoMetadataHeaderView` / `Scaffold` 注入约定保持一致。
-    @Environment(AppDependencies.self) private var dependencies
-
     /// horizontal padding：与 `RepoMetadataHeaderView` 保持一致 24pt,让三段视觉
     /// 边距与 hero 严格对齐（避免读者察觉 hero / body 区分）。
     private let horizontalPadding: CGFloat = 24
 
-    /// 三段是否可见。两条件 AND（v1.7 修订）：
+    /// 三段是否可见。两条件 AND(**v2.0 修订**, 2026-06-10):
     /// - `authSession.state.isAuthenticated`：登录是「我的标签/笔记/订阅」的语义前提
-    /// - `starredRegistry.contains(ghRepoId: repo.id)`：当前用户已 star
-    ///   （registry 是 R-01 v1.2 §4.3 写权限锁死的单一信任源,@Observable 让
-    ///    star/unstar 触发自动重渲染）
+    /// - `repo.isStarred`：当前用户已 star —— 直接读 `Repo.isStarred`(本地 DB
+    ///   `is_starred` 列的内存镜像),不再走 `StarredRegistry.contains(...)`。
     ///
-    /// **为什么不再用 `repo.id != 0`**：v9 schema 后 trending row 自带 ghRepoId
-    /// （非 0）,`TrendingRepo.makeEphemeralRepo` 用它作 `Repo.id` → 未 star 的
-    /// trending repo 也满足 `repo.id != 0` → 三段被错误展示 + AI 按钮可点导致
-    /// `ai_summaries` FK 失败。改用 `registry.contains(ghRepoId:)` 把守卫绑到
-    /// 真正的 starred 信号,根治此 corner case。
+    /// **为什么 v2.0 不再用 `starredRegistry.contains(ghRepoId:)`**:
+    /// v1.7 改用 registry 本意是绑「写权限 fileprivate 锁死」的单一信任源,但
+    /// `StarredRegistry.reload()` 是异步的(`AppDependencies.init` 末尾
+    /// `Task { await bootstrapper.reload() }`),且 `SyncManager` 304 ETag 命中
+    /// 早退路径直接 `return`,**不触发 `onSyncCompleted` hook**(v2.0 已补上),
+    /// 任一路径未跑完 registry.ids 就是空集 → contains 永远返 false → Manage
+    /// 详情页所有已 star repo 三段全部不显。改用 `repo.isStarred` 让 view 层
+    /// **不依赖异步生效的 registry**,Manage 启动时无论 registry 是否 reload 完
+    /// 都能正确判定。
+    ///
+    /// **为什么 v2.0 也不用 `repo.id != 0`(v1.4 旧守卫)**:v9 schema 后 trending
+    /// row 自带 ghRepoId(非 0),`TrendingRepo.makeEphemeralRepo` 用它作
+    /// `Repo.id` → 未 star 的 trending repo 也满足 `repo.id != 0` → 三段被错误
+    /// 展示 + AI 按钮可点导致 `ai_summaries` FK 失败。`isStarred` 直接读
+    /// `is_starred` 列,ephemeral 显式 false,不会撞这个 corner case。
     private var isVisible: Bool {
-        authSession.state.isAuthenticated
-            && dependencies.starredRegistry.contains(ghRepoId: repo.id)
+        authSession.state.isAuthenticated && repo.isStarred
     }
 
     var body: some View {

@@ -35,9 +35,11 @@ import AppKit
 ///   `RepoDetailScaffold.metadataPanel` 跟随折叠（4 场景同构事实推翻 v1.2 P0
 ///   原则;详见 `Starcat/Shared/Components/RepoDetailScaffold.swift` 文件头）
 ///
-/// 三段的可见性由 `RepoLocalSections` 内部根据
-/// `isAuthenticated && starredRegistry.contains(ghRepoId: repo.id)` 自动判定
-/// (v1.7 修订, 2026-06-10),ContentView / Scaffold 都不需要再传 isLocalHit 等开关参数。
+/// 三段的可见性由 `RepoLocalSections` 内部根据 `isAuthenticated && repo.isStarred`
+/// 自动判定(**v2.0 修订**, 2026-06-10,从 v1.7 的 registry.contains 回归到
+/// `Repo.isStarred` 字段。原因:registry.reload() 异步 + SyncManager 304 早退
+/// 不触发 hook 导致 Manage 三段空缺,详见 `RepoLocalSections.swift` 文件头),
+/// ContentView / Scaffold 都不需要再传 isLocalHit 等开关参数。
 struct RepoMetadataHeaderView<TrailingActions: View>: View {
     let repo: Repo
     let fallbackAccentColor: Color
