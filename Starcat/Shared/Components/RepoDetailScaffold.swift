@@ -76,6 +76,17 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// Stars stat chip 的 tooltip 本地化键（透传给 RepoMetadataHeaderView）。
     let starHelpKey: LocalizedStringKey
 
+    /// 详情页右下角浮动刷新按钮触发的异步动作（设计 §3.2.2 / §3.2.9）。
+    ///
+    /// `nil` → 不渲染浮动按钮（Trending / Weekly / Activity 详情页通常不传，
+    /// 它们的列表页 toolbar 已有刷新）。
+    /// `non-nil` → 在右下角浮动渲染 `SyncIconButton`，点击期间 isRefreshing=true
+    /// 触发持续旋转动画，await 闭包返回后回正。
+    ///
+    /// Manage 详情页传入 `await homeViewModel.reloadItems(forceRefresh: true)`
+    /// 以便用户在详情页直接刷整个仓库视图数据。
+    let onRefresh: (() async -> Void)?
+
     private let heroExtension_: () -> HeroExt
     private let body_: (@escaping (CGFloat) -> Void) -> Body
 
@@ -84,6 +95,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
 
     /// 顶部面板自然高度（由 CollapsibleRepoMetadataPanel 内部回填）。
     @State private var metadataPanelHeight: CGFloat = 0
+
+    /// 浮动刷新按钮的旋转/禁用状态。点击后立即 true，await onRefresh? 返回后回 false。
+    @State private var isRefreshing: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -98,6 +112,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         onStarTapped: @escaping () async throws -> Void,
+        onRefresh: (() async -> Void)? = nil,
         @ViewBuilder heroExtension: @escaping () -> HeroExt,
         @ViewBuilder body: @escaping (@escaping (CGFloat) -> Void) -> Body
     ) {
@@ -106,6 +121,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         self.fallbackAccentColor = fallbackAccentColor
         self.starHelpKey = starHelpKey
         self.onStarTapped = onStarTapped
+        self.onRefresh = onRefresh
         self.heroExtension_ = heroExtension
         self.body_ = body
     }
@@ -117,6 +133,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         onStarTapped: @escaping () async throws -> Void,
+        onRefresh: (() async -> Void)? = nil,
         @ViewBuilder body: @escaping (@escaping (CGFloat) -> Void) -> Body
     ) where HeroExt == EmptyView {
         self.init(
@@ -125,6 +142,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             fallbackAccentColor: fallbackAccentColor,
             starHelpKey: starHelpKey,
             onStarTapped: onStarTapped,
+            onRefresh: onRefresh,
             heroExtension: { EmptyView() },
             body: body
         )
@@ -134,6 +152,26 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             metadataPanel
             body_(updateScrollOffset)
+        }
+        // 设计 §3.2.2 / §3.2.9：详情页右下角浮动刷新按钮。仅当 onRefresh != nil 渲染。
+        // 用 overlay 而非 ZStack，避免影响主 VStack 的 frame 计算（按钮不挤压 body 高度）。
+        .overlay(alignment: .bottomTrailing) {
+            if let onRefresh {
+                SyncIconButton(
+                    isRefreshing: isRefreshing,
+                    disabled: isRefreshing,
+                    tooltip: String(localized: "repo.detail.refresh")
+                ) {
+                    guard !isRefreshing else { return }
+                    Task {
+                        isRefreshing = true
+                        await onRefresh()
+                        isRefreshing = false
+                    }
+                }
+                .padding(.trailing, 16)
+                .padding(.bottom, 16)
+            }
         }
         .id(repo.id)
         .navigationTitle(repo.name)
