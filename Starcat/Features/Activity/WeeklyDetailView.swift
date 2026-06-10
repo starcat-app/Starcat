@@ -109,7 +109,7 @@ struct WeeklyDetailView: View {
                 // tooltip 同步切换：本地命中 + 已 star 显示「取消 Star」，未 star 显示「重新 star」，
                 // 未命中时显示「打开 Stargazers 页面」，避免与下方 onStarTapped 闭包做的事不一致。
                 starHelpKey: starHelpKey(repo: displayRepo),
-                onStarTapped: { handleStarTapped(repo: displayRepo) },
+                onStarTapped: { try await handleStarTapped(repo: displayRepo) },
                 body: { onScrollOffset in
                     WeeklyDetailContent(
                         repo: displayRepo,
@@ -303,14 +303,17 @@ struct WeeklyDetailView: View {
 
     // MARK: - Star / Unstar 协调
 
-    /// Star stat 按钮点击（**严格按 R-01 §3.2.3 / Q2 决策**）：
+    /// Star stat 按钮点击（**严格按 R-01 §3.2.3 / Q1 / Q2 / N1 / N2 决策**）：
     ///
-    /// - **本地命中 + 已 star** → **直接 unstar，不弹 confirm**；
-    /// - **本地命中 + 未 star**（墓碑行）→ 调 GitHub API 重新 star；
-    /// - **未命中**（临时 Repo）→ 打开 GitHub stargazers 页面。
+    /// - **本地命中 + 已 star** → 直接 unstar（不弹 confirm，§3.2.3 / Q2）
+    /// - **本地命中 + 未 star**（墓碑行）→ 调 GitHub API 重新 star
+    /// - **未命中**（临时 Repo）→ 打开 GitHub stargazers 页面（不抛错，chip 不抖）
+    /// - **未登录** → `authSession.signIn()` 触发设备流，return（chip 不抖）
+    /// - **API 抛错** → throw 让 `StarStatChipButton` 触发抖动 + 短暂红色 600ms
     ///
-    /// 未登录走 `authSession.signIn()` 触发设备流登录，不直接跳 GitHub 网页。
-    private func handleStarTapped(repo: Repo) {
+    /// 注意签名是 `async throws`：失败由 chip 统一处理（抖动 + 日志），本方法
+    /// 不再 catch 写日志。
+    private func handleStarTapped(repo: Repo) async throws {
         guard authSession.state.isAuthenticated else {
             authSession.signIn()
             return
@@ -318,9 +321,9 @@ struct WeeklyDetailView: View {
 
         if isLocalHit {
             if repo.isStarred {
-                Task { await performUnstar(repo: repo) }
+                try await performUnstar(repo: repo)
             } else {
-                Task { await performStar(repo: repo) }
+                try await performStar(repo: repo)
             }
         } else {
             let url = URL(string: "\(repo.htmlUrl)/stargazers") ?? URL(string: repo.htmlUrl)!
@@ -332,32 +335,24 @@ struct WeeklyDetailView: View {
     /// `StarActionService.unstar(repo:)`，**不弹 confirm**。
     ///
     /// 服务内部完成 ① GitHub `DELETE /user/starred/{o}/{r}` ② DB markUnstarred 写
-    /// 墓碑行 ③ StarredRegistry remove。本 view 只负责调用 + 成功后刷一次 sidebar /
-    /// list + `resolveRepo` 重读本地真值（isStarred 已变 false）。
-    /// API 失败按 §3.2.3 应该 chip 抖动（hero 内部反馈），目前仅 AppLog 记日志。
-    private func performUnstar(repo: Repo) async {
-        do {
-            try await dependencies.starActionService.unstar(repo: repo)
-            await homeViewModel.refreshSidebar()
-            await homeViewModel.reloadItems(forceRefresh: true)
-            if let project { await resolveRepo(for: project) }
-        } catch {
-            AppLog.sync.error("weekly unstar failed: \(error.localizedDescription, privacy: .public)")
-        }
+    /// 墓碑行 ③ StarredRegistry remove。失败抛错让 chip 处理，本方法只在成功
+    /// 后刷一次 sidebar / list + `resolveRepo` 重读本地真值。
+    private func performUnstar(repo: Repo) async throws {
+        try await dependencies.starActionService.unstar(repo: repo)
+        await homeViewModel.refreshSidebar()
+        await homeViewModel.reloadItems(forceRefresh: true)
+        if let project { await resolveRepo(for: project) }
     }
 
     /// 本地命中但已取消 star（墓碑行）→ 重新 star。
     /// 走 `StarActionService.star(owner:repo:)` 单点：服务内部完成 GitHub
     /// `PUT /user/starred/{o}/{r}` + `GET /repos/{o}/{r}` 拉最新字段 + DB upsert
-    /// + `StarredRegistry.add`。本 view 只负责刷新本地展示。
-    private func performStar(repo: Repo) async {
-        do {
-            _ = try await dependencies.starActionService.star(owner: repo.owner, repo: repo.name)
-            await homeViewModel.refreshSidebar()
-            await homeViewModel.reloadItems(forceRefresh: true)
-            if let project { await resolveRepo(for: project) }
-        } catch {
-            AppLog.sync.error("weekly star failed: \(error.localizedDescription, privacy: .public)")
-        }
+    /// + `StarredRegistry.add`。失败抛错让 chip 处理。
+    private func performStar(repo: Repo) async throws {
+        _ = try await dependencies.starActionService.star(owner: repo.owner, repo: repo.name)
+        await homeViewModel.refreshSidebar()
+        await homeViewModel.reloadItems(forceRefresh: true)
+        if let project { await resolveRepo(for: project) }
     }
+
 }

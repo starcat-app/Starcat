@@ -38,7 +38,15 @@ import AppKit
 struct RepoMetadataHeaderView<TrailingActions: View>: View {
     let repo: Repo
     let fallbackAccentColor: Color
-    let onStarTapped: () -> Void
+
+    /// hero ⭐/☆ chip 触发的异步动作。
+    ///
+    /// 设计 §3.2.3 状态机要求 chip 内部能感知 loading / 失败这两个临时状态，
+    /// 所以闭包签名是 `() async throws -> Void`：
+    /// - 成功（不抛错）→ `StarStatChipButton` 内部 isLoading 复位，UI 由外层
+    ///   数据流（StarredRegistry @Observable）驱动重渲染（API 200 才变 UI）
+    /// - 抛错 → chip 抖动 + 短暂红色 600ms（不弹 toast / alert，§3.2.3 / Q2）
+    let onStarTapped: () async throws -> Void
     /// 是否渲染需要本地 `repo.id` 的三个区块（Tags / Notes / Release）。详见类型级注释。
     let showLocalSections: Bool
     /// Stars stat 按钮的 tooltip 本地化键。
@@ -54,7 +62,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         fallbackAccentColor: Color = .accentColor,
         showLocalSections: Bool = true,
         starHelpKey: LocalizedStringKey = "repo.unstar",
-        onStarTapped: @escaping () -> Void,
+        onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder trailingActions: () -> TrailingActions
     ) {
         self.repo = repo
@@ -164,13 +172,15 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 
     private var statsSection: some View {
         HStack(alignment: .center, spacing: 24) {
-            Button(action: onStarTapped) {
-                RepoStatItem(label: "repo.stars", value: repo.starsCount, systemImage: "star.fill", tint: .yellow)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .pressableHover()
-            .help(starHelpKey)
+            // R-01 §3.2.3 状态机：StarStatChipButton 封装 idle / loading /
+            // shake / error-flash 4 状态。已 star → ⭐ 实心黄；未 star →
+            // ☆ 空心灰；API 进行中 → ProgressView；失败 → 抖动 + 短暂红色。
+            StarStatChipButton(
+                isStarred: repo.isStarred,
+                count: repo.starsCount,
+                helpKey: starHelpKey,
+                action: onStarTapped
+            )
 
             Button {
                 if let url = URL(string: "\(repo.htmlUrl)/fork") {

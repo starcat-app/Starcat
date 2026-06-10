@@ -98,7 +98,7 @@ struct TrendingScaffoldShell: View {
             // 未 star（无论本地墓碑行还是 ephemeral）显示「star」。
             starHelpKey: repo.isStarred ? "repo.unstar" : "trending.star",
             onStarTapped: {
-                handleStarTapped(repo: repo)
+                try await handleStarTapped(repo: repo)
             },
             heroExtension: {
                 TrendingContributorsSection(contributors: trending.contributors)
@@ -151,54 +151,33 @@ struct TrendingScaffoldShell: View {
 
     // MARK: - Star / Unstar 协调
 
-    /// hero ⭐/☆ chip 点击（**严格按 R-01 §3.2.3 / Q2 决策**）：
+    /// hero ⭐/☆ chip 点击（**严格按 R-01 §3.2.3 / Q1 / Q2 / N1 / N2 决策**）：
     ///
-    /// - 已 star（本地命中且 isStarred = true）→ **直接 unstar，不弹 confirm**；
-    /// - 未 star（本地墓碑行 / 本地未命中 ephemeral）→ 直接 star。
+    /// - 已 star（本地命中且 isStarred = true）→ **直接 unstar，不弹 confirm**
+    /// - 未 star（本地墓碑行 / 本地未命中 ephemeral）→ 直接 star
+    /// - 未登录 → `authSession.signIn()` 触发设备流后**不抛错 return**（chip
+    ///   不抖动，因为这不是失败语义）
+    /// - API 抛错 → 直接重新抛出让 `StarStatChipButton` 触发抖动 + 短暂红色
+    ///   600ms（不弹 toast / alert）
     ///
-    /// API 失败时按 §3.2.3 应该 chip 抖动 + 短暂红色（不弹 toast / alert），目前
-    /// chip 内部反馈尚未实现（hero stats chip 是 Scaffold 内部组件），失败仅
-    /// `AppLog.sync.error` 记日志。
-    private func handleStarTapped(repo: Repo) {
+    /// 注意签名是 `async throws`：throws 不再 catch 写日志，由 chip 统一处理
+    /// 失败反馈（chip 内部 catch 后会调 AppLog.sync.error）。
+    private func handleStarTapped(repo: Repo) async throws {
         guard authSession.state.isAuthenticated else {
             authSession.signIn()
             return
         }
 
         if repo.isStarred {
-            Task { await performUnstar(repo: repo) }
-        } else {
-            Task { await performStar(repo: repo) }
-        }
-    }
-
-    /// 调 StarActionService 单点 star。
-    /// 服务内部完成 GitHub `PUT /user/starred/...` + `GET /repos/{o}/{r}` 拉最新
-    /// 字段 + DB upsert + StarredRegistry add。
-    private func performStar(repo: Repo) async {
-        do {
-            _ = try await dependencies.starActionService.star(owner: repo.owner, repo: repo.name)
-            // Star 后强制刷一次 sidebar / list，确保 manage 列表 row 状态同步。
-            await homeViewModel.refreshSidebar()
-            await homeViewModel.reloadItems(forceRefresh: true)
-            // 本 view 重新解析一次 → 切到本地真值，hero 三段开启。
-            await resolveRepo()
-        } catch {
-            AppLog.sync.error("trending star failed: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    /// 与 Manage / Activity / Weekly 详情页 unstar 流程对齐：直接调
-    /// `StarActionService.unstar(repo:)`，**不弹 confirm**。
-    private func performUnstar(repo: Repo) async {
-        do {
             try await dependencies.starActionService.unstar(repo: repo)
-            await homeViewModel.refreshSidebar()
-            await homeViewModel.reloadItems(forceRefresh: true)
-            // unstar 后 Repo.isStarred 改为 false（保留行作墓碑），重新解析以拿最新值。
-            await resolveRepo()
-        } catch {
-            AppLog.sync.error("trending unstar failed: \(error.localizedDescription, privacy: .public)")
+        } else {
+            _ = try await dependencies.starActionService.star(owner: repo.owner, repo: repo.name)
         }
+
+        // 成功后强制刷 sidebar / list，让 manage 列表 row 状态同步；
+        // 本 view 重新解析一次切到本地真值（hero 三段开启 / 关闭）。
+        await homeViewModel.refreshSidebar()
+        await homeViewModel.reloadItems(forceRefresh: true)
+        await resolveRepo()
     }
 }
