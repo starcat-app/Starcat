@@ -10,6 +10,13 @@
 //  - `expiresAt` 改 nullable（永不过期 = null）
 //  - 旧的非 envelope 顶层 `ShareResponseDTO` 已删除，改走 `ShareCreateResponse`
 //
+//  R-01 P1-3b 修订（2026-06-10）：
+//  - sharing-api 后端 JSON tag 全量改 snake_case（与 trending/weekly 风格一致）
+//  - Swift 属性名保持 camelCase（语言习惯不变）
+//  - 序列化转换由 ShareAPI actor 的 JSONEncoder/JSONDecoder 设
+//    `keyEncodingStrategy = .convertToSnakeCase` / `keyDecodingStrategy = .convertFromSnakeCase`
+//    统一处理，本文件无需写 CodingKeys
+//
 
 import Foundation
 
@@ -17,8 +24,8 @@ import Foundation
 
 /// 分享创建请求体（POST /api/v1/share 的 body）。
 ///
-/// 字段命名 camelCase 是历史遗留：sharing 后端的 ShareRepoRequest 也用 camelCase
-/// （与 trending/weekly 的 snake_case 不同）；本 DTO 仅作为请求体使用，与后端保持一致。
+/// 字段命名：Swift 属性名走 camelCase（语言习惯），网络传输时由 ShareAPI 的
+/// `keyEncodingStrategy = .convertToSnakeCase` 自动转 snake_case 与后端契约对齐。
 struct ShareRepoRequest: Codable, Sendable {
     let repo: ShareRepoDTO
     let aiSummary: ShareAISummaryDTO
@@ -55,7 +62,8 @@ struct ShareAISummaryDTO: Codable, Sendable {
 /// `POST /api/v1/share` 200 响应里 envelope 的 `data` 部分。
 ///
 /// 后端 Go 类型：`internal/model/share.go` `ShareCreateResponse`。
-/// 字段命名 camelCase 与请求 body 一致（同款历史遗留）。
+/// 字段命名：Swift 属性 camelCase + 网络传输 snake_case，由 ShareAPI 的
+/// `keyDecodingStrategy = .convertFromSnakeCase` 自动转换（详见文件头 P1-3b 注释）。
 ///
 /// 字段说明：
 /// - `shareUrl`：完整的分享页 URL（如 `https://starcat.ink/s/abc12345`）
