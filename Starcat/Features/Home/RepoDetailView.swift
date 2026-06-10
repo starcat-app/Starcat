@@ -86,13 +86,8 @@ struct RepoDetailView: View {
                         backendHint: nil
                     ),
                     onStarTapped: {
-                        Task {
-                            do {
-                                try await dependencies.starActionService.unstar(repo: repo)
-                            } catch {
-                                AppLog.sync.error("manage detail unstar failed: \(error.localizedDescription, privacy: .public)")
-                            }
-                        }
+                        // §3.2.3 状态机：throws 让 StarStatChipButton 抖动 + 短暂红色（不弹 alert）
+                        try await dependencies.starActionService.unstar(repo: repo)
                     }
                 ) { onScrollOffset in
                     ManageDetailContent(repo: repo, onScrollOffset: onScrollOffset)

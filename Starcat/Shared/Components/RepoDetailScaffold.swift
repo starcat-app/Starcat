@@ -60,10 +60,15 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 详情页通用视图数据（trailingActions / translation / backendHint）。
     let viewData: RepoDetailViewData
 
-    /// Hero stats 行 ⭐/☆ chip 触发的回调。
-    /// 设计 §3.2.3：仅 hero stats 行的 chip 是 star/unstar 入口，trailing actions
-    /// 不重复包含 star。
-    let onStarTapped: () -> Void
+    /// Hero stats 行 ⭐/☆ chip 触发的异步动作（设计 §3.2.3 状态机）。
+    ///
+    /// - 成功（不抛错）→ chip 自动退出 loading；UI 由 `StarredRegistry` /
+    ///   `Repo.isStarred` 字段变更驱动重渲染（API 200 才变 UI 原则）
+    /// - 抛错 → chip 抖动 + 短暂红色 600ms，不弹 toast / alert
+    /// - 闭包内部应：① 未登录走 `authSession.signIn()` 后 return（不抛错）
+    ///   ② 已 star 调 `dependencies.starActionService.unstar(repo:)`
+    ///   ③ 未 star 调 `dependencies.starActionService.star(owner:repo:)`
+    let onStarTapped: () async throws -> Void
 
     /// Activity 等场景的 fallback 颜色（无语言时 Hero 渐变使用）。
     let fallbackAccentColor: Color
@@ -97,7 +102,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         fallbackAccentColor: Color = .accentColor,
         heroShowsLocalSections: Bool = false,
         starHelpKey: LocalizedStringKey = "repo.unstar",
-        onStarTapped: @escaping () -> Void,
+        onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder heroExtension: @escaping () -> HeroExt,
         @ViewBuilder body: @escaping (@escaping (CGFloat) -> Void) -> Body
     ) {
@@ -118,7 +123,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         fallbackAccentColor: Color = .accentColor,
         heroShowsLocalSections: Bool = false,
         starHelpKey: LocalizedStringKey = "repo.unstar",
-        onStarTapped: @escaping () -> Void,
+        onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder body: @escaping (@escaping (CGFloat) -> Void) -> Body
     ) where HeroExt == EmptyView {
         self.init(
