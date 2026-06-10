@@ -334,18 +334,23 @@ struct WeeklyDetailView: View {
         }
     }
 
-    /// 与 Activity / Manage 详情页 unstar 流程对齐。
+    /// 与 Manage / Trending / Activity 详情页 unstar 流程**完全对齐**：走
+    /// `StarActionService.unstar(repo:)` 单点。
+    ///
+    /// 服务内部完成 ① GitHub `DELETE /user/starred/{o}/{r}` ② DB markUnstarred 写
+    /// 墓碑行 ③ StarredRegistry remove。本 view 只负责调用 + 失败时设错误态 + 成功
+    /// 后刷一次 sidebar / list 让 manage 列表跟随同步，最后 `resolveRepo` 重读
+    /// 本地真值（isStarred 已变 false）。
+    ///
+    /// **不再 hand-roll**：之前直接调 `apiClient.unstar` + `repoRepository.markUnstarred`
+    /// + `homeViewModel.refreshSidebar` 的写法绕过了 `StarredRegistry`，会让 hero ⭐ chip
+    /// 与各列表 ✓ 标记不同步（registry 是 `@Observable` 全局单例，跨场景驱动 UI），
+    /// R-01 §3.1.6 明确要求 star/unstar 必须走 service 单点。
     private func performUnstar(repo: Repo) async {
-        guard case .authenticated(let user) = authSession.state else {
-            unstarError = "auth.needLogin"
-            return
-        }
         do {
-            try await dependencies.apiClient.unstar(owner: repo.owner, repo: repo.name)
-            try await dependencies.repoRepository.markUnstarred(repoId: repo.id, userID: user.id)
+            try await dependencies.starActionService.unstar(repo: repo)
             await homeViewModel.refreshSidebar()
             await homeViewModel.reloadItems(forceRefresh: true)
-            // 取消 star 后本地 isStarred 改 false；重新查一次保证 UI 状态最新。
             if let project { await resolveRepo(for: project) }
         } catch {
             unstarError = "repo.unstar.actionFailed"
@@ -353,15 +358,18 @@ struct WeeklyDetailView: View {
         }
     }
 
-    /// 本地有但已取消 star → 重新 star。
-    /// 调远端 star → 等下一次全量同步把 isStarred=true 写回；当下手动刷新一次本地 repo。
+    /// 本地命中但已取消 star（墓碑行）→ 重新 star。
+    /// 走 `StarActionService.star(owner:repo:)` 单点：服务内部完成 GitHub
+    /// `PUT /user/starred/{o}/{r}` + `GET /repos/{o}/{r}` 拉最新字段 + DB upsert
+    /// + `StarredRegistry.add`。本 view 只负责刷新本地展示 + 错误兜底。
     private func performStar(repo: Repo) async {
         guard authSession.state.isAuthenticated else {
             authSession.signIn()
             return
         }
         do {
-            try await dependencies.apiClient.star(owner: repo.owner, repo: repo.name)
+            _ = try await dependencies.starActionService.star(owner: repo.owner, repo: repo.name)
+            await homeViewModel.refreshSidebar()
             await homeViewModel.reloadItems(forceRefresh: true)
             if let project { await resolveRepo(for: project) }
         } catch {
