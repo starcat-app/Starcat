@@ -15,11 +15,10 @@
 //    跟着 hero 一起折叠收起。需要外部通过 `RepoDetailScaffold(heroExtension:)` 接入。
 //  - **body slot**：`ReadmeStateView`（README WebView + 翻译入口可选）
 //
-//  R-01 决策（§3.2.3）：
-//  - **未 star** 时不渲染 tags / notes / release 三段（Scaffold 已通过 `heroShowsLocalSections=false`
-//    控制；本 ContentView 也不重复渲染这三段）。
-//  - **已 star** 时由 Scaffold 的 `heroShowsLocalSections=true` 控制 hero 渲染三段；
-//    本 ContentView 仍只负责 contributors + readme。
+//  R-01 v1.2 P0（2026-06-10）决策（§3.2.4 / §3.2.6）：
+//  - **未 star（ephemeral, repo.id == 0）** 时 RepoLocalSections 自动隐藏三段；
+//  - **已 star（本地命中, repo.id != 0）** 时 RepoLocalSections 渲染三段，
+//    且用户从未 star → star 后 spring 0.25s 平滑展开。
 //
 //  ────────────────────────────────────────────────────────────────────────────
 //  数据驱动
@@ -52,20 +51,26 @@ struct TrendingDetailContent: View {
     @Environment(AuthSession.self) private var authSession
 
     var body: some View {
-        ReadmeStateView(
-            state: readmeVM.state,
-            baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
-            owner: repo.owner,
-            repo: repo.name,
-            onScrollOffsetChange: onScrollOffset,
-            // R-01：仅本地命中（id != 0）的 repo 才提供翻译入口。
-            // 避免 ephemeral repo 用 id=0 走翻译缓存造成串扰。
-            translationControl: repo.id != 0 ? ReadmeTranslationControl(
-                repo: repo,
-                translationVM: translationVM,
-                settings: settings
-            ) : nil
-        ) {
+        VStack(alignment: .leading, spacing: 0) {
+            // R-01 §3.2.4：三段在 ContentView 渲染（repo.id != 0 才显示），
+            // 用户在 trending 详情点 star → resolveRepo 切到本地真值（id != 0）
+            // → 三段 spring 0.25s 平滑展开。
+            RepoLocalSections(repo: repo)
+
+            ReadmeStateView(
+                state: readmeVM.state,
+                baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
+                owner: repo.owner,
+                repo: repo.name,
+                onScrollOffsetChange: onScrollOffset,
+                // R-01：仅本地命中（id != 0）的 repo 才提供翻译入口。
+                // 避免 ephemeral repo 用 id=0 走翻译缓存造成串扰。
+                translationControl: repo.id != 0 ? ReadmeTranslationControl(
+                    repo: repo,
+                    translationVM: translationVM,
+                    settings: settings
+                ) : nil
+            ) {
             // README 重新加载走 trending 链路。
             //
             // **为什么不调 readmeVM.reload(repo:)**：reload 内部走 manage 缓存表（PK
@@ -79,10 +84,11 @@ struct TrendingDetailContent: View {
                 repo: repo.name,
                 isLoggedIn: authSession.state.isAuthenticated
             )
-        } onLogin: {
-            authSession.signIn()
+            } onLogin: {
+                authSession.signIn()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

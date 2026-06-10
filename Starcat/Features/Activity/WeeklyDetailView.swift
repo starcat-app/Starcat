@@ -105,7 +105,10 @@ struct WeeklyDetailView: View {
                     backendHint: nil
                 ),
                 fallbackAccentColor: ActivityCategory.weekly.iconColor,
-                heroShowsLocalSections: isLocalHit,
+                // R-01 v1.2 P0：三段渲染已下沉到 WeeklyDetailContent (RepoLocalSections)，
+                // hero 不再持有 showLocalSections 概念；可见性由 RepoLocalSections
+                // 内部根据 repo.id != 0 自动判定。
+                //
                 // tooltip 同步切换：本地命中 + 已 star 显示「取消 Star」，未 star 显示「重新 star」，
                 // 未命中时显示「打开 Stargazers 页面」，避免与下方 onStarTapped 闭包做的事不一致。
                 starHelpKey: starHelpKey(repo: displayRepo),

@@ -92,8 +92,10 @@ struct TrendingScaffoldShell: View {
                 translation: repo.id != 0 ? ReadmeTranslationContext(fullName: repo.fullName) : nil,
                 backendHint: nil
             ),
-            // 本地命中 → 三段（tags / notes / release）渲染；未命中 → 隐藏。
-            heroShowsLocalSections: isLocalHit,
+            // R-01 v1.2 P0：三段渲染已下沉到 ContentView (RepoLocalSections)，
+            // hero 不再持有 showLocalSections 概念；可见性由 RepoLocalSections
+            // 内部根据 repo.id != 0 自动判定。
+            //
             // tooltip 与 onStarTapped 行为对齐：已 star 显示「取消 star」；
             // 未 star（无论本地墓碑行还是 ephemeral）显示「star」。
             starHelpKey: repo.isStarred ? "repo.unstar" : "trending.star",

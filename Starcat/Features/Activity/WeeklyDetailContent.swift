@@ -10,10 +10,12 @@
 //
 //  Weekly 详情 = `RepoDetailScaffold` (Hero) + body slot
 //
-//  本 ContentView 只负责 README WebView 渲染：
+//  本 ContentView 负责：
+//  - `RepoLocalSections`：Tags / Notes / Release 三段（v1.2 P0 起从 hero 下沉，
+//    自动按 repo.id != 0 控制可见性，star 后 spring 0.25s 平滑展开）
+//  - `ReadmeStateView`：README WebView 渲染
 //  - **不**渲染贡献者列（trending 独有；weekly 没有 contributors 字段）
 //  - **不**渲染 weekly issue 按钮（由 Scaffold 的 trailingActions 接入）
-//  - **不**渲染 tags / notes / release 三段（Scaffold heroShowsLocalSections 决定）
 //
 //  ────────────────────────────────────────────────────────────────────────────
 //  README 加载策略
@@ -46,26 +48,32 @@ struct WeeklyDetailContent: View {
     @Environment(AuthSession.self) private var authSession
 
     var body: some View {
-        ReadmeStateView(
-            state: readmeVM.state,
-            // 拼接 blob/HEAD：与 trending / manage 详情页一致，让 README 内的相对
-            // 链接能正确解析为 https://github.com/owner/repo/blob/HEAD/xxx。
-            baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
-            owner: repo.owner,
-            repo: repo.name,
-            onScrollOffsetChange: onScrollOffset,
-            // weekly 详情不接翻译入口（与 trending 详情对齐）。
-            translationControl: nil
-        ) {
-            readmeVM.loadTrending(
+        VStack(alignment: .leading, spacing: 0) {
+            // R-01 §3.2.4：三段在 ContentView 渲染。weekly 本地命中（id != 0）
+            // 时显示 tags/notes/release，未命中（ephemeral）时隐藏。
+            RepoLocalSections(repo: repo)
+
+            ReadmeStateView(
+                state: readmeVM.state,
+                // 拼接 blob/HEAD：与 trending / manage 详情页一致，让 README 内的相对
+                // 链接能正确解析为 https://github.com/owner/repo/blob/HEAD/xxx。
+                baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
                 owner: repo.owner,
                 repo: repo.name,
-                isLoggedIn: authSession.state.isAuthenticated
-            )
-        } onLogin: {
-            authSession.signIn()
+                onScrollOffsetChange: onScrollOffset,
+                // weekly 详情不接翻译入口（与 trending 详情对齐）。
+                translationControl: nil
+            ) {
+                readmeVM.loadTrending(
+                    owner: repo.owner,
+                    repo: repo.name,
+                    isLoggedIn: authSession.state.isAuthenticated
+                )
+            } onLogin: {
+                authSession.signIn()
+            }
+            .environment(readmeVM)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .environment(readmeVM)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
