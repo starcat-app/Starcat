@@ -10,6 +10,13 @@
 //  - 强制 Bearer Auth（apiKey 字段 + Authorization 头）
 //  - 错误统一走 `StarcatEnvelopeNetworkError`（不再用本地化 ShareAPIError）
 //
+//  R-01 P1-3b 修订（2026-06-10）：
+//  - sharing-api 后端 JSON tag 全量改 snake_case，与 trending/weekly 风格一致
+//  - 本 actor 的 JSONEncoder/JSONDecoder 同步设 .convertToSnakeCase /
+//    .convertFromSnakeCase，Swift 端属性名仍用 camelCase（语言习惯）
+//  - StarcatEnvelope / StarcatErrorEnvelope 的 schema_version 等顶层 key 走
+//    explicit CodingKeys，strategy 不影响（CodingKeys 优先级更高）
+//
 
 import Foundation
 
@@ -53,6 +60,11 @@ actor ShareAPI {
         }
         self.encoder = JSONEncoder()
         self.decoder = JSONDecoder()
+        // P1-3b：sharing-api 后端 JSON 字段全 snake_case；Swift 属性名仍 camelCase，
+        // 靠 strategy 自动双向转换，无需在每个 DTO 写 CodingKeys。
+        // StarcatEnvelope / StarcatErrorEnvelope 内部走 explicit CodingKeys，strategy 不会覆盖。
+        self.encoder.keyEncodingStrategy = .convertToSnakeCase
+        self.decoder.keyDecodingStrategy = .convertFromSnakeCase
     }
 
     /// 热更新 baseURL（用户在设置页改地址后由 `AppDependencies` 推送进来）。
