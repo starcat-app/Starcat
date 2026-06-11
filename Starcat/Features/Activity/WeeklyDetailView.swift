@@ -226,11 +226,37 @@ struct WeeklyDetailView: View {
     /// 决定 `displayRepo` 与 `isLocalHit`。
     ///
     /// 步骤：
-    /// 1. 查本地 DB → 命中即返回（保证 tags/notes/release 完整）；
-    /// 2. 未命中 → 调 GitHub API；
-    /// 3. API 失败 → 用 WeeklyProject 现有字段构造最小 Repo（保证 hero 不白屏）。
+    /// 1a. **优先 findById(displayRepo?.id)** 精确匹配 — 用于 star/unstar 完成后
+    ///     第二次 resolveRepo,避开 owner/name 大小写 / 重命名问题(详见 D-24)。
+    /// 1b. findById 不命中(displayRepo nil / id=0 fallback / 历史未命中) → 走
+    ///     `findByOwnerName(owner:name:)` 兜底。
+    /// 2. 全部不命中 → 调 GitHub API,构造临时 Repo;
+    /// 3. API 失败 → 用 WeeklyProject 现有字段构造最小 Repo(保证 hero 不白屏)。
     private func resolveRepo(for project: WeeklyProject) async {
-        // 1) 本地查找
+        // 1a) 本地查找 — id 精确匹配 优先
+        //
+        // **D-24 followup**: weekly 项目 owner/name 源自阮一峰周刊 markdown 解析,
+        // 偶有大小写不一致(如 `Vercel/swr` vs GitHub 真值 `vercel/swr`)。SQLite
+        // 默认 BINARY collation 导致 findByOwnerName 漏掉,而 ghRepoId 全局
+        // 唯一且不变,findById 精确命中无大小写陷阱。
+        //
+        // 触发时机:第二次以后调用 resolveRepo(handleStarTapped 之后),此时
+        // displayRepo 已经有真 ghRepoId(来自初次 GitHub API fetch / star 后
+        // toggle 同步覆盖)。
+        if let id = displayRepo?.id, id > 0 {
+            do {
+                if let local = try await dependencies.repoRepository.findById(id) {
+                    displayRepo = local
+                    isLocalHit = true
+                    isFetchingRemote = false
+                    return
+                }
+            } catch {
+                AppLog.sync.error("weekly: local repo findById(\(id, privacy: .public)) failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        // 1b) findById 未命中 → owner/name 兜底
         do {
             if let local = try await dependencies.repoRepository.findByOwnerName(
                 owner: project.owner,
@@ -350,6 +376,37 @@ struct WeeklyDetailView: View {
             return
         }
         try await dependencies.starActionService.toggle(repo: repo)
+
+        // ─────────────────────────────────────────────────────────────────
+        // D-22 followup(2026-06-11, 详见 §6.3 D-24):
+        // toggle 完成后**两步双保险**让 hero star 立即同步真值:
+        //
+        // 1. 用 registry 派生 isStarred 显式更新 displayRepo —— 第一道防线:
+        //    无论 resolveRepo 步骤 1 命中与否, hero 当帧就能拿到新 isStarred。
+        //    registry 是 toggle 内部 `_add`/`_remove` 的同步真值源(@MainActor
+        //    @Observable, 同步内存写入), toggle await 返回后 registry 已是
+        //    新真值,不受 owner/name 解析准确性影响。
+        //
+        // 2. 再调 resolveRepo(for:) —— 第二道防线:把本地 DB 完整字段(topics /
+        //    license / forks / stars 真值)合回 displayRepo。已升级为 `findById`
+        //    优先命中(详见 resolveRepo 文档段 D-24 followup 注释),避开
+        //    weekly owner/name 大小写不一致漏命中陷阱;命中后 displayRepo
+        //    的 isStarred 跟 registry 同步(均为 toggle 真值)。
+        //
+        // dong4j 2026-06-11 复现:weekly 详情第一次 star 一个 repo 后,卡片立
+        // 即变实心(走 sidebar.refreshSidebar / list reload 路径),但 hero 永
+        // 远空心直到切换 weekly 项目重建 view 才正常 —— 根因就是上面两步
+        // 之前都没做(只调 resolveRepo,且 resolveRepo 走 owner/name 失败 →
+        // 退化到 GitHub API → 写 displayRepo.isStarred=false 覆盖了刚刚 star
+        // 完的真值)。
+        //
+        // Repo 是 value type 且 `var isStarred: Bool` 可写,直接 copy + 覆值即可。
+        // ─────────────────────────────────────────────────────────────────
+        let nowStarred = dependencies.starredRegistry.contains(ghRepoId: repo.id)
+        var updated = repo
+        updated.isStarred = nowStarred
+        displayRepo = updated
+
         await homeViewModel.refreshSidebar()
         await homeViewModel.reloadItems(forceRefresh: true)
         if let project { await resolveRepo(for: project) }

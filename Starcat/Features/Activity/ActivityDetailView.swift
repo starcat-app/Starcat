@@ -26,6 +26,20 @@ struct ActivityDetailView: View {
     /// Activity 里点星标 / 仓库 / 建议活动时污染右侧主详情页的 README 状态。
     @State private var readmeVM: ReadmeViewModel?
 
+    /// 当前活跃的 Repo（hero / RepoLocalSections 等都基于此渲染）。
+    ///
+    /// **D-24 修订**（2026-06-11）：原本直接用 `item.repo` 派生 hero，但 `item` 是
+    /// 父 View（HomeView）传入的 prop，star/unstar 完成后 `item.repo.isStarred`
+    /// 不会自动更新（parent 的 `selectedActivityItem` 是 @State 不跟随 toggle），
+    /// 导致：① star 已 starred repo 后 hero 不变空心（unstar 失效）；② 极少
+    /// 数 corner case star 未 star repo 后 hero 不变实心（activity 列表已
+    /// `.filter { $0.isStarred }` 通常不出现，但走 suggestion 等 kind 可能）。
+    ///
+    /// 修法：加 @State 缓存活跃 repo，初始化为 `item.repo`，handleStarTapped
+    /// 后用 `starredRegistry` 派生 isStarred 显式覆值（详见 handleStarTapped 注释）。
+    /// 与 Trending / Weekly 详情同构（都有 displayRepo + registry-derived 兜底）。
+    @State private var displayRepo: Repo?
+
     // R-01 §3.2.3 / §5.4：原 `repoMetadataPanelCollapseProgress` / `repoMetadataPanelHeight`
     // / `showUnstarConfirm` / `unstarError` / `isUnstarring` 状态已迁移：
     // - Hero 折叠由 `RepoDetailScaffold` 内部状态管理
@@ -48,6 +62,12 @@ struct ActivityDetailView: View {
         }
         .task(id: readmeLoadKey(for: item)) {
             await loadReadmeIfNeeded(for: item)
+        }
+        // **D-24**：切换 item 时把 displayRepo 同步到新 item.repo 真值；
+        // ActivityItem.id 已 Identifiable，稳定 key。同一 item 内部 star/unstar 不会
+        // 触发本 task 重跑（id 不变），交由 handleStarTapped 显式更新 displayRepo。
+        .task(id: item?.id) {
+            displayRepo = item?.repo
         }
     }
 
@@ -235,7 +255,11 @@ struct ActivityDetailView: View {
     ///   `RepoLocalSections.swift` v2.0 修订段)。
     @ViewBuilder
     private func repoBackedDetailPage(_ item: ActivityItem) -> some View {
-        if let repo = item.repo, let readmeVM {
+        // **D-24**：优先用 @State displayRepo（含 toggle 后 registry-derived
+        // 真值），nil 时 fallback 到 item.repo（首帧 .task 还未跑）。
+        // SwiftUI view diff 走 Repo 全字段 ==（D-22 修订），displayRepo 任一
+        // 字段变化即触发 child body 重算 → hero StarStatChipButton 重渲染。
+        if let repo = displayRepo ?? item.repo, let readmeVM {
             RepoDetailScaffold(
                 repo: repo,
                 viewData: RepoDetailViewData(
@@ -430,18 +454,45 @@ struct ActivityDetailView: View {
         return [.share, .ai]
     }
 
-    /// hero ⭐/☆ chip 点击(**v2.0 修订**)。
+    /// hero ⭐/☆ chip 点击（**v2.0 修订** + **D-24 修订** 2026-06-11）。
     ///
     /// 与 manage / trending / weekly 同构——`StarActionService.toggle(repo:)`
     /// 内部按 `repo.isStarred || registry.contains(...)` 任一为 true 派生
-    /// star / unstar 分支(详见 `StarringSubsystem.swift` v2.0 修订段)。
+    /// star / unstar 分支（详见 `StarringSubsystem.swift` v2.0 修订段）。
     /// 失败抛错让 `StarStatChipButton` 触发抖动 + 短暂红色 600ms。
+    ///
+    /// **D-24 修订**：toggle 完成后**用 registry 派生 isStarred 显式更新 displayRepo**。
+    ///
+    /// 为什么需要：
+    /// - 历史实现 hero 直接绑 `item.repo`（HomeView prop 透传），item 是父 View
+    ///   `selectedActivityItem` 的当前快照；`refreshSidebar / reloadItems` 不会
+    ///   改写 selectedActivityItem 这个 @State，所以 `item.repo.isStarred` 永远
+    ///   是进入详情页那一刻的值。
+    /// - dong4j 2026-06-11 复现：「活动 → 星标 / 仓库 / 建议」3 个分类下点击
+    ///   已 star repo 的 hero ⭐ chip，期望走 unstar 让 hero 变空心 + 三段
+    ///   （Tags/Notes/Release）收起；实际 toggle 成功了（DB / registry 都
+    ///   写对了，列表 row 也消失），但 hero ⭐ 仍是实心、三段仍显示。
+    /// - registry 是 toggle 内部 `_add` / `_remove` 的同步真值源（@MainActor
+    ///   @Observable，同步内存写入），toggle await 返回后 registry 已是新真值。
+    ///   覆值后 displayRepo 触发 SwiftUI view diff（D-22 Repo 全字段 ==），
+    ///   hero ⭐ chip 当帧重渲染。
+    ///
+    /// 三段收起：RepoLocalSections 内部守卫 `repo.isStarred`（v2.0），displayRepo
+    /// 更新到 isStarred=false 后三段自然隐藏，trailingActions 也派生新真值。
     private func handleStarTapped(repo: Repo) async throws {
         guard authSession.state.isAuthenticated else {
             authSession.signIn()
             return
         }
         try await dependencies.starActionService.toggle(repo: repo)
+
+        // **D-24**：registry 派生新 isStarred 显式更新 displayRepo，让 hero / 三段
+        // 当帧拿到真值（不依赖父 View selectedActivityItem 重新派发）。
+        let nowStarred = dependencies.starredRegistry.contains(ghRepoId: repo.id)
+        var updated = repo
+        updated.isStarred = nowStarred
+        displayRepo = updated
+
         await homeViewModel.refreshSidebar()
         await homeViewModel.reloadItems(forceRefresh: true)
     }

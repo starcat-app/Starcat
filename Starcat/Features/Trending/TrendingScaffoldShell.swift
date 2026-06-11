@@ -195,8 +195,30 @@ struct TrendingScaffoldShell: View {
         }
         try await dependencies.starActionService.toggle(repo: repo)
 
-        // 成功后强制刷 sidebar / list,让 manage 列表 row 状态同步;
-        // 本 view 重新解析一次切到本地真值(hero 三段开启 / 关闭)。
+        // ─────────────────────────────────────────────────────────────────
+        // D-22 followup(2026-06-11, 详见 §6.3 D-24):
+        // toggle 完成后先**用 registry 派生 isStarred 显式更新 displayRepo**,
+        // 再走 sidebar / list 刷新 + resolveRepo。
+        //
+        // 为什么不能只靠 resolveRepo:
+        // - resolveRepo 步骤 1 调 findByOwnerName(owner:name:)。trending 这条
+        //   path 一般能命中(owner/name 来自 GitHub Trending HTML, 与 DB 真值
+        //   大小写一致), 但 weekly 路径源自阮一峰周刊 markdown 解析,大小写
+        //   不规范时不命中 → 退化到 GitHub API → 新 Repo 又是 isStarred=false,
+        //   导致 hero 永远不实心。本次为三个详情页(trending/weekly/activity)
+        //   统一加这条 registry-derived 兜底,语义一致 + 抗 owner/name 漂移。
+        // - registry 是 toggle 内部 `_add`/`_remove` 的同步真值源(@MainActor
+        //   @Observable, 同步内存写入), toggle await 返回后 registry 已是新真值。
+        //
+        // Repo 是 value type 且 `var isStarred: Bool` 可写,直接 copy + 覆值即可。
+        // resolveRepo() 后续会再次覆盖 displayRepo(合回本地完整字段,如 topics /
+        // license / forksCount 等), isStarred 不变(本地真值与 registry 同步)。
+        // ─────────────────────────────────────────────────────────────────
+        let nowStarred = dependencies.starredRegistry.contains(ghRepoId: repo.id)
+        var updated = repo
+        updated.isStarred = nowStarred
+        displayRepo = updated
+
         await homeViewModel.refreshSidebar()
         await homeViewModel.reloadItems(forceRefresh: true)
         await resolveRepo()
