@@ -463,7 +463,7 @@ struct StarcatRepoCardDTOTests {
         #expect(resp.data[2].homepage == nil)
     }
 
-    // MARK: - R-01 v1.2 GRDB v8 4 字段消化（2026-06-10）
+    // MARK: - R-01 v1.2 StarcatRepoCardDTO 扩展 4 字段消化（2026-06-10）
     //
     // 验证 owner_avatar / subscribers_count / default_branch / open_issues_count
     // 在 JSON → DTO → Repo 全链路上零字段丢失，且老 fixture（缺这 4 字段）按预期退化。
