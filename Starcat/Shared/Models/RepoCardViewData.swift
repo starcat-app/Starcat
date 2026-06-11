@@ -28,7 +28,8 @@
 //    因为它们的视觉骨架与 repo 卡片差异较大（左上 kind icon、右上相对时间、body 是
 //    release notes 等）。这些走 ActivityViewModel 自己的视图数据，沿用现状。
 //  - star / repository / suggestion 三类是 repo-backed 的，可以走 RepoCardViewData
-//    + `CardBadge.activityKind(_, _)` 携带左上 kind icon 和右上时间。
+//    + `CardBadge.activityKind(_)` 携带头像左下 kind icon 角标。
+//    （v2.0 起右上相对时间已删；详见 `CardBadge.activityKind` 文档注释。）
 //
 
 import Foundation
@@ -103,9 +104,19 @@ enum CardBadge: Hashable, Sendable {
     /// Weekly 场景：项目首次被收录的期号（如「第 399 期」）。
     case weeklyIssue(Int)
 
-    /// Activity 场景：左上 kind icon + 右上相对时间。
-    /// `Date` 用于显示「3 天前」相对时间；`ActivityCategory` 决定 icon。
-    case activityKind(ActivityCategory, Date)
+    /// Activity 场景：头像左下角 kind icon 圆角标。
+    /// `ActivityCategory` 决定 icon 形状与配色。
+    ///
+    /// **v2.0（2026-06-11 dong4j 决策）去掉 `Date` 第二参**：
+    /// 原 `.activityKind(ActivityCategory, Date)` 用 `Date` 在卡片右上角渲染
+    /// `RelativeDateBadge`「3 天前」相对时间，但 `Date` 的真实语义按 kind 漂移
+    /// 严重（`.star` = starredAt / `.repository` & `.suggestion` = pushedAt /
+    /// `.release` 走老的 `ActivityRowView` 不进这里），在 `.all` 视图同框时
+    /// 用户根本分不清"5 分钟前"指 star 行为还是 repo push。dong4j 体测后判定
+    /// 右上时间戳"信息密度低 + 语义漂移"得不偿失,选择整列去掉,头像左下 kind icon
+    /// + 行内 chip 区已经能传达足够信号。`.release` / `.announcement` 走
+    /// `ActivityRowView`（不进 UnifiedRepoRow）的时间戳保留不动。
+    case activityKind(ActivityCategory)
 }
 
 // MARK: - Repo → RepoCardViewData

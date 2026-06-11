@@ -54,8 +54,8 @@
 //
 //  R-01 设计意图本就包含「Activity-repo-backed 卡片」（见上面 line 14 替代列表），
 //  但 P0 落地时 Activity 全走 `ActivityRowView` 老路径 —— `UnifiedRepoRow` 的
-//  `case .activityKind(category, date) = card.badge` 分支（avatarWithKindBadge
-//  头像角圆角标 + 右上 RelativeDateBadge）一直没真正被消费。
+//  `case .activityKind = card.badge` 分支（avatarWithKindBadge 头像角圆角标）
+//  一直没真正被消费。
 //
 //  v1.9 在 `Features/Activity/ActivityView.rowContent(for:)` 按 `item.kind` 派发：
 //  - `star` / `repository` / `suggestion`（**纯仓库型**）→ UnifiedRepoRow，
@@ -66,6 +66,26 @@
 //
 //  Activity row 不传 `showStarredCheckmark`（默认 false）—— `ActivityViewModel.filter
 //  { $0.isStarred }` 已过滤 100% starred,挂 ✓ 视觉冗余,与 Manage 同策略。
+//
+//  ────────────────────────────────────────────────────────────────────────────
+//  v2.0 修订（2026-06-11, dong4j 反馈）：Activity 右上 RelativeDateBadge 删除
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  dong4j 体测后判定：Activity 卡片右上角的相对时间戳信息密度低且语义漂移
+//  严重 —— `.star` 时戳是 `starredAt`（用户行为）/ `.repository` & `.suggestion`
+//  时戳都是 `pushedAt`（仓库代码推送）/ `.release` 走老的 `ActivityRowView`
+//  根本不进这里。在 `.all` 视图同框时用户无法分辨「5 分钟前」对应哪种事件。
+//
+//  v2.0 把 `CardBadge.activityKind(ActivityCategory, Date)` 改为
+//  `.activityKind(ActivityCategory)` 删 Date 参数，UnifiedRepoRow 内
+//  RelativeDateBadge 整段渲染移除。`.release` / `.announcement` 的时间戳
+//  在 `ActivityRowView` 内不动（release name + publishedAt 是该 kind 核心信息）。
+//
+//  设计反思：原 R-01 v1.2 §3.1.5 表格规划「Activity 卡片：头像 kind icon +
+//  右上相对时间」是按 kind 时戳「都是该事件发生时间」想当然的均质假设。
+//  落地后才发现 `.repository` / `.suggestion` 都用 `pushedAt`（非用户视角的
+//  「事件发生」），且 `.suggestion` 是启发式推荐而非时间事件 —— v2.0 整列删除
+//  是承认这个时戳维度不够强一致来支持统一渲染。
 //
 
 import SwiftUI
@@ -148,10 +168,12 @@ struct UnifiedRepoRow: View {
 
                         Spacer(minLength: 0)
 
-                        // Activity 场景右上角相对时间（与 kind icon 在头像角分开）
-                        if case .activityKind(_, let date) = card.badge {
-                            RelativeDateBadge(date: date)
-                        }
+                        // v2.0（2026-06-11 dong4j 决策）：Activity 卡片右上角 RelativeDateBadge 已删。
+                        // 原渲染 `item.createdAt` 在 `.star`(=starredAt) / `.repository` & `.suggestion`
+                        // (=pushedAt) 之间语义漂移，`.all` 视图同框时用户分不清「5 分钟前」指 star
+                        // 行为还是 repo push；信息密度低 + 语义漂移得不偿失。头像左下 kind icon +
+                        // 行内 chip 区已能传达足够信号。`.release` / `.announcement` 走老的
+                        // `ActivityRowView`（不进 UnifiedRepoRow）的时间戳保留不动。
                     }
 
                     if let description = card.description, !description.isEmpty {
@@ -198,7 +220,7 @@ struct UnifiedRepoRow: View {
     /// 头像 + Activity kind icon 角标
     @ViewBuilder
     private var avatarWithKindBadge: some View {
-        if case .activityKind(let category, _) = card.badge {
+        if case .activityKind(let category) = card.badge {
             // 头像右下角 kind icon 圆形小角标
             ZStack(alignment: .bottomTrailing) {
                 RemoteAvatar(urlString: RepoAvatarURL.from(owner: card.owner), size: 40)
