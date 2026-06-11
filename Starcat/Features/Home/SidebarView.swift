@@ -20,6 +20,10 @@ struct SidebarView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(AuthSession.self) private var authSession
+    /// 系统级"减少动效"开关。开启时把 spring 折叠动画退化为瞬切，避免给晕动症 / 偏好
+    /// 静态界面的用户增加负担。与项目内 `ListRowRevealModifier` / `RepoLocalSections`
+    /// / `SmartSearchField` 等动画路径处理方式一致。
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// HOM-PROFILE 2026-06-05：贡献草坪数据来源。@Observable，payload 变化时 sidebar 自动重渲染。
     @Environment(ContributionService.self) private var contributionService
     /// 2026-06-06 A 方案：用户 profile 缓存服务。Sidebar `.task(id: user.login)`
@@ -95,6 +99,42 @@ struct SidebarView: View {
     /// 逗号），对绝大多数 starred 数都够。超过时 Text 会被截到 60pt 容器内，但实际
     /// 用户超过 100,000 stars 概率极低，不需要为此牺牲稳定性。
     private static let trailingFixedWidth: CGFloat = 60
+
+    // MARK: - 折叠动画规格（2026-06-11 dong4j 体验优化：对齐 Xcode 文件树的丝滑感）
+
+    /// Sidebar 折叠/展开统一动画曲线。
+    ///
+    /// 选用 `.spring(response: 0.28, dampingFraction: 0.86)` 的依据：
+    /// - 与 `Starcat/Shared/Components/RepoLocalSections.swift` 三段
+    ///   `.spring(response: 0.25, dampingFraction: 0.85)` 同族,保证全 App 的"展开/收起"
+    ///   节奏一致(都是"短促 spring + 微回弹")。
+    /// - response 比 RepoLocalSections 略放宽到 0.28s：sidebar 折叠的内容比详情页三段
+    ///   更细粒度(单条行 ~28pt 高,每个 section 可能十几行),稍长一点能让 row 的
+    ///   move transition 看得清,而不是"几乎瞬切"。
+    /// - dampingFraction 0.86：相比纯 easeInOut 会有~3% 的回弹幅度,刚好让 chevron 旋转和
+    ///   行滑出有一点物理感,但不会"晃动两下"。Xcode 文件树的折叠也是这种感觉。
+    ///
+    /// 历史：2026-06-11 之前用 `.easeInOut(duration: 0.2)`,体验偏"硬"且 chevron / 行
+    /// 用同曲线但 List 内 row insertion 默认动画并未被替换 → 视觉上 chevron 转完了但行
+    /// 还在缓慢淡入,节奏脱节。改 spring 后曲线统一,且与项目内其他展开/收起动画对齐。
+    private static let disclosureSpring: Animation = .spring(response: 0.28, dampingFraction: 0.86)
+
+    /// 被折叠的 row(languageRow / trendingLanguageRow / activityCategoryRow / TagWallView)
+    /// 入场/出场 transition：从顶部滑入 + 淡入,出场反向。
+    ///
+    /// 与 `RepoLocalSections.swift` 三段的 transition 完全一致(`.move(edge: .top).combined(with: .opacity)`),
+    /// 视觉语言统一。macOS 上 SwiftUI `List(.sidebar)` 对 row `.transition` 的支持自
+    /// macOS 14 起趋于稳定,实测 macOS 15+ 上 row 滑入/滑出和 chevron 旋转能精准同步。
+    ///
+    /// 注：这个 transition 必须与 `withAnimation(disclosureSpring)` 配合才会用 spring
+    /// 曲线播放;否则 SwiftUI 会用默认曲线,效果退化为单纯的 fade。
+    private static let disclosureRowTransition: AnyTransition =
+        .move(edge: .top).combined(with: .opacity)
+
+    /// 根据 reduceMotion 返回应使用的动画(开启时返回 nil 让 SwiftUI 瞬切)。
+    private var disclosureAnimation: Animation? {
+        reduceMotion ? nil : Self.disclosureSpring
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -234,6 +274,8 @@ struct SidebarView: View {
             // W4 A6：Tags 段。
             // HOM-179：改为标签墙形式，横向排列自动换行；多选 OR 过滤。
             // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
+            // 2026-06-11：TagWallView 加 disclosureRowTransition,折叠时整块标签墙
+            // 从顶部滑入 + 淡入,与 RepoLocalSections 三段的展开节奏对齐。
             Section {
                 if tagsExpanded && !viewModel.tags.isEmpty {
                     TagWallView(
@@ -244,6 +286,7 @@ struct SidebarView: View {
                             viewModel.toggleSelectedTag(tagId)
                         }
                     )
+                    .transition(Self.disclosureRowTransition)
                 }
             } header: {
                 tagSectionHeader
@@ -251,10 +294,14 @@ struct SidebarView: View {
 
             if !viewModel.languageStats.isEmpty {
                 // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
+                // 2026-06-11：每行加 disclosureRowTransition,展开时逐行从顶部滑入。
+                // List 内 row .transition 在 macOS 14+ 趋于稳定,与 chevron 旋转 + spring
+                // 节奏完全同步,接近 Xcode 文件树的体验。
                 Section {
                     if languagesExpanded {
                         ForEach(viewModel.languageStats) { stat in
                             languageRow(stat)
+                                .transition(Self.disclosureRowTransition)
                         }
                     }
                 } header: {
@@ -279,10 +326,12 @@ struct SidebarView: View {
             if trendingLanguagesExpanded {
                 // 2026-06-11 改造：列表数据从后端 `/api/v1/languages` 聚合而来（含 __uncategorized__）。
                 // 后端返空 / 不可达时 store 内部自动退化到 fallbackList，所以这里 displayList 永远非空。
+                // disclosureRowTransition：每行折叠/展开时从顶部滑入 + 淡入,与 chevron 旋转 spring 同步。
                 ForEach(dependencies.trendingLanguageStore.displayList, id: \.key) { agg in
                     let language = agg.asTrendingLanguage
                     // count = 0 时不展示数字（fallback 列表 / 后端尚未返回时）；> 0 才展示
                     trendingLanguageRow(language, count: agg.count > 0 ? agg.count : nil)
+                        .transition(Self.disclosureRowTransition)
                 }
             }
         } header: {
@@ -296,8 +345,10 @@ struct SidebarView: View {
             activityCategoryRow(.all)
 
             if activityCategoriesExpanded {
+                // disclosureRowTransition：与 Manage / Trending 同款"顶部滑入 + 淡入"。
                 ForEach(activityLeafCategories) { category in
                     activityCategoryRow(category)
+                        .transition(Self.disclosureRowTransition)
                 }
             }
         } header: {
@@ -307,7 +358,7 @@ struct SidebarView: View {
 
     private var activityCategorySectionHeader: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(disclosureAnimation) {
                 activityCategoriesExpanded.toggle()
             }
         } label: {
@@ -531,7 +582,7 @@ struct SidebarView: View {
 
     private var trendingLanguageSectionHeader: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(disclosureAnimation) {
                 trendingLanguagesExpanded.toggle()
             }
         } label: {
@@ -570,17 +621,19 @@ struct SidebarView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .rotationEffect(.degrees(isExpanded ? 90 : 0))
-            .animation(.easeInOut(duration: 0.2), value: isExpanded)
+            // 2026-06-11：chevron 旋转与行展开/收起共用 disclosureSpring,保证转动节奏
+            // 与行的 move+opacity transition 完全同步。详情见 disclosureSpring 注释。
+            .animation(disclosureAnimation, value: isExpanded)
     }
 
     private func toggleTags() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(disclosureAnimation) {
             tagsExpanded.toggle()
         }
     }
 
     private func toggleLanguages() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(disclosureAnimation) {
             languagesExpanded.toggle()
         }
     }
