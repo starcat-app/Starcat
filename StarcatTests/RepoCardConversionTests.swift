@@ -211,7 +211,7 @@ struct RepoCardConversionTests {
     /// `StarcatRepoCardDTO` 的 `subscribers` / `openIssues` 是 `Int`（默认 0），传入参数
     /// 用 `Int` 而非 `Int?` 与之对齐；TrendingRepo 内会把 0 当作"未设置"在 UI 隐藏。
     ///
-    /// R-05（2026-06-11，10 列直接进 v4 建表）：加 10 个 default 参数（watchers/topics/
+    /// R-05 trending 详情页字段补齐 10 字段（2026-06-11）：加 10 个 default 参数（watchers/topics/
     /// license/homepage/isArchived/isFork/isPrivate/pushedAt/createdAt/updatedAt），全部
     /// default 保持老调用兼容。新测试通过显式传参验证 R-05 字段透传链路。
     private func makeTrendingRepo(
