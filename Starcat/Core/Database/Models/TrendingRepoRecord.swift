@@ -69,6 +69,36 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
     var defaultBranch: String?
     var openIssuesCount: Int?
 
+    // MARK: - R-05 trending 详情页字段补齐（2026-06-11，直接进 v4 建表）
+    //
+    // 与 `repos` 表的对应字段同名同语义，全部 Optional 容 trending-api 偶发字段缺失。
+    //
+    // **R-05 动机**：trending 详情页 hero 区显示 watchers / topics / license / homepage /
+    // created / updated 等字段；之前 ephemeral fallback 路径填 0 / nil，dong4j 真机看
+    // 到"Watchers 0 / Created - / Topics N/A"才发现 trending-api 后端早就返这些字段
+    // 了，是客户端 `TrendingRepo` 转换层丢字段。详见 `TrendingModels.swift` 同期注释。
+    //
+    // **schema 落地**：直接写在 v4 `createTrendingRepos` 建表 SQL 里，无独立迁移版本
+    // （dong4j 决策「产品都没有上线，直接改 schema 就可以了」）。本地需删一次 sqlite
+    // 重建：`~/Library/Containers/com.starcat.app/Data/Library/.../starcat.sqlite`。
+    //
+    // **持久化语义**：
+    // - `topics` TEXT：JSON 数组字符串（如 `["ai","swift"]`），与 `repos.topics` 完全
+    //   一致；不另起 trending_topics 明细表，保持持久化 1:1 映射 DTO。
+    // - `is_archived / is_fork / is_private` INTEGER（SQLite 用 0/1 存 Bool，GRDB 自动桥）。
+    // - 时间字段 ISO8601 字符串，与 `repos.created_at / updated_at / pushed_at` 对齐。
+
+    var watchersCount: Int?
+    var topics: String?
+    var license: String?
+    var homepage: String?
+    var isArchived: Bool?
+    var isFork: Bool?
+    var isPrivate: Bool?
+    var pushedAt: String?
+    var createdAt: String?
+    var updatedAt: String?
+
     // MARK: - 缓存维度
 
     /// ISO8601 字符串。仅用于"缓存于 X 前"展示，不参与 TTL 判断（dong4j 决策 ttl_c：不设 TTL）。
@@ -96,6 +126,17 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
         case subscribersCount = "subscribers_count"
         case defaultBranch = "default_branch"
         case openIssuesCount = "open_issues_count"
+        // R-05 trending 详情页字段补齐（2026-06-11，直接进 v4 建表）
+        case watchersCount = "watchers_count"
+        case topics
+        case license
+        case homepage
+        case isArchived = "is_archived"
+        case isFork = "is_fork"
+        case isPrivate = "is_private"
+        case pushedAt = "pushed_at"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
         case cachedAt = "cached_at"
     }
 
@@ -145,7 +186,18 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
             ownerAvatar: ownerAvatar.flatMap(URL.init(string:)),
             subscribersCount: subscribersCount,
             defaultBranch: defaultBranch,
-            openIssuesCount: openIssuesCount
+            openIssuesCount: openIssuesCount,
+            // R-05 trending 详情页字段补齐 10 字段透传（持久化 → 内存领域模型）
+            watchersCount: watchersCount,
+            topics: topics,
+            license: license,
+            homepage: homepage.flatMap(URL.init(string:)),
+            isArchived: isArchived,
+            isFork: isFork,
+            isPrivate: isPrivate,
+            pushedAt: pushedAt,
+            createdAt: createdAt,
+            updatedAt: updatedAt
         )
     }
 
@@ -202,6 +254,17 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
             subscribersCount: repo.subscribersCount,
             defaultBranch: repo.defaultBranch,
             openIssuesCount: repo.openIssuesCount,
+            // R-05 trending 详情页字段补齐 10 字段（领域模型 → 持久化）
+            watchersCount: repo.watchersCount,
+            topics: repo.topics,
+            license: repo.license,
+            homepage: repo.homepage?.absoluteString,
+            isArchived: repo.isArchived,
+            isFork: repo.isFork,
+            isPrivate: repo.isPrivate,
+            pushedAt: repo.pushedAt,
+            createdAt: repo.createdAt,
+            updatedAt: repo.updatedAt,
             cachedAt: ISO8601DateFormatter.shared.string(from: cachedAt)
         )
     }
@@ -222,8 +285,11 @@ extension TrendingRepo {
     /// 从持久化字段直接构造（GRDB 行 → 业务模型），与 DTO 初始化路径并存。
     ///
     /// R-01 v1.2 GRDB v8（2026-06-10）：扩 4 字段（ownerAvatar / subscribersCount /
-    /// defaultBranch / openIssuesCount）；调用方（`TrendingRepoRecord.toDomain()`）已
-    /// 同步更新。所有 4 字段都 Optional，老缓存行 NULL 不影响构造。
+    /// defaultBranch / openIssuesCount）；所有字段 Optional，老缓存行 NULL 不影响构造。
+    ///
+    /// R-05（2026-06-11，10 列直接进 v4 建表）：再扩 10 字段（watchersCount / topics /
+    /// license / homepage / isArchived / isFork / isPrivate / pushedAt / createdAt /
+    /// updatedAt）；全部 default = nil，老 callsite 无需逐个补参。
     init(
         ghRepoId: Int64,
         fullName: String,
@@ -240,7 +306,17 @@ extension TrendingRepo {
         ownerAvatar: URL? = nil,
         subscribersCount: Int? = nil,
         defaultBranch: String? = nil,
-        openIssuesCount: Int? = nil
+        openIssuesCount: Int? = nil,
+        watchersCount: Int? = nil,
+        topics: String? = nil,
+        license: String? = nil,
+        homepage: URL? = nil,
+        isArchived: Bool? = nil,
+        isFork: Bool? = nil,
+        isPrivate: Bool? = nil,
+        pushedAt: String? = nil,
+        createdAt: String? = nil,
+        updatedAt: String? = nil
     ) {
         self.ghRepoId = ghRepoId
         self.fullName = fullName
@@ -258,5 +334,15 @@ extension TrendingRepo {
         self.subscribersCount = subscribersCount
         self.defaultBranch = defaultBranch
         self.openIssuesCount = openIssuesCount
+        self.watchersCount = watchersCount
+        self.topics = topics
+        self.license = license
+        self.homepage = homepage
+        self.isArchived = isArchived
+        self.isFork = isFork
+        self.isPrivate = isPrivate
+        self.pushedAt = pushedAt
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
     }
 }
