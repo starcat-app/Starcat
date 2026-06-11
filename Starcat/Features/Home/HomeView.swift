@@ -165,7 +165,10 @@ struct HomeView: View {
                 // 2026-06-02 21:38：透传给 SidebarHeaderView 让头像背景的语言色在 Trending 页也能联动
                 currentTrendingRepo: selectedTrendingRepo,
                 // 2026-06-05：Activity 页没有统一 Repo 模型，直接透传 ActivityItem 收口后的 accent 色。
-                currentActivityTintColor: selectedActivityItem?.accentColor
+                // 2026-06-11 D-29：weekly 分类没有 selectedActivityItem，单独走 weekly project 语言色派生路径,
+                // 让 sidebar 头像背景在 weekly 内切换 project 时也能跟着 GitHub 语言色联动,
+                // 与 manage / trending / activity-repo-backed 三家行为同构(详见 derivedActivityTintColor doc)。
+                currentActivityTintColor: derivedActivityTintColor
             )
                 .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
         } content: {
@@ -542,6 +545,37 @@ struct HomeView: View {
     }
 
     // MARK: - 辅助
+
+    /// Activity 页面顶部头像卡的 tint 色派生（**D-29 修订**, 2026-06-11）。
+    ///
+    /// 取色优先级（与 `SidebarHeaderView.sidebarTintColor` 第 3 档对齐 — Activity 页面 5 类详情）：
+    /// 1. **weekly 分类 + 已选中 weekly project**：
+    ///    - 有语言 → `LanguageColor.color(for:)` 走 GitHub 语言色映射;
+    ///    - 无语言 → `ActivityCategory.weekly.iconColor` 兜底分类色。
+    /// 2. **其它分类**（公告 / 发布 / 关注 / 星标 / 仓库 / 建议）→ `selectedActivityItem?.accentColor`
+    ///    （`ActivityItem.accentColor` 已在源头收口"语言色优先 / 分类色兜底"语义,详见
+    ///    `ActivityModels.swift`）。
+    ///
+    /// **D-29 修复点**：weekly 分类下没有 `selectedActivityItem`（weekly 选中走
+    /// `dependencies.weeklySelectionService.selectedProject` 真源,与 ActivityItem 模型解耦）,
+    /// 此前 `currentActivityTintColor` 只透传 `selectedActivityItem?.accentColor` 永远 nil,
+    /// 导致 sidebar 头像背景在 weekly 内切换 project 时不变(走系统 .accentColor 兜底)。
+    /// 修法把 weekly project 的语言色派生收口到本 computed property,与 manage / trending /
+    /// activity-repo-backed 三家行为同构 — 切 repo / project 时头像背景跟着 GitHub 语言色变化。
+    ///
+    /// 注:`WeeklySelectionService` 是 `@MainActor @Observable`,本 computed property 在 view body
+    /// 内被读取时 SwiftUI Observation 框架自动订阅 `selectedProject` 变化 → 重新计算 →
+    /// SidebarHeaderView 收到新 tint → 头像背景平滑过渡。
+    private var derivedActivityTintColor: Color? {
+        if selectedSidebarPage == .activity, selectedActivityCategory == .weekly,
+           let project = dependencies.weeklySelectionService.selectedProject {
+            if let language = project.language, !language.isEmpty {
+                return LanguageColor.color(for: language)
+            }
+            return ActivityCategory.weekly.iconColor
+        }
+        return selectedActivityItem?.accentColor
+    }
 
     /// README 加载状态的纯文本签名，用于驱动 `.onChange` 在 .loaded 切换时刷新翻译 VM。
     ///
