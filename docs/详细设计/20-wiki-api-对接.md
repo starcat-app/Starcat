@@ -1,811 +1,534 @@
-# 20. starcat-wiki-api 客户端对接
+# 20. starcat-wiki-api 客户端对接方案
 
-> **本文是 `supports/starcat-wiki-api` 的【客户端对接手册】**。
-> 服务端的设计与权衡详见 `19-wiki集成.md`（§3-7）。本文只解决「客户端（Starcat App）怎么调、怎么处理、什么情况下降级」。
+> **状态：客户端实施完成，全量自动化测试通过，待 dong4j 真机验收。**
 >
-> **目标读者**：要在 Starcat 客户端接入 wiki-api 的 iOS / macOS 工程师（dong4j）。
+> **评审结论（dong4j，2026-06-11）**：
+> 1. 权限边界开放：未登录、未 Star 的 repo 也可使用 Wiki。
+> 2. 首期范围收敛：Starcat 只做详情页单仓库查询。
+> 3. Weekly Issue 必须排在最前，因为它是 Weekly 分组特有入口。
+>
+> 本文基于 2026-06-11 的实际代码重新审计：
+> - 客户端：`Starcat/` 当前主分支
+> - 后端：`supports/starcat-wiki-api`，commit `ac237e9`
+> - 原始设计：`docs/详细设计/19-wiki集成.md`
+>
+> 本文以当前代码事实为准，不直接照搬 19 号文档。19 号文档保留产品背景和历史决策，
+> 但其中客户端契约、状态枚举、批量语义和依赖装配方案已有明显过期内容。
 
 ---
 
-## 0. 元信息
+## 1. 结论
 
-| 项 | 值 |
-|---|---|
-| 服务名 | `starcat-wiki-api` |
-| 端口 | `5004` |
-| 基础路径 | `http://127.0.0.1:5004`（本地） / `https://starcat-wiki-api.fly.dev`（生产） |
-| 鉴权 | `Authorization: Bearer <api-key>`（与 trending / weekly / sharing 共用同一把 Key） |
-| 响应格式 | `Envelope<T>`（`schema_version` + `data` + `meta`），与 supports 4 个 API byte-level 一致 |
-| 错误格式 | `ErrorEnvelope`（`code` + `message` + `details?`） |
-| 服务端版本 | `v1.0.0`（2026-06-10 初始化，详见 `supports/starcat-wiki-api/CHANGELOG.md`） |
+首期采用一个窄范围、可独立验收的接入方案：
 
-> ⚠️ 本号文档成文于 2026-06-11，**端点形态、字段名、模型结构均已与 `main.go` / `handler/probe.go` / `internal/probe/types.go` e2e 对齐**。如果未来实现改了，先改服务端代码、再改本文档。
+1. Starcat 只调用 `GET /api/v1/wikis?owner=&repo=`，不接 batch/admin。
+2. 详情页通过一个统一的 `RepoWikiMenu` 展示已确认收录的外部文档站。
+3. 组件挂在 `RepoDetailScaffold`，一次覆盖 Manage、Trending、Weekly、Activity 四类 repo 详情页。
+4. `WikiAPI` 是始终可构造的非 optional actor；网络失败是请求状态，不是依赖装配失败。
+5. 不在 App 启动时探活，不因一次 `/healthz` 失败永久隐藏功能。
+6. 首期不增加客户端数据库、不批量预热、不做 source 开关、不做“Try Open”猜测跳转。
+7. Wiki 查询不依赖 GitHub 登录，也不依赖 repo 是否已 Star。
 
----
-
-## 1. 核心能力（一句话）
-
-> **给定一个 GitHub `owner/repo`，告诉你 DeepWiki / Zread / Google Code Wiki 这三个外部文档站有没有收录它；如果收录了，给出跳转 URL。**
-
-Starcat 客户端的「详情页右上角 → 打开外部文档」按钮组用这个数据驱动。
+这个范围已经能完成核心价值：“打开任意 repo 详情时，若 DeepWiki / Zread / Code Wiki 已收录，
+用户可直接跳转阅读”，同时避免把后端 v2 尚不稳定的异步 batch 状态机带进客户端。
 
 ---
 
-## 2. 鉴权
+## 2. 审计结果
 
-### 2.1 与其他 3 个 API 的关系
+### 2.1 可以直接复用的现有能力
 
-| 服务 | 端口 | 鉴权 |
+| 能力 | 当前实现 | 接入结论 |
 |---|---|---|
-| sharing-api | 5001 | `Bearer <api-key>` |
-| trending-api | 5002 | `Bearer <api-key>` |
-| weekly-api | 5003 | `Bearer <api-key>` |
-| **wiki-api** | **5004** | **`Bearer <api-key>`** |
+| 统一 endpoint | `AppEndpoints` | 新增 `Wiki` 命名空间 |
+| 服务配置 | `ThirdPartyService.allCases` + `ServicesSettingsTab` | 新增 `.wiki` 后自动生成设置区块 |
+| BYOK | `AppSettings` + Keychain + `StarcatAPIKeyResolver` | 按现有“每服务独立覆盖，production key 兜底”规则复用 |
+| 热更新 | `AppDependencies.setServiceURL/setServiceAPIKey` | switch 新增 `.wiki` |
+| 健康检查 | `ServiceHealthChecker` | 设置页手动测试连接时复用 |
+| Envelope | `StarcatEnvelopeDecoder` | 直接解码 `[WikiStatusItem]` |
+| 详情页统一骨架 | `RepoDetailScaffold` | Wiki 入口应在此统一接入 |
+| 测试网络桩 | `URLProtocolStub` | 客户端单测使用固定响应，不依赖公网 |
 
-**用户视角**：「一把 Starcat API Key 通行 4 个后端」。**客户端实现**：`StarcatAPIKey` 解析器共用同一个 Keychain item，按 `case .wiki` 路由到 `wiki-api`。
+### 2.2 原 19/20 号方案中不合理或已过期的部分
 
-### 2.2 鉴权失败响应
-
-```http
-HTTP/1.1 401 Unauthorized
-Content-Type: application/json; charset=utf-8
-
-{
-  "schema_version": 1,
-  "error": {
-    "code": "UNAUTHORIZED",
-    "message": "missing or invalid Authorization header"
-  }
-}
-```
-
-> 客户端处理：`401` → 标记 `wikiAPI` 不可用（解耦到 `AppDependencies`，详见 §6.2）+ 设置页"服务"Tab 显示「Wiki 服务鉴权失败」。
-
-### 2.3 测试用 Key
-
-- **本地**：用 `bash supports/scripts/gen-api-key.sh 1` 生成
-- **e2e 验证**：`sk-starcat-E22GFRKJLNWCGEZBJIFFFTM37H5K5FOH`（已验证可用，仅本地）
-
----
-
-## 3. 端点速查表
-
-| 方法 | 路径 | 鉴权 | 用途 | 客户端调用频次 |
-|---|---|---|---|---|
-| `GET` | `/healthz` | ❌ 公开 | 健康检查 | App 启动时 1 次 |
-| `GET` | `/api/v1/wikis?owner=&repo=` | ✅ | 单仓库三源探测 | 详情页打开 1 次 |
-| `POST` | `/api/v1/wikis/batch` | ✅ | 批量探测（≤50 repo） | 首装 / 批量刷新 |
-| `POST` | `/internal/sync/probe` | ✅ | 管理员全量重探测（**当前 noop**） | 调试用，不调 |
-| `POST` | `/internal/refresh/owner` | ✅ | 管理员单 owner 刷新（**当前 noop**） | 调试用，不调 |
-
----
-
-## 4. 端点详解
-
-### 4.1 `GET /healthz`（公开）
-
-**用途**：App 启动时探测 wiki-api 是否在线。
-
-```http
-GET /healthz HTTP/1.1
-```
-
-**响应**：
-```http
-HTTP/1.1 200 OK
-Content-Type: text/plain; charset=utf-8
-
-ok
-```
-
-**客户端实现**：
-```swift
-// Starcat/Core/Network/WikiAPI.swift
-func health() async -> Bool {
-    let url = baseURL.appendingPathComponent("healthz")
-    var req = URLRequest(url: url)
-    req.timeoutInterval = 3
-    do {
-        let (_, resp) = try await session.data(for: req)
-        return (resp as? HTTPURLResponse)?.statusCode == 200
-    } catch {
-        return false
-    }
-}
-```
-
-**降级**：`health() == false` → `wikiAPI` 实例降级为 `nil`，详情页右上角外部文档按钮组**整体不显示**。
-
----
-
-### 4.2 `GET /api/v1/wikis`（单查）
-
-**用途**：详情页打开时，探测当前 repo 被 3 个外部站收录状态。
-
-**请求**：
-```http
-GET /api/v1/wikis?owner=facebook&repo=react HTTP/1.1
-Host: 127.0.0.1:5004
-Authorization: Bearer sk-starcat-...
-```
-
-| Query 参数 | 必填 | 说明 |
+| 原方案 | 审计结论 | 新方案 |
 |---|---|---|
-| `owner` | ✅ | GitHub owner，建议客户端用 `^[a-zA-Z0-9._-]+$` 校验（与 weekly-api `parser/markdown.go:116-131` 一致） |
-| `repo` | ✅ | GitHub repo，同上校验 |
+| `WikiAPI?`，初始化失败变 nil | 当前 API actor 初始化不抛错；把网络故障建模成 DI 缺失会导致恢复困难 | `let wikiAPI: WikiAPI`，错误由每次请求表达 |
+| App 启动调用 `/healthz` | 增加启动网络请求；瞬时故障会造成错误的全局降级 | 只在设置页用户主动“测试连接”时探活 |
+| 4 个服务共用一个 Keychain item | 当前实现按 `ThirdPartyService.rawValue` 分服务存 BYOK；改成共享会破坏既有设置模型 | `.wiki` 使用独立 BYOK 覆盖，production 默认 key 仍可相同 |
+| 未登录隐藏 Wiki | Wiki API 使用 Starcat service key，不使用 GitHub OAuth；外部文档也是公开内容 | 登录与否都可查询和跳转 |
+| 仅已 Star repo 显示 | Trending/Weekly 的未 Star repo 同样有阅读文档价值 | 所有合法 `owner/repo` 都显示查询结果 |
+| `unknown/probably_indexed/rate_limited` | 后端 v2 已删除这些公开契约 | 客户端只处理 `indexed/not_indexed/error`，并容忍未来未知值 |
+| 离线时按模板显示 “Try Open” | 会把“服务不可用”误表示成“可能已收录”，用户点击后可能进入无效页面 | 请求失败时静默隐藏 Wiki 菜单，保留 GitHub 原入口 |
+| 首装批量扫描全部 stars | 后端 batch 是异步秒返，首次常拿不到结果；还会制造大量外站探测 | 首期不接 batch，按详情页访问懒加载 |
+| 客户端写本地 Wiki cache | 后端已有 SQLite + SWR；客户端再缓存会出现双 TTL 和失效一致性问题 | 首期不持久化，后端缓存是单一信任源 |
+| 设置每个 source 开关 | 后端单查不支持 source filter，关闭 UI 也不会减少后端探测成本 | 首期不提供 source 开关 |
+| 将 Wiki 塞进各场景 `trailingActions` | 四个详情页会重复维护异步状态和装配逻辑 | `RepoDetailScaffold` 内统一挂载自治组件 |
 
-**响应（200，冷启动 → fresh）**：
+### 2.3 后端当前真实契约
+
+#### 单查
+
+```http
+GET /api/v1/wikis?owner=facebook&repo=react
+Authorization: Bearer <api-key>
+```
+
 ```json
 {
   "schema_version": 1,
   "data": [
     {
-      "source": "codewiki",
-      "status": "unknown",
-      "url": "https://codewiki.google/github.com/facebook/react",
-      "confidence": "low",
-      "probeMethod": "url_probe",
-      "httpStatus": 200
-    },
-    {
       "source": "zread",
       "status": "indexed",
       "url": "https://zread.ai/facebook/react",
-      "confidence": "high",
       "probeMethod": "json_api",
       "httpStatus": 200,
       "matchedSignals": ["api_status_success"]
-    },
-    {
-      "source": "deepwiki",
-      "status": "indexed",
-      "url": "https://deepwiki.com/facebook/react",
-      "confidence": "high",
-      "probeMethod": "json_api",
-      "httpStatus": 200,
-      "matchedSignals": ["api_status_completed"]
     }
   ],
   "meta": {
-    "generated_at": "2026-06-11T02:25:26+08:00",
+    "generated_at": "2026-06-11T10:00:00+08:00",
     "cache_status": "fresh"
   }
 }
 ```
 
-**响应字段（data[].item）**：
+`cache_status` 语义：
 
-| 字段 | 类型 | 必返 | 说明 |
-|---|---|---|---|
-| `source` | enum | ✅ | `"deepwiki"` / `"zread"` / `"codewiki"` |
-| `status` | enum | ✅ | `"indexed"` / `"probably_indexed"` / `"not_indexed"` / `"unknown"` / `"error"` / `"rate_limited"` |
-| `url` | string | ✅ | 跳转 URL（展示页，不是 API URL） |
-| `confidence` | string | ✅ | `"high"` / `"medium"` / `"low"` |
-| `probeMethod` | string | ✅ | `"html_fingerprint"` / `"batchexecute_fetch"` / `"url_probe"` / `"json_api"` |
-| `httpStatus` | int | ❌ | 上游探测 HTTP 状态码（omitted if null） |
-| `matchedSignals` | string[] | ❌ | 命中信号集合（omitted if 空） |
-| `error` | string | ❌ | 错误信息（仅 status=error 时存在） |
-| `expiresAt` | — | ❌ | **不暴露给客户端**（`json:"-"`，缓存用） |
-
-**响应字段（meta）**：
-
-| 字段 | 类型 | 必返 | 说明 |
-|---|---|---|---|
-| `cache_status` | string | ✅ | `"fresh"` / `"stale"` / `"cold"` |
-| `generated_at` | string | ✅ | RFC3339 字符串 |
-
-**URL 模板**（客户端直跳时也按这个拼）：
-
-| source | URL 模板 |
-|---|---|
-| `deepwiki` | `https://deepwiki.com/{owner}/{repo}` |
-| `zread` | `https://zread.ai/{owner}/{repo}` |
-| `codewiki` | `https://codewiki.google/github.com/{owner}/{repo}` |
-
-**错误响应**：
-
-```http
-HTTP/1.1 400 Bad Request
-{
-  "schema_version": 1,
-  "error": {
-    "code": "BAD_REQUEST",
-    "message": "owner and repo are required"
-  }
-}
-```
-
-```http
-HTTP/1.1 500 Internal Server Error
-{
-  "schema_version": 1,
-  "error": {
-    "code": "INTERNAL_ERROR",
-    "message": "<sqlite error message>"
-  }
-}
-```
-
-**客户端实现**：
-```swift
-// Starcat/Core/Network/WikiAPI.swift
-actor WikiAPI {
-    func status(owner: String, repo: String) async throws -> [WikiStatusItem] {
-        var comps = URLComponents(url: baseURL.appendingPathComponent("api/v1/wikis"),
-                                  resolvingAgainstBaseURL: false)!
-        comps.queryItems = [
-            .init(name: "owner", value: owner),
-            .init(name: "repo", value: repo),
-        ]
-        var req = URLRequest(url: comps.url!)
-        req.setValue("Bearer \(apiKey ?? "")", forHTTPHeaderField: "Authorization")
-        req.timeoutInterval = 30   // 冷启动可能要 1-3s 同步探测
-        let (data, resp) = try await session.data(for: req)
-        guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
-            throw StarcatAPIError.transport(...)
-        }
-        let env = try JSONDecoder().decode(
-            StarcatEnvelope<[WikiStatusItem]>.self, from: data
-        )
-        return env.data
-    }
-}
-```
-
-> ⚠️ `req.timeoutInterval = 30`：**冷启动场景下服务端要同步探测 3 个源**（SQLite miss 时走 `syncProbe`，1-3s）。客户端不能给太短，否则会假性失败。
-
----
-
-### 4.3 `POST /api/v1/wikis/batch`（批量）
-
-**用途**：首装 / 批量刷新时，一次性探测多个 repo。
-
-**请求**：
-```http
-POST /api/v1/wikis/batch HTTP/1.1
-Host: 127.0.0.1:5004
-Authorization: Bearer sk-starcat-...
-Content-Type: application/json
-
-{
-  "repos": [
-    "facebook/react",
-    "vercel/next.js",
-    "openai/openai-cookbook"
-  ]
-}
-```
-
-| Body 字段 | 必填 | 说明 |
+| 值 | 后端行为 | 客户端行为 |
 |---|---|---|
-| `repos` | ✅ | 数组，每项 `"owner/repo"`，**≤50** 个 |
+| `cold` | 无缓存，同步探测三源后返回 | 正常渲染，不额外轮询 |
+| `fresh` | 返回新鲜缓存 | 正常渲染 |
+| `stale` | 立即返回旧缓存，后台刷新 | 正常渲染旧结果；下次进入详情自然拿新结果 |
 
-**响应（200，全部走缓存）**：
-```json
-{
-  "schema_version": 1,
-  "data": {
-    "results": {
-      "facebook/react": [
-        {"source": "deepwiki", "status": "indexed", "url": "..."},
-        {"source": "zread",    "status": "indexed", "url": "..."},
-        {"source": "codewiki", "status": "unknown",  "url": "..."}
-      ],
-      "vercel/next.js": [ ... ],
-      "openai/openai-cookbook": [ ... ]
+首期客户端不依赖 `cache_status` 做状态机。原因是 stale 请求只返回旧值，后端没有推送或任务查询端点；
+当前页面主动轮询只会增加请求和 UI 抖动，收益有限。
+
+#### 状态
+
+当前 Go 类型定义为：
+
+```text
+probing / indexed / not_indexed / error
+```
+
+但单查 handler 只把 `probing` 映射为 `not_indexed`，**没有把 `error` 映射为
+`not_indexed`**。因此 README 中“error 对外映射为 not_indexed”的描述与代码不一致。
+客户端必须容忍 `error`，但只把 `indexed` 当成可跳转结果。
+
+#### 批量
+
+`POST /api/v1/wikis/batch` 当前是异步入队接口：
+
+- 已有 fresh cache 的 repo 会出现在 `data.results`。
+- 无缓存 repo 只会计入 `new_probes`，首次响应通常没有结果。
+- 后端没有 task status / completion endpoint。
+- 客户端若要拿最终值，只能自行轮询单查或再次 batch。
+
+所以 batch 不适合作为首期客户端预热 API。保留为后续能力，不进入本次实现。
+
+---
+
+## 3. 产品行为
+
+### 3.1 入口位置
+
+入口位于所有 repo 详情页 Hero 区域右上角，与 Share、AI、Weekly Issue 等 action 同一行。
+
+由 `RepoDetailScaffold` 统一渲染：
+
+```text
+[Weekly #123] [Wiki ▾] [Share] [AI]
+```
+
+Wiki 是 repo 的公开阅读入口，不属于 Tags / Notes / Releases 这类私人数据，因此：
+
+- 未登录也允许显示。
+- 未 Star 也允许显示。
+- 不参与 `RepoLocalSections` 的可见性规则。
+
+### 3.2 显示状态
+
+| 状态 | UI |
+|---|---|
+| 请求中 | 不占位，不显示 spinner，避免 Hero action 行跳动过强 |
+| 至少一个 `indexed` | 显示 `Wiki` Menu，只列出 indexed 项 |
+| 全部 `not_indexed` | 不显示 |
+| 只有 `error` / 未知状态 | 不显示，并记录网络日志 |
+| 401 / 4xx / 5xx / 网络失败 | 不显示；设置页可测试连接和修正 URL/Key |
+| repo fullName 非法 | 不发请求，不显示 |
+
+不提供“打开 Wiki 主站”兜底。主站不是当前 repo 的文档，不能替代精确结果。
+
+### 3.3 Menu 行为
+
+```text
+[book.pages  Wiki ▾]
+  DeepWiki             ↗
+  Zread                ↗
+  Google Code Wiki     ↗
+```
+
+- 排序固定为 DeepWiki、Zread、Google Code Wiki，不依赖后端 map/并发返回顺序。
+- 行点击使用服务端返回 URL，经 `http/https + host` 校验后交给 `NSWorkspace.shared.open`。
+- 只使用服务端返回 URL，不在客户端重复拼 URL 模板。
+- Menu 使用 `.buttonStyle(.plain)` 时必须紧跟 `.focusEffectDisabled()`。
+
+---
+
+## 4. 客户端架构
+
+### 4.1 文件范围
+
+计划新增：
+
+```text
+Starcat/Core/Network/WikiAPI.swift
+Starcat/Core/Network/WikiModels.swift
+Starcat/Shared/Components/RepoWikiMenu.swift
+StarcatTests/WikiAPITests.swift
+StarcatTests/RepoWikiMenuStateTests.swift
+```
+
+计划修改：
+
+```text
+Starcat/Core/Network/AppEndpoints.swift
+Starcat/Core/Settings/ThirdPartyService.swift
+Starcat/App/AppDependencies.swift
+Starcat/Shared/Components/RepoDetailScaffold.swift
+Starcat/Resources/Localizable.xcstrings
+StarcatTests/StarcatAPIKeyTests.swift
+docs/工程进度/功能实现总览.md
+docs/Swift 学习索引.md
+```
+
+不修改数据库 schema，不新增 SPM 依赖，因此不触发开源致谢新增。
+
+### 4.2 Endpoint 与服务设置
+
+`AppEndpoints` 新增第四个自建后端：
+
+```swift
+enum Wiki {
+    static let productionURL = URL(string: "https://starcat-wiki-api.fly.dev")!
+
+    @MainActor
+    static var baseURL: URL {
+        AppEndpoints.resolve(production: productionURL, service: .wiki)
     }
-  },
-  "meta": {
-    "generated_at": "2026-06-11T02:25:30+08:00",
-    "total": 3
-  }
+
+    enum Paths {
+        static let status = "/api/v1/wikis"
+        static let healthz = "/healthz"
+    }
 }
 ```
 
-**注意**：
-- 响应里 **`results` 是 `map<fullName, [items]>`**，不是设计文档 §6.2 想象的 `items: [{repo, providers: [...]}]` 嵌套结构。**e2e 验证后的实现语义**
-- 客户端**最多 50 个 repo**，超了返 400
-- 服务端内部会并发探测 + repo 之间插入随机延迟 `PROBE_BATCH_MIN/MAX_DELAY_MS`（80-400ms），50 个 repo 大约 30-120s
-- **空 repos 也合法**，返 `data.results = {}`
+`ThirdPartyService` 新增 `.wiki`，并补齐：
 
-**错误响应**：
-```http
-HTTP/1.1 400 Bad Request
-{
-  "schema_version": 1,
-  "error": {
-    "code": "BAD_REQUEST",
-    "message": "too many repos (max 50)"
-  }
-}
-```
+- 标题、描述、SF Symbol、颜色。
+- production URL。
+- source repository URL。
+- `/healthz` URL。
+- 鉴权探测 URL：`/api/v1/wikis`。不带 owner/repo 时有效 key 返回 400，错误 key 返回 401；
+  `ServiceHealthChecker` 现有规则会把 400 视为鉴权通过。
 
-```http
-HTTP/1.1 400 Bad Request
-{
-  "schema_version": 1,
-  "error": {
-    "code": "BAD_REQUEST",
-    "message": "invalid body"
-  }
-}
-```
+设置页无需新增专用 View。`ServicesSettingsTab` 已按 `ThirdPartyService.allCases` 自动渲染 URL、
+API Key、重置和测试连接。
 
-**客户端实现**：
-```swift
-func statusBatch(repos: [String]) async throws -> [String: [WikiStatusItem]] {
-    var req = URLRequest(url: baseURL.appendingPathComponent("api/v1/wikis/batch"))
-    req.httpMethod = "POST"
-    req.setValue("Bearer \(apiKey ?? "")", forHTTPHeaderField: "Authorization")
-    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    req.httpBody = try JSONEncoder().encode(["repos": repos])
-    req.timeoutInterval = 180   // 50 repo × 3 源 + 延迟 = 30-120s
-    let (data, _) = try await session.data(for: req)
-    let env = try JSONDecoder().decode(
-        StarcatEnvelope<BatchData>.self, from: data
-    )
-    return env.data.results
-}
-
-private struct BatchData: Decodable {
-    let results: [String: [WikiStatusItem]]
-}
-```
-
----
-
-### 4.4 Admin 端点（**当前是 noop**，仅供调试）
-
-#### `POST /internal/sync/probe`
-
-```http
-POST /internal/sync/probe HTTP/1.1
-Authorization: Bearer sk-starcat-...
-```
-
-**响应**：
-```json
-{
-  "schema_version": 1,
-  "data": {
-    "task_id": "task-2026-06-11T02:25:30Z-probe-0",
-    "started_at": "2026-06-11T02:25:30+08:00",
-    "status": "running"
-  }
-}
-```
-
-> ⚠️ **已知技术债 D-W1**：`handler/admin.go:HandleAdminSyncProbe` 当前只生成 `task_id` 立即返回，**后台没有真正执行重探测**。`scheduler/cron.go:refreshStale` 也是 placeholder。客户端**不应该依赖这个端点**做实际重探测，需要重探测就调 `POST /api/v1/wikis/batch`。
-
-#### `POST /internal/refresh/owner`
-
-同上 noop，**不要调用**。
-
----
-
-## 5. 数据模型
-
-### 5.1 客户端 DTO
+### 4.3 WikiAPI
 
 ```swift
-// Starcat/Core/Network/WikiModels.swift
-struct WikiStatusItem: Codable, Sendable, Identifiable {
-    let source: DocsSource
-    let status: DocsStatus
-    let url: String
-    let confidence: String
+actor WikiAPI {
+    private var baseURL: URL
+    private var apiKey: String?
+    private let session: URLSession
+    private let decoder: JSONDecoder
+
+    init(baseURL: URL, apiKey: String? = nil, session: URLSession? = nil)
+
+    func fetchStatus(owner: String, repo: String) async throws -> [WikiStatusItem]
+    func updateBaseURL(_ url: URL)
+    func updateAPIKey(_ key: String?)
+}
+```
+
+约束：
+
+- 实现风格对齐 `TrendingAPI` / `WeeklyAPI`。
+- URL 使用 `URLComponents` + `URLQueryItem`，禁止字符串拼 query。
+- Bearer header 规则与其他三个自建服务一致。
+- 使用 `StarcatEnvelopeDecoder.decode([WikiStatusItem].self, ...)`。
+- 首期不暴露 `health()`，健康检查统一由 `ServiceHealthChecker` 负责。
+- 首期不实现 `fetchBatch`，避免出现“代码存在但没有正确消费异步语义”的半成品。
+
+### 4.4 DTO 的前向兼容
+
+后端刚从 v1 状态模型切到 v2，客户端不能用脆弱的 raw-value enum 让一个未知值导致整包解码失败。
+
+推荐模型：
+
+```swift
+struct WikiStatusItem: Decodable, Sendable, Identifiable {
+    let source: WikiSource
+    let status: WikiProbeStatus
+    let url: URL
     let probeMethod: String?
     let httpStatus: Int?
     let matchedSignals: [String]?
 
-    var id: String { "\(source.rawValue)-\(url)" }
+    var id: String { source.rawValue }
 }
 
-enum DocsSource: String, Codable, CaseIterable, Sendable {
-    case deepwiki
-    case zread
-    case codewiki
-
-    var displayName: String {
-        switch self {
-        case .deepwiki: return "DeepWiki"
-        case .zread:    return "Zread"
-        case .codewiki: return "Google Code Wiki"
-        }
-    }
-
-    var urlTemplate: String {
-        switch self {
-        case .deepwiki: return "https://deepwiki.com/{owner}/{repo}"
-        case .zread:    return "https://zread.ai/{owner}/{repo}"
-        case .codewiki: return "https://codewiki.google/github.com/{owner}/{repo}"
-        }
-    }
-}
-
-enum DocsStatus: String, Codable, Sendable {
+enum WikiProbeStatus: Sendable, Equatable {
     case indexed
-    case probablyIndexed = "probably_indexed"
-    case notIndexed      = "not_indexed"
-    case unknown
+    case notIndexed
     case error
-    case rateLimited     = "rate_limited"
-
-    /// 是否有"可跳转"价值（驱动主按钮显隐，详见 §7.3）
-    var isMeaningful: Bool {
-        switch self {
-        case .indexed, .probablyIndexed, .unknown: return true
-        case .notIndexed, .error, .rateLimited:   return false
-        }
-    }
+    case unknown(String)
 }
 ```
 
-### 5.2 Envelope 复用
+`WikiProbeStatus` 自定义 `Decodable`，未知值落入 `.unknown(raw)`。`WikiSource` 也应避免未知 source
+拖垮整包：可以自定义 unknown case，UI 过滤不认识的 source。
 
-跟 trending / weekly / sharing **完全共用** `StarcatEnvelope.swift`：
+`confidence` 不进入 DTO。该字段已从后端 v2 schema 和 `ProbeResult` 删除。
+
+### 4.5 AppDependencies
 
 ```swift
-// 已存在,不要新建
-struct StarcatEnvelope<T: Decodable>: Decodable {
-    let schemaVersion: Int
-    let data: T
-    let meta: StarcatMeta?
-}
+let wikiAPI: WikiAPI
 ```
 
-⚠️ **跨项目 byte-level 同步约定**（`supports/docs/R-01-总体设计.md §4.1`）：`StarcatEnvelope` 跟 4 个 Go 服务的 `internal/model/envelope.go` 字段集**必须保持一致**。改 Go 端必须同步改 Swift 端，反之亦然。
+初始化与其他 API 同级：
+
+```swift
+self.wikiAPI = WikiAPI(
+    baseURL: AppEndpoints.Wiki.baseURL,
+    apiKey: StarcatAPIKeyResolver.resolve(for: .wiki)
+)
+```
+
+并在两个热更新 switch 中追加 `.wiki`：
+
+```swift
+case .wiki: await wikiAPI.updateBaseURL(target)
+case .wiki: await wikiAPI.updateAPIKey(resolved)
+```
+
+这里不存在“wiki-api down 导致其他 actor 初始化失败”的问题：actor 构造不发网络请求，也不抛错。
+真正的服务隔离发生在请求级，每个 actor 独立持有 URLSession 和状态。
+
+### 4.6 RepoWikiMenu
+
+组件职责：
+
+1. 接收 `repo.owner` / `repo.name`。
+2. 从 Environment 获取 `AppDependencies`。
+3. `.task(id: repo.fullName)` 调用 `wikiAPI.fetchStatus`。
+4. 把结果交给纯函数 `RepoWikiMenuState.make(items:)` 过滤、排序和生成菜单项。
+5. 仅当结果非空时渲染 Menu。
+
+建议状态：
+
+```swift
+@State private var links: [WikiLink] = []
+```
+
+不需要额外 ViewModel。组件只有一次请求和一个数组，单独创建 `@Observable` 类型会增加无收益抽象。
+
+将组件放进 `RepoDetailScaffold.trailingActionsView`。评审已确定 Weekly Issue 必须在最前，
+最终顺序契约为：
+
+```text
+Weekly: Weekly Issue -> Wiki -> Share -> AI
+其他详情页: Wiki -> Share -> AI
+```
+
+当前 `RepoDetailAction` 数组已经能识别 `.weeklyIssue`，不需要修改四个调用方的数据模型。
+`RepoDetailScaffold` 渲染时把 actions 分成两组：
+
+1. `weeklyIssueActions`：只包含 `.weeklyIssue`，先渲染。
+2. `remainingActions`：其余 `.share/.ai/.custom`，在 `RepoWikiMenu` 后渲染。
+
+这样可以保证 Weekly 特有入口始终第一，同时不引入新的 action priority、排序数字或场景枚举。
 
 ---
 
-## 6. 客户端接入方案
+## 5. 请求时序
 
-### 6.1 AppEndpoints 扩展
-
-```swift
-// Starcat/Core/Network/AppEndpoints.swift
-enum Wiki: ServiceEndpoint {
-    static let productionURL = "https://starcat-wiki-api.fly.dev"
-    enum Paths {
-        static let status      = "/api/v1/wikis"
-        static let statusBatch = "/api/v1/wikis/batch"
-    }
-}
+```text
+打开任意 repo 详情页
+  -> RepoDetailScaffold 创建 RepoWikiMenu
+  -> task(id: repo.fullName)
+  -> WikiAPI.fetchStatus(owner, repo)
+  -> StarcatEnvelopeDecoder 解码
+  -> 过滤 status == indexed
+  -> 固定 source 顺序排序
+  -> 0 项：隐藏；1~3 项：显示 Wiki Menu
 ```
 
-### 6.2 AppDependencies 装配（**强制解耦**）
+切换 repo 时 SwiftUI 会取消旧 task。`URLSession.data(for:)` 支持协作取消，组件不需要自己维护 request token。
 
-> ⚠️ **硬性规则**：`wikiAPI` 装配**必须**单独 try，失败转 `nil`，**不能影响** trendingAPI / shareAPI / weeklyAPI 三个 actor 的初始化。
+---
 
-```swift
-// Starcat/App/AppDependencies.swift
-@MainActor
-final class AppDependencies {
-    let trendingAPI: TrendingAPI
-    let shareAPI: ShareAPI
-    let weeklyAPI: WeeklyAPI
-    let wikiAPI: WikiAPI?    // ← optional
+## 6. 错误处理
 
-    init() {
-        self.trendingAPI = AppDependencies.makeTrendingAPI()
-        self.shareAPI    = AppDependencies.makeShareAPI()
-        self.weeklyAPI   = AppDependencies.makeWeeklyAPI()
-        self.wikiAPI     = AppDependencies.tryMakeWikiAPI()  // ← 单独 try
-    }
-
-    private static func tryMakeWikiAPI() -> WikiAPI? {
-        do {
-            return try WikiAPI(
-                baseURL: AppEndpoints.Wiki.baseURL,
-                apiKey: StarcatAPIKeyResolver.resolve(for: .wiki)
-            )
-        } catch {
-            Log.warn("[AppDependencies] WikiAPI init failed: \(error)")
-            return nil    // 详情页按钮组整体不显示
-        }
-    }
-}
-```
-
-**单服务 down 的影响边界**：
-
-| 场景 | 影响 |
+| 场景 | 处理 |
 |---|---|
-| `wikiAPI == nil` | 详情页外部文档按钮组**整体不显示**；banner 提示「外部文档索引服务暂不可用」 |
-| `trendingAPI == nil` | 详情页不能加载 trending 视图；wiki 按钮组**仍正常显示** |
-| 两个都 nil | trending 区 + wiki 区都不显示，**互不影响** |
+| owner/repo 为空 | 本地不发请求 |
+| 200 + 合法 envelope | 渲染 indexed 项 |
+| 200 + 未知 status/source | 忽略未知项，其他合法项继续展示 |
+| 400 | 视为客户端参数 bug，记录 warning，隐藏 |
+| 401 | 记录 unauthorized，隐藏；用户在设置页修正 Key |
+| 5xx | 记录 server error，隐藏 |
+| timeout/offline | 记录 transport error，隐藏 |
+| URL 非 http/https 或无 host | 丢弃该 item，禁止打开 |
 
-### 6.3 WikiAPI actor 实现
-
-参考 `TrendingAPI.swift:41-186` 的 actor 模式，完整骨架：
-
-```swift
-// Starcat/Core/Network/WikiAPI.swift
-actor WikiAPI {
-    let baseURL: URL
-    private(set) var apiKey: String?
-    private let session: URLSession
-
-    init(baseURL: URL, apiKey: String?,
-         session: URLSession = .starcatDefault) throws {
-        guard let url = URL(string: "/api/v1/wikis",
-                            relativeTo: baseURL) else {
-            throw StarcatAPIError.badURL
-        }
-        self.baseURL = baseURL
-        self.apiKey = apiKey
-        self.session = session
-    }
-
-    func status(owner: String, repo: String) async throws -> [WikiStatusItem] {
-        // ... 见 §4.2
-    }
-
-    func statusBatch(repos: [String]) async throws -> [String: [WikiStatusItem]] {
-        // ... 见 §4.3
-    }
-
-    func health() async -> Bool { /* ... */ }
-
-    func updateBaseURL(_ url: URL) async {
-        self.baseURL = url    // 设置页热更新
-    }
-
-    func updateAPIKey(_ key: String?) async {
-        self.apiKey = key     // 设置页热更新
-    }
-}
-```
-
-### 6.4 StarcatAPIKey 扩展
-
-```swift
-// Starcat/Core/Network/StarcatAPIKey.swift
-enum StarcatAPIKeyTarget: CaseIterable {
-    case sharing      // 5001
-    case trending     // 5002
-    case weekly       // 5003
-    case wiki         // 5004  ← 新增
-
-    var keychainKey: String {
-        switch self {
-        case .sharing, .trending, .weekly, .wiki:
-            return "com.starcat.app.apiKey"   // 4 个服务共用同一把 Key
-        }
-    }
-}
-```
-
-**BYOK 视角**：用户输入 1 把 Starcat API Key，4 个后端都用它。**避免**一个 key 存 4 份。
+首期不增加 toast/banner。详情页仍有 GitHub、README 等主路径，Wiki 是增强能力；用全局错误提示打断用户不合适。
 
 ---
 
-## 7. 详情页 UI 集成
+## 7. 测试方案
 
-### 7.1 入口位置
+### 7.1 客户端单测
 
-详情页（`RepoDetailScaffold`）的 `TrailingActions` 区（右上角）。原 `openInGitHub` 按钮**不动**，**新增**一个 `Wiki ▾` 按钮组。
+`WikiAPITests` 使用 `URLProtocolStub`：
 
-### 7.2 按钮显隐规则（**重要**）
+- 请求 method/path/query 正确。
+- 有 key 时发送 Bearer header，无 key 时不发送。
+- 200 解码三种 source。
+- `indexed/not_indexed/error` 解码正确。
+- 未知 status/source 不导致整包失败。
+- 401、500、非法 JSON 映射到预期错误。
+- `updateBaseURL` / `updateAPIKey` 下一次请求立即生效。
 
-| 状态组合 | 主按钮显示 |
-|---|---|
-| 至少 1 个 source 是 `indexed` / `probably_indexed` / `unknown` | ✅ 显示「Wiki ▾」 |
-| 3 个 source **全是** `not_indexed` | ❌ 主按钮**整体不显示**（不显示空下拉） |
-| 3 个 source **全是** `error` / `rate_limited` | ❌ 主按钮不显示（没意义，等缓存过期） |
-| `wikiAPI == nil`（解耦失败） | ❌ 主按钮不显示，改显示「打开主页」备选链接 |
-| 未登录态 | ❌ 隐藏（沿用 v1.4 规则） |
-| 设置里 3 个 source 全关掉 | ❌ 主按钮不显示（没东西可看） |
+`RepoWikiMenuStateTests` 测纯状态转换：
 
-**伪代码**：
+- 只保留 indexed。
+- 固定 DeepWiki -> Zread -> Code Wiki 顺序。
+- 全 not_indexed/error 返回空。
+- 非法 URL 被过滤。
+- 单个合法结果仍显示 Menu。
 
-```swift
-@MainActor
-func shouldShowWikiDropdown(items: [WikiStatusItem]) -> Bool {
-    // 1. wikiAPI 不可用
-    guard deps.wikiAPI != nil else { return false }
-    // 2. 未登录
-    guard session.isLoggedIn else { return false }
-    // 3. 至少 1 个启用的 source 有意义结果
-    let enabled = items.filter { AppSettings.wiki.enabledSources.contains($0.source) }
-    let meaningful = enabled.filter { $0.status.isMeaningful }
-    return !meaningful.isEmpty
-}
+扩展现有测试：
+
+- `StarcatAPIKeyTests` 增加 `.wiki` 默认/自定义/重置覆盖。
+- `ThirdPartyService` 相关测试增加 production URL、health URL、auth probe URL。
+
+### 7.2 构建与测试
+
+新增 Swift 文件后：
+
+```bash
+xcodegen generate
+xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
+  -only-testing:StarcatTests/WikiAPITests \
+  -only-testing:StarcatTests/RepoWikiMenuStateTests test
+xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 ```
 
-### 7.3 下拉组件
+按项目约定，跑测前需要关闭 Xcode IDE，避免争抢 `testmanagerd`。
 
-`[📖 Wiki ▾]` 主按钮 + Menu 下拉：
+### 7.3 人工验收
 
-```
-[📖 Wiki ▾]
-  ├─ ✅ DeepWiki           (book.pages.fill)        ← indexed, 主色
-  ├─ ✅ Zread              (book.pages.fill)        ← indexed
-  ├─ ⚠️ Google Code Wiki   (g.circle.fill)          ← unknown
-  ├─ ⏳ GitHub 文档         (book.pages)             ← 设置里关掉了, 不显示
-  └─ 打开主站...            (arrow.up.right.square)
-```
+由 dong4j 启动 App 验证：
 
-**UI 行为**：
-- **主按钮**显示「Wiki ▾」（点击展开下拉），**不直接跳转**
-- **下拉列表**：每个 wiki 源一行，按 `indexed → probablyIndexed → unknown → notIndexed` 顺序排列
-  - `indexed` / `probablyIndexed` → 主色行 + 点击 → 浏览器打开
-  - `unknown` → 次色行 + 「Try Open」文字 + 点击 → 浏览器打开
-  - `notIndexed` / `error` / `rateLimited` → 灰色行 + **不显示**
-- **未登录态**：下拉整体隐藏
-- **打开主站**（`arrow.up.right.square`）→ 跳 `https://deepwiki.com/`（deepwiki 作兜底，因为是 3 个里最广的）
-
-### 7.4 SWR 客户端配合
-
-服务端支持 SWR（stale-while-revalidate）：命中但过期时**立即返回 stale 数据**，后台异步刷新。客户端**无需**等待 `cache_status == "fresh"` 才渲染 UI：
-
-- `fresh` / `stale` / `cold` 都**立刻**渲染对应按钮（stale 用旧数据，冷启动空态）
-- 后台 silent 刷新时，**不显示 loading spinner**（避免 UI 抖动）
-- 刷新结果回来后，**平滑切换按钮状态**（用 SwiftUI `@Observable` 自动响应）
+1. Manage、Trending、Weekly、Activity 四类 repo 详情都能出现 Wiki Menu。
+2. 未登录、未 Star repo 也可显示。
+3. `facebook/react` 等已收录 repo 至少显示一个来源并能打开正确 URL。
+4. 全未收录 repo 不显示空 Menu。
+5. 设置页 Wiki 服务可改 URL/Key，保存后无需重启即可生效。
+6. 错误 Key 时 Wiki 隐藏，但 Trending/Weekly/Sharing 不受影响。
 
 ---
 
-## 8. 调用时序
+## 8. 后端审计债务
 
-### 8.1 用户场景：打开详情页
+这些问题不阻塞首期单查接入，但需要单独处理，不能混入客户端 PR：
 
-```
-用户点击 repo card
-  ↓
-详情页 RepoDetailScaffold.onAppear
-  ↓
-并行触发:
-  ├─ WikiAPI.status(owner, repo)   ← 5004
-  ├─ TrendingAPI.metadata(...)      ← 5002 (既有)
-  └─ 其他既有
-  ↓
-WikiAPI.status 返回 [WikiStatusItem] + meta.cache_status
-  ↓
-按 §7.2 显隐规则判断是否显示 Wiki ▾ 按钮
-  ↓
-若显示:渲染主按钮 + 预拉下拉数据
-```
-
-### 8.2 用户场景：首装 / 批量刷新
-
-```
-用户进设置 → 外部文档索引 → 「全部重新探测」
-  ↓
-客户端按 local DB 里所有 repo 全名分批:
-  - 50 个一批
-  - 串行调 POST /api/v1/wikis/batch(避免触发 Cloudflare)
-  ↓
-结果写 local cache(SwiftUI @Observable 驱动 UI)
-  ↓
-显示「已探测 N/M」
-```
-
-### 8.3 用户场景：服务热更新
-
-```
-设置页 → 服务 → 改 wiki-api baseURL / Key
-  ↓
-await deps.wikiAPI?.updateBaseURL(newURL)
-await deps.wikiAPI?.updateAPIKey(newKey)
-  ↓
-下次 status() 调用自动用新配置(无需重启 App)
-  ↓
-若更新后 health() == false → 自动降级为 nil,UI 按钮组消失
-```
-
----
-
-## 9. 错误处理矩阵
-
-| HTTP 状态 | code | 客户端处理 |
+| 编号 | 问题 | 影响 |
 |---|---|---|
-| `200` | — | 正常解析 `data` |
-| `400` | `BAD_REQUEST`（"owner and repo are required"） | 参数校验未过，本地 bug，跳过 |
-| `400` | `BAD_REQUEST`（"too many repos (max 50)"） | 客户端分批，单批 ≤ 50 |
-| `400` | `BAD_REQUEST`（"invalid body"） | 序列化 bug，本地 bug，跳过 |
-| `401` | `UNAUTHORIZED` | `wikiAPI` 降级为 nil + 设置页提示「Wiki 服务鉴权失败」 |
-| `500` | `INTERNAL_ERROR` | 详情页按钮组不显示 + 不重试（等下次打开） |
-| 网络错误 | — | 同上 500 处理 |
+| WIKI-BE-01 | README 说 `error` 对外映射为 `not_indexed`，代码实际会返回 `error` | 契约文档不一致 |
+| WIKI-BE-02 | batch 没有 task status，首次异步响应拿不到新结果 | 客户端无法可靠显示批量进度 |
+| WIKI-BE-03 | retry 针对单 source 入队，但 `batchProbeAsync` 会重探同 repo 三个 source | 额外外站流量，可能覆盖正常缓存 |
+| WIKI-BE-04 | scheduler 的 retry cron 写死 30 分钟，未读取 `RETRY_INTERVAL_MINUTES` | 配置与运行行为不一致 |
+| WIKI-BE-05 | admin 两个端点返回 running task，但实际不执行任务 | 容易误判成功 |
+| WIKI-BE-06 | probe tests 直接访问公网，不是稳定单元测试 | 离线/CI 网络受限时失败；本次实测 6 个失败 |
+| WIKI-BE-07 | `CHANGELOG.md` 只有 v1.0.0，未记录 v2 breaking contract | 版本追踪不完整 |
+| WIKI-BE-08 | `createSchema` 又调用 `migrateV2`，与“全新服务不做 migration”约定冲突 | 代码与项目约定不一致 |
+
+建议后续独立提交修复 WIKI-BE-01/03/04/05/06/07/08；batch 客户端能力等 WIKI-BE-02 有明确任务查询契约后再设计。
 
 ---
 
-## 10. 测试矩阵
+## 9. 实施步骤与验收门槛
 
-### 10.1 客户端单测
+评审通过后按以下顺序实施：
 
-| 场景 | 验证点 |
-|---|---|
-| `WikiAPI.status("facebook", "react")` | mock URLProtocolStub 返真实 200 响应 → 解码出 3 个 item |
-| `status` owner/repo 为空 | 本地校验拦截（不发请求） |
-| `status` 401 响应 | 抛 `StarcatAPIError.unauthorized` |
-| `status` 500 响应 | 抛 `StarcatAPIError.transport` |
-| `statusBatch` 50 个 | mock 返 50 个 fullName → 解析 map |
-| `statusBatch` 51 个 | 本地校验拦截（不发请求） |
-| `health()` true | `wikiAPI` 不降级 |
-| `health()` false（连接失败） | `wikiAPI` 降级为 nil（**注意：失败时**装配期已经 try 过，**这里测的是运行期 health**） |
-| `shouldShowWikiDropdown` 3 个全 notIndexed | 返 `false` |
-| `shouldShowWikiDropdown` 1 个 indexed | 返 `true` |
-| `shouldShowWikiDropdown` `wikiAPI == nil` | 返 `false` |
-| `shouldShowWikiDropdown` 未登录 | 返 `false` |
+1. 网络契约层
+   - 新增 endpoint、service case、DTO、WikiAPI。
+   - 验证：`WikiAPITests` 通过。
+2. 依赖与设置层
+   - 装配 `wikiAPI`，补 URL/Key 热更新与设置页元数据。
+   - 验证：现有 Services/API key 测试加 `.wiki` 后通过。
+3. 详情页 UI
+   - 新增 `RepoWikiMenu`，在 `RepoDetailScaffold` 统一挂载。
+   - 验证：状态纯函数测试 + 四详情页编译通过。
+4. 文档与进度
+   - 更新 `docs/Swift 学习索引.md`：`actor`、`.task(id:)`、自定义 `Decodable`、`Menu`。
+   - 更新 `docs/工程进度/功能实现总览.md`：checkbox、实现说明、文件清单、约束/TODO、仪表盘和变更日志。
+5. 全量验证
+   - `xcodegen generate`。
+   - 目标 Suite + 全量单测。
+   - dong4j 真机验证四类详情页与浏览器跳转。
 
-### 10.2 e2e 验证（已通过 2026-06-11）
+**完成定义**：不是“API 能请求成功”，而是四类 repo 详情页都通过统一组件得到一致行为，设置热更新生效，
+失败不影响其他服务，自动测试覆盖网络契约和菜单状态转换，工程进度与学习索引同步完成。
 
-| # | 场景 | 期望 | 实测 |
-|---|---|---|---|
-| 1 | `GET /api/v1/wikis` 无鉴权 | 401 | ✅ 401 |
-| 2 | `GET /api/v1/wikis` 无 owner | 400 | ✅ 400 |
-| 3 | `GET /api/v1/wikis?owner=facebook&repo=react` 冷启动 | 200 + 3 items | ✅ 200, deepwiki/zread indexed, codewiki unknown |
-| 4 | 同 #3 第二次（fresh 缓存） | 200 + 3 items, cache_status=fresh | ✅ 200, fresh |
-| 5 | `POST /api/v1/wikis/batch` 空 repos | 200 + results={} | ✅ 200 |
-| 6 | `POST /api/v1/wikis/batch` 3 个 repo | 200 + results map | ✅ 200, 3 个 fullName |
-| 7 | `POST /api/v1/wikis/batch` 51 个 | 400 too many | ✅ 400 |
-| 8 | `POST /api/v1/wikis/batch` 无效 JSON | 400 invalid body | ✅ 400 |
-| 9 | `POST /internal/sync/probe` 有鉴权 | 200 + task_id | ✅ 200 (noop) |
-| 10 | `POST /internal/refresh/owner` 有鉴权 | 200 + task_id | ✅ 200 (noop) |
-| 11 | `POST /internal/sync/probe` 无鉴权 | 401 | ✅ 401 |
+### 9.1 实施结果（2026-06-11）
 
----
+1. 网络契约层已完成：新增 `WikiModels.swift` / `WikiAPI.swift`，只接
+   `GET /api/v1/wikis?owner=&repo=`，DTO 对未知 source/status 宽松解码。
+2. 依赖与设置层已完成：`ThirdPartyService.wiki`、`AppEndpoints.Wiki`、非 optional
+   `AppDependencies.wikiAPI`、URL/API Key 热更新和设置页双阶段健康检查均已接通。
+3. 详情页 UI 已完成：`RepoWikiMenu` 统一挂到 `RepoDetailScaffold`；Weekly 固定
+   `Weekly Issue -> Wiki -> Share -> AI`，其他详情固定 `Wiki -> Share -> AI`。
+4. 自动化覆盖已完成：新增 `WikiAPITests` 6 项、`RepoWikiMenuStateTests` 3 项，并扩展
+   `ServiceHealthCheckerTests` / `StarcatAPIKeyTests`；定向运行共 27 项通过。
+5. 工程同步与验证已完成：执行 `xcodegen generate`；定向 27 项 / 4 suites 通过；全量
+   Swift Testing 415 项 / 59 suites 通过，XCTest 33 项通过（1 项样例生成器按设计跳过）。
+   同步更新本设计、Swift 学习索引和功能进度总览。
 
-## 11. 与设计文档 §6 的差异（**客户端对接必看**）
+### 9.2 本地联调修复（2026-06-11）
 
-> **dong4j 在 2026-06-11 复审 wiki-api 实现时发现，19-wiki集成.md §6 的「设计契约」跟当前实现**有几处不一致**。客户端对接以本节「实测实现」为准，不要按 §6 写代码。
+- Starcat 的 URL/API Key 优先级实现无误：设置页已保存值优先于 production 默认值。
+- Wiki 401 并非客户端未发送 Bearer，而是旧 `supports/start-all.sh` 用硬编码 Key 覆盖了
+  `supports/starcat-wiki-api/.env`；客户端发送 `.env` 中正确 Key 时，服务白名单却是另一把 Key。
+- `start-all.sh` 已删除 API Key、Wiki Key、GitHub Token 硬编码，各服务从自身 `.env` 加载；
+  同时改用 `nohup + disown`，健康检查成功后立即返回。
+- 设置页 URL 与 API Key 是两行独立保存。仅保存 Key 不会自动保存 URL；若要走本地 Wiki，
+  URL 行必须保存 `http://127.0.0.1:5004`。本次排查时持久化配置中尚无 `wiki` URL。
+- Trending 客户端 `/api/v1/repos` 与本地 Go 路由一致，本地 scheduler 已抓取 17 条数据；
+  页面无数据时应检查 `127.0.0.1:5002` 是否仍在监听，而不是回退旧 `/repo` 路径。
 
-| 项 | 19-wiki集成.md §6 设计的 | **当前实现的** | 影响 |
-|---|---|---|---|
-| §6.1 单查响应 `data` 字段 | `{owner, repo, checkedAt, items: [...]}` 嵌套结构 | `[items...]` 直接数组 | **D-W2**: 客户端解码器按数组解析，不要按嵌套 |
-| §6.2 批量请求 `sources` filter | `"sources": ["deepwiki", "zread", "codewiki"]` 字段 | **未实现**，请求只能传 `repos` | **D-W3**: 客户端不要传 `sources` 字段，传了也不生效 |
-| §6.2 批量响应 `data` 字段 | `{items: [{repo, providers: [...]}]}` 嵌套 | `{results: {fullName: [items]}}` map | **D-W4**: 客户端按 map 解析 |
-| §6.2 批量响应 `meta` | `cache_status, total, served_fresh, served_stale, latency_ms` | `generated_at, total` | 客户端**不要**依赖 `served_fresh/stale/latency_ms` |
-| §4.1 cron 03/04/05 三任务 | 实际跑 | **placeholder**（`scheduler/cron.go:46-68`） | 客户端不要依赖服务端定时刷新 |
-| §6.3 admin 端点 | 实际重探测 | **noop**（`handler/admin.go:11-32`） | 客户端不要调 admin，需要重探测用 batch |
-
-> **建议**：本节差异全部在 wiki-api **下一次重构时**消化掉（更新实现以对齐设计 OR 更新设计以对齐实现，**不要两边都改**）。在此之前，**客户端按本节实现写代码**。
-
----
-
-## 12. 已知技术债
-
-| 编号 | 说明 | 状态 |
-|---|---|---|
-| **D-W1** | admin 端点 + cron 全部 noop，没有真正定时重探测能力 | 未修（**优先 P1**） |
-| **D-W2** | §6.1 单查响应 data 是数组，**19-wiki集成.md §6.1 设计的是嵌套对象** | 未修（文档 vs 实现不一致） |
-| **D-W3** | §6.2 批量请求 `sources` filter 未实现 | 未修 |
-| **D-W4** | §6.2 批量响应 data 是 `{results: map}`，**§6.2 设计的是 `items` 数组** | 未修 |
-| **D-W5** | `PROBE_CACHE_*_DAYS/HOURS/MIN` 等 4 个 env 配置在 `.env.example` 列出，但 `sqlite.go:88-100` 写死 TTL，**env 不生效** | 未修 |
-| **D-W6** | `tryMakeWikiAPI()` 当前 main 入口**不调用 health() 预热**，`wikiAPI` 是否可用要等首次请求才知道 | 未修（优化项） |
-| **D-W7** | `BatchV1` 在并发探测时**没用 `inflight` 防重**（不像单查有 `sync.Map`），同一 batch 内出现重复 repo 会重复探测 | 未修 |
-| **D-W8** | 客户端**还没建** `WikiAPI.swift` / `WikiModels.swift` / `RepoDetailExternalDocsDropdown`，本文档是 0→1 蓝图 | 未开始 |
+未自动验收的仅剩人工交互：四类详情页实际菜单位置、浏览器跳转、未登录/未 Star 展示、
+设置页热更新。按项目约定由 dong4j 启动 App 验证。
 
 ---
 
-## 13. 落地 checklist
+## 10. 已确认决策
 
-> **本期范围**（与 `19-wiki集成.md §10.2 客户端验收清单` 一致，但按本文 §11 差异修正）：
+dong4j 于 2026-06-11 确认：
 
-- [ ] `Starcat/Core/Network/AppEndpoints.swift` 追加 `Wiki` case + `Paths.status` / `Paths.statusBatch`
-- [ ] `Starcat/Core/Network/StarcatAPIKey.swift` 追加 `.wiki` case
-- [ ] `Starcat/Core/Network/WikiAPI.swift` 新建，actor 模式参考 `TrendingAPI.swift:41-186`
-- [ ] `Starcat/Core/Network/WikiModels.swift` 新建（`WikiStatusItem` / `DocsSource` / `DocsStatus`）
-- [ ] `Starcat/App/AppDependencies.swift` v0.4 改造：`tryMakeWikiAPI()` 单独 try，失败 nil
-- [ ] `Starcat/Features/RepoDetail/Components/RepoDetailExternalDocsDropdown.swift` 新建
-- [ ] `Starcat/Features/RepoDetail/RepoDetailScaffold.swift` 集成新组件到 `TrailingActions`
-- [ ] `Starcat/Features/Settings/SettingsServiceTab.swift` 加「外部文档索引」行：baseURL / Key / enabledSources / 健康检查
-- [ ] `StarcatTests/WikiAPITests.swift` 新建（§10.1 矩阵）
-- [ ] `StarcatTests/WikiSWRTests.swift` 新建（fresh / stale / cold 三态）
-- [ ] `StarcatTests/RepoDetailExternalDocsDropdownTests.swift` 新建（§10.1 `shouldShowWikiDropdown`）
-- [ ] `Localizable.xcstrings` 加新键：`wiki.dropdown.title` / `wiki.source.deepwiki` / `wiki.source.zread` / `wiki.source.codewiki` / `wiki.settings.*` / `wiki.fallback.openMain`
+1. **权限边界开放**：Wiki 对未登录、未 Star repo 同样可用，因为它是公开阅读能力。
+2. **首期只做详情页单查**：不做 batch 预热、source 开关和客户端缓存。
+3. **Weekly Issue 必须第一**：Weekly 页面顺序为
+   `Weekly Issue -> Wiki -> Share -> AI`；其他详情页为 `Wiki -> Share -> AI`。
+
+以上三项作为客户端实施与验收的固定约束。
 
 ---
 
-## 14. 关联文档
-
-| 文档 | 用途 |
-|---|---|
-| `19-wiki集成.md` | wiki-api 服务端设计与权衡（§3-7）+ 历史 v0.1→v0.5 翻转 |
-| `18-三场景共用架构.md` | 客户端 4 个 API（sharing / trending / weekly / wiki）共用架构（Envelope / AppEndpoints / AppDependencies 解耦） |
-| `supports/docs/R-01-总体设计.md` | 4 个 Go 服务的总体设计（跨项目 byte-level 同步约束） |
-| `docs/工程进度/功能实现总览.md` | 主进度索引，本号文档完成后须勾选 + 加实现说明 |
-
----
-
-*最后更新：2026-06-11*
+*最后更新：2026-06-11（客户端实施完成）*
