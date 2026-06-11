@@ -81,6 +81,68 @@
 //  fullName 不匹配时自动跳到 1b owner/name 查找(与 D-24 之前行为一致)。
 //  这是最小改动方案,保留 D-24 大小写防护的同时修复 ghosting bug。
 //
+//  ────────────────────────────────────────────────────────────────────────────
+//  D-27 修订(2026-06-11 22:00, dong4j「weekly 切换 repo 卡顿 + 旧 repo 视觉残留」反馈)
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  Bug 现象:weekly 列表选中 A → 切到 B 时,右侧详情页表现为 ——
+//    ① 上半部分(hero)还是 A 的内容;
+//    ② 下半部分(README)闪一下 A 的 readme html;
+//    ③ 然后才出现 loading 转圈;
+//    ④ 最后才更换为 B 的 hero + readme。
+//
+//  对比 trending 切换路径(`TrendingScaffoldShell`)秒切丝滑,根因有三条互相放大:
+//
+//    1) **resolveRepo 步骤 2 把 GitHub `/repos/{o}/{r}` 网络调用放在切换 critical
+//       path 里**:weekly 项目大概率本地未命中(不是用户 starred 过的),必走 GitHub
+//       API。`await apiClient.repo(...)` 几百 ms ~ 1+s 期间 `displayRepo` 一直是 A,
+//       hero 看上去不变。trending 路径完全不调 `/repos`,本地未命中直接
+//       `trending.makeEphemeralRepo()` 同步返回。
+//
+//    2) **loadAll 串行 await**(原版 `await resolveRepo` 跑完才调 `loadReadme`):
+//       `readmeVM` 切到 B 的 `.loading` 状态被网络请求阻塞,期间 README 区一直
+//       渲染 A 的 stale `.loaded` html。
+//
+//    3) **`.id(project.id)` 加在 `content` 子树**而非 `WeeklyDetailView` 顶层:
+//       触发**子树重建**但 `@State displayRepo` / `readmeVM` 是外层 `WeeklyDetailView`
+//       的 state 不会重置 → 新子树用 stale 值(A 的 displayRepo + A 的 readmeVM.state
+//       `.loaded`)渲染一帧 → 用户看到「上半 A + 下半闪一下 A」的视觉残留。
+//       注:`RepoDetailScaffold` 内部本身就有 `.id(repo.id)` 处理元信息面板折叠重置,
+//       外层再加 `.id(project.id)` 完全冗余且反作用。
+//
+//  D-27 修法(三步同改,缺一不可):
+//
+//    1) **loadAll 入口同步推 fallback + 同步触发 readmeVM**:跨 project 切换时
+//       (`displayRepo?.fullName != project.fullName`)立即把 `displayRepo` 设为
+//       `makeFallbackRepo(from: project)`(同步构造,纯字段拷贝零失败可能)→ hero
+//       同帧切到 B 的 owner/name/desc/language/stars。然后**同步**调
+//       `readmeVM.loadTrending(...)`,该方法入口处 `if !isSameRepo { state = .loading }`
+//       同帧把 README 切到 spinner。这两步必须放在 await `resolveRepo` 之前,任何
+//       await 都会拖延 readme 切换。
+//
+//    2) **删除 `content(project).id(project.id)`**:Scaffold 内部已有
+//       `.id(repo.id)`(处理元信息面板折叠重置等),外层再加是冗余的。删掉后
+//       SwiftUI 平滑 diff hero / readme,不再出现 stale state 渲染一帧。
+//
+//    3) **resolveRepo 步骤 2 改后台 silent upgrade**:fallback 已在屏幕上(loadAll
+//       入口同步推),步骤 2 仅尝试用 GitHub `/repos` 真值替换 fallback 字段;失败
+//       时保持 fallback 不变(hero 不会因 API 失败而白屏)。同步删除 `@State
+//       isFetchingRemote`(其唯一用途——`else if isFetchingRemote` ProgressView 占位
+//       态——在 fallback-on-entry 策略下永远不会触发,作 dead state 删干净)。原
+//       「步骤 3 用 fallback 兜底」并入入口同步路径,resolveRepo 函数末尾不再额外
+//       推 fallback。
+//
+//  关键约束(写入注释):
+//    - fallback minimal Repo `id = 0` + `isStarred = false`,与原步骤 3 兜底语义
+//      一致 → trailingActions / RepoLocalSections 守卫 `repo.isStarred && id != 0`
+//      自动隐藏私人面板 / share / ai,与未登录或未命中场景表现完全一致;
+//    - readmeVM 是 WeeklyDetailView 局部 `@State`(非全局),不会污染 Manage / Trending
+//      主路径的 README 状态;
+//    - 同 project 内重复 resolveRepo(handleStarTapped 后)仍走 D-26 1a 精确路径,
+//      行为不变,只是不再因为 isFetchingRemote 抢屏卡顿;
+//    - 不删 `@State isLocalHit`(目前 view body 未读取,但保留供后续扩展,避免无关
+//      清理放大改动面)。
+//
 
 import SwiftUI
 import AppKit
@@ -99,25 +161,36 @@ struct WeeklyDetailView: View {
 
     /// 当前 project 对应的展示用 `Repo`。
     ///
-    /// 加载策略（见 `resolveRepo`）：
-    /// 1. 先查本地 DB（owner/name）→ 命中即用，`isLocalHit = true`，开 tags/notes/release；
-    /// 2. 未命中 → 调 `GET /repos/{owner}/{repo}` → 临时 Repo（id=0, isStarred=false），`isLocalHit = false`；
-    /// 3. API 失败 → 用 `WeeklyProject` 填一份最小 Repo（只有 owner/name/desc/language/stars），`isLocalHit = false`。
+    /// 加载策略（D-27 修订后,见 `loadAll` + `resolveRepo`）：
+    /// 0. **`loadAll` 入口同步推 fallback minimal Repo**(跨 project 切换时立即生效,
+    ///    `id=0` / `isStarred=false`,字段来自 `WeeklyProject`,保证 hero 同帧切到当前
+    ///    project 不残留上一个);
+    /// 1. `resolveRepo` 异步查本地 DB(`findById` 优先 + `findByOwnerName` 兜底)→ 命中
+    ///    即用本地真值替换 fallback,`isLocalHit = true`,开 tags/notes/release;
+    /// 2. 本地未命中 → silent upgrade:调 `GET /repos/{owner}/{repo}` → 临时 Repo
+    ///    (`id=0`, `isStarred=false`)替换 fallback,`isLocalHit = false`;失败保持
+    ///    fallback 不变(hero 不白屏)。
     @State private var displayRepo: Repo?
-    /// 当前 displayRepo 是否来自本地（决定 tags/notes/release 是否渲染、Star 按钮语义）。
+    /// 当前 displayRepo 是否来自本地（保留供后续扩展使用,view body 当前不读取此字段）。
     @State private var isLocalHit: Bool = false
-    /// 正在拉 GitHub API（本地未命中走的回源路径）。期间显示加载占位。
-    @State private var isFetchingRemote: Bool = false
+    // D-27 修订(2026-06-11):原 `@State isFetchingRemote` 已删除。其唯一用途
+    // ——「本地未命中 → 拉 GitHub API 期间显示 ProgressView 占位」—— 在 `loadAll`
+    // 入口同步推 fallback 后永远不会触发(displayRepo 不再有「nil 待拉」中间态)。
+    // 删 dead state 而非保留,避免后续协作者误用。
 
     // R-01 §3.2.3 决策（Q2）：unstar **即点即生效，不弹 confirm alert**；
     // API 失败 chip 抖动 + 短暂红色（不弹 toast / alert）。失败仅 AppLog 记日志。
     // → 本 view 不持有 showUnstarConfirm / unstarError 等 @State。
 
     var body: some View {
+        // D-27 修订(2026-06-11):删除原 `.id(project.id)` —— 该 modifier 加在 content
+        // 子树而非 WeeklyDetailView 顶层时会触发**子树重建**但外层 @State (displayRepo /
+        // readmeVM) 不重置,新子树用 stale 值渲染一帧 → 视觉残留。`RepoDetailScaffold`
+        // 内部已有 `.id(repo.id)` 处理元信息面板折叠重置,这里再加冗余且反作用。
+        // 现在依赖 SwiftUI 平滑 diff + loadAll 入口同步推 fallback displayRepo 实现切换。
         Group {
             if let project {
                 content(project)
-                    .id(project.id)
             } else {
                 emptyState
             }
@@ -164,19 +237,10 @@ struct WeeklyDetailView: View {
                     )
                 }
             )
-        } else if isFetchingRemote {
-            // 本地未命中、正在拉 GitHub API 的过渡态。
-            // 不希望出现"先白屏再 hero"的视觉跳跃，所以用占位 + 半透明 hint，与 README 加载态匹配。
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("weekly.detail.loadingRepo")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            // 极端兜底：project 非 nil 但 displayRepo / readmeVM 仍未填好。
-            // loadAll 会同步把 fallback minimal repo 推上来，正常路径不应触发。
+            // 极端兜底:project 非 nil 但 displayRepo / readmeVM 极短瞬间还没填好
+            // (理论上 loadAll 入口同步推 fallback + 同步 ensureReadmeViewModel 这帧就
+            // 完成赋值,正常路径不会进此分支)。
             EmptyView()
         }
     }
@@ -231,35 +295,75 @@ struct WeeklyDetailView: View {
 
     // MARK: - Loading 协调
 
-    /// 项目切换时一次性触发：repo 元数据 + README。
-    /// 顺序：repo 先（带 fallback 兜底，保证 hero 区有东西渲染）→ README 异步并发起。
+    /// 项目切换时一次性触发：fallback displayRepo + README + 后台升级 displayRepo。
+    ///
+    /// **D-27 修订(2026-06-11):严格的同步先行 + 异步升级双段式**——
+    ///
+    /// 1) **同步段(同帧立即生效,无 await)**:
+    ///    - `displayRepo` 跨 project 切换时立即推 `makeFallbackRepo(...)`(纯字段构造,
+    ///      零失败可能),hero 同帧切到当前 project,消除「上半还是 A 的内容」视觉残留;
+    ///    - `readmeVM.loadTrending(...)` 同步调用,内部入口处 `if !isSameRepo
+    ///      { state = .loading }` 同帧把 README 区切到 spinner,消除「下半闪一下 A 的
+    ///      readme html」视觉残留。
+    ///
+    /// 2) **异步段(后台升级 displayRepo)**:
+    ///    - `await resolveRepo(for:)` 走本地 DB 命中(D-26 1a id 精确 + 1b owner/name
+    ///      兜底)→ silent upgrade GitHub `/repos`(失败保持 fallback)。期间 hero 已
+    ///      经显示 fallback 内容,不再阻塞 UI。
+    ///
+    /// 这两段必须严格分先后:同步段必须放在 await 之前,任何 await 都会拖延 readme
+    /// 切换 → 重现 D-27 卡顿症状。
     private func loadAll(for project: WeeklyProject?) async {
         guard let project else {
-            // 切到空选中 → 释放 README 状态，避免上一项的 loading 残留。
+            // 切到空选中 → 释放 README 状态,避免上一项的 loading 残留。
             readmeVM?.reset()
             displayRepo = nil
             isLocalHit = false
-            isFetchingRemote = false
             return
         }
 
+        // ─── 同步段(D-27 修复 1):必须在任何 await 之前完成 ─────────────────
+        //
+        // 跨 project 切换时立即把 displayRepo 替换为当前 project 的 fallback minimal
+        // Repo(纯字段拷贝,零失败可能),hero 同帧切到 B 的 owner/name/desc/language/
+        // stars,消除「hero 残留 A 内容直到 await resolveRepo 完成」的卡顿症状。
+        //
+        // 同 project 内重复 loadAll(理论上 task(id:) 不会触发,但 handleStarTapped 等
+        // 路径不在此走)→ fullName 匹配 → 不动 displayRepo,保留本地命中真值。
+        if displayRepo?.fullName.lowercased() != project.fullName.lowercased() {
+            displayRepo = makeFallbackRepo(from: project)
+            isLocalHit = false
+        }
+        // 同步触发 README 切换。`loadTrending` 入口处 `if !isSameRepo { state = .loading }`
+        // 同帧设置,消除「README 闪一下 A 的 stale html」视觉残留。
+        loadReadme(for: project)
+
+        // ─── 异步段:后台升级 displayRepo 到本地真值或 GitHub API 真值 ───────
         await resolveRepo(for: project)
-        await loadReadme(for: project)
     }
 
-    /// 决定 `displayRepo` 与 `isLocalHit`。
+    /// 决定 `displayRepo` 与 `isLocalHit`(D-27 修订后:silent upgrade 模式)。
     ///
-    /// 步骤：
+    /// **前置条件**:`loadAll` 入口已经同步把 `displayRepo` 推到当前 project 的 fallback
+    /// minimal Repo,hero 已经在屏幕上。本函数仅负责**用更精细的真值替换 fallback**。
+    ///
+    /// 步骤:
     /// 1a. **优先 findById(displayRepo?.id)** 精确匹配 — 用于 star/unstar 完成后
     ///     第二次 resolveRepo,避开 owner/name 大小写 / 重命名问题(详见 D-24)。
-    ///     **D-26 修订(2026-06-11)**:1a 必须额外校验
-    ///     `displayRepo.fullName.lowercased() == project.fullName.lowercased()`,
-    ///     否则切换 project 时会用上一个 project 的 ghRepoId 误命中旧 repo,
-    ///     导致 hero 永远不替换(详见下方 D-26 注释段)。
-    /// 1b. findById 不命中(displayRepo nil / id=0 fallback / 历史未命中 / fullName
-    ///     不匹配) → 走 `findByOwnerName(owner:name:)` 兜底。
-    /// 2. 全部不命中 → 调 GitHub API,构造临时 Repo;
-    /// 3. API 失败 → 用 WeeklyProject 现有字段构造最小 Repo(保证 hero 不白屏)。
+    ///     **D-26 修订**:1a 必须额外校验 `displayRepo.fullName.lowercased() ==
+    ///     project.fullName.lowercased()`,否则切换 project 时会用上一个 project
+    ///     的 ghRepoId 误命中旧 repo。
+    ///     注:D-27 修复后 loadAll 入口推的 fallback `id=0`,1a 守卫 `cached.id > 0`
+    ///     自动跳过 fallback 路径,只在「handleStarTapped 后同 project 二次 resolveRepo」
+    ///     这条原本想走 1a 的路径上命中。
+    /// 1b. findById 不命中(displayRepo `id=0` fallback / 历史未命中 / fullName 不匹配)
+    ///     → 走 `findByOwnerName(owner:name:)` 兜底。
+    /// 2.  全部不命中 → **silent upgrade**:调 GitHub `/repos` 用真值替换 fallback;
+    ///     失败保持 fallback 不变(hero 不白屏)。
+    ///     **D-27 修订**:原步骤 2 设 `isFetchingRemote = true` + 阻塞 UI 显
+    ///     ProgressView,现在 fallback 已在屏上,API 在后台静默跑,不阻塞 UI。原
+    ///     「步骤 3 显式推 fallback 兜底」并入 `loadAll` 入口同步路径,本函数末尾
+    ///     不再额外推 fallback。
     private func resolveRepo(for project: WeeklyProject) async {
         // 1a) 本地查找 — id 精确匹配 优先(仅当 fullName 与当前 project 同源)
         //
@@ -292,7 +396,6 @@ struct WeeklyDetailView: View {
                 if let local = try await dependencies.repoRepository.findById(cached.id) {
                     displayRepo = local
                     isLocalHit = true
-                    isFetchingRemote = false
                     return
                 }
             } catch {
@@ -307,26 +410,28 @@ struct WeeklyDetailView: View {
                 name: project.name
             ) {
                 displayRepo = local
-                // local 行可能 isStarred=false（用户取消 star 后的墓碑行）；
-                // 此时也算"本地有 repo.id 可用"，tags/notes/release 段照常渲染。
+                // local 行可能 isStarred=false(用户取消 star 后的墓碑行);
+                // 此时也算"本地有 repo.id 可用",tags/notes/release 段照常渲染。
                 // Star stat 的 tooltip / 动作仍按 isStarred 真实状态决定。
                 isLocalHit = true
-                isFetchingRemote = false
                 return
             }
         } catch {
             AppLog.sync.error("weekly: local repo lookup failed: \(error.localizedDescription, privacy: .public)")
-            // 继续走远端路径，不阻塞
+            // 继续走远端路径,不阻塞
         }
 
-        // 2) 调 GitHub API（仅在视图层手动 fetch；本地仍是单一信任源）
-        isFetchingRemote = true
-        defer { isFetchingRemote = false }
+        // 2) Silent upgrade — 调 GitHub API 用真值替换 fallback。
+        //
+        // **D-27 修订(2026-06-11)**:此前这里设 `isFetchingRemote = true` 阻塞 UI 显
+        // ProgressView,导致 weekly 切换 critical path 必走 ~几百 ms ~ 1+s 的网络等待
+        // 期间 hero 残留上一个 project 的内容(详见文件头 D-27 修订段)。现在 fallback
+        // 已经在屏幕上(`loadAll` 入口同步推),本步骤仅用真值替换字段,失败时保持
+        // fallback 不变(hero 不白屏)。weekly 列表只是发现入口,**不入库**——避免污染
+        // 本地 starred 集合。
         do {
             let dto = try await dependencies.apiClient.repo(owner: project.owner, repo: project.name)
             let cachedAt = ISO8601DateFormatter.shared.string(from: Date())
-            // 用 GRDBRepoRepository.repoFromDTO + isStarred=false 拼一份临时 Repo；
-            // **不入库**：避免污染本地 starred 集合，weekly 列表只是发现入口。
             displayRepo = GRDBRepoRepository.repoFromDTO(
                 dto,
                 starredAt: nil,
@@ -334,14 +439,14 @@ struct WeeklyDetailView: View {
                 isStarred: false
             )
             isLocalHit = false
-            return
         } catch {
-            AppLog.network.error("weekly: GitHub /repos fetch failed for \(project.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            AppLog.network.error("weekly: GitHub /repos silent upgrade failed for \(project.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            // 保持 loadAll 入口推的 fallback minimal repo 不动,hero 不白屏。
+            // 原「步骤 3 兜底显式推 fallback」已并入 loadAll 入口同步路径,这里不再
+            // 重复推一次(避免 race:本步骤跑完时 displayRepo 可能已经被同 project 的
+            // handleStarTapped 路径推上来 — 虽然实际不太可能,但语义上 silent upgrade
+            // 应该是「成功才覆盖,失败不动」)。
         }
-
-        // 3) 最终兜底：用 WeeklyProject 现有字段构一份最小 Repo，保证 hero 不白屏
-        displayRepo = makeFallbackRepo(from: project)
-        isLocalHit = false
     }
 
     /// 从 WeeklyProject 构造一份"最小可用" Repo。
@@ -378,7 +483,13 @@ struct WeeklyDetailView: View {
         )
     }
 
-    private func loadReadme(for project: WeeklyProject) async {
+    /// 触发 README 加载。
+    ///
+    /// **D-27 修订(2026-06-11)**:函数签名从 `async` 改为同步 —— 内部 `loadTrending`
+    /// 本来就是"启动 Task,入口处同步设 state = .loading,网络异步跑"的 fire-and-forget
+    /// 形态,外层 await 没有意义,反而误导调用方以为「await 完了 README 已加载好」。
+    /// 同步签名让 `loadAll` 入口处「同步触发 README 切换」的语义更清晰。
+    private func loadReadme(for project: WeeklyProject) {
         let model = ensureReadmeViewModel()
         model.loadTrending(
             owner: project.owner,
