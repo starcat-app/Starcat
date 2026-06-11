@@ -36,6 +36,16 @@
 //    + 三态 icon（syncing / rateLimited / idle）等特殊行为，强行抽象会丢失能力。
 //    若后续要统一可加 `cancelIconOnHover` / `customIcon(for: state)` 等参数。
 //
+//  2026-06-11 dong4j 反馈「weekly 板块刷新按钮没转圈」根因 + 修复：
+//  - 表象：weekly 列表上方的 SyncIconButton 点击后没有可见的旋转动画
+//  - 根因：本地后端响应极快（1-6ms），加上 JSON 解码 + UI 更新整个 reload() 全程
+//    20-50ms，`isLoading=true` 状态在屏幕上停留不到 2 帧（< 33ms），人眼根本看不到旋转
+//  - 反观 SidebarSyncButton 转得明显是因为 GitHub 全量同步要几秒到几十秒
+//  - 修复（本次）：加 `minVisibleDuration` 参数（默认 600ms）+ 内部 `enforcedRefreshing`
+//    状态机。一旦 isRefreshing 触发 true，无论数据多快返回都至少持续旋转 minVisibleDuration，
+//    给用户明确「我点了 + 它在做事」的反馈。属于行业常规做法（iOS UIRefreshControl 同款）。
+//  - 所有现有调用方零改动直接受益（默认值），需要立即停止旋转的特殊场景可显式传 0。
+//
 
 import SwiftUI
 
@@ -45,6 +55,9 @@ import SwiftUI
 /// - 静止时（`isRefreshing == false`）：图标静止不转
 /// - 刷新中（`isRefreshing == true`）：图标持续旋转（线性，1 秒/圈）
 /// - 状态切换：`true → false` 时用 0.2s easeOut 平滑回正到 0°，避免突然跳变
+/// - **最短可见时长**（R-04 2026-06-11）：即便 `isRefreshing` 闪一下立即变 false（典型：
+///   本地后端 5ms 返回），按钮仍至少持续旋转 `minVisibleDuration`（默认 600ms），
+///   保证用户看到「按了 + 在做事」的视觉反馈。详见 `enforcedRefreshing` 状态机。
 ///
 /// 自动尊重 `accessibilityReduceMotion`：
 /// - reduceMotion 开启时旋转改为"瞬切到 360°"再瞬切回 0，仍提供视觉反馈但无连续动画
@@ -54,6 +67,9 @@ struct SyncIconButton: View {
     // MARK: - 公开参数
 
     /// 是否正在刷新中。true → 图标旋转；false → 图标静止。
+    ///
+    /// **注意**（R-04 2026-06-11）：实际旋转时长 = max(外部 isRefreshing 持续时间, `minVisibleDuration`)。
+    /// 即便 caller 只让 isRefreshing=true 持续 5ms，按钮也会强制旋转至少 minVisibleDuration。
     let isRefreshing: Bool
 
     /// 是否禁用按钮（如 `isRefreshing || isLoading` 期间不接受额外点击）。
@@ -69,6 +85,16 @@ struct SyncIconButton: View {
     /// 视觉割裂，统一收口到 18×18 + .caption。
     let frameSize: CGFloat
 
+    /// **最短可见旋转时长**（R-04 2026-06-11 dong4j 反馈）。
+    ///
+    /// 即使 `isRefreshing` 极快变 false（本地后端 5ms 返回这种），按钮也保证至少持续旋转
+    /// 这么久。给用户「我点了 + 它在做事」的明确反馈，避免"按了好像没反应"的错觉。
+    ///
+    /// 默认 600ms（视觉上恰好能感受到旋转节奏，又不显得故意拖时间）。
+    /// 如果调用方明确不需要（已自己保证最短可见性），可传 0 关闭本机制。
+    /// 行业常规做法（iOS UIRefreshControl / 各种 PullToRefresh 都有类似约定）。
+    let minVisibleDuration: TimeInterval
+
     /// hover tooltip 文本。直接传 `String`（已本地化），便于 caller 处理状态相关文案。
     let tooltip: String
 
@@ -78,6 +104,16 @@ struct SyncIconButton: View {
     // MARK: - 内部状态
 
     @State private var rotation: Double = 0
+
+    /// **强制旋转状态**（R-04 2026-06-11 最短可见时长机制）。
+    /// 与 `isRefreshing` 的关系：
+    /// - `isRefreshing=true` → `enforcedRefreshing` 立即 true，记 `enforcedStartedAt`
+    /// - `isRefreshing=false` → 延迟到 `enforcedStartedAt + minVisibleDuration` 才 false
+    /// - 视图层旋转动画绑定 **enforcedRefreshing**（而非 isRefreshing），让最短可见时长生效
+    @State private var enforcedRefreshing: Bool = false
+    @State private var enforcedStartedAt: Date?
+    @State private var stopTask: Task<Void, Never>?
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: - Init（带默认值，常用场景一行调用）
@@ -87,6 +123,7 @@ struct SyncIconButton: View {
         disabled: Bool = false,
         font: Font = .caption,
         frameSize: CGFloat = 18,
+        minVisibleDuration: TimeInterval = 0.6,
         tooltip: String,
         action: @escaping () -> Void
     ) {
@@ -94,6 +131,7 @@ struct SyncIconButton: View {
         self.disabled = disabled
         self.font = font
         self.frameSize = frameSize
+        self.minVisibleDuration = minVisibleDuration
         self.tooltip = tooltip
         self.action = action
     }
@@ -104,7 +142,7 @@ struct SyncIconButton: View {
         Button(action: action) {
             Image(systemName: "arrow.triangle.2.circlepath")
                 .font(font)
-                .foregroundStyle(isRefreshing ? Color.accentColor : Color.secondary)
+                .foregroundStyle(enforcedRefreshing ? Color.accentColor : Color.secondary)
                 .rotationEffect(.degrees(rotation))
                 .frame(width: frameSize, height: frameSize)
                 .contentShape(Rectangle())
@@ -115,15 +153,70 @@ struct SyncIconButton: View {
         .disabled(disabled)
         .help(tooltip)
         .onAppear {
-            updateRotation(isRefreshing: isRefreshing)
+            syncEnforcedState(isRefreshing: isRefreshing)
         }
         .onChange(of: isRefreshing) { _, newValue in
+            syncEnforcedState(isRefreshing: newValue)
+        }
+        .onChange(of: enforcedRefreshing) { _, newValue in
             updateRotation(isRefreshing: newValue)
         }
     }
 
-    // MARK: - 旋转控制（核心逻辑，与 SidebarSyncButton.updateRotation 行为一致）
+    // MARK: - 最短可见时长状态机（R-04 核心）
 
+    /// 把外部 `isRefreshing` 翻译为内部 `enforcedRefreshing`：
+    /// - true → 立即同步并记起始时间；取消任何 pending 的 stop task
+    /// - false → 如果已转够 minVisibleDuration 立即停；否则启动 task 延迟到满足
+    ///
+    /// 重复触发安全：每次都 cancel 上一个 stopTask，避免状态机错乱。
+    /// minVisibleDuration <= 0 → 直接透传 isRefreshing（关闭本机制，给特殊场景兜底）。
+    private func syncEnforcedState(isRefreshing: Bool) {
+        if minVisibleDuration <= 0 {
+            stopTask?.cancel()
+            stopTask = nil
+            if enforcedRefreshing != isRefreshing {
+                enforcedRefreshing = isRefreshing
+                enforcedStartedAt = isRefreshing ? Date() : nil
+            }
+            return
+        }
+
+        if isRefreshing {
+            stopTask?.cancel()
+            stopTask = nil
+            if !enforcedRefreshing {
+                enforcedRefreshing = true
+                enforcedStartedAt = Date()
+            }
+            return
+        }
+
+        guard enforcedRefreshing else { return } // 本来就没转，no-op
+        let elapsed = enforcedStartedAt.map { Date().timeIntervalSince($0) } ?? minVisibleDuration
+        let remaining = max(0, minVisibleDuration - elapsed)
+
+        stopTask?.cancel()
+        if remaining <= 0 {
+            enforcedRefreshing = false
+            enforcedStartedAt = nil
+            return
+        }
+        // 还差 remaining 秒才到最短可见时长——挂个定时器到点再停
+        stopTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            // 期间外部又触发了 true？跳过停止（onChange 会再来一遍）
+            guard !self.isRefreshing else { return }
+            self.enforcedRefreshing = false
+            self.enforcedStartedAt = nil
+        }
+    }
+
+    // MARK: - 旋转控制（与 SidebarSyncButton.updateRotation 行为一致）
+
+    /// 由 `enforcedRefreshing` 驱动（而非 isRefreshing），caller 闪烁 isRefreshing
+    /// 时按钮仍能完整转完最短可见时长。
     private func updateRotation(isRefreshing: Bool) {
         if isRefreshing {
             // 启动连续旋转：linear + repeatForever，1 秒一圈
@@ -189,6 +282,62 @@ struct SyncIconButton: View {
                 tooltip: "刷新中"
             ) {}
         }
+
+        Divider()
+
+        // R-04 最短可见时长验证（dong4j 2026-06-11 反馈本地 5ms 返回看不到旋转）：
+        // 点击下面三个按钮模拟「isRefreshing 极快闪烁」场景，验证 minVisibleDuration 生效。
+        Text("R-04：模拟「闪烁 5ms / 50ms / 默认 600ms 兜底」效果")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        FlashRefreshDemoRow()
     }
     .padding(40)
+}
+
+/// Preview 专用：模拟 caller 把 isRefreshing 闪烁 5ms / 50ms 的体验。
+/// 即便闪烁时间远小于一帧，按钮仍能完整旋转至少 minVisibleDuration。
+private struct FlashRefreshDemoRow: View {
+    @State private var flashing5ms: Bool = false
+    @State private var flashing50ms: Bool = false
+    @State private var flashing600msOff: Bool = false
+
+    var body: some View {
+        HStack(spacing: 30) {
+            VStack(spacing: 6) {
+                SyncIconButton(isRefreshing: flashing5ms, tooltip: "5ms 闪烁") {
+                    flashing5ms = true
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 5_000_000)
+                        flashing5ms = false
+                    }
+                }
+                Text("5ms 闪烁").font(.caption2).foregroundStyle(.secondary)
+            }
+            VStack(spacing: 6) {
+                SyncIconButton(isRefreshing: flashing50ms, tooltip: "50ms 闪烁") {
+                    flashing50ms = true
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 50_000_000)
+                        flashing50ms = false
+                    }
+                }
+                Text("50ms 闪烁").font(.caption2).foregroundStyle(.secondary)
+            }
+            VStack(spacing: 6) {
+                SyncIconButton(
+                    isRefreshing: flashing600msOff,
+                    minVisibleDuration: 0,
+                    tooltip: "关闭最短可见（透传）"
+                ) {
+                    flashing600msOff = true
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 5_000_000)
+                        flashing600msOff = false
+                    }
+                }
+                Text("min=0 透传").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
 }
