@@ -639,10 +639,10 @@ final class AppSettings {
 
     // MARK: - 第三方服务自定义 URL（2026-06-08 新增）
 
-    /// 第三方后端服务（Trending / Weekly / Sharing）的用户自定义 URL 字典。
+    /// 第三方后端服务（Trending / Weekly / Sharing / Wiki）的用户自定义 URL 字典。
     ///
     /// 设计要点：
-    /// - 键 = `ThirdPartyService.rawValue`（"trending" / "weekly" / "sharing"）。
+    /// - 键 = `ThirdPartyService.rawValue`（"trending" / "weekly" / "sharing" / "wiki"）。
     ///   用字符串而非直接用枚举做键是为了兼容 `Codable` 持久化 + 让 UserDefaults 直接吃
     ///   `[String: String]`；同时未来新增 service 不需要做迁移。
     /// - 值 = 用户填入的 URL 原始字符串（已通过 `ThirdPartyService.validate` 校验）。
@@ -688,7 +688,7 @@ final class AppSettings {
 
     // MARK: - 第三方服务 API Key（R-01 v1.2 2026-06-09 引入 / 2026-06-10 迁 Keychain）
     //
-    // 三个自建后端（trending / weekly / sharing）改造后强制 Bearer Token 鉴权，前端
+    // 四个自建后端（trending / weekly / sharing / wiki）改造后强制 Bearer Token 鉴权，前端
     // 必须在 Authorization 头里塞 `Bearer <api-key>`，否则任何 /api/v1/* 请求 401。
     //
     // 持久化方式（**2026-06-10 已迁 Keychain**）：

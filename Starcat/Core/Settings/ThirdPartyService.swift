@@ -26,12 +26,14 @@ import SwiftUI
 ///
 /// rawValue 用作 UserDefaults 持久化键，**不要**轻易改，否则用户已配置的自定义 URL 会丢。
 enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
-    /// GitHub Trending 抓取后端（GET /repo）。
+    /// GitHub Trending 抓取后端（GET /api/v1/repos）。
     case trending
-    /// 阮一峰周刊推荐 GitHub 项目后端（GET /api/weekly/projects）。
+    /// 阮一峰周刊推荐 GitHub 项目后端（GET /api/v1/weekly）。
     case weekly
-    /// AI 分享卡后端（POST /api/share）。
+    /// AI 分享卡后端（POST /api/v1/share）。
     case sharing
+    /// 外部文档站索引探测后端（GET /api/v1/wikis）。
+    case wiki
 
     var id: String { rawValue }
 
@@ -43,6 +45,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .trending: return "settings.services.trending.title"
         case .weekly:   return "settings.services.weekly.title"
         case .sharing:  return "settings.services.sharing.title"
+        case .wiki:     return "settings.services.wiki.title"
         }
     }
 
@@ -52,6 +55,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .trending: return "settings.services.trending.description"
         case .weekly:   return "settings.services.weekly.description"
         case .sharing:  return "settings.services.sharing.description"
+        case .wiki:     return "settings.services.wiki.description"
         }
     }
 
@@ -64,6 +68,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .trending: return "flame.fill"
         case .weekly:   return "newspaper"
         case .sharing:  return "square.and.arrow.up"
+        case .wiki:     return "book.pages"
         }
     }
 
@@ -74,6 +79,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .trending: return "#F05138" // Swift orange-red：与 trending"火"语义一致
         case .weekly:   return "#dea584" // Rust beige：与 ActivityCategory.weekly 完全一致
         case .sharing:  return "#3178c6" // TypeScript blue：与"分享 / 公开链接"的"链接蓝"语义一致
+        case .wiki:     return "#8B5CF6" // Violet：与知识库 / 文档入口区分现有三个服务
         }
     }
 
@@ -99,6 +105,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .trending: return URL(string: "https://github.com/dong4j/starcat-trending-api")!
         case .weekly:   return URL(string: "https://github.com/dong4j/starcat-weekly-api")!
         case .sharing:  return URL(string: "https://github.com/dong4j/starcat-sharing-api")!
+        case .wiki:     return URL(string: "https://github.com/dong4j/starcat-wiki-api")!
         }
     }
 
@@ -119,6 +126,8 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
             return AppEndpoints.appendPath(AppEndpoints.Trending.Paths.healthz, to: base)
         case .sharing:
             return AppEndpoints.Sharing.healthzURL(over: base)
+        case .wiki:
+            return AppEndpoints.appendPath(AppEndpoints.Wiki.Paths.healthz, to: base)
         }
     }
 
@@ -145,6 +154,10 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
             // sharing 的 base 含 /api；业务拼 <base>/v1/share；这里也拼 <base>/v1/share
             // 即 <host>/api/v1/share，让 authMiddleware 鉴权后路由到 GET（未注册 → 404/405）。
             return AppEndpoints.appendPath(AppEndpoints.Sharing.Paths.share, to: base)
+        case .wiki:
+            // 缺少 owner/repo 时有效 token 返回 400，无效 token 返回 401；现有 checker
+            // 把非 401/5xx 视为 middleware 已放行，因此无需增加专用探测端点。
+            return AppEndpoints.appendPath(AppEndpoints.Wiki.Paths.status, to: base)
         }
     }
 }
@@ -181,7 +194,7 @@ extension ThirdPartyService {
     /// - 必须能 `URL.init(string:)`、scheme ∈ {http, https}、host 非空
     /// - 末尾多余 `/` 不强制去掉（用户写法各异，统一以 `URL` 解析结果为准）
     ///
-    /// 不接受 `file://` 等非 http 协议——三个服务都是 HTTP 后端，写 `file://` 一定是误输。
+    /// 不接受 `file://` 等非 http 协议——四个服务都是 HTTP 后端，写 `file://` 一定是误输。
     static func validate(_ raw: String) -> ServiceURLValidation {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .empty }

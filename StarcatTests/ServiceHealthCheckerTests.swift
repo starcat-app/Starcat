@@ -110,6 +110,17 @@ struct ServiceHealthCheckerTests {
         #expect(code == 404)
     }
 
+    @Test("wiki 鉴权探测：缺 owner/repo 返回 400 仍表示 middleware 已放行")
+    func wikiAuthProbe400AlsoOk() async {
+        let checker = makeChecker()
+        stubResponses([
+            (pathSuffix: "/healthz", statusCode: 200, body: Data()),
+            (pathSuffix: "/api/v1/wikis", statusCode: 400, body: Data())
+        ])
+        let outcome = await checker.check(service: .wiki, baseURL: fakeBaseURL, apiKey: "sk-good")
+        #expect(outcome == .ok(statusCode: 400))
+    }
+
     @Test("healthz 503 → reachableButError，**不**进入鉴权 step")
     func healthzNon2xxShortCircuits() async {
         let checker = makeChecker()

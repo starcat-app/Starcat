@@ -11922,6 +11922,88 @@
         }
       }
     },
+    "settings.services.wiki.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External Wiki API"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部 Wiki API"
+          }
+        }
+      }
+    },
+    "settings.services.wiki.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detects whether a repository is indexed by DeepWiki, Zread, or Google Code Wiki."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "探测仓库是否已被 DeepWiki、Zread 或 Google Code Wiki 收录。"
+          }
+        }
+      }
+    },
+    "wiki.menu.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiki"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiki"
+          }
+        }
+      }
+    },
+    "wiki.menu.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open external repository documentation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开仓库的外部文档"
+          }
+        }
+      }
+    },
+    "wiki.source.deepwiki" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "DeepWiki" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "DeepWiki" } }
+      }
+    },
+    "wiki.source.zread" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Zread" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Zread" } }
+      }
+    },
+    "wiki.source.codewiki" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Google Code Wiki" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Google Code Wiki" } }
+      }
+    },
     "starAction.error.notAuthenticated" : {
       "extractionState" : "manual",
       "localizations" : {
