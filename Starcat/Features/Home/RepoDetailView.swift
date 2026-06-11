@@ -102,12 +102,14 @@ struct RepoDetailView: View {
                     onStarTapped: {
                         // §3.2.3 状态机：throws 让 StarStatChipButton 抖动 + 短暂红色（不弹 alert）
                         try await handleStarTapped(repo: repo)
-                    },
-                    onRefresh: {
-                        // §3.2.9：右下浮动刷新按钮触发 → 强制刷当前 repo 视图数据
-                        // （重拉缓存 repo + tags + notes + release 计数等）
-                        await viewModel.reloadItems(forceRefresh: true)
                     }
+                    // v2.1 修订（2026-06-11）：撤销 §3.2.9 给 Scaffold 加 `onRefresh:` +
+                    // 浮动刷新按钮的设计 —— Manage 详情同位置已经有 `cacheFooter` 内的
+                    // SyncIconButton(只刷 README),叠加 overlay 的浮动按钮(刷整个仓库视图)
+                    // 视觉上无法区分,用户反馈为 bug。改为合并：cacheFooter 内的按钮在
+                    // Manage 场景同时承担 README + reloadItems 双职责,详见
+                    // `ManageDetailContent.swift` 文件头 v2.1 修订段 +
+                    // `RepoDetailScaffold.swift` 文件头 v2.1 修订段。
                 ) { onScrollOffset in
                     ManageDetailContent(repo: repo, onScrollOffset: onScrollOffset)
                 }
