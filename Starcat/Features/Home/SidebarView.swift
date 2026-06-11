@@ -37,7 +37,12 @@ struct SidebarView: View {
     /// 当前打开/收起 Languages 组的状态。
     @State private var languagesExpanded: Bool = true
     /// W4 A6：Tags 组展开/收起状态。
-    @State private var tagsExpanded: Bool = true
+    /// 默认 **折叠**（2026-06-11 dong4j 体验优化）：tag 数量多时全展开会挤掉
+    /// Languages / Activity / Trending 等同级 section 的视觉权重，初始折叠让用户
+    /// 一眼看到全局结构，需要时再展开。会话内的展开状态由 @State 保持（不持久化，
+    /// 与下方 languagesExpanded / trendingLanguagesExpanded / activityCategoriesExpanded
+    /// 行为一致：重启 App 后回到折叠默认值）。
+    @State private var tagsExpanded: Bool = false
     /// Trending 语言列表展开/收起状态。和 Manage 的 Languages 分开，避免互相影响。
     @State private var trendingLanguagesExpanded: Bool = true
     /// Activity 分类列表展开/收起状态。Activity 是独立 root，不能复用 Trending 的展开态。

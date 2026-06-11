@@ -11554,22 +11554,6 @@
         }
       }
     },
-    "settings.services.save.help" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save the new URL. Takes effect immediately, no restart required."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存新地址，立即生效无需重启。"
-          }
-        }
-      }
-    },
     "settings.services.reset.help" : {
       "localizations" : {
         "en" : {
@@ -11682,18 +11666,18 @@
         }
       }
     },
-    "settings.services.health.error" : {
+    "settings.services.health.serverError" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reachable but error"
+            "value" : "Server error"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "可达但返回错误"
+            "value" : "服务器错误"
           }
         }
       }
@@ -11726,22 +11710,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "API Key 无效"
-          }
-        }
-      }
-    },
-    "settings.services.health.authProbeError" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Auth probe error"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "鉴权探测异常"
           }
         }
       }
@@ -11806,22 +11774,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "遮蔽 API Key"
-          }
-        }
-      }
-    },
-    "settings.services.apiKey.save.help" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save the API key to the encrypted local store and push to the running API actor."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "把 API Key 写入加密本地存储并热推送到运行中的 API actor。"
           }
         }
       }

@@ -20,6 +20,11 @@
 //    OAuth 3 个 path、自建后端 3 个 path——按服务命名空间整理。调用方写 `path: AppEndpoints
 //    .GitHubREST.Paths.userStarred`，grep 标识符就能定位所有引用点。
 //  - v4（2026-06-11 当前）：新增 Wiki 自建后端，统一接入 URL 设置、健康检查与业务路径。
+//  - v5（2026-06-11 R-03.1）：**Sharing 不再特殊**。原来 `Sharing.productionURL` 含 `/api`
+//    后缀、Paths 写 `/v1/...` 的设计假设「baseURL 总有 `/api`」，本地自部署填 `:5001` 时
+//    业务全 404（路径会少一段 `/api`）。现在统一与其它 3 个服务对齐：productionURL 不含
+//    `/api`，Paths 写绝对 `/api/v1/...`。历史用户已存的 `*/api` 后缀 baseURL 由
+//    `ThirdPartyService.normalizedBaseURL(_:)` 在保存阶段自动剥除，向后兼容。
 //
 //  非 REST 链接（GitHub 网页跳转、第三方装饰链接）**不**放本文件：
 //    - GitHub 网页跳转（github.com/{login}, github.com/{owner}/{repo} 等）→ `GitHubURLs.swift`
@@ -29,9 +34,10 @@
 //  设计约束：
 //  - 自建后端的 `baseURL` getter 标 `@MainActor`（要读 `AppSettings.shared`），导致 actor init
 //    无法用它作 default 参数；四个 API 的 `init(baseURL:)` 都没有默认值，强制 DI/测试显式传。
-//  - `Sharing.healthzURL` 是单独 helper，不在 `Sharing.Paths` 里。因为 sharing 的 baseURL 含
-//    `/api` 后缀（业务请求用），而 `/healthz` 挂在根路径，路径拼接语义不一样；放 Paths 里
-//    会让用户写 `Sharing.url(Sharing.Paths.healthz)` 拼出 `.../api/healthz`（错的）。
+//  - 客户端「测试连接」走 `/api/v1/ping`，后端为此专门 expose 的 endpoint（R-03 2026-06-11），
+//    由 BearerAuth 保护。避免借用业务 endpoint 作 auth probe 的副作用（sharing 的 GET /share
+//    返 405、wiki 的 GET /wikis 缺参数返 400 等需要客户端特判的尴尬场景）。
+//    详见 ServiceHealthChecker.swift。
 //  - `Paths.xxx` 全部以 `/` 开头，便于源码 grep 时直观；`url(_:)` 内部做 trim。
 //
 
@@ -75,8 +81,9 @@ enum AppEndpoints {
             static let projectsByOwnerRepo = "/api/v1/weekly"
             /// `GET /api/v1/issues` —— 周刊期号列表。
             static let issues = "/api/v1/issues"
-            /// `GET /healthz` —— 健康检查（与业务 path 同级，无需特殊处理）。
-            static let healthz = "/healthz"
+            /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点（R-03 2026-06-11）。
+            /// 需要 Bearer Auth，鉴权通过返回 200。详见 supports/starcat-weekly-api/internal/handler/ping.go。
+            static let ping = "/api/v1/ping"
         }
 
         /// 把 `Paths.xxx` 拼到当前 baseURL 上。
@@ -107,8 +114,9 @@ enum AppEndpoints {
             static let users = "/api/v1/users"
             /// `GET /api/v1/languages` —— 支持的语言字典（启动时缓存）。
             static let languages = "/api/v1/languages"
-            /// `GET /healthz` —— 健康检查。
-            static let healthz = "/healthz"
+            /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点（R-03 2026-06-11）。
+            /// 需要 Bearer Auth，鉴权通过返回 200。详见 supports/starcat-trending-api/internal/handler/ping.go。
+            static let ping = "/api/v1/ping"
         }
 
         @MainActor
@@ -121,52 +129,40 @@ enum AppEndpoints {
 
     /// AI 分享卡后端 endpoint 集合。
     ///
-    /// **特殊语义**：`baseURL` 含 `/api` 后缀（与生产部署语义一致，业务请求都在 `/api/*` 下）；
-    /// `/healthz` 挂在根路径（即 `baseURL` 的父级），所以提供独立的 `healthzURL` getter
-    /// 而非把 healthz 放进 `Paths` —— 避免有人写 `Sharing.url(Paths.healthz)` 拼出错的 URL。
+    /// R-03.1（2026-06-11）：与其它 3 个自建后端**完全对齐**——baseURL 是裸 host
+    /// （不含 `/api` 后缀），所有 path 写绝对 `/api/v1/...`。
+    /// 历史用户如果在 customServiceURL 里存了 `*/api` 形态的 URL，在保存阶段会被
+    /// `ThirdPartyService.normalizedBaseURL(_:)` 自动剥除 `/api` 后缀，向后兼容。
+    ///
+    /// 历史教训：之前 productionURL 设成 `.fly.dev/api`、Paths 写 `/v1/...`，假设
+    /// 「baseURL 总会有 `/api`」。本地自部署填 `http://127.0.0.1:5001`（不含 `/api`）
+    /// 一进来就 404——不只 ping，业务 share 也是。dong4j 2026-06-11 反馈后修正。
     enum Sharing {
-        /// 生产 URL（含 `/api` 后缀）。
-        static let productionURL = URL(string: "https://starcat-sharing-api.fly.dev/api")!
+        /// 生产 URL（不含 `/api` 后缀）。
+        static let productionURL = URL(string: "https://starcat-sharing-api.fly.dev")!
 
         @MainActor
         static var baseURL: URL {
             AppEndpoints.resolve(production: productionURL, service: .sharing)
         }
 
-        /// R-01 v1.2（2026-06-09）：旧的 `/share` 已迁到 `/v1/share`（baseURL 含 `/api`，
-        /// 拼接后绝对路径 `/api/v1/share`，envelope 包装 + Bearer Auth；详见
-        /// supports/starcat-sharing-api/cmd/server/main.go）。
+        /// R-01 v1.2（2026-06-09）建立 `/api/v1/*` 命名空间；R-03.1 客户端口径对齐
+        /// 后，本目录的 path 与 trending/weekly/wiki 完全同款（绝对路径 `/api/v1/...`）。
+        /// 后端路由：详见 supports/starcat-sharing-api/cmd/server/main.go。
         enum Paths {
-            /// `POST /v1/share` —— 相对 `baseURL`，即 `<base>/api/v1/share`。
-            static let share = "/v1/share"
-            // 注意：故意不放 healthz 在 Paths 里。healthz 走根路径，参见 `healthzURL` getter。
+            /// `POST /api/v1/share` —— 创建分享链接。envelope 包装 + Bearer Auth。
+            static let share = "/api/v1/share"
+            /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点（R-03 2026-06-11）。
+            /// 需要 Bearer Auth，鉴权通过返回 200。详见 supports/starcat-sharing-api/internal/handler/ping.go。
+            static let ping = "/api/v1/ping"
+            // 注意：本服务**未列** healthz path。客户端探活已统一收敛到 `ping`（R-03 2026-06-11），
+            // 不再调 healthz；后端 healthz 仍在跑（fly.io 健康检查用），但本目录是「Starcat
+            // 客户端用到的」端点目录，不调用就不列。
         }
 
         @MainActor
         static func url(_ path: String) -> URL {
             appendPath(path, to: baseURL)
-        }
-
-        /// 健康检查 URL。剥掉 `/api` 后缀再拼 `/healthz`，因为 `/healthz` 挂在根路径。
-        ///
-        /// 调用方一般不直接用本 getter——`ServiceHealthChecker` 走
-        /// `ThirdPartyService.healthCheckURL(base:)`，支持传入"草稿 URL"测试连接。
-        /// 本 getter 仅用于"用当前生效 baseURL 测试"的简化路径。
-        @MainActor
-        static var healthzURL: URL {
-            Self.healthzURL(over: baseURL)
-        }
-
-        /// 给定任意 `base`（可能是草稿、持久化、默认）拼出 healthz URL。
-        /// 用 static func 而非 instance method 是为了让"测试连接"路径不依赖 @MainActor 状态。
-        static func healthzURL(over base: URL) -> URL {
-            let root: URL
-            if base.path.hasSuffix("/api") {
-                root = base.deletingLastPathComponent()
-            } else {
-                root = base
-            }
-            return root.appendingPathComponent("healthz")
         }
     }
 
@@ -184,8 +180,9 @@ enum AppEndpoints {
         enum Paths {
             /// `GET /api/v1/wikis?owner=&repo=` —— 单仓库三源探测。
             static let status = "/api/v1/wikis"
-            /// `GET /healthz` —— 设置页手动健康检查。
-            static let healthz = "/healthz"
+            /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点（R-03 2026-06-11）。
+            /// 需要 Bearer Auth，鉴权通过返回 200。详见 supports/starcat-wiki-api/internal/handler/ping.go。
+            static let ping = "/api/v1/ping"
         }
 
         @MainActor
