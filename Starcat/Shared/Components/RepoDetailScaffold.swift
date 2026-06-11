@@ -279,12 +279,37 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     }
 
     /// trailingActions 派发渲染（按 RepoDetailAction enum 类型）。
+    ///
+    /// Wiki 评审约束（2026-06-11）：Weekly Issue 是 Weekly 分组特有入口，必须永远排第一。
+    /// 因此先渲染 `.weeklyIssue`，再渲染统一 `RepoWikiMenu`，最后渲染 share / ai / custom。
+    /// 其他详情页没有 weeklyIssue，自然得到 `Wiki -> Share -> AI`。这里按 action 类型分组，
+    /// 不引入 priority 数字，也不要求四个场景调用方改造数据模型。
     @ViewBuilder
     private var trailingActionsView: some View {
         HStack(spacing: 8) {
-            ForEach(viewData.trailingActions) { action in
+            ForEach(weeklyIssueActions) { action in
                 actionButton(for: action)
             }
+            RepoWikiMenu(repo: repo)
+            ForEach(remainingActions) { action in
+                actionButton(for: action)
+            }
+        }
+    }
+
+    /// Weekly 特有 action，固定放在 Wiki 之前。
+    private var weeklyIssueActions: [RepoDetailAction] {
+        viewData.trailingActions.filter { action in
+            if case .weeklyIssue = action { return true }
+            return false
+        }
+    }
+
+    /// 除 Weekly Issue 外的通用/场景 action，固定放在 Wiki 之后。
+    private var remainingActions: [RepoDetailAction] {
+        viewData.trailingActions.filter { action in
+            if case .weeklyIssue = action { return false }
+            return true
         }
     }
 

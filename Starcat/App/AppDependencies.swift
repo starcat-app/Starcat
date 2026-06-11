@@ -114,6 +114,12 @@ final class AppDependencies {
     /// 不再 new；③ 未来要做 ShareAPI 单测，从 environment 注入 mock 即可。
     let shareAPI: ShareAPI
 
+    // MARK: - Wiki 外部文档索引
+
+    /// DeepWiki / Zread / Google Code Wiki 单仓库收录查询客户端。
+    /// 构造期不发网络请求，因此保持非 optional；服务故障由每次请求独立降级。
+    let wikiAPI: WikiAPI
+
     // MARK: - HOM-47 Release 订阅追踪
 
     /// Release 订阅记录 Repository。
@@ -169,7 +175,7 @@ final class AppDependencies {
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
     init() {
-        // 启动期记录三个自建后端 API 的实际 baseURL（DEBUG 会标 `[DEV]`，方便确认
+        // 启动期记录四个自建后端 API 的实际 baseURL（DEBUG 会标 `[DEV]`，方便确认
         // 当前到底打的是 fly.dev 生产端点还是 127.0.0.1 本地端点）。
         // 详见 `AppEndpoints.swift` 头注释里的"使用方式"。
         AppEndpoints.logResolvedEndpoints()
@@ -312,6 +318,12 @@ final class AppDependencies {
             apiKey: StarcatAPIKeyResolver.resolve(for: .sharing)
         )
 
+        // Wiki 首期只做详情页单查，不在启动期 health probe，也不接 batch 预热。
+        self.wikiAPI = WikiAPI(
+            baseURL: AppEndpoints.Wiki.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .wiki)
+        )
+
         // 2026-06-08：第三方服务健康检查 actor。独立 ephemeral session + 5s 超时。
         self.serviceHealthChecker = ServiceHealthChecker()
 
@@ -424,6 +436,7 @@ final class AppDependencies {
         case .trending: await trendingAPI.updateBaseURL(target)
         case .weekly:   await weeklyAPI.updateBaseURL(target)
         case .sharing:  await shareAPI.updateBaseURL(target)
+        case .wiki:     await wikiAPI.updateBaseURL(target)
         }
     }
 
@@ -455,6 +468,7 @@ final class AppDependencies {
         case .trending: await trendingAPI.updateAPIKey(resolved)
         case .weekly:   await weeklyAPI.updateAPIKey(resolved)
         case .sharing:  await shareAPI.updateAPIKey(resolved)
+        case .wiki:     await wikiAPI.updateAPIKey(resolved)
         }
     }
 
