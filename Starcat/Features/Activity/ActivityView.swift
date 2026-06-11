@@ -20,8 +20,12 @@
 //
 //  v1.9 把这三种 kind 切到 `UnifiedRepoRow`，复用 `Repo.asCardData(badge: .activityKind(...))`：
 //    - 头像角自带 kind icon 圆角标（UnifiedRepoRow.avatarWithKindBadge 已有逻辑）；
-//    - 右上自带 RelativeDateBadge（UnifiedRepoRow.body 已有逻辑）；
 //    - chip 行 Lang / Stars / Forks 与 Manage / Trending / Weekly 完全对齐。
+//
+//  v2.0（2026-06-11 dong4j 决策）：卡片右上角 RelativeDateBadge **已整列删除**。
+//  原 `.activityKind(category, createdAt)` 第二参 Date 在 kind 间语义漂移
+//  （starredAt / pushedAt），`.all` 视图同框无法辨识，整列删除是承认时戳
+//  维度不够强一致。Date 参数已从 enum case 删除（详见 RepoCardViewData.swift 注释）。
 //
 //  保留 `ActivityRowView` 渲染的两类（dong4j 决策）：
 //    - `release`：title = release name(主位)+ subtitle = repo.fullName + body = release notes
@@ -105,10 +109,10 @@ struct ActivityView: View {
     /// 按 `item.kind` 派发到 `UnifiedRepoRow`（v1.9：纯仓库型 kind）或 `ActivityRowView`
     /// （release / announcement / following）。
     ///
-    /// **派发规则**（设计 §3.1.5 + v1.9 dong4j 拍板）：
+    /// **派发规则**（设计 §3.1.5 + v1.9 dong4j 拍板 / v2.0 删时戳）：
     /// - `star` / `repository` / `suggestion` → `UnifiedRepoRow` 与 Manage/Trending/Weekly
-    ///   100% 视觉同构（badge 走 `.activityKind(category, createdAt)`，
-    ///   头像角 kind icon + 右上相对时间均由 UnifiedRepoRow 已有逻辑承担）；
+    ///   100% 视觉同构（badge 走 `.activityKind(category)`，
+    ///   头像角 kind icon 由 UnifiedRepoRow 承担；v2.0 已删右上 RelativeDateBadge）；
     /// - 其它 kind（release 主体 = release name 而非 repo / announcement 无 repo）走老路径。
     ///
     /// `item.repo` 为 nil 的 corner case（announcement、未来的 following）一律退化到老视觉，
@@ -119,9 +123,7 @@ struct ActivityView: View {
             // v1.9：纯仓库型 kind 走 UnifiedRepoRow。`showStarredCheckmark` 不传（默认 false）
             // —— ActivityViewModel.filter { $0.isStarred } 已过滤 100% starred，挂 ✓ 视觉冗余。
             UnifiedRepoRow(
-                card: repo.asCardData(
-                    badge: .activityKind(item.category, item.createdAt ?? Date.distantPast)
-                ),
+                card: repo.asCardData(badge: .activityKind(item.category)),
                 isSelected: selectedItem?.id == item.id
             )
         } else {

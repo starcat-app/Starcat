@@ -63,8 +63,9 @@ struct RepoCardViewDataTests {
     @Test("Repo.asCardData(badge:): 传入 badge 正确携带")
     func repoToCardDataWithBadge() {
         let repo = sampleRepo(id: 1, isStarred: false)
-        let card = repo.asCardData(badge: .activityKind(.star, Date(timeIntervalSince1970: 0)))
-        if case .activityKind(let cat, _) = card.badge {
+        // v2.0（2026-06-11）：`.activityKind` 第二参 Date 已删除（详见 RepoCardViewData.swift 注释）。
+        let card = repo.asCardData(badge: .activityKind(.star))
+        if case .activityKind(let cat) = card.badge {
             #expect(cat == .star)
         } else {
             Issue.record("badge case 不匹配")
