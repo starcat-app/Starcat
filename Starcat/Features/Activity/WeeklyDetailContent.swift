@@ -33,8 +33,15 @@
 //  **关键约束**：
 //  - 使用**外部注入的 readmeVM**（由 `WeeklyDetailView` 局部持有），不复用 HomeView
 //    全局 readmeVM，避免周刊详情污染 manage / trending 主路径的 README 状态机。
-//  - 不接 `translationControl`：翻译 VM 用 `repo.id` 作缓存键，未命中本地（id=0）
-//    会撞坏命名空间；即便本地命中也保持简洁不接（与 trending 详情页同款决策）。
+//  - **翻译入口**（2026-06-11 修订）：参照 `TrendingDetailContent`，**仅本地命中
+//    （`repo.id != 0`）才接 `translationControl`**。理由：R-01 v1.0 设计 ⑬ 明确
+//    「翻译按钮覆盖所有 repo 详情」，weekly 详情也属其中；翻译缓存以 `repo.id`
+//    为外键，未命中本地的 ephemeral repo（id=0,见 `WeeklyDetailView.resolveRepo`
+//    步骤 2/3）会撞坏 `readme_translations(repo_id)` 命名空间,所以未命中时
+//    显式传 nil 关闭入口。
+//  - 与 `translationVM` 共享 HomeView 全局实例（`@Environment` 注入），不为
+//    weekly 单独建一份；按钮触发翻译时按 `control.repo` 派发，不依赖 HomeView
+//    的 `selectedRepoID` 链路 prepare（点击瞬间 VM 自己会用最新 repo 重置）。
 //
 
 import SwiftUI
@@ -51,6 +58,10 @@ struct WeeklyDetailContent: View {
     let readmeVM: ReadmeViewModel
 
     @Environment(AuthSession.self) private var authSession
+    // README 翻译共享 HomeView 注入的全局 translationVM + AppSettings
+    // （2026-06-11 修订，理由见文件头「关键约束」段）。
+    @Environment(ReadmeTranslationViewModel.self) private var translationVM
+    @Environment(AppSettings.self) private var settings
 
     var body: some View {
         // v1.5 修订（2026-06-10）：RepoLocalSections 已迁回 Scaffold metadataPanel,
@@ -63,8 +74,14 @@ struct WeeklyDetailContent: View {
             owner: repo.owner,
             repo: repo.name,
             onScrollOffsetChange: onScrollOffset,
-            // weekly 详情不接翻译入口（与 trending 详情对齐）。
-            translationControl: nil
+            // R-01 v1.0 设计 ⑬：翻译按钮覆盖所有 repo 详情。
+            // 仅本地命中（repo.id != 0）才接入——ephemeral repo 用 id=0 走翻译
+            // 缓存会撞坏 `readme_translations(repo_id)` 命名空间。
+            translationControl: repo.id != 0 ? ReadmeTranslationControl(
+                repo: repo,
+                translationVM: translationVM,
+                settings: settings
+            ) : nil
         ) {
             readmeVM.loadTrending(
                 owner: repo.owner,
