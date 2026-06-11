@@ -78,7 +78,9 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "trending.title"
         case .allStars:                return "sidebar.allRepos"
         case .untagged:                return "sidebar.untagged"
-        case .language(let lang):      return LocalizedStringKey(lang ?? "Unknown")
+        // language 走短名（详见 LanguageDisplayName）。LocalizedStringKey 兜底：
+        // 短名不会有 String Catalog 条目，SwiftUI 找不到翻译会原样吐 raw 字符串。
+        case .language(let lang):      return LocalizedStringKey(lang.map(LanguageDisplayName.shortened(for:)) ?? "Unknown")
         case .tag(let tagId):          return LocalizedStringKey(tagId)
         }
     }
@@ -90,7 +92,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "trending.title"
         case .allStars:                return "sidebar.allRepos"
         case .untagged:                return "sidebar.untagged"
-        case .language(let lang):      return lang ?? "Unknown"
+        case .language(let lang):      return lang.map(LanguageDisplayName.shortened(for:)) ?? "Unknown"
         case .tag(let tagId):          return tagId
         }
     }

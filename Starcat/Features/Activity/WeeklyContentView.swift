@@ -139,7 +139,8 @@ struct WeeklyContentView: View {
         if raw.isEmpty {
             return String(localized: "weekly.filter.allLanguages")
         }
-        return raw
+        // 短名（"Jupyter Notebook" → "Jupyter"），picker label 宽度有限，详见 LanguageDisplayName。
+        return LanguageDisplayName.shortened(for: raw)
     }
 
     // MARK: - Project List

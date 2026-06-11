@@ -611,7 +611,8 @@ struct SidebarView: View {
         if language == .all {
             Text("trending.allLanguages")
         } else {
-            Text(verbatim: language.rawValue)
+            // Trending 语言 picker label：同样走短名（详见 LanguageDisplayName）。
+            Text(verbatim: LanguageDisplayName.shortened(for: language.rawValue))
         }
     }
 
@@ -767,7 +768,10 @@ struct SidebarView: View {
             // Sidebar count bugfix v4：与 row() 同款保护——trailing 容器整体 fixed width 锁死。
             // 详细根因见 `trailingFixedWidth` 常量上方的大注释。
             HStack {
-                Text(verbatim: stat.displayName)
+                // 短名：避免 "Jupyter Notebook" 这种长名在侧边栏窄行被 tail truncate
+                // 成 "Jupyter Note…"。stat.displayName 已对 isEmpty 兜底（"Unknown" 等），
+                // 未命中映射时原样返回，安全。详见 LanguageDisplayName。
+                Text(verbatim: LanguageDisplayName.shortened(for: stat.displayName))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 4)
