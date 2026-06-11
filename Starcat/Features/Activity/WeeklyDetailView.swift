@@ -62,6 +62,25 @@
 //  - **onStarTapped**:无论命中与否都走 toggle,删跳 stargazers 妥协逻辑,
 //    weekly 也能直接 star 入自己账户。
 //
+//  ────────────────────────────────────────────────────────────────────────────
+//  D-26 修订(2026-06-11, dong4j bug 反馈)
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  D-24 修复了「weekly 详情页第一次 star 后 hero 不变实心」,引入了 `resolveRepo`
+//  步骤 1a 优先 `findById(displayRepo?.id)` 的精确命中策略(避开 weekly owner/name
+//  大小写不一致 owner/name 查找漏命中)。但该实现**只考虑同 project 内 star/unstar
+//  后第二次 resolveRepo**,没考虑切换 project 的场景。
+//
+//  Bug 现象:用户在 weekly 详情 A 中 star 之后,切到 weekly 详情 B,**README 区域
+//  正常切换到 B(loadReadme 走 project.owner/name)**,但 hero / 三段仍显示 A
+//  (`@State displayRepo` 不会因 project prop 变化自动重置,resolveRepo 1a 用 A_id
+//   findById 命中本地 A_local → displayRepo = A_local → return,B 永远不被解析)。
+//
+//  D-26 修法:1a 必须额外校验 `displayRepo.fullName.lowercased() ==
+//  project.fullName.lowercased()`,只有「同一 project 内」才走 ghRepoId 精确匹配;
+//  fullName 不匹配时自动跳到 1b owner/name 查找(与 D-24 之前行为一致)。
+//  这是最小改动方案,保留 D-24 大小写防护的同时修复 ghosting bug。
+//
 
 import SwiftUI
 import AppKit
@@ -233,31 +252,51 @@ struct WeeklyDetailView: View {
     /// 步骤：
     /// 1a. **优先 findById(displayRepo?.id)** 精确匹配 — 用于 star/unstar 完成后
     ///     第二次 resolveRepo,避开 owner/name 大小写 / 重命名问题(详见 D-24)。
-    /// 1b. findById 不命中(displayRepo nil / id=0 fallback / 历史未命中) → 走
-    ///     `findByOwnerName(owner:name:)` 兜底。
+    ///     **D-26 修订(2026-06-11)**:1a 必须额外校验
+    ///     `displayRepo.fullName.lowercased() == project.fullName.lowercased()`,
+    ///     否则切换 project 时会用上一个 project 的 ghRepoId 误命中旧 repo,
+    ///     导致 hero 永远不替换(详见下方 D-26 注释段)。
+    /// 1b. findById 不命中(displayRepo nil / id=0 fallback / 历史未命中 / fullName
+    ///     不匹配) → 走 `findByOwnerName(owner:name:)` 兜底。
     /// 2. 全部不命中 → 调 GitHub API,构造临时 Repo;
     /// 3. API 失败 → 用 WeeklyProject 现有字段构造最小 Repo(保证 hero 不白屏)。
     private func resolveRepo(for project: WeeklyProject) async {
-        // 1a) 本地查找 — id 精确匹配 优先
+        // 1a) 本地查找 — id 精确匹配 优先(仅当 fullName 与当前 project 同源)
         //
         // **D-24 followup**: weekly 项目 owner/name 源自阮一峰周刊 markdown 解析,
         // 偶有大小写不一致(如 `Vercel/swr` vs GitHub 真值 `vercel/swr`)。SQLite
         // 默认 BINARY collation 导致 findByOwnerName 漏掉,而 ghRepoId 全局
         // 唯一且不变,findById 精确命中无大小写陷阱。
         //
-        // 触发时机:第二次以后调用 resolveRepo(handleStarTapped 之后),此时
-        // displayRepo 已经有真 ghRepoId(来自初次 GitHub API fetch / star 后
-        // toggle 同步覆盖)。
-        if let id = displayRepo?.id, id > 0 {
+        // **D-26 修订(2026-06-11, dong4j bug 反馈)**:必须校验 fullName 同源
+        // 才能用 displayRepo.id 做 findById。
+        //
+        // 触发场景:用户在 weekly 详情 A(已 star,DB 入库 → displayRepo.id=A_id)
+        // 切换到 weekly 详情 B → `.task(id: project?.id)` 触发 resolveRepo(for: B),
+        // 此时 displayRepo 还是 A(SwiftUI @State 不会因 prop 变化自动重置)。
+        // 若不加 fullName 守卫,1a 会用 A_id 走 findById 命中本地 A_local 行
+        // → `displayRepo = A_local` → 直接 return,导致 hero 区永远显示 A 的内容,
+        // 而 README 路径(`loadReadme` 直接读 `project.owner/name`)却切到了 B,
+        // 用户看到「README 换了 / hero 没换」的 ghosting 错觉。
+        //
+        // 加 fullName 守卫后,只有「同一个 project 内 star/unstar 后的二次解析」
+        // 这条 1a 真正想走的路径会命中(此时 displayRepo.fullName == project.fullName);
+        // 切换 project 时 fullName 不匹配 → 自动跳到 1b 走 owner/name 查找,
+        // 与 D-24 之前的行为一致(weekly 大小写问题仍由 1b 走 GitHub API 兜底解决)。
+        //
+        // 触发时机:第二次以后调用 resolveRepo(同 project handleStarTapped 之后)。
+        if let cached = displayRepo,
+           cached.id > 0,
+           cached.fullName.lowercased() == project.fullName.lowercased() {
             do {
-                if let local = try await dependencies.repoRepository.findById(id) {
+                if let local = try await dependencies.repoRepository.findById(cached.id) {
                     displayRepo = local
                     isLocalHit = true
                     isFetchingRemote = false
                     return
                 }
             } catch {
-                AppLog.sync.error("weekly: local repo findById(\(id, privacy: .public)) failed: \(error.localizedDescription, privacy: .public)")
+                AppLog.sync.error("weekly: local repo findById(\(cached.id, privacy: .public)) failed: \(error.localizedDescription, privacy: .public)")
             }
         }
 
