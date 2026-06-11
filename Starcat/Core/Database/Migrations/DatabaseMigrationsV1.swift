@@ -352,6 +352,36 @@ enum DatabaseMigrations {
             t.column("stars_in_period", .integer).notNull().defaults(to: 0)
             t.column("contributors_json", .text)                 // JSON [{username, avatarURL, profileURL}]
 
+            // R-05 trending 详情页 hero/详情区显示字段（2026-06-11 直接进 v4 建表）
+            //
+            // **为什么直接写进 v4 而非提 v10 迁移**：dong4j 决策「产品都没有上线，直接改
+            // schema 就可以了」。产品未发布，没有真实用户数据要兼容；写迁移是过度工程，
+            // dong4j 本地删一次 sqlite 重建即可。**新协作者注意**：本节字段是 R-05
+            // 修复 trending 详情页 watchers/topics/license/homepage/created/updated/
+            // pushed/archived/fork/private 显示「N/A / 0 / -」的客户端透传链路收尾，
+            // 后端 trending-api enricher 早就在调 GitHub /repos 拉满了这 10 字段，
+            // 是客户端 TrendingRepo 转换层之前丢字段；详见 `TrendingModels.swift` 同
+            // 期注释 + `TrendingRepoRecord.swift` R-05 段。
+            //
+            // **字段命名与 `repos` 表对齐**（语义一致便于阅读 + 复用 SELECT）：
+            // - `topics` TEXT — JSON 数组字符串（如 `["ai","swift"]`）与 repos.topics 同款
+            // - `is_archived / is_fork / is_private` INTEGER — SQLite 0/1 Bool（GRDB 自动桥）
+            // - `pushed_at / created_at / updated_at` TEXT — ISO8601 字符串
+            // - `watchers_count` INTEGER / `license` TEXT / `homepage` TEXT
+            //
+            // 全部不 NOT NULL：trending-api enricher 偶发字段缺失时退化为 NULL，
+            // toDomain / makeEphemeralRepo 端 graceful 退化（Bool? → false / Int? → 0）。
+            t.column("watchers_count", .integer)
+            t.column("topics", .text)
+            t.column("license", .text)
+            t.column("homepage", .text)
+            t.column("is_archived", .integer)
+            t.column("is_fork", .integer)
+            t.column("is_private", .integer)
+            t.column("pushed_at", .text)
+            t.column("created_at", .text)
+            t.column("updated_at", .text)
+
             // 缓存维度
             t.column("cached_at", .text).notNull()
 
