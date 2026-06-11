@@ -117,7 +117,7 @@ struct SidebarView: View {
     /// 历史：2026-06-11 之前用 `.easeInOut(duration: 0.2)`,体验偏"硬"且 chevron / 行
     /// 用同曲线但 List 内 row insertion 默认动画并未被替换 → 视觉上 chevron 转完了但行
     /// 还在缓慢淡入,节奏脱节。改 spring 后曲线统一,且与项目内其他展开/收起动画对齐。
-    private static let disclosureSpring: Animation = .spring(response: 0.28, dampingFraction: 0.86)
+    private static let disclosureSpring: Animation = .spring(response: 0.28, dampingFraction: 0.78)
 
     /// 被折叠的 row(languageRow / trendingLanguageRow / activityCategoryRow / TagWallView)
     /// 入场/出场 transition：从顶部滑入 + 淡入,出场反向。
