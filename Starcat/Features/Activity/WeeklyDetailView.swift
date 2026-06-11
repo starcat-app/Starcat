@@ -118,8 +118,13 @@ struct WeeklyDetailView: View {
                 viewData: RepoDetailViewData(
                     hero: RepoDetailHero(repo: displayRepo),
                     trailingActions: trailingActions(for: project, repo: displayRepo),
-                    // weekly 详情不接翻译入口（与 trending 详情对齐）。
-                    translation: nil,
+                    // R-01 v1.0 设计 ⑬：翻译按钮覆盖所有 repo 详情。
+                    // 与 trending 同款：仅本地命中（`displayRepo.id != 0`）才暴露上下文,
+                    // ephemeral repo（id=0,见 `resolveRepo` 步骤 2/3）撞翻译缓存命名空间。
+                    // 实际翻译按钮渲染在 `WeeklyDetailContent` 的 `translationControl` 上,
+                    // 这里 `translation` 字段当前只作上下文持有（Scaffold 暂未消费）,保持
+                    // 与 4 详情页 viewData 元数据一致,后续若 Scaffold 改用此字段可零改动接通。
+                    translation: displayRepo.id != 0 ? ReadmeTranslationContext(fullName: displayRepo.fullName) : nil,
                     backendHint: nil
                 ),
                 fallbackAccentColor: ActivityCategory.weekly.iconColor,
