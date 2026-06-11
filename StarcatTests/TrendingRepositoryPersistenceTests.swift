@@ -252,7 +252,7 @@ struct TrendingRepositoryPersistenceTests {
         #expect(unwrapped <= after.addingTimeInterval(1), "lastRefreshedAt should be <= fetch end time")
     }
 
-    // MARK: - R-01 v1.2 GRDB v8 4 字段持久化（2026-06-10）
+    // MARK: - R-01 v1.2 StarcatRepoCardDTO 扩展 4 字段持久化（2026-06-10）
 
     @Test("v8 4 字段：DTO → trending_repos 表 → cachedTrending 域模型 全链路透传")
     func v8FieldsPersistedAndReadBack() async throws {
@@ -314,6 +314,104 @@ struct TrendingRepositoryPersistenceTests {
         #expect(cachedFirst.subscribersCount == 55)
         #expect(cachedFirst.defaultBranch == "develop")
         #expect(cachedFirst.openIssuesCount == 9)
+    }
+
+    // MARK: - R-05 trending 详情页字段补齐 10 字段持久化（2026-06-11）
+
+    @Test("R-05 10 字段：DTO → trending_repos 表 → cachedTrending 域模型 全链路透传")
+    func r05DetailFieldsPersistedAndReadBack() async throws {
+        let (repo, db) = try makeRepository { request in
+            // 构造一个所有 R-05 字段都填实值的 fixture（不走默认 fixture，因为它没填这些新字段）
+            let card: [String: Any] = [
+                "gh_repo_id": Int64(20251),
+                "full_name": "owner/r05repo",
+                "owner": "owner",
+                "repo": "r05repo",
+                "stars": 5000,
+                "forks": 300,
+                "watchers": 5000,
+                "subscribers": 78,
+                // R-05 详情页字段
+                "topics": ["ai", "swift", "macos"],
+                "homepage": "https://example.com",
+                "license_spdx": "Apache-2.0",
+                "is_archived": true,
+                "is_fork": false,
+                "is_private": false,
+                "default_branch": "main",
+                "open_issues": 12,
+                "pushed_at": "2026-06-11T08:00:00Z",
+                "updated_at": "2026-06-10T16:30:00Z",
+                "created_at": "2024-01-15T12:00:00Z",
+                "trending": [
+                    "change": 821,
+                    "contributors": []
+                ]
+            ]
+            let envelope: [String: Any] = ["schema_version": 1, "data": [card]]
+            let body = try! JSONSerialization.data(withJSONObject: envelope, options: [])
+            return (trendingPersistResponse(200, request.url!), body)
+        }
+
+        // 1. fetch → 内存域模型 10 字段透传
+        let fetched = try await repo.fetchTrending(since: .daily, language: .all)
+        #expect(fetched.count == 1)
+        let mem = try #require(fetched.first)
+        #expect(mem.watchersCount == 5000)
+        #expect(mem.topics == #"["ai","swift","macos"]"#)
+        #expect(mem.license == "Apache-2.0")
+        #expect(mem.homepage?.absoluteString == "https://example.com")
+        #expect(mem.isArchived == true)
+        #expect(mem.isFork == false)
+        #expect(mem.isPrivate == false)
+        #expect(mem.pushedAt == "2026-06-11T08:00:00Z")
+        #expect(mem.createdAt == "2024-01-15T12:00:00Z")
+        #expect(mem.updatedAt == "2026-06-10T16:30:00Z")
+
+        // 2. SQL 直读，验证 10 列真的写进表（GRDB Bool 桥到 SQLite INTEGER 0/1）
+        try await db.writer.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: "SELECT * FROM trending_repos WHERE full_name = ?",
+                arguments: ["owner/r05repo"]
+            )
+            #expect(row?["watchers_count"] as Int? == 5000)
+            #expect(row?["topics"] as String? == #"["ai","swift","macos"]"#)
+            #expect(row?["license"] as String? == "Apache-2.0")
+            #expect(row?["homepage"] as String? == "https://example.com")
+            #expect(row?["is_archived"] as Bool? == true)
+            #expect(row?["is_fork"] as Bool? == false)
+            #expect(row?["is_private"] as Bool? == false)
+            #expect(row?["pushed_at"] as String? == "2026-06-11T08:00:00Z")
+            #expect(row?["created_at"] as String? == "2024-01-15T12:00:00Z")
+            #expect(row?["updated_at"] as String? == "2026-06-10T16:30:00Z")
+        }
+
+        // 3. cachedTrending → toDomain 时 10 字段被还原回 TrendingRepo
+        let cached = await repo.cachedTrending(since: .daily, language: .all)
+        #expect(cached.count == 1)
+        let cachedFirst = try #require(cached.first)
+        #expect(cachedFirst.watchersCount == 5000)
+        #expect(cachedFirst.topics == #"["ai","swift","macos"]"#)
+        #expect(cachedFirst.license == "Apache-2.0")
+        #expect(cachedFirst.homepage?.absoluteString == "https://example.com")
+        #expect(cachedFirst.isArchived == true)
+        #expect(cachedFirst.isFork == false)
+        #expect(cachedFirst.isPrivate == false)
+        #expect(cachedFirst.pushedAt == "2026-06-11T08:00:00Z")
+        #expect(cachedFirst.createdAt == "2024-01-15T12:00:00Z")
+        #expect(cachedFirst.updatedAt == "2026-06-10T16:30:00Z")
+
+        // 4. makeEphemeralRepo 也要正确透传（R-05 修复的核心目标 —— 详情页 hero）
+        let ephemeral = cachedFirst.makeEphemeralRepo()
+        #expect(ephemeral.watchersCount == 5000)
+        #expect(ephemeral.topicsArray == ["ai", "swift", "macos"])
+        #expect(ephemeral.license == "Apache-2.0")
+        #expect(ephemeral.homepage == "https://example.com")
+        #expect(ephemeral.isArchived == true)
+        #expect(ephemeral.createdAt == "2024-01-15T12:00:00Z")
+        #expect(ephemeral.updatedAt == "2026-06-10T16:30:00Z")
+        #expect(ephemeral.pushedAt == "2026-06-11T08:00:00Z")
     }
 
     @Test("lastRefreshedAt: 多桶隔离，每个桶独立时间戳")

@@ -162,7 +162,10 @@ struct UnifiedRepoRow: View {
                         StarsBadge(count: card.starsCount, style: .full)
                         MetaBadge(systemImage: "tuningfork", text: card.forksCount.formattedShort, tint: .secondary)
                         if card.isArchived {
-                            ArchivedBadge()
+                            // 卡片走 iconOnly：4+ chip 同行（Language + Stars + Forks + Archived
+                            // + sceneBadge）下 "Archived" 文字会挤换行。详情页 / 活动详情面板
+                            // 仍走默认 ArchivedBadge() 保留文字，详见 RepoRowComponents.swift。
+                            ArchivedBadge(iconOnly: true)
                         }
                         sceneBadgeChip
                         if let semanticHit {

@@ -72,11 +72,11 @@ struct TrendingRepo: Identifiable, Equatable {
     /// 贡献者列表
     let contributors: [Contributor]
 
-    // MARK: - R-01 v1.2 GRDB v8 新字段（2026-06-10 落地）
+    // MARK: - R-01 v1.2 StarcatRepoCardDTO 扩展 4 字段（2026-06-10 落地）
     //
-    // 这 4 字段从 `StarcatRepoCardDTO` 透传过来，对应 trending_repos 表 v8 新加 4 列。
+    // 这 4 字段从 `StarcatRepoCardDTO` 透传过来，对应 `trending_repos` 表的同名 4 列。
     // 全部 Optional：trending API 返回的 DTO 不一定填满（enricher 可能没补全
-    // owner_avatar 等字段；离线缓存 v8 之前的行也是 NULL）。
+    // owner_avatar 等字段，下游 toDomain / makeEphemeralRepo 端 graceful 退化）。
 
     /// 仓库所有者头像 URL（GitHub `owner.avatar_url`），UI hero 区直接渲染。
     let ownerAvatar: URL?
@@ -86,6 +86,47 @@ struct TrendingRepo: Identifiable, Equatable {
     let defaultBranch: String?
     /// 未关闭 issue 数（GitHub `open_issues_count`）。
     let openIssuesCount: Int?
+
+    // MARK: - R-05 trending 详情页字段补齐 10 字段（2026-06-11 落地）
+    //
+    // 这 10 字段从 `StarcatRepoCardDTO` 透传过来，对应 `trending_repos` 表的同名 10 列
+    // （schema 详见 `DatabaseMigrationsV1.swift` 的 `createTrendingRepos`）。
+    // 全部 Optional：trending-api 偶发字段缺失时退化为 nil；
+    // 让 toDomain / makeEphemeralRepo 端 graceful 退化（Bool? → false / Int? → 0）。
+    //
+    // **R-05 修补动机**：trending 详情页（未 star 走 `makeEphemeralRepo()` 兜底路径）
+    // 之前显示 Watchers=0 / Created=- / Updated=- / License=N/A / Topics=N/A —— 不是
+    // trending-api 后端没拉（enricher 调 GET /repos/{o}/{r} 拉满了），是 v1.2 落地时
+    // `TrendingRepo.init(card:since:)` 把这 10 字段标为「v1.2 边界内但 trending UI
+    // 暂不需要」直接丢弃，下游 `makeEphemeralRepo()` 只能填默认值（0 / nil）。
+    //
+    // **持久化语义**：与 `Repo` 表对齐 —— `topics` 存 JSON 数组字符串（如
+    // `["ai","swift"]`）而非 [String]，避免再开一张 trending_topics 明细表 +
+    // 让 toDomain/from 完全一一映射，与 `repos.topics` 命名完全对齐。
+
+    /// Watchers 总数（GitHub `watchers_count`，注：API 字段实际等于 stars；真"watchers"
+    /// 语义看 subscribersCount。此处尊重 DTO 透传，UI 显示哪个由 hero/详情决定）。
+    let watchersCount: Int?
+    /// Topics JSON 数组字符串（如 `["ai","swift"]`）。与 `Repo.topics` 同语义同格式。
+    /// 解析时 UI 层用 `Repo.parsedTopics()` 之类 helper（已存在）。
+    let topics: String?
+    /// SPDX 许可证标识符（如 `MIT` / `Apache-2.0`）。
+    let license: String?
+    /// 项目主页 URL（GitHub `homepage`）。`nil` 表示 enricher 拿到空串后已归一化（详
+    /// 见 `StarcatRepoCardDTO.decodeOptionalURL`）。
+    let homepage: URL?
+    /// 仓库是否归档。
+    let isArchived: Bool?
+    /// 是否 fork 自其他仓库。
+    let isFork: Bool?
+    /// 是否私有仓库（trending 场景应总是 false，但保留字段防御外部 schema 变化）。
+    let isPrivate: Bool?
+    /// 最后一次 push 的 ISO8601 时间字符串。
+    let pushedAt: String?
+    /// 仓库创建的 ISO8601 时间字符串。
+    let createdAt: String?
+    /// 最后一次更新的 ISO8601 时间字符串。
+    let updatedAt: String?
 
     /// R-01 v1.2 初始化：从 envelope 化的 `StarcatRepoCardDTO` + 周期信息构造。
     ///
@@ -97,14 +138,20 @@ struct TrendingRepo: Identifiable, Equatable {
     ///   - `card.trending?.change` → `starsInPeriod`（缺扩展段时退化为 0）
     ///   - `card.trending?.contributors` → `contributors` 数组（缺扩展段时空数组）
     ///
-    /// **R-01 v1.2 GRDB v8 新增（2026-06-10）**：
+    /// **R-01 v1.2 扩展 4 字段（2026-06-10）**：
     ///   `card.ownerAvatar` / `card.subscribers` / `card.defaultBranch` / `card.openIssues`
     ///   → `ownerAvatar` / `subscribersCount` / `defaultBranch` / `openIssuesCount`
     ///
-    /// 仍未利用的 DTO 字段（v1.2 边界内但 trending UI 暂不需要）：
-    ///   `gh_repo_id`（trending 用 fullName 作 PK，不依赖 GitHub id）/
-    ///   `watchers` / `topics` / `homepage` / `license_spdx` /
-    ///   `is_archived` / `is_fork` / `is_private` / `pushed_at` / `updated_at` / `created_at`
+    /// **R-05 新增 10 字段（2026-06-11）**：补齐 trending 详情页 hero/
+    /// 详情区显示 watchers / topics / license / homepage / created / updated / pushed /
+    /// archived / fork / private 这 10 字段所需的全部透传——之前因为 trending 列表 row
+    /// 不展示这些字段被错误标为「v1.2 边界内但 trending UI 暂不需要」，导致
+    /// `makeEphemeralRepo()` 兜底路径只能填默认值。**Topics 字段做一次性 [String] →
+    /// JSON 字符串编码**，与 `Repo.topics` 持久化格式对齐，下游 `makeEphemeralRepo()`
+    /// 直接透传不再编码。
+    ///
+    /// 仍未利用的 DTO 字段（确认 trending 不需要）：
+    ///   `gh_repo_id`（trending 用 fullName 作 PK，不依赖 GitHub id；但 ghRepoId 已透传作 Repo.id）
     init(card: StarcatRepoCardDTO, since: TrendingPeriod) {
         self.ghRepoId = card.ghRepoId
         self.fullName = card.fullName
@@ -130,11 +177,41 @@ struct TrendingRepo: Identifiable, Equatable {
             )
         }
 
-        // R-01 v1.2 GRDB v8 4 字段透传（DTO 对应字段直接拿）
+        // R-01 v1.2 扩展 4 字段透传（DTO 对应字段直接拿）
         self.ownerAvatar = card.ownerAvatar
         self.subscribersCount = card.subscribers
         self.defaultBranch = card.defaultBranch
         self.openIssuesCount = card.openIssues
+
+        // R-05 详情页 10 字段透传（DTO → TrendingRepo）
+        //
+        // - watchers / homepage / license / pushedAt / createdAt / updatedAt / isArchived /
+        //   isFork / isPrivate：DTO 字段直接透传
+        // - topics：DTO 是 `[String]`；TrendingRepo 与 Repo 表对齐用 String?(JSON)。
+        //   一次性编码集中在这里，下游 makeEphemeralRepo / record 持久化全部直接拷贝。
+        //   编码失败极罕见（[String] → JSON 几乎不可能失败），退化为 nil 让后续链路
+        //   把 topics 段视为「无数据」隐藏，不阻塞 trending 卡片其它字段渲染。
+        self.watchersCount = card.watchers
+        self.topics = Self.encodeTopicsJSON(card.topics)
+        self.license = card.licenseSpdx
+        self.homepage = card.homepage
+        self.isArchived = card.isArchived
+        self.isFork = card.isFork
+        self.isPrivate = card.isPrivate
+        self.pushedAt = card.pushedAt
+        self.createdAt = card.createdAt
+        self.updatedAt = card.updatedAt
+    }
+
+    /// [String] → JSON 字符串编码（与 `StarcatRepoCardDTO.toEphemeralRepo()` 同语义）。
+    /// 空数组返回 nil；编码失败也返回 nil（不让 trending 卡片整体降级）。
+    private static func encodeTopicsJSON(_ topics: [String]) -> String? {
+        guard !topics.isEmpty else { return nil }
+        guard let data = try? JSONEncoder().encode(topics),
+              let str = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return str
     }
 
     /// 贡献者模型。
@@ -156,22 +233,24 @@ struct TrendingRepo: Identifiable, Equatable {
     /// 转为 `Repo` 才能喂给 Scaffold。
     ///
     /// **关键约束**：
-    /// - `id = ghRepoId`（v9 起 trending row 必填）；ghRepoId 为 0 退化代表「过渡 row」，
+    /// - `id = ghRepoId`（R-01 v1.2 起 trending row 必填）；ghRepoId 为 0 退化代表「过渡 row」，
     ///   调用方应通过 `id == 0` 判断「无法 star/unstar」。
-    /// - **不要落 DB**：本 Repo 的 `topics / watchers / created_at / updated_at` 等字段
-    ///   trending 模型本就没有，落库会污染本地数据。仅限「详情页 hero 区域不至于
-    ///   完全空着」。
+    /// - **不要落 DB**：仅限「详情页 hero 区域不至于完全空着」。`isStarred` 永远 false，
+    ///   落库会污染本地用户 star 列表。
     /// - **isStarred 永远 false**：trending 模型不知道当前用户的 star 状态，调用方应
     ///   通过 `StarredRegistry.contains(ghRepoId:)` 判断真实 star 状态后覆盖。
-    /// - 缺失字段（watchers / created_at / updated_at / topics / homepage / license / pushedAt）
-    ///   全部填默认值（0 / nil）。Hero 视图层应有能力 graceful 处理 0 / nil 情况。
+    /// - 字段缺失行为（R-05 修订，2026-06-11）：trending-api enricher 已经从 GitHub
+    ///   /repos/{o}/{r} 拉满了 watchers / topics / license / homepage / created /
+    ///   updated / pushed / archived / fork / private 共 10 字段，全部透传到
+    ///   `TrendingRepo`，再透传到这里，**详情页不再显示 0 / N/A / -**。仅当 trending-api
+    ///   enricher 偶发字段缺失时退化为 nil/默认，hero 端能 graceful 处理。
     ///
     /// **本地命中优先**：调用方应**先**通过 `repoRepository.findByOwnerName(owner:name:)`
     /// 查本地真值；只有未命中时才退化到本方法。本地真值含完整 v1.2 14 字段。
     func makeEphemeralRepo() -> Repo {
         let resolvedHtmlUrl = self.url.absoluteString
         return Repo(
-            id: self.ghRepoId,                      // v9 之后 trending row 必填；为 0 时调用方需检查
+            id: self.ghRepoId,                      // R-01 v1.2 起 trending row 必填；为 0 时调用方需检查
             owner: self.owner,
             name: self.name,
             fullName: self.fullName,
@@ -179,20 +258,21 @@ struct TrendingRepo: Identifiable, Equatable {
             language: self.language,
             starsCount: self.starsCount,
             forksCount: self.forksCount,
-            watchersCount: 0,                       // trending 模型没有；hero 显示 0 / 隐藏
-            topics: nil,                            // trending 模型没有；topics 段在 hero 隐藏
-            license: nil,
-            homepage: nil,
+            // R-05 起：以下字段从 DTO 透传过来（trending-api 缺字段时退化为 nil/默认）
+            watchersCount: self.watchersCount ?? 0,
+            topics: self.topics,                    // 已是 JSON 字符串与 Repo.topics 对齐
+            license: self.license,
+            homepage: self.homepage?.absoluteString,
             htmlUrl: resolvedHtmlUrl,
-            cloneUrl: nil,
-            sshUrl: nil,
-            isPrivate: false,
-            isFork: false,
-            isArchived: false,
+            cloneUrl: nil,                          // trending DTO 不含；保持 nil
+            sshUrl: nil,                            // trending DTO 不含；保持 nil
+            isPrivate: self.isPrivate ?? false,
+            isFork: self.isFork ?? false,
+            isArchived: self.isArchived ?? false,
             isStarred: false,                       // ephemeral；调用方按 registry 真值覆盖
-            pushedAt: nil,
-            createdAt: nil,
-            updatedAt: nil,
+            pushedAt: self.pushedAt,
+            createdAt: self.createdAt,
+            updatedAt: self.updatedAt,
             starredAt: nil,
             cachedAt: nil,
             ownerAvatar: self.ownerAvatar?.absoluteString,

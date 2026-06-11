@@ -4737,13 +4737,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "All repos are categorized"
+            "value" : "No untagged repos"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "所有仓库都已分类"
+            "value" : "暂无未分类仓库"
           }
         }
       }
@@ -4973,13 +4973,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "New Stars appear here until you tag them."
+            "value" : "Untagged Stars will appear here once syncing completes."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新增 Stars 默认会先出现在这里。"
+            "value" : "同步完成后未打标的 Stars 会出现在这里"
           }
         }
       }

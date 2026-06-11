@@ -414,7 +414,7 @@ extension StarcatRepoCardDTO {
             updatedAt: updatedAt,
             starredAt: nil,
             cachedAt: nil,
-            // R-01 v1.2 GRDB v8 新增字段（2026-06-10 落地）：DTO → Repo 全字段透传
+            // R-01 v1.2 扩展 4 字段（2026-06-10 落地）：DTO → Repo 全字段透传
             ownerAvatar: ownerAvatar?.absoluteString,
             subscribersCount: subscribers,
             defaultBranch: defaultBranch,

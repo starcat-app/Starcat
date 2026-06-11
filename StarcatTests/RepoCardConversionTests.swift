@@ -98,11 +98,62 @@ struct RepoCardConversionTests {
         #expect(ephemeral.subscribersCount == 12)
         #expect(ephemeral.defaultBranch == "main")
         #expect(ephemeral.openIssuesCount == 7)
-        // 缺失字段（trending 模型本就没有的）应是默认值
-        #expect(ephemeral.watchersCount == 0)
+        // R-05 起：watchers 从 DTO 透传（helper 默认 watchers=1000）
+        #expect(ephemeral.watchersCount == 1000)
+        // R-05：helper 默认 topics=[]/license=nil/homepage=nil → 详情页 hero 走 graceful 隐藏
         #expect(ephemeral.topicsArray.isEmpty)
         #expect(ephemeral.license == nil)
         #expect(ephemeral.homepage == nil)
+    }
+
+    // MARK: - R-05 trending 详情页字段补齐 10 字段透传
+
+    @Test("R-05 TrendingRepo.makeEphemeralRepo: 10 字段（topics/license/homepage/created/updated/pushed/archived/fork/private/watchers）全部透传")
+    func trendingMakeEphemeralRepoR05DetailFieldsPassThrough() {
+        let trending = makeTrendingRepo(
+            ghRepoId: 1234,
+            starsInPeriod: 100,
+            // R-05 详情页 10 字段
+            watchers: 42,
+            topics: ["ai", "swift", "macos"],
+            licenseSpdx: "MIT",
+            homepage: URL(string: "https://example.com"),
+            isArchived: true,
+            isFork: false,
+            isPrivate: false,
+            pushedAt: "2026-06-11T08:00:00Z",
+            createdAt: "2024-01-15T12:00:00Z",
+            updatedAt: "2026-06-10T16:30:00Z"
+        )
+
+        let ephemeral = trending.makeEphemeralRepo()
+
+        #expect(ephemeral.watchersCount == 42)
+        // topics 在 TrendingRepo 已编码为 JSON 字符串，Repo.topicsArray 反解出 [String]
+        #expect(ephemeral.topicsArray == ["ai", "swift", "macos"])
+        #expect(ephemeral.license == "MIT")
+        #expect(ephemeral.homepage == "https://example.com")
+        #expect(ephemeral.isArchived == true)
+        #expect(ephemeral.isFork == false)
+        #expect(ephemeral.isPrivate == false)
+        #expect(ephemeral.pushedAt == "2026-06-11T08:00:00Z")
+        #expect(ephemeral.createdAt == "2024-01-15T12:00:00Z")
+        #expect(ephemeral.updatedAt == "2026-06-10T16:30:00Z")
+    }
+
+    @Test("R-05 TrendingRepo: 空 topics 数组 → topics 字段 nil（不让 [] 编码成 \"[]\"）")
+    func trendingEmptyTopicsBecomesNil() {
+        let trending = makeTrendingRepo(
+            ghRepoId: 1, starsInPeriod: 0,
+            topics: []
+        )
+
+        // TrendingRepo.topics 内部已经做了 [] → nil 归一化（与 Repo 表对齐 + 避免 "[]" 字符串污染）
+        #expect(trending.topics == nil)
+
+        let ephemeral = trending.makeEphemeralRepo()
+        #expect(ephemeral.topics == nil)
+        #expect(ephemeral.topicsArray.isEmpty)
     }
 
     @Test("TrendingRepo.makeEphemeralRepo: ghRepoId == 0 退化（过渡 row）")
@@ -159,13 +210,27 @@ struct RepoCardConversionTests {
     ///
     /// `StarcatRepoCardDTO` 的 `subscribers` / `openIssues` 是 `Int`（默认 0），传入参数
     /// 用 `Int` 而非 `Int?` 与之对齐；TrendingRepo 内会把 0 当作"未设置"在 UI 隐藏。
+    ///
+    /// R-05 trending 详情页字段补齐 10 字段（2026-06-11）：加 10 个 default 参数（watchers/topics/
+    /// license/homepage/isArchived/isFork/isPrivate/pushedAt/createdAt/updatedAt），全部
+    /// default 保持老调用兼容。新测试通过显式传参验证 R-05 字段透传链路。
     private func makeTrendingRepo(
         ghRepoId: Int64,
         starsInPeriod: Int,
         ownerAvatar: URL? = nil,
         subscribersCount: Int = 0,
         defaultBranch: String? = nil,
-        openIssuesCount: Int = 0
+        openIssuesCount: Int = 0,
+        watchers: Int = 1000,
+        topics: [String] = [],
+        licenseSpdx: String? = nil,
+        homepage: URL? = nil,
+        isArchived: Bool = false,
+        isFork: Bool = false,
+        isPrivate: Bool = false,
+        pushedAt: String? = nil,
+        createdAt: String? = nil,
+        updatedAt: String? = nil
     ) -> TrendingRepo {
         let card = StarcatRepoCardDTO(
             ghRepoId: ghRepoId,
@@ -177,19 +242,19 @@ struct RepoCardConversionTests {
             language: "Swift",
             stars: 1000,
             forks: 50,
-            watchers: 1000,
+            watchers: watchers,
             subscribers: subscribersCount,
-            topics: [],
-            homepage: nil,
-            licenseSpdx: nil,
-            isArchived: false,
-            isFork: false,
-            isPrivate: false,
+            topics: topics,
+            homepage: homepage,
+            licenseSpdx: licenseSpdx,
+            isArchived: isArchived,
+            isFork: isFork,
+            isPrivate: isPrivate,
             defaultBranch: defaultBranch,
             openIssues: openIssuesCount,
-            pushedAt: nil,
-            updatedAt: nil,
-            createdAt: nil,
+            pushedAt: pushedAt,
+            updatedAt: updatedAt,
+            createdAt: createdAt,
             htmlUrl: URL(string: "https://github.com/alice/foo"),
             trending: StarcatRepoCardDTO.TrendingExtension(
                 change: starsInPeriod,
