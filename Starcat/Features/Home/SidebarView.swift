@@ -274,11 +274,15 @@ struct SidebarView: View {
     @ViewBuilder
     private var trendingSidebarContent: some View {
         Section {
-            trendingLanguageRow(.all)
+            trendingLanguageRow(.all, count: nil)
 
             if trendingLanguagesExpanded {
-                ForEach(trendingLanguages) { language in
-                    trendingLanguageRow(language)
+                // 2026-06-11 改造：列表数据从后端 `/api/v1/languages` 聚合而来（含 __uncategorized__）。
+                // 后端返空 / 不可达时 store 内部自动退化到 fallbackList，所以这里 displayList 永远非空。
+                ForEach(dependencies.trendingLanguageStore.displayList, id: \.key) { agg in
+                    let language = agg.asTrendingLanguage
+                    // count = 0 时不展示数字（fallback 列表 / 后端尚未返回时）；> 0 才展示
+                    trendingLanguageRow(language, count: agg.count > 0 ? agg.count : nil)
                 }
             }
         } header: {
@@ -537,7 +541,10 @@ struct SidebarView: View {
 
                 Spacer(minLength: 8)
 
-                Text(trendingLanguages.count.formatted())
+                // 显示「当前展示的语言条数」=（后端真实聚合时）trendingLanguageStore.aggregates.count，
+                // 兜底状态下用 displayList.count（fallbackList 元素数）。两条路径都用 displayList，
+                // 与下方 ForEach 渲染数完全一致，避免 header 计数与列表行数对不上的撕裂感。
+                Text(dependencies.trendingLanguageStore.displayList.count.formatted())
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -578,38 +585,55 @@ struct SidebarView: View {
         }
     }
 
-    /// Trending 语言优先来自本地 Stars 的语言聚合；未登录或尚未同步时给一组常用语言兜底，
-    /// 保证 Trending 入口第一次打开也有可探索的分类。
-    private var trendingLanguages: [TrendingLanguage] {
-        let localLanguages = viewModel.languageStats.compactMap(\.languageOrNil)
-            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    // 2026-06-11 改造：`trendingLanguages` 计算属性已删除——
+    // 历史实现从 `viewModel.languageStats`（用户本地 stars 聚合）取语言，但与 trending 后端
+    // 实际是否有该语言的 repo 完全脱钩（Swift 开发者本周可能 0 个 Swift trending repo，
+    // 列表展示 Swift 但点进去 0 条）。新实现走 `dependencies.trendingLanguageStore.displayList`，
+    // 直接消费后端 `/api/v1/languages` 聚合接口的结果（含 `__uncategorized__` 项）。
+    // 历史代码可在 git blame / commit `trending sidebar 切换到后端聚合接口` 之前的版本里找回。
 
-        let names = localLanguages.isEmpty
-            ? ["JavaScript", "Java", "Python", "CSS", "PHP", "Ruby", "C++", "C", "Shell", "Objective-C", "R", "Go", "Swift"]
-            : localLanguages
+    /// Trending 语言行。`count` 为 nil 时不展示行尾计数（fallbackList / All 行）。
+    @ViewBuilder
+    private func trendingLanguageRow(_ language: TrendingLanguage, count: Int?) -> some View {
+        Label {
+            HStack(spacing: 4) {
+                trendingLanguageTitle(language)
+                    .lineLimit(1)
 
-        return names.map { TrendingLanguage($0) }
+                Spacer(minLength: 4)
+
+                if let count, count > 0 {
+                    Text(count.formatted())
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+        } icon: {
+            trendingLanguageIcon(language)
+        }
+        .tag(language)
     }
 
     @ViewBuilder
-    private func trendingLanguageRow(_ language: TrendingLanguage) -> some View {
-        Label {
-            trendingLanguageTitle(language)
-                .lineLimit(1)
-        } icon: {
-            if language == .all {
-                Image(systemName: "chevron.left.forwardslash.chevron.right")
-            } else {
-                LanguageIconView(language: language.rawValue, size: 14)
-            }
+    private func trendingLanguageIcon(_ language: TrendingLanguage) -> some View {
+        if language == .all {
+            Image(systemName: "chevron.left.forwardslash.chevron.right")
+        } else if language.isUncategorized {
+            // 「未分类」用问号占位（与 Manage Languages 里 `language=nil` 行的视觉对齐）。
+            Image(systemName: "questionmark.circle")
+                .foregroundStyle(.secondary)
+        } else {
+            LanguageIconView(language: language.rawValue, size: 14)
         }
-        .tag(language)
     }
 
     @ViewBuilder
     private func trendingLanguageTitle(_ language: TrendingLanguage) -> some View {
         if language == .all {
             Text("trending.allLanguages")
+        } else if language.isUncategorized {
+            Text("trending.language.uncategorized")
         } else {
             // Trending 语言 picker label：同样走短名（详见 LanguageDisplayName）。
             Text(verbatim: LanguageDisplayName.shortened(for: language.rawValue))

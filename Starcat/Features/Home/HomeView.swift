@@ -326,6 +326,14 @@ struct HomeView: View {
 
             await viewModel.refreshSidebar()
 
+            // 2026-06-11 dong4j：trending sidebar 语言列表改用后端聚合接口驱动。
+            // 启动后异步拉一次（不阻塞 UI），后端不可达 / 401 时 store 内部退化到 fallbackList。
+            // 不放在 if isAuthenticated 分支：未登录用户进 Trending 也需要语言列表，
+            // 而后端 `/api/v1/languages` 不依赖 GitHub OAuth，仅依赖 Bearer Auth（用户 API Key 已就位）。
+            Task {
+                await dependencies.trendingLanguageStore.reload()
+            }
+
             // 校验恢复的分类是否仍存在（如 tag / language 已被删 / 无 repo）→ 回落 allStars。
             // refreshSidebar 已把 tags / languageStats 从本地库加载完毕，可安全校验。
             if selectedSidebarPage == .manage, !isManageSelectionValid(viewModel.selection) {

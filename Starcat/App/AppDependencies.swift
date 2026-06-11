@@ -88,6 +88,13 @@ final class AppDependencies {
     /// 让设置页 → 服务 Tab 改地址后可以直接 `await trendingAPI.updateBaseURL(_:)` 热更新。
     let trendingAPI: TrendingAPI
 
+    /// 2026-06-11 dong4j：trending sidebar 语言列表的状态容器。
+    ///
+    /// 启动 / 用户切到 trending 时由 HomeView `.task` 触发 `reload()` 拉一次后端聚合数据；
+    /// SidebarView 通过 environment 读取 `displayList` 渲染语言行。
+    /// 后端返空 / 不可达时 store 内部退化到 fallbackList，sidebar 始终能展示一组入口。
+    let trendingLanguageStore: TrendingLanguageStore
+
     /// 第三方后端服务健康检查 actor（2026-06-08）。
     /// 设置页"测试连接"按钮 → `await serviceHealthChecker.check(service:baseURL:)`。
     /// 独立 actor + 短超时（5s），不复用业务 API session。
@@ -300,6 +307,9 @@ final class AppDependencies {
             api: trendingAPIInstance,
             database: db
         )
+        // sidebar 语言列表 store。注意：构造期不主动 reload，避免拉网络阻塞启动；
+        // 由 HomeView `.task` 在首次进入时调 `reload()`，与 trending 列表的首屏入场时序一致。
+        self.trendingLanguageStore = TrendingLanguageStore(api: trendingAPIInstance)
 
         // MUL-176：阮一峰周刊 API 客户端。端点走 `AppEndpoints.Weekly.baseURL`。
         // 用户在设置页改地址 → AppDependencies.setServiceURL 推送到本 actor 的
@@ -438,6 +448,13 @@ final class AppDependencies {
         case .sharing:  await shareAPI.updateBaseURL(target)
         case .wiki:     await wikiAPI.updateBaseURL(target)
         }
+
+        // 3) trending sidebar 语言列表跟随 baseURL 重拉（指向新地址的实际数据）。
+        //    其他服务的 sidebar 内容（weekly issues / activity 分类）目前不走类似的 store，
+        //    无需在这里同步刷新；未来扩展时再加。
+        if service == .trending {
+            await trendingLanguageStore.reload()
+        }
     }
 
     /// 清空某服务的自定义 URL，等价于 `setServiceURL(nil, for:)`。
@@ -469,6 +486,12 @@ final class AppDependencies {
         case .weekly:   await weeklyAPI.updateAPIKey(resolved)
         case .sharing:  await shareAPI.updateAPIKey(resolved)
         case .wiki:     await wikiAPI.updateAPIKey(resolved)
+        }
+
+        // 4) trending API Key 改了 → 立刻用新 key 重拉一次语言列表。
+        //    之前 401 用户配好新 key 后 sidebar 立即恢复正确入口，无需重启。
+        if service == .trending {
+            await trendingLanguageStore.reload()
         }
     }
 
