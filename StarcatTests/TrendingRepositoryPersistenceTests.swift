@@ -252,7 +252,7 @@ struct TrendingRepositoryPersistenceTests {
         #expect(unwrapped <= after.addingTimeInterval(1), "lastRefreshedAt should be <= fetch end time")
     }
 
-    // MARK: - R-01 v1.2 GRDB v8 4 字段持久化（2026-06-10）
+    // MARK: - R-01 v1.2 StarcatRepoCardDTO 扩展 4 字段持久化（2026-06-10）
 
     @Test("v8 4 字段：DTO → trending_repos 表 → cachedTrending 域模型 全链路透传")
     func v8FieldsPersistedAndReadBack() async throws {
@@ -316,7 +316,7 @@ struct TrendingRepositoryPersistenceTests {
         #expect(cachedFirst.openIssuesCount == 9)
     }
 
-    // MARK: - R-05 trending 详情页字段补齐 10 字段持久化（2026-06-11，直接进 v4 建表）
+    // MARK: - R-05 trending 详情页字段补齐 10 字段持久化（2026-06-11）
 
     @Test("R-05 10 字段：DTO → trending_repos 表 → cachedTrending 域模型 全链路透传")
     func r05DetailFieldsPersistedAndReadBack() async throws {

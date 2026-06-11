@@ -70,7 +70,7 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
     /// 本地缓存时间，与 GitHub 字段无关。
     var cachedAt: String?
 
-    // MARK: - R-01 v1.2 StarcatRepoCardDTO 新字段（GRDB v8 schema，2026-06-10）
+    // MARK: - R-01 v1.2 StarcatRepoCardDTO 扩展 4 字段（2026-06-10）
     //
     // 4 字段全部 Optional：老用户从 v7 升级时 SQLite 把这些列填 NULL；新拉的 repo
     // 通过 toEphemeralRepo() / GitHub /repos API 写入实际值。
@@ -124,7 +124,7 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
         case updatedAt = "updated_at"
         case starredAt = "starred_at"
         case cachedAt = "cached_at"
-        // R-01 v1.2 GRDB v8 新增（2026-06-10）
+        // R-01 v1.2 扩展 4 字段（2026-06-10）
         case ownerAvatar = "owner_avatar"
         case subscribersCount = "subscribers_count"
         case defaultBranch = "default_branch"

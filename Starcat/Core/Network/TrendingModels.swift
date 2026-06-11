@@ -72,11 +72,11 @@ struct TrendingRepo: Identifiable, Equatable {
     /// 贡献者列表
     let contributors: [Contributor]
 
-    // MARK: - R-01 v1.2 GRDB v8 新字段（2026-06-10 落地）
+    // MARK: - R-01 v1.2 StarcatRepoCardDTO 扩展 4 字段（2026-06-10 落地）
     //
-    // 这 4 字段从 `StarcatRepoCardDTO` 透传过来，对应 trending_repos 表 v8 新加 4 列。
+    // 这 4 字段从 `StarcatRepoCardDTO` 透传过来，对应 `trending_repos` 表的同名 4 列。
     // 全部 Optional：trending API 返回的 DTO 不一定填满（enricher 可能没补全
-    // owner_avatar 等字段；离线缓存 v8 之前的行也是 NULL）。
+    // owner_avatar 等字段，下游 toDomain / makeEphemeralRepo 端 graceful 退化）。
 
     /// 仓库所有者头像 URL（GitHub `owner.avatar_url`），UI hero 区直接渲染。
     let ownerAvatar: URL?
@@ -87,11 +87,10 @@ struct TrendingRepo: Identifiable, Equatable {
     /// 未关闭 issue 数（GitHub `open_issues_count`）。
     let openIssuesCount: Int?
 
-    // MARK: - R-05 trending 详情页字段补齐（2026-06-11 落地，直接进 v4 建表）
+    // MARK: - R-05 trending 详情页字段补齐 10 字段（2026-06-11 落地）
     //
-    // 这 10 字段从 `StarcatRepoCardDTO` 透传过来，对应 `trending_repos` 表的 10 列
-    // （**直接写在 v4 建表 SQL 里**，无独立 v10 迁移；dong4j 决策「产品都没有上线，
-    // 直接改 schema 就可以了」—— 本地需删一次 sqlite 重建）。
+    // 这 10 字段从 `StarcatRepoCardDTO` 透传过来，对应 `trending_repos` 表的同名 10 列
+    // （schema 详见 `DatabaseMigrationsV1.swift` 的 `createTrendingRepos`）。
     // 全部 Optional：trending-api 偶发字段缺失时退化为 nil；
     // 让 toDomain / makeEphemeralRepo 端 graceful 退化（Bool? → false / Int? → 0）。
     //
@@ -139,11 +138,11 @@ struct TrendingRepo: Identifiable, Equatable {
     ///   - `card.trending?.change` → `starsInPeriod`（缺扩展段时退化为 0）
     ///   - `card.trending?.contributors` → `contributors` 数组（缺扩展段时空数组）
     ///
-    /// **R-01 v1.2 GRDB v8 新增（2026-06-10）**：
+    /// **R-01 v1.2 扩展 4 字段（2026-06-10）**：
     ///   `card.ownerAvatar` / `card.subscribers` / `card.defaultBranch` / `card.openIssues`
     ///   → `ownerAvatar` / `subscribersCount` / `defaultBranch` / `openIssuesCount`
     ///
-    /// **R-05 新增（2026-06-11，10 列直接进 v4 建表 SQL）**：补齐 trending 详情页 hero/
+    /// **R-05 新增 10 字段（2026-06-11）**：补齐 trending 详情页 hero/
     /// 详情区显示 watchers / topics / license / homepage / created / updated / pushed /
     /// archived / fork / private 这 10 字段所需的全部透传——之前因为 trending 列表 row
     /// 不展示这些字段被错误标为「v1.2 边界内但 trending UI 暂不需要」，导致
@@ -178,7 +177,7 @@ struct TrendingRepo: Identifiable, Equatable {
             )
         }
 
-        // R-01 v1.2 GRDB v8 4 字段透传（DTO 对应字段直接拿）
+        // R-01 v1.2 扩展 4 字段透传（DTO 对应字段直接拿）
         self.ownerAvatar = card.ownerAvatar
         self.subscribersCount = card.subscribers
         self.defaultBranch = card.defaultBranch
@@ -234,7 +233,7 @@ struct TrendingRepo: Identifiable, Equatable {
     /// 转为 `Repo` 才能喂给 Scaffold。
     ///
     /// **关键约束**：
-    /// - `id = ghRepoId`（v9 起 trending row 必填）；ghRepoId 为 0 退化代表「过渡 row」，
+    /// - `id = ghRepoId`（R-01 v1.2 起 trending row 必填）；ghRepoId 为 0 退化代表「过渡 row」，
     ///   调用方应通过 `id == 0` 判断「无法 star/unstar」。
     /// - **不要落 DB**：仅限「详情页 hero 区域不至于完全空着」。`isStarred` 永远 false，
     ///   落库会污染本地用户 star 列表。
@@ -251,7 +250,7 @@ struct TrendingRepo: Identifiable, Equatable {
     func makeEphemeralRepo() -> Repo {
         let resolvedHtmlUrl = self.url.absoluteString
         return Repo(
-            id: self.ghRepoId,                      // v9 之后 trending row 必填；为 0 时调用方需检查
+            id: self.ghRepoId,                      // R-01 v1.2 起 trending row 必填；为 0 时调用方需检查
             owner: self.owner,
             name: self.name,
             fullName: self.fullName,
