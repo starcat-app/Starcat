@@ -568,7 +568,8 @@ struct RepoListView: View {
         case .untagged:
             return String(localized: "sidebar.untagged")
         case .language(let language):
-            return language ?? String(localized: "sidebar.unknownLanguage")
+            // Navigation title 同样走短名（详见 LanguageDisplayName）。
+            return language.map(LanguageDisplayName.shortened(for:)) ?? String(localized: "sidebar.unknownLanguage")
         case .tag(let id):
             return viewModel.tags.first { $0.id == id }?.name ?? String(localized: "sidebar.tagFallback")
         }
