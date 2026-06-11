@@ -14,9 +14,28 @@
 //  即可，**不需要**改设置页 UI（`ServicesSettingsView` 用 `ThirdPartyService.allCases`
 //  自动渲染）。
 //
-//  健康检查约定：每个后端都暴露 `GET <baseURL>/healthz`，返回 2xx 即视为可用。
-//  `ServiceHealthChecker` 据此构造探测请求。如果将来某个服务路径不一样，把
-//  `healthCheckPath` 改成对应的 case 即可。
+//  健康检查约定（R-03 2026-06-11 重构）：
+//  以前用「/healthz（无鉴权）+ 业务 endpoint（带鉴权）」两阶段探测，体验上有坑——
+//  sharing 的 GET /api/v1/share 返 404/405、wiki 的 GET /api/v1/wikis 缺参数返 400，
+//  客户端要写一堆「这个状态码其实算 ok」的特殊判定。
+//
+//  现在统一走 **`/api/v1/ping`**（R-03.1 起 sharing 也走绝对 `/api/v1/ping`，
+//  不再因 baseURL 含 `/api` 而特殊），这是后端专门为 Starcat 客户端「测试连接」按钮
+//  加的端点，行为完全标准化：
+//   - 200 → 服务可达 + Key 正确
+//   - 401 → Key 错（缺 Authorization 头 / 错 token 都走这里）
+//   - 其他 4xx/5xx → 服务有问题（含状态码）
+//   - 网络错 → 完全连不上
+//  `ServiceHealthChecker` 基于本端点单步探测。
+//
+//  URL 规范化（R-03.1 2026-06-11）：
+//  用户在设置页可能输入各种形态——`http://127.0.0.1:5004`、`http://127.0.0.1:5004/`
+//  甚至（历史 sharing）`https://x.fly.dev/api`。这些都应当规范化为「裸 host + 端口」
+//  形态再持久化和发起请求，避免后续拼接出现双斜杠 / 多一段 `/api`。
+//  - `validate(_:)`：把用户输入字符串解析、校验、并 trim 末尾 `/`（通用，所有服务一视同仁）。
+//  - `normalizedBaseURL(_:)`：服务感知归一化——sharing 额外剥末尾 `/api`（兼容 R-03 前
+//    历史持久化数据），其它服务直透。
+//  调用顺序：`validate → 调用方拿到 .valid(url) → service.normalizedBaseURL(url) → 持久化 / 探测`。
 //
 
 import Foundation
@@ -109,56 +128,65 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// 给定生效 baseURL 构造健康检查 URL。
+    /// 给定生效 baseURL 构造「测试连接」探测 URL（R-03 2026-06-11）。
     ///
-    /// healthz path 由各自命名空间下的 `Paths.healthz` 提供（sharing 例外，见下）。
+    /// R-03.1 起 4 个后端**统一**暴露 `GET /api/v1/ping`，由 BearerAuth middleware 保护。
+    /// 200 = 服务可达 + Key 正确；401 = Key 错；其他 = 服务异常。
+    ///
+    /// 内部先调 `normalizedBaseURL(base)` 兜底「baseURL 末尾 `/` 或（仅 sharing）末尾 `/api`」
+    /// 这两种历史/容错形态，再拼 path。调用方传未规范化的 URL 也安全。
+    ///
     /// 调用方一般是 `ServiceHealthChecker`，传入"当前生效"或"用户草稿"的 baseURL，
     /// 让"测试连接"按钮不依赖已持久化的值，能预先验证草稿。
     ///
-    /// **sharing 的特殊处理**：sharing 的 baseURL 含 `/api` 后缀（业务请求语义），
-    /// 而 `/healthz` 挂在根路径，所以走 `AppEndpoints.Sharing.healthzURL(over:)` 单独
-    /// 处理（内部会剥掉 `/api` 再拼）。weekly / trending 无此特例，直接 appendPath。
-    func healthCheckURL(base: URL) -> URL {
+    /// 历史 baggage：原本有 `healthCheckURL` + `authProbeURL` 两个函数（两阶段探测），
+    /// R-03 合并为 `pingURL`；R-03.1 又取消了 sharing 的 `/v1/ping` 特例。
+    /// 详见文件顶部注释 + ServiceHealthChecker.swift。
+    func pingURL(base: URL) -> URL {
+        let normalized = normalizedBaseURL(base)
         switch self {
         case .weekly:
-            return AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.healthz, to: base)
+            return AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.ping, to: normalized)
         case .trending:
-            return AppEndpoints.appendPath(AppEndpoints.Trending.Paths.healthz, to: base)
+            return AppEndpoints.appendPath(AppEndpoints.Trending.Paths.ping, to: normalized)
         case .sharing:
-            return AppEndpoints.Sharing.healthzURL(over: base)
+            return AppEndpoints.appendPath(AppEndpoints.Sharing.Paths.ping, to: normalized)
         case .wiki:
-            return AppEndpoints.appendPath(AppEndpoints.Wiki.Paths.healthz, to: base)
+            return AppEndpoints.appendPath(AppEndpoints.Wiki.Paths.ping, to: normalized)
         }
     }
 
-    /// R-01 v1.2 2026-06-10：构造「鉴权探测」URL，用于在 healthz 通过后追加一次轻量
-    /// `/api/v1/*` GET 探测，验证 Bearer Token 是否被后端 authMiddleware 接受。
+    /// 服务感知的 baseURL 规范化（R-03.1 2026-06-11 新增）。
     ///
-    /// 每服务选最便宜 / 副作用最小的 GET 端点：
-    /// - trending: `/api/v1/languages` —— 启动期会缓存的语言字典（~几 KB），开销最低
-    /// - weekly: `/api/v1/issues` —— 周刊期号列表（轻量 GET）
-    /// - sharing: `/api/v1/share` —— GET 方法在后端无注册（业务是 POST），但 authMiddleware
-    ///   先于路由匹配执行：无 / 错 token → 401；有正确 token → 404 或 405（路由不匹配）。
-    ///   ServiceHealthChecker 把「401 = unauthorized；其他 = 鉴权通过（即便路由 404/405）」。
+    /// 用途：在「保存到 customServiceURL」「发送 ping 请求」「构造业务 URL」之前调用，
+    /// 把 baseURL 收敛到统一形态，避免后续拼接出现 `//`、`/api/api`、`/api/v1` 多前缀。
     ///
-    /// **sharing 与 healthz 同款剥 /api 处理**：sharing 的 baseURL 已经含 `/api` 后缀
-    /// （业务请求拼出 `<base>/v1/share`，等价于 `<host>/api/v1/share`）；这里 authProbeURL
-    /// 走 `AppEndpoints.Sharing.url(_:)` 拼出 `<host>/api/v1/share`，与 baseURL 形态一致。
-    func authProbeURL(base: URL) -> URL {
-        switch self {
-        case .weekly:
-            return AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.issues, to: base)
-        case .trending:
-            return AppEndpoints.appendPath(AppEndpoints.Trending.Paths.languages, to: base)
-        case .sharing:
-            // sharing 的 base 含 /api；业务拼 <base>/v1/share；这里也拼 <base>/v1/share
-            // 即 <host>/api/v1/share，让 authMiddleware 鉴权后路由到 GET（未注册 → 404/405）。
-            return AppEndpoints.appendPath(AppEndpoints.Sharing.Paths.share, to: base)
-        case .wiki:
-            // 缺少 owner/repo 时有效 token 返回 400，无效 token 返回 401；现有 checker
-            // 把非 401/5xx 视为 middleware 已放行，因此无需增加专用探测端点。
-            return AppEndpoints.appendPath(AppEndpoints.Wiki.Paths.status, to: base)
+    /// 行为：
+    /// 1. **通用**：用 URLComponents 重组，剥末尾连续 `/`（path 为 `/` 时整段清空 → 末尾无 /）。
+    /// 2. **Sharing 特例**：再剥末尾的 `/api` 段。这是为兼容 R-03 之前的历史持久化值
+    ///    （那时 productionURL 是 `.fly.dev/api`，customServiceURL 也可能是 `something/api`）；
+    ///    R-03.1 起所有 Paths 已写成绝对 `/api/v1/...`，base 必须不含 `/api` 才能正确拼接。
+    ///
+    /// 不做：query / fragment 清理（保留用户原意）；不做 scheme 大小写转换（host 大小写也保留）。
+    /// 失败：URLComponents 解析失败时直接返回原 URL（保守兜底，避免 normalize 反而破坏请求）。
+    func normalizedBaseURL(_ url: URL) -> URL {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url
         }
+
+        while components.path.hasSuffix("/") {
+            components.path = String(components.path.dropLast())
+        }
+
+        if self == .sharing {
+            // 兼容 R-03 之前用户已持久化的 `<host>/api` 形态。只剥一段，不递归，
+            // 避免误伤用户可能合法填的 `<host>/api/api`（虽然几乎不可能）。
+            if components.path == "/api" || components.path.hasSuffix("/api") {
+                components.path = String(components.path.dropLast("/api".count))
+            }
+        }
+
+        return components.url ?? url
     }
 }
 
@@ -192,9 +220,18 @@ extension ThirdPartyService {
     /// - 全部去掉首尾空白
     /// - 空串 → `.empty`（合法，表示"用默认"）
     /// - 必须能 `URL.init(string:)`、scheme ∈ {http, https}、host 非空
-    /// - 末尾多余 `/` 不强制去掉（用户写法各异，统一以 `URL` 解析结果为准）
+    /// - **末尾连续 `/` 全剥**：`http://127.0.0.1:5004/` → `http://127.0.0.1:5004`
+    ///   （R-03.1 2026-06-11，dong4j 反馈防御编程）
+    /// - 走 URLComponents 重组，避免 URL.init 把 `:5004/` 与 `:5004` 当两个等价但字符串
+    ///   不同的 URL（后续 `absoluteString` 持久化 + UI 显示就会不一致）
     ///
     /// 不接受 `file://` 等非 http 协议——四个服务都是 HTTP 后端，写 `file://` 一定是误输。
+    ///
+    /// 注意：本方法是**服务无关**的通用归一化。服务感知的额外归一化（例如 sharing
+    /// 剥末尾 `/api`）放在 `ThirdPartyService.normalizedBaseURL(_:)`，调用方在拿到
+    /// `.valid(url)` 后再走一次。这样保证：
+    ///  - validate 可以作 static func（无 self），单元测试只关心通用规则
+    ///  - service-aware 归一化集中在一处，单一信息源
     static func validate(_ raw: String) -> ServiceURLValidation {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .empty }
@@ -208,6 +245,16 @@ extension ThirdPartyService {
         guard let host = url.host, !host.isEmpty else {
             return .invalid(reasonKey: "settings.services.error.missingHost")
         }
-        return .valid(url)
+
+        // 通用归一化：用 URLComponents 重组，剥末尾连续 `/`。
+        // URLComponents 解析失败时（理论上前面已通过 URL.init，不应失败）安全降级到原 URL。
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return .valid(url)
+        }
+        while components.path.hasSuffix("/") {
+            components.path = String(components.path.dropLast())
+        }
+        let normalized = components.url ?? url
+        return .valid(normalized)
     }
 }

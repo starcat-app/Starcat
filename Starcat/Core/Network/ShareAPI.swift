@@ -5,10 +5,16 @@
 //  分享 API 客户端。
 //
 //  R-01 v1.2 改造（2026-06-09）：
-//  - endpoint `/share` → `/v1/share`（baseURL 含 `/api`，最终路径 `/api/v1/share`）
+//  - endpoint `/share` → `/v1/share`（最终路径 `/api/v1/share`）
 //  - 响应改 envelope 形态（`schema_version + data: ShareCreateResponse`）
 //  - 强制 Bearer Auth（apiKey 字段 + Authorization 头）
 //  - 错误统一走 `StarcatEnvelopeNetworkError`（不再用本地化 ShareAPIError）
+//
+//  R-03.1 修订（2026-06-11）：
+//  - baseURL **不再**含 `/api` 后缀（之前的"特殊语义"已删），与 trending/weekly/wiki 对齐
+//  - `Sharing.Paths.share = "/api/v1/share"`（绝对路径），由 `AppEndpoints.appendPath` 拼出
+//  - 历史 customServiceURL 末尾 `/api` 由 `ThirdPartyService.normalizedBaseURL(_:)`
+//    在保存阶段自动剥除，对本 actor 透明
 //
 //  R-01 P1-3b 修订（2026-06-10）：
 //  - sharing-api 后端 JSON tag 全量改 snake_case，与 trending/weekly 风格一致
@@ -38,7 +44,7 @@ actor ShareAPI {
     private let decoder: JSONDecoder
 
     /// - Parameters:
-    ///   - baseURL: 后端域名（含 `/api` 后缀，与 AppEndpoints.Sharing.baseURL 语义一致）；
+    ///   - baseURL: 后端裸 host（**不含** `/api` 后缀，R-03.1 起与其它自建后端对齐）；
     ///     DI 装配处由 `AppDependencies` 注入，用户在设置页改地址后 `updateBaseURL(_:)` 热更新。
     ///   - apiKey: Bearer Token；DI 装配处由 `AppDependencies` 从 `StarcatAPIKeyResolver`
     ///     解析后注入；用户在设置页改 key 后 `updateAPIKey(_:)` 热更新。
