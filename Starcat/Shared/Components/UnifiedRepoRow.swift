@@ -76,6 +76,13 @@ import SwiftUI
 /// `Repo.asCardData()` / `StarcatRepoCardDTO.asCardData(registry:badge:)` 适配生成。
 struct UnifiedRepoRow: View {
 
+    /// Weekly 期号 chip 的薰衣草紫，#9F80DB。
+    ///
+    /// 替换 SwiftUI 系统 `.purple`（#BF5AF2 在暗模式下饱和度过高，反差刺眼，
+    /// dong4j 2026-06-11 截图反馈）。同色相但降饱和与亮度，保留"紫 =
+    /// Weekly 精选"的视觉系统。引用方仅本 file `case .weeklyIssue`（line 230 段）。
+    fileprivate static let weeklyChipTint = Color(red: 159 / 255, green: 128 / 255, blue: 219 / 255)
+
     let card: RepoCardViewData
 
     /// 是否选中（驱动 RepoRowSurface 视觉变化）。
@@ -228,18 +235,25 @@ struct UnifiedRepoRow: View {
             }
 
         case .weeklyIssue(let number):
+            // 配色（dong4j 2026-06-11 反馈）：SwiftUI 系统 .purple 在暗模式
+            // 下饱和度过高，跟卡片其他低饱和 chip 反差刺眼。换成 #9F80DB
+            // 薰衣草紫（同色相但降饱和与亮度），保留"紫 = Weekly 精选"的
+            // 视觉系统。两处引用统一走 Self.weeklyChipTint，避免不一致。
+            //
+            // 注：同文件 SemanticScoreBadge (line 270/275) 仍用 .purple，
+            // 视觉行为同源问题，但 dong4j 本次未要求改 —— 留作后续。
             HStack(spacing: 4) {
                 Image(systemName: "newspaper")
                     .font(.system(size: 10, weight: .semibold))
                 Text("# \(number)")
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
             }
-            .foregroundStyle(.purple)
+            .foregroundStyle(Self.weeklyChipTint)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background {
                 Capsule(style: .continuous)
-                    .fill(Color.purple.opacity(0.12))
+                    .fill(Self.weeklyChipTint.opacity(0.12))
             }
 
         case .activityKind, .none:
