@@ -319,8 +319,17 @@ enum TrendingPeriod: String, CaseIterable, Identifiable {
 
 /// Trending 语言筛选项。
 ///
-/// 这里故意用 struct 而不是固定 enum：左侧 Trending 入口会复用用户本地
-/// `Languages` 聚合结果，语言集合随用户 stars 变化，不应该被硬编码 case 限住。
+/// 这里故意用 struct 而不是固定 enum：左侧 Trending 入口的语言集合来自
+/// 后端 `/api/v1/languages` 聚合接口（基于 trending_repos 实际数据），
+/// 不应该被硬编码 case 限住。后端返空 / 不可达时退化到下方的 `fallbackList`。
+///
+/// **特殊值（哨兵）**：
+///   - `.all`：rawValue=""，表示「全部语言」UI 入口，不向后端发 lang 参数
+///   - `.uncategorized`：rawValue=`__uncategorized__`，与后端常量
+///     `model.UncategorizedLanguageKey` 完全对齐——查询 `language IS NULL OR ''` 的 repo
+///
+/// 设计意图：哨兵值由前后端共同维护，**不要**改这个字符串值，否则后端旧客户端会出现
+/// 「未分类入口选了，但后端不识别 → 兜底走精确匹配 → 永远返 0 条」的隐性错误。
 struct TrendingLanguage: Hashable, Identifiable, Sendable {
     let rawValue: String
 
@@ -328,17 +337,38 @@ struct TrendingLanguage: Hashable, Identifiable, Sendable {
         self.rawValue = rawValue
     }
 
-    var id: String { rawValue.isEmpty ? "<all>" : rawValue }
-
-    /// 语言名称来自 API / 本地聚合，非空值必须按原样显示；只有“全部语言”走本地化。
-    var localizedDisplayName: String {
-        rawValue.isEmpty ? String(localized: "trending.allLanguages") : rawValue
+    var id: String {
+        if rawValue.isEmpty { return "<all>" }
+        // uncategorized 哨兵已经包含双下划线，与任何真实语言名碰不到，不需要额外前缀
+        return rawValue
     }
 
-    /// API 参数值（空字符串表示全部）。
+    /// 是否为「未分类」哨兵。UI 行 / 详情页判断专用。
+    var isUncategorized: Bool { rawValue == Self.uncategorizedKey }
+
+    /// 语言名称来自 API / 本地聚合，非空值原样显示；
+    /// 「全部」/「未分类」走本地化（i18n 决定文案，独立于后端 label）。
+    var localizedDisplayName: String {
+        if rawValue.isEmpty {
+            return String(localized: "trending.allLanguages")
+        }
+        if isUncategorized {
+            return String(localized: "trending.language.uncategorized")
+        }
+        return rawValue
+    }
+
+    /// API 参数值（空字符串表示全部；uncategorized 直接发哨兵值给后端）。
     var apiValue: String { rawValue }
 
+    // MARK: - 哨兵值（必须与后端 internal/model/trending.go 同名常量对齐）
+
+    /// `__uncategorized__` 哨兵字符串。
+    /// 后端对应：`internal/model.UncategorizedLanguageKey`。任何调整都必须前后端同步。
+    static let uncategorizedKey = "__uncategorized__"
+
     static let all = TrendingLanguage("")
+    static let uncategorized = TrendingLanguage(uncategorizedKey)
     static let swift = TrendingLanguage("Swift")
     static let python = TrendingLanguage("Python")
     static let typescript = TrendingLanguage("TypeScript")
@@ -348,4 +378,42 @@ struct TrendingLanguage: Hashable, Identifiable, Sendable {
     static let java = TrendingLanguage("Java")
     static let kotlin = TrendingLanguage("Kotlin")
     static let dart = TrendingLanguage("Dart")
+}
+
+// MARK: - Language Aggregate DTO
+
+/// 后端 `GET /api/v1/languages` 返回的单项（envelope.data 元素）。
+///
+/// 与 `TrendingLanguage` 的关系：
+///   - `TrendingLanguageAggregateDTO` 是网络层 DTO，对应后端 `model.LanguageAggregate`
+///   - `TrendingLanguage` 是 UI 模型，sidebar / picker 用它做 selection binding
+///   - 流向：后端 envelope → DTO 解码 → `TrendingLanguageStore` 保存 → SidebarView
+///     转 `TrendingLanguage` 渲染 + 透出 count
+///
+/// 字段命名走 envelope schema_version=1 的 snake_case 约定（CodingKeys 显式映射）。
+struct TrendingLanguageAggregateDTO: Decodable, Hashable, Sendable {
+    /// 后端语言 key（GitHub 规范化名 / `__uncategorized__`）。
+    let key: String
+    /// 后端展示名（`key` 同值 / `Uncategorized`）。
+    /// 客户端**不直接**展示这个值——非空 key 显示 key 本身，
+    /// `__uncategorized__` 走客户端 i18n 文案。
+    let label: String
+    /// 该语言下当前 trending_repos 表中可用且已 enrich 的 repo 数量。
+    /// sidebar 行尾计数列展示这个值，与 Tags / Languages section 视觉一致。
+    let count: Int
+
+    enum CodingKeys: String, CodingKey {
+        case key
+        case label
+        case count
+    }
+
+    /// 转成 sidebar 用的 `TrendingLanguage`。
+    /// 哨兵 key 自动转为 `.uncategorized`；其余 key 透传作为 rawValue。
+    var asTrendingLanguage: TrendingLanguage {
+        if key == TrendingLanguage.uncategorizedKey {
+            return .uncategorized
+        }
+        return TrendingLanguage(key)
+    }
 }
