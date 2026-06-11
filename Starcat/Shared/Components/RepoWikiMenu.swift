@@ -45,17 +45,29 @@ struct RepoWikiMenu: View {
     }
 
     /// 每次 repo 变化先清掉旧菜单，随后查询单仓库状态；失败只记日志并保持隐藏。
+    ///
+    /// **诊断日志**（2026-06-11 加）：原版只有 throw 路径记 warning，**成功但 indexed=0
+    /// 时完全静默** —— 这是 dong4j 反馈「看不到任何 wiki 按钮但日志里也没 wiki 字样」
+    /// 的关键死角。现在所有路径都打 info（含 repo 全名 / fetched 数 / indexed 数）,
+    /// 启动后可以从日志一眼看出卡在「请求未发出 / 401/404 / 全部 not_indexed / 成功
+    /// 但 URL 不合法」哪一环。如发现 wiki 全链路稳定后,可以把这两行 info 降级 debug。
     private func loadLinks() async {
         links = []
+        AppLog.network.info("wiki: lookup start for \(repo.fullName, privacy: .public)")
         do {
             let items = try await dependencies.wikiAPI.fetchStatus(owner: repo.owner, repo: repo.name)
             guard !Task.isCancelled else { return }
-            links = RepoWikiMenuState.make(items: items)
+            let resolved = RepoWikiMenuState.make(items: items)
+            links = resolved
+            let indexedCount = items.filter { $0.status == .indexed }.count
+            AppLog.network.info(
+                "wiki: lookup done for \(repo.fullName, privacy: .public): fetched=\(items.count, privacy: .public) indexed=\(indexedCount, privacy: .public) links=\(resolved.count, privacy: .public)"
+            )
         } catch is CancellationError {
             // SwiftUI 切换 repo 的正常取消，不记录成网络错误。
         } catch {
             AppLog.network.warning(
-                "Wiki lookup failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                "wiki: lookup failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)"
             )
         }
     }
