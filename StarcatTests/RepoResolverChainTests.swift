@@ -213,6 +213,9 @@ private final class CountingMockClient: GitHubAPIClientProtocol, @unchecked Send
     func readmeHTML(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?) async throws -> BytesResponse {
         fatalError("not used")
     }
+    func readmeMarkdown(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?) async throws -> BytesResponse {
+        fatalError("not used")
+    }
     func getSubscription(owner: String, repo: String) async throws -> GitHubSubscriptionDTO {
         GitHubSubscriptionDTO(subscribed: false, ignored: false, reason: nil, createdAt: nil, url: nil, repositoryUrl: nil)
     }

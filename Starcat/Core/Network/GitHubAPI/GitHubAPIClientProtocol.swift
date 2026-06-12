@@ -70,6 +70,24 @@ protocol GitHubAPIClientProtocol: Sendable {
         ifModifiedSince: String?
     ) async throws -> BytesResponse
 
+    /// 拉取 README 原始 Markdown 文本（决策 E3：按需懒补全）。
+    ///
+    /// 与 `readmeHTML` 并列、不替换。HTML 是 WebView 渲染主路径，Markdown 走"AI / 向量化按需补"
+    /// 路径，落到 `readmes.content`。详见 `docs/详细设计/26-向量搜索改进.md` § 3.2。
+    ///
+    /// - Parameters:
+    ///   - owner / repo: 仓库 owner 与 name
+    ///   - ifNoneMatch: 上次响应保存的 ETag；非空时带 If-None-Match → 304 命中本地缓存
+    ///   - ifModifiedSince: 上次响应保存的 Last-Modified；与 ifNoneMatch 等效，二选一即可
+    /// - Returns: 字节响应 + ETag / Last-Modified / notModified 标志
+    /// - Throws: 404 / 401 / RateLimit / 5xx 等 `NetworkError`
+    func readmeMarkdown(
+        owner: String,
+        repo: String,
+        ifNoneMatch: String?,
+        ifModifiedSince: String?
+    ) async throws -> BytesResponse
+
     // MARK: - Subscription (Watch)
 
     func getSubscription(owner: String, repo: String) async throws -> GitHubSubscriptionDTO

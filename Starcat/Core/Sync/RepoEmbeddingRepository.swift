@@ -11,7 +11,8 @@
 //
 //  关键约束：
 //  - 本仓库只处理本地缓存，不直接调用 AI 服务。
-//  - `content_hash` 由上层按 repo 文本生成；仓库只做精确比较。
+//  - 是否需要重建向量的判定逻辑（diff / 阈值）放在 `SemanticSearchService` 中，
+//    Repository 只负责按主键存取 `snapshot_json` + 向量 BLOB。
 //
 
 import Foundation

@@ -53,6 +53,8 @@ final class AppDependencies {
     let repoEmbeddingRepository: any RepoEmbeddingRepositoryProtocol
     /// W6 AI：语义搜索服务，使用 BYOK 设置 + SQLite 向量缓存。
     let semanticSearchService: SemanticSearchService
+    /// 2026-06-12 向量索引改进：后台慢速预拉 + 全量重建服务（Settings 触发）。
+    let semanticIndexBuilder: SemanticIndexBuilder
     /// W6 AI：单仓 AI 摘要缓存。
     let aiSummaryRepository: any AISummaryRepositoryProtocol
     /// W6 AI：单仓 AI 摘要与标签推荐服务。
@@ -325,9 +327,35 @@ final class AppDependencies {
         )
         let embeddingRepo = GRDBRepoEmbeddingRepository(database: db)
         self.repoEmbeddingRepository = embeddingRepo
-        self.semanticSearchService = SemanticSearchService(
+        // 2026-06-12 向量索引改进：注入 README / 笔记 / 摘要三类仓库，
+        // 让 SemanticSearchService.buildSnapshot 能从本地数据库取 readme.content /
+        // ai_summaries.summary_json / repo_notes.content，拼出三段式 indexedText。
+        let semantic = SemanticSearchService(
             embeddingRepository: embeddingRepo,
-            settings: self.settings
+            settings: self.settings,
+            readmeRepository: readmeRepo,
+            noteRepository: self.repoNoteRepository,
+            summaryRepository: summaryRepo
+        )
+        self.semanticSearchService = semantic
+
+        // 2026-06-12 向量索引改进：摘要生成成功后触发单 repo 向量重建。
+        // weak 捕获避免 `aiInsight ↔ semantic` 形成强循环（两者都是 @MainActor final class，
+        // 长生命周期对象，理论上不会真正释放，但 weak 是更稳的写法）。
+        // 闭包内调 `refreshIndexIfChanged`（内部 try/catch 处理 missingAPIKey 等）。
+        aiInsight.setOnSummaryGenerated { [weak semantic] repo in
+            Task { @MainActor in
+                await semantic?.refreshIndexIfChanged(for: repo)
+            }
+        }
+
+        // 2026-06-12 向量索引改进：后台慢速预拉 + 全量重建服务。
+        // 由 Settings → "AI 索引" Section 的「开始预拉 / 暂停 / 全量重建」按钮驱动；
+        // 装配时仅持有依赖，不主动 start——避免无声烧 API 配额（决策 E3）。
+        self.semanticIndexBuilder = SemanticIndexBuilder(
+            repoRepository: repo,
+            readmeAPI: self.readmeAPI,
+            semanticSearchService: semantic
         )
 
         // HOM-54：Trending Repository（W7+ 起接入 GRDB 持久化）。

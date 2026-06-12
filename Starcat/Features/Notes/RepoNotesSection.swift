@@ -71,6 +71,16 @@ struct RepoNotesSection: View {
     /// 私有笔记默认折叠，避免右侧详情页顶部长期占掉大块高度。
     @State private var isNotesExpanded: Bool = false
 
+    /// 2026-06-12 向量索引改进：笔记保存后的"向量重建"二级 debounce 任务。
+    ///
+    /// 链路：TextEditor 输入 → 800ms 防抖落库（已有）→ 落库成功后再 1500ms 防抖 → 调
+    /// `semanticSearchService.refreshIndexIfChanged(for: repo)`。
+    ///
+    /// 为何要两级 debounce：第一级 800ms 让 DB 写入收敛到用户停止输入；第二级 1500ms
+    /// 进一步避免连续短停顿被多次触发 embedding API。1.5s 与设计文档约定一致。
+    /// 切换 repo / view 销毁时取消，避免对前一个 repo 触发。
+    @State private var refreshIndexTask: Task<Void, Never>? = nil
+
     enum SaveState { case idle, saving, saved }
 
     var body: some View {
@@ -214,6 +224,11 @@ struct RepoNotesSection: View {
         if let prevId = previousRepoId, prevId != newId, hasUnsavedChanges {
             await viewModel?.saveContent(repoId: prevId, content: editingContent)
         }
+        // 切换 repo 时，取消上一个 repo 的"向量索引重建" debounce 任务——
+        // 否则前一个 repo 的 1.5s timer 还会触发一次 refreshIndexIfChanged(prevRepo)，
+        // 浪费 API 配额且语义混乱（当前页面已经在新 repo 上）。
+        refreshIndexTask?.cancel()
+        refreshIndexTask = nil
         previousRepoId = newId
         await viewModel?.loadFor(repoId: newId)
         editingContent = viewModel?.note?.content ?? ""
@@ -228,6 +243,24 @@ struct RepoNotesSection: View {
         await vm.saveContent(repoId: repo.id, content: editingContent)
         hasUnsavedChanges = false
         saveState = .saved
+        scheduleSemanticIndexRefresh()
+    }
+
+    /// 笔记落库成功后 1.5s 防抖触发向量重建。
+    ///
+    /// 实现要点：
+    /// - 取消上一次未完成的 task → 启动新 task → sleep 1.5s（可被 cancel）→ 检查未取消后调用；
+    /// - 即便 task 中途被 cancel，sleep 抛 CancellationError 也无需特别处理（外层 try? 吞掉）；
+    /// - 仅当 dependencies.semanticSearchService 真实存在时调（保留 nil safety）。
+    private func scheduleSemanticIndexRefresh() {
+        refreshIndexTask?.cancel()
+        let repoToRefresh = repo
+        let service = dependencies.semanticSearchService
+        refreshIndexTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard !Task.isCancelled else { return }
+            await service.refreshIndexIfChanged(for: repoToRefresh)
+        }
     }
 
     private func relativeDate(_ iso: String) -> String {
