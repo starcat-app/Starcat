@@ -189,7 +189,8 @@ struct RepoDetailView: View {
         guard authSession.state.isAuthenticated, repo.isStarred else {
             return []
         }
-        return [.share, .ai]
+        // CodeFlow 首版只支持公开仓库；私有仓库不显示入口，避免引入凭据管理。
+        return repo.isPrivate ? [.share, .ai] : [.codeGraph, .share, .ai]
     }
 
     /// hero ⭐/☆ chip 点击(**v2.0 修订**):

@@ -327,6 +327,10 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             // 复用现有 RepoAIOpenButton：内部通过 RepoAIWindowController 弹窗。
             RepoAIOpenButton(repo: repo)
 
+        case .codeGraph:
+            // 内部自治 sheet + 三步状态机，Scaffold 不持有 clone / 页面生成状态。
+            CodeFlowButton(repo: repo)
+
         case .weeklyIssue(let number, let url):
             Link(destination: url) {
                 HStack(spacing: 4) {
