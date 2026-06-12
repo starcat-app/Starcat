@@ -255,15 +255,16 @@ final class HomeViewModel {
     /// - 与现有 `statusMap` 走的"全表加载到字典 + applyView 过滤"路径完全一致
     private var repoTagsMap: [Int64: Set<String>] = [:]
 
-    // MARK: - 多选模式（W4 A5）
-
-    /// 是否进入多选模式。开启后中栏 List 切换到多选 selection binding。
-    /// D-04 风格：`private(set)`，UI 通过 `toggleMultiSelectMode()` 切换。
-    private(set) var isMultiSelectMode: Bool = false
-
-    /// 多选模式下选中的 repo id 集合。SwiftUI List(selection:) 双向绑定，
-    /// 所以这里必须可写。退出多选模式时由 `exitMultiSelectMode()` 清空。
-    var multiSelectedRepoIDs: Set<Int64> = []
+    // MARK: - 多选模式
+    //
+    // W12 toolbar PR-5（2026-06-12）：原 W4 A5 的 `isMultiSelectMode` / `multiSelectedRepoIDs`
+    // / `enterMultiSelectMode` / `exitMultiSelectMode` / `toggleMultiSelectMode` 已全部迁移到
+    // `AppDependencies.manageMultiSelectionStore`（与 trending/weekly/activity 同款 MultiSelectionStore）。
+    //
+    // 迁移动因：4 个分类多选交互完全统一（点击 toggle / Cmd+A 全选 / 退出 / 视觉），由 dong4j
+    // grill-me 拍板 A 路线。原来在 viewModel 内的 `formIntersection(visibleIDs)` 清理逻辑也下移到
+    // RepoListView 的 `.onChange(of: itemsRevision)` 调 `store.retain(visibleIDs:)`，view 层主导
+    // store 生命周期（A2 路线），避免 viewModel 重新持 store 引用造成耦合。
 
     // MARK: - 排序（W4-4 D1）
 
@@ -313,31 +314,6 @@ final class HomeViewModel {
 
     /// 派生：当前是否有任何过滤器生效（toolbar 显示徽标用）。
     var hasActiveFilter: Bool { hideArchived || hideForks || statusFilter != nil }
-
-    /// 切换多选模式。
-    /// 切入：清空单选 selectedRepoID（避免详情页显示残留）；
-    /// 切出：清空 multiSelectedRepoIDs（避免下次切入时出现脏数据）。
-    func toggleMultiSelectMode() {
-        if isMultiSelectMode {
-            exitMultiSelectMode()
-        } else {
-            enterMultiSelectMode()
-        }
-    }
-
-    func enterMultiSelectMode() {
-        isMultiSelectMode = true
-        // 把当前单选自动作为多选首项，符合"先选一个再扩选"的直觉
-        if let id = selectedRepoID {
-            multiSelectedRepoIDs = [id]
-        }
-        selectedRepoID = nil
-    }
-
-    func exitMultiSelectMode() {
-        isMultiSelectMode = false
-        multiSelectedRepoIDs = []
-    }
 
     // MARK: - 依赖
 
@@ -798,8 +774,10 @@ final class HomeViewModel {
     ///   避免触发 SwiftUI 的 `List.id(itemsRevision)` 重建 + `listRowReveal` 入场动画。
     /// - 典型受益场景：selection didSet 已经急切加载过缓存，紧跟着 reloadItems 又调了一遍
     ///   loadFromCache → applyView，数据完全相同，本来是一次浪费的 list rebuild。
-    /// - 仍然执行 selectedRepoID / multiSelectedRepoIDs 清理，因为这些不依赖 items 是否变化，
-    ///   只依赖最新 view 的 ID 集合。
+    /// - 仍然执行 selectedRepoID 清理（不依赖 items 是否变化）。
+    /// - W12 toolbar PR-5：多选状态清理（formIntersection）已下移到 RepoListView
+    ///   `.onChange(of: itemsRevision)` 调 `manageMultiSelectionStore.retain(visibleIDs:)`，
+    ///   viewModel 不再持 store 引用（A2 路线 / 解耦保持）。
     private func applyView() {
         var view = rawItems
         if hideArchived { view.removeAll { $0.isArchived } }
@@ -841,11 +819,7 @@ final class HomeViewModel {
         if let id = selectedRepoID, !view.contains(where: { $0.id == id }) {
             selectedRepoID = nil
         }
-        if isMultiSelectMode {
-            // 多选模式下被过滤掉的 id 也要从选中集合移除
-            let visibleIDs = Set(view.map(\.id))
-            multiSelectedRepoIDs.formIntersection(visibleIDs)
-        }
+        // 多选模式的 prune 已迁到 RepoListView.onChange(of: itemsRevision)（W12 toolbar PR-5）
     }
 }
 

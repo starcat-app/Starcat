@@ -71,9 +71,9 @@ struct RepoListView: View {
         .animation(contentAnimation, value: contentAnimationID)
         .navigationTitle(navigationTitle)
         .navigationSubtitle(navigationSubtitle)
-        // W4 A5：多选模式底部浮动操作栏；W12 PR-4 扩展到 trending/weekly/activity。
-        // Manage 使用 BatchActionBar（基于 HomeViewModel.multiSelectedRepoIDs），
-        // 其它页面使用 RemoteBatchActionBar（基于对应 MultiSelectionStore）。
+        // W4 A5：多选模式底部浮动操作栏；W12 PR-4 扩展到 trending/weekly/activity；
+        // W12 PR-5：Manage 也走 MultiSelectionStore 但保留独立 BatchActionBar（业务语义差异：
+        // 「打标签」+「Unstar」vs RemoteBatchActionBar 的「Star」+「Unstar」）。
         .safeAreaInset(edge: .bottom, spacing: 0) {
             currentBatchActionBar
         }
@@ -118,9 +118,50 @@ struct RepoListView: View {
                 exitAllRemoteStores()
             }
         }
+        // W12 PR-5 A2 路线：Manage filter/sort 变化触发 reloadItems → itemsRevision 自增 →
+        // 此处调 store.retain(visibleIDs) 清理被隐藏的孤儿选中项（替代原 viewModel.applyView
+        // 内的 formIntersection 块）。view 层主导 store 生命周期，避免 viewModel 持 store 引用。
+        .onChange(of: viewModel.itemsRevision) { _, _ in
+            let store = dependencies.manageMultiSelectionStore
+            guard store.isActive else { return }
+            let visibleIDs = Set(viewModel.items.map(\.id))
+            store.retain(visibleIDs: visibleIDs)
+        }
+        // W12 PR-5：Cmd+A 全选 — 4 场景统一注入一个隐藏按钮承载快捷键。
+        // 仅当**当前 page 对应的 store** 处于多选模式时生效（disabled 否则）。Shift 区间选不补。
+        .background {
+            selectAllShortcutButton
+        }
+    }
+
+    /// W12 PR-5：Manage 的 Cmd+A 全选隐藏按钮。
+    ///
+    /// 实现细节：
+    /// - 用 `Button { ... }.keyboardShortcut("a", modifiers: .command).hidden()` 是 SwiftUI 注册
+    ///   全局键盘快捷键的常规手法（隐藏按钮不占布局，但快捷键由 SwiftUI 路由系统接管）；
+    /// - 仅在 manage store 处于 active 时启用，否则 `.disabled(true)` 让 Cmd+A 不抢系统默认行为；
+    /// - selectAll 的入参由 view 自己从 viewModel.items 构造 SelectionSnapshot（Repo.id == ghRepoId）。
+    /// - Trending / Weekly / Activity 的 Cmd+A 由各自的 view 在本 PR 同步注入（行为 4 场景统一）。
+    ///   它们的 visible items 不暴露到 RepoListView 这一层，避免本视图反向依赖子 ViewModel。
+    @ViewBuilder
+    private var selectAllShortcutButton: some View {
+        let store = dependencies.manageMultiSelectionStore
+        Button {
+            let snapshots = viewModel.items.map {
+                SelectionSnapshot(ghRepoId: $0.id, owner: $0.owner, name: $0.name)
+            }
+            store.selectAll(snapshots)
+        } label: {
+            EmptyView()
+        }
+        .keyboardShortcut("a", modifiers: .command)
+        .disabled(!store.isActive || selectedPage != .manage)
+        .hidden()
     }
 
     /// 把三个远端 store 全部 exit。登出 / token 失效场景调用。
+    /// Manage 库内 100% 已 star，登出会触发会话清空但不主动 exit manage store（manage 多选不依赖
+    /// GitHub API token，本地操作如打标签仍可执行；如果用户登出后打 unstar 会被 StarActionService 拦）。
     private func exitAllRemoteStores() {
         let trending = dependencies.trendingMultiSelectionStore
         let weekly = dependencies.weeklyMultiSelectionStore
@@ -131,8 +172,9 @@ struct RepoListView: View {
     }
 
     /// 把"非当前 page+分类"对应的多选 store 全部 exit。
-    /// Manage 的多选状态由 HomeViewModel.isMultiSelectMode 自己管，这里只处理三个远端 store。
+    /// W12 PR-5：Manage 也走 store，切到 trending/activity 时把 manage store 一并 exit。
     private func exitInactiveMultiSelectStores(for page: SidebarRootPage, activityCategory: ActivityCategory) {
+        let manage = dependencies.manageMultiSelectionStore
         let trending = dependencies.trendingMultiSelectionStore
         let weekly = dependencies.weeklyMultiSelectionStore
         let activity = dependencies.activityMultiSelectionStore
@@ -143,9 +185,11 @@ struct RepoListView: View {
             if weekly.isActive { weekly.exit() }
             if activity.isActive { activity.exit() }
         case .trending:
+            if manage.isActive { manage.exit() }
             if weekly.isActive { weekly.exit() }
             if activity.isActive { activity.exit() }
         case .activity:
+            if manage.isActive { manage.exit() }
             if trending.isActive { trending.exit() }
             if activityCategory == .weekly {
                 if activity.isActive { activity.exit() }
@@ -164,13 +208,14 @@ struct RepoListView: View {
     /// - PR-2：所有页面统一注入 `searchField` —— 非 Manage 页面以 `isDisabled = true`
     ///   显示，tooltip 提示"该搜索仅在 Manage 页面可用"，为未来 GitHub 搜索模式铺路。
     /// W12 PR-4：根据当前 page 选择对应的多选 BatchActionBar 实现。
-    /// - Manage：基于 `HomeViewModel.multiSelectedRepoIDs`；
-    /// - Trending/Weekly/Activity：基于对应的 `MultiSelectionStore`。
+    /// W12 PR-5：Manage 也走 MultiSelectionStore，但保留独立 BatchActionBar（暴露
+    /// 「打标签」+「Unstar」业务语义按钮，与 RemoteBatchActionBar 的「Star」+「Unstar」不同）。
     @ViewBuilder
     private var currentBatchActionBar: some View {
         switch selectedPage {
         case .manage:
-            if viewModel.isMultiSelectMode {
+            let store = dependencies.manageMultiSelectionStore
+            if store.isActive {
                 BatchActionBar()
             }
         case .trending:
@@ -380,9 +425,13 @@ struct RepoListView: View {
                     settings.repoSortOption = newValue
                 }
 
-                MultiSelectButton(isActive: viewModel.isMultiSelectMode) {
-                    viewModel.toggleMultiSelectMode()
-                }
+                // W12 PR-5：Manage 多选按钮直接驱动 manageMultiSelectionStore（替代原
+                // viewModel.toggleMultiSelectMode），与 trending/weekly/activity 同款机制。
+                // Manage 已登录是隐含前提（库内 100% 已 star），不传 isDisabled。
+                MultiSelectButton(
+                    isActive: dependencies.manageMultiSelectionStore.isActive,
+                    action: { dependencies.manageMultiSelectionStore.toggle() }
+                )
             }
         )
 
@@ -446,11 +495,10 @@ struct RepoListView: View {
                 emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitleText: error)
             } else if viewModel.items.isEmpty {
                 emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
-            } else if viewModel.isMultiSelectMode {
-                // W4 A5：多选模式 List binding 类型不同，必须分开渲染
-                listWithOptionalBanner { multiSelectList($vm.multiSelectedRepoIDs) }
             } else {
-                listWithOptionalBanner { listContent($vm.selectedRepoID) }
+                // W12 PR-5：单选 / 多选共用同一 list 路径（plain Button + 条件 toggle），
+                // 对齐 Trending/Weekly/Activity 的实现模式。multiSelectList(_:) 已删除。
+                listWithOptionalBanner { unifiedListContent($vm.selectedRepoID) }
             }
         }
     }
@@ -458,7 +506,7 @@ struct RepoListView: View {
     /// HOM-52：仅在 Untagged 视图非空时，在列表顶部插入"批量 AI 整理"入口横幅。
     ///
     /// 之所以包成 ViewBuilder + closure 而不是把 banner 塞进每个 list view：
-    /// listContent / multiSelectList 都是带泛型 selection 的 List，加 banner 会破坏 List 滚动语义；
+    /// unifiedListContent 是带泛型 selection 的 List，加 banner 会破坏 List 滚动语义；
     /// 在外层 VStack 拼接更稳，且 banner 也参与 contentAnimationID 触发的过渡动画。
     @ViewBuilder
     private func listWithOptionalBanner<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
@@ -506,7 +554,8 @@ struct RepoListView: View {
         if selectedPage == .activity {
             return "activity-\(selectedActivityCategory.id)"
         }
-        let mode = viewModel.isMultiSelectMode ? "multi" : "single"
+        // W12 PR-5：多选状态迁到 manageMultiSelectionStore；contentAnimationID 用 store.isActive 派生。
+        let mode = dependencies.manageMultiSelectionStore.isActive ? "multi" : "single"
         if viewModel.isLoading {
             return "loading-\(viewModel.selection.id)-\(mode)"
         }
@@ -566,51 +615,45 @@ struct RepoListView: View {
 
     // MARK: - 列表主体
 
-    /// 单选列表使用手动 selection，而不是 `List(selection:)`。
+    /// 统一的 Manage 列表（W12 PR-5：替代原 `listContent(_:)` + `multiSelectList(_:)` 两条路径）。
     ///
-    /// 原因：`List(selection:)` 会强制绘制 macOS 系统蓝色选中底色，和 UI 升级后的
-    /// 自定义左侧 accent 条叠加后视觉过重。这里用 plain Button 写入 `selectedRepoID`，
-    /// 仍触发 HomeView 的 `.onChange(of: selectedRepoID)` 加载详情，但选中外观完全交给
-    /// `RepoRowView` 控制。
-    private func listContent(_ selection: Binding<Int64?>) -> some View {
-        List {
+    /// 单选 / 多选共用同一份 `List + ForEach + plain Button + UnifiedRepoRow` 结构，与
+    /// TrendingView / WeeklyContentView / ActivityView 完全对齐：
+    /// - 不用 `List(selection:)` —— 它会强制绘制 macOS 系统蓝色选中底色，把自定义 `RepoRowSurface`
+    ///   的语言色 accent / 18% 底色 / 42% 描边完全压住，多选与 trending 视觉割裂的根因；
+    /// - 单选模式（store.isActive == false）：Button action 写 `selectedRepoID`，HomeView 监听
+    ///   该变化加载详情；
+    /// - 多选模式（store.isActive == true）：Button action 调 `store.toggle(snapshot)` 切换选中态；
+    ///   selectedRepoID 完全不动（对齐 Trending：退出多选后详情页保持），UnifiedRepoRow 的
+    ///   isSelected 由 store.contains 派生；
+    /// - 卡片视觉完全由 `UnifiedRepoRow.isSelected` 驱动（无 List 系统蓝），4 个分类长得一模一样。
+    private func unifiedListContent(_ selection: Binding<Int64?>) -> some View {
+        let store = dependencies.manageMultiSelectionStore
+        return List {
             ForEach(indexedItems) { item in
                 let repo = item.repo
-                // UI 视觉升级：单选态不再使用 `List(selection:)`。
-                // macOS 会强制绘制系统蓝色选中底色，和自定义左侧色条叠加后过重；
-                // 改为 plain Button 手动写 selectedRepoID，保留点击打开详情，但视觉只由 RepoRowView 控制。
                 Button {
-                    selection.wrappedValue = repo.id
+                    if store.isActive {
+                        // 多选模式：toggle 该行选中态。Repo.id == ghRepoId == GitHub ID 同一 Int64 域。
+                        store.toggle(SelectionSnapshot(
+                            ghRepoId: repo.id,
+                            owner: repo.owner,
+                            name: repo.name
+                        ))
+                    } else {
+                        selection.wrappedValue = repo.id
+                    }
                 } label: {
                     UnifiedRepoRow(
                         card: repo.asCardData(),
-                        isSelected: selection.wrappedValue == repo.id,
+                        isSelected: store.isActive
+                            ? store.contains(ghRepoId: repo.id)
+                            : (selection.wrappedValue == repo.id),
                         semanticHit: viewModel.semanticHit(for: repo.id)
                     )
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-            }
-        }
-        .id(viewModel.itemsRevision)
-        .listStyle(.inset)
-        .alternatingRowBackgrounds()
-    }
-
-    /// W4 A5：多选 List。binding 类型 `Set<Int64>` → SwiftUI 自动启用多选行为。
-    /// macOS 用户用 Cmd / Shift 加选，行级 checkbox 不必显式画。
-    private func multiSelectList(_ selection: Binding<Set<Int64>>) -> some View {
-        List(selection: selection) {
-            ForEach(indexedItems) { item in
-                let repo = item.repo
-                UnifiedRepoRow(
-                    card: repo.asCardData(),
-                    isSelected: selection.wrappedValue.contains(repo.id),
-                    semanticHit: viewModel.semanticHit(for: repo.id)
-                )
                 .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -628,10 +671,12 @@ struct RepoListView: View {
         if selectedPage == .activity {
             return selectedActivityCategory.localizedTitle
         }
-        if viewModel.isMultiSelectMode {
+        // W12 PR-5：多选数从 manageMultiSelectionStore 派生（替代原 viewModel.multiSelectedRepoIDs）。
+        let manageStore = dependencies.manageMultiSelectionStore
+        if manageStore.isActive {
             return String(
                 format: String(localized: "list.selectedCountFormat"),
-                viewModel.multiSelectedRepoIDs.count,
+                manageStore.count,
                 viewModel.items.count
             )
         }

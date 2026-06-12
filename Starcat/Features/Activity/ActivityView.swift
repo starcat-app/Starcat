@@ -116,6 +116,23 @@ struct ActivityView: View {
             }
             .listStyle(.inset)
             .alternatingRowBackgrounds()
+            // W12 PR-5：Cmd+A 全选当前可见 activity item（仅 multi-select active 时生效）。
+            // 4 场景同款机制。`item.repo == nil` 的 announcement / following 项跳过——它们
+            // 在 row 层级也无法被 toggle 进 store，全选也应该尊重这条约束。
+            .background {
+                Button {
+                    let snapshots = viewModel.items.compactMap { item -> SelectionSnapshot? in
+                        guard let repo = item.repo else { return nil }
+                        return SelectionSnapshot(ghRepoId: repo.id, owner: repo.owner, name: repo.name)
+                    }
+                    multiStore.selectAll(snapshots)
+                } label: {
+                    EmptyView()
+                }
+                .keyboardShortcut("a", modifiers: .command)
+                .disabled(!multiStore.isActive)
+                .hidden()
+            }
         }
     }
 
