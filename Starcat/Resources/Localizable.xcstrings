@@ -3052,6 +3052,22 @@
         }
       }
     },
+    "authV2.codeCopiedAndOpening" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copied, opening GitHub"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制，正在打开 GitHub"
+          }
+        }
+      }
+    },
     "authV2.codeHint" : {
       "localizations" : {
         "en" : {
@@ -3360,7 +3376,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "批量打标签"
+            "value" : "打标签"
           }
         }
       }

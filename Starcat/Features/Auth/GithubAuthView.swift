@@ -318,7 +318,11 @@ struct GithubAuthView: View {
                         .symbolRenderingMode(.palette)
                         .foregroundStyle(Color.white, Color(red: 0.12, green: 0.42, blue: 0.18))
                         .font(.title3)
-                    Text("authV2.codeCopied")
+                    // 文案根据流程区分(dong4j 2026-06-12 反馈):
+                    //   主流程 .copiedAndOpening → "已复制,正在打开 GitHub"(暗示 1.5s 后会跳浏览器)
+                    //   副流程 .copiedSilent      → "已复制"             (用户已知不会跳浏览器)
+                    // .idle 时整个 HStack 已被 opacity(0) 隐藏,这里 fallback 给 .codeCopied 即可。
+                    Text(copyFeedback == .copiedAndOpening ? "authV2.codeCopiedAndOpening" : "authV2.codeCopied")
                 }
                 .font(.subheadline)
                 .fontWeight(.semibold)
