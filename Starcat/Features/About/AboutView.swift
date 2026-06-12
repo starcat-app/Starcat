@@ -821,7 +821,7 @@ private struct AboutDependency: Identifiable {
             url: URL(string: "https://news.ycombinator.com")
         ),
         AboutDependency(
-            name: "Google Code Wiki Logo",
+            name: "Code Wiki Logo",
             license: "Brand Asset",
             copyright: "Google LLC — used for source identification only",
             url: URL(string: "https://codewiki.google")

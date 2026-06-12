@@ -8666,13 +8666,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Detects whether a repository is indexed by DeepWiki, Zread, or Google Code Wiki."
+            "value" : "Detects whether a repository is indexed by DeepWiki, Zread, or Code Wiki."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "探测仓库是否已被 DeepWiki、Zread 或 Google Code Wiki 收录。"
+            "value" : "探测仓库是否已被 DeepWiki、Zread 或 Code Wiki 收录。"
           }
         }
       }
@@ -12263,13 +12263,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Google Code Wiki"
+            "value" : "Code Wiki"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Google Code Wiki"
+            "value" : "Code Wiki"
           }
         }
       }
