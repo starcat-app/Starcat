@@ -516,6 +516,47 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 未自动验收的仅剩人工交互：四类详情页实际菜单位置、浏览器跳转、未登录/未 Star 展示、
 设置页热更新。按项目约定由 dong4j 启动 App 验证。
 
+### 9.3 RepoWikiMenu「按钮永远不出现」bug 修复（2026-06-12）
+
+**现象**：dong4j 启动 App 进入 `react/react` 详情页（确认本地 wiki 5004 返回 200 +
+3 个 indexed、设置页"测试连接"也通过 HTTP 200），但右上角始终看不到 Wiki 菜单。
+`log show ... | grep wiki` 也完全没有 `wiki:` 任何字样，意味着 `.task` 闭包根本没跑过。
+
+**根因**：`RepoWikiMenu` 老版 body 写成：
+
+```swift
+Group {
+    if !links.isEmpty { Menu { ... } ... }
+}
+.task(id: repo.fullName) { await loadLinks() }
+```
+
+初始 `links == []` → Group 内 `if false` → body **退化为 EmptyView**。SwiftUI **不会**
+给 EmptyView 调度 `.task` / `.onAppear`（已知坑），形成死锁：
+
+```
+links 空 → body 是 EmptyView → .task 不跑 → loadLinks 不跑 → links 永远空
+```
+
+跟后端、URL、API Key 完全无关。设置页"测试连接"走的是 `ServiceHealthChecker` actor
++ `/api/v1/ping` 单独路径，不受此 bug 影响，所以能 200。
+
+**修复**：把 `.task` 挪到 `.background { Color.clear }` 上。`.background` 渲染的辅助层
+不影响父布局（不占 HStack spacing），但作为 view modifier 总会被求值，`Color.clear`
+是真实视图节点，`.task` 必然被调度。视觉效果跟"按需出现"完全一致。
+
+**额外补强**：`loadLinks` 全路径加 `print()` 兜底（`os.Logger` 在 Xcode console 的
+`.info` 级别可能被 filter 隐藏，`print` 永远走 stdout 可见），下次再有问题不用先去调
+Xcode Debug Area 的 filter 设置。
+
+**教训**：任何形如 `Group { if cond { ... } }.task` / `.onAppear` 的 SwiftUI 代码都要
+警惕这个坑 —— 要么保证 if 条件初始为 true，要么用 `.background` / 真实占位承载副作用
+modifier。本项目其它类似模式（条件渲染 + 视图副作用）后续遇到都按这个模式处理。
+
+**涉及文件**：`Starcat/Shared/Components/RepoWikiMenu.swift`（v1.1）。
+单测 `RepoWikiMenuStateTests` / `WikiAPITests` 9 项全过（这两个 suite 测的是纯函数和
+网络层，不依赖 view body 渲染时序，修复未引发回归）。
+
 ---
 
 ## 10. 已确认决策

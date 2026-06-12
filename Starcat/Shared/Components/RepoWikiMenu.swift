@@ -10,6 +10,50 @@
 //  - 请求中、未收录、服务错误都不占 UI 空间；只有服务端确认 indexed 才显示菜单。
 //  - `.task(id:)` 在切换 repo 时自动取消旧请求并重跑，避免旧结果串到新详情页。
 //
+//  ────────────────────────────────────────────────────────────────────────────
+//  v1.2 修订（2026-06-12，dong4j bug 反馈「按钮永远不出现」）
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  老版 body（v1.0）：
+//      Group {
+//          if !links.isEmpty { Menu { ... } ... }
+//      }
+//      .task(id: repo.fullName) { await loadLinks() }
+//
+//  bug 表现：即使后端 200 + 3 个 indexed，详情页右上角始终看不到 Wiki 菜单。
+//  日志里也完全没有 `wiki:` 任何字样（`.task` 闭包根本没跑过）。
+//
+//  根因：初始 `links == []` → `Group` 内 `if false` → body **退化为 EmptyView**。
+//  SwiftUI **不会**给 EmptyView 调度 `.task` / `.onAppear`（已知坑）。形成死锁：
+//      links 空 → body 是 EmptyView → .task 不跑 → loadLinks 不跑 → links 永远空
+//
+//  v1.1 失败尝试（已废弃）：把 `.task` 挪到 `.background { Color.clear.task(...) }` 上。
+//  实测**仍然不工作** —— `.background` modifier 附加在 host view 上，当 host view 退化
+//  为 EmptyView 时，整个节点（含 background modifier）一起被 SwiftUI optimizer 抹掉。
+//  background 并不是"独立于 host 渲染的辅助层"。教训：don't trust intuition on
+//  SwiftUI optimizer behavior，必须用真实视图节点。
+//
+//  v1.2 修复（当前）：用 `ZStack` 包一个**始终存在**的 `Color.clear` 子节点
+//  + 条件 if 渲染 Menu。`ZStack` 是真实容器，永远有节点；`Color.clear` 是真实视图
+//  （非 EmptyView），`.task` 必然被 SwiftUI 调度。代价：HStack(spacing: 8) 会把
+//  ZStack 看作真实子项，links 空时仍占一个 0×0 槽位（视觉效果：Wiki 跟旁边按钮之间
+//  多 8pt spacing；最坏情况是 Hero action 行整体向左挪 8pt）。这点视觉代价远小于
+//  "按钮永远不显示"的体验损失。
+//
+//  备选方案为什么没选：
+//  - 把 `.task` 上推到 RepoDetailScaffold：破坏 RepoWikiMenu 自治性，父视图要持有
+//    wiki 状态机，4 个详情页都得改。
+//  - `.onAppear + .onChange`：同样附加在 view 上，EmptyView 上不会触发，同样 bug。
+//  - `.background` / `.overlay` modifier：v1.1 已实测无效（见上）。
+//
+//  教训：任何形如 `Group { if ... }.task` 的 SwiftUI 代码都要警惕这个坑，要么
+//  保证 if 条件初始为 true，要么用 `ZStack { Color.clear; if ... { ... } }` 这种
+//  **永远有真实子节点的容器**承载 `.task`。`.background` / `.overlay` modifier 在
+//  host 为 EmptyView 时同样会被 optimizer 抹掉，不能用作 "兜底持有 .task"。
+//
+//  额外补充：`print()` 兜底日志（`os.Logger` 在 Xcode console 的 .info 级别可能被
+//  filter 隐藏，`print` 永远可见，debug 排查 zero overhead）。
+//
 
 import SwiftUI
 
@@ -21,7 +65,12 @@ struct RepoWikiMenu: View {
     @State private var links: [WikiLink] = []
 
     var body: some View {
-        Group {
+        // v1.2（2026-06-12）：ZStack 是真实容器永远在视图树里；Color.clear 是真实视图节点
+        // （非 EmptyView），保证 .task 必然被 SwiftUI 调度。详见文件头 v1.2 修订段。
+        ZStack {
+            Color.clear
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
             if !links.isEmpty {
                 Menu {
                     ForEach(links) { link in
@@ -37,6 +86,7 @@ struct RepoWikiMenu: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .help(Text("wiki.menu.help"))
+                .fixedSize()
             }
         }
         .task(id: repo.fullName) {
@@ -46,14 +96,20 @@ struct RepoWikiMenu: View {
 
     /// 每次 repo 变化先清掉旧菜单，随后查询单仓库状态；失败只记日志并保持隐藏。
     ///
-    /// **诊断日志**（2026-06-11 加）：原版只有 throw 路径记 warning，**成功但 indexed=0
-    /// 时完全静默** —— 这是 dong4j 反馈「看不到任何 wiki 按钮但日志里也没 wiki 字样」
-    /// 的关键死角。现在所有路径都打 info（含 repo 全名 / fetched 数 / indexed 数）,
-    /// 启动后可以从日志一眼看出卡在「请求未发出 / 401/404 / 全部 not_indexed / 成功
-    /// 但 URL 不合法」哪一环。如发现 wiki 全链路稳定后,可以把这两行 info 降级 debug。
+    /// **诊断日志**（2026-06-11 加 + 2026-06-12 加 print 兜底）：
+    /// 1. 原版只有 throw 路径记 warning，**成功但 indexed=0 时完全静默** ——
+    ///    dong4j 反馈「看不到任何 wiki 按钮但日志里也没 wiki 字样」的关键死角。
+    ///    所有路径都打 info（repo 全名 / fetched / indexed / links 数）。
+    /// 2. v1.1 加 `print()` 兜底：`os.Logger` 在 Xcode console 的 .info 级别可能
+    ///    被 filter 隐藏（用户需手动改 Debug Area 过滤设置），`print` 直接走
+    ///    stdout 永远可见，debug 排查 wiki 链路时不用调 Xcode filter。
+    ///    生产环境无影响（release build 中 print 仍写 stdout，开销可忽略）。
+    ///    全链路稳定后可以考虑把 print 删掉，但加这点开销远小于"再次出现按钮不显示
+    ///    用户却看不到任何日志线索"的体验损失。
     private func loadLinks() async {
         links = []
         AppLog.network.info("wiki: lookup start for \(repo.fullName, privacy: .public)")
+        print("[wiki] lookup start for \(repo.fullName)")
         do {
             let items = try await dependencies.wikiAPI.fetchStatus(owner: repo.owner, repo: repo.name)
             guard !Task.isCancelled else { return }
@@ -63,12 +119,14 @@ struct RepoWikiMenu: View {
             AppLog.network.info(
                 "wiki: lookup done for \(repo.fullName, privacy: .public): fetched=\(items.count, privacy: .public) indexed=\(indexedCount, privacy: .public) links=\(resolved.count, privacy: .public)"
             )
+            print("[wiki] lookup done for \(repo.fullName): fetched=\(items.count) indexed=\(indexedCount) links=\(resolved.count)")
         } catch is CancellationError {
             // SwiftUI 切换 repo 的正常取消，不记录成网络错误。
         } catch {
             AppLog.network.warning(
                 "wiki: lookup failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)"
             )
+            print("[wiki] lookup failed for \(repo.fullName): \(error.localizedDescription)")
         }
     }
 }
