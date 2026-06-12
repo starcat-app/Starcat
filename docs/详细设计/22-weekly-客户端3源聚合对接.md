@@ -1,6 +1,6 @@
 # Starcat 客户端 weekly 3 源聚合对接方案（R-05）
 
-> **状态**：设计中（2026-06-12，待 R-04 后端接口稳定后施工）
+> **状态**：关键契约已拍板（2026-06-12，待 R-04 后端接口稳定后施工）
 > **依赖**：[`21-weekly-api-后端3源聚合改造.md`](./21-weekly-api-后端3源聚合改造.md)
 > **影响范围**：客户端网络层、Activity / Weekly 列表、详情页、Weekly 语言筛选
 > **不影响**：客户端 GRDB schema、Manage、Trending、Activity 其它分类
@@ -22,8 +22,8 @@ GET /api/v1/repos/languages
 
 1. Weekly 列表展示三源去重后的统一 feed；
 2. 保留当前已经实现的分页、加载更多、防旧请求回写和列表动画机制；
-3. 点击列表项时立即使用列表 DTO 渲染 hero，不等待详情网络请求；
-4. 后台按 `gh_repo_id` 拉取详情，补齐来源事件时间线；
+3. 点击列表项时立即使用列表 DTO 的 `gh_repo_id` 和完整 Repo Card 构造首帧 `Repo`，不等待详情网络请求；
+4. 后台按 `gh_repo_id` 拉取详情，补齐完整 Repo Card 更新和来源事件时间线；
 5. 继续沿用 `UnifiedRepoRow`、`RepoDetailScaffold`、`WeeklyDetailScaffoldShell` 和 `StarActionService`；
 6. 公共发现数据仍不写入客户端 SQLite，只有用户主动 Star 后才进入本地私有数据体系。
 
@@ -59,9 +59,9 @@ WeeklyDetailView
 
 `WeeklyDetailView` 通过 `.id(project.id)` 重建 Shell，并使用 `.detailContentTransition()` 实现与 Trending 同款的 hero 入场动画。R-05 必须保留这套结构。
 
-### 1.3 Ephemeral Repo 使用真实 GitHub ID
+### 1.3 当前 DTO 已支持真实 GitHub ID，但 Weekly Shell 仍需改造
 
-当前 `StarcatRepoCardDTO.toEphemeralRepo()` 会把 `gh_repo_id` 写入 `Repo.id`。未 Star 的公共 repo 不是 `id=0`，而是：
+当前 `StarcatRepoCardDTO.toEphemeralRepo()` 已经会把 `gh_repo_id` 写入 `Repo.id`。目标态下，未 Star 的公共 repo 必须是：
 
 ```text
 Repo.id        = gh_repo_id
@@ -70,7 +70,7 @@ Repo.isStarred = false
 
 Tags / Notes / Releases、Share、AI 等私有功能通过 `repo.isStarred` 控制，而不是通过 `repo.id != 0` 判断。
 
-R-05 必须沿用该语义，不能恢复 `id=0` 哨兵模式。
+但当前 `WeeklyDetailScaffoldShell.makeFallbackRepo(from:)` 仍构造 `id=0` fallback，并在本地未命中后直调 GitHub `/repos/{owner}/{repo}`。R-05 必须删除这条 Weekly 专用 fallback 语义，改为用 `WeeklyFeedItem.card.toEphemeralRepo()` 构造首帧 `Repo`。项目未上线，不保留 `id=0` Weekly 兼容路径。
 
 ### 1.4 当前 Weekly Shell 未使用 RepoResolver
 
@@ -87,7 +87,7 @@ R-05 将第二步替换为聚合详情接口，但不强制把 Weekly Shell 改�
 
 | 原则 | 说明 |
 |---|---|
-| 后端负责聚合 | 去重、来源集合、事件时间归一、排序和语言统计全部由后端完成 |
+| 后端负责聚合 | 去重、来源集合、`latest_event_at`、排序和语言统计全部由后端完成 |
 | `gh_repo_id` 统一身份 | 列表 identity、selection、Shell `.id`、详情请求全部使用 Int64 ID |
 | 列表 DTO 负责首帧 | 点击 row 后立即用列表 DTO 构造 Repo 和 hero，不等待详情请求 |
 | 详情请求只做增量补全 | 拉最新 Repo Card 和完整 `events[]`，到达后替换公共字段并显示时间线 |
@@ -180,7 +180,7 @@ var id: Int64 { ghRepoId }
 1. 扩展现有 DTO，加入 `source_types`、事件时间和三源扩展；
 2. 新建 `WeeklyFeedRepoDTO`，内部组合一个共享 Repo Card DTO 与 Weekly feed 字段。
 
-推荐第二种：
+采用第二种：
 
 ```swift
 struct WeeklyFeedRepoDTO: Decodable, Sendable, Equatable {
@@ -194,7 +194,7 @@ struct WeeklyFeedRepoDTO: Decodable, Sendable, Equatable {
 }
 ```
 
-如果后端为了保持扁平 JSON 返回字段，DTO 可以自定义 `init(from:)` 把同一个 container 解码为 `card + feed fields`。这样不会污染 trending-api 也必须同步输出永远为空的 zread/discovery 字段。
+后端 wire JSON 固定为扁平对象，不嵌套 `card`。`WeeklyFeedRepoDTO` 自定义 `init(from:)`，从同一个 container 解码出 `StarcatRepoCardDTO + feed fields`。这样 `StarcatRepoCardDTO` 继续保持“通用 Repo Card”语义，三源聚合字段只存在于 Weekly feed DTO，不污染 trending-api。
 
 ### 3.5 事件 DTO
 
@@ -209,14 +209,17 @@ struct WeeklySourceEvent: Decodable, Identifiable, Sendable, Equatable {
     let discovery: DiscoveryEventPayload?
 }
 
-enum WeeklySource: String, Decodable, Sendable {
+enum WeeklySource: Decodable, Sendable, Equatable {
     case weekly
     case zread
     case discovery
+    case unknown(String)
 }
 ```
 
-后端负责事件排序，客户端保持响应顺序，不二次排序。
+`WeeklySource` 必须自定义 `init(from:)`：已知值解为 `.weekly/.zread/.discovery`，未知字符串解为 `.unknown(rawValue)`。这样后端以后新增来源时，旧客户端仍能展示中性时间线 chip，不会因为一个未知 source 让整个详情解码失败。
+
+后端负责事件排序，客户端保持响应顺序，不二次排序。客户端展示“最近更新”时直接使用后端 `latest_event_at`，不得从 `events[]` 或三源快照自行推导。
 
 ---
 
@@ -272,7 +275,7 @@ enum WeeklySource: String, Decodable, Sendable {
 
 沿用当前接近底部触发策略即可，不重新设计为新的 ScrollView sentinel。是否使用倒数第 3 行还是第 5 行属于实现时的体验微调，不是接口契约。
 
-`meta.next_page` 是 `hasMore` 的优先真源；若后端因兼容 fixture 未返回，才回退为 `page * pageSize < total`。
+`meta.next_page` 是 `hasMore` 的唯一真源。项目未上线，R-05 不兼容旧 fixture；后端未返回 `next_page` 视为接口错误并进入列表错误处理。
 
 ### 4.5 刷新失败语义
 
@@ -283,7 +286,7 @@ enum WeeklySource: String, Decodable, Sendable {
 | 加载下一页失败 | 保留已加载页，允许用户显式重试，不把 `hasMore` 永久置 false |
 | 筛选切换失败 | 当前查询显示错误状态；旧 generation 响应仍丢弃 |
 
-当前代码在分页失败时直接把 `hasMore = false`，R-05 应增加可重试状态，避免一次临时网络错误永久截断本次列表。
+当前代码在分页失败时直接把 `hasMore = false`，刷新失败时会清空 `items`。R-05 必须改为“保留旧列表 + 记录可重试错误”：首次加载失败才显示错误空态；已有列表时不清空 `items`，分页失败也不永久关闭后续加载。
 
 ---
 
@@ -313,6 +316,8 @@ detail task id      = gh_repo_id
 3. 只传 ID 无法渲染首帧；
 4. 详情请求应该是增量补全，而不是首帧依赖。
 
+`WeeklyProject.id = fullName`、`selectedProject?.id == project.id`、分页去重按 fullName、Shell `.id(project.id)` 这几处旧 identity 一次性删除。R-05 不保留 owner/name identity 的过渡逻辑。
+
 ---
 
 ## 6. 详情页对接
@@ -337,7 +342,7 @@ Shell 内继续持有：
 
 ```text
 同步阶段（任何 await 之前）
-1. 用 WeeklyFeedItem.card.toEphemeralRepo() 构造 displayRepo
+1. 用 WeeklyFeedItem.card.toEphemeralRepo() 构造 displayRepo，`Repo.id = gh_repo_id`
 2. 用 StarredRegistry / 本地查询结果修正 isStarred
 3. 立即启动 README 加载
 
@@ -349,6 +354,7 @@ Shell 内继续持有：
 ```
 
 详情请求失败时保留列表首帧和 README，不把整个详情页切为空态。
+如果详情响应 `repo.is_available == false`，仍按正常详情渲染历史来源时间线，并在时间线区域显示“仓库当前不可用”的非阻塞提示；这不是 404 错误。
 
 ### 6.3 公共字段与私有字段合并
 
@@ -357,6 +363,7 @@ Shell 内继续持有：
 | 字段 | 真源 |
 |---|---|
 | owner/name/description/stats/topics/license/dates | 详情接口最新值 |
+| `isAvailable` | 详情接口 |
 | `id` | `gh_repo_id` |
 | `isStarred` | 本地 Repo 或 `StarredRegistry` |
 | tags/notes/releases | 客户端本地 DB |
@@ -398,9 +405,10 @@ README
 规则：
 
 - 使用后端返回顺序；
+- 不用 `events[]` 重新计算列表或详情的“最近更新”；最近时间只读 `repo.latest_event_at` / `item.latest_event_at`；
 - `occurred_at` 显示相对时间，tooltip 显示绝对时间；
 - URL 缺失时 chip 只展示，不可点击；
-- 未知 source 使用中性样式并保留文本，不能让整个数组解码失败；
+- `.unknown(rawValue)` source 使用中性样式并保留原始文本，不能让整个数组解码失败；
 - 时间线为空时不渲染该区域。
 
 ### 6.7 Star / Unstar
@@ -458,7 +466,7 @@ AppDependencies
 ServicesSettingsView
 ```
 
-Weekly service URL / API Key 变化时：
+Weekly 语言列表来自后端三源合并后的 `github_repos` 可见集合，不做 source 维度拆分。Weekly service URL / API Key 变化时：
 
 1. `WeeklyFeedAPI.updateBaseURL/updateAPIKey`；
 2. 清空语言 Store；
@@ -474,7 +482,8 @@ Weekly service URL / API Key 变化时：
 | 列表 200 + 空数组 | 显示当前语言下暂无项目 |
 | 列表 401 | 提示 Weekly 服务 API Key 无效，保留已有列表 |
 | 列表 5xx / 网络失败 | 保留已有列表，允许重试 |
-| 详情 404 | 保留列表首帧，时间线区域显示“聚合详情已不可用”，提供 GitHub 链接 |
+| 详情 200 + `repo.is_available=false` | 保留 hero、README 和历史时间线，显示“仓库当前不可用”提示 |
+| 详情 404 | 表示该 `gh_repo_id` 从未建立或没有来源事件；保留列表首帧，显示非阻塞错误 |
 | 详情 401 / 5xx | 保留 hero 和 README，只显示非阻塞错误 |
 | 语言接口失败 | 使用 fallback 语言，不阻断列表 |
 | 某个 event payload 缺字段 | 该 chip 降级展示 source + 时间，不丢弃整个详情 |
@@ -500,7 +509,7 @@ Weekly service URL / API Key 变化时：
 
 | 区域 | 决策 |
 |---|---|
-| Hero | 列表 DTO 首帧，详情 DTO增量更新 |
+| Hero | 列表 DTO 首帧，详情完整 Repo Card 增量更新 |
 | 来源时间线 | 新增，只在 Weekly 详情展示 |
 | Wiki Menu | 保持现有位置和语义 |
 | 私有区域 | `repo.isStarred` 控制 |
@@ -554,6 +563,7 @@ Weekly service URL / API Key 变化时：
 12. Star 后私有区域展开，Unstar 后公共详情和时间线仍保留。
 13. Weekly service URL / API Key 热更新后，新请求使用新配置。
 14. `BackendAggregateRepoSource` 无 ID 时不构造错误的 owner/name 聚合请求。
+15. 详情返回 `repo.is_available=false` 时仍展示历史 events，不进入 404 空态。
 
 ---
 
@@ -564,8 +574,8 @@ Weekly service URL / API Key 变化时：
 - 分页、筛选、刷新行为不低于当前 Weekly 实现。
 - 点击 row 后 hero 立即出现，没有等待详情接口的白屏。
 - 详情按 `gh_repo_id` 请求，并展示完整来源时间线。
+- 详情返回完整 Repo Card；Weekly Shell 不再使用 `id=0` fallback，也不再调用 GitHub `/repos` 补 hero。
 - 未 Star repo 使用真实 GitHub ID 且 `isStarred = false`，不会错误展示私有区域。
-- 客户端不再直接调用 GitHub `/repos` 补 Weekly hero。
 - 不增加客户端公共 feed 持久化表。
 - 旧 Weekly API 和旧 `WeeklyProject` 语义清理完成。
 - 构建、定向测试和全量测试通过后，由 dong4j 运行客户端完成视觉验收。

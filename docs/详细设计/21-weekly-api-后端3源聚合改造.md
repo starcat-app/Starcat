@@ -1,6 +1,6 @@
 # weekly-api 3 源聚合改造方案（R-04）
 
-> **状态**：设计中（2026-06-12，待 dong4j 拍板施工）
+> **状态**：关键契约已拍板（2026-06-12，待施工）
 > **影响范围**：`supports/starcat-weekly-api/` 独立 Go 服务
 > **客户端影响**：现有 `WeeklyAPI` 接口由 R-05 一次性切换到聚合接口
 > **数据迁移**：项目未上线，不保留旧 schema；删除本地数据库后重建
@@ -39,10 +39,11 @@ GET /api/v1/repos/languages
 核心约束：
 
 - `gh_repo_id` 是 repo 身份唯一信任源；`owner/name` 只是可更新属性。
-- 列表按真实来源事件时间 `latest_event_at` 排序，不按导入时间排序。
+- 列表按后端聚合出的 `latest_event_at` 排序；客户端不得用 `weekly/zread/discovery` 快照自行推导时间。
 - GitHub enrich 可以去抖，但来源登记和事件写入绝不能被去抖跳过。
 - Discovery 只保留最新代码中的“收集 + GitHub enrichment”流程，不恢复已删除的 LLM 分类体系。
 - 客户端不做跨源去重、时间归一或排序。
+- 项目尚未上线，R-04 直接替换 schema、DTO 和公开路由；不写数据迁移，不保留老版本兼容逻辑。
 
 ---
 
@@ -117,6 +118,8 @@ gh_repo_id INTEGER PRIMARY KEY
 - discovery：`discovery_submissions.published_at`。
 
 冷启动导入历史数据时，所有 repo 的 `record_updated_at` 可能相近，因此绝不能用“入库时间”代替来源事件时间。
+
+`latest_event_at` 是客户端可见的唯一“最近更新 / 最近来源事件”字段。客户端列表排序、详情首帧展示、相对时间提示都直接使用后端返回值，不再按三源快照自行比较或重算。
 
 ### 2.3 来源事实由附表推导
 
@@ -380,7 +383,7 @@ LIMIT ? OFFSET ?
 
 当用户按 stars 或 pushed_at 排序时，也追加 `gh_repo_id DESC` 作为稳定次级排序键，避免翻页期间同值记录漂移。
 
-列表项返回完整 Repo Card 字段，以及用于首帧渲染的来源代表数据：
+列表项返回扁平的完整 Repo Card 字段，以及用于首帧渲染的 feed fields。客户端会把同一个 JSON object 解码为 `StarcatRepoCardDTO + feed fields`，因此后端不要嵌套 `card` 对象，也不要把 `source_types/latest_event_at/weekly/zread/discovery` 塞进通用 `StarcatRepoCardDTO`。
 
 ```json
 {
@@ -398,6 +401,7 @@ LIMIT ? OFFSET ?
       "owner": "microsoft",
       "name": "markitdown",
       "full_name": "microsoft/markitdown",
+      "html_url": "https://github.com/microsoft/markitdown",
       "description": "Python tool for converting files...",
       "homepage": "https://example.com",
       "language": "Python",
@@ -416,6 +420,7 @@ LIMIT ? OFFSET ?
       "is_archived": false,
       "is_fork": false,
       "is_private": false,
+      "is_available": true,
       "source_types": ["weekly", "zread"],
       "first_event_at": "2026-04-15T00:00:00Z",
       "latest_event_at": "2026-06-08T00:00:00Z",
@@ -440,12 +445,13 @@ LIMIT ? OFFSET ?
 约定：
 
 - `source_types` 是来源集合的唯一判断依据。
-- `weekly/zread/discovery` 是每个来源最新或代表性事件的快照，用于列表到详情的首帧透传。
+- `latest_event_at` 是列表最近时间的唯一真源；客户端不得从 `weekly/zread/discovery` 快照反推最近时间。
+- `weekly/zread/discovery` 是列表首帧代表快照：`weekly` 固定使用首次收录记录，`zread` 使用该 repo 最新一周事件，`discovery` 使用该 repo 最新一次 HN 投稿。
 - `is_available = 0` 的 repo 默认不返回。
 
 ### 5.2 `GET /api/v1/repos/{gh_repo_id}`
 
-详情接口按不可变 ID 查询，返回 Repo Card 和完整事件时间线：
+详情接口按不可变 ID 查询，返回完整 Repo Card 和完整事件时间线。`repo` 字段必须包含与列表相同的 Repo Card 字段、`is_available`、`source_types`、`first_event_at`、`latest_event_at` 和三源代表快照；客户端会用它增量更新 hero 公共字段。
 
 ```json
 {
@@ -456,8 +462,48 @@ LIMIT ? OFFSET ?
       "owner": "microsoft",
       "name": "markitdown",
       "full_name": "microsoft/markitdown",
+      "html_url": "https://github.com/microsoft/markitdown",
+      "description": "Python tool for converting files...",
+      "homepage": "https://example.com",
+      "language": "Python",
+      "stars": 130672,
+      "forks": 8421,
+      "watchers": 410,
+      "subscribers": 120,
+      "open_issues": 88,
+      "owner_avatar": "https://avatars.githubusercontent.com/...",
+      "default_branch": "main",
+      "license_spdx": "MIT",
+      "topics": ["markdown", "converter"],
+      "pushed_at": "2026-06-10T12:00:00Z",
+      "updated_at": "2026-06-10T12:00:00Z",
+      "created_at": "2024-11-01T00:00:00Z",
+      "is_archived": false,
+      "is_fork": false,
+      "is_private": false,
+      "is_available": true,
       "source_types": ["weekly", "zread", "discovery"],
-      "latest_event_at": "2026-06-08T00:00:00Z"
+      "first_event_at": "2026-04-15T00:00:00Z",
+      "latest_event_at": "2026-06-08T00:00:00Z",
+      "weekly": {
+        "issue_number": 342,
+        "issue_url": "https://github.com/ruanyf/weekly/blob/master/docs/issue-342.md",
+        "recommendation": "很实用的文档转换工具"
+      },
+      "zread": {
+        "week_start": "2026-06-08",
+        "week_end": "2026-06-14",
+        "week_label": "This Week",
+        "rank_in_week": 3,
+        "description_zh": "文件转 Markdown 的 Python 工具"
+      },
+      "discovery": {
+        "hn_id": 39812345,
+        "title": "Show HN: Markitdown",
+        "score": 234,
+        "comments": 87,
+        "published_at": "2026-05-25T14:30:00Z"
+      }
     },
     "events": [
       {
@@ -505,9 +551,11 @@ LIMIT ? OFFSET ?
 ORDER BY occurred_at DESC, event_id DESC
 ```
 
+`is_available = 0` 的 repo 详情仍返回 200，携带完整可用的历史来源事实和 `repo.is_available = false`。只有 `gh_repo_id` 从未建立或没有任何来源事件时才返回 404。这样客户端可以保留列表首帧、展示历史时间线，并明确提示仓库当前不可用。
+
 ### 5.3 `GET /api/v1/repos/languages`
 
-支持与列表相同的 `source` 过滤：
+语言接口只统计三源合并后的 `github_repos` 可见集合，不支持 `source` 参数。统计范围等同于默认列表：至少拥有一个来源附表、`is_available = 1` 的 repo；`__uncategorized__` 表示 `language IS NULL OR language = ''`。
 
 ```json
 {
@@ -591,7 +639,7 @@ OFFSET 分页在当前规模可接受。所有排序都必须带 `gh_repo_id` �
 | 2 | 实现主表 UPSERT 和来源事务 | 并发来源写入不丢 source、时间聚合正确 |
 | 3 | 抽取统一 enricher | 30 分钟内复用 GitHub 元数据，但仍写入第二来源 |
 | 4 | 改造 weekly / zread / discovery 三条 pipeline | 三源各自可独立同步，重复 repo 聚合为一条 |
-| 5 | 实现 list / detail / languages handler | handler 单测覆盖筛选、稳定排序、分页、404 |
+| 5 | 实现 list / detail / languages handler | handler 单测覆盖筛选、稳定排序、分页、unavailable 详情、404 |
 | 6 | 删除旧公开 handler 和路由 | `rg` 确认无旧路由残留 |
 | 7 | 本地端到端验证 | 空库同步三源，curl 验证列表、详情、时间线、语言 |
 | 8 | 更新 README / CHANGELOG | 接口示例与真实响应一致 |
@@ -614,6 +662,8 @@ OFFSET 分页在当前规模可接受。所有排序都必须带 `gh_repo_id` �
 8. `source/lang/sort/order` 非法参数返回明确 400，不拼接未校验 SQL。
 9. GitHub 404 标记不可用，但历史来源事件仍可通过内部数据检查。
 10. `rebuild-aggregates` 重算结果与在线写入结果一致。
+11. `GET /api/v1/repos/{gh_repo_id}` 对 `is_available = 0` 的 repo 返回 200 + 完整历史 events，而不是 404。
+12. `GET /api/v1/repos/languages` 统计三源合并后的可见 `github_repos`，不接受 `source` 过滤。
 
 ---
 
@@ -642,6 +692,8 @@ OFFSET 分页在当前规模可接受。所有排序都必须带 `gh_repo_id` �
 - 三源相同 `gh_repo_id` 在列表中只出现一次。
 - 默认列表严格按最近来源事件倒序，而不是按导入时间倒序。
 - 详情接口以 `gh_repo_id` 查询，rename / transfer 不破坏导航身份。
+- 详情 `repo` 返回完整 Repo Card 字段；客户端不需要再调用 GitHub `/repos` 补 hero。
+- 不可用 repo 的详情返回 `repo.is_available=false` 和历史 events，而不是直接 404。
 - 详情时间线完整展示 weekly、zread、discovery 的全部事件。
 - Discovery 不包含任何已删除的 LLM 分类字段和任务。
 - 客户端只需消费统一列表、ID 详情和语言接口。
