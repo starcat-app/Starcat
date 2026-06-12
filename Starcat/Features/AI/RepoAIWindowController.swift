@@ -2,13 +2,14 @@
 //  RepoAIWindowController.swift
 //  Starcat
 //
-//  详情页 AI 助手浮动窗口的 AppKit 外壳（HOM-150）。
+//  详情页 AI 助手玻璃态浮动面板的 AppKit 外壳（HOM-150）。
 //
 //  设计要点：
-//  - **按 repo.id 复用单例**：同一仓库再点 AI 按钮不会开第二个窗口，而是把已有窗口
+//  - **按 repo.id 复用单例**：同一仓库再点 AI 按钮不会开第二个面板，而是把已有面板
 //    带到前台，避免堆积一批"同 repo 不同对话"的浮动窗口，与 macOS 用户的浮窗心智
 //    （Finder 单文件 quicklook、Preview 单文件预览）对齐。
-//  - **不同 repo 各自独立窗口**：用户可以同时开多个 repo 的 AI 助手做对比。
+//  - **不同 repo 各自独立窗口**：用户可以继续打开其他 repo 做对比；所有面板默认
+//    常驻、保持浮动层级，只有主动点关闭按钮才销毁。
 //  - **窗口关闭后释放控制器**：单例 map 在 `windowWillClose` 里清掉对应条目；
 //    `isReleasedWhenClosed = false` 让 NSWindow 不在关闭时自动 dealloc，从而保留
 //    NSHostingController 直到我们手动放手；下次再开会重建一个全新窗口与 VM。
@@ -20,6 +21,13 @@
 
 import AppKit
 import SwiftUI
+
+/// `NSPanel` 默认不一定接受键盘焦点；AI 输入框必须能成为 first responder，
+/// 因此只在这个最小 AppKit 边界覆写 key/main 能力。
+private final class RepoAIPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
 
 /// 默认窗口尺寸与下限，集中在一处便于以后整体调优。
 ///
@@ -48,6 +56,9 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
     private static var instances: [Repo.ID: RepoAIWindowController] = [:]
 
     private let repoId: Repo.ID
+    /// `contentView` 只会保留 hosting view；控制器需要显式强持有 hosting controller，
+    /// 才能让 SwiftUI 生命周期与 AppKit 面板一致。
+    private let hostedContentController: NSViewController
 
     /// 显示给定 repo 的 AI 助手窗口；已开则把窗口带到前台。
     ///
@@ -110,18 +121,50 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
     ) {
         self.repoId = repo.id
 
+        let window = RepoAIPanel(
+            contentRect: NSRect(origin: .zero, size: RepoAIWindowMetrics.defaultContentSize),
+            styleMask: [.borderless, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+
         // `.environment` 必须在 hosting root 上挂——SwiftUI 子树才能正确读到
         // `@Environment(AppDependencies.self)` / `@Environment(HomeViewModel.self)`。
         // 这里同时挂上 settings，因为部分子视图（未来如果引入主题相关 modifier）
         // 会读 settings；与主窗 `StarcatApp` 给 ContentView 注入的链路对齐。
-        let content = RepoAIWindowContentView(repo: repo)
+        let content = RepoAIWindowContentView(
+            repo: repo,
+            onClose: { [weak window] in
+                window?.close()
+            }
+        )
             .environment(dependencies)
             .environment(dependencies.authSession)
             .environment(dependencies.settings)
             .environment(homeViewModel)
 
         let hostingController = NSHostingController(rootView: content)
-        let window = NSWindow(contentViewController: hostingController)
+        self.hostedContentController = hostingController
+
+        // 玻璃效果放在 AppKit 根视图，SwiftUI 内容只负责透明叠加。这样窗口阴影、
+        // 背景采样和圆角裁切都由同一个系统材质层完成，不需要手写 blur/scrim。
+        let glassView = NSVisualEffectView()
+        glassView.material = .popover
+        glassView.blendingMode = .behindWindow
+        glassView.state = .active
+        glassView.wantsLayer = true
+        glassView.layer?.cornerRadius = 18
+        glassView.layer?.masksToBounds = true
+
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        glassView.addSubview(hostingController.view)
+        NSLayoutConstraint.activate([
+            hostingController.view.leadingAnchor.constraint(equalTo: glassView.leadingAnchor),
+            hostingController.view.trailingAnchor.constraint(equalTo: glassView.trailingAnchor),
+            hostingController.view.topAnchor.constraint(equalTo: glassView.topAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: glassView.bottomAnchor)
+        ])
+        window.contentView = glassView
 
         // 窗口标题走 String(localized:) + format：AppKit NSWindow.title 是 String，
         // 不像 SwiftUI Text 那样自动解析 LocalizedStringKey，必须显式跑一次本地化。
@@ -129,10 +172,17 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
             format: String(localized: "ai.assistant.window.titleFormat"),
             repo.fullName
         )
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.setContentSize(RepoAIWindowMetrics.defaultContentSize)
         window.contentMinSize = RepoAIWindowMetrics.minContentSize
         window.minSize = RepoAIWindowMetrics.minContentSize
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = true
+        window.isMovableByWindowBackground = true
+        // AI 助手是常驻工具面板：始终浮在普通窗口上方，切换焦点或应用时不关闭。
+        window.level = .floating
+        window.hidesOnDeactivate = false
+        window.animationBehavior = .utilityWindow
         // 窗口关闭后不自动释放，让 controller 的 windowWillClose 里完成清理
         // （与 AboutWindowController 一致）。
         window.isReleasedWhenClosed = false

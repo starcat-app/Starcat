@@ -269,6 +269,8 @@
 |---|---|---|
 | `NSWorkspace.shared.open(url)` | `ReadmeWebView.Coordinator` 把外链跳系统浏览器 | "NSWorkspace open URL" |
 | `NSWindowController` | `AboutWindowController` 管理单例关于窗口，重复 Cmd+I 复用同一个窗口 | "NSWindowController showWindow" |
+| `NSPanel` + `NSWindow.Level.floating` | `RepoAIWindowController` 实现失焦不关闭且保持置顶的 AI 工具面板；自定义 `RepoAIPanel.canBecomeKey` 保证 SwiftUI 输入框可获得键盘焦点 | "NSPanel canBecomeKey NSWindow Level floating" |
+| `NSVisualEffectView` | `RepoAIWindowController` 用 `.popover` material 作为透明圆角面板的单一玻璃背景，SwiftUI 内容层保持透明避免遮住材质采样 | "NSVisualEffectView material popover blendingMode behindWindow" |
 | `NSWindow.StyleMask` | `AboutWindowController` 通过不包含 `.resizable` 固定关于窗口尺寸；窗口是否能拖拽调整必须由 AppKit styleMask 控制 | "NSWindow styleMask resizable SwiftUI hosting" |
 | `NSWindow.setFrameAutosaveName` | `MainWindowFrameModifier` 保存 / 恢复主窗口尺寸与位置 | "NSWindow setFrameAutosaveName setFrameUsingName" |
 | `NSWindow.contentMinSize` / `minSize` / `maxSize` | `MainWindowFrameModifier` 设置主窗口硬下限；`AboutWindowController` 用同一个 680×450 同时设置关于窗口 min/max，固定尺寸并避免默认底部空白过多 | "NSWindow contentMinSize minSize maxSize setFrame" |
