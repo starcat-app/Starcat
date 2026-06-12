@@ -363,17 +363,14 @@ private struct EULAPage: View {
 
 private struct CreditsPage: View {
     var body: some View {
+        // dong4j 2026-06-12 反馈:删除底部「感谢所有开源维护者...如果后续新增 SPM package,请同步更新这里」
+        // 这段 dependencyHint。理由:
+        // 1. 「请同步更新这里」是给协作者看的提示,不该出现在面向用户的 About 页(用户做不到也不关心)
+        // 2. AGENTS.md / CLAUDE.md 已经把"开源致谢同步规则"作为强制开发规则记录(2026-06-07 起生效),
+        //    协作者去那两份文档看就够,不需要 UI 兜底
+        // 3. 删除后 VStack 只剩 CreditsList 单一子视图,直接退化为单 view,无需嵌套 layout
         AboutSection(title: "about.credits.title", subtitle: "about.credits.subtitle") {
-            VStack(alignment: .leading, spacing: 10) {
-                CreditsList(dependencies: AboutDependency.all)
-
-                Divider().padding(.vertical, 4)
-
-                Text("about.credits.dependencyHint")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(3)
-            }
+            CreditsList(dependencies: AboutDependency.all)
         }
     }
 }
@@ -590,9 +587,11 @@ private struct DependencyRow: View {
 
             // 致谢页空间紧凑，且每行已经显示了项目名/许可证/版权，链接只需一个跳转图标即可。
             // 文本由 Label 的 title 承担无障碍语义（labelStyle(.iconOnly) 仅隐藏视觉文本）。
+            // 图标用 `globe`：SF Symbols 里最贴"网站 / 网络"语义的标准图标(地球+经纬线),
+            // 比早期 `arrow.up.right` 的"出框箭头"更精确表达"打开外部网站"(致谢列表的链接全是项目主页)。
             SafeExternalLink(
                 title: "about.externalLink.source",
-                systemImage: "arrow.up.right",
+                systemImage: "globe",
                 url: dependency.url,
                 iconOnly: true
             )
@@ -611,6 +610,25 @@ private struct DependencyRow: View {
 private struct CreditsList: View {
     let dependencies: [AboutDependency]
 
+    /// 一次性可见行数(dong4j 2026-06-12 反馈:从 3 行→4 行,不至于把底部 hint 文字挤出 sheet)。
+    /// 列高 = `visibleRowsCount * (rowHeight + dividerHeight) - dividerHeight + 留白缓冲`,
+    /// 这里显式表达"想看 N 行"的意图,后续若再调直接改这两个常量。
+    private let visibleRowsCount: CGFloat = 4
+    /// 单行内容估算高度。`DependencyRow` 内最高元素是 36pt 头像 +上下 padding 各 10 = 56pt;
+    /// 文字行（项目名 17 + 版权 11 + spacing 4 = 32pt）短于头像,不构成上限。
+    private let rowHeightEstimate: CGFloat = 56
+    /// Divider 视觉占位 1pt;末行无 Divider,这里参与列高累加时减回去即可。
+    private let dividerHeightEstimate: CGFloat = 1
+    /// 顶/底视觉缓冲,避免第 N 行紧贴边框看着拥挤,也给 ScrollView 一点弹性。
+    private let listVerticalPadding: CGFloat = 4
+
+    /// 期望容器高度(N 行算下来约 232pt)。
+    private var targetHeight: CGFloat {
+        visibleRowsCount * (rowHeightEstimate + dividerHeightEstimate)
+            - dividerHeightEstimate
+            + listVerticalPadding * 2
+    }
+
     var body: some View {
         ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -623,7 +641,7 @@ private struct CreditsList: View {
                 }
             }
         }
-        .frame(height: 168)
+        .frame(height: targetHeight)
         .scrollIndicators(.visible)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
@@ -653,10 +671,12 @@ private struct SafeExternalLink: View {
             NSWorkspace.shared.open(url)
         } label: {
             if iconOnly {
+                // dong4j 2026-06-12 反馈:致谢列表里 28×28 视觉过重,与同行的项目名/许可证胶囊抢镜。
+                // 缩到 22×22 + caption 字号(~11pt),让按钮变成"行尾轻量入口"而非"主操作焦点"。
                 Label(title, systemImage: systemImage)
                     .labelStyle(.iconOnly)
-                    .font(.callout.weight(.medium))
-                    .frame(width: 28, height: 28)
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(width: 22, height: 22)
                     .background(.regularMaterial, in: Circle())
                     .overlay {
                         Circle().stroke(.quaternary, lineWidth: 1)
