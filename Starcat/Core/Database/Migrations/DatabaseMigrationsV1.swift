@@ -26,6 +26,7 @@
 //  - 原 v3：repos 加 2 个性能复合索引（HOM-46）        → 合并进 `createRepos`
 //  - 原 v4：trending_repos + trending_readmes 两张表  → `createTrendingRepos` / `createTrendingReadmes`
 //  - 原 v5：repo_embeddings + ai_summaries 两张表     → `createRepoEmbeddings` / `createAISummaries`
+//          （2026-06-12 v2 改造：repo_embeddings 用 snapshot_json 替代 content_hash + indexed_text）
 //  - 原 v6：release_subscriptions + releases 两张表   → `createReleaseSubscriptions` / `createReleases`
 //  - 原 v7：readme_translations 一张表（HOM-68）       → `createReadmeTranslations`
 //  - 原 v8：repos / trending_repos 各加 4 列          → 合并进 `createRepos` / `createTrendingRepos`
@@ -446,29 +447,38 @@ enum DatabaseMigrations {
 
     // MARK: - repo_embeddings / ai_summaries（AI 语义搜索 + 单仓智能化）
 
-    /// repo_embeddings：repo 描述 / topics 等的 embedding 向量缓存。
+    /// repo_embeddings：repo 语义向量缓存（详见 `docs/详细设计/26-向量搜索改进.md`）。
     ///
     /// - SQLite BLOB 保存 Float32 向量，**不依赖 sqlite-vss / sqlite-vec 动态扩展**——
     ///   macOS 沙盒分发动态 SQLite extension 引入签名 / 加载路径 / App Review 风险；
     ///   Starcat MVP 规模在几千条 starred repo 内，Swift 内存 cosine 排名足够稳定。
-    /// - `content_hash`：参与向量化的 repo 文本指纹；repo 描述 / topics 变更后自动重建。
     /// - PK `(repo_id, model)`：让后续换 embedding model 时不会误用旧向量。
-    /// - 索引 `(model, content_hash)`：去重 / 命中查询路径。
+    ///
+    /// **2026-06-12 v2 schema 大改（产品上线前直接改 v1，不写 ALTER）**：
+    ///   - **删除 `content_hash` 与 `indexed_text` 两列**——
+    ///     原 hash 方案对 stars / forks 等高频变化字段敏感，每次同步就误触发全量重建；
+    ///     `indexed_text` 也可从 `snapshot_json` 实时 render，无需独占一列。
+    ///   - **新增 `snapshot_json` 列**：结构化快照 `IndexedSnapshot`（body / notes / metadata）
+    ///     的 JSON 编码。判定 repo 是否需要重建走 `IndexedTextDiff.shouldRebuild`（行级
+    ///     diff + 三档阈值），不再走 hash 全等比对。
+    ///   - **删除 `idx_repo_embeddings_model_hash` 索引**：原索引基于 `content_hash`
+    ///     做"命中查询"，新方案按 `(repo_id, model)` 主键直接命中，不再需要该索引。
+    ///
+    /// 涉及调用方：`SemanticSearchService.ensureIndexed` 走 `IndexedTextDiff` 而非
+    /// `current.contentHash != record.contentHash`；`RepoEmbeddingRepository.upsert`
+    /// 写入 snapshot_json 替代旧两列。
     private static func createRepoEmbeddings(_ db: Database) throws {
         try db.create(table: "repo_embeddings") { t in
             t.column("repo_id", .integer).notNull()
                 .references("repos", column: "id", onDelete: .cascade)
             t.column("model", .text).notNull()
-            t.column("content_hash", .text).notNull()
             t.column("dimensions", .integer).notNull()
             t.column("embedding", .blob).notNull()
-            t.column("indexed_text", .text).notNull()
+            t.column("snapshot_json", .text).notNull()   // IndexedSnapshot JSON
             t.column("updated_at", .text).notNull()
 
             t.primaryKey(["repo_id", "model"])
         }
-
-        try db.create(index: "idx_repo_embeddings_model_hash", on: "repo_embeddings", columns: ["model", "content_hash"])
     }
 
     /// ai_summaries：单仓 AI 智能化结果（只缓存 JSON，不自动写标签——标签必须用户显式确认）。

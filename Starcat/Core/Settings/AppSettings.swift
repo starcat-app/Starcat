@@ -621,6 +621,82 @@ final class AppSettings {
         didSet { persistBool(key: Keys.isProUser, value: isProUser) }
     }
 
+    // MARK: - AI 向量索引（2026-06-12 引入，决策 C2 / G / E3 落地）
+    //
+    // 5 个偏好字段对应 `docs/详细设计/26-向量搜索改进.md` § 5：
+    //   1. aiReadmeTruncateLength —— README 清洗后截断长度（决策 C2，默认 12000，范围 2000-32000）
+    //   2. aiIndexPreset           —— 阈值预设（严格 / 标准 / 宽松 / 自定义，决策 G）
+    //   3. aiIndexBodyDiffRatio    —— 主体行级 diff 阈值（默认 0.10 = 10%）
+    //   4. aiIndexNotesDiffRatio   —— 笔记行级 diff 阈值（默认 0.20 = 20%）
+    //   5. aiIndexAutoPrefetchEnabled —— 是否启用后台慢速预拉（默认 false：避免无声烧 API）
+    //
+    // 设计要点：
+    //   - 预设和具体数字独立持久化：用户在 Settings 折叠区改具体数字后，preset 自动设为 `.custom`，
+    //     避免"显示『标准』但实际数字不是标准值"的混乱（详见 `applyPresetIfNeeded` 注释）；
+    //   - 单一信任源：`thresholds` 计算属性按 `aiIndexPreset` + `aiIndexBodyDiffRatio` /
+    //     `aiIndexNotesDiffRatio` 返回最终 `DiffThresholds`，调用方（SemanticSearchService /
+    //     SemanticIndexBuilder）只读这个 computed 属性，不直接读字段。
+
+    /// README 清洗后用于 embedding 的最大字符长度（决策 C2）。
+    /// 默认 12000；Settings UI 滑杆范围 2000-32000，步进 1000。
+    /// 字段直接写入 UserDefaults Int 即可；不需要 JSON 编码。
+    var aiReadmeTruncateLength: Int {
+        didSet { defaults.set(aiReadmeTruncateLength, forKey: Keys.aiReadmeTruncateLength) }
+    }
+
+    /// AI 索引阈值预设（决策 G：严格 / 标准 / 宽松 / 自定义）。
+    /// 写入时不会自动覆盖 body / notes 具体数字 —— 由 UI 层在用户主动切换预设时调
+    /// `applyPreset(_:)` 完成"预设 → 具体数字"的同步。
+    var aiIndexPreset: AIIndexPreset {
+        didSet { persist(key: Keys.aiIndexPreset, value: aiIndexPreset.rawValue) }
+    }
+
+    /// 主体行级 diff 阈值（0.0 - 1.0）。
+    /// 由 UI 折叠区直接编辑；编辑后 `aiIndexPreset` 自动切到 `.custom`。
+    var aiIndexBodyDiffRatio: Double {
+        didSet { defaults.set(aiIndexBodyDiffRatio, forKey: Keys.aiIndexBodyDiffRatio) }
+    }
+
+    /// 笔记行级 diff 阈值（0.0 - 1.0）。同上。
+    var aiIndexNotesDiffRatio: Double {
+        didSet { defaults.set(aiIndexNotesDiffRatio, forKey: Keys.aiIndexNotesDiffRatio) }
+    }
+
+    /// 是否启用后台慢速预拉（决策 E3）。
+    /// 默认 **false**：首次切换全量重建代价大，用户应主动在 Settings 启动；
+    /// 旧向量保留可读，搜索不中断。
+    var aiIndexAutoPrefetchEnabled: Bool {
+        didSet { persistBool(key: Keys.aiIndexAutoPrefetchEnabled, value: aiIndexAutoPrefetchEnabled) }
+    }
+
+    /// 计算属性：当前生效的 `DiffThresholds`（单一信任源）。
+    ///
+    /// - 预设 != `.custom` → 用预设的固定阈值（5/10、10/20、20/30）
+    /// - 预设 == `.custom` → 用 body / notes 字段的具体数字
+    ///
+    /// `SemanticSearchService.ensureIndexed` / `SemanticIndexBuilder` 都通过这里取阈值，
+    /// 避免在多个文件里重复"判断预设 + 取阈值"逻辑。
+    var aiIndexThresholds: DiffThresholds {
+        if aiIndexPreset == .custom {
+            return DiffThresholds(
+                bodyDiffRatio: aiIndexBodyDiffRatio,
+                notesDiffRatio: aiIndexNotesDiffRatio
+            )
+        }
+        return aiIndexPreset.thresholds
+    }
+
+    /// 把预设切换到 `preset`，同时同步 body / notes 具体数字字段（保证 Settings UI
+    /// 折叠区的数字与预设一致）。`custom` 时不改具体字段。
+    func applyAIIndexPreset(_ preset: AIIndexPreset) {
+        aiIndexPreset = preset
+        if preset != .custom {
+            let t = preset.thresholds
+            aiIndexBodyDiffRatio = t.bodyDiffRatio
+            aiIndexNotesDiffRatio = t.notesDiffRatio
+        }
+    }
+
     /// HOM-126：自动后台 AI 整理偏好 + 运行态。
     ///
     /// 走 UserDefaults JSON 持久化（与 `aiSummaryTask` 同款）；任何字段变更（开关、阈值、
@@ -866,6 +942,18 @@ final class AppSettings {
         // 启动/同步触发 + 50 个 + 最近 star + 仅标签 + 90% 阈值），与任务描述一致。
         self.autoTidySettings = Self.decodeJSON(AutoTidySettings.self, key: Keys.autoTidySettings, defaults: defaults) ?? .default
 
+        // AI 向量索引（2026-06-12）：截断长度 / 阈值预设 / 主体阈值 / 笔记阈值 / 自动预拉。
+        // 缺失值兜底：截断 12000、预设 .standard、body 10%、notes 20%、自动预拉 false。
+        let truncRaw = defaults.object(forKey: Keys.aiReadmeTruncateLength) as? Int
+        self.aiReadmeTruncateLength = truncRaw ?? ReadmePreprocessor.defaultMaxLength
+        let presetRaw = defaults.string(forKey: Keys.aiIndexPreset)
+        self.aiIndexPreset = presetRaw.flatMap(AIIndexPreset.init(rawValue:)) ?? .standard
+        let bodyRatioRaw = defaults.object(forKey: Keys.aiIndexBodyDiffRatio) as? Double
+        self.aiIndexBodyDiffRatio = bodyRatioRaw ?? DiffThresholds.default.bodyDiffRatio
+        let notesRatioRaw = defaults.object(forKey: Keys.aiIndexNotesDiffRatio) as? Double
+        self.aiIndexNotesDiffRatio = notesRatioRaw ?? DiffThresholds.default.notesDiffRatio
+        self.aiIndexAutoPrefetchEnabled = defaults.object(forKey: Keys.aiIndexAutoPrefetchEnabled) as? Bool ?? false
+
         // 第三方服务自定义 URL（2026-06-08）：缺失或解码失败时为空字典，
         // 所有服务都走 `AppEndpoints.production(for:)` 默认值。
         self.customServiceURLs = Self.decodeJSON([String: String].self, key: Keys.customServiceURLs, defaults: defaults) ?? [:]
@@ -1052,5 +1140,11 @@ final class AppSettings {
         // 本 key 仅作「启动期一次性迁移识别」用，迁移完成后会被 init 内的 removeObject 清空。
         // 新写入路径不再走 UserDefaults，详见 setCustomAPIKey(_:for:) 注释。
         static let customServiceAPIKeys = "settings.services.customAPIKeys.v1"
+        // 2026-06-12 向量索引改进（5 个字段）
+        static let aiReadmeTruncateLength = "settings.ai.index.readmeTruncateLength.v1"
+        static let aiIndexPreset = "settings.ai.index.preset.v1"
+        static let aiIndexBodyDiffRatio = "settings.ai.index.bodyDiffRatio.v1"
+        static let aiIndexNotesDiffRatio = "settings.ai.index.notesDiffRatio.v1"
+        static let aiIndexAutoPrefetchEnabled = "settings.ai.index.autoPrefetchEnabled.v1"
     }
 }

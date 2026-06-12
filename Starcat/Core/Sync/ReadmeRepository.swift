@@ -83,6 +83,24 @@ struct ReadmeRepository {
         }
     }
 
+    /// 仅更新 `content` 列（向量索引改进 2026-06-12，决策 E3）。
+    ///
+    /// 用途：`ReadmeAPI.refreshMarkdownIfNeeded(...)` 按需懒补全 raw Markdown 时使用，
+    /// 不影响 `rendered_html` / `etag` / `last_modified` / `cached_at` / `size`——
+    /// HTML 路径的 SWR 缓存语义保持完整。
+    ///
+    /// 如果 readmes 行不存在，本方法不会插入（用 UPDATE 而非 UPSERT）：避免在没有
+    /// HTML 缓存的情况下落下"只有 markdown 没 HTML"的半行数据，让 WebView 不至于
+    /// 误信缓存命中。调用方应在补 Markdown 之前确保 readme 行已存在（HTML 已抓过）。
+    func updateContent(repoId: Int64, content: String) async throws {
+        try await writer.write { db in
+            try db.execute(
+                sql: "UPDATE readmes SET content = ? WHERE repo_id = ?",
+                arguments: [content, repoId]
+            )
+        }
+    }
+
     // MARK: - W4-4 D4：缓存统计
 
     /// readmes 表行数（设置页"清理缓存"显示当前缓存条目数用）。

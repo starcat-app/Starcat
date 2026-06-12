@@ -267,6 +267,72 @@ struct ReadmeAPI {
         return .updated(Self.bridgeToReadme(record))
     }
 
+    // MARK: - Raw Markdown 按需懒补全（决策 E3，向量索引改进 2026-06-12）
+
+    /// 按需补全 `readmes.content` 原始 Markdown 文本。
+    ///
+    /// 触发时机：
+    /// - 向量索引 / AI 摘要 / AI 标签等需要"纯文本"的下游服务发现 `readmes.content` 为 nil 时；
+    /// - 后台预拉服务 `SemanticIndexBuilder` 在拉完所有 HTML 后逐个补 Markdown。
+    ///
+    /// 与 `refreshReadme(for:)` 的关系：
+    /// - HTML 路径仍是 WebView 主路径，本方法**不**触碰 `rendered_html` / `etag` / `last_modified`；
+    /// - 只在 `readmes.content` 为 nil 时发请求；已有 Markdown 直接复用，不浪费 API 配额；
+    /// - HTML 行不存在时（404 / 第一次访问该 repo）直接 noop 跳过，避免误建半行数据；
+    /// - 所有错误包到 `.failed(error)`，不抛出（与 SWR 模式一致）。
+    ///
+    /// - Returns: `.updated(readme)` 表示落库成功；`.notFound` 表示 GitHub 没有该 README；
+    ///   `.notModified` 表示 readme 行已有 content / HTML 行不存在；`.failed(error)` 网络或落库失败。
+    func refreshMarkdownIfNeeded(for repo: Repo) async -> ReadmeRefreshResult {
+        let existing: Readme?
+        do {
+            existing = try await repository.find(repoId: repo.id)
+        } catch {
+            return .failed(error)
+        }
+
+        // 边界：HTML 行不存在或 content 已有，直接跳过（不发请求）
+        guard let cached = existing else {
+            return .notModified(Readme(
+                repoId: repo.id,
+                content: nil,
+                renderedHtml: nil,
+                etag: nil,
+                lastModified: nil,
+                cachedAt: ISO8601DateFormatter.shared.string(from: Date()),
+                size: 0
+            ))
+        }
+        if let content = cached.content, !content.isEmpty {
+            return .notModified(cached)
+        }
+
+        let raw: BytesResponse
+        do {
+            raw = try await client.readmeMarkdown(
+                owner: repo.owner,
+                repo: repo.name,
+                ifNoneMatch: nil,           // 强制拿原文，不与 HTML 路径共用 ETag
+                ifModifiedSince: nil
+            )
+        } catch NetworkError.notFound {
+            return .notFound
+        } catch {
+            return .failed(error)
+        }
+
+        let markdown = String(data: raw.data, encoding: .utf8) ?? ""
+        do {
+            try await repository.updateContent(repoId: repo.id, content: markdown)
+        } catch {
+            return .failed(error)
+        }
+
+        var refreshed = cached
+        refreshed.content = markdown
+        return .updated(refreshed)
+    }
+
     // MARK: - Private
 
     /// 不带 validator 的强制刷新（304 但本地缓存丢失时的兜底）。

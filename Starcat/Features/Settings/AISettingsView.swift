@@ -28,6 +28,9 @@ struct AISettingsTab: View {
     @Environment(AppSettings.self) private var settings
     /// HOM-126：「立刻手动触发一次」按钮直接调度。@Environment 注入自 StarcatApp。
     @Environment(AutoTidyScheduler.self) private var autoTidyScheduler
+    /// 2026-06-12 向量索引改进：AI 索引 Section 的"开始 / 暂停 / 全量重建"按钮需要
+    /// 直接调度 `SemanticIndexBuilder`。从 AppDependencies 拿。
+    @Environment(AppDependencies.self) private var dependencies
 
     /// HOM-AIPROVIDERS-PERSIST-2026-06-06 (dong4j 反馈)：
     /// 之前用 `@State private var selectedProfileID: String?` 保存当前选中的服务商
@@ -91,6 +94,17 @@ struct AISettingsTab: View {
     /// 用户第一次进入 AI 设置时希望直接看到开关，而不是再点一次折叠组。
     @SceneStorage("settings.ai.autoTidy.expanded") private var isAutoTidyExpanded: Bool = true
 
+    /// 2026-06-12 向量索引改进："AI 索引"分组默认收起，避免设置页一进来 6 个分组太挤；
+    /// 用户主动点开后偏好持久化。
+    @SceneStorage("settings.ai.aiIndex.expanded") private var isAIIndexExpanded: Bool = false
+
+    /// "AI 索引"折叠区显示 / 隐藏具体阈值数字；预设 == `.custom` 时强制展开（写 didSet 上不易，
+    /// 这里通过 computed `effectiveAdvancedExpanded` 处理）。
+    @SceneStorage("settings.ai.aiIndex.advancedExpanded") private var isAIIndexAdvancedExpanded: Bool = false
+
+    /// "全量重建"二次确认。
+    @State private var pendingRebuildAllConfirm: Bool = false
+
     var body: some View {
         // HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
         // 删除独立的"模型参数"区。原因：参数与"任务"绑定有歧义——同一模型被
@@ -106,7 +120,22 @@ struct AISettingsTab: View {
             // 自动整理分类放到 Prompt 之后——按"配置链路从上到下"顺序排：
             // Provider → 模型 → 模型配置 → Prompt → 自动化（消费上面所有配置）→ 隐私说明。
             autoTidySection
+            // 2026-06-12 向量索引改进：AI 索引（向量化）配置，放在自动整理之后
+            // 因为索引依赖摘要 / README 等上游配置就绪。
+            aiIndexSection
             privacySection
+        }
+        .confirmationDialog(
+            String(localized: "settings.aiIndex.rebuildAll.confirmTitle"),
+            isPresented: $pendingRebuildAllConfirm,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "settings.aiIndex.rebuildAll.confirm"), role: .destructive) {
+                dependencies.semanticIndexBuilder.rebuildAll()
+            }
+            Button(String(localized: "general.cancel"), role: .cancel) {}
+        } message: {
+            Text("settings.aiIndex.rebuildAll.confirmMessage")
         }
         .formStyle(.grouped)
         .task {
@@ -908,6 +937,239 @@ struct AISettingsTab: View {
                 disclosureLabel("Prompt", isExpanded: $isPromptExpanded)
             }
         }
+    }
+
+    // MARK: - AI 索引（向量搜索改进 2026-06-12）
+
+    /// "AI 索引" Section：截断长度滑杆 + 三档阈值预设 + 折叠区精细数字 + 预拉 / 全量重建按钮。
+    ///
+    /// UI 形态：
+    /// ```
+    /// AI 索引 ▼
+    ///   ┌ README 截断长度 ── 滑杆 [12000] ──── 12000 字符
+    ///   ├ 阈值预设      ── 严格 / 标准 / 宽松 / 自定义
+    ///   ├ 高级（折叠）  ── 主体阈值 Stepper + 笔记阈值 Stepper
+    ///   ├ ─────────────────────
+    ///   ├ 启动自动预拉 [开关]
+    ///   ├ [开始预拉] [暂停]     进度 234 / 1801（失败 0）
+    ///   └ [⚠ 全量重建]
+    /// ```
+    ///
+    /// 切换预设时通过 `applyAIIndexPreset(_:)` 把 body / notes 具体数字同步过去，避免
+    /// 折叠区显示 10/20 但实际生效 5/10 的"漂移"。
+    private var aiIndexSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $isAIIndexExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    truncateLengthRow
+                    presetRow
+                    advancedDisclosure
+                    Divider()
+                    Toggle("settings.aiIndex.autoPrefetch", isOn: autoPrefetchBinding)
+                    builderControlsRow
+                    rebuildAllRow
+                }
+                .padding(.vertical, 4)
+            } label: {
+                disclosureLabel(String(localized: "settings.aiIndex.section"), isExpanded: $isAIIndexExpanded)
+            }
+        }
+    }
+
+    /// 截断长度滑杆 + 数字读数。
+    /// 决策 C2：范围 2000-32000，步进 1000。
+    private var truncateLengthRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("settings.aiIndex.truncateLength")
+                    .font(.callout)
+                Spacer()
+                Text("\(settings.aiReadmeTruncateLength)")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(
+                value: truncateLengthBinding,
+                in: 2000...32000,
+                step: 1000
+            )
+            Text("settings.aiIndex.truncateLength.hint")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 三档预设 + custom：segmented picker；switch 时同步 body/notes 字段。
+    private var presetRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("settings.aiIndex.preset")
+                    .font(.callout)
+                Spacer()
+            }
+            Picker("", selection: presetBinding) {
+                ForEach(AIIndexPreset.allCases) { preset in
+                    Text(LocalizedStringKey(preset.displayNameKey)).tag(preset)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+    }
+
+    /// 高级区（折叠）：body / notes 阈值 Stepper。
+    /// 预设 != custom 时禁用编辑，提示用户先切到自定义。
+    @ViewBuilder
+    private var advancedDisclosure: some View {
+        let isCustom = settings.aiIndexPreset == .custom
+        DisclosureGroup(isExpanded: $isAIIndexAdvancedExpanded) {
+            VStack(alignment: .leading, spacing: 10) {
+                ratioRow(
+                    titleKey: "settings.aiIndex.bodyThreshold",
+                    value: bodyRatioBinding,
+                    enabled: isCustom
+                )
+                ratioRow(
+                    titleKey: "settings.aiIndex.notesThreshold",
+                    value: notesRatioBinding,
+                    enabled: isCustom
+                )
+                if !isCustom {
+                    Text("settings.aiIndex.advanced.lockedHint")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+        } label: {
+            disclosureLabel(String(localized: "settings.aiIndex.advanced"), isExpanded: $isAIIndexAdvancedExpanded)
+        }
+    }
+
+    /// 阈值行：Title + Stepper（步进 0.01）+ 百分比读数。
+    private func ratioRow(titleKey: String, value: Binding<Double>, enabled: Bool) -> some View {
+        HStack {
+            Text(LocalizedStringKey(titleKey))
+                .font(.callout)
+            Spacer()
+            Text("\(Int((value.wrappedValue * 100).rounded()))%")
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 50, alignment: .trailing)
+            Stepper("", value: value, in: 0.0...1.0, step: 0.01)
+                .labelsHidden()
+                .disabled(!enabled)
+        }
+    }
+
+    /// 开始 / 暂停 / 进度行。
+    @ViewBuilder
+    private var builderControlsRow: some View {
+        let builder = dependencies.semanticIndexBuilder
+        HStack(spacing: 10) {
+            switch builder.status {
+            case .idle, .completed, .failed:
+                Button(String(localized: "settings.aiIndex.prefetch.start")) {
+                    builder.start()
+                }
+            case .running:
+                Button(String(localized: "settings.aiIndex.prefetch.pause")) {
+                    builder.pause()
+                }
+            case .paused:
+                Button(String(localized: "settings.aiIndex.prefetch.resume")) {
+                    builder.resume()
+                }
+            }
+            Spacer()
+            Text(builderProgressText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var builderProgressText: String {
+        let b = dependencies.semanticIndexBuilder
+        switch b.status {
+        case .idle:
+            return ""
+        case .running, .paused:
+            return String(
+                format: String(localized: "settings.aiIndex.prefetch.progressFmt"),
+                b.processed, b.total, b.failures
+            )
+        case .completed(let p, let t):
+            return String(format: String(localized: "settings.aiIndex.prefetch.completedFmt"), p, t)
+        case .failed(let msg):
+            return String(format: String(localized: "settings.aiIndex.prefetch.failedFmt"), msg)
+        }
+    }
+
+    /// "全量重建"按钮。点击只弹确认 dialog，实际执行在 body 的 `.confirmationDialog`。
+    private var rebuildAllRow: some View {
+        HStack {
+            Button(role: .destructive) {
+                pendingRebuildAllConfirm = true
+            } label: {
+                Label("settings.aiIndex.rebuildAll.button", systemImage: "exclamationmark.triangle.fill")
+            }
+            Spacer()
+            Text("settings.aiIndex.rebuildAll.hint")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - AI 索引 bindings
+
+    private var truncateLengthBinding: Binding<Double> {
+        Binding(
+            get: { Double(self.settings.aiReadmeTruncateLength) },
+            set: { newValue in
+                self.settings.aiReadmeTruncateLength = Int(newValue.rounded())
+            }
+        )
+    }
+
+    private var presetBinding: Binding<AIIndexPreset> {
+        Binding(
+            get: { self.settings.aiIndexPreset },
+            set: { self.settings.applyAIIndexPreset($0) }
+        )
+    }
+
+    private var bodyRatioBinding: Binding<Double> {
+        Binding(
+            get: { self.settings.aiIndexBodyDiffRatio },
+            set: { newValue in
+                let clamped = max(0, min(1, newValue))
+                self.settings.aiIndexBodyDiffRatio = clamped
+                // 用户在高级区改具体数字 → 自动切到 custom（避免显示"标准"但数字漂移）
+                if self.settings.aiIndexPreset != .custom {
+                    self.settings.aiIndexPreset = .custom
+                }
+            }
+        )
+    }
+
+    private var notesRatioBinding: Binding<Double> {
+        Binding(
+            get: { self.settings.aiIndexNotesDiffRatio },
+            set: { newValue in
+                let clamped = max(0, min(1, newValue))
+                self.settings.aiIndexNotesDiffRatio = clamped
+                if self.settings.aiIndexPreset != .custom {
+                    self.settings.aiIndexPreset = .custom
+                }
+            }
+        )
+    }
+
+    private var autoPrefetchBinding: Binding<Bool> {
+        Binding(
+            get: { self.settings.aiIndexAutoPrefetchEnabled },
+            set: { self.settings.aiIndexAutoPrefetchEnabled = $0 }
+        )
     }
 
     /// 当前任务的占位符提示文案。

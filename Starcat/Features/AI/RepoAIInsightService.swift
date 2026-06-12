@@ -54,16 +54,35 @@ final class RepoAIInsightService {
     private let settings: AppSettings
     private let keychain: any KeychainManaging
 
+    /// 2026-06-12 向量索引改进：摘要生成成功后回调，让 `SemanticSearchService` 走
+    /// `refreshIndexIfChanged` 重建向量。
+    ///
+    /// 为何用闭包而非直接持有 `SemanticSearchService`：避免 RepoAIInsightService ↔
+    /// SemanticSearchService 互相 @MainActor 持有的循环依赖；AppDependencies 在装配时
+    /// 把 `[weak service]` 闭包挂上来即可。
+    ///
+    /// var 而非 let：AppDependencies 的构造顺序是先 aiInsight 后 semanticSearch，
+    /// 用 setter `setOnSummaryGenerated(_:)` 在装配末尾注入回调，避免双向构造时序困境。
+    private var onSummaryGenerated: (@MainActor (Repo) -> Void)?
+
     init(
         summaryRepository: any AISummaryRepositoryProtocol,
         readmeRepository: ReadmeRepository,
         settings: AppSettings,
-        keychain: any KeychainManaging = KeychainManager.shared
+        keychain: any KeychainManaging = KeychainManager.shared,
+        onSummaryGenerated: (@MainActor (Repo) -> Void)? = nil
     ) {
         self.summaryRepository = summaryRepository
         self.readmeRepository = readmeRepository
         self.settings = settings
         self.keychain = keychain
+        self.onSummaryGenerated = onSummaryGenerated
+    }
+
+    /// 装配时序后置注入回调（AppDependencies 用）。
+    /// 让 `SemanticSearchService` 先构造完，再回头给 `aiInsight` 挂上 "weak semantic" 闭包。
+    func setOnSummaryGenerated(_ handler: (@MainActor (Repo) -> Void)?) {
+        self.onSummaryGenerated = handler
     }
 
     /// 当前对话流式所用的模型名。
@@ -182,6 +201,13 @@ final class RepoAIInsightService {
                 generatedAt: generatedAt
             )
             try await summaryRepository.upsert(record)
+
+            // 2026-06-12 向量索引改进：摘要生成成功后触发单 repo 向量重建。
+            // AppDependencies 装配时挂的 `[weak semanticSearchService]` 闭包负责走
+            // `refreshIndexIfChanged`，diff 判定通过才真的调 embedding API。
+            // 不在 try await 失败路径触发：上面 `try await summaryRepository.upsert` 抛错就直接 throw，
+            // 触发点放在 upsert 之后保证状态一致。
+            onSummaryGenerated?(repo)
         }
         return RepoAIInsightGeneration(insight: insight, tagErrorMessage: tagErrorMessage)
     }
@@ -335,9 +361,27 @@ final class RepoAIInsightService {
         return "summary:\(settings.aiSummaryTask.providerID)/\(summaryModel)|tags:\(settings.aiTagsTask.providerID)/\(tagsModel)"
     }
 
+    /// 拼出"喂 LLM 的 repo 上下文"——元数据 + 清洗后的 README。
+    ///
+    /// **2026-06-12 改造**（向量索引改进）：
+    /// - README 清洗逻辑从本地 `Self.stripHTML` + 硬编码 12000 截断改为
+    ///   `ReadmePreprocessor.process(html:/markdown:)`，与向量索引共用同一份规则；
+    /// - 截断长度从 `AppSettings.aiReadmeTruncateLength` 读，让用户在 Settings 滑杆调整后
+    ///   AI 摘要 / 向量化都同步生效；
+    /// - 优先使用 `readmes.content`（raw markdown）：决策 E3 后台懒补全完成时直接用原文，
+    ///   信息密度比 HTML 剥后高；fallback `rendered_html` 保留兼容。
     private func makeSource(for repo: Repo) async throws -> Source {
         let readme = try await readmeRepository.find(repoId: repo.id)
-        let readmeText = Self.stripHTML(readme?.renderedHtml ?? readme?.content ?? "")
+        let truncateLength = settings.aiReadmeTruncateLength
+        let readmeText: String = {
+            if let markdown = readme?.content, !markdown.isEmpty {
+                return ReadmePreprocessor.process(markdown: markdown, maxLength: truncateLength)
+            }
+            if let html = readme?.renderedHtml, !html.isEmpty {
+                return ReadmePreprocessor.process(html: html, maxLength: truncateLength)
+            }
+            return ""
+        }()
         let source = [
             "Repository: \(repo.fullName)",
             "Description: \(repo.description ?? "")",
@@ -348,7 +392,7 @@ final class RepoAIInsightService {
             "Forks: \(repo.forksCount)",
             "Homepage: \(repo.homepage ?? "")",
             "README:",
-            String(readmeText.prefix(12_000))
+            readmeText
         ].joined(separator: "\n")
         return Source(text: source, hash: Self.hash(source))
     }
@@ -426,18 +470,9 @@ final class RepoAIInsightService {
         return String(trimmed[start...end])
     }
 
-    private nonisolated static func stripHTML(_ html: String) -> String {
-        html
-            .replacingOccurrences(of: "<script[\\s\\S]*?</script>", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "<style[\\s\\S]*?</style>", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-            .replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    // 2026-06-12：原 `stripHTML(_:)` 已被 `ReadmePreprocessor.process(html:)` 取代。
+    // 旧实现还有 `<style>` / `<script>` / 标签剔除 + 实体解码 + 空白压缩，但与向量化路径
+    // 的逻辑碎成两份。新设计单一职责，避免后续两边维护漂移。
 
     private nonisolated static func hash(_ text: String) -> String {
         let digest = SHA256.hash(data: Data(text.utf8))
