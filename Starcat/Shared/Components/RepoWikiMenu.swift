@@ -51,9 +51,6 @@
 //  **永远有真实子节点的容器**承载 `.task`。`.background` / `.overlay` modifier 在
 //  host 为 EmptyView 时同样会被 optimizer 抹掉，不能用作 "兜底持有 .task"。
 //
-//  额外补充：`print()` 兜底日志（`os.Logger` 在 Xcode console 的 .info 级别可能被
-//  filter 隐藏，`print` 永远可见，debug 排查 zero overhead）。
-//
 
 import SwiftUI
 
@@ -153,38 +150,18 @@ struct RepoWikiMenu: View {
     }
 
     /// 每次 repo 变化先清掉旧菜单，随后查询单仓库状态；失败只记日志并保持隐藏。
-    ///
-    /// **诊断日志**（2026-06-11 加 + 2026-06-12 加 print 兜底）：
-    /// 1. 原版只有 throw 路径记 warning，**成功但 indexed=0 时完全静默** ——
-    ///    dong4j 反馈「看不到任何 wiki 按钮但日志里也没 wiki 字样」的关键死角。
-    ///    所有路径都打 info（repo 全名 / fetched / indexed / links 数）。
-    /// 2. v1.1 加 `print()` 兜底：`os.Logger` 在 Xcode console 的 .info 级别可能
-    ///    被 filter 隐藏（用户需手动改 Debug Area 过滤设置），`print` 直接走
-    ///    stdout 永远可见，debug 排查 wiki 链路时不用调 Xcode filter。
-    ///    生产环境无影响（release build 中 print 仍写 stdout，开销可忽略）。
-    ///    全链路稳定后可以考虑把 print 删掉，但加这点开销远小于"再次出现按钮不显示
-    ///    用户却看不到任何日志线索"的体验损失。
     private func loadLinks() async {
         links = []
-        AppLog.network.info("wiki: lookup start for \(repo.fullName, privacy: .public)")
-        print("[wiki] lookup start for \(repo.fullName)")
         do {
             let items = try await dependencies.wikiAPI.fetchStatus(owner: repo.owner, repo: repo.name)
             guard !Task.isCancelled else { return }
-            let resolved = RepoWikiMenuState.make(items: items)
-            links = resolved
-            let indexedCount = items.filter { $0.status == .indexed }.count
-            AppLog.network.info(
-                "wiki: lookup done for \(repo.fullName, privacy: .public): fetched=\(items.count, privacy: .public) indexed=\(indexedCount, privacy: .public) links=\(resolved.count, privacy: .public)"
-            )
-            print("[wiki] lookup done for \(repo.fullName): fetched=\(items.count) indexed=\(indexedCount) links=\(resolved.count)")
+            links = RepoWikiMenuState.make(items: items)
         } catch is CancellationError {
             // SwiftUI 切换 repo 的正常取消，不记录成网络错误。
         } catch {
             AppLog.network.warning(
                 "wiki: lookup failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)"
             )
-            print("[wiki] lookup failed for \(repo.fullName): \(error.localizedDescription)")
         }
     }
 }
