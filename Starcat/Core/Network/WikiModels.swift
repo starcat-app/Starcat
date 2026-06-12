@@ -51,6 +51,20 @@ enum WikiSource: Decodable, Sendable, Hashable {
         }
     }
 
+    /// 菜单行图标。给三家用各有区分度的 SF Symbol，避免列表里三个 `arrow.up.right.square`
+    /// 让用户分不清来源。选 symbol 原则：
+    /// - 体现该来源的产品调性（DeepWiki 偏"理解 / 深度"→ brain / sparkles，Zread 偏"快速阅读"
+    ///   → bolt.text，Code Wiki 偏"代码索引"→ chevron.left.forwardslash.chevron.right）
+    /// - 同时全部在 macOS 15+ 可用，不需要额外可用性 fallback
+    var sfSymbol: String {
+        switch self {
+        case .deepWiki: return "sparkles.rectangle.stack"
+        case .zread: return "text.book.closed"
+        case .codeWiki: return "chevron.left.forwardslash.chevron.right"
+        case .unknown: return "doc.text"
+        }
+    }
+
     init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
         switch raw {
