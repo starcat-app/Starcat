@@ -394,16 +394,16 @@ struct RepoShareButton: View {
         .pressableHover()
         .disabled(isSharing)
         .help("分享 Repo")
-        .alert("分享成功", isPresented: $showSharePopup) {
+        .alert("链接已生成", isPresented: $showSharePopup) {
+            Button("在浏览器打开") {
+                if let urlString = shareUrl, let url = URL(string: urlString) {
+                    NSWorkspace.shared.open(url)
+                }
+            }
             Button("复制链接") {
                 if let url = shareUrl {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(url, forType: .string)
-                }
-            }
-            Button("在浏览器打开") {
-                if let urlString = shareUrl, let url = URL(string: urlString) {
-                    NSWorkspace.shared.open(url)
                 }
             }
             Button("关闭", role: .cancel) {}

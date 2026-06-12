@@ -1,133 +1,176 @@
-# weekly-api 3 源聚合改造方案 (R-04)
+# weekly-api 3 源聚合改造方案（R-04）
 
-> **状态**: 设计中（2026-06-12，待 dong4j 拍板施工）
-> **影响范围**: 仅 weekly-api 后端（`supports/starcat-weekly-api/` 独立 Go 服务）
-> **客户端影响**: 现有 `WeeklyAPI` 三个 endpoint 调用全部废弃，客户端在独立 PR (R-05) 单独对接
-> **数据迁移**: **无**——项目未上线，删 db 直接重建
-> **兼容性**: **不保留**——schema/接口/DTO 全部破坏性重写
-
----
-
-## 0. TL;DR
-
-把 weekly-api 现在的 **3 张孤岛表 + 3 个独立 endpoint** 重构为：
-
-```
-┌─────────────────── github_repos (主表) ──────────────────┐
-│ PRIMARY KEY: gh_repo_id (int64, GitHub 不可变 ID)        │
-│ 包含：所有 GitHub API repo 字段 + source_types 聚合     │
-└─────────┬───────────────┬───────────────┬───────────────┘
-          ▼               ▼               ▼
-   weekly_extras   zread_extras   discovery_extras
-                                  + discovery_submissions
-```
-
-对外只暴露 1 个聚合接口 `GET /api/v1/repos`（+ 2 个辅助接口）。
-
-**核心收益**：
-1. 同一 repo 跨多源收录时 GitHub API 只调 1 次（配额省 50%+）
-2. 主表 `gh_repo_id` 唯一键彻底解决 owner/name 在 rename/transfer 后断裂的问题
-3. 客户端调 1 个接口拿到去重 + 聚合 + 分页结果，不再做数据清洗
-4. `source_types: ["weekly", "zread"]` 让客户端能在详情页"来源时间线"准确渲染
+> **状态**：设计中（2026-06-12，待 dong4j 拍板施工）
+> **影响范围**：`supports/starcat-weekly-api/` 独立 Go 服务
+> **客户端影响**：现有 `WeeklyAPI` 接口由 R-05 一次性切换到聚合接口
+> **数据迁移**：项目未上线，不保留旧 schema；删除本地数据库后重建
+> **兼容性**：不保留旧列表和详情接口
 
 ---
 
-## 1. 背景与现状
+## 0. 结论
 
-### 1.1 当前 schema：3 张孤岛表
+weekly-api 当前已经同时承载三类公共发现数据：
 
-| 表 | 唯一键 | 行数 | 时间维度 | 1:N |
-|---|---|---:|---|---|
-| `projects` | `(repo_owner, repo_name)` | 3077（已 enrich 1648）| 无（仅 `enriched_at`） | 否（每 repo 一行）|
-| `zread_trending` | `(week_start, owner, name)` | 0（cron 周一 06:00 UTC）| `week_start` | 是（按周）|
-| `discovery_repos` + `discovery_submissions` | `(owner, repo)` + `hn_id` | 0（需 `LLM_API_KEY`）| `published_at`（HN 投稿）| 是（按投稿）|
+1. 阮一峰科技爱好者周刊项目；
+2. ZRead 周趋势项目；
+3. Show HN GitHub 项目。
 
-### 1.2 当前 3 个 endpoint
+三条数据链目前分别落在 `projects`、`zread_trending`、`discovery_repos + discovery_submissions` 中，对外接口和 DTO 也互不统一。本方案把三源重构为一套以 GitHub 不可变仓库 ID 为核心的聚合模型：
 
-```
-GET /api/v1/weekly?page=&page_size=&issue=&lang=&sort=    阮一峰列表
-GET /api/v1/weekly/{owner}/{repo}                         阮一峰单详情
-GET /api/v1/issues / GET /api/v1/issues/{number}          阮一峰期号
-GET /api/v1/zread?week=this|last|YYYY-MM-DD&limit=        zread 周列表
-GET /api/v1/discovery?category=&page=&page_size=          Show HN AI 发现
-GET /api/v1/discovery/{owner}/{repo}                      Show HN 单详情
-```
-
-### 1.3 当前 DTO 形态不一致
-
-```go
-// trending / weekly 用平级 extension：
-type StarcatRepoCardDTO struct {
-    GhRepoID int64 ...
-    Trending *TrendingExtension `json:"trending,omitempty"`
-    Weekly   *WeeklyExtension   `json:"weekly,omitempty"`
-}
-
-// discovery 用套娃：
-type DiscoveryItemDTO struct {
-    Repo      StarcatRepoCardDTO `json:"repo"`
-    Discovery DiscoveryExtension `json:"discovery"`
-}
+```text
+                          github_repos
+                    PK: gh_repo_id (Int64)
+             GitHub 元数据 + 聚合时间 + 来源集合
+                  /             |              \
+                 /              |               \
+        weekly_extras     zread_events     discovery_submissions
+           1 : 1             1 : N                 1 : N
 ```
 
-### 1.4 三大痛点
+对客户端提供三个接口：
 
-1. **GitHub API 配额浪费**：同一 repo（如 `microsoft/markitdown`）同时上阮一峰 + zread → 两个 spider 各调一次 `GET /repos/{o}/{r}` 配额翻倍
-2. **owner/name 唯一键不可靠**：repo rename 或 transfer 后老 (owner, name) 数据成孤儿，新数据被当成"新 repo"重复入库
-3. **前端聚合负担**：Starcat 客户端要调 3 个接口、按 owner/name 自行去重、合并 source 标识
+```text
+GET /api/v1/repos
+GET /api/v1/repos/{gh_repo_id}
+GET /api/v1/repos/languages
+```
+
+核心约束：
+
+- `gh_repo_id` 是 repo 身份唯一信任源；`owner/name` 只是可更新属性。
+- 列表按真实来源事件时间 `latest_event_at` 排序，不按导入时间排序。
+- GitHub enrich 可以去抖，但来源登记和事件写入绝不能被去抖跳过。
+- Discovery 只保留最新代码中的“收集 + GitHub enrichment”流程，不恢复已删除的 LLM 分类体系。
+- 客户端不做跨源去重、时间归一或排序。
 
 ---
 
-## 2. 设计决策
+## 1. 最新代码现状
 
-### 2.1 主键选择：`gh_repo_id`
+### 1.1 当前存储模型
 
-GitHub API 返回的 `id` 是不可变 int64。无论 rename / transfer / fork 重命名，ID 不变。spider 拿到 (owner, name) 后**必然要调 GitHub API enrich**，所以 `gh_repo_id` 一定有，没有额外成本。
+| 数据源 | 当前表 | 当前身份键 | 时间事实 |
+|---|---|---|---|
+| 阮一峰周刊 | `projects`、`weekly_issues` | `(repo_owner, repo_name)` | 首次收录期号及期号发布时间 |
+| ZRead | `zread_trending` | `(week_start, owner, name)` | `week_start` / `week_end` |
+| Show HN | `discovery_repos`、`discovery_submissions` | `(owner, repo)`、`hn_id` | 投稿 `published_at` |
 
-二级唯一约束 `UNIQUE(owner, name)` 保留，配合 `ON CONFLICT(gh_repo_id) DO UPDATE` 处理 rename：旧 owner/name 自动被覆盖。
+最新 weekly-api `c2a97bc` 已删除 Discovery 的 LLM 分类阶段。当前 Discovery repo 只维护：
 
-### 2.2 主表 vs 附表拆分原则
+- GitHub enrichment 状态：`pending / ready / retryable / unavailable`；
+- GitHub repo 元数据；
+- Show HN 投稿事实。
 
-| 字段类型 | 归属 |
-|---|---|
-| GitHub API 原生字段（stars, language, license_spdx, topics, ...） | 主表 `github_repos` |
-| 跨源聚合字段（source_types, first_seen_at, last_seen_at, enriched_at） | 主表 |
-| 数据源专属字段（issue_number / week_start / hn_id） | 各自附表 |
-| 数据源 1:N 事件（zread 多周、HN 多次投稿） | 附表带 AUTOINCREMENT id 主键 |
+因此新聚合 schema 不再包含 `category`、`classify_status`、`classify_model` 等字段，也不依赖 `LLM_API_KEY`。
 
-### 2.3 spider 改造原则
+### 1.2 当前接口
 
-每个 spider 改 2 阶段：
-
+```text
+GET /api/v1/weekly?page=&page_size=&issue=&lang=&sort=
+GET /api/v1/weekly/{owner}/{repo}
+GET /api/v1/issues
+GET /api/v1/issues/{number}
+GET /api/v1/zread?week=&limit=
+GET /api/v1/discovery?page=&page_size=
+GET /api/v1/discovery/{owner}/{repo}
 ```
-阶段 A：从源站点抓取，提取 (owner, name) + 源专属字段（issue / week / hn_id）
-阶段 B：调统一 enricher.EnsureRepo(owner, name, source) → 拿到 gh_repo_id → 写主表 + 写附表
-```
 
-**关键约束**：所有 spider 共用 `enricher.EnsureRepo`，内部带"短期 enrich 去抖"——同一 repo 在 30 分钟内已 enrich 过则直接复用主表数据，不重复打 GitHub API。
+### 1.3 主要问题
 
-### 2.4 schema 演进策略
-
-项目未上线 → **不写迁移**。`createSchema(db)` 单文件一次性建好所有表；任何字段变更直接改 `createSchema` 函数，本地 `rm weekly.db` 重建即可。与 4 backend 当前"全新服务语态"一致（详见 §3.9.4）。
+1. 同一 repo 在多个来源中重复保存 GitHub 元数据，并可能重复消耗 GitHub API 配额。
+2. `(owner, name)` 无法稳定识别 rename / transfer 后的同一仓库。
+3. 三源时间精度不同，客户端无法可靠地统一排序。
+4. 客户端需要理解三套接口和三套 DTO，违背“重后端、轻客户端”的边界。
 
 ---
 
-## 3. 主表 schema
+## 2. 核心设计决策
+
+### 2.1 Repo 身份统一为 `gh_repo_id`
+
+GitHub API 的仓库 `id` 在 rename 和 transfer 后保持不变。主表使用：
+
+```sql
+gh_repo_id INTEGER PRIMARY KEY
+```
+
+`owner`、`name`、`full_name` 由最近一次成功 enrichment 覆盖。详情接口直接按 `gh_repo_id` 查询，避免客户端拿旧 owner/name 请求详情时产生 404。
+
+`UNIQUE(owner, name)` 只用于发现异常重复和快速反查，不承担跨时间身份语义。
+
+### 2.2 列表排序使用来源事件时间
+
+必须区分三类时间：
+
+| 字段 | 语义 | 是否用于默认列表排序 |
+|---|---|---|
+| `first_event_at` | 最早一次来源事件发生时间 | 否 |
+| `latest_event_at` | 最近一次来源事件发生时间 | 是 |
+| `record_updated_at` | 本服务最近一次写记录时间 | 否 |
+| `enriched_at` | 最近一次成功请求 GitHub API 的时间 | 否 |
+
+来源事件时间定义：
+
+- weekly：`weekly_issues.published_at`；
+- zread：`week_start 00:00:00Z`；
+- discovery：`discovery_submissions.published_at`。
+
+冷启动导入历史数据时，所有 repo 的 `record_updated_at` 可能相近，因此绝不能用“入库时间”代替来源事件时间。
+
+### 2.3 来源事实由附表推导
+
+`source_types_json` 可以保留为主表冗余字段，方便列表返回；但来源事实的真源是附表：
+
+- 存在 `weekly_extras` 行 → `weekly`；
+- 存在 `zread_events` 行 → `zread`；
+- 存在 `discovery_submissions` 行 → `discovery`。
+
+每次写附表后，在同一事务中重算并更新：
+
+- `source_types_json`；
+- `first_event_at`；
+- `latest_event_at`。
+
+这样即使 GitHub enrich 命中去抖快路径，也不会漏记第二个来源。
+
+### 2.4 Enrichment 与来源登记分离
+
+每条 spider 数据都经过两个独立步骤：
+
+```text
+1. EnsureGitHubRepo(owner, name)
+   - 获取或复用 gh_repo_id
+   - 只负责 GitHub 元数据
+   - 允许 30 分钟去抖
+
+2. AttachSourceEvent(gh_repo_id, event)
+   - 写来源附表
+   - 重算 source_types / first_event_at / latest_event_at
+   - 每次都执行，禁止被 enrich 去抖跳过
+```
+
+### 2.5 不恢复 Discovery 分类系统
+
+Show HN 只表达“某个 GitHub repo 在 HN 被投稿”这一事实。首期不提供 category filter，不设计 pending/classified，也不增加客户端“显示未分类项目”开关。
+
+---
+
+## 3. 数据库设计
+
+### 3.1 `github_repos`
 
 ```sql
 CREATE TABLE github_repos (
-    -- 主键（GitHub 不可变 ID）
     gh_repo_id          INTEGER PRIMARY KEY,
 
-    -- 仓库标识
     owner               TEXT NOT NULL,
     name                TEXT NOT NULL,
-    full_name           TEXT NOT NULL,         -- "owner/name" 冗余，便于直接查询
+    full_name           TEXT NOT NULL,
 
-    -- GitHub API enrich 字段
     description         TEXT,
     homepage            TEXT,
-    language            TEXT,                  -- GitHub 标注的 primary language（最权威）
+    language            TEXT,
     stars               INTEGER NOT NULL DEFAULT 0,
     forks               INTEGER NOT NULL DEFAULT 0,
     watchers            INTEGER NOT NULL DEFAULT 0,
@@ -136,7 +179,7 @@ CREATE TABLE github_repos (
     owner_avatar        TEXT,
     default_branch      TEXT,
     license_spdx        TEXT,
-    topics_json         TEXT NOT NULL DEFAULT '[]',  -- JSON array
+    topics_json         TEXT NOT NULL DEFAULT '[]',
     pushed_at           TEXT,
     updated_at          TEXT,
     created_at          TEXT,
@@ -144,110 +187,93 @@ CREATE TABLE github_repos (
     is_fork             INTEGER NOT NULL DEFAULT 0,
     is_private          INTEGER NOT NULL DEFAULT 0,
 
-    -- 跨源聚合字段
-    source_types_json   TEXT NOT NULL DEFAULT '[]',  -- ["weekly", "zread", "discovery"]
-    first_seen_at       TEXT NOT NULL,               -- 首次入库时间
-    last_seen_at        TEXT NOT NULL,               -- 最近一次被任意源命中
-    enriched_at         TEXT,                        -- 最近一次 GitHub API 补全
-    is_available        INTEGER NOT NULL DEFAULT 1,  -- GitHub 404/已删除时置 0
+    source_types_json   TEXT NOT NULL DEFAULT '[]',
+    first_event_at      TEXT NOT NULL,
+    latest_event_at     TEXT NOT NULL,
+    enriched_at         TEXT,
+    record_updated_at   TEXT NOT NULL,
+    is_available        INTEGER NOT NULL DEFAULT 1,
 
     UNIQUE(owner, name)
 );
 
-CREATE INDEX idx_github_repos_lang        ON github_repos(language);
-CREATE INDEX idx_github_repos_stars       ON github_repos(stars DESC);
-CREATE INDEX idx_github_repos_pushed      ON github_repos(pushed_at DESC);
-CREATE INDEX idx_github_repos_first_seen  ON github_repos(first_seen_at DESC);
-CREATE INDEX idx_github_repos_last_seen   ON github_repos(last_seen_at DESC);
+CREATE INDEX idx_github_repos_language
+    ON github_repos(language);
+CREATE INDEX idx_github_repos_latest_event
+    ON github_repos(latest_event_at DESC, gh_repo_id DESC);
+CREATE INDEX idx_github_repos_stars
+    ON github_repos(stars DESC, gh_repo_id DESC);
+CREATE INDEX idx_github_repos_pushed
+    ON github_repos(pushed_at DESC, gh_repo_id DESC);
 ```
 
-**字段语义说明**：
-- `first_seen_at` = 该 repo 第一次被任何 spider 收录的时间；用作"最近发现"语义的排序键
-- `last_seen_at` = 该 repo 最近一次被任意 spider 命中（不限源）；用作"还在持续受关注"语义
-- `enriched_at` = 最近一次成功调 GitHub API 时间；enricher 用此字段做"30 分钟内不重复 enrich"判断
-- `source_types_json` = 该 repo 命中过的所有源；UI 详情页"来源时间线"chip 列表的总开关
+`first_event_at/latest_event_at` 在首次 `EnsureGitHubRepo` 占位时可暂用当前时间，随后必须在写入第一个来源事件的同一事务中改成真实事件时间。对外列表只返回已经拥有来源附表的 repo。
 
+### 3.2 `weekly_issues`
 
+```sql
+CREATE TABLE weekly_issues (
+    number       INTEGER PRIMARY KEY,
+    published_at TEXT NOT NULL,
+    source_url   TEXT NOT NULL,
+    parsed_at    TEXT NOT NULL
+);
+```
 
----
-
-## 4. 附表 schema
-
-### 4.1 weekly_extras（阮一峰）
+### 3.3 `weekly_extras`
 
 ```sql
 CREATE TABLE weekly_extras (
-    gh_repo_id          INTEGER PRIMARY KEY REFERENCES github_repos(gh_repo_id),
-    first_issue_number  INTEGER REFERENCES weekly_issues(number),
-    issue_url           TEXT,                   -- 派生字段：可在查询时拼，存一份方便
-    recommendation      TEXT,                   -- 阮一峰原文中的中文推荐语（parser 解析）
+    gh_repo_id          INTEGER PRIMARY KEY
+                        REFERENCES github_repos(gh_repo_id) ON DELETE CASCADE,
+    first_issue_number  INTEGER NOT NULL
+                        REFERENCES weekly_issues(number),
+    issue_url           TEXT NOT NULL,
+    recommendation      TEXT,
     parsed_at           TEXT NOT NULL
 );
 
-CREATE INDEX idx_weekly_extras_issue ON weekly_extras(first_issue_number DESC);
+CREATE INDEX idx_weekly_extras_issue
+    ON weekly_extras(first_issue_number DESC);
 ```
 
-**1:1 关系**：每个 repo 在阮一峰只有一个"首次收录的期号"。
+每个 repo 只保存首次进入阮一峰周刊的期号。事件时间从 `weekly_issues.published_at` 获取。
 
-### 4.2 zread_extras（zread 周 trending）
+### 3.4 `zread_events`
 
 ```sql
-CREATE TABLE zread_extras (
-    -- AUTOINCREMENT 因为 1:N（同一 repo 多周复现）
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    gh_repo_id          INTEGER NOT NULL REFERENCES github_repos(gh_repo_id),
-    week_start          TEXT NOT NULL,
-    week_end            TEXT NOT NULL,
-    week_label          TEXT NOT NULL,          -- "This Week" / "Last Week" / 历史空串
-    rank_in_week        INTEGER NOT NULL,
-    description_zh      TEXT,                   -- zread 的中文描述（阮一峰没有）
-    zread_repo_id       TEXT,                   -- zread 内部 UUID
-    wiki_id             TEXT,
-    -- v0.4.1 跨年回溯字段（保留）
+CREATE TABLE zread_events (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    gh_repo_id           INTEGER NOT NULL
+                         REFERENCES github_repos(gh_repo_id) ON DELETE CASCADE,
+    week_start           TEXT NOT NULL,
+    week_end             TEXT,
+    week_label           TEXT,
+    rank_in_week         INTEGER NOT NULL,
+    description_zh       TEXT,
+    zread_repo_id        TEXT,
+    wiki_id              TEXT,
     zread_week_start_raw TEXT,
     zread_week_end_raw   TEXT,
     zread_year_inferred  INTEGER,
-    fetched_at          TEXT NOT NULL,
+    fetched_at           TEXT NOT NULL,
 
     UNIQUE(gh_repo_id, week_start)
 );
 
-CREATE INDEX idx_zread_extras_repo ON zread_extras(gh_repo_id);
-CREATE INDEX idx_zread_extras_week ON zread_extras(week_start DESC);
+CREATE INDEX idx_zread_events_repo_time
+    ON zread_events(gh_repo_id, week_start DESC);
 ```
 
-**1:N 关系**：同一 repo 跨多周复现 → 多行；UI 详情页时间线渲染。
+同一 repo 可以连续多周出现，每周是一条独立事件。
 
-### 4.3 discovery_extras + discovery_submissions（Show HN）
+### 3.5 `discovery_submissions`
 
 ```sql
--- repo 维度的分类状态（1:1）
-CREATE TABLE discovery_extras (
-    gh_repo_id          INTEGER PRIMARY KEY REFERENCES github_repos(gh_repo_id),
-
-    -- AI 分类
-    category            TEXT NOT NULL DEFAULT 'unknown',
-    classify_status     TEXT NOT NULL DEFAULT 'pending',
-    classify_confidence REAL,
-    classify_reason     TEXT,
-    classify_method     TEXT,
-    classify_model      TEXT,
-    classify_attempts   INTEGER NOT NULL DEFAULT 0,
-    classify_next_retry_at TEXT,
-    classify_error      TEXT,
-    classified_at       TEXT,
-
-    -- README 分类原料（不放主表，因为只 Show HN 用）
-    readme_excerpt      TEXT NOT NULL DEFAULT ''
-);
-
-CREATE INDEX idx_discovery_extras_classify
-    ON discovery_extras(classify_status, classify_next_retry_at, category);
-
--- 投稿事实表（1:N，同一 repo 多次 HN 投稿）
 CREATE TABLE discovery_submissions (
     hn_id           INTEGER PRIMARY KEY,
-    gh_repo_id      INTEGER NOT NULL REFERENCES github_repos(gh_repo_id),
+    gh_repo_id      INTEGER NOT NULL
+                    REFERENCES github_repos(gh_repo_id) ON DELETE CASCADE,
     title           TEXT NOT NULL,
     hn_url          TEXT NOT NULL,
     source_url      TEXT,
@@ -258,190 +284,103 @@ CREATE TABLE discovery_submissions (
     last_seen_at    TEXT NOT NULL
 );
 
-CREATE INDEX idx_discovery_submissions_repo
+CREATE INDEX idx_discovery_submissions_repo_time
     ON discovery_submissions(gh_repo_id, published_at DESC);
-CREATE INDEX idx_discovery_submissions_published
-    ON discovery_submissions(published_at DESC, score DESC);
+CREATE INDEX idx_discovery_submissions_time
+    ON discovery_submissions(published_at DESC, hn_id DESC);
 ```
 
-**为什么 Show HN 拆 2 表**：分类状态是 repo 级别的（一个 repo 只属于一个 category），但投稿是事件级别的（同 repo 可有多次投稿，每次有独立 hn_id / score / 投稿时间）。
-
-### 4.4 weekly_issues（保留，不改）
-
-```sql
-CREATE TABLE weekly_issues (
-    number       INTEGER PRIMARY KEY,
-    published_at TEXT,
-    source_url   TEXT,
-    parsed_at    TEXT
-);
-```
+不再单独保留 `discovery_extras`。当前代码中的 enrichment 状态属于旧的分阶段落库实现；统一主表后，GitHub 元数据和可用状态由 `github_repos` 承担，投稿事实由本表承担。
 
 ---
 
-## 5. enricher 统一入口
+## 4. 统一写入流程
 
-### 5.1 接口
+### 4.1 Enricher 接口
 
 ```go
-// internal/enricher/repo.go
-
-// EnsureRepo 是所有 spider 写主表前的统一入口。
-//
-// 流程：
-//   1. 查主表是否已有该 (owner, name)；若有且 enriched_at 在 30 分钟内，直接返回 gh_repo_id
-//   2. 否则调 GitHub API 拿完整 repo 数据
-//   3. UPSERT 主表（ON CONFLICT(gh_repo_id) DO UPDATE 全字段覆盖 + source_types 追加）
-//   4. 返回 gh_repo_id 给调用方写附表
-//
-// 短期去抖（30 分钟）保证：阮一峰 cron + zread cron 在同一小时内跑、命中同一 repo 时只调 1 次 GitHub API。
-type Enricher interface {
-    EnsureRepo(ctx context.Context, owner, name, source string) (ghRepoID int64, err error)
+type RepoEnricher interface {
+    EnsureGitHubRepo(
+        ctx context.Context,
+        owner string,
+        name string,
+        force bool,
+    ) (model.GitHubRepo, error)
 }
 ```
 
-### 5.2 主表 UPSERT 实现
+行为：
+
+1. 先按规范化后的 `(owner, name)` 查询主表。
+2. 若存在且 `enriched_at` 距当前不足 30 分钟，直接返回主表数据。
+3. 否则调用共享 `internal/github.Client` 获取最新 repo 数据。
+4. 按 `gh_repo_id` UPSERT 主表，覆盖 owner/name 和 GitHub 元数据。
+5. GitHub 返回 404 时，把已知 repo 标记为 `is_available = 0`；来源历史事实不删除。
+
+### 4.2 来源写入必须事务化
 
 ```go
-func (s *SQLiteStore) UpsertGitHubRepo(repo model.GitHubRepo, source string) error {
-    now := time.Now().UTC().Format(time.RFC3339)
-
-    // 1. 先查现有 source_types
-    var existingSourcesJSON string
-    err := s.db.QueryRow(
-        `SELECT source_types_json FROM github_repos WHERE gh_repo_id = ?`,
-        repo.GhRepoID,
-    ).Scan(&existingSourcesJSON)
-
-    var sources []string
-    if err == nil {
-        json.Unmarshal([]byte(existingSourcesJSON), &sources)
-    }
-
-    // 2. 追加新 source 并去重
-    sources = appendUnique(sources, source)
-    sourcesJSON, _ := json.Marshal(sources)
-
-    // 3. UPSERT（ON CONFLICT 全字段覆盖 + source_types 用 Go 计算后传入）
-    _, err = s.db.Exec(`
-        INSERT INTO github_repos (
-            gh_repo_id, owner, name, full_name,
-            description, homepage, language, stars, forks, watchers, subscribers,
-            open_issues, owner_avatar, default_branch, license_spdx, topics_json,
-            pushed_at, updated_at, created_at,
-            is_archived, is_fork, is_private,
-            source_types_json, first_seen_at, last_seen_at, enriched_at, is_available
-        ) VALUES (?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?, ?, ?, ?)
-        ON CONFLICT(gh_repo_id) DO UPDATE SET
-            owner = excluded.owner,                        -- 处理 rename / transfer
-            name = excluded.name,
-            full_name = excluded.full_name,
-            description = excluded.description,
-            homepage = excluded.homepage,
-            language = excluded.language,
-            stars = excluded.stars,
-            forks = excluded.forks,
-            watchers = excluded.watchers,
-            subscribers = excluded.subscribers,
-            open_issues = excluded.open_issues,
-            owner_avatar = excluded.owner_avatar,
-            default_branch = excluded.default_branch,
-            license_spdx = excluded.license_spdx,
-            topics_json = excluded.topics_json,
-            pushed_at = excluded.pushed_at,
-            updated_at = excluded.updated_at,
-            -- created_at 不覆盖（GitHub 不变量，已有值更可靠）
-            is_archived = excluded.is_archived,
-            is_fork = excluded.is_fork,
-            is_private = excluded.is_private,
-            source_types_json = excluded.source_types_json,  -- Go 已合并好
-            -- first_seen_at 不覆盖（保留首次入库时间）
-            last_seen_at = excluded.last_seen_at,
-            enriched_at = excluded.enriched_at,
-            is_available = excluded.is_available
-    `, repo.GhRepoID, repo.Owner, repo.Name, repo.FullName,
-        repo.Description, repo.Homepage, repo.Language, repo.Stars, repo.Forks, repo.Watchers, repo.Subscribers,
-        repo.OpenIssues, repo.OwnerAvatar, repo.DefaultBranch, repo.LicenseSpdx, repo.TopicsJSON,
-        repo.PushedAt, repo.UpdatedAt, repo.CreatedAt,
-        boolToInt(repo.IsArchived), boolToInt(repo.IsFork), boolToInt(repo.IsPrivate),
-        string(sourcesJSON), now, now, now, 1,
-    )
-    return err
-}
+func (s *SQLiteStore) AttachSourceEvent(
+    repoID int64,
+    source model.SourceType,
+    eventAt time.Time,
+    writeExtra func(tx *sql.Tx) error,
+) error
 ```
 
-> ⚠️ `source_types_json` 用 Go 层合并而不是 SQL `json_each`，避免 SQLite JSON1 扩展依赖问题；性能差异可忽略（每次 enrich 一次查询 + 一次写入）。
+单个事务内完成：
 
+1. UPSERT 对应附表；
+2. 根据三张附表重算 `source_types_json`；
+3. 计算该 repo 所有来源事件的最小、最大时间；
+4. 更新主表的 `first_event_at/latest_event_at/record_updated_at`；
+5. 提交事务。
 
+禁止使用“先 SELECT JSON、Go 合并、再无条件 UPDATE”的跨事务读改写方式，否则并发 spider 可能互相覆盖来源集合。
 
-### 5.3 spider 调用样例
+### 4.3 Spider 调用顺序
 
 ```go
-// 阮一峰 spider:
-for _, item := range issueParser.Items() {
-    ghRepoID, err := enricher.EnsureRepo(ctx, item.Owner, item.Name, "weekly")
-    if err != nil { /* skip & log */ continue }
-    store.UpsertWeeklyExtras(model.WeeklyExtras{
-        GhRepoID:         ghRepoID,
-        FirstIssueNumber: item.IssueNumber,
-        IssueURL:         item.IssueURL,
-        Recommendation:   item.RecText,
-    })
+repo, err := enricher.EnsureGitHubRepo(ctx, owner, name, false)
+if err != nil {
+    // 当前事件无法获得 gh_repo_id，记录日志并进入既有重试机制。
+    continue
 }
 
-// zread spider:
-for _, t := range zreadResp.Trending {
-    ghRepoID, err := enricher.EnsureRepo(ctx, t.Owner, t.Name, "zread")
-    if err != nil { continue }
-    store.UpsertZreadExtras(model.ZreadExtras{
-        GhRepoID: ghRepoID, WeekStart: t.WeekStart, WeekEnd: t.WeekEnd,
-        WeekLabel: t.WeekLabel, RankInWeek: t.Rank, DescriptionZh: t.Desc,
-    })
-}
-
-// discovery service:
-for _, hn := range hnRepos {
-    ghRepoID, err := enricher.EnsureRepo(ctx, hn.Owner, hn.Repo, "discovery")
-    if err != nil { continue }
-    store.UpsertDiscoveryExtras(model.DiscoveryExtras{ GhRepoID: ghRepoID, ReadmeExcerpt: ... })
-    store.UpsertDiscoverySubmission(model.DiscoverySubmission{ HnID: hn.ID, GhRepoID: ghRepoID, ... })
-}
+err = store.AttachSourceEvent(repo.GhRepoID, source, occurredAt, func(tx *sql.Tx) error {
+    return upsertSourceSpecificRow(tx, sourcePayload)
+})
 ```
+
+`EnsureGitHubRepo` 命中去抖缓存时，`AttachSourceEvent` 仍然执行。
 
 ---
 
-## 6. 接口设计
+## 5. 查询接口
 
-### 6.1 GET `/api/v1/repos`（主接口）
+### 5.1 `GET /api/v1/repos`
 
-| 参数 | 默认 | 说明 |
+参数：
+
+| 参数 | 默认值 | 说明 |
 |---|---|---|
-| `source` | 不传 = 全部 | 逗号分隔过滤：`weekly,zread,discovery`；只返回 `source_types_json` 中**包含任意指定 source** 的 repo |
-| `lang` | 不传 = 全部 | 语言过滤；`__uncategorized__` 表示 `language IS NULL OR language = ''` |
-| `sort` | `first_seen_at` | `first_seen_at` / `last_seen_at` / `stars` / `pushed_at` |
-| `order` | `desc` | `asc` / `desc` |
-| `page` | 1 | 1-based |
-| `page_size` | 30 | max 50（防恶意分页）|
+| `source` | 全部 | 可选，逗号分隔；语义为命中任一来源 |
+| `lang` | 全部 | `__uncategorized__` 表示空语言 |
+| `sort` | `latest_event_at` | `latest_event_at / stars / pushed_at` |
+| `order` | `desc` | `asc / desc` |
+| `page` | `1` | 1-based |
+| `page_size` | `30` | 最大 50 |
 
-**SQL 关键片段**：
+默认排序必须稳定：
 
 ```sql
--- source 过滤：JSON1 like 匹配（每源独立 OR）
-WHERE (source_types_json LIKE '%"weekly"%' OR source_types_json LIKE '%"zread"%')
-
--- lang 过滤
-AND ( language = ?  OR  (? = '__uncategorized__' AND (language IS NULL OR language = '')) )
-
--- 排序
-ORDER BY first_seen_at DESC
-
--- 分页
-LIMIT 30 OFFSET 0
+ORDER BY latest_event_at DESC, gh_repo_id DESC
+LIMIT ? OFFSET ?
 ```
 
-> 主接口走主表单表查询，附表通过额外的 IN 查询批量装填（详见 6.2）。
+当用户按 stars 或 pushed_at 排序时，也追加 `gh_repo_id DESC` 作为稳定次级排序键，避免翻页期间同值记录漂移。
 
-**响应**：
+列表项返回完整 Repo Card 字段，以及用于首帧渲染的来源代表数据：
 
 ```json
 {
@@ -460,33 +399,35 @@ LIMIT 30 OFFSET 0
       "name": "markitdown",
       "full_name": "microsoft/markitdown",
       "description": "Python tool for converting files...",
-      "homepage": "https://...",
+      "homepage": "https://example.com",
       "language": "Python",
       "stars": 130672,
       "forks": 8421,
       "watchers": 410,
+      "subscribers": 120,
+      "open_issues": 88,
+      "owner_avatar": "https://avatars.githubusercontent.com/...",
+      "default_branch": "main",
       "license_spdx": "MIT",
       "topics": ["markdown", "converter"],
-      "pushed_at": "2026-06-10T...",
-      "updated_at": "2026-06-10T...",
-      "created_at": "2024-11-01T...",
-      "owner_avatar": "https://...",
-      "default_branch": "main",
+      "pushed_at": "2026-06-10T12:00:00Z",
+      "updated_at": "2026-06-10T12:00:00Z",
+      "created_at": "2024-11-01T00:00:00Z",
       "is_archived": false,
       "is_fork": false,
       "is_private": false,
       "source_types": ["weekly", "zread"],
-      "first_seen_at": "2026-04-15T...",
-      "last_seen_at": "2026-06-08T...",
-
+      "first_event_at": "2026-04-15T00:00:00Z",
+      "latest_event_at": "2026-06-08T00:00:00Z",
       "weekly": {
         "issue_number": 342,
         "issue_url": "https://github.com/ruanyf/weekly/blob/master/docs/issue-342.md",
         "recommendation": "很实用的文档转换工具"
       },
       "zread": {
-        "week_label": "This Week",
         "week_start": "2026-06-08",
+        "week_end": "2026-06-14",
+        "week_label": "This Week",
         "rank_in_week": 6,
         "description_zh": "文件转 Markdown 的 Python 工具"
       },
@@ -496,14 +437,15 @@ LIMIT 30 OFFSET 0
 }
 ```
 
-**关键约定**：
-- 客户端**不**用 `weekly/zread/discovery` 三个字段判断"该 repo 是否命中过该源"；要看 `source_types`
-- 上面三个 ext 字段**只填一份"代表数据"**：weekly = 首次收录的期号；zread = 最新一周；discovery = 当前的 category + 最新投稿。完整时间线走 6.2 详情接口
-- ext 字段为 null 表示该 repo 不在该 source（或未 enrich）
+约定：
 
-### 6.2 GET `/api/v1/repos/{owner}/{repo}`（详情 + 时间线）
+- `source_types` 是来源集合的唯一判断依据。
+- `weekly/zread/discovery` 是每个来源最新或代表性事件的快照，用于列表到详情的首帧透传。
+- `is_available = 0` 的 repo 默认不返回。
 
-返回该 repo 的完整聚合数据 + **所有源的事件时间线**（按时间倒序）：
+### 5.2 `GET /api/v1/repos/{gh_repo_id}`
+
+详情接口按不可变 ID 查询，返回 Repo Card 和完整事件时间线：
 
 ```json
 {
@@ -513,211 +455,194 @@ LIMIT 30 OFFSET 0
       "gh_repo_id": 123456,
       "owner": "microsoft",
       "name": "markitdown",
-      ... // 同 6.1 单条全字段
-      "source_types": ["weekly", "zread", "discovery"]
+      "full_name": "microsoft/markitdown",
+      "source_types": ["weekly", "zread", "discovery"],
+      "latest_event_at": "2026-06-08T00:00:00Z"
     },
     "events": [
       {
+        "id": "zread:2026-06-08",
         "source": "zread",
         "occurred_at": "2026-06-08T00:00:00Z",
-        "zread": { "week_start": "2026-06-08", "week_end": "2026-06-14",
-                   "week_label": "This Week", "rank_in_week": 3,
-                   "description_zh": "..." }
+        "url": "https://zread.ai/repos/microsoft/markitdown",
+        "zread": {
+          "week_start": "2026-06-08",
+          "week_end": "2026-06-14",
+          "rank_in_week": 3,
+          "description_zh": "..."
+        }
       },
       {
+        "id": "discovery:39812345",
         "source": "discovery",
         "occurred_at": "2026-05-25T14:30:00Z",
-        "discovery": { "submission": {
-          "hn_id": 39812345, "title": "Show HN: Markitdown",
-          "score": 234, "comments": 87, "hn_url": "..."
-        } }
+        "url": "https://news.ycombinator.com/item?id=39812345",
+        "discovery": {
+          "hn_id": 39812345,
+          "title": "Show HN: Markitdown",
+          "score": 234,
+          "comments": 87
+        }
       },
       {
-        "source": "zread",
-        "occurred_at": "2026-05-25T00:00:00Z",
-        "zread": { "week_start": "2026-05-25", "rank_in_week": 7, ... }
-      },
-      {
+        "id": "weekly:342",
         "source": "weekly",
         "occurred_at": "2026-04-15T00:00:00Z",
-        "weekly": { "issue_number": 342, "recommendation": "..." }
+        "url": "https://github.com/ruanyf/weekly/blob/master/docs/issue-342.md",
+        "weekly": {
+          "issue_number": 342,
+          "recommendation": "..."
+        }
       }
     ]
   }
 }
 ```
 
-**时间归一**：
-- `weekly` event → 用 `weekly_issues.published_at`（期号发布日）
-- `zread` event → 用 `week_start`（00:00:00Z）
-- `discovery` event → 用 `discovery_submissions.published_at`（HN 投稿时间，精确到秒）
+事件排序固定为：
 
-### 6.3 GET `/api/v1/repos/languages`（语言聚合）
+```sql
+ORDER BY occurred_at DESC, event_id DESC
+```
+
+### 5.3 `GET /api/v1/repos/languages`
+
+支持与列表相同的 `source` 过滤：
 
 ```json
 {
   "schema_version": 1,
-  "meta": { "total": 1648, "generated_at": "..." },
+  "meta": { "total": 1648, "generated_at": "2026-06-12T00:00:00Z" },
   "data": [
     { "key": "Python", "label": "Python", "count": 318 },
     { "key": "TypeScript", "label": "TypeScript", "count": 226 },
-    { "key": "Go", "label": "Go", "count": 142 },
-    { "key": "Rust", "label": "Rust", "count": 89 },
     { "key": "__uncategorized__", "label": "Uncategorized", "count": 7 }
   ]
 }
 ```
 
-仿 trending-api 的 `GetAggregatedLanguages` 实现（详见 `supports/starcat-trending-api/internal/handler/languages.go`）。**支持 `?source=...` 过滤**——客户端选了 `source=weekly,zread` 后，语言下拉应只显示这两源中实际存在的语言。
-
-```sql
-SELECT
-    COALESCE(NULLIF(language, ''), '__uncategorized__') AS key,
-    COUNT(*) AS count
-FROM github_repos
-WHERE is_available = 1
-  AND (source_types_json LIKE '%"weekly"%' OR source_types_json LIKE '%"zread"%')
-GROUP BY key
-ORDER BY count DESC, key ASC;
-```
-
-### 6.4 旧接口全部删除
+### 5.4 删除旧公开接口
 
 ```diff
-- GET /api/v1/weekly                  ✗ 删
-- GET /api/v1/weekly/{owner}/{repo}   ✗ 删
-- GET /api/v1/issues                  ✗ 删
-- GET /api/v1/issues/{number}         ✗ 删
-- GET /api/v1/zread                   ✗ 删
-- GET /api/v1/discovery               ✗ 删
-- GET /api/v1/discovery/{owner}/{repo} ✗ 删
-+ GET /api/v1/repos                            ✓ 新
-+ GET /api/v1/repos/{owner}/{repo}             ✓ 新
-+ GET /api/v1/repos/languages                  ✓ 新
+- GET /api/v1/weekly
+- GET /api/v1/weekly/{owner}/{repo}
+- GET /api/v1/issues
+- GET /api/v1/issues/{number}
+- GET /api/v1/zread
+- GET /api/v1/discovery
+- GET /api/v1/discovery/{owner}/{repo}
++ GET /api/v1/repos
++ GET /api/v1/repos/{gh_repo_id}
++ GET /api/v1/repos/languages
 ```
 
-> 项目未上线：直接删除路由 + handler 文件；不写 deprecation 标记。
+周刊期号数据仍保存在 `weekly_issues`，但不再作为客户端独立浏览入口。详情事件直接携带期号 URL。
 
-### 6.5 admin / internal 接口
+### 5.5 内部接口
 
+```text
+POST /internal/sync/weekly
+POST /internal/sync/zread
+POST /internal/sync/discovery
+POST /internal/rebuild-aggregates
 ```
-POST /internal/sync/weekly       触发阮一峰 spider
-POST /internal/sync/zread        触发 zread spider
-POST /internal/sync/discovery    触发 Show HN spider
-POST /internal/rebuild           重建主表 source_types_json（修复用，扫所有附表重算）
-```
 
-`/internal/rebuild` 是兜底命令：当主表 `source_types_json` 因 bug 漂移时，扫 weekly_extras / zread_extras / discovery_extras 三表，对每个 gh_repo_id 重算 source_types。
-
-
+`rebuild-aggregates` 从三张来源附表重算主表的 `source_types_json`、`first_event_at`、`latest_event_at`，用于修复冗余聚合字段漂移。
 
 ---
 
-## 7. cron 调度
+## 6. 缓存与分页
 
-保留现有调度表（验证过的稳定时间点），只把内部实现改写：
+首期不增加 handler 级业务内存分页缓存。理由：
 
-| Cron 表达式 (UTC) | Job | 改造前 | 改造后 |
-|---|---|---|---|
-| `0 0 * * 1` 周一 00:00 | 阮一峰 fetch | 写 `projects` | 写 `github_repos` + `weekly_extras` |
-| `0 0 * * 1` 周一 00:00 | 阮一峰 enrich（剩余）| `projects.enriched_at` 未填的批量补 | 同左，但走 `enricher.EnsureRepo` |
-| `0 6 * * 1` 周一 06:00 | zread fetch | 写 `zread_trending` | 写 `github_repos` + `zread_extras` |
-| `0 * * * *` 每小时 | discovery collect | 写 `discovery_repos` + submissions | 写 `github_repos` + `discovery_extras` + `discovery_submissions` |
-| `*/15 * * * *` | discovery classify retry | 扫 `pending` 重试 | 改查 `discovery_extras.classify_status` |
+1. SQLite 单表索引分页足以支撑当前数千条规模；
+2. 带 source/lang/sort/page 组合后，缓存键和失效条件明显变复杂；
+3. spider 写入后的缓存一致性会增加额外风险。
 
----
+保留标准 HTTP 缓存能力：
 
-## 8. 实施 PR 拆分
+- 根据查询参数和数据库聚合版本生成 `ETag`；
+- 支持 `If-None-Match` 返回 304；
+- 每次来源事务提交后更新数据库级 aggregate revision。
 
-| PR | 范围 | 工作量 | 依赖 |
-|---|---|---:|---|
-| **PR-1 schema 重写** | `internal/store/sqlite.go::createSchema` 重写：删 5 张旧表，建 `github_repos` + 4 附表 | 0.5 天 | - |
-| **PR-2 model 层** | `internal/model/repo.go` 新增 `GitHubRepo` / `WeeklyExtras` / `ZreadExtras` / `DiscoveryExtras` / `DiscoverySubmission` 5 个 struct | 0.5 天 | PR-1 |
-| **PR-3 store 层** | `UpsertGitHubRepo` + 4 个 `Upsert*Extras*` + `QueryRepos` / `QueryRepoDetail` / `AggregateLanguages` | 1.5 天 | PR-2 |
-| **PR-4 enricher 抽取** | `internal/enricher/repo.go` 新建；统一 GitHub Client + 30 分钟去抖 | 1 天 | PR-3 |
-| **PR-5 spider 改造** | `internal/parser/weekly` / `internal/spider/zread` / `internal/discovery` 三处改造，分别接 `enricher.EnsureRepo` + 写 extras | 1.5 天 | PR-4 |
-| **PR-6 handler 重写** | 新建 `handler/repos.go`（list/detail/languages 3 个）；删 `handler/weekly.go` `zread.go` `discovery.go` `issues.go`；改 `cmd/server/main.go` 路由 | 1 天 | PR-3 |
-| **PR-7 测试 + e2e** | unit test（store / enricher / handler 各一组）+ 本地 curl 三源端到端联调 | 1 天 | PR-6 |
-| **PR-8 文档** | `CHANGELOG.md` v1.0.0 + `README.md` 接口文档 + 同步本设计文档勾选标记 | 0.5 天 | PR-7 |
-| **总计** | | **~7.5 天** | |
+如果上线后观测到 SQL 查询成为瓶颈，再增加 1~5 分钟 TTL 的查询缓存和 singleflight，不在首期提前实现。
 
-> 客户端对接（`Starcat/Core/Network/RepoAPI.swift` 替换 `WeeklyAPI`）单独 R-05 PR，预计 +2.5 天。
+OFFSET 分页在当前规模可接受。所有排序都必须带 `gh_repo_id` 次级排序，避免同值记录造成跨页重复或遗漏。
 
 ---
 
-## 9. 风险与未决项
+## 7. 调度
 
-### 9.1 已识别风险
-
-1. **Repo rename / transfer**
-   - **场景**：repo 改 owner（个人转组织）后，原 (owner, name) 失效，新 (owner, name) 生效但 `gh_repo_id` 不变
-   - **行为**：下次 enrich 时 `ON CONFLICT(gh_repo_id) DO UPDATE` 自动覆盖 owner/name
-   - **副作用**：旧 `(old_owner, old_name)` 的 web 链接会 404；GitHub 自身也有 redirect，影响可接受
-   - **未决**：是否要存历史 owner/name？现阶段不做
-
-2. **GitHub API 配额**
-   - **冷启动**：首次跑要 enrich 所有历史 repo，3077 个 + zread 增量 → 单次最多 ~3500 calls
-   - **配额上限**：5000 calls/h（带 token），完全在限内
-   - **稳态**：每周一双 spider 共触发约 100~200 calls，可忽略
-
-3. **Show HN 依赖 LLM_API_KEY**
-   - **场景**：未配置 LLM_API_KEY 时，所有 discovery_extras 卡在 `classify_status='pending'`
-   - **handler 行为**：默认 `/api/v1/repos?source=discovery` **只返回 status='classified' 的**；增加 `?include_pending=true` 给 debug 用
-   - **未决**：是否给 pending 加默认 category="unknown" 让前端能看到？倾向不加，避免污染列表
-
-4. **enricher 短期去抖窗口**
-   - **当前设计**：30 分钟内同 repo 不重 enrich
-   - **风险**：阮一峰 cron + zread cron 跨时段命中同 repo 时，第二次想刷新 stars/topics 会被去抖跳过
-   - **缓解**：去抖只在"主动调 EnsureRepo"路径生效；admin `/internal/sync` 强制刷新带 `?force=true` 参数
-
-### 9.2 未决项（请 dong4j 拍板）
-
-| ID | 议题 | 倾向方案 |
+| Cron（UTC） | Job | 聚合后行为 |
 |---|---|---|
-| Q1 | enricher 调用模式：spider 同步阻塞 vs 异步队列 | **同步阻塞**——简单、可观测；若日后量级上来再切异步 |
-| Q2 | 主接口路径：`/api/v1/repos` vs `/api/v1/feed` | **`/api/v1/repos`**——语义最准确，feed 偏新闻流语境 |
-| Q3 | 主接口默认 sort | **`first_seen_at desc`**——"最近发现"语义最贴 weekly 现状 |
-| Q4 | discovery 未分类 repo 是否参与 list | **不参与**（默认）；带 `?include_pending=true` 时进 |
-| Q5 | DTO 字段命名风格 | **snake_case**（与 trending-api / 当前 weekly-api 一致）|
-| Q6 | `events` 时间归一精度 | **保留各源原生精度**（weekly 日级、zread 周级 00:00:00Z、discovery 秒级）|
+| 周一 00:00 | weekly fetch | 解析期号和 repo，ensure GitHub repo，写 `weekly_extras` |
+| 周一 06:00 | zread fetch | ensure GitHub repo，逐周写 `zread_events` |
+| 每小时 | discovery collect | 抓 Show HN，ensure GitHub repo，写 submissions |
+
+删除 Discovery classify retry cron。GitHub enrichment 重试继续沿用当前 `pending / ready / retryable / unavailable` 的容错语义，但最终统一落到主表的 `is_available/enriched_at`。
 
 ---
 
-## 10. 与其他文档的关系
+## 8. 实施顺序
 
-- **本文档** = `weekly-api` 后端改造方案（独立施工）
-- 客户端对接方案（`WeeklyAPI` → `RepoAPI`）= **R-05** 单独编写
-- 与 `docs/详细设计/05-GitHub API设计.md` 共用 GitHub Client 接口
-- 与 `supports/starcat-trending-api/` 共用语言聚合模式（不共享代码，仿写）
-- 进度同步：`docs/工程进度/功能实现总览.md` → 在 §3.9 ZRead 章节追加 R-04 任务
+| 阶段 | 工作内容 | 验证 |
+|---|---|---|
+| 1 | 重写 schema 与 model | 空库建表测试、外键测试 |
+| 2 | 实现主表 UPSERT 和来源事务 | 并发来源写入不丢 source、时间聚合正确 |
+| 3 | 抽取统一 enricher | 30 分钟内复用 GitHub 元数据，但仍写入第二来源 |
+| 4 | 改造 weekly / zread / discovery 三条 pipeline | 三源各自可独立同步，重复 repo 聚合为一条 |
+| 5 | 实现 list / detail / languages handler | handler 单测覆盖筛选、稳定排序、分页、404 |
+| 6 | 删除旧公开 handler 和路由 | `rg` 确认无旧路由残留 |
+| 7 | 本地端到端验证 | 空库同步三源，curl 验证列表、详情、时间线、语言 |
+| 8 | 更新 README / CHANGELOG | 接口示例与真实响应一致 |
 
----
-
-## 11. CHANGELOG
-
-```
-weekly-api v1.0.0 (2026-06-XX)
-==============================
-BREAKING CHANGES
-- DB schema 完全重写：projects / zread_trending / discovery_repos / discovery_submissions 五表合并为
-  github_repos 主表 + weekly_extras / zread_extras / discovery_extras / discovery_submissions 四附表
-- 旧 endpoint 全部删除：/api/v1/weekly, /api/v1/zread, /api/v1/discovery, /api/v1/issues
-- 新 endpoint：/api/v1/repos, /api/v1/repos/{owner}/{repo}, /api/v1/repos/languages
-- 主键统一为 gh_repo_id (int64)，owner+name 降为二级唯一约束
-- 项目首次上线版本，无数据迁移、无兼容逻辑
-
-新增
-- 三源（阮一峰 / zread / Show HN）数据在 DB 层去重聚合
-- 同一 repo 跨源命中时 GitHub API 只调 1 次（30 分钟去抖窗口）
-- 时间线接口暴露 repo 在所有源的命中事件
-- 语言聚合接口支持按 source 过滤
-```
+后端接口和 fixture 稳定后，再开始 R-05 客户端施工。
 
 ---
 
-## 12. 后续 TODO（出 v1.0 后再考虑）
+## 9. 测试要求
 
-- [ ] 本地缓存层：handler 加 in-memory cache（5min TTL）+ stampede 锁，减少高频列表查询的 SQL 压力
-- [ ] 全文搜索：基于 SQLite FTS5 给 `description / topics / weekly.recommendation / zread.description_zh` 建索引
-- [ ] watch / subscribers 增量曲线：单独时序表 `repo_metrics`，每天采样一次（区分这里是用 enricher 实时 vs 历史快照）
-- [ ] 历史 owner/name 表：`github_repo_aliases`，rename / transfer 时记录，给老链接 redirect
+至少覆盖：
+
+1. 同 repo 先写 weekly、30 分钟内再写 zread，最终 `source_types` 包含两者。
+2. 历史 weekly 数据导入时，排序使用期号发布时间而不是导入时间。
+3. 同一 repo 多周 zread 事件全部保留，详情按时间倒序。
+4. 同一 repo 多次 Show HN 投稿全部保留。
+5. rename / transfer 后按同一 `gh_repo_id` 更新 owner/name，ID 详情接口仍命中。
+6. 并发写两个来源时不发生 source JSON 丢失。
+7. `latest_event_at` 相同时按 `gh_repo_id` 稳定分页。
+8. `source/lang/sort/order` 非法参数返回明确 400，不拼接未校验 SQL。
+9. GitHub 404 标记不可用，但历史来源事件仍可通过内部数据检查。
+10. `rebuild-aggregates` 重算结果与在线写入结果一致。
+
+---
+
+## 10. 风险与取舍
+
+### 10.1 冷启动 GitHub 配额
+
+历史 weekly 数据超过 3000 条，首次 enrich 可能接近单 token 小时配额。实现必须复用当前共享 GitHub Client 的 rate-limit 处理，并允许任务跨窗口继续，不能假设一次任务必然跑完。
+
+### 10.2 `(owner, name)` 首次解析仍依赖 GitHub
+
+历史来源只有 owner/name，没有 `gh_repo_id` 时，首次统一必然需要请求 GitHub。仓库已删除或私有化时无法建立主表身份，这类记录记录日志并跳过公开 feed，不伪造 ID。
+
+### 10.3 冗余聚合字段漂移
+
+`source_types_json` 和事件时间是查询优化字段，不是真源。通过来源事务和 `rebuild-aggregates` 双重约束控制漂移。
+
+### 10.4 不提前实现复杂缓存
+
+当前量级下，正确的时间语义、原子写入和稳定分页比内存缓存更重要。缓存必须基于观测结果再引入。
+
+---
+
+## 11. 最终验收标准
+
+- 三源相同 `gh_repo_id` 在列表中只出现一次。
+- 默认列表严格按最近来源事件倒序，而不是按导入时间倒序。
+- 详情接口以 `gh_repo_id` 查询，rename / transfer 不破坏导航身份。
+- 详情时间线完整展示 weekly、zread、discovery 的全部事件。
+- Discovery 不包含任何已删除的 LLM 分类字段和任务。
+- 客户端只需消费统一列表、ID 详情和语言接口。
+- 删除数据库重建后，后端测试与本地三源端到端验证全部通过。

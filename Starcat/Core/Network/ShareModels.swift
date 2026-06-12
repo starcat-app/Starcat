@@ -13,9 +13,18 @@
 //  R-01 P1-3b 修订（2026-06-10）：
 //  - sharing-api 后端 JSON tag 全量改 snake_case（与 trending/weekly 风格一致）
 //  - Swift 属性名保持 camelCase（语言习惯不变）
-//  - 序列化转换由 ShareAPI actor 的 JSONEncoder/JSONDecoder 设
-//    `keyEncodingStrategy = .convertToSnakeCase` / `keyDecodingStrategy = .convertFromSnakeCase`
-//    统一处理，本文件无需写 CodingKeys
+//
+//  2026-06-12 修订（dong4j 发现「点击分享 → 响应解析失败：未能读取数据」）：
+//  - 改回与 trending/weekly/wiki 同款做法：**显式 CodingKeys 映射 snake_case**，
+//    ShareAPI 的 JSONEncoder/JSONDecoder 不再开 `.convertToSnakeCase` /
+//    `.convertFromSnakeCase` 策略。
+//  - 根因：`StarcatEnvelope` 顶层 `CodingKeys: case schemaVersion = "schema_version"`
+//    与 decoder 的 `.convertFromSnakeCase` 策略冲突——策略会先把 JSON 里的
+//    `schema_version` 转成 camelCase 的 `schemaVersion`，但 `StarcatEnvelope` 用
+//    `CodingKey.stringValue == "schema_version"` 去容器里查 key，结果查不到，
+//    抛 `keyNotFound`（即 UI 上看到的 "未能读取数据，因为数据丢失"）。
+//  - TrendingAPI / WeeklyAPI 早就踩过这个坑，注释里明确写了「不要开
+//    `.convertFromSnakeCase`」。本文件这次回滚到同款规范，避免再翻车。
 //
 
 import Foundation
@@ -24,11 +33,17 @@ import Foundation
 
 /// 分享创建请求体（POST /api/v1/share 的 body）。
 ///
-/// 字段命名：Swift 属性名走 camelCase（语言习惯），网络传输时由 ShareAPI 的
-/// `keyEncodingStrategy = .convertToSnakeCase` 自动转 snake_case 与后端契约对齐。
+/// 字段命名：Swift 属性 camelCase（语言习惯）；与后端契约对齐的 snake_case 由
+/// 各结构体的显式 `CodingKeys` 写死映射，**不依赖** JSONEncoder strategy（详见
+/// 文件头 2026-06-12 修订注释）。
 struct ShareRepoRequest: Codable, Sendable {
     let repo: ShareRepoDTO
     let aiSummary: ShareAISummaryDTO
+
+    enum CodingKeys: String, CodingKey {
+        case repo
+        case aiSummary = "ai_summary"
+    }
 }
 
 struct ShareRepoDTO: Codable, Sendable {
@@ -40,11 +55,27 @@ struct ShareRepoDTO: Codable, Sendable {
     let topics: [String]
     let homepage: String?
     let url: String
+
+    enum CodingKeys: String, CodingKey {
+        case fullName = "full_name"
+        case description
+        case language
+        case starsCount = "stars_count"
+        case forksCount = "forks_count"
+        case topics
+        case homepage
+        case url
+    }
 }
 
 struct ShareTagDTO: Codable, Sendable {
     let name: String
     let confidence: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case confidence
+    }
 }
 
 struct ShareAISummaryDTO: Codable, Sendable {
@@ -55,6 +86,16 @@ struct ShareAISummaryDTO: Codable, Sendable {
     let strengths: [String]
     let risks: [String]
     let suggestedTags: [ShareTagDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case oneLiner = "one_liner"
+        case summary
+        case platforms
+        case suitableFor = "suitable_for"
+        case strengths
+        case risks
+        case suggestedTags = "suggested_tags"
+    }
 }
 
 // MARK: - 响应
@@ -62,8 +103,8 @@ struct ShareAISummaryDTO: Codable, Sendable {
 /// `POST /api/v1/share` 200 响应里 envelope 的 `data` 部分。
 ///
 /// 后端 Go 类型：`internal/model/share.go` `ShareCreateResponse`。
-/// 字段命名：Swift 属性 camelCase + 网络传输 snake_case，由 ShareAPI 的
-/// `keyDecodingStrategy = .convertFromSnakeCase` 自动转换（详见文件头 P1-3b 注释）。
+/// 字段命名：Swift 属性 camelCase + 网络传输 snake_case，靠下方显式 `CodingKeys`
+/// 映射（**不依赖** decoder 的 `.convertFromSnakeCase`，原因见文件头注释）。
 ///
 /// 字段说明：
 /// - `shareUrl`：完整的分享页 URL（如 `https://starcat.ink/s/abc12345`）
@@ -75,4 +116,11 @@ struct ShareCreateResponse: Codable, Sendable, Equatable {
     let shareId: String
     let expiresAt: String?
     let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case shareUrl = "share_url"
+        case shareId = "share_id"
+        case expiresAt = "expires_at"
+        case createdAt = "created_at"
+    }
 }

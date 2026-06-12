@@ -82,14 +82,11 @@ actor WikiAPI {
 
     /// 设置页修改服务地址后热更新；下一次请求立即使用新地址。
     func updateBaseURL(_ url: URL) {
-        AppLog.network.info("WikiAPI baseURL updated to \(url.absoluteString, privacy: .public)")
         baseURL = url
     }
 
-    /// 设置页修改 BYOK 后热更新；日志只打印安全前缀。
+    /// 设置页修改 BYOK 后热更新。
     func updateAPIKey(_ key: String?) {
-        let preview = key.flatMap { $0.isEmpty ? nil : String($0.prefix(7)) } ?? "<nil>"
-        AppLog.network.info("WikiAPI apiKey updated (prefix=\(preview, privacy: .public)****)")
         apiKey = key
     }
 
