@@ -72,26 +72,62 @@ struct RepoWikiMenu: View {
                 .frame(width: 0, height: 0)
                 .accessibilityHidden(true)
             if !links.isEmpty {
-                Menu {
-                    ForEach(links) { link in
-                        Link(destination: link.url) {
-                            Label(link.title, systemImage: "arrow.up.right.square")
-                        }
-                    }
-                } label: {
-                    Label("wiki.menu.title", systemImage: "book.pages")
-                        .font(.body)
-                }
-                .menuStyle(.borderlessButton)
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help(Text("wiki.menu.help"))
-                .fixedSize()
+                menuButton
             }
         }
         .task(id: repo.fullName) {
             await loadLinks()
         }
+    }
+
+    /// v1.3 / v1.4（2026-06-12）：按钮视觉对齐 `RepoShareButton` —— Capsule outlined +
+    /// HStack(spacing: 6) + size 13 semibold + horizontal 12 / vertical 6 padding。
+    /// 末尾加 `chevron.down` 提示这是个下拉菜单（macOS Menu 默认不画箭头）。
+    ///
+    /// **v1.4 关键修正**（2026-06-12，dong4j 截图反馈"风格不一样"）:
+    /// 老版用 `.menuStyle(.borderlessButton)` —— 实测**会**把 label 当成系统默认按钮重画,
+    /// 我们自定义的 Capsule background / horizontal+vertical padding / chevron.down 全部
+    /// 被吃掉,导致 Wiki 按钮在视觉上是"光秃秃的图标+文字",跟旁边 [分享] / [AI] 完全不一致。
+    /// 改用 `.menuStyle(.button)`(macOS 13+ 才有,但项目 macOS 15+ 没问题),它把 menu 当
+    /// 自定义 button 渲染,**完整保留 label 内的所有 view 装饰**,Capsule 边框 / padding /
+    /// chevron 才能正确显示出来。
+    ///
+    /// **教训**:macOS SwiftUI Menu 自定义 label 视觉时,**绝对不要**用
+    /// `.menuStyle(.borderlessButton)`,它会无情吃掉所有自定义装饰。`.menuStyle(.button)`
+    /// 才是"我自己画 label 你别动"的正确选择。
+    @ViewBuilder
+    private var menuButton: some View {
+        Menu {
+            ForEach(links) { link in
+                Link(destination: link.url) {
+                    Label(link.title, systemImage: link.source.sfSymbol)
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "book.closed.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("wiki.menu.title")
+                    .font(.system(size: 13, weight: .semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .opacity(0.6)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .foregroundStyle(.primary)
+            .background(
+                Capsule()
+                    .strokeBorder(Color.secondary.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .menuStyle(.button) // v1.4 关键修正：从 .borderlessButton 改 .button，保留 label 装饰
+        .menuIndicator(.hidden) // 我们自己画的 chevron.down 已经表达了"下拉"语义
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pressableHover() // 与 Share / AI 同款 hover 反馈
+        .help(Text("wiki.menu.help"))
+        .fixedSize()
     }
 
     /// 每次 repo 变化先清掉旧菜单，随后查询单仓库状态；失败只记日志并保持隐藏。
