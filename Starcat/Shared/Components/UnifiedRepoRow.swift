@@ -213,6 +213,16 @@ struct UnifiedRepoRow: View {
                         if let semanticHit {
                             SemanticScoreBadge(hit: semanticHit)
                         }
+                        // 阅读状态角标（v2，2026-06-12）。
+                        // 渲染条件 = isStarred && readStatus 已注入 && status != .read
+                        // - 仅 starred row 显（ephemeral trending/weekly 行 isStarred=false 跳过）
+                        // - readStatus == nil → 调用方没注入状态信号（trending/weekly/activity 默认走这）→ 跳过
+                        // - .read 默认态不显，避免列表"整页角标"视觉污染
+                        if card.isStarred,
+                           let readStatus = card.readStatus,
+                           readStatus != .read {
+                            RepoStatusChip(status: readStatus)
+                        }
                         Spacer(minLength: 0)
                     }
                 }
@@ -403,5 +413,63 @@ struct SemanticScoreBadge: View {
 
     private var scoreText: String {
         "\(Int((max(0, min(hit.score, 1)) * 100).rounded()))%"
+    }
+}
+
+// MARK: - RepoStatusChip
+
+/// 阅读状态角标（v2，2026-06-12）。
+///
+/// **设计意图**：在 row chip 行末尾以最小视觉权重传达「这个 starred repo 我还没看 / 正在用」
+/// 两个稀有信号。`.read` **不渲染**（默认态，绝大多数 row 都是这个，渲染反而成噪音）。
+///
+/// **可见性条件**：由调用方（UnifiedRepoRow chip 行）守卫：
+/// 1. `card.isStarred == true`（trending/weekly ephemeral row 不显）
+/// 2. `card.readStatus != nil`（调用方已显式注入状态信号）
+/// 3. `card.readStatus != .read`
+///
+/// **视觉规格**：
+/// - `.unread`：蓝色实心圆点（7pt），与邮件 / RSS "未读"视觉系统一致；不带文字保持紧凑
+/// - `.using`：`bookmark.fill` 图标 + accent 色 capsule + "在用"短文本
+/// - `.read`：EmptyView（不应被调用方传入，但守卫住做兜底）
+fileprivate struct RepoStatusChip: View {
+
+    let status: RepoStatus
+
+    var body: some View {
+        switch status {
+        case .unread:
+            // 圆点 + accessibility label / help 提示。
+            // 不挂背景 capsule —— 跟其他 chip（Language / Stars / Forks 带背景）对比成"原子"信号，
+            // 视觉上跟 macOS 邮件未读蓝点同语义。
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: 7, height: 7)
+                .padding(.horizontal, 3)
+                .accessibilityLabel(Text("repo.status.unread"))
+                .help(Text("repo.status.unread"))
+
+        case .using:
+            // capsule chip（与 sceneBadge / SemanticScoreBadge 同视觉档），accent 色
+            // 高亮 —— 这是用户主动标的"重点 repo"，应该比 unread 更突出。
+            HStack(spacing: 3) {
+                Image(systemName: "bookmark.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                Text("repo.status.using")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(Color.accentColor.opacity(0.12))
+            }
+            .accessibilityLabel(Text("repo.status.using"))
+
+        case .read:
+            // 守卫兜底：调用方应该已经过滤掉 .read，这里返回 EmptyView 保持 enum 完备性。
+            EmptyView()
+        }
     }
 }

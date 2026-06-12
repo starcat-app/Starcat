@@ -795,9 +795,10 @@ final class AppSettings {
         self.hideArchived = defaults.object(forKey: Keys.hideArchived) as? Bool ?? false
         self.hideForks = defaults.object(forKey: Keys.hideForks) as? Bool ?? false
 
-        // W4-4 D3：空字符串表示 nil(无过滤);非空字符串尝试匹配 RepoStatus,失败也回落 nil
+        // W4-4 D3：空字符串表示 nil(无过滤);非空字符串走 RepoStatus.parse(lenient),
+        // v1 旧值 reading/deprecated 自动回落到 .read，老用户重启后过滤不丢失。
         let statusRaw = defaults.string(forKey: Keys.statusFilter) ?? ""
-        self.statusFilter = statusRaw.isEmpty ? nil : RepoStatus(rawValue: statusRaw)
+        self.statusFilter = statusRaw.isEmpty ? nil : RepoStatus.parse(statusRaw)
 
         // 上次 Manage 分类：缺失则空串，由 SidebarItem 解码时回落 allStars
         self.lastManageSelectionRaw = defaults.string(forKey: Keys.lastManageSelection) ?? ""

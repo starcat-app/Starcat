@@ -94,6 +94,26 @@ struct RepoCardViewData: Identifiable, Hashable, Sendable {
     /// fullName 同行右侧的轻量元信息。Release 聚合卡片用它展示最新发布时间；
     /// 其它场景保持 nil，避免恢复已删除的右上相对时间戳。
     let inlineMetadata: RepoCardInlineMetadata?
+
+    /// 阅读状态（v2，2026-06-12 引入）。
+    ///
+    /// **设计意图**：让列表 row 在 chip 行末尾渲染 unread / using 角标，
+    /// 帮用户在主列表"一眼分辨哪些 starred repo 还没看 / 哪些正在用"。
+    ///
+    /// **填充语义**：
+    /// - **nil**：调用方没查 / 没传（trending / weekly / activity 默认走这）
+    ///   → UnifiedRepoRow **不渲染**任何状态角标（即使 isStarred == true）
+    /// - **.unread / .read / .using**：调用方已显式查询并传入
+    ///   → 渲染规则：`isStarred && readStatus != .read` 才显示角标
+    ///
+    /// 之所以让 nil 与 .unread 区分（而不是直接默认 .unread），是因为
+    /// trending/weekly ephemeral 列表里 100% 的 row 都是「未在 repo_notes 写过」
+    /// → 全部当 implicit unread → 整页都亮红点 = 视觉污染。让调用方显式声明
+    /// 才是"对 readStatus 信号负责"的语义。
+    ///
+    /// **目前已接入路径**：Manage（`RepoListView`）
+    /// **暂未接入**：Trending / Weekly / Activity（保持 nil；后续按需扩展）
+    let readStatus: RepoStatus?
 }
 
 struct RepoCardInlineMetadata: Hashable, Sendable {
@@ -143,10 +163,13 @@ extension Repo {
     /// - Parameters:
     ///   - badge: 场景独有徽章（manage 场景通常 nil）
     ///   - inlineMetadata: fullName 同行右侧的小型元信息（发行版聚合卡片使用）
+    ///   - readStatus: 阅读状态（Manage 场景由 `HomeViewModel.statusMap` 注入；
+    ///     其他场景保持 nil 即可，UnifiedRepoRow 不会渲染角标）
     /// - Returns: 视图数据；`isStarred` 直接读 `self.isStarred`（本地 DB 是真值）
     func asCardData(
         badge: CardBadge? = nil,
-        inlineMetadata: RepoCardInlineMetadata? = nil
+        inlineMetadata: RepoCardInlineMetadata? = nil,
+        readStatus: RepoStatus? = nil
     ) -> RepoCardViewData {
         RepoCardViewData(
             ghRepoId: self.id,
@@ -165,7 +188,8 @@ extension Repo {
             badge: badge,
             weeklySources: [],
             weeklySourceLabel: nil,
-            inlineMetadata: inlineMetadata
+            inlineMetadata: inlineMetadata,
+            readStatus: readStatus
         )
     }
 }
@@ -199,7 +223,8 @@ extension StarcatRepoCardDTO {
             badge: badge,
             weeklySources: [],
             weeklySourceLabel: nil,
-            inlineMetadata: nil
+            inlineMetadata: nil,
+            readStatus: nil
         )
     }
 }
@@ -242,7 +267,8 @@ extension TrendingRepo {
             badge: resolvedBadge,
             weeklySources: [],
             weeklySourceLabel: nil,
-            inlineMetadata: nil
+            inlineMetadata: nil,
+            readStatus: nil
         )
     }
 }
@@ -279,7 +305,8 @@ extension WeeklyFeedItem {
             badge: badge,
             weeklySources: sourceTypes,
             weeklySourceLabel: shortSourceLabel,
-            inlineMetadata: nil
+            inlineMetadata: nil,
+            readStatus: nil
         )
     }
 }

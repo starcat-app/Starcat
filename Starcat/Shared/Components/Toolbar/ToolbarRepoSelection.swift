@@ -51,7 +51,11 @@ struct ToolbarRepoSelection: Equatable {
     let cloneSSH: String
 
     /// 用户自定义 homepage（GitHub repo 设置里填的"Website"）。
-    /// 仅 Manage 路径有这个字段；trending / weekly 一律 nil。
+    ///
+    /// **2026-06-12 修订**：之前注释写「仅 Manage 路径有这个字段；trending / weekly 一律 nil」是
+    /// R-01 v1.2 初版状态，R-05（2026-06-11）trending-api enricher 已拉满 10 字段含 homepage，
+    /// `TrendingRepo.homepage` / `WeeklyFeedItem.card.homepage` 都已可信透传 —— 不能再写死 nil。
+    /// 现在 4 个工厂方法都应该尽量传递 homepage 真值,只有真没有时才 nil。
     let homepage: URL?
 
     /// 是否已 star。由调用方按 `StarredRegistry.contains(ghRepoId:)` 计算，
@@ -78,6 +82,11 @@ struct ToolbarRepoSelection: Equatable {
     }
 
     /// 从 Trending 列表项构造（trending 没有 cloneUrl，全部走兜底拼接）。
+    ///
+    /// **2026-06-12 修订**：之前 `homepage: nil` 写死 —— 是 R-01 v1.2 初版「trending 模型暂无
+    /// homepage 字段」的过时假设，R-05（2026-06-11）trending-api enricher 已经透传 homepage
+    /// 到 `TrendingRepo.homepage`，这里再写死 nil 会让 Trending 详情页 toolbar「在 GitHub 打开」
+    /// 菜单永远显不出 Homepage 子项。改为直接透传。
     static func from(trending: TrendingRepo, isStarred: Bool) -> ToolbarRepoSelection {
         ToolbarRepoSelection(
             owner: trending.owner,
@@ -86,7 +95,7 @@ struct ToolbarRepoSelection: Equatable {
             htmlUrl: trending.url,
             cloneHTTPS: defaultHTTPS(owner: trending.owner, name: trending.name),
             cloneSSH: defaultSSH(owner: trending.owner, name: trending.name),
-            homepage: nil,
+            homepage: trending.homepage,
             isStarred: isStarred
         )
     }
