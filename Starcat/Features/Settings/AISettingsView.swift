@@ -56,6 +56,14 @@ struct AISettingsTab: View {
     @State private var keyError: String?
     @State private var promptTask: AIModelTask = .summary
 
+    /// HOM-AIPROVIDERS-DELETE-CONFIRM-2026-06-12 (dong4j 反馈)：
+    /// 删除服务商需要二次确认。删除会同步删 profile + Keychain key + 修复
+    /// 任务绑定（`repairTasksAfterProfileChange`），属于不可逆破坏性操作，
+    /// 走 `.confirmationDialog` 拦一道。`pendingDeleteProfileID` 持有待删
+    /// 目标的 ID 而非整个 profile，避免 dialog 弹起期间 `verifiedProfiles`
+    /// 数组变化导致引用悬空（异步刷新 / @AppStorage 写回都可能触发刷新）。
+    @State private var pendingDeleteProfileID: String?
+
     /// HOM-68 follow-up v7 (dong4j 反馈 2026-06-05 23:20)：
     /// "默认设置"（原"模型设置"）也改成 tab 样式，4 个任务（summary/tags/
     /// embedding/translation）共用一行 Provider+模型 picker。和 parameterTask /
@@ -128,6 +136,67 @@ struct AISettingsTab: View {
                 keyError = nil
             }
         })
+        // HOM-AIPROVIDERS-DELETE-CONFIRM-2026-06-12 (dong4j 反馈)：
+        // 删除服务商二次确认。用 `presenting:` 把 profile 注入到 dialog 闭包，
+        // 让按钮标题能显示具体服务商名（"删除「DeepSeek」"），减少误删风险。
+        // 用 `pendingDeleteProfileID` 而非整个 profile 作为状态源，避免数组刷新
+        // 期间引用悬空（见 `pendingDeleteProfileID` 注释）。
+        .confirmationDialog(
+            "确认删除服务商",
+            isPresented: deleteConfirmationBinding,
+            titleVisibility: .visible,
+            presenting: pendingDeleteProfile
+        ) { profile in
+            Button("删除「\(profile.displayName)」", role: .destructive) {
+                deleteProfile(id: profile.id)
+            }
+            Button("取消", role: .cancel) {
+                pendingDeleteProfileID = nil
+            }
+        } message: { profile in
+            Text("删除「\(profile.displayName)」后无法恢复。")
+        }
+    }
+
+    /// 二次确认 dialog 的 isPresented 绑定。
+    /// set 时支持外部把它置 false（点 macOS 系统返回 / 点空白处关 dialog），
+    /// 同步清掉 `pendingDeleteProfileID` 避免下次再弹时残留旧目标。
+    private var deleteConfirmationBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteProfileID != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingDeleteProfileID = nil
+                }
+            }
+        )
+    }
+
+    /// 当前待删除目标的 profile。pendingDeleteProfileID 持有 ID 而非整个 profile，
+    /// 这里实时查表，避免数组刷新引用悬空。如果 ID 找不到对应 profile（删除瞬间数据
+    /// 已变），返回 nil 让 dialog 自然 dismiss（`confirmationDialog(presenting:)` 在
+    /// presenting 为 nil 时不展示 content）。
+    private var pendingDeleteProfile: AIProviderProfile? {
+        guard let id = pendingDeleteProfileID else { return nil }
+        return profile(id)
+    }
+
+    /// 真删除入口，由 confirmationDialog 内部按钮调用。
+    /// 既有的 `deleteSelectedProfile()` 隐式依赖 `selectedProfileID`，但二次确认
+    /// 期间用户可能切换了 selection，所以这里收紧到「按显式 ID 删除」，与
+    /// pendingDeleteProfileID 的语义一致，避免误删。
+    private func deleteProfile(id: String) {
+        AppLog.ai.debug("[AISettings] deleteProfile(id:) confirmed id=\(id, privacy: .public)")
+        settings.aiProviderProfiles.removeAll { $0.id == id }
+        try? KeychainManager.shared.deleteAIKey(forProvider: id)
+        apiKeys.removeValue(forKey: id)
+        // 被删的恰好是当前 selected 时，回退到剩余 verified 中的第一个；
+        // 否则保持当前 selection 不动（删的是非当前项时，用户视线不应被打断）。
+        if selectedProfileID == id {
+            setSelectedProfileID(verifiedProfiles.first?.id)
+        }
+        repairTasksAfterProfileChange()
+        pendingDeleteProfileID = nil
     }
 
     // MARK: - Provider
@@ -144,7 +213,11 @@ struct AISettingsTab: View {
                 // SwiftUI Picker 的 menu style 会把 Label 内的 Image 一起渲染到下拉
                 // 菜单和已选 caption 区，无需为下拉 / 当前选中分别画。
                 if verifiedProfiles.isEmpty {
-                    Text("暂无已验证服务商")
+                    // HOM-AIPROVIDERS-HIDE-PROVIDER-2026-06-12 (dong4j 反馈)：
+                    // zero state 文案补充行动指引——之前只说「暂无已验证服务商」是
+                    // 状态描述，用户不知道下一步要做什么。改成「...点右侧 + 新增」
+                    // 让新用户直接看到入口。
+                    Text("暂无已验证服务商，点击右侧 + 新增")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -164,7 +237,11 @@ struct AISettingsTab: View {
                 Spacer(minLength: 12)
 
                 Button {
-                    beginDraft(provider: .openAICompatible)
+                    // HOM-AIPROVIDERS-HIDE-PROVIDER-2026-06-12：包 withAnimation 让下方
+                    // Provider 行 + 输入区伴随 transition 滑入，而不是瞬切。
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        beginDraft(provider: .openAICompatible)
+                    }
                 } label: {
                     Label("新增", systemImage: "plus")
                         .labelStyle(.iconOnly)
@@ -173,7 +250,9 @@ struct AISettingsTab: View {
                 .disabled(draftProfile != nil)
 
                 Button(role: .destructive) {
-                    deleteSelectedProfile()
+                    // HOM-AIPROVIDERS-DELETE-CONFIRM-2026-06-12：先弹二次确认 dialog，
+                    // dialog 内点「删除」才真正执行 `deleteProfile(id:)`。
+                    pendingDeleteProfileID = selectedProfileID
                 } label: {
                     Label("删除", systemImage: "trash")
                         .labelStyle(.iconOnly)
@@ -182,19 +261,48 @@ struct AISettingsTab: View {
                 .disabled(selectedProfile == nil)
             }
 
-            // 第二行展示 Starcat 当前支持的全部服务商。选择一个服务商不会立刻写入
-            // `aiProviderProfiles`；它只会创建/更新草稿，测试通过后才晋升为正式配置。
-            Picker("Provider", selection: supportedProviderBinding) {
-                ForEach(AIServiceProvider.allCases) { provider in
-                    Label {
-                        Text(provider.displayName)
-                    } icon: {
-                        AIProviderIconView(provider: provider, size: 14)
+            // HOM-AIPROVIDERS-HIDE-PROVIDER-2026-06-12 (dong4j 反馈)：
+            // Provider 下拉只在「点 + 进入新增草稿」时显示。背景：之前两个下拉常驻
+            //   1) 「服务商配置」= 已验证 profile 切换
+            //   2) 「Provider」    = 选 provider 类型 / 隐式重建草稿
+            // 两个下拉语义不同但视觉同形（都是 menu picker），新用户进设置页一眼看
+            // 不出谁是「我现在在看哪个 profile」、谁是「我要新建」。更糟的是 Provider
+            // 下拉直接切类型就会重建草稿（`supportedProviderBinding.set` 调
+            // `beginDraft`），与右上角 `+` 按钮形成两个新增入口，违反「+ 是新增唯一
+            // 入口」的产品意图。
+            //
+            // 修法：Provider 下拉用 `if draftProfile != nil` 包裹，常态隐藏；只在点
+            // `+`（→ beginDraft → draftProfile != nil）后随输入区一起出现。这样信息
+            // 架构变成「常态只显示当前 profile / 点 + 进入新增模式才显示类型选择」，
+            // 与 macOS 系统设置「网络 → +」的交互节奏一致。
+            //
+            // Provider 切换仍走原 `supportedProviderBinding`（重建草稿，丢弃同一草稿
+            // 内已输入的 displayName/baseURL/apiKey）。这是合理的——切类型本质就是
+            // 「换底子」，不同 provider 的默认 baseURL 完全不同，保留旧值会更困惑。
+            //
+            // transition 用 `.opacity` + 默认 spring，让出现/消失自然过渡，避免 Form
+            // 里某行突然蹦出来。
+            //
+            // 边界场景：用户在已验证 profile 上修改 displayName/baseURL/apiKey 时，
+            // `editableProfileTextBinding` 会调 `beginDraft(from: current)` 把它提升为
+            // 草稿 → 这里 Provider 行也会跟着出现。这是预期行为：① 与「新增模式」UI
+            // 统一（draft != nil 都显示）；② 用户编辑时本来就可以切类型（如发现 Base
+            // URL 错了想换个 provider），保留这个能力；③ 用户不点 Provider 就不会
+            // 影响输入，干扰极小。
+            if draftProfile != nil {
+                Picker("Provider", selection: supportedProviderBinding) {
+                    ForEach(AIServiceProvider.allCases) { provider in
+                        Label {
+                            Text(provider.displayName)
+                        } icon: {
+                            AIProviderIconView(provider: provider, size: 14)
+                        }
+                        .tag(provider)
                     }
-                    .tag(provider)
                 }
+                .pickerStyle(.menu)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .pickerStyle(.menu)
 
             if let profile = activeProfile {
                 providerInputRows(profile)
@@ -873,14 +981,10 @@ struct AISettingsTab: View {
         keyError = nil
     }
 
-    private func deleteSelectedProfile() {
-        guard let id = selectedProfileID else { return }
-        settings.aiProviderProfiles.removeAll { $0.id == id }
-        try? KeychainManager.shared.deleteAIKey(forProvider: id)
-        apiKeys.removeValue(forKey: id)
-        setSelectedProfileID(verifiedProfiles.first?.id)
-        repairTasksAfterProfileChange()
-    }
+    // `deleteSelectedProfile()` 已被 `deleteProfile(id:)` + `confirmationDialog`
+    // 二次确认链路取代（HOM-AIPROVIDERS-DELETE-CONFIRM-2026-06-12）。原函数
+    // 隐式依赖 `selectedProfileID`，confirm dialog 期间用户可能切换 selection
+    // 导致语义偏差，新函数收紧到显式 ID 删除。
 
     @MainActor
     private func testAndFetchModels(_ profile: AIProviderProfile) async {
@@ -914,8 +1018,12 @@ struct AISettingsTab: View {
                 profiles.append(verified)
                 settings.aiProviderProfiles = profiles
                 setSelectedProfileID(profile.id)
-                draftProfile = nil
-                draftAPIKey = ""
+                // HOM-AIPROVIDERS-HIDE-PROVIDER-2026-06-12：包 withAnimation 让
+                // Provider 行随草稿晋升收起，与点 + 时的滑入动画对称。
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    draftProfile = nil
+                    draftAPIKey = ""
+                }
             } else {
                 updateProfile(profile.id) { current in
                     current = verified
