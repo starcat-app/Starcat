@@ -1,7 +1,7 @@
 # Starcat 客户端「weekly 3 源 feed」对接方案
 
 > **状态**: 设计中（2026-06-12，待 dong4j 拍板施工）
-> **依赖**: 必须先有 [`21-weekly-api-3源feed改造.md`](./21-weekly-api-3源feed改造.md)（R-04 后端）落地上线
+> **依赖**: 必须先有 [`21-weekly-api-后端3源聚合改造.md`](./21-weekly-api-后端3源聚合改造.md)（R-04 后端）落地上线
 > **影响范围**: Starcat 客户端 — 网络层 / Activity-weekly 列表与详情页 / sidebar weekly 区
 > **不影响**: GRDB schema（无新增表 / 列） / 持久化层 / Manage / Trending / Activity 其它分类
 > **本文档不涉及**: 代码细节、文件清单、PR 切分 — 这些在施工阶段再补
@@ -328,7 +328,7 @@ dong4j 在 R-04 已明确「项目未上线，不做兼容」。客户端方案�
 ## 8. 文档关联
 
 - **本文档** = 客户端「weekly 3 源 feed」对接方案
-- 后端方案 = [`docs/详细设计/21-weekly-api-3源feed改造.md`](./21-weekly-api-3源feed改造.md)（R-04）
+- 后端方案 = [`docs/详细设计/21-weekly-api-后端3源聚合改造.md`](./21-weekly-api-后端3源聚合改造.md)（R-04）
 - 三场景共用骨架 = [`docs/详细设计/18-三场景共用架构.md`](./18-三场景共用架构.md)（R-01 v1.2 / v1.7 / v2.0 / v2.1 / D-28 v3）
 - README 翻译共用路径 = [`docs/详细设计/14-AI集成落地记录.md`](./14-AI集成落地记录.md)
 - Wiki menu 协同 = [`docs/详细设计/20-wiki-api-对接.md`](./20-wiki-api-对接.md)

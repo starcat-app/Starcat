@@ -4,7 +4,7 @@
 > 状态：**设计稿（待评审）**
 > 版本：v0.5
 > 关联：
-> - `docs/需求讨论/starcat-github-analysis-session.md`（用户分类与早期讨论，作为本设计的输入）
+> - `docs/需求讨论/github分析-讨论记录.md`（用户分类与早期讨论，作为本设计的输入）
 > - `docs/详细设计/18-三场景共用架构.md`（三场景共用 DTO / Envelope / BaseURL 热更新 / Bearer 鉴权模式，**本设计沿用**）
 > - `docs/详细设计/05-GitHub%20API设计.md`（OAuth / Rate Limit 处理范式，作为外部 HTTP 探测的对照参考）
 > - 后端脚手架：`supports/starcat-trending-api` / `supports/starcat-sharing-api` / `supports/starcat-weekly-api`（三个 Go 项目的目录 / 中间件 / Envelope / 部署约定）
@@ -30,13 +30,13 @@
 - Starcat 客户端 `Starcat/Core/Network/` 已有 3 个后端 actor：`TrendingAPI` / `ShareAPI` / `WeeklyAPI`
 - `supports/` 下已有 3 个独立 Go API 项目（端口 5001/5002/5003），共用 `internal/middleware/auth.go` + `internal/model/envelope.go`（byte-level 共享）
 - Starcat 详情页 (`Features/Home/RepoDetailView.swift`) 当前**无任何"外部文档站跳转"入口**，用户对 star 的 repo 想要看 DeepWiki 解读需要自己复制 `owner/repo` 去浏览器手贴
-- `docs/需求讨论/starcat-github-analysis-session.md` 已经把"GitHub 项目分析"分成三类能力（外部文档站 / 本地代码分析 / AI 上下文生成），本文档只解决第一类
+- `docs/需求讨论/github分析-讨论记录.md` 已经把"GitHub 项目分析"分成三类能力（外部文档站 / 本地代码分析 / AI 上下文生成），本文档只解决第一类
 - Starcat 客户端与三个 Go 后端服务**均无任何 deepwiki / zread / codewiki 集成代码**（已 grep 验证）
 
 ### 1.2 问题
 
 1. **手动跳转成本高**：用户 star 了几百个 repo，要逐个复制 `owner/repo` 去 DeepWiki / Zread 搜索判断"有没有被收录"，不可接受
-2. **三类能力混淆**：`starcat-github-analysis-session.md` 第 1 节明确早期错把 CodeWiki（生成文档类）和 CodeGraphContext（代码分析类）混成一类；需要明确本文档**只做"查询 + 跳转"**，不做 clone、不做本地分析、不做文档生成
+2. **三类能力混淆**：`github分析-讨论记录.md` 第 1 节明确早期错把 CodeWiki（生成文档类）和 CodeGraphContext（代码分析类）混成一类；需要明确本文档**只做"查询 + 跳转"**，不做 clone、不做本地分析、不做文档生成
 3. **单 repo 探测稳定可做，三类站差异大**：DeepWiki / Zread 是 HTML 指纹探测，Google Code Wiki 是 Google 内部 batchexecute RPC，需要分别设计
 4. **缓存策略缺失**：每次打开 Starcat 都实时扫会爆 rate limit，且对被探测站点不友好
 5. **zread trending 真实存在但被初次探测遗漏**：用户纠正后实测确认 `https://zread.ai/api/v1/public/repo/trending` 是公开的、**无鉴权**的 JSON 端点（112KB / 10 group / 153 repo / 周维度），需要正式设计接入路径（见 §8）—— **v0.5 翻转**：dong4j 决定接入点从 trending-api 改为 weekly-api（语义对齐）
@@ -52,7 +52,7 @@
 
 ### 1.4 非目标
 
-1. **不做本地 clone / 源码分析 / 文档生成**：这三类是 `starcat-github-analysis-session.md` §4.2 / §4.3 的本地代码分析 / AI 上下文生成能力，留给后续设计
+1. **不做本地 clone / 源码分析 / 文档生成**：这三类是 `github分析-讨论记录.md` §4.2 / §4.3 的本地代码分析 / AI 上下文生成能力，留给后续设计
 2. **不接 MCP / 不接 API key**：DeepWiki MCP、Zread MCP、Z.AI 平台都明确不做，跟用户 2026-06-10 "不要 MCP、不要 API key" 的口径一致
 3. **不做语义搜索 / 不做"用户已 star 列表的 AI 二次解读"**：留给后续 AI 功能
 4. **不引入新 web 框架**：保持 supports 三个 Go 项目"纯 net/http + database/sql"零框架风格

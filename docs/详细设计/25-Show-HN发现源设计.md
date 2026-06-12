@@ -45,7 +45,7 @@
 | v1.0 | 2026-06-11 | 把 v1 需求文档升级为可落地设计：四项核心决策（Q1 Activity 第 7 分类 / Q2 寄生 weekly-api / Q3 单标签互斥 / Q4 24h 窗口 + 合并记录）+ 完整 schema + 后端实现清单 + 客户端实现清单 + 文档同步清单 | dong4j 2026-06-11 拍板四项关键决策；v1 文档保留作为讨论历史不再维护 |
 | v1.1 | 2026-06-11 | 后端实施评审修订：改用 HN 官方 API；仓库/投稿双表；显式 retry 状态机；endpoint 专用 `{repo, discovery}` DTO；Admin Key 独立；Activity 实际为第 8 个具体分类 | 代码审查发现 v1.0 的 Algolia、单表主键、unknown 状态复用、README 来源和共享 DTO 契约均会导致实现错误 |
 | v1.2 | 2026-06-12 | **架构简化**：移除 LLM 分类模块，三阶段流水线简化为两阶段（collect → enrich），7 分类体系 + prompt 模板 + classifier 全部删除。统一聚合表方案要求所有数据源走相同流水线，LLM 是唯一外部 AI 调用，拆掉后与阮一峰/zread 模式完全一致 | dong4j 决策：Discovery 定位从「AI 分类发现频道」调整为「Show HN 原始聚合」，与周刊/zread 统一为同模式，降低维护成本 |
-> - `docs/需求讨论/Starcat-AI-Discovery-ShowHN-Plan.md`（v1 原始需求，本设计是其升级版）
+> - `docs/需求讨论/show-hn-发现源-需求初稿.md`（v1 原始需求，本设计是其升级版）
 > - `docs/详细设计/16-活动页设计.md`（Activity 现有 7 个具体分类，本设计是其第 8 个具体分类扩展）
 > - `docs/详细设计/18-三场景共用架构.md`（envelope / Bearer Auth / UnifiedRepoRow / RepoDetailScaffold / StarredRegistry，**本设计沿用**）
 > - `docs/详细设计/19-wiki集成.md`（zread spider + enricher + 单文件 createSchema 模式，**本设计仿写**）
@@ -450,8 +450,8 @@ HH:17:00  Collector:  HN showstories/item → 提取 github URL → UPSERT 双�
 
 ## 10. 文档同步清单
 
-- 本文档（`docs/详细设计/21-AI-Discovery-Show-HN-设计.md`）= 单一信任源
-- `docs/需求讨论/Starcat-AI-Discovery-ShowHN-Plan.md` 顶部追加 v2 指针段，原文保留作历史
+- 本文档（`docs/详细设计/25-Show-HN发现源设计.md`）= 单一信任源
+- `docs/需求讨论/show-hn-发现源-需求初稿.md` 顶部追加 v2 指针段，原文保留作历史
 - `docs/工程进度/功能实现总览.md` P1 章节维护 AI Discovery 10 个条目；当前 5 个后端项已完成、5 个客户端项待实施
 - `docs/详细设计/16-活动页设计.md` §3.2 表格追加 `discovery` 行；§5.1 `ActivityKind` 加 `case discovery`；末尾加「v2 修订指针 → 21 文档」
 - 实施完成后回填本文档勾选状态 / 实际工程量 / 偏离设计的微调记录
