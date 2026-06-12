@@ -80,7 +80,7 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
                     repoId: row["repo_id"],
                     tagName: row["tag_name"],
                     name: row["name"],
-                    bodyTruncated: row["body_truncated"],
+                    bodyMarkdown: row["body_markdown"],
                     htmlUrl: row["html_url"],
                     isPrerelease: row["is_prerelease"],
                     isDraft: row["is_draft"],
@@ -119,14 +119,14 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
                 try db.execute(
                     sql: """
                     INSERT INTO releases (
-                        id, repo_id, tag_name, name, body_truncated, html_url,
+                        id, repo_id, tag_name, name, body_markdown, html_url,
                         is_prerelease, is_draft, published_at, created_at_remote,
                         assets_json, is_read, fetched_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         tag_name = excluded.tag_name,
                         name = excluded.name,
-                        body_truncated = excluded.body_truncated,
+                        body_markdown = excluded.body_markdown,
                         html_url = excluded.html_url,
                         is_prerelease = excluded.is_prerelease,
                         is_draft = excluded.is_draft,
@@ -137,7 +137,7 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
                     """,
                     arguments: [
                         record.id, record.repoId, record.tagName, record.name,
-                        record.bodyTruncated, record.htmlUrl,
+                        record.bodyMarkdown, record.htmlUrl,
                         record.isPrerelease ? 1 : 0, record.isDraft ? 1 : 0,
                         record.publishedAt, record.createdAtRemote,
                         record.assetsJson, isReadDefault ? 1 : 0, record.fetchedAt

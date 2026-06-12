@@ -106,8 +106,8 @@ struct ActivityView: View {
         }
     }
 
-    /// 按 `item.kind` 派发到 `UnifiedRepoRow`（v1.9：纯仓库型 kind）或 `ActivityRowView`
-    /// （release / announcement / following）。
+    /// 按 `item.kind` 派发到 `UnifiedRepoRow`（repo-backed kind）或 `ActivityRowView`
+    /// （announcement / following）。
     ///
     /// **派发规则**（设计 §3.1.5 + v1.9 dong4j 拍板 / v2.0 删时戳）：
     /// - `star` / `repository` / `suggestion` → `UnifiedRepoRow` 与 Manage/Trending/Weekly
@@ -123,7 +123,10 @@ struct ActivityView: View {
             // v1.9：纯仓库型 kind 走 UnifiedRepoRow。`showStarredCheckmark` 不传（默认 false）
             // —— ActivityViewModel.filter { $0.isStarred } 已过滤 100% starred，挂 ✓ 视觉冗余。
             UnifiedRepoRow(
-                card: repo.asCardData(badge: .activityKind(item.category)),
+                card: repo.asCardData(
+                    badge: .activityKind(item.category),
+                    inlineMetadata: inlineMetadata(for: item)
+                ),
                 isSelected: selectedItem?.id == item.id
             )
         } else {
@@ -137,16 +140,21 @@ struct ActivityView: View {
     /// 判定一个 kind 是否能用 UnifiedRepoRow 渲染（v1.9）。
     ///
     /// 出参为 false 的两类：
-    /// - `release`：以 release name 为主标题 + 未读 chip，与 UnifiedRepoRow「以仓库为主体」
-    ///   语义冲突；
+    /// - `release`：v2.1 起也按 repo 聚合展示，一 repo 一卡片；release-specific 时间
+    ///   放在 fullName 同行的 inline metadata，不再走老的 release row。
     /// - `announcement` / `following`：无 `item.repo`，无法构造 `RepoCardViewData`。
     private func isUnifiedRowKind(_ kind: ActivityKind) -> Bool {
         switch kind {
-        case .star, .repository, .suggestion:
+        case .release, .star, .repository, .suggestion:
             return true
-        case .release, .announcement, .following:
+        case .announcement, .following:
             return false
         }
+    }
+
+    private func inlineMetadata(for item: ActivityItem) -> RepoCardInlineMetadata? {
+        guard item.kind == .release, let date = item.createdAt else { return nil }
+        return RepoCardInlineMetadata(systemImage: "calendar", text: Self.absoluteDate(date))
     }
 
     private func refreshRow(_ viewModel: ActivityViewModel) -> some View {
@@ -245,6 +253,14 @@ struct ActivityView: View {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    static func absoluteDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        return formatter.string(from: date)
     }
 }
 

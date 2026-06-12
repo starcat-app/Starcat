@@ -174,6 +174,11 @@ struct UnifiedRepoRow: View {
                             .padding(.leading, 3)
                         }
 
+                        if let metadata = card.inlineMetadata {
+                            RepoCardInlineMetadataBadge(metadata: metadata)
+                                .padding(.leading, 3)
+                        }
+
                         Spacer(minLength: 0)
 
                         // v2.0（2026-06-11 dong4j 决策）：Activity 卡片右上角 RelativeDateBadge 已删。
@@ -339,6 +344,31 @@ private struct WeeklySourceInlineBadge: View {
                 .clipShape(Circle())
                 .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
         }
+    }
+}
+
+// MARK: - RepoCardInlineMetadataBadge
+
+private struct RepoCardInlineMetadataBadge: View {
+    let metadata: RepoCardInlineMetadata
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: metadata.systemImage)
+                .font(.system(size: 9, weight: .semibold))
+            Text(verbatim: metadata.text)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background {
+            Capsule(style: .continuous)
+                .fill(Color.secondary.opacity(0.10))
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .help(metadata.text)
     }
 }
 
