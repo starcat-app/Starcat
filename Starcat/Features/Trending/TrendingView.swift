@@ -311,12 +311,25 @@ struct TrendingView: View {
             // - 新增/删除/换序的 row 才有动画（由 row reveal 处理）
             ForEach(indexedRepos) { item in
                 let repo = item.repo
+                // W12 PR-4：多选模式下点击行 toggle 选中，否则进入详情页。
+                // 多选 store 由 AppDependencies 注入；isActive 由 toolbar 多选按钮控制。
+                let store = dependencies.trendingMultiSelectionStore
                 Button {
-                    selectedRepoID = repo.id
+                    if store.isActive {
+                        store.toggle(SelectionSnapshot(
+                            ghRepoId: repo.ghRepoId,
+                            owner: repo.owner,
+                            name: repo.name
+                        ))
+                    } else {
+                        selectedRepoID = repo.id
+                    }
                 } label: {
                     UnifiedRepoRow(
                         card: repo.asCardData(registry: dependencies.starredRegistry),
-                        isSelected: selectedRepoID == repo.id,
+                        isSelected: store.isActive
+                            ? store.contains(ghRepoId: repo.ghRepoId)
+                            : (selectedRepoID == repo.id),
                         showStarredCheckmark: true
                     )
                 }

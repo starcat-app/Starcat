@@ -239,17 +239,30 @@ final class StarActionService {
     ///
     /// - throws: 同 star。失败不修改 registry。
     func unstar(repo: Repo) async throws {
+        try await unstar(ghRepoId: repo.id, owner: repo.owner, name: repo.name)
+    }
+
+    /// Unstar 入口的 by-id overload（W12 toolbar 专项 PR-4 引入）。
+    ///
+    /// 与 `unstar(repo:)` 等价；存在动机：trending / weekly 多选项是 ephemeral —
+    /// 列表里没有完整 `Repo` 实例，但 `ghRepoId` + `owner` + `name` 三元组一定齐全。
+    /// 让 BatchStarService 直接调本 overload，避免在 ephemeral 路径上构造 dummy
+    /// Repo 充入大量 sentinel 字段。
+    ///
+    /// **同文件依赖**：访问 `registry._remove` 是 fileprivate，必须留在本文件内，
+    /// 与 StarringSubsystem 的「写入路径唯一」契约一致（详见文件头注释）。
+    func unstar(ghRepoId: Int64, owner: String, name: String) async throws {
         guard let userID = userIDProvider() else {
             throw StarActionError.notAuthenticated
         }
 
-        try await apiClient.unstar(owner: repo.owner, repo: repo.name)
-        try await repoRepository.markUnstarred(repoId: repo.id, userID: userID)
+        try await apiClient.unstar(owner: owner, repo: name)
+        try await repoRepository.markUnstarred(repoId: ghRepoId, userID: userID)
 
-        registry._remove(repo.id)
+        registry._remove(ghRepoId)
         await homeRefresher?.refreshAfterStarChange()
 
-        AppLog.sync.info("Unstar OK \(repo.fullName, privacy: .public) (id=\(repo.id, privacy: .public))")
+        AppLog.sync.info("Unstar OK \(owner, privacy: .public)/\(name, privacy: .public) (id=\(ghRepoId, privacy: .public))")
     }
 
     // ────────────────────────────────────────────────────────────────────────

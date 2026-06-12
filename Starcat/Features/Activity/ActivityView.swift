@@ -86,13 +86,26 @@ struct ActivityView: View {
         } else if viewModel.items.isEmpty {
             emptyState(systemImage: selectedCategory.systemImage, title: "activity.empty.title", subtitle: emptySubtitle)
         } else {
+            // W12 PR-4：activity 多选 store。仅含 repo 关联的 ActivityItem 能被选中
+            // （announcement / following 这类 repo == nil 的项继续走单选）。
+            let multiStore = dependencies.activityMultiSelectionStore
             List {
                 refreshRow(viewModel)
                 ForEach(Array(viewModel.items.enumerated()), id: \.element.id) { index, item in
                     Button {
-                        selectedItem = item
+                        if multiStore.isActive, let repo = item.repo {
+                            multiStore.toggle(SelectionSnapshot(
+                                ghRepoId: repo.id,
+                                owner: repo.owner,
+                                name: repo.name
+                            ))
+                        } else if !multiStore.isActive {
+                            selectedItem = item
+                        }
+                        // multiStore.isActive 但 item.repo == nil 时 no-op：
+                        // 无法构造 SelectionSnapshot，UI 也不应让用户错觉「选中了」。
                     } label: {
-                        rowContent(for: item)
+                        rowContent(for: item, multiSelectActive: multiStore.isActive, multiStore: multiStore)
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
@@ -118,7 +131,18 @@ struct ActivityView: View {
     /// `item.repo` 为 nil 的 corner case（announcement、未来的 following）一律退化到老视觉，
     /// 因为 `RepoCardViewData` 必填 fullName / owner / repo / ghRepoId。
     @ViewBuilder
-    private func rowContent(for item: ActivityItem) -> some View {
+    private func rowContent(for item: ActivityItem, multiSelectActive: Bool, multiStore: MultiSelectionStore) -> some View {
+        // W12 PR-4：多选模式下 row.isSelected 取自 multiStore；单选模式仍取 selectedItem。
+        // announcement / following（item.repo == nil）即使多选模式也只显示单选高亮兜底，
+        // 因为这类项无法 toggle 进 store。
+        let isMultiSelected: Bool = {
+            if multiSelectActive, let repo = item.repo {
+                return multiStore.contains(ghRepoId: repo.id)
+            }
+            return false
+        }()
+        let isSelected = multiSelectActive ? isMultiSelected : (selectedItem?.id == item.id)
+
         if let repo = item.repo, isUnifiedRowKind(item.kind) {
             // v1.9：纯仓库型 kind 走 UnifiedRepoRow。`showStarredCheckmark` 不传（默认 false）
             // —— ActivityViewModel.filter { $0.isStarred } 已过滤 100% starred，挂 ✓ 视觉冗余。
@@ -127,12 +151,12 @@ struct ActivityView: View {
                     badge: .activityKind(item.category),
                     inlineMetadata: inlineMetadata(for: item)
                 ),
-                isSelected: selectedItem?.id == item.id
+                isSelected: isSelected
             )
         } else {
             ActivityRowView(
                 item: item,
-                isSelected: selectedItem?.id == item.id
+                isSelected: isSelected
             )
         }
     }
