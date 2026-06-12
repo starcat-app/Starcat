@@ -2,13 +2,39 @@
 
 > 创建：2026-06-11
 > 状态：后端已实现，客户端待实施
-> 版本：v1.1
+> 版本：v1.2
 > 关联：
-> - `docs/需求讨论/Starcat-AI-Discovery-ShowHN-Plan.md`（v1 原始需求，本设计是其升级版）
-> - `docs/详细设计/16-活动页设计.md`（Activity 现有 7 个具体分类，本设计是其第 8 个具体分类扩展）
-> - `docs/详细设计/18-三场景共用架构.md`（envelope / Bearer Auth / UnifiedRepoRow / RepoDetailScaffold / StarredRegistry，**本设计沿用**）
-> - `docs/详细设计/19-wiki集成.md`（zread spider + enricher + 单文件 createSchema 模式，**本设计仿写**）
-> - 后端脚手架：`supports/starcat-weekly-api`（端口 5003，本设计在内新增 Discovery 双表 + 3 端点）
+
+---
+
+## 修订说明（v1.2，2026-06-12）
+
+**变更类型：架构简化 — 移除 LLM 分类模块。**
+
+**变更原因：**
+1. Discovery 定位调整：从「需要 AI 分类的垂直发现频道」变为「Show HN 原始数据聚合」，与阮一峰周刊、zread trending 统一为同一模式——爬取外部源 → GitHub 补全 → 单一聚合接口暴露
+2. 统一聚合表方案（`github_repos` 主表 + 数据源附表）要求所有数据源走相同流水线，LLM 分类是唯一引入外部 AI 调用的环节，拆掉后流水线完全一致
+3. 7 分类体系维护成本高（prompt 迭代、分类重叠仲裁、confidence 阈值调参），Show HN 体量小（30 条/小时），分类 ROI 不足以支撑持续投入
+4. 客户端 segmented control（8 个 AI 子分类）可用更简单的筛选替代（如按语言、按 stars 排序），不依赖服务端分类
+
+**具体变更：**
+- ❌ 删除：`internal/discovery/classifier.go`（LLM 分类器）
+- ❌ 删除：§3 AI 分类体系（7 分类 + unknown + 优先级规则）
+- ❌ 删除：§11 附录 A：LLM Prompt 模板
+- ❌ 删除：`discovery_repos` 表中分类相关字段（`category` / `classify_confidence` / `classify_attempts` / `classify_next_retry_at` / `classify_error`）
+- ❌ 删除：`DISCOVERY_*` 环境变量中 LLM 相关配置（`LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL` / `DISCOVERY_CONFIDENCE_THRESHOLD` / `DISCOVERY_MAX_CLASSIFY_ATTEMPTS` / `DISCOVERY_CLASSIFY_COOLDOWN_DAYS`）
+- ✅ 保留：HN 采集 + GitHub enrich 两阶段流水线
+- ✅ 保留：`discovery_repos` / `discovery_submissions` 双表模型（去掉分类列）
+- ✅ 保留：`GET /api/v1/discovery` / `GET /api/v1/discovery/{owner}/{repo}` / `POST /internal/sync/discovery` 三个端点
+- ⚠️ 端点响应中 `discovery.category` / `discovery.classify_confidence` 字段移除，客户端不得依赖
+
+**关联影响：**
+- `.env.example` 移除 LLM 配置段，保留抓取与 enrich 配置
+- `cmd/server/main.go` 移除 `LLM_API_KEY` 判断与 classifier 初始化，Discovery 不再依赖 LLM
+- `internal/discovery/service.go` 三阶段简化为两阶段（collect → enrich）
+- 客户端 §6 中栏 segmented 方案废除，改为简单列表 + 语言/stars 排序
+
+> **v1.2 实施真值**：本文档中标注「❌ 删除」「⚠️ 移除」的章节与字段均不再有效。后端实施以 `supports/starcat-weekly-api/internal/discovery/` 当前代码为准。
 
 ---
 
@@ -16,10 +42,16 @@
 
 | 版本 | 日期 | 主要调整 | 触发人 / 触发原因 |
 |---|---|---|---|
-| v1.0 | 2026-06-11 | 把 v1 需求文档（`docs/需求讨论/Starcat-AI-Discovery-ShowHN-Plan.md`）升级为可落地设计：四项核心决策（Q1 Activity 第 7 分类 / Q2 寄生 weekly-api / Q3 单标签互斥 / Q4 24h 窗口 + 合并记录）+ 完整 schema + 后端实现清单 + 客户端实现清单 + 文档同步清单 | dong4j 2026-06-11 拍板四项关键决策；v1 文档保留作为讨论历史不再维护 |
+| v1.0 | 2026-06-11 | 把 v1 需求文档升级为可落地设计：四项核心决策（Q1 Activity 第 7 分类 / Q2 寄生 weekly-api / Q3 单标签互斥 / Q4 24h 窗口 + 合并记录）+ 完整 schema + 后端实现清单 + 客户端实现清单 + 文档同步清单 | dong4j 2026-06-11 拍板四项关键决策；v1 文档保留作为讨论历史不再维护 |
 | v1.1 | 2026-06-11 | 后端实施评审修订：改用 HN 官方 API；仓库/投稿双表；显式 retry 状态机；endpoint 专用 `{repo, discovery}` DTO；Admin Key 独立；Activity 实际为第 8 个具体分类 | 代码审查发现 v1.0 的 Algolia、单表主键、unknown 状态复用、README 来源和共享 DTO 契约均会导致实现错误 |
+| v1.2 | 2026-06-12 | **架构简化**：移除 LLM 分类模块，三阶段流水线简化为两阶段（collect → enrich），7 分类体系 + prompt 模板 + classifier 全部删除。统一聚合表方案要求所有数据源走相同流水线，LLM 是唯一外部 AI 调用，拆掉后与阮一峰/zread 模式完全一致 | dong4j 决策：Discovery 定位从「AI 分类发现频道」调整为「Show HN 原始聚合」，与周刊/zread 统一为同模式，降低维护成本 |
+> - `docs/需求讨论/Starcat-AI-Discovery-ShowHN-Plan.md`（v1 原始需求，本设计是其升级版）
+> - `docs/详细设计/16-活动页设计.md`（Activity 现有 7 个具体分类，本设计是其第 8 个具体分类扩展）
+> - `docs/详细设计/18-三场景共用架构.md`（envelope / Bearer Auth / UnifiedRepoRow / RepoDetailScaffold / StarredRegistry，**本设计沿用**）
+> - `docs/详细设计/19-wiki集成.md`（zread spider + enricher + 单文件 createSchema 模式，**本设计仿写**）
+> - 后端脚手架：`supports/starcat-weekly-api`（端口 5003，本设计在内新增 Discovery 双表 + 3 端点）
 
-> **v1.1 实施真值**：后端代码位于 `supports/starcat-weekly-api/internal/discovery/`，本文件后续后端章节均已按实现修订。客户端实施必须消费 `{repo, discovery}`，不得再给共享 `StarcatRepoCardDTO` 增加 `discovery` 字段。
+> **v1.2 实施真值**：后端代码位于 `supports/starcat-weekly-api/internal/discovery/`，本文件后续章节已按 v1.2 修订。客户端实施必须消费 `{repo, discovery}`，不得再给共享 `StarcatRepoCardDTO` 增加 `discovery` 字段。
 
 ---
 
@@ -42,43 +74,41 @@ GitHub Star 用户面对「AI 项目井喷」时痛点突出：
 1. **Trending 滞后**：`starcat-trending-api` 的 GitHub Trending 数据是「已经验证热门」的项目（一般要积累 100+ stars 才进 daily trending），错过早期发现窗口
 2. **官方 Explore 不足**：GitHub 官方 Trending / Explore 不专注 AI 子领域，AI Agent / MCP / RAG 等垂类项目混在一起
 3. **Show HN 是早期信号**：`https://news.ycombinator.com/show` 是开发者社区「项目刚上线找用户」的主战场，含大量 GitHub 链接，是 Trending 之前的 leading indicator
-4. **AI 子领域分类缺失**：用户想按「我现在关心 AI Agent」或「我想看 MCP Server」过滤，没有现成数据源做这个粒度的归类
+4. **AI 子领域分类缺失**（v1.2 已移除）：~~用户想按「我现在关心 AI Agent」或「我想看 MCP Server」过滤，没有现成数据源做这个粒度的归类~~ — v1.2 统一聚合表方案不再需要服务端 AI 分类
 
 ### 1.3 目标
 
-1. **Show HN → GitHub 链路自动化**：每小时调用 HN 官方 API，过滤出含 GitHub URL 的帖子，提取 `owner/repo`，进入 enricher 队列
-2. **AI 单标签分类**：用 LLM 把 repo 归为 7 个 AI 子分类之一（agent / coding / mcp / rag / infra / model / skill），低置信度落 `unknown`
-3. **复用现有客户端骨架**：作为 `Activity` 的第 8 个具体分类（`ActivityCategory.discovery`），中栏 segmented 切 8 个 AI 筛选项（含 `all`），row 用 `UnifiedRepoRow`，详情页用 `RepoDetailScaffold` + ephemeral repo 链路
-4. **后端寄生 weekly-api**：新增 `discovery_repos` / `discovery_submissions` 双表 + 3 端点 + 1 cron + LLM classifier，不开新服务、不动 trending-api
+1. **Show HN → GitHub 链路自动化**：每小时调用 HN 官方 API，过滤出含 GitHub URL 的帖子，提取 `owner/repo`，进入 enricher 补全队列
+2. **复用现有客户端骨架**：作为 `Activity` 的第 8 个具体分类（`ActivityCategory.discovery`），row 用 `UnifiedRepoRow`，详情页用 `RepoDetailScaffold` + ephemeral repo 链路
+3. **后端寄生 weekly-api**：新增 `discovery_repos` / `discovery_submissions` 双表 + 3 端点 + 1 cron，不开新服务、不动 trending-api
+4. **与统一聚合表对齐**（v1.2 新增）：Discovery 数据最终进入 `github_repos` 统一主表，与其他数据源（阮一峰周刊、zread）走相同流水线模式
 
 ### 1.4 非目标
 
 1. **不接入 Show HN 之外的源**：Product Hunt / Reddit LocalLLaMA / HuggingFace Trending / Awesome AI 列出但留待 v2
-2. **不做多标签分类**：一个 repo 只属于一个主分类（Q3 决策）；多标签会让 UI tab 切换语义复杂、prompt 成本高
-3. **不做 star 跃迁触发再分类**：分类一次后稳定，仅在 LLM 失败时冷却 7 天后重试（YAGNI）
-4. **不做客户端缓存**：每次走后端，weekly-api 已有 SQLite 持久化 + 最多 30 条 24h 内数据，体量很小
-5. **不做中文翻译字段**（`description_zh`）：留待对接 wiki-api 时再加，当前不是核心痛点
-6. **不做后台人工修正 UI**：分类错误反馈机制留待 v2，第一版只通过更新 LLM prompt + 数据库直接 SQL 修正
+2. **不做 AI 分类**（v1.2 移除）：~~LLM 单标签分类、7 分类体系、confidence 阈值~~ 全部删除，统一聚合表模式不需要服务端分类
+3. **不做客户端缓存**：每次走后端，weekly-api 已有 SQLite 持久化 + 最多 30 条 24h 内数据，体量很小
+4. **不做中文翻译字段**（`description_zh`）：留待对接 wiki-api 时再加，当前不是核心痛点
 
 ---
 
 ## 2. 总体方案
 
-### 2.1 架构数据流
+### 2.1 架构数据流（v1.2：两阶段，无 LLM）
 
 ```mermaid
 flowchart LR
     HN[HN Official API showstories/item] -->|hourly cron| Collector[discovery/hn.go]
     Collector -->|过滤 github.com| Filter[提取 owner/repo]
     Filter -->|UPSERT| DB[(discovery_repos + discovery_submissions)]
-    DB -->|select unenriched| Enricher[GitHub Token Pool 拉 metadata + readme]
+    DB -->|select unenriched| Enricher[GitHub Client 拉 metadata + readme]
     Enricher -->|update| DB
-    DB -->|select unclassified| Classifier[discovery/classifier.go]
-    Classifier -->|category + confidence| DB
     DB -->|GET /api/v1/discovery| Handler[handler/discovery.go]
     Handler -->|envelope JSON| Client[Starcat 客户端]
     Client -->|UnifiedRepoRow| ActivityUI[Activity > Discovery 子页]
 ```
+
+> v1.2 移除 Classifier 节点。流水线简化为 collect → enrich 两阶段，与阮一峰周刊 / zread 完全一致。
 
 ### 2.2 与现有架构的复用关系
 
@@ -100,14 +130,16 @@ flowchart LR
 |---|---|---|---|
 | Q1 | 导航位置 | Activity 第 8 个具体分类（第 9 个 enum case，含 `all`） | A. 升级顶栏一级会让顶栏拥挤；B. 在 trending 下做二级 tab 跟「趋势」语义重叠；C. 把 trending 也搬到 activity 改动太大 |
 | Q2 | 后端归属 | 寄生 starcat-weekly-api | A. 独立 starcat-discovery-api 工程量大且要复制 4 件套；B. 寄生 trending-api 跟「已验证热门」语义不符 |
-| Q3 | AI 分类 | 单标签互斥 + confidence 阈值 | B. 多标签让 UI tab 重复出现 + LLM prompt 复杂；C. 规则先行 + LLM fallback 维护负担重 |
+| Q3 | AI 分类 | ❌ v1.2 移除，不再做 AI 分类 | B. 多标签让 UI tab 重复出现 + LLM prompt 复杂；C. 规则先行 + LLM fallback 维护负担重；v1.2 统一聚合表模式不再需要服务端分类 |
 | Q4 | 抓取边界 | 每小时取官方 showstories 前 30 条 + 24h 查询窗口；repo/submission 分表 | 单表 `(owner,repo)` 主键会把二次投稿的新分数拼到旧 hn_id，并因旧 published_at 无法重新进入 24h 窗口 |
 
 ---
 
-## 3. AI 分类体系
+## 3. AI 分类体系（❌ v1.2 移除）
 
-### 3.1 7 个主分类（不含 unknown）
+> **本章全部内容已被 v1.2 修订移除。** LLM 分类器、7 分类体系、prompt 模板均不再使用。保留本章仅作历史参考，实施以 v1.2 两阶段流水线为准。
+
+### 3.1 7 个主分类（不含 unknown）~~（已移除）~~
 
 | 分类 | enum 值 | 定义 | 标杆项目 |
 |---|---|---|---|
@@ -162,16 +194,15 @@ schema 位于 `supports/starcat-weekly-api/internal/store/sqlite.go#createSchema
 
 列表查询使用 `ROW_NUMBER() OVER (PARTITION BY owner, repo ORDER BY published_at DESC, hn_id DESC)`，只取 24h 窗口内每个仓库最新投稿。这样二次投稿会以新的 HN 链接重新进入列表，不会把新分数拼到旧记录。
 
-### 4.2 显式流水线状态
+### 4.2 显式流水线状态（v1.2：仅 enrichment 阶段）
 
-`unknown` 只表示业务分类未知，不再同时承担失败状态：
+v1.2 移除 classification 阶段，仅保留 enrichment 状态机：
 
 | 阶段 | 状态 |
 |---|---|
 | enrichment | `pending / ready / retryable / unavailable` |
-| classification | `pending / classified / rejected / retryable` |
 
-两阶段分别保存 `attempts / next_retry_at / error`。分类连续失败达到阈值后会把 attempts 清零并设置 7 天后的 `next_retry_at`，因此冷却结束后能真正重新入队；低置信度或确认非 AI 项目进入 `rejected`，不会无意义重试。
+enrichment 失败保存 `attempts / next_retry_at / error`，达到阈值后冷却并设置重试时间。404 标记为 `unavailable` 不再重试。
 
 ### 4.3 Metadata 与 README
 
@@ -192,8 +223,8 @@ schema 位于 `supports/starcat-weekly-api/internal/store/sqlite.go#createSchema
 |---|---|---|
 | `internal/discovery/hn.go` | 调 HN 官方 `showstories/item` API，从 item URL 与自发布正文提取 GitHub repo | 新增 |
 | `internal/discovery/github.go` | 复用 Token Pool 拉 metadata + README，清洗并截取 2000 字符 | 新增 |
-| `internal/discovery/classifier.go` | 纯标准库 OpenAI-compatible 调用 + JSON 白名单校验 + prompt injection 防护 | 新增 |
-| `internal/discovery/service.go` | collect → enrich → classify 三阶段编排与失败隔离 | 新增 |
+| `internal/discovery/classifier.go` | ~~纯标准库 OpenAI-compatible 调用 + JSON 白名单校验 + prompt injection 防护~~ **v1.2 移除** | — |
+| `internal/discovery/service.go` | collect → enrich 两阶段编排与失败隔离（v1.2 移除 classify 阶段） | 新增 |
 | `internal/model/discovery.go` | `DiscoveryItem` 行模型 + `DiscoveryEnvelope` | `internal/model/zread_trending.go` |
 | `internal/handler/discovery.go` | 3 个 handler（list / single / admin sync） | `internal/handler/zread_trending.go` |
 | `internal/handler/discovery_test.go` | 200 envelope + Bearer 鉴权 + category 参数校验 | `internal/handler/handler_test.go` |
@@ -216,7 +247,7 @@ schema 位于 `supports/starcat-weekly-api/internal/store/sqlite.go#createSchema
 
 | 方法 | 路径 | 鉴权 | 用途 |
 |---|---|---|---|
-| `GET` | `/api/v1/discovery?category=&page=&page_size=` | Bearer | 列表查询；`category` 取值 `all/agent/coding/mcp/rag/infra/model/skill`；默认 `all` 不含 `unknown`；`page_size` 上限 50 |
+| `GET` | `/api/v1/discovery?page=&page_size=` | Bearer | 列表查询（v1.2 移除 `category` 参数）；24h 窗口内的 Show HN 项目；`page_size` 上限 50 |
 | `GET` | `/api/v1/discovery/{owner}/{repo}` | Bearer | 详情页单查（客户端 `BackendAggregateRepoSource` 用） |
 | `POST` | `/internal/sync/discovery` | 独立 Admin Bearer | 内部 sync 触发；不允许使用会随客户端分发的普通 API Key |
 
@@ -240,9 +271,7 @@ schema 位于 `supports/starcat-weekly-api/internal/store/sqlite.go#createSchema
         "hn_url": "https://news.ycombinator.com/item?id=39823456",
         "hn_score": 142,
         "hn_comments": 38,
-        "hn_published_at": "2026-06-11T08:30:00Z",
-        "category": "agent",
-        "classify_confidence": 0.92
+        "hn_published_at": "2026-06-11T08:30:00Z"
       }
     }
   ],
@@ -272,17 +301,18 @@ schema 位于 `supports/starcat-weekly-api/internal/store/sqlite.go#createSchema
 | `Starcat/Core/Settings/AppSettings.swift` | 新增 `lastDiscoverySubcategoryRaw` UserDefaults key（持久化中栏 segmented 选中态） |
 | `Starcat/Features/Home/SidebarView.swift` | Activity 分类列表自动追加（`ActivityCategory.allCases` 驱动）；SF Symbol 用 `sparkles` 或复用 `LanguageIconView(language: "Solidity")` 暖橙色 |
 
-### 6.2 中栏 Discovery 子页（segmented + 列表）
+### 6.2 中栏 Discovery 子页（v1.2：简化为列表，无 segmented）
+
+v1.2 移除 LLM 分类后，不再需要 AI 子分类 segmented control。Discovery 子页为简单列表 + 排序。
 
 新建目录 `Starcat/Features/Activity/Discovery/`：
 
 | 文件 | 职责 |
 |---|---|
-| `DiscoveryCategory.swift` | 8 子分类枚举 `case all / agent / coding / mcp / rag / infra / model / skill`；i18n key + 显示色 + 图标 |
-| `DiscoveryViewModel.swift` | `@Observable`，订阅 `WeeklyAPI.fetchDiscovery(category:)`；`@MainActor` 曝光 `[DiscoveryItemDTO]` + `selectedSubcategory: DiscoveryCategory`；切换子分类时重新拉取；下拉刷新走 `WeeklyAPI.fetchDiscovery(category:forceRefresh:)`（HTTP 层 cache-control） |
-| `DiscoveryView.swift` | 顶部 `Picker(.segmented)` 切 8 子分类；列表用 `UnifiedRepoRow(card: item.repo.asCardData(badge: .discoveryHN(...)))`；`.focusEffectDisabled()` 强制规则；空态 / 加载态 / 错误态三种 UI 复用既有 placeholder |
+| `DiscoveryViewModel.swift` | `@Observable`，订阅 `WeeklyAPI.fetchDiscovery()`；`@MainActor` 曝光 `[DiscoveryItemDTO]`；下拉刷新走 `WeeklyAPI.fetchDiscovery(forceRefresh:)` |
+| `DiscoveryView.swift` | 列表用 `UnifiedRepoRow(card: item.repo.asCardData(badge: .discoveryHN(...)))`；`.focusEffectDisabled()` 强制规则；空态 / 加载态 / 错误态三种 UI 复用既有 placeholder；顶部可选排序 Picker（`stars` / `hn_score` / `pushed_at`） |
 
-`DiscoveryView` 顶部 segmented 长度超出（8 项）时的退路：超过 macOS 默认 7 项 segmented 会拥挤，第一版方案 = `Picker(.menu)` 折叠 / 或拆成两行。具体由实施时根据 macOS 视觉密度判断；详设阶段不锁死。
+> v1.2 移除 `DiscoveryCategory.swift`（8 子分类枚举），客户端不再需要 category 参数。
 
 ### 6.3 网络层（复用 WeeklyAPI）
 
@@ -333,15 +363,14 @@ schema 位于 `supports/starcat-weekly-api/internal/store/sqlite.go#createSchema
 | zread Trending sync | 每周 | 周一 06:00 | 现有 |
 | **Show HN Discovery sync** | **每小时** | **第 17 分** | **本设计新增；可用 `DISCOVERY_CRON` 覆盖** |
 
-每小时执行流程：
+每小时执行流程（v1.2 两阶段）：
 
 ```
 HH:17:00  Collector:  HN showstories/item → 提取 github URL → UPSERT 双表
-随后       Enricher:   取 pending/retryable 候选 → GitHub Token Pool 拉 metadata + README → UPDATE
-随后       Classifier: 取 pending/retryable 候选 → LLM 调用 → UPDATE
+随后       Enricher:   取 pending/retryable 候选 → GitHub Client 拉 metadata + README → UPDATE
 ```
 
-每条仓库的 enrich/classify 失败只影响自身；collector 整体失败会结束本轮并等待下次 cron，Web 服务与存量查询不受影响。
+> v1.2 移除 Classifier 阶段。每条仓库的 enrich 失败只影响自身；collector 整体失败会结束本轮并等待下次 cron。
 
 ### 7.2 24h 时间窗口（Q4 决策）
 
@@ -354,7 +383,7 @@ HH:17:00  Collector:  HN showstories/item → 提取 github URL → UPSERT 双�
 
 - HN 官方 Firebase API：每轮 1 次 `showstories` + 最多 30 次 `item`；客户端设置明确 User-Agent，并设置请求超时
 - GitHub API：复用 weekly-api 现有 token pool（zread enricher 同款），enricher 限速由 token pool 自管
-- LLM API：每小时最多 30 次调用 + 每条 ~$0.0003 → 月成本 < $1
+- LLM API：~~每小时最多 30 次调用 + 每条 ~$0.0003 → 月成本 < $1~~ **v1.2 移除，不再调用 LLM**
 
 ---
 
@@ -362,14 +391,14 @@ HH:17:00  Collector:  HN showstories/item → 提取 github URL → UPSERT 双�
 
 ### 8.1 不做的事（YAGNI）
 
-1. **多标签分类**：一个 repo 只属于一个主分类（Q3 决策）
-2. **star 跃迁触发再分类**：分类后稳定，仅 LLM 失败时 7 天冷却后重试
+1. **多标签分类**（v1.2 移除）：~~一个 repo 只属于一个主分类（Q3 决策）~~ 不再需要
+2. **star 跃迁触发再分类**（v1.2 移除）：~~分类后稳定，仅 LLM 失败时 7 天冷却后重试~~ 不再需要
 3. **Show HN 之外的源**：留待 v2（Product Hunt / Reddit / HuggingFace / Awesome AI）
 4. **中文翻译字段**：`description_zh` 留待对接 wiki-api 时再加
 5. **客户端缓存**：每次走后端，weekly-api SQLite 已持久化
-6. **后台人工修正 UI**：分类错误反馈机制留待 v2
+6. **后台人工修正 UI**（v1.2 移除）：~~分类错误反馈机制留待 v2~~ 不再需要
 7. **HN 评论摘要**：详情页只放外链按钮，不抓评论
-8. **多 model A/B 测试**：第一版只 `LLM_MODEL` 单一变量
+8. **多 model A/B 测试**（v1.2 移除）：~~第一版只 `LLM_MODEL` 单一变量~~ 不再需要
 
 ### 8.2 同 repo 在 Trending 与 Discovery 同时出现
 
@@ -384,12 +413,9 @@ HH:17:00  Collector:  HN showstories/item → 提取 github URL → UPSERT 双�
 - 详情页 trailingActions 中 `.share` / `.ai` / 私人三段（Tags / Notes / Releases）按 R-01 v2.0 规则隐藏
 - `.hnDiscussion(hnUrl)` 与登录态独立，未登录可点击
 
-### 8.4 LLM 失败的 user-visible 影响
+### 8.4 LLM 失败的 user-visible 影响（v1.2 移除）
 
-- 调用失败时保持 `category=unknown`，状态进入 `retryable`，API 只查询 `classified`，因此不会把失败项暴露给用户
-- 连续失败达到阈值后写入 7 天后的 `classify_next_retry_at`；到期后自动重新入队
-- 低置信度或确认非目标 AI 项目进入 `rejected`，不会重试
-- 调试入口：`POST /internal/sync/discovery` 触发一轮正常流水线，不绕过 `next_retry_at`，且只接受独立 `ADMIN_API_KEYS`
+> **本章已移除。** v1.2 不再使用 LLM 分类，不存在 LLM 失败场景。所有 enrich 阶段完成的 repo 直接进入 API 可查询状态。
 
 ### 8.5 Show HN collector 解析鲁棒性
 
@@ -430,7 +456,9 @@ HH:17:00  Collector:  HN showstories/item → 提取 github URL → UPSERT 双�
 - `docs/详细设计/16-活动页设计.md` §3.2 表格追加 `discovery` 行；§5.1 `ActivityKind` 加 `case discovery`；末尾加「v2 修订指针 → 21 文档」
 - 实施完成后回填本文档勾选状态 / 实际工程量 / 偏离设计的微调记录
 
-## 11. 附录 A：LLM Prompt 模板（v1）
+## 11. 附录 A：LLM Prompt 模板（❌ v1.2 移除）
+
+> **本章全部内容已被 v1.2 修订移除。** LLM 分类器与 prompt 模板不再使用，保留仅作历史参考。
 
 ```
 你是 GitHub AI 项目分类专家。把项目归入下面 7 个分类之一。
@@ -474,4 +502,4 @@ HH:17:00  Collector:  HN showstories/item → 提取 github URL → UPSERT 双�
 
 ---
 
-*最后更新：2026-06-11（v1.1，后端已实现并验证；客户端待实施）*
+*最后更新：2026-06-12（v1.2，移除 LLM 分类模块，两阶段流水线；客户端待实施）*
