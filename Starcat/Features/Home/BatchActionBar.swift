@@ -18,6 +18,10 @@
 //    > 5 条强制走 BatchStarConfirmSheet 二次确认；执行中切到进度态 + 取消按钮；
 //    完成后通过 ToastOverlay 弹「成功 X / 跳过 Y / 失败 Z」摘要。
 //  - 完成后自动退出多选模式
+//  - W12 PR-5（2026-06-12）：数据源从 `viewModel.multiSelectedRepoIDs` 切到
+//    `manageMultiSelectionStore`（与 trending/weekly/activity 同款），ghRepoId 即 Repo.id
+//    （同一 Int64 域）直接喂 batchAddTag；UI 文案：「批量打标签」→「打标签」并加 borderedProminent
+//    主显著度。两个组件（BatchActionBar / RemoteBatchActionBar）按业务语义保留独立命名。
 //
 
 import SwiftUI
@@ -39,6 +43,9 @@ struct BatchActionBar: View {
     /// 用本地 @State 缓存，避免 service.completionSummary 被立即清空时 toast 来不及显示。
     @State private var toastMessage: String?
 
+    /// W12 PR-5：抽出 store 引用，便于 idleContent 直接读 count / snapshots 不必每次走依赖链。
+    private var store: MultiSelectionStore { dependencies.manageMultiSelectionStore }
+
     var body: some View {
         Group {
             if dependencies.batchStarService.isRunning {
@@ -54,12 +61,13 @@ struct BatchActionBar: View {
         .toast(message: $toastMessage, icon: "checkmark.circle.fill", duration: 3.0)
         .sheet(isPresented: $showTagSheet) {
             BatchTagSheet(
-                repoIds: viewModel.multiSelectedRepoIDs,
+                // W12 PR-5：snapshots.keys 即 ghRepoId == Repo.id 同一 Int64 域，直接喂。
+                repoIds: Set(store.snapshots.keys),
                 tagRepository: dependencies.tagRepository,
                 repoTagRepository: dependencies.repoTagRepository,
                 onCompleted: {
                     showTagSheet = false
-                    viewModel.exitMultiSelectMode()
+                    store.exit()
                     Task {
                         await viewModel.refreshSidebar()
                         await viewModel.reloadItems(forceRefresh: true)
@@ -87,7 +95,7 @@ struct BatchActionBar: View {
             dependencies.batchStarService.consumeSummary()
 
             // 完成（含部分完成）→ 退出多选模式 + 刷新 sidebar / 列表
-            viewModel.exitMultiSelectMode()
+            store.exit()
             Task {
                 await viewModel.refreshSidebar()
                 await viewModel.reloadItems(forceRefresh: true)
@@ -98,36 +106,40 @@ struct BatchActionBar: View {
     // MARK: - 默认态：选中数 + 操作按钮
 
     private var idleContent: some View {
-        HStack(spacing: 10) {
-            Text(String(format: String(localized: "batch.selectedCountFormat"), viewModel.multiSelectedRepoIDs.count))
+        let count = store.count
+        return HStack(spacing: 10) {
+            Text(String(format: String(localized: "batch.selectedCountFormat"), count))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
 
             Spacer()
 
+            // PR-5：「打标签」固定主显著度（borderedProminent）。Manage 库内 100% 已 star，
+            // 打标签是最常用主操作，Unstar 是次操作（破坏性），固定主次符合预期。
             Button {
                 showTagSheet = true
             } label: {
                 Label("batch.addTags", systemImage: "tag.fill")
             }
-            .disabled(viewModel.multiSelectedRepoIDs.isEmpty)
+            .buttonStyle(.borderedProminent)
+            .disabled(count == 0)
             .help(Text("batch.addTags.help"))
 
             // W12 PR-3：批量取消 Star。Manage 库内 100% 已 star，无需额外二分判定。
+            // tint(.red) 保留：macOS HIG 破坏性操作标准着色，与详情页 Unstar 按钮一致。
             Button {
                 handleBatchUnstarTap()
             } label: {
                 Label("batch.unstar", systemImage: "star.slash.fill")
             }
-            .disabled(viewModel.multiSelectedRepoIDs.isEmpty)
+            .disabled(count == 0)
             .help(Text("batch.unstar.help"))
             .tint(.red)
 
-            // PR-4 followup：退出按钮改为图标-only，文案太长挤掉真正的操作按钮。
-            // 文案保留在 accessibilityLabel + help（hover tooltip）。Esc 快捷键不变。
+            // PR-4 followup：退出按钮图标-only，accessibility + help tooltip 保留。Esc 快捷键不变。
             Button {
-                viewModel.exitMultiSelectMode()
+                store.exit()
             } label: {
                 Image(systemName: "xmark.circle")
                     .accessibilityLabel(Text("batch.exitMultiSelect"))
@@ -187,13 +199,13 @@ struct BatchActionBar: View {
 
     // MARK: - 派生
 
-    /// 从 viewModel.items 反查选中 repo，并映射到 `BatchStarTarget`（W12 PR-4 统一入参形态）。
-    /// items 中找不到的 id 静默丢弃（典型场景：用户先选了再切分类导致 items 替换）。
+    /// 选中项对应的 `BatchStarTarget` 数组。
+    ///
+    /// W12 PR-5：直接读 `store.targets`，store 内的 SelectionSnapshot.toTarget() 已经做了字段映射
+    /// （ghRepoId / owner / name）。不需要再回 viewModel.items 反查（snapshot 在用户选中瞬间已记录
+    /// 必备字段，即便后续 reloadItems 把 items 换了，snapshot 仍可独立完成批量任务）。
     private func selectedTargets() -> [BatchStarTarget] {
-        let ids = viewModel.multiSelectedRepoIDs
-        return viewModel.items
-            .filter { ids.contains($0.id) }
-            .map { BatchStarTarget.from(repo: $0) }
+        store.targets
     }
 
     /// 预估跳过条数：当前 registry 状态已是目标态的条数。

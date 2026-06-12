@@ -2,7 +2,7 @@
 //  MultiSelectionStoreTests.swift
 //  StarcatTests
 //
-//  MultiSelectionStore 状态机测试（W12 toolbar 专项 PR-4）。
+//  MultiSelectionStore 状态机测试（W12 toolbar 专项 PR-4 引入 / PR-5 补 retain）。
 //
 //  覆盖范围：
 //  - 默认非多选 / 选区空
@@ -11,6 +11,7 @@
 //  - selectAll / deselectAll
 //  - contains / count / targets 派生只读
 //  - 同一 ghRepoId 重复 add 不会重复
+//  - retain(visibleIDs:) Manage filter/sort 变化清理孤儿选中项（PR-5 新增）
 //
 
 import Foundation
@@ -136,5 +137,67 @@ struct MultiSelectionStoreTests {
 
         let sorted = store.sortedSnapshots
         #expect(sorted.map(\.ghRepoId) == [10, 30, 50])
+    }
+
+    // MARK: - retain(visibleIDs:) — W12 toolbar PR-5
+    //
+    // Manage filter/sort 变化触发 reloadItems → RepoListView 在 .onChange(of: itemsRevision)
+    // 调本方法，移除被隐藏的孤儿选中项。Trending/Weekly/Activity reload 时整页换数据，
+    // 由 exit() 兜底，理论上不调本方法（但对它们的实例调用也应安全，本测试也覆盖）。
+
+    @Test("retain：visibleIDs 全覆盖现有选中 → 无变化")
+    func retainKeepsAllWhenAllVisible() {
+        let store = MultiSelectionStore()
+        store.enter()
+        store.toggle(snap(10))
+        store.toggle(snap(20))
+        store.toggle(snap(30))
+        #expect(store.count == 3)
+
+        store.retain(visibleIDs: [10, 20, 30, 99])
+        #expect(store.count == 3)
+        #expect(store.contains(ghRepoId: 10))
+        #expect(store.contains(ghRepoId: 20))
+        #expect(store.contains(ghRepoId: 30))
+    }
+
+    @Test("retain：visibleIDs 只覆盖部分 → 只保留 visible 选中项")
+    func retainKeepsVisibleSubset() {
+        let store = MultiSelectionStore()
+        store.enter()
+        store.toggle(snap(10))
+        store.toggle(snap(20))
+        store.toggle(snap(30))
+
+        // 模拟用户开了 "隐藏 archived" filter，导致 id=20 的 repo 被隐藏
+        store.retain(visibleIDs: [10, 30])
+
+        #expect(store.count == 2)
+        #expect(store.contains(ghRepoId: 10))
+        #expect(store.contains(ghRepoId: 20) == false)
+        #expect(store.contains(ghRepoId: 30))
+    }
+
+    @Test("retain：visibleIDs 完全不交集 → 清空选中")
+    func retainEmptiesWhenNoIntersection() {
+        let store = MultiSelectionStore()
+        store.enter()
+        store.toggle(snap(10))
+        store.toggle(snap(20))
+        #expect(store.count == 2)
+
+        // 模拟切到完全不同的分类
+        store.retain(visibleIDs: [100, 200])
+        #expect(store.count == 0)
+        #expect(store.isActive == true) // retain 不动 isActive，只清 snapshots
+    }
+
+    @Test("retain：非多选模式（isActive=false）→ no-op")
+    func retainNoOpWhenInactive() {
+        let store = MultiSelectionStore()
+        // 不调 enter() — isActive 保持 false
+        store.retain(visibleIDs: [10, 20])
+        #expect(store.count == 0)
+        #expect(store.isActive == false)
     }
 }

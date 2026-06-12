@@ -345,6 +345,22 @@ struct TrendingView: View {
         .refreshable {
             await viewModel.reload(forceNetwork: true)
         }
+        // W12 PR-5：Cmd+A 全选当前可见 trending repo（仅 multi-select active 时生效）。
+        // 4 场景同款机制：隐藏按钮 + keyboardShortcut。
+        .background {
+            let store = dependencies.trendingMultiSelectionStore
+            Button {
+                let snapshots = viewModel.repos.map {
+                    SelectionSnapshot(ghRepoId: $0.ghRepoId, owner: $0.owner, name: $0.name)
+                }
+                store.selectAll(snapshots)
+            } label: {
+                EmptyView()
+            }
+            .keyboardShortcut("a", modifiers: .command)
+            .disabled(!store.isActive)
+            .hidden()
+        }
     }
     //
     // 历史：原本这里有 `.listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))`

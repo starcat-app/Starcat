@@ -2,24 +2,34 @@
 //  MultiSelectionStore.swift
 //  Starcat
 //
-//  Trending / Weekly / Activity 多选模式的统一状态容器（W12 toolbar 专项 PR-4）。
+//  Manage / Trending / Weekly / Activity 4 个分类多选模式的**统一**状态容器。
+//
+//  历史：
+//  - W12 toolbar 专项 PR-4（2026-06-12 17:35）：首次引入，仅服务 Trending/Weekly/Activity 3 个远端场景，
+//    避免「未必已 star 的 ephemeral 多选语义」污染 Manage 当时基于 HomeViewModel.multiSelectedRepoIDs
+//    的「已 star 库内多选 + batch-tag」链路；
+//  - W12 toolbar 专项 PR-5（2026-06-12，dong4j grill-me 拍板）：Manage 也迁到本 store，4 场景统一。
+//    PR-4 担心的污染问题在 **Manage 用自己的实例 + BatchActionBar/RemoteBatchActionBar 仍按业务语义独立**
+//    （前者只暴露打标签+Unstar，后者只暴露 Star+Unstar）的前提下不存在。
 //
 //  存在意义：
-//  - Manage 多选有完整 Repo 实例，直接复用 `HomeViewModel.multiSelectedRepoIDs`
-//    （`Set<Int64>` 形态 + 从 viewModel.items 反查 Repo）；
 //  - Trending / Weekly / Activity 的列表项是 ephemeral，**没有本地 Repo 实例**：
 //    每次多选时需要把 owner / name / ghRepoId 等"批量操作必备字段"一并快照下来，
 //    避免列表 items 在多选期间换页 / reload 后 selection 找不回 owner/name。
-//  - 本 store **不复用** `HomeViewModel.multiSelectedRepoIDs`：那是 Manage 单页强耦合
-//    的 set，语义为「已 star 库内多选」；trending/weekly 的"未必已 star"语义混进去
-//    会污染 manage 现有多选 + 批量打标签 / 批量 unstar 链路。
+//  - Manage 虽然有完整本地 Repo 实例，但走同一份 store 让 4 场景的交互（点击 toggle / Cmd+A 全选 /
+//    退出 / Cmd+点击 toggle）完全一致，UX 可预测且代码路径单一。
+//    Manage 的 BatchActionBar 用 `Set(store.snapshots.keys)` 直接喂 `batchAddTag(repoIds:tagId:)`
+//    （Repo.id == ghRepoId 同 Int64 域，无需字段映射）。
 //
 //  关键约束：
 //  - `@MainActor @Observable`：所有读写都在主线程；SwiftUI Observation 自动驱动
 //    toolbar 多选按钮 / BatchActionBar 跟随选中数刷新；
-//  - 一次只有一个 page 处于多选模式：调用方在 page 切换时主动 `exit()` 当前 store；
+//  - 一次只有一个 page 处于多选模式：调用方（RepoListView）在 page 切换时主动 `exit()` 当前 store；
 //  - 入选的 snapshot 不会自动随后端数据刷新而更新；用户启动批量操作时由
-//    BatchStarService 用 `StarredRegistry` 复核每条当前 star 状态再决定 skip。
+//    BatchStarService 用 `StarredRegistry` 复核每条当前 star 状态再决定 skip；
+//  - **Manage 专属约束**（A2 路线）：filter / sort 变化触发 reloadItems 后，view 层在
+//    `.onChange(of: itemsRevision)` 调 `retain(visibleIDs:)` 清理被隐藏的孤儿选中项。
+//    Trending/Weekly/Activity 不会触发该路径——它们 reload 时整页换数据，由 exit() 兜底。
 //
 
 import Foundation
@@ -110,7 +120,11 @@ final class MultiSelectionStore {
         }
     }
 
-    /// 全选指定列表（用于 toolbar 上的"全选"操作；本期不内建 UI，但接口预留）。
+    /// 全选指定列表。
+    ///
+    /// W12 toolbar PR-5：Cmd+A 全选快捷键调用此方法（4 场景同款）。调用方负责把当前 visible items
+    /// 转成 `[SelectionSnapshot]`（owner / name / ghRepoId）传进来；本方法只负责把 snapshots
+    /// 字典做 by-key 合并（同 ghRepoId 覆盖，不会重复）。
     func selectAll(_ list: [SelectionSnapshot]) {
         for item in list {
             snapshots[item.ghRepoId] = item
@@ -120,5 +134,25 @@ final class MultiSelectionStore {
     /// 全部取消选中（不退出多选模式）。
     func deselectAll() {
         snapshots.removeAll()
+    }
+
+    /// 只保留 `visibleIDs` 内的选中项；其余孤儿选中项移除。
+    ///
+    /// W12 toolbar PR-5（A2 路线）：Manage 场景下 filter / sort 变化触发 reloadItems 后，
+    /// items 是「全集的子集」（如开「隐藏 archived」），原本选中但被隐藏的 repo 应该从 selection
+    /// 中移除（避免「看不见的选中项」继续参与批量操作）。
+    ///
+    /// view 层在 `.onChange(of: viewModel.itemsRevision)` 调用此方法，store 不感知 view 的具体
+    /// items 形态，调用方负责把 items 映射为 `Set<Int64>` ghRepoId。
+    ///
+    /// Trending/Weekly/Activity 不会调用本方法 —— 它们 reload 时整页换数据，由 RepoListView 切页面
+    /// 时 exit() 兜底清空。本方法对它们的实例调用也安全（只读 snapshots 字典做集合运算）。
+    func retain(visibleIDs: Set<Int64>) {
+        // 只在多选模式下做清理。非多选态 snapshots 已为空，无需操作。
+        guard isActive else { return }
+        let staleKeys = snapshots.keys.filter { !visibleIDs.contains($0) }
+        for key in staleKeys {
+            snapshots.removeValue(forKey: key)
+        }
     }
 }

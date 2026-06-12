@@ -186,8 +186,11 @@ final class AppDependencies {
 
     /// W12 toolbar 专项 PR-4：Trending 多选 store。
     ///
-    /// 与 manage（沿用 `HomeViewModel.multiSelectedRepoIDs`）刻意分开，避免「未必已 star」
-    /// 的 ephemeral 多选语义污染 manage 现有的「已 star 库内多选 + batch-tag」链路。
+    /// W12 toolbar PR-5（2026-06-12）：原来 PR-4 注释里写「与 manage（沿用 HomeViewModel.multiSelectedRepoIDs）刻意分开」
+    /// 的设计在 PR-5 被主动打破——dong4j 拍板把 Manage 也迁到 MultiSelectionStore，4 个场景统一交互
+    /// （点击 toggle / 无 Shift / 卡片视觉对齐）。PR-4 担心的"未必已 star 污染 manage"在 Manage 自己的
+    /// store 上不存在（Manage 库内 100% 已 star），同时 BatchActionBar / RemoteBatchActionBar 两个组件
+    /// 仍按业务语义独立（前者打标签+Unstar，后者 Star+Unstar），不存在污染问题。
     let trendingMultiSelectionStore: MultiSelectionStore
 
     /// W12 toolbar 专项 PR-4：Weekly 多选 store。
@@ -197,6 +200,19 @@ final class AppDependencies {
     /// 仅有 repo 关联的 ActivityItem 才能进入多选；announcement / suggestion 这类
     /// `repo == nil` 的项在 row 层级隐藏 toggle，不会被加入 snapshots。
     let activityMultiSelectionStore: MultiSelectionStore
+
+    /// W12 toolbar 专项 PR-5：Manage 多选 store（替代原 HomeViewModel.multiSelectedRepoIDs）。
+    ///
+    /// 与三个远端 store 同款，但语义不同：
+    /// - 入选的 snapshot 全部对应**本地 Repo**（Repo.id == GitHub ID == ghRepoId，同一 Int64 域）；
+    /// - 进入多选起始空集合，点击 row toggle（不继承 selectedRepoID，对齐 Trending 现状）；
+    /// - 退出多选**不动** selectedRepoID，详情页保持，对齐 Trending UX；
+    /// - filter / sort 变化触发 reloadItems 后，RepoListView 在 `.onChange(of: itemsRevision)`
+    ///   调 `retain(visibleIDs:)` 移除被隐藏的孤儿选中项（A2 路线，view 层主导 store 生命周期，
+    ///   不让 HomeViewModel 持 store 引用，避免重新耦合）；
+    /// - BatchActionBar 用 `Set(store.snapshots.keys)` 直接喂 `batchAddTag(repoIds:tagId:)`
+    ///   （Repo.id == ghRepoId 等价，无需额外字段映射）。
+    let manageMultiSelectionStore: MultiSelectionStore
 
     /// 详情页 Repo 解析链（Local → Hint → BackendAggregate(占位) → GitHub → Minimal）。
     let repoResolver: RepoResolver
@@ -429,6 +445,7 @@ final class AppDependencies {
         self.trendingMultiSelectionStore = MultiSelectionStore()
         self.weeklyMultiSelectionStore = MultiSelectionStore()
         self.activityMultiSelectionStore = MultiSelectionStore()
+        self.manageMultiSelectionStore = MultiSelectionStore()
 
         // RepoResolver chain：5 个 source 按优先级顺序
         // R-01 v1.2（2026-06-09）：BackendAggregateRepoSource 已填实，接 weekly 的

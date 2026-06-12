@@ -221,6 +221,21 @@ struct WeeklyContentView: View {
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
+        // W12 PR-5：Cmd+A 全选当前可见 weekly project（仅 multi-select active 时生效）。
+        // 4 场景同款机制：隐藏按钮 + keyboardShortcut。
+        .background {
+            Button {
+                let snapshots = viewModel.items.map {
+                    SelectionSnapshot(ghRepoId: $0.ghRepoId, owner: $0.owner, name: $0.name)
+                }
+                multiStore.selectAll(snapshots)
+            } label: {
+                EmptyView()
+            }
+            .keyboardShortcut("a", modifiers: .command)
+            .disabled(!multiStore.isActive)
+            .hidden()
+        }
     }
 
     // MARK: - Helpers
