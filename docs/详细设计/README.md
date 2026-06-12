@@ -25,6 +25,11 @@
 | 18 | [三场景共用架构](18-三场景共用架构.md) | Manage / Trending / Weekly / Activity 4 场景的 UI 骨架 + 行为契约共用架构（R-01 v1.2~v2.0） |
 | 19 | [wiki 集成](19-wiki集成.md) | starcat-wiki-api 服务端设计（v0.1~v0.5 五次翻转历史 + 4 场景接入 + zread 接入评估）|
 | 20 | [starcat-wiki-api 客户端对接](20-wiki-api-对接.md) | wiki-api 客户端对接手册 v1.0：端点契约 + DTO + 详情页 UI 集成 + 8 项技术债 + 13 项落地 checklist |
+| 21 | [weekly-api 后端 3 源聚合改造](21-weekly-api-后端3源聚合改造.md) | R-04：把 weekly / zread / discovery 3 表 3 端点重构为主表 `github_repos` + 4 附表 + 1 聚合接口 `/api/v1/repos`，gh_repo_id 主键 |
+| 22 | [weekly 客户端 3 源聚合对接](22-weekly-客户端3源聚合对接.md) | R-04 配套客户端方案：列表换 3 源合并 feed、详情页加来源时间线 chip，客户端只展示和筛选不参与聚合 |
+| 23 | [Chrome 插件方案](23-Chrome-插件方案.md) | Starcat Companion Chrome 插件总体方案 v1.0：URL Scheme + 本地 HTTP 双向通信、5 项 MVP（状态胶囊 / 一键采集 / 笔记追加 / 浮按钮 / 角标）、与 R-04 主表 `source=clip` 接入 |
+| 24 | [GitHub 搜索集成设计](24-GitHub-搜索集成设计.md) | 系统级 / 工具级 GitHub 搜索集成方案 |
+| 25 | [Show HN 发现源设计](25-Show-HN发现源设计.md) | AI Discovery（Show HN 官方 API + LLM 单标签分类，Activity 第 8 个具体分类），v1.1 后端已实现，客户端待接入 |
 
 ---
 
@@ -59,6 +64,7 @@
 
 | 日期 | 更新内容 |
 |------|---------|
+| 2026-06-12 | 文档命名规范化：详细设计 21~25 + 需求讨论 4 份重命名（详见 `工程进度/功能实现总览.md` §10）；本次同步：补齐 21/22/23/24/25 索引行，统一描述风格 |
 | 2026-06-11 | 添加 starcat-wiki-api 客户端对接文档 v1.0（20-wiki-api-对接.md ~580 行 14 节,e2e 11/11 全绿,8 项技术债 + 13 项客户端落地 checklist）;同时把已存在但漏登的 18-三场景共用架构 + 19-wiki集成 补入索引 |
 | 2026-06-10 | （R-02 改造期）19-wiki集成.md 经历 v0.5 翻转(zread 周 trending 从 trending-api 迁出 + 并入 weekly-api + 4 项决策同步确认) |
 | 2026-06-10 | 18-三场景共用架构.md 持续迭代至 R-01 v2.0 修订(registry 信任源问题根治) |

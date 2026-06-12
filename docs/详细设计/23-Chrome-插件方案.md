@@ -1,15 +1,15 @@
 # Starcat Companion（Chrome 插件）总体方案
 
 > **状态**: 设计中（2026-06-12，待 dong4j 拍板施工）
-> **依赖**: R-04 后端聚合表 `github_repos`（[`21-weekly-api-3源feed改造.md`](./21-weekly-api-3源feed改造.md)）落地后插件能力可全量铺开；MVP 不强依赖 R-04
+> **依赖**: R-04 后端聚合表 `github_repos`（[`21-weekly-api-后端3源聚合改造.md`](./21-weekly-api-后端3源聚合改造.md)）落地后插件能力可全量铺开；MVP 不强依赖 R-04
 > **影响范围**: 新建 Chrome 插件项目 + Starcat App 内嵌本地 HTTP 服务（小改动）+ 已有 deep link 路由扩展
 > **不影响**: 4 个后端 Go 服务（trending / weekly / sharing / wiki）、客户端 GRDB schema、客户端核心架构（UnifiedRepoRow / RepoDetailScaffold / StarredRegistry）
 > **本文档不涉及**: 代码细节、文件清单、PR 切分、UI mock — 这些在施工阶段再补
 > **关联**:
-> - 原始需求：[`docs/需求讨论/starcat_chrome_extension_ideas.md`](../需求讨论/starcat_chrome_extension_ideas.md)（v0 初稿，本设计是其结合现状的升级版）
+> - 原始需求：[`docs/需求讨论/chrome插件-需求初稿.md`](../需求讨论/chrome插件-需求初稿.md)（v0 初稿，本设计是其结合现状的升级版）
 > - [`16-活动页设计.md`](./16-活动页设计.md)（Activity 8 个具体分类，浏览器采集复用同骨架）
 > - [`18-三场景共用架构.md`](./18-三场景共用架构.md)（envelope / Bearer / UnifiedRepoRow / RepoDetailScaffold / StarredRegistry，**本设计沿用**）
-> - [`21-weekly-api-3源feed改造.md`](./21-weekly-api-3源feed改造.md)（R-04 主表 `github_repos` + `source_types` 数组，浏览器采集作为新 source 接入）
+> - [`21-weekly-api-后端3源聚合改造.md`](./21-weekly-api-后端3源聚合改造.md)（R-04 主表 `github_repos` + `source_types` 数组，浏览器采集作为新 source 接入）
 
 ---
 
@@ -17,7 +17,7 @@
 
 | 版本 | 日期 | 主要调整 | 触发人 / 触发原因 |
 |---|---|---|---|
-| v1.0 | 2026-06-12 | 把原始需求 `starcat_chrome_extension_ideas.md` 升级为可落地设计：① 结合 Starcat 现状重定位（"Starcat 私人空间在浏览器里的镜像 + 最低摩擦的采集通道"）；② 五项 MVP 功能 F1~F5；③ 双向通信通道（URL Scheme + 本地 HTTP）；④ R-04 主表 `source=clip` 接入路径；⑤ 能力边界（严禁插件碰 token / 调 GitHub API / 跑 AI） | 原始需求是在不知 Starcat 现状的前提下写的，存在大量越界（插件做 AI / 独立 Inbox 表 / Research Session 隐私敏感）；本版按 Starcat 已上线 8 分类 Activity + R-04 聚合表 + StarredRegistry + BYOK AI 的现状重写 |
+| v1.0 | 2026-06-12 | 把原始需求 `chrome插件-需求初稿.md` 升级为可落地设计：① 结合 Starcat 现状重定位（"Starcat 私人空间在浏览器里的镜像 + 最低摩擦的采集通道"）；② 五项 MVP 功能 F1~F5；③ 双向通信通道（URL Scheme + 本地 HTTP）；④ R-04 主表 `source=clip` 接入路径；⑤ 能力边界（严禁插件碰 token / 调 GitHub API / 跑 AI） | 原始需求是在不知 Starcat 现状的前提下写的，存在大量越界（插件做 AI / 独立 Inbox 表 / Research Session 隐私敏感）；本版按 Starcat 已上线 8 分类 Activity + R-04 聚合表 + StarredRegistry + BYOK AI 的现状重写 |
 
 ---
 
@@ -43,7 +43,7 @@
 
 ### 1.1 原始需求
 
-`docs/需求讨论/starcat_chrome_extension_ideas.md`（1041 行 v0 初稿）。在不掌握 Starcat 现状的前提下写出，存在以下越界：
+`docs/需求讨论/chrome插件-需求初稿.md`（1041 行 v0 初稿）。在不掌握 Starcat 现状的前提下写出，存在以下越界：
 
 1. 提议新建独立 "Starcat Inbox / Knowledge / Clips" 模块 —— 但 Starcat 已经有 Activity 聚合页 8 个具体分类，且 R-04 正在把所有外部源合并到主表 `github_repos`，再立 Inbox 表是重复造轮子。
 2. 让插件做 AI 摘要 / PR 总结 / Release 解释 —— 但 Starcat 已有完整 BYOK AI 链路（18+ provider / 流式摘要 / `ai_summaries` 表 / README 翻译 / 自动后台整理），插件再配一份 AI = 体验割裂。
@@ -636,8 +636,8 @@ R-04 主表 `github_repos` 的 `source_types` 字段：
 |---|---|
 | `docs/工程进度/功能实现总览.md` | ① 在 §5（P2）或新增 §5.6 加 Chrome 插件计划条目；② §10 变更日志加方案落档行；③ 实施完成后按 CLAUDE.md / AGENTS.md 工作流要求标记 + 写实现说明 |
 | `docs/详细设计/16-活动页设计.md` | V0.2 若决定新增 `clip` 子分类，在 §3 Activity 分类章节追加；V0.1 不动 |
-| `docs/详细设计/21-weekly-api-3源feed改造.md`（R-04） | 在 §2.4 source_types 列表的描述里增加 `clip`，与 weekly/zread/discovery 并列 |
-| `docs/详细设计/22-weekly-3源feed客户端对接.md` | 详情页"来源时间线"chip 行的 source 类型列表增加 `clip` 渲染样式 |
+| `docs/详细设计/21-weekly-api-后端3源聚合改造.md`（R-04） | 在 §2.4 source_types 列表的描述里增加 `clip`，与 weekly/zread/discovery 并列 |
+| `docs/详细设计/22-weekly-客户端3源聚合对接.md` | 详情页"来源时间线"chip 行的 source 类型列表增加 `clip` 渲染样式 |
 | `docs/Swift 学习索引.md` | 实施 M1 时若引入 SwiftNIO / Network.framework 嵌入式 HTTP server，关键概念加索引 |
 | 新增 `docs/详细设计/24-本地HTTP服务设计.md`（如有必要）| M1 详细设计若复杂度高（端口探测 / Token 持久化 / Bearer 中间件 / CORS），可单独拆出；MVP 简单则不拆 |
 
