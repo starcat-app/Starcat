@@ -2504,6 +2504,23 @@
         }
       }
     },
+    "ai.assistant.window.close.help" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close AI Assistant"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭 AI 助手"
+          }
+        }
+      }
+    },
     "ai.assistant.window.titleFormat" : {
       "extractionState" : "stale",
       "localizations" : {
