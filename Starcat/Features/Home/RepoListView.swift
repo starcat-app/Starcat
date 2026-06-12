@@ -24,6 +24,10 @@ struct RepoListView: View {
     @Environment(AppSettings.self) private var settings
     /// HOM-52：批量 AI 整理入口横幅需要查询队列状态。
     @Environment(AppDependencies.self) private var dependencies
+    /// W12 PR-4 followup：trending / weekly toolbar 多选按钮按登录态禁用——
+    /// 批量 star/unstar 必须调 GitHub API 携带 token，未登录态点按钮无任何效果，
+    /// 直接在源头 disable 比让用户点了报错友好。
+    @Environment(AuthSession.self) private var authSession
 
     /// HOM-54：TrendingRepository，用于渲染 Trending 页面。
     var trendingRepository: (any TrendingRepositoryProtocol)?
@@ -51,17 +55,6 @@ struct RepoListView: View {
     // 顶部 clone 按钮现在属于中栏 toolbar；复制成功提示也跟着放在列表栏上。
     @State private var toastMessage: String?
 
-    /// toolbar 上 SF Symbol 的统一视觉尺寸。
-    ///
-    /// 不同 symbol 的默认 bounding box 差异很大（例如 `doc.on.clipboard` 会显得更高），
-    /// 所以顶部按钮统一走这个 helper，而不是依赖各控件自己的 `imageScale`。
-    private func toolbarIcon(_ systemName: String) -> some View {
-        Image(systemName: systemName)
-            .font(.system(size: 16, weight: .regular))
-            .frame(width: 18, height: 18, alignment: .center)
-            .contentShape(Rectangle())
-    }
-
     var body: some View {
         @Bindable var vm = viewModel
 
@@ -78,32 +71,342 @@ struct RepoListView: View {
         .animation(contentAnimation, value: contentAnimationID)
         .navigationTitle(navigationTitle)
         .navigationSubtitle(navigationSubtitle)
-        // W4 A5：多选模式底部浮动操作栏
+        // W4 A5：多选模式底部浮动操作栏；W12 PR-4 扩展到 trending/weekly/activity。
+        // Manage 使用 BatchActionBar（基于 HomeViewModel.multiSelectedRepoIDs），
+        // 其它页面使用 RemoteBatchActionBar（基于对应 MultiSelectionStore）。
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if viewModel.isMultiSelectMode {
-                BatchActionBar()
-            }
+            currentBatchActionBar
         }
         .toolbar {
-            if selectedPage == .manage {
+            // W12 toolbar 专项 PR-1：toolbar 内容按 selectedPage 派发到对应 spec builder。
+            // 当前只有 manage 走完整 spec，trending / activity 返回 .empty —— 它们各自
+            // 仍在中栏自绘 toolbar，PR-2/3/4 阶段再迁过来。
+            let spec = currentToolbarSpec
+            if let leading = spec.leadingPrimary {
                 ToolbarItemGroup(placement: .primaryAction) {
-                    statusFilterMenu
-                    sortMenu
-                    multiSelectButton
+                    leading
                 }
+            }
+            if let trailing = spec.trailingPrimary {
                 ToolbarItemGroup(placement: .primaryAction) {
-                    if let repo = viewModel.selectedRepo {
-                        // 这两个动作作用于右侧详情页，但视觉上要贴近最右搜索按钮。
-                        externalLinksMenu(repo: repo)
-                        cloneMenu(repo: repo)
-                    }
+                    trailing
                 }
+            }
+            if let search = spec.searchField {
                 ToolbarItem(placement: .primaryAction) {
-                    smartSearchField
+                    search
                 }
             }
         }
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
+        // W12 PR-4：切页面时主动 exit 非活跃 store，避免"切到 trending 时 weekly 还显示
+        // 底部多选栏"的视觉穿帮。同一时刻只允许一份处于 isActive，由本视图集中保证。
+        .onChange(of: selectedPage) { _, newPage in
+            exitInactiveMultiSelectStores(for: newPage, activityCategory: selectedActivityCategory)
+        }
+        .onChange(of: selectedActivityCategory) { _, newCategory in
+            // activity 内切换 weekly ↔ 其它子分类时，旧分类对应的 store 也要清空。
+            if selectedPage == .activity {
+                exitInactiveMultiSelectStores(for: .activity, activityCategory: newCategory)
+            }
+        }
+        // PR-4 followup：登录态变化时（典型场景：登出 / token 失效），主动把所有远端 store
+        // exit 掉。否则用户从「多选中」直接登出后，store.isActive 仍为 true，底部条会试图
+        // 渲染但按钮全 disable，体验割裂。
+        .onChange(of: authSession.state.isAuthenticated) { _, isAuthed in
+            if !isAuthed {
+                exitAllRemoteStores()
+            }
+        }
+    }
+
+    /// 把三个远端 store 全部 exit。登出 / token 失效场景调用。
+    private func exitAllRemoteStores() {
+        let trending = dependencies.trendingMultiSelectionStore
+        let weekly = dependencies.weeklyMultiSelectionStore
+        let activity = dependencies.activityMultiSelectionStore
+        if trending.isActive { trending.exit() }
+        if weekly.isActive { weekly.exit() }
+        if activity.isActive { activity.exit() }
+    }
+
+    /// 把"非当前 page+分类"对应的多选 store 全部 exit。
+    /// Manage 的多选状态由 HomeViewModel.isMultiSelectMode 自己管，这里只处理三个远端 store。
+    private func exitInactiveMultiSelectStores(for page: SidebarRootPage, activityCategory: ActivityCategory) {
+        let trending = dependencies.trendingMultiSelectionStore
+        let weekly = dependencies.weeklyMultiSelectionStore
+        let activity = dependencies.activityMultiSelectionStore
+
+        switch page {
+        case .manage:
+            if trending.isActive { trending.exit() }
+            if weekly.isActive { weekly.exit() }
+            if activity.isActive { activity.exit() }
+        case .trending:
+            if weekly.isActive { weekly.exit() }
+            if activity.isActive { activity.exit() }
+        case .activity:
+            if trending.isActive { trending.exit() }
+            if activityCategory == .weekly {
+                if activity.isActive { activity.exit() }
+            } else {
+                if weekly.isActive { weekly.exit() }
+            }
+        }
+    }
+
+    // MARK: - Toolbar spec 派发
+
+    /// 按 `selectedPage` 派发当前 toolbar 内容。
+    ///
+    /// 设计参见 `PageToolbarSpec` 文件头：
+    /// - PR-1：Manage 走完整 spec，其它页面 leading/trailing 仍为 nil（保留自绘 toolbar）；
+    /// - PR-2：所有页面统一注入 `searchField` —— 非 Manage 页面以 `isDisabled = true`
+    ///   显示，tooltip 提示"该搜索仅在 Manage 页面可用"，为未来 GitHub 搜索模式铺路。
+    /// W12 PR-4：根据当前 page 选择对应的多选 BatchActionBar 实现。
+    /// - Manage：基于 `HomeViewModel.multiSelectedRepoIDs`；
+    /// - Trending/Weekly/Activity：基于对应的 `MultiSelectionStore`。
+    @ViewBuilder
+    private var currentBatchActionBar: some View {
+        switch selectedPage {
+        case .manage:
+            if viewModel.isMultiSelectMode {
+                BatchActionBar()
+            }
+        case .trending:
+            let store = dependencies.trendingMultiSelectionStore
+            if store.isActive {
+                RemoteBatchActionBar(store: store)
+            }
+        case .activity:
+            let store = (selectedActivityCategory == .weekly)
+                ? dependencies.weeklyMultiSelectionStore
+                : dependencies.activityMultiSelectionStore
+            if store.isActive {
+                RemoteBatchActionBar(store: store)
+            }
+        }
+    }
+
+    private var currentToolbarSpec: PageToolbarSpec {
+        switch selectedPage {
+        case .manage:    return makeManageToolbarSpec()
+        case .trending:  return makeTrendingToolbarSpec()
+        case .activity:  return makeActivityToolbarSpec()
+        }
+    }
+
+    /// 非 Manage 页面共用的 SmartSearchField 注入（PR-2）。
+    ///
+    /// 禁用判定：当前 `mode` 是 `.keyword` / `.semantic` 时禁用——它们都依赖
+    /// Manage 的本地 FTS5 / 向量索引。未来 `.github` 模式上线时，此处放开 `isDisabled`。
+    @MainActor
+    private func nonManageSearchField() -> AnyView {
+        let mode = viewModel.smartSearchMode
+        let needsManageData = (mode == .keyword || mode == .semantic)
+        return AnyView(smartSearchField(isDisabled: needsManageData))
+    }
+
+    /// Trending 页面 toolbar spec（W12 PR-4）：
+    /// - leading 暂无（period picker 仍在中栏自绘 toolbar，period 是数据切片维度而非排序）；
+    /// - trailing 注入：[external / clone] +「多选按钮」。
+    ///   external / clone 派发 `selectedTrendingRepo` 单选项；多选按钮驱动
+    ///   `trendingMultiSelectionStore`，由 `TrendingView` 的行点击 toggle 选中状态。
+    /// - PR-4 followup：未登录态多选按钮 disable。批量 star/unstar 都需要 token，
+    ///   未登录直接 disable 比让用户点了再弹错误友好；如果 store 已经处于 active
+    ///   （比如登录后切到 trending 又登出），同帧把 store exit 兜底清掉 stale selection。
+    @MainActor
+    private func makeTrendingToolbarSpec() -> PageToolbarSpec {
+        let store = dependencies.trendingMultiSelectionStore
+        let registry = dependencies.starredRegistry
+        let isAuthed = authSession.state.isAuthenticated
+
+        let trailing: AnyView = {
+            let selectionView: AnyView? = selectedTrendingRepo.map { repo in
+                let sel = ToolbarRepoSelection.from(
+                    trending: repo,
+                    isStarred: registry.contains(ghRepoId: repo.ghRepoId)
+                )
+                return AnyView(
+                    Group {
+                        ExternalLinksMenu(selection: sel)
+                        CloneMenu(selection: sel) { toastKey in
+                            toastMessage = toastKey
+                        }
+                    }
+                )
+            }
+            return AnyView(
+                Group {
+                    selectionView
+                    MultiSelectButton(
+                        isActive: store.isActive,
+                        action: { store.toggle() },
+                        isDisabled: !isAuthed
+                    )
+                }
+            )
+        }()
+
+        return PageToolbarSpec(
+            trailingPrimary: trailing,
+            searchField: nonManageSearchField()
+        )
+    }
+
+    /// Activity 页面 toolbar spec（W12 PR-4）：
+    /// - leading 暂无（weekly 的 sort + language picker 仍在 WeeklyContentView 自绘）；
+    /// - trailing 注入：[external / clone] +「多选按钮」。
+    ///   - weekly 子分类：external/clone 派发 `weeklySelectionService.selectedItem`，多选用
+    ///     `weeklyMultiSelectionStore`；
+    ///   - 其它子分类：external/clone 派发 `selectedActivityItem?.repo`（announcement /
+    ///     following 这种 repo == nil 时不显示菜单），多选用 `activityMultiSelectionStore`。
+    /// - PR-4 followup：未登录态多选按钮 disable（同 trending 同款理由）。activity 其它子分类
+    ///   理论上只有登录态才会有 starred 数据，加守卫是防御性编程，不会有副作用。
+    @MainActor
+    private func makeActivityToolbarSpec() -> PageToolbarSpec {
+        let isWeekly = (selectedActivityCategory == .weekly)
+        let store = isWeekly
+            ? dependencies.weeklyMultiSelectionStore
+            : dependencies.activityMultiSelectionStore
+        let registry = dependencies.starredRegistry
+        let isAuthed = authSession.state.isAuthenticated
+
+        let selectionView: AnyView? = {
+            if isWeekly {
+                guard let item = dependencies.weeklySelectionService.selectedItem else { return nil }
+                let sel = ToolbarRepoSelection.from(
+                    weekly: item,
+                    isStarred: registry.contains(ghRepoId: item.ghRepoId)
+                )
+                return AnyView(
+                    Group {
+                        ExternalLinksMenu(selection: sel)
+                        CloneMenu(selection: sel) { toastKey in
+                            toastMessage = toastKey
+                        }
+                    }
+                )
+            } else {
+                guard let repo = selectedActivityItem?.repo else { return nil }
+                let sel = ToolbarRepoSelection.from(
+                    repo: repo,
+                    isStarred: registry.contains(ghRepoId: repo.id)
+                )
+                return AnyView(
+                    Group {
+                        ExternalLinksMenu(selection: sel)
+                        CloneMenu(selection: sel) { toastKey in
+                            toastMessage = toastKey
+                        }
+                    }
+                )
+            }
+        }()
+
+        let trailing = AnyView(
+            Group {
+                selectionView
+                MultiSelectButton(
+                    isActive: store.isActive,
+                    action: { store.toggle() },
+                    isDisabled: !isAuthed
+                )
+            }
+        )
+
+        return PageToolbarSpec(
+            trailingPrimary: trailing,
+            searchField: nonManageSearchField()
+        )
+    }
+
+    /// Manage 页面 toolbar：filter / sort / multiSelect / external / clone / search。
+    ///
+    /// W12 PR-1：把原 inline 实现拆到独立组件（ExternalLinksMenu / CloneMenu /
+    /// MultiSelectButton / UnifiedSortMenu / UnifiedFilterMenu），本方法只做组装。
+    @MainActor
+    private func makeManageToolbarSpec() -> PageToolbarSpec {
+        // @Bindable 让 `$vm.statusFilter` 等可派生 Binding，传给下游 picker / toggle。
+        @Bindable var vm = viewModel
+
+        let filterItems: [FilterMenuItem] = [
+            .content(id: "status", view: AnyView(
+                Picker("list.filter.status", selection: $vm.statusFilter) {
+                    Text("general.all").tag(RepoStatus?.none)
+                    ForEach(RepoStatus.allCases, id: \.self) { st in
+                        Label(st.displayName, systemImage: statusIcon(for: st))
+                            .tag(RepoStatus?.some(st))
+                    }
+                }
+                .pickerStyle(.inline)
+            )),
+            .divider(id: "after-status"),
+            .toggle(id: "hideArchived", label: "settings.general.hideArchived", icon: "archivebox", isOn: $vm.hideArchived),
+            .toggle(id: "hideForks", label: "settings.general.hideForks", icon: "tuningfork", isOn: $vm.hideForks)
+        ]
+
+        let leading = AnyView(
+            Group {
+                UnifiedFilterMenu(
+                    items: filterItems,
+                    isAnyFilterActive: viewModel.hasActiveFilter,
+                    accessibilityLabel: viewModel.statusFilter == nil
+                        ? "list.filter.status"
+                        : LocalizedStringKey(viewModel.statusFilter?.localizedDisplayName ?? "list.filter.status")
+                )
+                .onChange(of: viewModel.hideArchived) { _, newValue in
+                    settings.hideArchived = newValue
+                }
+                .onChange(of: viewModel.hideForks) { _, newValue in
+                    settings.hideForks = newValue
+                }
+                .onChange(of: viewModel.statusFilter) { _, newValue in
+                    settings.statusFilter = newValue
+                }
+
+                UnifiedSortMenu(
+                    selection: $vm.sortOption,
+                    options: RepoSortOption.allCases,
+                    displayName: { $0.displayName },
+                    systemImage: { $0.systemImage }
+                )
+                .onAppear {
+                    if viewModel.sortOption != settings.repoSortOption {
+                        viewModel.sortOption = settings.repoSortOption
+                    }
+                }
+                .onChange(of: viewModel.sortOption) { _, newValue in
+                    settings.repoSortOption = newValue
+                }
+
+                MultiSelectButton(isActive: viewModel.isMultiSelectMode) {
+                    viewModel.toggleMultiSelectMode()
+                }
+            }
+        )
+
+        let trailing: AnyView? = {
+            guard let repo = viewModel.selectedRepo else { return nil }
+            let selection = ToolbarRepoSelection.from(
+                repo: repo,
+                isStarred: dependencies.starredRegistry.contains(ghRepoId: repo.id)
+            )
+            return AnyView(
+                Group {
+                    ExternalLinksMenu(selection: selection)
+                    CloneMenu(selection: selection) { toastKey in
+                        toastMessage = toastKey
+                    }
+                }
+            )
+        }()
+
+        return PageToolbarSpec(
+            leadingPrimary: leading,
+            trailingPrimary: trailing,
+            searchField: AnyView(smartSearchField())
+        )
     }
 
     /// 中栏主体内容。
@@ -234,7 +537,10 @@ struct RepoListView: View {
     /// 2026-06-04 修订：dong4j 确认新原型后，搜索入口不再使用系统 `.searchable`。
     /// 原因是当前交互需要“默认折叠 + 模式切换内嵌 + AI 光晕 + 索引刷新内嵌”，这些能力
     /// 超出了 `NSSearchField` / SwiftUI `.searchable` 的定制范围。
-    private var smartSearchField: some View {
+    ///
+    /// W12 PR-2：增加 `isDisabled` 参数。Trending / Activity 页面也会渲染本组件
+    /// 作为常驻入口，但 mode 为 keyword/semantic 时禁用并显示 tooltip。
+    private func smartSearchField(isDisabled: Bool = false) -> some View {
         @Bindable var vm = viewModel
         return SmartSearchField(
             text: $vm.searchQuery,
@@ -245,7 +551,8 @@ struct RepoListView: View {
             },
             onRefreshSemanticIndex: {
                 Task { await viewModel.refreshSemanticIndex() }
-            }
+            },
+            isDisabled: isDisabled
         )
         .onAppear {
             if viewModel.smartSearchMode != settings.smartSearchMode {
@@ -254,197 +561,6 @@ struct RepoListView: View {
         }
         .onChange(of: viewModel.smartSearchMode) { _, newValue in
             settings.smartSearchMode = newValue
-        }
-    }
-
-    /// 顶部 "在 GitHub 打开" 菜单。
-    ///
-    /// 这个按钮从右侧详情页 toolbar 移到中栏 toolbar，是因为 NavigationSplitView 会把
-    /// detail toolbar 渲染在右栏左边；dong4j 期望详情动作靠近最右搜索入口，形成一条统一操作区。
-    @ViewBuilder
-    private func externalLinksMenu(repo: Repo) -> some View {
-        Menu {
-            if let issues = RepoExternalLinks.issues(repo) {
-                Button {
-                    NSWorkspace.shared.open(issues)
-                } label: {
-                    Label("externalLinks.issues", systemImage: "exclamationmark.bubble")
-                }
-            }
-            if let pulls = RepoExternalLinks.pulls(repo) {
-                Button {
-                    NSWorkspace.shared.open(pulls)
-                } label: {
-                    Label("externalLinks.pullRequests", systemImage: "arrow.triangle.pull")
-                }
-            }
-            if let releases = RepoExternalLinks.releases(repo) {
-                Button {
-                    NSWorkspace.shared.open(releases)
-                } label: {
-                    Label("externalLinks.releases", systemImage: "tag.circle")
-                }
-            }
-            if let homepage = RepoExternalLinks.homepage(repo) {
-                Divider()
-                Button {
-                    NSWorkspace.shared.open(homepage)
-                } label: {
-                    Label("externalLinks.homepage", systemImage: "house")
-                    Text(homepage.absoluteString)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } label: {
-            toolbarIcon("safari")
-                .accessibilityLabel("externalLinks.openOnGithub")
-        } primaryAction: {
-            if let url = RepoExternalLinks.repo(repo) {
-                NSWorkspace.shared.open(url)
-            }
-        }
-        .help("externalLinks.hint")
-    }
-
-    /// 顶部 clone URL 复制菜单。
-    ///
-    /// 地址优先使用 GitHub API 同步回来的字段；旧缓存缺字段时按 GitHub 规则兜底生成，
-    /// 保证选中 repo 后复制按钮稳定可见。
-    @ViewBuilder
-    private func cloneMenu(repo: Repo) -> some View {
-        let https = httpsCloneURL(for: repo)
-        let git = gitCloneURL(for: repo)
-
-        Menu {
-            Button {
-                copy(https, success: "clone.copiedHttps")
-            } label: {
-                Label("clone.https", systemImage: "globe")
-            }
-            Text(https)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            Divider()
-
-            Button {
-                copy(git, success: "clone.copiedGit")
-            } label: {
-                Label("clone.git", systemImage: "terminal")
-            }
-            Text(git)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        } label: {
-            toolbarIcon("doc.on.clipboard")
-                .accessibilityLabel("clone.hint")
-        }
-        .help("clone.hint")
-    }
-
-    private func httpsCloneURL(for repo: Repo) -> String {
-        let fromAPI = repo.cloneUrl?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let fromAPI, !fromAPI.isEmpty {
-            return fromAPI
-        }
-        return "https://github.com/\(repo.owner)/\(repo.name).git"
-    }
-
-    private func gitCloneURL(for repo: Repo) -> String {
-        let fromAPI = repo.sshUrl?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let fromAPI, !fromAPI.isEmpty {
-            return fromAPI
-        }
-        return "git@github.com:\(repo.owner)/\(repo.name).git"
-    }
-
-    private func copy(_ string: String, success: String) {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(string, forType: .string)
-        toastMessage = success
-    }
-
-    /// 用 SF Symbol `checklist` 表达"批量操作"语义；按钮在多选模式时强调显示。
-    private var multiSelectButton: some View {
-        Button {
-            viewModel.toggleMultiSelectMode()
-        } label: {
-            toolbarIcon(viewModel.isMultiSelectMode ? "checklist.checked" : "checklist")
-                .accessibilityLabel(viewModel.isMultiSelectMode ? Text("batch.exitMultiSelect") : Text("batch.multiSelect"))
-        }
-        .help(viewModel.isMultiSelectMode ? Text("list.exitMultiSelectMode") : Text("list.multiSelectMode"))
-        .keyboardShortcut("m", modifiers: [.command, .shift])
-    }
-
-    /// 阅读状态入口，同时保留 D2 的 Archived/Fork 列表过滤。
-    /// 开启任一过滤时图标会切换为"已激活"形态，提示用户当前列表不是全集。
-    /// - D2：Archived / Fork 两个 Toggle
-    /// - D3：阅读状态 Picker(全部 + 4 状态)
-    private var statusFilterMenu: some View {
-        @Bindable var vm = viewModel
-        return Menu {
-            Picker("list.filter.status", selection: $vm.statusFilter) {
-                Text("general.all").tag(RepoStatus?.none)
-                ForEach(RepoStatus.allCases, id: \.self) { st in
-                    Label(st.displayName, systemImage: statusIcon(for: st))
-                        .tag(RepoStatus?.some(st))
-                }
-            }
-            .pickerStyle(.inline)
-            Divider()
-            Toggle(isOn: $vm.hideArchived) {
-                Label("settings.general.hideArchived", systemImage: "archivebox")
-            }
-            Toggle(isOn: $vm.hideForks) {
-                Label("settings.general.hideForks", systemImage: "tuningfork")
-            }
-        } label: {
-            toolbarIcon(viewModel.hasActiveFilter ? "circle.grid.2x1.fill" : "circle.grid.2x1")
-                .accessibilityLabel(viewModel.statusFilter?.localizedDisplayName ?? String(localized: "list.filter.status"))
-        }
-        .help(viewModel.hasActiveFilter ? Text("list.filter.active") : Text("list.filter.hint"))
-        .onChange(of: viewModel.hideArchived) { _, newValue in
-            settings.hideArchived = newValue
-        }
-        .onChange(of: viewModel.hideForks) { _, newValue in
-            settings.hideForks = newValue
-        }
-        .onChange(of: viewModel.statusFilter) { _, newValue in
-            settings.statusFilter = newValue
-        }
-    }
-
-    /// W4-4 D1：排序入口。Picker 显示当前选中(系统会自动加 ✓ 标记)。
-    /// 与 AppSettings.repoSortOption 双向同步：
-    /// - 用户改 → onChange 写 settings(落盘)
-    /// - settings 变 → onAppear / onChange 同步回 viewModel
-    /// 不在 Picker binding 里直接绑 settings,是因为 viewModel 才是排序的"事实源",
-    /// settings 只负责跨会话恢复。
-    private var sortMenu: some View {
-        @Bindable var vm = viewModel
-        return Menu {
-            Picker("list.sort", selection: $vm.sortOption) {
-                ForEach(RepoSortOption.allCases) { opt in
-                    Label(opt.displayName, systemImage: opt.systemImage)
-                        .tag(opt)
-                }
-            }
-            .pickerStyle(.inline)
-        } label: {
-            toolbarIcon("arrow.up.arrow.down")
-                .accessibilityLabel("list.sort")
-        }
-        .help("list.sortHint")
-        .onAppear {
-            // 首次进入 / sheet 关闭重建时,把已持久化的偏好同步到 viewModel
-            if viewModel.sortOption != settings.repoSortOption {
-                viewModel.sortOption = settings.repoSortOption
-            }
-        }
-        .onChange(of: viewModel.sortOption) { _, newValue in
-            settings.repoSortOption = newValue
         }
     }
 

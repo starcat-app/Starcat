@@ -2,7 +2,14 @@
 //  RepoLocalSections.swift
 //  Starcat
 //
-//  R-01「三场景共用架构」三段（Tags / Notes / Release）的统一封装与转场动画。
+//  R-01「三场景共用架构」本地段（Tags / Notes）的统一封装与转场动画。
+//
+//  ⚠️ **v2.0 修订（2026-06-12，dong4j 反馈）**：原本是「三段（Tags / Notes / Release）」,
+//      v2.0 起 Release 订阅段被压缩为 hero stats 行的紧凑 stat 单元
+//      `RepoReleaseStatItem`（详见 `Starcat/Features/Releases/RepoReleaseSection.swift`
+//      与 `RepoMetadataHeaderView.statsSection`），不再挂在本组件下。
+//      下方原有的注释中所有「三段」字样均应理解为「Tags / Notes 两段」,
+//      但出于「保留历史推理 + 不做大修注释」原则没有逐处替换,新协作者读到时请知悉。
 //
 //  ────────────────────────────────────────────────────────────────────────────
 //  设计意图（详细设计 §3.2.4 / §3.2.6 / §5.x ContentView 集合 + R-01 v1.2 P0）
@@ -156,8 +163,9 @@ struct RepoLocalSections: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 RepoNotesSection(repo: repo)
                     .transition(.move(edge: .top).combined(with: .opacity))
-                RepoReleaseSection(repo: repo)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                // v2.0(2026-06-12)：原 RepoReleaseSection 段已压缩为 hero stats 行的紧凑
+                // stat `RepoReleaseStatItem`,与 Stars / Forks 等同行,详见 `RepoMetadataHeaderView.statsSection`。
+                // 这里不再挂载第三段,以让本组件聚焦"重交互的 Tags / Notes 双段"。
             }
         }
         .padding(.horizontal, horizontalPadding)

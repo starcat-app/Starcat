@@ -206,6 +206,10 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 
             RepoDateStatItem(label: "repo.created", value: repo.createdAt, systemImage: "calendar.badge.plus")
             RepoDateStatItem(label: "repo.updated", value: repo.updatedAt, systemImage: "clock.arrow.circlepath")
+            // v2.0(2026-06-12,dong4j 反馈)：原本独立成段的 Releases 订阅区被压缩为这一列紧凑 stat,
+            // 与 Stars / Forks / Watchers / Created / Updated 同行展示。详见
+            // `Starcat/Features/Releases/RepoReleaseSection.swift` 文件头 v2.0 演化说明。
+            RepoReleaseStatItem(repo: repo)
         }
     }
 }
@@ -619,15 +623,21 @@ private struct RepoDateStatItem: View {
     let systemImage: String
 
     var body: some View {
+        // dong4j 2026-06-12 反馈:hero stats 行字号要统一。
+        // 主行字号原为 12pt（理由是 yyyy-MM-dd 字符串较长,12pt 让列宽更紧凑）,
+        // 但与同行其它 stat（Stars / Forks / Watchers / Releases 主行均 14pt）不一致,视觉割裂。
+        // 现统一升 14pt,代价是 Created / Updated 列宽各增加约 12pt;
+        // 若详情页中栏被挤压到放不下 6 列,后续可改用更短的格式（如 yy-MM-dd 或本地化 short style）来缩列宽,
+        // 而不要回退字号。
         VStack(alignment: .center, spacing: 2) {
             HStack(spacing: 4) {
                 Image(systemName: systemImage)
                     .foregroundStyle(.secondary)
-                    .font(.system(size: 12))
+                    .font(.system(size: 14))
                 Text(formattedDate)
                     .monospacedDigit()
                     .lineLimit(1)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
             }
             Text(label)
                 .font(.system(size: 10))

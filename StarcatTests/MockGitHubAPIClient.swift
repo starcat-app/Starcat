@@ -51,6 +51,9 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
 
     private(set) var readmeHTMLCalls: [(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)] = []
     private(set) var starCalls: [(owner: String, repo: String)] = []
+    /// W12 PR-3：批量 unstar 测试需要断言 API 调用次数。
+    /// 与 starCalls 对称，每次进入 `unstar(owner:repo:)` 都 append（无论 handler 是否抛错）。
+    private(set) var unstarCalls: [(owner: String, repo: String)] = []
     /// HOM-47：releases 调用日志，便于断言"是否拉过 / 拉了几次"。
     private(set) var releasesCalls: [(owner: String, repo: String, perPage: Int)] = []
 
@@ -64,6 +67,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
 
     func unstar(owner: String, repo: String) async throws {
+        unstarCalls.append((owner, repo))
         guard let handler = unstarHandler else {
             fatalError("MockGitHubAPIClient.unstarHandler 未设置")
         }

@@ -178,6 +178,26 @@ final class AppDependencies {
     /// StarredRegistry 启动 / 同步完成后的全量重建 helper。
     let starredRegistryBootstrapper: StarredRegistryBootstrapper
 
+    /// W12 toolbar 专项 PR-3：批量 star / unstar 调度服务。
+    ///
+    /// 单例：同一时刻只允许跑一个批次；进度 / 完成摘要由本服务统一暴露给 BatchActionBar
+    /// 等 UI 订阅。复用 `starActionService` 单条入口，保证"写入路径唯一"契约。
+    let batchStarService: BatchStarService
+
+    /// W12 toolbar 专项 PR-4：Trending 多选 store。
+    ///
+    /// 与 manage（沿用 `HomeViewModel.multiSelectedRepoIDs`）刻意分开，避免「未必已 star」
+    /// 的 ephemeral 多选语义污染 manage 现有的「已 star 库内多选 + batch-tag」链路。
+    let trendingMultiSelectionStore: MultiSelectionStore
+
+    /// W12 toolbar 专项 PR-4：Weekly 多选 store。
+    let weeklyMultiSelectionStore: MultiSelectionStore
+
+    /// W12 toolbar 专项 PR-4：Activity 多选 store。
+    /// 仅有 repo 关联的 ActivityItem 才能进入多选；announcement / suggestion 这类
+    /// `repo == nil` 的项在 row 层级隐藏 toggle，不会被加入 snapshots。
+    let activityMultiSelectionStore: MultiSelectionStore
+
     /// 详情页 Repo 解析链（Local → Hint → BackendAggregate(占位) → GitHub → Minimal）。
     let repoResolver: RepoResolver
 
@@ -396,6 +416,19 @@ final class AppDependencies {
 
         let bootstrapper = StarredRegistryBootstrapper(registry: registry, repoRepository: repo)
         self.starredRegistryBootstrapper = bootstrapper
+
+        // W12 PR-3：批量 star / unstar 调度服务。
+        // 复用 starActionService 单条入口；本服务自身不直接碰 apiClient / repoRepository,
+        // 保证「写入路径唯一」契约不破。
+        self.batchStarService = BatchStarService(
+            starActionService: starActionSvc,
+            registry: registry
+        )
+
+        // W12 PR-4：三个 page 的多选 store。各 page 独立持有，互不干扰。
+        self.trendingMultiSelectionStore = MultiSelectionStore()
+        self.weeklyMultiSelectionStore = MultiSelectionStore()
+        self.activityMultiSelectionStore = MultiSelectionStore()
 
         // RepoResolver chain：5 个 source 按优先级顺序
         // R-01 v1.2（2026-06-09）：BackendAggregateRepoSource 已填实，接 weekly 的

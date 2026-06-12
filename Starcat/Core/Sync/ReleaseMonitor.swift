@@ -7,7 +7,7 @@
 //  职责：
 //  - 一次"巡检"：拉取所有激活订阅 → 对每个 repo 调 GitHub Releases API → 写库 → 找出新 Release
 //  - 不直接发通知（由 ReleaseNotificationService 在 ReleasePoller 中编排）
-//  - 不持有调度器引用（被 ReleasePoller / RepoReleaseSection 调用）
+//  - 不持有调度器引用（被 ReleasePoller / RepoReleaseStatItem 调用; v2.0 前为 RepoReleaseSection）
 //
 //  设计取舍：
 //  - 串行而非并发：避免短时内对 GitHub 5000/h 配额造成集中冲击；订阅数预计 < 100，串行总耗时可接受

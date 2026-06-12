@@ -154,17 +154,29 @@ struct WeeklyContentView: View {
     private func projectList(_ viewModel: WeeklyContentViewModel) -> some View {
         let selection = dependencies.weeklySelectionService
         let registry = dependencies.starredRegistry
+        // W12 PR-4：weekly 多选 store。多选模式下点击行 toggle 选中，否则进入详情。
+        let multiStore = dependencies.weeklyMultiSelectionStore
         return List {
             ForEach(Array(viewModel.items.enumerated()), id: \.element.id) { index, project in
                 Button {
-                    selection.select(project)
+                    if multiStore.isActive {
+                        multiStore.toggle(SelectionSnapshot(
+                            ghRepoId: project.ghRepoId,
+                            owner: project.owner,
+                            name: project.name
+                        ))
+                    } else {
+                        selection.select(project)
+                    }
                 } label: {
                     // R-01 v1.2 Phase B4（2026-06-10）：weekly row 切到 UnifiedRepoRow，
                     // 与 manage / trending 视觉同款；周刊期号通过 `CardBadge.weeklyIssue`
                     // 在 chip 行显示，星标 ✓ 由 `StarredRegistry` 驱动联动。
                     UnifiedRepoRow(
                         card: project.asCardData(registry: registry),
-                        isSelected: selection.selectedItem?.id == project.id,
+                        isSelected: multiStore.isActive
+                            ? multiStore.contains(ghRepoId: project.ghRepoId)
+                            : (selection.selectedItem?.id == project.id),
                         showStarredCheckmark: true
                     )
                 }

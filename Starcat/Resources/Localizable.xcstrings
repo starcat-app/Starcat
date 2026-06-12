@@ -1,9 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "·" : {
-
-    },
     "“%@”" : {
 
     },
@@ -1492,86 +1489,6 @@
         }
       }
     },
-    "activity.release.empty.subtitle" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Release records will appear here after the next release check."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下次发行版检查后，版本记录会显示在这里。"
-          }
-        }
-      }
-    },
-    "activity.release.empty.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No release records"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无发行版记录"
-          }
-        }
-      }
-    },
-    "activity.release.latestPublishedAt" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Latest release published at"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最新版本发布时间"
-          }
-        }
-      }
-    },
-    "activity.release.noNotes" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No release notes."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无 release notes。"
-          }
-        }
-      }
-    },
-    "activity.release.timeline.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Release Notes"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "发行版记录"
-          }
-        }
-      }
-    },
     "activity.detail.assets" : {
       "localizations" : {
         "en" : {
@@ -1836,6 +1753,88 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刷新活动"
+          }
+        }
+      }
+    },
+    "activity.release.empty.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release records will appear here after the next release check."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下次发行版检查后，版本记录会显示在这里。"
+          }
+        }
+      }
+    },
+    "activity.release.empty.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No release records"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无发行版记录"
+          }
+        }
+      }
+    },
+    "activity.release.latestPublishedAt" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Latest release published at"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新版本发布时间"
+          }
+        }
+      }
+    },
+    "activity.release.noNotes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No release notes."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无 release notes。"
+          }
+        }
+      }
+    },
+    "activity.release.timeline.title" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release Notes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发行版记录"
           }
         }
       }
@@ -3416,6 +3415,159 @@
         }
       }
     },
+    "batch.confirm.estDuration" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Est. duration"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预计耗时"
+          }
+        }
+      }
+    },
+    "batch.confirm.estDurationSecondsFormat" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "~%d s"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "约 %d 秒"
+          }
+        }
+      }
+    },
+    "batch.confirm.estSkipped" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Est. skipped"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预计跳过"
+          }
+        }
+      }
+    },
+    "batch.confirm.moreReposFormat" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "... and %d more"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "...还有 %d 个"
+          }
+        }
+      }
+    },
+    "batch.confirm.starSubtitle" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Already-starred repos will be skipped automatically."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已 Star 的仓库会被自动跳过。"
+          }
+        }
+      }
+    },
+    "batch.confirm.starTitle" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm Batch Star"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认批量 Star"
+          }
+        }
+      }
+    },
+    "batch.confirm.targets" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Targets"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目标仓库"
+          }
+        }
+      }
+    },
+    "batch.confirm.unstarSubtitle" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Already-unstarred repos will be skipped automatically."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已取消 Star 的仓库会被自动跳过。"
+          }
+        }
+      }
+    },
+    "batch.confirm.unstarTitle" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm Batch Unstar"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认批量取消 Star"
+          }
+        }
+      }
+    },
     "batch.exitMultiSelect" : {
       "localizations" : {
         "en" : {
@@ -3428,6 +3580,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "退出多选"
+          }
+        }
+      }
+    },
+    "batch.exitMultiSelect.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exit multi-select"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出多选（Esc）"
           }
         }
       }
@@ -3461,6 +3629,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "多选"
+          }
+        }
+      }
+    },
+    "batch.multiSelect.disabledNotAuthenticated" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to use batch operations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录后可批量操作"
           }
         }
       }
@@ -3499,6 +3684,40 @@
         }
       }
     },
+    "batch.progress.cancel" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止"
+          }
+        }
+      }
+    },
+    "batch.progress.processingFormat" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Processing %d / %d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "处理中 %d / %d"
+          }
+        }
+      }
+    },
     "batch.searchTags" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3529,6 +3748,123 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已选 %d 个"
+          }
+        }
+      }
+    },
+    "batch.star" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star"
+          }
+        }
+      }
+    },
+    "batch.star.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star selected repos (already-starred items are skipped)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对所选仓库批量 Star（已 Star 的会被跳过）"
+          }
+        }
+      }
+    },
+    "batch.summary.format" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$d succeeded · %3$d skipped · %4$d failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@：成功 %2$d / 跳过 %3$d / 失败 %4$d"
+          }
+        }
+      }
+    },
+    "batch.summary.star" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star"
+          }
+        }
+      }
+    },
+    "batch.summary.unstar" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unstar"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unstar"
+          }
+        }
+      }
+    },
+    "batch.unstar" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unstar"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unstar"
+          }
+        }
+      }
+    },
+    "batch.unstar.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unstar selected repos (already-unstarred items are skipped)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对所选仓库批量取消 Star（已取消的会被跳过）"
           }
         }
       }
@@ -5113,6 +5449,7 @@
       }
     },
     "list.filter.hint" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5915,7 +6252,6 @@
       }
     },
     "releases.action.subscribe" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5932,7 +6268,6 @@
       }
     },
     "releases.action.unsubscribe" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6102,6 +6437,7 @@
       }
     },
     "releases.notify.disable" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6118,6 +6454,7 @@
       }
     },
     "releases.notify.enable" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6232,6 +6569,7 @@
       }
     },
     "releases.section.noRelease" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6248,7 +6586,6 @@
       }
     },
     "releases.section.title" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6260,6 +6597,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Releases"
+          }
+        }
+      }
+    },
+    "releases.stat.subscribed" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subscribed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已订阅"
           }
         }
       }
@@ -7276,6 +7630,23 @@
         }
       }
     },
+    "search.disabledInPage" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This search is only available on the Manage page"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该搜索仅在 Manage 页面可用"
+          }
+        }
+      }
+    },
     "search.hint" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7362,6 +7733,7 @@
       }
     },
     "search.repoPlaceholder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7411,6 +7783,7 @@
       }
     },
     "search.semantic.placeholder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12397,6 +12770,9 @@
     "优先使用流式响应" : {
 
     },
+    "删除「%@」后无法恢复。" : {
+
+    },
     "匹配 %@ 个" : {
 
     },
@@ -12406,7 +12782,7 @@
     "当前为前端模拟流程，不会发起 Apple 订阅或扣费。真实订阅接入后将复用同一套成功反馈。" : {
 
     },
-    "暂无已验证服务商" : {
+    "暂无已验证服务商，点击右侧 + 新增" : {
 
     },
     "暂无模型。点击“测试并获取模型”，或在默认设置中使用自定义模型名。" : {

@@ -365,7 +365,7 @@ private struct CreditsPage: View {
     var body: some View {
         AboutSection(title: "about.credits.title", subtitle: "about.credits.subtitle") {
             VStack(alignment: .leading, spacing: 10) {
-                AutoScrollingCreditsList(dependencies: AboutDependency.all)
+                CreditsList(dependencies: AboutDependency.all)
 
                 Divider().padding(.vertical, 4)
 
@@ -588,9 +588,16 @@ private struct DependencyRow: View {
 
             Spacer()
 
-            SafeExternalLink(title: "about.externalLink.source", systemImage: "arrow.up.right", url: dependency.url)
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
+            // 致谢页空间紧凑，且每行已经显示了项目名/许可证/版权，链接只需一个跳转图标即可。
+            // 文本由 Label 的 title 承担无障碍语义（labelStyle(.iconOnly) 仅隐藏视觉文本）。
+            SafeExternalLink(
+                title: "about.externalLink.source",
+                systemImage: "arrow.up.right",
+                url: dependency.url,
+                iconOnly: true
+            )
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -599,48 +606,29 @@ private struct DependencyRow: View {
 
 /// 致谢页中部的依赖列表。
 ///
-/// 后续依赖变多后，这块会成为主要信息区，因此列表自己滚动，而不是依赖整页滚动。
-/// 鼠标停在列表上时暂停自动滚动，方便用户复制名称或点击 source 链接。
-private struct AutoScrollingCreditsList: View {
+/// 依赖项较多（>10 条），整页滚动会让其它信息区被挤出视野，因此这里独立成一个固定高度的滚动容器，
+/// 由用户手动滚动浏览。早期版本曾加过基于 Timer 的自动轮播，但实际使用中干扰复制/点击操作，已移除。
+private struct CreditsList: View {
     let dependencies: [AboutDependency]
 
-    @State private var focusedIndex = 0
-    @State private var isHovering = false
-
-    private let timer = Timer.publish(every: 2.4, on: .main, in: .common).autoconnect()
-
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical) {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(dependencies.enumerated()), id: \.element.id) { index, dependency in
-                        DependencyRow(dependency: dependency)
-                            .id(index)
+        ScrollView(.vertical) {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(dependencies.enumerated()), id: \.element.id) { index, dependency in
+                    DependencyRow(dependency: dependency)
 
-                        if index != dependencies.count - 1 {
-                            Divider()
-                        }
+                    if index != dependencies.count - 1 {
+                        Divider()
                     }
                 }
             }
-            .frame(height: 168)
-            .scrollIndicators(.visible)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 1)
-            }
-            .onHover { hovering in
-                isHovering = hovering
-            }
-            .onReceive(timer) { _ in
-                guard !isHovering, dependencies.count > 1 else { return }
-                focusedIndex = (focusedIndex + 1) % dependencies.count
-
-                withAnimation(.easeInOut(duration: 0.45)) {
-                    proxy.scrollTo(focusedIndex, anchor: .top)
-                }
-            }
+        }
+        .frame(height: 168)
+        .scrollIndicators(.visible)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 1)
         }
     }
 }
@@ -648,24 +636,41 @@ private struct AutoScrollingCreditsList: View {
 /// 外部链接按钮。
 ///
 /// 这里只接受调用方传入的 URL，内部统一用 NSWorkspace 打开，便于后续加 URL 白名单或埋点。
+///
+/// 形态：
+/// - 默认胶囊（icon + 文本），用于品牌区/EULA/Privacy 等需要文案引导的场景。
+/// - `iconOnly = true` 时退化为圆形图标按钮，用于致谢列表这种空间紧凑、上下文已说明用途的场景；
+///   仍保留 Label 的 title 以保证 VoiceOver 能正确读出按钮含义。
 private struct SafeExternalLink: View {
     let title: LocalizedStringKey
     let systemImage: String
     let url: URL?
+    var iconOnly: Bool = false
 
     var body: some View {
         Button {
             guard let url else { return }
             NSWorkspace.shared.open(url)
         } label: {
-            Label(title, systemImage: systemImage)
-                .font(.callout.weight(.medium))
-                .padding(.horizontal, 11)
-                .padding(.vertical, 7)
-                .background(.regularMaterial, in: Capsule())
-                .overlay {
-                    Capsule().stroke(.quaternary, lineWidth: 1)
-                }
+            if iconOnly {
+                Label(title, systemImage: systemImage)
+                    .labelStyle(.iconOnly)
+                    .font(.callout.weight(.medium))
+                    .frame(width: 28, height: 28)
+                    .background(.regularMaterial, in: Circle())
+                    .overlay {
+                        Circle().stroke(.quaternary, lineWidth: 1)
+                    }
+            } else {
+                Label(title, systemImage: systemImage)
+                    .font(.callout.weight(.medium))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay {
+                        Capsule().stroke(.quaternary, lineWidth: 1)
+                    }
+            }
         }
         .disabled(url == nil)
         .help(Text(verbatim: url?.absoluteString ?? ""))
