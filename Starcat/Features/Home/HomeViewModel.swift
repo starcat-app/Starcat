@@ -310,7 +310,56 @@ final class HomeViewModel {
 
     /// reloadItems 时一并拉的 repo→status 映射。
     /// 用 dict 而非每行查询避免 N+1;applyView 直接读取做过滤。
-    private var statusMap: [Int64: RepoStatus] = [:]
+    ///
+    /// **可见性策略**（v2，2026-06-12）：从 `private` 升为 `private(set)`，
+    /// 让 `RepoListView` 在构造 `RepoCardViewData.readStatus` 时能读取本字段。
+    /// `@Observable` 在 view body 里读 dict 会订阅整个 dict 的变更，详情页
+    /// 改 status 后通过 `applyStatusChange(...)` 局部更新 dict → SwiftUI
+    /// 触发 List 重渲染 → row 角标即时刷新。
+    private(set) var statusMap: [Int64: RepoStatus] = [:]
+
+    /// `RepoListView` 渲染 row 时读取本方法填充 `RepoCardViewData.readStatus`。
+    ///
+    /// 没在 statusMap 里的 repoId 返回 `.unread`（implicit unread）——
+    /// 这与 `applyView()` 状态过滤的 `statusMap[id] ?? .unread` 默认行为一致：
+    /// `repo_notes` 表没行 == 用户从没打开过详情页 == 未读。
+    ///
+    /// 该方法只在 Manage 列表 row 渲染时调用，4 场景中只有 Manage 在用，
+    /// 因此可以安全返回非 nil（trending/weekly/activity 不走本路径）。
+    func readStatus(for repoId: Int64) -> RepoStatus {
+        statusMap[repoId] ?? .unread
+    }
+
+    /// 详情页修改 status 后由 `NotificationCenter.repoStatusDidChange` 触发，
+    /// 局部更新 statusMap 让 row 角标即时刷新。
+    ///
+    /// 单条 dict 写入是 O(1) 的；不调 `applyView()` 因为状态过滤未生效时（statusFilter == nil）
+    /// 仅角标可见性变，List 的 items 序列不变；若 statusFilter == status，需要 applyView
+    /// 让该 row 进入 / 退出过滤集合 —— 这里统一调 applyView，让逻辑更直观。
+    fileprivate func applyStatusChange(repoId: Int64, status: RepoStatus) {
+        guard statusMap[repoId] != status else { return }
+        statusMap[repoId] = status
+        applyView()
+    }
+
+    /// 订阅 `.repoStatusDidChange` 通知，让详情页改 status 后主列表角标即时刷新（v2，2026-06-12）。
+    ///
+    /// **调用方**：`RepoListView` 在 `.task` 里调用，与 view lifetime 绑定（view 退出 task cancel）。
+    /// **关键约束**：
+    /// - for-await-in 是 AsyncSequence 标准模式（与 `RepoNotesSection` 监听 `.readmeDidLoad` 同源）
+    /// - Task.isCancelled 保证 view 退出后立即跳出循环
+    /// - userInfo 解析失败（payload 不全）则忽略；不抛错（避免一次坏 post 中断整个 observer）
+    /// - 用 `RepoStatus.parse(_:)` 保证 v1 旧值兼容（理论上发射方都用 v2 值，但守一手）
+    func observeRepoStatusChanges() async {
+        let stream = NotificationCenter.default.notifications(named: .repoStatusDidChange)
+        for await note in stream {
+            guard !Task.isCancelled else { break }
+            guard let repoId = note.userInfo?["repoId"] as? Int64,
+                  let statusRaw = note.userInfo?["status"] as? String else { continue }
+            let status = RepoStatus.parse(statusRaw)
+            applyStatusChange(repoId: repoId, status: status)
+        }
+    }
 
     /// 派生：当前是否有任何过滤器生效（toolbar 显示徽标用）。
     var hasActiveFilter: Bool { hideArchived || hideForks || statusFilter != nil }

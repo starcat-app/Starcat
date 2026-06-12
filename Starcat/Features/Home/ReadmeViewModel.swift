@@ -55,6 +55,29 @@
 
 import Foundation
 
+extension Notification.Name {
+
+    /// README 加载完成事件（manage 路径 only，2026-06-12 阅读状态 v2 引入）。
+    ///
+    /// **发射时机**：`ReadmeViewModel.loadInternal` 路径下任一次 `state = .loaded(...)`
+    /// 写入后立即 post。trending 路径（loadTrending）**不发射**——trending repo 大多是
+    /// ephemeral（repo.id = ghRepoId 但 `isStarred = false`），不属于用户库，不应触发
+    /// 阅读状态升级。
+    ///
+    /// **userInfo**：
+    /// - `"repoId": Int64` —— 加载完成的 repo.id（保证 != 0；ephemeral / id=0 不 post）
+    ///
+    /// **订阅方**：`RepoNotesSection`（详情页"阅读状态"段），匹配当前 repo.id 后调用
+    /// `repoNoteRepository.markAsReadIfNeeded(repoId:)` 把 unread 升级为 read。
+    /// 接口设计上是事件流而非直接调用，因为 `ReadmeViewModel` 通过 environment 注入
+    /// 路径在 4 个详情页（manage / trending / weekly / activity）并不完全一致
+    /// （manage 在 HomeView 最外层注入，其他 3 个在 ContentView 子树内注入），
+    /// RepoLocalSections / RepoNotesSection 在 Scaffold 的 metadataPanel 内挂载，
+    /// trending/weekly/activity Shell 的 environment 链不直达。NotificationCenter
+    /// 完全解耦发射方与订阅方，零 environment 改造。
+    static let readmeDidLoad = Notification.Name("StarcatReadmeDidLoad")
+}
+
 @MainActor
 @Observable
 final class ReadmeViewModel {
@@ -323,6 +346,8 @@ final class ReadmeViewModel {
             if let c = cached, let html = c.renderedHtml, !html.isEmpty {
                 let cachedAt = Self.parseISO8601(c.cachedAt) ?? Date()
                 self.state = .loaded(html: html, cachedAt: cachedAt)
+                // 阅读状态 v2：缓存命中即视为"已加载"，派发事件让笔记段升级 unread → read。
+                self.postReadmeLoaded(repoId: requestedId)
                 hasUsableCache = true
             } else {
                 // 无可用缓存：保持 .loading（之前在入口已设置；同 repo 且无 cache 的极端 case 也补一下）
@@ -362,6 +387,9 @@ final class ReadmeViewModel {
                 if let html = readme.renderedHtml, !html.isEmpty {
                     let cachedAt = Self.parseISO8601(readme.cachedAt) ?? Date()
                     self.state = .loaded(html: html, cachedAt: cachedAt)
+                    // 阅读状态 v2：网络刷新成功，再 post 一次（幂等：repository 端
+                    // markAsReadIfNeeded 对 read/using 行 no-op，不会重复升级）。
+                    self.postReadmeLoaded(repoId: requestedId)
                 } else {
                     // GitHub 返回 200 但 body 为空（极少见）→ 视作 empty
                     self.state = .empty
@@ -374,6 +402,8 @@ final class ReadmeViewModel {
                 if let html = readme.renderedHtml, !html.isEmpty {
                     let cachedAt = Self.parseISO8601(readme.cachedAt) ?? Date()
                     self.state = .loaded(html: html, cachedAt: cachedAt)
+                    // 304 路径同样视为"加载完成"事件；与上方两处幂等。
+                    self.postReadmeLoaded(repoId: requestedId)
                 }
                 // html 为空的 304 理论上不该发生（refreshReadme 会走 unconditional 兜底），
                 // 防御性不动 state。
@@ -401,6 +431,21 @@ final class ReadmeViewModel {
     }
 
     // MARK: - Helpers
+
+    /// 派发 README 加载完成事件（阅读状态 v2，2026-06-12）。
+    ///
+    /// **守卫**：`repoId != 0` —— ephemeral repo（trending / weekly fallback）显式跳过，
+    /// 不污染 `repo_notes` 表。manage 路径的 repo.id 都是真 DB 主键，必非 0。
+    ///
+    /// 仅由 `loadInternal` 调用（manage 路径）；trending 路径不调用。
+    private func postReadmeLoaded(repoId: Int64) {
+        guard repoId != 0 else { return }
+        NotificationCenter.default.post(
+            name: .readmeDidLoad,
+            object: nil,
+            userInfo: ["repoId": repoId]
+        )
+    }
 
     /// 判断"未登录时 GitHub 拒绝请求"的错误——若是，UI 应引导登录而非展示原始报错。
     ///

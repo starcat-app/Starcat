@@ -378,7 +378,10 @@ struct RepoListView: View {
         let filterItems: [FilterMenuItem] = [
             .content(id: "status", view: AnyView(
                 Picker("list.filter.status", selection: $vm.statusFilter) {
-                    Text("general.all").tag(RepoStatus?.none)
+                    // 「全部」也挂图标避免下拉里出现"3 个 Label + 1 个裸 Text"的不对齐视觉。
+                    // `tray.full` 与下方 envelope.badge / envelope.open / checkmark.seal
+                    // 同邮件视觉系统，语义"收件箱全在这"。
+                    Label("general.all", systemImage: "tray.full").tag(RepoStatus?.none)
                     ForEach(RepoStatus.allCases, id: \.self) { st in
                         Label(st.displayName, systemImage: statusIcon(for: st))
                             .tag(RepoStatus?.some(st))
@@ -644,8 +647,11 @@ struct RepoListView: View {
                         selection.wrappedValue = repo.id
                     }
                 } label: {
+                    // 读取 viewModel.statusMap（@Observable 字段）让 SwiftUI 订阅 dict 变更：
+                    // 详情页改 status → NotificationCenter post → HomeViewModel 局部
+                    // 更新 statusMap → 本 row 重新渲染（角标即时刷新），无需 reloadItems。
                     UnifiedRepoRow(
-                        card: repo.asCardData(),
+                        card: repo.asCardData(readStatus: viewModel.readStatus(for: repo.id)),
                         isSelected: store.isActive
                             ? store.contains(ghRepoId: repo.id)
                             : (selection.wrappedValue == repo.id),
@@ -662,6 +668,12 @@ struct RepoListView: View {
         .id(viewModel.itemsRevision)
         .listStyle(.inset)
         .alternatingRowBackgrounds()
+        // 阅读状态 v2（2026-06-12）：订阅 .repoStatusDidChange，详情页改 status 后
+        // HomeViewModel.statusMap 局部更新 → UnifiedRepoRow.readStatus 重渲染 → 角标即时刷新。
+        // task 与 view lifetime 绑定（view 退出自动 cancel），不会泄漏 NotificationCenter observer。
+        .task {
+            await viewModel.observeRepoStatusChanges()
+        }
     }
 
     private var navigationSubtitle: String {
@@ -807,10 +819,9 @@ struct RepoListView: View {
 
     private func statusIcon(for status: RepoStatus) -> String {
         switch status {
-        case .unread:     return "envelope.badge"
-        case .reading:    return "book"
-        case .using:      return "checkmark.seal"
-        case .deprecated: return "archivebox"
+        case .unread: return "envelope.badge"
+        case .read:   return "envelope.open"
+        case .using:  return "checkmark.seal"
         }
     }
 }
