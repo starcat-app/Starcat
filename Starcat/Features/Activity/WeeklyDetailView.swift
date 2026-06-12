@@ -70,16 +70,16 @@ import SwiftUI
 
 struct WeeklyDetailView: View {
 
-    let project: WeeklyProject?
+    let item: WeeklyFeedItem?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            if let project {
+            if let item {
                 // D-28 v3 关键:外层挂 .id(project.id) 让 shell 整体重建,
                 // @State displayRepo / readmeVM 自动重置 →
                 // 配合 .detailContentTransition() 触发"轻轻落下"动画(与 trending 同款)。
-                WeeklyDetailScaffoldShell(project: project)
-                    .id(project.id)
+                WeeklyDetailScaffoldShell(item: item)
+                    .id(item.id)
                     .detailContentTransition()
             } else {
                 emptyState
@@ -90,7 +90,7 @@ struct WeeklyDetailView: View {
         // 监听 project.id 变化,用 0.4s easeOut 包裹 shell removal + insertion,
         // 让 .detailContentTransition() 的非对称 transition(insertion: opacity + offset y:14
         // / removal: 仅 opacity)在 0.4s 内完成插值 — 视觉上"轻轻落下"。
-        .animation(.easeOut(duration: 0.4), value: project?.id ?? "weekly-empty")
+        .animation(.easeOut(duration: 0.4), value: item?.id ?? 0)
     }
 
     private var emptyState: some View {

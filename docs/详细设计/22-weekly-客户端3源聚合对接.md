@@ -23,11 +23,11 @@ GET /api/v1/repos/languages
 1. Weekly 列表展示三源去重后的统一 feed；
 2. 保留当前已经实现的分页、加载更多、防旧请求回写和列表动画机制；
 3. 点击列表项时立即使用列表 DTO 的 `gh_repo_id` 和完整 Repo Card 构造首帧 `Repo`，不等待详情网络请求；
-4. 后台按 `gh_repo_id` 拉取详情，补齐完整 Repo Card 更新和来源事件时间线；
+4. 后台按 `gh_repo_id` 拉取详情，补齐完整 Repo Card 更新；来源只在 `full_name` 同行显示来源图标 + 短时间/期号标签；
 5. 继续沿用 `UnifiedRepoRow`、`RepoDetailScaffold`、`WeeklyDetailScaffoldShell` 和 `StarActionService`；
 6. 公共发现数据仍不写入客户端 SQLite，只有用户主动 Star 后才进入本地私有数据体系。
 
-列表不展示来源 chip 和事件时间。来源信息只在详情页展示。
+列表和详情页都展示同款轻量来源标识：repo name / full_name 右侧显示来源小圆图标 + 短标签，不单独占据详情页纵向空间。
 
 ---
 
@@ -90,7 +90,7 @@ R-05 将第二步替换为聚合详情接口，但不强制把 Weekly Shell 改�
 | 后端负责聚合 | 去重、来源集合、`latest_event_at`、排序和语言统计全部由后端完成 |
 | `gh_repo_id` 统一身份 | 列表 identity、selection、Shell `.id`、详情请求全部使用 Int64 ID |
 | 列表 DTO 负责首帧 | 点击 row 后立即用列表 DTO 构造 Repo 和 hero，不等待详情请求 |
-| 详情请求只做增量补全 | 拉最新 Repo Card 和完整 `events[]`，到达后替换公共字段并显示时间线 |
+| 详情请求只做增量补全 | 拉最新 Repo Card，到达后替换公共字段；来源标识沿用列表项的 source snapshot |
 | 私有数据边界不变 | 公共 repo 不落客户端 DB；Star 后由现有写路径入库 |
 | 保留现有 UI 骨架 | 不新建另一套列表行、详情页或分页状态机 |
 | 配置热更新不变 | 新 API actor 沿用现有 baseURL / API Key 动态更新机制 |
@@ -217,7 +217,7 @@ enum WeeklySource: Decodable, Sendable, Equatable {
 }
 ```
 
-`WeeklySource` 必须自定义 `init(from:)`：已知值解为 `.weekly/.zread/.discovery`，未知字符串解为 `.unknown(rawValue)`。这样后端以后新增来源时，旧客户端仍能展示中性时间线 chip，不会因为一个未知 source 让整个详情解码失败。
+`WeeklySource` 必须自定义 `init(from:)`：已知值解为 `.weekly/.zread/.discovery`，未知字符串解为 `.unknown(rawValue)`。这样后端以后新增来源时，旧客户端仍能展示中性来源 badge，不会因为一个未知 source 让整个详情解码失败。
 
 后端负责事件排序，客户端保持响应顺序，不二次排序。客户端展示“最近更新”时直接使用后端 `latest_event_at`，不得从 `events[]` 或三源快照自行推导。
 
@@ -265,11 +265,11 @@ enum WeeklySource: Decodable, Sendable, Equatable {
 
 - 显示头像、full name、description、stars、forks、language；
 - 继续显示已 Star 的 ✓；
-- 不显示来源 chip；
-- 不显示 `latest_event_at` 时间徽章；
+- repo name 右侧显示来源小圆图标 + 短标签；
+- 不单独显示 `latest_event_at` 时间徽章；
 - 不使用 weekly issue 作为所有 row 的默认 badge，因为 zread/discovery-only repo 没有期号。
 
-阮一峰期号只在详情来源时间线中展示。
+短标签规则：weekly 显示期号、ZRead 显示 week label、Hacker News 显示 `M.d`。
 
 ### 4.4 分页触发
 
@@ -335,7 +335,6 @@ Shell 内继续持有：
 
 - `displayRepo`；
 - `readmeVM`；
-- `events`；
 - `detailLoadState`。
 
 ### 6.2 `loadAll` 顺序
@@ -350,11 +349,11 @@ Shell 内继续持有：
 4. 优先按 gh_repo_id 查询本地 Repo
 5. 本地命中：用本地 Repo 替换 displayRepo，保留私有状态真值
 6. 调 GET /api/v1/repos/{gh_repo_id}
-7. 更新公共 Repo 字段和 events，但不能覆盖本地 isStarred 真值
+7. 更新公共 Repo 字段，但不能覆盖本地 isStarred 真值
 ```
 
 详情请求失败时保留列表首帧和 README，不把整个详情页切为空态。
-如果详情响应 `repo.is_available == false`，仍按正常详情渲染历史来源时间线，并在时间线区域显示“仓库当前不可用”的非阻塞提示；这不是 404 错误。
+如果详情响应 `repo.is_available == false`，仍按正常详情渲染历史来源标识，并在 hero 附近显示“仓库当前不可用”的非阻塞提示；这不是 404 错误。
 
 ### 6.3 公共字段与私有字段合并
 
@@ -367,7 +366,7 @@ Shell 内继续持有：
 | `id` | `gh_repo_id` |
 | `isStarred` | 本地 Repo 或 `StarredRegistry` |
 | tags/notes/releases | 客户端本地 DB |
-| source timeline | 详情接口 `events[]` |
+| 来源图标与短标签 | 列表项 `source_types` + 三源 snapshot |
 
 禁止直接用 `detail.card.toEphemeralRepo()` 覆盖一个已经本地命中的 `Repo`，否则会把 `isStarred` 重置为 false，导致私有区域收起。
 
@@ -381,35 +380,34 @@ Shell 内继续持有：
 
 README 仍按现有 Readme API 路径加载，不由 weekly-api 返回正文。
 
-### 6.5 来源时间线位置
+### 6.5 来源标识位置
 
-时间线作为 `RepoDetailScaffold` 的场景扩展区，位置在 hero 元信息之后、README 和本地私有区域之前：
+来源标识不再单独占据详情页多行区域。详情页与列表卡片保持一致：在 `RepoMetadataHeaderView` 的 `full_name` 同一行右侧显示来源小圆图标 + 短标签。由于来源标识已经表达了阮一峰期号，右侧 `Wiki` 旁边不再重复展示旧的粉色期刊数 badge。
 
 ```text
 RepoMetadataHeaderView
-SourceTimelineSection
+  full_name  [来源图标组 + 短标签]
 RepoLocalSections（仅已 Star）
 README
 ```
 
-不要把每个来源事件塞进 trailing actions。右上角 `RepoWikiMenu` 是代码文档入口，来源时间线是收录事实，两者语义独立。
+不要把每个来源事件塞进 trailing actions。右上角 `RepoWikiMenu` 是代码文档入口，来源标识是收录事实摘要，两者语义独立。
 
-### 6.6 时间线渲染
+### 6.6 来源标识渲染
 
-| 来源 | 主文案 | 辅助信息 | 点击 |
+| 来源 | 图标资源 | 短标签 | 点击 |
 |---|---|---|---|
-| weekly | 阮一峰周刊 · 第 N 期 | 推荐语、发布日期 | 打开 issue URL |
-| zread | ZRead · 周第 N 名 | 周范围、中文描述 | 有 URL 时打开 |
-| discovery | Show HN · N 分 | 评论数、投稿时间 | 打开 HN URL |
+| weekly | `WeeklySources/ruanyf` | 期号，如 `186` | 打开 `issue_url` |
+| zread | `WeeklySources/zread` | `week_label`，如 `This Week` / `Week 23` | 打开 `https://zread.ai/{owner}/{repo}` |
+| discovery | `WeeklySources/hackernews` | 短日期 `M.d`，如 `5.2` | 打开 Hacker News item |
 
 规则：
 
-- 使用后端返回顺序；
+- 使用 `source_types` 返回顺序；
 - 不用 `events[]` 重新计算列表或详情的“最近更新”；最近时间只读 `repo.latest_event_at` / `item.latest_event_at`；
-- `occurred_at` 显示相对时间，tooltip 显示绝对时间；
-- URL 缺失时 chip 只展示，不可点击；
-- `.unknown(rawValue)` source 使用中性样式并保留原始文本，不能让整个数组解码失败；
-- 时间线为空时不渲染该区域。
+- 未知来源使用中性 SF Symbol，不让整个详情解码失败；
+- URL 缺失时来源标识只展示，不可点击；
+- 图标放在独立 `WeeklySources` asset folder；不要复用 `WikiSources`，避免不同业务来源混在一个资源命名空间里。
 
 ### 6.7 Star / Unstar
 
@@ -419,7 +417,7 @@ README
 - Star 成功后由现有 repository 写入本地 DB；
 - 重新按 `gh_repo_id` 查本地 Repo，更新 `displayRepo.isStarred`；
 - Tags / Notes / Releases、Share、AI 自动展开；
-- Unstar 后保持公共详情和时间线可见，只收起私有区域。
+- Unstar 后保持公共详情和来源标识可见，只收起私有区域。
 
 ---
 
@@ -482,11 +480,11 @@ Weekly 语言列表来自后端三源合并后的 `github_repos` 可见集合，
 | 列表 200 + 空数组 | 显示当前语言下暂无项目 |
 | 列表 401 | 提示 Weekly 服务 API Key 无效，保留已有列表 |
 | 列表 5xx / 网络失败 | 保留已有列表，允许重试 |
-| 详情 200 + `repo.is_available=false` | 保留 hero、README 和历史时间线，显示“仓库当前不可用”提示 |
+| 详情 200 + `repo.is_available=false` | 保留 hero、README 和来源标识，显示“仓库当前不可用”提示 |
 | 详情 404 | 表示该 `gh_repo_id` 从未建立或没有来源事件；保留列表首帧，显示非阻塞错误 |
 | 详情 401 / 5xx | 保留 hero 和 README，只显示非阻塞错误 |
 | 语言接口失败 | 使用 fallback 语言，不阻断列表 |
-| 某个 event payload 缺字段 | 该 chip 降级展示 source + 时间，不丢弃整个详情 |
+| 某个来源 snapshot 缺字段 | 该来源标识降级展示 source，不丢弃整个详情 |
 
 详情错误不能替换整个右侧面板，因为列表 DTO 已经足够构造可用详情。
 
@@ -499,8 +497,8 @@ Weekly 语言列表来自后端三源合并后的 `github_repos` 可见集合，
 | 项目 | 决策 |
 |---|---|
 | 默认排序 | `latest_event_at desc` |
-| 来源 chip | 不显示 |
-| 事件时间 badge | 不显示 |
+| 来源标识 | repo name 右侧显示来源小圆图标 + 短标签 |
+| 事件时间 badge | 不单独显示 |
 | 已 Star ✓ | 显示 |
 | 周刊期号 badge | 不作为统一 row badge |
 | stars / forks / language | 显示 |
@@ -510,7 +508,7 @@ Weekly 语言列表来自后端三源合并后的 `github_repos` 可见集合，
 | 区域 | 决策 |
 |---|---|
 | Hero | 列表 DTO 首帧，详情完整 Repo Card 增量更新 |
-| 来源时间线 | 新增，只在 Weekly 详情展示 |
+| 来源标识 | full_name 同行显示来源小圆图标 + 短标签，不单独占行 |
 | Wiki Menu | 保持现有位置和语义 |
 | 私有区域 | `repo.isStarred` 控制 |
 | README | 保持现有 WebView / ReadmeViewModel 链路 |
@@ -536,7 +534,7 @@ Weekly 语言列表来自后端三源合并后的 `github_repos` 可见集合，
 | 3 | 动态语言 Store | URL/Key 更新后失效重拉、fallback 测试 |
 | 4 | 调整 Selection 和 Shell ID | row、selection、动画都使用 gh_repo_id |
 | 5 | 详情首帧与 ID 请求 | 首帧无白屏、详情失败保留 hero |
-| 6 | 来源时间线 UI | 三源事件、缺 URL、未知 source、空数组 |
+| 6 | 来源标识 UI | 三源图标、短标签、未知 source、空数组 |
 | 7 | 升级 BackendAggregateRepoSource | 有 ID 命中聚合接口，无 ID 继续 fallback |
 | 8 | 删除 WeeklyAPI / WeeklyModels 旧残留 | `rg` 确认旧 endpoint 和类型无调用 |
 | 9 | 构建、定向测试、全量测试 | 按 AGENTS.md 要求执行 |
@@ -558,12 +556,12 @@ Weekly 语言列表来自后端三源合并后的 `github_repos` 可见集合，
 7. 点击 row 后无需等待详情请求即可构造完整 hero。
 8. 详情请求使用 `/api/v1/repos/{gh_repo_id}`。
 9. 详情公共字段更新时不覆盖本地 `isStarred`。
-10. 三源事件保持后端顺序并正确渲染。
-11. 未知 source 或缺失 payload 不导致整个详情解码失败。
-12. Star 后私有区域展开，Unstar 后公共详情和时间线仍保留。
+10. 三源来源图标按 `source_types` 顺序正确渲染。
+11. 未知 source 或缺失 snapshot 不导致整个详情解码失败。
+12. Star 后私有区域展开，Unstar 后公共详情和来源标识仍保留。
 13. Weekly service URL / API Key 热更新后，新请求使用新配置。
 14. `BackendAggregateRepoSource` 无 ID 时不构造错误的 owner/name 聚合请求。
-15. 详情返回 `repo.is_available=false` 时仍展示历史 events，不进入 404 空态。
+15. 详情返回 `repo.is_available=false` 时仍展示来源标识，不进入 404 空态。
 
 ---
 
@@ -573,7 +571,7 @@ Weekly 语言列表来自后端三源合并后的 `github_repos` 可见集合，
 - 列表顺序与后端 `latest_event_at desc` 一致。
 - 分页、筛选、刷新行为不低于当前 Weekly 实现。
 - 点击 row 后 hero 立即出现，没有等待详情接口的白屏。
-- 详情按 `gh_repo_id` 请求，并展示完整来源时间线。
+- 详情按 `gh_repo_id` 请求，并在 full_name 同行展示来源小圆图标 + 短标签。
 - 详情返回完整 Repo Card；Weekly Shell 不再使用 `id=0` fallback，也不再调用 GitHub `/repos` 补 hero。
 - 未 Star repo 使用真实 GitHub ID 且 `isStarred = false`，不会错误展示私有区域。
 - 不增加客户端公共 feed 持久化表。

@@ -77,6 +77,9 @@ struct WeeklyContentView: View {
                 projectList(viewModel)
             }
         }
+        .task {
+            await viewModel.loadLanguagesIfNeeded()
+        }
     }
 
     // MARK: - Filter Bar
@@ -91,7 +94,7 @@ struct WeeklyContentView: View {
                 get: { viewModel.selectedSort },
                 set: { viewModel.changeSort(to: $0) }
             )) {
-                ForEach(WeeklySort.allCases) { sort in
+                ForEach(WeeklyFeedSort.allCases) { sort in
                     Text(sort.localizedTitle).tag(sort)
                 }
             } label: {
@@ -104,7 +107,7 @@ struct WeeklyContentView: View {
                 get: { viewModel.selectedLanguage },
                 set: { viewModel.changeLanguage(to: $0) }
             )) {
-                ForEach(WeeklyContentViewModel.languageOptions, id: \.self) { lang in
+                ForEach(viewModel.languageOptions, id: \.self) { lang in
                     Text(languageDisplayName(lang)).tag(lang)
                 }
             } label: {
@@ -139,6 +142,9 @@ struct WeeklyContentView: View {
         if raw.isEmpty {
             return String(localized: "weekly.filter.allLanguages")
         }
+        if raw == TrendingLanguage.uncategorizedKey {
+            return String(localized: "trending.language.uncategorized")
+        }
         // 短名（"Jupyter Notebook" → "Jupyter"），picker label 宽度有限，详见 LanguageDisplayName。
         return LanguageDisplayName.shortened(for: raw)
     }
@@ -158,7 +164,7 @@ struct WeeklyContentView: View {
                     // 在 chip 行显示，星标 ✓ 由 `StarredRegistry` 驱动联动。
                     UnifiedRepoRow(
                         card: project.asCardData(registry: registry),
-                        isSelected: selection.selectedProject?.id == project.id,
+                        isSelected: selection.selectedItem?.id == project.id,
                         showStarredCheckmark: true
                     )
                 }
@@ -168,7 +174,7 @@ struct WeeklyContentView: View {
                     Button(action: { open(project.url) }) {
                         Text("weekly.action.openRepo")
                     }
-                    if let issueURL = project.issueURL {
+                    if let issueURL = project.weekly?.issueURL {
                         Button(action: { open(issueURL) }) {
                             Text("weekly.action.openIssue")
                         }
@@ -211,7 +217,8 @@ struct WeeklyContentView: View {
         if let viewModel { return viewModel }
         let model = WeeklyContentViewModel(
             api: dependencies.weeklyAPI,
-            selectionService: dependencies.weeklySelectionService
+            selectionService: dependencies.weeklySelectionService,
+            languageStore: dependencies.weeklyLanguageStore
         )
         viewModel = model
         return model
@@ -284,27 +291,9 @@ struct WeeklyContentView: View {
 @Observable
 final class WeeklyContentViewModel {
 
-    /// 语言筛选选项：取 ruanyf/weekly 中常见的几种主语言；后端 lang 参数大小写敏感，
-    /// 这里全部用 GitHub Linguist 规范写法。
-    /// 空串代表"全部语言"，与后端 `lang` 参数留空等价。
-    static let languageOptions: [String] = [
-        "",
-        "TypeScript",
-        "JavaScript",
-        "Python",
-        "Go",
-        "Rust",
-        "Swift",
-        "Java",
-        "Kotlin",
-        "C",
-        "C++",
-        "Shell"
-    ]
-
     // MARK: - State
 
-    private(set) var items: [WeeklyProject] = []
+    private(set) var items: [WeeklyFeedItem] = []
     private(set) var total: Int = 0
     private(set) var page: Int = 1
     private(set) var hasMore: Bool = false
@@ -316,10 +305,11 @@ final class WeeklyContentViewModel {
     private(set) var itemsRevision: Int = 0
 
     /// 排序当前值；setter 由 `changeSort(to:)` 控制以保证副作用统一。
-    private(set) var selectedSort: WeeklySort = .firstIssueDesc
+    private(set) var selectedSort: WeeklyFeedSort = .latestEventAt
     private(set) var selectedLanguage: String = ""
-    /// 期号筛选；目前 UI 没暴露，保留以便后续接入"按期号"侧栏交互。
-    private(set) var selectedIssue: WeeklyIssueFilter = .all
+    var languageOptions: [String] {
+        [""] + languageStore.displayList.map(\.key)
+    }
 
     // MARK: - Dependencies
 
@@ -327,14 +317,20 @@ final class WeeklyContentViewModel {
     /// 把 total 推到外部 sidebar 计数徽章 / detail pane 路由的共享状态。
     /// 解耦 sidebar 与列表 ViewModel：sidebar 不直接持有 ViewModel，避免双向依赖。
     private let selectionService: WeeklySelectionService?
+    private let languageStore: WeeklyLanguageStore
 
     /// 标记当前 in-flight 请求的代次；切换筛选 / reload 时 bump，
     /// 旧请求即便回来也会因为代次不匹配而被丢弃，避免顺序错乱。
     private var generation: Int = 0
 
-    init(api: WeeklyAPI, selectionService: WeeklySelectionService? = nil) {
+    init(
+        api: WeeklyAPI,
+        selectionService: WeeklySelectionService? = nil,
+        languageStore: WeeklyLanguageStore
+    ) {
         self.api = api
         self.selectionService = selectionService
+        self.languageStore = languageStore
     }
 
     // MARK: - Public
@@ -345,6 +341,14 @@ final class WeeklyContentViewModel {
         await reload()
     }
 
+    func loadLanguagesIfNeeded() async {
+        await languageStore.reloadIfNeeded()
+        if !selectedLanguage.isEmpty, !languageOptions.contains(selectedLanguage) {
+            selectedLanguage = ""
+            await reload()
+        }
+    }
+
     /// 主动刷新：清空当前数据，从第一页重新拉。
     func reload() async {
         let myGen = bumpGeneration()
@@ -353,12 +357,12 @@ final class WeeklyContentViewModel {
         loadError = nil
 
         do {
-            let result = try await api.fetchProjects(
-                page: 1,
-                pageSize: WeeklyAPI.defaultPageSize,
-                issue: selectedIssue,
-                language: selectedLanguage,
-                sort: selectedSort
+            let result = try await api.fetchRepos(
+                query: WeeklyFeedQuery(
+                    language: selectedLanguage.isEmpty ? nil : selectedLanguage,
+                    sort: selectedSort,
+                    page: 1
+                )
             )
             guard myGen == generation else { return }
             items = result.items
@@ -370,9 +374,10 @@ final class WeeklyContentViewModel {
         } catch {
             guard myGen == generation else { return }
             loadError = error.localizedDescription
-            items = []
-            total = 0
-            hasMore = false
+            if items.isEmpty {
+                total = 0
+                hasMore = false
+            }
         }
         if myGen == generation {
             isLoading = false
@@ -392,12 +397,12 @@ final class WeeklyContentViewModel {
 
         let nextPage = page + 1
         do {
-            let result = try await api.fetchProjects(
-                page: nextPage,
-                pageSize: WeeklyAPI.defaultPageSize,
-                issue: selectedIssue,
-                language: selectedLanguage,
-                sort: selectedSort
+            let result = try await api.fetchRepos(
+                query: WeeklyFeedQuery(
+                    language: selectedLanguage.isEmpty ? nil : selectedLanguage,
+                    sort: selectedSort,
+                    page: nextPage
+                )
             )
             guard myGen == generation else { return }
             // 同 id 项目可能因为后端排序变动并发出现重复，去一次重保险。
@@ -411,12 +416,11 @@ final class WeeklyContentViewModel {
         } catch {
             guard myGen == generation else { return }
             loadError = error.localizedDescription
-            // 分页失败保留已有数据；hasMore 暂时关掉，避免反复触发同一坏请求。
-            hasMore = false
+            // 分页失败保留已有数据与 hasMore，用户滚动/刷新可继续重试。
         }
     }
 
-    func changeSort(to newValue: WeeklySort) {
+    func changeSort(to newValue: WeeklyFeedSort) {
         guard newValue != selectedSort else { return }
         selectedSort = newValue
         Task { await reload() }
@@ -444,15 +448,17 @@ final class WeeklyContentViewModel {
     }
 }
 
-// MARK: - WeeklySort localized
+// MARK: - WeeklyFeedSort localized
 
-extension WeeklySort {
+extension WeeklyFeedSort {
     var localizedTitle: String {
         switch self {
-        case .firstIssueDesc:
-            return String(localized: "weekly.sort.latestIssue")
-        case .starsDesc:
+        case .latestEventAt:
+            return String(localized: "weekly.sort.latestEvent")
+        case .stars:
             return String(localized: "weekly.sort.starsDesc")
+        case .pushedAt:
+            return String(localized: "weekly.sort.pushedAt")
         }
     }
 }

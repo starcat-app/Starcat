@@ -165,41 +165,41 @@ struct RepoCardConversionTests {
         // 调用方应通过 id == 0 判断「无法 star/unstar」
     }
 
-    // MARK: - WeeklyProject → CardData
+    // MARK: - WeeklyFeedItem → CardData
 
-    @Test("WeeklyProject.asCardData(registry:): firstIssue > 0 → .weeklyIssue 徽章")
-    func weeklyProjectToCardDataWithIssueBadge() {
-        let project = makeWeeklyProject(ghRepoId: 333, firstIssue: 399)
+    @Test("WeeklyFeedItem.asCardData(registry:): 保留来源图标与短标签")
+    func weeklyFeedItemToCardDataWithSourceBadge() {
+        let item = makeWeeklyFeedItem(ghRepoId: 333, firstIssue: 399)
         let registry = StarredRegistry()
 
-        let card = project.asCardData(registry: registry)
+        let card = item.asCardData(registry: registry)
 
         #expect(card.id == 333)
         #expect(card.fullName == "bob/tiny")
         #expect(card.starsCount == 200)
-        if case .weeklyIssue(let n) = card.badge {
-            #expect(n == 399)
-        } else {
-            Issue.record("firstIssue > 0 时应挂 .weeklyIssue 徽章")
-        }
+        #expect(card.badge == nil)
+        #expect(card.weeklySources == [.weekly])
+        #expect(card.weeklySourceLabel == "399")
     }
 
-    @Test("WeeklyProject.asCardData(registry:): firstIssue == 0 → 不挂徽章")
-    func weeklyProjectToCardDataNoIssueBadge() {
-        let project = makeWeeklyProject(ghRepoId: 444, firstIssue: 0)
+    @Test("WeeklyFeedItem.asCardData(registry:): discovery-only 使用短日期")
+    func weeklyFeedItemDiscoveryDateLabel() {
+        let item = makeWeeklyFeedItem(ghRepoId: 444, firstIssue: 0, source: .discovery)
         let registry = StarredRegistry()
 
-        let card = project.asCardData(registry: registry)
+        let card = item.asCardData(registry: registry)
 
-        #expect(card.badge == nil, "firstIssue == 0 时不应挂徽章（避免 # 0 视觉突兀）")
+        #expect(card.badge == nil)
+        #expect(card.weeklySources == [.discovery])
+        #expect(card.weeklySourceLabel == "5.2")
     }
 
-    @Test("WeeklyProject.asCardData(registry:): registry 命中 → isStarred = true")
+    @Test("WeeklyFeedItem.asCardData(registry:): registry 命中 → isStarred = true")
     func weeklyProjectIsStarredFromRegistry() async throws {
-        let project = makeWeeklyProject(ghRepoId: 555, firstIssue: 1)
+        let item = makeWeeklyFeedItem(ghRepoId: 555, firstIssue: 1)
         let registry = try await makeRegistry(starredGhRepoIds: [555])
 
-        let card = project.asCardData(registry: registry)
+        let card = item.asCardData(registry: registry)
 
         #expect(card.isStarred == true)
     }
@@ -264,23 +264,21 @@ struct RepoCardConversionTests {
         return TrendingRepo(card: card, since: .daily)
     }
 
-    /// 构造一个 WeeklyProject。
-    ///
-    /// 注：`WeeklyExtension` 没有 memberwise init（Decodable 自动合成依赖于 JSON 解码），
-    /// 因此直接构造时通过 JSON 解码绕一圈，比手动 mirror struct 字段更稳。
-    private func makeWeeklyProject(
+    /// 构造一个 WeeklyFeedItem。
+    private func makeWeeklyFeedItem(
         ghRepoId: Int64,
-        firstIssue: Int
-    ) -> WeeklyProject {
-        let weekly: StarcatRepoCardDTO.WeeklyExtension? = {
+        firstIssue: Int,
+        source: WeeklySource = .weekly
+    ) -> WeeklyFeedItem {
+        let weekly: WeeklySnapshot? = {
             guard firstIssue > 0 else { return nil }
             let json = #"""
             {
-              "first_issue": \#(firstIssue),
+              "issue_number": \#(firstIssue),
               "issue_url": "https://github.com/ruanyf/weekly/blob/master/docs/issue-\#(firstIssue).md"
             }
             """#.data(using: .utf8)!
-            return try? JSONDecoder().decode(StarcatRepoCardDTO.WeeklyExtension.self, from: json)
+            return try? JSONDecoder().decode(WeeklySnapshot.self, from: json)
         }()
 
         let card = StarcatRepoCardDTO(
@@ -297,10 +295,23 @@ struct RepoCardConversionTests {
             isArchived: false,
             isFork: false,
             isPrivate: false,
-            htmlUrl: URL(string: "https://github.com/bob/tiny"),
-            weekly: weekly
+            htmlUrl: URL(string: "https://github.com/bob/tiny")
         )
-        return WeeklyProject(card: card)
+        let discovery = source == .discovery ? DiscoverySnapshot(
+            hnID: 123,
+            title: "Show HN: Tiny",
+            score: 5,
+            comments: 1,
+            publishedAt: "2026-05-02T00:00:00Z"
+        ) : nil
+        return WeeklyFeedItem(dto: WeeklyFeedRepoDTO(
+            card: card,
+            sourceTypes: [source],
+            firstEventAt: "2026-05-02T00:00:00Z",
+            latestEventAt: "2026-05-02T00:00:00Z",
+            weekly: weekly,
+            discovery: discovery
+        ))
     }
 
     /// 构造一个已含指定 ghRepoIds 的 `StarredRegistry`。

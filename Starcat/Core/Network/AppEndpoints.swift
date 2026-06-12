@@ -73,14 +73,12 @@ enum AppEndpoints {
         /// （与 `/api/v1/zread` 风格对齐），`/api/v1/projects` → `/api/v1/weekly`。
         /// 这是 **breaking change** —— 客户端必须同步升级，旧路径已 404。
         enum Paths {
-            /// `GET /api/v1/weekly?page=&page_size=&issue=&lang=&sort=` —— 分页拉项目列表（envelope 包装）。
-            /// 命名与后端对齐（v0.5.2 起，从 `projects` 改名为 `weekly`）。
-            static let projects = "/api/v1/weekly"
-            /// `GET /api/v1/weekly/{owner}/{repo}` —— 单 repo 聚合详情（用于 BackendAggregateRepoSource）。
-            /// 不是常量，调用方拼字符串：`projectsByOwnerRepo + "/owner/repo"`。
-            static let projectsByOwnerRepo = "/api/v1/weekly"
-            /// `GET /api/v1/issues` —— 周刊期号列表。
-            static let issues = "/api/v1/issues"
+            /// `GET /api/v1/repos?page=&page_size=&lang=&sort=&order=` —— 三源聚合 repo feed。
+            static let repos = "/api/v1/repos"
+            /// `GET /api/v1/repos/{gh_repo_id}` —— 单 repo 聚合详情与来源事件。
+            static let repoDetail = "/api/v1/repos"
+            /// `GET /api/v1/repos/languages` —— 三源聚合语言统计。
+            static let languages = "/api/v1/repos/languages"
             /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点（R-03 2026-06-11）。
             /// 需要 Bearer Auth，鉴权通过返回 200。详见 supports/starcat-weekly-api/internal/handler/ping.go。
             static let ping = "/api/v1/ping"

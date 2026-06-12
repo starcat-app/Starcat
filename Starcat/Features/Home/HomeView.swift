@@ -197,7 +197,7 @@ struct HomeView: View {
                     // MUL-176 followup：weekly 分类右侧详情独立路由到 WeeklyDetailView，
                     // 不复用 ActivityDetailView——weekly 项目没有本地 Repo 缓存，且要展示
                     // 期号 / 周刊原文等专属字段（详情数据来自 WeeklySelectionService）。
-                    WeeklyDetailView(project: dependencies.weeklySelectionService.selectedProject)
+                    WeeklyDetailView(item: dependencies.weeklySelectionService.selectedItem)
                 } else {
                     ActivityDetailView(item: selectedActivityItem)
                 }
@@ -568,7 +568,7 @@ struct HomeView: View {
     /// SidebarHeaderView 收到新 tint → 头像背景平滑过渡。
     private var derivedActivityTintColor: Color? {
         if selectedSidebarPage == .activity, selectedActivityCategory == .weekly,
-           let project = dependencies.weeklySelectionService.selectedProject {
+           let project = dependencies.weeklySelectionService.selectedItem {
             if let language = project.language, !language.isEmpty {
                 return LanguageColor.color(for: language)
             }

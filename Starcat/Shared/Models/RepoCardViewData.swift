@@ -84,6 +84,12 @@ struct RepoCardViewData: Identifiable, Hashable, Sendable {
 
     /// 场景独有徽章（trending +N / weekly 第 N 期 / activity kind icon）。
     let badge: CardBadge?
+
+    /// Weekly 三源标识。仅 Weekly feed 传入；其它场景保持空数组。
+    let weeklySources: [WeeklySource]
+
+    /// Weekly 三源短标签：ruanyf 显示期号、ZRead 显示周、HN 显示短日期。
+    let weeklySourceLabel: String?
 }
 
 // MARK: - CardBadge
@@ -142,7 +148,9 @@ extension Repo {
             isFork: self.isFork,
             isPrivate: self.isPrivate,
             isStarred: self.isStarred,
-            badge: badge
+            badge: badge,
+            weeklySources: [],
+            weeklySourceLabel: nil
         )
     }
 }
@@ -173,7 +181,9 @@ extension StarcatRepoCardDTO {
             isFork: self.isFork,
             isPrivate: self.isPrivate,
             isStarred: registry.contains(ghRepoId: self.ghRepoId),
-            badge: badge
+            badge: badge,
+            weeklySources: [],
+            weeklySourceLabel: nil
         )
     }
 }
@@ -213,49 +223,45 @@ extension TrendingRepo {
             isFork: false,
             isPrivate: false,
             isStarred: registry.contains(ghRepoId: self.ghRepoId),
-            badge: resolvedBadge
+            badge: resolvedBadge,
+            weeklySources: [],
+            weeklySourceLabel: nil
         )
     }
 }
 
-// MARK: - WeeklyProject → RepoCardViewData
+// MARK: - WeeklyFeedItem → RepoCardViewData
 
-extension WeeklyProject {
+extension WeeklyFeedItem {
 
     /// 把 Weekly 领域模型转为卡片视图数据。
     ///
-    /// `firstIssue == 0`（Trending hint 缺周刊扩展段时退化为 0）时不挂 weeklyIssue
-    /// 徽章——0 不是合法期号，UI 显示 "# 0" 视觉上很突兀。
-    ///
     /// - Parameters:
     ///   - registry: 全局已 star 集合（决定 ✓ 标记）
-    ///   - badge: 通常传 `nil` 让本扩展按 `firstIssue` 自动决定 weeklyIssue 徽章；
-    ///            如需自定义可显式覆盖
+    ///   - badge: 三源聚合列表默认不挂 badge，来源图标与短标签单独渲染。
     /// - Returns: 视图数据
     @MainActor
     func asCardData(
         registry: StarredRegistry,
         badge: CardBadge? = nil
     ) -> RepoCardViewData {
-        let resolvedBadge: CardBadge? = {
-            if let badge { return badge }
-            return self.firstIssue > 0 ? .weeklyIssue(self.firstIssue) : nil
-        }()
         return RepoCardViewData(
-            ghRepoId: self.ghRepoId,
-            fullName: self.fullName,
-            owner: self.owner,
-            repo: self.name,
-            avatarURL: self.ownerAvatar,
-            description: self.description,
-            language: self.language,
-            starsCount: self.stars,
-            forksCount: self.forks ?? 0,
-            isArchived: self.isArchived ?? false,
-            isFork: self.isFork ?? false,
-            isPrivate: self.isPrivate ?? false,
-            isStarred: registry.contains(ghRepoId: self.ghRepoId),
-            badge: resolvedBadge
+            ghRepoId: card.ghRepoId,
+            fullName: card.fullName,
+            owner: card.owner,
+            repo: card.repo,
+            avatarURL: card.ownerAvatar,
+            description: card.description,
+            language: card.language,
+            starsCount: card.stars,
+            forksCount: card.forks,
+            isArchived: card.isArchived,
+            isFork: card.isFork,
+            isPrivate: card.isPrivate,
+            isStarred: registry.contains(ghRepoId: card.ghRepoId),
+            badge: badge,
+            weeklySources: sourceTypes,
+            weeklySourceLabel: shortSourceLabel
         )
     }
 }

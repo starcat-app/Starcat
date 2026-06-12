@@ -37,7 +37,7 @@ enum WeeklyAPIError: Error, LocalizedError {
     }
 }
 
-/// 周刊后端 API 客户端。
+/// 三源聚合 Weekly feed 后端 API 客户端。
 ///
 /// 用 `actor` 隔离 URLSession + JSONDecoder 的并发访问；公共方法是 async，
 /// 与 TrendingAPI 完全一致，方便 ViewModel 同一种 await 风格调用。
@@ -49,8 +49,8 @@ actor WeeklyAPI {
     /// 但这只影响 `/internal/sync/weekly`，正常列表查询是本地 SQLite 命中，30s 充裕。
     private static let timeout: TimeInterval = 30
 
-    /// 默认每页大小，与后端 README 默认值保持一致；UI 层不复写。
-    static let defaultPageSize: Int = 20
+    /// 默认每页大小，与 R-05 设计默认请求保持一致。
+    static let defaultPageSize: Int = 30
 
     // MARK: - Properties
 
@@ -117,38 +117,15 @@ actor WeeklyAPI {
         self.apiKey = key
     }
 
-    /// 拉取周刊项目分页列表。
+    /// 拉取三源聚合 repo feed。
     ///
-    /// R-01 v1.2：响应 envelope 化 —— `data: [StarcatRepoCardDTO]` + `meta: {page, page_size, total, ...}`。
-    /// 内部把卡片转成 `WeeklyProject` UI 模型 + 从 meta 取分页信息构造 `WeeklyProjectListResult`，
-    /// 让 ViewModel 调用层零变更。
-    ///
-    /// - Parameters:
-    ///   - page: 页码，从 1 开始。
-    ///   - pageSize: 每页大小。
-    ///   - issue: 期号筛选；`.all` 不传该参数。
-    ///   - language: 语言筛选；nil 或空串等价于不筛选。
-    ///   - sort: 排序方式。
-    /// - Returns: 项目列表 + 分页元数据。
-    func fetchProjects(
-        page: Int = 1,
-        pageSize: Int = WeeklyAPI.defaultPageSize,
-        issue: WeeklyIssueFilter = .all,
-        language: String? = nil,
-        sort: WeeklySort = .firstIssueDesc
-    ) async throws -> WeeklyProjectListResult {
-        let url = try buildProjectsURL(page: page, pageSize: pageSize, issue: issue, language: language, sort: sort)
+    /// 后端负责聚合、排序和去重；客户端不发送 source filter，不用 owner/name
+    /// 推导 identity，只消费 `gh_repo_id`。
+    func fetchRepos(query: WeeklyFeedQuery = WeeklyFeedQuery()) async throws -> WeeklyFeedListResult {
+        let url = try buildReposURL(query: query)
         let (data, response) = try await performRequestWithResponse(url: url)
 
-        // envelope 解码：直接走 helper，让 schema_version warning / error envelope / 401 都自动处理。
-        // 但本 endpoint 还需要拿 meta 段的分页信息，所以解码出 envelope 整体后再拆 data + meta。
         do {
-            let envelope = try decoder.decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: data)
-
-            // 复用 helper 的 schema_version / 错误判断逻辑：先扔进去转一次（成功路径会返回 data，
-            // 但本方法需要 envelope.meta），所以这里仅手工执行同款步骤：
-            // 1) 错误响应（envelope.go 里 4xx/5xx 也是 envelope 形态）→ helper 自动识别
-            //    这里先直接判 status code，再走错误路径
             guard let http = response as? HTTPURLResponse else {
                 throw WeeklyAPIError.transport(underlying: URLError(.badServerResponse))
             }
@@ -162,21 +139,24 @@ actor WeeklyAPI {
                 throw WeeklyAPIError.serverError(message: raw)
             }
 
-            // 2) schema_version warning（与 StarcatEnvelopeDecoder 同款语义）
+            let envelope = try decoder.decode(StarcatEnvelope<[WeeklyFeedRepoDTO]>.self, from: data)
             if !envelope.isSupported {
                 AppLog.network.warning(
                     "weekly envelope schema_version=\(envelope.schemaVersion, privacy: .public) > supported=\(StarcatEnvelopeSchema.supported, privacy: .public); 部分新字段可能未识别，建议升级 Starcat"
                 )
             }
 
-            // 3) 拼装 WeeklyProjectListResult：items 从 cards 转，分页信息从 meta 取（meta 缺失走传入参数兜底）
-            let items = envelope.data.map(WeeklyProject.init(card:))
-            let meta = envelope.meta
-            return WeeklyProjectListResult(
+            guard let meta = envelope.meta else {
+                throw WeeklyAPIError.serverError(message: "missing response meta")
+            }
+
+            let items = envelope.data.map(WeeklyFeedItem.init(dto:))
+            return WeeklyFeedListResult(
                 items: items,
-                total: meta?.total ?? items.count,
-                page: meta?.page ?? page,
-                pageSize: meta?.pageSize ?? pageSize
+                total: meta.total ?? items.count,
+                page: meta.page ?? query.page,
+                pageSize: meta.pageSize ?? query.pageSize,
+                nextPage: meta.nextPage
             )
         } catch let error as WeeklyAPIError {
             throw error
@@ -185,22 +165,10 @@ actor WeeklyAPI {
         }
     }
 
-    /// 拉取单 repo 聚合详情（用于 `BackendAggregateRepoSource` / 详情页）。
-    ///
-    /// R-01 v1.2 后端新增 `GET /api/v1/projects/{owner}/{repo}` endpoint（v0.5.2 dong4j 重命名为
-    /// `GET /api/v1/weekly/{owner}/{repo}`），返回该项目的最新
-    /// `StarcatRepoCardDTO`（含 weekly 扩展段 + 后端 enricher 补的所有元数据）。
-    ///
-    /// **不**做任何 UI 转换：直接返回 DTO，由调用方（`BackendAggregateRepoSource` /
-    /// `Repo.makeMinimal(card:)` 等）决定如何用。
-    ///
-    /// 错误：
-    /// - 404（项目不在周刊收录列表里）→ `WeeklyAPIError.serverError`，调用方应当 catch
-    ///   并退化为 nil（让 RepoResolver 链继续询问下一个 source）
-    /// - 401（鉴权失败）→ `WeeklyAPIError.serverError(message: "[UNAUTHORIZED] ...")`
-    func fetchProject(owner: String, repo: String) async throws -> StarcatRepoCardDTO {
+    /// 拉取单 repo 聚合详情（repo + source events）。
+    func fetchDetail(repoID: Int64) async throws -> WeeklyRepoDetail {
         let endpoint = AppEndpoints.appendPath(
-            "\(AppEndpoints.Weekly.Paths.projectsByOwnerRepo)/\(owner)/\(repo)",
+            "\(AppEndpoints.Weekly.Paths.repoDetail)/\(repoID)",
             to: baseURL
         )
         let (data, response) = try await performRequestWithResponse(url: endpoint)
@@ -220,10 +188,10 @@ actor WeeklyAPI {
         }
 
         do {
-            let envelope = try decoder.decode(StarcatEnvelope<StarcatRepoCardDTO>.self, from: data)
+            let envelope = try decoder.decode(StarcatEnvelope<WeeklyRepoDetail>.self, from: data)
             if !envelope.isSupported {
                 AppLog.network.warning(
-                    "weekly project envelope schema_version=\(envelope.schemaVersion, privacy: .public) > supported=\(StarcatEnvelopeSchema.supported, privacy: .public)"
+                    "weekly detail envelope schema_version=\(envelope.schemaVersion, privacy: .public) > supported=\(StarcatEnvelopeSchema.supported, privacy: .public)"
                 )
             }
             return envelope.data
@@ -232,26 +200,37 @@ actor WeeklyAPI {
         }
     }
 
+    /// 获取三源聚合语言列表，用于 Weekly 语言筛选。
+    func fetchLanguages() async throws -> [TrendingLanguageAggregateDTO] {
+        let endpoint = AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.languages, to: baseURL)
+        let (data, response) = try await performRequestWithResponse(url: endpoint)
+
+        do {
+            return try StarcatEnvelopeDecoder.decode(
+                [TrendingLanguageAggregateDTO].self,
+                data: data,
+                response: response,
+                decoder: decoder
+            )
+        } catch let error as StarcatEnvelopeNetworkError {
+            throw WeeklyAPIError.serverError(message: error.localizedDescription)
+        } catch {
+            throw WeeklyAPIError.decodingError(underlying: error)
+        }
+    }
+
     // MARK: - Private
 
-    private func buildProjectsURL(
-        page: Int,
-        pageSize: Int,
-        issue: WeeklyIssueFilter,
-        language: String?,
-        sort: WeeklySort
-    ) throws -> URL {
-        let endpoint = AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.projects, to: baseURL)
+    private func buildReposURL(query: WeeklyFeedQuery) throws -> URL {
+        let endpoint = AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.repos, to: baseURL)
         var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
         var queryItems: [URLQueryItem] = [
-            URLQueryItem(name: "page", value: String(page)),
-            URLQueryItem(name: "page_size", value: String(pageSize)),
-            URLQueryItem(name: "sort", value: sort.apiValue)
+            URLQueryItem(name: "page", value: String(query.page)),
+            URLQueryItem(name: "page_size", value: String(query.pageSize)),
+            URLQueryItem(name: "sort", value: query.sort.rawValue),
+            URLQueryItem(name: "order", value: query.order.rawValue)
         ]
-        if let issueValue = issue.apiValue {
-            queryItems.append(URLQueryItem(name: "issue", value: issueValue))
-        }
-        if let language, !language.isEmpty {
+        if let language = query.language, !language.isEmpty {
             queryItems.append(URLQueryItem(name: "lang", value: language))
         }
         components?.queryItems = queryItems
@@ -285,19 +264,17 @@ actor WeeklyAPI {
 
 // MARK: - Result
 
-/// 列表查询的领域级返回：DTO 已转成 `WeeklyProject`，分页元数据原样透传。
+/// 列表查询的领域级返回：DTO 已转成 `WeeklyFeedItem`，分页元数据原样透传。
 ///
 /// 单独抽出来而不是直接复用 DTO，是为了让 ViewModel 不依赖 `Decodable` 类型，
 /// 后续若做缓存层（GRDB）替换，签名也不用动。
-struct WeeklyProjectListResult: Equatable {
-    let items: [WeeklyProject]
+struct WeeklyFeedListResult: Equatable {
+    let items: [WeeklyFeedItem]
     let total: Int
     let page: Int
     let pageSize: Int
+    let nextPage: Int?
 
-    /// 是否还有下一页：根据 total / page / pageSize 推算，避免 ViewModel 自算出错。
-    var hasMore: Bool {
-        guard pageSize > 0 else { return false }
-        return page * pageSize < total
-    }
+    /// 是否还有下一页：R-05 规定唯一真源是 `meta.next_page`。
+    var hasMore: Bool { nextPage != nil }
 }

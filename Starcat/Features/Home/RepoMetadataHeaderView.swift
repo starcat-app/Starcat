@@ -61,18 +61,21 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     /// 这是为了让 tooltip 与实际 `onStarTapped` 闭包(`StarActionService.toggle`)
     /// 行为对齐,避免误导用户。
     let starHelpKey: LocalizedStringKey
+    let headerSourceBadge: RepoDetailHeaderSourceBadge?
     private let trailingActions: TrailingActions
 
     init(
         repo: Repo,
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
+        headerSourceBadge: RepoDetailHeaderSourceBadge? = nil,
         onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder trailingActions: () -> TrailingActions
     ) {
         self.repo = repo
         self.fallbackAccentColor = fallbackAccentColor
         self.starHelpKey = starHelpKey
+        self.headerSourceBadge = headerSourceBadge
         self.onStarTapped = onStarTapped
         self.trailingActions = trailingActions()
     }
@@ -100,13 +103,19 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
             RepoMetadataAvatarButton(repo: repo)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(repo.fullName)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .textSelection(.enabled)
-                    .help(repo.fullName)
+                HStack(spacing: 8) {
+                    Text(repo.fullName)
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .textSelection(.enabled)
+                        .help(repo.fullName)
+
+                    if let headerSourceBadge, !headerSourceBadge.sources.isEmpty {
+                        RepoDetailHeaderSourceBadgeView(badge: headerSourceBadge)
+                    }
+                }
                 badgeRow
                 inlineTopicsRow
             }
@@ -271,6 +280,75 @@ private struct RepoMetadataPanelHeightPreferenceKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+private struct RepoDetailHeaderSourceBadgeView: View {
+    let badge: RepoDetailHeaderSourceBadge
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        Group {
+            if let url = badge.url {
+                Button {
+                    openURL(url)
+                } label: {
+                    content
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .pressableHover()
+            } else {
+                content
+            }
+        }
+        .help(helpText)
+    }
+
+    private var content: some View {
+        HStack(spacing: 4) {
+            HStack(spacing: -4) {
+                ForEach(Array(badge.sources.prefix(4).enumerated()), id: \.offset) { _, source in
+                    sourceIcon(source)
+                }
+            }
+            if let label = badge.label, !label.isEmpty {
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background {
+            Capsule(style: .continuous)
+                .fill(Color.secondary.opacity(0.10))
+        }
+    }
+
+    private var helpText: String {
+        badge.sources.map(\.displayName).joined(separator: " / ")
+    }
+
+    @ViewBuilder
+    private func sourceIcon(_ source: WeeklySource) -> some View {
+        switch source {
+        case .unknown:
+            Image(systemName: source.assetName)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(Color(nsColor: .controlBackgroundColor)))
+                .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
+        default:
+            Image(source.assetName)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 18, height: 18)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
+        }
     }
 }
 
