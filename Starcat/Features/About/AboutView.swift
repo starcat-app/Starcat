@@ -363,14 +363,19 @@ private struct EULAPage: View {
 
 private struct CreditsPage: View {
     var body: some View {
-        // dong4j 2026-06-12 反馈:删除底部「感谢所有开源维护者...如果后续新增 SPM package,请同步更新这里」
-        // 这段 dependencyHint。理由:
-        // 1. 「请同步更新这里」是给协作者看的提示,不该出现在面向用户的 About 页(用户做不到也不关心)
-        // 2. AGENTS.md / CLAUDE.md 已经把"开源致谢同步规则"作为强制开发规则记录(2026-06-07 起生效),
-        //    协作者去那两份文档看就够,不需要 UI 兜底
-        // 3. 删除后 VStack 只剩 CreditsList 单一子视图,直接退化为单 view,无需嵌套 layout
+        // dong4j 2026-06-12 反馈演化:
+        // - v1: 完整 hint「感谢所有开源维护者。Starcat 只列出当前工程直接依赖;如果后续新增 SPM package,请同步更新这里。」
+        // - v2: 删除整段(理由:协作者提示不该出现在用户 About 页)
+        // - v3(本次): 只保留「感谢所有开源维护者。」一句,既给用户传达感激之情,又不掺协作者向的"请同步更新"指令。
+        //         同步规则仍然由 AGENTS.md / CLAUDE.md 的「开源致谢同步规则」(2026-06-07 起强制)兜底。
         AboutSection(title: "about.credits.title", subtitle: "about.credits.subtitle") {
-            CreditsList(dependencies: AboutDependency.all)
+            VStack(alignment: .leading, spacing: 10) {
+                CreditsList(dependencies: AboutDependency.all)
+
+                Text("about.credits.dependencyHint")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }
@@ -607,31 +612,47 @@ private struct DependencyRow: View {
 ///
 /// 依赖项较多（>10 条），整页滚动会让其它信息区被挤出视野，因此这里独立成一个固定高度的滚动容器，
 /// 由用户手动滚动浏览。早期版本曾加过基于 Timer 的自动轮播，但实际使用中干扰复制/点击操作，已移除。
+///
+/// **高度策略（v3,2026-06-12 dong4j 反馈"底部多出一点"修订）**：
+/// - 之前用纯估算 height = `N × rowHeight + (N-1) × dividerHeight + 缓冲`,实际行高比估算略小,
+///   导致内容 < frame,ScrollView 在底部留 8-12pt 空白。
+/// - 现在用 PreferenceKey 动态测量内容真实高度（`CreditsContentHeightKey`）,
+///   `frame = min(contentHeight, maxHeight)`：
+///   · 内容 < `maxHeight`(本例:依赖 ≤ 4 条) → frame 自适应内容,无底部留白
+///   · 内容 ≥ `maxHeight`(依赖 > 4 条) → frame 锁到 4 行高度,启用滚动
+/// - **注意必须用 VStack 而非 LazyVStack**：懒渲染只把可见区域的 row 算进 contentHeight,
+///   会让首次测量值偏小、frame 反复抖动直至稳态。本组件依赖项 ~14 条,VStack 全渲染开销可忽略。
 private struct CreditsList: View {
     let dependencies: [AboutDependency]
 
-    /// 一次性可见行数(dong4j 2026-06-12 反馈:从 3 行→4 行,不至于把底部 hint 文字挤出 sheet)。
-    /// 列高 = `visibleRowsCount * (rowHeight + dividerHeight) - dividerHeight + 留白缓冲`,
-    /// 这里显式表达"想看 N 行"的意图,后续若再调直接改这两个常量。
-    private let visibleRowsCount: CGFloat = 4
-    /// 单行内容估算高度。`DependencyRow` 内最高元素是 36pt 头像 +上下 padding 各 10 = 56pt;
-    /// 文字行（项目名 17 + 版权 11 + spacing 4 = 32pt）短于头像,不构成上限。
-    private let rowHeightEstimate: CGFloat = 56
-    /// Divider 视觉占位 1pt;末行无 Divider,这里参与列高累加时减回去即可。
-    private let dividerHeightEstimate: CGFloat = 1
-    /// 顶/底视觉缓冲,避免第 N 行紧贴边框看着拥挤,也给 ScrollView 一点弹性。
-    private let listVerticalPadding: CGFloat = 4
+    /// 内容真实高度(由 PreferenceKey 通过 GeometryReader 上报)。
+    /// 首次 body 渲染时为 0,此时 `renderedHeight` 降级到 `maxHeight` 占位。
+    @State private var contentHeight: CGFloat = 0
 
-    /// 期望容器高度(N 行算下来约 232pt)。
-    private var targetHeight: CGFloat {
-        visibleRowsCount * (rowHeightEstimate + dividerHeightEstimate)
-            - dividerHeightEstimate
-            + listVerticalPadding * 2
+    /// 触发滚动的可见行数阈值(dong4j 2026-06-12:3 行→4 行)。
+    private let visibleRowsCount: Int = 4
+    /// 单行内容估算高度(只用于算 maxHeight 上限,实际 frame 用 PreferenceKey 测得的真值)。
+    /// `DependencyRow` 最高元素是 36pt 头像 + 上下 padding 各 10pt = 56pt。
+    private let rowHeightEstimate: CGFloat = 56
+    /// Divider 视觉占位 1pt;`maxHeight` 计算时 N-1 条 divider 都参与累加。
+    private let dividerHeightEstimate: CGFloat = 1
+
+    /// 4 行 + 3 divider 的容器最大高度,内容超过这个值才需要滚动。
+    private var maxHeight: CGFloat {
+        CGFloat(visibleRowsCount) * rowHeightEstimate
+            + CGFloat(visibleRowsCount - 1) * dividerHeightEstimate
+    }
+
+    /// 实际渲染高度。首次未测量时降级到 `maxHeight`,避免 ScrollView 高度为 0 闪烁;
+    /// 之后取 `min(content, max)`,内容少则贴合内容,内容多则锁到 4 行高度。
+    private var renderedHeight: CGFloat {
+        guard contentHeight > 0 else { return maxHeight }
+        return min(contentHeight, maxHeight)
     }
 
     var body: some View {
         ScrollView(.vertical) {
-            LazyVStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(dependencies.enumerated()), id: \.element.id) { index, dependency in
                     DependencyRow(dependency: dependency)
 
@@ -640,14 +661,40 @@ private struct CreditsList: View {
                     }
                 }
             }
+            .background(
+                // GeometryReader 放 background 不参与布局,只用 preference 把 VStack 自然高度上报到外层。
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: CreditsContentHeightKey.self,
+                        value: proxy.size.height
+                    )
+                }
+            )
         }
-        .frame(height: targetHeight)
+        .frame(height: renderedHeight)
         .scrollIndicators(.visible)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 1)
         }
+        .onPreferenceChange(CreditsContentHeightKey.self) { value in
+            // SwiftUI 内置去重: value 不变不会触发 closure;
+            // 写入 @State → frame 重新计算,但 children 自然高度不依赖 frame,不会形成 layout loop。
+            contentHeight = value
+        }
+    }
+}
+
+/// `CreditsList` 用于把 VStack 自然内容高度从内部冒泡到外层 frame 的 PreferenceKey。
+///
+/// 用 max() 合并是因为一次 layout 中 GeometryReader 可能多次上报(尺寸抖动),
+/// 取最大值能稳定到最终内容高度而不是中间过渡值。
+private struct CreditsContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

@@ -242,13 +242,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Thanks to all open source maintainers. Starcat only lists direct dependencies of the current project; if new SPM packages are added later, please update this section accordingly."
+            "value" : "Thanks to all open source maintainers."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "感谢所有开源维护者。Starcat 只列出当前工程直接依赖；如果后续新增 SPM package，请同步更新这里。"
+            "value" : "感谢所有开源维护者。"
           }
         }
       }
@@ -5251,6 +5251,7 @@
       }
     },
     "general.all" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
