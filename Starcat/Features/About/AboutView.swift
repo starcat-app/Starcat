@@ -780,6 +780,32 @@ private struct AboutDependency: Identifiable {
             license: "MIT",
             copyright: "Copyright (c) 2017 GitHub, Inc.",
             url: URL(string: "https://github.com/github/linguist")
+        ),
+
+        // MARK: 第三方品牌标识（非开源代码，但仍登记以保持透明）
+        //
+        // 这 3 个外部文档站的品牌 logo 嵌入在 `Assets.xcassets/WikiSources/` 下,
+        // 用于详情页 Wiki 菜单的来源识别。它们是各品牌的商标 / 品牌资产,Starcat
+        // 仅作"识别用图"展示,不主张所有权,license 字段标记为 "Brand Asset"。
+        // 严格按 CLAUDE.md「开源致谢同步规则」第 2 条「嵌入式资源」登记。
+
+        AboutDependency(
+            name: "DeepWiki Logo",
+            license: "Brand Asset",
+            copyright: "Cognition Labs, Inc. — used for source identification only",
+            url: URL(string: "https://deepwiki.com")
+        ),
+        AboutDependency(
+            name: "Zread Logo",
+            license: "Brand Asset",
+            copyright: "Zread.ai — used for source identification only",
+            url: URL(string: "https://zread.ai")
+        ),
+        AboutDependency(
+            name: "Google Code Wiki Logo",
+            license: "Brand Asset",
+            copyright: "Google LLC — used for source identification only",
+            url: URL(string: "https://codewiki.google")
         )
     ]
 }

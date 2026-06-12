@@ -100,7 +100,29 @@ struct RepoWikiMenu: View {
         Menu {
             ForEach(links) { link in
                 Link(destination: link.url) {
-                    Label(link.title, systemImage: link.source.sfSymbol)
+                    // v1.4 → v1.5 → v1.6 修订（2026-06-12）：菜单项图标用各家品牌 logo。
+                    // v1.6 视觉再次收敛（dong4j 反馈"尺寸 10,圆角 6,zread 四周有白边,
+                    // deepwiki 没有圆角"）:
+                    // - 尺寸 10×10（v1.5 是 14×14）→ 更小更克制,接近 macOS menu 系统
+                    //   icon 标准字号的紧凑版。
+                    // - cornerRadius 6 → 在 10×10 视图上半径达 60%,接近"圆角胶囊",
+                    //   把 deepwiki 的硬矩形角彻底磨圆,把 zread 反色后的整片白色裁成
+                    //   小圆角方块（视觉上跟 light mode 的黑色圆角方块对称）,3 家最终
+                    //   形状高度一致。
+                    // - `interpolation(.high)` 在 10pt 这种极小尺寸下抗锯齿尤其重要。
+                    Label {
+                        Text(link.title)
+                    } icon: {
+                        if let name = link.source.assetName {
+                            Image(name)
+                                .resizable()
+                                .interpolation(.high)
+                                .frame(width: 10, height: 10)
+                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        } else {
+                            Image(systemName: link.source.fallbackSFSymbol)
+                        }
+                    }
                 }
             }
         } label: {

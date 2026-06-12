@@ -51,18 +51,28 @@ enum WikiSource: Decodable, Sendable, Hashable {
         }
     }
 
-    /// 菜单行图标。给三家用各有区分度的 SF Symbol，避免列表里三个 `arrow.up.right.square`
-    /// 让用户分不清来源。选 symbol 原则：
-    /// - 体现该来源的产品调性（DeepWiki 偏"理解 / 深度"→ brain / sparkles，Zread 偏"快速阅读"
-    ///   → bolt.text，Code Wiki 偏"代码索引"→ chevron.left.forwardslash.chevron.right）
-    /// - 同时全部在 macOS 15+ 可用，不需要额外可用性 fallback
-    var sfSymbol: String {
+    /// 菜单行图标。v1.4（2026-06-12）：从 SF Symbol 切换为各家品牌 logo（PNG），
+    /// 提升来源识别度和品牌一致性。资源位于 `Assets.xcassets/WikiSources/` 命名空间。
+    ///
+    /// 适配细节：
+    /// - `zread` 原图是深灰圆角方形 + 浅灰 V 线条，dark mode 下与背景融合不可见；
+    ///   imageset 已配置 luminosity=dark appearance 走反色版本（浅底 + 深灰线条）。
+    /// - `deepwiki` / `codewiki` 自身明暗对比足够，两种 mode 共用单版本。
+    /// - `unknown` 后备：用 SF Symbol `doc.text`，避免新来源出现时图标空白。
+    ///
+    /// 返回 `nil` 表示走 SF Symbol fallback（仅 `.unknown` 走此路径）。
+    var assetName: String? {
         switch self {
-        case .deepWiki: return "sparkles.rectangle.stack"
-        case .zread: return "text.book.closed"
-        case .codeWiki: return "chevron.left.forwardslash.chevron.right"
-        case .unknown: return "doc.text"
+        case .deepWiki: return "WikiSources/deepwiki"
+        case .zread: return "WikiSources/zread"
+        case .codeWiki: return "WikiSources/codewiki"
+        case .unknown: return nil
         }
+    }
+
+    /// `assetName` 为 nil 时的 SF Symbol fallback（目前只有 unknown 来源走这里）。
+    var fallbackSFSymbol: String {
+        "doc.text"
     }
 
     init(from decoder: Decoder) throws {
