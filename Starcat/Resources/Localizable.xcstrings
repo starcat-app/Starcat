@@ -3037,6 +3037,7 @@
       }
     },
     "authV2.codeCopied" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3053,6 +3054,7 @@
       }
     },
     "authV2.codeCopiedAndOpening" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7261,6 +7263,7 @@
       }
     },
     "repo.status" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7272,6 +7275,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "状态"
+          }
+        }
+      }
+    },
+    "repo.status.cancelUsing" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop using"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消正在使用"
           }
         }
       }
@@ -7289,6 +7308,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已废弃"
+          }
+        }
+      }
+    },
+    "repo.status.markUsingHint" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to mark as Using"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击标记为正在使用"
+          }
+        }
+      }
+    },
+    "repo.status.read" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已读"
           }
         }
       }
@@ -7311,7 +7364,6 @@
       }
     },
     "repo.status.unread" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7328,7 +7380,6 @@
       }
     },
     "repo.status.using" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7339,7 +7390,24 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已采用"
+            "value" : "正在使用"
+          }
+        }
+      }
+    },
+    "repo.status.usingHint" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Currently in use"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前正在使用"
           }
         }
       }
