@@ -166,6 +166,14 @@ struct UnifiedRepoRow: View {
                             MetaBadge(systemImage: "tuningfork", text: "Fork", tint: .secondary)
                         }
 
+                        if !card.weeklySources.isEmpty {
+                            WeeklySourceInlineBadge(
+                                sources: card.weeklySources,
+                                label: card.weeklySourceLabel
+                            )
+                            .padding(.leading, 3)
+                        }
+
                         Spacer(minLength: 0)
 
                         // v2.0（2026-06-11 dong4j 决策）：Activity 卡片右上角 RelativeDateBadge 已删。
@@ -280,6 +288,56 @@ struct UnifiedRepoRow: View {
 
         case .activityKind, .none:
             EmptyView()
+        }
+    }
+}
+
+// MARK: - WeeklySourceInlineBadge
+
+private struct WeeklySourceInlineBadge: View {
+    let sources: [WeeklySource]
+    let label: String?
+
+    var body: some View {
+        HStack(spacing: 4) {
+            HStack(spacing: -4) {
+                ForEach(Array(sources.prefix(4).enumerated()), id: \.offset) { _, source in
+                    sourceIcon(source)
+                }
+            }
+            if let label, !label.isEmpty {
+                Text(label)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background {
+            Capsule(style: .continuous)
+                .fill(Color.secondary.opacity(0.10))
+        }
+        .help(sources.map(\.displayName).joined(separator: " / "))
+    }
+
+    @ViewBuilder
+    private func sourceIcon(_ source: WeeklySource) -> some View {
+        switch source {
+        case .unknown:
+            Image(systemName: source.assetName)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(Color(nsColor: .controlBackgroundColor)))
+                .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
+        default:
+            Image(source.assetName)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 16, height: 16)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
         }
     }
 }

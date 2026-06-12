@@ -1,10 +1,12 @@
 # weekly-api 3 源聚合改造方案（R-04）
 
-> **状态**：关键契约已拍板（2026-06-12，待施工）
+> **状态**：后端已实施并本地接口验收通过（2026-06-12）
 > **影响范围**：`supports/starcat-weekly-api/` 独立 Go 服务
 > **客户端影响**：现有 `WeeklyAPI` 接口由 R-05 一次性切换到聚合接口
 > **数据迁移**：项目未上线，不保留旧 schema；删除本地数据库后重建
 > **兼容性**：不保留旧列表和详情接口
+
+> **实施记录（2026-06-12）**：`supports/starcat-weekly-api` 已按本文落地 R-04。公开读取接口只保留 `GET /api/v1/repos`、`GET /api/v1/repos/{gh_repo_id}`、`GET /api/v1/repos/languages`；旧 `/api/v1/weekly`、`/api/v1/zread`、`/api/v1/discovery` 已删除并本地验证 404。`go test -timeout 60s ./... -count=1` 为 28 项 / 15 packages 全绿；本地删 `weekly.db` 后通过 `supports/start-all.sh` 启动服务，已验证分页、详情、语言、`source=weekly`、`source=zread`、旧接口 404。
 
 ---
 
@@ -57,13 +59,15 @@ GET /api/v1/repos/languages
 | ZRead | `zread_trending` | `(week_start, owner, name)` | `week_start` / `week_end` |
 | Show HN | `discovery_repos`、`discovery_submissions` | `(owner, repo)`、`hn_id` | 投稿 `published_at` |
 
-最新 weekly-api `c2a97bc` 已删除 Discovery 的 LLM 分类阶段。当前 Discovery repo 只维护：
+最新 weekly-api `c2a97bc` 已删除 Discovery 的 LLM 分类阶段。R-04 实施后，Discovery 不再维护独立的 `discovery_repos` enrichment 状态机；仓库元数据统一写入 `github_repos`，Show HN 投稿事实统一写入 `discovery_submissions`。
+
+R-04 之前 Discovery repo 曾维护：
 
 - GitHub enrichment 状态：`pending / ready / retryable / unavailable`；
 - GitHub repo 元数据；
 - Show HN 投稿事实。
 
-因此新聚合 schema 不再包含 `category`、`classify_status`、`classify_model` 等字段，也不依赖 `LLM_API_KEY`。
+因此新聚合 schema 不再包含 `category`、`classify_status`、`classify_model` 等字段，也不依赖 `LLM_API_KEY`；`readme_excerpt` 也不再由 Discovery 路径生成。
 
 ### 1.2 当前接口
 
@@ -118,6 +122,8 @@ gh_repo_id INTEGER PRIMARY KEY
 - discovery：`discovery_submissions.published_at`。
 
 冷启动导入历史数据时，所有 repo 的 `record_updated_at` 可能相近，因此绝不能用“入库时间”代替来源事件时间。
+
+**R-04 实施细节（weekly `published_at`）**：`ruanyf/weekly` 的 issue Markdown 和 README 索引没有稳定的显式发布时间；本地 `.weekly-repo` 是 shallow clone，git commit/tag 时间会被本次 pull 时间污染。实现中 `issuePublishedAt(path)` 优先解析正文图片资源名里的 `bgYYYYMMDD` 作为期号发布时间（例如 `bg20180614...` → `2018-06-14T00:00:00Z`），只有解析不到时才回退到文件 mtime。客户端只消费后端返回的 `latest_event_at`，不需要知道这个解析细节。
 
 `latest_event_at` 是客户端可见的唯一“最近更新 / 最近来源事件”字段。客户端列表排序、详情首帧展示、相对时间提示都直接使用后端返回值，不再按三源快照自行比较或重算。
 
@@ -627,7 +633,13 @@ OFFSET 分页在当前规模可接受。所有排序都必须带 `gh_repo_id` �
 | 周一 06:00 | zread fetch | ensure GitHub repo，逐周写 `zread_events` |
 | 每小时 | discovery collect | 抓 Show HN，ensure GitHub repo，写 submissions |
 
-删除 Discovery classify retry cron。GitHub enrichment 重试继续沿用当前 `pending / ready / retryable / unavailable` 的容错语义，但最终统一落到主表的 `is_available/enriched_at`。
+删除 Discovery classify retry cron。Discovery 不再保留独立 `pending / ready / retryable / unavailable` 状态机；GitHub 请求失败只记录日志并等待下次 collect/cron 重新尝试。对已经存在 `github_repos` 行的仓库，后续 GitHub 404 可以把主表 `is_available` 标记为 0；首次发现时就 404 的 owner/name 因拿不到 `gh_repo_id`，不伪造主表行，直接跳过公开 feed。
+
+**R-04 实施细节（启动与手动触发）**：
+
+1. `Scheduler.Start()` 当前仍按“首次 weekly 全量同步 → 注册 cron → 立即启动 discovery goroutine”的顺序执行。由于首次 weekly 会逐条 GitHub enrich，冷启动删库后 `source=discovery` 可能在一段时间内为空，这是预期的运行时状态，不表示 `/api/v1/repos?source=discovery` 查询契约有问题。
+2. `POST /internal/sync/discovery` 使用 `ADMIN_API_KEYS` 鉴权，不能复用客户端 `API_KEYS`。本地 `.env` 未配置 `ADMIN_API_KEYS` 时，该手动端点返回 401，日志会打印 `ADMIN_API_KEYS not configured; admin discovery sync is disabled`。如果需要立即采集 Show HN 数据，需要先配置 `ADMIN_API_KEYS` 并重启服务，再手动触发。
+3. 客户端 R-05 不能假设三源在首次启动时同时有数据；`source_types` 和三源快照以服务端当前已采集结果为准。`source=discovery` 返回空列表是合法状态。
 
 ---
 
@@ -698,3 +710,39 @@ OFFSET 分页在当前规模可接受。所有排序都必须带 `gh_repo_id` �
 - Discovery 不包含任何已删除的 LLM 分类字段和任务。
 - 客户端只需消费统一列表、ID 详情和语言接口。
 - 删除数据库重建后，后端测试与本地三源端到端验证全部通过。
+
+---
+
+## 12. R-04 实施对照与后续前端注意事项（2026-06-12）
+
+本节记录实际后端实现与本文设计之间的确认项 / 细节差异，作为 R-05 客户端施工前的事实源。
+
+### 12.1 已按设计落地的契约
+
+1. **公开接口**：只保留 `GET /api/v1/repos`、`GET /api/v1/repos/{gh_repo_id}`、`GET /api/v1/repos/languages`。旧 `/api/v1/weekly`、`/api/v1/zread`、`/api/v1/discovery` 在本地验证均为 404。
+2. **列表 DTO**：返回扁平 Repo Card + feed fields，没有嵌套 `card` 对象。列表项包含 `gh_repo_id`、`full_name`、`owner`、`repo`、`html_url`、`is_available`、`source_types`、`first_event_at`、`latest_event_at` 以及三源代表快照。
+3. **分页与排序**：默认按 `latest_event_at DESC, gh_repo_id DESC`；本地验证 page1/page2 无重复。`source`、`lang`、`sort`、`order` 非法参数返回明确 400。
+4. **详情接口**：按 `gh_repo_id` 查询，返回 `repo + events[]`。`events[]` 已验证 weekly / zread 事件可返回。
+5. **语言接口**：返回 `key / label / count`，不接受 `source` 参数；传 `source` 返回 400。
+6. **zread 接入**：`POST /internal/sync/zread` 可触发写入统一 feed；本地验证 `source=zread` 有数据，且默认合并列表会把 2026 zread 排在 2018 weekly 之前。
+7. **测试**：`go test -timeout 60s ./... -count=1` 为 28 项 / 15 packages 全绿。
+
+### 12.2 实施中明确化的细节
+
+1. **weekly 事件时间来源**：实现不使用文件 mtime 作为正常路径，而是优先解析 Markdown 资源名 `bgYYYYMMDD`。这是为了避免删库重建或 shallow clone 导致旧 issue 被错误排到当前年份。客户端只看 `latest_event_at`。
+2. **Discovery 数据可能为空**：冷启动时 `source=discovery` 返回空列表是合法状态。Show HN collect 依赖 scheduler 跑到 discovery job，或配置 `ADMIN_API_KEYS` 后手动触发 `/internal/sync/discovery`。
+3. **Discovery 手动同步鉴权**：`/internal/sync/discovery` 使用 `ADMIN_API_KEYS`，不是客户端 `API_KEYS`。未配置时返回 401，本地日志会提示 disabled。
+4. **首次 404 处理边界**：首次从来源解析到 owner/name 后，如果 GitHub API 已返回 404，后端拿不到可信 `gh_repo_id`，不会伪造主表行。只有已经建立过 `github_repos` 的仓库后续变不可用，才可能返回 `repo.is_available=false` 的历史详情。
+5. **Discovery 不再有独立 repo 状态机**：实现删除 `discovery_repos`，不保留 `pending/ready/retryable/unavailable` 表状态；Show HN 投稿事实直接挂到 `discovery_submissions(gh_repo_id)`。
+
+### 12.3 尚未覆盖或需后续补强的后端测试
+
+当前单测覆盖了核心编译、store discovery 新路径和 repos handler 基本契约，但还没有完全覆盖 §9 中所有验收项。后续如继续加强后端质量，优先补：
+
+1. 同一 `gh_repo_id` 先 weekly 后 zread，验证 `source_types` 合并为 `["weekly", "zread"]`。
+2. `rebuild-aggregates` 与在线写入结果完全一致。
+3. 已存在 repo 后 GitHub 404 时，详情返回 200 + `is_available=false` + 历史 events。
+4. 并发写两个来源时 `source_types_json` 不丢来源。
+5. rename / transfer 后 canonical owner/name 覆盖，但 `gh_repo_id` 详情仍命中。
+
+这些测试缺口不改变当前 R-05 客户端接口契约；前端可按 §5 的 JSON 结构和本节事实开始施工。

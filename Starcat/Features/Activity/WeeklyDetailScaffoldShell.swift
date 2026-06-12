@@ -74,7 +74,7 @@ import AppKit
 ///   `WeeklyDetailScaffoldShell(project:)` 一行调用。
 struct WeeklyDetailScaffoldShell: View {
 
-    let project: WeeklyProject
+    let item: WeeklyFeedItem
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
@@ -120,7 +120,7 @@ struct WeeklyDetailScaffoldShell: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .task(id: project.id) {
+        .task(id: item.id) {
             await loadAll()
         }
     }
@@ -133,12 +133,17 @@ struct WeeklyDetailScaffoldShell: View {
             repo: repo,
             viewData: RepoDetailViewData(
                 hero: RepoDetailHero(repo: repo),
-                trailingActions: trailingActions(for: project, repo: repo),
+                trailingActions: trailingActions(for: repo),
                 // R-01 v1.0 设计 ⑬:翻译按钮覆盖所有 repo 详情。
                 // 与 trending 同款:仅本地命中(`displayRepo.id != 0`)才暴露上下文,
                 // ephemeral repo(id=0)撞翻译缓存命名空间。
                 translation: repo.id != 0 ? ReadmeTranslationContext(fullName: repo.fullName) : nil,
-                backendHint: nil
+                backendHint: nil,
+                headerSourceBadge: RepoDetailHeaderSourceBadge(
+                    sources: item.sourceTypes,
+                    label: item.shortSourceLabel,
+                    url: sourceURL(for: item)
+                )
             ),
             fallbackAccentColor: ActivityCategory.weekly.iconColor,
             // R-01 v1.5 / v2.0:tooltip 与 toggle 行为对齐,直接派生自 `repo.isStarred`。
@@ -154,20 +159,30 @@ struct WeeklyDetailScaffoldShell: View {
         )
     }
 
-    /// 计算 trailingActions(v2.0 修订, 2026-06-10):
-    /// - `.weeklyIssue`(周刊期号外链):仅依赖 `firstIssue + issueURL`,与登录态/star 态无关
-    ///   (公开 GitHub issue 页面),**保持独立**;
-    /// - `.share` / `.ai`:守卫绑 `isAuthenticated && repo.isStarred`,与 4 详情页同构。
-    private func trailingActions(for project: WeeklyProject, repo: Repo) -> [RepoDetailAction] {
+    /// 计算 trailingActions。
+    ///
+    /// Weekly 来源已经在 `full_name` 行用 source badge 展示并负责跳转，右侧 actions
+    /// 只保留通用详情动作，避免同一个阮一峰期号在 header 两个位置重复出现。
+    private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
         var actions: [RepoDetailAction] = []
-        if project.firstIssue > 0, let issueURL = project.issueURL {
-            actions.append(.weeklyIssue(number: project.firstIssue, url: issueURL))
-        }
         if authSession.state.isAuthenticated, repo.isStarred {
             actions.append(.share)
             actions.append(.ai)
         }
         return actions
+    }
+
+    private func sourceURL(for item: WeeklyFeedItem) -> URL? {
+        if let url = item.weekly?.issueURL {
+            return url
+        }
+        if item.zread != nil {
+            return URL(string: "https://zread.ai/\(item.owner)/\(item.name)")
+        }
+        if let hnID = item.discovery?.hnID {
+            return URL(string: "https://news.ycombinator.com/item?id=\(hnID)")
+        }
+        return nil
     }
 
     /// hero ⭐/☆ chip 的 tooltip 本地化键(v2.0 修订)。
@@ -201,14 +216,26 @@ struct WeeklyDetailScaffoldShell: View {
         // 同 shell 内 handleStarTapped 后重复 loadAll 不会发生(loadAll 仅由
         // .task(id: project.id) 触发,project.id 不变 task 不重跑),所以无需
         // D-27 时代的 `displayRepo?.fullName != project.fullName` 守卫。
-        if displayRepo?.fullName.lowercased() != project.fullName.lowercased() {
-            displayRepo = makeFallbackRepo(from: project)
+        if displayRepo?.id != item.ghRepoId {
+            displayRepo = makeFallbackRepo(from: item)
             isLocalHit = false
         }
-        loadReadme(for: project)
+        loadReadme(for: item)
 
         // ─── 异步段:后台升级 displayRepo 到本地真值或 GitHub API 真值 ───────
-        await resolveRepo(for: project)
+        await loadDetail(for: item)
+        await resolveRepo(for: item)
+    }
+
+    private func loadDetail(for item: WeeklyFeedItem) async {
+        do {
+            let detail = try await dependencies.weeklyAPI.fetchDetail(repoID: item.ghRepoId)
+            guard detail.repo.card.ghRepoId == item.ghRepoId else { return }
+            displayRepo = detail.repo.card.toEphemeralRepo()
+            isLocalHit = false
+        } catch {
+            AppLog.network.warning("weekly: detail load failed for \(item.ghRepoId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// 决定 `displayRepo` 与 `isLocalHit`(D-27 修订:silent upgrade 模式)。
@@ -222,13 +249,11 @@ struct WeeklyDetailScaffoldShell: View {
     /// 1b. findById 不命中 → 走 `findByOwnerName(owner:name:)` 兜底。
     /// 2.  全部不命中 → **silent upgrade**:调 GitHub `/repos` 用真值替换 fallback;
     ///     失败保持 fallback 不变(hero 不白屏)。
-    private func resolveRepo(for project: WeeklyProject) async {
+    private func resolveRepo(for item: WeeklyFeedItem) async {
         // 1a) 本地查找 — id 精确匹配 优先(仅当 fullName 与当前 project 同源)
-        if let cached = displayRepo,
-           cached.id > 0,
-           cached.fullName.lowercased() == project.fullName.lowercased() {
+        if let cached = displayRepo, cached.id > 0 {
             do {
-                if let local = try await dependencies.repoRepository.findById(cached.id) {
+                if let local = try await dependencies.repoRepository.findById(item.ghRepoId) {
                     displayRepo = local
                     isLocalHit = true
                     return
@@ -241,8 +266,8 @@ struct WeeklyDetailScaffoldShell: View {
         // 1b) findById 未命中 → owner/name 兜底
         do {
             if let local = try await dependencies.repoRepository.findByOwnerName(
-                owner: project.owner,
-                name: project.name
+                owner: item.owner,
+                name: item.name
             ) {
                 displayRepo = local
                 isLocalHit = true
@@ -256,7 +281,7 @@ struct WeeklyDetailScaffoldShell: View {
         //
         // weekly 列表只是发现入口,**不入库**——避免污染本地 starred 集合。
         do {
-            let dto = try await dependencies.apiClient.repo(owner: project.owner, repo: project.name)
+            let dto = try await dependencies.apiClient.repo(owner: item.owner, repo: item.name)
             let cachedAt = ISO8601DateFormatter.shared.string(from: Date())
             displayRepo = GRDBRepoRepository.repoFromDTO(
                 dto,
@@ -266,7 +291,7 @@ struct WeeklyDetailScaffoldShell: View {
             )
             isLocalHit = false
         } catch {
-            AppLog.network.error("weekly: GitHub /repos silent upgrade failed for \(project.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            AppLog.network.error("weekly: GitHub /repos silent upgrade failed for \(item.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
             // 保持 loadAll 入口推的 fallback 不动,hero 不白屏。
         }
     }
@@ -275,41 +300,16 @@ struct WeeklyDetailScaffoldShell: View {
     ///
     /// 仅填 weekly 项目本身就有的字段：fullName / description / language / stars。
     /// `id = 0` 配合守卫 `repo.id != 0`,不能让此 Repo 进任何写入路径。
-    private func makeFallbackRepo(from project: WeeklyProject) -> Repo {
-        Repo(
-            id: 0,
-            owner: project.owner,
-            name: project.name,
-            fullName: project.fullName,
-            description: project.description,
-            language: project.language,
-            starsCount: project.stars,
-            forksCount: 0,
-            watchersCount: 0,
-            topics: nil,
-            license: nil,
-            homepage: nil,
-            htmlUrl: project.url.absoluteString,
-            cloneUrl: nil,
-            sshUrl: nil,
-            isPrivate: false,
-            isFork: false,
-            isArchived: false,
-            isStarred: false,
-            pushedAt: nil,
-            createdAt: nil,
-            updatedAt: nil,
-            starredAt: nil,
-            cachedAt: ISO8601DateFormatter.shared.string(from: Date())
-        )
+    private func makeFallbackRepo(from item: WeeklyFeedItem) -> Repo {
+        item.card.toEphemeralRepo()
     }
 
     /// 触发 README 加载（D-27 修订:同步签名,fire-and-forget）。
-    private func loadReadme(for project: WeeklyProject) {
+    private func loadReadme(for item: WeeklyFeedItem) {
         let model = ensureReadmeViewModel()
         model.loadTrending(
-            owner: project.owner,
-            repo: project.name,
+            owner: item.owner,
+            repo: item.name,
             isLoggedIn: authSession.state.isAuthenticated
         )
     }
@@ -351,6 +351,6 @@ struct WeeklyDetailScaffoldShell: View {
 
         await homeViewModel.refreshSidebar()
         await homeViewModel.reloadItems(forceRefresh: true)
-        await resolveRepo(for: project)
+        await resolveRepo(for: item)
     }
 }

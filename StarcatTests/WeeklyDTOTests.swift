@@ -2,8 +2,8 @@
 //  WeeklyDTOTests.swift
 //  StarcatTests
 //
-//  R-01 v1.2 后：验证 envelope 化的 weekly 响应能正确解码到 `StarcatRepoCardDTO + WeeklyExtension`，
-//  并能转换成 UI 消费的 `WeeklyProject` 领域模型。
+//  R-05 后：验证 envelope 化的三源聚合 weekly 响应能正确解码到
+//  `WeeklyFeedRepoDTO + WeeklyFeedItem`。
 //
 //  关键约束：
 //  - 后端响应顶层走 `StarcatEnvelope<[StarcatRepoCardDTO]>`（schema_version + data + meta）
@@ -20,7 +20,7 @@ struct WeeklyDTOTests {
 
     private var decoder: JSONDecoder { JSONDecoder() }
 
-    @Test("完整 envelope 响应解码到 WeeklyProject")
+    @Test("完整 envelope 响应解码到 WeeklyFeedItem")
     func decodeFullEnvelope() throws {
         let json = #"""
         {
@@ -43,22 +43,33 @@ struct WeeklyDTOTests {
               "is_private": false,
               "open_issues": 5,
               "html_url": "https://github.com/alice/awesome-tool",
+              "is_available": true,
+              "source_types": ["weekly", "zread", "future"],
+              "first_event_at": "2024-05-02T00:00:00Z",
+              "latest_event_at": "2026-05-02T00:00:00Z",
               "weekly": {
-                "first_issue": 399,
+                "issue_number": 399,
                 "issue_url": "https://github.com/ruanyf/weekly/blob/master/docs/issue-399.md"
+              },
+              "zread": {
+                "week_start": "2026-05-01",
+                "week_end": "2026-05-07",
+                "week_label": "Week 18",
+                "rank_in_week": 2
               }
             }
           ],
           "meta": {
             "page": 1,
             "page_size": 20,
-            "total": 1
+            "total": 1,
+            "next_page": 2
           }
         }
         """#
 
         let data = try #require(json.data(using: .utf8))
-        let envelope = try decoder.decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: data)
+        let envelope = try decoder.decode(StarcatEnvelope<[WeeklyFeedRepoDTO]>.self, from: data)
 
         #expect(envelope.schemaVersion == 1)
         #expect(envelope.isSupported == true)
@@ -66,16 +77,20 @@ struct WeeklyDTOTests {
         #expect(envelope.meta?.total == 1)
         #expect(envelope.meta?.page == 1)
         #expect(envelope.meta?.pageSize == 20)
+        #expect(envelope.meta?.nextPage == 2)
 
-        let project = WeeklyProject(card: envelope.data[0])
-        #expect(project.owner == "alice")
-        #expect(project.name == "awesome-tool")
-        #expect(project.fullName == "alice/awesome-tool")
-        #expect(project.stars == 1234)
-        #expect(project.language == "Go")
-        #expect(project.firstIssue == 399)
-        #expect(project.url.absoluteString == "https://github.com/alice/awesome-tool")
-        #expect(project.issueURL?.absoluteString == "https://github.com/ruanyf/weekly/blob/master/docs/issue-399.md")
+        let item = WeeklyFeedItem(dto: envelope.data[0])
+        #expect(item.id == 100001)
+        #expect(item.owner == "alice")
+        #expect(item.name == "awesome-tool")
+        #expect(item.fullName == "alice/awesome-tool")
+        #expect(item.stars == 1234)
+        #expect(item.language == "Go")
+        #expect(item.weekly?.issueNumber == 399)
+        #expect(item.zread?.weekLabel == "Week 18")
+        #expect(item.sourceTypes == [.weekly, .zread, .unknown("future")])
+        #expect(item.shortSourceLabel == "399")
+        #expect(item.url.absoluteString == "https://github.com/alice/awesome-tool")
     }
 
     @Test("description / language / weekly 缺失时使用回退")
@@ -99,7 +114,17 @@ struct WeeklyDTOTests {
               "is_archived": false,
               "is_fork": false,
               "is_private": false,
-              "open_issues": 0
+              "open_issues": 0,
+              "source_types": ["discovery"],
+              "first_event_at": "2026-05-02T00:00:00Z",
+              "latest_event_at": "2026-05-02T00:00:00Z",
+              "discovery": {
+                "hn_id": 123,
+                "title": "Show HN: Tiny",
+                "score": 5,
+                "comments": 2,
+                "published_at": "2026-05-02T00:00:00Z"
+              }
             }
           ],
           "meta": {
@@ -111,13 +136,14 @@ struct WeeklyDTOTests {
         """#
 
         let data = try #require(json.data(using: .utf8))
-        let envelope = try decoder.decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: data)
-        let project = WeeklyProject(card: envelope.data[0])
+        let envelope = try decoder.decode(StarcatEnvelope<[WeeklyFeedRepoDTO]>.self, from: data)
+        let item = WeeklyFeedItem(dto: envelope.data[0])
 
-        #expect(project.description == nil)
-        #expect(project.language == nil)
-        #expect(project.firstIssue == 0)
-        #expect(project.issueURL == nil, "缺 weekly 段时 issueURL 应为 nil")
+        #expect(item.description == nil)
+        #expect(item.language == nil)
+        #expect(item.weekly == nil)
+        #expect(item.discovery?.hnID == 123)
+        #expect(item.shortSourceLabel == "5.2")
     }
 
     @Test("空 data 数组不报错")
@@ -130,36 +156,24 @@ struct WeeklyDTOTests {
         }
         """#
         let data = try #require(json.data(using: .utf8))
-        let envelope = try decoder.decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: data)
+        let envelope = try decoder.decode(StarcatEnvelope<[WeeklyFeedRepoDTO]>.self, from: data)
         #expect(envelope.data.isEmpty)
         #expect(envelope.meta?.total == 0)
     }
 }
 
-@Suite("WeeklyProjectListResult.hasMore 推算")
-struct WeeklyProjectListResultTests {
+@Suite("WeeklyFeedListResult.hasMore")
+struct WeeklyFeedListResultTests {
 
-    @Test("还有下一页时 hasMore = true")
-    func hasMoreWhenPagesRemain() {
-        let result = WeeklyProjectListResult(items: [], total: 100, page: 1, pageSize: 20)
+    @Test("nextPage 存在时 hasMore = true")
+    func hasMoreWhenNextPageExists() {
+        let result = WeeklyFeedListResult(items: [], total: 100, page: 1, pageSize: 20, nextPage: 2)
         #expect(result.hasMore == true)
     }
 
-    @Test("最后一页时 hasMore = false")
-    func noMoreOnLastPage() {
-        let result = WeeklyProjectListResult(items: [], total: 100, page: 5, pageSize: 20)
-        #expect(result.hasMore == false)
-    }
-
-    @Test("total 不足一页时 hasMore = false")
-    func noMoreWhenLessThanOnePage() {
-        let result = WeeklyProjectListResult(items: [], total: 5, page: 1, pageSize: 20)
-        #expect(result.hasMore == false)
-    }
-
-    @Test("pageSize 0 时 hasMore = false 兜底")
-    func noMoreWhenPageSizeZero() {
-        let result = WeeklyProjectListResult(items: [], total: 5, page: 1, pageSize: 0)
+    @Test("nextPage 缺失时 hasMore = false")
+    func noMoreWithoutNextPage() {
+        let result = WeeklyFeedListResult(items: [], total: 100, page: 5, pageSize: 20, nextPage: nil)
         #expect(result.hasMore == false)
     }
 }

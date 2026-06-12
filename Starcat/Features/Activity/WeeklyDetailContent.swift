@@ -64,8 +64,6 @@ struct WeeklyDetailContent: View {
     @Environment(AppSettings.self) private var settings
 
     var body: some View {
-        // v1.5 修订（2026-06-10）：RepoLocalSections 已迁回 Scaffold metadataPanel,
-        // 本 ContentView body 仅剩 ReadmeStateView,无需再包 VStack。
         ReadmeStateView(
             state: readmeVM.state,
             // 拼接 blob/HEAD：与 trending / manage 详情页一致,让 README 内的相对

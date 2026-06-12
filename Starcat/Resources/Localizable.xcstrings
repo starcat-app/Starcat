@@ -12106,6 +12106,23 @@
         }
       }
     },
+    "weekly.sort.latestEvent" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Latest Activity"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近收录"
+          }
+        }
+      }
+    },
     "weekly.sort.latestIssue" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12123,6 +12140,23 @@
         }
       }
     },
+    "weekly.sort.pushedAt" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recently Pushed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近推送"
+          }
+        }
+      }
+    },
     "weekly.sort.starsDesc" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12136,6 +12170,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stars 最多"
+          }
+        }
+      }
+    },
+    "weekly.source.ruanyf" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruan Yi-feng Weekly"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "阮一峰周刊"
+          }
+        }
+      }
+    },
+    "weekly.sources.title" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sources"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来源"
           }
         }
       }

@@ -110,6 +110,9 @@ final class AppDependencies {
     /// 详见 `WeeklySelectionService` 文件头注释。
     let weeklySelectionService: WeeklySelectionService
 
+    /// Weekly 三源聚合语言筛选 Store。首次进入 Weekly 时懒加载。
+    let weeklyLanguageStore: WeeklyLanguageStore
+
     // MARK: - HOM-173 分享卡
 
     /// AI 分享卡后端 API 客户端。
@@ -314,13 +317,15 @@ final class AppDependencies {
         // MUL-176：阮一峰周刊 API 客户端。端点走 `AppEndpoints.Weekly.baseURL`。
         // 用户在设置页改地址 → AppDependencies.setServiceURL 推送到本 actor 的
         // updateBaseURL，无需重启 App。
-        self.weeklyAPI = WeeklyAPI(
+        let weeklyAPIInstance = WeeklyAPI(
             baseURL: AppEndpoints.Weekly.baseURL,
             apiKey: StarcatAPIKeyResolver.resolve(for: .weekly)
         )
+        self.weeklyAPI = weeklyAPIInstance
 
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
+        self.weeklyLanguageStore = WeeklyLanguageStore(api: weeklyAPIInstance)
 
         // HOM-173：分享卡 API 客户端。端点走 `AppEndpoints.Sharing.baseURL`（保留 /api 后缀）。
         self.shareAPI = ShareAPI(
@@ -454,6 +459,9 @@ final class AppDependencies {
         //    无需在这里同步刷新；未来扩展时再加。
         if service == .trending {
             await trendingLanguageStore.reload()
+        } else if service == .weekly {
+            weeklyLanguageStore.invalidate()
+            await weeklyLanguageStore.reload()
         }
     }
 
@@ -492,6 +500,9 @@ final class AppDependencies {
         //    之前 401 用户配好新 key 后 sidebar 立即恢复正确入口，无需重启。
         if service == .trending {
             await trendingLanguageStore.reload()
+        } else if service == .weekly {
+            weeklyLanguageStore.invalidate()
+            await weeklyLanguageStore.reload()
         }
     }
 

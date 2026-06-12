@@ -267,6 +267,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     repo: repo,
                     fallbackAccentColor: fallbackAccentColor,
                     starHelpKey: starHelpKey,
+                    headerSourceBadge: viewData.headerSourceBadge,
                     onStarTapped: onStarTapped
                 ) {
                     trailingActionsView

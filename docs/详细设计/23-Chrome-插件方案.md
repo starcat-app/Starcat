@@ -533,7 +533,7 @@ R-04 主表 `github_repos` 的 `source_types` 字段：
 
 - 与 weekly / zread / discovery 三个数据源**完全对等**
 - Activity 聚合页可以新增 `clip` 子分类（V0.2 评估），或保持当前 8 分类不变（用户能在 Manage 全列表看到，无需新分类）
-- 详情页"来源时间线"chip 行（22 文档设计）天然能展示"clip：浏览器采集于 YYYY-MM-DD HH:MM"
+- 详情页 full_name 同行来源标识（22 文档设计）可扩展展示 `clip` 来源摘要
 
 > **结论**：R-04 落地后，浏览器采集是**零成本**的第 4 个数据源。
 
@@ -637,7 +637,7 @@ R-04 主表 `github_repos` 的 `source_types` 字段：
 | `docs/工程进度/功能实现总览.md` | ① 在 §5（P2）或新增 §5.6 加 Chrome 插件计划条目；② §10 变更日志加方案落档行；③ 实施完成后按 CLAUDE.md / AGENTS.md 工作流要求标记 + 写实现说明 |
 | `docs/详细设计/16-活动页设计.md` | V0.2 若决定新增 `clip` 子分类，在 §3 Activity 分类章节追加；V0.1 不动 |
 | `docs/详细设计/21-weekly-api-后端3源聚合改造.md`（R-04） | 在 §2.4 source_types 列表的描述里增加 `clip`，与 weekly/zread/discovery 并列 |
-| `docs/详细设计/22-weekly-客户端3源聚合对接.md` | 详情页"来源时间线"chip 行的 source 类型列表增加 `clip` 渲染样式 |
+| `docs/详细设计/22-weekly-客户端3源聚合对接.md` | 来源标识的 source 类型列表增加 `clip` 渲染样式 |
 | `docs/Swift 学习索引.md` | 实施 M1 时若引入 SwiftNIO / Network.framework 嵌入式 HTTP server，关键概念加索引 |
 | 新增 `docs/详细设计/24-本地HTTP服务设计.md`（如有必要）| M1 详细设计若复杂度高（端口探测 / Token 持久化 / Bearer 中间件 / CORS），可单独拆出；MVP 简单则不拆 |
 

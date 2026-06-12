@@ -781,12 +781,19 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright (c) 2017 GitHub, Inc.",
             url: URL(string: "https://github.com/github/linguist")
         ),
+        AboutDependency(
+            name: "ruanyf/weekly",
+            license: "CC BY-NC-SA 4.0",
+            copyright: "Copyright (c) Ruanyifeng",
+            url: URL(string: "https://github.com/ruanyf/weekly")
+        ),
 
         // MARK: 第三方品牌标识（非开源代码，但仍登记以保持透明）
         //
-        // 这 3 个外部文档站的品牌 logo 嵌入在 `Assets.xcassets/WikiSources/` 下,
-        // 用于详情页 Wiki 菜单的来源识别。它们是各品牌的商标 / 品牌资产,Starcat
-        // 仅作"识别用图"展示,不主张所有权,license 字段标记为 "Brand Asset"。
+        // 外部来源品牌 logo 嵌入在 `Assets.xcassets/WikiSources/`（Wiki 菜单）与
+        // `Assets.xcassets/WeeklySources/`（Weekly 三源 feed）下,用于来源识别。
+        // 它们是各品牌的商标 / 品牌资产,Starcat 仅作"识别用图"展示,不主张所有权,
+        // license 字段标记为 "Brand Asset"。
         // 严格按 CLAUDE.md「开源致谢同步规则」第 2 条「嵌入式资源」登记。
 
         AboutDependency(
@@ -800,6 +807,18 @@ private struct AboutDependency: Identifiable {
             license: "Brand Asset",
             copyright: "Zread.ai — used for source identification only",
             url: URL(string: "https://zread.ai")
+        ),
+        AboutDependency(
+            name: "ZRead",
+            license: "Brand Asset",
+            copyright: "Zread.ai — used for weekly source identification only",
+            url: URL(string: "https://zread.ai")
+        ),
+        AboutDependency(
+            name: "Hacker News",
+            license: "Brand Asset",
+            copyright: "Y Combinator — used for source identification only",
+            url: URL(string: "https://news.ycombinator.com")
         ),
         AboutDependency(
             name: "Google Code Wiki Logo",
