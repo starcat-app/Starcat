@@ -45,7 +45,7 @@ struct ReleaseRepositoryTests {
             repoId: repoId,
             tagName: tag,
             name: "Release \(tag)",
-            bodyTruncated: nil,
+            bodyMarkdown: nil,
             htmlUrl: "https://github.com/x/y/releases/tag/\(tag)",
             isPrerelease: false,
             isDraft: false,
@@ -70,12 +70,12 @@ struct ReleaseRepositoryTests {
 
         // 二次 upsert 同 id：body / fetched_at 应被刷新，is_read 必须保留
         var r1Updated = r1
-        r1Updated.bodyTruncated = "new body"
+        r1Updated.bodyMarkdown = "new body"
         r1Updated.fetchedAt = "2026-06-05T00:00:00Z"
         try await repo.upsertMany([r1Updated], isReadDefault: false)
 
         let latest = try #require(try await repo.latest(forRepo: 10))
-        #expect(latest.bodyTruncated == "new body")
+        #expect(latest.bodyMarkdown == "new body")
         #expect(latest.fetchedAt == "2026-06-05T00:00:00Z")
         #expect(latest.isRead == true) // 关键：upsert 不能踩平用户的已读状态
     }

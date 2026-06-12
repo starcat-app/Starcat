@@ -7,7 +7,8 @@
 //  设计取舍：
 //  - assets 用 JSON 字符串存（assets_json）。Release.assets 数量稳定 ≤ 10，
 //    没有"按平台跨 Release 反查所有资产"的查询场景；不开关联表避免 N+1
-//  - body 截断后再存（最多 600 字符），避免几 MB 的发版日志撑大数据库
+//  - body_markdown 保存 GitHub 返回的完整 Release notes Markdown。发行版详情页需要
+//    原文渲染，截断只允许发生在 UI 摘要层，不能污染缓存真值。
 //  - is_read 是用户已读状态。和 RepoNote.status 的"未读/在读"不同：这里是 Release-level
 //
 
@@ -30,8 +31,8 @@ struct ReleaseRecord: Codable, FetchableRecord, MutablePersistableRecord, Equata
     /// Release 标题，可空。GitHub 允许 Release 不写名字（仅有 tag_name）。
     var name: String?
 
-    /// 截取后的 release notes（Markdown 原文，限 600 字符）。
-    var bodyTruncated: String?
+    /// GitHub Release notes 的完整 Markdown 原文。
+    var bodyMarkdown: String?
 
     /// Release 在 GitHub 上的网页地址。
     var htmlUrl: String
@@ -63,7 +64,7 @@ struct ReleaseRecord: Codable, FetchableRecord, MutablePersistableRecord, Equata
         case repoId = "repo_id"
         case tagName = "tag_name"
         case name
-        case bodyTruncated = "body_truncated"
+        case bodyMarkdown = "body_markdown"
         case htmlUrl = "html_url"
         case isPrerelease = "is_prerelease"
         case isDraft = "is_draft"

@@ -524,7 +524,8 @@ enum DatabaseMigrations {
     ///   只在时间线展示时需要，没有"按平台筛选所有 release 资产"的查询场景；
     ///   开一张 release_assets 关联表会引入 N+1 与 cascade，性价比低
     /// - `is_read`：用户已读状态，UI 端默认未读
-    /// - `body_truncated`：Release notes 截取首段（最多 600 字符），用于时间线行展示
+    /// - `body_markdown`：GitHub 返回的完整 Release notes Markdown；列表摘要由 UI 层截断，
+    ///   数据库必须保留原文，供发行版聚合详情页完整渲染
     private static func createReleases(_ db: Database) throws {
         try db.create(table: "releases") { t in
             t.column("id", .integer).primaryKey()
@@ -532,7 +533,7 @@ enum DatabaseMigrations {
                 .references("repos", column: "id", onDelete: .cascade)
             t.column("tag_name", .text).notNull()
             t.column("name", .text)
-            t.column("body_truncated", .text)
+            t.column("body_markdown", .text)
             t.column("html_url", .text).notNull()
             t.column("is_prerelease", .boolean).notNull().defaults(to: false)
             t.column("is_draft", .boolean).notNull().defaults(to: false)

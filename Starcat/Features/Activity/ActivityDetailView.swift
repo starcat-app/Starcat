@@ -81,7 +81,13 @@ struct ActivityDetailView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let item {
-                if shouldShowReadme(for: item), item.repo != nil {
+                if item.kind == .release, item.repo != nil {
+                    // 发行版改为 repo-backed 详情：上半部分复用 RepoDetailScaffold，
+                    // 下半部分渲染该 repo 聚合后的 Release notes Markdown 时间线。
+                    ActivityReleaseDetailScaffoldShell(item: item)
+                        .id(item.id)
+                        .detailContentTransition()
+                } else if shouldShowReadme(for: item), item.repo != nil {
                     // D-28 v3:repo-backed 走共用 shell(与 trending/weekly 同款 4 详情页同构)。
                     // 外层挂 .id(item.id) 让 shell 重建 → @State 自动重置 →
                     // 配合 .detailContentTransition() 触发"轻轻落下"动画。
@@ -215,7 +221,7 @@ struct ActivityDetailView: View {
                     Label(release.tagName, systemImage: "tag.fill")
                         .font(.headline)
 
-                    if let body = release.bodyTruncated, !body.isEmpty {
+                    if let body = release.bodyMarkdown, !body.isEmpty {
                         Text(body)
                             .font(.body)
                             .foregroundStyle(.primary)

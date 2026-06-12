@@ -90,6 +90,15 @@ struct RepoCardViewData: Identifiable, Hashable, Sendable {
 
     /// Weekly 三源短标签：ruanyf 显示期号、ZRead 显示周、HN 显示短日期。
     let weeklySourceLabel: String?
+
+    /// fullName 同行右侧的轻量元信息。Release 聚合卡片用它展示最新发布时间；
+    /// 其它场景保持 nil，避免恢复已删除的右上相对时间戳。
+    let inlineMetadata: RepoCardInlineMetadata?
+}
+
+struct RepoCardInlineMetadata: Hashable, Sendable {
+    let systemImage: String
+    let text: String
 }
 
 // MARK: - CardBadge
@@ -131,9 +140,14 @@ extension Repo {
 
     /// 把已 star 的本地 `Repo` 转为卡片视图数据。
     ///
-    /// - Parameter badge: 场景独有徽章（manage 场景通常 nil）
+    /// - Parameters:
+    ///   - badge: 场景独有徽章（manage 场景通常 nil）
+    ///   - inlineMetadata: fullName 同行右侧的小型元信息（发行版聚合卡片使用）
     /// - Returns: 视图数据；`isStarred` 直接读 `self.isStarred`（本地 DB 是真值）
-    func asCardData(badge: CardBadge? = nil) -> RepoCardViewData {
+    func asCardData(
+        badge: CardBadge? = nil,
+        inlineMetadata: RepoCardInlineMetadata? = nil
+    ) -> RepoCardViewData {
         RepoCardViewData(
             ghRepoId: self.id,
             fullName: self.fullName,
@@ -150,7 +164,8 @@ extension Repo {
             isStarred: self.isStarred,
             badge: badge,
             weeklySources: [],
-            weeklySourceLabel: nil
+            weeklySourceLabel: nil,
+            inlineMetadata: inlineMetadata
         )
     }
 }
@@ -183,7 +198,8 @@ extension StarcatRepoCardDTO {
             isStarred: registry.contains(ghRepoId: self.ghRepoId),
             badge: badge,
             weeklySources: [],
-            weeklySourceLabel: nil
+            weeklySourceLabel: nil,
+            inlineMetadata: nil
         )
     }
 }
@@ -225,7 +241,8 @@ extension TrendingRepo {
             isStarred: registry.contains(ghRepoId: self.ghRepoId),
             badge: resolvedBadge,
             weeklySources: [],
-            weeklySourceLabel: nil
+            weeklySourceLabel: nil,
+            inlineMetadata: nil
         )
     }
 }
@@ -261,7 +278,8 @@ extension WeeklyFeedItem {
             isStarred: registry.contains(ghRepoId: card.ghRepoId),
             badge: badge,
             weeklySources: sourceTypes,
-            weeklySourceLabel: shortSourceLabel
+            weeklySourceLabel: shortSourceLabel,
+            inlineMetadata: nil
         )
     }
 }

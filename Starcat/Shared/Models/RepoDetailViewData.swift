@@ -78,19 +78,36 @@ struct RepoDetailHero: Sendable {
     let homepage: URL?
 }
 
-/// 详情页 repo name 行右侧的轻量来源标识。
+/// 详情页 repo name 行右侧的轻量 inline 标识。
 ///
-/// 目前由 Weekly 三源聚合使用：只展示来源小圆图标 + 短时间/期号标签，
-/// 不单独占据详情页纵向空间。其它场景默认 nil。
+/// Weekly 三源聚合用 `sources` 展示来源小圆图标 + 短时间/期号标签；发行版聚合详情
+/// 用 `systemImage + label` 展示最新发布时间。它刻意保持在 full_name 同行，
+/// 不单独占据详情页纵向空间，也不 fork 顶部 header 组件。
 struct RepoDetailHeaderSourceBadge: Sendable, Equatable {
     let sources: [WeeklySource]
+    let systemImage: String?
     let label: String?
     let url: URL?
+    let help: String?
 
-    init(sources: [WeeklySource], label: String?, url: URL? = nil) {
+    init(sources: [WeeklySource], label: String?, url: URL? = nil, help: String? = nil) {
         self.sources = sources
+        self.systemImage = nil
         self.label = label
         self.url = url
+        self.help = help
+    }
+
+    init(systemImage: String, label: String, url: URL? = nil, help: String? = nil) {
+        self.sources = []
+        self.systemImage = systemImage
+        self.label = label
+        self.url = url
+        self.help = help
+    }
+
+    var isVisible: Bool {
+        !sources.isEmpty || systemImage != nil || label?.isEmpty == false
     }
 }
 

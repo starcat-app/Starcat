@@ -19,6 +19,7 @@
 
 import SwiftUI
 import AppKit
+import MarkdownUI
 
 struct ReleaseTimelineView: View {
 
@@ -408,11 +409,18 @@ private struct ReleaseTimelineRow: View {
                     .foregroundStyle(.primary)
             }
 
-            if let body = entry.release.bodyTruncated, !body.isEmpty {
-                Text(verbatim: body)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(isExpanded ? nil : 3)
+            if let body = entry.release.bodyMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !body.isEmpty {
+                if isExpanded {
+                    Markdown(body)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text(verbatim: body)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
             }
 
             assetsSection

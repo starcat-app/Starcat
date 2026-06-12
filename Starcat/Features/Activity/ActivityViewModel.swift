@@ -163,7 +163,7 @@ final class ActivityViewModel {
     private func makeItems(repos: [Repo], releases: [ReleaseTimelineEntry]) -> [ActivityItem] {
         var result: [ActivityItem] = []
         result.append(makeAnnouncement())
-        result.append(contentsOf: releases.prefix(40).map(makeReleaseItem))
+        result.append(contentsOf: makeReleaseItems(releases))
         result.append(contentsOf: makeStarItems(repos))
         result.append(contentsOf: makeRepositoryItems(repos))
         result.append(contentsOf: makeSuggestionItems(repos))
@@ -182,26 +182,44 @@ final class ActivityViewModel {
             htmlURL: nil,
             repo: nil,
             release: nil,
+            releases: [],
             isRead: true
         )
     }
 
-    private func makeReleaseItem(_ entry: ReleaseTimelineEntry) -> ActivityItem {
-        let release = entry.release
-        let title = release.name?.isEmpty == false ? release.name! : release.tagName
-        return ActivityItem(
-            id: "release:\(release.id)",
-            kind: .release,
-            category: .release,
-            title: title,
-            subtitle: entry.repo.fullName,
-            body: release.bodyTruncated,
-            createdAt: Self.parseDate(release.publishedAt) ?? Self.parseDate(release.createdAtRemote),
-            htmlURL: URL(string: release.htmlUrl),
-            repo: entry.repo,
-            release: release,
-            isRead: release.isRead
-        )
+    /// 发行版活动按 repo 聚合，而不是按 release event 展开。
+    ///
+    /// 原实现是一条 ReleaseTimelineEntry 生成一张卡片，导致同一个 repo 有多个版本时
+    /// 中栏出现多张几乎相同的卡片。现在列表主体回到 repo：同一 repo 只显示一张，
+    /// 用最新 release 的发布时间排序，详情页再展开该 repo 下所有 cached releases。
+    private func makeReleaseItems(_ entries: [ReleaseTimelineEntry]) -> [ActivityItem] {
+        let grouped = Dictionary(grouping: entries, by: { $0.repo.id })
+        return grouped.values.compactMap { group -> ActivityItem? in
+            guard let first = group.first else { return nil }
+            let sorted = group.sorted { lhs, rhs in
+                Self.releaseSortDate(lhs.release) > Self.releaseSortDate(rhs.release)
+            }
+            guard let latest = sorted.first?.release else { return nil }
+            let latestTitle = latest.name?.isEmpty == false ? latest.name! : latest.tagName
+            return ActivityItem(
+                id: "release-repo:\(first.repo.id)",
+                kind: .release,
+                category: .release,
+                title: first.repo.fullName,
+                subtitle: latestTitle,
+                body: first.repo.description,
+                createdAt: Self.parseDate(latest.publishedAt) ?? Self.parseDate(latest.createdAtRemote),
+                htmlURL: URL(string: first.repo.htmlUrl),
+                repo: first.repo,
+                release: latest,
+                releases: sorted.map(\.release),
+                isRead: sorted.allSatisfy { $0.release.isRead }
+            )
+        }
+    }
+
+    private static func releaseSortDate(_ release: ReleaseRecord) -> Date {
+        parseDate(release.publishedAt) ?? parseDate(release.createdAtRemote) ?? parseDate(release.fetchedAt) ?? .distantPast
     }
 
     private func makeStarItems(_ repos: [Repo]) -> [ActivityItem] {
@@ -221,6 +239,7 @@ final class ActivityViewModel {
                     htmlURL: URL(string: repo.htmlUrl),
                     repo: repo,
                     release: nil,
+                    releases: [],
                     isRead: true
                 )
             }
@@ -243,6 +262,7 @@ final class ActivityViewModel {
                     htmlURL: URL(string: repo.htmlUrl),
                     repo: repo,
                     release: nil,
+                    releases: [],
                     isRead: true
                 )
             }
@@ -270,6 +290,7 @@ final class ActivityViewModel {
                     htmlURL: URL(string: repo.htmlUrl),
                     repo: repo,
                     release: nil,
+                    releases: [],
                     isRead: true
                 )
             }

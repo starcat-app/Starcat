@@ -212,7 +212,9 @@ final class RepoReleaseSectionViewModel {
         isMutating = true
         defer { isMutating = false }
         do {
-            let response = try await apiClient.releases(owner: owner, repo: repoName, perPage: 10)
+            // 首次订阅时取满 GitHub 单页上限，给「活动 → 发行版」聚合详情页提供
+            // 尽可能完整的近期历史；不在这里做无限翻页，避免一次订阅消耗过多 rate limit。
+            let response = try await apiClient.releases(owner: owner, repo: repoName, perPage: 100)
             let dtos = response.value
             let nowISO = ISO8601DateFormatter.shared.string(from: Date())
             let records = dtos.map { dto in
@@ -221,7 +223,7 @@ final class RepoReleaseSectionViewModel {
                     repoId: repoId,
                     tagName: dto.tagName,
                     name: dto.name,
-                    bodyTruncated: Self.truncateBody(dto.body),
+                    bodyMarkdown: dto.body,
                     htmlUrl: dto.htmlUrl,
                     isPrerelease: dto.prerelease,
                     isDraft: dto.draft,
@@ -293,12 +295,6 @@ final class RepoReleaseSectionViewModel {
             isPrivate: false, isFork: false, isArchived: false, isStarred: true,
             pushedAt: nil, createdAt: nil, updatedAt: nil, starredAt: nil, cachedAt: nil
         )
-    }
-
-    private static func truncateBody(_ body: String?) -> String? {
-        guard let body, !body.isEmpty else { return nil }
-        let limit = 600
-        return body.count <= limit ? body : String(body.prefix(limit))
     }
 
     private static func dtoToAsset(_ dto: GitHubReleaseAssetDTO) -> ReleaseAsset {

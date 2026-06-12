@@ -59,7 +59,8 @@ actor ReleaseMonitor {
     private let releaseRepo: any ReleaseRepositoryProtocol
     private let repoRepo: any RepoRepositoryProtocol
 
-    /// 单 repo 默认每页拉取条数。GitHub 限制 max 100，10 已足够覆盖"上次轮询以来的新增"。
+    /// 单 repo 默认每页拉取条数。GitHub 限制 max 100；这里取满第一页，保证发行版聚合
+    /// 详情页能拿到尽可能完整的近期历史，同时仍避免无限翻页消耗 GitHub rate limit。
     private let perPage: Int
 
     init(
@@ -67,7 +68,7 @@ actor ReleaseMonitor {
         subscriptionRepo: any ReleaseSubscriptionRepositoryProtocol,
         releaseRepo: any ReleaseRepositoryProtocol,
         repoRepo: any RepoRepositoryProtocol,
-        perPage: Int = 10
+        perPage: Int = 100
     ) {
         self.apiClient = apiClient
         self.subscriptionRepo = subscriptionRepo
@@ -168,7 +169,7 @@ actor ReleaseMonitor {
                 repoId: repo.id,
                 tagName: dto.tagName,
                 name: dto.name,
-                bodyTruncated: Self.truncateBody(dto.body),
+                bodyMarkdown: dto.body,
                 htmlUrl: dto.htmlUrl,
                 isPrerelease: dto.prerelease,
                 isDraft: dto.draft,
@@ -210,13 +211,6 @@ actor ReleaseMonitor {
     }
 
     // MARK: - 工具
-
-    private static func truncateBody(_ body: String?) -> String? {
-        guard let body, !body.isEmpty else { return nil }
-        let limit = 600
-        if body.count <= limit { return body }
-        return String(body.prefix(limit))
-    }
 
     private static func dtoToAsset(_ dto: GitHubReleaseAssetDTO) -> ReleaseAsset {
         ReleaseAsset(

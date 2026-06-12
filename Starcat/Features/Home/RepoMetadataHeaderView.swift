@@ -112,7 +112,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
                         .textSelection(.enabled)
                         .help(repo.fullName)
 
-                    if let headerSourceBadge, !headerSourceBadge.sources.isEmpty {
+                    if let headerSourceBadge, headerSourceBadge.isVisible {
                         RepoDetailHeaderSourceBadgeView(badge: headerSourceBadge)
                     }
                 }
@@ -307,10 +307,16 @@ private struct RepoDetailHeaderSourceBadgeView: View {
 
     private var content: some View {
         HStack(spacing: 4) {
-            HStack(spacing: -4) {
-                ForEach(Array(badge.sources.prefix(4).enumerated()), id: \.offset) { _, source in
-                    sourceIcon(source)
+            if !badge.sources.isEmpty {
+                HStack(spacing: -4) {
+                    ForEach(Array(badge.sources.prefix(4).enumerated()), id: \.offset) { _, source in
+                        sourceIcon(source)
+                    }
                 }
+            } else if let systemImage = badge.systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
             }
             if let label = badge.label, !label.isEmpty {
                 Text(label)
@@ -328,7 +334,10 @@ private struct RepoDetailHeaderSourceBadgeView: View {
     }
 
     private var helpText: String {
-        badge.sources.map(\.displayName).joined(separator: " / ")
+        if let help = badge.help, !help.isEmpty {
+            return help
+        }
+        return badge.sources.map(\.displayName).joined(separator: " / ")
     }
 
     @ViewBuilder
