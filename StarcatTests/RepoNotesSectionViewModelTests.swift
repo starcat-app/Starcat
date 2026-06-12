@@ -37,9 +37,9 @@ struct RepoNotesSectionViewModelTests {
         let (vm, _, db) = try makeVM()
         try await db.insertRepoFixture(id: 1)
 
-        await vm.setStatus(repoId: 1, status: .reading)
-        #expect(vm.note?.status == "reading")
-        #expect(vm.status == .reading)
+        await vm.setStatus(repoId: 1, status: .using)
+        #expect(vm.note?.status == "using")
+        #expect(vm.status == .using)
     }
 
     @Test("setStatus: 切换状态 → 老 content 不丢")
@@ -72,15 +72,39 @@ struct RepoNotesSectionViewModelTests {
         #expect(vm.note?.status == "using") // 行还在
     }
 
-    @Test("status 派生：非法字符串 → nil（防御未来字段扩展）")
-    func statusDerivationDefensive() async throws {
-        let (vm, _, db) = try makeVM()
-        try await db.insertRepoFixture(id: 1)
-        await vm.setStatus(repoId: 1, status: .reading)
-        #expect(vm.status == .reading)
+    @Test("status 派生：DB 存 v1 旧值 reading/deprecated → 派生为 .read（lenient）")
+    func statusDerivationLegacyValues() async throws {
+        let (vm, repo, db) = try makeVM()
+        try await db.insertRepoFixtures(count: 2, idStart: 1)
 
-        // 模拟未来新增字段：用底层 upsert 写入未知 status
-        // 这里不通过 vm 调，直接复用 vm.loadFor 验证派生防御
-        // （省略：当前 enum 完备，先信任 RepoStatus init? 的 nil 行为）
+        // 通过底层 upsert 直接写入 v1 旧值（模拟存量数据）。
+        try await repo.upsert(RepoNote(
+            repoId: 1, content: nil, status: "reading",
+            isAIGenerated: false, editedAt: nil
+        ))
+        try await repo.upsert(RepoNote(
+            repoId: 2, content: nil, status: "deprecated",
+            isAIGenerated: false, editedAt: nil
+        ))
+
+        await vm.loadFor(repoId: 1)
+        #expect(vm.status == .read)
+        await vm.loadFor(repoId: 2)
+        #expect(vm.status == .read)
+    }
+
+    @Test("markAsReadIfNeeded: 无 note → 创建 read 行；using 不被覆盖")
+    func markAsReadFlow() async throws {
+        let (vm, _, db) = try makeVM()
+        try await db.insertRepoFixtures(count: 2, idStart: 1)
+
+        // repo 1：无 note → markAsReadIfNeeded 创建 read 行
+        await vm.markAsReadIfNeeded(repoId: 1)
+        #expect(vm.status == .read)
+
+        // repo 2：先 using，markAsReadIfNeeded 不下行
+        await vm.setStatus(repoId: 2, status: .using)
+        await vm.markAsReadIfNeeded(repoId: 2)
+        #expect(vm.status == .using)
     }
 }

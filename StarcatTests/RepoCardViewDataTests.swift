@@ -153,6 +153,39 @@ struct RepoCardViewDataTests {
         #expect(c1.id == 7)
     }
 
+    // MARK: - 4. readStatus 注入（v2 阅读状态角标）
+
+    @Test("Repo.asCardData(): 默认 readStatus = nil（其他场景无注入）")
+    func readStatusDefaultsToNil() {
+        let repo = sampleRepo(id: 1, isStarred: true)
+        let card = repo.asCardData()
+        #expect(card.readStatus == nil)
+    }
+
+    @Test("Repo.asCardData(readStatus:): unread / read / using 显式注入正确携带")
+    func readStatusExplicitlyPassed() {
+        let repo = sampleRepo(id: 1, isStarred: true)
+
+        let unread = repo.asCardData(readStatus: .unread)
+        #expect(unread.readStatus == .unread)
+
+        let read = repo.asCardData(readStatus: .read)
+        #expect(read.readStatus == .read)
+
+        let using = repo.asCardData(readStatus: .using)
+        #expect(using.readStatus == .using)
+    }
+
+    @Test("DTO.asCardData(): readStatus 强制 nil（trending/weekly 不显角标策略）")
+    func dtoReadStatusAlwaysNil() {
+        let registry = StarredRegistry()
+        let dto = StarcatRepoCardDTO(
+            ghRepoId: 999, fullName: "a/b", owner: "a", repo: "b"
+        )
+        let card = dto.asCardData(registry: registry)
+        #expect(card.readStatus == nil)
+    }
+
     // MARK: - Helpers
 
     private func sampleRepo(id: Int64, isStarred: Bool) -> Repo {

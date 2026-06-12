@@ -59,9 +59,8 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
             for row in rows {
                 let id: Int64 = row["repo_id"]
                 let raw: String = row["status"]
-                if let status = RepoStatus(rawValue: raw) {
-                    map[id] = status
-                }
+                // 用 lenient parse：v1 旧值 reading/deprecated 会被回落到 .read。
+                map[id] = RepoStatus.parse(raw)
             }
             return map
         }
@@ -80,9 +79,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
             for row in rows {
                 let id: Int64 = row["repo_id"]
                 let raw: String = row["status"]
-                if let status = RepoStatus(rawValue: raw) {
-                    map[id] = status
-                }
+                map[id] = RepoStatus.parse(raw)
             }
             return map
         }
@@ -112,9 +109,9 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
             for row in rows {
                 let raw: String = row["status"]
                 let count: Int = row["cnt"]
-                if let status = RepoStatus(rawValue: raw) {
-                    result[status] = count
-                }
+                // 用 lenient parse：v1 旧值 reading/deprecated 会被并入 .read 计数。
+                let status = RepoStatus.parse(raw)
+                result[status, default: 0] += count
             }
             return result
         }
@@ -161,6 +158,31 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                     edited_at = excluded.edited_at
                 """,
                 arguments: [repoId, status.rawValue, nowISO]
+            )
+        }
+    }
+
+    /// 自动状态机：unread → read，单条 SQL 实现幂等升级。
+    ///
+    /// **SQL 设计**：
+    /// - INSERT 缺省 status = 'read'（首次进详情页 + README 加载完即升级）
+    /// - ON CONFLICT 时仅在 status='unread' 才写新值；其他状态（read/using 或 v1 兼容值
+    ///   reading/deprecated）保持不动。WHERE 子句锁住"绝不下行"语义。
+    /// - editedAt 同样只在 unread 升级路径上更新；read/using 行不被擦动（避免无意义触发
+    ///   CloudKit 同步）。
+    func markAsReadIfNeeded(repoId: Int64) async throws {
+        let nowISO = ISO8601DateFormatter.shared.string(from: Date())
+        try await writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO repo_notes (repo_id, content, status, is_ai_generated, edited_at)
+                VALUES (?, NULL, 'read', 0, ?)
+                ON CONFLICT(repo_id) DO UPDATE SET
+                    status = 'read',
+                    edited_at = excluded.edited_at
+                WHERE repo_notes.status = 'unread'
+                """,
+                arguments: [repoId, nowISO]
             )
         }
     }
