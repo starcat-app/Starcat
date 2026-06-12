@@ -378,7 +378,7 @@ struct RepoShareButton: View {
                     Image(systemName: "square.and.arrow.up")
                         .font(.system(size: 13, weight: .semibold))
                 }
-                Text("分享")
+                Text("repo.share.button.label")
                     .font(.system(size: 13, weight: .semibold))
             }
             .padding(.horizontal, 12)
@@ -393,28 +393,28 @@ struct RepoShareButton: View {
         .focusEffectDisabled()
         .pressableHover()
         .disabled(isSharing)
-        .help("分享 Repo")
-        .alert("链接已生成", isPresented: $showSharePopup) {
-            Button("在浏览器打开") {
+        .help("repo.share.button.help")
+        .alert("repo.share.success.title", isPresented: $showSharePopup) {
+            Button("repo.share.success.openInBrowser") {
                 if let urlString = shareUrl, let url = URL(string: urlString) {
                     NSWorkspace.shared.open(url)
                 }
             }
-            Button("复制链接") {
+            Button("repo.share.success.copyLink") {
                 if let url = shareUrl {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(url, forType: .string)
                 }
             }
-            Button("关闭", role: .cancel) {}
+            Button("repo.share.success.close", role: .cancel) {}
         } message: {
             Text(shareUrl ?? "")
         }
-        .alert("分享失败", isPresented: Binding(get: { shareError != nil }, set: { if !$0 { shareError = nil } })) {
-            Button("重试") {
+        .alert("repo.share.error.title", isPresented: Binding(get: { shareError != nil }, set: { if !$0 { shareError = nil } })) {
+            Button("repo.share.error.retry") {
                 Task { await shareRepo() }
             }
-            Button("取消", role: .cancel) {}
+            Button("repo.share.error.cancel", role: .cancel) {}
         } message: {
             if let error = shareError { Text(error) }
         }
