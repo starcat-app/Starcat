@@ -289,14 +289,17 @@ struct SearchCenterView: View {
         case .repository(let repo):
             UnifiedRepoRow(
                 card: repo.card,
-                isSelected: isSelected,
+                // 搜索结果不复用主列表的整行选中底色。浮层在浅色主题下面积更大，
+                // 蓝色铺底会压低文本对比度；键盘当前位置改由左侧细条表达。
+                isSelected: false,
                 showStarredCheckmark: true
             )
+            .overlay(alignment: .leading) { searchSelectionIndicator(isSelected) }
         case .reference(let reference):
             HStack(spacing: 12) {
                 Image(systemName: "globe")
                     .frame(width: 34, height: 34)
-                    .background(Color.blue.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(reference.title).font(.headline).lineLimit(1)
                     Text(reference.snippet ?? reference.originalURL.absoluteString)
@@ -306,8 +309,18 @@ struct SearchCenterView: View {
                 Spacer()
             }
             .padding(10)
-            .background(isSelected ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(alignment: .leading) { searchSelectionIndicator(isSelected) }
         }
+    }
+
+    /// 搜索浮层只用轻量位置提示承载键盘选择，不再给结果卡片铺色。
+    /// 3pt 指示条在亮/暗主题下都清晰，也不会改变 repo/reference 两类内容的底色。
+    private func searchSelectionIndicator(_ isSelected: Bool) -> some View {
+        Capsule()
+            .fill(Color.accentColor)
+            .frame(width: 3, height: 34)
+            .opacity(isSelected ? 1 : 0)
+            .padding(.leading, 2)
     }
 
     private func scopeTitle(_ scope: SearchScope) -> String {
