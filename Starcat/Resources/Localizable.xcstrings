@@ -8508,6 +8508,23 @@
         }
       }
     },
+    "settings.aiIndex.prefetch.alreadyUpToDateFmt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All up to date (%d repos)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已是最新（共 %d 个仓库）"
+          }
+        }
+      }
+    },
     "settings.aiIndex.prefetch.completedFmt" : {
       "extractionState" : "stale",
       "localizations" : {
