@@ -55,6 +55,11 @@ packages:
   ConfettiSwiftUI:
     url: https://github.com/simibac/ConfettiSwiftUI.git
     branch: master
+  # 用于 RepoContextPacker（AI 摘要上下文打包）解压 GitHub source ZIP，
+  # 沙箱友好 + Swift-native API + 约 200KB 体积，详见 docs/详细设计/27-RepoContextPacker设计.md §22.2。
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation
+    from: "0.9.20"
 
 targets:
   Starcat:
@@ -94,6 +99,7 @@ targets:
       - package: MarkdownUI
       - package: OpenAI
       - package: ConfettiSwiftUI
+      - package: ZIPFoundation
     # 在所有 build phase 跑完之后、codesign 之前执行：
     # 用 git 元数据改写产物 Info.plist 的 CFBundleVersion / CFBundleShortVersionString。
     # 详见 scripts/bump-version.sh 文件头注释。

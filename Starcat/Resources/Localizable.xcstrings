@@ -7027,6 +7027,102 @@
         }
       }
     },
+    "repo.notes.editor.done" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成"
+          }
+        }
+      }
+    },
+    "repo.notes.editor.emptyPreview" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No note content yet. Switch to the Edit tab to start writing…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无笔记内容,切换到「编辑」开始写作…"
+          }
+        }
+      }
+    },
+    "repo.notes.editor.tabEdit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑"
+          }
+        }
+      }
+    },
+    "repo.notes.editor.tabPreview" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preview"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览"
+          }
+        }
+      }
+    },
+    "repo.notes.editor.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Private Notes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "私有笔记"
+          }
+        }
+      }
+    },
+    "repo.notes.expandEditor" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open full editor (supports Markdown preview)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开大窗口编辑(支持 Markdown 预览)"
+          }
+        }
+      }
+    },
     "repo.openOnGithub" : {
       "extractionState" : "stale",
       "localizations" : {
