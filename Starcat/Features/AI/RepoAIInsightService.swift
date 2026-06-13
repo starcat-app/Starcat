@@ -53,6 +53,7 @@ final class RepoAIInsightService {
     private let readmeRepository: ReadmeRepository
     private let settings: AppSettings
     private let keychain: any KeychainManaging
+    private let externalContextProvider: AnySearchContextProvider
 
     /// 2026-06-12 向量索引改进：摘要生成成功后回调，让 `SemanticSearchService` 走
     /// `refreshIndexIfChanged` 重建向量。
@@ -76,6 +77,7 @@ final class RepoAIInsightService {
         self.readmeRepository = readmeRepository
         self.settings = settings
         self.keychain = keychain
+        self.externalContextProvider = AnySearchContextProvider(settings: settings)
         self.onSummaryGenerated = onSummaryGenerated
     }
 
@@ -111,10 +113,23 @@ final class RepoAIInsightService {
         existingTagHints: [String] = [],
         includeSummary: Bool = true,
         includeTags: Bool = true,
+        allowExternalContext: Bool = true,
         onSummaryDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> RepoAIInsightGeneration {
         let source = try await makeSource(for: repo)
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
+        let resolvedExternalContext: AIExternalContext?
+        if includeSummary, allowExternalContext {
+            do {
+                resolvedExternalContext = try await externalContextProvider.collect(for: repo)
+            } catch {
+                // 外部搜索是补充能力，失败不能阻断本地 README 摘要。
+                AppLog.ai.error("AnySearch external context skipped: \(error.localizedDescription, privacy: .public)")
+                resolvedExternalContext = nil
+            }
+        } else {
+            resolvedExternalContext = nil
+        }
 
         // HOM-52：标签生成路径在 source 末尾追加两段强制约束：
         //   (1) Tag format rules —— 限制中英文标签长度 / 风格，覆盖所有用户 prompt（含自定义）
@@ -153,14 +168,20 @@ final class RepoAIInsightService {
         }()
 
         // 两者都需要时并发跑（与原实现一致）；任一关闭则串行 / 短路，避免无意义 AI 调用。
-        let summaryText: String
+        let summarySource: Source = {
+            guard let context = resolvedExternalContext else { return augmentedSource }
+            let merged = augmentedSource.text + "\n" + context.markdown
+            return Source(text: merged, hash: Self.hash(merged))
+        }()
+
+        var summaryText: String
         let resolvedTagResult: Result<[AITagSuggestion], Error>
         if includeSummary, includeTags {
             async let tagResult = tagSuggestionsResult(source: augmentedSource)
-            summaryText = try await generateSummary(source: augmentedSource, onDelta: onSummaryDelta)
+            summaryText = try await generateSummary(source: summarySource, onDelta: onSummaryDelta)
             resolvedTagResult = await tagResult
         } else if includeSummary {
-            summaryText = try await generateSummary(source: augmentedSource, onDelta: onSummaryDelta)
+            summaryText = try await generateSummary(source: summarySource, onDelta: onSummaryDelta)
             resolvedTagResult = .success([])
         } else if includeTags {
             summaryText = ""
@@ -171,6 +192,10 @@ final class RepoAIInsightService {
             resolvedTagResult = .success([])
         }
         let suggestions = (try? resolvedTagResult.get()) ?? []
+        if let context = resolvedExternalContext, !summaryText.isEmpty {
+            let links = context.sources.map { "- [\($0.host ?? $0.absoluteString)](\($0.absoluteString))" }
+            summaryText += "\n\n## 外部参考来源\n" + links.joined(separator: "\n")
+        }
         let tagErrorMessage: String? = {
             if case .failure(let error) = resolvedTagResult {
                 return error.localizedDescription
@@ -358,7 +383,8 @@ final class RepoAIInsightService {
     private func cacheModelKey() -> String {
         let summaryModel = settings.aiSummaryTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
         let tagsModel = settings.aiTagsTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
-        return "summary:\(settings.aiSummaryTask.providerID)/\(summaryModel)|tags:\(settings.aiTagsTask.providerID)/\(tagsModel)"
+        let external = settings.anySearchEnabled && settings.aiExternalContextEnabled ? "on" : "off"
+        return "summary:\(settings.aiSummaryTask.providerID)/\(summaryModel)|tags:\(settings.aiTagsTask.providerID)/\(tagsModel)|external:\(external)"
     }
 
     /// 拼出"喂 LLM 的 repo 上下文"——元数据 + 清洗后的 README。
