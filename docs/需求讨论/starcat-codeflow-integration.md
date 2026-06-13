@@ -307,7 +307,7 @@ Starcat 注入模式跳过 CodeFlow 的大 ZIP二次确认框，确保打开后�
 
 ## 6. UI
 
-CodeFlow 入口位于 Manage 页顶部 toolbar 的「打开浏览器」菜单中，在 Releases 下方以独立分组展示。仅公开仓库显示该菜单项，详情页 hero 区不再单独放置「代码图谱」按钮。
+CodeFlow 入口统一接入 Manage、Trending、Weekly 和 Activity 的 toolbar「打开浏览器」下拉面板，固定位于第一组，使用粉紫蓝整行渐变卡片与功能副标题作为主推入口，Issues、Pull Requests 和 Releases 依次放在其后。仅公开且当前可访问的仓库显示该入口，详情页 hero 区不再单独放置「代码图谱」按钮。Trending 复用 `makeEphemeralRepo()`，Weekly 复用 `card.toEphemeralRepo()`，Activity 直接使用关联 `Repo`；临时 Repo 只用于 CodeFlow 下载参数，不写入数据库。
 
 点击菜单项后，紧凑执行面板显示当前仓库名。主区域只展示三段概览状态：下载仓库、生成图谱页面、浏览器打开；「执行详情」则展示完整流水线，不再展示原始日志字符串。
 
@@ -531,7 +531,8 @@ CodeFlow 上游 README 声明 MIT，但固定提交中没有 `LICENSE` 文件。
 - [x] 页面自动解压、分析并展示图谱；
 - [x] HTTP 错误、空 ZIP、超过 100 MB 均显示明确错误；
 - [x] 私有仓库不展示代码图谱入口。
-- [x] CodeFlow 入口位于 toolbar「打开浏览器」菜单的 Releases 下方，不再占用详情 hero。
+- [x] CodeFlow 入口位于 toolbar「打开浏览器」下拉面板第一组，使用紧凑的整行多彩渐变卡片和功能副标题，不再占用详情 hero。
+- [x] Manage、Trending、Weekly 和 Activity 的公开可访问仓库均展示 CodeFlow 入口。
 - [x] 每个成功项目同目录写入 `metadata.json`，记录最后生成时间、生成时 ZIP 大小和生成次数；
 - [x] 已有图谱的 CodeFlow 入口面板提供「重新生成」，按删除旧产物后重新执行完整流程；
 - [x] 打开已有图谱面板时比较生成 SHA 与最新 SHA，准确展示最新、有更新或检查失败；
