@@ -409,7 +409,20 @@ struct GRDBRepoRepository {
             createdAt: dto.createdAt,
             updatedAt: dto.updatedAt,
             starredAt: starredAt,
-            cachedAt: cachedAt
+            cachedAt: cachedAt,
+            // SEARCH-RICH 2026-06-14：接通 3 个零额外网络成本的字段。
+            // - `ownerAvatar` 来自 `dto.owner.avatarUrl`，stars 同步嵌套 owner 也带；
+            //   过去 mapper 没传 → `repos.owner_avatar` 列对所有同步入库的 repo 都是 NULL，
+            //   逼着搜索弹窗 / 详情页只能用 `https://github.com/{login}.png` 拼凑。
+            //   现在搭车每次同步自然回填，不增加任何 API 调用。
+            // - `subscribersCount` 仅 `/repos/{owner}/{name}` 端点返回，stars / search
+            //   嵌套 repo 都不含 → 保持 nil（保留为 Optional 字段供后续 D-21 之类的
+            //   懒加载场景填）。
+            // - `defaultBranch` / `openIssuesCount`：DTO 已扩，搭车回填。
+            ownerAvatar: dto.owner.avatarUrl,
+            subscribersCount: nil,
+            defaultBranch: dto.defaultBranch,
+            openIssuesCount: dto.openIssuesCount
         )
     }
 }

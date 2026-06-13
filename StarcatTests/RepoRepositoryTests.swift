@@ -47,7 +47,12 @@ struct RepoRepositoryTests {
             archived: false,
             pushedAt: nil,
             createdAt: nil,
-            updatedAt: nil
+            updatedAt: nil,
+            openIssuesCount: nil,
+            defaultBranch: nil,
+            disabled: nil,
+            isTemplate: nil,
+            score: nil
         )
         return StarredRepoDTO(starredAt: "2026-05-29T10:00:00Z", repo: repo)
     }
@@ -131,7 +136,9 @@ struct RepoRepositoryTests {
                 htmlUrl: "https://github.com/u/n\(id)",
                 cloneUrl: nil, sshUrl: nil,
                 isPrivate: false, fork: false, archived: false,
-                pushedAt: nil, createdAt: nil, updatedAt: nil
+                pushedAt: nil, createdAt: nil, updatedAt: nil,
+                openIssuesCount: nil, defaultBranch: nil,
+                disabled: nil, isTemplate: nil, score: nil
             )
             return StarredRepoDTO(starredAt: starred, repo: r)
         }
@@ -165,7 +172,9 @@ struct RepoRepositoryTests {
                 htmlUrl: "https://github.com/u/\(name)",
                 cloneUrl: nil, sshUrl: nil,
                 isPrivate: false, fork: false, archived: false,
-                pushedAt: nil, createdAt: nil, updatedAt: nil
+                pushedAt: nil, createdAt: nil, updatedAt: nil,
+                openIssuesCount: nil, defaultBranch: nil,
+                disabled: nil, isTemplate: nil, score: nil
             )
             return StarredRepoDTO(starredAt: "2026-05-29T10:00:00Z", repo: r)
         }

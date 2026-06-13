@@ -79,6 +79,16 @@ struct GitHubLicenseDTO: Decodable, Equatable {
 /// - `fork` → 数据库 `is_fork`
 /// - `archived` → 数据库 `is_archived`
 /// - `private` 是 Swift 关键字，需要用 `isPrivate` 并显式 CodingKey
+///
+/// 2026-06-14 SEARCH-RICH（搜索弹窗信息密度增强）：新增 5 个零成本字段。
+/// 全部 Optional —— 兼容老的 `/user/starred` 嵌套 repo（部分字段不返回）以及
+/// 网络层不同端点的字段差异：
+/// - `openIssuesCount` / `defaultBranch`：`/search/repositories` 与
+///   `/user/starred` 嵌套 repo 都返回；过去未解码导致 `Repo` 表对应列长期 NULL
+/// - `disabled` / `isTemplate`：仅 search / `/repos/{owner}/{repo}` 返回；
+///   仅在搜索结果详情弹窗里渲染状态徽章，不入库（瞬时态）
+/// - `score`：仅 search 端点返回（best-match 排序时给出 0.0~1.0 相关度）；
+///   其它端点不返回 → 必须 Optional
 struct GitHubRepoDTO: Decodable, Equatable {
     let id: Int64
     let name: String
@@ -101,6 +111,25 @@ struct GitHubRepoDTO: Decodable, Equatable {
     let pushedAt: String?
     let createdAt: String?
     let updatedAt: String?
+
+    // MARK: - SEARCH-RICH（2026-06-14）
+    //
+    // 全部 Optional 但**不带默认值**：Swift `let x: T = default` 会让编译器
+    // synthesized memberwise init 完全跳过该参数（"已固定"语义），后续没法
+    // 在 init 里覆盖；为了保留 memberwise init 既能默认 nil 又能显式传值的
+    // 灵活性，5 个字段保持 `let x: T?`，所有 callsite 显式传 nil（10 处 fixture
+    // 已逐一更新）。
+
+    /// 未关闭 issue 数（GitHub `open_issues_count`，**含 PR**）。
+    let openIssuesCount: Int?
+    /// 默认分支（如 `main` / `master`）。
+    let defaultBranch: String?
+    /// 仓库是否被 GitHub 停用（违规 / DMCA / 长期无人维护被官方停用）。
+    let disabled: Bool?
+    /// 是否模板仓库（GitHub Repository Template 功能）。
+    let isTemplate: Bool?
+    /// 搜索相关度（仅 `/search/repositories` 返回，best-match 排序时有意义）。
+    let score: Double?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -125,6 +154,15 @@ struct GitHubRepoDTO: Decodable, Equatable {
         case pushedAt
         case updatedAt
         case createdAt
+        // SEARCH-RICH 2026-06-14
+        // 以下 5 个 case 用 camelCase raw value，配合 decoder 的
+        // `.convertFromSnakeCase` strategy：JSON `open_issues_count` 先被
+        // strategy 转成 `openIssuesCount`，再与本 raw value 匹配 → 解码成功。
+        case openIssuesCount
+        case defaultBranch
+        case disabled
+        case isTemplate
+        case score
     }
 }
 

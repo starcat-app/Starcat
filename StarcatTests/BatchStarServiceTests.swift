@@ -97,7 +97,9 @@ struct BatchStarServiceTests {
                 license: nil, homepage: r.homepage, htmlUrl: r.htmlUrl,
                 cloneUrl: r.cloneUrl, sshUrl: r.sshUrl,
                 isPrivate: r.isPrivate, fork: r.isFork, archived: r.isArchived,
-                pushedAt: r.pushedAt, createdAt: r.createdAt, updatedAt: r.updatedAt
+                pushedAt: r.pushedAt, createdAt: r.createdAt, updatedAt: r.updatedAt,
+                openIssuesCount: nil, defaultBranch: nil,
+                disabled: nil, isTemplate: nil, score: nil
             )
             return StarredRepoDTO(starredAt: "2026-06-12T00:00:00Z", repo: dto)
         }

@@ -75,6 +75,31 @@ struct RepoIdentity: Hashable, Sendable {
     }
 }
 
+/// 远端 repo 的「不入库瞬时态」字段。
+///
+/// 设计意图（SEARCH-RICH 2026-06-14）：
+/// - GitHub `/search/repositories` 返回的 `disabled` / `is_template` / `score`
+///   这三类字段在本地 `Repo` 表里没有列（`disabled` / `is_template` 频率低不值
+///   建列；`score` 是查询相关度，与 repo 本身无关）。
+/// - 把它们从 `Repo` 模型剥离 → 由 `RepositoryCandidate.remoteExtras` 旁挂，
+///   仅在会话内的搜索弹窗使用，不污染数据库 schema 也不被 stars 同步消化。
+/// - 全部 Optional：用 nil 表示「来源端点没返回 / 本地命中无远端字段」。
+struct RemoteRepoExtras: Hashable, Sendable {
+    /// GitHub `disabled`：仓库被官方停用（DMCA / 违规 / 长期无人维护）。
+    let disabled: Bool?
+    /// GitHub `is_template`：模板仓库（用户可一键派生）。
+    let isTemplate: Bool?
+    /// GitHub `score`：搜索相关度（best-match 排序时有意义；0.0 ~ 1.0+）。
+    let score: Double?
+
+    static let empty = RemoteRepoExtras(disabled: nil, isTemplate: nil, score: nil)
+
+    /// 没有任何信号要展示时（全 nil 或 false）UI 可以直接整段隐藏。
+    var hasAnyVisibleBadge: Bool {
+        disabled == true || isTemplate == true
+    }
+}
+
 struct RepositoryCandidate: Identifiable, Hashable, Sendable {
     var id: RepoIdentity { identity }
 
@@ -85,6 +110,9 @@ struct RepositoryCandidate: Identifiable, Hashable, Sendable {
     /// 远端完整元数据，仅用于会话内详情/AI，不代表已经写入本地数据库。
     var remoteRepo: Repo?
     var semanticScore: Double?
+    /// 远端瞬时态字段（disabled / is_template / score）。默认 `.empty` 让现有
+    /// 调用点零改动；GitHub Search Provider 显式填值后弹窗能渲染对应徽章。
+    var remoteExtras: RemoteRepoExtras = .empty
 
     var isStarred: Bool { localRepo?.isStarred ?? card.isStarred }
     var displayRepo: Repo? { localRepo ?? remoteRepo }
