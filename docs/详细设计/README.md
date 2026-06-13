@@ -30,6 +30,7 @@
 | 23 | [Chrome 插件方案](23-Chrome-插件方案.md) | Starcat Companion Chrome 插件总体方案 v1.0：URL Scheme + 本地 HTTP 双向通信、5 项 MVP（状态胶囊 / 一键采集 / 笔记追加 / 浮按钮 / 角标）、与 R-04 主表 `source=clip` 接入 |
 | 24 | [GitHub 搜索集成设计](24-GitHub-搜索集成设计.md) | 系统级 / 工具级 GitHub 搜索集成方案 |
 | 25 | [Show HN 发现源设计](25-Show-HN发现源设计.md) | AI Discovery（Show HN 官方 API + LLM 单标签分类，Activity 第 8 个具体分类），v1.1 后端已实现，客户端待接入 |
+| 28 | [搜索增强最终方案](28-搜索增强最终方案.md) | 保留 Manage 快速过滤，新增 `⌘K` 全局搜索中心，聚合 Local / GitHub / AnySearch Web 并复用现有详情与动作体系 |
 
 ---
 
@@ -64,6 +65,7 @@
 
 | 日期 | 更新内容 |
 |------|---------|
+| 2026-06-13 | 新增搜索增强最终方案：结合 AnySearch / GitHub 搜索需求、`d9bd9f7` 命令搜索浮层与当前主线代码，收敛为“Manage 快速过滤 + 全局搜索中心”双入口 |
 | 2026-06-12 | 文档命名规范化：详细设计 21~25 + 需求讨论 4 份重命名（详见 `工程进度/功能实现总览.md` §10）；本次同步：补齐 21/22/23/24/25 索引行，统一描述风格 |
 | 2026-06-11 | 添加 starcat-wiki-api 客户端对接文档 v1.0（20-wiki-api-对接.md ~580 行 14 节,e2e 11/11 全绿,8 项技术债 + 13 项客户端落地 checklist）;同时把已存在但漏登的 18-三场景共用架构 + 19-wiki集成 补入索引 |
 | 2026-06-10 | （R-02 改造期）19-wiki集成.md 经历 v0.5 翻转(zread 周 trending 从 trending-api 迁出 + 并入 weekly-api + 4 项决策同步确认) |
