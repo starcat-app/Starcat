@@ -838,6 +838,12 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright (c) 2020 Simon Bachmann",
             url: URL(string: "https://github.com/simibac/ConfettiSwiftUI")
         ),
+        AboutDependency(
+            name: "ZIPFoundation",
+            license: "MIT",
+            copyright: "Copyright (c) 2017-2026 Thomas Zoechling",
+            url: URL(string: "https://github.com/weichsel/ZIPFoundation")
+        ),
 
         // MARK: 嵌入式资源 / 生成代码（非 SPM，但同样属于第三方开源）
 
