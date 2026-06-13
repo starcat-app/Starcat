@@ -10,13 +10,17 @@ import AppKit
 import SwiftUI
 
 struct IntegrationSettingsTab: View {
+    @Environment(AppSettings.self) private var settings
     /// CodeFlow 生成物不进数据库，设置页直接观察文件系统扫描结果。
     @State private var storage = CodeFlowStorage.shared
     @State private var showsClearConfirmation = false
     @State private var actionError: String?
+    @State private var anySearchAPIKey: String = ""
+    @State private var showAnySearchAPIKey: Bool = false
 
     var body: some View {
         Form {
+            anySearchSection
             Section("CodeFlow") {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("代码图谱输出目录", systemImage: "point.3.connected.trianglepath.dotted")
@@ -84,6 +88,7 @@ struct IntegrationSettingsTab: View {
         }
         .formStyle(.grouped)
         .task { storage.reload() }
+        .task { anySearchAPIKey = settings.anySearchAPIKey() ?? "" }
         .alert("清除全部 CodeFlow 数据？", isPresented: $showsClearConfirmation) {
             Button("取消", role: .cancel) {}
             Button("全部清除", role: .destructive) { clearAllProjects() }
@@ -97,6 +102,45 @@ struct IntegrationSettingsTab: View {
             Button("好") { actionError = nil }
         } message: {
             Text(actionError ?? "未知错误")
+        }
+    }
+
+    private var anySearchSection: some View {
+        @Bindable var settings = settings
+        return Section("AnySearch") {
+            Toggle("启用 AnySearch 网页搜索", isOn: $settings.anySearchEnabled)
+            Toggle("匿名模式（不发送 API Key）", isOn: $settings.anySearchAnonymousMode)
+                .disabled(!settings.anySearchEnabled)
+
+            HStack {
+                Group {
+                    if showAnySearchAPIKey {
+                        TextField("API Key", text: $anySearchAPIKey)
+                    } else {
+                        SecureField("API Key", text: $anySearchAPIKey)
+                    }
+                }
+                Button {
+                    showAnySearchAPIKey.toggle()
+                } label: {
+                    Image(systemName: showAnySearchAPIKey ? "eye.slash" : "eye")
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                Button("保存") { settings.setAnySearchAPIKey(anySearchAPIKey) }
+            }
+            .disabled(!settings.anySearchEnabled || settings.anySearchAnonymousMode)
+
+            Toggle("在“全部”范围中包含网页结果", isOn: $settings.searchIncludeWebInAll)
+                .disabled(!settings.anySearchEnabled)
+            Toggle("AI 摘要使用外部网页上下文", isOn: $settings.aiExternalContextEnabled)
+                .disabled(!settings.anySearchEnabled)
+            Toggle("允许私有仓库使用外部上下文", isOn: $settings.aiExternalContextAllowPrivateRepos)
+                .disabled(!settings.aiExternalContextEnabled)
+
+            Text("默认禁止把私有仓库名称、README 或笔记发送到外部搜索。匿名模式不会发送已保存的 API Key；配置了无效 Key 时不会自动降级为匿名请求。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
