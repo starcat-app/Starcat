@@ -263,11 +263,18 @@ struct SearchCenterView: View {
             ProgressView("正在搜索…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.candidates.isEmpty {
+            // 必须撑满剩余空间，否则 ContentUnavailableView 只占自身 intrinsic 高度,
+            // 浮层 VStack 是固定 620pt 高度,子视图总高小于 frame 时 SwiftUI 会把
+            // 整列内容垂直居中,造成搜索框、tabs、filter bar 全部下沉,与有结果时
+            // 的"顶部贴边"布局不一致。给空状态一个 maxHeight: .infinity 即可保持
+            // 上方 chrome（搜索框 / scope picker / GitHub 筛选栏）位置不变,
+            // 仅在结果区域内展示空状态提示。
             ContentUnavailableView(
                 "没有找到结果",
                 systemImage: "magnifyingglass",
                 description: Text(viewModel.errorMessages.first ?? "尝试更换关键词或搜索范围")
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             List(Array(viewModel.candidates.enumerated()), id: \.element.id) { index, candidate in
                 // 这里不再用 Button:macOS SwiftUI 在 List 内的 Button + onHover
@@ -342,11 +349,14 @@ struct SearchCenterView: View {
     private var historyContent: some View {
         Group {
             if viewModel.history.isEmpty {
+                // 同 resultContent 的"没有找到结果"分支,空历史也要撑满,
+                // 否则首次打开浮层时搜索框会被居中下沉。
                 ContentUnavailableView(
                     "搜索 Starcat",
                     systemImage: "sparkle.magnifyingglass",
                     description: Text("输入关键词后按 Return")
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     historyHeader
