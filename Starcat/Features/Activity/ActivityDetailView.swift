@@ -2,11 +2,73 @@
 //  ActivityDetailView.swift
 //  Starcat
 //
-//  Activity 页右侧详情。
+//  Activity 页右侧详情（外层路由 + non-repo metadataPanel 自绘）。
 //
-//  每种活动的详情字段不同，因此这里按 `ActivityKind` 分支渲染，而不是把 Activity
-//  伪装成 Repo 后塞回 `RepoDetailView`。Release 详情复用 `ReleaseRecord` 与 assets_json；
-//  Star / Repository / Suggestion 则展示本地 Repo 元数据和跳转入口。
+//  ────────────────────────────────────────────────────────────────────────────
+//  D-28 v3 重构（2026-06-11，dong4j 反馈"看不到动画 + 4 详情页应该真同构"）
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  之前 ActivityDetailView 自持 `@State displayRepo` / `@State readmeVM` 等所有
+//  解析层 state,导致同分支切换 item 时无法走「shell .id 重建」路径,hero 入场
+//  动画无法稳定触发。
+//
+//  D-28 v3 把 repo-backed 解析层下沉到 `ActivityDetailScaffoldShell`(同款
+//  trending / weekly 模式),本 view 简化为「外层路由 + non-repo 自绘
+//  metadataPanel + 空态承载」三段:
+//
+//      ZStack(alignment: .topLeading) {
+//          if let item {
+//              if shouldShowReadme(for: item), item.repo != nil {
+//                  // repo-backed:走共用 shell,与 trending/weekly 同款
+//                  ActivityDetailScaffoldShell(item: item)
+//                      .id(item.id)                  // ← 关键!外层挂 .id 让 shell 重建
+//                      .detailContentTransition()
+//              } else {
+//                  // non-repo (announcement / release / following):自绘 metadataPanel
+//                  ScrollView { activityMetadataPanel(item) }
+//                      .detailScrollViewStyle()
+//                      .id(item.id)
+//                      .detailContentTransition()
+//              }
+//          } else {
+//              emptyState
+//                  .id("activity-empty")
+//                  .detailContentTransition()
+//          }
+//      }
+//      .animation(.easeOut(duration: 0.4), value: item?.id ?? "activity-empty")
+//
+//  **关键约束**:
+//
+//  1. **必须配 ZStack(alignment: .topLeading)**:Group transparent container
+//     跨分支切换 transition 不稳定触发。
+//
+//  2. **shell 外层必须挂 `.id(item.id)`**:这是 D-28 v3 vs v1/v2 的本质差别——
+//     shell 重建时 @State 自动重置,与 trending 完全同款行为。同 kind 内切换
+//     不同 item(如 star A → star B)也走"轻轻落下"动画,**与 manage 同分支
+//     切 repo 体验一致**(Activity item.repo 是本地真值,shell .task 同步设
+//     displayRepo,无 API 等待)。
+//
+//  3. **non-repo 分支也挂 `.id(item.id)`**:让 announcement / release / following
+//     之间切换、或同 kind 切 item 时,`activityMetadataPanel` 也走 `.detailContentTransition()`
+//     的"轻轻落下"动画,与 repo-backed 分支视觉同构。
+//
+//  4. **animation key 用 item?.id ?? "empty"**:与外层 .id 同源,两者同帧变化 →
+//     SwiftUI 用 0.4s easeOut 包裹 transition 时长。
+//
+//  ────────────────────────────────────────────────────────────────────────────
+//  历史修订全部下沉到 Shell（参考 ActivityDetailScaffoldShell.swift 文件头）
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  - **D-22 全字段 ==**:Shell 内部 displayRepo prop 变化触发 SwiftUI diff
+//  - **D-24 registry-derived isStarred**:Shell `handleStarTapped` 同步覆值
+//
+//  本 view (ActivityDetailView) 只负责:
+//  - **路由**:三分支判断(repo-backed shell / non-repo metadataPanel / empty)
+//  - **non-repo 自绘**:announcement / release / following 的 hero header +
+//    detailBody(announcementDetail / releaseDetail 等)
+//  - **入场动画**:外层 ZStack + .id(item.id) + .detailContentTransition() +
+//    .animation(value:),让分支切换和同分支 item 切换都走"轻轻落下"
 //
 
 import SwiftUI
@@ -14,46 +76,52 @@ import AppKit
 
 struct ActivityDetailView: View {
 
-    @Environment(AppDependencies.self) private var dependencies
-    @Environment(AuthSession.self) private var authSession
-    @Environment(HomeViewModel.self) private var homeViewModel
-
     let item: ActivityItem?
 
-    /// Activity 详情页自持一个 README ViewModel。
-    ///
-    /// 不复用 HomeView 注入给 Manage / Trending 的 ReadmeViewModel，是为了避免
-    /// Activity 里点星标 / 仓库 / 建议活动时污染右侧主详情页的 README 状态。
-    @State private var readmeVM: ReadmeViewModel?
-
-    // R-01 §3.2.3 / §5.4：原 `repoMetadataPanelCollapseProgress` / `repoMetadataPanelHeight`
-    // / `showUnstarConfirm` / `unstarError` / `isUnstarring` 状态已迁移：
-    // - Hero 折叠由 `RepoDetailScaffold` 内部状态管理
-    // - star/unstar 走 `StarActionService`（无 confirm，失败仅日志）
-
     var body: some View {
-        Group {
+        ZStack(alignment: .topLeading) {
             if let item {
-                if shouldShowReadme(for: item), item.repo != nil {
-                    repoBackedDetailPage(item)
+                if item.kind == .release, item.repo != nil {
+                    // 发行版改为 repo-backed 详情：上半部分复用 RepoDetailScaffold，
+                    // 下半部分渲染该 repo 聚合后的 Release notes Markdown 时间线。
+                    ActivityReleaseDetailScaffoldShell(item: item)
+                        .id(item.id)
+                        .detailContentTransition()
+                } else if shouldShowReadme(for: item), item.repo != nil {
+                    // D-28 v3:repo-backed 走共用 shell(与 trending/weekly 同款 4 详情页同构)。
+                    // 外层挂 .id(item.id) 让 shell 重建 → @State 自动重置 →
+                    // 配合 .detailContentTransition() 触发"轻轻落下"动画。
+                    ActivityDetailScaffoldShell(item: item)
+                        .id(item.id)
+                        .detailContentTransition()
                 } else {
+                    // non-repo kind(announcement / release / following / 无 repo 的 corner case):
+                    // 自绘 metadataPanel + ScrollView,同样挂 .id(item.id) + .detailContentTransition()
+                    // 让切换走"轻轻落下"动画。
                     ScrollView {
                         activityMetadataPanel(item)
                     }
                     .detailScrollViewStyle()
+                    .id(item.id)
+                    .detailContentTransition()
                 }
             } else {
                 emptyState
+                    .id("activity-empty")
+                    .detailContentTransition()
             }
         }
-        .task(id: readmeLoadKey(for: item)) {
-            await loadReadmeIfNeeded(for: item)
-        }
+        // 监听 item.id 变化,用 0.4s easeOut 包裹分支 / item 切换的 transition,
+        // 让 .detailContentTransition() 的非对称 transition(insertion: opacity + offset y:14
+        // / removal: 仅 opacity)在 0.4s 内完成插值 — 视觉上"轻轻落下"。
+        .animation(.easeOut(duration: 0.4), value: item?.id ?? "activity-empty")
     }
 
-    /// Activity 详情顶部面板。
+    // MARK: - non-repo 详情自绘（announcement / release / following 等）
+
+    /// Activity 详情顶部面板（non-repo kind 走这条分支）。
     ///
-    /// Manage / Trending 详情页顶部都有“语言色 → 透明”的 hero 背景，用来让当前选择
+    /// Manage / Trending 详情页顶部都有"语言色 → 透明"的 hero 背景，用来让当前选择
     /// 和右侧详情形成同一视觉锚点。Activity 没有统一的 repo 模型，因此直接使用
     /// `ActivityItem.accentColor`：有 repo 主语言时取语言色，没有语言标识时回退分类色。
     private func activityMetadataPanel(_ item: ActivityItem) -> some View {
@@ -153,7 +221,7 @@ struct ActivityDetailView: View {
                     Label(release.tagName, systemImage: "tag.fill")
                         .font(.headline)
 
-                    if let body = release.bodyTruncated, !body.isEmpty {
+                    if let body = release.bodyMarkdown, !body.isEmpty {
                         Text(body)
                             .font(.body)
                             .foregroundStyle(.primary)
@@ -222,47 +290,6 @@ struct ActivityDetailView: View {
         }
     }
 
-    /// R-01 §5.4：Activity-repo-backed 详情迁移到 RepoDetailScaffold + ActivityRepoDetailContent。
-    ///
-    /// 关键差异（vs Manage 详情）：
-    /// - `fallbackAccentColor` 用 activity category 色（无语言时回退分类色，与 Manage 不同）
-    /// - star/unstar 失败仅打日志，UI 不弹 alert（dong4j Q5-A 决策）
-    /// - 旧 `repoMetadataPanelCollapseProgress/Height` 状态不再使用——Scaffold 自管
-    @ViewBuilder
-    private func repoBackedDetailPage(_ item: ActivityItem) -> some View {
-        if let repo = item.repo, let readmeVM {
-            RepoDetailScaffold(
-                repo: repo,
-                viewData: RepoDetailViewData(
-                    hero: RepoDetailHero(repo: repo),
-                    trailingActions: [.share, .ai],
-                    translation: ReadmeTranslationContext(fullName: repo.fullName),
-                    backendHint: nil
-                ),
-                fallbackAccentColor: item.category.iconColor,
-                onStarTapped: {
-                    // §3.2.3 状态机：throws 让 StarStatChipButton 抖动 + 短暂红色（不弹 alert）
-                    try await dependencies.starActionService.unstar(repo: repo)
-                }
-            ) { onScrollOffset in
-                ActivityRepoDetailContent(
-                    repo: repo,
-                    onScrollOffset: onScrollOffset
-                )
-                .environment(readmeVM)
-            }
-        } else if item.repo != nil {
-            // readmeVM 还没异步初始化好（loadReadmeIfNeeded 需要一帧建出来）→ 占位
-            VStack(spacing: 10) {
-                ProgressView()
-                Text("readme.loading")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-
     private func assetRow(_ asset: ReleaseAsset) -> some View {
         HStack(spacing: 8) {
             Image(systemName: assetIcon(asset.name))
@@ -301,6 +328,8 @@ struct ActivityDetailView: View {
         .padding(.vertical, 4)
     }
 
+    // MARK: - 空态
+
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "tray.full")
@@ -316,6 +345,8 @@ struct ActivityDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }
+
+    // MARK: - 图标 / 路由 helper
 
     @ViewBuilder
     private func leadingIconButton(_ item: ActivityItem, size: CGFloat) -> some View {
@@ -368,34 +399,6 @@ struct ActivityDetailView: View {
             return false
         }
     }
-
-    private func readmeLoadKey(for item: ActivityItem?) -> String {
-        guard let item, shouldShowReadme(for: item), let repo = item.repo else {
-            return "none"
-        }
-        return "\(item.kind.rawValue):\(repo.id):\(authSession.state.isAuthenticated)"
-    }
-
-    private func ensureReadmeViewModel() -> ReadmeViewModel {
-        if let readmeVM {
-            return readmeVM
-        }
-        let model = ReadmeViewModel(api: dependencies.readmeAPI)
-        readmeVM = model
-        return model
-    }
-
-    private func loadReadmeIfNeeded(for item: ActivityItem?) async {
-        guard let item, shouldShowReadme(for: item), let repo = item.repo else {
-            readmeVM?.reset()
-            return
-        }
-        ensureReadmeViewModel().load(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
-    }
-
-    // R-01 §3.2.3：performUnstar / errorAlertBinding 已迁移到 StarActionService 单点
-    //（onStarTapped 闭包内调 `dependencies.starActionService.unstar(repo:)`，
-    //  无 confirm，失败仅日志）。
 
     private func assetIcon(_ name: String) -> String {
         let lower = name.lowercased()

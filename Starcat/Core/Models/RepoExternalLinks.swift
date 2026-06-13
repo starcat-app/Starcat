@@ -21,29 +21,55 @@ import Foundation
 
 enum RepoExternalLinks {
 
+    // MARK: - 基于 Repo 的便捷重载（Manage 路径）
+
     /// 仓库主页（= GitHub 上的 owner/name 页面）。
     static func repo(_ repo: Repo) -> URL? {
         URL(string: repo.htmlUrl)
     }
 
     static func issues(_ repo: Repo) -> URL? {
-        URL(string: "\(githubBase(repo))/issues")
+        issues(owner: repo.owner, name: repo.name)
     }
 
     static func releases(_ repo: Repo) -> URL? {
-        URL(string: "\(githubBase(repo))/releases")
+        releases(owner: repo.owner, name: repo.name)
     }
 
     static func pulls(_ repo: Repo) -> URL? {
-        URL(string: "\(githubBase(repo))/pulls")
+        pulls(owner: repo.owner, name: repo.name)
     }
 
     /// Repo.homepage 字段，若非合法 http(s) URL 返回 nil。
     /// 用户在 GitHub 设置 homepage 时可能填 "example.com"（无 scheme），
     /// 这里只接受 http/https 开头的，避免 NSWorkspace 打开本地路径之类的安全风险。
     static func homepage(_ repo: Repo) -> URL? {
-        guard let raw = repo.homepage?.trimmingCharacters(in: .whitespaces),
-              !raw.isEmpty else { return nil }
+        homepage(raw: repo.homepage)
+    }
+
+    // MARK: - 基于 owner/name 的拼接重载（trending / weekly / activity 共用）
+    //
+    // 子页面 URL（issues / pulls / releases）GitHub API 不直接返回，必须按 owner/name
+    // 拼接。Trending / Weekly 等远端源没有本地 `Repo` 对象但 owner/name 一定有，
+    // 走这套重载就能复用同一份 URL 规则。
+
+    static func issues(owner: String, name: String) -> URL? {
+        URL(string: "\(githubBase(owner: owner, name: name))/issues")
+    }
+
+    static func releases(owner: String, name: String) -> URL? {
+        URL(string: "\(githubBase(owner: owner, name: name))/releases")
+    }
+
+    static func pulls(owner: String, name: String) -> URL? {
+        URL(string: "\(githubBase(owner: owner, name: name))/pulls")
+    }
+
+    /// 通用 homepage 解析：把"可能为 nil / 不带 scheme / 含空白"的原始字符串过滤成合法 http(s) URL。
+    /// 调用方（如 `ToolbarRepoSelection`）拿到的 `homepage` 字段类型不固定（String? / URL?），
+    /// 这里只接 String?。
+    static func homepage(raw: String?) -> URL? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else { return nil }
         guard let url = URL(string: raw),
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else { return nil }
@@ -53,7 +79,7 @@ enum RepoExternalLinks {
     // MARK: - 内部
 
     /// 用 owner / name 而非 htmlUrl 拼，避免 htmlUrl 末尾带空格 / 大小写差异等边角问题。
-    private static func githubBase(_ repo: Repo) -> String {
-        "https://github.com/\(repo.owner)/\(repo.name)"
+    private static func githubBase(owner: String, name: String) -> String {
+        "https://github.com/\(owner)/\(name)"
     }
 }

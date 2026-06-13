@@ -20,22 +20,22 @@ import GRDB
 
 struct GRDBReleaseSubscriptionRepository: ReleaseSubscriptionRepositoryProtocol {
 
-    private let writer: any DatabaseWriter
+    private let database: any DatabaseManaging
 
     init(database: any DatabaseManaging) {
-        self.writer = database.writer
+        self.database = database
     }
 
     // MARK: - 查询
 
     func find(repoId: Int64) async throws -> ReleaseSubscription? {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try ReleaseSubscription.fetchOne(db, key: repoId)
         }
     }
 
     func fetchActive() async throws -> [ReleaseSubscription] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try ReleaseSubscription.fetchAll(
                 db,
                 sql: "SELECT * FROM release_subscriptions WHERE is_subscribed = 1"
@@ -44,7 +44,7 @@ struct GRDBReleaseSubscriptionRepository: ReleaseSubscriptionRepositoryProtocol 
     }
 
     func fetchAll() async throws -> [ReleaseSubscription] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try ReleaseSubscription.fetchAll(db)
         }
     }
@@ -64,7 +64,7 @@ struct GRDBReleaseSubscriptionRepository: ReleaseSubscriptionRepositoryProtocol 
     /// 否则下一次轮询会把仓库历史所有 Release 当成"新 Release"批量推通知给用户。
     func subscribe(repoId: Int64, primingReleaseId: Int64?, primingTagName: String?) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(
                 sql: """
                 INSERT INTO release_subscriptions (
@@ -85,7 +85,7 @@ struct GRDBReleaseSubscriptionRepository: ReleaseSubscriptionRepositoryProtocol 
 
     func unsubscribe(repoId: Int64) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(
                 sql: """
                 UPDATE release_subscriptions
@@ -99,7 +99,7 @@ struct GRDBReleaseSubscriptionRepository: ReleaseSubscriptionRepositoryProtocol 
 
     func setNotifyEnabled(repoId: Int64, enabled: Bool) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(
                 sql: """
                 UPDATE release_subscriptions
@@ -119,7 +119,7 @@ struct GRDBReleaseSubscriptionRepository: ReleaseSubscriptionRepositoryProtocol 
     ) async throws {
         let polledISO = ISO8601DateFormatter.shared.string(from: polledAt)
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(
                 sql: """
                 UPDATE release_subscriptions

@@ -201,7 +201,7 @@ struct HomeViewModelFilterSortTests {
         try await insertRepo(db, id: 2, fullName: "o/b", stars: 0, starredAt: "2026-05-02T00:00:00Z")
         try await insertRepo(db, id: 3, fullName: "o/c", stars: 0, starredAt: "2026-05-03T00:00:00Z")
         try await noteRepo.updateStatus(repoId: 1, status: .using)
-        try await noteRepo.updateStatus(repoId: 2, status: .reading)
+        try await noteRepo.updateStatus(repoId: 2, status: .read)
         // repo 3 无 note → implicit unread
         await vm.reloadItems()
 
@@ -232,12 +232,74 @@ struct HomeViewModelFilterSortTests {
         let (vm, db, noteRepo) = try makeSUT()
         try await insertRepo(db, id: 1, fullName: "o/a", stars: 0, starredAt: "2026-05-01T00:00:00Z")
         try await insertRepo(db, id: 2, fullName: "o/b", stars: 0, starredAt: "2026-05-02T00:00:00Z")
-        try await noteRepo.updateStatus(repoId: 1, status: .deprecated)
+        try await noteRepo.updateStatus(repoId: 1, status: .using)
         await vm.reloadItems()
 
         vm.statusFilter = nil
 
         #expect(vm.items.count == 2)
+    }
+
+    // MARK: - v2 readStatus 角标支持（2026-06-12）
+
+    @Test("readStatus(for:): reloadItems 后 status 正确反映到 dict 中")
+    func readStatusReflectsDatabase() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/a", stars: 0, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/b", stars: 0, starredAt: "2026-05-02T00:00:00Z")
+        try await insertRepo(db, id: 3, fullName: "o/c", stars: 0, starredAt: "2026-05-03T00:00:00Z")
+        try await noteRepo.updateStatus(repoId: 1, status: .using)
+        try await noteRepo.updateStatus(repoId: 2, status: .read)
+        // repo 3 无 note → implicit unread
+
+        await vm.reloadItems()
+
+        #expect(vm.readStatus(for: 1) == .using)
+        #expect(vm.readStatus(for: 2) == .read)
+        #expect(vm.readStatus(for: 3) == .unread, "implicit unread: 未在 repo_notes 写过的 repo 默认 unread")
+    }
+
+    @Test("observeRepoStatusChanges: NotificationCenter post 后 readStatus 即时刷新")
+    func notificationDrivesStatusMapUpdate() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/a", stars: 0, starredAt: "2026-05-01T00:00:00Z")
+        try await noteRepo.updateStatus(repoId: 1, status: .unread)
+        await vm.reloadItems()
+        #expect(vm.readStatus(for: 1) == .unread)
+
+        // 启动 observer task；后续 post 后异步消费 + 更新 dict。
+        let task = Task { await vm.observeRepoStatusChanges() }
+        // 让 observer 进入 await stream 状态（避免在 post 之前 stream 还没建好导致丢消息）
+        try await Task.sleep(nanoseconds: 50_000_000)  // 50ms
+
+        NotificationCenter.default.post(
+            name: .repoStatusDidChange,
+            object: nil,
+            userInfo: ["repoId": Int64(1), "status": RepoStatus.using.rawValue]
+        )
+
+        // 等待 observer 消费通知（异步 + main actor hop）
+        try await pollUntil(timeout: 1.0) { vm.readStatus(for: 1) == .using }
+        #expect(vm.readStatus(for: 1) == .using)
+
+        // 兜底：取消 observer task，避免 leak
+        task.cancel()
+    }
+
+    /// 周期性检查条件，最多等待 `timeout` 秒；条件成立立即返回。
+    /// 用于异步状态更新的等待，避免硬编码 sleep。
+    ///
+    /// 本 Suite 是 `@MainActor`，condition closure 与本方法都在 main actor 上下文执行。
+    private func pollUntil(
+        timeout: TimeInterval,
+        interval: TimeInterval = 0.02,
+        condition: () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            try await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+        }
     }
 }
 
@@ -293,7 +355,7 @@ struct AppSettingsFilterTests {
     func statusNilPersists() {
         let defaults = makeIsolatedDefaults()
         let s1 = AppSettings(defaults: defaults)
-        s1.statusFilter = .reading
+        s1.statusFilter = .read
         s1.statusFilter = nil
         let s2 = AppSettings(defaults: defaults)
         #expect(s2.statusFilter == nil)

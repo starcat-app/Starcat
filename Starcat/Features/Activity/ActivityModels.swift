@@ -133,6 +133,11 @@ struct ActivityItem: Identifiable, Equatable {
     let htmlURL: URL?
     let repo: Repo?
     let release: ReleaseRecord?
+    /// 发行版聚合详情专用：同一个 repo 下已缓存的 Release 列表，按发布时间倒序。
+    ///
+    /// 其它 Activity kind 保持空数组。把它放在 ActivityItem 上，是为了列表选中后
+    /// 详情页首帧无需再做一次 DB 查询；详情 shell 仍会按 repoId 后台刷新最新缓存。
+    let releases: [ReleaseRecord]
     let isRead: Bool
 
     /// 行 / 详情头部 accent 配色：

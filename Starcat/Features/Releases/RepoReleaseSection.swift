@@ -2,59 +2,75 @@
 //  RepoReleaseSection.swift
 //  Starcat
 //
-//  Repo 详情页 - Release 订阅段（HOM-47）。
+//  Repo 详情页 hero stats 行 - Release 订阅紧凑 stat 单元（HOM-47）。
+//
+//  ⚠️ 文件名仍为 `RepoReleaseSection` 是历史遗留：v2.0（2026-06-12）把原本独立成段
+//      的「Releases 订阅段」压缩进 hero stats 行的紧凑 stat 单元 `RepoReleaseStatItem`，
+//      与 Stars / Forks / Watchers / Created / Updated 同一行,作为详情页第 6 个 stat。
+//      为避免触发 xcodegen 全量 project 重生与 git history 断裂,文件名保留不动。
 //
 //  组件结构：
-//  - `RepoReleaseSection` (View)：展示订阅状态 + 最新 Release 概要 + 订阅 / 通知开关
-//  - `RepoReleaseSectionViewModel` (@MainActor @Observable)：状态机 + 副作用入口
+//  - `RepoReleaseStatItem` (View)：紧凑 stat 单元（VStack center, 14pt 主行 + 10pt 副行）
+//  - `RepoReleaseSectionViewModel` (@MainActor @Observable)：状态机 + 副作用入口（沿用）
 //
 //  设计取舍：
-//  - 订阅按钮的"首次按下"会立即拉一次 Release（priming 游标），
+//  - 订阅按钮的"首次按下"会立即拉一页 Release（priming 游标），
 //    避免用户后续轮询时被推送一堆历史 Release
-//  - 详情页只展示最新一条；完整历史去时间线视图查
-//  - 通知开关与订阅状态解耦：用户可"订阅但静默"（默认开启）
+//  - 详情页只在 stat 第二行展示**最新一条 tag**；完整历史去时间线视图查
+//  - 通知静默开关 v1.0 时存在,v2.0 移除：订阅 = 自动开通知,与首次订阅授权语义对齐,
+//    后续若用户想静音可去时间线视图统一管理
+//
+//  v1.0 → v2.0 演化轨迹（2026-06-12,dong4j 反馈）：
+//  - v1.0：详情页有完整 `RepoReleaseSection` 段（标题 + 订阅按钮 + 通知开关 + 最新 release 行）
+//  - v2.0：dong4j 反馈该段独立成块挤压 README 阅读区,与 hero stats 重复表达"仓库基础信息",
+//    遂压缩为单 stat 单元;同时删除通知静默开关与 "3 天前" 相对时间这两个紧凑形态放不下的修饰
 //
 
 import SwiftUI
 
-struct RepoReleaseSection: View {
+/// 详情页 hero stats 行的「Releases 订阅」紧凑单元。
+///
+/// 视觉规格与 `RepoStatItem` / `StarStatChipButton` 对齐(VStack center,14pt 主行 + 10pt 副行)：
+/// - **第一行**：🔔 / 🔔.fill 图标 + "订阅" / "已订阅" 文本 —— 整列作为 Button,
+///   未订阅 → 订阅(priming 拉一页 + 写库 + 申请通知授权),已订阅 → 取消订阅
+/// - **第二行**：
+///   - 未订阅 / 没有 release：`Releases` 灰色 label(与其它 stat 第二行 label 风格一致)
+///   - 已订阅 + 有 release：最新 tag(accent 色,可点击打开 GitHub release 页)
+///
+/// 状态机(沿用 `RepoReleaseSectionViewModel`)：
+/// - `subscription.isSubscribed`：决定第一行图标 / 文本与点击行为
+/// - `latestRelease`：决定第二行展示 tag 还是 fallback "Releases" label
+/// - `isMutating`：subscribe / unsubscribe 进行中,第一行图标位渲染 ProgressView 替代,
+///   按钮 disabled 防双击
+/// - `errorMessage`：通过 `.help` tooltip 透传给用户,不在主视觉上高亮(stats 行已经
+///   有 5 个其它 stat,出错时整列变红会过分抢眼)
+///
+/// **登录态门控（与 hero ⭐/☆ chip 同构）**：
+/// 未登录用户点击订阅按钮不会进入 `subscribe / unsubscribe` API 路径,而是先调
+/// `authSession.signIn()` 触发设备流登录,登录完成后用户需再点一次才真正订阅。
+/// 这与 `StarStatChipButton` 调用方(`handleStarTapped`)的处理完全一致 ——
+/// **不直接抛错、不弹错误提示**(避免把"未登录"误传成"操作失败"语义)。
+struct RepoReleaseStatItem: View {
 
     let repo: Repo
 
     @Environment(AppDependencies.self) private var dependencies
 
+    /// 登录态门控来源。未登录时点击订阅会走 `authSession.signIn()` 触发设备流,
+    /// 与 `RepoDetailScaffold.onStarTapped` / 各 ScaffoldShell.handleStarTapped
+    /// 的「未登录 → signIn() 后 return」一致。
+    @Environment(AuthSession.self) private var authSession
+
     @State private var viewModel: RepoReleaseSectionViewModel?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // 标题行：与 Tags / Notes 段保持一致——
-            // "Releases" Title 后面紧贴 Subscribe / Unsubscribe 按钮，
-            // 通知静默开关 (notifyToggle) 紧跟订阅按钮后面（dong4j 2026-06-04 反馈：
-            // 原版把它甩到行尾产生孤儿图标 + 视线跳跃，与"主操作的修饰符"语义不符），
-            // ProgressView 用 Spacer 推到行尾继续承担"加载中"指示。
-            HStack(spacing: 8) {
-                Label("releases.section.title", systemImage: "shippingbox")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if let vm = viewModel {
-                    subscribeButton(vm: vm)
-                    if vm.subscription?.isSubscribed == true {
-                        notifyToggle(vm: vm)
-                    }
-                }
-
-                Spacer()
-
-                if viewModel?.isLoading == true {
-                    ProgressView()
-                        .controlSize(.mini)
-                }
-            }
-
-            latestReleaseRow
+        VStack(alignment: .center, spacing: 2) {
+            actionRow
+            secondaryRow
         }
+        .help(helpText)
         .task(id: repo.id) {
+            // viewModel 在首次进入时按需创建;后续 repo 切换由 task(id:) 重启 → loadFor 重读。
             if viewModel == nil {
                 viewModel = RepoReleaseSectionViewModel(
                     apiClient: dependencies.apiClient,
@@ -67,54 +83,21 @@ struct RepoReleaseSection: View {
         }
     }
 
+    /// 第一行:图标 + 文字,作为订阅 / 取消订阅的主交互入口。
+    ///
+    /// **未登录门控**:与 hero ⭐/☆ chip 调用方同构(详见 `StarStatChipButton.swift`
+    /// 文件头第 33 行说明 + 各 `ScaffoldShell.handleStarTapped`):未登录用户点击 →
+    /// `authSession.signIn()` 触发设备流,return 不进入 subscribe / unsubscribe API
+    /// 路径。登录成功后用户需再点一次才真正订阅(不做"先记意图后续登录自动执行"的
+    /// 隐式行为,避免误订阅)。
     @ViewBuilder
-    private var latestReleaseRow: some View {
-        if let vm = viewModel, let latest = vm.latestRelease {
-            HStack(spacing: 8) {
-                Image(systemName: "tag.fill")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                // tag 本身就是跳转入口：蓝色 accent 颜色暗示可点击，配 `.pressableHover()`
-                // 与 Stars / Forks 等 Stat Item 一致的 opacity + scale 反馈，
-                // 替代原先额外的 `arrow.up.right.square` 跳转图标按钮（dong4j 反馈交互冗余）。
-                Button {
-                    if let url = URL(string: latest.htmlUrl) {
-                        NSWorkspace.shared.open(url)
-                    }
-                } label: {
-                    Text(verbatim: latest.tagName)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundStyle(Color.accentColor)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .pressableHover()
-                .help("releases.openOnGitHub")
-                if let date = relativeDate(latest.publishedAt) {
-                    Text("·")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                    Text(verbatim: date)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } else if let vm = viewModel, vm.errorMessage != nil {
-            Text(vm.errorMessage ?? "")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        } else if viewModel?.isLoading == false {
-            Text("releases.section.noRelease")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-    }
-
-    @ViewBuilder
-    private func subscribeButton(vm: RepoReleaseSectionViewModel) -> some View {
-        let subscribed = vm.subscription?.isSubscribed == true
+    private var actionRow: some View {
         Button {
+            guard let vm = viewModel else { return }
+            guard authSession.state.isAuthenticated else {
+                authSession.signIn()
+                return
+            }
             Task {
                 if subscribed {
                     await vm.unsubscribe(repoId: repo.id)
@@ -123,37 +106,74 @@ struct RepoReleaseSection: View {
                 }
             }
         } label: {
-            Label(
-                subscribed ? "releases.action.unsubscribe" : "releases.action.subscribe",
-                systemImage: subscribed ? "bell.slash" : "bell.badge"
-            )
-            .font(.caption)
+            HStack(spacing: 4) {
+                iconOrSpinner
+                Text(actionTitleKey)
+                    .font(.system(size: 14, weight: .medium))
+            }
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .focusEffectDisabled()
-        .disabled(vm.isMutating)
+        .pressableHover()
+        .disabled(viewModel?.isMutating == true)
     }
 
+    /// isMutating 时显示 spinner(防双击同时给用户视觉反馈),否则显示订阅状态对应的铃铛图标。
+    /// 不监听 isLoading(初次 loadFor 的状态)是为了避免详情页打开瞬间 stat 闪一下 spinner。
     @ViewBuilder
-    private func notifyToggle(vm: RepoReleaseSectionViewModel) -> some View {
-        let notifyOn = vm.subscription?.notifyEnabled == true
-        Button {
-            Task { await vm.setNotifyEnabled(repoId: repo.id, enabled: !notifyOn) }
-        } label: {
-            Image(systemName: notifyOn ? "bell.fill" : "bell.slash.fill")
-                .font(.caption)
-                .foregroundStyle(notifyOn ? Color.accentColor : .secondary)
+    private var iconOrSpinner: some View {
+        if viewModel?.isMutating == true {
+            ProgressView()
+                .controlSize(.small)
+                .frame(width: 14, height: 14)
+        } else {
+            Image(systemName: subscribed ? "bell.fill" : "bell")
+                .foregroundStyle(subscribed ? Color.accentColor : .secondary)
+                .font(.system(size: 14))
         }
-        .buttonStyle(.borderless)
-        .focusEffectDisabled()
-        .help(notifyOn ? Text("releases.notify.disable") : Text("releases.notify.enable"))
     }
 
-    private func relativeDate(_ iso: String?) -> String? {
-        guard let iso, let date = ISO8601DateFormatter.shared.date(from: iso) else { return nil }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: Date())
+    /// 第二行:未订阅 → "Releases" 灰色 label;已订阅 + 有 release → 最新 tag(accent 色,可点跳 GitHub)。
+    @ViewBuilder
+    private var secondaryRow: some View {
+        if subscribed, let latest = viewModel?.latestRelease {
+            Button {
+                if let url = URL(string: latest.htmlUrl) {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                Text(verbatim: latest.tagName)
+                    .font(.system(size: 10, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.accentColor)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pressableHover()
+        } else {
+            Text("releases.section.title")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var subscribed: Bool {
+        viewModel?.subscription?.isSubscribed == true
+    }
+
+    private var actionTitleKey: LocalizedStringKey {
+        subscribed ? "releases.stat.subscribed" : "releases.action.subscribe"
+    }
+
+    /// hover 时的帮助 tooltip:errorMessage 优先(动态字符串,verbatim 直传);
+    /// 否则给出动作意图(订阅 / 取消订阅)。
+    private var helpText: Text {
+        if let err = viewModel?.errorMessage, !err.isEmpty {
+            return Text(verbatim: err)
+        }
+        return subscribed ? Text("releases.action.unsubscribe") : Text("releases.action.subscribe")
     }
 }
 
@@ -212,7 +232,9 @@ final class RepoReleaseSectionViewModel {
         isMutating = true
         defer { isMutating = false }
         do {
-            let response = try await apiClient.releases(owner: owner, repo: repoName, perPage: 10)
+            // 首次订阅时取满 GitHub 单页上限，给「活动 → 发行版」聚合详情页提供
+            // 尽可能完整的近期历史；不在这里做无限翻页，避免一次订阅消耗过多 rate limit。
+            let response = try await apiClient.releases(owner: owner, repo: repoName, perPage: 100)
             let dtos = response.value
             let nowISO = ISO8601DateFormatter.shared.string(from: Date())
             let records = dtos.map { dto in
@@ -221,7 +243,7 @@ final class RepoReleaseSectionViewModel {
                     repoId: repoId,
                     tagName: dto.tagName,
                     name: dto.name,
-                    bodyTruncated: Self.truncateBody(dto.body),
+                    bodyMarkdown: dto.body,
                     htmlUrl: dto.htmlUrl,
                     isPrerelease: dto.prerelease,
                     isDraft: dto.draft,
@@ -293,12 +315,6 @@ final class RepoReleaseSectionViewModel {
             isPrivate: false, isFork: false, isArchived: false, isStarred: true,
             pushedAt: nil, createdAt: nil, updatedAt: nil, starredAt: nil, cachedAt: nil
         )
-    }
-
-    private static func truncateBody(_ body: String?) -> String? {
-        guard let body, !body.isEmpty else { return nil }
-        let limit = 600
-        return body.count <= limit ? body : String(body.prefix(limit))
     }
 
     private static func dtoToAsset(_ dto: GitHubReleaseAssetDTO) -> ReleaseAsset {

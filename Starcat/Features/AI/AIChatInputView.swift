@@ -28,10 +28,6 @@ struct AIChatInputView: View {
                 .font(.body)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
-                .background(
-                    Color(nsColor: .textBackgroundColor),
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .strokeBorder(Color.gray.opacity(0.25), lineWidth: 1)
@@ -43,7 +39,6 @@ struct AIChatInputView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.bar)
     }
 
     private var sendButton: some View {

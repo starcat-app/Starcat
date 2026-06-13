@@ -5,17 +5,33 @@
 //  分享 API 客户端。
 //
 //  R-01 v1.2 改造（2026-06-09）：
-//  - endpoint `/share` → `/v1/share`（baseURL 含 `/api`，最终路径 `/api/v1/share`）
+//  - endpoint `/share` → `/v1/share`（最终路径 `/api/v1/share`）
 //  - 响应改 envelope 形态（`schema_version + data: ShareCreateResponse`）
 //  - 强制 Bearer Auth（apiKey 字段 + Authorization 头）
 //  - 错误统一走 `StarcatEnvelopeNetworkError`（不再用本地化 ShareAPIError）
+//
+//  R-03.1 修订（2026-06-11）：
+//  - baseURL **不再**含 `/api` 后缀（之前的"特殊语义"已删），与 trending/weekly/wiki 对齐
+//  - `Sharing.Paths.share = "/api/v1/share"`（绝对路径），由 `AppEndpoints.appendPath` 拼出
+//  - 历史 customServiceURL 末尾 `/api` 由 `ThirdPartyService.normalizedBaseURL(_:)`
+//    在保存阶段自动剥除，对本 actor 透明
 //
 //  R-01 P1-3b 修订（2026-06-10）：
 //  - sharing-api 后端 JSON tag 全量改 snake_case，与 trending/weekly 风格一致
 //  - 本 actor 的 JSONEncoder/JSONDecoder 同步设 .convertToSnakeCase /
 //    .convertFromSnakeCase，Swift 端属性名仍用 camelCase（语言习惯）
-//  - StarcatEnvelope / StarcatErrorEnvelope 的 schema_version 等顶层 key 走
-//    explicit CodingKeys，strategy 不影响（CodingKeys 优先级更高）
+//
+//  2026-06-12 修订（dong4j 发现「点击分享 → 响应解析失败：未能读取数据」）：
+//  - **回滚** P1-3b 加上的 `.convertToSnakeCase` / `.convertFromSnakeCase` 策略，
+//    改回与 TrendingAPI / WeeklyAPI / WikiAPI 同款做法——「DTO 写显式 CodingKeys，
+//    JSONEncoder/JSONDecoder 不开 strategy」。
+//  - 之前注释里"strategy 不影响（CodingKeys 优先级更高）"是错的：实际行为是
+//    decoder 先用 strategy 把 JSON key `schema_version` 转成 camelCase 的
+//    `schemaVersion`，再去容器里按 `CodingKey.stringValue == "schema_version"`
+//    查找 → **查不到** → 抛 `DecodingError.keyNotFound("schemaVersion is missing")`，
+//    UI 上展示成「响应解析失败：未能读取数据，因为数据丢失。」
+//  - TrendingAPI 88 行 / WeeklyAPI 95 行注释里早就警告过这个坑；ShareAPI 这次回归
+//    同款规范，避免再次翻车。
 //
 
 import Foundation
@@ -38,7 +54,7 @@ actor ShareAPI {
     private let decoder: JSONDecoder
 
     /// - Parameters:
-    ///   - baseURL: 后端域名（含 `/api` 后缀，与 AppEndpoints.Sharing.baseURL 语义一致）；
+    ///   - baseURL: 后端裸 host（**不含** `/api` 后缀，R-03.1 起与其它自建后端对齐）；
     ///     DI 装配处由 `AppDependencies` 注入，用户在设置页改地址后 `updateBaseURL(_:)` 热更新。
     ///   - apiKey: Bearer Token；DI 装配处由 `AppDependencies` 从 `StarcatAPIKeyResolver`
     ///     解析后注入；用户在设置页改 key 后 `updateAPIKey(_:)` 热更新。
@@ -58,27 +74,23 @@ actor ShareAPI {
             config.timeoutIntervalForResource = Self.timeout
             self.session = URLSession(configuration: config)
         }
+        // 2026-06-12：与 TrendingAPI / WeeklyAPI / WikiAPI 同款做法，**不开**
+        // `.convertToSnakeCase` / `.convertFromSnakeCase` 策略——`StarcatEnvelope`
+        // 顶层走显式 CodingKeys，开了 strategy 反而会与 CodingKeys 冲突，导致
+        // `keyNotFound`（详见文件头 2026-06-12 修订注释 + ShareModels.swift 顶部）。
+        // snake_case ↔ camelCase 的映射改由各 DTO 的显式 CodingKeys 保证。
         self.encoder = JSONEncoder()
         self.decoder = JSONDecoder()
-        // P1-3b：sharing-api 后端 JSON 字段全 snake_case；Swift 属性名仍 camelCase，
-        // 靠 strategy 自动双向转换，无需在每个 DTO 写 CodingKeys。
-        // StarcatEnvelope / StarcatErrorEnvelope 内部走 explicit CodingKeys，strategy 不会覆盖。
-        self.encoder.keyEncodingStrategy = .convertToSnakeCase
-        self.decoder.keyDecodingStrategy = .convertFromSnakeCase
     }
 
     /// 热更新 baseURL（用户在设置页改地址后由 `AppDependencies` 推送进来）。
     /// actor 串行化让 URL 切换无需重启 App。
     func updateBaseURL(_ url: URL) {
-        AppLog.network.info("ShareAPI baseURL updated to \(url.absoluteString, privacy: .public)")
         self.baseURL = url
     }
 
     /// 热更新 API Key（用户在设置页改 key 后由 `AppDependencies` 推送进来）。
-    /// 出于日志安全考虑不打印 key 本体，只打 prefix。
     func updateAPIKey(_ key: String?) {
-        let preview = key.flatMap { $0.isEmpty ? nil : String($0.prefix(7)) } ?? "<nil>"
-        AppLog.network.info("ShareAPI apiKey updated (prefix=\(preview, privacy: .public)****)")
         self.apiKey = key
     }
 

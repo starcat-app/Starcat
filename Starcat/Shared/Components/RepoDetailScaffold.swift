@@ -15,16 +15,80 @@
 //    4. `body` view-builder（ContentView 插槽，自由渲染 ScrollView + sections + README）
 //
 //  Scaffold 负责：
-//    - Hero header（复用 `RepoMetadataHeaderView`，传 `showLocalSections=false`
-//      让 Hero 仅渲染元信息——三段 section 由 ContentView 自己决定是否渲染）
+//    - Hero header（复用 `RepoMetadataHeaderView`,渲染元信息 + ⭐/☆ chip + trailing actions）
 //    - 折叠面板（复用 `CollapsibleRepoMetadataPanel`）
+//    - heroExtension slot（场景特化的 hero 后内容,如 Trending Contributors）
+//    - **RepoLocalSections（v1.5 修订, 2026-06-10）**：Tags / Notes (含阅读状态) /
+//      Releases 订阅三段内置渲染在 metadataPanel 内,跟随 hero **整段折叠**;
+//      4 场景同构（Manage / Trending / Weekly / Activity-repo-backed 都是同样
+//      `RepoLocalSections(repo: repo)` 调用）,内置消除 4 场景重复 + 解决「滚动
+//      README 时三段挤压阅读区」bug。详见下方 v1.5 修订段。
 //    - trailingActions 渲染（按 `RepoDetailAction` enum 派发）
 //
 //  Scaffold **不**负责：
-//    - body 内部布局（ContentView 自己持有 ScrollView + sections + Readme）
+//    - body 内部布局（ContentView 自己持有 ScrollView + Readme）
 //    - star/unstar 业务逻辑（由 onStarTapped 上层处理）
-//    - 翻译浮动按钮 / 刷新浮动按钮（这两个是 ReadmeStateView 的内嵌 cacheFooter，
-//      ContentView 渲染 ReadmeStateView 时已经包含；Scaffold 不重复渲染）
+//    - 翻译浮动按钮 / 刷新浮动按钮（这两个是 ReadmeStateView 的内嵌 cacheFooter,
+//      ContentView 渲染 ReadmeStateView 时已经包含;Scaffold 不重复渲染）
+//
+//  ────────────────────────────────────────────────────────────────────────────
+//  v2.1 修订（2026-06-11, dong4j bug 反馈「右下角多了一个一模一样的刷新图标」）：
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  撤销 P0-E（2026-06-10）的 §3.2.9「右下角浮动刷新按钮」设计 —— 删除 `onRefresh:`
+//  入参 + `.overlay(alignment: .bottomTrailing)` 浮动 SyncIconButton + 内部 isRefreshing
+//  状态机。回归本文件头一开始就声明的设计原则:「翻译浮动按钮 / 刷新浮动按钮 ... Scaffold
+//  不重复渲染」。
+//
+//  当时（P0-E）加这个浮动按钮的目的是给 Manage 详情提供「整页刷新」入口，但同位置
+//  `ReadmeStateView.cacheFooter` **始终**也渲染一个同款 `SyncIconButton`(只刷 README) →
+//  视觉上同位置叠两个一样的图标,用户分不清职责差异,反馈为 bug。
+//
+//  修复方向(dong4j 选 A:合并)：cacheFooter 内那个按钮在 Manage 场景**同时**刷 README
+//  + reloadItems(整页 repo 视图数据)。Manage 路径下已通过 `ManageDetailContent` 注入
+//  `HomeViewModel` + onRetry 闭包内并发触发 `readmeVM.reload(...)` + `Task { await
+//  viewModel.reloadItems(forceRefresh: true) }` 实现(详见 `ManageDetailContent.swift`
+//  文件头 v2.1 修订段)。Trending / Activity / Weekly 三场景的 cacheFooter onRetry 不变,
+//  仍只刷 README,符合各自语义。
+//
+//  关键约束:
+//  - i18n key `repo.detail.refresh`(P0-E 引入,en「Refresh details」/zh-Hans「刷新详情」)
+//    在本次修订中一并删除,无残留引用。
+//  - cacheFooter 按钮的 tooltip 仍是 `readme.refresh`(无文案修改)——避免影响其他 3 个
+//    共用 `ReadmeStateView` 的场景的语义;Manage 下「事实上扩展到整页刷新」是合理的,
+//    用户在详情页点刷新自然期望全刷。
+//  - 后续若再有「需要在详情页提供独立刷新入口」的诉求,先优先看 cacheFooter onRetry 闭包
+//    能否承担,而不是再加 Scaffold overlay。
+//
+//  ────────────────────────────────────────────────────────────────────────────
+//  v1.5 修订（2026-06-10, dong4j bug 反馈）：RepoLocalSections 迁回折叠面板内
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  v1.2 P0（2026-06-10 上午）把 RepoLocalSections 三段从 hero 下沉到 ContentView,
+//  理由是「各场景的 section 集合不同,hero 不该知道有几段要展开」。但实际落地后
+//  4 场景的 ContentView body 里 RepoLocalSections 调用 100% 一致（`RepoLocalSections(repo: repo)`
+//  无任何场景特化参数）—— 抽象层"灵活性"在事实上没有被使用。
+//
+//  v1.5 上午用户反馈：滚动 README 时只有 hero 一段折叠,中间三段仍占据屏幕中部
+//  挤压 README 阅读区。根因 = 三段在 ContentView body 里、不在折叠面板（CollapsibleRepoMetadataPanel）
+//  内 → scroll progress 驱不动它。
+//
+//  权衡：方案 A（Scaffold 内置 RepoLocalSections,跟随折叠）vs 方案 B（slot 化,
+//  调用方传 RepoLocalSections）vs 方案 C（透传 progress 自己衰减）。dong4j 拍板
+//  方案 A —— 折叠一致性 > 抽象灵活性,4 场景同构事实推翻了原 v1.2 P0「Scaffold
+//  不该知道有几段」原则。
+//
+//  v1.5 实现：本组件直接挂 `RepoLocalSections(repo: repo)` 在 metadataPanel 内
+//  hero + heroExtension 之后,跟随 `CollapsibleRepoMetadataPanel` 的 progress
+//  自然折叠（panel 按 PreferenceKey 测三段加入后的高度,visibleHeight = panelHeight ×
+//  (1 - progress) 同步衰减,opacity / offset 也同步）。
+//
+//  4 个 ContentView body 删去自己的 `RepoLocalSections(repo:)` 调用,只剩 ReadmeStateView。
+//
+//  RepoLocalSections 内部的 v1.4 守卫（`isAuthenticated && repo.id != 0`）+ spring
+//  0.25s star 后展开转场动画都保留 —— 用户在 trending/weekly 详情点 star 后,
+//  panelHeight 会随三段加入而增长,折叠面板与 spring 转场协同（两层动画都是
+//  short-duration spring,叠加视觉 OK）。
 //
 //  ────────────────────────────────────────────────────────────────────────────
 //  与现有 RepoDetailView (Manage / Trending) 的迁移路径
@@ -76,16 +140,10 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// Stars stat chip 的 tooltip 本地化键（透传给 RepoMetadataHeaderView）。
     let starHelpKey: LocalizedStringKey
 
-    /// 详情页右下角浮动刷新按钮触发的异步动作（设计 §3.2.2 / §3.2.9）。
-    ///
-    /// `nil` → 不渲染浮动按钮（Trending / Weekly / Activity 详情页通常不传，
-    /// 它们的列表页 toolbar 已有刷新）。
-    /// `non-nil` → 在右下角浮动渲染 `SyncIconButton`，点击期间 isRefreshing=true
-    /// 触发持续旋转动画，await 闭包返回后回正。
-    ///
-    /// Manage 详情页传入 `await homeViewModel.reloadItems(forceRefresh: true)`
-    /// 以便用户在详情页直接刷整个仓库视图数据。
-    let onRefresh: (() async -> Void)?
+    // v2.1 修订（2026-06-11）：原 `onRefresh: (() async -> Void)?` 入参已删除。
+    // 该字段曾给 §3.2.9「右下角浮动刷新按钮」用,但与 cacheFooter 内置 SyncIconButton
+    // 视觉重叠造成 bug,详见文件头 v2.1 修订段。现刷新入口统一收口到 cacheFooter
+    // (4 场景共用),Manage 场景下 onRetry 闭包内并发触发 README + reloadItems。
 
     private let heroExtension_: () -> HeroExt
     private let body_: (@escaping (CGFloat) -> Void) -> Body
@@ -96,8 +154,8 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 顶部面板自然高度（由 CollapsibleRepoMetadataPanel 内部回填）。
     @State private var metadataPanelHeight: CGFloat = 0
 
-    /// 浮动刷新按钮的旋转/禁用状态。点击后立即 true，await onRefresh? 返回后回 false。
-    @State private var isRefreshing: Bool = false
+    // v2.1 修订（2026-06-11）：原 `@State private var isRefreshing: Bool` 已删除。
+    // 该状态曾给浮动刷新按钮用,现统一由 cacheFooter 内的 `readmeVM.isRefreshing` 驱动。
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -112,7 +170,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         onStarTapped: @escaping () async throws -> Void,
-        onRefresh: (() async -> Void)? = nil,
         @ViewBuilder heroExtension: @escaping () -> HeroExt,
         @ViewBuilder body: @escaping (@escaping (CGFloat) -> Void) -> Body
     ) {
@@ -121,7 +178,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         self.fallbackAccentColor = fallbackAccentColor
         self.starHelpKey = starHelpKey
         self.onStarTapped = onStarTapped
-        self.onRefresh = onRefresh
         self.heroExtension_ = heroExtension
         self.body_ = body
     }
@@ -133,7 +189,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         onStarTapped: @escaping () async throws -> Void,
-        onRefresh: (() async -> Void)? = nil,
         @ViewBuilder body: @escaping (@escaping (CGFloat) -> Void) -> Body
     ) where HeroExt == EmptyView {
         self.init(
@@ -142,36 +197,17 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             fallbackAccentColor: fallbackAccentColor,
             starHelpKey: starHelpKey,
             onStarTapped: onStarTapped,
-            onRefresh: onRefresh,
             heroExtension: { EmptyView() },
             body: body
         )
     }
 
     var body: some View {
+        // v2.1 修订（2026-06-11）：原 `.overlay(alignment: .bottomTrailing)` 浮动刷新
+        // 按钮已删除（与 cacheFooter 内置按钮视觉重叠造成 bug,详见文件头 v2.1 修订段）。
         VStack(alignment: .leading, spacing: 0) {
             metadataPanel
             body_(updateScrollOffset)
-        }
-        // 设计 §3.2.2 / §3.2.9：详情页右下角浮动刷新按钮。仅当 onRefresh != nil 渲染。
-        // 用 overlay 而非 ZStack，避免影响主 VStack 的 frame 计算（按钮不挤压 body 高度）。
-        .overlay(alignment: .bottomTrailing) {
-            if let onRefresh {
-                SyncIconButton(
-                    isRefreshing: isRefreshing,
-                    disabled: isRefreshing,
-                    tooltip: String(localized: "repo.detail.refresh")
-                ) {
-                    guard !isRefreshing else { return }
-                    Task {
-                        isRefreshing = true
-                        await onRefresh()
-                        isRefreshing = false
-                    }
-                }
-                .padding(.trailing, 16)
-                .padding(.bottom, 16)
-            }
         }
         .id(repo.id)
         .navigationTitle(repo.name)
@@ -202,11 +238,24 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         return min(max((normalizedOffset - collapseStart) / collapseDistance, 0), 1)
     }
 
-    /// 顶部信息面板（折叠容器 + Hero 元信息 + heroExtension slot）。
+    /// 顶部信息面板（折叠容器 + Hero 元信息 + heroExtension slot + RepoLocalSections）。
     ///
-    /// `heroExtension` 出现在 RepoMetadataHeaderView 之后、折叠面板之内，会跟着
-    /// hero 一起折叠收起。**调用方需自行处理 horizontal padding**——RepoMetadataHeaderView
-    /// 内部用 `.padding(.horizontal, 24)`，extension 也应保持这个值以视觉对齐。
+    /// 渲染顺序（自上而下）：
+    /// 1. `RepoMetadataHeaderView` —— Hero 元信息 + ⭐/☆ chip + trailingActions
+    /// 2. `heroExtension_()` —— 场景特化扩展（如 Trending Contributors）
+    /// 3. `RepoLocalSections(repo:)` —— **v1.5 内置（2026-06-10）**：Tags / Notes /
+    ///    Releases 订阅三段。**4 场景同构**,内置消除 4 个 ContentView 重复 + 解决
+    ///    「滚动 README 时三段挤压阅读区」bug —— 三段现在跟随面板整段折叠。
+    ///    可见性由 RepoLocalSections 内部 `isAuthenticated && repo.id != 0` 守卫
+    ///    自动判定（v1.4 决策）,Scaffold 无条件挂载即可。
+    ///
+    /// 全部内容包在 `CollapsibleRepoMetadataPanel` 里,内部 PreferenceKey 测自然
+    /// 高度 → 按 `metadataPanelCollapseProgress` (0...1) 同步衰减 visibleHeight /
+    /// opacity / offset,实现「滚动 README 时整段面板折叠让位阅读」体验。
+    ///
+    /// **调用方 / heroExtension 需自行处理 horizontal padding**——RepoMetadataHeaderView
+    /// 与 RepoLocalSections 内部都用 `.padding(.horizontal, 24)`,extension 也应保持
+    /// 这个值以视觉对齐。
     @ViewBuilder
     private var metadataPanel: some View {
         CollapsibleRepoMetadataPanel(
@@ -218,22 +267,51 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     repo: repo,
                     fallbackAccentColor: fallbackAccentColor,
                     starHelpKey: starHelpKey,
+                    headerSourceBadge: viewData.headerSourceBadge,
                     onStarTapped: onStarTapped
                 ) {
                     trailingActionsView
                 }
                 heroExtension_()
+                // v1.5（2026-06-10）：RepoLocalSections 内置渲染,跟随面板整段折叠。
+                // 可见性 + spring 0.25s star 后展开转场都由组件内部自治,Scaffold 无脑挂。
+                RepoLocalSections(repo: repo)
             }
         }
     }
 
     /// trailingActions 派发渲染（按 RepoDetailAction enum 类型）。
+    ///
+    /// Wiki 评审约束（2026-06-11）：Weekly Issue 是 Weekly 分组特有入口，必须永远排第一。
+    /// 因此先渲染 `.weeklyIssue`，再渲染统一 `RepoWikiMenu`，最后渲染 share / ai / custom。
+    /// 其他详情页没有 weeklyIssue，自然得到 `Wiki -> Share -> AI`。这里按 action 类型分组，
+    /// 不引入 priority 数字，也不要求四个场景调用方改造数据模型。
     @ViewBuilder
     private var trailingActionsView: some View {
         HStack(spacing: 8) {
-            ForEach(viewData.trailingActions) { action in
+            ForEach(weeklyIssueActions) { action in
                 actionButton(for: action)
             }
+            RepoWikiMenu(repo: repo)
+            ForEach(remainingActions) { action in
+                actionButton(for: action)
+            }
+        }
+    }
+
+    /// Weekly 特有 action，固定放在 Wiki 之前。
+    private var weeklyIssueActions: [RepoDetailAction] {
+        viewData.trailingActions.filter { action in
+            if case .weeklyIssue = action { return true }
+            return false
+        }
+    }
+
+    /// 除 Weekly Issue 外的通用/场景 action，固定放在 Wiki 之后。
+    private var remainingActions: [RepoDetailAction] {
+        viewData.trailingActions.filter { action in
+            if case .weeklyIssue = action { return false }
+            return true
         }
     }
 

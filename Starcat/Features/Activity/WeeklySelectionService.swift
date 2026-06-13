@@ -34,11 +34,11 @@ final class WeeklySelectionService {
     /// `nil` 表示"尚未拉取过"，sidebar 据此决定是否显示计数徽章。
     private(set) var total: Int?
 
-    /// Activity 页 weekly 分类中当前选中的项目。
+    /// Activity 页 weekly 分类中当前选中的聚合 feed 项。
     ///
     /// nil → 详情页显示空态；非 nil → HomeView 详情区路由到 `WeeklyDetailView`。
     /// 用户切换非 weekly 分类、切走 Activity 页时，由调用方主动 `clearSelection`。
-    private(set) var selectedProject: WeeklyProject?
+    private(set) var selectedItem: WeeklyFeedItem?
 
     /// WeeklyContentViewModel 拉到分页结果后写一次 total。
     ///
@@ -49,12 +49,12 @@ final class WeeklySelectionService {
     }
 
     /// 选中项目（点击行触发）。
-    func select(_ project: WeeklyProject?) {
-        selectedProject = project
+    func select(_ item: WeeklyFeedItem?) {
+        selectedItem = item
     }
 
     /// 清空选中（切换分类、切走 Activity 页时调用）。
     func clearSelection() {
-        selectedProject = nil
+        selectedItem = nil
     }
 }

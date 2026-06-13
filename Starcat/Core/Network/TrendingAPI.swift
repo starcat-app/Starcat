@@ -114,7 +114,8 @@ actor TrendingAPI {
     ///
     /// - Parameters:
     ///   - since: 时间周期（daily/weekly/monthly）
-    ///   - language: 编程语言筛选（空字符串表示全部）
+    ///   - language: 编程语言筛选（`.all`=不带 lang；`.uncategorized`=发哨兵 `__uncategorized__`，
+    ///     后端识别后查询 `language IS NULL OR ''` 的 repo）
     /// - Returns: Trending 仓库数组（已从 DTO 转换为 UI 模型）
     func fetchTrending(
         since: TrendingPeriod,
@@ -138,6 +139,44 @@ actor TrendingAPI {
         }
     }
 
+    /// 获取**基于实际数据聚合**的 trending 语言列表（2026-06-11 dong4j 新增）。
+    ///
+    /// 后端 `GET /api/v1/languages`（v2）返回的不再是 GitHub trending 页面的全量语言菜单
+    /// （历史 v1 行为），而是基于 `trending_repos` 表的实时聚合：
+    /// 仅包含**当前真有 repo 的语言** + 一项 `__uncategorized__`（语言为 NULL/空的 repo）。
+    ///
+    /// 响应结构（envelope schema_version=1）：
+    /// ```
+    /// {
+    ///   "schema_version": 1,
+    ///   "data": [
+    ///     { "key": "Go", "label": "Go", "count": 31 },
+    ///     ...
+    ///     { "key": "__uncategorized__", "label": "Uncategorized", "count": 5 }
+    ///   ],
+    ///   "meta": { "total": N, ... }
+    /// }
+    /// ```
+    ///
+    /// 排序由后端保证：未分类**永远排最后**，其它按 count DESC + key ASC。
+    /// 错误处理：与 `fetchTrending` 共用 envelope decoder，401 / 4xx / 5xx 翻成
+    /// `TrendingAPIError`，让上层（`TrendingLanguageStore`）走相同退化分支。
+    func fetchLanguages() async throws -> [TrendingLanguageAggregateDTO] {
+        let url = try buildLanguagesURL()
+        let (data, response) = try await performRequestWithResponse(url: url)
+
+        do {
+            return try StarcatEnvelopeDecoder.decode(
+                [TrendingLanguageAggregateDTO].self,
+                data: data,
+                response: response,
+                decoder: decoder
+            )
+        } catch let error as StarcatEnvelopeNetworkError {
+            throw error.asTrendingAPIError
+        }
+    }
+
     // MARK: - Private
 
     private func buildURL(since: TrendingPeriod, language: TrendingLanguage) throws -> URL {
@@ -148,6 +187,8 @@ actor TrendingAPI {
         queryItems.append(URLQueryItem(name: "since", value: since.apiValue))
 
         if !language.apiValue.isEmpty {
+            // 注意：`.uncategorized` 的 apiValue 是 `__uncategorized__`，会原样发出去；
+            // 后端 SQLiteStore.GetRepos 识别这个哨兵值，转 `language IS NULL OR ''` 查询。
             queryItems.append(URLQueryItem(name: "lang", value: language.apiValue))
         }
 
@@ -158,6 +199,12 @@ actor TrendingAPI {
         }
 
         return url
+    }
+
+    /// 构造 `/api/v1/languages` 的完整 URL（无 query 参数；后端目前不接受筛选维度）。
+    private func buildLanguagesURL() throws -> URL {
+        let endpoint = AppEndpoints.appendPath(AppEndpoints.Trending.Paths.languages, to: baseURL)
+        return endpoint
     }
 
     /// 走 GET + 注入 Bearer + 拿到 (data, response)，**不解析 status code**——

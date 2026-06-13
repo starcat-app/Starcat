@@ -28,7 +28,8 @@
 //    因为它们的视觉骨架与 repo 卡片差异较大（左上 kind icon、右上相对时间、body 是
 //    release notes 等）。这些走 ActivityViewModel 自己的视图数据，沿用现状。
 //  - star / repository / suggestion 三类是 repo-backed 的，可以走 RepoCardViewData
-//    + `CardBadge.activityKind(_, _)` 携带左上 kind icon 和右上时间。
+//    + `CardBadge.activityKind(_)` 携带头像左下 kind icon 角标。
+//    （v2.0 起右上相对时间已删；详见 `CardBadge.activityKind` 文档注释。）
 //
 
 import Foundation
@@ -83,6 +84,41 @@ struct RepoCardViewData: Identifiable, Hashable, Sendable {
 
     /// 场景独有徽章（trending +N / weekly 第 N 期 / activity kind icon）。
     let badge: CardBadge?
+
+    /// Weekly 三源标识。仅 Weekly feed 传入；其它场景保持空数组。
+    let weeklySources: [WeeklySource]
+
+    /// Weekly 三源短标签：ruanyf 显示期号、ZRead 显示周、HN 显示短日期。
+    let weeklySourceLabel: String?
+
+    /// fullName 同行右侧的轻量元信息。Release 聚合卡片用它展示最新发布时间；
+    /// 其它场景保持 nil，避免恢复已删除的右上相对时间戳。
+    let inlineMetadata: RepoCardInlineMetadata?
+
+    /// 阅读状态（v2，2026-06-12 引入）。
+    ///
+    /// **设计意图**：让列表 row 在 chip 行末尾渲染 unread / using 角标，
+    /// 帮用户在主列表"一眼分辨哪些 starred repo 还没看 / 哪些正在用"。
+    ///
+    /// **填充语义**：
+    /// - **nil**：调用方没查 / 没传（trending / weekly / activity 默认走这）
+    ///   → UnifiedRepoRow **不渲染**任何状态角标（即使 isStarred == true）
+    /// - **.unread / .read / .using**：调用方已显式查询并传入
+    ///   → 渲染规则：`isStarred && readStatus != .read` 才显示角标
+    ///
+    /// 之所以让 nil 与 .unread 区分（而不是直接默认 .unread），是因为
+    /// trending/weekly ephemeral 列表里 100% 的 row 都是「未在 repo_notes 写过」
+    /// → 全部当 implicit unread → 整页都亮红点 = 视觉污染。让调用方显式声明
+    /// 才是"对 readStatus 信号负责"的语义。
+    ///
+    /// **目前已接入路径**：Manage（`RepoListView`）
+    /// **暂未接入**：Trending / Weekly / Activity（保持 nil；后续按需扩展）
+    let readStatus: RepoStatus?
+}
+
+struct RepoCardInlineMetadata: Hashable, Sendable {
+    let systemImage: String
+    let text: String
 }
 
 // MARK: - CardBadge
@@ -103,9 +139,19 @@ enum CardBadge: Hashable, Sendable {
     /// Weekly 场景：项目首次被收录的期号（如「第 399 期」）。
     case weeklyIssue(Int)
 
-    /// Activity 场景：左上 kind icon + 右上相对时间。
-    /// `Date` 用于显示「3 天前」相对时间；`ActivityCategory` 决定 icon。
-    case activityKind(ActivityCategory, Date)
+    /// Activity 场景：头像左下角 kind icon 圆角标。
+    /// `ActivityCategory` 决定 icon 形状与配色。
+    ///
+    /// **v2.0（2026-06-11 dong4j 决策）去掉 `Date` 第二参**：
+    /// 原 `.activityKind(ActivityCategory, Date)` 用 `Date` 在卡片右上角渲染
+    /// `RelativeDateBadge`「3 天前」相对时间，但 `Date` 的真实语义按 kind 漂移
+    /// 严重（`.star` = starredAt / `.repository` & `.suggestion` = pushedAt /
+    /// `.release` 走老的 `ActivityRowView` 不进这里），在 `.all` 视图同框时
+    /// 用户根本分不清"5 分钟前"指 star 行为还是 repo push。dong4j 体测后判定
+    /// 右上时间戳"信息密度低 + 语义漂移"得不偿失,选择整列去掉,头像左下 kind icon
+    /// + 行内 chip 区已经能传达足够信号。`.release` / `.announcement` 走
+    /// `ActivityRowView`（不进 UnifiedRepoRow）的时间戳保留不动。
+    case activityKind(ActivityCategory)
 }
 
 // MARK: - Repo → RepoCardViewData
@@ -114,9 +160,17 @@ extension Repo {
 
     /// 把已 star 的本地 `Repo` 转为卡片视图数据。
     ///
-    /// - Parameter badge: 场景独有徽章（manage 场景通常 nil）
+    /// - Parameters:
+    ///   - badge: 场景独有徽章（manage 场景通常 nil）
+    ///   - inlineMetadata: fullName 同行右侧的小型元信息（发行版聚合卡片使用）
+    ///   - readStatus: 阅读状态（Manage 场景由 `HomeViewModel.statusMap` 注入；
+    ///     其他场景保持 nil 即可，UnifiedRepoRow 不会渲染角标）
     /// - Returns: 视图数据；`isStarred` 直接读 `self.isStarred`（本地 DB 是真值）
-    func asCardData(badge: CardBadge? = nil) -> RepoCardViewData {
+    func asCardData(
+        badge: CardBadge? = nil,
+        inlineMetadata: RepoCardInlineMetadata? = nil,
+        readStatus: RepoStatus? = nil
+    ) -> RepoCardViewData {
         RepoCardViewData(
             ghRepoId: self.id,
             fullName: self.fullName,
@@ -131,7 +185,11 @@ extension Repo {
             isFork: self.isFork,
             isPrivate: self.isPrivate,
             isStarred: self.isStarred,
-            badge: badge
+            badge: badge,
+            weeklySources: [],
+            weeklySourceLabel: nil,
+            inlineMetadata: inlineMetadata,
+            readStatus: readStatus
         )
     }
 }
@@ -162,7 +220,11 @@ extension StarcatRepoCardDTO {
             isFork: self.isFork,
             isPrivate: self.isPrivate,
             isStarred: registry.contains(ghRepoId: self.ghRepoId),
-            badge: badge
+            badge: badge,
+            weeklySources: [],
+            weeklySourceLabel: nil,
+            inlineMetadata: nil,
+            readStatus: nil
         )
     }
 }
@@ -202,49 +264,49 @@ extension TrendingRepo {
             isFork: false,
             isPrivate: false,
             isStarred: registry.contains(ghRepoId: self.ghRepoId),
-            badge: resolvedBadge
+            badge: resolvedBadge,
+            weeklySources: [],
+            weeklySourceLabel: nil,
+            inlineMetadata: nil,
+            readStatus: nil
         )
     }
 }
 
-// MARK: - WeeklyProject → RepoCardViewData
+// MARK: - WeeklyFeedItem → RepoCardViewData
 
-extension WeeklyProject {
+extension WeeklyFeedItem {
 
     /// 把 Weekly 领域模型转为卡片视图数据。
     ///
-    /// `firstIssue == 0`（Trending hint 缺周刊扩展段时退化为 0）时不挂 weeklyIssue
-    /// 徽章——0 不是合法期号，UI 显示 "# 0" 视觉上很突兀。
-    ///
     /// - Parameters:
     ///   - registry: 全局已 star 集合（决定 ✓ 标记）
-    ///   - badge: 通常传 `nil` 让本扩展按 `firstIssue` 自动决定 weeklyIssue 徽章；
-    ///            如需自定义可显式覆盖
+    ///   - badge: 三源聚合列表默认不挂 badge，来源图标与短标签单独渲染。
     /// - Returns: 视图数据
     @MainActor
     func asCardData(
         registry: StarredRegistry,
         badge: CardBadge? = nil
     ) -> RepoCardViewData {
-        let resolvedBadge: CardBadge? = {
-            if let badge { return badge }
-            return self.firstIssue > 0 ? .weeklyIssue(self.firstIssue) : nil
-        }()
         return RepoCardViewData(
-            ghRepoId: self.ghRepoId,
-            fullName: self.fullName,
-            owner: self.owner,
-            repo: self.name,
-            avatarURL: self.ownerAvatar,
-            description: self.description,
-            language: self.language,
-            starsCount: self.stars,
-            forksCount: self.forks ?? 0,
-            isArchived: self.isArchived ?? false,
-            isFork: self.isFork ?? false,
-            isPrivate: self.isPrivate ?? false,
-            isStarred: registry.contains(ghRepoId: self.ghRepoId),
-            badge: resolvedBadge
+            ghRepoId: card.ghRepoId,
+            fullName: card.fullName,
+            owner: card.owner,
+            repo: card.repo,
+            avatarURL: card.ownerAvatar,
+            description: card.description,
+            language: card.language,
+            starsCount: card.stars,
+            forksCount: card.forks,
+            isArchived: card.isArchived,
+            isFork: card.isFork,
+            isPrivate: card.isPrivate,
+            isStarred: registry.contains(ghRepoId: card.ghRepoId),
+            badge: badge,
+            weeklySources: sourceTypes,
+            weeklySourceLabel: shortSourceLabel,
+            inlineMetadata: nil,
+            readStatus: nil
         )
     }
 }

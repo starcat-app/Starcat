@@ -2,10 +2,10 @@
 //  BatchActionBar.swift
 //  Starcat
 //
-//  多选模式底部浮动操作栏（W4 A5）。
+//  多选模式底部浮动操作栏（W4 A5 / W12 PR-3 扩展）。
 //
 //  组件结构（同文件三层）：
-//  - `BatchActionBar`      底栏 UI：选中数 + 操作按钮 + 退出多选
+//  - `BatchActionBar`      底栏 UI：选中数 + 操作按钮 + 退出多选；执行中切到进度态
 //  - `BatchTagSheet`       批量打标签 sheet：选标签 → 触发 batchAddTag
 //  - `BatchTagSheetViewModel` 内部状态：tags / selection / 提交状态
 //
@@ -14,7 +14,14 @@
 //  - 批量打标签走"先选 1 个 tag → batchAddTag(repoIds, tagId)"流程
 //    （MVP 简化：一次只能给所选 repos 加一个 tag，不做"替换式批量改标签"
 //     ——那语义太重，会清掉用户在每个 repo 上已有的其它标签）
-//  - 完成后自动退出多选模式 + 给个 transient 提示
+//  - W12 PR-3：批量 unstar 按钮仅在 Manage 显示（库内 100% 已 star）；
+//    > 5 条强制走 BatchStarConfirmSheet 二次确认；执行中切到进度态 + 取消按钮；
+//    完成后通过 ToastOverlay 弹「成功 X / 跳过 Y / 失败 Z」摘要。
+//  - 完成后自动退出多选模式
+//  - W12 PR-5（2026-06-12）：数据源从 `viewModel.multiSelectedRepoIDs` 切到
+//    `manageMultiSelectionStore`（与 trending/weekly/activity 同款），ghRepoId 即 Repo.id
+//    （同一 Int64 域）直接喂 batchAddTag；UI 文案：「批量打标签」→「打标签」并加 borderedProminent
+//    主显著度。两个组件（BatchActionBar / RemoteBatchActionBar）按业务语义保留独立命名。
 //
 
 import SwiftUI
@@ -28,49 +35,407 @@ struct BatchActionBar: View {
 
     @State private var showTagSheet: Bool = false
 
+    /// W12 PR-3：当前是否要弹批量 unstar 二次确认 sheet。
+    /// 仅 > 5 条时弹；≤ 5 条直接 enqueue。
+    @State private var showUnstarConfirm: Bool = false
+
+    /// 完成摘要 toast（"成功 X / 跳过 Y / 失败 Z"）。
+    /// 用本地 @State 缓存，避免 service.completionSummary 被立即清空时 toast 来不及显示。
+    @State private var toastMessage: String?
+
+    /// W12 PR-5：抽出 store 引用，便于 idleContent 直接读 count / snapshots 不必每次走依赖链。
+    private var store: MultiSelectionStore { dependencies.manageMultiSelectionStore }
+
     var body: some View {
-        HStack(spacing: 10) {
-            Text(String(format: String(localized: "batch.selectedCountFormat"), viewModel.multiSelectedRepoIDs.count))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-
-            Spacer()
-
-            Button {
-                showTagSheet = true
-            } label: {
-                Label("batch.addTags", systemImage: "tag.fill")
+        Group {
+            if dependencies.batchStarService.isRunning {
+                runningContent
+            } else {
+                idleContent
             }
-            .disabled(viewModel.multiSelectedRepoIDs.isEmpty)
-            .help(Text("batch.addTags.help"))
-
-            Button {
-                viewModel.exitMultiSelectMode()
-            } label: {
-                Label("batch.exitMultiSelect", systemImage: "xmark.circle")
-            }
-            .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
+        .toast(message: $toastMessage, icon: "checkmark.circle.fill", duration: 3.0)
         .sheet(isPresented: $showTagSheet) {
             BatchTagSheet(
-                repoIds: viewModel.multiSelectedRepoIDs,
+                // W12 PR-5：snapshots.keys 即 ghRepoId == Repo.id 同一 Int64 域，直接喂。
+                repoIds: Set(store.snapshots.keys),
                 tagRepository: dependencies.tagRepository,
                 repoTagRepository: dependencies.repoTagRepository,
                 onCompleted: {
                     showTagSheet = false
-                    viewModel.exitMultiSelectMode()
-                    // W4-4 D4：批量打标签后，刷新 Sidebar 计数 + 列表
+                    store.exit()
                     Task {
                         await viewModel.refreshSidebar()
                         await viewModel.reloadItems(forceRefresh: true)
                     }
                 }
             )
+        }
+        .sheet(isPresented: $showUnstarConfirm) {
+            let targets = selectedTargets()
+            BatchStarConfirmSheet(
+                action: .unstar,
+                targets: targets,
+                estimatedSkipped: estimatedSkipped(targets: targets, action: .unstar),
+                onConfirm: {
+                    showUnstarConfirm = false
+                    startBatchUnstar(targets: targets)
+                },
+                onCancel: { showUnstarConfirm = false }
+            )
+        }
+        // 监听 batchStarService.completionSummary：写一次后立即 consume，避免下次切换时残留。
+        .onChange(of: dependencies.batchStarService.completionSummary) { _, newValue in
+            guard let summary = newValue else { return }
+            toastMessage = formatSummary(summary)
+            dependencies.batchStarService.consumeSummary()
+
+            // 完成（含部分完成）→ 退出多选模式 + 刷新 sidebar / 列表
+            store.exit()
+            Task {
+                await viewModel.refreshSidebar()
+                await viewModel.reloadItems(forceRefresh: true)
+            }
+        }
+    }
+
+    // MARK: - 默认态：选中数 + 操作按钮
+
+    private var idleContent: some View {
+        let count = store.count
+        return HStack(spacing: 10) {
+            Text(String(format: String(localized: "batch.selectedCountFormat"), count))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+
+            Spacer()
+
+            // PR-5：「打标签」固定主显著度（borderedProminent）。Manage 库内 100% 已 star，
+            // 打标签是最常用主操作，Unstar 是次操作（破坏性），固定主次符合预期。
+            Button {
+                showTagSheet = true
+            } label: {
+                Label("batch.addTags", systemImage: "tag.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(count == 0)
+            .help(Text("batch.addTags.help"))
+
+            // W12 PR-3：批量取消 Star。Manage 库内 100% 已 star，无需额外二分判定。
+            // tint(.red) 保留：macOS HIG 破坏性操作标准着色，与详情页 Unstar 按钮一致。
+            Button {
+                handleBatchUnstarTap()
+            } label: {
+                Label("batch.unstar", systemImage: "star.slash.fill")
+            }
+            .disabled(count == 0)
+            .help(Text("batch.unstar.help"))
+            .tint(.red)
+
+            // PR-4 followup：退出按钮图标-only，accessibility + help tooltip 保留。Esc 快捷键不变。
+            Button {
+                store.exit()
+            } label: {
+                Image(systemName: "xmark.circle")
+                    .accessibilityLabel(Text("batch.exitMultiSelect"))
+            }
+            .help(Text("batch.exitMultiSelect.help"))
+            .keyboardShortcut(.cancelAction)
+        }
+    }
+
+    // MARK: - 进度态：处理中 X/N + 当前 repo + 取消
+
+    private var runningContent: some View {
+        let p = dependencies.batchStarService.progress ?? .init()
+        return HStack(spacing: 10) {
+            ProgressView(value: Double(p.completed), total: Double(max(p.total, 1)))
+                .progressViewStyle(.linear)
+                .frame(width: 110)
+
+            Text(String(format: String(localized: "batch.progress.processingFormat"), p.completed, p.total))
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+
+            if let current = p.currentFullName {
+                Text(verbatim: current)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+
+            Button(role: .destructive) {
+                dependencies.batchStarService.cancel()
+            } label: {
+                Label("batch.progress.cancel", systemImage: "stop.circle")
+            }
+        }
+    }
+
+    // MARK: - 业务路由
+
+    /// 点击「批量取消 Star」：> 5 条走确认 sheet，否则直接 enqueue。
+    private func handleBatchUnstarTap() {
+        let targets = selectedTargets()
+        guard !targets.isEmpty else { return }
+        if targets.count > 5 {
+            showUnstarConfirm = true
+        } else {
+            startBatchUnstar(targets: targets)
+        }
+    }
+
+    private func startBatchUnstar(targets: [BatchStarTarget]) {
+        dependencies.batchStarService.enqueue(targets: targets, action: .unstar)
+    }
+
+    // MARK: - 派生
+
+    /// 选中项对应的 `BatchStarTarget` 数组。
+    ///
+    /// W12 PR-5：直接读 `store.targets`，store 内的 SelectionSnapshot.toTarget() 已经做了字段映射
+    /// （ghRepoId / owner / name）。不需要再回 viewModel.items 反查（snapshot 在用户选中瞬间已记录
+    /// 必备字段，即便后续 reloadItems 把 items 换了，snapshot 仍可独立完成批量任务）。
+    private func selectedTargets() -> [BatchStarTarget] {
+        store.targets
+    }
+
+    /// 预估跳过条数：当前 registry 状态已是目标态的条数。
+    /// 仅做 sheet 显示，BatchStarService 执行时还会按当时 registry 实际复核。
+    private func estimatedSkipped(targets: [BatchStarTarget], action: BatchStarService.Action) -> Int {
+        let registry = dependencies.starredRegistry
+        let expected: Bool = (action == .star) // 已 star 对 star 跳过；未 star 对 unstar 跳过
+        return targets.filter { registry.contains(ghRepoId: $0.ghRepoId) == expected }.count
+    }
+
+    /// 把 Summary 格式化为 toast 文案。
+    /// 使用 plain String 而非 LocalizedStringKey：toast 组件需要 String 类型。
+    private func formatSummary(_ s: BatchStarService.Summary) -> String {
+        let actionKey = s.action == .unstar ? "batch.summary.unstar" : "batch.summary.star"
+        let prefix = String(localized: String.LocalizationValue(actionKey))
+        return String(
+            format: String(localized: "batch.summary.format"),
+            prefix,
+            s.succeeded,
+            s.skipped,
+            s.failed
+        )
+    }
+}
+
+// MARK: - RemoteBatchActionBar
+
+/// Trending / Weekly / Activity 三个页面共用的批量操作底栏（W12 PR-4）。
+///
+/// 与 Manage 的 `BatchActionBar` 区别：
+/// - 数据源是 `MultiSelectionStore`（owner/name 快照），而非 `HomeViewModel.multiSelectedRepoIDs`；
+/// - 列表项**混合 star/unstar 状态**，因此同时暴露「批量 Star」+「批量取消 Star」两个按钮；
+/// - 没有「批量打标签」按钮（trending/weekly/activity 的列表项可能不在本地 DB，
+///   `batchAddTag` 需要 `repoIds: Set<Int64>` 但本地无 Repo 记录会插入失败）；
+/// - 主按钮显著度：先按"未 star 占比"判断主操作——多数未 star → Star 主按钮；
+///   多数已 star → Unstar 主按钮；持平时 Star 优先（鼓励发现新项目）。
+///
+/// 执行中切换到进度态、cancel 按钮、完成 toast 与 Manage 版本完全一致，复用
+/// `BatchStarService` 的同一份状态机。
+struct RemoteBatchActionBar: View {
+
+    /// 由调用方按页面注入（trending/weekly/activity 各自的实例）。
+    let store: MultiSelectionStore
+
+    @Environment(AppDependencies.self) private var dependencies
+
+    /// 二次确认 sheet。> 5 条时强制弹出。
+    @State private var pendingAction: BatchStarService.Action?
+    @State private var showConfirm: Bool = false
+
+    /// 完成摘要 toast（与 BatchActionBar 一致；本地缓存避免 service summary 被立刻 consume 后 toast 不出现）。
+    @State private var toastMessage: String?
+
+    var body: some View {
+        Group {
+            if dependencies.batchStarService.isRunning {
+                runningContent
+            } else {
+                idleContent
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+        .toast(message: $toastMessage, icon: "checkmark.circle.fill", duration: 3.0)
+        .sheet(isPresented: $showConfirm) {
+            if let action = pendingAction {
+                let targets = store.targets
+                BatchStarConfirmSheet(
+                    action: action,
+                    targets: targets,
+                    estimatedSkipped: estimatedSkipped(targets: targets, action: action),
+                    onConfirm: {
+                        showConfirm = false
+                        startBatch(action: action, targets: targets)
+                    },
+                    onCancel: { showConfirm = false }
+                )
+            }
+        }
+        .onChange(of: dependencies.batchStarService.completionSummary) { _, newValue in
+            guard let summary = newValue else { return }
+            toastMessage = formatSummary(summary)
+            dependencies.batchStarService.consumeSummary()
+            // 完成后退出多选，避免用户在 stale 选中态上再发起一次（registry 已变）。
+            store.exit()
+        }
+    }
+
+    // MARK: - 默认态
+
+    private var idleContent: some View {
+        let count = store.count
+        let starWeight = starButtonWeight()
+
+        return HStack(spacing: 10) {
+            Text(String(format: String(localized: "batch.selectedCountFormat"), count))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+
+            Spacer()
+
+            // 主按钮按"未 star 占比"决定显著度（plan §3.9）。
+            // borderedProminent vs bordered 是 macOS 上最直观的"主/次"差异。
+            Button {
+                handleTap(action: .star)
+            } label: {
+                Label("batch.star", systemImage: "star.fill")
+            }
+            .disabled(count == 0)
+            .help(Text("batch.star.help"))
+            .modifier(ProminentIf(active: starWeight == .star))
+
+            Button {
+                handleTap(action: .unstar)
+            } label: {
+                Label("batch.unstar", systemImage: "star.slash.fill")
+            }
+            .disabled(count == 0)
+            .help(Text("batch.unstar.help"))
+            .tint(.red)
+            .modifier(ProminentIf(active: starWeight == .unstar))
+
+            // PR-4 followup：退出按钮改为图标-only，与 Manage 版本对齐。
+            Button {
+                store.exit()
+            } label: {
+                Image(systemName: "xmark.circle")
+                    .accessibilityLabel(Text("batch.exitMultiSelect"))
+            }
+            .help(Text("batch.exitMultiSelect.help"))
+            .keyboardShortcut(.cancelAction)
+        }
+    }
+
+    // MARK: - 进度态
+
+    private var runningContent: some View {
+        let p = dependencies.batchStarService.progress ?? .init()
+        return HStack(spacing: 10) {
+            ProgressView(value: Double(p.completed), total: Double(max(p.total, 1)))
+                .progressViewStyle(.linear)
+                .frame(width: 110)
+
+            Text(String(format: String(localized: "batch.progress.processingFormat"), p.completed, p.total))
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+
+            if let current = p.currentFullName {
+                Text(verbatim: current)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+
+            Button(role: .destructive) {
+                dependencies.batchStarService.cancel()
+            } label: {
+                Label("batch.progress.cancel", systemImage: "stop.circle")
+            }
+        }
+    }
+
+    // MARK: - 业务路由
+
+    private func handleTap(action: BatchStarService.Action) {
+        let targets = store.targets
+        guard !targets.isEmpty else { return }
+        if targets.count > 5 {
+            pendingAction = action
+            showConfirm = true
+        } else {
+            startBatch(action: action, targets: targets)
+        }
+    }
+
+    private func startBatch(action: BatchStarService.Action, targets: [BatchStarTarget]) {
+        pendingAction = nil
+        dependencies.batchStarService.enqueue(targets: targets, action: action)
+    }
+
+    // MARK: - 派生
+
+    private enum StarWeight { case star, unstar, equal }
+
+    /// 决定主按钮：选中项中未 star 占比 > 50% → Star 主按钮；否则 Unstar 主按钮；持平时偏向 Star。
+    private func starButtonWeight() -> StarWeight {
+        let registry = dependencies.starredRegistry
+        let total = store.count
+        guard total > 0 else { return .star }
+        let unstarred = store.snapshots.values.filter { !registry.contains(ghRepoId: $0.ghRepoId) }.count
+        let starred = total - unstarred
+        if unstarred > starred { return .star }
+        if starred > unstarred { return .unstar }
+        return .star
+    }
+
+    /// 与 BatchActionBar 同源算法：当前 registry 已是目标态的视为跳过。
+    private func estimatedSkipped(targets: [BatchStarTarget], action: BatchStarService.Action) -> Int {
+        let registry = dependencies.starredRegistry
+        let expected: Bool = (action == .star)
+        return targets.filter { registry.contains(ghRepoId: $0.ghRepoId) == expected }.count
+    }
+
+    private func formatSummary(_ s: BatchStarService.Summary) -> String {
+        let actionKey = s.action == .unstar ? "batch.summary.unstar" : "batch.summary.star"
+        let prefix = String(localized: String.LocalizationValue(actionKey))
+        return String(
+            format: String(localized: "batch.summary.format"),
+            prefix,
+            s.succeeded,
+            s.skipped,
+            s.failed
+        )
+    }
+}
+
+/// 按条件套 borderedProminent 的小 modifier；放外部避免 if/else 写两份 Button。
+private struct ProminentIf: ViewModifier {
+    let active: Bool
+    func body(content: Content) -> some View {
+        if active {
+            content.buttonStyle(.borderedProminent)
+        } else {
+            content
         }
     }
 }

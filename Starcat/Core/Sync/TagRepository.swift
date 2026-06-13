@@ -21,16 +21,16 @@ import GRDB
 
 struct GRDBTagRepository: TagRepositoryProtocol {
 
-    private let writer: any DatabaseWriter
+    private let database: any DatabaseManaging
 
     init(database: any DatabaseManaging) {
-        self.writer = database.writer
+        self.database = database
     }
 
     // MARK: - 写入
 
     func create(_ tag: Tag) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             var copy = tag
             try copy.insert(db) // 用 insert 而非 save：保证 name 冲突时显式抛错
         }
@@ -38,13 +38,13 @@ struct GRDBTagRepository: TagRepositoryProtocol {
 
     /// 全字段 update。调用方应保证 tag.id 存在；不存在视为脏数据由 GRDB 抛错。
     func update(_ tag: Tag) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             try tag.update(db)
         }
     }
 
     func delete(id: String) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             _ = try Tag.deleteOne(db, key: id)
         }
     }
@@ -56,7 +56,7 @@ struct GRDBTagRepository: TagRepositoryProtocol {
     /// 全部在一个事务内，要么全成要么全回滚。
     func merge(source: String, into target: String) async throws {
         guard source != target else { return } // 自合并 no-op
-        try await writer.write { db in
+        try await database.writer.write { db in
             // 校验 target 存在（否则 INSERT OR IGNORE 也会因 FK 失败）
             let targetExists = try Tag.fetchOne(db, key: target) != nil
             guard targetExists else {
@@ -92,13 +92,13 @@ struct GRDBTagRepository: TagRepositoryProtocol {
     // MARK: - 查询
 
     func find(id: String) async throws -> Tag? {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Tag.fetchOne(db, key: id)
         }
     }
 
     func findByName(_ name: String) async throws -> Tag? {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Tag.filter(Column("name") == name).fetchOne(db)
         }
     }
@@ -106,7 +106,7 @@ struct GRDBTagRepository: TagRepositoryProtocol {
     /// 按 sort_order asc → name asc 排序的全部标签。
     /// 100 量级以内 fetchAll 直接返回；超过 1000 再考虑分页。
     func fetchAll() async throws -> [Tag] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Tag
                 .order(Column("sort_order").asc, Column("name").asc)
                 .fetchAll(db)

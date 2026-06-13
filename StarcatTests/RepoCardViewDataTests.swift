@@ -63,8 +63,9 @@ struct RepoCardViewDataTests {
     @Test("Repo.asCardData(badge:): 传入 badge 正确携带")
     func repoToCardDataWithBadge() {
         let repo = sampleRepo(id: 1, isStarred: false)
-        let card = repo.asCardData(badge: .activityKind(.star, Date(timeIntervalSince1970: 0)))
-        if case .activityKind(let cat, _) = card.badge {
+        // v2.0（2026-06-11）：`.activityKind` 第二参 Date 已删除（详见 RepoCardViewData.swift 注释）。
+        let card = repo.asCardData(badge: .activityKind(.star))
+        if case .activityKind(let cat) = card.badge {
             #expect(cat == .star)
         } else {
             Issue.record("badge case 不匹配")
@@ -150,6 +151,39 @@ struct RepoCardViewDataTests {
         #expect(c1.id == c2.id)                   // id 不变（同 gh_repo_id）
         #expect(c1.fullName != c2.fullName)        // 但显示文案变了
         #expect(c1.id == 7)
+    }
+
+    // MARK: - 4. readStatus 注入（v2 阅读状态角标）
+
+    @Test("Repo.asCardData(): 默认 readStatus = nil（其他场景无注入）")
+    func readStatusDefaultsToNil() {
+        let repo = sampleRepo(id: 1, isStarred: true)
+        let card = repo.asCardData()
+        #expect(card.readStatus == nil)
+    }
+
+    @Test("Repo.asCardData(readStatus:): unread / read / using 显式注入正确携带")
+    func readStatusExplicitlyPassed() {
+        let repo = sampleRepo(id: 1, isStarred: true)
+
+        let unread = repo.asCardData(readStatus: .unread)
+        #expect(unread.readStatus == .unread)
+
+        let read = repo.asCardData(readStatus: .read)
+        #expect(read.readStatus == .read)
+
+        let using = repo.asCardData(readStatus: .using)
+        #expect(using.readStatus == .using)
+    }
+
+    @Test("DTO.asCardData(): readStatus 强制 nil（trending/weekly 不显角标策略）")
+    func dtoReadStatusAlwaysNil() {
+        let registry = StarredRegistry()
+        let dto = StarcatRepoCardDTO(
+            ghRepoId: 999, fullName: "a/b", owner: "a", repo: "b"
+        )
+        let card = dto.asCardData(registry: registry)
+        #expect(card.readStatus == nil)
     }
 
     // MARK: - Helpers

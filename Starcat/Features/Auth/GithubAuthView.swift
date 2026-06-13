@@ -9,7 +9,9 @@
 //
 //  与 Legacy 版（`GithubAuthViewLegacy.swift`）的差异：
 //  - 视觉：卡片 / 圆角 / 暖色渐变 code 卡，旧版是平铺式系统控件
-//  - awaitingCode 交互：点 code 主区 → 复制 + 1.5s 后自动开浏览器；点右侧图标 → 仅复制
+//  - awaitingCode 交互：
+//      · 点 code 主区 → 复制 + 切到 "✓ 已复制" + 1.5s 后自动开浏览器
+//      · 点右侧图标   → 复制 + 切到 "✓ 已复制" + 1.5s 后复位（不开浏览器）
 //  - 5 个状态：idle / connecting / awaitingCode / authenticated / error，过渡有 smooth 动画
 //  - authenticated 态显示 0.6s 成功反馈再 dismiss，避免"瞬间消失"的迷惑感
 //
@@ -41,8 +43,11 @@ struct GithubAuthView: View {
 
     /// awaitingCode 态 code 卡片的复制反馈状态机。
     /// - `.idle`：等待用户操作
-    /// - `.copiedAndOpening`：点了主区域，已复制，1.5s 后会自动开浏览器
-    /// - `.copiedSilent`：点了右侧独立图标，已复制但不会开浏览器
+    /// - `.copiedAndOpening`：点了主区域,已复制,1.5s 后会自动开浏览器
+    /// - `.copiedSilent`：点了右侧独立图标,已复制,1.5s 后仅复位(不会开浏览器)
+    ///
+    /// 两个 "copied" 态视觉完全相同（`isCopied == true`），用户看到的都是 "✓ 已复制"，
+    /// 仅在副作用上区分（是否到时间后开浏览器）。
     @State private var copyFeedback: CopyFeedback = .idle
 
     /// 反馈复位的延时 task（主流程 1.5s 后开浏览器并复位 / 副流程 1.5s 后仅复位）。
@@ -228,7 +233,7 @@ struct GithubAuthView: View {
     ///
     /// **两个独立 hit target，共用同一张渐变背景**：
     /// - 左主区（大块）：点击 → 复制 + 1.5s 后**自动开浏览器**（`copyAndOpenBrowser`）
-    /// - 右独立图标（`doc.on.doc`）：点击 → **仅复制不开浏览器**（`copyCodeOnly`）
+    /// - 右独立图标（`doc.on.doc`）：点击 → **复制 + "✓ 已复制" 反馈但不开浏览器**（`copyCodeOnly`）
     /// - 中间一根半透明白色 1pt 分隔条勾出两 hit target 边界
     ///
     /// **布局关键（dong4j 2026-06-03 10:29 反馈)**：
@@ -240,8 +245,12 @@ struct GithubAuthView: View {
     ///   自然居中在 HStack(= 整张卡片)正中
     /// - overlay 内容加 `.allowsHitTesting(false)`，点击事件穿透到下面的两个 Button
     ///
-    /// **副流程不切换 code 主区域显示**（dong4j 2026-06-03 反馈）：
-    /// 避免「主区域文字 + 图标 + hint 文字」3 处同义反馈视觉重复，副流程下整张卡片静态。
+    /// **两个流程都切换 code 主区域显示**（dong4j 2026-06-12 反馈）：
+    /// 之前 v2（2026-06-03）副流程下整张卡片不变,理由是怕「主区域文字 + 图标 + hint 文字」3 处同义反馈
+    /// 视觉重复;但实际使用中用户点了右侧图标看不到"复制成功"反馈会怀疑是否点中,反而困惑。
+    /// 现在两个 hit target 共用 `isCopied` 视觉态(主流程 `.copiedAndOpening` / 副流程 `.copiedSilent`),
+    /// 用户操作有清晰反馈,代价是同一时刻确实有 2 处反馈源(✓ 已复制 + macOS Button 默认按下高亮),
+    /// 但「2 处反馈」的认知成本远小于「无反馈疑惑」,trade-off 倾向后者。
     private func codeButton(info: OAuthDeviceCodeInfo) -> some View {
         HStack(spacing: 0) {
             // 主区域：透明 hit area，撑满左侧除分隔条 + 图标外的全部空间
@@ -300,13 +309,25 @@ struct GithubAuthView: View {
                 }
                 .opacity(copyFeedback.isCopied ? 0 : 1)
 
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark")
-                    Text("authV2.codeCopied")
+                HStack(spacing: 6) {
+                    // 用 palette 双色渲染把 checkmark.circle.fill 拆成"深绿圆 + 白勾"双图层,
+                    // 比纯线条 ✓ 更接近"成功徽章"的常见视觉语义,在暖橙背景上识别度也更高。
+                    // ⚠️ palette 模式下 foregroundStyle 的两个参数顺序是「图层 0 = ✓ / 图层 1 = 圆」,
+                    //    不是按颜色字面顺序。给反了会得到深绿勾 + 白色圆(在白色 sheet 上肉眼几乎不可见)。
+                    Image(systemName: "checkmark.circle.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(Color.white, Color(red: 0.12, green: 0.42, blue: 0.18))
+                        .font(.title3)
+                    // 文案根据流程区分(dong4j 2026-06-12 反馈):
+                    //   主流程 .copiedAndOpening → "已复制,正在打开 GitHub"(暗示 1.5s 后会跳浏览器)
+                    //   副流程 .copiedSilent      → "已复制"             (用户已知不会跳浏览器)
+                    // .idle 时整个 HStack 已被 opacity(0) 隐藏,这里 fallback 给 .codeCopied 即可。
+                    Text(copyFeedback == .copiedAndOpening ? "authV2.codeCopiedAndOpening" : "authV2.codeCopied")
                 }
                 .font(.subheadline)
                 .fontWeight(.semibold)
-                // 深森林绿：在暖橙背景上对比度足够且不刺眼，保留"操作成功"的语义识别度
+                // 深森林绿:文字色保持与徽章圆色一致,形成"圆 + 文字"同色系成功反馈;
+                // 外层 foregroundStyle 不会覆盖 Image 上已显式声明的 palette 颜色。
                 .foregroundStyle(Color(red: 0.12, green: 0.42, blue: 0.18))
                 .opacity(copyFeedback.isCopied ? 1 : 0)
             }
@@ -484,19 +505,27 @@ struct GithubAuthView: View {
         }
     }
 
-    /// 点 code 右侧独立复制图标：仅复制，不开浏览器，**不做任何 UI 反馈**。
+    /// 点 code 右侧独立复制图标：仅复制，**给 1.5s 的 "✓ 已复制" 反馈但不开浏览器**。
     ///
-    /// 关键副作用：取消主流程的倒计时 task。
-    /// 用户场景：用户先点 code 主区进入 1.5s 倒计时（即将开浏览器），中途改主意点图标只复制 →
-    /// `copyResetTask?.cancel()` 阻止"开浏览器"被触发，`copyFeedback = .idle` 让 ZStack
-    /// 立刻从 "已复制 ✓" 切回数字显示。
+    /// 关键副作用：取消上一个倒计时 task（无论是主流程还是副流程的）。
+    /// 用户场景：
+    /// - 用户先点 code 主区进入 1.5s 倒计时（即将开浏览器）→ 中途改主意点右侧图标只复制 →
+    ///   `copyResetTask?.cancel()` 阻止"开浏览器"被触发,改走副流程倒计时（1.5s 后回 idle 不开浏览器）。
+    /// - 用户连续点击右侧图标 → 每次都重置倒计时,持续保持 "✓ 已复制" 视觉。
     ///
-    /// 反馈策略（dong4j 2026-06-03 09:07）：副流程无可见 hint，靠 macOS Button 默认按下高亮
-    /// + 用户后续粘贴动作即可感知复制成功，避免视觉噪音。
+    /// 反馈策略（dong4j 2026-06-12 修订;v2 2026-06-03 时是"无反馈"，使用中证明会让用户怀疑没点中,
+    /// 现在统一与主流程一致地切到 "✓ 已复制",仅在 1.5s 到时不调用 `NSWorkspace.open` 区分语义）。
     private func copyCodeOnly(info: OAuthDeviceCodeInfo) {
         copyToClipboard(info.userCode)
         copyResetTask?.cancel()
-        copyFeedback = .idle
+        copyFeedback = .copiedSilent
+        copyResetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            // Task.isCancelled 的 guard 与主流程一致:用户在 1.5s 内再点别处时,
+            // 旧 task 即使已经过 sleep 也不应再修改 copyFeedback,避免覆盖新流程的状态。
+            guard !Task.isCancelled else { return }
+            copyFeedback = .idle
+        }
     }
 
     /// 复制 user_code 到系统剪贴板（两种复制场景共用）。
@@ -567,19 +596,31 @@ private enum BigButtonStyle {
 
 // MARK: - Copy Feedback
 
-/// awaitingCode 态 code 卡片的复制反馈状态机（两态）。
+/// awaitingCode 态 code 卡片的复制反馈状态机（三态）。
 /// - `.idle`：code 主区域显示 user_code 数字
-/// - `.copiedAndOpening`：仅主流程触发 → code 主区切到 "已复制 ✓" + 1.5s 后自动开浏览器
+/// - `.copiedAndOpening`：主流程触发 → code 主区切到 "已复制 ✓" + 1.5s 后自动开浏览器
+/// - `.copiedSilent`：副流程触发(点右侧图标) → code 主区切到 "已复制 ✓" + 1.5s 后仅复位
 ///
-/// 副流程（点右侧图标）仅做"复制 + 取消倒计时"，**不切换 copyFeedback 状态**，
-/// 整张 code 卡片视觉保持不变（dong4j 2026-06-03 09:07 反馈：删除右侧 hint，无需额外提示）。
+/// 两个 "copied" 态视觉完全相同(都让 `isCopied == true`),区别仅在副作用:
+/// `.copiedAndOpening` 倒计时结束后调用 `NSWorkspace.open(verificationURI)`,
+/// `.copiedSilent` 倒计时结束后只复位回 `.idle` 不开浏览器。
+///
+/// 演化轨迹:
+/// - v1（2026-06-03 09:07）：副流程无 UI 反馈,枚举里只有 `.idle / .copiedAndOpening` 两态;
+///   理由是怕「主区域文字 + 图标 + hint 文字」3 处同义反馈视觉重复。
+/// - v2（2026-06-12,dong4j 反馈）：使用中发现副流程无反馈让用户怀疑是否点中,
+///   恢复 `.copiedSilent` 态让两流程都给清晰反馈。
 private enum CopyFeedback: Equatable {
     case idle
     case copiedAndOpening
+    case copiedSilent
 
-    /// 是否需要把 code 主区域文字切到 "已复制 ✓"。
+    /// 是否需要把 code 主区域文字切到 "✓ 已复制"。两个 "copied" 态都返回 true。
     var isCopied: Bool {
-        self == .copiedAndOpening
+        switch self {
+        case .idle: return false
+        case .copiedAndOpening, .copiedSilent: return true
+        }
     }
 }
 

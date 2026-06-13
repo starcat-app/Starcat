@@ -30,7 +30,8 @@
 //  约束：
 //  - WKWebView 在 NSViewRepresentable 里复用：updateNSView 只在 html 真正变化时 reload
 //    （避免列表切换 repo 时白闪）
-//  - baseURL 传 repo htmlUrl（如 https://github.com/owner/repo），用于解析极少数遗漏的相对路径
+//  - baseURL 必须由 repositoryContentBaseURL(from:) 生成并保留末尾 `/`，否则
+//    WebKit 会把 HEAD 当文件名，`docs/guide.md` 会错误解析成 `/blob/docs/guide.md`
 //  - **背景透明**：`drawsBackground = false` + CSS `html, body { background: transparent }`
 //    是必须成对存在的。任一缺失就会在暗色下看到色差
 //    （GitHub `#0d1117` 与 SwiftUI 宿主 `NSColor.windowBackgroundColor` 不同色）。
@@ -147,6 +148,17 @@ struct ReadmeWebView: NSViewRepresentable {
         </body>
         </html>
         """
+    }
+
+    // MARK: - README 链接基地址
+
+    /// 构造 README 相对链接使用的 GitHub 仓库内容目录。
+    ///
+    /// GitHub HTML 渲染 API 返回的 `href="docs/guide.md"` 需要相对于
+    /// `/blob/HEAD/` 解析。这里显式声明为目录 URL，关键是保留末尾 `/`；如果使用
+    /// `/blob/HEAD`，Foundation / WebKit 会把 `HEAD` 当作当前文件名并在解析时丢掉它。
+    static func repositoryContentBaseURL(from repositoryURL: URL) -> URL {
+        repositoryURL.appendingPathComponent("blob/HEAD", isDirectory: true)
     }
 
     // MARK: - 图片相对路径重写

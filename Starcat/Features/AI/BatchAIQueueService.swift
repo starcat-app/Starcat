@@ -354,7 +354,8 @@ final class BatchAIQueueService {
             for: repo,
             existingTagHints: hints,
             includeSummary: options.actions.contains(.summary),
-            includeTags: options.actions.contains(.tags)
+            includeTags: options.actions.contains(.tags),
+            allowExternalContext: false
         )
         return JobOutcome(insight: insight, repo: repo, existingTagHints: hints)
     }

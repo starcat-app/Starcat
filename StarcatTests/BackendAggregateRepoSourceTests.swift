@@ -32,8 +32,8 @@ struct BackendAggregateRepoSourceTests {
         )
 
         URLProtocolStub.requestHandler = { request in
-            // 验证 path = /api/v1/projects/alice/foo
-            #expect(request.url?.path == "/api/v1/projects/alice/foo")
+            // R-05 后端聚合详情以 gh_repo_id 为路径参数。
+            #expect(request.url?.path == "/api/v1/repos/42")
             // 验证 Bearer header
             #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-key")
 
@@ -41,26 +41,33 @@ struct BackendAggregateRepoSourceTests {
             {
               "schema_version": 1,
               "data": {
-                "gh_repo_id": 42,
-                "full_name": "alice/foo",
-                "owner": "alice",
-                "repo": "foo",
-                "description": "Aggregated by weekly",
-                "language": "Swift",
-                "stars": 100,
-                "forks": 10,
-                "watchers": 100,
-                "subscribers": 5,
-                "topics": ["ai"],
-                "is_archived": false,
-                "is_fork": false,
-                "is_private": false,
-                "open_issues": 1,
-                "html_url": "https://github.com/alice/foo",
-                "weekly": {
-                  "first_issue": 380,
-                  "issue_url": "https://github.com/ruanyf/weekly/blob/master/docs/issue-380.md"
-                }
+                "repo": {
+                  "gh_repo_id": 42,
+                  "full_name": "alice/foo",
+                  "owner": "alice",
+                  "repo": "foo",
+                  "description": "Aggregated by weekly",
+                  "language": "Swift",
+                  "stars": 100,
+                  "forks": 10,
+                  "watchers": 100,
+                  "subscribers": 5,
+                  "topics": ["ai"],
+                  "is_archived": false,
+                  "is_fork": false,
+                  "is_private": false,
+                  "open_issues": 1,
+                  "html_url": "https://github.com/alice/foo",
+                  "is_available": true,
+                  "source_types": ["weekly"],
+                  "first_event_at": "2026-01-01T00:00:00Z",
+                  "latest_event_at": "2026-01-01T00:00:00Z",
+                  "weekly": {
+                    "issue_number": 380,
+                    "issue_url": "https://github.com/ruanyf/weekly/blob/master/docs/issue-380.md"
+                  }
+                },
+                "events": []
               }
             }
             """#.data(using: .utf8)!
@@ -68,7 +75,13 @@ struct BackendAggregateRepoSourceTests {
         }
 
         let source = BackendAggregateRepoSource(weeklyAPI: weeklyAPI)
-        let repo = try await source.tryResolve(owner: "alice", name: "foo", hint: nil)
+        let hint = StarcatRepoCardDTO(
+            ghRepoId: 42,
+            fullName: "alice/foo",
+            owner: "alice",
+            repo: "foo"
+        )
+        let repo = try await source.tryResolve(owner: "alice", name: "foo", hint: hint)
 
         let r = try #require(repo)
         #expect(r.id == 42)
@@ -94,7 +107,8 @@ struct BackendAggregateRepoSourceTests {
         }
 
         let source = BackendAggregateRepoSource(weeklyAPI: weeklyAPI)
-        let repo = try await source.tryResolve(owner: "ghost", name: "x", hint: nil)
+        let hint = StarcatRepoCardDTO(ghRepoId: 99, fullName: "ghost/x", owner: "ghost", repo: "x")
+        let repo = try await source.tryResolve(owner: "ghost", name: "x", hint: hint)
         #expect(repo == nil, "404 应当 catch 后返 nil，让 chain 继续询问下一个 source")
     }
 
@@ -115,7 +129,8 @@ struct BackendAggregateRepoSourceTests {
         }
 
         let source = BackendAggregateRepoSource(weeklyAPI: weeklyAPI)
-        let repo = try await source.tryResolve(owner: "alice", name: "foo", hint: nil)
+        let hint = StarcatRepoCardDTO(ghRepoId: 42, fullName: "alice/foo", owner: "alice", repo: "foo")
+        let repo = try await source.tryResolve(owner: "alice", name: "foo", hint: hint)
         #expect(repo == nil, "401 应当 catch 后返 nil")
     }
 }

@@ -2,165 +2,421 @@
 //  WeeklyModels.swift
 //  Starcat
 //
-//  阮一峰周刊（ruanyf/weekly）后端 API 的响应 DTO 与领域模型。
+//  Activity / Weekly 三源聚合 feed 的网络 DTO 与 UI 领域模型。
 //
-//  数据源：starcat-weekly-api（独立 Go 服务，见 https://github.com/dong4j/starcat-weekly-api）
-//  上游 API 返回纯 JSON（与 starcat-sharing-api 同款风格，无 code 包装）。
-//
-//  设计约束：
-//  - DTO 字段名与后端 JSON 保持一致（snake_case），通过 CodingKeys 显式映射，
-//    与 TrendingModels 保持同款做法：不开 `.convertFromSnakeCase`，避免与
-//    显式 CodingKeys 冲突。
-//  - 领域模型由 DTO 构造，UI 层只关心领域模型。
+//  数据源：starcat-weekly-api R-04 聚合接口。
+//  关键约束：
+//  - 后端 wire JSON 是扁平对象：同一个对象同时包含 `StarcatRepoCardDTO`
+//    字段和 feed 专属字段；前端用自定义解码组合成 `card + feed fields`，
+//    不污染通用 Repo Card schema。
+//  - `gh_repo_id` 是唯一稳定身份；owner/name/full_name 只用于显示和跳转。
+//  - source enum 必须容忍未知值，后端未来新增来源时旧客户端不应整批解码失败。
 //
 
 import Foundation
 
-// MARK: - API Response（已删，R-01 v1.2 走 envelope）
-//
-// 旧的非 envelope `WeeklyProjectListDTO` / `WeeklyProjectDTO` 在 R-01 v1.2 改造后已废。
-// 新数据流：API 响应 envelope → `StarcatEnvelope<[StarcatRepoCardDTO]>` → 由 `WeeklyProject.init(card:)`
-// 转 UI 模型；分页信息从 envelope.meta 取（page / pageSize / total）。
+// MARK: - Source
 
-// MARK: - Domain Model
+enum WeeklySource: Decodable, Hashable, Sendable {
+    case weekly
+    case zread
+    case discovery
+    case unknown(String)
 
-/// 周刊推荐项目领域模型，UI 直接消费。
-///
-/// 与 DTO 拆开是为了：
-/// 1. 把字符串 URL 转成 `URL`，避免每个调用点都 `URL(string:)`；
-/// 2. 提供 `fullName` 这种派生字段，让 UI 写法更简洁；
-/// 3. 后续若加入 AI 摘要、订阅状态等 UI 专属字段，不污染网络层 DTO。
-struct WeeklyProject: Identifiable, Equatable {
-    /// 用 owner/repo 作 id：同一仓库不论在多少期出现，UI 都按"项目"维度去重展示。
-    var id: String { fullName }
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        switch raw {
+        case "weekly": self = .weekly
+        case "zread": self = .zread
+        case "discovery": self = .discovery
+        default: self = .unknown(raw)
+        }
+    }
 
-    /// GitHub repo 数字 id（R-01 v1.2，2026-06-10）。
-    ///
-    /// 来自 `StarcatRepoCardDTO.ghRepoId`（后端 enricher 必填，`N5` 决策保证 N6 后
-    /// trending / weekly 列表 100% 携带 ghRepoId）。0 留作历史 / 故障 fallback 哨兵——
-    /// 走到 0 时跨场景 `StarredRegistry.contains(ghRepoId: 0)` 永远命中不到，UI 上等同
-    /// 「此 row 不显示 ✓」，可接受。
-    let ghRepoId: Int64
+    var rawValue: String {
+        switch self {
+        case .weekly: return "weekly"
+        case .zread: return "zread"
+        case .discovery: return "discovery"
+        case .unknown(let raw): return raw
+        }
+    }
 
-    let owner: String
-    let name: String
-    let url: URL
-    let description: String?
-    let stars: Int
-    let language: String?
-    /// 项目第一次被周刊收录的期号；用来在 row 上展示"第 NNN 期推荐"。
-    let firstIssue: Int
-    /// 第一次收录的原始 md URL，方便用户跳到周刊原文上下文。
+    var displayName: String {
+        switch self {
+        case .weekly: return String(localized: "weekly.source.ruanyf")
+        case .zread: return "ZRead"
+        case .discovery: return "Hacker News"
+        case .unknown(let raw): return raw
+        }
+    }
+
+    var assetName: String {
+        switch self {
+        case .weekly: return "WeeklySources/ruanyf"
+        case .zread: return "WeeklySources/zread"
+        case .discovery: return "WeeklySources/hackernews"
+        case .unknown: return "questionmark.circle.fill"
+        }
+    }
+}
+
+// MARK: - Snapshots
+
+struct WeeklySnapshot: Decodable, Hashable, Sendable {
+    let issueNumber: Int
     let issueURL: URL?
+    let recommendation: String?
 
-    // MARK: R-01 v1.2 v8 字段（来自 StarcatRepoCardDTO）
+    enum CodingKeys: String, CodingKey {
+        case issueNumber = "issue_number"
+        case issueURL = "issue_url"
+        case recommendation
+    }
+}
 
-    /// 仓库所有者头像 URL（GitHub `owner.avatar_url`）。RepoCardViewData / Hero 直接
-    /// 渲染；缺失时 UI 走 `RepoAvatarURL.from(owner:)` fallback。
-    let ownerAvatar: URL?
+struct ZreadSnapshot: Decodable, Hashable, Sendable {
+    let weekStart: String
+    let weekEnd: String?
+    let weekLabel: String?
+    let rankInWeek: Int
+    let descriptionZh: String?
 
-    /// Forks 数；后端 enricher 未补全时为 nil（UI 显示 0 / 隐藏）。
-    let forks: Int?
+    enum CodingKeys: String, CodingKey {
+        case weekStart = "week_start"
+        case weekEnd = "week_end"
+        case weekLabel = "week_label"
+        case rankInWeek = "rank_in_week"
+        case descriptionZh = "description_zh"
+    }
+}
 
-    /// Watchers / subscribers / open_issues / default_branch — Weekly 详情 hero 区
-    /// 复用 Manage / Trending 同款 RepoMetadataHeaderView，必须填齐这些字段。缺失
-    /// 字段以 nil 透传，由 hero 渲染层判断「显示 / 隐藏」。
-    let watchers: Int?
-    let subscribers: Int?
-    let openIssues: Int?
-    let defaultBranch: String?
+struct DiscoverySnapshot: Decodable, Hashable, Sendable {
+    let hnID: Int64
+    let title: String
+    let score: Int
+    let comments: Int
+    let publishedAt: String
 
-    let topics: [String]?
-    let homepage: URL?
-    let licenseSpdx: String?
+    enum CodingKeys: String, CodingKey {
+        case hnID = "hn_id"
+        case title
+        case score
+        case comments
+        case publishedAt = "published_at"
+    }
+}
 
-    let isArchived: Bool?
-    let isFork: Bool?
-    let isPrivate: Bool?
+// MARK: - DTO
 
-    /// 时间戳（ISO8601 字符串），用于 hero 区的 "更新于 X 日" / "创建于 Y 日" 展示。
-    let pushedAt: String?
-    let updatedAt: String?
-    let createdAt: String?
+struct WeeklyFeedRepoDTO: Decodable, Equatable, Sendable {
+    let card: StarcatRepoCardDTO
+    let name: String
+    let isAvailable: Bool
+    let sourceTypes: [WeeklySource]
+    let firstEventAt: String
+    let latestEventAt: String
+    let weekly: WeeklySnapshot?
+    let zread: ZreadSnapshot?
+    let discovery: DiscoverySnapshot?
 
-    var fullName: String { "\(owner)/\(name)" }
+    enum CodingKeys: String, CodingKey {
+        case name
+        case isAvailable = "is_available"
+        case sourceTypes = "source_types"
+        case firstEventAt = "first_event_at"
+        case latestEventAt = "latest_event_at"
+        case weekly
+        case zread
+        case discovery
+    }
 
-    /// R-01 v1.2 初始化：从 envelope 化的 `StarcatRepoCardDTO` + `WeeklyExtension` 构造。
+    enum CardCodingKeys: String, CodingKey {
+        case ghRepoId = "gh_repo_id"
+        case fullName = "full_name"
+        case owner
+        case repo
+        case ownerAvatar = "owner_avatar"
+        case description
+        case language
+        case stars
+        case forks
+        case watchers
+        case subscribers
+        case topics
+        case homepage
+        case licenseSpdx = "license_spdx"
+        case isArchived = "is_archived"
+        case isFork = "is_fork"
+        case isPrivate = "is_private"
+        case defaultBranch = "default_branch"
+        case openIssues = "open_issues"
+        case pushedAt = "pushed_at"
+        case updatedAt = "updated_at"
+        case createdAt = "created_at"
+        case htmlUrl = "html_url"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.card = try Self.decodeCard(from: decoder)
+        self.name = try c.decodeIfPresent(String.self, forKey: .name) ?? card.repo
+        self.isAvailable = try c.decodeIfPresent(Bool.self, forKey: .isAvailable) ?? true
+        self.sourceTypes = try c.decodeIfPresent([WeeklySource].self, forKey: .sourceTypes) ?? []
+        self.firstEventAt = try c.decode(String.self, forKey: .firstEventAt)
+        self.latestEventAt = try c.decode(String.self, forKey: .latestEventAt)
+        self.weekly = try c.decodeIfPresent(WeeklySnapshot.self, forKey: .weekly)
+        self.zread = try c.decodeIfPresent(ZreadSnapshot.self, forKey: .zread)
+        self.discovery = try c.decodeIfPresent(DiscoverySnapshot.self, forKey: .discovery)
+    }
+
+    /// 从同一个扁平 JSON object 解出共享 Repo Card 字段。
     ///
-    /// 字段映射：
-    ///   - `card.owner` / `card.repo` → `owner` / `name`
-    ///   - `card.htmlUrl` 优先；缺失时 fallback 用 `GitHubURLs.repo(owner:repo:)`
-    ///   - `card.description` / `card.language` → `description` / `language`
-    ///   - `card.stars` → `stars`
-    ///   - `card.weekly?.firstIssue` → `firstIssue`（缺扩展段时退化为 0）
-    ///   - `card.weekly?.issueUrl` → `issueURL`（缺扩展段时 nil）
-    ///   - **R-01 v1.2 v8**：`ghRepoId` / `ownerAvatar` / `forks` / `watchers` /
-    ///     `subscribers` / `openIssues` / `defaultBranch` / `topics` / `homepage` /
-    ///     `licenseSpdx` / `isArchived` / `isFork` / `isPrivate` / `pushedAt` /
-    ///     `updatedAt` / `createdAt` 全部从 DTO 直透传（DTO 也已透传 GitHub
-    ///     `/repos/{owner}/{repo}` 全部主字段）。
-    init(card: StarcatRepoCardDTO) {
-        self.ghRepoId = card.ghRepoId
-        self.owner = card.owner
-        self.name = card.repo
-        self.url = card.htmlUrl ?? GitHubURLs.repo(owner: card.owner, repo: card.repo)
-        self.description = card.description
-        self.stars = card.stars
-        self.language = card.language
-        self.firstIssue = card.weekly?.firstIssue ?? 0
-        self.issueURL = card.weekly?.issueUrl
+    /// 不能直接调用 `StarcatRepoCardDTO(from:)`：R-04 后端的 `weekly` 字段已经改成
+    /// aggregate snapshot（`issue_number`），而旧通用 DTO 的 `WeeklyExtension` 仍是
+    /// R-01 语义（`first_issue`）。这里显式只取 GitHub repo metadata 字段，避免
+    /// feed 专属 `weekly/zread/discovery` 扩展段污染通用 Card DTO。
+    private static func decodeCard(from decoder: Decoder) throws -> StarcatRepoCardDTO {
+        let c = try decoder.container(keyedBy: CardCodingKeys.self)
+        return StarcatRepoCardDTO(
+            ghRepoId: try c.decode(Int64.self, forKey: .ghRepoId),
+            fullName: try c.decode(String.self, forKey: .fullName),
+            owner: try c.decode(String.self, forKey: .owner),
+            repo: try c.decode(String.self, forKey: .repo),
+            ownerAvatar: try decodeOptionalURL(c, forKey: .ownerAvatar),
+            description: try c.decodeIfPresent(String.self, forKey: .description),
+            language: try c.decodeIfPresent(String.self, forKey: .language),
+            stars: try c.decodeIfPresent(Int.self, forKey: .stars) ?? 0,
+            forks: try c.decodeIfPresent(Int.self, forKey: .forks) ?? 0,
+            watchers: try c.decodeIfPresent(Int.self, forKey: .watchers) ?? 0,
+            subscribers: try c.decodeIfPresent(Int.self, forKey: .subscribers) ?? 0,
+            topics: try c.decodeIfPresent([String].self, forKey: .topics) ?? [],
+            homepage: try decodeOptionalURL(c, forKey: .homepage),
+            licenseSpdx: try c.decodeIfPresent(String.self, forKey: .licenseSpdx),
+            isArchived: try c.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false,
+            isFork: try c.decodeIfPresent(Bool.self, forKey: .isFork) ?? false,
+            isPrivate: try c.decodeIfPresent(Bool.self, forKey: .isPrivate) ?? false,
+            defaultBranch: try c.decodeIfPresent(String.self, forKey: .defaultBranch),
+            openIssues: try c.decodeIfPresent(Int.self, forKey: .openIssues) ?? 0,
+            pushedAt: try c.decodeIfPresent(String.self, forKey: .pushedAt),
+            updatedAt: try c.decodeIfPresent(String.self, forKey: .updatedAt),
+            createdAt: try c.decodeIfPresent(String.self, forKey: .createdAt),
+            htmlUrl: try decodeOptionalURL(c, forKey: .htmlUrl)
+        )
+    }
 
-        // v1.2 v8 字段透传
-        self.ownerAvatar = card.ownerAvatar
-        self.forks = card.forks
-        self.watchers = card.watchers
-        self.subscribers = card.subscribers
-        self.openIssues = card.openIssues
-        self.defaultBranch = card.defaultBranch
-        self.topics = card.topics
-        self.homepage = card.homepage
-        self.licenseSpdx = card.licenseSpdx
-        self.isArchived = card.isArchived
-        self.isFork = card.isFork
-        self.isPrivate = card.isPrivate
-        self.pushedAt = card.pushedAt
-        self.updatedAt = card.updatedAt
-        self.createdAt = card.createdAt
+    private static func decodeOptionalURL(
+        _ container: KeyedDecodingContainer<CardCodingKeys>,
+        forKey key: CardCodingKeys
+    ) throws -> URL? {
+        guard let raw = try container.decodeIfPresent(String.self, forKey: key) else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return URL(string: trimmed)
+    }
+
+    init(
+        card: StarcatRepoCardDTO,
+        name: String? = nil,
+        isAvailable: Bool = true,
+        sourceTypes: [WeeklySource],
+        firstEventAt: String,
+        latestEventAt: String,
+        weekly: WeeklySnapshot? = nil,
+        zread: ZreadSnapshot? = nil,
+        discovery: DiscoverySnapshot? = nil
+    ) {
+        self.card = card
+        self.name = name ?? card.repo
+        self.isAvailable = isAvailable
+        self.sourceTypes = sourceTypes
+        self.firstEventAt = firstEventAt
+        self.latestEventAt = latestEventAt
+        self.weekly = weekly
+        self.zread = zread
+        self.discovery = discovery
+    }
+}
+
+struct WeeklyRepoDetail: Decodable, Equatable, Sendable {
+    let repo: WeeklyFeedRepoDTO
+    let events: [WeeklySourceEvent]
+}
+
+struct WeeklySourceEvent: Decodable, Identifiable, Equatable, Sendable {
+    let id: String
+    let source: WeeklySource
+    let occurredAt: String
+    let url: URL?
+    let weekly: WeeklyEventPayload?
+    let zread: ZreadEventPayload?
+    let discovery: DiscoveryEventPayload?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case source
+        case occurredAt = "occurred_at"
+        case url
+        case weekly
+        case zread
+        case discovery
+    }
+}
+
+struct WeeklyEventPayload: Decodable, Hashable, Sendable {
+    let issueNumber: Int
+    let recommendation: String?
+
+    enum CodingKeys: String, CodingKey {
+        case issueNumber = "issue_number"
+        case recommendation
+    }
+}
+
+struct ZreadEventPayload: Decodable, Hashable, Sendable {
+    let weekStart: String
+    let weekEnd: String?
+    let rankInWeek: Int
+    let descriptionZh: String?
+
+    enum CodingKeys: String, CodingKey {
+        case weekStart = "week_start"
+        case weekEnd = "week_end"
+        case rankInWeek = "rank_in_week"
+        case descriptionZh = "description_zh"
+    }
+}
+
+struct DiscoveryEventPayload: Decodable, Hashable, Sendable {
+    let hnID: Int64
+    let title: String
+    let score: Int
+    let comments: Int
+
+    enum CodingKeys: String, CodingKey {
+        case hnID = "hn_id"
+        case title
+        case score
+        case comments
+    }
+}
+
+// MARK: - Domain
+
+struct WeeklyFeedItem: Identifiable, Equatable, Sendable {
+    var id: Int64 { ghRepoId }
+
+    let card: StarcatRepoCardDTO
+    let isAvailable: Bool
+    let sourceTypes: [WeeklySource]
+    let firstEventAt: String
+    let latestEventAt: String
+    let weekly: WeeklySnapshot?
+    let zread: ZreadSnapshot?
+    let discovery: DiscoverySnapshot?
+
+    var ghRepoId: Int64 { card.ghRepoId }
+    var owner: String { card.owner }
+    var name: String { card.repo }
+    var fullName: String { card.fullName }
+    var url: URL { card.htmlUrl ?? GitHubURLs.repo(owner: card.owner, repo: card.repo) }
+    var description: String? { card.description }
+    var language: String? { card.language }
+    var stars: Int { card.stars }
+
+    /// 列表行右侧短标签：按最有代表性的已知来源选择，保持极短避免挤压 repo name。
+    var shortSourceLabel: String? {
+        if let issueNumber = weekly?.issueNumber {
+            return "\(issueNumber)"
+        }
+        if let label = zread?.weekLabel, !label.isEmpty {
+            return label
+        }
+        if let date = discovery?.publishedAt.shortMonthDayString {
+            return date
+        }
+        return nil
+    }
+
+    init(dto: WeeklyFeedRepoDTO) {
+        self.card = dto.card
+        self.isAvailable = dto.isAvailable
+        self.sourceTypes = dto.sourceTypes
+        self.firstEventAt = dto.firstEventAt
+        self.latestEventAt = dto.latestEventAt
+        self.weekly = dto.weekly
+        self.zread = dto.zread
+        self.discovery = dto.discovery
     }
 }
 
 // MARK: - Query parameters
 
-/// 排序枚举，与后端 `sort` 参数一一对应。
-///
-/// 故意只暴露两个用户视角清晰的选项：
-/// - "最新收录"：以期号倒序，用户能持续看到最近一期开始的项目；
-/// - "Stars 最多"：把口碑积累的项目顶到前面，便于发现稳定推荐。
-enum WeeklySort: String, CaseIterable, Identifiable {
-    case firstIssueDesc = "first_issue_desc"
-    case starsDesc = "stars_desc"
+struct WeeklyFeedQuery: Equatable, Sendable {
+    let language: String?
+    let sort: WeeklyFeedSort
+    let order: WeeklyFeedOrder
+    let page: Int
+    let pageSize: Int
 
-    var id: String { rawValue }
-    var apiValue: String { rawValue }
+    init(
+        language: String? = nil,
+        sort: WeeklyFeedSort = .latestEventAt,
+        order: WeeklyFeedOrder = .desc,
+        page: Int = 1,
+        pageSize: Int = WeeklyAPI.defaultPageSize
+    ) {
+        self.language = language
+        self.sort = sort
+        self.order = order
+        self.page = page
+        self.pageSize = pageSize
+    }
 }
 
-/// 期号筛选；`all` 不传 issue 参数，对应"全部期号"。
-///
-/// 用结构体而非 enum，是为了让"任意期号"成为可参数化值，避免 enum 退化成
-/// `case n(Int)` 后还得在 UI 里特殊处理"selected case"。
-struct WeeklyIssueFilter: Hashable, Identifiable {
-    /// nil = 全部期号；非 nil = 指定期号。
-    let issueNumber: Int?
+enum WeeklyFeedSort: String, CaseIterable, Identifiable, Sendable {
+    case latestEventAt = "latest_event_at"
+    case stars
+    case pushedAt = "pushed_at"
 
-    var id: String {
-        if let n = issueNumber { return "issue:\(n)" }
-        return "issue:all"
+    var id: String { rawValue }
+}
+
+enum WeeklyFeedOrder: String, Sendable {
+    case asc
+    case desc
+}
+
+// MARK: - Display helpers
+
+extension String {
+    fileprivate var shortMonthDayString: String? {
+        guard let date = Self.weeklyDate(from: self) else { return nil }
+        let components = Calendar(identifier: .gregorian).dateComponents([.month, .day], from: date)
+        guard let month = components.month, let day = components.day else { return nil }
+        return "\(month).\(day)"
     }
 
-    var apiValue: String? {
-        guard let n = issueNumber else { return nil }
-        return String(n)
+    fileprivate var fullYearMonthDayString: String? {
+        guard let date = Self.weeklyDate(from: self) else { return nil }
+        let components = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day], from: date)
+        guard let year = components.year, let month = components.month, let day = components.day else { return nil }
+        return "\(year).\(month).\(day)"
     }
 
-    static let all = WeeklyIssueFilter(issueNumber: nil)
+    private static let weeklyDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let weeklyFractionalDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static func weeklyDate(from raw: String) -> Date? {
+        weeklyDateFormatter.date(from: raw) ?? weeklyFractionalDateFormatter.date(from: raw)
+    }
 }

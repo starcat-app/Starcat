@@ -2,7 +2,8 @@
 //  TrendingRepoRecord.swift
 //  Starcat
 //
-//  Trending 仓库 GRDB 持久化记录，对应 v4 迁移的 `trending_repos` 表。
+//  Trending 仓库 GRDB 持久化记录，对应 `trending_repos` 表
+//  （schema 详见 `DatabaseMigrationsV1.swift` 的 `createTrendingRepos`）。
 //
 //  设计动机：
 //  - `TrendingRepo`（见 `TrendingModels.swift`）是 UI 层值对象：含派生属性
@@ -41,11 +42,10 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
 
     // MARK: - repo 维度
 
-    /// GitHub repo 数字 id（R-01 v1.2 GRDB v9，2026-06-10）。
+    /// GitHub repo 数字 id（R-01 v1.2 跨场景 ✓ 标记必备，2026-06-10）。
     ///
-    /// **NULL 容忍**：v9 ALTER TABLE ADD COLUMN 时未指定 NOT NULL，老缓存行该列
-    /// 为 NULL；toDomain() 时退化为 `0`（哨兵），新行（下次 fetchTrending 整批替换）
-    /// 永远填实。
+    /// **NULL 容忍**：表定义为可空列（trending-api enricher 偶发漏返时该列为 NULL）；
+    /// toDomain() 时退化为 `0`（哨兵），新行（下次 fetchTrending 整批替换）永远填实。
     var ghRepoId: Int64?
 
     var fullName: String
@@ -59,15 +59,41 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
     /// JSON 数组字符串：`[{"username":..., "avatarURL":..., "profileURL":...}]`
     var contributorsJSON: String?
 
-    // MARK: - R-01 v1.2 GRDB v8 新字段（2026-06-10）
+    // MARK: - R-01 v1.2 StarcatRepoCardDTO 扩展 4 字段（2026-06-10）
     //
     // 与 `repos` 表的对应字段同名同语义（owner_avatar / subscribers_count /
-    // default_branch / open_issues_count），全部 Optional 兼容老缓存行 NULL。
+    // default_branch / open_issues_count），全部 Optional 容 trending-api 偶发字段缺失。
 
     var ownerAvatar: String?
     var subscribersCount: Int?
     var defaultBranch: String?
     var openIssuesCount: Int?
+
+    // MARK: - R-05 trending 详情页字段补齐 10 字段（2026-06-11）
+    //
+    // 与 `repos` 表的对应字段同名同语义，全部 Optional 容 trending-api 偶发字段缺失。
+    //
+    // **R-05 动机**：trending 详情页 hero 区显示 watchers / topics / license / homepage /
+    // created / updated 等字段；之前 ephemeral fallback 路径填 0 / nil，dong4j 真机看
+    // 到"Watchers 0 / Created - / Topics N/A"才发现 trending-api 后端早就返这些字段
+    // 了，是客户端 `TrendingRepo` 转换层丢字段。详见 `TrendingModels.swift` 同期注释。
+    //
+    // **持久化语义**：
+    // - `topics` TEXT：JSON 数组字符串（如 `["ai","swift"]`），与 `repos.topics` 完全
+    //   一致；不另起 trending_topics 明细表，保持持久化 1:1 映射 DTO。
+    // - `is_archived / is_fork / is_private` INTEGER（SQLite 用 0/1 存 Bool，GRDB 自动桥）。
+    // - 时间字段 ISO8601 字符串，与 `repos.created_at / updated_at / pushed_at` 对齐。
+
+    var watchersCount: Int?
+    var topics: String?
+    var license: String?
+    var homepage: String?
+    var isArchived: Bool?
+    var isFork: Bool?
+    var isPrivate: Bool?
+    var pushedAt: String?
+    var createdAt: String?
+    var updatedAt: String?
 
     // MARK: - 缓存维度
 
@@ -80,7 +106,7 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
         case period
         case languageFilter = "language_filter"
         case rank
-        // R-01 v1.2 GRDB v9 新增（2026-06-10）
+        // R-01 v1.2 跨场景 ✓ 标记必备（2026-06-10）
         case ghRepoId = "gh_repo_id"
         case fullName = "full_name"
         case owner
@@ -91,11 +117,22 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
         case forksCount = "forks_count"
         case starsInPeriod = "stars_in_period"
         case contributorsJSON = "contributors_json"
-        // R-01 v1.2 GRDB v8 新增（2026-06-10）
+        // R-01 v1.2 StarcatRepoCardDTO 扩展 4 字段（2026-06-10）
         case ownerAvatar = "owner_avatar"
         case subscribersCount = "subscribers_count"
         case defaultBranch = "default_branch"
         case openIssuesCount = "open_issues_count"
+        // R-05 trending 详情页字段补齐 10 字段（2026-06-11）
+        case watchersCount = "watchers_count"
+        case topics
+        case license
+        case homepage
+        case isArchived = "is_archived"
+        case isFork = "is_fork"
+        case isPrivate = "is_private"
+        case pushedAt = "pushed_at"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
         case cachedAt = "cached_at"
     }
 
@@ -141,11 +178,22 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
             starsInPeriod: starsInPeriodValue,
             periodText: periodText,
             contributors: contributorsArray,
-            // R-01 v1.2 GRDB v8 4 字段透传（持久化 → 内存领域模型）
+            // R-01 v1.2 扩展 4 字段透传（持久化 → 内存领域模型）
             ownerAvatar: ownerAvatar.flatMap(URL.init(string:)),
             subscribersCount: subscribersCount,
             defaultBranch: defaultBranch,
-            openIssuesCount: openIssuesCount
+            openIssuesCount: openIssuesCount,
+            // R-05 trending 详情页字段补齐 10 字段透传（持久化 → 内存领域模型）
+            watchersCount: watchersCount,
+            topics: topics,
+            license: license,
+            homepage: homepage.flatMap(URL.init(string:)),
+            isArchived: isArchived,
+            isFork: isFork,
+            isPrivate: isPrivate,
+            pushedAt: pushedAt,
+            createdAt: createdAt,
+            updatedAt: updatedAt
         )
     }
 
@@ -186,7 +234,7 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
             period: period.rawValue,
             languageFilter: languageFilter.apiValue,
             rank: rank,
-            // R-01 v1.2 GRDB v9：ghRepoId 持久化以支撑 RepoCardViewData.id + 跨场景 ✓
+            // R-01 v1.2：ghRepoId 持久化以支撑 RepoCardViewData.id + 跨场景 ✓
             ghRepoId: repo.ghRepoId,
             fullName: repo.fullName,
             owner: repo.owner,
@@ -197,11 +245,22 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
             forksCount: repo.forksCount,
             starsInPeriod: repo.starsInPeriod,
             contributorsJSON: contributorsJSON,
-            // R-01 v1.2 GRDB v8 4 字段（领域模型 → 持久化）
+            // R-01 v1.2 扩展 4 字段（领域模型 → 持久化）
             ownerAvatar: repo.ownerAvatar?.absoluteString,
             subscribersCount: repo.subscribersCount,
             defaultBranch: repo.defaultBranch,
             openIssuesCount: repo.openIssuesCount,
+            // R-05 trending 详情页字段补齐 10 字段（领域模型 → 持久化）
+            watchersCount: repo.watchersCount,
+            topics: repo.topics,
+            license: repo.license,
+            homepage: repo.homepage?.absoluteString,
+            isArchived: repo.isArchived,
+            isFork: repo.isFork,
+            isPrivate: repo.isPrivate,
+            pushedAt: repo.pushedAt,
+            createdAt: repo.createdAt,
+            updatedAt: repo.updatedAt,
             cachedAt: ISO8601DateFormatter.shared.string(from: cachedAt)
         )
     }
@@ -221,9 +280,12 @@ private struct ContributorJSON: Codable {
 extension TrendingRepo {
     /// 从持久化字段直接构造（GRDB 行 → 业务模型），与 DTO 初始化路径并存。
     ///
-    /// R-01 v1.2 GRDB v8（2026-06-10）：扩 4 字段（ownerAvatar / subscribersCount /
-    /// defaultBranch / openIssuesCount）；调用方（`TrendingRepoRecord.toDomain()`）已
-    /// 同步更新。所有 4 字段都 Optional，老缓存行 NULL 不影响构造。
+    /// R-01 v1.2 扩展 4 字段（2026-06-10）：ownerAvatar / subscribersCount /
+    /// defaultBranch / openIssuesCount；所有字段 Optional，trending-api 缺字段不影响构造。
+    ///
+    /// R-05 详情页字段补齐 10 字段（2026-06-11）：再扩 watchersCount / topics /
+    /// license / homepage / isArchived / isFork / isPrivate / pushedAt / createdAt /
+    /// updatedAt；全部 default = nil，老 callsite 无需逐个补参。
     init(
         ghRepoId: Int64,
         fullName: String,
@@ -240,7 +302,17 @@ extension TrendingRepo {
         ownerAvatar: URL? = nil,
         subscribersCount: Int? = nil,
         defaultBranch: String? = nil,
-        openIssuesCount: Int? = nil
+        openIssuesCount: Int? = nil,
+        watchersCount: Int? = nil,
+        topics: String? = nil,
+        license: String? = nil,
+        homepage: URL? = nil,
+        isArchived: Bool? = nil,
+        isFork: Bool? = nil,
+        isPrivate: Bool? = nil,
+        pushedAt: String? = nil,
+        createdAt: String? = nil,
+        updatedAt: String? = nil
     ) {
         self.ghRepoId = ghRepoId
         self.fullName = fullName
@@ -258,5 +330,15 @@ extension TrendingRepo {
         self.subscribersCount = subscribersCount
         self.defaultBranch = defaultBranch
         self.openIssuesCount = openIssuesCount
+        self.watchersCount = watchersCount
+        self.topics = topics
+        self.license = license
+        self.homepage = homepage
+        self.isArchived = isArchived
+        self.isFork = isFork
+        self.isPrivate = isPrivate
+        self.pushedAt = pushedAt
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
     }
 }

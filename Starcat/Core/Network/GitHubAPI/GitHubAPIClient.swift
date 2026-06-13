@@ -100,17 +100,32 @@ actor GitHubAPIClient {
 
     init(
         baseURL: URL = AppEndpoints.GitHubREST.baseURL,
-        session: URLSession = .shared,
+        session: URLSession? = nil,
         tokenProvider: any GitHubTokenProviding = KeychainTokenProvider()
     ) {
         self.baseURL = baseURL
-        self.session = session
+        // 默认 session 必须挂 `GitHubAuthRedirectDelegate`（D-25 防自动登出）。
+        // 不能用 `URLSession.shared`：单例不接受 delegate，301 重定向时会丢
+        // Authorization → 后续 401 被误判为 token 失效 → 自动登出。
+        // 测试侧通过 URLProtocolStub.ephemeralSession() 显式注入 session，
+        // 不会走到 makeDefaultSession()。
+        self.session = session ?? Self.makeDefaultSession()
         self.tokenProvider = tokenProvider
 
         let decoder = JSONDecoder()
         // GitHub 返回 snake_case，DTO 用 camelCase
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         self.decoder = decoder
+    }
+
+    /// 构造生产侧默认 URLSession：挂 `GitHubAuthRedirectDelegate` 处理
+    /// GitHub 301 重定向时丢 Authorization 的坑（D-25）。
+    private static func makeDefaultSession() -> URLSession {
+        URLSession(
+            configuration: .default,
+            delegate: GitHubAuthRedirectDelegate(),
+            delegateQueue: nil
+        )
     }
 
     // MARK: - 集中式 401 处理

@@ -6,21 +6,22 @@
 //
 //  设计要点：
 //  - 用户可以为每个 `ThirdPartyService` 填入自部署后的 URL，留空 = 走 fly.io 生产默认值。
-//  - 校验只做格式（http/https + host 非空），不发网络请求；想测连接走"测试连接"按钮。
+//  - 校验只做格式（http/https + host 非空），不发网络请求；想测连接走「测试连接」按钮。
 //  - 修改后**热生效**——通过 `AppDependencies.setServiceURL(_:for:)` 同时写
 //    `AppSettings.customServiceURLs` 持久化 + 推送到对应 API actor `updateBaseURL`，
 //    不需要重启 App。
 //  - 整页用 `ThirdPartyService.allCases` 自动渲染，新增服务时无需改本视图代码。
 //
 //  关键约束：
-//  - 编辑状态走 `@State` 草稿（`draftURLs: [String: String]`），失焦或显式"保存"才写盘。
-//    这是为了避免每个 keypress 都触发 didSet → 持久化 + actor 热更新的链路，体验/性能两不好。
+//  - 编辑状态走 `@State` 草稿（`draftURLs` / `draftAPIKeys`），**点「测试连接」时统一落盘**
+//    （R-03 2026-06-11 dong4j 拍板：删掉单独的「保存」按钮，把保存合并进测试连接按钮里）。
+//    这样既避免每 keypress 触发 didSet → 持久化 + actor 热更新的链路，又把「保存 + 验证」
+//    合并成一次操作。即便测试失败，已保存值依然保留（保存是用户意图，测试只是验证）。
 //  - 测试连接按钮使用 actor `serviceHealthChecker`，结果缓存在 `healthResults: [String: HealthCheckOutcome]`
 //    里，仅当前会话有效（关 Settings 窗口就清，避免误导）。
 //
 
 import SwiftUI
-import AppKit
 
 struct ServicesSettingsTab: View {
 
@@ -41,7 +42,6 @@ struct ServicesSettingsTab: View {
     @State private var probingServiceID: String?
     /// 当前正在保存（写持久化 + 推送 actor）的 service id。
     @State private var savingServiceID: String?
-
     var body: some View {
         Form {
             Section {
@@ -67,9 +67,7 @@ struct ServicesSettingsTab: View {
     @ViewBuilder
     private func serviceSection(for service: ThirdPartyService) -> some View {
         let validation = ThirdPartyService.validate(draft(for: service))
-        let isDirty = isDraftDirty(for: service)
         let isProbing = probingServiceID == service.id
-        let isSaving = savingServiceID == service.id
 
         Section {
             // 标题 + 描述 + 跳源码链接
@@ -98,6 +96,10 @@ struct ServicesSettingsTab: View {
             .padding(.vertical, 2)
 
             // URL 输入框 + 重置按钮
+            //
+            // R-03 (2026-06-11)：原本 URL 旁还有「保存」按钮 + 回车自动保存，已删除。
+            // 现在保存逻辑统一收敛到底部「测试连接」按钮（点它会先把草稿落盘，再发探测请求）。
+            // TextField 的回车键也走「测试连接」语义，与按钮一致。
             HStack(spacing: 8) {
                 TextField(
                     "settings.services.url",
@@ -110,20 +112,8 @@ struct ServicesSettingsTab: View {
                 .textFieldStyle(.roundedBorder)
                 .disableAutocorrection(true)
                 .onSubmit {
-                    Task { await save(service: service, validation: validation) }
+                    Task { await testConnection(for: service) }
                 }
-
-                Button {
-                    Task { await save(service: service, validation: validation) }
-                } label: {
-                    if isSaving {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text("general.save")
-                    }
-                }
-                .disabled(!isDirty || !validation.canPersist || isSaving)
-                .help(Text("settings.services.save.help"))
 
                 Button {
                     Task { await reset(service: service) }
@@ -179,18 +169,16 @@ struct ServicesSettingsTab: View {
         }
     }
 
-    /// API Key BYOK 输入行（R-01 v1.2 2026-06-10）。
+    /// API Key BYOK 输入行（R-01 v1.2 2026-06-10；R-03 2026-06-11 删 [保存] 按钮）。
     ///
-    /// 设计：SecureField 默认黑点遮蔽 → 眼睛按钮切到明文 TextField → 保存 / 重置按钮。
-    /// 与 URL 草稿同节奏：失焦或显式点保存才落 keychain，避免 keypress 高频写。
+    /// 设计：SecureField 默认黑点遮蔽 → 眼睛按钮切到明文 TextField。
+    /// 保存逻辑已合并进底部「测试连接」按钮（点它会先把 URL + Key 草稿一起落盘，再探测）。
+    /// 回车键也走「测试连接」语义，与按钮一致。
     @ViewBuilder
     private func apiKeyRow(for service: ThirdPartyService) -> some View {
         let isReveal = revealAPIKey[service.id] ?? false
-        let isDirty = isAPIKeyDraftDirty(for: service)
-        let isSaving = savingServiceID == service.id
 
         HStack(spacing: 8) {
-            // SecureField（黑点）/ TextField（明文）二选一，由 reveal 控制
             Group {
                 if isReveal {
                     TextField(
@@ -209,10 +197,9 @@ struct ServicesSettingsTab: View {
             .textFieldStyle(.roundedBorder)
             .disableAutocorrection(true)
             .onSubmit {
-                Task { await saveAPIKey(for: service) }
+                Task { await testConnection(for: service) }
             }
 
-            // 显示/隐藏 toggle（眼睛图标）
             Button {
                 revealAPIKey[service.id] = !isReveal
             } label: {
@@ -221,15 +208,6 @@ struct ServicesSettingsTab: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(Text(isReveal ? "settings.services.apiKey.hide" : "settings.services.apiKey.reveal"))
-
-            // 保存 API Key 按钮
-            Button {
-                Task { await saveAPIKey(for: service) }
-            } label: {
-                Text("general.save")
-            }
-            .disabled(!isDirty || isSaving)
-            .help(Text("settings.services.apiKey.save.help"))
         }
     }
 
@@ -281,6 +259,11 @@ struct ServicesSettingsTab: View {
 
     /// 保存当前草稿。`validation` 必须是 `.valid` 或 `.empty`，调用方已检查 `canPersist`。
     ///
+    /// 保存前会走 `service.normalizedBaseURL(_:)` 二次归一化——`validate` 只做通用规范化
+    /// （trim 末尾 `/`），sharing 兼容剥 `/api` 的 service-aware 规范化在这里完成。
+    /// 同时把规范化结果回写到 `draftURLs`，让 UI 立刻显示干净形态（满足 R-03.1 需求：
+    /// 用户输入 `http://127.0.0.1:5004/` 后焦点离开时显示成 `http://127.0.0.1:5004`）。
+    ///
     /// - Parameter clearHealthResult: 显式 "保存" 按钮触发的保存（默认 true）会清掉
     ///   旧的健康检查结果——因为 URL 已变，旧结果与新 URL 无关，留着误导。
     ///   "测试连接 → ok → 自动保存"路径传 false，保留刚拿到的成功结果给用户看到。
@@ -295,9 +278,15 @@ struct ServicesSettingsTab: View {
 
         let urlToPersist: URL?
         switch validation {
-        case .valid(let url): urlToPersist = url
-        case .empty:          urlToPersist = nil
-        case .invalid:        return // 上面 guard 已挡，理论上到不了这里
+        case .valid(let url):
+            let normalized = service.normalizedBaseURL(url)
+            urlToPersist = normalized
+            // 回写 draft，让 UI 立刻显示规范化后的形态（与持久化值一致）。
+            draftURLs[service.id] = normalized.absoluteString
+        case .empty:
+            urlToPersist = nil
+        case .invalid:
+            return // 上面 guard 已挡，理论上到不了这里
         }
 
         await dependencies.setServiceURL(urlToPersist, for: service)
@@ -318,25 +307,31 @@ struct ServicesSettingsTab: View {
     }
 
     /// 保存 API Key 草稿到 Keychain + 推送到 API actor 热更新。
-    private func saveAPIKey(for service: ThirdPartyService) async {
+    ///
+    /// - Parameter clearHealthResult: 默认 true（清掉旧的健康检查结果，避免误导）；
+    ///   `testConnection` 内部调用时传 false，让新探测结果能正常覆盖。
+    private func saveAPIKey(for service: ThirdPartyService, clearHealthResult: Bool = true) async {
         savingServiceID = service.id
         defer { savingServiceID = nil }
         let trimmed = apiKeyDraft(for: service).trimmingCharacters(in: .whitespacesAndNewlines)
         await dependencies.setServiceAPIKey(trimmed.isEmpty ? nil : trimmed, for: service)
-        // URL 改动的旧 health result 与新 key 无关，清掉避免误导
-        healthResults[service.id] = nil
+        if clearHealthResult {
+            healthResults[service.id] = nil
+        }
     }
 
-    /// 测试连接。用当前**草稿**的 URL（如果合法），否则用"当前生效"URL（已保存的或默认）。
-    /// 这样用户即使没点保存，也能先测一下新地址是否通。
+    /// 「测试连接」按钮的统一入口（R-03 2026-06-11 重设计）。
     ///
-    /// **R-01 v1.2 2026-06-10 扩展**：测试连接现在双 step（healthz + Bearer 鉴权探测）。
-    /// 用 draft 中的 API Key（未填则走 `StarcatAPIKeyResolver.resolve` 解析的当前生效值）测鉴权，
-    /// 让用户在保存前能验证 BYOK Key 是否被后端接受。
+    /// 旧版（v1.2 2026-06-10）：URL 旁有独立 [保存]、API Key 旁有独立 [保存]，测试只是验证；
+    /// 验证通过后才条件式 auto-save dirty 草稿。
     ///
-    /// **测试通过 + 草稿与持久化值不一致 → 自动保存**（2026-06-08 dong4j 反馈，2026-06-10 扩到 API Key）。
-    /// 省去用户"测一下 → 点保存"的二次点击。`save` 传 `clearHealthResult: false`
-    /// 保留刚拿到的 ✓ Reachable 状态。
+    /// 新版（R-03 2026-06-11，dong4j 拍板）：删掉两个 [保存] 按钮，「测试连接」按钮包揽
+    /// 「先保存草稿（URL + API Key）→ 再发探测请求」的完整流程。
+    /// **测试失败不回滚已保存值**（保存是用户意图，测试只是验证）。
+    ///
+    /// 探测端点已统一收敛到 `/api/v1/ping`（详见 ServiceHealthChecker.swift / R-03 改造说明）。
+    /// 用当前**草稿**的 URL（如果合法），否则用「当前生效」URL（已保存的或默认）；
+    /// API Key 也按草稿 → 持久化 → production 默认的顺序解析。
     private func testConnection(for service: ThirdPartyService) async {
         probingServiceID = service.id
         defer { probingServiceID = nil }
@@ -344,12 +339,27 @@ struct ServicesSettingsTab: View {
         let validation = ThirdPartyService.validate(draft(for: service))
         let baseURL: URL
         switch validation {
-        case .valid(let url): baseURL = url
-        case .empty:          baseURL = service.productionURL
-        case .invalid:        return // 上面 disabled 应已挡，安全兜底
+        case .valid(let url):
+            // service-aware 归一化（sharing 剥 /api / 所有服务剥末尾 /）。
+            // save() 内部也会做同样的归一化再落盘——这里独立调一次是因为下面
+            // 可能不走 save（草稿与持久化一致时 isDraftDirty 为 false），探测 URL 仍需规范化。
+            baseURL = service.normalizedBaseURL(url)
+        case .empty:
+            baseURL = service.productionURL
+        case .invalid:
+            return // 按钮 disabled 已挡，安全兜底
         }
 
-        // 鉴权 key 解析顺序：草稿（用户正在编辑） → 已配置 BYOK → production 默认（编译期注入）
+        // —— 第 1 步：先把草稿（URL + Key）落盘 —— //
+        // 即便后续探测失败，已保存值依然保留。保存是用户意图，测试只是验证。
+        if validation.canPersist, isDraftDirty(for: service) {
+            await save(service: service, validation: validation, clearHealthResult: false)
+        }
+        if isAPIKeyDraftDirty(for: service) {
+            await saveAPIKey(for: service, clearHealthResult: false)
+        }
+
+        // —— 第 2 步：解析探测用 Key（草稿优先，否则用持久化值，否则用 production 默认）—— //
         // 三段都没值 → nil（让后端必返 401，UI 显示 unauthorized 引导用户去填 Key）
         let trimmedDraftKey = apiKeyDraft(for: service).trimmingCharacters(in: .whitespacesAndNewlines)
         let probeKey: String?
@@ -361,25 +371,13 @@ struct ServicesSettingsTab: View {
             probeKey = StarcatAPIKeyDefaults.productionKeyOrNil
         }
 
+        // —— 第 3 步：发 ping 探测 —— //
         let outcome = await dependencies.serviceHealthChecker.check(
             service: service,
             baseURL: baseURL,
             apiKey: probeKey
         )
         healthResults[service.id] = outcome
-
-        // 自动保存路径：测试通过 → 把 dirty 的 URL / API Key 一起落盘（按需）。
-        if case .ok = outcome {
-            if case .valid = validation, isDraftDirty(for: service) {
-                await save(service: service, validation: validation, clearHealthResult: false)
-            }
-            if isAPIKeyDraftDirty(for: service) {
-                await dependencies.setServiceAPIKey(
-                    trimmedDraftKey.isEmpty ? nil : trimmedDraftKey,
-                    for: service
-                )
-            }
-        }
     }
 
     // MARK: - Helpers
@@ -425,8 +423,8 @@ struct ServicesSettingsTab: View {
         switch outcome {
         case .ok: return .green
         case .unauthorized: return .red
-        case .authProbeError, .reachableButError: return .orange
-        case .unreachable: return .red
+        case .serverError: return .orange
+        case .networkError: return .red
         }
     }
 }

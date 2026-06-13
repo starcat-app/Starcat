@@ -28,6 +28,9 @@ struct AISettingsTab: View {
     @Environment(AppSettings.self) private var settings
     /// HOM-126：「立刻手动触发一次」按钮直接调度。@Environment 注入自 StarcatApp。
     @Environment(AutoTidyScheduler.self) private var autoTidyScheduler
+    /// 2026-06-12 向量索引改进：AI 索引 Section 的"开始 / 暂停 / 全量重建"按钮需要
+    /// 直接调度 `SemanticIndexBuilder`。从 AppDependencies 拿。
+    @Environment(AppDependencies.self) private var dependencies
 
     /// HOM-AIPROVIDERS-PERSIST-2026-06-06 (dong4j 反馈)：
     /// 之前用 `@State private var selectedProfileID: String?` 保存当前选中的服务商
@@ -56,6 +59,14 @@ struct AISettingsTab: View {
     @State private var keyError: String?
     @State private var promptTask: AIModelTask = .summary
 
+    /// HOM-AIPROVIDERS-DELETE-CONFIRM-2026-06-12 (dong4j 反馈)：
+    /// 删除服务商需要二次确认。删除会同步删 profile + Keychain key + 修复
+    /// 任务绑定（`repairTasksAfterProfileChange`），属于不可逆破坏性操作，
+    /// 走 `.confirmationDialog` 拦一道。`pendingDeleteProfileID` 持有待删
+    /// 目标的 ID 而非整个 profile，避免 dialog 弹起期间 `verifiedProfiles`
+    /// 数组变化导致引用悬空（异步刷新 / @AppStorage 写回都可能触发刷新）。
+    @State private var pendingDeleteProfileID: String?
+
     /// HOM-68 follow-up v7 (dong4j 反馈 2026-06-05 23:20)：
     /// "默认设置"（原"模型设置"）也改成 tab 样式，4 个任务（summary/tags/
     /// embedding/translation）共用一行 Provider+模型 picker。和 parameterTask /
@@ -83,6 +94,22 @@ struct AISettingsTab: View {
     /// 用户第一次进入 AI 设置时希望直接看到开关，而不是再点一次折叠组。
     @SceneStorage("settings.ai.autoTidy.expanded") private var isAutoTidyExpanded: Bool = true
 
+    /// 2026-06-12 向量索引改进："AI 索引"分组默认收起，避免设置页一进来 6 个分组太挤；
+    /// 用户主动点开后偏好持久化。
+    @SceneStorage("settings.ai.aiIndex.expanded") private var isAIIndexExpanded: Bool = false
+
+    /// "AI 索引"折叠区显示 / 隐藏具体阈值数字；预设 == `.custom` 时强制展开（写 didSet 上不易，
+    /// 这里通过 computed `effectiveAdvancedExpanded` 处理）。
+    @SceneStorage("settings.ai.aiIndex.advancedExpanded") private var isAIIndexAdvancedExpanded: Bool = false
+
+    /// 2026-06-13 RepoContextPacker 客户端接入（§0.4 Y3）：「AI 代码上下文」分组的展开偏好。
+    /// 默认收起——与 promptSection / aiIndexSection 一致；避免设置页首次打开就被新 section 撑高。
+    /// 用户主动点开后偏好持久化（SceneStorage 跨设置窗口打开周期保留）。
+    @SceneStorage("settings.ai.repoContext.expanded") private var isRepoContextExpanded: Bool = false
+
+    /// "全量重建"二次确认。
+    @State private var pendingRebuildAllConfirm: Bool = false
+
     var body: some View {
         // HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
         // 删除独立的"模型参数"区。原因：参数与"任务"绑定有歧义——同一模型被
@@ -98,7 +125,26 @@ struct AISettingsTab: View {
             // 自动整理分类放到 Prompt 之后——按"配置链路从上到下"顺序排：
             // Provider → 模型 → 模型配置 → Prompt → 自动化（消费上面所有配置）→ 隐私说明。
             autoTidySection
+            // 2026-06-12 向量索引改进：AI 索引（向量化）配置，放在自动整理之后
+            // 因为索引依赖摘要 / README 等上游配置就绪。
+            aiIndexSection
+            // 2026-06-13 RepoContextPacker 客户端接入（§0.4 Y3）：AI 代码上下文配置。
+            // 放在 aiIndexSection 与 privacySection 之间——与「索引」性质相同（消费上游配置的
+            // 高级 AI 能力），且紧贴 privacySection 形成「先看功能再看隐私」的阅读节奏。
+            aiRepoContextSection
             privacySection
+        }
+        .confirmationDialog(
+            String(localized: "settings.aiIndex.rebuildAll.confirmTitle"),
+            isPresented: $pendingRebuildAllConfirm,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "settings.aiIndex.rebuildAll.confirm"), role: .destructive) {
+                dependencies.semanticIndexBuilder.rebuildAll()
+            }
+            Button(String(localized: "general.cancel"), role: .cancel) {}
+        } message: {
+            Text("settings.aiIndex.rebuildAll.confirmMessage")
         }
         .formStyle(.grouped)
         .task {
@@ -128,6 +174,67 @@ struct AISettingsTab: View {
                 keyError = nil
             }
         })
+        // HOM-AIPROVIDERS-DELETE-CONFIRM-2026-06-12 (dong4j 反馈)：
+        // 删除服务商二次确认。用 `presenting:` 把 profile 注入到 dialog 闭包，
+        // 让按钮标题能显示具体服务商名（"删除「DeepSeek」"），减少误删风险。
+        // 用 `pendingDeleteProfileID` 而非整个 profile 作为状态源，避免数组刷新
+        // 期间引用悬空（见 `pendingDeleteProfileID` 注释）。
+        .confirmationDialog(
+            "确认删除服务商",
+            isPresented: deleteConfirmationBinding,
+            titleVisibility: .visible,
+            presenting: pendingDeleteProfile
+        ) { profile in
+            Button("删除「\(profile.displayName)」", role: .destructive) {
+                deleteProfile(id: profile.id)
+            }
+            Button("取消", role: .cancel) {
+                pendingDeleteProfileID = nil
+            }
+        } message: { profile in
+            Text("删除「\(profile.displayName)」后无法恢复。")
+        }
+    }
+
+    /// 二次确认 dialog 的 isPresented 绑定。
+    /// set 时支持外部把它置 false（点 macOS 系统返回 / 点空白处关 dialog），
+    /// 同步清掉 `pendingDeleteProfileID` 避免下次再弹时残留旧目标。
+    private var deleteConfirmationBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteProfileID != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingDeleteProfileID = nil
+                }
+            }
+        )
+    }
+
+    /// 当前待删除目标的 profile。pendingDeleteProfileID 持有 ID 而非整个 profile，
+    /// 这里实时查表，避免数组刷新引用悬空。如果 ID 找不到对应 profile（删除瞬间数据
+    /// 已变），返回 nil 让 dialog 自然 dismiss（`confirmationDialog(presenting:)` 在
+    /// presenting 为 nil 时不展示 content）。
+    private var pendingDeleteProfile: AIProviderProfile? {
+        guard let id = pendingDeleteProfileID else { return nil }
+        return profile(id)
+    }
+
+    /// 真删除入口，由 confirmationDialog 内部按钮调用。
+    /// 既有的 `deleteSelectedProfile()` 隐式依赖 `selectedProfileID`，但二次确认
+    /// 期间用户可能切换了 selection，所以这里收紧到「按显式 ID 删除」，与
+    /// pendingDeleteProfileID 的语义一致，避免误删。
+    private func deleteProfile(id: String) {
+        AppLog.ai.debug("[AISettings] deleteProfile(id:) confirmed id=\(id, privacy: .public)")
+        settings.aiProviderProfiles.removeAll { $0.id == id }
+        try? KeychainManager.shared.deleteAIKey(forProvider: id)
+        apiKeys.removeValue(forKey: id)
+        // 被删的恰好是当前 selected 时，回退到剩余 verified 中的第一个；
+        // 否则保持当前 selection 不动（删的是非当前项时，用户视线不应被打断）。
+        if selectedProfileID == id {
+            setSelectedProfileID(verifiedProfiles.first?.id)
+        }
+        repairTasksAfterProfileChange()
+        pendingDeleteProfileID = nil
     }
 
     // MARK: - Provider
@@ -144,7 +251,11 @@ struct AISettingsTab: View {
                 // SwiftUI Picker 的 menu style 会把 Label 内的 Image 一起渲染到下拉
                 // 菜单和已选 caption 区，无需为下拉 / 当前选中分别画。
                 if verifiedProfiles.isEmpty {
-                    Text("暂无已验证服务商")
+                    // HOM-AIPROVIDERS-HIDE-PROVIDER-2026-06-12 (dong4j 反馈)：
+                    // zero state 文案补充行动指引——之前只说「暂无已验证服务商」是
+                    // 状态描述，用户不知道下一步要做什么。改成「...点右侧 + 新增」
+                    // 让新用户直接看到入口。
+                    Text("暂无已验证服务商，点击右侧 + 新增")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -164,7 +275,11 @@ struct AISettingsTab: View {
                 Spacer(minLength: 12)
 
                 Button {
-                    beginDraft(provider: .openAICompatible)
+                    // HOM-AIPROVIDERS-HIDE-PROVIDER-2026-06-12：包 withAnimation 让下方
+                    // Provider 行 + 输入区伴随 transition 滑入，而不是瞬切。
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        beginDraft(provider: .openAICompatible)
+                    }
                 } label: {
                     Label("新增", systemImage: "plus")
                         .labelStyle(.iconOnly)
@@ -173,7 +288,9 @@ struct AISettingsTab: View {
                 .disabled(draftProfile != nil)
 
                 Button(role: .destructive) {
-                    deleteSelectedProfile()
+                    // HOM-AIPROVIDERS-DELETE-CONFIRM-2026-06-12：先弹二次确认 dialog，
+                    // dialog 内点「删除」才真正执行 `deleteProfile(id:)`。
+                    pendingDeleteProfileID = selectedProfileID
                 } label: {
                     Label("删除", systemImage: "trash")
                         .labelStyle(.iconOnly)
@@ -182,19 +299,48 @@ struct AISettingsTab: View {
                 .disabled(selectedProfile == nil)
             }
 
-            // 第二行展示 Starcat 当前支持的全部服务商。选择一个服务商不会立刻写入
-            // `aiProviderProfiles`；它只会创建/更新草稿，测试通过后才晋升为正式配置。
-            Picker("Provider", selection: supportedProviderBinding) {
-                ForEach(AIServiceProvider.allCases) { provider in
-                    Label {
-                        Text(provider.displayName)
-                    } icon: {
-                        AIProviderIconView(provider: provider, size: 14)
+            // HOM-AIPROVIDERS-HIDE-PROVIDER-2026-06-12 (dong4j 反馈)：
+            // Provider 下拉只在「点 + 进入新增草稿」时显示。背景：之前两个下拉常驻
+            //   1) 「服务商配置」= 已验证 profile 切换
+            //   2) 「Provider」    = 选 provider 类型 / 隐式重建草稿
+            // 两个下拉语义不同但视觉同形（都是 menu picker），新用户进设置页一眼看
+            // 不出谁是「我现在在看哪个 profile」、谁是「我要新建」。更糟的是 Provider
+            // 下拉直接切类型就会重建草稿（`supportedProviderBinding.set` 调
+            // `beginDraft`），与右上角 `+` 按钮形成两个新增入口，违反「+ 是新增唯一
+            // 入口」的产品意图。
+            //
+            // 修法：Provider 下拉用 `if draftProfile != nil` 包裹，常态隐藏；只在点
+            // `+`（→ beginDraft → draftProfile != nil）后随输入区一起出现。这样信息
+            // 架构变成「常态只显示当前 profile / 点 + 进入新增模式才显示类型选择」，
+            // 与 macOS 系统设置「网络 → +」的交互节奏一致。
+            //
+            // Provider 切换仍走原 `supportedProviderBinding`（重建草稿，丢弃同一草稿
+            // 内已输入的 displayName/baseURL/apiKey）。这是合理的——切类型本质就是
+            // 「换底子」，不同 provider 的默认 baseURL 完全不同，保留旧值会更困惑。
+            //
+            // transition 用 `.opacity` + 默认 spring，让出现/消失自然过渡，避免 Form
+            // 里某行突然蹦出来。
+            //
+            // 边界场景：用户在已验证 profile 上修改 displayName/baseURL/apiKey 时，
+            // `editableProfileTextBinding` 会调 `beginDraft(from: current)` 把它提升为
+            // 草稿 → 这里 Provider 行也会跟着出现。这是预期行为：① 与「新增模式」UI
+            // 统一（draft != nil 都显示）；② 用户编辑时本来就可以切类型（如发现 Base
+            // URL 错了想换个 provider），保留这个能力；③ 用户不点 Provider 就不会
+            // 影响输入，干扰极小。
+            if draftProfile != nil {
+                Picker("Provider", selection: supportedProviderBinding) {
+                    ForEach(AIServiceProvider.allCases) { provider in
+                        Label {
+                            Text(provider.displayName)
+                        } icon: {
+                            AIProviderIconView(provider: provider, size: 14)
+                        }
+                        .tag(provider)
                     }
-                    .tag(provider)
                 }
+                .pickerStyle(.menu)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .pickerStyle(.menu)
 
             if let profile = activeProfile {
                 providerInputRows(profile)
@@ -802,6 +948,424 @@ struct AISettingsTab: View {
         }
     }
 
+    // MARK: - AI 索引（向量搜索改进 2026-06-12）
+
+    /// "AI 索引" Section：截断长度滑杆 + 三档阈值预设 + 折叠区精细数字 + 预拉 / 全量重建按钮。
+    ///
+    /// UI 形态：
+    /// ```
+    /// AI 索引 ▼
+    ///   ┌ README 截断长度 ── 滑杆 [12000] ──── 12000 字符
+    ///   ├ 阈值预设      ── 严格 / 标准 / 宽松 / 自定义
+    ///   ├ 高级（折叠）  ── 主体阈值 Stepper + 笔记阈值 Stepper
+    ///   ├ ─────────────────────
+    ///   ├ 启动自动预拉 [开关]
+    ///   ├ [开始预拉] [暂停]     进度 234 / 1801（失败 0）
+    ///   └ [⚠ 全量重建]
+    /// ```
+    ///
+    /// 切换预设时通过 `applyAIIndexPreset(_:)` 把 body / notes 具体数字同步过去，避免
+    /// 折叠区显示 10/20 但实际生效 5/10 的"漂移"。
+    private var aiIndexSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $isAIIndexExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    truncateLengthRow
+                    presetRow
+                    advancedDisclosure
+                    Divider()
+                    Toggle("settings.aiIndex.autoPrefetch", isOn: autoPrefetchBinding)
+                    builderControlsRow
+                    rebuildAllRow
+                }
+                .padding(.vertical, 4)
+            } label: {
+                disclosureLabel(String(localized: "settings.aiIndex.section"), isExpanded: $isAIIndexExpanded)
+            }
+        }
+    }
+
+    /// 截断长度滑杆 + 数字读数。
+    /// 决策 C2：范围 2000-32000，步进 1000。
+    private var truncateLengthRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("settings.aiIndex.truncateLength")
+                    .font(.callout)
+                Spacer()
+                Text("\(settings.aiReadmeTruncateLength)")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(
+                value: truncateLengthBinding,
+                in: 2000...32000,
+                step: 1000
+            )
+            Text("settings.aiIndex.truncateLength.hint")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 三档预设 + custom：segmented picker；switch 时同步 body/notes 字段。
+    private var presetRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("settings.aiIndex.preset")
+                    .font(.callout)
+                Spacer()
+            }
+            Picker("", selection: presetBinding) {
+                ForEach(AIIndexPreset.allCases) { preset in
+                    Text(LocalizedStringKey(preset.displayNameKey)).tag(preset)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+    }
+
+    /// 高级区（折叠）：body / notes 阈值 Stepper。
+    /// 预设 != custom 时禁用编辑，提示用户先切到自定义。
+    @ViewBuilder
+    private var advancedDisclosure: some View {
+        let isCustom = settings.aiIndexPreset == .custom
+        DisclosureGroup(isExpanded: $isAIIndexAdvancedExpanded) {
+            VStack(alignment: .leading, spacing: 10) {
+                ratioRow(
+                    titleKey: "settings.aiIndex.bodyThreshold",
+                    value: bodyRatioBinding,
+                    enabled: isCustom
+                )
+                ratioRow(
+                    titleKey: "settings.aiIndex.notesThreshold",
+                    value: notesRatioBinding,
+                    enabled: isCustom
+                )
+                if !isCustom {
+                    Text("settings.aiIndex.advanced.lockedHint")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+        } label: {
+            disclosureLabel(String(localized: "settings.aiIndex.advanced"), isExpanded: $isAIIndexAdvancedExpanded)
+        }
+    }
+
+    /// 阈值行：Title + Stepper（步进 0.01）+ 百分比读数。
+    private func ratioRow(titleKey: String, value: Binding<Double>, enabled: Bool) -> some View {
+        HStack {
+            Text(LocalizedStringKey(titleKey))
+                .font(.callout)
+            Spacer()
+            Text("\(Int((value.wrappedValue * 100).rounded()))%")
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 50, alignment: .trailing)
+            Stepper("", value: value, in: 0.0...1.0, step: 0.01)
+                .labelsHidden()
+                .disabled(!enabled)
+        }
+    }
+
+    /// 开始 / 暂停 / 进度行。
+    ///
+    /// **2026-06-13 dong4j 反馈"开始预拉闪烁"改造**：
+    /// `.alreadyUpToDate(total)` 与 `.completed` 共用按钮分支（都回到"开始预拉"），
+    /// 右侧进度文字位置换成 `alreadyUpToDateBadge`——palette 模式渲染的白勾 + 深森林绿圆
+    /// + 同色系文字"已是最新（共 N 个仓库）"，参考登录页 `GithubAuthView` 的复制成功
+    /// 徽章姿势（保持视觉语言一致，新用户一眼就懂）。
+    @ViewBuilder
+    private var builderControlsRow: some View {
+        let builder = dependencies.semanticIndexBuilder
+        HStack(spacing: 10) {
+            switch builder.status {
+            case .idle, .completed, .alreadyUpToDate, .failed:
+                Button(String(localized: "settings.aiIndex.prefetch.start")) {
+                    builder.start()
+                }
+            case .running:
+                Button(String(localized: "settings.aiIndex.prefetch.pause")) {
+                    builder.pause()
+                }
+            case .paused:
+                Button(String(localized: "settings.aiIndex.prefetch.resume")) {
+                    builder.resume()
+                }
+            }
+            Spacer()
+            builderProgressView
+        }
+    }
+
+    /// 右侧进度信息视图。`.alreadyUpToDate` 渲染为绿色 ✓ palette 徽章 + 友好文案，
+    /// 其它状态保持原"caption 灰色文本"行为。
+    @ViewBuilder
+    private var builderProgressView: some View {
+        let builder = dependencies.semanticIndexBuilder
+        switch builder.status {
+        case .alreadyUpToDate(let total):
+            alreadyUpToDateBadge(total: total)
+        default:
+            Text(builderProgressText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// "已是最新"绿色徽章。
+    ///
+    /// 视觉规范（与登录页 `GithubAuthView` 的"已复制 ✓"反馈保持一致）：
+    /// - 图标 `checkmark.circle.fill` 用 `symbolRenderingMode(.palette)` 渲染两层色：
+    ///   ⚠️ palette 模式下 `foregroundStyle` 第一参数是**前景层（✓）**、第二参数是
+    ///   **背景层（圆）**，给反了在浅色面板上会看不见圆，需小心顺序。
+    ///   颜色取深森林绿（0.12, 0.42, 0.18）+ 白勾，"成功徽章"的常见视觉语义。
+    /// - 文字与圆同色系，形成"图标 + 文字"一体的成功反馈块。
+    /// - `total == 0` 时（用户没 starred 任何 repo）也走这条分支，文案"已是最新
+    ///   （共 0 个仓库）"逻辑自洽——预拉完空集合本来就是"无事可做" = 已是最新。
+    private func alreadyUpToDateBadge(total: Int) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.circle.fill")
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(Color.white, Color(red: 0.12, green: 0.42, blue: 0.18))
+                .font(.callout)
+            Text(String(format: String(localized: "settings.aiIndex.prefetch.alreadyUpToDateFmt"), total))
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(Color(red: 0.12, green: 0.42, blue: 0.18))
+        }
+    }
+
+    private var builderProgressText: String {
+        let b = dependencies.semanticIndexBuilder
+        switch b.status {
+        case .idle:
+            return ""
+        case .running, .paused:
+            return String(
+                format: String(localized: "settings.aiIndex.prefetch.progressFmt"),
+                b.processed, b.total, b.failures
+            )
+        case .completed(let p, let t):
+            return String(format: String(localized: "settings.aiIndex.prefetch.completedFmt"), p, t)
+        case .alreadyUpToDate(let total):
+            // builderProgressView 会优先走 alreadyUpToDateBadge 分支，这里只是为了
+            // switch 穷举性兜底，理论上不会被调用到。返回 i18n 文案保持安全。
+            return String(format: String(localized: "settings.aiIndex.prefetch.alreadyUpToDateFmt"), total)
+        case .failed(let msg):
+            return String(format: String(localized: "settings.aiIndex.prefetch.failedFmt"), msg)
+        }
+    }
+
+    /// "全量重建"按钮。点击只弹确认 dialog，实际执行在 body 的 `.confirmationDialog`。
+    private var rebuildAllRow: some View {
+        HStack {
+            Button(role: .destructive) {
+                pendingRebuildAllConfirm = true
+            } label: {
+                Label("settings.aiIndex.rebuildAll.button", systemImage: "exclamationmark.triangle.fill")
+            }
+            Spacer()
+            Text("settings.aiIndex.rebuildAll.hint")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - AI 索引 bindings
+
+    private var truncateLengthBinding: Binding<Double> {
+        Binding(
+            get: { Double(self.settings.aiReadmeTruncateLength) },
+            set: { newValue in
+                self.settings.aiReadmeTruncateLength = Int(newValue.rounded())
+            }
+        )
+    }
+
+    private var presetBinding: Binding<AIIndexPreset> {
+        Binding(
+            get: { self.settings.aiIndexPreset },
+            set: { self.settings.applyAIIndexPreset($0) }
+        )
+    }
+
+    private var bodyRatioBinding: Binding<Double> {
+        Binding(
+            get: { self.settings.aiIndexBodyDiffRatio },
+            set: { newValue in
+                let clamped = max(0, min(1, newValue))
+                self.settings.aiIndexBodyDiffRatio = clamped
+                // 用户在高级区改具体数字 → 自动切到 custom（避免显示"标准"但数字漂移）
+                if self.settings.aiIndexPreset != .custom {
+                    self.settings.aiIndexPreset = .custom
+                }
+            }
+        )
+    }
+
+    private var notesRatioBinding: Binding<Double> {
+        Binding(
+            get: { self.settings.aiIndexNotesDiffRatio },
+            set: { newValue in
+                let clamped = max(0, min(1, newValue))
+                self.settings.aiIndexNotesDiffRatio = clamped
+                if self.settings.aiIndexPreset != .custom {
+                    self.settings.aiIndexPreset = .custom
+                }
+            }
+        )
+    }
+
+    private var autoPrefetchBinding: Binding<Bool> {
+        Binding(
+            get: { self.settings.aiIndexAutoPrefetchEnabled },
+            set: { self.settings.aiIndexAutoPrefetchEnabled = $0 }
+        )
+    }
+
+    // MARK: - AI 代码上下文（2026-06-13 §0.4 Y3）
+    //
+    // 「AI 代码上下文」分组，对应 §0 客户端接入任务清单 §0.4 触点 C。
+    //
+    // 设计要点（沿用 promptSection / autoTidySection / aiIndexSection 同款风格）：
+    //   - DisclosureGroup 默认折叠（@SceneStorage 持久化）；
+    //   - 总开关 Toggle 控制下面控件的 disabled 状态（用户关掉总开关后调下面没意义）；
+    //   - Slider 走 Int↔Double 适配 binding（SwiftUI Slider 强制 BinaryFloatingPoint，不能直接绑 Int）；
+    //   - Stepper 走自定义 Int binding（AISettingsTab 没用 @Bindable var settings = settings）；
+    //   - **不提供「私有仓库」开关**：当前 OAuth scope 是 `read:user` + `public_repo`，
+    //     API 永远不会返回 isPrivate=true 的 repo；增加一个永远走不到的开关只会污染设置页；
+    //   - 「管理已生成的上下文 →」按钮**当前先 print 占位**（Y3 仅 UI 阶段，Y5 触点 E 落地存储 Tab 才接通）。
+    //
+    // 关键约束：
+    //   - 本 section 完全是 UI 层；改字段值只写 AppSettings UserDefaults，不触发任何 AI / 网络 / 磁盘 I/O。
+    //   - 用户改 Slider/Stepper 立即落盘（didSet）；下次生成 AI 摘要才生效（X4 接通 RepoAIInsightService）。
+    //   - X4 / Y5 未完成期间，本 section 是「光配置不生效」状态——用户改完看不到效果，但配置是真持久化的。
+
+    private var aiRepoContextSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $isRepoContextExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    repoContextEnableRow
+                    Divider()
+                    repoContextTokenBudgetRow
+                    repoContextTier1MaxLinesRow
+                    Divider()
+                    repoContextManageStorageRow
+                }
+                .padding(.vertical, 4)
+            } label: {
+                disclosureLabel(String(localized: "ai.context.settings.title"), isExpanded: $isRepoContextExpanded)
+            }
+        }
+    }
+
+    /// 总开关 + 一段说明 caption。
+    /// caption 解释「会做什么 + 首次生成耗时预期」，让用户开启前有合理预期。
+    private var repoContextEnableRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("ai.context.settings.enabled", isOn: repoContextEnabledBinding)
+            Text("ai.context.settings.description")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Token 预算 Slider 行。范围 4000-32000、步进 2000——8 档刻度，
+    /// 既不会让用户感到"想精调但跳得太大"，也不会让"步进 100"显得选择困难。
+    private var repoContextTokenBudgetRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("ai.context.settings.tokenBudget")
+                    .font(.callout)
+                Spacer()
+                Text("\(settings.aiRepoContextTokenBudget) tokens")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(
+                value: tokenBudgetBinding,
+                in: 4000...32000,
+                step: 2000
+            )
+            .disabled(!settings.aiRepoContextEnabled)
+        }
+    }
+
+    /// Tier 1 关键文件保留行数 Stepper 行。范围 40-200、步进 20。
+    /// 单 Stepper 占一行（与 aiIndexSection 的 ratioRow 同样的「标题 + 读数 + 控件」横向布局）。
+    private var repoContextTier1MaxLinesRow: some View {
+        HStack {
+            Text("ai.context.settings.tier1MaxLines")
+                .font(.callout)
+            Spacer()
+            Text("\(settings.aiRepoContextTier1MaxLines) 行")
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 60, alignment: .trailing)
+            Stepper(
+                "",
+                value: repoContextTier1MaxLinesBinding,
+                in: 40...200,
+                step: 20
+            )
+            .labelsHidden()
+            .disabled(!settings.aiRepoContextEnabled)
+        }
+    }
+
+    /// 「管理已生成的上下文 → 存储 Tab」跳转按钮。
+    ///
+    /// **Y3 仅 UI 阶段的占位实现**：当前只 print 一条日志；Y5 触点 E 落地存储 Tab 时改为
+    /// 真正的 NotificationCenter 跳转（`Notification.Name.starcatJumpToSettingsTab` +
+    /// `SettingsView` 内监听切 selectedTab 到 .storage）。占位实现允许 UI 层先看到完整
+    /// 视觉效果，且不会触发未实现的代码路径。
+    private var repoContextManageStorageRow: some View {
+        Button {
+            // Y5 触点 E 待实现：跳转到 Settings → Storage Tab 的 AI 代码上下文管理面板。
+            AppLog.ai.debug("[AISettings] manage storage button tapped — Y5 not implemented yet")
+        } label: {
+            Label("ai.context.settings.manageStorage", systemImage: "internaldrive")
+        }
+        .disabled(!settings.aiRepoContextEnabled)
+    }
+
+    /// Token 预算 Int↔Double 适配 binding。
+    /// SwiftUI Slider 要求 `BinaryFloatingPoint` 值类型，但 `aiRepoContextTokenBudget` 是 Int
+    /// （UserDefaults 直接 Int 持久化更直观，避免出现 `8000.0`）。这里在两端之间做转换：
+    ///   - get：Int → Double（无损扩展）
+    ///   - set：Double → Int（`rounded()` 保证步进对齐到整 2000）
+    private var tokenBudgetBinding: Binding<Double> {
+        Binding(
+            get: { Double(self.settings.aiRepoContextTokenBudget) },
+            set: { newValue in
+                self.settings.aiRepoContextTokenBudget = Int(newValue.rounded())
+            }
+        )
+    }
+
+    /// 总开关 Bool binding。AISettingsTab 没用 `@Bindable var settings = settings`（与
+    /// SettingsView.generalTab 不同），所以子项 Toggle 不能直接 `$settings.xxx`，必须走
+    /// 自定义 binding（与 `autoPrefetchBinding` 同款）。
+    private var repoContextEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { self.settings.aiRepoContextEnabled },
+            set: { self.settings.aiRepoContextEnabled = $0 }
+        )
+    }
+
+    /// Tier 1 行数 Int binding。Stepper 原生支持 Int，理论上可直接绑字段，但 AISettingsTab
+    /// 没用 `@Bindable var settings = settings`，照样要自定义 binding。
+    private var repoContextTier1MaxLinesBinding: Binding<Int> {
+        Binding(
+            get: { self.settings.aiRepoContextTier1MaxLines },
+            set: { self.settings.aiRepoContextTier1MaxLines = $0 }
+        )
+    }
+
     /// 当前任务的占位符提示文案。
     /// - summary / tags：仅 `{context}` 表示仓库元数据 + README 摘要；
     /// - translation：额外支持 `{targetLanguage}` 表示当前目标语言名（如 `Simplified Chinese`）。
@@ -873,14 +1437,10 @@ struct AISettingsTab: View {
         keyError = nil
     }
 
-    private func deleteSelectedProfile() {
-        guard let id = selectedProfileID else { return }
-        settings.aiProviderProfiles.removeAll { $0.id == id }
-        try? KeychainManager.shared.deleteAIKey(forProvider: id)
-        apiKeys.removeValue(forKey: id)
-        setSelectedProfileID(verifiedProfiles.first?.id)
-        repairTasksAfterProfileChange()
-    }
+    // `deleteSelectedProfile()` 已被 `deleteProfile(id:)` + `confirmationDialog`
+    // 二次确认链路取代（HOM-AIPROVIDERS-DELETE-CONFIRM-2026-06-12）。原函数
+    // 隐式依赖 `selectedProfileID`，confirm dialog 期间用户可能切换 selection
+    // 导致语义偏差，新函数收紧到显式 ID 删除。
 
     @MainActor
     private func testAndFetchModels(_ profile: AIProviderProfile) async {
@@ -914,8 +1474,12 @@ struct AISettingsTab: View {
                 profiles.append(verified)
                 settings.aiProviderProfiles = profiles
                 setSelectedProfileID(profile.id)
-                draftProfile = nil
-                draftAPIKey = ""
+                // HOM-AIPROVIDERS-HIDE-PROVIDER-2026-06-12：包 withAnimation 让
+                // Provider 行随草稿晋升收起，与点 + 时的滑入动画对称。
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    draftProfile = nil
+                    draftAPIKey = ""
+                }
             } else {
                 updateProfile(profile.id) { current in
                     current = verified

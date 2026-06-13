@@ -8,14 +8,19 @@
 //  设计意图（详细设计 §3.2 / §5.4 + R-01 v1.2 Phase B5 落地，2026-06-10）
 //  ────────────────────────────────────────────────────────────────────────────
 //
-//  Weekly 详情 = `RepoDetailScaffold` (Hero) + body slot
+//  Weekly 详情 = `RepoDetailScaffold` (Hero + RepoLocalSections) + body slot
 //
 //  本 ContentView 负责：
-//  - `RepoLocalSections`：Tags / Notes / Release 三段（v1.2 P0 起从 hero 下沉，
-//    自动按 repo.id != 0 控制可见性，star 后 spring 0.25s 平滑展开）
 //  - `ReadmeStateView`：README WebView 渲染
-//  - **不**渲染贡献者列（trending 独有；weekly 没有 contributors 字段）
+//  - **不**渲染贡献者列（trending 独有;weekly 没有 contributors 字段）
 //  - **不**渲染 weekly issue 按钮（由 Scaffold 的 trailingActions 接入）
+//
+//  R-01 v1.5 修订（2026-06-10 下午, dong4j bug 反馈）：
+//  - tags / notes / release 三段（`RepoLocalSections`）**从 ContentView 迁回 Scaffold
+//    metadataPanel 内**,跟随 hero 整段折叠让位 README 阅读区;
+//  - 本 ContentView 不再渲染 `RepoLocalSections`,body 仅剩 `ReadmeStateView`;
+//  - 三段可见性逻辑 + spring star 后展开转场都由 `RepoLocalSections` 内部自治
+//    （详见 `RepoDetailScaffold.swift` 文件头 v1.5 修订段）。
 //
 //  ────────────────────────────────────────────────────────────────────────────
 //  README 加载策略
@@ -28,8 +33,15 @@
 //  **关键约束**：
 //  - 使用**外部注入的 readmeVM**（由 `WeeklyDetailView` 局部持有），不复用 HomeView
 //    全局 readmeVM，避免周刊详情污染 manage / trending 主路径的 README 状态机。
-//  - 不接 `translationControl`：翻译 VM 用 `repo.id` 作缓存键，未命中本地（id=0）
-//    会撞坏命名空间；即便本地命中也保持简洁不接（与 trending 详情页同款决策）。
+//  - **翻译入口**（2026-06-11 修订）：参照 `TrendingDetailContent`，**仅本地命中
+//    （`repo.id != 0`）才接 `translationControl`**。理由：R-01 v1.0 设计 ⑬ 明确
+//    「翻译按钮覆盖所有 repo 详情」，weekly 详情也属其中；翻译缓存以 `repo.id`
+//    为外键，未命中本地的 ephemeral repo（id=0,见 `WeeklyDetailView.resolveRepo`
+//    步骤 2/3）会撞坏 `readme_translations(repo_id)` 命名空间,所以未命中时
+//    显式传 nil 关闭入口。
+//  - 与 `translationVM` 共享 HomeView 全局实例（`@Environment` 注入），不为
+//    weekly 单独建一份；按钮触发翻译时按 `control.repo` 派发，不依赖 HomeView
+//    的 `selectedRepoID` 链路 prepare（点击瞬间 VM 自己会用最新 repo 重置）。
 //
 
 import SwiftUI
@@ -46,34 +58,37 @@ struct WeeklyDetailContent: View {
     let readmeVM: ReadmeViewModel
 
     @Environment(AuthSession.self) private var authSession
+    // README 翻译共享 HomeView 注入的全局 translationVM + AppSettings
+    // （2026-06-11 修订，理由见文件头「关键约束」段）。
+    @Environment(ReadmeTranslationViewModel.self) private var translationVM
+    @Environment(AppSettings.self) private var settings
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // R-01 §3.2.4：三段在 ContentView 渲染。weekly 本地命中（id != 0）
-            // 时显示 tags/notes/release，未命中（ephemeral）时隐藏。
-            RepoLocalSections(repo: repo)
-
-            ReadmeStateView(
-                state: readmeVM.state,
-                // 拼接 blob/HEAD：与 trending / manage 详情页一致，让 README 内的相对
-                // 链接能正确解析为 https://github.com/owner/repo/blob/HEAD/xxx。
-                baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
+        ReadmeStateView(
+            state: readmeVM.state,
+            // 与其他详情页共用目录型 base URL，末尾 `/` 是相对链接保留 HEAD 的关键。
+            baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
+            owner: repo.owner,
+            repo: repo.name,
+            onScrollOffsetChange: onScrollOffset,
+            // R-01 v1.0 设计 ⑬：翻译按钮覆盖所有 repo 详情。
+            // 仅本地命中（repo.id != 0）才接入——ephemeral repo 用 id=0 走翻译
+            // 缓存会撞坏 `readme_translations(repo_id)` 命名空间。
+            translationControl: repo.id != 0 ? ReadmeTranslationControl(
+                repo: repo,
+                translationVM: translationVM,
+                settings: settings
+            ) : nil
+        ) {
+            readmeVM.loadTrending(
                 owner: repo.owner,
                 repo: repo.name,
-                onScrollOffsetChange: onScrollOffset,
-                // weekly 详情不接翻译入口（与 trending 详情对齐）。
-                translationControl: nil
-            ) {
-                readmeVM.loadTrending(
-                    owner: repo.owner,
-                    repo: repo.name,
-                    isLoggedIn: authSession.state.isAuthenticated
-                )
-            } onLogin: {
-                authSession.signIn()
-            }
-            .environment(readmeVM)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                isLoggedIn: authSession.state.isAuthenticated
+            )
+        } onLogin: {
+            authSession.signIn()
         }
+        .environment(readmeVM)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

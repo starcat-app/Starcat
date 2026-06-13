@@ -55,6 +55,29 @@
 
 import Foundation
 
+extension Notification.Name {
+
+    /// README 加载完成事件（manage 路径 only，2026-06-12 阅读状态 v2 引入）。
+    ///
+    /// **发射时机**：`ReadmeViewModel.loadInternal` 路径下任一次 `state = .loaded(...)`
+    /// 写入后立即 post。trending 路径（loadTrending）**不发射**——trending repo 大多是
+    /// ephemeral（repo.id = ghRepoId 但 `isStarred = false`），不属于用户库，不应触发
+    /// 阅读状态升级。
+    ///
+    /// **userInfo**：
+    /// - `"repoId": Int64` —— 加载完成的 repo.id（保证 != 0；ephemeral / id=0 不 post）
+    ///
+    /// **订阅方**：`RepoNotesSection`（详情页"阅读状态"段），匹配当前 repo.id 后调用
+    /// `repoNoteRepository.markAsReadIfNeeded(repoId:)` 把 unread 升级为 read。
+    /// 接口设计上是事件流而非直接调用，因为 `ReadmeViewModel` 通过 environment 注入
+    /// 路径在 4 个详情页（manage / trending / weekly / activity）并不完全一致
+    /// （manage 在 HomeView 最外层注入，其他 3 个在 ContentView 子树内注入），
+    /// RepoLocalSections / RepoNotesSection 在 Scaffold 的 metadataPanel 内挂载，
+    /// trending/weekly/activity Shell 的 environment 链不直达。NotificationCenter
+    /// 完全解耦发射方与订阅方，零 environment 改造。
+    static let readmeDidLoad = Notification.Name("StarcatReadmeDidLoad")
+}
+
 @MainActor
 @Observable
 final class ReadmeViewModel {
@@ -87,8 +110,30 @@ final class ReadmeViewModel {
     /// - 手动刷新（`reload(repo:)`）会清掉对应项，给一次重试机会
     private var sessionNotFound: Set<Int64> = []
 
-    init(api: ReadmeAPI) {
+    /// 详情页 HTML 拉到（200 / 304）后触发的可选回调（**manage 路径 only**）。
+    ///
+    /// **2026-06-13 dong4j 补救 B 引入**。
+    /// 文档 `docs/详细设计/26-向量搜索改进.md` §6 关键流程表承诺的「详情页 README 拉到 →
+    /// 异步补 raw Markdown 落 `readmes.content` + 调 `refreshIndexIfChanged`」触发源，
+    /// 之前 2026-06-12 落地时漏接，2026-06-13 通过本回调补齐。
+    ///
+    /// **调用时机**：`loadInternal` 的 `.updated` / `.notModified` 分支拿到非空 html 后；
+    /// **不调用**：`.notFound` / `.failed` / 缓存命中（首段）/ `loadTrending`（trending 路径）。
+    ///
+    /// **典型实现**（由 `HomeView` 装配 manage 路径的 `ReadmeViewModel` 时挂入）：
+    /// 1. `Task { @MainActor in ... }` fire-and-forget，不阻塞详情页渲染；
+    /// 2. `await readmeAPI.refreshMarkdownIfNeeded(for: repo)` 仅在 `readmes.content` 为空时
+    ///    真发 GitHub raw markdown 请求；
+    /// 3. 若返回 `.updated` 才接着 `await semanticSearchService.refreshIndexIfChanged(for: repo)`
+    ///    走 diff 判定 + 视情况重建向量；`.notModified`（content 已存在）不动以省 embedding API。
+    ///
+    /// **为何 trending 路径不调**：trending repo 多为 ephemeral（用户没 star），不属于本地
+    /// 库的 readmes 表 / repo_embeddings 表，补 markdown / 触发向量重建都无意义。
+    private let onHTMLLoaded: ((Repo) -> Void)?
+
+    init(api: ReadmeAPI, onHTMLLoaded: ((Repo) -> Void)? = nil) {
         self.api = api
+        self.onHTMLLoaded = onHTMLLoaded
     }
 
     // MARK: - Actions
@@ -143,6 +188,22 @@ final class ReadmeViewModel {
         currentTask?.cancel()
 
         let key = "\(owner)/\(repo)"
+
+        // v1.6 修订（2026-06-10, dong4j bug 反馈）：未登录态下禁用 README 渲染。
+        //
+        // 与 `loadInternal` 同义（详见该函数 v1.6 修订段长注释）：trending 路径同样
+        // 是 SWR 两段式,未登录用户也会出现「闪现 stale cache → 跳登录提示」的跳帧。
+        // 入口同步覆盖 state 为 .requiresLogin,跳过所有缓存读取与网络刷新。
+        //
+        // 注意:trending 路径的 currentTrendingKey **仍要更新**,否则用户登录后
+        // selectedTrendingRepoID 不变 → onChange 不重触发 loadTrending,但内部 key
+        // 还是上一个 repo,后续命中"同 repo 不变 state"的快速路径会出错。
+        guard isLoggedIn else {
+            currentTrendingKey = key
+            currentRepoId = nil
+            state = .requiresLogin
+            return
+        }
 
         // 切到新 repo 时立即同步设 .loading 占位（race 防护）
         let isSameRepo = (currentTrendingKey == key)
@@ -232,6 +293,36 @@ final class ReadmeViewModel {
             return
         }
 
+        // ────────────────────────────────────────────────────────────────────
+        // v1.6 修订（2026-06-10, dong4j bug 反馈）：未登录态下禁用 README 渲染
+        // ────────────────────────────────────────────────────────────────────
+        //
+        // 问题：未登录用户点 repo 详情页时,会出现「先闪现已缓存 README → 跳到
+        // 登录提示」的视觉跳帧。
+        //
+        // 根因：原 SWR 路径下,未登录用户的请求流：
+        //   1. 第一阶段读 cached → 命中（曾登录用户留下的缓存）→ state = .loaded
+        //      → WebView 渲染 stale 缓存（用户看到 README 内容）
+        //   2. 第二阶段强制走网络 refresh → GitHub 401/403/匿名配额耗尽
+        //   3. catch error → `if !isLoggedIn { state = .requiresLogin }` →
+        //      WebView 切到登录提示（用户看到"跳帧"到登录页）
+        //
+        // dong4j 产品决策：未登录用户**根本不能看 README**（即便本地有缓存或匿名
+        // 配额够用）→ 入口立即同步设 .requiresLogin,跳过所有 SWR 路径,既消除
+        // 跳帧又明确引导登录。
+        //
+        // 关键约束：
+        // - 必须**同步**设 state（不能 await）—— SwiftUI 一帧 commit 即生效;
+        // - 必须**强制覆盖** state（即便上一个 repo 是 .loaded）——`currentTask?.cancel()`
+        //   只能阻止 future write,不会回滚已写的 state;
+        // - 放在 `guard let repo else` 之后,nil repo 仍走 .idle（取消选择不弹登录）;
+        // - 不影响登录用户的 SWR 体验——已登录用户分支完全没动。
+        guard isLoggedIn else {
+            currentRepoId = repo.id
+            state = .requiresLogin
+            return
+        }
+
         // session 404 短路：仅自动加载受其影响；手动 reload 会清掉
         if forceRefresh {
             sessionNotFound.remove(repo.id)
@@ -277,6 +368,14 @@ final class ReadmeViewModel {
             if let c = cached, let html = c.renderedHtml, !html.isEmpty {
                 let cachedAt = Self.parseISO8601(c.cachedAt) ?? Date()
                 self.state = .loaded(html: html, cachedAt: cachedAt)
+                // 阅读状态 v2：缓存命中即视为"已加载"，派发事件让笔记段升级 unread → read。
+                self.postReadmeLoaded(repoId: requestedId)
+                // 2026-06-13 dong4j 补救 B：cache 命中分支也触发——高频路径（用户重复打开
+                // 同 repo / cache 在 6h softTtl 内）会跳过下方网络刷新阶段，不走 .updated /
+                // .notModified，必须在这里 hook 才能让"看详情页 = 自动丰富 markdown"成立。
+                // 后续若 cache 过期再进网络分支，会再触发一次；refreshMarkdownIfNeeded 内部
+                // 对 content 非空短路 .notModified，重复触发 cheap（仅一次本地 DB 查询）。
+                self.onHTMLLoaded?(repo)
                 hasUsableCache = true
             } else {
                 // 无可用缓存：保持 .loading（之前在入口已设置；同 repo 且无 cache 的极端 case 也补一下）
@@ -316,6 +415,12 @@ final class ReadmeViewModel {
                 if let html = readme.renderedHtml, !html.isEmpty {
                     let cachedAt = Self.parseISO8601(readme.cachedAt) ?? Date()
                     self.state = .loaded(html: html, cachedAt: cachedAt)
+                    // 阅读状态 v2：网络刷新成功，再 post 一次（幂等：repository 端
+                    // markAsReadIfNeeded 对 read/using 行 no-op，不会重复升级）。
+                    self.postReadmeLoaded(repoId: requestedId)
+                    // 2026-06-13 dong4j 补救 B：异步补 raw markdown + 视情况触发向量重建。
+                    // fire-and-forget 由回调实现方自己管 Task；这里只负责告知"HTML 到位"。
+                    self.onHTMLLoaded?(repo)
                 } else {
                     // GitHub 返回 200 但 body 为空（极少见）→ 视作 empty
                     self.state = .empty
@@ -328,6 +433,13 @@ final class ReadmeViewModel {
                 if let html = readme.renderedHtml, !html.isEmpty {
                     let cachedAt = Self.parseISO8601(readme.cachedAt) ?? Date()
                     self.state = .loaded(html: html, cachedAt: cachedAt)
+                    // 304 路径同样视为"加载完成"事件；与上方两处幂等。
+                    self.postReadmeLoaded(repoId: requestedId)
+                    // 2026-06-13 补救 B：304 路径也触发——HTML 没变但 `readmes.content`
+                    // 可能为空（用户从未跑过 SemanticIndexBuilder / 之前是新 user），
+                    // 给它一次懒补 markdown 的机会；refreshMarkdownIfNeeded 内部 content
+                    // 非空时短路 .notModified，不会无谓打 GitHub。
+                    self.onHTMLLoaded?(repo)
                 }
                 // html 为空的 304 理论上不该发生（refreshReadme 会走 unconditional 兜底），
                 // 防御性不动 state。
@@ -355,6 +467,21 @@ final class ReadmeViewModel {
     }
 
     // MARK: - Helpers
+
+    /// 派发 README 加载完成事件（阅读状态 v2，2026-06-12）。
+    ///
+    /// **守卫**：`repoId != 0` —— ephemeral repo（trending / weekly fallback）显式跳过，
+    /// 不污染 `repo_notes` 表。manage 路径的 repo.id 都是真 DB 主键，必非 0。
+    ///
+    /// 仅由 `loadInternal` 调用（manage 路径）；trending 路径不调用。
+    private func postReadmeLoaded(repoId: Int64) {
+        guard repoId != 0 else { return }
+        NotificationCenter.default.post(
+            name: .readmeDidLoad,
+            object: nil,
+            userInfo: ["repoId": repoId]
+        )
+    }
 
     /// 判断"未登录时 GitHub 拒绝请求"的错误——若是，UI 应引导登录而非展示原始报错。
     ///

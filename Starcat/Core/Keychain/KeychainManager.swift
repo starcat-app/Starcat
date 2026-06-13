@@ -57,11 +57,11 @@ protocol KeychainManaging: Sendable {
     func loadAIKey(forProvider providerID: String) throws -> String?
     func deleteAIKey(forProvider providerID: String) throws
 
-    // R-01 v1.2 新增（2026-06-10）：自建后端服务 API Key（trending / weekly / sharing）。
+    // R-01 v1.2 新增（2026-06-10）：自建后端服务 API Key（trending / weekly / sharing / wiki）。
     // BYOK 模式下用户在「设置 → 服务」Tab 填的 Key 走加密本地文件持久化，
     // 与 GitHub Token / AI Key 同等安全级别（AES-GCM）。
     //
-    // serviceID 参数：用 `ThirdPartyService.rawValue`（"trending" / "weekly" / "sharing"），
+    // serviceID 参数：用 `ThirdPartyService.rawValue`（"trending" / "weekly" / "sharing" / "wiki"），
     // 调用方负责传字符串 ID（避免 KeychainManaging 反向依赖业务枚举类型）。
     func storeServiceAPIKey(_ key: String, forService serviceID: String) throws
     func loadServiceAPIKey(forService serviceID: String) throws -> String?
@@ -86,7 +86,8 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
 
         /// R-01 v1.2：自建后端服务 API Key 命名空间（与 aiKey 解耦，避免 ID 冲突）。
         ///
-        /// 形如 `service_api_key::trending` / `service_api_key::weekly` / `service_api_key::sharing`。
+        /// 形如 `service_api_key::trending` / `service_api_key::weekly` / `service_api_key::sharing` /
+        /// `service_api_key::wiki`。
         static func serviceAPIKey(serviceID: String) -> String {
             "service_api_key::\(serviceID)"
         }
@@ -225,7 +226,7 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
         AppLog.keychain.info("AI provider key removed")
     }
 
-    // MARK: - R-01 自建后端服务 API Key（trending / weekly / sharing）
+    // MARK: - R-01 自建后端服务 API Key（trending / weekly / sharing / wiki）
 
     func storeServiceAPIKey(_ key: String, forService serviceID: String) throws {
         try setValue(key, forAccount: Account.serviceAPIKey(serviceID: serviceID))

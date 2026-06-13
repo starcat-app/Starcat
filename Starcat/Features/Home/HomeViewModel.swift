@@ -255,15 +255,16 @@ final class HomeViewModel {
     /// - 与现有 `statusMap` 走的"全表加载到字典 + applyView 过滤"路径完全一致
     private var repoTagsMap: [Int64: Set<String>] = [:]
 
-    // MARK: - 多选模式（W4 A5）
-
-    /// 是否进入多选模式。开启后中栏 List 切换到多选 selection binding。
-    /// D-04 风格：`private(set)`，UI 通过 `toggleMultiSelectMode()` 切换。
-    private(set) var isMultiSelectMode: Bool = false
-
-    /// 多选模式下选中的 repo id 集合。SwiftUI List(selection:) 双向绑定，
-    /// 所以这里必须可写。退出多选模式时由 `exitMultiSelectMode()` 清空。
-    var multiSelectedRepoIDs: Set<Int64> = []
+    // MARK: - 多选模式
+    //
+    // W12 toolbar PR-5（2026-06-12）：原 W4 A5 的 `isMultiSelectMode` / `multiSelectedRepoIDs`
+    // / `enterMultiSelectMode` / `exitMultiSelectMode` / `toggleMultiSelectMode` 已全部迁移到
+    // `AppDependencies.manageMultiSelectionStore`（与 trending/weekly/activity 同款 MultiSelectionStore）。
+    //
+    // 迁移动因：4 个分类多选交互完全统一（点击 toggle / Cmd+A 全选 / 退出 / 视觉），由 dong4j
+    // grill-me 拍板 A 路线。原来在 viewModel 内的 `formIntersection(visibleIDs)` 清理逻辑也下移到
+    // RepoListView 的 `.onChange(of: itemsRevision)` 调 `store.retain(visibleIDs:)`，view 层主导
+    // store 生命周期（A2 路线），避免 viewModel 重新持 store 引用造成耦合。
 
     // MARK: - 排序（W4-4 D1）
 
@@ -309,35 +310,59 @@ final class HomeViewModel {
 
     /// reloadItems 时一并拉的 repo→status 映射。
     /// 用 dict 而非每行查询避免 N+1;applyView 直接读取做过滤。
-    private var statusMap: [Int64: RepoStatus] = [:]
+    ///
+    /// **可见性策略**（v2，2026-06-12）：从 `private` 升为 `private(set)`，
+    /// 让 `RepoListView` 在构造 `RepoCardViewData.readStatus` 时能读取本字段。
+    /// `@Observable` 在 view body 里读 dict 会订阅整个 dict 的变更，详情页
+    /// 改 status 后通过 `applyStatusChange(...)` 局部更新 dict → SwiftUI
+    /// 触发 List 重渲染 → row 角标即时刷新。
+    private(set) var statusMap: [Int64: RepoStatus] = [:]
+
+    /// `RepoListView` 渲染 row 时读取本方法填充 `RepoCardViewData.readStatus`。
+    ///
+    /// 没在 statusMap 里的 repoId 返回 `.unread`（implicit unread）——
+    /// 这与 `applyView()` 状态过滤的 `statusMap[id] ?? .unread` 默认行为一致：
+    /// `repo_notes` 表没行 == 用户从没打开过详情页 == 未读。
+    ///
+    /// 该方法只在 Manage 列表 row 渲染时调用，4 场景中只有 Manage 在用，
+    /// 因此可以安全返回非 nil（trending/weekly/activity 不走本路径）。
+    func readStatus(for repoId: Int64) -> RepoStatus {
+        statusMap[repoId] ?? .unread
+    }
+
+    /// 详情页修改 status 后由 `NotificationCenter.repoStatusDidChange` 触发，
+    /// 局部更新 statusMap 让 row 角标即时刷新。
+    ///
+    /// 单条 dict 写入是 O(1) 的；不调 `applyView()` 因为状态过滤未生效时（statusFilter == nil）
+    /// 仅角标可见性变，List 的 items 序列不变；若 statusFilter == status，需要 applyView
+    /// 让该 row 进入 / 退出过滤集合 —— 这里统一调 applyView，让逻辑更直观。
+    fileprivate func applyStatusChange(repoId: Int64, status: RepoStatus) {
+        guard statusMap[repoId] != status else { return }
+        statusMap[repoId] = status
+        applyView()
+    }
+
+    /// 订阅 `.repoStatusDidChange` 通知，让详情页改 status 后主列表角标即时刷新（v2，2026-06-12）。
+    ///
+    /// **调用方**：`RepoListView` 在 `.task` 里调用，与 view lifetime 绑定（view 退出 task cancel）。
+    /// **关键约束**：
+    /// - for-await-in 是 AsyncSequence 标准模式（与 `RepoNotesSection` 监听 `.readmeDidLoad` 同源）
+    /// - Task.isCancelled 保证 view 退出后立即跳出循环
+    /// - userInfo 解析失败（payload 不全）则忽略；不抛错（避免一次坏 post 中断整个 observer）
+    /// - 用 `RepoStatus.parse(_:)` 保证 v1 旧值兼容（理论上发射方都用 v2 值，但守一手）
+    func observeRepoStatusChanges() async {
+        let stream = NotificationCenter.default.notifications(named: .repoStatusDidChange)
+        for await note in stream {
+            guard !Task.isCancelled else { break }
+            guard let repoId = note.userInfo?["repoId"] as? Int64,
+                  let statusRaw = note.userInfo?["status"] as? String else { continue }
+            let status = RepoStatus.parse(statusRaw)
+            applyStatusChange(repoId: repoId, status: status)
+        }
+    }
 
     /// 派生：当前是否有任何过滤器生效（toolbar 显示徽标用）。
     var hasActiveFilter: Bool { hideArchived || hideForks || statusFilter != nil }
-
-    /// 切换多选模式。
-    /// 切入：清空单选 selectedRepoID（避免详情页显示残留）；
-    /// 切出：清空 multiSelectedRepoIDs（避免下次切入时出现脏数据）。
-    func toggleMultiSelectMode() {
-        if isMultiSelectMode {
-            exitMultiSelectMode()
-        } else {
-            enterMultiSelectMode()
-        }
-    }
-
-    func enterMultiSelectMode() {
-        isMultiSelectMode = true
-        // 把当前单选自动作为多选首项，符合"先选一个再扩选"的直觉
-        if let id = selectedRepoID {
-            multiSelectedRepoIDs = [id]
-        }
-        selectedRepoID = nil
-    }
-
-    func exitMultiSelectMode() {
-        isMultiSelectMode = false
-        multiSelectedRepoIDs = []
-    }
 
     // MARK: - 依赖
 
@@ -377,6 +402,87 @@ final class HomeViewModel {
     }
 
     // MARK: - 公开 action
+
+    /// D-30 配套（2026-06-13）：账号切换时清空所有与登录身份强绑定的 in-memory 状态。
+    ///
+    /// **为什么需要这个方法**：
+    /// D-30 在 `AppDependencies.switchUserDatabase(to:)` 里把 `DatabaseManager.currentPool`
+    /// 切到了新用户的 `users/<newId>/starcat.sqlite`，**DB 层物理隔离已经完成**。
+    /// 但 `HomeViewModel` 是个 `@Observable` 长生命周期对象（由 `HomeView` 用 `@State`
+    /// 持有，跨账号切换不重建），它持有的 in-memory 状态 —— `listCache` /
+    /// `items` / Sidebar 计数 / `statusMap` / `tags` / `repoTagsMap` —— 仍然是
+    /// **旧账号的快照**。
+    ///
+    /// 不主动清这些缓存 → 表现为「退出 A 用 B 登录，看到的还是 A 的列表」：
+    /// 1. `listCache[.allStars]` 5min TTL 内 → `HomeView.task(id: viewModel.selection)`
+    ///    内 `guard !viewModel.hasCachedItems else { return }` 直接 short-circuit；
+    /// 2. 即便 selection 不在 listCache 里，`statusMap` / `repoTagsMap` 等映射
+    ///    在 `applyView()` 时仍按旧账号数据染色；
+    /// 3. Sidebar 行数（`totalCount` / `untaggedCount` / `languageStats` / `tags`）
+    ///    全是旧账号的，新账号看到的导航全错。
+    ///
+    /// **调用时机**（**只有这一处**）：`HomeView` 监听到 `authSession.state.user?.id`
+    /// 变化时（含登入 / 登出 / 切换账号三条路径）。**不要从其它地方调**：
+    /// - 不是任何手动 refresh 路径，那条路径用 `reloadItems(forceRefresh: true)`；
+    /// - 不是 sidebar selection 变化路径，那条已有 didSet 处理。
+    ///
+    /// **清空的字段（与账号强绑定）**：列表与 Sidebar 全套数据 + 选择/搜索状态。
+    ///
+    /// **保留的字段（用户级偏好，跨账号共享）**：
+    /// - `sortOption` / `hideArchived` / `hideForks` / `statusFilter` / `smartSearchMode`
+    ///   —— 这些 4 个偏好从 `AppSettings` 同步进来，**`AppSettings` 是跨账号全局的**
+    ///   （NSUbiquitousKeyValueStore / UserDefaults），所以在 viewModel 这一层
+    ///   也保留这些值，不需要重置。
+    /// - `selection` —— 由 `HomeView` 在 onChange 内单独处理（登入恢复 saved
+    ///   manage selection / 登出切到 trending），本方法**不动 selection**，
+    ///   避免和 HomeView 的赋值打架。
+    ///
+    /// **关键约束**（已踩过的坑）：
+    /// 1. 必须在 `HomeView` 切 `viewModel.selection` **之前**调，否则 selection 的
+    ///    didSet 会先用旧 listCache 做 eager cache load（见上方 selection 字段
+    ///    didSet line 66-75）→ 旧数据先闪一帧再被覆盖。
+    /// 2. `currentReloadTask` / `prefetchTask` 必须 `.cancel()` —— 旧账号 DB pool
+    ///    虽然已被 D-30 切走，但旧 task 内的 `try await database.writer.read` 在
+    ///    切换瞬间可能正持有旧 pool 的 read transaction（GRDB 内部读连接池）。
+    ///    cancel 后旧 task 的 `Repo` 结果即便回来也由 `applyView()` 的 race 防护
+    ///    路径丢弃（reloadItems 实现内的 task 身份对比）。
+    /// 3. `selectedTagIds = []` 必须放在 `repoTagsMap.removeAll()` **之后**，
+    ///    避免 didSet 触发的 `applyView()` 用空 `repoTagsMap` 配旧 `rawItems` 渲一帧。
+    ///    实际上整段 reset 跑完 SwiftUI 才会触发一次 body 重算（`@Observable` 合批），
+    ///    但顺序仍按 "DB 上游 → UI 下游" 写，便于读代码的人理解。
+    /// 4. `isLoading = true` 强制开骨架屏 —— 防止"selection 不变 + listCache 清空"
+    ///    的 corner case 下 UI 闪现一帧空列表（详见 HomeView 那边的注释）。
+    func resetAllStateForUserSwitch() {
+        currentReloadTask?.cancel()
+        currentReloadTask = nil
+        prefetchTask?.cancel()
+        prefetchTask = nil
+
+        listCache.removeAll()
+        rawItems = []
+        statusMap = [:]
+        repoTagsMap = [:]
+        semanticHitMap = [:]
+        selectedTagIds = []
+
+        items = []
+        itemsRevision &+= 1
+
+        totalCount = 0
+        untaggedCount = 0
+        languageStats = []
+        tags = []
+        tagCounts = [:]
+
+        selectedRepoID = nil
+        searchQuery = ""
+        searchSubmissionID &+= 1
+
+        loadError = nil
+        isRefreshing = false
+        isSemanticIndexing = false
+        isLoading = true
+    }
 
     func submitSearch(_ query: String) {
         searchQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -798,8 +904,10 @@ final class HomeViewModel {
     ///   避免触发 SwiftUI 的 `List.id(itemsRevision)` 重建 + `listRowReveal` 入场动画。
     /// - 典型受益场景：selection didSet 已经急切加载过缓存，紧跟着 reloadItems 又调了一遍
     ///   loadFromCache → applyView，数据完全相同，本来是一次浪费的 list rebuild。
-    /// - 仍然执行 selectedRepoID / multiSelectedRepoIDs 清理，因为这些不依赖 items 是否变化，
-    ///   只依赖最新 view 的 ID 集合。
+    /// - 仍然执行 selectedRepoID 清理（不依赖 items 是否变化）。
+    /// - W12 toolbar PR-5：多选状态清理（formIntersection）已下移到 RepoListView
+    ///   `.onChange(of: itemsRevision)` 调 `manageMultiSelectionStore.retain(visibleIDs:)`，
+    ///   viewModel 不再持 store 引用（A2 路线 / 解耦保持）。
     private func applyView() {
         var view = rawItems
         if hideArchived { view.removeAll { $0.isArchived } }
@@ -841,11 +949,7 @@ final class HomeViewModel {
         if let id = selectedRepoID, !view.contains(where: { $0.id == id }) {
             selectedRepoID = nil
         }
-        if isMultiSelectMode {
-            // 多选模式下被过滤掉的 id 也要从选中集合移除
-            let visibleIDs = Set(view.map(\.id))
-            multiSelectedRepoIDs.formIntersection(visibleIDs)
-        }
+        // 多选模式的 prune 已迁到 RepoListView.onChange(of: itemsRevision)（W12 toolbar PR-5）
     }
 }
 

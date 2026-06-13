@@ -59,6 +59,7 @@ struct StarcatAPIKeyTests {
         #expect(StarcatAPIKeyResolver.resolve(for: .trending, settings: settings) == nil)
         #expect(StarcatAPIKeyResolver.resolve(for: .weekly, settings: settings) == nil)
         #expect(StarcatAPIKeyResolver.resolve(for: .sharing, settings: settings) == nil)
+        #expect(StarcatAPIKeyResolver.resolve(for: .wiki, settings: settings) == nil)
     }
 
     @Test("BYOK 覆盖 production 默认（hybrid 高优先）")
@@ -78,9 +79,10 @@ struct StarcatAPIKeyTests {
 
         // .trending 走 BYOK
         #expect(StarcatAPIKeyResolver.resolve(for: .trending, settings: settings) == "sk-starcat-only-trending")
-        // .weekly / .sharing 未配置 → nil
+        // .weekly / .sharing / .wiki 未配置 → nil
         #expect(StarcatAPIKeyResolver.resolve(for: .weekly, settings: settings) == nil)
         #expect(StarcatAPIKeyResolver.resolve(for: .sharing, settings: settings) == nil)
+        #expect(StarcatAPIKeyResolver.resolve(for: .wiki, settings: settings) == nil)
     }
 
     @Test("BYOK 写空字符串 → 等价 reset，resolve 回退默认")

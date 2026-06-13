@@ -34,6 +34,21 @@ struct SmartSearchField: View {
     let onSubmitSearch: (String) -> Void
     let onRefreshSemanticIndex: () -> Void
 
+    /// W12 toolbar 专项 PR-2：禁用态。
+    ///
+    /// 设计动机：搜索框已扩到所有页面常驻显示，但 `.keyword` / `.semantic` 模式只对
+    /// Manage 页面有意义（Trending / Activity / Weekly 没有本地 FTS5 / 向量索引）。
+    /// 非 Manage 页面调用方传 `isDisabled = true`：
+    /// - 折叠态图标变灰；
+    /// - 展开后的 TextField + 提交按钮 / 刷新索引按钮全部 disabled；
+    /// - 整个组件挂 `.help(disabledHelpKey)` 解释为何不能用（未来 GitHub 搜索模式
+    ///   上线后调用方按 mode 灵活决定 isDisabled）。
+    /// 默认 `false`，沿用原行为。
+    var isDisabled: Bool = false
+
+    /// 禁用态的 tooltip 文案 key。仅 `isDisabled == true` 时生效。
+    var disabledHelpKey: LocalizedStringKey = "search.disabledInPage"
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var draftText = ""
@@ -69,9 +84,13 @@ struct SmartSearchField: View {
             }
         }
         .frame(width: shouldExpand ? expandedWidth : collapsedWidth, height: height)
+        .opacity(isDisabled ? 0.55 : 1.0)
+        .help(isDisabled ? disabledHelpKey : (mode == .semantic ? "search.semantic.placeholder" : "search.repoPlaceholder"))
         .animation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.86), value: shouldExpand)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: mode)
         .onChange(of: isTextFieldFocused) { _, focused in
+            // PR-2：禁用态不参与展开/折叠状态切换，避免点击造成意外展开。
+            guard !isDisabled else { return }
             if focused {
                 isExpanded = true
             } else {
@@ -79,11 +98,13 @@ struct SmartSearchField: View {
             }
         }
         .onChange(of: isCollapsedIconFocused) { _, focused in
+            guard !isDisabled else { return }
             if focused {
                 expandAndFocusInput()
             }
         }
         .onChange(of: mode) { _, _ in
+            guard !isDisabled else { return }
             expandAndFocusInput()
         }
         .onAppear {
@@ -103,6 +124,8 @@ struct SmartSearchField: View {
     /// 这样可以避免一次点击同时触发“展开”和“打开菜单”的歧义。
     private var collapsedButton: some View {
         Button {
+            // PR-2 禁用态：点击 no-op；外层 `.help(disabledHelpKey)` 已说明原因。
+            guard !isDisabled else { return }
             expandAndFocusInput()
         } label: {
             Image(systemName: mode.systemImage)
@@ -114,7 +137,7 @@ struct SmartSearchField: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .focused($isCollapsedIconFocused)
-        .help(mode == .semantic ? Text("search.semantic.placeholder") : Text("search.repoPlaceholder"))
+        .disabled(isDisabled)
         .background(searchBackground)
         .overlay(searchBorder)
         .overlay(aiGlow)
@@ -134,6 +157,7 @@ struct SmartSearchField: View {
                 .onSubmit {
                     commitSearch()
                 }
+                .disabled(isDisabled)
 
             if isSemantic {
                 Divider()
@@ -154,6 +178,7 @@ struct SmartSearchField: View {
         .overlay(aiGlow)
         .contentShape(Capsule(style: .continuous))
         .onTapGesture {
+            guard !isDisabled else { return }
             expandAndFocusInput()
         }
     }
@@ -185,6 +210,7 @@ struct SmartSearchField: View {
         }
         .menuStyle(.borderlessButton)
         .focusEffectDisabled()
+        .disabled(isDisabled)
         .help("search.mode.hint")
     }
 
@@ -206,7 +232,7 @@ struct SmartSearchField: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .disabled(isIndexing)
+        .disabled(isIndexing || isDisabled)
         .foregroundStyle(isIndexing ? Color.secondary : Color.green)
         .help(isIndexing ? Text("search.semantic.indexing") : Text("search.semantic.refreshIndex"))
     }

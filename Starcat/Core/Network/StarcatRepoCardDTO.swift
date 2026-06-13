@@ -46,7 +46,7 @@ import Foundation
 
 // MARK: - Envelope（统一顶层包装见 StarcatEnvelope.swift）
 //
-// `/api/v1/repos` / `/api/v1/projects` 端点的顶层响应统一走 `StarcatEnvelope<[StarcatRepoCardDTO]>`，
+// `/api/v1/repos` / `/api/v1/weekly` 端点的顶层响应统一走 `StarcatEnvelope<[StarcatRepoCardDTO]>`，
 // 单 repo 聚合 endpoint 走 `StarcatEnvelope<StarcatRepoCardDTO>`，定义在 StarcatEnvelope.swift 里。
 // 旧的非泛型 `StarcatRepoCardResponse` 已删除（R-01 数据层接通时统一用 `StarcatEnvelopeDecoder.decode`）。
 
@@ -193,7 +193,8 @@ struct StarcatRepoCardDTO: Decodable, Sendable, Equatable {
         self.fullName = try c.decode(String.self, forKey: .fullName)
         self.owner = try c.decode(String.self, forKey: .owner)
         self.repo = try c.decode(String.self, forKey: .repo)
-        self.ownerAvatar = try c.decodeIfPresent(URL.self, forKey: .ownerAvatar)
+        // URL 字段一律走 decodeOptionalURL，容错后端"空字符串"语义。详见 helper 注释。
+        self.ownerAvatar = try Self.decodeOptionalURL(c, forKey: .ownerAvatar)
         self.description = try c.decodeIfPresent(String.self, forKey: .description)
         self.language = try c.decodeIfPresent(String.self, forKey: .language)
         self.stars = try c.decodeIfPresent(Int.self, forKey: .stars) ?? 0
@@ -201,7 +202,7 @@ struct StarcatRepoCardDTO: Decodable, Sendable, Equatable {
         self.watchers = try c.decodeIfPresent(Int.self, forKey: .watchers) ?? 0
         self.subscribers = try c.decodeIfPresent(Int.self, forKey: .subscribers) ?? 0
         self.topics = try c.decodeIfPresent([String].self, forKey: .topics) ?? []
-        self.homepage = try c.decodeIfPresent(URL.self, forKey: .homepage)
+        self.homepage = try Self.decodeOptionalURL(c, forKey: .homepage)
         self.licenseSpdx = try c.decodeIfPresent(String.self, forKey: .licenseSpdx)
         self.isArchived = try c.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
         self.isFork = try c.decodeIfPresent(Bool.self, forKey: .isFork) ?? false
@@ -211,9 +212,46 @@ struct StarcatRepoCardDTO: Decodable, Sendable, Equatable {
         self.pushedAt = try c.decodeIfPresent(String.self, forKey: .pushedAt)
         self.updatedAt = try c.decodeIfPresent(String.self, forKey: .updatedAt)
         self.createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
-        self.htmlUrl = try c.decodeIfPresent(URL.self, forKey: .htmlUrl)
+        self.htmlUrl = try Self.decodeOptionalURL(c, forKey: .htmlUrl)
         self.trending = try c.decodeIfPresent(TrendingExtension.self, forKey: .trending)
         self.weekly = try c.decodeIfPresent(WeeklyExtension.self, forKey: .weekly)
+    }
+
+    /// 容错版本的 `Optional<URL>` 解码：把 `""`（空字符串）当作 nil，避免整批解码崩。
+    ///
+    /// 为什么需要这个 helper（2026-06-11 trending-api 实战踩坑）：
+    /// - 后端 enricher 直接把 GitHub API 的 `homepage` 字段透传，GitHub 的 `homepage` 在
+    ///   仓库未填主页时返回的是 `""`（空字符串），不是 `null`。
+    /// - Swift 标准库 `URL` 的 Decodable 实现是先 decode 出 String，再调
+    ///   `URL(string:)`；对 `""`，新版 Swift 返回 nil 并抛 `DecodingError.dataCorrupted`。
+    /// - `decodeIfPresent(URL.self, ...)` 只跳过 `null`，对 `""` 仍走 URL 解码 → 抛错 →
+    ///   整个 `[StarcatRepoCardDTO]` 数组解码失败 → 客户端报 "未能读取数据，因为它的格式不正确"。
+    ///
+    /// 设计取舍：这是**客户端侧的最后防线**。后端 enricher 同步在做归一化（空字符串 → nil），
+    /// 但生产 fly.dev 上的旧版本可能短期内不会同步部署，客户端必须自己扛得住，
+    /// 同时新引入的「发现型」后端（未来的 trending v2 / weekly v2 等）也都受益。
+    ///
+    /// 同样适用于 `ownerAvatar` / `htmlUrl`（防御性，目前没观察到空，但成本很低）。
+    /// `TrendingContributor.avatar` 是必填 `URL`，那里若真给空字符串就该直接报错让人发现，不在本函数适用范围。
+    private static func decodeOptionalURL(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) throws -> URL? {
+        // 不直接 decode URL 是因为 URL 的 Decodable 实现对空串会抛错；先取 String 再判空。
+        guard let raw = try container.decodeIfPresent(String.self, forKey: key) else {
+            return nil
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        // 空串过滤掉之后还可能是非法 URL（如 "not a url"），此时 URL(string:) 返回 nil，
+        // 这里也吞掉（设计意图是「客户端永远不该被脏数据卡住」），但打 OSLog 让排查可见。
+        if let url = URL(string: trimmed) {
+            return url
+        }
+        AppLog.network.warning(
+            "decodeOptionalURL: dropping invalid URL string for key=\(key.stringValue, privacy: .public) raw=\(trimmed, privacy: .public)"
+        )
+        return nil
     }
 
     /// 测试 / fixture 使用的 memberwise init。生产代码请走 JSONDecoder 解码。
@@ -376,7 +414,7 @@ extension StarcatRepoCardDTO {
             updatedAt: updatedAt,
             starredAt: nil,
             cachedAt: nil,
-            // R-01 v1.2 GRDB v8 新增字段（2026-06-10 落地）：DTO → Repo 全字段透传
+            // R-01 v1.2 扩展 4 字段（2026-06-10 落地）：DTO → Repo 全字段透传
             ownerAvatar: ownerAvatar?.absoluteString,
             subscribersCount: subscribers,
             defaultBranch: defaultBranch,

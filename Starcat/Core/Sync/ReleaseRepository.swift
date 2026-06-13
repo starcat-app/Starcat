@@ -15,16 +15,16 @@ import GRDB
 
 struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
 
-    private let writer: any DatabaseWriter
+    private let database: any DatabaseManaging
 
     init(database: any DatabaseManaging) {
-        self.writer = database.writer
+        self.database = database
     }
 
     // MARK: - 查询
 
     func latest(forRepo repoId: Int64) async throws -> ReleaseRecord? {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try ReleaseRecord.fetchOne(
                 db,
                 sql: """
@@ -39,7 +39,7 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
     }
 
     func fetch(forRepo repoId: Int64, limit: Int) async throws -> [ReleaseRecord] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try ReleaseRecord.fetchAll(
                 db,
                 sql: """
@@ -54,7 +54,7 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
     }
 
     func fetchTimeline(limit: Int) async throws -> [ReleaseTimelineEntry] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             // 一次 JOIN 同时拿 release + repo，避免 N+1。
             // GRDB 不直接支持"一次 query 解码出两个 model"，这里用裸 SQL 拼成一行宽表，
             // 再用 Row 索引手工 split 出 ReleaseRecord 与 Repo。
@@ -80,7 +80,7 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
                     repoId: row["repo_id"],
                     tagName: row["tag_name"],
                     name: row["name"],
-                    bodyTruncated: row["body_truncated"],
+                    bodyMarkdown: row["body_markdown"],
                     htmlUrl: row["html_url"],
                     isPrerelease: row["is_prerelease"],
                     isDraft: row["is_draft"],
@@ -101,7 +101,7 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
     }
 
     func unreadCount() async throws -> Int {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Int.fetchOne(db, sql: """
                 SELECT COUNT(*) FROM releases r
                 INNER JOIN release_subscriptions s ON s.repo_id = r.repo_id
@@ -114,19 +114,19 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
 
     func upsertMany(_ records: [ReleaseRecord], isReadDefault: Bool) async throws {
         guard !records.isEmpty else { return }
-        try await writer.write { db in
+        try await database.writer.write { db in
             for record in records {
                 try db.execute(
                     sql: """
                     INSERT INTO releases (
-                        id, repo_id, tag_name, name, body_truncated, html_url,
+                        id, repo_id, tag_name, name, body_markdown, html_url,
                         is_prerelease, is_draft, published_at, created_at_remote,
                         assets_json, is_read, fetched_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         tag_name = excluded.tag_name,
                         name = excluded.name,
-                        body_truncated = excluded.body_truncated,
+                        body_markdown = excluded.body_markdown,
                         html_url = excluded.html_url,
                         is_prerelease = excluded.is_prerelease,
                         is_draft = excluded.is_draft,
@@ -137,7 +137,7 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
                     """,
                     arguments: [
                         record.id, record.repoId, record.tagName, record.name,
-                        record.bodyTruncated, record.htmlUrl,
+                        record.bodyMarkdown, record.htmlUrl,
                         record.isPrerelease ? 1 : 0, record.isDraft ? 1 : 0,
                         record.publishedAt, record.createdAtRemote,
                         record.assetsJson, isReadDefault ? 1 : 0, record.fetchedAt
@@ -148,7 +148,7 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
     }
 
     func markRead(releaseId: Int64, isRead: Bool) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(
                 sql: "UPDATE releases SET is_read = ? WHERE id = ?",
                 arguments: [isRead ? 1 : 0, releaseId]
@@ -157,7 +157,7 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
     }
 
     func markAllRead(forRepo repoId: Int64) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(
                 sql: "UPDATE releases SET is_read = 1 WHERE repo_id = ?",
                 arguments: [repoId]
@@ -166,7 +166,7 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
     }
 
     func markAllRead() async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(sql: "UPDATE releases SET is_read = 1")
         }
     }

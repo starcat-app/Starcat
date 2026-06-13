@@ -92,12 +92,17 @@ struct TrendingScaffoldShell: View {
                 translation: repo.id != 0 ? ReadmeTranslationContext(fullName: repo.fullName) : nil,
                 backendHint: nil
             ),
-            // R-01 v1.2 P0：三段渲染已下沉到 ContentView (RepoLocalSections)，
-            // hero 不再持有 showLocalSections 概念；可见性由 RepoLocalSections
-            // 内部根据 repo.id != 0 自动判定。
+            // R-01 v1.2 P0：三段渲染已下沉到 Scaffold metadataPanel (RepoLocalSections),
+            // hero 不再持有 showLocalSections 概念;**v2.0 修订**(2026-06-10)后可见性
+            // 绑 `Repo.isStarred`(本地 DB `is_starred` 列的内存镜像)。
             //
-            // tooltip 与 onStarTapped 行为对齐：已 star 显示「取消 star」；
-            // 未 star（无论本地墓碑行还是 ephemeral）显示「star」。
+            // tooltip 与 onStarTapped 行为对齐(**v2.0 修订**):用 `repo.isStarred`
+            // 派生 —— `resolveRepo()` 步骤 1 命中本地后 displayRepo 就是含真值
+            // isStarred 的本地 row,步骤 2 ephemeral 显式 isStarred=false。已 star
+            // 显示「取消 star」;未 star 显示「star」。**`StarActionService.toggle`
+            // 内部用 `repo.isStarred || registry.contains(...)` 兜住「刚 star 完
+            // displayRepo 还是旧 ephemeral」的瞬间 stale 问题**(详见
+            // `StarringSubsystem.swift` v2.0 修订段)。
             starHelpKey: repo.isStarred ? "repo.unstar" : "trending.star",
             onStarTapped: {
                 try await handleStarTapped(repo: repo)
@@ -111,12 +116,25 @@ struct TrendingScaffoldShell: View {
         )
     }
 
-    /// trailing actions：
-    /// - 本地命中（id != 0）→ `[.share, .ai]`（与 Manage 详情页对齐，share / ai 都依赖 repo.id）
-    /// - 未命中（ephemeral, id == 0）→ 空数组（share 走 AI 摘要缓存键 = repo.id，ephemeral
-    ///   会撞坏；ai 也类似。trending hero 上方已有「在 GitHub 查看」入口承接外链需求）。
+    /// trailing actions(**v2.0 修订**, 2026-06-10):
+    /// - **未登录** → 空数组(未登录态下分享/AI 都不应展示);
+    /// - 已登录 + **未 star** → 空数组(`Repo.isStarred=false`):v9 之后 trending
+    ///   row 自带 ghRepoId,ephemeral repo 满足 `repo.id != 0` 但 `isStarred=false`,
+    ///   守卫绑 `repo.isStarred` 直接拦住 AI 按钮 → 不会撞 `ai_summaries(repo_id=ghRepoId)`
+    ///   FK 失败;
+    /// - 已登录 + **已 star** → `[.share, .ai]`(share / ai 都依赖 repos 表里有
+    ///   repo.id,已 star 即保证 repos 表里已写入)。
+    ///
+    /// **v2.0 从 v1.7 的 `starredRegistry.contains(...)` 回归**:registry async
+    /// bootstrap + SyncManager 304 早退会让 contains 在启动期返 false,改用
+    /// `Repo.isStarred` 直接读本地 DB 列(`resolveRepo` 命中本地时含真值,
+    /// ephemeral 显式 false)。star/unstar 后 `handleStarTapped` 会调 `resolveRepo()`
+    /// 重新解析,trailingActions 自动重计算。
     private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
-        repo.id != 0 ? [.share, .ai] : []
+        guard authSession.state.isAuthenticated, repo.isStarred else {
+            return []
+        }
+        return [.share, .ai]
     }
 
     // MARK: - Repo 解析
@@ -153,31 +171,54 @@ struct TrendingScaffoldShell: View {
 
     // MARK: - Star / Unstar 协调
 
-    /// hero ⭐/☆ chip 点击（**严格按 R-01 §3.2.3 / Q1 / Q2 / N1 / N2 决策**）：
+    /// hero ⭐/☆ chip 点击(**v2.0 修订**, 2026-06-10, R-01 §3.2.3 / Q1 / Q2 / N1 / N2):
     ///
-    /// - 已 star（本地命中且 isStarred = true）→ **直接 unstar，不弹 confirm**
-    /// - 未 star（本地墓碑行 / 本地未命中 ephemeral）→ 直接 star
-    /// - 未登录 → `authSession.signIn()` 触发设备流后**不抛错 return**（chip
-    ///   不抖动，因为这不是失败语义）
-    /// - API 抛错 → 直接重新抛出让 `StarStatChipButton` 触发抖动 + 短暂红色
-    ///   600ms（不弹 toast / alert）
+    /// 与 manage / weekly / activity 完全同构——`StarActionService.toggle(repo:)`
+    /// 内部按 `repo.isStarred || registry.contains(ghRepoId:)` 任一为 true 派生
+    /// star / unstar 分支(**v2.0 折中**:既稳定信任 `Repo.isStarred` 主路径,又
+    /// 用 registry 兜住「刚 star 完 displayRepo 还是 ephemeral」的瞬间 stale)。
     ///
-    /// 注意签名是 `async throws`：throws 不再 catch 写日志，由 chip 统一处理
-    /// 失败反馈（chip 内部 catch 后会调 AppLog.sync.error）。
+    /// - 已 star → 直接 unstar(不弹 confirm,§3.2.3 / Q2)
+    /// - 未 star → 直接 star(`star(owner:repo:)` 内部完成 PUT + GET /repos + DB upsert,
+    ///   ephemeral repo / 本地墓碑行 / 完全未命中三种情形通吃)
+    /// - 未登录 → `authSession.signIn()` 触发设备流后**不抛错 return**(chip
+    ///   不抖动,这不是失败语义)
+    /// - API 抛错 → 直接重新抛出让 `StarStatChipButton` 触发抖动 + 短暂红色 600ms
+    ///   (不弹 toast / alert)
+    ///
+    /// 注意签名是 `async throws`:throws 不再 catch 写日志,由 chip 统一处理失败反馈
+    /// (chip 内部 catch 后会调 AppLog.sync.error)。
     private func handleStarTapped(repo: Repo) async throws {
         guard authSession.state.isAuthenticated else {
             authSession.signIn()
             return
         }
+        try await dependencies.starActionService.toggle(repo: repo)
 
-        if repo.isStarred {
-            try await dependencies.starActionService.unstar(repo: repo)
-        } else {
-            _ = try await dependencies.starActionService.star(owner: repo.owner, repo: repo.name)
-        }
+        // ─────────────────────────────────────────────────────────────────
+        // D-22 followup(2026-06-11, 详见 §6.3 D-24):
+        // toggle 完成后先**用 registry 派生 isStarred 显式更新 displayRepo**,
+        // 再走 sidebar / list 刷新 + resolveRepo。
+        //
+        // 为什么不能只靠 resolveRepo:
+        // - resolveRepo 步骤 1 调 findByOwnerName(owner:name:)。trending 这条
+        //   path 一般能命中(owner/name 来自 GitHub Trending HTML, 与 DB 真值
+        //   大小写一致), 但 weekly 路径源自阮一峰周刊 markdown 解析,大小写
+        //   不规范时不命中 → 退化到 GitHub API → 新 Repo 又是 isStarred=false,
+        //   导致 hero 永远不实心。本次为三个详情页(trending/weekly/activity)
+        //   统一加这条 registry-derived 兜底,语义一致 + 抗 owner/name 漂移。
+        // - registry 是 toggle 内部 `_add`/`_remove` 的同步真值源(@MainActor
+        //   @Observable, 同步内存写入), toggle await 返回后 registry 已是新真值。
+        //
+        // Repo 是 value type 且 `var isStarred: Bool` 可写,直接 copy + 覆值即可。
+        // resolveRepo() 后续会再次覆盖 displayRepo(合回本地完整字段,如 topics /
+        // license / forksCount 等), isStarred 不变(本地真值与 registry 同步)。
+        // ─────────────────────────────────────────────────────────────────
+        let nowStarred = dependencies.starredRegistry.contains(ghRepoId: repo.id)
+        var updated = repo
+        updated.isStarred = nowStarred
+        displayRepo = updated
 
-        // 成功后强制刷 sidebar / list，让 manage 列表 row 状态同步；
-        // 本 view 重新解析一次切到本地真值（hero 三段开启 / 关闭）。
         await homeViewModel.refreshSidebar()
         await homeViewModel.reloadItems(forceRefresh: true)
         await resolveRepo()

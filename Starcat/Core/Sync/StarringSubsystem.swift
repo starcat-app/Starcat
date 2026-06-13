@@ -239,17 +239,100 @@ final class StarActionService {
     ///
     /// - throws: 同 star。失败不修改 registry。
     func unstar(repo: Repo) async throws {
+        try await unstar(ghRepoId: repo.id, owner: repo.owner, name: repo.name)
+    }
+
+    /// Unstar 入口的 by-id overload（W12 toolbar 专项 PR-4 引入）。
+    ///
+    /// 与 `unstar(repo:)` 等价；存在动机：trending / weekly 多选项是 ephemeral —
+    /// 列表里没有完整 `Repo` 实例，但 `ghRepoId` + `owner` + `name` 三元组一定齐全。
+    /// 让 BatchStarService 直接调本 overload，避免在 ephemeral 路径上构造 dummy
+    /// Repo 充入大量 sentinel 字段。
+    ///
+    /// **同文件依赖**：访问 `registry._remove` 是 fileprivate，必须留在本文件内，
+    /// 与 StarringSubsystem 的「写入路径唯一」契约一致（详见文件头注释）。
+    func unstar(ghRepoId: Int64, owner: String, name: String) async throws {
         guard let userID = userIDProvider() else {
             throw StarActionError.notAuthenticated
         }
 
-        try await apiClient.unstar(owner: repo.owner, repo: repo.name)
-        try await repoRepository.markUnstarred(repoId: repo.id, userID: userID)
+        try await apiClient.unstar(owner: owner, repo: name)
+        try await repoRepository.markUnstarred(repoId: ghRepoId, userID: userID)
 
-        registry._remove(repo.id)
+        registry._remove(ghRepoId)
         await homeRefresher?.refreshAfterStarChange()
 
-        AppLog.sync.info("Unstar OK \(repo.fullName, privacy: .public) (id=\(repo.id, privacy: .public))")
+        AppLog.sync.info("Unstar OK \(owner, privacy: .public)/\(name, privacy: .public) (id=\(ghRepoId, privacy: .public))")
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // v1.7 引入 / **v2.0 修订**(2026-06-10, dong4j 真机反馈后回归):
+    // 4 详情页统一 toggle 入口
+    // ────────────────────────────────────────────────────────────────────────
+    //
+    // ## 背景演化
+    //
+    // - **v1.4 / v1.5 修订前**:4 个详情页(Manage / Trending / Weekly / Activity)
+    //   各自实现 `onStarTapped`,行为契约散落在场景层(Manage 写死 unstar、
+    //   Trending 按 repo.isStarred 二分、Weekly 按 isLocalHit 三段...)。
+    //
+    // - **v1.7 改用 `registry.contains(ghRepoId:)` 二分**:本意是绑「写权限锁死的
+    //   单一信任源」,避免 ephemeral repo `isStarred=false` 但 registry 已 add 的
+    //   stale 误判。但 dong4j 真机回归发现 Manage 已 star 的 repo 点 ⭐ 居然走
+    //   star 而不是 unstar。根因:`StarredRegistry.reload()` 是异步的(在
+    //   `AppDependencies.init` 末尾 `Task { await bootstrapper.reload() }`),且
+    //   `SyncManager` 304 ETag 命中早退路径直接 `return`,**不触发 onSyncCompleted
+    //   hook**(v2.0 已补上),任一路径未跑完 → registry.ids 空集 → contains
+    //   永远 false → 本就 starred 的 Manage repo 被当成未 star 重新走 star 分支。
+    //
+    // ## v2.0 折中策略:`repo.isStarred || registry.contains(ghRepoId:)` 任一为 true 走 unstar
+    //
+    // 这是个既稳又不漏的「双信任源 OR」组合:
+    //
+    // - **`repo.isStarred`(主路径)**:本地 DB `is_starred` 列的内存镜像,在
+    //   `Repo` 对象构造时一次性读出,**同步可信**:
+    //     - Manage:`fetchAllStarred` 已 filter is_starred=true → 真值 true
+    //     - Trending 本地命中:`findByOwnerName` 返回的 row 含 is_starred 真值
+    //     - Trending ephemeral:`makeEphemeralRepo()` 显式 `isStarred = false`
+    //     - Weekly 本地命中 / ephemeral:同 Trending
+    //     - Activity:`item.repo` 来自 ActivityRepository 的 Repo 表查询 → 真值
+    //
+    // - **`registry.contains(ghRepoId:)`(兜底)**:解决「刚 star 完瞬间」的 stale,
+    //   user 在 Trending 详情页第一次 star → `star(...)` 写入 DB + registry add →
+    //   refreshSidebar / reloadItems → 但 displayRepo 可能还是旧 ephemeral
+    //   `isStarred=false`(若 resolveRepo 还没跑完),用户立即再点 ⭐ 应该是
+    //   unstar 但只看 repo.isStarred 会错走 star。registry 此时已含 ghRepoId,
+    //   兜得住。
+    //
+    // 任一条件 true 即 unstar 的合理性:
+    //   - DB true & registry true → 已 star,unstar(主路径)
+    //   - DB true & registry false → 启动期 registry 未 reload,信 DB(v2.0 修复点)
+    //   - DB false & registry true → 刚 star 完 displayRepo 还是 stale,信 registry
+    //   - DB false & registry false → 真未 star,star
+    //
+    // ## 调用方模板(4 个详情页)
+    //
+    // ```swift
+    // guard isAuthenticated else { signIn(); return }
+    // try await dependencies.starActionService.toggle(repo: repo)
+    // await homeViewModel.refreshSidebar()
+    // await homeViewModel.reloadItems(forceRefresh: true)
+    // ```
+    //
+    // ## 关键约束
+    //   - `repo.id` 等价于 `ghRepoId`(R-01 终稿后 repos.id == GitHub repo id),
+    //     trending / weekly ephemeral repo 也走同一字段;
+    //   - 失败语义不变(任意一步抛错都直接上抛,UI 层 chip 抖动 + 短暂红色);
+    //   - view 层守卫(`trailingActions` / `RepoLocalSections.isVisible` /
+    //     `starHelpKey`)**只用 `repo.isStarred`,不再调 registry**——
+    //     view 层不需要兜「刚 star 完」corner case(此时 displayRepo 重解析后
+    //     就是真值),保留单信任源避免 UI 闪烁。
+    func toggle(repo: Repo) async throws {
+        if repo.isStarred || registry.contains(ghRepoId: repo.id) {
+            try await unstar(repo: repo)
+        } else {
+            _ = try await star(owner: repo.owner, repo: repo.name)
+        }
     }
 }
 

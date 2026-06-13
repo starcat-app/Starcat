@@ -597,6 +597,58 @@ final class AppSettings {
         didSet { persist(key: Keys.smartSearchMode, value: smartSearchMode.rawValue) }
     }
 
+    /// AnySearch 总开关。关闭后 Web Provider 和 AI 外部上下文都不得发起请求。
+    var anySearchEnabled: Bool {
+        didSet { persistBool(key: Keys.anySearchEnabled, value: anySearchEnabled) }
+    }
+    var anySearchAnonymousMode: Bool {
+        didSet { persistBool(key: Keys.anySearchAnonymousMode, value: anySearchAnonymousMode) }
+    }
+    var searchIncludeWebInAll: Bool {
+        didSet { persistBool(key: Keys.searchIncludeWebInAll, value: searchIncludeWebInAll) }
+    }
+    var aiExternalContextEnabled: Bool {
+        didSet { persistBool(key: Keys.aiExternalContextEnabled, value: aiExternalContextEnabled) }
+    }
+    var aiExternalContextAllowPrivateRepos: Bool {
+        didSet { persistBool(key: Keys.aiExternalContextAllowPrivateRepos, value: aiExternalContextAllowPrivateRepos) }
+    }
+
+    // MARK: - AI 代码上下文（2026-06-13 引入，RepoContextPacker 客户端接入阶段 X1）
+    //
+    // 3 个偏好字段对应 `docs/详细设计/27-RepoContextPacker设计.md` §0.3 X1：
+    //   1. aiRepoContextEnabled       —— 总开关（默认 true，启用 RepoContextPacker 注入 AI prompt）
+    //   2. aiRepoContextTokenBudget   —— Token 预算（默认 8000，范围 4000-32000，控制 XML 体积）
+    //   3. aiRepoContextTier1MaxLines —— 关键文件保留行数（默认 80，范围 40-200，对应 `TierTruncation.tier1MaxLines`）
+    //
+    // 设计要点：
+    //   - 字段独立于 `aiExternalContextEnabled`（那个是 AnySearch Web 检索结果注入）；
+    //     两个外部上下文源相互正交，用户可独立开关。
+    //   - **不设「私有仓库」开关**：当前 Starcat 的 GitHub OAuth scope 是 `read:user` + `public_repo`，
+    //     API 永远不会返回 isPrivate=true 的 repo（用户即便在 GitHub 上 star 了私有仓库，
+    //     由于 scope 不含 `repo`，列表也拿不到）。Starcat 还没接管"私有仓库可见性"逻辑，
+    //     增加一个永远走不到的开关只会污染设置页并误导用户。
+
+    /// AI 代码上下文总开关。默认开启——这是 P0 价值卖点（让 AI"看到代码"）。
+    /// 关闭后 `RepoAIInsightService.makeSource` 跳过 RepoContextPacker 调用，降级为 README-only。
+    var aiRepoContextEnabled: Bool {
+        didSet { persistBool(key: Keys.aiRepoContextEnabled, value: aiRepoContextEnabled) }
+    }
+
+    /// Token 预算上限。Pass 2 BudgetAllocator 严格遵守，Tier 1 超 budget 降级 pathOnly。
+    /// 范围 4000-32000，默认 8000——经验值：小型仓库（< 50 文件）能装满，中型仓库（50-200 文件）核心覆盖。
+    /// 用户在「关键文件被截断」场景可调大；在 LLM 上下文窗口紧张（gpt-4o-mini 128k 但要省钱）时调小。
+    var aiRepoContextTokenBudget: Int {
+        didSet { defaults.set(aiRepoContextTokenBudget, forKey: Keys.aiRepoContextTokenBudget) }
+    }
+
+    /// 关键文件（Tier 1）头部保留行数。默认 80，对应 `TierTruncation.tier1MaxLines`。
+    /// 范围 40-200：40 行只够看 import + 一两个函数签名；200 行能看到中型文件的主结构。
+    /// 用户调大会让 Tier 1 单文件估算 token 数翻倍（按 `byteCount × 0.27` 估算）。
+    var aiRepoContextTier1MaxLines: Int {
+        didSet { defaults.set(aiRepoContextTier1MaxLines, forKey: Keys.aiRepoContextTier1MaxLines) }
+    }
+
     /// 贡献草坪贪吃蛇玩法（HOM-SNAKE-MODES 2026-06-05）。
     /// 默认 `.greedy`（snk 同款），让"草坪 + 蛇"的卖点立刻直观可感。
     /// 修改时 `ContributionGraphView` 会通过 `.onChange` 重建 animator。
@@ -621,6 +673,82 @@ final class AppSettings {
         didSet { persistBool(key: Keys.isProUser, value: isProUser) }
     }
 
+    // MARK: - AI 向量索引（2026-06-12 引入，决策 C2 / G / E3 落地）
+    //
+    // 5 个偏好字段对应 `docs/详细设计/26-向量搜索改进.md` § 5：
+    //   1. aiReadmeTruncateLength —— README 清洗后截断长度（决策 C2，默认 12000，范围 2000-32000）
+    //   2. aiIndexPreset           —— 阈值预设（严格 / 标准 / 宽松 / 自定义，决策 G）
+    //   3. aiIndexBodyDiffRatio    —— 主体行级 diff 阈值（默认 0.10 = 10%）
+    //   4. aiIndexNotesDiffRatio   —— 笔记行级 diff 阈值（默认 0.20 = 20%）
+    //   5. aiIndexAutoPrefetchEnabled —— 是否启用后台慢速预拉（默认 false：避免无声烧 API）
+    //
+    // 设计要点：
+    //   - 预设和具体数字独立持久化：用户在 Settings 折叠区改具体数字后，preset 自动设为 `.custom`，
+    //     避免"显示『标准』但实际数字不是标准值"的混乱（详见 `applyPresetIfNeeded` 注释）；
+    //   - 单一信任源：`thresholds` 计算属性按 `aiIndexPreset` + `aiIndexBodyDiffRatio` /
+    //     `aiIndexNotesDiffRatio` 返回最终 `DiffThresholds`，调用方（SemanticSearchService /
+    //     SemanticIndexBuilder）只读这个 computed 属性，不直接读字段。
+
+    /// README 清洗后用于 embedding 的最大字符长度（决策 C2）。
+    /// 默认 12000；Settings UI 滑杆范围 2000-32000，步进 1000。
+    /// 字段直接写入 UserDefaults Int 即可；不需要 JSON 编码。
+    var aiReadmeTruncateLength: Int {
+        didSet { defaults.set(aiReadmeTruncateLength, forKey: Keys.aiReadmeTruncateLength) }
+    }
+
+    /// AI 索引阈值预设（决策 G：严格 / 标准 / 宽松 / 自定义）。
+    /// 写入时不会自动覆盖 body / notes 具体数字 —— 由 UI 层在用户主动切换预设时调
+    /// `applyPreset(_:)` 完成"预设 → 具体数字"的同步。
+    var aiIndexPreset: AIIndexPreset {
+        didSet { persist(key: Keys.aiIndexPreset, value: aiIndexPreset.rawValue) }
+    }
+
+    /// 主体行级 diff 阈值（0.0 - 1.0）。
+    /// 由 UI 折叠区直接编辑；编辑后 `aiIndexPreset` 自动切到 `.custom`。
+    var aiIndexBodyDiffRatio: Double {
+        didSet { defaults.set(aiIndexBodyDiffRatio, forKey: Keys.aiIndexBodyDiffRatio) }
+    }
+
+    /// 笔记行级 diff 阈值（0.0 - 1.0）。同上。
+    var aiIndexNotesDiffRatio: Double {
+        didSet { defaults.set(aiIndexNotesDiffRatio, forKey: Keys.aiIndexNotesDiffRatio) }
+    }
+
+    /// 是否启用后台慢速预拉（决策 E3）。
+    /// 默认 **false**：首次切换全量重建代价大，用户应主动在 Settings 启动；
+    /// 旧向量保留可读，搜索不中断。
+    var aiIndexAutoPrefetchEnabled: Bool {
+        didSet { persistBool(key: Keys.aiIndexAutoPrefetchEnabled, value: aiIndexAutoPrefetchEnabled) }
+    }
+
+    /// 计算属性：当前生效的 `DiffThresholds`（单一信任源）。
+    ///
+    /// - 预设 != `.custom` → 用预设的固定阈值（5/10、10/20、20/30）
+    /// - 预设 == `.custom` → 用 body / notes 字段的具体数字
+    ///
+    /// `SemanticSearchService.ensureIndexed` / `SemanticIndexBuilder` 都通过这里取阈值，
+    /// 避免在多个文件里重复"判断预设 + 取阈值"逻辑。
+    var aiIndexThresholds: DiffThresholds {
+        if aiIndexPreset == .custom {
+            return DiffThresholds(
+                bodyDiffRatio: aiIndexBodyDiffRatio,
+                notesDiffRatio: aiIndexNotesDiffRatio
+            )
+        }
+        return aiIndexPreset.thresholds
+    }
+
+    /// 把预设切换到 `preset`，同时同步 body / notes 具体数字字段（保证 Settings UI
+    /// 折叠区的数字与预设一致）。`custom` 时不改具体字段。
+    func applyAIIndexPreset(_ preset: AIIndexPreset) {
+        aiIndexPreset = preset
+        if preset != .custom {
+            let t = preset.thresholds
+            aiIndexBodyDiffRatio = t.bodyDiffRatio
+            aiIndexNotesDiffRatio = t.notesDiffRatio
+        }
+    }
+
     /// HOM-126：自动后台 AI 整理偏好 + 运行态。
     ///
     /// 走 UserDefaults JSON 持久化（与 `aiSummaryTask` 同款）；任何字段变更（开关、阈值、
@@ -639,10 +767,10 @@ final class AppSettings {
 
     // MARK: - 第三方服务自定义 URL（2026-06-08 新增）
 
-    /// 第三方后端服务（Trending / Weekly / Sharing）的用户自定义 URL 字典。
+    /// 第三方后端服务（Trending / Weekly / Sharing / Wiki）的用户自定义 URL 字典。
     ///
     /// 设计要点：
-    /// - 键 = `ThirdPartyService.rawValue`（"trending" / "weekly" / "sharing"）。
+    /// - 键 = `ThirdPartyService.rawValue`（"trending" / "weekly" / "sharing" / "wiki"）。
     ///   用字符串而非直接用枚举做键是为了兼容 `Codable` 持久化 + 让 UserDefaults 直接吃
     ///   `[String: String]`；同时未来新增 service 不需要做迁移。
     /// - 值 = 用户填入的 URL 原始字符串（已通过 `ThirdPartyService.validate` 校验）。
@@ -688,7 +816,7 @@ final class AppSettings {
 
     // MARK: - 第三方服务 API Key（R-01 v1.2 2026-06-09 引入 / 2026-06-10 迁 Keychain）
     //
-    // 三个自建后端（trending / weekly / sharing）改造后强制 Bearer Token 鉴权，前端
+    // 四个自建后端（trending / weekly / sharing / wiki）改造后强制 Bearer Token 鉴权，前端
     // 必须在 Authorization 头里塞 `Bearer <api-key>`，否则任何 /api/v1/* 请求 401。
     //
     // 持久化方式（**2026-06-10 已迁 Keychain**）：
@@ -795,9 +923,10 @@ final class AppSettings {
         self.hideArchived = defaults.object(forKey: Keys.hideArchived) as? Bool ?? false
         self.hideForks = defaults.object(forKey: Keys.hideForks) as? Bool ?? false
 
-        // W4-4 D3：空字符串表示 nil(无过滤);非空字符串尝试匹配 RepoStatus,失败也回落 nil
+        // W4-4 D3：空字符串表示 nil(无过滤);非空字符串走 RepoStatus.parse(lenient),
+        // v1 旧值 reading/deprecated 自动回落到 .read，老用户重启后过滤不丢失。
         let statusRaw = defaults.string(forKey: Keys.statusFilter) ?? ""
-        self.statusFilter = statusRaw.isEmpty ? nil : RepoStatus(rawValue: statusRaw)
+        self.statusFilter = statusRaw.isEmpty ? nil : RepoStatus.parse(statusRaw)
 
         // 上次 Manage 分类：缺失则空串，由 SidebarItem 解码时回落 allStars
         self.lastManageSelectionRaw = defaults.string(forKey: Keys.lastManageSelection) ?? ""
@@ -850,6 +979,18 @@ final class AppSettings {
         self.aiTranslationTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiTranslationTask, defaults: defaults) ?? defaultTranslationTask
         let searchModeRaw = defaults.string(forKey: Keys.smartSearchMode)
         self.smartSearchMode = searchModeRaw.flatMap(SmartSearchMode.init(rawValue:)) ?? .keyword
+        self.anySearchEnabled = defaults.object(forKey: Keys.anySearchEnabled) as? Bool ?? false
+        self.anySearchAnonymousMode = defaults.object(forKey: Keys.anySearchAnonymousMode) as? Bool ?? true
+        self.searchIncludeWebInAll = defaults.object(forKey: Keys.searchIncludeWebInAll) as? Bool ?? false
+        self.aiExternalContextEnabled = defaults.object(forKey: Keys.aiExternalContextEnabled) as? Bool ?? false
+        self.aiExternalContextAllowPrivateRepos = defaults.object(forKey: Keys.aiExternalContextAllowPrivateRepos) as? Bool ?? false
+
+        // 2026-06-13 RepoContextPacker 客户端接入（3 个字段）：
+        // 总开关默认 true（P0 价值卖点）；token budget 默认 8000 / Tier 1 行数默认 80
+        // 与 RepoContextPacker `PackInput.tokenBudget` / `TierTruncation.tier1MaxLines` 缺省值对齐。
+        self.aiRepoContextEnabled = defaults.object(forKey: Keys.aiRepoContextEnabled) as? Bool ?? true
+        self.aiRepoContextTokenBudget = defaults.object(forKey: Keys.aiRepoContextTokenBudget) as? Int ?? 8000
+        self.aiRepoContextTier1MaxLines = defaults.object(forKey: Keys.aiRepoContextTier1MaxLines) as? Int ?? 80
 
         let snakeStyleRaw = defaults.string(forKey: Keys.snakeStyle)
         self.snakeStyle = snakeStyleRaw.flatMap(SnakeStyle.init(rawValue:)) ?? SnakeStyle.default
@@ -864,6 +1005,18 @@ final class AppSettings {
         // HOM-126：自动整理偏好。缺失时回落到 `AutoTidySettings.default`（总开关关 +
         // 启动/同步触发 + 50 个 + 最近 star + 仅标签 + 90% 阈值），与任务描述一致。
         self.autoTidySettings = Self.decodeJSON(AutoTidySettings.self, key: Keys.autoTidySettings, defaults: defaults) ?? .default
+
+        // AI 向量索引（2026-06-12）：截断长度 / 阈值预设 / 主体阈值 / 笔记阈值 / 自动预拉。
+        // 缺失值兜底：截断 12000、预设 .standard、body 10%、notes 20%、自动预拉 false。
+        let truncRaw = defaults.object(forKey: Keys.aiReadmeTruncateLength) as? Int
+        self.aiReadmeTruncateLength = truncRaw ?? ReadmePreprocessor.defaultMaxLength
+        let presetRaw = defaults.string(forKey: Keys.aiIndexPreset)
+        self.aiIndexPreset = presetRaw.flatMap(AIIndexPreset.init(rawValue:)) ?? .standard
+        let bodyRatioRaw = defaults.object(forKey: Keys.aiIndexBodyDiffRatio) as? Double
+        self.aiIndexBodyDiffRatio = bodyRatioRaw ?? DiffThresholds.default.bodyDiffRatio
+        let notesRatioRaw = defaults.object(forKey: Keys.aiIndexNotesDiffRatio) as? Double
+        self.aiIndexNotesDiffRatio = notesRatioRaw ?? DiffThresholds.default.notesDiffRatio
+        self.aiIndexAutoPrefetchEnabled = defaults.object(forKey: Keys.aiIndexAutoPrefetchEnabled) as? Bool ?? false
 
         // 第三方服务自定义 URL（2026-06-08）：缺失或解码失败时为空字典，
         // 所有服务都走 `AppEndpoints.production(for:)` 默认值。
@@ -918,6 +1071,24 @@ final class AppSettings {
             defaults.set(String(decoding: data, as: UTF8.self), forKey: key)
         } catch {
             AppLog.general.error("persistJSON failed for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// AnySearch API Key 复用 service key 的独立命名空间，仍由加密凭据文件承载。
+    func anySearchAPIKey() -> String? {
+        try? keychain.loadServiceAPIKey(forService: "anysearch")
+    }
+
+    func setAnySearchAPIKey(_ value: String?) {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        do {
+            if trimmed.isEmpty {
+                try keychain.deleteServiceAPIKey(forService: "anysearch")
+            } else {
+                try keychain.storeServiceAPIKey(trimmed, forService: "anysearch")
+            }
+        } catch {
+            AppLog.keychain.error("AnySearch API key update failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -1042,6 +1213,11 @@ final class AppSettings {
         static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
         static let aiTranslationTask = "settings.ai.task.translation.v2"  // HOM-68 follow-up
         static let smartSearchMode = "settings.search.mode"
+        static let anySearchEnabled = "settings.search.anysearch.enabled.v1"
+        static let anySearchAnonymousMode = "settings.search.anysearch.anonymous.v1"
+        static let searchIncludeWebInAll = "settings.search.web.includeInAll.v1"
+        static let aiExternalContextEnabled = "settings.ai.externalContext.enabled.v1"
+        static let aiExternalContextAllowPrivateRepos = "settings.ai.externalContext.allowPrivate.v1"
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
         static let isProUser = "settings.pro.isProUser"  // HOM-151
@@ -1051,5 +1227,15 @@ final class AppSettings {
         // 本 key 仅作「启动期一次性迁移识别」用，迁移完成后会被 init 内的 removeObject 清空。
         // 新写入路径不再走 UserDefaults，详见 setCustomAPIKey(_:for:) 注释。
         static let customServiceAPIKeys = "settings.services.customAPIKeys.v1"
+        // 2026-06-12 向量索引改进（5 个字段）
+        static let aiReadmeTruncateLength = "settings.ai.index.readmeTruncateLength.v1"
+        static let aiIndexPreset = "settings.ai.index.preset.v1"
+        static let aiIndexBodyDiffRatio = "settings.ai.index.bodyDiffRatio.v1"
+        static let aiIndexNotesDiffRatio = "settings.ai.index.notesDiffRatio.v1"
+        static let aiIndexAutoPrefetchEnabled = "settings.ai.index.autoPrefetchEnabled.v1"
+        // 2026-06-13 RepoContextPacker 客户端接入（3 个字段，§0.3 X1）
+        static let aiRepoContextEnabled = "settings.ai.repoContext.enabled.v1"
+        static let aiRepoContextTokenBudget = "settings.ai.repoContext.tokenBudget.v1"
+        static let aiRepoContextTier1MaxLines = "settings.ai.repoContext.tier1MaxLines.v1"
     }
 }

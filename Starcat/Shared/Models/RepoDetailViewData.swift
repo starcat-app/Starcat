@@ -78,6 +78,39 @@ struct RepoDetailHero: Sendable {
     let homepage: URL?
 }
 
+/// 详情页 repo name 行右侧的轻量 inline 标识。
+///
+/// Weekly 三源聚合用 `sources` 展示来源小圆图标 + 短时间/期号标签；发行版聚合详情
+/// 用 `systemImage + label` 展示最新发布时间。它刻意保持在 full_name 同行，
+/// 不单独占据详情页纵向空间，也不 fork 顶部 header 组件。
+struct RepoDetailHeaderSourceBadge: Sendable, Equatable {
+    let sources: [WeeklySource]
+    let systemImage: String?
+    let label: String?
+    let url: URL?
+    let help: String?
+
+    init(sources: [WeeklySource], label: String?, url: URL? = nil, help: String? = nil) {
+        self.sources = sources
+        self.systemImage = nil
+        self.label = label
+        self.url = url
+        self.help = help
+    }
+
+    init(systemImage: String, label: String, url: URL? = nil, help: String? = nil) {
+        self.sources = []
+        self.systemImage = systemImage
+        self.label = label
+        self.url = url
+        self.help = help
+    }
+
+    var isVisible: Bool {
+        !sources.isEmpty || systemImage != nil || label?.isEmpty == false
+    }
+}
+
 // MARK: - Repo → RepoDetailHero
 
 extension RepoDetailHero {
@@ -247,15 +280,20 @@ struct RepoDetailViewData {
     /// 仅 Trending / Weekly 详情会传非 nil（Manage 详情来自本地 SQLite，不需要 hint）。
     let backendHint: StarcatRepoCardDTO?
 
+    /// repo full_name 同行右侧的来源标识。Weekly 用于展示三源图标和时间短标签。
+    let headerSourceBadge: RepoDetailHeaderSourceBadge?
+
     init(
         hero: RepoDetailHero,
         trailingActions: [RepoDetailAction] = [],
         translation: ReadmeTranslationContext? = nil,
-        backendHint: StarcatRepoCardDTO? = nil
+        backendHint: StarcatRepoCardDTO? = nil,
+        headerSourceBadge: RepoDetailHeaderSourceBadge? = nil
     ) {
         self.hero = hero
         self.trailingActions = trailingActions
         self.translation = translation
         self.backendHint = backendHint
+        self.headerSourceBadge = headerSourceBadge
     }
 }

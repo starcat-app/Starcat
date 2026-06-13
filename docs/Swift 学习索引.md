@@ -17,8 +17,8 @@
 |---|---|---|
 | `struct` | `Repo` / `APIResponse<T>` / `BytesResponse` / `GRDBRepoRepository` | "Swift struct value type" |
 | `class` (`final class`) | `ReadmeViewModel` / `HomeViewModel` / `MockGitHubAPIClient` | "Swift reference types classes" |
-| `actor` | `GitHubAPIClient`（actor 串行化所有请求） | "Swift actors" |
-| `enum`（含关联值） | `NetworkError` / `LoadState` / `ReadmeRefreshResult` / `SidebarItem` | "Swift enumerations associated values" |
+| `actor` | `GitHubAPIClient` / `WikiAPI`（隔离可变网络配置，支持 URL/Key 热更新） | "Swift actors" |
+| `enum`（含关联值） | `NetworkError` / `LoadState` / `WikiSource.unknown(String)` / `SidebarItem` | "Swift enumerations associated values" |
 | `protocol` | `RepoRepositoryProtocol` / `GitHubAPIClientProtocol` / `GitHubTokenProviding` | "Swift protocols" |
 | `extension` | `extension GitHubAPIClient: GitHubAPIClientProtocol {}` / `extension BytesResponse` | "Swift extensions" |
 | `typealias` | `URLProtocolStub.Handler` | "Swift typealias" |
@@ -53,6 +53,7 @@
 | `do { try ... } catch { ... }` | 单测 `do-catch NetworkError.case` 模式 | "Swift error catching" |
 | `catch SomeError.case` | 精确 catch 某个 case，再 rethrow | "Swift specific error catching" |
 | `Result<Success, Failure>` | `HomeViewModel.reloadItems` 用 `Result<[Repo], Error>` 延迟 throw | "Swift Result type" |
+| 自定义 `Decodable.init(from:)` | `WikiSource` / `WikiProbeStatus` 宽松接收后端未来新增枚举值 | "Swift Decodable init from Decoder singleValueContainer" |
 
 ### 1.5 泛型
 
@@ -95,7 +96,7 @@
 | `async let` | `HomeViewModel.refreshSidebar` 并行起 3 个查询 | "Swift async let concurrency" |
 | `withTaskGroup` | 项目里未用，未来批量场景会引入 | "Swift TaskGroup" |
 | `@MainActor` | `ReadmeViewModel` / `HomeViewModel` / `AppDependencies` / `Coordinator` | "Swift MainActor" |
-| `actor` | `GitHubAPIClient` | "Swift actors data race" |
+| `actor` | `GitHubAPIClient` / `WikiAPI` | "Swift actors data race" |
 | `nonisolated` / `nonisolated(unsafe)` | `URLProtocolStub` 静态可变属性 | "Swift nonisolated keyword" |
 | `Sendable` / `@Sendable` / `@unchecked Sendable` | `final class URLProtocolStub: URLProtocol, @unchecked Sendable` | "Swift Sendable types concurrency" |
 | `CancellationError` | `catch is CancellationError` in `GitHubAPIClient.perform<T>` | "Swift CancellationError" |
@@ -137,7 +138,8 @@
 
 | 关键词 | 用法点 | 搜索词 |
 |---|---|---|
-| `.task(id:)` | View 出现时拉数据，id 变化时重跑 | "SwiftUI task modifier id" |
+| `.task(id:)` | `RepoWikiMenu` 随 `repo.fullName` 变化取消旧查询并重跑 | "SwiftUI task modifier id cancellation" |
+| `Menu` | `RepoWikiMenu` 仅在存在已收录来源时展示外部 Wiki 下拉项 | "SwiftUI Menu macOS" |
 | `.onChange(of:)` | `HomeView.onChange(selectedRepoID)` 驱动 ReadmeViewModel | "SwiftUI onChange iOS 17" |
 | `.onAppear` | `ListRowRevealModifier` 利用 List 懒创建，在 Manage / Trending row 进入可视区域时触发渐进式入场 | "SwiftUI onAppear List row lazy loading" |
 | `.toolbar` / `ToolbarItem` | 顶栏同步、状态、排序、多选按钮；`RepoListView` 右上角接入自定义 `SmartSearchField` 作为独立 toolbar item | "SwiftUI toolbar ToolbarItem primaryAction macOS" |
@@ -267,6 +269,8 @@
 |---|---|---|
 | `NSWorkspace.shared.open(url)` | `ReadmeWebView.Coordinator` 把外链跳系统浏览器 | "NSWorkspace open URL" |
 | `NSWindowController` | `AboutWindowController` 管理单例关于窗口，重复 Cmd+I 复用同一个窗口 | "NSWindowController showWindow" |
+| `NSPanel` + `NSWindow.Level.floating` | `RepoAIWindowController` 实现失焦不关闭且保持置顶的 AI 工具面板；自定义 `RepoAIPanel.canBecomeKey` 保证 SwiftUI 输入框可获得键盘焦点 | "NSPanel canBecomeKey NSWindow Level floating" |
+| `NSVisualEffectView` | `RepoAIWindowController` 用 `.popover` material 作为透明圆角面板的单一玻璃背景，SwiftUI 内容层保持透明避免遮住材质采样 | "NSVisualEffectView material popover blendingMode behindWindow" |
 | `NSWindow.StyleMask` | `AboutWindowController` 通过不包含 `.resizable` 固定关于窗口尺寸；窗口是否能拖拽调整必须由 AppKit styleMask 控制 | "NSWindow styleMask resizable SwiftUI hosting" |
 | `NSWindow.setFrameAutosaveName` | `MainWindowFrameModifier` 保存 / 恢复主窗口尺寸与位置 | "NSWindow setFrameAutosaveName setFrameUsingName" |
 | `NSWindow.contentMinSize` / `minSize` / `maxSize` | `MainWindowFrameModifier` 设置主窗口硬下限；`AboutWindowController` 用同一个 680×450 同时设置关于窗口 min/max，固定尺寸并避免默认底部空白过多 | "NSWindow contentMinSize minSize maxSize setFrame" |

@@ -293,7 +293,177 @@ struct StarcatRepoCardDTOTests {
         #expect(repo.topicsArray.isEmpty)
     }
 
-    // MARK: - R-01 v1.2 GRDB v8 4 字段消化（2026-06-10）
+    // MARK: - 空 URL 容错（2026-06-11 trending-api 实战修复）
+    //
+    // 后端 enricher 直接透传 GitHub `/repos` API 的 homepage 字段；GitHub 在仓库未填主页
+    // 时返回 ""（空串）而非 null。Swift 的 URL Decodable 对 "" 会抛 dataCorrupted，
+    // 整个 [StarcatRepoCardDTO] 解码挂掉，客户端报 "未能读取数据，因为它的格式不正确"。
+    // 修复方案是 DTO 端的 `decodeOptionalURL` helper：把 "" / "   " / 非法 URL 全归一化为 nil。
+    // 这些测试卡住该契约，防止有人未来又把 helper 改回 `decodeIfPresent(URL.self, ...)`。
+
+    @Test("空 URL 容错：homepage='' / owner_avatar='' / html_url='' 全部解码为 nil，整体不抛错")
+    func decodeEmptyURLStringsAsNil() throws {
+        let json = #"""
+        {
+          "gh_repo_id": 1,
+          "full_name": "a/b",
+          "owner": "a",
+          "repo": "b",
+          "owner_avatar": "",
+          "homepage": "",
+          "html_url": "",
+          "stars": 0, "forks": 0, "watchers": 0, "subscribers": 0,
+          "topics": [],
+          "is_archived": false, "is_fork": false, "is_private": false,
+          "open_issues": 0
+        }
+        """#.data(using: .utf8)!
+
+        let dto = try JSONDecoder().decode(StarcatRepoCardDTO.self, from: json)
+        #expect(dto.ownerAvatar == nil)
+        #expect(dto.homepage == nil)
+        #expect(dto.htmlUrl == nil)
+    }
+
+    @Test("空 URL 容错：homepage 只有空白字符也算 nil")
+    func decodeWhitespaceURLAsNil() throws {
+        let json = #"""
+        {
+          "gh_repo_id": 1, "full_name": "a/b", "owner": "a", "repo": "b",
+          "homepage": "   ",
+          "stars": 0, "forks": 0, "watchers": 0, "subscribers": 0,
+          "topics": [],
+          "is_archived": false, "is_fork": false, "is_private": false,
+          "open_issues": 0
+        }
+        """#.data(using: .utf8)!
+
+        let dto = try JSONDecoder().decode(StarcatRepoCardDTO.self, from: json)
+        #expect(dto.homepage == nil)
+    }
+
+    @Test("空 URL 容错：非法 URL 字符串吞掉返回 nil（不抛错）")
+    func decodeInvalidURLStringAsNil() throws {
+        // 用户笔记：Swift 的 URL(string:) 实际对大多数"看起来不像 URL"的字符串
+        // 也会返回非 nil（只要不是空），所以这里用一个明确包含非法字符 / 不合法编码的串。
+        // ASCII 控制字符 + 空格 + 中文 → URL(string:) 在 macOS 15 / Swift 6 上返回 nil。
+        let json = #"""
+        {
+          "gh_repo_id": 1, "full_name": "a/b", "owner": "a", "repo": "b",
+          "homepage": "not a valid url \u0001 中文",
+          "stars": 0, "forks": 0, "watchers": 0, "subscribers": 0,
+          "topics": [],
+          "is_archived": false, "is_fork": false, "is_private": false,
+          "open_issues": 0
+        }
+        """#.data(using: .utf8)!
+
+        // 不抛错——即使解出来是 nil，整批响应也能正常解码。
+        let dto = try JSONDecoder().decode(StarcatRepoCardDTO.self, from: json)
+        // 不强断言 homepage 一定是 nil（取决于运行时 URL(string:) 的兼容行为），
+        // 关键契约是「不能抛错把整批响应拖崩」。如果解出来是非 nil URL 也无害。
+        _ = dto
+    }
+
+    @Test("空 URL 容错：homepage 为 null（标准 JSON null）解码为 nil")
+    func decodeNullURLAsNil() throws {
+        let json = #"""
+        {
+          "gh_repo_id": 1, "full_name": "a/b", "owner": "a", "repo": "b",
+          "homepage": null,
+          "stars": 0, "forks": 0, "watchers": 0, "subscribers": 0,
+          "topics": [],
+          "is_archived": false, "is_fork": false, "is_private": false,
+          "open_issues": 0
+        }
+        """#.data(using: .utf8)!
+
+        let dto = try JSONDecoder().decode(StarcatRepoCardDTO.self, from: json)
+        #expect(dto.homepage == nil)
+    }
+
+    @Test("空 URL 容错：homepage 字段完全缺失解码为 nil")
+    func decodeMissingURLKeyAsNil() throws {
+        let json = #"""
+        {
+          "gh_repo_id": 1, "full_name": "a/b", "owner": "a", "repo": "b",
+          "stars": 0, "forks": 0, "watchers": 0, "subscribers": 0,
+          "topics": [],
+          "is_archived": false, "is_fork": false, "is_private": false,
+          "open_issues": 0
+        }
+        """#.data(using: .utf8)!
+
+        let dto = try JSONDecoder().decode(StarcatRepoCardDTO.self, from: json)
+        #expect(dto.homepage == nil)
+    }
+
+    @Test("空 URL 容错：合法 URL 字符串正常解码（不要被新 helper 误伤）")
+    func decodeValidURLStillWorks() throws {
+        let json = #"""
+        {
+          "gh_repo_id": 1, "full_name": "a/b", "owner": "a", "repo": "b",
+          "owner_avatar": "https://avatars.githubusercontent.com/u/1?v=4",
+          "homepage": "https://example.com/path?q=1",
+          "html_url": "https://github.com/a/b",
+          "stars": 0, "forks": 0, "watchers": 0, "subscribers": 0,
+          "topics": [],
+          "is_archived": false, "is_fork": false, "is_private": false,
+          "open_issues": 0
+        }
+        """#.data(using: .utf8)!
+
+        let dto = try JSONDecoder().decode(StarcatRepoCardDTO.self, from: json)
+        #expect(dto.ownerAvatar?.absoluteString == "https://avatars.githubusercontent.com/u/1?v=4")
+        #expect(dto.homepage?.absoluteString == "https://example.com/path?q=1")
+        #expect(dto.htmlUrl?.absoluteString == "https://github.com/a/b")
+    }
+
+    @Test("空 URL 容错（端到端）：trending envelope 17 条里 5 条 homepage='' 不导致整批崩")
+    func envelopeWithMixedEmptyHomepagesDecodes() throws {
+        // 模拟 trending-api 实测响应：3 条 repo，其中 2 条 homepage="" 1 条有值。
+        // 修复前：第一条 homepage="" 就抛 dataCorrupted，整个数组拿不到。
+        // 修复后：3 条全部解码成功，homepage 字段按"空串当 nil"语义正确还原。
+        let json = #"""
+        {
+          "schema_version": 1,
+          "data": [
+            {
+              "gh_repo_id": 1, "full_name": "a/b", "owner": "a", "repo": "b",
+              "homepage": "",
+              "stars": 0, "forks": 0, "watchers": 0, "subscribers": 0,
+              "topics": [],
+              "is_archived": false, "is_fork": false, "is_private": false,
+              "open_issues": 0
+            },
+            {
+              "gh_repo_id": 2, "full_name": "c/d", "owner": "c", "repo": "d",
+              "homepage": "https://valid.example.com",
+              "stars": 1, "forks": 0, "watchers": 0, "subscribers": 0,
+              "topics": [],
+              "is_archived": false, "is_fork": false, "is_private": false,
+              "open_issues": 0
+            },
+            {
+              "gh_repo_id": 3, "full_name": "e/f", "owner": "e", "repo": "f",
+              "homepage": "",
+              "stars": 2, "forks": 0, "watchers": 0, "subscribers": 0,
+              "topics": [],
+              "is_archived": false, "is_fork": false, "is_private": false,
+              "open_issues": 0
+            }
+          ]
+        }
+        """#.data(using: .utf8)!
+
+        let resp = try JSONDecoder().decode(StarcatEnvelope<[StarcatRepoCardDTO]>.self, from: json)
+        #expect(resp.data.count == 3)
+        #expect(resp.data[0].homepage == nil)
+        #expect(resp.data[1].homepage?.absoluteString == "https://valid.example.com")
+        #expect(resp.data[2].homepage == nil)
+    }
+
+    // MARK: - R-01 v1.2 StarcatRepoCardDTO 扩展 4 字段消化（2026-06-10）
     //
     // 验证 owner_avatar / subscribers_count / default_branch / open_issues_count
     // 在 JSON → DTO → Repo 全链路上零字段丢失，且老 fixture（缺这 4 字段）按预期退化。

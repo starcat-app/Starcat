@@ -53,17 +53,38 @@ final class RepoAIInsightService {
     private let readmeRepository: ReadmeRepository
     private let settings: AppSettings
     private let keychain: any KeychainManaging
+    private let externalContextProvider: AnySearchContextProvider
+
+    /// 2026-06-12 向量索引改进：摘要生成成功后回调，让 `SemanticSearchService` 走
+    /// `refreshIndexIfChanged` 重建向量。
+    ///
+    /// 为何用闭包而非直接持有 `SemanticSearchService`：避免 RepoAIInsightService ↔
+    /// SemanticSearchService 互相 @MainActor 持有的循环依赖；AppDependencies 在装配时
+    /// 把 `[weak service]` 闭包挂上来即可。
+    ///
+    /// var 而非 let：AppDependencies 的构造顺序是先 aiInsight 后 semanticSearch，
+    /// 用 setter `setOnSummaryGenerated(_:)` 在装配末尾注入回调，避免双向构造时序困境。
+    private var onSummaryGenerated: (@MainActor (Repo) -> Void)?
 
     init(
         summaryRepository: any AISummaryRepositoryProtocol,
         readmeRepository: ReadmeRepository,
         settings: AppSettings,
-        keychain: any KeychainManaging = KeychainManager.shared
+        keychain: any KeychainManaging = KeychainManager.shared,
+        onSummaryGenerated: (@MainActor (Repo) -> Void)? = nil
     ) {
         self.summaryRepository = summaryRepository
         self.readmeRepository = readmeRepository
         self.settings = settings
         self.keychain = keychain
+        self.externalContextProvider = AnySearchContextProvider(settings: settings)
+        self.onSummaryGenerated = onSummaryGenerated
+    }
+
+    /// 装配时序后置注入回调（AppDependencies 用）。
+    /// 让 `SemanticSearchService` 先构造完，再回头给 `aiInsight` 挂上 "weak semantic" 闭包。
+    func setOnSummaryGenerated(_ handler: (@MainActor (Repo) -> Void)?) {
+        self.onSummaryGenerated = handler
     }
 
     /// 当前对话流式所用的模型名。
@@ -92,10 +113,23 @@ final class RepoAIInsightService {
         existingTagHints: [String] = [],
         includeSummary: Bool = true,
         includeTags: Bool = true,
+        allowExternalContext: Bool = true,
         onSummaryDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> RepoAIInsightGeneration {
         let source = try await makeSource(for: repo)
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
+        let resolvedExternalContext: AIExternalContext?
+        if includeSummary, allowExternalContext {
+            do {
+                resolvedExternalContext = try await externalContextProvider.collect(for: repo)
+            } catch {
+                // 外部搜索是补充能力，失败不能阻断本地 README 摘要。
+                AppLog.ai.error("AnySearch external context skipped: \(error.localizedDescription, privacy: .public)")
+                resolvedExternalContext = nil
+            }
+        } else {
+            resolvedExternalContext = nil
+        }
 
         // HOM-52：标签生成路径在 source 末尾追加两段强制约束：
         //   (1) Tag format rules —— 限制中英文标签长度 / 风格，覆盖所有用户 prompt（含自定义）
@@ -134,14 +168,20 @@ final class RepoAIInsightService {
         }()
 
         // 两者都需要时并发跑（与原实现一致）；任一关闭则串行 / 短路，避免无意义 AI 调用。
-        let summaryText: String
+        let summarySource: Source = {
+            guard let context = resolvedExternalContext else { return augmentedSource }
+            let merged = augmentedSource.text + "\n" + context.markdown
+            return Source(text: merged, hash: Self.hash(merged))
+        }()
+
+        var summaryText: String
         let resolvedTagResult: Result<[AITagSuggestion], Error>
         if includeSummary, includeTags {
             async let tagResult = tagSuggestionsResult(source: augmentedSource)
-            summaryText = try await generateSummary(source: augmentedSource, onDelta: onSummaryDelta)
+            summaryText = try await generateSummary(source: summarySource, onDelta: onSummaryDelta)
             resolvedTagResult = await tagResult
         } else if includeSummary {
-            summaryText = try await generateSummary(source: augmentedSource, onDelta: onSummaryDelta)
+            summaryText = try await generateSummary(source: summarySource, onDelta: onSummaryDelta)
             resolvedTagResult = .success([])
         } else if includeTags {
             summaryText = ""
@@ -152,6 +192,10 @@ final class RepoAIInsightService {
             resolvedTagResult = .success([])
         }
         let suggestions = (try? resolvedTagResult.get()) ?? []
+        if let context = resolvedExternalContext, !summaryText.isEmpty {
+            let links = context.sources.map { "- [\($0.host ?? $0.absoluteString)](\($0.absoluteString))" }
+            summaryText += "\n\n## 外部参考来源\n" + links.joined(separator: "\n")
+        }
         let tagErrorMessage: String? = {
             if case .failure(let error) = resolvedTagResult {
                 return error.localizedDescription
@@ -172,7 +216,7 @@ final class RepoAIInsightService {
 
         // HOM-52：只跑标签（includeSummary == false）时不写 ai_summaries 缓存——
         // 否则会用空 summaryText 覆盖已有的有效摘要缓存。调用方仍能拿到 suggestions。
-        if includeSummary {
+        if includeSummary, repo.isStarred {
             let jsonData = try JSONEncoder().encode(insight)
             let record = AISummaryRecord(
                 repoId: repo.id,
@@ -182,6 +226,13 @@ final class RepoAIInsightService {
                 generatedAt: generatedAt
             )
             try await summaryRepository.upsert(record)
+
+            // 2026-06-12 向量索引改进：摘要生成成功后触发单 repo 向量重建。
+            // AppDependencies 装配时挂的 `[weak semanticSearchService]` 闭包负责走
+            // `refreshIndexIfChanged`，diff 判定通过才真的调 embedding API。
+            // 不在 try await 失败路径触发：上面 `try await summaryRepository.upsert` 抛错就直接 throw，
+            // 触发点放在 upsert 之后保证状态一致。
+            onSummaryGenerated?(repo)
         }
         return RepoAIInsightGeneration(insight: insight, tagErrorMessage: tagErrorMessage)
     }
@@ -332,12 +383,34 @@ final class RepoAIInsightService {
     private func cacheModelKey() -> String {
         let summaryModel = settings.aiSummaryTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
         let tagsModel = settings.aiTagsTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
-        return "summary:\(settings.aiSummaryTask.providerID)/\(summaryModel)|tags:\(settings.aiTagsTask.providerID)/\(tagsModel)"
+        let external: String = {
+            guard settings.anySearchEnabled && settings.aiExternalContextEnabled else { return "off" }
+            return settings.aiExternalContextAllowPrivateRepos ? "on-private" : "on-public"
+        }()
+        return "summary:\(settings.aiSummaryTask.providerID)/\(summaryModel)|tags:\(settings.aiTagsTask.providerID)/\(tagsModel)|external:\(external)"
     }
 
+    /// 拼出"喂 LLM 的 repo 上下文"——元数据 + 清洗后的 README。
+    ///
+    /// **2026-06-12 改造**（向量索引改进）：
+    /// - README 清洗逻辑从本地 `Self.stripHTML` + 硬编码 12000 截断改为
+    ///   `ReadmePreprocessor.process(html:/markdown:)`，与向量索引共用同一份规则；
+    /// - 截断长度从 `AppSettings.aiReadmeTruncateLength` 读，让用户在 Settings 滑杆调整后
+    ///   AI 摘要 / 向量化都同步生效；
+    /// - 优先使用 `readmes.content`（raw markdown）：决策 E3 后台懒补全完成时直接用原文，
+    ///   信息密度比 HTML 剥后高；fallback `rendered_html` 保留兼容。
     private func makeSource(for repo: Repo) async throws -> Source {
         let readme = try await readmeRepository.find(repoId: repo.id)
-        let readmeText = Self.stripHTML(readme?.renderedHtml ?? readme?.content ?? "")
+        let truncateLength = settings.aiReadmeTruncateLength
+        let readmeText: String = {
+            if let markdown = readme?.content, !markdown.isEmpty {
+                return ReadmePreprocessor.process(markdown: markdown, maxLength: truncateLength)
+            }
+            if let html = readme?.renderedHtml, !html.isEmpty {
+                return ReadmePreprocessor.process(html: html, maxLength: truncateLength)
+            }
+            return ""
+        }()
         let source = [
             "Repository: \(repo.fullName)",
             "Description: \(repo.description ?? "")",
@@ -348,7 +421,7 @@ final class RepoAIInsightService {
             "Forks: \(repo.forksCount)",
             "Homepage: \(repo.homepage ?? "")",
             "README:",
-            String(readmeText.prefix(12_000))
+            readmeText
         ].joined(separator: "\n")
         return Source(text: source, hash: Self.hash(source))
     }
@@ -426,18 +499,9 @@ final class RepoAIInsightService {
         return String(trimmed[start...end])
     }
 
-    private nonisolated static func stripHTML(_ html: String) -> String {
-        html
-            .replacingOccurrences(of: "<script[\\s\\S]*?</script>", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "<style[\\s\\S]*?</style>", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-            .replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    // 2026-06-12：原 `stripHTML(_:)` 已被 `ReadmePreprocessor.process(html:)` 取代。
+    // 旧实现还有 `<style>` / `<script>` / 标签剔除 + 实体解码 + 空白压缩，但与向量化路径
+    // 的逻辑碎成两份。新设计单一职责，避免后续两边维护漂移。
 
     private nonisolated static func hash(_ text: String) -> String {
         let digest = SHA256.hash(data: Data(text.utf8))
