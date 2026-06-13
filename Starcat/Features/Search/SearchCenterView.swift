@@ -236,6 +236,12 @@ struct SearchCenterView: View {
                             Button("Ask / AI 摘要") { onOpenAI(repo) }
                             Button(isStarred(repo.id) ? "取消 Star" : "Star") { onToggleStar(repo) }
                         }
+                    } else if case .reference(let reference) = candidate {
+                        Button("在浏览器打开") { NSWorkspace.shared.open(reference.originalURL) }
+                        Button("复制 URL") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(reference.originalURL.absoluteString, forType: .string)
+                        }
                     }
                 }
                 .listRowSeparator(.hidden)

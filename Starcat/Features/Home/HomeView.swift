@@ -178,8 +178,12 @@ struct HomeView: View {
         _searchCenterViewModel = State(initialValue: SearchCenterViewModel(
             coordinator: SearchCoordinator(providers: [
                 LocalKeywordSearchProvider(repository: repository),
-                GitHubRepositorySearchProvider(client: githubAPIClient)
-            ])
+                GitHubRepositorySearchProvider(client: githubAPIClient),
+                AnySearchWebProvider()
+            ]),
+            includeWebInAll: {
+                AppSettings.shared.anySearchEnabled && AppSettings.shared.searchIncludeWebInAll
+            }
         ))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
             tagRepository: tagRepository,
