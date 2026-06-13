@@ -130,19 +130,30 @@ struct SearchCenterView: View {
     }
 
     private var githubFilterBar: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             HStack {
                 Button {
                     showGitHubFilters.toggle()
                 } label: {
-                    Label("GitHub 筛选", systemImage: "line.3.horizontal.decrease.circle")
+                    HStack(spacing: 7) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                        Text("GitHub 筛选")
+                            .fontWeight(.semibold)
+                        Image(systemName: showGitHubFilters ? "chevron.up" : "chevron.down")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 Spacer()
-                Text(isGitHubAuthenticated ? "GitHub 已登录" : "GitHub 匿名搜索")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Label(
+                    isGitHubAuthenticated ? "已登录" : "匿名搜索",
+                    systemImage: isGitHubAuthenticated ? "person.crop.circle.badge.checkmark" : "person.crop.circle"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 if let summary = viewModel.githubResultSummary {
                     Text(summary)
                         .font(.caption)
@@ -156,50 +167,66 @@ struct SearchCenterView: View {
             }
 
             if showGitHubFilters {
-                HStack(spacing: 8) {
-                    TextField("Language", text: optionalBinding(\.language))
-                    TextField("Topic", text: optionalBinding(\.topic))
-                    TextField("Min stars", value: $viewModel.githubFilters.minimumStars, format: .number)
-                        .frame(width: 90)
-                    Picker("排序", selection: $viewModel.githubFilters.sort) {
-                        Text("Best match").tag(GitHubSearchSort.bestMatch)
-                        Text("Stars").tag(GitHubSearchSort.stars)
-                        Text("Forks").tag(GitHubSearchSort.forks)
-                        Text("Updated").tag(GitHubSearchSort.updated)
+                VStack(spacing: 12) {
+                    HStack(alignment: .bottom, spacing: 12) {
+                        githubTextFilter(
+                            title: "语言",
+                            placeholder: "例如 Swift",
+                            text: optionalBinding(\.language)
+                        )
+                        githubTextFilter(
+                            title: "Topic",
+                            placeholder: "例如 macOS",
+                            text: optionalBinding(\.topic)
+                        )
+                        VStack(alignment: .leading, spacing: 5) {
+                            filterFieldLabel("最低 Stars")
+                            TextField("不限", value: $viewModel.githubFilters.minimumStars, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        .frame(width: 112)
                     }
-                    .frame(width: 120)
-                    Picker("顺序", selection: $viewModel.githubFilters.order) {
-                        Text("降序").tag(SearchOrder.descending)
-                        Text("升序").tag(SearchOrder.ascending)
+
+                    HStack(alignment: .bottom, spacing: 12) {
+                        githubPicker(title: "排序方式", width: 130) {
+                            Picker("排序方式", selection: $viewModel.githubFilters.sort) {
+                                Text("最佳匹配").tag(GitHubSearchSort.bestMatch)
+                                Text("Stars").tag(GitHubSearchSort.stars)
+                                Text("Forks").tag(GitHubSearchSort.forks)
+                                Text("最近更新").tag(GitHubSearchSort.updated)
+                            }
+                        }
+                        githubPicker(title: "顺序", width: 90) {
+                            Picker("顺序", selection: $viewModel.githubFilters.order) {
+                                Text("降序").tag(SearchOrder.descending)
+                                Text("升序").tag(SearchOrder.ascending)
+                            }
+                        }
+                        githubDateFilter(title: "创建时间晚于", keyPath: \.createdAfter)
+                        githubDateFilter(title: "推送时间晚于", keyPath: \.pushedAfter)
+                        Spacer(minLength: 0)
                     }
-                    .frame(width: 90)
-                    Button("应用") { Task { await viewModel.applyGitHubFilters() } }
+
+                    HStack(spacing: 8) {
+                        Spacer()
+                        Button("清除日期") {
+                            viewModel.githubFilters.createdAfter = nil
+                            viewModel.githubFilters.pushedAfter = nil
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("应用筛选") {
+                            Task { await viewModel.applyGitHubFilters() }
+                        }
                         .buttonStyle(.borderedProminent)
-                }
-                .textFieldStyle(.roundedBorder)
-                HStack(spacing: 8) {
-                    DatePicker(
-                        "Created after",
-                        selection: optionalDateBinding(\.createdAfter),
-                        displayedComponents: .date
-                    )
-                    DatePicker(
-                        "Pushed after",
-                        selection: optionalDateBinding(\.pushedAfter),
-                        displayedComponents: .date
-                    )
-                    Button("清除日期") {
-                        viewModel.githubFilters.createdAfter = nil
-                        viewModel.githubFilters.pushedAfter = nil
                     }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
                 }
+                .padding(12)
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Color.primary.opacity(0.025))
+        .padding(.vertical, 10)
     }
 
     @ViewBuilder
@@ -337,6 +364,72 @@ struct SearchCenterView: View {
             get: { viewModel.githubFilters[keyPath: keyPath] ?? "" },
             set: { value in
                 viewModel.githubFilters[keyPath: keyPath] = value.isEmpty ? nil : value
+            }
+        )
+    }
+
+    private func githubTextFilter(title: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            filterFieldLabel(title)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.roundedBorder)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func filterFieldLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.caption)
+            .fontWeight(.medium)
+            .foregroundStyle(.secondary)
+    }
+
+    /// Picker 的标题放到控件上方，避免 macOS 自动把 label 挤在选择框左侧，造成
+    /// “排序 Best m…”这类横向截断。调用方仍传原生 Picker，交互行为不变。
+    private func githubPicker<Content: View>(
+        title: String,
+        width: CGFloat,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            filterFieldLabel(title)
+            content()
+                .labelsHidden()
+        }
+        .frame(width: width, alignment: .leading)
+    }
+
+    /// Optional Date 需要把“是否启用”显式展示出来。旧 UI 在 nil 时也显示今天，
+    /// 用户会误以为日期已加入 query；checkbox 关闭时 DatePicker 仅作预览且不生效。
+    private func githubDateFilter(
+        title: String,
+        keyPath: WritableKeyPath<GitHubSearchFilters, Date?>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            filterFieldLabel(title)
+            HStack(spacing: 5) {
+                Toggle("", isOn: optionalDateEnabledBinding(keyPath))
+                    .labelsHidden()
+                    .toggleStyle(.checkbox)
+                DatePicker(
+                    title,
+                    selection: optionalDateBinding(keyPath),
+                    displayedComponents: .date
+                )
+                .labelsHidden()
+                .disabled(viewModel.githubFilters[keyPath: keyPath] == nil)
+            }
+        }
+        .frame(width: 140, alignment: .leading)
+    }
+
+    private func optionalDateEnabledBinding(
+        _ keyPath: WritableKeyPath<GitHubSearchFilters, Date?>
+    ) -> Binding<Bool> {
+        Binding(
+            get: { viewModel.githubFilters[keyPath: keyPath] != nil },
+            set: { enabled in
+                viewModel.githubFilters[keyPath: keyPath] = enabled ? Date() : nil
             }
         )
     }
