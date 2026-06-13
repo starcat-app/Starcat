@@ -111,7 +111,37 @@ actor AnySearchClient: AnySearchClientProtocol {
                 sourceDomain: raw.sourceDomain ?? normalized.host
             )
         }
-        return AnySearchResponse(results: results, metadata: payload.metadata)
+        return AnySearchResponse(
+            results: results,
+            metadata: payload.metadata,
+            rateLimit: Self.parseRateLimit(from: http)
+        )
+    }
+
+    /// 从 `HTTPURLResponse` 解析 `x-ratelimit-*` 三字段。
+    ///
+    /// 关键约束：
+    /// - **三字段全在才返回非 nil**——AnySearch 在 200 响应里总是三个齐发，
+    ///   缺一意味着上游格式变化或匿名访问的边缘情况，宁可降级为 nil 也不
+    ///   返回半残数据让 UI 出现"剩余 0/0"这种误导性显示。
+    /// - `HTTPURLResponse.value(forHTTPHeaderField:)` **大小写无关**（系统行为），
+    ///   不论上游返回 `X-RateLimit-Limit` 还是 `x-ratelimit-limit` 都能命中。
+    /// - `reset` 字段是 Unix 秒戳（不是毫秒、不是 ISO8601），见 `docs/需求讨论/
+    ///   starcat-anysearch-integration-plan.md` §2 / 实测响应头。
+    static func parseRateLimit(from response: HTTPURLResponse) -> AnySearchRateLimit? {
+        guard
+            let limitStr = response.value(forHTTPHeaderField: "x-ratelimit-limit"),
+            let limit = Int(limitStr),
+            let remainingStr = response.value(forHTTPHeaderField: "x-ratelimit-remaining"),
+            let remaining = Int(remainingStr),
+            let resetStr = response.value(forHTTPHeaderField: "x-ratelimit-reset"),
+            let resetTs = TimeInterval(resetStr)
+        else { return nil }
+        return AnySearchRateLimit(
+            limit: limit,
+            remaining: remaining,
+            resetAt: Date(timeIntervalSince1970: resetTs)
+        )
     }
 
     static func normalize(_ url: URL) -> URL? {

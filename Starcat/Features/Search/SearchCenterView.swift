@@ -918,29 +918,25 @@ private struct SearchRemoteRepoDetailView: View {
         .help("search.detail.action.openOwner")
     }
 
+    /// 头像视图。SEARCH-RICH 2026-06-14 修订（dong4j 反馈"每次打开都要重复
+    /// 拉取吗"）:
+    ///
+    /// 老版用 SwiftUI 标准 `AsyncImage` —— 它**只走 URLSession.URLCache**(内存
+    /// 4MB / 磁盘 20MB 的小池子,且每次 view 重建都会重新发 URLRequest,即便命中
+    /// URLCache 也会 placeholder 闪一下);头像作为弹窗"重复打开同一 repo 也不
+    /// 该再发请求"的高频静态资源,这套缓存太弱。
+    ///
+    /// 新版改用项目自有 `RemoteAvatar` 组件 —— 内部走 Kingfisher,带 100MB 内存
+    /// + 1GB 磁盘 + TTL 1 周的双层缓存,弹窗反复打开同一 repo 命中内存 cache
+    /// 直接同步出图,零网络。视觉规格(圆形 + 0.5px secondary opacity 0.18 描边)
+    /// 与 sidebar / share-card / 详情页 hero 保持完全一致。
+    ///
+    /// owner 头像 URL 优先用 `repo.ownerAvatar`(mapper 已接通 GitHubRepoDTO 的
+    /// `owner.avatar_url`),缺失时拼 GitHub 官方头像直链兜底(永远可拼出来)。
     @ViewBuilder
     private func avatarImage(repo: Repo) -> some View {
-        let resolvedURL: URL? = {
-            if let s = repo.ownerAvatar, let url = URL(string: s) { return url }
-            return URL(string: "https://github.com/\(repo.owner).png")
-        }()
-
-        AsyncImage(url: resolvedURL) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().scaledToFill()
-            default:
-                Image(systemName: "person.crop.circle.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .frame(width: Self.avatarSize, height: Self.avatarSize)
-        .clipShape(Circle())
-        .overlay {
-            Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-        }
+        let urlString: String = repo.ownerAvatar ?? "https://github.com/\(repo.owner).png"
+        RemoteAvatar(urlString: urlString, size: Self.avatarSize)
     }
 
     private func scoreBadge(score: Double) -> some View {
@@ -1413,6 +1409,14 @@ private struct SearchRemoteRepoDetailView: View {
         let value: String = repo.cloneUrl ?? "https://github.com/\(repo.owner)/\(repo.name).git"
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    /// 在浏览器打开 owner 主页。被两处调用：① 顶栏头像点击；② 折叠菜单"打开
+    /// Owner 主页"。不走宿主回调是因为这是纯外链，没有业务侧副作用（不像
+    /// toggleStar 需要入库），与现有 reference candidate 直接 NSWorkspace 行为对齐。
+    private func openOwnerPage(login: String) {
+        guard let url = URL(string: "https://github.com/\(login)") else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 
