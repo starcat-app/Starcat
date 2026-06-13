@@ -859,6 +859,12 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright (c) Ruanyifeng",
             url: URL(string: "https://github.com/ruanyf/weekly")
         ),
+        AboutDependency(
+            name: "CodeFlow",
+            license: "MIT",
+            copyright: "MIT declaration in upstream README; no LICENSE file in commit 51ab970",
+            url: URL(string: "https://github.com/braedonsaunders/codeflow")
+        ),
 
         // MARK: 第三方品牌标识（非开源代码，但仍登记以保持透明）
         //
