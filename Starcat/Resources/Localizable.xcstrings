@@ -2689,6 +2689,176 @@
         }
       }
     },
+    "ai.context.storage.section" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "AI Code Context" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "AI 代码上下文" }
+        }
+      }
+    },
+    "ai.context.storage.outputDirectory" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Context Output Directory" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "代码上下文输出目录" }
+        }
+      }
+    },
+    "ai.context.storage.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Switching directories migrates existing context.xml and metadata.json. Shared source ZIPs remain in the app container." }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "切换目录时会迁移现有 context.xml 与 metadata.json；共享源码 ZIP 仍保存在应用容器。" }
+        }
+      }
+    },
+    "ai.context.storage.choose" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Choose Directory" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "选择目录" }
+        }
+      }
+    },
+    "ai.context.storage.revealHelp" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Reveal in Finder" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "在 Finder 中显示" }
+        }
+      }
+    },
+    "ai.context.storage.resetHelp" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Reset to default App Container directory" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "迁移到 App Container 默认目录" }
+        }
+      }
+    },
+    "ai.context.storage.statRepos" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Repos" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "项目" }
+        }
+      }
+    },
+    "ai.context.storage.statBytes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Size" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "占用" }
+        }
+      }
+    },
+    "ai.context.storage.statGenerations" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Generations" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "累计生成" }
+        }
+      }
+    },
+    "ai.context.storage.statGenerationsFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "%d times" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "%d 次" }
+        }
+      }
+    },
+    "ai.context.storage.statLast" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Last Generated" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "最后生成" }
+        }
+      }
+    },
+    "ai.context.storage.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "No AI code contexts in current directory yet." }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "当前目录还没有 AI 代码上下文。" }
+        }
+      }
+    },
+    "ai.context.storage.menuReveal" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Reveal" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "打开" }
+        }
+      }
+    },
+    "ai.context.storage.menuDelete" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Delete" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "删除" }
+        }
+      }
+    },
+    "ai.context.storage.clearAll" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Clear All" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "一键清除" }
+        }
+      }
+    },
+    "ai.context.storage.clearAllConfirm.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "Clear all AI code contexts?" }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "清除全部 AI 代码上下文？" }
+        }
+      }
+    },
+    "ai.context.storage.clearAllConfirm.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : { "state" : "translated", "value" : "This will delete all context.xml and metadata.json in the current output directory. Shared source ZIPs are not deleted." }
+        },
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "将删除当前输出目录中的全部 context.xml 与 metadata.json。共享源码 ZIP 不会被删除。" }
+        }
+      }
+    },
     "ai.context.settings.tier1MaxLines" : {
       "localizations" : {
         "en" : {

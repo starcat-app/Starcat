@@ -25,7 +25,15 @@ struct SearchCenterView: View {
     @State private var remoteDetailRepo: Repo?
     /// 鼠标 hover 是浮层视图的瞬时状态，不写入 selectedIndex，避免鼠标经过后改变
     /// 用户的键盘导航位置。候选 ID 同时覆盖 GitHub repo 与 AnySearch reference。
+    ///
+    /// 注意：搜索结果出来时 selectedIndex 为 nil（"未选中任何一项"），此时
+    /// 视图只剩 hover 一种高亮来源 —— 鼠标 hover 哪项哪项亮、移走全灭；只有
+    /// 用户首次按 ↑/↓ 后 selectedIndex 才会被设为 0，开始走键盘选中逻辑。
     @State private var hoveredCandidateID: String?
+    /// 清空全部历史的二次确认对话框可见性。
+    /// 放在视图层是因为"是否要二次确认"是 UI 决策而非业务状态；ViewModel 的
+    /// `clearHistory()` 仍保持单纯执行删除，不被弹窗逻辑污染。
+    @State private var showingClearHistoryAlert = false
 
     var body: some View {
         ZStack {
@@ -35,12 +43,12 @@ struct SearchCenterView: View {
 
             VStack(spacing: 0) {
                 searchHeader
-                Divider()
+                themedSeparator
                 scopePicker
                 if viewModel.scope == .all || viewModel.scope == .github {
                     githubFilterBar
                 }
-                Divider()
+                themedSeparator
                 resultContent
             }
             .frame(width: 760, height: 620)
@@ -84,6 +92,16 @@ struct SearchCenterView: View {
             viewModel.dismiss()
             return .handled
         }
+    }
+
+    /// 浮层内部的分隔线。
+    /// SwiftUI 默认 `Divider()` 在浅色主题 + `.regularMaterial` 浮层底上会显得过于发亮
+    /// （因为 SwiftUI 默认分隔色与浅色材质的对比度过高），换成 `NSColor.separatorColor`
+    /// 这一 AppKit 系统级 separator 后，dark / light 都能自动得到合适的对比度。
+    private var themedSeparator: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(height: 1)
     }
 
     private var searchHeader: some View {
@@ -241,28 +259,31 @@ struct SearchCenterView: View {
             )
         } else {
             List(Array(viewModel.candidates.enumerated()), id: \.element.id) { index, candidate in
-                Button {
-                    if case .repository(let repository) = candidate,
-                       repository.localRepo == nil,
-                       let remoteRepo = repository.remoteRepo {
-                        remoteDetailRepo = remoteRepo
-                    } else {
-                        onOpenCandidate(candidate)
-                    }
-                } label: {
-                    candidateRow(
-                        candidate,
-                        isSelected: index == viewModel.selectedIndex,
-                        isHovered: hoveredCandidateID == candidate.id
-                    )
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
+                // 这里不再用 Button:macOS SwiftUI 在 List 内的 Button + onHover
+                // 对「最末行紧贴 List 边界」存在 hit-test 缩水 bug,导致最底部一行 hover
+                // 不触发(safeAreaInset / contentShape 调整都修不彻底)。改成整行
+                // .contentShape(Rectangle()) + .onTapGesture/.onHover 后,hover 命中区域
+                // 由我们显式定义,不再受 List 内 Button 容器边界影响,所有行表现一致。
+                // 牺牲点:丢掉 Button 自带的 keyboard 触发(空格/回车)和 VoiceOver 的
+                // .isButton trait,所以下面用 .accessibilityAddTraits(.isButton) 补回语义,
+                // 而 Return 键打开仍由 body 顶层 .onKeyPress(.return) 处理,不受影响。
+                candidateRow(
+                    candidate,
+                    isSelected: index == viewModel.selectedIndex,
+                    isHovered: hoveredCandidateID == candidate.id
+                )
+                .contentShape(Rectangle())
                 .onHover { hovering in
                     withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
                         hoveredCandidateID = hovering ? candidate.id : nil
                     }
                 }
+                .onTapGesture {
+                    activate(candidate)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { activate(candidate) }
                 .contextMenu {
                     if case .repository(let repository) = candidate {
                         Button("在 GitHub 打开") { onOpenURL(repository) }
@@ -288,6 +309,12 @@ struct SearchCenterView: View {
             // regularMaterial 明显断层。只隐藏 scroll content 背景，行选中态继续保留。
             .scrollContentBackground(.hidden)
             .background(Color.clear)
+            // 给最底部留 8pt 透明缓冲：SwiftUI 在 `.listStyle(.inset)` 下，最后一行
+            // 紧贴 List 边界时 hover hit-test 会被边界裁掉，造成最末项 hover 不触发。
+            // 留出这段缓冲后，最末项有完整命中区域，hover 与其它行表现一致。
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: 8)
+            }
             .overlay(alignment: .bottomLeading) {
                 if let message = viewModel.errorMessages.first {
                     Label(message, systemImage: "exclamationmark.triangle")
@@ -301,25 +328,79 @@ struct SearchCenterView: View {
         }
     }
 
+    /// 历史区域：标签流式布局 + 顶部"最近搜索 / 清空全部"。
+    /// 设计要点：
+    /// - 不再用 List 一行一项，避免浅色主题下 List 默认 row separator 过亮
+    /// - 用 FlowLayout 让标签自动换行，每个标签底色按文本哈希从 TagColorPalette
+    ///   里取一个固定色（同一关键词每次进入颜色稳定，不抖动）
+    /// - 浅色 / 深色主题用不同透明度，保证两套主题下都能看见
     private var historyContent: some View {
         Group {
             if viewModel.history.isEmpty {
-                ContentUnavailableView("搜索 Starcat", systemImage: "sparkle.magnifyingglass", description: Text("输入关键词后按 Return"))
+                ContentUnavailableView(
+                    "搜索 Starcat",
+                    systemImage: "sparkle.magnifyingglass",
+                    description: Text("输入关键词后按 Return")
+                )
             } else {
-                List(viewModel.history, id: \.self) { entry in
-                    Button { Task { await viewModel.useHistory(entry) } } label: {
-                        Label(entry, systemImage: "clock.arrow.circlepath")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
+                VStack(alignment: .leading, spacing: 0) {
+                    historyHeader
+                    ScrollView {
+                        SearchHistoryFlowLayout(spacing: 8) {
+                            ForEach(viewModel.history, id: \.self) { entry in
+                                HistoryChip(
+                                    entry: entry,
+                                    onUse: { Task { await viewModel.useHistory(entry) } },
+                                    onRemove: { viewModel.removeHistory(entry) }
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
                 }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
             }
         }
+        .confirmationDialog(
+            "确定要清空全部搜索历史吗?",
+            isPresented: $showingClearHistoryAlert,
+            titleVisibility: .visible
+        ) {
+            Button("清空全部", role: .destructive) {
+                viewModel.clearHistory()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("此操作不可恢复。")
+        }
+    }
+
+    /// "最近搜索" 标题 + 右侧 "清空全部" 触发按钮。
+    /// 单独抽出来避免 ScrollView 把标题也卷进去；这样在历史项很多时标题保持悬停在顶部。
+    private var historyHeader: some View {
+        HStack {
+            Text("最近搜索")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                showingClearHistoryAlert = true
+            } label: {
+                Label("清空全部", systemImage: "trash")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("清空全部搜索历史")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 6)
     }
 
     @ViewBuilder
@@ -366,7 +447,22 @@ struct SearchCenterView: View {
                     lineWidth: 1
                 )
         }
-        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        // hit-test 用 Rectangle 而不是 RoundedRectangle：圆角四个角会成为 onHover 死区,
+        // 鼠标在角附近移入时无法触发 hover；改用矩形让整行的命中区域与可视区域一致。
+        .contentShape(Rectangle())
+    }
+
+    /// 候选项的"激活"动作（点击 / 回车 / VoiceOver 主操作）。
+    /// 远端仓库（仅 GitHub 搜出、未 star、未入本地库）走会话级详情 sheet；
+    /// 其余（本地、reference、已 star）由宿主决定打开方式，统一走 onOpenCandidate。
+    private func activate(_ candidate: SearchCandidate) {
+        if case .repository(let repository) = candidate,
+           repository.localRepo == nil,
+           let remoteRepo = repository.remoteRepo {
+            remoteDetailRepo = remoteRepo
+        } else {
+            onOpenCandidate(candidate)
+        }
     }
 
     private func scopeTitle(_ scope: SearchScope) -> String {
@@ -464,6 +560,131 @@ struct SearchCenterView: View {
         )
     }
 }
+
+// MARK: - History Chip
+
+/// 单条历史记录的胶囊标签。
+///
+/// **视觉对齐 `UnifiedRepoRow.RepoCardInlineMetadataBadge`**：
+/// 整个项目的 metadata pill（Stars / Forks / Language / sceneBadge）统一走
+/// `Color.secondary.opacity(0.10)` 浅灰胶囊 + `.foregroundStyle(.secondary)`
+/// 的克制风格；搜索历史 chip 也按这一套设计语言走，避免引入第二种 chip
+/// 视觉规则。早期方案曾给每个 chip 用 `TagColorPalette` 调出彩色底，但视觉
+/// 上跟 repo 卡片冲突，dong4j 直接 reject —— 改回单色灰底。
+///
+/// 交互要点：
+/// - 点击 chip 主体 → 触发该关键词的搜索（整个胶囊都是命中区）
+/// - hover 时右侧浮出 `x` 删除按钮（独立 hitbox，避免被父 Button 吞掉 click），
+///   不 hover 时也预留出 14pt 空位避免 chip 宽度跳变
+/// - hover 同时把胶囊底色从 0.10 加深到 0.18，提供"被聚焦"的反馈
+private struct HistoryChip: View {
+    let entry: String
+    let onUse: () -> Void
+    let onRemove: () -> Void
+
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button(action: onUse) {
+                HStack(spacing: 0) {
+                    Text(entry)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    // 始终预留删除按钮的位置（14pt 按钮 + 6pt 间距 ≈ 14pt 占位），
+                    // 避免 hover 时 chip 宽度跳变带动后续 chip 重排。
+                    Color.clear.frame(width: 14, height: 14)
+                        .padding(.leading, 6)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.secondary.opacity(isHovered ? 0.18 : 0.10))
+                )
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(entry)
+
+            if isHovered {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .padding(.trailing, 6)
+                .help("删除这条历史")
+                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            }
+        }
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
+        }
+        .contextMenu {
+            Button("使用此关键词") { onUse() }
+            Divider()
+            Button("删除这条历史", role: .destructive) { onRemove() }
+        }
+    }
+}
+
+// MARK: - FlowLayout
+
+/// 搜索历史专用的自动换行布局。
+///
+/// 跟项目里 `RepoTagsSection` / `TagWallView` / `ActivityDetailView` 里同名的
+/// private FlowLayout 行为一致；按"Surgical Changes"原则不做跨文件抽公共
+/// 类型（private 不可跨文件共享）的范围外重构，单独再实现一份。
+///
+/// 如果后续需要把 4 处 FlowLayout 抽到 Shared 复用，记到技术债 D-? 再统一处理。
+private struct SearchHistoryFlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var rowWidth: CGFloat = 0
+        var totalHeight: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if rowWidth + size.width > maxWidth {
+                totalHeight += rowHeight + spacing
+                rowWidth = size.width + spacing
+                rowHeight = size.height
+            } else {
+                rowWidth += size.width + spacing
+                rowHeight = max(rowHeight, size.height)
+            }
+        }
+        totalHeight += rowHeight
+        return CGSize(width: maxWidth.isFinite ? maxWidth : rowWidth, height: totalHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let maxWidth = bounds.width
+        var x: CGFloat = bounds.minX
+        var y: CGFloat = bounds.minY
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > bounds.minX + maxWidth {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+// MARK: - Remote Repo Detail
 
 /// GitHub 搜索结果的会话级详情，不写数据库；只有用户执行 Star 后才通过
 /// StarActionService 进入本地事实源。
