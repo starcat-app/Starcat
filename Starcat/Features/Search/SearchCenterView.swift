@@ -598,9 +598,15 @@ private struct HistoryChip: View {
                         .lineLimit(1)
 
                     if entry.useCount >= Self.useCountBadgeMinimum {
-                        Text("·\(entry.useCount)")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.tertiary)
+                        // 用 verbatim: 显式跳过 SwiftUI 的 LocalizedStringKey 本地化查找
+                        // —— "·\(Int)" 这种"单符号 + 单参数"组合曾在 i18n fallback 边界
+                        // 上出现过显示异常；改 verbatim 直出原文最稳。
+                        // 颜色 secondary 而非 tertiary：dong4j 实测 tertiary 在
+                        // `Capsule.opacity(0.10)` 灰底 + light mode 下几乎不可见；
+                        // 提升一档对比度，仍靠字号差（11 vs query 12）区分主次。
+                        Text(verbatim: "·\(entry.useCount)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
 
