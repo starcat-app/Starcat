@@ -597,6 +597,23 @@ final class AppSettings {
         didSet { persist(key: Keys.smartSearchMode, value: smartSearchMode.rawValue) }
     }
 
+    /// AnySearch 总开关。关闭后 Web Provider 和 AI 外部上下文都不得发起请求。
+    var anySearchEnabled: Bool {
+        didSet { persistBool(key: Keys.anySearchEnabled, value: anySearchEnabled) }
+    }
+    var anySearchAnonymousMode: Bool {
+        didSet { persistBool(key: Keys.anySearchAnonymousMode, value: anySearchAnonymousMode) }
+    }
+    var searchIncludeWebInAll: Bool {
+        didSet { persistBool(key: Keys.searchIncludeWebInAll, value: searchIncludeWebInAll) }
+    }
+    var aiExternalContextEnabled: Bool {
+        didSet { persistBool(key: Keys.aiExternalContextEnabled, value: aiExternalContextEnabled) }
+    }
+    var aiExternalContextAllowPrivateRepos: Bool {
+        didSet { persistBool(key: Keys.aiExternalContextAllowPrivateRepos, value: aiExternalContextAllowPrivateRepos) }
+    }
+
     /// 贡献草坪贪吃蛇玩法（HOM-SNAKE-MODES 2026-06-05）。
     /// 默认 `.greedy`（snk 同款），让"草坪 + 蛇"的卖点立刻直观可感。
     /// 修改时 `ContributionGraphView` 会通过 `.onChange` 重建 animator。
@@ -927,6 +944,11 @@ final class AppSettings {
         self.aiTranslationTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiTranslationTask, defaults: defaults) ?? defaultTranslationTask
         let searchModeRaw = defaults.string(forKey: Keys.smartSearchMode)
         self.smartSearchMode = searchModeRaw.flatMap(SmartSearchMode.init(rawValue:)) ?? .keyword
+        self.anySearchEnabled = defaults.object(forKey: Keys.anySearchEnabled) as? Bool ?? false
+        self.anySearchAnonymousMode = defaults.object(forKey: Keys.anySearchAnonymousMode) as? Bool ?? true
+        self.searchIncludeWebInAll = defaults.object(forKey: Keys.searchIncludeWebInAll) as? Bool ?? false
+        self.aiExternalContextEnabled = defaults.object(forKey: Keys.aiExternalContextEnabled) as? Bool ?? false
+        self.aiExternalContextAllowPrivateRepos = defaults.object(forKey: Keys.aiExternalContextAllowPrivateRepos) as? Bool ?? false
 
         let snakeStyleRaw = defaults.string(forKey: Keys.snakeStyle)
         self.snakeStyle = snakeStyleRaw.flatMap(SnakeStyle.init(rawValue:)) ?? SnakeStyle.default
@@ -1007,6 +1029,24 @@ final class AppSettings {
             defaults.set(String(decoding: data, as: UTF8.self), forKey: key)
         } catch {
             AppLog.general.error("persistJSON failed for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// AnySearch API Key 复用 service key 的独立命名空间，仍由加密凭据文件承载。
+    func anySearchAPIKey() -> String? {
+        try? keychain.loadServiceAPIKey(forService: "anysearch")
+    }
+
+    func setAnySearchAPIKey(_ value: String?) {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        do {
+            if trimmed.isEmpty {
+                try keychain.deleteServiceAPIKey(forService: "anysearch")
+            } else {
+                try keychain.storeServiceAPIKey(trimmed, forService: "anysearch")
+            }
+        } catch {
+            AppLog.keychain.error("AnySearch API key update failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -1131,6 +1171,11 @@ final class AppSettings {
         static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
         static let aiTranslationTask = "settings.ai.task.translation.v2"  // HOM-68 follow-up
         static let smartSearchMode = "settings.search.mode"
+        static let anySearchEnabled = "settings.search.anysearch.enabled.v1"
+        static let anySearchAnonymousMode = "settings.search.anysearch.anonymous.v1"
+        static let searchIncludeWebInAll = "settings.search.web.includeInAll.v1"
+        static let aiExternalContextEnabled = "settings.ai.externalContext.enabled.v1"
+        static let aiExternalContextAllowPrivateRepos = "settings.ai.externalContext.allowPrivate.v1"
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
         static let isProUser = "settings.pro.isProUser"  // HOM-151
