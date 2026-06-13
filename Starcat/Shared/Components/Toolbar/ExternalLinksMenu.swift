@@ -13,7 +13,9 @@
 //    homepage 都是辅助跳转，按 GitHub 子页面规则纯字符串拼，所以 trending /
 //    weekly 这种没有本地 Repo 对象的场景也能用。
 //  - CodeFlow 需要完整 `Repo` 才能下载 ZIP，因此仅 Manage 公开仓库传入
-//    `codeFlowRepo`。它放在 Releases 后的独立分组中，入口不再占用详情 hero 区域。
+//    `codeFlowRepo`。它是主推功能，固定放在菜单第一组，并使用整行渐变卡片；原生
+//    NSMenu 会丢弃 SwiftUI label 内的字体、HStack 和徽标样式，因此只有存在
+//    CodeFlow 时改用自定义 Popover，其余场景继续使用原生 Menu。
 //  - homepage 现在 4 场景都可能有值：Manage 走 Repo.homepage / Trending 走
 //    TrendingRepo.homepage（R-05 起 trending-api enricher 已拉满）/ Weekly 走
 //    WeeklyFeedItem.card.homepage / Activity-repo-backed 走本地 Repo.homepage。
@@ -44,38 +46,43 @@ struct ExternalLinksMenu: View {
     }
 
     var body: some View {
+        Group {
+            if codeFlowRepo != nil {
+                FeaturedExternalLinksControl(
+                    selection: selection,
+                    onOpenCodeFlow: { isCodeFlowPresented = true }
+                )
+            } else {
+                standardMenu
+            }
+        }
+        .help("externalLinks.hint")
+        .sheet(isPresented: $isCodeFlowPresented) {
+            if let codeFlowRepo {
+                CodeFlowPanel(repo: codeFlowRepo)
+            }
+        }
+    }
+
+    /// 没有 CodeFlow 的场景保持系统 Menu，避免为了统一外观扩大自绘范围。
+    private var standardMenu: some View {
         Menu {
             Button {
-                if let issues = RepoExternalLinks.issues(owner: selection.owner, name: selection.name) {
-                    NSWorkspace.shared.open(issues)
-                }
+                open(RepoExternalLinks.issues(owner: selection.owner, name: selection.name))
             } label: {
                 Label("externalLinks.issues", systemImage: "exclamationmark.bubble")
             }
 
             Button {
-                if let pulls = RepoExternalLinks.pulls(owner: selection.owner, name: selection.name) {
-                    NSWorkspace.shared.open(pulls)
-                }
+                open(RepoExternalLinks.pulls(owner: selection.owner, name: selection.name))
             } label: {
                 Label("externalLinks.pullRequests", systemImage: "arrow.triangle.pull")
             }
 
             Button {
-                if let releases = RepoExternalLinks.releases(owner: selection.owner, name: selection.name) {
-                    NSWorkspace.shared.open(releases)
-                }
+                open(RepoExternalLinks.releases(owner: selection.owner, name: selection.name))
             } label: {
                 Label("externalLinks.releases", systemImage: "tag.circle")
-            }
-
-            if codeFlowRepo != nil {
-                Divider()
-                Button {
-                    isCodeFlowPresented = true
-                } label: {
-                    Label("CodeFlow", systemImage: "point.3.connected.trianglepath.dotted")
-                }
             }
 
             if let homepage = selection.homepage {
@@ -90,15 +97,185 @@ struct ExternalLinksMenu: View {
             ToolbarIcon("safari")
                 .accessibilityLabel("externalLinks.openOnGithub")
         } primaryAction: {
-            if let url = selection.htmlUrl {
+            open(selection.htmlUrl)
+        }
+    }
+
+    private func open(_ url: URL?) {
+        if let url {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+/// Manage 公共仓库使用的外链控制器。
+///
+/// 左侧 Safari 按钮保留“直接打开仓库”的 primary action，右侧 chevron 打开自定义
+/// Popover。这样既能完整绘制 CodeFlow 渐变卡片，也不改变用户已经形成的点击习惯。
+private struct FeaturedExternalLinksControl: View {
+    let selection: ToolbarRepoSelection
+    let onOpenCodeFlow: () -> Void
+
+    @State private var isPresented = false
+
+    var body: some View {
+        ControlGroup {
+            Button {
+                open(selection.htmlUrl)
+            } label: {
+                ToolbarIcon("safari")
+                    .accessibilityLabel("externalLinks.openOnGithub")
+            }
+
+            Button {
+                isPresented.toggle()
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 12, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("externalLinks.hint")
+            // `arrowEdge` 是 Popover 相对触发控件的首选展开边。
+            // toolbar 在窗口顶部，使用 `.bottom` 才会优先向下展开。
+            .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+                ExternalLinksPopover(
+                    selection: selection,
+                    onOpenCodeFlow: {
+                        isPresented = false
+                        // 等 Popover 完成关闭后再呈现 sheet，避免两个 presentation 同帧竞争。
+                        DispatchQueue.main.async { onOpenCodeFlow() }
+                    },
+                    onDismiss: { isPresented = false }
+                )
+            }
+        }
+        .controlSize(.regular)
+    }
+
+    private func open(_ url: URL?) {
+        if let url {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+/// 可完整控制视觉样式的 CodeFlow 主推菜单面板。
+private struct ExternalLinksPopover: View {
+    let selection: ToolbarRepoSelection
+    let onOpenCodeFlow: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(spacing: 7) {
+            Button(action: onOpenCodeFlow) {
+                HStack(spacing: 11) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .font(.system(size: 17, weight: .semibold))
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("CodeFlow")
+                            .font(.system(size: 14, weight: .bold))
+                        Text("可视化项目代码结构")
+                            .font(.system(size: 10, weight: .medium))
+                            .opacity(0.82)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.bold))
+                        .opacity(0.8)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 11)
+                .frame(height: 46)
+                .background(
+                    LinearGradient(
+                        colors: [Color(red: 0.96, green: 0.25, blue: 0.58), .purple, .blue],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                )
+                .shadow(color: .purple.opacity(0.22), radius: 8, y: 3)
+                .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+
+            Divider()
+                .padding(.horizontal, 4)
+
+            ExternalLinkPopoverRow(
+                titleKey: "externalLinks.issues",
+                systemImage: "exclamationmark.bubble",
+                url: RepoExternalLinks.issues(owner: selection.owner, name: selection.name),
+                onDismiss: onDismiss
+            )
+            ExternalLinkPopoverRow(
+                titleKey: "externalLinks.pullRequests",
+                systemImage: "arrow.triangle.pull",
+                url: RepoExternalLinks.pulls(owner: selection.owner, name: selection.name),
+                onDismiss: onDismiss
+            )
+            ExternalLinkPopoverRow(
+                titleKey: "externalLinks.releases",
+                systemImage: "tag.circle",
+                url: RepoExternalLinks.releases(owner: selection.owner, name: selection.name),
+                onDismiss: onDismiss
+            )
+
+            if let homepage = selection.homepage {
+                Divider()
+                    .padding(.horizontal, 4)
+                ExternalLinkPopoverRow(
+                    titleKey: "externalLinks.homepage",
+                    systemImage: "house",
+                    url: homepage,
+                    onDismiss: onDismiss
+                )
+            }
+        }
+        .padding(7)
+        .frame(width: 238)
+    }
+}
+
+/// Popover 内的普通外链行，使用轻量 hover 背景模拟系统菜单的指针反馈。
+private struct ExternalLinkPopoverRow: View {
+    let titleKey: LocalizedStringKey
+    let systemImage: String
+    let url: URL?
+    let onDismiss: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button {
+            onDismiss()
+            if let url {
                 NSWorkspace.shared.open(url)
             }
-        }
-        .help("externalLinks.hint")
-        .sheet(isPresented: $isCodeFlowPresented) {
-            if let codeFlowRepo {
-                CodeFlowPanel(repo: codeFlowRepo)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .frame(width: 18)
+                Text(titleKey)
+                Spacer()
             }
+            .font(.system(size: 13))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(
+                isHovering ? Color.accentColor.opacity(0.14) : .clear,
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .onHover { isHovering = $0 }
     }
 }

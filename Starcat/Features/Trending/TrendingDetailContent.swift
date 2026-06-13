@@ -58,7 +58,7 @@ struct TrendingDetailContent: View {
         // 本 ContentView body 仅剩 ReadmeStateView,无需再包 VStack。
         ReadmeStateView(
             state: readmeVM.state,
-            baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
+            baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
             owner: repo.owner,
             repo: repo.name,
             onScrollOffsetChange: onScrollOffset,

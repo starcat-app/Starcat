@@ -66,9 +66,8 @@ struct WeeklyDetailContent: View {
     var body: some View {
         ReadmeStateView(
             state: readmeVM.state,
-            // 拼接 blob/HEAD：与 trending / manage 详情页一致,让 README 内的相对
-            // 链接能正确解析为 https://github.com/owner/repo/blob/HEAD/xxx。
-            baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
+            // 与其他详情页共用目录型 base URL，末尾 `/` 是相对链接保留 HEAD 的关键。
+            baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
             owner: repo.owner,
             repo: repo.name,
             onScrollOffsetChange: onScrollOffset,
