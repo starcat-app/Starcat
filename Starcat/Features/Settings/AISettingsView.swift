@@ -1325,8 +1325,12 @@ struct AISettingsTab: View {
     /// 视觉效果，且不会触发未实现的代码路径。
     private var repoContextManageStorageRow: some View {
         Button {
-            // Y5 触点 E 待实现：跳转到 Settings → Storage Tab 的 AI 代码上下文管理面板。
-            AppLog.ai.debug("[AISettings] manage storage button tapped — Y5 not implemented yet")
+            // 2026-06-13 Y3↔Y5 跨 Tab 跳转：发出事件，由 SettingsView 内部
+            // onReceive(.starcatJumpToSettingsTab) 切换 selectedTab 到 .storage。
+            // 用 NotificationCenter 而不是直接耦合 SettingsView 是因为 SettingsView
+            // 用 @State 自管 tab、且 selectedTab 是 private——见 SettingsView.swift
+            // 顶部 extension Notification.Name 的注释。
+            NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: "storage")
         } label: {
             Label("ai.context.settings.manageStorage", systemImage: "internaldrive")
         }
