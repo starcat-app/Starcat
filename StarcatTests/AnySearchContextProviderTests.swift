@@ -26,4 +26,23 @@ struct AnySearchContextProviderTests {
         #expect(queries.allSatisfy { $0.contains("apple/swift") })
         #expect(queries.joined().count < 400)
     }
+
+    @Test("私有仓库默认禁止外部上下文")
+    func privateRepoGate() {
+        #expect(!AnySearchContextProvider.allowsExternalContext(
+            repoIsPrivate: true,
+            enabled: true,
+            allowPrivate: false
+        ))
+        #expect(AnySearchContextProvider.allowsExternalContext(
+            repoIsPrivate: true,
+            enabled: true,
+            allowPrivate: true
+        ))
+        #expect(!AnySearchContextProvider.allowsExternalContext(
+            repoIsPrivate: false,
+            enabled: false,
+            allowPrivate: true
+        ))
+    }
 }
