@@ -22,8 +22,11 @@ final class AnySearchContextProvider {
     }
 
     func collect(for repo: Repo) async throws -> AIExternalContext? {
-        guard settings.anySearchEnabled, settings.aiExternalContextEnabled else { return nil }
-        guard !repo.isPrivate || settings.aiExternalContextAllowPrivateRepos else { return nil }
+        guard Self.allowsExternalContext(
+            repoIsPrivate: repo.isPrivate,
+            enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
+            allowPrivate: settings.aiExternalContextAllowPrivateRepos
+        ) else { return nil }
 
         let client = AnySearchClient(
             apiKey: settings.anySearchAPIKey(),
@@ -65,5 +68,13 @@ final class AnySearchContextProvider {
             "\(repo.fullName) documentation release notes",
             "\(repo.fullName) alternatives review \(String(description.prefix(120)))"
         ]
+    }
+
+    nonisolated static func allowsExternalContext(
+        repoIsPrivate: Bool,
+        enabled: Bool,
+        allowPrivate: Bool
+    ) -> Bool {
+        enabled && (!repoIsPrivate || allowPrivate)
     }
 }
