@@ -33,14 +33,14 @@ protocol AISummaryRepositoryProtocol: Sendable {
 
 struct GRDBAISummaryRepository: AISummaryRepositoryProtocol {
 
-    private let writer: any DatabaseWriter
+    private let database: any DatabaseManaging
 
     init(database: any DatabaseManaging) {
-        self.writer = database.writer
+        self.database = database
     }
 
     func find(repoId: Int64, model: String) async throws -> AISummaryRecord? {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try AISummaryRecord.fetchOne(db, sql: """
                 SELECT * FROM ai_summaries
                 WHERE repo_id = ? AND model = ?
@@ -49,7 +49,7 @@ struct GRDBAISummaryRepository: AISummaryRepositoryProtocol {
     }
 
     func upsert(_ record: AISummaryRecord) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             var copy = record
             try copy.save(db)
         }
@@ -60,7 +60,7 @@ struct GRDBAISummaryRepository: AISummaryRepositoryProtocol {
     /// `GROUP BY` 的字段是 undefined behavior（GROUP BY 行内非聚合字段取值不保证来自 MAX 行）。
     /// 用应用层去重虽然多读几行字符串，但语义更稳。
     func fetchLatestPerRepo() async throws -> [Int64: AISummaryRecord] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             let records = try AISummaryRecord.fetchAll(db, sql: """
                 SELECT * FROM ai_summaries ORDER BY generated_at DESC
                 """)

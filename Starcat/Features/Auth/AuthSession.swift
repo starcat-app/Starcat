@@ -78,9 +78,25 @@ final class AuthSession {
     /// 在 token 被清除的瞬间把 registry 也清空，避免下个用户登录后看到上个用户的
     /// star 状态（registry 与 token 必须同步）。
     ///
-    /// 调用时机：① `signOut()` 主动登出末尾；② `invalidateSession()` 401 被动失效末尾。
+    /// 调用时机：① `signOut()` 主动登出末尾;② `invalidateSession()` 401 被动失效末尾。
     /// 仅在状态成功切到 `.unauthenticated` 之后调用。
     var onSignOut: (@MainActor () -> Void)?
+
+    /// 2026-06-12 多账号 DB 隔离：登录态变化时通知 `AppDependencies` 切换 SQLite 数据库。
+    ///
+    /// **触发时机**（参数语义：非 nil = 切到该 user 的 DB，nil = 切到 `_anonymous`）：
+    /// - `runDeviceFlow` 拿到 user 后、emit `.authenticated` 之前 → 传 `user.id`
+    /// - `restoreSessionIfAvailable` `/user` 验证成功后、emit `.authenticated` 之前 → 传 `user.id`
+    /// - `signOut` 末尾、调 `onSignOut?()` 之前 → 传 `nil`
+    /// - `invalidateSession` 末尾、调 `onSignOut?()` 之前 → 传 `nil`
+    ///
+    /// **时序约束（关键！）**：必须 `await` 完成 DB 切换后再 emit state。
+    /// 否则 HomeView `.task` 观察到 `.authenticated` 后立刻启动 SyncManager 拉 stars，
+    /// Repository.database.writer 还指向上一个用户的 pool，会把新账号数据写到旧 DB。
+    ///
+    /// **场景**：dong4j 拍板"先退出再登录"，不存在登录态硬切，
+    /// 因此 DB reopen 时所有后台任务都该已停（由 onSignOut 链路保证）。
+    var onUserSessionChanged: (@MainActor (Int64?) async -> Void)?
 
     /// 当前进行中的 Device Flow 轮询 Task，便于取消。
     private var pollingTask: Task<Void, Never>?
@@ -146,6 +162,10 @@ final class AuthSession {
 
         do {
             let user = try await apiClient.getCurrentUser()
+            // 多账号 DB 隔离：先把 SQLite 切到该 user 的目录，再 emit state。
+            // 注入方 AppDependencies 拿到 user.id 调 database.reopen，
+            // 让后续 SyncManager 等所有 Repository query 都打到正确的 DB 文件。
+            await onUserSessionChanged?(user.id)
             self.state = .authenticated(user: user)
             // ② 用真实数据覆盖 prime 出来的快照，并让 service 写盘
             userProfileService?.acceptFromAuth(user)
@@ -155,6 +175,8 @@ final class AuthSession {
             try? keychain.deleteGithubToken()
             // 401 时清掉 cached profile，避免下次启动 prime 出错误账号的数据
             userProfileService?.reset(login: state.user?.login)
+            // 多账号 DB 隔离：token 失效 = 进入未登录态，DB 切到 _anonymous
+            await onUserSessionChanged?(nil)
             self.state = .unauthenticated
         } catch {
             // 网络错误：token 保留 + cached state 也保留（避免离线时把刚 prime 的快照擦掉）
@@ -204,6 +226,10 @@ final class AuthSession {
 
             // 阶段 3：拉 /user 验证 + 取信息
             let user = try await apiClient.getCurrentUser()
+            // 多账号 DB 隔离：先把 SQLite 切到该 user 的目录，再 emit state。
+            // 必须在 emit .authenticated 之前完成，否则 HomeView 观察到状态变化
+            // 启动的 SyncManager 会把新账号 stars 写到老 DB。
+            await onUserSessionChanged?(user.id)
             self.state = .authenticated(user: user)
             // 让 UserProfileService 持久化这次 user，下次启动可以秒显
             userProfileService?.acceptFromAuth(user)
@@ -226,7 +252,14 @@ final class AuthSession {
 
     // MARK: - 登出
 
-    func signOut() {
+    /// 主动登出。
+    ///
+    /// **2026-06-12 起改为 async**：内部要 `await onUserSessionChanged?(nil)`
+    /// 让 SQLite 在本调用返回前切到 `_anonymous` 占位库。否则会出现
+    /// "signOut 同步返回 → 用户立即点登录 B → reopen(nil) 与 reopen(B.id) 并发，
+    /// 后排队的 reopen(nil) 把刚切到 B 的 DB 又切回 anonymous" 的时序 bug。
+    /// 调用方（SidebarHeaderView）需在 Button action 内 `Task { await ... }` 包一下。
+    func signOut() async {
         let currentLogin = state.user?.login
         do {
             try keychain.deleteGithubToken()
@@ -239,6 +272,8 @@ final class AuthSession {
         lastError = nil
         // R-01：清空 StarredRegistry，避免下个用户登录看到上个用户的 star 状态
         onSignOut?()
+        // 多账号 DB 隔离：DB 切到 _anonymous 占位库（同步 await，保证返回前 DB 已切换）
+        await onUserSessionChanged?(nil)
         AppLog.auth.info("Signed out")
     }
 
@@ -258,7 +293,10 @@ final class AuthSession {
     ///   出现的 401 由各自流程处理，这里跳过，避免把进行中的 Device Flow 误判为失效。
     /// - 并发的多个 401 会重复调用本方法，首个把状态切走后，后续因 guard 直接 no-op。
     /// - `@MainActor`：状态变更只在主线程，由回调侧负责 hop 到主线程。
-    func invalidateSession() {
+    /// **2026-06-12 起改为 async**：与 `signOut()` 同源，需 await `onUserSessionChanged?(nil)`
+    /// 同步完成 DB 切换。调用方（GitHubAPIClient 的 unauthorizedHandler）已在 Task 里，
+    /// 加 await 即可。
+    func invalidateSession() async {
         guard state.isAuthenticated else { return }
         AppLog.auth.warning("Session invalidated (401/unauthorized in use); clearing token")
         let currentLogin = state.user?.login
@@ -273,6 +311,8 @@ final class AuthSession {
         lastError = NetworkError.unauthorized
         // R-01：清空 StarredRegistry（与 token 同步失效）
         onSignOut?()
+        // 多账号 DB 隔离：401 被动失效时也切到 _anonymous，与主动 signOut 同语义
+        await onUserSessionChanged?(nil)
     }
 
     // MARK: - 接收 service 推送的最新 user（反向 push）

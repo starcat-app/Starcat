@@ -57,7 +57,7 @@ actor TrendingRepository: TrendingRepositoryProtocol {
     // MARK: - Properties
 
     private let api: TrendingAPI
-    private let writer: any DatabaseWriter
+    private let database: any DatabaseManaging
 
     // MARK: - Initialization
 
@@ -68,7 +68,7 @@ actor TrendingRepository: TrendingRepositoryProtocol {
     ///   - database: 共享数据库句柄。
     init(api: TrendingAPI, database: any DatabaseManaging) {
         self.api = api
-        self.writer = database.writer
+        self.database = database
     }
 
     // MARK: - Public API（SWR 接口）
@@ -86,7 +86,7 @@ actor TrendingRepository: TrendingRepositoryProtocol {
         let period = since.rawValue
         let langFilter = language.apiValue
         do {
-            let records = try await writer.read { db in
+            let records = try await database.writer.read { db in
                 try TrendingRepoRecord
                     .filter(Column("period") == period && Column("language_filter") == langFilter)
                     .order(Column("rank").asc)
@@ -140,7 +140,7 @@ actor TrendingRepository: TrendingRepositoryProtocol {
         // 单事务内 DELETE + 多次 INSERT，保证原子性 —— 避免"删了没写入完"留下空榜单
         let now = Date()
         do {
-            try await writer.write { db in
+            try await database.writer.write { db in
                 try db.execute(
                     sql: "DELETE FROM trending_repos WHERE period = ? AND language_filter = ?",
                     arguments: [period, langFilter]
@@ -179,7 +179,7 @@ actor TrendingRepository: TrendingRepositoryProtocol {
         let period = since.rawValue
         let langFilter = language.apiValue
         do {
-            let record = try await writer.read { db in
+            let record = try await database.writer.read { db in
                 try TrendingRepoRecord
                     .filter(Column("period") == period && Column("language_filter") == langFilter)
                     .order(Column("cached_at").desc)

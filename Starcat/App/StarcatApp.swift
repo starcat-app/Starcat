@@ -192,7 +192,11 @@ struct StarcatApp: App {
 
     private static func bootstrap() {
         AppLog.general.info("Starcat starting (bundle=\(AppConstants.bundleIdentifier, privacy: .public))")
-        DatabaseManager.bootstrap()
+
+        // 2026-06-12 多账号 DB 隔离：DatabaseManager 不再是单例，由 AppDependencies init
+        // 内部 `try DatabaseManager(userId: nil)` 打开 `users/_anonymous` 占位 DB。
+        // 这里不再单独 bootstrap DB。AuthSession 在 restoreSession / signIn 成功后通过
+        // onUserSessionChanged closure 触发 `database.reopen(userId:)` 切到 user 目录。
 
         // 测试期跳过 Keychain 自检：ad-hoc 签名 + ACL 不匹配会触发 GUI 授权弹窗，
         // 测试 host 主线程被对话框阻塞 → testmanagerd 永远连不上 App。

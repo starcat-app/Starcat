@@ -403,6 +403,87 @@ final class HomeViewModel {
 
     // MARK: - 公开 action
 
+    /// D-30 配套（2026-06-13）：账号切换时清空所有与登录身份强绑定的 in-memory 状态。
+    ///
+    /// **为什么需要这个方法**：
+    /// D-30 在 `AppDependencies.switchUserDatabase(to:)` 里把 `DatabaseManager.currentPool`
+    /// 切到了新用户的 `users/<newId>/starcat.sqlite`，**DB 层物理隔离已经完成**。
+    /// 但 `HomeViewModel` 是个 `@Observable` 长生命周期对象（由 `HomeView` 用 `@State`
+    /// 持有，跨账号切换不重建），它持有的 in-memory 状态 —— `listCache` /
+    /// `items` / Sidebar 计数 / `statusMap` / `tags` / `repoTagsMap` —— 仍然是
+    /// **旧账号的快照**。
+    ///
+    /// 不主动清这些缓存 → 表现为「退出 A 用 B 登录，看到的还是 A 的列表」：
+    /// 1. `listCache[.allStars]` 5min TTL 内 → `HomeView.task(id: viewModel.selection)`
+    ///    内 `guard !viewModel.hasCachedItems else { return }` 直接 short-circuit；
+    /// 2. 即便 selection 不在 listCache 里，`statusMap` / `repoTagsMap` 等映射
+    ///    在 `applyView()` 时仍按旧账号数据染色；
+    /// 3. Sidebar 行数（`totalCount` / `untaggedCount` / `languageStats` / `tags`）
+    ///    全是旧账号的，新账号看到的导航全错。
+    ///
+    /// **调用时机**（**只有这一处**）：`HomeView` 监听到 `authSession.state.user?.id`
+    /// 变化时（含登入 / 登出 / 切换账号三条路径）。**不要从其它地方调**：
+    /// - 不是任何手动 refresh 路径，那条路径用 `reloadItems(forceRefresh: true)`；
+    /// - 不是 sidebar selection 变化路径，那条已有 didSet 处理。
+    ///
+    /// **清空的字段（与账号强绑定）**：列表与 Sidebar 全套数据 + 选择/搜索状态。
+    ///
+    /// **保留的字段（用户级偏好，跨账号共享）**：
+    /// - `sortOption` / `hideArchived` / `hideForks` / `statusFilter` / `smartSearchMode`
+    ///   —— 这些 4 个偏好从 `AppSettings` 同步进来，**`AppSettings` 是跨账号全局的**
+    ///   （NSUbiquitousKeyValueStore / UserDefaults），所以在 viewModel 这一层
+    ///   也保留这些值，不需要重置。
+    /// - `selection` —— 由 `HomeView` 在 onChange 内单独处理（登入恢复 saved
+    ///   manage selection / 登出切到 trending），本方法**不动 selection**，
+    ///   避免和 HomeView 的赋值打架。
+    ///
+    /// **关键约束**（已踩过的坑）：
+    /// 1. 必须在 `HomeView` 切 `viewModel.selection` **之前**调，否则 selection 的
+    ///    didSet 会先用旧 listCache 做 eager cache load（见上方 selection 字段
+    ///    didSet line 66-75）→ 旧数据先闪一帧再被覆盖。
+    /// 2. `currentReloadTask` / `prefetchTask` 必须 `.cancel()` —— 旧账号 DB pool
+    ///    虽然已被 D-30 切走，但旧 task 内的 `try await database.writer.read` 在
+    ///    切换瞬间可能正持有旧 pool 的 read transaction（GRDB 内部读连接池）。
+    ///    cancel 后旧 task 的 `Repo` 结果即便回来也由 `applyView()` 的 race 防护
+    ///    路径丢弃（reloadItems 实现内的 task 身份对比）。
+    /// 3. `selectedTagIds = []` 必须放在 `repoTagsMap.removeAll()` **之后**，
+    ///    避免 didSet 触发的 `applyView()` 用空 `repoTagsMap` 配旧 `rawItems` 渲一帧。
+    ///    实际上整段 reset 跑完 SwiftUI 才会触发一次 body 重算（`@Observable` 合批），
+    ///    但顺序仍按 "DB 上游 → UI 下游" 写，便于读代码的人理解。
+    /// 4. `isLoading = true` 强制开骨架屏 —— 防止"selection 不变 + listCache 清空"
+    ///    的 corner case 下 UI 闪现一帧空列表（详见 HomeView 那边的注释）。
+    func resetAllStateForUserSwitch() {
+        currentReloadTask?.cancel()
+        currentReloadTask = nil
+        prefetchTask?.cancel()
+        prefetchTask = nil
+
+        listCache.removeAll()
+        rawItems = []
+        statusMap = [:]
+        repoTagsMap = [:]
+        semanticHitMap = [:]
+        selectedTagIds = []
+
+        items = []
+        itemsRevision &+= 1
+
+        totalCount = 0
+        untaggedCount = 0
+        languageStats = []
+        tags = []
+        tagCounts = [:]
+
+        selectedRepoID = nil
+        searchQuery = ""
+        searchSubmissionID &+= 1
+
+        loadError = nil
+        isRefreshing = false
+        isSemanticIndexing = false
+        isLoading = true
+    }
+
     func submitSearch(_ query: String) {
         searchQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         semanticHitMap = [:]
