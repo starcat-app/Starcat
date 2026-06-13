@@ -8866,13 +8866,45 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI Index"
+            "value" : "Vector Index"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 索引"
+            "value" : "向量化索引"
+          }
+        }
+      }
+    },
+    "settings.aiIndex.scoreThreshold" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Result filter threshold"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索结果过滤阈值"
+          }
+        }
+      }
+    },
+    "settings.aiIndex.scoreThreshold.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide semantic search results below this similarity score; default 75%."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 语义搜索时，相似度低于此分数的结果不显示；默认 75%。"
           }
         }
       }

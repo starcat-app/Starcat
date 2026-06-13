@@ -950,14 +950,16 @@ struct AISettingsTab: View {
 
     // MARK: - AI 索引（向量搜索改进 2026-06-12）
 
-    /// "AI 索引" Section：截断长度滑杆 + 三档阈值预设 + 折叠区精细数字 + 预拉 / 全量重建按钮。
+    /// "向量化索引" Section（原 "AI 索引"，HOM-197 2026-06-13 改名）：
+    /// README 截断长度滑杆 + 搜索结果过滤阈值滑杆 + 三档阈值预设 + 折叠区精细数字 + 预拉 / 全量重建按钮。
     ///
     /// UI 形态：
     /// ```
-    /// AI 索引 ▼
-    ///   ┌ README 截断长度 ── 滑杆 [12000] ──── 12000 字符
+    /// 向量化索引 ▼
+    ///   ┌ README 截断长度 ──── 滑杆 [12000] ──── 12000 字符
+    ///   ├ 搜索结果过滤阈值 ─── 滑杆 [75%] ────── 75%      ← HOM-197 新增
     ///   ├ 阈值预设      ── 严格 / 标准 / 宽松 / 自定义
-    ///   ├ 高级（折叠）  ── 主体阈值 Stepper + 笔记阈值 Stepper
+    ///   ├ 高级（折叠）  ── 主体阈值 Slider + 笔记阈值 Slider   ← HOM-197 Stepper→Slider
     ///   ├ ─────────────────────
     ///   ├ 启动自动预拉 [开关]
     ///   ├ [开始预拉] [暂停]     进度 234 / 1801（失败 0）
@@ -971,6 +973,11 @@ struct AISettingsTab: View {
             DisclosureGroup(isExpanded: $isAIIndexExpanded) {
                 VStack(alignment: .leading, spacing: 12) {
                     truncateLengthRow
+                    // HOM-197（2026-06-13 dong4j）：紧贴截断长度下方插入「搜索结果过滤
+                    // 阈值」。两者都属于"AI 语义搜索流水线"维度的偏好——截断长度控制
+                    // 喂给 embedding 的文本量，阈值控制召回结果的展示门槛，放在一起
+                    // 让用户一眼读出"输入→输出"两端的旋钮。
+                    scoreThresholdRow
                     presetRow
                     advancedDisclosure
                     Divider()
@@ -1008,6 +1015,34 @@ struct AISettingsTab: View {
         }
     }
 
+    /// HOM-197（2026-06-13 dong4j）：搜索结果过滤阈值滑杆。
+    ///
+    /// 形态完全复用 `truncateLengthRow` 骨架（标题 + 右上百分比 + Slider + 下方 hint），
+    /// 让用户在同一组里横向看到的滑杆视觉语言一致。
+    ///
+    /// 配置：10% - 100%，步进 1%，默认 75%。生效路径见 `AppSettings
+    /// .aiSemanticSearchScoreThreshold` 文档与 `HomeViewModel.applyView()` 的语义分支。
+    private var scoreThresholdRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("settings.aiIndex.scoreThreshold")
+                    .font(.callout)
+                Spacer()
+                Text("\(Int((settings.aiSemanticSearchScoreThreshold * 100).rounded()))%")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(
+                value: scoreThresholdBinding,
+                in: 0.10...1.00,
+                step: 0.01
+            )
+            Text("settings.aiIndex.scoreThreshold.hint")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     /// 三档预设 + custom：segmented picker；switch 时同步 body/notes 字段。
     private var presetRow: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1026,7 +1061,7 @@ struct AISettingsTab: View {
         }
     }
 
-    /// 高级区（折叠）：body / notes 阈值 Stepper。
+    /// 高级区（折叠）：body / notes 阈值滑杆（HOM-197 2026-06-13 由 Stepper 改为 Slider）。
     /// 预设 != custom 时禁用编辑，提示用户先切到自定义。
     @ViewBuilder
     private var advancedDisclosure: some View {
@@ -1055,18 +1090,30 @@ struct AISettingsTab: View {
         }
     }
 
-    /// 阈值行：Title + Stepper（步进 0.01）+ 百分比读数。
+    /// 阈值行：与 `truncateLengthRow` / `scoreThresholdRow` 同款骨架——
+    /// 标题 + 右上百分比读数 + Slider（HOM-197 dong4j 反馈，2026-06-13）。
+    ///
+    /// 范围 1% - 90%、步进 1%：
+    /// - **下限 1%**：0% 意味着"任何字符差异都重建"会把 embedding 配额烧爆，
+    ///   1% 起作为安全护栏；
+    /// - **上限 90%**：现有最宽松预设 relaxed 是 20/30%，留出充足 headroom 给极端
+    ///   "几乎不重建"场景；100% 等价于"永不自动重建" 没有实用意义；
+    /// - 默认沿用 `DiffThresholds.default`（body 10% / notes 20%，即 standard 预设）。
+    ///
+    /// 预设非 `.custom` 时滑杆 `.disabled(!enabled)`；用户拖动后 binding 会自动把
+    /// 预设切到 `.custom`（在 `bodyRatioBinding` / `notesRatioBinding` 的 set 闭包内
+    /// 完成，与原 Stepper 行为一致）。
     private func ratioRow(titleKey: String, value: Binding<Double>, enabled: Bool) -> some View {
-        HStack {
-            Text(LocalizedStringKey(titleKey))
-                .font(.callout)
-            Spacer()
-            Text("\(Int((value.wrappedValue * 100).rounded()))%")
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 50, alignment: .trailing)
-            Stepper("", value: value, in: 0.0...1.0, step: 0.01)
-                .labelsHidden()
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(LocalizedStringKey(titleKey))
+                    .font(.callout)
+                Spacer()
+                Text("\(Int((value.wrappedValue * 100).rounded()))%")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: value, in: 0.01...0.90, step: 0.01)
                 .disabled(!enabled)
         }
     }
@@ -1182,6 +1229,18 @@ struct AISettingsTab: View {
             get: { Double(self.settings.aiReadmeTruncateLength) },
             set: { newValue in
                 self.settings.aiReadmeTruncateLength = Int(newValue.rounded())
+            }
+        )
+    }
+
+    /// HOM-197：阈值滑杆 binding。
+    /// `set` 端 clamp 到 [0.10, 1.00]——SwiftUI Slider 在 `step` 截断 + 浮点抖动下
+    /// 偶尔会写出超出 `in:` 范围 1e-9 的值，clamp 是防御性兜底。
+    private var scoreThresholdBinding: Binding<Double> {
+        Binding(
+            get: { self.settings.aiSemanticSearchScoreThreshold },
+            set: { newValue in
+                self.settings.aiSemanticSearchScoreThreshold = max(0.10, min(1.00, newValue))
             }
         )
     }
