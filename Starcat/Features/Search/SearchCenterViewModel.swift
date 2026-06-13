@@ -18,9 +18,11 @@ final class SearchCenterViewModel {
     var scope: SearchScope = .all
     var selectedIndex: Int = 0
     var isPresented: Bool = false
+    var githubFilters: GitHubSearchFilters = .empty
 
     private(set) var lastSubmittedQuery: String = ""
     private(set) var history: [String]
+    private(set) var currentGitHubPage: Int = 1
 
     let coordinator: SearchCoordinator
     private let historyStore: SearchHistoryStore
@@ -62,6 +64,11 @@ final class SearchCenterViewModel {
         }.sorted()
     }
 
+    var canLoadMoreGitHub: Bool {
+        guard case .loaded(let page) = coordinator.status(for: .github) else { return false }
+        return page.hasNextPage
+    }
+
     func present() {
         isPresented = true
         selectedIndex = 0
@@ -85,6 +92,7 @@ final class SearchCenterViewModel {
         historyStore.record(request.query)
         history = historyStore.items
         selectedIndex = 0
+        currentGitHubPage = 1
         await coordinator.search(request)
         clampSelection()
     }
@@ -94,6 +102,7 @@ final class SearchCenterViewModel {
         guard !lastSubmittedQuery.isEmpty else { return }
         query = lastSubmittedQuery
         selectedIndex = 0
+        currentGitHubPage = 1
         await coordinator.search(makeRequest(query: lastSubmittedQuery))
         clampSelection()
     }
@@ -110,6 +119,29 @@ final class SearchCenterViewModel {
         coordinator.reset()
     }
 
+    func applyGitHubFilters() async {
+        guard !lastSubmittedQuery.isEmpty else { return }
+        currentGitHubPage = 1
+        selectedIndex = 0
+        await coordinator.search(makeRequest(query: lastSubmittedQuery))
+        clampSelection()
+    }
+
+    func loadMoreGitHub() async {
+        guard canLoadMoreGitHub, !lastSubmittedQuery.isEmpty else { return }
+        currentGitHubPage += 1
+        let request = SearchRequest(
+            query: lastSubmittedQuery,
+            scope: scope,
+            githubFilters: githubFilters,
+            page: currentGitHubPage,
+            perPage: 30,
+            includeWebInAll: includeWebInAll()
+        )
+        await coordinator.loadMore(request, source: .github)
+        clampSelection()
+    }
+
     func moveSelection(by offset: Int) {
         guard !candidates.isEmpty else { return }
         selectedIndex = min(max(0, selectedIndex + offset), candidates.count - 1)
@@ -123,6 +155,8 @@ final class SearchCenterViewModel {
         SearchRequest(
             query: query,
             scope: scope,
+            githubFilters: githubFilters,
+            page: currentGitHubPage,
             includeWebInAll: includeWebInAll()
         )
     }
