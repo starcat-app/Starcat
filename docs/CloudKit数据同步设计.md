@@ -16,6 +16,7 @@
 | RepoNotes | ✅ 同步 | 用户写的笔记 |
 | RepoStatus | ✅ 同步 | 阅读状态 |
 | SavedSearches | ✅ 同步 | 保存的搜索 |
+| SearchHistory | ✅ 同步 | 搜索关键词历史（useCount 走 max 合并，见 §2.6.1） |
 | ReleaseSubscriptions | ✅ 同步 | Release 订阅设置 |
 | User Preferences | ✅ 同步 | 用户设置 |
 | Repo 缓存 | ❌ 不同步 | 可从 GitHub 重建 |
@@ -60,6 +61,7 @@
 │  CKRecordType_RepoNote           → 仓库笔记                │
 │  CKRecordType_RepoStatus         → 仓库状态                │
 │  CKRecordType_SavedSearch        → 保存的搜索               │
+│  CKRecordType_SearchHistory      → 搜索历史（含使用次数）   │
 │  CKRecordType_ReleaseSubscription → Release 订阅             │
 │  CKRecordType_UserPreferences     → 用户设置                │
 │  CKRecordType_Tombstone          → 删除标记                │
@@ -138,6 +140,38 @@ searchRecord["createdAt"] = Date()
 searchRecord["modifiedAt"] = Date()
 searchRecord["lastUsedAt"] = Date()
 ```
+
+### 2.6.1 SearchHistory (搜索历史)
+
+> **新增于 2026-06-14**：从 UserDefaults 升级到 SQLite + CloudKit-ready 字段。
+> 本期（W4）仅本地持久化；CloudKit 实际同步在 W5 跟 Tag / RepoNote / SavedSearch 一起接入。
+
+```swift
+// CKRecordType: "SearchHistory"
+let historyRecord = CKRecord(recordType: "SearchHistory")
+historyRecord["id"] = "uuid-string"            // UUID
+historyRecord["query"] = "swift concurrency"   // 原始输入（保留大小写）
+historyRecord["queryLower"] = "swift concurrency" // 小写归一，去重键
+historyRecord["useCount"] = 5                  // Int，累计使用次数
+historyRecord["lastUsedAt"] = Date()           // 排序衰减 + UI 显示
+historyRecord["firstSeenAt"] = Date()          // 首次记录
+historyRecord["modifiedAt"] = Date()           // CloudKit LWW 时间戳
+```
+
+**特殊冲突合并策略**（不同于其它 user-data 的纯 LWW）：
+
+- `modifiedAt` 较新者整体取优；
+- **但 `useCount = max(local, remote)`** —— 避免 "Mac 搜了 5 次、iPhone 搜了 3 次，
+  同步后只剩 3 次" 的明显计数倒退。
+- 这是本表与 Tag/RepoNote 纯 LWW 的**唯一差异**，实现时在 `CloudKitSync.applyRemoteRecord`
+  里专项处理（W5 落地）。
+
+**字段使用建议**：
+- `queryLower` 作 UNIQUE 索引，CloudKit 端用 `CKQueryOperation` 按 `lower` 去重；
+- `useCount` 不进 CloudKit Queryable Index（不参与 server-side 排序，由客户端
+  内存里按 `decayedScore` 计算排序）；
+- 历史总数客户端硬上限 50，超出后按 `decayedScore` 升序淘汰最低分项，淘汰时
+  写 Tombstone 同步给其它设备。
 
 ### 2.7 ReleaseSubscription (Release 订阅)
 

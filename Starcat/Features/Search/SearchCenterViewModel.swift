@@ -7,6 +7,10 @@
 //  关键约束：输入草稿不会逐字符访问数据库或网络；只有用户提交、切换 scope 后的
 //  已提交查询重跑、或显式加载更多时才调用 Coordinator，避免远端搜索消耗失控。
 //
+//  历史记录：从 W4 (UserDefaults) 升级到 W5-ready GRDB SQLite + CloudKit-friendly
+//  字段（id UUID / modifiedAt LWW / useCount + 半衰期衰减排序）。详见
+//  `SearchHistoryRepositoryProtocol` 与 `docs/CloudKit数据同步设计.md` §2.x。
+//
 
 import Foundation
 import Observation
@@ -27,23 +31,27 @@ final class SearchCenterViewModel {
     var githubFilters: GitHubSearchFilters = .empty
 
     private(set) var lastSubmittedQuery: String = ""
-    private(set) var history: [String]
+    /// 历史记录（按 `decayedScore` 降序排列；UI 直接遍历即可）。
+    /// 持久化由 `historyRepository` 负责；本字段是异步加载后的最新内存快照。
+    private(set) var history: [SearchHistory] = []
     private(set) var currentGitHubPage: Int = 1
 
     let coordinator: SearchCoordinator
-    private let historyStore: SearchHistoryStore
+    private let historyRepository: any SearchHistoryRepositoryProtocol
     private let includeWebInAll: () -> Bool
 
     init(
         coordinator: SearchCoordinator,
-        historyStore: SearchHistoryStore? = nil,
+        historyRepository: any SearchHistoryRepositoryProtocol,
         includeWebInAll: @escaping () -> Bool = { false }
     ) {
         self.coordinator = coordinator
-        let resolvedHistoryStore = historyStore ?? SearchHistoryStore()
-        self.historyStore = resolvedHistoryStore
+        self.historyRepository = historyRepository
         self.includeWebInAll = includeWebInAll
-        self.history = resolvedHistoryStore.items
+
+        // 首次构造异步拉一次历史；调用方不需要 await，UI 出现后逐渐填充即可。
+        // 失败时静默置空（历史不可见好过把 UI 卡住）。
+        Task { await self.reloadHistory() }
     }
 
     var candidates: [SearchCandidate] {
@@ -105,8 +113,10 @@ final class SearchCenterViewModel {
         }
 
         lastSubmittedQuery = request.query
-        historyStore.record(request.query)
-        history = historyStore.items
+        // 历史记录持久化 + 重新加载：try? 静默吞错避免 SQLite 异常炸 UI；
+        // 真实失败留到 W5 接 CloudKit 时一起观测。
+        try? await historyRepository.record(request.query)
+        await reloadHistory()
         selectedIndex = nil
         currentGitHubPage = 1
         await coordinator.search(request)
@@ -123,8 +133,8 @@ final class SearchCenterViewModel {
         clampSelection()
     }
 
-    func useHistory(_ entry: String) async {
-        query = entry
+    func useHistory(_ entry: SearchHistory) async {
+        query = entry.query
         await submit()
     }
 
@@ -137,17 +147,17 @@ final class SearchCenterViewModel {
 
     /// 删除单条历史。仅在用户主动点击 chip 上的 "x" 时调用，
     /// 不会重置当前的查询 / 结果 / 选中位置，保持手术式删除。
-    func removeHistory(_ entry: String) {
-        historyStore.remove(entry)
-        history = historyStore.items
+    func removeHistory(_ entry: SearchHistory) async {
+        try? await historyRepository.remove(query: entry.queryLower)
+        await reloadHistory()
     }
 
     /// 清空全部历史。视图层负责二次确认（confirmationDialog），
     /// 此处只是执行删除并刷新本地 `history` 快照。
-    func clearHistory() {
+    func clearHistory() async {
         guard !history.isEmpty else { return }
-        historyStore.clear()
-        history = historyStore.items
+        try? await historyRepository.clearAll()
+        await reloadHistory()
     }
 
     func applyGitHubFilters() async {
@@ -204,5 +214,20 @@ final class SearchCenterViewModel {
             page: currentGitHubPage,
             includeWebInAll: includeWebInAll()
         )
+    }
+
+    /// 从 repository 拉最新历史，按 `decayedScore` 降序写入 `history`。
+    ///
+    /// **为何在 ViewModel 里排序而不是 SQL**：SQLite 不内置 `pow()`，注册自定义函数
+    /// 仅为这一个表的排序得不偿失；表上限 50 条，内存排序的 O(n log n) ≪ 1ms。
+    private func reloadHistory() async {
+        guard let entries = try? await historyRepository.fetchAll() else {
+            history = []
+            return
+        }
+        let now = Date()
+        history = entries.sorted { lhs, rhs in
+            lhs.decayedScore(now: now) > rhs.decayedScore(now: now)
+        }
     }
 }

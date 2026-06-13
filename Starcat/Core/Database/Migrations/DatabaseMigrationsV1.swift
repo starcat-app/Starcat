@@ -65,6 +65,7 @@ enum DatabaseMigrations {
             try createRepoNotes(db)
             try createReadmes(db)
             try createSavedSearches(db)
+            try createSearchHistory(db)
             try createSyncState(db)
             try createTagStatsCache(db)
             try createReposFTS(db)
@@ -214,7 +215,7 @@ enum DatabaseMigrations {
             """)
     }
 
-    // MARK: - starred_repos / tags / repo_tags / repo_notes / readmes / saved_searches / tag_stats_cache
+    // MARK: - starred_repos / tags / repo_tags / repo_notes / readmes / saved_searches / search_history / tag_stats_cache
 
     /// starred_repos：用户的 star 关系表（独立于 repos 缓存维度）。
     /// repos cascade 删除时关联清理；sync_status 跟踪与 GitHub 的双向 star 同步态。
@@ -307,6 +308,37 @@ enum DatabaseMigrations {
             t.column("updated_at", .text).notNull()
             t.column("last_used_at", .text)
         }
+    }
+
+    /// search_history：搜索浮层 `⌘K` 的关键词历史。
+    ///
+    /// 与 `saved_searches`（用户主动保存的命名查询条件）的区别：
+    /// - search_history 是**自动记录**的最近输入；saved_searches 是用户**主动收藏**。
+    /// - search_history 只存关键词字符串 + 计数 + 时间戳；saved_searches 存复杂 query JSON。
+    ///
+    /// CloudKit-ready 字段（W5 同步主线接入时使用）：
+    /// - `id` UUID 字符串 → CloudKit recordName
+    /// - `modified_at` ISO8601 → CloudKit LWW 时间戳
+    /// - 详细 schema 与冲突合并策略见 `docs/CloudKit数据同步设计.md` §2.x
+    ///
+    /// 排序：UI 内存里按 `useCount × 0.5^(daysSinceLastUsed / 14)` 半衰期衰减；
+    /// SQLite 不内置 pow()，全表只 50 条上限内存计算成本可忽略。
+    /// 数据库索引按 `last_used_at` 倒序建立，便于"取最近 N 条"的快速预筛。
+    private static func createSearchHistory(_ db: Database) throws {
+        try db.create(table: "search_history") { t in
+            t.column("id", .text).primaryKey()
+            t.column("query", .text).notNull()
+            t.column("query_lower", .text).notNull().unique()
+            t.column("use_count", .integer).notNull().defaults(to: 1)
+            t.column("last_used_at", .text).notNull()
+            t.column("first_seen_at", .text).notNull()
+            t.column("modified_at", .text).notNull()
+        }
+        try db.create(
+            index: "idx_search_history_last_used_at",
+            on: "search_history",
+            columns: ["last_used_at"]
+        )
     }
 
     /// sync_state：单用户全量 / 增量同步状态机。

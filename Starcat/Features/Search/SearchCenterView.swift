@@ -347,11 +347,11 @@ struct SearchCenterView: View {
                     historyHeader
                     ScrollView {
                         SearchHistoryFlowLayout(spacing: 8) {
-                            ForEach(viewModel.history, id: \.self) { entry in
+                            ForEach(viewModel.history, id: \.id) { entry in
                                 HistoryChip(
                                     entry: entry,
                                     onUse: { Task { await viewModel.useHistory(entry) } },
-                                    onRemove: { viewModel.removeHistory(entry) }
+                                    onRemove: { Task { await viewModel.removeHistory(entry) } }
                                 )
                             }
                         }
@@ -371,7 +371,7 @@ struct SearchCenterView: View {
             titleVisibility: .visible
         ) {
             Button("清空全部", role: .destructive) {
-                viewModel.clearHistory()
+                Task { await viewModel.clearHistory() }
             }
             Button("取消", role: .cancel) {}
         } message: {
@@ -578,24 +578,35 @@ struct SearchCenterView: View {
 ///   不 hover 时也预留出 14pt 空位避免 chip 宽度跳变
 /// - hover 同时把胶囊底色从 0.10 加深到 0.18，提供"被聚焦"的反馈
 private struct HistoryChip: View {
-    let entry: String
+    let entry: SearchHistory
     let onUse: () -> Void
     let onRemove: () -> Void
 
     @State private var isHovered: Bool = false
 
+    /// 显示 useCount 角标的最低门槛。`< 3` 视为"偶尔搜过"，无需占据视觉注意力。
+    /// 这是 dong4j 拍板的阈值，需要调整时改这一个常量即可。
+    private static let useCountBadgeMinimum = 3
+
     var body: some View {
         ZStack(alignment: .trailing) {
             Button(action: onUse) {
-                HStack(spacing: 0) {
-                    Text(entry)
+                HStack(spacing: 4) {
+                    Text(entry.query)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    // 始终预留删除按钮的位置（14pt 按钮 + 6pt 间距 ≈ 14pt 占位），
-                    // 避免 hover 时 chip 宽度跳变带动后续 chip 重排。
+
+                    if entry.useCount >= Self.useCountBadgeMinimum {
+                        Text("·\(entry.useCount)")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.tertiary)
+                            .monospacedDigit()
+                    }
+
+                    // 始终预留删除按钮的位置（14pt 占位），避免 hover 时 chip 宽度跳变。
                     Color.clear.frame(width: 14, height: 14)
-                        .padding(.leading, 6)
+                        .padding(.leading, 2)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
@@ -607,7 +618,7 @@ private struct HistoryChip: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .help(entry)
+            .help(chipTooltip)
 
             if isHovered {
                 Button(action: onRemove) {
@@ -630,6 +641,12 @@ private struct HistoryChip: View {
             Divider()
             Button("删除这条历史", role: .destructive) { onRemove() }
         }
+    }
+
+    /// 系统 tooltip 内容：useCount > 1 时附带次数信息便于用户知道分数怎么来的。
+    private var chipTooltip: String {
+        guard entry.useCount > 1 else { return entry.query }
+        return "\(entry.query) — 使用 \(entry.useCount) 次"
     }
 }
 

@@ -136,6 +136,7 @@ struct HomeView: View {
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
+        searchHistoryRepository: any SearchHistoryRepositoryProtocol,
         semanticSearchService: SemanticSearchService? = nil,
         trendingRepository: any TrendingRepositoryProtocol,
         githubAPIClient: any GitHubAPIClientProtocol,
@@ -181,6 +182,7 @@ struct HomeView: View {
                 GitHubRepositorySearchProvider(client: githubAPIClient),
                 AnySearchWebProvider()
             ]),
+            historyRepository: searchHistoryRepository,
             includeWebInAll: {
                 AppSettings.shared.anySearchEnabled && AppSettings.shared.searchIncludeWebInAll
             }
