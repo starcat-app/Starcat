@@ -2,30 +2,34 @@
 //  CodeFlowRunner.swift
 //  Starcat
 //
-//  CodeFlow 集成流水线：URLSession 下载 GitHub ZIP archive，缓存到应用容器，
-//  再把 ZIP 注入 vendored CodeFlow HTML，由页面内置 JSZip 自动解压和分析。
+//  CodeFlow 集成流水线：解析 GitHub 分支 HEAD、复用或下载 commit 固定 ZIP，
+//  再把 ZIP 注入 vendored CodeFlow HTML，并通过 CodeFlowStorage 原子保存生成物。
 //
 
 import Foundation
 
 enum CodeFlowError: LocalizedError, Sendable {
     case privateRepository
-    case invalidArchiveURL
-    case downloadFailed(statusCode: Int)
+    case invalidGitHubURL
+    case requestFailed(statusCode: Int)
     case archiveTooLarge
     case emptyArchive
     case templateMissing
     case invalidTemplate
+    case branchMissing
+    case branchNotFound(String)
 
     var errorDescription: String? {
         switch self {
         case .privateRepository: return "首版代码图谱仅支持公开仓库。"
-        case .invalidArchiveURL: return "无法生成 GitHub ZIP 下载地址。"
-        case .downloadFailed(let statusCode): return "下载仓库 ZIP 失败（HTTP \(statusCode)）。"
+        case .invalidGitHubURL: return "无法生成 GitHub API 地址。"
+        case .requestFailed(let statusCode): return "GitHub 请求失败（HTTP \(statusCode)）。"
         case .archiveTooLarge: return "仓库 ZIP 超过当前 100 MB 下载上限。"
         case .emptyArchive: return "GitHub 返回了空的 ZIP 文件。"
         case .templateMissing: return "Starcat 安装包中缺少 CodeFlow 页面。"
         case .invalidTemplate: return "CodeFlow 页面缺少 Starcat ZIP 注入入口。"
+        case .branchMissing: return "仓库没有可用于生成代码图谱的分支。"
+        case .branchNotFound(let name): return "生成分支 \(name) 已不存在，请选择其它分支。"
         }
     }
 }
@@ -34,7 +38,19 @@ protocol CodeFlowArchiveDownloading: Sendable {
     func download(from url: URL) async throws -> (Data, HTTPURLResponse)
 }
 
-struct URLSessionCodeFlowArchiveDownloader: CodeFlowArchiveDownloading {
+protocol CodeFlowGitHubProviding: Sendable {
+    func branches(owner: String, repo: String) async throws -> [CodeFlowBranch]
+    func branch(owner: String, repo: String, name: String) async throws -> CodeFlowBranch
+}
+
+/// CodeFlow 使用独立轻量请求器，避免扩大 GitHubAPIClientProtocol 后让全部测试 mock 跟着改。
+struct URLSessionCodeFlowGitHubClient: CodeFlowArchiveDownloading, CodeFlowGitHubProviding {
+    private struct BranchDTO: Decodable {
+        struct CommitDTO: Decodable { let sha: String }
+        let name: String
+        let commit: CommitDTO
+    }
+
     private let session: URLSession
     private let tokenProvider: any GitHubTokenProviding
 
@@ -46,7 +62,43 @@ struct URLSessionCodeFlowArchiveDownloader: CodeFlowArchiveDownloading {
         self.tokenProvider = tokenProvider
     }
 
+    func branches(owner: String, repo: String) async throws -> [CodeFlowBranch] {
+        var page = 1
+        var result: [CodeFlowBranch] = []
+        while true {
+            let url = try apiURL(owner: owner, repo: repo, suffix: "branches", queryItems: [
+                URLQueryItem(name: "per_page", value: "100"),
+                URLQueryItem(name: "page", value: String(page))
+            ])
+            let (data, response) = try await request(url: url)
+            guard (200...299).contains(response.statusCode) else {
+                throw CodeFlowError.requestFailed(statusCode: response.statusCode)
+            }
+            let values = try JSONDecoder().decode([BranchDTO].self, from: data)
+            result.append(contentsOf: values.map { CodeFlowBranch(name: $0.name, commitSHA: $0.commit.sha) })
+            guard values.count == 100 else { break }
+            page += 1
+        }
+        return result
+    }
+
+    func branch(owner: String, repo: String, name: String) async throws -> CodeFlowBranch {
+        let encodedBranch = Self.encodePathComponent(name)
+        let url = try apiURL(owner: owner, repo: repo, suffix: "branches/\(encodedBranch)")
+        let (data, response) = try await request(url: url)
+        if response.statusCode == 404 { throw CodeFlowError.branchNotFound(name) }
+        guard (200...299).contains(response.statusCode) else {
+            throw CodeFlowError.requestFailed(statusCode: response.statusCode)
+        }
+        let value = try JSONDecoder().decode(BranchDTO.self, from: data)
+        return CodeFlowBranch(name: value.name, commitSHA: value.commit.sha)
+    }
+
     func download(from url: URL) async throws -> (Data, HTTPURLResponse) {
+        try await request(url: url)
+    }
+
+    private func request(url: URL) async throws -> (Data, HTTPURLResponse) {
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
@@ -59,53 +111,109 @@ struct URLSessionCodeFlowArchiveDownloader: CodeFlowArchiveDownloading {
         }
         return (data, httpResponse)
     }
+
+    private func apiURL(
+        owner: String,
+        repo: String,
+        suffix: String,
+        queryItems: [URLQueryItem] = []
+    ) throws -> URL {
+        var components = URLComponents(string: "https://api.github.com")!
+        components.percentEncodedPath = "/repos/\(Self.encodePathComponent(owner))/\(Self.encodePathComponent(repo))/\(suffix)"
+        components.queryItems = queryItems.isEmpty ? nil : queryItems
+        guard let url = components.url else { throw CodeFlowError.invalidGitHubURL }
+        return url
+    }
+
+    /// 分支名允许包含 `/`，必须按单个 path component 编码，不能直接拼进 URL path。
+    private static func encodePathComponent(_ value: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    }
+}
+
+struct CodeFlowArchiveResult: Sendable {
+    let url: URL
+    let wasDownloaded: Bool
+    let bytes: Int64
 }
 
 struct CodeFlowRunner {
     static let maximumArchiveBytes = 100_000_000
 
     private let downloader: any CodeFlowArchiveDownloading
+    private let github: any CodeFlowGitHubProviding
+    private let storage: CodeFlowStorage
     private let fileManager: FileManager
 
     init(
-        downloader: any CodeFlowArchiveDownloading = URLSessionCodeFlowArchiveDownloader(),
+        downloader: (any CodeFlowArchiveDownloading)? = nil,
+        github: (any CodeFlowGitHubProviding)? = nil,
+        storage: CodeFlowStorage = .shared,
         fileManager: FileManager = .default
     ) {
-        self.downloader = downloader
+        let client = URLSessionCodeFlowGitHubClient()
+        self.downloader = downloader ?? client
+        self.github = github ?? client
+        self.storage = storage
         self.fileManager = fileManager
     }
 
-    /// 下载公开仓库 ZIP。已有缓存时直接复用，保持“不判断分支和更新”的最短链路。
-    func archiveIfNeeded(repo: Repo) async throws -> (URL, wasDownloaded: Bool) {
+    func branches(repo: Repo) async throws -> [CodeFlowBranch] {
         guard !repo.isPrivate else { throw CodeFlowError.privateRepository }
-        let archiveURL = try archiveFileURL(owner: repo.owner, name: repo.name)
+        return try await github.branches(owner: repo.owner, repo: repo.name)
+    }
+
+    func resolveBranch(repo: Repo, name: String) async throws -> CodeFlowBranch {
+        guard !repo.isPrivate else { throw CodeFlowError.privateRepository }
+        return try await github.branch(owner: repo.owner, repo: repo.name, name: name)
+    }
+
+    /// 共享源码快照按不可变 commit SHA 命名，CodeFlow 删除或重新生成不得删除它。
+    func archiveIfNeeded(repo: Repo, commitSHA: String) async throws -> CodeFlowArchiveResult {
+        guard !repo.isPrivate else { throw CodeFlowError.privateRepository }
+        let archiveURL = try archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: commitSHA)
         if fileManager.fileExists(atPath: archiveURL.path) {
-            return (archiveURL, false)
+            let bytes = try fileSize(archiveURL)
+            guard bytes > 0 else { throw CodeFlowError.emptyArchive }
+            return CodeFlowArchiveResult(url: archiveURL, wasDownloaded: false, bytes: bytes)
         }
 
-        guard let encodedOwner = repo.owner.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-              let encodedName = repo.name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-              let downloadURL = URL(string: "https://api.github.com/repos/\(encodedOwner)/\(encodedName)/zipball") else {
-            throw CodeFlowError.invalidArchiveURL
+        let encodedOwner = Self.encodePathComponent(repo.owner)
+        let encodedName = Self.encodePathComponent(repo.name)
+        let encodedSHA = Self.encodePathComponent(commitSHA)
+        guard let downloadURL = URL(string: "https://api.github.com/repos/\(encodedOwner)/\(encodedName)/zipball/\(encodedSHA)") else {
+            throw CodeFlowError.invalidGitHubURL
         }
         let (data, response) = try await downloader.download(from: downloadURL)
         guard (200...299).contains(response.statusCode) else {
-            throw CodeFlowError.downloadFailed(statusCode: response.statusCode)
+            throw CodeFlowError.requestFailed(statusCode: response.statusCode)
         }
         guard !data.isEmpty else { throw CodeFlowError.emptyArchive }
         guard data.count <= Self.maximumArchiveBytes else { throw CodeFlowError.archiveTooLarge }
 
         try fileManager.createDirectory(at: archiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: archiveURL, options: .atomic)
-        return (archiveURL, true)
+        let temporaryURL = archiveURL.appendingPathExtension("tmp")
+        try? fileManager.removeItem(at: temporaryURL)
+        defer { try? fileManager.removeItem(at: temporaryURL) }
+        try data.write(to: temporaryURL, options: .atomic)
+        try fileManager.moveItem(at: temporaryURL, to: archiveURL)
+        return CodeFlowArchiveResult(url: archiveURL, wasDownloaded: true, bytes: Int64(data.count))
     }
 
-    func makeVisualizationPage(archiveURL: URL, owner: String, name: String) throws -> URL {
+    func makeVisualizationPage(
+        archive: CodeFlowArchiveResult,
+        repo: Repo,
+        branch: CodeFlowBranch,
+        startedAt: Date,
+        steps: [CodeFlowExecutionStep],
+        previousGenerationCount: Int? = nil
+    ) throws -> CodeFlowStoredProject {
         guard let templateURL = Bundle.main.url(forResource: "codeflow", withExtension: "html", subdirectory: "CodeFlow")
             ?? Bundle.main.url(forResource: "codeflow", withExtension: "html") else {
             throw CodeFlowError.templateMissing
         }
-        let archiveData = try Data(contentsOf: archiveURL, options: .mappedIfSafe)
+        let archiveData = try Data(contentsOf: archive.url, options: .mappedIfSafe)
         guard !archiveData.isEmpty else { throw CodeFlowError.emptyArchive }
         guard archiveData.count <= Self.maximumArchiveBytes else { throw CodeFlowError.archiveTooLarge }
 
@@ -114,29 +222,99 @@ struct CodeFlowRunner {
         guard html.contains(token) else { throw CodeFlowError.invalidTemplate }
         html = html.replacingOccurrences(of: token, with: archiveData.base64EncodedString())
 
-        let outputURL = try visualizationDirectory(owner: owner, name: name)
-            .appendingPathComponent("index.html", isDirectory: false)
-        try fileManager.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try html.write(to: outputURL, atomically: true, encoding: .utf8)
-        return outputURL
+        let storedGenerationCount = try storage.existingProject(owner: repo.owner, name: repo.name)?
+            .metadata.generation.generationCount
+        let previousCount = previousGenerationCount ?? storedGenerationCount ?? 0
+        let finishedAt = Date()
+        let pageBytes = Int64(html.utf8.count)
+        let metadata = CodeFlowMetadata(
+            schemaVersion: 1,
+            repository: .init(
+                githubID: repo.id,
+                owner: repo.owner,
+                name: repo.name,
+                fullName: repo.fullName,
+                htmlURL: repo.htmlUrl
+            ),
+            artifact: .init(
+                page: "index.html",
+                pageBytes: pageBytes,
+                sourceArchiveBytes: archive.bytes,
+                sourceArchiveKey: "github.com/\(repo.owner)/\(repo.name)/\(branch.commitSHA).zip"
+            ),
+            generation: .init(
+                generatedAt: finishedAt,
+                generationCount: previousCount + 1,
+                lastDurationMilliseconds: Self.milliseconds(from: startedAt, to: finishedAt)
+            ),
+            sourceRevision: .init(
+                branch: branch.name,
+                commitSHA: branch.commitSHA,
+                commitURL: "https://github.com/\(repo.owner)/\(repo.name)/commit/\(branch.commitSHA)"
+            ),
+            lastExecution: .init(startedAt: startedAt, finishedAt: finishedAt, steps: steps),
+            generator: .init(
+                codeFlowCommit: "51ab9708841e14258bebfb5fb326e8b37782d193",
+                integrationVersion: 1
+            )
+        )
+        return try storage.write(pageHTML: html, metadata: metadata, owner: repo.owner, name: repo.name)
     }
 
-    func archiveFileURL(owner: String, name: String) throws -> URL {
-        try applicationSupportDirectory()
-            .appendingPathComponent("archives/github.com", isDirectory: true)
-            .appendingPathComponent(owner, isDirectory: true)
-            .appendingPathComponent("\(name).zip", isDirectory: false)
+    func existingProject(owner: String, name: String) throws -> CodeFlowStoredProject? {
+        try storage.existingProject(owner: owner, name: name)
     }
 
-    private func visualizationDirectory(owner: String, name: String) throws -> URL {
+    func deleteVisualization(owner: String, name: String) throws {
+        try storage.deleteProject(owner: owner, name: name)
+    }
+
+    func openVisualization(_ pageURL: URL) throws -> Bool {
+        try storage.openPage(pageURL)
+    }
+
+    func updateExecution(
+        project: CodeFlowStoredProject,
+        startedAt: Date,
+        steps: [CodeFlowExecutionStep]
+    ) throws -> CodeFlowStoredProject {
+        let old = project.metadata
+        let metadata = CodeFlowMetadata(
+            schemaVersion: old.schemaVersion,
+            repository: old.repository,
+            artifact: old.artifact,
+            generation: old.generation,
+            sourceRevision: old.sourceRevision,
+            lastExecution: .init(startedAt: startedAt, finishedAt: Date(), steps: steps),
+            generator: old.generator
+        )
+        return try storage.updateMetadata(metadata, owner: old.repository.owner, name: old.repository.name)
+    }
+
+    func archiveFileURL(owner: String, name: String, commitSHA: String) throws -> URL {
         try applicationSupportDirectory()
-            .appendingPathComponent("codeflow", isDirectory: true)
+            .appendingPathComponent("repository-snapshots/github.com", isDirectory: true)
             .appendingPathComponent(owner, isDirectory: true)
             .appendingPathComponent(name, isDirectory: true)
+            .appendingPathComponent("\(commitSHA).zip", isDirectory: false)
     }
 
     private func applicationSupportDirectory() throws -> URL {
         try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             .appendingPathComponent("Starcat", isDirectory: true)
+    }
+
+    private func fileSize(_ url: URL) throws -> Int64 {
+        let values = try url.resourceValues(forKeys: [.fileSizeKey])
+        return Int64(values.fileSize ?? 0)
+    }
+
+    private static func encodePathComponent(_ value: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    }
+
+    static func milliseconds(from start: Date, to end: Date = Date()) -> Int {
+        max(0, Int(end.timeIntervalSince(start) * 1_000))
     }
 }

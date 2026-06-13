@@ -43,6 +43,10 @@ struct ServicesSettingsTab: View {
     @State private var probingServiceID: String?
     /// 当前正在保存（写持久化 + 推送 actor）的 service id。
     @State private var savingServiceID: String?
+    /// CodeFlow 生成物不进数据库，设置页直接观察文件系统扫描结果。
+    @State private var codeFlowStorage = CodeFlowStorage.shared
+    @State private var showsClearCodeFlowConfirmation = false
+    @State private var codeFlowActionError: String?
 
     var body: some View {
         Form {
@@ -53,6 +57,8 @@ struct ServicesSettingsTab: View {
                     .padding(.vertical, 2)
             }
 
+            codeFlowSection
+
             ForEach(ThirdPartyService.allCases) { service in
                 serviceSection(for: service)
             }
@@ -61,6 +67,188 @@ struct ServicesSettingsTab: View {
         .task {
             // 进入页面时把已持久化的 URL 拉到草稿里。
             loadDrafts()
+            codeFlowStorage.reload()
+        }
+        .alert("清除全部 CodeFlow 数据？", isPresented: $showsClearCodeFlowConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("全部清除", role: .destructive) { clearAllCodeFlowProjects() }
+        } message: {
+            Text("将删除当前输出目录中的全部 CodeFlow HTML 与 metadata。共享源码 ZIP 不会被删除。")
+        }
+        .alert("CodeFlow 操作失败", isPresented: Binding(
+            get: { codeFlowActionError != nil },
+            set: { if !$0 { codeFlowActionError = nil } }
+        )) {
+            Button("好") { codeFlowActionError = nil }
+        } message: {
+            Text(codeFlowActionError ?? "未知错误")
+        }
+    }
+
+    // MARK: - CodeFlow
+
+    private var codeFlowSection: some View {
+        Section("CodeFlow") {
+            VStack(alignment: .leading, spacing: 5) {
+                Label("代码图谱输出目录", systemImage: "point.3.connected.trianglepath.dotted")
+                    .font(.headline)
+                Text("HTML 与 metadata 保存在此目录；供其它集成复用的源码 ZIP 仍保存在应用容器。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Text(codeFlowStorage.outputDirectoryDisplayPath)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                Spacer()
+                Button("选择目录") { chooseCodeFlowOutputDirectory() }
+                Button {
+                    revealCodeFlowOutputDirectory()
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .help("在 Finder 中显示")
+                Button {
+                    codeFlowStorage.resetOutputDirectory()
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .disabled(!codeFlowStorage.hasCustomOutputDirectory)
+                .help("恢复 App Container 默认目录")
+            }
+
+            HStack(spacing: 18) {
+                codeFlowStat(title: "项目", value: "\(codeFlowStorage.projects.count)")
+                codeFlowStat(title: "占用", value: ByteCountFormatter.string(fromByteCount: codeFlowStorage.totalBytes, countStyle: .file))
+                codeFlowStat(title: "累计生成", value: "\(codeFlowStorage.totalGenerationCount) 次")
+                if let date = codeFlowStorage.latestGeneratedAt {
+                    codeFlowStat(title: "最后生成", value: date.formatted(date: .abbreviated, time: .shortened))
+                }
+                Spacer()
+            }
+
+            if let message = codeFlowStorage.lastErrorMessage {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if codeFlowStorage.projects.isEmpty {
+                Text("当前目录还没有 CodeFlow 生成项目。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(codeFlowStorage.projects) { project in
+                    codeFlowProjectRow(project)
+                }
+
+                HStack {
+                    Spacer()
+                    Button("一键清除", role: .destructive) {
+                        showsClearCodeFlowConfirmation = true
+                    }
+                }
+            }
+        }
+    }
+
+    private func codeFlowStat(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption2).foregroundStyle(.tertiary)
+            Text(value).font(.caption.weight(.medium))
+        }
+    }
+
+    private func codeFlowProjectRow(_ project: CodeFlowStoredProject) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(project.metadata.repository.fullName)
+                        .font(.callout.weight(.medium))
+                    Text("\(project.metadata.sourceRevision.branch) · \(project.metadata.sourceRevision.shortSHA) · HTML \(ByteCountFormatter.string(fromByteCount: project.metadata.artifact.pageBytes, countStyle: .file)) · ZIP \(ByteCountFormatter.string(fromByteCount: project.metadata.artifact.sourceArchiveBytes, countStyle: .file))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Text(project.metadata.generation.generatedAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Button("打开") {
+                    do {
+                        guard try codeFlowStorage.openPage(project.pageURL) else {
+                            throw CocoaError(.fileNoSuchFile)
+                        }
+                    } catch {
+                        codeFlowActionError = error.localizedDescription
+                    }
+                }
+                Button("预览") {
+                    do {
+                        try codeFlowStorage.revealPage(project.pageURL)
+                    } catch {
+                        codeFlowActionError = error.localizedDescription
+                    }
+                }
+                Button("删除", role: .destructive) { deleteCodeFlowProject(project) }
+            }
+
+            DisclosureGroup("详情") {
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+                    GridRow { Text("页面路径"); Text(project.pageURL.path).textSelection(.enabled) }
+                    GridRow { Text("生成次数"); Text("\(project.metadata.generation.generationCount)") }
+                    GridRow { Text("最近耗时"); Text("\(project.metadata.generation.lastDurationMilliseconds) ms") }
+                    GridRow { Text("CodeFlow 版本"); Text(String(project.metadata.generator.codeFlowCommit.prefix(7))).monospaced() }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
+            }
+        }
+    }
+
+    private func chooseCodeFlowOutputDirectory() {
+        let panel = NSOpenPanel()
+        panel.title = "选择 CodeFlow 输出目录"
+        panel.prompt = "选择"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try codeFlowStorage.setCustomOutputDirectory(url)
+        } catch {
+            codeFlowActionError = error.localizedDescription
+        }
+    }
+
+    private func revealCodeFlowOutputDirectory() {
+        do {
+            try codeFlowStorage.revealOutputRoot()
+        } catch {
+            codeFlowActionError = error.localizedDescription
+        }
+    }
+
+    private func deleteCodeFlowProject(_ project: CodeFlowStoredProject) {
+        do {
+            try codeFlowStorage.deleteProject(
+                owner: project.metadata.repository.owner,
+                name: project.metadata.repository.name
+            )
+        } catch {
+            codeFlowActionError = error.localizedDescription
+        }
+    }
+
+    private func clearAllCodeFlowProjects() {
+        do {
+            try codeFlowStorage.deleteAllProjects()
+        } catch {
+            codeFlowActionError = error.localizedDescription
         }
     }
 

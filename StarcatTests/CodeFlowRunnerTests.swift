@@ -2,7 +2,7 @@
 //  CodeFlowRunnerTests.swift
 //  StarcatTests
 //
-//  验证 GitHub ZIP 下载、缓存复用和 CodeFlow 页面注入，不访问真实网络。
+//  验证 commit 固定 ZIP、共享缓存、metadata 与 CodeFlow 输出目录，不访问真实网络。
 //
 
 import Foundation
@@ -11,55 +11,103 @@ import Testing
 
 @Suite("CodeFlowRunner")
 struct CodeFlowRunnerTests {
-    @Test("首次下载使用 GitHub zipball API 并写入缓存")
-    func downloadsGitHubZipball() async throws {
+    @Test("首次下载使用固定 commit zipball 并写入共享快照")
+    func downloadsFixedCommitZipball() async throws {
         let downloader = RecordingArchiveDownloader(data: Data("zip-data".utf8))
-        let runner = CodeFlowRunner(downloader: downloader)
-        let repo = makeRepo(owner: "braedonsaunders", name: "codeflow")
-        let archiveURL = try runner.archiveFileURL(owner: repo.owner, name: repo.name)
-        try? FileManager.default.removeItem(at: archiveURL)
-        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+        let github = StubCodeFlowGitHubProvider()
+        let runner = CodeFlowRunner(downloader: downloader, github: github)
+        let repo = makeRepo(owner: "starcat-download-\(UUID().uuidString)", name: "codeflow")
+        let sha = "51ab9708841e14258bebfb5fb326e8b37782d193"
+        let archiveURL = try runner.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: sha)
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent().deletingLastPathComponent()) }
 
-        let result = try await runner.archiveIfNeeded(repo: repo)
+        let result = try await runner.archiveIfNeeded(repo: repo, commitSHA: sha)
 
         #expect(result.wasDownloaded)
-        #expect(try Data(contentsOf: result.0) == Data("zip-data".utf8))
+        #expect(try Data(contentsOf: result.url) == Data("zip-data".utf8))
         let requestedURLs = await downloader.requestedURLs
-        #expect(requestedURLs == [URL(string: "https://api.github.com/repos/braedonsaunders/codeflow/zipball")!])
+        #expect(requestedURLs == [URL(string: "https://api.github.com/repos/\(repo.owner)/codeflow/zipball/\(sha)")!])
     }
 
-    @Test("已有 ZIP 时跳过网络下载")
-    func reusesCachedArchive() async throws {
+    @Test("同一 commit 已有 ZIP 时跳过网络下载")
+    func reusesCommitArchive() async throws {
         let downloader = RecordingArchiveDownloader(data: Data("new-data".utf8))
-        let runner = CodeFlowRunner(downloader: downloader)
+        let runner = CodeFlowRunner(downloader: downloader, github: StubCodeFlowGitHubProvider())
         let repo = makeRepo(owner: "starcat-cache-\(UUID().uuidString)", name: "demo")
-        let archiveURL = try runner.archiveFileURL(owner: repo.owner, name: repo.name)
+        let archiveURL = try runner.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: "abc123")
         try FileManager.default.createDirectory(at: archiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("cached".utf8).write(to: archiveURL)
-        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent().deletingLastPathComponent()) }
 
-        let result = try await runner.archiveIfNeeded(repo: repo)
+        let result = try await runner.archiveIfNeeded(repo: repo, commitSHA: "abc123")
 
         #expect(!result.wasDownloaded)
         #expect(await downloader.requestedURLs.isEmpty)
     }
 
-    @Test("生成页面注入 ZIP 并移除占位 token")
-    func generatedPageContainsInjectedArchive() throws {
+    @Test("生成页面同时写入 metadata 并可从文件系统恢复")
+    func generatedPageContainsMetadata() throws {
         let fileManager = FileManager.default
-        let archiveURL = fileManager.temporaryDirectory
-            .appendingPathComponent("starcat-codeflow-\(UUID().uuidString).zip")
+        let root = fileManager.temporaryDirectory.appendingPathComponent("starcat-codeflow-output-\(UUID().uuidString)")
+        let storage = CodeFlowStorage(fileManager: fileManager, defaults: isolatedDefaults(), fixedRootURL: root)
+        let runner = CodeFlowRunner(
+            downloader: RecordingArchiveDownloader(data: Data()),
+            github: StubCodeFlowGitHubProvider(),
+            storage: storage,
+            fileManager: fileManager
+        )
+        let archiveURL = fileManager.temporaryDirectory.appendingPathComponent("starcat-codeflow-\(UUID().uuidString).zip")
         try Data("zip-data".utf8).write(to: archiveURL)
-        defer { try? fileManager.removeItem(at: archiveURL) }
+        defer {
+            try? fileManager.removeItem(at: archiveURL)
+            try? fileManager.removeItem(at: root)
+        }
 
-        let owner = "starcat-page-test-\(UUID().uuidString)"
-        let runner = CodeFlowRunner(fileManager: fileManager)
-        let pageURL = try runner.makeVisualizationPage(archiveURL: archiveURL, owner: owner, name: "Demo")
-        defer { try? fileManager.removeItem(at: pageURL.deletingLastPathComponent().deletingLastPathComponent()) }
+        let repo = makeRepo(owner: "braedonsaunders", name: "codeflow")
+        let branch = CodeFlowBranch(name: "main", commitSHA: "51ab9708841e14258bebfb5fb326e8b37782d193")
+        let project = try runner.makeVisualizationPage(
+            archive: CodeFlowArchiveResult(url: archiveURL, wasDownloaded: true, bytes: 8),
+            repo: repo,
+            branch: branch,
+            startedAt: Date(),
+            steps: [],
+            previousGenerationCount: 2
+        )
 
-        let html = try String(contentsOf: pageURL, encoding: .utf8)
+        let html = try String(contentsOf: project.pageURL, encoding: .utf8)
         #expect(!html.contains("__STARCAT_CODEFLOW_ZIP_PAYLOAD_TOKEN__"))
-        #expect(html.contains("window.__STARCAT_CODEFLOW_ZIP_BASE64__ = \""))
+        #expect(project.metadata.sourceRevision.branch == "main")
+        #expect(project.metadata.sourceRevision.commitSHA == branch.commitSHA)
+        #expect(project.metadata.generation.generationCount == 3)
+        #expect(try runner.existingProject(owner: repo.owner, name: repo.name)?.pageURL == project.pageURL)
+    }
+
+    @Test("CodeFlow 清理只删除生成物，不删除共享 ZIP")
+    func deletingProjectPreservesSharedArchive() async throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory.appendingPathComponent("starcat-codeflow-delete-\(UUID().uuidString)")
+        let storage = CodeFlowStorage(fileManager: fileManager, defaults: isolatedDefaults(), fixedRootURL: root)
+        let downloader = RecordingArchiveDownloader(data: Data("zip-data".utf8))
+        let runner = CodeFlowRunner(downloader: downloader, github: StubCodeFlowGitHubProvider(), storage: storage)
+        let repo = makeRepo(owner: "starcat-delete-\(UUID().uuidString)", name: "demo")
+        let sha = "abc123"
+        let archive = try await runner.archiveIfNeeded(repo: repo, commitSHA: sha)
+        let project = try runner.makeVisualizationPage(
+            archive: archive,
+            repo: repo,
+            branch: CodeFlowBranch(name: "main", commitSHA: sha),
+            startedAt: Date(),
+            steps: []
+        )
+        defer {
+            try? fileManager.removeItem(at: root)
+            try? fileManager.removeItem(at: archive.url.deletingLastPathComponent().deletingLastPathComponent())
+        }
+
+        try runner.deleteVisualization(owner: repo.owner, name: repo.name)
+
+        #expect(!fileManager.fileExists(atPath: project.directoryURL.path))
+        #expect(fileManager.fileExists(atPath: archive.url.path))
     }
 
     private func makeRepo(owner: String, name: String) -> Repo {
@@ -87,8 +135,16 @@ struct CodeFlowRunnerTests {
             createdAt: nil,
             updatedAt: nil,
             starredAt: nil,
-            cachedAt: nil
+            cachedAt: nil,
+            defaultBranch: "main"
         )
+    }
+
+    private func isolatedDefaults() -> UserDefaults {
+        let suiteName = "CodeFlowRunnerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
     }
 }
 
@@ -104,12 +160,17 @@ private actor RecordingArchiveDownloader: CodeFlowArchiveDownloading {
 
     func download(from url: URL) async throws -> (Data, HTTPURLResponse) {
         requestedURLs.append(url)
-        let response = HTTPURLResponse(
-            url: url,
-            statusCode: statusCode,
-            httpVersion: "HTTP/1.1",
-            headerFields: nil
-        )!
+        let response = HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: nil)!
         return (data, response)
+    }
+}
+
+private struct StubCodeFlowGitHubProvider: CodeFlowGitHubProviding {
+    func branches(owner: String, repo: String) async throws -> [CodeFlowBranch] {
+        [CodeFlowBranch(name: "main", commitSHA: "abc123")]
+    }
+
+    func branch(owner: String, repo: String, name: String) async throws -> CodeFlowBranch {
+        CodeFlowBranch(name: name, commitSHA: "abc123")
     }
 }

@@ -217,9 +217,6 @@ enum RepoDetailAction: Identifiable {
     /// **不带 handler**——同 `.share` 决策，AI 窗口行为对所有 repo 一致。
     case ai
 
-    /// 本地 CodeFlow 分析入口。当前只对公开仓库提供。
-    case codeGraph
-
     /// Weekly 场景独有：跳到该期周刊原文。
     case weeklyIssue(number: Int, url: URL)
 
@@ -234,7 +231,6 @@ enum RepoDetailAction: Identifiable {
         switch self {
         case .share: return "share"
         case .ai: return "ai"
-        case .codeGraph: return "codeGraph"
         case .weeklyIssue: return "weeklyIssue"
         case .custom(let id, _, _, _): return "custom-\(id)"
         }
