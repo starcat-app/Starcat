@@ -167,6 +167,9 @@ final class SearchCoordinator {
                 current.localRepo = localRepo
                 current.card = candidate.card
             }
+            if current.remoteRepo == nil {
+                current.remoteRepo = candidate.remoteRepo
+            }
             if current.semanticScore == nil {
                 current.semanticScore = candidate.semanticScore
             }

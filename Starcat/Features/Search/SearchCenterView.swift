@@ -14,10 +14,13 @@ struct SearchCenterView: View {
     let onOpenURL: (RepositoryCandidate) -> Void
     let onCopyURL: (RepositoryCandidate) -> Void
     let onOpenAI: (Repo) -> Void
+    let onToggleStar: (Repo) -> Void
+    let isStarred: (Int64) -> Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isSearchFocused: Bool
     @State private var showGitHubFilters: Bool = false
+    @State private var remoteDetailRepo: Repo?
 
     var body: some View {
         ZStack {
@@ -45,6 +48,14 @@ struct SearchCenterView: View {
             .transition(reduceMotion ? .opacity : .scale(scale: 0.97).combined(with: .opacity))
         }
         .onAppear { isSearchFocused = true }
+        .sheet(item: $remoteDetailRepo) { repo in
+            SearchRemoteRepoDetailView(
+                repo: repo,
+                isStarred: isStarred(repo.id),
+                onToggleStar: { onToggleStar(repo) },
+                onOpenAI: { onOpenAI(repo) }
+            )
+        }
         .onKeyPress(.upArrow) {
             viewModel.moveSelection(by: -1)
             return .handled
@@ -194,7 +205,15 @@ struct SearchCenterView: View {
             )
         } else {
             List(Array(viewModel.candidates.enumerated()), id: \.element.id) { index, candidate in
-                Button { onOpenCandidate(candidate) } label: {
+                Button {
+                    if case .repository(let repository) = candidate,
+                       repository.localRepo == nil,
+                       let remoteRepo = repository.remoteRepo {
+                        remoteDetailRepo = remoteRepo
+                    } else {
+                        onOpenCandidate(candidate)
+                    }
+                } label: {
                     candidateRow(candidate, isSelected: index == viewModel.selectedIndex)
                 }
                 .buttonStyle(.plain)
@@ -203,9 +222,10 @@ struct SearchCenterView: View {
                     if case .repository(let repository) = candidate {
                         Button("在 GitHub 打开") { onOpenURL(repository) }
                         Button("复制 URL") { onCopyURL(repository) }
-                        if let repo = repository.localRepo {
+                        if let repo = repository.displayRepo {
                             Divider()
                             Button("Ask / AI 摘要") { onOpenAI(repo) }
+                            Button(isStarred(repo.id) ? "取消 Star" : "Star") { onToggleStar(repo) }
                         }
                     }
                 }
@@ -295,5 +315,48 @@ struct SearchCenterView: View {
             get: { viewModel.githubFilters[keyPath: keyPath] ?? Date() },
             set: { viewModel.githubFilters[keyPath: keyPath] = $0 }
         )
+    }
+}
+
+/// GitHub 搜索结果的会话级详情，不写数据库；只有用户执行 Star 后才通过
+/// StarActionService 进入本地事实源。
+private struct SearchRemoteRepoDetailView: View {
+    let repo: Repo
+    let isStarred: Bool
+    let onToggleStar: () -> Void
+    let onOpenAI: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(repo.fullName).font(.title2.bold())
+                    Text(repo.description ?? "暂无描述").foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+            }
+            HStack(spacing: 18) {
+                Label(repo.language ?? "Unknown", systemImage: "chevron.left.forwardslash.chevron.right")
+                Label("\(repo.starsCount)", systemImage: "star")
+                Label("\(repo.forksCount)", systemImage: "tuningfork")
+                if let license = repo.license { Label(license, systemImage: "doc.text") }
+            }
+            .foregroundStyle(.secondary)
+            HStack {
+                Button(isStarred ? "取消 Star" : "Star") { onToggleStar() }
+                    .buttonStyle(.borderedProminent)
+                Button("Ask / AI 摘要") { onOpenAI() }
+                Button("在 GitHub 打开") {
+                    if let url = URL(string: repo.htmlUrl) { NSWorkspace.shared.open(url) }
+                }
+            }
+        }
+        .padding(24)
+        .frame(width: 620, height: 260)
     }
 }

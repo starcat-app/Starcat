@@ -44,6 +44,7 @@ struct GitHubRepositorySearchProvider: SearchProvider {
                 card: ephemeral.asCardData(),
                 sources: [.github],
                 localRepo: nil,
+                remoteRepo: ephemeral,
                 semanticScore: nil
             )
         }

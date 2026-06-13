@@ -82,9 +82,12 @@ struct RepositoryCandidate: Identifiable, Hashable, Sendable {
     var card: RepoCardViewData
     var sources: Set<SearchSource>
     var localRepo: Repo?
+    /// 远端完整元数据，仅用于会话内详情/AI，不代表已经写入本地数据库。
+    var remoteRepo: Repo?
     var semanticScore: Double?
 
     var isStarred: Bool { localRepo?.isStarred ?? card.isStarred }
+    var displayRepo: Repo? { localRepo ?? remoteRepo }
 }
 
 struct ReferenceCandidate: Identifiable, Hashable, Sendable {

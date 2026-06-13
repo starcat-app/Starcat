@@ -263,7 +263,9 @@ struct HomeView: View {
                     onOpenCandidate: openSearchCandidate,
                     onOpenURL: openSearchRepositoryURL,
                     onCopyURL: copySearchRepositoryURL,
-                    onOpenAI: openSearchRepositoryAI
+                    onOpenAI: openSearchRepositoryAI,
+                    onToggleStar: toggleSearchRepositoryStar,
+                    isStarred: { dependencies.starredRegistry.contains(ghRepoId: $0) }
                 )
                 .zIndex(100)
             }
@@ -712,6 +714,16 @@ struct HomeView: View {
             dependencies: dependencies,
             homeViewModel: viewModel
         )
+    }
+
+    private func toggleSearchRepositoryStar(_ repo: Repo) {
+        Task {
+            do {
+                try await dependencies.starActionService.toggle(repo: repo)
+            } catch {
+                AppLog.network.error("Search star toggle failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     // MARK: - 辅助
