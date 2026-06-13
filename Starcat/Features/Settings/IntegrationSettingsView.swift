@@ -108,23 +108,25 @@ struct IntegrationSettingsTab: View {
 
     private var anySearchSection: some View {
         @Bindable var settings = settings
-        return Section("AnySearch") {
-            Toggle("启用 AnySearch 网页搜索", isOn: $settings.anySearchEnabled)
-            Toggle("匿名模式（不发送 API Key）", isOn: $settings.anySearchAnonymousMode)
+        return Section("settings.anySearch.title") {
+            Toggle("settings.anySearch.enabled", isOn: $settings.anySearchEnabled)
+            Toggle("settings.anySearch.anonymous", isOn: $settings.anySearchAnonymousMode)
                 .disabled(!settings.anySearchEnabled)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("API Key")
+                Text("settings.anySearch.apiKey")
                     .font(.callout.weight(.medium))
 
                 HStack(spacing: 8) {
                     Group {
                         if showAnySearchAPIKey {
-                            TextField("输入 AnySearch API Key", text: $anySearchAPIKey)
+                            TextField("", text: $anySearchAPIKey, prompt: Text("settings.anySearch.apiKey.placeholder"))
                         } else {
-                            SecureField("输入 AnySearch API Key", text: $anySearchAPIKey)
+                            SecureField("", text: $anySearchAPIKey, prompt: Text("settings.anySearch.apiKey.placeholder"))
                         }
                     }
+                    .labelsHidden()
+                    .accessibilityLabel(Text("settings.anySearch.apiKey"))
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: .infinity)
                     .onChange(of: anySearchAPIKey) { _, _ in
@@ -139,32 +141,38 @@ struct IntegrationSettingsTab: View {
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
-                    .help(showAnySearchAPIKey ? "隐藏 API Key" : "显示 API Key")
+                    .help(Text(showAnySearchAPIKey
+                        ? LocalizedStringKey("settings.anySearch.apiKey.hide")
+                        : LocalizedStringKey("settings.anySearch.apiKey.show")))
 
-                    Button(anySearchAPIKeySaved ? "已保存" : "保存") {
+                    Button {
                         settings.setAnySearchAPIKey(anySearchAPIKey)
                         anySearchAPIKey = settings.anySearchAPIKey() ?? ""
                         anySearchAPIKeySaved = true
+                    } label: {
+                        Text(anySearchAPIKeySaved
+                            ? LocalizedStringKey("settings.anySearch.apiKey.saved")
+                            : LocalizedStringKey("settings.anySearch.apiKey.save"))
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(anySearchAPIKeySaved)
                 }
 
                 Text(settings.anySearchAnonymousMode
-                    ? "Key 会加密保存，但匿名模式下请求不会发送 Authorization。"
-                    : "Key 加密保存在本机，请求时作为 Bearer Token 发送。")
+                    ? LocalizedStringKey("settings.anySearch.apiKey.anonymousDescription")
+                    : LocalizedStringKey("settings.anySearch.apiKey.bearerDescription"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Toggle("在“全部”范围中包含网页结果", isOn: $settings.searchIncludeWebInAll)
+            Toggle("settings.anySearch.includeWebInAll", isOn: $settings.searchIncludeWebInAll)
                 .disabled(!settings.anySearchEnabled)
-            Toggle("AI 摘要使用外部网页上下文", isOn: $settings.aiExternalContextEnabled)
+            Toggle("settings.anySearch.aiContext", isOn: $settings.aiExternalContextEnabled)
                 .disabled(!settings.anySearchEnabled)
-            Toggle("允许私有仓库使用外部上下文", isOn: $settings.aiExternalContextAllowPrivateRepos)
+            Toggle("settings.anySearch.allowPrivateContext", isOn: $settings.aiExternalContextAllowPrivateRepos)
                 .disabled(!settings.aiExternalContextEnabled)
 
-            Text("默认禁止把私有仓库名称、README 或笔记发送到外部搜索。匿名模式不会发送已保存的 API Key；配置了无效 Key 时不会自动降级为匿名请求。")
+            Text("settings.anySearch.privacyDescription")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

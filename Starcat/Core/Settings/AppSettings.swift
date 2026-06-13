@@ -614,6 +614,41 @@ final class AppSettings {
         didSet { persistBool(key: Keys.aiExternalContextAllowPrivateRepos, value: aiExternalContextAllowPrivateRepos) }
     }
 
+    // MARK: - AI 代码上下文（2026-06-13 引入，RepoContextPacker 客户端接入阶段 X1）
+    //
+    // 3 个偏好字段对应 `docs/详细设计/27-RepoContextPacker设计.md` §0.3 X1：
+    //   1. aiRepoContextEnabled       —— 总开关（默认 true，启用 RepoContextPacker 注入 AI prompt）
+    //   2. aiRepoContextTokenBudget   —— Token 预算（默认 8000，范围 4000-32000，控制 XML 体积）
+    //   3. aiRepoContextTier1MaxLines —— 关键文件保留行数（默认 80，范围 40-200，对应 `TierTruncation.tier1MaxLines`）
+    //
+    // 设计要点：
+    //   - 字段独立于 `aiExternalContextEnabled`（那个是 AnySearch Web 检索结果注入）；
+    //     两个外部上下文源相互正交，用户可独立开关。
+    //   - **不设「私有仓库」开关**：当前 Starcat 的 GitHub OAuth scope 是 `read:user` + `public_repo`，
+    //     API 永远不会返回 isPrivate=true 的 repo（用户即便在 GitHub 上 star 了私有仓库，
+    //     由于 scope 不含 `repo`，列表也拿不到）。Starcat 还没接管"私有仓库可见性"逻辑，
+    //     增加一个永远走不到的开关只会污染设置页并误导用户。
+
+    /// AI 代码上下文总开关。默认开启——这是 P0 价值卖点（让 AI"看到代码"）。
+    /// 关闭后 `RepoAIInsightService.makeSource` 跳过 RepoContextPacker 调用，降级为 README-only。
+    var aiRepoContextEnabled: Bool {
+        didSet { persistBool(key: Keys.aiRepoContextEnabled, value: aiRepoContextEnabled) }
+    }
+
+    /// Token 预算上限。Pass 2 BudgetAllocator 严格遵守，Tier 1 超 budget 降级 pathOnly。
+    /// 范围 4000-32000，默认 8000——经验值：小型仓库（< 50 文件）能装满，中型仓库（50-200 文件）核心覆盖。
+    /// 用户在「关键文件被截断」场景可调大；在 LLM 上下文窗口紧张（gpt-4o-mini 128k 但要省钱）时调小。
+    var aiRepoContextTokenBudget: Int {
+        didSet { defaults.set(aiRepoContextTokenBudget, forKey: Keys.aiRepoContextTokenBudget) }
+    }
+
+    /// 关键文件（Tier 1）头部保留行数。默认 80，对应 `TierTruncation.tier1MaxLines`。
+    /// 范围 40-200：40 行只够看 import + 一两个函数签名；200 行能看到中型文件的主结构。
+    /// 用户调大会让 Tier 1 单文件估算 token 数翻倍（按 `byteCount × 0.27` 估算）。
+    var aiRepoContextTier1MaxLines: Int {
+        didSet { defaults.set(aiRepoContextTier1MaxLines, forKey: Keys.aiRepoContextTier1MaxLines) }
+    }
+
     /// 贡献草坪贪吃蛇玩法（HOM-SNAKE-MODES 2026-06-05）。
     /// 默认 `.greedy`（snk 同款），让"草坪 + 蛇"的卖点立刻直观可感。
     /// 修改时 `ContributionGraphView` 会通过 `.onChange` 重建 animator。
@@ -950,6 +985,13 @@ final class AppSettings {
         self.aiExternalContextEnabled = defaults.object(forKey: Keys.aiExternalContextEnabled) as? Bool ?? false
         self.aiExternalContextAllowPrivateRepos = defaults.object(forKey: Keys.aiExternalContextAllowPrivateRepos) as? Bool ?? false
 
+        // 2026-06-13 RepoContextPacker 客户端接入（3 个字段）：
+        // 总开关默认 true（P0 价值卖点）；token budget 默认 8000 / Tier 1 行数默认 80
+        // 与 RepoContextPacker `PackInput.tokenBudget` / `TierTruncation.tier1MaxLines` 缺省值对齐。
+        self.aiRepoContextEnabled = defaults.object(forKey: Keys.aiRepoContextEnabled) as? Bool ?? true
+        self.aiRepoContextTokenBudget = defaults.object(forKey: Keys.aiRepoContextTokenBudget) as? Int ?? 8000
+        self.aiRepoContextTier1MaxLines = defaults.object(forKey: Keys.aiRepoContextTier1MaxLines) as? Int ?? 80
+
         let snakeStyleRaw = defaults.string(forKey: Keys.snakeStyle)
         self.snakeStyle = snakeStyleRaw.flatMap(SnakeStyle.init(rawValue:)) ?? SnakeStyle.default
 
@@ -1191,5 +1233,9 @@ final class AppSettings {
         static let aiIndexBodyDiffRatio = "settings.ai.index.bodyDiffRatio.v1"
         static let aiIndexNotesDiffRatio = "settings.ai.index.notesDiffRatio.v1"
         static let aiIndexAutoPrefetchEnabled = "settings.ai.index.autoPrefetchEnabled.v1"
+        // 2026-06-13 RepoContextPacker 客户端接入（3 个字段，§0.3 X1）
+        static let aiRepoContextEnabled = "settings.ai.repoContext.enabled.v1"
+        static let aiRepoContextTokenBudget = "settings.ai.repoContext.tokenBudget.v1"
+        static let aiRepoContextTier1MaxLines = "settings.ai.repoContext.tier1MaxLines.v1"
     }
 }
