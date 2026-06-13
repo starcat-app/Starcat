@@ -74,7 +74,7 @@ struct ExternalLinksMenu: View {
                 Button {
                     isCodeFlowPresented = true
                 } label: {
-                    Label("CodeFlow 代码图谱", systemImage: "point.3.connected.trianglepath.dotted")
+                    Label("CodeFlow", systemImage: "point.3.connected.trianglepath.dotted")
                 }
             }
 
