@@ -62,6 +62,10 @@ struct HomeView: View {
     /// 避免在 RepoDetailView 内部用 .task 异步 @State 赋值引发的"首次点击没初始化"问题。
     @State private var translationVM: ReadmeTranslationViewModel
 
+    /// 搜索中心是主窗口级 overlay，生命周期与 HomeView 一致，跨 Manage / Trending /
+    /// Activity 切换时不丢查询状态。
+    @State private var searchCenterViewModel: SearchCenterViewModel
+
     /// W4 A2：标签管理 sheet 显示状态。
     @State private var showTagManagement: Bool = false
 
@@ -171,6 +175,11 @@ struct HomeView: View {
             }
         ))
         _translationVM = State(initialValue: ReadmeTranslationViewModel(service: readmeTranslationService))
+        _searchCenterViewModel = State(initialValue: SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [
+                LocalKeywordSearchProvider(repository: repository)
+            ])
+        ))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
             tagRepository: tagRepository,
             repoTagRepository: repoTagRepository
@@ -213,6 +222,9 @@ struct HomeView: View {
                 },
                 onShowBatchAIPanel: {
                     showBatchAIPanel = true
+                },
+                onOpenSearchCenter: {
+                    searchCenterViewModel.present()
                 }
             )
                 .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
@@ -242,6 +254,24 @@ struct HomeView: View {
             if DebugFlags.layoutOverlay {
                 LayoutDebugOverlay()
             }
+        }
+        .overlay {
+            if searchCenterViewModel.isPresented {
+                SearchCenterView(
+                    viewModel: searchCenterViewModel,
+                    onOpenCandidate: openSearchCandidate,
+                    onOpenURL: openSearchRepositoryURL,
+                    onCopyURL: copySearchRepositoryURL,
+                    onOpenAI: openSearchRepositoryAI
+                )
+                .zIndex(100)
+            }
+        }
+        // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
+        .background {
+            Button("") { searchCenterViewModel.present() }
+                .keyboardShortcut("k", modifiers: .command)
+                .hidden()
         }
         .sheet(isPresented: $showTagManagement, onDismiss: {
             // W4 A6：标签管理 sheet 关闭后 → 刷新 Sidebar Tags 段 + 当前列表
@@ -640,6 +670,47 @@ struct HomeView: View {
                 dependencies.weeklySelectionService.clearSelection()
             }
         }
+    }
+
+    /// 本地结果回到 Manage 并复用现有 FTS5 提交流程，确保列表与详情状态仍由
+    /// HomeViewModel 单一维护；网页资料直接交给系统浏览器。
+    private func openSearchCandidate(_ candidate: SearchCandidate) {
+        switch candidate {
+        case .repository(let candidate):
+            guard let repo = candidate.localRepo else {
+                openSearchRepositoryURL(candidate)
+                return
+            }
+            selectedSidebarPage = .manage
+            viewModel.selection = .allStars
+            viewModel.submitSearch(repo.fullName)
+            searchCenterViewModel.dismiss()
+            Task {
+                await viewModel.reloadItems(forceRefresh: true)
+                viewModel.selectedRepoID = repo.id
+            }
+        case .reference(let reference):
+            NSWorkspace.shared.open(reference.originalURL)
+        }
+    }
+
+    private func openSearchRepositoryURL(_ candidate: RepositoryCandidate) {
+        guard let url = URL(string: "https://github.com/\(candidate.identity.owner)/\(candidate.identity.name)") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func copySearchRepositoryURL(_ candidate: RepositoryCandidate) {
+        let value = "https://github.com/\(candidate.identity.owner)/\(candidate.identity.name)"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func openSearchRepositoryAI(_ repo: Repo) {
+        RepoAIWindowController.show(
+            repo: repo,
+            dependencies: dependencies,
+            homeViewModel: viewModel
+        )
     }
 
     // MARK: - 辅助

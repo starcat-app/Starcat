@@ -11,6 +11,9 @@ import SwiftUI
 struct SearchCenterView: View {
     @Bindable var viewModel: SearchCenterViewModel
     let onOpenCandidate: (SearchCandidate) -> Void
+    let onOpenURL: (RepositoryCandidate) -> Void
+    let onCopyURL: (RepositoryCandidate) -> Void
+    let onOpenAI: (Repo) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isSearchFocused: Bool
@@ -127,6 +130,16 @@ struct SearchCenterView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .contextMenu {
+                    if case .repository(let repository) = candidate {
+                        Button("在 GitHub 打开") { onOpenURL(repository) }
+                        Button("复制 URL") { onCopyURL(repository) }
+                        if let repo = repository.localRepo {
+                            Divider()
+                            Button("Ask / AI 摘要") { onOpenAI(repo) }
+                        }
+                    }
+                }
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             }
