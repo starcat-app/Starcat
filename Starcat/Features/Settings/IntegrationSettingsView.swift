@@ -17,6 +17,7 @@ struct IntegrationSettingsTab: View {
     @State private var actionError: String?
     @State private var anySearchAPIKey: String = ""
     @State private var showAnySearchAPIKey: Bool = false
+    @State private var anySearchAPIKeySaved: Bool = false
 
     var body: some View {
         Form {
@@ -112,24 +113,49 @@ struct IntegrationSettingsTab: View {
             Toggle("匿名模式（不发送 API Key）", isOn: $settings.anySearchAnonymousMode)
                 .disabled(!settings.anySearchEnabled)
 
-            HStack {
-                Group {
-                    if showAnySearchAPIKey {
-                        TextField("API Key", text: $anySearchAPIKey)
-                    } else {
-                        SecureField("API Key", text: $anySearchAPIKey)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("API Key")
+                    .font(.callout.weight(.medium))
+
+                HStack(spacing: 8) {
+                    Group {
+                        if showAnySearchAPIKey {
+                            TextField("输入 AnySearch API Key", text: $anySearchAPIKey)
+                        } else {
+                            SecureField("输入 AnySearch API Key", text: $anySearchAPIKey)
+                        }
                     }
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: .infinity)
+                    .onChange(of: anySearchAPIKey) { _, _ in
+                        anySearchAPIKeySaved = false
+                    }
+
+                    Button {
+                        showAnySearchAPIKey.toggle()
+                    } label: {
+                        Image(systemName: showAnySearchAPIKey ? "eye.slash" : "eye")
+                            .frame(width: 18)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help(showAnySearchAPIKey ? "隐藏 API Key" : "显示 API Key")
+
+                    Button(anySearchAPIKeySaved ? "已保存" : "保存") {
+                        settings.setAnySearchAPIKey(anySearchAPIKey)
+                        anySearchAPIKey = settings.anySearchAPIKey() ?? ""
+                        anySearchAPIKeySaved = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(anySearchAPIKeySaved)
                 }
-                Button {
-                    showAnySearchAPIKey.toggle()
-                } label: {
-                    Image(systemName: showAnySearchAPIKey ? "eye.slash" : "eye")
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                Button("保存") { settings.setAnySearchAPIKey(anySearchAPIKey) }
+
+                Text(settings.anySearchAnonymousMode
+                    ? "Key 会加密保存，但匿名模式下请求不会发送 Authorization。"
+                    : "Key 加密保存在本机，请求时作为 Bearer Token 发送。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .disabled(!settings.anySearchEnabled || settings.anySearchAnonymousMode)
 
             Toggle("在“全部”范围中包含网页结果", isOn: $settings.searchIncludeWebInAll)
                 .disabled(!settings.anySearchEnabled)
