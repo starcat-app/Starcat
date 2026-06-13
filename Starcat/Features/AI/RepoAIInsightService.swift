@@ -216,7 +216,7 @@ final class RepoAIInsightService {
 
         // HOM-52：只跑标签（includeSummary == false）时不写 ai_summaries 缓存——
         // 否则会用空 summaryText 覆盖已有的有效摘要缓存。调用方仍能拿到 suggestions。
-        if includeSummary {
+        if includeSummary, repo.isStarred {
             let jsonData = try JSONEncoder().encode(insight)
             let record = AISummaryRecord(
                 repoId: repo.id,
@@ -383,7 +383,10 @@ final class RepoAIInsightService {
     private func cacheModelKey() -> String {
         let summaryModel = settings.aiSummaryTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
         let tagsModel = settings.aiTagsTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
-        let external = settings.anySearchEnabled && settings.aiExternalContextEnabled ? "on" : "off"
+        let external: String = {
+            guard settings.anySearchEnabled && settings.aiExternalContextEnabled else { return "off" }
+            return settings.aiExternalContextAllowPrivateRepos ? "on-private" : "on-public"
+        }()
         return "summary:\(settings.aiSummaryTask.providerID)/\(summaryModel)|tags:\(settings.aiTagsTask.providerID)/\(tagsModel)|external:\(external)"
     }
 

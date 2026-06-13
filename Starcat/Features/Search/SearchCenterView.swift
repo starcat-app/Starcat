@@ -66,7 +66,10 @@ struct SearchCenterView: View {
             return .handled
         }
         .onKeyPress(.return) {
-            if let candidate = viewModel.selectedCandidate, !viewModel.lastSubmittedQuery.isEmpty {
+            let normalizedDraft = viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let candidate = viewModel.selectedCandidate,
+               !viewModel.lastSubmittedQuery.isEmpty,
+               normalizedDraft == viewModel.lastSubmittedQuery {
                 onOpenCandidate(candidate)
             } else {
                 Task { await viewModel.submit() }

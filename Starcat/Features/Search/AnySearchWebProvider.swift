@@ -29,7 +29,10 @@ struct AnySearchWebProvider: SearchProvider {
         }
         guard config.enabled else { throw AnySearchError.disabled }
 
-        let key = "\(request.query.lowercased())|\(config.anonymous ? "anonymous" : "bearer")"
+        // Bearer Key 变化必须自然 miss，避免用户修正无效 Key 后仍读到旧会话缓存。
+        // 只使用进程内 hashValue，不把密钥原文写入 key、日志或磁盘。
+        let credentialVersion = config.anonymous ? "anonymous" : "bearer:\(config.apiKey?.hashValue ?? 0)"
+        let key = "\(request.query.lowercased())|\(credentialVersion)"
         if let cached = await cache.value(for: key) { return cached }
 
         let client = AnySearchClient(apiKey: config.apiKey, anonymous: config.anonymous)
