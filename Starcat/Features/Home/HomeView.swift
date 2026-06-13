@@ -401,6 +401,13 @@ struct HomeView: View {
             if viewModel.smartSearchMode != settings.smartSearchMode {
                 viewModel.smartSearchMode = settings.smartSearchMode
             }
+            // HOM-197（2026-06-13 dong4j）：把语义搜索过滤阈值从 settings 注入 viewModel。
+            // 与 sortOption / hideArchived / hideForks / statusFilter 同款"View 启动期单向同步"。
+            // viewModel 内 didSet 会自动调 applyView()，但首启时 items 还没填充，applyView
+            // 是 no-op；真正生效在第一次 reloadItems 完成 + applyView 后。
+            if viewModel.semanticScoreThreshold != settings.aiSemanticSearchScoreThreshold {
+                viewModel.semanticScoreThreshold = settings.aiSemanticSearchScoreThreshold
+            }
             
             // 恢复上次保存的 Manage 分类（跨启动）。无记录时 persistedRawValue 解码回落 allStars。
             savedManageSelection = SidebarItem(persistedRawValue: settings.lastManageSelectionRaw)
@@ -627,6 +634,18 @@ struct HomeView: View {
         .onChange(of: settings.smartSearchMode) { _, newMode in
             if viewModel.smartSearchMode != newMode {
                 viewModel.smartSearchMode = newMode
+            }
+        }
+        // HOM-197（2026-06-13 dong4j）：用户在 Settings 拖「搜索结果过滤阈值」滑杆时
+        // 即时 re-filter 当前语义搜索结果。
+        //
+        // 设计取舍：监听 settings 的字段而非把 viewModel 直接绑 settings——
+        // 与现有 sortOption / hideArchived / hideForks / statusFilter 同款"settings ↔ vm
+        // 单向 mirror"模式，让 viewModel 在单测 / Preview 场景里能完全独立于 AppSettings。
+        // viewModel 的 didSet 自动触发 applyView()，纯本地 filter 不调 embedding API。
+        .onChange(of: settings.aiSemanticSearchScoreThreshold) { _, newValue in
+            if viewModel.semanticScoreThreshold != newValue {
+                viewModel.semanticScoreThreshold = newValue
             }
         }
         // Manage ↔ Trending 切换时，记住各自的上次选择，切换回来时恢复
