@@ -84,9 +84,15 @@ struct RepoListView: View {
                 Button {
                     onOpenSearchCenter?()
                 } label: {
-                    Image(systemName: "sparkle.magnifyingglass")
+                    // 图标-only 在 macOS toolbar 中会被压成狭窄椭圆，既难辨认也与
+                    // 相邻筛选控件的视觉重量不一致。保留系统 bordered 样式并补文字，
+                    // 让入口拥有稳定点击面积，同时继续由 ⌘K 承担高频键盘路径。
+                    Label("搜索", systemImage: "magnifyingglass")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(minWidth: 62, minHeight: 24)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .focusEffectDisabled()
                 .help("全局搜索 (⌘K)")
             }
