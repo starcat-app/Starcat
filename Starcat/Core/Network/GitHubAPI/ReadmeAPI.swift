@@ -322,14 +322,19 @@ struct ReadmeAPI {
         }
 
         let markdown = String(data: raw.data, encoding: .utf8) ?? ""
+        // 2026-06-13 dong4j 决策：`readmes.content` 唯一消费者是机器（向量化 / AI 摘要），
+        // HTML 标签 / entity 都是噪声 → 落库前过一遍 `ReadmePreprocessor.sanitize(markdown:)`,
+        // 不截断（截断由消费方按各自的 `maxLength` 决定），下游零 strip 开销。
+        // 详见 `ReadmePreprocessor.swift` 头注释中的 A3 决策修订。
+        let sanitized = ReadmePreprocessor.sanitize(markdown: markdown)
         do {
-            try await repository.updateContent(repoId: repo.id, content: markdown)
+            try await repository.updateContent(repoId: repo.id, content: sanitized)
         } catch {
             return .failed(error)
         }
 
         var refreshed = cached
-        refreshed.content = markdown
+        refreshed.content = sanitized
         return .updated(refreshed)
     }
 
