@@ -2,7 +2,11 @@
 //  SearchModelsTests.swift
 //  StarcatTests
 //
-//  搜索领域模型与历史记录的纯逻辑回归测试。
+//  搜索领域模型的纯逻辑回归测试。
+//
+//  历史记录（SearchHistory + GRDBSearchHistoryRepository）的测试已迁到
+//  `SearchHistoryRepositoryTests.swift`，原 UserDefaults 版本的
+//  `SearchHistoryStoreTests` 在 2026-06-14 持久化升级到 GRDB 后整体废弃。
 //
 
 import Foundation
@@ -34,42 +38,3 @@ struct SearchModelsTests {
         #expect(request.perPage == 100)
     }
 }
-
-@Suite("Search History")
-@MainActor
-struct SearchHistoryStoreTests {
-    @Test("提交历史去重、前移并限制数量")
-    func recordDeduplicatesAndLimits() {
-        let suite = "SearchHistoryStoreTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = SearchHistoryStore(defaults: defaults, limit: 3)
-
-        store.record("Swift")
-        store.record("Rust")
-        store.record("Go")
-        store.record("swift")
-        store.record("Kotlin")
-
-        #expect(store.items == ["Kotlin", "swift", "Go"])
-        #expect(defaults.stringArray(forKey: "search.center.history") == store.items)
-    }
-
-    @Test("删除和清空会同步持久化")
-    func removeAndClearPersist() {
-        let suite = "SearchHistoryStoreTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = SearchHistoryStore(defaults: defaults)
-
-        store.record("Swift")
-        store.record("Rust")
-        store.remove("SWIFT")
-        #expect(store.items == ["Rust"])
-
-        store.clear()
-        #expect(store.items.isEmpty)
-        #expect(defaults.stringArray(forKey: "search.center.history") == [])
-    }
-}
-
