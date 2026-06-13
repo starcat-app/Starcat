@@ -865,6 +865,12 @@ private struct AboutDependency: Identifiable {
             copyright: "MIT declaration in upstream README; no LICENSE file in commit 51ab970",
             url: URL(string: "https://github.com/braedonsaunders/codeflow")
         ),
+        AboutDependency(
+            name: "Repomix",
+            license: "MIT",
+            copyright: "Copyright 2024 Kazuki Yamada",
+            url: URL(string: "https://github.com/yamadashy/repomix")
+        ),
 
         // MARK: 第三方品牌标识（非开源代码，但仍登记以保持透明）
         //
