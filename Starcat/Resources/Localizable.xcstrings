@@ -26,6 +26,16 @@
         }
       }
     },
+    "%@ · %@ · XML %@ · %@ tokens · %@ files" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@ · XML %3$@ · %4$@ tokens · %5$@ files"
+          }
+        }
+      }
+    },
     "%@ × %@" : {
       "localizations" : {
         "en" : {
@@ -47,6 +57,16 @@
     },
     "%@ 行" : {
 
+    },
+    "%@/%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@/%2$@"
+          }
+        }
+      }
     },
     "%@%@" : {
       "localizations" : {
@@ -2689,176 +2709,6 @@
         }
       }
     },
-    "ai.context.storage.section" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "AI Code Context" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "AI 代码上下文" }
-        }
-      }
-    },
-    "ai.context.storage.outputDirectory" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "Context Output Directory" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "代码上下文输出目录" }
-        }
-      }
-    },
-    "ai.context.storage.subtitle" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "Switching directories migrates existing context.xml and metadata.json. Shared source ZIPs remain in the app container." }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "切换目录时会迁移现有 context.xml 与 metadata.json；共享源码 ZIP 仍保存在应用容器。" }
-        }
-      }
-    },
-    "ai.context.storage.choose" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "Choose Directory" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "选择目录" }
-        }
-      }
-    },
-    "ai.context.storage.revealHelp" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "Reveal in Finder" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "在 Finder 中显示" }
-        }
-      }
-    },
-    "ai.context.storage.resetHelp" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "Reset to default App Container directory" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "迁移到 App Container 默认目录" }
-        }
-      }
-    },
-    "ai.context.storage.statRepos" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "Repos" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "项目" }
-        }
-      }
-    },
-    "ai.context.storage.statBytes" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "Size" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "占用" }
-        }
-      }
-    },
-    "ai.context.storage.statGenerations" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "Generations" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "累计生成" }
-        }
-      }
-    },
-    "ai.context.storage.statGenerationsFormat" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "%d times" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "%d 次" }
-        }
-      }
-    },
-    "ai.context.storage.statLast" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "Last Generated" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "最后生成" }
-        }
-      }
-    },
-    "ai.context.storage.empty" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "No AI code contexts in current directory yet." }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "当前目录还没有 AI 代码上下文。" }
-        }
-      }
-    },
-    "ai.context.storage.menuReveal" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "Reveal" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "打开" }
-        }
-      }
-    },
-    "ai.context.storage.menuDelete" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "Delete" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "删除" }
-        }
-      }
-    },
-    "ai.context.storage.clearAll" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "Clear All" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "一键清除" }
-        }
-      }
-    },
-    "ai.context.storage.clearAllConfirm.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "Clear all AI code contexts?" }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "清除全部 AI 代码上下文？" }
-        }
-      }
-    },
-    "ai.context.storage.clearAllConfirm.message" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : { "state" : "translated", "value" : "This will delete all context.xml and metadata.json in the current output directory. Shared source ZIPs are not deleted." }
-        },
-        "zh-Hans" : {
-          "stringUnit" : { "state" : "translated", "value" : "将删除当前输出目录中的全部 context.xml 与 metadata.json。共享源码 ZIP 不会被删除。" }
-        }
-      }
-    },
     "ai.context.settings.tier1MaxLines" : {
       "localizations" : {
         "en" : {
@@ -2904,6 +2754,290 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Token 预算"
+          }
+        }
+      }
+    },
+    "ai.context.storage.choose" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Directory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择目录"
+          }
+        }
+      }
+    },
+    "ai.context.storage.clearAll" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear All"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一键清除"
+          }
+        }
+      }
+    },
+    "ai.context.storage.clearAllConfirm.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This will delete all context.xml and metadata.json in the current output directory. Shared source ZIPs are not deleted."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将删除当前输出目录中的全部 context.xml 与 metadata.json。共享源码 ZIP 不会被删除。"
+          }
+        }
+      }
+    },
+    "ai.context.storage.clearAllConfirm.title" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear all AI code contexts?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除全部 AI 代码上下文？"
+          }
+        }
+      }
+    },
+    "ai.context.storage.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No AI code contexts in current directory yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前目录还没有 AI 代码上下文。"
+          }
+        }
+      }
+    },
+    "ai.context.storage.menuDelete" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除"
+          }
+        }
+      }
+    },
+    "ai.context.storage.menuReveal" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reveal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开"
+          }
+        }
+      }
+    },
+    "ai.context.storage.outputDirectory" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Context Output Directory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码上下文输出目录"
+          }
+        }
+      }
+    },
+    "ai.context.storage.resetHelp" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset to default App Container directory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "迁移到 App Container 默认目录"
+          }
+        }
+      }
+    },
+    "ai.context.storage.revealHelp" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reveal in Finder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Finder 中显示"
+          }
+        }
+      }
+    },
+    "ai.context.storage.section" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Code Context"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 代码上下文"
+          }
+        }
+      }
+    },
+    "ai.context.storage.statBytes" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Size"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "占用"
+          }
+        }
+      }
+    },
+    "ai.context.storage.statGenerations" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "累计生成"
+          }
+        }
+      }
+    },
+    "ai.context.storage.statGenerationsFormat" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d times"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 次"
+          }
+        }
+      }
+    },
+    "ai.context.storage.statLast" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last Generated"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最后生成"
+          }
+        }
+      }
+    },
+    "ai.context.storage.statRepos" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repos"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "项目"
+          }
+        }
+      }
+    },
+    "ai.context.storage.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switching directories migrates existing context.xml and metadata.json. Shared source ZIPs remain in the app container."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换目录时会迁移现有 context.xml 与 metadata.json；共享源码 ZIP 仍保存在应用容器。"
           }
         }
       }
@@ -8119,6 +8253,7 @@
       }
     },
     "search.detail.action.askAI" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8135,6 +8270,7 @@
       }
     },
     "search.detail.action.close" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8151,6 +8287,7 @@
       }
     },
     "search.detail.action.copyClone" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8167,6 +8304,7 @@
       }
     },
     "search.detail.action.copyURL" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8183,6 +8321,7 @@
       }
     },
     "search.detail.action.more.tooltip" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8199,6 +8338,7 @@
       }
     },
     "search.detail.action.openHomepage" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8215,6 +8355,7 @@
       }
     },
     "search.detail.action.openOnGitHub" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8231,6 +8372,7 @@
       }
     },
     "search.detail.action.openOwner" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8247,6 +8389,7 @@
       }
     },
     "search.detail.action.star" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8263,6 +8406,7 @@
       }
     },
     "search.detail.action.unstar" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8279,6 +8423,7 @@
       }
     },
     "search.detail.badge.archived" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8295,6 +8440,7 @@
       }
     },
     "search.detail.badge.disabled" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8311,6 +8457,7 @@
       }
     },
     "search.detail.badge.fork" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8327,6 +8474,7 @@
       }
     },
     "search.detail.badge.template" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8375,6 +8523,7 @@
       }
     },
     "search.detail.license.tooltip" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8391,6 +8540,7 @@
       }
     },
     "search.detail.score.format" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8407,6 +8557,7 @@
       }
     },
     "search.detail.score.tooltip" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8423,6 +8574,7 @@
       }
     },
     "search.detail.stat.openIssues.tooltip" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8439,6 +8591,7 @@
       }
     },
     "search.detail.time.created.format" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8455,6 +8608,7 @@
       }
     },
     "search.detail.time.updated.format" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8735,6 +8889,91 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search"
+          }
+        }
+      }
+    },
+    "search.web.badge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网页"
+          }
+        }
+      }
+    },
+    "search.web.rate.exhaustedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quota exhausted · resets at %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "额度用尽 · %@ 重置"
+          }
+        }
+      }
+    },
+    "search.web.rate.remainingFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld/%2$lld left"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "剩余 %1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "search.web.rate.tooltipFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used %1$lld/%2$lld · resets at %3$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日已用 %1$lld/%2$lld · %3$@ 重置"
+          }
+        }
+      }
+    },
+    "search.web.summaryFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld results · %2$.1fs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 条结果 · %2$.1fs"
           }
         }
       }
@@ -14326,6 +14565,9 @@
     "最佳匹配" : {
 
     },
+    "最近搜索" : {
+
+    },
     "最近更新" : {
 
     },
@@ -14363,6 +14605,9 @@
 
     },
     "暂无模型。点击“测试并获取模型”，或在默认设置中使用自定义模型名。" : {
+
+    },
+    "此操作不可恢复。" : {
 
     },
     "没有匹配的模型。" : {
