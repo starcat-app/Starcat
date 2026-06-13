@@ -16,6 +16,7 @@ struct SearchCenterView: View {
     let onOpenAI: (Repo) -> Void
     let onToggleStar: (Repo) -> Void
     let isStarred: (Int64) -> Bool
+    let isGitHubAuthenticated: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isSearchFocused: Bool
@@ -136,6 +137,14 @@ struct SearchCenterView: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 Spacer()
+                Text(isGitHubAuthenticated ? "GitHub 已登录" : "GitHub 匿名搜索")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let summary = viewModel.githubResultSummary {
+                    Text(summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if viewModel.canLoadMoreGitHub {
                     Button("加载更多") { Task { await viewModel.loadMoreGitHub() } }
                         .buttonStyle(.plain)

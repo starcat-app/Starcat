@@ -69,6 +69,14 @@ final class SearchCenterViewModel {
         return page.hasNextPage
     }
 
+    var githubResultSummary: String? {
+        guard case .loaded(let page) = coordinator.status(for: .github), let total = page.totalCount else { return nil }
+        if total > 1_000 {
+            return "GitHub 命中 \(total) 条，仅可浏览前 1000 条"
+        }
+        return "GitHub 命中 \(total) 条"
+    }
+
     func present() {
         isPresented = true
         selectedIndex = 0

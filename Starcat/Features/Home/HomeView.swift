@@ -265,7 +265,8 @@ struct HomeView: View {
                     onCopyURL: copySearchRepositoryURL,
                     onOpenAI: openSearchRepositoryAI,
                     onToggleStar: toggleSearchRepositoryStar,
-                    isStarred: { dependencies.starredRegistry.contains(ghRepoId: $0) }
+                    isStarred: { dependencies.starredRegistry.contains(ghRepoId: $0) },
+                    isGitHubAuthenticated: authSession.state.isAuthenticated
                 )
                 .zIndex(100)
             }
