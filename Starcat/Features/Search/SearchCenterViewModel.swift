@@ -18,6 +18,9 @@ final class SearchCenterViewModel {
     var scope: SearchScope = .all
     var selectedIndex: Int = 0
     var isPresented: Bool = false
+    /// 搜索浮层会在关闭时从 SwiftUI 视图树移除，因此可恢复的 UI 状态必须由
+    /// 长生命周期 ViewModel 持有，不能放在 SearchCenterView 的临时 @State 中。
+    var isGitHubFiltersExpanded: Bool = false
     var githubFilters: GitHubSearchFilters = .empty
 
     private(set) var lastSubmittedQuery: String = ""
@@ -78,13 +81,15 @@ final class SearchCenterViewModel {
     }
 
     func present() {
+        // 重新打开只恢复面板，不重置选中项或重新搜索。用户误点遮罩关闭后应回到
+        // 原来的 query、scope、filters、结果和键盘位置。
         isPresented = true
-        selectedIndex = 0
     }
 
     func dismiss() {
+        // dismiss 仅控制可见性。真正清空会话只允许走 clear() 或提交空 query，
+        // 否则点击浮层外部 / Esc 会让用户被迫重复远端搜索。
         isPresented = false
-        coordinator.reset()
     }
 
     func submit() async {

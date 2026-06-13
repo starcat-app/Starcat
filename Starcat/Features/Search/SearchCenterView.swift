@@ -22,7 +22,6 @@ struct SearchCenterView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isSearchFocused: Bool
-    @State private var showGitHubFilters: Bool = false
     @State private var remoteDetailRepo: Repo?
 
     var body: some View {
@@ -135,13 +134,13 @@ struct SearchCenterView: View {
         VStack(spacing: 10) {
             HStack {
                 Button {
-                    showGitHubFilters.toggle()
+                    viewModel.isGitHubFiltersExpanded.toggle()
                 } label: {
                     HStack(spacing: 7) {
                         Image(systemName: "line.3.horizontal.decrease.circle")
                         Text("GitHub 筛选")
                             .fontWeight(.semibold)
-                        Image(systemName: showGitHubFilters ? "chevron.up" : "chevron.down")
+                        Image(systemName: viewModel.isGitHubFiltersExpanded ? "chevron.up" : "chevron.down")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
@@ -168,7 +167,7 @@ struct SearchCenterView: View {
                 }
             }
 
-            if showGitHubFilters {
+            if viewModel.isGitHubFiltersExpanded {
                 VStack(spacing: 12) {
                     HStack(alignment: .bottom, spacing: 12) {
                         githubLanguagePicker
