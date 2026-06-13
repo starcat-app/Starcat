@@ -177,7 +177,8 @@ struct HomeView: View {
         _translationVM = State(initialValue: ReadmeTranslationViewModel(service: readmeTranslationService))
         _searchCenterViewModel = State(initialValue: SearchCenterViewModel(
             coordinator: SearchCoordinator(providers: [
-                LocalKeywordSearchProvider(repository: repository)
+                LocalKeywordSearchProvider(repository: repository),
+                GitHubRepositorySearchProvider(client: githubAPIClient)
             ])
         ))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
