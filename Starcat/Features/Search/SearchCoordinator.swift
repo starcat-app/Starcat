@@ -83,6 +83,31 @@ final class SearchCoordinator {
         statuses[source] ?? .idle
     }
 
+    /// 只追加单一来源的下一页。分页不能复用 `search`，因为后者会清空已有本地与远端
+    /// 结果；这里仍递增 generation，保证快速连续点击时旧页不会迟到写回。
+    func loadMore(_ request: SearchRequest, source: SearchSource) async {
+        guard let provider = providers.first(where: { $0.source == source }) else { return }
+        activeTask?.cancel()
+        generation &+= 1
+        let requestGeneration = generation
+        statuses[source] = .loading
+
+        let task = Task {
+            do {
+                let page = try await provider.search(request)
+                guard !Task.isCancelled, requestGeneration == generation else { return }
+                statuses[source] = .loaded(page)
+                repositories = Self.mergeRepositories(existing: repositories, incoming: page.repositories)
+                references = Self.mergeReferences(existing: references, incoming: page.references)
+            } catch {
+                guard !Task.isCancelled, requestGeneration == generation else { return }
+                statuses[source] = .failed(error.localizedDescription)
+            }
+        }
+        activeTask = task
+        await task.value
+    }
+
     private func consume(_ outcome: ProviderOutcome, generation outcomeGeneration: UInt64) {
         guard outcomeGeneration == generation else { return }
 

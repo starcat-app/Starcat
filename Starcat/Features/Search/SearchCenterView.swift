@@ -17,6 +17,7 @@ struct SearchCenterView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isSearchFocused: Bool
+    @State private var showGitHubFilters: Bool = false
 
     var body: some View {
         ZStack {
@@ -28,6 +29,9 @@ struct SearchCenterView: View {
                 searchHeader
                 Divider()
                 scopePicker
+                if viewModel.scope == .all || viewModel.scope == .github {
+                    githubFilterBar
+                }
                 Divider()
                 resultContent
             }
@@ -108,6 +112,71 @@ struct SearchCenterView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 46)
+    }
+
+    private var githubFilterBar: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Button {
+                    showGitHubFilters.toggle()
+                } label: {
+                    Label("GitHub 筛选", systemImage: "line.3.horizontal.decrease.circle")
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                Spacer()
+                if viewModel.canLoadMoreGitHub {
+                    Button("加载更多") { Task { await viewModel.loadMoreGitHub() } }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                }
+            }
+
+            if showGitHubFilters {
+                HStack(spacing: 8) {
+                    TextField("Language", text: optionalBinding(\.language))
+                    TextField("Topic", text: optionalBinding(\.topic))
+                    TextField("Min stars", value: $viewModel.githubFilters.minimumStars, format: .number)
+                        .frame(width: 90)
+                    Picker("排序", selection: $viewModel.githubFilters.sort) {
+                        Text("Best match").tag(GitHubSearchSort.bestMatch)
+                        Text("Stars").tag(GitHubSearchSort.stars)
+                        Text("Forks").tag(GitHubSearchSort.forks)
+                        Text("Updated").tag(GitHubSearchSort.updated)
+                    }
+                    .frame(width: 120)
+                    Picker("顺序", selection: $viewModel.githubFilters.order) {
+                        Text("降序").tag(SearchOrder.descending)
+                        Text("升序").tag(SearchOrder.ascending)
+                    }
+                    .frame(width: 90)
+                    Button("应用") { Task { await viewModel.applyGitHubFilters() } }
+                        .buttonStyle(.borderedProminent)
+                }
+                .textFieldStyle(.roundedBorder)
+                HStack(spacing: 8) {
+                    DatePicker(
+                        "Created after",
+                        selection: optionalDateBinding(\.createdAfter),
+                        displayedComponents: .date
+                    )
+                    DatePicker(
+                        "Pushed after",
+                        selection: optionalDateBinding(\.pushedAfter),
+                        displayedComponents: .date
+                    )
+                    Button("清除日期") {
+                        viewModel.githubFilters.createdAfter = nil
+                        viewModel.githubFilters.pushedAfter = nil
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color.primary.opacity(0.025))
     }
 
     @ViewBuilder
@@ -210,5 +279,21 @@ struct SearchCenterView: View {
         case .github: return "GitHub"
         case .web: return "网页"
         }
+    }
+
+    private func optionalBinding(_ keyPath: WritableKeyPath<GitHubSearchFilters, String?>) -> Binding<String> {
+        Binding(
+            get: { viewModel.githubFilters[keyPath: keyPath] ?? "" },
+            set: { value in
+                viewModel.githubFilters[keyPath: keyPath] = value.isEmpty ? nil : value
+            }
+        )
+    }
+
+    private func optionalDateBinding(_ keyPath: WritableKeyPath<GitHubSearchFilters, Date?>) -> Binding<Date> {
+        Binding(
+            get: { viewModel.githubFilters[keyPath: keyPath] ?? Date() },
+            set: { viewModel.githubFilters[keyPath: keyPath] = $0 }
+        )
     }
 }
