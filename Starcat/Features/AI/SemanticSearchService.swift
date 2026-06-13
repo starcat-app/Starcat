@@ -110,10 +110,15 @@ final class SemanticSearchService {
     ///
     /// UI 工具栏的"重建索引"按钮 + 设置页"全量重建" 调这里；搜索时缺失索引也会走
     /// `ensureIndexed(force: false)` 自动补缺，但走 diff 短路。
-    func refreshIndex(for repos: [Repo]) async throws {
-        guard !repos.isEmpty else { return }
+    ///
+    /// **返回值（2026-06-13 dong4j 反馈"开始预拉闪烁"改造）**：实际调用 embedding
+    /// API 重新写入的 repo 数。`force=true` 路径下通常等于 `repos.count`；空入参 = 0。
+    /// `@discardableResult` 让既有 callsite 无需修改（HomeViewModel 等只关心异常）。
+    @discardableResult
+    func refreshIndex(for repos: [Repo]) async throws -> Int {
+        guard !repos.isEmpty else { return 0 }
         let (client, model) = try makeClient(task: settings.aiEmbeddingTask)
-        try await ensureIndexed(repos, model: model, client: client, force: true)
+        return try await ensureIndexed(repos, model: model, client: client, force: true)
     }
 
     /// 单 repo 按 diff 阈值判定后**有需要**才重建。
@@ -124,14 +129,26 @@ final class SemanticSearchService {
     /// - 后台 `SemanticIndexBuilder` 补完 README Markdown 后。
     ///
     /// 不抛 missingAPIKey：未配置 Provider 时静默 no-op，避免每次保存笔记都弹错误。
-    func refreshIndexIfChanged(for repo: Repo) async {
+    ///
+    /// **返回值（2026-06-13 dong4j 反馈"开始预拉闪烁"改造）**：
+    /// - `true`：实际调用 embedding API 重建了向量；
+    /// - `false`：被 diff 阈值跳过、缺 API Key 静默 no-op、或重建抛错。
+    ///
+    /// `SemanticIndexBuilder` 用它统计 `skipped` 计数，完成时判定"是否全部跳过"
+    /// 切到 `.alreadyUpToDate` 状态显示"已是最新"绿色徽章。其它 callsite
+    /// （摘要回调 / 笔记保存 / README backfill）不关心结果，靠 `@discardableResult` 静默。
+    @discardableResult
+    func refreshIndexIfChanged(for repo: Repo) async -> Bool {
         do {
             let (client, model) = try makeClient(task: settings.aiEmbeddingTask)
-            try await ensureIndexed([repo], model: model, client: client)
+            let rebuilt = try await ensureIndexed([repo], model: model, client: client)
+            return rebuilt > 0
         } catch SemanticSearchError.missingAPIKey {
             // 静默：用户没配 AI，不打扰
+            return false
         } catch {
             AppLog.ai.error("refreshIndexIfChanged failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 
@@ -161,13 +178,17 @@ final class SemanticSearchService {
     ///
     /// force=false：先取本地 snapshot，用 `IndexedTextDiff.shouldRebuild` 判定是否真的要重建；
     /// force=true：跳过 diff，每个 repo 都重新拼 snapshot + 调 embedding。
+    ///
+    /// **返回值**：实际向 embedding API 提交并 upsert 的 repo 数（= `workItems.count`）。
+    /// 给上层 `refreshIndex` / `refreshIndexIfChanged` 报告"真的重建了几条"，让
+    /// `SemanticIndexBuilder` 可以区分"全部跳过（已是最新）"和"实际重建"两种完成态。
     private func ensureIndexed(
         _ repos: [Repo],
         model: String,
         client: any AIClientProtocol,
         force: Bool = false
-    ) async throws {
-        guard !repos.isEmpty else { return }
+    ) async throws -> Int {
+        guard !repos.isEmpty else { return 0 }
 
         // 取本地已有 embedding（用于 diff 比对）
         let existing = try await embeddingRepository.fetchEmbeddingsByRepoID(
@@ -203,7 +224,7 @@ final class SemanticSearchService {
             }
             workItems.append(WorkItem(repo: repo, snapshot: snapshot, renderedText: renderedText))
         }
-        guard !workItems.isEmpty else { return }
+        guard !workItems.isEmpty else { return 0 }
 
         // 分批调 embedding API
         for chunk in workItems.chunked(into: batchSize) {
@@ -221,6 +242,7 @@ final class SemanticSearchService {
             }
             try await embeddingRepository.upsert(rows)
         }
+        return workItems.count
     }
 
     /// 拼接单个 repo 的 `IndexedSnapshot`：从 readme / summary / note repository 取数据，

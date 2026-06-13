@@ -1063,12 +1063,18 @@ struct AISettingsTab: View {
     }
 
     /// 开始 / 暂停 / 进度行。
+    ///
+    /// **2026-06-13 dong4j 反馈"开始预拉闪烁"改造**：
+    /// `.alreadyUpToDate(total)` 与 `.completed` 共用按钮分支（都回到"开始预拉"），
+    /// 右侧进度文字位置换成 `alreadyUpToDateBadge`——palette 模式渲染的白勾 + 深森林绿圆
+    /// + 同色系文字"已是最新（共 N 个仓库）"，参考登录页 `GithubAuthView` 的复制成功
+    /// 徽章姿势（保持视觉语言一致，新用户一眼就懂）。
     @ViewBuilder
     private var builderControlsRow: some View {
         let builder = dependencies.semanticIndexBuilder
         HStack(spacing: 10) {
             switch builder.status {
-            case .idle, .completed, .failed:
+            case .idle, .completed, .alreadyUpToDate, .failed:
                 Button(String(localized: "settings.aiIndex.prefetch.start")) {
                     builder.start()
                 }
@@ -1082,9 +1088,45 @@ struct AISettingsTab: View {
                 }
             }
             Spacer()
+            builderProgressView
+        }
+    }
+
+    /// 右侧进度信息视图。`.alreadyUpToDate` 渲染为绿色 ✓ palette 徽章 + 友好文案，
+    /// 其它状态保持原"caption 灰色文本"行为。
+    @ViewBuilder
+    private var builderProgressView: some View {
+        let builder = dependencies.semanticIndexBuilder
+        switch builder.status {
+        case .alreadyUpToDate(let total):
+            alreadyUpToDateBadge(total: total)
+        default:
             Text(builderProgressText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    /// "已是最新"绿色徽章。
+    ///
+    /// 视觉规范（与登录页 `GithubAuthView` 的"已复制 ✓"反馈保持一致）：
+    /// - 图标 `checkmark.circle.fill` 用 `symbolRenderingMode(.palette)` 渲染两层色：
+    ///   ⚠️ palette 模式下 `foregroundStyle` 第一参数是**前景层（✓）**、第二参数是
+    ///   **背景层（圆）**，给反了在浅色面板上会看不见圆，需小心顺序。
+    ///   颜色取深森林绿（0.12, 0.42, 0.18）+ 白勾，"成功徽章"的常见视觉语义。
+    /// - 文字与圆同色系，形成"图标 + 文字"一体的成功反馈块。
+    /// - `total == 0` 时（用户没 starred 任何 repo）也走这条分支，文案"已是最新
+    ///   （共 0 个仓库）"逻辑自洽——预拉完空集合本来就是"无事可做" = 已是最新。
+    private func alreadyUpToDateBadge(total: Int) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.circle.fill")
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(Color.white, Color(red: 0.12, green: 0.42, blue: 0.18))
+                .font(.callout)
+            Text(String(format: String(localized: "settings.aiIndex.prefetch.alreadyUpToDateFmt"), total))
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(Color(red: 0.12, green: 0.42, blue: 0.18))
         }
     }
 
@@ -1100,6 +1142,10 @@ struct AISettingsTab: View {
             )
         case .completed(let p, let t):
             return String(format: String(localized: "settings.aiIndex.prefetch.completedFmt"), p, t)
+        case .alreadyUpToDate(let total):
+            // builderProgressView 会优先走 alreadyUpToDateBadge 分支，这里只是为了
+            // switch 穷举性兜底，理论上不会被调用到。返回 i18n 文案保持安全。
+            return String(format: String(localized: "settings.aiIndex.prefetch.alreadyUpToDateFmt"), total)
         case .failed(let msg):
             return String(format: String(localized: "settings.aiIndex.prefetch.failedFmt"), msg)
         }
