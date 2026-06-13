@@ -446,7 +446,10 @@ struct RepoListView: View {
             )
             return AnyView(
                 Group {
-                    ExternalLinksMenu(selection: selection)
+                    ExternalLinksMenu(
+                        selection: selection,
+                        codeFlowRepo: repo.isPrivate ? nil : repo
+                    )
                     CloneMenu(selection: selection) { toastKey in
                         toastMessage = toastKey
                     }

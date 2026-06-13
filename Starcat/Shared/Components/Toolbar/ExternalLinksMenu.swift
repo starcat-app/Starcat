@@ -12,6 +12,8 @@
 //  - 主操作（primaryAction）= 打开 repo 主页；菜单内的 issues / pulls / releases /
 //    homepage 都是辅助跳转，按 GitHub 子页面规则纯字符串拼，所以 trending /
 //    weekly 这种没有本地 Repo 对象的场景也能用。
+//  - CodeFlow 需要完整 `Repo` 才能下载 ZIP，因此仅 Manage 公开仓库传入
+//    `codeFlowRepo`。它放在 Releases 后的独立分组中，入口不再占用详情 hero 区域。
 //  - homepage 现在 4 场景都可能有值：Manage 走 Repo.homepage / Trending 走
 //    TrendingRepo.homepage（R-05 起 trending-api enricher 已拉满）/ Weekly 走
 //    WeeklyFeedItem.card.homepage / Activity-repo-backed 走本地 Repo.homepage。
@@ -33,6 +35,13 @@ import AppKit
 struct ExternalLinksMenu: View {
 
     let selection: ToolbarRepoSelection
+    let codeFlowRepo: Repo?
+    @State private var isCodeFlowPresented = false
+
+    init(selection: ToolbarRepoSelection, codeFlowRepo: Repo? = nil) {
+        self.selection = selection
+        self.codeFlowRepo = codeFlowRepo
+    }
 
     var body: some View {
         Menu {
@@ -60,6 +69,15 @@ struct ExternalLinksMenu: View {
                 Label("externalLinks.releases", systemImage: "tag.circle")
             }
 
+            if codeFlowRepo != nil {
+                Divider()
+                Button {
+                    isCodeFlowPresented = true
+                } label: {
+                    Label("CodeFlow 代码图谱", systemImage: "point.3.connected.trianglepath.dotted")
+                }
+            }
+
             if let homepage = selection.homepage {
                 Divider()
                 Button {
@@ -77,5 +95,10 @@ struct ExternalLinksMenu: View {
             }
         }
         .help("externalLinks.hint")
+        .sheet(isPresented: $isCodeFlowPresented) {
+            if let codeFlowRepo {
+                CodeFlowPanel(repo: codeFlowRepo)
+            }
+        }
     }
 }
