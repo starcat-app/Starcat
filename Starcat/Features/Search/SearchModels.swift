@@ -201,6 +201,25 @@ struct SearchProviderPage: Equatable, Sendable {
     let references: [ReferenceCandidate]
     let totalCount: Int?
     let hasNextPage: Bool
+    /// 网页搜索专属元信息（命中数 / 用时 / 限流）。
+    ///
+    /// 仅 `AnySearchWebProvider` 会填值，其它 provider（local / github）传 nil。
+    /// 显式 default `nil` 让 GitHub / Local provider 调用点零改动。
+    let webMetadata: WebSearchMetadata?
+
+    init(
+        repositories: [RepositoryCandidate],
+        references: [ReferenceCandidate],
+        totalCount: Int?,
+        hasNextPage: Bool,
+        webMetadata: WebSearchMetadata? = nil
+    ) {
+        self.repositories = repositories
+        self.references = references
+        self.totalCount = totalCount
+        self.hasNextPage = hasNextPage
+        self.webMetadata = webMetadata
+    }
 
     static let empty = SearchProviderPage(
         repositories: [],
@@ -208,6 +227,35 @@ struct SearchProviderPage: Equatable, Sendable {
         totalCount: 0,
         hasNextPage: false
     )
+}
+
+/// 网页搜索的页级元信息。
+///
+/// 与 vendor-specific 的 `AnySearchMetadata` / `AnySearchRateLimit` 解耦：
+/// 后续若引入 Tavily / Brave / Bing 等替代 provider，只需要保持 provider 适配
+/// 出同样的 `WebSearchMetadata`，上层 `SearchCoordinator` / ViewModel / View
+/// 零改动。
+struct WebSearchMetadata: Equatable, Sendable {
+    /// API 报告的总命中数（不一定等于实际返回结果数；可能更多）。
+    let totalResults: Int?
+    /// 远端搜索耗时（毫秒）。
+    let searchTimeMs: Int?
+    /// HTTP 层限流配额信息（来源：`x-ratelimit-*` header）。三字段缺一即 nil。
+    let rateLimit: WebRateLimit?
+}
+
+/// 通用网页搜索限流配额（与 `AnySearchRateLimit` 等价但解耦命名空间）。
+struct WebRateLimit: Equatable, Sendable {
+    let limit: Int
+    let remaining: Int
+    let resetAt: Date
+
+    /// 剩余比例，归一化到 [0, 1]，用于 UI 着色阈值判断。
+    /// limit==0 时返回 0（视为"无可用配额"，染色逻辑会落入"用尽"分支）。
+    var fractionRemaining: Double {
+        guard limit > 0 else { return 0 }
+        return min(max(0, Double(remaining) / Double(limit)), 1)
+    }
 }
 
 enum SearchProviderStatus: Equatable, Sendable {

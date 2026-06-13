@@ -91,6 +91,20 @@ final class SearchCenterViewModel {
         return "GitHub 命中 \(total) 条"
     }
 
+    /// 网页搜索（AnySearch）成功响应后的页级元信息。
+    ///
+    /// 只在 web provider 处于 `.loaded` 状态时非 nil；用于驱动浮层底部 footer
+    /// 的"X 条结果 · 用时 Y.Ys"摘要 chip 和"剩余 N/M"限流 chip。
+    ///
+    /// 关键约束：
+    /// - 调用方（SearchCenterView）拿到非 nil 后应**进一步判空**`rateLimit` 字段，
+    ///   因为 header 三字段缺一不全时 `rateLimit == nil` 但 metadata 仍可能有效。
+    /// - status 在 `.idle` / `.loading` / `.failed` 时返回 nil，footer 不渲染。
+    var webMetadata: WebSearchMetadata? {
+        guard case .loaded(let page) = coordinator.status(for: .web) else { return nil }
+        return page.webMetadata
+    }
+
     func present() {
         // 重新打开只恢复面板，不重置选中项或重新搜索。用户误点遮罩关闭后应回到
         // 原来的 query、scope、filters、结果和键盘位置。

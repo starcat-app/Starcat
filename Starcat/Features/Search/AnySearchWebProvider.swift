@@ -51,11 +51,22 @@ struct AnySearchWebProvider: SearchProvider {
                 source: .web
             )
         }
+        // 把 vendor-specific 的 metadata + rateLimit 适配成 search 域的 WebSearchMetadata。
+        // 解耦目的：未来换 Tavily / Brave provider 时 SearchCoordinator / ViewModel / View
+        // 零改动，仅 provider 层重写适配逻辑。
+        let webMetadata = WebSearchMetadata(
+            totalResults: response.metadata?.totalResults,
+            searchTimeMs: response.metadata?.searchTimeMs,
+            rateLimit: response.rateLimit.map { rl in
+                WebRateLimit(limit: rl.limit, remaining: rl.remaining, resetAt: rl.resetAt)
+            }
+        )
         let page = SearchProviderPage(
             repositories: [],
             references: references,
             totalCount: response.metadata?.totalResults ?? references.count,
-            hasNextPage: false
+            hasNextPage: false,
+            webMetadata: webMetadata
         )
         await cache.insert(page, for: key)
         return page
