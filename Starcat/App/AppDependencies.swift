@@ -228,7 +228,16 @@ final class AppDependencies {
         // 详见 `AppEndpoints.swift` 头注释里的"使用方式"。
         AppEndpoints.logResolvedEndpoints()
 
-        let db: any DatabaseManaging = DatabaseManager.shared
+        // 2026-06-12 多账号 DB 隔离：DatabaseManager 不再单例，启动期用 `userId: nil`
+        // 走 `users/_anonymous` 占位 DB；AuthSession 在登录成功后通过 onUserSessionChanged
+        // closure 触发 `database.reopen(userId:)` 切到该 user 的 DB。
+        // 失败 fatalError —— 与原 DatabaseManager.shared 失败行为一致（DB 是核心数据载体）。
+        let db: any DatabaseManaging
+        do {
+            db = try DatabaseManager(userId: nil)
+        } catch {
+            fatalError("Failed to initialize DatabaseManager: \(error)")
+        }
         self.database = db
 
         let api = GitHubAPIClient()
@@ -257,7 +266,8 @@ final class AppDependencies {
         Task { [weak session] in
             await api.setUnauthorizedHandler {
                 Task { @MainActor in
-                    session?.invalidateSession()
+                    // invalidateSession 2026-06-12 起改 async（要 await DB 切到 _anonymous）
+                    await session?.invalidateSession()
                 }
             }
         }
@@ -501,12 +511,46 @@ final class AppDependencies {
             bootstrapper.clearOnSignOut()
         }
 
+        // 2026-06-12 多账号 DB 隔离：登录态变化 → 切 SQLite 到对应 user 目录。
+        //
+        // weak self：closure 长期挂在 session 上，session 被 self 强持，避免循环引用。
+        // closure 为 @MainActor + async：AuthSession 也在 @MainActor 上，直接 await
+        // 不需要 hop；switchUserDatabase 内部 await database.reopen(userId:) 串行执行。
+        //
+        // 错误处理：reopen 失败仅记日志不向上抛——AuthSession 不关心 DB 细节,
+        // 而且失败状态下 currentPool 仍指向旧 pool（reopen 实现保证），用户至少
+        // 还能看到自己的数据，不会进入"无 DB 可用"的死状态。
+        session.onUserSessionChanged = { [weak self] userId in
+            guard let self else { return }
+            do {
+                try await self.switchUserDatabase(to: userId)
+            } catch {
+                AppLog.database.error(
+                    "switchUserDatabase failed for userId=\(userId.map(String.init) ?? "anonymous", privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
         // 启动期 reload：异步 Task，不阻塞 init。测试 host 跳过避免触发 DB 启动期成本。
         if !TestEnvironment.isRunning {
             Task { [bootstrapper] in
                 await bootstrapper.reload()
             }
         }
+    }
+
+    // MARK: - 多账号 DB 切换（2026-06-12 多账号 DB 隔离）
+
+    /// 切换 SQLite 到指定 GitHub User ID 对应的目录。`nil` 切到 `_anonymous` 占位 DB。
+    ///
+    /// 调用方：AuthSession 通过 `onUserSessionChanged` closure 触发。**不要从外部直接调**，
+    /// 否则可能跟 AuthSession 的内部状态变化竞态（场景：UI 直接调本方法切到 X，但
+    /// AuthSession 没同步更新 state，Repository 在新 DB 里查不到对应 user 的数据）。
+    ///
+    /// 关键约束：本方法内部 `await database.reopen(userId:)`——后者标 `@MainActor`，
+    /// 在 MainActor 队列内串行执行，多次并发调用会顺序排队不并发。
+    func switchUserDatabase(to userId: Int64?) async throws {
+        try await database.reopen(userId: userId)
     }
 
     // MARK: - 第三方服务热更新（2026-06-08 新增）

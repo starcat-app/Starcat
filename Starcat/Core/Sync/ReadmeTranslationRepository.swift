@@ -37,14 +37,14 @@ protocol ReadmeTranslationRepositoryProtocol: Sendable {
 /// GRDB 实现。
 struct GRDBReadmeTranslationRepository: ReadmeTranslationRepositoryProtocol {
 
-    private let writer: any DatabaseWriter
+    private let database: any DatabaseManaging
 
     init(database: any DatabaseManaging) {
-        self.writer = database.writer
+        self.database = database
     }
 
     func find(repoId: Int64, targetLanguage: String) async throws -> ReadmeTranslation? {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try ReadmeTranslation.fetchOne(db, sql: """
                 SELECT * FROM readme_translations
                 WHERE repo_id = ? AND target_language = ?
@@ -53,14 +53,14 @@ struct GRDBReadmeTranslationRepository: ReadmeTranslationRepositoryProtocol {
     }
 
     func upsert(_ translation: ReadmeTranslation) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             var copy = translation
             try copy.upsert(db)
         }
     }
 
     func delete(repoId: Int64, targetLanguage: String) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(sql: """
                 DELETE FROM readme_translations
                 WHERE repo_id = ? AND target_language = ?
@@ -69,7 +69,7 @@ struct GRDBReadmeTranslationRepository: ReadmeTranslationRepositoryProtocol {
     }
 
     func deleteAll(repoId: Int64) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(
                 sql: "DELETE FROM readme_translations WHERE repo_id = ?",
                 arguments: [repoId]

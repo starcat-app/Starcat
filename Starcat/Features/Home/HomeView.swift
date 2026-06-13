@@ -460,21 +460,61 @@ struct HomeView: View {
         // 监听完整登录态变化：任何登录都立刻切 Manage、登出时回 Trending。
         //
         // 为什么监听整个 state 而非 isAuthenticated（Bool）：
-        // - 同时覆盖"启动期从 Keychain 异步恢复登录"与"用户手动 Device Flow 登录"两条路径，
+        // - 同时覆盖"启动期从 Keychain 异步恢复登录"与"用户手动 Device Flow 登录"两条路径,
         //   两者都把页面切到 Manage 并恢复上次分类（不存在则回落 allStars）。
-        // - 用 oldState.isAuthenticated 判断登出，避免 .unauthenticated → .awaitingUserCode
-        //   等中间态被误判。
+        // - 用 oldUserID / newUserID 对比 user.id（而非 isAuthenticated Bool）来判定
+        //   "真正的账号变化"。原因（D-30 follow-up, 2026-06-13）：
+        //     ① 多账号下「退出 A → 登录 B」是核心场景，必须感知 user.id 从 A → B 的变化,
+        //        而 isAuthenticated 在 A→B 之间会经历 false 中间态，用 Bool 无法表达;
+        //     ② 同时天然滤掉 .unauthenticated → .awaitingUserCode 等中间态（user.id 都是 nil）。
         .onChange(of: authSession.state) { oldState, newState in
-            if newState.isAuthenticated {
-                // 任何登录（启动恢复 / 手动登录）→ 默认 Manage + 上次分类
+            let oldUserID = oldState.user?.id
+            let newUserID = newState.user?.id
+
+            // user id 没变（如 unauthenticated ↔ awaitingUserCode 中间态、authenticated(A) 内部刷新）
+            // → 不动任何业务状态，避免误清缓存导致 UI 无谓重渲。
+            guard oldUserID != newUserID else { return }
+
+            if let newUser = newState.user {
+                // 真正的"登录新账号"路径（含启动恢复 / 手动 Device Flow / 退出再登）。
+                //
+                // D-30 follow-up（2026-06-13）：必须按"先清缓存 → 再切 selection → 异步重载 + sync"的
+                // 顺序，否则 viewModel.selection didSet 内的 eager cache load（HomeViewModel.swift
+                // line 66-75）会先用旧账号 listCache 渲一帧 → 用户感知到"先看到 A 的数据闪一下再被
+                // 覆盖"。详细原理见 `HomeViewModel.resetAllStateForUserSwitch` 注释。
+                viewModel.resetAllStateForUserSwitch()
+
                 selectedSidebarPage = .manage
                 let restored = savedManageSelection
                 viewModel.selection = isManageSelectionValid(restored) ? restored : .allStars
-            } else if oldState.isAuthenticated {
-                // 登出：保存当前 Manage selection（排除 trending），强制切回 Trending 并清除选择
+
+                // 拉新账号的 sidebar + items + 全量 sync。**必须用 Task @MainActor 异步发起**：
+                // - onChange 闭包是同步的，不能直接 await;
+                // - syncManager.performFullSync 是同步入口（内部派发到自己的 actor），无需 await。
+                // 顺序：① reset 已清旧缓存 → ② refreshSidebar 拉新 sidebar 计数 →
+                //       ③ reloadItems(forceRefresh: true) 强制查 DB（此时 D-30 已切到 newUser 的 DB,
+                //          但 DB 里可能还是空的，所以 ④ 拉远端 sync 把 stars 落库）→
+                //       ④ performFullSync 拉 GitHub stars 写入新 DB，sync 完成后 .onChange(of:
+                //          syncManager.state) 会再触发一次 reloadItems，新数据上屏。
+                Task { @MainActor in
+                    await viewModel.refreshSidebar()
+                    if selectedSidebarPage == .manage {
+                        await viewModel.reloadItems(forceRefresh: true)
+                    }
+                    syncManager.performFullSync(userID: newUser.id)
+                }
+            } else if oldUserID != nil {
+                // 登出（newUserID == nil 且 oldUserID != nil）：保存当前 Manage selection（排除
+                // trending）, 强制切回 Trending 并清除选择 + 清缓存。
+                //
+                // 为什么登出也要 reset：D-30 把 DB 切到了 `_anonymous`，新 DB 是空的；
+                // 但 viewModel 内的 items / sidebar 计数还是 A 的，trending 视图不看这些字段,
+                // 看起来无害 —— 但如果用户登出后立即又点 sidebar 上的 "全部仓库" 之类的
+                // 入口（虽然该入口在未登录态下被隐藏，但防御性编程），残留数据会闪现。
                 if !viewModel.selection.isTrending {
                     savedManageSelection = viewModel.selection
                 }
+                viewModel.resetAllStateForUserSwitch()
                 selectedSidebarPage = .trending
                 viewModel.selection = .trending
                 viewModel.selectedRepoID = nil

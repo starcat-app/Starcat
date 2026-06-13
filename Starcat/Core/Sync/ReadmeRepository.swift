@@ -29,10 +29,10 @@ import GRDB
 /// README Repository。
 struct ReadmeRepository {
 
-    private let writer: any DatabaseWriter
+    private let database: any DatabaseManaging
 
     init(database: any DatabaseManaging) {
-        self.writer = database.writer
+        self.database = database
     }
 
     // MARK: - 查询
@@ -40,7 +40,7 @@ struct ReadmeRepository {
     /// 按 repoId 查找 README 缓存。
     /// - Returns: 缓存命中返回 Readme；未命中返回 nil
     func find(repoId: Int64) async throws -> Readme? {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Readme.fetchOne(db, key: repoId)
         }
     }
@@ -52,7 +52,7 @@ struct ReadmeRepository {
     /// GRDB 的 `MutablePersistableRecord.upsert(_:)` 是 mutating 方法（会回填 rowID），
     /// 因此必须在 closure 内拷贝为 var；外部接口仍可传不可变值。
     func upsert(_ readme: Readme) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             var copy = readme
             try copy.upsert(db)
         }
@@ -61,7 +61,7 @@ struct ReadmeRepository {
     /// 仅更新 cached_at（命中 304 时刷新本地缓存有效期判定，不写新 HTML）。
     func touchCachedAt(repoId: Int64, at date: Date) async throws {
         let iso = ISO8601DateFormatter.shared.string(from: date)
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(
                 sql: "UPDATE readmes SET cached_at = ? WHERE repo_id = ?",
                 arguments: [iso, repoId]
@@ -71,14 +71,14 @@ struct ReadmeRepository {
 
     /// 删除指定 repo 的 README 缓存。
     func delete(repoId: Int64) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             _ = try Readme.deleteOne(db, key: repoId)
         }
     }
 
     /// 全表清空（设置页"清理缓存"用，已在 W4-4 D4 接入）。
     func deleteAll() async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             _ = try Readme.deleteAll(db)
         }
     }
@@ -93,7 +93,7 @@ struct ReadmeRepository {
     /// HTML 缓存的情况下落下"只有 markdown 没 HTML"的半行数据，让 WebView 不至于
     /// 误信缓存命中。调用方应在补 Markdown 之前确保 readme 行已存在（HTML 已抓过）。
     func updateContent(repoId: Int64, content: String) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(
                 sql: "UPDATE readmes SET content = ? WHERE repo_id = ?",
                 arguments: [content, repoId]
@@ -105,7 +105,7 @@ struct ReadmeRepository {
 
     /// readmes 表行数（设置页"清理缓存"显示当前缓存条目数用）。
     func countAll() async throws -> Int {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Int.fetchOne(db, sql: "SELECT count(*) FROM readmes") ?? 0
         }
     }
@@ -113,7 +113,7 @@ struct ReadmeRepository {
     /// 所有缓存 README 字节总数（基于 `readmes.size` 列）。
     /// 注：size 是 upsert 时写入的 HTML 字节数，等价于 disk 占用的近似量级。
     func totalBytes() async throws -> Int64 {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Int64.fetchOne(db, sql: "SELECT COALESCE(SUM(size), 0) FROM readmes") ?? 0
         }
     }

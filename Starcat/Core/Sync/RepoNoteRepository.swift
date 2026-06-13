@@ -26,16 +26,16 @@ import GRDB
 
 struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
 
-    private let writer: any DatabaseWriter
+    private let database: any DatabaseManaging
 
     init(database: any DatabaseManaging) {
-        self.writer = database.writer
+        self.database = database
     }
 
     // MARK: - 查询
 
     func find(repoId: Int64) async throws -> RepoNote? {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try RepoNote.fetchOne(db, key: repoId)
         }
     }
@@ -48,7 +48,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
         // 若在闭包外构造 args 然后被捕获，会触发 Swift 6 严格模式的 "non-Sendable type
         // captured in @Sendable closure" 报错。改为闭包内构造后，跨 actor 边界的只有
         // `[Int64]`（天然 Sendable）和 `placeholders`（String，Sendable），安全。
-        return try await writer.read { db in
+        return try await database.writer.read { db in
             let args = repoIds.map { $0 as DatabaseValueConvertible }
             let rows = try Row.fetchAll(
                 db,
@@ -73,7 +73,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     /// - 无 `IN (...)` → 省掉 1800+ 个占位符的 SQL 解析 + 参数绑定（之前是这部分让 fetchStatusMap 慢 50~100ms）。
     /// - `repo_notes` 表通常很小（只在用户主动标记状态 / 写笔记时建行），全表扫描成本远低于带参 IN 查询。
     func fetchAllStatusMap() async throws -> [Int64: RepoStatus] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: "SELECT repo_id, status FROM repo_notes")
             var map: [Int64: RepoStatus] = [:]
             for row in rows {
@@ -86,7 +86,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     }
 
     func fetchRepos(byStatus status: RepoStatus) async throws -> [Repo] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Repo.fetchAll(db, sql: """
                 SELECT r.* FROM repos r
                 JOIN repo_notes n ON n.repo_id = r.id
@@ -97,7 +97,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     }
 
     func statusCounts() async throws -> [RepoStatus: Int] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: """
                 SELECT n.status AS status, COUNT(*) AS cnt
                 FROM repo_notes n
@@ -120,7 +120,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     // MARK: - 写入
 
     func upsert(_ note: RepoNote) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             var copy = note
             try copy.upsert(db)
         }
@@ -130,7 +130,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     /// content 传 nil 表示清空。editedAt 自动设为 now。
     func updateContent(repoId: Int64, content: String?) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
-        try await writer.write { db in
+        try await database.writer.write { db in
             // 用 UPSERT 语义：先 INSERT（如不存在），ON CONFLICT 时 UPDATE content + edited_at
             try db.execute(
                 sql: """
@@ -148,7 +148,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     /// 仅更新 status；行不存在则创建一行（content=NULL）。editedAt 自动设为 now。
     func updateStatus(repoId: Int64, status: RepoStatus) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(
                 sql: """
                 INSERT INTO repo_notes (repo_id, content, status, is_ai_generated, edited_at)
@@ -172,7 +172,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     ///   CloudKit 同步）。
     func markAsReadIfNeeded(repoId: Int64) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(
                 sql: """
                 INSERT INTO repo_notes (repo_id, content, status, is_ai_generated, edited_at)
