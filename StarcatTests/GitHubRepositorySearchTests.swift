@@ -13,7 +13,9 @@ import Testing
 struct GitHubRepositorySearchTests {
     @Test("query builder 生成结构化 qualifiers")
     func structuredQuery() throws {
-        let date = try #require(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2025, month: 6, day: 1)))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        let date = try #require(calendar.date(from: DateComponents(year: 2025, month: 6, day: 1)))
         let filters = GitHubSearchFilters(
             language: " Swift ",
             topic: "macos",
