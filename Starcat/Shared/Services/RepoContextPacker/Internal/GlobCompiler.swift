@@ -52,9 +52,17 @@ public enum GlobCompiler {
             case "*":
                 let next = glob.index(after: i)
                 if next < glob.endIndex && glob[next] == "*" {
-                    // ** 跨目录
-                    pattern += ".*"
-                    i = glob.index(after: next)
+                    let afterDoubleStar = glob.index(after: next)
+                    if afterDoubleStar < glob.endIndex && glob[afterDoubleStar] == "/" {
+                        // `**/` 表示零个或多个目录层级。目录部分必须整体可选，才能让
+                        // `src/**/*.ts` 同时命中 `src/index.ts` 与 `src/a/index.ts`。
+                        pattern += "(?:.*/)?"
+                        i = glob.index(after: afterDoubleStar)
+                    } else {
+                        // 不带尾随斜杠的 ** 仍表示任意跨目录字符。
+                        pattern += ".*"
+                        i = afterDoubleStar
+                    }
                     continue
                 } else {
                     // * 单目录内
