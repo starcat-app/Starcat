@@ -23,6 +23,9 @@ struct SearchCenterView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isSearchFocused: Bool
     @State private var remoteDetailRepo: Repo?
+    /// 鼠标 hover 是浮层视图的瞬时状态，不写入 selectedIndex，避免鼠标经过后改变
+    /// 用户的键盘导航位置。候选 ID 同时覆盖 GitHub repo 与 AnySearch reference。
+    @State private var hoveredCandidateID: String?
 
     var body: some View {
         ZStack {
@@ -247,10 +250,19 @@ struct SearchCenterView: View {
                         onOpenCandidate(candidate)
                     }
                 } label: {
-                    candidateRow(candidate, isSelected: index == viewModel.selectedIndex)
+                    candidateRow(
+                        candidate,
+                        isSelected: index == viewModel.selectedIndex,
+                        isHovered: hoveredCandidateID == candidate.id
+                    )
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .onHover { hovering in
+                    withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
+                        hoveredCandidateID = hovering ? candidate.id : nil
+                    }
+                }
                 .contextMenu {
                     if case .repository(let repository) = candidate {
                         Button("在 GitHub 打开") { onOpenURL(repository) }
@@ -311,30 +323,50 @@ struct SearchCenterView: View {
     }
 
     @ViewBuilder
-    private func candidateRow(_ candidate: SearchCandidate, isSelected: Bool) -> some View {
-        switch candidate {
-        case .repository(let repo):
-            UnifiedRepoRow(
-                card: repo.card,
-                isSelected: isSelected,
-                showStarredCheckmark: true
-            )
-        case .reference(let reference):
-            HStack(spacing: 12) {
-                Image(systemName: "globe")
-                    .frame(width: 34, height: 34)
-                    .background(Color.blue.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(reference.title).font(.headline).lineLimit(1)
-                    Text(reference.snippet ?? reference.originalURL.absoluteString)
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    Text(reference.domain).font(.caption2).foregroundStyle(.tertiary)
+    private func candidateRow(
+        _ candidate: SearchCandidate,
+        isSelected: Bool,
+        isHovered: Bool
+    ) -> some View {
+        Group {
+            switch candidate {
+            case .repository(let repo):
+                UnifiedRepoRow(
+                    card: repo.card,
+                    isSelected: isSelected,
+                    showStarredCheckmark: true
+                )
+            case .reference(let reference):
+                HStack(spacing: 12) {
+                    Image(systemName: "globe")
+                        .frame(width: 34, height: 34)
+                        .background(Color.blue.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(reference.title).font(.headline).lineLimit(1)
+                        Text(reference.snippet ?? reference.originalURL.absoluteString)
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        Text(reference.domain).font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    Spacer()
                 }
-                Spacer()
+                .padding(10)
+                .background(isSelected ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10))
             }
-            .padding(10)
-            .background(isSelected ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10))
         }
+        // Search Center 在 UnifiedRepoRow 外再加一层统一 hover，确保 GitHub 与
+        // AnySearch 都有同等清晰的指针反馈；选中态优先，不叠加 hover 色。
+        .background(
+            isHovered && !isSelected ? Color.accentColor.opacity(0.11) : .clear,
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(
+                    isHovered && !isSelected ? Color.accentColor.opacity(0.26) : .clear,
+                    lineWidth: 1
+                )
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func scopeTitle(_ scope: SearchScope) -> String {
