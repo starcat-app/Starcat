@@ -22,7 +22,10 @@ struct SearchCenterView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isSearchFocused: Bool
-    @State private var remoteDetailRepo: Repo?
+    /// SEARCH-RICH 2026-06-14：从 `Repo?` 改为 `RepositoryCandidate?` —— 弹窗
+    /// 新增需要展示 `remoteExtras`（disabled / isTemplate / score）以及 sort 模式
+    /// 来决定是否渲染匹配度，单纯的 `Repo` 不够用，必须把整张候选传进去。
+    @State private var remoteDetailCandidate: RepositoryCandidate?
     /// 鼠标 hover 是浮层视图的瞬时状态，不写入 selectedIndex，避免鼠标经过后改变
     /// 用户的键盘导航位置。候选 ID 同时覆盖 GitHub repo 与 AnySearch reference。
     ///
@@ -61,12 +64,22 @@ struct SearchCenterView: View {
             .transition(reduceMotion ? .opacity : .scale(scale: 0.97).combined(with: .opacity))
         }
         .onAppear { isSearchFocused = true }
-        .sheet(item: $remoteDetailRepo) { repo in
+        .sheet(item: $remoteDetailCandidate) { candidate in
+            // 把 sort 模式一并传入：仅在 bestMatch 时才渲染匹配度，否则
+            // score 字段对当前结果排序无解释力（按 stars / forks / updated
+            // 排序时它仍是 search 端点回的同一个值，但语义已和位置脱钩）。
             SearchRemoteRepoDetailView(
-                repo: repo,
-                isStarred: isStarred(repo.id),
-                onToggleStar: { onToggleStar(repo) },
-                onOpenAI: { onOpenAI(repo) }
+                candidate: candidate,
+                isCurrentSortBestMatch: viewModel.githubFilters.sort == .bestMatch,
+                isStarred: candidate.displayRepo.map { isStarred($0.id) } ?? false,
+                onToggleStar: {
+                    if let repo = candidate.displayRepo { onToggleStar(repo) }
+                },
+                onOpenAI: {
+                    if let repo = candidate.displayRepo { onOpenAI(repo) }
+                },
+                onOpenInGitHub: { onOpenURL(candidate) },
+                onCopyURL: { onCopyURL(candidate) }
             )
         }
         .onKeyPress(.upArrow) {
@@ -455,11 +468,16 @@ struct SearchCenterView: View {
     /// 候选项的"激活"动作（点击 / 回车 / VoiceOver 主操作）。
     /// 远端仓库（仅 GitHub 搜出、未 star、未入本地库）走会话级详情 sheet；
     /// 其余（本地、reference、已 star）由宿主决定打开方式，统一走 onOpenCandidate。
+    ///
+    /// SEARCH-RICH 2026-06-14：sheet 改成接收整张 `RepositoryCandidate`
+    /// （`remoteExtras` 由 GitHub Provider 填充，弹窗用来渲染状态徽章与匹配度），
+    /// 不再只传 `Repo`。判断"是否走 remote sheet"的条件保持不变：
+    /// `localRepo == nil && remoteRepo != nil` —— 即仅 GitHub 搜到、本地未入库。
     private func activate(_ candidate: SearchCandidate) {
         if case .repository(let repository) = candidate,
            repository.localRepo == nil,
-           let remoteRepo = repository.remoteRepo {
-            remoteDetailRepo = remoteRepo
+           repository.remoteRepo != nil {
+            remoteDetailCandidate = repository
         } else {
             onOpenCandidate(candidate)
         }
@@ -609,10 +627,6 @@ private struct HistoryChip: View {
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
-
-                    // 始终预留删除按钮的位置（14pt 占位），避免 hover 时 chip 宽度跳变。
-                    Color.clear.frame(width: 14, height: 14)
-                        .padding(.leading, 2)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
@@ -628,13 +642,27 @@ private struct HistoryChip: View {
 
             if isHovered {
                 Button(action: onRemove) {
+                    // xmark.circle.fill 用"危险红 + 半透明"传达 destructive 语义。
+                    //
+                    // 颜色选型：
+                    // - `.red` 是 SwiftUI 动态色，会跟随 dark/light 主题调整明度
+                    // - `.opacity(0.7)` 把饱和度压下来，避免在浅色 chip 上过分刺眼
+                    // - 跟 contextMenu "删除这条历史" 的 `role: .destructive` 语义对齐
+                    //
+                    // 外裹 `Circle().fill(.controlBackgroundColor)` 实底圆背景：
+                    // 让 xmark 即使盖在下方 ·N 末尾也能一眼识别为独立按钮，不跟文字融合。
+                    // controlBackgroundColor 是系统级控件背景，自动适配深浅主题。
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.red.opacity(0.7))
+                        .background(
+                            Circle()
+                                .fill(Color(nsColor: .controlBackgroundColor))
+                        )
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .padding(.trailing, 6)
+                .padding(.trailing, 4)
                 .help("删除这条历史")
                 .transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
@@ -709,45 +737,600 @@ private struct SearchHistoryFlowLayout: Layout {
 
 // MARK: - Remote Repo Detail
 
-/// GitHub 搜索结果的会话级详情，不写数据库；只有用户执行 Star 后才通过
-/// StarActionService 进入本地事实源。
+/// GitHub 搜索结果的会话级详情卡（SEARCH-RICH 2026-06-14 重构）。
+///
+/// 设计目标：在不打额外 GitHub API 调用、不入库的前提下，把搜索接口已经返回
+/// 的字段尽量暴露出来，帮用户在 Star 之前完成「这个 repo 值不值得收藏」决策。
+///
+/// **不入库约束**：本视图仅消化 `RepositoryCandidate.remoteRepo`（搜索页 ephemeral
+/// 转换得到，未进数据库）+ `remoteRepo.remoteExtras`（disabled / isTemplate /
+/// score 三类瞬时态字段，旁挂在 candidate 上）。用户点击 Star 后才通过
+/// `StarActionService` 走正式入库流程；本视图自身不写任何持久化层。
+///
+/// **匹配度可见性**：`score` 字段对 best-match 排序才有意义，其他排序模式
+/// （stars / forks / updated）下 score 仍是 search 端点回传的同一个值，但语义
+/// 与当前列表位置已脱钩 → 弹窗只在 `isCurrentSortBestMatch == true` 时显示。
+///
+/// **未填字段降级策略**：
+/// - `remoteRepo == nil`：理论上 activate 函数已守卫，进入本视图前 remoteRepo 必非空；
+///   若仍为 nil（防御性），整个 view 显示空态卡片避免崩溃
+/// - description / topics / homepage / language 等 Optional 字段缺失时，对应行/区段
+///   整体隐藏，不渲染"未知"占位（避免视觉噪音）
 private struct SearchRemoteRepoDetailView: View {
-    let repo: Repo
+
+    let candidate: RepositoryCandidate
+    let isCurrentSortBestMatch: Bool
     let isStarred: Bool
     let onToggleStar: () -> Void
     let onOpenAI: () -> Void
+    let onOpenInGitHub: () -> Void
+    /// 复制仓库 HTML URL（走宿主回调，宿主可叠加 toast / 日志）。
+    let onCopyURL: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    /// SEARCH-RICH 2026-06-14：Wiki 集成需要 `dependencies.wikiAPI`。
+    /// `AppDependencies` 已在 `StarcatApp` 主 scene 注入 environment，sheet
+    /// 默认继承 environment，所以这里直接 `@Environment` 拿到。
+    @Environment(AppDependencies.self) private var dependencies
+
+    /// 已确认 indexed 的外部 wiki 链接（DeepWiki / ZRead / CodeWiki）。
+    /// `.task(id: candidate.identity)` 触发 fetch，未收录 / 失败时保持空数组
+    /// → 整行隐藏（与 `RepoWikiMenu` 的"未收录不占 UI"语义一致）。
+    @State private var wikiLinks: [WikiLink] = []
+
+    /// 卡片宽度。480pt 足以容纳 owner / repo 双行 + 头像 + 顶栏徽章；再窄
+    /// 顶栏会挤压 license / score 徽章；再宽就显得空旷不像「快速决策卡」。
+    private static let cardWidth: CGFloat = 480
+
+    /// 头像直径。与 `RepoMetadataHeaderView` 的 hero 头像保持一致视觉档次。
+    private static let avatarSize: CGFloat = 44
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(repo.fullName).font(.title2.bold())
-                    Text(repo.description ?? "暂无描述").foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-            }
-            HStack(spacing: 18) {
-                Label(repo.language ?? "Unknown", systemImage: "chevron.left.forwardslash.chevron.right")
-                Label("\(repo.starsCount)", systemImage: "star")
-                Label("\(repo.forksCount)", systemImage: "tuningfork")
-                if let license = repo.license { Label(license, systemImage: "doc.text") }
-            }
-            .foregroundStyle(.secondary)
-            HStack {
-                Button(isStarred ? "取消 Star" : "Star") { onToggleStar() }
-                    .buttonStyle(.borderedProminent)
-                Button("Ask / AI 摘要") { onOpenAI() }
-                Button("在 GitHub 打开") {
-                    if let url = URL(string: repo.htmlUrl) { NSWorkspace.shared.open(url) }
-                }
+        Group {
+            if let repo = candidate.displayRepo {
+                content(repo: repo)
+            } else {
+                emptyState
             }
         }
+        .frame(width: Self.cardWidth)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private func content(repo: Repo) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header(repo: repo)
+            if let description = repo.description, !description.isEmpty {
+                // description 是用户内容，必须 verbatim。
+                Text(verbatim: description)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("search.detail.empty.description")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
+                    .italic()
+            }
+
+            if shouldShowStateBadgeRow(repo: repo) {
+                stateBadgeRow(repo: repo)
+            }
+
+            statsRow(repo: repo)
+            timestampRow(repo: repo)
+
+            if !repo.topicsArray.isEmpty {
+                topicsRow(topics: repo.topicsArray)
+            }
+
+            // Wiki 集成（SEARCH-RICH 2026-06-14）：未收录 / 失败时整行隐藏；
+            // 与 topics 行同样位于"内容补充区",共享紧凑卡的"信号优先"原则。
+            if !wikiLinks.isEmpty {
+                wikiLinksRow(links: wikiLinks)
+            }
+
+            Divider()
+
+            actionRow(repo: repo)
+        }
+        .padding(20)
+        // `.task` 必须挂在 `content(repo:)` 内层 VStack 上(它永远存在,与 RepoWikiMenu
+        // v1.2 修订里"EmptyView 不调度 task"是同款坑的反向避雷)。`id` 用 candidate
+        // identity:repo 不变时 task 不重跑;切到下一个候选时(如果未来支持卡片间
+        // 切换)task 会自动取消旧请求并对新 repo 重新发起,与 RepoWikiMenu 行为一致。
+        .task(id: candidate.identity) {
+            await loadWikiLinks(repo: repo)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.title2)
+                .foregroundStyle(.orange)
+            Text("search.detail.empty.repoUnavailable")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Button("search.detail.action.close") { dismiss() }
+        }
         .padding(24)
-        .frame(width: 620, height: 260)
+    }
+
+    // MARK: - Header
+
+    @ViewBuilder
+    private func header(repo: Repo) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ownerAvatar(repo: repo)
+
+            VStack(alignment: .leading, spacing: 2) {
+                // owner / name 都是 GitHub 数据，必须 verbatim 防止 SwiftUI 误把
+                // 它们当本地化 key（例如 owner 叫 "share" 之类的常见 key 会撞）。
+                Text(verbatim: repo.owner)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Text(verbatim: repo.name)
+                    .font(.system(size: 18, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 8)
+
+            if isCurrentSortBestMatch, let score = candidate.remoteExtras.score {
+                scoreBadge(score: score)
+            }
+            if let license = repo.license, !license.isEmpty {
+                licenseBadge(license: license)
+            }
+
+            Button { dismiss() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("search.detail.action.close")
+        }
+    }
+
+    /// owner 头像。点击跳 owner 主页（与设计稿"点头像跳 owner"对齐）。
+    /// 头像 URL 优先用 `repo.ownerAvatar`（mapper 已接通），缺失时用
+    /// `https://github.com/{login}.png` 兜底（GitHub 官方提供的头像直链）。
+    @ViewBuilder
+    private func ownerAvatar(repo: Repo) -> some View {
+        Button { openOwnerPage(login: repo.owner) } label: {
+            avatarImage(repo: repo)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("search.detail.action.openOwner")
+    }
+
+    @ViewBuilder
+    private func avatarImage(repo: Repo) -> some View {
+        let resolvedURL: URL? = {
+            if let s = repo.ownerAvatar, let url = URL(string: s) { return url }
+            return URL(string: "https://github.com/\(repo.owner).png")
+        }()
+
+        AsyncImage(url: resolvedURL) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().scaledToFill()
+            default:
+                Image(systemName: "person.crop.circle.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .frame(width: Self.avatarSize, height: Self.avatarSize)
+        .clipShape(Circle())
+        .overlay {
+            Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+        }
+    }
+
+    private func scoreBadge(score: Double) -> some View {
+        // 显示精度：保留两位小数足够区分 0.95 / 0.97 / 1.0；更高位无信息密度。
+        let formatted = String(format: "%.2f", score)
+        let label = String(format: String(localized: "search.detail.score.format"), formatted)
+        return Label {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .monospacedDigit()
+        } icon: {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 9, weight: .semibold))
+        }
+        .labelStyle(.titleAndIcon)
+        .foregroundStyle(.orange)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color.orange.opacity(0.12), in: Capsule())
+        .help("search.detail.score.tooltip")
+    }
+
+    private func licenseBadge(license: String) -> some View {
+        // license 是 GitHub 返回的 SPDX id 或 license name（例如 "MIT" / "Apache-2.0"），
+        // 是数据，不是 UI 文案，必须 verbatim。
+        Text(verbatim: license)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color.secondary.opacity(0.10), in: Capsule())
+            .help("search.detail.license.tooltip")
+    }
+
+    // MARK: - State badges (archived / fork / template / disabled)
+
+    /// 状态徽章行只在至少一条徽章命中时渲染（避免空行占空间）。
+    private func shouldShowStateBadgeRow(repo: Repo) -> Bool {
+        repo.isArchived
+            || repo.isFork
+            || candidate.remoteExtras.isTemplate == true
+            || candidate.remoteExtras.disabled == true
+    }
+
+    private func stateBadgeRow(repo: Repo) -> some View {
+        HStack(spacing: 6) {
+            if repo.isArchived {
+                stateBadge(textKey: "search.detail.badge.archived", color: .orange)
+            }
+            if repo.isFork {
+                stateBadge(textKey: "search.detail.badge.fork", color: .gray)
+            }
+            if candidate.remoteExtras.isTemplate == true {
+                stateBadge(textKey: "search.detail.badge.template", color: .purple)
+            }
+            if candidate.remoteExtras.disabled == true {
+                stateBadge(textKey: "search.detail.badge.disabled", color: .red)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func stateBadge(textKey: LocalizedStringKey, color: Color) -> some View {
+        Text(textKey)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.14), in: Capsule())
+            .overlay {
+                Capsule().strokeBorder(color.opacity(0.30), lineWidth: 0.5)
+            }
+    }
+
+    // MARK: - Stats row
+
+    private func statsRow(repo: Repo) -> some View {
+        HStack(spacing: 14) {
+            statItem(systemImage: "star", value: "\(repo.starsCount)")
+            statItem(systemImage: "tuningfork", value: "\(repo.forksCount)")
+
+            // open_issues_count 在 GitHub 设计里是 "issue + PR 合计"，tooltip 提示
+            // 避免用户误读为只有 issues。值为 nil 时整个 stat 隐藏（不显示 "—"）。
+            if let openIssues = repo.openIssuesCount {
+                statItem(
+                    systemImage: "exclamationmark.circle",
+                    value: "\(openIssues)",
+                    tooltipKey: "search.detail.stat.openIssues.tooltip"
+                )
+            }
+
+            // default_branch 在大多数 repo 是 "main"；它的价值不在炫数据，而在
+            // 让用户判断该 repo 还在用旧的 master 默认分支（往往代表久未维护）。
+            if let branch = repo.defaultBranch, !branch.isEmpty {
+                statItem(systemImage: "arrow.triangle.branch", value: branch)
+            }
+
+            // language 也作为统计行的一员（沿用 UnifiedRepoRow / metadata pill 风格）；
+            // 之所以放在 stats 行末尾而不是徽章区，是因为它在用户决策权重上属于
+            // 「数据维度」而非「状态」。
+            if let language = repo.language, !language.isEmpty {
+                statItem(systemImage: "chevron.left.forwardslash.chevron.right", value: language)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private func statItem(
+        systemImage: String,
+        value: String,
+        tooltipKey: LocalizedStringKey? = nil
+    ) -> some View {
+        let item = Label {
+            Text(verbatim: value)
+                .font(.system(size: 12, weight: .medium))
+                .monospacedDigit()
+        } icon: {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .medium))
+        }
+        .labelStyle(.titleAndIcon)
+        .foregroundStyle(.secondary)
+
+        if let tooltipKey {
+            item.help(tooltipKey)
+        } else {
+            item
+        }
+    }
+
+    // MARK: - Timestamps
+
+    /// 创建 / 推送 时间相对显示。两者都缺时整行隐藏。
+    private func timestampRow(repo: Repo) -> some View {
+        let createdRelative = relativeTime(iso8601: repo.createdAt)
+        let pushedRelative = relativeTime(iso8601: repo.pushedAt)
+
+        return HStack(spacing: 8) {
+            Image(systemName: "clock")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+
+            if let created = createdRelative {
+                Text(String(format: String(localized: "search.detail.time.created.format"), created))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            if createdRelative != nil && pushedRelative != nil {
+                Text(verbatim: "·")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+
+            if let pushed = pushedRelative {
+                Text(String(format: String(localized: "search.detail.time.updated.format"), pushed))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .opacity(createdRelative == nil && pushedRelative == nil ? 0 : 1)
+    }
+
+    /// ISO8601 字符串 → 相对时间。
+    /// - 用 `RelativeDateTimeFormatter` 跟随当前 `Locale`（en / zh-Hans 自动适配）
+    /// - 解析失败返回 nil；调用方按 nil 整段隐藏，不渲染"unknown"占位
+    ///
+    /// **不能用 `ISO8601DateFormatter.shared`**：该共享实例的 `formatOptions`
+    /// 含 `.withFractionalSeconds`，会**强制要求**字符串带毫秒（如
+    /// `"2024-01-01T00:00:00.000Z"`）；但 GitHub `/search/repositories` 实际
+    /// 返回 `"2024-01-01T00:00:00Z"`（不带毫秒）→ 解析全部返回 nil → 整行
+    /// 透明隐藏（dong4j 2026-06-14 真机复现：弹窗看不到任何时间字段）。
+    /// 复用 `RepoDetailViewData.parseISO8601` 的双 try 思路：先试带 fractional，
+    /// 失败再试纯 internet date time。
+    private func relativeTime(iso8601: String?) -> String? {
+        guard let iso8601, !iso8601.isEmpty else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var parsed: Date? = formatter.date(from: iso8601)
+        if parsed == nil {
+            formatter.formatOptions = [.withInternetDateTime]
+            parsed = formatter.date(from: iso8601)
+        }
+        guard let date = parsed else { return nil }
+        let rel = RelativeDateTimeFormatter()
+        rel.unitsStyle = .full
+        return rel.localizedString(for: date, relativeTo: Date())
+    }
+
+    // MARK: - Topics
+
+    /// Topics chips。布局采用 `SearchHistoryFlowLayout`（同文件已定义的自动换行
+    /// 布局），避免 topics 多时挤压固定宽度的卡片。
+    ///
+    /// 用 `Text(verbatim:)`：topic 是用户内容，绝不能被 SwiftUI 当成本地化 key
+    /// 进 xcstrings 查找；前缀 `#` 也是装饰，与本地化无关。
+    private func topicsRow(topics: [String]) -> some View {
+        SearchHistoryFlowLayout(spacing: 6) {
+            ForEach(topics.prefix(8), id: \.self) { topic in
+                Text(verbatim: "#\(topic)")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Color.secondary.opacity(0.10), in: Capsule())
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    // MARK: - Wiki 集成（SEARCH-RICH 2026-06-14）
+
+    /// 行内 wiki chip 行。设计意图：用户在「快速决策要不要 Star 这个 repo」时
+    /// 能一眼看到"还能在 DeepWiki / ZRead / CodeWiki 哪几家读到可读文档"，
+    /// 比 ··· 折叠菜单的"藏起来"更适合搜索弹窗"信息密度卡"定位。
+    ///
+    /// 行布局：📖 图标 + "Wikis" 标签 + N 个 chip 按钮（每个对应一家收录站）。
+    /// 调用方在外层 `if !wikiLinks.isEmpty` 守卫下渲染本行 → 全部未收录时整行
+    /// 隐藏，零视觉负担（与详情页 `RepoWikiMenu` 的"未收录不占 UI"原则一致）。
+    private func wikiLinksRow(links: [WikiLink]) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "book.closed.fill")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text("search.detail.wikis.label")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            ForEach(links) { link in
+                wikiChip(link: link)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// 单条 wiki chip。视觉对齐 topic chip 的灰色 capsule，但加入品牌 logo
+    /// 让用户能一眼区分 DeepWiki / ZRead / CodeWiki —— logo 视觉规格与
+    /// `RepoWikiMenu` 菜单项一致（10×10 + cornerRadius 6 + interpolation high）,
+    /// 这样详情页菜单项和搜索弹窗 chip 看起来是"同一套东西在不同位置呈现"。
+    private func wikiChip(link: WikiLink) -> some View {
+        Button {
+            NSWorkspace.shared.open(link.url)
+        } label: {
+            HStack(spacing: 5) {
+                wikiSourceIcon(source: link.source)
+                Text(verbatim: link.title)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.secondary.opacity(0.10), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(Text(verbatim: link.url.absoluteString))
+    }
+
+    @ViewBuilder
+    private func wikiSourceIcon(source: WikiSource) -> some View {
+        if let name = source.assetName {
+            Image(name)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 10, height: 10)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        } else {
+            Image(systemName: source.fallbackSFSymbol)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 拉一次 wiki 状态。错误静默 —— wiki 是辅助信息，失败不应污染搜索弹窗
+    /// 主流程；与 `RepoWikiMenu.loadLinks()` 的失败处理同款。
+    private func loadWikiLinks(repo: Repo) async {
+        wikiLinks = []
+        do {
+            let items = try await dependencies.wikiAPI.fetchStatus(
+                owner: repo.owner,
+                repo: repo.name
+            )
+            guard !Task.isCancelled else { return }
+            wikiLinks = RepoWikiMenuState.make(items: items)
+        } catch is CancellationError {
+            // SwiftUI 切换 candidate 的正常取消（未来若支持卡片间切换时触发）
+        } catch {
+            AppLog.network.warning(
+                "search-detail wiki: lookup failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    // MARK: - Action row
+
+    /// 主操作行：Star / Ask AI / 在 GitHub 打开 + ··· 折叠菜单
+    private func actionRow(repo: Repo) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                onToggleStar()
+            } label: {
+                Label(
+                    isStarred
+                        ? "search.detail.action.unstar"
+                        : "search.detail.action.star",
+                    systemImage: isStarred ? "star.slash" : "star"
+                )
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                onOpenAI()
+            } label: {
+                Label("search.detail.action.askAI", systemImage: "sparkles")
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                onOpenInGitHub()
+            } label: {
+                Label("search.detail.action.openOnGitHub", systemImage: "arrow.up.right.square")
+            }
+            .buttonStyle(.borderedProminent)
+
+            Spacer(minLength: 0)
+
+            overflowMenu(repo: repo)
+        }
+    }
+
+    /// 折叠菜单（4 项）。
+    /// - homepage 无值时禁用对应 menu item（不是隐藏）—— 让用户知道"作者没填"
+    ///   而不是"功能没做"，与 `RepoExternalLinks.homepage` 行为一致。
+    @ViewBuilder
+    private func overflowMenu(repo: Repo) -> some View {
+        let homepageURL: URL? = {
+            guard let raw = repo.homepage, !raw.isEmpty else { return nil }
+            return URL(string: raw)
+        }()
+
+        Menu {
+            Button {
+                onCopyURL()
+            } label: {
+                Label("search.detail.action.copyURL", systemImage: "link")
+            }
+
+            Button {
+                copyCloneURL(repo: repo)
+            } label: {
+                Label("search.detail.action.copyClone", systemImage: "terminal")
+            }
+
+            Divider()
+
+            Button {
+                openOwnerPage(login: repo.owner)
+            } label: {
+                Label("search.detail.action.openOwner", systemImage: "person.crop.circle")
+            }
+
+            Button {
+                if let url = homepageURL { NSWorkspace.shared.open(url) }
+            } label: {
+                Label("search.detail.action.openHomepage", systemImage: "globe")
+            }
+            .disabled(homepageURL == nil)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 14))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("search.detail.action.more.tooltip")
+    }
+
+    // MARK: - Local actions (no host callback needed)
+
+    /// 复制 git clone URL。
+    /// 优先用 `repo.cloneUrl`（HTTPS clone URL，GitHub 直接给）；缺失时退化到
+    /// 「`https://github.com/{owner}/{name}.git` 拼凑」（永远可拼出来）。
+    private func copyCloneURL(repo: Repo) {
+        let value: String = repo.cloneUrl ?? "https://github.com/\(repo.owner)/\(repo.name).git"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    /// 在浏览器打开 owner 主页。
+    /// 不走宿主回调是因为这就是个外链，没有业务侧副作用（不像 toggleStar 需要
+    /// 入库），与现有 reference candidate 直接 NSWorkspace 行为对齐。
+    private func openOwnerPage(login: String) {
+        guard let url = URL(string: "https://github.com/\(login)") else { return }
+        NSWorkspace.shared.open(url)
     }
 }

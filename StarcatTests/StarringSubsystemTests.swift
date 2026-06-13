@@ -82,7 +82,12 @@ struct StarringSubsystemTests {
             archived: false,
             pushedAt: nil,
             createdAt: nil,
-            updatedAt: nil
+            updatedAt: nil,
+            openIssuesCount: nil,
+            defaultBranch: nil,
+            disabled: nil,
+            isTemplate: nil,
+            score: nil
         )
     }
 

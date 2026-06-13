@@ -91,7 +91,9 @@ struct RepoCardViewDataTests {
                 forksCount: 0, watchersCount: 0, topics: nil, license: nil,
                 homepage: nil, htmlUrl: "https://github.com/u/x", cloneUrl: nil, sshUrl: nil,
                 isPrivate: false, fork: false, archived: false,
-                pushedAt: nil, createdAt: nil, updatedAt: nil
+                pushedAt: nil, createdAt: nil, updatedAt: nil,
+                openIssuesCount: nil, defaultBranch: nil,
+                disabled: nil, isTemplate: nil, score: nil
             )
         )
         try await repoRepo.upsertStarred([dto42], userID: 100, syncedAt: Date())

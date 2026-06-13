@@ -39,13 +39,22 @@ struct GitHubRepositorySearchProvider: SearchProvider {
                 cachedAt: ISO8601DateFormatter().string(from: Date()),
                 isStarred: false
             )
+            // SEARCH-RICH 2026-06-14：把 search 端点专属的 disabled / is_template /
+            // score 旁挂到 `remoteExtras`。这三个字段不入 `Repo` 模型 / 不入库，
+            // 仅供搜索弹窗渲染状态徽章 + 匹配度。
+            let extras = RemoteRepoExtras(
+                disabled: dto.disabled,
+                isTemplate: dto.isTemplate,
+                score: dto.score
+            )
             return RepositoryCandidate(
                 identity: RepoIdentity(ghRepoID: dto.id, owner: dto.owner.login, name: dto.name),
                 card: ephemeral.asCardData(),
                 sources: [.github],
                 localRepo: nil,
                 remoteRepo: ephemeral,
-                semanticScore: nil
+                semanticScore: nil,
+                remoteExtras: extras
             )
         }
         let cappedTotal = min(response.value.totalCount, 1_000)
