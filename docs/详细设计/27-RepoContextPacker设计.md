@@ -8,6 +8,358 @@
 
 ---
 
+## 0. 客户端接入任务清单（2026-06-13 起，**当前在做**）
+
+> **本章是"立即可执行的工程任务列表"**，与 §23「实施进度」配套（§23 记录已落地的底层 pipeline，§0 记录当前接入阶段的待办）。
+>
+> **范围与目标**：把已完成的 `RepoContextPacker` 接入主流程，让 AI 摘要 / AI 对话真正"看到代码"。
+>
+> 按 **W → X → Y** 顺序推进，每阶段都能独立验证。
+
+### 0.1 当前代码摸底（2026-06-13 17:30，2026-06-13 22:00 修订）
+
+接入路径上现有的"既成事实"：
+
+| 接入面 | 现状 | 接入策略 |
+|---|---|---|
+| ZIP 快照层 | 已在 `Features/CodeGraph/CodeFlowRunner.swift` 实现 `archiveIfNeeded(repo:commitSHA:)` + `archiveFileURL(...)` + `resolveBranch(repo:name:)`，路径 `Application Support/Starcat/repository-snapshots/github.com/<owner>/<repo>/<sha>.zip` | **抽出**到 `Shared/Services/SharedSnapshotService.swift` 让 CodeFlow 与 RepoContextPacker 共用，遵守 `docs/需求讨论/starcat-codeflow-integration.md` §4.2「共享但只读、不删」约定 |
+| AI 摘要主入口 | `Features/AI/RepoAIInsightService.swift:402-427` 的 `makeSource(for:)` 拼接 README + 元信息为 `Source.text`，被 `generateInsight` 和 `chatStream` 同时复用 | 在 `makeSource` 内新增一段「可选 RepoContextProvider 注入」，与现有的 `AnySearchContextProvider`（`generateInsight:122-132`）平行接入，**失败不阻断主流程** |
+| AI 设置存储 | `Core/Settings/AppSettings.swift` 有 `aiSummaryTask` / `aiExternalContextEnabled` / `aiReadmeTruncateLength` 等，UserDefaults 持久化，`Keys` 子结构集中管理 key | 新增 3 个字段 `aiRepoContextEnabled` / `aiRepoContextTokenBudget` / `aiRepoContextTier1MaxLines`，沿用现有的 `persist*` 模式。**不设「私有仓库」开关**：当前 OAuth scope `read:user` + `public_repo` 永远拿不到 `isPrivate=true` 的 repo（Starcat 还没接管私有仓库可见性逻辑），增加一个走不到的开关只会误导用户 |
+| **产物存储层** | **当前无独立服务**，`ContextWriter` 直接 `Data.write(.atomic)` 到 hardcoded `Application Support/Starcat/analysis/<owner>/<repo>/` | **新建 `RepoContextStorage`**（仿 `CodeFlowStorage` 全套接口）：Security-scoped bookmark + 路径迁移 + 项目扫描 + 删除；默认目录改名 `Application Support/Starcat/repo-context/` 与 `codeflow/` 同级对齐 |
+| 设置页 UI（配置） | `Features/Settings/AISettingsView.swift` 已有"AI 索引 / 摘要 / 标签"三段 + 多用 `DisclosureGroup + SceneStorage` 折叠 | 在该 Tab 末尾新增一个 `DisclosureGroup("AI 代码上下文（实验）")` 区块，只放配置开关（总开关 + Token 预算 Slider + 关键文件保留行数 Stepper + 跳转管理面板按钮） |
+| 设置页 UI（产物管理） | `Features/Settings/SettingsView.swift:StorageSettingsTab` 已有 README / 图片清理；**CodeFlow 数据管理放 `IntegrationSettingsTab` 是因为它是 vendored 第三方集成**；RepoContextPacker 是 Starcat 自带功能，归属应在 StorageSettingsTab | **扩展 StorageSettingsTab**：新增 "AI 代码上下文" Section，照搬 CodeFlow 模式精简版（路径配置行 + 4 字段统计行 + 项目列表 + 一键清除 + 二次确认 + 错误 alert） |
+| AI 摘要 UI | `Features/AI/RepoAIWindowContentView.swift` 有 `summaryHeader` / `streamingSummary` / `footer(_:)` / `errorBanner` 等已存在子视图 | 改 `streamingSummary` 显示「准备代码上下文 → 生成摘要」两段进度；改 `footer` 末尾追加 token / 文件数 caption；顶部新增条件渲染的 `contextDegradedBanner` |
+| AppDependencies | `App/AppDependencies.swift:296-301` 是 `RepoAIInsightService` 的装配点，已有 `summaryRepository` / `readmeRepository` / `settings` 依赖 | 在其之前装配 `sharedSnapshotService` + `repoContextStorage` + `repoAIContextProvider`，并把 `repoAIContextProvider` 注入到 `RepoAIInsightService` 初始化参数 |
+| i18n | `Resources/Localizable.xcstrings`，`ai.assistant.*` / `ai.settings.*` 命名空间已有先例 | 新增 `ai.context.*` 命名空间（覆盖 `phase` / `footer` / `settings` / `banner` / `storage` 5 个子段） |
+
+### 0.2 阶段 W：共享 ZIP 快照服务 + 产物存储 + RepoAIContextProvider
+
+> 目标：让 `RepoContextPacker.pack(_:)` 可以被一个**业务无关的 facade** 安全调用，并且产物（XML + 元数据）落到一个**用户可见、可迁移、可清理**的目录。
+
+- [ ] **W1. 抽 `SharedSnapshotService`** —— 新建 `Starcat/Shared/Services/SharedSnapshotService.swift`：
+  - 把 `CodeFlowRunner.archiveIfNeeded(repo:commitSHA:)` / `archiveFileURL(owner:name:commitSHA:)` / `resolveBranch(repo:name:)` 三个方法的**核心逻辑**搬过来；
+  - 错误类型独立为 `SharedSnapshotError`（拆 `privateRepository` / `requestFailed` / `archiveTooLarge` / `emptyArchive` / `branchNotFound` 5 个 case，不要污染 `CodeFlowError`）；
+  - 100MB ZIP 上限常量从 `CodeFlowRunner.maximumArchiveBytes` 提到 `SharedSnapshotService.maximumArchiveBytes`，CodeFlow 改为引用；
+  - 路径常量 `repository-snapshots/github.com/<owner>/<repo>/<sha>.zip` 内化（CodeFlow / Packer 都不直接拼）。
+- [ ] **W2. CodeFlow 改造** —— `CodeFlowRunner` 通过依赖注入接 `SharedSnapshotService`：
+  - `archiveIfNeeded` / `archiveFileURL` / `branch` / `resolveBranch` / `branches` 全部 delegate 到新服务；
+  - `CodeFlowError.privateRepository` / `archiveTooLarge` / `emptyArchive` / `branchNotFound` 改为 mapping 自 `SharedSnapshotError`（保持现有调用方错误文案不变）；
+  - 跑 CodeFlow E2E（手动点一次"生成代码图谱"），确认 ZIP 复用 / 重新下载 / 私有仓库报错三条路径不退化。
+- [ ] **W3. 新建 `RepoAIContextProvider`** —— `Starcat/Features/AI/RepoAIContextProvider.swift`：
+  - 业务接口：`func context(for repo: Repo) async throws -> URL?` 返回 `context.xml` 路径，nil 表示「未启用 / 静默失败」；
+  - 内部三步：① 调 `SharedSnapshotService.resolveBranch + archiveIfNeeded` 拿 ZIP；② 调 `RepoContextStorage.lookupMetadata(owner:repo:)` 检查 `<owner>/<repo>/metadata.json` 是否已存在且 `commitSha + tokenBudget + tier1MaxLines + tierRulesVersion` 都匹配（命中则跳过 pack 直接返回 `<repo>/context.xml`）；③ 不命中则调 `RepoContextPacker.pack(_:)`，由 packer 内部的 `ContextWriter` 通过 `RepoContextStorage.withOutputRoot` 写盘；
+  - 失败降级：`CancellationError` 重新抛出；其它任何错误返回 nil + log（学习 `RepoAIInsightService.generateInsight:127-129` 的 `AnySearchContextProvider` 处理范本）；
+  - **不做私有仓库判断**（接入面表已说明，scope 不允许私有仓库进入系统）。
+- [ ] **W4. AppDependencies 装配** —— 在 `AppDependencies.swift:296` `RepoAIInsightService` 装配**之前**：
+  - new 一个 `sharedSnapshotService: SharedSnapshotService` 持有；
+  - new 一个 `repoContextStorage = RepoContextStorage.shared`（singleton，仿 `CodeFlowStorage.shared`）；
+  - new 一个 `repoAIContextProvider: RepoAIContextProvider` 持有（依赖 `sharedSnapshotService` + `repoContextStorage` + `settings`）；
+  - **不再传 `outputBaseDir`**：`RepoContextPacker.pack` 改为接收 `outputDirectory: URL`（由 `ContextWriter` 在 `RepoContextStorage.withOutputRoot` 闭包内 resolve 出 `<root>/<owner>/<repo>/`）；
+  - `RepoAIInsightService.init` 新增 `repoAIContextProvider:` 参数（**X5 才接通业务**，W4 只完成装配）。
+- [ ] **W5. 单测** —— `StarcatTests/SharedSnapshotServiceTests.swift`：
+  - 私有仓库 throws `.privateRepository`；
+  - 已存在 ZIP 复用（mock fileManager 返回 exists）；
+  - 不存在 ZIP 下载（mock downloader 返回 fixture 2KB data，断言写入 archiveURL）；
+  - 100MB 上限 throws `.archiveTooLarge`；
+  - 空 response throws `.emptyArchive`。
+- [ ] **W6. 新建 `RepoContextStorage`** —— 新建 `Starcat/Shared/Services/RepoContextStorage.swift`（**仿 `Features/CodeGraph/CodeFlowStorage.swift` 精简版，相同接口形态**）：
+  - `@MainActor @Observable final class RepoContextStorage`，单例 `static let shared = RepoContextStorage()`；
+  - **状态属性**（与 CodeFlowStorage 对齐）：
+    - `private(set) var projects: [RepoContextProject]`：扫描产物目录得到的项目数组；
+    - `private(set) var lastErrorMessage: String?`：操作失败时 UI 显示用；
+    - `var totalBytes: Int64 { projects.reduce(0) { $0 + $1.contextBytes + $1.metadataBytes } }`：总占用；
+    - `var totalGenerationCount: Int { projects.reduce(0) { $0 + $1.generationCount } }`：总生成次数；
+    - `var latestGeneratedAt: Date? { projects.compactMap(\.generatedAt).max() }`：最近一次生成时间；
+  - **持久化**：自定义产物根目录通过 Security-scoped bookmark 持久化（UserDefaults key `settings.repoContext.outputDirectoryBookmark.v1`）；默认路径 `Application Support/Starcat/repo-context/`（与 `codeflow/` 同级，便于后续整体备份）；
+  - **目录结构**：`<root>/<owner>/<repo>/{context.xml, metadata.json}`（与 CodeFlow `<root>/<owner>/<repo>/code-graph/index.html` 镜像）；
+  - **核心方法**（参考 `CodeFlowStorage.swift` 已有实现，对应签名直接借用）：
+    - `effectiveRootURL() throws -> URL`：返回当前生效的根（自定义 bookmark 或 default app support）；
+    - `withOutputRoot<T>(_ block: (URL) async throws -> T) async throws -> T`：security-scoped 闭包包装（自定义目录走 `startAccessingSecurityScopedResource`，default 不走）；
+    - `selectOutputDirectory(_ url: URL) throws`：用户在 UI 选了新目录后，**自动迁移**旧目录所有 `<owner>/<repo>/` 子目录到新目录（同名 conflict 走 `<repo>-2026-06-13-150000` 后缀）；
+    - `resetOutputDirectory() throws`：丢弃 bookmark，迁移回 default；
+    - `refresh() async`：从文件系统重新枚举 `projects`（每个 owner / repo 子目录 → 一条 `RepoContextProject`）；
+    - `delete(owner:repo:) async throws`：单删；
+    - `deleteAll() async throws`：清空；
+    - `lookupMetadata(owner:repo:) -> PackMetadata?`：W3 走的缓存命中入口（封装从 `metadata.json` 反序列化）；
+  - **设计要点（与 CodeFlow 同款）**：文件系统为单一信任源，没有任何内存索引；UI 状态完全派生自 `projects` 数组；所有写操作末尾都触发 `refresh()`。
+- [ ] **W7. 扩展 `PackMetadata`** —— `Starcat/Shared/Services/RepoContextPacker/Models/PackerIO.swift`：
+  - 增加 4 个可选字段（**保持向后兼容**，老 metadata.json 反序列化不报错）：
+    - `tier1MaxLines: Int?`：W3 缓存命中判断需要（settings 调整后旧 metadata 失效）；
+    - `tierRulesVersion: String?`：固定 `"v1"`（后续 TierRules 升级时 bump，强制重 pack）；
+    - `lastAccessedAt: Date?`：UI 按访问时间排序、LRU 清理用；
+    - `generationCount: Int?`：UI 显示「生成 N 次」（首次写 1，后续 +1）；
+  - `RepoContextProject` struct（W6 新建）从 metadata.json 反序列化得到这些字段。
+- [ ] **W8. 改造 `ContextWriter`** —— `Starcat/Shared/Services/RepoContextPacker/Internal/ContextWriter.swift`：
+  - 当前 `write(_:to outputDirectory:)` 是直接 `Data.write(.atomic)` 到 hardcoded 目录；
+  - 改为接收 `RepoContextStorage` 引用，写盘走 `storage.withOutputRoot { root in ... }`；
+  - 写盘前从 storage 读取旧 metadata 的 `generationCount`，新 metadata 的 `generationCount = old + 1`；
+  - 写盘后调 `storage.refresh()` 刷新 UI；
+  - 单测保留（fixture 走临时目录，不依赖 storage 单例）。
+
+### 0.3 阶段 X：AppSettings 字段 + Prompt 注入
+
+> 目标：让 `RepoContextPacker` 的 XML 真的被喂进 LLM 的 system prompt / user context。
+
+- [x] **X1. AppSettings 新增 3 个字段**（`AppSettings.swift`，2026-06-13 完成）：
+  - `aiRepoContextEnabled: Bool`（默认 `true`，UserDefaults key `settings.ai.repoContext.enabled.v1`）；
+  - `aiRepoContextTokenBudget: Int`（默认 `8000`，范围 `4000-32000`，key `settings.ai.repoContext.tokenBudget.v1`）；
+  - `aiRepoContextTier1MaxLines: Int`（默认 `80`，范围 `40-200`，key `settings.ai.repoContext.tier1MaxLines.v1`，对应 `TierTruncation.tier1MaxLines` 的运行期 override 入口）；
+  - `Keys` 子结构同步加 3 条；`init` 末尾 3 行 `defaults.object(forKey:) as? T ?? default` 解出来；不要破坏现有 `persist` 模式。
+  - **不增加 `aiRepoContextAllowPrivate`**：原因见 §0.1 接入面表与 `AppSettings.swift` 内 MARK 注释。
+- [ ] **X2. AppSettings 单测**（`AppSettingsTests.swift`）：3 字段默认值 / 写入回读 / out-of-range Stepper 取值兜底。
+- [ ] **X3. `TierTruncation` 加运行期 override** —— 现在的 `tier1MaxLines = 80` 是 `static let`，X3 需要重构为**可注入**（保留默认 80 当 fallback）：
+  - 方案：`TierTruncation.tier1Head(_:maxLines:maxChars:)` 增加 2 个可选参数，调用方传入 settings 值；
+  - `XmlOutputBuilder.build` 接收 `tier1MaxLines` 参数（由 `RepoContextPacker.pack` 从 `PackInput` 转发），不传时用默认 80；
+  - `PackInput` 增加 `tier1MaxLines: Int = 80` 字段。
+- [ ] **X4. `RepoAIInsightService` 接通 RepoAIContextProvider**（`RepoAIInsightService.swift`）：
+  - `init` 新增 `repoAIContextProvider: RepoAIContextProvider?` 参数（默认 nil 不破坏现有测试）；
+  - 把 `private let externalContextProvider: AnySearchContextProvider` 旁边并列加一个 `private let repoContextProvider: RepoAIContextProvider?`；
+  - 改造 `makeSource(for:)`：在原有 README + 元信息拼接**后**追加一段 `<repo-context>...</repo-context>`（如果 `aiRepoContextEnabled && repoContextProvider?.context(for:repo)` 返回非 nil 的 contextURL，读文件内容拼进去；失败静默返回原 source）；
+  - 注意 `Source.hash` 计算必须包含 context 内容（否则改 budget / 关掉 context 后用户重新生成的摘要会命中旧缓存，dong4j 体验崩坏）。
+- [ ] **X5. 同款接入到 `chatStream`** —— 不另写一遍，X4 已经在 `makeSource` 注入完成，`chatStream` 自动复用（`chatStream` 第 261 行就调的 `makeSource`）。**唯一需要确认**：system prompt 模板 `"Repository context: \(source.text)"` 已经把 `<repo-context>` 段囊括进去，无需改 `chatStream` 自己。
+- [ ] **X6. AppDependencies 装配收尾** —— `AppDependencies.swift:296` `RepoAIInsightService` 初始化时把 `repoAIContextProvider: self.repoAIContextProvider` 传进去。
+- [ ] **X7. RepoAIInsightService 单测** —— `StarcatTests/RepoAIInsightServiceTests.swift`（如果还没有）/ 新建：
+  - 关闭 `aiRepoContextEnabled` 时 source 不含 `<repo-context>`；
+  - 开启且 provider 返回 URL 时 source 含 `<repo-context>`；
+  - provider 抛错时 source 不含 `<repo-context>` 且不抛错；
+  - `Source.hash` 在两次开关之间变化（防 cache 复用 bug）。
+
+### 0.4 阶段 Y：UI 触点 6 个 + E2E
+
+> 触点编号沿用 §12 设计文档命名（A~F），独立实施可并行。
+
+- [ ] **Y1. 触点 A：摘要生成两阶段状态条**（`RepoAIWindowContentView.swift`）：
+  - 改 `streamingSummary(_ text:)` 上方的 `HStack { ProgressView + Text }`：
+    - 当 `chatVM`/`insightVM` 还在 `repoAIContextProvider` 调用阶段（`text.isEmpty` 且 generating），显示 `ai.context.phase.preparingContext`（"准备代码上下文..."）；
+    - 进入 LLM 流式时切到 `ai.assistant.summary.streaming`；
+  - 需要 ViewModel 暴露一个新的 `enum SummaryPhase { case idle, preparingContext, streamingSummary, done, failed }`，`RepoAIInsightViewModel` 增加 `private(set) var phase: SummaryPhase = .idle`；
+  - `generateInsight` 调用前置 `.preparingContext`，第一个 onSummaryDelta 触发时切 `.streamingSummary`。
+- [ ] **Y2. 触点 B：摘要 footer 元信息**（`RepoAIWindowContentView.swift:footer`）：
+  - 在 `Text("由 X 生成 · 时间")` **下方**追加一行 `caption2 / tertiary`：`87 个文件 · 7.2K tokens · 51ab970 · main`；
+  - 数据来源：`RepoAIInsightService` 把 `PackMetadata`（来自 `RepoAIContextProvider`）一并放进 `RepoAIInsight` 一个新可选字段 `contextMetadata: ContextFooterMetadata?`（结构含 `keptFileCount: Int` / `actualTokens: Int` / `shortSha: String` / `ref: String`）；
+  - 没用代码上下文时该行不渲染（`if let footer = insight.contextMetadata { ... }`）；
+  - i18n：`ai.context.footer.format` = `"%d files · %@ tokens · %@ · %@"`。
+- [ ] **Y3. 触点 C：设置页配置区**（`Features/Settings/AISettingsView.swift`）：
+
+  **插入位置精确定位**：现有 `AISettingsTab.body`（line 108-127）的 `Form` 按"配置链路从上到下"顺序排了 7 个 section：
+
+  ```
+  Form {
+      providerSection       // ① Provider 配置
+      enabledModelsSection  // ② 已发现的模型
+      taskModelsSection     // ③ 任务模型（4 task → provider/model 绑定）
+      promptSection         // ④ Prompt 编辑（DisclosureGroup）
+      autoTidySection       // ⑤ 自动整理（DisclosureGroup）
+      aiIndexSection        // ⑥ AI 索引/向量化（DisclosureGroup）
+      aiRepoContextSection  // ⑦ ← 新增插这里
+      privacySection        // ⑧ 隐私说明（始终保持最后）
+  }
+  ```
+
+  **为什么放 ⑥/⑧ 之间**：
+  - 与 `aiIndexSection`（向量化）是同性质"消费上游配置的高级 AI 能力"，相邻分组合理；
+  - `privacySection` 必须保持最后（用户读到时已了解所有功能 → 总览数据流向）；
+  - 「AI 代码上下文」涉及"上传源码到云端 LLM"的隐私敏感操作，紧贴 `privacySection` 形成「先看功能再看隐私」的阅读节奏；
+  - **不要**做成 `aiIndexSection` 内的子 `DisclosureGroup`：索引与代码上下文是独立特性，混在一起反而难发现。
+
+  **Section 内部结构**（沿用现有 `promptSection` / `autoTidySection` / `aiIndexSection` 的 `DisclosureGroup` + `@SceneStorage` 默认折叠风格）：
+
+  ```swift
+  // 1. 新增 SceneStorage 折叠状态（与 isPromptExpanded 等并列声明在 view 顶部）
+  @SceneStorage("settings.ai.repoContext.expanded") private var isRepoContextExpanded: Bool = false
+
+  // 2. 新增 computed View
+  private var aiRepoContextSection: some View {
+      Section {
+          DisclosureGroup(isExpanded: $isRepoContextExpanded) {
+              VStack(alignment: .leading, spacing: 12) {
+                  Toggle("ai.context.settings.enabled", isOn: $settings.aiRepoContextEnabled)
+                  Text("ai.context.settings.description").font(.caption).foregroundStyle(.secondary)
+
+                  Divider()
+
+                  // Slider 4000-32000 step 2000
+                  HStack {
+                      Text("ai.context.settings.tokenBudget")
+                      Spacer()
+                      Text("\(settings.aiRepoContextTokenBudget) tokens").monospacedDigit().foregroundStyle(.secondary)
+                  }
+                  Slider(value: tokenBudgetBinding, in: 4000...32000, step: 2000)
+                      .disabled(!settings.aiRepoContextEnabled)
+
+                  // Stepper 40-200 step 20
+                  Stepper(value: $settings.aiRepoContextTier1MaxLines, in: 40...200, step: 20) {
+                      HStack {
+                          Text("ai.context.settings.tier1MaxLines")
+                          Spacer()
+                          Text("\(settings.aiRepoContextTier1MaxLines) 行").monospacedDigit().foregroundStyle(.secondary)
+                      }
+                  }
+                  .disabled(!settings.aiRepoContextEnabled)
+
+                  Divider()
+
+                  Button {
+                      // 跳转到 Settings → Storage Tab；
+                      // 当前 SettingsView 用 @State 自管 selectedTab，无 NotificationCenter 入口，
+                      // 这里走 NotificationCenter.post 给 SettingsView 加监听（Y3 一并实现）。
+                      NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: "storage")
+                  } label: {
+                      Label("ai.context.settings.manageStorage", systemImage: "internaldrive")
+                  }
+              }
+              .padding(.vertical, 4)
+          } label: {
+              Label("ai.context.settings.title", systemImage: "doc.text.magnifyingglass")
+                  .font(.headline)
+          }
+      }
+  }
+
+  // 3. tokenBudgetBinding（避免 Slider 直接绑 Int 字段的 Double 转换噪音）
+  private var tokenBudgetBinding: Binding<Double> {
+      Binding(
+          get: { Double(settings.aiRepoContextTokenBudget) },
+          set: { settings.aiRepoContextTokenBudget = Int($0) }
+      )
+  }
+  ```
+
+  **配套小改动**：
+  - `SettingsView.swift` 新增 `NotificationCenter` 监听 `.starcatJumpToSettingsTab`，把 `selectedTab` 切到 `.storage`；
+  - `Notification.Name` 扩展在 `Shared/Extensions/Notification+Names.swift`（如果没有就建）；
+  - 默认 `isRepoContextExpanded = false`（与 promptSection 一致），首次开启功能的用户需要主动展开 — 避免设置页一打开就被新 section 撑高。
+
+  **i18n 键清单**（Y3 一并加到 `Localizable.xcstrings`）：
+  | Key | zh-Hans | en |
+  |---|---|---|
+  | `ai.context.settings.title` | AI 代码上下文（实验） | AI Code Context (Experimental) |
+  | `ai.context.settings.enabled` | 启用代码上下文 | Enable Code Context |
+  | `ai.context.settings.description` | 把仓库源码打包成 XML 喂给 AI，让摘要 / 对话能"看到代码"。首次生成会下载并解压 ZIP，可能 1-3 秒。 | Pack repo source code as XML for AI to "see" the code in summaries/chat. First generation downloads and unzips, may take 1-3s. |
+  | `ai.context.settings.tokenBudget` | Token 预算 | Token Budget |
+  | `ai.context.settings.tier1MaxLines` | 关键文件保留行数 | Key Files Line Cap |
+  | `ai.context.settings.manageStorage` | 管理已生成的上下文 → 存储 Tab | Manage Generated Contexts → Storage Tab |
+- [ ] **Y4. 触点 D：降级 banner**（`RepoAIWindowContentView.swift`）：
+  - 在 `summarySection` 顶部、`errorBanner` 之前**条件渲染** `contextDegradedBanner`；
+  - 数据来源：`RepoAIInsightViewModel` 新增 `contextDegradationReason: ContextDegradationReason?` 状态，5 种枚举：`network` / `disk` / `archiveTooLarge` / `extractionFailed` / `zipSlipBlocked`；
+  - i18n：`ai.context.banner.network` / `ai.context.banner.disk` / 等 5 条文案 + 通用 `ai.context.banner.dismiss`。
+- [ ] **Y5. 触点 E：存储 Tab 数据管理面板**（`SettingsView.swift:StorageSettingsTab`，**走 CodeFlow 模式精简版**）：
+
+  **归属理由**：RepoContextPacker 是 Starcat **自带功能**（纯 Swift + ZIPFoundation），不是 vendored 第三方集成，不放 `IntegrationSettingsTab`；StorageSettingsTab 当前就是"缓存与产物清理"统一入口，扩展它最合理。
+
+  **Section 结构**（参考 `Features/Settings/IntegrationSettingsView.swift` 中 CodeFlow 数据管理一节的视觉与交互骨架，**裁剪掉 Sparkle / EdDSA / vendored asset 等无关项**）：
+
+  ```
+  Section("ai.context.storage.section") {
+      // ① 路径配置行：当前根 URL + 「选择…」按钮 + 「重置」按钮 + 「在 Finder 显示」按钮
+      LabeledContent("ai.context.storage.outputDirectory") {
+          HStack { Text(rootDisplayPath).truncationMode(.middle); choose / reset / reveal }
+      }
+
+      // ② 统计行（4 列横排）：项目数 · 总占用 · 总生成次数 · 最近生成时间
+      LabeledContent("ai.context.storage.stats") {
+          HStack(spacing: 16) {
+              Stat("\(storage.projects.count) repos")
+              Stat(ByteCountFormatter.string(fromByteCount: storage.totalBytes, countStyle: .file))
+              Stat("\(storage.totalGenerationCount) generations")
+              Stat(storage.latestGeneratedAt.map { RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: .now) } ?? "—")
+          }
+      }
+
+      // ③ 项目列表：每行 = 一个 <owner>/<repo>，右侧 Menu(...) → Preview / Reveal / Delete
+      ForEach(storage.projects) { project in
+          HStack {
+              VStack(alignment: .leading) {
+                  Text("\(project.owner)/\(project.repo)").font(.body.monospaced())
+                  Text("\(project.commitSha.prefix(7)) · \(ByteCountFormatter.string(fromByteCount: project.contextBytes, countStyle: .file)) · \(project.generationCount)x").font(.caption).foregroundStyle(.secondary)
+              }
+              Spacer()
+              Menu { ... } label: { Image(systemName: "ellipsis.circle") }
+          }
+      }
+
+      // ④ 一键清空 destructive button + confirmation dialog
+      Button(role: .destructive) { showClearAllConfirm = true } label: { Label("ai.context.storage.clearAll", systemImage: "trash") }
+          .confirmationDialog(...)
+
+      // ⑤ 错误 alert：监听 storage.lastErrorMessage，非 nil 时弹 alert
+  }
+  ```
+
+  **关键交互**：
+  - **路径选择**：`NSOpenPanel(canChooseDirectories: true, canChooseFiles: false)` → `storage.selectOutputDirectory(url)` → 内部自动迁移所有 `<owner>/<repo>/` 子目录到新目录（同名 conflict 加时间戳后缀）；
+  - **重置**：`storage.resetOutputDirectory()` → 迁移回 `Application Support/Starcat/repo-context/`；
+  - **删除**：`storage.delete(owner:repo:)` → `FileManager.removeItem` + `refresh()`；
+  - **一键清空**：`storage.deleteAll()` 删整个根目录下所有 `<owner>/<repo>/` 子目录，**保留根目录本身**（避免后续生成时再次创建目录的权限问题）。
+
+  **i18n 键清单**（Y5 一并加到 `Localizable.xcstrings`）：
+
+  | Key | zh-Hans | en |
+  |---|---|---|
+  | `ai.context.storage.section` | AI 代码上下文 | AI Code Context |
+  | `ai.context.storage.outputDirectory` | 产物目录 | Output Directory |
+  | `ai.context.storage.choose` | 选择… | Choose… |
+  | `ai.context.storage.reset` | 重置为默认 | Reset to Default |
+  | `ai.context.storage.reveal` | 在 Finder 中显示 | Reveal in Finder |
+  | `ai.context.storage.stats` | 统计 | Statistics |
+  | `ai.context.storage.statRepos` | %d 个仓库 | %d repos |
+  | `ai.context.storage.statGenerations` | %d 次生成 | %d generations |
+  | `ai.context.storage.menuPreview` | 预览 context.xml | Preview context.xml |
+  | `ai.context.storage.menuReveal` | 在 Finder 中显示 | Reveal in Finder |
+  | `ai.context.storage.menuDelete` | 删除此项 | Delete |
+  | `ai.context.storage.clearAll` | 清空全部 | Clear All |
+  | `ai.context.storage.clearAllConfirm.title` | 确定清空所有 AI 代码上下文？ | Clear all AI code contexts? |
+  | `ai.context.storage.clearAllConfirm.message` | 此操作不可撤销。下次生成 AI 摘要时会重新打包。 | This cannot be undone. Next AI summary will repack. |
+
+  **不引入新的 Inspector 工具类**：所有目录枚举、字节统计、删除逻辑都已经在 W6 的 `RepoContextStorage` 内实现，UI 直接绑定 `@Observable` 状态即可，**不要**再开一个 `AIContextStorageInspector` —— 那是单一信任源被打破的反模式。
+- [ ] **Y6. 触点 F：右上角"在 Finder 显示上下文"菜单项**（`RepoAIWindowController.swift` 或 `RepoAIWindowContentView.panelHeader`）：
+  - 关闭按钮 `xmark` 旁加一个 `Menu` （`ellipsis.circle`）：
+    - Menu Item 1：`ai.context.menu.showInFinder` → `NSWorkspace.shared.activateFileViewerSelecting([contextURL])`；
+    - Menu Item 2：`ai.context.menu.regenerate`（强制忽略 cache 重新 pack，调 `vm.regenerateContext(force:true)`）；
+    - context 不存在时整个 Menu disabled。
+- [ ] **Y7. 端到端 fixture 测试** —— `StarcatTests/RepoContextPacker/EndToEndIntegrationTests.swift`：
+  - 4 个 fixture ZIP（手动放到 `StarcatTests/Fixtures/repo-zips/`）：vapor-vapor / repomix 自身 / 中型 monorepo / 5 文件的迷你 demo；
+  - 跑完整 `RepoContextPacker.pack(_:)`，断言：
+    - 输出 `context.xml` 通过 `XMLParser` 严格校验（无非法字符 / 标签闭合）；
+    - 输出 `metadata.json` 解析成功且 `actualTokens ≤ tokenBudget × 1.2`（§22.7 决议）；
+    - token 估算误差 `|estimatedTokens - actualTokens| / actualTokens ≤ 12%`；
+    - `< 1s` 完成（小 demo 仓库）；
+  - 注意：fixture ZIP 不入 git，提供 `StarcatTests/Fixtures/scripts/download-fixtures.sh` 脚本由 CI / 本地手动跑，README 说明跳过 fixture 时 E2E 自动 skip。
+
+### 0.5 阶段 Z：本次延后（仅记录、不做）
+
+- 设计文档 §22.11(e) 提到的 mojibake 文件名实际累计 warnings 逻辑；
+- V2 ⭐⭐⭐ 优先级：tiktoken-swift 精确 token 计数 / `.gitignore` 解析；
+- V2 ⭐⭐ 优先级：Markdown 输出格式；
+- V2 ⭐ 优先级：tree-sitter compress / git 历史增强。
+- 详见 §23.3 W/X/Y 表后的 Z 段、§23.6 后续任务粒度估算。
+
+### 0.6 完成判定（DoD）
+
+阶段 W / X / Y 全部勾选后还需要满足：
+
+1. **构建**：`xcodegen generate` 0 错 + `xcodebuild -scheme Starcat build` BUILD SUCCEEDED；
+2. **测试**：`xcodebuild test` 全绿（含新增的 SharedSnapshotServiceTests / RepoContextStorageTests / RepoAIInsightServiceTests / EndToEndIntegrationTests）；
+3. **手动验证**：
+   - 公开仓库（如 `vapor/vapor`）走完整链路，AI 摘要包含「## 架构概览」「## 模块职责」等明显源于代码的章节；
+   - 关掉 `aiRepoContextEnabled` 重新生成，摘要降级为 README-only（与 X4 前一致）；
+   - 设置页 3 个字段写入、回读、out-of-range 兜底全部正常；
+   - StorageSettingsTab 看到 `repo-context/<owner>/<repo>/` 列表 + 4 项统计 + 单删 + 一键清空；
+   - 修改产物目录（NSOpenPanel 选一个新位置）后，已生成的 `<owner>/<repo>/` 子目录被迁移到新目录；重置 → 迁回 default `Application Support/Starcat/repo-context/`；
+4. **进度同步**：`docs/工程进度/功能实现总览.md` RepoContextPacker 条目「客户端接入（Step 8-10）」`[ ]` → `[x]` + `> 实现：...` 行。
+
+### 0.7 风险与已知陷阱
+
+| 风险 | 描述 | 缓解 |
+|---|---|---|
+| **缓存 hash 失效** | X4 改 `Source.hash` 算法后，所有存量 `ai_summaries` 缓存都会命中失败被重生成 | 决议：不做平滑过渡，**接受一次全量重生成**（dong4j 项目刚起步，缓存不珍贵；强行做迁移逻辑复杂） |
+| **`RepoAIContextProvider` 耗时阻塞首字延迟** | pack 一次 10-200ms（小仓库）到 1-3s（中等仓库），用户感知"按了生成按钮但 1 秒没反应" | Y1 触点 A 状态条解决（明确显示"准备代码上下文..."阶段） |
+| **`CodeFlowRunner` 改造破坏 P0 功能** | W2 抽 SharedSnapshotService 时如果错误映射漏一个 case，CodeFlow 用户看到不同文案 | 改造完手动跑一次 CodeFlow E2E（点"生成代码图谱"+ 验证已生成项目能复用 ZIP）；写迁移测试断言所有 5 种错误映射 |
+| **`repo-context/` 占用爆炸** | 用户大量 star，每个公开仓库都生成一次，`<owner>/<repo>/` 累积可能上 GB | Y5 触点 E 解决一半（用户可清 / 改路径到外置硬盘）；后续 V2 加 LRU 自动清理或大小上限（不进 MVP） |
+| **路径迁移期间 App 崩溃数据丢失** | `selectOutputDirectory` 走"copy → verify → delete"三步走，如果在中途 App 崩了，新旧目录都有数据 | 与 CodeFlowStorage 同款策略：永远先 `FileManager.copyItem` 到新目录、`refresh()` 确认能读到、再 `removeItem` 旧目录；中途崩了下次启动按"新目录优先、旧目录残留"清理即可 |
+
+---
+
 ## 1. 设计目标
 
 ### 1.1 一句话目标
@@ -2652,9 +3004,10 @@ StarcatTests/RepoContextPacker/
 
 ---
 
-*文档版本：v1.3，2026-06-13*  
+*文档版本：v1.4，2026-06-13*  
 *作者：Starcat AI 协作（dong4j + Claude）*  
 *变更记录：*  
+*- v1.4（2026-06-13 21:50）：新增 §0「客户端接入任务清单」放到文档最前面，作为当前阶段的可执行任务索引；按 W → X → Y 三阶段拆分（W = SharedSnapshotService + RepoAIContextProvider 抽象层 / X = AppSettings 4 字段 + RepoAIInsightService prompt 注入 / Y = 6 个 UI 触点 + E2E fixture）；§0.1 现状摸底表对齐 8 个接入面到具体代码行号；§0.6 DoD 给硬性完成标准；§0.7 风险清单列出 5 项已识别风险与缓解。与 §23 配套：§23 记录已落地的底层 pipeline，§0 记录当前接入阶段的待办。*  
 *- v1.3（2026-06-13 17:30）：新增 §23「任务清单与实施进度」章节；标注本次（2026-06-13 17:15）已完成 §18 Step 1-7 全部范围（18 新源文件 + 8 测试文件 ~55 case + ZIPFoundation 依赖集成 + AboutDependency 同步），Step 8-10 客户端接入（W1-W3 / X1-X5 / Y1-Y7 共 ~3.5 天）和 V2 升级（Z1-Z5）暂未做；同步勾选 §22.12 实施前检查清单（全 9 项 ✅）；`SkipReason` 实际归位 `Models/` 而非 `Rules/`（语义上与错误处理配对）。*  
 *- v1.2（2026-06-13 16:21）：新增 §22「实施前 grill 决策记录」作为实施权威覆盖层；记录 10 轮 grill 全部决议（ZIPFoundation 依赖 / 自写 glob→regex / 分层错误 / 三 pass + TaskGroup cap=8 / 系统 temp 解压 + Application Support 持久化 / 扩展名白名单 + NUL 探测 / Token 两阶段估算→校准 / Tier 1 行字符双约束 + Tier 0 100KB 上限 / String 拼接 XML + CDATA 拆段转义 / 5 项安全防护）；§9 / §10 / §6 章节由 §22 覆盖；__SourceZipExtractor / BudgetAllocator / ContextWriter / RepoContextPacker__ 由 actor 改为 struct；错误枚举补 `zipSlipDetected` / `extractedDirectoryTooLarge` / `cancelled`，移除 `fileReadFailed`（改为 SkipReason）。*  
 *- v1.1（2026-06-13 14:55）：新增 §12 UX 设计章节（15 个子节）；后续 §12-§20 顺移到 §13-§21；定义 8 个 UI 触点（5 个 MVP + 3 个 V2）、失败处理矩阵 7 项、i18n 命名规范 7 个子命名空间。*  

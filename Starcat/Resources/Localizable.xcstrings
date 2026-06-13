@@ -16,6 +16,16 @@
     "%@" : {
 
     },
+    "%@ · %@ · HTML %@ · ZIP %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@ · HTML %3$@ · ZIP %4$@"
+          }
+        }
+      }
+    },
     "%@ × %@" : {
       "localizations" : {
         "en" : {
@@ -26,7 +36,16 @@
         }
       }
     },
+    "%@ ms" : {
+
+    },
+    "%@ tokens" : {
+
+    },
     "%@ 个模型" : {
+
+    },
+    "%@ 行" : {
 
     },
     "%@%@" : {
@@ -2620,6 +2639,105 @@
         }
       }
     },
+    "ai.context.settings.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pack repo source code as XML to feed AI, so summaries and chat can \"see the code\". First generation downloads and unzips the repo, may take 1-3s."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把仓库源码打包成 XML 喂给 AI，让摘要 / 对话能「看到代码」。首次生成会下载并解压 ZIP，可能 1-3 秒。"
+          }
+        }
+      }
+    },
+    "ai.context.settings.enabled" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable Code Context"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用代码上下文"
+          }
+        }
+      }
+    },
+    "ai.context.settings.manageStorage" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage Generated Contexts → Storage Tab"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理已生成的上下文 → 存储 Tab"
+          }
+        }
+      }
+    },
+    "ai.context.settings.tier1MaxLines" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key Files Line Cap"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关键文件保留行数"
+          }
+        }
+      }
+    },
+    "ai.context.settings.title" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Code Context (Experimental)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 代码上下文（实验）"
+          }
+        }
+      }
+    },
+    "ai.context.settings.tokenBudget" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token Budget"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token 预算"
+          }
+        }
+      }
+    },
     "ai.provider.doubao" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4732,6 +4850,15 @@
         }
       }
     },
+    "CodeFlow" : {
+
+    },
+    "CodeFlow 代码图谱" : {
+
+    },
+    "CodeFlow 版本" : {
+
+    },
     "contribution.hoverHint" : {
       "localizations" : {
         "en" : {
@@ -5253,6 +5380,9 @@
         }
       }
     },
+    "Forks" : {
+
+    },
     "general.all" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5369,6 +5499,9 @@
           }
         }
       }
+    },
+    "GitHub 筛选" : {
+
     },
     "keychain.error.deleteFailedFormat" : {
       "extractionState" : "stale",
@@ -6877,6 +7010,103 @@
         }
       }
     },
+    "repo.notes.editor.done" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成"
+          }
+        }
+      }
+    },
+    "repo.notes.editor.emptyPreview" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No note content yet. Switch to the Edit tab to start writing…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无笔记内容,切换到「编辑」开始写作…"
+          }
+        }
+      }
+    },
+    "repo.notes.editor.tabEdit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑"
+          }
+        }
+      }
+    },
+    "repo.notes.editor.tabPreview" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preview"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览"
+          }
+        }
+      }
+    },
+    "repo.notes.editor.title" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Private Notes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "私有笔记"
+          }
+        }
+      }
+    },
+    "repo.notes.expandEditor" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open full editor (supports Markdown preview)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开大窗口编辑(支持 Markdown 预览)"
+          }
+        }
+      }
+    },
     "repo.notes.loadFailed" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7023,102 +7253,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "写点笔记，例如：为什么 star 它、何时复用、踩过哪些坑…"
-          }
-        }
-      }
-    },
-    "repo.notes.editor.done" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Done"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完成"
-          }
-        }
-      }
-    },
-    "repo.notes.editor.emptyPreview" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No note content yet. Switch to the Edit tab to start writing…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无笔记内容,切换到「编辑」开始写作…"
-          }
-        }
-      }
-    },
-    "repo.notes.editor.tabEdit" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edit"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "编辑"
-          }
-        }
-      }
-    },
-    "repo.notes.editor.tabPreview" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Preview"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "预览"
-          }
-        }
-      }
-    },
-    "repo.notes.editor.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Private Notes"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "私有笔记"
-          }
-        }
-      }
-    },
-    "repo.notes.expandEditor" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open full editor (supports Markdown preview)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开大窗口编辑(支持 Markdown 预览)"
           }
         }
       }
@@ -8775,6 +8909,258 @@
         }
       }
     },
+    "settings.anySearch.aiContext" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use external web context in AI summaries"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 摘要使用外部网页上下文"
+          }
+        }
+      }
+    },
+    "settings.anySearch.allowPrivateContext" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow external context for private repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许私有仓库使用外部上下文"
+          }
+        }
+      }
+    },
+    "settings.anySearch.anonymous" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anonymous mode (do not send API Key)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匿名模式（不发送 API Key）"
+          }
+        }
+      }
+    },
+    "settings.anySearch.apiKey" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key"
+          }
+        }
+      }
+    },
+    "settings.anySearch.apiKey.anonymousDescription" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The key is stored securely, but anonymous requests do not send an Authorization header."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key 会加密保存，但匿名模式下请求不会发送 Authorization。"
+          }
+        }
+      }
+    },
+    "settings.anySearch.apiKey.bearerDescription" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The key is stored securely on this Mac and sent as a Bearer token."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key 加密保存在本机，请求时作为 Bearer Token 发送。"
+          }
+        }
+      }
+    },
+    "settings.anySearch.apiKey.hide" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏 API Key"
+          }
+        }
+      }
+    },
+    "settings.anySearch.apiKey.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter AnySearch API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入 AnySearch API Key"
+          }
+        }
+      }
+    },
+    "settings.anySearch.apiKey.save" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存"
+          }
+        }
+      }
+    },
+    "settings.anySearch.apiKey.saved" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保存"
+          }
+        }
+      }
+    },
+    "settings.anySearch.apiKey.show" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示 API Key"
+          }
+        }
+      }
+    },
+    "settings.anySearch.enabled" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable AnySearch web search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用 AnySearch 网页搜索"
+          }
+        }
+      }
+    },
+    "settings.anySearch.includeWebInAll" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Include web results in All"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“全部”范围中包含网页结果"
+          }
+        }
+      }
+    },
+    "settings.anySearch.privacyDescription" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Private repository names, READMEs, and notes are not sent to external search by default. Anonymous mode does not send the saved API Key. An invalid key never falls back to an anonymous request."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认禁止把私有仓库名称、README 或笔记发送到外部搜索。匿名模式不会发送已保存的 API Key；配置了无效 Key 时不会自动降级为匿名请求。"
+          }
+        }
+      }
+    },
+    "settings.anySearch.title" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch"
+          }
+        }
+      }
+    },
     "settings.appearance.dark" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9263,6 +9649,23 @@
         }
       }
     },
+    "settings.integrations.title" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integrations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "集成"
+          }
+        }
+      }
+    },
     "settings.listDensity.card" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9496,22 +9899,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不可达"
-          }
-        }
-      }
-    },
-    "settings.integrations.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Integrations"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "集成"
           }
         }
       }
@@ -11435,6 +11822,9 @@
 
     },
     "starcat.app" : {
+
+    },
+    "Stars" : {
 
     },
     "sync.error.tokenExpired" : {
@@ -13386,7 +13776,25 @@
     "𝕏" : {
 
     },
+    "下载所选分支最新 commit 的源码快照" : {
+
+    },
     "优先使用流式响应" : {
+
+    },
+    "全部语言" : {
+
+    },
+    "最佳匹配" : {
+
+    },
+    "最近更新" : {
+
+    },
+    "最近耗时" : {
+
+    },
+    "切换目录时会迁移现有 CodeFlow HTML 与 metadata；共享源码 ZIP 仍保存在应用容器。" : {
 
     },
     "删除「%@」后无法恢复。" : {
@@ -13395,10 +13803,22 @@
     "匹配 %@ 个" : {
 
     },
+    "升序" : {
+
+    },
+    "可视化项目代码结构" : {
+
+    },
+    "将删除当前输出目录中的全部 CodeFlow HTML 与 metadata。共享源码 ZIP 不会被删除。" : {
+
+    },
     "已自定义" : {
 
     },
     "当前为前端模拟流程，不会发起 Apple 订阅或扣费。真实订阅接入后将复用同一套成功反馈。" : {
+
+    },
+    "当前目录还没有 CodeFlow 生成项目。" : {
 
     },
     "暂无已验证服务商，点击右侧 + 新增" : {
@@ -13414,6 +13834,21 @@
 
     },
     "测试并获取模型" : {
+
+    },
+    "生成分支" : {
+
+    },
+    "生成次数" : {
+
+    },
+    "输入关键词后按 Return" : {
+
+    },
+    "降序" : {
+
+    },
+    "页面路径" : {
 
     }
   },

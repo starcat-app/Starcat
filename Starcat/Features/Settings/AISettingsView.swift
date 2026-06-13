@@ -102,6 +102,11 @@ struct AISettingsTab: View {
     /// 这里通过 computed `effectiveAdvancedExpanded` 处理）。
     @SceneStorage("settings.ai.aiIndex.advancedExpanded") private var isAIIndexAdvancedExpanded: Bool = false
 
+    /// 2026-06-13 RepoContextPacker 客户端接入（§0.4 Y3）：「AI 代码上下文」分组的展开偏好。
+    /// 默认收起——与 promptSection / aiIndexSection 一致；避免设置页首次打开就被新 section 撑高。
+    /// 用户主动点开后偏好持久化（SceneStorage 跨设置窗口打开周期保留）。
+    @SceneStorage("settings.ai.repoContext.expanded") private var isRepoContextExpanded: Bool = false
+
     /// "全量重建"二次确认。
     @State private var pendingRebuildAllConfirm: Bool = false
 
@@ -123,6 +128,10 @@ struct AISettingsTab: View {
             // 2026-06-12 向量索引改进：AI 索引（向量化）配置，放在自动整理之后
             // 因为索引依赖摘要 / README 等上游配置就绪。
             aiIndexSection
+            // 2026-06-13 RepoContextPacker 客户端接入（§0.4 Y3）：AI 代码上下文配置。
+            // 放在 aiIndexSection 与 privacySection 之间——与「索引」性质相同（消费上游配置的
+            // 高级 AI 能力），且紧贴 privacySection 形成「先看功能再看隐私」的阅读节奏。
+            aiRepoContextSection
             privacySection
         }
         .confirmationDialog(
@@ -1215,6 +1224,145 @@ struct AISettingsTab: View {
         Binding(
             get: { self.settings.aiIndexAutoPrefetchEnabled },
             set: { self.settings.aiIndexAutoPrefetchEnabled = $0 }
+        )
+    }
+
+    // MARK: - AI 代码上下文（2026-06-13 §0.4 Y3）
+    //
+    // 「AI 代码上下文」分组，对应 §0 客户端接入任务清单 §0.4 触点 C。
+    //
+    // 设计要点（沿用 promptSection / autoTidySection / aiIndexSection 同款风格）：
+    //   - DisclosureGroup 默认折叠（@SceneStorage 持久化）；
+    //   - 总开关 Toggle 控制下面控件的 disabled 状态（用户关掉总开关后调下面没意义）；
+    //   - Slider 走 Int↔Double 适配 binding（SwiftUI Slider 强制 BinaryFloatingPoint，不能直接绑 Int）；
+    //   - Stepper 走自定义 Int binding（AISettingsTab 没用 @Bindable var settings = settings）；
+    //   - **不提供「私有仓库」开关**：当前 OAuth scope 是 `read:user` + `public_repo`，
+    //     API 永远不会返回 isPrivate=true 的 repo；增加一个永远走不到的开关只会污染设置页；
+    //   - 「管理已生成的上下文 →」按钮**当前先 print 占位**（Y3 仅 UI 阶段，Y5 触点 E 落地存储 Tab 才接通）。
+    //
+    // 关键约束：
+    //   - 本 section 完全是 UI 层；改字段值只写 AppSettings UserDefaults，不触发任何 AI / 网络 / 磁盘 I/O。
+    //   - 用户改 Slider/Stepper 立即落盘（didSet）；下次生成 AI 摘要才生效（X4 接通 RepoAIInsightService）。
+    //   - X4 / Y5 未完成期间，本 section 是「光配置不生效」状态——用户改完看不到效果，但配置是真持久化的。
+
+    private var aiRepoContextSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $isRepoContextExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    repoContextEnableRow
+                    Divider()
+                    repoContextTokenBudgetRow
+                    repoContextTier1MaxLinesRow
+                    Divider()
+                    repoContextManageStorageRow
+                }
+                .padding(.vertical, 4)
+            } label: {
+                disclosureLabel(String(localized: "ai.context.settings.title"), isExpanded: $isRepoContextExpanded)
+            }
+        }
+    }
+
+    /// 总开关 + 一段说明 caption。
+    /// caption 解释「会做什么 + 首次生成耗时预期」，让用户开启前有合理预期。
+    private var repoContextEnableRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("ai.context.settings.enabled", isOn: repoContextEnabledBinding)
+            Text("ai.context.settings.description")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Token 预算 Slider 行。范围 4000-32000、步进 2000——8 档刻度，
+    /// 既不会让用户感到"想精调但跳得太大"，也不会让"步进 100"显得选择困难。
+    private var repoContextTokenBudgetRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("ai.context.settings.tokenBudget")
+                    .font(.callout)
+                Spacer()
+                Text("\(settings.aiRepoContextTokenBudget) tokens")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(
+                value: tokenBudgetBinding,
+                in: 4000...32000,
+                step: 2000
+            )
+            .disabled(!settings.aiRepoContextEnabled)
+        }
+    }
+
+    /// Tier 1 关键文件保留行数 Stepper 行。范围 40-200、步进 20。
+    /// 单 Stepper 占一行（与 aiIndexSection 的 ratioRow 同样的「标题 + 读数 + 控件」横向布局）。
+    private var repoContextTier1MaxLinesRow: some View {
+        HStack {
+            Text("ai.context.settings.tier1MaxLines")
+                .font(.callout)
+            Spacer()
+            Text("\(settings.aiRepoContextTier1MaxLines) 行")
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 60, alignment: .trailing)
+            Stepper(
+                "",
+                value: repoContextTier1MaxLinesBinding,
+                in: 40...200,
+                step: 20
+            )
+            .labelsHidden()
+            .disabled(!settings.aiRepoContextEnabled)
+        }
+    }
+
+    /// 「管理已生成的上下文 → 存储 Tab」跳转按钮。
+    ///
+    /// **Y3 仅 UI 阶段的占位实现**：当前只 print 一条日志；Y5 触点 E 落地存储 Tab 时改为
+    /// 真正的 NotificationCenter 跳转（`Notification.Name.starcatJumpToSettingsTab` +
+    /// `SettingsView` 内监听切 selectedTab 到 .storage）。占位实现允许 UI 层先看到完整
+    /// 视觉效果，且不会触发未实现的代码路径。
+    private var repoContextManageStorageRow: some View {
+        Button {
+            // Y5 触点 E 待实现：跳转到 Settings → Storage Tab 的 AI 代码上下文管理面板。
+            AppLog.ai.debug("[AISettings] manage storage button tapped — Y5 not implemented yet")
+        } label: {
+            Label("ai.context.settings.manageStorage", systemImage: "internaldrive")
+        }
+        .disabled(!settings.aiRepoContextEnabled)
+    }
+
+    /// Token 预算 Int↔Double 适配 binding。
+    /// SwiftUI Slider 要求 `BinaryFloatingPoint` 值类型，但 `aiRepoContextTokenBudget` 是 Int
+    /// （UserDefaults 直接 Int 持久化更直观，避免出现 `8000.0`）。这里在两端之间做转换：
+    ///   - get：Int → Double（无损扩展）
+    ///   - set：Double → Int（`rounded()` 保证步进对齐到整 2000）
+    private var tokenBudgetBinding: Binding<Double> {
+        Binding(
+            get: { Double(self.settings.aiRepoContextTokenBudget) },
+            set: { newValue in
+                self.settings.aiRepoContextTokenBudget = Int(newValue.rounded())
+            }
+        )
+    }
+
+    /// 总开关 Bool binding。AISettingsTab 没用 `@Bindable var settings = settings`（与
+    /// SettingsView.generalTab 不同），所以子项 Toggle 不能直接 `$settings.xxx`，必须走
+    /// 自定义 binding（与 `autoPrefetchBinding` 同款）。
+    private var repoContextEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { self.settings.aiRepoContextEnabled },
+            set: { self.settings.aiRepoContextEnabled = $0 }
+        )
+    }
+
+    /// Tier 1 行数 Int binding。Stepper 原生支持 Int，理论上可直接绑字段，但 AISettingsTab
+    /// 没用 `@Bindable var settings = settings`，照样要自定义 binding。
+    private var repoContextTier1MaxLinesBinding: Binding<Int> {
+        Binding(
+            get: { self.settings.aiRepoContextTier1MaxLines },
+            set: { self.settings.aiRepoContextTier1MaxLines = $0 }
         )
     }
 
