@@ -74,10 +74,8 @@ struct ManageDetailContent: View {
         // 本 ContentView body 仅剩 ReadmeStateView,无需再包 VStack。
         ReadmeStateView(
             state: readmeVM.state,
-            // 拼接 blob/HEAD：GitHub HTML 渲染 API 返回的相对链接是相对于仓库根目录解析的,
-            // 缺少 blob/{branch} 前缀;补上后相对链接（如 README-en.md）才能正确解析为
-            // https://github.com/owner/repo/blob/HEAD/README-en.md。
-            baseURL: URL(string: "\(repo.htmlUrl)/blob/HEAD"),
+            // 统一构造带末尾 `/` 的目录 URL，避免 WebKit 把 HEAD 当文件名后丢掉分支段。
+            baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
             owner: repo.owner,
             repo: repo.name,
             onScrollOffsetChange: onScrollOffset,

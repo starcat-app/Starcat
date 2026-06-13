@@ -14,6 +14,8 @@
 //    状态，避免每个 toolbar 控件都管一份 @State；
 //  - https / git URL 在 `ToolbarRepoSelection` 构造时就已经准备好（Manage 走本地
 //    `cloneUrl` / `sshUrl`，trending / weekly 走 owner/name 兜底），渲染层零计算。
+//  - 菜单只展示协议名称，不展示完整 URL。长 URL 会不必要地撑宽菜单，
+//    用户的真实目标是点击后复制，复制结果仍由 toast 确认。
 //
 
 import SwiftUI
@@ -34,9 +36,6 @@ struct CloneMenu: View {
             } label: {
                 Label("clone.https", systemImage: "globe")
             }
-            Text(verbatim: selection.cloneHTTPS)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
 
             Divider()
 
@@ -45,9 +44,6 @@ struct CloneMenu: View {
             } label: {
                 Label("clone.git", systemImage: "terminal")
             }
-            Text(verbatim: selection.cloneSSH)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         } label: {
             ToolbarIcon("doc.on.clipboard")
                 .accessibilityLabel("clone.hint")

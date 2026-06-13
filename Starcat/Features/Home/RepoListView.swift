@@ -272,9 +272,15 @@ struct RepoListView: View {
                     trending: repo,
                     isStarred: registry.contains(ghRepoId: repo.ghRepoId)
                 )
+                // Trending 未 star 的仓库没有本地 Repo，复用详情页现有 ephemeral 转换，
+                // 仅作为 CodeFlow 下载参数使用，不写入数据库。
+                let codeFlowRepo = repo.makeEphemeralRepo()
                 return AnyView(
                     Group {
-                        ExternalLinksMenu(selection: sel)
+                        ExternalLinksMenu(
+                            selection: sel,
+                            codeFlowRepo: codeFlowRepo.isPrivate ? nil : codeFlowRepo
+                        )
                         CloneMenu(selection: sel) { toastKey in
                             toastMessage = toastKey
                         }
@@ -324,9 +330,15 @@ struct RepoListView: View {
                     weekly: item,
                     isStarred: registry.contains(ghRepoId: item.ghRepoId)
                 )
+                // Weekly card 已包含生成临时 Repo 所需的 GitHub 元数据。不可访问的历史
+                // 项目不展示 CodeFlow，避免用户进入后必然得到 zipball 404。
+                let codeFlowRepo = item.card.toEphemeralRepo()
                 return AnyView(
                     Group {
-                        ExternalLinksMenu(selection: sel)
+                        ExternalLinksMenu(
+                            selection: sel,
+                            codeFlowRepo: item.isAvailable && !codeFlowRepo.isPrivate ? codeFlowRepo : nil
+                        )
                         CloneMenu(selection: sel) { toastKey in
                             toastMessage = toastKey
                         }
@@ -340,7 +352,10 @@ struct RepoListView: View {
                 )
                 return AnyView(
                     Group {
-                        ExternalLinksMenu(selection: sel)
+                        ExternalLinksMenu(
+                            selection: sel,
+                            codeFlowRepo: repo.isPrivate ? nil : repo
+                        )
                         CloneMenu(selection: sel) { toastKey in
                             toastMessage = toastKey
                         }
