@@ -216,6 +216,36 @@ public struct RelativeDateBadge: View {
     }
 }
 
+// MARK: - WebSourceBadge
+
+/// 网页搜索类目徽章：globe icon + "Web"。
+///
+/// 设计意图：在搜索中心 reference 卡片的标题右侧，与 `LanguageBadge` 同档级
+/// 显示，使得用户在 `.all` scope 下能一眼区分"这是网页结果"vs"这是仓库结果"。
+///
+/// 视觉系统：
+/// - 蓝色 = "Web" 类目色（与 `RepoRowSurface(accentColor: .blue)` 同源）
+/// - capsule + icon + 文字，与 LanguageBadge 完全同档
+/// - 文字走 i18n key `search.web.badge`（en: "Web" / zh-Hans: "网页"）
+public struct WebSourceBadge: View {
+    public init() {}
+
+    public var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "globe")
+                .font(.system(size: 9, weight: .medium))
+            Text("search.web.badge")
+                .font(.caption2)
+                .lineLimit(1)
+        }
+        .foregroundStyle(.blue)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(.blue.opacity(0.12), in: Capsule())
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
 // MARK: - LanguageColor
 
 /// GitHub 主流语言色卡映射；未命中走 Gray。

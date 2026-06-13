@@ -26,13 +26,10 @@ struct SearchCenterView: View {
     /// 新增需要展示 `remoteExtras`（disabled / isTemplate / score）以及 sort 模式
     /// 来决定是否渲染匹配度，单纯的 `Repo` 不够用，必须把整张候选传进去。
     @State private var remoteDetailCandidate: RepositoryCandidate?
-    /// 鼠标 hover 是浮层视图的瞬时状态，不写入 selectedIndex，避免鼠标经过后改变
-    /// 用户的键盘导航位置。候选 ID 同时覆盖 GitHub repo 与 AnySearch reference。
-    ///
-    /// 注意：搜索结果出来时 selectedIndex 为 nil（"未选中任何一项"），此时
-    /// 视图只剩 hover 一种高亮来源 —— 鼠标 hover 哪项哪项亮、移走全灭；只有
-    /// 用户首次按 ↑/↓ 后 selectedIndex 才会被设为 0，开始走键盘选中逻辑。
-    @State private var hoveredCandidateID: String?
+    // hover 高亮由 row 内层的 RepoRowSurface 自带（`UnifiedRepoRow` 与 reference
+    // 卡片均复用同一容器），SearchCenterView 不再单独维护 `hoveredCandidateID`。
+    // 设计意图未变：键盘 selectedIndex 与鼠标 hover 仍互不干扰——
+    // hover 是 row 内部 `@State`，移开自动清空；selectedIndex 由 `.onKeyPress` 写入。
     /// 清空全部历史的二次确认对话框可见性。
     /// 放在视图层是因为"是否要二次确认"是 UI 决策而非业务状态；ViewModel 的
     /// `clearHistory()` 仍保持单纯执行删除，不被弹窗逻辑污染。
@@ -53,6 +50,7 @@ struct SearchCenterView: View {
                 }
                 themedSeparator
                 resultContent
+                webResultFooter
             }
             .frame(width: 760, height: 620)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -282,15 +280,9 @@ struct SearchCenterView: View {
                 // 而 Return 键打开仍由 body 顶层 .onKeyPress(.return) 处理,不受影响。
                 candidateRow(
                     candidate,
-                    isSelected: index == viewModel.selectedIndex,
-                    isHovered: hoveredCandidateID == candidate.id
+                    isSelected: index == viewModel.selectedIndex
                 )
                 .contentShape(Rectangle())
-                .onHover { hovering in
-                    withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
-                        hoveredCandidateID = hovering ? candidate.id : nil
-                    }
-                }
                 .onTapGesture {
                     activate(candidate)
                 }
@@ -419,8 +411,7 @@ struct SearchCenterView: View {
     @ViewBuilder
     private func candidateRow(
         _ candidate: SearchCandidate,
-        isSelected: Bool,
-        isHovered: Bool
+        isSelected: Bool
     ) -> some View {
         Group {
             switch candidate {
@@ -431,38 +422,205 @@ struct SearchCenterView: View {
                     showStarredCheckmark: true
                 )
             case .reference(let reference):
-                HStack(spacing: 12) {
-                    Image(systemName: "globe")
-                        .frame(width: 34, height: 34)
-                        .background(Color.blue.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(reference.title).font(.headline).lineLimit(1)
-                        Text(reference.snippet ?? reference.originalURL.absoluteString)
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                        Text(reference.domain).font(.caption2).foregroundStyle(.tertiary)
+                // 复用 RepoRowSurface 三态透明度（default / hover / selected）+
+                // 圆角 + 左侧 accent bar，让网页卡片与 UnifiedRepoRow 视觉骨架对等。
+                // accentColor: .blue 是"Web 类目色"，与 WebSourceBadge / RemoteFavicon
+                // 背景蓝同源；hover 反馈不再单独叠加，全部走 RepoRowSurface 内置逻辑。
+                RepoRowSurface(isSelected: isSelected, accentColor: .blue) {
+                    HStack(alignment: .top, spacing: 12) {
+                        // 左侧 32pt 容器 + 内嵌 18pt favicon。
+                        // 容器 cornerRadius 6 / favicon cornerRadius 4 与 UnifiedRepoRow
+                        // 头像（圆形）形成"圆形=Repo / 圆角矩形=Web"的形状区分。
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.blue.opacity(0.10))
+                                .frame(width: 32, height: 32)
+                            RemoteFavicon(host: reference.domain, size: 18)
+                        }
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(spacing: 6) {
+                                Text(reference.title)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .layoutPriority(1)
+                                WebSourceBadge()
+                                Spacer(minLength: 0)
+                            }
+                            if let snippet = reference.snippet, !snippet.isEmpty {
+                                Text(snippet)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                            // 第三行：domain · path 首段（如 "github.com · zeka-stack"），
+                            // 让用户在不展开 URL 的情况下就能看出"是哪个 owner / org / 路径"。
+                            // 首段为空（裸域名结果）时仅显示 domain，不显示分隔符。
+                            HStack(spacing: 5) {
+                                Text(reference.domain)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                                if let firstPath = Self.firstPathSegment(of: reference.originalURL) {
+                                    Text("·")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.tertiary)
+                                    Text(firstPath)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                            }
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer()
                 }
-                .padding(10)
-                .background(isSelected ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10))
             }
-        }
-        // Search Center 在 UnifiedRepoRow 外再加一层统一 hover，确保 GitHub 与
-        // AnySearch 都有同等清晰的指针反馈；选中态优先，不叠加 hover 色。
-        .background(
-            isHovered && !isSelected ? Color.accentColor.opacity(0.11) : .clear,
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(
-                    isHovered && !isSelected ? Color.accentColor.opacity(0.26) : .clear,
-                    lineWidth: 1
-                )
         }
         // hit-test 用 Rectangle 而不是 RoundedRectangle：圆角四个角会成为 onHover 死区,
         // 鼠标在角附近移入时无法触发 hover；改用矩形让整行的命中区域与可视区域一致。
         .contentShape(Rectangle())
+    }
+
+    /// URL 路径的首段（不含前导 `/`），用于 reference 卡片第三行展示。
+    /// 裸域名（无 path 或 path == "/"）返回 nil。
+    private static func firstPathSegment(of url: URL) -> String? {
+        let segments = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
+        return segments.first
+    }
+
+    // MARK: - Web 搜索底部 footer（metadata + rate limit）
+
+    /// 浮层底部 footer：左侧"X 条结果 · Y.Ys"摘要 chip，右侧"剩余 N/M"限流 chip。
+    ///
+    /// 关键约束（不要回退）：
+    /// - **仅在 web provider `.loaded` 时显示**（`viewModel.webMetadata != nil`）；
+    ///   首屏 / 历史区 / 错误态全部不渲染，避免占用稀缺垂直空间
+    /// - **rate limit 三字段缺一不全 → 右侧 chip 不显示**（左侧 metadata 仍渲染）；
+    ///   `WebRateLimit` 在 client 层就已经被 parse 失败兜底为 nil，UI 不再判错
+    /// - **remaining ≤ 0 时切换到全宽"额度用尽"chip**（红色 + 重置时间），
+    ///   把"剩余 0/N"这种容易误读的形态合并成强信号一行
+    @ViewBuilder
+    private var webResultFooter: some View {
+        if let metadata = viewModel.webMetadata {
+            HStack(spacing: 8) {
+                searchSummaryChip(metadata)
+                Spacer(minLength: 8)
+                if let rateLimit = metadata.rateLimit {
+                    rateLimitChip(rateLimit)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.primary.opacity(0.025))
+        }
+    }
+
+    /// 左侧"X 条结果 · Y.Ys"chip。
+    /// totalResults / searchTimeMs 任一缺失就不显示（API 不应该缺，但兜底）。
+    @ViewBuilder
+    private func searchSummaryChip(_ metadata: WebSearchMetadata) -> some View {
+        if let total = metadata.totalResults, let ms = metadata.searchTimeMs {
+            HStack(spacing: 4) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 9, weight: .medium))
+                Text(String(
+                    format: String(localized: "search.web.summaryFormat"),
+                    total,
+                    Double(ms) / 1000.0
+                ))
+                .font(.caption2)
+                .lineLimit(1)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(.secondary.opacity(0.10), in: Capsule())
+            .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    /// 右侧 rate limit chip：余量 > 0 走"剩余 N/M"形态，= 0 走"额度用尽 · 重置时间"。
+    @ViewBuilder
+    private func rateLimitChip(_ rateLimit: WebRateLimit) -> some View {
+        if rateLimit.remaining <= 0 {
+            exhaustedRateLimitChip(rateLimit)
+        } else {
+            normalRateLimitChip(rateLimit)
+        }
+    }
+
+    /// 余量 > 0 的 chip：圆点 + "剩余 N/M"，颜色按 fractionRemaining 三档。
+    private func normalRateLimitChip(_ rateLimit: WebRateLimit) -> some View {
+        let color = Self.rateLimitColor(fraction: rateLimit.fractionRemaining)
+        return HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(String(
+                format: String(localized: "search.web.rate.remainingFormat"),
+                rateLimit.remaining,
+                rateLimit.limit
+            ))
+            .font(.caption2.monospacedDigit())
+            .lineLimit(1)
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.12), in: Capsule())
+        .fixedSize(horizontal: true, vertical: false)
+        .help(rateLimitTooltip(rateLimit))
+    }
+
+    /// 余量 = 0 的 chip：红色 + "额度用尽 · HH:mm 重置"，传达"短时间内不可继续搜"。
+    private func exhaustedRateLimitChip(_ rateLimit: WebRateLimit) -> some View {
+        let resetText = Self.shortResetText(from: rateLimit.resetAt)
+        let title = String(format: String(localized: "search.web.rate.exhaustedFormat"), resetText)
+        return HStack(spacing: 4) {
+            Circle().fill(Color.red).frame(width: 6, height: 6)
+            Text(title)
+                .font(.caption2)
+                .lineLimit(1)
+        }
+        .foregroundStyle(.red)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Color.red.opacity(0.12), in: Capsule())
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// hover tooltip："今日已用 N/M · HH:mm 重置"。
+    /// 主显示只放"剩余 N/M"，把"已用 + 重置时间"挪到 tooltip，避免常态文案过长。
+    private func rateLimitTooltip(_ rateLimit: WebRateLimit) -> String {
+        let used = max(0, rateLimit.limit - rateLimit.remaining)
+        let resetText = Self.shortResetText(from: rateLimit.resetAt)
+        return String(
+            format: String(localized: "search.web.rate.tooltipFormat"),
+            used,
+            rateLimit.limit,
+            resetText
+        )
+    }
+
+    /// 三档染色阈值（>50% 绿 / >20% 橙 / ≤20% 红）。
+    /// 与 GitHub / 大多 API 仪表盘的视觉惯例一致，给用户"还能用 / 该悠着点 / 快没了"
+    /// 三级视觉信号；阈值确认（dong4j 2026-06-13）。
+    static func rateLimitColor(fraction: Double) -> Color {
+        if fraction > 0.5 { return .green }
+        if fraction > 0.2 { return .orange }
+        return .red
+    }
+
+    /// 把 reset 时间格式化为本地短时（如 "02:30"）。
+    /// 用 `DateFormatter` 而不是 `Date.formatted(date:time:)`：后者在某些 locale 会
+    /// 多出 "AM/PM" 后缀（en_US），跟 zh-Hans 的 24h 视觉不一致；强制 .short timeStyle
+    /// + .none dateStyle 保证两种语言下都是纯时间。
+    static func shortResetText(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter.string(from: date)
     }
 
     /// 候选项的"激活"动作（点击 / 回车 / VoiceOver 主操作）。

@@ -52,7 +52,11 @@ actor AnySearchClient: AnySearchClientProtocol {
     }
 
     func search(_ request: AnySearchRequest) async throws -> AnySearchResponse {
-        guard !request.query.isEmpty else { return AnySearchResponse(results: [], metadata: nil) }
+        // 空 query 不打网络，直接返回空响应。rateLimit 显式传 nil：未实际请求
+        // 就没有"配额信息"语义，UI 也不会渲染 footer（webMetadata 一路 nil）。
+        guard !request.query.isEmpty else {
+            return AnySearchResponse(results: [], metadata: nil, rateLimit: nil)
+        }
         do {
             return try await perform(request)
         } catch AnySearchError.server {
