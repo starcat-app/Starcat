@@ -44,7 +44,7 @@ private struct CodeFlowPanel: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                stepRow("拉取仓库", step: .cloning)
+                stepRow("下载仓库 ZIP", step: .downloading)
                 stepRow("准备 CodeFlow 页面", step: .preparing)
                 stepRow("浏览器打开", step: .opening)
             }
@@ -84,7 +84,7 @@ private struct CodeFlowPanel: View {
 
     private var isRunning: Bool {
         switch viewModel.state {
-        case .cloning, .preparing, .opening: return true
+        case .downloading, .preparing, .opening: return true
         default: return false
         }
     }
@@ -109,11 +109,11 @@ private struct CodeFlowPanel: View {
     }
 
     private func stepStatus(for step: CodeFlowViewModel.State) -> StepStatus {
-        let order: [CodeFlowViewModel.State] = [.cloning, .preparing, .opening]
+        let order: [CodeFlowViewModel.State] = [.downloading, .preparing, .opening]
         guard let target = order.firstIndex(of: step) else { return .pending }
         let current: Int
         switch viewModel.state {
-        case .cloning: current = 0
+        case .downloading: current = 0
         case .preparing: current = 1
         case .opening: current = 2
         case .succeeded: current = 3

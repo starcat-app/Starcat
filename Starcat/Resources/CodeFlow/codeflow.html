@@ -612,9 +612,9 @@ body{height:100dvh;min-height:100dvh}
 <body>
 <div id="root"></div>
 <script>
-// Starcat replaces this token in the generated copy with a Base64-encoded JSON payload.
-// Keeping the upstream analyzer unchanged means CodeFlow still processes the project as File[].
-window.__STARCAT_CODEFLOW_PROJECT_BASE64__ = "__STARCAT_CODEFLOW_PAYLOAD_TOKEN__";
+// Starcat replaces this token with the GitHub ZIP archive encoded as Base64.
+// CodeFlow then reuses its upstream JSZip ingestion path without filesystem permissions.
+window.__STARCAT_CODEFLOW_ZIP_BASE64__ = "__STARCAT_CODEFLOW_ZIP_PAYLOAD_TOKEN__";
 </script>
 <script type="text/babel">
 /*
@@ -5681,30 +5681,21 @@ function App(){
     },[]);
 
     useEffect(function(){
-        var encoded=window.__STARCAT_CODEFLOW_PROJECT_BASE64__;
+        var encoded=window.__STARCAT_CODEFLOW_ZIP_BASE64__;
         if(!encoded||encoded.charAt(0)==='_')return;
         try{
             var bytes=Uint8Array.from(atob(encoded),function(ch){return ch.charCodeAt(0);});
-            var payload=JSON.parse(new TextDecoder().decode(bytes));
-            var rootName=payload.name||'Starcat Project';
-            var files=(payload.files||[]).map(function(entry){
-                var path=rootName+'/'+entry.path;
-                var name=entry.path.split('/').pop()||entry.path;
-                var file=new File([entry.content],name,{type:'text/plain'});
-                Object.defineProperty(file,'webkitRelativePath',{value:path});
-                return file;
-            });
-            if(!files.length)throw new Error('Starcat did not provide any supported source files');
-            localFilesRef.current=files;
+            if(!bytes.length)throw new Error('Starcat provided an empty ZIP archive');
+            var zipFile=new File([bytes],'starcat-repository.zip',{type:'application/zip'});
             resetAnalysisState();
             setRepoInfo(null);
             setLocalDirHandle(null);
-            setLocalSourceKind('folder');
+            setLocalSourceKind('zip');
             zipArchiveRef.current=null;
-            zipFileRef.current=null;
+            zipFileRef.current=zipFile;
             setLoading(true);
-            setProgress('Reading project from Starcat...');
-            readLocalFolderFromFiles(files,activeExcludePatterns);
+            setProgress('Extracting GitHub ZIP from Starcat...');
+            readZipArchive(zipFile,activeExcludePatterns);
         }catch(err){
             setError('Failed to load Starcat project: '+(err.message||err));
             setLoading(false);
@@ -6195,7 +6186,6 @@ function App(){
     async function readLocalFolderFromFiles(fileObjs,compiledPatterns){
         var patterns=compiledPatterns||activeExcludePatterns;
         var SOFT_LIMIT=ANALYSIS_LIMITS.localSoft;
-        var isStarcatInjected=window.__STARCAT_CODEFLOW_PROJECT_BASE64__&&window.__STARCAT_CODEFLOW_PROJECT_BASE64__.charAt(0)!=='_';
         try{
             setProgress('Loading language parsers...');
             await Parser.initTreeSitter().catch(function(){return null;});
@@ -6229,7 +6219,7 @@ function App(){
                 return;
             }
 
-            if(fileCount>SOFT_LIMIT&&!isStarcatInjected){
+            if(fileCount>SOFT_LIMIT){
                 var proceed=await requestConfirm({
                     tone:'warning',
                     icon:'folder',
@@ -6289,6 +6279,7 @@ function App(){
     async function readZipArchive(zipFile,compiledPatterns){
         var patterns=compiledPatterns||activeExcludePatterns;
         var SOFT_LIMIT=ANALYSIS_LIMITS.localSoft;
+        var isStarcatInjected=window.__STARCAT_CODEFLOW_ZIP_BASE64__&&window.__STARCAT_CODEFLOW_ZIP_BASE64__.charAt(0)!=='_';
         try{
             if(!window.JSZip)throw new Error('ZIP support failed to load');
             setProgress('Loading language parsers...');
@@ -6323,7 +6314,7 @@ function App(){
                 return;
             }
 
-            if(fileCount>SOFT_LIMIT){
+            if(fileCount>SOFT_LIMIT&&!isStarcatInjected){
                 var proceed=await requestConfirm({
                     tone:'warning',
                     icon:'archive',

@@ -2,7 +2,7 @@
 //  CodeFlowViewModel.swift
 //  Starcat
 //
-//  驱动 clone -> 生成自动分析页面 -> 默认浏览器打开的单仓库流程。
+//  驱动下载 ZIP -> 生成自动分析页面 -> 默认浏览器打开的单仓库流程。
 //
 
 import AppKit
@@ -13,7 +13,7 @@ import Foundation
 final class CodeFlowViewModel {
     enum State: Equatable {
         case idle
-        case cloning
+        case downloading
         case preparing
         case opening
         case succeeded
@@ -37,15 +37,16 @@ final class CodeFlowViewModel {
         log = ""
         task = Task {
             do {
-                state = .cloning
-                let (repositoryURL, cloneResult) = try await runner.cloneIfNeeded(repo: repo)
-                if let cloneResult { append("$ \(cloneResult.commandDescription)\n\(cloneResult.stdout)\n\(cloneResult.stderr)") }
-                else { append("本地仓库已存在，跳过 clone：\(repositoryURL.path)") }
+                state = .downloading
+                let (archiveURL, wasDownloaded) = try await runner.archiveIfNeeded(repo: repo)
+                append(wasDownloaded
+                    ? "ZIP 下载完成：\(archiveURL.path)"
+                    : "本地 ZIP 已存在，跳过下载：\(archiveURL.path)")
 
                 try Task.checkCancellation()
                 state = .preparing
                 let pageURL = try runner.makeVisualizationPage(
-                    repositoryURL: repositoryURL,
+                    archiveURL: archiveURL,
                     owner: repo.owner,
                     name: repo.name
                 )

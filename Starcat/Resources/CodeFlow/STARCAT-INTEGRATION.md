@@ -7,8 +7,8 @@
 
 Starcat changes are intentionally narrow:
 
-1. Add the `__STARCAT_CODEFLOW_PAYLOAD_TOKEN__` payload placeholder.
-2. On page load, decode the injected project payload into browser `File[]` objects.
-3. Reuse upstream `readLocalFolderFromFiles` so analysis and visualization behavior remain upstream-compatible.
+1. Add the `__STARCAT_CODEFLOW_ZIP_PAYLOAD_TOKEN__` placeholder.
+2. On page load, decode the injected GitHub ZIP into a browser `File` object.
+3. Reuse upstream `readZipArchive` so JSZip extraction, analysis, and visualization remain upstream-compatible.
 
 Do not replace the vendored HTML without reapplying and verifying these three changes.
