@@ -42,6 +42,8 @@ struct SettingsView: View {
         case storage
         /// 2026-06-08 新增：第三方 / 自建后端服务的 URL 配置。
         case services
+        /// 直接嵌入 Starcat 的第三方工具，与后端服务配置分开管理。
+        case integrations
     }
 
     /// 统一的内容尺寸——所有 Tab 共用，避免切 Tab 时窗口尺寸跳变。
@@ -80,6 +82,11 @@ struct SettingsView: View {
                     Label("settings.services.title", systemImage: "network")
                 }
                 .tag(SettingsTab.services)
+            IntegrationSettingsTab()
+                .tabItem {
+                    Label("settings.integrations.title", systemImage: "puzzlepiece.extension")
+                }
+                .tag(SettingsTab.integrations)
         }
         .frame(width: Self.contentSize.width, height: Self.contentSize.height)
         .scenePadding()
