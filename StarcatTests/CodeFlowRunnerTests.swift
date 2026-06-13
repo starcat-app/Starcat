@@ -2,7 +2,7 @@
 //  CodeFlowRunnerTests.swift
 //  StarcatTests
 //
-//  验证 CodeFlow 集成最关键的 Git clone 命令契约。
+//  验证 GitHub ZIP 下载、缓存复用和 CodeFlow 页面注入，不访问真实网络。
 //
 
 import Foundation
@@ -11,58 +11,73 @@ import Testing
 
 @Suite("CodeFlowRunner")
 struct CodeFlowRunnerTests {
-    @Test("生成页面会注入源码并移除占位 token")
-    func generatedPageContainsInjectedProject() throws {
+    @Test("首次下载使用 GitHub zipball API 并写入缓存")
+    func downloadsGitHubZipball() async throws {
+        let downloader = RecordingArchiveDownloader(data: Data("zip-data".utf8))
+        let runner = CodeFlowRunner(downloader: downloader)
+        let repo = makeRepo(owner: "braedonsaunders", name: "codeflow")
+        let archiveURL = try runner.archiveFileURL(owner: repo.owner, name: repo.name)
+        try? FileManager.default.removeItem(at: archiveURL)
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+
+        let result = try await runner.archiveIfNeeded(repo: repo)
+
+        #expect(result.wasDownloaded)
+        #expect(try Data(contentsOf: result.0) == Data("zip-data".utf8))
+        let requestedURLs = await downloader.requestedURLs
+        #expect(requestedURLs == [URL(string: "https://api.github.com/repos/braedonsaunders/codeflow/zipball")!])
+    }
+
+    @Test("已有 ZIP 时跳过网络下载")
+    func reusesCachedArchive() async throws {
+        let downloader = RecordingArchiveDownloader(data: Data("new-data".utf8))
+        let runner = CodeFlowRunner(downloader: downloader)
+        let repo = makeRepo(owner: "starcat-cache-\(UUID().uuidString)", name: "demo")
+        let archiveURL = try runner.archiveFileURL(owner: repo.owner, name: repo.name)
+        try FileManager.default.createDirectory(at: archiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("cached".utf8).write(to: archiveURL)
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+
+        let result = try await runner.archiveIfNeeded(repo: repo)
+
+        #expect(!result.wasDownloaded)
+        #expect(await downloader.requestedURLs.isEmpty)
+    }
+
+    @Test("生成页面注入 ZIP 并移除占位 token")
+    func generatedPageContainsInjectedArchive() throws {
         let fileManager = FileManager.default
-        let sourceURL = fileManager.temporaryDirectory
-            .appendingPathComponent("starcat-codeflow-source-\(UUID().uuidString)", isDirectory: true)
-        try fileManager.createDirectory(at: sourceURL, withIntermediateDirectories: true)
-        try "struct Demo {}".write(
-            to: sourceURL.appendingPathComponent("Demo.swift"),
-            atomically: true,
-            encoding: .utf8
-        )
-        defer { try? fileManager.removeItem(at: sourceURL) }
+        let archiveURL = fileManager.temporaryDirectory
+            .appendingPathComponent("starcat-codeflow-\(UUID().uuidString).zip")
+        try Data("zip-data".utf8).write(to: archiveURL)
+        defer { try? fileManager.removeItem(at: archiveURL) }
 
         let owner = "starcat-page-test-\(UUID().uuidString)"
         let runner = CodeFlowRunner(fileManager: fileManager)
-        let pageURL = try runner.makeVisualizationPage(
-            repositoryURL: sourceURL,
-            owner: owner,
-            name: "Demo"
-        )
+        let pageURL = try runner.makeVisualizationPage(archiveURL: archiveURL, owner: owner, name: "Demo")
         defer { try? fileManager.removeItem(at: pageURL.deletingLastPathComponent().deletingLastPathComponent()) }
 
         let html = try String(contentsOf: pageURL, encoding: .utf8)
-        #expect(!html.contains("__STARCAT_CODEFLOW_PAYLOAD_TOKEN__"))
-        #expect(html.contains("window.__STARCAT_CODEFLOW_PROJECT_BASE64__ = \""))
+        #expect(!html.contains("__STARCAT_CODEFLOW_ZIP_PAYLOAD_TOKEN__"))
+        #expect(html.contains("window.__STARCAT_CODEFLOW_ZIP_BASE64__ = \""))
     }
 
-    @Test("clone 使用系统 Git 和 shallow clone")
-    func cloneCommand() async throws {
-        let executor = RecordingCodeFlowExecutor()
-        let fileManager = FileManager.default
-        let runner = CodeFlowRunner(executor: executor, fileManager: fileManager)
-        let owner = "starcat-test-\(UUID().uuidString)"
-        let destination = try runner.repositoryDirectory(owner: owner, name: "codeflow")
-        try? fileManager.removeItem(at: destination)
-        defer { try? fileManager.removeItem(at: destination.deletingLastPathComponent()) }
-
-        let repo = Repo(
+    private func makeRepo(owner: String, name: String) -> Repo {
+        Repo(
             id: 99_001,
             owner: owner,
-            name: "codeflow",
-            fullName: "\(owner)/codeflow",
+            name: name,
+            fullName: "\(owner)/\(name)",
             description: nil,
             language: "HTML",
             starsCount: 0,
             forksCount: 0,
             watchersCount: 0,
             topics: nil,
-            license: "MIT",
+            license: nil,
             homepage: nil,
-            htmlUrl: "https://github.com/braedonsaunders/codeflow",
-            cloneUrl: "https://github.com/braedonsaunders/codeflow.git",
+            htmlUrl: "https://github.com/\(owner)/\(name)",
+            cloneUrl: nil,
             sshUrl: nil,
             isPrivate: false,
             isFork: false,
@@ -74,33 +89,27 @@ struct CodeFlowRunnerTests {
             starredAt: nil,
             cachedAt: nil
         )
-        _ = try await runner.cloneIfNeeded(repo: repo)
-
-        let calls = await executor.calls
-        #expect(calls.count == 1)
-        #expect(calls[0].executableURL.path == "/usr/bin/git")
-        #expect(calls[0].arguments == [
-            "clone", "--depth=1", "https://github.com/braedonsaunders/codeflow.git", destination.path
-        ])
     }
 }
 
-private actor RecordingCodeFlowExecutor: CodeFlowCommandExecuting {
-    struct Call: Sendable {
-        let executableURL: URL
-        let arguments: [String]
+private actor RecordingArchiveDownloader: CodeFlowArchiveDownloading {
+    private(set) var requestedURLs: [URL] = []
+    private let data: Data
+    private let statusCode: Int
+
+    init(data: Data, statusCode: Int = 200) {
+        self.data = data
+        self.statusCode = statusCode
     }
 
-    private(set) var calls: [Call] = []
-
-    func run(executableURL: URL, arguments: [String]) async throws -> CodeFlowCommandResult {
-        calls.append(Call(executableURL: executableURL, arguments: arguments))
-        return CodeFlowCommandResult(
-            executable: executableURL.path,
-            arguments: arguments,
-            exitCode: 0,
-            stdout: "ok",
-            stderr: ""
-        )
+    func download(from url: URL) async throws -> (Data, HTTPURLResponse) {
+        requestedURLs.append(url)
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: nil
+        )!
+        return (data, response)
     }
 }
