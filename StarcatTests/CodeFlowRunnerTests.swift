@@ -110,6 +110,42 @@ struct CodeFlowRunnerTests {
         #expect(fileManager.fileExists(atPath: archive.url.path))
     }
 
+    @Test("切换输出目录会迁移 CodeFlow 项目并保留无关文件")
+    func migratesProjectsBetweenOutputRoots() throws {
+        let fileManager = FileManager.default
+        let sourceRoot = fileManager.temporaryDirectory.appendingPathComponent("starcat-codeflow-source-\(UUID().uuidString)")
+        let destinationRoot = fileManager.temporaryDirectory.appendingPathComponent("starcat-codeflow-destination-\(UUID().uuidString)")
+        let storage = CodeFlowStorage(fileManager: fileManager, defaults: isolatedDefaults(), fixedRootURL: sourceRoot)
+        let unrelated = sourceRoot.appendingPathComponent("keep-me.txt")
+        try fileManager.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+        try Data("keep".utf8).write(to: unrelated)
+        defer {
+            try? fileManager.removeItem(at: sourceRoot)
+            try? fileManager.removeItem(at: destinationRoot)
+        }
+
+        let now = Date()
+        let metadata = CodeFlowMetadata(
+            schemaVersion: 1,
+            repository: .init(githubID: 1, owner: "owner", name: "repo", fullName: "owner/repo", htmlURL: "https://github.com/owner/repo"),
+            artifact: .init(page: "index.html", pageBytes: 13, sourceArchiveBytes: 8, sourceArchiveKey: "github.com/owner/repo/abc.zip"),
+            generation: .init(generatedAt: now, generationCount: 1, lastDurationMilliseconds: 12),
+            sourceRevision: .init(branch: "main", commitSHA: "abc", commitURL: "https://github.com/owner/repo/commit/abc"),
+            lastExecution: .init(startedAt: now, finishedAt: now, steps: []),
+            generator: .init(codeFlowCommit: "51ab970", integrationVersion: 1)
+        )
+        let project = try storage.write(pageHTML: "<html></html>", metadata: metadata, owner: "owner", name: "repo")
+
+        try storage.migrateProjects(
+            from: (sourceRoot, false),
+            to: (destinationRoot, false)
+        )
+
+        #expect(!fileManager.fileExists(atPath: project.directoryURL.path))
+        #expect(fileManager.fileExists(atPath: destinationRoot.appendingPathComponent("owner/repo/index.html").path))
+        #expect(fileManager.fileExists(atPath: unrelated.path))
+    }
+
     private func makeRepo(owner: String, name: String) -> Repo {
         Repo(
             id: 99_001,

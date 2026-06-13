@@ -156,18 +156,26 @@ final class CodeFlowStorage {
         projects.map(\.metadata.generation.generatedAt).max()
     }
 
-    /// 保存用户通过 NSOpenPanel 主动选择的目录。Bookmark 是沙箱跨启动访问的必要条件。
+    /// 保存用户通过 NSOpenPanel 主动选择的目录，并把当前 CodeFlow 项目迁移过去。
+    ///
+    /// 先复制全部项目，确认成功后再删除源目录，避免迁移中断导致现有图谱丢失。
     func setCustomOutputDirectory(_ url: URL) throws {
         let data = try url.bookmarkData(
             options: .withSecurityScope,
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         )
+        let source = try resolveOutputRoot()
+        try migrateProjects(from: source, to: (url, true))
         defaults.set(data, forKey: Self.bookmarkKey)
         reload()
     }
 
-    func resetOutputDirectory() {
+    /// 恢复默认目录也属于目录切换，必须先把当前自定义目录中的项目迁回容器。
+    func resetOutputDirectory() throws {
+        let source = try resolveOutputRoot()
+        let destination = (try defaultOutputRoot(), false)
+        try migrateProjects(from: source, to: destination)
         defaults.removeObject(forKey: Self.bookmarkKey)
         reload()
     }
@@ -275,6 +283,13 @@ final class CodeFlowStorage {
 
     private func withOutputRoot<T>(_ operation: (URL) throws -> T) throws -> T {
         let resolved = try resolveOutputRoot()
+        return try withResolvedRoot(resolved, operation)
+    }
+
+    private func withResolvedRoot<T>(
+        _ resolved: (url: URL, requiresSecurityScope: Bool),
+        _ operation: (URL) throws -> T
+    ) throws -> T {
         let didStart = resolved.requiresSecurityScope
             ? resolved.url.startAccessingSecurityScopedResource()
             : false
@@ -285,6 +300,56 @@ final class CodeFlowStorage {
             if didStart { resolved.url.stopAccessingSecurityScopedResource() }
         }
         return try operation(resolved.url)
+    }
+
+    /// 只迁移能够识别的 CodeFlow 项目；目标冲突时以当前目录版本覆盖。
+    func migrateProjects(
+        from source: (url: URL, requiresSecurityScope: Bool),
+        to destination: (url: URL, requiresSecurityScope: Bool)
+    ) throws {
+        guard source.url.standardizedFileURL != destination.url.standardizedFileURL else { return }
+
+        try withResolvedRoot(source) { sourceRoot in
+            try withResolvedRoot(destination) { destinationRoot in
+                try fileManager.createDirectory(at: destinationRoot, withIntermediateDirectories: true)
+                let sourceProjects = try scanProjects(root: sourceRoot)
+                var copiedDirectories: [URL] = []
+
+                do {
+                    for project in sourceProjects {
+                        let target = projectDirectory(
+                            root: destinationRoot,
+                            owner: project.metadata.repository.owner,
+                            name: project.metadata.repository.name
+                        )
+                        let temporary = target
+                            .deletingLastPathComponent()
+                            .appendingPathComponent(".\(project.metadata.repository.name).migration-\(UUID().uuidString)")
+                        try fileManager.createDirectory(at: temporary.deletingLastPathComponent(), withIntermediateDirectories: true)
+                        try fileManager.copyItem(at: project.directoryURL, to: temporary)
+                        if fileManager.fileExists(atPath: target.path) {
+                            try fileManager.removeItem(at: target)
+                        }
+                        try fileManager.moveItem(at: temporary, to: target)
+                        copiedDirectories.append(target)
+                    }
+                } catch {
+                    // 源目录尚未删除；清理本轮已经复制的目标，保持切换前状态。
+                    for directory in copiedDirectories { try? fileManager.removeItem(at: directory) }
+                    throw error
+                }
+
+                // 目标已完整复制后，源清理由 best-effort 完成。即使某个旧文件被外部进程
+                // 占用，也不能让 bookmark 停留在旧目录，否则已复制的新目录反而失去授权。
+                for project in sourceProjects {
+                    try? fileManager.removeItem(at: project.directoryURL)
+                    let ownerDirectory = project.directoryURL.deletingLastPathComponent()
+                    if (try? fileManager.contentsOfDirectory(atPath: ownerDirectory.path).isEmpty) == true {
+                        try? fileManager.removeItem(at: ownerDirectory)
+                    }
+                }
+            }
+        }
     }
 
     private func resolveOutputRoot() throws -> (url: URL, requiresSecurityScope: Bool) {
