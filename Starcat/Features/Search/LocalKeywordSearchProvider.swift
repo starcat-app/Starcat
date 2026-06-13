@@ -31,6 +31,7 @@ struct LocalKeywordSearchProvider: SearchProvider {
                 card: repo.asCardData(),
                 sources: [.localKeyword],
                 localRepo: repo,
+                remoteRepo: nil,
                 semanticScore: nil
             )
         }
@@ -42,4 +43,3 @@ struct LocalKeywordSearchProvider: SearchProvider {
         )
     }
 }
-

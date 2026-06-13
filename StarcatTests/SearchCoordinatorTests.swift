@@ -67,6 +67,7 @@ struct SearchCoordinatorTests {
             card: remoteCard,
             sources: [.github],
             localRepo: nil,
+            remoteRepo: nil,
             semanticScore: nil
         )
 
@@ -123,6 +124,7 @@ struct SearchCoordinatorTests {
             card: repo.asCardData(),
             sources: [source],
             localRepo: repo,
+            remoteRepo: nil,
             semanticScore: nil
         )
     }
