@@ -11,7 +11,8 @@
 //
 //  关键约束：
 //  - 本仓库只处理本地缓存，不直接调用 AI 服务。
-//  - `content_hash` 由上层按 repo 文本生成；仓库只做精确比较。
+//  - 是否需要重建向量的判定逻辑（diff / 阈值）放在 `SemanticSearchService` 中，
+//    Repository 只负责按主键存取 `snapshot_json` + 向量 BLOB。
 //
 
 import Foundation
@@ -25,15 +26,15 @@ protocol RepoEmbeddingRepositoryProtocol: Sendable {
 
 struct GRDBRepoEmbeddingRepository: RepoEmbeddingRepositoryProtocol {
 
-    private let writer: any DatabaseWriter
+    private let database: any DatabaseManaging
 
     init(database: any DatabaseManaging) {
-        self.writer = database.writer
+        self.database = database
     }
 
     func fetchEmbeddings(model: String, repoIDs: [Int64]) async throws -> [RepoEmbedding] {
         guard !repoIDs.isEmpty else { return [] }
-        return try await writer.read { db in
+        return try await database.writer.read { db in
             let placeholders = Array(repeating: "?", count: repoIDs.count).joined(separator: ",")
             var args: [any DatabaseValueConvertible] = [model]
             args.append(contentsOf: repoIDs)
@@ -51,7 +52,7 @@ struct GRDBRepoEmbeddingRepository: RepoEmbeddingRepositoryProtocol {
 
     func upsert(_ embeddings: [RepoEmbedding]) async throws {
         guard !embeddings.isEmpty else { return }
-        try await writer.write { db in
+        try await database.writer.write { db in
             for var embedding in embeddings {
                 try embedding.save(db)
             }

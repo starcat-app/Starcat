@@ -32,4 +32,23 @@ extension GitHubAPIClient {
             ifModifiedSince: ifModifiedSince
         )
     }
+
+    /// 拉取 README 原始 Markdown 文本。
+    /// 详细 doc 见 `GitHubAPIClientProtocol.readmeMarkdown(...)`。
+    ///
+    /// Accept = `application/vnd.github.raw`，与 HTML 路径同 URL 但 mime 不同，
+    /// GitHub 内部分支返回未渲染的原文。
+    func readmeMarkdown(
+        owner: String,
+        repo: String,
+        ifNoneMatch: String? = nil,
+        ifModifiedSince: String? = nil
+    ) async throws -> BytesResponse {
+        try await getBytes(
+            path: AppEndpoints.GitHubREST.Paths.repoReadme(owner: owner, repo: repo),
+            accept: "application/vnd.github.raw",
+            ifNoneMatch: ifNoneMatch,
+            ifModifiedSince: ifModifiedSince
+        )
+    }
 }

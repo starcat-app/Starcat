@@ -20,6 +20,10 @@ struct SidebarView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(AuthSession.self) private var authSession
+    /// 系统级"减少动效"开关。开启时把 spring 折叠动画退化为瞬切，避免给晕动症 / 偏好
+    /// 静态界面的用户增加负担。与项目内 `ListRowRevealModifier` / `RepoLocalSections`
+    /// / `SmartSearchField` 等动画路径处理方式一致。
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// HOM-PROFILE 2026-06-05：贡献草坪数据来源。@Observable，payload 变化时 sidebar 自动重渲染。
     @Environment(ContributionService.self) private var contributionService
     /// 2026-06-06 A 方案：用户 profile 缓存服务。Sidebar `.task(id: user.login)`
@@ -37,7 +41,12 @@ struct SidebarView: View {
     /// 当前打开/收起 Languages 组的状态。
     @State private var languagesExpanded: Bool = true
     /// W4 A6：Tags 组展开/收起状态。
-    @State private var tagsExpanded: Bool = true
+    /// 默认 **折叠**（2026-06-11 dong4j 体验优化）：tag 数量多时全展开会挤掉
+    /// Languages / Activity / Trending 等同级 section 的视觉权重，初始折叠让用户
+    /// 一眼看到全局结构，需要时再展开。会话内的展开状态由 @State 保持（不持久化，
+    /// 与下方 languagesExpanded / trendingLanguagesExpanded / activityCategoriesExpanded
+    /// 行为一致：重启 App 后回到折叠默认值）。
+    @State private var tagsExpanded: Bool = false
     /// Trending 语言列表展开/收起状态。和 Manage 的 Languages 分开，避免互相影响。
     @State private var trendingLanguagesExpanded: Bool = true
     /// Activity 分类列表展开/收起状态。Activity 是独立 root，不能复用 Trending 的展开态。
@@ -90,6 +99,42 @@ struct SidebarView: View {
     /// 逗号），对绝大多数 starred 数都够。超过时 Text 会被截到 60pt 容器内，但实际
     /// 用户超过 100,000 stars 概率极低，不需要为此牺牲稳定性。
     private static let trailingFixedWidth: CGFloat = 60
+
+    // MARK: - 折叠动画规格（2026-06-11 dong4j 体验优化：对齐 Xcode 文件树的丝滑感）
+
+    /// Sidebar 折叠/展开统一动画曲线。
+    ///
+    /// 选用 `.spring(response: 0.28, dampingFraction: 0.86)` 的依据：
+    /// - 与 `Starcat/Shared/Components/RepoLocalSections.swift` 三段
+    ///   `.spring(response: 0.25, dampingFraction: 0.85)` 同族,保证全 App 的"展开/收起"
+    ///   节奏一致(都是"短促 spring + 微回弹")。
+    /// - response 比 RepoLocalSections 略放宽到 0.28s：sidebar 折叠的内容比详情页三段
+    ///   更细粒度(单条行 ~28pt 高,每个 section 可能十几行),稍长一点能让 row 的
+    ///   move transition 看得清,而不是"几乎瞬切"。
+    /// - dampingFraction 0.86：相比纯 easeInOut 会有~3% 的回弹幅度,刚好让 chevron 旋转和
+    ///   行滑出有一点物理感,但不会"晃动两下"。Xcode 文件树的折叠也是这种感觉。
+    ///
+    /// 历史：2026-06-11 之前用 `.easeInOut(duration: 0.2)`,体验偏"硬"且 chevron / 行
+    /// 用同曲线但 List 内 row insertion 默认动画并未被替换 → 视觉上 chevron 转完了但行
+    /// 还在缓慢淡入,节奏脱节。改 spring 后曲线统一,且与项目内其他展开/收起动画对齐。
+    private static let disclosureSpring: Animation = .spring(response: 0.28, dampingFraction: 0.78)
+
+    /// 被折叠的 row(languageRow / trendingLanguageRow / activityCategoryRow / TagWallView)
+    /// 入场/出场 transition：从顶部滑入 + 淡入,出场反向。
+    ///
+    /// 与 `RepoLocalSections.swift` 三段的 transition 完全一致(`.move(edge: .top).combined(with: .opacity)`),
+    /// 视觉语言统一。macOS 上 SwiftUI `List(.sidebar)` 对 row `.transition` 的支持自
+    /// macOS 14 起趋于稳定,实测 macOS 15+ 上 row 滑入/滑出和 chevron 旋转能精准同步。
+    ///
+    /// 注：这个 transition 必须与 `withAnimation(disclosureSpring)` 配合才会用 spring
+    /// 曲线播放;否则 SwiftUI 会用默认曲线,效果退化为单纯的 fade。
+    private static let disclosureRowTransition: AnyTransition =
+        .move(edge: .top).combined(with: .opacity)
+
+    /// 根据 reduceMotion 返回应使用的动画(开启时返回 nil 让 SwiftUI 瞬切)。
+    private var disclosureAnimation: Animation? {
+        reduceMotion ? nil : Self.disclosureSpring
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -229,6 +274,8 @@ struct SidebarView: View {
             // W4 A6：Tags 段。
             // HOM-179：改为标签墙形式，横向排列自动换行；多选 OR 过滤。
             // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
+            // 2026-06-11：TagWallView 加 disclosureRowTransition,折叠时整块标签墙
+            // 从顶部滑入 + 淡入,与 RepoLocalSections 三段的展开节奏对齐。
             Section {
                 if tagsExpanded && !viewModel.tags.isEmpty {
                     TagWallView(
@@ -239,6 +286,7 @@ struct SidebarView: View {
                             viewModel.toggleSelectedTag(tagId)
                         }
                     )
+                    .transition(Self.disclosureRowTransition)
                 }
             } header: {
                 tagSectionHeader
@@ -246,10 +294,14 @@ struct SidebarView: View {
 
             if !viewModel.languageStats.isEmpty {
                 // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
+                // 2026-06-11：每行加 disclosureRowTransition,展开时逐行从顶部滑入。
+                // List 内 row .transition 在 macOS 14+ 趋于稳定,与 chevron 旋转 + spring
+                // 节奏完全同步,接近 Xcode 文件树的体验。
                 Section {
                     if languagesExpanded {
                         ForEach(viewModel.languageStats) { stat in
                             languageRow(stat)
+                                .transition(Self.disclosureRowTransition)
                         }
                     }
                 } header: {
@@ -269,11 +321,17 @@ struct SidebarView: View {
     @ViewBuilder
     private var trendingSidebarContent: some View {
         Section {
-            trendingLanguageRow(.all)
+            trendingLanguageRow(.all, count: nil)
 
             if trendingLanguagesExpanded {
-                ForEach(trendingLanguages) { language in
-                    trendingLanguageRow(language)
+                // 2026-06-11 改造：列表数据从后端 `/api/v1/languages` 聚合而来（含 __uncategorized__）。
+                // 后端返空 / 不可达时 store 内部自动退化到 fallbackList，所以这里 displayList 永远非空。
+                // disclosureRowTransition：每行折叠/展开时从顶部滑入 + 淡入,与 chevron 旋转 spring 同步。
+                ForEach(dependencies.trendingLanguageStore.displayList, id: \.key) { agg in
+                    let language = agg.asTrendingLanguage
+                    // count = 0 时不展示数字（fallback 列表 / 后端尚未返回时）；> 0 才展示
+                    trendingLanguageRow(language, count: agg.count > 0 ? agg.count : nil)
+                        .transition(Self.disclosureRowTransition)
                 }
             }
         } header: {
@@ -287,8 +345,10 @@ struct SidebarView: View {
             activityCategoryRow(.all)
 
             if activityCategoriesExpanded {
+                // disclosureRowTransition：与 Manage / Trending 同款"顶部滑入 + 淡入"。
                 ForEach(activityLeafCategories) { category in
                     activityCategoryRow(category)
+                        .transition(Self.disclosureRowTransition)
                 }
             }
         } header: {
@@ -298,7 +358,7 @@ struct SidebarView: View {
 
     private var activityCategorySectionHeader: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(disclosureAnimation) {
                 activityCategoriesExpanded.toggle()
             }
         } label: {
@@ -522,7 +582,7 @@ struct SidebarView: View {
 
     private var trendingLanguageSectionHeader: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(disclosureAnimation) {
                 trendingLanguagesExpanded.toggle()
             }
         } label: {
@@ -532,7 +592,10 @@ struct SidebarView: View {
 
                 Spacer(minLength: 8)
 
-                Text(trendingLanguages.count.formatted())
+                // 显示「当前展示的语言条数」=（后端真实聚合时）trendingLanguageStore.aggregates.count，
+                // 兜底状态下用 displayList.count（fallbackList 元素数）。两条路径都用 displayList，
+                // 与下方 ForEach 渲染数完全一致，避免 header 计数与列表行数对不上的撕裂感。
+                Text(dependencies.trendingLanguageStore.displayList.count.formatted())
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -558,55 +621,75 @@ struct SidebarView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .rotationEffect(.degrees(isExpanded ? 90 : 0))
-            .animation(.easeInOut(duration: 0.2), value: isExpanded)
+            // 2026-06-11：chevron 旋转与行展开/收起共用 disclosureSpring,保证转动节奏
+            // 与行的 move+opacity transition 完全同步。详情见 disclosureSpring 注释。
+            .animation(disclosureAnimation, value: isExpanded)
     }
 
     private func toggleTags() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(disclosureAnimation) {
             tagsExpanded.toggle()
         }
     }
 
     private func toggleLanguages() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(disclosureAnimation) {
             languagesExpanded.toggle()
         }
     }
 
-    /// Trending 语言优先来自本地 Stars 的语言聚合；未登录或尚未同步时给一组常用语言兜底，
-    /// 保证 Trending 入口第一次打开也有可探索的分类。
-    private var trendingLanguages: [TrendingLanguage] {
-        let localLanguages = viewModel.languageStats.compactMap(\.languageOrNil)
-            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    // 2026-06-11 改造：`trendingLanguages` 计算属性已删除——
+    // 历史实现从 `viewModel.languageStats`（用户本地 stars 聚合）取语言，但与 trending 后端
+    // 实际是否有该语言的 repo 完全脱钩（Swift 开发者本周可能 0 个 Swift trending repo，
+    // 列表展示 Swift 但点进去 0 条）。新实现走 `dependencies.trendingLanguageStore.displayList`，
+    // 直接消费后端 `/api/v1/languages` 聚合接口的结果（含 `__uncategorized__` 项）。
+    // 历史代码可在 git blame / commit `trending sidebar 切换到后端聚合接口` 之前的版本里找回。
 
-        let names = localLanguages.isEmpty
-            ? ["JavaScript", "Java", "Python", "CSS", "PHP", "Ruby", "C++", "C", "Shell", "Objective-C", "R", "Go", "Swift"]
-            : localLanguages
+    /// Trending 语言行。`count` 为 nil 时不展示行尾计数（fallbackList / All 行）。
+    @ViewBuilder
+    private func trendingLanguageRow(_ language: TrendingLanguage, count: Int?) -> some View {
+        Label {
+            HStack(spacing: 4) {
+                trendingLanguageTitle(language)
+                    .lineLimit(1)
 
-        return names.map { TrendingLanguage($0) }
+                Spacer(minLength: 4)
+
+                if let count, count > 0 {
+                    Text(count.formatted())
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+        } icon: {
+            trendingLanguageIcon(language)
+        }
+        .tag(language)
     }
 
     @ViewBuilder
-    private func trendingLanguageRow(_ language: TrendingLanguage) -> some View {
-        Label {
-            trendingLanguageTitle(language)
-                .lineLimit(1)
-        } icon: {
-            if language == .all {
-                Image(systemName: "chevron.left.forwardslash.chevron.right")
-            } else {
-                LanguageIconView(language: language.rawValue, size: 14)
-            }
+    private func trendingLanguageIcon(_ language: TrendingLanguage) -> some View {
+        if language == .all {
+            Image(systemName: "chevron.left.forwardslash.chevron.right")
+        } else if language.isUncategorized {
+            // 「未分类」用问号占位（与 Manage Languages 里 `language=nil` 行的视觉对齐）。
+            Image(systemName: "questionmark.circle")
+                .foregroundStyle(.secondary)
+        } else {
+            LanguageIconView(language: language.rawValue, size: 14)
         }
-        .tag(language)
     }
 
     @ViewBuilder
     private func trendingLanguageTitle(_ language: TrendingLanguage) -> some View {
         if language == .all {
             Text("trending.allLanguages")
+        } else if language.isUncategorized {
+            Text("trending.language.uncategorized")
         } else {
-            Text(verbatim: language.rawValue)
+            // Trending 语言 picker label：同样走短名（详见 LanguageDisplayName）。
+            Text(verbatim: LanguageDisplayName.shortened(for: language.rawValue))
         }
     }
 
@@ -762,7 +845,10 @@ struct SidebarView: View {
             // Sidebar count bugfix v4：与 row() 同款保护——trailing 容器整体 fixed width 锁死。
             // 详细根因见 `trailingFixedWidth` 常量上方的大注释。
             HStack {
-                Text(verbatim: stat.displayName)
+                // 短名：避免 "Jupyter Notebook" 这种长名在侧边栏窄行被 tail truncate
+                // 成 "Jupyter Note…"。stat.displayName 已对 isEmpty 兜底（"Unknown" 等），
+                // 未命中映射时原样返回，安全。详见 LanguageDisplayName。
+                Text(verbatim: LanguageDisplayName.shortened(for: stat.displayName))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 4)

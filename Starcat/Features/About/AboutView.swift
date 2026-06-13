@@ -363,16 +363,18 @@ private struct EULAPage: View {
 
 private struct CreditsPage: View {
     var body: some View {
+        // dong4j 2026-06-12 反馈演化:
+        // - v1: 完整 hint「感谢所有开源维护者。Starcat 只列出当前工程直接依赖;如果后续新增 SPM package,请同步更新这里。」
+        // - v2: 删除整段(理由:协作者提示不该出现在用户 About 页)
+        // - v3(本次): 只保留「感谢所有开源维护者。」一句,既给用户传达感激之情,又不掺协作者向的"请同步更新"指令。
+        //         同步规则仍然由 AGENTS.md / CLAUDE.md 的「开源致谢同步规则」(2026-06-07 起强制)兜底。
         AboutSection(title: "about.credits.title", subtitle: "about.credits.subtitle") {
             VStack(alignment: .leading, spacing: 10) {
-                AutoScrollingCreditsList(dependencies: AboutDependency.all)
-
-                Divider().padding(.vertical, 4)
+                CreditsList(dependencies: AboutDependency.all)
 
                 Text("about.credits.dependencyHint")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .lineSpacing(3)
             }
         }
     }
@@ -588,9 +590,18 @@ private struct DependencyRow: View {
 
             Spacer()
 
-            SafeExternalLink(title: "about.externalLink.source", systemImage: "arrow.up.right", url: dependency.url)
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
+            // 致谢页空间紧凑，且每行已经显示了项目名/许可证/版权，链接只需一个跳转图标即可。
+            // 文本由 Label 的 title 承担无障碍语义（labelStyle(.iconOnly) 仅隐藏视觉文本）。
+            // 图标用 `globe`：SF Symbols 里最贴"网站 / 网络"语义的标准图标(地球+经纬线),
+            // 比早期 `arrow.up.right` 的"出框箭头"更精确表达"打开外部网站"(致谢列表的链接全是项目主页)。
+            SafeExternalLink(
+                title: "about.externalLink.source",
+                systemImage: "globe",
+                url: dependency.url,
+                iconOnly: true
+            )
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -599,73 +610,134 @@ private struct DependencyRow: View {
 
 /// 致谢页中部的依赖列表。
 ///
-/// 后续依赖变多后，这块会成为主要信息区，因此列表自己滚动，而不是依赖整页滚动。
-/// 鼠标停在列表上时暂停自动滚动，方便用户复制名称或点击 source 链接。
-private struct AutoScrollingCreditsList: View {
+/// 依赖项较多（>10 条），整页滚动会让其它信息区被挤出视野，因此这里独立成一个固定高度的滚动容器，
+/// 由用户手动滚动浏览。早期版本曾加过基于 Timer 的自动轮播，但实际使用中干扰复制/点击操作，已移除。
+///
+/// **高度策略（v3,2026-06-12 dong4j 反馈"底部多出一点"修订）**：
+/// - 之前用纯估算 height = `N × rowHeight + (N-1) × dividerHeight + 缓冲`,实际行高比估算略小,
+///   导致内容 < frame,ScrollView 在底部留 8-12pt 空白。
+/// - 现在用 PreferenceKey 动态测量内容真实高度（`CreditsContentHeightKey`）,
+///   `frame = min(contentHeight, maxHeight)`：
+///   · 内容 < `maxHeight`(本例:依赖 ≤ 4 条) → frame 自适应内容,无底部留白
+///   · 内容 ≥ `maxHeight`(依赖 > 4 条) → frame 锁到 4 行高度,启用滚动
+/// - **注意必须用 VStack 而非 LazyVStack**：懒渲染只把可见区域的 row 算进 contentHeight,
+///   会让首次测量值偏小、frame 反复抖动直至稳态。本组件依赖项 ~14 条,VStack 全渲染开销可忽略。
+private struct CreditsList: View {
     let dependencies: [AboutDependency]
 
-    @State private var focusedIndex = 0
-    @State private var isHovering = false
+    /// 内容真实高度(由 PreferenceKey 通过 GeometryReader 上报)。
+    /// 首次 body 渲染时为 0,此时 `renderedHeight` 降级到 `maxHeight` 占位。
+    @State private var contentHeight: CGFloat = 0
 
-    private let timer = Timer.publish(every: 2.4, on: .main, in: .common).autoconnect()
+    /// 触发滚动的可见行数阈值(dong4j 2026-06-12:3 行→4 行)。
+    private let visibleRowsCount: Int = 4
+    /// 单行内容估算高度(只用于算 maxHeight 上限,实际 frame 用 PreferenceKey 测得的真值)。
+    /// `DependencyRow` 最高元素是 36pt 头像 + 上下 padding 各 10pt = 56pt。
+    private let rowHeightEstimate: CGFloat = 56
+    /// Divider 视觉占位 1pt;`maxHeight` 计算时 N-1 条 divider 都参与累加。
+    private let dividerHeightEstimate: CGFloat = 1
+
+    /// 4 行 + 3 divider 的容器最大高度,内容超过这个值才需要滚动。
+    private var maxHeight: CGFloat {
+        CGFloat(visibleRowsCount) * rowHeightEstimate
+            + CGFloat(visibleRowsCount - 1) * dividerHeightEstimate
+    }
+
+    /// 实际渲染高度。首次未测量时降级到 `maxHeight`,避免 ScrollView 高度为 0 闪烁;
+    /// 之后取 `min(content, max)`,内容少则贴合内容,内容多则锁到 4 行高度。
+    private var renderedHeight: CGFloat {
+        guard contentHeight > 0 else { return maxHeight }
+        return min(contentHeight, maxHeight)
+    }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical) {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(dependencies.enumerated()), id: \.element.id) { index, dependency in
-                        DependencyRow(dependency: dependency)
-                            .id(index)
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(dependencies.enumerated()), id: \.element.id) { index, dependency in
+                    DependencyRow(dependency: dependency)
 
-                        if index != dependencies.count - 1 {
-                            Divider()
-                        }
+                    if index != dependencies.count - 1 {
+                        Divider()
                     }
                 }
             }
-            .frame(height: 168)
-            .scrollIndicators(.visible)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 1)
-            }
-            .onHover { hovering in
-                isHovering = hovering
-            }
-            .onReceive(timer) { _ in
-                guard !isHovering, dependencies.count > 1 else { return }
-                focusedIndex = (focusedIndex + 1) % dependencies.count
-
-                withAnimation(.easeInOut(duration: 0.45)) {
-                    proxy.scrollTo(focusedIndex, anchor: .top)
+            .background(
+                // GeometryReader 放 background 不参与布局,只用 preference 把 VStack 自然高度上报到外层。
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: CreditsContentHeightKey.self,
+                        value: proxy.size.height
+                    )
                 }
-            }
+            )
         }
+        .frame(height: renderedHeight)
+        .scrollIndicators(.visible)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 1)
+        }
+        .onPreferenceChange(CreditsContentHeightKey.self) { value in
+            // SwiftUI 内置去重: value 不变不会触发 closure;
+            // 写入 @State → frame 重新计算,但 children 自然高度不依赖 frame,不会形成 layout loop。
+            contentHeight = value
+        }
+    }
+}
+
+/// `CreditsList` 用于把 VStack 自然内容高度从内部冒泡到外层 frame 的 PreferenceKey。
+///
+/// 用 max() 合并是因为一次 layout 中 GeometryReader 可能多次上报(尺寸抖动),
+/// 取最大值能稳定到最终内容高度而不是中间过渡值。
+private struct CreditsContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
 /// 外部链接按钮。
 ///
 /// 这里只接受调用方传入的 URL，内部统一用 NSWorkspace 打开，便于后续加 URL 白名单或埋点。
+///
+/// 形态：
+/// - 默认胶囊（icon + 文本），用于品牌区/EULA/Privacy 等需要文案引导的场景。
+/// - `iconOnly = true` 时退化为圆形图标按钮，用于致谢列表这种空间紧凑、上下文已说明用途的场景；
+///   仍保留 Label 的 title 以保证 VoiceOver 能正确读出按钮含义。
 private struct SafeExternalLink: View {
     let title: LocalizedStringKey
     let systemImage: String
     let url: URL?
+    var iconOnly: Bool = false
 
     var body: some View {
         Button {
             guard let url else { return }
             NSWorkspace.shared.open(url)
         } label: {
-            Label(title, systemImage: systemImage)
-                .font(.callout.weight(.medium))
-                .padding(.horizontal, 11)
-                .padding(.vertical, 7)
-                .background(.regularMaterial, in: Capsule())
-                .overlay {
-                    Capsule().stroke(.quaternary, lineWidth: 1)
-                }
+            if iconOnly {
+                // dong4j 2026-06-12 反馈:致谢列表里 28×28 视觉过重,与同行的项目名/许可证胶囊抢镜。
+                // 缩到 22×22 + caption 字号(~11pt),让按钮变成"行尾轻量入口"而非"主操作焦点"。
+                Label(title, systemImage: systemImage)
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(width: 22, height: 22)
+                    .background(.regularMaterial, in: Circle())
+                    .overlay {
+                        Circle().stroke(.quaternary, lineWidth: 1)
+                    }
+            } else {
+                Label(title, systemImage: systemImage)
+                    .font(.callout.weight(.medium))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay {
+                        Capsule().stroke(.quaternary, lineWidth: 1)
+                    }
+            }
         }
         .disabled(url == nil)
         .help(Text(verbatim: url?.absoluteString ?? ""))
@@ -766,6 +838,12 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright (c) 2020 Simon Bachmann",
             url: URL(string: "https://github.com/simibac/ConfettiSwiftUI")
         ),
+        AboutDependency(
+            name: "ZIPFoundation",
+            license: "MIT",
+            copyright: "Copyright (c) 2017-2026 Thomas Zoechling",
+            url: URL(string: "https://github.com/weichsel/ZIPFoundation")
+        ),
 
         // MARK: 嵌入式资源 / 生成代码（非 SPM，但同样属于第三方开源）
 
@@ -780,6 +858,63 @@ private struct AboutDependency: Identifiable {
             license: "MIT",
             copyright: "Copyright (c) 2017 GitHub, Inc.",
             url: URL(string: "https://github.com/github/linguist")
+        ),
+        AboutDependency(
+            name: "ruanyf/weekly",
+            license: "CC BY-NC-SA 4.0",
+            copyright: "Copyright (c) Ruanyifeng",
+            url: URL(string: "https://github.com/ruanyf/weekly")
+        ),
+        AboutDependency(
+            name: "CodeFlow",
+            license: "MIT",
+            copyright: "MIT declaration in upstream README; no LICENSE file in commit 51ab970",
+            url: URL(string: "https://github.com/braedonsaunders/codeflow")
+        ),
+        AboutDependency(
+            name: "Repomix",
+            license: "MIT",
+            copyright: "Copyright 2024 Kazuki Yamada",
+            url: URL(string: "https://github.com/yamadashy/repomix")
+        ),
+
+        // MARK: 第三方品牌标识（非开源代码，但仍登记以保持透明）
+        //
+        // 外部来源品牌 logo 嵌入在 `Assets.xcassets/WikiSources/`（Wiki 菜单）与
+        // `Assets.xcassets/WeeklySources/`（Weekly 三源 feed）下,用于来源识别。
+        // 它们是各品牌的商标 / 品牌资产,Starcat 仅作"识别用图"展示,不主张所有权,
+        // license 字段标记为 "Brand Asset"。
+        // 严格按 CLAUDE.md「开源致谢同步规则」第 2 条「嵌入式资源」登记。
+
+        AboutDependency(
+            name: "DeepWiki Logo",
+            license: "Brand Asset",
+            copyright: "Cognition Labs, Inc. — used for source identification only",
+            url: URL(string: "https://deepwiki.com")
+        ),
+        AboutDependency(
+            name: "Zread Logo",
+            license: "Brand Asset",
+            copyright: "Zread.ai — used for source identification only",
+            url: URL(string: "https://zread.ai")
+        ),
+        AboutDependency(
+            name: "ZRead",
+            license: "Brand Asset",
+            copyright: "Zread.ai — used for weekly source identification only",
+            url: URL(string: "https://zread.ai")
+        ),
+        AboutDependency(
+            name: "Hacker News",
+            license: "Brand Asset",
+            copyright: "Y Combinator — used for source identification only",
+            url: URL(string: "https://news.ycombinator.com")
+        ),
+        AboutDependency(
+            name: "Code Wiki Logo",
+            license: "Brand Asset",
+            copyright: "Google LLC — used for source identification only",
+            url: URL(string: "https://codewiki.google")
         )
     ]
 }

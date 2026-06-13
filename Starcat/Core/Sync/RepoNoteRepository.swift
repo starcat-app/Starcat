@@ -26,16 +26,16 @@ import GRDB
 
 struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
 
-    private let writer: any DatabaseWriter
+    private let database: any DatabaseManaging
 
     init(database: any DatabaseManaging) {
-        self.writer = database.writer
+        self.database = database
     }
 
     // MARK: - 查询
 
     func find(repoId: Int64) async throws -> RepoNote? {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try RepoNote.fetchOne(db, key: repoId)
         }
     }
@@ -48,7 +48,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
         // 若在闭包外构造 args 然后被捕获，会触发 Swift 6 严格模式的 "non-Sendable type
         // captured in @Sendable closure" 报错。改为闭包内构造后，跨 actor 边界的只有
         // `[Int64]`（天然 Sendable）和 `placeholders`（String，Sendable），安全。
-        return try await writer.read { db in
+        return try await database.writer.read { db in
             let args = repoIds.map { $0 as DatabaseValueConvertible }
             let rows = try Row.fetchAll(
                 db,
@@ -59,9 +59,8 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
             for row in rows {
                 let id: Int64 = row["repo_id"]
                 let raw: String = row["status"]
-                if let status = RepoStatus(rawValue: raw) {
-                    map[id] = status
-                }
+                // 用 lenient parse：v1 旧值 reading/deprecated 会被回落到 .read。
+                map[id] = RepoStatus.parse(raw)
             }
             return map
         }
@@ -74,22 +73,20 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     /// - 无 `IN (...)` → 省掉 1800+ 个占位符的 SQL 解析 + 参数绑定（之前是这部分让 fetchStatusMap 慢 50~100ms）。
     /// - `repo_notes` 表通常很小（只在用户主动标记状态 / 写笔记时建行），全表扫描成本远低于带参 IN 查询。
     func fetchAllStatusMap() async throws -> [Int64: RepoStatus] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: "SELECT repo_id, status FROM repo_notes")
             var map: [Int64: RepoStatus] = [:]
             for row in rows {
                 let id: Int64 = row["repo_id"]
                 let raw: String = row["status"]
-                if let status = RepoStatus(rawValue: raw) {
-                    map[id] = status
-                }
+                map[id] = RepoStatus.parse(raw)
             }
             return map
         }
     }
 
     func fetchRepos(byStatus status: RepoStatus) async throws -> [Repo] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Repo.fetchAll(db, sql: """
                 SELECT r.* FROM repos r
                 JOIN repo_notes n ON n.repo_id = r.id
@@ -100,7 +97,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     }
 
     func statusCounts() async throws -> [RepoStatus: Int] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: """
                 SELECT n.status AS status, COUNT(*) AS cnt
                 FROM repo_notes n
@@ -112,9 +109,9 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
             for row in rows {
                 let raw: String = row["status"]
                 let count: Int = row["cnt"]
-                if let status = RepoStatus(rawValue: raw) {
-                    result[status] = count
-                }
+                // 用 lenient parse：v1 旧值 reading/deprecated 会被并入 .read 计数。
+                let status = RepoStatus.parse(raw)
+                result[status, default: 0] += count
             }
             return result
         }
@@ -123,7 +120,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     // MARK: - 写入
 
     func upsert(_ note: RepoNote) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             var copy = note
             try copy.upsert(db)
         }
@@ -133,7 +130,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     /// content 传 nil 表示清空。editedAt 自动设为 now。
     func updateContent(repoId: Int64, content: String?) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
-        try await writer.write { db in
+        try await database.writer.write { db in
             // 用 UPSERT 语义：先 INSERT（如不存在），ON CONFLICT 时 UPDATE content + edited_at
             try db.execute(
                 sql: """
@@ -151,7 +148,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     /// 仅更新 status；行不存在则创建一行（content=NULL）。editedAt 自动设为 now。
     func updateStatus(repoId: Int64, status: RepoStatus) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(
                 sql: """
                 INSERT INTO repo_notes (repo_id, content, status, is_ai_generated, edited_at)
@@ -161,6 +158,31 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                     edited_at = excluded.edited_at
                 """,
                 arguments: [repoId, status.rawValue, nowISO]
+            )
+        }
+    }
+
+    /// 自动状态机：unread → read，单条 SQL 实现幂等升级。
+    ///
+    /// **SQL 设计**：
+    /// - INSERT 缺省 status = 'read'（首次进详情页 + README 加载完即升级）
+    /// - ON CONFLICT 时仅在 status='unread' 才写新值；其他状态（read/using 或 v1 兼容值
+    ///   reading/deprecated）保持不动。WHERE 子句锁住"绝不下行"语义。
+    /// - editedAt 同样只在 unread 升级路径上更新；read/using 行不被擦动（避免无意义触发
+    ///   CloudKit 同步）。
+    func markAsReadIfNeeded(repoId: Int64) async throws {
+        let nowISO = ISO8601DateFormatter.shared.string(from: Date())
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO repo_notes (repo_id, content, status, is_ai_generated, edited_at)
+                VALUES (?, NULL, 'read', 0, ?)
+                ON CONFLICT(repo_id) DO UPDATE SET
+                    status = 'read',
+                    edited_at = excluded.edited_at
+                WHERE repo_notes.status = 'unread'
+                """,
+                arguments: [repoId, nowISO]
             )
         }
     }

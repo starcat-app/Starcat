@@ -30,8 +30,15 @@ struct RepoDetailView: View {
     @Environment(HomeViewModel.self) private var viewModel
     // W4 B1：取消 star 需要的依赖
     @Environment(AppDependencies.self) private var dependencies
-    /// 系统级"减少动效"开关，开启时详情页切换退化为仅 opacity 淡入（不再上滑）。
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // D-28 修订（2026-06-11）：原 `@Environment(\.accessibilityReduceMotion) reduceMotion`
+    // 移除 —— 该开关唯一消费点 `private var detailContentTransition` 已抽到
+    // `Shared/Components/DetailContentTransition.swift` 共享 modifier,reduceMotion 由
+    // modifier 内部读取,本 view 不再需要持有该 environment。
+    /// v1.4 修订 (2026-06-10)：trailingActions(.share/.ai) 加 isAuthenticated 守卫的依赖。
+    /// Manage 场景业务上必须登录才能看到 repo 列表（HomeViewModel 从本地 starred_repos
+    /// 拉数据,登出会清 token + StarredRegistry,但本地 starred_repos 表不清,理论上多账号
+    /// 切换时仍可能短暂看到已登出用户的数据）→ 加防御性守卫,与 trending/weekly 全场景一致。
+    @Environment(AuthSession.self) private var authSession
 
     // R-01 §3.2.3 决策：unstar 即点即生效，不再有 confirm alert / unstarError 弹窗。
     // 失败由 StarActionService 内部记日志，UI 仅靠 hero ⭐ chip 抖动 + 短暂红色提示
@@ -75,41 +82,62 @@ struct RepoDetailView: View {
                 // R-01 §3.2.3：Manage 详情迁移到 RepoDetailScaffold + ManageDetailContent。
                 // - 删除原 `showUnstarConfirm` / `isUnstarring` / `unstarError` 三个 @State + 对应 alert
                 //   （dong4j Q5-A 决策：unstar 即点即生效，无 confirm；失败时 chip 抖动 + 红色 ~600ms，不弹 toast）
-                // - star/unstar 调用统一走 `dependencies.starActionService.unstar(repo:)`
-                //   （由 StarringSubsystem 单点维护 registry / DB / 远端三方一致性）
+                // - star/unstar 调用统一走 `dependencies.starActionService.toggle(repo:)`
+                //   （v1.7 修订：4 详情页同构,toggle 内部按 StarredRegistry 派生 star/unstar）
                 RepoDetailScaffold(
                     repo: repo,
                     viewData: RepoDetailViewData(
                         hero: RepoDetailHero(repo: repo),
-                        trailingActions: [.share, .ai],
+                        // **v2.0 修订** (2026-06-10):分享/AI 等私人功能可见性绑「已 star」
+                        // 单一信任源 = `Repo.isStarred`(本地 DB `is_starred` 列的内存镜像)。
+                        // 从 v1.7 的 `StarredRegistry.contains(...)` 回归,因为 registry 异步
+                        // bootstrap + SyncManager 304 早退不触发 hook 会让 Manage 启动期
+                        // registry 为空 → 私人面板全部不显。`Repo.isStarred` 在 4 场景全部
+                        // 可信(详见 `StarringSubsystem.swift` v2.0 修订段)。
+                        trailingActions: trailingActions(for: repo),
                         translation: ReadmeTranslationContext(fullName: repo.fullName),
                         backendHint: nil
                     ),
+                    // **v2.0 修订**:tooltip 与 toggle 行为对齐——已 star 显示「取消 star」,
+                    // 未 star 显示「star」。从 `Repo.isStarred` 直接派生(同 trailingActions)。
+                    starHelpKey: repo.isStarred ? "repo.unstar" : "repo.star",
                     onStarTapped: {
                         // §3.2.3 状态机：throws 让 StarStatChipButton 抖动 + 短暂红色（不弹 alert）
-                        try await dependencies.starActionService.unstar(repo: repo)
-                    },
-                    onRefresh: {
-                        // §3.2.9：右下浮动刷新按钮触发 → 强制刷当前 repo 视图数据
-                        // （重拉缓存 repo + tags + notes + release 计数等）
-                        await viewModel.reloadItems(forceRefresh: true)
+                        try await handleStarTapped(repo: repo)
                     }
+                    // v2.1 修订（2026-06-11）：撤销 §3.2.9 给 Scaffold 加 `onRefresh:` +
+                    // 浮动刷新按钮的设计 —— Manage 详情同位置已经有 `cacheFooter` 内的
+                    // SyncIconButton(只刷 README),叠加 overlay 的浮动按钮(刷整个仓库视图)
+                    // 视觉上无法区分,用户反馈为 bug。改为合并：cacheFooter 内的按钮在
+                    // Manage 场景同时承担 README + reloadItems 双职责,详见
+                    // `ManageDetailContent.swift` 文件头 v2.1 修订段 +
+                    // `RepoDetailScaffold.swift` 文件头 v2.1 修订段。
                 ) { onScrollOffset in
                     ManageDetailContent(repo: repo, onScrollOffset: onScrollOffset)
                 }
-                .transition(detailContentTransition)
+                // D-28 修订（2026-06-11）：从 `.transition(detailContentTransition)` 切到
+                // 共享 modifier `.detailContentTransition()`,与 activity / weekly 详情页
+                // 4 处入场动画**完全同构**(共享逻辑沉淀在
+                // `Shared/Components/DetailContentTransition.swift`)。
+                .detailContentTransition()
             } else if let trending = selectedTrendingRepo {
                 // R-01 §3.2.3 Phase B3（2026-06-10）：trending 详情切到 RepoDetailScaffold
                 // + TrendingDetailContent 共用骨架。`TrendingScaffoldShell` 内部维护
                 // `displayRepo` / `isLocalHit` 状态机，先查本地（已 star 拿真值，三段
                 // 跟着渲染），未命中退化到 ephemeral Repo（id=0，三段隐藏）。
+                //
+                // **`.id(trending.id)` 故意保留**(与 manage 分支差异)：
+                // TrendingScaffoldShell 设计为 `.id` 重建友好——trending row 自带
+                // v1.2 完整字段(R-05 透传 10 字段补齐),内部 `task(id: trending.id)`
+                // 重建后 displayRepo 同步设置,fallback 走 makeEphemeralRepo() 同步快
+                // 路径不依赖网络。同 trending 内切 repo 也触发 transition,体验丝滑。
                 TrendingScaffoldShell(trending: trending)
                     .id(trending.id)
-                    .transition(detailContentTransition)
+                    .detailContentTransition()
             } else {
                 emptyState
                     .id("empty")
-                    .transition(detailContentTransition)
+                    .detailContentTransition()
             }
         }
         // 监听"当前显示的 detail 内容标识"变化，触发 .transition 动效。
@@ -137,30 +165,51 @@ struct RepoDetailView: View {
         return "empty"
     }
 
-    /// 详情页内容切换时的 view transition。
-    ///
-    /// **非对称设计**（重要）：
-    /// - insertion 新内容：opacity 0→1 + offset y:8→0 滑入，让用户感觉"新内容轻轻落下"。
-    /// - removal 旧内容：仅 opacity 1→0 直接淡出，**不滑动**——否则新旧两份内容同时
-    ///   在 view tree 里漂移，视觉上很乱，特别是 README WebView 切换时容易显得抖动。
-    ///
-    /// reduceMotion 兜底：完全去掉 offset，只保留 opacity 淡入淡出，避免前庭不适。
-    ///
-    /// 14pt 的 offset（21:44 从 8pt 调大）：经验值，让"轻轻落下"明显可感知；
-    /// 8pt 在 macOS 大屏 + WebView 渲染延迟下太微弱，肉眼几乎看不出来。
-    /// 再大（>20pt）就像"页面跳"，14pt 是平衡点。
-    private var detailContentTransition: AnyTransition {
-        if reduceMotion {
-            return .opacity
-        }
-        return .asymmetric(
-            insertion: .opacity.combined(with: .offset(y: 14)),
-            removal: .opacity
-        )
-    }
+    // D-28 修订（2026-06-11）：原 `private var detailContentTransition` 已抽到
+    // `Shared/Components/DetailContentTransition.swift` 暴露成 `.detailContentTransition()`
+    // modifier,4 详情页（manage / trending / activity / weekly）共享同一份非对称 transition
+    // 配置(insertion: opacity + offset y:14 / removal: opacity / reduceMotion 兜底)。
+    // 详细设计见共享文件文件头注释段。
 
     // R-01 §3.2.3：performUnstar / errorAlertBinding 已迁移到 StarActionService 单点维护
     // （RepoDetailView 不再持有 unstar 业务逻辑）。
+
+    // MARK: - Star toggle / 私人面板可见性（**v2.0 修订**, 2026-06-10）
+
+    /// trailingActions 守卫(与 trending / weekly / activity 4 详情页同构):
+    /// 已登录 + `repo.isStarred == true` → `[.share, .ai]`,否则空数组。
+    ///
+    /// **v2.0 从 v1.7 的 `starredRegistry.contains(...)` 回归到 `repo.isStarred`**:
+    /// 直接读 `Repo.isStarred`(本地 DB `is_starred` 列的内存镜像)避免依赖
+    /// 异步 bootstrap 的 registry。Manage 场景 `selectedRepo.isStarred` 永远 true
+    /// (因为 selectedRepo 来自 `fetchAllStarred`),unstar 后 viewModel 会刷新
+    /// 列表 → selectedRepo 切到 nil 或新 repo → 这个 detail view 自动重渲染。
+    /// 4 场景同构 + 不依赖 registry async 时序,详见 `RepoLocalSections.swift` 文件头。
+    private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
+        guard authSession.state.isAuthenticated, repo.isStarred else {
+            return []
+        }
+        return [.share, .ai]
+    }
+
+    /// hero ⭐/☆ chip 点击(**v2.0 修订**):
+    ///
+    /// 与 trending / weekly / activity 完全同构——`StarActionService.toggle(repo:)`
+    /// 内部按 `repo.isStarred || registry.contains(...)` 任一为 true 走 unstar 分支,
+    /// 4 处调用方都是这 6 行模板。失败抛错让 `StarStatChipButton` 触发抖动 +
+    /// 短暂红色 600ms。
+    ///
+    /// 未登录 → `authSession.signIn()` 触发设备流后**不抛错 return**(chip 不抖,
+    /// 这不是失败语义)。
+    private func handleStarTapped(repo: Repo) async throws {
+        guard authSession.state.isAuthenticated else {
+            authSession.signIn()
+            return
+        }
+        try await dependencies.starActionService.toggle(repo: repo)
+        await viewModel.refreshSidebar()
+        await viewModel.reloadItems(forceRefresh: true)
+    }
 
     // R-01 §3.2.3 Phase B3（2026-06-10）：本 view 的 trending 分支全部交给
     // `TrendingScaffoldShell`（同 module 平级文件）+ `RepoDetailScaffold` +

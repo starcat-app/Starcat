@@ -29,6 +29,30 @@ enum AppConstants {
     /// 数据库文件名（位于应用沙盒 Application Support 目录）。
     static let databaseFileName = "starcat.sqlite"
 
+    // MARK: - 多账号目录布局（2026-06-12 多账号 DB 隔离）
+    //
+    // 同一台 Mac 上同一个 macOS 账号可以登录多个 GitHub 账号。
+    // 每个 GitHub 账号一份独立的 SQLite 数据库，物理隔离避免串数据：
+    //   ~/Library/Application Support/com.starcat.app/
+    //   └── users/
+    //       ├── _anonymous/                    ← 未登录占位（避免 nil 特判）
+    //       │   └── starcat.sqlite
+    //       └── <github_user_id>/              ← 已登录用户（按 GitHub User ID）
+    //           ├── starcat.sqlite (+ .wal/.shm)
+    //           └── _meta.json                 ← {"login":"...", "last_at":"..."}
+    //
+    // 用 GitHub User ID（Int64）而非 login 作为目录名：用户改 GitHub 用户名后
+    // ID 不变，目录路径稳定；login 可能因为用户改名导致目录错位。
+
+    /// 多账号目录的父目录名（与 bundle 目录同级）。
+    static let usersDirectoryName = "users"
+
+    /// 未登录占位目录名（前缀 `_` 避免与真实 GitHub user id 冲突）。
+    static let anonymousUserDirectoryName = "_anonymous"
+
+    /// 用户目录下的诊断元信息文件名（仅给开发者 Finder 查看用，运行时不读）。
+    static let userMetaFileName = "_meta.json"
+
     // MARK: - GitHub OAuth
 
     /// OAuth 回调 URL scheme，必须与 Info.plist `CFBundleURLSchemes` 一致。

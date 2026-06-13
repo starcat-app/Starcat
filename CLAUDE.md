@@ -293,7 +293,7 @@ enum RepoListDensity: String, CaseIterable, Identifiable {
 - ✅ README 渲染：WebView（100% GFM 兼容）
 - ✅ OAuth scope：`["read:user", "public_repo"]`
 - ✅ 后台任务：macOS 用 NSBackgroundActivityScheduler
-- ✅ 语义搜索：服务端计算，客户端存缓存
+- ✅ 语义搜索：BYOK Provider 生成 embedding，本地 SQLite 缓存并由 Swift 计算 cosine
 
 ---
 

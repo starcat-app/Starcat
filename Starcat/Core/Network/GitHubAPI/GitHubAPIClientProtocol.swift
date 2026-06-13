@@ -54,6 +54,13 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// - Throws: 网络层 `NetworkError`（404 / 401 / RateLimit 等）。
     func repo(owner: String, repo: String) async throws -> GitHubRepoDTO
 
+    /// GitHub Repository Search。返回 APIResponse 以保留 rate-limit 与分页响应头。
+    func searchRepositories(
+        query: GitHubRepositorySearchQuery,
+        page: Int,
+        perPage: Int
+    ) async throws -> APIResponse<GitHubRepositorySearchDTO>
+
     // MARK: - Readme
 
     /// 拉取 README（GitHub 服务端渲染的 HTML 片段）。
@@ -64,6 +71,24 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// - Returns: 字节响应 + ETag / Last-Modified / notModified 标志
     /// - Throws: 404 / 401 / RateLimit / 5xx 等 `NetworkError`
     func readmeHTML(
+        owner: String,
+        repo: String,
+        ifNoneMatch: String?,
+        ifModifiedSince: String?
+    ) async throws -> BytesResponse
+
+    /// 拉取 README 原始 Markdown 文本（决策 E3：按需懒补全）。
+    ///
+    /// 与 `readmeHTML` 并列、不替换。HTML 是 WebView 渲染主路径，Markdown 走"AI / 向量化按需补"
+    /// 路径，落到 `readmes.content`。详见 `docs/详细设计/26-向量搜索改进.md` § 3.2。
+    ///
+    /// - Parameters:
+    ///   - owner / repo: 仓库 owner 与 name
+    ///   - ifNoneMatch: 上次响应保存的 ETag；非空时带 If-None-Match → 304 命中本地缓存
+    ///   - ifModifiedSince: 上次响应保存的 Last-Modified；与 ifNoneMatch 等效，二选一即可
+    /// - Returns: 字节响应 + ETag / Last-Modified / notModified 标志
+    /// - Throws: 404 / 401 / RateLimit / 5xx 等 `NetworkError`
+    func readmeMarkdown(
         owner: String,
         repo: String,
         ifNoneMatch: String?,
@@ -87,3 +112,14 @@ protocol GitHubAPIClientProtocol: Sendable {
 /// `GitHubAPIClient` actor 已经实现了所有要求的方法（在 StarsAPI / UserAPI / ReadmeHTMLAPI
 /// extension 中），这里只需空 conformance 声明。
 extension GitHubAPIClient: GitHubAPIClientProtocol {}
+
+extension GitHubAPIClientProtocol {
+    /// 旧 Mock 的兼容默认实现；任何实际搜索调用都会明确失败，不会伪造空结果。
+    func searchRepositories(
+        query: GitHubRepositorySearchQuery,
+        page: Int,
+        perPage: Int
+    ) async throws -> APIResponse<GitHubRepositorySearchDTO> {
+        throw NetworkError.clientError(statusCode: 501, message: "Repository search is not implemented by this client")
+    }
+}

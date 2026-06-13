@@ -50,11 +50,14 @@ struct LanguageStat: FetchableRecord, Codable, Equatable, Identifiable {
 /// 协议抽象 `RepoRepositoryProtocol` 见同目录另一文件。
 struct GRDBRepoRepository {
 
-    /// GRDB writer。
-    private let writer: any DatabaseWriter
+    /// 数据库门面（持有协议引用，每次 query 通过 `database.writer` 拿到当前 pool）。
+    /// 2026-06-12 多账号 DB 隔离改造：原 `private let writer: any DatabaseWriter`
+    /// 切到协议引用是为了支持 DatabaseManager 内部 reopen 时切换 pool；
+    /// **不要** 缓存 `database.writer` 为本地 let，否则切账号后还会写到老 DB。
+    private let database: any DatabaseManaging
 
     init(database: any DatabaseManaging) {
-        self.writer = database.writer
+        self.database = database
     }
 
     // MARK: - Upsert
@@ -66,7 +69,7 @@ struct GRDBRepoRepository {
         guard !dtos.isEmpty else { return }
         let cachedAtISO = ISO8601DateFormatter.shared.string(from: syncedAt)
 
-        try await writer.write { db in
+        try await database.writer.write { db in
             for dto in dtos {
                 var repo = Self.repoFromDTO(dto.repo, starredAt: dto.starredAt, cachedAt: cachedAtISO)
                 try repo.save(db)
@@ -89,7 +92,7 @@ struct GRDBRepoRepository {
     /// 同时清理 starred_repos 中相应行。
     /// 不删除 repo / 笔记 / 标签，确保用户数据安全。
     func markUnstarredExcept(remoteRepoIDs: Set<Int64>, userID: Int64) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             let localIDs = try Int64.fetchSet(db, sql: "SELECT id FROM repos WHERE is_starred = 1")
             let toUnstar = localIDs.subtracting(remoteRepoIDs)
             guard !toUnstar.isEmpty else { return }
@@ -115,7 +118,7 @@ struct GRDBRepoRepository {
     /// 复用 markUnstarredExcept 的同款语义：UPDATE is_starred=0 + DELETE starred_repos 行。
     /// 不删 repo / 笔记 / 标签关联，给用户保留 re-star 后立刻恢复数据的可能。
     func markUnstarred(repoId: Int64, userID: Int64) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             try db.execute(
                 sql: "UPDATE repos SET is_starred = 0 WHERE id = ?",
                 arguments: [repoId]
@@ -135,7 +138,7 @@ struct GRDBRepoRepository {
     /// 用 `Int64.fetchAll(... ORDER BY id)` 单列返回，避免实例化 `Repo` 行（节省内存 + 反序列化）。
     /// 1.8K starred 的项目实测 ~5ms 内完成。
     func fetchStarredRepoIDs() async throws -> [Int64] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Int64.fetchAll(db, sql: "SELECT id FROM repos WHERE is_starred = 1 ORDER BY id")
         }
     }
@@ -160,7 +163,7 @@ struct GRDBRepoRepository {
         let cachedAtISO = ISO8601DateFormatter.shared.string(from: syncedAt)
         let resolvedStarredAt = starredAt ?? cachedAtISO
 
-        return try await writer.write { db in
+        return try await database.writer.write { db in
             var repo = Self.repoFromDTO(repoDTO, starredAt: resolvedStarredAt, cachedAt: cachedAtISO, isStarred: true)
             try repo.save(db)
 
@@ -182,14 +185,14 @@ struct GRDBRepoRepository {
 
     /// 当前用户已 star 的 repo 总数（is_starred = 1）。
     func starredCount() async throws -> Int {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Int.fetchOne(db, sql: "SELECT count(*) FROM repos WHERE is_starred = 1") ?? 0
         }
     }
 
     /// 仅供测试 / 调试：取前 N 个已 star 的 repo。
     func topStarred(limit: Int = 10) async throws -> [Repo] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Repo.filter(Column("is_starred") == true)
                 .order(Column("starred_at").desc)
                 .limit(limit)
@@ -202,7 +205,7 @@ struct GRDBRepoRepository {
     /// 列表渲染采用 SwiftUI List 懒加载，1801 条数据一次性返回也无压力；
     /// 后续 (>10k) 数据量时再考虑游标 / 分页。
     func fetchAllStarred() async throws -> [Repo] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Repo.filter(Column("is_starred") == true)
                 .order(Column("starred_at").desc)
                 .fetchAll(db)
@@ -211,7 +214,7 @@ struct GRDBRepoRepository {
 
     /// HOM-47：按 GitHub repo id 找单条记录（含 is_starred=0 的"曾经 star 过"行）。
     func findById(_ repoId: Int64) async throws -> Repo? {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Repo.fetchOne(db, key: repoId)
         }
     }
@@ -223,7 +226,7 @@ struct GRDBRepoRepository {
     /// 不限制 `is_starred = true`：用户 star 后取消的"墓碑行"也会命中，调用方按 `repo.isStarred` 决定 UI。
     func findByOwnerName(owner: String, name: String) async throws -> Repo? {
         let fullName = "\(owner)/\(name)"
-        return try await writer.read { db in
+        return try await database.writer.read { db in
             try Repo.filter(Column("full_name") == fullName).fetchOne(db)
         }
     }
@@ -231,7 +234,7 @@ struct GRDBRepoRepository {
     /// 未打标签的 repo（Sidebar "Untagged" 入口）。
     /// 实现：左联 repo_tags 找出无关联记录的 repos。
     func fetchUntagged() async throws -> [Repo] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try Repo.fetchAll(db, sql: """
                 SELECT r.* FROM repos r
                 LEFT JOIN repo_tags rt ON rt.repo_id = r.id
@@ -244,7 +247,7 @@ struct GRDBRepoRepository {
     /// 按语言筛选 repo。
     /// - Parameter language: nil 表示无语言（GitHub 上的纯文本/配置仓库），传字符串表示精确匹配。
     func fetchByLanguage(_ language: String?) async throws -> [Repo] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             if let language {
                 return try Repo
                     .filter(Column("is_starred") == true && Column("language") == language)
@@ -263,7 +266,7 @@ struct GRDBRepoRepository {
     /// 用于 Sidebar 的 Languages 分组展示。
     /// `language IS NULL` 的 repo 也单独统计为一项（caller 用 `("Unknown", count)` 渲染）。
     func languageStats() async throws -> [LanguageStat] {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try LanguageStat.fetchAll(db, sql: """
                 SELECT COALESCE(language, '') AS language, COUNT(*) AS count
                 FROM repos
@@ -283,7 +286,7 @@ struct GRDBRepoRepository {
             return try await fetchAllStarred()
         }
         let ftsQuery = FTSQuery.sanitize(trimmed)
-        return try await writer.read { db in
+        return try await database.writer.read { db in
             try Repo.fetchAll(db, sql: """
                 SELECT r.* FROM repos r
                 JOIN repos_fts ON repos_fts.rowid = r.id
@@ -301,7 +304,7 @@ struct GRDBRepoRepository {
     /// `nil` 把 ETag 抹掉。
     func updateSyncState(userID: Int64, starredCount: Int, syncedCount: Int, status: String) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
-        try await writer.write { db in
+        try await database.writer.write { db in
             let existing = try SyncStateRecord.fetchOne(db, key: userID)
             var state = SyncStateRecord(
                 userId: userID,
@@ -323,14 +326,14 @@ struct GRDBRepoRepository {
     /// 读 page 1 ETag。
     /// 无 sync_state 行或字段为 NULL → 返回 nil（首次同步无条件请求）。
     func fetchStarsETag(userID: Int64) async throws -> String? {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try SyncStateRecord.fetchOne(db, key: userID)?.starsEtag
         }
     }
 
     /// W4-4 C3：读 `last_sync_at`，供增量同步做 `starred_at` 切分点。
     func fetchLastSyncAt(userID: Int64) async throws -> String? {
-        try await writer.read { db in
+        try await database.writer.read { db in
             try SyncStateRecord.fetchOne(db, key: userID)?.lastSyncAt
         }
     }
@@ -338,7 +341,7 @@ struct GRDBRepoRepository {
     /// 写 page 1 ETag。
     /// 若 sync_state 行不存在 → 用占位字段先插一行（其余统计字段后续会被 updateSyncState 覆写）。
     func updateStarsETag(userID: Int64, etag: String?) async throws {
-        try await writer.write { db in
+        try await database.writer.write { db in
             if var existing = try SyncStateRecord.fetchOne(db, key: userID) {
                 existing.starsEtag = etag
                 try existing.update(db)
@@ -418,8 +421,8 @@ struct GRDBRepoRepository {
 /// file" 警告）。所以即便 `RepoRepositoryProtocol`（继承 `Sendable`）的实现声明保留在
 /// `RepoRepositoryProtocol.swift`（D-01 决策），`Sendable` 这一条仍要单独在这里声明。
 ///
-/// 安全性：本 struct 唯一存储属性 `writer: any DatabaseWriter` —— GRDB 的 `DatabaseWriter`
-/// 协议本身就是 `Sendable` 的，所以编译器可自动合成 Sendable（不需要 `@unchecked`）。
+/// 安全性：本 struct 唯一存储属性 `database: any DatabaseManaging` —— `DatabaseManaging`
+/// 协议本身 `: Sendable`，所以编译器可自动合成 Sendable（不需要 `@unchecked`）。
 extension GRDBRepoRepository: Sendable {}
 
 // MARK: - ISO8601 helper

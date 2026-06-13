@@ -60,6 +60,18 @@ protocol RepoNoteRepositoryProtocol: Sendable {
     /// 仅更新状态。不存在的 repo_notes 行会被自动创建（content 为 nil）。
     /// editedAt 自动设为 now。
     func updateStatus(repoId: Int64, status: RepoStatus) async throws
+
+    /// 自动状态机：把 `unread` 提升为 `read`（README 加载完成后由 UI 层调用）。
+    ///
+    /// **语义保证（重要约束）**：
+    /// - 行不存在 → 插入新行，status = `read`
+    /// - 行存在且 status = `unread` → 升级为 `read`
+    /// - 行存在且 status = `read` / `using` → **不动**（幂等；避免覆盖用户手动标过的 using）
+    ///
+    /// 这个方法专为「README 加载完成时静默升级」设计，与 `updateStatus` 的区别是
+    /// **绝不下行**（不会从 using 退回 read）。UI 层可以无脑调，不需要先 find 判断当前状态。
+    /// editedAt 仅在真正发生变更时更新，避免无意义改动触发 CloudKit 同步。
+    func markAsReadIfNeeded(repoId: Int64) async throws
 }
 
 // 注意：`GRDBRepoNoteRepository: RepoNoteRepositoryProtocol` 的 conformance 直接写在

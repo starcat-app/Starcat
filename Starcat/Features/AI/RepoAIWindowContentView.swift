@@ -23,8 +23,8 @@
 //    底锚 + onChange of streamingSummaryText）。
 //  - 复制按钮（摘要 header / 气泡时间戳 / 对话底部"复制全部"）统一走
 //    `CopyFeedbackButton`：icon 切 ✓ + 绿色 + tooltip 切「已复制」+ 1.5s 复位。
-//  - 对话 ScrollView 与窗口背景统一用 `.windowBackgroundColor`，AI 气泡无背景，
-//    明暗主题切换下视觉一体。
+//  - 对话 ScrollView 与根视图保持透明，背景统一由 AppKit `NSVisualEffectView`
+//    提供；AI 气泡无背景，明暗主题切换下视觉一体。
 //  - 摘要 "重新生成"/"复制" 按钮放在 header 右上角，与对话区互不抢位。
 //  - 错误条采用克制橙色样式；两个 VM 各自的 errorMessage 都留位置。
 //
@@ -55,6 +55,7 @@ enum AIPanelMode: String, CaseIterable, Identifiable, Hashable {
 struct RepoAIWindowContentView: View {
 
     let repo: Repo
+    let onClose: () -> Void
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var homeViewModel
@@ -102,6 +103,10 @@ struct RepoAIWindowContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            panelHeader
+
+            Divider()
+
             summarySection
                 .frame(maxWidth: .infinity, alignment: .top)
                 // 单面板互斥：当前不激活的面板 maxHeight 切到 0。另一面板会撑
@@ -129,7 +134,13 @@ struct RepoAIWindowContentView: View {
                 onSend: sendChatMessage
             )
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.14), lineWidth: 1)
+                .allowsHitTesting(false)
+        }
         .task(id: repo.id) {
             // R-01 §3.2.7 Step 8：第一次 task 触发时冻结 star 状态。
             // 窗口可能在 task 期间被切换 repo（id 变化触发 task 重跑），那种情况
@@ -139,6 +150,42 @@ struct RepoAIWindowContentView: View {
             await initializeViewModelsIfNeeded()
             await insightVM?.load(repo: repo)
         }
+    }
+
+    /// 自定义面板标题栏。系统标题栏被隐藏后，主动关闭入口必须留在内容树中；
+    /// `isMovableByWindowBackground` 仍让标题空白区域承担拖动窗口的职责。
+    private var panelHeader: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.purple)
+
+            Text(
+                verbatim: String(
+                    format: String(localized: "ai.assistant.window.titleFormat"),
+                    repo.fullName
+                )
+            )
+            .font(.headline)
+            .lineLimit(1)
+
+            Spacer(minLength: 12)
+
+            Button {
+                onClose()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, height: 26)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("ai.assistant.window.close.help")
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 12)
+        .padding(.vertical, 10)
     }
 
     // MARK: - 初始化
@@ -260,7 +307,6 @@ struct RepoAIWindowContentView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
-        .background(.bar)
     }
 
     /// 复制按钮（含点击反馈，HOM-150 dong4j 优化 2）。
@@ -431,7 +477,6 @@ struct RepoAIWindowContentView: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(.bar)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Color.primary.opacity(0.06))
@@ -478,7 +523,7 @@ struct RepoAIWindowContentView: View {
                     }
                     .padding(.vertical, 16)
                 }
-                .background(Color(nsColor: .windowBackgroundColor))
+                .background(Color.clear)
                 .onChange(of: chat.messages.count) { _, _ in
                     withAnimation(.easeOut(duration: 0.15)) {
                         proxy.scrollTo(Self.chatBottomAnchorID, anchor: .bottom)

@@ -62,6 +62,10 @@ struct HomeView: View {
     /// 避免在 RepoDetailView 内部用 .task 异步 @State 赋值引发的"首次点击没初始化"问题。
     @State private var translationVM: ReadmeTranslationViewModel
 
+    /// 搜索中心是主窗口级 overlay，生命周期与 HomeView 一致，跨 Manage / Trending /
+    /// Activity 切换时不丢查询状态。
+    @State private var searchCenterViewModel: SearchCenterViewModel
+
     /// W4 A2：标签管理 sheet 显示状态。
     @State private var showTagManagement: Bool = false
 
@@ -144,8 +148,43 @@ struct HomeView: View {
             repoNoteRepository: repoNoteRepository,
             semanticSearchService: semanticSearchService
         ))
-        _readmeVM = State(initialValue: ReadmeViewModel(api: readmeAPI))
+        // 2026-06-13 dong4j 补救 B：manage 路径详情页 README 拉到后异步补 raw markdown
+        // + 视情况触发向量索引重建。
+        //
+        // 设计要点：
+        // - 闭包同步触发后立刻 spawn 一个 fire-and-forget `Task { @MainActor in ... }`，
+        //   不阻塞 ReadmeViewModel 状态机；`refreshMarkdownIfNeeded` 内 await 网络期间
+        //   suspension 自然让出 main thread。
+        // - 仅在 `.updated`（真的拉到新 markdown）时调 `refreshIndexIfChanged`，避免
+        //   `.notModified`（content 已存在）继续打 embedding API。
+        // - `semanticSearchService` 是可选参数（Preview / 测试可不注入）；nil 时仅落
+        //   markdown，跳过向量重建。
+        // - 闭包 capture 的 readmeAPI / semantic 都是 App 级长寿命引用，强引用安全。
+        // - trending / weekly / activity 三个 ContentView 内自己 new 的 ReadmeViewModel
+        //   走 `loadTrending` 不触发本回调；即便有意外路径也传 nil 保险。
+        let semanticForBackfill = semanticSearchService
+        _readmeVM = State(initialValue: ReadmeViewModel(
+            api: readmeAPI,
+            onHTMLLoaded: { [readmeAPI] repo in
+                Task { @MainActor in
+                    let result = await readmeAPI.refreshMarkdownIfNeeded(for: repo)
+                    if case .updated = result, let semantic = semanticForBackfill {
+                        await semantic.refreshIndexIfChanged(for: repo)
+                    }
+                }
+            }
+        ))
         _translationVM = State(initialValue: ReadmeTranslationViewModel(service: readmeTranslationService))
+        _searchCenterViewModel = State(initialValue: SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [
+                LocalKeywordSearchProvider(repository: repository),
+                GitHubRepositorySearchProvider(client: githubAPIClient),
+                AnySearchWebProvider()
+            ]),
+            includeWebInAll: {
+                AppSettings.shared.anySearchEnabled && AppSettings.shared.searchIncludeWebInAll
+            }
+        ))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
             tagRepository: tagRepository,
             repoTagRepository: repoTagRepository
@@ -165,7 +204,10 @@ struct HomeView: View {
                 // 2026-06-02 21:38：透传给 SidebarHeaderView 让头像背景的语言色在 Trending 页也能联动
                 currentTrendingRepo: selectedTrendingRepo,
                 // 2026-06-05：Activity 页没有统一 Repo 模型，直接透传 ActivityItem 收口后的 accent 色。
-                currentActivityTintColor: selectedActivityItem?.accentColor
+                // 2026-06-11 D-29：weekly 分类没有 selectedActivityItem，单独走 weekly project 语言色派生路径,
+                // 让 sidebar 头像背景在 weekly 内切换 project 时也能跟着 GitHub 语言色联动,
+                // 与 manage / trending / activity-repo-backed 三家行为同构(详见 derivedActivityTintColor doc)。
+                currentActivityTintColor: derivedActivityTintColor
             )
                 .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
         } content: {
@@ -185,6 +227,9 @@ struct HomeView: View {
                 },
                 onShowBatchAIPanel: {
                     showBatchAIPanel = true
+                },
+                onOpenSearchCenter: {
+                    searchCenterViewModel.present()
                 }
             )
                 .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
@@ -194,7 +239,7 @@ struct HomeView: View {
                     // MUL-176 followup：weekly 分类右侧详情独立路由到 WeeklyDetailView，
                     // 不复用 ActivityDetailView——weekly 项目没有本地 Repo 缓存，且要展示
                     // 期号 / 周刊原文等专属字段（详情数据来自 WeeklySelectionService）。
-                    WeeklyDetailView(project: dependencies.weeklySelectionService.selectedProject)
+                    WeeklyDetailView(item: dependencies.weeklySelectionService.selectedItem)
                 } else {
                     ActivityDetailView(item: selectedActivityItem)
                 }
@@ -214,6 +259,28 @@ struct HomeView: View {
             if DebugFlags.layoutOverlay {
                 LayoutDebugOverlay()
             }
+        }
+        .overlay {
+            if searchCenterViewModel.isPresented {
+                SearchCenterView(
+                    viewModel: searchCenterViewModel,
+                    languages: viewModel.languageStats,
+                    onOpenCandidate: openSearchCandidate,
+                    onOpenURL: openSearchRepositoryURL,
+                    onCopyURL: copySearchRepositoryURL,
+                    onOpenAI: openSearchRepositoryAI,
+                    onToggleStar: toggleSearchRepositoryStar,
+                    isStarred: { dependencies.starredRegistry.contains(ghRepoId: $0) },
+                    isGitHubAuthenticated: authSession.state.isAuthenticated
+                )
+                .zIndex(100)
+            }
+        }
+        // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
+        .background {
+            Button("") { searchCenterViewModel.present() }
+                .keyboardShortcut("k", modifiers: .command)
+                .hidden()
         }
         .sheet(isPresented: $showTagManagement, onDismiss: {
             // W4 A6：标签管理 sheet 关闭后 → 刷新 Sidebar Tags 段 + 当前列表
@@ -256,11 +323,33 @@ struct HomeView: View {
         // HOM-47：登录后启动后台 Release 轮询；登出时停。
         // 与 SyncManager 不同：Release Poller 自调度（NSBackgroundActivityScheduler），
         // 启动一次后由系统在后台触发；这里只负责启停门控。
+        //
+        // 2026-06-13 dong4j 补救 A：同一时机门控「启动时自动后台预拉」(`SemanticIndexBuilder`)。
+        // - 登录恢复完成（首启异步路径）/ 重新登录 → 若 `aiIndexAutoPrefetchEnabled` 开启则
+        //   调 `start()` 启动顺序补 README markdown + diff 判定向量重建。
+        // - 登出 / 失效 → `cancel()` 重置 builder 状态，避免给下一个用户带进度残值。
+        // - 测试 host 跳过（避免 `xcodebuild test` 触发后台任务 hang testmanagerd）。
+        // - `start()` 内部对 `.running` 状态幂等，多次触发不会重启已在跑的任务。
         .onChange(of: authSession.state) { _, newState in
             if newState.isAuthenticated {
                 dependencies.releasePoller.start()
+                if !TestEnvironment.isRunning, settings.aiIndexAutoPrefetchEnabled {
+                    dependencies.semanticIndexBuilder.start()
+                }
             } else {
                 dependencies.releasePoller.stop()
+                dependencies.semanticIndexBuilder.cancel()
+            }
+        }
+        // 2026-06-13 dong4j 补救 A 配套：用户运行期切换「自动预拉」Toggle 即时生效。
+        // 已登录态下勾选 Toggle → 立刻启动 Builder；取消勾选 → 立刻暂停。
+        // 未登录态不动（避免误烧未来登录 user 的配额预期）。
+        .onChange(of: settings.aiIndexAutoPrefetchEnabled) { _, newValue in
+            guard !TestEnvironment.isRunning, authSession.state.isAuthenticated else { return }
+            if newValue {
+                dependencies.semanticIndexBuilder.start()
+            } else {
+                dependencies.semanticIndexBuilder.pause()
             }
         }
         .task {
@@ -283,6 +372,17 @@ struct HomeView: View {
             // - 同步完成事件由下方 `.onChange(of: syncManager.state)` 转发给调度器
             //   （理由见 AutoTidyScheduler.notifySyncStateChanged 文档）。
             dependencies.autoTidyScheduler.start()
+
+            // 2026-06-13 dong4j 补救 A：「启动时自动后台预拉」首启即时门控。
+            // 多数首启场景下登录态恢复未完成，这里走不到 isAuthenticated 分支；
+            // 实际启动由上方 `.onChange(of: authSession.state)` 在恢复完成后触发。
+            // 当用户重进 HomeView 时（已登录态稳定）则在这里直接启动。
+            // `start()` 对 `.running` 幂等，与 onChange 路径不会双启。
+            if !TestEnvironment.isRunning,
+               authSession.state.isAuthenticated,
+               settings.aiIndexAutoPrefetchEnabled {
+                dependencies.semanticIndexBuilder.start()
+            }
 
             // W4-4 D1/D2:把持久化的视图偏好同步到 viewModel,避免首次 reloadItems 用默认值
             // 然后 onAppear 才纠正导致列表抖动一次。
@@ -325,6 +425,14 @@ struct HomeView: View {
             }
 
             await viewModel.refreshSidebar()
+
+            // 2026-06-11 dong4j：trending sidebar 语言列表改用后端聚合接口驱动。
+            // 启动后异步拉一次（不阻塞 UI），后端不可达 / 401 时 store 内部退化到 fallbackList。
+            // 不放在 if isAuthenticated 分支：未登录用户进 Trending 也需要语言列表，
+            // 而后端 `/api/v1/languages` 不依赖 GitHub OAuth，仅依赖 Bearer Auth（用户 API Key 已就位）。
+            Task {
+                await dependencies.trendingLanguageStore.reload()
+            }
 
             // 校验恢复的分类是否仍存在（如 tag / language 已被删 / 无 repo）→ 回落 allStars。
             // refreshSidebar 已把 tags / languageStats 从本地库加载完毕，可安全校验。
@@ -449,21 +557,61 @@ struct HomeView: View {
         // 监听完整登录态变化：任何登录都立刻切 Manage、登出时回 Trending。
         //
         // 为什么监听整个 state 而非 isAuthenticated（Bool）：
-        // - 同时覆盖"启动期从 Keychain 异步恢复登录"与"用户手动 Device Flow 登录"两条路径，
+        // - 同时覆盖"启动期从 Keychain 异步恢复登录"与"用户手动 Device Flow 登录"两条路径,
         //   两者都把页面切到 Manage 并恢复上次分类（不存在则回落 allStars）。
-        // - 用 oldState.isAuthenticated 判断登出，避免 .unauthenticated → .awaitingUserCode
-        //   等中间态被误判。
+        // - 用 oldUserID / newUserID 对比 user.id（而非 isAuthenticated Bool）来判定
+        //   "真正的账号变化"。原因（D-30 follow-up, 2026-06-13）：
+        //     ① 多账号下「退出 A → 登录 B」是核心场景，必须感知 user.id 从 A → B 的变化,
+        //        而 isAuthenticated 在 A→B 之间会经历 false 中间态，用 Bool 无法表达;
+        //     ② 同时天然滤掉 .unauthenticated → .awaitingUserCode 等中间态（user.id 都是 nil）。
         .onChange(of: authSession.state) { oldState, newState in
-            if newState.isAuthenticated {
-                // 任何登录（启动恢复 / 手动登录）→ 默认 Manage + 上次分类
+            let oldUserID = oldState.user?.id
+            let newUserID = newState.user?.id
+
+            // user id 没变（如 unauthenticated ↔ awaitingUserCode 中间态、authenticated(A) 内部刷新）
+            // → 不动任何业务状态，避免误清缓存导致 UI 无谓重渲。
+            guard oldUserID != newUserID else { return }
+
+            if let newUser = newState.user {
+                // 真正的"登录新账号"路径（含启动恢复 / 手动 Device Flow / 退出再登）。
+                //
+                // D-30 follow-up（2026-06-13）：必须按"先清缓存 → 再切 selection → 异步重载 + sync"的
+                // 顺序，否则 viewModel.selection didSet 内的 eager cache load（HomeViewModel.swift
+                // line 66-75）会先用旧账号 listCache 渲一帧 → 用户感知到"先看到 A 的数据闪一下再被
+                // 覆盖"。详细原理见 `HomeViewModel.resetAllStateForUserSwitch` 注释。
+                viewModel.resetAllStateForUserSwitch()
+
                 selectedSidebarPage = .manage
                 let restored = savedManageSelection
                 viewModel.selection = isManageSelectionValid(restored) ? restored : .allStars
-            } else if oldState.isAuthenticated {
-                // 登出：保存当前 Manage selection（排除 trending），强制切回 Trending 并清除选择
+
+                // 拉新账号的 sidebar + items + 全量 sync。**必须用 Task @MainActor 异步发起**：
+                // - onChange 闭包是同步的，不能直接 await;
+                // - syncManager.performFullSync 是同步入口（内部派发到自己的 actor），无需 await。
+                // 顺序：① reset 已清旧缓存 → ② refreshSidebar 拉新 sidebar 计数 →
+                //       ③ reloadItems(forceRefresh: true) 强制查 DB（此时 D-30 已切到 newUser 的 DB,
+                //          但 DB 里可能还是空的，所以 ④ 拉远端 sync 把 stars 落库）→
+                //       ④ performFullSync 拉 GitHub stars 写入新 DB，sync 完成后 .onChange(of:
+                //          syncManager.state) 会再触发一次 reloadItems，新数据上屏。
+                Task { @MainActor in
+                    await viewModel.refreshSidebar()
+                    if selectedSidebarPage == .manage {
+                        await viewModel.reloadItems(forceRefresh: true)
+                    }
+                    syncManager.performFullSync(userID: newUser.id)
+                }
+            } else if oldUserID != nil {
+                // 登出（newUserID == nil 且 oldUserID != nil）：保存当前 Manage selection（排除
+                // trending）, 强制切回 Trending 并清除选择 + 清缓存。
+                //
+                // 为什么登出也要 reset：D-30 把 DB 切到了 `_anonymous`，新 DB 是空的；
+                // 但 viewModel 内的 items / sidebar 计数还是 A 的，trending 视图不看这些字段,
+                // 看起来无害 —— 但如果用户登出后立即又点 sidebar 上的 "全部仓库" 之类的
+                // 入口（虽然该入口在未登录态下被隐藏，但防御性编程），残留数据会闪现。
                 if !viewModel.selection.isTrending {
                     savedManageSelection = viewModel.selection
                 }
+                viewModel.resetAllStateForUserSwitch()
                 selectedSidebarPage = .trending
                 viewModel.selection = .trending
                 viewModel.selectedRepoID = nil
@@ -533,7 +681,89 @@ struct HomeView: View {
         }
     }
 
+    /// 本地结果回到 Manage 并复用现有 FTS5 提交流程，确保列表与详情状态仍由
+    /// HomeViewModel 单一维护；网页资料直接交给系统浏览器。
+    private func openSearchCandidate(_ candidate: SearchCandidate) {
+        switch candidate {
+        case .repository(let candidate):
+            guard let repo = candidate.localRepo else {
+                openSearchRepositoryURL(candidate)
+                return
+            }
+            selectedSidebarPage = .manage
+            viewModel.selection = .allStars
+            viewModel.submitSearch(repo.fullName)
+            searchCenterViewModel.dismiss()
+            Task {
+                await viewModel.reloadItems(forceRefresh: true)
+                viewModel.selectedRepoID = repo.id
+            }
+        case .reference(let reference):
+            NSWorkspace.shared.open(reference.originalURL)
+        }
+    }
+
+    private func openSearchRepositoryURL(_ candidate: RepositoryCandidate) {
+        guard let url = URL(string: "https://github.com/\(candidate.identity.owner)/\(candidate.identity.name)") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func copySearchRepositoryURL(_ candidate: RepositoryCandidate) {
+        let value = "https://github.com/\(candidate.identity.owner)/\(candidate.identity.name)"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func openSearchRepositoryAI(_ repo: Repo) {
+        RepoAIWindowController.show(
+            repo: repo,
+            dependencies: dependencies,
+            homeViewModel: viewModel
+        )
+    }
+
+    private func toggleSearchRepositoryStar(_ repo: Repo) {
+        Task {
+            do {
+                try await dependencies.starActionService.toggle(repo: repo)
+            } catch {
+                AppLog.network.error("Search star toggle failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
     // MARK: - 辅助
+
+    /// Activity 页面顶部头像卡的 tint 色派生（**D-29 修订**, 2026-06-11）。
+    ///
+    /// 取色优先级（与 `SidebarHeaderView.sidebarTintColor` 第 3 档对齐 — Activity 页面 5 类详情）：
+    /// 1. **weekly 分类 + 已选中 weekly project**：
+    ///    - 有语言 → `LanguageColor.color(for:)` 走 GitHub 语言色映射;
+    ///    - 无语言 → `ActivityCategory.weekly.iconColor` 兜底分类色。
+    /// 2. **其它分类**（公告 / 发布 / 关注 / 星标 / 仓库 / 建议）→ `selectedActivityItem?.accentColor`
+    ///    （`ActivityItem.accentColor` 已在源头收口"语言色优先 / 分类色兜底"语义,详见
+    ///    `ActivityModels.swift`）。
+    ///
+    /// **D-29 修复点**：weekly 分类下没有 `selectedActivityItem`（weekly 选中走
+    /// `dependencies.weeklySelectionService.selectedProject` 真源,与 ActivityItem 模型解耦）,
+    /// 此前 `currentActivityTintColor` 只透传 `selectedActivityItem?.accentColor` 永远 nil,
+    /// 导致 sidebar 头像背景在 weekly 内切换 project 时不变(走系统 .accentColor 兜底)。
+    /// 修法把 weekly project 的语言色派生收口到本 computed property,与 manage / trending /
+    /// activity-repo-backed 三家行为同构 — 切 repo / project 时头像背景跟着 GitHub 语言色变化。
+    ///
+    /// 注:`WeeklySelectionService` 是 `@MainActor @Observable`,本 computed property 在 view body
+    /// 内被读取时 SwiftUI Observation 框架自动订阅 `selectedProject` 变化 → 重新计算 →
+    /// SidebarHeaderView 收到新 tint → 头像背景平滑过渡。
+    private var derivedActivityTintColor: Color? {
+        if selectedSidebarPage == .activity, selectedActivityCategory == .weekly,
+           let project = dependencies.weeklySelectionService.selectedItem {
+            if let language = project.language, !language.isEmpty {
+                return LanguageColor.color(for: language)
+            }
+            return ActivityCategory.weekly.iconColor
+        }
+        return selectedActivityItem?.accentColor
+    }
 
     /// README 加载状态的纯文本签名，用于驱动 `.onChange` 在 .loaded 切换时刷新翻译 VM。
     ///

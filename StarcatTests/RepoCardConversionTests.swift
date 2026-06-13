@@ -98,11 +98,62 @@ struct RepoCardConversionTests {
         #expect(ephemeral.subscribersCount == 12)
         #expect(ephemeral.defaultBranch == "main")
         #expect(ephemeral.openIssuesCount == 7)
-        // 缺失字段（trending 模型本就没有的）应是默认值
-        #expect(ephemeral.watchersCount == 0)
+        // R-05 起：watchers 从 DTO 透传（helper 默认 watchers=1000）
+        #expect(ephemeral.watchersCount == 1000)
+        // R-05：helper 默认 topics=[]/license=nil/homepage=nil → 详情页 hero 走 graceful 隐藏
         #expect(ephemeral.topicsArray.isEmpty)
         #expect(ephemeral.license == nil)
         #expect(ephemeral.homepage == nil)
+    }
+
+    // MARK: - R-05 trending 详情页字段补齐 10 字段透传
+
+    @Test("R-05 TrendingRepo.makeEphemeralRepo: 10 字段（topics/license/homepage/created/updated/pushed/archived/fork/private/watchers）全部透传")
+    func trendingMakeEphemeralRepoR05DetailFieldsPassThrough() {
+        let trending = makeTrendingRepo(
+            ghRepoId: 1234,
+            starsInPeriod: 100,
+            // R-05 详情页 10 字段
+            watchers: 42,
+            topics: ["ai", "swift", "macos"],
+            licenseSpdx: "MIT",
+            homepage: URL(string: "https://example.com"),
+            isArchived: true,
+            isFork: false,
+            isPrivate: false,
+            pushedAt: "2026-06-11T08:00:00Z",
+            createdAt: "2024-01-15T12:00:00Z",
+            updatedAt: "2026-06-10T16:30:00Z"
+        )
+
+        let ephemeral = trending.makeEphemeralRepo()
+
+        #expect(ephemeral.watchersCount == 42)
+        // topics 在 TrendingRepo 已编码为 JSON 字符串，Repo.topicsArray 反解出 [String]
+        #expect(ephemeral.topicsArray == ["ai", "swift", "macos"])
+        #expect(ephemeral.license == "MIT")
+        #expect(ephemeral.homepage == "https://example.com")
+        #expect(ephemeral.isArchived == true)
+        #expect(ephemeral.isFork == false)
+        #expect(ephemeral.isPrivate == false)
+        #expect(ephemeral.pushedAt == "2026-06-11T08:00:00Z")
+        #expect(ephemeral.createdAt == "2024-01-15T12:00:00Z")
+        #expect(ephemeral.updatedAt == "2026-06-10T16:30:00Z")
+    }
+
+    @Test("R-05 TrendingRepo: 空 topics 数组 → topics 字段 nil（不让 [] 编码成 \"[]\"）")
+    func trendingEmptyTopicsBecomesNil() {
+        let trending = makeTrendingRepo(
+            ghRepoId: 1, starsInPeriod: 0,
+            topics: []
+        )
+
+        // TrendingRepo.topics 内部已经做了 [] → nil 归一化（与 Repo 表对齐 + 避免 "[]" 字符串污染）
+        #expect(trending.topics == nil)
+
+        let ephemeral = trending.makeEphemeralRepo()
+        #expect(ephemeral.topics == nil)
+        #expect(ephemeral.topicsArray.isEmpty)
     }
 
     @Test("TrendingRepo.makeEphemeralRepo: ghRepoId == 0 退化（过渡 row）")
@@ -114,41 +165,41 @@ struct RepoCardConversionTests {
         // 调用方应通过 id == 0 判断「无法 star/unstar」
     }
 
-    // MARK: - WeeklyProject → CardData
+    // MARK: - WeeklyFeedItem → CardData
 
-    @Test("WeeklyProject.asCardData(registry:): firstIssue > 0 → .weeklyIssue 徽章")
-    func weeklyProjectToCardDataWithIssueBadge() {
-        let project = makeWeeklyProject(ghRepoId: 333, firstIssue: 399)
+    @Test("WeeklyFeedItem.asCardData(registry:): 保留来源图标与短标签")
+    func weeklyFeedItemToCardDataWithSourceBadge() {
+        let item = makeWeeklyFeedItem(ghRepoId: 333, firstIssue: 399)
         let registry = StarredRegistry()
 
-        let card = project.asCardData(registry: registry)
+        let card = item.asCardData(registry: registry)
 
         #expect(card.id == 333)
         #expect(card.fullName == "bob/tiny")
         #expect(card.starsCount == 200)
-        if case .weeklyIssue(let n) = card.badge {
-            #expect(n == 399)
-        } else {
-            Issue.record("firstIssue > 0 时应挂 .weeklyIssue 徽章")
-        }
+        #expect(card.badge == nil)
+        #expect(card.weeklySources == [.weekly])
+        #expect(card.weeklySourceLabel == "399")
     }
 
-    @Test("WeeklyProject.asCardData(registry:): firstIssue == 0 → 不挂徽章")
-    func weeklyProjectToCardDataNoIssueBadge() {
-        let project = makeWeeklyProject(ghRepoId: 444, firstIssue: 0)
+    @Test("WeeklyFeedItem.asCardData(registry:): discovery-only 使用短日期")
+    func weeklyFeedItemDiscoveryDateLabel() {
+        let item = makeWeeklyFeedItem(ghRepoId: 444, firstIssue: 0, source: .discovery)
         let registry = StarredRegistry()
 
-        let card = project.asCardData(registry: registry)
+        let card = item.asCardData(registry: registry)
 
-        #expect(card.badge == nil, "firstIssue == 0 时不应挂徽章（避免 # 0 视觉突兀）")
+        #expect(card.badge == nil)
+        #expect(card.weeklySources == [.discovery])
+        #expect(card.weeklySourceLabel == "5.2")
     }
 
-    @Test("WeeklyProject.asCardData(registry:): registry 命中 → isStarred = true")
+    @Test("WeeklyFeedItem.asCardData(registry:): registry 命中 → isStarred = true")
     func weeklyProjectIsStarredFromRegistry() async throws {
-        let project = makeWeeklyProject(ghRepoId: 555, firstIssue: 1)
+        let item = makeWeeklyFeedItem(ghRepoId: 555, firstIssue: 1)
         let registry = try await makeRegistry(starredGhRepoIds: [555])
 
-        let card = project.asCardData(registry: registry)
+        let card = item.asCardData(registry: registry)
 
         #expect(card.isStarred == true)
     }
@@ -159,13 +210,27 @@ struct RepoCardConversionTests {
     ///
     /// `StarcatRepoCardDTO` 的 `subscribers` / `openIssues` 是 `Int`（默认 0），传入参数
     /// 用 `Int` 而非 `Int?` 与之对齐；TrendingRepo 内会把 0 当作"未设置"在 UI 隐藏。
+    ///
+    /// R-05 trending 详情页字段补齐 10 字段（2026-06-11）：加 10 个 default 参数（watchers/topics/
+    /// license/homepage/isArchived/isFork/isPrivate/pushedAt/createdAt/updatedAt），全部
+    /// default 保持老调用兼容。新测试通过显式传参验证 R-05 字段透传链路。
     private func makeTrendingRepo(
         ghRepoId: Int64,
         starsInPeriod: Int,
         ownerAvatar: URL? = nil,
         subscribersCount: Int = 0,
         defaultBranch: String? = nil,
-        openIssuesCount: Int = 0
+        openIssuesCount: Int = 0,
+        watchers: Int = 1000,
+        topics: [String] = [],
+        licenseSpdx: String? = nil,
+        homepage: URL? = nil,
+        isArchived: Bool = false,
+        isFork: Bool = false,
+        isPrivate: Bool = false,
+        pushedAt: String? = nil,
+        createdAt: String? = nil,
+        updatedAt: String? = nil
     ) -> TrendingRepo {
         let card = StarcatRepoCardDTO(
             ghRepoId: ghRepoId,
@@ -177,19 +242,19 @@ struct RepoCardConversionTests {
             language: "Swift",
             stars: 1000,
             forks: 50,
-            watchers: 1000,
+            watchers: watchers,
             subscribers: subscribersCount,
-            topics: [],
-            homepage: nil,
-            licenseSpdx: nil,
-            isArchived: false,
-            isFork: false,
-            isPrivate: false,
+            topics: topics,
+            homepage: homepage,
+            licenseSpdx: licenseSpdx,
+            isArchived: isArchived,
+            isFork: isFork,
+            isPrivate: isPrivate,
             defaultBranch: defaultBranch,
             openIssues: openIssuesCount,
-            pushedAt: nil,
-            updatedAt: nil,
-            createdAt: nil,
+            pushedAt: pushedAt,
+            updatedAt: updatedAt,
+            createdAt: createdAt,
             htmlUrl: URL(string: "https://github.com/alice/foo"),
             trending: StarcatRepoCardDTO.TrendingExtension(
                 change: starsInPeriod,
@@ -199,23 +264,21 @@ struct RepoCardConversionTests {
         return TrendingRepo(card: card, since: .daily)
     }
 
-    /// 构造一个 WeeklyProject。
-    ///
-    /// 注：`WeeklyExtension` 没有 memberwise init（Decodable 自动合成依赖于 JSON 解码），
-    /// 因此直接构造时通过 JSON 解码绕一圈，比手动 mirror struct 字段更稳。
-    private func makeWeeklyProject(
+    /// 构造一个 WeeklyFeedItem。
+    private func makeWeeklyFeedItem(
         ghRepoId: Int64,
-        firstIssue: Int
-    ) -> WeeklyProject {
-        let weekly: StarcatRepoCardDTO.WeeklyExtension? = {
+        firstIssue: Int,
+        source: WeeklySource = .weekly
+    ) -> WeeklyFeedItem {
+        let weekly: WeeklySnapshot? = {
             guard firstIssue > 0 else { return nil }
             let json = #"""
             {
-              "first_issue": \#(firstIssue),
+              "issue_number": \#(firstIssue),
               "issue_url": "https://github.com/ruanyf/weekly/blob/master/docs/issue-\#(firstIssue).md"
             }
             """#.data(using: .utf8)!
-            return try? JSONDecoder().decode(StarcatRepoCardDTO.WeeklyExtension.self, from: json)
+            return try? JSONDecoder().decode(WeeklySnapshot.self, from: json)
         }()
 
         let card = StarcatRepoCardDTO(
@@ -232,10 +295,23 @@ struct RepoCardConversionTests {
             isArchived: false,
             isFork: false,
             isPrivate: false,
-            htmlUrl: URL(string: "https://github.com/bob/tiny"),
-            weekly: weekly
+            htmlUrl: URL(string: "https://github.com/bob/tiny")
         )
-        return WeeklyProject(card: card)
+        let discovery = source == .discovery ? DiscoverySnapshot(
+            hnID: 123,
+            title: "Show HN: Tiny",
+            score: 5,
+            comments: 1,
+            publishedAt: "2026-05-02T00:00:00Z"
+        ) : nil
+        return WeeklyFeedItem(dto: WeeklyFeedRepoDTO(
+            card: card,
+            sourceTypes: [source],
+            firstEventAt: "2026-05-02T00:00:00Z",
+            latestEventAt: "2026-05-02T00:00:00Z",
+            weekly: weekly,
+            discovery: discovery
+        ))
     }
 
     /// 构造一个已含指定 ghRepoIds 的 `StarredRegistry`。

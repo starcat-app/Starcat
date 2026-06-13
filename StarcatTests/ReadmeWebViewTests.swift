@@ -10,8 +10,8 @@
 //
 //  注：链接（<a href>）的相对路径解析由 WKWebView 的 baseURL 机制处理，
 //  属于集成层面行为，不适合在纯 Swift 单测中覆盖（需要真实 WKWebView 环境）。
-//  RepoDetailView.swift 的 baseURL 已从 repo.htmlUrl 改为 repo.htmlUrl + "/blob/HEAD"，
-//  保证相对链接在 WebView 中被正确解析为 GitHub blob URL。
+//  详情页 baseURL 统一由 repositoryContentBaseURL(from:) 构造为 `/blob/HEAD/` 目录，
+//  保证相对链接在 WebView 中解析时不会把 HEAD 当作文件名丢掉。
 //
 
 import Testing
@@ -20,6 +20,18 @@ import Foundation
 
 @Suite("ReadmeWebView")
 struct ReadmeWebViewTests {
+
+    // MARK: - repositoryContentBaseURL
+
+    @Test("README 相对链接保留 blob/HEAD 分支段")
+    func repositoryContentBaseURL_resolvesRelativeLinkUnderHead() throws {
+        let repositoryURL = try #require(URL(string: "https://github.com/alice/foo"))
+        let baseURL = ReadmeWebView.repositoryContentBaseURL(from: repositoryURL)
+
+        #expect(baseURL.absoluteString == "https://github.com/alice/foo/blob/HEAD/")
+        #expect(URL(string: "docs/guide.md", relativeTo: baseURL)?.absoluteURL.absoluteString
+            == "https://github.com/alice/foo/blob/HEAD/docs/guide.md")
+    }
 
     // MARK: - rewriteAssetURLs
 

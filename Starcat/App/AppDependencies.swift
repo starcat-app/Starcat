@@ -53,6 +53,8 @@ final class AppDependencies {
     let repoEmbeddingRepository: any RepoEmbeddingRepositoryProtocol
     /// W6 AI：语义搜索服务，使用 BYOK 设置 + SQLite 向量缓存。
     let semanticSearchService: SemanticSearchService
+    /// 2026-06-12 向量索引改进：后台慢速预拉 + 全量重建服务（Settings 触发）。
+    let semanticIndexBuilder: SemanticIndexBuilder
     /// W6 AI：单仓 AI 摘要缓存。
     let aiSummaryRepository: any AISummaryRepositoryProtocol
     /// W6 AI：单仓 AI 摘要与标签推荐服务。
@@ -88,6 +90,13 @@ final class AppDependencies {
     /// 让设置页 → 服务 Tab 改地址后可以直接 `await trendingAPI.updateBaseURL(_:)` 热更新。
     let trendingAPI: TrendingAPI
 
+    /// 2026-06-11 dong4j：trending sidebar 语言列表的状态容器。
+    ///
+    /// 启动 / 用户切到 trending 时由 HomeView `.task` 触发 `reload()` 拉一次后端聚合数据；
+    /// SidebarView 通过 environment 读取 `displayList` 渲染语言行。
+    /// 后端返空 / 不可达时 store 内部退化到 fallbackList，sidebar 始终能展示一组入口。
+    let trendingLanguageStore: TrendingLanguageStore
+
     /// 第三方后端服务健康检查 actor（2026-06-08）。
     /// 设置页"测试连接"按钮 → `await serviceHealthChecker.check(service:baseURL:)`。
     /// 独立 actor + 短超时（5s），不复用业务 API session。
@@ -103,6 +112,9 @@ final class AppDependencies {
     /// 详见 `WeeklySelectionService` 文件头注释。
     let weeklySelectionService: WeeklySelectionService
 
+    /// Weekly 三源聚合语言筛选 Store。首次进入 Weekly 时懒加载。
+    let weeklyLanguageStore: WeeklyLanguageStore
+
     // MARK: - HOM-173 分享卡
 
     /// AI 分享卡后端 API 客户端。
@@ -113,6 +125,12 @@ final class AppDependencies {
     /// 本地联调改 env 即可；② `RepoMetadataHeaderView` 通过 environment 拿到这个实例，
     /// 不再 new；③ 未来要做 ShareAPI 单测，从 environment 注入 mock 即可。
     let shareAPI: ShareAPI
+
+    // MARK: - Wiki 外部文档索引
+
+    /// DeepWiki / Zread / Google Code Wiki 单仓库收录查询客户端。
+    /// 构造期不发网络请求，因此保持非 optional；服务故障由每次请求独立降级。
+    let wikiAPI: WikiAPI
 
     // MARK: - HOM-47 Release 订阅追踪
 
@@ -162,6 +180,42 @@ final class AppDependencies {
     /// StarredRegistry 启动 / 同步完成后的全量重建 helper。
     let starredRegistryBootstrapper: StarredRegistryBootstrapper
 
+    /// W12 toolbar 专项 PR-3：批量 star / unstar 调度服务。
+    ///
+    /// 单例：同一时刻只允许跑一个批次；进度 / 完成摘要由本服务统一暴露给 BatchActionBar
+    /// 等 UI 订阅。复用 `starActionService` 单条入口，保证"写入路径唯一"契约。
+    let batchStarService: BatchStarService
+
+    /// W12 toolbar 专项 PR-4：Trending 多选 store。
+    ///
+    /// W12 toolbar PR-5（2026-06-12）：原来 PR-4 注释里写「与 manage（沿用 HomeViewModel.multiSelectedRepoIDs）刻意分开」
+    /// 的设计在 PR-5 被主动打破——dong4j 拍板把 Manage 也迁到 MultiSelectionStore，4 个场景统一交互
+    /// （点击 toggle / 无 Shift / 卡片视觉对齐）。PR-4 担心的"未必已 star 污染 manage"在 Manage 自己的
+    /// store 上不存在（Manage 库内 100% 已 star），同时 BatchActionBar / RemoteBatchActionBar 两个组件
+    /// 仍按业务语义独立（前者打标签+Unstar，后者 Star+Unstar），不存在污染问题。
+    let trendingMultiSelectionStore: MultiSelectionStore
+
+    /// W12 toolbar 专项 PR-4：Weekly 多选 store。
+    let weeklyMultiSelectionStore: MultiSelectionStore
+
+    /// W12 toolbar 专项 PR-4：Activity 多选 store。
+    /// 仅有 repo 关联的 ActivityItem 才能进入多选；announcement / suggestion 这类
+    /// `repo == nil` 的项在 row 层级隐藏 toggle，不会被加入 snapshots。
+    let activityMultiSelectionStore: MultiSelectionStore
+
+    /// W12 toolbar 专项 PR-5：Manage 多选 store（替代原 HomeViewModel.multiSelectedRepoIDs）。
+    ///
+    /// 与三个远端 store 同款，但语义不同：
+    /// - 入选的 snapshot 全部对应**本地 Repo**（Repo.id == GitHub ID == ghRepoId，同一 Int64 域）；
+    /// - 进入多选起始空集合，点击 row toggle（不继承 selectedRepoID，对齐 Trending 现状）；
+    /// - 退出多选**不动** selectedRepoID，详情页保持，对齐 Trending UX；
+    /// - filter / sort 变化触发 reloadItems 后，RepoListView 在 `.onChange(of: itemsRevision)`
+    ///   调 `retain(visibleIDs:)` 移除被隐藏的孤儿选中项（A2 路线，view 层主导 store 生命周期，
+    ///   不让 HomeViewModel 持 store 引用，避免重新耦合）；
+    /// - BatchActionBar 用 `Set(store.snapshots.keys)` 直接喂 `batchAddTag(repoIds:tagId:)`
+    ///   （Repo.id == ghRepoId 等价，无需额外字段映射）。
+    let manageMultiSelectionStore: MultiSelectionStore
+
     /// 详情页 Repo 解析链（Local → Hint → BackendAggregate(占位) → GitHub → Minimal）。
     let repoResolver: RepoResolver
 
@@ -169,12 +223,21 @@ final class AppDependencies {
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
     init() {
-        // 启动期记录三个自建后端 API 的实际 baseURL（DEBUG 会标 `[DEV]`，方便确认
+        // 启动期记录四个自建后端 API 的实际 baseURL（DEBUG 会标 `[DEV]`，方便确认
         // 当前到底打的是 fly.dev 生产端点还是 127.0.0.1 本地端点）。
         // 详见 `AppEndpoints.swift` 头注释里的"使用方式"。
         AppEndpoints.logResolvedEndpoints()
 
-        let db: any DatabaseManaging = DatabaseManager.shared
+        // 2026-06-12 多账号 DB 隔离：DatabaseManager 不再单例，启动期用 `userId: nil`
+        // 走 `users/_anonymous` 占位 DB；AuthSession 在登录成功后通过 onUserSessionChanged
+        // closure 触发 `database.reopen(userId:)` 切到该 user 的 DB。
+        // 失败 fatalError —— 与原 DatabaseManager.shared 失败行为一致（DB 是核心数据载体）。
+        let db: any DatabaseManaging
+        do {
+            db = try DatabaseManager(userId: nil)
+        } catch {
+            fatalError("Failed to initialize DatabaseManager: \(error)")
+        }
         self.database = db
 
         let api = GitHubAPIClient()
@@ -203,7 +266,8 @@ final class AppDependencies {
         Task { [weak session] in
             await api.setUnauthorizedHandler {
                 Task { @MainActor in
-                    session?.invalidateSession()
+                    // invalidateSession 2026-06-12 起改 async（要 await DB 切到 _anonymous）
+                    await session?.invalidateSession()
                 }
             }
         }
@@ -273,9 +337,35 @@ final class AppDependencies {
         )
         let embeddingRepo = GRDBRepoEmbeddingRepository(database: db)
         self.repoEmbeddingRepository = embeddingRepo
-        self.semanticSearchService = SemanticSearchService(
+        // 2026-06-12 向量索引改进：注入 README / 笔记 / 摘要三类仓库，
+        // 让 SemanticSearchService.buildSnapshot 能从本地数据库取 readme.content /
+        // ai_summaries.summary_json / repo_notes.content，拼出三段式 indexedText。
+        let semantic = SemanticSearchService(
             embeddingRepository: embeddingRepo,
-            settings: self.settings
+            settings: self.settings,
+            readmeRepository: readmeRepo,
+            noteRepository: self.repoNoteRepository,
+            summaryRepository: summaryRepo
+        )
+        self.semanticSearchService = semantic
+
+        // 2026-06-12 向量索引改进：摘要生成成功后触发单 repo 向量重建。
+        // weak 捕获避免 `aiInsight ↔ semantic` 形成强循环（两者都是 @MainActor final class，
+        // 长生命周期对象，理论上不会真正释放，但 weak 是更稳的写法）。
+        // 闭包内调 `refreshIndexIfChanged`（内部 try/catch 处理 missingAPIKey 等）。
+        aiInsight.setOnSummaryGenerated { [weak semantic] repo in
+            Task { @MainActor in
+                await semantic?.refreshIndexIfChanged(for: repo)
+            }
+        }
+
+        // 2026-06-12 向量索引改进：后台慢速预拉 + 全量重建服务。
+        // 由 Settings → "AI 索引" Section 的「开始预拉 / 暂停 / 全量重建」按钮驱动；
+        // 装配时仅持有依赖，不主动 start——避免无声烧 API 配额（决策 E3）。
+        self.semanticIndexBuilder = SemanticIndexBuilder(
+            repoRepository: repo,
+            readmeAPI: self.readmeAPI,
+            semanticSearchService: semantic
         )
 
         // HOM-54：Trending Repository（W7+ 起接入 GRDB 持久化）。
@@ -294,22 +384,33 @@ final class AppDependencies {
             api: trendingAPIInstance,
             database: db
         )
+        // sidebar 语言列表 store。注意：构造期不主动 reload，避免拉网络阻塞启动；
+        // 由 HomeView `.task` 在首次进入时调 `reload()`，与 trending 列表的首屏入场时序一致。
+        self.trendingLanguageStore = TrendingLanguageStore(api: trendingAPIInstance)
 
         // MUL-176：阮一峰周刊 API 客户端。端点走 `AppEndpoints.Weekly.baseURL`。
         // 用户在设置页改地址 → AppDependencies.setServiceURL 推送到本 actor 的
         // updateBaseURL，无需重启 App。
-        self.weeklyAPI = WeeklyAPI(
+        let weeklyAPIInstance = WeeklyAPI(
             baseURL: AppEndpoints.Weekly.baseURL,
             apiKey: StarcatAPIKeyResolver.resolve(for: .weekly)
         )
+        self.weeklyAPI = weeklyAPIInstance
 
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
+        self.weeklyLanguageStore = WeeklyLanguageStore(api: weeklyAPIInstance)
 
         // HOM-173：分享卡 API 客户端。端点走 `AppEndpoints.Sharing.baseURL`（保留 /api 后缀）。
         self.shareAPI = ShareAPI(
             baseURL: AppEndpoints.Sharing.baseURL,
             apiKey: StarcatAPIKeyResolver.resolve(for: .sharing)
+        )
+
+        // Wiki 首期只做详情页单查，不在启动期 health probe，也不接 batch 预热。
+        self.wikiAPI = WikiAPI(
+            baseURL: AppEndpoints.Wiki.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .wiki)
         )
 
         // 2026-06-08：第三方服务健康检查 actor。独立 ephemeral session + 5s 超时。
@@ -370,9 +471,23 @@ final class AppDependencies {
         let bootstrapper = StarredRegistryBootstrapper(registry: registry, repoRepository: repo)
         self.starredRegistryBootstrapper = bootstrapper
 
+        // W12 PR-3：批量 star / unstar 调度服务。
+        // 复用 starActionService 单条入口；本服务自身不直接碰 apiClient / repoRepository,
+        // 保证「写入路径唯一」契约不破。
+        self.batchStarService = BatchStarService(
+            starActionService: starActionSvc,
+            registry: registry
+        )
+
+        // W12 PR-4：三个 page 的多选 store。各 page 独立持有，互不干扰。
+        self.trendingMultiSelectionStore = MultiSelectionStore()
+        self.weeklyMultiSelectionStore = MultiSelectionStore()
+        self.activityMultiSelectionStore = MultiSelectionStore()
+        self.manageMultiSelectionStore = MultiSelectionStore()
+
         // RepoResolver chain：5 个 source 按优先级顺序
         // R-01 v1.2（2026-06-09）：BackendAggregateRepoSource 已填实，接 weekly 的
-        // GET /api/v1/projects/{owner}/{repo}；详细见 BackendAggregateRepoSource.swift。
+        // GET /api/v1/weekly/{owner}/{repo}（v0.5.2 dong4j 重命名）；详细见 BackendAggregateRepoSource.swift。
         self.repoResolver = RepoResolver(chain: [
             LocalRepoSource(repository: repo),
             BackendHintRepoSource(),
@@ -396,12 +511,46 @@ final class AppDependencies {
             bootstrapper.clearOnSignOut()
         }
 
+        // 2026-06-12 多账号 DB 隔离：登录态变化 → 切 SQLite 到对应 user 目录。
+        //
+        // weak self：closure 长期挂在 session 上，session 被 self 强持，避免循环引用。
+        // closure 为 @MainActor + async：AuthSession 也在 @MainActor 上，直接 await
+        // 不需要 hop；switchUserDatabase 内部 await database.reopen(userId:) 串行执行。
+        //
+        // 错误处理：reopen 失败仅记日志不向上抛——AuthSession 不关心 DB 细节,
+        // 而且失败状态下 currentPool 仍指向旧 pool（reopen 实现保证），用户至少
+        // 还能看到自己的数据，不会进入"无 DB 可用"的死状态。
+        session.onUserSessionChanged = { [weak self] userId in
+            guard let self else { return }
+            do {
+                try await self.switchUserDatabase(to: userId)
+            } catch {
+                AppLog.database.error(
+                    "switchUserDatabase failed for userId=\(userId.map(String.init) ?? "anonymous", privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
         // 启动期 reload：异步 Task，不阻塞 init。测试 host 跳过避免触发 DB 启动期成本。
         if !TestEnvironment.isRunning {
             Task { [bootstrapper] in
                 await bootstrapper.reload()
             }
         }
+    }
+
+    // MARK: - 多账号 DB 切换（2026-06-12 多账号 DB 隔离）
+
+    /// 切换 SQLite 到指定 GitHub User ID 对应的目录。`nil` 切到 `_anonymous` 占位 DB。
+    ///
+    /// 调用方：AuthSession 通过 `onUserSessionChanged` closure 触发。**不要从外部直接调**，
+    /// 否则可能跟 AuthSession 的内部状态变化竞态（场景：UI 直接调本方法切到 X，但
+    /// AuthSession 没同步更新 state，Repository 在新 DB 里查不到对应 user 的数据）。
+    ///
+    /// 关键约束：本方法内部 `await database.reopen(userId:)`——后者标 `@MainActor`，
+    /// 在 MainActor 队列内串行执行，多次并发调用会顺序排队不并发。
+    func switchUserDatabase(to userId: Int64?) async throws {
+        try await database.reopen(userId: userId)
     }
 
     // MARK: - 第三方服务热更新（2026-06-08 新增）
@@ -424,6 +573,17 @@ final class AppDependencies {
         case .trending: await trendingAPI.updateBaseURL(target)
         case .weekly:   await weeklyAPI.updateBaseURL(target)
         case .sharing:  await shareAPI.updateBaseURL(target)
+        case .wiki:     await wikiAPI.updateBaseURL(target)
+        }
+
+        // 3) trending sidebar 语言列表跟随 baseURL 重拉（指向新地址的实际数据）。
+        //    其他服务的 sidebar 内容（weekly issues / activity 分类）目前不走类似的 store，
+        //    无需在这里同步刷新；未来扩展时再加。
+        if service == .trending {
+            await trendingLanguageStore.reload()
+        } else if service == .weekly {
+            weeklyLanguageStore.invalidate()
+            await weeklyLanguageStore.reload()
         }
     }
 
@@ -455,6 +615,16 @@ final class AppDependencies {
         case .trending: await trendingAPI.updateAPIKey(resolved)
         case .weekly:   await weeklyAPI.updateAPIKey(resolved)
         case .sharing:  await shareAPI.updateAPIKey(resolved)
+        case .wiki:     await wikiAPI.updateAPIKey(resolved)
+        }
+
+        // 4) trending API Key 改了 → 立刻用新 key 重拉一次语言列表。
+        //    之前 401 用户配好新 key 后 sidebar 立即恢复正确入口，无需重启。
+        if service == .trending {
+            await trendingLanguageStore.reload()
+        } else if service == .weekly {
+            weeklyLanguageStore.invalidate()
+            await weeklyLanguageStore.reload()
         }
     }
 

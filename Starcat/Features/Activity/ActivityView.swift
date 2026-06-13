@@ -10,6 +10,34 @@
 //  - ViewModel 由本视图按 Environment 里的 AppDependencies 构造，避免把 Activity 专属依赖
 //    继续透传进 RepoListView 的初始化参数。
 //
+//  ────────────────────────────────────────────────────────────────────────────
+//  v1.9 修订（2026-06-10, dong4j「四场景统一 row」遗留 bug）：repo-backed kind 切 UnifiedRepoRow
+//  ────────────────────────────────────────────────────────────────────────────
+//
+//  R-01「四个场景统一 row」原本只统一了 3 个（Manage / Trending / Weekly），Activity 全
+//  走独立的 `ActivityRowView` —— Activity 的 `star` / `repository` / `suggestion` 这三
+//  种**纯仓库型**卡片视觉与其它场景割裂。
+//
+//  v1.9 把这三种 kind 切到 `UnifiedRepoRow`，复用 `Repo.asCardData(badge: .activityKind(...))`：
+//    - 头像角自带 kind icon 圆角标（UnifiedRepoRow.avatarWithKindBadge 已有逻辑）；
+//    - chip 行 Lang / Stars / Forks 与 Manage / Trending / Weekly 完全对齐。
+//
+//  v2.0（2026-06-11 dong4j 决策）：卡片右上角 RelativeDateBadge **已整列删除**。
+//  原 `.activityKind(category, createdAt)` 第二参 Date 在 kind 间语义漂移
+//  （starredAt / pushedAt），`.all` 视图同框无法辨识，整列删除是承认时戳
+//  维度不够强一致。Date 参数已从 enum case 删除（详见 RepoCardViewData.swift 注释）。
+//
+//  保留 `ActivityRowView` 渲染的两类（dong4j 决策）：
+//    - `release`：title = release name(主位)+ subtitle = repo.fullName + body = release notes
+//      摘录 + 未读 chip。视觉上「以 release 为主体」，与 UnifiedRepoRow「以仓库为主体」
+//      语义冲突，强行切会丢 release name 视觉权重 + 未读 chip 渲染槽。
+//    - `announcement`：item.repo == nil，根本无法构造 `RepoCardViewData`（必填 fullName /
+//      owner / repo / ghRepoId）。视觉差异本就该有 —— 让用户一眼看出这是 GitHub 公告。
+//    - `following`：当前 ActivityViewModel 未生产此 kind；预留入口，行为同 announcement。
+//
+//  `showStarredCheckmark` 不传 → 默认 false，与 Manage 同策略 ——`ActivityViewModel.filter {
+//  $0.isStarred }` 已过滤 100% starred，挂 ✓ 视觉冗余。
+//
 
 import SwiftUI
 
@@ -58,16 +86,26 @@ struct ActivityView: View {
         } else if viewModel.items.isEmpty {
             emptyState(systemImage: selectedCategory.systemImage, title: "activity.empty.title", subtitle: emptySubtitle)
         } else {
+            // W12 PR-4：activity 多选 store。仅含 repo 关联的 ActivityItem 能被选中
+            // （announcement / following 这类 repo == nil 的项继续走单选）。
+            let multiStore = dependencies.activityMultiSelectionStore
             List {
                 refreshRow(viewModel)
                 ForEach(Array(viewModel.items.enumerated()), id: \.element.id) { index, item in
                     Button {
-                        selectedItem = item
+                        if multiStore.isActive, let repo = item.repo {
+                            multiStore.toggle(SelectionSnapshot(
+                                ghRepoId: repo.id,
+                                owner: repo.owner,
+                                name: repo.name
+                            ))
+                        } else if !multiStore.isActive {
+                            selectedItem = item
+                        }
+                        // multiStore.isActive 但 item.repo == nil 时 no-op：
+                        // 无法构造 SelectionSnapshot，UI 也不应让用户错觉「选中了」。
                     } label: {
-                        ActivityRowView(
-                            item: item,
-                            isSelected: selectedItem?.id == item.id
-                        )
+                        rowContent(for: item, multiSelectActive: multiStore.isActive, multiStore: multiStore)
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
@@ -78,7 +116,86 @@ struct ActivityView: View {
             }
             .listStyle(.inset)
             .alternatingRowBackgrounds()
+            // W12 PR-5：Cmd+A 全选当前可见 activity item（仅 multi-select active 时生效）。
+            // 4 场景同款机制。`item.repo == nil` 的 announcement / following 项跳过——它们
+            // 在 row 层级也无法被 toggle 进 store，全选也应该尊重这条约束。
+            .background {
+                Button {
+                    let snapshots = viewModel.items.compactMap { item -> SelectionSnapshot? in
+                        guard let repo = item.repo else { return nil }
+                        return SelectionSnapshot(ghRepoId: repo.id, owner: repo.owner, name: repo.name)
+                    }
+                    multiStore.selectAll(snapshots)
+                } label: {
+                    EmptyView()
+                }
+                .keyboardShortcut("a", modifiers: .command)
+                .disabled(!multiStore.isActive)
+                .hidden()
+            }
         }
+    }
+
+    /// 按 `item.kind` 派发到 `UnifiedRepoRow`（repo-backed kind）或 `ActivityRowView`
+    /// （announcement / following）。
+    ///
+    /// **派发规则**（设计 §3.1.5 + v1.9 dong4j 拍板 / v2.0 删时戳）：
+    /// - `star` / `repository` / `suggestion` → `UnifiedRepoRow` 与 Manage/Trending/Weekly
+    ///   100% 视觉同构（badge 走 `.activityKind(category)`，
+    ///   头像角 kind icon 由 UnifiedRepoRow 承担；v2.0 已删右上 RelativeDateBadge）；
+    /// - 其它 kind（release 主体 = release name 而非 repo / announcement 无 repo）走老路径。
+    ///
+    /// `item.repo` 为 nil 的 corner case（announcement、未来的 following）一律退化到老视觉，
+    /// 因为 `RepoCardViewData` 必填 fullName / owner / repo / ghRepoId。
+    @ViewBuilder
+    private func rowContent(for item: ActivityItem, multiSelectActive: Bool, multiStore: MultiSelectionStore) -> some View {
+        // W12 PR-4：多选模式下 row.isSelected 取自 multiStore；单选模式仍取 selectedItem。
+        // announcement / following（item.repo == nil）即使多选模式也只显示单选高亮兜底，
+        // 因为这类项无法 toggle 进 store。
+        let isMultiSelected: Bool = {
+            if multiSelectActive, let repo = item.repo {
+                return multiStore.contains(ghRepoId: repo.id)
+            }
+            return false
+        }()
+        let isSelected = multiSelectActive ? isMultiSelected : (selectedItem?.id == item.id)
+
+        if let repo = item.repo, isUnifiedRowKind(item.kind) {
+            // v1.9：纯仓库型 kind 走 UnifiedRepoRow。`showStarredCheckmark` 不传（默认 false）
+            // —— ActivityViewModel.filter { $0.isStarred } 已过滤 100% starred，挂 ✓ 视觉冗余。
+            UnifiedRepoRow(
+                card: repo.asCardData(
+                    badge: .activityKind(item.category),
+                    inlineMetadata: inlineMetadata(for: item)
+                ),
+                isSelected: isSelected
+            )
+        } else {
+            ActivityRowView(
+                item: item,
+                isSelected: isSelected
+            )
+        }
+    }
+
+    /// 判定一个 kind 是否能用 UnifiedRepoRow 渲染（v1.9）。
+    ///
+    /// 出参为 false 的两类：
+    /// - `release`：v2.1 起也按 repo 聚合展示，一 repo 一卡片；release-specific 时间
+    ///   放在 fullName 同行的 inline metadata，不再走老的 release row。
+    /// - `announcement` / `following`：无 `item.repo`，无法构造 `RepoCardViewData`。
+    private func isUnifiedRowKind(_ kind: ActivityKind) -> Bool {
+        switch kind {
+        case .release, .star, .repository, .suggestion:
+            return true
+        case .announcement, .following:
+            return false
+        }
+    }
+
+    private func inlineMetadata(for item: ActivityItem) -> RepoCardInlineMetadata? {
+        guard item.kind == .release, let date = item.createdAt else { return nil }
+        return RepoCardInlineMetadata(systemImage: "calendar", text: Self.absoluteDate(date))
     }
 
     private func refreshRow(_ viewModel: ActivityViewModel) -> some View {
@@ -177,6 +294,14 @@ struct ActivityView: View {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    static func absoluteDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        return formatter.string(from: date)
     }
 }
 

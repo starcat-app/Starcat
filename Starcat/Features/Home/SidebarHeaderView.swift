@@ -401,7 +401,9 @@ struct SidebarHeaderView: View {
             Divider()
 
             Button(role: .destructive) {
-                authSession.signOut()
+                // signOut 改 async（2026-06-12 多账号 DB 隔离要 await DB 切换完成），
+                // SwiftUI Button action 是同步闭包，包 Task 触发即可。
+                Task { await authSession.signOut() }
             } label: {
                 Label("auth.signOut", systemImage: "rectangle.portrait.and.arrow.right")
             }

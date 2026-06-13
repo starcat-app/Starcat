@@ -70,7 +70,7 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
     /// 本地缓存时间，与 GitHub 字段无关。
     var cachedAt: String?
 
-    // MARK: - R-01 v1.2 StarcatRepoCardDTO 新字段（GRDB v8 schema，2026-06-10）
+    // MARK: - R-01 v1.2 StarcatRepoCardDTO 扩展 4 字段（2026-06-10）
     //
     // 4 字段全部 Optional：老用户从 v7 升级时 SQLite 把这些列填 NULL；新拉的 repo
     // 通过 toEphemeralRepo() / GitHub /repos API 写入实际值。
@@ -124,7 +124,7 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
         case updatedAt = "updated_at"
         case starredAt = "starred_at"
         case cachedAt = "cached_at"
-        // R-01 v1.2 GRDB v8 新增（2026-06-10）
+        // R-01 v1.2 扩展 4 字段（2026-06-10）
         case ownerAvatar = "owner_avatar"
         case subscribersCount = "subscribers_count"
         case defaultBranch = "default_branch"
@@ -141,23 +141,77 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
     }
 
     // MARK: - Hashable / Equatable
+    //
+    // ─────────────────────────────────────────────────────────────────────
+    // v3 修订（2026-06-11, dong4j hero star 不刷新 bug 真机复现后回归）
+    // ─────────────────────────────────────────────────────────────────────
+    //
+    // 演化路径（重要历史避坑）：
+    //
+    // - **v1 早期**：依赖 compiler synthesized 全字段 ==，与下面只 hash id 的
+    //   `hash(into:)` 配对。Hashable 合约要求 `a == b ⇒ hash(a) == hash(b)`
+    //   （**单向蕴含**），全字段 == 配 hash 只 id **满足合约**（== 真 → 所有
+    //   字段相等 → id 相等 → hash 相等 ✓）。
+    //
+    //   但当时项目把 `Repo` 作为 `List(selection:)` 的 selection 类型，selection
+    //   binding 写入时 SwiftUI 内部用 hash 做 bucket + == 做匹配；同 id 不同
+    //   cachedAt 等字段更新后 selection 与 viewItem hash 相同但 == 不等，
+    //   表现为"列表点击没反应、detail 不刷新"。
+    //
+    // - **v2 妥协**：把 `==` 改成只比 id（与 hash 一致），修了 List(selection:)
+    //   bug。代价：**SwiftUI view diffing 也用 Equatable 比较 view prop**——
+    //   当父 view 重新计算后构造新 child view（如 `RepoDetailScaffold(repo: ...)`）,
+    //   SwiftUI 用 `Repo.==` 判断 `repo` prop 是否变化决定是否调用 child body；
+    //   只比 id 的 == 让"id 相同但其他字段变了"的更新被 diff 跳过，子 view 不重渲染。
+    //
+    //   v2 引入的副作用：dong4j 在 trending 详情页第一次 star 一个 repo 后,
+    //   `displayRepo` 切换为 isStarred=true 的本地真值（id 不变），但 SwiftUI 用
+    //   `Repo.==` 判定 prop 没变,跳过 hero `StarStatChipButton` 重渲染→
+    //   **hero star icon 永远是空心,只有切走 detail 再切回（view 销毁重建,
+    //   不走 diff 路径）才显示实心**。
+    //
+    //   同源 bug 在 stars count / forks / starredAt / status / topics 等所有
+    //   "id 不变但其他字段变化"路径都潜伏存在，只是这些字段变化频率低 + 用户
+    //   不主动盯着复现，所以直到高频 star 操作才被暴露。
+    //
+    // - **v3 回归全字段 ==**（本提交）：
+    //
+    //   1. **删除自定义 `==`**：让 Swift compiler synthesize 全字段比较。
+    //      `Repo` 所有字段都是 Equatable value type（Int64 / String / String?
+    //      / Int / Bool / String?），synthesis 安全。
+    //
+    //   2. **保留 `hash(into:)` 只 hash id**：
+    //      - 满足 Hashable 合约（== 真 → 全字段相等 → id 相等 → hash 相等 ✓）
+    //      - hash 计算便宜（不遍历 25+ 字段）
+    //      - 反向：hash 相等不要求 == 真（合约不强制），允许 hash 冲突
+    //      - 业务上 Starcat **没有** Set<Repo> / Dictionary<Repo, V> 用法
+    //        （selection 全部走 selectedRepoID: Int64? / multiSelectedRepoIDs:
+    //        Set<Int64>，详见 `HomeViewModel.swift` line 123-130 注释），
+    //        所以 hash 冲突频率不影响真实性能。
+    //
+    //   3. **List(selection:) 不再用 Repo**：原 v2 修法目标已通过把所有
+    //      selection 改成 Int64-based 彻底解决（HomeViewModel 单选 / 多选
+    //      字段类型),`Repo.==` 不再承担 selection 匹配职责，可以放心做
+    //      正确的全字段比较，让 SwiftUI view diffing 正常工作。
+    //
+    // 不变量：
+    //   - Hashable 合约：== ⇒ hash 相等（保持）
+    //   - SwiftUI diffing：repo 任一字段变化都触发 view body 重新计算（恢复）
+    //   - selection 路径：HomeViewModel.selectedRepoID / multiSelectedRepoIDs
+    //     必须保持 Int64-based（不要回退到 Repo-based,否则 v1 bug 复活）
 
-    /// 只基于 id 散列（即同一 GitHub repo 即视为相等的 hash key）。
-    /// List(selection:) 用此保证选中行稳定，不受 cachedAt 等字段变化影响。
+    /// 只基于 id 散列（即同一 GitHub repo 即视为相等的 hash key 集合）。
+    /// 默认 synthesized hash 会遍历 25+ 字段，对 1800+ repo 全部 hash 一遍代价不小；
+    /// id 在 GitHub 全局唯一，足够作 hash key。
+    ///
+    /// 配合下面 compiler-synthesized `==`（全字段比较），符合 Hashable 合约
+    /// `a == b ⇒ hash(a) == hash(b)`：全字段 == 真 → id 必相等 → hash 相等 ✓。
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
 
-    /// **必须与 hash 一致**：Hashable 契约要求 `a == b` ⇔ `hash(a) == hash(b)`。
-    ///
-    /// 早期版本依赖 synthesized 全字段 ==，与上面的 `hash(into:)` 不一致,
-    /// 导致 SwiftUI `List(selection:)` 在 selection binding 写入时
-    /// 找不到匹配 tag（hash 相等但 == 不等），表现为"列表点击没反应、detail 不刷新"。
-    ///
-    /// 仓库 id 在 GitHub 全局唯一，用 id 比较即可覆盖所有合理场景。
-    static func == (lhs: Repo, rhs: Repo) -> Bool {
-        lhs.id == rhs.id
-    }
+    // `static func == (lhs: Repo, rhs: Repo) -> Bool` 由 Swift compiler 自动
+    // synthesize 全字段比较（不要手写 id-only ==，详见上面 v3 修订注释）。
 }
 
 // MARK: - R-01 Minimal Fallback 工厂

@@ -8,7 +8,7 @@
 //  R-01 v1.2 实现（2026-06-09）
 //  ────────────────────────────────────────────────────────────────────────────
 //
-//  接 weekly 后端的 `GET /api/v1/projects/{owner}/{repo}` 端点，拿到完整聚合的
+//  接 weekly 后端的 `GET /api/v1/weekly/{owner}/{repo}` 端点，拿到完整聚合的
 //  `StarcatRepoCardDTO`（含 weekly 扩展段 + 后端 enricher 补的最新元数据），转
 //  ephemeral `Repo` 返回。
 //
@@ -49,10 +49,13 @@ actor BackendAggregateRepoSource: RepoSource {
     /// 或字段较旧（爬取后没刷新过）。本 source 的价值是**主动**调聚合 endpoint 拿"最新版本"
     /// 的卡片数据，所以不直接复用 hint。
     func tryResolve(owner: String, name: String, hint: StarcatRepoCardDTO?) async throws -> Repo? {
+        guard let repoID = hint?.ghRepoId, repoID > 0 else {
+            return nil
+        }
         do {
-            let card = try await weeklyAPI.fetchProject(owner: owner, repo: name)
+            let detail = try await weeklyAPI.fetchDetail(repoID: repoID)
             // dto.toEphemeralRepo() 已处理 isStarred = false 等约束（详情页不改 DB，只 in-memory）
-            return card.toEphemeralRepo()
+            return detail.repo.card.toEphemeralRepo()
         } catch {
             // 鉴权失败 / 404 / 解码错都退化为"未命中"，让链继续询问下一个 source。
             AppLog.sync.warning(

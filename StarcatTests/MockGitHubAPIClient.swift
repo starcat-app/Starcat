@@ -42,6 +42,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var starHandler: ((_ owner: String, _ repo: String) async throws -> Void)?
     var getCurrentUserHandler: (() async throws -> GitHubUserDTO)?
     var readmeHTMLHandler: ((_ owner: String, _ repo: String, _ ifNoneMatch: String?, _ ifModifiedSince: String?) async throws -> BytesResponse)?
+    /// 2026-06-12 向量索引改进：README 原始 Markdown 端点 handler。
+    var readmeMarkdownHandler: ((_ owner: String, _ repo: String, _ ifNoneMatch: String?, _ ifModifiedSince: String?) async throws -> BytesResponse)?
     /// HOM-47：Releases API mock handler。
     var releasesHandler: ((_ owner: String, _ repo: String, _ perPage: Int) async throws -> APIResponse<[GitHubReleaseDTO]>)?
     /// 2026-06-08：单仓库元数据 API mock handler（Weekly 详情页本地缓存未命中时调）。
@@ -50,7 +52,12 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     // MARK: - 调用记录（供断言用）
 
     private(set) var readmeHTMLCalls: [(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)] = []
+    /// 2026-06-12 向量索引改进：README Markdown 调用日志，便于断言"按需懒补全是否真的发请求"。
+    private(set) var readmeMarkdownCalls: [(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)] = []
     private(set) var starCalls: [(owner: String, repo: String)] = []
+    /// W12 PR-3：批量 unstar 测试需要断言 API 调用次数。
+    /// 与 starCalls 对称，每次进入 `unstar(owner:repo:)` 都 append（无论 handler 是否抛错）。
+    private(set) var unstarCalls: [(owner: String, repo: String)] = []
     /// HOM-47：releases 调用日志，便于断言"是否拉过 / 拉了几次"。
     private(set) var releasesCalls: [(owner: String, repo: String, perPage: Int)] = []
 
@@ -64,6 +71,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
 
     func unstar(owner: String, repo: String) async throws {
+        unstarCalls.append((owner, repo))
         guard let handler = unstarHandler else {
             fatalError("MockGitHubAPIClient.unstarHandler 未设置")
         }
@@ -94,6 +102,19 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
         readmeHTMLCalls.append((owner, repo, ifNoneMatch, ifModifiedSince))
         guard let handler = readmeHTMLHandler else {
             fatalError("MockGitHubAPIClient.readmeHTMLHandler 未设置")
+        }
+        return try await handler(owner, repo, ifNoneMatch, ifModifiedSince)
+    }
+
+    func readmeMarkdown(
+        owner: String,
+        repo: String,
+        ifNoneMatch: String?,
+        ifModifiedSince: String?
+    ) async throws -> BytesResponse {
+        readmeMarkdownCalls.append((owner, repo, ifNoneMatch, ifModifiedSince))
+        guard let handler = readmeMarkdownHandler else {
+            fatalError("MockGitHubAPIClient.readmeMarkdownHandler 未设置")
         }
         return try await handler(owner, repo, ifNoneMatch, ifModifiedSince)
     }

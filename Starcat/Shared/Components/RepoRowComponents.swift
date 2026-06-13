@@ -55,7 +55,9 @@ public struct LanguageBadge: View {
             Circle()
                 .fill(LanguageColor.color(for: language))
                 .frame(width: 8, height: 8)
-            Text(language)
+            // 颜色查表（上一行 LanguageColor.color）必须传 raw 名，
+            // 文字显示走短名（"Jupyter Notebook" → "Jupyter"），详见 LanguageDisplayName。
+            Text(LanguageDisplayName.shortened(for: language))
                 .font(style == .full ? .caption : .caption2)
                 .foregroundStyle(style == .full ? .primary : .secondary)
                 .lineLimit(1)
@@ -146,23 +148,44 @@ public struct MetaBadge: View {
 /// `Text("repo.archived")` 的静态字符串形态以便 SwiftUI / Xcode 自动提取本地化字符串。
 /// 若改成 `MetaBadge(text: "repo.archived")`，参数类型是 `String`（非 `LocalizedStringKey`），
 /// 字符串提取语义就会丢失。
+///
+/// `iconOnly`（2026-06-11 引入）：
+/// - 设计动机：仓库**卡片**（UnifiedRepoRow）一行可能并排 4+ chip
+///   （Language + Stars + Forks + Archived + sceneBadge），中等列宽下
+///   "Archived" 文字会把整行挤换行（见 dong4j 截图反馈）。
+/// - 仅 chip 文字消失，**保留** Capsule 背景 + 橙色 tint：用户对"archived
+///   = 橙色"的色觉识别记忆要保住；同时无障碍语义不能丢，所以图标-only
+///   模式仍然挂 `accessibilityLabel(Text("repo.archived"))`，VoiceOver
+///   依旧能播报"已归档"。
+/// - **关键边界**：默认 `iconOnly == false`，保证既有调用（活动详情面板
+///   / 任何后续 detail-style 场景）不受影响 —— dong4j 明确要求"只是
+///   repo 卡片，别给我把详情页里面的文字也删除了"。
+/// - 详情页 hero 用的是另一个组件 `RepoBadgeChip`（与本组件平行），
+///   不会被这里的改动波及。
 public struct ArchivedBadge: View {
+    let iconOnly: Bool
 
-    public init() {}
+    public init(iconOnly: Bool = false) {
+        self.iconOnly = iconOnly
+    }
 
     public var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "archivebox")
                 .font(.system(size: 9, weight: .medium))
-            Text("repo.archived")
-                .font(.caption2)
-                .lineLimit(1)
+            if !iconOnly {
+                Text("repo.archived")
+                    .font(.caption2)
+                    .lineLimit(1)
+            }
         }
         .foregroundStyle(.orange)
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
         .background(.orange.opacity(0.12), in: Capsule())
         .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("repo.archived"))
     }
 }
 
@@ -266,6 +289,52 @@ public extension Int {
             return String(format: "%.1fk", n / 1_000)
         } else {
             return "\(self)"
+        }
+    }
+}
+
+// MARK: - LanguageDisplayName
+
+/// 编程语言 UI 显示短名映射（raw → short）。
+///
+/// 设计动机（dong4j 2026-06-11 反馈）：
+/// GitHub Linguist 官方名如 "Jupyter Notebook" / "Visual Basic .NET" 在卡片 chip、
+/// 侧边栏窄行、Trending / Weekly picker label 这些**横向受限**场景下，会被
+/// SwiftUI 的 `.lineLimit(1) + .truncationMode(.tail)` 切成 "Jupyter Note…" /
+/// "Visual Basic …" —— 比直接显示 "Jupyter" / "VB.NET" 还难看。
+///
+/// 关键约束（**写新代码 / 加新调用点必须遵守**）：
+/// - **仅显示层用**。底层数据通道**绝对保留 raw 名**：
+///     - GRDB `repos.language` 列 / 数据库查询 / sidebar `LanguageStat.language`
+///     - GitHub API 请求 / 响应反序列化
+///     - `LanguageColor.color(for:)` 颜色查表（switch case key 是 raw "Jupyter Notebook"）
+///     - `LinguistLanguages.all` 元数据查询
+///     - `LanguageIconView(language:)` 图标查表
+///     - `RepoMetadataGradientBackground(language:)` 渐变背景
+///     - AI prompt 拼接的 "Language: ..." 字段
+///     - 分享卡 / Markdown / HTML 导出的 group key
+///   一旦把短名落到这些通道，会跟 GitHub Linguist 规范名对不上，破坏数据一致性。
+/// - 短名表是**保守白名单**，未命中一律 `default: return raw`，
+///   不做模糊截断 / 启发式短化（避免误伤本身就短的名字）。
+/// - i18n：短名都是英文专有名词（语言 / 框架名），不走 String Catalog；
+///   未来如需本地化，把返回值改成 `LocalizedStringKey` 再适配调用点。
+///
+/// 当前白名单（dong4j 2026-06-11 确认）：
+/// - Jupyter Notebook → Jupyter
+/// - Vim Script       → Vim
+/// - Emacs Lisp       → Elisp
+/// - Visual Basic .NET → VB.NET
+/// - Common Lisp      → Lisp
+public enum LanguageDisplayName {
+    /// 把 GitHub Linguist raw 名映射成 UI 显示短名；未命中原样返回。
+    public static func shortened(for raw: String) -> String {
+        switch raw {
+        case "Jupyter Notebook":   return "Jupyter"
+        case "Vim Script":         return "Vim"
+        case "Emacs Lisp":         return "Elisp"
+        case "Visual Basic .NET":  return "VB.NET"
+        case "Common Lisp":        return "Lisp"
+        default:                   return raw
         }
     }
 }

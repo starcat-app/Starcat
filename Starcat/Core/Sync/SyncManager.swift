@@ -196,6 +196,28 @@ final class SyncManager {
                         status: "idle"
                     )
                     progress = SyncProgress(current: localCount, total: localCount, currentPage: 1)
+
+                    // **R-01 v2.0 修订**(2026-06-10):304 早退路径**也必须**触发
+                    // `onSyncCompleted` hook,把 registry 与本地 DB 同步。
+                    //
+                    // 修复原因(dong4j 真机回归发现):v1.7 引入 4 详情页用
+                    // `StarredRegistry.contains` 派生 trailingActions / starHelpKey /
+                    // toggle 分支后,Manage 启动期 304 命中(常态!ETag 命中即 304)
+                    // → `runningTask = nil; return` 直接退出 → 不调 hook → registry
+                    // 在 `AppDependencies.init` 末尾的 `Task { reload() }` 又因为
+                    // `repos.is_starred` 列还没被同步初始化(304 早退前 ETag 未变 +
+                    // `bootstrapper` 已经跑过一次 reload 但当时 DB 可能空)而拿到空集。
+                    //
+                    // 即便修复 view 层守卫回归 `repo.isStarred`(主路径),`StarActionService.toggle`
+                    // 仍依赖 registry 兜「ephemeral 刚 star」corner case;hook 这条
+                    // 防御让 304 早退也能确保 registry 与 DB 一致,从源头根治 stale 问题。
+                    //
+                    // 性能影响:`StarredRegistryBootstrapper.reload()` 内部仅查
+                    // `fetchStarredRepoIDs()`(单条 SQL),开销可忽略。
+                    if let hook = onSyncCompleted {
+                        await hook()
+                    }
+
                     state = .completed(at: Date())
                     runningTask = nil
                     return
