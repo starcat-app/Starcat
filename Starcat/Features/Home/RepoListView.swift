@@ -49,6 +49,8 @@ struct RepoListView: View {
     /// 这两个动作产生 sheet 由 HomeView 统一承载（避免 RepoListView 多持一个 @State）。
     var onStartBatchAI: (() -> Void)?
     var onShowBatchAIPanel: (() -> Void)?
+    /// 全局搜索中心由 HomeView 承载；列表 toolbar 只负责触发，不持有浮层状态。
+    var onOpenSearchCenter: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -78,6 +80,16 @@ struct RepoListView: View {
             currentBatchActionBar
         }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    onOpenSearchCenter?()
+                } label: {
+                    Image(systemName: "sparkle.magnifyingglass")
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("全局搜索 (⌘K)")
+            }
             // W12 toolbar 专项 PR-1：toolbar 内容按 selectedPage 派发到对应 spec builder。
             // 当前只有 manage 走完整 spec，trending / activity 返回 .empty —— 它们各自
             // 仍在中栏自绘 toolbar，PR-2/3/4 阶段再迁过来。
