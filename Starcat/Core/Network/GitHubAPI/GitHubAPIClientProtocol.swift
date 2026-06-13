@@ -54,6 +54,13 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// - Throws: 网络层 `NetworkError`（404 / 401 / RateLimit 等）。
     func repo(owner: String, repo: String) async throws -> GitHubRepoDTO
 
+    /// GitHub Repository Search。返回 APIResponse 以保留 rate-limit 与分页响应头。
+    func searchRepositories(
+        query: GitHubRepositorySearchQuery,
+        page: Int,
+        perPage: Int
+    ) async throws -> APIResponse<GitHubRepositorySearchDTO>
+
     // MARK: - Readme
 
     /// 拉取 README（GitHub 服务端渲染的 HTML 片段）。
@@ -105,3 +112,14 @@ protocol GitHubAPIClientProtocol: Sendable {
 /// `GitHubAPIClient` actor 已经实现了所有要求的方法（在 StarsAPI / UserAPI / ReadmeHTMLAPI
 /// extension 中），这里只需空 conformance 声明。
 extension GitHubAPIClient: GitHubAPIClientProtocol {}
+
+extension GitHubAPIClientProtocol {
+    /// 旧 Mock 的兼容默认实现；任何实际搜索调用都会明确失败，不会伪造空结果。
+    func searchRepositories(
+        query: GitHubRepositorySearchQuery,
+        page: Int,
+        perPage: Int
+    ) async throws -> APIResponse<GitHubRepositorySearchDTO> {
+        throw NetworkError.clientError(statusCode: 501, message: "Repository search is not implemented by this client")
+    }
+}
