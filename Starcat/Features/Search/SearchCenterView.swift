@@ -10,6 +10,8 @@ import SwiftUI
 
 struct SearchCenterView: View {
     @Bindable var viewModel: SearchCenterViewModel
+    /// 直接复用 Manage 本地 Star 仓库的语言统计，避免搜索筛选维护第二份固定语言表。
+    let languages: [LanguageStat]
     let onOpenCandidate: (SearchCandidate) -> Void
     let onOpenURL: (RepositoryCandidate) -> Void
     let onCopyURL: (RepositoryCandidate) -> Void
@@ -169,11 +171,7 @@ struct SearchCenterView: View {
             if showGitHubFilters {
                 VStack(spacing: 12) {
                     HStack(alignment: .bottom, spacing: 12) {
-                        githubTextFilter(
-                            title: "语言",
-                            placeholder: "例如 Swift",
-                            text: optionalBinding(\.language)
-                        )
+                        githubLanguagePicker
                         githubTextFilter(
                             title: "Topic",
                             placeholder: "例如 macOS",
@@ -185,9 +183,6 @@ struct SearchCenterView: View {
                                 .textFieldStyle(.roundedBorder)
                         }
                         .frame(width: 112)
-                    }
-
-                    HStack(alignment: .bottom, spacing: 12) {
                         githubPicker(title: "排序方式", width: 130) {
                             Picker("排序方式", selection: $viewModel.githubFilters.sort) {
                                 Text("最佳匹配").tag(GitHubSearchSort.bestMatch)
@@ -202,23 +197,23 @@ struct SearchCenterView: View {
                                 Text("升序").tag(SearchOrder.ascending)
                             }
                         }
-                        githubDateFilter(title: "创建时间晚于", keyPath: \.createdAfter)
-                        githubDateFilter(title: "推送时间晚于", keyPath: \.pushedAfter)
                         Spacer(minLength: 0)
-                    }
-
-                    HStack(spacing: 8) {
-                        Spacer()
-                        Button("清除日期") {
-                            viewModel.githubFilters.createdAfter = nil
-                            viewModel.githubFilters.pushedAfter = nil
-                        }
-                        .buttonStyle(.bordered)
 
                         Button("应用筛选") {
                             Task { await viewModel.applyGitHubFilters() }
                         }
                         .buttonStyle(.borderedProminent)
+                    }
+
+                    HStack(alignment: .bottom, spacing: 16) {
+                        githubDateFilter(title: "创建时间晚于", keyPath: \.createdAfter)
+                        githubDateFilter(title: "推送时间晚于", keyPath: \.pushedAfter)
+                        Button("清除日期") {
+                            viewModel.githubFilters.createdAfter = nil
+                            viewModel.githubFilters.pushedAfter = nil
+                        }
+                        .buttonStyle(.bordered)
+                        Spacer(minLength: 0)
                     }
                 }
                 .padding(12)
@@ -370,6 +365,26 @@ struct SearchCenterView: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// “全部语言”对应 nil，不生成 GitHub `language:` qualifier；其余选项直接来自
+    /// Starcat 本地 Star 列表的 languageStats，与 Sidebar 的语言口径保持一致。
+    private var githubLanguagePicker: some View {
+        githubPicker(title: "语言", width: 128) {
+            Picker("语言", selection: optionalLanguageBinding) {
+                Text("全部语言").tag("")
+                ForEach(languages) { stat in
+                    Text(stat.displayName).tag(stat.language)
+                }
+            }
+        }
+    }
+
+    private var optionalLanguageBinding: Binding<String> {
+        Binding(
+            get: { viewModel.githubFilters.language ?? "" },
+            set: { viewModel.githubFilters.language = $0.isEmpty ? nil : $0 }
+        )
+    }
+
     private func filterFieldLabel(_ title: String) -> some View {
         Text(title)
             .font(.caption)
@@ -392,39 +407,23 @@ struct SearchCenterView: View {
         .frame(width: width, alignment: .leading)
     }
 
-    /// Optional Date 需要把“是否启用”显式展示出来。旧 UI 在 nil 时也显示今天，
-    /// 用户会误以为日期已加入 query；checkbox 关闭时 DatePicker 仅作预览且不生效。
+    /// 使用 macOS 原生紧凑 DatePicker。筛选值初始仍为 nil，只有用户实际修改
+    /// DatePicker 后 binding setter 才写入日期；点击“清除日期”恢复 nil，不传 qualifier。
     private func githubDateFilter(
         title: String,
         keyPath: WritableKeyPath<GitHubSearchFilters, Date?>
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             filterFieldLabel(title)
-            HStack(spacing: 5) {
-                Toggle("", isOn: optionalDateEnabledBinding(keyPath))
-                    .labelsHidden()
-                    .toggleStyle(.checkbox)
-                DatePicker(
-                    title,
-                    selection: optionalDateBinding(keyPath),
-                    displayedComponents: .date
-                )
-                .labelsHidden()
-                .disabled(viewModel.githubFilters[keyPath: keyPath] == nil)
-            }
+            DatePicker(
+                title,
+                selection: optionalDateBinding(keyPath),
+                displayedComponents: .date
+            )
+            .labelsHidden()
+            .datePickerStyle(.compact)
         }
-        .frame(width: 140, alignment: .leading)
-    }
-
-    private func optionalDateEnabledBinding(
-        _ keyPath: WritableKeyPath<GitHubSearchFilters, Date?>
-    ) -> Binding<Bool> {
-        Binding(
-            get: { viewModel.githubFilters[keyPath: keyPath] != nil },
-            set: { enabled in
-                viewModel.githubFilters[keyPath: keyPath] = enabled ? Date() : nil
-            }
-        )
+        .frame(width: 150, alignment: .leading)
     }
 
     private func optionalDateBinding(_ keyPath: WritableKeyPath<GitHubSearchFilters, Date?>) -> Binding<Date> {

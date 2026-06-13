@@ -264,6 +264,7 @@ struct HomeView: View {
             if searchCenterViewModel.isPresented {
                 SearchCenterView(
                     viewModel: searchCenterViewModel,
+                    languages: viewModel.languageStats,
                     onOpenCandidate: openSearchCandidate,
                     onOpenURL: openSearchRepositoryURL,
                     onCopyURL: copySearchRepositoryURL,
