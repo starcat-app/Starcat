@@ -110,8 +110,30 @@ final class ReadmeViewModel {
     /// - 手动刷新（`reload(repo:)`）会清掉对应项，给一次重试机会
     private var sessionNotFound: Set<Int64> = []
 
-    init(api: ReadmeAPI) {
+    /// 详情页 HTML 拉到（200 / 304）后触发的可选回调（**manage 路径 only**）。
+    ///
+    /// **2026-06-13 dong4j 补救 B 引入**。
+    /// 文档 `docs/详细设计/26-向量搜索改进.md` §6 关键流程表承诺的「详情页 README 拉到 →
+    /// 异步补 raw Markdown 落 `readmes.content` + 调 `refreshIndexIfChanged`」触发源，
+    /// 之前 2026-06-12 落地时漏接，2026-06-13 通过本回调补齐。
+    ///
+    /// **调用时机**：`loadInternal` 的 `.updated` / `.notModified` 分支拿到非空 html 后；
+    /// **不调用**：`.notFound` / `.failed` / 缓存命中（首段）/ `loadTrending`（trending 路径）。
+    ///
+    /// **典型实现**（由 `HomeView` 装配 manage 路径的 `ReadmeViewModel` 时挂入）：
+    /// 1. `Task { @MainActor in ... }` fire-and-forget，不阻塞详情页渲染；
+    /// 2. `await readmeAPI.refreshMarkdownIfNeeded(for: repo)` 仅在 `readmes.content` 为空时
+    ///    真发 GitHub raw markdown 请求；
+    /// 3. 若返回 `.updated` 才接着 `await semanticSearchService.refreshIndexIfChanged(for: repo)`
+    ///    走 diff 判定 + 视情况重建向量；`.notModified`（content 已存在）不动以省 embedding API。
+    ///
+    /// **为何 trending 路径不调**：trending repo 多为 ephemeral（用户没 star），不属于本地
+    /// 库的 readmes 表 / repo_embeddings 表，补 markdown / 触发向量重建都无意义。
+    private let onHTMLLoaded: ((Repo) -> Void)?
+
+    init(api: ReadmeAPI, onHTMLLoaded: ((Repo) -> Void)? = nil) {
         self.api = api
+        self.onHTMLLoaded = onHTMLLoaded
     }
 
     // MARK: - Actions
@@ -348,6 +370,12 @@ final class ReadmeViewModel {
                 self.state = .loaded(html: html, cachedAt: cachedAt)
                 // 阅读状态 v2：缓存命中即视为"已加载"，派发事件让笔记段升级 unread → read。
                 self.postReadmeLoaded(repoId: requestedId)
+                // 2026-06-13 dong4j 补救 B：cache 命中分支也触发——高频路径（用户重复打开
+                // 同 repo / cache 在 6h softTtl 内）会跳过下方网络刷新阶段，不走 .updated /
+                // .notModified，必须在这里 hook 才能让"看详情页 = 自动丰富 markdown"成立。
+                // 后续若 cache 过期再进网络分支，会再触发一次；refreshMarkdownIfNeeded 内部
+                // 对 content 非空短路 .notModified，重复触发 cheap（仅一次本地 DB 查询）。
+                self.onHTMLLoaded?(repo)
                 hasUsableCache = true
             } else {
                 // 无可用缓存：保持 .loading（之前在入口已设置；同 repo 且无 cache 的极端 case 也补一下）
@@ -390,6 +418,9 @@ final class ReadmeViewModel {
                     // 阅读状态 v2：网络刷新成功，再 post 一次（幂等：repository 端
                     // markAsReadIfNeeded 对 read/using 行 no-op，不会重复升级）。
                     self.postReadmeLoaded(repoId: requestedId)
+                    // 2026-06-13 dong4j 补救 B：异步补 raw markdown + 视情况触发向量重建。
+                    // fire-and-forget 由回调实现方自己管 Task；这里只负责告知"HTML 到位"。
+                    self.onHTMLLoaded?(repo)
                 } else {
                     // GitHub 返回 200 但 body 为空（极少见）→ 视作 empty
                     self.state = .empty
@@ -404,6 +435,11 @@ final class ReadmeViewModel {
                     self.state = .loaded(html: html, cachedAt: cachedAt)
                     // 304 路径同样视为"加载完成"事件；与上方两处幂等。
                     self.postReadmeLoaded(repoId: requestedId)
+                    // 2026-06-13 补救 B：304 路径也触发——HTML 没变但 `readmes.content`
+                    // 可能为空（用户从未跑过 SemanticIndexBuilder / 之前是新 user），
+                    // 给它一次懒补 markdown 的机会；refreshMarkdownIfNeeded 内部 content
+                    // 非空时短路 .notModified，不会无谓打 GitHub。
+                    self.onHTMLLoaded?(repo)
                 }
                 // html 为空的 304 理论上不该发生（refreshReadme 会走 unconditional 兜底），
                 // 防御性不动 state。

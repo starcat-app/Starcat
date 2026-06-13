@@ -144,7 +144,32 @@ struct HomeView: View {
             repoNoteRepository: repoNoteRepository,
             semanticSearchService: semanticSearchService
         ))
-        _readmeVM = State(initialValue: ReadmeViewModel(api: readmeAPI))
+        // 2026-06-13 dong4j 补救 B：manage 路径详情页 README 拉到后异步补 raw markdown
+        // + 视情况触发向量索引重建。
+        //
+        // 设计要点：
+        // - 闭包同步触发后立刻 spawn 一个 fire-and-forget `Task { @MainActor in ... }`，
+        //   不阻塞 ReadmeViewModel 状态机；`refreshMarkdownIfNeeded` 内 await 网络期间
+        //   suspension 自然让出 main thread。
+        // - 仅在 `.updated`（真的拉到新 markdown）时调 `refreshIndexIfChanged`，避免
+        //   `.notModified`（content 已存在）继续打 embedding API。
+        // - `semanticSearchService` 是可选参数（Preview / 测试可不注入）；nil 时仅落
+        //   markdown，跳过向量重建。
+        // - 闭包 capture 的 readmeAPI / semantic 都是 App 级长寿命引用，强引用安全。
+        // - trending / weekly / activity 三个 ContentView 内自己 new 的 ReadmeViewModel
+        //   走 `loadTrending` 不触发本回调；即便有意外路径也传 nil 保险。
+        let semanticForBackfill = semanticSearchService
+        _readmeVM = State(initialValue: ReadmeViewModel(
+            api: readmeAPI,
+            onHTMLLoaded: { [readmeAPI] repo in
+                Task { @MainActor in
+                    let result = await readmeAPI.refreshMarkdownIfNeeded(for: repo)
+                    if case .updated = result, let semantic = semanticForBackfill {
+                        await semantic.refreshIndexIfChanged(for: repo)
+                    }
+                }
+            }
+        ))
         _translationVM = State(initialValue: ReadmeTranslationViewModel(service: readmeTranslationService))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
             tagRepository: tagRepository,
@@ -259,11 +284,33 @@ struct HomeView: View {
         // HOM-47：登录后启动后台 Release 轮询；登出时停。
         // 与 SyncManager 不同：Release Poller 自调度（NSBackgroundActivityScheduler），
         // 启动一次后由系统在后台触发；这里只负责启停门控。
+        //
+        // 2026-06-13 dong4j 补救 A：同一时机门控「启动时自动后台预拉」(`SemanticIndexBuilder`)。
+        // - 登录恢复完成（首启异步路径）/ 重新登录 → 若 `aiIndexAutoPrefetchEnabled` 开启则
+        //   调 `start()` 启动顺序补 README markdown + diff 判定向量重建。
+        // - 登出 / 失效 → `cancel()` 重置 builder 状态，避免给下一个用户带进度残值。
+        // - 测试 host 跳过（避免 `xcodebuild test` 触发后台任务 hang testmanagerd）。
+        // - `start()` 内部对 `.running` 状态幂等，多次触发不会重启已在跑的任务。
         .onChange(of: authSession.state) { _, newState in
             if newState.isAuthenticated {
                 dependencies.releasePoller.start()
+                if !TestEnvironment.isRunning, settings.aiIndexAutoPrefetchEnabled {
+                    dependencies.semanticIndexBuilder.start()
+                }
             } else {
                 dependencies.releasePoller.stop()
+                dependencies.semanticIndexBuilder.cancel()
+            }
+        }
+        // 2026-06-13 dong4j 补救 A 配套：用户运行期切换「自动预拉」Toggle 即时生效。
+        // 已登录态下勾选 Toggle → 立刻启动 Builder；取消勾选 → 立刻暂停。
+        // 未登录态不动（避免误烧未来登录 user 的配额预期）。
+        .onChange(of: settings.aiIndexAutoPrefetchEnabled) { _, newValue in
+            guard !TestEnvironment.isRunning, authSession.state.isAuthenticated else { return }
+            if newValue {
+                dependencies.semanticIndexBuilder.start()
+            } else {
+                dependencies.semanticIndexBuilder.pause()
             }
         }
         .task {
@@ -286,6 +333,17 @@ struct HomeView: View {
             // - 同步完成事件由下方 `.onChange(of: syncManager.state)` 转发给调度器
             //   （理由见 AutoTidyScheduler.notifySyncStateChanged 文档）。
             dependencies.autoTidyScheduler.start()
+
+            // 2026-06-13 dong4j 补救 A：「启动时自动后台预拉」首启即时门控。
+            // 多数首启场景下登录态恢复未完成，这里走不到 isAuthenticated 分支；
+            // 实际启动由上方 `.onChange(of: authSession.state)` 在恢复完成后触发。
+            // 当用户重进 HomeView 时（已登录态稳定）则在这里直接启动。
+            // `start()` 对 `.running` 幂等，与 onChange 路径不会双启。
+            if !TestEnvironment.isRunning,
+               authSession.state.isAuthenticated,
+               settings.aiIndexAutoPrefetchEnabled {
+                dependencies.semanticIndexBuilder.start()
+            }
 
             // W4-4 D1/D2:把持久化的视图偏好同步到 viewModel,避免首次 reloadItems 用默认值
             // 然后 onAppear 才纠正导致列表抖动一次。
