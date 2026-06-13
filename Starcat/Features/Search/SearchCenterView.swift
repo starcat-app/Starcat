@@ -778,6 +778,14 @@ private struct SearchRemoteRepoDetailView: View {
     /// → 整行隐藏（与 `RepoWikiMenu` 的"未收录不占 UI"语义一致）。
     @State private var wikiLinks: [WikiLink] = []
 
+    /// 折叠菜单 popover 显隐。点 ··· 触发；菜单项点击后置 false 关闭。
+    @State private var isOverflowPresented = false
+
+    /// CodeFlow 子 sheet 显隐。从 popover 触发：先关 popover、用 DispatchQueue
+    /// 让动画完成，再翻 true 弹 sheet（与 `FeaturedExternalLinksControl` 同款时序）。
+    /// macOS 15+ 支持 sheet over sheet（搜索弹窗本身已是 sheet，这是层 2）。
+    @State private var isCodeFlowPresented = false
+
     /// 卡片宽度。480pt 足以容纳 owner / repo 双行 + 头像 + 顶栏徽章；再窄
     /// 顶栏会挤压 license / score 徽章；再宽就显得空旷不像「快速决策卡」。
     private static let cardWidth: CGFloat = 480
@@ -1268,51 +1276,132 @@ private struct SearchRemoteRepoDetailView: View {
         }
     }
 
-    /// 折叠菜单（4 项）。
-    /// - homepage 无值时禁用对应 menu item（不是隐藏）—— 让用户知道"作者没填"
-    ///   而不是"功能没做"，与 `RepoExternalLinks.homepage` 行为一致。
+    /// 折叠菜单 popover。SEARCH-RICH 2026-06-14：从原生 Menu 升级为自绘 popover，
+    /// 复用 toolbar `ExternalLinksPopover` 的视觉（CodeFlow 渐变卡片 + 行内菜单项）。
+    ///
+    /// 升级动机：
+    /// - **CodeFlow 推广**：CodeFlow 是核心差异化能力，搜索弹窗用户在「探索是否
+    ///   Star」阶段，立刻能可视化代码结构对决策非常有帮助；用渐变卡片视觉信号最强
+    /// - **对齐详情页**：用户已经在 RepoListView 顶部 toolbar 见过同款卡片，搜索
+    ///   弹窗保持一致避免认知割裂
+    ///
+    /// **CodeFlow 私有仓库策略**：搜索结果默认是公共 repo，但已 star 的私有 repo
+    /// 也可能命中（用户搜自己的私有项目）→ `repo.isPrivate` 时整张卡片不渲染，与
+    /// dong4j 选择的 `hidden` 模式一致（toolbar 是 `disabled`，二者权衡下搜索场景
+    /// 走 hidden 更克制：列表里很少出现私有，没必要专门留个灰条提示）。
+    ///
+    /// **Sheet over sheet**：CodeFlow `CodeFlowPanel` 是 sheet，搜索弹窗本身也是
+    /// sheet → 这里嵌套 sheet（macOS 15+ 稳定，`ShareCardSheet` 等已先例）。点击
+    /// CodeFlow 时先翻 popover false → DispatchQueue.main.async 后才 isCodeFlow=true，
+    /// 与 `FeaturedExternalLinksControl` 同款"避免双 presentation 同帧竞争"做法。
     @ViewBuilder
     private func overflowMenu(repo: Repo) -> some View {
-        let homepageURL: URL? = {
-            guard let raw = repo.homepage, !raw.isEmpty else { return nil }
-            return URL(string: raw)
-        }()
-
-        Menu {
-            Button {
-                onCopyURL()
-            } label: {
-                Label("search.detail.action.copyURL", systemImage: "link")
-            }
-
-            Button {
-                copyCloneURL(repo: repo)
-            } label: {
-                Label("search.detail.action.copyClone", systemImage: "terminal")
-            }
-
-            Divider()
-
-            Button {
-                openOwnerPage(login: repo.owner)
-            } label: {
-                Label("search.detail.action.openOwner", systemImage: "person.crop.circle")
-            }
-
-            Button {
-                if let url = homepageURL { NSWorkspace.shared.open(url) }
-            } label: {
-                Label("search.detail.action.openHomepage", systemImage: "globe")
-            }
-            .disabled(homepageURL == nil)
+        Button {
+            isOverflowPresented.toggle()
         } label: {
             Image(systemName: "ellipsis.circle")
                 .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
         .help("search.detail.action.more.tooltip")
+        .popover(isPresented: $isOverflowPresented, arrowEdge: .top) {
+            overflowPopoverContent(repo: repo)
+        }
+        .sheet(isPresented: $isCodeFlowPresented) {
+            CodeFlowPanel(repo: repo)
+        }
+    }
+
+    /// Popover 内容：复用 `CodeFlowFeaturedTile` + `ExternalLinkPopoverRow` 公共组件，
+    /// 加上本地的 `SearchOverflowActionRow` 处理"剪贴板"这类非外链动作。
+    ///
+    /// 分组（用 Divider 隔开）：
+    /// 1. CodeFlow 渐变卡（仅 `!repo.isPrivate` 渲染）
+    /// 2. GitHub 子页面：Issues / Pull Requests / Releases
+    /// 3. 用户主页 / Homepage（homepage 缺失时禁用项 disabled）
+    /// 4. 本地操作：Copy URL / Copy Clone（不打开浏览器，仅写剪贴板）
+    private func overflowPopoverContent(repo: Repo) -> some View {
+        let homepageURL = RepoExternalLinks.homepage(raw: repo.homepage)
+
+        return VStack(spacing: 7) {
+            if !repo.isPrivate {
+                CodeFlowFeaturedTile {
+                    isOverflowPresented = false
+                    DispatchQueue.main.async { isCodeFlowPresented = true }
+                }
+
+                Divider()
+                    .padding(.horizontal, 4)
+            }
+
+            ExternalLinkPopoverRow(
+                titleKey: "externalLinks.issues",
+                systemImage: "exclamationmark.bubble",
+                url: RepoExternalLinks.issues(owner: repo.owner, name: repo.name),
+                onDismiss: { isOverflowPresented = false }
+            )
+            ExternalLinkPopoverRow(
+                titleKey: "externalLinks.pullRequests",
+                systemImage: "arrow.triangle.pull",
+                url: RepoExternalLinks.pulls(owner: repo.owner, name: repo.name),
+                onDismiss: { isOverflowPresented = false }
+            )
+            ExternalLinkPopoverRow(
+                titleKey: "externalLinks.releases",
+                systemImage: "tag.circle",
+                url: RepoExternalLinks.releases(owner: repo.owner, name: repo.name),
+                onDismiss: { isOverflowPresented = false }
+            )
+
+            Divider()
+                .padding(.horizontal, 4)
+
+            ExternalLinkPopoverRow(
+                titleKey: "search.detail.action.openOwner",
+                systemImage: "person.crop.circle",
+                url: URL(string: "https://github.com/\(repo.owner)"),
+                onDismiss: { isOverflowPresented = false }
+            )
+
+            // homepage 缺失时仍渲染但置灰：与 toolbar `ExternalLinksPopover` 的
+            // "homepage 缺失整行隐藏"不同——搜索弹窗是"快速决策"场景,用户可能想
+            // 知道"这 repo 有没有官网"; disabled 灰行能传递"作者没填"的信号,
+            // 比直接消失信息更清晰(与原生 Menu 旧版本行为对齐)。
+            SearchOverflowActionRow(
+                titleKey: "search.detail.action.openHomepage",
+                systemImage: "globe",
+                isDisabled: homepageURL == nil
+            ) {
+                isOverflowPresented = false
+                if let url = homepageURL { NSWorkspace.shared.open(url) }
+            }
+
+            Divider()
+                .padding(.horizontal, 4)
+
+            SearchOverflowActionRow(
+                titleKey: "search.detail.action.copyURL",
+                systemImage: "link"
+            ) {
+                isOverflowPresented = false
+                onCopyURL()
+            }
+
+            SearchOverflowActionRow(
+                titleKey: "search.detail.action.copyClone",
+                systemImage: "terminal"
+            ) {
+                isOverflowPresented = false
+                copyCloneURL(repo: repo)
+            }
+        }
+        .padding(7)
+        .frame(width: 238)
     }
 
     // MARK: - Local actions (no host callback needed)
@@ -1325,12 +1414,44 @@ private struct SearchRemoteRepoDetailView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
     }
+}
 
-    /// 在浏览器打开 owner 主页。
-    /// 不走宿主回调是因为这就是个外链，没有业务侧副作用（不像 toggleStar 需要
-    /// 入库），与现有 reference candidate 直接 NSWorkspace 行为对齐。
-    private func openOwnerPage(login: String) {
-        guard let url = URL(string: "https://github.com/\(login)") else { return }
-        NSWorkspace.shared.open(url)
+/// 搜索弹窗 popover 内的「本地操作」行（复制剪贴板、homepage 禁用态等）。
+///
+/// 视觉与 `ExternalLinkPopoverRow` 完全一致（同款 hover 反馈 / spacing / icon 宽度），
+/// 区别在于：
+/// - 不接 URL，接 `action: () -> Void` —— 让调用方决定具体行为（写剪贴板 / 打开
+///   带空判断的 URL / 触发宿主回调），不强行把所有行为塞到"打开外链"这一套语义里
+/// - 支持 `isDisabled`，用于 homepage 缺失时置灰但保留显示
+struct SearchOverflowActionRow: View {
+    let titleKey: LocalizedStringKey
+    let systemImage: String
+    var isDisabled: Bool = false
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .frame(width: 18)
+                Text(titleKey)
+                Spacer()
+            }
+            .font(.system(size: 13))
+            .foregroundStyle(isDisabled ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(
+                (isHovering && !isDisabled) ? Color.accentColor.opacity(0.14) : .clear,
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(isDisabled)
+        .onHover { isHovering = $0 }
     }
 }
