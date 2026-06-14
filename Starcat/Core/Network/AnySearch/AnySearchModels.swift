@@ -80,23 +80,118 @@ struct AnySearchRateLimit: Equatable, Sendable {
     let resetAt: Date
 }
 
+/// AnySearch 错误。
+///
+/// **分类策略（dong4j 2026-06-14 拍板）**：按 HTTP status 大类做 typed case，
+/// envelope `message` 字段（API 端的人类可读文案，已经本地化为请求语言）作为
+/// 细节透传。不依赖官方 envelope `code` 的数字编码（如 `40202`）—— 文档未明
+/// 确编码规则，避免 API 升级时大量改动。
+///
+/// **关键映射**（对照 https://www.anysearch.com/docs 错误码表）：
+///
+/// | HTTP | API symbol                              | Case                            |
+/// |------|-----------------------------------------|---------------------------------|
+/// | 400  | invalid_request                         | `.invalidRequest(message:)`     |
+/// | 401  | invalid_api_key / invalid_auth_header   | `.invalidAPIKey(.invalid/.malformedHeader)` |
+/// | 402  | daily_free_quota_exhausted (anon)       | `.anonymousQuotaExhausted`      |
+/// | 402  | quota_exhausted / user_daily_quota_*    | `.keyQuotaExhausted(...)`       |
+/// | 403  | expired_api_key                         | `.invalidAPIKey(.expired)`      |
+/// | 403  | account_disabled                        | `.accountDisabled`              |
+/// | 403  | private_capability_not_enabled          | `.capabilityNotEnabled(message:)` |
+/// | 429  | rate_limit_exceeded(_user)              | `.rateLimited(scope:, retryAfter:)` |
+/// | 500/503 | internal_error / *_unavailable / ... | `.serviceUnavailable(message:)` |
+/// | 其余 | 兜底                                     | `.api(code:message:)` / `.server(statusCode:)` |
+///
+/// **匿名 vs Bearer 区分**：402 错误在两种模式下文案差异大（匿名 → 引导绑 Key；
+/// Bearer → 引导升套餐），所以 `AnySearchClient.perform` 拿到 402 时必须感知
+/// 当前 `anonymous` 标志才能选对 case。
 enum AnySearchError: Error, LocalizedError, Equatable {
     case disabled
     case invalidURL
-    case invalidAPIKey
-    case rateLimited
+
+    /// 400 类请求错误（query 为空 / domain 非法 / content_types 非法等）。
+    /// `message` 来自 envelope，已是用户语言。
+    case invalidRequest(message: String)
+
+    /// 401 / 403 expired_api_key。`reason` 区分细分原因，UI 用来选不同文案：
+    /// - `.invalid`：Key 字符串无效 / 不存在 / 被禁用 → 引导用户重新粘贴
+    /// - `.malformedHeader`：Authorization header 格式错（不是 `Bearer xxx`） → 一般是代码 bug，理论不会触发
+    /// - `.expired`：Key 已过期 → 引导用户去 console 续费 / 换 Key
+    case invalidAPIKey(reason: KeyFailReason)
+
+    /// 403 account_disabled —— 账号整个被封，换 Key 也没用，必须联系 support。
+    case accountDisabled
+
+    /// 403 private_capability_not_enabled —— 请求了未对当前 Key 开放的 domain /
+    /// 能力。`message` 来自 envelope，指出具体哪个能力。
+    case capabilityNotEnabled(message: String)
+
+    /// 402 + 当前是匿名模式 —— 当日 IP 级免费配额耗尽。
+    /// UI 应引导用户去设置页绑定 API Key 提额。
+    case anonymousQuotaExhausted
+
+    /// 402 + 当前是 Bearer 模式 —— Key / 账号付费配额或当日免费配额耗尽。
+    /// `limit / used` 来自 envelope `data` 字段；缺失时为 nil。
+    case keyQuotaExhausted(limit: Int?, used: Int?)
+
+    /// 429 —— 请求过于频繁。
+    /// `scope` 区分账号级（所有 Key 合计）vs Key 级；`retryAfter` 来自 HTTP
+    /// `Retry-After` header（单位：秒），缺失时为 nil。
+    case rateLimited(scope: RateLimitScope, retryAfter: Int?)
+
+    /// 500 / 502 / 503 / 504 —— 服务端临时性异常，建议重试。`message` 来自
+    /// envelope 或 statusCode 兜底，UI 用来给"内部错误 / 配额检查失败"等差异化提示。
+    case serviceUnavailable(message: String?)
+
+    /// 仍保留原 `.server(statusCode:)`，作为前述 typed case 都没命中的兜底。
     case server(statusCode: Int)
+
     case invalidResponse
     case api(code: Int, message: String)
     case decoding
     case transport(String)
 
+    enum KeyFailReason: Equatable, Sendable {
+        case invalid
+        case malformedHeader
+        case expired
+    }
+
+    enum RateLimitScope: Equatable, Sendable {
+        case key      // rate_limit_exceeded
+        case account  // rate_limit_exceeded_user
+    }
+
     var errorDescription: String? {
         switch self {
         case .disabled: return "AnySearch 未启用"
         case .invalidURL: return "AnySearch URL 无效"
-        case .invalidAPIKey: return "AnySearch API Key 无效或已过期"
-        case .rateLimited: return "AnySearch 额度不足或请求过于频繁"
+        case .invalidRequest(let message):
+            return "请求参数无效：\(message)"
+        case .invalidAPIKey(let reason):
+            switch reason {
+            case .invalid: return "AnySearch API Key 无效或已被禁用"
+            case .malformedHeader: return "AnySearch API Key 头格式错误"
+            case .expired: return "AnySearch API Key 已过期"
+            }
+        case .accountDisabled:
+            return "AnySearch 账号已禁用，请联系 support@anysearch.com"
+        case .capabilityNotEnabled(let message):
+            return "该能力未对当前 API Key 开放：\(message)"
+        case .anonymousQuotaExhausted:
+            return "AnySearch 匿名免费额度已用尽，绑定 API Key 可继续使用"
+        case .keyQuotaExhausted(let limit, let used):
+            if let limit, let used {
+                return "AnySearch 配额已用尽（\(used)/\(limit)），请升级套餐或等待下个计费周期"
+            }
+            return "AnySearch 配额已用尽，请升级套餐或等待下个计费周期"
+        case .rateLimited(_, let retryAfter):
+            if let retryAfter {
+                return "AnySearch 请求过于频繁，\(retryAfter) 秒后重试"
+            }
+            return "AnySearch 请求过于频繁，请稍候重试"
+        case .serviceUnavailable(let message):
+            return message.map { "AnySearch 服务暂时异常：\($0)" } ?? "AnySearch 服务暂时异常，请稍后重试"
         case .server(let code): return "AnySearch 服务异常（HTTP \(code)）"
         case .invalidResponse: return "AnySearch 返回了无效响应"
         case .api(_, let message): return message

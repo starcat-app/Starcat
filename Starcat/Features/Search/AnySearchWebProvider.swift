@@ -64,7 +64,12 @@ struct AnySearchWebProvider: SearchProvider {
         // Bearer Key 变化必须自然 miss，避免用户修正无效 Key 后仍读到旧会话缓存。
         // 只使用进程内 hashValue，不把密钥原文写入 key、日志或磁盘。
         let credentialVersion = config.anonymous ? "anonymous" : "bearer:\(config.apiKey?.hashValue ?? 0)"
-        let key = "\(request.query.lowercased())|\(credentialVersion)"
+        // cache key 必须把 filters fingerprint 纳入 —— 同 query 切 domain / zone /
+        // contentTypes / maxResults 时如果还命中旧 cache 就违反"应用筛选"语义。
+        // fingerprint 用 sorted+join 而非 hashValue，跨进程稳定（虽然 cache 本身是
+        // 内存的，但显式稳定 key 更利于排障）。
+        let filtersFingerprint = request.anySearchFilters.fingerprint
+        let key = "\(request.query.lowercased())|\(credentialVersion)|\(filtersFingerprint)"
         if let cached = await cache.value(for: key) {
             // cache hit 也算一次"用户搜索"：在用户体感里"我又搜了一次"，sessionUsed 必须 +1。
             // 取出 cache 后，把 webMetadata.rateLimit.sessionUsed 用最新计数覆写。
@@ -73,9 +78,18 @@ struct AnySearchWebProvider: SearchProvider {
         }
 
         let client = AnySearchClient(apiKey: config.apiKey, anonymous: config.anonymous)
+        // 用户筛选条件优先；筛选未指定的字段保持原"自动"行为：
+        // - maxResults：用户值钳到 1...50（filters 内部 default 10），再与 perPage 取较小
+        // - domain / zone：nil 时 AnySearchRequest 内 Codable 自动跳过该 key
+        // - contentTypes：空 Set 时显式传 nil（API 端「无 key」语义 = 自动）
+        let filters = request.anySearchFilters
+        let effectiveMaxResults = min(max(1, filters.maxResults), min(request.perPage, 50))
         let response = try await client.search(AnySearchRequest(
             query: request.query,
-            maxResults: min(request.perPage, 20),
+            maxResults: effectiveMaxResults,
+            domain: filters.domain,
+            contentTypes: filters.contentTypes.isEmpty ? nil : Array(filters.contentTypes).sorted(),
+            zone: filters.zone?.rawValue,
             language: Locale.current.language.languageCode?.identifier
         ))
         let references = response.results.map { result in

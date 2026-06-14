@@ -171,10 +171,75 @@ struct GitHubSearchFilters: Equatable, Hashable, Codable, Sendable {
     static let empty = GitHubSearchFilters()
 }
 
+/// AnySearch 网关支持的地理路由分区。
+///
+/// - `cn`：国内优先（中文资料、本地化结果倾向）
+/// - `intl`：海外优先
+/// - nil（未传）：网关按 query 和 IP 自动路由（推荐默认）
+enum AnySearchZone: String, CaseIterable, Identifiable, Codable, Sendable {
+    case cn
+    case intl
+
+    var id: String { rawValue }
+}
+
+/// AnySearch 搜索筛选条件（用户在搜索弹窗 UI 调整的可选参数）。
+///
+/// 设计与 `GitHubSearchFilters` 对称：默认值 = `.empty`，全部 Optional / 空集合
+/// → provider 翻译时不传给 API → 网关走自动路由。这样用户「什么都不选」=「跟
+/// 当前默认行为完全一致」，无功能回退。
+///
+/// **字段开放范围（dong4j 2026-06-14 拍板）**：
+/// - 开放：`domain` / `contentTypes` / `zone` / `maxResults` —— 用户最常调的 4 个
+/// - 不开放：`tag`（依赖 domain 联动，格式复杂）/ `params`（文档未给可选键全集）/
+///   `language`（隐式跟随 `Locale.current`，UI 上无开关）
+///
+/// **持久化（dong4j 2026-06-14 拍板）**：对齐 `GitHubSearchFilters`，会话级即可
+/// —— 挂在 `SearchCenterViewModel` 的 `@Observable` 属性上，App 重启清零，不写
+/// `AppSettings`。
+struct AnySearchFilters: Equatable, Hashable, Codable, Sendable {
+    /// AnySearch 22 个 domain 之一（general / code / tech / ...）。
+    /// nil = 自动（不传给 API，网关按 query 路由到最优数据源）。
+    var domain: String?
+
+    /// 内容类型过滤（如 `["web", "news", "doc"]`）。
+    /// 空集合 = 自动（不传 API）；非空时只显示命中的类型。
+    /// 官方文档未给完整枚举，UI 当前开放 `web` / `news` / `doc` 三个常见值。
+    var contentTypes: Set<String> = []
+
+    /// 地理分区路由。nil = 跟随网关自动路由。
+    var zone: AnySearchZone?
+
+    /// 单次返回结果数。API 上限 100，但 UI 钳到 1...50（弹窗里 30 已绰绰有余，
+    /// 100 会让首屏滚动疲劳）。default 10 与原硬编码行为对齐。
+    var maxResults: Int = 10
+
+    static let empty = AnySearchFilters()
+
+    /// 用于 cache key 的稳定指纹。
+    ///
+    /// `SearchSessionCache` 现在按 `query + credentialVersion` 做 key，filters
+    /// 变化必须让 key 自然 miss，否则用户切 domain 后还返回旧结果。
+    /// 用 sorted+join 而不是直接 `hashValue`：后者跨进程不稳定，且容易因
+    /// `Set` 迭代顺序不稳定造成 cache miss 率虚高。
+    var fingerprint: String {
+        let parts: [String] = [
+            "d=\(domain ?? "")",
+            "ct=\(contentTypes.sorted().joined(separator: ","))",
+            "z=\(zone?.rawValue ?? "")",
+            "n=\(maxResults)"
+        ]
+        return parts.joined(separator: "|")
+    }
+}
+
 struct SearchRequest: Equatable, Hashable, Sendable {
     let query: String
     let scope: SearchScope
     let githubFilters: GitHubSearchFilters
+    /// AnySearch 筛选条件。默认 `.empty` 让所有既有调用点零改动 —— 与未传时
+    /// 的「全部走默认」行为完全一致。
+    let anySearchFilters: AnySearchFilters
     let page: Int
     let perPage: Int
     let includeWebInAll: Bool
@@ -183,6 +248,7 @@ struct SearchRequest: Equatable, Hashable, Sendable {
         query: String,
         scope: SearchScope = .all,
         githubFilters: GitHubSearchFilters = .empty,
+        anySearchFilters: AnySearchFilters = .empty,
         page: Int = 1,
         perPage: Int = 30,
         includeWebInAll: Bool = false
@@ -190,6 +256,7 @@ struct SearchRequest: Equatable, Hashable, Sendable {
         self.query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         self.scope = scope
         self.githubFilters = githubFilters
+        self.anySearchFilters = anySearchFilters
         self.page = max(1, page)
         self.perPage = min(max(1, perPage), 100)
         self.includeWebInAll = includeWebInAll

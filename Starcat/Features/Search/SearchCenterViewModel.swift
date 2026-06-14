@@ -29,6 +29,12 @@ final class SearchCenterViewModel {
     /// 长生命周期 ViewModel 持有，不能放在 SearchCenterView 的临时 @State 中。
     var isGitHubFiltersExpanded: Bool = false
     var githubFilters: GitHubSearchFilters = .empty
+    /// AnySearch 筛选条折叠状态。与 GitHub 筛选条对称（dong4j 2026-06-14 拍板：
+    /// 持久化策略对齐 githubFilters —— 仅会话级，App 重启清零，不写 AppSettings）。
+    var isAnySearchFiltersExpanded: Bool = false
+    /// AnySearch 筛选条件（domain / contentTypes / zone / maxResults）。
+    /// 默认 `.empty` 表示「自动」，与未做本次改造前的行为完全一致。
+    var anySearchFilters: AnySearchFilters = .empty
 
     private(set) var lastSubmittedQuery: String = ""
     /// 历史记录（按 `decayedScore` 降序排列；UI 直接遍历即可）。
@@ -218,6 +224,17 @@ final class SearchCenterViewModel {
         clampSelection()
     }
 
+    /// 应用 AnySearch 筛选条件。与 `applyGitHubFilters` 对称：触发 coordinator
+    /// 重跑当前 query，AnySearchWebProvider 内的 cache key 已把 filters fingerprint
+    /// 纳入，新筛选不会复用旧结果。
+    func applyAnySearchFilters() async {
+        guard !lastSubmittedQuery.isEmpty else { return }
+        currentGitHubPage = 1
+        selectedIndex = nil
+        await coordinator.search(makeRequest(query: lastSubmittedQuery))
+        clampSelection()
+    }
+
     func loadMoreGitHub() async {
         guard canLoadMoreGitHub, !lastSubmittedQuery.isEmpty else { return }
         currentGitHubPage += 1
@@ -225,6 +242,7 @@ final class SearchCenterViewModel {
             query: lastSubmittedQuery,
             scope: scope,
             githubFilters: githubFilters,
+            anySearchFilters: anySearchFilters,
             page: currentGitHubPage,
             perPage: 30,
             includeWebInAll: includeWebInAll()
@@ -261,6 +279,7 @@ final class SearchCenterViewModel {
             query: query,
             scope: scope,
             githubFilters: githubFilters,
+            anySearchFilters: anySearchFilters,
             page: currentGitHubPage,
             includeWebInAll: includeWebInAll()
         )
