@@ -452,7 +452,7 @@ struct RepoAIWindowContentView: View {
             }
             Text("ai.assistant.summary.preparingContext.caption")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -639,6 +639,10 @@ struct RepoAIWindowContentView: View {
     ///   - 第一行：由 X 模型生成 · 时间（旧版独占）
     ///   - 第二行：基于 commit abc1234 (4280 tokens · 38 files)
     ///     仅当 insight.contextMetadata 非 nil 时出现；不存在的旧缓存 insight 上行兼容。
+    ///
+    /// **2026-06-14 D-31 follow-up**：颜色从 `.tertiary` 升到 `.secondary`。
+    /// `.tertiary` 在浅色主题下对比度只有 ~1.5:1，肉眼几乎"灰糊"在白底上；
+    /// 与 D-31 空状态组件统一对齐到 `.secondary`（4.5:1+ 满足 WCAG AA）。
     private func footer(_ insight: RepoAIInsight) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
@@ -660,7 +664,7 @@ struct RepoAIWindowContentView: View {
             }
         }
         .font(.caption2)
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(.secondary)
     }
 
     /// Y2：代码上下文元信息行。展示 "<commit-7位> · N tokens · M files"。
@@ -882,19 +886,12 @@ struct RepoAIWindowContentView: View {
     }
 
     private var chatEmptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 36))
-                .foregroundStyle(.tertiary)
-            Text("ai.assistant.chat.empty.title")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text("ai.assistant.chat.empty.description")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-        }
+        EmptyStateView(
+            systemImage: "bubble.left.and.bubble.right",
+            title: "ai.assistant.chat.empty.title",
+            subtitle: "ai.assistant.chat.empty.description",
+            subtitleHorizontalPadding: 40
+        )
         .frame(maxWidth: .infinity)
     }
 
@@ -1064,6 +1061,14 @@ struct RepoAIWindowContentView: View {
     }
 
     /// 3 维汇总状态行。
+    ///
+    /// 2026-06-14 视觉对齐 repo 卡片：3 维由"text 拼字串 · 分隔符"改成 3 个独立 pill
+    /// （capsule + 图标 + 文字），样式与 `UnifiedRepoRow.RepoCardInlineMetadataBadge`
+    /// 完全一致（9pt semibold icon + 10pt semibold monospaced text + 5/2 padding +
+    /// `secondary.opacity(0.10)` capsule + secondary 灰色），让"对话窗口下方的状态条"
+    /// 与"列表卡片的元数据 pill"风格统一，用户对"灰色小胶囊 = 状态信号"的认知能直接
+    /// 迁移。"📎 上下文："prefix 保留——单看 pill 行可能不知道这是干嘛，prefix 给一个
+    /// 一秒能读懂的语义锚点。
     @ViewBuilder
     private func summarizedStatusRow(vm: RepoAIInsightViewModel) -> some View {
         let hasSummary = (vm.insight?.summaryMarkdown?.isEmpty == false)
@@ -1079,13 +1084,31 @@ struct RepoAIWindowContentView: View {
             HStack(spacing: 6) {
                 Image(systemName: "paperclip")
                     .foregroundStyle(.secondary)
-                Text(verbatim: makeContextStatusText(
-                    hasSummary: hasSummary,
-                    hasCode: hasCode,
-                    hasExternal: hasExternal
-                ))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                Text("ai.assistant.chat.contextStatus.prefix")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                // pill 行——3 个维度按命中条件渲染，缺失维度不占位。pill 之间用 spacing 4
+                // （与 RepoCardInlineMetadataBadge 在 repo 卡片底排连排时的间距一致）。
+                HStack(spacing: 4) {
+                    if hasSummary {
+                        contextStatusPill(
+                            icon: "sparkles",
+                            label: "ai.assistant.chat.contextStatus.summary"
+                        )
+                    }
+                    if hasCode {
+                        contextStatusPill(
+                            icon: "doc.text.magnifyingglass",
+                            label: "ai.assistant.chat.contextStatus.code"
+                        )
+                    }
+                    if hasExternal {
+                        contextStatusPill(
+                            icon: "globe",
+                            label: "ai.assistant.chat.contextStatus.external"
+                        )
+                    }
+                }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 6)
@@ -1094,18 +1117,34 @@ struct RepoAIWindowContentView: View {
         // 三者都为 false：返回隐含 EmptyView，配合外层 frame(maxHeight: 0) 完全不占位。
     }
 
-    /// 按命中维度拼出形如「上下文：摘要 · 代码 · 外网」的本地化文本。
+    /// 单个 context 维度 pill（与 repo 卡片 `RepoCardInlineMetadataBadge` 同款视觉）。
     ///
-    /// 用 `String(localized:)` + 普通字符串拼接而非 SwiftUI `Text` 组合，是因为
-    /// 这里要做"按 bool 选择性插入"，Text 的 `+` 操作语法对条件插入不友好。
-    /// 文案前缀和三个维度词都各自独立 i18n（en/zh-Hans 都需要补 key）。
-    private func makeContextStatusText(hasSummary: Bool, hasCode: Bool, hasExternal: Bool) -> String {
-        var parts: [String] = []
-        if hasSummary { parts.append(String(localized: "ai.assistant.chat.contextStatus.summary")) }
-        if hasCode { parts.append(String(localized: "ai.assistant.chat.contextStatus.code")) }
-        if hasExternal { parts.append(String(localized: "ai.assistant.chat.contextStatus.external")) }
-        let prefix = String(localized: "ai.assistant.chat.contextStatus.prefix")
-        return prefix + parts.joined(separator: " · ")
+    /// 视觉规格全部照搬 `Starcat/Shared/Components/UnifiedRepoRow.swift` 内
+    /// fileprivate `RepoCardInlineMetadataBadge`：9pt semibold icon + 10pt semibold
+    /// monospaced text + 5pt horizontal / 2pt vertical padding + capsule
+    /// `Color.secondary.opacity(0.10)` 背景 + secondary 灰色 + fixedSize 防内容自适应
+    /// 引起布局抖动。这样列表里的"语言 / star / fork"pill 和本视图的"摘要 / 代码 /
+    /// 外网"pill 看起来是同一族视觉语言。
+    ///
+    /// 不抽到 `Shared/Components` 共享：原 `RepoCardInlineMetadataBadge` 是 fileprivate
+    /// （设计上不希望被外部依赖），本视图局部用 3 次，复制 12 行实现成本低于打开 API
+    /// 边界的维护成本；如果未来还有第 4 个调用方，再做一次 surgical 抽提到共享层。
+    private func contextStatusPill(icon: String, label: LocalizedStringKey) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .semibold))
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background {
+            Capsule(style: .continuous)
+                .fill(Color.secondary.opacity(0.10))
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// Y9.2 玻璃态主题适配：与 errorBanner 同款风格——背景 0.12 → 0.18 + strokeBorder。

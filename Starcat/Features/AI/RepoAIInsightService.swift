@@ -833,10 +833,12 @@ final class RepoAIInsightService {
         //     与 RepoContextPacker XML 输出的 `<repository>` 根标签语义对齐；
         //   - 拼接整段原始 XML 而不是 marker / placeholder：LLM 直接消费 XML，无需 service 端
         //     做"摘要再摘要"；
-        //   - **读 contextURL 时用 String(contentsOf:)** 而不是 streaming：context.xml 已经
-        //     按 token budget 限过（默认 8000 tokens ≈ 32KB），一次读全无内存压力；
-        //   - **任何失败都静默吞**：provider.context(for:) 已经把网络 / 磁盘 / pack 错误降级
-        //     成 nil 了，这里只需再防御 String 读取本身失败（极少触发，比如文件刚被外部删）。
+        //   - **xml 内容直接消费 `result.xml`**：2026-06-14 silent failure 修复后，xml 已在
+        //     provider 内部的 security scope 内通过 `RepoContextStorage.loadContextXml(...)`
+        //     读好，service 不再做任何文件 IO。这一改动根除了"用户把 RepoContext 输出根目录
+        //     改成自选文件夹时，service 在 scope 外 `String(contentsOf:)` 必失败、被 `try?`
+        //     吞成 nil、contextMeta 永远 nil 的 silent failure"（dong4j 反馈
+        //     addyosmani/agent-skills 案例）。
         //
         // Y2：同时把 PackMetadata 投影成 RepoAIInsightContextMeta 透传出去，让上层 UI footer 用。
         // Y4：按 provider outcome 3 态分别处理（success / featureDisabled / degraded）。
@@ -847,22 +849,19 @@ final class RepoAIInsightService {
             let outcome = try await provider.contextOutcome(for: repo)
             switch outcome {
             case .success(let result):
-                if let contextXml = try? String(contentsOf: result.url, encoding: .utf8),
-                   !contextXml.isEmpty {
-                    // 代码上下文 XML 既给 LLM 用又进 hash：commit SHA 改 = 代码语义改
-                    // = 该重生成摘要。这是"语义级变更"，不属于 HOM-199 要稳定化的流量字段。
-                    llmText += "\n\n" + contextXml
-                    hashText += "\n\n" + contextXml
-                    codeContextXml = contextXml
-                    contextMeta = RepoAIInsightContextMeta(
-                        commitSha: result.metadata.commitSha,
-                        ref: result.metadata.ref,
-                        tokenBudget: result.metadata.tokenBudget,
-                        actualTokens: result.metadata.stats.actualTokens,
-                        totalFiles: result.metadata.stats.totalFiles,
-                        generatedAt: result.metadata.generatedAt
-                    )
-                }
+                // 代码上下文 XML 既给 LLM 用又进 hash：commit SHA 改 = 代码语义改
+                // = 该重生成摘要。这是"语义级变更"，不属于 HOM-199 要稳定化的流量字段。
+                llmText += "\n\n" + result.xml
+                hashText += "\n\n" + result.xml
+                codeContextXml = result.xml
+                contextMeta = RepoAIInsightContextMeta(
+                    commitSha: result.metadata.commitSha,
+                    ref: result.metadata.ref,
+                    tokenBudget: result.metadata.tokenBudget,
+                    actualTokens: result.metadata.stats.actualTokens,
+                    totalFiles: result.metadata.stats.totalFiles,
+                    generatedAt: result.metadata.generatedAt
+                )
             case .featureDisabled:
                 // 用户主动关：不显示 banner，degradationReason 留 nil
                 break

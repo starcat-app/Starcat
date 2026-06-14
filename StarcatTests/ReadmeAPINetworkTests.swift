@@ -451,8 +451,8 @@ struct ReadmeAPINetworkTests {
 
         let fetched = try await trendingRepo.find(fullName: "octocat/hello")
         let expectedRewritten = "https://raw.githubusercontent.com/octocat/hello/HEAD/logo.png"
-        #expect(fetched?.renderedHtml.contains(expectedRewritten) == true)
-        #expect(fetched?.renderedHtml.contains("./logo.png") == false)
+        #expect(fetched?.renderedHtml?.contains(expectedRewritten) == true)
+        #expect(fetched?.renderedHtml?.contains("./logo.png") == false)
     }
 
     @Test("prefetchTrending: cache 过期 → 走 refreshTrendingReadme")

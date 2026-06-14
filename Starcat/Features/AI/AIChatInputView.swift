@@ -99,14 +99,19 @@ struct AIChatInputView: View {
                 Text("ai.assistant.input.contextMenu.anySearch.disabledHint")
             }
         } label: {
+            // 视觉对齐 sendButton：右侧发送按钮是 32×32 实心圆 + 14pt bold 箭头，
+            // 这里 ellipsis.circle 走描边圆 + secondary 灰，font 22pt 让圆形 symbol
+            // 的实际直径接近 ~26pt，frame 与 sendButton 同步成 32×32 让两个按钮
+            // 在 HStack 中等高对齐。圆体略小于发送按钮，保留"次级操作 < 主操作"
+            // 的视觉层级（不抢戏，但不再"小一圈"）。
             Image(systemName: "ellipsis.circle")
-                .font(.system(size: 16))
+                .font(.system(size: 22))
                 .foregroundStyle(.secondary)
-                .frame(width: 30, height: 30)
+                .frame(width: 32, height: 32)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .frame(width: 30)
+        .frame(width: 32)
         .focusEffectDisabled()
         .help("ai.assistant.input.contextMenu.help")
     }

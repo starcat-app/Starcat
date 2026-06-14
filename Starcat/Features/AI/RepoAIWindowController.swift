@@ -60,6 +60,21 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
     /// 才能让 SwiftUI 生命周期与 AppKit 面板一致。
     private let hostedContentController: NSViewController
 
+    /// 监听 `NSApplication.didBecomeActiveNotification` 的 block-based observer token。
+    ///
+    /// 2026-06-14 dong4j 反馈"AI 摘要窗口现在是置顶于所有窗口之上的, 我只需要置顶于
+    /// starcat 主窗口之上"——把固定 `.floating` level 改成"按 App active 状态动态切"：
+    ///   - Starcat 是前台 App 时 → `.floating`：浮在 Starcat 主窗之上，保留原体验；
+    ///   - 切到其它 App（Chrome / Xcode 等）时 → `.normal`：其它 App 的窗口可以正常
+    ///     遮住 AI 窗，不再强行浮在所有窗口之上。
+    /// 用 block-based observer + `[weak self]` 比 selector-based 安全（self dealloc 时
+    /// 不会触发悬挂调用），deinit 显式 `removeObserver(token)` 双保险。
+    private var didBecomeActiveObserver: NSObjectProtocol?
+
+    /// 监听 `NSApplication.didResignActiveNotification` 的 block-based observer token。
+    /// 见 `didBecomeActiveObserver` 注释。
+    private var didResignActiveObserver: NSObjectProtocol?
+
     /// 显示给定 repo 的 AI 助手窗口；已开则把窗口带到前台。
     ///
     /// - Parameters:
@@ -187,8 +202,13 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         window.backgroundColor = .clear
         window.hasShadow = true
         window.isMovableByWindowBackground = true
-        // AI 助手是常驻工具面板：始终浮在普通窗口上方，切换焦点或应用时不关闭。
-        window.level = .floating
+        // AI 助手是常驻工具面板：Starcat 是前台 App 时浮在主窗之上，切到其他 App 时
+        // 降到 `.normal` 让其他 App 的窗口可以遮住它（dong4j 2026-06-14 反馈：之前固定
+        // `.floating` 让 AI 窗在用户切到 Chrome / Xcode 看资料时仍挡在前面，不符合
+        // "只置顶于 Starcat 主窗口之上"的预期）。下方 `installAppActivationObservers()`
+        // 负责切换；初始值按当前 App active 状态设定。`hidesOnDeactivate = false` 让
+        // 失活时窗口仍可见（只是 level 降低不被前置），用户切回 Starcat 立刻看到。
+        window.level = NSApp.isActive ? .floating : .normal
         window.hidesOnDeactivate = false
         window.animationBehavior = .utilityWindow
         // 窗口关闭后不自动释放，让 controller 的 windowWillClose 里完成清理
@@ -200,6 +220,48 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         // 见上文 maskImage 注释：圆角 contentView + borderless 时阴影需要重算一次，
         // 否则首帧 shadow 按矩形 frame 绘制，圆角处会硬切。
         window.invalidateShadow()
+        // super.init 之后才能用 self；在此挂上 App 激活 / 失活 observer，让窗口 level
+        // 跟随 Starcat 前后台状态切换（详见两个 observer 字段的注释）。
+        installAppActivationObservers()
+    }
+
+    /// 注册 App 激活 / 失活的 NotificationCenter observer，让 AI 窗 `level` 跟随切换。
+    ///
+    /// - Starcat 进入前台 (`didBecomeActive`) → `.floating`：恢复"浮在主窗之上"；
+    /// - Starcat 离开前台 (`didResignActive`) → `.normal`：其他 App 的窗口可以遮住它。
+    ///
+    /// 用 main queue 派发回调，因为 NSWindow.level setter 必须在主线程调用；observer
+    /// closure 默认在 posted notification 所在线程跑（这里是主线程，但显式 `.main`
+    /// 队列更稳）。`[weak self]` 防止 self dealloc 后 observer 被异步触发悬挂调用。
+    private func installAppActivationObservers() {
+        let center = NotificationCenter.default
+        didBecomeActiveObserver = center.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.window?.level = .floating
+        }
+        didResignActiveObserver = center.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.window?.level = .normal
+        }
+    }
+
+    deinit {
+        // block-based observer 在 self dealloc 时不会自动 invalidate（与 selector-based
+        // observer 在 macOS 10.11+ 的自动清理不同），必须显式 removeObserver(token) 防
+        // NotificationCenter 持有过期 token / 已 deallocated controller 的弱引用闭包
+        // 仍被调用（虽然 `[weak self]` 兜底，但 token 留在 center 里仍是泄漏）。
+        if let token = didBecomeActiveObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+        if let token = didResignActiveObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
     }
 
     /// 生成 9-slice 圆角蒙版图，用于 `NSVisualEffectView.maskImage`。

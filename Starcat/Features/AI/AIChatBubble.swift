@@ -185,9 +185,11 @@ struct AIChatBubble: View {
     }
 
     private var timestampLabel: some View {
+        // 2026-06-14 D-31 follow-up：.tertiary → .secondary。
+        // 浅色主题下 .tertiary 时间戳几乎不可读，与 D-31 全局对比度修正对齐。
         Text(message.timestamp, style: .time)
             .font(.caption2)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
     }
 }
 

@@ -160,16 +160,13 @@ struct ReleaseTimelineView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "shippingbox")
-                .font(.system(size: 40))
-                .foregroundStyle(.tertiary)
-            Text("releases.timeline.empty.title")
-                .font(.headline)
-            Text("releases.timeline.empty.subtitle")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
+        EmptyStateView(
+            systemImage: "shippingbox",
+            title: "releases.timeline.empty.title",
+            subtitle: "releases.timeline.empty.subtitle",
+            iconSize: 40,
+            spacing: 12
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 

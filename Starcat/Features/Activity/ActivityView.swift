@@ -242,35 +242,23 @@ struct ActivityView: View {
     }
 
     private func emptyState(systemImage: String, title: LocalizedStringKey, subtitle: LocalizedStringKey) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 36))
-                .foregroundStyle(.tertiary)
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-        }
+        EmptyStateView(
+            systemImage: systemImage,
+            title: title,
+            subtitle: subtitle,
+            spacing: 12
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }
 
     private func emptyState(systemImage: String, title: LocalizedStringKey, subtitleText: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 36))
-                .foregroundStyle(.tertiary)
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text(verbatim: subtitleText)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-        }
+        EmptyStateView(
+            systemImage: systemImage,
+            title: title,
+            subtitleText: subtitleText,
+            spacing: 12
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }
