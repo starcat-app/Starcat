@@ -30,6 +30,7 @@ struct ContentView: View {
         HomeView(
             repository: dependencies.repoRepository,
             readmeAPI: dependencies.readmeAPI,
+            readmeAvailability: dependencies.readmeAvailability,
             tagRepository: dependencies.tagRepository,
             repoTagRepository: dependencies.repoTagRepository,
             repoNoteRepository: dependencies.repoNoteRepository,
