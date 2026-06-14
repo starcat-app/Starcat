@@ -1089,23 +1089,32 @@ struct RepoAIWindowContentView: View {
                     .foregroundStyle(.secondary)
                 // pill 行——3 个维度按命中条件渲染，缺失维度不占位。pill 之间用 spacing 4
                 // （与 RepoCardInlineMetadataBadge 在 repo 卡片底排连排时的间距一致）。
+                //
+                // 3 色语义化分布（2026-06-14 dong4j 反馈"统一灰底太单调"）：
+                //   - 摘要 → 紫色（与 summaryHeader 的 sparkles 同色，项目内 AI 主色）
+                //   - 代码 → 蓝色（代码语义经典色 + macOS accent 默认色）
+                //   - 外网 → 绿色（globe / 互联网语义）
+                // 三色都是 SwiftUI 系统色，在浅 / 深主题下都自适应不需要手写双套色。
                 HStack(spacing: 4) {
                     if hasSummary {
                         contextStatusPill(
                             icon: "sparkles",
-                            label: "ai.assistant.chat.contextStatus.summary"
+                            label: "ai.assistant.chat.contextStatus.summary",
+                            tint: .purple
                         )
                     }
                     if hasCode {
                         contextStatusPill(
                             icon: "doc.text.magnifyingglass",
-                            label: "ai.assistant.chat.contextStatus.code"
+                            label: "ai.assistant.chat.contextStatus.code",
+                            tint: .blue
                         )
                     }
                     if hasExternal {
                         contextStatusPill(
                             icon: "globe",
-                            label: "ai.assistant.chat.contextStatus.external"
+                            label: "ai.assistant.chat.contextStatus.external",
+                            tint: .green
                         )
                     }
                 }
@@ -1117,19 +1126,32 @@ struct RepoAIWindowContentView: View {
         // 三者都为 false：返回隐含 EmptyView，配合外层 frame(maxHeight: 0) 完全不占位。
     }
 
-    /// 单个 context 维度 pill（与 repo 卡片 `RepoCardInlineMetadataBadge` 同款视觉）。
+    /// 单个 context 维度 pill（沿用 repo 卡片 `RepoCardInlineMetadataBadge` 的尺寸 /
+    /// 字号 / padding / capsule 几何，但底色 + 前景从单色灰升级为 `tint` 驱动的彩色
+    /// 语义标签）。
     ///
-    /// 视觉规格全部照搬 `Starcat/Shared/Components/UnifiedRepoRow.swift` 内
-    /// fileprivate `RepoCardInlineMetadataBadge`：9pt semibold icon + 10pt semibold
-    /// monospaced text + 5pt horizontal / 2pt vertical padding + capsule
-    /// `Color.secondary.opacity(0.10)` 背景 + secondary 灰色 + fixedSize 防内容自适应
-    /// 引起布局抖动。这样列表里的"语言 / star / fork"pill 和本视图的"摘要 / 代码 /
-    /// 外网"pill 看起来是同一族视觉语言。
+    /// 视觉规格：
+    ///   - 9pt semibold icon + 10pt semibold monospaced text；
+    ///   - 5pt horizontal / 2pt vertical padding（与 RepoCardInlineMetadataBadge 一致）；
+    ///   - 前景（icon + text）= `tint`；
+    ///   - 背景 capsule = `tint.opacity(0.15)`（比 banner 的 0.18 略轻，因 pill 面积小、
+    ///     高 opacity 会让小 chip 过于刺眼）；
+    ///   - `fixedSize(horizontal: true)` 防内容自适应引起布局抖动。
     ///
-    /// 不抽到 `Shared/Components` 共享：原 `RepoCardInlineMetadataBadge` 是 fileprivate
-    /// （设计上不希望被外部依赖），本视图局部用 3 次，复制 12 行实现成本低于打开 API
-    /// 边界的维护成本；如果未来还有第 4 个调用方，再做一次 surgical 抽提到共享层。
-    private func contextStatusPill(icon: String, label: LocalizedStringKey) -> some View {
+    /// 2026-06-14 演进：dong4j 反馈"3 个 pill 统一灰底太单调"，从原本的
+    /// `Color.secondary.opacity(0.10)` + `.secondary` 前景升级为 tint 驱动的彩色方案。
+    /// 不再与 `RepoCardInlineMetadataBadge` 视觉完全一致——repo 卡片底排 pill 是元数据
+    /// 列表（语言 / star / fork），用一种灰色避免抢戏；本 chat 状态条 3 项是不同语义维度
+    /// （AI 摘要 / 代码上下文 / 外部材料），彩色区分让用户一眼分辨"当前对话带了哪几路
+    /// 上下文"。
+    ///
+    /// 不抽到 `Shared/Components` 共享：本视图局部用 3 次，复制 ~15 行实现成本低于打开
+    /// API 边界的维护成本；如果未来还有第 4 个调用方再做一次 surgical 抽提到共享层。
+    private func contextStatusPill(
+        icon: String,
+        label: LocalizedStringKey,
+        tint: Color
+    ) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: 9, weight: .semibold))
@@ -1137,12 +1159,12 @@ struct RepoAIWindowContentView: View {
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .lineLimit(1)
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(tint)
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
         .background {
             Capsule(style: .continuous)
-                .fill(Color.secondary.opacity(0.10))
+                .fill(tint.opacity(0.15))
         }
         .fixedSize(horizontal: true, vertical: false)
     }
