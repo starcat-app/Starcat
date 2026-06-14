@@ -32,9 +32,19 @@ struct TrendingReadmeRepositoryLRUTests {
     }
 
     /// 按 idx 生成 ISO8601 字符串,保证 ASC 排序后 idx 小的更早。
+    ///
+    /// **fixture 修复（2026-06-15）**：原实现用 `ISO8601DateFormatter.shared.date(from: "2026-06-14T00:00:00Z")!`
+    /// 在 `ISO8601DateFormatter.shared` 配 `.withFractionalSeconds` 后会返 nil（输入字符串无 `.SSS` 段），
+    /// 强解包炸 fatal error（pre-existing bug，HEAD 已挂 4 case）。改成用 `Calendar` 直接造
+    /// Date，不依赖 formatter parse 行为；编码仍用 shared formatter 保证 SQL `ORDER BY ASC`
+    /// 在带 `.000` 的字符串字典序上仍然单调（fractional seconds 部分始终是 `.000` 不影响排序）。
     private func iso(_ idx: Int) -> String {
-        // 2026-06-14T00:00:00Z + idx 秒,简化 SQL ORDER BY cached_at ASC 的语义。
-        let base = ISO8601DateFormatter.shared.date(from: "2026-06-14T00:00:00Z")!
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 6
+        components.day = 14
+        components.timeZone = TimeZone(secondsFromGMT: 0)
+        let base = Calendar(identifier: .gregorian).date(from: components)!
         return ISO8601DateFormatter.shared.string(from: base.addingTimeInterval(TimeInterval(idx)))
     }
 
