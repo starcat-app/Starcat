@@ -64,16 +64,26 @@ actor AnySearchClient: AnySearchClientProtocol {
         guard !request.query.isEmpty else {
             return AnySearchResponse(results: [], metadata: nil, rateLimit: nil)
         }
+        // Y9.3（dong4j 2026-06-14 排查"开关都开了为什么没注入"）：
+        // search 入口 / perform 内部加诊断 log。只看到 collect.start 但没看到
+        // query response / error skipped 时，可凭这些 log 定位是：
+        //   ① URLSession 卡在 data(for:)（看到 sending HTTP 没看到 got response）
+        //   ② 抛错被 catch 块吞了（perform retry 兜底之外的错误）
+        //   ③ 5xx / timeout 路径正在重试中（看到两次 sending HTTP）
+        AppLog.ai.info("AnySearch.search begin: query=\"\(request.query, privacy: .public)\" anonymous=\(self.anonymous, privacy: .public)")
         do {
             return try await perform(request)
         } catch AnySearchError.serviceUnavailable {
             // 5xx 一次重试。新 typed case `.serviceUnavailable` 覆盖了大多数
             // 500/503 路径；原 `.server(statusCode:)` 仍作 default 兜底，下面
             // 单独捕获保持向后兼容（理论上 perform 改造后不再抛 .server）。
+            AppLog.ai.info("AnySearch.search retry after 5xx: query=\"\(request.query, privacy: .public)\"")
             return try await perform(request)
         } catch AnySearchError.server {
+            AppLog.ai.info("AnySearch.search retry after server error: query=\"\(request.query, privacy: .public)\"")
             return try await perform(request)
         } catch AnySearchError.transport(let message) where message.contains("timed out") {
+            AppLog.ai.info("AnySearch.search retry after timeout: query=\"\(request.query, privacy: .public)\"")
             return try await perform(request)
         }
     }
@@ -91,13 +101,18 @@ actor AnySearchClient: AnySearchClientProtocol {
         }
         request.httpBody = try JSONEncoder.anySearch.encode(body)
 
+        AppLog.ai.info("AnySearch.perform sending HTTP: url=\(url.absoluteString, privacy: .public) hasAuth=\(!self.anonymous && self.apiKey?.isEmpty == false, privacy: .public)")
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
         } catch {
+            // Y9.3：transport 错误是 timeout / 网络不可达 / DNS 失败 / TLS 握手失败的统称，
+            // 单独打 error log 让用户能看到（catch 链上方的 retry 路径不看 transport 异常）。
+            AppLog.ai.error("AnySearch.perform transport error: \(error.localizedDescription, privacy: .public)")
             throw AnySearchError.transport(error.localizedDescription)
         }
+        AppLog.ai.info("AnySearch.perform got HTTP response: status=\((response as? HTTPURLResponse)?.statusCode ?? -1, privacy: .public) bytes=\(data.count, privacy: .public)")
         guard let http = response as? HTTPURLResponse else { throw AnySearchError.invalidResponse }
 
         // 不论 status 是 2xx / 4xx / 5xx 都先把 body 尝试解 envelope —— 4xx/5xx

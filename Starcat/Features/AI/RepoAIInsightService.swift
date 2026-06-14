@@ -43,6 +43,22 @@ struct RepoAIInsightGeneration: Equatable, Sendable {
     /// Y4：代码上下文降级原因（nil = 用上了代码或用户关了开关）。
     /// UI 层判定 banner 是否显示。
     var contextDegradationReason: ContextDegradationReason?
+
+    /// Y9.3：外部网页上下文（AnySearch）降级原因（nil = 拉到了 / 用户没开 / 守卫拦截）。
+    ///
+    /// 与 `contextDegradationReason` 并行存在但相互正交：
+    ///   - `contextDegradationReason`：代码上下文（RepoContextPacker）失败原因；
+    ///   - `externalContextDegradationReason`：外部网页上下文（AnySearch）失败原因；
+    ///   - 两者可同时非 nil（两路 banner 同时显示）。
+    ///
+    /// 关键约束：
+    ///   - **守卫拦截不算降级**：用户没开 anySearchEnabled / aiExternalContextEnabled / 私仓不允许时，
+    ///     `collect` 直接返回 nil，不进 catch 路径，本字段保持 nil；
+    ///   - **0 结果不算降级**：HTTP 200 但业务零结果时（unique.isEmpty），那是 AnySearch 没数据，
+    ///     不是错误，本字段保持 nil；
+    ///   - **真错误才填**：AnySearchError / URLError / 兜底统一过 ExternalContextDegradationReason.classify
+    ///     映射到具体 case，UI banner 显示对应文案。
+    var externalContextDegradationReason: ExternalContextDegradationReason?
 }
 
 @MainActor
@@ -162,6 +178,9 @@ final class RepoAIInsightService {
         let source = try await makeSource(for: repo)
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
         let resolvedExternalContext: AIExternalContext?
+        // Y9.3（2026-06-14 dong4j 反馈）：捕获 anysearch 降级原因，让 UI 给出具体反馈
+        // （之前只打 log 静默降级，用户看不到为什么没注入）。
+        var externalDegradationReason: ExternalContextDegradationReason?
         if includeSummary, allowExternalContext {
             do {
                 resolvedExternalContext = try await externalContextProvider.collect(for: repo)
@@ -169,6 +188,7 @@ final class RepoAIInsightService {
                 // 外部搜索是补充能力，失败不能阻断本地 README 摘要。
                 AppLog.ai.error("AnySearch external context skipped: \(error.localizedDescription, privacy: .public)")
                 resolvedExternalContext = nil
+                externalDegradationReason = ExternalContextDegradationReason.classify(error)
             }
         } else {
             resolvedExternalContext = nil
@@ -315,7 +335,9 @@ final class RepoAIInsightService {
             // Y4：透传 makeSource 阶段的代码上下文降级原因。
             // 注：augmentedSource / summarySource 都从 source 派生但不改 contextDegradationReason，
             // 这里直接读最原始 source 的 reason 即可。
-            contextDegradationReason: source.contextDegradationReason
+            contextDegradationReason: source.contextDegradationReason,
+            // Y9.3：透传 anysearch 降级原因，UI 层渲染独立 banner。
+            externalContextDegradationReason: externalDegradationReason
         )
     }
 

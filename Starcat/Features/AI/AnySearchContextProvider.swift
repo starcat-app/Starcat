@@ -16,6 +16,7 @@
 //
 
 import Foundation
+import os
 
 struct AIExternalContext: Equatable, Sendable {
     let markdown: String
@@ -31,17 +32,41 @@ final class AnySearchContextProvider {
     }
 
     func collect(for repo: Repo) async throws -> AIExternalContext? {
+        // Y9.3（dong4j 2026-06-14 排查"开关都开了为什么没注入"）：
+        // 在 collect 内部各路径加 OSLog 诊断，让用户能在 Console.app 看到
+        // anysearch 是被拦截了 / 抛错了 / 0 结果了 / 还是真成功了。
+        // 之前只有「抛错」才打 log，0 结果和守卫拦截都静默，定位困难。
+        //
+        // log 字段口径：
+        //   - 总开关守卫：debug 级，正常关闭路径不需要 spam log
+        //   - HTTP 抛错：error 级（在 RepoAIInsightService 里已有，此处只补响应路径）
+        //   - 空结果：info 级（这是用户最想知道的"调用成功但拉到 0 条"）
+        //   - 成功：info 级 + 命中条数
         guard Self.allowsExternalContext(
             repoIsPrivate: repo.isPrivate,
             enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
             allowPrivate: settings.aiExternalContextAllowPrivateRepos
-        ) else { return nil }
+        ) else {
+            AppLog.ai.debug("""
+                AnySearch.collect blocked by settings: \
+                anySearchEnabled=\(self.settings.anySearchEnabled, privacy: .public) \
+                aiExternalContextEnabled=\(self.settings.aiExternalContextEnabled, privacy: .public) \
+                isPrivate=\(repo.isPrivate, privacy: .public) \
+                allowPrivate=\(self.settings.aiExternalContextAllowPrivateRepos, privacy: .public)
+                """)
+            return nil
+        }
 
         let client = AnySearchClient(
             apiKey: settings.anySearchAPIKey(),
             anonymous: settings.anySearchAnonymousMode
         )
         let queries = Self.queries(for: repo)
+        AppLog.ai.info("""
+            AnySearch.collect start: repo=\(repo.fullName, privacy: .public) \
+            anonymous=\(self.settings.anySearchAnonymousMode, privacy: .public) \
+            queries=\(queries.count, privacy: .public)
+            """)
         var results: [AnySearchResult] = []
         for query in queries.prefix(2) {
             let response = try await client.search(AnySearchRequest(
@@ -55,12 +80,26 @@ final class AnySearchContextProvider {
                 contentTypes: ["web", "doc", "news"],
                 language: Locale.current.language.languageCode?.identifier
             ))
+            AppLog.ai.info("""
+                AnySearch.collect query response: \
+                query=\"\(query, privacy: .public)\" results=\(response.results.count, privacy: .public)
+                """)
             results.append(contentsOf: response.results)
         }
 
         var seen = Set<String>()
         let unique = results.filter { seen.insert($0.normalizedURL.absoluteString).inserted }.prefix(6)
-        guard !unique.isEmpty else { return nil }
+        guard !unique.isEmpty else {
+            AppLog.ai.info("""
+                AnySearch.collect ended with zero unique results: repo=\(repo.fullName, privacy: .public) \
+                rawCount=\(results.count, privacy: .public)
+                """)
+            return nil
+        }
+        AppLog.ai.info("""
+            AnySearch.collect success: repo=\(repo.fullName, privacy: .public) \
+            unique=\(unique.count, privacy: .public)
+            """)
         let entries = unique.map { result in
             let snippet = String((result.snippet ?? result.content ?? "").prefix(500))
             return "- [\(result.title)](\(result.normalizedURL.absoluteString))\n  \(snippet)"
