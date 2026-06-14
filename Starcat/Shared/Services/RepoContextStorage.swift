@@ -147,17 +147,35 @@ final class RepoContextStorage {
 
     /// 保存用户通过 NSOpenPanel 主动选择的目录，并把当前项目迁移过去。
     ///
+    /// 用户通常会给多个集成选择同一个父目录，因此这里强制把上下文产物隔离到
+    /// `repocontext` 子目录；如果用户已经选中该目录则不重复追加。
+    ///
     /// 先复制全部项目，确认成功后再删除源目录，避免迁移中断导致已生成上下文丢失。
     func setCustomOutputDirectory(_ url: URL) throws {
-        let data = try url.bookmarkData(
+        let didStart = url.startAccessingSecurityScopedResource()
+        guard didStart else { throw RepoContextStorageError.outputDirectoryUnavailable }
+        defer { url.stopAccessingSecurityScopedResource() }
+
+        let outputRoot = Self.customOutputRoot(for: url)
+        try fileManager.createDirectory(at: outputRoot, withIntermediateDirectories: true)
+        let data = try outputRoot.bookmarkData(
             options: .withSecurityScope,
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         )
         let source = try resolveOutputRoot()
-        try migrateProjects(from: source, to: (url, true))
+        // 当前仍持有用户所选父目录的 security scope，迁移时无需对子目录重复申请。
+        try migrateProjects(from: source, to: (outputRoot, false))
         defaults.set(data, forKey: Self.bookmarkKey)
         reload()
+    }
+
+    /// 将用户选择的父目录规范化为 RepoContextPacker 独占根目录。
+    static func customOutputRoot(for selectedURL: URL) -> URL {
+        guard selectedURL.lastPathComponent.lowercased() != "repocontext" else {
+            return selectedURL
+        }
+        return selectedURL.appendingPathComponent("repocontext", isDirectory: true)
     }
 
     /// 恢复默认目录也属于目录切换，必须先把当前自定义目录中的项目迁回容器。
@@ -464,7 +482,7 @@ final class RepoContextStorage {
             appropriateFor: nil,
             create: true
         )
-        .appendingPathComponent("Starcat/repo-context", isDirectory: true)
+        .appendingPathComponent("Starcat/repocontext", isDirectory: true)
     }
 
     private func projectDirectory(root: URL, owner: String, repo: String) -> URL {

@@ -25,7 +25,7 @@
 | ZIP 快照层 | 已在 `Features/CodeGraph/CodeFlowRunner.swift` 实现 `archiveIfNeeded(repo:commitSHA:)` + `archiveFileURL(...)` + `resolveBranch(repo:name:)`，路径 `Application Support/Starcat/repository-snapshots/github.com/<owner>/<repo>/<sha>.zip` | **抽出**到 `Shared/Services/SharedSnapshotService.swift` 让 CodeFlow 与 RepoContextPacker 共用，遵守 `docs/需求讨论/starcat-codeflow-integration.md` §4.2「共享但只读、不删」约定 |
 | AI 摘要主入口 | `Features/AI/RepoAIInsightService.swift:402-427` 的 `makeSource(for:)` 拼接 README + 元信息为 `Source.text`，被 `generateInsight` 和 `chatStream` 同时复用 | 在 `makeSource` 内新增一段「可选 RepoContextProvider 注入」，与现有的 `AnySearchContextProvider`（`generateInsight:122-132`）平行接入，**失败不阻断主流程** |
 | AI 设置存储 | `Core/Settings/AppSettings.swift` 有 `aiSummaryTask` / `aiExternalContextEnabled` / `aiReadmeTruncateLength` 等，UserDefaults 持久化，`Keys` 子结构集中管理 key | 新增 3 个字段 `aiRepoContextEnabled` / `aiRepoContextTokenBudget` / `aiRepoContextTier1MaxLines`，沿用现有的 `persist*` 模式。**不设「私有仓库」开关**：当前 OAuth scope `read:user` + `public_repo` 永远拿不到 `isPrivate=true` 的 repo（Starcat 还没接管私有仓库可见性逻辑），增加一个走不到的开关只会误导用户 |
-| **产物存储层** | **当前无独立服务**，`ContextWriter` 直接 `Data.write(.atomic)` 到 hardcoded `Application Support/Starcat/analysis/<owner>/<repo>/` | **新建 `RepoContextStorage`**（仿 `CodeFlowStorage` 全套接口）：Security-scoped bookmark + 路径迁移 + 项目扫描 + 删除；默认目录改名 `Application Support/Starcat/repo-context/` 与 `codeflow/` 同级对齐 |
+| **产物存储层** | `ContextWriter` 通过 `RepoContextStorage` 写盘 | 默认目录使用 `Application Support/Starcat/repocontext/`；用户选择自定义父目录时自动补 `repocontext/`，与 CodeFlow 的 `codeflow/` 隔离 |
 | 设置页 UI（配置） | `Features/Settings/AISettingsView.swift` 已有"AI 索引 / 摘要 / 标签"三段 + 多用 `DisclosureGroup + SceneStorage` 折叠 | 在该 Tab 末尾新增一个 `DisclosureGroup("AI 代码上下文（实验）")` 区块，只放配置开关（总开关 + Token 预算 Slider + 关键文件保留行数 Stepper + 跳转管理面板按钮） |
 | 设置页 UI（产物管理） | `Features/Settings/SettingsView.swift:StorageSettingsTab` 已有 README / 图片清理；**CodeFlow 数据管理放 `IntegrationSettingsTab` 是因为它是 vendored 第三方集成**；RepoContextPacker 是 Starcat 自带功能，归属应在 StorageSettingsTab | **扩展 StorageSettingsTab**：新增 "AI 代码上下文" Section，照搬 CodeFlow 模式精简版（路径配置行 + 4 字段统计行 + 项目列表 + 一键清除 + 二次确认 + 错误 alert） |
 | AI 摘要 UI | `Features/AI/RepoAIWindowContentView.swift` 有 `summaryHeader` / `streamingSummary` / `footer(_:)` / `errorBanner` 等已存在子视图 | 改 `streamingSummary` 显示「准备代码上下文 → 生成摘要」两段进度；改 `footer` 末尾追加 token / 文件数 caption；顶部新增条件渲染的 `contextDegradedBanner` |
@@ -70,7 +70,7 @@
     - `var totalBytes: Int64 { projects.reduce(0) { $0 + $1.contextBytes + $1.metadataBytes } }`：总占用；
     - `var totalGenerationCount: Int { projects.reduce(0) { $0 + $1.generationCount } }`：总生成次数；
     - `var latestGeneratedAt: Date? { projects.compactMap(\.generatedAt).max() }`：最近一次生成时间；
-  - **持久化**：自定义产物根目录通过 Security-scoped bookmark 持久化（UserDefaults key `settings.repoContext.outputDirectoryBookmark.v1`）；默认路径 `Application Support/Starcat/repo-context/`（与 `codeflow/` 同级，便于后续整体备份）；
+  - **持久化**：自定义产物根目录通过 Security-scoped bookmark 持久化（UserDefaults key `settings.repoContext.outputDirectoryBookmark.v1`）；默认路径 `Application Support/Starcat/repocontext/`。用户选择共同父目录时自动补 `repocontext/`，与 CodeFlow 的 `codeflow/` 隔离；
   - **目录结构**：`<root>/<owner>/<repo>/{context.xml, metadata.json}`（与 CodeFlow `<root>/<owner>/<repo>/code-graph/index.html` 镜像）；
   - **核心方法**（参考 `CodeFlowStorage.swift` 已有实现，对应签名直接借用）：
     - `effectiveRootURL() throws -> URL`：返回当前生效的根（自定义 bookmark 或 default app support）；
@@ -288,7 +288,7 @@
 
   **关键交互**：
   - **路径选择**：`NSOpenPanel(canChooseDirectories: true, canChooseFiles: false)` → `storage.selectOutputDirectory(url)` → 内部自动迁移所有 `<owner>/<repo>/` 子目录到新目录（同名 conflict 加时间戳后缀）；
-  - **重置**：`storage.resetOutputDirectory()` → 迁移回 `Application Support/Starcat/repo-context/`；
+  - **重置**：`storage.resetOutputDirectory()` → 迁移回 `Application Support/Starcat/repocontext/`；
   - **删除**：`storage.delete(owner:repo:)` → `FileManager.removeItem` + `refresh()`；
   - **一键清空**：`storage.deleteAll()` 删整个根目录下所有 `<owner>/<repo>/` 子目录，**保留根目录本身**（避免后续生成时再次创建目录的权限问题）。
 
@@ -344,8 +344,8 @@
    - 公开仓库（如 `vapor/vapor`）走完整链路，AI 摘要包含「## 架构概览」「## 模块职责」等明显源于代码的章节；
    - 关掉 `aiRepoContextEnabled` 重新生成，摘要降级为 README-only（与 X4 前一致）；
    - 设置页 3 个字段写入、回读、out-of-range 兜底全部正常；
-   - StorageSettingsTab 看到 `repo-context/<owner>/<repo>/` 列表 + 4 项统计 + 单删 + 一键清空；
-   - 修改产物目录（NSOpenPanel 选一个新位置）后，已生成的 `<owner>/<repo>/` 子目录被迁移到新目录；重置 → 迁回 default `Application Support/Starcat/repo-context/`；
+   - StorageSettingsTab 看到 `repocontext/<owner>/<repo>/` 列表 + 4 项统计 + 单删 + 一键清空；
+   - 修改产物目录（NSOpenPanel 选一个新位置）后，实际根目录自动补 `repocontext/`，已生成的 `<owner>/<repo>/` 子目录被迁移到该目录；重置 → 迁回 default `Application Support/Starcat/repocontext/`；
 4. **进度同步**：`docs/工程进度/功能实现总览.md` RepoContextPacker 条目「客户端接入（Step 8-10）」`[ ]` → `[x]` + `> 实现：...` 行。
 
 ### 0.7 风险与已知陷阱
