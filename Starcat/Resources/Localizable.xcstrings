@@ -11557,6 +11557,70 @@
         }
       }
     },
+    "settings.storage.actionFailed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Storage operation failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存储操作失败"
+          }
+        }
+      }
+    },
+    "settings.storage.archive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloaded Repository ZIPs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已下载的仓库 ZIP"
+          }
+        }
+      }
+    },
+    "settings.storage.archive.revealHelp" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open ZIP download directory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 ZIP 下载目录"
+          }
+        }
+      }
+    },
+    "settings.storage.archiveUsageFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld files · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个 · %@"
+          }
+        }
+      }
+    },
     "settings.storage.cacheUsage" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -11587,6 +11651,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清理操作"
+          }
+        }
+      }
+    },
+    "settings.storage.clearArchive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Downloaded ZIPs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除已下载的 ZIP"
+          }
+        }
+      }
+    },
+    "settings.storage.clearArchive.confirm" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear downloaded repository ZIPs?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除已下载的仓库 ZIP？"
+          }
+        }
+      }
+    },
+    "settings.storage.clearArchive.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodeFlow or AI context generation will download the repository ZIP again when needed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下次生成 CodeFlow 或 AI 代码上下文时会按需重新下载。"
           }
         }
       }
@@ -11631,13 +11743,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Same as clearing README + images."
+            "value" : "Same as clearing README, images, and downloaded repository ZIPs."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "等同于同时清 README + 图片。"
+            "value" : "等同于同时清理 README、图片和已下载的仓库 ZIP。"
           }
         }
       }

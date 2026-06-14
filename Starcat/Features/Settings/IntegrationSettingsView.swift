@@ -37,15 +37,18 @@ struct IntegrationSettingsTab: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(-1)
                     Spacer()
                     Button("选择目录") { chooseOutputDirectory() }
+                        .fixedSize()
                     Button {
                         revealOutputDirectory()
                     } label: {
                         Image(systemName: "folder")
                     }
                     .help("在 Finder 中显示")
+                    .fixedSize()
                     Button {
                         resetOutputDirectory()
                     } label: {
@@ -53,6 +56,7 @@ struct IntegrationSettingsTab: View {
                     }
                     .disabled(!storage.hasCustomOutputDirectory)
                     .help("迁移到 App Container 默认目录")
+                    .fixedSize()
                 }
 
                 HStack(spacing: 18) {
