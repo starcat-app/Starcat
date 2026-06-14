@@ -126,6 +126,22 @@ struct RepoAIWindowContentView: View {
                 .allowsHitTesting(panelMode == .chat)
                 .animation(.easeInOut(duration: 0.28), value: panelMode)
 
+            // 对话上下文状态提示（Y8，2026-06-14）：在 chat 输入框上方显示一行
+            // 轻量 caption，让用户随时知道本次对话是不是带上了代码上下文。
+            //
+            // 关键设计：
+            //   - **数据源复用摘要 vm**：`insight.contextMetadata` / `vm.contextDegradationReason`
+            //     在摘要 generate 路径已被填充，chat 路径与摘要共用同一份 makeSource 结果，
+            //     不需要在 RepoAIChatViewModel 里再持一份；
+            //   - **只在 .chat 面板显示**：摘要面板已有 banner / footer 双重提示，无需重复；
+            //   - **3 态不显**（用户主动关总开关 / 摘要还没生成过 / 网络在跑）：不打扰，
+            //     让"轻量"原则真的轻量——只在有明确信号时给反馈。
+            if panelMode == .chat {
+                chatContextStatusRow
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .animation(.easeInOut(duration: 0.28), value: panelMode)
+            }
+
             Divider()
 
             AIChatInputView(
@@ -810,6 +826,48 @@ struct RepoAIWindowContentView: View {
         .foregroundStyle(.yellow)
         .padding(10)
         .background(Color.yellow.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    /// Y8（2026-06-14）：对话输入框上方的轻量状态行。
+    ///
+    /// 三态显示：
+    ///   1. 摘要 vm 持有 `insight.contextMetadata` 非 nil → 绿色 ✓ + "本次对话基于完整代码上下文"
+    ///   2. 摘要 vm 持有 `contextDegradationReason` 非 nil → 黄色 ⚠ + degradation 文案（复用 i18n key）
+    ///   3. 其他（vm 还没生成 / featureDisabled / load 缓存路径）→ 完全不显示，0 padding 不占位
+    ///
+    /// 为什么复用 `insightVM` 而不是给 `RepoAIChatViewModel` 也加状态：
+    ///   - 同一个 repo 摘要和对话走同一条 `makeSource` 链路，结果一致；
+    ///   - 用户大概率先进摘要 tab（默认 panelMode == .summary），生成完再切对话，
+    ///     此时 vm 状态已经填好；
+    ///   - 即便用户先发对话再回摘要，本 caption 在第一次摘要生成后即刻刷新（vm 是 @Observable）。
+    @ViewBuilder
+    private var chatContextStatusRow: some View {
+        if let vm = insightVM {
+            if vm.insight?.contextMetadata != nil {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("ai.assistant.chat.contextStatus.full")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else if let reason = vm.contextDegradationReason {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.yellow)
+                    Text(LocalizedStringKey(reason.bannerMessageKey))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            // 其他状态：返回隐含 EmptyView，配合外层 frame(maxHeight: 0) 完全不占位。
+        }
     }
 
     private func chatErrorBanner(message: String, onDismiss: @escaping () -> Void) -> some View {

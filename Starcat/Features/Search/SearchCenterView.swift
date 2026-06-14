@@ -975,12 +975,14 @@ struct SearchCenterView: View {
         )
     }
 
-    /// 单次结果数（1...50）。Stepper 而非 TextField：避免用户输入超界值再被钳到
-    /// 引发视觉跳变；钳到 50 而非 API 上限 100，理由：弹窗滚动疲劳。
+    /// 单次结果数（1...100，对齐官方 API 上限）。
+    ///
+    /// Stepper 而非 TextField：避免用户输入超界值再被钳到引发视觉跳变。
+    /// step 10：100 范围下 step 5 会让用户从 10 调到 100 要按 18 次太累；step 10 更顺手。
     private var anySearchMaxResultsField: some View {
         VStack(alignment: .leading, spacing: 5) {
             filterFieldLabel("结果数")
-            Stepper(value: $viewModel.anySearchFilters.maxResults, in: 1...50, step: 5) {
+            Stepper(value: $viewModel.anySearchFilters.maxResults, in: 1...100, step: 10) {
                 Text("\(viewModel.anySearchFilters.maxResults)")
                     .font(.system(size: 12).monospacedDigit())
                     .frame(minWidth: 24, alignment: .leading)

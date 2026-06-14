@@ -210,8 +210,8 @@ struct AnySearchFilters: Equatable, Hashable, Codable, Sendable {
     /// 地理分区路由。nil = 跟随网关自动路由。
     var zone: AnySearchZone?
 
-    /// 单次返回结果数。API 上限 100，但 UI 钳到 1...50（弹窗里 30 已绰绰有余，
-    /// 100 会让首屏滚动疲劳）。default 10 与原硬编码行为对齐。
+    /// 单次返回结果数。范围 1–100（对齐官方 API），default 10 与原硬编码行为对齐。
+    /// UI Stepper 在 `SearchCenterView.anySearchMaxResultsField` 钳到同样区间。
     var maxResults: Int = 10
 
     static let empty = AnySearchFilters()
