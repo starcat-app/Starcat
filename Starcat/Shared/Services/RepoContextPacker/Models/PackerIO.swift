@@ -50,6 +50,18 @@ public struct PackInput: Sendable {
     /// Token budget 上限（默认 8000，用户可在 AI 设置页调）。
     public let tokenBudget: Int
 
+    /// Tier 1 文件头部保留行数（X3 引入，2026-06-13）。
+    ///
+    /// 默认 80 行，对应 `TierTruncation.tier1MaxLines` 的历史值。允许用户通过
+    /// `AppSettings.aiRepoContextTier1MaxLines` 改成 40-200。
+    ///
+    /// **关键约束**：
+    ///   - 字符数上限 `tier1MaxChars=4000` 不参数化（§22.9 决议双约束语义，行数 + 字符数共同决定截断点）；
+    ///   - 增大此值会让单个 Tier 1 文件估算 token 翻倍，由 `BudgetAllocator` 在 Plan 阶段统一约束；
+    ///   - 写入 `PackMetadata.tier1MaxLines`，W6 `RepoContextStorage.lookupMetadata` 把它纳入
+    ///     缓存命中判断（用户调过 settings 后旧 metadata 失效，强制重 pack）。
+    public let tier1MaxLines: Int
+
     public init(
         zipURL: URL,
         owner: String,
@@ -57,7 +69,8 @@ public struct PackInput: Sendable {
         ref: String,
         commitSha: String,
         outputBaseDir: URL,
-        tokenBudget: Int = 8000
+        tokenBudget: Int = 8000,
+        tier1MaxLines: Int = 80
     ) {
         self.zipURL = zipURL
         self.owner = owner
@@ -66,6 +79,7 @@ public struct PackInput: Sendable {
         self.commitSha = commitSha
         self.outputBaseDir = outputBaseDir
         self.tokenBudget = tokenBudget
+        self.tier1MaxLines = tier1MaxLines
     }
 }
 
@@ -216,7 +230,13 @@ public struct XmlBuildResult: Sendable {
 
 // MARK: - 9. PackMetadata（写入 metadata.json）
 
-/// `metadata.json` 的完整结构（§22.10 Q9 决议）。
+/// `metadata.json` 的完整结构（§22.10 Q9 决议 + 2026-06-13 W7 扩字段）。
+///
+/// **W7 扩字段（2026-06-13）**：
+///   - `tier1MaxLines` / `lastAccessedAt` / `generationCount` 三个新增字段全部
+///     声明为 Optional，**保证向后兼容**——旧版 `metadata.json`（不含这些字段）
+///     反序列化时为 nil，UI / 缓存命中逻辑要做空值兜底。
+///   - 加字段不 bump `schemaVersion`：Optional 即兼容，无需走 migration 路径。
 public struct PackMetadata: Codable, Sendable {
     public let schemaVersion: Int
     public let tierRulesVersion: String
@@ -233,6 +253,64 @@ public struct PackMetadata: Codable, Sendable {
     public let stats: PackStats
     public let skippedFiles: [SkippedFile]
     public let warnings: [String]
+
+    // MARK: - W7 扩字段（向后兼容）
+
+    /// W7：Tier 1 头部保留行数（来自 `PackInput.tier1MaxLines`）。
+    ///
+    /// `RepoAIContextProvider` 命中缓存的判定要求 `commitSha + tokenBudget +
+    /// tier1MaxLines + tierRulesVersion` 全部一致。用户在 settings 里调整 Tier 1
+    /// 行数后旧 metadata 自动失效，强制重 pack。
+    ///
+    /// 旧 metadata.json 反序列化时为 nil（默认按 `TierTruncation.tier1MaxLines`
+    /// 也就是 80 处理；nil 时缓存判定额外检查 `settings 当前值 == 80` 才命中）。
+    public let tier1MaxLines: Int?
+
+    /// W7：最近一次被 AI 摘要消费的时间（ISO-8601 with `Z`）。
+    ///
+    /// 用于 StorageSettingsTab 按"最近使用"排序，以及未来 V2 加 LRU 自动清理。
+    /// 每次 `RepoAIContextProvider.context(for:)` 命中缓存或 pack 完成都会被刷新。
+    public let lastAccessedAt: String?
+
+    /// W7：累计生成次数（首次写盘 1，后续 `existing.generationCount + 1`）。
+    ///
+    /// 用于 StorageSettingsTab 的 "累计生成 N 次" 统计列，给用户直观反馈"这个
+    /// 仓库被反复重打了多少次"（重 pack 一般意味着 settings 调过 / commit 变了）。
+    public let generationCount: Int?
+
+    public init(
+        schemaVersion: Int,
+        tierRulesVersion: String,
+        tokenEstimatorVersion: String,
+        owner: String,
+        repo: String,
+        ref: String,
+        commitSha: String,
+        generatedAt: String,
+        tokenBudget: Int,
+        stats: PackStats,
+        skippedFiles: [SkippedFile],
+        warnings: [String],
+        tier1MaxLines: Int? = nil,
+        lastAccessedAt: String? = nil,
+        generationCount: Int? = nil
+    ) {
+        self.schemaVersion = schemaVersion
+        self.tierRulesVersion = tierRulesVersion
+        self.tokenEstimatorVersion = tokenEstimatorVersion
+        self.owner = owner
+        self.repo = repo
+        self.ref = ref
+        self.commitSha = commitSha
+        self.generatedAt = generatedAt
+        self.tokenBudget = tokenBudget
+        self.stats = stats
+        self.skippedFiles = skippedFiles
+        self.warnings = warnings
+        self.tier1MaxLines = tier1MaxLines
+        self.lastAccessedAt = lastAccessedAt
+        self.generationCount = generationCount
+    }
 }
 
 // MARK: - 10. PackStats（metadata.stats 子结构）

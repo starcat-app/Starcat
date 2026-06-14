@@ -234,6 +234,14 @@ struct RepoAIWindowContentView: View {
                                 errorBanner(message: error)
                             }
 
+                            // Y4：代码上下文降级 banner——只在 generate 路径（非 load 缓存路径）显示。
+                            // 与 errorBanner 风格区分：errorBanner 是错误红色，本 banner 是
+                            // 信息黄色（系统 .yellow 圆点 + 提示文案），让用户知道"虽然摘要生成了，
+                            // 但这次没用上代码内容"。
+                            if let reason = vm.contextDegradationReason {
+                                contextDegradationBanner(reason)
+                            }
+
                             if vm.isLoading {
                                 HStack(spacing: 8) {
                                     ProgressView().controlSize(.small)
@@ -241,6 +249,11 @@ struct RepoAIWindowContentView: View {
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
+                            } else if vm.isGenerating, vm.phase == .preparingContext {
+                                // Y1：摘要生成首阶段 -- RepoContextPacker 正在打包代码上下文。
+                                // 此时 streamingSummaryText 还是空字符串（service 还没收到 LLM
+                                // 的第一个 delta），需要单独 UI 提示用户"在做事，别关窗口"。
+                                preparingContextPlaceholder()
                             } else if let draft = vm.streamingSummaryText, !draft.isEmpty {
                                 streamingSummary(draft)
                             } else if let insight = vm.insight {
@@ -291,22 +304,55 @@ struct RepoAIWindowContentView: View {
             if let insight = vm.insight, !vm.isGenerating {
                 copyButton(insight: insight)
 
-                Button {
-                    // R-01 §3.2.7 Step 8：includeTags 由窗口打开瞬间冻结的 star 状态决定。
-                    Task { await vm.generate(repo: repo, includeTags: starredAtOpen == true) }
+                // Y6（2026-06-13）：右上角原"重新生成"单按钮改为 ellipsis.circle Menu，
+                // 让"在 Finder 中显示代码上下文"找得到地方挂。
+                //
+                // Menu 项：
+                //   1. 重新生成：与历史按钮等价；
+                //   2. 在 Finder 中显示上下文：当 insight.contextMetadata 非 nil 才出现
+                //      （README-only 路径下没意义）；点击调 RepoContextStorage.shared.revealProject。
+                Menu {
+                    Button {
+                        Task { await vm.generate(repo: repo, includeTags: starredAtOpen == true) }
+                    } label: {
+                        Label("ai.assistant.summary.regenerate", systemImage: "arrow.clockwise")
+                    }
+
+                    if insight.contextMetadata != nil {
+                        Divider()
+                        Button {
+                            revealContextInFinder()
+                        } label: {
+                            Label("ai.assistant.summary.menu.revealContext", systemImage: "folder")
+                        }
+                    }
                 } label: {
-                    Label("ai.assistant.summary.regenerate", systemImage: "arrow.clockwise")
-                        .labelStyle(.iconOnly)
+                    Image(systemName: "ellipsis.circle")
                 }
-                .buttonStyle(.borderless)
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(width: 20)
                 .focusEffectDisabled()
-                .help("ai.assistant.summary.regenerate.help")
+                .help("ai.assistant.summary.menu.help")
             } else if vm.isGenerating {
                 ProgressView().controlSize(.small)
             }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
+    }
+
+    /// Y6：从右上角 Menu 触发，在 Finder 选中本仓库的 `context.xml`。
+    ///
+    /// 走 `RepoContextStorage.shared`（与 StorageSettingsTab 同款 security scope 模式）。
+    /// 找不到 stored project（被外部删了 / bookmark 失效）时静默吞错——这只是个"便捷
+    /// 跳转"，失败不应该弹 alert 打扰用户。
+    private func revealContextInFinder() {
+        let storage = RepoContextStorage.shared
+        guard let project = try? storage.existingProject(owner: repo.owner, repo: repo.name) else {
+            return
+        }
+        try? storage.revealProject(project)
     }
 
     /// 复制按钮（含点击反馈，HOM-150 dong4j 优化 2）。
@@ -358,6 +404,26 @@ struct RepoAIWindowContentView: View {
                     .foregroundStyle(.secondary)
             }
             RepoAISummaryMarkdownView(markdown: text)
+        }
+    }
+
+    /// Y1：RepoContextPacker 打包阶段的"准备中"占位。
+    ///
+    /// 与 `streamingSummary` 视觉上一致（同款 spinner + caption），但文案区分：
+    ///   - streaming：用户已经看到 LLM 在吐字了 → caption 提示"摘要正在生成"
+    ///   - preparingContext：没有任何文字输出，但后台 packer 正在工作 → caption 提示
+    ///     "正在分析仓库代码结构"，避免用户以为 App 卡死
+    private func preparingContextPlaceholder() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("ai.assistant.summary.preparingContext")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text("ai.assistant.summary.preparingContext.caption")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
     }
 
@@ -426,22 +492,50 @@ struct RepoAIWindowContentView: View {
         }
     }
 
+    /// Y2（2026-06-13）：footer 两行结构。
+    ///   - 第一行：由 X 模型生成 · 时间（旧版独占）
+    ///   - 第二行：基于 commit abc1234 (4280 tokens · 38 files)
+    ///     仅当 insight.contextMetadata 非 nil 时出现；不存在的旧缓存 insight 上行兼容。
     private func footer(_ insight: RepoAIInsight) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "checkmark.seal")
-            // "由 X 生成 · 时间" 含两个动态占位，走 String(format:) + 本地化模板，
-            // 比直接 `Text("由 \(...) 生成")` 让 Xcode 自动抽 key 更可控、key 名也
-            // 不会被改文案时连带破坏（key 名是稳定 identifier）。
-            Text(
-                String(
-                    format: String(localized: "ai.assistant.summary.footer.generatedByFormat"),
-                    insight.model,
-                    formattedDate(insight.generatedAt)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.seal")
+                // "由 X 生成 · 时间" 含两个动态占位，走 String(format:) + 本地化模板，
+                // 比直接 `Text("由 \(...) 生成")` 让 Xcode 自动抽 key 更可控、key 名也
+                // 不会被改文案时连带破坏（key 名是稳定 identifier）。
+                Text(
+                    String(
+                        format: String(localized: "ai.assistant.summary.footer.generatedByFormat"),
+                        insight.model,
+                        formattedDate(insight.generatedAt)
+                    )
                 )
-            )
+            }
+
+            if let meta = insight.contextMetadata {
+                contextMetaFooterRow(meta)
+            }
         }
         .font(.caption2)
         .foregroundStyle(.tertiary)
+    }
+
+    /// Y2：代码上下文元信息行。展示 "<commit-7位> · N tokens · M files"。
+    ///
+    /// 文案格式化用 `String(format:)` + i18n 模板，与上面的 generatedBy 行同款手法
+    /// （避免 SwiftUI Text 拼接造成 key 名漂移）。
+    private func contextMetaFooterRow(_ meta: RepoAIInsightContextMeta) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "doc.text.magnifyingglass")
+            Text(
+                String(
+                    format: String(localized: "ai.assistant.summary.footer.contextMetaFormat"),
+                    meta.commitShaShort,
+                    meta.actualTokens,
+                    meta.totalFiles
+                )
+            )
+        }
     }
 
     private func formattedDate(_ value: String) -> String {
@@ -700,6 +794,22 @@ struct RepoAIWindowContentView: View {
         .foregroundStyle(.orange)
         .padding(10)
         .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    /// Y4：代码上下文降级 banner。
+    ///
+    /// 视觉上比 errorBanner 克制——这不是错误（摘要照常生成了），只是告诉用户"这次
+    /// 没用上代码内容"。用 `.yellow.opacity(0.10)` 背景 + `info.circle` icon。
+    /// 文案 5 case 全部走 i18n key（在 Y4 一并补 Localizable.xcstrings）。
+    private func contextDegradationBanner(_ reason: ContextDegradationReason) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "info.circle.fill")
+            Text(LocalizedStringKey(reason.bannerMessageKey))
+                .font(.caption)
+        }
+        .foregroundStyle(.yellow)
+        .padding(10)
+        .background(Color.yellow.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func chatErrorBanner(message: String, onDismiss: @escaping () -> Void) -> some View {

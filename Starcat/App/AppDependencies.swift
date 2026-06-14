@@ -295,10 +295,26 @@ final class AppDependencies {
 
         let summaryRepo = GRDBAISummaryRepository(database: db)
         self.aiSummaryRepository = summaryRepo
+
+        // 2026-06-13 W4：RepoContextPacker 客户端接入三件套装配。
+        // 顺序：① SharedSnapshotService（无依赖，单 struct 实例 OK）
+        //      ② RepoContextStorage（单例，从此 root 走 storage.shared 即 W6 决议）
+        //      ③ RepoAIContextProvider（组合上面两个 + settings）
+        // 三者都 W3 决议「失败降级 nil」，注入 RepoAIInsightService 时**不破坏**现有
+        // 测试（init 加默认参数 nil 让旧测试无需改动）。
+        let snapshotService = SharedSnapshotService()
+        let repoContextStorage = RepoContextStorage.shared
+        let repoAIContextProvider = RepoAIContextProvider(
+            snapshotService: snapshotService,
+            storage: repoContextStorage,
+            settings: self.settings
+        )
+
         let aiInsight = RepoAIInsightService(
             summaryRepository: summaryRepo,
             readmeRepository: readmeRepo,
-            settings: self.settings
+            settings: self.settings,
+            repoAIContextProvider: repoAIContextProvider
         )
         self.repoAIInsightService = aiInsight
 

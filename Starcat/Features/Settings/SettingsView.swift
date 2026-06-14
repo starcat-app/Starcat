@@ -211,48 +211,23 @@ private struct StorageSettingsTab: View {
     /// 当前显示的确认弹窗类型;nil 表示不显示。
     @State private var pendingAction: PendingAction?
 
-    // MARK: - Y5 触点 E：AI 代码上下文产物管理（Mock UI 阶段）
+    // MARK: - Y5b 触点 E：AI 代码上下文产物管理（业务接通版，2026-06-13）
     //
-    // 当前是「先看效果」UI 阶段——`@State` 直接持有 mock 数据，让 dong4j 能在
-    // 设置 → 存储页看到完整视觉（路径配置 / 4 列统计 / 项目列表 / 一键清除）。
-    // W6 落地 `RepoContextStorage` 后，把 `aiContextMockProjects` 换成
-    // `@State private var aiContextStorage = RepoContextStorage.shared`，其余
-    // body 代码只改字段路径即可（mock struct 的字段命名已和 `RepoContextProject`
-    // 提前对齐：owner / repo / commitShortSHA / branch / contextBytes / ...）。
+    // 业务接通要点（与 `IntegrationSettingsView.codeFlowSection` 同款模式）：
+    //   - `@State private var aiContextStorage = RepoContextStorage.shared` 让 SwiftUI
+    //     自动跟踪 @Observable 单例的属性变更；
+    //   - 所有按钮 action 实际触发 storage 方法 + NSOpenPanel；
+    //   - 错误用 `aiContextActionError` 弹 alert（与 IntegrationSettingsView 同款）。
     //
-    // 关键约束（与 CodeFlow 模式对齐）：
-    //   1. 默认根 URL 用 `FileManager.default.urls(for: .applicationSupportDirectory)`
-    //      实时计算，**不读硬盘** —— 即便目录不存在也能显示路径文本；
-    //   2. 按钮 action 在 Mock 阶段全部走 `AppLog.ai.debug` 占位，不弹 NSOpenPanel、
-    //      不写文件系统；W6 接通后再实际触发；
-    //   3. "一键清空" 二次确认 + destructive 角色与 CodeFlow `showsClearConfirmation`
-    //      同款模式。
-    @State private var aiContextMockProjects: [MockAIContextProject] = MockAIContextProject.samples
+    // 关键约束：
+    //   1. `.task { aiContextStorage.reload() }` 在 Tab 出现时强制重扫描，让用户刚生成
+    //      的产物立即可见；
+    //   2. `revealProject` / `deleteProject` 都走 storage 内部 security scope 路径，
+    //      避免 sandbox 拒绝 NSWorkspace 调用；
+    //   3. "一键清除" 仍保留二次确认 alert，destructive 角色防误删。
+    @State private var aiContextStorage = RepoContextStorage.shared
     @State private var showsAIContextClearConfirmation: Bool = false
-
-    /// 默认产物目录（与 §0.4 W6 决议：`Application Support/Starcat/repo-context/`）。
-    /// Mock 阶段只显示路径文本，目录不一定存在，不调 `createDirectory`。
-    private var aiContextDefaultOutputURL: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory() + "/Library/Application Support")
-        return appSupport.appending(path: "Starcat/repo-context", directoryHint: .isDirectory)
-    }
-
-    private var aiContextDirectoryDisplayPath: String {
-        aiContextDefaultOutputURL.path
-    }
-
-    private var aiContextTotalBytes: Int64 {
-        aiContextMockProjects.reduce(0) { $0 + $1.contextBytes + $1.metadataBytes }
-    }
-
-    private var aiContextTotalGenerations: Int {
-        aiContextMockProjects.reduce(0) { $0 + $1.generationCount }
-    }
-
-    private var aiContextLatestGeneratedAt: Date? {
-        aiContextMockProjects.map(\.generatedAt).max()
-    }
+    @State private var aiContextActionError: String?
 
     /// 清理操作类型。每种类型有不同的确认文案与执行路径。
     private enum PendingAction: Identifiable {
@@ -346,19 +321,40 @@ private struct StorageSettingsTab: View {
         .alert("ai.context.storage.clearAllConfirm.title", isPresented: $showsAIContextClearConfirmation) {
             Button("general.cancel", role: .cancel) {}
             Button("ai.context.storage.clearAll", role: .destructive) {
-                AppLog.ai.debug("[StorageSettings] clear all AI contexts (Mock UI, no-op)")
-                aiContextMockProjects.removeAll()
+                do {
+                    try aiContextStorage.deleteAllProjects()
+                } catch {
+                    aiContextActionError = error.localizedDescription
+                }
             }
         } message: {
             Text("ai.context.storage.clearAllConfirm.message")
+        }
+        // Y5b：storage 操作失败时弹 alert。与 IntegrationSettingsView 同款模式：
+        // - storage 内部抛错 → 设置 aiContextActionError → 触发 alert
+        // - 用户点"好"清除 aiContextActionError → alert 关闭
+        .alert(
+            "ai.context.storage.actionFailed",
+            isPresented: Binding(
+                get: { aiContextActionError != nil },
+                set: { if !$0 { aiContextActionError = nil } }
+            )
+        ) {
+            Button("general.ok") { aiContextActionError = nil }
+        } message: {
+            Text(aiContextActionError ?? "")
+        }
+        .task {
+            // Tab 出现时主动扫描产物目录（首次进入 / 后台跑过 packer 之后回来都能更新）。
+            aiContextStorage.reload()
         }
     }
 
     // MARK: - AI 代码上下文 Section
 
-    /// AI 代码上下文产物管理面板。视觉对照 `IntegrationSettingsView.codeFlowSection`，
-    /// 字段命名与未来 `RepoContextProject` 对齐（owner / repo / commitShortSHA / branch /
-    /// contextBytes / metadataBytes / generatedAt / generationCount）。
+    /// AI 代码上下文产物管理面板。视觉对照 `IntegrationSettingsView.codeFlowSection`。
+    /// Y5b 起业务接通 `RepoContextStorage.shared`，所有数据 / CRUD / NSOpenPanel
+    /// 都走真实存储层。
     private var aiContextSection: some View {
         Section("ai.context.storage.section") {
             VStack(alignment: .leading, spacing: 5) {
@@ -370,7 +366,7 @@ private struct StorageSettingsTab: View {
             }
 
             HStack(spacing: 8) {
-                Text(aiContextDirectoryDisplayPath)
+                Text(aiContextStorage.outputDirectoryDisplayPath)
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -378,44 +374,51 @@ private struct StorageSettingsTab: View {
                     .textSelection(.enabled)
                 Spacer()
                 Button("ai.context.storage.choose") {
-                    AppLog.ai.debug("[StorageSettings] choose output directory tapped (Mock UI, no-op)")
+                    chooseAIContextOutputDirectory()
                 }
                 Button {
-                    AppLog.ai.debug("[StorageSettings] reveal output directory tapped (Mock UI, no-op)")
+                    revealAIContextOutputDirectory()
                 } label: {
                     Image(systemName: "folder")
                 }
                 .help(Text("ai.context.storage.revealHelp"))
                 Button {
-                    AppLog.ai.debug("[StorageSettings] reset output directory tapped (Mock UI, no-op)")
+                    resetAIContextOutputDirectory()
                 } label: {
                     Image(systemName: "arrow.counterclockwise")
                 }
-                .disabled(true) // 当前 mock 总是处于 default 目录态，重置按钮 disabled
+                .disabled(!aiContextStorage.hasCustomOutputDirectory)
                 .help(Text("ai.context.storage.resetHelp"))
             }
 
             HStack(spacing: 18) {
                 aiContextStat(titleKey: "ai.context.storage.statRepos",
-                              value: "\(aiContextMockProjects.count)")
+                              value: "\(aiContextStorage.projects.count)")
                 aiContextStat(titleKey: "ai.context.storage.statBytes",
-                              value: ByteCountFormatter.string(fromByteCount: aiContextTotalBytes, countStyle: .file))
+                              value: ByteCountFormatter.string(fromByteCount: aiContextStorage.totalBytes, countStyle: .file))
                 aiContextStat(titleKey: "ai.context.storage.statGenerations",
                               value: String(format: String(localized: "ai.context.storage.statGenerationsFormat"),
-                                            aiContextTotalGenerations))
-                if let date = aiContextLatestGeneratedAt {
+                                            aiContextStorage.totalGenerationCount))
+                if let date = aiContextStorage.latestGeneratedAt {
                     aiContextStat(titleKey: "ai.context.storage.statLast",
                                   value: date.formatted(date: .abbreviated, time: .shortened))
                 }
                 Spacer()
             }
 
-            if aiContextMockProjects.isEmpty {
+            // storage 内部抛错（bookmark 失效 / 目录权限丢失等）会反映到 lastErrorMessage
+            // 上，扫描时显示给用户。区别于 actionError：actionError 是按钮触发的失败（短暂弹窗），
+            // lastErrorMessage 是 reload 失败（持续在界面里）。
+            if let message = aiContextStorage.lastErrorMessage {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if aiContextStorage.projects.isEmpty {
                 Text("ai.context.storage.empty")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(aiContextMockProjects) { project in
+                ForEach(aiContextStorage.projects) { project in
                     aiContextProjectRow(project)
                 }
 
@@ -439,32 +442,90 @@ private struct StorageSettingsTab: View {
         }
     }
 
-    /// 单个产物行（一个 `<owner>/<repo>` 项目）。
+    /// 单个产物行（一个 `<owner>/<repo>` 项目）。Y5b 起绑定 `RepoContextStoredProject`。
+    ///
     /// 视觉与 `IntegrationSettingsView.projectRow(_:)` 对齐：左侧两行文本（仓库全名 +
-    /// 元信息 caption），右侧 3 个 Button（预览 / 打开 / 删除）。
-    private func aiContextProjectRow(_ project: MockAIContextProject) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+    /// 元信息 caption），右侧 2 个 Button（在 Finder 显示 / 删除）。
+    /// 注：与 CodeFlow 不同，本场景没有"预览页面"概念（context.xml 不直接展示给用户看），
+    /// 删除 IntegrationSettingsView 的 "预览" 按钮。
+    private func aiContextProjectRow(_ project: RepoContextStoredProject) -> some View {
+        let metadata = project.metadata
+        let commitShortSHA = String(metadata.commitSha.prefix(7))
+        let xmlBytesStr = ByteCountFormatter.string(fromByteCount: Int64(metadata.stats.contextXmlBytes), countStyle: .file)
+        let actualTokens = metadata.stats.actualTokens
+        let totalFiles = metadata.stats.totalFiles
+        return VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("\(project.owner)/\(project.repo)")
+                    Text("\(metadata.owner)/\(metadata.repo)")
                         .font(.callout.weight(.medium))
-                    Text("\(project.branch) · \(project.commitShortSHA) · XML \(ByteCountFormatter.string(fromByteCount: project.contextBytes, countStyle: .file)) · \(project.actualTokens) tokens · \(project.keptFileCount) files")
+                    Text("\(metadata.ref) · \(commitShortSHA) · XML \(xmlBytesStr) · \(actualTokens) tokens · \(totalFiles) files")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    Text(project.generatedAt.formatted(date: .abbreviated, time: .shortened))
+                    Text(project.generatedAtDate.formatted(date: .abbreviated, time: .shortened))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
                 Spacer()
                 Button("ai.context.storage.menuReveal") {
-                    AppLog.ai.debug("[StorageSettings] reveal \(project.owner)/\(project.repo) tapped (Mock UI, no-op)")
+                    revealAIContextProject(project)
                 }
                 Button("ai.context.storage.menuDelete", role: .destructive) {
-                    AppLog.ai.debug("[StorageSettings] delete \(project.owner)/\(project.repo) tapped (Mock UI, no-op)")
-                    aiContextMockProjects.removeAll { $0.id == project.id }
+                    deleteAIContextProject(project)
                 }
             }
+        }
+    }
+
+    // MARK: - Y5b storage action 入口
+
+    /// 选择新的产物输出目录（与 IntegrationSettingsView 同款 NSOpenPanel）。
+    private func chooseAIContextOutputDirectory() {
+        let panel = NSOpenPanel()
+        panel.title = String(localized: "ai.context.storage.choosePanelTitle")
+        panel.prompt = String(localized: "ai.context.storage.choosePanelPrompt")
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try aiContextStorage.setCustomOutputDirectory(url)
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
+    }
+
+    private func resetAIContextOutputDirectory() {
+        do {
+            try aiContextStorage.resetOutputDirectory()
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
+    }
+
+    private func revealAIContextOutputDirectory() {
+        do {
+            try aiContextStorage.revealOutputRoot()
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
+    }
+
+    private func revealAIContextProject(_ project: RepoContextStoredProject) {
+        do {
+            try aiContextStorage.revealProject(project)
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
+    }
+
+    private func deleteAIContextProject(_ project: RepoContextStoredProject) {
+        do {
+            try aiContextStorage.deleteProject(owner: project.metadata.owner, repo: project.metadata.repo)
+        } catch {
+            aiContextActionError = error.localizedDescription
         }
     }
 
@@ -491,77 +552,4 @@ private struct StorageSettingsTab: View {
     }
 }
 
-// MARK: - AI 代码上下文：Mock 数据模型（W6 落地前临时持有 UI 状态）
-//
-// 设计要点：
-//   - 字段命名与未来 `RepoContextProject`（W6 落地）/ `PackMetadata`（已落地，W7
-//     扩字段）对齐，便于后续替换时只改 `@State` 持有方而不动 view body；
-//   - `Identifiable` 让 `ForEach` 不需要 explicit id；
-//   - sample 数据覆盖：常见小仓库（vapor）/ 大型 monorepo（pointfreeco）/ 中等
-//     active 维护（krzyzanowskim），3 种典型量级让 dong4j 看效果时能感知 UI 在
-//     不同体积下的视觉差异。
-private struct MockAIContextProject: Identifiable {
-
-    let id = UUID()
-    let owner: String
-    let repo: String
-    /// commit SHA 短哈希（前 7 字符）。
-    let commitShortSHA: String
-    let branch: String
-    /// `context.xml` 字节数。
-    let contextBytes: Int64
-    /// `metadata.json` 字节数。
-    let metadataBytes: Int64
-    /// 最近一次生成时间（`PackMetadata.generatedAt`）。
-    let generatedAt: Date
-    /// 生成次数（W7 扩字段，每次 pack 后 +1）。
-    let generationCount: Int
-    /// 用户配置的 token 预算（`PackMetadata.tokenBudget`）。
-    let tokenBudget: Int
-    /// 校准后的真实 token 数（`PackMetadata.stats.actualTokens`）。
-    let actualTokens: Int
-    /// 实际保留的文件数（`PackMetadata.stats.keptFileCount`）。
-    let keptFileCount: Int
-
-    static let samples: [MockAIContextProject] = [
-        .init(
-            owner: "vapor",
-            repo: "vapor",
-            commitShortSHA: "51ab970",
-            branch: "main",
-            contextBytes: 524_288,
-            metadataBytes: 1_536,
-            generatedAt: .now.addingTimeInterval(-3_600),
-            generationCount: 3,
-            tokenBudget: 8_000,
-            actualTokens: 7_234,
-            keptFileCount: 87
-        ),
-        .init(
-            owner: "pointfreeco",
-            repo: "swift-composable-architecture",
-            commitShortSHA: "abc1234",
-            branch: "main",
-            contextBytes: 758_496,
-            metadataBytes: 1_684,
-            generatedAt: .now.addingTimeInterval(-86_400),
-            generationCount: 1,
-            tokenBudget: 8_000,
-            actualTokens: 7_902,
-            keptFileCount: 142
-        ),
-        .init(
-            owner: "gonzalezreal",
-            repo: "swift-markdown-ui",
-            commitShortSHA: "def5678",
-            branch: "main",
-            contextBytes: 312_000,
-            metadataBytes: 1_490,
-            generatedAt: .now.addingTimeInterval(-7 * 86_400),
-            generationCount: 5,
-            tokenBudget: 12_000,
-            actualTokens: 11_250,
-            keptFileCount: 56
-        )
-    ]
-}
+// Y5b（2026-06-13）：原 `MockAIContextProject` 已下线，业务接通 `RepoContextStoredProject`。

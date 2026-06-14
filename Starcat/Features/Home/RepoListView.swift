@@ -668,47 +668,66 @@ struct RepoListView: View {
     /// - 卡片视觉完全由 `UnifiedRepoRow.isSelected` 驱动（无 List 系统蓝），4 个分类长得一模一样。
     private func unifiedListContent(_ selection: Binding<Int64?>) -> some View {
         let store = dependencies.manageMultiSelectionStore
-        return List {
-            ForEach(indexedItems) { item in
-                let repo = item.repo
-                Button {
-                    if store.isActive {
-                        // 多选模式：toggle 该行选中态。Repo.id == ghRepoId == GitHub ID 同一 Int64 域。
-                        store.toggle(SelectionSnapshot(
-                            ghRepoId: repo.id,
-                            owner: repo.owner,
-                            name: repo.name
-                        ))
-                    } else {
-                        selection.wrappedValue = repo.id
+        // ScrollViewReader 包装的目的（dong4j 2026-06-13）：
+        // 外部场景（命令面板 / SearchCenter 选中本地 repo，HomeView.openSearchCandidate
+        // 写 viewModel.selectedRepoID）必须能让列表滚到目标行，否则用户只看到详情区切了过去，
+        // 而列表里"被选中的那行"远在视口外，体感上像"啥也没发生"。
+        // 用 ForEach 行的 `.id(repo.id)` 作为 scroll anchor —— Repo.id 是 GitHub repo id，
+        // 全局唯一，不会与 trending / weekly / activity 的 id 域冲突。
+        return ScrollViewReader { proxy in
+            List {
+                ForEach(indexedItems) { item in
+                    let repo = item.repo
+                    Button {
+                        if store.isActive {
+                            // 多选模式：toggle 该行选中态。Repo.id == ghRepoId == GitHub ID 同一 Int64 域。
+                            store.toggle(SelectionSnapshot(
+                                ghRepoId: repo.id,
+                                owner: repo.owner,
+                                name: repo.name
+                            ))
+                        } else {
+                            selection.wrappedValue = repo.id
+                        }
+                    } label: {
+                        // 读取 viewModel.statusMap（@Observable 字段）让 SwiftUI 订阅 dict 变更：
+                        // 详情页改 status → NotificationCenter post → HomeViewModel 局部
+                        // 更新 statusMap → 本 row 重新渲染（角标即时刷新），无需 reloadItems。
+                        UnifiedRepoRow(
+                            card: repo.asCardData(readStatus: viewModel.readStatus(for: repo.id)),
+                            isSelected: store.isActive
+                                ? store.contains(ghRepoId: repo.id)
+                                : (selection.wrappedValue == repo.id),
+                            semanticHit: viewModel.semanticHit(for: repo.id)
+                        )
                     }
-                } label: {
-                    // 读取 viewModel.statusMap（@Observable 字段）让 SwiftUI 订阅 dict 变更：
-                    // 详情页改 status → NotificationCenter post → HomeViewModel 局部
-                    // 更新 statusMap → 本 row 重新渲染（角标即时刷新），无需 reloadItems。
-                    UnifiedRepoRow(
-                        card: repo.asCardData(readStatus: viewModel.readStatus(for: repo.id)),
-                        isSelected: store.isActive
-                            ? store.contains(ghRepoId: repo.id)
-                            : (selection.wrappedValue == repo.id),
-                        semanticHit: viewModel.semanticHit(for: repo.id)
-                    )
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .id(repo.id)
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
             }
-        }
-        .id(viewModel.itemsRevision)
-        .listStyle(.inset)
-        .alternatingRowBackgrounds()
-        // 阅读状态 v2（2026-06-12）：订阅 .repoStatusDidChange，详情页改 status 后
-        // HomeViewModel.statusMap 局部更新 → UnifiedRepoRow.readStatus 重渲染 → 角标即时刷新。
-        // task 与 view lifetime 绑定（view 退出自动 cancel），不会泄漏 NotificationCenter observer。
-        .task {
-            await viewModel.observeRepoStatusChanges()
+            .id(viewModel.itemsRevision)
+            .listStyle(.inset)
+            .alternatingRowBackgrounds()
+            // 阅读状态 v2（2026-06-12）：订阅 .repoStatusDidChange，详情页改 status 后
+            // HomeViewModel.statusMap 局部更新 → UnifiedRepoRow.readStatus 重渲染 → 角标即时刷新。
+            // task 与 view lifetime 绑定（view 退出自动 cancel），不会泄漏 NotificationCenter observer。
+            .task {
+                await viewModel.observeRepoStatusChanges()
+            }
+            // selectedRepoID 变化 → 把目标行滚到视口中部。
+            // - 用户点击 row 触发的变化：目标行已在视口内，scrollTo 是 no-op
+            // - 详情区"上一篇/下一篇"或外部 navigate（SearchCenter）触发：行可能在视口外，需要滚
+            // 仅在非 nil 时滚（nil 表示"清空选中"，不该跳动）。
+            .onChange(of: selection.wrappedValue) { _, newValue in
+                guard let id = newValue else { return }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(id, anchor: .center)
+                }
+            }
         }
     }
 

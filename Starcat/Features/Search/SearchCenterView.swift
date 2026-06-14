@@ -449,36 +449,44 @@ struct SearchCenterView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 5) {
-                            HStack(spacing: 6) {
-                                Text(reference.title)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .layoutPriority(1)
-                                WebSourceBadge()
-                                Spacer(minLength: 0)
-                            }
+                            // 标题独占一行：原"网页"chip 删除（dong4j 2026-06-13 反馈：
+                            // 每个网页卡片都挂同一个 chip，信息密度 0；scope 切到 .web
+                            // 时所有卡片都是网页，更冗余）。需要"类目"信号时由左侧 favicon
+                            // + 左侧蓝色 accent bar 自然传达。
+                            Text(reference.title)
+                                .font(.system(size: 13, weight: .semibold))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             if let snippet = reference.snippet, !snippet.isEmpty {
+                                // dong4j 2026-06-13 反馈：浅色主题下 .secondary 在
+                                // `.regularMaterial` 浮层背景上对比度严重不足；改用
+                                // .primary.opacity(0.85)，明暗主题下都能保持"主文字仅次于标题"
+                                // 的视觉层级（不直接用 Color.black 是为了暗色主题自动适配）。
                                 Text(snippet)
                                     .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.primary.opacity(0.85))
                                     .lineLimit(2)
                             }
                             // 第三行：domain · path 首段（如 "github.com · zeka-stack"），
                             // 让用户在不展开 URL 的情况下就能看出"是哪个 owner / org / 路径"。
                             // 首段为空（裸域名结果）时仅显示 domain，不显示分隔符。
+                            //
+                            // dong4j 2026-06-13 反馈：原 .tertiary 在浅色 material 上
+                            // 几乎不可见；改用 .secondary 上提一档对比度。仍比 snippet 弱，
+                            // 维持"标题 > snippet > 元信息"三档视觉权重。
                             HStack(spacing: 5) {
                                 Text(reference.domain)
                                     .font(.system(size: 11))
-                                    .foregroundStyle(.tertiary)
+                                    .foregroundStyle(.secondary)
                                     .lineLimit(1)
                                 if let firstPath = Self.firstPathSegment(of: reference.originalURL) {
                                     Text("·")
                                         .font(.system(size: 11))
-                                        .foregroundStyle(.tertiary)
+                                        .foregroundStyle(.secondary)
                                     Text(firstPath)
                                         .font(.system(size: 11))
-                                        .foregroundStyle(.tertiary)
+                                        .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
                                 }
@@ -501,24 +509,30 @@ struct SearchCenterView: View {
         return segments.first
     }
 
-    // MARK: - Web 搜索底部 footer（metadata + rate limit）
+    // MARK: - 搜索底部 footer（metadata + rate limit）
 
-    /// 浮层底部 footer：左侧"X 条结果 · Y.Ys"摘要 chip，右侧"剩余 N/M"限流 chip。
+    /// 浮层底部 footer。按 scope 分支渲染：
+    ///
+    /// - **`.web`**（仅网页）：左侧"X 条 · Y.Ys"汇总 chip + 右侧 rate limit chip
+    /// - **`.all`**（聚合）：左侧多段 chip"本地 N · GitHub M · 网页 K"（按 provider
+    ///   命中数依次展示）+ 右侧 rate limit chip（仅当 web 参与且已加载）
+    /// - **`.local` / `.github`**：不渲染 footer
     ///
     /// 关键约束（不要回退）：
-    /// - **仅在 web provider `.loaded` 时显示**（`viewModel.webMetadata != nil`）；
-    ///   首屏 / 历史区 / 错误态全部不渲染，避免占用稀缺垂直空间
-    /// - **rate limit 三字段缺一不全 → 右侧 chip 不显示**（左侧 metadata 仍渲染）；
-    ///   `WebRateLimit` 在 client 层就已经被 parse 失败兜底为 nil，UI 不再判错
-    /// - **remaining ≤ 0 时切换到全宽"额度用尽"chip**（红色 + 重置时间），
-    ///   把"剩余 0/N"这种容易误读的形态合并成强信号一行
+    /// - footer 渲染条件 = "至少有一个 chip 可显示"：
+    ///   - 至少一个 provider 已加载（resultCounts 非空），或
+    ///   - rate limit chip 可显示（webMetadata.rateLimit 非 nil）
+    /// - rate limit 三字段缺一不全 → 右侧 chip 不显示（左侧 metadata 仍渲染）
+    /// - remaining ≤ 0 时右侧 chip 切换到"额度用尽 · HH:mm 重置"
     @ViewBuilder
     private var webResultFooter: some View {
-        if let metadata = viewModel.webMetadata {
+        let counts = viewModel.resultCounts
+        let rateLimit = viewModel.webMetadata?.rateLimit
+        if !counts.isEmpty || rateLimit != nil {
             HStack(spacing: 8) {
-                searchSummaryChip(metadata)
+                leadingSummaryContent(counts: counts)
                 Spacer(minLength: 8)
-                if let rateLimit = metadata.rateLimit {
+                if let rateLimit {
                     rateLimitChip(rateLimit)
                 }
             }
@@ -528,28 +542,67 @@ struct SearchCenterView: View {
         }
     }
 
-    /// 左侧"X 条结果 · Y.Ys"chip。
-    /// totalResults / searchTimeMs 任一缺失就不显示（API 不应该缺，但兜底）。
+    /// 左侧汇总区。根据当前 scope 选择渲染策略：
+    /// - `.web` scope + 只有 web：用 `searchSummaryChip` 显示"X 条·Y.Ys"（含用时）
+    /// - 其他场景（聚合 / 单 source 但不是 .web）：用多段 sourceChip 串接，
+    ///   不显示用时（"用时"概念只有 web 上可靠，本地 / GitHub 没记录）
     @ViewBuilder
-    private func searchSummaryChip(_ metadata: WebSearchMetadata) -> some View {
-        if let total = metadata.totalResults, let ms = metadata.searchTimeMs {
-            HStack(spacing: 4) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 9, weight: .medium))
-                Text(String(
-                    format: String(localized: "search.web.summaryFormat"),
-                    total,
-                    Double(ms) / 1000.0
-                ))
-                .font(.caption2)
-                .lineLimit(1)
+    private func leadingSummaryContent(counts: [ResultSourceCount]) -> some View {
+        if viewModel.scope == .web,
+           let webMetadata = viewModel.webMetadata,
+           let total = webMetadata.totalResults,
+           let ms = webMetadata.searchTimeMs {
+            // .web scope 走"含用时"的紧凑形态（保留 v1 体验）
+            webOnlySummaryChip(totalResults: total, timeMs: ms)
+        } else {
+            // 聚合形态：每个 source 一个 chip，按 viewModel.resultCounts 顺序排
+            HStack(spacing: 6) {
+                ForEach(counts) { entry in
+                    sourceCountChip(entry)
+                }
             }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(.secondary.opacity(0.10), in: Capsule())
-            .fixedSize(horizontal: true, vertical: false)
         }
+    }
+
+    /// `.web` scope 专用 chip：放大镜 + "X 条结果 · Y.Ys"（含用时）。
+    /// 用时只有 web 来源可靠取到，本地 / GitHub 没记录，所以仅在 .web 单源场景渲染。
+    private func webOnlySummaryChip(totalResults: Int, timeMs: Int) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 9, weight: .semibold))
+            Text(String(
+                format: String(localized: "search.web.summaryFormat"),
+                totalResults,
+                Double(timeMs) / 1000.0
+            ))
+            .font(.system(size: 11, weight: .medium))
+            .lineLimit(1)
+        }
+        .foregroundStyle(.primary.opacity(0.75))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(.primary.opacity(0.08), in: Capsule())
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// 聚合 footer 的单段 chip：source 标签 + 数字。
+    /// 例如 "本地 3" / "GitHub 10" / "网页 20"。
+    /// 视觉规格与 webOnlySummaryChip 完全一致，让 .all 与 .web scope 切换时不抖动。
+    private func sourceCountChip(_ entry: ResultSourceCount) -> some View {
+        HStack(spacing: 4) {
+            Text(String(
+                format: String(localized: "search.footer.summaryFormat"),
+                String(localized: String.LocalizationValue(entry.labelKey)),
+                entry.count
+            ))
+            .font(.system(size: 11, weight: .medium).monospacedDigit())
+            .lineLimit(1)
+        }
+        .foregroundStyle(.primary.opacity(0.75))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(.primary.opacity(0.08), in: Capsule())
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// 右侧 rate limit chip：余量 > 0 走"剩余 N/M"形态，= 0 走"额度用尽 · 重置时间"。
@@ -563,6 +616,10 @@ struct SearchCenterView: View {
     }
 
     /// 余量 > 0 的 chip：圆点 + "剩余 N/M"，颜色按 fractionRemaining 三档。
+    ///
+    /// dong4j 2026-06-13 反馈：原 12% 背景 + caption2 在浅色主题下偏淡。
+    /// 改：背景 opacity 12% → 22%，前景文字 `.semibold` 加粗 + size 11，
+    /// chip 加 1pt 同色描边强化轮廓。明暗两套主题下都清晰可读。
     private func normalRateLimitChip(_ rateLimit: WebRateLimit) -> some View {
         let color = Self.rateLimitColor(fraction: rateLimit.fractionRemaining)
         return HStack(spacing: 4) {
@@ -572,31 +629,34 @@ struct SearchCenterView: View {
                 rateLimit.remaining,
                 rateLimit.limit
             ))
-            .font(.caption2.monospacedDigit())
+            .font(.system(size: 11, weight: .semibold).monospacedDigit())
             .lineLimit(1)
         }
         .foregroundStyle(color)
-        .padding(.horizontal, 7)
+        .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(color.opacity(0.12), in: Capsule())
+        .background(color.opacity(0.22), in: Capsule())
+        .overlay { Capsule().stroke(color.opacity(0.35), lineWidth: 0.8) }
         .fixedSize(horizontal: true, vertical: false)
         .help(rateLimitTooltip(rateLimit))
     }
 
     /// 余量 = 0 的 chip：红色 + "额度用尽 · HH:mm 重置"，传达"短时间内不可继续搜"。
+    /// 同步加强对比度（背景 22% + 描边 + .semibold），与 normalRateLimitChip 统一。
     private func exhaustedRateLimitChip(_ rateLimit: WebRateLimit) -> some View {
         let resetText = Self.shortResetText(from: rateLimit.resetAt)
         let title = String(format: String(localized: "search.web.rate.exhaustedFormat"), resetText)
         return HStack(spacing: 4) {
             Circle().fill(Color.red).frame(width: 6, height: 6)
             Text(title)
-                .font(.caption2)
+                .font(.system(size: 11, weight: .semibold))
                 .lineLimit(1)
         }
         .foregroundStyle(.red)
-        .padding(.horizontal, 7)
+        .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(Color.red.opacity(0.12), in: Capsule())
+        .background(Color.red.opacity(0.22), in: Capsule())
+        .overlay { Capsule().stroke(Color.red.opacity(0.35), lineWidth: 0.8) }
         .fixedSize(horizontal: true, vertical: false)
     }
 

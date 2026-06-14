@@ -512,3 +512,65 @@ struct AutoTidySettingsTests {
         #expect(picked.isEmpty)
     }
 }
+
+// MARK: - X2 RepoContextPacker 偏好（§0.3 X1）
+
+/// X2（2026-06-13）：验证 3 个 RepoContextPacker 偏好字段的默认值 + 持久化往返。
+///
+/// 关键覆盖：
+///   1. 默认值与 PackInput / TierTruncation 缺省值对齐（true / 8000 / 80）
+///   2. 写入后新建实例能从 UserDefaults 读回
+///   3. AppSettings 自身**不**对入参做 clamp——保护逻辑在 SwiftUI Stepper(in:) UI 层；
+///      此测试只验证持久化的"诚实回读"语义（写多少读多少），防止有人加了"偷偷 clamp"
+///      逻辑后破坏 Stepper 显示行为。真正 UI 层 clamp 由 SettingsView snapshot 测兜底。
+@MainActor
+@Suite("AppSettings.RepoContextPacker")
+struct AppSettingsRepoContextTests {
+
+    private func makeIsolatedDefaults() -> UserDefaults {
+        let suiteName = "test.starcat.appsettings.repocontext.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
+    }
+
+    @Test("默认值：enabled=true / tokenBudget=8000 / tier1MaxLines=80")
+    func defaults() {
+        let s = AppSettings(defaults: makeIsolatedDefaults())
+        #expect(s.aiRepoContextEnabled == true)
+        #expect(s.aiRepoContextTokenBudget == 8000)
+        #expect(s.aiRepoContextTier1MaxLines == 80)
+    }
+
+    @Test("写入后新建实例能正确回读 3 个字段")
+    func roundTripPersists() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+        s1.aiRepoContextEnabled = false
+        s1.aiRepoContextTokenBudget = 16000
+        s1.aiRepoContextTier1MaxLines = 160
+
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.aiRepoContextEnabled == false)
+        #expect(s2.aiRepoContextTokenBudget == 16000)
+        #expect(s2.aiRepoContextTier1MaxLines == 160)
+    }
+
+    @Test("out-of-range 值会被原样持久化（clamp 由 Stepper UI 层负责）")
+    func outOfRangeValuesPassThroughUnclamped() {
+        // 行为契约：AppSettings 不对入参做 clamp（避免和 SwiftUI Stepper UI 重复约束）。
+        // 此测试锁定"诚实回读"语义，防止以后误加"偷偷 clamp"破坏 Stepper 显示。
+        let defaults = makeIsolatedDefaults()
+        let s = AppSettings(defaults: defaults)
+        s.aiRepoContextTokenBudget = 999_999
+        s.aiRepoContextTier1MaxLines = -5
+
+        #expect(s.aiRepoContextTokenBudget == 999_999)
+        #expect(s.aiRepoContextTier1MaxLines == -5)
+
+        // 新实例同样回读非 clamp 值
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.aiRepoContextTokenBudget == 999_999)
+        #expect(s2.aiRepoContextTier1MaxLines == -5)
+    }
+}

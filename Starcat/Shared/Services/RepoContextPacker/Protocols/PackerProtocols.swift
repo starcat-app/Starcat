@@ -74,12 +74,32 @@ public protocol XmlOutputBuilding: Sendable {
     ///   - plan: BudgetAllocator 的执行计划
     ///   - directoryTree: DirectoryTreeBuilder 已生成的字符串
     ///   - metadata: 根元素需要的 owner/repo/sha 等
+    ///   - tier1MaxLines: X3 引入（2026-06-13），Tier 1 头部行数运行期 override
+    ///     （默认 80，用户可在 AI 设置页调）
     /// - Returns: XmlBuildResult（含 xml / actualTokens / skippedFiles / warnings）
     func build(
         plan: AllocatedPlan,
         directoryTree: String,
-        metadata: XmlMetadata
+        metadata: XmlMetadata,
+        tier1MaxLines: Int
     ) async throws -> XmlBuildResult
+}
+
+extension XmlOutputBuilding {
+    /// 兼容旧签名：不传 tier1MaxLines 时按默认 80 处理（与 X3 之前行为完全一致）。
+    /// 测试代码大量调用旧签名，保留这个 extension 避免改一片单测。
+    public func build(
+        plan: AllocatedPlan,
+        directoryTree: String,
+        metadata: XmlMetadata
+    ) async throws -> XmlBuildResult {
+        try await build(
+            plan: plan,
+            directoryTree: directoryTree,
+            metadata: metadata,
+            tier1MaxLines: TierTruncation.tier1MaxLines
+        )
+    }
 }
 
 /// XmlOutputBuilder 需要的元数据子集（避免传整个 PackInput / PackMetadata）。

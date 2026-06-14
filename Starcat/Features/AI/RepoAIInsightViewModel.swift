@@ -18,6 +18,20 @@
 import Foundation
 import Observation
 
+/// Y1（2026-06-13）：AI 摘要生成的两阶段状态机。
+///
+/// 用户体验目标：在 RepoContextPacker pipeline 跑的几秒 ~ 十几秒里给 UI 一个有信息量的
+/// 进度提示，而不是空白旋转 spinner。
+///
+/// 两阶段区分点：
+///   - `preparingContext`：从 `generate(repo:)` 入口开始，直到收到第一个 streaming delta。
+///     语义上覆盖：makeSource（含 RepoContextPacker pack）+ LLM 请求建立连接。
+///   - `streamingSummary`：收到第一个 streaming delta 之后切换；语义 = LLM 输出阶段。
+enum SummaryPhase: Sendable {
+    case preparingContext
+    case streamingSummary
+}
+
 @MainActor
 @Observable
 final class RepoAIInsightViewModel {
@@ -29,6 +43,14 @@ final class RepoAIInsightViewModel {
     private(set) var tagErrorMessage: String?
     private(set) var streamingSummaryText: String?
     private(set) var appliedTagNames: Set<String> = []
+
+    /// Y1：摘要生成阶段（仅在 `isGenerating == true` 期间有意义）。
+    /// `nil` 表示当前不在生成中。
+    private(set) var phase: SummaryPhase?
+
+    /// Y4：本次摘要生成时代码上下文的降级原因（nil = 成功 或 用户主动关）。
+    /// 由 `generate(repo:)` 写入；缓存命中（`load`）路径不写，保持旧摘要 UI 状态干净。
+    private(set) var contextDegradationReason: ContextDegradationReason?
 
     private let service: RepoAIInsightService
     private let tagRepository: any TagRepositoryProtocol
@@ -56,6 +78,9 @@ final class RepoAIInsightViewModel {
             errorMessage = nil
             tagErrorMessage = nil
             streamingSummaryText = nil
+            // Y4：load 路径不携带降级原因；从缓存读到的 insight 已经是历史快照，
+            // 当时的降级原因不在数据库里持久化（避免存"过期错误"误导用户）。
+            contextDegradationReason = nil
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -70,9 +95,13 @@ final class RepoAIInsightViewModel {
     func generate(repo: Repo, includeTags: Bool = true) async {
         isGenerating = true
         streamingSummaryText = ""
+        // Y1：入口先设 preparingContext，让 UI 在 makeSource（含 RepoContextPacker）期间
+        // 显示"准备代码上下文…"文案。首个 streaming delta 到来时再切到 streamingSummary。
+        phase = .preparingContext
         defer {
             isGenerating = false
             streamingSummaryText = nil
+            phase = nil
         }
         do {
             let result = try await service.generateInsight(
@@ -80,9 +109,14 @@ final class RepoAIInsightViewModel {
                 includeTags: includeTags
             ) { [weak self] partial in
                 self?.streamingSummaryText = partial
+                // 第一次 delta 时切阶段——之后所有 delta 都已经是 streamingSummary，
+                // 不需要 if 判等比较（赋值同款值开销可忽略）。
+                self?.phase = .streamingSummary
             }
             insight = result.insight
             tagErrorMessage = result.tagErrorMessage
+            // Y4：透传降级原因到 UI banner。
+            contextDegradationReason = result.contextDegradationReason
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription

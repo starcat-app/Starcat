@@ -42,7 +42,8 @@ public struct DefaultXmlOutputBuilder: XmlOutputBuilding {
     public func build(
         plan: AllocatedPlan,
         directoryTree: String,
-        metadata: XmlMetadata
+        metadata: XmlMetadata,
+        tier1MaxLines: Int
     ) async throws -> XmlBuildResult {
         try Task.checkCancellation()
 
@@ -102,7 +103,7 @@ public struct DefaultXmlOutputBuilder: XmlOutputBuilding {
             switch contentResult {
             case .success(let text):
                 let originalLines = countLines(text)
-                let truncatedText = TierTruncation.tier1Head(text)
+                let truncatedText = TierTruncation.tier1Head(text, maxLines: tier1MaxLines)
                 let wasTruncated = truncatedText.count != text.count ||
                     truncatedText != text
                 let tokens = TokenEstimator.estimate(text: truncatedText)
