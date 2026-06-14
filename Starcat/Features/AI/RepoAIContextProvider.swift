@@ -103,11 +103,72 @@ struct RepoAIContextProvider {
         } catch {
             // 把错误分类成 ContextDegradationReason 让 UI 能给用户讲清楚为什么没用上代码
             let reason = ContextDegradationReason.classify(error)
-            AppLog.ai.warning(
-                "[RepoAIContextProvider] context prep degraded reason=\(String(describing: reason), privacy: .public) for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)"
+
+            // 2026-06-14（dong4j 反馈"zip 已下载但 xml/metadata 没生成"）：
+            //
+            // `error.localizedDescription` 把 `RepoContextPackerError` 的 enum case 名 +
+            // underlying NSError 全挤进一行字符串里，根因丢失。Console.app 上看到
+            // "代码上下文打包失败" 这类泛化文案对排查没帮助。
+            //
+            // 这里改用 `String(reflecting:)` 把 enum case + 关联值结构完整导出（如
+            // `RepoContextPackerError.zipExtractionFailed(underlying: ...)`），同时单独
+            // dump NSError 的 domain / code / userInfo 让 Console 一眼定位是哪一步挂的。
+            //
+            // 关键约束：privacy 全部 .public —— 这些是错误诊断信息（无 PII），打码反而
+            // 让 dong4j 在 Console.app 上看到一堆 `<private>` 没法用。
+            let debugDump = Self.formatErrorForDiagnostics(error)
+            AppLog.ai.error(
+                """
+                [RepoAIContextProvider] context prep failed for \(repo.fullName, privacy: .public)
+                  reason=\(String(describing: reason), privacy: .public)
+                  \(debugDump, privacy: .public)
+                """
             )
             return .degraded(reason)
         }
+    }
+
+    /// 把任意 `Error` 拆解为对人类可读的多行诊断文本。
+    ///
+    /// 输出格式（每段独占一行）：
+    /// ```
+    /// type=<dynamicType>
+    /// localized=<localizedDescription>
+    /// reflecting=<String(reflecting: error)>      # enum case + 关联值（packer 错误用）
+    /// nserror.domain=<NSError.domain>
+    /// nserror.code=<NSError.code>
+    /// nserror.userInfo=<NSError.userInfo>
+    /// underlying=<formatErrorForDiagnostics(underlying)>   # 递归展开 underlying
+    /// ```
+    ///
+    /// 对 `RepoContextPackerError` 的 6 个含 `underlying:` 关联值的 case 会递归展开，
+    /// 让 Console.app 能看到"ZIPFoundation 抛 fileWriteUnknown / writer 抛 cocoa
+    /// .fileNoSuchFileError"这类底层根因。
+    private static func formatErrorForDiagnostics(_ error: Error) -> String {
+        var lines: [String] = []
+        lines.append("type=\(type(of: error))")
+        lines.append("localized=\(error.localizedDescription)")
+        lines.append("reflecting=\(String(reflecting: error))")
+
+        let nsError = error as NSError
+        lines.append("nserror.domain=\(nsError.domain) code=\(nsError.code)")
+        if !nsError.userInfo.isEmpty {
+            // userInfo 可能含巨大对象（NSURL / NSData），用 String(describing:) 控制大小。
+            lines.append("nserror.userInfo=\(nsError.userInfo)")
+        }
+
+        // 递归展开 RepoContextPackerError 的 underlying 关联值——单独 case
+        // 才有 underlying，用 if case let 模式匹配避免漏 case 时编译失败。
+        if let packerError = error as? RepoContextPackerError {
+            if let underlying = packerError.underlyingError {
+                let nested = formatErrorForDiagnostics(underlying)
+                    .split(separator: "\n")
+                    .map { "  " + $0 }
+                    .joined(separator: "\n")
+                lines.append("underlying:\n\(nested)")
+            }
+        }
+        return lines.joined(separator: "\n  ")
     }
 
     /// 兼容旧 API：Y2 之前的调用方期望 `URL?`，保留这个简化入口（内部走 outcome 路径）。

@@ -92,4 +92,34 @@ public enum RepoContextPackerError: LocalizedError, Sendable {
             return "Packer 已取消"
         }
     }
+
+    // MARK: - Diagnostics
+
+    /// 含 `underlying: Error` 关联值的 case 提取统一入口。
+    ///
+    /// 用途：`RepoAIContextProvider.formatErrorForDiagnostics(_:)` 在写诊断 log 时递归
+    /// 展开 underlying 错误，Console.app 上能直接看到 ZIPFoundation / Foundation 抛的
+    /// 底层 NSError 根因（`fileWriteUnknown` / `permissionDenied` 这种）。
+    ///
+    /// 加这个属性而不是给整个枚举加 `CustomDebugStringConvertible`：`String(reflecting:)`
+    /// 已经能展开 enum case + 关联值，我们要的只是"统一拿到 underlying"这件小事，简单 helper
+    /// 比扩展协议侵入面小。
+    public var underlyingError: Error? {
+        switch self {
+        case .zipExtractionFailed(let underlying),
+             .xmlBuildFailed(let underlying):
+            return underlying
+        case .outputDirectoryNotWritable(_, let underlying),
+             .writeFailed(_, let underlying):
+            return underlying
+        case .zipFileNotFound,
+             .zipTooLarge,
+             .extractedDirectoryTooLarge,
+             .zipEmpty,
+             .zipSlipDetected,
+             .noFilesAfterFiltering,
+             .cancelled:
+            return nil
+        }
+    }
 }

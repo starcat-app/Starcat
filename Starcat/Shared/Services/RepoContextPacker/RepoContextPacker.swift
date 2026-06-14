@@ -69,24 +69,51 @@ public struct RepoContextPacker {
 
     public func pack(_ input: PackInput) async throws -> PackOutput {
         let generatedAt = Date()
+        // 2026-06-14 dong4j 反馈 "zip 已下载但 xml/metadata 没生成"：在 6 步 pipeline 之间
+        // 加 OSLog 埋点。每个 Pass 入口写一行 debug，出口在 catch 处由调用栈外的
+        // RepoAIContextProvider.formatErrorForDiagnostics 兜底 dump 完整错误链。
+        // 这样 Console.app 上能一眼看到管道卡在哪一 Pass。
+        let scope = "\(input.owner)/\(input.repo)@\(input.commitSha.prefix(7))"
+        AppLog.ai.debug(
+            """
+            [Packer] start \(scope, privacy: .public) \
+            zipURL=\(input.zipURL.path, privacy: .public) \
+            tokenBudget=\(input.tokenBudget, privacy: .public) \
+            tier1MaxLines=\(input.tier1MaxLines, privacy: .public)
+            """
+        )
 
         // === Pass 0：解压 ZIP ===
         try Task.checkCancellation()
+        AppLog.ai.debug("[Packer] \(scope, privacy: .public) Pass 0 extract begin")
         let extracted = try await extractor.extract(input.zipURL)
         // 任何分支下都清理临时目录
         defer { extracted.cleanup() }
+        AppLog.ai.debug(
+            "[Packer] \(scope, privacy: .public) Pass 0 extract done root=\(extracted.rootURL.lastPathComponent, privacy: .public)"
+        )
 
         // === Pass 1：过滤文件 ===
         try Task.checkCancellation()
+        AppLog.ai.debug("[Packer] \(scope, privacy: .public) Pass 1 filter begin")
         let filterResult = try filter.scan(rootURL: extracted.rootURL)
+        AppLog.ai.debug(
+            "[Packer] \(scope, privacy: .public) Pass 1 filter done files=\(filterResult.files.count, privacy: .public) skipped=\(filterResult.skippedFiles.count, privacy: .public)"
+        )
 
         // === Pass 2a：分级 ===
         try Task.checkCancellation()
         let classifyResult = classifier.classify(files: filterResult.files)
+        AppLog.ai.debug(
+            "[Packer] \(scope, privacy: .public) Pass 2a classify done tiered=\(classifyResult.tieredFiles.count, privacy: .public) skipped=\(classifyResult.skippedFiles.count, privacy: .public)"
+        )
 
         // === Pass 2b：预算分配 ===
         try Task.checkCancellation()
         let plan = allocator.allocate(classifyResult.tieredFiles, budget: input.tokenBudget)
+        AppLog.ai.debug(
+            "[Packer] \(scope, privacy: .public) Pass 2b allocate done items=\(plan.items.count, privacy: .public) estTokens=\(plan.totalEstimatedTokens, privacy: .public)"
+        )
 
         // === Pass 2c：目录树 ===
         try Task.checkCancellation()
@@ -94,6 +121,7 @@ public struct RepoContextPacker {
 
         // === Pass 3：XML 拼装（含并发读）===
         try Task.checkCancellation()
+        AppLog.ai.debug("[Packer] \(scope, privacy: .public) Pass 3 xml build begin")
         let xmlMeta = XmlMetadata(
             owner: input.owner,
             repo: input.repo,
@@ -108,9 +136,13 @@ public struct RepoContextPacker {
             metadata: xmlMeta,
             tier1MaxLines: input.tier1MaxLines
         )
+        AppLog.ai.debug(
+            "[Packer] \(scope, privacy: .public) Pass 3 xml build done actualTokens=\(buildResult.actualTokens, privacy: .public) skipped=\(buildResult.skippedFiles.count, privacy: .public) warnings=\(buildResult.warnings.count, privacy: .public)"
+        )
 
         // === Pass 4：写盘 ===
         try Task.checkCancellation()
+        AppLog.ai.debug("[Packer] \(scope, privacy: .public) Pass 4 write begin")
         let allSkipped = filterResult.skippedFiles
             + classifyResult.skippedFiles
             + buildResult.skippedFiles
@@ -154,6 +186,14 @@ public struct RepoContextPacker {
             outputBaseDir: input.outputBaseDir,
             owner: input.owner,
             repo: input.repo
+        )
+        AppLog.ai.debug(
+            """
+            [Packer] \(scope, privacy: .public) Pass 4 write done \
+            xml=\(output.contextURL.path, privacy: .public) \
+            metadata=\(output.metadataURL.path, privacy: .public) \
+            xmlBytes=\(output.stats.contextXmlBytes, privacy: .public)
+            """
         )
 
         return output
