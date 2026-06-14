@@ -60,15 +60,32 @@ struct AnySearchClientTests {
         #expect(URLProtocolStub.receivedRequests.count == 1)
     }
 
-    @Test("API Key 探测请求只取一条 ping 结果并发送 Bearer Key")
-    func apiKeyProbeUsesMinimalSearchRequest() async throws {
+    // MARK: - API Key 探测请求契约
+    //
+    // 关注两层契约：
+    // 1. 网络层（URLProtocol 真能看到的）：Bearer Key 是否正确出现在 Authorization 头
+    //    → `apiKeyProbeSendsBearerHeader` 验证
+    // 2. 编码层（请求 body 内容）：query/max_results 是否被忠实编进 JSON
+    //    → `anySearchRequestEncodesPingFieldsToSnakeCase` 验证（不走 URLProtocol，
+    //    直接测 model Codable，理由见下）
+    //
+    // **为什么 body 验证不能放在 URLProtocol closure 里**：
+    // Apple 的 URLSession 把 URLRequest 派给 URLProtocol 之前，会把 `httpBody` 内部化
+    // 到 task 缓冲区（避免 IPC 拷贝），URLProtocol 实例既拿不到 `httpBody` 也拿不到
+    // `httpBodyStream`。这是系统行为，没有 workaround。强行在 stub 里 try-stream
+    // 会得到 nil（已实测，见 commit 历史）。
+    //
+    // 因此拆成两层：URLProtocol 只验证它真能看到的（headers / URL），编码契约下沉到
+    // model 单元测试。两个测试合起来覆盖原 `apiKeyProbeUsesMinimalSearchRequest` 的
+    // 完整语义，且各自只断言它真能验证的事。
+
+    @Test("API Key 探测请求带 Bearer Key 头并命中 /v1/search 路径")
+    func apiKeyProbeSendsBearerHeader() async throws {
         URLProtocolStub.reset()
         URLProtocolStub.requestHandler = { request in
             #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer candidate-key")
-            let body = try #require(request.httpBody)
-            let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
-            #expect(json["query"] as? String == "ping")
-            #expect(json["max_results"] as? Int == 1)
+            #expect(request.url?.path == "/v1/search")
+            #expect(request.httpMethod == "POST")
             return Self.successResponse(for: request)
         }
         let client = AnySearchClient(
@@ -80,6 +97,27 @@ struct AnySearchClientTests {
         _ = try await client.search(AnySearchRequest(query: "ping", maxResults: 1))
 
         #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
+    @Test("AnySearchRequest 用 snake_case 编码 query 与 max_results")
+    func anySearchRequestEncodesPingFieldsToSnakeCase() throws {
+        // mirror 产品 encoder 策略：见 `AnySearchClient.swift` 的 private extension
+        // JSONEncoder.anySearch（snake_case）。这里手写一份避免把 file-private API
+        // 提升到 internal 可见性。如果产品 encoder 策略变化（如未来改 ISO date），
+        // 此处需同步更新；当前只用 snake_case + 字符串/数字字段，安全。
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+
+        let data = try encoder.encode(AnySearchRequest(query: "ping", maxResults: 1))
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        #expect(json["query"] as? String == "ping")
+        #expect(json["max_results"] as? Int == 1)
+        // 顺带断言钳制逻辑：超界值会被钳到边界（与 `clampsResultCount` 互补，
+        // 这里走完整 Codable 路径而不是单测 init）
+        let clampedData = try encoder.encode(AnySearchRequest(query: "q", maxResults: 999))
+        let clampedJSON = try #require(JSONSerialization.jsonObject(with: clampedData) as? [String: Any])
+        #expect(clampedJSON["max_results"] as? Int == 100)
     }
 
     // MARK: - Rate limit header parsing

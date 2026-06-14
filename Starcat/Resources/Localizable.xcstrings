@@ -2489,6 +2489,22 @@
         }
       }
     },
+    "ai.assistant.chat.contextStatus.full" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat is grounded in full code context"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本次对话基于完整代码上下文"
+          }
+        }
+      }
+    },
     "ai.assistant.summary.preparingContext.caption" : {
       "localizations" : {
         "en" : {

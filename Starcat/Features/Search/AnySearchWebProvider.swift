@@ -79,11 +79,14 @@ struct AnySearchWebProvider: SearchProvider {
 
         let client = AnySearchClient(apiKey: config.apiKey, anonymous: config.anonymous)
         // 用户筛选条件优先；筛选未指定的字段保持原"自动"行为：
-        // - maxResults：用户值钳到 1...50（filters 内部 default 10），再与 perPage 取较小
+        // - maxResults：直接对齐官方 1–100 上限（filters 内部 default 10）。AnySearchRequest.init
+        //   会再做一次防御性钳制，这里 [1, 100] 是显式 mirror。**不引入 perPage 上限**：
+        //   perPage（GitHub 分页用，默认 30）是 GitHub 的概念，AnySearch 无分页能力，
+        //   一次性返回 N 条，让 UI 上的 max_results 直接体现用户意图。
         // - domain / zone：nil 时 AnySearchRequest 内 Codable 自动跳过该 key
         // - contentTypes：空 Set 时显式传 nil（API 端「无 key」语义 = 自动）
         let filters = request.anySearchFilters
-        let effectiveMaxResults = min(max(1, filters.maxResults), min(request.perPage, 50))
+        let effectiveMaxResults = min(max(1, filters.maxResults), 100)
         let response = try await client.search(AnySearchRequest(
             query: request.query,
             maxResults: effectiveMaxResults,
