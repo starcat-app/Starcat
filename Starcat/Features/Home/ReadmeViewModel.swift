@@ -184,16 +184,25 @@ final class ReadmeViewModel {
     /// 流程（与 `loadInternal` 完全对齐，只是缓存路径走 `cachedTrendingReadme(fullName:)`）：
     /// 1. 切到新 repo → 同步设 `.loading` 占位（避免 await 期间显示上一个 repo 的 README）
     /// 2. 读 `trending_readmes` 表（按 `owner/repo` PK）→ 命中立即上屏 `.loaded`
-    /// 3. 不论缓存是否命中，都强制走网络刷新（dong4j 决策 ttl_c：trending 不设 TTL）
+    /// 3. 判断是否需要后台 refresh（HOM-201 P1-4，2026-06-14：与 manage 对齐用 softTtl=6h
+    ///    短路；forceRefresh / 无可用缓存 / 缓存过期 → 必刷）
     /// 4. 200 / 304 → 覆盖或 touch cached_at；404 → 删本地 + `.empty`；其他错误 → 有缓存就静默
     ///
     /// 与 `loadInternal` 的差异：
     /// - 缓存读写 PK 是 `full_name`（owner/repo）而非 `repo_id`
     /// - 没有 manage 的 session 404 集合（trending repo 切换频繁，没必要在 session 内禁止重试）
-    /// - 没有 forceRefresh 参数：调用方每次都希望走 SWR（无 TTL 短路）
+    ///
+    /// HOM-201 P1-4（2026-06-14）：把 trending 路径的 TTL 行为对齐到 manage（softTtl=6h）。
+    /// 此前 dong4j 决策 `ttl_c` 让 trending 每次都强制走网络;但配合 P1-1 hover prefetch
+    /// 后,每次进详情都打 GitHub 304 太浪费 60/h 匿名配额。改为:
+    /// - 自动加载(`forceRefresh: false`) → 命中 softTtl 6h 内的缓存就跳过网络;
+    /// - 用户主动刷新(详情页底部刷新按钮 / 列表 refreshable / forceRefresh: true) → 必刷。
+    /// 用户感知不到差异(6h 内即便不刷网络,本地 cache 仍是最新),配额节省显著。
     ///
     /// - Parameter isLoggedIn: 用户是否已登录。用于判断 403 是否因未授权（应显示"请登录"而非"加载失败"）。
-    func loadTrending(owner: String, repo: String, isLoggedIn: Bool) {
+    /// - Parameter forceRefresh: 用户主动触发刷新(详情页底部 cacheFooter / 列表 refreshable)
+    ///   时传 true,绕过 softTtl 短路。默认 false。
+    func loadTrending(owner: String, repo: String, isLoggedIn: Bool, forceRefresh: Bool = false) {
         currentTask?.cancel()
 
         let key = "\(owner)/\(repo)"
@@ -248,7 +257,30 @@ final class ReadmeViewModel {
                 hasUsableCache = false
             }
 
-            // 第二阶段：强制走网络刷新（dong4j 决策 ttl_c：trending 不设 TTL，每次都拉网络覆盖）
+            // 第二阶段：判断是否需要后台 refresh(与 loadInternal 同构,P1-4)
+            // - forceRefresh=true(用户主动) → 必刷
+            // - 无可用缓存 → 必刷
+            // - cached 在 softTtl(6h) 内 → 不刷直接结束
+            // - cached 过期 → 必刷
+            let needsRefresh: Bool
+            if forceRefresh {
+                needsRefresh = true
+            } else if !hasUsableCache {
+                needsRefresh = true
+            } else if let c = cached,
+                      ReadmeAPI.isWithinSoftTtl(
+                        cachedAt: c.cachedAt,
+                        now: Date(),
+                        softTtl: ReadmeAPI.softTtl
+                      ) {
+                needsRefresh = false
+            } else {
+                needsRefresh = true
+            }
+
+            if !needsRefresh { return }
+
+            // 第三阶段：后台 refresh(不抛错,所有错误都包到 .failed)
             let result = await self.api.refreshTrendingReadme(owner: owner, repo: repo)
             guard !Task.isCancelled, self.currentTrendingKey == key else { return }
 
