@@ -9186,36 +9186,36 @@
         }
       }
     },
-    "search.web.rate.remainingFormat" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld/%2$lld left"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "剩余 %1$lld/%2$lld"
-          }
-        }
-      }
-    },
     "search.web.rate.tooltipFormat" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Used %1$lld/%2$lld · resets at %3$@"
+            "value" : "Session used %1$lld/%2$lld · API window resets at %3$@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "今日已用 %1$lld/%2$lld · %3$@ 重置"
+            "value" : "本次会话已用 %1$lld/%2$lld · API 窗口 %3$@ 重置"
+          }
+        }
+      }
+    },
+    "search.web.rate.usedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld/%2$lld used"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已用 %1$lld/%2$lld"
           }
         }
       }

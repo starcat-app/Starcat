@@ -244,17 +244,35 @@ struct WebSearchMetadata: Equatable, Sendable {
     let rateLimit: WebRateLimit?
 }
 
-/// 通用网页搜索限流配额（与 `AnySearchRateLimit` 等价但解耦命名空间）。
+/// 通用网页搜索限流配额（领域层模型）。
+///
+/// **重要语义说明（dong4j 2026-06-14）**：
+/// - `limit` 来源：API 响应头 `x-ratelimit-limit`，反映服务端真实窗口上限（匿名 10 / Bearer 20）。
+/// - `sessionUsed` 来源：**本地进程内计数**，由 provider 的 `AnySearchUsageCounter` 每次
+///   search 调用（含 cache hit）+1 累加而来；**不来自 API**。
+/// - `resetAt` 来源：API 响应头 `x-ratelimit-reset`（Unix 秒戳）。
+///
+/// **为什么不直接用 API 返回的 remaining**：实测匿名模式 `remaining` 恒为 8、Bearer 模式恒为 18，
+/// API 端并不按真实调用计数更新。展示给用户会产生「为什么数字不变」的困惑（dong4j 2026-06-14 反馈）。
+/// 因此领域层放弃 vendor 的 remaining，改用本地计数，更贴合用户「我已经搜了 N 次」的直观感受。
+/// 进程重启自然归零（counter 不持久化），符合「会话内配额追踪」的轻量定位。
 struct WebRateLimit: Equatable, Sendable {
     let limit: Int
-    let remaining: Int
+    let sessionUsed: Int
     let resetAt: Date
 
-    /// 剩余比例，归一化到 [0, 1]，用于 UI 着色阈值判断。
+    /// 剩余配额数（用于 exhausted 分支判定）。允许为负——本地计数若超过 API 上限，
+    /// 视为「用尽」状态，UI 钳到 0 后落入红色 chip + 重置时间的展示。
+    var sessionRemaining: Int { max(0, limit - sessionUsed) }
+
+    /// 是否已用尽：本地计数 >= 上限。落入 UI 的「额度用尽 · HH:mm 重置」分支。
+    var isExhausted: Bool { sessionUsed >= limit && limit > 0 }
+
+    /// 剩余比例，归一化到 [0, 1]，用于 UI 着色阈值判断（绿/橙/红三档）。
     /// limit==0 时返回 0（视为"无可用配额"，染色逻辑会落入"用尽"分支）。
     var fractionRemaining: Double {
         guard limit > 0 else { return 0 }
-        return min(max(0, Double(remaining) / Double(limit)), 1)
+        return min(max(0, Double(sessionRemaining) / Double(limit)), 1)
     }
 }
 
