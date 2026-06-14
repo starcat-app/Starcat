@@ -297,12 +297,38 @@ struct AIModelParameters: Codable, Equatable, Sendable {
 }
 
 /// Prompt 配置。
+///
+/// **占位符渲染**（`render` 函数）：
+/// - 入参 `placeholders` 是任务私有 dict（key 不带花括号），渲染时将
+///   `{key}` 替换为 dict 中的 value；
+/// - 每个任务的占位符**互不共享**——Tags 任务用的 `{repository.metadata}` /
+///   `{tags.repo}` / `{output.language}` 等占位符是 Tags 任务局部命名空间，
+///   Summary / Translation 等其它任务即便出现同名占位符也是各自局部语义；
+/// - 模板中**未在 dict 中找到**的占位符**保留原文**，便于 LLM 直接看到字面量
+///   反推用户写错了哪个 key（不静默吞 / 不替换为空字符串）。
 struct AIPromptConfiguration: Codable, Equatable, Sendable {
     var systemPrompt: String
     var userPromptTemplate: String
 
-    func renderedUserPrompt(context: String) -> String {
-        userPromptTemplate.replacingOccurrences(of: "{context}", with: context)
+    /// 用 `placeholders` dict 渲染 `userPromptTemplate`，把 `{key}` 替换为对应 value。
+    func renderedUserPrompt(placeholders: [String: String]) -> String {
+        Self.render(template: userPromptTemplate, placeholders: placeholders)
+    }
+
+    /// 用 `placeholders` dict 渲染 `systemPrompt`。
+    /// 仅当任务有 system 层占位符（如 Tags 的 `{output.language}`）时由调用方使用。
+    func renderedSystemPrompt(placeholders: [String: String]) -> String {
+        Self.render(template: systemPrompt, placeholders: placeholders)
+    }
+
+    /// 通用模板渲染：把 `{key}` 替换为 dict 中对应 value。
+    /// dict 中没有的 key 保留 `{key}` 原文（不替换为空字符串）。
+    static func render(template: String, placeholders: [String: String]) -> String {
+        var result = template
+        for (key, value) in placeholders {
+            result = result.replacingOccurrences(of: "{\(key)}", with: value)
+        }
+        return result
     }
 }
 
@@ -369,30 +395,86 @@ enum AIDefaultPrompts {
         """
     )
 
+    /// Tags 任务私有占位符（dong4j 2026-06-14 拍板，i18n 策略 C：全英文指令 + Locale 仅控输出语言）：
+    ///
+    /// **system 层**：
+    /// - `{output.language}`：跟 `Locale.current` 派发为 `Simplified Chinese` / `English` /
+    ///   `Japanese` 等；驱动 Tag Style Rules 分支选择 + reason 字段语言。
+    ///
+    /// **user 层**：
+    /// - `{repository.metadata}`：repo 元数据（fullName / description / language / topics 等）；
+    /// - `{repository.readme}`：清洗 + 截断后的 README 纯文本；
+    /// - `{repository.code_context}`：RepoContextPacker 生成的代码 XML（无则空字符串）；
+    /// - `{tags.repo}`：当前仓库已绑定标签（强信号，逗号分隔，不带 label）；
+    /// - `{tags.library}`：用户标签库高频前 30 个（弱信号，逗号分隔，不带 label）。
+    ///
+    /// **删占位符 = 不注入对应数据**：用户在 Settings 改默认 prompt 把某个占位符删掉，
+    /// service 层就不渲染对应内容；改坏了点 Restore Default 还原。
+    /// 占位符在 dict 中查不到时保留原文（让 LLM 看到字面量便于排错，不静默吞）。
     static let tags = AIPromptConfiguration(
         systemPrompt: """
         You are Starcat's repository tagging assistant.
-        Return strict JSON only in message.content.
-        Do not write reasoning, analysis traces, markdown fences, or explanations.
-        Suggested tags must be short, reusable, and suitable for a local tag system.
-        """,
-        userPromptTemplate: """
-        请基于下面的 GitHub 仓库上下文推荐 3 到 8 个中文或技术英文标签。
 
-        只返回 JSON，结构必须匹配：
+        # Output Format (STRICT)
+        Return strict JSON only in message.content. NO prose, NO markdown fences, NO reasoning traces, NO explanations outside the JSON.
+
+        Schema (failure to match this schema will cause the output to be rejected):
         {
           "suggestedTags": [
-            {"name": "Swift", "confidence": 0.91, "reason": "为什么推荐这个标签"}
+            {"name": "string", "confidence": 0.0, "reason": "string"}
           ]
         }
 
-        规则：
-        - confidence 必须在 0 到 1 之间。
-        - name 必须短，可复用，适合本地标签系统。
-        - 不要返回 markdown。
+        Constraints:
+        - "confidence" MUST be a number in the closed interval [0, 1].
+        - "name" MUST be short (1-3 tokens), reusable, suitable for a local tag system.
+        - "reason" should be one short sentence explaining why this tag fits this repository.
+        - Generate 3 to 8 tags total. NO duplicates.
 
-        Repository context:
-        {context}
+        # Tag Style Rules
+        Apply ONLY the branch matching {output.language}:
+
+        - If {output.language} is "Simplified Chinese" or "Traditional Chinese":
+          - Tag names ≤ 4 characters; nouns or short technical terms only (e.g. 「向量检索」「编辑器」「机器学习」).
+          - NEVER full sentences.
+          - Well-known technical English terms (e.g. RAG, LLM, GitHub, API) MAY remain in English.
+
+        - If {output.language} is "English":
+          - Tag names: a single domain word, abbreviation, or common technical term (e.g. RAG, LLM, DevOps, WebRTC, Editor).
+          - NEVER compound phrases or full sentences.
+          - Tag names MUST be in English; do NOT include non-ASCII characters.
+
+        - Otherwise (Japanese / Korean / others):
+          - Follow the same spirit: short nouns, no sentences. Well-known technical English terms may remain in English.
+
+        Keep style consistent within one repository's tag set.
+
+        # Tag Source Priority
+        1. If "Existing tags on this repository" is provided in the user message, REUSE them whenever applicable — generating synonyms creates duplicate tags and pollutes the user's tag library.
+        2. If "Other frequently-used tags in your library" is provided, use them as STYLE / GRANULARITY reference only — do NOT force-fit them onto unrelated repositories.
+        3. If neither is provided, infer tags from the repository context using the style rules above.
+
+        # Output Language
+        The "reason" field MUST be written in {output.language}.
+        Tag "name" field follows the Tag Style Rules above (matched against {output.language}).
+        """,
+        userPromptTemplate: """
+        Suggest 3 to 8 tags for the GitHub repository described below.
+
+        Repository metadata:
+        {repository.metadata}
+
+        README:
+        {repository.readme}
+
+        Code structure:
+        {repository.code_context}
+
+        Existing tags on this repository (strong hint, prefer reuse):
+        {tags.repo}
+
+        Other frequently-used tags in your library (style hint, optional):
+        {tags.library}
         """
     )
 

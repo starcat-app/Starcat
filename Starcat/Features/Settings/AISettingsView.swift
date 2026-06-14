@@ -1430,12 +1430,22 @@ struct AISettingsTab: View {
     }
 
     /// 当前任务的占位符提示文案。
-    /// - summary / tags：仅 `{context}` 表示仓库元数据 + README 摘要；
-    /// - translation：额外支持 `{targetLanguage}` 表示当前目标语言名（如 `Simplified Chinese`）。
+    ///
+    /// 各任务占位符**互不共享**——每个任务有自己独立的占位符命名空间：
+    /// - **summary**：`{context}` —— repo 元数据 + README 摘要 + 可选 Code XML + 可选外部材料；
+    /// - **tags**：6 个占位符（system 用 `{output.language}`；user 用 `{repository.metadata}` /
+    ///   `{repository.readme}` / `{repository.code_context}` / `{tags.repo}` / `{tags.library}`）；
+    ///   详见 `AIDefaultPrompts.tags` 的注释；
+    /// - **translation**：`{targetLanguage}` + `{context}`。
+    ///
+    /// **删占位符 = 不注入对应数据**：用户在 prompt 里删掉某个占位符就不会渲染对应内容；
+    /// 改坏了点 Restore Default 还原。
     private var promptPlaceholderHint: String {
         switch promptTask {
-        case .summary, .tags:
+        case .summary:
             return "User Prompt 中的 {context} 会在运行时替换为仓库元数据和 README 摘要。"
+        case .tags:
+            return String(localized: "settings.ai.prompt.placeholders.tags")
         case .translation:
             return "支持两个占位符：{targetLanguage} 替换为当前目标语言名（如 Simplified Chinese / English / Japanese），{context} 替换为源 README HTML 片段。"
         case .embedding:
