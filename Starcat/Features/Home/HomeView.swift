@@ -134,6 +134,7 @@ struct HomeView: View {
         repository: any RepoRepositoryProtocol,
         readmeAPI: ReadmeAPI,
         readmeAvailability: ReadmeAvailability,
+        readmeOnHTMLLoaded: @escaping @MainActor (Repo) -> Void,
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
@@ -150,32 +151,15 @@ struct HomeView: View {
             repoNoteRepository: repoNoteRepository,
             semanticSearchService: semanticSearchService
         ))
-        // 2026-06-13 dong4j 补救 B：manage 路径详情页 README 拉到后异步补 raw markdown
-        // + 视情况触发向量索引重建。
-        //
-        // 设计要点：
-        // - 闭包同步触发后立刻 spawn 一个 fire-and-forget `Task { @MainActor in ... }`，
-        //   不阻塞 ReadmeViewModel 状态机；`refreshMarkdownIfNeeded` 内 await 网络期间
-        //   suspension 自然让出 main thread。
-        // - 仅在 `.updated`（真的拉到新 markdown）时调 `refreshIndexIfChanged`，避免
-        //   `.notModified`（content 已存在）继续打 embedding API。
-        // - `semanticSearchService` 是可选参数（Preview / 测试可不注入）；nil 时仅落
-        //   markdown，跳过向量重建。
-        // - 闭包 capture 的 readmeAPI / semantic 都是 App 级长寿命引用，强引用安全。
-        // - trending / weekly / activity 三个 ContentView 内自己 new 的 ReadmeViewModel
-        //   走 `loadTrending` 不触发本回调；即便有意外路径也传 nil 保险。
-        let semanticForBackfill = semanticSearchService
+        // HOM-201 P0-4（2026-06-14）：原 manage 路径 README 拉到后的 backfill closure
+        // 由 ContentView 透过 `readmeOnHTMLLoaded` 注入；factory 由
+        // `AppDependencies.makeReadmeOnHTMLLoadedHandler()` 统一构造,让 manage / active
+        // 两个走 `loadInternal` 的路径行为一致（active 详情页之前漏接,导致已 star
+        // 的 active 详情不会触发 markdown backfill / 向量重建——见 26-向量搜索改进.md §6）。
         _readmeVM = State(initialValue: ReadmeViewModel(
             api: readmeAPI,
             availability: readmeAvailability,
-            onHTMLLoaded: { [readmeAPI] repo in
-                Task { @MainActor in
-                    let result = await readmeAPI.refreshMarkdownIfNeeded(for: repo)
-                    if case .updated = result, let semantic = semanticForBackfill {
-                        await semantic.refreshIndexIfChanged(for: repo)
-                    }
-                }
-            }
+            onHTMLLoaded: readmeOnHTMLLoaded
         ))
         _translationVM = State(initialValue: ReadmeTranslationViewModel(service: readmeTranslationService))
         _searchCenterViewModel = State(initialValue: SearchCenterViewModel(

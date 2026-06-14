@@ -233,6 +233,40 @@ final class AppDependencies {
     /// 详情页 Repo 解析链（Local → Hint → BackendAggregate(占位) → GitHub → Minimal）。
     let repoResolver: RepoResolver
 
+    // MARK: - README onHTMLLoaded handler (HOM-201 P0-4, 2026-06-14)
+
+    /// 构造 `ReadmeViewModel.onHTMLLoaded` 回调用的 closure。
+    ///
+    /// 原本只在 `HomeView.init` 里 inline 给 manage 全局 VM 挂载，导致从 active /
+    /// weekly 详情页进入已 star 仓库时不会触发 `refreshMarkdownIfNeeded` +
+    /// `refreshIndexIfChanged` —— 后者是文档 `docs/详细设计/26-向量搜索改进.md`
+    /// §6 关键流程表承诺的"详情页 README 拉到 → 异步补 raw markdown 落
+    /// readmes.content + 视情况重建向量索引"触发源。manage 与 active 都走
+    /// `loadInternal`（依赖同一 `readmes` 表 PK=repo_id），两者行为应一致；本工厂方法
+    /// 把 closure 提到 DI 层，让 `ActivityDetailScaffoldShell` 等 Shell 局部 VM
+    /// 也能复用同一份逻辑。
+    ///
+    /// **trending / weekly 路径**：`ReadmeViewModel.loadTrending` 内部根本不调
+    /// `onHTMLLoaded`（参见 ReadmeViewModel 实现），所以传给走 trending 路径的 Shell
+    /// （Weekly）是 dead-code dispatch，无副作用——传入只是为了让所有 Shell 装配
+    /// 代码同构、避免日后切换路径时漏接。
+    ///
+    /// **生命周期**：closure 仅 capture `readmeAPI` / `semanticSearchService` 两个
+    /// App 级长寿命引用，不持有 `self`，避免 closure 长期挂在 `ReadmeViewModel` 上
+    /// 把整个 `AppDependencies` 的释放时机绑定到 ViewModel。
+    func makeReadmeOnHTMLLoadedHandler() -> @MainActor (Repo) -> Void {
+        let readmeAPI = self.readmeAPI
+        let semantic = self.semanticSearchService
+        return { repo in
+            Task { @MainActor in
+                let result = await readmeAPI.refreshMarkdownIfNeeded(for: repo)
+                if case .updated = result {
+                    await semantic.refreshIndexIfChanged(for: repo)
+                }
+            }
+        }
+    }
+
     // MARK: - 初始化
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
