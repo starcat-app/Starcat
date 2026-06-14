@@ -10,7 +10,7 @@
 //  - `.notFound`            ← 404 → 删除本地旧缓存 + 返回 notFound
 //  - `.failed(Error)`       ← transport / 5xx → 包到 .failed 不抛
 //
-//  以及 `cachedReadme(repoId:)` 的本地读路径（命中 / 未命中）。
+//  以及 `cachedReadme(for:)` 的本地读路径（命中 / 未命中 / trending→manage promote）。
 //
 //  设计：
 //  - `MockGitHubAPIClient`：实现 `GitHubAPIClientProtocol`，stub `readmeHTML` 返回值（D-02 协议解锁）
@@ -260,7 +260,7 @@ struct ReadmeAPINetworkTests {
         let readme = makeReadme(repoId: repo.id, html: "local")
         try await readmeRepo.upsert(readme)
 
-        let cached = try await api.cachedReadme(repoId: repo.id)
+        let cached = try await api.cachedReadme(for: repo)
         #expect(cached?.renderedHtml == "local")
     }
 
@@ -268,7 +268,66 @@ struct ReadmeAPINetworkTests {
     func cachedMiss() async throws {
         let (api, _, repo, _, _) = try await makeAPI()
 
-        let cached = try await api.cachedReadme(repoId: repo.id)
+        let cached = try await api.cachedReadme(for: repo)
         #expect(cached == nil)
+    }
+
+    // MARK: - HOM-201 P0-1: trending → manage cache promote
+
+    @Test("cachedReadme: manage miss + trending hit → promote 到 manage 表 + 清 trending 行")
+    func cachedTrendingPromote() async throws {
+        let (api, _, repo, readmeRepo, db) = try await makeAPI()
+        let trendingRepo = TrendingReadmeRepository(database: db)
+
+        // 准备：trending_readmes 里有这个 repo 的 README，manage 表没有
+        let trendingRecord = TrendingReadme(
+            fullName: repo.fullName,
+            renderedHtml: "trending-html",
+            etag: "\"trend-etag\"",
+            lastModified: nil,
+            cachedAt: "2026-06-14T00:00:00Z",
+            size: 13
+        )
+        try await trendingRepo.upsert(trendingRecord)
+
+        // 第一次调用：manage miss → trending hit → promote
+        let cached = try await api.cachedReadme(for: repo)
+        #expect(cached?.renderedHtml == "trending-html")
+        #expect(cached?.etag == "\"trend-etag\"")
+        #expect(cached?.repoId == repo.id)
+
+        // promote 成功后 manage 表应有这行
+        let manageRow = try await readmeRepo.find(repoId: repo.id)
+        #expect(manageRow?.renderedHtml == "trending-html")
+        #expect(manageRow?.etag == "\"trend-etag\"")
+
+        // trending 行应被清掉，避免双份存储
+        let trendingRow = try await trendingRepo.find(fullName: repo.fullName)
+        #expect(trendingRow == nil)
+    }
+
+    @Test("cachedReadme: manage hit 直接返回，不查 trending")
+    func cachedManageHitSkipsTrending() async throws {
+        let (api, _, repo, readmeRepo, db) = try await makeAPI()
+        let trendingRepo = TrendingReadmeRepository(database: db)
+
+        // 两表都有数据；manage 应优先返回
+        let manage = makeReadme(repoId: repo.id, html: "manage-html")
+        try await readmeRepo.upsert(manage)
+        try await trendingRepo.upsert(TrendingReadme(
+            fullName: repo.fullName,
+            renderedHtml: "trending-html",
+            etag: nil,
+            lastModified: nil,
+            cachedAt: "2026-06-14T00:00:00Z",
+            size: 14
+        ))
+
+        let cached = try await api.cachedReadme(for: repo)
+        #expect(cached?.renderedHtml == "manage-html")
+
+        // trending 行未被动到（cachedReadme manage 命中后短路）
+        let trendingRow = try await trendingRepo.find(fullName: repo.fullName)
+        #expect(trendingRow != nil)
     }
 }

@@ -18,7 +18,7 @@
 //    ├─ 切到新 repo → state = .loading 占位（防止显示旧 repo README）
 //    │
 //    ▼
-//  cachedReadme(repoId:)              ← 异步读本地（GRDB 内存查询，通常 < 1ms）
+//  cachedReadme(for:)                 ← 异步读本地（GRDB 内存查询，通常 < 1ms）
 //    │
 //    ├─ 有缓存 → state = .loaded(html, cachedAt) 立即上屏
 //    └─ 无缓存 → 保持 state = .loading
@@ -364,9 +364,13 @@ final class ReadmeViewModel {
             defer { self.isRefreshing = false }
 
             // 第一阶段：读本地缓存
+            //
+            // HOM-201 P0-1（2026-06-14）：传 repo 而非 repoId,让 ReadmeAPI 在 manage 表
+            // 未命中时兜底查 `trending_readmes`（按 fullName）并 promote 到 manage 表
+            // ——用户在 trending 详情读过 README + star + 切到 manage 详情时零网络复用。
             let cached: Readme?
             do {
-                cached = try await self.api.cachedReadme(repoId: requestedId)
+                cached = try await self.api.cachedReadme(for: repo)
             } catch {
                 cached = nil
                 AppLog.network.warning("README cachedReadme 失败 repo=\(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")

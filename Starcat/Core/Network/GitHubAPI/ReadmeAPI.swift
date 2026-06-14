@@ -10,8 +10,13 @@
 //
 //  Phase 2 关键改动（2026-05-30，见 docs/详细设计/readme.md-渲染设计.md §12.2 / §13）：
 //  把原 `fetchHTML(for:forceRefresh:)` 拆为：
-//  - `cachedReadme(repoId:)` 纯读本地（不发网络）
+//  - `cachedReadme(for:)` 纯读本地（不发网络）
 //  - `refreshReadme(for:)` 走网络刷新（所有错误包到 `.failed`，不抛出）
+//
+//  HOM-201 P0-1（2026-06-14）：`cachedReadme(for:)` 由 `(repoId:)` 改为 `(for repo:)`,
+//  manage 表（`readmes` PK=`repo_id`）未命中时兜底查 `trending_readmes`（PK=`full_name`）
+//  并 promote 到 manage 表 —— 用户在 trending 详情读过 README + star + 切到 manage
+//  详情时零网络复用。详见方法注释。
 //
 //  这样 ViewModel 可以实现 "先读缓存立即 loaded → 判断 softTtl → 后台 fire-and-forget refresh"
 //  的 stale-while-revalidate 模式，不再需要 API 层吃下 softTtl 短路。
@@ -111,9 +116,61 @@ struct ReadmeAPI {
     /// 纯读本地缓存，不发网络。
     ///
     /// SWR 模式的"第一阶段"：拿到旧 HTML 立即上屏。
-    /// - Returns: 缓存命中返回 Readme；未命中返回 nil
-    func cachedReadme(repoId: Int64) async throws -> Readme? {
-        try await repository.find(repoId: repoId)
+    ///
+    /// HOM-201 P0-1（2026-06-14）：当 manage 表（`readmes` PK=`repo_id`）未命中时，
+    /// 兜底查 `trending_readmes` 表（PK=`full_name`）。命中则 promote：
+    /// - upsert 到 `readmes`，让下一次直接 manage 路径命中；
+    /// - 清掉 `trending_readmes` 里的旧行，避免双份存储。
+    ///
+    /// 真实场景：用户在 trending 详情读过 README → star → 切到 manage 详情。
+    /// 没 promote 之前 manage 路径会重新打 GitHub 拉一份相同内容；有 promote 则零
+    /// 网络复用。promote 写失败不致命——仍返回 trending 数据给 UI，下次再尝试。
+    ///
+    /// **不做反向兜底**（manage → trending）：trending 路径以 `owner/repo` 为 key,
+    /// `cachedTrendingReadme(owner:repo:)` 拿不到 `repo.id` 没法反查；这个反向场景
+    /// （已 star 的 repo 又出现在 trending 列表且首次进 trending 详情）较少，
+    /// 不做。
+    ///
+    /// - Parameter repo: 目标仓库（需要 `id` 查 manage 表，`fullName` 兜底查 trending 表）
+    /// - Returns: 缓存命中返回 Readme（可能来自 manage 或 trending 表）；未命中 nil
+    func cachedReadme(for repo: Repo) async throws -> Readme? {
+        if let manageHit = try await repository.find(repoId: repo.id) {
+            return manageHit
+        }
+
+        guard !repo.fullName.isEmpty else { return nil }
+
+        // 兜底查询失败不致命：manage 表也没命中，返回 nil 让上层走 refresh 路径
+        let trendingHit: TrendingReadme?
+        do {
+            trendingHit = try await trendingRepository.find(fullName: repo.fullName)
+        } catch {
+            AppLog.network.debug("cachedReadme trending 兜底查询失败 \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+        guard let trending = trendingHit else { return nil }
+
+        let promoted = Readme(
+            repoId: repo.id,
+            // trending_readmes 没存 raw markdown；manage 路径的 onHTMLLoaded 后续会补
+            content: nil,
+            renderedHtml: trending.renderedHtml,
+            etag: trending.etag,
+            lastModified: trending.lastModified,
+            cachedAt: trending.cachedAt,
+            size: trending.size
+        )
+
+        do {
+            try await repository.upsert(promoted)
+            // promote 成功后清掉 trending 行，避免空间浪费
+            try? await trendingRepository.delete(fullName: repo.fullName)
+            AppLog.network.debug("README cache promote trending → manage: \(repo.fullName, privacy: .public) (repoId=\(repo.id))")
+        } catch {
+            // 写入失败：仍返回 trending 内容给 UI 用，下次再 promote
+            AppLog.network.warning("cachedReadme trending → manage promote upsert 失败 \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+        return promoted
     }
 
     /// 走网络刷新 README HTML 并同步本地缓存。
