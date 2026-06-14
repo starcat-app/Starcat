@@ -2512,6 +2512,23 @@
         }
       }
     },
+    "ai.assistant.summary.externalReferences.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External References"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部参考来源"
+          }
+        }
+      }
+    },
     "ai.assistant.summary.footer.contextMetaFormat" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9724,19 +9741,36 @@
         }
       }
     },
+    "settings.ai.prompt.placeholders.summary" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Available placeholders for the Summary task:\n\n• {outputLanguage} — output language descriptor (auto, follows current Locale; e.g. Simplified Chinese / English / Japanese). Drives both body language and section titles.\n• {metadata} — repo metadata block (full name, description, language, topics, license, stars, forks, homepage)\n• {readme} — README plain text (cleaned & truncated)\n• {codeContext} — code context XML from RepoContextPacker (empty when disabled or unavailable)\n• {externalContext} — external web search markdown from AnySearch (wrapped in <external_context trust=\"untrusted\">; empty when disabled or unavailable)\n\nDelete a placeholder from the prompt to skip injecting that data; restore by clicking the reset button."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Summary 任务可用占位符：\n\n• {outputLanguage} —— 输出语言（跟随系统 Locale 自动派发，如 Simplified Chinese / English / Japanese）；同时驱动正文语言和章节标题语言。\n• {metadata} —— 仓库元数据块（fullName / description / language / topics / license / stars / forks / homepage）\n• {readme} —— 清洗 + 截断后的 README 纯文本\n• {codeContext} —— RepoContextPacker 生成的代码上下文 XML（关闭或拉取失败时为空）\n• {externalContext} —— AnySearch 生成的外部网页检索 markdown（已含 <external_context trust=\"untrusted\"> 包裹；关闭或拉取失败时为空）\n\n从 prompt 里删掉占位符即不注入对应数据；改坏了点恢复默认按钮还原。"
+          }
+        }
+      }
+    },
     "settings.ai.prompt.placeholders.tags" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Available placeholders for the Tags task:\n\n• {output.language} — output language descriptor (auto, follows current Locale)\n• {repository.metadata} — repo metadata block (full name, description, language, topics, license, etc.)\n• {repository.readme} — README plain text (cleaned & truncated)\n• {repository.code_context} — code context XML (empty when disabled or unavailable)\n• {tags.repo} — tags already attached to this repository (comma-separated)\n• {tags.library} — top-30 frequently-used tags from your library (comma-separated)\n\nDelete a placeholder from the prompt to skip injecting that data; restore by clicking the reset button."
+            "value" : "Available placeholders for the Tags task:\n\n• {outputLanguage} — output language descriptor (auto, follows current Locale)\n• {metadata} — repo metadata block (full name, description, language, topics, license, etc.)\n• {readme} — README plain text (cleaned & truncated)\n• {codeContext} — code context XML (empty when disabled or unavailable)\n• {repoTags} — tags already attached to this repository (comma-separated)\n• {libraryTags} — top-30 frequently-used tags from your library (comma-separated)\n\nDelete a placeholder from the prompt to skip injecting that data; restore by clicking the reset button."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tags 任务可用占位符：\n\n• {output.language} —— 输出语言（跟随系统 Locale 自动派发，如 Simplified Chinese / English / Japanese）\n• {repository.metadata} —— 仓库元数据块（fullName / description / language / topics / license / 等）\n• {repository.readme} —— 清洗 + 截断后的 README 纯文本\n• {repository.code_context} —— 代码上下文 XML（关闭或拉取失败时为空）\n• {tags.repo} —— 当前仓库已绑定的标签（逗号分隔）\n• {tags.library} —— 标签库高频前 30 个（逗号分隔）\n\n从 prompt 里删掉占位符即不注入对应数据;改坏了点恢复默认按钮还原。"
+            "value" : "Tags 任务可用占位符：\n\n• {outputLanguage} —— 输出语言（跟随系统 Locale 自动派发，如 Simplified Chinese / English / Japanese）\n• {metadata} —— 仓库元数据块（fullName / description / language / topics / license / 等）\n• {readme} —— 清洗 + 截断后的 README 纯文本\n• {codeContext} —— 代码上下文 XML（关闭或拉取失败时为空）\n• {repoTags} —— 当前仓库已绑定的标签（逗号分隔）\n• {libraryTags} —— 标签库高频前 30 个（逗号分隔）\n\n从 prompt 里删掉占位符即不注入对应数据；改坏了点恢复默认按钮还原。"
           }
         }
       }

@@ -91,9 +91,16 @@ struct AppSettingsTests {
         #expect(s.aiSummaryTask.providerID == s.aiProviderProfiles[0].id)
         #expect(s.aiTagsTask.providerID == s.aiProviderProfiles[0].id)
         #expect(s.aiEmbeddingTask.providerID == s.aiProviderProfiles[0].id)
-        #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{context}"))
-        #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("## 一句话总结"))
-        #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("## 风险与注意点"))
+        // 2026-06-14 v4 占位符归一化（dong4j 拍板）：
+        // 旧 `{context}` 黑盒拆成 5 个透明占位符（{outputLanguage} + {metadata} +
+        // {readme} + {codeContext} + {externalContext}）；旧硬编中文章节标题
+        // (`## 一句话总结` / `## 风险与注意点`) 改成英文 + 由 LLM 按 {outputLanguage} 自然翻译。
+        #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{metadata}"))
+        #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{readme}"))
+        #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{codeContext}"))
+        #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{externalContext}"))
+        #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{outputLanguage}"))
+        #expect(s.aiSummaryTask.prompt.systemPrompt.contains("{outputLanguage}"))
         #expect(s.smartSearchMode == .keyword)
     }
 
