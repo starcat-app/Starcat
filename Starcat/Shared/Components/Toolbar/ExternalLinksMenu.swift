@@ -38,11 +38,33 @@ struct ExternalLinksMenu: View {
 
     let selection: ToolbarRepoSelection
     let codeFlowRepo: Repo?
-    @State private var isCodeFlowPresented = false
+    /// 由稳定的页面根视图承载 CodeFlow sheet；toolbar 组件只发送打开请求。
+    ///
+    /// 历史坑（dong4j 2026-06-14 验收反馈）：原本用 `@State isCodeFlowPresented: Bool`
+    /// + `.sheet(isPresented:)`，从 toolbar 打开 CodeFlow 再点右上角 ✕ 关闭时，
+    /// sheet 会"关闭 → 短暂再次出现 → 再关闭"。
+    ///
+    /// 根因：本组件嵌在 `RepoListView.makeManageToolbarSpec()` 的
+    /// `AnyView(Group { ExternalLinksMenu, CloneMenu })` trailing 闭包里，
+    /// trailing 会随 `viewModel.selectedRepo` / `starredRegistry` /
+    /// `authSession` 等任意状态变化被频繁重建。`dismiss()` 触发 sheet 关闭时，
+    /// SwiftUI 内部 sheet state 与外部 `$isCodeFlowPresented` binding 的更新
+    /// 存在 1 帧时序差；这一帧里如果父视图正好重建，**新创建的 binding 实例**
+    /// 让 sheet "复活" 1 帧后才真正关闭 —— 视觉上就是闪现一次。
+    ///
+    /// 仅把 Bool 改成 item 仍不够：如果 `.sheet(item:)` 继续挂在 toolbar 子树上，
+    /// `AnyView` 重建时 presentation host 本身仍会被替换，关闭期间可能再次挂载。
+    /// 因此由 `RepoListView` 持有 item 并在稳定根节点呈现，本组件不保存 sheet 状态。
+    let onOpenCodeFlow: (Repo) -> Void
 
-    init(selection: ToolbarRepoSelection, codeFlowRepo: Repo? = nil) {
+    init(
+        selection: ToolbarRepoSelection,
+        codeFlowRepo: Repo? = nil,
+        onOpenCodeFlow: @escaping (Repo) -> Void = { _ in }
+    ) {
         self.selection = selection
         self.codeFlowRepo = codeFlowRepo
+        self.onOpenCodeFlow = onOpenCodeFlow
     }
 
     var body: some View {
@@ -50,18 +72,17 @@ struct ExternalLinksMenu: View {
             if codeFlowRepo != nil {
                 FeaturedExternalLinksControl(
                     selection: selection,
-                    onOpenCodeFlow: { isCodeFlowPresented = true }
+                    onOpenCodeFlow: {
+                        if let codeFlowRepo {
+                            onOpenCodeFlow(codeFlowRepo)
+                        }
+                    }
                 )
             } else {
                 standardMenu
             }
         }
         .help("externalLinks.hint")
-        .sheet(isPresented: $isCodeFlowPresented) {
-            if let codeFlowRepo {
-                CodeFlowPanel(repo: codeFlowRepo)
-            }
-        }
     }
 
     /// 没有 CodeFlow 的场景保持系统 Menu，避免为了统一外观扩大自绘范围。
@@ -168,41 +189,7 @@ private struct ExternalLinksPopover: View {
 
     var body: some View {
         VStack(spacing: 7) {
-            Button(action: onOpenCodeFlow) {
-                HStack(spacing: 11) {
-                    Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .font(.system(size: 17, weight: .semibold))
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("CodeFlow")
-                            .font(.system(size: 14, weight: .bold))
-                        Text("可视化项目代码结构")
-                            .font(.system(size: 10, weight: .medium))
-                            .opacity(0.82)
-                    }
-
-                    Spacer(minLength: 4)
-
-                    Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.bold))
-                        .opacity(0.8)
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 11)
-                .frame(height: 46)
-                .background(
-                    LinearGradient(
-                        colors: [Color(red: 0.96, green: 0.25, blue: 0.58), .purple, .blue],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
-                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-                )
-                .shadow(color: .purple.opacity(0.22), radius: 8, y: 3)
-                .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
+            CodeFlowFeaturedTile(action: onOpenCodeFlow)
 
             Divider()
                 .padding(.horizontal, 4)
@@ -242,8 +229,60 @@ private struct ExternalLinksPopover: View {
     }
 }
 
+// MARK: - 公共子组件（toolbar / 搜索弹窗 共用）
+//
+// SEARCH-RICH 2026-06-14：搜索弹窗 ··· 折叠菜单要复用 toolbar 同款 popover 视觉
+// （CodeFlow 渐变卡片 + 行内菜单项），抽出本组件后两边共享单一信任源；将来 toolbar
+// popover 视觉调整时搜索弹窗自动同步，不会再出现"两套 UI 慢慢漂移"。
+
+/// CodeFlow 主推菜单卡片。
+///
+/// 视觉是 popover 第一组的整行渐变胶囊（pink → purple → blue），用于把 CodeFlow 这
+/// 个核心差异化能力推到用户视野最前。`action` 由调用方决定 sheet / panel / 回调路径。
+struct CodeFlowFeaturedTile: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 11) {
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+                    .font(.system(size: 17, weight: .semibold))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("CodeFlow")
+                        .font(.system(size: 14, weight: .bold))
+                    Text("可视化项目代码结构")
+                        .font(.system(size: 10, weight: .medium))
+                        .opacity(0.82)
+                }
+
+                Spacer(minLength: 4)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.bold))
+                    .opacity(0.8)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 11)
+            .frame(height: 46)
+            .background(
+                LinearGradient(
+                    colors: [Color(red: 0.96, green: 0.25, blue: 0.58), .purple, .blue],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            )
+            .shadow(color: .purple.opacity(0.22), radius: 8, y: 3)
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+}
+
 /// Popover 内的普通外链行，使用轻量 hover 背景模拟系统菜单的指针反馈。
-private struct ExternalLinkPopoverRow: View {
+struct ExternalLinkPopoverRow: View {
     let titleKey: LocalizedStringKey
     let systemImage: String
     let url: URL?

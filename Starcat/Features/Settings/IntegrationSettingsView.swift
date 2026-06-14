@@ -17,7 +17,7 @@ struct IntegrationSettingsTab: View {
     @State private var actionError: String?
     @State private var anySearchAPIKey: String = ""
     @State private var showAnySearchAPIKey: Bool = false
-    @State private var anySearchAPIKeySaved: Bool = false
+    @State private var anySearchAPIKeyTestState: AnySearchAPIKeyTestState = .idle
 
     var body: some View {
         Form {
@@ -37,15 +37,18 @@ struct IntegrationSettingsTab: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(-1)
                     Spacer()
                     Button("选择目录") { chooseOutputDirectory() }
+                        .fixedSize()
                     Button {
                         revealOutputDirectory()
                     } label: {
                         Image(systemName: "folder")
                     }
                     .help("在 Finder 中显示")
+                    .fixedSize()
                     Button {
                         resetOutputDirectory()
                     } label: {
@@ -53,6 +56,7 @@ struct IntegrationSettingsTab: View {
                     }
                     .disabled(!storage.hasCustomOutputDirectory)
                     .help("迁移到 App Container 默认目录")
+                    .fixedSize()
                 }
 
                 HStack(spacing: 18) {
@@ -130,7 +134,7 @@ struct IntegrationSettingsTab: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: .infinity)
                     .onChange(of: anySearchAPIKey) { _, _ in
-                        anySearchAPIKeySaved = false
+                        anySearchAPIKeyTestState = .idle
                     }
 
                     Button {
@@ -146,17 +150,23 @@ struct IntegrationSettingsTab: View {
                         : LocalizedStringKey("settings.anySearch.apiKey.show")))
 
                     Button {
-                        settings.setAnySearchAPIKey(anySearchAPIKey)
-                        anySearchAPIKey = settings.anySearchAPIKey() ?? ""
-                        anySearchAPIKeySaved = true
+                        testAnySearchAPIKey()
                     } label: {
-                        Text(anySearchAPIKeySaved
-                            ? LocalizedStringKey("settings.anySearch.apiKey.saved")
-                            : LocalizedStringKey("settings.anySearch.apiKey.save"))
+                        if anySearchAPIKeyTestState == .testing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text("settings.anySearch.apiKey.test")
+                        }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(anySearchAPIKeySaved)
+                    .disabled(
+                        anySearchAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                            anySearchAPIKeyTestState == .testing
+                    )
                 }
+
+                anySearchAPIKeyTestFeedback
 
                 Text(settings.anySearchAnonymousMode
                     ? LocalizedStringKey("settings.anySearch.apiKey.anonymousDescription")
@@ -175,6 +185,51 @@ struct IntegrationSettingsTab: View {
             Text("settings.anySearch.privacyDescription")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 使用输入框中的未保存 Key 强制发起一次 Bearer 请求，避免匿名模式成功造成
+    /// “Key 有效”的假阳性。探测成功后才持久化，失败时保留已有 Key 不变。
+    private func testAnySearchAPIKey() {
+        let candidate = anySearchAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !candidate.isEmpty else { return }
+
+        anySearchAPIKeyTestState = .testing
+        Task {
+            do {
+                let client = AnySearchClient(apiKey: candidate, anonymous: false)
+                _ = try await client.search(AnySearchRequest(query: "ping", maxResults: 1))
+                settings.setAnySearchAPIKey(candidate)
+                guard settings.anySearchAPIKey() == candidate else {
+                    anySearchAPIKeyTestState = .saveFailed
+                    return
+                }
+                anySearchAPIKey = candidate
+                anySearchAPIKeyTestState = .succeeded
+            } catch {
+                anySearchAPIKeyTestState = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var anySearchAPIKeyTestFeedback: some View {
+        switch anySearchAPIKeyTestState {
+        case .idle, .testing:
+            EmptyView()
+        case .succeeded:
+            Label("settings.anySearch.apiKey.testSucceeded", systemImage: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.green)
+        case .saveFailed:
+            Label("settings.anySearch.apiKey.saveFailed", systemImage: "xmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+        case .failed(let message):
+            Label(message, systemImage: "xmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .textSelection(.enabled)
         }
     }
 
@@ -288,6 +343,14 @@ struct IntegrationSettingsTab: View {
             actionError = error.localizedDescription
         }
     }
+}
+
+private enum AnySearchAPIKeyTestState: Equatable {
+    case idle
+    case testing
+    case succeeded
+    case saveFailed
+    case failed(String)
 }
 
 #Preview {

@@ -17,7 +17,28 @@
 //  - 控件直接绑定到 AppSettings 的 @Observable 属性，写入即落盘
 //
 
+import AppKit
 import SwiftUI
+
+// MARK: - 跨 Tab 跳转事件
+//
+// 2026-06-13 Y3/Y5：AISettingsTab 的「管理已生成的上下文 →」按钮需要把
+// settings 窗口从 .ai 切到 .storage。SettingsView 当前用 @State 自管
+// selectedTab，没有外部入口可以直接改它的值；项目惯例（见 ReadmeViewModel /
+// RepoNote）是「跨 View 通信用 Notification.Name」，于是在 settings feature
+// 模块内部约定一个事件名：发起方 (AISettingsView) post，接收方 (SettingsView
+// .onReceive) 读取 object: String 决定切到哪个 tag。
+//
+// 关键约束：
+//   1. object 用 String 而不是 enum——避免 AISettingsView 反向依赖 SettingsView
+//      内部的 SettingsTab（那是 private enum）；
+//   2. 未识别的 object 字符串直接忽略，不 crash；
+//   3. 名字加 `starcat.` 前缀防止与系统 / 三方框架冲突。
+extension Notification.Name {
+    /// 跨 Settings Tab 跳转。`object: String` 取值：`"general"` / `"storage"` /
+    /// `"pro"` / `"ai"` / `"services"` / `"integrations"`。
+    static let starcatJumpToSettingsTab: Notification.Name = .init("starcat.settings.jumpToTab")
+}
 
 struct SettingsView: View {
 
@@ -90,6 +111,18 @@ struct SettingsView: View {
         }
         .frame(width: Self.contentSize.width, height: Self.contentSize.height)
         .scenePadding()
+        .onReceive(NotificationCenter.default.publisher(for: .starcatJumpToSettingsTab)) { note in
+            guard let target = note.object as? String else { return }
+            switch target {
+            case "general":      selectedTab = .general
+            case "storage":      selectedTab = .storage
+            case "pro":          selectedTab = .pro
+            case "ai":           selectedTab = .ai
+            case "services":     selectedTab = .services
+            case "integrations": selectedTab = .integrations
+            default: break
+            }
+        }
     }
 
     private var generalTab: some View {
@@ -177,14 +210,34 @@ private struct StorageSettingsTab: View {
     @State private var isWorking: Bool = false
     /// 当前显示的确认弹窗类型;nil 表示不显示。
     @State private var pendingAction: PendingAction?
+    @State private var storageActionError: String?
+
+    // MARK: - Y5b 触点 E：AI 代码上下文产物管理（业务接通版，2026-06-13）
+    //
+    // 业务接通要点（与 `IntegrationSettingsView.codeFlowSection` 同款模式）：
+    //   - `@State private var aiContextStorage = RepoContextStorage.shared` 让 SwiftUI
+    //     自动跟踪 @Observable 单例的属性变更；
+    //   - 所有按钮 action 实际触发 storage 方法 + NSOpenPanel；
+    //   - 错误用 `aiContextActionError` 弹 alert（与 IntegrationSettingsView 同款）。
+    //
+    // 关键约束：
+    //   1. `.task { aiContextStorage.reload() }` 在 Tab 出现时强制重扫描，让用户刚生成
+    //      的产物立即可见；
+    //   2. `revealProject` / `deleteProject` 都走 storage 内部 security scope 路径，
+    //      避免 sandbox 拒绝 NSWorkspace 调用；
+    //   3. "一键清除" 仍保留二次确认 alert，destructive 角色防误删。
+    @State private var aiContextStorage = RepoContextStorage.shared
+    @State private var showsAIContextClearConfirmation: Bool = false
+    @State private var aiContextActionError: String?
 
     /// 清理操作类型。每种类型有不同的确认文案与执行路径。
     private enum PendingAction: Identifiable {
-        case readme, image, all
+        case readme, image, archive, all
         var id: String {
             switch self {
             case .readme: return "readme"
             case .image:  return "image"
+            case .archive: return "archive"
             case .all:    return "all"
             }
         }
@@ -192,6 +245,7 @@ private struct StorageSettingsTab: View {
             switch self {
             case .readme: return String(localized: "settings.storage.clearReadme.confirm")
             case .image:  return String(localized: "settings.storage.clearImage.confirm")
+            case .archive: return String(localized: "settings.storage.clearArchive.confirm")
             case .all:    return String(localized: "settings.storage.clearAll.confirm")
             }
         }
@@ -199,6 +253,7 @@ private struct StorageSettingsTab: View {
             switch self {
             case .readme: return "settings.storage.clearReadme.message"
             case .image:  return "settings.storage.clearImage.message"
+            case .archive: return "settings.storage.clearArchive.message"
             case .all:    return "settings.storage.clearAll.message"
             }
         }
@@ -218,6 +273,25 @@ private struct StorageSettingsTab: View {
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
+                LabeledContent("settings.storage.archive") {
+                    HStack(spacing: 8) {
+                        Text(archiveUsageText)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                        Button {
+                            do {
+                                try cleaner.revealArchiveDirectory()
+                            } catch {
+                                storageActionError = error.localizedDescription
+                            }
+                        } label: {
+                            Image(systemName: "folder")
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .help(Text("settings.storage.archive.revealHelp"))
+                    }
+                }
                 LabeledContent("settings.storage.log") {
                     Text("settings.storage.logDescription")
                         .foregroundStyle(.tertiary)
@@ -231,9 +305,13 @@ private struct StorageSettingsTab: View {
                     .disabled(isWorking || stats.readmeCount == 0)
                 Button("settings.storage.clearImage") { pendingAction = .image }
                     .disabled(isWorking || stats.imageDiskBytes == 0)
+                Button("settings.storage.clearArchive") { pendingAction = .archive }
+                    .disabled(isWorking || stats.archiveCount == 0)
                 Button("settings.storage.clearAll", role: .destructive) { pendingAction = .all }
                     .disabled(isWorking || stats.totalBytes == 0)
             }
+
+            aiContextSection
 
             if isWorking {
                 Section {
@@ -265,6 +343,230 @@ private struct StorageSettingsTab: View {
         } message: { action in
             Text(action.confirmMessageKey)
         }
+        .alert("ai.context.storage.clearAllConfirm.title", isPresented: $showsAIContextClearConfirmation) {
+            Button("general.cancel", role: .cancel) {}
+            Button("ai.context.storage.clearAll", role: .destructive) {
+                do {
+                    try aiContextStorage.deleteAllProjects()
+                } catch {
+                    aiContextActionError = error.localizedDescription
+                }
+            }
+        } message: {
+            Text("ai.context.storage.clearAllConfirm.message")
+        }
+        .alert(
+            "settings.storage.actionFailed",
+            isPresented: Binding(
+                get: { storageActionError != nil },
+                set: { if !$0 { storageActionError = nil } }
+            )
+        ) {
+            Button("general.ok") { storageActionError = nil }
+        } message: {
+            Text(storageActionError ?? "")
+        }
+        // Y5b：storage 操作失败时弹 alert。与 IntegrationSettingsView 同款模式：
+        // - storage 内部抛错 → 设置 aiContextActionError → 触发 alert
+        // - 用户点"好"清除 aiContextActionError → alert 关闭
+        .alert(
+            "ai.context.storage.actionFailed",
+            isPresented: Binding(
+                get: { aiContextActionError != nil },
+                set: { if !$0 { aiContextActionError = nil } }
+            )
+        ) {
+            Button("general.ok") { aiContextActionError = nil }
+        } message: {
+            Text(aiContextActionError ?? "")
+        }
+        .task {
+            // Tab 出现时主动扫描产物目录（首次进入 / 后台跑过 packer 之后回来都能更新）。
+            aiContextStorage.reload()
+        }
+    }
+
+    // MARK: - AI 代码上下文 Section
+
+    /// AI 代码上下文产物管理面板。视觉对照 `IntegrationSettingsView.codeFlowSection`。
+    /// Y5b 起业务接通 `RepoContextStorage.shared`，所有数据 / CRUD / NSOpenPanel
+    /// 都走真实存储层。
+    private var aiContextSection: some View {
+        Section("ai.context.storage.section") {
+            VStack(alignment: .leading, spacing: 5) {
+                Label("ai.context.storage.outputDirectory", systemImage: "doc.text.magnifyingglass")
+                    .font(.headline)
+                Text("ai.context.storage.subtitle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Text(aiContextStorage.outputDirectoryDisplayPath)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(-1)
+                Spacer()
+                Button("ai.context.storage.choose") {
+                    chooseAIContextOutputDirectory()
+                }
+                .fixedSize()
+                Button {
+                    revealAIContextOutputDirectory()
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .help(Text("ai.context.storage.revealHelp"))
+                .fixedSize()
+                Button {
+                    resetAIContextOutputDirectory()
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .disabled(!aiContextStorage.hasCustomOutputDirectory)
+                .help(Text("ai.context.storage.resetHelp"))
+                .fixedSize()
+            }
+
+            HStack(spacing: 18) {
+                aiContextStat(titleKey: "ai.context.storage.statRepos",
+                              value: "\(aiContextStorage.projects.count)")
+                aiContextStat(titleKey: "ai.context.storage.statBytes",
+                              value: ByteCountFormatter.string(fromByteCount: aiContextStorage.totalBytes, countStyle: .file))
+                aiContextStat(titleKey: "ai.context.storage.statGenerations",
+                              value: String(format: String(localized: "ai.context.storage.statGenerationsFormat"),
+                                            aiContextStorage.totalGenerationCount))
+                if let date = aiContextStorage.latestGeneratedAt {
+                    aiContextStat(titleKey: "ai.context.storage.statLast",
+                                  value: date.formatted(date: .abbreviated, time: .shortened))
+                }
+                Spacer()
+            }
+
+            // storage 内部抛错（bookmark 失效 / 目录权限丢失等）会反映到 lastErrorMessage
+            // 上，扫描时显示给用户。区别于 actionError：actionError 是按钮触发的失败（短暂弹窗），
+            // lastErrorMessage 是 reload 失败（持续在界面里）。
+            if let message = aiContextStorage.lastErrorMessage {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if aiContextStorage.projects.isEmpty {
+                Text("ai.context.storage.empty")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(aiContextStorage.projects) { project in
+                    aiContextProjectRow(project)
+                }
+
+                HStack {
+                    Spacer()
+                    Button("ai.context.storage.clearAll", role: .destructive) {
+                        showsAIContextClearConfirmation = true
+                    }
+                }
+            }
+        }
+    }
+
+    /// 统计列（4 项：repos / size / generations / last generated）。
+    /// 视觉与 `IntegrationSettingsView.stat(title:value:)` 对齐（caption2 标题 +
+    /// caption.weight(.medium) 数值，左对齐 2pt 行距）。
+    private func aiContextStat(titleKey: LocalizedStringKey, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(titleKey).font(.caption2).foregroundStyle(.tertiary)
+            Text(value).font(.caption.weight(.medium))
+        }
+    }
+
+    /// 单个产物行（一个 `<owner>/<repo>` 项目）。Y5b 起绑定 `RepoContextStoredProject`。
+    ///
+    /// 视觉与 `IntegrationSettingsView.projectRow(_:)` 对齐：左侧两行文本（仓库全名 +
+    /// 元信息 caption），右侧 2 个 Button（在 Finder 显示 / 删除）。
+    /// 注：与 CodeFlow 不同，本场景没有"预览页面"概念（context.xml 不直接展示给用户看），
+    /// 删除 IntegrationSettingsView 的 "预览" 按钮。
+    private func aiContextProjectRow(_ project: RepoContextStoredProject) -> some View {
+        let metadata = project.metadata
+        let commitShortSHA = String(metadata.commitSha.prefix(7))
+        let xmlBytesStr = ByteCountFormatter.string(fromByteCount: Int64(metadata.stats.contextXmlBytes), countStyle: .file)
+        let actualTokens = metadata.stats.actualTokens
+        let totalFiles = metadata.stats.totalFiles
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(metadata.owner)/\(metadata.repo)")
+                        .font(.callout.weight(.medium))
+                    Text("\(metadata.ref) · \(commitShortSHA) · XML \(xmlBytesStr) · \(actualTokens) tokens · \(totalFiles) files")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Text(project.generatedAtDate.formatted(date: .abbreviated, time: .shortened))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Button("ai.context.storage.menuReveal") {
+                    revealAIContextProject(project)
+                }
+                Button("ai.context.storage.menuDelete", role: .destructive) {
+                    deleteAIContextProject(project)
+                }
+            }
+        }
+    }
+
+    // MARK: - Y5b storage action 入口
+
+    /// 选择新的产物输出目录（与 IntegrationSettingsView 同款 NSOpenPanel）。
+    private func chooseAIContextOutputDirectory() {
+        let panel = NSOpenPanel()
+        panel.title = String(localized: "ai.context.storage.choosePanelTitle")
+        panel.prompt = String(localized: "ai.context.storage.choosePanelPrompt")
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try aiContextStorage.setCustomOutputDirectory(url)
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
+    }
+
+    private func resetAIContextOutputDirectory() {
+        do {
+            try aiContextStorage.resetOutputDirectory()
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
+    }
+
+    private func revealAIContextOutputDirectory() {
+        do {
+            try aiContextStorage.revealOutputRoot()
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
+    }
+
+    private func revealAIContextProject(_ project: RepoContextStoredProject) {
+        do {
+            try aiContextStorage.revealProject(project)
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
+    }
+
+    private func deleteAIContextProject(_ project: RepoContextStoredProject) {
+        do {
+            try aiContextStorage.deleteProject(owner: project.metadata.owner, repo: project.metadata.repo)
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
     }
 
     /// 执行清理 + 重新加载统计。UI state 全程在 main actor。
@@ -274,6 +576,7 @@ private struct StorageSettingsTab: View {
         switch action {
         case .readme: await cleaner.clearReadmes()
         case .image:  await cleaner.clearImageCache()
+        case .archive: cleaner.clearArchives()
         case .all:    await cleaner.clearAll()
         }
         stats = await cleaner.loadStatistics()
@@ -288,4 +591,14 @@ private struct StorageSettingsTab: View {
             stats.readmeBytes.formattedByteSize
         )
     }
+
+    private var archiveUsageText: String {
+        String(
+            format: String(localized: "settings.storage.archiveUsageFormat"),
+            stats.archiveCount,
+            stats.archiveBytes.formattedByteSize
+        )
+    }
 }
+
+// Y5b（2026-06-13）：原 `MockAIContextProject` 已下线，业务接通 `RepoContextStoredProject`。

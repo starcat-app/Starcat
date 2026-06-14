@@ -57,6 +57,20 @@ public enum TierTruncation {
     ///   - marker **始终**以 `\n\n//` 开头（前面空行让 LLM 视觉分隔清晰）
     ///   - 同一输入字符串多次调用结果完全一致（无随机 / 时间依赖）
     public static func tier1Head(_ text: String) -> String {
+        tier1Head(text, maxLines: tier1MaxLines)
+    }
+
+    /// X3 引入（2026-06-13）：允许用户通过 `AppSettings.aiRepoContextTier1MaxLines`
+    /// override 默认 80 行。字符数上限 `tier1MaxChars` 不参数化（§22.9 双约束语义不变）。
+    ///
+    /// **关键约束**：
+    ///   - `maxLines` 取值范围 40-200，UI 层 Stepper 已做兜底；这里再 clamp 一次防止
+    ///     单测 / 直接调用传入不合理值（< 1 会 prefix 出空字符串）；
+    ///   - marker 文案里嵌入实际生效的 maxLines（用户看 `metadata.json.warnings` 时
+    ///     能知道是哪个值生效，方便排错）。
+    public static func tier1Head(_ text: String, maxLines: Int) -> String {
+        let effectiveMaxLines = max(1, min(maxLines, 1000))
+
         // Step 1：换行归一
         let normalized = text
             .replacingOccurrences(of: "\r\n", with: "\n")
@@ -65,7 +79,7 @@ public enum TierTruncation {
         // Step 2：检查是否需要截断
         // 注意：split(omittingEmptySubsequences: false) 会保留尾随空行，line count 更准确
         let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
-        let exceedsLines = lines.count > tier1MaxLines
+        let exceedsLines = lines.count > effectiveMaxLines
         let exceedsChars = normalized.count > tier1MaxChars
 
         if !exceedsLines && !exceedsChars {
@@ -73,7 +87,7 @@ public enum TierTruncation {
         }
 
         // Step 3：按行截
-        var result = lines.prefix(tier1MaxLines).joined(separator: "\n")
+        var result = lines.prefix(effectiveMaxLines).joined(separator: "\n")
 
         // Step 4：字符数再卡上限
         if result.count > tier1MaxChars {
@@ -82,6 +96,6 @@ public enum TierTruncation {
         }
 
         // Step 5：行数超的 marker
-        return result + "\n\n// ... [truncated: showing first \(tier1MaxLines) of \(lines.count) lines]\n"
+        return result + "\n\n// ... [truncated: showing first \(effectiveMaxLines) of \(lines.count) lines]\n"
     }
 }
