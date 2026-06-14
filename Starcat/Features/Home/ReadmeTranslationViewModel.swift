@@ -207,6 +207,30 @@ final class ReadmeTranslationViewModel {
         errorMessage = nil
     }
 
+    /// 用户主动取消当前翻译任务（2026-06-14 dong4j 反馈：详情页右下角翻译按钮没有
+    /// 停止入口，hover 时切到 stop 图标 + 点击触发取消）。
+    ///
+    /// 设计要点：
+    ///   - **不写 errorMessage**：用户主动取消不是错误，无需 banner 打扰；
+    ///   - **不清 displayMode**：保留当前显示（原文 / 旧译文），只取消正在跑的请求；
+    ///   - **复位 isTranslating + streamingHtml**：让 UI 立即从"翻译中"切回常规态；
+    ///   - **idempotent**：未在翻译时调用为 no-op（按钮已经走 toggle 分支，但守门更稳）。
+    ///
+    /// `currentTask?.cancel()` 触发 `service.translate` 内部的 `try Task.checkCancellation()`
+    /// 链路，最终 `performTranslation` 的 do 块抛 `CancellationError` 进入 catch；
+    /// catch 里设的 `errorMessage = error.localizedDescription` 会写入"已取消"字样
+    /// （CancellationError.localizedDescription = "The operation couldn't be completed.
+    /// (Swift.CancellationError error 1.)"），不友好——所以本函数主动把 errorMessage
+    /// 清掉防御这种竞态。
+    func cancelTranslation() {
+        guard isTranslating else { return }
+        currentTask?.cancel()
+        currentTask = nil
+        isTranslating = false
+        streamingHtml = nil
+        errorMessage = nil
+    }
+
     // MARK: - 内部实现
 
     /// 把已读到的缓存切到展示态。
