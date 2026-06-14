@@ -27,8 +27,12 @@ import Observation
 /// 同时承载"已完成"和"流式累积中"两种状态：
 /// - 用户发送：构造一次后 `content` 不再变化；
 /// - 助手回答：先以空 content 插入 messages 末尾，随后按 stream chunk 不断改写。
-struct ChatMessage: Identifiable, Equatable, Sendable {
-    enum Role: String, Sendable, Equatable {
+///
+/// **HOM-70（2026-06-15）补 Codable**：磁盘持久化用，schema 见
+/// `DiskChatHistoryStore` 顶部注释。`isStreaming` 不参与持久化（默认 false 即可），
+/// 因为落盘的消息一定是"已完成"状态。
+struct ChatMessage: Identifiable, Equatable, Sendable, Codable {
+    enum Role: String, Sendable, Equatable, Codable {
         case user
         case assistant
     }
@@ -54,6 +58,82 @@ struct ChatMessage: Identifiable, Equatable, Sendable {
         self.timestamp = timestamp
         self.isStreaming = isStreaming
     }
+
+    // 自定义 Codable：跳过 `isStreaming`（落盘的消息恒为 false），其余字段照常。
+    // 老 JSON（理论上不存在，HOM-70 首版上线）若缺这个字段也能正常 decode。
+    private enum CodingKeys: String, CodingKey {
+        case id, role, content, timestamp
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.role = try container.decode(Role.self, forKey: .role)
+        self.content = try container.decode(String.self, forKey: .content)
+        self.timestamp = try container.decode(Date.self, forKey: .timestamp)
+        self.isStreaming = false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(role, forKey: .role)
+        try container.encode(content, forKey: .content)
+        try container.encode(timestamp, forKey: .timestamp)
+    }
+}
+
+/// AI 对话会话（HOM-70 / 2026-06-15）。
+///
+/// 一个 `(owner, repo)` 下可以有多个 session：用户点「+ 新增对话」即新建，或在
+/// 上下文溢出（`context_length_exceeded`）时手动新建并把上一 session 的尾部对话
+/// 摘要作为"开场白"带进来。
+///
+/// 设计约束：
+/// - `title`：取首条 user message 的首行（max 30 字符）；为空时显示本地化"新对话"。
+/// - `carriedOverSummary`：仅当此 session 由「上下文溢出 → 新建」诞生时非 nil，
+///   首次渲染时 UI 显示一条"承接上一对话"banner / 系统消息（消费一次后保留在
+///   session 里供历史回看）。
+/// - `messages` 顺序：第一条最早，末尾最新；空数组合法（刚创建未发言）。
+struct ChatSession: Identifiable, Equatable, Sendable, Codable {
+    let id: UUID
+    var title: String
+    let createdAt: Date
+    var updatedAt: Date
+    var messages: [ChatMessage]
+    /// 上一 session 在溢出时摘要带过来的开场白。nil = 全新空白 session。
+    var carriedOverSummary: String?
+
+    init(
+        id: UUID = UUID(),
+        title: String = "",
+        createdAt: Date = Date(),
+        updatedAt: Date? = nil,
+        messages: [ChatMessage] = [],
+        carriedOverSummary: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt ?? createdAt
+        self.messages = messages
+        self.carriedOverSummary = carriedOverSummary
+    }
+}
+
+/// 会话索引项（`index.json` 用，"轻量列表"专用）。
+///
+/// 为什么不直接复用 `ChatSession`：list 视图（session popover）只需要 title + 时间 +
+/// 消息数 + 体积，不需要全部 messages；磁盘读 index 一次就能渲染列表，远快于扫
+/// 所有 `<session-id>.json`。当 session 被新增 / 修改 / 删除时由
+/// `DiskChatHistoryStore` 同步更新对应 index 条目。
+struct ChatSessionSummary: Identifiable, Equatable, Sendable, Codable {
+    let id: UUID
+    var title: String
+    let createdAt: Date
+    var updatedAt: Date
+    var messageCount: Int
+    var bytes: Int64
 }
 
 @MainActor
@@ -65,11 +145,29 @@ final class RepoAIChatViewModel {
     /// 完整对话记录。顺序：第一条最早，最后一条最新。
     private(set) var messages: [ChatMessage] = []
 
+    /// 当前 session id（nil = 尚未初始化）。所有 send / load / 切换路径都围绕此 id。
+    private(set) var currentSessionId: UUID?
+
+    /// 当前 session 的"承接上一对话摘要"（仅由溢出新建路径写入；UI 以 banner 形式展示）。
+    private(set) var currentCarriedOverSummary: String?
+
+    /// 当前 repo 下的全部 session 概要（按 updatedAt 倒序）。供 popover 列表渲染。
+    /// 由 `refreshSessions(repo:)` / saveSession 后自动刷新。
+    private(set) var sessions: [ChatSessionSummary] = []
+
     /// 是否正在发送（含等待首个 token + 流式中）。
     private(set) var isSending: Bool = false
 
     /// 最近一次错误（非 nil 时 UI 渲染错误条）。
     private(set) var errorMessage: String?
+
+    /// 上下文窗口溢出标志（HOM-70）。
+    ///
+    /// 由 `sendMessage` 中检测 chatStream 错误的 errorDescription 是否含
+    /// `context_length_exceeded` / `maximum context length` / `token limit` 等关键字
+    /// 后设置；UI 据此显示一行"上下文已满，新建对话"banner + CTA 按钮。
+    /// 调用 `startNewSessionAfterOverflow(repo:)` 后自动清零。
+    private(set) var isContextOverflow: Bool = false
 
     /// 输入框文本。@Observable 双向绑定 SwiftUI `TextField`。
     var inputText: String = ""
@@ -77,27 +175,109 @@ final class RepoAIChatViewModel {
     // MARK: - 依赖
 
     private let service: RepoAIInsightService
+    private let historyStore: DiskChatHistoryStore
 
-    init(service: RepoAIInsightService) {
+    init(
+        service: RepoAIInsightService,
+        historyStore: DiskChatHistoryStore = .shared
+    ) {
         self.service = service
+        self.historyStore = historyStore
+    }
+
+    // MARK: - Session 生命周期
+
+    /// 进入对话时调用：加载该 repo 的所有 session，自动选中最近的一个；都没有就新建一个空 session。
+    ///
+    /// **必须在 UI 首次显示前调用**——`RepoAIWindowContentView.initializeViewModelsIfNeeded`
+    /// 创建完 VM 后立刻 await 这个方法，等返回再让用户操作输入框，避免空 session 状态下
+    /// 用户发的第一条消息丢失 sessionId 关联。
+    func bootstrap(repo: Repo) async {
+        await refreshSessions(repo: repo)
+        if let latest = sessions.first,
+           let session = (try? historyStore.loadSession(owner: repo.owner, repo: repo.name, sessionId: latest.id)) ?? nil {
+            applySession(session)
+        } else {
+            startEmptySession()
+        }
+    }
+
+    /// 主动切换到另一个已有 session。
+    func switchSession(to sessionId: UUID, repo: Repo) {
+        guard !isSending else { return }
+        guard sessionId != currentSessionId else { return }
+        guard let session = (try? historyStore.loadSession(owner: repo.owner, repo: repo.name, sessionId: sessionId)) ?? nil
+        else { return }
+        applySession(session)
+    }
+
+    /// 主动新建一个空 session（用户点「+ 新增对话」入口）。
+    ///
+    /// 行为：内存切到新空 session（**不立即落盘**，避免列表里冒出"未发过言的空对话"），
+    /// 第一次 sendMessage 后才会真正写入 disk + 出现在列表里。
+    func startNewSession() {
+        guard !isSending else { return }
+        startEmptySession()
+    }
+
+    /// 检测到上下文溢出后用户点「新建并承接」入口：把上一 session 末尾 6 条
+    /// 对话转成摘要文案，写入新 session 的 `carriedOverSummary`。
+    func startNewSessionAfterOverflow(repo: Repo) async {
+        guard !isSending else { return }
+        let summary = makeCarryOverSummary(from: messages)
+        let new = ChatSession(carriedOverSummary: summary)
+        applySession(new)
+        // 立即落盘让该 carry-over session 出现在列表里（避免用户切走又切回来后空白）。
+        try? historyStore.saveSession(owner: repo.owner, repo: repo.name, session: makeSnapshot())
+        await refreshSessions(repo: repo)
+    }
+
+    /// 删当前 repo 的全部对话（AI 窗口右上角"清除当前 repo 对话"入口）。
+    func deleteAllForCurrentRepo(repo: Repo) async {
+        guard !isSending else { return }
+        try? historyStore.deleteAllForRepo(owner: repo.owner, repo: repo.name)
+        startEmptySession()
+        await refreshSessions(repo: repo)
+    }
+
+    /// 删某个 session（用户在列表里单条删除入口）。
+    /// 若删的是当前 session，自动跳到下一个最新的，没有就新建空 session。
+    func deleteSession(sessionId: UUID, repo: Repo) async {
+        guard !isSending else { return }
+        try? historyStore.deleteSession(owner: repo.owner, repo: repo.name, sessionId: sessionId)
+        if currentSessionId == sessionId {
+            await refreshSessions(repo: repo)
+            if let next = sessions.first,
+               let session = (try? historyStore.loadSession(owner: repo.owner, repo: repo.name, sessionId: next.id)) ?? nil {
+                applySession(session)
+            } else {
+                startEmptySession()
+            }
+        } else {
+            await refreshSessions(repo: repo)
+        }
+    }
+
+    /// 刷新列表 (popover 打开 / saveSession 之后)。
+    func refreshSessions(repo: Repo) async {
+        sessions = (try? historyStore.listSessions(owner: repo.owner, repo: repo.name)) ?? []
     }
 
     // MARK: - 动作
 
-    /// 发送当前 `inputText` 给 AI；流式累积助手回答。
+    /// 发送当前 `inputText` 给 AI；流式累积助手回答；按 turn 落盘。
     ///
-    /// 流程：
-    /// 1. 守门：去空白 + 拦截并发发送 → 直接 return；
-    /// 2. 立刻把"用户消息"插到 messages 末尾，UI 一帧内就看见自己的话；
-    /// 3. 插一条空的"助手消息"占位并 `isStreaming = true`；
-    /// 4. 调 `service.chatStream` 拉增量，onDelta 回调里原地写助手消息的 content；
-    /// 5. 流式结束（无论成功 / 失败）都翻 `isStreaming = false`，错误时把 errorMessage
-    ///    赋值并把助手消息置为简短错误提示（不要让"思考中…"的占位永远卡在 UI 上）。
-    ///
-    /// 历史构造：剔除当前轮的 user / assistant 占位，剩下的就是要喂给模型的多轮上下文。
+    /// 流程（HOM-70 修订版）：
+    /// 1. 守门：去空白 + 拦截并发 + 确保 currentSessionId 已就绪；
+    /// 2. 用户消息追加到 `messages` 末尾，**立即落盘**（保证就算 stream 挂了，user 消息也不丢）；
+    /// 3. 助手 placeholder 占位 + `isStreaming = true`；
+    /// 4. service.chatStream 增量回调原地改写助手 content（与 HOM-150 同款）；
+    /// 5. **完成**（成功 / 失败）后翻 `isStreaming = false`，**再次落盘**整段 session；
+    /// 6. 失败时若错误关键字命中 context-overflow → 设 `isContextOverflow = true`，UI 给 banner。
     func sendMessage(repo: Repo) async {
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isSending else { return }
+        if currentSessionId == nil { startEmptySession() }
 
         let userMessage = ChatMessage(role: .user, content: trimmed)
         let assistantPlaceholder = ChatMessage(role: .assistant, content: "", isStreaming: true)
@@ -112,12 +292,20 @@ final class RepoAIChatViewModel {
         }
 
         messages.append(userMessage)
+        // 首条消息触发：用文案生成 title（30 字符截断）。后续轮次保留首条 title。
+        if messages.filter({ $0.role == .user }).count == 1 {
+            currentSessionTitle = Self.makeTitle(from: trimmed)
+        }
+        // 落盘 user message（即便 stream 挂了也不丢）。
+        persistCurrentSession(repo: repo)
+
         let assistantIndex = messages.count
         messages.append(assistantPlaceholder)
 
         inputText = ""
         isSending = true
         errorMessage = nil
+        isContextOverflow = false
 
         defer { isSending = false }
 
@@ -139,8 +327,14 @@ final class RepoAIChatViewModel {
                 messages[assistantIndex].content = final
                 messages[assistantIndex].isStreaming = false
             }
+            persistCurrentSession(repo: repo)
+            await refreshSessions(repo: repo)
         } catch {
-            errorMessage = error.localizedDescription
+            let description = error.localizedDescription
+            errorMessage = description
+            if Self.looksLikeContextOverflow(description) {
+                isContextOverflow = true
+            }
             if messages.indices.contains(assistantIndex) {
                 // 不留空占位（避免 UI 上看到一条"灰色光标但无文字"的助手消息）。
                 // 失败占位文案走 i18n：英文 / 中文用户都能看懂自己语言的失败提示。
@@ -148,11 +342,14 @@ final class RepoAIChatViewModel {
                 messages[assistantIndex].content = prefix.isEmpty
                     ? String(
                         format: String(localized: "ai.assistant.chat.failureFormat"),
-                        error.localizedDescription
+                        description
                     )
                     : prefix
                 messages[assistantIndex].isStreaming = false
             }
+            // 失败 turn 也落盘（保留用户消息 + 失败占位，便于回看 / 复制问题反馈）。
+            persistCurrentSession(repo: repo)
+            await refreshSessions(repo: repo)
         }
     }
 
@@ -161,13 +358,120 @@ final class RepoAIChatViewModel {
         errorMessage = nil
     }
 
-    /// 显式清空对话历史。
+    /// 显式清空 context-overflow 标志（UI 上 "关闭 banner" 入口；不影响 errorMessage）。
+    func dismissContextOverflow() {
+        isContextOverflow = false
+    }
+
+    /// 显式清空对话历史（仅内存层，不删盘）。
     ///
-    /// 当前 UI 没有暴露入口，但保留方法供未来"重置对话"按钮 / 重启窗口时调用。
+    /// 当前主用户路径是「清除当前 repo 对话」/「+ 新增对话」，本方法保留供 reset 类场景使用。
     func resetConversation() {
         guard !isSending else { return }
         messages.removeAll()
         errorMessage = nil
+        isContextOverflow = false
+    }
+
+    // MARK: - Session 持久化辅助
+
+    /// 当前 session 的可变 title（首条 user 消息发出后即写入）。
+    private var currentSessionTitle: String = ""
+    private var currentSessionCreatedAt: Date = Date()
+
+    private func startEmptySession() {
+        let id = UUID()
+        let now = Date()
+        currentSessionId = id
+        currentSessionTitle = ""
+        currentSessionCreatedAt = now
+        currentCarriedOverSummary = nil
+        messages.removeAll()
+        errorMessage = nil
+        isContextOverflow = false
+    }
+
+    private func applySession(_ session: ChatSession) {
+        currentSessionId = session.id
+        currentSessionTitle = session.title
+        currentSessionCreatedAt = session.createdAt
+        currentCarriedOverSummary = session.carriedOverSummary
+        messages = session.messages
+        errorMessage = nil
+        isContextOverflow = false
+    }
+
+    private func makeSnapshot() -> ChatSession {
+        ChatSession(
+            id: currentSessionId ?? UUID(),
+            title: currentSessionTitle,
+            createdAt: currentSessionCreatedAt,
+            updatedAt: Date(),
+            messages: messages,
+            carriedOverSummary: currentCarriedOverSummary
+        )
+    }
+
+    private func persistCurrentSession(repo: Repo) {
+        guard currentSessionId != nil else { return }
+        do {
+            try historyStore.saveSession(owner: repo.owner, repo: repo.name, session: makeSnapshot())
+        } catch {
+            AppLog.ai.warning("Chat history persist failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// 从对话末尾 6 条消息生成"承接上一对话"摘要文案。
+    ///
+    /// 简化策略：不调 LLM 二次摘要（dong4j 拍板"用户自己处理上下文"），直接把末尾 6 条
+    /// 按 role 拼成 markdown 列表交给下一 session 的 system 上下文。
+    /// 单条截断到 ~280 字符防止本身又溢出。
+    private func makeCarryOverSummary(from messages: [ChatMessage]) -> String {
+        let recent = Array(messages.suffix(6))
+        var lines: [String] = []
+        for msg in recent {
+            let trimmed = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let snippet = trimmed.count > 280 ? String(trimmed.prefix(280)) + "…" : trimmed
+            let prefix = msg.role == .user ? "Q" : "A"
+            lines.append("- \(prefix): \(snippet)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// 把 user 消息首行截成 ~30 字符的 session title。
+    private static func makeTitle(from userMessage: String) -> String {
+        let firstLine = userMessage
+            .components(separatedBy: .newlines)
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if firstLine.count > 30 {
+            return String(firstLine.prefix(30)) + "…"
+        }
+        return firstLine
+    }
+
+    /// 错误描述里命中下列任一关键字 → 视为 context-window 溢出。
+    ///
+    /// 关键字覆盖 OpenAI / Anthropic / DashScope / 国产 LLM 常见返回文案；保守命中策略：
+    /// 命中即给 banner（误报 = 用户看到 banner 但其实其它原因失败，自己关掉即可）；
+    /// 没命中也无害，errorMessage 仍然显示。
+    static func looksLikeContextOverflow(_ description: String) -> Bool {
+        let lower = description.lowercased()
+        let keywords = [
+            "context_length_exceeded",
+            "maximum context length",
+            "context window",
+            "context length exceeded",
+            "token limit",
+            "tokens exceed",
+            "exceeds the maximum",
+            "上下文长度",
+            "上下文窗口",
+            "tokens超过",
+            "超出最大上下文"
+        ]
+        return keywords.contains { lower.contains($0) }
     }
 
     /// 把当前对话历史拼成可粘贴到外部 Markdown 渲染器（Obsidian / Notion / 飞书

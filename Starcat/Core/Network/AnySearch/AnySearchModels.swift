@@ -38,15 +38,20 @@ struct AnySearchRequest: Codable, Hashable, Sendable {
     }
 }
 
-struct AnySearchResponse: Equatable, Sendable {
+struct AnySearchResponse: Codable, Equatable, Sendable {
     let results: [AnySearchResult]
     let metadata: AnySearchMetadata?
     /// HTTP 层的限流元信息（来自 `x-ratelimit-*` header，不在 JSON envelope 内）。
     /// 三字段缺一不全 → nil（健壮容错，见 `AnySearchClient.perform`）。
+    ///
+    /// **持久化语义**：磁盘缓存写盘前需要把本字段清成 nil —— rateLimit 是"本次请求时刻"
+    /// 的快照（remaining 是当时余量、resetAt 是当时定的下次重置时间），读出旧 cache 时
+    /// 这些数字早已过期，再回填给 UI 会显示"剩余 -3 / 重置时间已过去 2 小时"等假数字。
+    /// 由 `DiskAnySearchCache` 在 save 路径上清空。
     let rateLimit: AnySearchRateLimit?
 }
 
-struct AnySearchResult: Identifiable, Hashable, Sendable {
+struct AnySearchResult: Identifiable, Codable, Hashable, Sendable {
     var id: String { normalizedURL.absoluteString }
     let title: String
     let url: URL
@@ -74,7 +79,7 @@ struct AnySearchMetadata: Codable, Equatable, Sendable {
 ///   `HTTPURLResponse` header 单独读取并注入。
 /// - 429 错误响应理论上也带 reset header，但当前 client 抛 `.rateLimited`
 ///   时未携带，v2 再扩展（见 `docs/详细设计/28-搜索增强最终方案.md`）。
-struct AnySearchRateLimit: Equatable, Sendable {
+struct AnySearchRateLimit: Codable, Equatable, Sendable {
     let limit: Int
     let remaining: Int
     let resetAt: Date
