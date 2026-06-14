@@ -9,8 +9,9 @@
 //  同一份 ZIP 缓存目录、同款上限、同款错误分类。
 //
 //  关键不变量（与 §0.2 W1/W2 决议对齐）：
-//    1. ZIP 缓存路径不变：`Application Support/Starcat/repository-snapshots/github.com/<owner>/<repo>/<sha>.zip`
-//       —— CodeFlow 已有的产物不需要迁移；新加的 RepoContextPacker 直接走同一份缓存。
+//    1. ZIP 缓存统一复用 CodeFlow 旧目录：
+//       `Application Support/Starcat/archives/github.com/<owner>/<repo>.zip`。
+//       RepoContextPacker 不再维护第二份 `repository-snapshots` 下载缓存。
 //    2. 100MB 上限不变（`maximumArchiveBytes = 100_000_000`）。
 //    3. 错误自治：`SharedSnapshotError` 与 `CodeFlowError` 各自独立，CodeFlowRunner
 //       在 catch SharedSnapshotError 时映射成 CodeFlowError 保持现有文案不变。
@@ -105,17 +106,22 @@ struct SharedSnapshotService {
         }
     }
 
-    // MARK: - ZIP 下载（按 commit SHA 不可变缓存）
+    // MARK: - ZIP 下载（仓库级路径 + commit 内容校验）
 
-    /// 共享源码快照按不可变 commit SHA 命名，**任何**下游（CodeFlow 删除 / RepoContextPacker
-    /// 重生成）都不得删除它——它属于 SharedSnapshotService 这层的内部缓存。
+    /// 共享源码快照沿用 CodeFlow 的仓库级 ZIP 路径。
+    ///
+    /// 旧缓存只按 `<owner>/<repo>.zip` 命名，因此不能只凭“文件存在”判断命中。GitHub
+    /// zipball 的首个目录名包含 7 位 commit SHA；只有它与请求 SHA 匹配时才复用，避免
+    /// 分支 HEAD 更新后把旧源码误标成新提交。任何下游都不得主动删除这个共享 ZIP。
     func archiveIfNeeded(repo: Repo, commitSHA: String) async throws -> CodeFlowArchiveResult {
         guard !repo.isPrivate else { throw SharedSnapshotError.privateRepository }
         let archiveURL = try archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: commitSHA)
         if fileManager.fileExists(atPath: archiveURL.path) {
             let bytes = try fileSize(archiveURL)
             guard bytes > 0 else { throw SharedSnapshotError.emptyArchive }
-            return CodeFlowArchiveResult(url: archiveURL, wasDownloaded: false, bytes: bytes)
+            if try archiveMatchesCommit(at: archiveURL, commitSHA: commitSHA) {
+                return CodeFlowArchiveResult(url: archiveURL, wasDownloaded: false, bytes: bytes)
+            }
         }
 
         let encodedOwner = Self.encodePathComponent(repo.owner)
@@ -141,17 +147,23 @@ struct SharedSnapshotService {
         try? fileManager.removeItem(at: temporaryURL)
         defer { try? fileManager.removeItem(at: temporaryURL) }
         try data.write(to: temporaryURL, options: .atomic)
-        try fileManager.moveItem(at: temporaryURL, to: archiveURL)
+        // 旧仓库级缓存可能属于另一个 commit。新 ZIP 完整落到临时文件后再替换，
+        // 避免下载失败时提前丢掉仍可供旧产物使用的缓存。
+        if fileManager.fileExists(atPath: archiveURL.path) {
+            _ = try fileManager.replaceItemAt(archiveURL, withItemAt: temporaryURL)
+        } else {
+            try fileManager.moveItem(at: temporaryURL, to: archiveURL)
+        }
         return CodeFlowArchiveResult(url: archiveURL, wasDownloaded: true, bytes: Int64(data.count))
     }
 
-    /// 共享 ZIP 缓存路径：`Application Support/Starcat/repository-snapshots/github.com/<owner>/<name>/<sha>.zip`
+    /// 共享 ZIP 缓存路径：`Application Support/Starcat/archives/github.com/<owner>/<name>.zip`。
+    /// `commitSHA` 保留在签名中，避免改动现有 caller；提交一致性由 ZIP 内容校验保证。
     func archiveFileURL(owner: String, name: String, commitSHA: String) throws -> URL {
         try applicationSupportDirectory()
-            .appendingPathComponent("repository-snapshots/github.com", isDirectory: true)
+            .appendingPathComponent("archives/github.com", isDirectory: true)
             .appendingPathComponent(owner, isDirectory: true)
-            .appendingPathComponent(name, isDirectory: true)
-            .appendingPathComponent("\(commitSHA).zip", isDirectory: false)
+            .appendingPathComponent("\(name).zip", isDirectory: false)
     }
 
     // MARK: - 内部工具
@@ -164,6 +176,29 @@ struct SharedSnapshotService {
     private func fileSize(_ url: URL) throws -> Int64 {
         let values = try url.resourceValues(forKeys: [.fileSizeKey])
         return Int64(values.fileSize ?? 0)
+    }
+
+    /// 读取 ZIP 第一个 local file header 的文件名，判断 GitHub 根目录中的短 SHA。
+    ///
+    /// GitHub zipball 的第一项形如 `owner-repo-d187883/`。这里只解析 ZIP 固定头部，
+    /// 不解压仓库，也不引入新的 ZIP 依赖。无法识别的旧缓存按未命中处理并重新下载。
+    private func archiveMatchesCommit(at url: URL, commitSHA: String) throws -> Bool {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let header = try handle.read(upToCount: 4_096) ?? Data()
+
+        guard header.count >= 30,
+              Array(header.prefix(4)) == [0x50, 0x4B, 0x03, 0x04] else {
+            return false
+        }
+
+        let fileNameLength = Int(header[26]) | (Int(header[27]) << 8)
+        guard fileNameLength > 0, 30 + fileNameLength <= header.count else { return false }
+        let fileNameData = header.subdata(in: 30..<(30 + fileNameLength))
+        guard let firstEntry = String(data: fileNameData, encoding: .utf8) else { return false }
+
+        let shortSHA = String(commitSHA.prefix(7)).lowercased()
+        return firstEntry.lowercased().contains("-\(shortSHA)/")
     }
 
     private static func encodePathComponent(_ value: String) -> String {

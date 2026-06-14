@@ -229,7 +229,7 @@ struct CodeFlowRunner {
                 page: "index.html",
                 pageBytes: pageBytes,
                 sourceArchiveBytes: archive.bytes,
-                sourceArchiveKey: "github.com/\(repo.owner)/\(repo.name)/\(branch.commitSHA).zip"
+                sourceArchiveKey: "github.com/\(repo.owner)/\(repo.name).zip"
             ),
             generation: .init(
                 generatedAt: finishedAt,

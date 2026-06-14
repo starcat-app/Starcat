@@ -2,14 +2,15 @@
 //  SharedSnapshotServiceTests.swift
 //  StarcatTests
 //
-//  W5（2026-06-13）：验证抽出来的共享 ZIP 下载层在 5 种关键场景下的行为。
+//  W5（2026-06-13）：验证抽出来的共享 ZIP 下载层关键行为。
 //
-//  覆盖 5 个 case（按文档 §0.2 W5 decision）：
+//  覆盖 6 个 case：
 //    1. 私有仓库直接抛 `.privateRepository`，不走网络
 //    2. 已有 ZIP 缓存时复用，不重新下载
 //    3. 首次下载并写盘成功
 //    4. 100MB 上限时抛 `.archiveTooLarge`
 //    5. 空 response 抛 `.emptyArchive`
+//    6. 仓库级旧 ZIP 的 SHA 不匹配时重新下载
 //
 //  关键约束：不接触真实网络；用 fileManager 临时目录做磁盘 IO。
 //
@@ -40,13 +41,30 @@ struct SharedSnapshotServiceTests {
         let repo = makeRepo(owner: "starcat-reuse-\(UUID().uuidString)", name: "demo")
         let archiveURL = try service.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: "deadbeef")
         try FileManager.default.createDirectory(at: archiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data("cached-bytes".utf8).write(to: archiveURL)
-        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent().deletingLastPathComponent()) }
+        try makeZipHeader(firstEntry: "starcat-reuse-demo-deadbee/").write(to: archiveURL)
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
 
         let result = try await service.archiveIfNeeded(repo: repo, commitSHA: "deadbeef")
 
         #expect(!result.wasDownloaded)
         #expect(await downloader.requestedURLs.isEmpty)
+    }
+
+    @Test("仓库级 ZIP 对应旧 commit 时重新下载并替换")
+    func replacesArchiveForDifferentCommit() async throws {
+        let downloader = SnapshotRecordingDownloader(data: Data("new-zip".utf8))
+        let service = SharedSnapshotService(downloader: downloader, github: SnapshotStubGitHubProvider())
+        let repo = makeRepo(owner: "starcat-stale-\(UUID().uuidString)", name: "demo")
+        let archiveURL = try service.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: "2222222")
+        try FileManager.default.createDirectory(at: archiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try makeZipHeader(firstEntry: "starcat-stale-demo-1111111/").write(to: archiveURL)
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+
+        let result = try await service.archiveIfNeeded(repo: repo, commitSHA: "2222222abcdef")
+
+        #expect(result.wasDownloaded)
+        #expect(try Data(contentsOf: archiveURL) == Data("new-zip".utf8))
+        #expect(await downloader.requestedURLs.count == 1)
     }
 
     @Test("首次下载写盘并返回 wasDownloaded == true")
@@ -56,7 +74,7 @@ struct SharedSnapshotServiceTests {
         let repo = makeRepo(owner: "starcat-download-\(UUID().uuidString)", name: "demo")
         let sha = "51ab9708841e14258bebfb5fb326e8b37782d193"
         let archiveURL = try service.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: sha)
-        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent().deletingLastPathComponent()) }
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
 
         let result = try await service.archiveIfNeeded(repo: repo, commitSHA: sha)
 
@@ -75,7 +93,7 @@ struct SharedSnapshotServiceTests {
         let service = SharedSnapshotService(downloader: downloader, github: SnapshotStubGitHubProvider())
         let repo = makeRepo(owner: "starcat-toolarge-\(UUID().uuidString)", name: "demo")
         let archiveURL = try service.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: "deadbeef")
-        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent().deletingLastPathComponent()) }
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
 
         await #expect(throws: SharedSnapshotError.self) {
             _ = try await service.archiveIfNeeded(repo: repo, commitSHA: "deadbeef")
@@ -127,6 +145,18 @@ struct SharedSnapshotServiceTests {
             cachedAt: nil,
             defaultBranch: "main"
         )
+    }
+
+    /// 构造只包含首个 local file header 的最小测试数据；缓存校验不需要完整解压 ZIP。
+    private func makeZipHeader(firstEntry: String) -> Data {
+        let name = Data(firstEntry.utf8)
+        var header = Data([0x50, 0x4B, 0x03, 0x04])
+        header.append(Data(repeating: 0, count: 22))
+        header.append(UInt8(name.count & 0xFF))
+        header.append(UInt8((name.count >> 8) & 0xFF))
+        header.append(contentsOf: [0, 0])
+        header.append(name)
+        return header
     }
 }
 
