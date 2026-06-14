@@ -86,11 +86,14 @@ struct ReadmeAPINetworkTests {
         // HOM-201 P0-3：ReadmeAPI 新增 inflightTracker 必填参数。本套用例每次都新建
         // 一份 fresh tracker，避免用例之间共享 in-flight 状态。
         let inflightTracker = ReadmeInflightTracker()
+        // HOM-201 P2-3:metrics 同款每用例独立 fresh 计数器,避免污染断言。
+        let metrics = ReadmeMetrics()
         let api = ReadmeAPI(
             client: mock,
             repository: readmeRepo,
             trendingRepository: trendingReadmeRepo,
-            inflightTracker: inflightTracker
+            inflightTracker: inflightTracker,
+            metrics: metrics
         )
         return (api, mock, repo, readmeRepo, db)
     }
