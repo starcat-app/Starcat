@@ -148,13 +148,21 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
 
         // 玻璃效果放在 AppKit 根视图，SwiftUI 内容只负责透明叠加。这样窗口阴影、
         // 背景采样和圆角裁切都由同一个系统材质层完成，不需要手写 blur/scrim。
+        //
+        // 圆角实现（dong4j 2026-06-14 反馈：浅色主题下圆角外有白色"折角"露出）：
+        // - 原 `layer.cornerRadius = 18 + masksToBounds = true` 对 NSVisualEffectView
+        //   的 vibrant 子层裁切不完整，在浅色主题下圆角外的扇形死角会透出 NSWindow
+        //   或 hosting layer 的默认白色背景。深色主题下底色为深，肉眼难察。
+        // - 改用 `NSVisualEffectView.maskImage` 9-slice 圆角蒙版：这是 Apple 给
+        //   visual effect view 的官方圆角入口，会一并裁切 vibrant 子层与背景采样区，
+        //   是 Spotlight / Raycast 等浮窗的标准做法。
+        // - `invalidateShadow()` 兜底：borderless + 圆角 contentView 时 NSWindow
+        //   的阴影需要重算一次，否则首帧阴影按矩形 frame 绘制，圆角处阴影发硬。
         let glassView = NSVisualEffectView()
         glassView.material = .popover
         glassView.blendingMode = .behindWindow
         glassView.state = .active
-        glassView.wantsLayer = true
-        glassView.layer?.cornerRadius = 18
-        glassView.layer?.masksToBounds = true
+        glassView.maskImage = Self.roundedCornerMaskImage(radius: 18)
 
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         glassView.addSubview(hostingController.view)
@@ -189,6 +197,29 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
+        // 见上文 maskImage 注释：圆角 contentView + borderless 时阴影需要重算一次，
+        // 否则首帧 shadow 按矩形 frame 绘制，圆角处会硬切。
+        window.invalidateShadow()
+    }
+
+    /// 生成 9-slice 圆角蒙版图，用于 `NSVisualEffectView.maskImage`。
+    ///
+    /// 实现要点：
+    /// - 单元图尺寸 = `radius * 2 + 1`：四个角各占 radius、中心 1pt 是拉伸区。
+    /// - `capInsets` 标记四角不拉伸区域，`resizingMode = .stretch` 让中间 1pt
+    ///   被拉伸到任意目标尺寸，因此一张 37x37 图可以适配任意窗口大小。
+    /// - 填充色用 `NSColor.black` —— maskImage 只看 alpha，颜色无意义；
+    ///   不透明像素 = 显示，透明像素 = 裁掉。
+    private static func roundedCornerMaskImage(radius: CGFloat) -> NSImage {
+        let edge = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
     }
 
     @available(*, unavailable)
