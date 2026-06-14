@@ -29,7 +29,7 @@ import Foundation
 /// let new = IndexedTextBuilder.buildSnapshot(repo: repo, readme: readme, summary: summary, note: note)
 /// // 与上次实际索引的快照比对
 /// if IndexedTextDiff.shouldRebuild(old: old, new: new, thresholds: thresholds) {
-///     let text = IndexedTextBuilder.render(snapshot: new)
+///     let text = IndexedTextBuilder.render(snapshot: new, userPromptTemplate: template)
 ///     // ...调 embedding API...
 /// }
 /// ```

@@ -9707,6 +9707,23 @@
         }
       }
     },
+    "settings.ai.prompt.placeholders.embedding" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Available placeholders for the Embedding task:\n\n• {fullName} — owner/name\n• {description} — repo description\n• {language} — primary language\n• {topics} — topics list (comma-separated)\n• {license} — SPDX license identifier\n• {homepage} — homepage URL\n• {body} — main body (AI summary > README > description+topics fallback)\n• {notes} — your private note\n\nNote: embedding API does not accept a system prompt — leaving the System Prompt field empty has no effect.\n\nDelete a placeholder from the prompt to skip injecting that data; restore by clicking the reset button."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Embedding 任务可用占位符：\n\n• {fullName} —— owner/name\n• {description} —— 仓库描述\n• {language} —— 主语言\n• {topics} —— topics 列表（逗号分隔）\n• {license} —— SPDX 许可证标识\n• {homepage} —— 主页 URL\n• {body} —— 主体内容（三级降级：AI 摘要 > README 纯文本 > description+topics 兜底）\n• {notes} —— 用户私有笔记\n\n说明:embedding API 不接受 system prompt,系统提示词留空不会被使用。\n\n从 prompt 里删掉占位符即不注入对应数据;改坏了点恢复默认按钮还原。"
+          }
+        }
+      }
+    },
     "settings.ai.prompt.placeholders.tags" : {
       "extractionState" : "manual",
       "localizations" : {

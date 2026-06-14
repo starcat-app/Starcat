@@ -478,7 +478,49 @@ enum AIDefaultPrompts {
         """
     )
 
-    static let embedding = AIPromptConfiguration(systemPrompt: "", userPromptTemplate: "{context}")
+    /// 向量嵌入（embedding）任务默认 prompt（dong4j 决策 2026-06-14）。
+    ///
+    /// **embedding API 不接受 system prompt**——所以 `systemPrompt` 留空，运行时也不会用到。
+    /// 留这个字段是为了让 UI 跟其他任务保持一致的编辑控件结构（用户能看到"系统提示词为空"
+    /// 这件事，理解 embedding 不需要 system prompt）。
+    ///
+    /// **占位符（仅 embedding 任务局部）**：
+    /// - `{fullName}` — `owner/name`
+    /// - `{description}` — repo 描述（空 → 空字符串）
+    /// - `{language}` — 主语言
+    /// - `{topics}` — `IndexedTextBuilder.normalizeTopics()` 处理后的逗号分隔列表
+    /// - `{license}` — SPDX 标识
+    /// - `{homepage}` — 主页 URL
+    /// - `{body}` — 三级降级主体（AI 摘要 > README 纯文本 > description+topics 兜底）
+    /// - `{notes}` — 用户私有笔记
+    ///
+    /// **删占位符 = 不注入对应数据**：dict 里有 key 但 value 是空字符串 → 替换为空；
+    /// 模板中删掉占位符那行（连同 label）→ 输出根本不渲染对应内容。
+    ///
+    /// **`{body}` 不拆细的原因**：三级降级是稳定性兜底（dong4j 2026-06-12 决策 D）。
+    /// 如果拆成 `{summary}` / `{readme}` 让用户控制，用户写 `{summary}` 但 repo
+    /// 没生成过摘要 → 输入退化为只有元数据 → 搜索效果烂。
+    ///
+    /// **已知约束**：用户改 prompt template 后，老 vector 是用旧 template 喂出来的，
+    /// 跟新 template 不可比；diff 判定（`IndexedTextDiff.shouldRebuild`）只看
+    /// `snapshot_json` 不看 prompt → 老 vector 不会自动失效。pre-launch 不处理，
+    /// 上线前需补 diff 维度（snapshot_json hash + prompt template hash 双判定）。
+    static let embedding = AIPromptConfiguration(
+        systemPrompt: "",
+        userPromptTemplate: """
+        Repository: {fullName}
+        Description: {description}
+        Language: {language}
+        Topics: {topics}
+        License: {license}
+        Homepage: {homepage}
+
+        {body}
+
+        Notes:
+        {notes}
+        """
+    )
 
     /// HOM-68 follow-up（2026-06-05 22:30）：README 翻译默认 Prompt。
     ///

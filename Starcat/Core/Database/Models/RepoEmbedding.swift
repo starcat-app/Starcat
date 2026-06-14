@@ -37,7 +37,8 @@ struct RepoEmbedding: Codable, FetchableRecord, MutablePersistableRecord, Equata
     var embedding: Data
 
     /// `IndexedSnapshot` 的 JSON 编码，用于 diff 算法判定是否需要重建向量。
-    /// 不直接存 indexedText：snapshot 可实时 `IndexedTextBuilder.render` 出 indexedText，
+    /// 不直接存 indexedText：snapshot 可实时
+    /// `IndexedTextBuilder.render(snapshot:userPromptTemplate:)` 出 indexedText，
     /// 字段拆分让"判断要不要重建"和"喂模型的字符串"两个职责解耦。
     var snapshotJson: String
     var updatedAt: String

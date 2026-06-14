@@ -21,8 +21,13 @@
 //    避免 stars / forks 高频变化引起 diff 永远超阈值。
 //  - **buildSnapshot 是 pure 函数**：不读 settings / 不调网络，方便单测；
 //    截断长度等可配置项必须由调用方传入。
-//  - `render(snapshot:)` 输出的字符串只用于"喂 embedding 模型"，不要再用于 diff 判定
-//    （diff 走结构化 snapshot，避免顺序变化误判）。
+//  - `render(snapshot:userPromptTemplate:)` 输出的字符串只用于"喂 embedding 模型"，
+//    不要再用于 diff 判定（diff 走结构化 snapshot，避免顺序变化误判）。
+//  - **render 走占位符渲染**（dong4j 决策 2026-06-14）：embedding 任务有自己独立的
+//    占位符命名空间（`{fullName}` / `{description}` / `{language}` / `{topics}` /
+//    `{license}` / `{homepage}` / `{body}` / `{notes}`），用户在 Settings 编辑
+//    `aiEmbeddingTask.prompt.userPromptTemplate` 时可以自由组合 / 删除占位符。
+//    删占位符（甚至连同 label 那一行）= 不注入对应数据。
 //
 
 import Foundation
@@ -64,38 +69,38 @@ enum IndexedTextBuilder {
 
     // MARK: - 渲染最终字符串
 
-    /// 把 snapshot 拼成 embedding 模型的输入字符串。
+    /// 把 snapshot 按 `userPromptTemplate` 渲染成 embedding 模型的输入字符串。
     ///
-    /// 输出顺序（固定）：
-    /// ```
-    /// Repository: {fullName}
-    /// Description: {description}
-    /// Language: {language}
-    /// Topics: {topics}
-    /// License: {license}
-    /// Homepage: {homepage}
-    /// {body}
-    /// Notes:
-    /// {notes}
-    /// ```
-    /// 顺序固定的目的：让生成出的 text 在元数据相同时只有 body / notes 顺序差异，
-    /// 便于日志诊断 / 抓包对比。
-    static func render(snapshot: IndexedSnapshot) -> String {
-        var lines: [String] = []
-        lines.append("Repository: \(snapshot.metadata.fullName)")
-        lines.append("Description: \(snapshot.metadata.description ?? "")")
-        lines.append("Language: \(snapshot.metadata.language ?? "")")
-        lines.append("Topics: \(snapshot.metadata.topics ?? "")")
-        lines.append("License: \(snapshot.metadata.license ?? "")")
-        lines.append("Homepage: \(snapshot.metadata.homepage ?? "")")
-        if !snapshot.body.isEmpty {
-            lines.append(snapshot.body)
-        }
-        if let notes = snapshot.notes, !notes.isEmpty {
-            lines.append("Notes:")
-            lines.append(notes)
-        }
-        return lines.joined(separator: "\n")
+    /// **占位符约定**（仅 embedding 任务局部命名空间）：
+    /// - `{fullName}` → `snapshot.metadata.fullName`
+    /// - `{description}` → `snapshot.metadata.description ?? ""`
+    /// - `{language}` → `snapshot.metadata.language ?? ""`
+    /// - `{topics}` → `snapshot.metadata.topics ?? ""`（已是 `"a, b, c"` 形式）
+    /// - `{license}` → `snapshot.metadata.license ?? ""`
+    /// - `{homepage}` → `snapshot.metadata.homepage ?? ""`
+    /// - `{body}` → `snapshot.body`（三级降级产物，可为空字符串）
+    /// - `{notes}` → `snapshot.notes ?? ""`
+    ///
+    /// **空数据**：dict 里有 key 但 value 是空字符串 → 替换为空（label / 换行保留）；
+    /// 模板中删占位符那行（连同 label）→ 输出根本不渲染对应内容。
+    /// 模板中写了不在 dict 中的占位符 → 保留 `{xxx}` 字面量（对齐 `AIPromptConfiguration.render`
+    /// 的 fail-loud 语义，便于发现写错的 key）。
+    ///
+    /// **不做空行清理**：如果用户的 template 让某个占位符渲染为空导致连续空行，
+    /// 不做 squeeze。原因：① 用户的 template 是用户的，service 不偷偷改格式；
+    /// ② embedding 模型对空白容忍，几个空行不影响向量质量。
+    static func render(snapshot: IndexedSnapshot, userPromptTemplate: String) -> String {
+        let placeholders: [String: String] = [
+            "fullName": snapshot.metadata.fullName,
+            "description": snapshot.metadata.description ?? "",
+            "language": snapshot.metadata.language ?? "",
+            "topics": snapshot.metadata.topics ?? "",
+            "license": snapshot.metadata.license ?? "",
+            "homepage": snapshot.metadata.homepage ?? "",
+            "body": snapshot.body,
+            "notes": snapshot.notes ?? ""
+        ]
+        return AIPromptConfiguration.render(template: userPromptTemplate, placeholders: placeholders)
     }
 
     // MARK: - 私有：三级降级主体
