@@ -240,7 +240,10 @@ struct IndexedTextBuilderTests {
             aiSummary: nil,
             noteContent: "MY NOTE"
         )
-        let text = IndexedTextBuilder.render(snapshot: snap)
+        let text = IndexedTextBuilder.render(
+            snapshot: snap,
+            userPromptTemplate: AIDefaultPrompts.embedding.userPromptTemplate
+        )
         #expect(text.contains("BODY"))
         #expect(text.contains("Notes:"))
         #expect(text.contains("MY NOTE"))

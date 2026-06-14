@@ -208,9 +208,16 @@ final class SemanticSearchService {
         var workItems: [WorkItem] = []
         workItems.reserveCapacity(repos.count)
 
+        // 用户在 Settings 编辑过的 embedding template（默认值见 AIDefaultPrompts.embedding）。
+        // template 是用户层面可改的，每次重建索引都拿当前最新值。
+        let embeddingTemplate = settings.aiEmbeddingTask.prompt.userPromptTemplate
+
         for repo in repos {
             let snapshot = await buildSnapshot(for: repo, truncateLength: truncateLen)
-            let renderedText = IndexedTextBuilder.render(snapshot: snapshot)
+            let renderedText = IndexedTextBuilder.render(
+                snapshot: snapshot,
+                userPromptTemplate: embeddingTemplate
+            )
 
             if !force, let row = existing[repo.id] {
                 let oldSnapshot = (try? IndexedSnapshot.decode(json: row.snapshotJson))
