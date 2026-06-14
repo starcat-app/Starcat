@@ -57,6 +57,9 @@ struct SearchCenterView: View {
                 if viewModel.scope == .all || viewModel.scope == .github {
                     githubFilterBar
                 }
+                if viewModel.scope == .all || viewModel.scope == .web {
+                    anySearchFilterBar
+                }
                 themedSeparator
                 resultContent
                 webResultFooter
@@ -268,6 +271,62 @@ struct SearchCenterView: View {
                         .buttonStyle(.bordered)
                         Spacer(minLength: 0)
                     }
+                }
+                .padding(12)
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    /// AnySearch（网页）筛选条。结构与 `githubFilterBar` 对称：
+    /// - 折叠态：标题 + 当前已选筛选摘要 + 展开 chevron
+    /// - 展开态：单行 4 个控件（domain / contentTypes / zone / maxResults）+ 应用筛选
+    ///
+    /// scope 是 `.web` 或 `.all` 时显示；与 GitHub 筛选条共存时呈上下两条独立栏目，
+    /// 避免把不同源的筛选耦合到一个折叠区域里造成认知割裂。
+    private var anySearchFilterBar: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Button {
+                    viewModel.isAnySearchFiltersExpanded.toggle()
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "globe")
+                        Text("Web 筛选")
+                            .fontWeight(.semibold)
+                        Image(systemName: viewModel.isAnySearchFiltersExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                Spacer()
+                // 折叠态显示一句话筛选摘要（如「code · web,doc · 全球 · 10 条」），
+                // 让用户即便不展开也能一眼看到当前生效的非默认筛选。完全默认时
+                // 显示「自动」提示当前走网关自动路由。
+                Text(anySearchFiltersSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            if viewModel.isAnySearchFiltersExpanded {
+                HStack(alignment: .bottom, spacing: 12) {
+                    anySearchDomainPicker
+                    anySearchContentTypesField
+                    anySearchZonePicker
+                    anySearchMaxResultsField
+                    Spacer(minLength: 0)
+
+                    Button("应用筛选") {
+                        Task { await viewModel.applyAnySearchFilters() }
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
                 .padding(12)
                 .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -826,6 +885,167 @@ struct SearchCenterView: View {
             )
         )
     }
+
+    // MARK: - AnySearch 筛选条 helpers（PR-3，dong4j 2026-06-14）
+
+    /// AnySearch domain 下拉。
+    ///
+    /// 首项「自动」对应 nil（不传 `domain` 给 API，网关按 query 自动路由），其余
+    /// 22 项来自官方 enum（hard-code 在 `Self.allAnySearchDomains`）。domain 是 API
+    /// 关键字，**不本地化**；中文用户可通过括号注释快速辨识（如 `code（代码）`）。
+    private var anySearchDomainPicker: some View {
+        githubPicker(title: "域 (Domain)", width: 158) {
+            Picker("Domain", selection: anySearchDomainBinding) {
+                Text("自动").tag("")
+                ForEach(Self.allAnySearchDomains, id: \.0) { pair in
+                    Text(pair.1).tag(pair.0)
+                }
+            }
+        }
+    }
+
+    private var anySearchDomainBinding: Binding<String> {
+        Binding(
+            get: { viewModel.anySearchFilters.domain ?? "" },
+            set: { viewModel.anySearchFilters.domain = $0.isEmpty ? nil : $0 }
+        )
+    }
+
+    /// content_types 三选 Toggle（web / news / doc）。
+    /// 用 Menu + 内部 Toggle 实现紧凑多选；空集 = 自动（不传 API）。
+    /// 官方文档未给完整枚举，先开 3 个最常见的；按反馈再加（写入注释固化范围）。
+    private var anySearchContentTypesField: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            filterFieldLabel("内容类型")
+            Menu {
+                ForEach(Self.allAnySearchContentTypes, id: \.0) { pair in
+                    Toggle(pair.1, isOn: anySearchContentTypeBinding(pair.0))
+                }
+            } label: {
+                Text(anySearchContentTypesLabel)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(width: 140)
+    }
+
+    private func anySearchContentTypeBinding(_ key: String) -> Binding<Bool> {
+        Binding(
+            get: { viewModel.anySearchFilters.contentTypes.contains(key) },
+            set: { isOn in
+                if isOn {
+                    viewModel.anySearchFilters.contentTypes.insert(key)
+                } else {
+                    viewModel.anySearchFilters.contentTypes.remove(key)
+                }
+            }
+        )
+    }
+
+    private var anySearchContentTypesLabel: String {
+        let selected = viewModel.anySearchFilters.contentTypes
+        if selected.isEmpty { return "自动" }
+        // 用预定义顺序输出（Set 迭代顺序不稳定），与摘要保持一致体验
+        let ordered = Self.allAnySearchContentTypes.compactMap { selected.contains($0.0) ? $0.0 : nil }
+        return ordered.joined(separator: ", ")
+    }
+
+    /// AnySearch zone 下拉。首项「自动」对应 nil，跟随网关自动路由。
+    private var anySearchZonePicker: some View {
+        githubPicker(title: "地区", width: 100) {
+            Picker("Zone", selection: anySearchZoneBinding) {
+                Text("自动").tag("")
+                Text("国内").tag(AnySearchZone.cn.rawValue)
+                Text("全球").tag(AnySearchZone.intl.rawValue)
+            }
+        }
+    }
+
+    private var anySearchZoneBinding: Binding<String> {
+        Binding(
+            get: { viewModel.anySearchFilters.zone?.rawValue ?? "" },
+            set: { newValue in
+                viewModel.anySearchFilters.zone = newValue.isEmpty
+                    ? nil
+                    : AnySearchZone(rawValue: newValue)
+            }
+        )
+    }
+
+    /// 单次结果数（1...50）。Stepper 而非 TextField：避免用户输入超界值再被钳到
+    /// 引发视觉跳变；钳到 50 而非 API 上限 100，理由：弹窗滚动疲劳。
+    private var anySearchMaxResultsField: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            filterFieldLabel("结果数")
+            Stepper(value: $viewModel.anySearchFilters.maxResults, in: 1...50, step: 5) {
+                Text("\(viewModel.anySearchFilters.maxResults)")
+                    .font(.system(size: 12).monospacedDigit())
+                    .frame(minWidth: 24, alignment: .leading)
+            }
+        }
+        .frame(width: 130)
+    }
+
+    /// 折叠态摘要：把当前生效的非默认筛选拼成「code · web,doc · 全球 · 10 条」。
+    /// 全默认时显示「自动（按 query 路由）」，让用户即便不展开也能确认状态。
+    private var anySearchFiltersSummary: String {
+        let f = viewModel.anySearchFilters
+        var parts: [String] = []
+        if let domain = f.domain { parts.append(domain) }
+        if !f.contentTypes.isEmpty {
+            let ordered = Self.allAnySearchContentTypes
+                .compactMap { f.contentTypes.contains($0.0) ? $0.0 : nil }
+            parts.append(ordered.joined(separator: ","))
+        }
+        if let zone = f.zone {
+            parts.append(zone == .cn ? "国内" : "全球")
+        }
+        if f.maxResults != 10 { parts.append("\(f.maxResults) 条") }
+        return parts.isEmpty ? "自动（按 query 路由）" : parts.joined(separator: " · ")
+    }
+
+    /// AnySearch 22 个 domain 显示对照表。
+    ///
+    /// 元组 `(rawValue, displayName)`：rawValue 直接传给 API（不本地化），
+    /// displayName 给中文用户加括号注释方便快速辨识。完整顺序照搬官方文档：
+    /// https://www.anysearch.com/docs → Enum Reference → Domains (22 values)
+    ///
+    /// 维护提示：API 端新增 domain 时同步追加；保持与官方枚举顺序一致便于查阅。
+    private static let allAnySearchDomains: [(String, String)] = [
+        ("general", "general（综合）"),
+        ("code", "code（代码）"),
+        ("tech", "tech（科技）"),
+        ("fashion", "fashion（时尚）"),
+        ("travel", "travel（旅行）"),
+        ("home", "home（家居）"),
+        ("ecommerce", "ecommerce（电商）"),
+        ("gaming", "gaming（游戏）"),
+        ("film", "film（影视）"),
+        ("music", "music（音乐）"),
+        ("finance", "finance（财经）"),
+        ("academic", "academic（学术）"),
+        ("legal", "legal（法律）"),
+        ("business", "business（商业）"),
+        ("ip", "ip（知识产权）"),
+        ("security", "security（安全）"),
+        ("education", "education（教育）"),
+        ("health", "health（健康）"),
+        ("religion", "religion（宗教）"),
+        ("geo", "geo（地理）"),
+        ("environment", "environment（环境）"),
+        ("energy", "energy（能源）")
+    ]
+
+    /// content_types 预设选项。官方文档未给完整枚举，先开 3 个最常见的；
+    /// 用户反馈需要其他类型（如 image / video）时再扩展。
+    private static let allAnySearchContentTypes: [(String, String)] = [
+        ("web", "网页"),
+        ("news", "新闻"),
+        ("doc", "文档")
+    ]
 }
 
 // MARK: - GitHub Date Filter Field
