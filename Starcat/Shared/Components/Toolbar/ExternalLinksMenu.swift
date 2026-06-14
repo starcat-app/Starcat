@@ -38,8 +38,7 @@ struct ExternalLinksMenu: View {
 
     let selection: ToolbarRepoSelection
     let codeFlowRepo: Repo?
-    /// CodeFlow sheet 的呈现状态，用 Identifiable item 驱动，**不要**回退到
-    /// `.sheet(isPresented: Bool)`。
+    /// 由稳定的页面根视图承载 CodeFlow sheet；toolbar 组件只发送打开请求。
     ///
     /// 历史坑（dong4j 2026-06-14 验收反馈）：原本用 `@State isCodeFlowPresented: Bool`
     /// + `.sheet(isPresented:)`，从 toolbar 打开 CodeFlow 再点右上角 ✕ 关闭时，
@@ -53,17 +52,19 @@ struct ExternalLinksMenu: View {
     /// 存在 1 帧时序差；这一帧里如果父视图正好重建，**新创建的 binding 实例**
     /// 让 sheet "复活" 1 帧后才真正关闭 —— 视觉上就是闪现一次。
     ///
-    /// 修复：`.sheet(item:)` 用 Identifiable item 的存在性驱动 sheet，关闭
-    /// 即 `item = nil`，SwiftUI 通过 item identity 跟踪状态，不依赖 Bool
-    /// binding 在父视图重建期间的同步性。`Repo` 已 conform Identifiable
-    /// (`id: Int64`)，可直接当 item driver。
-    ///
-    /// 参考：https://www.hackingwithswift.com/forums/swiftui/why-is-my-sheet-reappearing-briefly-after-being-dismissed/29670
-    @State private var codeFlowSheetRepo: Repo?
+    /// 仅把 Bool 改成 item 仍不够：如果 `.sheet(item:)` 继续挂在 toolbar 子树上，
+    /// `AnyView` 重建时 presentation host 本身仍会被替换，关闭期间可能再次挂载。
+    /// 因此由 `RepoListView` 持有 item 并在稳定根节点呈现，本组件不保存 sheet 状态。
+    let onOpenCodeFlow: (Repo) -> Void
 
-    init(selection: ToolbarRepoSelection, codeFlowRepo: Repo? = nil) {
+    init(
+        selection: ToolbarRepoSelection,
+        codeFlowRepo: Repo? = nil,
+        onOpenCodeFlow: @escaping (Repo) -> Void = { _ in }
+    ) {
         self.selection = selection
         self.codeFlowRepo = codeFlowRepo
+        self.onOpenCodeFlow = onOpenCodeFlow
     }
 
     var body: some View {
@@ -71,18 +72,17 @@ struct ExternalLinksMenu: View {
             if codeFlowRepo != nil {
                 FeaturedExternalLinksControl(
                     selection: selection,
-                    // 直接把传入的 codeFlowRepo 赋给 state item;
-                    // sheet 自然在 codeFlowSheetRepo 非 nil 时呈现。
-                    onOpenCodeFlow: { codeFlowSheetRepo = codeFlowRepo }
+                    onOpenCodeFlow: {
+                        if let codeFlowRepo {
+                            onOpenCodeFlow(codeFlowRepo)
+                        }
+                    }
                 )
             } else {
                 standardMenu
             }
         }
         .help("externalLinks.hint")
-        .sheet(item: $codeFlowSheetRepo) { repo in
-            CodeFlowPanel(repo: repo)
-        }
     }
 
     /// 没有 CodeFlow 的场景保持系统 Menu，避免为了统一外观扩大自绘范围。
