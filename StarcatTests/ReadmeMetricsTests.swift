@@ -167,7 +167,6 @@ struct ReadmeAPIMetricsIntegrationTests {
     private func makeReadme(repoId: Int64, html: String) -> Readme {
         Readme(
             repoId: repoId,
-            content: nil,
             renderedHtml: html,
             etag: "\"e\"",
             lastModified: nil,

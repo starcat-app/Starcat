@@ -147,7 +147,6 @@ struct ReadmeHTMLCodecRepositoryIntegrationTests {
         let html = "<div><h1>压缩 round-trip 测试 🚀</h1></div>"
         try await repo.upsert(Readme(
             repoId: repoId,
-            content: nil,
             renderedHtml: html,
             etag: "\"e\"",
             lastModified: nil,
