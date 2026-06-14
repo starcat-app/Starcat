@@ -59,8 +59,6 @@ struct TrendingDetailContent: View {
         ReadmeStateView(
             state: readmeVM.state,
             baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
-            owner: repo.owner,
-            repo: repo.name,
             onScrollOffsetChange: onScrollOffset,
             // R-01：仅本地命中（id != 0）的 repo 才提供翻译入口。
             // 避免 ephemeral repo 用 id=0 走翻译缓存造成串扰。
