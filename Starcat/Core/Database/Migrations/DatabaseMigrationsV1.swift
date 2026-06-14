@@ -283,12 +283,17 @@ enum DatabaseMigrations {
 
     /// readmes：GitHub 原 README 缓存（与翻译表 readme_translations 完全独立，ETag 流程独占）。
     /// `etag` / `last_modified` 支持 ReadmeAPI 的 304 短路；`size` 用于后续缓存清理排序。
+    ///
+    /// HOM-201 P2-1(2026-06-14):`rendered_html` 列由 TEXT 改为 BLOB,应用层用 zlib
+    /// 透明压缩(5-8x 比),磁盘占用显著下降。语义不变(Model `renderedHtml` 仍是
+    /// `String?`),由 `ReadmeHTMLCodec` 在 `Readme.init(row:)` / `encode(to:)` 边界
+    /// 处理编解码;`size` 仍是明文字节数(LRU 决策口径稳定)。
     private static func createReadmes(_ db: Database) throws {
         try db.create(table: "readmes") { t in
             t.column("repo_id", .integer).primaryKey()
                 .references("repos", column: "id", onDelete: .cascade)
             t.column("content", .text)
-            t.column("rendered_html", .text)
+            t.column("rendered_html", .blob)
             t.column("etag", .text)
             t.column("last_modified", .text)
             t.column("cached_at", .text).notNull()
@@ -464,10 +469,13 @@ enum DatabaseMigrations {
     /// trending_readmes：trending repo 的 README 缓存（PK 用 `full_name` 而非 repo_id）。
     /// 字段语义与 `readmes` 完全对齐，让 ReadmeAPI 复用同一套 SWR + ETag 304 + 大小统计逻辑。
     /// 不挂 FTS5 触发器：trending 是榜单切换型，不需要全文搜索。
+    ///
+    /// HOM-201 P2-1(2026-06-14):`rendered_html` 列由 TEXT 改为 BLOB,与 `readmes` 同款
+    /// zlib 透明压缩;详见 `createReadmes` 注释与 `ReadmeHTMLCodec` 文件头。
     private static func createTrendingReadmes(_ db: Database) throws {
         try db.create(table: "trending_readmes") { t in
             t.column("full_name", .text).primaryKey()
-            t.column("rendered_html", .text)
+            t.column("rendered_html", .blob)
             t.column("etag", .text)
             t.column("last_modified", .text)
             t.column("cached_at", .text).notNull()
