@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "·" : {
+
+    },
     "“%@”" : {
 
     },
@@ -1972,6 +1975,91 @@
     "AI 服务商" : {
 
     },
+    "ai.assistant.chat.contextStatus.code" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.contextStatus.external" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外网"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.contextStatus.full" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat is grounded in full code context"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本次对话基于完整代码上下文"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.contextStatus.prefix" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Context: "
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上下文："
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.contextStatus.summary" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Summary"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "摘要"
+          }
+        }
+      }
+    },
     "ai.assistant.chat.copyAll.label" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2240,6 +2328,73 @@
         }
       }
     },
+    "ai.assistant.input.contextMenu.anySearch" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External docs (AnySearch)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部材料 (AnySearch)"
+          }
+        }
+      }
+    },
+    "ai.assistant.input.contextMenu.anySearch.disabledHint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable AnySearch in Settings → Integrations first"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先在 设置 → 集成 启用 AnySearch"
+          }
+        }
+      }
+    },
+    "ai.assistant.input.contextMenu.codeContext" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code context"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码上下文"
+          }
+        }
+      }
+    },
+    "ai.assistant.input.contextMenu.help" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Context options"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上下文配置"
+          }
+        }
+      }
+    },
     "ai.assistant.input.placeholder" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2357,6 +2512,23 @@
         }
       }
     },
+    "ai.assistant.summary.footer.contextMetaFormat" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Based on %1$@ (%2$d tokens · %3$d files)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基于 %1$@（%2$d tokens · %3$d files）"
+          }
+        }
+      }
+    },
     "ai.assistant.summary.footer.generatedByFormat" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2423,6 +2595,72 @@
         }
       }
     },
+    "ai.assistant.summary.menu.help" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More actions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多操作"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.menu.revealContext" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reveal Code Context in Finder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Finder 中显示代码上下文"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.preparingContext" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing code context…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备代码上下文…"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.preparingContext.caption" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyzing repository code structure for a more accurate summary"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在分析仓库代码结构，让 AI 摘要更准确"
+          }
+        }
+      }
+    },
     "ai.assistant.summary.regenerate" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2457,6 +2695,38 @@
         }
       }
     },
+    "ai.assistant.summary.staleSettings.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Context settings changed. Regenerate to apply."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上下文设置已变更，重新生成以应用"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.staleSettings.regenerate" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regenerate"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新生成"
+          }
+        }
+      }
+    },
     "ai.assistant.summary.streaming" : {
       "localizations" : {
         "en" : {
@@ -2469,230 +2739,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在生成 AI 摘要…"
-          }
-        }
-      }
-    },
-    "ai.assistant.summary.preparingContext" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Preparing code context…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "准备代码上下文…"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.contextStatus.full" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Chat is grounded in full code context"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本次对话基于完整代码上下文"
-          }
-        }
-      }
-    },
-    "ai.assistant.summary.preparingContext.caption" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Analyzing repository code structure for a more accurate summary"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在分析仓库代码结构，让 AI 摘要更准确"
-          }
-        }
-      }
-    },
-    "ai.assistant.summary.footer.contextMetaFormat" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Based on %1$@ (%2$d tokens · %3$d files)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "基于 %1$@（%2$d tokens · %3$d files）"
-          }
-        }
-      }
-    },
-    "ai.assistant.summary.menu.help" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "More actions"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更多操作"
-          }
-        }
-      }
-    },
-    "ai.assistant.summary.menu.revealContext" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reveal Code Context in Finder"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 Finder 中显示代码上下文"
-          }
-        }
-      }
-    },
-    "ai.context.degraded.privateRepository" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Private repository – code content not analyzed"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "该仓库为私有，未分析代码内容"
-          }
-        }
-      }
-    },
-    "ai.context.degraded.networkUnavailable" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Network unavailable – summary based on README only"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网络异常，本次摘要仅基于 README 生成"
-          }
-        }
-      }
-    },
-    "ai.context.degraded.archiveTooLarge" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Repository exceeds 100MB limit – code not analyzed"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仓库超过 100MB 上限，未分析代码内容"
-          }
-        }
-      }
-    },
-    "ai.context.degraded.packFailure" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Code context preparation failed – summary based on README only"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "代码上下文打包失败，本次仅基于 README 生成"
-          }
-        }
-      }
-    },
-    "ai.context.degraded.outputDirectoryUnavailable" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Code context output directory unavailable – please re-select in settings"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "代码上下文输出目录不可用，请在设置中重新选择"
-          }
-        }
-      }
-    },
-    "ai.context.storage.actionFailed" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI Code Context Action Failed"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI 代码上下文操作失败"
-          }
-        }
-      }
-    },
-    "ai.context.storage.choosePanelTitle" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose AI Code Context Output Directory"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择 AI 代码上下文输出目录"
-          }
-        }
-      }
-    },
-    "ai.context.storage.choosePanelPrompt" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose and Migrate"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择并迁移"
           }
         }
       }
@@ -2883,6 +2929,91 @@
         }
       }
     },
+    "ai.context.degraded.archiveTooLarge" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository exceeds 100MB limit – code not analyzed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库超过 100MB 上限，未分析代码内容"
+          }
+        }
+      }
+    },
+    "ai.context.degraded.networkUnavailable" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Network unavailable – summary based on README only"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网络异常，本次摘要仅基于 README 生成"
+          }
+        }
+      }
+    },
+    "ai.context.degraded.outputDirectoryUnavailable" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code context output directory unavailable – please re-select in settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码上下文输出目录不可用，请在设置中重新选择"
+          }
+        }
+      }
+    },
+    "ai.context.degraded.packFailure" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code context preparation failed – summary based on README only"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码上下文打包失败，本次仅基于 README 生成"
+          }
+        }
+      }
+    },
+    "ai.context.degraded.privateRepository" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Private repository – code content not analyzed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该仓库为私有，未分析代码内容"
+          }
+        }
+      }
+    },
     "ai.context.settings.description" : {
       "localizations" : {
         "en" : {
@@ -2982,6 +3113,23 @@
         }
       }
     },
+    "ai.context.storage.actionFailed" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Code Context Action Failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 代码上下文操作失败"
+          }
+        }
+      }
+    },
     "ai.context.storage.choose" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2995,6 +3143,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择目录"
+          }
+        }
+      }
+    },
+    "ai.context.storage.choosePanelPrompt" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose and Migrate"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择并迁移"
+          }
+        }
+      }
+    },
+    "ai.context.storage.choosePanelTitle" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose AI Code Context Output Directory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 AI 代码上下文输出目录"
           }
         }
       }
@@ -3262,6 +3444,125 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "切换目录时会迁移现有 context.xml 与 metadata.json；共享源码 ZIP 仍保存在应用容器。"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.capabilityNotEnabled" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch capability not enabled for this account – external references skipped"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch 当前账号未开通 code 域能力，本次未拉取外部参考"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.invalidAPIKey" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch API key invalid – check Settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch API Key 无效，请在设置中检查"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.networkUnavailable" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Network unreachable – external references not fetched this time"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网络不可用，本次未拉取外部参考"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.quotaExhausted" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch quota exhausted – external references not fetched"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch 配额已用完，本次未拉取外部参考"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.rateLimited" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch rate limited – please retry shortly"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch 请求过于频繁，请稍后再试"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.serviceUnavailable" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch temporarily unavailable – external references not fetched"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch 暂时不可用，本次未拉取外部参考"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.unknown" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch error – external references skipped"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch 暂不可用，本次未拉取外部参考"
           }
         }
       }
@@ -8881,6 +9182,74 @@
         }
       }
     },
+    "search.footer.source.github" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub"
+          }
+        }
+      }
+    },
+    "search.footer.source.local" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地"
+          }
+        }
+      }
+    },
+    "search.footer.source.web" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网页"
+          }
+        }
+      }
+    },
+    "search.footer.summaryFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$lld"
+          }
+        }
+      }
+    },
     "search.hint" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9113,74 +9482,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search"
-          }
-        }
-      }
-    },
-    "search.footer.source.github" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub"
-          }
-        }
-      }
-    },
-    "search.footer.source.local" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Local"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本地"
-          }
-        }
-      }
-    },
-    "search.footer.source.web" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网页"
-          }
-        }
-      }
-    },
-    "search.footer.summaryFormat" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ %2$lld"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ %2$lld"
           }
         }
       }
@@ -10162,6 +10463,7 @@
       }
     },
     "settings.anySearch.apiKey.saveFailed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10211,6 +10513,7 @@
       }
     },
     "settings.anySearch.apiKey.testSucceeded" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11590,6 +11893,7 @@
       }
     },
     "settings.storage.actionFailed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11606,6 +11910,7 @@
       }
     },
     "settings.storage.archive" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11638,6 +11943,7 @@
       }
     },
     "settings.storage.archiveUsageFormat" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11683,54 +11989,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清理操作"
-          }
-        }
-      }
-    },
-    "settings.storage.clearArchive" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear Downloaded ZIPs"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除已下载的 ZIP"
-          }
-        }
-      }
-    },
-    "settings.storage.clearArchive.confirm" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear downloaded repository ZIPs?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除已下载的仓库 ZIP？"
-          }
-        }
-      }
-    },
-    "settings.storage.clearArchive.message" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "CodeFlow or AI context generation will download the repository ZIP again when needed."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下次生成 CodeFlow 或 AI 代码上下文时会按需重新下载。"
           }
         }
       }
@@ -11782,6 +12040,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "等同于同时清理 README、图片和已下载的仓库 ZIP。"
+          }
+        }
+      }
+    },
+    "settings.storage.clearArchive" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Downloaded ZIPs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除已下载的 ZIP"
+          }
+        }
+      }
+    },
+    "settings.storage.clearArchive.confirm" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear downloaded repository ZIPs?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除已下载的仓库 ZIP？"
+          }
+        }
+      }
+    },
+    "settings.storage.clearArchive.message" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodeFlow or AI context generation will download the repository ZIP again when needed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下次生成 CodeFlow 或 AI 代码上下文时会按需重新下载。"
           }
         }
       }
@@ -14506,6 +14815,9 @@
         }
       }
     },
+    "Web 筛选" : {
+
+    },
     "weekly.action.copyURL" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15026,6 +15338,9 @@
     "优先使用流式响应" : {
 
     },
+    "全球" : {
+
+    },
     "全部语言" : {
 
     },
@@ -15054,6 +15369,9 @@
 
     },
     "可视化项目代码结构" : {
+
+    },
+    "国内" : {
 
     },
     "将删除当前输出目录中的全部 CodeFlow HTML 与 metadata。共享源码 ZIP 不会被删除。" : {
@@ -15090,6 +15408,9 @@
 
     },
     "生成次数" : {
+
+    },
+    "自动" : {
 
     },
     "输入关键词后按 Return" : {
