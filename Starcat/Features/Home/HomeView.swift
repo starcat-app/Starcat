@@ -133,6 +133,7 @@ struct HomeView: View {
     init(
         repository: any RepoRepositoryProtocol,
         readmeAPI: ReadmeAPI,
+        readmeAvailability: ReadmeAvailability,
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
@@ -166,6 +167,7 @@ struct HomeView: View {
         let semanticForBackfill = semanticSearchService
         _readmeVM = State(initialValue: ReadmeViewModel(
             api: readmeAPI,
+            availability: readmeAvailability,
             onHTMLLoaded: { [readmeAPI] repo in
                 Task { @MainActor in
                     let result = await readmeAPI.refreshMarkdownIfNeeded(for: repo)

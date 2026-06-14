@@ -137,7 +137,12 @@ struct ActivityDetailScaffoldShell: View {
         if let readmeVM {
             return readmeVM
         }
-        let model = ReadmeViewModel(api: dependencies.readmeAPI)
+        // HOM-201 P0-2（2026-06-14）：注入 `readmeAvailability` 单例，让 active 详情
+        // 与 manage 全局 VM 共用同一个"已知 404"集合（详见 ReadmeAvailability.swift）。
+        let model = ReadmeViewModel(
+            api: dependencies.readmeAPI,
+            availability: dependencies.readmeAvailability
+        )
         readmeVM = model
         return model
     }

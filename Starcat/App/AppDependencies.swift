@@ -43,6 +43,12 @@ final class AppDependencies {
     let readmeRepository: ReadmeRepository
     /// Week 4 引入：README HTML 抓取 + 缓存协调。
     let readmeAPI: ReadmeAPI
+    /// HOM-201 P0-2（2026-06-14）：README "已知不存在" 共享会话状态。
+    ///
+    /// 由所有 `ReadmeViewModel`（manage 全局 VM + active/weekly 各 Shell 局部 VM）
+    /// 共用同一实例，让"manage 命中 404 → 切到 active 看同 repo"等跨场景路径
+    /// 短路掉重复的 GitHub 请求。详见 `ReadmeAvailability.swift`。
+    let readmeAvailability: ReadmeAvailability
     /// W4 Batch A1 引入：标签 CRUD。
     let tagRepository: any TagRepositoryProtocol
     /// W4 Batch A1 引入：repo ↔ tag 关联 + 批量打标签。
@@ -292,6 +298,8 @@ final class AppDependencies {
             repository: readmeRepo,
             trendingRepository: trendingReadmeRepo
         )
+        // HOM-201 P0-2：跨 VM 共享的 404 短路状态容器。无依赖、无 IO，构造即用。
+        self.readmeAvailability = ReadmeAvailability()
 
         let summaryRepo = GRDBAISummaryRepository(database: db)
         self.aiSummaryRepository = summaryRepo

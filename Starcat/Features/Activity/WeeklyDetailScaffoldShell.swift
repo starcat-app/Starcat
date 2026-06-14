@@ -318,7 +318,13 @@ struct WeeklyDetailScaffoldShell: View {
         if let readmeVM {
             return readmeVM
         }
-        let model = ReadmeViewModel(api: dependencies.readmeAPI)
+        // HOM-201 P0-2（2026-06-14）：与 active Shell 同款，注入共享 availability 单例。
+        // weekly 走 `loadTrending` 不读 availability，但构造函数必传——传同一个实例
+        // 保证未来 weekly 切到 loadInternal 路径时自然共享 404 短路。
+        let model = ReadmeViewModel(
+            api: dependencies.readmeAPI,
+            availability: dependencies.readmeAvailability
+        )
         readmeVM = model
         return model
     }
