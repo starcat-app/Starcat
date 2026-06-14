@@ -662,6 +662,20 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.aiTranslationTask, value: aiTranslationTask) }
     }
 
+    /// 对话任务模型配置（2026-06-14 v4 引入）。
+    ///
+    /// 之前对话路径直接复用 `aiSummaryTask` 的 model + 参数，system prompt 在
+    /// `RepoAIInsightService.assembleChatSystemPrompt` 静态函数里硬编码拼接，
+    /// 用户没法编辑。本字段把 chat 提到与其他 4 个任务平级，让 prompt + provider
+    /// + model 都暴露给 Settings 页（详见 `AIDefaultPrompts.chat` 的注释）。
+    ///
+    /// 首次升级时 `init` 兜底逻辑会用与摘要相同的 provider+model + summaryDefault
+    /// 参数（chat 与摘要场景接近：都是单仓上下文 + 流式生成 + 中等温度），用户可在
+    /// 设置页改。
+    var aiChatTask: AIModelTaskConfiguration {
+        didSet { persistJSON(key: Keys.aiChatTask, value: aiChatTask) }
+    }
+
     /// 搜索栏当前模式。默认 keyword，避免用户未配置 AI 时误触发付费 API。
     var smartSearchMode: SmartSearchMode {
         didSet { persist(key: Keys.smartSearchMode, value: smartSearchMode.rawValue) }
@@ -1068,6 +1082,16 @@ final class AppSettings {
             modelName: resolvedAIChatModel
         )
         self.aiTranslationTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiTranslationTask, defaults: defaults) ?? defaultTranslationTask
+        // 2026-06-14 v4：对话任务首次升级时与摘要使用同一 provider+model + summaryDefault
+        // 参数（chat 跟摘要场景接近，参数没必要再分一套）。老用户没有 aiChatTask key →
+        // decode 失败 fallback 到默认值，行为跟之前"复用 aiSummaryTask"基本等价（model 一致），
+        // 唯一区别是 system prompt 现在走 AIDefaultPrompts.chat 模板（用户可在设置页改）。
+        let defaultChatTask = Self.makeDefaultTask(
+            task: .chat,
+            profileID: defaultProfile.id,
+            modelName: resolvedAIChatModel
+        )
+        self.aiChatTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiChatTask, defaults: defaults) ?? defaultChatTask
         let searchModeRaw = defaults.string(forKey: Keys.smartSearchMode)
         self.smartSearchMode = searchModeRaw.flatMap(SmartSearchMode.init(rawValue:)) ?? .keyword
         self.anySearchEnabled = defaults.object(forKey: Keys.anySearchEnabled) as? Bool ?? false
@@ -1274,6 +1298,7 @@ final class AppSettings {
                 case .tags:        return .tagsDefault
                 case .embedding:   return .embeddingDefault
                 case .translation: return .translationDefault
+                case .chat:        return .summaryDefault  // chat 场景接近摘要，复用同一份参数（128K maxToken / 0.2 温度 / 流式 on）
                 }
             }(),
             prompt: {
@@ -1282,6 +1307,7 @@ final class AppSettings {
                 case .tags:        return AIDefaultPrompts.tags
                 case .embedding:   return AIDefaultPrompts.embedding
                 case .translation: return AIDefaultPrompts.translation
+                case .chat:        return AIDefaultPrompts.chat
                 }
             }()
         )
@@ -1310,6 +1336,7 @@ final class AppSettings {
         static let aiTagsTask = "settings.ai.task.tags.v2"
         static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
         static let aiTranslationTask = "settings.ai.task.translation.v2"  // HOM-68 follow-up
+        static let aiChatTask = "settings.ai.task.chat.v1"  // 2026-06-14 v4 占位符化（chat 提到 task 平级）
         static let smartSearchMode = "settings.search.mode"
         static let anySearchEnabled = "settings.search.anysearch.enabled.v1"
         static let anySearchAnonymousMode = "settings.search.anysearch.anonymous.v1"

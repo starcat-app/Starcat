@@ -193,30 +193,40 @@ struct AIProviderProfile: Codable, Identifiable, Equatable, Sendable {
 /// 模型分别配置，那 README 翻译也需要独立一栏，让用户可选不同 provider/model"。
 /// 翻译复用 chat capability，但参数（temperature / maxToken / timeout）独立于摘要，
 /// 因为译文质量需要更低温度 + 更高 max tokens（长 README 翻译后体积可能涨 20–50%）。
+///
+/// 2026-06-14 v4 追加 `.chat`：对话路径之前直接复用 `aiSummaryTask` 的 model + 参数，
+/// system prompt 在 `RepoAIInsightService.assembleChatSystemPrompt` 里硬编码拼接，
+/// 用户没法编辑、Settings 看不见。本次让 chat 也走标准 task 配置 + 占位符模板路径
+/// （6 占位符：`{outputLanguage}` / `{metadata}` / `{readme}` / `{codeContext}` /
+/// `{summary}` / `{externalContext}`），跟其他 4 个任务一致。userPromptTemplate
+/// 留空（跟 embedding 镜像）—— 用户消息直接走 `AIChatRequest.history` + `userMessage`，
+/// 不需要模板包装。
 enum AIModelTask: String, Codable, CaseIterable, Identifiable, Sendable {
     case summary
     case tags
     case embedding
     case translation
+    case chat
 
     var id: String { rawValue }
 
     /// HOM-126 follow-up (dong4j 反馈 2026-06-07，「模型配置」/「Prompt」segmented picker 显得拥挤)：
     /// 任务名收紧为单字/双字，避免在 4 个 tab 横排的 segmented picker 里被截断。
-    /// 业务语义对齐：摘要 = 仓库 AI 摘要；标签 = 自动推荐 + 应用标签；向量化 = embedding 索引；翻译 = README 翻译。
+    /// 业务语义对齐：摘要 = 仓库 AI 摘要；标签 = 自动推荐 + 应用标签；向量化 = embedding 索引；翻译 = README 翻译；对话 = 详情页 AI 助手。
     var displayName: String {
         switch self {
         case .summary:     return "摘要"
         case .tags:        return "标签"
         case .embedding:   return "向量化"
         case .translation: return "翻译"
+        case .chat:        return "对话"
         }
     }
 
     var requiredCapability: AIModelCapability {
         switch self {
-        case .summary, .tags, .translation: return .chat
-        case .embedding:                    return .embedding
+        case .summary, .tags, .translation, .chat: return .chat
+        case .embedding:                           return .embedding
         }
     }
 }
@@ -637,6 +647,86 @@ enum AIDefaultPrompts {
         {readmeHTML}
         </README_FRAGMENT>
         """
+    )
+
+    /// Chat 任务占位符（dong4j 2026-06-14 v4 拍板，i18n 策略 C：全英文指令 + Locale 仅控输出语言）：
+    ///
+    /// **system 层 6 占位符**：
+    /// - `{outputLanguage}`：跟 `Locale.current` 派发为 `Simplified Chinese` / `English` /
+    ///   `Japanese` 等；驱动正文语言 + 兜底句"无法从上下文确认"自然翻译；
+    /// - `{metadata}`：repo 元数据（fullName / description / language / topics / license / stars / forks / homepage），
+    ///   与 Summary / Tags 任务共用同一份元数据块；
+    /// - `{readme}`：清洗 + 截断后的 README 纯文本；
+    /// - `{codeContext}`：RepoContextPacker 生成的代码 XML（关闭或拉取失败时为空字符串）；
+    /// - `{summary}`：缓存命中的 AI 摘要 markdown（未生成过摘要时为空字符串）；
+    /// - `{externalContext}`：AnySearch 生成的外部网页检索 markdown（关闭或拉取失败时为空字符串）。
+    ///
+    /// **userPromptTemplate 留空**（与 embedding 镜像）：
+    /// - embedding API 不接受 system prompt → systemPrompt 留空；
+    /// - chat 任务用户消息直接通过 `AIChatRequest.history` + `userMessage` 走 messages 数组，
+    ///   不需要"用户输入再嵌一层 prompt 模板"，所以 userPromptTemplate 留空。
+    /// - Settings UI 渲染该字段时会显示 disabled hint，跟 embedding 同款。
+    ///
+    /// **2026-06-14 v4 重构**（之前 chat system prompt 硬编码在
+    /// `RepoAIInsightService.assembleChatSystemPrompt` 静态函数里）：
+    /// 1. 砍掉旧硬编码 `Reply in Simplified Chinese only`，统一走 `{outputLanguage}` i18n 派发；
+    /// 2. 砍掉旧硬编码兜底中文 `"未从 README 或仓库元数据中确认"`，改成
+    ///    `say so explicitly in {outputLanguage}` 让 LLM 自然翻译；
+    /// 3. 把单一黑盒 sourceText 拆成 5 个透明 section 占位符（跟 Summary v4 对齐），用户在
+    ///    Settings 看得见、也能删；
+    /// 4. 加强 LLM 输出约束：禁 `<think>` / `<thinking>` / `<reasoning>` 推理痕迹 XML、
+    ///    禁外层 ``` 围栏整篇包裹、内部代码必须 fenced + 标语言、显式禁开场白 / 收场套话；
+    /// 5. 新增独有占位符 `{summary}`（chat 独有，其他任务没有），缓存命中的 AI 摘要作为参考；
+    /// 6. 新增独有占位符 `{externalContext}`，AnySearch 内容（已去掉 trust=untrusted 标记，
+    ///    详见 `AnySearchContextProvider` 注释）跟 README/metadata 平等参考。
+    ///
+    /// **删占位符 = 不注入对应数据**：用户在 Settings 改默认 prompt 把某个占位符删掉，
+    /// service 层就不渲染对应内容；改坏了点 Restore Default 还原。
+    /// 占位符在 dict 中查不到时保留原文（让 LLM 看到字面量便于排错，不静默吞）。
+    ///
+    /// **空 section 处理**：跟 Summary v4 同款——`{codeContext}` / `{summary}` /
+    /// `{externalContext}` 在 service 端 build dict 时若无数据就传空串，
+    /// 渲染出空 section header（LLM 自然忽略，token 浪费 < 5/section）。
+    static let chat = AIPromptConfiguration(
+        systemPrompt: """
+        You are Starcat's repository chat assistant, helping developers explore and understand a specific GitHub repository through conversation.
+
+        # Output Format (STRICT)
+        - Reply in Markdown format only (no plain text envelope, no JSON wrapper).
+        - Do NOT wrap the entire reply in an outer ``` fence; however, code examples, shell commands, configuration snippets, API calls, and similar within the reply MUST be wrapped in ``` fences with a language tag (e.g. ```bash, ```js, ```yaml, ```python, ```swift). Do not use indented code blocks or plain text to represent code.
+        - Do NOT output reasoning, analysis traces, or thought processes.
+        - Do NOT include <think>, <thinking>, <reasoning>, or other reasoning-trace XML tags; if your model has a thinking stage, return only the final answer.
+        - Output language: {outputLanguage} (use this language for the reply; technical English proper nouns are excluded — see the next constraint).
+
+        # Factual Constraints
+        - Stay grounded in the provided repository context (metadata + README + optional code structure + optional AI summary + optional external references).
+        - Do NOT fabricate APIs, commands, file paths, links, or version numbers that are not present in the context.
+        - If a question cannot be answered from the available context, say so explicitly in {outputLanguage} — do not guess. Tell the user the answer cannot be confirmed from the available materials.
+        - Preserve technical English proper nouns as-is (library names, command names, framework names, API names, version strings, commit hashes, etc.) — do not force-translate them.
+
+        # Reply Style
+        - Keep replies focused on what the user asked; no padding, no boilerplate openers ("Sure!", "Great question!"), no closing summaries ("In summary, ...", "Hope this helps!").
+        - When citing repository context, prefer specific references (file names, exact commands from README) over vague phrasing.
+        - For multi-part questions, answer each part briefly; do not over-elaborate parts the user did not ask about.
+
+        # Repository Context
+
+        ## Metadata
+        {metadata}
+
+        ## README
+        {readme}
+
+        ## Code Structure
+        {codeContext}
+
+        ## AI Summary
+        {summary}
+
+        ## External References
+        {externalContext}
+        """,
+        userPromptTemplate: ""
     )
 }
 

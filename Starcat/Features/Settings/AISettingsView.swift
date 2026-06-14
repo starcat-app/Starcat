@@ -1438,6 +1438,9 @@ struct AISettingsTab: View {
     /// - **tags**：6 个占位符（system 用 `{outputLanguage}`；user 用 `{metadata}` /
     ///   `{readme}` / `{codeContext}` / `{repoTags}` / `{libraryTags}`）；详见
     ///   `AIDefaultPrompts.tags` 的注释。
+    /// - **chat**：6 个占位符（system 用 `{outputLanguage}` / `{metadata}` / `{readme}` /
+    ///   `{codeContext}` / `{summary}` / `{externalContext}`；userPromptTemplate 留空，
+    ///   用户消息直接走 messages 数组）；详见 `AIDefaultPrompts.chat` 的注释。
     /// - **embedding**：8 个占位符（`{fullName}` / `{description}` / `{language}` / `{topics}` /
     ///   `{license}` / `{homepage}` / `{body}` / `{notes}`）；详见 `AIDefaultPrompts.embedding`
     ///   的注释；embedding API 不接受 system prompt，所以 system 一栏空且不会被使用。
@@ -1456,6 +1459,8 @@ struct AISettingsTab: View {
             return String(localized: "settings.ai.prompt.placeholders.translation")
         case .embedding:
             return String(localized: "settings.ai.prompt.placeholders.embedding")
+        case .chat:
+            return String(localized: "settings.ai.prompt.placeholders.chat")
         }
     }
 
@@ -1641,6 +1646,8 @@ struct AISettingsTab: View {
                 config.prompt = AIDefaultPrompts.tags
             case .embedding:
                 config.prompt = AIDefaultPrompts.embedding
+            case .chat:
+                config.prompt = AIDefaultPrompts.chat
             case .translation:
                 // README 翻译的 Prompt 由 ReadmeTranslationService 按目标语言动态拼装，
                 // 不读 task.prompt；这里仅为 switch 穷举性兜底，UI 已经把 translation
@@ -1920,6 +1927,7 @@ struct AISettingsTab: View {
         case .tags:        return settings.aiTagsTask
         case .embedding:   return settings.aiEmbeddingTask
         case .translation: return settings.aiTranslationTask
+        case .chat:        return settings.aiChatTask
         }
     }
 
@@ -1935,6 +1943,8 @@ struct AISettingsTab: View {
             settings.aiEmbeddingTask = config
         case .translation:
             settings.aiTranslationTask = config
+        case .chat:
+            settings.aiChatTask = config
         }
     }
 
