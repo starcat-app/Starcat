@@ -76,16 +76,8 @@ final class URLProtocolStub: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        // **关键约束（D-14 补丁，2026-06-14 dong4j）**：
-        // URLSession 在把 URLRequest 派发给 URLProtocol 之前，会把 `httpBody`
-        // 移到 `httpBodyStream`（系统行为，避免 body 跨进程拷贝）。这意味着所有
-        // 测试里直接读 `request.httpBody` 都会拿到 nil。
-        //
-        // 对策：在交给 handler 前把 stream 消化成 Data 重新写回 httpBody。
-        // 这样测试可以统一用 `request.httpBody` 断言，不用每次自己 stream 读。
-        // body 不大（AnySearch / GitHub 请求 < 4KB），一次性 read 没有性能问题。
-        let normalizedRequest = Self.materializeBody(request)
-        URLProtocolStub.receivedRequests.append(normalizedRequest)
+        // 记录原始请求供测试 assert（headers / path / body）
+        URLProtocolStub.receivedRequests.append(request)
 
         guard let handler = URLProtocolStub.requestHandler else {
             client?.urlProtocol(self, didFailWithError: URLError(.unknown))
@@ -93,36 +85,13 @@ final class URLProtocolStub: URLProtocol, @unchecked Sendable {
         }
 
         do {
-            let (response, data) = try handler(normalizedRequest)
+            let (response, data) = try handler(request)
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
         }
-    }
-
-    /// 把 `httpBodyStream` 消化成 Data 写回 `httpBody`，便于测试断言。
-    /// 已经有 httpBody 的请求原样返回。stream 读失败时静默放弃（保留原 stream），
-    /// 测试需要自行检查（绝大多数请求 body 很小 < 4KB，几乎不会失败）。
-    private static func materializeBody(_ request: URLRequest) -> URLRequest {
-        if request.httpBody != nil { return request }
-        guard let stream = request.httpBodyStream else { return request }
-        var mutable = request
-        var data = Data()
-        let bufferSize = 4096
-        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
-        defer { buffer.deallocate() }
-        stream.open()
-        defer { stream.close() }
-        while stream.hasBytesAvailable {
-            let read = stream.read(buffer, maxLength: bufferSize)
-            if read <= 0 { break }
-            data.append(buffer, count: read)
-        }
-        mutable.httpBody = data
-        mutable.httpBodyStream = nil
-        return mutable
     }
 
     /// no-op；本 stub 一次性返回所有数据，不存在中途取消逻辑。
