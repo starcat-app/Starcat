@@ -262,6 +262,15 @@ struct RepoAIWindowContentView: View {
                                 contextDegradationBanner(reason)
                             }
 
+                            // Y9.3（2026-06-14 dong4j 反馈）：AnySearch 外部上下文降级 banner。
+                            // 与代码上下文降级 banner 并行存在但相互正交，两路可同时显示。
+                            // 用户开了 AnySearch + AI 子开关后，若上游 502 / 网络异常 / Key 失效 /
+                            // 配额用完 / 限流 / 能力未启用，本 banner 给出对应分类的提示文案，避免
+                            // 静默降级让用户疑惑"我都开了为什么没注入"。
+                            if let reason = vm.externalContextDegradationReason {
+                                externalContextDegradationBanner(reason)
+                            }
+
                             if vm.isLoading {
                                 HStack(spacing: 8) {
                                     ProgressView().controlSize(.small)
@@ -959,6 +968,35 @@ struct RepoAIWindowContentView: View {
     ///     （与 staleSettingsBanner 保持同款风格）。
     /// 文案 5 case 全部走 i18n key（在 Y4 一并补 Localizable.xcstrings）。
     private func contextDegradationBanner(_ reason: ContextDegradationReason) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "info.circle.fill")
+                .foregroundStyle(.yellow)
+            Text(LocalizedStringKey(reason.bannerMessageKey))
+                .font(.caption)
+                .foregroundStyle(.primary)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.yellow.opacity(0.18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.yellow.opacity(0.35), lineWidth: 1)
+                )
+        )
+    }
+
+    /// Y9.3（2026-06-14 dong4j 反馈）：AnySearch 外部上下文降级 banner。
+    ///
+    /// 与 contextDegradationBanner 共享 Y9.2 玻璃态适配同款视觉（黄色 info 系），
+    /// 与 errorBanner 区分（红色错误 ≠ 黄色信息）。两路 banner 可同时显示，给用户
+    /// "代码上下文 + 外部网页材料"两个独立维度的反馈。
+    ///
+    /// 文案策略：7 case 都走 i18n key，UI 层零硬编码（i18n 在 Y9.3 一并补齐）。
+    /// 不在 banner 显示具体 statusCode 值（如 502）—— bannerMessageKey 已在中文文案里
+    /// 把"上游临时不可用"的语义讲清楚，附加数字反而干扰 glance 阅读。需要细节排查的
+    /// 用户可以去 Console.app 看 OSLog（已有诊断 log 链路）。
+    private func externalContextDegradationBanner(_ reason: ExternalContextDegradationReason) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "info.circle.fill")
                 .foregroundStyle(.yellow)

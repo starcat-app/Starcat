@@ -52,6 +52,14 @@ final class RepoAIInsightViewModel {
     /// 由 `generate(repo:)` 写入；缓存命中（`load`）路径不写，保持旧摘要 UI 状态干净。
     private(set) var contextDegradationReason: ContextDegradationReason?
 
+    /// Y9.3（2026-06-14）：外部网页上下文（AnySearch）降级原因。
+    ///
+    /// 与 `contextDegradationReason` 同款生命周期：
+    ///   - `generate()` 路径：写入 service 返回的分类原因（含 nil 清零）；
+    ///   - `load()` 缓存路径：清零（从缓存读到的 insight 是历史快照，当时的 anysearch
+    ///     错误不持久化避免误导用户）。
+    private(set) var externalContextDegradationReason: ExternalContextDegradationReason?
+
     private let service: RepoAIInsightService
     private let tagRepository: any TagRepositoryProtocol
     private let repoTagRepository: any RepoTagRepositoryProtocol
@@ -81,6 +89,8 @@ final class RepoAIInsightViewModel {
             // Y4：load 路径不携带降级原因；从缓存读到的 insight 已经是历史快照，
             // 当时的降级原因不在数据库里持久化（避免存"过期错误"误导用户）。
             contextDegradationReason = nil
+            // Y9.3：anysearch 降级原因同款生命周期，load 路径一并清零。
+            externalContextDegradationReason = nil
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -117,6 +127,8 @@ final class RepoAIInsightViewModel {
             tagErrorMessage = result.tagErrorMessage
             // Y4：透传降级原因到 UI banner。
             contextDegradationReason = result.contextDegradationReason
+            // Y9.3：透传 anysearch 降级原因到 UI banner。
+            externalContextDegradationReason = result.externalContextDegradationReason
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
