@@ -64,9 +64,28 @@ struct RepoAIInsightGeneration: Equatable, Sendable {
 @MainActor
 final class RepoAIInsightService {
 
+    /// makeSource 产物：既给 Summary（用 `text` 整体作为 `{context}` 等价输入），
+    /// 也给 Tags（按占位符 `{repository.metadata}` / `{repository.readme}` /
+    /// `{repository.code_context}` 拆段注入）。
+    ///
+    /// `text` = `metadata` + "\n" + readme 块 + (可选) "\n\n" + `codeContext`，
+    /// 是 LLM 实际看到的整体顺序，拆段字段只是它的局部投影。
     private struct Source {
         let text: String
         let hash: String
+
+        /// Tags 占位符 `{repository.metadata}` 的渲染源——
+        /// repo 元数据多行块（fullName / description / language / topics / license / stars / forks / homepage）。
+        let metadata: String
+
+        /// Tags 占位符 `{repository.readme}` 的渲染源——清洗 + 截断后的 README 纯文本。
+        /// 不含 "README:" 头（头由 prompt 模板自带，占位符仅渲染纯数据）。
+        let readme: String
+
+        /// Tags 占位符 `{repository.code_context}` 的渲染源——RepoContextPacker 生成的 XML。
+        /// 失败 / 关闭 / 私仓不允许时为空字符串（不是 nil，让占位符直接渲染空段不出现 `{xxx}` 字面量）。
+        let codeContext: String
+
         /// Y2：从 RepoContextPacker 拿到的元信息（命中缓存或新生成都填充）。
         /// 透传到 makeInsight 写入 RepoAIInsight.contextMetadata，供 UI footer 显示。
         var contextMeta: RepoAIInsightContextMeta?
@@ -78,11 +97,17 @@ final class RepoAIInsightService {
         init(
             text: String,
             hash: String,
+            metadata: String,
+            readme: String,
+            codeContext: String,
             contextMeta: RepoAIInsightContextMeta? = nil,
             contextDegradationReason: ContextDegradationReason? = nil
         ) {
             self.text = text
             self.hash = hash
+            self.metadata = metadata
+            self.readme = readme
+            self.codeContext = codeContext
             self.contextMeta = contextMeta
             self.contextDegradationReason = contextDegradationReason
         }
@@ -194,66 +219,36 @@ final class RepoAIInsightService {
             resolvedExternalContext = nil
         }
 
-        // HOM-52 + 2026-06-14 dong4j 反馈：标签生成路径在 source 末尾追加 prompt 三段附录。
-        //   (1) Tag format rules —— 限制中英文标签长度 / 风格，覆盖所有用户 prompt（含自定义）
-        //   (2) Existing tags on THIS repository —— 强信号，AI 必须优先复用避免同义重复
-        //   (3) Other frequently-used tags in library —— 弱信号，仅作风格 / 命名习惯参考
-        //
-        // 为何不写进 default prompt：用户可能已经在 Settings 改过 prompt（持久化在 UserDefaults），
-        // 改 default 对老用户不生效。注入到 {context} 末尾走的是同一个 prompt template 替换路径，
-        // 无论用户怎么改 system / user prompt 都会拿到这三段规则。
-        // includeTags == false 时不注入，避免摘要任务的 prompt 被无关规则污染。
+        // 2026-06-14 dong4j 反馈重构：Tags 双层 hints 改走占位符渲染路径
+        //   ({tags.repo} / {tags.library}，详见 AIDefaultPrompts.tags 注释)，
+        //   不再在 source.text 末尾硬拼接附录，因此：
+        //   - 摘要任务的 source 不再被无关 Tag 规则污染（旧实现 augmentedSource 同时
+        //     喂给了 summary 和 tags 两条路径，是隐性 bug）；
+        //   - Tag format rules 已上提到 system prompt 默认值（用户可见 / 可改 / 改坏点 Restore Default）。
         //
         // 双层 hints 由调用方通过 `RepoAIInsightService.makeTagHints(...)` 工厂方法统一构造，
         // 保证两条入口（单仓 AI 摘要 / 批量 AI 整理）信号源不漂移；详见 `AITagHints` 注释。
-        let augmentedSource: Source = {
-            guard includeTags else { return source }
 
-            var appendix = """
-
-            Tag format rules (必须遵守):
-            - 中文标签：长度 ≤ 4 字（如「向量检索」「编辑器」「机器学习」），名词或简短术语，不要句子。
-            - 英文标签：单个领域词、专业缩写或常见技术术语（如 RAG / LLM / Vector / DevOps / WebRTC / Editor），不要复合短语。
-            - 中英文混用时每个标签独立判断；同一仓库的标签风格保持一致。
-            """
-
-            // 强信号：repo 已绑定标签——AI 必须优先复用，避免「向量搜索 / Vector Search / 向量检索」同义爆炸。
-            // 工厂方法已 trim + 去重 + 排序，这里直接 join 即可。
-            if !existingTagHints.repoTags.isEmpty {
-                appendix += """
-
-
-                Existing tags on THIS repository (强烈优先复用，避免生成同义不同名标签):
-                \(existingTagHints.repoTags.joined(separator: ", "))
-                """
-            }
-
-            // 弱信号：用户标签库其它高频标签——仅作命名习惯 / 颗粒度参考，不强制复用。
-            // 工厂方法已去掉与 repoTags 重叠的项，保证 prompt 内无重复。
-            if !existingTagHints.libraryTags.isEmpty {
-                appendix += """
-
-
-                Other frequently-used tags in your library (可参考命名风格 / 颗粒度，非强制复用):
-                \(existingTagHints.libraryTags.joined(separator: ", "))
-                """
-            }
-
-            let merged = source.text + appendix
-            return Source(text: merged, hash: Self.hash(merged))
-        }()
-
-        // 两者都需要时并发跑（与原实现一致）；任一关闭则串行 / 短路，避免无意义 AI 调用。
+        // 两者都需要时并发跑；任一关闭则串行 / 短路，避免无意义 AI 调用。
+        // Summary 走 `summarySource`（含 AnySearch 外部材料），Tags 走 `(source, hints)`。
         let summarySource: Source = {
-            guard let context = resolvedExternalContext else { return augmentedSource }
-            let merged = augmentedSource.text + "\n" + context.markdown
-            return Source(text: merged, hash: Self.hash(merged))
+            guard let context = resolvedExternalContext else { return source }
+            let merged = source.text + "\n" + context.markdown
+            return Source(
+                text: merged,
+                hash: Self.hash(merged),
+                metadata: source.metadata,
+                readme: source.readme,
+                codeContext: source.codeContext,
+                contextMeta: source.contextMeta,
+                contextDegradationReason: source.contextDegradationReason
+            )
         }()
 
         var summaryText: String
         let resolvedTagResult: Result<[AITagSuggestion], Error>
         if includeSummary, includeTags {
-            async let tagResult = tagSuggestionsResult(source: augmentedSource)
+            async let tagResult = tagSuggestionsResult(source: source, hints: existingTagHints)
             summaryText = try await generateSummary(source: summarySource, onDelta: onSummaryDelta)
             resolvedTagResult = await tagResult
         } else if includeSummary {
@@ -261,7 +256,7 @@ final class RepoAIInsightService {
             resolvedTagResult = .success([])
         } else if includeTags {
             summaryText = ""
-            resolvedTagResult = await tagSuggestionsResult(source: augmentedSource)
+            resolvedTagResult = await tagSuggestionsResult(source: source, hints: existingTagHints)
         } else {
             // 调用方两者都关：返回空 insight，避免无意义网络调用。
             summaryText = ""
@@ -346,7 +341,7 @@ final class RepoAIInsightService {
             insight: insight,
             tagErrorMessage: tagErrorMessage,
             // Y4：透传 makeSource 阶段的代码上下文降级原因。
-            // 注：augmentedSource / summarySource 都从 source 派生但不改 contextDegradationReason，
+            // 注：summarySource 从 source 派生但不改 contextDegradationReason，
             // 这里直接读最原始 source 的 reason 即可。
             contextDegradationReason: source.contextDegradationReason,
             // Y9.3：透传 anysearch 降级原因，UI 层渲染独立 banner。
@@ -503,9 +498,12 @@ final class RepoAIInsightService {
         return sections.joined(separator: "\n\n")
     }
 
-    private func tagSuggestionsResult(source: Source) async -> Result<[AITagSuggestion], Error> {
+    private func tagSuggestionsResult(
+        source: Source,
+        hints: AITagHints
+    ) async -> Result<[AITagSuggestion], Error> {
         do {
-            return .success(try await generateTags(source: source))
+            return .success(try await generateTags(source: source, hints: hints))
         } catch {
             AppLog.ai.error("AI tag generation failed: \(error.localizedDescription, privacy: .public)")
             return .failure(error)
@@ -519,9 +517,10 @@ final class RepoAIInsightService {
         let task = settings.aiSummaryTask
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "摘要")
         let params = settings.effectiveParameters(for: task)
+        // Summary 任务私有占位符：仅 `{context}`（兼上 README + 元数据 + 可选 Code XML + 可选外部材料）。
         let request = AIChatRequest(
             systemPrompt: task.prompt.systemPrompt,
-            userPrompt: task.prompt.renderedUserPrompt(context: source.text),
+            userPrompt: task.prompt.renderedUserPrompt(placeholders: ["context": source.text]),
             model: model,
             parameters: params,
             responseFormat: .text
@@ -546,17 +545,67 @@ final class RepoAIInsightService {
         }
     }
 
-    private func generateTags(source: Source) async throws -> [AITagSuggestion] {
+    /// Tags 任务私有占位符渲染。
+    ///
+    /// **占位符约定**（详见 `AIDefaultPrompts.tags` 注释）：
+    /// - system prompt：`{output.language}`（驱动 Tag Style Rules 分支 + reason 字段语言）
+    /// - user prompt：`{repository.metadata}` / `{repository.readme}` /
+    ///   `{repository.code_context}` / `{tags.repo}` / `{tags.library}`
+    ///
+    /// **删占位符 = 不注入对应数据**：用户在 Settings 改默认 prompt 把某个占位符删掉，
+    /// service 这里仍然 build 同一份 dict，但替换不到 → 自然不渲染对应内容；
+    /// 反过来用户多写了占位符也无害（dict 没有就保留字面量，让 LLM 直接看到便于排错）。
+    private func generateTags(source: Source, hints: AITagHints) async throws -> [AITagSuggestion] {
         let task = settings.aiTagsTask
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "推荐标签")
+
+        let outputLanguage = Self.outputLanguageDescriptor()
+        let systemPrompt = task.prompt.renderedSystemPrompt(placeholders: [
+            "output.language": outputLanguage
+        ])
+        // hints 已由 makeTagHints 工厂方法做过 trim + 去重 + 排序 + 截断（详见 AITagHints 注释），
+        // 这里 join 即可；任一为空时占位符渲染为空字符串，prompt 模板里对应的 label
+        // 保持原样（用户编辑 prompt 时所见即所得）。
+        let userPrompt = task.prompt.renderedUserPrompt(placeholders: [
+            "repository.metadata": source.metadata,
+            "repository.readme": source.readme,
+            "repository.code_context": source.codeContext,
+            "tags.repo": hints.repoTags.joined(separator: ", "),
+            "tags.library": hints.libraryTags.joined(separator: ", ")
+        ])
+
         let response = try await client.chat(request: AIChatRequest(
-            systemPrompt: task.prompt.systemPrompt,
-            userPrompt: task.prompt.renderedUserPrompt(context: source.text),
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
             model: model,
             parameters: settings.effectiveParameters(for: task),
             responseFormat: .jsonObject
         ))
         return try Self.decodeTagSuggestions(json: response.content)
+    }
+
+    /// `{output.language}` 占位符的 Locale 派发。
+    ///
+    /// 派发到 LLM 一眼能识别的英文语言名（`Simplified Chinese` / `English` / 等），
+    /// 避免不同 Provider 对 BCP-47 标识（`zh-Hans`）解读不一致。
+    /// 仅 Tags 任务在用；将来其它任务支持 `{output.language}` 时复用本 helper。
+    nonisolated static func outputLanguageDescriptor() -> String {
+        let lang = Locale.current.language.languageCode?.identifier ?? "en"
+        switch lang {
+        case "zh":
+            let region = Locale.current.language.region?.identifier
+            return (region == "TW" || region == "HK" || region == "MO")
+                ? "Traditional Chinese"
+                : "Simplified Chinese"
+        case "ja": return "Japanese"
+        case "ko": return "Korean"
+        case "fr": return "French"
+        case "de": return "German"
+        case "es": return "Spanish"
+        case "ru": return "Russian"
+        case "pt": return "Portuguese"
+        default:   return "English"
+        }
     }
 
     private func makeClient(
@@ -709,7 +758,10 @@ final class RepoAIInsightService {
         //
         // 注：旧 hash 与新 hash 算法不同，存量缓存会一次性"看似失效"。这是一次性升级代价；
         // 之后该 repo 重新生成一次即可永久稳定，不会再因为 stars 涨一颗就失效。
-        var llmText = [
+        // 元数据块——单独抽出，既给 Summary 走 `text` 整体注入，也给 Tags
+        // 占位符 `{repository.metadata}` 单独注入（Tags prompt 模板里
+        // README 头由用户自己写，不在 metadata 块里）。
+        let metadataBlock = [
             "Repository: \(repo.fullName)",
             "Description: \(repo.description ?? "")",
             "Language: \(repo.language ?? "")",
@@ -717,20 +769,21 @@ final class RepoAIInsightService {
             "License: \(repo.license ?? "")",
             "Stars: \(repo.starsCount)",
             "Forks: \(repo.forksCount)",
-            "Homepage: \(repo.homepage ?? "")",
-            "README:",
-            readmeText
+            "Homepage: \(repo.homepage ?? "")"
         ].joined(separator: "\n")
 
-        var hashText = [
+        // hashText 元数据子集（剔除 stars/forks/homepage 这类高频流量字段）
+        // —— HOM-199 缓存稳定化保留逻辑。
+        let metadataHashBlock = [
             "Repository: \(repo.fullName)",
             "Description: \(repo.description ?? "")",
             "Language: \(repo.language ?? "")",
             "Topics: \(repo.topics ?? "")",
-            "License: \(repo.license ?? "")",
-            "README:",
-            readmeText
+            "License: \(repo.license ?? "")"
         ].joined(separator: "\n")
+
+        var llmText = metadataBlock + "\nREADME:\n" + readmeText
+        var hashText = metadataHashBlock + "\nREADME:\n" + readmeText
 
         // X4（2026-06-13）：注入 RepoContextPacker 产出的代码上下文 XML（若 provider 可用）。
         //
@@ -748,6 +801,7 @@ final class RepoAIInsightService {
         // Y4：按 provider outcome 3 态分别处理（success / featureDisabled / degraded）。
         var contextMeta: RepoAIInsightContextMeta?
         var degradationReason: ContextDegradationReason?
+        var codeContextXml = ""
         if let provider = repoAIContextProvider {
             let outcome = try await provider.contextOutcome(for: repo)
             switch outcome {
@@ -758,6 +812,7 @@ final class RepoAIInsightService {
                     // = 该重生成摘要。这是"语义级变更"，不属于 HOM-199 要稳定化的流量字段。
                     llmText += "\n\n" + contextXml
                     hashText += "\n\n" + contextXml
+                    codeContextXml = contextXml
                     contextMeta = RepoAIInsightContextMeta(
                         commitSha: result.metadata.commitSha,
                         ref: result.metadata.ref,
@@ -779,6 +834,9 @@ final class RepoAIInsightService {
         return Source(
             text: llmText,
             hash: Self.hash(hashText),
+            metadata: metadataBlock,
+            readme: readmeText,
+            codeContext: codeContextXml,
             contextMeta: contextMeta,
             contextDegradationReason: degradationReason
         )

@@ -9707,6 +9707,23 @@
         }
       }
     },
+    "settings.ai.prompt.placeholders.tags" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Available placeholders for the Tags task:\n\n• {output.language} — output language descriptor (auto, follows current Locale)\n• {repository.metadata} — repo metadata block (full name, description, language, topics, license, etc.)\n• {repository.readme} — README plain text (cleaned & truncated)\n• {repository.code_context} — code context XML (empty when disabled or unavailable)\n• {tags.repo} — tags already attached to this repository (comma-separated)\n• {tags.library} — top-30 frequently-used tags from your library (comma-separated)\n\nDelete a placeholder from the prompt to skip injecting that data; restore by clicking the reset button."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tags 任务可用占位符：\n\n• {output.language} —— 输出语言（跟随系统 Locale 自动派发，如 Simplified Chinese / English / Japanese）\n• {repository.metadata} —— 仓库元数据块（fullName / description / language / topics / license / 等）\n• {repository.readme} —— 清洗 + 截断后的 README 纯文本\n• {repository.code_context} —— 代码上下文 XML（关闭或拉取失败时为空）\n• {tags.repo} —— 当前仓库已绑定的标签（逗号分隔）\n• {tags.library} —— 标签库高频前 30 个（逗号分隔）\n\n从 prompt 里删掉占位符即不注入对应数据;改坏了点恢复默认按钮还原。"
+          }
+        }
+      }
+    },
     "settings.ai.provider" : {
       "extractionState" : "stale",
       "localizations" : {
