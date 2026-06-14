@@ -10113,6 +10113,22 @@
         }
       }
     },
+    "settings.anySearch.apiKey.saveFailed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key is valid, but it could not be saved."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key 有效，但保存失败。"
+          }
+        }
+      }
+    },
     "settings.anySearch.apiKey.show" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10126,6 +10142,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示 API Key"
+          }
+        }
+      }
+    },
+    "settings.anySearch.apiKey.test" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Test"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测试"
+          }
+        }
+      }
+    },
+    "settings.anySearch.apiKey.testSucceeded" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key is valid and has been saved."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key 有效，已保存。"
           }
         }
       }
