@@ -321,6 +321,11 @@ struct WeeklyDetailScaffoldShell: View {
         // HOM-201 P0-2（2026-06-14）：与 active Shell 同款，注入共享 availability 单例。
         // weekly 走 `loadTrending` 不读 availability，但构造函数必传——传同一个实例
         // 保证未来 weekly 切到 loadInternal 路径时自然共享 404 短路。
+        //
+        // HOM-201 P0-4（2026-06-14）：weekly 永远走 `loadTrending`，`onHTMLLoaded` 不会
+        // 被触发（详见 `ReadmeViewModel.onHTMLLoaded` 注释），因此**故意不传**——
+        // 跟 active Shell 不一样,是为了让"weekly 是 trending 路径"这件事在代码层面
+        // 显式可见。
         let model = ReadmeViewModel(
             api: dependencies.readmeAPI,
             availability: dependencies.readmeAvailability
