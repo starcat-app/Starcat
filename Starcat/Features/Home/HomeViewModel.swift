@@ -681,10 +681,16 @@ final class HomeViewModel {
                             guard let semanticSearchService = self.semanticSearchService else {
                                 throw SemanticSearchError.missingAPIKey
                             }
+                            // 2026-06-14 dong4j：先 FTS 拿命中 ID 集合，再调语义搜索（思路 1，C 加权）。
+                            // FTS5 是本地 SQLite 查询，毫秒级零成本；ftsHitIDs 仅作排序加权信号
+                            // 不做硬过滤，保住"语义同义但字面没匹"的纯向量召回能力。
                             let candidates = try await self.repository.fetchAllStarred()
+                            let ftsHits = try await self.repository.searchFTS(query: self.searchQuery)
+                            let ftsHitIDs = Set(ftsHits.map(\.id))
                             let hits = try await semanticSearchService.search(
                                 query: self.searchQuery,
-                                candidates: candidates
+                                candidates: candidates,
+                                ftsHitIDs: ftsHitIDs
                             )
                             return (
                                 repos: hits.map(\.repo),
@@ -961,9 +967,13 @@ final class HomeViewModel {
         // 阈值即时生效：Settings 拖滑杆改阈值后，HomeView 监听该字段触发 refilter()
         // → 走到这里 → 重新过滤当前已缓存的 hits，**不调 embedding API**。
         // 这是把过滤放 view 层而非 service 层的核心收益（详见 AppSettings 文档）。
+        //
+        // **2026-06-14 阈值单位迁移**：dong4j 决策——过滤判定字段从原始 cosine `score`
+        // 改成 A 重标定后的 `displayScore`，让"滑杆 75% = 列表 75%"单位一致。
+        // 配合 SemanticSearchService 的 B 字面 boost / C FTS 加权，过滤命中相关性显著提升。
         if isSemanticSearching, let threshold = semanticScoreThreshold {
             view.removeAll { repo in
-                let score = semanticHitMap[repo.id]?.score ?? 0
+                let score = semanticHitMap[repo.id]?.displayScore ?? 0
                 return score < threshold
             }
         }

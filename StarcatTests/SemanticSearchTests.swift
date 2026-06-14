@@ -35,6 +35,135 @@ struct SemanticSearchTests {
         #expect(abs(orthogonal - 0.0) < 0.0001)
         #expect(abs(opposite + 1.0) < 0.0001)
     }
+
+    // MARK: - 2026-06-14 A+B 改造：纯函数级单测
+
+    @Test("normalizeDisplayScore: 经验区间 [0.30, 0.95] 线性映射到 [0, 1]")
+    func normalizeDisplayScore() {
+        let f = SemanticSearchService.normalizeDisplayScore
+        #expect(abs(f(0.30) - 0.0) < 0.0001, "下界 0.30 → 0%")
+        #expect(abs(f(0.95) - 1.0) < 0.0001, "上界 0.95 → 100%")
+        // 中间点：(0.625 - 0.30) / (0.95 - 0.30) = 0.5
+        #expect(abs(f(0.625) - 0.5) < 0.0001)
+        // 用户截图 case：cosine 0.68 → (0.68 - 0.30) / 0.65 ≈ 0.585
+        #expect(abs(f(0.68) - 0.5846) < 0.001)
+        // 旧默认阈值 0.75 cosine → ~0.692 displayScore
+        #expect(abs(f(0.75) - 0.6923) < 0.001)
+    }
+
+    @Test("normalizeDisplayScore: 超出区间应被 clamp 到 [0, 1]")
+    func normalizeDisplayScoreClamp() {
+        let f = SemanticSearchService.normalizeDisplayScore
+        #expect(f(0.0) == 0.0)
+        #expect(f(-0.5) == 0.0)
+        #expect(f(1.0) == 1.0)
+        #expect(f(2.0) == 1.0)
+    }
+
+    @Test("normalizeDisplayScore: NaN 输入返回 0")
+    func normalizeDisplayScoreNaN() {
+        #expect(SemanticSearchService.normalizeDisplayScore(.nan) == 0)
+    }
+
+    @Test("tier(forDisplayScore:) 4 档边界")
+    func tierBoundaries() {
+        let f = SemanticSearchService.tier(forDisplayScore:)
+        #expect(f(1.0) == 4)
+        #expect(f(0.85) == 4)
+        #expect(f(0.84) == 3)
+        #expect(f(0.65) == 3)
+        #expect(f(0.64) == 2)
+        #expect(f(0.45) == 2)
+        #expect(f(0.44) == 1)
+        #expect(f(0.0) == 1)
+    }
+
+    @Test("hasLiteralMatch: fullName 子串命中（owner 单独不在 description 里也算）")
+    func literalMatchFullName() {
+        let repo = makeRepo(fullName: "google/guava", description: "java helpers", topics: nil)
+        #expect(SemanticSearchService.hasLiteralMatch(repo: repo, query: "google"))
+        #expect(SemanticSearchService.hasLiteralMatch(repo: repo, query: "guava"))
+        #expect(SemanticSearchService.hasLiteralMatch(repo: repo, query: "google/guava"))
+    }
+
+    @Test("hasLiteralMatch: description 命中")
+    func literalMatchDescription() {
+        let repo = makeRepo(
+            fullName: "vendor/tool",
+            description: "fewer tokens, fewer tool calls, 100% local",
+            topics: nil
+        )
+        // 用户截图核心 case：query 完整出现在 description
+        #expect(SemanticSearchService.hasLiteralMatch(repo: repo, query: "fewer tokens, fewer tool calls, 100% local"))
+        #expect(SemanticSearchService.hasLiteralMatch(repo: repo, query: "100% local"))
+    }
+
+    @Test("hasLiteralMatch: topics JSON 字符串命中")
+    func literalMatchTopics() {
+        let repo = makeRepo(fullName: "u/r", description: "x", topics: "[\"ai\",\"local-llm\"]")
+        #expect(SemanticSearchService.hasLiteralMatch(repo: repo, query: "local-llm"))
+        // topics 是 JSON 字符串，里面的引号 / 中括号也能被子串匹配，符合"字面命中"语义
+        #expect(SemanticSearchService.hasLiteralMatch(repo: repo, query: "ai"))
+    }
+
+    @Test("hasLiteralMatch: 大小写不敏感")
+    func literalMatchCaseInsensitive() {
+        let repo = makeRepo(fullName: "Google/Guava", description: "Java Helpers", topics: nil)
+        #expect(SemanticSearchService.hasLiteralMatch(repo: repo, query: "google"))
+        #expect(SemanticSearchService.hasLiteralMatch(repo: repo, query: "JAVA"))
+    }
+
+    @Test("hasLiteralMatch: 完全无关 query 应返回 false")
+    func literalMatchMiss() {
+        let repo = makeRepo(fullName: "google/guava", description: "java helpers", topics: nil)
+        #expect(!SemanticSearchService.hasLiteralMatch(repo: repo, query: "kubernetes"))
+    }
+
+    @Test("常量约束：literal boost floor / fts boost weight 在合理范围")
+    func constantsAreSane() {
+        // literal boost 必须 ≥ displayScore 高档阈值 (4 星 = 0.85)
+        // 否则字面命中也不一定显示 4★，违背"字面命中应是高度相关"的产品意图
+        #expect(SemanticSearchService.literalBoostFloor >= 0.85)
+        #expect(SemanticSearchService.literalBoostFloor <= 1.0)
+        // fts boost 必须 < 经验区间跨度，否则会让弱相关被一路推到顶档
+        let span = SemanticSearchService.displayScoreHighAnchor - SemanticSearchService.displayScoreLowAnchor
+        #expect(SemanticSearchService.ftsBoostWeight < span)
+        #expect(SemanticSearchService.ftsBoostWeight > 0)
+    }
+
+    // MARK: - helpers
+
+    private func makeRepo(fullName: String, description: String?, topics: String?) -> Repo {
+        let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
+        let owner = parts.count == 2 ? parts[0] : ""
+        let name = parts.count == 2 ? parts[1] : fullName
+        return Repo(
+            id: 1,
+            owner: owner,
+            name: name,
+            fullName: fullName,
+            description: description,
+            language: nil,
+            starsCount: 0,
+            forksCount: 0,
+            watchersCount: 0,
+            topics: topics,
+            license: nil,
+            homepage: nil,
+            htmlUrl: "https://github.com/\(fullName)",
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            isFork: false,
+            isArchived: false,
+            isStarred: true,
+            pushedAt: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            starredAt: nil,
+            cachedAt: nil
+        )
+    }
 }
 
 @Suite("Repo AI Insight")

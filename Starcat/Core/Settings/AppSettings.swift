@@ -809,11 +809,17 @@ final class AppSettings {
 
     /// AI 语义搜索结果过滤阈值（2026-06-13 dong4j 需求 HOM-197）。
     ///
-    /// 语义搜索命中的 cosine similarity 分数低于此阈值的 repo 不在列表展示——
+    /// 语义搜索命中分数低于此阈值的 repo 不在列表展示——
     /// 默认 0.75，UI 滑杆范围 0.10 - 1.00、步进 0.01。
     ///
+    /// **2026-06-14 单位迁移**：dong4j 决策——判定字段从原始 cosine 改成
+    /// `SemanticSearchHit.displayScore`（A 重标定后的经验区间归一值），让
+    /// "滑杆 75%" 与 "结果列表 75%" 视觉单位一致。原始 cosine 0.75 ≈
+    /// displayScore 0.692，新单位下默认 0.75 实际比旧版稍严，但配合 B 字面 boost / C
+    /// FTS 加权后好结果不会被滤掉。
+    ///
     /// **生效路径**：`HomeViewModel.applyView()` 在 `isSemanticSearching` 分支里
-    /// 对 `view` 做 `removeAll { (semanticHitMap[$0.id]?.score ?? 0) < threshold }`，
+    /// 对 `view` 做 `removeAll { (semanticHitMap[$0.id]?.displayScore ?? 0) < threshold }`，
     /// 与 hideArchived / hideForks / statusFilter 同串行过滤。
     ///
     /// **为什么不在 SemanticSearchService.search() 里过滤**：拖滑杆改阈值要即时

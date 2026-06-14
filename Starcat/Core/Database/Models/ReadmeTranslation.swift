@@ -2,29 +2,41 @@
 //  ReadmeTranslation.swift
 //  Starcat
 //
-//  README AI 翻译结果缓存模型，对应 `readme_translations` 表（HOM-68）。
+//  README AI 翻译结果缓存模型（HOM-68 / 2026-06-15 砍 DB 改纯磁盘缓存 v2）。
 //
 //  模块职责：
-//  - 表达「某仓库 README 在某目标语言下的最新翻译」，单一 PK `(repo_id, target_language)`；
-//  - 持有 `source_hash` 让上层判断原 README 是否已被作者更新（避免误用旧译文）；
-//  - 记录使用的 LLM 模型名，便于复盘 / 后续多模型对比。
+//  - 表达「某仓库 README 在某目标语言下的最新翻译」；
+//  - 持有 `sourceHash` 让上层判断原 README 是否已被作者更新（避免误用旧译文）；
+//  - 记录使用的 LLM 模型名，便于复盘 / 后续多模型对比；
+//  - 字段全部走 `<owner>/<repo>/<lang>.json` 磁盘 metadata 序列化。
 //
 //  关键约束：
 //  - 这是「AI 输出缓存」，不是「原 README 缓存」（后者由 `Readme` / `readmes` 表负责）。
-//  - 字段语义和 readmes 表对齐（`translated_html` ↔ `rendered_html`、`size` 同义），
+//  - **v2 起完全脱离 GRDB**：本类型不再实现 `FetchableRecord`/`PersistableRecord`，
+//    存储改为 `DiskReadmeTranslationCache` 单点负责（`<owner>/<repo>/<lang>.{html,json}`）。
+//    背景：原 v1 用 `readme_translations` 表 + `repo_id FK → repos.id`，但 trending /
+//    activity / weekly 详情页的 repo 大多数未本地 star → `repos` 表无对应 row →
+//    `INSERT INTO readme_translations` 撞 SQLite error 19。dong4j 决策："翻译资产不
+//    应该被 star 状态削减，未 star 也能翻译查看；DB 改纯磁盘单一存储"。
+//  - 字段语义和 readmes 表对齐（`translatedHtml` ↔ `rendered_html`、`size` 同义），
 //    让 UI 端可以直接喂给 `ReadmeWebView` 渲染，无需二次包装。
+//  - `repoId` 字段保留为可选——磁盘 cache 路径不依赖它（路径用 owner/repo），但
+//    服务层透传到 record 里方便未来如有 starred-only 索引需求时可读到，不强制要求。
 //
 
 import Foundation
-import GRDB
 
 /// README 翻译缓存。
-struct ReadmeTranslation: Codable, FetchableRecord, MutablePersistableRecord, Equatable, Sendable {
+///
+/// 字段说明见 `CodingKeys` 上方注释。snake_case JSON key 与 v1 GRDB 表列名保持一致，
+/// 是为了让既有 fixture / 测试样例能零改动迁移（虽然 v1 的 DB 已经砍，但 JSON shape
+/// 维持稳定能减少不必要的 churn）。
+struct ReadmeTranslation: Codable, Equatable, Sendable {
 
-    static let databaseTableName = "readme_translations"
-
-    /// 关联仓库 ID（外键 → repos.id ON DELETE CASCADE）。
-    var repoId: Int64
+    /// 关联 GitHub 仓库 ID。磁盘 cache 路径不依赖它，但服务层在写入时透传保留，
+    /// 用于排查 / 日志 / 未来如要做 starred-only 索引时可派上用场。
+    /// 可选：trending / activity ephemeral repo 可能拿不到真实 id（极少数情况）。
+    var repoId: Int64?
 
     /// 目标语言（BCP-47 风格 raw，如 `zh-Hans` / `en` / `ja`）。
     ///
@@ -34,7 +46,7 @@ struct ReadmeTranslation: Codable, FetchableRecord, MutablePersistableRecord, Eq
 
     /// 使用的 LLM 模型名（如 `gpt-4o-mini` / `deepseek-chat`）。
     ///
-    /// 当用户改了任务对应的模型后旧译文仍可被命中——是否复用由上层 `source_hash`
+    /// 当用户改了任务对应的模型后旧译文仍可被命中——是否复用由上层 `sourceHash`
     /// 决定，不在这里做"模型不同自动作废"的硬规则，避免用户切换模型后丢失所有
     /// 已生成的中文译文（成本沉重）。
     var model: String
