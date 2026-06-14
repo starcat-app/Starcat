@@ -330,4 +330,99 @@ struct ReadmeAPINetworkTests {
         let trendingRow = try await trendingRepo.find(fullName: repo.fullName)
         #expect(trendingRow != nil)
     }
+
+    // MARK: - HOM-201 P1-1: prefetch（列表 hover 预拉）
+
+    /// 关键路径：缓存在 6h 内 → 完全短路网络（GitHub 配额保护）。
+    @Test("prefetch: cache 在 softTtl 内 → 不调用 GitHub")
+    func prefetchSkipsWhenFresh() async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+
+        // 写一条 cachedAt 是"刚才"的本地缓存
+        let nowISO = ISO8601DateFormatter.shared.string(from: Date())
+        try await readmeRepo.upsert(makeReadme(repoId: repo.id, html: "fresh", cachedAt: nowISO))
+
+        await api.prefetch(for: repo)
+
+        #expect(mock.readmeHTMLCalls.isEmpty)
+    }
+
+    /// 缓存过期 → prefetch 应触发条件刷新（被 inflight tracker 自动 dedupe）。
+    @Test("prefetch: cache 过期 → 走 refreshReadme")
+    func prefetchTriggersRefreshWhenStale() async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+
+        // 过去 24h 远超 softTtl=6h
+        let stale = ISO8601DateFormatter.shared.string(from: Date().addingTimeInterval(-24 * 3600))
+        try await readmeRepo.upsert(makeReadme(repoId: repo.id, html: "stale", cachedAt: stale))
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            BytesResponse.ok(data: Data("<h1>new</h1>".utf8), etag: "\"new\"")
+        }
+
+        await api.prefetch(for: repo)
+
+        #expect(mock.readmeHTMLCalls.count == 1)
+        let refreshed = try await readmeRepo.find(repoId: repo.id)
+        #expect(refreshed?.renderedHtml == "<h1>new</h1>")
+    }
+
+    /// 无缓存 → 必须刷一次。
+    @Test("prefetch: 无 cache → 走 refreshReadme")
+    func prefetchTriggersRefreshWhenMissing() async throws {
+        let (api, mock, repo, _, _) = try await makeAPI()
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            BytesResponse.ok(data: Data("<h1>fresh</h1>".utf8), etag: "\"e\"")
+        }
+
+        await api.prefetch(for: repo)
+
+        #expect(mock.readmeHTMLCalls.count == 1)
+    }
+
+    /// trending prefetch: 同上 softTtl 短路语义。
+    @Test("prefetchTrending: cache 在 softTtl 内 → 不调用 GitHub")
+    func prefetchTrendingSkipsWhenFresh() async throws {
+        let (api, mock, _, _, db) = try await makeAPI()
+        let trendingRepo = TrendingReadmeRepository(database: db)
+
+        let nowISO = ISO8601DateFormatter.shared.string(from: Date())
+        try await trendingRepo.upsert(TrendingReadme(
+            fullName: "octocat/hello",
+            renderedHtml: "fresh",
+            etag: nil,
+            lastModified: nil,
+            cachedAt: nowISO,
+            size: 5
+        ))
+
+        await api.prefetchTrending(owner: "octocat", repo: "hello")
+
+        #expect(mock.readmeHTMLCalls.isEmpty)
+    }
+
+    @Test("prefetchTrending: cache 过期 → 走 refreshTrendingReadme")
+    func prefetchTrendingTriggersRefreshWhenStale() async throws {
+        let (api, mock, _, _, db) = try await makeAPI()
+        let trendingRepo = TrendingReadmeRepository(database: db)
+
+        let stale = ISO8601DateFormatter.shared.string(from: Date().addingTimeInterval(-24 * 3600))
+        try await trendingRepo.upsert(TrendingReadme(
+            fullName: "octocat/hello",
+            renderedHtml: "stale",
+            etag: nil,
+            lastModified: nil,
+            cachedAt: stale,
+            size: 5
+        ))
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            BytesResponse.ok(data: Data("<h1>new</h1>".utf8), etag: "\"new\"")
+        }
+
+        await api.prefetchTrending(owner: "octocat", repo: "hello")
+
+        #expect(mock.readmeHTMLCalls.count == 1)
+    }
 }

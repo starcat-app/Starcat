@@ -527,6 +527,47 @@ struct ReadmeAPI {
         )
     }
 
+    // MARK: - Prefetch（HOM-201 P1-1）
+
+    /// 列表 hover 触发的 README 预拉（manage / active 路径）。
+    ///
+    /// 设计：
+    /// - 命中 softTtl 内的本地缓存 → 直接返回**不发任何请求**，避免 hover 路过批量浪费配额；
+    /// - 缓存缺失 / 已过期 → 走 `refreshReadme(for:)`（被 `ReadmeInflightTracker` 去重，
+    ///   并发 hover 同一 repo 只发一次 GitHub）。
+    /// - 错误静默吞掉（包括读缓存失败、网络失败等）—— 这只是预热，失败不该打扰用户；
+    ///   用户真进详情时 `loadInternal` 走正常 SWR 流程会再尝试一次并展示错误。
+    ///
+    /// **不接受**调用方传 TTL —— 与 ViewModel `loadInternal` 用同一个 `Self.softTtl=6h`，
+    /// 保证 prefetch 和"自动加载是否短路网络"两条判定永远对齐，不会出现"prefetch
+    /// 走网络 / 详情页又判 fresh 不复用刚拉到的数据"这种内部错位。
+    func prefetch(for repo: Repo) async {
+        // `try?` 套在返回 Optional 的 throws 调用上会得到 `T??`，先平坦化再 if-let
+        let cached: Readme? = (try? await cachedReadme(for: repo)) ?? nil
+        if let cached,
+           Self.isWithinSoftTtl(cachedAt: cached.cachedAt, now: Date(), softTtl: Self.softTtl) {
+            return
+        }
+        _ = await refreshReadme(for: repo)
+    }
+
+    /// 列表 hover 触发的 README 预拉（trending / weekly 路径）。
+    ///
+    /// 与 `prefetch(for:)` 同套 softTtl 短路语义；trending 路径在 HOM-201 P1-4 之前
+    /// 详情页 `loadTrending` 本身不读 softTtl 强制每次走网络，但**本预拉方法**仍按
+    /// softTtl 短路 —— 否则 hover trending 列表会批量打 GitHub 304；P1-4 落地后
+    /// 详情页也对齐 softTtl，整条路径就完全闭环了。
+    func prefetchTrending(owner: String, repo: String) async {
+        let fullName = "\(owner)/\(repo)"
+        // `try?` 套在返回 Optional 的 throws 调用上会得到 `T??`，先平坦化再 if-let
+        let cached: TrendingReadme? = (try? await trendingRepository.find(fullName: fullName)) ?? nil
+        if let cached,
+           Self.isWithinSoftTtl(cachedAt: cached.cachedAt, now: Date(), softTtl: Self.softTtl) {
+            return
+        }
+        _ = await refreshTrendingReadme(owner: owner, repo: repo)
+    }
+
     // MARK: - 纯逻辑工具（可独立单测）
 
     /// 判断 `cached_at`（ISO8601 字符串）距 `now` 是否仍在 `softTtl` 内。
