@@ -114,8 +114,21 @@ final class RepoAIInsightViewModel {
             phase = nil
         }
         do {
+            // 2026-06-14 dong4j 反馈：单仓路径之前漏传 hints，AI 不知道用户已有标签库 →
+            // 容易生成「向量搜索 / Vector Search / 向量检索」这种同义不同名标签。
+            // 与批量 AI 整理路径走同一份 `RepoAIInsightService.makeTagHints` 工厂，
+            // 信号源单一：repo 自身标签（强信号）+ 全库高频前 30（弱信号），见 helper 注释。
+            // includeTags == false 时不构造 hints，节省两次 DB 查询。
+            let hints: AITagHints = includeTags
+                ? await RepoAIInsightService.makeTagHints(
+                    for: repo,
+                    repoTagRepository: repoTagRepository,
+                    tagRepository: tagRepository
+                )
+                : .empty
             let result = try await service.generateInsight(
                 for: repo,
+                existingTagHints: hints,
                 includeTags: includeTags
             ) { [weak self] partial in
                 self?.streamingSummaryText = partial

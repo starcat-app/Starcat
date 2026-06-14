@@ -129,3 +129,35 @@ struct AITagSuggestion: Codable, Identifiable, Equatable, Sendable {
 
     var id: String { name.localizedLowercase }
 }
+
+/// AI 标签生成的"已有标签"提示，分两层语义传递给 prompt。
+///
+/// **为什么不用扁平 `[String]`**：
+/// service 层无法区分"哪些是 repo 已绑定的（强信号，应优先复用避免重复打）"
+/// 与"哪些是用户标签库里其它常用项（弱信号，作为风格参考）"。
+/// 扁平数组下 prompt 只能写一句"优先复用"，LLM 对 repo 自身已有标签
+/// 的避重感知会被全局标签稀释，容易生成「向量搜索 / Vector Search / 向量检索」
+/// 这种同义不同名标签让标签库爆炸。
+///
+/// **设计约束**：
+/// - 两个数组都已**去重 + 排序 + 截断**完成（由 `RepoAIInsightService.makeTagHints`
+///   工厂方法统一生成）；service 层不再做二次处理；
+/// - 排序保证 deterministic：同一份输入 → 同一份 source.hash → AI 摘要缓存稳定命中，
+///   避免 `Set → Array` 顺序不稳导致缓存频繁失效；
+/// - `repoTags` 与 `libraryTags` 互斥：`libraryTags` 工厂方法构造时已去掉 `repoTags`
+///   里的元素，避免同一标签在 prompt 里出现两次（占字符 + 信号矛盾）；
+/// - 任一数组为空时 prompt 对应段落不渲染（避免出现 `Existing tags ... :` 后跟空行）。
+struct AITagHints: Sendable, Equatable {
+
+    /// 当前 repo 已绑定的标签名（强信号，AI 必须优先复用避免同义重复）。
+    /// 列表全部传，不截断——单个 repo 标签数量普遍 ≤10，prompt 占用可控。
+    var repoTags: [String]
+
+    /// 用户标签库里其它高频标签名（弱信号，作为风格 / 命名习惯参考）。
+    /// 已去掉 `repoTags` 里的元素，并按使用次数倒序截断到约定上限。
+    var libraryTags: [String]
+
+    static let empty = AITagHints(repoTags: [], libraryTags: [])
+
+    var isEmpty: Bool { repoTags.isEmpty && libraryTags.isEmpty }
+}
