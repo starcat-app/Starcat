@@ -206,26 +206,74 @@ struct WebRateLimitTests {
 
     @Test("fractionRemaining 在 limit==0 时返回 0")
     func fractionWhenLimitIsZero() {
-        let rl = WebRateLimit(limit: 0, remaining: 0, resetAt: Date())
+        let rl = WebRateLimit(limit: 0, sessionUsed: 0, resetAt: Date())
         #expect(rl.fractionRemaining == 0)
     }
 
-    @Test("fractionRemaining 正常范围比例")
+    @Test("fractionRemaining 正常范围比例（sessionUsed 视角）")
     func fractionWithinNormalRange() {
-        let rl = WebRateLimit(limit: 20, remaining: 18, resetAt: Date())
+        // 上限 20，本地已用 2 → 剩余 18 → fractionRemaining = 0.9
+        let rl = WebRateLimit(limit: 20, sessionUsed: 2, resetAt: Date())
         #expect(rl.fractionRemaining == 0.9)
+        #expect(rl.sessionRemaining == 18)
+        #expect(!rl.isExhausted)
     }
 
-    @Test("fractionRemaining 在 remaining 超过 limit 时被 clamp 到 1")
-    func fractionClampedAboveOne() {
-        // 边界情况：上游 bug 时可能返回 remaining > limit，UI 不能因此画出"110%"色带
-        let rl = WebRateLimit(limit: 10, remaining: 11, resetAt: Date())
-        #expect(rl.fractionRemaining == 1)
-    }
-
-    @Test("fractionRemaining 在 remaining 为负时被 clamp 到 0")
-    func fractionClampedBelowZero() {
-        let rl = WebRateLimit(limit: 10, remaining: -3, resetAt: Date())
+    @Test("fractionRemaining 在 sessionUsed > limit 时被 clamp 到 0 + isExhausted=true")
+    func fractionExhaustedAndClamped() {
+        // 本地计数允许超过 API 上限（user 一直点搜索），此时视为「用尽」
+        let rl = WebRateLimit(limit: 10, sessionUsed: 12, resetAt: Date())
         #expect(rl.fractionRemaining == 0)
+        #expect(rl.sessionRemaining == 0)
+        #expect(rl.isExhausted)
+    }
+
+    @Test("sessionUsed == limit 时即视为用尽")
+    func fractionExactlyExhausted() {
+        let rl = WebRateLimit(limit: 10, sessionUsed: 10, resetAt: Date())
+        #expect(rl.fractionRemaining == 0)
+        #expect(rl.isExhausted)
+    }
+
+    @Test("sessionUsed == 0 时 fractionRemaining = 1")
+    func fractionFullWhenUnused() {
+        let rl = WebRateLimit(limit: 10, sessionUsed: 0, resetAt: Date())
+        #expect(rl.fractionRemaining == 1)
+        #expect(rl.sessionRemaining == 10)
+        #expect(!rl.isExhausted)
+    }
+}
+
+@Suite("AnySearch Usage Counter", .serialized)
+struct AnySearchUsageCounterTests {
+
+    @Test("初始 count 为 0")
+    func initialCountIsZero() async {
+        let counter = AnySearchUsageCounter()
+        let count = await counter.count
+        #expect(count == 0)
+    }
+
+    @Test("increment 累加并返回新值")
+    func incrementAccumulates() async {
+        let counter = AnySearchUsageCounter()
+        let v1 = await counter.increment()
+        let v2 = await counter.increment()
+        let v3 = await counter.increment()
+        #expect(v1 == 1)
+        #expect(v2 == 2)
+        #expect(v3 == 3)
+        let finalCount = await counter.count
+        #expect(finalCount == 3)
+    }
+
+    @Test("reset 归零")
+    func resetToZero() async {
+        let counter = AnySearchUsageCounter()
+        _ = await counter.increment()
+        _ = await counter.increment()
+        await counter.reset()
+        let count = await counter.count
+        #expect(count == 0)
     }
 }

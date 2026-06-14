@@ -37,9 +37,18 @@ struct SearchCenterView: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.42)
+            // 模态遮罩（dong4j 2026-06-14 第四次调整，对齐 Spotlight 真实意图）：
+            // - 历次反复：0.42 → 0.20 → 0.05 三步降下来，但 dong4j 真实诉求是
+            //   「主窗口变暗、浮层变亮」（即 macOS Spotlight 的视觉模型），
+            //   不是「主窗口保持亮、浮层也保持亮」。前 3 次降 dim 是误读需求。
+            // - 0.40 让主窗口明显「退到后景」，给浮层留出强烈焦点感。tap-to-dismiss
+            //   命中区也兼具焦点反馈，与 Spotlight / Raycast 等命令面板一致。
+            Color.black.opacity(0.40)
                 .ignoresSafeArea()
                 .onTapGesture { viewModel.dismiss() }
+                // dim 蒙层走纯 opacity 淡入淡出；与浮层 VStack 的 scale+opacity transition
+                // 同步播放，避免「浮层缩放出现时遮罩瞬切」造成的视觉割裂。
+                .transition(.opacity)
 
             VStack(spacing: 0) {
                 searchHeader
@@ -53,12 +62,19 @@ struct SearchCenterView: View {
                 webResultFooter
             }
             .frame(width: 760, height: 620)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            // 浮层背景（dong4j 2026-06-14 终版）：
+            // 极简：用 `windowBackgroundColor` 实底，浮层颜色直接 = 主窗口未压暗时的颜色。
+            // 主窗口被 dim 蒙层压暗后，浮层不受 dim 影响自然凸显——这就是 Spotlight 的视觉模型。
+            // 不需要 NSVisualEffectView / vibrant material / 双层叠加这些花活。
+            .background {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color(nsColor: .windowBackgroundColor))
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(.white.opacity(0.12))
             }
-            .shadow(color: .black.opacity(0.35), radius: 32, y: 14)
+            .shadow(color: .black.opacity(0.45), radius: 40, y: 16)
             .transition(reduceMotion ? .opacity : .scale(scale: 0.97).combined(with: .opacity))
         }
         .onAppear { isSearchFocused = true }
@@ -605,28 +621,31 @@ struct SearchCenterView: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    /// 右侧 rate limit chip：余量 > 0 走"剩余 N/M"形态，= 0 走"额度用尽 · 重置时间"。
+    /// 右侧 rate limit chip：未用尽走"已用 N/M"形态，用尽走"额度用尽 · 重置时间"。
+    ///
+    /// **语义重要变更（dong4j 2026-06-14）**：`sessionUsed` 来自本地计数（每次搜索 +1），
+    /// 不是 API 返回的 remaining（恒定假值）。详见 `WebRateLimit` 注释。
     @ViewBuilder
     private func rateLimitChip(_ rateLimit: WebRateLimit) -> some View {
-        if rateLimit.remaining <= 0 {
+        if rateLimit.isExhausted {
             exhaustedRateLimitChip(rateLimit)
         } else {
             normalRateLimitChip(rateLimit)
         }
     }
 
-    /// 余量 > 0 的 chip：圆点 + "剩余 N/M"，颜色按 fractionRemaining 三档。
+    /// 未用尽 chip：圆点 + "已用 N/M"，颜色按 fractionRemaining 三档（>50% 绿 / 20-50% 橙 / ≤20% 红）。
+    /// 颜色反映「还能用多少」的紧迫感，与文案「已用」相反但语义互补。
     ///
-    /// dong4j 2026-06-13 反馈：原 12% 背景 + caption2 在浅色主题下偏淡。
-    /// 改：背景 opacity 12% → 22%，前景文字 `.semibold` 加粗 + size 11，
-    /// chip 加 1pt 同色描边强化轮廓。明暗两套主题下都清晰可读。
+    /// 视觉规格（dong4j 2026-06-13）：背景 22% + 描边 35% + size 11 .semibold，
+    /// 明暗主题都清晰可读。
     private func normalRateLimitChip(_ rateLimit: WebRateLimit) -> some View {
         let color = Self.rateLimitColor(fraction: rateLimit.fractionRemaining)
         return HStack(spacing: 4) {
             Circle().fill(color).frame(width: 6, height: 6)
             Text(String(
-                format: String(localized: "search.web.rate.remainingFormat"),
-                rateLimit.remaining,
+                format: String(localized: "search.web.rate.usedFormat"),
+                rateLimit.sessionUsed,
                 rateLimit.limit
             ))
             .font(.system(size: 11, weight: .semibold).monospacedDigit())
@@ -641,7 +660,7 @@ struct SearchCenterView: View {
         .help(rateLimitTooltip(rateLimit))
     }
 
-    /// 余量 = 0 的 chip：红色 + "额度用尽 · HH:mm 重置"，传达"短时间内不可继续搜"。
+    /// 用尽 chip：红色 + "额度用尽 · HH:mm 重置"，传达"短时间内不可继续搜"。
     /// 同步加强对比度（背景 22% + 描边 + .semibold），与 normalRateLimitChip 统一。
     private func exhaustedRateLimitChip(_ rateLimit: WebRateLimit) -> some View {
         let resetText = Self.shortResetText(from: rateLimit.resetAt)
@@ -660,14 +679,14 @@ struct SearchCenterView: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    /// hover tooltip："今日已用 N/M · HH:mm 重置"。
-    /// 主显示只放"剩余 N/M"，把"已用 + 重置时间"挪到 tooltip，避免常态文案过长。
+    /// hover tooltip："本次会话已用 N/M · HH:mm 后 API 端窗口重置"。
+    /// 重点向用户解释：N 是本地会话计数（重启归零），M 是 API 真实上限，
+    /// 重置时间来自 API（指 API 端的窗口重置，不是本地 counter）。
     private func rateLimitTooltip(_ rateLimit: WebRateLimit) -> String {
-        let used = max(0, rateLimit.limit - rateLimit.remaining)
         let resetText = Self.shortResetText(from: rateLimit.resetAt)
         return String(
             format: String(localized: "search.web.rate.tooltipFormat"),
-            used,
+            rateLimit.sessionUsed,
             rateLimit.limit,
             resetText
         )
