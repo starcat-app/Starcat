@@ -27,7 +27,7 @@
 import Foundation
 import os
 
-struct AIExternalContext: Equatable, Sendable {
+struct AIExternalContext: Codable, Equatable, Sendable {
     let markdown: String
     let sources: [URL]
 }
@@ -35,9 +35,19 @@ struct AIExternalContext: Equatable, Sendable {
 @MainActor
 final class AnySearchContextProvider {
     private let settings: AppSettings
+    /// 磁盘缓存（HOM-69 / 2026-06-15 dong4j 拍板 24h TTL，key = repo_id）。
+    ///
+    /// 为什么 key 用 repo_id 不带 query：dong4j 决议——repo description 极少变，
+    /// 24h 内即使变了继续复用旧 cache 也可接受；用 repo_id 命中率最高、简化路径。
+    /// trending / activity ephemeral repo 拿不到稳定 id 时（id == 0），DiskAnySearchCache
+    /// 内部跳过不写盘，避免所有 ephemeral repo 互相覆盖。
+    ///
+    /// 测试场景：传 nil 关闭磁盘路径，或传 `init(rootOverride:)` 的实例隔离。
+    private let diskCache: DiskAnySearchCache?
 
-    init(settings: AppSettings) {
+    init(settings: AppSettings, diskCache: DiskAnySearchCache? = nil) {
         self.settings = settings
+        self.diskCache = diskCache ?? DiskAnySearchCache.shared
     }
 
     func collect(for repo: Repo) async throws -> AIExternalContext? {
@@ -51,6 +61,7 @@ final class AnySearchContextProvider {
         //   - HTTP 抛错：error 级（在 RepoAIInsightService 里已有，此处只补响应路径）
         //   - 空结果：info 级（这是用户最想知道的"调用成功但拉到 0 条"）
         //   - 成功：info 级 + 命中条数
+        //   - 磁盘命中：info 级（让 dong4j 排障时能确认"这次没走网络"）
         guard Self.allowsExternalContext(
             repoIsPrivate: repo.isPrivate,
             enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
@@ -64,6 +75,19 @@ final class AnySearchContextProvider {
                 allowPrivate=\(self.settings.aiExternalContextAllowPrivateRepos, privacy: .public)
                 """)
             return nil
+        }
+
+        // HOM-69：磁盘缓存命中直接返回，省 2 次 AnySearch API 调用（一次 collect 用 2 个 query）。
+        //
+        // 不命中也不报错——下面继续走网络路径。磁盘读失败（try?）也同样降级走网络，
+        // 不能因 cache 异常阻断主流程。
+        if let disk = diskCache,
+           let cached = try? await disk.loadAISummary(repoId: repo.id) {
+            AppLog.ai.info("""
+                AnySearch.collect disk cache hit: repo=\(repo.fullName, privacy: .public) \
+                repoId=\(repo.id, privacy: .public) sources=\(cached.sources.count, privacy: .public)
+                """)
+            return cached
         }
 
         let client = AnySearchClient(
@@ -136,7 +160,13 @@ final class AnySearchContextProvider {
         \(entries.joined(separator: "\n"))
         </external_context>
         """
-        return AIExternalContext(markdown: markdown, sources: unique.map(\.normalizedURL))
+        let context = AIExternalContext(markdown: markdown, sources: unique.map(\.normalizedURL))
+        // HOM-69：网络拉成功后写盘。失败仅静默吞错（不能因写盘失败阻断 AI 摘要主流程）。
+        // ephemeral repo（id == 0）由 DiskAnySearchCache 内部跳过，此处无需额外守卫。
+        if let disk = diskCache {
+            try? await disk.saveAISummary(repoId: repo.id, context: context)
+        }
+        return context
     }
 
     nonisolated static func queries(for repo: Repo) -> [String] {

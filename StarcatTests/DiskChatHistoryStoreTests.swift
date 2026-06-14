@@ -1,0 +1,305 @@
+//
+//  DiskChatHistoryStoreTests.swift
+//  StarcatTests
+//
+//  覆盖 DiskChatHistoryStore CRUD + LRU + index 自愈（HOM-70 / 2026-06-15）。
+//
+//  关注点：
+//  - listSessions：index.json 读到 / 损坏自愈重建 / 完全缺失从 session 文件重建；
+//  - saveSession：单条 upsert 维护 index；同一 sessionId 重复保存覆盖不重复；
+//  - deleteSession：清 session 文件 + index 同步移除；删完最后一个 → index.json 也删；
+//  - deleteAllForRepo：清整个 <owner>/<repo>/ 目录；
+//  - deleteEverything：清整个 chat-history 根目录；
+//  - LRU sweep：仅在总量 > 100 MB 时触发，按 mtime 升序删；无 TTL；
+//  - Observable 派生量 totalBytes / sessionCount / repoCount 同步更新；
+//  - 损坏 JSON → loadSession 返 nil 且自动删损坏文件 + 同步 index。
+//
+
+import Foundation
+import Testing
+@testable import Starcat
+
+@MainActor
+@Suite("DiskChatHistoryStore")
+struct DiskChatHistoryStoreTests {
+
+    private func makeIsolatedStore(file: StaticString = #filePath, line: UInt = #line) throws
+        -> (store: DiskChatHistoryStore, root: URL)
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-chat-history-test-\(UUID().uuidString)", isDirectory: true)
+        let store = DiskChatHistoryStore(rootOverride: root)
+        return (store, root)
+    }
+
+    private func cleanup(_ root: URL) {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    private func makeSession(
+        id: UUID = UUID(),
+        title: String = "hello",
+        messageCount: Int = 2,
+        createdAt: Date = Date(),
+        updatedAt: Date? = nil
+    ) -> ChatSession {
+        let messages = (0..<messageCount).map { i in
+            ChatMessage(
+                id: UUID(),
+                role: i % 2 == 0 ? .user : .assistant,
+                content: "msg-\(i)",
+                timestamp: createdAt
+            )
+        }
+        return ChatSession(
+            id: id,
+            title: title,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            messages: messages
+        )
+    }
+
+    // MARK: - listSessions
+
+    @Test("listSessions 无任何 session 返回空数组")
+    func listSessionsEmpty() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let list = try store.listSessions(owner: "octo", repo: "demo")
+        #expect(list.isEmpty)
+    }
+
+    @Test("saveSession + listSessions 同 (owner,repo) 往返")
+    func saveAndList() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let session = makeSession(title: "first")
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        let list = try store.listSessions(owner: "octo", repo: "demo")
+        #expect(list.count == 1)
+        #expect(list.first?.id == session.id)
+        #expect(list.first?.title == "first")
+        #expect(list.first?.messageCount == 2)
+    }
+
+    @Test("loadSession 命中往返")
+    func loadSession() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let session = makeSession(title: "loadme", messageCount: 3)
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        let loaded = try store.loadSession(owner: "octo", repo: "demo", sessionId: session.id)
+        #expect(loaded?.id == session.id)
+        #expect(loaded?.title == "loadme")
+        #expect(loaded?.messages.count == 3)
+    }
+
+    @Test("loadSession 未命中返回 nil")
+    func loadMissing() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let loaded = try store.loadSession(owner: "octo", repo: "demo", sessionId: UUID())
+        #expect(loaded == nil)
+    }
+
+    @Test("同 sessionId 重复保存覆盖且 index 不重复")
+    func saveOverwrites() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let id = UUID()
+        let v1 = makeSession(id: id, title: "v1", messageCount: 1)
+        let v2 = makeSession(id: id, title: "v2", messageCount: 4)
+        try store.saveSession(owner: "octo", repo: "demo", session: v1)
+        try store.saveSession(owner: "octo", repo: "demo", session: v2)
+
+        let list = try store.listSessions(owner: "octo", repo: "demo")
+        #expect(list.count == 1)
+        #expect(list.first?.title == "v2")
+        #expect(list.first?.messageCount == 4)
+    }
+
+    @Test("listSessions 按 updatedAt 倒序（最新在前）")
+    func listSortedNewestFirst() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let old = makeSession(title: "old", updatedAt: Date(timeIntervalSinceNow: -3600))
+        let new = makeSession(title: "new", updatedAt: Date())
+        try store.saveSession(owner: "octo", repo: "demo", session: old)
+        try store.saveSession(owner: "octo", repo: "demo", session: new)
+
+        let list = try store.listSessions(owner: "octo", repo: "demo")
+        #expect(list.count == 2)
+        #expect(list.first?.title == "new")
+        #expect(list.last?.title == "old")
+    }
+
+    @Test("不同 (owner,repo) 互不干扰")
+    func differentReposIsolated() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let a = makeSession(title: "A")
+        let b = makeSession(title: "B")
+        try store.saveSession(owner: "octo", repo: "demo", session: a)
+        try store.saveSession(owner: "octo", repo: "other", session: b)
+
+        #expect(try store.listSessions(owner: "octo", repo: "demo").map(\.title) == ["A"])
+        #expect(try store.listSessions(owner: "octo", repo: "other").map(\.title) == ["B"])
+    }
+
+    // MARK: - delete
+
+    @Test("deleteSession 移除文件 + index 同步移除条目")
+    func deleteSessionSyncsIndex() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let a = makeSession(title: "A")
+        let b = makeSession(title: "B")
+        try store.saveSession(owner: "octo", repo: "demo", session: a)
+        try store.saveSession(owner: "octo", repo: "demo", session: b)
+
+        try store.deleteSession(owner: "octo", repo: "demo", sessionId: a.id)
+
+        let remaining = try store.listSessions(owner: "octo", repo: "demo")
+        #expect(remaining.count == 1)
+        #expect(remaining.first?.title == "B")
+        #expect(try store.loadSession(owner: "octo", repo: "demo", sessionId: a.id) == nil)
+    }
+
+    @Test("deleteAllForRepo 清空该 repo 全部 sessions")
+    func deleteAllForRepoWipesRepo() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        try store.saveSession(owner: "octo", repo: "demo", session: makeSession(title: "A"))
+        try store.saveSession(owner: "octo", repo: "demo", session: makeSession(title: "B"))
+        try store.saveSession(owner: "octo", repo: "other", session: makeSession(title: "C"))
+
+        try store.deleteAllForRepo(owner: "octo", repo: "demo")
+
+        #expect(try store.listSessions(owner: "octo", repo: "demo").isEmpty)
+        #expect(try store.listSessions(owner: "octo", repo: "other").count == 1)
+    }
+
+    @Test("deleteEverything 清空整个 chat-history 根")
+    func deleteEverythingWipesAll() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        try store.saveSession(owner: "octo", repo: "demo", session: makeSession())
+        try store.saveSession(owner: "octo", repo: "other", session: makeSession())
+
+        try store.deleteEverything()
+
+        #expect(store.sessionCount == 0)
+        #expect(store.totalBytes == 0)
+        #expect(store.repoCount == 0)
+        #expect(try store.listSessions(owner: "octo", repo: "demo").isEmpty)
+    }
+
+    // MARK: - Observable 派生量
+
+    @Test("Observable 派生量随 save / delete 同步更新")
+    func observableUpdates() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        #expect(store.sessionCount == 0)
+        #expect(store.repoCount == 0)
+        #expect(store.totalBytes == 0)
+
+        try store.saveSession(owner: "octo", repo: "demo", session: makeSession())
+        #expect(store.sessionCount == 1)
+        #expect(store.repoCount == 1)
+        #expect(store.totalBytes > 0)
+
+        try store.saveSession(owner: "octo", repo: "other", session: makeSession())
+        #expect(store.sessionCount == 2)
+        #expect(store.repoCount == 2)
+
+        try store.deleteEverything()
+        #expect(store.sessionCount == 0)
+        #expect(store.repoCount == 0)
+        #expect(store.totalBytes == 0)
+    }
+
+    // MARK: - index 自愈
+
+    @Test("index.json 损坏 → listSessions 自动从 session 文件重建")
+    func corruptedIndexAutoRebuilds() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let session = makeSession(title: "valid")
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        // 直接破坏 index.json
+        let indexPath = root
+            .appendingPathComponent("octo", isDirectory: true)
+            .appendingPathComponent("demo", isDirectory: true)
+            .appendingPathComponent("index.json")
+        try Data("garbage not json".utf8).write(to: indexPath)
+
+        let list = try store.listSessions(owner: "octo", repo: "demo")
+        #expect(list.count == 1)
+        #expect(list.first?.title == "valid")
+    }
+
+    @Test("index.json 完全缺失 → listSessions 仍能从 session 文件重建")
+    func missingIndexAutoRebuilds() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let session = makeSession(title: "orphan")
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        let indexPath = root
+            .appendingPathComponent("octo", isDirectory: true)
+            .appendingPathComponent("demo", isDirectory: true)
+            .appendingPathComponent("index.json")
+        try FileManager.default.removeItem(at: indexPath)
+
+        let list = try store.listSessions(owner: "octo", repo: "demo")
+        #expect(list.count == 1)
+        #expect(list.first?.title == "orphan")
+    }
+
+    // MARK: - 损坏 session 文件
+
+    @Test("loadSession decode 失败 → 返 nil 且删损坏文件 + 同步 index")
+    func corruptedSessionRemoved() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let id = UUID()
+        let dir = root.appendingPathComponent("octo/demo", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let badPath = dir.appendingPathComponent("\(id.uuidString).json")
+        try Data("{ not a session }".utf8).write(to: badPath)
+        // 也写一个伪 index 让自愈逻辑早期返回它，避免 fallback 路径覆盖结果
+        let indexPath = dir.appendingPathComponent("index.json")
+        let fakeIndex = """
+        { "sessions": [
+            { "id": "\(id.uuidString)", "title": "fake", "createdAt": "\(ISO8601DateFormatter().string(from: Date()))", "updatedAt": "\(ISO8601DateFormatter().string(from: Date()))", "messageCount": 0, "bytes": 0 }
+        ] }
+        """
+        try Data(fakeIndex.utf8).write(to: indexPath)
+
+        let loaded = try store.loadSession(owner: "octo", repo: "demo", sessionId: id)
+        #expect(loaded == nil)
+        // 损坏文件被删
+        #expect(!FileManager.default.fileExists(atPath: badPath.path))
+        // index 同步更新（id 移除）
+        let list = try store.listSessions(owner: "octo", repo: "demo")
+        #expect(list.allSatisfy { $0.id != id })
+    }
+
+    // MARK: - LRU
+
+    @Test("LRU sweep：未超 100MB 不删任何文件")
+    func lruSweepUnderLimitNoop() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        try store.saveSession(owner: "octo", repo: "demo", session: makeSession())
+        let before = store.sessionCount
+
+        try store.lruSweep()
+        #expect(store.sessionCount == before)
+    }
+}
