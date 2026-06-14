@@ -83,7 +83,15 @@ struct ReadmeAPINetworkTests {
         // W7+：ReadmeAPI 新增 trendingRepository 必填参数，本套测试只验 manage 路径，
         // 用同一个内存库装一个 TrendingReadmeRepository 即可（不会被本套用例触达）。
         let trendingReadmeRepo = TrendingReadmeRepository(database: db)
-        let api = ReadmeAPI(client: mock, repository: readmeRepo, trendingRepository: trendingReadmeRepo)
+        // HOM-201 P0-3：ReadmeAPI 新增 inflightTracker 必填参数。本套用例每次都新建
+        // 一份 fresh tracker，避免用例之间共享 in-flight 状态。
+        let inflightTracker = ReadmeInflightTracker()
+        let api = ReadmeAPI(
+            client: mock,
+            repository: readmeRepo,
+            trendingRepository: trendingReadmeRepo,
+            inflightTracker: inflightTracker
+        )
         return (api, mock, repo, readmeRepo, db)
     }
 

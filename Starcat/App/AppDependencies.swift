@@ -49,6 +49,12 @@ final class AppDependencies {
     /// 共用同一实例，让"manage 命中 404 → 切到 active 看同 repo"等跨场景路径
     /// 短路掉重复的 GitHub 请求。详见 `ReadmeAvailability.swift`。
     let readmeAvailability: ReadmeAvailability
+    /// HOM-201 P0-3（2026-06-14）：README 网络刷新 in-flight 去重器。
+    ///
+    /// 注入到 `ReadmeAPI`，让同 `repo.id` / `owner/repo` 的并发 refresh 请求
+    /// 合并为一个 Task，多个 ViewModel（manage / active / weekly 等）同时请求
+    /// 时只发一次 GitHub。详见 `ReadmeInflightTracker.swift`。
+    let readmeInflightTracker: ReadmeInflightTracker
     /// W4 Batch A1 引入：标签 CRUD。
     let tagRepository: any TagRepositoryProtocol
     /// W4 Batch A1 引入：repo ↔ tag 关联 + 批量打标签。
@@ -293,10 +299,14 @@ final class AppDependencies {
         // W7+ 新增：Trending README 持久化（trending_readmes 表，PK = full_name）
         let trendingReadmeRepo = TrendingReadmeRepository(database: db)
         self.trendingReadmeRepository = trendingReadmeRepo
+        // HOM-201 P0-3：网络刷新 in-flight 去重器。先于 ReadmeAPI 构造，作为依赖注入。
+        let inflightTracker = ReadmeInflightTracker()
+        self.readmeInflightTracker = inflightTracker
         self.readmeAPI = ReadmeAPI(
             client: api,
             repository: readmeRepo,
-            trendingRepository: trendingReadmeRepo
+            trendingRepository: trendingReadmeRepo,
+            inflightTracker: inflightTracker
         )
         // HOM-201 P0-2：跨 VM 共享的 404 短路状态容器。无依赖、无 IO，构造即用。
         self.readmeAvailability = ReadmeAvailability()

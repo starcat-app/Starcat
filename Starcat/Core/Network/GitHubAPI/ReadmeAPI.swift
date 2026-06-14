@@ -47,7 +47,12 @@ import Foundation
 ///
 /// 用 enum 而非 throws 是为了让调用方在"刷新失败但旧缓存还能用"时静默回退，
 /// 不必把网络错误传到 UI 打扰用户（SWR 模式）。
-enum ReadmeRefreshResult {
+///
+/// HOM-201 P0-3（2026-06-14）：标 `@unchecked Sendable` 是为了让本枚举能放进
+/// `Task<ReadmeRefreshResult, Never>`、跨 `ReadmeInflightTracker` actor 边界传递。
+/// `.failed(Error)` 让自动 Sendable 推导失败（Error 协议没标 Sendable），但实际
+/// 入参都是 `NetworkError` enum / GRDB error 等不可变值类型，跨线程读取安全。
+enum ReadmeRefreshResult: @unchecked Sendable {
     /// 200：拿到新 HTML，已 upsert 到本地。
     case updated(Readme)
     /// 304：本地缓存仍有效，cached_at 已 touch（readme.cachedAt 已是最新）。
@@ -68,6 +73,13 @@ struct ReadmeAPI {
     /// W7+ 引入：Trending README 持久化（与 manage 路径独立的 `trending_readmes` 表）。
     /// 用 owner/repo 作 PK，与 manage 的 `repo_id` PK 路径互不污染。
     let trendingRepository: TrendingReadmeRepository
+    /// HOM-201 P0-3（2026-06-14）：网络刷新 in-flight 去重器。
+    ///
+    /// 由 `AppDependencies` 持有单例。同一 `repo.id`（manage 路径）或 `owner/repo`
+    /// （trending 路径）并发进入 `refreshReadme(for:)` / `refreshTrendingReadme(...)`
+    /// 时，第二个及之后的请求 await 首发 Task 的结果，不再额外打 GitHub。
+    /// 详见 `ReadmeInflightTracker.swift` 文件头。
+    let inflightTracker: ReadmeInflightTracker
 
     /// 软过期阈值。
     ///
@@ -85,11 +97,13 @@ struct ReadmeAPI {
     init(
         client: any GitHubAPIClientProtocol,
         repository: ReadmeRepository,
-        trendingRepository: TrendingReadmeRepository
+        trendingRepository: TrendingReadmeRepository,
+        inflightTracker: ReadmeInflightTracker
     ) {
         self.client = client
         self.repository = repository
         self.trendingRepository = trendingRepository
+        self.inflightTracker = inflightTracker
     }
 
     // MARK: - Public
@@ -110,9 +124,22 @@ struct ReadmeAPI {
     ///
     /// 本方法不做 softTtl 短路 —— 调用方应用 `isWithinSoftTtl` 自己判断是否调本方法。
     ///
+    /// HOM-201 P0-3（2026-06-14）：外层包了 `ReadmeInflightTracker.dedupeManage` ——
+    /// 同 `repo.id` 的并发请求复用首发 Task，返回完全相同的 result。
+    /// `refreshReadme` 不区分调用方的 forceRefresh（语义都是带 If-None-Match 条件请求）,
+    /// 共享 Task 是安全的；A 期望"refresh 一次"和 B 期望"refresh 一次"等价于两人一起
+    /// 等同一次结果。
+    ///
     /// - Parameter repo: 目标仓库
     /// - Returns: `ReadmeRefreshResult` —— `.updated` / `.notModified` / `.notFound` / `.failed`
     func refreshReadme(for repo: Repo) async -> ReadmeRefreshResult {
+        await inflightTracker.dedupeManage(repoId: repo.id) {
+            await self.performRefreshReadme(for: repo)
+        }
+    }
+
+    /// `refreshReadme(for:)` 的真实业务实现，由 `inflightTracker.dedupeManage` 包装调用。
+    private func performRefreshReadme(for repo: Repo) async -> ReadmeRefreshResult {
         let existing: Readme?
         do {
             existing = try await repository.find(repoId: repo.id)
@@ -204,8 +231,23 @@ struct ReadmeAPI {
     /// 与 manage 路径的差异：
     /// - 走 `TrendingReadmeRepository`（PK = full_name）而非 `ReadmeRepository`（PK = repo_id）
     /// - 返回 `Readme`（repoId=0 占位）让 ReadmeViewModel 的 SWR 模板能复用
+    ///
+    /// HOM-201 P0-3（2026-06-14）：外层包了 `ReadmeInflightTracker.dedupeTrending` ——
+    /// 同 `owner/repo` 并发请求复用首发 Task。同 manage 路径一样不抛错、所有错误包到
+    /// `.failed`，Task value 共享语义安全。
     func refreshTrendingReadme(owner: String, repo: String) async -> ReadmeRefreshResult {
         let fullName = "\(owner)/\(repo)"
+        return await inflightTracker.dedupeTrending(fullName: fullName) {
+            await self.performRefreshTrendingReadme(owner: owner, repo: repo, fullName: fullName)
+        }
+    }
+
+    /// `refreshTrendingReadme(...)` 的真实业务实现，由 `inflightTracker.dedupeTrending` 包装调用。
+    private func performRefreshTrendingReadme(
+        owner: String,
+        repo: String,
+        fullName: String
+    ) async -> ReadmeRefreshResult {
 
         // 第一步：取本地缓存的 ETag / Last-Modified 做条件请求
         let existing: TrendingReadme?
