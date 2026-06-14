@@ -76,8 +76,6 @@ struct ManageDetailContent: View {
             state: readmeVM.state,
             // 统一构造带末尾 `/` 的目录 URL，避免 WebKit 把 HEAD 当文件名后丢掉分支段。
             baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
-            owner: repo.owner,
-            repo: repo.name,
             onScrollOffsetChange: onScrollOffset,
             translationControl: ReadmeTranslationControl(
                 repo: repo,

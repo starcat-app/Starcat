@@ -54,8 +54,6 @@ struct ActivityRepoDetailContent: View {
         ReadmeStateView(
             state: readmeVM.state,
             baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
-            owner: repo.owner,
-            repo: repo.name,
             onScrollOffsetChange: onScrollOffset,
             translationControl: ReadmeTranslationControl(
                 repo: repo,

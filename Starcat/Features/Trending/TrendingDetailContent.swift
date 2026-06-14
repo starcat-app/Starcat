@@ -59,8 +59,6 @@ struct TrendingDetailContent: View {
         ReadmeStateView(
             state: readmeVM.state,
             baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
-            owner: repo.owner,
-            repo: repo.name,
             onScrollOffsetChange: onScrollOffset,
             // R-01：仅本地命中（id != 0）的 repo 才提供翻译入口。
             // 避免 ephemeral repo 用 id=0 走翻译缓存造成串扰。
@@ -78,10 +76,13 @@ struct TrendingDetailContent: View {
             // 已 star 仓库也用 trending 入口刷 readme,保证 Trending 页面体验一致——
             // 用户在 trending row 点开看到的 README 永远来自 trending API 路径,
             // 不与 manage 详情页的 SWR 状态机相互污染。
+            // HOM-201 P1-4（2026-06-14）:onRetry 是用户主动刷新(底部 cacheFooter 刷新按钮),
+            // 必须绕过 softTtl 短路,否则按 6h TTL 6 小时内会被忽略不刷新。
             readmeVM.loadTrending(
                 owner: repo.owner,
                 repo: repo.name,
-                isLoggedIn: authSession.state.isAuthenticated
+                isLoggedIn: authSession.state.isAuthenticated,
+                forceRefresh: true
             )
         } onLogin: {
             authSession.signIn()

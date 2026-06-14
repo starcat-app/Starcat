@@ -43,6 +43,24 @@ final class AppDependencies {
     let readmeRepository: ReadmeRepository
     /// Week 4 引入：README HTML 抓取 + 缓存协调。
     let readmeAPI: ReadmeAPI
+    /// HOM-201 P0-2（2026-06-14）：README "已知不存在" 共享会话状态。
+    ///
+    /// 由所有 `ReadmeViewModel`（manage 全局 VM + active/weekly 各 Shell 局部 VM）
+    /// 共用同一实例，让"manage 命中 404 → 切到 active 看同 repo"等跨场景路径
+    /// 短路掉重复的 GitHub 请求。详见 `ReadmeAvailability.swift`。
+    let readmeAvailability: ReadmeAvailability
+    /// HOM-201 P0-3（2026-06-14）：README 网络刷新 in-flight 去重器。
+    ///
+    /// 注入到 `ReadmeAPI`，让同 `repo.id` / `owner/repo` 的并发 refresh 请求
+    /// 合并为一个 Task，多个 ViewModel（manage / active / weekly 等）同时请求
+    /// 时只发一次 GitHub。详见 `ReadmeInflightTracker.swift`。
+    let readmeInflightTracker: ReadmeInflightTracker
+    /// HOM-201 P2-3（2026-06-14）：README 缓存命中 / 刷新结果计数器。
+    ///
+    /// 进程级,SWR 状态机所有终态(cachedHit / refresh-200 / 304 / 404 / failed)
+    /// 都在 `ReadmeAPI` 内 record;Settings 调试段 / AppLog 周期 flush 都可以读
+    /// `snapshot()` 拿当前累计值。详见 `ReadmeMetrics.swift`。
+    let readmeMetrics: ReadmeMetrics
     /// W4 Batch A1 引入：标签 CRUD。
     let tagRepository: any TagRepositoryProtocol
     /// W4 Batch A1 引入：repo ↔ tag 关联 + 批量打标签。
@@ -221,6 +239,40 @@ final class AppDependencies {
     /// 详情页 Repo 解析链（Local → Hint → BackendAggregate(占位) → GitHub → Minimal）。
     let repoResolver: RepoResolver
 
+    // MARK: - README onHTMLLoaded handler (HOM-201 P0-4, 2026-06-14)
+
+    /// 构造 `ReadmeViewModel.onHTMLLoaded` 回调用的 closure。
+    ///
+    /// 原本只在 `HomeView.init` 里 inline 给 manage 全局 VM 挂载，导致从 active /
+    /// weekly 详情页进入已 star 仓库时不会触发 `refreshMarkdownIfNeeded` +
+    /// `refreshIndexIfChanged` —— 后者是文档 `docs/详细设计/26-向量搜索改进.md`
+    /// §6 关键流程表承诺的"详情页 README 拉到 → 异步补 raw markdown 落
+    /// readmes.content + 视情况重建向量索引"触发源。manage 与 active 都走
+    /// `loadInternal`（依赖同一 `readmes` 表 PK=repo_id），两者行为应一致；本工厂方法
+    /// 把 closure 提到 DI 层，让 `ActivityDetailScaffoldShell` 等 Shell 局部 VM
+    /// 也能复用同一份逻辑。
+    ///
+    /// **trending / weekly 路径**：`ReadmeViewModel.loadTrending` 内部根本不调
+    /// `onHTMLLoaded`（参见 ReadmeViewModel 实现），所以传给走 trending 路径的 Shell
+    /// （Weekly）是 dead-code dispatch，无副作用——传入只是为了让所有 Shell 装配
+    /// 代码同构、避免日后切换路径时漏接。
+    ///
+    /// **生命周期**：closure 仅 capture `readmeAPI` / `semanticSearchService` 两个
+    /// App 级长寿命引用，不持有 `self`，避免 closure 长期挂在 `ReadmeViewModel` 上
+    /// 把整个 `AppDependencies` 的释放时机绑定到 ViewModel。
+    func makeReadmeOnHTMLLoadedHandler() -> @MainActor (Repo) -> Void {
+        let readmeAPI = self.readmeAPI
+        let semantic = self.semanticSearchService
+        return { repo in
+            Task { @MainActor in
+                let result = await readmeAPI.refreshMarkdownIfNeeded(for: repo)
+                if case .updated = result {
+                    await semantic.refreshIndexIfChanged(for: repo)
+                }
+            }
+        }
+    }
+
     // MARK: - 初始化
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
@@ -287,11 +339,21 @@ final class AppDependencies {
         // W7+ 新增：Trending README 持久化（trending_readmes 表，PK = full_name）
         let trendingReadmeRepo = TrendingReadmeRepository(database: db)
         self.trendingReadmeRepository = trendingReadmeRepo
+        // HOM-201 P0-3：网络刷新 in-flight 去重器。先于 ReadmeAPI 构造，作为依赖注入。
+        let inflightTracker = ReadmeInflightTracker()
+        self.readmeInflightTracker = inflightTracker
+        // HOM-201 P2-3:缓存指标计数器。无 IO 无依赖,构造即用,注入 ReadmeAPI。
+        let metrics = ReadmeMetrics()
+        self.readmeMetrics = metrics
         self.readmeAPI = ReadmeAPI(
             client: api,
             repository: readmeRepo,
-            trendingRepository: trendingReadmeRepo
+            trendingRepository: trendingReadmeRepo,
+            inflightTracker: inflightTracker,
+            metrics: metrics
         )
+        // HOM-201 P0-2：跨 VM 共享的 404 短路状态容器。无依赖、无 IO，构造即用。
+        self.readmeAvailability = ReadmeAvailability()
 
         let summaryRepo = GRDBAISummaryRepository(database: db)
         self.aiSummaryRepository = summaryRepo
