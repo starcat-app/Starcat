@@ -86,6 +86,14 @@ struct ReadmeAPI {
     /// 详见 `ReadmeInflightTracker.swift` 文件头。
     let inflightTracker: ReadmeInflightTracker
 
+    /// HOM-201 P2-3（2026-06-14）：README 缓存命中 / 刷新结果计数器。
+    ///
+    /// 在 SWR 状态机的所有终态(cachedHit / refresh-200 / 304 / 404 / failed)
+    /// 各埋一次,提供后续优化判断的事实证据(命中率 / 304 占比 / 失败率)。
+    /// 进程级,不持久化;由 `AppDependencies` 持有单例。
+    /// 详见 `ReadmeMetrics.swift` 文件头。
+    let metrics: ReadmeMetrics
+
     /// 软过期阈值。
     ///
     /// **Phase 2 后语义变化**：本常量不再被 ReadmeAPI 自身使用，
@@ -103,12 +111,14 @@ struct ReadmeAPI {
         client: any GitHubAPIClientProtocol,
         repository: ReadmeRepository,
         trendingRepository: TrendingReadmeRepository,
-        inflightTracker: ReadmeInflightTracker
+        inflightTracker: ReadmeInflightTracker,
+        metrics: ReadmeMetrics
     ) {
         self.client = client
         self.repository = repository
         self.trendingRepository = trendingRepository
         self.inflightTracker = inflightTracker
+        self.metrics = metrics
     }
 
     // MARK: - Public
@@ -135,6 +145,8 @@ struct ReadmeAPI {
     /// - Returns: 缓存命中返回 Readme（可能来自 manage 或 trending 表）；未命中 nil
     func cachedReadme(for repo: Repo) async throws -> Readme? {
         if let manageHit = try await repository.find(repoId: repo.id) {
+            // HOM-201 P2-3:manage 表直接命中计入 cachedHit
+            await metrics.recordCachedHit()
             return manageHit
         }
 
@@ -170,6 +182,8 @@ struct ReadmeAPI {
             // 写入失败：仍返回 trending 内容给 UI 用，下次再 promote
             AppLog.network.warning("cachedReadme trending → manage promote upsert 失败 \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
+        // HOM-201 P2-3:trending → manage promote 也算 cachedHit(本次不发网络)
+        await metrics.recordCachedHit()
         return promoted
     }
 
@@ -196,11 +210,16 @@ struct ReadmeAPI {
     }
 
     /// `refreshReadme(for:)` 的真实业务实现，由 `inflightTracker.dedupeManage` 包装调用。
+    ///
+    /// HOM-201 P2-3:各终态末尾 record metrics(refresh200 / 304 / 404 / failed)。
+    /// 调用 `refreshUnconditional` 兜底时不在本方法 record(让兜底自身 record),
+    /// 避免一次刷新计入两次。
     private func performRefreshReadme(for repo: Repo) async -> ReadmeRefreshResult {
         let existing: Readme?
         do {
             existing = try await repository.find(repoId: repo.id)
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
 
@@ -217,8 +236,10 @@ struct ReadmeAPI {
             if existing != nil {
                 try? await repository.delete(repoId: repo.id)
             }
+            await metrics.recordRefresh404()
             return .notFound
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
 
@@ -226,6 +247,7 @@ struct ReadmeAPI {
         if raw.notModified {
             guard let cached = existing else {
                 // 极端 case：本地缓存被清掉但服务端仍 304 → 兜底无条件重拉
+                // 不在此处 record,refreshUnconditional 自己处理
                 AppLog.network.warning("README 304 但本地缓存丢失，无条件重拉 \(repo.fullName, privacy: .public)")
                 return await refreshUnconditional(repo: repo)
             }
@@ -233,6 +255,7 @@ struct ReadmeAPI {
             try? await repository.touchCachedAt(repoId: repo.id, at: now)
             var refreshed = cached
             refreshed.cachedAt = ISO8601DateFormatter.shared.string(from: now)
+            await metrics.recordRefresh304()
             return .notModified(refreshed)
         }
 
@@ -255,8 +278,10 @@ struct ReadmeAPI {
         do {
             try await repository.upsert(readme)
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
+        await metrics.recordRefresh200()
         return .updated(readme)
     }
 
@@ -304,6 +329,10 @@ struct ReadmeAPI {
     }
 
     /// `refreshTrendingReadme(...)` 的真实业务实现，由 `inflightTracker.dedupeTrending` 包装调用。
+    ///
+    /// HOM-201 P2-3:与 `performRefreshReadme` 同款 metrics 埋点;trending 路径 304
+    /// 返回的是 `.updated(...)`(因为 cachedAt 已更新),但**实际网络层面**是 304,
+    /// 仍 record 为 refresh304 不是 refresh200,与 manage 路径口径一致。
     private func performRefreshTrendingReadme(
         owner: String,
         repo: String,
@@ -315,6 +344,7 @@ struct ReadmeAPI {
         do {
             existing = try await trendingRepository.find(fullName: fullName)
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
 
@@ -332,8 +362,10 @@ struct ReadmeAPI {
             if existing != nil {
                 try? await trendingRepository.delete(fullName: fullName)
             }
+            await metrics.recordRefresh404()
             return .notFound
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
 
@@ -341,6 +373,7 @@ struct ReadmeAPI {
         if raw.notModified {
             guard let cached = existing else {
                 // 极端 case：本地缓存被清掉但服务端仍 304 → 兜底无条件重拉
+                // 不在此处 record,refreshTrendingUnconditional 自己处理
                 AppLog.network.warning("Trending README 304 但本地缓存丢失，无条件重拉 \(fullName, privacy: .public)")
                 return await refreshTrendingUnconditional(owner: owner, repo: repo)
             }
@@ -348,6 +381,7 @@ struct ReadmeAPI {
             try? await trendingRepository.touchCachedAt(fullName: fullName, at: now)
             var refreshed = cached
             refreshed.cachedAt = ISO8601DateFormatter.shared.string(from: now)
+            await metrics.recordRefresh304()
             return .updated(Self.bridgeToReadme(refreshed))
         }
 
@@ -367,8 +401,10 @@ struct ReadmeAPI {
         do {
             try await trendingRepository.upsert(record)
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
+        await metrics.recordRefresh200()
         return .updated(Self.bridgeToReadme(record))
     }
 
@@ -457,8 +493,10 @@ struct ReadmeAPI {
                 ifModifiedSince: nil
             )
         } catch NetworkError.notFound {
+            await metrics.recordRefresh404()
             return .notFound
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
 
@@ -479,8 +517,10 @@ struct ReadmeAPI {
         do {
             try await repository.upsert(readme)
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
+        await metrics.recordRefresh200()
         return .updated(readme)
     }
 
@@ -496,8 +536,10 @@ struct ReadmeAPI {
                 ifModifiedSince: nil
             )
         } catch NetworkError.notFound {
+            await metrics.recordRefresh404()
             return .notFound
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
 
@@ -516,8 +558,10 @@ struct ReadmeAPI {
         do {
             try await trendingRepository.upsert(record)
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
+        await metrics.recordRefresh200()
         return .updated(Self.bridgeToReadme(record))
     }
 

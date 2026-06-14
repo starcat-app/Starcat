@@ -55,6 +55,12 @@ final class AppDependencies {
     /// 合并为一个 Task，多个 ViewModel（manage / active / weekly 等）同时请求
     /// 时只发一次 GitHub。详见 `ReadmeInflightTracker.swift`。
     let readmeInflightTracker: ReadmeInflightTracker
+    /// HOM-201 P2-3（2026-06-14）：README 缓存命中 / 刷新结果计数器。
+    ///
+    /// 进程级,SWR 状态机所有终态(cachedHit / refresh-200 / 304 / 404 / failed)
+    /// 都在 `ReadmeAPI` 内 record;Settings 调试段 / AppLog 周期 flush 都可以读
+    /// `snapshot()` 拿当前累计值。详见 `ReadmeMetrics.swift`。
+    let readmeMetrics: ReadmeMetrics
     /// W4 Batch A1 引入：标签 CRUD。
     let tagRepository: any TagRepositoryProtocol
     /// W4 Batch A1 引入：repo ↔ tag 关联 + 批量打标签。
@@ -336,11 +342,15 @@ final class AppDependencies {
         // HOM-201 P0-3：网络刷新 in-flight 去重器。先于 ReadmeAPI 构造，作为依赖注入。
         let inflightTracker = ReadmeInflightTracker()
         self.readmeInflightTracker = inflightTracker
+        // HOM-201 P2-3:缓存指标计数器。无 IO 无依赖,构造即用,注入 ReadmeAPI。
+        let metrics = ReadmeMetrics()
+        self.readmeMetrics = metrics
         self.readmeAPI = ReadmeAPI(
             client: api,
             repository: readmeRepo,
             trendingRepository: trendingReadmeRepo,
-            inflightTracker: inflightTracker
+            inflightTracker: inflightTracker,
+            metrics: metrics
         )
         // HOM-201 P0-2：跨 VM 共享的 404 短路状态容器。无依赖、无 IO，构造即用。
         self.readmeAvailability = ReadmeAvailability()
