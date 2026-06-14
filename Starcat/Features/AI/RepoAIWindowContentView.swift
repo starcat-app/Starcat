@@ -64,6 +64,10 @@ struct RepoAIWindowContentView: View {
     /// 控制器创建 hosting 时已 `.environment(dependencies.authSession)` 注入。
     @Environment(AuthSession.self) private var authSession
 
+    /// Y9（2026-06-14）：响应快捷菜单 / Settings 页面对开关字段的修改，让
+    /// `chatContextStatusRow` 能即时刷新；与 `AIChatInputView` 共用同一份注入。
+    @Environment(AppSettings.self) private var settings
+
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
 
@@ -445,6 +449,13 @@ struct RepoAIWindowContentView: View {
 
     @ViewBuilder
     private func insightContent(_ insight: RepoAIInsight, vm: RepoAIInsightViewModel) -> some View {
+        // Y9（2026-06-14，决议 D=d2）：用户翻完快捷菜单 / Settings 开关后，已展示的
+        // insight 用的可能不是当前 settings 的物料；显示克制提示让用户自行决定是否
+        // 重新生成（不自动作废 / 不自动 regenerate，遵循"AI 保守"原则）。
+        if isInsightStaleAgainstCurrentSettings(insight: insight, hasDegradation: vm.contextDegradationReason != nil) {
+            staleSettingsBanner(vm: vm)
+        }
+
         RepoAISummaryMarkdownView(markdown: insight.summaryMarkdown ?? insight.summary)
 
         // R-01 §3.2.7 Step 8：未 star 时**不渲染**标签段（即便 insight.suggestedTags
@@ -465,6 +476,68 @@ struct RepoAIWindowContentView: View {
         }
 
         footer(insight)
+    }
+
+    /// Y9：判定当前展示的 insight 是否与"用户当前 settings 想要的物料"不一致。
+    ///
+    /// 两个独立维度——任一失配即视为 stale：
+    ///   1. **代码上下文**：`settings.aiRepoContextEnabled` ≠ `insight.contextMetadata != nil`
+    ///      - 例：用户关了代码开关但 insight 是带 commitSha 生成的 → stale；
+    ///      - 例外：vm 已有 contextDegradationReason → 降级路径已经在 banner 里解释，
+    ///        本判定排除该路径避免双重提示（`hasDegradation == true` 时跳过代码维度）。
+    ///   2. **AnySearch 外部材料**：当前 settings 允许（双开关 AND + 私仓门控）
+    ///      ≠ `insight.externalContextMarkdown != nil`
+    ///      - 例：用户开了 AnySearch 但 insight 是关时生成的 → stale；
+    ///
+    /// 用户调整 settings 后下次手动点 "重新生成" 即可消除提示——这条路径与摘要面板
+    /// 右上角 ellipsis Menu 的"重新生成"是同一个 action。
+    private func isInsightStaleAgainstCurrentSettings(
+        insight: RepoAIInsight,
+        hasDegradation: Bool
+    ) -> Bool {
+        if !hasDegradation {
+            let userWantsCode = settings.aiRepoContextEnabled
+            let insightHasCode = insight.contextMetadata != nil
+            if userWantsCode != insightHasCode { return true }
+        }
+
+        let externalAllowed = AnySearchContextProvider.allowsExternalContext(
+            repoIsPrivate: repo.isPrivate,
+            enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
+            allowPrivate: settings.aiExternalContextAllowPrivateRepos
+        )
+        let insightHasExternal = insight.externalContextMarkdown?.isEmpty == false
+        if externalAllowed != insightHasExternal { return true }
+
+        return false
+    }
+
+    /// Y9：「设置已变更」提示行 + [重新生成] 按钮。
+    ///
+    /// 视觉风格选择 `.yellow.opacity(0.10)` + `info.circle` —— 比 errorBanner 的红色
+    /// 克制，与 contextDegradationBanner 同色系，让用户立刻识别为"信息提示"而非
+    /// "错误"。按钮调用与摘要面板右上角 Menu 同款 generate(includeTags:)，include
+    /// flags 由当前 starredAtOpen 决定，与既有路径保持一致。
+    private func staleSettingsBanner(vm: RepoAIInsightViewModel) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "info.circle.fill")
+                .foregroundStyle(.yellow)
+            Text("ai.assistant.summary.staleSettings.message")
+                .font(.caption)
+            Spacer(minLength: 8)
+            Button {
+                Task { await vm.generate(repo: repo, includeTags: starredAtOpen == true) }
+            } label: {
+                Text("ai.assistant.summary.staleSettings.regenerate")
+                    .font(.caption.weight(.medium))
+            }
+            .buttonStyle(.borderless)
+            .focusEffectDisabled()
+            .disabled(vm.isGenerating)
+        }
+        .foregroundStyle(.primary)
+        .padding(10)
+        .background(Color.yellow.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     /// 推荐标签块。视觉上比对话气泡克制：
@@ -828,46 +901,97 @@ struct RepoAIWindowContentView: View {
         .background(Color.yellow.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    /// Y8（2026-06-14）：对话输入框上方的轻量状态行。
+    /// Y9（2026-06-14，决议 E=e3+）：对话输入框上方的"上下文汇总"状态行。
     ///
-    /// 三态显示：
-    ///   1. 摘要 vm 持有 `insight.contextMetadata` 非 nil → 绿色 ✓ + "本次对话基于完整代码上下文"
-    ///   2. 摘要 vm 持有 `contextDegradationReason` 非 nil → 黄色 ⚠ + degradation 文案（复用 i18n key）
-    ///   3. 其他（vm 还没生成 / featureDisabled / load 缓存路径）→ 完全不显示，0 padding 不占位
+    /// 优先级（从高到低，命中即停）：
+    ///   1. **降级 banner**：摘要生成时 RepoContextPacker 报错（`vm.contextDegradationReason`
+    ///      非 nil）→ 黄色 ⚠ + degradation 文案。这是异常路径的强信号，盖过其他显示。
+    ///   2. **3 维汇总**：按当前 settings + cachedInsight 动态拼接「摘要 · 代码 · 外网」
+    ///      - 摘要：`vm.insight?.summaryMarkdown` 非空（说明用户至少生成过一次）；
+    ///      - 代码：`settings.aiRepoContextEnabled == true` 且 contextMetadata 实际有
+    ///        （上次确实 pack 成功 / 还在缓存里）；
+    ///      - 外网：settings 当前允许 AnySearch（双开关 AND + 私仓门控）且
+    ///        `vm.insight?.externalContextMarkdown` 有缓存。
+    ///   3. **三者都为 false**：完全不显示（README-only 是默认状态，无需占位）。
     ///
-    /// 为什么复用 `insightVM` 而不是给 `RepoAIChatViewModel` 也加状态：
-    ///   - 同一个 repo 摘要和对话走同一条 `makeSource` 链路，结果一致；
-    ///   - 用户大概率先进摘要 tab（默认 panelMode == .summary），生成完再切对话，
-    ///     此时 vm 状态已经填好；
-    ///   - 即便用户先发对话再回摘要，本 caption 在第一次摘要生成后即刻刷新（vm 是 @Observable）。
+    /// 为什么混用「settings 当前值」+「cachedInsight 实际有否」：
+    ///   - settings 反映"用户当前意图"（即将翻译成 system prompt 的开关）；
+    ///   - cachedInsight 反映"对话路径实际能拿到的物料"（决议 B=b2，对话不重新拉
+    ///     AnySearch HTTP，只读缓存）。
+    ///   - 仅看 settings 会误报（关了 anySearch 但缓存里还有 markdown：实际不会用，
+    ///     状态行不该说带）；仅看缓存会漏报（用户开了代码开关但还没生成新摘要：
+    ///     下条对话就会带 Code XML，状态行该说带）。
+    ///
+    /// 当用户在快捷菜单翻完开关 → settings.didSet → @Observable 触发 view 刷新 →
+    /// 本行立即更新（无需等 chatVM 异步重算）。
     @ViewBuilder
     private var chatContextStatusRow: some View {
         if let vm = insightVM {
-            if vm.insight?.contextMetadata != nil {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                    Text("ai.assistant.chat.contextStatus.full")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else if let reason = vm.contextDegradationReason {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.yellow)
-                    Text(LocalizedStringKey(reason.bannerMessageKey))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if let reason = vm.contextDegradationReason {
+                degradationStatusRow(reason: reason)
+            } else {
+                summarizedStatusRow(vm: vm)
             }
-            // 其他状态：返回隐含 EmptyView，配合外层 frame(maxHeight: 0) 完全不占位。
         }
+    }
+
+    /// 降级 banner（沿用 Y4 / Y8 风格）。
+    private func degradationStatusRow(reason: ContextDegradationReason) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+            Text(LocalizedStringKey(reason.bannerMessageKey))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 3 维汇总状态行。
+    @ViewBuilder
+    private func summarizedStatusRow(vm: RepoAIInsightViewModel) -> some View {
+        let hasSummary = (vm.insight?.summaryMarkdown?.isEmpty == false)
+        let hasCode = settings.aiRepoContextEnabled && vm.insight?.contextMetadata != nil
+        let externalAllowed = AnySearchContextProvider.allowsExternalContext(
+            repoIsPrivate: repo.isPrivate,
+            enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
+            allowPrivate: settings.aiExternalContextAllowPrivateRepos
+        )
+        let hasExternal = externalAllowed && (vm.insight?.externalContextMarkdown?.isEmpty == false)
+
+        if hasSummary || hasCode || hasExternal {
+            HStack(spacing: 6) {
+                Image(systemName: "paperclip")
+                    .foregroundStyle(.secondary)
+                Text(verbatim: makeContextStatusText(
+                    hasSummary: hasSummary,
+                    hasCode: hasCode,
+                    hasExternal: hasExternal
+                ))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        // 三者都为 false：返回隐含 EmptyView，配合外层 frame(maxHeight: 0) 完全不占位。
+    }
+
+    /// 按命中维度拼出形如「上下文：摘要 · 代码 · 外网」的本地化文本。
+    ///
+    /// 用 `String(localized:)` + 普通字符串拼接而非 SwiftUI `Text` 组合，是因为
+    /// 这里要做"按 bool 选择性插入"，Text 的 `+` 操作语法对条件插入不友好。
+    /// 文案前缀和三个维度词都各自独立 i18n（en/zh-Hans 都需要补 key）。
+    private func makeContextStatusText(hasSummary: Bool, hasCode: Bool, hasExternal: Bool) -> String {
+        var parts: [String] = []
+        if hasSummary { parts.append(String(localized: "ai.assistant.chat.contextStatus.summary")) }
+        if hasCode { parts.append(String(localized: "ai.assistant.chat.contextStatus.code")) }
+        if hasExternal { parts.append(String(localized: "ai.assistant.chat.contextStatus.external")) }
+        let prefix = String(localized: "ai.assistant.chat.contextStatus.prefix")
+        return prefix + parts.joined(separator: " · ")
     }
 
     private func chatErrorBanner(message: String, onDismiss: @escaping () -> Void) -> some View {

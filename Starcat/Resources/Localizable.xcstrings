@@ -2240,6 +2240,70 @@
         }
       }
     },
+    "ai.assistant.input.contextMenu.anySearch" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External docs (AnySearch)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部材料 (AnySearch)"
+          }
+        }
+      }
+    },
+    "ai.assistant.input.contextMenu.anySearch.disabledHint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable AnySearch in Settings → Integrations first"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先在 设置 → 集成 启用 AnySearch"
+          }
+        }
+      }
+    },
+    "ai.assistant.input.contextMenu.codeContext" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code context"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码上下文"
+          }
+        }
+      }
+    },
+    "ai.assistant.input.contextMenu.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Context options"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上下文配置"
+          }
+        }
+      }
+    },
     "ai.assistant.input.placeholder" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2457,6 +2521,38 @@
         }
       }
     },
+    "ai.assistant.summary.staleSettings.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Context settings changed. Regenerate to apply."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上下文设置已变更，重新生成以应用"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.staleSettings.regenerate" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regenerate"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新生成"
+          }
+        }
+      }
+    },
     "ai.assistant.summary.streaming" : {
       "localizations" : {
         "en" : {
@@ -2489,7 +2585,40 @@
         }
       }
     },
+    "ai.assistant.chat.contextStatus.code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.contextStatus.external" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外网"
+          }
+        }
+      }
+    },
     "ai.assistant.chat.contextStatus.full" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2501,6 +2630,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "本次对话基于完整代码上下文"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.contextStatus.prefix" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Context: "
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上下文："
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.contextStatus.summary" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Summary"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "摘要"
           }
         }
       }

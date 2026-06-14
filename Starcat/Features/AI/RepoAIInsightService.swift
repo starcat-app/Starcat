@@ -134,6 +134,15 @@ final class RepoAIInsightService {
 
     func cachedInsight(for repo: Repo) async throws -> RepoAIInsight? {
         let source = try await makeSource(for: repo)
+        return try await loadCachedInsight(source: source, repo: repo)
+    }
+
+    /// Y9（2026-06-14）：根据已经算好的 `Source` 加载缓存 insight。
+    ///
+    /// 提取该 helper 是为了让 `chatStream` 只调一次 `makeSource`（重 IO：可能触发
+    /// ZIP 下载 / snapshotService.resolveBranch 网络调用），把 hash 比对与 source 计算
+    /// 解耦。`cachedInsight(for:)` 公开 API 形式不变，内部走同一条路径。
+    private func loadCachedInsight(source: Source, repo: Repo) async throws -> RepoAIInsight? {
         guard let record = try await summaryRepository.find(repoId: repo.id, model: cacheModelKey()),
               record.sourceHash == source.hash
         else {
@@ -251,6 +260,17 @@ final class RepoAIInsightService {
         // 保留旧字段的同时把新摘要正文写进 summaryMarkdown，UI 优先读该字段。
         insight.summaryMarkdown = summaryText
 
+        // Y9（2026-06-14，决议 B=b2）：把 AnySearch 拉来的整段 markdown 回填到 insight。
+        //
+        // 设计要点：
+        //   - 直接存 `resolvedExternalContext?.markdown`（已含 <external_context> XML 包裹 +
+        //     防 prompt-injection 提示 + 6 条 snippet），不做任何二次处理；
+        //   - 用户关了 anySearch / external context / 私仓不允许 → resolvedExternalContext 为 nil →
+        //     此处赋 nil，对话路径读到 nil 时静默不拼，与"用户意图"一致；
+        //   - 与 `summaryText` 末尾追加的"## 外部参考来源"链接列表不冲突——前者给摘要面板渲染
+        //     展示用，后者给对话 system prompt 注入用，两份数据来源同一次 collect 调用。
+        insight.externalContextMarkdown = resolvedExternalContext?.markdown
+
         // HOM-52：只跑标签（includeSummary == false）时不写 ai_summaries 缓存——
         // 否则会用空 summaryText 覆盖已有的有效摘要缓存。调用方仍能拿到 suggestions。
         if includeSummary, repo.isStarred {
@@ -296,6 +316,22 @@ final class RepoAIInsightService {
     /// 后续若发现"摘要适合低温度、对话需要更高 temperature"，再独立 `aiChatTask` 配置。
     /// 同 `generateInsight` 一样，复用 `makeSource(for:)` 拼出的"repo 元数据 + README"
     /// 上下文，避免对 README WebView 缓存路径出现两份取数逻辑。
+    ///
+    /// **Y9（2026-06-14）对话上下文增强**（决议 A=a2 / B=b2 / F1=f1b）：
+    /// system prompt 在 README + (可选) Code XML 之外，按当前 settings 决定是否额外注入：
+    ///   - **AI 摘要正文**（包括 markdown）：从 `loadCachedInsight` 读，没缓存就跳过；
+    ///     用 f1b "Previous AI summary:" 自然语言段落标识，让 LLM 知道是上次的提炼；
+    ///   - **AnySearch 外部材料**：从 `cachedInsight.externalContextMarkdown` 读，
+    ///     **零额外 HTTP**（决议 B=b2，对话路径不重复调 AnySearch API 烧配额）；
+    ///     需 settings 当前允许（anySearch+externalContext+私仓门控）才注入；
+    ///   - **代码上下文 XML**：由 `makeSource` 内部根据 `aiRepoContextEnabled` 决定，
+    ///     与摘要路径完全对称，无需额外参数。
+    ///
+    /// 这意味着：用户在快捷菜单或 Settings 翻开关 → 下一条对话立即生效（settings 是
+    /// `@MainActor @Observable`，本方法同 actor 直读零 race）。如果用户翻开关后
+    /// `cacheModelKey` / `source.hash` 失效 → cachedInsight 拿不到 → 对话退化成
+    /// README-only（含 Code XML if 开），与摘要面板 "[设置已变更, 重新生成]" 提示
+    /// 形成对偶反馈链。
     func chatStream(
         for repo: Repo,
         history: [AIChatMessage],
@@ -303,19 +339,16 @@ final class RepoAIInsightService {
         onDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
         let source = try await makeSource(for: repo)
+
+        // Y9：复用同一份 source 做缓存比对（避免 makeSource 被调两次造成重复网络 IO）。
+        // 缓存命中 = 摘要 + AnySearch markdown 都从 `ai_summaries.summary_json` 直接拿到。
+        // try? 故意吞错：缓存读失败（比如 SQLite 临时锁）不应阻塞对话主流程。
+        let cached = try? await loadCachedInsight(source: source, repo: repo)
+
         let task = settings.aiSummaryTask
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "对话")
 
-        let systemPrompt = """
-        You are Starcat's repository chat assistant.
-        Reply in Simplified Chinese only.
-        Stay grounded in the provided repository context (metadata + README).
-        If a question cannot be answered from that context, say "未从 README 或仓库元数据中确认" — do not invent APIs, commands, links, or version numbers.
-        Markdown is allowed (including fenced code blocks); keep replies focused on what the user asked, no padding.
-
-        Repository context:
-        \(source.text)
-        """
+        let systemPrompt = buildChatSystemPrompt(repo: repo, source: source, cached: cached)
 
         let request = AIChatRequest(
             systemPrompt: systemPrompt,
@@ -340,6 +373,81 @@ final class RepoAIInsightService {
         // 这里兜底用累积值；若仍为空才抛 emptyResponse。
         guard let final = accumulated.nilIfBlank else { throw AIClientError.emptyResponse }
         return final
+    }
+
+    /// Y9（2026-06-14）：拼装对话路径的 system prompt（决议 A=a2 / B=b2 / F1=f1b）。
+    ///
+    /// 实质拼接逻辑下沉到 `assembleChatSystemPrompt(...)` 静态函数（internal 可测），
+    /// 本方法负责"读 settings + 私仓门控"等 actor-bound 准备工作。
+    private func buildChatSystemPrompt(repo: Repo, source: Source, cached: RepoAIInsight?) -> String {
+        let externalAllowed = AnySearchContextProvider.allowsExternalContext(
+            repoIsPrivate: repo.isPrivate,
+            enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
+            allowPrivate: settings.aiExternalContextAllowPrivateRepos
+        )
+        return Self.assembleChatSystemPrompt(
+            sourceText: source.text,
+            cachedSummaryMarkdown: cached?.summaryMarkdown,
+            cachedExternalMarkdown: cached?.externalContextMarkdown,
+            allowExternal: externalAllowed
+        )
+    }
+
+    /// Y9：对话 system prompt 拼接的纯函数（静态、无 actor 副作用、internal for tests）。
+    ///
+    /// 输出顺序（从上到下）：
+    ///   1. 助手身份说明（含强制中文 + 不准编造 API 等约束）；
+    ///   2. **可选**：`Previous AI summary (...):` + fenced markdown 块（f1b 自然语言段）
+    ///      - 仅当 `cachedSummaryMarkdown` 非空时插入；
+    ///      - 用 ```markdown / ``` 包裹，让 LLM 视为引用而非新事实；
+    ///   3. `Repository context:\n{sourceText}` (元数据 + README + 可选 Code XML)；
+    ///   4. **可选**：AnySearch `<external_context>` markdown（决议 B=b2）
+    ///      - 仅当 `cachedExternalMarkdown` 非空且 `allowExternal == true` 时插入；
+    ///      - markdown 本身已含 `<external_context trust="untrusted">` 包裹和防 prompt
+    ///        injection 提示，无需在此再加。
+    ///
+    /// 段间用 `\n\n` 分隔，让 LLM 解析时能识别为独立 block；尾部不加额外换行，
+    /// 调用方拼 user prompt 时会自然产生隔离。
+    ///
+    /// `nonisolated`：本函数纯字符串拼接、无 actor 副作用，单测从 sync 上下文可直接调用。
+    nonisolated static func assembleChatSystemPrompt(
+        sourceText: String,
+        cachedSummaryMarkdown: String?,
+        cachedExternalMarkdown: String?,
+        allowExternal: Bool
+    ) -> String {
+        var sections: [String] = [
+            """
+            You are Starcat's repository chat assistant.
+            Reply in Simplified Chinese only.
+            Stay grounded in the provided repository context (metadata + README + optional code structure).
+            If a question cannot be answered from that context, say "未从 README 或仓库元数据中确认" — do not invent APIs, commands, links, or version numbers.
+            Markdown is allowed (including fenced code blocks); keep replies focused on what the user asked, no padding.
+            """
+        ]
+
+        if let summary = cachedSummaryMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !summary.isEmpty {
+            sections.append("""
+            Previous AI summary (generated earlier from this repo's README + code; treat as a reference, may be slightly stale):
+            ```markdown
+            \(summary)
+            ```
+            """)
+        }
+
+        sections.append("""
+        Repository context:
+        \(sourceText)
+        """)
+
+        if allowExternal,
+           let externalMd = cachedExternalMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !externalMd.isEmpty {
+            sections.append(externalMd)
+        }
+
+        return sections.joined(separator: "\n\n")
     }
 
     private func tagSuggestionsResult(source: Source) async -> Result<[AITagSuggestion], Error> {
