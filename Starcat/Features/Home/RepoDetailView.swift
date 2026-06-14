@@ -255,9 +255,6 @@ struct ReadmeStateView: View {
 
     let state: ReadmeViewModel.LoadState
     let baseURL: URL?
-    /// 仓库 owner / name —— 透传给 ReadmeWebView 用于图片相对路径重写
-    let owner: String
-    let repo: String
     let onScrollOffsetChange: (CGFloat) -> Void
     /// HOM-68：可选的 README 翻译控件描述。nil 时不渲染翻译入口
     /// （Trending 详情页不接翻译，传 nil；Manage 详情页传具体值）。
@@ -266,11 +263,12 @@ struct ReadmeStateView: View {
     /// 未登录用户点击"登录"按钮时的回调
     let onLogin: () -> Void
 
+    /// HOM-201 P1-2（2026-06-14）：原本接受的 `owner` / `repo` 参数已删除——
+    /// `<img>` 相对路径重写在 `ReadmeAPI` upsert 前就完成,渲染层不再需要这两个
+    /// 仓库标识来跑正则,这两个参数从 4 个 DetailContent 的调用现场也一并清理。
     init(
         state: ReadmeViewModel.LoadState,
         baseURL: URL?,
-        owner: String,
-        repo: String,
         onScrollOffsetChange: @escaping (CGFloat) -> Void,
         translationControl: ReadmeTranslationControl? = nil,
         onRetry: @escaping () -> Void,
@@ -278,8 +276,6 @@ struct ReadmeStateView: View {
     ) {
         self.state = state
         self.baseURL = baseURL
-        self.owner = owner
-        self.repo = repo
         self.onScrollOffsetChange = onScrollOffsetChange
         self.translationControl = translationControl
         self.onRetry = onRetry
@@ -306,8 +302,6 @@ struct ReadmeStateView: View {
                 ReadmeWebView(
                     htmlFragment: renderedHtml,
                     baseURL: baseURL,
-                    owner: owner,
-                    repo: repo,
                     onScrollOffsetChange: onScrollOffsetChange
                 )
                 cacheFooter(cachedAt: cachedAt, sourceHtml: html)

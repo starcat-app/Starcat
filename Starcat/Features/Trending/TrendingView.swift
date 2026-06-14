@@ -338,6 +338,12 @@ struct TrendingView: View {
                 .listRowReveal(index: item.index, snapshotID: viewModel.reposRevision)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
+                // HOM-201 P1-1（2026-06-14）：hover 500ms 后预拉 trending README，
+                // softTtl 短路在 API 层做（命中 6h 内 trending 缓存不打 GitHub；
+                // P1-4 让详情页 loadTrending 也用 softTtl,整条路径闭环）。
+                .readmePrefetch { [readmeAPI = dependencies.readmeAPI, owner = repo.owner, name = repo.name] in
+                    await readmeAPI.prefetchTrending(owner: owner, repo: name)
+                }
             }
         }
         .listStyle(.inset)
