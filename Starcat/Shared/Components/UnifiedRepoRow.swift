@@ -197,6 +197,16 @@ struct UnifiedRepoRow: View {
                     }
 
                     // chip 行
+                    //
+                    // 布局分区（v2.1，2026-06-13 dong4j 反馈）：
+                    // - **左簇**：Language / Stars / Forks / Archived / sceneBadge / RepoStatusChip
+                    //   —— 仓库自身的属性元数据，自然左对齐紧贴起始边；
+                    // - `Spacer(minLength: 8)` 居中分隔，至少 8pt 间距避免左簇与右侧贴边；
+                    // - **右簇**：SemanticScoreBadge —— 这是查询期临时派生的"匹配信号"
+                    //   而非仓库自身属性，与左侧静态属性的语义层级不同。靠右独立成区
+                    //   让用户在浏览搜索结果时，眼睛只需在卡片右缘"扫一列百分比"即可
+                    //   横向比较多张卡片的命中强度，比之前夹在 chip 中间需要 saccade
+                    //   逐张定位更高效。
                     HStack(spacing: 8) {
                         if let language = card.language, !language.isEmpty {
                             LanguageBadge(language: language, style: .full)
@@ -210,9 +220,6 @@ struct UnifiedRepoRow: View {
                             ArchivedBadge(iconOnly: true)
                         }
                         sceneBadgeChip
-                        if let semanticHit {
-                            SemanticScoreBadge(hit: semanticHit)
-                        }
                         // 阅读状态角标（v2，2026-06-12）。
                         // 渲染条件 = isStarred && readStatus 已注入 && status != .read
                         // - 仅 starred row 显（ephemeral trending/weekly 行 isStarred=false 跳过）
@@ -223,7 +230,14 @@ struct UnifiedRepoRow: View {
                            readStatus != .read {
                             RepoStatusChip(status: readStatus)
                         }
-                        Spacer(minLength: 0)
+                        // 把 SemanticScoreBadge 推到行末右对齐。
+                        // 无 semanticHit 时（非语义搜索场景）Spacer 仅吃掉剩余空间，
+                        // 左簇仍贴左渲染，行为与改造前一致 —— 不影响 Trending / Weekly /
+                        // Activity / Manage 非搜索态的视觉。
+                        Spacer(minLength: 8)
+                        if let semanticHit {
+                            SemanticScoreBadge(hit: semanticHit)
+                        }
                     }
                 }
 

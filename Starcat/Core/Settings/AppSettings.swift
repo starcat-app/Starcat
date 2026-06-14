@@ -721,6 +721,25 @@ final class AppSettings {
         didSet { persistBool(key: Keys.aiIndexAutoPrefetchEnabled, value: aiIndexAutoPrefetchEnabled) }
     }
 
+    /// AI 语义搜索结果过滤阈值（2026-06-13 dong4j 需求 HOM-197）。
+    ///
+    /// 语义搜索命中的 cosine similarity 分数低于此阈值的 repo 不在列表展示——
+    /// 默认 0.75，UI 滑杆范围 0.10 - 1.00、步进 0.01。
+    ///
+    /// **生效路径**：`HomeViewModel.applyView()` 在 `isSemanticSearching` 分支里
+    /// 对 `view` 做 `removeAll { (semanticHitMap[$0.id]?.score ?? 0) < threshold }`，
+    /// 与 hideArchived / hideForks / statusFilter 同串行过滤。
+    ///
+    /// **为什么不在 SemanticSearchService.search() 里过滤**：拖滑杆改阈值要即时
+    /// 生效，但每改一次都重调 embedding API 既慢又烧钱。把过滤放 view 层让
+    /// `semanticHitMap` 保留全量 hits，纯本地 re-filter 不动 API。
+    ///
+    /// 类型为 Double 保持与 `aiIndexBodyDiffRatio` / `aiIndexNotesDiffRatio` 同款，
+    /// 持久化也走 UserDefaults double 直存（无需 JSON 编码）。
+    var aiSemanticSearchScoreThreshold: Double {
+        didSet { defaults.set(aiSemanticSearchScoreThreshold, forKey: Keys.aiSemanticSearchScoreThreshold) }
+    }
+
     /// 计算属性：当前生效的 `DiffThresholds`（单一信任源）。
     ///
     /// - 预设 != `.custom` → 用预设的固定阈值（5/10、10/20、20/30）
@@ -1017,6 +1036,9 @@ final class AppSettings {
         let notesRatioRaw = defaults.object(forKey: Keys.aiIndexNotesDiffRatio) as? Double
         self.aiIndexNotesDiffRatio = notesRatioRaw ?? DiffThresholds.default.notesDiffRatio
         self.aiIndexAutoPrefetchEnabled = defaults.object(forKey: Keys.aiIndexAutoPrefetchEnabled) as? Bool ?? false
+        // HOM-197：语义搜索过滤阈值默认 0.75；老用户首启缺 key 走默认。
+        let semScoreRaw = defaults.object(forKey: Keys.aiSemanticSearchScoreThreshold) as? Double
+        self.aiSemanticSearchScoreThreshold = semScoreRaw ?? 0.75
 
         // 第三方服务自定义 URL（2026-06-08）：缺失或解码失败时为空字典，
         // 所有服务都走 `AppEndpoints.production(for:)` 默认值。
@@ -1233,6 +1255,8 @@ final class AppSettings {
         static let aiIndexBodyDiffRatio = "settings.ai.index.bodyDiffRatio.v1"
         static let aiIndexNotesDiffRatio = "settings.ai.index.notesDiffRatio.v1"
         static let aiIndexAutoPrefetchEnabled = "settings.ai.index.autoPrefetchEnabled.v1"
+        // HOM-197（2026-06-13 dong4j）：AI 语义搜索过滤阈值，默认 0.75。
+        static let aiSemanticSearchScoreThreshold = "settings.ai.semanticSearch.scoreThreshold.v1"
         // 2026-06-13 RepoContextPacker 客户端接入（3 个字段，§0.3 X1）
         static let aiRepoContextEnabled = "settings.ai.repoContext.enabled.v1"
         static let aiRepoContextTokenBudget = "settings.ai.repoContext.tokenBudget.v1"

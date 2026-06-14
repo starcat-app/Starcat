@@ -81,19 +81,20 @@ struct RepoListView: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                // 视觉对齐：与 UnifiedFilterMenu / UnifiedSortMenu / MultiSelectButton 等
+                // 邻位控件一致，统一走 `Button { ToolbarIcon(...) }` 让 macOS toolbar
+                // 自行渲染默认圆角矩形按钮，避免之前 `.buttonStyle(.bordered) + minWidth: 62`
+                // 强制成的宽椭圆比其它按钮"高/宽一圈"造成的视觉失衡。
+                // 图标语义：`sparkle.magnifyingglass` 同时表达「搜索 + 聚合/增强」——
+                // 本入口聚合 Local Stars / GitHub / Web（详见 SearchCenterView 三 provider），
+                // 比裸 `magnifyingglass`（普通字段搜索）更准确地传达「聚合搜索中心」。
+                // ⌘K 快捷键由 HomeView 内隐藏按钮独立注册，这里不重复绑定避免冲突。
                 Button {
                     onOpenSearchCenter?()
                 } label: {
-                    // 图标-only 在 macOS toolbar 中会被压成狭窄椭圆，既难辨认也与
-                    // 相邻筛选控件的视觉重量不一致。保留系统 bordered 样式并补文字，
-                    // 让入口拥有稳定点击面积，同时继续由 ⌘K 承担高频键盘路径。
-                    Label("搜索", systemImage: "magnifyingglass")
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(minWidth: 62, minHeight: 24)
+                    ToolbarIcon("sparkle.magnifyingglass")
+                        .accessibilityLabel(Text("全局搜索"))
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-                .focusEffectDisabled()
                 .help("全局搜索 (⌘K)")
             }
             // W12 toolbar 专项 PR-1：toolbar 内容按 selectedPage 派发到对应 spec builder。
