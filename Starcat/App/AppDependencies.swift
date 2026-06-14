@@ -380,12 +380,18 @@ final class AppDependencies {
         )
         self.repoAIInsightService = aiInsight
 
-        // HOM-68：README 翻译。复用 AppSettings.aiSummaryTask 的 provider/model 选择
-        // 与 Keychain API Key，独立 Service 承载严格保结构的翻译 prompt + 本地 SQLite 缓存。
-        let translationRepo = GRDBReadmeTranslationRepository(database: db)
-        self.readmeTranslationRepository = translationRepo
+        // HOM-68：README 翻译。复用 AppSettings.aiTranslationTask 的 provider/model 选择
+        // 与 Keychain API Key，独立 Service 承载严格保结构的翻译 prompt + 纯磁盘缓存。
+        //
+        // **HOM-68 v2（2026-06-15）**：缓存层从 GRDB 表（已删 `readme_translations`）
+        // 改为 `DiskReadmeTranslationCache.shared`（路径 `<appSupport>/com.starcat.app/
+        // translations-cache/<owner>/<repo>/<lang>.{html,json}`）。改造原因 + 详细决策
+        // 见 `ReadmeTranslationRepositoryProtocol` 顶部注释。装配点用 shared 单例是因
+        // 为 cache 是 `@MainActor @Observable`，UI（设置页存储 Tab）也需要观察同一份
+        // 状态（totalBytes / itemCount / latestCreatedAt），多实例会导致 UI 状态不同步。
+        self.readmeTranslationRepository = DiskReadmeTranslationCache.shared
         self.readmeTranslationService = ReadmeTranslationService(
-            translationRepository: translationRepo,
+            translationRepository: DiskReadmeTranslationCache.shared,
             settings: self.settings
         )
 

@@ -24,7 +24,20 @@ import Foundation
 
 struct SemanticSearchHit: Equatable, Sendable {
     let repo: Repo
+    /// 原始 cosine similarity，[-1, 1]，文本 embedding 实际范围 ~[0.3, 0.95]。
+    /// 仅作调试 / 测试参考；UI 展示与阈值过滤都走 `displayScore`。
     let score: Double
+    /// A 重标定后的展示分（2026-06-14 dong4j 改造）：
+    /// 经验区间 `[0.30, 0.95]` 线性归一到 `[0, 1]`，再叠加 B 字面命中 boost
+    /// （fullName/description/topics 包含 query → 强制 ≥ 0.95）。
+    /// **HomeViewModel 阈值过滤的判定字段就是它**——让设置页 75% 滑杆与列表 75% 数字
+    /// 同语义。FTS hit 的 +0.15 boost 不计入 displayScore（FTS 命中是召回信号，
+    /// 不是相似度本身），只在排序阶段生效。
+    let displayScore: Double
+    /// 视觉档位 1-4（★1 / ★2 / ★3 / ★4）。
+    /// 由 `displayScore` 映射：≥0.85→4，≥0.65→3，≥0.45→2，其余→1。
+    /// 给 UI "高/中/低" 视觉强度提示用，避免精确数字带来的过度解读。
+    let tier: Int
     let reason: String
 }
 
@@ -71,11 +84,34 @@ final class SemanticSearchService {
         self.batchSize = batchSize
     }
 
-    /// 对传入候选 repo 做语义搜索。
+    /// 对传入候选 repo 做语义搜索（2026-06-14 A+B+C 改造）。
     ///
     /// 候选集由 HomeViewModel 决定：当前实现对全量 starred repos 搜索，再叠加列表过滤。
     /// 这样与原 FTS 搜索保持"全局搜索"语义一致，而不是只在当前 sidebar 分类内搜。
-    func search(query: String, candidates: [Repo], limit: Int = 80) async throws -> [SemanticSearchHit] {
+    ///
+    /// **召回与排序信号**（短 query × 长 doc 的稀释问题修补）：
+    /// - **A 显示层重标定**：原始 cosine 经验区间 `[0.30, 0.95]` 归一到 `[0, 1]`，
+    ///   解决"完全无关 ≈ 0.30 / 完全相关 ≈ 0.95" 的 cosine 在文本 embedding 模型下
+    ///   实际值域偏移问题。同时计算 1-4 档视觉 tier。
+    /// - **B 字面命中 boost**：query 完整出现在 `fullName / description / topics` 时，
+    ///   `effectiveScore = max(cosine, 0.95)`。"用户复制 description 都才 68%" 的
+    ///   核心 case 被这条短路修复——字面命中直接置顶。
+    /// - **C FTS hit 加权**：`ftsHitIDs` 内的 repo 排序分 +0.15。FTS 命中是召回信号，
+    ///   不是相似度本身——所以**只影响排序，不影响 `displayScore` / `tier`**。
+    ///   思路 1（boost 而非过滤）保住"语义同义但字面没匹"的召回能力。
+    ///
+    /// - Parameters:
+    ///   - query: 用户原文。
+    ///   - candidates: 候选 repo 集合（通常是当前用户全量 starred）。
+    ///   - ftsHitIDs: FTS5 命中的 repo ID 集合，由 caller 在调用前先跑 FTS 拿到。
+    ///     传空集 = 不启用 C 加权（仅 A+B 生效）。
+    ///   - limit: 最多返回多少条。
+    func search(
+        query: String,
+        candidates: [Repo],
+        ftsHitIDs: Set<Int64> = [],
+        limit: Int = 80
+    ) async throws -> [SemanticSearchHit] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
         guard !candidates.isEmpty else { return [] }
@@ -90,20 +126,44 @@ final class SemanticSearchService {
         guard !stored.isEmpty else { throw SemanticSearchError.noVectors }
 
         let queryVector = try await client.embedding(input: trimmed, model: model)
-        let hits = candidates.compactMap { repo -> SemanticSearchHit? in
+
+        // 用 (hit, sortScore) 元组临时承载排序分；最终输出只暴露 hit。
+        let scored: [(hit: SemanticSearchHit, sortScore: Double)] = candidates.compactMap { repo in
             guard let row = stored[repo.id] else { return nil }
             let vector = row.vector
             guard !vector.isEmpty, vector.count == queryVector.count else { return nil }
-            let score = Self.cosineSimilarity(queryVector, vector)
-            guard score.isFinite else { return nil }
-            return SemanticSearchHit(
+            let cosine = Self.cosineSimilarity(queryVector, vector)
+            guard cosine.isFinite else { return nil }
+
+            // B：字面命中 boost。effectiveScore 用于 displayScore 计算 + 排序基础。
+            let literalHit = Self.hasLiteralMatch(repo: repo, query: trimmed)
+            let effectiveScore = literalHit ? max(cosine, Self.literalBoostFloor) : cosine
+
+            // C：FTS hit 仅给排序加权，不影响 displayScore（FTS 是召回信号不是相似度）。
+            let ftsBoost: Double = ftsHitIDs.contains(repo.id) ? Self.ftsBoostWeight : 0
+            let sortScore = effectiveScore + ftsBoost
+
+            // A：经验区间归一到 [0, 1]。
+            let displayScore = Self.normalizeDisplayScore(effectiveScore)
+            let tier = Self.tier(forDisplayScore: displayScore)
+
+            let hit = SemanticSearchHit(
                 repo: repo,
-                score: score,
-                reason: Self.reason(for: repo, query: trimmed, score: score)
+                score: cosine,
+                displayScore: displayScore,
+                tier: tier,
+                reason: Self.reason(
+                    for: repo,
+                    query: trimmed,
+                    displayScore: displayScore,
+                    literalHit: literalHit,
+                    ftsHit: ftsHitIDs.contains(repo.id)
+                )
             )
+            return (hit, sortScore)
         }
 
-        return Array(hits.sorted { $0.score > $1.score }.prefix(limit))
+        return Array(scored.sorted { $0.sortScore > $1.sortScore }.prefix(limit).map(\.hit))
     }
 
     /// 强制刷新一批 repo 的向量索引（force=true 路径）。
@@ -182,6 +242,8 @@ final class SemanticSearchService {
     /// **返回值**：实际向 embedding API 提交并 upsert 的 repo 数（= `workItems.count`）。
     /// 给上层 `refreshIndex` / `refreshIndexIfChanged` 报告"真的重建了几条"，让
     /// `SemanticIndexBuilder` 可以区分"全部跳过（已是最新）"和"实际重建"两种完成态。
+    /// `search()` 路径不关心该计数，靠 `@discardableResult` 静默忽略。
+    @discardableResult
     private func ensureIndexed(
         _ repos: [Repo],
         model: String,
@@ -336,8 +398,68 @@ final class SemanticSearchService {
         return dot / (sqrt(normA) * sqrt(normB))
     }
 
-    private static func reason(for repo: Repo, query: String, score: Double) -> String {
-        let scoreText = "\(Int((max(0, min(score, 1)) * 100).rounded()))%"
+    // MARK: - A+B+C 排序信号常量与纯函数
+
+    /// A 经验区间锚定下界。文本 embedding 模型（OpenAI / BGE / GTE 等）实测：
+    /// 完全无关文本 cosine 普遍在 0.30~0.50，远高于 0；以 0.30 为下界让"完全无关"映射到 0%。
+    nonisolated static let displayScoreLowAnchor: Double = 0.30
+    /// A 经验区间锚定上界。同一字符串的 embedding cosine 也很少到 1.0，多在 0.95~0.99；
+    /// 以 0.95 为上界让"高度相关"映射到 100%。
+    nonisolated static let displayScoreHighAnchor: Double = 0.95
+
+    /// B 字面命中 boost 阈值。effectiveScore = max(cosine, literalBoostFloor)。
+    /// 0.95 是经验值：字面命中的 repo 至少和"高度相关"同档，避免出现"我搜的词就在 description
+    /// 里，但相似度才 60%" 的反直觉体验。
+    nonisolated static let literalBoostFloor: Double = 0.95
+
+    /// C FTS hit 排序加权系数。固定加在 sortScore 上（非 displayScore）。
+    /// 0.15 ≈ 经验区间跨度（0.65）的 23%，足以让 FTS 命中越过 1-2 档非命中候选，
+    /// 但不至于完全压过明显更高的语义相关。
+    nonisolated static let ftsBoostWeight: Double = 0.15
+
+    /// 把 effectiveScore（cosine 或 literal boost 后的值）线性映射到 [0, 1]。
+    /// 超出锚定区间的输入做 clamp，保证返回值范围稳定。
+    nonisolated static func normalizeDisplayScore(_ raw: Double) -> Double {
+        guard raw.isFinite else { return 0 }
+        let span = displayScoreHighAnchor - displayScoreLowAnchor
+        let normalized = (raw - displayScoreLowAnchor) / span
+        return max(0, min(1, normalized))
+    }
+
+    /// 把 displayScore 映射到 1-4 档视觉档位：
+    /// - 4★：≥ 0.85（高度相关）
+    /// - 3★：≥ 0.65
+    /// - 2★：≥ 0.45
+    /// - 1★：其余
+    /// 档位边界刻意用比 displayScore 阈值（0.75）更细的分布，让用户在 0.45~0.85
+    /// 区间也能看到视觉差异。
+    nonisolated static func tier(forDisplayScore score: Double) -> Int {
+        if score >= 0.85 { return 4 }
+        if score >= 0.65 { return 3 }
+        if score >= 0.45 { return 2 }
+        return 1
+    }
+
+    /// 判定 query 字符串是否字面出现在 repo 的 fullName / description / topics 任一字段。
+    /// 用 `localizedLowercase + contains` 做大小写不敏感子串匹配；不做分词、不做正则。
+    nonisolated static func hasLiteralMatch(repo: Repo, query: String) -> Bool {
+        let lowerQuery = query.localizedLowercase
+        if repo.fullName.localizedLowercase.contains(lowerQuery) { return true }
+        if let description = repo.description, description.localizedLowercase.contains(lowerQuery) { return true }
+        if let topics = repo.topics, topics.localizedLowercase.contains(lowerQuery) { return true }
+        return false
+    }
+
+    /// 生成展示用的命中原因文案。
+    /// 用 displayScore 而非原始 cosine 作为百分数显示，与 UI 阈值滑杆同语义。
+    private static func reason(
+        for repo: Repo,
+        query: String,
+        displayScore: Double,
+        literalHit: Bool,
+        ftsHit: Bool
+    ) -> String {
+        let scoreText = "\(Int((max(0, min(displayScore, 1)) * 100).rounded()))%"
         let lowerQuery = query.localizedLowercase
         if repo.fullName.localizedLowercase.contains(lowerQuery) {
             return "仓库名直接相关，语义相似度 \(scoreText)"
@@ -348,6 +470,11 @@ final class SemanticSearchService {
         if let topics = repo.topics, topics.localizedLowercase.contains(lowerQuery) {
             return "Topics 命中相关方向，语义相似度 \(scoreText)"
         }
+        if ftsHit {
+            return "笔记 / 字段关键词命中，语义相似度 \(scoreText)"
+        }
+        // literalHit == false && ftsHit == false：纯语义召回
+        _ = literalHit
         return "AI 向量相似度 \(scoreText)"
     }
 }

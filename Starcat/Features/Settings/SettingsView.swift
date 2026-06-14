@@ -230,6 +230,17 @@ private struct StorageSettingsTab: View {
     @State private var showsAIContextClearConfirmation: Bool = false
     @State private var aiContextActionError: String?
 
+    // 翻译磁盘缓存（HOM-68 v2 / 2026-06-15）：
+    //   - `DiskReadmeTranslationCache.shared` 是 `@MainActor @Observable` 单例，
+    //     UI 在用量行直接读 `totalBytes` / `itemCount` / `latestCreatedAt` 即可；
+    //   - `showsTranslationCacheClearConfirmation` 控制清空二次确认 alert；
+    //   - 不暴露列表 / 选目录 / Reveal 等复杂入口（dong4j 2026-06-15 拍板：只要用量
+    //     数字 + 清除按钮），所以也没有 actionError 单独 alert——清除失败极少，
+    //     失败时静默由 AppLog 兜底（与摘要 / RepoContext 区别：那两个有自定义目录
+    //     bookmark 等额外失败面，翻译只删默认 appSupport 路径，几乎不会失败）。
+    @State private var translationCache = DiskReadmeTranslationCache.shared
+    @State private var showsTranslationCacheClearConfirmation: Bool = false
+
     /// 清理操作类型。每种类型有不同的确认文案与执行路径。
     private enum PendingAction: Identifiable {
         case readme, image, archive, all
@@ -292,6 +303,12 @@ private struct StorageSettingsTab: View {
                         .help(Text("settings.storage.archive.revealHelp"))
                     }
                 }
+                LabeledContent("settings.storage.translation") {
+                    Text(translationUsageText)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                .help(Text("settings.storage.translation.help"))
                 LabeledContent("settings.storage.log") {
                     Text("settings.storage.logDescription")
                         .foregroundStyle(.tertiary)
@@ -307,6 +324,11 @@ private struct StorageSettingsTab: View {
                     .disabled(isWorking || stats.imageDiskBytes == 0)
                 Button("settings.storage.clearArchive") { pendingAction = .archive }
                     .disabled(isWorking || stats.archiveCount == 0)
+                // HOM-68 v2：清除翻译磁盘缓存。空缓存时 disabled，避免误触发"删空目录"。
+                Button("settings.storage.clearTranslation") {
+                    showsTranslationCacheClearConfirmation = true
+                }
+                .disabled(isWorking || translationCache.itemCount == 0)
                 Button("settings.storage.clearAll", role: .destructive) { pendingAction = .all }
                     .disabled(isWorking || stats.totalBytes == 0)
             }
@@ -383,6 +405,30 @@ private struct StorageSettingsTab: View {
         .task {
             // Tab 出现时主动扫描产物目录（首次进入 / 后台跑过 packer 之后回来都能更新）。
             aiContextStorage.reload()
+        }
+        .task {
+            // Tab 出现时刷新翻译磁盘缓存统计（页面打开瞬间用量行有准确数字，不会延迟一帧）。
+            translationCache.reload()
+        }
+        // HOM-68 v2：清除翻译缓存的二次确认 alert。与 ai context 同款 destructive 角色。
+        .alert(
+            "settings.storage.clearTranslation.confirm",
+            isPresented: $showsTranslationCacheClearConfirmation
+        ) {
+            Button("general.cancel", role: .cancel) {}
+            Button("settings.storage.clearTranslation.action", role: .destructive) {
+                Task {
+                    do {
+                        try await translationCache.deleteEverything()
+                    } catch {
+                        // 失败概率极低（默认 appSupport 路径无权限问题），仍走 alert 入口
+                        // 与其它清理操作语义一致。
+                        storageActionError = error.localizedDescription
+                    }
+                }
+            }
+        } message: {
+            Text("settings.storage.clearTranslation.message")
         }
     }
 
@@ -597,6 +643,19 @@ private struct StorageSettingsTab: View {
             format: String(localized: "settings.storage.archiveUsageFormat"),
             stats.archiveCount,
             stats.archiveBytes.formattedByteSize
+        )
+    }
+
+    /// 翻译磁盘缓存用量行文案：`X 项 · YY KB`。
+    /// 空缓存时显示"未生成"（不显示"0 项 · 0 字节"，更友好）。
+    private var translationUsageText: String {
+        if translationCache.itemCount == 0 {
+            return String(localized: "settings.storage.translation.empty")
+        }
+        return String(
+            format: String(localized: "settings.storage.translationUsageFormat"),
+            translationCache.itemCount,
+            translationCache.totalBytes.formattedByteSize
         )
     }
 }

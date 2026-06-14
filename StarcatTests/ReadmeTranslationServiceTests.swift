@@ -163,74 +163,85 @@ struct ReadmeTranslationServiceStaticTests {
 @Suite("ReadmeTranslationService 缓存联动")
 struct ReadmeTranslationServiceCacheTests {
 
+    /// 隔离的 disk cache + service 三件套。
+    ///
+    /// **HOM-68 v2（2026-06-15）**：原 GRDB 路径已下线，stack 改为：
+    ///   - `DiskReadmeTranslationCache(rootOverride: tmpDir)` 注入测试目录
+    ///   - service 直接消费 cache 作为 `translationRepository`
+    /// 不再需要 `InMemoryDatabaseManager` / repos 表 fixture（owner/repo 自由组合即可）。
     private func makeStack() async throws
-        -> (ReadmeTranslationService, GRDBReadmeTranslationRepository, AppSettings, Int64)
+        -> (ReadmeTranslationService, DiskReadmeTranslationCache, AppSettings, URL)
     {
-        let db = try InMemoryDatabaseManager()
-        let translationRepo = GRDBReadmeTranslationRepository(database: db)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-service-test-\(UUID().uuidString)", isDirectory: true)
+        let cache = DiskReadmeTranslationCache(rootOverride: root)
         let settings = AppSettings()
         let service = ReadmeTranslationService(
-            translationRepository: translationRepo,
+            translationRepository: cache,
             settings: settings,
             keychain: KeychainManager.shared
         )
-
-        let repoId: Int64 = 99
-        try await db.writer.write { db in
-            try db.execute(
-                sql: """
-                INSERT INTO repos (
-                    id, owner, name, full_name, html_url, cached_at
-                ) VALUES (?, 'octo', 'demo', 'octo/demo', 'https://github.com/octo/demo', '2026-05-30T00:00:00Z')
-                """,
-                arguments: [repoId]
-            )
-        }
-        return (service, translationRepo, settings, repoId)
+        return (service, cache, settings, root)
     }
 
     @Test("isCacheFresh：source_hash 匹配当前 sourceHtml → true，被改一字符 → false")
     func isCacheFreshReactsToSourceChange() async throws {
-        let (service, repo, _, repoId) = try await makeStack()
+        let (service, cache, _, root) = try await makeStack()
+        defer { try? FileManager.default.removeItem(at: root) }
         let source = "<h1>Title</h1><p>body</p>"
 
-        try await repo.upsert(ReadmeTranslation(
-            repoId: repoId,
-            targetLanguage: "zh-Hans",
-            model: "test-model",
-            sourceHash: ReadmeTranslationService.hash(source),
-            translatedHtml: "<h1>标题</h1><p>正文</p>",
-            size: 16,
-            createdAt: "2026-06-05T10:00:00Z"
-        ))
+        try await cache.upsert(
+            ReadmeTranslation(
+                repoId: 99,
+                targetLanguage: "zh-Hans",
+                model: "test-model",
+                sourceHash: ReadmeTranslationService.hash(source),
+                translatedHtml: "<h1>标题</h1><p>正文</p>",
+                size: 16,
+                createdAt: "2026-06-05T10:00:00Z"
+            ),
+            owner: "octo",
+            repo: "demo"
+        )
 
         let cached = try #require(
-            try await service.cachedTranslation(repoId: repoId, targetLanguage: .simplifiedChinese)
+            try await service.cachedTranslation(
+                owner: "octo",
+                repo: "demo",
+                targetLanguage: .simplifiedChinese
+            )
         )
 
         #expect(service.isCacheFresh(cached: cached, sourceHtml: source))
         #expect(!service.isCacheFresh(cached: cached, sourceHtml: source + "."))
     }
 
-    @Test("cachedTranslation：按 (repo_id, language) 取，命中错语言时返回 nil")
+    @Test("cachedTranslation：按 (owner, repo, language) 取，命中错语言时返回 nil")
     func cachedTranslationKeyedByLanguage() async throws {
-        let (service, repo, _, repoId) = try await makeStack()
-        try await repo.upsert(ReadmeTranslation(
-            repoId: repoId,
-            targetLanguage: "ja",
-            model: "test-model",
-            sourceHash: "fixed",
-            translatedHtml: "<p>こんにちは</p>",
-            size: 10,
-            createdAt: "2026-06-05T10:00:00Z"
-        ))
+        let (service, cache, _, root) = try await makeStack()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try await cache.upsert(
+            ReadmeTranslation(
+                repoId: 99,
+                targetLanguage: "ja",
+                model: "test-model",
+                sourceHash: "fixed",
+                translatedHtml: "<p>こんにちは</p>",
+                size: 10,
+                createdAt: "2026-06-05T10:00:00Z"
+            ),
+            owner: "octo",
+            repo: "demo"
+        )
 
         let jaHit = try await service.cachedTranslation(
-            repoId: repoId,
+            owner: "octo",
+            repo: "demo",
             targetLanguage: .japanese
         )
         let zhMiss = try await service.cachedTranslation(
-            repoId: repoId,
+            owner: "octo",
+            repo: "demo",
             targetLanguage: .simplifiedChinese
         )
 

@@ -269,4 +269,105 @@ struct RepoRepositoryTests {
         #expect(hits.count == 1)
         #expect(hits.first?.name == "rust-cli")
     }
+
+    // MARK: - 2026-06-14 召回扩展用例
+
+    /// 用不同 owner 的小数据集，专门覆盖 full_name / owner / 笔记命中。
+    /// 不复用 seedDataset 因为它的 owner 都是 "u"，单字符 owner 在 FTS5 token 边界
+    /// 上区分度太低（"u" 也是常见 description token），无法干净验证 owner 列召回。
+    private func seedOwnerDataset(_ repo: GRDBRepoRepository) async throws {
+        func mkUser(login: String) -> GitHubUserDTO {
+            GitHubUserDTO(id: 1, login: login, name: nil, avatarUrl: nil,
+                          publicRepos: nil, followers: nil, following: nil,
+                          bio: nil, company: nil, location: nil, email: nil,
+                          blog: nil, twitterUsername: nil, htmlUrl: nil)
+        }
+        func mkdto(id: Int64, owner: String, name: String, desc: String?) -> StarredRepoDTO {
+            let r = GitHubRepoDTO(
+                id: id, name: name, fullName: "\(owner)/\(name)", owner: mkUser(login: owner),
+                description: desc, language: "Swift",
+                stargazersCount: 0, forksCount: 0, watchersCount: 0,
+                topics: nil, license: nil, homepage: nil,
+                htmlUrl: "https://github.com/\(owner)/\(name)",
+                cloneUrl: nil, sshUrl: nil,
+                isPrivate: false, fork: false, archived: false,
+                pushedAt: nil, createdAt: nil, updatedAt: nil,
+                openIssuesCount: nil, defaultBranch: nil,
+                disabled: nil, isTemplate: nil, score: nil
+            )
+            return StarredRepoDTO(starredAt: "2026-05-29T10:00:00Z", repo: r)
+        }
+        let dtos: [StarredRepoDTO] = [
+            mkdto(id: 101, owner: "colbymchenry", name: "codegraph", desc: "knowledge graph mcp"),
+            mkdto(id: 102, owner: "vercel",       name: "next-foo",   desc: "react app framework"),
+            mkdto(id: 103, owner: "google",       name: "guava",      desc: "java helpers")
+        ]
+        try await repo.upsertStarred(dtos, userID: 100, syncedAt: Date())
+    }
+
+    @Test("searchFTS 单独搜 owner 应能命中（full_name 列拆出 owner token）")
+    func searchFTS_matchesOwnerOnly() async throws {
+        let (repo, _) = try makeRepo()
+        try await seedOwnerDataset(repo)
+
+        // owner 'colbymchenry' 不在 name / description / language / topics 任何列里——
+        // 只有 full_name 列里的 'colbymchenry/codegraph' token 化后才能命中。
+        // 这个用例如果失败，说明 full_name 没进 FTS。
+        let hits = try await repo.searchFTS(query: "colbymchenry")
+        #expect(hits.count == 1)
+        #expect(hits.first?.name == "codegraph")
+    }
+
+    @Test("searchFTS 完整 owner/repo 命中")
+    func searchFTS_matchesFullName() async throws {
+        let (repo, _) = try makeRepo()
+        try await seedOwnerDataset(repo)
+
+        // FTSQuery.sanitize 会包双引号变成 phrase 查询；fts5 unicode61 把 '/' 当切词符,
+        // doc 里 'google/guava' 也是 'google' + 'guava' 两个相邻 token,phrase 仍能匹。
+        let hits = try await repo.searchFTS(query: "google/guava")
+        #expect(hits.count == 1)
+        #expect(hits.first?.name == "guava")
+    }
+
+    @Test("searchFTS 命中私有笔记内容（notes_fts UNION 召回）")
+    func searchFTS_matchesNoteContent() async throws {
+        let (repo, db) = try makeRepo()
+        try await seedOwnerDataset(repo)
+
+        // 给 repo 102 (next-foo) 加笔记，关键词 "部署失败" 不在 repo 任何字段里。
+        let noteRepo = GRDBRepoNoteRepository(database: db)
+        try await noteRepo.upsert(RepoNote(
+            repoId: 102,
+            content: "试过部署失败，已切到别的方案",
+            status: "unread",
+            isAIGenerated: false,
+            editedAt: "2026-06-14T12:00:00Z"
+        ))
+
+        let hits = try await repo.searchFTS(query: "部署失败")
+        #expect(hits.count == 1)
+        #expect(hits.first?.id == 102)
+    }
+
+    @Test("searchFTS 同 repo 多源命中只返回一条（OR 合并去重）")
+    func searchFTS_dedupAcrossSources() async throws {
+        let (repo, db) = try makeRepo()
+        try await seedOwnerDataset(repo)
+
+        // codegraph 的 description 已含 "knowledge"；再加一条同关键词笔记。
+        // 两路命中（repos_fts + notes_fts）经 GROUP BY repo_id 应只返回 1 条 codegraph。
+        let noteRepo = GRDBRepoNoteRepository(database: db)
+        try await noteRepo.upsert(RepoNote(
+            repoId: 101,
+            content: "this knowledge graph is interesting",
+            status: "unread",
+            isAIGenerated: false,
+            editedAt: "2026-06-14T12:00:00Z"
+        ))
+
+        let hits = try await repo.searchFTS(query: "knowledge")
+        let codegraphHits = hits.filter { $0.id == 101 }
+        #expect(codegraphHits.count == 1, "同 repo 在两个 fts 表都命中时不应重复返回")
+    }
 }

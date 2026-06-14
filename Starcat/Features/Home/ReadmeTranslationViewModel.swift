@@ -102,13 +102,20 @@ final class ReadmeTranslationViewModel {
 
         // 仅当源 HTML 已就绪时才查缓存对齐；ReadmeViewModel 还在 loading 时
         // 没必要预查（缓存键不依赖 sourceHash，但是 staleness 计算依赖）。
+        //
+        // HOM-68 v2（2026-06-15）：cachedTranslation 接口从 repoId 改为 owner/repo
+        // —— 磁盘 cache 路径用 `<owner>/<repo>/<lang>.{html,json}`，trending /
+        // activity 这类 ephemeral repo 拿不到稳定 GitHub repo id 时也能命中。
         let requestedRepoId = repo.id
+        let requestedOwner = repo.owner
+        let requestedName = repo.name
         let requestedLanguage = targetLanguage
         currentTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let cached = try await self.service.cachedTranslation(
-                    repoId: requestedRepoId,
+                    owner: requestedOwner,
+                    repo: requestedName,
                     targetLanguage: requestedLanguage
                 )
                 guard !Task.isCancelled,
@@ -166,8 +173,10 @@ final class ReadmeTranslationViewModel {
             guard let self else { return }
             do {
                 // 命中缓存且未过期 → 直接上屏
+                // HOM-68 v2：cachedTranslation 接口从 repoId 改为 owner/repo（见 prepare 同款注释）。
                 if let cached = try await self.service.cachedTranslation(
-                    repoId: repo.id,
+                    owner: repo.owner,
+                    repo: repo.name,
                     targetLanguage: targetLanguage
                 ), self.service.isCacheFresh(cached: cached, sourceHtml: sourceHtml) {
                     self.applyCachedTranslation(cached, language: targetLanguage)
