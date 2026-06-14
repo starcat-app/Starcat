@@ -975,20 +975,40 @@ struct SearchCenterView: View {
         )
     }
 
-    /// 单次结果数（1...100，对齐官方 API 上限）。
+    /// 单次结果数（1...100，对齐官方 API 上限，default 10）。
     ///
-    /// Stepper 而非 TextField：避免用户输入超界值再被钳到引发视觉跳变。
-    /// step 10：100 范围下 step 5 会让用户从 10 调到 100 要按 18 次太累；step 10 更顺手。
+    /// 用 TextField + `.number` format 而非 Stepper：用户调到大值时（如 80）按 Stepper
+    /// 要点很多下，直接输入更顺。
+    ///
+    /// **输入验证**：
+    /// - 类型：`.number.grouping(.never)` formatter 只接受数字字符（自带过滤），不允许
+    ///   字母 / 符号 / 千分号
+    /// - 范围：[1, 100]。在 binding setter 流式钳制 —— 用户输入 999 会被即时压回 100，
+    ///   不需要 blur / 提交才触发。空值 / 负数同样压到下界 1
     private var anySearchMaxResultsField: some View {
         VStack(alignment: .leading, spacing: 5) {
             filterFieldLabel("结果数")
-            Stepper(value: $viewModel.anySearchFilters.maxResults, in: 1...100, step: 10) {
-                Text("\(viewModel.anySearchFilters.maxResults)")
-                    .font(.system(size: 12).monospacedDigit())
-                    .frame(minWidth: 24, alignment: .leading)
-            }
+            TextField("10", value: clampedMaxResultsBinding, format: .number.grouping(.never))
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12))
+                .multilineTextAlignment(.center)
+                .frame(width: 60)
         }
-        .frame(width: 130)
+        .frame(width: 130, alignment: .leading)
+    }
+
+    /// `anySearchFilters.maxResults` 的钳制 binding。
+    ///
+    /// 关键约束：写入永远压到 [1, 100]。AnySearchRequest.init 与 AnySearchWebProvider
+    /// 也会再钳一次，这里是 UI 层第一道防线 —— 让用户在输入框看到的就是最终值，
+    /// 而不是先收下 999 再到网络层悄悄改 100 造成"我明明输入了 999"的错觉。
+    private var clampedMaxResultsBinding: Binding<Int> {
+        Binding(
+            get: { viewModel.anySearchFilters.maxResults },
+            set: { newValue in
+                viewModel.anySearchFilters.maxResults = min(max(1, newValue), 100)
+            }
+        )
     }
 
     /// 折叠态摘要：把当前生效的非默认筛选拼成「code · web,doc · 全球 · 10 条」。
