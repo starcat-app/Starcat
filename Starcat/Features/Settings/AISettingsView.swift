@@ -1429,13 +1429,15 @@ struct AISettingsTab: View {
         )
     }
 
-    /// 当前任务的占位符提示文案。
+    /// 当前任务的占位符提示文案（2026-06-14 v4 占位符全栈归一化方案 C：单段 camelCase）。
     ///
     /// 各任务占位符**互不共享**——每个任务有自己独立的占位符命名空间：
-    /// - **summary**：`{context}` —— repo 元数据 + README 摘要 + 可选 Code XML + 可选外部材料；
-    /// - **tags**：6 个占位符（system 用 `{output.language}`；user 用 `{repository.metadata}` /
-    ///   `{repository.readme}` / `{repository.code_context}` / `{tags.repo}` / `{tags.library}`）；
-    ///   详见 `AIDefaultPrompts.tags` 的注释；
+    /// - **summary**：5 个占位符（system 用 `{outputLanguage}`；user 用 `{outputLanguage}` /
+    ///   `{metadata}` / `{readme}` / `{codeContext}` / `{externalContext}`）；详见
+    ///   `AIDefaultPrompts.summary` 的注释。
+    /// - **tags**：6 个占位符（system 用 `{outputLanguage}`；user 用 `{metadata}` /
+    ///   `{readme}` / `{codeContext}` / `{repoTags}` / `{libraryTags}`）；详见
+    ///   `AIDefaultPrompts.tags` 的注释。
     /// - **embedding**：8 个占位符（`{fullName}` / `{description}` / `{language}` / `{topics}` /
     ///   `{license}` / `{homepage}` / `{body}` / `{notes}`）；详见 `AIDefaultPrompts.embedding`
     ///   的注释；embedding API 不接受 system prompt，所以 system 一栏空且不会被使用。
@@ -1447,7 +1449,7 @@ struct AISettingsTab: View {
     private var promptPlaceholderHint: String {
         switch promptTask {
         case .summary:
-            return "User Prompt 中的 {context} 会在运行时替换为仓库元数据和 README 摘要。"
+            return String(localized: "settings.ai.prompt.placeholders.summary")
         case .tags:
             return String(localized: "settings.ai.prompt.placeholders.tags")
         case .translation:

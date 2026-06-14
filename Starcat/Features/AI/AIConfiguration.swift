@@ -348,65 +348,123 @@ struct AIModelTaskConfiguration: Codable, Equatable, Sendable {
 
 /// AI Prompt 默认值集中地。
 enum AIDefaultPrompts {
+    /// Summary 任务占位符（dong4j 2026-06-14 v4.x 拍板，i18n 策略 C：全英文指令 + Locale 仅控输出语言）：
+    ///
+    /// **system 层**：
+    /// - `{outputLanguage}`：跟 `Locale.current` 派发为 `Simplified Chinese` / `English` /
+    ///   `Japanese` 等；驱动正文语言（技术英文专有名词除外）。
+    ///
+    /// **user 层**：
+    /// - `{outputLanguage}`：复用同一个值；驱动章节标题语言（不再是硬编码中文 `## 一句话总结`）。
+    /// - `{metadata}`：repo 元数据（fullName / description / language / topics / stars / license 等）；
+    /// - `{readme}`：清洗 + 截断后的 README 纯文本；
+    /// - `{codeContext}`：RepoContextPacker 生成的代码 XML（无则空字符串）；
+    /// - `{externalContext}`：AnySearchContextProvider 生成的外部检索 markdown（带
+    ///   `<external_context trust="untrusted">` 包裹，无则空字符串）。
+    ///
+    /// **2026-06-14 v4.x 重构**（dong4j 拍板）：
+    /// 1. 砍掉旧 v3 的硬编码 `Use Simplified Chinese`，统一走 `{outputLanguage}` i18n 派发；
+    /// 2. 把单一黑盒 `{context}` 拆成 4 个透明占位符（metadata / readme / codeContext /
+    ///    externalContext），用户在 Settings 看得见、也能删；
+    /// 3. 把"6 个固定 ## 章节强制必填"改成"7 个推荐章节 + 有信息则写、无信息则省"，
+    ///    避免模型在无信息时硬编内容；唯一硬约束是「Overview」必须有内容（UI 端从摘要
+    ///    开头提取项目预览，没内容会破坏卡片渲染）；
+    /// 4. 加强 LLM 输出约束：禁 `<think>` / `<thinking>` 等推理痕迹 XML、禁外层
+    ///    ``` 围栏整篇包裹、内部代码必须 fenced + 标语言、禁套话；
+    /// 5. 输入材料（Input Materials）放在 user prompt 末尾，利用 LLM recency bias。
+    ///
+    /// **删占位符 = 不注入对应数据**：用户在 Settings 改默认 prompt 把某个占位符删掉，
+    /// service 层就不渲染对应内容；改坏了点 Restore Default 还原。
+    /// 占位符在 dict 中查不到时保留原文（让 LLM 看到字面量便于排错，不静默吞）。
+    ///
+    /// **`{externalContext}` 的 trust 处理**：AnySearch 来自互联网，可能含恶意 prompt
+    /// injection；markdown 自带 `<external_context trust="untrusted">` 包裹和警告语
+    /// （详见 `AnySearchContextProvider.swift`），prompt 模板这一层不再重复声明。
     static let summary = AIPromptConfiguration(
         systemPrompt: """
-        You are Starcat's repository summary assistant.
-        Write the final answer in message.content only.
-        Return Markdown only.
-        Do not write reasoning, analysis traces, outer markdown fences, or JSON.
-        Use Simplified Chinese.
-        Do not invent facts not present in the provided metadata or README.
+        You are Starcat's repository summary assistant, helping developers quickly understand a project and assess its value.
+
+        # Output Format (STRICT)
+        - Write the final answer in message.content only, using Markdown format (no plain text, no JSON).
+        - Do NOT wrap the entire summary in an outer ``` fence; however, code examples, shell commands, configuration snippets, API calls, and similar within the summary MUST be wrapped in ``` fences with a language tag (e.g. ```bash, ```js, ```yaml, ```python, ```swift). Do not use indented code blocks or plain text to represent code.
+        - Do NOT output reasoning, analysis traces, or thought processes.
+        - Do NOT include <think>, <thinking>, <reasoning>, or other reasoning-trace XML tags; if your model has a thinking stage, return only the final answer.
+        - Output language: {outputLanguage} (use this language for the body; technical English proper nouns are excluded — see the next constraint).
+
+        # Factual Constraints
+        - Do NOT fabricate facts beyond what is provided in the metadata, README, or code context.
+        - Skip content that cannot be confirmed from the input materials. Do NOT write "unconfirmed" placeholders, and do NOT fabricate content just to fill out sections.
+        - Preserve technical English proper nouns as-is (library names, command names, framework names, API names, version strings, commit hashes, etc.) — do not force-translate them.
         """,
         userPromptTemplate: """
-        请阅读下面的 GitHub 仓库上下文，生成一份适合开发者快速判断价值的中文 Markdown 摘要。
+        Generate a Markdown summary in {outputLanguage} based on the GitHub repository input materials below, helping developers quickly judge whether the project is worth further investigation.
 
-        输出要求：
-        - 必须按下面的二级标题顺序输出，不要新增其它顶级章节。
-        - 每个章节都要有内容；如果上下文无法确认，请明确写“未从 README 或元数据中确认”。
-        - 保留技术英文名、命令名和框架名。
-        - “最小示例”只有在 README 或元数据中能确认时才写代码块；不能确认时写一句说明，不要编造示例。
-        - 不要输出 JSON，不要用 markdown 代码围栏包裹整篇内容。
+        # Output Guidelines
 
-        必须包含的 Markdown 结构：
+        Output the following sections in order (use {outputLanguage} for section titles — the examples below are in English; write a section only when you have information for it, otherwise skip the entire section; you may add additional important sections as the context warrants):
 
-        ## 一句话总结
-        用 1 句话说明这个项目是什么，以及它解决什么问题。
+        ## Overview
+        Describe the project's positioning, goals, and the problem it solves. **This section MUST have content — the UI extracts the project preview from the beginning of the summary.**
 
-        ## 这个项目是什么
-        用 2-4 个短段落说明核心用途、主要能力、和同类工具相比的定位。
+        ## Core Capabilities
+        Summarize the project's main features, capabilities, or technical strengths.
 
-        ## 平台 / 生态
-        - 列出语言、框架、运行平台、依赖生态或集成对象。
+        ## Use Cases
+        Describe what real-world problems the project addresses and which developers or teams it suits.
 
-        ## 适合场景
-        - 列出 3-6 个适合使用这个项目的场景。
+        ## Tech Ecosystem
+        Describe the platforms, programming languages, frameworks, runtime environments, or related ecosystem the project uses.
 
-        ## 优点
-        - 列出 3-6 个优点或亮点。
+        ## Strengths
+        Summarize the project's highlights, distinctive features, or advantages over similar solutions.
 
-        ## 风险与注意点
-        - 列出 2-5 个风险、限制、维护状态、学习成本或接入成本。
+        ## Risks & Limitations
+        Describe known limitations, maintenance status, compatibility issues, or things to watch out for.
 
-        ## 最小示例
-        给出 README 中能确认的最小使用方式；如无可靠信息，写“未从 README 或元数据中确认”。
+        ## Minimal Example
+        Provide a minimal example only when a reliable one exists in the README or code context; otherwise omit this section. Code MUST be wrapped in ``` fences with a language tag.
 
-        Repository context:
-        {context}
+        # Writing Requirements
+        - Use natural, concise, professional technical language.
+        - Do NOT copy entire passages from the README verbatim; paraphrase in your own words.
+        - Do NOT fabricate information not present in the input materials; if something cannot be confirmed, simply omit it.
+        - Do NOT close with boilerplate like "in summary", "to conclude", or similar.
+        - Preserve technical terms, framework names, command names, and English proper nouns as-is.
+
+        # Input Materials
+
+        ## Metadata
+        {metadata}
+
+        ## README
+        {readme}
+
+        ## Code Context
+        {codeContext}
+
+        ## External References
+        {externalContext}
         """
     )
 
     /// Tags 任务私有占位符（dong4j 2026-06-14 拍板，i18n 策略 C：全英文指令 + Locale 仅控输出语言）：
     ///
     /// **system 层**：
-    /// - `{output.language}`：跟 `Locale.current` 派发为 `Simplified Chinese` / `English` /
+    /// - `{outputLanguage}`：跟 `Locale.current` 派发为 `Simplified Chinese` / `English` /
     ///   `Japanese` 等；驱动 Tag Style Rules 分支选择 + reason 字段语言。
     ///
     /// **user 层**：
-    /// - `{repository.metadata}`：repo 元数据（fullName / description / language / topics 等）；
-    /// - `{repository.readme}`：清洗 + 截断后的 README 纯文本；
-    /// - `{repository.code_context}`：RepoContextPacker 生成的代码 XML（无则空字符串）；
-    /// - `{tags.repo}`：当前仓库已绑定标签（强信号，逗号分隔，不带 label）；
-    /// - `{tags.library}`：用户标签库高频前 30 个（弱信号，逗号分隔，不带 label）。
+    /// - `{metadata}`：repo 元数据（fullName / description / language / topics 等）；
+    /// - `{readme}`：清洗 + 截断后的 README 纯文本；
+    /// - `{codeContext}`：RepoContextPacker 生成的代码 XML（无则空字符串）；
+    /// - `{repoTags}`：当前仓库已绑定标签（强信号，逗号分隔，不带 label）；
+    /// - `{libraryTags}`：用户标签库高频前 30 个（弱信号，逗号分隔，不带 label）。
+    ///
+    /// **2026-06-14 v2 重命名**（dong4j 拍板，方案 C 全栈占位符归一化）：
+    /// 旧两段点分式 `{output.language}` / `{repository.metadata}` / `{repository.readme}` /
+    /// `{repository.code_context}` / `{tags.repo}` / `{tags.library}` 重命名为单段驼峰，
+    /// 跟 Embedding / Translation / Summary 任务的命名风格统一。pre-launch 直接换名，
+    /// 不做 backward compat。
     ///
     /// **删占位符 = 不注入对应数据**：用户在 Settings 改默认 prompt 把某个占位符删掉，
     /// service 层就不渲染对应内容；改坏了点 Restore Default 还原。
@@ -432,14 +490,14 @@ enum AIDefaultPrompts {
         - Generate 3 to 8 tags total. NO duplicates.
 
         # Tag Style Rules
-        Apply ONLY the branch matching {output.language}:
+        Apply ONLY the branch matching {outputLanguage}:
 
-        - If {output.language} is "Simplified Chinese" or "Traditional Chinese":
+        - If {outputLanguage} is "Simplified Chinese" or "Traditional Chinese":
           - Tag names ≤ 4 characters; nouns or short technical terms only (e.g. 「向量检索」「编辑器」「机器学习」).
           - NEVER full sentences.
           - Well-known technical English terms (e.g. RAG, LLM, GitHub, API) MAY remain in English.
 
-        - If {output.language} is "English":
+        - If {outputLanguage} is "English":
           - Tag names: a single domain word, abbreviation, or common technical term (e.g. RAG, LLM, DevOps, WebRTC, Editor).
           - NEVER compound phrases or full sentences.
           - Tag names MUST be in English; do NOT include non-ASCII characters.
@@ -455,26 +513,26 @@ enum AIDefaultPrompts {
         3. If neither is provided, infer tags from the repository context using the style rules above.
 
         # Output Language
-        The "reason" field MUST be written in {output.language}.
-        Tag "name" field follows the Tag Style Rules above (matched against {output.language}).
+        The "reason" field MUST be written in {outputLanguage}.
+        Tag "name" field follows the Tag Style Rules above (matched against {outputLanguage}).
         """,
         userPromptTemplate: """
         Suggest 3 to 8 tags for the GitHub repository described below.
 
         Repository metadata:
-        {repository.metadata}
+        {metadata}
 
         README:
-        {repository.readme}
+        {readme}
 
         Code structure:
-        {repository.code_context}
+        {codeContext}
 
         Existing tags on this repository (strong hint, prefer reuse):
-        {tags.repo}
+        {repoTags}
 
         Other frequently-used tags in your library (style hint, optional):
-        {tags.library}
+        {libraryTags}
         """
     )
 

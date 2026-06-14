@@ -64,27 +64,37 @@ struct RepoAIInsightGeneration: Equatable, Sendable {
 @MainActor
 final class RepoAIInsightService {
 
-    /// makeSource 产物：既给 Summary（用 `text` 整体作为 `{context}` 等价输入），
-    /// 也给 Tags（按占位符 `{repository.metadata}` / `{repository.readme}` /
-    /// `{repository.code_context}` 拆段注入）。
+    /// makeSource 产物：Summary / Tags 任务都用占位符渲染（`{metadata}` / `{readme}` /
+    /// `{codeContext}` / `{externalContext}` / `{repoTags}` / `{libraryTags}`，详见
+    /// `AIDefaultPrompts.summary` 与 `AIDefaultPrompts.tags` 注释）。
     ///
-    /// `text` = `metadata` + "\n" + readme 块 + (可选) "\n\n" + `codeContext`，
-    /// 是 LLM 实际看到的整体顺序，拆段字段只是它的局部投影。
+    /// `text` 字段保留是为了让 `Self.hash(text)` 作为缓存 key 输入——
+    /// 它是 `metadata + "\n" + readme 块 + (可选) "\n\n" + codeContext` 的拼接快照，
+    /// 但**不再直接喂给 prompt**（prompt 走拆段占位符注入）。新增的 externalContext
+    /// 当 generateInsight 拿到 AnySearch 结果时会被合并进 hash 输入（详见
+    /// `summarySource` 局部闭包），保证外部材料一变就让缓存失效。
     private struct Source {
         let text: String
         let hash: String
 
-        /// Tags 占位符 `{repository.metadata}` 的渲染源——
+        /// Summary `{metadata}` / Tags `{metadata}` 的渲染源——
         /// repo 元数据多行块（fullName / description / language / topics / license / stars / forks / homepage）。
         let metadata: String
 
-        /// Tags 占位符 `{repository.readme}` 的渲染源——清洗 + 截断后的 README 纯文本。
+        /// Summary `{readme}` / Tags `{readme}` 的渲染源——清洗 + 截断后的 README 纯文本。
         /// 不含 "README:" 头（头由 prompt 模板自带，占位符仅渲染纯数据）。
         let readme: String
 
-        /// Tags 占位符 `{repository.code_context}` 的渲染源——RepoContextPacker 生成的 XML。
-        /// 失败 / 关闭 / 私仓不允许时为空字符串（不是 nil，让占位符直接渲染空段不出现 `{xxx}` 字面量）。
+        /// Summary `{codeContext}` / Tags `{codeContext}` 的渲染源——
+        /// RepoContextPacker 生成的 XML。失败 / 关闭 / 私仓不允许时为空字符串
+        /// （不是 nil，让占位符直接渲染空段不出现 `{codeContext}` 字面量）。
         let codeContext: String
+
+        /// Summary `{externalContext}` 的渲染源——AnySearch 生成的外部检索 markdown
+        /// （已含 `<external_context trust="untrusted">` XML 包裹 + 警告语，详见
+        /// `AnySearchContextProvider`）。无外部上下文 / 用户关了开关 / 私仓不允许时
+        /// 为空字符串。Tags 任务不消费此字段——标签推荐不需要外部检索结果做风格参考。
+        let externalContext: String
 
         /// Y2：从 RepoContextPacker 拿到的元信息（命中缓存或新生成都填充）。
         /// 透传到 makeInsight 写入 RepoAIInsight.contextMetadata，供 UI footer 显示。
@@ -100,6 +110,7 @@ final class RepoAIInsightService {
             metadata: String,
             readme: String,
             codeContext: String,
+            externalContext: String = "",
             contextMeta: RepoAIInsightContextMeta? = nil,
             contextDegradationReason: ContextDegradationReason? = nil
         ) {
@@ -108,6 +119,7 @@ final class RepoAIInsightService {
             self.metadata = metadata
             self.readme = readme
             self.codeContext = codeContext
+            self.externalContext = externalContext
             self.contextMeta = contextMeta
             self.contextDegradationReason = contextDegradationReason
         }
@@ -220,7 +232,7 @@ final class RepoAIInsightService {
         }
 
         // 2026-06-14 dong4j 反馈重构：Tags 双层 hints 改走占位符渲染路径
-        //   ({tags.repo} / {tags.library}，详见 AIDefaultPrompts.tags 注释)，
+        //   ({repoTags} / {libraryTags}，详见 AIDefaultPrompts.tags 注释)，
         //   不再在 source.text 末尾硬拼接附录，因此：
         //   - 摘要任务的 source 不再被无关 Tag 规则污染（旧实现 augmentedSource 同时
         //     喂给了 summary 和 tags 两条路径，是隐性 bug）；
@@ -231,15 +243,22 @@ final class RepoAIInsightService {
 
         // 两者都需要时并发跑；任一关闭则串行 / 短路，避免无意义 AI 调用。
         // Summary 走 `summarySource`（含 AnySearch 外部材料），Tags 走 `(source, hints)`。
+        //
+        // 2026-06-14 v4 拆段重构：旧实现把 ext.markdown 拼到 `source.text` 末尾，依赖
+        // Summary prompt 的单一 `{context}` 占位符替换吞下整段。新实现把 `externalContext`
+        // 升级为一等字段，由 generateSummary 通过独立 `{externalContext}` 占位符渲染；
+        // `text` 字段仍合并 ext.markdown 仅为了 hash 计算——任何 ext 变化都让缓存失效，
+        // 与 v3 行为等价。
         let summarySource: Source = {
             guard let context = resolvedExternalContext else { return source }
-            let merged = source.text + "\n" + context.markdown
+            let hashInput = source.text + "\n" + context.markdown
             return Source(
-                text: merged,
-                hash: Self.hash(merged),
+                text: hashInput,
+                hash: Self.hash(hashInput),
                 metadata: source.metadata,
                 readme: source.readme,
                 codeContext: source.codeContext,
+                externalContext: context.markdown,
                 contextMeta: source.contextMeta,
                 contextDegradationReason: source.contextDegradationReason
             )
@@ -265,7 +284,10 @@ final class RepoAIInsightService {
         let suggestions = (try? resolvedTagResult.get()) ?? []
         if let context = resolvedExternalContext, !summaryText.isEmpty {
             let links = context.sources.map { "- [\($0.host ?? $0.absoluteString)](\($0.absoluteString))" }
-            summaryText += "\n\n## 外部参考来源\n" + links.joined(separator: "\n")
+            // 2026-06-14 v4：footer 标题走 i18n。旧版硬编码"## 外部参考来源"导致英文
+            // 系统下生成的摘要混杂中文标题，与 prompt 的 {outputLanguage} 策略冲突。
+            let footerTitle = String(localized: "ai.assistant.summary.externalReferences.title")
+            summaryText += "\n\n## \(footerTitle)\n" + links.joined(separator: "\n")
         }
         let tagErrorMessage: String? = {
             if case .failure(let error) = resolvedTagResult {
@@ -517,10 +539,23 @@ final class RepoAIInsightService {
         let task = settings.aiSummaryTask
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "摘要")
         let params = settings.effectiveParameters(for: task)
-        // Summary 任务私有占位符：仅 `{context}`（兼上 README + 元数据 + 可选 Code XML + 可选外部材料）。
+        // Summary 任务占位符（v4，2026-06-14）：
+        // - system: `{outputLanguage}`
+        // - user:   `{outputLanguage}` / `{metadata}` / `{readme}` / `{codeContext}` / `{externalContext}`
+        // 详见 `AIDefaultPrompts.summary` 注释。删某个占位符 → 不渲染对应内容；
+        // dict 里 build 完整 5 key 即可，prompt 模板里没用到的 key 不会有副作用。
+        let outputLanguage = Self.outputLanguageDescriptor()
         let request = AIChatRequest(
-            systemPrompt: task.prompt.systemPrompt,
-            userPrompt: task.prompt.renderedUserPrompt(placeholders: ["context": source.text]),
+            systemPrompt: task.prompt.renderedSystemPrompt(placeholders: [
+                "outputLanguage": outputLanguage
+            ]),
+            userPrompt: task.prompt.renderedUserPrompt(placeholders: [
+                "outputLanguage": outputLanguage,
+                "metadata": source.metadata,
+                "readme": source.readme,
+                "codeContext": source.codeContext,
+                "externalContext": source.externalContext
+            ]),
             model: model,
             parameters: params,
             responseFormat: .text
@@ -547,10 +582,14 @@ final class RepoAIInsightService {
 
     /// Tags 任务私有占位符渲染。
     ///
-    /// **占位符约定**（详见 `AIDefaultPrompts.tags` 注释）：
-    /// - system prompt：`{output.language}`（驱动 Tag Style Rules 分支 + reason 字段语言）
-    /// - user prompt：`{repository.metadata}` / `{repository.readme}` /
-    ///   `{repository.code_context}` / `{tags.repo}` / `{tags.library}`
+    /// **占位符约定**（v4，详见 `AIDefaultPrompts.tags` 注释）：
+    /// - system prompt：`{outputLanguage}`（驱动 Tag Style Rules 分支 + reason 字段语言）
+    /// - user prompt：`{metadata}` / `{readme}` / `{codeContext}` / `{repoTags}` / `{libraryTags}`
+    ///
+    /// **2026-06-14 v4 重命名**（dong4j 拍板，方案 C 全栈占位符归一化）：
+    /// 旧两段式 `{output.language}` / `{repository.metadata}` / `{repository.readme}` /
+    /// `{repository.code_context}` / `{tags.repo}` / `{tags.library}` 重命名为单段驼峰，
+    /// 跟 Embedding / Translation / Summary 任务对齐。pre-launch 直接换名，不做 backward compat。
     ///
     /// **删占位符 = 不注入对应数据**：用户在 Settings 改默认 prompt 把某个占位符删掉，
     /// service 这里仍然 build 同一份 dict，但替换不到 → 自然不渲染对应内容；
@@ -561,17 +600,17 @@ final class RepoAIInsightService {
 
         let outputLanguage = Self.outputLanguageDescriptor()
         let systemPrompt = task.prompt.renderedSystemPrompt(placeholders: [
-            "output.language": outputLanguage
+            "outputLanguage": outputLanguage
         ])
         // hints 已由 makeTagHints 工厂方法做过 trim + 去重 + 排序 + 截断（详见 AITagHints 注释），
         // 这里 join 即可；任一为空时占位符渲染为空字符串，prompt 模板里对应的 label
         // 保持原样（用户编辑 prompt 时所见即所得）。
         let userPrompt = task.prompt.renderedUserPrompt(placeholders: [
-            "repository.metadata": source.metadata,
-            "repository.readme": source.readme,
-            "repository.code_context": source.codeContext,
-            "tags.repo": hints.repoTags.joined(separator: ", "),
-            "tags.library": hints.libraryTags.joined(separator: ", ")
+            "metadata": source.metadata,
+            "readme": source.readme,
+            "codeContext": source.codeContext,
+            "repoTags": hints.repoTags.joined(separator: ", "),
+            "libraryTags": hints.libraryTags.joined(separator: ", ")
         ])
 
         let response = try await client.chat(request: AIChatRequest(
@@ -584,11 +623,12 @@ final class RepoAIInsightService {
         return try Self.decodeTagSuggestions(json: response.content)
     }
 
-    /// `{output.language}` 占位符的 Locale 派发。
+    /// `{outputLanguage}` 占位符的 Locale 派发。
     ///
     /// 派发到 LLM 一眼能识别的英文语言名（`Simplified Chinese` / `English` / 等），
     /// 避免不同 Provider 对 BCP-47 标识（`zh-Hans`）解读不一致。
-    /// 仅 Tags 任务在用；将来其它任务支持 `{output.language}` 时复用本 helper。
+    /// Tags 与 Summary 任务都用此 helper 提供 `{outputLanguage}` 值（2026-06-14 v4
+    /// 起统一）；将来其它需要按系统语言切换输出的任务也复用本 helper。
     nonisolated static func outputLanguageDescriptor() -> String {
         let lang = Locale.current.language.languageCode?.identifier ?? "en"
         switch lang {
@@ -758,9 +798,9 @@ final class RepoAIInsightService {
         //
         // 注：旧 hash 与新 hash 算法不同，存量缓存会一次性"看似失效"。这是一次性升级代价；
         // 之后该 repo 重新生成一次即可永久稳定，不会再因为 stars 涨一颗就失效。
-        // 元数据块——单独抽出，既给 Summary 走 `text` 整体注入，也给 Tags
-        // 占位符 `{repository.metadata}` 单独注入（Tags prompt 模板里
-        // README 头由用户自己写，不在 metadata 块里）。
+        // 元数据块——单独抽出，给 Summary `{metadata}` 与 Tags `{metadata}` 占位符
+        // 共用注入；Source.text 字段也用它做 hash 输入快照（README 头由 prompt 模板
+        // 自带，不在 metadata 块里，占位符仅渲染纯数据）。
         let metadataBlock = [
             "Repository: \(repo.fullName)",
             "Description: \(repo.description ?? "")",
