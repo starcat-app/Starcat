@@ -55,9 +55,19 @@ final class SearchCenterViewModel {
         self.historyRepository = historyRepository
         self.includeWebInAll = includeWebInAll
 
-        // 首次构造异步拉一次历史；调用方不需要 await，UI 出现后逐渐填充即可。
-        // 失败时静默置空（历史不可见好过把 UI 卡住）。
-        Task { await self.reloadHistory() }
+        // 历史加载放在 `present()` 触发，不在 init 做。
+        //
+        // HOM-199 修复（dong4j 2026-06-14）：原实现在 init 里 `Task { await reloadHistory() }`,
+        // 但 HomeView.init 与 AppDependencies.init 同步发生在 `_anonymous` 占位 DB 阶段
+        // （D-30 多账号 DB 隔离），此时 `historyRepository.fetchAll()` 命中的是空的占位库；
+        // 之后 `AuthSession.restoreSessionIfAvailable` → `database.reopen(userId:)` 把 DB
+        // pool 切到该 user 的真实 SQLite，但本 VM 没有任何路径再拉一次 → `history` 永远停留
+        // 在空快照，用户必须先 submit 一次才能间接触发 `reloadHistory()`（见 `submit()`）
+        // 把真实历史搬上来。
+        //
+        // 修法选型（dong4j 选择方案 2，与 AuthSession 解耦）：每次 `present()` 时按需 reload。
+        // 代价：首次打开会多一次 SQLite 读（50 行表，<1ms）；收益：彻底回避 DB 切换时序窗口，
+        // ViewModel 不需要订阅 AuthSession.state，分层依然干净。
     }
 
     var candidates: [SearchCandidate] {
@@ -151,6 +161,12 @@ final class SearchCenterViewModel {
         // 重新打开只恢复面板，不重置选中项或重新搜索。用户误点遮罩关闭后应回到
         // 原来的 query、scope、filters、结果和键盘位置。
         isPresented = true
+        // HOM-199 修复：每次打开都 fire-and-forget 拉一次最新历史。
+        // - 首次打开（init 后从未加载）→ 把历史从真实 user DB 填进来；
+        // - 后续打开 → 顺便吸收上一次提交可能并发产生的写入（成本：单次 50 行表 SQLite read）。
+        // 用 detached-on-MainActor 模式：本 VM 是 @MainActor，`Task { ... }` 继承 actor，
+        // SwiftUI Button 调用 present() 时不需要 await，UI 已经显示后历史会异步填充。
+        Task { await self.reloadHistory() }
     }
 
     func dismiss() {
