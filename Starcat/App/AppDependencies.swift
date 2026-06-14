@@ -548,6 +548,21 @@ final class AppDependencies {
                     "switchUserDatabase failed for userId=\(userId.map(String.init) ?? "anonymous", privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
             }
+
+            // HOM-199 B1：DB 切到新用户后立即 reload StarredRegistry。
+            //
+            // 为什么不依赖 `onSyncCompleted`：那是 SyncManager.performFullSync 跑完才触发，
+            // 通常滞后 1~5 秒。这段窗口里所有 RepoCardViewData.isStarred 都从空 / 旧用户的
+            // registry 读出 → 卡片心形全空、HomeViewModel 的 isStarred 投影错误，
+            // 直到 sync 完成才"突然出现"心形，体验割裂。
+            //
+            // 这里 reload 的是 **登录前已经持久化在用户 DB 里的** repos.is_starred 列，
+            // 不需要走网络——纯磁盘读 < 50ms，可以接受同步等待。
+            //
+            // signOut 路径（userId == nil）也跑：DB 已切到 _anonymous，registry 应是空集；
+            // 走 reload 会从 anonymous DB 读到空集，等价 `clearOnSignOut()`，不冲突。
+            // 失败容忍：reload 内部已 try/catch + 日志，不会向外抛错破坏 closure 语义。
+            await self.starredRegistryBootstrapper.reload()
         }
 
         // 启动期 reload：异步 Task，不阻塞 init。测试 host 跳过避免触发 DB 启动期成本。
