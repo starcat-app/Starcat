@@ -102,6 +102,13 @@ enum RepoContextStorageError: LocalizedError {
 @Observable
 final class RepoContextStorage {
 
+    /// security-scoped bookmark 授权的是用户选择目录，实际产物可能位于其 `repocontext`
+    /// 子目录。两者必须分开保存，否则 bookmark 解析回父目录时会误把父目录当输出根。
+    private struct ResolvedOutputRoot {
+        let url: URL
+        let securityScopeURL: URL?
+    }
+
     static let shared = RepoContextStorage()
 
     private static let bookmarkKey = "settings.repoContext.outputDirectoryBookmark.v1"
@@ -111,6 +118,8 @@ final class RepoContextStorage {
 
     private(set) var projects: [RepoContextStoredProject] = []
     private(set) var lastErrorMessage: String?
+    /// UserDefaults 不受 Observation 自动追踪；切换配置后递增以刷新路径与按钮状态。
+    private var directoryConfigurationRevision: Int = 0
 
     init(
         fileManager: FileManager = .default,
@@ -125,11 +134,13 @@ final class RepoContextStorage {
     // MARK: - UI 状态属性（@Observable 派生）
 
     var hasCustomOutputDirectory: Bool {
-        fixedRootURL == nil && defaults.data(forKey: Self.bookmarkKey) != nil
+        _ = directoryConfigurationRevision
+        return fixedRootURL == nil && defaults.data(forKey: Self.bookmarkKey) != nil
     }
 
     var outputDirectoryDisplayPath: String {
-        (try? resolveOutputRoot().url.path) ?? "输出目录授权已失效"
+        _ = directoryConfigurationRevision
+        return (try? resolveOutputRoot().url.path) ?? "输出目录授权已失效"
     }
 
     var totalBytes: Int64 { projects.reduce(0) { $0 + $1.totalBytes } }
@@ -158,15 +169,21 @@ final class RepoContextStorage {
 
         let outputRoot = Self.customOutputRoot(for: url)
         try fileManager.createDirectory(at: outputRoot, withIntermediateDirectories: true)
-        let data = try outputRoot.bookmarkData(
+        // bookmark 保存用户实际授权的目录；恢复后再计算 repocontext 子目录。
+        // macOS 可能把子目录 bookmark 规范化回授权父目录，不能依赖它保留 child path。
+        let data = try url.bookmarkData(
             options: .withSecurityScope,
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         )
         let source = try resolveOutputRoot()
         // 当前仍持有用户所选父目录的 security scope，迁移时无需对子目录重复申请。
-        try migrateProjects(from: source, to: (outputRoot, false))
+        try migrateProjects(
+            from: source,
+            to: ResolvedOutputRoot(url: outputRoot, securityScopeURL: nil)
+        )
         defaults.set(data, forKey: Self.bookmarkKey)
+        directoryConfigurationRevision += 1
         reload()
     }
 
@@ -181,9 +198,10 @@ final class RepoContextStorage {
     /// 恢复默认目录也属于目录切换，必须先把当前自定义目录中的项目迁回容器。
     func resetOutputDirectory() throws {
         let source = try resolveOutputRoot()
-        let destination = (try defaultOutputRoot(), false)
+        let destination = ResolvedOutputRoot(url: try defaultOutputRoot(), securityScopeURL: nil)
         try migrateProjects(from: source, to: destination)
         defaults.removeObject(forKey: Self.bookmarkKey)
+        directoryConfigurationRevision += 1
         reload()
     }
 
@@ -378,25 +396,23 @@ final class RepoContextStorage {
     // MARK: - 内部：security scope 与迁移
 
     private func withResolvedRoot<T>(
-        _ resolved: (url: URL, requiresSecurityScope: Bool),
+        _ resolved: ResolvedOutputRoot,
         _ operation: (URL) throws -> T
     ) throws -> T {
-        let didStart = resolved.requiresSecurityScope
-            ? resolved.url.startAccessingSecurityScopedResource()
-            : false
-        if resolved.requiresSecurityScope && !didStart {
+        let didStart = resolved.securityScopeURL?.startAccessingSecurityScopedResource() ?? false
+        if resolved.securityScopeURL != nil && !didStart {
             throw RepoContextStorageError.outputDirectoryUnavailable
         }
         defer {
-            if didStart { resolved.url.stopAccessingSecurityScopedResource() }
+            if didStart { resolved.securityScopeURL?.stopAccessingSecurityScopedResource() }
         }
         return try operation(resolved.url)
     }
 
     /// 只迁移能够识别的项目；目标冲突时以源目录版本覆盖。
     private func migrateProjects(
-        from source: (url: URL, requiresSecurityScope: Bool),
-        to destination: (url: URL, requiresSecurityScope: Bool)
+        from source: ResolvedOutputRoot,
+        to destination: ResolvedOutputRoot
     ) throws {
         guard source.url.standardizedFileURL != destination.url.standardizedFileURL else { return }
 
@@ -442,11 +458,13 @@ final class RepoContextStorage {
         }
     }
 
-    private func resolveOutputRoot() throws -> (url: URL, requiresSecurityScope: Bool) {
-        if let fixedRootURL { return (fixedRootURL, false) }
+    private func resolveOutputRoot() throws -> ResolvedOutputRoot {
+        if let fixedRootURL {
+            return ResolvedOutputRoot(url: fixedRootURL, securityScopeURL: nil)
+        }
 
         guard let bookmark = defaults.data(forKey: Self.bookmarkKey) else {
-            return (try defaultOutputRoot(), false)
+            return ResolvedOutputRoot(url: try defaultOutputRoot(), securityScopeURL: nil)
         }
 
         var isStale = false
@@ -472,7 +490,10 @@ final class RepoContextStorage {
             )
             defaults.set(refreshed, forKey: Self.bookmarkKey)
         }
-        return (url, true)
+        return ResolvedOutputRoot(
+            url: Self.customOutputRoot(for: url),
+            securityScopeURL: url
+        )
     }
 
     private func defaultOutputRoot() throws -> URL {
