@@ -268,6 +268,7 @@ struct WeeklyContentView: View {
 
     /// 空 / 错误状态视图。
     /// retry 闭包给 Button 直接调用，错误态需要"重试"，空态默认只是再刷一次。
+    @ViewBuilder
     private func emptyState(
         systemImage: String,
         title: LocalizedStringKey,
@@ -275,33 +276,35 @@ struct WeeklyContentView: View {
         subtitleText: String? = nil,
         retry: (() -> Void)? = nil
     ) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 36))
-                .foregroundStyle(.tertiary)
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            if let subtitle {
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-            } else if let subtitleText {
-                Text(verbatim: subtitleText)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-            }
-            if let retry {
+        // 注：因为 EmptyStateView 是 generic on Accessory，retry 有无两种分支
+        // 不能共用一个 if-else（generic 参数不一致编译期就分裂为两个类型），
+        // 所以这里拆成两条独立的 EmptyStateView 调用。
+        if let retry {
+            EmptyStateView(
+                systemImage: systemImage,
+                title: title,
+                subtitle: subtitle,
+                subtitleText: subtitleText,
+                spacing: 12
+            ) {
                 Button(action: retry) {
                     Text("weekly.action.retry")
                 }
                 .controlSize(.small)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding()
+        } else {
+            EmptyStateView(
+                systemImage: systemImage,
+                title: title,
+                subtitle: subtitle,
+                subtitleText: subtitleText,
+                spacing: 12
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
     }
 }
 

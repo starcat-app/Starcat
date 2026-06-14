@@ -226,17 +226,13 @@ struct RepoDetailView: View {
     // MARK: - 空态
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 56))
-                .foregroundStyle(.tertiary)
-            Text("empty.noSelection")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text("empty.selectFromList")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
+        EmptyStateView(
+            systemImage: "doc.text.magnifyingglass",
+            title: "empty.noSelection",
+            subtitle: "empty.selectFromList",
+            iconSize: 56,
+            spacing: 12
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -308,17 +304,11 @@ struct ReadmeStateView: View {
             }
 
         case .empty:
-            VStack(spacing: 10) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 36))
-                    .foregroundStyle(.tertiary)
-                Text("readme.empty")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                Text("readme.emptyDescription")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
+            EmptyStateView(
+                systemImage: "doc.text",
+                title: "readme.empty",
+                subtitle: "readme.emptyDescription"
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .requiresLogin:

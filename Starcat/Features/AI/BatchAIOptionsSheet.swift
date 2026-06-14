@@ -163,9 +163,11 @@ struct BatchAIOptionsSheet: View {
                 .controlSize(.mini)
                 .tint(.accentColor)
 
+            // 2026-06-14 D-31 follow-up：.tertiary → .secondary。
+            // hint 仍需要能读清（百分比阈值是关键提示），与 D-31 全局对比度修正对齐。
             Text(String(format: String(localized: "batchAI.options.threshold.hintFormat"), percentString(options.confidenceThreshold)))
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
         .padding(12)
         .background(

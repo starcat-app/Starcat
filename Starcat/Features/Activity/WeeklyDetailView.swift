@@ -94,17 +94,13 @@ struct WeeklyDetailView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "newspaper")
-                .font(.system(size: 42))
-                .foregroundStyle(.tertiary)
-            Text("weekly.detail.emptyTitle")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text("weekly.detail.emptySubtitle")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
+        EmptyStateView(
+            systemImage: "newspaper",
+            title: "weekly.detail.emptyTitle",
+            subtitle: "weekly.detail.emptySubtitle",
+            iconSize: 42,
+            spacing: 12
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }

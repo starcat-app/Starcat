@@ -331,17 +331,13 @@ struct ActivityDetailView: View {
     // MARK: - 空态
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "tray.full")
-                .font(.system(size: 42))
-                .foregroundStyle(.tertiary)
-            Text("activity.detail.emptyTitle")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text("activity.detail.emptySubtitle")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
+        EmptyStateView(
+            systemImage: "tray.full",
+            title: "activity.detail.emptyTitle",
+            subtitle: "activity.detail.emptySubtitle",
+            iconSize: 42,
+            spacing: 12
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }
