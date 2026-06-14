@@ -455,7 +455,32 @@ final class RepoAIInsightService {
             }
             return ""
         }()
-        var source = [
+
+        // HOM-199 AI 摘要缓存稳定化（2026-06-14）：拆分"喂 LLM 的文本"和"缓存键 hash"两条路径。
+        //
+        // 旧版用同一个 `source` 字符串既送 LLM 又算 SHA256 写进 `ai_summaries.source_hash`。
+        // 但 `source` 里塞了 `Stars: N` / `Forks: M` 这种 GitHub sync 每次都会刷新的流量数据，
+        // 导致——
+        //   1. 用户登录 / 重新登录 → AuthSession 触发立即 performFullSync；
+        //   2. 几乎每个仓库的 starsCount / forksCount 都被刷成新值；
+        //   3. 所有 ai_summaries.source_hash 一次性全部失效；
+        //   4. UI 端 cachedInsight() 因 hash 不匹配返回 nil → 用户看到"AI 摘要全部消失"，
+        //      数据其实没丢，DB 表里 summary_json 还在。
+        //
+        // 修复策略：保留 `llmText`（含 stars/forks/homepage，让 LLM 仍有热度感知，
+        // 重新生成时摘要质量不退化），但 `hashText` 只包含"语义稳定子集"：
+        //   - repo 身份：fullName
+        //   - 作者主动维护的元信息：description / language / topics / license
+        //   - README 正文
+        //   - 代码上下文 XML（commit SHA 改 = 代码语义改，应该重生成 → 仍进 hash）
+        //
+        // 剔除字段：
+        //   - Stars / Forks：纯流量数据，不影响"这个项目做什么"的判定
+        //   - Homepage：少数仓库主会改，但改了不需要重生成摘要（首页 URL 跟项目定位无关）
+        //
+        // 注：旧 hash 与新 hash 算法不同，存量缓存会一次性"看似失效"。这是一次性升级代价；
+        // 之后该 repo 重新生成一次即可永久稳定，不会再因为 stars 涨一颗就失效。
+        var llmText = [
             "Repository: \(repo.fullName)",
             "Description: \(repo.description ?? "")",
             "Language: \(repo.language ?? "")",
@@ -464,6 +489,16 @@ final class RepoAIInsightService {
             "Stars: \(repo.starsCount)",
             "Forks: \(repo.forksCount)",
             "Homepage: \(repo.homepage ?? "")",
+            "README:",
+            readmeText
+        ].joined(separator: "\n")
+
+        var hashText = [
+            "Repository: \(repo.fullName)",
+            "Description: \(repo.description ?? "")",
+            "Language: \(repo.language ?? "")",
+            "Topics: \(repo.topics ?? "")",
+            "License: \(repo.license ?? "")",
             "README:",
             readmeText
         ].joined(separator: "\n")
@@ -490,7 +525,10 @@ final class RepoAIInsightService {
             case .success(let result):
                 if let contextXml = try? String(contentsOf: result.url, encoding: .utf8),
                    !contextXml.isEmpty {
-                    source += "\n\n" + contextXml
+                    // 代码上下文 XML 既给 LLM 用又进 hash：commit SHA 改 = 代码语义改
+                    // = 该重生成摘要。这是"语义级变更"，不属于 HOM-199 要稳定化的流量字段。
+                    llmText += "\n\n" + contextXml
+                    hashText += "\n\n" + contextXml
                     contextMeta = RepoAIInsightContextMeta(
                         commitSha: result.metadata.commitSha,
                         ref: result.metadata.ref,
@@ -510,8 +548,8 @@ final class RepoAIInsightService {
         }
 
         return Source(
-            text: source,
-            hash: Self.hash(source),
+            text: llmText,
+            hash: Self.hash(hashText),
             contextMeta: contextMeta,
             contextDegradationReason: degradationReason
         )
