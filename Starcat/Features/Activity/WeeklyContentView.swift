@@ -182,6 +182,11 @@ struct WeeklyContentView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                // HOM-201 P1-1（2026-06-14）：weekly 行 hover 500ms 后预拉 trending README，
+                // 与 trending 列表同款（weekly 详情走 loadTrending 命中 trending_readmes 表）。
+                .readmePrefetch { [readmeAPI = dependencies.readmeAPI, owner = project.owner, name = project.name] in
+                    await readmeAPI.prefetchTrending(owner: owner, repo: name)
+                }
                 .contextMenu {
                     Button(action: { open(project.url) }) {
                         Text("weekly.action.openRepo")
