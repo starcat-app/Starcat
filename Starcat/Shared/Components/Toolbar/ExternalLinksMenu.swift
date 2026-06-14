@@ -38,7 +38,28 @@ struct ExternalLinksMenu: View {
 
     let selection: ToolbarRepoSelection
     let codeFlowRepo: Repo?
-    @State private var isCodeFlowPresented = false
+    /// CodeFlow sheet 的呈现状态，用 Identifiable item 驱动，**不要**回退到
+    /// `.sheet(isPresented: Bool)`。
+    ///
+    /// 历史坑（dong4j 2026-06-14 验收反馈）：原本用 `@State isCodeFlowPresented: Bool`
+    /// + `.sheet(isPresented:)`，从 toolbar 打开 CodeFlow 再点右上角 ✕ 关闭时，
+    /// sheet 会"关闭 → 短暂再次出现 → 再关闭"。
+    ///
+    /// 根因：本组件嵌在 `RepoListView.makeManageToolbarSpec()` 的
+    /// `AnyView(Group { ExternalLinksMenu, CloneMenu })` trailing 闭包里，
+    /// trailing 会随 `viewModel.selectedRepo` / `starredRegistry` /
+    /// `authSession` 等任意状态变化被频繁重建。`dismiss()` 触发 sheet 关闭时，
+    /// SwiftUI 内部 sheet state 与外部 `$isCodeFlowPresented` binding 的更新
+    /// 存在 1 帧时序差；这一帧里如果父视图正好重建，**新创建的 binding 实例**
+    /// 让 sheet "复活" 1 帧后才真正关闭 —— 视觉上就是闪现一次。
+    ///
+    /// 修复：`.sheet(item:)` 用 Identifiable item 的存在性驱动 sheet，关闭
+    /// 即 `item = nil`，SwiftUI 通过 item identity 跟踪状态，不依赖 Bool
+    /// binding 在父视图重建期间的同步性。`Repo` 已 conform Identifiable
+    /// (`id: Int64`)，可直接当 item driver。
+    ///
+    /// 参考：https://www.hackingwithswift.com/forums/swiftui/why-is-my-sheet-reappearing-briefly-after-being-dismissed/29670
+    @State private var codeFlowSheetRepo: Repo?
 
     init(selection: ToolbarRepoSelection, codeFlowRepo: Repo? = nil) {
         self.selection = selection
@@ -50,17 +71,17 @@ struct ExternalLinksMenu: View {
             if codeFlowRepo != nil {
                 FeaturedExternalLinksControl(
                     selection: selection,
-                    onOpenCodeFlow: { isCodeFlowPresented = true }
+                    // 直接把传入的 codeFlowRepo 赋给 state item;
+                    // sheet 自然在 codeFlowSheetRepo 非 nil 时呈现。
+                    onOpenCodeFlow: { codeFlowSheetRepo = codeFlowRepo }
                 )
             } else {
                 standardMenu
             }
         }
         .help("externalLinks.hint")
-        .sheet(isPresented: $isCodeFlowPresented) {
-            if let codeFlowRepo {
-                CodeFlowPanel(repo: codeFlowRepo)
-            }
+        .sheet(item: $codeFlowSheetRepo) { repo in
+            CodeFlowPanel(repo: repo)
         }
     }
 

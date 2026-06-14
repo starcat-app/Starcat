@@ -216,6 +216,12 @@ struct SearchCenterView: View {
             }
 
             if viewModel.isGitHubFiltersExpanded {
+                // 两行布局（dong4j 2026-06-14 反馈调整）：
+                // - 第一行：核心内容筛选（语言 / Topic / 最低 Stars）+ 主 CTA「应用筛选」
+                //   把 CTA 放在视觉显眼的右上角，与命令面板的「主操作位于右上」惯例一致
+                // - 第二行：排序与时间相关（排序方式 / 顺序 / 两个日期 / 清除日期）
+                //   把「排序」与「时间过滤」归在一起，因为它们都是「调整结果呈现/范围」
+                //   而非「定义内容」的辅助维度。这样第一行专注 What，第二行专注 How
                 VStack(spacing: 12) {
                     HStack(alignment: .bottom, spacing: 12) {
                         githubLanguagePicker
@@ -230,6 +236,15 @@ struct SearchCenterView: View {
                                 .textFieldStyle(.roundedBorder)
                         }
                         .frame(width: 112)
+                        Spacer(minLength: 0)
+
+                        Button("应用筛选") {
+                            Task { await viewModel.applyGitHubFilters() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+
+                    HStack(alignment: .bottom, spacing: 12) {
                         githubPicker(title: "排序方式", width: 130) {
                             Picker("排序方式", selection: $viewModel.githubFilters.sort) {
                                 Text("最佳匹配").tag(GitHubSearchSort.bestMatch)
@@ -244,15 +259,6 @@ struct SearchCenterView: View {
                                 Text("升序").tag(SearchOrder.ascending)
                             }
                         }
-                        Spacer(minLength: 0)
-
-                        Button("应用筛选") {
-                            Task { await viewModel.applyGitHubFilters() }
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-
-                    HStack(alignment: .bottom, spacing: 16) {
                         githubDateFilter(title: "创建时间晚于", keyPath: \.createdAfter)
                         githubDateFilter(title: "推送时间晚于", keyPath: \.pushedAfter)
                         Button("清除日期") {
@@ -799,30 +805,179 @@ struct SearchCenterView: View {
         .frame(width: width, alignment: .leading)
     }
 
-    /// 使用 macOS 原生紧凑 DatePicker。筛选值初始仍为 nil，只有用户实际修改
-    /// DatePicker 后 binding setter 才写入日期；点击“清除日期”恢复 nil，不传 qualifier。
+    /// 日期筛选字段（SEARCH-FILTER 2026-06-14 改造）。
+    ///
+    /// 老实现：`DatePicker(...).datePickerStyle(.compact)` —— 文档承诺渲染成
+    /// 「按钮 + popover」，但 macOS 26 (Tahoe) 实测下退化到 stepper field（数字
+    /// 字段 + 上下箭头），dong4j 截图反馈不希望出现上下箭头操作日期。
+    ///
+    /// 新实现：用 `GitHubDateFilterField`（同文件下方）—— 显式 Button + popover
+    /// + `.graphical` DatePicker，绕开 `.compact` 在新版 macOS 上的样式 fallback，
+    /// 同时把"点击 → 弹出可视化月历选择"的交互固化下来。
     private func githubDateFilter(
         title: String,
         keyPath: WritableKeyPath<GitHubSearchFilters, Date?>
     ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            filterFieldLabel(title)
-            DatePicker(
-                title,
-                selection: optionalDateBinding(keyPath),
-                displayedComponents: .date
+        GitHubDateFilterField(
+            title: title,
+            date: Binding(
+                get: { viewModel.githubFilters[keyPath: keyPath] },
+                set: { viewModel.githubFilters[keyPath: keyPath] = $0 }
             )
-            .labelsHidden()
-            .datePickerStyle(.compact)
+        )
+    }
+}
+
+// MARK: - GitHub Date Filter Field
+
+/// GitHub 筛选条件中的日期选择字段（搜索弹窗专用）。
+///
+/// ## 为什么自绘 Button + popover，而不是直接用 `DatePicker(.compact)`
+///
+/// macOS 上 `DatePicker(...).datePickerStyle(.compact)` 历史承诺是「按钮 + 弹出
+/// 月历 popover」样式，但在 macOS 15 / 26 (Tahoe) 的 SwiftUI build 上实测会退化
+/// 到 stepper field（数字字段 + 上下箭头）。dong4j 2026-06-14 截图反馈明确不想
+/// 看到上下箭头操作日期。
+///
+/// 另外，图形日历比上下箭头更适合「最近 N 天 / 某个月之后」这类 GitHub 筛选
+/// 语义：鼠标点选某一天比按箭头逐日翻找快得多。
+///
+/// ## 交互模型
+///
+/// - 主体：圆角矩形按钮，左侧 📅 图标，中间日期文本（未选择时显示「选择日期」
+///   + secondary 颜色），右侧 ⌄ 图标。视觉与 TextField / Picker 等高一致，
+///   能无缝混在筛选行 HStack 里
+/// - 点击：弹出 popover（`arrowEdge: .bottom`，让箭头指向触发按钮），内嵌
+///   `.graphical` DatePicker 完整月历
+/// - 选日：DatePicker setter 即时回写 binding（`@Binding var date: Date?`），
+///   用户能在 popover 仍打开时切换月份继续探索
+/// - 关闭：底部右侧「完成」按钮 / 点击 popover 外部区域 / esc
+///
+/// ## 不在 popover 内放「清除」按钮的原因
+///
+/// 调用方（`SearchCenterView.githubFilterBar`）已经在第二行末尾提供「清除日期」
+/// 按钮，会同时把创建时间和推送时间复位。如果 popover 内再放一个单字段「清除」，
+/// 用户会困惑「该用哪个」。所以这里保持单一职责：popover 只负责选日期，清除
+/// 由外部统一处理。
+private struct GitHubDateFilterField: View {
+    let title: String
+    /// 真实数据源。nil 表示「用户未指定该筛选条件」，写筛选时不生成 qualifier；
+    /// popover 内只要用户点过任一日期就写入真实值，binding setter 立刻把 nil
+    /// 升级为具体 Date。
+    @Binding var date: Date?
+
+    @State private var isPresented = false
+
+    /// 显示宽度与原 `.compact` DatePicker 持平（150pt），保证旧布局横向对齐
+    /// 不发生跳变。两个并排的日期字段加起来 ~316pt，落在筛选行剩余空间内。
+    private static let fieldWidth: CGFloat = 150
+
+    /// 主体显示用日期格式：`yyyy/MM/dd`。与截图中 dong4j 习惯的中式日期格式一致，
+    /// 也跟 `.compact` 旧样式默认输出对齐，避免用户切换布局后认不出。
+    private static let displayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy/MM/dd"
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+
+            Button {
+                isPresented.toggle()
+            } label: {
+                fieldLabel
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+                calendarPopover
+            }
         }
-        .frame(width: 150, alignment: .leading)
+        .frame(width: Self.fieldWidth, alignment: .leading)
     }
 
-    private func optionalDateBinding(_ keyPath: WritableKeyPath<GitHubSearchFilters, Date?>) -> Binding<Date> {
-        Binding(
-            get: { viewModel.githubFilters[keyPath: keyPath] ?? Date() },
-            set: { viewModel.githubFilters[keyPath: keyPath] = $0 }
+    /// 按钮主体视觉。整体仿照 `.roundedBorder` TextField 的描边 + 实底配色，
+    /// 让它和同行的 Topic / 最低 Stars 等输入框观感一致。
+    /// `textBackgroundColor` / `separatorColor` 是 AppKit 系统级动态色，
+    /// 自动适配 dark / light 主题，无需各自再写两套颜色。
+    private var fieldLabel: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "calendar")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Text(displayText)
+                .font(.system(size: 12))
+                .foregroundStyle(date == nil ? .secondary : .primary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color(nsColor: .textBackgroundColor))
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        )
+        .contentShape(Rectangle())
+    }
+
+    /// Popover 内容：`.graphical` 完整月历 + 底部「完成」按钮。
+    ///
+    /// **为什么用 `.fixedSize()` 而不是 `.frame(width:)`**：
+    /// macOS 上 `.graphical` DatePicker 有固定的 intrinsic content size（约 220pt
+    /// 宽，由 SwiftUI 内部按 7 列周历 + 年月切换条算出来），强行用更大宽度的
+    /// frame 包它，月历不会被拉伸 —— 只会让自身居中、两侧出现明显空白
+    /// （dong4j 2026-06-14 截图反馈）。改用 `.fixedSize()` 让外层 VStack 跟随
+    /// 月历的 intrinsic size，popover 就紧贴内容收缩，视觉上零浪费。
+    ///
+    /// DatePicker 用 `Binding(get/set)` 把 `Date?` 拍平成 `Date` 给月历：
+    /// - get：nil 时 fallback 到「今天」，让月历有个默认聚焦月份
+    /// - set：用户任一点击都会立刻把 nil 升级为具体日期写回 `@Binding`
+    ///   → 筛选状态即时同步，无需用户点「完成」才生效；「完成」纯粹是关闭
+    ///   popover 的便捷出口
+    private var calendarPopover: some View {
+        VStack(spacing: 10) {
+            DatePicker(
+                "",
+                selection: Binding(
+                    get: { date ?? Date() },
+                    set: { date = $0 }
+                ),
+                displayedComponents: .date
+            )
+            .datePickerStyle(.graphical)
+            .labelsHidden()
+
+            // 用 `.frame(maxWidth: .infinity, alignment: .trailing)` 让「完成」
+            // 按钮始终贴右；不能用 HStack { Spacer(); Button } —— 后者会让 HStack
+            // 占据父 VStack 全宽，与 .fixedSize() 行为冲突（VStack 取最大子宽时
+            // 会陷入循环假设，月历再次被拉伸出空白）。
+            Button("完成") {
+                isPresented = false
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(14)
+        .fixedSize()
+    }
+
+    private var displayText: String {
+        guard let date else { return "选择日期" }
+        return Self.displayFormatter.string(from: date)
     }
 }
 
@@ -1028,10 +1183,20 @@ private struct SearchRemoteRepoDetailView: View {
     /// 折叠菜单 popover 显隐。点 ··· 触发；菜单项点击后置 false 关闭。
     @State private var isOverflowPresented = false
 
-    /// CodeFlow 子 sheet 显隐。从 popover 触发：先关 popover、用 DispatchQueue
-    /// 让动画完成，再翻 true 弹 sheet（与 `FeaturedExternalLinksControl` 同款时序）。
-    /// macOS 15+ 支持 sheet over sheet（搜索弹窗本身已是 sheet，这是层 2）。
-    @State private var isCodeFlowPresented = false
+    /// CodeFlow 子 sheet 用 Identifiable item 驱动，**不要**回退到
+    /// `.sheet(isPresented: Bool)`。
+    ///
+    /// 历史坑（dong4j 2026-06-14 验收反馈，toolbar `ExternalLinksMenu` 同款问题）：
+    /// `.sheet(isPresented:)` 在父视图频繁重建（toolbar trailing 闭包 / 搜索弹窗
+    /// 内嵌 sheet）的场景下，sheet 关闭瞬间内部 state 与外部 Bool binding 的
+    /// 更新存在 1 帧时序差，会让 sheet "关闭 → 闪现 → 再关闭"。改用
+    /// `.sheet(item:)` 用 item 存在性驱动，关闭即 `item = nil`，更稳。
+    /// 搜索弹窗本身已是 sheet，这里是 sheet over sheet (macOS 15+ 稳定），
+    /// 嵌套层级更深时 item 模式的优势更明显。
+    ///
+    /// 触发流程仍保留"先关 popover → DispatchQueue.main.async 后再赋值 item"
+    /// 的时序，避免 popover 与 sheet 同帧 presentation 竞争。
+    @State private var codeFlowSheetRepo: Repo?
 
     /// 卡片宽度。480pt 足以容纳 owner / repo 双行 + 头像 + 顶栏徽章；再窄
     /// 顶栏会挤压 license / score 徽章；再宽就显得空旷不像「快速决策卡」。
@@ -1555,8 +1720,8 @@ private struct SearchRemoteRepoDetailView: View {
         .popover(isPresented: $isOverflowPresented, arrowEdge: .top) {
             overflowPopoverContent(repo: repo)
         }
-        .sheet(isPresented: $isCodeFlowPresented) {
-            CodeFlowPanel(repo: repo)
+        .sheet(item: $codeFlowSheetRepo) { sheetRepo in
+            CodeFlowPanel(repo: sheetRepo)
         }
     }
 
@@ -1575,7 +1740,10 @@ private struct SearchRemoteRepoDetailView: View {
             if !repo.isPrivate {
                 CodeFlowFeaturedTile {
                     isOverflowPresented = false
-                    DispatchQueue.main.async { isCodeFlowPresented = true }
+                    // 关 popover 后下一帧再赋值 item 弹 sheet，避免 popover
+                    // 与 sheet 同帧 presentation 竞争（参考
+                    // FeaturedExternalLinksControl 同款时序）。
+                    DispatchQueue.main.async { codeFlowSheetRepo = repo }
                 }
 
                 Divider()
