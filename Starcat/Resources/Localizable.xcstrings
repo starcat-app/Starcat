@@ -10213,23 +10213,6 @@
         }
       }
     },
-    "settings.aiIndex.section" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vector Index"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "向量化索引"
-          }
-        }
-      }
-    },
     "settings.aiIndex.scoreThreshold" : {
       "localizations" : {
         "en" : {
@@ -10258,6 +10241,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AI 语义搜索时，相似度低于此分数的结果不显示；默认 75%。"
+          }
+        }
+      }
+    },
+    "settings.aiIndex.section" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vector Index"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向量化索引"
           }
         }
       }
@@ -15336,6 +15336,9 @@
 
     },
     "优先使用流式响应" : {
+
+    },
+    "全局搜索" : {
 
     },
     "全球" : {

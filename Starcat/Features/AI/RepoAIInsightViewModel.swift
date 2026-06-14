@@ -156,16 +156,22 @@ final class RepoAIInsightViewModel {
         }
     }
 
+    /// 找到同名标签直接复用；否则按 `TagAutoVisual` 共享算法挑色 + 挑图标后落库。
+    ///
+    /// 视觉与「批量 AI 整理」（`BatchAIQueueService`）走同一份 FNV-1a 算法，确保
+    /// AI 推荐路径上自动建出来的标签风格统一，且同名标签每次新建落到同一 (颜色, 图标)。
+    /// 详细约束见 `TagAutoVisual` 注释。
     private func findOrCreateTag(named name: String) async throws -> Tag {
         if let existing = try await tagRepository.findByName(name) {
             return existing
         }
         let now = ISO8601DateFormatter.shared.string(from: Date())
+        let visual = TagAutoVisual.pick(for: name)
         let tag = Tag(
             id: UUID().uuidString,
             name: name,
-            color: nil,
-            icon: "tag",
+            color: visual.colorHex,
+            icon: visual.iconName,
             sortOrder: 0,
             isPreset: false,
             parentId: nil,

@@ -53,9 +53,38 @@ public struct DefaultSourceZipExtractor: SourceZipExtracting {
         }
 
         // Step 3：ZIPFoundation 解压（detached 避免阻塞）
+        //
+        // 2026-06-14（dong4j 反馈"zip 已下载但 xml/metadata 没生成"）：
+        //
+        // **必须传 `allowUncontainedSymlinks: true`**，否则任何含相对路径 symlink
+        // 的 GitHub 仓库（典型例子：`addyosmani/agent-skills` 里
+        // `.opencode/skills -> ../skills/`）解压都会失败：
+        //   - ZIPFoundation 0.9+ 默认 `allowUncontainedSymlinks: false`
+        //   - 它会先标准化每个 symlink 的 target，发现 `../xxx` 解析后位于解压根之外
+        //     就立刻抛 `Archive.ArchiveError.uncontainedSymlink`
+        //   - 整个 ZIP 解压被中止 → 整条 packer pipeline 失败 → AI 摘要降级 README-only
+        //
+        // 打开此开关的安全性论证（已踩过的坑级）：
+        //   1. **后续 FileFilter 主动跳 symlink**：`FileFilter.swift` 第 ~64 行
+        //      `if values?.isSymbolicLink == true { skipped.append(...symlinkSkipped...); continue }`，
+        //      解压出来的 symlink 不会被读内容、不会被分级、不会进 XML；
+        //   2. **`FileManager.enumerator` 默认不跟随 symlink**（Apple 文档明确写明），
+        //      symlink 指向解压根外侧的内容也不会被 enumerator 列出；
+        //   3. **解压目录是沙箱内临时目录**（`Application Support/.../tmp/RepoContextPacker/<UUID>`），
+        //      defer 闭包结束就 removeItem 清掉，即使有恶意 symlink 也只是临时存在 < 1s；
+        //   4. **GitHub source ZIP 里 symlink 一定是相对路径**（GitHub 不允许 symlink 指向
+        //      绝对路径或 `..` 链穿出 repo）。
+        //
+        // 选择 `allowUncontainedSymlinks: true` 而不是改用 `Archive` 低级 API 手动跳过 symlink
+        // entry：实现复杂度 30+ 行 vs 1 行参数；后者还要重写 progress 跟踪 / 错误处理；
+        // 前者借助 ZIPFoundation 已有逻辑，改动面最小。
         do {
             try await Task.detached(priority: .userInitiated) {
-                try FileManager.default.unzipItem(at: zipURL, to: tempRoot)
+                try FileManager.default.unzipItem(
+                    at: zipURL,
+                    to: tempRoot,
+                    allowUncontainedSymlinks: true
+                )
             }.value
         } catch {
             try? FileManager.default.removeItem(at: tempRoot)
