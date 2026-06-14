@@ -3014,118 +3014,6 @@
         }
       }
     },
-    "ai.externalContext.degraded.capabilityNotEnabled" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch capability not enabled for this account – external references skipped"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch 当前账号未开通 code 域能力，本次未拉取外部参考"
-          }
-        }
-      }
-    },
-    "ai.externalContext.degraded.invalidAPIKey" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch API key invalid – check Settings"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch API Key 无效，请在设置中检查"
-          }
-        }
-      }
-    },
-    "ai.externalContext.degraded.networkUnavailable" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Network unreachable – external references not fetched this time"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网络不可用，本次未拉取外部参考"
-          }
-        }
-      }
-    },
-    "ai.externalContext.degraded.quotaExhausted" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch quota exhausted – external references not fetched"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch 配额已用完，本次未拉取外部参考"
-          }
-        }
-      }
-    },
-    "ai.externalContext.degraded.rateLimited" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch rate limited – please retry shortly"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch 请求过于频繁，请稍后再试"
-          }
-        }
-      }
-    },
-    "ai.externalContext.degraded.serviceUnavailable" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch temporarily unavailable – external references not fetched"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch 暂时不可用，本次未拉取外部参考"
-          }
-        }
-      }
-    },
-    "ai.externalContext.degraded.unknown" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch error – external references skipped"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch 暂不可用，本次未拉取外部参考"
-          }
-        }
-      }
-    },
     "ai.context.settings.description" : {
       "localizations" : {
         "en" : {
@@ -3556,6 +3444,125 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "切换目录时会迁移现有 context.xml 与 metadata.json；共享源码 ZIP 仍保存在应用容器。"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.capabilityNotEnabled" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch capability not enabled for this account – external references skipped"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch 当前账号未开通 code 域能力，本次未拉取外部参考"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.invalidAPIKey" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch API key invalid – check Settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch API Key 无效，请在设置中检查"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.networkUnavailable" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Network unreachable – external references not fetched this time"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网络不可用，本次未拉取外部参考"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.quotaExhausted" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch quota exhausted – external references not fetched"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch 配额已用完，本次未拉取外部参考"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.rateLimited" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch rate limited – please retry shortly"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch 请求过于频繁，请稍后再试"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.serviceUnavailable" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch temporarily unavailable – external references not fetched"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch 暂时不可用，本次未拉取外部参考"
+          }
+        }
+      }
+    },
+    "ai.externalContext.degraded.unknown" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch error – external references skipped"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch 暂不可用，本次未拉取外部参考"
           }
         }
       }
