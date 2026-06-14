@@ -60,6 +60,28 @@ struct AnySearchClientTests {
         #expect(URLProtocolStub.receivedRequests.count == 1)
     }
 
+    @Test("API Key 探测请求只取一条 ping 结果并发送 Bearer Key")
+    func apiKeyProbeUsesMinimalSearchRequest() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer candidate-key")
+            let body = try #require(request.httpBody)
+            let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            #expect(json["query"] as? String == "ping")
+            #expect(json["max_results"] as? Int == 1)
+            return Self.successResponse(for: request)
+        }
+        let client = AnySearchClient(
+            apiKey: "candidate-key",
+            anonymous: false,
+            session: URLProtocolStub.ephemeralSession()
+        )
+
+        _ = try await client.search(AnySearchRequest(query: "ping", maxResults: 1))
+
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
     // MARK: - Rate limit header parsing
     //
     // Rate limit 解析逻辑见 `AnySearchClient.parseRateLimit(from:)`，关键约束：
@@ -182,6 +204,183 @@ struct AnySearchClientTests {
         let response = try await client.search(AnySearchRequest(query: "swift"))
 
         #expect(response.rateLimit == nil)
+    }
+
+    // MARK: - 错误码分类（PR-1 改造，dong4j 2026-06-14）
+    //
+    // AnySearchClient.perform 现在对所有 4xx/5xx 都读 body 并解析 envelope，
+    // 用 HTTP status + envelope.message + anonymous 标志启发式分类成 typed
+    // case。下面测试覆盖每条主路径，保证 UI 拿到的错误语义稳定。
+
+    @Test("400 → invalidRequest 带 envelope 透传 message")
+    func httpStatus400YieldsInvalidRequest() async throws {
+        let client = Self.makeClient(
+            statusCode: 400,
+            body: #"{"code":40001,"message":"empty query","data":null}"#,
+            anonymous: true
+        )
+        await #expect(throws: AnySearchError.invalidRequest(message: "empty query")) {
+            _ = try await client.search(AnySearchRequest(query: "x"))
+        }
+    }
+
+    @Test("401 默认 → invalidAPIKey(.invalid)")
+    func httpStatus401YieldsInvalidKey() async throws {
+        let client = Self.makeClient(
+            statusCode: 401,
+            body: #"{"code":40101,"message":"API key not found","data":null}"#,
+            anonymous: false,
+            apiKey: "wrong-key"
+        )
+        await #expect(throws: AnySearchError.invalidAPIKey(reason: .invalid)) {
+            _ = try await client.search(AnySearchRequest(query: "x"))
+        }
+    }
+
+    @Test("401 envelope message 含 header → invalidAPIKey(.malformedHeader)")
+    func httpStatus401WithHeaderKeywordYieldsMalformed() async throws {
+        let client = Self.makeClient(
+            statusCode: 401,
+            body: #"{"code":40102,"message":"Authorization header is malformed","data":null}"#,
+            anonymous: false,
+            apiKey: "wrong"
+        )
+        await #expect(throws: AnySearchError.invalidAPIKey(reason: .malformedHeader)) {
+            _ = try await client.search(AnySearchRequest(query: "x"))
+        }
+    }
+
+    @Test("402 + 匿名模式 → anonymousQuotaExhausted")
+    func httpStatus402AnonymousYieldsAnonQuota() async throws {
+        let client = Self.makeClient(
+            statusCode: 402,
+            body: #"{"code":40202,"message":"daily free quota exhausted","data":null}"#,
+            anonymous: true
+        )
+        await #expect(throws: AnySearchError.anonymousQuotaExhausted) {
+            _ = try await client.search(AnySearchRequest(query: "x"))
+        }
+    }
+
+    @Test("402 + Bearer 模式 → keyQuotaExhausted 带 envelope 配额数字")
+    func httpStatus402BearerYieldsKeyQuotaWithNumbers() async throws {
+        let body = #"{"code":40203,"message":"quota exhausted","data":{"quota_limit":1000,"quota_used":1000,"quota_remaining":0}}"#
+        let client = Self.makeClient(
+            statusCode: 402,
+            body: body,
+            anonymous: false,
+            apiKey: "valid-key"
+        )
+        await #expect(throws: AnySearchError.keyQuotaExhausted(limit: 1000, used: 1000)) {
+            _ = try await client.search(AnySearchRequest(query: "x"))
+        }
+    }
+
+    @Test("403 message 含 expired → invalidAPIKey(.expired)")
+    func httpStatus403ExpiredYieldsExpiredKey() async throws {
+        let client = Self.makeClient(
+            statusCode: 403,
+            body: #"{"code":40301,"message":"API key has expired","data":null}"#,
+            anonymous: false,
+            apiKey: "k"
+        )
+        await #expect(throws: AnySearchError.invalidAPIKey(reason: .expired)) {
+            _ = try await client.search(AnySearchRequest(query: "x"))
+        }
+    }
+
+    @Test("403 message 含 disabled → accountDisabled")
+    func httpStatus403DisabledYieldsAccountDisabled() async throws {
+        let client = Self.makeClient(
+            statusCode: 403,
+            body: #"{"code":40303,"message":"account is disabled","data":null}"#,
+            anonymous: false,
+            apiKey: "k"
+        )
+        await #expect(throws: AnySearchError.accountDisabled) {
+            _ = try await client.search(AnySearchRequest(query: "x"))
+        }
+    }
+
+    @Test("403 兜底 → capabilityNotEnabled 带 message")
+    func httpStatus403OtherYieldsCapabilityNotEnabled() async throws {
+        let client = Self.makeClient(
+            statusCode: 403,
+            body: #"{"code":40302,"message":"private capability not enabled for this key","data":null}"#,
+            anonymous: false,
+            apiKey: "k"
+        )
+        await #expect(throws: AnySearchError.capabilityNotEnabled(message: "private capability not enabled for this key")) {
+            _ = try await client.search(AnySearchRequest(query: "x"))
+        }
+    }
+
+    @Test("429 默认 → rateLimited(.key) + Retry-After header")
+    func httpStatus429YieldsRateLimitedKeyWithRetry() async throws {
+        let client = Self.makeClient(
+            statusCode: 429,
+            body: #"{"code":42902,"message":"rate limit exceeded","data":null}"#,
+            anonymous: true,
+            extraHeaders: ["Retry-After": "30"]
+        )
+        await #expect(throws: AnySearchError.rateLimited(scope: .key, retryAfter: 30)) {
+            _ = try await client.search(AnySearchRequest(query: "x"))
+        }
+    }
+
+    @Test("429 message 含 user → rateLimited(.account)")
+    func httpStatus429UserScopeYieldsRateLimitedAccount() async throws {
+        let client = Self.makeClient(
+            statusCode: 429,
+            body: #"{"code":42901,"message":"rate limit exceeded user account","data":null}"#,
+            anonymous: false,
+            apiKey: "k"
+        )
+        await #expect(throws: AnySearchError.rateLimited(scope: .account, retryAfter: nil)) {
+            _ = try await client.search(AnySearchRequest(query: "x"))
+        }
+    }
+
+    @Test("503 → serviceUnavailable 带 envelope message")
+    func httpStatus503YieldsServiceUnavailable() async throws {
+        let client = Self.makeClient(
+            statusCode: 503,
+            body: #"{"code":50301,"message":"quota check failed","data":null}"#,
+            anonymous: true
+        )
+        // 注：search() 顶层会对 serviceUnavailable 重试一次，URLProtocolStub 会
+        // 返回同样的 503 → 第二次仍抛 serviceUnavailable，最终对用户可见。
+        await #expect(throws: AnySearchError.serviceUnavailable(message: "quota check failed")) {
+            _ = try await client.search(AnySearchRequest(query: "x"))
+        }
+    }
+
+    /// 构造一个返回固定 status/body 的 stubbed client，便于错误码测试复用。
+    /// **关键**：URLProtocolStub.requestHandler 必须 reset 后再设，防止跨用例污染。
+    private static func makeClient(
+        statusCode: Int,
+        body: String,
+        anonymous: Bool,
+        apiKey: String? = nil,
+        extraHeaders: [String: String] = [:]
+    ) -> AnySearchClient {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            var headerFields: [String: String] = ["Content-Type": "application/json"]
+            for (k, v) in extraHeaders { headerFields[k] = v }
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: statusCode,
+                httpVersion: nil,
+                headerFields: headerFields
+            )!
+            return (response, Data(body.utf8))
+        }
+        return AnySearchClient(
+            apiKey: apiKey,
+            anonymous: anonymous,
+            session: URLProtocolStub.ephemeralSession()
+        )
     }
 
     private static func successResponse(
