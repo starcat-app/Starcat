@@ -718,6 +718,11 @@ struct RepoListView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                     .id(repo.id)
+                    // HOM-201 P1-1（2026-06-14）：hover 500ms 后预拉 README，
+                    // softTtl 短路在 API 层做（命中 6h 内缓存不打 GitHub）。
+                    .readmePrefetch { [readmeAPI = dependencies.readmeAPI] in
+                        await readmeAPI.prefetch(for: repo)
+                    }
                 }
             }
             .id(viewModel.itemsRevision)

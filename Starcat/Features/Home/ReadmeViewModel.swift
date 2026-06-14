@@ -18,7 +18,7 @@
 //    ├─ 切到新 repo → state = .loading 占位（防止显示旧 repo README）
 //    │
 //    ▼
-//  cachedReadme(repoId:)              ← 异步读本地（GRDB 内存查询，通常 < 1ms）
+//  cachedReadme(for:)                 ← 异步读本地（GRDB 内存查询，通常 < 1ms）
 //    │
 //    ├─ 有缓存 → state = .loaded(html, cachedAt) 立即上屏
 //    └─ 无缓存 → 保持 state = .loading
@@ -35,7 +35,7 @@
 //    │
 //    ├─ .updated(readme)    → state = .loaded(新 html, 新 cachedAt)   无感替换
 //    ├─ .notModified(readme) → state = .loaded(原 html, 新 cachedAt)  仅刷新"缓存于..."显示
-//    ├─ .notFound           → sessionNotFound.insert + state = .empty
+//    ├─ .notFound           → availability.markNotFound + state = .empty
 //    └─ .failed(error)      → 有缓存 → 静默 debug 日志; 无缓存 → state = .error
 //  ```
 //
@@ -48,7 +48,8 @@
 //    加 loading spinner 反而吵
 //
 //  Session 404 缓存：
-//  - `sessionNotFound: Set<Int64>` 记录 session 内已确认无 README 的 repoId
+//  - 状态由共享对象 `ReadmeAvailability`（`AppDependencies` 持有的单例）承载，
+//    跨 manage / active 等多个 VM 实例共享一份"已知不存在"集合（HOM-201 P0-2，2026-06-14）
 //  - 自动加载命中 → 直接走 empty 不发请求
 //  - 手动 reload 清掉对应项给一次重试机会
 //
@@ -105,10 +106,13 @@ final class ReadmeViewModel {
     /// 当前 in-flight 任务。新请求来时先 cancel。
     private var currentTask: Task<Void, Never>?
 
-    /// session 内已确认"无 README"（404）的 repoId 集合。
-    /// - 自动加载（`load(repo:)`）命中 → 直接 empty 不请求
-    /// - 手动刷新（`reload(repo:)`）会清掉对应项，给一次重试机会
-    private var sessionNotFound: Set<Int64> = []
+    /// session 内已确认"无 README"（404）的状态承载对象。
+    ///
+    /// HOM-201 P0-2（2026-06-14）：原 `sessionNotFound: Set<Int64>` 字段提升为
+    /// `AppDependencies` 持有的单例 `ReadmeAvailability`。本字段是它的注入引用，
+    /// manage（HomeView 全局 VM）和 active（每个 Shell 局部 VM）共用同一份状态，
+    /// 跨 VM 命中 404 短路。详见 `ReadmeAvailability.swift` 文件头。
+    private let availability: ReadmeAvailability
 
     /// 详情页 HTML 拉到（200 / 304）后触发的可选回调（**manage 路径 only**）。
     ///
@@ -131,8 +135,13 @@ final class ReadmeViewModel {
     /// 库的 readmes 表 / repo_embeddings 表，补 markdown / 触发向量重建都无意义。
     private let onHTMLLoaded: ((Repo) -> Void)?
 
-    init(api: ReadmeAPI, onHTMLLoaded: ((Repo) -> Void)? = nil) {
+    init(
+        api: ReadmeAPI,
+        availability: ReadmeAvailability,
+        onHTMLLoaded: ((Repo) -> Void)? = nil
+    ) {
         self.api = api
+        self.availability = availability
         self.onHTMLLoaded = onHTMLLoaded
     }
 
@@ -148,7 +157,7 @@ final class ReadmeViewModel {
     /// 重新加载当前 repo（用户点击"重试" / 详情底栏"刷新"时调用）。
     ///
     /// 与 `load(repo:)` 的差异：
-    /// - 清掉 sessionNotFound 中该 repoId（README 可能刚被作者补上）
+    /// - 清掉 availability 中该 repoId 的 404 标记（README 可能刚被作者补上）
     /// - `forceRefresh: true` → 即使 cached 仍在 softTtl 内也走网络
     /// - 同一 repo + 当前是 .error → 同步转为 .loading 给反馈
     /// - 同一 repo + 当前是 .loaded → 保持显示，后台静默 refresh（SWR 体验）
@@ -175,16 +184,25 @@ final class ReadmeViewModel {
     /// 流程（与 `loadInternal` 完全对齐，只是缓存路径走 `cachedTrendingReadme(fullName:)`）：
     /// 1. 切到新 repo → 同步设 `.loading` 占位（避免 await 期间显示上一个 repo 的 README）
     /// 2. 读 `trending_readmes` 表（按 `owner/repo` PK）→ 命中立即上屏 `.loaded`
-    /// 3. 不论缓存是否命中，都强制走网络刷新（dong4j 决策 ttl_c：trending 不设 TTL）
+    /// 3. 判断是否需要后台 refresh（HOM-201 P1-4，2026-06-14：与 manage 对齐用 softTtl=6h
+    ///    短路；forceRefresh / 无可用缓存 / 缓存过期 → 必刷）
     /// 4. 200 / 304 → 覆盖或 touch cached_at；404 → 删本地 + `.empty`；其他错误 → 有缓存就静默
     ///
     /// 与 `loadInternal` 的差异：
     /// - 缓存读写 PK 是 `full_name`（owner/repo）而非 `repo_id`
     /// - 没有 manage 的 session 404 集合（trending repo 切换频繁，没必要在 session 内禁止重试）
-    /// - 没有 forceRefresh 参数：调用方每次都希望走 SWR（无 TTL 短路）
+    ///
+    /// HOM-201 P1-4（2026-06-14）：把 trending 路径的 TTL 行为对齐到 manage（softTtl=6h）。
+    /// 此前 dong4j 决策 `ttl_c` 让 trending 每次都强制走网络;但配合 P1-1 hover prefetch
+    /// 后,每次进详情都打 GitHub 304 太浪费 60/h 匿名配额。改为:
+    /// - 自动加载(`forceRefresh: false`) → 命中 softTtl 6h 内的缓存就跳过网络;
+    /// - 用户主动刷新(详情页底部刷新按钮 / 列表 refreshable / forceRefresh: true) → 必刷。
+    /// 用户感知不到差异(6h 内即便不刷网络,本地 cache 仍是最新),配额节省显著。
     ///
     /// - Parameter isLoggedIn: 用户是否已登录。用于判断 403 是否因未授权（应显示"请登录"而非"加载失败"）。
-    func loadTrending(owner: String, repo: String, isLoggedIn: Bool) {
+    /// - Parameter forceRefresh: 用户主动触发刷新(详情页底部 cacheFooter / 列表 refreshable)
+    ///   时传 true,绕过 softTtl 短路。默认 false。
+    func loadTrending(owner: String, repo: String, isLoggedIn: Bool, forceRefresh: Bool = false) {
         currentTask?.cancel()
 
         let key = "\(owner)/\(repo)"
@@ -239,7 +257,30 @@ final class ReadmeViewModel {
                 hasUsableCache = false
             }
 
-            // 第二阶段：强制走网络刷新（dong4j 决策 ttl_c：trending 不设 TTL，每次都拉网络覆盖）
+            // 第二阶段：判断是否需要后台 refresh(与 loadInternal 同构,P1-4)
+            // - forceRefresh=true(用户主动) → 必刷
+            // - 无可用缓存 → 必刷
+            // - cached 在 softTtl(6h) 内 → 不刷直接结束
+            // - cached 过期 → 必刷
+            let needsRefresh: Bool
+            if forceRefresh {
+                needsRefresh = true
+            } else if !hasUsableCache {
+                needsRefresh = true
+            } else if let c = cached,
+                      ReadmeAPI.isWithinSoftTtl(
+                        cachedAt: c.cachedAt,
+                        now: Date(),
+                        softTtl: ReadmeAPI.softTtl
+                      ) {
+                needsRefresh = false
+            } else {
+                needsRefresh = true
+            }
+
+            if !needsRefresh { return }
+
+            // 第三阶段：后台 refresh(不抛错,所有错误都包到 .failed)
             let result = await self.api.refreshTrendingReadme(owner: owner, repo: repo)
             guard !Task.isCancelled, self.currentTrendingKey == key else { return }
 
@@ -323,10 +364,12 @@ final class ReadmeViewModel {
             return
         }
 
-        // session 404 短路：仅自动加载受其影响；手动 reload 会清掉
+        // session 404 短路：仅自动加载受其影响；手动 reload 会清掉。
+        // HOM-201 P0-2（2026-06-14）：状态来自跨 VM 共享的 `ReadmeAvailability`，
+        // manage 命中后切到 active 看同 repo 也能短路掉网络请求（详见类头注释）。
         if forceRefresh {
-            sessionNotFound.remove(repo.id)
-        } else if sessionNotFound.contains(repo.id) {
+            availability.clearNotFound(repoId: repo.id)
+        } else if availability.isKnownNotFound(repoId: repo.id) {
             currentRepoId = repo.id
             state = .empty
             return
@@ -353,9 +396,13 @@ final class ReadmeViewModel {
             defer { self.isRefreshing = false }
 
             // 第一阶段：读本地缓存
+            //
+            // HOM-201 P0-1（2026-06-14）：传 repo 而非 repoId,让 ReadmeAPI 在 manage 表
+            // 未命中时兜底查 `trending_readmes`（按 fullName）并 promote 到 manage 表
+            // ——用户在 trending 详情读过 README + star + 切到 manage 详情时零网络复用。
             let cached: Readme?
             do {
-                cached = try await self.api.cachedReadme(repoId: requestedId)
+                cached = try await self.api.cachedReadme(for: repo)
             } catch {
                 cached = nil
                 AppLog.network.warning("README cachedReadme 失败 repo=\(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
@@ -445,7 +492,7 @@ final class ReadmeViewModel {
                 // 防御性不动 state。
 
             case .notFound:
-                self.sessionNotFound.insert(requestedId)
+                self.availability.markNotFound(repoId: requestedId)
                 self.state = .empty
 
             case .failed(let error):

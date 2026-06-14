@@ -47,7 +47,6 @@ struct ReadmeRepositoryTests {
     private func makeReadme(repoId: Int64, html: String, etag: String? = "\"abc123\"") -> Readme {
         Readme(
             repoId: repoId,
-            content: nil,
             renderedHtml: html,
             etag: etag,
             lastModified: "Sat, 30 May 2026 09:00:00 GMT",
@@ -179,7 +178,7 @@ struct CacheCleanerTests {
 
     private func insertReadme(_ repo: ReadmeRepository, html: String) async throws {
         try await repo.upsert(Readme(
-            repoId: 1, content: nil, renderedHtml: html,
+            repoId: 1, renderedHtml: html,
             etag: nil, lastModified: nil,
             cachedAt: "2026-05-30T00:00:00Z",
             size: html.utf8.count

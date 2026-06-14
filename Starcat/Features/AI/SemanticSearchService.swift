@@ -273,10 +273,14 @@ final class SemanticSearchService {
     private func loadReadmeText(repoId: Int64, truncateLength: Int) async -> String? {
         guard let readmeRepo = readmeRepository else { return nil }
         do {
-            guard let readme = try await readmeRepo.find(repoId: repoId) else { return nil }
-            if let content = readme.content, !content.isEmpty {
+            // HOM-201 P2-2:content 拆到独立表 readme_contents,显式调 findContent;
+            // 默认 find 只回 html 元数据,避免列表 / 详情场景拉冗余 markdown body。
+            if let content = try await readmeRepo.findContent(repoId: repoId),
+               !content.isEmpty {
                 return ReadmePreprocessor.process(markdown: content, maxLength: truncateLength)
             }
+            // markdown 没 backfill 时回退用 HTML(WebView 主路径仍有 rendered_html)
+            guard let readme = try await readmeRepo.find(repoId: repoId) else { return nil }
             if let html = readme.renderedHtml, !html.isEmpty {
                 return ReadmePreprocessor.process(html: html, maxLength: truncateLength)
             }

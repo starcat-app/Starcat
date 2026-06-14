@@ -68,8 +68,6 @@ struct WeeklyDetailContent: View {
             state: readmeVM.state,
             // 与其他详情页共用目录型 base URL，末尾 `/` 是相对链接保留 HEAD 的关键。
             baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
-            owner: repo.owner,
-            repo: repo.name,
             onScrollOffsetChange: onScrollOffset,
             // R-01 v1.0 设计 ⑬：翻译按钮覆盖所有 repo 详情。
             // 仅本地命中（repo.id != 0）才接入——ephemeral repo 用 id=0 走翻译
@@ -80,10 +78,13 @@ struct WeeklyDetailContent: View {
                 settings: settings
             ) : nil
         ) {
+            // HOM-201 P1-4（2026-06-14）:onRetry 是用户主动刷新(底部 cacheFooter 刷新按钮),
+            // 必须绕过 softTtl 短路,否则按 6h TTL 6 小时内会被忽略不刷新。
             readmeVM.loadTrending(
                 owner: repo.owner,
                 repo: repo.name,
-                isLoggedIn: authSession.state.isAuthenticated
+                isLoggedIn: authSession.state.isAuthenticated,
+                forceRefresh: true
             )
         } onLogin: {
             authSession.signIn()

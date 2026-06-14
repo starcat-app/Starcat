@@ -10,8 +10,13 @@
 //
 //  Phase 2 关键改动（2026-05-30，见 docs/详细设计/readme.md-渲染设计.md §12.2 / §13）：
 //  把原 `fetchHTML(for:forceRefresh:)` 拆为：
-//  - `cachedReadme(repoId:)` 纯读本地（不发网络）
+//  - `cachedReadme(for:)` 纯读本地（不发网络）
 //  - `refreshReadme(for:)` 走网络刷新（所有错误包到 `.failed`，不抛出）
+//
+//  HOM-201 P0-1（2026-06-14）：`cachedReadme(for:)` 由 `(repoId:)` 改为 `(for repo:)`,
+//  manage 表（`readmes` PK=`repo_id`）未命中时兜底查 `trending_readmes`（PK=`full_name`）
+//  并 promote 到 manage 表 —— 用户在 trending 详情读过 README + star + 切到 manage
+//  详情时零网络复用。详见方法注释。
 //
 //  这样 ViewModel 可以实现 "先读缓存立即 loaded → 判断 softTtl → 后台 fire-and-forget refresh"
 //  的 stale-while-revalidate 模式，不再需要 API 层吃下 softTtl 短路。
@@ -47,7 +52,12 @@ import Foundation
 ///
 /// 用 enum 而非 throws 是为了让调用方在"刷新失败但旧缓存还能用"时静默回退，
 /// 不必把网络错误传到 UI 打扰用户（SWR 模式）。
-enum ReadmeRefreshResult {
+///
+/// HOM-201 P0-3（2026-06-14）：标 `@unchecked Sendable` 是为了让本枚举能放进
+/// `Task<ReadmeRefreshResult, Never>`、跨 `ReadmeInflightTracker` actor 边界传递。
+/// `.failed(Error)` 让自动 Sendable 推导失败（Error 协议没标 Sendable），但实际
+/// 入参都是 `NetworkError` enum / GRDB error 等不可变值类型，跨线程读取安全。
+enum ReadmeRefreshResult: @unchecked Sendable {
     /// 200：拿到新 HTML，已 upsert 到本地。
     case updated(Readme)
     /// 304：本地缓存仍有效，cached_at 已 touch（readme.cachedAt 已是最新）。
@@ -68,6 +78,21 @@ struct ReadmeAPI {
     /// W7+ 引入：Trending README 持久化（与 manage 路径独立的 `trending_readmes` 表）。
     /// 用 owner/repo 作 PK，与 manage 的 `repo_id` PK 路径互不污染。
     let trendingRepository: TrendingReadmeRepository
+    /// HOM-201 P0-3（2026-06-14）：网络刷新 in-flight 去重器。
+    ///
+    /// 由 `AppDependencies` 持有单例。同一 `repo.id`（manage 路径）或 `owner/repo`
+    /// （trending 路径）并发进入 `refreshReadme(for:)` / `refreshTrendingReadme(...)`
+    /// 时，第二个及之后的请求 await 首发 Task 的结果，不再额外打 GitHub。
+    /// 详见 `ReadmeInflightTracker.swift` 文件头。
+    let inflightTracker: ReadmeInflightTracker
+
+    /// HOM-201 P2-3（2026-06-14）：README 缓存命中 / 刷新结果计数器。
+    ///
+    /// 在 SWR 状态机的所有终态(cachedHit / refresh-200 / 304 / 404 / failed)
+    /// 各埋一次,提供后续优化判断的事实证据(命中率 / 304 占比 / 失败率)。
+    /// 进程级,不持久化;由 `AppDependencies` 持有单例。
+    /// 详见 `ReadmeMetrics.swift` 文件头。
+    let metrics: ReadmeMetrics
 
     /// 软过期阈值。
     ///
@@ -85,11 +110,15 @@ struct ReadmeAPI {
     init(
         client: any GitHubAPIClientProtocol,
         repository: ReadmeRepository,
-        trendingRepository: TrendingReadmeRepository
+        trendingRepository: TrendingReadmeRepository,
+        inflightTracker: ReadmeInflightTracker,
+        metrics: ReadmeMetrics
     ) {
         self.client = client
         self.repository = repository
         self.trendingRepository = trendingRepository
+        self.inflightTracker = inflightTracker
+        self.metrics = metrics
     }
 
     // MARK: - Public
@@ -97,9 +126,64 @@ struct ReadmeAPI {
     /// 纯读本地缓存，不发网络。
     ///
     /// SWR 模式的"第一阶段"：拿到旧 HTML 立即上屏。
-    /// - Returns: 缓存命中返回 Readme；未命中返回 nil
-    func cachedReadme(repoId: Int64) async throws -> Readme? {
-        try await repository.find(repoId: repoId)
+    ///
+    /// HOM-201 P0-1（2026-06-14）：当 manage 表（`readmes` PK=`repo_id`）未命中时，
+    /// 兜底查 `trending_readmes` 表（PK=`full_name`）。命中则 promote：
+    /// - upsert 到 `readmes`，让下一次直接 manage 路径命中；
+    /// - 清掉 `trending_readmes` 里的旧行，避免双份存储。
+    ///
+    /// 真实场景：用户在 trending 详情读过 README → star → 切到 manage 详情。
+    /// 没 promote 之前 manage 路径会重新打 GitHub 拉一份相同内容；有 promote 则零
+    /// 网络复用。promote 写失败不致命——仍返回 trending 数据给 UI，下次再尝试。
+    ///
+    /// **不做反向兜底**（manage → trending）：trending 路径以 `owner/repo` 为 key,
+    /// `cachedTrendingReadme(owner:repo:)` 拿不到 `repo.id` 没法反查；这个反向场景
+    /// （已 star 的 repo 又出现在 trending 列表且首次进 trending 详情）较少，
+    /// 不做。
+    ///
+    /// - Parameter repo: 目标仓库（需要 `id` 查 manage 表，`fullName` 兜底查 trending 表）
+    /// - Returns: 缓存命中返回 Readme（可能来自 manage 或 trending 表）；未命中 nil
+    func cachedReadme(for repo: Repo) async throws -> Readme? {
+        if let manageHit = try await repository.find(repoId: repo.id) {
+            // HOM-201 P2-3:manage 表直接命中计入 cachedHit
+            await metrics.recordCachedHit()
+            return manageHit
+        }
+
+        guard !repo.fullName.isEmpty else { return nil }
+
+        // 兜底查询失败不致命：manage 表也没命中，返回 nil 让上层走 refresh 路径
+        let trendingHit: TrendingReadme?
+        do {
+            trendingHit = try await trendingRepository.find(fullName: repo.fullName)
+        } catch {
+            AppLog.network.debug("cachedReadme trending 兜底查询失败 \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+        guard let trending = trendingHit else { return nil }
+
+        let promoted = Readme(
+            repoId: repo.id,
+            // trending_readmes 没存 raw markdown,onHTMLLoaded 后续 backfill 走 readme_contents 表
+            renderedHtml: trending.renderedHtml,
+            etag: trending.etag,
+            lastModified: trending.lastModified,
+            cachedAt: trending.cachedAt,
+            size: trending.size
+        )
+
+        do {
+            try await repository.upsert(promoted)
+            // promote 成功后清掉 trending 行，避免空间浪费
+            try? await trendingRepository.delete(fullName: repo.fullName)
+            AppLog.network.debug("README cache promote trending → manage: \(repo.fullName, privacy: .public) (repoId=\(repo.id))")
+        } catch {
+            // 写入失败：仍返回 trending 内容给 UI 用，下次再 promote
+            AppLog.network.warning("cachedReadme trending → manage promote upsert 失败 \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+        // HOM-201 P2-3:trending → manage promote 也算 cachedHit(本次不发网络)
+        await metrics.recordCachedHit()
+        return promoted
     }
 
     /// 走网络刷新 README HTML 并同步本地缓存。
@@ -110,13 +194,31 @@ struct ReadmeAPI {
     ///
     /// 本方法不做 softTtl 短路 —— 调用方应用 `isWithinSoftTtl` 自己判断是否调本方法。
     ///
+    /// HOM-201 P0-3（2026-06-14）：外层包了 `ReadmeInflightTracker.dedupeManage` ——
+    /// 同 `repo.id` 的并发请求复用首发 Task，返回完全相同的 result。
+    /// `refreshReadme` 不区分调用方的 forceRefresh（语义都是带 If-None-Match 条件请求）,
+    /// 共享 Task 是安全的；A 期望"refresh 一次"和 B 期望"refresh 一次"等价于两人一起
+    /// 等同一次结果。
+    ///
     /// - Parameter repo: 目标仓库
     /// - Returns: `ReadmeRefreshResult` —— `.updated` / `.notModified` / `.notFound` / `.failed`
     func refreshReadme(for repo: Repo) async -> ReadmeRefreshResult {
+        await inflightTracker.dedupeManage(repoId: repo.id) {
+            await self.performRefreshReadme(for: repo)
+        }
+    }
+
+    /// `refreshReadme(for:)` 的真实业务实现，由 `inflightTracker.dedupeManage` 包装调用。
+    ///
+    /// HOM-201 P2-3:各终态末尾 record metrics(refresh200 / 304 / 404 / failed)。
+    /// 调用 `refreshUnconditional` 兜底时不在本方法 record(让兜底自身 record),
+    /// 避免一次刷新计入两次。
+    private func performRefreshReadme(for repo: Repo) async -> ReadmeRefreshResult {
         let existing: Readme?
         do {
             existing = try await repository.find(repoId: repo.id)
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
 
@@ -133,8 +235,10 @@ struct ReadmeAPI {
             if existing != nil {
                 try? await repository.delete(repoId: repo.id)
             }
+            await metrics.recordRefresh404()
             return .notFound
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
 
@@ -142,6 +246,7 @@ struct ReadmeAPI {
         if raw.notModified {
             guard let cached = existing else {
                 // 极端 case：本地缓存被清掉但服务端仍 304 → 兜底无条件重拉
+                // 不在此处 record,refreshUnconditional 自己处理
                 AppLog.network.warning("README 304 但本地缓存丢失，无条件重拉 \(repo.fullName, privacy: .public)")
                 return await refreshUnconditional(repo: repo)
             }
@@ -149,26 +254,32 @@ struct ReadmeAPI {
             try? await repository.touchCachedAt(repoId: repo.id, at: now)
             var refreshed = cached
             refreshed.cachedAt = ISO8601DateFormatter.shared.string(from: now)
+            await metrics.recordRefresh304()
             return .notModified(refreshed)
         }
 
         // 200 → 写新缓存
+        // HOM-201 P1-2（2026-06-14）：upsert 前对 HTML 做一次 `<img>` 相对路径重写，
+        // 一次性落库；ReadmeWebView 渲染层不再每次切 repo 重跑正则。
         let html = String(data: raw.data, encoding: .utf8) ?? ""
+        let rewrittenHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: repo.owner, repo: repo.name)
         let now = Date()
         let readme = Readme(
             repoId: repo.id,
-            content: nil,
-            renderedHtml: html,
+            renderedHtml: rewrittenHtml,
             etag: raw.etag,
             lastModified: raw.lastModified,
             cachedAt: ISO8601DateFormatter.shared.string(from: now),
-            size: raw.data.count
+            // size 仍按重写后字节数,与 rendered_html 实际占用对齐(后续 LRU 淘汰按 size 判)
+            size: rewrittenHtml.utf8.count
         )
         do {
             try await repository.upsert(readme)
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
+        await metrics.recordRefresh200()
         return .updated(readme)
     }
 
@@ -204,14 +315,34 @@ struct ReadmeAPI {
     /// 与 manage 路径的差异：
     /// - 走 `TrendingReadmeRepository`（PK = full_name）而非 `ReadmeRepository`（PK = repo_id）
     /// - 返回 `Readme`（repoId=0 占位）让 ReadmeViewModel 的 SWR 模板能复用
+    ///
+    /// HOM-201 P0-3（2026-06-14）：外层包了 `ReadmeInflightTracker.dedupeTrending` ——
+    /// 同 `owner/repo` 并发请求复用首发 Task。同 manage 路径一样不抛错、所有错误包到
+    /// `.failed`，Task value 共享语义安全。
     func refreshTrendingReadme(owner: String, repo: String) async -> ReadmeRefreshResult {
         let fullName = "\(owner)/\(repo)"
+        return await inflightTracker.dedupeTrending(fullName: fullName) {
+            await self.performRefreshTrendingReadme(owner: owner, repo: repo, fullName: fullName)
+        }
+    }
+
+    /// `refreshTrendingReadme(...)` 的真实业务实现，由 `inflightTracker.dedupeTrending` 包装调用。
+    ///
+    /// HOM-201 P2-3:与 `performRefreshReadme` 同款 metrics 埋点;trending 路径 304
+    /// 返回的是 `.updated(...)`(因为 cachedAt 已更新),但**实际网络层面**是 304,
+    /// 仍 record 为 refresh304 不是 refresh200,与 manage 路径口径一致。
+    private func performRefreshTrendingReadme(
+        owner: String,
+        repo: String,
+        fullName: String
+    ) async -> ReadmeRefreshResult {
 
         // 第一步：取本地缓存的 ETag / Last-Modified 做条件请求
         let existing: TrendingReadme?
         do {
             existing = try await trendingRepository.find(fullName: fullName)
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
 
@@ -229,8 +360,10 @@ struct ReadmeAPI {
             if existing != nil {
                 try? await trendingRepository.delete(fullName: fullName)
             }
+            await metrics.recordRefresh404()
             return .notFound
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
 
@@ -238,6 +371,7 @@ struct ReadmeAPI {
         if raw.notModified {
             guard let cached = existing else {
                 // 极端 case：本地缓存被清掉但服务端仍 304 → 兜底无条件重拉
+                // 不在此处 record,refreshTrendingUnconditional 自己处理
                 AppLog.network.warning("Trending README 304 但本地缓存丢失，无条件重拉 \(fullName, privacy: .public)")
                 return await refreshTrendingUnconditional(owner: owner, repo: repo)
             }
@@ -245,44 +379,50 @@ struct ReadmeAPI {
             try? await trendingRepository.touchCachedAt(fullName: fullName, at: now)
             var refreshed = cached
             refreshed.cachedAt = ISO8601DateFormatter.shared.string(from: now)
+            await metrics.recordRefresh304()
             return .updated(Self.bridgeToReadme(refreshed))
         }
 
         // 第四步：200 → 写新缓存
+        // HOM-201 P1-2（2026-06-14）：upsert 前 rewrite `<img>` 相对路径,与 manage 路径对齐。
         let html = String(data: raw.data, encoding: .utf8) ?? ""
+        let rewrittenHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: owner, repo: repo)
         let now = Date()
         let record = TrendingReadme(
             fullName: fullName,
-            renderedHtml: html,
+            renderedHtml: rewrittenHtml,
             etag: raw.etag,
             lastModified: raw.lastModified,
             cachedAt: ISO8601DateFormatter.shared.string(from: now),
-            size: raw.data.count
+            size: rewrittenHtml.utf8.count
         )
         do {
             try await trendingRepository.upsert(record)
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
+        await metrics.recordRefresh200()
         return .updated(Self.bridgeToReadme(record))
     }
 
     // MARK: - Raw Markdown 按需懒补全（决策 E3，向量索引改进 2026-06-12）
 
-    /// 按需补全 `readmes.content` 原始 Markdown 文本。
+    /// 按需补全 raw Markdown 文本到独立表 `readme_contents`(HOM-201 P2-2)。
     ///
     /// 触发时机：
-    /// - 向量索引 / AI 摘要 / AI 标签等需要"纯文本"的下游服务发现 `readmes.content` 为 nil 时；
+    /// - 向量索引 / AI 摘要 / AI 标签等需要"纯文本"的下游服务发现 markdown 为 nil 时；
     /// - 后台预拉服务 `SemanticIndexBuilder` 在拉完所有 HTML 后逐个补 Markdown。
     ///
     /// 与 `refreshReadme(for:)` 的关系：
     /// - HTML 路径仍是 WebView 主路径，本方法**不**触碰 `rendered_html` / `etag` / `last_modified`；
-    /// - 只在 `readmes.content` 为 nil 时发请求；已有 Markdown 直接复用，不浪费 API 配额；
-    /// - HTML 行不存在时（404 / 第一次访问该 repo）直接 noop 跳过，避免误建半行数据；
+    /// - 只在 `readme_contents` 表对应行不存在 / content 为空时发请求；
+    ///   已有 Markdown 直接复用，不浪费 API 配额；
+    /// - HTML 行不存在时（404 / 第一次访问该 repo）直接 noop 跳过，避免误建孤立 markdown；
     /// - 所有错误包到 `.failed(error)`，不抛出（与 SWR 模式一致）。
     ///
     /// - Returns: `.updated(readme)` 表示落库成功；`.notFound` 表示 GitHub 没有该 README；
-    ///   `.notModified` 表示 readme 行已有 content / HTML 行不存在；`.failed(error)` 网络或落库失败。
+    ///   `.notModified` 表示已有 content / HTML 行不存在；`.failed(error)` 网络或落库失败。
     func refreshMarkdownIfNeeded(for repo: Repo) async -> ReadmeRefreshResult {
         let existing: Readme?
         do {
@@ -291,11 +431,10 @@ struct ReadmeAPI {
             return .failed(error)
         }
 
-        // 边界：HTML 行不存在或 content 已有，直接跳过（不发请求）
+        // 边界:HTML 行不存在(还没抓过)直接跳过,不为孤立 markdown 建行
         guard let cached = existing else {
             return .notModified(Readme(
                 repoId: repo.id,
-                content: nil,
                 renderedHtml: nil,
                 etag: nil,
                 lastModified: nil,
@@ -303,7 +442,11 @@ struct ReadmeAPI {
                 size: 0
             ))
         }
-        if let content = cached.content, !content.isEmpty {
+
+        // HOM-201 P2-2:content 拆到独立表后,这里显式查 readme_contents,
+        // 非空就 short-circuit;查询失败容错(当作 content 不存在,继续拉)
+        let cachedMarkdown = try? await repository.findContent(repoId: repo.id)
+        if let cachedMarkdown, !cachedMarkdown.isEmpty {
             return .notModified(cached)
         }
 
@@ -322,20 +465,23 @@ struct ReadmeAPI {
         }
 
         let markdown = String(data: raw.data, encoding: .utf8) ?? ""
-        // 2026-06-13 dong4j 决策：`readmes.content` 唯一消费者是机器（向量化 / AI 摘要），
-        // HTML 标签 / entity 都是噪声 → 落库前过一遍 `ReadmePreprocessor.sanitize(markdown:)`,
-        // 不截断（截断由消费方按各自的 `maxLength` 决定），下游零 strip 开销。
-        // 详见 `ReadmePreprocessor.swift` 头注释中的 A3 决策修订。
+        // 2026-06-13 dong4j 决策：`readme_contents.content` 唯一消费者是机器
+        // (向量化 / AI 摘要),HTML 标签 / entity 都是噪声 → 落库前过一遍
+        // `ReadmePreprocessor.sanitize(markdown:)`,不截断(截断由消费方按各自的
+        // `maxLength` 决定),下游零 strip 开销。详见 `ReadmePreprocessor.swift`
+        // 头注释中的 A3 决策修订。
         let sanitized = ReadmePreprocessor.sanitize(markdown: markdown)
         do {
-            try await repository.updateContent(repoId: repo.id, content: sanitized)
+            try await repository.upsertContent(
+                repoId: repo.id,
+                content: sanitized,
+                at: Date()
+            )
         } catch {
             return .failed(error)
         }
 
-        var refreshed = cached
-        refreshed.content = sanitized
-        return .updated(refreshed)
+        return .updated(cached)
     }
 
     // MARK: - Private
@@ -352,27 +498,33 @@ struct ReadmeAPI {
                 ifModifiedSince: nil
             )
         } catch NetworkError.notFound {
+            await metrics.recordRefresh404()
             return .notFound
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
 
+        // HOM-201 P1-2：兜底无条件刷新也 rewrite,与正常 200 分支对齐,避免不同分支
+        // 落库内容不一致。
         let html = String(data: raw.data, encoding: .utf8) ?? ""
+        let rewrittenHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: repo.owner, repo: repo.name)
         let now = Date()
         let readme = Readme(
             repoId: repo.id,
-            content: nil,
-            renderedHtml: html,
+            renderedHtml: rewrittenHtml,
             etag: raw.etag,
             lastModified: raw.lastModified,
             cachedAt: ISO8601DateFormatter.shared.string(from: now),
-            size: raw.data.count
+            size: rewrittenHtml.utf8.count
         )
         do {
             try await repository.upsert(readme)
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
+        await metrics.recordRefresh200()
         return .updated(readme)
     }
 
@@ -388,26 +540,32 @@ struct ReadmeAPI {
                 ifModifiedSince: nil
             )
         } catch NetworkError.notFound {
+            await metrics.recordRefresh404()
             return .notFound
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
 
+        // HOM-201 P1-2：trending 兜底无条件刷新也 rewrite,与正常 200 分支对齐。
         let html = String(data: raw.data, encoding: .utf8) ?? ""
+        let rewrittenHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: owner, repo: repo)
         let now = Date()
         let record = TrendingReadme(
             fullName: fullName,
-            renderedHtml: html,
+            renderedHtml: rewrittenHtml,
             etag: raw.etag,
             lastModified: raw.lastModified,
             cachedAt: ISO8601DateFormatter.shared.string(from: now),
-            size: raw.data.count
+            size: rewrittenHtml.utf8.count
         )
         do {
             try await trendingRepository.upsert(record)
         } catch {
+            await metrics.recordRefreshFailed()
             return .failed(error)
         }
+        await metrics.recordRefresh200()
         return .updated(Self.bridgeToReadme(record))
     }
 
@@ -415,17 +573,58 @@ struct ReadmeAPI {
     /// 让 ReadmeViewModel 的 SWR 模板（`LoadState.loaded(html:cachedAt:)`）能直接消费。
     ///
     /// 注：repoId 置 0（trending 没真实 GitHub repo id），ViewModel 不读这字段。
-    /// content 置 nil（trending 链路不缓存原始 markdown，与 manage 同款）。
+    /// trending 链路不缓存原始 markdown(P2-2 拆表后 markdown 走 readme_contents,
+    /// trending 路径不参与)。
     private static func bridgeToReadme(_ trending: TrendingReadme) -> Readme {
         Readme(
             repoId: 0,
-            content: nil,
             renderedHtml: trending.renderedHtml,
             etag: trending.etag,
             lastModified: trending.lastModified,
             cachedAt: trending.cachedAt,
             size: trending.size
         )
+    }
+
+    // MARK: - Prefetch（HOM-201 P1-1）
+
+    /// 列表 hover 触发的 README 预拉（manage / active 路径）。
+    ///
+    /// 设计：
+    /// - 命中 softTtl 内的本地缓存 → 直接返回**不发任何请求**，避免 hover 路过批量浪费配额；
+    /// - 缓存缺失 / 已过期 → 走 `refreshReadme(for:)`（被 `ReadmeInflightTracker` 去重，
+    ///   并发 hover 同一 repo 只发一次 GitHub）。
+    /// - 错误静默吞掉（包括读缓存失败、网络失败等）—— 这只是预热，失败不该打扰用户；
+    ///   用户真进详情时 `loadInternal` 走正常 SWR 流程会再尝试一次并展示错误。
+    ///
+    /// **不接受**调用方传 TTL —— 与 ViewModel `loadInternal` 用同一个 `Self.softTtl=6h`，
+    /// 保证 prefetch 和"自动加载是否短路网络"两条判定永远对齐，不会出现"prefetch
+    /// 走网络 / 详情页又判 fresh 不复用刚拉到的数据"这种内部错位。
+    func prefetch(for repo: Repo) async {
+        // `try?` 套在返回 Optional 的 throws 调用上会得到 `T??`，先平坦化再 if-let
+        let cached: Readme? = (try? await cachedReadme(for: repo)) ?? nil
+        if let cached,
+           Self.isWithinSoftTtl(cachedAt: cached.cachedAt, now: Date(), softTtl: Self.softTtl) {
+            return
+        }
+        _ = await refreshReadme(for: repo)
+    }
+
+    /// 列表 hover 触发的 README 预拉（trending / weekly 路径）。
+    ///
+    /// 与 `prefetch(for:)` 同套 softTtl 短路语义；trending 路径在 HOM-201 P1-4 之前
+    /// 详情页 `loadTrending` 本身不读 softTtl 强制每次走网络，但**本预拉方法**仍按
+    /// softTtl 短路 —— 否则 hover trending 列表会批量打 GitHub 304；P1-4 落地后
+    /// 详情页也对齐 softTtl，整条路径就完全闭环了。
+    func prefetchTrending(owner: String, repo: String) async {
+        let fullName = "\(owner)/\(repo)"
+        // `try?` 套在返回 Optional 的 throws 调用上会得到 `T??`，先平坦化再 if-let
+        let cached: TrendingReadme? = (try? await trendingRepository.find(fullName: fullName)) ?? nil
+        if let cached,
+           Self.isWithinSoftTtl(cachedAt: cached.cachedAt, now: Date(), softTtl: Self.softTtl) {
+            return
+        }
+        _ = await refreshTrendingReadme(owner: owner, repo: repo)
     }
 
     // MARK: - 纯逻辑工具（可独立单测）
