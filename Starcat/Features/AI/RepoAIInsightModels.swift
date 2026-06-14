@@ -37,6 +37,27 @@ struct RepoAIInsight: Codable, Equatable, Sendable {
     ///     塞进 DB 会让 ai_summaries.summary_json 列体积暴增；
     ///   - 只挑 footer 需要的 7 个字段。
     var contextMetadata: RepoAIInsightContextMeta?
+
+    /// Y9（2026-06-14）：摘要生成时 AnySearch 拉取的外部材料（已格式化为 markdown）。
+    ///
+    /// **为什么放在 Insight 里**：
+    ///   - **零 schema migration**（决议 F=f2b）：作为 Codable 可选字段塞进
+    ///     `summaryJson` 列，老缓存 JSON 缺该字段时反序列化为 nil，向后完全兼容；
+    ///   - **复用缓存生命周期**：与摘要正文同生同灭——`cacheModelKey` 编码了
+    ///     `external:on/off` 状态，settings 翻转后会自动失效；
+    ///   - **对话路径零 HTTP**（决议 B=b2）：`chatStream` 读 `cachedInsight` 时
+    ///     一并拿到 markdown，免去重复调 AnySearch API 烧配额。
+    ///
+    /// **内容形态**：直接存 `AnySearchContextProvider.collect()` 产出的整段
+    /// `<external_context trust="untrusted" source="AnySearch">...</external_context>`
+    /// 块（含防 prompt-injection 提示行 + 6 条 `- [title](url)\n  snippet` 列表）。
+    /// 长度上限：6 条 × 500 字 ≈ 3KB，对 SQLite TEXT 列无压力。
+    ///
+    /// **不与 summaryMarkdown 末尾的"## 外部参考来源"段冲突**：
+    ///   - `summaryMarkdown` 末尾仅有链接列表（无 snippet），给"摘要面板渲染"使用；
+    ///   - 本字段保留完整 snippet，给"对话 system prompt 注入"使用；
+    ///   - 两份数据来源同一次 collect 调用，无内容漂移风险。
+    var externalContextMarkdown: String?
 }
 
 /// Y2：UI footer 显示的代码上下文元信息（PackMetadata 的精简投影）。
