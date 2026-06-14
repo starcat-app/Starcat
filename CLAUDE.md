@@ -174,6 +174,14 @@ docs/
 - **dong4j 是 Swift 初学者**：写新代码或解释已有代码时，遇到关键 Swift / SwiftUI / Concurrency / WebKit / GRDB 概念应主动提示去查 `docs/Swift 学习索引.md` 对应条目
 - 详细开发规范见 `docs/` 各文档
 
+### UI 颜色规范：适配明暗主题（强制，2026-06-14 起生效）
+
+文字 / 图标 `foregroundStyle` **只用 `.primary` 或 `.secondary`，禁止 `.tertiary`**。
+
+`.tertiary` 在浅色主题下对比度仅约 1.5:1（远低于 WCAG AA 4.5:1），文字图标在白底上几乎"灰糊"不可读。
+
+**唯一例外**：刻意弱化的装饰性图标占位（如队列未开始态 `Image("circle")`、未选中态视觉降级等），可以保留 `.tertiary`，但**必须**在代码注释里写明"故意弱化 + 产品意图"。
+
 ### UI 规范：Focus Ring 蓝框（强制）
 
 **所有**使用 `.buttonStyle(.plain)` 的 Button **必须**添加 `.focusEffectDisabled()`，禁用 macOS 默认的蓝色 focus ring。
@@ -309,4 +317,4 @@ enum RepoListDensity: String, CaseIterable, Identifiable {
 
 ---
 
-*最后更新：2026-06-07*
+*最后更新：2026-06-14*
