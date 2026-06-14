@@ -176,13 +176,17 @@ final class RepoAIInsightService {
 
     /// 当前对话流式所用的模型名。
     ///
-    /// 与 `chatStream` / `makeClient` 中的解析顺序完全一致——优先用 `aiSummaryTask`
+    /// 与 `chatStream` / `makeClient` 中的解析顺序完全一致——优先用 `aiChatTask`
     /// 的 `resolvedModelName`，空则 fallback 到全局 `aiChatModel`。给"复制完整对话"
     /// 导出的 Markdown 末尾署名「由 X 生成」时使用。
     /// HOM-150 dong4j 2026-06-04 15:48 反馈："markdown 的最后应该加上由什么模型生成
     /// 的，就像 AI 摘要生成最后也添加了由什么模型生成的"。
+    ///
+    /// 2026-06-14 v4：从 `aiSummaryTask` 改成 `aiChatTask`（chat 提到 task 平级）。
+    /// 老用户首次启动时 `aiChatTask` 默认值会用与摘要同 provider+model（详见
+    /// `AppSettings.init` 的 fallback 逻辑），所以 model 选择行为对老用户无感。
     var resolvedChatModelName: String {
-        settings.aiSummaryTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
+        settings.aiChatTask.resolvedModelName.nilIfBlank ?? settings.aiChatModel
     }
 
     func cachedInsight(for repo: Repo) async throws -> RepoAIInsight? {
@@ -376,21 +380,23 @@ final class RepoAIInsightService {
     /// 与 `generateInsight` 的区别：
     /// - 走"多轮 chat"路径：system prompt 注入 repo 元数据 + README，
     ///   `history` 承载之前的用户/助手轮次，本轮发的内容放 `userMessage`；
-    /// - **强制流式**，忽略 `aiSummaryTask.parameters.streamEnabled`——
+    /// - **强制流式**，忽略 `aiChatTask.parameters.streamEnabled`——
     ///   chat 体验对"打字机式增量出字"非常敏感，非流式整段返回会让窗口长时间空白；
     /// - **不写 SQLite 缓存**：对话上下文是临时的，下次打开窗口重新开始；持久化要等
     ///   后续真的有"历史会话回看"需求再设计表结构；
     /// - **不解析 JSON / 不限制结构**：模型可以自由用 Markdown 回答（含代码块）。
     ///
-    /// 复用 `aiSummaryTask` 的 provider / model / 参数（temperature 0.2、maxToken 2048）。
-    /// 后续若发现"摘要适合低温度、对话需要更高 temperature"，再独立 `aiChatTask` 配置。
+    /// 2026-06-14 v4 拆分 `aiChatTask`（之前复用 `aiSummaryTask`）：把 chat 的 prompt /
+    /// provider / model / 参数都暴露给 Settings 编辑，跟其他 4 个任务平级。老用户首次启动
+    /// 时 `aiChatTask` 默认值会用与摘要同 provider+model + summaryDefault 参数，行为对
+    /// 老用户基本无感（唯一差异：system prompt 现在走 `AIDefaultPrompts.chat` 模板）。
     /// 同 `generateInsight` 一样，复用 `makeSource(for:)` 拼出的"repo 元数据 + README"
     /// 上下文，避免对 README WebView 缓存路径出现两份取数逻辑。
     ///
     /// **Y9（2026-06-14）对话上下文增强**（决议 A=a2 / B=b2 / F1=f1b）：
     /// system prompt 在 README + (可选) Code XML 之外，按当前 settings 决定是否额外注入：
-    ///   - **AI 摘要正文**（包括 markdown）：从 `loadCachedInsight` 读，没缓存就跳过；
-    ///     用 f1b "Previous AI summary:" 自然语言段落标识，让 LLM 知道是上次的提炼；
+    ///   - **AI 摘要正文**（包括 markdown）：从 `loadCachedInsight` 读，没缓存就为空字符串；
+    ///     喂给 prompt 模板的 `{summary}` 占位符，渲染为 `## AI Summary` 段；
     ///   - **AnySearch 外部材料**：从 `cachedInsight.externalContextMarkdown` 读，
     ///     **零额外 HTTP**（决议 B=b2，对话路径不重复调 AnySearch API 烧配额）；
     ///     需 settings 当前允许（anySearch+externalContext+私仓门控）才注入；
@@ -415,7 +421,7 @@ final class RepoAIInsightService {
         // try? 故意吞错：缓存读失败（比如 SQLite 临时锁）不应阻塞对话主流程。
         let cached = try? await loadCachedInsight(source: source, repo: repo)
 
-        let task = settings.aiSummaryTask
+        let task = settings.aiChatTask
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "对话")
 
         let systemPrompt = buildChatSystemPrompt(repo: repo, source: source, cached: cached)
@@ -445,79 +451,70 @@ final class RepoAIInsightService {
         return final
     }
 
-    /// Y9（2026-06-14）：拼装对话路径的 system prompt（决议 A=a2 / B=b2 / F1=f1b）。
+    /// 2026-06-14 v4 重构：拼装对话路径的 system prompt，走 `aiChatTask.prompt` 模板
+    /// + 6 占位符渲染（详见 `AIDefaultPrompts.chat` 注释）。
     ///
-    /// 实质拼接逻辑下沉到 `assembleChatSystemPrompt(...)` 静态函数（internal 可测），
-    /// 本方法负责"读 settings + 私仓门控"等 actor-bound 准备工作。
+    /// 实质渲染逻辑下沉到 `assembleChatSystemPrompt(...)` 静态函数（internal 可测），
+    /// 本方法负责"读 settings + 私仓门控 + 拆 source 字段"等 actor-bound 准备工作。
     private func buildChatSystemPrompt(repo: Repo, source: Source, cached: RepoAIInsight?) -> String {
         let externalAllowed = AnySearchContextProvider.allowsExternalContext(
             repoIsPrivate: repo.isPrivate,
             enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
             allowPrivate: settings.aiExternalContextAllowPrivateRepos
         )
+        // 私仓门控不通过时，把 externalContext 强制清空（即便 cached 里有也不注入）。
+        let externalContext = externalAllowed
+            ? (cached?.externalContextMarkdown ?? "")
+            : ""
         return Self.assembleChatSystemPrompt(
-            sourceText: source.text,
-            cachedSummaryMarkdown: cached?.summaryMarkdown,
-            cachedExternalMarkdown: cached?.externalContextMarkdown,
-            allowExternal: externalAllowed
+            template: settings.aiChatTask.prompt.systemPrompt,
+            outputLanguage: Self.outputLanguageDescriptor(),
+            metadata: source.metadata,
+            readme: source.readme,
+            codeContext: source.codeContext,
+            summary: cached?.summaryMarkdown ?? "",
+            externalContext: externalContext
         )
     }
 
-    /// Y9：对话 system prompt 拼接的纯函数（静态、无 actor 副作用、internal for tests）。
+    /// v4：对话 system prompt 渲染的纯函数（静态、无 actor 副作用、internal for tests）。
     ///
-    /// 输出顺序（从上到下）：
-    ///   1. 助手身份说明（含强制中文 + 不准编造 API 等约束）；
-    ///   2. **可选**：`Previous AI summary (...):` + fenced markdown 块（f1b 自然语言段）
-    ///      - 仅当 `cachedSummaryMarkdown` 非空时插入；
-    ///      - 用 ```markdown / ``` 包裹，让 LLM 视为引用而非新事实；
-    ///   3. `Repository context:\n{sourceText}` (元数据 + README + 可选 Code XML)；
-    ///   4. **可选**：AnySearch `<external_context>` markdown（决议 B=b2）
-    ///      - 仅当 `cachedExternalMarkdown` 非空且 `allowExternal == true` 时插入；
-    ///      - markdown 本身已含 `<external_context trust="untrusted">` 包裹和防 prompt
-    ///        injection 提示，无需在此再加。
+    /// 直接走 `AIPromptConfiguration.renderedSystemPrompt(placeholders:)`，跟 Summary /
+    /// Tags 任务的渲染路径完全一致。占位符在 `template` 里找不到时保留字面量
+    /// （让 LLM 看到 `{xxx}` 便于排错），找到则替换为对应字段。
     ///
-    /// 段间用 `\n\n` 分隔，让 LLM 解析时能识别为独立 block；尾部不加额外换行，
-    /// 调用方拼 user prompt 时会自然产生隔离。
+    /// **空 section 处理**（跟 Summary v4 同款）：`codeContext` / `summary` / `externalContext`
+    /// 任意一个为空字符串都直接渲染成空 section header（如 `## AI Summary` 后面什么都没有），
+    /// LLM 自然忽略，不在这里做"删除整段 section"的复杂字符串处理——pre-launch 阶段
+    /// 简单稳定优先，token 浪费 < 5/section 可以接受。
+    ///
+    /// **签名变更说明**：v3 旧签名是 `(sourceText, cachedSummaryMarkdown, cachedExternalMarkdown,
+    /// allowExternal)`，把 metadata + readme + codeContext 黑盒拼成 `sourceText` 喂进去。
+    /// v4 改成"6 个一等参数"，跟模板的 6 占位符一一对应，让单测能精确断言每个占位符的渲染结果。
     ///
     /// `nonisolated`：本函数纯字符串拼接、无 actor 副作用，单测从 sync 上下文可直接调用。
     nonisolated static func assembleChatSystemPrompt(
-        sourceText: String,
-        cachedSummaryMarkdown: String?,
-        cachedExternalMarkdown: String?,
-        allowExternal: Bool
+        template: String,
+        outputLanguage: String,
+        metadata: String,
+        readme: String,
+        codeContext: String,
+        summary: String,
+        externalContext: String
     ) -> String {
-        var sections: [String] = [
-            """
-            You are Starcat's repository chat assistant.
-            Reply in Simplified Chinese only.
-            Stay grounded in the provided repository context (metadata + README + optional code structure).
-            If a question cannot be answered from that context, say "未从 README 或仓库元数据中确认" — do not invent APIs, commands, links, or version numbers.
-            Markdown is allowed (including fenced code blocks); keep replies focused on what the user asked, no padding.
-            """
-        ]
-
-        if let summary = cachedSummaryMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !summary.isEmpty {
-            sections.append("""
-            Previous AI summary (generated earlier from this repo's README + code; treat as a reference, may be slightly stale):
-            ```markdown
-            \(summary)
-            ```
-            """)
-        }
-
-        sections.append("""
-        Repository context:
-        \(sourceText)
-        """)
-
-        if allowExternal,
-           let externalMd = cachedExternalMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !externalMd.isEmpty {
-            sections.append(externalMd)
-        }
-
-        return sections.joined(separator: "\n\n")
+        // 复用 AIPromptConfiguration.render（{key} → value，dict 没有的 key 保留字面量
+        // 让 LLM 看到便于排错），与 Summary / Tags 任务的渲染语义统一。
+        AIPromptConfiguration.render(
+            template: template,
+            placeholders: [
+                "outputLanguage": outputLanguage,
+                "metadata": metadata,
+                "readme": readme,
+                "codeContext": codeContext,
+                "summary": summary,
+                "externalContext": externalContext
+            ]
+        )
     }
 
     private func tagSuggestionsResult(

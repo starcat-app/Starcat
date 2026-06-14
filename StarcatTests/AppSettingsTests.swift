@@ -101,6 +101,18 @@ struct AppSettingsTests {
         #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{externalContext}"))
         #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{outputLanguage}"))
         #expect(s.aiSummaryTask.prompt.systemPrompt.contains("{outputLanguage}"))
+        // 2026-06-14 v4：chat task 提到 task 平级（之前复用 aiSummaryTask）。验证默认值：
+        // - provider 跟 summary 同（首次升级时复用同一 profile + chatModel）
+        // - systemPrompt 含全部 6 占位符
+        // - userPromptTemplate 留空（chat 用户消息走 messages 数组，不用模板包装）
+        #expect(s.aiChatTask.providerID == s.aiProviderProfiles[0].id)
+        #expect(s.aiChatTask.prompt.systemPrompt.contains("{outputLanguage}"))
+        #expect(s.aiChatTask.prompt.systemPrompt.contains("{metadata}"))
+        #expect(s.aiChatTask.prompt.systemPrompt.contains("{readme}"))
+        #expect(s.aiChatTask.prompt.systemPrompt.contains("{codeContext}"))
+        #expect(s.aiChatTask.prompt.systemPrompt.contains("{summary}"))
+        #expect(s.aiChatTask.prompt.systemPrompt.contains("{externalContext}"))
+        #expect(s.aiChatTask.prompt.userPromptTemplate.isEmpty)
         #expect(s.smartSearchMode == .keyword)
     }
 

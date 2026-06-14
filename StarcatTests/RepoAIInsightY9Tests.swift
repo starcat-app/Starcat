@@ -136,114 +136,169 @@ struct RepoAIInsightY9Tests {
         #expect(decoded.generationContextSettings?.externalContextAllowed == false)
     }
 
-    // MARK: - assembleChatSystemPrompt
+    // MARK: - assembleChatSystemPrompt（v4 占位符渲染版本）
 
-    @Test("最小输入：仅 sourceText，无摘要无外部材料")
+    /// v4 重构后 assembleChatSystemPrompt 是纯模板渲染：6 占位符无脑替换，没有内部
+    /// 条件判断逻辑（旧版的 allowExternal / blank summary 检测都移到了 caller
+    /// `buildChatSystemPrompt` 那一层 + nil-coalesce + 私仓门控）。
+    /// 这些测试用 `AIDefaultPrompts.chat.systemPrompt` 当 template，验证占位符替换 +
+    /// section 顺序 + 默认 prompt 包含的关键短语。
+
+    @Test("最小输入：metadata/readme 必填，其它占位符为空字符串 → section header 仍渲染")
     func assembleMinimal() {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
-            sourceText: "Repository: foo/bar\nDescription: hi",
-            cachedSummaryMarkdown: nil,
-            cachedExternalMarkdown: nil,
-            allowExternal: false
+            template: AIDefaultPrompts.chat.systemPrompt,
+            outputLanguage: "English",
+            metadata: "Repository: foo/bar\nDescription: hi",
+            readme: "# Hello",
+            codeContext: "",
+            summary: "",
+            externalContext: ""
         )
 
+        // identity / output format / factual / style 4 段都在
         #expect(result.contains("You are Starcat's repository chat assistant"))
-        #expect(result.contains("Repository context:"))
+        #expect(result.contains("# Output Format (STRICT)"))
+        #expect(result.contains("# Factual Constraints"))
+        #expect(result.contains("# Reply Style"))
+
+        // 5 个 input section 标题都在（即便对应占位符为空）
+        #expect(result.contains("## Metadata"))
+        #expect(result.contains("## README"))
+        #expect(result.contains("## Code Structure"))
+        #expect(result.contains("## AI Summary"))
+        #expect(result.contains("## External References"))
+
+        // 实际数据被替换了
         #expect(result.contains("Repository: foo/bar"))
-        #expect(!result.contains("Previous AI summary"))
-        #expect(!result.contains("<external_context"))
+        #expect(result.contains("# Hello"))
+
+        // outputLanguage 占位符被替换
+        #expect(result.contains("Output language: English"))
+        #expect(!result.contains("{outputLanguage}"))
     }
 
-    @Test("含摘要：fenced markdown 块按 f1b 自然语言段插入到 sourceText 之前")
+    @Test("summary 非空 → 渲染到 ## AI Summary section")
     func assembleWithSummary() {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
-            sourceText: "Repository: foo/bar",
-            cachedSummaryMarkdown: "## 一句话\nThis is a test summary.",
-            cachedExternalMarkdown: nil,
-            allowExternal: true
+            template: AIDefaultPrompts.chat.systemPrompt,
+            outputLanguage: "Simplified Chinese",
+            metadata: "Repository: foo/bar",
+            readme: "README body",
+            codeContext: "",
+            summary: "## 一句话\nThis is a test summary.",
+            externalContext: ""
         )
 
-        // 关键断言：摘要必须出现在 sourceText 之前（决议 A=a2 + F1=f1b 顺序）
-        let summaryRange = try? #require(result.range(of: "Previous AI summary"))
-        let sourceRange = try? #require(result.range(of: "Repository context:"))
-        if let s = summaryRange, let r = sourceRange {
-            #expect(s.lowerBound < r.lowerBound)
-        }
-        // fenced markdown 包裹
-        #expect(result.contains("```markdown"))
+        #expect(result.contains("## 一句话"))
         #expect(result.contains("This is a test summary."))
+
+        // 顺序断言：## AI Summary 必须出现在 ## Metadata 之后
+        let metadataIdx = try? #require(result.range(of: "## Metadata")).lowerBound
+        let summaryIdx = try? #require(result.range(of: "## AI Summary")).lowerBound
+        if let m = metadataIdx, let s = summaryIdx {
+            #expect(m < s)
+        }
     }
 
-    @Test("含外部材料 + allowExternal=true：markdown 拼到末尾")
-    func assembleWithExternalAllowed() {
-        let externalMd = "<external_context trust=\"untrusted\">\n- [doc](https://x.com)\n</external_context>"
+    @Test("externalContext 非空 → 渲染到 ## External References section（末尾）")
+    func assembleWithExternalContext() {
+        let externalMd = "<external_context source=\"AnySearch\">\n- [doc](https://x.com)\n</external_context>"
         let result = RepoAIInsightService.assembleChatSystemPrompt(
-            sourceText: "Repository: foo/bar",
-            cachedSummaryMarkdown: nil,
-            cachedExternalMarkdown: externalMd,
-            allowExternal: true
+            template: AIDefaultPrompts.chat.systemPrompt,
+            outputLanguage: "English",
+            metadata: "Repository: foo/bar",
+            readme: "",
+            codeContext: "",
+            summary: "",
+            externalContext: externalMd
         )
 
         #expect(result.contains("<external_context"))
-        #expect(result.contains("- [doc](https://x.com)"))
+        #expect(result.contains("https://x.com"))
 
-        // 关键断言：external 必须出现在 sourceText 之后
-        let sourceRange = try? #require(result.range(of: "Repository context:"))
-        let externalRange = try? #require(result.range(of: "<external_context"))
-        if let s = sourceRange, let e = externalRange {
-            #expect(s.lowerBound < e.lowerBound)
+        // 顺序断言：## External References 必须出现在 ## AI Summary 之后（v4 模板章节顺序）
+        let summaryIdx = try? #require(result.range(of: "## AI Summary")).lowerBound
+        let externalIdx = try? #require(result.range(of: "## External References")).lowerBound
+        if let s = summaryIdx, let e = externalIdx {
+            #expect(s < e)
         }
     }
 
-    @Test("allowExternal=false 时即便缓存里有 markdown 也不拼（用户实时意图优先）")
-    func assembleSkipsExternalWhenDisallowed() {
-        let externalMd = "<external_context trust=\"untrusted\">\n- [doc](https://x.com)\n</external_context>"
+    @Test("空 externalContext → section header 渲染但下面没内容")
+    func assembleEmptyExternalRendersHeaderOnly() {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
-            sourceText: "Repository: foo/bar",
-            cachedSummaryMarkdown: nil,
-            cachedExternalMarkdown: externalMd,
-            allowExternal: false
+            template: AIDefaultPrompts.chat.systemPrompt,
+            outputLanguage: "English",
+            metadata: "Repository: foo/bar",
+            readme: "body",
+            codeContext: "",
+            summary: "",
+            externalContext: ""
         )
 
+        // section header 在
+        #expect(result.contains("## External References"))
+        // 没有任何 external_context XML 包裹
         #expect(!result.contains("<external_context"))
-        #expect(!result.contains("https://x.com"))
     }
 
-    @Test("摘要全空白字符不拼：避免无意义的空 fenced 块")
-    func assembleSkipsBlankSummary() {
-        let result = RepoAIInsightService.assembleChatSystemPrompt(
-            sourceText: "Repository: foo/bar",
-            cachedSummaryMarkdown: "   \n\n   ",
-            cachedExternalMarkdown: nil,
-            allowExternal: false
-        )
-
-        #expect(!result.contains("Previous AI summary"))
-        #expect(!result.contains("```markdown"))
-    }
-
-    @Test("全要素拼接：摘要 + sourceText + 外部材料 顺序正确")
+    @Test("全要素拼接：5 个 input section 顺序为 metadata → readme → codeContext → summary → externalContext")
     func assembleFullStack() {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
-            sourceText: "Repository: foo/bar",
-            cachedSummaryMarkdown: "summary content",
-            cachedExternalMarkdown: "<external_context>e</external_context>",
-            allowExternal: true
+            template: AIDefaultPrompts.chat.systemPrompt,
+            outputLanguage: "Simplified Chinese",
+            metadata: "M-DATA",
+            readme: "R-DATA",
+            codeContext: "C-DATA",
+            summary: "S-DATA",
+            externalContext: "E-DATA"
         )
 
-        let summaryIdx = result.range(of: "Previous AI summary")?.lowerBound
-        let sourceIdx = result.range(of: "Repository context:")?.lowerBound
-        let externalIdx = result.range(of: "<external_context")?.lowerBound
+        let metaIdx = result.range(of: "M-DATA")?.lowerBound
+        let readmeIdx = result.range(of: "R-DATA")?.lowerBound
+        let codeIdx = result.range(of: "C-DATA")?.lowerBound
+        let summaryIdx = result.range(of: "S-DATA")?.lowerBound
+        let externalIdx = result.range(of: "E-DATA")?.lowerBound
 
-        // 三段都必须存在
+        // 5 个 section 内容都必须出现
+        #expect(metaIdx != nil)
+        #expect(readmeIdx != nil)
+        #expect(codeIdx != nil)
         #expect(summaryIdx != nil)
-        #expect(sourceIdx != nil)
         #expect(externalIdx != nil)
 
-        // 顺序断言：摘要 < sourceText < external
-        if let s = summaryIdx, let r = sourceIdx, let e = externalIdx {
-            #expect(s < r)
-            #expect(r < e)
+        // 顺序断言：metadata < readme < codeContext < summary < externalContext
+        if let m = metaIdx, let r = readmeIdx, let c = codeIdx, let s = summaryIdx, let e = externalIdx {
+            #expect(m < r)
+            #expect(r < c)
+            #expect(c < s)
+            #expect(s < e)
         }
+    }
+
+    @Test("占位符 dict 找不到 key → 保留 {key} 字面量（让 LLM 看到便于排错）")
+    func assembleUnknownPlaceholderPreserved() {
+        // 用户改过 prompt 模板，引入了 dict 没有的占位符（比如 {fooBar}）
+        let customTemplate = """
+        Hello {outputLanguage}.
+        Custom field: {fooBar}
+        Metadata: {metadata}
+        """
+
+        let result = RepoAIInsightService.assembleChatSystemPrompt(
+            template: customTemplate,
+            outputLanguage: "English",
+            metadata: "M-DATA",
+            readme: "",
+            codeContext: "",
+            summary: "",
+            externalContext: ""
+        )
+
+        #expect(result.contains("Hello English."))
+        #expect(result.contains("Metadata: M-DATA"))
+        // 关键：{fooBar} 不在 dict 里，必须保留字面量而非被替换为空
+        #expect(result.contains("{fooBar}"))
     }
 }
