@@ -430,12 +430,23 @@ enum SmartSearchMode: String, CaseIterable, Identifiable {
 ///
 /// 设计：
 /// - **raw 用 BCP-47 标签**（`zh-Hans` / `en` / `ja` 等）：与 `Locale.identifier` 兼容，
-///   后续如果要做"按系统语言自动选默认目标"或写日志时可以直接传给 Locale；
-/// - 默认 `.simplifiedChinese`：HOM-68 明确要求默认中文；
+///   后续做"按 App 当前 locale 自动选默认目标"或写日志时可以直接传给 Locale；
+/// - **默认值不再写死 `.simplifiedChinese`**（HOM-198 fix，2026-06-14）：
+///   首次启动 / UserDefaults 未持久化时，由 `defaultForCurrentLocale()`
+///   按 App 当前 i18n locale 推断；中日韩 locale → 对应语言，其余一律落到英文。
+///   选择英文作为兜底（而不是简体中文）：原默认值对所有非中文用户硬塞中文，
+///   issue 的核心抱怨就是这条；英文是 README 原文最普遍的语言，也是绝大多数
+///   非中日韩用户的工作语言，作为 fallback 比中文合理。老用户 UserDefaults
+///   里已有值的不被覆盖，迁移零风险。
 /// - 第一版只列 5 个主流语言；后续按用户反馈追加。
 /// - `displayName` 走本地化（菜单显示的是「简体中文 / English / 日本語」之类用户母语标签）；
 /// - `promptName` 是发给 LLM 的目标语言名称，固定走英文（`Simplified Chinese`），
 ///   避免不同 provider 对中文 prompt 关键词的解析差异，提示词中明确语言能更稳定。
+///
+/// **与 App UI 本地化语言（`Localizable.xcstrings`）解耦**：
+/// App UI 当前只支持 zh-Hans + en，但翻译目标语言列了 5 种——日韩用户完全可能
+/// 用英文界面但把 README 翻成日韩文。这两个概念不应该拉齐，扩展支持语言时
+/// 各自迭代各自的列表。
 enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sendable {
     case simplifiedChinese = "zh-Hans"
     case traditionalChinese = "zh-Hant"
@@ -466,6 +477,65 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
         case .english:            return "English"
         case .japanese:           return "Japanese"
         case .korean:             return "Korean"
+        }
+    }
+
+    // MARK: - HOM-198：按 App 当前 locale 推断默认目标语言
+
+    /// 按 App 当前 i18n locale 推断默认翻译目标语言。
+    ///
+    /// **取值来源刻意用 `Bundle.main.preferredLocalizations.first`** 而不是
+    /// `Locale.current.identifier`：
+    /// - `preferredLocalizations` 是 App "实际渲染" 使用的本地化（受 xcstrings
+    ///   能匹配的语言限制，再按用户系统语言偏好排序），代表"用户看到的 App 界面"；
+    /// - `Locale.current` 反映的是用户系统区域设置，可能 App 界面已经回落到英文
+    ///   而系统 locale 仍是日文——那样默认翻译成日文会与 App 界面割裂。
+    ///
+    /// 极端 fallback：若 `preferredLocalizations` 为空（理论上不会发生，
+    /// Bundle 至少会回到 development localization `zh-Hans`），再回退到
+    /// `Locale.current.identifier`，最后还无法解析就走 `.english`。
+    ///
+    /// 只在"用户从未选过"时被消费（见 `AppSettings.init`），用户主动改过
+    /// 之后这个函数就不再影响默认行为。
+    static func defaultForCurrentLocale() -> ReadmeTranslationLanguage {
+        let identifier = Bundle.main.preferredLocalizations.first
+            ?? Locale.current.identifier
+        return defaultLanguage(forLocaleIdentifier: identifier)
+    }
+
+    /// 把 BCP-47 locale identifier 映射为翻译目标语言。
+    ///
+    /// 拆出来是为了**让单测能注入任意 identifier**（不依赖运行环境的
+    /// Bundle / Locale），同时 `defaultForCurrentLocale()` 也复用同一份规则。
+    ///
+    /// 映射规则：
+    /// - `zh-Hant` / `zh-TW` / `zh-HK` / `zh-MO` → `.traditionalChinese`；
+    /// - 其余 `zh*`（含 `zh-Hans` / `zh-CN` / `zh-SG` / 裸 `zh`）→ `.simplifiedChinese`；
+    /// - `ja*` → `.japanese`；
+    /// - `ko*` → `.korean`；
+    /// - 其余（含 `en*` / `fr*` / `de*` / `es*` …）→ `.english`。
+    ///
+    /// 用 `Locale.Language` 而不是字符串 `hasPrefix` 比对：标准 API 会正确处理
+    /// `zh_CN`（旧 POSIX 格式）/ `zh-Hans-CN`（带脚本和区域）/ 大小写差异等边角情形。
+    static func defaultLanguage(forLocaleIdentifier identifier: String) -> ReadmeTranslationLanguage {
+        let lang = Locale.Language(identifier: identifier)
+        let code = lang.languageCode?.identifier ?? ""
+        let script = lang.script?.identifier ?? ""
+        let region = lang.region?.identifier ?? ""
+
+        switch code {
+        case "zh":
+            // 脚本显式 Hant → 繁体；否则按地区判定（TW/HK/MO 繁体），其余落简体。
+            if script == "Hant" || ["TW", "HK", "MO"].contains(region) {
+                return .traditionalChinese
+            }
+            return .simplifiedChinese
+        case "ja":
+            return .japanese
+        case "ko":
+            return .korean
+        default:
+            return .english
         }
     }
 }
@@ -656,9 +726,11 @@ final class AppSettings {
         didSet { persist(key: Keys.snakeStyle, value: snakeStyle.rawValue) }
     }
 
-    /// README 翻译目标语言（HOM-68）。
-    /// 默认简体中文，符合 HOM-68 验收要求；用户可在详情页翻译按钮的下拉菜单里切换，
-    /// 选择后即时落盘，下次进入详情页直接命中本地翻译缓存（按 `(repo_id, language)` 查表）。
+    /// README 翻译目标语言（HOM-68；HOM-198 调整默认值来源）。
+    /// 默认值由 `ReadmeTranslationLanguage.defaultForCurrentLocale()` 按 App 当前
+    /// i18n locale 推断（中日韩 → 对应语言，其余 → 英文），不再写死中文；用户可在
+    /// 详情页翻译按钮的下拉菜单里切换，选择后即时落盘，下次进入详情页直接命中
+    /// 本地翻译缓存（按 `(repo_id, language)` 查表）。
     var readmeTranslationLanguage: ReadmeTranslationLanguage {
         didSet { persist(key: Keys.readmeTranslationLanguage, value: readmeTranslationLanguage.rawValue) }
     }
@@ -1014,10 +1086,14 @@ final class AppSettings {
         let snakeStyleRaw = defaults.string(forKey: Keys.snakeStyle)
         self.snakeStyle = snakeStyleRaw.flatMap(SnakeStyle.init(rawValue:)) ?? SnakeStyle.default
 
-        // HOM-68：README 翻译目标语言。默认简体中文。
+        // HOM-68 / HOM-198：README 翻译目标语言。
+        // 老用户已有持久化值 → 保留；首次启动 → 按 App 当前 locale 推断
+        // （`defaultForCurrentLocale()`，中日韩 → 对应语言，其余 → 英文）。
+        // 不再写死 `.simplifiedChinese`，避免对所有非中文用户硬塞中文。
         let translationLangRaw = defaults.string(forKey: Keys.readmeTranslationLanguage)
         self.readmeTranslationLanguage = translationLangRaw
-            .flatMap(ReadmeTranslationLanguage.init(rawValue:)) ?? .simplifiedChinese
+            .flatMap(ReadmeTranslationLanguage.init(rawValue:))
+            ?? .defaultForCurrentLocale()
 
         self.isProUser = defaults.object(forKey: Keys.isProUser) as? Bool ?? false
 
