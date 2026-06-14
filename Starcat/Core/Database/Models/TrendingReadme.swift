@@ -20,12 +20,16 @@
 //  - `cachedAt` 是 NOT NULL，因为有缓存就一定有时间戳；与表层约束对齐。
 //  - 不挂任何外键 / FTS：trending 缓存是独立、临时性数据，不与用户数据表关联。
 //
+//  HOM-201 P2-1(2026-06-14):`rendered_html` 列由 TEXT 改为 BLOB,与 `Readme` 同款
+//  zlib 透明压缩;Codable 自动派生不再适用,自实现 init(row:) / encode(to container:)。
+//  详见 `ReadmeHTMLCodec` 文件头与 `Readme.swift`。
+//
 
 import Foundation
 import GRDB
 
 /// `trending_readmes` 表行映射。
-struct TrendingReadme: Codable, FetchableRecord, MutablePersistableRecord, Equatable {
+struct TrendingReadme: FetchableRecord, MutablePersistableRecord, Equatable {
 
     static let databaseTableName = "trending_readmes"
 
@@ -33,6 +37,8 @@ struct TrendingReadme: Codable, FetchableRecord, MutablePersistableRecord, Equat
     var fullName: String
 
     /// GitHub 服务端渲染的 README HTML。可选——404 / 边缘 case 下可能为 nil。
+    ///
+    /// HOM-201 P2-1:对外 String? 不变,持久化层透明压缩(see `ReadmeHTMLCodec`)。
     var renderedHtml: String?
 
     /// GitHub 返回的 ETag，用于 If-None-Match 增量校验。
@@ -44,15 +50,48 @@ struct TrendingReadme: Codable, FetchableRecord, MutablePersistableRecord, Equat
     /// 缓存写入时间，ISO8601 字符串。仅用于"缓存于 X 时间前"展示。
     var cachedAt: String
 
-    /// HTML 字节数，便于"清理缓存"统计或按大小排序清理。
+    /// HTML 字节数(明文),便于"清理缓存"统计或按大小排序清理。
+    ///
+    /// HOM-201 P2-1:仍是明文 utf-8 字节数;LRU 决策口径稳定(磁盘实占 ≈ size / 5-7)。
     var size: Int
 
-    enum CodingKeys: String, CodingKey {
-        case fullName = "full_name"
-        case renderedHtml = "rendered_html"
-        case etag
-        case lastModified = "last_modified"
-        case cachedAt = "cached_at"
-        case size
+    /// 用于显式构造(测试 / ReadmeAPI / promote 等场景)。
+    init(
+        fullName: String,
+        renderedHtml: String?,
+        etag: String?,
+        lastModified: String?,
+        cachedAt: String,
+        size: Int
+    ) {
+        self.fullName = fullName
+        self.renderedHtml = renderedHtml
+        self.etag = etag
+        self.lastModified = lastModified
+        self.cachedAt = cachedAt
+        self.size = size
+    }
+
+    // MARK: - GRDB FetchableRecord
+
+    init(row: Row) {
+        self.fullName = row["full_name"]
+        let blob: Data? = row["rendered_html"]
+        self.renderedHtml = ReadmeHTMLCodec.decode(blob)
+        self.etag = row["etag"]
+        self.lastModified = row["last_modified"]
+        self.cachedAt = row["cached_at"]
+        self.size = row["size"]
+    }
+
+    // MARK: - GRDB MutablePersistableRecord
+
+    func encode(to container: inout PersistenceContainer) {
+        container["full_name"] = fullName
+        container["rendered_html"] = ReadmeHTMLCodec.encode(renderedHtml)
+        container["etag"] = etag
+        container["last_modified"] = lastModified
+        container["cached_at"] = cachedAt
+        container["size"] = size
     }
 }

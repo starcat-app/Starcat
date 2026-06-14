@@ -77,27 +77,44 @@ struct ReadmeRepository {
     }
 
     /// 全表清空（设置页"清理缓存"用，已在 W4-4 D4 接入）。
+    ///
+    /// HOM-201 P2-2:同步清 `readme_contents`(raw markdown 拆表后的独立表),
+    /// 让"清理缓存"一次性带走所有 README 相关 cache(html + markdown)。
     func deleteAll() async throws {
         try await database.writer.write { db in
             _ = try Readme.deleteAll(db)
+            _ = try ReadmeContent.deleteAll(db)
         }
     }
 
-    /// 仅更新 `content` 列（向量索引改进 2026-06-12，决策 E3）。
+    // MARK: - readme_contents(HOM-201 P2-2)
+
+    /// 查询 raw Markdown 文本(独立表 `readme_contents`,P2-2 拆出去后专门承载)。
     ///
-    /// 用途：`ReadmeAPI.refreshMarkdownIfNeeded(...)` 按需懒补全 raw Markdown 时使用，
-    /// 不影响 `rendered_html` / `etag` / `last_modified` / `cached_at` / `size`——
-    /// HTML 路径的 SWR 缓存语义保持完整。
+    /// 调用方:仅 AI / 向量索引等"纯文本消费方"显式调,普通 detail 渲染路径不调。
+    /// 详见 `ReadmeContent.swift` 文件头与 `createReadmeContents` schema 注释。
+    func findContent(repoId: Int64) async throws -> String? {
+        try await database.writer.read { db in
+            try ReadmeContent.fetchOne(db, key: repoId)?.content
+        }
+    }
+
+    /// upsert raw Markdown 到 `readme_contents` 表。
     ///
-    /// 如果 readmes 行不存在，本方法不会插入（用 UPDATE 而非 UPSERT）：避免在没有
-    /// HTML 缓存的情况下落下"只有 markdown 没 HTML"的半行数据，让 WebView 不至于
-    /// 误信缓存命中。调用方应在补 Markdown 之前确保 readme 行已存在（HTML 已抓过）。
-    func updateContent(repoId: Int64, content: String) async throws {
+    /// 调用方:`ReadmeAPI.refreshMarkdownIfNeeded(...)` 按需懒补全时使用。
+    /// **业务约束**:调用方需先确保 `readmes` 行存在(否则 FK 不阻挡,但语义上是
+    /// "孤立 markdown 没 HTML",WebView 兜底会查无 rendered_html 进 .empty 状态)。
+    func upsertContent(repoId: Int64, content: String, at date: Date) async throws {
+        let iso = ISO8601DateFormatter.shared.string(from: date)
+        let size = content.utf8.count
         try await database.writer.write { db in
-            try db.execute(
-                sql: "UPDATE readmes SET content = ? WHERE repo_id = ?",
-                arguments: [content, repoId]
+            var row = ReadmeContent(
+                repoId: repoId,
+                content: content,
+                cachedAt: iso,
+                size: size
             )
+            try row.upsert(db)
         }
     }
 

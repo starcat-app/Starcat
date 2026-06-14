@@ -170,6 +170,11 @@ struct ActivityView: View {
                 ),
                 isSelected: isSelected
             )
+            // HOM-201 P1-1（2026-06-14）：activity 行 hover 500ms 后预拉 manage 表的 README，
+            // active 详情走 loadInternal 同 manage 复用 `readmes` 表；softTtl 短路在 API 层做。
+            .readmePrefetch { [readmeAPI = dependencies.readmeAPI] in
+                await readmeAPI.prefetch(for: repo)
+            }
         } else {
             ActivityRowView(
                 item: item,

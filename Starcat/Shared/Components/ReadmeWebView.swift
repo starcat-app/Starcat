@@ -11,15 +11,15 @@
 //  3. 禁止页面自带 JavaScript：GitHub HTML 不需要页面脚本，关闭可减小攻击面。
 //     例外：注入一个 app-owned isolated user script，只用于把 window.scrollY 回传给 SwiftUI，
 //     让详情页能在 README 滚动时折叠顶部信息面板。
-//  4. 图片相对路径重写（rewriteAssetURLs）：
+//  4. 图片相对路径重写：
 //     - GitHub 的 HTML render 端点对 Markdown `![]()` 会做 camo 代理重写，
 //       但对原生 HTML `<img src="./xx">` 不重写，原样吐回相对路径
 //     - 我们的 baseURL 是 `https://github.com/owner/repo`，浏览器把 `./logo.PNG`
 //       解析成 `https://github.com/owner/logo.PNG` → 404
-//     - 修复：HTML 注入前用正则把所有 `<img src="相对路径">` 重写为
-//       `https://raw.githubusercontent.com/{owner}/{repo}/HEAD/...`
-//       （绝对 URL / data: / 协议相对 // 不动）。`HEAD` 自动指向默认分支，
-//       无需知道 default branch。
+//     - 修复：HOM-201 P1-2（2026-06-14）把"`<img>` 相对路径 → raw URL"重写从渲染层
+//       迁移到 `ReadmeAPI` upsert 前（见 `ReadmeAssetURLRewriter`）。本视图收到的
+//       `htmlFragment` 已是 rewrite 过的版本，直接 wrap document 即可，不再在
+//       渲染线程跑 NSRegularExpression。
 //  5. 链接拦截（decidePolicyFor navigationAction）：
 //     - 用户点链接（`.linkActivated`）→ NSWorkspace.open 跳系统浏览器
 //     - 主框架的"非首次"导航（含右键菜单"重新加载"、reload()、meta refresh 等）
@@ -61,15 +61,12 @@ struct ReadmeWebView: NSViewRepresentable {
     /// GitHub 返回的 HTML 片段（不含 <html>/<head>/<body>）。
     let htmlFragment: String
 
-    /// 用于解析 HTML 内相对 URL 的基地址。
+    /// 用于解析 HTML 内相对 URL 的基地址（链接 `<a href>` 等）。
     /// 通常传 repo.htmlUrl（https://github.com/owner/repo）。
+    /// HOM-201 P1-2（2026-06-14）起，`<img>` 相对路径已在 IO 层（`ReadmeAPI`）
+    /// 通过 `ReadmeAssetURLRewriter.rewrite(...)` 预处理为 raw.githubusercontent.com
+    /// 绝对 URL，**渲染层不再依赖 baseURL 解析图片**；baseURL 仅用于链接解析。
     let baseURL: URL?
-
-    /// 仓库 owner（用于把图片相对路径重写为 raw URL）。nil 时跳过重写。
-    let owner: String?
-
-    /// 仓库 name（同上）。
-    let repo: String?
 
     /// README 内部滚动位置变化回调。
     ///
@@ -124,8 +121,10 @@ struct ReadmeWebView: NSViewRepresentable {
         guard context.coordinator.lastLoadedKey != key else { return }
         context.coordinator.lastLoadedKey = key
 
-        let rewritten = Self.rewriteAssetURLs(in: htmlFragment, owner: owner, repo: repo)
-        let fullHTML = Self.assembleDocument(fragment: rewritten, isDark: colorScheme == .dark)
+        // HOM-201 P1-2（2026-06-14）：`htmlFragment` 已是 `ReadmeAPI` rewrite 后的
+        // 内容(img src 已是 raw.githubusercontent.com 绝对 URL),这里直接 wrap document,
+        // 不再在渲染线程跑 NSRegularExpression。
+        let fullHTML = Self.assembleDocument(fragment: htmlFragment, isDark: colorScheme == .dark)
         context.coordinator.expectsInitialLoad = true
         webView.loadHTMLString(fullHTML, baseURL: baseURL)
     }
@@ -159,69 +158,6 @@ struct ReadmeWebView: NSViewRepresentable {
     /// `/blob/HEAD`，Foundation / WebKit 会把 `HEAD` 当作当前文件名并在解析时丢掉它。
     static func repositoryContentBaseURL(from repositoryURL: URL) -> URL {
         repositoryURL.appendingPathComponent("blob/HEAD", isDirectory: true)
-    }
-
-    // MARK: - 图片相对路径重写
-
-    /// 把 HTML 中所有 `<img src="相对路径">` 重写为 raw.githubusercontent.com 绝对 URL。
-    ///
-    /// 触发原因：GitHub HTML render 端点对原生 HTML `<img>` 不做 URL 重写，
-    /// 用 `repo.htmlUrl` 作 baseURL 时 `./logo.PNG` 会被浏览器解析为
-    /// `https://github.com/owner/logo.PNG` → 404。
-    ///
-    /// 策略：
-    /// - 完整 URL（http(s):// / data: / 协议相对 //） → 不动
-    /// - 其余视作相对路径 → 拼到 `https://raw.githubusercontent.com/{owner}/{repo}/HEAD/`
-    ///   - HEAD 自动指向 default branch，无需额外查询
-    ///   - 去掉前导 `./` 与 `/`，与 GitHub 仓库根对齐
-    /// - owner/repo 缺失 → 直接原样返回（保守，宁可坏图不要错重写）
-    ///
-    /// 正则只匹配双引号包裹的 src（GitHub render 出来稳定用双引号），
-    /// 不做完整 HTML 解析以避免引入新依赖（SwiftSoup 等）。
-    static func rewriteAssetURLs(in html: String, owner: String?, repo: String?) -> String {
-        guard let owner, let repo, !owner.isEmpty, !repo.isEmpty else { return html }
-        let rawBase = "https://raw.githubusercontent.com/\(owner)/\(repo)/HEAD/"
-
-        // <img ...src="xxx"...> ；捕获 1 = src 前的属性串，捕获 2 = src 值
-        let pattern = #"<img\b([^>]*?)\bsrc\s*=\s*"([^"]+)""#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return html
-        }
-        let nsHtml = html as NSString
-        let matches = regex.matches(in: html, options: [], range: NSRange(location: 0, length: nsHtml.length))
-        guard !matches.isEmpty else { return html }
-
-        var result = ""
-        var cursor = 0
-        for m in matches {
-            // 复制 match 之前未变的部分
-            let unchanged = NSRange(location: cursor, length: m.range.location - cursor)
-            result += nsHtml.substring(with: unchanged)
-
-            let prefix = nsHtml.substring(with: m.range(at: 1))
-            let originalSrc = nsHtml.substring(with: m.range(at: 2))
-            let rewritten = rewriteOneAssetURL(originalSrc, rawBase: rawBase)
-            result += "<img\(prefix)src=\"\(rewritten)\""
-
-            cursor = m.range.location + m.range.length
-        }
-        result += nsHtml.substring(from: cursor)
-        return result
-    }
-
-    /// 单个 src 重写。绝对/协议相对/data URI 一律放过，其余拼到 rawBase。
-    static func rewriteOneAssetURL(_ src: String, rawBase: String) -> String {
-        let trimmed = src.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lower = trimmed.lowercased()
-        if lower.hasPrefix("http://") || lower.hasPrefix("https://")
-            || lower.hasPrefix("//") || lower.hasPrefix("data:")
-            || lower.hasPrefix("mailto:") || lower.hasPrefix("javascript:") {
-            return trimmed
-        }
-        var clean = Substring(trimmed)
-        if clean.hasPrefix("./") { clean = clean.dropFirst(2) }
-        while clean.hasPrefix("/") { clean = clean.dropFirst() }
-        return rawBase + String(clean)
     }
 
     // MARK: - Coordinator
