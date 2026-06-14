@@ -589,13 +589,17 @@ final class RepoAIInsightService {
     ///   `ReadmePreprocessor.process(html:/markdown:)`，与向量索引共用同一份规则；
     /// - 截断长度从 `AppSettings.aiReadmeTruncateLength` 读，让用户在 Settings 滑杆调整后
     ///   AI 摘要 / 向量化都同步生效；
-    /// - 优先使用 `readmes.content`（raw markdown）：决策 E3 后台懒补全完成时直接用原文，
-    ///   信息密度比 HTML 剥后高；fallback `rendered_html` 保留兼容。
+    /// - 优先使用 `readme_contents.content`(raw markdown,HOM-201 P2-2 拆表后独立):
+    ///   决策 E3 后台懒补全完成时直接用原文,信息密度比 HTML 剥后高;
+    ///   fallback `rendered_html` 保留兼容。
     private func makeSource(for repo: Repo) async throws -> Source {
-        let readme = try await readmeRepository.find(repoId: repo.id)
+        let markdown = try await readmeRepository.findContent(repoId: repo.id)
+        let readme: Readme? = (markdown == nil)
+            ? try await readmeRepository.find(repoId: repo.id)
+            : nil
         let truncateLength = settings.aiReadmeTruncateLength
         let readmeText: String = {
-            if let markdown = readme?.content, !markdown.isEmpty {
+            if let markdown, !markdown.isEmpty {
                 return ReadmePreprocessor.process(markdown: markdown, maxLength: truncateLength)
             }
             if let html = readme?.renderedHtml, !html.isEmpty {

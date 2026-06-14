@@ -164,8 +164,7 @@ struct ReadmeAPI {
 
         let promoted = Readme(
             repoId: repo.id,
-            // trending_readmes 没存 raw markdown；manage 路径的 onHTMLLoaded 后续会补
-            content: nil,
+            // trending_readmes 没存 raw markdown,onHTMLLoaded 后续 backfill 走 readme_contents 表
             renderedHtml: trending.renderedHtml,
             etag: trending.etag,
             lastModified: trending.lastModified,
@@ -267,7 +266,6 @@ struct ReadmeAPI {
         let now = Date()
         let readme = Readme(
             repoId: repo.id,
-            content: nil,
             renderedHtml: rewrittenHtml,
             etag: raw.etag,
             lastModified: raw.lastModified,
@@ -410,20 +408,21 @@ struct ReadmeAPI {
 
     // MARK: - Raw Markdown 按需懒补全（决策 E3，向量索引改进 2026-06-12）
 
-    /// 按需补全 `readmes.content` 原始 Markdown 文本。
+    /// 按需补全 raw Markdown 文本到独立表 `readme_contents`(HOM-201 P2-2)。
     ///
     /// 触发时机：
-    /// - 向量索引 / AI 摘要 / AI 标签等需要"纯文本"的下游服务发现 `readmes.content` 为 nil 时；
+    /// - 向量索引 / AI 摘要 / AI 标签等需要"纯文本"的下游服务发现 markdown 为 nil 时；
     /// - 后台预拉服务 `SemanticIndexBuilder` 在拉完所有 HTML 后逐个补 Markdown。
     ///
     /// 与 `refreshReadme(for:)` 的关系：
     /// - HTML 路径仍是 WebView 主路径，本方法**不**触碰 `rendered_html` / `etag` / `last_modified`；
-    /// - 只在 `readmes.content` 为 nil 时发请求；已有 Markdown 直接复用，不浪费 API 配额；
-    /// - HTML 行不存在时（404 / 第一次访问该 repo）直接 noop 跳过，避免误建半行数据；
+    /// - 只在 `readme_contents` 表对应行不存在 / content 为空时发请求；
+    ///   已有 Markdown 直接复用，不浪费 API 配额；
+    /// - HTML 行不存在时（404 / 第一次访问该 repo）直接 noop 跳过，避免误建孤立 markdown；
     /// - 所有错误包到 `.failed(error)`，不抛出（与 SWR 模式一致）。
     ///
     /// - Returns: `.updated(readme)` 表示落库成功；`.notFound` 表示 GitHub 没有该 README；
-    ///   `.notModified` 表示 readme 行已有 content / HTML 行不存在；`.failed(error)` 网络或落库失败。
+    ///   `.notModified` 表示已有 content / HTML 行不存在；`.failed(error)` 网络或落库失败。
     func refreshMarkdownIfNeeded(for repo: Repo) async -> ReadmeRefreshResult {
         let existing: Readme?
         do {
@@ -432,11 +431,10 @@ struct ReadmeAPI {
             return .failed(error)
         }
 
-        // 边界：HTML 行不存在或 content 已有，直接跳过（不发请求）
+        // 边界:HTML 行不存在(还没抓过)直接跳过,不为孤立 markdown 建行
         guard let cached = existing else {
             return .notModified(Readme(
                 repoId: repo.id,
-                content: nil,
                 renderedHtml: nil,
                 etag: nil,
                 lastModified: nil,
@@ -444,7 +442,11 @@ struct ReadmeAPI {
                 size: 0
             ))
         }
-        if let content = cached.content, !content.isEmpty {
+
+        // HOM-201 P2-2:content 拆到独立表后,这里显式查 readme_contents,
+        // 非空就 short-circuit;查询失败容错(当作 content 不存在,继续拉)
+        let cachedMarkdown = try? await repository.findContent(repoId: repo.id)
+        if let cachedMarkdown, !cachedMarkdown.isEmpty {
             return .notModified(cached)
         }
 
@@ -463,20 +465,23 @@ struct ReadmeAPI {
         }
 
         let markdown = String(data: raw.data, encoding: .utf8) ?? ""
-        // 2026-06-13 dong4j 决策：`readmes.content` 唯一消费者是机器（向量化 / AI 摘要），
-        // HTML 标签 / entity 都是噪声 → 落库前过一遍 `ReadmePreprocessor.sanitize(markdown:)`,
-        // 不截断（截断由消费方按各自的 `maxLength` 决定），下游零 strip 开销。
-        // 详见 `ReadmePreprocessor.swift` 头注释中的 A3 决策修订。
+        // 2026-06-13 dong4j 决策：`readme_contents.content` 唯一消费者是机器
+        // (向量化 / AI 摘要),HTML 标签 / entity 都是噪声 → 落库前过一遍
+        // `ReadmePreprocessor.sanitize(markdown:)`,不截断(截断由消费方按各自的
+        // `maxLength` 决定),下游零 strip 开销。详见 `ReadmePreprocessor.swift`
+        // 头注释中的 A3 决策修订。
         let sanitized = ReadmePreprocessor.sanitize(markdown: markdown)
         do {
-            try await repository.updateContent(repoId: repo.id, content: sanitized)
+            try await repository.upsertContent(
+                repoId: repo.id,
+                content: sanitized,
+                at: Date()
+            )
         } catch {
             return .failed(error)
         }
 
-        var refreshed = cached
-        refreshed.content = sanitized
-        return .updated(refreshed)
+        return .updated(cached)
     }
 
     // MARK: - Private
@@ -507,7 +512,6 @@ struct ReadmeAPI {
         let now = Date()
         let readme = Readme(
             repoId: repo.id,
-            content: nil,
             renderedHtml: rewrittenHtml,
             etag: raw.etag,
             lastModified: raw.lastModified,
@@ -569,11 +573,11 @@ struct ReadmeAPI {
     /// 让 ReadmeViewModel 的 SWR 模板（`LoadState.loaded(html:cachedAt:)`）能直接消费。
     ///
     /// 注：repoId 置 0（trending 没真实 GitHub repo id），ViewModel 不读这字段。
-    /// content 置 nil（trending 链路不缓存原始 markdown，与 manage 同款）。
+    /// trending 链路不缓存原始 markdown(P2-2 拆表后 markdown 走 readme_contents,
+    /// trending 路径不参与)。
     private static func bridgeToReadme(_ trending: TrendingReadme) -> Readme {
         Readme(
             repoId: 0,
-            content: nil,
             renderedHtml: trending.renderedHtml,
             etag: trending.etag,
             lastModified: trending.lastModified,

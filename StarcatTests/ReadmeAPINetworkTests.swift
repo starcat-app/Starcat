@@ -101,7 +101,6 @@ struct ReadmeAPINetworkTests {
     private func makeReadme(repoId: Int64, html: String, etag: String? = "\"old-etag\"", cachedAt: String = "2026-05-29T00:00:00Z") -> Readme {
         Readme(
             repoId: repoId,
-            content: nil,
             renderedHtml: html,
             etag: etag,
             lastModified: nil,

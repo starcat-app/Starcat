@@ -11,6 +11,11 @@
 //  `ReadmeHTMLCodec` 在 `init(row:)` / `encode(to container:)` 边界做编解码;
 //  Codable 自动派生不再适用(String? ↔ BLOB 映射需手写)。
 //
+//  HOM-201 P2-2(2026-06-14):原 `content` 字段(raw Markdown)拆到独立表 / 独立 Model
+//  `ReadmeContent`(对应 `readme_contents` 表),让默认 `find(repoId:)` 不再带出
+//  几百 KB markdown body。AI / 向量索引等"纯文本消费方"显式调
+//  `ReadmeRepository.findContent(repoId:)` 拉 markdown。
+//
 
 import Foundation
 import GRDB
@@ -20,9 +25,6 @@ struct Readme: FetchableRecord, MutablePersistableRecord, Equatable {
     static let databaseTableName = "readmes"
 
     var repoId: Int64
-
-    /// 原始 Markdown 文本。
-    var content: String?
 
     /// 渲染后 HTML(GitHub 服务端渲染,WebView 显示用)。
     ///
@@ -47,7 +49,6 @@ struct Readme: FetchableRecord, MutablePersistableRecord, Equatable {
     /// 用于显式构造(测试 / ReadmeAPI / promote 等场景)。
     init(
         repoId: Int64,
-        content: String?,
         renderedHtml: String?,
         etag: String?,
         lastModified: String?,
@@ -55,7 +56,6 @@ struct Readme: FetchableRecord, MutablePersistableRecord, Equatable {
         size: Int
     ) {
         self.repoId = repoId
-        self.content = content
         self.renderedHtml = renderedHtml
         self.etag = etag
         self.lastModified = lastModified
@@ -69,7 +69,6 @@ struct Readme: FetchableRecord, MutablePersistableRecord, Equatable {
     /// 还原为明文 String;解压失败兜底 nil,行本身仍可 fetch 出来。
     init(row: Row) {
         self.repoId = row["repo_id"]
-        self.content = row["content"]
         let blob: Data? = row["rendered_html"]
         self.renderedHtml = ReadmeHTMLCodec.decode(blob)
         self.etag = row["etag"]
@@ -84,7 +83,6 @@ struct Readme: FetchableRecord, MutablePersistableRecord, Equatable {
     /// 落到 `rendered_html` 列。`size` 仍是明文字节数(LRU 口径稳定)。
     func encode(to container: inout PersistenceContainer) {
         container["repo_id"] = repoId
-        container["content"] = content
         container["rendered_html"] = ReadmeHTMLCodec.encode(renderedHtml)
         container["etag"] = etag
         container["last_modified"] = lastModified

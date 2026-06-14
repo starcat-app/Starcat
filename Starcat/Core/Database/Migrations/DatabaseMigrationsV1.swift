@@ -64,6 +64,7 @@ enum DatabaseMigrations {
             try createRepoTags(db)
             try createRepoNotes(db)
             try createReadmes(db)
+            try createReadmeContents(db)
             try createSavedSearches(db)
             try createSearchHistory(db)
             try createSyncState(db)
@@ -288,11 +289,15 @@ enum DatabaseMigrations {
     /// 透明压缩(5-8x 比),磁盘占用显著下降。语义不变(Model `renderedHtml` 仍是
     /// `String?`),由 `ReadmeHTMLCodec` 在 `Readme.init(row:)` / `encode(to:)` 边界
     /// 处理编解码;`size` 仍是明文字节数(LRU 决策口径稳定)。
+    ///
+    /// HOM-201 P2-2(2026-06-14):原 `content` 列(raw Markdown)拆到独立表
+    /// `readme_contents`(见 `createReadmeContents`),让 `find(repoId:)` 默认查询不
+    /// 再带出几百 KB Markdown body;只有 AI / 向量索引等"纯文本消费方"显式调
+    /// `findContent(repoId:)` 时才查 readme_contents 表。详见 `ReadmeRepository`。
     private static func createReadmes(_ db: Database) throws {
         try db.create(table: "readmes") { t in
             t.column("repo_id", .integer).primaryKey()
                 .references("repos", column: "id", onDelete: .cascade)
-            t.column("content", .text)
             t.column("rendered_html", .blob)
             t.column("etag", .text)
             t.column("last_modified", .text)
@@ -301,6 +306,31 @@ enum DatabaseMigrations {
         }
 
         try db.create(index: "idx_readmes_cached", on: "readmes", columns: ["cached_at"])
+    }
+
+    /// readme_contents:raw Markdown 文本独立表(HOM-201 P2-2,2026-06-14)。
+    ///
+    /// 设计动机:`readmes.content` 此前是 raw markdown,但**只有 AI / 向量索引**少数
+    /// 路径用,详情页 WebView 走 `rendered_html`。原 schema 让详情页每次 `find` 都
+    /// 把几百 KB markdown 一起拉回内存,纯浪费 IO 与内存。拆表后:
+    ///  - `readmes.find(repoId:)` 默认只回元数据 + 压缩 HTML;
+    ///  - `readme_contents.findContent(repoId:)` 显式拉 markdown(AI / 向量索引专用)。
+    ///
+    /// 与 `readmes` 表的关系:PK 都是 `repo_id`,FK 指向 `repos.id` ON DELETE CASCADE;
+    /// 但**没有 FK 指向 readmes**,因为 markdown backfill 早于或独立于 HTML 写入路径
+    /// 时不应被强约束。调用方(`ReadmeAPI.refreshMarkdownIfNeeded`)负责保证"HTML 已
+    /// 抓过 → 才写 markdown"的业务约束。
+    ///
+    /// `content` 同样用 `.blob` + zlib 透明压缩(`ReadmeHTMLCodec`,markdown 也是
+    /// 结构化文本,压缩比 3-5x)。`size` 仍是明文字节数,与 `readmes.size` 口径对齐。
+    private static func createReadmeContents(_ db: Database) throws {
+        try db.create(table: "readme_contents") { t in
+            t.column("repo_id", .integer).primaryKey()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("content", .blob)
+            t.column("cached_at", .text).notNull()
+            t.column("size", .integer).notNull().defaults(to: 0)
+        }
     }
 
     /// saved_searches：用户保存的搜索条件。`query` 存搜索过滤参数的 JSON 序列化。
