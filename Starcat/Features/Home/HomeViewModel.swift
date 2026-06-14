@@ -308,6 +308,27 @@ final class HomeViewModel {
         }
     }
 
+    // MARK: - 语义搜索阈值（HOM-197，2026-06-13 dong4j）
+
+    /// AI 语义搜索结果过滤阈值（cosine similarity 分数，0.0 - 1.0）。
+    ///
+    /// 与 `AppSettings.aiSemanticSearchScoreThreshold` 单向同步（settings → vm）：
+    /// `HomeView` 在 `.task` 内初始化 + `.onChange(of: settings.…)` 监听更新，
+    /// 与 `sortOption` / `hideArchived` / `hideForks` / `statusFilter` 同款机制。
+    ///
+    /// `nil` = 不启用过滤（兜底语义，理论上 HomeView 必然注入 settings 值，
+    /// 留 nil 是为单测 / Preview 场景能直接 new HomeViewModel 而不依赖 AppSettings）。
+    ///
+    /// didSet 触发 applyView()：用户拖滑杆 → settings 写盘 → HomeView .onChange
+    /// → 写入这里 → didSet → applyView → items 即时按新阈值重过滤。
+    /// 整条路径**不调 embedding API**，详见 applyView() 内 HOM-197 分支注释。
+    var semanticScoreThreshold: Double? = nil {
+        didSet {
+            guard oldValue != semanticScoreThreshold else { return }
+            applyView()
+        }
+    }
+
     /// reloadItems 时一并拉的 repo→status 映射。
     /// 用 dict 而非每行查询避免 N+1;applyView 直接读取做过滤。
     ///
@@ -930,6 +951,20 @@ final class HomeViewModel {
             view.removeAll { repo in
                 let tagsOfRepo = repoTagsMap[repo.id] ?? []
                 return tagsOfRepo.isDisjoint(with: selectedTagIds)
+            }
+        }
+        // HOM-197（2026-06-13 dong4j）：AI 语义搜索结果按相似度阈值过滤。
+        //
+        // 仅 isSemanticSearching 时启用：FTS / 普通分类列表的 semanticHitMap 始终为空，
+        // 不进这条分支（避免误把非搜索列表全部过滤掉）。
+        //
+        // 阈值即时生效：Settings 拖滑杆改阈值后，HomeView 监听该字段触发 refilter()
+        // → 走到这里 → 重新过滤当前已缓存的 hits，**不调 embedding API**。
+        // 这是把过滤放 view 层而非 service 层的核心收益（详见 AppSettings 文档）。
+        if isSemanticSearching, let threshold = semanticScoreThreshold {
+            view.removeAll { repo in
+                let score = semanticHitMap[repo.id]?.score ?? 0
+                return score < threshold
             }
         }
         // 语义搜索结果的排序来自 cosine similarity；再套用户的 stars/name 排序会破坏 AI 排名。
