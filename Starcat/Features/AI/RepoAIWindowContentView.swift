@@ -524,10 +524,15 @@ struct RepoAIWindowContentView: View {
 
     /// Y9：「设置已变更」提示行 + [重新生成] 按钮。
     ///
-    /// 视觉风格选择 `.yellow.opacity(0.10)` + `info.circle` —— 比 errorBanner 的红色
-    /// 克制，与 contextDegradationBanner 同色系，让用户立刻识别为"信息提示"而非
-    /// "错误"。按钮调用与摘要面板右上角 Menu 同款 generate(includeTags:)，include
-    /// flags 由当前 starredAtOpen 决定，与既有路径保持一致。
+    /// 视觉风格（Y9.2 dong4j 2026-06-14 反馈玻璃态适配）：
+    ///   - icon 用 `.yellow` 标识"信息提示"色彩；
+    ///   - 文字 `.primary` 跟随主题黑/白，避免浅色主题下黄字对比度不足；
+    ///   - 背景从 `yellow.opacity(0.10)` 提到 `0.18` —— 在 NSVisualEffectView popover 玻璃态
+    ///     下 0.10 几乎被材质吃掉看不出黄色块；
+    ///   - 加 `strokeBorder(yellow.opacity(0.35))` 让 banner 在玻璃态下有清晰轮廓。
+    ///
+    /// 按钮调用与摘要面板右上角 Menu 同款 generate(includeTags:)，include flags 由当前
+    /// starredAtOpen 决定，与既有路径保持一致。
     private func staleSettingsBanner(vm: RepoAIInsightViewModel) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "info.circle.fill")
@@ -547,13 +552,29 @@ struct RepoAIWindowContentView: View {
         }
         .foregroundStyle(.primary)
         .padding(10)
-        .background(Color.yellow.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.yellow.opacity(0.18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.yellow.opacity(0.35), lineWidth: 1)
+                )
+        )
     }
 
     /// 推荐标签块。视觉上比对话气泡克制：
     /// "tag name + reason + 置信度 + 应用按钮"，与旧详情页 AI Tab 的样式对齐。
+    ///
+    /// Y9.2（2026-06-14 dong4j 反馈玻璃态主题适配）：
+    ///   - 整体加 `.regularMaterial` 卡片容器 + 细描边，让标签块从 NSVisualEffectView popover
+    ///     玻璃态背景里"浮起来"，原方案直接堆在 ScrollView 内容区里文字飘在材质上看着空；
+    ///   - 单条 tag 行之间加 `Divider().opacity(0.35)`，弱化但保留分隔感；
+    ///   - `tag.reason` 字号改 `.caption2`，跟"tag name"层级拉开但仍维持 `.secondary`；
+    ///   - 应用按钮统一用 `.bordered` controlSize=`.small`，让 macOS 自动跟随主题渲染
+    ///     （原默认风格在玻璃态下会渲染成纯白底/纯黑字与背景脱节，与"复制完整对话"按钮
+    ///     是同款 bug，一并修掉）。
     private func tagSuggestionsBlock(_ tags: [AITagSuggestion], vm: RepoAIInsightViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("ai.assistant.tags.title")
                     .font(.subheadline.weight(.semibold))
@@ -561,18 +582,22 @@ struct RepoAIWindowContentView: View {
                 Button("ai.assistant.tags.applyAll") {
                     Task { await vm.applyAllTags(repo: repo) }
                 }
+                .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(tags.allSatisfy { vm.appliedTagNames.contains($0.name.trimmingNormalized) })
             }
 
-            ForEach(tags) { tag in
+            ForEach(Array(tags.enumerated()), id: \.element.id) { index, tag in
+                if index > 0 {
+                    Divider().opacity(0.35)
+                }
                 let isApplied = vm.appliedTagNames.contains(tag.name.trimmingNormalized)
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(tag.name)
                             .font(.body.weight(.medium))
                         Text(tag.reason)
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -584,11 +609,21 @@ struct RepoAIWindowContentView: View {
                     Button(isApplied ? "ai.assistant.tags.applied" : "ai.assistant.tags.apply") {
                         Task { await vm.applyTag(tag, repo: repo) }
                     }
+                    .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(isApplied)
                 }
             }
         }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                )
+        )
     }
 
     /// Y2（2026-06-13）：footer 两行结构。
@@ -797,6 +832,13 @@ struct RepoAIWindowContentView: View {
     /// 调用 `chat.markdownExport(repo:)` 拼完整 Markdown 文档（结构见
     /// `RepoAIChatViewModel.markdownExport` 注释）；providesContent 是 closure，
     /// 按下瞬间才拼字符串，避免每次 view 重绘都做 N 条消息的字符串拼接。
+    ///
+    /// Y9.2（2026-06-14 dong4j 反馈玻璃态主题适配）：
+    ///   - 原方案 `Color(nsColor: .controlBackgroundColor)` 是固定的 system 控件背景色，
+    ///     在 NSVisualEffectView popover 玻璃态背景上会渲染成不透明纯白（浅色）/纯黑（深色），
+    ///     与玻璃态主题脱节，看着像贴了一片白纸；
+    ///   - 改用 `.thinMaterial` 让 capsule 与玻璃态融合，保留半透明质感跟随主题；
+    ///   - 描边从 `0.10` 提到 `0.18` 增强在玻璃态下的可识别度。
     private func conversationCopyRow(chat: RepoAIChatViewModel) -> some View {
         HStack {
             Spacer()
@@ -816,10 +858,10 @@ struct RepoAIWindowContentView: View {
                 .padding(.vertical, 6)
                 .background(
                     Capsule()
-                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .fill(.thinMaterial)
                         .overlay(
                             Capsule()
-                                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
+                                .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
                         )
                 )
                 .pressableHover(opacity: 0.75, scale: 1.04)
@@ -884,31 +926,55 @@ struct RepoAIWindowContentView: View {
 
     // MARK: - 错误条
 
+    /// Y9.2 玻璃态主题适配：icon 保持 `.orange` 当色彩标识，文字 `.primary` 跟随主题；
+    /// 背景 0.12 → 0.18 + strokeBorder 让 banner 在 popover 玻璃态背景下有清晰轮廓。
     private func errorBanner(message: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
             Text(message)
                 .font(.caption)
+                .foregroundStyle(.primary)
         }
-        .foregroundStyle(.orange)
         .padding(10)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.orange.opacity(0.18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.orange.opacity(0.35), lineWidth: 1)
+                )
+        )
     }
 
     /// Y4：代码上下文降级 banner。
     ///
     /// 视觉上比 errorBanner 克制——这不是错误（摘要照常生成了），只是告诉用户"这次
-    /// 没用上代码内容"。用 `.yellow.opacity(0.10)` 背景 + `info.circle` icon。
+    /// 没用上代码内容"。
+    ///
+    /// Y9.2（2026-06-14 dong4j 反馈玻璃态主题适配）：
+    ///   - 原方案整段 `foregroundStyle(.yellow)` 让文字在浅色 / 玻璃态下都成淡黄看不清；
+    ///   - 改为 icon 留 `.yellow` 当色彩标识，文字用 `.primary` 跟随主题；
+    ///   - 背景 0.10 → 0.18 + strokeBorder 让 banner 在玻璃态下有清晰轮廓
+    ///     （与 staleSettingsBanner 保持同款风格）。
     /// 文案 5 case 全部走 i18n key（在 Y4 一并补 Localizable.xcstrings）。
     private func contextDegradationBanner(_ reason: ContextDegradationReason) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "info.circle.fill")
+                .foregroundStyle(.yellow)
             Text(LocalizedStringKey(reason.bannerMessageKey))
                 .font(.caption)
+                .foregroundStyle(.primary)
         }
-        .foregroundStyle(.yellow)
         .padding(10)
-        .background(Color.yellow.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.yellow.opacity(0.18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.yellow.opacity(0.35), lineWidth: 1)
+                )
+        )
     }
 
     /// Y9（2026-06-14，决议 E=e3+）：对话输入框上方的"上下文汇总"状态行。
@@ -1004,12 +1070,14 @@ struct RepoAIWindowContentView: View {
         return prefix + parts.joined(separator: " · ")
     }
 
+    /// Y9.2 玻璃态主题适配：与 errorBanner 同款风格——背景 0.12 → 0.18 + strokeBorder。
     private func chatErrorBanner(message: String, onDismiss: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
             Text(message)
                 .font(.caption)
+                .foregroundStyle(.primary)
             Spacer()
             Button {
                 onDismiss()
@@ -1021,7 +1089,14 @@ struct RepoAIWindowContentView: View {
             .focusEffectDisabled()
         }
         .padding(10)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.orange.opacity(0.18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.orange.opacity(0.35), lineWidth: 1)
+                )
+        )
     }
 }
 
