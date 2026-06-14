@@ -321,10 +321,14 @@ final class BatchAIQueueService {
     // MARK: - 单 job 处理
 
     /// 处理单个 repo 的执行结果（成功路径携带的产出）。
+    ///
+    /// 注：`existingTagHints` 当前在 `applyResult` 内未被读取，属于历史遗留 dead 字段。
+    /// 2026-06-14 hints 类型从 `[String]` 升级到 `AITagHints` 时同步升级该字段类型保持
+    /// 编译，未在本次手术中删除（不擅自清理 pre-existing dead code）。
     private struct JobOutcome {
         var insight: RepoAIInsightGeneration
         var repo: Repo
-        var existingTagHints: [String]
+        var existingTagHints: AITagHints
     }
 
     /// 调 RepoAIInsightService 拉取摘要 / 标签建议；本方法**不写库**，
@@ -339,15 +343,25 @@ final class BatchAIQueueService {
             throw RepoAIInsightError.invalidJSON  // 复用现有 error 类型；不应发生
         }
 
-        // 拉一次"现有标签 + 计数"作为 prompt 提示。
-        // 只有 includeTags 时才有意义；避免无谓查询。
-        let hints: [String]
+        // 标签生成 hints：repo 自身标签（强信号）+ 全库高频前 30（弱信号）。
+        // 与单仓 AI 摘要应用标签路径（RepoAIInsightViewModel.generate）共享
+        // `RepoAIInsightService.makeTagHints` 工厂方法，信号源单一信任源；
+        // 详细约束见 `AITagHints` + `makeTagHints` 注释。
+        // includeTags == false 时跳过构造，节省两次 DB 查询。
+        //
+        // 2026-06-14 修订（dong4j 反馈）：原版只用 `tagRepository.fetchAll().prefix(50).map(\.name)`，
+        // 漏掉了 repo 自身标签——这些 repo 专属标签往往不在全局 Top 50 里，AI 看不到 →
+        // 大概率生成同义新标签，与用户已有的 repo 标签重复。helper 现在显式拉 repo 自身标签
+        // 单独排前面强信号注入，全库标签去重后仅作风格参考弱信号注入。
+        let hints: AITagHints
         if options.actions.contains(.tags) {
-            let allTags = (try? await tagRepository.fetchAll()) ?? []
-            // 按 sortOrder 已经倒序，前 50 个最常用的足够引导 AI 复用。
-            hints = allTags.prefix(50).map(\.name)
+            hints = await RepoAIInsightService.makeTagHints(
+                for: repo,
+                repoTagRepository: repoTagRepository,
+                tagRepository: tagRepository
+            )
         } else {
-            hints = []
+            hints = .empty
         }
 
         let insight = try await insightService.generateInsight(

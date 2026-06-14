@@ -169,7 +169,7 @@ final class RepoAIInsightService {
 
     func generateInsight(
         for repo: Repo,
-        existingTagHints: [String] = [],
+        existingTagHints: AITagHints = .empty,
         includeSummary: Bool = true,
         includeTags: Bool = true,
         allowExternalContext: Bool = true,
@@ -194,14 +194,18 @@ final class RepoAIInsightService {
             resolvedExternalContext = nil
         }
 
-        // HOM-52：标签生成路径在 source 末尾追加两段强制约束：
+        // HOM-52 + 2026-06-14 dong4j 反馈：标签生成路径在 source 末尾追加 prompt 三段附录。
         //   (1) Tag format rules —— 限制中英文标签长度 / 风格，覆盖所有用户 prompt（含自定义）
-        //   (2) Existing user tags —— 批量路径传入时引导 AI 优先复用
+        //   (2) Existing tags on THIS repository —— 强信号，AI 必须优先复用避免同义重复
+        //   (3) Other frequently-used tags in library —— 弱信号，仅作风格 / 命名习惯参考
         //
         // 为何不写进 default prompt：用户可能已经在 Settings 改过 prompt（持久化在 UserDefaults），
         // 改 default 对老用户不生效。注入到 {context} 末尾走的是同一个 prompt template 替换路径，
-        // 无论用户怎么改 system / user prompt 都会拿到这两段规则。
+        // 无论用户怎么改 system / user prompt 都会拿到这三段规则。
         // includeTags == false 时不注入，避免摘要任务的 prompt 被无关规则污染。
+        //
+        // 双层 hints 由调用方通过 `RepoAIInsightService.makeTagHints(...)` 工厂方法统一构造，
+        // 保证两条入口（单仓 AI 摘要 / 批量 AI 整理）信号源不漂移；详见 `AITagHints` 注释。
         let augmentedSource: Source = {
             guard includeTags else { return source }
 
@@ -213,16 +217,25 @@ final class RepoAIInsightService {
             - 中英文混用时每个标签独立判断；同一仓库的标签风格保持一致。
             """
 
-            let trimmedHints = existingTagHints
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .prefix(50)
-            if !trimmedHints.isEmpty {
+            // 强信号：repo 已绑定标签——AI 必须优先复用，避免「向量搜索 / Vector Search / 向量检索」同义爆炸。
+            // 工厂方法已 trim + 去重 + 排序，这里直接 join 即可。
+            if !existingTagHints.repoTags.isEmpty {
                 appendix += """
 
 
-                Existing user tags (优先复用，无法归类的才新增；避免标签数量爆炸):
-                \(trimmedHints.joined(separator: ", "))
+                Existing tags on THIS repository (强烈优先复用，避免生成同义不同名标签):
+                \(existingTagHints.repoTags.joined(separator: ", "))
+                """
+            }
+
+            // 弱信号：用户标签库其它高频标签——仅作命名习惯 / 颗粒度参考，不强制复用。
+            // 工厂方法已去掉与 repoTags 重叠的项，保证 prompt 内无重复。
+            if !existingTagHints.libraryTags.isEmpty {
+                appendix += """
+
+
+                Other frequently-used tags in your library (可参考命名风格 / 颗粒度，非强制复用):
+                \(existingTagHints.libraryTags.joined(separator: ", "))
                 """
             }
 
@@ -580,6 +593,74 @@ final class RepoAIInsightService {
             return settings.aiExternalContextAllowPrivateRepos ? "on-private" : "on-public"
         }()
         return "summary:\(settings.aiSummaryTask.providerID)/\(summaryModel)|tags:\(settings.aiTagsTask.providerID)/\(tagsModel)|external:\(external)"
+    }
+
+    /// 为标签生成构造双层 hints：repo 自身已绑定标签（强信号） + 用户标签库其它高频标签（弱信号）。
+    ///
+    /// **必须由两条调用入口共享**——`RepoAIInsightViewModel.generate(...)`（单仓 AI 摘要应用标签）
+    /// 与 `BatchAIQueueService.processSingle(...)`（批量 AI 整理）。两边必须走同一份提示构造逻辑，
+    /// 否则又会出现 2026-06-14 上午发现的"单仓路径漏传 hints / 批量只取全局 Top 50 漏掉 repo
+    /// 自身标签"两条路径漂移问题。
+    ///
+    /// **算法**：
+    /// 1. 拉 `repo` 当前已绑定标签（一般 ≤10 个，全部传入；强信号）。
+    /// 2. 拉全库标签 + 全库使用次数 dict，按 (使用次数 DESC, name ASC) 稳定排序。
+    /// 3. 从全库标签中**剔除已在 repo 上**的项（避免与 repoTags 重复占字符 / 信号矛盾）。
+    /// 4. 截断到 `libraryLimit`（默认 30，dong4j 2026-06-14 拍板：≤40 个不挤压 README，
+    ///    避免 prompt 偏向风格匹配过强）。
+    ///
+    /// **稳定性约束**：
+    /// - 两个 list 都按 `(useCount DESC, name ASC)` 排序——不用 `Set → Array` 顺序不稳的
+    ///   桶序，避免同一份输入产生不同 source.hash 让 AI 摘要缓存失效。
+    /// - 任一 repository 抛错时降级为空数组（标签生成是辅助优化项，不能因此阻断 AI 摘要主流程）。
+    ///
+    /// **参数**：
+    /// - `libraryLimit` 默认 30，可由 caller 调整；过大 (>50) 会让 prompt 偏向"风格匹配"信号
+    ///   稀释「优先在 repo 已有里复用」的强信号；过小 (<10) 又失去"参考其它命名颗粒度"的价值。
+    static func makeTagHints(
+        for repo: Repo,
+        repoTagRepository: any RepoTagRepositoryProtocol,
+        tagRepository: any TagRepositoryProtocol,
+        libraryLimit: Int = 30
+    ) async -> AITagHints {
+        async let repoTagsResult: [Tag] = {
+            (try? await repoTagRepository.fetchTags(forRepo: repo.id)) ?? []
+        }()
+        async let allTagsResult: [Tag] = {
+            (try? await tagRepository.fetchAll()) ?? []
+        }()
+        async let countsResult: [String: Int] = {
+            (try? await repoTagRepository.repoCountsByTag()) ?? [:]
+        }()
+
+        let repoTags = await repoTagsResult
+        let allTags = await allTagsResult
+        let counts = await countsResult
+
+        // repo 已有标签：trim + 去空 + 去重 + 排序（稳定 hash）。
+        // 不按 useCount 排——repo 自身这几个标签信号同等重要，按 name 字典序最稳。
+        let repoNames: [String] = {
+            let cleaned = repoTags
+                .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            return Array(Set(cleaned)).sorted()
+        }()
+
+        // 全库标签：剔除 repo 已有项 → 按 (useCount DESC, name ASC) 排 → 截断。
+        let repoNameSet = Set(repoNames)
+        let libraryNames: [String] = allTags
+            .map { (name: $0.name.trimmingCharacters(in: .whitespacesAndNewlines), id: $0.id) }
+            .filter { !$0.name.isEmpty && !repoNameSet.contains($0.name) }
+            .sorted { lhs, rhs in
+                let lc = counts[lhs.id] ?? 0
+                let rc = counts[rhs.id] ?? 0
+                if lc != rc { return lc > rc }
+                return lhs.name < rhs.name
+            }
+            .prefix(max(0, libraryLimit))
+            .map(\.name)
+
+        return AITagHints(repoTags: repoNames, libraryTags: libraryNames)
     }
 
     /// 拼出"喂 LLM 的 repo 上下文"——元数据 + 清洗后的 README。
