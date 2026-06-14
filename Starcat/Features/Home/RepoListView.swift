@@ -56,6 +56,9 @@ struct RepoListView: View {
 
     // 顶部 clone 按钮现在属于中栏 toolbar；复制成功提示也跟着放在列表栏上。
     @State private var toastMessage: String?
+    /// toolbar spec 会通过 `AnyView` 频繁重建，sheet 必须由稳定的页面根节点承载。
+    /// 否则关闭 CodeFlow 时 presentation host 被替换，窗口会短暂再次出现。
+    @State private var codeFlowSheetRepo: Repo?
 
     var body: some View {
         @Bindable var vm = viewModel
@@ -117,6 +120,9 @@ struct RepoListView: View {
             }
         }
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
+        .sheet(item: $codeFlowSheetRepo) { repo in
+            CodeFlowPanel(repo: repo)
+        }
         // W12 PR-4：切页面时主动 exit 非活跃 store，避免"切到 trending 时 weekly 还显示
         // 底部多选栏"的视觉穿帮。同一时刻只允许一份处于 isActive，由本视图集中保证。
         .onChange(of: selectedPage) { _, newPage in
@@ -297,7 +303,8 @@ struct RepoListView: View {
                     Group {
                         ExternalLinksMenu(
                             selection: sel,
-                            codeFlowRepo: codeFlowRepo.isPrivate ? nil : codeFlowRepo
+                            codeFlowRepo: codeFlowRepo.isPrivate ? nil : codeFlowRepo,
+                            onOpenCodeFlow: { codeFlowSheetRepo = $0 }
                         )
                         CloneMenu(selection: sel) { toastKey in
                             toastMessage = toastKey
@@ -355,7 +362,8 @@ struct RepoListView: View {
                     Group {
                         ExternalLinksMenu(
                             selection: sel,
-                            codeFlowRepo: item.isAvailable && !codeFlowRepo.isPrivate ? codeFlowRepo : nil
+                            codeFlowRepo: item.isAvailable && !codeFlowRepo.isPrivate ? codeFlowRepo : nil,
+                            onOpenCodeFlow: { codeFlowSheetRepo = $0 }
                         )
                         CloneMenu(selection: sel) { toastKey in
                             toastMessage = toastKey
@@ -372,7 +380,8 @@ struct RepoListView: View {
                     Group {
                         ExternalLinksMenu(
                             selection: sel,
-                            codeFlowRepo: repo.isPrivate ? nil : repo
+                            codeFlowRepo: repo.isPrivate ? nil : repo,
+                            onOpenCodeFlow: { codeFlowSheetRepo = $0 }
                         )
                         CloneMenu(selection: sel) { toastKey in
                             toastMessage = toastKey
@@ -481,7 +490,8 @@ struct RepoListView: View {
                 Group {
                     ExternalLinksMenu(
                         selection: selection,
-                        codeFlowRepo: repo.isPrivate ? nil : repo
+                        codeFlowRepo: repo.isPrivate ? nil : repo,
+                        onOpenCodeFlow: { codeFlowSheetRepo = $0 }
                     )
                     CloneMenu(selection: selection) { toastKey in
                         toastMessage = toastKey
