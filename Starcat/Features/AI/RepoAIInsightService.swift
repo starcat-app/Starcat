@@ -271,6 +271,24 @@ final class RepoAIInsightService {
         //     展示用，后者给对话 system prompt 注入用，两份数据来源同一次 collect 调用。
         insight.externalContextMarkdown = resolvedExternalContext?.markdown
 
+        // Y9.1（2026-06-14）：把生成时的"上下文配置快照"写进 insight。
+        //
+        // 这是 stale banner 判定的唯一信任源：UI 层用 `snap vs 当前 settings` 对比，
+        // 只在用户翻过开关时报 stale；老 insight 缺该字段（Codable 反序列化为 nil）
+        // 自动豁免，规避 Y9 初版"老缓存每次都误报"的 bug（dong4j 2026-06-14 反馈）。
+        //
+        // externalContextAllowed 存 effective 结果（双开关 AND + 私仓门控的最终值），
+        // 与 chatStream 的 AnySearchContextProvider.allowsExternalContext(...) 同款判定，
+        // 避免后续 UI 层重复计算 3 个开关的组合。
+        insight.generationContextSettings = GenerationContextSettings(
+            codeContextEnabled: settings.aiRepoContextEnabled,
+            externalContextAllowed: AnySearchContextProvider.allowsExternalContext(
+                repoIsPrivate: repo.isPrivate,
+                enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
+                allowPrivate: settings.aiExternalContextAllowPrivateRepos
+            )
+        )
+
         // HOM-52：只跑标签（includeSummary == false）时不写 ai_summaries 缓存——
         // 否则会用空 summaryText 覆盖已有的有效摘要缓存。调用方仍能拿到 suggestions。
         if includeSummary, repo.isStarred {
