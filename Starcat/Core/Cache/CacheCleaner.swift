@@ -17,6 +17,7 @@
 //  执行时机：用户在 Settings → 存储 主动点击；不在后台自动清理。
 //
 
+import AppKit
 import Foundation
 import Kingfisher
 
@@ -28,10 +29,19 @@ struct CacheStatistics: Equatable, Sendable {
     let readmeBytes: Int64
     /// Kingfisher 磁盘缓存字节数。
     let imageDiskBytes: UInt
-    /// 派生：总字节数（README + 图片磁盘）。
-    var totalBytes: Int64 { readmeBytes + Int64(imageDiskBytes) }
+    /// CodeFlow / RepoContext 共用的源码 ZIP 数量与容量。
+    let archiveCount: Int
+    let archiveBytes: Int64
+    /// 派生：总字节数（README + 图片磁盘 + 源码 ZIP）。
+    var totalBytes: Int64 { readmeBytes + Int64(imageDiskBytes) + archiveBytes }
 
-    static let empty = CacheStatistics(readmeCount: 0, readmeBytes: 0, imageDiskBytes: 0)
+    static let empty = CacheStatistics(
+        readmeCount: 0,
+        readmeBytes: 0,
+        imageDiskBytes: 0,
+        archiveCount: 0,
+        archiveBytes: 0
+    )
 }
 
 /// 缓存清理协调器。
@@ -43,9 +53,17 @@ struct CacheStatistics: Equatable, Sendable {
 final class CacheCleaner {
 
     private let readmeRepository: ReadmeRepository
+    private let fileManager: FileManager
+    private let fixedArchiveDirectory: URL?
 
-    init(readmeRepository: ReadmeRepository) {
+    init(
+        readmeRepository: ReadmeRepository,
+        fileManager: FileManager = .default,
+        fixedArchiveDirectory: URL? = nil
+    ) {
         self.readmeRepository = readmeRepository
+        self.fileManager = fileManager
+        self.fixedArchiveDirectory = fixedArchiveDirectory
     }
 
     // MARK: - 统计
@@ -57,10 +75,13 @@ final class CacheCleaner {
     func loadStatistics() async -> CacheStatistics {
         let (readmeCount, readmeBytes) = await loadReadmeStats()
         let imageDisk = await calculateImageDiskBytes()
+        let archives = loadArchiveStats()
         return CacheStatistics(
             readmeCount: readmeCount,
             readmeBytes: readmeBytes,
-            imageDiskBytes: imageDisk
+            imageDiskBytes: imageDisk,
+            archiveCount: archives.count,
+            archiveBytes: archives.bytes
         )
     }
 
@@ -102,11 +123,33 @@ final class CacheCleaner {
         AppLog.general.info("Image cache cleared by user")
     }
 
+    /// 只删除共享下载目录里的 ZIP 文件，保留根目录和任何非 ZIP 文件。
+    func clearArchives() {
+        do {
+            let directory = try archiveDirectoryURL()
+            for url in archiveFileURLs(in: directory) {
+                try fileManager.removeItem(at: url)
+            }
+            removeEmptySubdirectories(in: directory)
+            AppLog.general.info("Downloaded repository ZIP files cleared by user")
+        } catch {
+            AppLog.general.error("Clear repository ZIP files failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// 打开共享 ZIP 下载目录；目录尚未创建时先创建。
+    func revealArchiveDirectory() throws {
+        let directory = try archiveDirectoryURL()
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(directory)
+    }
+
     /// 清全部(README + 图片)。
     /// 不做事务原子性 — 两者本来就独立,且失败也不影响业务逻辑。
     func clearAll() async {
         await clearReadmes()
         await clearImageCache()
+        clearArchives()
     }
 
     // MARK: - 内部
@@ -123,6 +166,65 @@ final class CacheCleaner {
                     AppLog.general.error("Image disk size calc failed: \(error.localizedDescription, privacy: .public)")
                     cont.resume(returning: 0)
                 }
+            }
+        }
+    }
+
+    private func loadArchiveStats() -> (count: Int, bytes: Int64) {
+        do {
+            let files = archiveFileURLs(in: try archiveDirectoryURL())
+            let bytes = files.reduce(into: Int64(0)) { total, url in
+                let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+                total += Int64(size ?? 0)
+            }
+            return (files.count, bytes)
+        } catch {
+            AppLog.general.error("Repository ZIP stats failed: \(error.localizedDescription, privacy: .public)")
+            return (0, 0)
+        }
+    }
+
+    private func archiveDirectoryURL() throws -> URL {
+        if let fixedArchiveDirectory { return fixedArchiveDirectory }
+        return try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        .appendingPathComponent("Starcat/archives", isDirectory: true)
+    }
+
+    private func archiveFileURLs(in directory: URL) -> [URL] {
+        guard let enumerator = fileManager.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        return enumerator.compactMap { item in
+            guard let url = item as? URL,
+                  url.pathExtension.lowercased() == "zip",
+                  (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+                return nil
+            }
+            return url
+        }
+    }
+
+    /// 清掉 ZIP 后遗留的 owner / host 空目录，但保留用户要打开的 `archives` 根目录。
+    private func removeEmptySubdirectories(in root: URL) {
+        guard let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        let directories = enumerator.compactMap { $0 as? URL }.sorted {
+            $0.pathComponents.count > $1.pathComponents.count
+        }
+        for directory in directories where directory != root {
+            if (try? fileManager.contentsOfDirectory(atPath: directory.path).isEmpty) == true {
+                try? fileManager.removeItem(at: directory)
             }
         }
     }

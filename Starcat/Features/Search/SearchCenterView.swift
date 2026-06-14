@@ -22,43 +22,81 @@ struct SearchCenterView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isSearchFocused: Bool
-    @State private var remoteDetailRepo: Repo?
-    /// 鼠标 hover 是浮层视图的瞬时状态，不写入 selectedIndex，避免鼠标经过后改变
-    /// 用户的键盘导航位置。候选 ID 同时覆盖 GitHub repo 与 AnySearch reference。
-    @State private var hoveredCandidateID: String?
+    /// SEARCH-RICH 2026-06-14：从 `Repo?` 改为 `RepositoryCandidate?` —— 弹窗
+    /// 新增需要展示 `remoteExtras`（disabled / isTemplate / score）以及 sort 模式
+    /// 来决定是否渲染匹配度，单纯的 `Repo` 不够用，必须把整张候选传进去。
+    @State private var remoteDetailCandidate: RepositoryCandidate?
+    // hover 高亮由 row 内层的 RepoRowSurface 自带（`UnifiedRepoRow` 与 reference
+    // 卡片均复用同一容器），SearchCenterView 不再单独维护 `hoveredCandidateID`。
+    // 设计意图未变：键盘 selectedIndex 与鼠标 hover 仍互不干扰——
+    // hover 是 row 内部 `@State`，移开自动清空；selectedIndex 由 `.onKeyPress` 写入。
+    /// 清空全部历史的二次确认对话框可见性。
+    /// 放在视图层是因为"是否要二次确认"是 UI 决策而非业务状态；ViewModel 的
+    /// `clearHistory()` 仍保持单纯执行删除，不被弹窗逻辑污染。
+    @State private var showingClearHistoryAlert = false
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.42)
+            // 模态遮罩（dong4j 2026-06-14 第四次调整，对齐 Spotlight 真实意图）：
+            // - 历次反复：0.42 → 0.20 → 0.05 三步降下来，但 dong4j 真实诉求是
+            //   「主窗口变暗、浮层变亮」（即 macOS Spotlight 的视觉模型），
+            //   不是「主窗口保持亮、浮层也保持亮」。前 3 次降 dim 是误读需求。
+            // - 0.40 让主窗口明显「退到后景」，给浮层留出强烈焦点感。tap-to-dismiss
+            //   命中区也兼具焦点反馈，与 Spotlight / Raycast 等命令面板一致。
+            Color.black.opacity(0.40)
                 .ignoresSafeArea()
                 .onTapGesture { viewModel.dismiss() }
+                // dim 蒙层走纯 opacity 淡入淡出；与浮层 VStack 的 scale+opacity transition
+                // 同步播放，避免「浮层缩放出现时遮罩瞬切」造成的视觉割裂。
+                .transition(.opacity)
 
             VStack(spacing: 0) {
                 searchHeader
-                Divider()
+                themedSeparator
                 scopePicker
                 if viewModel.scope == .all || viewModel.scope == .github {
                     githubFilterBar
                 }
-                Divider()
+                if viewModel.scope == .all || viewModel.scope == .web {
+                    anySearchFilterBar
+                }
+                themedSeparator
                 resultContent
+                webResultFooter
             }
             .frame(width: 760, height: 620)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            // 浮层背景（dong4j 2026-06-14 终版）：
+            // 极简：用 `windowBackgroundColor` 实底，浮层颜色直接 = 主窗口未压暗时的颜色。
+            // 主窗口被 dim 蒙层压暗后，浮层不受 dim 影响自然凸显——这就是 Spotlight 的视觉模型。
+            // 不需要 NSVisualEffectView / vibrant material / 双层叠加这些花活。
+            .background {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color(nsColor: .windowBackgroundColor))
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(.white.opacity(0.12))
             }
-            .shadow(color: .black.opacity(0.35), radius: 32, y: 14)
+            .shadow(color: .black.opacity(0.45), radius: 40, y: 16)
             .transition(reduceMotion ? .opacity : .scale(scale: 0.97).combined(with: .opacity))
         }
         .onAppear { isSearchFocused = true }
-        .sheet(item: $remoteDetailRepo) { repo in
+        .sheet(item: $remoteDetailCandidate) { candidate in
+            // 把 sort 模式一并传入：仅在 bestMatch 时才渲染匹配度，否则
+            // score 字段对当前结果排序无解释力（按 stars / forks / updated
+            // 排序时它仍是 search 端点回的同一个值，但语义已和位置脱钩）。
             SearchRemoteRepoDetailView(
-                repo: repo,
-                isStarred: isStarred(repo.id),
-                onToggleStar: { onToggleStar(repo) },
-                onOpenAI: { onOpenAI(repo) }
+                candidate: candidate,
+                isCurrentSortBestMatch: viewModel.githubFilters.sort == .bestMatch,
+                isStarred: candidate.displayRepo.map { isStarred($0.id) } ?? false,
+                onToggleStar: {
+                    if let repo = candidate.displayRepo { onToggleStar(repo) }
+                },
+                onOpenAI: {
+                    if let repo = candidate.displayRepo { onOpenAI(repo) }
+                },
+                onOpenInGitHub: { onOpenURL(candidate) },
+                onCopyURL: { onCopyURL(candidate) }
             )
         }
         .onKeyPress(.upArrow) {
@@ -84,6 +122,16 @@ struct SearchCenterView: View {
             viewModel.dismiss()
             return .handled
         }
+    }
+
+    /// 浮层内部的分隔线。
+    /// SwiftUI 默认 `Divider()` 在浅色主题 + `.regularMaterial` 浮层底上会显得过于发亮
+    /// （因为 SwiftUI 默认分隔色与浅色材质的对比度过高），换成 `NSColor.separatorColor`
+    /// 这一 AppKit 系统级 separator 后，dark / light 都能自动得到合适的对比度。
+    private var themedSeparator: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(height: 1)
     }
 
     private var searchHeader: some View {
@@ -171,6 +219,12 @@ struct SearchCenterView: View {
             }
 
             if viewModel.isGitHubFiltersExpanded {
+                // 两行布局（dong4j 2026-06-14 反馈调整）：
+                // - 第一行：核心内容筛选（语言 / Topic / 最低 Stars）+ 主 CTA「应用筛选」
+                //   把 CTA 放在视觉显眼的右上角，与命令面板的「主操作位于右上」惯例一致
+                // - 第二行：排序与时间相关（排序方式 / 顺序 / 两个日期 / 清除日期）
+                //   把「排序」与「时间过滤」归在一起，因为它们都是「调整结果呈现/范围」
+                //   而非「定义内容」的辅助维度。这样第一行专注 What，第二行专注 How
                 VStack(spacing: 12) {
                     HStack(alignment: .bottom, spacing: 12) {
                         githubLanguagePicker
@@ -185,6 +239,15 @@ struct SearchCenterView: View {
                                 .textFieldStyle(.roundedBorder)
                         }
                         .frame(width: 112)
+                        Spacer(minLength: 0)
+
+                        Button("应用筛选") {
+                            Task { await viewModel.applyGitHubFilters() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+
+                    HStack(alignment: .bottom, spacing: 12) {
                         githubPicker(title: "排序方式", width: 130) {
                             Picker("排序方式", selection: $viewModel.githubFilters.sort) {
                                 Text("最佳匹配").tag(GitHubSearchSort.bestMatch)
@@ -199,15 +262,6 @@ struct SearchCenterView: View {
                                 Text("升序").tag(SearchOrder.ascending)
                             }
                         }
-                        Spacer(minLength: 0)
-
-                        Button("应用筛选") {
-                            Task { await viewModel.applyGitHubFilters() }
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-
-                    HStack(alignment: .bottom, spacing: 16) {
                         githubDateFilter(title: "创建时间晚于", keyPath: \.createdAfter)
                         githubDateFilter(title: "推送时间晚于", keyPath: \.pushedAfter)
                         Button("清除日期") {
@@ -226,6 +280,62 @@ struct SearchCenterView: View {
         .padding(.vertical, 10)
     }
 
+    /// AnySearch（网页）筛选条。结构与 `githubFilterBar` 对称：
+    /// - 折叠态：标题 + 当前已选筛选摘要 + 展开 chevron
+    /// - 展开态：单行 4 个控件（domain / contentTypes / zone / maxResults）+ 应用筛选
+    ///
+    /// scope 是 `.web` 或 `.all` 时显示；与 GitHub 筛选条共存时呈上下两条独立栏目，
+    /// 避免把不同源的筛选耦合到一个折叠区域里造成认知割裂。
+    private var anySearchFilterBar: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Button {
+                    viewModel.isAnySearchFiltersExpanded.toggle()
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "globe")
+                        Text("Web 筛选")
+                            .fontWeight(.semibold)
+                        Image(systemName: viewModel.isAnySearchFiltersExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                Spacer()
+                // 折叠态显示一句话筛选摘要（如「code · web,doc · 全球 · 10 条」），
+                // 让用户即便不展开也能一眼看到当前生效的非默认筛选。完全默认时
+                // 显示「自动」提示当前走网关自动路由。
+                Text(anySearchFiltersSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            if viewModel.isAnySearchFiltersExpanded {
+                HStack(alignment: .bottom, spacing: 12) {
+                    anySearchDomainPicker
+                    anySearchContentTypesField
+                    anySearchZonePicker
+                    anySearchMaxResultsField
+                    Spacer(minLength: 0)
+
+                    Button("应用筛选") {
+                        Task { await viewModel.applyAnySearchFilters() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(12)
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
     @ViewBuilder
     private var resultContent: some View {
         if viewModel.lastSubmittedQuery.isEmpty {
@@ -234,35 +344,39 @@ struct SearchCenterView: View {
             ProgressView("正在搜索…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.candidates.isEmpty {
+            // 必须撑满剩余空间，否则 ContentUnavailableView 只占自身 intrinsic 高度,
+            // 浮层 VStack 是固定 620pt 高度,子视图总高小于 frame 时 SwiftUI 会把
+            // 整列内容垂直居中,造成搜索框、tabs、filter bar 全部下沉,与有结果时
+            // 的"顶部贴边"布局不一致。给空状态一个 maxHeight: .infinity 即可保持
+            // 上方 chrome（搜索框 / scope picker / GitHub 筛选栏）位置不变,
+            // 仅在结果区域内展示空状态提示。
             ContentUnavailableView(
                 "没有找到结果",
                 systemImage: "magnifyingglass",
                 description: Text(viewModel.errorMessages.first ?? "尝试更换关键词或搜索范围")
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             List(Array(viewModel.candidates.enumerated()), id: \.element.id) { index, candidate in
-                Button {
-                    if case .repository(let repository) = candidate,
-                       repository.localRepo == nil,
-                       let remoteRepo = repository.remoteRepo {
-                        remoteDetailRepo = remoteRepo
-                    } else {
-                        onOpenCandidate(candidate)
-                    }
-                } label: {
-                    candidateRow(
-                        candidate,
-                        isSelected: index == viewModel.selectedIndex,
-                        isHovered: hoveredCandidateID == candidate.id
-                    )
+                // 这里不再用 Button:macOS SwiftUI 在 List 内的 Button + onHover
+                // 对「最末行紧贴 List 边界」存在 hit-test 缩水 bug,导致最底部一行 hover
+                // 不触发(safeAreaInset / contentShape 调整都修不彻底)。改成整行
+                // .contentShape(Rectangle()) + .onTapGesture/.onHover 后,hover 命中区域
+                // 由我们显式定义,不再受 List 内 Button 容器边界影响,所有行表现一致。
+                // 牺牲点:丢掉 Button 自带的 keyboard 触发(空格/回车)和 VoiceOver 的
+                // .isButton trait,所以下面用 .accessibilityAddTraits(.isButton) 补回语义,
+                // 而 Return 键打开仍由 body 顶层 .onKeyPress(.return) 处理,不受影响。
+                candidateRow(
+                    candidate,
+                    isSelected: index == viewModel.selectedIndex
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    activate(candidate)
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .onHover { hovering in
-                    withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
-                        hoveredCandidateID = hovering ? candidate.id : nil
-                    }
-                }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { activate(candidate) }
                 .contextMenu {
                     if case .repository(let repository) = candidate {
                         Button("在 GitHub 打开") { onOpenURL(repository) }
@@ -288,6 +402,12 @@ struct SearchCenterView: View {
             // regularMaterial 明显断层。只隐藏 scroll content 背景，行选中态继续保留。
             .scrollContentBackground(.hidden)
             .background(Color.clear)
+            // 给最底部留 8pt 透明缓冲：SwiftUI 在 `.listStyle(.inset)` 下，最后一行
+            // 紧贴 List 边界时 hover hit-test 会被边界裁掉，造成最末项 hover 不触发。
+            // 留出这段缓冲后，最末项有完整命中区域，hover 与其它行表现一致。
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: 8)
+            }
             .overlay(alignment: .bottomLeading) {
                 if let message = viewModel.errorMessages.first {
                     Label(message, systemImage: "exclamationmark.triangle")
@@ -301,32 +421,88 @@ struct SearchCenterView: View {
         }
     }
 
+    /// 历史区域：标签流式布局 + 顶部"最近搜索 / 清空全部"。
+    /// 设计要点：
+    /// - 不再用 List 一行一项，避免浅色主题下 List 默认 row separator 过亮
+    /// - 用 FlowLayout 让标签自动换行，每个标签底色按文本哈希从 TagColorPalette
+    ///   里取一个固定色（同一关键词每次进入颜色稳定，不抖动）
+    /// - 浅色 / 深色主题用不同透明度，保证两套主题下都能看见
     private var historyContent: some View {
         Group {
             if viewModel.history.isEmpty {
-                ContentUnavailableView("搜索 Starcat", systemImage: "sparkle.magnifyingglass", description: Text("输入关键词后按 Return"))
+                // 同 resultContent 的"没有找到结果"分支,空历史也要撑满,
+                // 否则首次打开浮层时搜索框会被居中下沉。
+                ContentUnavailableView(
+                    "搜索 Starcat",
+                    systemImage: "sparkle.magnifyingglass",
+                    description: Text("输入关键词后按 Return")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List(viewModel.history, id: \.self) { entry in
-                    Button { Task { await viewModel.useHistory(entry) } } label: {
-                        Label(entry, systemImage: "clock.arrow.circlepath")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
+                VStack(alignment: .leading, spacing: 0) {
+                    historyHeader
+                    ScrollView {
+                        SearchHistoryFlowLayout(spacing: 8) {
+                            ForEach(viewModel.history, id: \.id) { entry in
+                                HistoryChip(
+                                    entry: entry,
+                                    onUse: { Task { await viewModel.useHistory(entry) } },
+                                    onRemove: { Task { await viewModel.removeHistory(entry) } }
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
                 }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
             }
         }
+        .confirmationDialog(
+            "确定要清空全部搜索历史吗?",
+            isPresented: $showingClearHistoryAlert,
+            titleVisibility: .visible
+        ) {
+            Button("清空全部", role: .destructive) {
+                Task { await viewModel.clearHistory() }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("此操作不可恢复。")
+        }
+    }
+
+    /// "最近搜索" 标题 + 右侧 "清空全部" 触发按钮。
+    /// 单独抽出来避免 ScrollView 把标题也卷进去；这样在历史项很多时标题保持悬停在顶部。
+    private var historyHeader: some View {
+        HStack {
+            Text("最近搜索")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                showingClearHistoryAlert = true
+            } label: {
+                Label("清空全部", systemImage: "trash")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("清空全部搜索历史")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 6)
     }
 
     @ViewBuilder
     private func candidateRow(
         _ candidate: SearchCandidate,
-        isSelected: Bool,
-        isHovered: Bool
+        isSelected: Bool
     ) -> some View {
         Group {
             switch candidate {
@@ -337,36 +513,286 @@ struct SearchCenterView: View {
                     showStarredCheckmark: true
                 )
             case .reference(let reference):
-                HStack(spacing: 12) {
-                    Image(systemName: "globe")
-                        .frame(width: 34, height: 34)
-                        .background(Color.blue.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(reference.title).font(.headline).lineLimit(1)
-                        Text(reference.snippet ?? reference.originalURL.absoluteString)
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                        Text(reference.domain).font(.caption2).foregroundStyle(.tertiary)
+                // 复用 RepoRowSurface 三态透明度（default / hover / selected）+
+                // 圆角 + 左侧 accent bar，让网页卡片与 UnifiedRepoRow 视觉骨架对等。
+                // accentColor: .blue 是"Web 类目色"，与 WebSourceBadge / RemoteFavicon
+                // 背景蓝同源；hover 反馈不再单独叠加，全部走 RepoRowSurface 内置逻辑。
+                RepoRowSurface(isSelected: isSelected, accentColor: .blue) {
+                    HStack(alignment: .top, spacing: 12) {
+                        // 左侧 32pt 容器 + 内嵌 18pt favicon。
+                        // 容器 cornerRadius 6 / favicon cornerRadius 4 与 UnifiedRepoRow
+                        // 头像（圆形）形成"圆形=Repo / 圆角矩形=Web"的形状区分。
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.blue.opacity(0.10))
+                                .frame(width: 32, height: 32)
+                            RemoteFavicon(host: reference.domain, size: 18)
+                        }
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            // 标题独占一行：原"网页"chip 删除（dong4j 2026-06-13 反馈：
+                            // 每个网页卡片都挂同一个 chip，信息密度 0；scope 切到 .web
+                            // 时所有卡片都是网页，更冗余）。需要"类目"信号时由左侧 favicon
+                            // + 左侧蓝色 accent bar 自然传达。
+                            Text(reference.title)
+                                .font(.system(size: 13, weight: .semibold))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if let snippet = reference.snippet, !snippet.isEmpty {
+                                // dong4j 2026-06-13 反馈：浅色主题下 .secondary 在
+                                // `.regularMaterial` 浮层背景上对比度严重不足；改用
+                                // .primary.opacity(0.85)，明暗主题下都能保持"主文字仅次于标题"
+                                // 的视觉层级（不直接用 Color.black 是为了暗色主题自动适配）。
+                                Text(snippet)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.primary.opacity(0.85))
+                                    .lineLimit(2)
+                            }
+                            // 第三行：domain · path 首段（如 "github.com · zeka-stack"），
+                            // 让用户在不展开 URL 的情况下就能看出"是哪个 owner / org / 路径"。
+                            // 首段为空（裸域名结果）时仅显示 domain，不显示分隔符。
+                            //
+                            // dong4j 2026-06-13 反馈：原 .tertiary 在浅色 material 上
+                            // 几乎不可见；改用 .secondary 上提一档对比度。仍比 snippet 弱，
+                            // 维持"标题 > snippet > 元信息"三档视觉权重。
+                            HStack(spacing: 5) {
+                                Text(reference.domain)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                if let firstPath = Self.firstPathSegment(of: reference.originalURL) {
+                                    Text("·")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                    Text(firstPath)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                            }
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer()
                 }
-                .padding(10)
-                .background(isSelected ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10))
             }
         }
-        // Search Center 在 UnifiedRepoRow 外再加一层统一 hover，确保 GitHub 与
-        // AnySearch 都有同等清晰的指针反馈；选中态优先，不叠加 hover 色。
-        .background(
-            isHovered && !isSelected ? Color.accentColor.opacity(0.11) : .clear,
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(
-                    isHovered && !isSelected ? Color.accentColor.opacity(0.26) : .clear,
-                    lineWidth: 1
-                )
+        // hit-test 用 Rectangle 而不是 RoundedRectangle：圆角四个角会成为 onHover 死区,
+        // 鼠标在角附近移入时无法触发 hover；改用矩形让整行的命中区域与可视区域一致。
+        .contentShape(Rectangle())
+    }
+
+    /// URL 路径的首段（不含前导 `/`），用于 reference 卡片第三行展示。
+    /// 裸域名（无 path 或 path == "/"）返回 nil。
+    private static func firstPathSegment(of url: URL) -> String? {
+        let segments = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
+        return segments.first
+    }
+
+    // MARK: - 搜索底部 footer（metadata + rate limit）
+
+    /// 浮层底部 footer。按 scope 分支渲染：
+    ///
+    /// - **`.web`**（仅网页）：左侧"X 条 · Y.Ys"汇总 chip + 右侧 rate limit chip
+    /// - **`.all`**（聚合）：左侧多段 chip"本地 N · GitHub M · 网页 K"（按 provider
+    ///   命中数依次展示）+ 右侧 rate limit chip（仅当 web 参与且已加载）
+    /// - **`.local` / `.github`**：不渲染 footer
+    ///
+    /// 关键约束（不要回退）：
+    /// - footer 渲染条件 = "至少有一个 chip 可显示"：
+    ///   - 至少一个 provider 已加载（resultCounts 非空），或
+    ///   - rate limit chip 可显示（webMetadata.rateLimit 非 nil）
+    /// - rate limit 三字段缺一不全 → 右侧 chip 不显示（左侧 metadata 仍渲染）
+    /// - remaining ≤ 0 时右侧 chip 切换到"额度用尽 · HH:mm 重置"
+    @ViewBuilder
+    private var webResultFooter: some View {
+        let counts = viewModel.resultCounts
+        let rateLimit = viewModel.webMetadata?.rateLimit
+        if !counts.isEmpty || rateLimit != nil {
+            HStack(spacing: 8) {
+                leadingSummaryContent(counts: counts)
+                Spacer(minLength: 8)
+                if let rateLimit {
+                    rateLimitChip(rateLimit)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.primary.opacity(0.025))
         }
-        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// 左侧汇总区。根据当前 scope 选择渲染策略：
+    /// - `.web` scope + 只有 web：用 `searchSummaryChip` 显示"X 条·Y.Ys"（含用时）
+    /// - 其他场景（聚合 / 单 source 但不是 .web）：用多段 sourceChip 串接，
+    ///   不显示用时（"用时"概念只有 web 上可靠，本地 / GitHub 没记录）
+    @ViewBuilder
+    private func leadingSummaryContent(counts: [ResultSourceCount]) -> some View {
+        if viewModel.scope == .web,
+           let webMetadata = viewModel.webMetadata,
+           let total = webMetadata.totalResults,
+           let ms = webMetadata.searchTimeMs {
+            // .web scope 走"含用时"的紧凑形态（保留 v1 体验）
+            webOnlySummaryChip(totalResults: total, timeMs: ms)
+        } else {
+            // 聚合形态：每个 source 一个 chip，按 viewModel.resultCounts 顺序排
+            HStack(spacing: 6) {
+                ForEach(counts) { entry in
+                    sourceCountChip(entry)
+                }
+            }
+        }
+    }
+
+    /// `.web` scope 专用 chip：放大镜 + "X 条结果 · Y.Ys"（含用时）。
+    /// 用时只有 web 来源可靠取到，本地 / GitHub 没记录，所以仅在 .web 单源场景渲染。
+    private func webOnlySummaryChip(totalResults: Int, timeMs: Int) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 9, weight: .semibold))
+            Text(String(
+                format: String(localized: "search.web.summaryFormat"),
+                totalResults,
+                Double(timeMs) / 1000.0
+            ))
+            .font(.system(size: 11, weight: .medium))
+            .lineLimit(1)
+        }
+        .foregroundStyle(.primary.opacity(0.75))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(.primary.opacity(0.08), in: Capsule())
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// 聚合 footer 的单段 chip：source 标签 + 数字。
+    /// 例如 "本地 3" / "GitHub 10" / "网页 20"。
+    /// 视觉规格与 webOnlySummaryChip 完全一致，让 .all 与 .web scope 切换时不抖动。
+    private func sourceCountChip(_ entry: ResultSourceCount) -> some View {
+        HStack(spacing: 4) {
+            Text(String(
+                format: String(localized: "search.footer.summaryFormat"),
+                String(localized: String.LocalizationValue(entry.labelKey)),
+                entry.count
+            ))
+            .font(.system(size: 11, weight: .medium).monospacedDigit())
+            .lineLimit(1)
+        }
+        .foregroundStyle(.primary.opacity(0.75))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(.primary.opacity(0.08), in: Capsule())
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// 右侧 rate limit chip：未用尽走"已用 N/M"形态，用尽走"额度用尽 · 重置时间"。
+    ///
+    /// **语义重要变更（dong4j 2026-06-14）**：`sessionUsed` 来自本地计数（每次搜索 +1），
+    /// 不是 API 返回的 remaining（恒定假值）。详见 `WebRateLimit` 注释。
+    @ViewBuilder
+    private func rateLimitChip(_ rateLimit: WebRateLimit) -> some View {
+        if rateLimit.isExhausted {
+            exhaustedRateLimitChip(rateLimit)
+        } else {
+            normalRateLimitChip(rateLimit)
+        }
+    }
+
+    /// 未用尽 chip：圆点 + "已用 N/M"，颜色按 fractionRemaining 三档（>50% 绿 / 20-50% 橙 / ≤20% 红）。
+    /// 颜色反映「还能用多少」的紧迫感，与文案「已用」相反但语义互补。
+    ///
+    /// 视觉规格（dong4j 2026-06-13）：背景 22% + 描边 35% + size 11 .semibold，
+    /// 明暗主题都清晰可读。
+    private func normalRateLimitChip(_ rateLimit: WebRateLimit) -> some View {
+        let color = Self.rateLimitColor(fraction: rateLimit.fractionRemaining)
+        return HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(String(
+                format: String(localized: "search.web.rate.usedFormat"),
+                rateLimit.sessionUsed,
+                rateLimit.limit
+            ))
+            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+            .lineLimit(1)
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.22), in: Capsule())
+        .overlay { Capsule().stroke(color.opacity(0.35), lineWidth: 0.8) }
+        .fixedSize(horizontal: true, vertical: false)
+        .help(rateLimitTooltip(rateLimit))
+    }
+
+    /// 用尽 chip：红色 + "额度用尽 · HH:mm 重置"，传达"短时间内不可继续搜"。
+    /// 同步加强对比度（背景 22% + 描边 + .semibold），与 normalRateLimitChip 统一。
+    private func exhaustedRateLimitChip(_ rateLimit: WebRateLimit) -> some View {
+        let resetText = Self.shortResetText(from: rateLimit.resetAt)
+        let title = String(format: String(localized: "search.web.rate.exhaustedFormat"), resetText)
+        return HStack(spacing: 4) {
+            Circle().fill(Color.red).frame(width: 6, height: 6)
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(.red)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Color.red.opacity(0.22), in: Capsule())
+        .overlay { Capsule().stroke(Color.red.opacity(0.35), lineWidth: 0.8) }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// hover tooltip："本次会话已用 N/M · HH:mm 后 API 端窗口重置"。
+    /// 重点向用户解释：N 是本地会话计数（重启归零），M 是 API 真实上限，
+    /// 重置时间来自 API（指 API 端的窗口重置，不是本地 counter）。
+    private func rateLimitTooltip(_ rateLimit: WebRateLimit) -> String {
+        let resetText = Self.shortResetText(from: rateLimit.resetAt)
+        return String(
+            format: String(localized: "search.web.rate.tooltipFormat"),
+            rateLimit.sessionUsed,
+            rateLimit.limit,
+            resetText
+        )
+    }
+
+    /// 三档染色阈值（>50% 绿 / >20% 橙 / ≤20% 红）。
+    /// 与 GitHub / 大多 API 仪表盘的视觉惯例一致，给用户"还能用 / 该悠着点 / 快没了"
+    /// 三级视觉信号；阈值确认（dong4j 2026-06-13）。
+    static func rateLimitColor(fraction: Double) -> Color {
+        if fraction > 0.5 { return .green }
+        if fraction > 0.2 { return .orange }
+        return .red
+    }
+
+    /// 把 reset 时间格式化为本地短时（如 "02:30"）。
+    /// 用 `DateFormatter` 而不是 `Date.formatted(date:time:)`：后者在某些 locale 会
+    /// 多出 "AM/PM" 后缀（en_US），跟 zh-Hans 的 24h 视觉不一致；强制 .short timeStyle
+    /// + .none dateStyle 保证两种语言下都是纯时间。
+    static func shortResetText(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter.string(from: date)
+    }
+
+    /// 候选项的"激活"动作（点击 / 回车 / VoiceOver 主操作）。
+    /// 远端仓库（仅 GitHub 搜出、未 star、未入本地库）走会话级详情 sheet；
+    /// 其余（本地、reference、已 star）由宿主决定打开方式，统一走 onOpenCandidate。
+    ///
+    /// SEARCH-RICH 2026-06-14：sheet 改成接收整张 `RepositoryCandidate`
+    /// （`remoteExtras` 由 GitHub Provider 填充，弹窗用来渲染状态徽章与匹配度），
+    /// 不再只传 `Repo`。判断"是否走 remote sheet"的条件保持不变：
+    /// `localRepo == nil && remoteRepo != nil` —— 即仅 GitHub 搜到、本地未入库。
+    private func activate(_ candidate: SearchCandidate) {
+        if case .repository(let repository) = candidate,
+           repository.localRepo == nil,
+           repository.remoteRepo != nil {
+            remoteDetailCandidate = repository
+        } else {
+            onOpenCandidate(candidate)
+        }
     }
 
     private func scopeTitle(_ scope: SearchScope) -> String {
@@ -438,72 +864,1255 @@ struct SearchCenterView: View {
         .frame(width: width, alignment: .leading)
     }
 
-    /// 使用 macOS 原生紧凑 DatePicker。筛选值初始仍为 nil，只有用户实际修改
-    /// DatePicker 后 binding setter 才写入日期；点击“清除日期”恢复 nil，不传 qualifier。
+    /// 日期筛选字段（SEARCH-FILTER 2026-06-14 改造）。
+    ///
+    /// 老实现：`DatePicker(...).datePickerStyle(.compact)` —— 文档承诺渲染成
+    /// 「按钮 + popover」，但 macOS 26 (Tahoe) 实测下退化到 stepper field（数字
+    /// 字段 + 上下箭头），dong4j 截图反馈不希望出现上下箭头操作日期。
+    ///
+    /// 新实现：用 `GitHubDateFilterField`（同文件下方）—— 显式 Button + popover
+    /// + `.graphical` DatePicker，绕开 `.compact` 在新版 macOS 上的样式 fallback，
+    /// 同时把"点击 → 弹出可视化月历选择"的交互固化下来。
     private func githubDateFilter(
         title: String,
         keyPath: WritableKeyPath<GitHubSearchFilters, Date?>
     ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            filterFieldLabel(title)
-            DatePicker(
-                title,
-                selection: optionalDateBinding(keyPath),
-                displayedComponents: .date
+        GitHubDateFilterField(
+            title: title,
+            date: Binding(
+                get: { viewModel.githubFilters[keyPath: keyPath] },
+                set: { viewModel.githubFilters[keyPath: keyPath] = $0 }
             )
-            .labelsHidden()
-            .datePickerStyle(.compact)
-        }
-        .frame(width: 150, alignment: .leading)
+        )
     }
 
-    private func optionalDateBinding(_ keyPath: WritableKeyPath<GitHubSearchFilters, Date?>) -> Binding<Date> {
+    // MARK: - AnySearch 筛选条 helpers（PR-3，dong4j 2026-06-14）
+
+    /// AnySearch domain 下拉。
+    ///
+    /// 首项「自动」对应 nil（不传 `domain` 给 API，网关按 query 自动路由），其余
+    /// 22 项来自官方 enum（hard-code 在 `Self.allAnySearchDomains`）。domain 是 API
+    /// 关键字，**不本地化**；中文用户可通过括号注释快速辨识（如 `code（代码）`）。
+    private var anySearchDomainPicker: some View {
+        githubPicker(title: "域 (Domain)", width: 158) {
+            Picker("Domain", selection: anySearchDomainBinding) {
+                Text("自动").tag("")
+                ForEach(Self.allAnySearchDomains, id: \.0) { pair in
+                    Text(pair.1).tag(pair.0)
+                }
+            }
+        }
+    }
+
+    private var anySearchDomainBinding: Binding<String> {
         Binding(
-            get: { viewModel.githubFilters[keyPath: keyPath] ?? Date() },
-            set: { viewModel.githubFilters[keyPath: keyPath] = $0 }
+            get: { viewModel.anySearchFilters.domain ?? "" },
+            set: { viewModel.anySearchFilters.domain = $0.isEmpty ? nil : $0 }
         )
+    }
+
+    /// content_types 三选 Toggle（web / news / doc）。
+    /// 用 Menu + 内部 Toggle 实现紧凑多选；空集 = 自动（不传 API）。
+    /// 官方文档未给完整枚举，先开 3 个最常见的；按反馈再加（写入注释固化范围）。
+    private var anySearchContentTypesField: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            filterFieldLabel("内容类型")
+            Menu {
+                ForEach(Self.allAnySearchContentTypes, id: \.0) { pair in
+                    Toggle(pair.1, isOn: anySearchContentTypeBinding(pair.0))
+                }
+            } label: {
+                Text(anySearchContentTypesLabel)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(width: 140)
+    }
+
+    private func anySearchContentTypeBinding(_ key: String) -> Binding<Bool> {
+        Binding(
+            get: { viewModel.anySearchFilters.contentTypes.contains(key) },
+            set: { isOn in
+                if isOn {
+                    viewModel.anySearchFilters.contentTypes.insert(key)
+                } else {
+                    viewModel.anySearchFilters.contentTypes.remove(key)
+                }
+            }
+        )
+    }
+
+    private var anySearchContentTypesLabel: String {
+        let selected = viewModel.anySearchFilters.contentTypes
+        if selected.isEmpty { return "自动" }
+        // 用预定义顺序输出（Set 迭代顺序不稳定），与摘要保持一致体验
+        let ordered = Self.allAnySearchContentTypes.compactMap { selected.contains($0.0) ? $0.0 : nil }
+        return ordered.joined(separator: ", ")
+    }
+
+    /// AnySearch zone 下拉。首项「自动」对应 nil，跟随网关自动路由。
+    private var anySearchZonePicker: some View {
+        githubPicker(title: "地区", width: 100) {
+            Picker("Zone", selection: anySearchZoneBinding) {
+                Text("自动").tag("")
+                Text("国内").tag(AnySearchZone.cn.rawValue)
+                Text("全球").tag(AnySearchZone.intl.rawValue)
+            }
+        }
+    }
+
+    private var anySearchZoneBinding: Binding<String> {
+        Binding(
+            get: { viewModel.anySearchFilters.zone?.rawValue ?? "" },
+            set: { newValue in
+                viewModel.anySearchFilters.zone = newValue.isEmpty
+                    ? nil
+                    : AnySearchZone(rawValue: newValue)
+            }
+        )
+    }
+
+    /// 单次结果数（1...100，对齐官方 API 上限，default 10）。
+    ///
+    /// 用 TextField + `.number` format 而非 Stepper：用户调到大值时（如 80）按 Stepper
+    /// 要点很多下，直接输入更顺。
+    ///
+    /// **输入验证**：
+    /// - 类型：`.number.grouping(.never)` formatter 只接受数字字符（自带过滤），不允许
+    ///   字母 / 符号 / 千分号
+    /// - 范围：[1, 100]。在 binding setter 流式钳制 —— 用户输入 999 会被即时压回 100，
+    ///   不需要 blur / 提交才触发。空值 / 负数同样压到下界 1
+    private var anySearchMaxResultsField: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            filterFieldLabel("结果数")
+            TextField("10", value: clampedMaxResultsBinding, format: .number.grouping(.never))
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12))
+                .multilineTextAlignment(.center)
+                .frame(width: 60)
+        }
+        .frame(width: 130, alignment: .leading)
+    }
+
+    /// `anySearchFilters.maxResults` 的钳制 binding。
+    ///
+    /// 关键约束：写入永远压到 [1, 100]。AnySearchRequest.init 与 AnySearchWebProvider
+    /// 也会再钳一次，这里是 UI 层第一道防线 —— 让用户在输入框看到的就是最终值，
+    /// 而不是先收下 999 再到网络层悄悄改 100 造成"我明明输入了 999"的错觉。
+    private var clampedMaxResultsBinding: Binding<Int> {
+        Binding(
+            get: { viewModel.anySearchFilters.maxResults },
+            set: { newValue in
+                viewModel.anySearchFilters.maxResults = min(max(1, newValue), 100)
+            }
+        )
+    }
+
+    /// 折叠态摘要：把当前生效的非默认筛选拼成「code · web,doc · 全球 · 10 条」。
+    /// 全默认时显示「自动（按 query 路由）」，让用户即便不展开也能确认状态。
+    private var anySearchFiltersSummary: String {
+        let f = viewModel.anySearchFilters
+        var parts: [String] = []
+        if let domain = f.domain { parts.append(domain) }
+        if !f.contentTypes.isEmpty {
+            let ordered = Self.allAnySearchContentTypes
+                .compactMap { f.contentTypes.contains($0.0) ? $0.0 : nil }
+            parts.append(ordered.joined(separator: ","))
+        }
+        if let zone = f.zone {
+            parts.append(zone == .cn ? "国内" : "全球")
+        }
+        if f.maxResults != 10 { parts.append("\(f.maxResults) 条") }
+        return parts.isEmpty ? "自动（按 query 路由）" : parts.joined(separator: " · ")
+    }
+
+    /// AnySearch 22 个 domain 显示对照表。
+    ///
+    /// 元组 `(rawValue, displayName)`：rawValue 直接传给 API（不本地化），
+    /// displayName 给中文用户加括号注释方便快速辨识。完整顺序照搬官方文档：
+    /// https://www.anysearch.com/docs → Enum Reference → Domains (22 values)
+    ///
+    /// 维护提示：API 端新增 domain 时同步追加；保持与官方枚举顺序一致便于查阅。
+    private static let allAnySearchDomains: [(String, String)] = [
+        ("general", "general（综合）"),
+        ("code", "code（代码）"),
+        ("tech", "tech（科技）"),
+        ("fashion", "fashion（时尚）"),
+        ("travel", "travel（旅行）"),
+        ("home", "home（家居）"),
+        ("ecommerce", "ecommerce（电商）"),
+        ("gaming", "gaming（游戏）"),
+        ("film", "film（影视）"),
+        ("music", "music（音乐）"),
+        ("finance", "finance（财经）"),
+        ("academic", "academic（学术）"),
+        ("legal", "legal（法律）"),
+        ("business", "business（商业）"),
+        ("ip", "ip（知识产权）"),
+        ("security", "security（安全）"),
+        ("education", "education（教育）"),
+        ("health", "health（健康）"),
+        ("religion", "religion（宗教）"),
+        ("geo", "geo（地理）"),
+        ("environment", "environment（环境）"),
+        ("energy", "energy（能源）")
+    ]
+
+    /// content_types 预设选项。官方文档未给完整枚举，先开 3 个最常见的；
+    /// 用户反馈需要其他类型（如 image / video）时再扩展。
+    private static let allAnySearchContentTypes: [(String, String)] = [
+        ("web", "网页"),
+        ("news", "新闻"),
+        ("doc", "文档")
+    ]
+}
+
+// MARK: - GitHub Date Filter Field
+
+/// GitHub 筛选条件中的日期选择字段（搜索弹窗专用）。
+///
+/// ## 为什么自绘 Button + popover，而不是直接用 `DatePicker(.compact)`
+///
+/// macOS 上 `DatePicker(...).datePickerStyle(.compact)` 历史承诺是「按钮 + 弹出
+/// 月历 popover」样式，但在 macOS 15 / 26 (Tahoe) 的 SwiftUI build 上实测会退化
+/// 到 stepper field（数字字段 + 上下箭头）。dong4j 2026-06-14 截图反馈明确不想
+/// 看到上下箭头操作日期。
+///
+/// 另外，图形日历比上下箭头更适合「最近 N 天 / 某个月之后」这类 GitHub 筛选
+/// 语义：鼠标点选某一天比按箭头逐日翻找快得多。
+///
+/// ## 交互模型
+///
+/// - 主体：圆角矩形按钮，左侧 📅 图标，中间日期文本（未选择时显示「选择日期」
+///   + secondary 颜色），右侧 ⌄ 图标。视觉与 TextField / Picker 等高一致，
+///   能无缝混在筛选行 HStack 里
+/// - 点击：弹出 popover（`arrowEdge: .bottom`，让箭头指向触发按钮），内嵌
+///   `.graphical` DatePicker 完整月历
+/// - 选日：DatePicker setter 即时回写 binding（`@Binding var date: Date?`），
+///   用户能在 popover 仍打开时切换月份继续探索
+/// - 关闭：底部右侧「完成」按钮 / 点击 popover 外部区域 / esc
+///
+/// ## 不在 popover 内放「清除」按钮的原因
+///
+/// 调用方（`SearchCenterView.githubFilterBar`）已经在第二行末尾提供「清除日期」
+/// 按钮，会同时把创建时间和推送时间复位。如果 popover 内再放一个单字段「清除」，
+/// 用户会困惑「该用哪个」。所以这里保持单一职责：popover 只负责选日期，清除
+/// 由外部统一处理。
+private struct GitHubDateFilterField: View {
+    let title: String
+    /// 真实数据源。nil 表示「用户未指定该筛选条件」，写筛选时不生成 qualifier；
+    /// popover 内只要用户点过任一日期就写入真实值，binding setter 立刻把 nil
+    /// 升级为具体 Date。
+    @Binding var date: Date?
+
+    @State private var isPresented = false
+
+    /// 显示宽度与原 `.compact` DatePicker 持平（150pt），保证旧布局横向对齐
+    /// 不发生跳变。两个并排的日期字段加起来 ~316pt，落在筛选行剩余空间内。
+    private static let fieldWidth: CGFloat = 150
+
+    /// 主体显示用日期格式：`yyyy/MM/dd`。与截图中 dong4j 习惯的中式日期格式一致，
+    /// 也跟 `.compact` 旧样式默认输出对齐，避免用户切换布局后认不出。
+    private static let displayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy/MM/dd"
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+
+            Button {
+                isPresented.toggle()
+            } label: {
+                fieldLabel
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+                calendarPopover
+            }
+        }
+        .frame(width: Self.fieldWidth, alignment: .leading)
+    }
+
+    /// 按钮主体视觉。整体仿照 `.roundedBorder` TextField 的描边 + 实底配色，
+    /// 让它和同行的 Topic / 最低 Stars 等输入框观感一致。
+    /// `textBackgroundColor` / `separatorColor` 是 AppKit 系统级动态色，
+    /// 自动适配 dark / light 主题，无需各自再写两套颜色。
+    private var fieldLabel: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "calendar")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Text(displayText)
+                .font(.system(size: 12))
+                .foregroundStyle(date == nil ? .secondary : .primary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        )
+        .contentShape(Rectangle())
+    }
+
+    /// Popover 内容：`.graphical` 完整月历 + 底部「完成」按钮。
+    ///
+    /// **为什么用 `.fixedSize()` 而不是 `.frame(width:)`**：
+    /// macOS 上 `.graphical` DatePicker 有固定的 intrinsic content size（约 220pt
+    /// 宽，由 SwiftUI 内部按 7 列周历 + 年月切换条算出来），强行用更大宽度的
+    /// frame 包它，月历不会被拉伸 —— 只会让自身居中、两侧出现明显空白
+    /// （dong4j 2026-06-14 截图反馈）。改用 `.fixedSize()` 让外层 VStack 跟随
+    /// 月历的 intrinsic size，popover 就紧贴内容收缩，视觉上零浪费。
+    ///
+    /// DatePicker 用 `Binding(get/set)` 把 `Date?` 拍平成 `Date` 给月历：
+    /// - get：nil 时 fallback 到「今天」，让月历有个默认聚焦月份
+    /// - set：用户任一点击都会立刻把 nil 升级为具体日期写回 `@Binding`
+    ///   → 筛选状态即时同步，无需用户点「完成」才生效；「完成」纯粹是关闭
+    ///   popover 的便捷出口
+    private var calendarPopover: some View {
+        VStack(spacing: 10) {
+            DatePicker(
+                "",
+                selection: Binding(
+                    get: { date ?? Date() },
+                    set: { date = $0 }
+                ),
+                displayedComponents: .date
+            )
+            .datePickerStyle(.graphical)
+            .labelsHidden()
+
+            // 用 `.frame(maxWidth: .infinity, alignment: .trailing)` 让「完成」
+            // 按钮始终贴右；不能用 HStack { Spacer(); Button } —— 后者会让 HStack
+            // 占据父 VStack 全宽，与 .fixedSize() 行为冲突（VStack 取最大子宽时
+            // 会陷入循环假设，月历再次被拉伸出空白）。
+            Button("完成") {
+                isPresented = false
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(14)
+        .fixedSize()
+    }
+
+    private var displayText: String {
+        guard let date else { return "选择日期" }
+        return Self.displayFormatter.string(from: date)
     }
 }
 
-/// GitHub 搜索结果的会话级详情，不写数据库；只有用户执行 Star 后才通过
-/// StarActionService 进入本地事实源。
+// MARK: - History Chip
+
+/// 单条历史记录的胶囊标签。
+///
+/// **视觉对齐 `UnifiedRepoRow.RepoCardInlineMetadataBadge`**：
+/// 整个项目的 metadata pill（Stars / Forks / Language / sceneBadge）统一走
+/// `Color.secondary.opacity(0.10)` 浅灰胶囊 + `.foregroundStyle(.secondary)`
+/// 的克制风格；搜索历史 chip 也按这一套设计语言走，避免引入第二种 chip
+/// 视觉规则。早期方案曾给每个 chip 用 `TagColorPalette` 调出彩色底，但视觉
+/// 上跟 repo 卡片冲突，dong4j 直接 reject —— 改回单色灰底。
+///
+/// 交互要点：
+/// - 点击 chip 主体 → 触发该关键词的搜索（整个胶囊都是命中区）
+/// - hover 时右侧浮出 `x` 删除按钮（独立 hitbox，避免被父 Button 吞掉 click），
+///   不 hover 时也预留出 14pt 空位避免 chip 宽度跳变
+/// - hover 同时把胶囊底色从 0.10 加深到 0.18，提供"被聚焦"的反馈
+private struct HistoryChip: View {
+    let entry: SearchHistory
+    let onUse: () -> Void
+    let onRemove: () -> Void
+
+    @State private var isHovered: Bool = false
+
+    /// 显示 useCount 角标的最低门槛。`< 3` 视为"偶尔搜过"，无需占据视觉注意力。
+    /// 这是 dong4j 拍板的阈值，需要调整时改这一个常量即可。
+    private static let useCountBadgeMinimum = 3
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button(action: onUse) {
+                HStack(spacing: 4) {
+                    Text(entry.query)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    if entry.useCount >= Self.useCountBadgeMinimum {
+                        // 用 verbatim: 显式跳过 SwiftUI 的 LocalizedStringKey 本地化查找
+                        // —— "·\(Int)" 这种"单符号 + 单参数"组合曾在 i18n fallback 边界
+                        // 上出现过显示异常；改 verbatim 直出原文最稳。
+                        // 颜色 secondary 而非 tertiary：dong4j 实测 tertiary 在
+                        // `Capsule.opacity(0.10)` 灰底 + light mode 下几乎不可见；
+                        // 提升一档对比度，仍靠字号差（11 vs query 12）区分主次。
+                        Text(verbatim: "·\(entry.useCount)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.secondary.opacity(isHovered ? 0.18 : 0.10))
+                )
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(chipTooltip)
+
+            if isHovered {
+                Button(action: onRemove) {
+                    // xmark.circle.fill 用"危险红 + 半透明"传达 destructive 语义。
+                    //
+                    // 颜色选型：
+                    // - `.red` 是 SwiftUI 动态色，会跟随 dark/light 主题调整明度
+                    // - `.opacity(0.7)` 把饱和度压下来，避免在浅色 chip 上过分刺眼
+                    // - 跟 contextMenu "删除这条历史" 的 `role: .destructive` 语义对齐
+                    //
+                    // 外裹 `Circle().fill(.controlBackgroundColor)` 实底圆背景：
+                    // 让 xmark 即使盖在下方 ·N 末尾也能一眼识别为独立按钮，不跟文字融合。
+                    // controlBackgroundColor 是系统级控件背景，自动适配深浅主题。
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.red.opacity(0.7))
+                        .background(
+                            Circle()
+                                .fill(Color(nsColor: .controlBackgroundColor))
+                        )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .padding(.trailing, 4)
+                .help("删除这条历史")
+                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            }
+        }
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
+        }
+        .contextMenu {
+            Button("使用此关键词") { onUse() }
+            Divider()
+            Button("删除这条历史", role: .destructive) { onRemove() }
+        }
+    }
+
+    /// 系统 tooltip 内容：useCount > 1 时附带次数信息便于用户知道分数怎么来的。
+    private var chipTooltip: String {
+        guard entry.useCount > 1 else { return entry.query }
+        return "\(entry.query) — 使用 \(entry.useCount) 次"
+    }
+}
+
+// MARK: - FlowLayout
+
+/// 搜索历史专用的自动换行布局。
+///
+/// 跟项目里 `RepoTagsSection` / `TagWallView` / `ActivityDetailView` 里同名的
+/// private FlowLayout 行为一致；按"Surgical Changes"原则不做跨文件抽公共
+/// 类型（private 不可跨文件共享）的范围外重构，单独再实现一份。
+///
+/// 如果后续需要把 4 处 FlowLayout 抽到 Shared 复用，记到技术债 D-? 再统一处理。
+private struct SearchHistoryFlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var rowWidth: CGFloat = 0
+        var totalHeight: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if rowWidth + size.width > maxWidth {
+                totalHeight += rowHeight + spacing
+                rowWidth = size.width + spacing
+                rowHeight = size.height
+            } else {
+                rowWidth += size.width + spacing
+                rowHeight = max(rowHeight, size.height)
+            }
+        }
+        totalHeight += rowHeight
+        return CGSize(width: maxWidth.isFinite ? maxWidth : rowWidth, height: totalHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let maxWidth = bounds.width
+        var x: CGFloat = bounds.minX
+        var y: CGFloat = bounds.minY
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > bounds.minX + maxWidth {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+// MARK: - Remote Repo Detail
+
+/// GitHub 搜索结果的会话级详情卡（SEARCH-RICH 2026-06-14 重构）。
+///
+/// 设计目标：在不打额外 GitHub API 调用、不入库的前提下，把搜索接口已经返回
+/// 的字段尽量暴露出来，帮用户在 Star 之前完成「这个 repo 值不值得收藏」决策。
+///
+/// **不入库约束**：本视图仅消化 `RepositoryCandidate.remoteRepo`（搜索页 ephemeral
+/// 转换得到，未进数据库）+ `remoteRepo.remoteExtras`（disabled / isTemplate /
+/// score 三类瞬时态字段，旁挂在 candidate 上）。用户点击 Star 后才通过
+/// `StarActionService` 走正式入库流程；本视图自身不写任何持久化层。
+///
+/// **匹配度可见性**：`score` 字段对 best-match 排序才有意义，其他排序模式
+/// （stars / forks / updated）下 score 仍是 search 端点回传的同一个值，但语义
+/// 与当前列表位置已脱钩 → 弹窗只在 `isCurrentSortBestMatch == true` 时显示。
+///
+/// **未填字段降级策略**：
+/// - `remoteRepo == nil`：理论上 activate 函数已守卫，进入本视图前 remoteRepo 必非空；
+///   若仍为 nil（防御性），整个 view 显示空态卡片避免崩溃
+/// - description / topics / homepage / language 等 Optional 字段缺失时，对应行/区段
+///   整体隐藏，不渲染"未知"占位（避免视觉噪音）
 private struct SearchRemoteRepoDetailView: View {
-    let repo: Repo
+
+    let candidate: RepositoryCandidate
+    let isCurrentSortBestMatch: Bool
     let isStarred: Bool
     let onToggleStar: () -> Void
     let onOpenAI: () -> Void
+    let onOpenInGitHub: () -> Void
+    /// 复制仓库 HTML URL（走宿主回调，宿主可叠加 toast / 日志）。
+    let onCopyURL: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    /// SEARCH-RICH 2026-06-14：Wiki 集成需要 `dependencies.wikiAPI`。
+    /// `AppDependencies` 已在 `StarcatApp` 主 scene 注入 environment，sheet
+    /// 默认继承 environment，所以这里直接 `@Environment` 拿到。
+    @Environment(AppDependencies.self) private var dependencies
+
+    /// 已确认 indexed 的外部 wiki 链接（DeepWiki / ZRead / CodeWiki）。
+    /// `.task(id: candidate.identity)` 触发 fetch，未收录 / 失败时保持空数组
+    /// → 整行隐藏（与 `RepoWikiMenu` 的"未收录不占 UI"语义一致）。
+    @State private var wikiLinks: [WikiLink] = []
+
+    /// 折叠菜单 popover 显隐。点 ··· 触发；菜单项点击后置 false 关闭。
+    @State private var isOverflowPresented = false
+
+    /// CodeFlow 子 sheet 用 Identifiable item 驱动，**不要**回退到
+    /// `.sheet(isPresented: Bool)`。
+    ///
+    /// 历史坑（dong4j 2026-06-14 验收反馈，toolbar `ExternalLinksMenu` 同款问题）：
+    /// `.sheet(isPresented:)` 在父视图频繁重建（toolbar trailing 闭包 / 搜索弹窗
+    /// 内嵌 sheet）的场景下，sheet 关闭瞬间内部 state 与外部 Bool binding 的
+    /// 更新存在 1 帧时序差，会让 sheet "关闭 → 闪现 → 再关闭"。改用
+    /// `.sheet(item:)` 用 item 存在性驱动，关闭即 `item = nil`，更稳。
+    /// 搜索弹窗本身已是 sheet，这里是 sheet over sheet (macOS 15+ 稳定），
+    /// 嵌套层级更深时 item 模式的优势更明显。
+    ///
+    /// 触发流程仍保留"先关 popover → DispatchQueue.main.async 后再赋值 item"
+    /// 的时序，避免 popover 与 sheet 同帧 presentation 竞争。
+    @State private var codeFlowSheetRepo: Repo?
+
+    /// 卡片宽度。480pt 足以容纳 owner / repo 双行 + 头像 + 顶栏徽章；再窄
+    /// 顶栏会挤压 license / score 徽章；再宽就显得空旷不像「快速决策卡」。
+    private static let cardWidth: CGFloat = 480
+
+    /// 头像直径。与 `RepoMetadataHeaderView` 的 hero 头像保持一致视觉档次。
+    private static let avatarSize: CGFloat = 44
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(repo.fullName).font(.title2.bold())
-                    Text(repo.description ?? "暂无描述").foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-            }
-            HStack(spacing: 18) {
-                Label(repo.language ?? "Unknown", systemImage: "chevron.left.forwardslash.chevron.right")
-                Label("\(repo.starsCount)", systemImage: "star")
-                Label("\(repo.forksCount)", systemImage: "tuningfork")
-                if let license = repo.license { Label(license, systemImage: "doc.text") }
-            }
-            .foregroundStyle(.secondary)
-            HStack {
-                Button(isStarred ? "取消 Star" : "Star") { onToggleStar() }
-                    .buttonStyle(.borderedProminent)
-                Button("Ask / AI 摘要") { onOpenAI() }
-                Button("在 GitHub 打开") {
-                    if let url = URL(string: repo.htmlUrl) { NSWorkspace.shared.open(url) }
-                }
+        Group {
+            if let repo = candidate.displayRepo {
+                content(repo: repo)
+            } else {
+                emptyState
             }
         }
+        .frame(width: Self.cardWidth)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private func content(repo: Repo) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header(repo: repo)
+            if let description = repo.description, !description.isEmpty {
+                // description 是用户内容，必须 verbatim。
+                Text(verbatim: description)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("search.detail.empty.description")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
+                    .italic()
+            }
+
+            if shouldShowStateBadgeRow(repo: repo) {
+                stateBadgeRow(repo: repo)
+            }
+
+            statsRow(repo: repo)
+            timestampRow(repo: repo)
+
+            if !repo.topicsArray.isEmpty {
+                topicsRow(topics: repo.topicsArray)
+            }
+
+            // Wiki 集成（SEARCH-RICH 2026-06-14）：未收录 / 失败时整行隐藏；
+            // 与 topics 行同样位于"内容补充区",共享紧凑卡的"信号优先"原则。
+            if !wikiLinks.isEmpty {
+                wikiLinksRow(links: wikiLinks)
+            }
+
+            Divider()
+
+            actionRow(repo: repo)
+        }
+        .padding(20)
+        // `.task` 必须挂在 `content(repo:)` 内层 VStack 上(它永远存在,与 RepoWikiMenu
+        // v1.2 修订里"EmptyView 不调度 task"是同款坑的反向避雷)。`id` 用 candidate
+        // identity:repo 不变时 task 不重跑;切到下一个候选时(如果未来支持卡片间
+        // 切换)task 会自动取消旧请求并对新 repo 重新发起,与 RepoWikiMenu 行为一致。
+        .task(id: candidate.identity) {
+            await loadWikiLinks(repo: repo)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.title2)
+                .foregroundStyle(.orange)
+            Text("search.detail.empty.repoUnavailable")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Button("search.detail.action.close") { dismiss() }
+        }
         .padding(24)
-        .frame(width: 620, height: 260)
+    }
+
+    // MARK: - Header
+
+    @ViewBuilder
+    private func header(repo: Repo) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ownerAvatar(repo: repo)
+
+            VStack(alignment: .leading, spacing: 2) {
+                // owner / name 都是 GitHub 数据，必须 verbatim 防止 SwiftUI 误把
+                // 它们当本地化 key（例如 owner 叫 "share" 之类的常见 key 会撞）。
+                Text(verbatim: repo.owner)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Text(verbatim: repo.name)
+                    .font(.system(size: 18, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 8)
+
+            if isCurrentSortBestMatch, let score = candidate.remoteExtras.score {
+                scoreBadge(score: score)
+            }
+            if let license = repo.license, !license.isEmpty {
+                licenseBadge(license: license)
+            }
+
+            Button { dismiss() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("search.detail.action.close")
+        }
+    }
+
+    /// owner 头像。点击跳 owner 主页（与设计稿"点头像跳 owner"对齐）。
+    /// 头像 URL 优先用 `repo.ownerAvatar`（mapper 已接通），缺失时用
+    /// `https://github.com/{login}.png` 兜底（GitHub 官方提供的头像直链）。
+    @ViewBuilder
+    private func ownerAvatar(repo: Repo) -> some View {
+        Button { openOwnerPage(login: repo.owner) } label: {
+            avatarImage(repo: repo)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("search.detail.action.openOwner")
+    }
+
+    /// 头像视图。SEARCH-RICH 2026-06-14 修订（dong4j 反馈"每次打开都要重复
+    /// 拉取吗"）:
+    ///
+    /// 老版用 SwiftUI 标准 `AsyncImage` —— 它**只走 URLSession.URLCache**(内存
+    /// 4MB / 磁盘 20MB 的小池子,且每次 view 重建都会重新发 URLRequest,即便命中
+    /// URLCache 也会 placeholder 闪一下);头像作为弹窗"重复打开同一 repo 也不
+    /// 该再发请求"的高频静态资源,这套缓存太弱。
+    ///
+    /// 新版改用项目自有 `RemoteAvatar` 组件 —— 内部走 Kingfisher,带 100MB 内存
+    /// + 1GB 磁盘 + TTL 1 周的双层缓存,弹窗反复打开同一 repo 命中内存 cache
+    /// 直接同步出图,零网络。视觉规格(圆形 + 0.5px secondary opacity 0.18 描边)
+    /// 与 sidebar / share-card / 详情页 hero 保持完全一致。
+    ///
+    /// owner 头像 URL 优先用 `repo.ownerAvatar`(mapper 已接通 GitHubRepoDTO 的
+    /// `owner.avatar_url`),缺失时拼 GitHub 官方头像直链兜底(永远可拼出来)。
+    @ViewBuilder
+    private func avatarImage(repo: Repo) -> some View {
+        let urlString: String = repo.ownerAvatar ?? "https://github.com/\(repo.owner).png"
+        RemoteAvatar(urlString: urlString, size: Self.avatarSize)
+    }
+
+    private func scoreBadge(score: Double) -> some View {
+        // 显示精度：保留两位小数足够区分 0.95 / 0.97 / 1.0；更高位无信息密度。
+        let formatted = String(format: "%.2f", score)
+        let label = String(format: String(localized: "search.detail.score.format"), formatted)
+        return Label {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .monospacedDigit()
+        } icon: {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 9, weight: .semibold))
+        }
+        .labelStyle(.titleAndIcon)
+        .foregroundStyle(.orange)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color.orange.opacity(0.12), in: Capsule())
+        .help("search.detail.score.tooltip")
+    }
+
+    private func licenseBadge(license: String) -> some View {
+        // license 是 GitHub 返回的 SPDX id 或 license name（例如 "MIT" / "Apache-2.0"），
+        // 是数据，不是 UI 文案，必须 verbatim。
+        Text(verbatim: license)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color.secondary.opacity(0.10), in: Capsule())
+            .help("search.detail.license.tooltip")
+    }
+
+    // MARK: - State badges (archived / fork / template / disabled)
+
+    /// 状态徽章行只在至少一条徽章命中时渲染（避免空行占空间）。
+    private func shouldShowStateBadgeRow(repo: Repo) -> Bool {
+        repo.isArchived
+            || repo.isFork
+            || candidate.remoteExtras.isTemplate == true
+            || candidate.remoteExtras.disabled == true
+    }
+
+    private func stateBadgeRow(repo: Repo) -> some View {
+        HStack(spacing: 6) {
+            if repo.isArchived {
+                stateBadge(textKey: "search.detail.badge.archived", color: .orange)
+            }
+            if repo.isFork {
+                stateBadge(textKey: "search.detail.badge.fork", color: .gray)
+            }
+            if candidate.remoteExtras.isTemplate == true {
+                stateBadge(textKey: "search.detail.badge.template", color: .purple)
+            }
+            if candidate.remoteExtras.disabled == true {
+                stateBadge(textKey: "search.detail.badge.disabled", color: .red)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func stateBadge(textKey: LocalizedStringKey, color: Color) -> some View {
+        Text(textKey)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.14), in: Capsule())
+            .overlay {
+                Capsule().strokeBorder(color.opacity(0.30), lineWidth: 0.5)
+            }
+    }
+
+    // MARK: - Stats row
+
+    private func statsRow(repo: Repo) -> some View {
+        HStack(spacing: 14) {
+            statItem(systemImage: "star", value: "\(repo.starsCount)")
+            statItem(systemImage: "tuningfork", value: "\(repo.forksCount)")
+
+            // open_issues_count 在 GitHub 设计里是 "issue + PR 合计"，tooltip 提示
+            // 避免用户误读为只有 issues。值为 nil 时整个 stat 隐藏（不显示 "—"）。
+            if let openIssues = repo.openIssuesCount {
+                statItem(
+                    systemImage: "exclamationmark.circle",
+                    value: "\(openIssues)",
+                    tooltipKey: "search.detail.stat.openIssues.tooltip"
+                )
+            }
+
+            // default_branch 在大多数 repo 是 "main"；它的价值不在炫数据，而在
+            // 让用户判断该 repo 还在用旧的 master 默认分支（往往代表久未维护）。
+            if let branch = repo.defaultBranch, !branch.isEmpty {
+                statItem(systemImage: "arrow.triangle.branch", value: branch)
+            }
+
+            // language 也作为统计行的一员（沿用 UnifiedRepoRow / metadata pill 风格）；
+            // 之所以放在 stats 行末尾而不是徽章区，是因为它在用户决策权重上属于
+            // 「数据维度」而非「状态」。
+            if let language = repo.language, !language.isEmpty {
+                statItem(systemImage: "chevron.left.forwardslash.chevron.right", value: language)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private func statItem(
+        systemImage: String,
+        value: String,
+        tooltipKey: LocalizedStringKey? = nil
+    ) -> some View {
+        let item = Label {
+            Text(verbatim: value)
+                .font(.system(size: 12, weight: .medium))
+                .monospacedDigit()
+        } icon: {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .medium))
+        }
+        .labelStyle(.titleAndIcon)
+        .foregroundStyle(.secondary)
+
+        if let tooltipKey {
+            item.help(tooltipKey)
+        } else {
+            item
+        }
+    }
+
+    // MARK: - Timestamps
+
+    /// 创建 / 推送 时间相对显示。两者都缺时整行隐藏。
+    private func timestampRow(repo: Repo) -> some View {
+        let createdRelative = relativeTime(iso8601: repo.createdAt)
+        let pushedRelative = relativeTime(iso8601: repo.pushedAt)
+
+        return HStack(spacing: 8) {
+            Image(systemName: "clock")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+
+            if let created = createdRelative {
+                Text(String(format: String(localized: "search.detail.time.created.format"), created))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            if createdRelative != nil && pushedRelative != nil {
+                Text(verbatim: "·")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+
+            if let pushed = pushedRelative {
+                Text(String(format: String(localized: "search.detail.time.updated.format"), pushed))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .opacity(createdRelative == nil && pushedRelative == nil ? 0 : 1)
+    }
+
+    /// ISO8601 字符串 → 相对时间。
+    /// - 用 `RelativeDateTimeFormatter` 跟随当前 `Locale`（en / zh-Hans 自动适配）
+    /// - 解析失败返回 nil；调用方按 nil 整段隐藏，不渲染"unknown"占位
+    ///
+    /// **不能用 `ISO8601DateFormatter.shared`**：该共享实例的 `formatOptions`
+    /// 含 `.withFractionalSeconds`，会**强制要求**字符串带毫秒（如
+    /// `"2024-01-01T00:00:00.000Z"`）；但 GitHub `/search/repositories` 实际
+    /// 返回 `"2024-01-01T00:00:00Z"`（不带毫秒）→ 解析全部返回 nil → 整行
+    /// 透明隐藏（dong4j 2026-06-14 真机复现：弹窗看不到任何时间字段）。
+    /// 复用 `RepoDetailViewData.parseISO8601` 的双 try 思路：先试带 fractional，
+    /// 失败再试纯 internet date time。
+    private func relativeTime(iso8601: String?) -> String? {
+        guard let iso8601, !iso8601.isEmpty else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var parsed: Date? = formatter.date(from: iso8601)
+        if parsed == nil {
+            formatter.formatOptions = [.withInternetDateTime]
+            parsed = formatter.date(from: iso8601)
+        }
+        guard let date = parsed else { return nil }
+        let rel = RelativeDateTimeFormatter()
+        rel.unitsStyle = .full
+        return rel.localizedString(for: date, relativeTo: Date())
+    }
+
+    // MARK: - Topics
+
+    /// Topics chips。布局采用 `SearchHistoryFlowLayout`（同文件已定义的自动换行
+    /// 布局），避免 topics 多时挤压固定宽度的卡片。
+    ///
+    /// 用 `Text(verbatim:)`：topic 是用户内容，绝不能被 SwiftUI 当成本地化 key
+    /// 进 xcstrings 查找；前缀 `#` 也是装饰，与本地化无关。
+    private func topicsRow(topics: [String]) -> some View {
+        SearchHistoryFlowLayout(spacing: 6) {
+            ForEach(topics.prefix(8), id: \.self) { topic in
+                Text(verbatim: "#\(topic)")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Color.secondary.opacity(0.10), in: Capsule())
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    // MARK: - Wiki 集成（SEARCH-RICH 2026-06-14）
+
+    /// 行内 wiki chip 行。设计意图：用户在「快速决策要不要 Star 这个 repo」时
+    /// 能一眼看到"还能在 DeepWiki / ZRead / CodeWiki 哪几家读到可读文档"，
+    /// 比 ··· 折叠菜单的"藏起来"更适合搜索弹窗"信息密度卡"定位。
+    ///
+    /// 行布局：📖 图标 + "Wikis" 标签 + N 个 chip 按钮（每个对应一家收录站）。
+    /// 调用方在外层 `if !wikiLinks.isEmpty` 守卫下渲染本行 → 全部未收录时整行
+    /// 隐藏，零视觉负担（与详情页 `RepoWikiMenu` 的"未收录不占 UI"原则一致）。
+    private func wikiLinksRow(links: [WikiLink]) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "book.closed.fill")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text("search.detail.wikis.label")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            ForEach(links) { link in
+                wikiChip(link: link)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// 单条 wiki chip。视觉对齐 topic chip 的灰色 capsule，但加入品牌 logo
+    /// 让用户能一眼区分 DeepWiki / ZRead / CodeWiki —— logo 视觉规格与
+    /// `RepoWikiMenu` 菜单项一致（10×10 + cornerRadius 6 + interpolation high）,
+    /// 这样详情页菜单项和搜索弹窗 chip 看起来是"同一套东西在不同位置呈现"。
+    private func wikiChip(link: WikiLink) -> some View {
+        Button {
+            NSWorkspace.shared.open(link.url)
+        } label: {
+            HStack(spacing: 5) {
+                wikiSourceIcon(source: link.source)
+                Text(verbatim: link.title)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.secondary.opacity(0.10), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(Text(verbatim: link.url.absoluteString))
+    }
+
+    @ViewBuilder
+    private func wikiSourceIcon(source: WikiSource) -> some View {
+        if let name = source.assetName {
+            Image(name)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 10, height: 10)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        } else {
+            Image(systemName: source.fallbackSFSymbol)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 拉一次 wiki 状态。错误静默 —— wiki 是辅助信息，失败不应污染搜索弹窗
+    /// 主流程；与 `RepoWikiMenu.loadLinks()` 的失败处理同款。
+    private func loadWikiLinks(repo: Repo) async {
+        wikiLinks = []
+        do {
+            let items = try await dependencies.wikiAPI.fetchStatus(
+                owner: repo.owner,
+                repo: repo.name
+            )
+            guard !Task.isCancelled else { return }
+            wikiLinks = RepoWikiMenuState.make(items: items)
+        } catch is CancellationError {
+            // SwiftUI 切换 candidate 的正常取消（未来若支持卡片间切换时触发）
+        } catch {
+            AppLog.network.warning(
+                "search-detail wiki: lookup failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    // MARK: - Action row
+
+    /// 主操作行：Star / Ask AI / 在 GitHub 打开 + ··· 折叠菜单
+    private func actionRow(repo: Repo) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                onToggleStar()
+            } label: {
+                Label(
+                    isStarred
+                        ? "search.detail.action.unstar"
+                        : "search.detail.action.star",
+                    systemImage: isStarred ? "star.slash" : "star"
+                )
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                onOpenAI()
+            } label: {
+                Label("search.detail.action.askAI", systemImage: "sparkles")
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                onOpenInGitHub()
+            } label: {
+                Label("search.detail.action.openOnGitHub", systemImage: "arrow.up.right.square")
+            }
+            .buttonStyle(.borderedProminent)
+
+            Spacer(minLength: 0)
+
+            overflowMenu(repo: repo)
+        }
+    }
+
+    /// 折叠菜单 popover。SEARCH-RICH 2026-06-14：从原生 Menu 升级为自绘 popover，
+    /// 复用 toolbar `ExternalLinksPopover` 的视觉（CodeFlow 渐变卡片 + 行内菜单项）。
+    ///
+    /// 升级动机：
+    /// - **CodeFlow 推广**：CodeFlow 是核心差异化能力，搜索弹窗用户在「探索是否
+    ///   Star」阶段，立刻能可视化代码结构对决策非常有帮助；用渐变卡片视觉信号最强
+    /// - **对齐详情页**：用户已经在 RepoListView 顶部 toolbar 见过同款卡片，搜索
+    ///   弹窗保持一致避免认知割裂
+    ///
+    /// **CodeFlow 私有仓库策略**：搜索结果默认是公共 repo，但已 star 的私有 repo
+    /// 也可能命中（用户搜自己的私有项目）→ `repo.isPrivate` 时整张卡片不渲染，与
+    /// dong4j 选择的 `hidden` 模式一致（toolbar 是 `disabled`，二者权衡下搜索场景
+    /// 走 hidden 更克制：列表里很少出现私有，没必要专门留个灰条提示）。
+    ///
+    /// **Sheet over sheet**：CodeFlow `CodeFlowPanel` 是 sheet，搜索弹窗本身也是
+    /// sheet → 这里嵌套 sheet（macOS 15+ 稳定，`ShareCardSheet` 等已先例）。点击
+    /// CodeFlow 时先翻 popover false → DispatchQueue.main.async 后才 isCodeFlow=true，
+    /// 与 `FeaturedExternalLinksControl` 同款"避免双 presentation 同帧竞争"做法。
+    @ViewBuilder
+    private func overflowMenu(repo: Repo) -> some View {
+        Button {
+            isOverflowPresented.toggle()
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("search.detail.action.more.tooltip")
+        .popover(isPresented: $isOverflowPresented, arrowEdge: .top) {
+            overflowPopoverContent(repo: repo)
+        }
+        .sheet(item: $codeFlowSheetRepo) { sheetRepo in
+            CodeFlowPanel(repo: sheetRepo)
+        }
+    }
+
+    /// Popover 内容：复用 `CodeFlowFeaturedTile` + `ExternalLinkPopoverRow` 公共组件，
+    /// 加上本地的 `SearchOverflowActionRow` 处理"剪贴板"这类非外链动作。
+    ///
+    /// 分组（用 Divider 隔开）：
+    /// 1. CodeFlow 渐变卡（仅 `!repo.isPrivate` 渲染）
+    /// 2. GitHub 子页面：Issues / Pull Requests / Releases
+    /// 3. 用户主页 / Homepage（homepage 缺失时禁用项 disabled）
+    /// 4. 本地操作：Copy URL / Copy Clone（不打开浏览器，仅写剪贴板）
+    private func overflowPopoverContent(repo: Repo) -> some View {
+        let homepageURL = RepoExternalLinks.homepage(raw: repo.homepage)
+
+        return VStack(spacing: 7) {
+            if !repo.isPrivate {
+                CodeFlowFeaturedTile {
+                    isOverflowPresented = false
+                    // 关 popover 后下一帧再赋值 item 弹 sheet，避免 popover
+                    // 与 sheet 同帧 presentation 竞争（参考
+                    // FeaturedExternalLinksControl 同款时序）。
+                    DispatchQueue.main.async { codeFlowSheetRepo = repo }
+                }
+
+                Divider()
+                    .padding(.horizontal, 4)
+            }
+
+            ExternalLinkPopoverRow(
+                titleKey: "externalLinks.issues",
+                systemImage: "exclamationmark.bubble",
+                url: RepoExternalLinks.issues(owner: repo.owner, name: repo.name),
+                onDismiss: { isOverflowPresented = false }
+            )
+            ExternalLinkPopoverRow(
+                titleKey: "externalLinks.pullRequests",
+                systemImage: "arrow.triangle.pull",
+                url: RepoExternalLinks.pulls(owner: repo.owner, name: repo.name),
+                onDismiss: { isOverflowPresented = false }
+            )
+            ExternalLinkPopoverRow(
+                titleKey: "externalLinks.releases",
+                systemImage: "tag.circle",
+                url: RepoExternalLinks.releases(owner: repo.owner, name: repo.name),
+                onDismiss: { isOverflowPresented = false }
+            )
+
+            Divider()
+                .padding(.horizontal, 4)
+
+            ExternalLinkPopoverRow(
+                titleKey: "search.detail.action.openOwner",
+                systemImage: "person.crop.circle",
+                url: URL(string: "https://github.com/\(repo.owner)"),
+                onDismiss: { isOverflowPresented = false }
+            )
+
+            // homepage 缺失时仍渲染但置灰：与 toolbar `ExternalLinksPopover` 的
+            // "homepage 缺失整行隐藏"不同——搜索弹窗是"快速决策"场景,用户可能想
+            // 知道"这 repo 有没有官网"; disabled 灰行能传递"作者没填"的信号,
+            // 比直接消失信息更清晰(与原生 Menu 旧版本行为对齐)。
+            SearchOverflowActionRow(
+                titleKey: "search.detail.action.openHomepage",
+                systemImage: "globe",
+                isDisabled: homepageURL == nil
+            ) {
+                isOverflowPresented = false
+                if let url = homepageURL { NSWorkspace.shared.open(url) }
+            }
+
+            Divider()
+                .padding(.horizontal, 4)
+
+            SearchOverflowActionRow(
+                titleKey: "search.detail.action.copyURL",
+                systemImage: "link"
+            ) {
+                isOverflowPresented = false
+                onCopyURL()
+            }
+
+            SearchOverflowActionRow(
+                titleKey: "search.detail.action.copyClone",
+                systemImage: "terminal"
+            ) {
+                isOverflowPresented = false
+                copyCloneURL(repo: repo)
+            }
+        }
+        .padding(7)
+        .frame(width: 238)
+    }
+
+    // MARK: - Local actions (no host callback needed)
+
+    /// 复制 git clone URL。
+    /// 优先用 `repo.cloneUrl`（HTTPS clone URL，GitHub 直接给）；缺失时退化到
+    /// 「`https://github.com/{owner}/{name}.git` 拼凑」（永远可拼出来）。
+    private func copyCloneURL(repo: Repo) {
+        let value: String = repo.cloneUrl ?? "https://github.com/\(repo.owner)/\(repo.name).git"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    /// 在浏览器打开 owner 主页。被两处调用：① 顶栏头像点击；② 折叠菜单"打开
+    /// Owner 主页"。不走宿主回调是因为这是纯外链，没有业务侧副作用（不像
+    /// toggleStar 需要入库），与现有 reference candidate 直接 NSWorkspace 行为对齐。
+    private func openOwnerPage(login: String) {
+        guard let url = URL(string: "https://github.com/\(login)") else { return }
+        NSWorkspace.shared.open(url)
+    }
+}
+
+/// 搜索弹窗 popover 内的「本地操作」行（复制剪贴板、homepage 禁用态等）。
+///
+/// 视觉与 `ExternalLinkPopoverRow` 完全一致（同款 hover 反馈 / spacing / icon 宽度），
+/// 区别在于：
+/// - 不接 URL，接 `action: () -> Void` —— 让调用方决定具体行为（写剪贴板 / 打开
+///   带空判断的 URL / 触发宿主回调），不强行把所有行为塞到"打开外链"这一套语义里
+/// - 支持 `isDisabled`，用于 homepage 缺失时置灰但保留显示
+struct SearchOverflowActionRow: View {
+    let titleKey: LocalizedStringKey
+    let systemImage: String
+    var isDisabled: Bool = false
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .frame(width: 18)
+                Text(titleKey)
+                Spacer()
+            }
+            .font(.system(size: 13))
+            .foregroundStyle(isDisabled ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(
+                (isHovering && !isDisabled) ? Color.accentColor.opacity(0.14) : .clear,
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(isDisabled)
+        .onHover { isHovering = $0 }
     }
 }

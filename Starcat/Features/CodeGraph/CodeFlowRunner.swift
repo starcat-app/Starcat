@@ -139,66 +139,55 @@ struct CodeFlowArchiveResult: Sendable {
 }
 
 struct CodeFlowRunner {
-    static let maximumArchiveBytes = 100_000_000
 
-    private let downloader: any CodeFlowArchiveDownloading
-    private let github: any CodeFlowGitHubProviding
+    /// 100MB ZIP 上限——保留向后兼容（外部代码可能引用 `CodeFlowRunner.maximumArchiveBytes`）。
+    /// 真实生效的常量在 `SharedSnapshotService.maximumArchiveBytes`，本字段只是别名。
+    static let maximumArchiveBytes = SharedSnapshotService.maximumArchiveBytes
+
+    /// W2 改造（2026-06-13）：分支查询 / ZIP 下载逻辑全部委托给共享服务。
+    /// CodeFlowRunner 本身只保留：HTML 模板注入 + storage 写盘 + 业务级 metadata 拼装。
+    private let snapshotService: SharedSnapshotService
     private let storage: CodeFlowStorage
-    private let fileManager: FileManager
 
     init(
         downloader: (any CodeFlowArchiveDownloading)? = nil,
         github: (any CodeFlowGitHubProviding)? = nil,
         storage: CodeFlowStorage = .shared,
+        snapshotService: SharedSnapshotService? = nil,
         fileManager: FileManager = .default
     ) {
-        let client = URLSessionCodeFlowGitHubClient()
-        self.downloader = downloader ?? client
-        self.github = github ?? client
+        // snapshotService 优先注入；否则用 downloader/github 创建一个新的（向后兼容现有测试的 mock 注入方式）。
+        self.snapshotService = snapshotService ?? SharedSnapshotService(
+            downloader: downloader,
+            github: github,
+            fileManager: fileManager
+        )
         self.storage = storage
-        self.fileManager = fileManager
     }
 
     func branches(repo: Repo) async throws -> [CodeFlowBranch] {
-        guard !repo.isPrivate else { throw CodeFlowError.privateRepository }
-        return try await github.branches(owner: repo.owner, repo: repo.name)
+        do {
+            return try await snapshotService.branches(repo: repo)
+        } catch let error as SharedSnapshotError {
+            throw Self.mapSnapshotError(error)
+        }
     }
 
     func resolveBranch(repo: Repo, name: String) async throws -> CodeFlowBranch {
-        guard !repo.isPrivate else { throw CodeFlowError.privateRepository }
-        return try await github.branch(owner: repo.owner, repo: repo.name, name: name)
+        do {
+            return try await snapshotService.resolveBranch(repo: repo, name: name)
+        } catch let error as SharedSnapshotError {
+            throw Self.mapSnapshotError(error)
+        }
     }
 
     /// 共享源码快照按不可变 commit SHA 命名，CodeFlow 删除或重新生成不得删除它。
     func archiveIfNeeded(repo: Repo, commitSHA: String) async throws -> CodeFlowArchiveResult {
-        guard !repo.isPrivate else { throw CodeFlowError.privateRepository }
-        let archiveURL = try archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: commitSHA)
-        if fileManager.fileExists(atPath: archiveURL.path) {
-            let bytes = try fileSize(archiveURL)
-            guard bytes > 0 else { throw CodeFlowError.emptyArchive }
-            return CodeFlowArchiveResult(url: archiveURL, wasDownloaded: false, bytes: bytes)
+        do {
+            return try await snapshotService.archiveIfNeeded(repo: repo, commitSHA: commitSHA)
+        } catch let error as SharedSnapshotError {
+            throw Self.mapSnapshotError(error)
         }
-
-        let encodedOwner = Self.encodePathComponent(repo.owner)
-        let encodedName = Self.encodePathComponent(repo.name)
-        let encodedSHA = Self.encodePathComponent(commitSHA)
-        guard let downloadURL = URL(string: "https://api.github.com/repos/\(encodedOwner)/\(encodedName)/zipball/\(encodedSHA)") else {
-            throw CodeFlowError.invalidGitHubURL
-        }
-        let (data, response) = try await downloader.download(from: downloadURL)
-        guard (200...299).contains(response.statusCode) else {
-            throw CodeFlowError.requestFailed(statusCode: response.statusCode)
-        }
-        guard !data.isEmpty else { throw CodeFlowError.emptyArchive }
-        guard data.count <= Self.maximumArchiveBytes else { throw CodeFlowError.archiveTooLarge }
-
-        try fileManager.createDirectory(at: archiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let temporaryURL = archiveURL.appendingPathExtension("tmp")
-        try? fileManager.removeItem(at: temporaryURL)
-        defer { try? fileManager.removeItem(at: temporaryURL) }
-        try data.write(to: temporaryURL, options: .atomic)
-        try fileManager.moveItem(at: temporaryURL, to: archiveURL)
-        return CodeFlowArchiveResult(url: archiveURL, wasDownloaded: true, bytes: Int64(data.count))
     }
 
     func makeVisualizationPage(
@@ -240,7 +229,7 @@ struct CodeFlowRunner {
                 page: "index.html",
                 pageBytes: pageBytes,
                 sourceArchiveBytes: archive.bytes,
-                sourceArchiveKey: "github.com/\(repo.owner)/\(repo.name)/\(branch.commitSHA).zip"
+                sourceArchiveKey: "github.com/\(repo.owner)/\(repo.name).zip"
             ),
             generation: .init(
                 generatedAt: finishedAt,
@@ -292,26 +281,19 @@ struct CodeFlowRunner {
     }
 
     func archiveFileURL(owner: String, name: String, commitSHA: String) throws -> URL {
-        try applicationSupportDirectory()
-            .appendingPathComponent("repository-snapshots/github.com", isDirectory: true)
-            .appendingPathComponent(owner, isDirectory: true)
-            .appendingPathComponent(name, isDirectory: true)
-            .appendingPathComponent("\(commitSHA).zip", isDirectory: false)
+        try snapshotService.archiveFileURL(owner: owner, name: name, commitSHA: commitSHA)
     }
 
-    private func applicationSupportDirectory() throws -> URL {
-        try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            .appendingPathComponent("Starcat", isDirectory: true)
-    }
-
-    private func fileSize(_ url: URL) throws -> Int64 {
-        let values = try url.resourceValues(forKeys: [.fileSizeKey])
-        return Int64(values.fileSize ?? 0)
-    }
-
-    private static func encodePathComponent(_ value: String) -> String {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
-        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    /// SharedSnapshotError → CodeFlowError 一一映射，保留 CodeFlow UI 现有文案。
+    private static func mapSnapshotError(_ error: SharedSnapshotError) -> CodeFlowError {
+        switch error {
+        case .privateRepository: return .privateRepository
+        case .invalidGitHubURL: return .invalidGitHubURL
+        case .requestFailed(let statusCode): return .requestFailed(statusCode: statusCode)
+        case .archiveTooLarge: return .archiveTooLarge
+        case .emptyArchive: return .emptyArchive
+        case .branchNotFound(let name): return .branchNotFound(name)
+        }
     }
 
     static func milliseconds(from start: Date, to end: Date = Date()) -> Int {

@@ -15,12 +15,14 @@ import Testing
 struct SearchCenterViewModelTests {
     @Test("关闭并重新打开时保留完整搜索会话")
     func dismissAndPresentPreservesSession() async throws {
-        let defaults = try #require(UserDefaults(suiteName: "SearchCenterViewModelTests.\(UUID().uuidString)"))
-        let history = SearchHistoryStore(defaults: defaults)
+        // 2026-06-14：历史从 UserDefaults 升级到 GRDB SQLite。测试用内存 DB +
+        // GRDB Repository 装配 ViewModel，行为不变。
+        let db = try InMemoryDatabaseManager()
+        let history = GRDBSearchHistoryRepository(database: db)
         let candidate = Self.makeCandidate()
         let provider = SearchCenterSessionStubProvider(candidate: candidate)
         let coordinator = SearchCoordinator(providers: [provider])
-        let viewModel = SearchCenterViewModel(coordinator: coordinator, historyStore: history)
+        let viewModel = SearchCenterViewModel(coordinator: coordinator, historyRepository: history)
 
         viewModel.query = "swift"
         viewModel.scope = .github

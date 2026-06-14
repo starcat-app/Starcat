@@ -136,6 +136,7 @@ struct HomeView: View {
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
+        searchHistoryRepository: any SearchHistoryRepositoryProtocol,
         semanticSearchService: SemanticSearchService? = nil,
         trendingRepository: any TrendingRepositoryProtocol,
         githubAPIClient: any GitHubAPIClientProtocol,
@@ -181,6 +182,7 @@ struct HomeView: View {
                 GitHubRepositorySearchProvider(client: githubAPIClient),
                 AnySearchWebProvider()
             ]),
+            historyRepository: searchHistoryRepository,
             includeWebInAll: {
                 AppSettings.shared.anySearchEnabled && AppSettings.shared.searchIncludeWebInAll
             }
@@ -276,6 +278,14 @@ struct HomeView: View {
                 .zIndex(100)
             }
         }
+        // 弹出/关闭轻量动画（dong4j 2026-06-14）：
+        // - SearchCenterView 内部已定义 transition（dim opacity / VStack scale+opacity），
+        //   但需要外层用 `.animation(_:value:)` 显式绑定 isPresented 才会触发播放。
+        // - `.snappy(duration: 0.22)` 是 macOS 14+ 的「无超调 spring」，轻快不弹，
+        //   贴近 Spotlight / Raycast 命令面板的体感。
+        // - value 仅监听 isPresented，不会污染浮层内其他状态的动画（scope 切换、
+        //   ProgressView spinner 等照旧无动画）。
+        .animation(.snappy(duration: 0.22), value: searchCenterViewModel.isPresented)
         // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
         .background {
             Button("") { searchCenterViewModel.present() }
@@ -700,8 +710,21 @@ struct HomeView: View {
         }
     }
 
-    /// 本地结果回到 Manage 并复用现有 FTS5 提交流程，确保列表与详情状态仍由
+    /// 本地结果回到 Manage 并复用现有列表加载流程，确保列表与详情状态仍由
     /// HomeViewModel 单一维护；网页资料直接交给系统浏览器。
+    ///
+    /// 语义（dong4j 2026-06-13 选定方案 B "导航到 repo"）：
+    /// - **不**回填工具栏搜索框（避免 `owner/name` 被 FTS5 短语搜索 → 命中 0 的 bug；
+    ///   见 `RepoRepository.searchFTS` / `DatabaseMigrationsV1.createReposFTS`，
+    ///   `repos_fts` 只索引 `name/description/language/topics`，没 owner / full_name，
+    ///   且 `unicode61` tokenizer 默认把 `/` 当分隔符）；
+    /// - 主动**清空**当前搜索词，让列表回到 "全部 Stars" 全量视图；
+    /// - 切到 `allStars` 让目标 repo 必在列表中；
+    /// - 强制 reload 后写 `selectedRepoID`，由 RepoListView 的 ScrollViewReader 滚到目标行。
+    ///
+    /// 关键约束：`submitSearch("")` 必须**先于** `reloadItems` 调用，否则 reloadItems
+    /// 会先用旧 searchQuery（即用户上次输入的关键词）拉一遍数据，再被清空触发第二次
+    /// 拉取，列表会闪烁。
     private func openSearchCandidate(_ candidate: SearchCandidate) {
         switch candidate {
         case .repository(let candidate):
@@ -711,7 +734,7 @@ struct HomeView: View {
             }
             selectedSidebarPage = .manage
             viewModel.selection = .allStars
-            viewModel.submitSearch(repo.fullName)
+            viewModel.submitSearch("")
             searchCenterViewModel.dismiss()
             Task {
                 await viewModel.reloadItems(forceRefresh: true)

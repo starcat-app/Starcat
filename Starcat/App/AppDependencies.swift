@@ -49,6 +49,8 @@ final class AppDependencies {
     let repoTagRepository: any RepoTagRepositoryProtocol
     /// W4 Batch A1 引入：repo 笔记 + 状态管理（同表合并）。
     let repoNoteRepository: any RepoNoteRepositoryProtocol
+    /// 搜索浮层 `⌘K` 的关键词历史 Repository（GRDB SQLite，CloudKit-ready 字段已就绪，W5 同步接入）。
+    let searchHistoryRepository: any SearchHistoryRepositoryProtocol
     /// W6 AI：repo embedding SQLite 缓存。
     let repoEmbeddingRepository: any RepoEmbeddingRepositoryProtocol
     /// W6 AI：语义搜索服务，使用 BYOK 设置 + SQLite 向量缓存。
@@ -293,10 +295,26 @@ final class AppDependencies {
 
         let summaryRepo = GRDBAISummaryRepository(database: db)
         self.aiSummaryRepository = summaryRepo
+
+        // 2026-06-13 W4：RepoContextPacker 客户端接入三件套装配。
+        // 顺序：① SharedSnapshotService（无依赖，单 struct 实例 OK）
+        //      ② RepoContextStorage（单例，从此 root 走 storage.shared 即 W6 决议）
+        //      ③ RepoAIContextProvider（组合上面两个 + settings）
+        // 三者都 W3 决议「失败降级 nil」，注入 RepoAIInsightService 时**不破坏**现有
+        // 测试（init 加默认参数 nil 让旧测试无需改动）。
+        let snapshotService = SharedSnapshotService()
+        let repoContextStorage = RepoContextStorage.shared
+        let repoAIContextProvider = RepoAIContextProvider(
+            snapshotService: snapshotService,
+            storage: repoContextStorage,
+            settings: self.settings
+        )
+
         let aiInsight = RepoAIInsightService(
             summaryRepository: summaryRepo,
             readmeRepository: readmeRepo,
-            settings: self.settings
+            settings: self.settings,
+            repoAIContextProvider: repoAIContextProvider
         )
         self.repoAIInsightService = aiInsight
 
@@ -315,6 +333,7 @@ final class AppDependencies {
         self.tagRepository = tagRepo
         self.repoTagRepository = repoTagRepo
         self.repoNoteRepository = GRDBRepoNoteRepository(database: db)
+        self.searchHistoryRepository = GRDBSearchHistoryRepository(database: db)
 
         // HOM-52：批量整理服务装在 AI insight + 标签 + 标签关联 + AI 摘要 Repo 之后。
         // 注：onTagsChanged 由 HomeView 在 environment 注入后挂接，刷新 Sidebar 计数。

@@ -190,7 +190,10 @@ struct RepoResolverChainTests {
             topics: nil, license: nil, homepage: nil,
             htmlUrl: "https://github.com/\(owner)/\(name)", cloneUrl: nil, sshUrl: nil,
             isPrivate: false, fork: false, archived: false,
-            pushedAt: nil, createdAt: nil, updatedAt: nil
+            pushedAt: nil, createdAt: nil, updatedAt: nil,
+            // SEARCH-RICH 2026-06-14：5 个新字段对此 chain 测试无意义，置 nil。
+            openIssuesCount: nil, defaultBranch: nil,
+            disabled: nil, isTemplate: nil, score: nil
         )
     }
 }

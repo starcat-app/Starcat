@@ -39,6 +39,10 @@ enum RepoAIInsightError: Error, LocalizedError, Equatable {
 struct RepoAIInsightGeneration: Equatable, Sendable {
     var insight: RepoAIInsight
     var tagErrorMessage: String?
+
+    /// Y4：代码上下文降级原因（nil = 用上了代码或用户关了开关）。
+    /// UI 层判定 banner 是否显示。
+    var contextDegradationReason: ContextDegradationReason?
 }
 
 @MainActor
@@ -47,6 +51,25 @@ final class RepoAIInsightService {
     private struct Source {
         let text: String
         let hash: String
+        /// Y2：从 RepoContextPacker 拿到的元信息（命中缓存或新生成都填充）。
+        /// 透传到 makeInsight 写入 RepoAIInsight.contextMetadata，供 UI footer 显示。
+        var contextMeta: RepoAIInsightContextMeta?
+
+        /// Y4：本次 makeSource 阶段代码上下文降级原因（nil = 成功 或 用户关了开关）。
+        /// 透传到 generateInsight 出参，UI 显示 banner。
+        var contextDegradationReason: ContextDegradationReason?
+
+        init(
+            text: String,
+            hash: String,
+            contextMeta: RepoAIInsightContextMeta? = nil,
+            contextDegradationReason: ContextDegradationReason? = nil
+        ) {
+            self.text = text
+            self.hash = hash
+            self.contextMeta = contextMeta
+            self.contextDegradationReason = contextDegradationReason
+        }
     }
 
     private let summaryRepository: any AISummaryRepositoryProtocol
@@ -54,6 +77,15 @@ final class RepoAIInsightService {
     private let settings: AppSettings
     private let keychain: any KeychainManaging
     private let externalContextProvider: AnySearchContextProvider
+
+    /// X4（2026-06-13）：注入 RepoContextPacker 的代码上下文。
+    ///
+    /// 设计原则与 `externalContextProvider`（AnySearch）镜像：
+    ///   - `Optional`：传 nil 时完全跳过代码上下文路径（单测 / 老调用方）；
+    ///   - **失败降级**：provider 内部已经做了"任何错误 → 返回 nil"的兜底，service 不再 catch；
+    ///   - **影响缓存**：context xml 被拼到 `Source.text` 末尾，自动让 `Source.hash` 变化，
+    ///     旧摘要缓存随之失效。
+    private let repoAIContextProvider: RepoAIContextProvider?
 
     /// 2026-06-12 向量索引改进：摘要生成成功后回调，让 `SemanticSearchService` 走
     /// `refreshIndexIfChanged` 重建向量。
@@ -71,6 +103,7 @@ final class RepoAIInsightService {
         readmeRepository: ReadmeRepository,
         settings: AppSettings,
         keychain: any KeychainManaging = KeychainManager.shared,
+        repoAIContextProvider: RepoAIContextProvider? = nil,
         onSummaryGenerated: (@MainActor (Repo) -> Void)? = nil
     ) {
         self.summaryRepository = summaryRepository
@@ -78,6 +111,7 @@ final class RepoAIInsightService {
         self.settings = settings
         self.keychain = keychain
         self.externalContextProvider = AnySearchContextProvider(settings: settings)
+        self.repoAIContextProvider = repoAIContextProvider
         self.onSummaryGenerated = onSummaryGenerated
     }
 
@@ -208,7 +242,10 @@ final class RepoAIInsightService {
             summaryText: summaryText,
             tags: suggestions,
             model: summaryModel,
-            generatedAt: generatedAt
+            generatedAt: generatedAt,
+            // Y2：把 makeSource 阶段拿到的 PackMetadata 投影透传到 RepoAIInsight，
+            // 让 UI footer 能显示"基于 commit abc123 (4280 tokens, 38 files)"。
+            contextMeta: source.contextMeta
         )
 
         // 保留旧字段的同时把新摘要正文写进 summaryMarkdown，UI 优先读该字段。
@@ -234,7 +271,14 @@ final class RepoAIInsightService {
             // 触发点放在 upsert 之后保证状态一致。
             onSummaryGenerated?(repo)
         }
-        return RepoAIInsightGeneration(insight: insight, tagErrorMessage: tagErrorMessage)
+        return RepoAIInsightGeneration(
+            insight: insight,
+            tagErrorMessage: tagErrorMessage,
+            // Y4：透传 makeSource 阶段的代码上下文降级原因。
+            // 注：augmentedSource / summarySource 都从 source 派生但不改 contextDegradationReason，
+            // 这里直接读最原始 source 的 reason 即可。
+            contextDegradationReason: source.contextDegradationReason
+        )
     }
 
     /// 与仓库对话（HOM-150）。
@@ -411,7 +455,7 @@ final class RepoAIInsightService {
             }
             return ""
         }()
-        let source = [
+        var source = [
             "Repository: \(repo.fullName)",
             "Description: \(repo.description ?? "")",
             "Language: \(repo.language ?? "")",
@@ -423,7 +467,54 @@ final class RepoAIInsightService {
             "README:",
             readmeText
         ].joined(separator: "\n")
-        return Source(text: source, hash: Self.hash(source))
+
+        // X4（2026-06-13）：注入 RepoContextPacker 产出的代码上下文 XML（若 provider 可用）。
+        //
+        // 设计要点：
+        //   - 始终拼到 source 末尾（README 之后）：让 LLM 先理解仓库定位（README）再看代码结构，
+        //     与 RepoContextPacker XML 输出的 `<repository>` 根标签语义对齐；
+        //   - 拼接整段原始 XML 而不是 marker / placeholder：LLM 直接消费 XML，无需 service 端
+        //     做"摘要再摘要"；
+        //   - **读 contextURL 时用 String(contentsOf:)** 而不是 streaming：context.xml 已经
+        //     按 token budget 限过（默认 8000 tokens ≈ 32KB），一次读全无内存压力；
+        //   - **任何失败都静默吞**：provider.context(for:) 已经把网络 / 磁盘 / pack 错误降级
+        //     成 nil 了，这里只需再防御 String 读取本身失败（极少触发，比如文件刚被外部删）。
+        //
+        // Y2：同时把 PackMetadata 投影成 RepoAIInsightContextMeta 透传出去，让上层 UI footer 用。
+        // Y4：按 provider outcome 3 态分别处理（success / featureDisabled / degraded）。
+        var contextMeta: RepoAIInsightContextMeta?
+        var degradationReason: ContextDegradationReason?
+        if let provider = repoAIContextProvider {
+            let outcome = try await provider.contextOutcome(for: repo)
+            switch outcome {
+            case .success(let result):
+                if let contextXml = try? String(contentsOf: result.url, encoding: .utf8),
+                   !contextXml.isEmpty {
+                    source += "\n\n" + contextXml
+                    contextMeta = RepoAIInsightContextMeta(
+                        commitSha: result.metadata.commitSha,
+                        ref: result.metadata.ref,
+                        tokenBudget: result.metadata.tokenBudget,
+                        actualTokens: result.metadata.stats.actualTokens,
+                        totalFiles: result.metadata.stats.totalFiles,
+                        generatedAt: result.metadata.generatedAt
+                    )
+                }
+            case .featureDisabled:
+                // 用户主动关：不显示 banner，degradationReason 留 nil
+                break
+            case .degraded(let reason):
+                // 失败：摘要照常生成（README-only），banner 让用户知道为什么没用代码
+                degradationReason = reason
+            }
+        }
+
+        return Source(
+            text: source,
+            hash: Self.hash(source),
+            contextMeta: contextMeta,
+            contextDegradationReason: degradationReason
+        )
     }
 
     nonisolated static func decodeInsight(json raw: String) throws -> RepoAIInsight {
@@ -453,7 +544,8 @@ final class RepoAIInsightService {
         summaryText: String,
         tags: [AITagSuggestion],
         model: String,
-        generatedAt: String
+        generatedAt: String,
+        contextMeta: RepoAIInsightContextMeta? = nil
     ) -> RepoAIInsight {
         let normalized = summaryText.trimmingCharacters(in: .whitespacesAndNewlines)
         let firstLine = firstMeaningfulMarkdownLine(from: normalized) ?? String(normalized.prefix(80))
@@ -468,7 +560,8 @@ final class RepoAIInsightService {
             minimalExample: nil,
             suggestedTags: tags,
             model: model,
-            generatedAt: generatedAt
+            generatedAt: generatedAt,
+            contextMetadata: contextMeta
         )
     }
 

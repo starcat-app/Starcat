@@ -75,6 +75,31 @@ struct RepoIdentity: Hashable, Sendable {
     }
 }
 
+/// 远端 repo 的「不入库瞬时态」字段。
+///
+/// 设计意图（SEARCH-RICH 2026-06-14）：
+/// - GitHub `/search/repositories` 返回的 `disabled` / `is_template` / `score`
+///   这三类字段在本地 `Repo` 表里没有列（`disabled` / `is_template` 频率低不值
+///   建列；`score` 是查询相关度，与 repo 本身无关）。
+/// - 把它们从 `Repo` 模型剥离 → 由 `RepositoryCandidate.remoteExtras` 旁挂，
+///   仅在会话内的搜索弹窗使用，不污染数据库 schema 也不被 stars 同步消化。
+/// - 全部 Optional：用 nil 表示「来源端点没返回 / 本地命中无远端字段」。
+struct RemoteRepoExtras: Hashable, Sendable {
+    /// GitHub `disabled`：仓库被官方停用（DMCA / 违规 / 长期无人维护）。
+    let disabled: Bool?
+    /// GitHub `is_template`：模板仓库（用户可一键派生）。
+    let isTemplate: Bool?
+    /// GitHub `score`：搜索相关度（best-match 排序时有意义；0.0 ~ 1.0+）。
+    let score: Double?
+
+    static let empty = RemoteRepoExtras(disabled: nil, isTemplate: nil, score: nil)
+
+    /// 没有任何信号要展示时（全 nil 或 false）UI 可以直接整段隐藏。
+    var hasAnyVisibleBadge: Bool {
+        disabled == true || isTemplate == true
+    }
+}
+
 struct RepositoryCandidate: Identifiable, Hashable, Sendable {
     var id: RepoIdentity { identity }
 
@@ -85,6 +110,9 @@ struct RepositoryCandidate: Identifiable, Hashable, Sendable {
     /// 远端完整元数据，仅用于会话内详情/AI，不代表已经写入本地数据库。
     var remoteRepo: Repo?
     var semanticScore: Double?
+    /// 远端瞬时态字段（disabled / is_template / score）。默认 `.empty` 让现有
+    /// 调用点零改动；GitHub Search Provider 显式填值后弹窗能渲染对应徽章。
+    var remoteExtras: RemoteRepoExtras = .empty
 
     var isStarred: Bool { localRepo?.isStarred ?? card.isStarred }
     var displayRepo: Repo? { localRepo ?? remoteRepo }
@@ -143,10 +171,75 @@ struct GitHubSearchFilters: Equatable, Hashable, Codable, Sendable {
     static let empty = GitHubSearchFilters()
 }
 
+/// AnySearch 网关支持的地理路由分区。
+///
+/// - `cn`：国内优先（中文资料、本地化结果倾向）
+/// - `intl`：海外优先
+/// - nil（未传）：网关按 query 和 IP 自动路由（推荐默认）
+enum AnySearchZone: String, CaseIterable, Identifiable, Codable, Sendable {
+    case cn
+    case intl
+
+    var id: String { rawValue }
+}
+
+/// AnySearch 搜索筛选条件（用户在搜索弹窗 UI 调整的可选参数）。
+///
+/// 设计与 `GitHubSearchFilters` 对称：默认值 = `.empty`，全部 Optional / 空集合
+/// → provider 翻译时不传给 API → 网关走自动路由。这样用户「什么都不选」=「跟
+/// 当前默认行为完全一致」，无功能回退。
+///
+/// **字段开放范围（dong4j 2026-06-14 拍板）**：
+/// - 开放：`domain` / `contentTypes` / `zone` / `maxResults` —— 用户最常调的 4 个
+/// - 不开放：`tag`（依赖 domain 联动，格式复杂）/ `params`（文档未给可选键全集）/
+///   `language`（隐式跟随 `Locale.current`，UI 上无开关）
+///
+/// **持久化（dong4j 2026-06-14 拍板）**：对齐 `GitHubSearchFilters`，会话级即可
+/// —— 挂在 `SearchCenterViewModel` 的 `@Observable` 属性上，App 重启清零，不写
+/// `AppSettings`。
+struct AnySearchFilters: Equatable, Hashable, Codable, Sendable {
+    /// AnySearch 22 个 domain 之一（general / code / tech / ...）。
+    /// nil = 自动（不传给 API，网关按 query 路由到最优数据源）。
+    var domain: String?
+
+    /// 内容类型过滤（如 `["web", "news", "doc"]`）。
+    /// 空集合 = 自动（不传 API）；非空时只显示命中的类型。
+    /// 官方文档未给完整枚举，UI 当前开放 `web` / `news` / `doc` 三个常见值。
+    var contentTypes: Set<String> = []
+
+    /// 地理分区路由。nil = 跟随网关自动路由。
+    var zone: AnySearchZone?
+
+    /// 单次返回结果数。范围 1–100（对齐官方 API），default 10 与原硬编码行为对齐。
+    /// UI Stepper 在 `SearchCenterView.anySearchMaxResultsField` 钳到同样区间。
+    var maxResults: Int = 10
+
+    static let empty = AnySearchFilters()
+
+    /// 用于 cache key 的稳定指纹。
+    ///
+    /// `SearchSessionCache` 现在按 `query + credentialVersion` 做 key，filters
+    /// 变化必须让 key 自然 miss，否则用户切 domain 后还返回旧结果。
+    /// 用 sorted+join 而不是直接 `hashValue`：后者跨进程不稳定，且容易因
+    /// `Set` 迭代顺序不稳定造成 cache miss 率虚高。
+    var fingerprint: String {
+        let parts: [String] = [
+            "d=\(domain ?? "")",
+            "ct=\(contentTypes.sorted().joined(separator: ","))",
+            "z=\(zone?.rawValue ?? "")",
+            "n=\(maxResults)"
+        ]
+        return parts.joined(separator: "|")
+    }
+}
+
 struct SearchRequest: Equatable, Hashable, Sendable {
     let query: String
     let scope: SearchScope
     let githubFilters: GitHubSearchFilters
+    /// AnySearch 筛选条件。默认 `.empty` 让所有既有调用点零改动 —— 与未传时
+    /// 的「全部走默认」行为完全一致。
+    let anySearchFilters: AnySearchFilters
     let page: Int
     let perPage: Int
     let includeWebInAll: Bool
@@ -155,6 +248,7 @@ struct SearchRequest: Equatable, Hashable, Sendable {
         query: String,
         scope: SearchScope = .all,
         githubFilters: GitHubSearchFilters = .empty,
+        anySearchFilters: AnySearchFilters = .empty,
         page: Int = 1,
         perPage: Int = 30,
         includeWebInAll: Bool = false
@@ -162,6 +256,7 @@ struct SearchRequest: Equatable, Hashable, Sendable {
         self.query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         self.scope = scope
         self.githubFilters = githubFilters
+        self.anySearchFilters = anySearchFilters
         self.page = max(1, page)
         self.perPage = min(max(1, perPage), 100)
         self.includeWebInAll = includeWebInAll
@@ -173,6 +268,25 @@ struct SearchProviderPage: Equatable, Sendable {
     let references: [ReferenceCandidate]
     let totalCount: Int?
     let hasNextPage: Bool
+    /// 网页搜索专属元信息（命中数 / 用时 / 限流）。
+    ///
+    /// 仅 `AnySearchWebProvider` 会填值，其它 provider（local / github）传 nil。
+    /// 显式 default `nil` 让 GitHub / Local provider 调用点零改动。
+    let webMetadata: WebSearchMetadata?
+
+    init(
+        repositories: [RepositoryCandidate],
+        references: [ReferenceCandidate],
+        totalCount: Int?,
+        hasNextPage: Bool,
+        webMetadata: WebSearchMetadata? = nil
+    ) {
+        self.repositories = repositories
+        self.references = references
+        self.totalCount = totalCount
+        self.hasNextPage = hasNextPage
+        self.webMetadata = webMetadata
+    }
 
     static let empty = SearchProviderPage(
         repositories: [],
@@ -180,6 +294,53 @@ struct SearchProviderPage: Equatable, Sendable {
         totalCount: 0,
         hasNextPage: false
     )
+}
+
+/// 网页搜索的页级元信息。
+///
+/// 与 vendor-specific 的 `AnySearchMetadata` / `AnySearchRateLimit` 解耦：
+/// 后续若引入 Tavily / Brave / Bing 等替代 provider，只需要保持 provider 适配
+/// 出同样的 `WebSearchMetadata`，上层 `SearchCoordinator` / ViewModel / View
+/// 零改动。
+struct WebSearchMetadata: Equatable, Sendable {
+    /// API 报告的总命中数（不一定等于实际返回结果数；可能更多）。
+    let totalResults: Int?
+    /// 远端搜索耗时（毫秒）。
+    let searchTimeMs: Int?
+    /// HTTP 层限流配额信息（来源：`x-ratelimit-*` header）。三字段缺一即 nil。
+    let rateLimit: WebRateLimit?
+}
+
+/// 通用网页搜索限流配额（领域层模型）。
+///
+/// **重要语义说明（dong4j 2026-06-14）**：
+/// - `limit` 来源：API 响应头 `x-ratelimit-limit`，反映服务端真实窗口上限（匿名 10 / Bearer 20）。
+/// - `sessionUsed` 来源：**本地进程内计数**，由 provider 的 `AnySearchUsageCounter` 每次
+///   search 调用（含 cache hit）+1 累加而来；**不来自 API**。
+/// - `resetAt` 来源：API 响应头 `x-ratelimit-reset`（Unix 秒戳）。
+///
+/// **为什么不直接用 API 返回的 remaining**：实测匿名模式 `remaining` 恒为 8、Bearer 模式恒为 18，
+/// API 端并不按真实调用计数更新。展示给用户会产生「为什么数字不变」的困惑（dong4j 2026-06-14 反馈）。
+/// 因此领域层放弃 vendor 的 remaining，改用本地计数，更贴合用户「我已经搜了 N 次」的直观感受。
+/// 进程重启自然归零（counter 不持久化），符合「会话内配额追踪」的轻量定位。
+struct WebRateLimit: Equatable, Sendable {
+    let limit: Int
+    let sessionUsed: Int
+    let resetAt: Date
+
+    /// 剩余配额数（用于 exhausted 分支判定）。允许为负——本地计数若超过 API 上限，
+    /// 视为「用尽」状态，UI 钳到 0 后落入红色 chip + 重置时间的展示。
+    var sessionRemaining: Int { max(0, limit - sessionUsed) }
+
+    /// 是否已用尽：本地计数 >= 上限。落入 UI 的「额度用尽 · HH:mm 重置」分支。
+    var isExhausted: Bool { sessionUsed >= limit && limit > 0 }
+
+    /// 剩余比例，归一化到 [0, 1]，用于 UI 着色阈值判断（绿/橙/红三档）。
+    /// limit==0 时返回 0（视为"无可用配额"，染色逻辑会落入"用尽"分支）。
+    var fractionRemaining: Double {
+        guard limit > 0 else { return 0 }
+        return min(max(0, Double(sessionRemaining) / Double(limit)), 1)
+    }
 }
 
 enum SearchProviderStatus: Equatable, Sendable {

@@ -11,6 +11,18 @@ import Testing
 
 @Suite("CodeFlowRunner")
 struct CodeFlowRunnerTests {
+    @Test("自定义父目录会按集成名隔离，已选目标目录时不重复追加")
+    func normalizesCustomOutputRoots() {
+        let parent = URL(fileURLWithPath: "/Users/test/Starcat", isDirectory: true)
+        let codeFlowRoot = parent.appendingPathComponent("codeflow", isDirectory: true)
+        let repoContextRoot = parent.appendingPathComponent("repocontext", isDirectory: true)
+
+        #expect(CodeFlowStorage.customOutputRoot(for: parent) == codeFlowRoot)
+        #expect(CodeFlowStorage.customOutputRoot(for: codeFlowRoot) == codeFlowRoot)
+        #expect(RepoContextStorage.customOutputRoot(for: parent) == repoContextRoot)
+        #expect(RepoContextStorage.customOutputRoot(for: repoContextRoot) == repoContextRoot)
+    }
+
     @Test("首次下载使用固定 commit zipball 并写入共享快照")
     func downloadsFixedCommitZipball() async throws {
         let downloader = RecordingArchiveDownloader(data: Data("zip-data".utf8))
@@ -19,7 +31,7 @@ struct CodeFlowRunnerTests {
         let repo = makeRepo(owner: "starcat-download-\(UUID().uuidString)", name: "codeflow")
         let sha = "51ab9708841e14258bebfb5fb326e8b37782d193"
         let archiveURL = try runner.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: sha)
-        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent().deletingLastPathComponent()) }
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
 
         let result = try await runner.archiveIfNeeded(repo: repo, commitSHA: sha)
 
@@ -36,8 +48,8 @@ struct CodeFlowRunnerTests {
         let repo = makeRepo(owner: "starcat-cache-\(UUID().uuidString)", name: "demo")
         let archiveURL = try runner.archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: "abc123")
         try FileManager.default.createDirectory(at: archiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data("cached".utf8).write(to: archiveURL)
-        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent().deletingLastPathComponent()) }
+        try makeZipHeader(firstEntry: "starcat-cache-demo-abc123/").write(to: archiveURL)
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
 
         let result = try await runner.archiveIfNeeded(repo: repo, commitSHA: "abc123")
 
@@ -101,7 +113,7 @@ struct CodeFlowRunnerTests {
         )
         defer {
             try? fileManager.removeItem(at: root)
-            try? fileManager.removeItem(at: archive.url.deletingLastPathComponent().deletingLastPathComponent())
+            try? fileManager.removeItem(at: archive.url.deletingLastPathComponent())
         }
 
         try runner.deleteVisualization(owner: repo.owner, name: repo.name)
@@ -174,6 +186,18 @@ struct CodeFlowRunnerTests {
             cachedAt: nil,
             defaultBranch: "main"
         )
+    }
+
+    /// 构造包含 GitHub zipball 首目录名的最小 ZIP header，供共享缓存 SHA 校验使用。
+    private func makeZipHeader(firstEntry: String) -> Data {
+        let name = Data(firstEntry.utf8)
+        var header = Data([0x50, 0x4B, 0x03, 0x04])
+        header.append(Data(repeating: 0, count: 22))
+        header.append(UInt8(name.count & 0xFF))
+        header.append(UInt8((name.count >> 8) & 0xFF))
+        header.append(contentsOf: [0, 0])
+        header.append(name)
+        return header
     }
 
     private func isolatedDefaults() -> UserDefaults {
