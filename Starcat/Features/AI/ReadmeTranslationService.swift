@@ -259,10 +259,16 @@ final class ReadmeTranslationService {
     /// 状态依赖，在 Swift 6 严格隔离下，被 `nonisolated` 函数引用必须是 nonisolated。
     nonisolated static let targetLanguagePlaceholder = "{targetLanguage}"
 
-    /// 占位符：将被替换为源 README HTML 片段。与 summary / tags 保持一致。
-    nonisolated static let contextPlaceholder = "{context}"
+    /// 占位符：将被替换为源 README HTML 片段。
+    ///
+    /// **2026-06-14 v2 重命名**：原 `{context}` → `{readmeHTML}`，原因：
+    /// - 业务化命名，与 Tags / Embedding 重构对齐（每个任务局部命名空间）；
+    /// - 与 user prompt 中的 `<README_FRAGMENT>` 包裹标签语义呼应；
+    /// - 区别于 summary 任务的 `{context}`，避免用户在不同任务间复用模板时混淆。
+    /// pre-launch 直接换名，不做兼容（详见 `AIDefaultPrompts.translation` 注释）。
+    nonisolated static let readmeHTMLPlaceholder = "{readmeHTML}"
 
-    /// 替换 prompt 模板里的 `{targetLanguage}` / `{context}` 占位符。
+    /// 替换 prompt 模板里的 `{targetLanguage}` / `{readmeHTML}` 占位符。
     ///
     /// 与 `AIPromptConfiguration.renderedUserPrompt(context:)` 同等地位，
     /// 但翻译比摘要 / 标签多一个目标语言变量，所以这里独立一份 renderer。
@@ -275,27 +281,20 @@ final class ReadmeTranslationService {
     ) -> String {
         template
             .replacingOccurrences(of: targetLanguagePlaceholder, with: targetLanguage.promptName)
-            .replacingOccurrences(of: contextPlaceholder, with: sourceHtml)
+            .replacingOccurrences(of: readmeHTMLPlaceholder, with: sourceHtml)
     }
 
     /// 从用户设置中取出有效 prompt 配置，必要时回退到 `AIDefaultPrompts.translation`。
     ///
-    /// 触发回退的两类情况：
-    /// 1. **老版本兼容**：HOM-68 follow-up v1（commit 97f1b5c）把 translation 默认
-    ///    `AIPromptConfiguration` 设为 `("" , "{context}")` 占位，老用户的 UserDefaults
-    ///    里仍然存着这份占位；如果不兜底，翻译会以"空 system prompt + 只发原文"
-    ///    的方式调用 LLM，输出几乎一定会破坏结构（被 `assertStructureNotBroken` 拦）。
-    /// 2. **用户误清空**：若用户在设置页把 system 或 user prompt 改成空白，
-    ///    回退到默认能让翻译继续可用，符合"安全网"语义。
-    ///
-    /// 判定为"未配置"的条件：system 或 user 任一为空（trim 后），
-    /// 或 user prompt 退化为裸 `{context}`（无目标语言指令、无包裹标签）。
+    /// 触发回退条件：system 或 user prompt 任一为空（trim 后）。这是"用户误清空"
+    /// 安全网——若用户在设置页把 system 或 user prompt 改成空白，回退到默认能让翻译
+    /// 继续可用，避免以"空 system prompt + 只发原文"的方式调用 LLM 拿到破坏结构的输出。
     nonisolated static func effectivePromptConfiguration(
         _ prompt: AIPromptConfiguration
     ) -> AIPromptConfiguration {
         let trimmedSystem = prompt.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedUser = prompt.userPromptTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedSystem.isEmpty || trimmedUser.isEmpty || trimmedUser == "{context}" {
+        if trimmedSystem.isEmpty || trimmedUser.isEmpty {
             return AIDefaultPrompts.translation
         }
         return prompt

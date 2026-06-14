@@ -9741,6 +9741,23 @@
         }
       }
     },
+    "settings.ai.prompt.placeholders.translation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Available placeholders for the README Translation task:\n\n• {targetLanguage} — current target language descriptor (e.g. Simplified Chinese / English / Japanese), driven by the language picker on the README pane.\n• {readmeHTML} — source README HTML fragment (rendered by GitHub's HTML endpoint; user-prompt only).\n\nNote: {targetLanguage} should appear at least once in either System or User prompt, otherwise the model has to guess. {readmeHTML} only makes sense in the User prompt.\n\nDelete a placeholder from the prompt to skip injecting that data; restore by clicking the reset button."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README 翻译任务可用占位符：\n\n• {targetLanguage} —— 当前目标语言名（如 Simplified Chinese / English / Japanese），由 README 面板上的语言选择器决定。\n• {readmeHTML} —— 源 README HTML 片段（GitHub HTML render 端点产物；只能用于 User Prompt）。\n\n说明：{targetLanguage} 必须在 System / User 任一处出现，否则模型不知道要翻成哪种语言。{readmeHTML} 写在 System 中没有意义。\n\n从 prompt 里删掉占位符即不注入对应数据；改坏了点恢复默认按钮还原。"
+          }
+        }
+      }
+    },
     "settings.ai.provider" : {
       "extractionState" : "stale",
       "localizations" : {

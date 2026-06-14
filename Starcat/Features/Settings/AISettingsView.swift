@@ -1439,7 +1439,8 @@ struct AISettingsTab: View {
     /// - **embedding**：8 个占位符（`{fullName}` / `{description}` / `{language}` / `{topics}` /
     ///   `{license}` / `{homepage}` / `{body}` / `{notes}`）；详见 `AIDefaultPrompts.embedding`
     ///   的注释；embedding API 不接受 system prompt，所以 system 一栏空且不会被使用。
-    /// - **translation**：`{targetLanguage}` + `{context}`。
+    /// - **translation**：`{targetLanguage}` + `{readmeHTML}`；详见 `AIDefaultPrompts.translation`
+    ///   的注释（2026-06-14 v2 占位符由 `{context}` 重命名为 `{readmeHTML}`）。
     ///
     /// **删占位符 = 不注入对应数据**：用户在 prompt 里删掉某个占位符就不会渲染对应内容；
     /// 改坏了点 Restore Default 还原。
@@ -1450,7 +1451,7 @@ struct AISettingsTab: View {
         case .tags:
             return String(localized: "settings.ai.prompt.placeholders.tags")
         case .translation:
-            return "支持两个占位符：{targetLanguage} 替换为当前目标语言名（如 Simplified Chinese / English / Japanese），{context} 替换为源 README HTML 片段。"
+            return String(localized: "settings.ai.prompt.placeholders.translation")
         case .embedding:
             return String(localized: "settings.ai.prompt.placeholders.embedding")
         }
