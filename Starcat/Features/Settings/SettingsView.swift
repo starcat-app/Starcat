@@ -210,6 +210,7 @@ private struct StorageSettingsTab: View {
     @State private var isWorking: Bool = false
     /// 当前显示的确认弹窗类型;nil 表示不显示。
     @State private var pendingAction: PendingAction?
+    @State private var storageActionError: String?
 
     // MARK: - Y5b 触点 E：AI 代码上下文产物管理（业务接通版，2026-06-13）
     //
@@ -231,11 +232,12 @@ private struct StorageSettingsTab: View {
 
     /// 清理操作类型。每种类型有不同的确认文案与执行路径。
     private enum PendingAction: Identifiable {
-        case readme, image, all
+        case readme, image, archive, all
         var id: String {
             switch self {
             case .readme: return "readme"
             case .image:  return "image"
+            case .archive: return "archive"
             case .all:    return "all"
             }
         }
@@ -243,6 +245,7 @@ private struct StorageSettingsTab: View {
             switch self {
             case .readme: return String(localized: "settings.storage.clearReadme.confirm")
             case .image:  return String(localized: "settings.storage.clearImage.confirm")
+            case .archive: return String(localized: "settings.storage.clearArchive.confirm")
             case .all:    return String(localized: "settings.storage.clearAll.confirm")
             }
         }
@@ -250,6 +253,7 @@ private struct StorageSettingsTab: View {
             switch self {
             case .readme: return "settings.storage.clearReadme.message"
             case .image:  return "settings.storage.clearImage.message"
+            case .archive: return "settings.storage.clearArchive.message"
             case .all:    return "settings.storage.clearAll.message"
             }
         }
@@ -269,6 +273,25 @@ private struct StorageSettingsTab: View {
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
+                LabeledContent("settings.storage.archive") {
+                    HStack(spacing: 8) {
+                        Text(archiveUsageText)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                        Button {
+                            do {
+                                try cleaner.revealArchiveDirectory()
+                            } catch {
+                                storageActionError = error.localizedDescription
+                            }
+                        } label: {
+                            Image(systemName: "folder")
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .help(Text("settings.storage.archive.revealHelp"))
+                    }
+                }
                 LabeledContent("settings.storage.log") {
                     Text("settings.storage.logDescription")
                         .foregroundStyle(.tertiary)
@@ -282,6 +305,8 @@ private struct StorageSettingsTab: View {
                     .disabled(isWorking || stats.readmeCount == 0)
                 Button("settings.storage.clearImage") { pendingAction = .image }
                     .disabled(isWorking || stats.imageDiskBytes == 0)
+                Button("settings.storage.clearArchive") { pendingAction = .archive }
+                    .disabled(isWorking || stats.archiveCount == 0)
                 Button("settings.storage.clearAll", role: .destructive) { pendingAction = .all }
                     .disabled(isWorking || stats.totalBytes == 0)
             }
@@ -330,6 +355,17 @@ private struct StorageSettingsTab: View {
         } message: {
             Text("ai.context.storage.clearAllConfirm.message")
         }
+        .alert(
+            "settings.storage.actionFailed",
+            isPresented: Binding(
+                get: { storageActionError != nil },
+                set: { if !$0 { storageActionError = nil } }
+            )
+        ) {
+            Button("general.ok") { storageActionError = nil }
+        } message: {
+            Text(storageActionError ?? "")
+        }
         // Y5b：storage 操作失败时弹 alert。与 IntegrationSettingsView 同款模式：
         // - storage 内部抛错 → 设置 aiContextActionError → 触发 alert
         // - 用户点"好"清除 aiContextActionError → alert 关闭
@@ -371,17 +407,20 @@ private struct StorageSettingsTab: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(-1)
                 Spacer()
                 Button("ai.context.storage.choose") {
                     chooseAIContextOutputDirectory()
                 }
+                .fixedSize()
                 Button {
                     revealAIContextOutputDirectory()
                 } label: {
                     Image(systemName: "folder")
                 }
                 .help(Text("ai.context.storage.revealHelp"))
+                .fixedSize()
                 Button {
                     resetAIContextOutputDirectory()
                 } label: {
@@ -389,6 +428,7 @@ private struct StorageSettingsTab: View {
                 }
                 .disabled(!aiContextStorage.hasCustomOutputDirectory)
                 .help(Text("ai.context.storage.resetHelp"))
+                .fixedSize()
             }
 
             HStack(spacing: 18) {
@@ -536,6 +576,7 @@ private struct StorageSettingsTab: View {
         switch action {
         case .readme: await cleaner.clearReadmes()
         case .image:  await cleaner.clearImageCache()
+        case .archive: cleaner.clearArchives()
         case .all:    await cleaner.clearAll()
         }
         stats = await cleaner.loadStatistics()
@@ -548,6 +589,14 @@ private struct StorageSettingsTab: View {
             format: String(localized: "settings.storage.readmeUsageFormat"),
             stats.readmeCount,
             stats.readmeBytes.formattedByteSize
+        )
+    }
+
+    private var archiveUsageText: String {
+        String(
+            format: String(localized: "settings.storage.archiveUsageFormat"),
+            stats.archiveCount,
+            stats.archiveBytes.formattedByteSize
         )
     }
 }

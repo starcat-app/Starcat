@@ -210,6 +210,38 @@ struct CacheCleanerTests {
         #expect(stats.readmeCount == 0)
         #expect(stats.readmeBytes == 0)
     }
+
+    @Test("ZIP 统计只计算 zip，清理后保留非 ZIP 文件与 archives 根目录")
+    func archiveStatsAndClear() async throws {
+        let (repo, _) = try await makeReadmeRepo()
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("starcat-archive-cache-\(UUID().uuidString)", isDirectory: true)
+        let ownerDirectory = root.appendingPathComponent("github.com/owner", isDirectory: true)
+        try fileManager.createDirectory(at: ownerDirectory, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 3).write(to: ownerDirectory.appendingPathComponent("one.zip"))
+        try Data(repeating: 2, count: 5).write(to: ownerDirectory.appendingPathComponent("two.ZIP"))
+        let keepURL = root.appendingPathComponent("keep.txt")
+        try Data("keep".utf8).write(to: keepURL)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let cleaner = CacheCleaner(
+            readmeRepository: repo,
+            fileManager: fileManager,
+            fixedArchiveDirectory: root
+        )
+        var stats = await cleaner.loadStatistics()
+        #expect(stats.archiveCount == 2)
+        #expect(stats.archiveBytes == 8)
+
+        cleaner.clearArchives()
+        stats = await cleaner.loadStatistics()
+
+        #expect(stats.archiveCount == 0)
+        #expect(stats.archiveBytes == 0)
+        #expect(fileManager.fileExists(atPath: root.path))
+        #expect(fileManager.fileExists(atPath: keepURL.path))
+    }
 }
 
 // MARK: - Int64.formattedByteSize

@@ -118,6 +118,13 @@ enum CodeFlowStorageError: LocalizedError {
 /// 文件系统是 CodeFlow 生成物的单一真源；本类型不建立数据库镜像。
 @Observable
 final class CodeFlowStorage {
+    /// bookmark 授权目录与实际 `codeflow` 输出根必须分离，避免系统解析 bookmark 时
+    /// 回退到父目录后，扫描和 UI 路径仍停留在默认值或错误父目录。
+    private struct ResolvedOutputRoot {
+        let url: URL
+        let securityScopeURL: URL?
+    }
+
     static let shared = CodeFlowStorage()
 
     private static let bookmarkKey = "settings.codeflow.outputDirectoryBookmark.v1"
@@ -127,6 +134,7 @@ final class CodeFlowStorage {
 
     private(set) var projects: [CodeFlowStoredProject] = []
     private(set) var lastErrorMessage: String?
+    private var directoryConfigurationRevision: Int = 0
 
     init(
         fileManager: FileManager = .default,
@@ -139,11 +147,13 @@ final class CodeFlowStorage {
     }
 
     var hasCustomOutputDirectory: Bool {
-        fixedRootURL == nil && defaults.data(forKey: Self.bookmarkKey) != nil
+        _ = directoryConfigurationRevision
+        return fixedRootURL == nil && defaults.data(forKey: Self.bookmarkKey) != nil
     }
 
     var outputDirectoryDisplayPath: String {
-        (try? resolveOutputRoot().url.path) ?? "输出目录授权已失效"
+        _ = directoryConfigurationRevision
+        return (try? resolveOutputRoot().url.path) ?? "输出目录授权已失效"
     }
 
     var totalBytes: Int64 { projects.reduce(0) { $0 + $1.totalBytes } }
@@ -169,15 +179,20 @@ final class CodeFlowStorage {
 
         let outputRoot = Self.customOutputRoot(for: url)
         try fileManager.createDirectory(at: outputRoot, withIntermediateDirectories: true)
-        let data = try outputRoot.bookmarkData(
+        // 保存用户真正授权的目录；恢复时再派生 codeflow 子目录。
+        let data = try url.bookmarkData(
             options: .withSecurityScope,
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         )
         let source = try resolveOutputRoot()
         // 当前仍持有用户所选父目录的 security scope，迁移时无需对子目录重复申请。
-        try migrateProjects(from: source, to: (outputRoot, false))
+        try migrateProjects(
+            from: source,
+            to: ResolvedOutputRoot(url: outputRoot, securityScopeURL: nil)
+        )
         defaults.set(data, forKey: Self.bookmarkKey)
+        directoryConfigurationRevision += 1
         reload()
     }
 
@@ -192,9 +207,10 @@ final class CodeFlowStorage {
     /// 恢复默认目录也属于目录切换，必须先把当前自定义目录中的项目迁回容器。
     func resetOutputDirectory() throws {
         let source = try resolveOutputRoot()
-        let destination = (try defaultOutputRoot(), false)
+        let destination = ResolvedOutputRoot(url: try defaultOutputRoot(), securityScopeURL: nil)
         try migrateProjects(from: source, to: destination)
         defaults.removeObject(forKey: Self.bookmarkKey)
+        directoryConfigurationRevision += 1
         reload()
     }
 
@@ -305,17 +321,15 @@ final class CodeFlowStorage {
     }
 
     private func withResolvedRoot<T>(
-        _ resolved: (url: URL, requiresSecurityScope: Bool),
+        _ resolved: ResolvedOutputRoot,
         _ operation: (URL) throws -> T
     ) throws -> T {
-        let didStart = resolved.requiresSecurityScope
-            ? resolved.url.startAccessingSecurityScopedResource()
-            : false
-        if resolved.requiresSecurityScope && !didStart {
+        let didStart = resolved.securityScopeURL?.startAccessingSecurityScopedResource() ?? false
+        if resolved.securityScopeURL != nil && !didStart {
             throw CodeFlowStorageError.outputDirectoryUnavailable
         }
         defer {
-            if didStart { resolved.url.stopAccessingSecurityScopedResource() }
+            if didStart { resolved.securityScopeURL?.stopAccessingSecurityScopedResource() }
         }
         return try operation(resolved.url)
     }
@@ -324,6 +338,22 @@ final class CodeFlowStorage {
     func migrateProjects(
         from source: (url: URL, requiresSecurityScope: Bool),
         to destination: (url: URL, requiresSecurityScope: Bool)
+    ) throws {
+        try migrateProjects(
+            from: ResolvedOutputRoot(
+                url: source.url,
+                securityScopeURL: source.requiresSecurityScope ? source.url : nil
+            ),
+            to: ResolvedOutputRoot(
+                url: destination.url,
+                securityScopeURL: destination.requiresSecurityScope ? destination.url : nil
+            )
+        )
+    }
+
+    private func migrateProjects(
+        from source: ResolvedOutputRoot,
+        to destination: ResolvedOutputRoot
     ) throws {
         guard source.url.standardizedFileURL != destination.url.standardizedFileURL else { return }
 
@@ -370,11 +400,13 @@ final class CodeFlowStorage {
         }
     }
 
-    private func resolveOutputRoot() throws -> (url: URL, requiresSecurityScope: Bool) {
-        if let fixedRootURL { return (fixedRootURL, false) }
+    private func resolveOutputRoot() throws -> ResolvedOutputRoot {
+        if let fixedRootURL {
+            return ResolvedOutputRoot(url: fixedRootURL, securityScopeURL: nil)
+        }
 
         guard let bookmark = defaults.data(forKey: Self.bookmarkKey) else {
-            return (try defaultOutputRoot(), false)
+            return ResolvedOutputRoot(url: try defaultOutputRoot(), securityScopeURL: nil)
         }
 
         var isStale = false
@@ -396,7 +428,10 @@ final class CodeFlowStorage {
             let refreshed = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
             defaults.set(refreshed, forKey: Self.bookmarkKey)
         }
-        return (url, true)
+        return ResolvedOutputRoot(
+            url: Self.customOutputRoot(for: url),
+            securityScopeURL: url
+        )
     }
 
     private func defaultOutputRoot() throws -> URL {
