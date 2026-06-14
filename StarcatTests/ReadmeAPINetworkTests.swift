@@ -402,6 +402,57 @@ struct ReadmeAPINetworkTests {
         #expect(mock.readmeHTMLCalls.isEmpty)
     }
 
+    // MARK: - HOM-201 P1-2: rewrite-at-upsert（rendered_html 落库前先 rewrite img）
+
+    /// refreshReadme 200 分支:落库的 rendered_html 应该是 rewrite 过的(img 已是 raw URL)。
+    @Test("refreshReadme: 200 写库前 img 相对路径 rewrite 为 raw.githubusercontent.com")
+    func refresh200RewritesImg() async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+        let rawHTML = #"<p>logo:<img src="./logo.png" alt="x"></p>"#
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            BytesResponse.ok(data: rawHTML.data(using: .utf8)!, etag: "\"e\"")
+        }
+
+        let result = await api.refreshReadme(for: repo)
+        guard case let .updated(updated) = result else {
+            Issue.record("期望 .updated，实际: \(result)")
+            return
+        }
+
+        // 落到 Readme 对象与 DB 行的 rendered_html 都应是 rewrite 后版本
+        let expectedRewritten = "https://raw.githubusercontent.com/\(repo.owner)/\(repo.name)/HEAD/logo.png"
+        #expect(updated.renderedHtml?.contains(expectedRewritten) == true)
+        #expect(updated.renderedHtml?.contains("./logo.png") == false)
+
+        let fetched = try await readmeRepo.find(repoId: repo.id)
+        #expect(fetched?.renderedHtml?.contains(expectedRewritten) == true)
+        #expect(fetched?.renderedHtml?.contains("./logo.png") == false)
+    }
+
+    /// refreshTrendingReadme 200 分支同款 rewrite 校验。
+    @Test("refreshTrendingReadme: 200 写库前 img 相对路径 rewrite 为 raw.githubusercontent.com")
+    func refreshTrending200RewritesImg() async throws {
+        let (api, mock, _, _, db) = try await makeAPI()
+        let trendingRepo = TrendingReadmeRepository(database: db)
+        let rawHTML = #"<p>logo:<img src="./logo.png" alt="x"></p>"#
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            BytesResponse.ok(data: rawHTML.data(using: .utf8)!, etag: "\"e\"")
+        }
+
+        let result = await api.refreshTrendingReadme(owner: "octocat", repo: "hello")
+        guard case .updated = result else {
+            Issue.record("期望 .updated，实际: \(result)")
+            return
+        }
+
+        let fetched = try await trendingRepo.find(fullName: "octocat/hello")
+        let expectedRewritten = "https://raw.githubusercontent.com/octocat/hello/HEAD/logo.png"
+        #expect(fetched?.renderedHtml.contains(expectedRewritten) == true)
+        #expect(fetched?.renderedHtml.contains("./logo.png") == false)
+    }
+
     @Test("prefetchTrending: cache 过期 → 走 refreshTrendingReadme")
     func prefetchTrendingTriggersRefreshWhenStale() async throws {
         let (api, mock, _, _, db) = try await makeAPI()

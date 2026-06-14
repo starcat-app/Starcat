@@ -237,16 +237,20 @@ struct ReadmeAPI {
         }
 
         // 200 → 写新缓存
+        // HOM-201 P1-2（2026-06-14）：upsert 前对 HTML 做一次 `<img>` 相对路径重写，
+        // 一次性落库；ReadmeWebView 渲染层不再每次切 repo 重跑正则。
         let html = String(data: raw.data, encoding: .utf8) ?? ""
+        let rewrittenHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: repo.owner, repo: repo.name)
         let now = Date()
         let readme = Readme(
             repoId: repo.id,
             content: nil,
-            renderedHtml: html,
+            renderedHtml: rewrittenHtml,
             etag: raw.etag,
             lastModified: raw.lastModified,
             cachedAt: ISO8601DateFormatter.shared.string(from: now),
-            size: raw.data.count
+            // size 仍按重写后字节数,与 rendered_html 实际占用对齐(后续 LRU 淘汰按 size 判)
+            size: rewrittenHtml.utf8.count
         )
         do {
             try await repository.upsert(readme)
@@ -348,15 +352,17 @@ struct ReadmeAPI {
         }
 
         // 第四步：200 → 写新缓存
+        // HOM-201 P1-2（2026-06-14）：upsert 前 rewrite `<img>` 相对路径,与 manage 路径对齐。
         let html = String(data: raw.data, encoding: .utf8) ?? ""
+        let rewrittenHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: owner, repo: repo)
         let now = Date()
         let record = TrendingReadme(
             fullName: fullName,
-            renderedHtml: html,
+            renderedHtml: rewrittenHtml,
             etag: raw.etag,
             lastModified: raw.lastModified,
             cachedAt: ISO8601DateFormatter.shared.string(from: now),
-            size: raw.data.count
+            size: rewrittenHtml.utf8.count
         )
         do {
             try await trendingRepository.upsert(record)
@@ -456,16 +462,19 @@ struct ReadmeAPI {
             return .failed(error)
         }
 
+        // HOM-201 P1-2：兜底无条件刷新也 rewrite,与正常 200 分支对齐,避免不同分支
+        // 落库内容不一致。
         let html = String(data: raw.data, encoding: .utf8) ?? ""
+        let rewrittenHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: repo.owner, repo: repo.name)
         let now = Date()
         let readme = Readme(
             repoId: repo.id,
             content: nil,
-            renderedHtml: html,
+            renderedHtml: rewrittenHtml,
             etag: raw.etag,
             lastModified: raw.lastModified,
             cachedAt: ISO8601DateFormatter.shared.string(from: now),
-            size: raw.data.count
+            size: rewrittenHtml.utf8.count
         )
         do {
             try await repository.upsert(readme)
@@ -492,15 +501,17 @@ struct ReadmeAPI {
             return .failed(error)
         }
 
+        // HOM-201 P1-2：trending 兜底无条件刷新也 rewrite,与正常 200 分支对齐。
         let html = String(data: raw.data, encoding: .utf8) ?? ""
+        let rewrittenHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: owner, repo: repo)
         let now = Date()
         let record = TrendingReadme(
             fullName: fullName,
-            renderedHtml: html,
+            renderedHtml: rewrittenHtml,
             etag: raw.etag,
             lastModified: raw.lastModified,
             cachedAt: ISO8601DateFormatter.shared.string(from: now),
-            size: raw.data.count
+            size: rewrittenHtml.utf8.count
         )
         do {
             try await trendingRepository.upsert(record)
