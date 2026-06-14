@@ -68,7 +68,8 @@ struct RepoAIInsightY9Tests {
             model: "gpt-test",
             generatedAt: "2026-06-14T00:00:00Z",
             contextMetadata: nil,
-            externalContextMarkdown: "<external_context>linked</external_context>"
+            externalContextMarkdown: "<external_context>linked</external_context>",
+            generationContextSettings: nil
         )
 
         let data = try JSONEncoder().encode(original)
@@ -76,6 +77,63 @@ struct RepoAIInsightY9Tests {
 
         #expect(decoded.externalContextMarkdown == "<external_context>linked</external_context>")
         #expect(decoded.summaryMarkdown == "## summary")
+    }
+
+    // MARK: - Y9.1 generationContextSettings 快照（修 stale banner 误报）
+
+    @Test("Y9.1：缺 generationContextSettings 字段反序列化为 nil（老 insight 兼容）")
+    func decodesLegacyJsonWithoutGenerationContextSettings() throws {
+        // 模拟 Y9 时代缓存：含 externalContextMarkdown 但没有 generationContextSettings
+        // —— 这是 Y9.1 修复的核心场景。
+        let json = """
+        {
+          "oneLiner": "test",
+          "summary": "s",
+          "platforms": [],
+          "suitableFor": [],
+          "strengths": [],
+          "risks": [],
+          "suggestedTags": [],
+          "model": "gpt-test",
+          "generatedAt": "2026-06-14T00:00:00Z",
+          "externalContextMarkdown": "<external_context>x</external_context>"
+        }
+        """
+        let data = try #require(json.data(using: .utf8))
+        let insight = try JSONDecoder().decode(RepoAIInsight.self, from: data)
+
+        #expect(insight.externalContextMarkdown != nil)
+        #expect(insight.generationContextSettings == nil)
+    }
+
+    @Test("Y9.1：generationContextSettings 序列化往返一致（双布尔字段）")
+    func roundTripsGenerationContextSettings() throws {
+        let snap = GenerationContextSettings(
+            codeContextEnabled: true,
+            externalContextAllowed: false
+        )
+        let original = RepoAIInsight(
+            oneLiner: "t",
+            summary: "s",
+            summaryMarkdown: nil,
+            platforms: [],
+            suitableFor: [],
+            strengths: [],
+            risks: [],
+            minimalExample: nil,
+            suggestedTags: [],
+            model: "gpt-test",
+            generatedAt: "2026-06-14T00:00:00Z",
+            contextMetadata: nil,
+            externalContextMarkdown: nil,
+            generationContextSettings: snap
+        )
+
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(RepoAIInsight.self, from: data)
+
+        #expect(decoded.generationContextSettings?.codeContextEnabled == true)
+        #expect(decoded.generationContextSettings?.externalContextAllowed == false)
     }
 
     // MARK: - assembleChatSystemPrompt

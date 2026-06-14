@@ -478,36 +478,46 @@ struct RepoAIWindowContentView: View {
         footer(insight)
     }
 
-    /// Y9：判定当前展示的 insight 是否与"用户当前 settings 想要的物料"不一致。
+    /// Y9.1（2026-06-14）：判定当前展示的 insight 是否与"用户当前 settings 想要的物料"
+    /// 不一致——基于 insight 持久化的 `generationContextSettings` 快照精准判定。
     ///
-    /// 两个独立维度——任一失配即视为 stale：
-    ///   1. **代码上下文**：`settings.aiRepoContextEnabled` ≠ `insight.contextMetadata != nil`
-    ///      - 例：用户关了代码开关但 insight 是带 commitSha 生成的 → stale；
-    ///      - 例外：vm 已有 contextDegradationReason → 降级路径已经在 banner 里解释，
-    ///        本判定排除该路径避免双重提示（`hasDegradation == true` 时跳过代码维度）。
-    ///   2. **AnySearch 外部材料**：当前 settings 允许（双开关 AND + 私仓门控）
-    ///      ≠ `insight.externalContextMarkdown != nil`
-    ///      - 例：用户开了 AnySearch 但 insight 是关时生成的 → stale；
+    /// **演进背景**：Y9 初版用 `contextMetadata != nil` / `externalContextMarkdown != nil`
+    /// 反推"生成时配置"，但这种间接推断不可靠——`contextMetadata == nil` 既可能是
+    /// 用户当时关了开关，也可能是当时下载失败降级。用户反馈"什么都没动每次都提示设置
+    /// 已变更"（dong4j 2026-06-14）即由此引发。
     ///
-    /// 用户调整 settings 后下次手动点 "重新生成" 即可消除提示——这条路径与摘要面板
-    /// 右上角 ellipsis Menu 的"重新生成"是同一个 action。
+    /// **当前算法（Y9.1）**：
+    ///   1. **缺快照（老 insight）**：`generationContextSettings == nil` → 直接返回 false
+    ///      不报 stale。这让所有 Y9.1 之前生成的 insight 自动豁免本次新加的判定。
+    ///   2. **代码维度**：`snap.codeContextEnabled != settings.aiRepoContextEnabled`
+    ///      - 用户翻了代码上下文开关 → 报 stale；
+    ///   3. **外网维度**：`snap.externalContextAllowed != currentExternalAllowed`
+    ///      - 用户翻了 anysearch / external context / 私仓允许 任一开关 → 报 stale；
+    ///
+    /// `hasDegradation` 参数保留但**不再使用**（快照机制下，降级路径会让快照如实记录
+    /// 当时的"用户意图 = 想要代码"，但 insight.contextMetadata 仍为 nil；这是预期行为，
+    /// 不参与 stale 判定。降级 banner 由 `vm.contextDegradationReason` 单独负责显示）。
     private func isInsightStaleAgainstCurrentSettings(
         insight: RepoAIInsight,
-        hasDegradation: Bool
+        hasDegradation _: Bool
     ) -> Bool {
-        if !hasDegradation {
-            let userWantsCode = settings.aiRepoContextEnabled
-            let insightHasCode = insight.contextMetadata != nil
-            if userWantsCode != insightHasCode { return true }
+        guard let snap = insight.generationContextSettings else {
+            // 老 insight 没快照：保守不报，避免误报。下次用户主动 regenerate 后会写入快照。
+            return false
         }
 
-        let externalAllowed = AnySearchContextProvider.allowsExternalContext(
+        if snap.codeContextEnabled != settings.aiRepoContextEnabled {
+            return true
+        }
+
+        let currentExternalAllowed = AnySearchContextProvider.allowsExternalContext(
             repoIsPrivate: repo.isPrivate,
             enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
             allowPrivate: settings.aiExternalContextAllowPrivateRepos
         )
-        let insightHasExternal = insight.externalContextMarkdown?.isEmpty == false
-        if externalAllowed != insightHasExternal { return true }
+        if snap.externalContextAllowed != currentExternalAllowed {
+            return true
+        }
 
         return false
     }
