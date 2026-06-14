@@ -105,6 +105,42 @@ final class SearchCenterViewModel {
         return page.webMetadata
     }
 
+    /// 当前 scope 下、各 provider 已加载的命中数。
+    ///
+    /// 设计意图（dong4j 2026-06-13 反馈）：`.all` scope 下底部 footer 应该
+    /// 反映"本地 + GitHub + 网页"三者聚合，而不是只展示网页的命中数和耗时。
+    /// 此属性按 scope 选取需要展示的 provider 列表，过滤掉非 `.loaded` 的，
+    /// 输出顺序固定（本地 → GitHub → 网页），保证 UI 不抖动。
+    ///
+    /// - `.all`：返回三段（本地 / GitHub / 网页），只包含已加载的来源。
+    ///   - 本地复合 source 取 `.localKeyword`（FTS）—— 语义搜索算"补强"
+    ///     不单独计列，否则容易让用户看到"本地 3 + 本地 2"两条对相同结果重复计数。
+    /// - `.web`：返回单段（网页）。
+    /// - `.local` / `.github`：返回空数组。
+    ///   - `.local` 命中数瞬时无意义、与左上角已有的语义搜索 chip 信息重复，
+    ///     不显示 footer 避免冗余。
+    ///   - `.github` 命中数已通过 `githubResultSummary` 在 githubFilterBar 显示。
+    var resultCounts: [ResultSourceCount] {
+        let sources: [SearchSource]
+        switch scope {
+        case .all:
+            sources = [.localKeyword, .github, .web]
+        case .web:
+            sources = [.web]
+        case .local, .github:
+            return []
+        }
+        return sources.compactMap { source in
+            guard case .loaded(let page) = coordinator.status(for: source) else { return nil }
+            // GitHub 的 totalCount 是 API 报告的"全站命中总数"（可能 1000+），
+            // 与列表展示数（取首页 30 条）有差异；这里直接展示总数，与
+            // githubResultSummary 同口径，避免两处口径不一致。
+            // 本地 / web 的 totalCount 与实际返回数相同，无此问题。
+            let total = page.totalCount ?? 0
+            return ResultSourceCount(source: source, count: total)
+        }
+    }
+
     func present() {
         // 重新打开只恢复面板，不重置选中项或重新搜索。用户误点遮罩关闭后应回到
         // 原来的 query、scope、filters、结果和键盘位置。
@@ -242,6 +278,31 @@ final class SearchCenterViewModel {
         let now = Date()
         history = entries.sorted { lhs, rhs in
             lhs.decayedScore(now: now) > rhs.decayedScore(now: now)
+        }
+    }
+}
+
+/// 单个搜索来源的命中数据（命中数 + 来源标识）。
+///
+/// 用于驱动浮层底部 footer 的多段 chip 展示。`id` 直接取 source.rawValue，
+/// SwiftUI ForEach 复用时不会出现"两个本地段"冲突（理论上不可能，但保险）。
+struct ResultSourceCount: Identifiable, Equatable, Sendable {
+    let source: SearchSource
+    let count: Int
+
+    var id: String { source.rawValue }
+
+    /// chip 上显示的来源标签 i18n key。
+    /// 与 `SearchScope.titleKey` 故意分离：scope 是"我想搜什么"，
+    /// source 是"结果来自哪儿"，未来可独立翻译微调。
+    var labelKey: String {
+        switch source {
+        case .localKeyword, .localSemantic:
+            return "search.footer.source.local"
+        case .github:
+            return "search.footer.source.github"
+        case .web:
+            return "search.footer.source.web"
         }
     }
 }

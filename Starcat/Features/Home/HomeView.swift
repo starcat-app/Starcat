@@ -683,8 +683,21 @@ struct HomeView: View {
         }
     }
 
-    /// 本地结果回到 Manage 并复用现有 FTS5 提交流程，确保列表与详情状态仍由
+    /// 本地结果回到 Manage 并复用现有列表加载流程，确保列表与详情状态仍由
     /// HomeViewModel 单一维护；网页资料直接交给系统浏览器。
+    ///
+    /// 语义（dong4j 2026-06-13 选定方案 B "导航到 repo"）：
+    /// - **不**回填工具栏搜索框（避免 `owner/name` 被 FTS5 短语搜索 → 命中 0 的 bug；
+    ///   见 `RepoRepository.searchFTS` / `DatabaseMigrationsV1.createReposFTS`，
+    ///   `repos_fts` 只索引 `name/description/language/topics`，没 owner / full_name，
+    ///   且 `unicode61` tokenizer 默认把 `/` 当分隔符）；
+    /// - 主动**清空**当前搜索词，让列表回到 "全部 Stars" 全量视图；
+    /// - 切到 `allStars` 让目标 repo 必在列表中；
+    /// - 强制 reload 后写 `selectedRepoID`，由 RepoListView 的 ScrollViewReader 滚到目标行。
+    ///
+    /// 关键约束：`submitSearch("")` 必须**先于** `reloadItems` 调用，否则 reloadItems
+    /// 会先用旧 searchQuery（即用户上次输入的关键词）拉一遍数据，再被清空触发第二次
+    /// 拉取，列表会闪烁。
     private func openSearchCandidate(_ candidate: SearchCandidate) {
         switch candidate {
         case .repository(let candidate):
@@ -694,7 +707,7 @@ struct HomeView: View {
             }
             selectedSidebarPage = .manage
             viewModel.selection = .allStars
-            viewModel.submitSearch(repo.fullName)
+            viewModel.submitSearch("")
             searchCenterViewModel.dismiss()
             Task {
                 await viewModel.reloadItems(forceRefresh: true)

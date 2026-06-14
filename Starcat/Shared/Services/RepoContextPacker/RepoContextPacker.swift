@@ -105,7 +105,8 @@ public struct RepoContextPacker {
         let buildResult = try await xmlBuilder.build(
             plan: plan,
             directoryTree: directoryTree,
-            metadata: xmlMeta
+            metadata: xmlMeta,
+            tier1MaxLines: input.tier1MaxLines
         )
 
         // === Pass 4：写盘 ===
@@ -137,7 +138,14 @@ public struct RepoContextPacker {
                 contextXmlBytes: 0  // writer 会回填真实值
             ),
             skippedFiles: allSkipped,
-            warnings: buildResult.warnings
+            warnings: buildResult.warnings,
+            // W7：写入 tier1MaxLines 让 RepoAIContextProvider 缓存命中判定能区分
+            // "用户调过 Tier 1 行数后的旧 metadata"。
+            tier1MaxLines: input.tier1MaxLines,
+            // lastAccessedAt / generationCount 由 ContextWriter 在 W8 写盘前从
+            // 旧 metadata 读 → +1 → 落库（这里给 nil 占位）。
+            lastAccessedAt: nil,
+            generationCount: nil
         )
 
         let output = try await writer.write(
