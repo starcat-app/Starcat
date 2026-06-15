@@ -67,10 +67,28 @@ final class AuthSession {
     /// ② OAuth 登录成功 / restore 成功后把 user 顺手 push 给 service 持久化；
     /// ③ signOut / invalidate 时清 service。
     ///
-    /// 用 var + 外部注入而非构造器参数：装配时 AppDependencies 先建 AuthSession，
-    /// 再建 UserProfileService（持有 AuthSession weak 反向引用），最后回填 `session.userProfileService = svc`。
+    /// 用 var + 外部注入而非构造器参数:装配时 AppDependencies 先建 AuthSession,
+    /// 再建 UserProfileService(持有 AuthSession weak 反向引用),最后回填 `session.userProfileService = svc`。
     /// 这样避免两者构造器循环依赖。
     var userProfileService: UserProfileService?
+
+    /// 2026-06-15 ContributionService 联动清理:与 `userProfileService` 对称的"登出清缓存"hook。
+    ///
+    /// **修复的 bug**(dong4j 2026-06-15 报):用户 A 登出 → B 登录后,sidebar 草坪仍显示 A 的数据,
+    /// 必须手动点账号菜单"刷新个人信息"才会更新。
+    ///
+    /// **根因**:之前 `signOut` / `invalidateSession` 只调 `userProfileService.reset`,漏了
+    /// `contributionService`。导致 service 内存里 `payload` + `lastFetchedAt` 仍是 A 的;
+    /// B 登录后 sidebar `.task(id: user.login)` 触发 `contributionService.load(login: B)`,
+    /// 因 `lastFetchedAt` 还在 3h TTL 窗口内,`load` 直接 no-op 返回,**根本不发请求**。
+    ///
+    /// **修复**:本字段与 `userProfileService` 对称注入,在登出 / 401 时调 `reset(login:)`
+    /// 把内存 + 磁盘缓存清掉。B 登录后 sidebar `.task` 再调 `load` 时,`lastFetchedAt == nil`,
+    /// 自然走网络拉新数据,不需要额外的 force 刷新。
+    ///
+    /// 持有语义同 `userProfileService`:`var` 而非构造器参数避免双向构造依赖;`AppDependencies`
+    /// 装配末尾回填 `session.contributionService = contributionService`。
+    var contributionService: ContributionService?
 
     /// R-01（2026-06-09）：登出 / 会话失效时的回调。
     ///
@@ -174,7 +192,12 @@ final class AuthSession {
             AppLog.auth.warning("restore: token invalid (401); clearing")
             try? keychain.deleteGithubToken()
             // 401 时清掉 cached profile，避免下次启动 prime 出错误账号的数据
-            userProfileService?.reset(login: state.user?.login)
+            let staleLogin = state.user?.login
+            userProfileService?.reset(login: staleLogin)
+            // 2026-06-15 修复:与 userProfileService 对称清掉草坪缓存。
+            // 启动期 401 极少能命中(此时 ContributionService 多半还没 load 过、payload/lastFetchedAt 都是 nil),
+            // 但保持与 signOut / invalidateSession 三处对称,任何"token 失效"路径都同款清理,语义更可靠。
+            contributionService?.reset(login: staleLogin)
             // 多账号 DB 隔离：token 失效 = 进入未登录态，DB 切到 _anonymous
             await onUserSessionChanged?(nil)
             self.state = .unauthenticated
@@ -268,6 +291,10 @@ final class AuthSession {
         }
         // 清掉 cached profile（含磁盘 + lastLogin），下次启动是干净的未登录态
         userProfileService?.reset(login: currentLogin)
+        // 2026-06-15 修复:与 userProfileService 对称清掉草坪 service 的内存 + 磁盘缓存。
+        // 否则切到 B 账号后 sidebar `.task` 触发 `load(login: B)` 会因 lastFetchedAt 还在 A
+        // 那次成功的 3h TTL 窗口内被直接 no-op,草坪一直挂着 A 的数据(详见 contributionService 字段注释)。
+        contributionService?.reset(login: currentLogin)
         state = .unauthenticated
         lastError = nil
         // R-01：清空 StarredRegistry，避免下个用户登录看到上个用户的 star 状态
@@ -306,6 +333,8 @@ final class AuthSession {
             AppLog.auth.error("invalidateSession: failed to delete token: \(error.localizedDescription, privacy: .public)")
         }
         userProfileService?.reset(login: currentLogin)
+        // 2026-06-15 修复:与 signOut 路径同步清草坪 service,避免 B 登录后 sidebar 显示 A 的草坪。
+        contributionService?.reset(login: currentLogin)
         state = .unauthenticated
         // 复用 network.error.unauthorized 文案（"未授权，请重新登录。"）在登录页提示用户。
         lastError = NetworkError.unauthorized
