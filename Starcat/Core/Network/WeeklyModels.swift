@@ -63,7 +63,12 @@ enum WeeklySource: Decodable, Hashable, Sendable {
 
 // MARK: - Snapshots
 
-struct WeeklySnapshot: Decodable, Hashable, Sendable {
+// R-06.4：三个 Snapshot 都升级到 `Codable`（= `Decodable + Encodable`）。
+// 原 wire 解码只需要 `Decodable`，但 R-06.4 客户端 bulk 缓存表把整个 snapshot 序列化
+// 成 JSON 字符串落 SQLite（`WeeklyBulkRepoRecord.weeklySnapshotJSON` 等），落盘路径
+// 需要 `Encodable`。加 `Encodable` 用 synthesized impl，CodingKeys 复用同套 snake_case
+// 映射，与 wire 完全等价 round-trip。
+struct WeeklySnapshot: Codable, Hashable, Sendable {
     let issueNumber: Int
     let issueURL: URL?
     let recommendation: String?
@@ -75,7 +80,7 @@ struct WeeklySnapshot: Decodable, Hashable, Sendable {
     }
 }
 
-struct ZreadSnapshot: Decodable, Hashable, Sendable {
+struct ZreadSnapshot: Codable, Hashable, Sendable {
     let weekStart: String
     let weekEnd: String?
     let weekLabel: String?
@@ -91,7 +96,7 @@ struct ZreadSnapshot: Decodable, Hashable, Sendable {
     }
 }
 
-struct DiscoverySnapshot: Decodable, Hashable, Sendable {
+struct DiscoverySnapshot: Codable, Hashable, Sendable {
     let hnID: Int64
     let title: String
     let score: Int

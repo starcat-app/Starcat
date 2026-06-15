@@ -9,10 +9,15 @@
 //  - 持久化到 `trending_repos` 表（v4 迁移引入）
 //  - 提供 SWR 模式所需的双方法：纯读缓存（立即上屏）+ 走网络刷新（覆盖缓存）
 //
-//  设计约束（dong4j 2026-06-02 决策）：
-//  - **不设 TTL**（决策 ttl_c）：每次进 Trending 都强制走网络重拉，本地缓存只承担
-//    "离线兜底 + 快速首屏 SWR"角色。所以本类没有"是否过期"的判断逻辑，只有
-//    "有没有缓存"和"网络是否成功"两个状态。
+//  设计约束（dong4j 2026-06-15 R-06.1 修订）：
+//  - **客户端 TTL = 24h**（决策推翻 2026-06-02 "不设 TTL" 旧策略）：
+//    TTL 判断**放在 ViewModel 层**（`TrendingViewModel.trendingTTL` + `TrendingCachePolicy`），
+//    而非 Repository 内部。理由：ViewModel 已经持有 `lastRefreshedAt` 做新鲜度展示，
+//    复用同一份数据判 TTL 最直接；Repository 协议保持纯净（cachedTrending /
+//    fetchTrending / lastRefreshedAt 三方法语义不动），调用方按需自行决定何时调用 fetch。
+//    这跟"加 cachePolicy 入参到 fetchTrending"的备选方案相比，避免引入"返回值标记
+//    from-cache vs from-network"的额外复杂度（否则 ViewModel 不知道要不要更新
+//    `lastRefreshedAt = Date()`，会出现 TTL 命中后死循环 always-fresh 的 bug）。
 //  - **整批替换**：fetchTrending 拿到新数据后，先 DELETE 该 (period, language_filter) 下的
 //    旧行再批量 INSERT 新行。同一榜单内排名可能整体洗牌，行级 upsert 反而会留下脏数据
 //    （比如旧第 25 名今天掉出榜了，仅 upsert 不删则它在数据库里仍占第 25 名）。

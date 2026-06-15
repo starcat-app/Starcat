@@ -8,13 +8,13 @@
 //  - 把"AI 摘要"和"AI 对话"放在同一个浮动窗口里，但状态完全独立：
 //    重新生成摘要不会清空对话；发送消息不会丢失摘要。
 //  - 单面板模式（HOM-150 dong4j 2026-06-04 15:30 重设计）：
-//    任一时刻只展示「摘要」**或**「对话」之一，中间一根 segmented toggle bar 切换。
+//    任一时刻只创建并展示「摘要」**或**「对话」之一，中间 segmented toggle 切换。
 //  - 摘要部分复用既有的 `RepoAIInsightViewModel`（生成 / 缓存 / 标签推荐三段），
 //    对话部分由新的 `RepoAIChatViewModel` 承担。
 //
 //  关键约束（HOM-150 累计 4 轮 dong4j 反馈整合）：
 //  - **单面板互斥**（dong4j 2026-06-04 15:30）：用 `AIPanelMode` 枚举控制当前激活
-//    哪一边，另一边折叠到 height = 0；segmented bar 用户可主动切换；初始默认
+//    哪一边，非活动面板不进入视图树；segmented bar 用户可主动切换；初始默认
 //    `.summary`（最大化摘要），用户发送任何消息后自动切到 `.chat`（最大化对话）。
 //  - **顶部下拉展开摘要**（dong4j 2026-06-04 15:30）：在 `.chat` 模式下，用户把
 //    对话滚到顶部后再下拉到 -60pt overscroll → 切回 `.summary`；这是替代旧 32/8pt
@@ -44,9 +44,9 @@ import SwiftUI
 /// 3. 与 dong4j 2026-06-04 15:30 的明确要求一致：「打开默认最大化摘要，
 ///    输入后切对话」。
 enum AIPanelMode: String, CaseIterable, Identifiable, Hashable {
-    /// 摘要面板撑满，对话面板折叠到 0。
+    /// 只创建摘要面板。
     case summary
-    /// 对话面板撑满，摘要面板折叠到 0。
+    /// 只创建对话面板。
     case chat
 
     var id: String { rawValue }
@@ -68,8 +68,16 @@ struct RepoAIWindowContentView: View {
     /// `chatContextStatusRow` 能即时刷新；与 `AIChatInputView` 共用同一份注入。
     @Environment(AppSettings.self) private var settings
 
+    /// 2026-06-15:摘要 / chat panel 切换、tail follow toggle 等多处
+    /// 0.2-0.3s 隐式动画在「关闭应用内动画」时全部跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
+    /// 历史消息的“修改”操作通过一次性请求回填输入组件。正常键入只改输入组件
+    /// 内部 `@State`，不会让本窗口根视图跟着每个字符失效。
+    @State private var pendingChatDraftReplacement: String?
+    @FocusState private var isChatInputFocused: Bool
 
     /// AI 窗口打开瞬间冻结的 star 状态（R-01 §3.2.7 Step 8）。
     ///
@@ -90,12 +98,50 @@ struct RepoAIWindowContentView: View {
     /// 摘要"的快捷手势。两个方向都靠中间的 segmented toggle bar 主动切换兜底。
     @State private var panelMode: AIPanelMode = .summary
 
-    /// 对话区 ScrollView 最近一次的滚动 phase。
+    /// 首次切到对话时，历史 session 需要异步读盘。准备完成前继续保留摘要面板，
+    /// 避免先插入空 chat view、随后又在同一个动画事务里替换成真实聊天内容。
+    @State private var isPreparingChat: Bool = false
+
+    /// 面板结构替换本身始终瞬时完成；目标面板插入后只做单向淡入。
+    /// 这样旧面板不会以 transition snapshot 的形式与新文字交叉叠加。
+    @State private var panelContentOpacity: Double = 1
+
+    /// 摘要 / 对话各自的"跟随尾部"状态机（2026-06-15 dong4j 反馈）。
     ///
-    /// 仅用于 `handleChatOverscroll` 守门：overscroll 必须由用户手势 phase
-    /// (`.tracking / .interacting / .decelerating`) 触发，程序化 scrollTo（流式
-    /// 自动滚底，phase = `.animating`）和布局抖动（phase = `.idle`）一律忽略。
-    @State private var lastChatScrollPhase: ScrollPhase = .idle
+    /// 用户痛点：流式生成 AI 摘要 / 对话时，UI 强制 scrollTo(.bottom) 会把
+    /// 用户主动上滚到的位置又拽回底部，无法回看已经吐出来的内容。
+    ///
+    /// 解决：把"跟随尾部 + 滚回底部自动恢复"抽到 `ScrollTailController`
+    /// （见 `Starcat/Shared/Components/ScrollFollowTail.swift`），摘要段
+    /// 与对话段各持一个独立 controller——两边逻辑同源、状态隔离。
+    ///
+    /// `chatTail.lastPhase` 同时承担旧 `lastChatScrollPhase` 的职责
+    /// （overscroll 切回摘要面板时的 phase 门控），不再单独维护一份 state。
+    @State private var summaryTail = ScrollTailController()
+    @State private var chatTail = ScrollTailController()
+    /// 合并同一 run-loop 内的多个流式更新，避免连续向 ScrollViewReader 排队 scrollTo。
+    @State private var isChatTailScrollScheduled: Bool = false
+
+    /// HOM-70：session 列表 popover 显示状态。
+    @State private var isSessionListPresented: Bool = false
+
+    /// HOM-70 v2：「承接自上一对话」banner 的 view-端 dismiss 跟踪。
+    ///
+    /// **关键解耦**：dismiss 仅翻 view 端状态隐藏 banner UI，**不动**
+    /// `chat.currentCarriedOverSummary` —— AI 仍能从 system prompt 的
+    /// `{previousSessionCarryOver}` section 看到承接段，让"AI 知道" vs "用户视觉"
+    /// 完全独立。用户点 ✕ 表达"我不需要继续看到这个提醒"而不是"清除上文承接"。
+    ///
+    /// 用 `Set<UUID>` 按 session id 跟踪：切回已 dismiss 的 session 不再弹 banner；
+    /// 切到其它带承接的 session 仍正常显示。@State 仅生命周期内有效，重启窗口
+    /// 后所有 dismiss 清零（行为可接受，用户重新打开 = 给一次提醒机会）。
+    @State private var carryOverDismissedSessions: Set<UUID> = []
+    /// HOM-70 v2：「承接自上一对话」banner 的展开/收起跟踪（按 session 独立）。
+    /// 承接摘要末 6 条对话拼的 markdown 可能比较长，默认 3 行预览 + 用户点击展开看全文。
+    @State private var carryOverExpandedSessions: Set<UUID> = []
+
+    /// HOM-70：清除当前 repo 对话历史的确认弹窗状态。
+    @State private var pendingClearCurrentRepoConfirm: Bool = false
 
     /// Top overscroll 触发摘要展开的阈值（pt）。
     ///
@@ -111,27 +157,27 @@ struct RepoAIWindowContentView: View {
 
             Divider()
 
-            summarySection
-                .frame(maxWidth: .infinity, alignment: .top)
-                // 单面板互斥：当前不激活的面板 maxHeight 切到 0。另一面板会撑
-                // 满 VStack 的全部剩余空间。clipped 防止 0 高度时内部 padding
-                // 溢出顶到下方面板。
-                .frame(maxHeight: panelMode == .summary ? .infinity : 0)
-                .clipped()
-                .allowsHitTesting(panelMode == .summary)
-                .animation(.easeInOut(duration: 0.28), value: panelMode)
+            activePanel
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .opacity(panelContentOpacity)
 
             panelToggleBar
 
-            chatSection
-                .frame(maxWidth: .infinity, alignment: .top)
-                .frame(maxHeight: panelMode == .chat ? .infinity : 0)
-                .clipped()
-                .allowsHitTesting(panelMode == .chat)
-                .animation(.easeInOut(duration: 0.28), value: panelMode)
+            Divider()
 
-            // 对话上下文状态提示（Y8，2026-06-14）：在 chat 输入框上方显示一行
-            // 轻量 caption，让用户随时知道本次对话是不是带上了代码上下文。
+            AIChatInputView(
+                pendingReplacement: $pendingChatDraftReplacement,
+                focus: $isChatInputFocused,
+                isSending: chatVM?.isSending ?? false,
+                onSend: sendChatMessage,
+                onCancel: cancelChatStreaming
+            )
+
+            // 对话上下文状态提示（Y8，2026-06-14；2026-06-15 13:05 dong4j 反馈把它
+            // 移到输入框**下方**）：原设计放在 chat 输入框上方，与 macOS 习惯不符——
+            // macOS 常见模式是「输入主体在上 / 状态条在下」（Xcode 编辑器底栏、Mail
+            // 写信底栏都是这个布局）。把 caption 紧贴底部，让上下文标签作为输入框的
+            // 辅助状态信息，而不是 banner-style 横在头顶。
             //
             // 关键设计：
             //   - **数据源复用摘要 vm**：`insight.contextMetadata` / `vm.contextDegradationReason`
@@ -142,17 +188,8 @@ struct RepoAIWindowContentView: View {
             //     让"轻量"原则真的轻量——只在有明确信号时给反馈。
             if panelMode == .chat {
                 chatContextStatusRow
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    .animation(.easeInOut(duration: 0.28), value: panelMode)
+                    .transition(.opacity)
             }
-
-            Divider()
-
-            AIChatInputView(
-                text: chatInputBinding,
-                isSending: chatVM?.isSending ?? false,
-                onSend: sendChatMessage
-            )
         }
         .background(Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -167,8 +204,20 @@ struct RepoAIWindowContentView: View {
             // 我们也重新捕获一次（视为"等价于关闭再打开"）——通过 nil-check 之后
             // 直接覆盖式赋值实现，每次 task 重跑都重新读取当前 registry。
             starredAtOpen = dependencies.starredRegistry.contains(ghRepoId: repo.id)
-            await initializeViewModelsIfNeeded()
+            await initializeInsightViewModelIfNeeded()
             await insightVM?.load(repo: repo)
+        }
+    }
+
+    /// 任一时刻只让当前面板进入 SwiftUI 视图树。旧实现把另一面板压到高度 0，
+    /// 但隐藏的 Markdown 仍会解析、布局并响应状态变化，是输入和切换卡顿的主因。
+    @ViewBuilder
+    private var activePanel: some View {
+        switch panelMode {
+        case .summary:
+            summarySection
+        case .chat:
+            chatSection
         }
     }
 
@@ -210,12 +259,12 @@ struct RepoAIWindowContentView: View {
 
     // MARK: - 初始化
 
-    /// 首次进入窗口时构造两个 VM。
+    /// 首次进入窗口时只构造摘要 VM；聊天 VM 延迟到首次使用。
     ///
     /// 用 `@State` 包一层而不是在 init 里直接创建，是因为 SwiftUI struct init 不能
     /// 安全地访问 @Environment（环境在 body 求值时才注入）；放进 `.task` 拿到环境
     /// 后再创建可靠得多。
-    private func initializeViewModelsIfNeeded() async {
+    private func initializeInsightViewModelIfNeeded() async {
         if insightVM == nil {
             let ivm = RepoAIInsightViewModel(
                 service: dependencies.repoAIInsightService,
@@ -232,9 +281,23 @@ struct RepoAIWindowContentView: View {
             }
             insightVM = ivm
         }
-        if chatVM == nil {
-            chatVM = RepoAIChatViewModel(service: dependencies.repoAIInsightService)
+    }
+
+    /// 聊天历史只在用户首次进入聊天面板或首次发送时加载。窗口默认展示摘要，
+    /// 首帧不应该为不可见的聊天 Markdown 支付解析和布局成本。
+    private func prepareChatIfNeeded() async {
+        let vm: RepoAIChatViewModel
+        if let chatVM {
+            vm = chatVM
+        } else {
+            let newVM = RepoAIChatViewModel(
+                service: dependencies.repoAIInsightService,
+                wikiContextService: dependencies.wikiContextService
+            )
+            chatVM = newVM
+            vm = newVM
         }
+        await vm.bootstrap(repo: repo)
     }
 
     // MARK: - 摘要段
@@ -247,64 +310,79 @@ struct RepoAIWindowContentView: View {
 
                 // ScrollViewReader 内嵌 ScrollView，让流式 token 进来时能 `scrollTo`
                 // 底部锚点（dong4j 优化 1：现在像 ChatGPT 一样实时滚字）。
+                //
+                // 2026-06-15 dong4j 优化：加入「跟随尾部」机制——用户主动上滚后
+                // 自动停止跟随，滚回底部后自动恢复。具体见
+                // `Starcat/Shared/Components/ScrollFollowTail.swift` 的设计注释。
+                //
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 14) {
-                            if let error = vm.errorMessage {
-                                errorBanner(message: error)
-                            }
-
-                            // Y4：代码上下文降级 banner——只在 generate 路径（非 load 缓存路径）显示。
-                            // 与 errorBanner 风格区分：errorBanner 是错误红色，本 banner 是
-                            // 信息黄色（系统 .yellow 圆点 + 提示文案），让用户知道"虽然摘要生成了，
-                            // 但这次没用上代码内容"。
-                            if let reason = vm.contextDegradationReason {
-                                contextDegradationBanner(reason)
-                            }
-
-                            // Y9.3（2026-06-14 dong4j 反馈）：AnySearch 外部上下文降级 banner。
-                            // 与代码上下文降级 banner 并行存在但相互正交，两路可同时显示。
-                            // 用户开了 AnySearch + AI 子开关后，若上游 502 / 网络异常 / Key 失效 /
-                            // 配额用完 / 限流 / 能力未启用，本 banner 给出对应分类的提示文案，避免
-                            // 静默降级让用户疑惑"我都开了为什么没注入"。
-                            if let reason = vm.externalContextDegradationReason {
-                                externalContextDegradationBanner(reason)
-                            }
-
-                            if vm.isLoading {
-                                HStack(spacing: 8) {
-                                    ProgressView().controlSize(.small)
-                                    Text("ai.assistant.summary.loadingCache")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                    ZStack(alignment: .bottomTrailing) {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 14) {
+                                if let error = vm.errorMessage {
+                                    errorBanner(message: error)
                                 }
-                            } else if vm.isGenerating, vm.phase == .preparingContext {
-                                // Y1：摘要生成首阶段 -- RepoContextPacker 正在打包代码上下文。
-                                // 此时 streamingSummaryText 还是空字符串（service 还没收到 LLM
-                                // 的第一个 delta），需要单独 UI 提示用户"在做事，别关窗口"。
-                                preparingContextPlaceholder()
-                            } else if let draft = vm.streamingSummaryText, !draft.isEmpty {
-                                streamingSummary(draft)
-                            } else if let insight = vm.insight {
-                                insightContent(insight, vm: vm)
-                            } else {
-                                emptySummaryState(vm: vm)
-                            }
 
-                            Color.clear
-                                .frame(height: 1)
-                                .id(Self.summaryBottomAnchorID)
+                                // Y4：代码上下文降级 banner——只在 generate 路径（非 load 缓存路径）显示。
+                                // 与 errorBanner 风格区分：errorBanner 是错误红色，本 banner 是
+                                // 信息黄色（系统 .yellow 圆点 + 提示文案），让用户知道"虽然摘要生成了，
+                                // 但这次没用上代码内容"。
+                                if let reason = vm.contextDegradationReason {
+                                    contextDegradationBanner(reason)
+                                }
+
+                                // Y9.3（2026-06-14 dong4j 反馈）：AnySearch 外部上下文降级 banner。
+                                // 与代码上下文降级 banner 并行存在但相互正交，两路可同时显示。
+                                // 用户开了 AnySearch + AI 子开关后，若上游 502 / 网络异常 / Key 失效 /
+                                // 配额用完 / 限流 / 能力未启用，本 banner 给出对应分类的提示文案，避免
+                                // 静默降级让用户疑惑"我都开了为什么没注入"。
+                                if let reason = vm.externalContextDegradationReason {
+                                    externalContextDegradationBanner(reason)
+                                }
+
+                                if vm.isLoading {
+                                    HStack(spacing: 8) {
+                                        ProgressView().controlSize(.small)
+                                        Text("ai.assistant.summary.loadingCache")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                } else if vm.isGenerating, vm.phase == .preparingContext {
+                                    // Y1：摘要生成首阶段 -- RepoContextPacker 正在打包代码上下文。
+                                    // 此时 streamingSummaryText 还是空字符串（service 还没收到 LLM
+                                    // 的第一个 delta），需要单独 UI 提示用户"在做事，别关窗口"。
+                                    preparingContextPlaceholder()
+                                } else if let draft = vm.streamingSummaryText, !draft.isEmpty {
+                                    streamingSummary(draft)
+                                } else if let insight = vm.insight {
+                                    insightContent(insight, vm: vm)
+                                } else {
+                                    emptySummaryState(vm: vm)
+                                }
+
+                                Color.clear
+                                    .frame(height: 1)
+                                    .id(Self.summaryBottomAnchorID)
+                                    .onScrollVisibilityChange(threshold: 0.5) { isVisible in
+                                        summaryTail.updateBottomVisibility(isVisible)
+                                    }
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .onChange(of: vm.streamingSummaryText ?? "") { _, newValue in
-                        guard !newValue.isEmpty else { return }
-                        proxy.scrollTo(Self.summaryBottomAnchorID, anchor: .bottom)
-                    }
-                    .onChange(of: vm.insight?.summaryMarkdown ?? "") { _, _ in
-                        proxy.scrollTo(Self.summaryBottomAnchorID, anchor: .bottom)
+                        .onScrollPhaseChange { _, newPhase in
+                            summaryTail.updatePhase(newPhase)
+                        }
+                        .onChange(of: vm.streamingSummaryText ?? "") { _, newValue in
+                            guard !newValue.isEmpty, summaryTail.isFollowing else { return }
+                            proxy.scrollTo(Self.summaryBottomAnchorID, anchor: .bottom)
+                        }
+                        .onChange(of: vm.insight?.summaryMarkdown ?? "") { _, _ in
+                            guard summaryTail.isFollowing else { return }
+                            proxy.scrollTo(Self.summaryBottomAnchorID, anchor: .bottom)
+                        }
+
                     }
                 }
             }
@@ -396,7 +474,7 @@ struct RepoAIWindowContentView: View {
         ) { didCopy in
             Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
                 .foregroundStyle(didCopy ? Color.green : Color.primary)
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
         }
     }
 
@@ -452,7 +530,7 @@ struct RepoAIWindowContentView: View {
             }
             Text("ai.assistant.summary.preparingContext.caption")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -639,6 +717,10 @@ struct RepoAIWindowContentView: View {
     ///   - 第一行：由 X 模型生成 · 时间（旧版独占）
     ///   - 第二行：基于 commit abc1234 (4280 tokens · 38 files)
     ///     仅当 insight.contextMetadata 非 nil 时出现；不存在的旧缓存 insight 上行兼容。
+    ///
+    /// **2026-06-14 D-31 follow-up**：颜色从 `.tertiary` 升到 `.secondary`。
+    /// `.tertiary` 在浅色主题下对比度只有 ~1.5:1，肉眼几乎"灰糊"在白底上；
+    /// 与 D-31 空状态组件统一对齐到 `.secondary`（4.5:1+ 满足 WCAG AA）。
     private func footer(_ insight: RepoAIInsight) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
@@ -660,20 +742,43 @@ struct RepoAIWindowContentView: View {
             }
         }
         .font(.caption2)
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(.secondary)
     }
 
-    /// Y2：代码上下文元信息行。展示 "<commit-7位> · N tokens · M files"。
+    /// Y2：代码上下文元信息行。展示 "基于 <commit-7位> (N tokens · M files)"。
     ///
-    /// 文案格式化用 `String(format:)` + i18n 模板，与上面的 generatedBy 行同款手法
-    /// （避免 SwiftUI Text 拼接造成 key 名漂移）。
+    /// **2026-06-15 dong4j**：commit short sha 改为可点击链接，点击跳转 GitHub commit 详情页。
+    ///
+    /// 设计选择：
+    /// - **i18n 拆三段** 而非 `String(format:)` 整段拼接 —— 因为中间要嵌入交互式 view（不是文本），
+    ///   无法走 `%@` 占位符。拆成 prefix（"基于"）+ `CommitHashLink`（short sha）+ statsFormat
+    ///   （"(N tokens · M files)"）三个 SwiftUI 元素，HStack 拼装。这种拆法在多语言里仍然成立：
+    ///   英文 "Based on <link> (N tokens · M files)" 与中文 "基于 <link>（N tokens · M files）"
+    ///   语法结构相同（前缀 + 链接 + 括号统计段），翻译方不会出现"语序错位 → 词组拆碎"问题。
+    /// - **抽出 `CommitHashLink` 子 view** —— SwiftUI `Link(destination:label:)` closure 形式
+    ///   **绕过了** macOS 内置 `_LinkLabel` 私有装饰链（hover 下划线 / 手型指针 cursor），只剩
+    ///   tint 着色和点击行为。10:53 dong4j 反馈"hover 没下划线 / 没手型 / 没 tooltip"就是这个
+    ///   坑。修复路线 = 保留 `Link`（让点击 + VoiceOver + 键盘导航免费）+ 子 view 持有 `@State
+    ///   isHovered` 手动加 `.underline(isHovered)` + `.pointerStyle(.link)` (macOS 15+) 显式手型，
+    ///   tooltip 通过 `.help(...)` 自然继承 hover 状态。
+    /// - **URL 用 full sha 而非 commitShaShort** —— `RepoAIInsightContextMeta.commitSha` 是 40 字符
+    ///   full sha，传给 GitHub 不会有碰撞风险也不会触发 302 重定向。展示层用 short（commitShaShort）
+    ///   只是为了视觉简洁。
     private func contextMetaFooterRow(_ meta: RepoAIInsightContextMeta) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             Image(systemName: "doc.text.magnifyingglass")
+            Text("ai.assistant.summary.footer.contextMeta.prefix")
+            CommitHashLink(
+                shortSha: meta.commitShaShort,
+                destination: GitHubURLs.repoCommit(
+                    owner: repo.owner,
+                    repo: repo.name,
+                    sha: meta.commitSha
+                )
+            )
             Text(
                 String(
-                    format: String(localized: "ai.assistant.summary.footer.contextMetaFormat"),
-                    meta.commitShaShort,
+                    format: String(localized: "ai.assistant.summary.footer.contextMeta.statsFormat"),
                     meta.actualTokens,
                     meta.totalFiles
                 )
@@ -694,13 +799,14 @@ struct RepoAIWindowContentView: View {
     /// - 用原生 `Picker(.segmented)`：macOS 上渲染为 `NSSegmentedControl` 风格，
     ///   与系统视觉一致，不抢戏；
     /// - icon + 文字双标识："✨ AI 摘要" / "💬 AI 对话"，扫一眼即可分辨；
-    /// - selection 绑定 `panelMode` 并带 0.28s easeInOut 动画，与上下两段
-    ///   `frame(maxHeight: ...)` 的折叠动画完全同节奏；
+    /// - 首次进入聊天先异步准备数据，期间保留摘要内容并在右侧显示进度；
+    /// - 面板结构无动画替换，下一帧仅让目标面板做 0.12s 单向淡入，旧、新文字
+    ///   永远不会同时存在；
     /// - bar 自带细分隔线（`.bar` 材质 + Divider 上下），视觉上是上下两段
     ///   面板的边界，无需额外加 `Divider()`。
     private var panelToggleBar: some View {
         HStack(spacing: 0) {
-            Picker("", selection: $panelMode.animation(.easeInOut(duration: 0.28))) {
+            Picker("", selection: panelModeBinding) {
                 Label("ai.assistant.toggle.summary", systemImage: "sparkles").tag(AIPanelMode.summary)
                 Label("ai.assistant.toggle.chat", systemImage: "bubble.left.and.bubble.right").tag(AIPanelMode.chat)
             }
@@ -709,6 +815,7 @@ struct RepoAIWindowContentView: View {
             // 限宽避免在大窗口下 segmented 被拉成超长条带；居中通过外层
             // `.frame(maxWidth: .infinity)` + Picker 自身有限宽实现。
             .frame(maxWidth: 280)
+            .disabled(isPreparingChat)
             .help("ai.assistant.toggle.help")
         }
         .frame(maxWidth: .infinity)
@@ -724,6 +831,13 @@ struct RepoAIWindowContentView: View {
                 .fill(Color.primary.opacity(0.06))
                 .frame(height: 0.5)
         }
+        .overlay(alignment: .trailing) {
+            if isPreparingChat {
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(.trailing, 16)
+            }
+        }
     }
 
     // MARK: - 对话段
@@ -731,70 +845,527 @@ struct RepoAIWindowContentView: View {
     @ViewBuilder
     private var chatSection: some View {
         if let chat = chatVM {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        if chat.messages.isEmpty {
-                            chatEmptyState
-                                .padding(.top, 60)
-                        } else {
-                            ForEach(chat.messages) { message in
-                                AIChatBubble(message: message)
-                                    .id(message.id)
-                            }
-
-                            // 对话底部"复制全部"区域：流式中（chat.isSending）暂时
-                            // 隐藏，避免用户在 token 还在流时复制到半截 Markdown。
-                            if !chat.isSending {
-                                conversationCopyRow(chat: chat)
-                            }
-
-                            // 锚点：scrollTo 用，让"新消息追加后自动滚到最底部"。
-                            // 单独留一个 0 高度 anchor 比 scrollTo 最后一条 message.id
-                            // 更稳：流式中助手 message 不断改 content，scrollTo 同一个
-                            // id 在某些版本 SwiftUI 下不重新触发滚动，0 高度 anchor 不会。
-                            Color.clear
-                                .frame(height: 1)
-                                .id(Self.chatBottomAnchorID)
-                        }
-                    }
-                    .padding(.vertical, 16)
-                }
-                .background(Color.clear)
-                .onChange(of: chat.messages.count) { _, _ in
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        proxy.scrollTo(Self.chatBottomAnchorID, anchor: .bottom)
-                    }
-                }
-                .onChange(of: chat.messages.last?.content ?? "") { _, _ in
-                    // 流式 token 进来时也滚一下，否则长回答会被滚动条卡在中间。
-                    proxy.scrollTo(Self.chatBottomAnchorID, anchor: .bottom)
-                }
-                // dong4j 2026-06-04 15:30 重设计：不再用滚动 hysteresis 切折叠，
-                // 改为只识别"顶部下拉 overscroll"这一种明确的 scroll-driven 手势。
-                .onScrollPhaseChange { _, newPhase in
-                    lastChatScrollPhase = newPhase
-                }
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    geometry.contentOffset.y
-                } action: { _, newOffset in
-                    handleChatOverscroll(
-                        offsetY: newOffset,
-                        hasMessages: !chat.messages.isEmpty
-                    )
-                }
-
-                if let err = chat.errorMessage {
-                    chatErrorBanner(message: err) {
-                        chat.dismissError()
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-                }
+            VStack(spacing: 0) {
+                chatSessionToolbar(chat: chat)
+                Divider().opacity(0.5)
+                chatScrollArea(chat: chat)
             }
         } else {
             Color.clear
         }
+    }
+
+    /// HOM-70：对话面板右上角 session 控制栏。
+    ///
+    /// 左侧：当前 session 标题（空 session 显示「新对话」），溢出截断。
+    /// 右侧：「+ 新建」、「session 列表」（popover）、「⋯ 菜单」（清当前 repo / 删本 session）。
+    /// 全部按钮严格遵守 `.buttonStyle(.plain) + .focusEffectDisabled()` 规则。
+    private func chatSessionToolbar(chat: RepoAIChatViewModel) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text(verbatim: displayTitle(for: chat))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 8)
+
+            Button {
+                chat.startNewSession()
+            } label: {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("ai.assistant.chat.session.new.help")
+            .disabled(chat.isSending)
+
+            Button {
+                isSessionListPresented = true
+                Task { await chat.refreshSessions(repo: repo) }
+            } label: {
+                Image(systemName: "list.bullet.rectangle")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("ai.assistant.chat.session.list.help")
+            .popover(isPresented: $isSessionListPresented, arrowEdge: .top) {
+                sessionListPopover(chat: chat)
+            }
+
+            Menu {
+                Button(role: .destructive) {
+                    pendingClearCurrentRepoConfirm = true
+                } label: {
+                    Label("ai.assistant.chat.session.clearCurrentRepo", systemImage: "trash")
+                }
+                .disabled(chat.sessions.isEmpty)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 22, height: 22)
+            .focusEffectDisabled()
+            .help("ai.assistant.chat.session.menu.help")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .confirmationDialog(
+            String(localized: "ai.assistant.chat.session.clearCurrentRepo.confirm"),
+            isPresented: $pendingClearCurrentRepoConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("general.clear", role: .destructive) {
+                Task { await chat.deleteAllForCurrentRepo(repo: repo) }
+            }
+            Button("general.cancel", role: .cancel) { }
+        } message: {
+            Text("ai.assistant.chat.session.clearCurrentRepo.message")
+        }
+    }
+
+    /// session 列表 popover。
+    ///
+    /// 极简列表：title + 时间 + 消息数；当前 session 用蓝色 chevron 标记。
+    /// 点击一项 → 切换；尾部 swipe / 单项删除按钮 → 删 session。
+    private func sessionListPopover(chat: RepoAIChatViewModel) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("ai.assistant.chat.session.list.title")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    chat.startNewSession()
+                    isSessionListPresented = false
+                } label: {
+                    Label("ai.assistant.chat.session.new", systemImage: "plus")
+                        .font(.caption.weight(.medium))
+                }
+                .buttonStyle(.borderless)
+                .focusEffectDisabled()
+                .disabled(chat.isSending)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+            Divider()
+            if chat.sessions.isEmpty {
+                Text("ai.assistant.chat.session.list.empty")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 28)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(chat.sessions) { summary in
+                            sessionListRow(summary: summary, chat: chat)
+                            if summary.id != chat.sessions.last?.id {
+                                Divider().opacity(0.4)
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 320)
+            }
+        }
+        .frame(width: 320)
+    }
+
+    private func sessionListRow(summary: ChatSessionSummary, chat: RepoAIChatViewModel) -> some View {
+        let isCurrent = summary.id == chat.currentSessionId
+        return HStack(alignment: .top, spacing: 8) {
+            Image(systemName: isCurrent ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 11))
+                .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary.opacity(0.5))
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: summary.title.isEmpty
+                     ? String(localized: "ai.assistant.chat.session.untitled")
+                     : summary.title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(verbatim: formattedSessionMeta(summary))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button {
+                Task { await chat.deleteSession(sessionId: summary.id, repo: repo) }
+            } label: {
+                Image(systemName: "trash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("ai.assistant.chat.session.delete.help")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            Task {
+                await chat.switchSession(to: summary.id, repo: repo)
+                isSessionListPresented = false
+            }
+        }
+        .background(isCurrent ? Color.accentColor.opacity(0.06) : Color.clear)
+    }
+
+    /// Picker 只表达用户意图，真正切换统一交给 `requestPanelMode(_:)`。
+    /// 准备聊天期间让 segmented 先显示目标项，但内容仍保留摘要，避免空白闪烁。
+    private var panelModeBinding: Binding<AIPanelMode> {
+        Binding(
+            get: { isPreparingChat ? .chat : panelMode },
+            set: { newMode in
+                guard !isPreparingChat else { return }
+                Task { await requestPanelMode(newMode) }
+            }
+        )
+    }
+
+    /// 面板切换的唯一入口。
+    ///
+    /// 首次进入 chat 必须等 bootstrap 完成，确保插入视图树的第一帧就是完整聊天内容。
+    /// 提交时禁用 transaction animation，让旧面板立刻离树；随后下一帧只把新面板
+    /// 从透明淡入，因此不存在 cross-fade 导致的文字重合。
+    @MainActor
+    private func requestPanelMode(_ newMode: AIPanelMode) async {
+        guard newMode != panelMode else { return }
+
+        if newMode == .chat {
+            guard !isPreparingChat else { return }
+            isPreparingChat = true
+            await prepareChatIfNeeded()
+        }
+
+        var replacement = Transaction()
+        replacement.disablesAnimations = true
+        withTransaction(replacement) {
+            isPreparingChat = false
+            panelMode = newMode
+            panelContentOpacity = reduceMotion ? 1 : 0
+        }
+
+        guard !reduceMotion else { return }
+        await Task.yield()
+        withAnimation(.easeOut(duration: 0.12)) {
+            panelContentOpacity = 1
+        }
+    }
+
+    private func displayTitle(for chat: RepoAIChatViewModel) -> String {
+        if let current = chat.sessions.first(where: { $0.id == chat.currentSessionId }), !current.title.isEmpty {
+            return current.title
+        }
+        return String(localized: "ai.assistant.chat.session.untitled")
+    }
+
+    private func formattedSessionMeta(_ summary: ChatSessionSummary) -> String {
+        let relative = summary.updatedAt.formatted(date: .abbreviated, time: .shortened)
+        return String(
+            format: String(localized: "ai.assistant.chat.session.list.metaFormat"),
+            summary.messageCount,
+            relative
+        )
+    }
+
+    @ViewBuilder
+    private func chatScrollArea(chat: RepoAIChatViewModel) -> some View {
+        ScrollViewReader { proxy in
+                // 2026-06-15 dong4j 优化：与摘要段同源接入 ScrollTailController。
+                //
+                // 对话段比摘要段多一件事：还要监听顶部下拉 overscroll（≤ -60pt）
+                // 来切回摘要面板。两个滚动驱动行为共享同一份 phase / geometry：
+                //   - `chatTail.lastPhase` 同时给"跟随"判定 + "overscroll"门控用；
+                //   - `onScrollGeometryChange` 只读取顶部 overscroll 所需的 offsetY；
+                //   - 是否到底由底部 sentinel 可见性独立判断，不再读 content geometry。
+                ScrollView {
+                        // 2026-06-15 dong4j 反馈：历史对话滚动像按消息分块跳跃。
+                        // AI 回复是高度差异很大的 Markdown；LazyVStack 会在长消息进入
+                        // 可视区时才实例化并重新测量 cell，随后修正此前估算的 content
+                        // offset，表现为跨消息边界时整块跳动。对话受模型上下文限制，
+                        // 单 session 消息规模可控，因此这里主动换取一次性准确布局，
+                        // 使用 VStack 保证连续滚动，不做惰性高度估算。
+                        VStack(alignment: .leading, spacing: 14) {
+                            // HOM-70 v2：「承接自上一对话」banner —— 放在 ScrollView 内部最顶部，
+                            // 跟随滚动（聊久了自动滚出视野不占屏）；空 session（刚承接还没消息）
+                            // 也显示，让用户立刻知道"这是承接自上一对话的新 session"。
+                            if shouldShowCarryOverBanner(chat: chat) {
+                                carriedOverSummaryBanner(chat: chat)
+                                    .padding(.horizontal, 16)
+                            }
+
+                            if chat.messages.isEmpty {
+                                chatEmptyState
+                                    .padding(.top, 60)
+                            } else {
+                                if chat.hasEarlierMessages {
+                                    loadEarlierMessagesButton(chat: chat)
+                                        .padding(.horizontal, 16)
+                                }
+
+                                ForEach(chat.messages) { message in
+                                    AIChatBubble(
+                                        message: message,
+                                        onEditUserMessage: editUserMessage
+                                    )
+                                    .equatable()
+                                }
+
+                                if let streaming = chat.streamingPresentation {
+                                    AIStreamingChatBubble(snapshot: streaming)
+                                    .equatable()
+                                }
+
+                                // 对话底部"复制全部"区域：流式中（chat.isSending）暂时
+                                // 隐藏，避免用户在 token 还在流时复制到半截 Markdown。
+                                if !chat.isSending {
+                                    conversationCopyRow(chat: chat)
+                                }
+
+                                // 锚点：scrollTo 用，让"新消息追加后自动滚到最底部"。
+                                // 单独留一个 0 高度 anchor 比 scrollTo 最后一条 message.id
+                                // 更稳：流式中助手 message 不断改 content，scrollTo 同一个
+                                // id 在某些版本 SwiftUI 下不重新触发滚动，0 高度 anchor 不会。
+                                Color.clear
+                                    .frame(height: 1)
+                                    .id(Self.chatBottomAnchorID)
+                                    .onScrollVisibilityChange(threshold: 0.5) { isVisible in
+                                        chatTail.updateBottomVisibility(isVisible)
+                                    }
+                            }
+                        }
+                        .padding(.vertical, 16)
+                    }
+                    .background(Color.clear)
+                    .onChange(of: chat.messages.count) { _, _ in
+                        scheduleChatTailScroll(proxy: proxy)
+                    }
+                    .onChange(of: chat.streamingPresentation?.revision ?? 0) { _, _ in
+                        scheduleChatTailScroll(proxy: proxy)
+                    }
+                    .onChange(of: chat.isSending) { _, isSending in
+                        // 流式结束后会插入“复制完整对话”行，它位于 sentinel 之前；
+                        // 高度变化也要补一次尾部对齐，否则视觉上会停在按钮上方。
+                        guard !isSending else { return }
+                        scheduleChatTailScroll(proxy: proxy)
+                    }
+                    // dong4j 2026-06-04 15:30 重设计：识别"顶部下拉 overscroll"切回摘要面板。
+                    // dong4j 2026-06-15 复用：同一份 phase / geometry 同时给"跟随尾部"用。
+                    .onScrollPhaseChange { _, newPhase in
+                        chatTail.updatePhase(newPhase)
+                    }
+                    .onScrollGeometryChange(for: Bool.self) { geo in
+                        geo.contentOffset.y < overscrollExpandThreshold
+                    } action: { oldValue, newValue in
+                        guard !oldValue, newValue else { return }
+                        handleChatOverscroll(
+                            hasMessages: !chat.messages.isEmpty || chat.streamingPresentation != nil
+                        )
+                    }
+
+            if chat.isContextOverflow {
+                contextOverflowBanner(chat: chat)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            } else if let err = chat.errorMessage {
+                chatErrorBanner(message: err) {
+                    chat.dismissError()
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+            }
+        }
+    }
+
+    /// HOM-70 v2：是否应该在 chatScrollArea 顶部展示「承接自上一对话」banner。
+    ///
+    /// 三个条件全满足：① 当前 session 有非空 `carriedOverSummary` 字段；
+    /// ② 当前 session id 存在；③ 用户没在本 session 主动 dismiss 过 banner。
+    /// 切到无承接的 session / 用户已 dismiss 的 session → 不显示。
+    private func shouldShowCarryOverBanner(chat: RepoAIChatViewModel) -> Bool {
+        guard let summary = chat.currentCarriedOverSummary, !summary.isEmpty,
+              let sid = chat.currentSessionId else {
+            return false
+        }
+        return !carryOverDismissedSessions.contains(sid)
+    }
+
+    /// 分页加载更早历史。
+    ///
+    /// 首屏只渲染最近 2 条消息，避免大量 Markdown 气泡拖慢 AI 窗口和输入框。用户确实
+    /// 要回看历史时再按 20 条一个 chunk 向前加载；按钮放在滚动内容顶部，语义上等价于
+    /// 常见聊天 App 的“加载更早消息”。
+    private func loadEarlierMessagesButton(chat: RepoAIChatViewModel) -> some View {
+        HStack {
+            Spacer()
+            Button {
+                Task { await chat.loadEarlierMessages(repo: repo) }
+            } label: {
+                HStack(spacing: 6) {
+                    if chat.isLoadingEarlierMessages {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "chevron.up.circle")
+                    }
+                    Text(chat.isLoadingEarlierMessages
+                         ? "ai.assistant.chat.history.loadingEarlier"
+                         : "ai.assistant.chat.history.loadEarlier")
+                        .font(.caption.weight(.medium))
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.secondary.opacity(0.10))
+                )
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .disabled(chat.isLoadingEarlierMessages)
+            .help("ai.assistant.chat.history.loadEarlier.help")
+            Spacer()
+        }
+    }
+
+    /// HOM-70 v2：「承接自上一对话」banner —— 用户点上下文溢出 banner 的「新建并承接」
+    /// 后，新 session 的 `currentCarriedOverSummary` 拿到上一对话末 6 条 turn 的 markdown
+    /// 摘要。本 banner 让用户**看到**承接段（视觉），与 AI 通过 system prompt 的
+    /// `{previousSessionCarryOver}` section **读到**承接段（prompt）相互独立。
+    ///
+    /// 视觉：紫色 `arrow.uturn.backward.circle.fill` icon + 标题"承接自上一对话" +
+    /// 默认 3 行 markdown 预览（lineLimit:3 + .textSelection 让用户能复制）+
+    /// 展开/收起按钮（按 session 跟踪独立状态）+ 右上 ✕ dismiss（仅翻 view 端 @State
+    /// 不动 VM 数据，AI 仍能从 prompt 看到承接段）。
+    ///
+    /// 紫色与 sparkles AI icon 同色系，与 contextOverflowBanner 黄色（系统警告色）/
+    /// chatErrorBanner 红色（错误色）形成语义区分：紫色 = "AI 元信息"。
+    private func carriedOverSummaryBanner(chat: RepoAIChatViewModel) -> some View {
+        let summaryText = chat.currentCarriedOverSummary ?? ""
+        let sid = chat.currentSessionId
+        let isExpanded = sid.map { carryOverExpandedSessions.contains($0) } ?? false
+
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "arrow.uturn.backward.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.purple)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("ai.assistant.chat.carryOver.title")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text(summaryText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(isExpanded ? nil : 3)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    guard let sid else { return }
+                    if isExpanded {
+                        carryOverExpandedSessions.remove(sid)
+                    } else {
+                        carryOverExpandedSessions.insert(sid)
+                    }
+                } label: {
+                    Text(isExpanded
+                         ? "ai.assistant.chat.carryOver.collapse"
+                         : "ai.assistant.chat.carryOver.expand")
+                        .font(.caption2.weight(.medium))
+                }
+                .buttonStyle(.borderless)
+                .focusEffectDisabled()
+            }
+
+            Spacer(minLength: 4)
+
+            Button {
+                if let sid {
+                    carryOverDismissedSessions.insert(sid)
+                }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("ai.assistant.chat.carryOver.dismiss.help")
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.purple.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.purple.opacity(0.30), lineWidth: 0.5)
+        )
+    }
+
+    /// HOM-70：上下文溢出 banner。
+    ///
+    /// 触发条件：`chat.isContextOverflow == true`（chatStream 错误描述命中
+    /// `RepoAIChatViewModel.looksLikeContextOverflow` 的关键字集）。
+    /// 行为：左侧文案解释"上下文已满"，右侧两个按钮：
+    ///   - "新建并承接"：调 `chat.startNewSessionAfterOverflow(repo:)`，把末尾 6 条
+    ///     摘要塞进新 session 的 carriedOverSummary；
+    ///   - 关闭：仅 dismiss banner，不创建新 session。
+    /// 视觉沿用 staleSettingsBanner / contextDegradationBanner 同款黄色 info 系。
+    private func contextOverflowBanner(chat: RepoAIChatViewModel) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+            Text("ai.assistant.chat.contextOverflow.message")
+                .font(.caption)
+                .foregroundStyle(.primary)
+            Spacer(minLength: 8)
+            Button {
+                Task { await chat.startNewSessionAfterOverflow(repo: repo) }
+            } label: {
+                Text("ai.assistant.chat.contextOverflow.newWithCarry")
+                    .font(.caption.weight(.medium))
+            }
+            .buttonStyle(.borderless)
+            .focusEffectDisabled()
+            .disabled(chat.isSending)
+            Button {
+                chat.dismissContextOverflow()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.yellow.opacity(0.18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.yellow.opacity(0.35), lineWidth: 1)
+                )
+        )
     }
 
     private static let chatBottomAnchorID = "chat-bottom-anchor"
@@ -807,19 +1378,22 @@ struct RepoAIWindowContentView: View {
     /// 3. 用户手势驱动相位（`.tracking / .interacting / .decelerating`）：排除
     ///    流式 `proxy.scrollTo` 程序化滚动（phase = `.animating`）和布局抖动
     ///    （phase = `.idle`）触发的偏移变化——同 v3 修反馈循环时的门控逻辑；
-    /// 4. `offsetY < overscrollExpandThreshold` (默认 -60pt)：macOS bouncing 区
-    ///    需要明显下拉幅度，避免误触；
+    /// 4. geometry transform 已把连续 offset 压成“是否越过 -60pt”布尔值，只有
+    ///    false → true 才调用本方法，流式布局期间不再每帧回调主视图；
     /// 5. `panelMode == .chat` 守门防止在动画切到 `.summary` 后又被 layout 抖动
     ///    再次触发（虽然 phase 门控基本兜住，多一道守门更稳）。
     ///
     /// 为什么不用 `.refreshable {}`：那个 modifier 会在 ScrollView 顶部加一个
     /// pull-to-refresh ProgressView 圆圈，视觉上像"加载指示"而不是"展开面板"，
     /// 容易引起用户误解。手动监听 contentOffset 的负值区间更纯粹。
-    private func handleChatOverscroll(offsetY: CGFloat, hasMessages: Bool) {
+    private func handleChatOverscroll(hasMessages: Bool) {
         guard panelMode == .chat else { return }
         guard hasMessages else { return }
 
-        switch lastChatScrollPhase {
+        // 2026-06-15：phase 来源从原 `lastChatScrollPhase` 切到 `chatTail.lastPhase`，
+        // 跟「跟随尾部」状态机共享同一份 phase tracking，避免一个 view 上挂两个
+        // onScrollPhaseChange + 两份独立 state 漂移。门控语义不变。
+        switch chatTail.lastPhase {
         case .interacting, .decelerating, .tracking:
             break
         case .idle, .animating:
@@ -828,10 +1402,7 @@ struct RepoAIWindowContentView: View {
             return
         }
 
-        guard offsetY < overscrollExpandThreshold else { return }
-        withAnimation(.easeInOut(duration: 0.3)) {
-            panelMode = .summary
-        }
+        Task { await requestPanelMode(.summary) }
     }
 
     /// 对话底部"复制全部对话"区域。
@@ -842,12 +1413,15 @@ struct RepoAIWindowContentView: View {
     /// `RepoAIChatViewModel.markdownExport` 注释）；providesContent 是 closure，
     /// 按下瞬间才拼字符串，避免每次 view 重绘都做 N 条消息的字符串拼接。
     ///
-    /// Y9.2（2026-06-14 dong4j 反馈玻璃态主题适配）：
-    ///   - 原方案 `Color(nsColor: .controlBackgroundColor)` 是固定的 system 控件背景色，
-    ///     在 NSVisualEffectView popover 玻璃态背景上会渲染成不透明纯白（浅色）/纯黑（深色），
-    ///     与玻璃态主题脱节，看着像贴了一片白纸；
-    ///   - 改用 `.thinMaterial` 让 capsule 与玻璃态融合，保留半透明质感跟随主题；
-    ///   - 描边从 `0.10` 提到 `0.18` 增强在玻璃态下的可识别度。
+    /// 2026-06-15 13:12 dong4j 反馈"不要圆形边框了,简单点即可"：去掉 capsule fill
+    /// 和 strokeBorder,只保留 icon + 文字 + hover 反馈。原方案的 `.thinMaterial`
+    /// capsule + 0.18 描边在玻璃态背景上虽然可读,但视觉权重偏重,与"次级操作"
+    /// 定位不符。简化为"裸 icon + 文字"是 ChatGPT / Claude 等 AI 对话框底部
+    /// 工具行的主流做法。
+    /// - icon 与 user/assistant 气泡复制按钮同款（13pt medium + 14×14 frame）,杜绝
+    ///   切换抖动；
+    /// - 文字保持 `.caption`,与"次级辅助操作"层级一致；
+    /// - `pressableHover` 保留作为唯一的"我可点击"暗示,鼠标悬停 + 按下时有微动反馈。
     private func conversationCopyRow(chat: RepoAIChatViewModel) -> some View {
         HStack {
             Spacer()
@@ -856,24 +1430,22 @@ struct RepoAIWindowContentView: View {
                 tooltip: "ai.assistant.chat.copyAll.tooltip"
             ) { didCopy in
                 HStack(spacing: 6) {
+                    // 13:46 dong4j 反馈"复制图标要和字体大小匹配"：原 `system(size: 13)`
+                    // 让 icon 比文字 `.caption`(~12pt) 大一档。统一用 `.font(.caption)`
+                    // 让 SwiftUI 系统级保证 icon 与文字字号一致；frame 14×14 保留作为
+                    // 防抖容器(SF Symbol 内在尺寸约 ~14pt,容器紧贴不留多余白)。
                     Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
                         .font(.caption)
-                        .contentTransition(.symbolEffect(.replace))
+                        .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                        .frame(width: 14, height: 14)
                     Text(didCopy ? "ai.assistant.copy.copied" : "ai.assistant.chat.copyAll.label")
                         .font(.caption)
                 }
                 .foregroundStyle(didCopy ? Color.green : .secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .fill(.thinMaterial)
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
-                        )
-                )
-                .pressableHover(opacity: 0.75, scale: 1.04)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+                .pressableHover(opacity: 0.65, scale: 1.03)
             }
             Spacer()
         }
@@ -882,27 +1454,45 @@ struct RepoAIWindowContentView: View {
     }
 
     private var chatEmptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 36))
-                .foregroundStyle(.tertiary)
-            Text("ai.assistant.chat.empty.title")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text("ai.assistant.chat.empty.description")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-        }
+        EmptyStateView(
+            systemImage: "bubble.left.and.bubble.right",
+            title: "ai.assistant.chat.empty.title",
+            subtitle: "ai.assistant.chat.empty.description",
+            subtitleHorizontalPadding: 40
+        )
         .frame(maxWidth: .infinity)
     }
 
-    private var chatInputBinding: Binding<String> {
-        Binding(
-            get: { chatVM?.inputText ?? "" },
-            set: { chatVM?.inputText = $0 }
-        )
+    /// 把历史用户问题回填到底部输入框并聚焦，用户确认后再发送。
+    private func editUserMessage(_ content: String) {
+        pendingChatDraftReplacement = content
+        Task { @MainActor in
+            // 等 binding 先把文本提交给 TextField，再请求焦点，避免焦点切换抢在内容更新前。
+            await Task.yield()
+            isChatInputFocused = true
+        }
+    }
+
+    /// 合并同一主线程周期内的尾部滚动请求。
+    ///
+    /// 流式 Markdown 每次提交会同时改变文本高度和 sentinel 位置；直接在每个
+    /// onChange 中 scrollTo 会堆积程序化滚动。这里最多保留一个待执行请求，且自动
+    /// 跟随不使用动画，用户一旦开始滚动，执行前的二次 guard 会立即取消拉底。
+    private func scheduleChatTailScroll(proxy: ScrollViewProxy) {
+        guard chatTail.isFollowing, !isChatTailScrollScheduled else { return }
+        isChatTailScrollScheduled = true
+
+        Task { @MainActor in
+            await Task.yield()
+            defer { isChatTailScrollScheduled = false }
+            guard chatTail.isFollowing else { return }
+
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(Self.chatBottomAnchorID, anchor: .bottom)
+            }
+        }
     }
 
     /// 当前登录用户的 GitHub username（如 `dong4j`）。
@@ -922,15 +1512,26 @@ struct RepoAIWindowContentView: View {
     /// dong4j 2026-06-04 15:30 反馈："用户输入对话时折叠 AI 摘要，展开 AI 对话框
     /// 面板"——所以发送时如果当前不在 `.chat` 模式则切过去，并不区分"是不是第
     /// 一条"。若已经在 `.chat`，跳过切换避免无谓动画。
-    private func sendChatMessage() {
-        guard let chatVM else { return }
+    private func sendChatMessage(_ text: String) {
         let repoSnapshot = repo
-        Task { await chatVM.sendMessage(repo: repoSnapshot) }
-        if panelMode != .chat {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                panelMode = .chat
-            }
+        Task {
+            await requestPanelMode(.chat)
+            // 已经在 chat 时 requestPanelMode 会立即返回；仍需确保 VM 存在，
+            // 覆盖用户直接在默认摘要页输入并发送的首次路径。
+            await prepareChatIfNeeded()
+            await chatVM?.sendMessage(text, repo: repoSnapshot)
         }
+    }
+
+    /// 2026-06-15 13:12 dong4j 反馈"AI 输出时发送按钮变成终止按钮"：用户在流式
+    /// 期间点击 stop,vm 内 sendTask cancel → 已累积的 partial 被当作正常完成的
+    /// 助手消息保存（ChatGPT / Claude 同款）。
+    ///
+    /// 本函数只做透传,不做任何"是否真的在流式"判定 —— AIChatInputView 自身根据
+    /// `isSending` 切换图标与点击语义,只有处于流式态时按钮才会触发这条路径,
+    /// 重复防护交给 vm 的 `cancelStreaming()`（sendTask 为 nil 时调 cancel 安全）。
+    private func cancelChatStreaming() {
+        chatVM?.cancelStreaming()
     }
 
     // MARK: - 错误条
@@ -1050,6 +1651,10 @@ struct RepoAIWindowContentView: View {
     }
 
     /// 降级 banner（沿用 Y4 / Y8 风格）。
+    ///
+    /// 2026-06-15 13:31 dong4j 反馈"和上方输入框间距太大"：把 `.vertical 6` 拆成
+    /// 不对称的 `top 2 / bottom 6`,与输入框底部 4pt 合计 6pt 紧凑视觉；
+    /// 底部 6pt 保留作为窗口底边的呼吸距。`summarizedStatusRow` 同步。
     private func degradationStatusRow(reason: ContextDegradationReason) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -1059,11 +1664,20 @@ struct RepoAIWindowContentView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 6)
+        .padding(.top, 2)
+        .padding(.bottom, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 3 维汇总状态行。
+    ///
+    /// 2026-06-14 视觉对齐 repo 卡片：3 维由"text 拼字串 · 分隔符"改成 3 个独立 pill
+    /// （capsule + 图标 + 文字），样式与 `UnifiedRepoRow.RepoCardInlineMetadataBadge`
+    /// 完全一致（9pt semibold icon + 10pt semibold monospaced text + 5/2 padding +
+    /// `secondary.opacity(0.10)` capsule + secondary 灰色），让"对话窗口下方的状态条"
+    /// 与"列表卡片的元数据 pill"风格统一，用户对"灰色小胶囊 = 状态信号"的认知能直接
+    /// 迁移。"📎 上下文："prefix 保留——单看 pill 行可能不知道这是干嘛，prefix 给一个
+    /// 一秒能读懂的语义锚点。
     @ViewBuilder
     private func summarizedStatusRow(vm: RepoAIInsightViewModel) -> some View {
         let hasSummary = (vm.insight?.summaryMarkdown?.isEmpty == false)
@@ -1079,33 +1693,93 @@ struct RepoAIWindowContentView: View {
             HStack(spacing: 6) {
                 Image(systemName: "paperclip")
                     .foregroundStyle(.secondary)
-                Text(verbatim: makeContextStatusText(
-                    hasSummary: hasSummary,
-                    hasCode: hasCode,
-                    hasExternal: hasExternal
-                ))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                Text("ai.assistant.chat.contextStatus.prefix")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                // pill 行——3 个维度按命中条件渲染，缺失维度不占位。pill 之间用 spacing 4
+                // （与 RepoCardInlineMetadataBadge 在 repo 卡片底排连排时的间距一致）。
+                //
+                // 3 色语义化分布（2026-06-14 dong4j 反馈"统一灰底太单调"）：
+                //   - 摘要 → 紫色（与 summaryHeader 的 sparkles 同色，项目内 AI 主色）
+                //   - 代码 → 蓝色（代码语义经典色 + macOS accent 默认色）
+                //   - 外网 → 绿色（globe / 互联网语义）
+                // 三色都是 SwiftUI 系统色，在浅 / 深主题下都自适应不需要手写双套色。
+                HStack(spacing: 4) {
+                    if hasSummary {
+                        contextStatusPill(
+                            icon: "sparkles",
+                            label: "ai.assistant.chat.contextStatus.summary",
+                            tint: .purple
+                        )
+                    }
+                    if hasCode {
+                        contextStatusPill(
+                            icon: "doc.text.magnifyingglass",
+                            label: "ai.assistant.chat.contextStatus.code",
+                            tint: .blue
+                        )
+                    }
+                    if hasExternal {
+                        contextStatusPill(
+                            icon: "globe",
+                            label: "ai.assistant.chat.contextStatus.external",
+                            tint: .green
+                        )
+                    }
+                }
             }
+            // 2026-06-15 13:31 dong4j 反馈"和上方输入框间距太大"：拆成不对称的
+            // top 2 / bottom 6,与输入框底部 4pt 合计 6pt 紧凑间距；底部 6 保留作为
+            // 窗口底边的呼吸距。详见 degradationStatusRow 同款注释。
             .padding(.horizontal, 20)
-            .padding(.vertical, 6)
+            .padding(.top, 2)
+            .padding(.bottom, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         // 三者都为 false：返回隐含 EmptyView，配合外层 frame(maxHeight: 0) 完全不占位。
     }
 
-    /// 按命中维度拼出形如「上下文：摘要 · 代码 · 外网」的本地化文本。
+    /// 单个 context 维度 pill（沿用 repo 卡片 `RepoCardInlineMetadataBadge` 的尺寸 /
+    /// 字号 / padding / capsule 几何，但底色 + 前景从单色灰升级为 `tint` 驱动的彩色
+    /// 语义标签）。
     ///
-    /// 用 `String(localized:)` + 普通字符串拼接而非 SwiftUI `Text` 组合，是因为
-    /// 这里要做"按 bool 选择性插入"，Text 的 `+` 操作语法对条件插入不友好。
-    /// 文案前缀和三个维度词都各自独立 i18n（en/zh-Hans 都需要补 key）。
-    private func makeContextStatusText(hasSummary: Bool, hasCode: Bool, hasExternal: Bool) -> String {
-        var parts: [String] = []
-        if hasSummary { parts.append(String(localized: "ai.assistant.chat.contextStatus.summary")) }
-        if hasCode { parts.append(String(localized: "ai.assistant.chat.contextStatus.code")) }
-        if hasExternal { parts.append(String(localized: "ai.assistant.chat.contextStatus.external")) }
-        let prefix = String(localized: "ai.assistant.chat.contextStatus.prefix")
-        return prefix + parts.joined(separator: " · ")
+    /// 视觉规格：
+    ///   - 9pt semibold icon + 10pt semibold monospaced text；
+    ///   - 5pt horizontal / 2pt vertical padding（与 RepoCardInlineMetadataBadge 一致）；
+    ///   - 前景（icon + text）= `tint`；
+    ///   - 背景 capsule = `tint.opacity(0.15)`（比 banner 的 0.18 略轻，因 pill 面积小、
+    ///     高 opacity 会让小 chip 过于刺眼）；
+    ///   - `fixedSize(horizontal: true)` 防内容自适应引起布局抖动。
+    ///
+    /// 2026-06-14 演进：dong4j 反馈"3 个 pill 统一灰底太单调"，从原本的
+    /// `Color.secondary.opacity(0.10)` + `.secondary` 前景升级为 tint 驱动的彩色方案。
+    /// 不再与 `RepoCardInlineMetadataBadge` 视觉完全一致——repo 卡片底排 pill 是元数据
+    /// 列表（语言 / star / fork），用一种灰色避免抢戏；本 chat 状态条 3 项是不同语义维度
+    /// （AI 摘要 / 代码上下文 / 外部材料），彩色区分让用户一眼分辨"当前对话带了哪几路
+    /// 上下文"。
+    ///
+    /// 不抽到 `Shared/Components` 共享：本视图局部用 3 次，复制 ~15 行实现成本低于打开
+    /// API 边界的维护成本；如果未来还有第 4 个调用方再做一次 surgical 抽提到共享层。
+    private func contextStatusPill(
+        icon: String,
+        label: LocalizedStringKey,
+        tint: Color
+    ) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .semibold))
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background {
+            Capsule(style: .continuous)
+                .fill(tint.opacity(0.15))
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// Y9.2 玻璃态主题适配：与 errorBanner 同款风格——背景 0.12 → 0.18 + strokeBorder。

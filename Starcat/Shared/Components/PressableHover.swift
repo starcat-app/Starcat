@@ -57,7 +57,7 @@ struct PressableOpacityHover: ViewModifier {
     var duration: Double = 0.15
 
     @State private var isHovered = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content

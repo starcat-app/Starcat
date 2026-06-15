@@ -75,7 +75,7 @@ struct ContributionGraphView: View {
     var login: String?
 
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     /// HOM-SNAKE-MODES：读取用户选的玩法。
     @Environment(AppSettings.self) private var settings
 
@@ -213,7 +213,9 @@ struct ContributionGraphView: View {
                 drawGrid(ctx: ctx, scale: scale, frame: .empty)
             }
         } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
+            // 蛇身步进远低于屏幕刷新率；20 FPS 能保持连续运动，
+            // 同时减少 Canvas 全量重画对 sidebar 滚动的干扰。
+            TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
                 let frame = currentFrame(at: context.date)
                 Canvas { ctx, size in
                     let scale = size.width / intrinsicSize.width

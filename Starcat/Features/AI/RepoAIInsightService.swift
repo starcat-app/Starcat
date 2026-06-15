@@ -408,10 +408,28 @@ final class RepoAIInsightService {
     /// `cacheModelKey` / `source.hash` 失效 → cachedInsight 拿不到 → 对话退化成
     /// README-only（含 Code XML if 开），与摘要面板 "[设置已变更, 重新生成]" 提示
     /// 形成对偶反馈链。
+    /// HOM-70 v2（2026-06-15）：新增 `carriedOverSummary: String?` 必填入参——本 session 由
+    /// 「上下文溢出 → 新建并承接」诞生时，调用方（`RepoAIChatViewModel.sendMessage`）
+    /// 把 `currentCarriedOverSummary` 透传进来，service 注入 system prompt 的
+    /// `{previousSessionCarryOver}` section，让 AI 知道上一对话末尾聊到哪儿。
+    /// 普通 session 传 `nil` —— 项目未上线不给默认值，强制 callsite 显式声明意图，
+    /// 避免未来新增对话路径漏注入承接段。
+    ///
+    /// 2026-06-15 v4.y：再加 `wikiLinks` / `codeFlowPageURL` 两个必填入参 —— 把已收录
+    /// 的外部 Wiki 镜像 + 本地 CodeFlow `file://` 链接注入 system prompt 的
+    /// `{starcatResources}` section，由 `StarcatResourcesProvider.snapshot(...)` 渲染。
+    /// 调用方（`RepoAIChatViewModel.sendMessage`）从 bootstrap 期缓存的内存值
+    /// （`wikiContextService.cachedLinks(...)` + `CodeFlowStorage.existingProject(...).pageURL`）
+    /// 透传过来；无资源时传空数组 / nil，section 渲染为空 header（LLM 自动忽略）。
     func chatStream(
         for repo: Repo,
         history: [AIChatMessage],
         userMessage: String,
+        carriedOverSummary: String?,
+        wikiLinks: [WikiLink],
+        codeFlowPageURL: URL?,
+        // 聊天链路只上抛本次新增 delta。累积值由 ViewModel 单点维护，避免 SDK、
+        // service、UI 三层各复制一次不断增长的完整字符串。
         onDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
         let source = try await makeSource(for: repo)
@@ -424,7 +442,14 @@ final class RepoAIInsightService {
         let task = settings.aiChatTask
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "对话")
 
-        let systemPrompt = buildChatSystemPrompt(repo: repo, source: source, cached: cached)
+        let systemPrompt = buildChatSystemPrompt(
+            repo: repo,
+            source: source,
+            cached: cached,
+            carriedOverSummary: carriedOverSummary,
+            wikiLinks: wikiLinks,
+            codeFlowPageURL: codeFlowPageURL
+        )
 
         let request = AIChatRequest(
             systemPrompt: systemPrompt,
@@ -440,7 +465,7 @@ final class RepoAIInsightService {
             switch event {
             case .delta(let delta):
                 accumulated += delta
-                onDelta?(accumulated)
+                onDelta?(delta)
             case .completed(let response):
                 return response.content
             }
@@ -452,11 +477,19 @@ final class RepoAIInsightService {
     }
 
     /// 2026-06-14 v4 重构：拼装对话路径的 system prompt，走 `aiChatTask.prompt` 模板
-    /// + 6 占位符渲染（详见 `AIDefaultPrompts.chat` 注释）。
+    /// + 占位符渲染（详见 `AIDefaultPrompts.chat` 注释，2026-06-15 起 8 占位符）。
     ///
     /// 实质渲染逻辑下沉到 `assembleChatSystemPrompt(...)` 静态函数（internal 可测），
-    /// 本方法负责"读 settings + 私仓门控 + 拆 source 字段"等 actor-bound 准备工作。
-    private func buildChatSystemPrompt(repo: Repo, source: Source, cached: RepoAIInsight?) -> String {
+    /// 本方法负责"读 settings + 私仓门控 + 拆 source 字段 + 调 RuntimeContextProvider"
+    /// 等 actor-bound 准备工作。
+    private func buildChatSystemPrompt(
+        repo: Repo,
+        source: Source,
+        cached: RepoAIInsight?,
+        carriedOverSummary: String?,
+        wikiLinks: [WikiLink],
+        codeFlowPageURL: URL?
+    ) -> String {
         let externalAllowed = AnySearchContextProvider.allowsExternalContext(
             repoIsPrivate: repo.isPrivate,
             enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
@@ -466,14 +499,25 @@ final class RepoAIInsightService {
         let externalContext = externalAllowed
             ? (cached?.externalContextMarkdown ?? "")
             : ""
+        // 2026-06-15：每次组装都实时抓 runtimeContext。UTC 时间到整点精度，
+        // 同一小时内字符串完全相同，服务端 prompt cache 仍能命中；跨小时才 miss 一次。
+        // 2026-06-15 v4.y：starcatResources 走纯函数 provider，wiki / codeflow 数据由
+        // viewModel bootstrap 期缓存好（cache hit 秒返回，miss 后台刷新），这里直接拼字符串。
+        let starcatResources = StarcatResourcesProvider.snapshot(
+            wikiLinks: wikiLinks,
+            codeFlowPageURL: codeFlowPageURL
+        )
         return Self.assembleChatSystemPrompt(
             template: settings.aiChatTask.prompt.systemPrompt,
             outputLanguage: Self.outputLanguageDescriptor(),
+            runtimeContext: RuntimeContextProvider.snapshot(),
+            starcatResources: starcatResources,
             metadata: source.metadata,
             readme: source.readme,
             codeContext: source.codeContext,
             summary: cached?.summaryMarkdown ?? "",
-            externalContext: externalContext
+            externalContext: externalContext,
+            previousSessionCarryOver: carriedOverSummary ?? ""
         )
     }
 
@@ -491,28 +535,43 @@ final class RepoAIInsightService {
     /// **签名变更说明**：v3 旧签名是 `(sourceText, cachedSummaryMarkdown, cachedExternalMarkdown,
     /// allowExternal)`，把 metadata + readme + codeContext 黑盒拼成 `sourceText` 喂进去。
     /// v4 改成"6 个一等参数"，跟模板的 6 占位符一一对应，让单测能精确断言每个占位符的渲染结果。
+    /// 2026-06-15 v4.x 追加 `runtimeContext` 参数，对应模板新增的 `{runtimeContext}` 占位符。
     ///
     /// `nonisolated`：本函数纯字符串拼接、无 actor 副作用，单测从 sync 上下文可直接调用。
     nonisolated static func assembleChatSystemPrompt(
         template: String,
         outputLanguage: String,
+        runtimeContext: String,
+        starcatResources: String,
         metadata: String,
         readme: String,
         codeContext: String,
         summary: String,
-        externalContext: String
+        externalContext: String,
+        previousSessionCarryOver: String
     ) -> String {
         // 复用 AIPromptConfiguration.render（{key} → value，dict 没有的 key 保留字面量
         // 让 LLM 看到便于排错），与 Summary / Tags 任务的渲染语义统一。
+        //
+        // 「必填参数 + 不给默认值」遵循 HOM-70 v2 同款约束：项目未上线，让编译器帮我找到
+        // 所有 callsite 一并升级，避免后续新增对话路径漏注入。具体到本函数：
+        // - `previousSessionCarryOver` 普通 session 传 `""`（承接段为空 section header）；
+        // - `runtimeContext` 调用方应传 `RuntimeContextProvider.snapshot()`，不留兜底空串
+        //   入口避免"忘了调 provider 还能编译过"的潜在 bug；
+        // - `starcatResources` 调用方传 `StarcatResourcesProvider.snapshot(wikiLinks:codeFlowPageURL:)`
+        //   的结果（全空时本身就是空串，section 自然为空 header）。
         AIPromptConfiguration.render(
             template: template,
             placeholders: [
                 "outputLanguage": outputLanguage,
+                "runtimeContext": runtimeContext,
+                "starcatResources": starcatResources,
                 "metadata": metadata,
                 "readme": readme,
                 "codeContext": codeContext,
                 "summary": summary,
-                "externalContext": externalContext
+                "externalContext": externalContext,
+                "previousSessionCarryOver": previousSessionCarryOver
             ]
         )
     }
@@ -833,10 +892,12 @@ final class RepoAIInsightService {
         //     与 RepoContextPacker XML 输出的 `<repository>` 根标签语义对齐；
         //   - 拼接整段原始 XML 而不是 marker / placeholder：LLM 直接消费 XML，无需 service 端
         //     做"摘要再摘要"；
-        //   - **读 contextURL 时用 String(contentsOf:)** 而不是 streaming：context.xml 已经
-        //     按 token budget 限过（默认 8000 tokens ≈ 32KB），一次读全无内存压力；
-        //   - **任何失败都静默吞**：provider.context(for:) 已经把网络 / 磁盘 / pack 错误降级
-        //     成 nil 了，这里只需再防御 String 读取本身失败（极少触发，比如文件刚被外部删）。
+        //   - **xml 内容直接消费 `result.xml`**：2026-06-14 silent failure 修复后，xml 已在
+        //     provider 内部的 security scope 内通过 `RepoContextStorage.loadContextXml(...)`
+        //     读好，service 不再做任何文件 IO。这一改动根除了"用户把 RepoContext 输出根目录
+        //     改成自选文件夹时，service 在 scope 外 `String(contentsOf:)` 必失败、被 `try?`
+        //     吞成 nil、contextMeta 永远 nil 的 silent failure"（dong4j 反馈
+        //     addyosmani/agent-skills 案例）。
         //
         // Y2：同时把 PackMetadata 投影成 RepoAIInsightContextMeta 透传出去，让上层 UI footer 用。
         // Y4：按 provider outcome 3 态分别处理（success / featureDisabled / degraded）。
@@ -847,22 +908,19 @@ final class RepoAIInsightService {
             let outcome = try await provider.contextOutcome(for: repo)
             switch outcome {
             case .success(let result):
-                if let contextXml = try? String(contentsOf: result.url, encoding: .utf8),
-                   !contextXml.isEmpty {
-                    // 代码上下文 XML 既给 LLM 用又进 hash：commit SHA 改 = 代码语义改
-                    // = 该重生成摘要。这是"语义级变更"，不属于 HOM-199 要稳定化的流量字段。
-                    llmText += "\n\n" + contextXml
-                    hashText += "\n\n" + contextXml
-                    codeContextXml = contextXml
-                    contextMeta = RepoAIInsightContextMeta(
-                        commitSha: result.metadata.commitSha,
-                        ref: result.metadata.ref,
-                        tokenBudget: result.metadata.tokenBudget,
-                        actualTokens: result.metadata.stats.actualTokens,
-                        totalFiles: result.metadata.stats.totalFiles,
-                        generatedAt: result.metadata.generatedAt
-                    )
-                }
+                // 代码上下文 XML 既给 LLM 用又进 hash：commit SHA 改 = 代码语义改
+                // = 该重生成摘要。这是"语义级变更"，不属于 HOM-199 要稳定化的流量字段。
+                llmText += "\n\n" + result.xml
+                hashText += "\n\n" + result.xml
+                codeContextXml = result.xml
+                contextMeta = RepoAIInsightContextMeta(
+                    commitSha: result.metadata.commitSha,
+                    ref: result.metadata.ref,
+                    tokenBudget: result.metadata.tokenBudget,
+                    actualTokens: result.metadata.stats.actualTokens,
+                    totalFiles: result.metadata.stats.totalFiles,
+                    generatedAt: result.metadata.generatedAt
+                )
             case .featureDisabled:
                 // 用户主动关：不显示 banner，degradationReason 留 nil
                 break

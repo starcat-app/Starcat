@@ -66,6 +66,9 @@ struct TagWallChip: View {
     let isSelected: Bool
     let onTap: () -> Void
 
+    /// 2026-06-15:tag chip 选中态切换 0.15s 渐变在「关闭应用内动画」时跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     /// 圆角常量；放在视图外部以便 background / clipShape / overlay 共用同一个值。
     private static let cornerRadius: CGFloat = 6
 
@@ -125,7 +128,7 @@ struct TagWallChip: View {
         .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
         .onTapGesture { onTap() }
         .pressableHover()
-        .animation(.easeOut(duration: 0.15), value: isSelected)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isSelected)
     }
 }
 

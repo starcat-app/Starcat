@@ -28,7 +28,7 @@ struct SidebarHeaderView: View {
     /// 用于打开 macOS 原生设置窗口（SettingsLink 的 programmatic 等效方式）
     @Environment(\.openSettings) private var openSettings
     /// 系统级"减少动效"开关，开启时把"渐变流动"退化为静态版（仍保留四周淡出 + 颜色切换补间）。
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     /// HOM-173：分享卡需要消费贡献草坪 payload；ContributionService 已在 AppDependencies 注入。
     @Environment(ContributionService.self) private var contributionService
     /// HOM-174：Pro 用户标识需要从 AppSettings 获取。
@@ -160,7 +160,7 @@ struct SidebarHeaderView: View {
     ///
     /// 持续流动动效：两层 mask 的关键 stops 位置随时间正弦漂移，周期解耦
     /// （vertical 16s / horizontal 13s）形成 Lissajous-like 自然呼吸轨迹。
-    /// `@Environment(\.accessibilityReduceMotion)` 开启时退化为静态 stops 避免前庭不适。
+    /// `@Environment(\.starcatReduceMotion)` 开启时退化为静态 stops 避免前庭不适。
     ///
     /// 关键技术铁律（已踩坑，**不要再犯**）：
     /// SwiftUI 的 `LinearGradient(colors:)` / `RadialGradient(colors:)` 中 colors 数组
@@ -170,12 +170,28 @@ struct SidebarHeaderView: View {
     /// `opacity(0.35)` 比 v3 (0.32) 略提：vignette 让大部分 view 已是低 alpha 区，
     /// 中心区需要提一档保证视觉存在感。`.allowsHitTesting(false)` 不挡上层按钮点击。
     private var sidebarTintBackground: some View {
+        Group {
+            if reduceMotion {
+                sidebarTintFrame(time: 0)
+            } else {
+                // 横纵两层 mask 共用同一个时钟。旧实现建了两个 30 FPS
+                // TimelineView，每帧各自使整个 header 重新求值；慢呼吸动画
+                // 收敛到单个 12 FPS 时钟后视觉节奏不变；12 能整除 60/120 Hz，
+                // 且对 9~15 秒周期的慢渐变足够连续。
+                TimelineView(.animation(minimumInterval: 1.0 / 12.0)) { context in
+                    sidebarTintFrame(time: context.date.timeIntervalSinceReferenceDate)
+                }
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: sidebarTintColor)
+        .allowsHitTesting(false)
+    }
+
+    private func sidebarTintFrame(time: TimeInterval) -> some View {
         Rectangle()
             .fill(sidebarTintColor.opacity(0.35))
-            .mask(verticalFadeMask)
-            .mask(horizontalFadeMask)
-            .animation(.easeInOut(duration: 0.45), value: sidebarTintColor)
-            .allowsHitTesting(false)
+            .mask(verticalFadeMask(time: time))
+            .mask(horizontalFadeMask(time: time))
     }
 
     /// 头像卡背景的 alpha mask：径向"中心亮 → 四周柔和淡出"形态，并按时间做"漂移 + 呼吸"。
@@ -190,12 +206,12 @@ struct SidebarHeaderView: View {
     ///    比 2-stop 线性 black → transparent 的淡出尾巴长一倍，肉眼几乎看不到"色块结束"。
     ///
     /// reduceMotion 开启 → 静态径向 mask（center 居中、固定 endRadius=320），同样套用多档 stops。
-    /// reduceMotion 关闭 → `TimelineView(.animation(minimumInterval: 1/30))` 驱动：
+    /// reduceMotion 关闭 → 与横向渐变共享同一个 12 FPS `TimelineView` 驱动：
     /// - center 在 [0.32, 0.68] × [0.30, 0.60] 范围内正弦漂移（x/y 周期解耦，约 11s / 15s，
     ///   形成无规律 Lissajous 轨迹，更像"自然呼吸"而非简单往复）；
     /// - endRadius 在 [260, 380]pt 内呼吸（约 9s 周期，base 320 ± 60）。
     ///
-    /// 30 FPS 对这种慢呼吸足够流畅；TimelineView 在 window 不在前台时自动暂停，无后台耗电。
+    /// 12 FPS 对这种慢呼吸足够流畅，并避免两个 mask 各自创建刷新时钟。
     /// 振幅刻意保守（中心点 ±18%、半径 ±60pt），让色块"飘"而不是"飞"，不抢 sidebar 列表注意力。
     /// 第一层 mask：中部最饱和、上下都淡出的纵向 vignette。
     ///
@@ -221,33 +237,17 @@ struct SidebarHeaderView: View {
     /// 落在头像中部）；同时让中段衰减 stop 提前（0.80 → 0.62），让色块上移聚焦头像，
     /// 链接行和 stats 区域所在的下半部分尽量透明，不与下方草坪/导航栏抢色。
     /// 漂移振幅相应收窄 0.12 → 0.08，避免下移时又落到 identity 行。
-    @ViewBuilder
-    private var verticalFadeMask: some View {
-        if reduceMotion {
-            LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color.black.opacity(0.00), location: 0.00),
-                    .init(color: Color.black, location: 0.18),
-                    .init(color: Color.black.opacity(0.30), location: 0.62),
-                    .init(color: Color.black.opacity(0.00), location: 1.00)
-                ]),
-                startPoint: .top, endPoint: .bottom
-            )
-        } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
-                let t = context.date.timeIntervalSinceReferenceDate
-                let peakPosition = 0.18 + sin(t * 0.38) * 0.08
-                LinearGradient(
-                    gradient: Gradient(stops: [
-                        .init(color: Color.black.opacity(0.00), location: 0.00),
-                        .init(color: Color.black, location: peakPosition),
-                        .init(color: Color.black.opacity(0.30), location: 0.62),
-                        .init(color: Color.black.opacity(0.00), location: 1.00)
-                    ]),
-                    startPoint: .top, endPoint: .bottom
-                )
-            }
-        }
+    private func verticalFadeMask(time: TimeInterval) -> some View {
+        let peakPosition = 0.18 + sin(time * 0.38) * 0.08
+        return LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.black.opacity(0.00), location: 0.00),
+                .init(color: Color.black, location: peakPosition),
+                .init(color: Color.black.opacity(0.30), location: 0.62),
+                .init(color: Color.black.opacity(0.00), location: 1.00)
+            ]),
+            startPoint: .top, endPoint: .bottom
+        )
     }
 
     /// 第二层 mask：左右淡出（左右边界 alpha=0、中部 alpha=100%），消除"左右两条硬色边"。
@@ -255,33 +255,17 @@ struct SidebarHeaderView: View {
     /// reduceMotion → 静态 stops（左右各 28% 区域是淡出区，中部 44% 是全亮区）；
     /// 动效模式下中心点在 [-0.10, 0.10] 横向漂移（约 13s 周期，与垂直周期 16s 解耦避免同步往复），
     /// 让色块的"水平亮度中心"轻微左右浮动，配合 vertical mask 形成 Lissajous-like 自然呼吸轨迹。
-    @ViewBuilder
-    private var horizontalFadeMask: some View {
-        if reduceMotion {
-            LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color.black.opacity(0.00), location: 0.00),
-                    .init(color: Color.black, location: 0.28),
-                    .init(color: Color.black, location: 0.72),
-                    .init(color: Color.black.opacity(0.00), location: 1.00)
-                ]),
-                startPoint: .leading, endPoint: .trailing
-            )
-        } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
-                let t = context.date.timeIntervalSinceReferenceDate
-                let centerOffset = sin(t * 0.48) * 0.10
-                LinearGradient(
-                    gradient: Gradient(stops: [
-                        .init(color: Color.black.opacity(0.00), location: 0.00),
-                        .init(color: Color.black, location: 0.28 + centerOffset),
-                        .init(color: Color.black, location: 0.72 + centerOffset),
-                        .init(color: Color.black.opacity(0.00), location: 1.00)
-                    ]),
-                    startPoint: .leading, endPoint: .trailing
-                )
-            }
-        }
+    private func horizontalFadeMask(time: TimeInterval) -> some View {
+        let centerOffset = sin(time * 0.48) * 0.10
+        return LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.black.opacity(0.00), location: 0.00),
+                .init(color: Color.black, location: 0.28 + centerOffset),
+                .init(color: Color.black, location: 0.72 + centerOffset),
+                .init(color: Color.black.opacity(0.00), location: 1.00)
+            ]),
+            startPoint: .leading, endPoint: .trailing
+        )
     }
 
     // MARK: - 未登录态

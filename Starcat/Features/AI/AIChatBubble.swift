@@ -19,9 +19,16 @@
 
 import SwiftUI
 
-struct AIChatBubble: View {
+struct AIChatBubble: View, Equatable {
 
     let message: ChatMessage
+    let onEditUserMessage: (String) -> Void
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    static func == (lhs: AIChatBubble, rhs: AIChatBubble) -> Bool {
+        // action 始终路由到同一个窗口输入框，真正决定气泡是否需要重绘的只有消息值。
+        lhs.message == rhs.message
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -76,8 +83,54 @@ struct AIChatBubble: View {
                     in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                 )
 
+            userFooter
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    /// 用户消息操作行：修改、复制、时间戳全部贴齐气泡右边缘。
+    /// 修改只回填输入框，由用户确认后再次发送；不直接重发，避免误触产生新请求。
+    private var userFooter: some View {
+        HStack(spacing: 6) {
+            Button {
+                onEditUserMessage(message.content)
+            } label: {
+                // 2026-06-15 13:42 dong4j 反馈把"编辑"图标从 `pencil` 改成 U-turn
+                // 箭头 `arrow.uturn.backward`（macOS 系统经典"撤销 / 返回"图标,
+                // 与"把历史问题回填到输入框重新编辑"的语义更贴合 —— pencil 更像
+                // "原地编辑",U-turn 更像"回到上一步重写"）。
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("ai.assistant.chat.editQuestion.tooltip")
+
+            CopyFeedbackButton(
+                providesContent: { message.content },
+                tooltip: "ai.assistant.chat.copyQuestion.tooltip"
+            ) { didCopy in
+                // 2026-06-15 13:12 dong4j 反馈"复制按钮点击后抖动 + 图标太细"：
+                // 抖动根因 = `doc.on.doc`（瘦描边）和 `checkmark.circle.fill`（正圆）
+                // 的 SF Symbol 内在宽高不一致,切换时 HStack 重新布局让 timestamp
+                // 横向位置抖动 → 用固定 frame 锁死容器尺寸杜绝 layout 重排。
+                //
+                // 13:29 dong4j 反馈"图标大了"：13 → 11。
+                // 13:37 dong4j 反馈"还要小"：11 → 9。
+                // 13:42 dong4j 确认"太细"原本指的是**左边的编辑按钮 pencil**,不是复制按钮
+                //   → 回退 medium weight,恢复 SF Symbol 默认 weight；保留 size 9 / frame 10×10
+                //   （字号、防抖 frame 都是用户自己确认过的尺寸,与"太细"无关）。
+                Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                    .font(.system(size: 9))
+                    .foregroundStyle(didCopy ? Color.green : .secondary)
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                    .frame(width: 10, height: 10)
+            }
+
             timestampLabel
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     /// 助手消息气泡：左对齐 + **无背景** + Markdown 渲染（HOM-150 dong4j 2026-06-04
@@ -156,7 +209,7 @@ struct AIChatBubble: View {
                 .symbolEffect(
                     .variableColor.iterative.dimInactiveLayers,
                     options: .repeating,
-                    isActive: true
+                    isActive: !reduceMotion
                 )
             Text("ai.assistant.chat.generating")
                 .font(.caption2)
@@ -176,18 +229,112 @@ struct AIChatBubble: View {
                 providesContent: { message.content },
                 tooltip: "ai.assistant.chat.copyReply.tooltip"
             ) { didCopy in
+                // 与 userFooter 复制按钮规格保持一致：size 9 默认 weight / frame 10×10。
+                // 详见 userFooter 注释（含 size 13 → 11 → 9 降档 + 13:42 weight 回退的反馈记录）。
                 Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                    .font(.caption2)
+                    .font(.system(size: 9))
                     .foregroundStyle(didCopy ? Color.green : .secondary)
-                    .contentTransition(.symbolEffect(.replace))
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                    .frame(width: 10, height: 10)
             }
         }
     }
 
     private var timestampLabel: some View {
+        // 2026-06-14 D-31 follow-up：.tertiary → .secondary。
+        // 浅色主题下 .tertiary 时间戳几乎不可读，与 D-31 全局对比度修正对齐。
         Text(message.timestamp, style: .time)
             .font(.caption2)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
+    }
+}
+
+/// 流式阶段专用的助手气泡。
+///
+/// 与完成态 `AIChatBubble` 分开，原因是两者的性能约束不同：完成态只解析一次完整
+/// Markdown；流式态把已冻结 chunk 各自解析一次，当前增长尾部使用普通 Text。父视图
+/// 每次 revision 更新时，已有 chunk 通过 Equatable 跳过 body，避免全文重复 parse。
+struct AIStreamingChatBubble: View, Equatable {
+    let snapshot: StreamingMarkdownSnapshot
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    static func == (lhs: AIStreamingChatBubble, rhs: AIStreamingChatBubble) -> Bool {
+        lhs.snapshot == rhs.snapshot
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            assistantAvatar
+            VStack(alignment: .leading, spacing: 6) {
+                if snapshot.isEmpty {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("ai.assistant.chat.thinking")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    ForEach(snapshot.stableMarkdownChunks.indices, id: \.self) { index in
+                        StableStreamingMarkdownChunk(markdown: snapshot.stableMarkdownChunks[index])
+                            .equatable()
+                    }
+
+                    if !snapshot.liveTail.isEmpty {
+                        // 尾部结构仍可能被下一个 token 改写（代码围栏、列表、强调等），
+                        // 中间态用纯文本换取稳定帧率；完成后整条消息恢复完整 Markdown。
+                        Text(snapshot.liveTail)
+                            .font(.body)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    streamingIndicator
+                }
+            }
+            .padding(.vertical, 2)
+            Spacer(minLength: 40)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var assistantAvatar: some View {
+        Image(systemName: "sparkles")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 26, height: 26)
+            .background(
+                LinearGradient(
+                    colors: [.purple.opacity(0.85), .blue.opacity(0.85)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: Circle()
+            )
+            .padding(.top, 2)
+    }
+
+    private var streamingIndicator: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.purple.opacity(0.85))
+                .symbolEffect(
+                    .variableColor.iterative.dimInactiveLayers,
+                    options: .repeating,
+                    isActive: !reduceMotion
+                )
+            Text("ai.assistant.chat.generating")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// 已冻结 chunk 的输入一旦生成便不再变化，Equatable 可以阻止父流式气泡更新时重复解析。
+private struct StableStreamingMarkdownChunk: View, Equatable {
+    let markdown: String
+
+    var body: some View {
+        RepoAISummaryMarkdownView(markdown: MarkdownHeadingDemoter.demoteToH3(markdown))
     }
 }
 
@@ -196,17 +343,17 @@ struct AIChatBubble: View {
         AIChatBubble(message: ChatMessage(
             role: .user,
             content: "这个项目用什么语言？"
-        ))
+        ), onEditUserMessage: { _ in })
         AIChatBubble(message: ChatMessage(
             role: .assistant,
             content: "这是一段 **Markdown** 示例 — `swift` 代码：\n\n```swift\nlet x = 1\n```\n\n你可以继续追问。",
             isStreaming: false
-        ))
+        ), onEditUserMessage: { _ in })
         AIChatBubble(message: ChatMessage(
             role: .assistant,
             content: "",
             isStreaming: true
-        ))
+        ), onEditUserMessage: { _ in })
     }
     .padding(.vertical, 12)
     .frame(width: 720)

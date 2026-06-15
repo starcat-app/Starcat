@@ -61,6 +61,10 @@ struct AuthHeroCarouselView: View {
     /// 配合下方 timingCurve 形成"慢起慢收"的更柔和电影感淡入淡出。
     private let crossfadeDuration: Double = 2.0
 
+    /// 2026-06-15:hero 图片轮播在「关闭应用内动画」时瞬切,
+    /// 仍按 `switchInterval` 切换显示但不做 2s 淡入淡出,避免视觉刺激。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     // MARK: - Body
 
     var body: some View {
@@ -76,7 +80,7 @@ struct AuthHeroCarouselView: View {
                     // 起步慢 → 中段加速 → 收尾慢,比 .easeInOut 的 sine 曲线更柔和、不"硬"。
                     // 想再丝滑可换 (0.25, 0.1, 0.25, 1.0) 即 CSS "ease" 曲线。
                     .animation(
-                        .timingCurve(0.4, 0.0, 0.2, 1.0, duration: crossfadeDuration),
+                        reduceMotion ? nil : .timingCurve(0.4, 0.0, 0.2, 1.0, duration: crossfadeDuration),
                         value: currentIndex
                     )
             }

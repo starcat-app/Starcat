@@ -31,6 +31,9 @@ struct AISettingsTab: View {
     /// 2026-06-12 向量索引改进：AI 索引 Section 的"开始 / 暂停 / 全量重建"按钮需要
     /// 直接调度 `SemanticIndexBuilder`。从 AppDependencies 拿。
     @Environment(AppDependencies.self) private var dependencies
+    /// 2026-06-15:disclosureLabel / 草稿 Provider 收/放 / 已发现模型展开等
+    /// 多处 0.18-0.2s 动画在「关闭应用内动画」时跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     /// HOM-AIPROVIDERS-PERSIST-2026-06-06 (dong4j 反馈)：
     /// 之前用 `@State private var selectedProfileID: String?` 保存当前选中的服务商
@@ -90,9 +93,10 @@ struct AISettingsTab: View {
     // 选模型"完整路径时不需要手动展开折叠组。
     @SceneStorage("settings.ai.discoveredModels.expanded") private var isDiscoveredModelsExpanded: Bool = false
     @SceneStorage("settings.ai.taskModels.expanded") private var isTaskModelsExpanded: Bool = false
-    /// HOM-126：「自动整理」分组的展开偏好。默认展开——这是 HOM-126 的核心新增，
-    /// 用户第一次进入 AI 设置时希望直接看到开关，而不是再点一次折叠组。
-    @SceneStorage("settings.ai.autoTidy.expanded") private var isAutoTidyExpanded: Bool = true
+    /// 「自动整理」分组的展开偏好。默认折叠——与同 Tab 内其他 DisclosureGroup
+    /// （已发现模型 / 模型配置 / Prompt / AI 索引 / AI 代码上下文）的默认折叠风格统一，
+    /// 避免设置页一进来一堆分组同时展开造成视觉拥挤；用户主动展开后由 SceneStorage 持久化。
+    @SceneStorage("settings.ai.autoTidy.expanded") private var isAutoTidyExpanded: Bool = false
 
     /// 2026-06-12 向量索引改进："AI 索引"分组默认收起，避免设置页一进来 6 个分组太挤；
     /// 用户主动点开后偏好持久化。
@@ -106,6 +110,14 @@ struct AISettingsTab: View {
     /// 默认收起——与 promptSection / aiIndexSection 一致；避免设置页首次打开就被新 section 撑高。
     /// 用户主动点开后偏好持久化（SceneStorage 跨设置窗口打开周期保留）。
     @SceneStorage("settings.ai.repoContext.expanded") private var isRepoContextExpanded: Bool = false
+
+    /// HOM-68 v3 (2026-06-15)：AI 代码上下文产物管理面板从存储 Tab 搬过来。
+    /// `@Observable` 单例直接订阅；视图层调 reveal / delete 等方法时由 storage 内部
+    /// 处理 security scope。
+    @State private var aiContextStorage = RepoContextStorage.shared
+
+    /// AI 代码上下文 storage 操作失败时弹 alert 用。和 `keyError` 等并列各管一摊。
+    @State private var aiContextActionError: String?
 
     /// "全量重建"二次确认。
     @State private var pendingRebuildAllConfirm: Bool = false
@@ -194,6 +206,23 @@ struct AISettingsTab: View {
         } message: { profile in
             Text("删除「\(profile.displayName)」后无法恢复。")
         }
+        // HOM-68 v3 (2026-06-15)：AI 代码上下文产物管理从存储 Tab 搬过来后,
+        // 进入 AI Tab 时强制重扫描产物目录,让用户刚生成的产物立即可见。
+        .task {
+            aiContextStorage.reload()
+        }
+        // AI 代码上下文 storage 操作失败 alert (与 IntegrationSettingsView 同款模式)。
+        .alert(
+            "ai.context.storage.actionFailed",
+            isPresented: Binding(
+                get: { aiContextActionError != nil },
+                set: { if !$0 { aiContextActionError = nil } }
+            )
+        ) {
+            Button("general.ok") { aiContextActionError = nil }
+        } message: {
+            Text(aiContextActionError ?? "")
+        }
     }
 
     /// 二次确认 dialog 的 isPresented 绑定。
@@ -277,7 +306,7 @@ struct AISettingsTab: View {
                 Button {
                     // HOM-AIPROVIDERS-HIDE-PROVIDER-2026-06-12：包 withAnimation 让下方
                     // Provider 行 + 输入区伴随 transition 滑入，而不是瞬切。
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                         beginDraft(provider: .openAICompatible)
                     }
                 } label: {
@@ -339,7 +368,7 @@ struct AISettingsTab: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
 
             if let profile = activeProfile {
@@ -596,7 +625,7 @@ struct AISettingsTab: View {
     /// 标题瞬切、点 chevron 平滑"的不一致体感。
     private func disclosureLabel(_ title: String, isExpanded: Binding<Bool>) -> some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.18)) {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                 isExpanded.wrappedValue.toggle()
             }
         } label: {
@@ -619,8 +648,8 @@ struct AISettingsTab: View {
     /// HOM-126：「自动整理」分组。
     ///
     /// 设计：
-    /// - 用 DisclosureGroup 默认展开（与其他折叠组的"默认收起"不同）：自动整理是
-    ///   本期主推功能，第一次进 AI 设置应直接看到开关而不是再点一次折叠组。
+    /// - 用 DisclosureGroup 默认折叠（与同 Tab 其他折叠组统一），用户主动展开后由
+    ///   `isAutoTidyExpanded` SceneStorage 持久化。
     /// - 总开关 OFF 时下面所有子项 `.disabled(true)` + `.opacity(0.5)`，符合 HOM-126
     ///   验收"总开关关闭时所有子项 disabled"。
     /// - 触发时机用三个独立 Toggle（启动 / 同步 / 定时），UI 简单直接；不用 Picker
@@ -1376,24 +1405,190 @@ struct AISettingsTab: View {
         }
     }
 
-    /// 「管理已生成的上下文 → 存储 Tab」跳转按钮。
-    ///
-    /// **Y3 仅 UI 阶段的占位实现**：当前只 print 一条日志；Y5 触点 E 落地存储 Tab 时改为
-    /// 真正的 NotificationCenter 跳转（`Notification.Name.starcatJumpToSettingsTab` +
-    /// `SettingsView` 内监听切 selectedTab 到 .storage）。占位实现允许 UI 层先看到完整
-    /// 视觉效果，且不会触发未实现的代码路径。
+    // MARK: - AI 代码上下文产物管理面板（HOM-68 v3 / 2026-06-15）
+    //
+    // 历史背景：原方案只在 AI 设置里放一个「管理已生成的上下文 →」跳转按钮，把完整
+    // 的输出目录 / 项目列表 / 单项删除面板放在 存储 Tab。dong4j 拍板把"精细化操作"
+    // 集中到对应功能 Tab、把"全局汇总 + 一键清除"集中到 存储 Tab，因此本面板从
+    // 存储 Tab 搬过来；存储 Tab 那边只保留汇总数字 + 行内"清理"按钮。
+    //
+    // 视觉对照 `IntegrationSettingsView.codeFlowSection`，保持两类产物（CodeFlow /
+    // RepoContextPacker）的 UI 节奏一致：
+    //   1. 输出目录路径行 + 「选择目录 / 在 Finder 显示 / 重置默认」3 个按钮；
+    //   2. 4 列汇总统计（项目数 / 占用 / 累计生成 / 最后生成）；
+    //   3. 错误状态 / 空状态 / 项目列表三态切换；
+    //   4. 项目列表中每行：仓库名 + 元信息 caption + 「打开 / 删除」按钮。
+    //
+    // 与 CodeFlow 的差异：
+    //   - **不提供"预览"按钮**：context.xml 不是给用户直接看的，没有"预览页面"概念。
+    //   - **不提供"一键清除"按钮**：搬到 存储 Tab 作为汇总入口；本地仅保留单项删除。
+
+    /// AI 代码上下文产物管理面板。
+    @ViewBuilder
     private var repoContextManageStorageRow: some View {
-        Button {
-            // 2026-06-13 Y3↔Y5 跨 Tab 跳转：发出事件，由 SettingsView 内部
-            // onReceive(.starcatJumpToSettingsTab) 切换 selectedTab 到 .storage。
-            // 用 NotificationCenter 而不是直接耦合 SettingsView 是因为 SettingsView
-            // 用 @State 自管 tab、且 selectedTab 是 private——见 SettingsView.swift
-            // 顶部 extension Notification.Name 的注释。
-            NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: "storage")
-        } label: {
-            Label("ai.context.settings.manageStorage", systemImage: "internaldrive")
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Label("ai.context.storage.outputDirectory", systemImage: "doc.text.magnifyingglass")
+                    .font(.headline)
+                Text("ai.context.storage.subtitle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Text(aiContextStorage.outputDirectoryDisplayPath)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(-1)
+                Spacer()
+                Button("ai.context.storage.choose") {
+                    chooseAIContextOutputDirectory()
+                }
+                .fixedSize()
+                Button {
+                    revealAIContextOutputDirectory()
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .help(Text("ai.context.storage.revealHelp"))
+                .fixedSize()
+                Button {
+                    resetAIContextOutputDirectory()
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .disabled(!aiContextStorage.hasCustomOutputDirectory)
+                .help(Text("ai.context.storage.resetHelp"))
+                .fixedSize()
+            }
+
+            HStack(spacing: 18) {
+                aiContextStat(titleKey: "ai.context.storage.statRepos",
+                              value: "\(aiContextStorage.projects.count)")
+                aiContextStat(titleKey: "ai.context.storage.statBytes",
+                              value: ByteCountFormatter.string(fromByteCount: aiContextStorage.totalBytes, countStyle: .file))
+                aiContextStat(titleKey: "ai.context.storage.statGenerations",
+                              value: String(format: String(localized: "ai.context.storage.statGenerationsFormat"),
+                                            aiContextStorage.totalGenerationCount))
+                if let date = aiContextStorage.latestGeneratedAt {
+                    aiContextStat(titleKey: "ai.context.storage.statLast",
+                                  value: date.formatted(date: .abbreviated, time: .shortened))
+                }
+                Spacer()
+            }
+
+            // storage 内部抛错（bookmark 失效 / 目录权限丢失等）反映到 lastErrorMessage,
+            // 持续显示直到下次 reload 成功。actionError（按钮触发的失败）走顶部 alert,
+            // 两者职责分明：actionError = 短暂弹窗，lastErrorMessage = 持续状态。
+            if let message = aiContextStorage.lastErrorMessage {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if aiContextStorage.projects.isEmpty {
+                Text("ai.context.storage.empty")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(aiContextStorage.projects) { project in
+                    aiContextProjectRow(project)
+                }
+            }
         }
         .disabled(!settings.aiRepoContextEnabled)
+    }
+
+    /// 4 列汇总统计中的单列（caption2 标题 + caption.weight(.medium) 数值）。
+    /// 视觉与 `IntegrationSettingsView.stat(title:value:)` 对齐。
+    private func aiContextStat(titleKey: LocalizedStringKey, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(titleKey).font(.caption2).foregroundStyle(.secondary)
+            Text(value).font(.caption.weight(.medium))
+        }
+    }
+
+    /// 单个产物行（一个 `<owner>/<repo>` 项目）。绑定 `RepoContextStoredProject`。
+    /// 与 CodeFlow projectRow 不同点：① 不提供"预览"按钮；② 不显示"详情" disclosure
+    /// （context.xml metadata 不需要让用户深扒）。
+    private func aiContextProjectRow(_ project: RepoContextStoredProject) -> some View {
+        let metadata = project.metadata
+        let commitShortSHA = String(metadata.commitSha.prefix(7))
+        let xmlBytesStr = ByteCountFormatter.string(fromByteCount: Int64(metadata.stats.contextXmlBytes), countStyle: .file)
+        let actualTokens = metadata.stats.actualTokens
+        let totalFiles = metadata.stats.totalFiles
+        return HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(metadata.owner)/\(metadata.repo)")
+                    .font(.callout.weight(.medium))
+                Text("\(metadata.ref) · \(commitShortSHA) · XML \(xmlBytesStr) · \(actualTokens) tokens · \(totalFiles) files")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text(project.generatedAtDate.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("ai.context.storage.menuReveal") {
+                revealAIContextProject(project)
+            }
+            Button("ai.context.storage.menuDelete", role: .destructive) {
+                deleteAIContextProject(project)
+            }
+        }
+    }
+
+    // MARK: - AI 代码上下文 storage action 入口
+
+    /// 选择新的产物输出目录（NSOpenPanel）。失败走 aiContextActionError alert。
+    private func chooseAIContextOutputDirectory() {
+        let panel = NSOpenPanel()
+        panel.title = String(localized: "ai.context.storage.choosePanelTitle")
+        panel.prompt = String(localized: "ai.context.storage.choosePanelPrompt")
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try aiContextStorage.setCustomOutputDirectory(url)
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
+    }
+
+    private func resetAIContextOutputDirectory() {
+        do {
+            try aiContextStorage.resetOutputDirectory()
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
+    }
+
+    private func revealAIContextOutputDirectory() {
+        do {
+            try aiContextStorage.revealOutputRoot()
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
+    }
+
+    private func revealAIContextProject(_ project: RepoContextStoredProject) {
+        do {
+            try aiContextStorage.revealProject(project)
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
+    }
+
+    private func deleteAIContextProject(_ project: RepoContextStoredProject) {
+        do {
+            try aiContextStorage.deleteProject(owner: project.metadata.owner, repo: project.metadata.repo)
+        } catch {
+            aiContextActionError = error.localizedDescription
+        }
     }
 
     /// Token 预算 Int↔Double 适配 binding。
@@ -1560,7 +1755,7 @@ struct AISettingsTab: View {
                 setSelectedProfileID(profile.id)
                 // HOM-AIPROVIDERS-HIDE-PROVIDER-2026-06-12：包 withAnimation 让
                 // Provider 行随草稿晋升收起，与点 + 时的滑入动画对称。
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                     draftProfile = nil
                     draftAPIKey = ""
                 }
@@ -1577,7 +1772,7 @@ struct AISettingsTab: View {
             // 不用手动去展开折叠组。withAnimation 与 disclosureLabel 的展开动画
             // 走同一条曲线（easeInOut 0.18），视觉一致。
             if !models.isEmpty {
-                withAnimation(.easeInOut(duration: 0.18)) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                     isDiscoveredModelsExpanded = true
                 }
             }

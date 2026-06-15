@@ -37,9 +37,9 @@
 //         **做"半透明叠加"的正确做法：传不透明色（如 `.black`），然后调用方
 //         在外面套 `.blendMode(.plusLighter)` 或 `.blendMode(.screen)`**——
 //         黑色部分会"加 0 = 不变"自动消失，只留亮点叠加到底层 material 上。
-//      4. **持续 60fps 重渲染**：内部 `TimelineView(.animation)` 每帧重画。
-//         GPU 占用 ~ 1-3%（M1 实测），sheet 关闭后 SwiftUI 自动停掉 TimelineView，
-//         不需要手动管理生命周期。**别叠多个实例**，一个 view 一份就够。
+//      4. **持续渲染限频**：内部 Timeline 固定最高 30 FPS，不跟随
+//         60/120 Hz 屏幕刷新率盲目重画；`starcatReduceMotion` 开启时彻底
+//         移除 Timeline，只渲染时间 0 的静态帧。**别叠多个实例**。
 //      5. **ImageRenderer 截不出 Metal shader 帧**：SwiftUI snapshot 不渲染 GPU
 //         shader。所以这个组件**不要**放进 `ShareCardContent` 期望"出现在导出图
 //         里"；它只能作为 sheet / view 的 **运行时装饰**。
@@ -70,6 +70,8 @@ import SwiftUI
 /// 调用方负责限定大小（通常通过 `.background { ... }` 让其撑满宿主 view 的 bounds），
 /// 本组件不主动 `ignoresSafeArea`，避免在 sheet 这种"模态无 safe area"语境下做无用功。
 struct DotsFlowBackground: View {
+
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     /// 点和高光的颜色。
     /// 做 sheet 背景时建议用 `.accentColor` 或品牌色（暗亮模式都能识别），
@@ -105,33 +107,44 @@ struct DotsFlowBackground: View {
     @State private var start: Date = .now
 
     var body: some View {
-        TimelineView(.animation) { ctx in
-            let elapsed = Float(ctx.date.timeIntervalSince(start))
-            background
-                .colorEffect(
-                    Shader(
-                        function: ShaderFunction(library: .default, name: "swDotsFlow"),
-                        arguments: [
-                            .boundingRect,
-                            .float(elapsed),
-                            .float(speed),
-                            .float(brightness),
-                            .color(tint),
-                            .color(background),
-                            .float(dotSize),
-                            .float(gridDensity),
-                            .float(patternScale),
-                            .float(vignette),
-                            // horizon / amplitude / depthFade 在 .flow 样式下被
-                            // shader 端 `(void)x;` 显式忽略，但 stitchable 函数
-                            // 签名固定 13 参，必须传齐——传 0 即可。
-                            .float(0),
-                            .float(0),
-                            .float(0)
-                        ]
-                    )
-                )
+        Group {
+            if reduceMotion {
+                renderedFrame(elapsed: 0)
+            } else {
+                // Metal 背景旧实现跟随屏幕 60/120 FPS 重绘。点阵流速很慢，
+                // 30 FPS 视觉等价，但可将 sheet 开启时的 shader 调用量至少减半。
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                    renderedFrame(elapsed: Float(context.date.timeIntervalSince(start)))
+                }
+            }
         }
+    }
+
+    private func renderedFrame(elapsed: Float) -> some View {
+        background
+            .colorEffect(
+                Shader(
+                    function: ShaderFunction(library: .default, name: "swDotsFlow"),
+                    arguments: [
+                        .boundingRect,
+                        .float(elapsed),
+                        .float(speed),
+                        .float(brightness),
+                        .color(tint),
+                        .color(background),
+                        .float(dotSize),
+                        .float(gridDensity),
+                        .float(patternScale),
+                        .float(vignette),
+                        // horizon / amplitude / depthFade 在 .flow 样式下被
+                        // shader 端 `(void)x;` 显式忽略，但 stitchable 函数
+                        // 签名固定 13 参，必须传齐——传 0 即可。
+                        .float(0),
+                        .float(0),
+                        .float(0)
+                    ]
+                )
+            )
     }
 }
 

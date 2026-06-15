@@ -225,18 +225,13 @@ struct TagEditorView: View {
     // MARK: - 空态
 
     private func emptyState(icon: String, titleKey: LocalizedStringKey, detailKey: LocalizedStringKey) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 32))
-                .foregroundStyle(.tertiary)
-            Text(titleKey)
-                .font(.headline)
-            Text(detailKey)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-        }
+        EmptyStateView(
+            systemImage: icon,
+            title: titleKey,
+            subtitle: detailKey,
+            iconSize: 32,
+            subtitleHorizontalPadding: 24
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

@@ -20,7 +20,7 @@ struct SearchCenterView: View {
     let isStarred: (Int64) -> Bool
     let isGitHubAuthenticated: Bool
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @FocusState private var isSearchFocused: Bool
     /// SEARCH-RICH 2026-06-14：从 `Repo?` 改为 `RepositoryCandidate?` —— 弹窗
     /// 新增需要展示 `remoteExtras`（disabled / isTemplate / score）以及 sort 模式
@@ -1246,6 +1246,9 @@ private struct HistoryChip: View {
 
     @State private var isHovered: Bool = false
 
+    /// 2026-06-15:hover scale + 删除按钮入场动画在「关闭应用内动画」时跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     /// 显示 useCount 角标的最低门槛。`< 3` 视为"偶尔搜过"，无需占据视觉注意力。
     /// 这是 dong4j 拍板的阈值，需要调整时改这一个常量即可。
     private static let useCountBadgeMinimum = 3
@@ -1308,11 +1311,11 @@ private struct HistoryChip: View {
                 .focusEffectDisabled()
                 .padding(.trailing, 4)
                 .help("删除这条历史")
-                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.85)))
             }
         }
         .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) { isHovered = hovering }
         }
         .contextMenu {
             Button("使用此关键词") { onUse() }

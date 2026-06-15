@@ -277,9 +277,21 @@ struct GRDBRepoRepository {
         }
     }
 
-    /// FTS5 全文搜索。
-    /// 在 `name / description / language / topics` 四列上搜索；空 query 直接退化为全量。
-    /// 用户输入由 caller 用 `FTSQuery.sanitize` 转义，避免 FTS5 语法错误（如 `"`、`*`、`-` 等元字符）。
+    /// FTS5 全文搜索（2026-06-14 召回扩展）。
+    ///
+    /// **索引列**：
+    /// - `repos_fts`：`name / full_name / description / language / topics`
+    /// - `notes_fts`：`repo_notes.content`（用户私有笔记）
+    ///
+    /// **合并策略**（Q2 方案 a "OR 合并"）：两表 UNION ALL 后按 `repo_id` 聚合取最佳 BM25，
+    /// 同一 repo 多源命中只返回一条；用户感知"找到了"最重要，不在乎来源是 repo 字段还是笔记。
+    ///
+    /// **排序**（Q3 改进）：`ORDER BY MIN(bm25) ASC, starred_at DESC`。
+    /// SQLite FTS5 的 `bm25()` 返回**负数**，越小（越负）越相关。`ASC` 把最负的（最相关）
+    /// 排第一；BM25 同分时回落 `starred_at` 让新 star 在前。
+    ///
+    /// 空 query 直接退化为全量；用户输入由 caller 用 `FTSQuery.sanitize` 转义，避免 FTS5
+    /// 语法错误（如 `"`、`*`、`-` 等元字符）。
     func searchFTS(query: String) async throws -> [Repo] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
@@ -287,12 +299,25 @@ struct GRDBRepoRepository {
         }
         let ftsQuery = FTSQuery.sanitize(trimmed)
         return try await database.writer.read { db in
+            // 用 CTE 把 "repos_fts 命中" 与 "notes_fts 命中" 摊平到同一关系
+            // (repo_id, score)；外层按 repo_id 聚合取 MIN(score) = 最相关的来源分数。
+            // bm25() 必须在原始 fts5 表上下文里调用，所以两路命中各自带分进 CTE，
+            // 不能在外层重新对 hits.score 做 bm25() 调用。
             try Repo.fetchAll(db, sql: """
+                WITH hits(repo_id, score) AS (
+                    SELECT rowid, bm25(repos_fts) FROM repos_fts WHERE repos_fts MATCH ?
+                    UNION ALL
+                    SELECT rowid, bm25(notes_fts) FROM notes_fts WHERE notes_fts MATCH ?
+                )
                 SELECT r.* FROM repos r
-                JOIN repos_fts ON repos_fts.rowid = r.id
-                WHERE repos_fts MATCH ? AND r.is_starred = 1
-                ORDER BY r.starred_at DESC
-                """, arguments: [ftsQuery])
+                JOIN (
+                    SELECT repo_id, MIN(score) AS best_score
+                    FROM hits
+                    GROUP BY repo_id
+                ) m ON r.id = m.repo_id
+                WHERE r.is_starred = 1
+                ORDER BY m.best_score ASC, r.starred_at DESC
+                """, arguments: [ftsQuery, ftsQuery])
         }
     }
 

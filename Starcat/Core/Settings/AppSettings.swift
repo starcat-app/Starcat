@@ -676,6 +676,15 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.aiChatTask, value: aiChatTask) }
     }
 
+    /// AI 对话历史存储后端。默认 `.jsonFiles`，保留当前 metadata + chunks 写入路径；
+    /// 选择 `.sqlite` 后，下一次创建 `DiskChatHistoryStore.shared` 会使用独立 SQLite 文件。
+    ///
+    /// 关键约束：运行中的 store 不做热切换，避免同一个会话窗口生命周期内一半写 JSON、
+    /// 一半写 SQLite。切换设置后重启应用即可使用新后端；迁移以后做显式工具，不自动搬数据。
+    var chatHistoryStorageKind: ChatHistoryStorageKind {
+        didSet { persist(key: Keys.chatHistoryStorageKind, value: chatHistoryStorageKind.rawValue) }
+    }
+
     /// 搜索栏当前模式。默认 keyword，避免用户未配置 AI 时误触发付费 API。
     var smartSearchMode: SmartSearchMode {
         didSet { persist(key: Keys.smartSearchMode, value: smartSearchMode.rawValue) }
@@ -749,6 +758,22 @@ final class AppSettings {
         didSet { persist(key: Keys.readmeTranslationLanguage, value: readmeTranslationLanguage.rawValue) }
     }
 
+    // MARK: - 无障碍 / 动画（2026-06-15 dong4j 需求）
+
+    /// 「关闭应用内动画」用户偏好。默认 `false`（动画全开）。
+    ///
+    /// 设计：通过 `AnimationOverrideModifier` 在 root view 上覆盖
+    /// `accessibilityReduceMotion` 环境值，让全工程 30+ 个已实现
+    /// `@Environment(\.starcatReduceMotion)` 兜底的视图零改动
+    /// 自动尊重本设置。与系统「减少动态效果」是 OR 关系。
+    /// 详见 `Shared/Components/AnimationOverrideModifier.swift` 文件头。
+    ///
+    /// **不影响**系统级动画（sheet 弹出 / 窗口切换 / Form 滚动惯性 /
+    /// Picker 下拉），那些由 macOS AppKit 驱动 SwiftUI 不参与。
+    var disableAnimations: Bool {
+        didSet { persistBool(key: Keys.disableAnimations, value: disableAnimations) }
+    }
+
     /// Pro 订阅模拟状态（HOM-151）。
     ///
     /// 真实 Apple 订阅接入前，设置页的"开通 Pro"按钮先写本地状态，用于串联：
@@ -809,11 +834,17 @@ final class AppSettings {
 
     /// AI 语义搜索结果过滤阈值（2026-06-13 dong4j 需求 HOM-197）。
     ///
-    /// 语义搜索命中的 cosine similarity 分数低于此阈值的 repo 不在列表展示——
+    /// 语义搜索命中分数低于此阈值的 repo 不在列表展示——
     /// 默认 0.75，UI 滑杆范围 0.10 - 1.00、步进 0.01。
     ///
+    /// **2026-06-14 单位迁移**：dong4j 决策——判定字段从原始 cosine 改成
+    /// `SemanticSearchHit.displayScore`（A 重标定后的经验区间归一值），让
+    /// "滑杆 75%" 与 "结果列表 75%" 视觉单位一致。原始 cosine 0.75 ≈
+    /// displayScore 0.692，新单位下默认 0.75 实际比旧版稍严，但配合 B 字面 boost / C
+    /// FTS 加权后好结果不会被滤掉。
+    ///
     /// **生效路径**：`HomeViewModel.applyView()` 在 `isSemanticSearching` 分支里
-    /// 对 `view` 做 `removeAll { (semanticHitMap[$0.id]?.score ?? 0) < threshold }`，
+    /// 对 `view` 做 `removeAll { (semanticHitMap[$0.id]?.displayScore ?? 0) < threshold }`，
     /// 与 hideArchived / hideForks / statusFilter 同串行过滤。
     ///
     /// **为什么不在 SemanticSearchService.search() 里过滤**：拖滑杆改阈值要即时
@@ -1092,6 +1123,8 @@ final class AppSettings {
             modelName: resolvedAIChatModel
         )
         self.aiChatTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiChatTask, defaults: defaults) ?? defaultChatTask
+        let chatHistoryStorageRaw = defaults.string(forKey: Keys.chatHistoryStorageKind)
+        self.chatHistoryStorageKind = chatHistoryStorageRaw.flatMap(ChatHistoryStorageKind.init(rawValue:)) ?? .jsonFiles
         let searchModeRaw = defaults.string(forKey: Keys.smartSearchMode)
         self.smartSearchMode = searchModeRaw.flatMap(SmartSearchMode.init(rawValue:)) ?? .keyword
         self.anySearchEnabled = defaults.object(forKey: Keys.anySearchEnabled) as? Bool ?? false
@@ -1120,6 +1153,10 @@ final class AppSettings {
             ?? .defaultForCurrentLocale()
 
         self.isProUser = defaults.object(forKey: Keys.isProUser) as? Bool ?? false
+
+        // 2026-06-15:无障碍——「关闭应用内动画」用户偏好。
+        // 缺失值时默认 false(动画全开),老用户首启不受影响。
+        self.disableAnimations = defaults.object(forKey: Keys.disableAnimations) as? Bool ?? false
 
         // HOM-126：自动整理偏好。缺失时回落到 `AutoTidySettings.default`（总开关关 +
         // 启动/同步触发 + 50 个 + 最近 star + 仅标签 + 90% 阈值），与任务描述一致。
@@ -1337,6 +1374,7 @@ final class AppSettings {
         static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
         static let aiTranslationTask = "settings.ai.task.translation.v2"  // HOM-68 follow-up
         static let aiChatTask = "settings.ai.task.chat.v1"  // 2026-06-14 v4 占位符化（chat 提到 task 平级）
+        static let chatHistoryStorageKind = "settings.ai.chatHistory.storageKind.v1"
         static let smartSearchMode = "settings.search.mode"
         static let anySearchEnabled = "settings.search.anysearch.enabled.v1"
         static let anySearchAnonymousMode = "settings.search.anysearch.anonymous.v1"
@@ -1346,6 +1384,7 @@ final class AppSettings {
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
         static let isProUser = "settings.pro.isProUser"  // HOM-151
+        static let disableAnimations = "settings.general.disableAnimations.v1"  // 2026-06-15
         static let autoTidySettings = "settings.ai.autoTidy.v1"  // HOM-126
         static let customServiceURLs = "settings.services.customURLs.v1"  // 2026-06-08
         // R-01 v1.2 2026-06-09 引入；2026-06-10 迁 Keychain。

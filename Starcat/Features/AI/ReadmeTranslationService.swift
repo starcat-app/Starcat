@@ -96,12 +96,19 @@ final class ReadmeTranslationService {
     /// - 缓存存在但 `source_hash` 不匹配当前 `sourceHtml` → 仍返回缓存（让 UI 显示
     ///   旧译文并提示"原 README 已更新，建议重新翻译"），由上层 ViewModel 用
     ///   `isCacheFresh(...)` 决定是否提示用户。
+    ///
+    /// **签名变更（HOM-68 v2 / 2026-06-15）**：`repoId` 改为 `owner / repo`。背景
+    /// 见 `ReadmeTranslationRepositoryProtocol` 顶部注释——磁盘 cache 路径用 owner/
+    /// repo 而非 repo_id，让 trending / activity 这类 ephemeral repo（id 不稳定）
+    /// 也能正确命中。
     func cachedTranslation(
-        repoId: Int64,
+        owner: String,
+        repo: String,
         targetLanguage: ReadmeTranslationLanguage
     ) async throws -> ReadmeTranslation? {
         try await translationRepository.find(
-            repoId: repoId,
+            owner: owner,
+            repo: repo,
             targetLanguage: targetLanguage.rawValue
         )
     }
@@ -184,7 +191,13 @@ final class ReadmeTranslationService {
             createdAt: ISO8601DateFormatter.shared.string(from: Date())
         )
 
-        try await translationRepository.upsert(record)
+        // 写入磁盘缓存：路径用 `<owner>/<repo>/<lang>.{html,json}`（HOM-68 v2 / 砍 DB
+        // 走纯磁盘后，写入不再受 FK 约束 → trending / activity 未 star 也能命中缓存）。
+        try await translationRepository.upsert(
+            record,
+            owner: request.repo.owner,
+            repo: request.repo.name
+        )
         return record
     }
 

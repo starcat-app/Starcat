@@ -231,6 +231,33 @@ final class RepoContextStorage {
         }
     }
 
+    /// 在 security scope 内读取指定项目的 `context.xml` 全文。
+    ///
+    /// **为什么单列这个 helper（2026-06-14 silent failure 修复）**：
+    ///
+    /// `existingProject(...)` / packer 输出会返回携带 `contextURL: URL` 的结构体。
+    /// 但 `withOutputRoot { ... }` 在 closure 返回的瞬间就 `stopAccessingSecurityScopedResource()`，
+    /// 调用方拿到 URL 后在 closure 外面 `String(contentsOf:)` —— 用户若把输出根目录改成
+    /// 自选文件夹（Documents / iCloud Drive 等需要 security scope 的位置），那次读取必然
+    /// 失败，被外层 `try?` 吞掉变成 nil → AI 摘要静默丢失代码上下文 metadata，UI footer
+    /// 第二行 / ⋯ 菜单的「在 Finder 中显示上下文」一并消失，用户无任何提示（dong4j 2026-06-14
+    /// 反馈 `addyosmani/agent-skills` 案例）。
+    ///
+    /// 把"读 xml"也封装进 storage、让整个 IO 都在 `withOutputRoot` 内完成，从源头杜绝
+    /// 上层漏 scope 的可能；上层只消费返回的 `String?`，不再直接接触 URL。
+    ///
+    /// - Returns: 找不到 / 文件不存在 / 文件空 → 返回 nil；caller 应视为降级路径。
+    ///            真正读取失败（权限 / IO 错误）会 throw，让 caller 能区分"没有"与"读不到"。
+    func loadContextXml(owner: String, repo: String) throws -> String? {
+        try withOutputRoot { root in
+            let url = projectDirectory(root: root, owner: owner, repo: repo)
+                .appendingPathComponent("context.xml")
+            guard fileManager.fileExists(atPath: url.path) else { return nil }
+            let xml = try String(contentsOf: url, encoding: .utf8)
+            return xml.isEmpty ? nil : xml
+        }
+    }
+
     // MARK: - W8 ContextWriter 写盘入口
 
     /// 把 packer 产生的 xml + metadata 写到 `<root>/<owner>/<repo>/`。

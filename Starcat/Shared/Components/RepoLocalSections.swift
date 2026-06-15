@@ -128,6 +128,10 @@ struct RepoLocalSections: View {
     /// 语义对齐。通过 Environment 注入,4 个 ContentView 调用方零改动。
     @Environment(AuthSession.self) private var authSession
 
+    /// 2026-06-15:三段 spring 展开/收起在「关闭应用内动画」时直接瞬切,
+    /// 与 `AnimationOverrideModifier` 注入的有效 reduceMotion 对齐。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     /// horizontal padding：与 `RepoMetadataHeaderView` 保持一致 24pt,让三段视觉
     /// 边距与 hero 严格对齐（避免读者察觉 hero / body 区分）。
     private let horizontalPadding: CGFloat = 24
@@ -160,9 +164,9 @@ struct RepoLocalSections: View {
         VStack(alignment: .leading, spacing: 12) {
             if isVisible {
                 RepoTagsSection(repo: repo)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                 RepoNotesSection(repo: repo)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                 // v2.0(2026-06-12)：原 RepoReleaseSection 段已压缩为 hero stats 行的紧凑
                 // stat `RepoReleaseStatItem`,与 Stars / Forks 等同行,详见 `RepoMetadataHeaderView.statsSection`。
                 // 这里不再挂载第三段,以让本组件聚焦"重交互的 Tags / Notes 双段"。
@@ -176,6 +180,6 @@ struct RepoLocalSections: View {
         // - value 绑 isVisible（v1.4 修订）：原来绑 repo.id 在「登录态切换且 repo.id
         //   不变」场景下不会触发动画（罕见但存在：用户登出再登入同一个详情页）;
         //   改绑 isVisible 覆盖所有触发源（登录态变 / repo.id 变 / 切不同详情页）。
-        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: isVisible)
+        .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.85), value: isVisible)
     }
 }

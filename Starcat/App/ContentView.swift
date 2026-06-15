@@ -15,6 +15,10 @@ struct ContentView: View {
 
     @Environment(AuthSession.self) private var authSession
     @Environment(AppDependencies.self) private var dependencies
+    /// 2026-06-15:用户「关闭应用内动画」开 + 系统「减少动态效果」开
+    /// 任一为真时,跳过登录态切换的 .smooth 隐式动画,避免内容树瞬切时
+    /// 仍有 SwiftUI 默认 spring 残留。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     /// 当用户主动点击"登录"按钮时（isAuthenticating = true）显示 GithubAuthView sheet。
     /// 注意：不使用 `!isAuthenticated` 作为条件，是为了避免应用启动时就弹出登录窗口，
@@ -49,7 +53,7 @@ struct ContentView: View {
             minWidth: MainWindowFrameDefaults.contentMinSize.width,
             minHeight: MainWindowFrameDefaults.contentMinSize.height
         )
-        .animation(.smooth, value: authSession.state)
+        .animation(reduceMotion ? nil : .smooth, value: authSession.state)
         .sheet(isPresented: showAuthViewBinding) {
             GithubAuthView()
         }

@@ -44,6 +44,10 @@ struct SettingsView: View {
 
     @Environment(AppSettings.self) private var settings
     @Environment(AppDependencies.self) private var dependencies
+    /// 2026-06-15:用于在主题切换的 withAnimation 处兜底跳过动画。
+    /// 系统「减少动态效果」或用户「关闭应用内动画」任一为真时生效
+    /// (root view 的 `AnimationOverrideModifier` 已 OR 合并)。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var selectedTab: SettingsTab = .general
 
@@ -145,8 +149,15 @@ struct SettingsView: View {
                 Picker("settings.general.appearanceMode", selection: Binding(
                     get: { settings.appearanceMode },
                     set: { newValue in
-                        withAnimation(.easeInOut(duration: 0.6)) {
+                        // 2026-06-15:reduceMotion 兜底——主题切换的颜色淡变在
+                        // 关动画时改为瞬切。`withAnimation(nil)` 让 binding 写入
+                        // 不挂任何 transaction,@Observable 属性变化按默认无包裹路径。
+                        if reduceMotion {
                             settings.appearanceMode = newValue
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.6)) {
+                                settings.appearanceMode = newValue
+                            }
                         }
                     }
                 )) {
@@ -188,130 +199,244 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            // 2026-06-15 dong4j 需求：无障碍 / 动画偏好。
+            //
+            // 单独起一个 Section 而不是夹在「外观」里——「关闭应用内动画」
+            // 是无障碍语义（与系统「辅助功能 → 减少动态效果」同源），与外观
+            // 主题（视觉偏好）属于不同维度；后续若新增其它无障碍配置
+            // （如字号缩放、对比度增强），都归在本 Section。
+            //
+            // 实现机制：toggle ON 时由 `AnimationOverrideModifier` 在 root view
+            // 上覆盖 `accessibilityReduceMotion` 环境值，全工程 30+ 个已实现
+            // reduceMotion 兜底路径的视图自动尊重新偏好（与系统级减少动态
+            // 效果走同一套代码路径）。详见 `Shared/Components/AnimationOverrideModifier.swift`。
+            Section("settings.general.accessibility") {
+                Toggle(isOn: $settings.disableAnimations) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.general.disableAnimations.title")
+                        Text("settings.general.disableAnimations.help")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
     }
 }
 
-// MARK: - W4-4 D4：存储 Tab
+// MARK: - 存储 Tab（HOM-68 v3 / 2026-06-15 大重构）
+//
+// 重构背景（dong4j 2026-06-15 拍板）：
+//   原设计把"缓存用量"（只读统计）和"清理操作"（按钮列表）做成两个独立 Section，
+//   导致用户必须在两个分组之间来回比对：先看用量决定要不要清，再去下一个分组找对应的按钮。
+//   同时 AI 代码上下文产物管理整段又在 storage Tab 占了一大块（输出目录 + 项目列表），
+//   而 CodeFlow 的同类面板放在 集成 Tab，两边职责不一致。
+//
+// 重构后职责划分：
+//   - 存储 Tab → 缓存用量：**全局汇总 + 总闸**。每行 = 一类缓存，行内显示用量数字 +
+//     "清理"按钮；底部一个"清除全部缓存" destructive 总按钮。覆盖 7 类：
+//     README / 图片 / ZIP / 翻译 / AnySearch / AI 代码上下文 / CodeFlow。
+//   - AI 设置 → AI 代码上下文(实验)：**这一类的精细化操作**（输出目录、单项目删除、
+//     在 Finder 显示）。"一键清除"按钮搬到存储 Tab，本地不再保留。
+//   - 集成 → CodeFlow：同上，"一键清除"按钮也搬到存储 Tab。
+//
+// 关键设计约束：
+//   1. 行内"清理"按钮统一走 confirmationDialog（PendingAction enum 驱动），
+//      所有类目共享一套确认/失败处理代码，避免每类一套独立 alert 像旧实现那样。
+//   2. 翻译 / AnySearch 原本各自走独立 alert，本次合并到 PendingAction.translation /
+//      .anySearch——视觉一致 + 代码量减半。
+//   3. 日志行删除（dong4j q3 拍板）：既然系统 Console.app 管理、用户无法操作，
+//      就别放在"缓存用量"里假装可清理，反而误导。
+//   4. ZIP 行保留 Finder 显示按钮（dong4j q2）：放在"清理"按钮左边。
+//   5. AI 上下文 / CodeFlow 行用量基于各自单例 @Observable 的 `projects.count` /
+//      `totalBytes`，不再走 CacheStatistics——CacheCleaner 不感知这两类（它们各自
+//      的 storage 单例管理生命周期，CacheCleaner 不应越权依赖单例）。
 
 /// 缓存统计与清理面板。
-///
-/// 独立 View 是为了把 CacheCleaner 的生命周期收敛在 Tab 内:
-/// - Tab 出现时 onAppear 加载统计
-/// - 用户清理后立即重新加载,UI 立刻反映新状态
-///
-/// 清理操作有 confirmationDialog 兜底,避免误点。
 private struct StorageSettingsTab: View {
+
+    @Environment(AppSettings.self) private var settings
 
     let readmeRepository: ReadmeRepository
 
     @State private var stats: CacheStatistics = .empty
     @State private var isWorking: Bool = false
-    /// 当前显示的确认弹窗类型;nil 表示不显示。
+    /// 当前显示的确认弹窗类型；nil 表示不显示。
     @State private var pendingAction: PendingAction?
     @State private var storageActionError: String?
 
-    // MARK: - Y5b 触点 E：AI 代码上下文产物管理（业务接通版，2026-06-13）
-    //
-    // 业务接通要点（与 `IntegrationSettingsView.codeFlowSection` 同款模式）：
-    //   - `@State private var aiContextStorage = RepoContextStorage.shared` 让 SwiftUI
-    //     自动跟踪 @Observable 单例的属性变更；
-    //   - 所有按钮 action 实际触发 storage 方法 + NSOpenPanel；
-    //   - 错误用 `aiContextActionError` 弹 alert（与 IntegrationSettingsView 同款）。
-    //
-    // 关键约束：
-    //   1. `.task { aiContextStorage.reload() }` 在 Tab 出现时强制重扫描，让用户刚生成
-    //      的产物立即可见；
-    //   2. `revealProject` / `deleteProject` 都走 storage 内部 security scope 路径，
-    //      避免 sandbox 拒绝 NSWorkspace 调用；
-    //   3. "一键清除" 仍保留二次确认 alert，destructive 角色防误删。
+    /// AI 代码上下文产物（精细化面板已搬到 AISettingsView，本 Tab 仅消费汇总数字
+    /// + "清除全部"入口）。`@Observable` 单例直接订阅，外部 storage 写入立即反映。
     @State private var aiContextStorage = RepoContextStorage.shared
-    @State private var showsAIContextClearConfirmation: Bool = false
-    @State private var aiContextActionError: String?
 
-    /// 清理操作类型。每种类型有不同的确认文案与执行路径。
+    /// CodeFlow 产物（精细化面板留在 IntegrationSettingsView，本 Tab 同 AI 上下文）。
+    @State private var codeFlowStorage = CodeFlowStorage.shared
+
+    /// 翻译磁盘缓存：`@MainActor @Observable` 单例，UI 直接读 `totalBytes` /
+    /// `itemCount`。删除走默认 appSupport 路径，无 bookmark 等额外失败面，
+    /// 失败极少；统一走 storageActionError。
+    @State private var translationCache = DiskReadmeTranslationCache.shared
+
+    /// AnySearch 磁盘缓存：global + ai-summary 子目录合并清除（dong4j 拍板「合并清除」），
+    /// 用户心智是"清搜索缓存"而不是分别清两个子目录。
+    @State private var anySearchCache = DiskAnySearchCache.shared
+
+    /// Wiki 探测结果磁盘缓存（2026-06-15 v4.y）：DeepWiki / ZRead / CodeWiki 单仓查询
+    /// 结果按 owner/repo 落盘。注入 AI Chat system prompt 的 `{starcatResources}` 段。
+    @State private var wikiCache = DiskWikiCache.shared
+
+    /// HOM-70：AI 对话历史磁盘存储（按 repo 多 session）。
+    /// 设置页 Tab 仅消费汇总数字 + "清除全部"入口，单 session 删除由对话窗口自己管理。
+    @State private var chatHistoryStore = DiskChatHistoryStore.shared
+
+    /// 行内"清理"按钮 + 底部"清除全部"按钮的待执行动作。
+    /// 7 类对应缓存 + 1 个全清。每类的 confirm 标题 / 描述键不同，但共用一个
+    /// confirmationDialog（避免视图里铺 7 个独立 alert）。
     private enum PendingAction: Identifiable {
-        case readme, image, archive, all
+        case readme, image, archive, translation, anySearch, wiki, chatHistory, aiContext, codeFlow, all
         var id: String {
             switch self {
-            case .readme: return "readme"
-            case .image:  return "image"
-            case .archive: return "archive"
-            case .all:    return "all"
+            case .readme:       return "readme"
+            case .image:        return "image"
+            case .archive:      return "archive"
+            case .translation:  return "translation"
+            case .anySearch:    return "anySearch"
+            case .wiki:         return "wiki"
+            case .chatHistory:  return "chatHistory"
+            case .aiContext:    return "aiContext"
+            case .codeFlow:     return "codeFlow"
+            case .all:          return "all"
             }
         }
         var confirmTitle: String {
             switch self {
-            case .readme: return String(localized: "settings.storage.clearReadme.confirm")
-            case .image:  return String(localized: "settings.storage.clearImage.confirm")
-            case .archive: return String(localized: "settings.storage.clearArchive.confirm")
-            case .all:    return String(localized: "settings.storage.clearAll.confirm")
+            case .readme:       return String(localized: "settings.storage.clearReadme.confirm")
+            case .image:        return String(localized: "settings.storage.clearImage.confirm")
+            case .archive:      return String(localized: "settings.storage.clearArchive.confirm")
+            case .translation:  return String(localized: "settings.storage.clearTranslation.confirm")
+            case .anySearch:    return String(localized: "settings.storage.clearAnySearch.confirm")
+            case .wiki:         return String(localized: "settings.storage.clearWiki.confirm")
+            case .chatHistory:  return String(localized: "settings.storage.clearChatHistory.confirm")
+            case .aiContext:    return String(localized: "settings.storage.clearAiContext.confirm")
+            case .codeFlow:     return String(localized: "settings.storage.clearCodeFlow.confirm")
+            case .all:          return String(localized: "settings.storage.clearAll.confirm")
             }
         }
         var confirmMessageKey: LocalizedStringKey {
             switch self {
-            case .readme: return "settings.storage.clearReadme.message"
-            case .image:  return "settings.storage.clearImage.message"
-            case .archive: return "settings.storage.clearArchive.message"
-            case .all:    return "settings.storage.clearAll.message"
+            case .readme:       return "settings.storage.clearReadme.message"
+            case .image:        return "settings.storage.clearImage.message"
+            case .archive:      return "settings.storage.clearArchive.message"
+            case .translation:  return "settings.storage.clearTranslation.message"
+            case .anySearch:    return "settings.storage.clearAnySearch.message"
+            case .wiki:         return "settings.storage.clearWiki.message"
+            case .chatHistory:  return "settings.storage.clearChatHistory.message"
+            case .aiContext:    return "settings.storage.clearAiContext.message"
+            case .codeFlow:     return "settings.storage.clearCodeFlow.message"
+            case .all:          return "settings.storage.clearAll.message"
             }
         }
     }
 
+    /// 9 类缓存全空时,"清除全部缓存"按钮 disabled,避免无意义点击。
+    private var isAllCachesEmpty: Bool {
+        stats.totalBytes == 0
+            && translationCache.itemCount == 0
+            && anySearchCache.itemCount == 0
+            && wikiCache.itemCount == 0
+            && chatHistoryStore.sessionCount == 0
+            && aiContextStorage.projects.isEmpty
+            && codeFlowStorage.projects.isEmpty
+    }
+
     var body: some View {
         let cleaner = CacheCleaner(readmeRepository: readmeRepository)
+        @Bindable var settings = settings
         return Form {
-            Section("settings.storage.cacheUsage") {
-                LabeledContent("settings.storage.readme") {
-                    Text(readmeUsageText)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-                LabeledContent("settings.storage.image") {
-                    Text(Int64(stats.imageDiskBytes).formattedByteSize)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-                LabeledContent("settings.storage.archive") {
-                    HStack(spacing: 8) {
-                        Text(archiveUsageText)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                        Button {
-                            do {
-                                try cleaner.revealArchiveDirectory()
-                            } catch {
-                                storageActionError = error.localizedDescription
-                            }
-                        } label: {
-                            Image(systemName: "folder")
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                        .help(Text("settings.storage.archive.revealHelp"))
+            Section("settings.storage.chatHistoryBackend.section") {
+                Picker("settings.storage.chatHistoryBackend.title", selection: $settings.chatHistoryStorageKind) {
+                    ForEach(ChatHistoryStorageKind.allCases) { kind in
+                        Text(LocalizedStringKey(kind.displayNameKey))
+                            .tag(kind)
                     }
                 }
-                LabeledContent("settings.storage.log") {
-                    Text("settings.storage.logDescription")
-                        .foregroundStyle(.tertiary)
-                        .font(.callout)
+                .pickerStyle(.menu)
+
+                Text("settings.storage.chatHistoryBackend.help")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("settings.storage.cacheUsage") {
+                usageRow(
+                    titleKey: "settings.storage.readme",
+                    usageText: readmeUsageText,
+                    isEmpty: stats.readmeCount == 0,
+                    action: .readme
+                )
+                usageRow(
+                    titleKey: "settings.storage.image",
+                    usageText: Int64(stats.imageDiskBytes).formattedByteSize,
+                    isEmpty: stats.imageDiskBytes == 0,
+                    action: .image
+                )
+                archiveUsageRow(cleaner: cleaner)
+                usageRow(
+                    titleKey: "settings.storage.translation",
+                    usageText: translationUsageText,
+                    isEmpty: translationCache.itemCount == 0,
+                    action: .translation,
+                    helpKey: "settings.storage.translation.help"
+                )
+                usageRow(
+                    titleKey: "settings.storage.anySearch",
+                    usageText: anySearchUsageText,
+                    isEmpty: anySearchCache.itemCount == 0,
+                    action: .anySearch,
+                    helpKey: "settings.storage.anySearch.help"
+                )
+                usageRow(
+                    titleKey: "settings.storage.wiki",
+                    usageText: wikiUsageText,
+                    isEmpty: wikiCache.itemCount == 0,
+                    action: .wiki,
+                    helpKey: "settings.storage.wiki.help"
+                )
+                usageRow(
+                    titleKey: "settings.storage.chatHistory",
+                    usageText: chatHistoryUsageText,
+                    isEmpty: chatHistoryStore.sessionCount == 0,
+                    action: .chatHistory,
+                    helpKey: "settings.storage.chatHistory.help"
+                )
+                usageRow(
+                    titleKey: "settings.storage.aiContext",
+                    usageText: aiContextUsageText,
+                    isEmpty: aiContextStorage.projects.isEmpty,
+                    action: .aiContext
+                )
+                usageRow(
+                    titleKey: "settings.storage.codeFlow",
+                    usageText: codeFlowUsageText,
+                    isEmpty: codeFlowStorage.projects.isEmpty,
+                    action: .codeFlow
+                )
+            }
+
+            Section {
+                // 用 HStack + Spacer 把"清除全部缓存"顶到最右边,与 Form 中其它 Section 的
+                // 视觉重心一致(总闸是 destructive 操作,放右边减少误点接近度)。
+                HStack {
+                    Spacer()
+                    Button("settings.storage.clearAll", role: .destructive) {
+                        pendingAction = .all
+                    }
+                    .disabled(isWorking || isAllCachesEmpty)
                 }
-                .help(Text("settings.storage.logHelp"))
             }
-
-            Section("settings.storage.clear") {
-                Button("settings.storage.clearReadme") { pendingAction = .readme }
-                    .disabled(isWorking || stats.readmeCount == 0)
-                Button("settings.storage.clearImage") { pendingAction = .image }
-                    .disabled(isWorking || stats.imageDiskBytes == 0)
-                Button("settings.storage.clearArchive") { pendingAction = .archive }
-                    .disabled(isWorking || stats.archiveCount == 0)
-                Button("settings.storage.clearAll", role: .destructive) { pendingAction = .all }
-                    .disabled(isWorking || stats.totalBytes == 0)
-            }
-
-            aiContextSection
 
             if isWorking {
                 Section {
@@ -326,6 +451,14 @@ private struct StorageSettingsTab: View {
         .formStyle(.grouped)
         .task {
             stats = await cleaner.loadStatistics()
+        }
+        .task {
+            // Tab 出现时强制重扫描全部产物 / 缓存目录，让用户刚生成的内容立即可见。
+            aiContextStorage.reload()
+            codeFlowStorage.reload()
+            translationCache.reload()
+            anySearchCache.reload()
+            chatHistoryStore.reload()
         }
         .confirmationDialog(
             pendingAction?.confirmTitle ?? "",
@@ -343,18 +476,6 @@ private struct StorageSettingsTab: View {
         } message: { action in
             Text(action.confirmMessageKey)
         }
-        .alert("ai.context.storage.clearAllConfirm.title", isPresented: $showsAIContextClearConfirmation) {
-            Button("general.cancel", role: .cancel) {}
-            Button("ai.context.storage.clearAll", role: .destructive) {
-                do {
-                    try aiContextStorage.deleteAllProjects()
-                } catch {
-                    aiContextActionError = error.localizedDescription
-                }
-            }
-        } message: {
-            Text("ai.context.storage.clearAllConfirm.message")
-        }
         .alert(
             "settings.storage.actionFailed",
             isPresented: Binding(
@@ -366,223 +487,142 @@ private struct StorageSettingsTab: View {
         } message: {
             Text(storageActionError ?? "")
         }
-        // Y5b：storage 操作失败时弹 alert。与 IntegrationSettingsView 同款模式：
-        // - storage 内部抛错 → 设置 aiContextActionError → 触发 alert
-        // - 用户点"好"清除 aiContextActionError → alert 关闭
-        .alert(
-            "ai.context.storage.actionFailed",
-            isPresented: Binding(
-                get: { aiContextActionError != nil },
-                set: { if !$0 { aiContextActionError = nil } }
-            )
-        ) {
-            Button("general.ok") { aiContextActionError = nil }
-        } message: {
-            Text(aiContextActionError ?? "")
+    }
+
+    // MARK: - 行视图 helpers
+
+    /// 标准用量行：`<标题>     <用量>  [清理]`。
+    /// `isEmpty == true` 时清理按钮 disabled（避免空缓存触发"删空目录"等无意义操作）。
+    private func usageRow(
+        titleKey: LocalizedStringKey,
+        usageText: String,
+        isEmpty: Bool,
+        action: PendingAction,
+        helpKey: LocalizedStringKey? = nil
+    ) -> some View {
+        let row = LabeledContent {
+            HStack(spacing: 8) {
+                Text(usageText)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                Button("settings.storage.action.clear") {
+                    pendingAction = action
+                }
+                .controlSize(.small)
+                .disabled(isWorking || isEmpty)
+            }
+        } label: {
+            Text(titleKey)
         }
-        .task {
-            // Tab 出现时主动扫描产物目录（首次进入 / 后台跑过 packer 之后回来都能更新）。
-            aiContextStorage.reload()
+
+        return Group {
+            if let helpKey {
+                row.help(Text(helpKey))
+            } else {
+                row
+            }
         }
     }
 
-    // MARK: - AI 代码上下文 Section
-
-    /// AI 代码上下文产物管理面板。视觉对照 `IntegrationSettingsView.codeFlowSection`。
-    /// Y5b 起业务接通 `RepoContextStorage.shared`，所有数据 / CRUD / NSOpenPanel
-    /// 都走真实存储层。
-    private var aiContextSection: some View {
-        Section("ai.context.storage.section") {
-            VStack(alignment: .leading, spacing: 5) {
-                Label("ai.context.storage.outputDirectory", systemImage: "doc.text.magnifyingglass")
-                    .font(.headline)
-                Text("ai.context.storage.subtitle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
+    /// ZIP 行（额外多一个 Finder 显示按钮）。
+    /// 单独抽出来，避免 `usageRow` 通用 helper 变成多参数泥潭。
+    private func archiveUsageRow(cleaner: CacheCleaner) -> some View {
+        LabeledContent {
             HStack(spacing: 8) {
-                Text(aiContextStorage.outputDirectoryDisplayPath)
-                    .font(.caption.monospaced())
+                Text(archiveUsageText)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .layoutPriority(-1)
-                Spacer()
-                Button("ai.context.storage.choose") {
-                    chooseAIContextOutputDirectory()
-                }
-                .fixedSize()
+                    .monospacedDigit()
                 Button {
-                    revealAIContextOutputDirectory()
+                    do {
+                        try cleaner.revealArchiveDirectory()
+                    } catch {
+                        storageActionError = error.localizedDescription
+                    }
                 } label: {
                     Image(systemName: "folder")
                 }
-                .help(Text("ai.context.storage.revealHelp"))
-                .fixedSize()
-                Button {
-                    resetAIContextOutputDirectory()
-                } label: {
-                    Image(systemName: "arrow.counterclockwise")
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(Text("settings.storage.archive.revealHelp"))
+                Button("settings.storage.action.clear") {
+                    pendingAction = .archive
                 }
-                .disabled(!aiContextStorage.hasCustomOutputDirectory)
-                .help(Text("ai.context.storage.resetHelp"))
-                .fixedSize()
+                .controlSize(.small)
+                .disabled(isWorking || stats.archiveCount == 0)
             }
-
-            HStack(spacing: 18) {
-                aiContextStat(titleKey: "ai.context.storage.statRepos",
-                              value: "\(aiContextStorage.projects.count)")
-                aiContextStat(titleKey: "ai.context.storage.statBytes",
-                              value: ByteCountFormatter.string(fromByteCount: aiContextStorage.totalBytes, countStyle: .file))
-                aiContextStat(titleKey: "ai.context.storage.statGenerations",
-                              value: String(format: String(localized: "ai.context.storage.statGenerationsFormat"),
-                                            aiContextStorage.totalGenerationCount))
-                if let date = aiContextStorage.latestGeneratedAt {
-                    aiContextStat(titleKey: "ai.context.storage.statLast",
-                                  value: date.formatted(date: .abbreviated, time: .shortened))
-                }
-                Spacer()
-            }
-
-            // storage 内部抛错（bookmark 失效 / 目录权限丢失等）会反映到 lastErrorMessage
-            // 上，扫描时显示给用户。区别于 actionError：actionError 是按钮触发的失败（短暂弹窗），
-            // lastErrorMessage 是 reload 失败（持续在界面里）。
-            if let message = aiContextStorage.lastErrorMessage {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            } else if aiContextStorage.projects.isEmpty {
-                Text("ai.context.storage.empty")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(aiContextStorage.projects) { project in
-                    aiContextProjectRow(project)
-                }
-
-                HStack {
-                    Spacer()
-                    Button("ai.context.storage.clearAll", role: .destructive) {
-                        showsAIContextClearConfirmation = true
-                    }
-                }
-            }
+        } label: {
+            Text("settings.storage.archive")
         }
     }
 
-    /// 统计列（4 项：repos / size / generations / last generated）。
-    /// 视觉与 `IntegrationSettingsView.stat(title:value:)` 对齐（caption2 标题 +
-    /// caption.weight(.medium) 数值，左对齐 2pt 行距）。
-    private func aiContextStat(titleKey: LocalizedStringKey, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(titleKey).font(.caption2).foregroundStyle(.tertiary)
-            Text(value).font(.caption.weight(.medium))
-        }
-    }
-
-    /// 单个产物行（一个 `<owner>/<repo>` 项目）。Y5b 起绑定 `RepoContextStoredProject`。
-    ///
-    /// 视觉与 `IntegrationSettingsView.projectRow(_:)` 对齐：左侧两行文本（仓库全名 +
-    /// 元信息 caption），右侧 2 个 Button（在 Finder 显示 / 删除）。
-    /// 注：与 CodeFlow 不同，本场景没有"预览页面"概念（context.xml 不直接展示给用户看），
-    /// 删除 IntegrationSettingsView 的 "预览" 按钮。
-    private func aiContextProjectRow(_ project: RepoContextStoredProject) -> some View {
-        let metadata = project.metadata
-        let commitShortSHA = String(metadata.commitSha.prefix(7))
-        let xmlBytesStr = ByteCountFormatter.string(fromByteCount: Int64(metadata.stats.contextXmlBytes), countStyle: .file)
-        let actualTokens = metadata.stats.actualTokens
-        let totalFiles = metadata.stats.totalFiles
-        return VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("\(metadata.owner)/\(metadata.repo)")
-                        .font(.callout.weight(.medium))
-                    Text("\(metadata.ref) · \(commitShortSHA) · XML \(xmlBytesStr) · \(actualTokens) tokens · \(totalFiles) files")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Text(project.generatedAtDate.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                Spacer()
-                Button("ai.context.storage.menuReveal") {
-                    revealAIContextProject(project)
-                }
-                Button("ai.context.storage.menuDelete", role: .destructive) {
-                    deleteAIContextProject(project)
-                }
-            }
-        }
-    }
-
-    // MARK: - Y5b storage action 入口
-
-    /// 选择新的产物输出目录（与 IntegrationSettingsView 同款 NSOpenPanel）。
-    private func chooseAIContextOutputDirectory() {
-        let panel = NSOpenPanel()
-        panel.title = String(localized: "ai.context.storage.choosePanelTitle")
-        panel.prompt = String(localized: "ai.context.storage.choosePanelPrompt")
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try aiContextStorage.setCustomOutputDirectory(url)
-        } catch {
-            aiContextActionError = error.localizedDescription
-        }
-    }
-
-    private func resetAIContextOutputDirectory() {
-        do {
-            try aiContextStorage.resetOutputDirectory()
-        } catch {
-            aiContextActionError = error.localizedDescription
-        }
-    }
-
-    private func revealAIContextOutputDirectory() {
-        do {
-            try aiContextStorage.revealOutputRoot()
-        } catch {
-            aiContextActionError = error.localizedDescription
-        }
-    }
-
-    private func revealAIContextProject(_ project: RepoContextStoredProject) {
-        do {
-            try aiContextStorage.revealProject(project)
-        } catch {
-            aiContextActionError = error.localizedDescription
-        }
-    }
-
-    private func deleteAIContextProject(_ project: RepoContextStoredProject) {
-        do {
-            try aiContextStorage.deleteProject(owner: project.metadata.owner, repo: project.metadata.repo)
-        } catch {
-            aiContextActionError = error.localizedDescription
-        }
-    }
+    // MARK: - 清理执行
 
     /// 执行清理 + 重新加载统计。UI state 全程在 main actor。
+    ///
+    /// 失败处理：每个 throws 调用独立 catch，互不阻断。多类同时失败时只显示**第一个**
+    /// 错误（避免连弹多个 alert）；这是设置页"清理"动作可接受的简化——失败极少，
+    /// 用户重试即可，没必要做错误聚合。
     @MainActor
     private func perform(action: PendingAction, using cleaner: CacheCleaner) async {
         isWorking = true
         switch action {
-        case .readme: await cleaner.clearReadmes()
-        case .image:  await cleaner.clearImageCache()
-        case .archive: cleaner.clearArchives()
-        case .all:    await cleaner.clearAll()
+        case .readme:
+            await cleaner.clearReadmes()
+        case .image:
+            await cleaner.clearImageCache()
+        case .archive:
+            cleaner.clearArchives()
+        case .translation:
+            do { try await translationCache.deleteEverything() }
+            catch { storageActionError = error.localizedDescription }
+        case .anySearch:
+            do { try await anySearchCache.deleteEverything() }
+            catch { storageActionError = error.localizedDescription }
+        case .wiki:
+            do { try wikiCache.deleteEverything() }
+            catch { storageActionError = error.localizedDescription }
+        case .chatHistory:
+            do { try chatHistoryStore.deleteEverything() }
+            catch { storageActionError = error.localizedDescription }
+        case .aiContext:
+            do { try aiContextStorage.deleteAllProjects() }
+            catch { storageActionError = error.localizedDescription }
+        case .codeFlow:
+            do { try codeFlowStorage.deleteAllProjects() }
+            catch { storageActionError = error.localizedDescription }
+        case .all:
+            await cleaner.clearAll()
+            // 4 处独立 try：互不阻断；首个失败的 description 留在 storageActionError，
+            // 后续若再失败则丢弃（避免连弹多个 alert，dong4j 反馈"重试一遍即可"）。
+            do { try await translationCache.deleteEverything() }
+            catch { storageActionError = error.localizedDescription }
+            do { try await anySearchCache.deleteEverything() }
+            catch {
+                if storageActionError == nil { storageActionError = error.localizedDescription }
+            }
+            do { try wikiCache.deleteEverything() }
+            catch {
+                if storageActionError == nil { storageActionError = error.localizedDescription }
+            }
+            do { try chatHistoryStore.deleteEverything() }
+            catch {
+                if storageActionError == nil { storageActionError = error.localizedDescription }
+            }
+            do { try aiContextStorage.deleteAllProjects() }
+            catch {
+                if storageActionError == nil { storageActionError = error.localizedDescription }
+            }
+            do { try codeFlowStorage.deleteAllProjects() }
+            catch {
+                if storageActionError == nil { storageActionError = error.localizedDescription }
+            }
         }
         stats = await cleaner.loadStatistics()
         isWorking = false
         pendingAction = nil
     }
+
+    // MARK: - 用量文案
 
     private var readmeUsageText: String {
         String(
@@ -599,6 +639,78 @@ private struct StorageSettingsTab: View {
             stats.archiveBytes.formattedByteSize
         )
     }
-}
 
-// Y5b（2026-06-13）：原 `MockAIContextProject` 已下线，业务接通 `RepoContextStoredProject`。
+    /// 翻译磁盘缓存用量行文案：`X 项 · YY KB`。空缓存显示"未生成"。
+    private var translationUsageText: String {
+        if translationCache.itemCount == 0 {
+            return String(localized: "settings.storage.translation.empty")
+        }
+        return String(
+            format: String(localized: "settings.storage.translationUsageFormat"),
+            translationCache.itemCount,
+            translationCache.totalBytes.formattedByteSize
+        )
+    }
+
+    /// AnySearch 磁盘缓存用量行文案（global + ai-summary 合计）。
+    private var anySearchUsageText: String {
+        if anySearchCache.itemCount == 0 {
+            return String(localized: "settings.storage.anySearch.empty")
+        }
+        return String(
+            format: String(localized: "settings.storage.anySearchUsageFormat"),
+            anySearchCache.itemCount,
+            anySearchCache.totalBytes.formattedByteSize
+        )
+    }
+
+    /// Wiki 探测结果磁盘缓存用量行文案。数据极小（每个 repo < 1KB），格式与
+    /// translation / anySearch 同款（`X 项 · YY KB`）保持视觉一致。
+    private var wikiUsageText: String {
+        if wikiCache.itemCount == 0 {
+            return String(localized: "settings.storage.wiki.empty")
+        }
+        return String(
+            format: String(localized: "settings.storage.wikiUsageFormat"),
+            wikiCache.itemCount,
+            wikiCache.totalBytes.formattedByteSize
+        )
+    }
+
+    /// AI 对话历史用量行文案：`X 场对话 · YY 个仓库 · ZZ KB`。空显示"未生成"。
+    private var chatHistoryUsageText: String {
+        if chatHistoryStore.sessionCount == 0 {
+            return String(localized: "settings.storage.chatHistory.empty")
+        }
+        return String(
+            format: String(localized: "settings.storage.chatHistoryUsageFormat"),
+            chatHistoryStore.sessionCount,
+            chatHistoryStore.repoCount,
+            chatHistoryStore.totalBytes.formattedByteSize
+        )
+    }
+
+    /// AI 代码上下文用量：`X 项 · YY KB`。空显示"未生成"。
+    private var aiContextUsageText: String {
+        if aiContextStorage.projects.isEmpty {
+            return String(localized: "settings.storage.aiContext.empty")
+        }
+        return String(
+            format: String(localized: "settings.storage.aiContextUsageFormat"),
+            aiContextStorage.projects.count,
+            aiContextStorage.totalBytes.formattedByteSize
+        )
+    }
+
+    /// CodeFlow 用量：同 AI 上下文格式。
+    private var codeFlowUsageText: String {
+        if codeFlowStorage.projects.isEmpty {
+            return String(localized: "settings.storage.codeFlow.empty")
+        }
+        return String(
+            format: String(localized: "settings.storage.codeFlowUsageFormat"),
+            codeFlowStorage.projects.count,
+            codeFlowStorage.totalBytes.formattedByteSize
+        )
+    }
+}
