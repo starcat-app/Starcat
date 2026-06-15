@@ -740,43 +740,35 @@ struct RepoAIWindowContentView: View {
 
     /// Y2：代码上下文元信息行。展示 "基于 <commit-7位> (N tokens · M files)"。
     ///
-    /// **2026-06-15 dong4j**：commit short sha 改为可点击的 `Link`，点击跳转 GitHub commit 详情页。
+    /// **2026-06-15 dong4j**：commit short sha 改为可点击链接，点击跳转 GitHub commit 详情页。
     ///
     /// 设计选择：
-    /// - **i18n 拆三段** 而非 `String(format:)` 整段拼接 —— 因为中间要嵌入 `Link`（不是文本），无法
-    ///   走 `%@` 占位符。拆成 prefix（"基于"）+ Link（short sha）+ statsFormat（"(N tokens · M
-    ///   files)"）三个 SwiftUI 元素，HStack 拼装。这种拆法在多语言里仍然成立：英文 "Based on
-    ///   <link> (N tokens · M files)" 与中文 "基于 <link>（N tokens · M files）" 语法结构相同
-    ///   （前缀 + 链接 + 括号统计段），翻译方不会出现"语序错位 → 词组拆碎"问题。
-    /// - **用 SwiftUI 原生 `Link`** 而非自定义 Button + openURL —— `Link` 自动渲染为系统 accent 色
-    ///   + hover 下划线 + 鼠标变手型指针，符合 macOS 原生网页链接约定，零代码实现"看起来就是链
-    ///   接"的视觉。`Link` 也自带 accessibility role，VoiceOver 会朗读为"链接"。
+    /// - **i18n 拆三段** 而非 `String(format:)` 整段拼接 —— 因为中间要嵌入交互式 view（不是文本），
+    ///   无法走 `%@` 占位符。拆成 prefix（"基于"）+ `CommitHashLink`（short sha）+ statsFormat
+    ///   （"(N tokens · M files)"）三个 SwiftUI 元素，HStack 拼装。这种拆法在多语言里仍然成立：
+    ///   英文 "Based on <link> (N tokens · M files)" 与中文 "基于 <link>（N tokens · M files）"
+    ///   语法结构相同（前缀 + 链接 + 括号统计段），翻译方不会出现"语序错位 → 词组拆碎"问题。
+    /// - **抽出 `CommitHashLink` 子 view** —— SwiftUI `Link(destination:label:)` closure 形式
+    ///   **绕过了** macOS 内置 `_LinkLabel` 私有装饰链（hover 下划线 / 手型指针 cursor），只剩
+    ///   tint 着色和点击行为。10:53 dong4j 反馈"hover 没下划线 / 没手型 / 没 tooltip"就是这个
+    ///   坑。修复路线 = 保留 `Link`（让点击 + VoiceOver + 键盘导航免费）+ 子 view 持有 `@State
+    ///   isHovered` 手动加 `.underline(isHovered)` + `.pointerStyle(.link)` (macOS 15+) 显式手型，
+    ///   tooltip 通过 `.help(...)` 自然继承 hover 状态。
     /// - **URL 用 full sha 而非 commitShaShort** —— `RepoAIInsightContextMeta.commitSha` 是 40 字符
     ///   full sha，传给 GitHub 不会有碰撞风险也不会触发 302 重定向。展示层用 short（commitShaShort）
     ///   只是为了视觉简洁。
-    /// - **link label 字体显式 `.font(.caption2.monospaced())`** —— HStack 外层已设 `.caption2`，但
-    ///   `Link` 会继承文本字体；commit sha 是 hex 字符串，等宽体更易扫读，与项目其它 hash 展示一致。
     private func contextMetaFooterRow(_ meta: RepoAIInsightContextMeta) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "doc.text.magnifyingglass")
             Text("ai.assistant.summary.footer.contextMeta.prefix")
-            Link(destination: GitHubURLs.repoCommit(
-                owner: repo.owner,
-                repo: repo.name,
-                sha: meta.commitSha
-            )) {
-                Text(meta.commitShaShort)
-                    .font(.caption2.monospaced())
-                    // 显式 `.tint`(accent 色)覆盖外层 footer 的
-                    // `.foregroundStyle(.secondary)`。SwiftUI 的 `Link` 默认
-                    // 用 accent 色，**但一旦外层显式设了 foregroundStyle，
-                    // Link 内的 Text 会继承外层值**——这是 02:43 dong4j 反馈
-                    // "没有系统蓝"的根因。用 `.tint` 而非 `.blue`：① 适配
-                    // 明暗主题 ② 跟随用户系统 accent 设置 ③ macOS 网页链接
-                    // 色约定。
-                    .foregroundStyle(.tint)
-            }
-            .help("ai.assistant.summary.footer.contextMeta.commit.help")
+            CommitHashLink(
+                shortSha: meta.commitShaShort,
+                destination: GitHubURLs.repoCommit(
+                    owner: repo.owner,
+                    repo: repo.name,
+                    sha: meta.commitSha
+                )
+            )
             Text(
                 String(
                     format: String(localized: "ai.assistant.summary.footer.contextMeta.statsFormat"),
