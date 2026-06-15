@@ -23,6 +23,12 @@ import Testing
 @Suite("RepoAIInsight Y9 — chat context enrichment")
 struct RepoAIInsightY9Tests {
 
+    /// 2026-06-15 v4.x：`assembleChatSystemPrompt` 加了 `runtimeContext` 必填参数。
+    /// 本套测试不关心运行环境字段的精确渲染（那是 `RuntimeContextProviderTests` 的事），
+    /// 只需要给个稳定 mock 值塞进调用，让现有 7 个 case 编译通过；
+    /// 各 case 内的 `#expect` 也不断言这个值——只关心其它占位符的拼接逻辑没回归。
+    private static let testRuntimeContext = "(runtime-context-mock)"
+
     // MARK: - Codable 兼容性
 
     @Test("旧缓存 JSON 缺 externalContextMarkdown 字段时反序列化为 nil 不抛错")
@@ -149,6 +155,7 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "English",
+            runtimeContext: Self.testRuntimeContext,
             metadata: "Repository: foo/bar\nDescription: hi",
             readme: "# Hello",
             codeContext: "",
@@ -184,6 +191,7 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "Simplified Chinese",
+            runtimeContext: Self.testRuntimeContext,
             metadata: "Repository: foo/bar",
             readme: "README body",
             codeContext: "",
@@ -209,6 +217,7 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "English",
+            runtimeContext: Self.testRuntimeContext,
             metadata: "Repository: foo/bar",
             readme: "",
             codeContext: "",
@@ -233,6 +242,7 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "English",
+            runtimeContext: Self.testRuntimeContext,
             metadata: "Repository: foo/bar",
             readme: "body",
             codeContext: "",
@@ -252,6 +262,7 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "Simplified Chinese",
+            runtimeContext: Self.testRuntimeContext,
             metadata: "M-DATA",
             readme: "R-DATA",
             codeContext: "C-DATA",
@@ -292,6 +303,7 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "Simplified Chinese",
+            runtimeContext: Self.testRuntimeContext,
             metadata: "Repository: foo/bar",
             readme: "README body",
             codeContext: "",
@@ -324,6 +336,7 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "English",
+            runtimeContext: Self.testRuntimeContext,
             metadata: "Repository: foo/bar",
             readme: "body",
             codeContext: "",
@@ -350,6 +363,7 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: customTemplate,
             outputLanguage: "English",
+            runtimeContext: Self.testRuntimeContext,
             metadata: "M-DATA",
             readme: "",
             codeContext: "",
