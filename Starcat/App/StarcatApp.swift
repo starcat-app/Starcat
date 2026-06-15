@@ -21,12 +21,21 @@ struct StarcatApp: App {
     /// 应用级依赖容器，必须在 init 中创建并通过 environment 传给 ContentView。
     @State private var dependencies: AppDependencies
 
-    // MARK: - DEBUG-only: 运行时语言切换
+    // MARK: - 用户语言切换（生产可用）
     //
-    // dong4j 2026-06-04 需求：测试 i18n 是否完全覆盖时，希望不重启 App 也能切语言。
-    // 用一个 `@State` 持有 `DebugLocaleStore.shared`（@Observable 单例），下面的
-    // `WindowGroup` 通过 `.environment(\.locale, _)` 应用，菜单项在 `.commands` 里注册。
-    // 整段包在 `#if DEBUG`：Release 包不存在这个状态、不显示这个菜单，零成本。
+    // dong4j 2026-06-15 需求：用户希望在「设置 → 通用」里能直接切 App 显示语言，
+    // 不依赖系统语言、不依赖 Xcode Scheme，也不需要重启 App。
+    // `LocaleStore` 是 `@MainActor @Observable` 单例，主窗口与 Settings 两个
+    // scene 都通过 `.environment(\.locale, _)` 注入；切换时 `.id(...)` 强制
+    // 整棵 view 树重建，避免某些缓存了 Locale 的 formatter（如
+    // `RelativeDateTimeFormatter` 实例缓存）不刷新。
+    @State private var localeStore = LocaleStore.shared
+
+    // MARK: - DEBUG-only: 运行时语言覆盖
+    //
+    // 与生产 `localeStore` 共存：debug menu 注入靠子树端，**临时覆盖**生产选择，
+    // 让开发者在不动用户偏好的前提下跳着试 i18n；选回 "system" 就回退到生产值。
+    // Release 包整段不参与编译。
     #if DEBUG
     @State private var debugLocaleStore = DebugLocaleStore.shared
     #endif
@@ -133,7 +142,7 @@ struct StarcatApp: App {
 
         // macOS 原生 Settings 窗口（Cmd+,）
         Settings {
-            SettingsView()
+            settingsRoot
                 // 2026-06-15:Settings 是独立 SwiftUI scene root,主窗口的
                 // 同款 modifier 不会传播到这里,必须再挂一次让 Settings 子树
                 // 的所有动画（如 List row 切换、Tab 切换）也尊重用户偏好。
@@ -163,20 +172,48 @@ struct StarcatApp: App {
     /// 不污染 Release 构建——`#if DEBUG` 在 ViewBuilder 内部合法，但放在 `.modifier`
     /// 链上不行。
     ///
-    /// 语义：DEBUG 时按 `debugLocaleStore.selection.effectiveLocale` 覆盖 environment
-    /// locale；`.system` 选项对应 `Locale.autoupdatingCurrent`，与不设置等价。
+    /// **modifier 链顺序与 SwiftUI environment 解析规则**：
+    /// - SwiftUI 中，`.environment(_, _)` 链上**靠子树端（链中后调用）的值**生效
+    /// - 所以这里**先**注入生产 `localeStore`，**再**注入 `debugLocaleStore` —— DEBUG
+    ///   期间 debug 菜单选了非 `.system` 时覆盖生产；选回 `.system`（其
+    ///   `effectiveLocale = .autoupdatingCurrent`）等价于不强制 locale，
+    ///   生产 localeStore 选择透出来。
+    /// - `.id(...)` 拼接两个 selection 的 rawValue：任一 store 变化都强制重建
+    ///   ContentView，避免缓存 Locale 的子视图（如 RelativeDateTimeFormatter
+    ///   实例缓存）不刷新——dong4j 历史截图反馈"切语言后部分时间格式没变"就是
+    ///   少了 identity 重建。
     @ViewBuilder
     private var contentRoot: some View {
         #if DEBUG
         ContentView()
+            .environment(\.locale, localeStore.selection.effectiveLocale)
             .environment(\.locale, debugLocaleStore.selection.effectiveLocale)
-            // 给 SwiftUI 一个 identity 提示：当 selection 改变时强制重建 ContentView
-            // 视图层级，避免某些缓存了 Locale 的子视图（例如 RelativeDateTimeFormatter）
-            // 在不重启 App 的情况下也能立刻刷新。代价是切语言时整个 ContentView
-            // 重新渲染一次——dong4j 截图反馈"切语言后部分时间格式没变"就是少了这一行。
-            .id(debugLocaleStore.selection)
+            .id("\(localeStore.selection.rawValue)|\(debugLocaleStore.selection.rawValue)")
         #else
         ContentView()
+            .environment(\.locale, localeStore.selection.effectiveLocale)
+            .id(localeStore.selection.rawValue)
+        #endif
+    }
+
+    /// Settings scene 的语言注入与重建逻辑，与 `contentRoot` 完全对称。
+    ///
+    /// 为什么 Settings 也必须注入：Settings 是独立 SwiftUI scene，主窗口的
+    /// `.environment(\.locale, _)` 不会传播过来——如果不注入，用户从设置页
+    /// 切完语言后，Settings 自身仍然显示切换前的 locale，体感是"切了个寂寞"。
+    /// `LocaleStore` 是 `@Observable` 单例，主窗口与 Settings 共享同一个
+    /// `selection`，任意一方写入都会让两个 scene 同步重渲染。
+    @ViewBuilder
+    private var settingsRoot: some View {
+        #if DEBUG
+        SettingsView()
+            .environment(\.locale, localeStore.selection.effectiveLocale)
+            .environment(\.locale, debugLocaleStore.selection.effectiveLocale)
+            .id("\(localeStore.selection.rawValue)|\(debugLocaleStore.selection.rawValue)")
+        #else
+        SettingsView()
+            .environment(\.locale, localeStore.selection.effectiveLocale)
+            .id(localeStore.selection.rawValue)
         #endif
     }
 
