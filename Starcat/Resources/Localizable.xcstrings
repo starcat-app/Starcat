@@ -1551,6 +1551,7 @@
       }
     },
     "activity.detail.emptySubtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1567,6 +1568,7 @@
       }
     },
     "activity.detail.emptyTitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1803,6 +1805,7 @@
       }
     },
     "activity.release.empty.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1819,6 +1822,7 @@
       }
     },
     "activity.release.empty.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1975,6 +1979,108 @@
     "AI 服务商" : {
 
     },
+    "ai.assistant.chat.carryOver.collapse" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.carryOver.dismiss.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide this recap (AI still sees the carried-over context)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起承接提示（AI 仍会看到承接的上下文）。"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.carryOver.expand" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show full recap"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展开全文"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.carryOver.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carried over from previous conversation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "承接自上一对话"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.contextOverflow.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Context window is full. Start a new session to continue."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对话上下文已超过模型窗口，新建对话才能继续。"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.contextOverflow.newWithCarry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start new (carry over)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新建并承接"
+          }
+        }
+      }
+    },
     "ai.assistant.chat.contextStatus.code" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2027,7 +2133,6 @@
       }
     },
     "ai.assistant.chat.contextStatus.prefix" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2112,6 +2217,7 @@
       }
     },
     "ai.assistant.chat.empty.description" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2128,6 +2234,7 @@
       }
     },
     "ai.assistant.chat.empty.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2291,6 +2398,210 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "生成中"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.session.clearCurrentRepo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear all sessions for this repo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除当前仓库的全部对话"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.session.clearCurrentRepo.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear all sessions for this repo?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除当前仓库的全部对话？"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.session.clearCurrentRepo.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All chat sessions for this repository will be permanently removed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前仓库下的所有对话会话将被永久删除，不可恢复。"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.session.delete.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this session"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除此会话"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.session.list.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No saved sessions for this repo yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本仓库下还没有保存的会话。"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.session.list.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show session list"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看会话列表"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.session.list.metaFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld msgs · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 条消息 · %@"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.session.list.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "会话列表"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.session.menu.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More options"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多操作"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.session.new" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新建"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.session.new.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start a new conversation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新建对话"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.session.untitled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New conversation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新对话"
           }
         }
       }
@@ -3250,6 +3561,7 @@
       }
     },
     "ai.context.storage.clearAllConfirm.message" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5974,6 +6286,7 @@
       }
     },
     "empty.noSelection" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6024,6 +6337,7 @@
       }
     },
     "empty.selectFromList" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6954,6 +7268,7 @@
       }
     },
     "readme.empty" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6970,6 +7285,7 @@
       }
     },
     "readme.emptyDescription" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7687,6 +8003,7 @@
       }
     },
     "releases.timeline.empty.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7703,6 +8020,7 @@
       }
     },
     "releases.timeline.empty.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8807,6 +9125,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Topics"
+          }
+        }
+      }
+    },
+    "scroll.followTail.help" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jump to the latest content and resume auto-scroll"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳转到最新内容并恢复自动跟随"
+          }
+        }
+      }
+    },
+    "scroll.followTail.label" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Follow latest"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟随最新"
           }
         }
       }
@@ -11137,6 +11488,7 @@
       }
     },
     "settings.general.accessibility" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12093,6 +12445,23 @@
         }
       }
     },
+    "settings.storage.action.clear" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清理"
+          }
+        }
+      }
+    },
     "settings.storage.actionFailed" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -12110,8 +12479,126 @@
         }
       }
     },
+    "settings.storage.aiContext" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Code Context"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 代码上下文"
+          }
+        }
+      }
+    },
+    "settings.storage.aiContext.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not generated"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未生成"
+          }
+        }
+      }
+    },
+    "settings.storage.aiContextUsageFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d items · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 项 · %@"
+          }
+        }
+      }
+    },
+    "settings.storage.anySearch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Cache"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索缓存"
+          }
+        }
+      }
+    },
+    "settings.storage.anySearch.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not generated yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未生成"
+          }
+        }
+      }
+    },
+    "settings.storage.anySearch.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch results cached on disk (global search 6h / AI summary external context 24h). Auto-evicted when exceeding 30 MB."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AnySearch 检索结果落地磁盘缓存（全局搜索 6 小时 / AI 摘要外部上下文 24 小时)。超过 30 MB 时自动淘汰。"
+          }
+        }
+      }
+    },
+    "settings.storage.anySearchUsageFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld items · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 项 · %@"
+          }
+        }
+      }
+    },
     "settings.storage.archive" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12177,6 +12664,74 @@
         }
       }
     },
+    "settings.storage.chatHistory" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat History"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对话历史"
+          }
+        }
+      }
+    },
+    "settings.storage.chatHistory.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not generated yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无对话"
+          }
+        }
+      }
+    },
+    "settings.storage.chatHistory.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On-disk AI chat sessions per repo. LRU evicts oldest sessions when total exceeds 100 MB."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按仓库分组的 AI 对话历史。总占用超过 100 MB 时按最久未访问优先淘汰。"
+          }
+        }
+      }
+    },
+    "settings.storage.chatHistoryUsageFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sessions · %lld repos · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 场对话 · %lld 个仓库 · %@"
+          }
+        }
+      }
+    },
     "settings.storage.clear" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -12190,6 +12745,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清理操作"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAiContext.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear all AI code context?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除全部 AI 代码上下文?"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAiContext.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deletes all generated context.xml and metadata.json. Source ZIPs are kept."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将删除所有已生成的 context.xml 与 metadata.json。共享源码 ZIP 不会被删除。"
           }
         }
       }
@@ -12245,6 +12834,74 @@
         }
       }
     },
+    "settings.storage.clearAnySearch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Search Cache"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除搜索缓存"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAnySearch.action" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAnySearch.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear all search cache?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认清除全部搜索缓存？"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAnySearch.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All cached AnySearch results (global search + AI summary external context) will be removed. Subsequent searches and summaries will re-query the network and consume API quota."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已缓存的所有 AnySearch 检索结果（全局搜索 + AI 摘要外部上下文）将被清空。下一次搜索 / 摘要会重新打网络，并消耗 API 配额。"
+          }
+        }
+      }
+    },
     "settings.storage.clearArchive" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -12292,6 +12949,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下次生成 CodeFlow 或 AI 代码上下文时会按需重新下载。"
+          }
+        }
+      }
+    },
+    "settings.storage.clearChatHistory.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear all AI chat history?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认清除所有 AI 对话历史？"
+          }
+        }
+      }
+    },
+    "settings.storage.clearChatHistory.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All chat sessions across all repos will be permanently removed. This action cannot be undone."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有仓库下的对话历史都会被永久删除，不可恢复。"
+          }
+        }
+      }
+    },
+    "settings.storage.clearCodeFlow.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear all CodeFlow data?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除全部 CodeFlow 数据?"
+          }
+        }
+      }
+    },
+    "settings.storage.clearCodeFlow.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deletes all CodeFlow HTML and metadata. Source ZIPs are kept."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将删除所有 CodeFlow HTML 与 metadata。共享源码 ZIP 不会被删除。"
           }
         }
       }
@@ -12414,157 +13139,6 @@
         }
       }
     },
-    "settings.storage.image" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Image Cache (Kingfisher)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "图片缓存(Kingfisher)"
-          }
-        }
-      }
-    },
-    "settings.storage.log" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Logs"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "日志"
-          }
-        }
-      }
-    },
-    "settings.storage.logDescription" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Managed by the system (Console.app)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "由系统(Console.app)管理"
-          }
-        }
-      }
-    },
-    "settings.storage.logHelp" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Starcat writes logs through OSLog. Use macOS Console.app to inspect and manage them."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Starcat 通过 OSLog 写日志，清理与查询请用 macOS 自带的 Console.app。"
-          }
-        }
-      }
-    },
-    "settings.storage.readme" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "README Cache"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "README 缓存"
-          }
-        }
-      }
-    },
-    "settings.storage.translation" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Translation Cache"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "翻译缓存"
-          }
-        }
-      }
-    },
-    "settings.storage.translationUsageFormat" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld items · %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 项 · %@"
-          }
-        }
-      }
-    },
-    "settings.storage.translation.empty" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not generated yet"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未生成"
-          }
-        }
-      }
-    },
-    "settings.storage.translation.help" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI-translated README cached on disk. Auto-evicted when exceeding 50 MB or 60 days idle."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI 翻译后的 README 落地磁盘缓存。超过 50 MB 或 60 天未访问时自动淘汰。"
-          }
-        }
-      }
-    },
     "settings.storage.clearTranslation" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12578,6 +13152,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除翻译缓存"
+          }
+        }
+      }
+    },
+    "settings.storage.clearTranslation.action" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除"
           }
         }
       }
@@ -12612,227 +13203,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已缓存的所有译文将被清空。仓库仍可按需重新翻译，需要重新消耗 AI 配额。"
-          }
-        }
-      }
-    },
-    "settings.storage.clearTranslation.action" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除"
-          }
-        }
-      }
-    },
-    "settings.storage.anySearch" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search Cache"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜索缓存"
-          }
-        }
-      }
-    },
-    "settings.storage.anySearchUsageFormat" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld items · %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 项 · %@"
-          }
-        }
-      }
-    },
-    "settings.storage.anySearch.empty" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not generated yet"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未生成"
-          }
-        }
-      }
-    },
-    "settings.storage.anySearch.help" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch results cached on disk (global search 6h / AI summary external context 24h). Auto-evicted when exceeding 30 MB."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AnySearch 检索结果落地磁盘缓存（全局搜索 6 小时 / AI 摘要外部上下文 24 小时)。超过 30 MB 时自动淘汰。"
-          }
-        }
-      }
-    },
-    "settings.storage.action.clear" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清理"
-          }
-        }
-      }
-    },
-    "settings.storage.aiContext" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI Code Context"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI 代码上下文"
-          }
-        }
-      }
-    },
-    "settings.storage.aiContext.empty" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not generated"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未生成"
-          }
-        }
-      }
-    },
-    "settings.storage.aiContextUsageFormat" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d items · %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d 项 · %@"
-          }
-        }
-      }
-    },
-    "settings.storage.clearAiContext.confirm" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear all AI code context?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除全部 AI 代码上下文?"
-          }
-        }
-      }
-    },
-    "settings.storage.clearAiContext.message" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deletes all generated context.xml and metadata.json. Source ZIPs are kept."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将删除所有已生成的 context.xml 与 metadata.json。共享源码 ZIP 不会被删除。"
-          }
-        }
-      }
-    },
-    "settings.storage.clearCodeFlow.confirm" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear all CodeFlow data?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除全部 CodeFlow 数据?"
-          }
-        }
-      }
-    },
-    "settings.storage.clearCodeFlow.message" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deletes all CodeFlow HTML and metadata. Source ZIPs are kept."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将删除所有 CodeFlow HTML 与 metadata。共享源码 ZIP 不会被删除。"
           }
         }
       }
@@ -12888,478 +13258,87 @@
         }
       }
     },
-    "settings.storage.clearAnySearch" : {
-      "extractionState" : "manual",
+    "settings.storage.image" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clear Search Cache"
+            "value" : "Image Cache (Kingfisher)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除搜索缓存"
+            "value" : "图片缓存(Kingfisher)"
           }
         }
       }
     },
-    "settings.storage.clearAnySearch.confirm" : {
-      "extractionState" : "manual",
+    "settings.storage.log" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clear all search cache?"
+            "value" : "Logs"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "确认清除全部搜索缓存？"
+            "value" : "日志"
           }
         }
       }
     },
-    "settings.storage.clearAnySearch.message" : {
-      "extractionState" : "manual",
+    "settings.storage.logDescription" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "All cached AnySearch results (global search + AI summary external context) will be removed. Subsequent searches and summaries will re-query the network and consume API quota."
+            "value" : "Managed by the system (Console.app)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已缓存的所有 AnySearch 检索结果（全局搜索 + AI 摘要外部上下文）将被清空。下一次搜索 / 摘要会重新打网络，并消耗 API 配额。"
+            "value" : "由系统(Console.app)管理"
           }
         }
       }
     },
-    "settings.storage.clearAnySearch.action" : {
-      "extractionState" : "manual",
+    "settings.storage.logHelp" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clear"
+            "value" : "Starcat writes logs through OSLog. Use macOS Console.app to inspect and manage them."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除"
+            "value" : "Starcat 通过 OSLog 写日志，清理与查询请用 macOS 自带的 Console.app。"
           }
         }
       }
     },
-    "settings.storage.chatHistory" : {
-      "extractionState" : "manual",
+    "settings.storage.readme" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Chat History"
+            "value" : "README Cache"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "对话历史"
-          }
-        }
-      }
-    },
-    "settings.storage.chatHistory.help" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "On-disk AI chat sessions per repo. LRU evicts oldest sessions when total exceeds 100 MB."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "按仓库分组的 AI 对话历史。总占用超过 100 MB 时按最久未访问优先淘汰。"
-          }
-        }
-      }
-    },
-    "settings.storage.chatHistory.empty" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not generated yet"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无对话"
-          }
-        }
-      }
-    },
-    "settings.storage.chatHistoryUsageFormat" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld sessions · %lld repos · %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 场对话 · %lld 个仓库 · %@"
-          }
-        }
-      }
-    },
-    "settings.storage.clearChatHistory.confirm" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear all AI chat history?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "确认清除所有 AI 对话历史？"
-          }
-        }
-      }
-    },
-    "settings.storage.clearChatHistory.message" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All chat sessions across all repos will be permanently removed. This action cannot be undone."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "所有仓库下的对话历史都会被永久删除，不可恢复。"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.session.new.help" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start a new conversation"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新建对话"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.session.new" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新建"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.session.list.help" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show session list"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "查看会话列表"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.session.list.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Conversations"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "会话列表"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.session.list.empty" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No saved sessions for this repo yet."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本仓库下还没有保存的会话。"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.session.list.metaFormat" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld msgs · %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 条消息 · %@"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.session.untitled" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New conversation"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新对话"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.session.delete.help" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete this session"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除此会话"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.session.menu.help" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "More options"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更多操作"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.session.clearCurrentRepo" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear all sessions for this repo"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除当前仓库的全部对话"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.session.clearCurrentRepo.confirm" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear all sessions for this repo?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除当前仓库的全部对话？"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.session.clearCurrentRepo.message" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All chat sessions for this repository will be permanently removed."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前仓库下的所有对话会话将被永久删除，不可恢复。"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.carryOver.collapse" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Collapse"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "收起"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.carryOver.dismiss.help" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hide this recap (AI still sees the carried-over context)."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "收起承接提示（AI 仍会看到承接的上下文）。"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.carryOver.expand" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show full recap"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "展开全文"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.carryOver.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Carried over from previous conversation"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "承接自上一对话"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.contextOverflow.message" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Context window is full. Start a new session to continue."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "对话上下文已超过模型窗口，新建对话才能继续。"
-          }
-        }
-      }
-    },
-    "ai.assistant.chat.contextOverflow.newWithCarry" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start new (carry over)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新建并承接"
+            "value" : "README 缓存"
           }
         }
       }
@@ -13394,6 +13373,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "存储"
+          }
+        }
+      }
+    },
+    "settings.storage.translation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translation Cache"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译缓存"
+          }
+        }
+      }
+    },
+    "settings.storage.translation.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not generated yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未生成"
+          }
+        }
+      }
+    },
+    "settings.storage.translation.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI-translated README cached on disk. Auto-evicted when exceeding 50 MB or 60 days idle."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 翻译后的 README 落地磁盘缓存。超过 50 MB 或 60 天未访问时自动淘汰。"
+          }
+        }
+      }
+    },
+    "settings.storage.translationUsageFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld items · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 项 · %@"
           }
         }
       }
@@ -16445,9 +16492,6 @@
     "国内" : {
 
     },
-    "将删除当前输出目录中的全部 CodeFlow HTML 与 metadata。共享源码 ZIP 不会被删除。" : {
-
-    },
     "已自定义" : {
 
     },
@@ -16492,38 +16536,6 @@
     },
     "页面路径" : {
 
-    },
-    "scroll.followTail.help" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jump to the latest content and resume auto-scroll"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "跳转到最新内容并恢复自动跟随"
-          }
-        }
-      }
-    },
-    "scroll.followTail.label" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Follow latest"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "跟随最新"
-          }
-        }
-      }
     }
   },
   "version" : "1.0"
