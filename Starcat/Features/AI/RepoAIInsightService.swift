@@ -428,6 +428,8 @@ final class RepoAIInsightService {
         carriedOverSummary: String?,
         wikiLinks: [WikiLink],
         codeFlowPageURL: URL?,
+        // 聊天链路只上抛本次新增 delta。累积值由 ViewModel 单点维护，避免 SDK、
+        // service、UI 三层各复制一次不断增长的完整字符串。
         onDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
         let source = try await makeSource(for: repo)
@@ -463,7 +465,7 @@ final class RepoAIInsightService {
             switch event {
             case .delta(let delta):
                 accumulated += delta
-                onDelta?(accumulated)
+                onDelta?(delta)
             case .completed(let response):
                 return response.content
             }

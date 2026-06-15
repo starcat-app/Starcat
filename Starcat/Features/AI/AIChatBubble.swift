@@ -249,6 +249,95 @@ struct AIChatBubble: View, Equatable {
     }
 }
 
+/// 流式阶段专用的助手气泡。
+///
+/// 与完成态 `AIChatBubble` 分开，原因是两者的性能约束不同：完成态只解析一次完整
+/// Markdown；流式态把已冻结 chunk 各自解析一次，当前增长尾部使用普通 Text。父视图
+/// 每次 revision 更新时，已有 chunk 通过 Equatable 跳过 body，避免全文重复 parse。
+struct AIStreamingChatBubble: View, Equatable {
+    let snapshot: StreamingMarkdownSnapshot
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    static func == (lhs: AIStreamingChatBubble, rhs: AIStreamingChatBubble) -> Bool {
+        lhs.snapshot == rhs.snapshot
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            assistantAvatar
+            VStack(alignment: .leading, spacing: 6) {
+                if snapshot.isEmpty {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("ai.assistant.chat.thinking")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    ForEach(snapshot.stableMarkdownChunks.indices, id: \.self) { index in
+                        StableStreamingMarkdownChunk(markdown: snapshot.stableMarkdownChunks[index])
+                            .equatable()
+                    }
+
+                    if !snapshot.liveTail.isEmpty {
+                        // 尾部结构仍可能被下一个 token 改写（代码围栏、列表、强调等），
+                        // 中间态用纯文本换取稳定帧率；完成后整条消息恢复完整 Markdown。
+                        Text(snapshot.liveTail)
+                            .font(.body)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    streamingIndicator
+                }
+            }
+            .padding(.vertical, 2)
+            Spacer(minLength: 40)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var assistantAvatar: some View {
+        Image(systemName: "sparkles")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 26, height: 26)
+            .background(
+                LinearGradient(
+                    colors: [.purple.opacity(0.85), .blue.opacity(0.85)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: Circle()
+            )
+            .padding(.top, 2)
+    }
+
+    private var streamingIndicator: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.purple.opacity(0.85))
+                .symbolEffect(
+                    .variableColor.iterative.dimInactiveLayers,
+                    options: .repeating,
+                    isActive: !reduceMotion
+                )
+            Text("ai.assistant.chat.generating")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// 已冻结 chunk 的输入一旦生成便不再变化，Equatable 可以阻止父流式气泡更新时重复解析。
+private struct StableStreamingMarkdownChunk: View, Equatable {
+    let markdown: String
+
+    var body: some View {
+        RepoAISummaryMarkdownView(markdown: MarkdownHeadingDemoter.demoteToH3(markdown))
+    }
+}
+
 #Preview("AIChatBubble") {
     VStack(spacing: 12) {
         AIChatBubble(message: ChatMessage(
