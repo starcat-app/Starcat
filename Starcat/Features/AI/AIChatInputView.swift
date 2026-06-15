@@ -5,22 +5,19 @@
 //  AI 助手窗口底部固定的输入条（HOM-150 / Y9 增强 / 2026-06-15 多行毛玻璃重写）。
 //
 //  设计要点：
-//  - 多行 TextField + 圆角毛玻璃容器：默认 1 行高、自动撑到 4 行、超出内部滚动；
+//  - AppKit NSTextView + 圆角毛玻璃容器：默认 1 行高、自动撑到 4 行、超出内部滚动；
 //  - Return 直接发送 / Shift+Return 换行（主流 ChatGPT / Claude 行为）；
-//  - 发送过程禁用 TextField，避免并发触发 stream；
+//  - 发送过程禁用编辑器，避免并发触发 stream；
 //  - 输入为空或正在发送时按钮 disabled，按钮的颜色 / 透明度由 SwiftUI 系统行为提供
 //    视觉反馈，不需要手写额外样式。
 //
 //  2026-06-15 重写（dong4j 反馈参考 chat 输入框样式）：
 //  - 由「单行 HStack」改为「文本区在上 + 控件行在下」的圆角毛玻璃容器；
-//  - TextField 用 `axis: .vertical` + `lineLimit(1...4)` 实现软上限自动撑高
-//    （macOS 13+ 原生能力，项目最低 macOS 15 直接可用）；
-//  - Return / Shift+Return 用 `.onKeyPress(.return)` 显式分流。
-//    **关键**：macOS 上 `axis: .vertical` 模式下 SwiftUI **不再触发 `.onSubmit`**
-//    （与 iOS 行为不同），Enter 默认走"换行"语义，所以必须 onKeyPress 拦截：
-//      · 无 modifier 的 Return → trySend() + return `.handled`（吞掉，不换行）；
-//      · Shift+Return → return `.ignored`（放行 SwiftUI 默认换行行为）。
-//    `.onKeyPress` 是 macOS 14+ API，本项目最低 macOS 15 满足。
+//  - 2026-06-15 二次性能修复：SwiftUI 多行 TextField 的高度测量会向上传播，chat
+//    面板挂载 Markdown 历史时，每个按键都可能带动整列重新布局。改为 NSTextView，
+//    文本留在 AppKit 内，仅跨行、空状态变化、发送和历史回填时通知 SwiftUI；
+//  - Return / Shift+Return 由 NSTextViewDelegate command 路径分流：普通 Return 发送，
+//    Shift+Return 插入换行，保持既有键盘交互不变；
 //  - 上下文菜单（Y9 决议）保留在**左下角**，与右下角发送按钮**等大 28×28**，
 //    遵循「左下=辅助操作 / 右下=主操作」的 Mac 原生 idiom（参考 Mail compose
 //    / Messages）；
@@ -35,22 +32,24 @@
 //  这种带成本的能力（详见 grill-me 决议 C 节点）。
 //
 //  卡顿修复（2026-06-15 12:47 已落地，本次重写延续）：
-//  - 输入草稿用本子组件的 `@State private var text`，**不放进窗口根级
-//    `RepoAIChatViewModel`**——否则每个按键都会让摘要和聊天 Markdown 子树重新
-//    参与依赖检查（实测 M1 Pro 都能感觉到键入卡顿）。
+//  - 输入草稿由非 Observable 的 `AIChatTextEditorState + NSTextView` 持有，**不放进
+//    SwiftUI @State 或窗口根级 RepoAIChatViewModel**——否则每个按键都会让摘要和
+//    聊天 Markdown 子树重新参与依赖检查与布局。
 //  - 历史问题「修改」通过 `pendingReplacement: Binding<String?>` 单向通道回填：
 //    上层只需 `pendingChatDraftReplacement = oldContent`，子组件 `.onChange`
-//    捕获后写回内部 `text` 并把 binding 置 nil（一次性，避免重复覆盖）。
+//    捕获后写进原生编辑器并把 binding 置 nil（一次性，避免重复覆盖）。
 //
 
+import AppKit
 import SwiftUI
 
 struct AIChatInputView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
-    /// 输入草稿属于输入组件自己的瞬时 UI 状态。不能放进窗口根级 ViewModel，
-    /// 否则每个按键都会让摘要和聊天 Markdown 子树重新参与依赖检查。
-    @State private var text: String = ""
+    /// 原生编辑器持有实际草稿，SwiftUI 只保留“是否为空”这个低频状态。
+    /// 普通字符输入不会再让窗口根视图执行属性图更新；只有空/非空切换才刷新发送按钮。
+    @State private var editorState = AIChatTextEditorState()
+    @State private var hasText = false
 
     /// 外部"草稿回填"通道（如点击"编辑历史问题"把旧内容塞回输入框）。
     /// 子组件捕获后写回内部 `text` 并把 binding 置 nil，单次生效不会重复覆盖。
@@ -104,45 +103,34 @@ struct AIChatInputView: View {
         .padding(.bottom, 4)
         .onChange(of: pendingReplacement) { _, replacement in
             guard let replacement else { return }
-            text = replacement
+            editorState.replaceText(replacement)
+            hasText = !replacement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             pendingReplacement = nil
         }
     }
 
     // MARK: - 文本编辑区
 
-    /// 多行 TextField，软上限 1-4 行。
+    /// AppKit 多行文本编辑器，软上限 1-4 行。
     ///
     /// 关键技术点：
-    /// - `axis: .vertical` + `lineLimit(1...4)`：单行起步，自动撑到 4 行，超出后
-    ///   TextField 内部出现滚动（SwiftUI 自带，无需 ScrollView 包装）。
-    /// - `.onKeyPress(.return)` 处理 Return 分流——见文件头注释关于
-    ///   macOS `axis: .vertical` 下 `.onSubmit` 不触发的说明。
+    /// - 文本和 selection 全部留在 `NSTextView`，每个按键不写 SwiftUI `@State`；
+    /// - 文本实际跨行时才 invalid intrinsic size，让外层重新布局；
+    /// - Return / Shift+Return 在 delegate command 路径分流，不依赖 SwiftUI key handler。
     private var textEditor: some View {
-        TextField(
-            "ai.assistant.input.placeholder",
-            text: $text,
-            axis: .vertical
+        AIChatNativeTextEditor(
+            state: editorState,
+            placeholder: String(localized: "ai.assistant.input.placeholder"),
+            isEnabled: !isSending,
+            isFocused: focus,
+            onEmptyStateChange: { isEmpty in
+                hasText = !isEmpty
+            },
+            onSubmit: trySend
         )
-        .focused(focus)
-        .textFieldStyle(.plain)
-        .font(.body)
-        .lineLimit(1...4)
         .padding(.horizontal, 14)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
-        .disabled(isSending)
-        // `.onKeyPress(keys:action:)` 是带 1 参 `KeyPress` 的重载（macOS 14+），
-        // 与 0 参的 `.onKeyPress(_:action:)` 区分；用前者才能拿到 modifier 判 Shift。
-        .onKeyPress(keys: [.return]) { keyPress in
-            // Shift+Return → 让 TextField 自己处理换行（`.vertical` 模式默认行为）。
-            if keyPress.modifiers.contains(.shift) {
-                return .ignored
-            }
-            // 无 modifier 的 Return → 触发发送，吞掉换行事件。
-            trySend()
-            return .handled
-        }
+        .padding(.top, 8)
+        .padding(.bottom, 4)
     }
 
     // MARK: - 控件行
@@ -266,7 +254,7 @@ struct AIChatInputView: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         // 空闲态：输入为空 → 禁用；流式态：永远可点（"停止"是主操作，必须可点）。
-        .disabled(!isSending && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .disabled(!isSending && !hasText)
         .help(isSending ? "ai.assistant.input.stop.help" : "ai.assistant.input.send.help")
     }
 
@@ -287,10 +275,219 @@ struct AIChatInputView: View {
 
     private func trySend() {
         guard !isSending else { return }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        text = ""
+        guard let trimmed = editorState.consumeTrimmedText() else { return }
+        hasText = false
         onSend(trimmed)
+    }
+}
+
+/// SwiftUI 与原生编辑器之间的窄桥梁。
+///
+/// 它故意不使用 `@Observable`：每个按键只更新这个普通引用对象，不应传播到 SwiftUI
+/// 属性图。SwiftUI 侧只有发送动作和历史问题回填需要读写它。
+@MainActor
+private final class AIChatTextEditorState {
+    fileprivate weak var textView: NSTextView?
+    fileprivate var pendingText: String?
+
+    func replaceText(_ text: String) {
+        pendingText = text
+        applyPendingTextIfPossible()
+    }
+
+    func consumeTrimmedText() -> String? {
+        let source = textView?.string ?? pendingText ?? ""
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        replaceText("")
+        return trimmed
+    }
+
+    fileprivate func connect(_ textView: NSTextView) {
+        self.textView = textView
+        applyPendingTextIfPossible()
+    }
+
+    private func applyPendingTextIfPossible() {
+        guard let textView, let pendingText else { return }
+        textView.string = pendingText
+        textView.setSelectedRange(NSRange(location: pendingText.utf16.count, length: 0))
+        self.pendingText = nil
+        // 直接赋值不会自动走 delegate；显式发送 change notification，让空状态、
+        // placeholder 和高度缓存与用户键入路径保持一致。
+        textView.didChangeText()
+    }
+}
+
+/// `NSTextView` 输入桥接。
+///
+/// 关键约束：delegate 的 `textDidChange` 不把完整文本写回 SwiftUI，只上报空状态边界；
+/// 因而对话区即使挂载多条 Markdown，普通输入也不会触发整棵 SwiftUI 子树失效。
+private struct AIChatNativeTextEditor: NSViewRepresentable {
+    let state: AIChatTextEditorState
+    let placeholder: String
+    let isEnabled: Bool
+    let isFocused: FocusState<Bool>.Binding
+    let onEmptyStateChange: (Bool) -> Void
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> AIChatIntrinsicScrollView {
+        let scrollView = AIChatIntrinsicScrollView()
+        let textView = AIChatTextView()
+
+        textView.delegate = context.coordinator
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textView.textColor = .labelColor
+        textView.insertionPointColor = .labelColor
+        textView.textContainerInset = NSSize(width: 0, height: 2)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.setAccessibilityLabel(placeholder)
+        textView.placeholder = placeholder
+
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.connect(textView: textView)
+        state.connect(textView)
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: AIChatIntrinsicScrollView, context: Context) {
+        context.coordinator.parent = self
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+
+        textView.isEditable = isEnabled
+        textView.isSelectable = isEnabled
+        state.connect(textView)
+
+        if isFocused.wrappedValue, textView.window?.firstResponder !== textView {
+            DispatchQueue.main.async {
+                guard isFocused.wrappedValue else { return }
+                textView.window?.makeFirstResponder(textView)
+            }
+        } else if !isFocused.wrappedValue, textView.window?.firstResponder === textView {
+            textView.window?.makeFirstResponder(nil)
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: AIChatNativeTextEditor
+        private var wasEmpty = true
+
+        init(parent: AIChatNativeTextEditor) {
+            self.parent = parent
+        }
+
+        func textDidBeginEditing(_ notification: Notification) {
+            if !parent.isFocused.wrappedValue {
+                parent.isFocused.wrappedValue = true
+            }
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            if parent.isFocused.wrappedValue {
+                parent.isFocused.wrappedValue = false
+            }
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            let isEmpty = textView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if isEmpty != wasEmpty {
+                wasEmpty = isEmpty
+                parent.onEmptyStateChange(isEmpty)
+            }
+            textView.needsDisplay = true
+            (textView.enclosingScrollView as? AIChatIntrinsicScrollView)?.textDidChange()
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
+            if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+                textView.insertNewlineIgnoringFieldEditor(nil)
+            } else {
+                parent.onSubmit()
+            }
+            return true
+        }
+    }
+}
+
+/// 只在文本真实跨行时改变 intrinsic height；1～4 行之外由内部滚动承接。
+private final class AIChatIntrinsicScrollView: NSScrollView {
+    private weak var managedTextView: NSTextView?
+    private var measuredHeight: CGFloat = 24
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: measuredHeight)
+    }
+
+    override func layout() {
+        super.layout()
+        guard let textView = managedTextView else { return }
+        let availableWidth = contentSize.width
+        if abs(textView.frame.width - availableWidth) >= 0.5 {
+            textView.setFrameSize(NSSize(width: availableWidth, height: max(textView.frame.height, measuredHeight)))
+            textDidChange()
+        }
+    }
+
+    func connect(textView: NSTextView) {
+        managedTextView = textView
+        textDidChange()
+    }
+
+    func textDidChange() {
+        guard let textView = managedTextView,
+              let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else { return }
+
+        layoutManager.ensureLayout(for: textContainer)
+        let lineHeight = layoutManager.defaultLineHeight(for: textView.font ?? .systemFont(ofSize: 13))
+        let contentHeight = ceil(layoutManager.usedRect(for: textContainer).height + textView.textContainerInset.height * 2)
+        let nextHeight = min(max(contentHeight, lineHeight + 4), lineHeight * 4 + 4)
+        let documentHeight = max(contentHeight, nextHeight)
+        if abs(textView.frame.height - documentHeight) >= 0.5 {
+            textView.setFrameSize(NSSize(width: textView.frame.width, height: documentHeight))
+        }
+        guard abs(nextHeight - measuredHeight) >= 0.5 else { return }
+        measuredHeight = nextHeight
+        invalidateIntrinsicContentSize()
+    }
+}
+
+/// `NSTextView` 没有公开 placeholder API，这个轻量子类只在空内容且未输入时绘制提示。
+private final class AIChatTextView: NSTextView {
+    var placeholder = ""
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard string.isEmpty, !placeholder.isEmpty else { return }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .foregroundColor: NSColor.placeholderTextColor
+        ]
+        placeholder.draw(
+            at: NSPoint(x: textContainerInset.width, y: textContainerInset.height),
+            withAttributes: attributes
+        )
     }
 }
 
