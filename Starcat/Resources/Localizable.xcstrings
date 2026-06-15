@@ -2434,6 +2434,57 @@
         }
       }
     },
+    "ai.assistant.chat.history.loadEarlier" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Load earlier messages"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载更早消息"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.history.loadEarlier.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Load 20 earlier messages from disk"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从磁盘再加载 20 条更早的消息"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.history.loadingEarlier" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载中…"
+          }
+        }
+      }
+    },
     "ai.assistant.chat.session.clearCurrentRepo" : {
       "extractionState" : "manual",
       "localizations" : {
