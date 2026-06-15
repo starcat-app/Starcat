@@ -4,7 +4,7 @@
 //
 //  「跟随尾部 (Follow Tail)」共享组件：让任何流式更新的 ScrollView
 //  在用户没有主动滚动时自动滚到底部；用户开始滚动就立即停止跟随，
-//  只有用户结束滚动且停在底部时才自动恢复跟随。
+//  只有用户结束滚动且底部锚点可见时才自动恢复跟随。
 //
 //  ┌──────────────────────────────────────────────────────────────────┐
 //  │ 为什么单独抽这个文件                                              │
@@ -12,56 +12,41 @@
 //  │ Starcat 至少 3 处会有"流式输出 + 用户想往上翻看历史"的场景：     │
 //  │   1. AI 摘要生成（RepoAIWindowContentView.summarySection，         │
 //  │      token-by-token 写 streamingSummaryText）                       │
-//  │   2. AI 对话回答（同文件 chatSection，chat.messages.last 增量改）  │
+//  │   2. AI 对话回答（同文件 chatSection，streamingMessage 增量改）   │
 //  │   3. 未来批量队列日志 / 任意其它 streaming 输出                    │
 //  │ 三者的"跟随策略"完全一致：                                          │
 //  │   - 流式中且用户在底部 → 自动 scrollTo(.bottom)                     │
 //  │   - 用户开始主动滚动 → 立即停止跟随                                 │
 //  │   - 用户结束滚动且停在底部 → 恢复跟随                               │
-//  │ 把状态机抽到 ScrollTailController + 把浮按钮抽到                    │
-//  │ FollowTailFloatingButton，调用方就不用各自维护一组散落的           │
-//  │ @State / phase / offset，否则改一处必漏另一处。                     │
+//  │ 状态机只接收两类单向信号：用户滚动 phase + 底部锚点可见性。         │
+//  │ 不再让 content geometry、按钮布局与跟随状态互相驱动。              │
 //  └──────────────────────────────────────────────────────────────────┘
 //
 //  关键约束 / 已踩过的坑（写之前的考量，避免后续 reviewer 重新踩一遍）：
 //
-//  1. **不能用 `offset == maxOffset` 浮点判等**：macOS ScrollView 的
-//     bouncing 行为会让 contentOffset.y 在到底瞬间溢出几 pt 进负值或
-//     超出 maxOffset；scrollTo(anchor: .bottom) 也会停在锚点像素的 1pt
-//     之外。判等永远不稳。改用带容差的 distanceFromBottom 判断最终位置。
+//  1. **位置真源只能是底部 sentinel 的可见性**：contentSize / offset 会被
+//     Markdown 重排、窗口尺寸和流式内容增长同时改变，不能代表用户是否到底。
 //
 //  2. **必须按 ScrollPhase 生命周期判断用户意图**：`scrollTo(...)` 自己触发的
 //     phase 是 `.animating`，不能暂停跟随；`.tracking / .interacting /
 //     .decelerating` 表示用户正在控制滚动，一进入就立即暂停；只有从用户 phase
-//     回到 `.idle`，并且 phase context 的最终 geometry 已经在底部，才恢复跟随。
+//     回到 `.idle`，并且底部 sentinel 可见，才恢复跟随。
 //
-//  3. **geometry callback 只记录位置，不直接切换状态**：流式内容增长、Markdown
-//     重新布局、浮动按钮显隐都会改变 geometry。若每次 geometry change 都尝试恢复
-//     或暂停，就会把布局变化误判成用户意图，造成乱跳甚至反馈循环。
+//  3. **sentinel 不可见不能主动关闭跟随**：流式内容增长时锚点会短暂离开可视区，
+//     随后自动 scrollTo 拉回。如果据此关闭跟随，会把自身布局变化误判成用户意图。
 //
 //  4. **初始 isFollowing = true**：用户打开窗口默认期待"自动跟随最
 //     新输出"，这个默认值与生成流程的预期 100% 吻合。
 //
-//  5. **不主动判 contentSize ≤ containerSize 的"内容还很短"情况**：
-//     内容短时 distanceFromBottom 通常 ≤ 0，所以会一直保持跟随，与
-//     预期一致，无需特殊逻辑。
+//  5. **无浮动恢复按钮**：用户明确要求不展示遮挡内容的“跟随最新”入口；恢复
+//     自动跟随的唯一方式是自然滚到底部并结束手势。
 //
 
 import SwiftUI
 
-/// onScrollGeometryChange 的 transform 输出类型，用一次 transform 同时取多个量。
-///
-/// 设计动机：对话段除了"跟随尾部"还有"顶部下拉 overscroll 切回摘要面板"，
-/// 后者需要 contentOffset.y，前者需要 distanceFromBottom。挂两个独立的
-/// `.onScrollGeometryChange` 也能 work，但同一份 geometry 会被 SwiftUI 重读
-/// 两遍 + 两个 closure 都参与 invalidation；用一个 Equatable struct 走单条
-/// transform 更紧凑，也避免"两个 closure 之间被 SwiftUI 重排顺序"造成隐患。
-///
-/// 仅有"跟随尾部"需求的 ScrollView 不需要用这个，直接对 CGFloat 取
-/// distanceFromBottom 即可。
+/// 对话区顶部 overscroll 检测需要的最小 geometry 快照。
 struct ScrollFollowTailMetrics: Equatable {
     let offsetY: CGFloat
-    let distanceFromBottom: CGFloat
 }
 
 /// 「跟随尾部」状态机。
@@ -72,21 +57,16 @@ struct ScrollFollowTailMetrics: Equatable {
 /// 调用方需要做 3 件事：
 ///   1. `@State private var tail = ScrollTailController()`，在 ScrollViewReader
 ///      内部读 `tail.isFollowing` 决定要不要 scrollTo；
-///   2. 在 ScrollView 上挂三参数 `.onScrollPhaseChange`，把 context 中的最终
-///      distanceFromBottom 传给 `updatePhase`；geometry change 只调用
-///      `updateGeometry` 记录最新位置；
+///   2. 用 `.onScrollPhaseChange` 传用户 phase，用底部 sentinel 的
+///      `.onScrollVisibilityChange` 传是否真正到底；
 ///   3. 当流式 trigger 变化时 `if tail.isFollowing { proxy.scrollTo(...) }`。
-///
-/// 浮动按钮 `FollowTailFloatingButton` 是配套 UI，调用方按需放到 ZStack 右下角。
 @MainActor
 @Observable
 final class ScrollTailController {
 
     /// 当前是否处于"自动跟随尾部"状态。
     ///
-    /// view 应该读它决定两件事：
-    ///   - 流式 trigger 变化时是否调 `proxy.scrollTo(.bottom)`；
-    ///   - 是否渲染 FollowTailFloatingButton（false 时显示，true 时隐藏）。
+    /// view 只读它决定流式 trigger 变化时是否调 `proxy.scrollTo(.bottom)`。
     private(set) var isFollowing: Bool = true
 
     /// 最近一次的滚动相位。
@@ -96,20 +76,14 @@ final class ScrollTailController {
     /// view 上挂两个 onScrollPhaseChange。
     private(set) var lastPhase: ScrollPhase = .idle
 
-    /// 最近一次 geometry callback 观察到的底部距离，供诊断与无 context 调用兜底。
-    private var latestDistanceFromBottom: CGFloat = 0
+    /// 底部 sentinel 当前是否可见。它是“是否到底”的唯一位置真源。
+    private var isBottomVisible: Bool = true
 
     /// 当前滚动生命周期是否由用户手势发起。
     private var isUserScrollInProgress: Bool = false
 
-    /// 底部容差（pt）。macOS bounce / 锚点像素误差会让真正底部落在 0 附近。
-    private let bottomTolerance: CGFloat = 8
-
-    /// SwiftUI 把 phase 与该切换时刻的最终底部距离递给控制器。
-    func updatePhase(_ phase: ScrollPhase, distanceFromBottom: CGFloat? = nil) {
-        if let distanceFromBottom {
-            latestDistanceFromBottom = distanceFromBottom
-        }
+    /// SwiftUI 把滚动 phase 递给控制器。
+    func updatePhase(_ phase: ScrollPhase) {
         lastPhase = phase
 
         switch phase {
@@ -123,7 +97,7 @@ final class ScrollTailController {
             isUserScrollInProgress = false
             // 仅在用户滚动生命周期结束后恢复。滚动过程中即使经过底部也不恢复，
             // 避免 bounce / 惯性尚未结束时被新 token 再次拉动。
-            if latestDistanceFromBottom <= bottomTolerance {
+            if isBottomVisible {
                 isFollowing = true
             }
         case .animating:
@@ -134,75 +108,12 @@ final class ScrollTailController {
         }
     }
 
-    /// SwiftUI 把"内容相对底部的距离"递给我们后调用本方法，仅记录位置。
-    ///
-    /// `distanceFromBottom` 计算式由调用方负责（用 onScrollGeometryChange
-    /// 的 transform 算出来）：
-    ///     `contentSize.height - contentOffset.y - containerSize.height`
-    /// 用户在最底部时该值约 = 0；上滚 100pt 该值 = 100。
-    func updateGeometry(distanceFromBottom: CGFloat) {
-        latestDistanceFromBottom = distanceFromBottom
-    }
-
-    /// 用户主动点了浮动按钮"跟随最新" / 或调用方明确要求恢复跟随时调。
-    ///
-    /// 与 `updateGeometry` 走的 phase 门控不同，这是显式的用户意图，
-    /// 直接置 true 不需要校验。配套地，调用方应在调用本方法**之后**
-    /// 用 ScrollViewReader 的 proxy.scrollTo(.bottom) 把视图滚到底。
-    func reengage() {
-        isUserScrollInProgress = false
-        isFollowing = true
-    }
-}
-
-/// 「跟随最新」浮动按钮（参考 GitHub Actions Logs / Slack 频道底部跳转按钮同款）。
-///
-/// 当用户上滚导致 `ScrollTailController.isFollowing == false` 时显示。
-/// 点击 → 调用方负责 `tail.reengage()` + `proxy.scrollTo(.bottom)`。
-///
-/// 视觉规范：
-///   - **2026-06-15 dong4j 反馈** "右下角的跟随最新使用图标，不要展示文本了"，
-///     从初版 "Capsule + ↓ + 跟随最新" 改为 **32×32 圆形 icon-only 按钮**。
-///     设计理由：① 浮在 ScrollView 右下角的"跳到底部"是公认 idiom（GitHub /
-///     Slack / iMessage 等都用纯 icon 圆形按钮），用户对图标的认知成本接近零；
-///     ② 文案改 tooltip 后，鼠标 hover 才显示，既不占视觉重量也保留可达性；
-///     ③ 圆形比胶囊更紧凑，不会与右下角内容产生横向"压舱物"感。
-///   - **32×32 pt 圆形 + .regularMaterial 玻璃态** 与项目其它浮层风格一致；
-///   - **arrow.down 12pt semibold + `.primary`** 前景，明暗主题自适应；
-///   - **`.accessibilityLabel("scroll.followTail.label")`** 让 VoiceOver
-///     仍朗读"跟随最新"，文案"看不见"但语义保留；
-///   - **`.help("scroll.followTail.help")`** 鼠标 hover 出 tooltip
-///     "跳转到最新内容并恢复自动跟随"；
-///   - 复用 `pressableHover`：默认 hover opacity=0.78, scale=1.04，悬停反馈；
-///   - 必须挂 `.focusEffectDisabled()`，禁用 macOS 默认蓝框（项目硬性规范）；
-///   - 显隐不加 transition / 隐式动画：按钮状态由滚动 geometry 驱动，动画会
-///     反向改变布局并再次触发 geometry callback。
-struct FollowTailFloatingButton: View {
-
-    /// 用户点击时的回调。调用方在里面置位 `controller.reengage()` 并调
-    /// `proxy.scrollTo(anchorID, anchor: .bottom)`（建议加 0.2s easeOut）。
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "arrow.down")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 32, height: 32)
-                .background(
-                    Circle()
-                        .fill(.regularMaterial)
-                        .overlay(
-                            Circle()
-                                .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
-                        )
-                        .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 2)
-                )
-                .pressableHover(opacity: 0.78, scale: 1.04)
+    /// 底部锚点可见性变化。不可见只记录，不主动关闭跟随；可见且用户手势已经
+    /// 结束时恢复，兼容“idle 回调早于 visibility 回调”的系统时序。
+    func updateBottomVisibility(_ isVisible: Bool) {
+        isBottomVisible = isVisible
+        if isVisible, !isUserScrollInProgress, lastPhase == .idle {
+            isFollowing = true
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .help("scroll.followTail.help")
-        .accessibilityLabel(Text("scroll.followTail.label"))
     }
 }

@@ -143,7 +143,13 @@ final class RepoAIChatViewModel {
     // MARK: - 可观察状态
 
     /// 完整对话记录。顺序：第一条最早，最后一条最新。
+    ///
+    /// 这里只保存已经完成的消息。流式 assistant 单独放在 `streamingMessage`，
+    /// 避免每个 partial 都改写整个数组并让全部历史 Markdown 参与 SwiftUI diff。
     private(set) var messages: [ChatMessage] = []
+
+    /// 当前正在生成的 assistant 消息；nil 表示没有进行中的流式回答。
+    private(set) var streamingMessage: ChatMessage?
 
     /// 当前 session id（nil = 尚未初始化）。所有 send / load / 切换路径都围绕此 id。
     private(set) var currentSessionId: UUID?
@@ -299,8 +305,7 @@ final class RepoAIChatViewModel {
         // 落盘 user message（即便 stream 挂了也不丢）。
         persistCurrentSession(repo: repo)
 
-        let assistantIndex = messages.count
-        messages.append(assistantPlaceholder)
+        streamingMessage = assistantPlaceholder
 
         inputText = ""
         isSending = true
@@ -317,29 +322,28 @@ final class RepoAIChatViewModel {
         //
         // 2026-06-15 11:15 流式节流（dong4j 反馈"AI 流式输出 200+ 字开始卡，500+ 字主线
         // 程死锁 + CPU 100%"）：根因 = `AIChatBubble` 用 `swift-markdown-ui` 渲染整段
-        // markdown，每个 token 触发：① messages[idx].content 改 @Observable → view 重建
-        // → ② AIChatBubble.body 重算 → ③ MarkdownHeadingDemoter.demoteToH3(O(n)) →
+        // markdown，每个 token 触发：①流式消息状态改写 → ② AIChatBubble.body 重算
+        // → ③ MarkdownHeadingDemoter.demoteToH3(O(n)) →
         // ④ swift-markdown-ui 重新 parse + AST → SwiftUI view tree。LLM 流式典型 50-200
         // token/s, 长回答 + 含代码块 syntax highlighting 时主线程渲染管线被压满，帧预算
         // 爆 → SwiftUI 报 `OnScrollGeometryChange Modifier tried to update multiple times
         // per frame` + AttributeGraph cycle，最终主线程 livelock CPU 100%（强退）。
         //
         // 节流策略：用时间窗口而非 chunk 数量（partial 是累积串不是 chunk 数）。窗口
-        // 33 ms ≈ 30 Hz（视觉上 30fps 跟 60fps 打字机几乎无差别，2 帧一次 commit 视觉
-        // 零感知），把 markdown 重 parse 频率从 50-200/s 砍到 ≤30/s，主线程压力降一个
-        // 数量级。**正确性保护**：chatStream 返回后下方 `messages[assistantIndex].content
-        // = final` 无条件覆盖，节流期间漏的 partial 一定能补回来——final 是 service 累积
-        // 的最终全文，跟最后一次 partial 100% 相等。
+        // 80 ms ≈ 12.5 Hz，仍有连续打字感，同时给滚动 phase / sentinel 回调留出主线程
+        // 预算。历史 messages 在 stream 期间完全不改，只有独立 streamingMessage 重绘；
+        // chatStream 返回后再把 final 一次 append 为正式消息，保证最终内容完整。
         //
         // 实现要点：`lastCommitAt` / `pendingPartial` 是 sendMessage 函数局部 `var`，
         // closure 是 `@MainActor (String) -> Void` 故 captured var 访问在 main actor
         // 隔离下安全，无 Sendable / race 问题。`pendingPartial` 仅作为"是否有未提交
-        // 的 partial 在等"的语义标记，节流窗口未到不写 messages, 等下个 partial 到来
+        // 的 partial 在等"的语义标记，节流窗口未到不写 UI，等下个 partial 到来
         // 时窗口到了就 commit 最新的（中间被跳过的不需要补，因为是累积串）。
         var lastCommitAt: TimeInterval = 0
         var pendingPartial: String?
-        // 33 ms = 1000ms / 30 ≈ 2 frames @ 60Hz。
-        let throttleInterval: TimeInterval = 0.033
+        // Markdown parse 比纯文本昂贵。80 ms 约 12.5 Hz，仍有连续打字感，同时给
+        // 滚动 phase / sentinel 可见性回调保留主线程预算。
+        let throttleInterval: TimeInterval = 0.08
         do {
             let final = try await service.chatStream(
                 for: repo,
@@ -352,19 +356,21 @@ final class RepoAIChatViewModel {
                 let now = Date.timeIntervalSinceReferenceDate
                 guard now - lastCommitAt >= throttleInterval else { return }
                 lastCommitAt = now
-                if self.messages.indices.contains(assistantIndex),
+                if var streaming = self.streamingMessage,
                    let toCommit = pendingPartial {
-                    // chunk 回调可能在任意 stream tick 触发，但 @MainActor 已保证主线程。
-                    // 用 index 改写而不是替换整条消息，让 SwiftUI diff 只重绘 content。
-                    self.messages[assistantIndex].content = toCommit
+                    // 只改独立流式消息，历史 messages 数组在整个 stream 期间保持稳定。
+                    streaming.content = toCommit
+                    self.streamingMessage = streaming
                     pendingPartial = nil
                 }
             }
 
-            if messages.indices.contains(assistantIndex) {
-                messages[assistantIndex].content = final
-                messages[assistantIndex].isStreaming = false
+            if var completed = streamingMessage {
+                completed.content = final
+                completed.isStreaming = false
+                messages.append(completed)
             }
+            streamingMessage = nil
             persistCurrentSession(repo: repo)
             await refreshSessions(repo: repo)
         } catch {
@@ -373,25 +379,27 @@ final class RepoAIChatViewModel {
             if Self.looksLikeContextOverflow(description) {
                 isContextOverflow = true
             }
-            if messages.indices.contains(assistantIndex) {
+            if var failed = streamingMessage {
                 // 节流尾巴 flush：失败时可能有未 commit 的最后一片 partial（节流窗口内
                 // stream 抛错），用 pendingPartial 兜底拿到节流期间收到的最新累积串。
                 // partial 是单调累加的，所以"长度更大"就是"内容更新"，简单可靠的兜底判定。
                 if let unflushed = pendingPartial,
-                   unflushed.count > messages[assistantIndex].content.count {
-                    messages[assistantIndex].content = unflushed
+                   unflushed.count > failed.content.count {
+                    failed.content = unflushed
                 }
                 // 不留空占位（避免 UI 上看到一条"灰色光标但无文字"的助手消息）。
                 // 失败占位文案走 i18n：英文 / 中文用户都能看懂自己语言的失败提示。
-                let prefix = messages[assistantIndex].content
-                messages[assistantIndex].content = prefix.isEmpty
+                let prefix = failed.content
+                failed.content = prefix.isEmpty
                     ? String(
                         format: String(localized: "ai.assistant.chat.failureFormat"),
                         description
                     )
                     : prefix
-                messages[assistantIndex].isStreaming = false
+                failed.isStreaming = false
+                messages.append(failed)
             }
+            streamingMessage = nil
             // 失败 turn 也落盘（保留用户消息 + 失败占位，便于回看 / 复制问题反馈）。
             persistCurrentSession(repo: repo)
             await refreshSessions(repo: repo)
@@ -414,6 +422,7 @@ final class RepoAIChatViewModel {
     func resetConversation() {
         guard !isSending else { return }
         messages.removeAll()
+        streamingMessage = nil
         errorMessage = nil
         isContextOverflow = false
     }
@@ -432,6 +441,7 @@ final class RepoAIChatViewModel {
         currentSessionCreatedAt = now
         currentCarriedOverSummary = nil
         messages.removeAll()
+        streamingMessage = nil
         errorMessage = nil
         isContextOverflow = false
     }
@@ -442,6 +452,7 @@ final class RepoAIChatViewModel {
         currentSessionCreatedAt = session.createdAt
         currentCarriedOverSummary = session.carriedOverSummary
         messages = session.messages
+        streamingMessage = nil
         errorMessage = nil
         isContextOverflow = false
     }

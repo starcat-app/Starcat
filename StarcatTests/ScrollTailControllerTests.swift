@@ -5,7 +5,7 @@
 //  锁住 AI 流式内容“跟随尾部”的用户手势生命周期。
 //
 //  关键约束：用户一开始滚动就暂停；滚动过程中即使经过底部也不恢复；
-//  只有用户滚动结束并停在底部时恢复。程序化滚动不能改变用户意图状态。
+//  只有用户滚动结束且底部锚点可见时恢复。流式布局变化不能改变用户意图状态。
 //
 
 import SwiftUI
@@ -20,7 +20,7 @@ struct ScrollTailControllerTests {
     func userScrollImmediatelyDisengages() {
         let controller = ScrollTailController()
 
-        controller.updatePhase(.tracking, distanceFromBottom: 0)
+        controller.updatePhase(.tracking)
 
         #expect(!controller.isFollowing)
     }
@@ -28,9 +28,9 @@ struct ScrollTailControllerTests {
     @Test("滚动过程中经过底部仍保持暂停")
     func reachingBottomDuringGestureDoesNotReengage() {
         let controller = ScrollTailController()
-        controller.updatePhase(.interacting, distanceFromBottom: 120)
+        controller.updatePhase(.interacting)
 
-        controller.updateGeometry(distanceFromBottom: 0)
+        controller.updateBottomVisibility(true)
 
         #expect(!controller.isFollowing)
     }
@@ -38,9 +38,11 @@ struct ScrollTailControllerTests {
     @Test("用户结束滚动且停在底部后恢复跟随")
     func userScrollEndingAtBottomReengages() {
         let controller = ScrollTailController()
-        controller.updatePhase(.interacting, distanceFromBottom: 120)
+        controller.updateBottomVisibility(false)
+        controller.updatePhase(.interacting)
+        controller.updateBottomVisibility(true)
 
-        controller.updatePhase(.idle, distanceFromBottom: 4)
+        controller.updatePhase(.idle)
 
         #expect(controller.isFollowing)
     }
@@ -48,23 +50,43 @@ struct ScrollTailControllerTests {
     @Test("用户结束滚动但未到底部时保持暂停")
     func userScrollEndingAwayFromBottomStaysDisengaged() {
         let controller = ScrollTailController()
-        controller.updatePhase(.interacting, distanceFromBottom: 120)
+        controller.updatePhase(.interacting)
+        controller.updateBottomVisibility(false)
 
-        controller.updatePhase(.idle, distanceFromBottom: 20)
+        controller.updatePhase(.idle)
 
         #expect(!controller.isFollowing)
     }
 
-    @Test("程序化滚动不暂停也不恢复跟随")
-    func programmaticScrollPreservesState() {
+    @Test("流式增长导致底部锚点暂时不可见时保持跟随")
+    func contentGrowthDoesNotDisengageFollowing() {
         let following = ScrollTailController()
-        following.updatePhase(.animating, distanceFromBottom: 100)
+        following.updateBottomVisibility(false)
         #expect(following.isFollowing)
+    }
 
+    @Test("idle 先到且随后锚点可见时仍恢复跟随")
+    func visibilityAfterIdleReengages() {
         let paused = ScrollTailController()
-        paused.updatePhase(.interacting, distanceFromBottom: 100)
-        paused.updatePhase(.idle, distanceFromBottom: 100)
-        paused.updatePhase(.animating, distanceFromBottom: 0)
+        paused.updateBottomVisibility(false)
+        paused.updatePhase(.interacting)
+        paused.updatePhase(.idle)
         #expect(!paused.isFollowing)
+
+        paused.updateBottomVisibility(true)
+
+        #expect(paused.isFollowing)
+    }
+
+    @Test("程序化滚动不改变跟随状态")
+    func programmaticScrollPreservesState() {
+        let controller = ScrollTailController()
+        controller.updateBottomVisibility(false)
+        controller.updatePhase(.interacting)
+        controller.updatePhase(.idle)
+
+        controller.updatePhase(.animating)
+
+        #expect(!controller.isFollowing)
     }
 }

@@ -19,9 +19,15 @@
 
 import SwiftUI
 
-struct AIChatBubble: View {
+struct AIChatBubble: View, Equatable {
 
     let message: ChatMessage
+    let onEditUserMessage: (String) -> Void
+
+    static func == (lhs: AIChatBubble, rhs: AIChatBubble) -> Bool {
+        // action 始终路由到同一个窗口输入框，真正决定气泡是否需要重绘的只有消息值。
+        lhs.message == rhs.message
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -76,8 +82,39 @@ struct AIChatBubble: View {
                     in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                 )
 
+            userFooter
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    /// 用户消息操作行：修改、复制、时间戳全部贴齐气泡右边缘。
+    /// 修改只回填输入框，由用户确认后再次发送；不直接重发，避免误触产生新请求。
+    private var userFooter: some View {
+        HStack(spacing: 6) {
+            Button {
+                onEditUserMessage(message.content)
+            } label: {
+                Image(systemName: "pencil")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("ai.assistant.chat.editQuestion.tooltip")
+
+            CopyFeedbackButton(
+                providesContent: { message.content },
+                tooltip: "ai.assistant.chat.copyQuestion.tooltip"
+            ) { didCopy in
+                Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                    .font(.caption2)
+                    .foregroundStyle(didCopy ? Color.green : .secondary)
+                    .contentTransition(.symbolEffect(.replace))
+            }
+
             timestampLabel
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     /// 助手消息气泡：左对齐 + **无背景** + Markdown 渲染（HOM-150 dong4j 2026-06-04
@@ -198,17 +235,17 @@ struct AIChatBubble: View {
         AIChatBubble(message: ChatMessage(
             role: .user,
             content: "这个项目用什么语言？"
-        ))
+        ), onEditUserMessage: { _ in })
         AIChatBubble(message: ChatMessage(
             role: .assistant,
             content: "这是一段 **Markdown** 示例 — `swift` 代码：\n\n```swift\nlet x = 1\n```\n\n你可以继续追问。",
             isStreaming: false
-        ))
+        ), onEditUserMessage: { _ in })
         AIChatBubble(message: ChatMessage(
             role: .assistant,
             content: "",
             isStreaming: true
-        ))
+        ), onEditUserMessage: { _ in })
     }
     .padding(.vertical, 12)
     .frame(width: 720)
