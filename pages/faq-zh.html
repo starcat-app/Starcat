@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Starcat 常见问题解答。了解 GitHub Star 管理、AI 功能、同步、定价等常见问题。">
+    <meta name="robots" content="index, follow">
+    <title>常见问题 · Starcat</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⭐%3C/text%3E%3C/svg%3E">
+    <style>
+        /* =====================================================================
+         * Starcat — FAQ 页面样式 (暗色主题)
+         * ===================================================================== */
+        :root {
+            --color-bg: #0F172A;
+            --color-bg-soft: #1E293B;
+            --color-card: #1E293B;
+            --color-border: #475569;
+            --color-border-soft: #334155;
+            --color-text: #F8FAFC;
+            --color-text-secondary: #CBD5E1;
+            --color-text-tertiary: #94A3B8;
+            --color-primary: #22C55E;
+            --color-primary-hover: #4ADE80;
+            --color-accent: #F59E0B;
+            --color-info-bg: rgba(34, 197, 94, 0.08);
+            --color-info-border: rgba(34, 197, 94, 0.25);
+            --color-success-bg: rgba(34, 197, 94, 0.1);
+            --color-success-border: rgba(34, 197, 94, 0.3);
+
+            --fs-hero: 48px;
+            --fs-h2: 28px;
+            --fs-h3: 20px;
+            --fs-body: 17px;
+            --fs-small: 14px;
+
+            --radius: 14px;
+            --radius-sm: 8px;
+
+            --font-sans: "PingFang SC", -apple-system, BlinkMacSystemFont, "IBM Plex Sans",
+                         "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+            --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+        }
+
+        * { box-sizing: border-box; }
+
+        html {
+            scroll-behavior: smooth;
+            -webkit-text-size-adjust: 100%;
+        }
+
+        body {
+            margin: 0;
+            background: var(--color-bg);
+            color: var(--color-text);
+            font-family: var(--font-sans);
+            font-size: var(--fs-body);
+            line-height: 1.65;
+            letter-spacing: 0.01em;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        a { color: var(--color-primary); text-decoration: none; transition: color .2s ease; }
+        a:hover { color: var(--color-primary-hover); text-decoration: underline; }
+
+        /* ─────────────  顶部导航  ───────────── */
+        .topbar {
+            position: sticky; top: 0; z-index: 50;
+            background: rgba(15, 23, 42, .85);
+            backdrop-filter: saturate(180%) blur(20px);
+            -webkit-backdrop-filter: saturate(180%) blur(20px);
+            border-bottom: 1px solid var(--color-border-soft);
+        }
+        .topbar-inner {
+            max-width: 1200px; margin: 0 auto; padding: 14px 24px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .brand {
+            display: flex; align-items: center; gap: 10px;
+            font-weight: 600; font-size: 17px; color: var(--color-text);
+        }
+        .brand-logo {
+            width: 28px; height: 28px; border-radius: 7px;
+            background: linear-gradient(135deg, #22C55E 0%, #4ADE80 100%);
+            display: inline-flex; align-items: center; justify-content: center;
+            color: #0F172A; font-size: 16px; font-weight: 700;
+        }
+        .topbar-nav { display: flex; gap: 28px; font-size: 14px; }
+        .topbar-nav a { color: var(--color-text-secondary); font-weight: 400; }
+        .topbar-nav a.active { color: var(--color-primary); font-weight: 500; }
+
+        /* ─────────────  Hero  ───────────── */
+        .hero {
+            background: linear-gradient(180deg, #1E293B 0%, var(--color-bg) 100%);
+            padding: 72px 24px 56px; text-align: center;
+            border-bottom: 1px solid var(--color-border-soft);
+        }
+        .hero-inner { max-width: 720px; margin: 0 auto; }
+        .hero h1 { font-size: var(--fs-hero); font-weight: 700; margin: 0 0 12px; color: var(--color-text); }
+        .hero p { font-size: 18px; color: var(--color-text-secondary); margin: 0; }
+
+        /* ─────────────  主内容  ───────────── */
+        .layout {
+            max-width: 800px; margin: 0 auto; padding: 48px 24px 96px;
+        }
+
+        /* 分类标签 */
+        .category-nav {
+            display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 48px; justify-content: center;
+        }
+        .category-nav a {
+            padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 500;
+            background: var(--color-bg-soft); color: var(--color-text-secondary);
+            border: 1px solid var(--color-border-soft); transition: all .2s ease;
+        }
+        .category-nav a:hover { border-color: var(--color-primary); color: var(--color-primary); text-decoration: none; }
+
+        section.category { margin-bottom: 48px; scroll-margin-top: 88px; }
+        section.category h2 {
+            font-size: var(--fs-h3); font-weight: 700; color: var(--color-primary);
+            margin: 0 0 20px; padding-bottom: 12px; border-bottom: 1px solid var(--color-border-soft);
+        }
+
+        /* FAQ 手风琴 */
+        details.faq-item {
+            background: var(--color-card);
+            border: 1px solid var(--color-border-soft);
+            border-radius: var(--radius-sm); margin-bottom: 10px;
+            overflow: hidden; transition: border-color .2s ease;
+        }
+        details.faq-item:hover { border-color: var(--color-border); }
+        details.faq-item[open] { border-color: var(--color-primary); }
+
+        details.faq-item summary {
+            list-style: none; cursor: pointer;
+            padding: 18px 44px 18px 20px; font-weight: 600; font-size: 16px;
+            color: var(--color-text); position: relative;
+            display: flex; align-items: center; gap: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        details.faq-item summary::-webkit-details-marker { display: none; }
+        details.faq-item summary::after {
+            content: "+"; position: absolute; right: 20px; top: 50%; transform: translateY(-50%);
+            font-size: 20px; font-weight: 400; color: var(--color-text-tertiary);
+            font-family: var(--font-mono); transition: transform .25s ease, color .25s ease;
+        }
+        details.faq-item[open] summary::after { content: "−"; color: var(--color-primary); }
+        details.faq-item summary .q-icon {
+            flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%;
+            background: var(--color-info-bg); color: var(--color-primary);
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 13px; font-weight: 700;
+        }
+
+        .faq-body {
+            padding: 0 20px 20px; font-size: 15px; color: var(--color-text-secondary);
+            line-height: 1.7;
+        }
+        .faq-body p { margin: 0 0 12px; }
+        .faq-body p:last-child { margin-bottom: 0; }
+        .faq-body ul, .faq-body ol { padding-left: 20px; margin: 6px 0 12px; }
+        .faq-body li { margin: 4px 0; }
+        .faq-body code {
+            background: rgba(255,255,255,0.08); border-radius: 4px; padding: 2px 6px;
+            font-family: var(--font-mono); font-size: 0.9em; color: #E2E8F0;
+        }
+        .faq-body strong { color: var(--color-text); }
+
+        /* ─────────────  CTA  ───────────── */
+        .cta-section {
+            text-align: center; padding: 48px 24px; margin-top: 32px;
+            background: var(--color-bg-soft); border-radius: var(--radius);
+            border: 1px solid var(--color-border-soft);
+        }
+        .cta-section h2 { font-size: 24px; margin: 0 0 12px; color: var(--color-text); }
+        .cta-section p { font-size: 16px; color: var(--color-text-secondary); margin: 0 0 24px; }
+        .cta-links { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+        .cta-btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 12px 28px; border-radius: var(--radius-sm); font-weight: 600; font-size: 15px;
+            transition: all .2s ease; text-decoration: none;
+            background: var(--color-primary); color: #0F172A;
+        }
+        .cta-btn:hover { background: var(--color-primary-hover); color: #0F172A; text-decoration: none; }
+        .cta-btn.secondary {
+            background: transparent; color: var(--color-text); border: 1px solid var(--color-border);
+        }
+        .cta-btn.secondary:hover { border-color: var(--color-primary); color: var(--color-primary); }
+
+        /* ─────────────  Footer  ───────────── */
+        footer.site-footer {
+            background: var(--color-bg-soft); border-top: 1px solid var(--color-border-soft);
+            padding: 40px 24px; color: var(--color-text-tertiary); font-size: 13px; text-align: center;
+        }
+        footer.site-footer .links { display: flex; justify-content: center; gap: 28px; margin-bottom: 16px; flex-wrap: wrap; }
+        footer.site-footer .links a { color: var(--color-text-tertiary); }
+        footer.site-footer .copyright { color: var(--color-text-tertiary); font-size: 12px; margin: 0; }
+
+        @media (max-width: 768px) {
+            .hero { padding: 48px 16px 36px; }
+            .hero h1 { font-size: 34px; }
+            .topbar-nav { display: none; }
+            .layout { padding: 32px 16px 64px; }
+            details.faq-item summary { font-size: 15px; padding: 16px 40px 16px 16px; }
+        }
+
+        @media print {
+            .topbar, .category-nav, .cta-section, footer .links { display: none; }
+            body { background: #fff; color: #000; }
+            details.faq-item { border: none; break-inside: avoid; }
+            details.faq-item summary::after { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<header class="topbar" role="banner">
+    <div class="topbar-inner">
+        <a class="brand" href="#">
+            <span class="brand-logo">S</span>
+            <span>Starcat</span>
+        </a>
+        <nav class="topbar-nav" aria-label="主导航">
+            <a href="./privacy-zh.html">隐私政策</a>
+            <a href="./eula-zh.html">用户许可协议</a>
+            <a href="./faq-zh.html" class="active">常见问题</a>
+        </nav>
+    </div>
+</header>
+
+<section class="hero">
+    <div class="hero-inner">
+        <h1>常见问题</h1>
+        <p>关于 Starcat 的安装、使用、AI 功能与订阅，你想了解的都在这里</p>
+    </div>
+</section>
+
+<main class="layout">
+
+    <nav class="category-nav" aria-label="问题分类">
+        <a href="#cat-basics">基础入门</a>
+        <a href="#cat-features">功能使用</a>
+        <a href="#cat-ai">AI 功能</a>
+        <a href="#cat-subscription">订阅与定价</a>
+        <a href="#cat-privacy">隐私与安全</a>
+        <a href="#cat-tech">技术相关</a>
+    </nav>
+
+    <!-- ===== 基础入门 ===== -->
+    <section class="category" id="cat-basics">
+        <h2>基础入门</h2>
+
+        <details class="faq-item" id="what-is-starcat">
+            <summary><span class="q-icon">Q</span>Starcat 是什么？</summary>
+            <div class="faq-body">
+                <p>Starcat 是一款面向 <strong>Apple 平台</strong>的 GitHub Star 管理与 AI 知识整理工具。它将你散落在 GitHub 上的 Star 收藏转化为可搜索、可分类、可回顾的个人知识库，核心理念是「<strong>整理、理解、找回、评估</strong>」。</p>
+                <p>简单说：如果你在 GitHub 上 Star 了几百上千个项目，却很难找到"上次那个做动画的库叫什么来着"，Starcat 就是为你准备的。</p>
+            </div>
+        </details>
+
+        <details class="faq-item" id="supported-platforms">
+            <summary><span class="q-icon">Q</span>Starcat 支持哪些平台？</summary>
+            <div class="faq-body">
+                <p>目前 <strong>仅支持 macOS 15 (Sequoia) 及以上版本</strong>。作为原生 SwiftUI 应用，我们优先聚焦 macOS 平台，充分利用 Apple 原生框架（GRDB.swift、CloudKit、Keychain 等）提供最佳体验。iOS / iPadOS 版本视用户反馈再评估。</p>
+            </div>
+        </details>
+
+        <details class="faq-item" id="system-requirements">
+            <summary><span class="q-icon">Q</span>系统要求是什么？</summary>
+            <div class="faq-body">
+                <ul>
+                    <li><strong>操作系统</strong>：macOS 15 (Sequoia) 或更高版本</li>
+                    <li><strong>GitHub 账户</strong>：需要有效的 GitHub 账户用于 OAuth 登录</li>
+                    <li><strong>Apple ID</strong>：用于 App Store 下载与可选 iCloud 同步</li>
+                    <li><strong>网络</strong>：需要互联网连接以同步 GitHub 数据</li>
+                </ul>
+            </div>
+        </details>
+
+        <details class="faq-item" id="how-to-install">
+            <summary><span class="q-icon">Q</span>如何安装 Starcat？</summary>
+            <div class="faq-body">
+                <p>Starcat 通过 <strong>Apple App Store</strong> 分发。搜索 "Starcat" 下载安装即可。首次启动后使用 GitHub OAuth 登录，应用会自动拉取你的 Star 列表。</p>
+            </div>
+        </details>
+    </section>
+
+    <!-- ===== 功能使用 ===== -->
+    <section class="category" id="cat-features">
+        <h2>功能使用</h2>
+
+        <details class="faq-item" id="core-features">
+            <summary><span class="q-icon">Q</span>Starcat 有哪些核心功能？</summary>
+            <div class="faq-body">
+                <p>核心功能分为基础功能和 AI 增强功能：</p>
+                <p><strong>基础功能（免费）</strong>：</p>
+                <ul>
+                    <li>GitHub OAuth 登录与增量 Star 同步</li>
+                    <li>macOS 原生三栏布局</li>
+                    <li>标签分类与编程语言筛选</li>
+                    <li>FTS5 全文搜索</li>
+                    <li>README Markdown 渲染</li>
+                    <li>私有笔记与状态管理（未读 / 阅读中 / 已采用 / 已废弃）</li>
+                    <li>JSON 导入 / 导出（兼容 OhMyStar、Astral）</li>
+                </ul>
+                <p><strong>AI 增强功能（Pro）</strong>：</p>
+                <ul>
+                    <li>AI 智能摘要（中 / 英文）</li>
+                    <li>AI 标签推荐（含确认流程，不会自动应用）</li>
+                    <li>混合语义搜索（BM25 + Embedding + RRF）</li>
+                    <li>AI 每日推荐（个性化 GitHub Trending）</li>
+                    <li>AI 项目健康度评估</li>
+                    <li>Release 订阅追踪</li>
+                </ul>
+            </div>
+        </details>
+
+        <details class="faq-item" id="how-to-organize">
+            <summary><span class="q-icon">Q</span>如何整理我的 Star 列表？</summary>
+            <div class="faq-body">
+                <p>你可以通过以下方式整理：</p>
+                <ul>
+                    <li><strong>自定义标签</strong>：为项目打上分类标签，支持多标签</li>
+                    <li><strong>阅读状态</strong>：标记"未读 / 阅读中 / 已采用 / 已废弃"，方便追踪</li>
+                    <li><strong>私有笔记</strong>：为每个项目添加个人笔记，记录使用心得</li>
+                    <li><strong>语言筛选</strong>：按编程语言快速过滤</li>
+                    <li><strong>全文搜索</strong>：搜索项目名、描述、README 内容</li>
+                </ul>
+            </div>
+        </details>
+
+        <details class="faq-item" id="export-data">
+            <summary><span class="q-icon">Q</span>我能导出数据吗？</summary>
+            <div class="faq-body">
+                <p>可以。Starcat 支持将全部用户内容（标签、笔记、状态等）<strong>导出为 JSON 格式</strong>，兼容 OhMyStar、Astral 等同类应用。数据始终在你手里，不会被锁定在某个平台。</p>
+            </div>
+        </details>
+
+        <details class="faq-item" id="release-tracking">
+            <summary><span class="q-icon">Q</span>Release 订阅追踪是什么？</summary>
+            <div class="faq-body">
+                <p>你可以订阅感兴趣的项目的 Release 更新，Starcat 会在新版本发布时通知你。时间线统一展示所有订阅项目的 Release 历史，还能智能过滤出 macOS / Windows / Linux 对应的资源文件，一键跳转下载。</p>
+            </div>
+        </details>
+    </section>
+
+    <!-- ===== AI 功能 ===== -->
+    <section class="category" id="cat-ai">
+        <h2>AI 功能</h2>
+
+        <details class="faq-item" id="ai-how-works">
+            <summary><span class="q-icon">Q</span>AI 功能如何工作？需要自己提供 API Key 吗？</summary>
+            <div class="faq-body">
+                <p>Starcat 提供三种 AI 服务模式，你可以在"设置 → AI 服务"中选择：</p>
+                <ol>
+                    <li><strong>Starcat Pro</strong>（内置配额）：使用我们提供的代理服务，无需自行配置</li>
+                    <li><strong>自建服务</strong>：使用你自己部署的云端服务器</li>
+                    <li><strong>BYOK</strong>（自带密钥）：使用你自己的 API Key，支持 OpenAI、Anthropic Claude、Google Gemini、DeepSeek、Ollama 等</li>
+                </ol>
+                <p>BYOK 模式下，你的 API Key <strong>仅保存在本地 Keychain</strong> 中，不上传至我们的服务器。</p>
+            </div>
+        </details>
+
+        <details class="faq-item" id="ai-providers">
+            <summary><span class="q-icon">Q</span>支持哪些 AI 提供商？</summary>
+            <div class="faq-body">
+                <ul>
+                    <li>Google Gemini</li>
+                    <li>OpenAI (GPT 系列)</li>
+                    <li>Anthropic Claude</li>
+                    <li>DeepSeek</li>
+                    <li>Ollama（本地模型，数据完全不离设备）</li>
+                </ul>
+            </div>
+        </details>
+
+        <details class="faq-item" id="ai-accuracy">
+            <summary><span class="q-icon">Q</span>AI 生成的摘要和标签准确吗？</summary>
+            <div class="faq-body">
+                <p>AI 生成的内容仅供参考。我们采取<strong>保守策略</strong>：AI 只给建议，用户确认后才写入。标签不会自动应用，所有 AI 建议都需要你手动确认。如果你更关注隐私，可以切换到 Ollama 本地模型。</p>
+            </div>
+        </details>
+
+        <details class="faq-item" id="semantic-search">
+            <summary><span class="q-icon">Q</span>语义搜索和普通搜索有什么区别？</summary>
+            <div class="faq-body">
+                <p>普通搜索（FTS5）基于关键词匹配，你必须输入准确的词汇才能找到结果。语义搜索使用 <strong>BM25 + Embedding 向量 + RRF 混合算法</strong>，可以理解你的搜索意图，即使使用不同的表述也能找到相关项目。比如搜索"动画库"也能匹配到描述中写"animation framework"的项目。</p>
+            </div>
+        </details>
+    </section>
+
+    <!-- ===== 订阅与定价 ===== -->
+    <section class="category" id="cat-subscription">
+        <h2>订阅与定价</h2>
+
+        <details class="faq-item" id="free-vs-pro">
+            <summary><span class="q-icon">Q</span>免费版和 Pro 版有什么区别？</summary>
+            <div class="faq-body">
+                <p><strong>免费版</strong>包含所有基础管理功能：Star 同步、三栏布局、标签分类、全文搜索、README 渲染、私有笔记、JSON 导入导出、Liquid Glass UI。</p>
+                <p><strong>Pro 版</strong>在免费版基础上解锁全部 AI 功能（摘要、标签推荐、语义搜索、每日推荐、健康度评估）和 Release 订阅追踪。</p>
+                <p>Pro 版提供<strong>年度订阅</strong>和<strong>一次性买断</strong>两种方式，具体价格以 App Store 实际展示为准。</p>
+            </div>
+        </details>
+
+        <details class="faq-item" id="refund-policy">
+            <summary><span class="q-icon">Q</span>如何退款？</summary>
+            <div class="faq-body">
+                <p>所有付款通过 Apple App Store 处理，退款由 <strong>Apple 全权负责</strong>。如需申请退款，请前往 <a href="https://reportaproblem.apple.com" target="_blank" rel="noopener">reportaproblem.apple.com</a> 提交请求。</p>
+            </div>
+        </details>
+
+        <details class="faq-item" id="cancel-subscription">
+            <summary><span class="q-icon">Q</span>如何取消订阅？</summary>
+            <div class="faq-body">
+                <p>在 Mac 上打开"<strong>系统设置 → Apple ID → 订阅</strong>"，找到 Starcat 并选择取消订阅。取消后当前周期内仍可使用 Pro 功能，到期后自动降为免费版。</p>
+            </div>
+        </details>
+    </section>
+
+    <!-- ===== 隐私与安全 ===== -->
+    <section class="category" id="cat-privacy">
+        <h2>隐私与安全</h2>
+
+        <details class="faq-item" id="data-location">
+            <summary><span class="q-icon">Q</span>我的数据存在哪里？</summary>
+            <div class="faq-body">
+                <p>Starcat 秉持「<strong>本地优先</strong>」理念：</p>
+                <ul>
+                    <li><strong>GitHub Token 与 AI API Key</strong>：存储于 Apple Keychain，受 Secure Enclave 加密</li>
+                    <li><strong>Star 仓库缓存</strong>：本地 SQLite 数据库，受 FileVault 全盘加密保护</li>
+                    <li><strong>用户内容（标签、笔记、状态）</strong>：本地 SQLite + 可选的 iCloud CloudKit 同步</li>
+                    <li><strong>AI 请求</strong>：直接发送至你选择的 AI 提供商</li>
+                </ul>
+            </div>
+        </details>
+
+        <details class="faq-item" id="data-sharing">
+            <summary><span class="q-icon">Q</span>我的数据会被出售或用于广告吗？</summary>
+            <div class="faq-body">
+                <p><strong>不会。</strong> Starcat 没有广告，不集成第三方广告 SDK，不出售任何用户数据，不追踪你的跨应用行为。详见《<a href="./privacy-zh.html">隐私政策</a>》。</p>
+            </div>
+        </details>
+
+        <details class="faq-item" id="github-permission">
+            <summary><span class="q-icon">Q</span>Starcat 能访问我的私有仓库吗？</summary>
+            <div class="faq-body">
+                <p><strong>不能。</strong> Starcat 申请的 GitHub OAuth 权限为 <code>read:user</code> 和 <code>public_repo</code>，只能读取你的公开 Star 信息，无法访问私有仓库内容，也无法读取你的 GitHub 密码。</p>
+            </div>
+        </details>
+    </section>
+
+    <!-- ===== 技术相关 ===== -->
+    <section class="category" id="cat-tech">
+        <h2>技术相关</h2>
+
+        <details class="faq-item" id="open-source">
+            <summary><span class="q-icon">Q</span>Starcat 是开源的吗？</summary>
+            <div class="faq-body">
+                <p>Starcat 客户端代码在 GitHub 上以 <strong>MIT 许可证</strong>开源：<a href="https://github.com/dong4j/Starcat" target="_blank" rel="noopener">github.com/dong4j/Starcat</a>。欢迎 Star、提 Issue 和 PR。</p>
+            </div>
+        </details>
+
+        <details class="faq-item" id="tech-stack">
+            <summary><span class="q-icon">Q</span>Starcat 的技术栈是什么？</summary>
+            <div class="faq-body">
+                <dl style="margin: 0;">
+                    <div style="display: grid; grid-template-columns: 150px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--color-border-soft);">
+                        <dt style="font-weight: 600; color: var(--color-text);">客户端</dt>
+                        <dd style="margin: 0; color: var(--color-text-secondary);">SwiftUI + macOS 15+</dd>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 150px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--color-border-soft);">
+                        <dt style="font-weight: 600; color: var(--color-text);">本地数据库</dt>
+                        <dd style="margin: 0; color: var(--color-text-secondary);">GRDB.swift (SQLite + FTS5)</dd>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 150px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--color-border-soft);">
+                        <dt style="font-weight: 600; color: var(--color-text);">云同步</dt>
+                        <dd style="margin: 0; color: var(--color-text-secondary);">CloudKit (iCloud)</dd>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 150px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--color-border-soft);">
+                        <dt style="font-weight: 600; color: var(--color-text);">安全存储</dt>
+                        <dd style="margin: 0; color: var(--color-text-secondary);">Keychain + Secure Enclave</dd>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 150px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--color-border-soft);">
+                        <dt style="font-weight: 600; color: var(--color-text);">AI 代理</dt>
+                        <dd style="margin: 0; color: var(--color-text-secondary);">自建服务 (Gemini / OpenAI / DeepSeek)</dd>
+                    </div>
+                </dl>
+            </div>
+        </details>
+
+        <details class="faq-item" id="competitors">
+            <summary><span class="q-icon">Q</span>和 Starship、OhMyStar 相比有什么不同？</summary>
+            <div class="faq-body">
+                <p>Starcat 的差异化在于：</p>
+                <ul>
+                    <li><strong>AI 深度集成</strong>：不仅做管理，还帮你理解、评估和发现项目</li>
+                    <li><strong>Release 追踪</strong>：订阅项目的新版本发布，统一时间线展示</li>
+                    <li><strong>原生 Apple 体验</strong>：SwiftUI + Liquid Glass，不跨平台妥协</li>
+                    <li><strong>数据可导出</strong>：JSON 格式兼容主流同类应用，不被平台锁定</li>
+                </ul>
+            </div>
+        </details>
+    </section>
+
+    <!-- CTA -->
+    <div class="cta-section">
+        <h2>还没有找到答案？</h2>
+        <p>直接联系我们，我们很乐意帮助你</p>
+        <div class="cta-links">
+            <a class="cta-btn" href="mailto:support@starcat.app">联系技术支持</a>
+            <a class="cta-btn secondary" href="https://github.com/dong4j/Starcat" target="_blank" rel="noopener">GitHub 仓库</a>
+        </div>
+    </div>
+
+</main>
+
+<footer class="site-footer" role="contentinfo">
+    <div class="links">
+        <a href="./privacy-zh.html">隐私政策</a>
+        <a href="./eula-zh.html">用户许可协议</a>
+        <a href="./faq-zh.html">常见问题</a>
+        <a href="mailto:support@starcat.app">联系我们</a>
+    </div>
+    <p class="copyright">Copyright © 2026 Starcat. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

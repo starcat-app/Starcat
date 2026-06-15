@@ -9,55 +9,50 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⭐%3C/text%3E%3C/svg%3E">
     <style>
         /* =====================================================================
-         * Starcat — 法律文档样式系统(明亮主题)
+         * Starcat — 法律文档样式系统 (暗色主题)
          * --------------------------------------------------------------------
+         * 与 privacy-zh.html、faq-zh.html 共用同一套设计变量与组件
          * 设计原则:
-         *   1. Apple 法律页风格:大量留白、克制的色板、清晰的字阶
-         *   2. 双栏布局(桌面):左侧目录 sticky,右侧正文卡片
+         *   1. 暗色模式优先,高对比度、低亮度,适合长时间阅读
+         *   2. 双栏布局 (桌面):左侧目录 sticky,右侧正文卡片
          *   3. 移动端折叠为单栏,目录变为顶部展开式
-         *   4. 排版字体优先 SF Pro / PingFang SC,确保中英混排美观
+         *   4. 排版优先 PingFang SC / IBM Plex Sans,确保中英混排美观
+         *   5. 绿色强调色,传递代码/开发者工具气质
          * ===================================================================== */
 
         :root {
-            /* 颜色 */
-            --color-bg: #ffffff;
-            --color-bg-soft: #fbfbfd;
-            --color-card: #ffffff;
-            --color-border: #d2d2d7;
-            --color-border-soft: #e5e5e7;
-            --color-text: #1d1d1f;
-            --color-text-secondary: #424245;
-            --color-text-tertiary: #6e6e73;
-            --color-primary: #0071e3;
-            --color-primary-hover: #0077ed;
-            --color-accent: #ff9500;
-            --color-warning-bg: #fff8e6;
-            --color-warning-border: #ffd60a;
-            --color-info-bg: #f0f7ff;
-            --color-info-border: #b3d7ff;
+            --color-bg: #0F172A;
+            --color-bg-soft: #1E293B;
+            --color-card: #1E293B;
+            --color-border: #475569;
+            --color-border-soft: #334155;
+            --color-text: #F8FAFC;
+            --color-text-secondary: #CBD5E1;
+            --color-text-tertiary: #94A3B8;
+            --color-primary: #22C55E;
+            --color-primary-hover: #4ADE80;
+            --color-accent: #F59E0B;
+            --color-warning-bg: rgba(245, 158, 11, 0.12);
+            --color-warning-border: #F59E0B;
+            --color-info-bg: rgba(34, 197, 94, 0.08);
+            --color-info-border: rgba(34, 197, 94, 0.25);
 
-            /* 字号 */
             --fs-hero: 48px;
             --fs-h2: 28px;
             --fs-h3: 20px;
             --fs-body: 17px;
             --fs-small: 14px;
 
-            /* 间距 */
             --space-section: 64px;
             --radius: 14px;
             --radius-sm: 8px;
 
-            /* 字体栈 */
-            --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text",
-                         "PingFang SC", "Microsoft YaHei", "Helvetica Neue",
-                         Arial, sans-serif;
-            --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+            --font-sans: "PingFang SC", -apple-system, BlinkMacSystemFont, "IBM Plex Sans",
+                         "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+            --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
         }
 
-        * {
-            box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
 
         html {
             scroll-behavior: smooth;
@@ -66,11 +61,11 @@
 
         body {
             margin: 0;
-            background: var(--color-bg-soft);
+            background: var(--color-bg);
             color: var(--color-text);
             font-family: var(--font-sans);
             font-size: var(--fs-body);
-            line-height: 1.6;
+            line-height: 1.65;
             letter-spacing: 0.01em;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
@@ -79,25 +74,20 @@
         a {
             color: var(--color-primary);
             text-decoration: none;
-            transition: color .15s ease;
+            transition: color .2s ease;
         }
-
-        a:hover {
-            color: var(--color-primary-hover);
-            text-decoration: underline;
-        }
+        a:hover { color: var(--color-primary-hover); text-decoration: underline; }
 
         /* ─────────────  顶部导航  ───────────── */
         .topbar {
             position: sticky;
             top: 0;
             z-index: 50;
-            background: rgba(255, 255, 255, .8);
+            background: rgba(15, 23, 42, .85);
             backdrop-filter: saturate(180%) blur(20px);
             -webkit-backdrop-filter: saturate(180%) blur(20px);
             border-bottom: 1px solid var(--color-border-soft);
         }
-
         .topbar-inner {
             max-width: 1200px;
             margin: 0 auto;
@@ -106,56 +96,27 @@
             align-items: center;
             justify-content: space-between;
         }
-
         .brand {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-weight: 600;
-            font-size: 17px;
-            color: var(--color-text);
+            display: flex; align-items: center; gap: 10px;
+            font-weight: 600; font-size: 17px; color: var(--color-text);
         }
-
         .brand-logo {
-            width: 28px;
-            height: 28px;
-            border-radius: 7px;
-            background: linear-gradient(135deg, #0071e3 0%, #5e9eff 100%);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            color: #fff;
-            font-size: 16px;
+            width: 28px; height: 28px; border-radius: 7px;
+            background: linear-gradient(135deg, #22C55E 0%, #4ADE80 100%);
+            display: inline-flex; align-items: center; justify-content: center;
+            color: #0F172A; font-size: 16px; font-weight: 700;
         }
-
-        .topbar-nav {
-            display: flex;
-            gap: 28px;
-            font-size: 14px;
-        }
-
-        .topbar-nav a {
-            color: var(--color-text-secondary);
-            font-weight: 400;
-        }
-
-        .topbar-nav a.active {
-            color: var(--color-text);
-            font-weight: 500;
-        }
+        .topbar-nav { display: flex; gap: 28px; font-size: 14px; }
+        .topbar-nav a { color: var(--color-text-secondary); font-weight: 400; }
+        .topbar-nav a.active { color: var(--color-primary); font-weight: 500; }
 
         /* ─────────────  Hero  ───────────── */
         .hero {
-            background: linear-gradient(180deg, #ffffff 0%, var(--color-bg-soft) 100%);
+            background: linear-gradient(180deg, #1E293B 0%, var(--color-bg) 100%);
             padding: 72px 24px 56px;
             border-bottom: 1px solid var(--color-border-soft);
         }
-
-        .hero-inner {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
+        .hero-inner { max-width: 1200px; margin: 0 auto; }
         .hero-eyebrow {
             font-size: 13px;
             text-transform: uppercase;
@@ -164,7 +125,6 @@
             font-weight: 600;
             margin: 0 0 12px;
         }
-
         .hero h1 {
             font-size: var(--fs-hero);
             font-weight: 700;
@@ -172,25 +132,14 @@
             letter-spacing: -0.02em;
             color: var(--color-text);
         }
-
         .hero-meta {
-            display: flex;
-            flex-wrap: wrap;
+            display: flex; flex-wrap: wrap;
             gap: 8px 24px;
             color: var(--color-text-tertiary);
             font-size: var(--fs-small);
         }
-
-        .hero-meta span {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .hero-meta strong {
-            color: var(--color-text-secondary);
-            font-weight: 500;
-        }
+        .hero-meta span { display: inline-flex; align-items: center; gap: 6px; }
+        .hero-meta strong { color: var(--color-text-secondary); font-weight: 500; }
 
         /* ─────────────  主布局  ───────────── */
         .layout {
@@ -211,7 +160,6 @@
             overflow-y: auto;
             padding-right: 8px;
         }
-
         .toc-title {
             font-size: 12px;
             text-transform: uppercase;
@@ -221,18 +169,8 @@
             margin: 0 0 14px;
             padding-left: 12px;
         }
-
-        .toc ol {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-            counter-reset: toc;
-        }
-
-        .toc li {
-            counter-increment: toc;
-        }
-
+        .toc ol { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+        .toc li { counter-increment: toc; }
         .toc a {
             display: block;
             padding: 8px 12px 8px 36px;
@@ -240,31 +178,26 @@
             color: var(--color-text-secondary);
             border-radius: var(--radius-sm);
             position: relative;
-            transition: all .15s ease;
+            transition: all .2s ease;
             line-height: 1.4;
         }
-
         .toc a::before {
             content: counter(toc, decimal-leading-zero);
             position: absolute;
-            left: 12px;
-            top: 8px;
+            left: 12px; top: 8px;
             font-size: 11px;
             color: var(--color-text-tertiary);
             font-variant-numeric: tabular-nums;
             font-weight: 500;
         }
-
         .toc a:hover {
-            background: #f0f0f3;
-            color: var(--color-text);
+            background: rgba(255,255,255,0.06);
+            color: var(--color-primary);
             text-decoration: none;
         }
 
         /* ─────────────  正文区  ───────────── */
-        .content {
-            min-width: 0;
-        }
+        .content { min-width: 0; }
 
         .lead {
             background: var(--color-info-bg);
@@ -276,10 +209,7 @@
             color: var(--color-text-secondary);
             line-height: 1.7;
         }
-
-        .lead strong {
-            color: var(--color-text);
-        }
+        .lead strong { color: var(--color-text); }
 
         section.chapter {
             background: var(--color-card);
@@ -288,8 +218,9 @@
             padding: 36px 40px;
             margin: 0 0 28px;
             scroll-margin-top: 88px;
+            transition: border-color .2s ease;
         }
-
+        section.chapter:hover { border-color: var(--color-border); }
         section.chapter h2 {
             font-size: var(--fs-h2);
             font-weight: 700;
@@ -299,17 +230,15 @@
             padding-bottom: 14px;
             border-bottom: 1px solid var(--color-border-soft);
         }
-
         section.chapter h2 .num {
             display: inline-block;
             font-size: 14px;
-            color: var(--color-text-tertiary);
+            color: var(--color-primary);
             font-weight: 500;
             margin-right: 12px;
             font-variant-numeric: tabular-nums;
             vertical-align: 0.18em;
         }
-
         section.chapter h3 {
             font-size: var(--fs-h3);
             font-weight: 600;
@@ -317,27 +246,10 @@
             margin: 28px 0 12px;
             letter-spacing: -0.01em;
         }
-
-        section.chapter p {
-            margin: 12px 0;
-            color: var(--color-text-secondary);
-        }
-
-        section.chapter ul,
-        section.chapter ol {
-            padding-left: 22px;
-            margin: 12px 0;
-        }
-
-        section.chapter li {
-            margin: 8px 0;
-            color: var(--color-text-secondary);
-        }
-
-        section.chapter strong {
-            color: var(--color-text);
-            font-weight: 600;
-        }
+        section.chapter p { margin: 12px 0; color: var(--color-text-secondary); }
+        section.chapter ul, section.chapter ol { padding-left: 22px; margin: 12px 0; }
+        section.chapter li { margin: 8px 0; color: var(--color-text-secondary); }
+        section.chapter strong { color: var(--color-text); font-weight: 600; }
 
         /* 强调框 */
         .callout {
@@ -347,20 +259,11 @@
             font-size: 15px;
             line-height: 1.65;
             border-left: 3px solid var(--color-border);
-            background: var(--color-bg-soft);
+            background: rgba(255,255,255,0.03);
             color: var(--color-text-secondary);
         }
-
-        .callout.warning {
-            background: var(--color-warning-bg);
-            border-left-color: var(--color-warning-border);
-        }
-
-        .callout.info {
-            background: var(--color-info-bg);
-            border-left-color: var(--color-primary);
-        }
-
+        .callout.warning { background: var(--color-warning-bg); border-left-color: var(--color-warning-border); }
+        .callout.info { background: var(--color-info-bg); border-left-color: var(--color-primary); }
         .callout strong { color: var(--color-text); }
         .callout .label {
             display: block;
@@ -373,11 +276,7 @@
         }
 
         /* 定义列表 */
-        .deflist {
-            margin: 16px 0;
-            border-top: 1px solid var(--color-border-soft);
-        }
-
+        .deflist { margin: 16px 0; border-top: 1px solid var(--color-border-soft); }
         .deflist > div {
             display: grid;
             grid-template-columns: 200px 1fr;
@@ -385,46 +284,24 @@
             padding: 14px 0;
             border-bottom: 1px solid var(--color-border-soft);
         }
-
-        .deflist dt {
-            font-weight: 600;
-            color: var(--color-text);
-            font-size: 15px;
-        }
-
-        .deflist dd {
-            margin: 0;
-            color: var(--color-text-secondary);
-            font-size: 15px;
-        }
+        .deflist dt { font-weight: 600; color: var(--color-text); font-size: 15px; }
+        .deflist dd { margin: 0; color: var(--color-text-secondary); font-size: 15px; }
 
         /* ─────────────  Footer  ───────────── */
         footer.site-footer {
-            background: #ffffff;
+            background: var(--color-bg-soft);
             border-top: 1px solid var(--color-border-soft);
             padding: 40px 24px;
             color: var(--color-text-tertiary);
             font-size: 13px;
             text-align: center;
         }
-
         footer.site-footer .links {
-            display: flex;
-            justify-content: center;
-            gap: 28px;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
+            display: flex; justify-content: center; gap: 28px;
+            margin-bottom: 16px; flex-wrap: wrap;
         }
-
-        footer.site-footer .links a {
-            color: var(--color-text-tertiary);
-        }
-
-        footer.site-footer .copyright {
-            color: var(--color-text-tertiary);
-            font-size: 12px;
-            margin: 0;
-        }
+        footer.site-footer .links a { color: var(--color-text-tertiary); }
+        footer.site-footer .copyright { color: var(--color-text-tertiary); font-size: 12px; margin: 0; }
 
         /* ─────────────  响应式  ───────────── */
         @media (max-width: 900px) {
@@ -434,10 +311,8 @@
                 padding: 24px 16px 64px;
             }
             .toc {
-                position: relative;
-                top: auto;
-                max-height: none;
-                background: #ffffff;
+                position: relative; top: auto; max-height: none;
+                background: var(--color-card);
                 border: 1px solid var(--color-border-soft);
                 border-radius: var(--radius);
                 padding: 16px;
@@ -446,10 +321,7 @@
             .hero h1 { font-size: 34px; }
             section.chapter { padding: 24px 22px; }
             section.chapter h2 { font-size: 22px; }
-            .deflist > div {
-                grid-template-columns: 1fr;
-                gap: 4px;
-            }
+            .deflist > div { grid-template-columns: 1fr; gap: 4px; }
             .topbar-nav { display: none; }
         }
 
@@ -457,7 +329,7 @@
             .topbar, .toc, footer .links { display: none; }
             .layout { grid-template-columns: 1fr; padding: 0; }
             section.chapter { border: none; padding: 16px 0; page-break-inside: avoid; }
-            body { background: #fff; }
+            body { background: #fff; color: #000; }
         }
     </style>
 </head>

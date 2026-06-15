@@ -9,36 +9,36 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⭐%3C/text%3E%3C/svg%3E">
     <style>
         /* =====================================================================
-         * Starcat — 法律文档样式系统(明亮主题)
+         * Starcat — 法律文档样式系统 (暗色主题)
          * --------------------------------------------------------------------
-         * 与 eula-zh.html 共用同一套设计变量与组件,保持两份文档视觉一致
+         * 与 eula-zh.html、faq-zh.html 共用同一套设计变量与组件
          * 设计原则:
-         *   1. Apple 法律页风格:大量留白、克制色板、清晰字阶
-         *   2. 双栏布局(桌面):左侧目录 sticky,右侧正文卡片
+         *   1. 暗色模式优先,高对比度、低亮度,适合长时间阅读
+         *   2. 双栏布局 (桌面):左侧目录 sticky,右侧正文卡片
          *   3. 移动端折叠为单栏,目录变为顶部展开式
-         *   4. 排版优先 SF Pro / PingFang SC,确保中英混排美观
-         *   5. 表格用于披露 Apple "数据类型 — 用途 — 是否关联用户"清单
+         *   4. 排版优先 PingFang SC / IBM Plex Sans,确保中英混排美观
+         *   5. 绿色强调色,传递代码/开发者工具气质
          * ===================================================================== */
 
         :root {
-            --color-bg: #ffffff;
-            --color-bg-soft: #fbfbfd;
-            --color-card: #ffffff;
-            --color-border: #d2d2d7;
-            --color-border-soft: #e5e5e7;
-            --color-text: #1d1d1f;
-            --color-text-secondary: #424245;
-            --color-text-tertiary: #6e6e73;
-            --color-primary: #0071e3;
-            --color-primary-hover: #0077ed;
-            --color-accent: #ff9500;
-            --color-success: #30a46c;
-            --color-warning-bg: #fff8e6;
-            --color-warning-border: #ffd60a;
-            --color-info-bg: #f0f7ff;
-            --color-info-border: #b3d7ff;
-            --color-success-bg: #ecfdf3;
-            --color-success-border: #b6e8c8;
+            --color-bg: #0F172A;
+            --color-bg-soft: #1E293B;
+            --color-card: #1E293B;
+            --color-border: #475569;
+            --color-border-soft: #334155;
+            --color-text: #F8FAFC;
+            --color-text-secondary: #CBD5E1;
+            --color-text-tertiary: #94A3B8;
+            --color-primary: #22C55E;
+            --color-primary-hover: #4ADE80;
+            --color-accent: #F59E0B;
+            --color-success: #22C55E;
+            --color-warning-bg: rgba(245, 158, 11, 0.12);
+            --color-warning-border: #F59E0B;
+            --color-info-bg: rgba(34, 197, 94, 0.08);
+            --color-info-border: rgba(34, 197, 94, 0.25);
+            --color-success-bg: rgba(34, 197, 94, 0.1);
+            --color-success-border: rgba(34, 197, 94, 0.3);
 
             --fs-hero: 48px;
             --fs-h2: 28px;
@@ -50,10 +50,9 @@
             --radius: 14px;
             --radius-sm: 8px;
 
-            --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text",
-                         "PingFang SC", "Microsoft YaHei", "Helvetica Neue",
-                         Arial, sans-serif;
-            --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+            --font-sans: "PingFang SC", -apple-system, BlinkMacSystemFont, "IBM Plex Sans",
+                         "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+            --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
         }
 
         * { box-sizing: border-box; }
@@ -65,11 +64,11 @@
 
         body {
             margin: 0;
-            background: var(--color-bg-soft);
+            background: var(--color-bg);
             color: var(--color-text);
             font-family: var(--font-sans);
             font-size: var(--fs-body);
-            line-height: 1.6;
+            line-height: 1.65;
             letter-spacing: 0.01em;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
@@ -78,17 +77,17 @@
         a {
             color: var(--color-primary);
             text-decoration: none;
-            transition: color .15s ease;
+            transition: color .2s ease;
         }
         a:hover { color: var(--color-primary-hover); text-decoration: underline; }
 
         code {
-            background: #f0f0f3;
+            background: rgba(255,255,255,0.08);
             border-radius: 4px;
             padding: 2px 6px;
             font-family: var(--font-mono);
             font-size: 0.9em;
-            color: #1d1d1f;
+            color: #E2E8F0;
         }
 
         /* ─────────────  顶部导航  ───────────── */
@@ -96,7 +95,7 @@
             position: sticky;
             top: 0;
             z-index: 50;
-            background: rgba(255, 255, 255, .8);
+            background: rgba(15, 23, 42, .85);
             backdrop-filter: saturate(180%) blur(20px);
             -webkit-backdrop-filter: saturate(180%) blur(20px);
             border-bottom: 1px solid var(--color-border-soft);
@@ -115,17 +114,17 @@
         }
         .brand-logo {
             width: 28px; height: 28px; border-radius: 7px;
-            background: linear-gradient(135deg, #0071e3 0%, #5e9eff 100%);
+            background: linear-gradient(135deg, #22C55E 0%, #4ADE80 100%);
             display: inline-flex; align-items: center; justify-content: center;
-            color: #fff; font-size: 16px;
+            color: #0F172A; font-size: 16px; font-weight: 700;
         }
         .topbar-nav { display: flex; gap: 28px; font-size: 14px; }
         .topbar-nav a { color: var(--color-text-secondary); font-weight: 400; }
-        .topbar-nav a.active { color: var(--color-text); font-weight: 500; }
+        .topbar-nav a.active { color: var(--color-primary); font-weight: 500; }
 
         /* ─────────────  Hero  ───────────── */
         .hero {
-            background: linear-gradient(180deg, #ffffff 0%, var(--color-bg-soft) 100%);
+            background: linear-gradient(180deg, #1E293B 0%, var(--color-bg) 100%);
             padding: 72px 24px 56px;
             border-bottom: 1px solid var(--color-border-soft);
         }
@@ -191,7 +190,7 @@
             color: var(--color-text-secondary);
             border-radius: var(--radius-sm);
             position: relative;
-            transition: all .15s ease;
+            transition: all .2s ease;
             line-height: 1.4;
         }
         .toc a::before {
@@ -204,8 +203,8 @@
             font-weight: 500;
         }
         .toc a:hover {
-            background: #f0f0f3;
-            color: var(--color-text);
+            background: rgba(255,255,255,0.06);
+            color: var(--color-primary);
             text-decoration: none;
         }
 
@@ -224,7 +223,7 @@
         }
         .lead strong { color: var(--color-text); }
 
-        /* 隐私承诺卡片(置顶,突出我们"不做什么") */
+        /* 隐私承诺卡片 */
         .pledge {
             background: var(--color-success-bg);
             border: 1px solid var(--color-success-border);
@@ -235,7 +234,7 @@
         .pledge h3 {
             margin: 0 0 14px;
             font-size: 18px;
-            color: #0a6b3d;
+            color: #4ADE80;
             display: flex; align-items: center; gap: 8px;
         }
         .pledge ul {
@@ -247,7 +246,7 @@
             gap: 10px 24px;
         }
         .pledge li {
-            color: #18452f;
+            color: #A7F3D0;
             font-size: 14.5px;
             line-height: 1.5;
             padding-left: 22px;
@@ -268,7 +267,9 @@
             padding: 36px 40px;
             margin: 0 0 28px;
             scroll-margin-top: 88px;
+            transition: border-color .2s ease;
         }
+        section.chapter:hover { border-color: var(--color-border); }
         section.chapter h2 {
             font-size: var(--fs-h2);
             font-weight: 700;
@@ -281,7 +282,7 @@
         section.chapter h2 .num {
             display: inline-block;
             font-size: 14px;
-            color: var(--color-text-tertiary);
+            color: var(--color-primary);
             font-weight: 500;
             margin-right: 12px;
             font-variant-numeric: tabular-nums;
@@ -310,7 +311,7 @@
             overflow: hidden;
         }
         .data-table th {
-            background: #f5f5f7;
+            background: rgba(255,255,255,0.04);
             color: var(--color-text);
             font-weight: 600;
             text-align: left;
@@ -328,7 +329,7 @@
             line-height: 1.55;
         }
         .data-table tr:last-child td { border-bottom: none; }
-        .data-table tr:hover td { background: #fafafa; }
+        .data-table tr:hover td { background: rgba(255,255,255,0.03); }
         .data-table .col-cat { font-weight: 600; color: var(--color-text); width: 22%; }
         .data-table .col-cat .sub {
             display: block;
@@ -348,10 +349,10 @@
             text-transform: uppercase;
             letter-spacing: 0.04em;
         }
-        .badge-local { background: #ecfdf3; color: #0a6b3d; }
-        .badge-cloud { background: #e6f4ff; color: #0958d9; }
-        .badge-keychain { background: #fff4e6; color: #ad6800; }
-        .badge-server { background: #fff0f6; color: #c41d7f; }
+        .badge-local { background: rgba(34,197,94,0.15); color: #4ADE80; }
+        .badge-cloud { background: rgba(56,189,248,0.15); color: #7DD3FC; }
+        .badge-keychain { background: rgba(245,158,11,0.15); color: #FBBF24; }
+        .badge-server { background: rgba(244,114,182,0.15); color: #F9A8D4; }
 
         /* Callouts */
         .callout {
@@ -361,7 +362,7 @@
             font-size: 15px;
             line-height: 1.65;
             border-left: 3px solid var(--color-border);
-            background: var(--color-bg-soft);
+            background: rgba(255,255,255,0.03);
             color: var(--color-text-secondary);
         }
         .callout.warning { background: var(--color-warning-bg); border-left-color: var(--color-warning-border); }
@@ -392,7 +393,7 @@
 
         /* ─────────────  Footer  ───────────── */
         footer.site-footer {
-            background: #ffffff;
+            background: var(--color-bg-soft);
             border-top: 1px solid var(--color-border-soft);
             padding: 40px 24px;
             color: var(--color-text-tertiary);
@@ -415,7 +416,7 @@
             }
             .toc {
                 position: relative; top: auto; max-height: none;
-                background: #ffffff;
+                background: var(--color-card);
                 border: 1px solid var(--color-border-soft);
                 border-radius: var(--radius);
                 padding: 16px;
@@ -435,7 +436,7 @@
             .topbar, .toc, footer .links { display: none; }
             .layout { grid-template-columns: 1fr; padding: 0; }
             section.chapter { border: none; padding: 16px 0; page-break-inside: avoid; }
-            body { background: #fff; }
+            body { background: #fff; color: #000; }
         }
     </style>
 </head>
