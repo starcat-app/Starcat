@@ -9838,7 +9838,6 @@
       }
     },
     "search.searching" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12743,6 +12742,91 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "对话历史"
+          }
+        }
+      }
+    },
+    "settings.storage.chatHistoryBackend.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose where new AI chat history is stored. Restart Starcat after changing this setting; existing data is not migrated automatically."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择新的 AI 对话历史写入位置。修改后重启 Starcat 生效；已有数据不会自动迁移。"
+          }
+        }
+      }
+    },
+    "settings.storage.chatHistoryBackend.jsonFiles" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JSON Files"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JSON 文件"
+          }
+        }
+      }
+    },
+    "settings.storage.chatHistoryBackend.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat History Storage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对话历史存储"
+          }
+        }
+      }
+    },
+    "settings.storage.chatHistoryBackend.sqlite" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SQLite"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SQLite"
+          }
+        }
+      }
+    },
+    "settings.storage.chatHistoryBackend.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Storage Backend"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存储后端"
           }
         }
       }
