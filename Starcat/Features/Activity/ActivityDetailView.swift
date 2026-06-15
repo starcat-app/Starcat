@@ -316,7 +316,7 @@ struct ActivityDetailView: View {
             ) { didCopy in
                 Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.clipboard")
                     .foregroundStyle(didCopy ? Color.green : Color.primary)
-                    .contentTransition(.symbolEffect(.replace))
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
             }
 
             if let url = URL(string: asset.browserDownloadUrl) {

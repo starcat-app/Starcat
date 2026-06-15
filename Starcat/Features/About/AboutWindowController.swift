@@ -51,7 +51,12 @@ final class AboutWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private init() {
-        let hostingController = NSHostingController(rootView: AboutView())
+        // About 同样是 AppKit 独立窗口，不继承 WindowGroup 的环境。
+        // modifier 必须写在 environment 之前，让其内部能读到 AppSettings。
+        let content = AboutView()
+            .starcatAnimationOverride()
+            .environment(AppSettings.shared)
+        let hostingController = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hostingController)
 
         window.title = String(localized: "app.about")

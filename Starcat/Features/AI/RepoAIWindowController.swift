@@ -138,6 +138,9 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
                 window?.close()
             }
         )
+            // AI 助手是 AppKit 自建 NSWindow，不在 StarcatApp.WindowGroup
+            // 环境子树内；必须独立挂动画策略，否则设置开关在此窗口失效。
+            .starcatAnimationOverride()
             .environment(dependencies)
             .environment(dependencies.authSession)
             .environment(dependencies.settings)
