@@ -13,11 +13,13 @@ struct IntegrationSettingsTab: View {
     @Environment(AppSettings.self) private var settings
     /// CodeFlow 生成物不进数据库，设置页直接观察文件系统扫描结果。
     @State private var storage = CodeFlowStorage.shared
-    @State private var showsClearConfirmation = false
     @State private var actionError: String?
     @State private var anySearchAPIKey: String = ""
     @State private var showAnySearchAPIKey: Bool = false
     @State private var anySearchAPIKeyTestState: AnySearchAPIKeyTestState = .idle
+    // HOM-68 v3 (2026-06-15)：CodeFlow"一键清除"按钮搬到 存储 Tab → 缓存用量。
+    // 本 Tab 仅保留"精细化操作"（输出目录配置、单项目预览/打开/删除）。
+    // → 与 AISettingsView.repoContextManageStorageRow 同款职责划分。
 
     var body: some View {
         Form {
@@ -81,25 +83,12 @@ struct IntegrationSettingsTab: View {
                     ForEach(storage.projects) { project in
                         projectRow(project)
                     }
-
-                    HStack {
-                        Spacer()
-                        Button("一键清除", role: .destructive) {
-                            showsClearConfirmation = true
-                        }
-                    }
                 }
             }
         }
         .formStyle(.grouped)
         .task { storage.reload() }
         .task { anySearchAPIKey = settings.anySearchAPIKey() ?? "" }
-        .alert("清除全部 CodeFlow 数据？", isPresented: $showsClearConfirmation) {
-            Button("取消", role: .cancel) {}
-            Button("全部清除", role: .destructive) { clearAllProjects() }
-        } message: {
-            Text("将删除当前输出目录中的全部 CodeFlow HTML 与 metadata。共享源码 ZIP 不会被删除。")
-        }
         .alert("CodeFlow 操作失败", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -336,13 +325,6 @@ struct IntegrationSettingsTab: View {
         }
     }
 
-    private func clearAllProjects() {
-        do {
-            try storage.deleteAllProjects()
-        } catch {
-            actionError = error.localizedDescription
-        }
-    }
 }
 
 private enum AnySearchAPIKeyTestState: Equatable {

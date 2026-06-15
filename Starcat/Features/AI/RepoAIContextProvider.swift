@@ -33,8 +33,23 @@ import Foundation
 ///
 /// Y2 决议（2026-06-13）：除了 context xml 路径外，还透传 `PackMetadata`，让 UI 层
 /// （RepoAIWindowContentView footer）能显示"基于 commit abc123、消耗 4280 tokens 生成"。
+///
+/// 2026-06-14 silent failure 修复：新增 `xml: String` 字段。原设计只返回 `url: URL`，
+/// 让 `RepoAIInsightService.makeSource` 在 security scope 外 `String(contentsOf:)` 读 xml；
+/// 用户把 RepoContext 输出根目录改成自选文件夹时（需要 security scope），读 xml 必失败、
+/// 被 `try?` 吞掉，contextMetadata 永远 nil → UI footer 第二行 / ⋯ 菜单第二项一并丢失。
+/// 把 xml 读取移进 provider 内部（在 `withOutputRoot` 内通过 `storage.loadContextXml(...)`
+/// 完成），通过本字段透传给 caller，杜绝跨 scope 边界的失败路径。
 struct RepoAIContextResult: Sendable {
+    /// context.xml 文件路径。**调用方不应直接 `String(contentsOf:)`**——
+    /// security scope 已在 provider 返回前关闭，跨 scope 读取会失败。需要文件全文请用 `xml`；
+    /// 需要 Finder 跳转请走 `RepoContextStorage.revealProject(_:)`（内部自己 withOutputRoot）。
     let url: URL
+
+    /// `context.xml` 文件全文（已在 security scope 内读好）。
+    /// 上层（service）直接消费此字符串，不再做任何文件 IO。
+    let xml: String
+
     let metadata: PackMetadata
 }
 
@@ -200,10 +215,19 @@ struct RepoAIContextProvider {
            existing.metadata.tierRulesVersion == currentTierRulesVersion {
             // 命中缓存 → 刷新 lastAccessedAt 让 UI 列表能按"最近使用"排序
             try? storage.touch(owner: repo.owner, repo: repo.name)
+            // 2026-06-14 silent failure 修复：在 security scope 内读好 xml 再透传给 caller。
+            // 读不到（外部删了 xml 文件 / 自选目录权限掉了）当作"缓存损坏"抛错，让外层
+            // catch 把它分类成 .degraded，UI 显示 banner 而不是静默丢失。
+            guard let xml = try storage.loadContextXml(owner: repo.owner, repo: repo.name) else {
+                AppLog.ai.warning(
+                    "[RepoAIContextProvider] cache hit but context.xml unreadable for \(repo.fullName, privacy: .public)"
+                )
+                throw RepoContextStorageError.outputDirectoryUnavailable
+            }
             AppLog.ai.debug(
                 "[RepoAIContextProvider] cache hit for \(repo.fullName, privacy: .public) sha=\(branch.commitSHA.prefix(7), privacy: .public)"
             )
-            return RepoAIContextResult(url: existing.contextURL, metadata: existing.metadata)
+            return RepoAIContextResult(url: existing.contextURL, xml: xml, metadata: existing.metadata)
         }
 
         // ④ 不命中 → 走完整 pipeline：下载 ZIP + Packer
@@ -237,7 +261,16 @@ struct RepoAIContextProvider {
         let resolvedMetadata = stored?.metadata ?? makePlaceholderMetadata(
             input: input, output: output, tokenEstimatorVersion: TierRules.tokenEstimatorVersion
         )
-        return RepoAIContextResult(url: output.contextURL, metadata: resolvedMetadata)
+        // 2026-06-14 silent failure 修复：与缓存命中路径同款 —— 在 security scope 内读好 xml
+        // 再透传给 caller。packer 刚写完 xml 又立刻读，正常情况下必定成功；读不到说明
+        // 存储层异常（极少触发），按"已降级"抛错让 UI 给出反馈而不是 silent failure。
+        guard let xml = try storage.loadContextXml(owner: repo.owner, repo: repo.name) else {
+            AppLog.ai.error(
+                "[RepoAIContextProvider] packed but context.xml unreadable for \(repo.fullName, privacy: .public)"
+            )
+            throw RepoContextStorageError.outputDirectoryUnavailable
+        }
+        return RepoAIContextResult(url: output.contextURL, xml: xml, metadata: resolvedMetadata)
     }
 
     /// 极少触发的兜底（storage 写盘成功但 existingProject 又读不出）：用 input + output 拼一个

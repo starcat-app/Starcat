@@ -400,8 +400,14 @@ private struct RepoCardInlineMetadataBadge: View {
 
 /// 语义搜索命中分数 chip。
 ///
-/// 紫色 capsule + sparkles + 百分比，悬停 tooltip 显示命中原因（reason）。
+/// 紫色 capsule + sparkles + 百分比 + 档位星号，悬停 tooltip 显示命中原因（reason）。
 /// 仅在 Manage 场景的 RepoListView 通过 `viewModel.semanticHit(for:)` 注入。
+///
+/// **2026-06-14 dong4j 改造（A 重标定）**：
+/// - 百分数源从原始 cosine `hit.score` 改成重标定后的 `hit.displayScore`，
+///   与设置页 75% 阈值滑杆同语义。原始 cosine 在文本 embedding 模型下值域偏移大
+///   （0.30 ≈ 完全无关，0.95 ≈ 高度相关），直接 ×100 显示反直觉。
+/// - 新增 `hit.tier` 1-4 档星号（★ ★★ ★★★ ★★★★），给用户一个抗精确数字解读的视觉强度。
 ///
 /// R-01 §3.1.5 之前定义在 `Features/Home/RepoRowView.swift`，Step 7.2 删除该旧文件后
 /// 一并迁移到 UnifiedRepoRow.swift（唯一调用方），保持单一真源。
@@ -411,6 +417,8 @@ struct SemanticScoreBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "sparkles")
+                .font(.system(size: 9, weight: .bold))
+            Text(tierStars)
                 .font(.system(size: 9, weight: .bold))
             Text(scoreText)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -426,7 +434,13 @@ struct SemanticScoreBadge: View {
     }
 
     private var scoreText: String {
-        "\(Int((max(0, min(hit.score, 1)) * 100).rounded()))%"
+        "\(Int((max(0, min(hit.displayScore, 1)) * 100).rounded()))%"
+    }
+
+    /// 1-4 档星号：★ / ★★ / ★★★ / ★★★★。
+    /// tier 在 SemanticSearchService 计算时已 clamp 到 1-4，这里安全 unwrap。
+    private var tierStars: String {
+        String(repeating: "★", count: max(1, min(4, hit.tier)))
     }
 }
 

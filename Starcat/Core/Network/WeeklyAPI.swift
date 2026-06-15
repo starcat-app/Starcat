@@ -200,6 +200,60 @@ actor WeeklyAPI {
         }
     }
 
+    /// 拉取 bulk endpoint：一次性返回 weekly 全量 repos + languages 聚合。
+    ///
+    /// R-06.4（2026-06-15）客户端接入：
+    /// - 不接受任何 query 参数（后端 endpoint 设计为"全量未过滤数据"，客户端拿全量后本地
+    ///   做 source/lang/sort/page 过滤）。
+    /// - `URLSession` 默认会带 `Accept-Encoding: gzip, deflate, br` 并自动解压（Foundation
+    ///   底层 NSURLSessionTask 在 Darwin 上由 CFNetwork 处理），所以我们读到的 `data` 已经
+    ///   是解压后的 JSON 字节流；服务端 `Content-Encoding: gzip` 对调用方完全透明。
+    /// - 不做 conditional GET 304：本地缓存层（`WeeklyBulkRepository`）已经用 12h TTL 做
+    ///   "客户端是否要发请求"的总闸；ETag 304 仅用于"绝对要发 + 但 server 也没变"的极少数
+    ///   场景，加 304 处理会让客户端代码量翻倍而收益微小（典型场景是用户在 TTL 内强制刷新，
+    ///   此时本来就是为了拿"server 真值"，304 反而需要 fallback 到本地 + 还得维护 ETag）。
+    func fetchBulkRepos() async throws -> WeeklyBulkResult {
+        let endpoint = AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.reposBulk, to: baseURL)
+        let (data, response) = try await performRequestWithResponse(url: endpoint)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw WeeklyAPIError.transport(underlying: URLError(.badServerResponse))
+        }
+        guard (200...299).contains(http.statusCode) else {
+            if let envelopeError = try? decoder.decode(StarcatErrorEnvelope.self, from: data) {
+                throw WeeklyAPIError.serverError(
+                    message: "[\(envelopeError.error.code)] \(envelopeError.error.message)"
+                )
+            }
+            let raw = String(data: data, encoding: .utf8)
+            throw WeeklyAPIError.serverError(message: raw)
+        }
+
+        do {
+            let envelope = try decoder.decode(StarcatEnvelope<WeeklyBulkDataDTO>.self, from: data)
+            if !envelope.isSupported {
+                AppLog.network.warning(
+                    "weekly bulk envelope schema_version=\(envelope.schemaVersion, privacy: .public) > supported=\(StarcatEnvelopeSchema.supported, privacy: .public); 部分新字段可能未识别，建议升级 Starcat"
+                )
+            }
+            let items = envelope.data.repos.map(WeeklyFeedItem.init(dto:))
+            // 服务端 ETag header 透传到客户端用于将来 conditional GET（当前不做 304）。
+            let etag = http.value(forHTTPHeaderField: "ETag")
+            let generatedAt = envelope.meta?.generatedAt
+            return WeeklyBulkResult(
+                items: items,
+                languages: envelope.data.languages,
+                etag: etag,
+                generatedAt: generatedAt,
+                total: envelope.meta?.total ?? items.count
+            )
+        } catch let error as WeeklyAPIError {
+            throw error
+        } catch {
+            throw WeeklyAPIError.decodingError(underlying: error)
+        }
+    }
+
     /// 获取三源聚合语言列表，用于 Weekly 语言筛选。
     func fetchLanguages() async throws -> [TrendingLanguageAggregateDTO] {
         let endpoint = AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.languages, to: baseURL)
@@ -277,4 +331,34 @@ struct WeeklyFeedListResult: Equatable {
 
     /// 是否还有下一页：R-05 规定唯一真源是 `meta.next_page`。
     var hasMore: Bool { nextPage != nil }
+}
+
+// MARK: - Bulk
+
+/// `/api/v1/repos/bulk` 返回的 envelope.data 段 schema。
+///
+/// R-06.4：内部 DTO，仅供 `WeeklyAPI.fetchBulkRepos` 解码后映射到 `WeeklyBulkResult` 后销毁，
+/// 不在 ViewModel / Repository 之间传递。
+struct WeeklyBulkDataDTO: Decodable, Equatable, Sendable {
+    let repos: [WeeklyFeedRepoDTO]
+    let languages: [TrendingLanguageAggregateDTO]
+}
+
+/// bulk endpoint 领域返回：DTO 已转 `WeeklyFeedItem`，languages 透传，meta 字段保留供
+/// `WeeklyBulkRepository` 写入 `weekly_bulk_meta` 表。
+///
+/// R-06.4（2026-06-15）：与 `WeeklyFeedListResult` 并列，区别是 bulk 无分页字段 +
+/// 多了 etag / generatedAt 两个 cache meta。
+struct WeeklyBulkResult: Equatable, Sendable {
+    let items: [WeeklyFeedItem]
+    let languages: [TrendingLanguageAggregateDTO]
+    /// 服务端响应 `ETag` header（如 `W/"abc123de"`）。当前不做 conditional GET 304，但
+    /// 落盘是为了将来"server 主动 push schedule 变更后客户端能在 12h TTL 内 ad-hoc 提早
+    /// 失效"等扩展场景。
+    let etag: String?
+    /// 服务端 envelope.meta.generated_at（payload 构建时刻，ISO8601）。与 client-side
+    /// `lastFetchedAt` 拉开语义：generated_at 是"服务端 payload 新鲜度"，lastFetchedAt 是
+    /// "客户端 byte 到达时刻"，两者可能差几秒（gzip + 网络往返）。
+    let generatedAt: String?
+    let total: Int
 }

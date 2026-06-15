@@ -72,6 +72,11 @@ struct WeeklyDetailView: View {
 
     let item: WeeklyFeedItem?
 
+    /// 2026-06-15:外层 0.4s easeOut 包裹的 detail transition 在「关闭应用内动画」
+    /// 时降级为瞬切(.detailContentTransition() 内部已按 reduceMotion 兜底为 .opacity,
+    /// 这里再守住 .animation 包裹时长 = 0)。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let item {
@@ -90,21 +95,17 @@ struct WeeklyDetailView: View {
         // 监听 project.id 变化,用 0.4s easeOut 包裹 shell removal + insertion,
         // 让 .detailContentTransition() 的非对称 transition(insertion: opacity + offset y:14
         // / removal: 仅 opacity)在 0.4s 内完成插值 — 视觉上"轻轻落下"。
-        .animation(.easeOut(duration: 0.4), value: item?.id ?? 0)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: item?.id ?? 0)
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "newspaper")
-                .font(.system(size: 42))
-                .foregroundStyle(.tertiary)
-            Text("weekly.detail.emptyTitle")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text("weekly.detail.emptySubtitle")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
+        EmptyStateView(
+            systemImage: "newspaper",
+            title: "weekly.detail.emptyTitle",
+            subtitle: "weekly.detail.emptySubtitle",
+            iconSize: 42,
+            spacing: 12
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }

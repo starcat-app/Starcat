@@ -40,6 +40,8 @@ struct GithubAuthView: View {
 
     @Environment(AuthSession.self) private var authSession
     @Environment(\.dismiss) private var dismiss
+    /// 2026-06-15:auth 卡片状态切换 0.28s smooth 动画在「关闭应用内动画」时跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     /// awaitingCode 态 code 卡片的复制反馈状态机。
     /// - `.idle`：等待用户操作
@@ -113,7 +115,7 @@ struct GithubAuthView: View {
                 .stroke(Color.primary.opacity(0.06), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.08), radius: 18, x: 0, y: 8)
-        .animation(.smooth(duration: 0.28), value: derivedState)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.28), value: derivedState)
     }
 
     // MARK: - Hero

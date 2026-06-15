@@ -268,37 +268,120 @@ struct TrendingTests {
     // MARK: - 智能 revision 行为（2026-06-02 新增，配合"消除二次入场动画"改造）
 
     @MainActor
-    @Test("TrendingViewModel.reload(forceNetwork: false): cache hit skips network call")
-    func reloadCacheHitSkipsNetworkWhenForceFalse() async throws {
+    @Test("TrendingViewModel.reload(.respectTTL): cache hit + TTL 内 skips network call")
+    func reloadCacheHitWithinTTLSkipsNetwork() async throws {
         let cachedRepos = [
             makeTrendingRepo(fullName: "owner/a"),
             makeTrendingRepo(fullName: "owner/b")
         ]
-        let stub = StubTrendingRepository(repos: cachedRepos, cached: cachedRepos)
+        // 缓存 1h 前刷过（远低于 24h TTL），.respectTTL 应跳过网络
+        let stub = StubTrendingRepository(
+            repos: cachedRepos,
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -3_600)
+        )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
-        await vm.reload(forceNetwork: false)
+        await vm.reload(cachePolicy: .respectTTL)
 
         #expect(vm.repos.count == 2)
         let count = await stub.fetchCallCount
-        #expect(count == 0, "cache hit + forceNetwork=false should skip network entirely")
+        #expect(count == 0, "cache hit + TTL 内 + .respectTTL should skip network entirely")
         #expect(vm.reposRevision == 1, "cache surface should still bump revision once for first-paint reveal")
     }
 
     @MainActor
-    @Test("TrendingViewModel.reload(forceNetwork: true): cache hit still calls network")
-    func reloadCacheHitFetchesWhenForceTrue() async throws {
+    @Test("TrendingViewModel.reload(.forceNetwork): cache hit still calls network")
+    func reloadCacheHitFetchesWhenForceNetwork() async throws {
         let cachedRepos = [
             makeTrendingRepo(fullName: "owner/a"),
             makeTrendingRepo(fullName: "owner/b")
         ]
-        let stub = StubTrendingRepository(repos: cachedRepos, cached: cachedRepos)
+        let stub = StubTrendingRepository(
+            repos: cachedRepos,
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -60)  // 即便 1 分钟前刚刷过
+        )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
-        await vm.reload(forceNetwork: true)
+        await vm.reload(cachePolicy: .forceNetwork)
 
         let count = await stub.fetchCallCount
-        #expect(count == 1, "forceNetwork=true should always fetch")
+        #expect(count == 1, ".forceNetwork should always fetch even within TTL")
+    }
+
+    // MARK: - R-06.1 TTL 边界单测
+
+    @MainActor
+    @Test("TrendingViewModel.reload(.respectTTL): cache hit + TTL 过期 → 走网络")
+    func reloadCacheHitBeyondTTLFetchesNetwork() async throws {
+        let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
+        // 缓存 25 小时前刷过（> 24h TTL），.respectTTL 应回退到网络
+        let stub = StubTrendingRepository(
+            repos: cachedRepos,
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -90_000)  // 25 hours ago
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(cachePolicy: .respectTTL)
+
+        let count = await stub.fetchCallCount
+        #expect(count == 1, "TTL 过期 → .respectTTL 也要走网络（自动后台刷新）")
+    }
+
+    @MainActor
+    @Test("TrendingViewModel.reload(.respectTTL): cache hit + 边界刚过 TTL → 走网络")
+    func reloadCacheHitJustBeyondTTLFetches() async throws {
+        let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
+        // TTL=86400，刚过 1 秒，应判定过期
+        let stub = StubTrendingRepository(
+            repos: cachedRepos,
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -(TrendingViewModel.trendingTTL + 1))
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(cachePolicy: .respectTTL)
+
+        let count = await stub.fetchCallCount
+        #expect(count == 1, "刚过 TTL 1 秒就应走网络")
+    }
+
+    @MainActor
+    @Test("TrendingViewModel.reload(.respectTTL): cache hit + 边界刚到 TTL 内 → 跳过网络")
+    func reloadCacheHitWithinTTLBoundaryNoFetch() async throws {
+        let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
+        // TTL=86400，刚好差 1 秒，仍在 TTL 内
+        let stub = StubTrendingRepository(
+            repos: cachedRepos,
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -(TrendingViewModel.trendingTTL - 1))
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(cachePolicy: .respectTTL)
+
+        let count = await stub.fetchCallCount
+        #expect(count == 0, "差 1 秒到 TTL 应继续走缓存")
+    }
+
+    @MainActor
+    @Test("TrendingViewModel.reload(.respectTTL): lastRefreshedAt = nil 永远拉网络")
+    func reloadCacheHitWithoutLastRefreshedAtFetchesNetwork() async throws {
+        // 异常路径：repository 返回 cached 数据但没记录 lastRefreshedAt（理论上不可能，但加单测兜底防御）
+        let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
+        let stub = StubTrendingRepository(
+            repos: cachedRepos,
+            cached: cachedRepos,
+            lastRefreshedAt: nil
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(cachePolicy: .respectTTL)
+
+        let count = await stub.fetchCallCount
+        #expect(count == 1, "lastRefreshedAt 缺失 → 保守判定为 TTL 外，走网络")
     }
 
     @MainActor
@@ -316,7 +399,7 @@ struct TrendingTests {
         let stub = StubTrendingRepository(repos: fresh, cached: cached)
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
-        await vm.reload(forceNetwork: true)
+        await vm.reload(cachePolicy: .forceNetwork)
 
         // 第一阶段缓存上屏 bump revision (revision=1)
         // 第二阶段网络回来发现 fullName 序列相同 → NOT bump (revision stays 1)
@@ -340,7 +423,7 @@ struct TrendingTests {
         let stub = StubTrendingRepository(repos: fresh, cached: cached)
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
-        await vm.reload(forceNetwork: true)
+        await vm.reload(cachePolicy: .forceNetwork)
 
         // 第一阶段缓存上屏 +1，第二阶段身份变化 +1，共 2
         #expect(vm.reposRevision == 2, "identity changed should bump revision again")
@@ -348,16 +431,16 @@ struct TrendingTests {
     }
 
     @MainActor
-    @Test("TrendingViewModel.reload: empty cache forces network even when forceNetwork=false")
+    @Test("TrendingViewModel.reload: empty cache forces network even with .respectTTL")
     func reloadEmptyCacheForcesNetwork() async throws {
         let fresh = [makeTrendingRepo(fullName: "owner/a")]
         let stub = StubTrendingRepository(repos: fresh, cached: [])
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
-        await vm.reload(forceNetwork: false)
+        await vm.reload(cachePolicy: .respectTTL)
 
         let count = await stub.fetchCallCount
-        #expect(count == 1, "empty cache must always fetch, regardless of forceNetwork")
+        #expect(count == 1, "empty cache must always fetch, regardless of cachePolicy")
         #expect(vm.repos.count == 1)
     }
 
@@ -372,9 +455,9 @@ struct TrendingTests {
         )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
-        await vm.reload(forceNetwork: false)
+        await vm.reload(cachePolicy: .respectTTL)
 
-        // 缓存命中 + forceNetwork=false：lastRefreshedAt 应该来自 repository（120s 前）
+        // 缓存命中 + .respectTTL + TTL 内：lastRefreshedAt 应该来自 repository（120s 前）
         #expect(vm.lastRefreshedAt != nil)
         let secs = vm.secondsSinceLastRefresh ?? 0
         #expect(secs >= 100 && secs <= 200, "should be roughly 120s ago")
@@ -382,9 +465,10 @@ struct TrendingTests {
     }
 
     @MainActor
-    @Test("TrendingViewModel: isStale true when last refresh > 1 hour ago")
-    func isStaleAfterOneHour() async throws {
-        let timestamp = Date(timeIntervalSinceNow: -7200)  // 2 小时前
+    @Test("TrendingViewModel: isStale true when last refresh > 20 hours ago")
+    func isStaleAfter20Hours() async throws {
+        // R-06.1: isStale 阈值从 1h 调到 20h（80% TTL 预警）。21h 前应判定 stale
+        let timestamp = Date(timeIntervalSinceNow: -75_600)  // 21 小时前
         let stub = StubTrendingRepository(
             repos: [],
             cached: [makeTrendingRepo(fullName: "owner/a")],
@@ -392,15 +476,16 @@ struct TrendingTests {
         )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
-        await vm.reload(forceNetwork: false)
+        await vm.reload(cachePolicy: .respectTTL)
 
         #expect(vm.isStale == true)
     }
 
     @MainActor
-    @Test("TrendingViewModel: isStale false when last refresh < 1 hour ago")
-    func isStaleFalseWhenRecent() async throws {
-        let timestamp = Date(timeIntervalSinceNow: -300)   // 5 分钟前
+    @Test("TrendingViewModel: isStale false when last refresh < 20 hours ago")
+    func isStaleFalseWhenWithin20Hours() async throws {
+        // R-06.1: 2h 前不再算 stale（旧阈值 1h 时算，新阈值 20h 不算）
+        let timestamp = Date(timeIntervalSinceNow: -7_200)  // 2 小时前
         let stub = StubTrendingRepository(
             repos: [],
             cached: [makeTrendingRepo(fullName: "owner/a")],
@@ -408,15 +493,15 @@ struct TrendingTests {
         )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
-        await vm.reload(forceNetwork: false)
+        await vm.reload(cachePolicy: .respectTTL)
 
-        #expect(vm.isStale == false)
+        #expect(vm.isStale == false, "20h 阈值下，2h 前不算 stale")
     }
 
     @MainActor
     @Test("TrendingViewModel: lastRefreshedAt updated to now after successful network fetch")
     func lastRefreshedAtUpdatedAfterFetch() async throws {
-        let oldTimestamp = Date(timeIntervalSinceNow: -3600)
+        let oldTimestamp = Date(timeIntervalSinceNow: -90_000)  // 25h 前（TTL 外，会触发拉网络）
         let stub = StubTrendingRepository(
             repos: [makeTrendingRepo(fullName: "owner/a")],
             cached: [makeTrendingRepo(fullName: "owner/a")],
@@ -424,7 +509,7 @@ struct TrendingTests {
         )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
-        await vm.reload(forceNetwork: true)
+        await vm.reload(cachePolicy: .forceNetwork)
 
         // 网络成功 → lastRefreshedAt 应该被更新为 Date()（接近 now）
         let secs = vm.secondsSinceLastRefresh ?? Double.greatestFiniteMagnitude

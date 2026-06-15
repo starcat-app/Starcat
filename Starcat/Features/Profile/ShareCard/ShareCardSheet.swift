@@ -86,7 +86,7 @@ struct ShareCardSheet: View {
 
     /// 行动按钮 hover 反馈的动画时长（秒）。reduceMotion 模式下归零。
     /// 抽出来是为了三个按钮的 hover 动画时长保持一致。
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -103,10 +103,10 @@ struct ShareCardSheet: View {
                     // "在做事 → 做完了"的连续过渡，无位移、无突兀的 overlay。
                     if let msg = exportProgressMessage {
                         progressPill(text: msg)
-                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                     } else if let feedback = lastActionFeedback {
                         feedbackPill(text: feedback)
-                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                     }
 
                     actionButtons
@@ -143,7 +143,7 @@ struct ShareCardSheet: View {
             // - `background: .clear` 不传也是默认值，但显式写出来便于排查
             //   "为什么背景被盖住了"——见 DotsFlowBackground.swift 文件头第 3 条约束。
             //
-            // 性能：单实例 60fps 重绘，M1 GPU 占用 ~ 1-3%；sheet 关闭后
+            // 性能：单实例最多 30 FPS 重绘；关闭应用内动画时渲染静态帧，sheet 关闭后
             // `TimelineView` 自动停。不要叠多个。
             //
             // 注意：导出图（performSave / performShareToX 经 ImageRenderer）不会包含
@@ -173,7 +173,7 @@ struct ShareCardSheet: View {
             )
             .blendMode(.plusLighter)
         }
-        .animation(.easeInOut(duration: 0.18), value: exportProgressMessage)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: exportProgressMessage)
         .task {
             // sheet 打开时强制刷一次 profile（D5-B 决策）。
             // 沉默执行：UserProfileService 内部 inflight 互斥；TTL 内的复用不会阻塞。
@@ -302,7 +302,7 @@ struct ShareCardSheet: View {
             isProUser: isProUser
         )
         // 主题切换时给一点淡入淡出动画，让预览过渡不生硬
-        .animation(.easeInOut(duration: 0.18), value: theme)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: theme)
         // 卡片下方加柔和阴影区分 sheet material
         .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
     }
@@ -709,12 +709,12 @@ struct ShareCardSheet: View {
     /// 用 Task.sleep 在主线程异步隐藏；多次调用以最近一次为准（旧 task 自动 cancel
     /// 不会发生，因为我们没存它——但反馈语义本就是"显示最新"，覆盖即可）。
     private func showFeedback(_ text: String) {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
             lastActionFeedback = text
         }
         Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                 lastActionFeedback = nil
             }
         }

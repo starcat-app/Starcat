@@ -138,6 +138,9 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
                 window?.close()
             }
         )
+            // AI 助手是 AppKit 自建 NSWindow，不在 StarcatApp.WindowGroup
+            // 环境子树内；必须独立挂动画策略，否则设置开关在此窗口失效。
+            .starcatAnimationOverride()
             .environment(dependencies)
             .environment(dependencies.authSession)
             .environment(dependencies.settings)
@@ -158,8 +161,17 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         //   是 Spotlight / Raycast 等浮窗的标准做法。
         // - `invalidateShadow()` 兜底：borderless + 圆角 contentView 时 NSWindow
         //   的阴影需要重算一次，否则首帧阴影按矩形 frame 绘制，圆角处阴影发硬。
+        //
+        // material 选择（2026-06-14 dong4j 反馈"AI 摘要面板的颜色和主窗口的颜色要
+        // 暗淡一点，改成和主窗口一样的底色"）：
+        // - 旧值 `.popover`：popover 材质在浅色主题下偏白、vibrant 子层提亮，相对主窗
+        //   实色背景显得"更白更亮"，与并排打开的主窗形成色差；
+        // - 新值 `.windowBackground`：AppKit 官方定义的"匹配 NSColor.windowBackgroundColor
+        //   的窗口背景材质"，与 SwiftUI `WindowGroup` 主窗的默认实色背景对齐，并排
+        //   摆放时两个窗口同色同调，不再有主次窗色差。`blendingMode = .behindWindow`
+        //   保留——让窗口背后桌面 / 其它窗口仍能透出一丝纹理，与主窗整体观感对齐。
         let glassView = NSVisualEffectView()
-        glassView.material = .popover
+        glassView.material = .windowBackground
         glassView.blendingMode = .behindWindow
         glassView.state = .active
         glassView.maskImage = Self.roundedCornerMaskImage(radius: 18)
@@ -187,8 +199,21 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         window.backgroundColor = .clear
         window.hasShadow = true
         window.isMovableByWindowBackground = true
-        // AI 助手是常驻工具面板：始终浮在普通窗口上方，切换焦点或应用时不关闭。
-        window.level = .floating
+        // AI 助手窗口按普通窗口对待：与 Starcat 主窗 / 其它 App 窗口在同一 `.normal`
+        // level 排序，不强行置顶。
+        //
+        // 决策演进（2026-06-14 dong4j）：
+        // - v1：`level = .floating` 始终浮在所有窗口之上 → 切到 Chrome / Xcode 时仍挡
+        //   在前面，体验差；
+        // - v2：监听 `didBecomeActive` / `didResignActive` 在 `.floating` / `.normal`
+        //   之间切换，想做到"应用内浮在主窗上、应用外不浮" → dong4j 反馈"逻辑很怪"，
+        //   切 App 的瞬间窗口层级抖动确实违反一般 macOS 窗口直觉；
+        // - v3（本版）：直接 `.normal` 普通窗口，与一般 NSWindow 完全一致。用户主动
+        //   点击/Cmd+Tab 切谁谁就在前面，简单可预期。
+        //
+        // `hidesOnDeactivate = false` 保留：失活时窗口仍可见，只是排序回退到 normal
+        // 层，不会从屏幕上消失。
+        window.level = .normal
         window.hidesOnDeactivate = false
         window.animationBehavior = .utilityWindow
         // 窗口关闭后不自动释放，让 controller 的 windowWillClose 里完成清理

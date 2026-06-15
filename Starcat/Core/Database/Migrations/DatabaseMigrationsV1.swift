@@ -28,7 +28,12 @@
 //  - 原 v5：repo_embeddings + ai_summaries 两张表     → `createRepoEmbeddings` / `createAISummaries`
 //          （2026-06-12 v2 改造：repo_embeddings 用 snapshot_json 替代 content_hash + indexed_text）
 //  - 原 v6：release_subscriptions + releases 两张表   → `createReleaseSubscriptions` / `createReleases`
-//  - 原 v7：readme_translations 一张表（HOM-68）       → `createReadmeTranslations`
+//  - 原 v7：readme_translations 一张表（HOM-68）       → **已删除（2026-06-15）**：
+//          翻译缓存改走纯磁盘 `DiskReadmeTranslationCache`（路径
+//          `~/Library/Application Support/com.starcat.app/translations-cache/<owner>/<repo>/<lang>.{html,json}`）。
+//          原因：trending/activity 未 star 撞 FK + CASCADE 删 vs "翻译资产不应跟随
+//          star 削减"的产品语义冲突；CloudKit / FTS / JSON 导入导出全 0 引用，砍掉
+//          无任何业务损失。详见 `ReadmeTranslationRepositoryProtocol` 顶部注释。
 //  - 原 v8：repos / trending_repos 各加 4 列          → 合并进 `createRepos` / `createTrendingRepos`
 //          （StarcatRepoCardDTO v1.2 owner_avatar / subscribers_count / default_branch / open_issues_count）
 //  - 原 v9：trending_repos 加 gh_repo_id              → 合并进 `createTrendingRepos`
@@ -70,6 +75,7 @@ enum DatabaseMigrations {
             try createSyncState(db)
             try createTagStatsCache(db)
             try createReposFTS(db)
+            try createNotesFTS(db)
             // 独立缓存表（与上面用户数据 / repos 缓存共享 repos 外键 cascade）
             try createTrendingRepos(db)
             try createTrendingReadmes(db)
@@ -77,7 +83,12 @@ enum DatabaseMigrations {
             try createAISummaries(db)
             try createReleaseSubscriptions(db)
             try createReleases(db)
-            try createReadmeTranslations(db)
+            // R-06.4（2026-06-15）：Weekly 渐进式 SWR 双轨制专用 bulk 缓存表。
+            try createWeeklyBulkRepos(db)
+            try createWeeklyBulkLanguages(db)
+            try createWeeklyBulkMeta(db)
+            // 原 createReadmeTranslations 已删除（2026-06-15 HOM-68 v2 砍 DB 改纯磁盘）。
+            // 翻译缓存现走 `DiskReadmeTranslationCache`，详见文件头「原 v7」段说明。
         }
     }
 
@@ -173,16 +184,22 @@ enum DatabaseMigrations {
     ///
     /// **设计要点**：
     /// - `content='repos'` + `content_rowid='id'`：FTS 不存原始内容，直接引用 repos 表
-    ///   的同名列，节省 1810 行 × 4 字段（name/description/language/topics）约 100KB+ 存储。
+    ///   的同名列,节省 1810 行 × 5 字段约 100KB+ 存储。
     /// - `tokenize = 'unicode61 remove_diacritics 2'`：CJK 友好（按字切分），去重音符
     ///   （café → cafe）；**不用 porter**（porter 是英文词干算法 running→run，对中文反而切碎语义）。
     /// - 3 个触发器 (AFTER INSERT / DELETE / UPDATE) 保持 FTS 索引与 repos 表同步。
     /// - 长期方向：若中文搜索体验不够，可后续替换为 `simple` + jieba 分词或集成 sqlite-vec。
+    ///
+    /// **2026-06-14 召回扩展**：加 `full_name` 列（如 `"google/guava"`）。
+    /// unicode61 把 `/` 当切词符，`full_name` 自动拆出 `google` + `guava` 两个 token，
+    /// 让"只搜 owner"或"完整 owner/repo"两种用户输入都能命中——之前 `name` 只是 repo 部分，
+    /// 搜 `google` 必匹不上 `google/guava`。冗余 token（repo 名段同时进 `name` 和 `full_name`）
+    /// 可忽略，倒排表自动按 docid 去重。
     private static func createReposFTS(_ db: Database) throws {
-        // 使用裸 SQL 因为 GRDB 的 create(virtualTable:) DSL 对「外部内容 + tokenize 选项」组合表达不够直观。
         try db.execute(sql: """
             CREATE VIRTUAL TABLE repos_fts USING fts5(
                 name,
+                full_name,
                 description,
                 language,
                 topics,
@@ -194,24 +211,96 @@ enum DatabaseMigrations {
 
         try db.execute(sql: """
             CREATE TRIGGER repos_ai AFTER INSERT ON repos BEGIN
-                INSERT INTO repos_fts(rowid, name, description, language, topics)
-                VALUES (new.id, new.name, new.description, new.language, new.topics);
+                INSERT INTO repos_fts(rowid, name, full_name, description, language, topics)
+                VALUES (new.id, new.name, new.full_name, new.description, new.language, new.topics);
             END
             """)
 
         try db.execute(sql: """
             CREATE TRIGGER repos_ad AFTER DELETE ON repos BEGIN
-                INSERT INTO repos_fts(repos_fts, rowid, name, description, language, topics)
-                VALUES('delete', old.id, old.name, old.description, old.language, old.topics);
+                INSERT INTO repos_fts(repos_fts, rowid, name, full_name, description, language, topics)
+                VALUES('delete', old.id, old.name, old.full_name, old.description, old.language, old.topics);
             END
             """)
 
         try db.execute(sql: """
             CREATE TRIGGER repos_au AFTER UPDATE ON repos BEGIN
-                INSERT INTO repos_fts(repos_fts, rowid, name, description, language, topics)
-                VALUES('delete', old.id, old.name, old.description, old.language, old.topics);
-                INSERT INTO repos_fts(rowid, name, description, language, topics)
-                VALUES (new.id, new.name, new.description, new.language, new.topics);
+                INSERT INTO repos_fts(repos_fts, rowid, name, full_name, description, language, topics)
+                VALUES('delete', old.id, old.name, old.full_name, old.description, old.language, old.topics);
+                INSERT INTO repos_fts(rowid, name, full_name, description, language, topics)
+                VALUES (new.id, new.name, new.full_name, new.description, new.language, new.topics);
+            END
+            """)
+    }
+
+    /// 私有笔记 FTS5 全文搜索（2026-06-14 dong4j 召回扩展）。
+    ///
+    /// **设计动机**：用户在 `repo_notes.content` 写下的笔记是"私人记忆词"
+    /// （如 "试过部署失败"、"pyenv 替代品"），命中率高、相关性高，是 Starcat
+    /// 区别 GitHub 自带搜索的核心差异点。原 `repos_fts` 只索引 4 个 repo 字段，
+    /// 笔记完全在搜索之外。
+    ///
+    /// **结构选择**（Q2 方案 Y）：独立 `notes_fts` 虚拟表 + 在 `searchFTS` 里 UNION
+    /// `repos_fts`。优点：
+    /// 1. 表语义清晰，互不干扰（笔记触发器只管 notes_fts，未来加 readme_fts 同款模板）
+    /// 2. 外部内容模式 `content='repo_notes', content_rowid='repo_id'`：repo_notes
+    ///    PK 已是 repo_id（INTEGER），直接当 rowid 桥接，不引入新关联表
+    /// 3. UNION 后两侧 rowid 都是 `repos.id`，搜索结果合并去重 by repo_id 自然成立
+    ///
+    /// **tokenizer 选 `trigram` 而非 `unicode61`**（2026-06-14 dong4j 决策方案 A）：
+    /// SQLite `unicode61` 对**连续 CJK 字符不切分**，整段中文笔记被当作单个 token，
+    /// 用户搜中间词（如笔记 "试过部署失败" 搜 "部署失败"）必匹不上。`trigram`（SQLite
+    /// 3.34+ 内置）按 3-字符滑动窗口建索引，CJK 中缀友好；同时英文也按子串匹配
+    /// （`deploy` 命中 `deployment`）—— 笔记主要是长文本中文 + 较长英文短语，trigram
+    /// 完美适配。**代价**：query 长度 < 3 字符时 trigram 无法命中（如笔记搜 "AI" /
+    /// "Go" 没结果），但笔记场景里这种短词搜索极少。
+    ///
+    /// **`repos_fts` 不一并换 trigram**：`repos_fts.language` 列含 `Go` / `C` / `R`
+    /// 等 ≤2 字符词，trigram 完全无法索引；`repos_fts.name` 也常出现短缩写（`AI` /
+    /// `ML` / `JS`）—— 短词搜索是 repo 列的核心需求，unicode61 必须保留。
+    ///
+    /// **只索引 `content`**（Q1 决策）：status / edited_at / is_ai_generated 不进 FTS。
+    /// status 词频太高（'unread'/'reading'/...）会反向稀释相关性；状态过滤已有 UI 入口。
+    ///
+    /// **UPDATE 触发器的 `WHEN` 守门**：repo_notes 同时承载笔记与阅读状态，每次
+    /// `applyStatusChange` 都会 UPDATE 整行；如果触发器无条件重建索引，状态切换的
+    /// 高频路径会产生大量空 IO。`WHEN OLD.content IS NOT NEW.content` 让 status 变化
+    /// 时触发器空跑（SQLite `IS NOT` 正确处理 NULL，不同于 `!=`）。
+    ///
+    /// **不索引空笔记**：`content` 为 NULL 或空字符串时 INSERT/UPDATE 触发器仍会写入，
+    /// 但 fts5 对空 token 序列自然不命中——无需额外 WHEN 过滤，留 fts5 自己处理简洁。
+    private static func createNotesFTS(_ db: Database) throws {
+        try db.execute(sql: """
+            CREATE VIRTUAL TABLE notes_fts USING fts5(
+                content,
+                content='repo_notes',
+                content_rowid='repo_id',
+                tokenize = 'trigram'
+            )
+            """)
+
+        try db.execute(sql: """
+            CREATE TRIGGER repo_notes_ai AFTER INSERT ON repo_notes BEGIN
+                INSERT INTO notes_fts(rowid, content)
+                VALUES (new.repo_id, new.content);
+            END
+            """)
+
+        try db.execute(sql: """
+            CREATE TRIGGER repo_notes_ad AFTER DELETE ON repo_notes BEGIN
+                INSERT INTO notes_fts(notes_fts, rowid, content)
+                VALUES('delete', old.repo_id, old.content);
+            END
+            """)
+
+        try db.execute(sql: """
+            CREATE TRIGGER repo_notes_au AFTER UPDATE ON repo_notes
+                WHEN OLD.content IS NOT NEW.content
+                BEGIN
+                INSERT INTO notes_fts(notes_fts, rowid, content)
+                VALUES('delete', old.repo_id, old.content);
+                INSERT INTO notes_fts(rowid, content)
+                VALUES (new.repo_id, new.content);
             END
             """)
     }
@@ -515,6 +604,111 @@ enum DatabaseMigrations {
         try db.create(index: "idx_trending_readmes_cached", on: "trending_readmes", columns: ["cached_at"])
     }
 
+    // MARK: - weekly_bulk_*（R-06.4 客户端 bulk 缓存 / 渐进式 SWR 双轨制）
+
+    /// `weekly_bulk_repos`：weekly bulk endpoint 一次性返回的 ~4000 条聚合 repo 全量落盘。
+    ///
+    /// 设计原则：
+    /// - 这是 R-06.4 客户端缓存层的**核心表**：后端 `/api/v1/repos/bulk` 返回的全量数据一次写入，
+    ///   后续 sort / language / page 全部在本地查询，**完全消除"切 picker 又拉一次网络"的浪费**。
+    /// - 与 `trending_repos` 同设计思路："cache 表 + cached_at"，但 PK 用 `gh_repo_id` 单列
+    ///   而非 (period, language_filter, rank) 复合——weekly 是全量聚合无榜单维度，
+    ///   gh_repo_id 是 GitHub 端 stable identity 直接当 PK 最简。
+    /// - 字段镜像后端 `model.RepoFeedItem`（card + 4 个 snapshot），与 `WeeklyFeedItem` 1:1 对齐。
+    /// - `weekly_snapshot_json / zread_snapshot_json / discovery_snapshot_json` 三列 JSON 直存
+    ///   而非分子表：snapshot 是 weekly 专属 wire payload（issueURL / weekLabel /
+    ///   publishedAt 等），分表毫无业务价值还引入 N+1 + cascade；保留 JSON 字符串透传到
+    ///   `WeeklyFeedItem.weekly/zread/discovery` 即可。
+    /// - `source_types_json` 同理 JSON 数组字符串（如 `["weekly","zread"]`）。
+    /// - 时间戳全部 ISO8601 TEXT，与项目其它缓存表（trending_repos / repos）对齐。
+    /// - `cached_at` 不参与单行 TTL：TTL 是"整批 bulk fetch 的新鲜度"由 `weekly_bulk_meta` 一行统管。
+    ///
+    /// 关键约束:
+    /// - 入库走"先 DELETE 整表 + 再批量 INSERT"全量替换语义（在 repository 内一个 transaction 内
+    ///   完成）；不做增量 upsert，因为 bulk endpoint 本身就是"当前全量快照"语义。
+    /// - 索引覆盖三条最热查询路径：language 筛选 / latest_event_at DESC 排序 / stars DESC 排序。
+    ///   pushed_at DESC 排序不加索引（用户极少切到，全表扫 4000 行无压力）。
+    private static func createWeeklyBulkRepos(_ db: Database) throws {
+        try db.create(table: "weekly_bulk_repos") { t in
+            t.column("gh_repo_id", .integer).primaryKey()
+            t.column("full_name", .text).notNull()
+            t.column("owner", .text).notNull()
+            t.column("repo", .text).notNull()
+            t.column("name", .text).notNull()
+
+            // Card 基础字段（镜像 StarcatRepoCardDTO）
+            t.column("owner_avatar", .text)
+            t.column("description", .text)
+            t.column("language", .text)
+            t.column("stars", .integer).notNull().defaults(to: 0)
+            t.column("forks", .integer).notNull().defaults(to: 0)
+            t.column("watchers", .integer).notNull().defaults(to: 0)
+            t.column("subscribers", .integer).notNull().defaults(to: 0)
+            t.column("topics_json", .text)            // JSON 数组字符串
+            t.column("homepage", .text)
+            t.column("license_spdx", .text)
+            t.column("is_archived", .integer).notNull().defaults(to: 0)
+            t.column("is_fork", .integer).notNull().defaults(to: 0)
+            t.column("is_private", .integer).notNull().defaults(to: 0)
+            t.column("default_branch", .text)
+            t.column("open_issues", .integer).notNull().defaults(to: 0)
+            t.column("pushed_at", .text)
+            t.column("updated_at", .text)
+            t.column("created_at", .text)
+            t.column("html_url", .text)
+
+            // Feed 专属字段
+            t.column("is_available", .integer).notNull().defaults(to: 1)
+            t.column("source_types_json", .text)      // JSON 数组（["weekly","zread",...]）
+            t.column("first_event_at", .text).notNull()
+            t.column("latest_event_at", .text).notNull()
+            t.column("weekly_snapshot_json", .text)   // JSON object 或 NULL
+            t.column("zread_snapshot_json", .text)
+            t.column("discovery_snapshot_json", .text)
+
+            // 缓存维度（不参与 TTL，仅给"调试为何这条 repo 是旧的"留痕）
+            t.column("cached_at", .text).notNull()
+        }
+
+        // 排序索引——latest_event_at DESC（默认排序）+ stars DESC（备选）
+        try db.create(index: "idx_weekly_bulk_latest_event", on: "weekly_bulk_repos", columns: ["latest_event_at"])
+        try db.create(index: "idx_weekly_bulk_stars", on: "weekly_bulk_repos", columns: ["stars"])
+        // language 筛选索引
+        try db.create(index: "idx_weekly_bulk_language", on: "weekly_bulk_repos", columns: ["language"])
+    }
+
+    /// `weekly_bulk_languages`：bulk endpoint 返回的语言聚合直存。
+    ///
+    /// 不从 `weekly_bulk_repos` GROUP BY 派生（虽然技术上等价）：
+    /// - 后端聚合走的是 SQL CASE-WHEN 处理"未分类" + 排序逻辑，客户端复制一套
+    ///   只会引入不一致风险；
+    /// - 后端聚合输出本来就是一起返回的小 payload（~50 行），直接落盘极简单；
+    /// - 让 `WeeklyLanguageStore` 可以直接读这个表（如果 bulk 缓存命中），
+    ///   不需要再单独发 `/repos/languages` 请求。
+    private static func createWeeklyBulkLanguages(_ db: Database) throws {
+        try db.create(table: "weekly_bulk_languages") { t in
+            t.column("key", .text).primaryKey()       // 语言 key（"Go" / "uncategorized" / 空串）
+            t.column("label", .text).notNull()
+            t.column("count", .integer).notNull().defaults(to: 0)
+            t.column("sort_order", .integer).notNull() // 保留后端原始顺序
+        }
+    }
+
+    /// `weekly_bulk_meta`：bulk cache 元信息单行表（PK = "singleton"）。
+    ///
+    /// 单行设计避免"meta 表只有 1 行还做唯一约束"的丑陋写法；PK 固定字符串就够了。
+    /// 跨 App 重启读这一行即可知道"上次什么时候拉的 / 拉了多少条 / 后端 ETag 是啥"，
+    /// ViewModel 据此判断 12h TTL。
+    private static func createWeeklyBulkMeta(_ db: Database) throws {
+        try db.create(table: "weekly_bulk_meta") { t in
+            t.column("id", .text).primaryKey()                // 固定值 "singleton"
+            t.column("etag", .text)                            // bulk endpoint ETag（W/"sha[:8]"）
+            t.column("last_fetched_at", .text).notNull()       // ISO8601 客户端拉取完成时刻
+            t.column("generated_at", .text)                    // 后端 envelope.meta.generated_at
+            t.column("total", .integer).notNull().defaults(to: 0) // = len(repos)
+        }
+    }
+
     // MARK: - repo_embeddings / ai_summaries（AI 语义搜索 + 单仓智能化）
 
     /// repo_embeddings：repo 语义向量缓存（详见 `docs/详细设计/26-向量搜索改进.md`）。
@@ -629,50 +823,14 @@ enum DatabaseMigrations {
         try db.create(index: "idx_releases_published", on: "releases", columns: ["published_at"])
     }
 
-    // MARK: - readme_translations（HOM-68 README AI 翻译缓存）
-
-    /// readme_translations：README AI 翻译结果缓存。
-    ///
-    /// **背景**：HOM-68 在 README 详情区新增"翻译 README"入口，调用 AI 把原 HTML 翻译成
-    /// 目标语言（默认简体中文）。翻译消耗 AI 配额、耗时显著，必须落地缓存避免用户每次切回详情页
-    /// 都重复消耗——这是验收标准之一。
-    ///
-    /// **设计要点**：
-    /// - **PK `(repo_id, target_language)`**：同一仓库每种目标语言保留最新一份翻译，
-    ///   覆盖式 upsert。第一版不保留历史版本（用户可手动重新翻译触发覆盖）。
-    /// - **`source_hash`**：对参与翻译的 README HTML 做 SHA256 指纹；README 被作者更新
-    ///   （远端 ETag 改变 → 本地 readmes 表 upsert 新内容）后旧翻译 source_hash 不再匹配，
-    ///   调用方按需重新生成而不是误用旧译文。
-    /// - **`model`**：记录当时使用的 LLM 模型名，便于排查"为什么这份翻译质量不如另一份"，
-    ///   第二版若做多模型对比也能复用。
-    /// - **`translated_html`**：保存模型回填后的 HTML 片段，与 `readmes.rendered_html` 结构对齐，
-    ///   UI 端可直接喂给 `ReadmeWebView` 渲染，无需重新组装。
-    /// - **`size` 字段**：与 readmes 对齐，便于后续缓存清理按字节排序。
-    /// - **外键 ON DELETE CASCADE**：取消 star → 本地 repo 行被删 → 联级清理翻译，
-    ///   避免孤立缓存膨胀。
-    ///
-    /// **为什么独立表而不是把翻译塞进 `readmes` 表**：
-    /// - `readmes` 是「GitHub 原 README 缓存」，由 ReadmeAPI 的 ETag 流程独占管理；
-    ///   塞翻译会让 ETag 304 命中时既要 touchCachedAt 又要保留 translation 字段，
-    ///   写入逻辑容易踩进「翻译被原 README 304 路径误清」之类的坑。
-    /// - 一个 repo 可能存多个目标语言（中/英/日同时缓存），独立表用复合 PK 更直观。
-    /// - 翻译表 schema 完全独立于 ETag/Last-Modified 流程，未来要加分块翻译进度
-    ///   或质量评分字段时不影响 readmes。
-    private static func createReadmeTranslations(_ db: Database) throws {
-        try db.create(table: "readme_translations") { t in
-            t.column("repo_id", .integer).notNull()
-                .references("repos", column: "id", onDelete: .cascade)
-            // 目标语言用 BCP-47 风格的 raw（如 `zh-Hans` / `en` / `ja`）
-            t.column("target_language", .text).notNull()
-            t.column("model", .text).notNull()
-            t.column("source_hash", .text).notNull()
-            t.column("translated_html", .text).notNull()
-            t.column("size", .integer).notNull().defaults(to: 0)
-            t.column("created_at", .text).notNull()
-
-            t.primaryKey(["repo_id", "target_language"])
-        }
-
-        try db.create(index: "idx_readme_translations_repo", on: "readme_translations", columns: ["repo_id"])
-    }
+    // MARK: - readme_translations（已删除，2026-06-15 HOM-68 v2）
+    //
+    // 历史 `createReadmeTranslations` 整段已删除。翻译缓存改走纯磁盘
+    // `DiskReadmeTranslationCache`（路径 `<appSupport>/com.starcat.app/translations-cache/`）。
+    // 删除原因详见文件头「原 v7」段 + `ReadmeTranslationRepositoryProtocol` 顶部注释。
+    //
+    // 切换关键决策（写给后来人）：
+    //   - 产品未上线 → 直接砍 v1 表，不留过渡迁移；
+    //   - 工程 grep 全量确认除了 service / repository 自身没人消费这张表；
+    //   - 产品语义"翻译资产不应跟随 star 削减"与 CASCADE 直接冲突，砍后语义清晰。
 }

@@ -93,6 +93,108 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
+    @Test("v1 应建出 notes_fts 虚拟表与触发器")
+    func notesFtsExists() throws {
+        let db = try makeDB()
+        try db.read { db in
+            let ftsExists = try db.tableExists("notes_fts")
+            #expect(ftsExists, "notes_fts virtual table should exist")
+
+            let triggers = try String.fetchAll(
+                db,
+                sql: "SELECT name FROM sqlite_master WHERE type = 'trigger' ORDER BY name"
+            )
+            #expect(triggers.contains("repo_notes_ai"))
+            #expect(triggers.contains("repo_notes_ad"))
+            #expect(triggers.contains("repo_notes_au"))
+        }
+    }
+
+    @Test("插入 repo_notes 后 notes_fts 应可搜到，且 status 变化不重建索引")
+    func notesFtsInsertAndStatusUpdate() throws {
+        let db = try makeDB()
+        try db.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url)
+                VALUES (10, 'alice', 'r10', 'alice/r10', 'https://github.com/alice/r10')
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_notes (repo_id, content, status)
+                VALUES (10, '试过部署失败 已切到别的方案', 'unread')
+                """)
+        }
+        try db.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?",
+                arguments: ["部署失败"]
+            )
+            #expect(rows.count == 1)
+            #expect(rows.first?["rowid"] as Int64? == 10)
+        }
+
+        // status 变化不应触发索引重建（WHEN OLD.content IS NOT NEW.content 守门）。
+        // 这里只能验证更新后仍能搜到——索引重建是无副作用的，但 trigger fired 次数无法直接断言；
+        // 退一步：确保 status 改变后索引仍正确。
+        try db.write { db in
+            try db.execute(sql: """
+                UPDATE repo_notes SET status = 'read' WHERE repo_id = 10
+                """)
+        }
+        try db.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?",
+                arguments: ["部署失败"]
+            )
+            #expect(rows.count == 1, "status 改变后笔记仍应能被搜到")
+        }
+    }
+
+    @Test("delete repo_notes 后 notes_fts 索引应同步清理")
+    func notesFtsDeleteCleansIndex() throws {
+        let db = try makeDB()
+        try db.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url)
+                VALUES (11, 'bob', 'r11', 'bob/r11', 'https://github.com/bob/r11')
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_notes (repo_id, content, status)
+                VALUES (11, 'kubernetes 部署笔记', 'unread')
+                """)
+            try db.execute(sql: "DELETE FROM repo_notes WHERE repo_id = 11")
+        }
+        try db.read { db in
+            let count = try Int.fetchOne(
+                db,
+                sql: "SELECT count(*) FROM notes_fts WHERE notes_fts MATCH ?",
+                arguments: ["kubernetes"]
+            )
+            #expect(count == 0)
+        }
+    }
+
+    @Test("repos_fts 应索引 full_name，单独搜 owner 能命中")
+    func ftsFullNameOwnerMatch() throws {
+        let db = try makeDB()
+        try db.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url)
+                VALUES (20, 'colbymchenry', 'codegraph', 'colbymchenry/codegraph', 'https://github.com/colbymchenry/codegraph')
+                """)
+        }
+        try db.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT rowid FROM repos_fts WHERE repos_fts MATCH ?",
+                arguments: ["colbymchenry"]
+            )
+            #expect(rows.count == 1, "full_name 列应让 owner-only 搜索命中")
+            #expect(rows.first?["rowid"] as Int64? == 20)
+        }
+    }
+
     @Test("foreign_keys 已启用，删除 repo 应级联清理 repo_notes")
     func foreignKeyCascade() throws {
         let db = try makeDB()

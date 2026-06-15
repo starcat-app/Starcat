@@ -135,6 +135,11 @@ final class AppDependencies {
     /// Weekly 三源聚合语言筛选 Store。首次进入 Weekly 时懒加载。
     let weeklyLanguageStore: WeeklyLanguageStore
 
+    /// R-06.4 客户端 bulk 缓存仓库：一次性拉全量 weekly 聚合数据 + 落 SQLite，让
+    /// `WeeklyContentViewModel` 走"渐进式 SWR 双轨制"——首次入场拉 remote 出图 + 后台
+    /// bulkSync 落盘，后续 sort/lang 切换走本地缓存零网络。
+    let weeklyBulkRepository: WeeklyBulkRepository
+
     // MARK: - HOM-173 分享卡
 
     /// AI 分享卡后端 API 客户端。
@@ -151,6 +156,15 @@ final class AppDependencies {
     /// DeepWiki / Zread / Google Code Wiki 单仓库收录查询客户端。
     /// 构造期不发网络请求，因此保持非 optional；服务故障由每次请求独立降级。
     let wikiAPI: WikiAPI
+
+    /// Wiki 探测结果磁盘 JSON 缓存（2026-06-15）。
+    /// 单进程单实例，与设置页 / `WikiContextService` 共用 observable 派生量。
+    let diskWikiCache: DiskWikiCache
+
+    /// Wiki SWR 编排层（2026-06-15）：read-through cache + 后台刷新 + 并发去重。
+    /// 上层 `RepoAIChatViewModel.bootstrap` 通过它一次性拿"已知 wiki 链接"+ 顺手
+    /// 触发后台刷新；未来详情页 toolbar wiki popover 也接入这里。
+    let wikiContextService: WikiContextService
 
     // MARK: - HOM-47 Release 订阅追踪
 
@@ -380,12 +394,18 @@ final class AppDependencies {
         )
         self.repoAIInsightService = aiInsight
 
-        // HOM-68：README 翻译。复用 AppSettings.aiSummaryTask 的 provider/model 选择
-        // 与 Keychain API Key，独立 Service 承载严格保结构的翻译 prompt + 本地 SQLite 缓存。
-        let translationRepo = GRDBReadmeTranslationRepository(database: db)
-        self.readmeTranslationRepository = translationRepo
+        // HOM-68：README 翻译。复用 AppSettings.aiTranslationTask 的 provider/model 选择
+        // 与 Keychain API Key，独立 Service 承载严格保结构的翻译 prompt + 纯磁盘缓存。
+        //
+        // **HOM-68 v2（2026-06-15）**：缓存层从 GRDB 表（已删 `readme_translations`）
+        // 改为 `DiskReadmeTranslationCache.shared`（路径 `<appSupport>/com.starcat.app/
+        // translations-cache/<owner>/<repo>/<lang>.{html,json}`）。改造原因 + 详细决策
+        // 见 `ReadmeTranslationRepositoryProtocol` 顶部注释。装配点用 shared 单例是因
+        // 为 cache 是 `@MainActor @Observable`，UI（设置页存储 Tab）也需要观察同一份
+        // 状态（totalBytes / itemCount / latestCreatedAt），多实例会导致 UI 状态不同步。
+        self.readmeTranslationRepository = DiskReadmeTranslationCache.shared
         self.readmeTranslationService = ReadmeTranslationService(
-            translationRepository: translationRepo,
+            translationRepository: DiskReadmeTranslationCache.shared,
             settings: self.settings
         )
 
@@ -482,6 +502,10 @@ final class AppDependencies {
         self.weeklySelectionService = WeeklySelectionService()
         self.weeklyLanguageStore = WeeklyLanguageStore(api: weeklyAPIInstance)
 
+        // R-06.4: 客户端 bulk 缓存仓库。注入同一 weeklyAPI actor 实例，让 bulk 端点
+        // 与分页 endpoint 共享 baseURL / apiKey 热更新（设置页改地址后两条路径同时生效）。
+        self.weeklyBulkRepository = WeeklyBulkRepository(api: weeklyAPIInstance, database: db)
+
         // HOM-173：分享卡 API 客户端。端点走 `AppEndpoints.Sharing.baseURL`（保留 /api 后缀）。
         self.shareAPI = ShareAPI(
             baseURL: AppEndpoints.Sharing.baseURL,
@@ -489,9 +513,20 @@ final class AppDependencies {
         )
 
         // Wiki 首期只做详情页单查，不在启动期 health probe，也不接 batch 预热。
-        self.wikiAPI = WikiAPI(
+        let wikiAPIInstance = WikiAPI(
             baseURL: AppEndpoints.Wiki.baseURL,
             apiKey: StarcatAPIKeyResolver.resolve(for: .wiki)
+        )
+        self.wikiAPI = wikiAPIInstance
+
+        // 2026-06-15 v4.y：Wiki 磁盘缓存 + SWR 编排。装配顺序：
+        // disk cache（只读 / 无网络）→ SWR service（依赖 cache + WikiAPI）。
+        // shared singleton 保留默认，AppDependencies 引用同一实例，让设置页存储 Tab
+        // 与对话 VM 共享同一份 `itemCount` / `totalBytes` observable 派生量。
+        self.diskWikiCache = .shared
+        self.wikiContextService = WikiContextService(
+            cache: .shared,
+            fetcher: wikiAPIInstance
         )
 
         // 2026-06-08：第三方服务健康检查 actor。独立 ephemeral session + 5s 超时。
@@ -518,7 +553,13 @@ final class AppDependencies {
         // HOM-PROFILE 2026-06-05：贡献草坪服务。
         // 直接持有具体 GitHubAPIClient（actor），不走 protocol——因为 graphql<T> 是泛型方法，
         // 未挂在协议上以保持 Mock 简单（详见 ContributionService.swift 注释）。
-        self.contributionService = ContributionService(apiClient: api)
+        let contributionSvc = ContributionService(apiClient: api)
+        self.contributionService = contributionSvc
+        // 2026-06-15 修复(切换账号草坪不刷新):把 service 挂到 AuthSession,让 signOut /
+        // invalidateSession / restore 401 三处的"登出联动清理"都能 reset 草坪缓存,
+        // 否则 B 登录后 sidebar `.task` 触发的 `load(login: B)` 会因 lastFetchedAt 还在
+        // A 那次成功的 3h TTL 窗口内被 no-op 掉,草坪一直挂着 A 的数据(详见 AuthSession 字段注释)。
+        session.contributionService = contributionSvc
 
         // 2026-06-06 A 方案：用户 profile 缓存。
         // 装配三步：① 建 service；② 接到 session（双向，session 强持 service / service weak 反向 → session）；

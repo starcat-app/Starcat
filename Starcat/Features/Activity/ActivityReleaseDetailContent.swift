@@ -79,16 +79,13 @@ struct ActivityReleaseDetailContent: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "shippingbox")
-                .font(.system(size: 40))
-                .foregroundStyle(.tertiary)
-            Text("activity.release.empty.title")
-                .font(.headline)
-            Text("activity.release.empty.subtitle")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
+        EmptyStateView(
+            systemImage: "shippingbox",
+            title: "activity.release.empty.title",
+            subtitle: "activity.release.empty.subtitle",
+            iconSize: 40,
+            spacing: 12
+        )
         .frame(maxWidth: .infinity, minHeight: 280)
         .padding()
     }

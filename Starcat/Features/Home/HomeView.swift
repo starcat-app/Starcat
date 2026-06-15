@@ -39,6 +39,9 @@ struct HomeView: View {
     @Environment(AuthSession.self) private var authSession
     @Environment(SyncManager.self) private var syncManager
     @Environment(AppSettings.self) private var settings
+    /// 2026-06-15:搜索浮层弹出/收起的 .snappy 动画在关动画时跳过。
+    /// 与系统「减少动态效果」OR 合并(`AnimationOverrideModifier`)。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     /// HOM-47：拿到 ReleasePoller 启动后台调度。
     @Environment(AppDependencies.self) private var dependencies
 
@@ -271,7 +274,7 @@ struct HomeView: View {
         //   贴近 Spotlight / Raycast 命令面板的体感。
         // - value 仅监听 isPresented，不会污染浮层内其他状态的动画（scope 切换、
         //   ProgressView spinner 等照旧无动画）。
-        .animation(.snappy(duration: 0.22), value: searchCenterViewModel.isPresented)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: searchCenterViewModel.isPresented)
         // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
         .background {
             Button("") { searchCenterViewModel.present() }
@@ -473,6 +476,22 @@ struct HomeView: View {
                 await viewModel.reloadItems(forceRefresh: true)
             }
         }
+        // R-07（2026-06-15）：SyncManager 写完第一页后立即刷一次列表，让首次登录 1~2s 内看到前 20 条。
+        //
+        // 与上方 `.task(id: syncManager.state)` 的 `.completed` 分支协作：
+        // - 此处 = 边沿"首页就绪" → 第一页 ~100 条立即上屏（HomeViewModel 客户端分页只渲染前 20 条）
+        // - state == .completed = 收尾"全集就绪" → reloadItems(forceRefresh: true) 走 SWR 数据变化
+        //   路径，applyView(resetPage: false) 保用户滚动位置，1800 全集对 items 切片影响通常为 0
+        //
+        // 304 早退 / 失败 / page 1 dtos 空都不会让 firstPageWrittenAt 翻边沿（详见 SyncManager.swift）。
+        // guard isAuthenticated 防御：理论上 SyncManager 不会在未登录态跑，但加一手避免账号切换瞬间误触。
+        .onChange(of: syncManager.firstPageWrittenAt) { _, newValue in
+            guard newValue != nil, authSession.state.isAuthenticated else { return }
+            Task { @MainActor in
+                await viewModel.refreshSidebar()
+                await viewModel.reloadItems(forceRefresh: true)
+            }
+        }
         // HOM-126：把同步状态变化转发给 AutoTidyScheduler，让它做"同步完成 → 自动整理"
         // 边沿触发判定。scheduler 内部会先 guard `autoTidySettings.triggerOnSync`，
         // 用户关掉同步触发后这里仍调用但 scheduler no-op，避免 view 端再加 guard。
@@ -492,7 +511,14 @@ struct HomeView: View {
         // - Int64 是 value type，equality 100% 确定
         // - readmeVM 在 HomeView 已构造完成，不存在"@State 异步赋值"竞态
         // - 即便 RepoDetailView 因 nil 走 emptyState 被销毁，本 onChange 仍稳定触发
-        .onChange(of: viewModel.selectedRepoID) { _, _ in
+        .onChange(of: viewModel.selectedRepoID) { _, newID in
+            // R-07：外部赋值（SearchCenter / 详情页"上一篇下一篇"）可能选中 page > 1 的 repo。
+            // 这里集中调一次 ensureRepoVisible，让列表把 currentPage 推到含 repo 的位置 → 后续
+            // RepoListView 的 ScrollViewReader 才能 scrollTo（target row 已在 items 切片内）。
+            // 已在 items 内（用户点行触发的常态）时 no-op，无副作用。
+            if let id = newID {
+                viewModel.ensureRepoVisible(repoId: id)
+            }
             if let repo = viewModel.selectedRepo {
                 readmeVM.load(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
                 // HOM-68：repo 变化时重置翻译态。源 HTML 尚未拿到，这里只重置 UI

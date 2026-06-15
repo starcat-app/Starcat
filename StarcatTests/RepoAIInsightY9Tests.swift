@@ -23,6 +23,13 @@ import Testing
 @Suite("RepoAIInsight Y9 — chat context enrichment")
 struct RepoAIInsightY9Tests {
 
+    /// 2026-06-15 v4.x：`assembleChatSystemPrompt` 加了 `runtimeContext` 必填参数。
+    /// 本套测试不关心运行环境字段的精确渲染（那是 `RuntimeContextProviderTests` 的事），
+    /// 只需要给个稳定 mock 值塞进调用，让现有 7 个 case 编译通过；
+    /// 各 case 内的 `#expect` 也不断言这个值——只关心其它占位符的拼接逻辑没回归。
+    private static let testRuntimeContext = "(runtime-context-mock)"
+    private static let testStarcatResources = "(starcat-resources-mock)"
+
     // MARK: - Codable 兼容性
 
     @Test("旧缓存 JSON 缺 externalContextMarkdown 字段时反序列化为 nil 不抛错")
@@ -149,11 +156,14 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "English",
+            runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "Repository: foo/bar\nDescription: hi",
             readme: "# Hello",
             codeContext: "",
             summary: "",
-            externalContext: ""
+            externalContext: "",
+            previousSessionCarryOver: ""
         )
 
         // identity / output format / factual / style 4 段都在
@@ -183,11 +193,14 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "Simplified Chinese",
+            runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "Repository: foo/bar",
             readme: "README body",
             codeContext: "",
             summary: "## 一句话\nThis is a test summary.",
-            externalContext: ""
+            externalContext: "",
+            previousSessionCarryOver: ""
         )
 
         #expect(result.contains("## 一句话"))
@@ -207,11 +220,14 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "English",
+            runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "Repository: foo/bar",
             readme: "",
             codeContext: "",
             summary: "",
-            externalContext: externalMd
+            externalContext: externalMd,
+            previousSessionCarryOver: ""
         )
 
         #expect(result.contains("<external_context"))
@@ -230,11 +246,14 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "English",
+            runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "Repository: foo/bar",
             readme: "body",
             codeContext: "",
             summary: "",
-            externalContext: ""
+            externalContext: "",
+            previousSessionCarryOver: ""
         )
 
         // section header 在
@@ -248,11 +267,14 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "Simplified Chinese",
+            runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "M-DATA",
             readme: "R-DATA",
             codeContext: "C-DATA",
             summary: "S-DATA",
-            externalContext: "E-DATA"
+            externalContext: "E-DATA",
+            previousSessionCarryOver: ""
         )
 
         let metaIdx = result.range(of: "M-DATA")?.lowerBound
@@ -277,6 +299,66 @@ struct RepoAIInsightY9Tests {
         }
     }
 
+    /// HOM-70 v2：carry-over 占位符渲染 + section 顺序 + 空字符串不出现 carry-over 内容。
+    @Test("previousSessionCarryOver 非空 → 渲染到 # Previous Session Carry-over section（末尾）")
+    func assembleWithCarryOver() {
+        let carry = """
+        - 上一轮我们聊了项目的 CLI 入口；
+        - 然后讨论了如何 mock URLSession 做单测。
+        """
+        let result = RepoAIInsightService.assembleChatSystemPrompt(
+            template: AIDefaultPrompts.chat.systemPrompt,
+            outputLanguage: "Simplified Chinese",
+            runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
+            metadata: "Repository: foo/bar",
+            readme: "README body",
+            codeContext: "",
+            summary: "",
+            externalContext: "",
+            previousSessionCarryOver: carry
+        )
+
+        // 内容被正确替换
+        #expect(result.contains("- 上一轮我们聊了项目的 CLI 入口"))
+        #expect(result.contains("如何 mock URLSession"))
+        // 占位符已被消耗，不应再出现字面量
+        #expect(!result.contains("{previousSessionCarryOver}"))
+        // section 标题在
+        #expect(result.contains("# Previous Session Carry-over"))
+
+        // 顺序断言：carry-over section 必须出现在 External References 之后（v2 模板末尾）
+        let externalIdx = try? #require(result.range(of: "## External References")).lowerBound
+        let carryIdx = try? #require(result.range(of: "# Previous Session Carry-over")).lowerBound
+        if let e = externalIdx, let c = carryIdx {
+            #expect(e < c)
+        }
+    }
+
+    /// HOM-70 v2：普通 session 传空字符串 → section header 仍渲染、但不出现承接段实际内容。
+    /// 这是默认行为（绝大多数 session 都不是承接来的），重要的是确认不会有"漏掉空替换
+    /// 留下 {previousSessionCarryOver} 字面量泄漏给 LLM"的回归。
+    @Test("空 previousSessionCarryOver → section header 渲染但下面没承接内容 + 占位符被替换")
+    func assembleEmptyCarryOverRendersHeaderOnly() {
+        let result = RepoAIInsightService.assembleChatSystemPrompt(
+            template: AIDefaultPrompts.chat.systemPrompt,
+            outputLanguage: "English",
+            runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
+            metadata: "Repository: foo/bar",
+            readme: "body",
+            codeContext: "",
+            summary: "",
+            externalContext: "",
+            previousSessionCarryOver: ""
+        )
+
+        // section header 在
+        #expect(result.contains("# Previous Session Carry-over"))
+        // 占位符被消耗了不再泄漏字面量
+        #expect(!result.contains("{previousSessionCarryOver}"))
+    }
+
     @Test("占位符 dict 找不到 key → 保留 {key} 字面量（让 LLM 看到便于排错）")
     func assembleUnknownPlaceholderPreserved() {
         // 用户改过 prompt 模板，引入了 dict 没有的占位符（比如 {fooBar}）
@@ -289,11 +371,14 @@ struct RepoAIInsightY9Tests {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: customTemplate,
             outputLanguage: "English",
+            runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "M-DATA",
             readme: "",
             codeContext: "",
             summary: "",
-            externalContext: ""
+            externalContext: "",
+            previousSessionCarryOver: ""
         )
 
         #expect(result.contains("Hello English."))

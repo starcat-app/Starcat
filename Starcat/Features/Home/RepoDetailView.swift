@@ -30,10 +30,17 @@ struct RepoDetailView: View {
     @Environment(HomeViewModel.self) private var viewModel
     // W4 B1：取消 star 需要的依赖
     @Environment(AppDependencies.self) private var dependencies
-    // D-28 修订（2026-06-11）：原 `@Environment(\.accessibilityReduceMotion) reduceMotion`
+    // D-28 修订（2026-06-11）：原 `@Environment(\.starcatReduceMotion) reduceMotion`
     // 移除 —— 该开关唯一消费点 `private var detailContentTransition` 已抽到
     // `Shared/Components/DetailContentTransition.swift` 共享 modifier,reduceMotion 由
     // modifier 内部读取,本 view 不再需要持有该 environment。
+    //
+    // 2026-06-15 修订:为支持「关闭应用内动画」用户偏好,需要再消费 reduceMotion
+    // 给 line 154 的 `.animation(.easeOut(duration: 0.4), value: detailContentID)`
+    // 与 line 544 翻译按钮 hover 切图标的 0.15s 淡入做"关动画"兜底。modifier 那
+    // 一份不动(包内闭合,view 透明),这里独立持一份是 SwiftUI Environment 的
+    // 标准模式,view 之间不共享 @Environment 实例,各 view 按需读取无副作用。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     /// v1.4 修订 (2026-06-10)：trailingActions(.share/.ai) 加 isAuthenticated 守卫的依赖。
     /// Manage 场景业务上必须登录才能看到 repo 列表（HomeViewModel 从本地 starred_repos
     /// 拉数据,登出会清 token + StarredRegistry,但本地 starred_repos 表不清,理论上多账号
@@ -151,7 +158,7 @@ struct RepoDetailView: View {
         // 之前 0.28s 太快，transition 在 WebView 还没出内容时就结束了，肉眼几乎
         // 看不见"轻轻落下"。0.4s 是经验值，比 README 首帧渲染稍慢一点，让用户
         // 能明确感受到内容从上方滑入。
-        .animation(.easeOut(duration: 0.4), value: detailContentID)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: detailContentID)
     }
 
     /// 当前 detail 内容的标识符，用作 `.animation(_:value:)` 的触发 key。
@@ -226,17 +233,13 @@ struct RepoDetailView: View {
     // MARK: - 空态
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 56))
-                .foregroundStyle(.tertiary)
-            Text("empty.noSelection")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text("empty.selectFromList")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
+        EmptyStateView(
+            systemImage: "doc.text.magnifyingglass",
+            title: "empty.noSelection",
+            subtitle: "empty.selectFromList",
+            iconSize: 56,
+            spacing: 12
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -308,17 +311,11 @@ struct ReadmeStateView: View {
             }
 
         case .empty:
-            VStack(spacing: 10) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 36))
-                    .foregroundStyle(.tertiary)
-                Text("readme.empty")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                Text("readme.emptyDescription")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
+            EmptyStateView(
+                systemImage: "doc.text",
+                title: "readme.empty",
+                subtitle: "readme.emptyDescription"
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .requiresLogin:
@@ -441,6 +438,20 @@ struct ReadmeTranslationFooterButton: View {
     let control: ReadmeTranslationControl
     let sourceHtml: String
 
+    /// 翻译中时按钮 hover 状态——hover 显示 stop 图标 + tooltip 切"停止翻译"。
+    ///
+    /// 2026-06-14 dong4j 反馈"详情页的右下角的翻译, 没有停止操作, 需要添加一个,
+    /// 光标移动到图标上显示停止图标, 点击之后停止翻译"。设计选择：
+    ///   - 复用主翻译按钮位置（不新增独立 stop 按钮）：避免 footer 区按钮堆积，且
+    ///     hover 切换符合用户对"翻译中按钮 = 当前能做的事就是取消"的直觉；
+    ///   - hover 时只切**图标**，文字"翻译"保持不变：按钮宽度不抖动，视觉聚焦在 icon；
+    ///   - 翻译中按钮**不再 disabled**：让 click 能落地触发 `cancelTranslation()`；
+    ///   - 默认 ProgressView 转圈：脱离 hover 时仍清晰看到"在跑"。
+    @State private var isHoveringWhileTranslating: Bool = false
+
+    /// 2026-06-15:hover 切图标的 0.15s 淡入在「关闭应用内动画」时跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     private var translationVM: ReadmeTranslationViewModel { control.translationVM }
     private var settings: AppSettings { control.settings }
 
@@ -471,23 +482,21 @@ struct ReadmeTranslationFooterButton: View {
             }
 
             Button {
-                translationVM.toggleTranslation(
-                    repo: control.repo,
-                    sourceHtml: sourceHtml,
-                    targetLanguage: settings.readmeTranslationLanguage
-                )
+                if translationVM.isTranslating {
+                    // 翻译中点击 = 用户主动停止：调 VM.cancelTranslation 取消正在跑的
+                    // Task + 复位 isTranslating + 不弹错误。下方 onHover 会在按钮失焦后
+                    // 把 isHoveringWhileTranslating 复位，恢复默认 icon 形态。
+                    translationVM.cancelTranslation()
+                } else {
+                    translationVM.toggleTranslation(
+                        repo: control.repo,
+                        sourceHtml: sourceHtml,
+                        targetLanguage: settings.readmeTranslationLanguage
+                    )
+                }
             } label: {
                 HStack(spacing: 4) {
-                    if translationVM.isTranslating {
-                        ProgressView()
-                            .controlSize(.small)
-                            .frame(width: 12, height: 12)
-                    } else {
-                        Image(systemName: isShowingTranslation
-                              ? "character.bubble.fill"
-                              : "character.bubble")
-                            .font(.caption2)
-                    }
+                    iconView
                     Text(buttonTitle)
                         .font(.caption2)
                 }
@@ -495,15 +504,65 @@ struct ReadmeTranslationFooterButton: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .disabled(translationVM.isTranslating || sourceHtml.isEmpty)
+            // 翻译中要让点击能落地触发 cancel，所以 disabled 条件改成：
+            //   - 翻译中：永远可点（点击 = 取消）；
+            //   - 非翻译中 + sourceHtml 为空：disabled（无内容可翻译 / 切换）。
+            .disabled(!translationVM.isTranslating && sourceHtml.isEmpty)
             .help(buttonTooltip)
+            .onHover { hovering in
+                // 只在翻译中跟踪 hover 切 icon；非翻译态不需要这个状态，确保切回
+                // 普通态时 isHoveringWhileTranslating 也被复位，防止下次进入翻译时
+                // 因残留 true 直接显示 stop 图标（虽然实际 hover 离开会立刻 false，
+                // 但额外守门更稳）。
+                if translationVM.isTranslating {
+                    isHoveringWhileTranslating = hovering
+                } else if isHoveringWhileTranslating {
+                    isHoveringWhileTranslating = false
+                }
+            }
 
             languageMenu
         }
     }
 
+    /// 按钮图标：3 态切换。
+    ///   - 翻译中 + 未 hover → 转圈 ProgressView（明确"在跑"）
+    ///   - 翻译中 + hover → 红色 `stop.fill`（暗示"点击可停"）
+    ///   - 非翻译态 → 原 `character.bubble[.fill]` 取决于是否已显示译文
+    ///
+    /// 翻译中两态用 ZStack + opacity 切换而非 if-else，是因为：
+    ///   - if-else 切换会导致 SwiftUI 重新初始化 ProgressView，转圈动画从 0 重启，
+    ///     用户连续 hover / leave 时会看到"动画反复重置"的不连续感；
+    ///   - ZStack + opacity 保留 ProgressView 实例 + 让动画连贯跑下去，hover 切走
+    ///     时只是隐藏不重启。
+    /// 加 `.animation(.easeInOut(duration: 0.15), value: isHoveringWhileTranslating)`
+    /// 让 hover 切换有淡入淡出，避免硬切。
+    @ViewBuilder
+    private var iconView: some View {
+        if translationVM.isTranslating {
+            ZStack {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 12, height: 12)
+                    .opacity(isHoveringWhileTranslating ? 0 : 1)
+                Image(systemName: "stop.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .opacity(isHoveringWhileTranslating ? 1 : 0)
+            }
+            .frame(width: 12, height: 12)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHoveringWhileTranslating)
+        } else {
+            Image(systemName: isShowingTranslation
+                  ? "character.bubble.fill"
+                  : "character.bubble")
+                .font(.caption2)
+        }
+    }
+
     /// 主按钮文案：未翻译 → "翻译"；已翻译 → "原文"。
     /// 缓存与当前源不匹配时给 "翻译" 一个 stale 标记，引导用户主动 regenerate。
+    /// 翻译中也保持"翻译"文字不变（仅图标 hover 切 stop），避免按钮宽度抖动。
     private var buttonTitle: LocalizedStringKey {
         if isShowingTranslation { return "readme.translate.showOriginal" }
         if translationVM.cacheIsStale { return "readme.translate.staleAction" }
@@ -511,6 +570,10 @@ struct ReadmeTranslationFooterButton: View {
     }
 
     private var buttonTooltip: LocalizedStringKey {
+        // 翻译中 + hover → "停止翻译"，明确点击会取消而非其它操作。
+        if translationVM.isTranslating && isHoveringWhileTranslating {
+            return "readme.translate.tooltip.stop"
+        }
         if isShowingTranslation { return "readme.translate.tooltip.showOriginal" }
         return "readme.translate.tooltip.translate"
     }

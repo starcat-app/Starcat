@@ -82,7 +82,7 @@ struct StarStatChipButton: View {
     /// 失败短暂红色（600ms 自动复位）。
     @State private var showErrorFlash: Bool = false
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
         Button {

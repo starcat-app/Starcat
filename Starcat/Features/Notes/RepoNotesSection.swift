@@ -53,6 +53,8 @@ struct RepoNotesSection: View {
     let repo: Repo
 
     @Environment(AppDependencies.self) private var dependencies
+    /// 2026-06-15：DisclosureGroup 展开/收起 0.16s 动画在「关闭应用内动画」时跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var viewModel: RepoNotesSectionViewModel?
 
@@ -204,7 +206,7 @@ struct RepoNotesSection: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture {
-                withAnimation(.easeInOut(duration: 0.16)) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                     isNotesExpanded.toggle()
                 }
             }

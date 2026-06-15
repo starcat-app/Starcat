@@ -71,6 +71,27 @@ final class SyncManager {
     var state: SyncState = .idle
     var progress: SyncProgress?
 
+    /// R-07（2026-06-15）：首次写入 page 1 后的「边沿信号」。
+    ///
+    /// 设计意图：让 `HomeView` 能在 SyncManager 还在跑后续页时就提前触发
+    /// `reloadItems` 把第一页 ~100 条 star 上屏，避免首次登录时盯着空白
+    /// 等十几秒拉完全部 1800 条才看到任何内容。
+    ///
+    /// 触发规则（严格）：
+    /// - 全量 / 增量主路径：page 1 `upsertStarred` 成功后赋值一次（同一帧）
+    /// - **304 早退**不触发（无新数据，registry 已在 304 路径自己刷过）
+    /// - **失败 / 取消**不触发（throw 跳过赋值，状态走 .failed / .idle）
+    /// - **page 1 dtos 为空**不触发（在 upsert 之前 break）
+    ///
+    /// 为什么用 `Date?` 而不是 Int 计数：① `@Observable` 的 `onChange` 监听
+    /// 用值变化触发，Date 每次必不同天然形成边沿；② Int 计数会让 view
+    /// 端误以为"递增有语义"——其实只是"又拉了一次"；③ Date 自带"刚刚"
+    /// 的时间语义，将来如需"5 秒内只触发一次"加防抖逻辑也直接。
+    ///
+    /// 与 `state == .completed` 关系：completed 仍是收尾的最终全集 reload
+    /// 触发点；本字段只负责"首屏边沿"，两者协作不互斥。
+    var firstPageWrittenAt: Date?
+
     // MARK: - 依赖
 
     /// D-02：依赖协议而非具体 actor，便于单测注入 Mock。
@@ -246,6 +267,13 @@ final class SyncManager {
                 totalSynced += dtos.count
                 progress?.current = totalSynced
                 progress?.currentPage = page
+
+                // R-07：page 1 写库成功 → 立刻翻边沿信号，HomeView 把首页 ~100 条上屏。
+                // 增量模式时 page 1 可能就 break，但本句仍执行；增量第一页写入也是值得"上屏"的场景。
+                // 失败 / cancellation 不会到这里（前面有 throw）。
+                if page == 1 {
+                    firstPageWrittenAt = Date()
+                }
 
                 AppLog.sync.debug("Synced page \(page, privacy: .public): \(dtos.count, privacy: .public) repos (total \(totalSynced, privacy: .public))")
 

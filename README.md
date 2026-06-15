@@ -91,6 +91,13 @@ Starcat/
     └── Assets.xcassets
 ```
 
+### 全量测试
+
+```bash
+cd /Users/dong4j/Developer/1.AI/ai-Incubator/Starcat && \
+  xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
+```
+
 ### AI 服务配置
 
 支持多种 AI 服务模式：

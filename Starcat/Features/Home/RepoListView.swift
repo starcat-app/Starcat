@@ -52,7 +52,7 @@ struct RepoListView: View {
     /// 全局搜索中心由 HomeView 承载；列表 toolbar 只负责触发，不持有浮层状态。
     var onOpenSearchCenter: (() -> Void)?
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     // 顶部 clone 按钮现在属于中栏 toolbar；复制成功提示也跟着放在列表栏上。
     @State private var toastMessage: String?
@@ -149,7 +149,11 @@ struct RepoListView: View {
         .onChange(of: viewModel.itemsRevision) { _, _ in
             let store = dependencies.manageMultiSelectionStore
             guard store.isActive else { return }
-            let visibleIDs = Set(viewModel.items.map(\.id))
+            // R-07：retain 用 filteredSorted（理论可见集合）而非 items（当前页切片）。
+            // 否则用户多选了第 1 页若干 row 后滚到 page 3，loadMore append 新 items
+            // 不会动 itemsRevision，但若改了 filter 又触发 retain → 第 1 页那些选中
+            // 因为不在 items 切片里被误删；用 filteredSorted 才符合"理论上仍可见"语义。
+            let visibleIDs = Set(viewModel.filteredSorted.map(\.id))
             store.retain(visibleIDs: visibleIDs)
         }
         // W12 PR-5：Cmd+A 全选 — 4 场景统一注入一个隐藏按钮承载快捷键。
@@ -165,14 +169,18 @@ struct RepoListView: View {
     /// - 用 `Button { ... }.keyboardShortcut("a", modifiers: .command).hidden()` 是 SwiftUI 注册
     ///   全局键盘快捷键的常规手法（隐藏按钮不占布局，但快捷键由 SwiftUI 路由系统接管）；
     /// - 仅在 manage store 处于 active 时启用，否则 `.disabled(true)` 让 Cmd+A 不抢系统默认行为；
-    /// - selectAll 的入参由 view 自己从 viewModel.items 构造 SelectionSnapshot（Repo.id == ghRepoId）。
+    /// - selectAll 的入参由 view 自己从 viewModel.filteredSorted 构造 SelectionSnapshot
+    ///   （Repo.id == ghRepoId）。**R-07 修订**：从 `items` 改用 `filteredSorted` ——
+    ///   原 `items` 是当前页切片（≤ 20 条），Cmd+A 只能"全选可见页"反直觉；用户口径
+    ///   下 "Cmd+A 全选" 应该是"过滤后的全集"，与 R-07 之前 `items = 全集` 时的行为
+    ///   语义对齐。
     /// - Trending / Weekly / Activity 的 Cmd+A 由各自的 view 在本 PR 同步注入（行为 4 场景统一）。
     ///   它们的 visible items 不暴露到 RepoListView 这一层，避免本视图反向依赖子 ViewModel。
     @ViewBuilder
     private var selectAllShortcutButton: some View {
         let store = dependencies.manageMultiSelectionStore
         Button {
-            let snapshots = viewModel.items.map {
+            let snapshots = viewModel.filteredSorted.map {
                 SelectionSnapshot(ghRepoId: $0.id, owner: $0.owner, name: $0.name)
             }
             store.selectAll(snapshots)
@@ -723,6 +731,15 @@ struct RepoListView: View {
                     .readmePrefetch { [readmeAPI = dependencies.readmeAPI] in
                         await readmeAPI.prefetch(for: repo)
                     }
+                    // R-07：滚到倒数第 3 行 → 追加下一页（Weekly 同款范式）。
+                    // 用 `viewModel.items.count` 实时读，配合 hasMore 守卫天然幂等：
+                    // loadMoreIfNeeded 内部 guard hasMore 防止已加载完后继续追加。
+                    // 用 item.index 比 indexOf(repo) 快（O(1)）。
+                    .onAppear {
+                        if viewModel.hasMore && item.index >= viewModel.items.count - 3 {
+                            viewModel.loadMoreIfNeeded()
+                        }
+                    }
                 }
             }
             .id(viewModel.itemsRevision)
@@ -740,8 +757,14 @@ struct RepoListView: View {
             // 仅在非 nil 时滚（nil 表示"清空选中"，不该跳动）。
             .onChange(of: selection.wrappedValue) { _, newValue in
                 guard let id = newValue else { return }
-                withAnimation(.easeInOut(duration: 0.2)) {
+                // 2026-06-15:reduceMotion 时跳过 0.2s 平滑滚动,直接 jump-to(scrollTo
+                // 在裸 closure 内不挂 transaction = 瞬切)。
+                if reduceMotion {
                     proxy.scrollTo(id, anchor: .center)
+                } else {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        proxy.scrollTo(id, anchor: .center)
+                    }
                 }
             }
         }
@@ -755,35 +778,39 @@ struct RepoListView: View {
             return selectedActivityCategory.localizedTitle
         }
         // W12 PR-5：多选数从 manageMultiSelectionStore 派生（替代原 viewModel.multiSelectedRepoIDs）。
+        // **R-07 修订**：subtitle 显示的"共 N 个"用户视角是「过滤后的总数」，应读
+        // `filteredSorted.count` 而非 `items.count`（分页切片）。否则用户看到
+        // "已选 5 / 共 20"，往下滚一屏又变成"共 40"，体感诡异。
         let manageStore = dependencies.manageMultiSelectionStore
+        let visibleTotal = viewModel.filteredSorted.count
         if manageStore.isActive {
             return String(
                 format: String(localized: "list.selectedCountFormat"),
                 manageStore.count,
-                viewModel.items.count
+                visibleTotal
             )
         }
         if viewModel.isRefreshing {
             if viewModel.isSemanticSearching {
                 return String(
                     format: String(localized: "search.semantic.refreshingFormat"),
-                    viewModel.items.count
+                    visibleTotal
                 )
             }
             return String(
                 format: String(localized: "list.refreshingFormat"),
-                viewModel.items.count
+                visibleTotal
             )
         }
         if viewModel.isSemanticSearching {
             return String(
                 format: String(localized: "search.semantic.resultCountFormat"),
-                viewModel.items.count
+                visibleTotal
             )
         }
         return String(
             format: String(localized: "list.repoCountFormat"),
-            viewModel.items.count
+            visibleTotal
         )
     }
 
@@ -797,9 +824,28 @@ struct RepoListView: View {
             return String(localized: "activity.title")
         }
         if viewModel.isSearching {
-            return String(format: String(localized: "search.searching"), viewModel.searchQuery)
+            return String(format: String(localized: "search.searching"), truncatedSearchQueryForTitle)
         }
         return localizedTitle(for: viewModel.selection)
+    }
+
+    /// 给 `.navigationTitle` 用的搜索词截断版本。
+    ///
+    /// **为什么必须在拼字符串时就截断**：`.navigationTitle(_:)` 接的是裸 `String`，
+    /// 直接绑到 macOS 窗口 chrome / NavigationStack title 区，**SwiftUI 没有 modifier 能
+    /// 在 view 层 truncate**（`.lineLimit` 对 system title 无效）。任由 query 过长会
+    /// 把 toolbar 撑出列表栏右侧或挤掉计数副标题。
+    ///
+    /// **阈值 24 个 grapheme cluster**：经验值，覆盖典型搜索 90%+ 场景；中英混排在
+    /// 280–400pt 列表栏宽度内不溢出。超长则后接 `…`（U+2026 HORIZONTAL ELLIPSIS
+    /// 单字符省略号，符合 Apple HIG，不用三个 ASCII 点）。
+    ///
+    /// **不动 `viewModel.searchQuery` 本体**：截断仅作显示用，FTS / 语义搜索仍按完整
+    /// query 跑；这里只防 title 视觉溢出。
+    private var truncatedSearchQueryForTitle: String {
+        let raw = viewModel.searchQuery
+        let limit = 24
+        return raw.count > limit ? "\(raw.prefix(limit))…" : raw
     }
 
     /// Navigation title 需要 plain String；静态入口走 localization，用户标签/语言按原样显示。
@@ -855,35 +901,23 @@ struct RepoListView: View {
     }
 
     private func emptyState(systemImage: String, title: LocalizedStringKey, subtitle: LocalizedStringKey) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 36))
-                .foregroundStyle(.tertiary)
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-        }
+        EmptyStateView(
+            systemImage: systemImage,
+            title: title,
+            subtitle: subtitle,
+            spacing: 12
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }
 
     private func emptyState(systemImage: String, title: LocalizedStringKey, subtitleText: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 36))
-                .foregroundStyle(.tertiary)
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text(verbatim: subtitleText)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-        }
+        EmptyStateView(
+            systemImage: systemImage,
+            title: title,
+            subtitleText: subtitleText,
+            spacing: 12
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }

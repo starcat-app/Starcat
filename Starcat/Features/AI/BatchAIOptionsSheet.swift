@@ -37,6 +37,9 @@ struct BatchAIOptionsSheet: View {
     /// 实际进度估算由 BatchAIQueueService.estimatedTimeRemaining 接管。
     private static let avgSecondsPerRepo: Double = 8.0
 
+    /// 2026-06-15:阈值滑杆出/收的 0.18s 动画在「关闭应用内动画」时跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             header
@@ -138,10 +141,10 @@ struct BatchAIOptionsSheet: View {
 
             if options.autoApplyTags, tagsEnabled {
                 thresholdSlider
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
         }
-        .animation(.easeInOut(duration: 0.18), value: options.autoApplyTags)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: options.autoApplyTags)
     }
 
     private var thresholdSlider: some View {
@@ -163,9 +166,11 @@ struct BatchAIOptionsSheet: View {
                 .controlSize(.mini)
                 .tint(.accentColor)
 
+            // 2026-06-14 D-31 follow-up：.tertiary → .secondary。
+            // hint 仍需要能读清（百分比阈值是关键提示），与 D-31 全局对比度修正对齐。
             Text(String(format: String(localized: "batchAI.options.threshold.hintFormat"), percentString(options.confidenceThreshold)))
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
         .padding(12)
         .background(
@@ -241,7 +246,7 @@ private struct OptionCard: View {
     let onToggle: () -> Void
 
     @State private var isHovered: Bool = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
         Button {
@@ -301,7 +306,7 @@ private struct OptionCard: View {
                     .foregroundStyle(.white)
             }
             .frame(width: 18, height: 18)
-            .transition(.scale.combined(with: .opacity))
+            .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
         } else {
             Circle()
                 .strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1.2)

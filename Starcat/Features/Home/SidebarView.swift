@@ -23,7 +23,7 @@ struct SidebarView: View {
     /// 系统级"减少动效"开关。开启时把 spring 折叠动画退化为瞬切，避免给晕动症 / 偏好
     /// 静态界面的用户增加负担。与项目内 `ListRowRevealModifier` / `RepoLocalSections`
     /// / `SmartSearchField` 等动画路径处理方式一致。
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     /// HOM-PROFILE 2026-06-05：贡献草坪数据来源。@Observable，payload 变化时 sidebar 自动重渲染。
     @Environment(ContributionService.self) private var contributionService
     /// 2026-06-06 A 方案：用户 profile 缓存服务。Sidebar `.task(id: user.login)`
@@ -185,8 +185,10 @@ struct SidebarView: View {
             .padding(.vertical, 6)
             .background(Color.secondary.opacity(0.06))
             .help(Text("sidebar.autoTidy.tooltip"))
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .animation(.easeInOut(duration: 0.2), value: autoTidyScheduler.isAutoTidyRunning)
+            // 2026-06-15:reduceMotion 兜底——transition 降为 .identity 瞬切,
+            // 外层 .animation 同步置 nil,避免 0.2s 包裹。
+            .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: autoTidyScheduler.isAutoTidyRunning)
         }
     }
 
@@ -888,6 +890,9 @@ struct SidebarView: View {
 private struct SidebarSyncButton: View {
     @Environment(SyncManager.self) private var syncManager
     @Environment(AuthSession.self) private var authSession
+    /// 2026-06-15:同步按钮 SF Symbol 旋转在「关闭应用内动画」时跳过,
+    /// 仅瞬切到 360°/0° 给"刷新中"提示但不持续转动。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var isHovering = false
 
     // 我们用单独的 state 追踪动画状态，确保旋转顺滑
@@ -962,12 +967,20 @@ private struct SidebarSyncButton: View {
 
     private func updateRotation(isSyncing: Bool) {
         if isSyncing {
-            withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+            if reduceMotion {
                 rotation = 360
+            } else {
+                withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+                    rotation = 360
+                }
             }
         } else {
-            withAnimation(.easeOut(duration: 0.2)) {
+            if reduceMotion {
                 rotation = 0
+            } else {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    rotation = 0
+                }
             }
         }
     }
