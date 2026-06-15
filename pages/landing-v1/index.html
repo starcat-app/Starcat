@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-Hans" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Starcat - The Developer's Star Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        background: '#0F172A',
+                        foreground: '#F8FAFC',
+                        primary: '#1E293B',
+                        secondary: '#334155',
+                        accent: '#22C55E',
+                        border: '#475569',
+                        muted: '#272F42'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.foreground');
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid theme('colors.border');
+        }
+        .text-glow {
+            text-shadow: 0 0 10px rgba(34, 197, 94, 0.3);
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen selection:bg-accent selection:text-background">
+    <!-- Navigation -->
+    <nav class="sticky top-0 z-50 glass-panel border-b-0 border-x-0 border-t-0 border-b border-border">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-2">
+                    <span class="text-2xl">⭐</span>
+                    <span class="font-bold text-xl tracking-tight">Starcat</span>
+                </div>
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-8">
+                        <a href="#features" class="hover:text-accent transition-colors duration-200">功能特性</a>
+                        <a href="#pricing" class="hover:text-accent transition-colors duration-200">版本差异</a>
+                        <a href="#" class="bg-accent text-background px-4 py-2 rounded-md font-medium hover:bg-green-400 transition-colors duration-200">免费下载</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <header class="pt-32 pb-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto text-center">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-accent/30 bg-accent/10 text-accent text-sm mb-8">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-accent"></span>
+            </span>
+            macOS 15+ Native Liquid Glass
+        </div>
+        <h1 class="text-5xl md:text-7xl font-bold tracking-tighter mb-6">
+            将 GitHub Stars 升级为<br/>
+            <span class="text-accent text-glow">可复用知识库</span>
+        </h1>
+        <p class="mt-4 max-w-2xl mx-auto text-xl text-slate-400 mb-10">
+            面向重度 GitHub 用户的 Apple 平台 Star 管理与 AI 知识整理工具。整理，理解、找回、评估。
+        </p>
+        <div class="flex flex-col sm:flex-row justify-center gap-4">
+            <button class="bg-accent text-background px-8 py-4 rounded-lg font-bold text-lg hover:bg-green-400 transition-all duration-200 hover:shadow-[0_0_20px_rgba(34,197,94,0.4)]">
+                获取 Starcat 免费版
+            </button>
+            <button class="glass-panel px-8 py-4 rounded-lg font-bold text-lg hover:bg-secondary transition-all duration-200">
+                升级至 PRO 版
+            </button>
+        </div>
+    </header>
+
+    <!-- Pricing / Versions -->
+    <section id="pricing" class="py-20 bg-primary/20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl md:text-4xl font-bold mb-4">选择适合你的开发利器</h2>
+                <p class="text-slate-400">免费体验核心管理能力，或升级 PRO 解锁 AI 智能引擎</p>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+                <!-- Free Tier -->
+                <div class="glass-panel rounded-2xl p-8 flex flex-col hover:border-slate-500 transition-colors">
+                    <h3 class="text-2xl font-bold mb-2">免费版</h3>
+                    <div class="text-4xl font-bold mb-6">
+                        <span class="text-3xl text-slate-400"></span><!-- Price left blank -->
+                    </div>
+                    <p class="text-slate-400 mb-8 border-b border-border pb-8">满足日常 Star 整理与原生体验需求。</p>
+                    <ul class="space-y-4 mb-8 flex-1">
+                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 基础管理 + Liquid Glass UI</li>
+                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> GitHub OAuth 登录与增量同步</li>
+                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 标签分类与语言筛选</li>
+                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> FTS5 全文搜索</li>
+                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> README Markdown 渲染</li>
+                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 私有笔记与状态管理 (未读/已采用等)</li>
+                    </ul>
+                    <button class="w-full glass-panel py-3 rounded-lg font-medium hover:bg-secondary transition-colors">
+                        立即下载免费版
+                    </button>
+                </div>
+
+                <!-- PRO Tier -->
+                <div class="glass-panel rounded-2xl p-8 flex flex-col border-accent relative overflow-hidden group">
+                    <div class="absolute inset-0 bg-accent/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div class="absolute top-0 right-0 bg-accent text-background px-3 py-1 text-xs font-bold rounded-bl-lg">PRO</div>
+                    <h3 class="text-2xl font-bold mb-2">PRO 版</h3>
+                    <div class="text-4xl font-bold mb-6 text-accent">
+                        <span class="text-3xl text-accent/70"></span><!-- Price left blank -->
+                    </div>
+                    <p class="text-slate-400 mb-8 border-b border-border pb-8">AI 驱动的智能知识库引擎，洞察每一行代码。</p>
+                    <ul class="space-y-4 mb-8 flex-1">
+                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> <span class="font-medium text-white">包含免费版所有功能</span></li>
+                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> AI 智能摘要 (中文/英文)</li>
+                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 混合语义搜索 (BM25 + Embedding + RRF)</li>
+                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> AI 标签推荐与 14 预设分类</li>
+                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> AI 项目健康度评估</li>
+                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-accent mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Release 订阅追踪 & 时间线统一展示</li>
+                    </ul>
+                    <button class="w-full bg-accent text-background py-3 rounded-lg font-bold hover:bg-green-400 transition-colors hover:shadow-[0_0_15px_rgba(34,197,94,0.3)]">
+                        升级至 PRO
+                    </button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="border-t border-border py-12 mt-20">
+        <div class="max-w-7xl mx-auto px-4 text-center text-slate-500">
+            <p>&copy; 2026 Starcat. All rights reserved.</p>
+        </div>
+    </footer>
+</body>
+</html>

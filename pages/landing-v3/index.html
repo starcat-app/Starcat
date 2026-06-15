@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-Hans" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Starcat - Sync Your GitHub Universe</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        background: '#0F0F23',
+                        foreground: '#F8FAFC',
+                        primary: '#1E1B4B',
+                        secondary: '#4338CA',
+                        accent: '#22C55E',
+                        border: '#312E81',
+                        muted: '#27273B'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.foreground');
+        }
+        .hero-gradient {
+            background: radial-gradient(circle at top right, #312E81 0%, #0F0F23 60%);
+        }
+        .card-bg {
+            background: linear-gradient(145deg, #1E1B4B, #0F0F23);
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen selection:bg-accent selection:text-background">
+    <!-- Navbar -->
+    <nav class="flex items-center justify-between p-6 max-w-7xl mx-auto">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-accent flex items-center justify-center text-xl text-background">⭐</div>
+            <span class="font-black text-2xl tracking-tighter">STARCAT</span>
+        </div>
+        <div>
+            <a href="#plans" class="text-sm font-bold uppercase tracking-wider text-slate-300 hover:text-white mr-6">订阅方案</a>
+            <a href="#" class="bg-white text-black px-6 py-3 rounded-full font-bold text-sm uppercase tracking-wider hover:scale-105 transition-transform">立即体验</a>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <header class="hero-gradient pt-24 pb-32 px-6 text-center">
+        <h1 class="text-6xl md:text-8xl font-black tracking-tighter mb-8 max-w-5xl mx-auto leading-tight">
+            点亮你的<br/>代码星系
+        </h1>
+        <p class="text-xl md:text-2xl text-slate-300 max-w-2xl mx-auto mb-12 font-medium">
+            告别混乱的收藏夹。Starcat 为你提供 Apple 平台最沉浸的 GitHub Stars 管理体验。
+        </p>
+        <div class="flex flex-col sm:flex-row justify-center gap-6">
+            <button class="bg-accent text-background px-10 py-4 rounded-full font-black text-lg uppercase tracking-wider hover:scale-105 transition-transform shadow-lg shadow-accent/20">
+                获取免费版
+            </button>
+            <button class="bg-white/10 text-white px-10 py-4 rounded-full font-black text-lg uppercase tracking-wider hover:bg-white/20 transition-colors backdrop-blur-md">
+                探索 PRO
+            </button>
+        </div>
+    </header>
+
+    <!-- Plans -->
+    <section id="plans" class="py-24 px-6 max-w-7xl mx-auto">
+        <div class="text-center mb-16">
+            <h2 class="text-4xl font-black tracking-tighter mb-4">选择你的频段</h2>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+            
+            <!-- Free Plan -->
+            <div class="card-bg border border-border rounded-3xl p-10 hover:border-secondary transition-colors duration-300">
+                <div class="inline-block px-4 py-1 rounded-full bg-slate-800 text-sm font-bold tracking-widest uppercase mb-6">Free Edition</div>
+                <h3 class="text-4xl font-black mb-8 pb-8 border-b border-border">基础混音</h3>
+                <ul class="space-y-5 text-slate-300 font-medium mb-12">
+                    <li class="flex items-center gap-4"><div class="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-xs">✓</div> macOS 原生 Liquid Glass UI</li>
+                    <li class="flex items-center gap-4"><div class="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-xs">✓</div> GitHub 一键增量同步</li>
+                    <li class="flex items-center gap-4"><div class="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-xs">✓</div> FTS5 全文搜索与标签分类</li>
+                    <li class="flex items-center gap-4"><div class="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-xs">✓</div> README Markdown 沉浸式阅读</li>
+                    <li class="flex items-center gap-4"><div class="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-xs">✓</div> 你的私有笔记与阅读状态</li>
+                </ul>
+                <button class="w-full py-4 rounded-full border-2 border-slate-600 font-black tracking-wider uppercase hover:bg-slate-800 transition-colors">
+                    开始收听
+                </button>
+            </div>
+
+            <!-- PRO Plan -->
+            <div class="card-bg border-2 border-accent rounded-3xl p-10 relative overflow-hidden transform md:-translate-y-4 shadow-2xl shadow-accent/10">
+                <div class="absolute top-0 right-0 bg-accent text-background px-6 py-2 rounded-bl-xl font-black tracking-widest uppercase">PRO</div>
+                <div class="inline-block px-4 py-1 rounded-full bg-accent/20 text-accent text-sm font-bold tracking-widest uppercase mb-6">Pro Edition</div>
+                <h3 class="text-4xl font-black mb-8 pb-8 border-b border-border">AI 无损母带</h3>
+                <ul class="space-y-5 text-slate-200 font-medium mb-12">
+                    <li class="flex items-center gap-4"><div class="w-6 h-6 rounded-full bg-accent text-background flex items-center justify-center text-xs font-bold">✓</div> 涵盖基础混音所有功能</li>
+                    <li class="flex items-center gap-4"><div class="w-6 h-6 rounded-full bg-accent text-background flex items-center justify-center text-xs font-bold">✓</div> AI 双语智能摘要，秒懂核心</li>
+                    <li class="flex items-center gap-4"><div class="w-6 h-6 rounded-full bg-accent text-background flex items-center justify-center text-xs font-bold">✓</div> 混合语义搜索，像问人类一样找库</li>
+                    <li class="flex items-center gap-4"><div class="w-6 h-6 rounded-full bg-accent text-background flex items-center justify-center text-xs font-bold">✓</div> AI 健康度评估与自动分类</li>
+                    <li class="flex items-center gap-4"><div class="w-6 h-6 rounded-full bg-accent text-background flex items-center justify-center text-xs font-bold">✓</div> Release 订阅：追踪每一次更新</li>
+                </ul>
+                <button class="w-full py-4 rounded-full bg-accent text-background font-black tracking-wider uppercase hover:scale-105 transition-transform">
+                    升级到 PRO
+                </button>
+            </div>
+
+        </div>
+    </section>
+
+    <footer class="py-12 text-center text-slate-500 text-sm font-bold tracking-widest uppercase">
+        STARCAT © 2026
+    </footer>
+</body>
+</html>

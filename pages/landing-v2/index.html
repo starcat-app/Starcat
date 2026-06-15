@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-Hans" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Starcat - The Premium Star Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"IBM Plex Sans"', 'sans-serif'],
+                    },
+                    colors: {
+                        background: '#0F172A',
+                        foreground: '#F8FAFC',
+                        primary: '#F59E0B',
+                        secondary: '#FBBF24',
+                        accent: '#8B5CF6',
+                        border: '#334155',
+                        muted: '#272F42'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.foreground');
+        }
+        .huge-text {
+            font-size: clamp(3rem, 8vw, 8rem);
+            font-weight: 700;
+            letter-spacing: -0.05em;
+            line-height: 1;
+        }
+        .card {
+            background-color: theme('colors.background');
+            border: 2px solid theme('colors.border');
+            transition: all 300ms ease;
+        }
+        .card:hover {
+            border-color: theme('colors.primary');
+            transform: translateY(-5px);
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen selection:bg-primary selection:text-background">
+    <!-- Nav -->
+    <nav class="py-8 px-6 lg:px-12 flex justify-between items-center max-w-[1600px] mx-auto">
+        <div class="text-2xl font-bold tracking-tight flex items-center gap-3">
+            <div class="w-8 h-8 rounded bg-primary flex items-center justify-center text-background text-sm">⭐</div>
+            STARCAT
+        </div>
+        <a href="#download" class="border-2 border-primary text-primary px-6 py-2 font-semibold hover:bg-primary hover:text-background transition-colors">
+            立即开始
+        </a>
+    </nav>
+
+    <!-- Hero -->
+    <header class="pt-20 pb-32 px-6 lg:px-12 max-w-[1600px] mx-auto">
+        <h1 class="huge-text mb-8 max-w-5xl">
+            资产级<br/>
+            <span class="text-primary">STAR</span> 管理。
+        </h1>
+        <p class="text-2xl lg:text-3xl text-slate-400 font-light max-w-3xl mb-16 leading-relaxed">
+            将散落的 GitHub 收藏转化为井然有序的结构化知识资产。<br/>
+            由原生 macOS 体验与深度 AI 引擎驱动。
+        </p>
+    </header>
+
+    <!-- Comparison -->
+    <section class="py-24 border-t-2 border-border bg-slate-900/50">
+        <div class="max-w-[1600px] mx-auto px-6 lg:px-12">
+            <h2 class="text-4xl md:text-6xl font-bold tracking-tight mb-20">版本选择</h2>
+            
+            <div class="grid lg:grid-cols-2 gap-12">
+                <!-- Free -->
+                <div class="card p-10 md:p-14">
+                    <h3 class="text-4xl font-bold mb-4">STARCAT 基础版</h3>
+                    <div class="text-2xl text-slate-400 mb-12">基础资产管理</div>
+                    <ul class="space-y-6 text-xl text-slate-300 font-light mb-16">
+                        <li class="flex gap-4"><span class="text-primary">✓</span> macOS 15+ 原生 Liquid Glass 布局</li>
+                        <li class="flex gap-4"><span class="text-primary">✓</span> GitHub OAuth 无缝同步</li>
+                        <li class="flex gap-4"><span class="text-primary">✓</span> 多维度标签分类与语言筛选</li>
+                        <li class="flex gap-4"><span class="text-primary">✓</span> FTS5 本地毫秒级全文搜索</li>
+                        <li class="flex gap-4"><span class="text-primary">✓</span> README 高清 Markdown 渲染</li>
+                        <li class="flex gap-4"><span class="text-primary">✓</span> 私有笔记与星标状态跟踪</li>
+                    </ul>
+                    <button class="w-full border-2 border-slate-500 text-slate-300 py-5 text-xl font-bold hover:bg-slate-800 transition-colors">
+                        下载基础版
+                    </button>
+                </div>
+
+                <!-- PRO -->
+                <div class="card p-10 md:p-14 border-accent relative">
+                    <div class="absolute top-0 right-0 bg-accent text-white px-6 py-2 font-bold tracking-widest text-sm">PRO 专属</div>
+                    <h3 class="text-4xl font-bold mb-4">STARCAT PRO</h3>
+                    <div class="text-2xl text-accent mb-12">全栈 AI 洞察</div>
+                    <ul class="space-y-6 text-xl text-slate-300 font-light mb-16">
+                        <li class="flex gap-4"><span class="text-accent">✓</span> 包含基础版所有特性</li>
+                        <li class="flex gap-4"><span class="text-accent">✓</span> AI 智能项目摘要 (支持中英文)</li>
+                        <li class="flex gap-4"><span class="text-accent">✓</span> 混合语义引擎 (BM25 + Embedding + RRF)</li>
+                        <li class="flex gap-4"><span class="text-accent">✓</span> 自动化标签推荐 (14 类工业标准体系)</li>
+                        <li class="flex gap-4"><span class="text-accent">✓</span> AI 深度健康度评估与趋势预测</li>
+                        <li class="flex gap-4"><span class="text-accent">✓</span> GitHub Release 追踪与统一时间线</li>
+                    </ul>
+                    <button class="w-full bg-accent text-white py-5 text-xl font-bold hover:bg-violet-600 transition-colors">
+                        订阅 PRO 洞察
+                    </button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="py-12 border-t-2 border-border text-center text-slate-600 font-medium">
+        <p>STARCAT © 2026. SECURE ASSET MANAGEMENT.</p>
+    </footer>
+</body>
+</html>
