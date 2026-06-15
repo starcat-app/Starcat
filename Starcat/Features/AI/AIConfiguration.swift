@@ -650,11 +650,16 @@ enum AIDefaultPrompts {
     )
 
     /// Chat 任务占位符（dong4j 2026-06-14 v4 拍板，i18n 策略 C：全英文指令 + Locale 仅控输出语言；
-    /// 2026-06-15 HOM-70 v2 新增 `{previousSessionCarryOver}` 占位符闭合 carry-over 链路）：
+    /// 2026-06-15 HOM-70 v2 新增 `{previousSessionCarryOver}` 占位符闭合 carry-over 链路；
+    /// 2026-06-15 v4.x 新增 `{runtimeContext}` 注入运行环境元数据）：
     ///
-    /// **system 层 7 占位符**：
+    /// **system 层 8 占位符**：
     /// - `{outputLanguage}`：跟 `Locale.current` 派发为 `Simplified Chinese` / `English` /
     ///   `Japanese` 等；驱动正文语言 + 兜底句"无法从上下文确认"自然翻译；
+    /// - `{runtimeContext}`：当前运行环境（UTC 时间 / 周几 / 用户时区 / Starcat 版本号），
+    ///   由 `RuntimeContextProvider.snapshot()` 生成。让 AI 能回答"现在几点 / 今天周几 /
+    ///   你这是什么版本"等元问题。**注入时机**：每次组装 system prompt 时实时生成
+    ///   （UTC 时间到整点精度，同一小时内字符串不变，服务端 prompt cache 仍能命中）；
     /// - `{metadata}`：repo 元数据（fullName / description / language / topics / license / stars / forks / homepage），
     ///   与 Summary / Tags 任务共用同一份元数据块；
     /// - `{readme}`：清洗 + 截断后的 README 纯文本；
@@ -715,6 +720,11 @@ enum AIDefaultPrompts {
         - Keep replies focused on what the user asked; no padding, no boilerplate openers ("Sure!", "Great question!"), no closing summaries ("In summary, ...", "Hope this helps!").
         - When citing repository context, prefer specific references (file names, exact commands from README) over vague phrasing.
         - For multi-part questions, answer each part briefly; do not over-elaborate parts the user did not ask about.
+
+        # Runtime Context
+        The lines below describe the current runtime environment (UTC time at hour precision, day of week in the user's timezone, the user's timezone, and the running Starcat app version). Use these values when the user asks about the current time, today's date / day of week, or the app version. When reporting "the current time" to the user, convert the UTC time into the user's timezone first; do not parrot the UTC value back.
+
+        {runtimeContext}
 
         # Repository Context
 

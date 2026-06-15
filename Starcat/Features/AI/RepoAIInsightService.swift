@@ -464,10 +464,11 @@ final class RepoAIInsightService {
     }
 
     /// 2026-06-14 v4 重构：拼装对话路径的 system prompt，走 `aiChatTask.prompt` 模板
-    /// + 6 占位符渲染（详见 `AIDefaultPrompts.chat` 注释）。
+    /// + 占位符渲染（详见 `AIDefaultPrompts.chat` 注释，2026-06-15 起 8 占位符）。
     ///
     /// 实质渲染逻辑下沉到 `assembleChatSystemPrompt(...)` 静态函数（internal 可测），
-    /// 本方法负责"读 settings + 私仓门控 + 拆 source 字段"等 actor-bound 准备工作。
+    /// 本方法负责"读 settings + 私仓门控 + 拆 source 字段 + 调 RuntimeContextProvider"
+    /// 等 actor-bound 准备工作。
     private func buildChatSystemPrompt(
         repo: Repo,
         source: Source,
@@ -483,9 +484,12 @@ final class RepoAIInsightService {
         let externalContext = externalAllowed
             ? (cached?.externalContextMarkdown ?? "")
             : ""
+        // 2026-06-15：每次组装都实时抓 runtimeContext。UTC 时间到整点精度，
+        // 同一小时内字符串完全相同，服务端 prompt cache 仍能命中；跨小时才 miss 一次。
         return Self.assembleChatSystemPrompt(
             template: settings.aiChatTask.prompt.systemPrompt,
             outputLanguage: Self.outputLanguageDescriptor(),
+            runtimeContext: RuntimeContextProvider.snapshot(),
             metadata: source.metadata,
             readme: source.readme,
             codeContext: source.codeContext,
@@ -509,11 +513,13 @@ final class RepoAIInsightService {
     /// **签名变更说明**：v3 旧签名是 `(sourceText, cachedSummaryMarkdown, cachedExternalMarkdown,
     /// allowExternal)`，把 metadata + readme + codeContext 黑盒拼成 `sourceText` 喂进去。
     /// v4 改成"6 个一等参数"，跟模板的 6 占位符一一对应，让单测能精确断言每个占位符的渲染结果。
+    /// 2026-06-15 v4.x 追加 `runtimeContext` 参数，对应模板新增的 `{runtimeContext}` 占位符。
     ///
     /// `nonisolated`：本函数纯字符串拼接、无 actor 副作用，单测从 sync 上下文可直接调用。
     nonisolated static func assembleChatSystemPrompt(
         template: String,
         outputLanguage: String,
+        runtimeContext: String,
         metadata: String,
         readme: String,
         codeContext: String,
@@ -524,14 +530,16 @@ final class RepoAIInsightService {
         // 复用 AIPromptConfiguration.render（{key} → value，dict 没有的 key 保留字面量
         // 让 LLM 看到便于排错），与 Summary / Tags 任务的渲染语义统一。
         //
-        // HOM-70 v2 强制 `previousSessionCarryOver` 必填（不给默认值）：项目未上线，
-        // 让编译器帮我找到所有 callsite 一并升级，避免后续新增对话路径漏注入承接段。
-        // 普通 session 调用方传 `""` 即可（template 会渲染出空 section header，
-        // LLM 自然忽略，跟 codeContext / summary / externalContext 空 section 同款）。
+        // 「必填参数 + 不给默认值」遵循 HOM-70 v2 同款约束：项目未上线，让编译器帮我找到
+        // 所有 callsite 一并升级，避免后续新增对话路径漏注入。具体到本函数：
+        // - `previousSessionCarryOver` 普通 session 传 `""`（承接段为空 section header）；
+        // - `runtimeContext` 调用方应传 `RuntimeContextProvider.snapshot()`，不留兜底空串
+        //   入口避免"忘了调 provider 还能编译过"的潜在 bug。
         AIPromptConfiguration.render(
             template: template,
             placeholders: [
                 "outputLanguage": outputLanguage,
+                "runtimeContext": runtimeContext,
                 "metadata": metadata,
                 "readme": readme,
                 "codeContext": codeContext,
