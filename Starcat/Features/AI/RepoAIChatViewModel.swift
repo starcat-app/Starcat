@@ -152,6 +152,10 @@ final class RepoAIChatViewModel {
     /// 当前正在生成的 assistant 消息；nil 表示没有进行中的流式回答。
     private(set) var streamingMessage: ChatMessage?
 
+    /// 流式阶段专用的轻量展示快照。稳定 Markdown chunk 不再变化，只有 liveTail
+    /// 随批次更新；UI 因此无需在每次提交时重新解析完整回答。
+    private(set) var streamingPresentation: StreamingMarkdownSnapshot?
+
     /// `messages.first` 在完整 session messages 数组中的下标。0 表示已经加载到最早消息。
     private(set) var messageStartIndex: Int = 0
 
@@ -226,8 +230,13 @@ final class RepoAIChatViewModel {
     ///   等到完成（即便被 cancel 也从 Task.value 正常返回），保持 API 行为兼容。
     private var sendTask: Task<Void, Never>?
 
+    /// 用户主动加载过更早历史后，不再自动裁剪可见窗口，避免正在回看时旧消息消失。
+    /// 常规连续聊天没有展开历史，始终只常驻最近若干条，控制 Markdown 节点数量。
+    private var hasExpandedVisibleHistory = false
+
     private static let initialVisibleMessageCount = 2
     private static let earlierMessagePageSize = DiskChatHistoryStore.messagesPerChunk
+    private static let recentVisibleMessageLimit = 12
 
     /// 主 init（生产路径 / 测试都走这一个，2026-06-15 v4.y 收敛）。
     ///
@@ -423,6 +432,7 @@ final class RepoAIChatViewModel {
 
         messages.insert(contentsOf: earlier, at: 0)
         messageStartIndex = start
+        hasExpandedVisibleHistory = true
     }
 
     // MARK: - 动作
@@ -485,6 +495,7 @@ final class RepoAIChatViewModel {
 
         messages.append(userMessage)
         totalMessageCount += 1
+        trimVisibleMessagesIfNeeded()
         // 首条消息触发：用文案生成 title（30 字符截断）。后续轮次保留首条 title。
         if persistedMessages.allSatisfy({ $0.role != .user }) {
             currentSessionTitle = Self.makeTitle(from: trimmed)
@@ -494,6 +505,13 @@ final class RepoAIChatViewModel {
         persistCurrentSession(repo: repo, messages: sessionMessagesForPersist)
 
         streamingMessage = assistantPlaceholder
+        streamingPresentation = StreamingMarkdownSnapshot(
+            messageID: assistantPlaceholder.id,
+            timestamp: assistantPlaceholder.timestamp,
+            stableMarkdownChunks: [],
+            liveTail: "",
+            revision: 0
+        )
 
         isSending = true
         errorMessage = nil
@@ -516,21 +534,17 @@ final class RepoAIChatViewModel {
         // 爆 → SwiftUI 报 `OnScrollGeometryChange Modifier tried to update multiple times
         // per frame` + AttributeGraph cycle，最终主线程 livelock CPU 100%（强退）。
         //
-        // 节流策略：用时间窗口而非 chunk 数量（partial 是累积串不是 chunk 数）。窗口
-        // 80 ms ≈ 12.5 Hz，仍有连续打字感，同时给滚动 phase / sentinel 回调留出主线程
-        // 预算。历史 messages 在 stream 期间完全不改，只有独立 streamingMessage 重绘；
-        // chatStream 返回后再把 final 一次 append 为正式消息，保证最终内容完整。
-        //
-        // 实现要点：`lastCommitAt` / `pendingPartial` 是 sendMessage 函数局部 `var`，
-        // closure 是 `@MainActor (String) -> Void` 故 captured var 访问在 main actor
-        // 隔离下安全，无 Sendable / race 问题。`pendingPartial` 仅作为"是否有未提交
-        // 的 partial 在等"的语义标记，节流窗口未到不写 UI，等下个 partial 到来
-        // 时窗口到了就 commit 最新的（中间被跳过的不需要补，因为是累积串）。
+        // 2026-06-15 对话过程性能重构：service 只回传 delta，本层单点累积。
+        // UI 最多约 10 Hz 提交，同时大 burst 达到 96 字符时立即提交，避免网络代理
+        // 合并 chunk 后用户长时间看不到新内容。每次提交只切分稳定 Markdown 前缀，
+        // 未闭合尾部走纯 Text；最终完成时才渲染一次完整 Markdown。
         var lastCommitAt: TimeInterval = 0
-        var pendingPartial: String?
-        // Markdown parse 比纯文本昂贵。80 ms 约 12.5 Hz，仍有连续打字感，同时给
-        // 滚动 phase / sentinel 可见性回调保留主线程预算。
-        let throttleInterval: TimeInterval = 0.08
+        var accumulated = ""
+        var pendingCharacterCount = 0
+        var renderRevision = 0
+        var markdownAssembler = StreamingMarkdownAssembler()
+        let throttleInterval: TimeInterval = 0.10
+        let immediateCommitCharacterCount = 96
         do {
             let final = try await service.chatStream(
                 for: repo,
@@ -539,19 +553,24 @@ final class RepoAIChatViewModel {
                 carriedOverSummary: currentCarriedOverSummary,
                 wikiLinks: wikiLinks,
                 codeFlowPageURL: codeFlowPageURL
-            ) { [weak self] partial in
+            ) { [weak self] delta in
                 guard let self else { return }
-                pendingPartial = partial
+                accumulated += delta
+                markdownAssembler.append(delta)
+                pendingCharacterCount += delta.count
                 let now = Date.timeIntervalSinceReferenceDate
-                guard now - lastCommitAt >= throttleInterval else { return }
+                guard now - lastCommitAt >= throttleInterval
+                        || pendingCharacterCount >= immediateCommitCharacterCount else { return }
                 lastCommitAt = now
-                if var streaming = self.streamingMessage,
-                   let toCommit = pendingPartial {
-                    // 只改独立流式消息，历史 messages 数组在整个 stream 期间保持稳定。
-                    streaming.content = toCommit
-                    self.streamingMessage = streaming
-                    pendingPartial = nil
-                }
+                pendingCharacterCount = 0
+                renderRevision += 1
+                self.streamingPresentation = StreamingMarkdownSnapshot(
+                    messageID: assistantPlaceholder.id,
+                    timestamp: assistantPlaceholder.timestamp,
+                    stableMarkdownChunks: markdownAssembler.stableMarkdownChunks,
+                    liveTail: markdownAssembler.liveTail,
+                    revision: renderRevision
+                )
             }
 
             if var completed = streamingMessage {
@@ -559,9 +578,11 @@ final class RepoAIChatViewModel {
                 completed.isStreaming = false
                 messages.append(completed)
                 totalMessageCount += 1
+                trimVisibleMessagesIfNeeded()
                 sessionMessagesForPersist.append(completed)
             }
             streamingMessage = nil
+            streamingPresentation = nil
             persistCurrentSession(repo: repo, messages: sessionMessagesForPersist)
             await refreshSessions(repo: repo)
         } catch {
@@ -575,11 +596,7 @@ final class RepoAIChatViewModel {
             // 就是 true,统一靠这个判。
             if Task.isCancelled {
                 if var stopped = streamingMessage {
-                    // 节流尾巴 flush：取消瞬间可能有未 commit 的最新 partial。
-                    if let unflushed = pendingPartial,
-                       unflushed.count > stopped.content.count {
-                        stopped.content = unflushed
-                    }
+                    stopped.content = accumulated
                     stopped.isStreaming = false
                     // 内容为空（用户在首个 token 之前就取消）→ 不留空助手消息，
                     // 避免出现一条"空气泡"。否则正常 append 到 messages。
@@ -588,10 +605,12 @@ final class RepoAIChatViewModel {
                     if !trimmedStopped.isEmpty {
                         messages.append(stopped)
                         totalMessageCount += 1
+                        trimVisibleMessagesIfNeeded()
                         sessionMessagesForPersist.append(stopped)
                     }
                 }
                 streamingMessage = nil
+                streamingPresentation = nil
                 // errorMessage 不写、isContextOverflow 不动 —— 取消不是错误。
                 persistCurrentSession(repo: repo, messages: sessionMessagesForPersist)
                 await refreshSessions(repo: repo)
@@ -604,13 +623,7 @@ final class RepoAIChatViewModel {
                 isContextOverflow = true
             }
             if var failed = streamingMessage {
-                // 节流尾巴 flush：失败时可能有未 commit 的最后一片 partial（节流窗口内
-                // stream 抛错），用 pendingPartial 兜底拿到节流期间收到的最新累积串。
-                // partial 是单调累加的，所以"长度更大"就是"内容更新"，简单可靠的兜底判定。
-                if let unflushed = pendingPartial,
-                   unflushed.count > failed.content.count {
-                    failed.content = unflushed
-                }
+                failed.content = accumulated
                 // 不留空占位（避免 UI 上看到一条"灰色光标但无文字"的助手消息）。
                 // 失败占位文案走 i18n：英文 / 中文用户都能看懂自己语言的失败提示。
                 let prefix = failed.content
@@ -623,9 +636,11 @@ final class RepoAIChatViewModel {
                 failed.isStreaming = false
                 messages.append(failed)
                 totalMessageCount += 1
+                trimVisibleMessagesIfNeeded()
                 sessionMessagesForPersist.append(failed)
             }
             streamingMessage = nil
+            streamingPresentation = nil
             // 失败 turn 也落盘（保留用户消息 + 失败占位，便于回看 / 复制问题反馈）。
             persistCurrentSession(repo: repo, messages: sessionMessagesForPersist)
             await refreshSessions(repo: repo)
@@ -649,6 +664,8 @@ final class RepoAIChatViewModel {
         guard !isSending else { return }
         messages.removeAll()
         streamingMessage = nil
+        streamingPresentation = nil
+        hasExpandedVisibleHistory = false
         messageStartIndex = 0
         totalMessageCount = 0
         errorMessage = nil
@@ -670,6 +687,8 @@ final class RepoAIChatViewModel {
         currentCarriedOverSummary = nil
         messages.removeAll()
         streamingMessage = nil
+        streamingPresentation = nil
+        hasExpandedVisibleHistory = false
         messageStartIndex = 0
         totalMessageCount = 0
         errorMessage = nil
@@ -683,6 +702,8 @@ final class RepoAIChatViewModel {
         currentCarriedOverSummary = session.carriedOverSummary
         messages = session.messages
         streamingMessage = nil
+        streamingPresentation = nil
+        hasExpandedVisibleHistory = false
         messageStartIndex = 0
         totalMessageCount = session.messages.count
         errorMessage = nil
@@ -696,10 +717,21 @@ final class RepoAIChatViewModel {
         currentCarriedOverSummary = page.session.carriedOverSummary
         messages = page.session.messages
         streamingMessage = nil
+        streamingPresentation = nil
+        hasExpandedVisibleHistory = false
         messageStartIndex = page.messageStartIndex
         totalMessageCount = page.totalMessageCount
         errorMessage = nil
         isContextOverflow = false
+    }
+
+    /// 常规连续聊天只保留最近 12 条已完成消息参与 SwiftUI 布局。完整历史仍在磁盘和
+    /// `sessionMessagesForPersist` 中，发送 prompt / 复制完整对话都按需读取，不丢数据。
+    private func trimVisibleMessagesIfNeeded() {
+        guard !hasExpandedVisibleHistory, messages.count > Self.recentVisibleMessageLimit else { return }
+        let overflow = messages.count - Self.recentVisibleMessageLimit
+        messages.removeFirst(overflow)
+        messageStartIndex += overflow
     }
 
     private func makeSnapshot(messages snapshotMessages: [ChatMessage]) -> ChatSession {

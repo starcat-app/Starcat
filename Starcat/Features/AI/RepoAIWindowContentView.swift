@@ -1128,11 +1128,8 @@ struct RepoAIWindowContentView: View {
                                     .equatable()
                                 }
 
-                                if let streaming = chat.streamingMessage {
-                                    AIChatBubble(
-                                        message: streaming,
-                                        onEditUserMessage: editUserMessage
-                                    )
+                                if let streaming = chat.streamingPresentation {
+                                    AIStreamingChatBubble(snapshot: streaming)
                                     .equatable()
                                 }
 
@@ -1160,7 +1157,7 @@ struct RepoAIWindowContentView: View {
                     .onChange(of: chat.messages.count) { _, _ in
                         scheduleChatTailScroll(proxy: proxy)
                     }
-                    .onChange(of: chat.streamingMessage?.content ?? "") { _, _ in
+                    .onChange(of: chat.streamingPresentation?.revision ?? 0) { _, _ in
                         scheduleChatTailScroll(proxy: proxy)
                     }
                     .onChange(of: chat.isSending) { _, isSending in
@@ -1174,12 +1171,12 @@ struct RepoAIWindowContentView: View {
                     .onScrollPhaseChange { _, newPhase in
                         chatTail.updatePhase(newPhase)
                     }
-                    .onScrollGeometryChange(for: ScrollFollowTailMetrics.self) { geo in
-                        ScrollFollowTailMetrics(offsetY: geo.contentOffset.y)
-                    } action: { _, new in
+                    .onScrollGeometryChange(for: Bool.self) { geo in
+                        geo.contentOffset.y < overscrollExpandThreshold
+                    } action: { oldValue, newValue in
+                        guard !oldValue, newValue else { return }
                         handleChatOverscroll(
-                            offsetY: new.offsetY,
-                            hasMessages: !chat.messages.isEmpty || chat.streamingMessage != nil
+                            hasMessages: !chat.messages.isEmpty || chat.streamingPresentation != nil
                         )
                     }
 
@@ -1381,15 +1378,15 @@ struct RepoAIWindowContentView: View {
     /// 3. 用户手势驱动相位（`.tracking / .interacting / .decelerating`）：排除
     ///    流式 `proxy.scrollTo` 程序化滚动（phase = `.animating`）和布局抖动
     ///    （phase = `.idle`）触发的偏移变化——同 v3 修反馈循环时的门控逻辑；
-    /// 4. `offsetY < overscrollExpandThreshold` (默认 -60pt)：macOS bouncing 区
-    ///    需要明显下拉幅度，避免误触；
+    /// 4. geometry transform 已把连续 offset 压成“是否越过 -60pt”布尔值，只有
+    ///    false → true 才调用本方法，流式布局期间不再每帧回调主视图；
     /// 5. `panelMode == .chat` 守门防止在动画切到 `.summary` 后又被 layout 抖动
     ///    再次触发（虽然 phase 门控基本兜住，多一道守门更稳）。
     ///
     /// 为什么不用 `.refreshable {}`：那个 modifier 会在 ScrollView 顶部加一个
     /// pull-to-refresh ProgressView 圆圈，视觉上像"加载指示"而不是"展开面板"，
     /// 容易引起用户误解。手动监听 contentOffset 的负值区间更纯粹。
-    private func handleChatOverscroll(offsetY: CGFloat, hasMessages: Bool) {
+    private func handleChatOverscroll(hasMessages: Bool) {
         guard panelMode == .chat else { return }
         guard hasMessages else { return }
 
@@ -1405,7 +1402,6 @@ struct RepoAIWindowContentView: View {
             return
         }
 
-        guard offsetY < overscrollExpandThreshold else { return }
         Task { await requestPanelMode(.summary) }
     }
 
