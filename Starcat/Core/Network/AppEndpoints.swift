@@ -75,6 +75,11 @@ enum AppEndpoints {
         enum Paths {
             /// `GET /api/v1/repos?page=&page_size=&lang=&sort=&order=` —— 三源聚合 repo feed。
             static let repos = "/api/v1/repos"
+            /// `GET /api/v1/repos/bulk` —— 一次性返回全量 repos + languages（R-06.3 后端落地，
+            /// R-06.4 客户端接入）。无 query 参数，envelope schema_version=1，支持
+            /// `Accept-Encoding: gzip` + `If-None-Match` 304。详见后端
+            /// `supports/starcat-weekly-api/internal/handler/bulk.go`。
+            static let reposBulk = "/api/v1/repos/bulk"
             /// `GET /api/v1/repos/{gh_repo_id}` —— 单 repo 聚合详情与来源事件。
             static let repoDetail = "/api/v1/repos"
             /// `GET /api/v1/repos/languages` —— 三源聚合语言统计。

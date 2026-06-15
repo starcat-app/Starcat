@@ -20,6 +20,22 @@
 //  - 列表顶部 toolbar 只保留"筛选 + 刷新"，移除了"x 项"文本——计数挪到 sidebar 的
 //    周刊分类右侧徽章（仿 manage Languages 计数样式），见 `WeeklySelectionService`。
 //
+//  R-06.4（2026-06-15）渐进式 SWR 双轨制：
+//  - **dataSource 双轨**：`.local`（缓存命中走本地 sort/filter/page）/ `.remote`
+//    （缓存未命中走分页 API fallback）。两种模式 UI 完全无感知，只在 ViewModel 内做
+//    分支调度。
+//  - **入场策略**：① 先读 `WeeklyBulkRepository.cachedBulk()`；② 命中 → 立即上屏 +
+//    切到 `.local`；命中且 12h TTL 内 → 不再发请求；命中但 TTL 过期 → 后台触发
+//    bulkSync 静默刷新（不阻塞 UI）；③ 未命中 → fallback 老分页 `fetchRepos(page=1)`
+//    立刻出图（200ms 级体感），同时后台启动 bulkSync 把 4000 条落盘；下次入场切 `.local`。
+//  - **切 sort / lang**：`.local` 模式纯本地 sort + filter + 客户端分页（瞬时无网络）；
+//    `.remote` 模式仍走老分页 API。
+//  - **主动刷新**：toolbar 刷新按钮 / pull-to-refresh 永远调 bulkSync（不论 dataSource），
+//    完成后强制切到 `.local`，让 12h TTL 重新计时。
+//  - **客户端 12h TTL**：判断在 ViewModel 层，Repository 不掺和；与 trending 24h TTL
+//    分层一致。weekly 数据更新慢（周一 00:00 UTC 周更）但聚合源多（zread + discovery
+//    天级），12h 是体感与新鲜度的平衡点。
+//
 
 import SwiftUI
 import AppKit
@@ -250,7 +266,8 @@ struct WeeklyContentView: View {
         let model = WeeklyContentViewModel(
             api: dependencies.weeklyAPI,
             selectionService: dependencies.weeklySelectionService,
-            languageStore: dependencies.weeklyLanguageStore
+            languageStore: dependencies.weeklyLanguageStore,
+            bulkRepository: dependencies.weeklyBulkRepository
         )
         viewModel = model
         return model
@@ -315,19 +332,41 @@ struct WeeklyContentView: View {
 
 // MARK: - ViewModel
 
+/// 当前数据源标识。
+///
+/// R-06.4 双轨制：UI 不关心走哪条路径，但 ViewModel 内部要靠这个 flag 决定
+/// changeSort / changeLanguage / loadMoreIfNeeded 走"本地纯计算"还是"远端分页"。
+enum WeeklyDataSource: Sendable, Equatable {
+    /// 本地缓存模式：所有筛选 / 排序 / 分页都在已经落盘的 4000 条上做。
+    case local
+    /// 远端分页模式：缓存未命中或首次入场 fallback;与 R-06.4 前的旧路径完全一致。
+    case remote
+}
+
 /// Weekly 分类专用 ViewModel。
 ///
-/// 设计要点：
-/// - 单一桶（sort + language 组合），切换筛选会清空当前项目并从 page=1 重新拉；
-/// - 分页采用追加式：滚到底部触发 `loadMoreIfNeeded`，把新 page 追加到 items 尾部；
-/// - `itemsRevision` 与 Activity / Trending 同款语义：用于 `listRowReveal` 决定是否
-///   重播入场动画——筛选切换 / 重新加载时 bump，分页追加时**不** bump。
+/// R-06.4 渐进式 SWR 双轨制（详见文件头 §渐进式 SWR 双轨制 注释）：
+/// - `.local` 模式：sort + lang 在本地全量集合上做，客户端分页只是切到当前 page * pageSize
+/// - `.remote` 模式：保持旧分页 API 行为完全等同。
+/// - `itemsRevision` 仍保持原语义：筛选切换 / 重新加载时 bump，分页追加 / 内部切片不 bump。
 @MainActor
 @Observable
 final class WeeklyContentViewModel {
 
+    // MARK: - Constants
+
+    /// 客户端 bulk 缓存 TTL（与 trending 24h 配套，但 weekly 数据更新频率更高所以更短）。
+    /// 与后端 60s TTL 配合形成两级缓存：客户端避免 12h 内重复打 server，server 避免
+    /// 60s 内重复 rebuild。
+    static let bulkTTL: TimeInterval = 12 * 60 * 60
+
+    /// `.local` 模式下客户端分页 page size（与后端 default page=20 对齐，让"切到 local
+    /// 后滚动"与"remote 模式滚动"视觉体验一致）。
+    private static let localPageSize: Int = 20
+
     // MARK: - State
 
+    /// UI 当前展示的 items（可能是 `.local` 全量本地分页切片，也可能是 `.remote` 累积分页结果）。
     private(set) var items: [WeeklyFeedItem] = []
     private(set) var total: Int = 0
     private(set) var page: Int = 1
@@ -339,12 +378,25 @@ final class WeeklyContentViewModel {
     /// 入场动画 / row-reveal 用的"身份快照"版本，仅在筛选切换 / 重新加载时 bump。
     private(set) var itemsRevision: Int = 0
 
+    /// 当前数据源；UI 可读以便将来展示"本地"徽章（暂未做）。
+    private(set) var dataSource: WeeklyDataSource = .remote
+
     /// 排序当前值；setter 由 `changeSort(to:)` 控制以保证副作用统一。
     private(set) var selectedSort: WeeklyFeedSort = .latestEventAt
     private(set) var selectedLanguage: String = ""
     var languageOptions: [String] {
         [""] + languageStore.displayList.map(\.key)
     }
+
+    // MARK: - Local cache state
+
+    /// `.local` 模式下持有的当前 sort + lang 筛选结果**全量**（未分页切片前）。
+    /// 切 sort / lang 时只需重排重过滤这个数组再切片，零网络。
+    private var filteredLocalItems: [WeeklyFeedItem] = []
+    /// bulk 缓存的"原始全量"——`filteredLocalItems` 是它的过滤+排序产物。
+    private var bulkAllItems: [WeeklyFeedItem] = []
+    /// 上次 bulk 拉取的客户端时间戳（用于判 12h TTL）。
+    private(set) var lastBulkFetchedAt: Date?
 
     // MARK: - Dependencies
 
@@ -353,27 +405,50 @@ final class WeeklyContentViewModel {
     /// 解耦 sidebar 与列表 ViewModel：sidebar 不直接持有 ViewModel，避免双向依赖。
     private let selectionService: WeeklySelectionService?
     private let languageStore: WeeklyLanguageStore
+    private let bulkRepository: WeeklyBulkRepository
 
     /// 标记当前 in-flight 请求的代次；切换筛选 / reload 时 bump，
-    /// 旧请求即便回来也会因为代次不匹配而被丢弃，避免顺序错乱。
+    /// 旧请求即便回来也会因为代次不匹配而被丢弃,避免顺序错乱。
     private var generation: Int = 0
 
     init(
         api: WeeklyAPI,
         selectionService: WeeklySelectionService? = nil,
-        languageStore: WeeklyLanguageStore
+        languageStore: WeeklyLanguageStore,
+        bulkRepository: WeeklyBulkRepository
     ) {
         self.api = api
         self.selectionService = selectionService
         self.languageStore = languageStore
+        self.bulkRepository = bulkRepository
     }
 
     // MARK: - Public
 
     /// 首次进入页面调用；如果已有数据就跳过，避免重新进入时把缓存丢掉。
+    ///
+    /// R-06.4 SWR 入场流程：
+    /// 1. 先读 SQLite 缓存；命中 → 立即上屏切到 `.local`；
+    /// 2. 命中 + TTL 内 → 不发任何请求；命中 + TTL 过期 → 后台静默 bulkSync；
+    /// 3. 未命中 → fallback 走老分页 fetchRepos(page=1) 200ms 出图，并在后台 bulkSync 落盘。
     func loadInitialIfNeeded() async {
         guard items.isEmpty, !isLoading else { return }
-        await reload()
+
+        // Step 1: 尝试从本地缓存读
+        if let cached = await bulkRepository.cachedBulk(), !cached.items.isEmpty {
+            applyLocalSnapshot(cached, bumpRevision: false)
+            // Step 2: TTL 判断
+            if isCacheFresh(at: cached.lastFetchedAt) {
+                return  // 12h 内，零网络上屏
+            }
+            // 缓存过期 → 后台静默刷新（不阻塞）
+            Task { await self.silentBulkSync() }
+            return
+        }
+
+        // Step 3: 缓存未命中 → 老分页拉第一页立刻上屏 + 后台 bulkSync 落盘
+        await loadRemotePage()
+        Task { await self.silentBulkSync() }
     }
 
     func loadLanguagesIfNeeded() async {
@@ -384,7 +459,10 @@ final class WeeklyContentViewModel {
         }
     }
 
-    /// 主动刷新：清空当前数据，从第一页重新拉。
+    /// 主动刷新：toolbar 刷新按钮 / pull-to-refresh 走这里。
+    ///
+    /// R-06.4：永远走 bulkSync（forceNetwork 语义），完成后切到 `.local`；网络失败时
+    /// fallback 到原分页 API（与旧版本保持一致的"刷新失败也能用"语义）。
     func reload() async {
         let myGen = bumpGeneration()
         isLoading = true
@@ -392,27 +470,22 @@ final class WeeklyContentViewModel {
         loadError = nil
 
         do {
-            let result = try await api.fetchRepos(
-                query: WeeklyFeedQuery(
-                    language: selectedLanguage.isEmpty ? nil : selectedLanguage,
-                    sort: selectedSort,
-                    page: 1
-                )
-            )
+            let result = try await bulkRepository.fetchBulk()
             guard myGen == generation else { return }
-            items = result.items
-            total = result.total
-            page = result.page
-            hasMore = result.hasMore
-            itemsRevision += 1
-            selectionService?.applyTotal(result.total)
+            let snapshot = WeeklyBulkCachedSnapshot(
+                items: result.items,
+                languages: result.languages,
+                etag: result.etag,
+                lastFetchedAt: Date(),
+                generatedAt: result.generatedAt,
+                total: result.total
+            )
+            applyLocalSnapshot(snapshot, bumpRevision: true)
         } catch {
             guard myGen == generation else { return }
-            loadError = error.localizedDescription
-            if items.isEmpty {
-                total = 0
-                hasMore = false
-            }
+            // bulk 失败 → 退到分页 API 拿第一页（保证刷新按钮不空手而归）
+            AppLog.network.warning("Weekly reload bulkSync failed, falling back to paginated API: \(error.localizedDescription, privacy: .public)")
+            await loadRemotePage()
         }
         if myGen == generation {
             isLoading = false
@@ -420,8 +493,16 @@ final class WeeklyContentViewModel {
     }
 
     /// 滚到底部触发的"加载下一页"。
+    ///
+    /// `.local`：纯本地切片增长（瞬时）；`.remote`：保持旧分页行为。
     func loadMoreIfNeeded() async {
         guard hasMore, !isLoading, !isLoadingMore else { return }
+
+        if dataSource == .local {
+            advanceLocalPage()
+            return
+        }
+
         let myGen = generation
         isLoadingMore = true
         defer {
@@ -458,13 +539,21 @@ final class WeeklyContentViewModel {
     func changeSort(to newValue: WeeklyFeedSort) {
         guard newValue != selectedSort else { return }
         selectedSort = newValue
-        Task { await reload() }
+        if dataSource == .local {
+            applyFiltersLocally(bumpRevision: true)
+        } else {
+            Task { await reload() }
+        }
     }
 
     func changeLanguage(to newValue: String) {
         guard newValue != selectedLanguage else { return }
         selectedLanguage = newValue
-        Task { await reload() }
+        if dataSource == .local {
+            applyFiltersLocally(bumpRevision: true)
+        } else {
+            Task { await reload() }
+        }
     }
 
     /// 给 List `.onAppear` 判断是否该触发下一页。
@@ -473,6 +562,140 @@ final class WeeklyContentViewModel {
         guard hasMore, !isLoading, !isLoadingMore else { return false }
         let threshold = max(items.count - 3, 0)
         return index >= threshold
+    }
+
+    // MARK: - Private: SWR
+
+    /// 静默刷新：bulk 拉新 + 整批替换 + 切到 .local。失败时只记日志不打扰 UI。
+    private func silentBulkSync() async {
+        let myGen = generation
+        do {
+            let result = try await bulkRepository.fetchBulk()
+            guard myGen == generation else { return }
+            let snapshot = WeeklyBulkCachedSnapshot(
+                items: result.items,
+                languages: result.languages,
+                etag: result.etag,
+                lastFetchedAt: Date(),
+                generatedAt: result.generatedAt,
+                total: result.total
+            )
+            applyLocalSnapshot(snapshot, bumpRevision: true)
+        } catch {
+            AppLog.network.warning("Weekly silent bulkSync failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// 远端分页 fallback：用于缓存未命中入场 / bulk 失败 fallback。
+    /// 隐含语义"切回 `.remote`"——`bumpRevision` 在 reload 路径必为 true（让动画重播）。
+    private func loadRemotePage() async {
+        let myGen = generation  // 由调用方先 bumpGeneration（loadInitialIfNeeded 不需 bump）
+        loadError = nil
+
+        do {
+            let result = try await api.fetchRepos(
+                query: WeeklyFeedQuery(
+                    language: selectedLanguage.isEmpty ? nil : selectedLanguage,
+                    sort: selectedSort,
+                    page: 1
+                )
+            )
+            guard myGen == generation else { return }
+            dataSource = .remote
+            items = result.items
+            total = result.total
+            page = result.page
+            hasMore = result.hasMore
+            itemsRevision += 1
+            selectionService?.applyTotal(result.total)
+        } catch {
+            guard myGen == generation else { return }
+            loadError = error.localizedDescription
+            if items.isEmpty {
+                total = 0
+                hasMore = false
+            }
+        }
+    }
+
+    /// 把 bulk 缓存 snapshot 应用到当前状态，切到 `.local` 并应用 sort/lang。
+    /// `bumpRevision`：reload 路径要刷新入场动画；首次入场不刷（避免列表上来就抖一次）。
+    private func applyLocalSnapshot(_ snapshot: WeeklyBulkCachedSnapshot, bumpRevision: Bool) {
+        bulkAllItems = snapshot.items
+        lastBulkFetchedAt = snapshot.lastFetchedAt
+        dataSource = .local
+        loadError = nil
+        applyFiltersLocally(bumpRevision: bumpRevision)
+    }
+
+    /// 在 `bulkAllItems` 基础上按当前 sort + lang 重过滤重排序，切片到 page 1 上屏。
+    private func applyFiltersLocally(bumpRevision: Bool) {
+        var filtered = bulkAllItems
+        if !selectedLanguage.isEmpty {
+            filtered = filtered.filter { item in
+                if selectedLanguage == TrendingLanguage.uncategorizedKey {
+                    return (item.language ?? "").isEmpty
+                }
+                return item.language?.caseInsensitiveCompare(selectedLanguage) == .orderedSame
+            }
+        }
+        filtered.sort(by: Self.makeLocalSorter(selectedSort))
+
+        filteredLocalItems = filtered
+        total = filtered.count
+        page = 1
+        let pageSize = Self.localPageSize
+        let slice = Array(filtered.prefix(pageSize))
+        items = slice
+        hasMore = filtered.count > slice.count
+        if bumpRevision {
+            itemsRevision += 1
+        }
+        selectionService?.applyTotal(filtered.count)
+    }
+
+    private func advanceLocalPage() {
+        let nextPage = page + 1
+        let pageSize = Self.localPageSize
+        let upper = min(nextPage * pageSize, filteredLocalItems.count)
+        items = Array(filteredLocalItems.prefix(upper))
+        page = nextPage
+        hasMore = upper < filteredLocalItems.count
+    }
+
+    /// 12h TTL 判断；时间倒着算（lastFetchedAt 之后过了 < 12h 即新鲜）。
+    private func isCacheFresh(at lastFetchedAt: Date) -> Bool {
+        Date().timeIntervalSince(lastFetchedAt) < Self.bulkTTL
+    }
+
+    /// 排序函数：与后端 `WeeklyFeedSort` 对齐（详见后端 `internal/store/sqlite.go`
+    /// `QueryRepos` 排序分支）。本地 sort 必须与 server-side 等价，否则用户切到 .local
+    /// 后切 sort 的视觉结果会与 .remote 模式不一致。
+    private static func makeLocalSorter(_ sort: WeeklyFeedSort) -> (WeeklyFeedItem, WeeklyFeedItem) -> Bool {
+        switch sort {
+        case .latestEventAt:
+            return { lhs, rhs in
+                if lhs.latestEventAt != rhs.latestEventAt {
+                    return lhs.latestEventAt > rhs.latestEventAt
+                }
+                return lhs.ghRepoId > rhs.ghRepoId
+            }
+        case .stars:
+            return { lhs, rhs in
+                if lhs.stars != rhs.stars {
+                    return lhs.stars > rhs.stars
+                }
+                return lhs.ghRepoId > rhs.ghRepoId
+            }
+        case .pushedAt:
+            // pushedAt 是 ISO8601 字符串，同格式下字典序与时间序等价。空字符串作 "最远过去"。
+            return { lhs, rhs in
+                let l = lhs.card.pushedAt ?? ""
+                let r = rhs.card.pushedAt ?? ""
+                if l != r { return l > r }
+                return lhs.ghRepoId > rhs.ghRepoId
+            }
+        }
     }
 
     // MARK: - Private

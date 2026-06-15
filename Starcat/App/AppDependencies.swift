@@ -135,6 +135,11 @@ final class AppDependencies {
     /// Weekly 三源聚合语言筛选 Store。首次进入 Weekly 时懒加载。
     let weeklyLanguageStore: WeeklyLanguageStore
 
+    /// R-06.4 客户端 bulk 缓存仓库：一次性拉全量 weekly 聚合数据 + 落 SQLite，让
+    /// `WeeklyContentViewModel` 走"渐进式 SWR 双轨制"——首次入场拉 remote 出图 + 后台
+    /// bulkSync 落盘，后续 sort/lang 切换走本地缓存零网络。
+    let weeklyBulkRepository: WeeklyBulkRepository
+
     // MARK: - HOM-173 分享卡
 
     /// AI 分享卡后端 API 客户端。
@@ -496,6 +501,10 @@ final class AppDependencies {
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
         self.weeklyLanguageStore = WeeklyLanguageStore(api: weeklyAPIInstance)
+
+        // R-06.4: 客户端 bulk 缓存仓库。注入同一 weeklyAPI actor 实例，让 bulk 端点
+        // 与分页 endpoint 共享 baseURL / apiKey 热更新（设置页改地址后两条路径同时生效）。
+        self.weeklyBulkRepository = WeeklyBulkRepository(api: weeklyAPIInstance, database: db)
 
         // HOM-173：分享卡 API 客户端。端点走 `AppEndpoints.Sharing.baseURL`（保留 /api 后缀）。
         self.shareAPI = ShareAPI(
