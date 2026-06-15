@@ -92,10 +92,12 @@ struct TrendingView: View {
                 selectedRepoID = nil
                 selectedTrendingRepo = nil
             }
-            // 首次进入页面：有缓存就不自动拉（forceNetwork=false）
-            // 这是消除"二次入场动画"的关键：原版在缓存命中后还会盲目走网络再 bump 一次 revision
-            // 现在缓存命中时直接上屏完事，让用户主动按刷新按钮决定何时拉新
-            await viewModel.reload(forceNetwork: false)
+            // 首次进入页面：按 TTL 决定是否拉网络（R-06.1，2026-06-15）
+            //   - 缓存命中且 24h 内 → 不走网络（零打扰，避免"二次入场动画"）
+            //   - 缓存命中但 TTL 过期 → 上屏旧缓存 + 后台静默刷新
+            //   - 缓存空 → 必拉
+            // 用户主动按刷新按钮 / pull-to-refresh / 错误重试时改用 `.forceNetwork` 绕过 TTL
+            await viewModel.reload(cachePolicy: .respectTTL)
         }
         .onChange(of: homeViewModel.languageStats) { _, stats in
             viewModel.updateLanguagePreferences(from: stats)
@@ -131,7 +133,7 @@ struct TrendingView: View {
     ///   不会因左右两侧内容长度变化而漂移位置
     /// - **刷新组用 `.overlay(alignment: .trailing)` 浮动**：与 picker 布局**完全解耦**，
     ///   新鲜度文本从"刚刚"变到"12 小时前"再到"3 天前"，picker 视觉位置岿然不动
-    /// - 新鲜度文字常驻显示，>1 小时变橙色提示陈旧（`isStale`），无缓存时整组隐藏
+    /// - 新鲜度文字常驻显示，>20 小时变橙色提示陈旧（`isStale`，80% TTL 预警），无缓存时整组隐藏
     /// - 刷新 icon 单独一个 Button，isRefreshing 时图标旋转动画
     /// - 整组用 `.help()` 显示完整 tooltip "上次刷新于 X 月 Y 日 HH:MM"（精确时间，hover 才看）
     ///
@@ -170,7 +172,7 @@ struct TrendingView: View {
 
     /// "12 分钟前" 新鲜度提示。
     /// - 没有 lastRefreshedAt 时整组隐藏（`formattedFreshness == nil`）
-    /// - >1 小时（`isStale`）变橙色提示陈旧，但不强制刷新
+    /// - >20 小时（`isStale`）变橙色提示陈旧，但不强制刷新
     @ViewBuilder
     private var freshnessIndicator: some View {
         if let text = viewModel.formattedFreshness {
@@ -184,6 +186,9 @@ struct TrendingView: View {
     /// 刷新 icon Button：常驻显示，isRefreshing 时图标旋转。
     /// hover 时 tooltip 显示"刷新榜单"或"上次刷新于 X 月 Y 日 HH:MM"。
     /// 使用共享 `SyncIconButton`（与详情页 cacheFooter 同款图标 + 旋转动画）。
+    ///
+    /// 用户主动操作走 `.forceNetwork` 绕过 24h TTL（R-06.1）—— 哪怕缓存"刚 5 分钟前才拉过"
+    /// 也尊重用户的"我现在就要新数据"意图，不在按钮里做 TTL 短路否则用户会以为按钮坏了。
     private var refreshButton: some View {
         SyncIconButton(
             isRefreshing: viewModel.isRefreshing,
@@ -191,7 +196,7 @@ struct TrendingView: View {
             tooltip: refreshButtonHelpText
         ) {
             Task {
-                await viewModel.reload(forceNetwork: true)
+                await viewModel.reload(cachePolicy: .forceNetwork)
             }
         }
     }
@@ -349,7 +354,8 @@ struct TrendingView: View {
         .listStyle(.inset)
         .alternatingRowBackgrounds()
         .refreshable {
-            await viewModel.reload(forceNetwork: true)
+            // Pull-to-refresh = 用户主动要新数据，绕过 24h TTL（R-06.1）
+            await viewModel.reload(cachePolicy: .forceNetwork)
         }
         // W12 PR-5：Cmd+A 全选当前可见 trending repo（仅 multi-select active 时生效）。
         // 4 场景同款机制：隐藏按钮 + keyboardShortcut。
@@ -442,7 +448,8 @@ struct TrendingView: View {
 
             Button("trending.retry") {
                 Task {
-                    await viewModel.reload(forceNetwork: true)
+                    // 错误重试 = 用户主动要新数据，绕过 24h TTL（R-06.1）
+                    await viewModel.reload(cachePolicy: .forceNetwork)
                 }
             }
             .buttonStyle(.borderedProminent)
