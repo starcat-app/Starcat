@@ -83,6 +83,10 @@ enum DatabaseMigrations {
             try createAISummaries(db)
             try createReleaseSubscriptions(db)
             try createReleases(db)
+            // R-06.4（2026-06-15）：Weekly 渐进式 SWR 双轨制专用 bulk 缓存表。
+            try createWeeklyBulkRepos(db)
+            try createWeeklyBulkLanguages(db)
+            try createWeeklyBulkMeta(db)
             // 原 createReadmeTranslations 已删除（2026-06-15 HOM-68 v2 砍 DB 改纯磁盘）。
             // 翻译缓存现走 `DiskReadmeTranslationCache`，详见文件头「原 v7」段说明。
         }
@@ -598,6 +602,111 @@ enum DatabaseMigrations {
         }
 
         try db.create(index: "idx_trending_readmes_cached", on: "trending_readmes", columns: ["cached_at"])
+    }
+
+    // MARK: - weekly_bulk_*（R-06.4 客户端 bulk 缓存 / 渐进式 SWR 双轨制）
+
+    /// `weekly_bulk_repos`：weekly bulk endpoint 一次性返回的 ~4000 条聚合 repo 全量落盘。
+    ///
+    /// 设计原则：
+    /// - 这是 R-06.4 客户端缓存层的**核心表**：后端 `/api/v1/repos/bulk` 返回的全量数据一次写入，
+    ///   后续 sort / language / page 全部在本地查询，**完全消除"切 picker 又拉一次网络"的浪费**。
+    /// - 与 `trending_repos` 同设计思路："cache 表 + cached_at"，但 PK 用 `gh_repo_id` 单列
+    ///   而非 (period, language_filter, rank) 复合——weekly 是全量聚合无榜单维度，
+    ///   gh_repo_id 是 GitHub 端 stable identity 直接当 PK 最简。
+    /// - 字段镜像后端 `model.RepoFeedItem`（card + 4 个 snapshot），与 `WeeklyFeedItem` 1:1 对齐。
+    /// - `weekly_snapshot_json / zread_snapshot_json / discovery_snapshot_json` 三列 JSON 直存
+    ///   而非分子表：snapshot 是 weekly 专属 wire payload（issueURL / weekLabel /
+    ///   publishedAt 等），分表毫无业务价值还引入 N+1 + cascade；保留 JSON 字符串透传到
+    ///   `WeeklyFeedItem.weekly/zread/discovery` 即可。
+    /// - `source_types_json` 同理 JSON 数组字符串（如 `["weekly","zread"]`）。
+    /// - 时间戳全部 ISO8601 TEXT，与项目其它缓存表（trending_repos / repos）对齐。
+    /// - `cached_at` 不参与单行 TTL：TTL 是"整批 bulk fetch 的新鲜度"由 `weekly_bulk_meta` 一行统管。
+    ///
+    /// 关键约束:
+    /// - 入库走"先 DELETE 整表 + 再批量 INSERT"全量替换语义（在 repository 内一个 transaction 内
+    ///   完成）；不做增量 upsert，因为 bulk endpoint 本身就是"当前全量快照"语义。
+    /// - 索引覆盖三条最热查询路径：language 筛选 / latest_event_at DESC 排序 / stars DESC 排序。
+    ///   pushed_at DESC 排序不加索引（用户极少切到，全表扫 4000 行无压力）。
+    private static func createWeeklyBulkRepos(_ db: Database) throws {
+        try db.create(table: "weekly_bulk_repos") { t in
+            t.column("gh_repo_id", .integer).primaryKey()
+            t.column("full_name", .text).notNull()
+            t.column("owner", .text).notNull()
+            t.column("repo", .text).notNull()
+            t.column("name", .text).notNull()
+
+            // Card 基础字段（镜像 StarcatRepoCardDTO）
+            t.column("owner_avatar", .text)
+            t.column("description", .text)
+            t.column("language", .text)
+            t.column("stars", .integer).notNull().defaults(to: 0)
+            t.column("forks", .integer).notNull().defaults(to: 0)
+            t.column("watchers", .integer).notNull().defaults(to: 0)
+            t.column("subscribers", .integer).notNull().defaults(to: 0)
+            t.column("topics_json", .text)            // JSON 数组字符串
+            t.column("homepage", .text)
+            t.column("license_spdx", .text)
+            t.column("is_archived", .integer).notNull().defaults(to: 0)
+            t.column("is_fork", .integer).notNull().defaults(to: 0)
+            t.column("is_private", .integer).notNull().defaults(to: 0)
+            t.column("default_branch", .text)
+            t.column("open_issues", .integer).notNull().defaults(to: 0)
+            t.column("pushed_at", .text)
+            t.column("updated_at", .text)
+            t.column("created_at", .text)
+            t.column("html_url", .text)
+
+            // Feed 专属字段
+            t.column("is_available", .integer).notNull().defaults(to: 1)
+            t.column("source_types_json", .text)      // JSON 数组（["weekly","zread",...]）
+            t.column("first_event_at", .text).notNull()
+            t.column("latest_event_at", .text).notNull()
+            t.column("weekly_snapshot_json", .text)   // JSON object 或 NULL
+            t.column("zread_snapshot_json", .text)
+            t.column("discovery_snapshot_json", .text)
+
+            // 缓存维度（不参与 TTL，仅给"调试为何这条 repo 是旧的"留痕）
+            t.column("cached_at", .text).notNull()
+        }
+
+        // 排序索引——latest_event_at DESC（默认排序）+ stars DESC（备选）
+        try db.create(index: "idx_weekly_bulk_latest_event", on: "weekly_bulk_repos", columns: ["latest_event_at"])
+        try db.create(index: "idx_weekly_bulk_stars", on: "weekly_bulk_repos", columns: ["stars"])
+        // language 筛选索引
+        try db.create(index: "idx_weekly_bulk_language", on: "weekly_bulk_repos", columns: ["language"])
+    }
+
+    /// `weekly_bulk_languages`：bulk endpoint 返回的语言聚合直存。
+    ///
+    /// 不从 `weekly_bulk_repos` GROUP BY 派生（虽然技术上等价）：
+    /// - 后端聚合走的是 SQL CASE-WHEN 处理"未分类" + 排序逻辑，客户端复制一套
+    ///   只会引入不一致风险；
+    /// - 后端聚合输出本来就是一起返回的小 payload（~50 行），直接落盘极简单；
+    /// - 让 `WeeklyLanguageStore` 可以直接读这个表（如果 bulk 缓存命中），
+    ///   不需要再单独发 `/repos/languages` 请求。
+    private static func createWeeklyBulkLanguages(_ db: Database) throws {
+        try db.create(table: "weekly_bulk_languages") { t in
+            t.column("key", .text).primaryKey()       // 语言 key（"Go" / "uncategorized" / 空串）
+            t.column("label", .text).notNull()
+            t.column("count", .integer).notNull().defaults(to: 0)
+            t.column("sort_order", .integer).notNull() // 保留后端原始顺序
+        }
+    }
+
+    /// `weekly_bulk_meta`：bulk cache 元信息单行表（PK = "singleton"）。
+    ///
+    /// 单行设计避免"meta 表只有 1 行还做唯一约束"的丑陋写法；PK 固定字符串就够了。
+    /// 跨 App 重启读这一行即可知道"上次什么时候拉的 / 拉了多少条 / 后端 ETag 是啥"，
+    /// ViewModel 据此判断 12h TTL。
+    private static func createWeeklyBulkMeta(_ db: Database) throws {
+        try db.create(table: "weekly_bulk_meta") { t in
+            t.column("id", .text).primaryKey()                // 固定值 "singleton"
+            t.column("etag", .text)                            // bulk endpoint ETag（W/"sha[:8]"）
+            t.column("last_fetched_at", .text).notNull()       // ISO8601 客户端拉取完成时刻
+            t.column("generated_at", .text)                    // 后端 envelope.meta.generated_at
+            t.column("total", .integer).notNull().defaults(to: 0) // = len(repos)
+        }
     }
 
     // MARK: - repo_embeddings / ai_summaries（AI 语义搜索 + 单仓智能化）
