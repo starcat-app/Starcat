@@ -55,6 +55,8 @@ struct SettingsView: View {
     @State private var localeStore = LocaleStore.shared
 
     @State private var selectedTab: SettingsTab = .general
+    /// 快捷键录制失败时只在 General 页就地提示，不修改已保存配置。
+    @State private var shortcutValidationError: KeyboardShortcutConfiguration.ValidationError?
 
     /// Settings 各 Tab 的内容尺寸。
     ///
@@ -241,6 +243,50 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            // 快捷键偏好集中在 General，都是本机交互习惯，不属于 AI 模型配置。
+            Section("settings.general.shortcuts") {
+                Toggle(isOn: $settings.aiChatRequiresCommandReturn) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.general.shortcuts.aiCommandReturn.title")
+                        Text("settings.general.shortcuts.aiCommandReturn.description")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                LabeledContent("settings.general.shortcuts.search.title") {
+                    HStack(spacing: 8) {
+                        ShortcutRecorderView(
+                            shortcut: $settings.globalSearchShortcut,
+                            onValidationError: { shortcutValidationError = $0 }
+                        )
+                        .onChange(of: settings.globalSearchShortcut) { _, _ in
+                            shortcutValidationError = nil
+                        }
+
+                        Button("settings.general.shortcuts.restoreDefault") {
+                            settings.globalSearchShortcut = .globalSearchDefault
+                            shortcutValidationError = nil
+                        }
+                        .buttonStyle(.borderless)
+                        .focusEffectDisabled()
+                    }
+                }
+
+                Text("settings.general.shortcuts.search.description")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let shortcutValidationError {
+                    Text(shortcutValidationMessageKey(shortcutValidationError))
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             // 2026-06-15 dong4j 需求：无障碍 / 动画偏好。
             //
             // 单独起一个 Section 而不是夹在「外观」里——「关闭应用内动画」
@@ -265,6 +311,19 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func shortcutValidationMessageKey(
+        _ error: KeyboardShortcutConfiguration.ValidationError
+    ) -> LocalizedStringKey {
+        switch error {
+        case .invalidKey:
+            return "settings.general.shortcuts.error.invalidKey"
+        case .missingModifier:
+            return "settings.general.shortcuts.error.missingModifier"
+        case .reserved:
+            return "settings.general.shortcuts.error.reserved"
+        }
     }
 }
 

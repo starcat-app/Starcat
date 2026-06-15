@@ -117,3 +117,45 @@ final class LocaleStore {
         static let appLocale = "AppLocaleOverride"
     }
 }
+
+// MARK: - SwiftUI environment helper
+
+/// 把 `LocaleStore.shared` 的当前选择注入子树 `\.locale` environment。
+///
+/// **为什么需要这道 modifier**：Starcat 有 3 处 SwiftUI 子树**不**在
+/// `StarcatApp.WindowGroup` scene tree 里——AI 助手浮窗（`RepoAIWindowController`）、
+/// 关于窗口（`AboutWindowController`）等都用 AppKit `NSWindow + NSHostingController`
+/// 自建，SwiftUI 的 `.environment(\.locale, _)` 注入只在 scene tree 内传播，**不会**
+/// 自动传过来，导致这些独立窗口里的 SwiftUI 子树永远跟随 `Locale.autoupdatingCurrent`
+/// 显示系统语言、忽略用户在设置页选的语言。
+///
+/// 解决方案：在每个 hosting root 显式挂这道 modifier。`@State` 订阅 `@Observable`
+/// 单例 `LocaleStore.shared`，用户在设置页改 selection 时这些独立窗口同步刷新。
+/// `.id(...)` 与主窗口同款做法，强制重建子树避免缓存了 Locale 的子视图（如
+/// `RelativeDateTimeFormatter`）不刷新。
+///
+/// **注意**：sheet / popover 通常仍在 scene tree 内（SwiftUI sheet host window 是
+/// scene 子节点），主窗口已注入的 `\.locale` 会自动传播，不需要再挂这道 modifier。
+/// 只在 AppKit 独立 NSWindow 入口处挂一次。
+private struct AppLocaleEnvironmentModifier: ViewModifier {
+
+    @State private var localeStore = LocaleStore.shared
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.locale, localeStore.selection.effectiveLocale)
+            .id(localeStore.selection.rawValue)
+    }
+}
+
+extension View {
+
+    /// 订阅 `LocaleStore.shared` 并把当前选择注入子树 `\.locale` environment。
+    ///
+    /// 仅用于 AppKit 自建的独立 NSWindow / NSPanel hosting root。普通 SwiftUI
+    /// scene 内的 view（含 sheet / popover）已自动继承 `StarcatApp` 注入的 locale，
+    /// 不需要重复挂这道 modifier。
+    func appLocaleEnvironment() -> some View {
+        modifier(AppLocaleEnvironmentModifier())
+    }
+}
