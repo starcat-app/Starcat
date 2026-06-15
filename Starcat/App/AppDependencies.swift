@@ -152,6 +152,15 @@ final class AppDependencies {
     /// 构造期不发网络请求，因此保持非 optional；服务故障由每次请求独立降级。
     let wikiAPI: WikiAPI
 
+    /// Wiki 探测结果磁盘 JSON 缓存（2026-06-15）。
+    /// 单进程单实例，与设置页 / `WikiContextService` 共用 observable 派生量。
+    let diskWikiCache: DiskWikiCache
+
+    /// Wiki SWR 编排层（2026-06-15）：read-through cache + 后台刷新 + 并发去重。
+    /// 上层 `RepoAIChatViewModel.bootstrap` 通过它一次性拿"已知 wiki 链接"+ 顺手
+    /// 触发后台刷新；未来详情页 toolbar wiki popover 也接入这里。
+    let wikiContextService: WikiContextService
+
     // MARK: - HOM-47 Release 订阅追踪
 
     /// Release 订阅记录 Repository。
@@ -495,9 +504,20 @@ final class AppDependencies {
         )
 
         // Wiki 首期只做详情页单查，不在启动期 health probe，也不接 batch 预热。
-        self.wikiAPI = WikiAPI(
+        let wikiAPIInstance = WikiAPI(
             baseURL: AppEndpoints.Wiki.baseURL,
             apiKey: StarcatAPIKeyResolver.resolve(for: .wiki)
+        )
+        self.wikiAPI = wikiAPIInstance
+
+        // 2026-06-15 v4.y：Wiki 磁盘缓存 + SWR 编排。装配顺序：
+        // disk cache（只读 / 无网络）→ SWR service（依赖 cache + WikiAPI）。
+        // shared singleton 保留默认，AppDependencies 引用同一实例，让设置页存储 Tab
+        // 与对话 VM 共享同一份 `itemCount` / `totalBytes` observable 派生量。
+        self.diskWikiCache = .shared
+        self.wikiContextService = WikiContextService(
+            cache: .shared,
+            fetcher: wikiAPIInstance
         )
 
         // 2026-06-08：第三方服务健康检查 actor。独立 ephemeral session + 5s 超时。

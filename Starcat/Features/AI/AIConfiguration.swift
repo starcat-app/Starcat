@@ -651,15 +651,24 @@ enum AIDefaultPrompts {
 
     /// Chat 任务占位符（dong4j 2026-06-14 v4 拍板，i18n 策略 C：全英文指令 + Locale 仅控输出语言；
     /// 2026-06-15 HOM-70 v2 新增 `{previousSessionCarryOver}` 占位符闭合 carry-over 链路；
-    /// 2026-06-15 v4.x 新增 `{runtimeContext}` 注入运行环境元数据）：
+    /// 2026-06-15 v4.x 新增 `{runtimeContext}` 注入运行环境元数据；
+    /// 2026-06-15 v4.y 新增 `{starcatResources}` 注入 Wiki 镜像 + 本地 CodeFlow 调用图链接）：
     ///
-    /// **system 层 8 占位符**：
+    /// **system 层 9 占位符**：
     /// - `{outputLanguage}`：跟 `Locale.current` 派发为 `Simplified Chinese` / `English` /
     ///   `Japanese` 等；驱动正文语言 + 兜底句"无法从上下文确认"自然翻译；
     /// - `{runtimeContext}`：当前运行环境（UTC 时间 / 周几 / 用户时区 / Starcat 版本号），
     ///   由 `RuntimeContextProvider.snapshot()` 生成。让 AI 能回答"现在几点 / 今天周几 /
     ///   你这是什么版本"等元问题。**注入时机**：每次组装 system prompt 时实时生成
     ///   （UTC 时间到整点精度，同一小时内字符串不变，服务端 prompt cache 仍能命中）；
+    /// - `{starcatResources}`：当前 repo 的 Starcat 衍生资源 —— 外部 Wiki 镜像
+    ///   （DeepWiki / ZRead / CodeWiki，已索引才出现）+ 本地 CodeFlow 调用图
+    ///   `file://` 链接（生成过才出现）。由 `StarcatResourcesProvider.snapshot(...)`
+    ///   生成；wiki 数据走 `WikiContextService` SWR 缓存（已收录 30 天 / 含未收录 3 天 TTL），
+    ///   CodeFlow 走 `CodeFlowStorage.existingProject(...)`。全空时本占位符渲染为空串，
+    ///   chat template 中的 `## Starcat Resources` header 会让 LLM 自动忽略。**注入时机**：
+    ///   `RepoAIChatViewModel.bootstrap` 阶段从磁盘读 cache + 后台刷新；
+    ///   `chatStream` 时把 cached 值透传进 system prompt；
     /// - `{metadata}`：repo 元数据（fullName / description / language / topics / license / stars / forks / homepage），
     ///   与 Summary / Tags 任务共用同一份元数据块；
     /// - `{readme}`：清洗 + 截断后的 README 纯文本；
@@ -725,6 +734,11 @@ enum AIDefaultPrompts {
         The lines below describe the current runtime environment (UTC time at hour precision, day of week in the user's timezone, the user's timezone, and the running Starcat app version). Use these values when the user asks about the current time, today's date / day of week, or the app version. When reporting "the current time" to the user, convert the UTC time into the user's timezone first; do not parrot the UTC value back.
 
         {runtimeContext}
+
+        # Starcat Resources
+        The block below lists supplementary resources Starcat knows about for this specific repository — external wiki indexes (third-party documentation mirrors) and any locally generated CodeFlow visualization (an interactive call-graph HTML). Recommend these links only when the user asks about documentation, architecture, code structure, or call relationships, and only recommend links that are explicitly listed below. Never invent URLs for resources not listed. If this section is empty, ignore it.
+
+        {starcatResources}
 
         # Repository Context
 

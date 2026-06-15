@@ -12663,6 +12663,74 @@
         }
       }
     },
+    "settings.storage.wiki" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiki Probe Cache"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiki 探测缓存"
+          }
+        }
+      }
+    },
+    "settings.storage.wiki.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not probed yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未探测"
+          }
+        }
+      }
+    },
+    "settings.storage.wiki.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DeepWiki / ZRead / CodeWiki indexing status cached on disk (fully indexed: 30 days / contains uncached: 3 days). Reused across the entire chat session and toolbar wiki popover."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DeepWiki / ZRead / CodeWiki 探测结果落地磁盘缓存（全部已收录 30 天 / 含未收录 3 天）。AI 对话会话期与详情页 toolbar wiki 弹层共用同一份缓存。"
+          }
+        }
+      }
+    },
+    "settings.storage.wikiUsageFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld items · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 项 · %@"
+          }
+        }
+      }
+    },
     "settings.storage.archive" : {
       "localizations" : {
         "en" : {
@@ -13047,7 +13115,41 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已缓存的所有 AnySearch 检索结果（全局搜索 + AI 摘要外部上下文）将被清空。下一次搜索 / 摘要会重新打网络，并消耗 API 配额。"
+            "value" : "已缓存的所有 AnySearch 检索结果（全局搜索 + AI 摘要外部上下文）将被清空。下一次搜索 / 摘要会重新打网络,并消耗 API 配额。"
+          }
+        }
+      }
+    },
+    "settings.storage.clearWiki.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear all Wiki probe cache?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认清除全部 Wiki 探测缓存？"
+          }
+        }
+      }
+    },
+    "settings.storage.clearWiki.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All cached DeepWiki / ZRead / CodeWiki probe results will be removed. The next time you open the AI chat for a repository, Starcat will re-probe the network and consume Wiki API quota."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已缓存的所有 DeepWiki / ZRead / CodeWiki 探测结果将被清空。下次在仓库详情页打开 AI 对话时,会重新发起一次探测,并消耗 Wiki API 配额。"
           }
         }
       }

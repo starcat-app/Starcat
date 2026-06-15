@@ -284,6 +284,10 @@ private struct StorageSettingsTab: View {
     /// 用户心智是"清搜索缓存"而不是分别清两个子目录。
     @State private var anySearchCache = DiskAnySearchCache.shared
 
+    /// Wiki 探测结果磁盘缓存（2026-06-15 v4.y）：DeepWiki / ZRead / CodeWiki 单仓查询
+    /// 结果按 owner/repo 落盘。注入 AI Chat system prompt 的 `{starcatResources}` 段。
+    @State private var wikiCache = DiskWikiCache.shared
+
     /// HOM-70：AI 对话历史磁盘存储（按 repo 多 session）。
     /// 设置页 Tab 仅消费汇总数字 + "清除全部"入口，单 session 删除由对话窗口自己管理。
     @State private var chatHistoryStore = DiskChatHistoryStore.shared
@@ -292,7 +296,7 @@ private struct StorageSettingsTab: View {
     /// 7 类对应缓存 + 1 个全清。每类的 confirm 标题 / 描述键不同，但共用一个
     /// confirmationDialog（避免视图里铺 7 个独立 alert）。
     private enum PendingAction: Identifiable {
-        case readme, image, archive, translation, anySearch, chatHistory, aiContext, codeFlow, all
+        case readme, image, archive, translation, anySearch, wiki, chatHistory, aiContext, codeFlow, all
         var id: String {
             switch self {
             case .readme:       return "readme"
@@ -300,6 +304,7 @@ private struct StorageSettingsTab: View {
             case .archive:      return "archive"
             case .translation:  return "translation"
             case .anySearch:    return "anySearch"
+            case .wiki:         return "wiki"
             case .chatHistory:  return "chatHistory"
             case .aiContext:    return "aiContext"
             case .codeFlow:     return "codeFlow"
@@ -313,6 +318,7 @@ private struct StorageSettingsTab: View {
             case .archive:      return String(localized: "settings.storage.clearArchive.confirm")
             case .translation:  return String(localized: "settings.storage.clearTranslation.confirm")
             case .anySearch:    return String(localized: "settings.storage.clearAnySearch.confirm")
+            case .wiki:         return String(localized: "settings.storage.clearWiki.confirm")
             case .chatHistory:  return String(localized: "settings.storage.clearChatHistory.confirm")
             case .aiContext:    return String(localized: "settings.storage.clearAiContext.confirm")
             case .codeFlow:     return String(localized: "settings.storage.clearCodeFlow.confirm")
@@ -326,6 +332,7 @@ private struct StorageSettingsTab: View {
             case .archive:      return "settings.storage.clearArchive.message"
             case .translation:  return "settings.storage.clearTranslation.message"
             case .anySearch:    return "settings.storage.clearAnySearch.message"
+            case .wiki:         return "settings.storage.clearWiki.message"
             case .chatHistory:  return "settings.storage.clearChatHistory.message"
             case .aiContext:    return "settings.storage.clearAiContext.message"
             case .codeFlow:     return "settings.storage.clearCodeFlow.message"
@@ -334,11 +341,12 @@ private struct StorageSettingsTab: View {
         }
     }
 
-    /// 8 类缓存全空时,"清除全部缓存"按钮 disabled,避免无意义点击。
+    /// 9 类缓存全空时,"清除全部缓存"按钮 disabled,避免无意义点击。
     private var isAllCachesEmpty: Bool {
         stats.totalBytes == 0
             && translationCache.itemCount == 0
             && anySearchCache.itemCount == 0
+            && wikiCache.itemCount == 0
             && chatHistoryStore.sessionCount == 0
             && aiContextStorage.projects.isEmpty
             && codeFlowStorage.projects.isEmpty
@@ -389,6 +397,13 @@ private struct StorageSettingsTab: View {
                     isEmpty: anySearchCache.itemCount == 0,
                     action: .anySearch,
                     helpKey: "settings.storage.anySearch.help"
+                )
+                usageRow(
+                    titleKey: "settings.storage.wiki",
+                    usageText: wikiUsageText,
+                    isEmpty: wikiCache.itemCount == 0,
+                    action: .wiki,
+                    helpKey: "settings.storage.wiki.help"
                 )
                 usageRow(
                     titleKey: "settings.storage.chatHistory",
@@ -563,6 +578,9 @@ private struct StorageSettingsTab: View {
         case .anySearch:
             do { try await anySearchCache.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
+        case .wiki:
+            do { try wikiCache.deleteEverything() }
+            catch { storageActionError = error.localizedDescription }
         case .chatHistory:
             do { try chatHistoryStore.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
@@ -579,6 +597,10 @@ private struct StorageSettingsTab: View {
             do { try await translationCache.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
             do { try await anySearchCache.deleteEverything() }
+            catch {
+                if storageActionError == nil { storageActionError = error.localizedDescription }
+            }
+            do { try wikiCache.deleteEverything() }
             catch {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
@@ -639,6 +661,19 @@ private struct StorageSettingsTab: View {
             format: String(localized: "settings.storage.anySearchUsageFormat"),
             anySearchCache.itemCount,
             anySearchCache.totalBytes.formattedByteSize
+        )
+    }
+
+    /// Wiki 探测结果磁盘缓存用量行文案。数据极小（每个 repo < 1KB），格式与
+    /// translation / anySearch 同款（`X 项 · YY KB`）保持视觉一致。
+    private var wikiUsageText: String {
+        if wikiCache.itemCount == 0 {
+            return String(localized: "settings.storage.wiki.empty")
+        }
+        return String(
+            format: String(localized: "settings.storage.wikiUsageFormat"),
+            wikiCache.itemCount,
+            wikiCache.totalBytes.formattedByteSize
         )
     }
 
