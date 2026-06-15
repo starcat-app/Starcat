@@ -2,44 +2,32 @@
 //  DiskChatHistoryStore.swift
 //  Starcat
 //
-//  AI 对话历史磁盘存储（HOM-70 / 2026-06-15 dong4j 拍板「按 repo 多 session + 100MB LRU」）。
+//  AI 对话历史磁盘存储（HOM-70 / 2026-06-15 chunk 分片重构）。
 //
 //  模块职责：
 //  - 把 `(owner, repo)` 维度的多 session 对话历史以 JSON 落盘到
 //    `~/Library/Application Support/com.starcat.app/chat-history/<owner>/<repo>/`；
-//  - 给 `RepoAIChatViewModel` 提供 listSessions / loadSession / saveSession /
-//    deleteSession / deleteAllForRepo / deleteEverything 六个接口；
-//  - 暴露 `@Observable` 派生量给设置页存储 Tab 渲染「对话历史 N 项 · XX MB」；
-//  - LRU 淘汰：总占用 > 100 MB 时按 session 文件 mtime 升序删（最久未访问优先），
-//    每 N 次 saveSession 触发一次（不在 read 路径上跑）。
+//  - 每个 session 拆成 metadata + chunks，避免首次进入聊天时整包读取大量 Markdown；
+//  - 给 `RepoAIChatViewModel` 提供 session 列表、尾部页、向前分页、完整导出/发送历史；
+//  - 暴露 `@Observable` 汇总量给设置页存储 Tab 渲染「对话历史 N 项 · XX MB」；
+//  - LRU 淘汰：总占用 > 100 MB 时按 session metadata mtime 升序删。
 //
 //  目录布局：
 //      chat-history/
 //        <owner>/
 //          <repo>/
-//            index.json               <-- session 索引（轻量列表，渲染 popover 用）
-//            <session-id>.json        <-- 单个 session 的完整 messages + 元数据
-//            <another-id>.json
+//            index.json
+//            <session-id>/
+//              metadata.json
+//              chunks/
+//                000000.json     // 第 0...19 条消息
+//                000001.json     // 第 20...39 条消息
 //
-//  关键约束（与 DiskReadmeTranslationCache / DiskAnySearchCache 的差异）：
-//    1. **index.json 与 session 文件双源**：index 是性能优化（避免 list 时打开所有
-//       session 文件），但**不是 source of truth**——任何对 session 的写入必须先
-//       写 session.json 再更新 index.json，半失败时 index 可能跟 session 不一致；
-//       `rebuildIndex(owner:repo:)` 提供自愈：扫所有 `<id>.json` 重建 index。
-//       list 时若 index.json 不存在 / decode 失败，自动 fallback 到扫盘并重建。
-//    2. **路径用 `<owner>/<repo>` 而非 `<repo_id>`**：与 DiskReadmeTranslationCache
-//       同理——ephemeral repo（trending / activity）拿不到稳定 id；owner/repo 在
-//       Finder 里也直观可读。
-//    3. **session id 用 UUID**：避免 title 含路径非法字符或多个同名 session 撞名。
-//       文件名直接是 `<uuid>.json`，UUID 是 ASCII 安全字符。
-//    4. **不存 lastAccessedAt 字段**：与翻译缓存同款，用文件 mtime 表达"最近访问"。
-//       loadSession 命中后 touch mtime → LRU sweep 看 mtime 升序删。
-//    5. **保存粒度 = 整个 session**：每次发完一轮就把 session 整体 atomic 覆写。
-//       单 session typical < 20 KB（30 轮对话 × ~600 字节），主线程 IO < 5 ms 不卡 UI。
-//    6. **LRU 是全局的，不是按 repo**：100 MB 是整个 chat-history 的预算，不是每个
-//       repo 100 MB。优先淘汰那些"长期没人访问"的 session，与用户「无过期时间」
-//       约束不冲突：active session 持续 touch mtime 不会被删。
-//    7. **@MainActor + 同步 IO**：与其它两个 Disk* 缓存同款。
+//  关键约束：
+//  1. 本项目未上线，无需兼容旧 `<session-id>.json` 单文件 schema；旧路径不再读取。
+//  2. chunk 大小固定 20 条，正好对应 UI「加载更早消息」的一页，首屏只从尾部页切 2 条渲染。
+//  3. `index.json` 仍是轻量列表缓存，不是 source of truth；损坏时从 session 目录重建。
+//  4. 写入用临时目录再替换 session 目录，避免半写入留下缺 chunk 的 session。
 //
 
 import Foundation
@@ -60,38 +48,37 @@ enum DiskChatHistoryStoreError: LocalizedError {
     }
 }
 
+/// 从 chunk 化 session 中读取的一页消息。
+struct ChatSessionPage: Equatable, Sendable {
+    var session: ChatSession
+    var messageStartIndex: Int
+    var totalMessageCount: Int
+}
+
 /// AI 对话历史磁盘存储（线程：所有公开方法 `@MainActor`）。
-///
-/// 单例由 `DiskChatHistoryStore.shared` 暴露；测试通过 `init(rootOverride:)` 隔离。
 @MainActor
 @Observable
 final class DiskChatHistoryStore {
 
-    /// 进程级单例。VM × N + 设置页 + tests 共用同一份 Observable 状态。
     static let shared = DiskChatHistoryStore()
 
-    // MARK: - LRU 策略（dong4j 2026-06-15 拍板 100 MB）
+    /// 每个 chunk 固定 20 条消息。UI 点击「加载更早消息」也按这个粒度向前读取。
+    nonisolated static let messagesPerChunk = 20
 
-    /// 总占用上限。超过即触发 LRU 删除（按 session 文件 mtime 升序删，直到 < limit）。
     private let maxTotalBytes: Int64 = 100 * 1024 * 1024 // 100 MB
 
-    // MARK: - Observable 派生量（设置页存储 Tab 渲染用）
-
-    /// 全部 chat-history（含 index.json + session.json）总字节数。
+    /// 全部 chat-history（index + metadata + chunks）总字节数。
     private(set) var totalBytes: Int64 = 0
 
-    /// session 总数（按所有 `<id>.json` 计；不算 index.json）。
+    /// session 总数（按包含 `metadata.json` 的 session 目录计）。
     private(set) var sessionCount: Int = 0
 
     /// 已使用 chat 的仓库数（owner/repo 目录数）。
     private(set) var repoCount: Int = 0
 
-    // MARK: - 内部状态
-
     private let fileManager: FileManager
     private let rootOverride: URL?
 
-    /// saveSession 计数（每 5 次触发一次 LRU sweep）。
     private var saveCountSinceLastSweep: Int = 0
     private let saveCountSweepThreshold: Int = 5
 
@@ -117,9 +104,6 @@ final class DiskChatHistoryStore {
     // MARK: - Session 增删查改
 
     /// 列出某 repo 的所有 session 概要，按 `updatedAt` 倒序（最新在前）。
-    ///
-    /// 优先读 `index.json`，缺失或损坏时自动 fallback 扫盘并重建 index。
-    /// 返回空列表代表该 repo 还从未开过对话。
     func listSessions(owner: String, repo: String) throws -> [ChatSessionSummary] {
         let indexURL = try indexFile(owner: owner, repo: repo)
 
@@ -129,14 +113,12 @@ final class DiskChatHistoryStore {
             return index.sessions.sorted { $0.updatedAt > $1.updatedAt }
         }
 
-        // index 缺失 / 损坏：自愈，从所有 session 文件重建。
         AppLog.ai.warning("Chat history: index missing/corrupted, rebuilding owner=\(owner, privacy: .public) repo=\(repo, privacy: .public)")
         let rebuilt = try rebuildIndex(owner: owner, repo: repo)
         return rebuilt.sorted { $0.updatedAt > $1.updatedAt }
     }
 
     /// 常规命中路径在后台线程读取并解码 index，避免首次进入聊天面板时阻塞主线程。
-    /// index 缺失或损坏仍回到主 actor 执行原有自愈逻辑；该路径属于低频异常路径。
     func listSessionsAsync(owner: String, repo: String) async throws -> [ChatSessionSummary] {
         let indexURL = try indexFile(owner: owner, repo: repo)
         let indexed = await Task.detached(priority: .userInitiated) {
@@ -155,72 +137,136 @@ final class DiskChatHistoryStore {
         return try listSessions(owner: owner, repo: repo)
     }
 
-    /// 读单个 session 的完整内容（messages + carriedOverSummary 等）。
-    /// 文件不存在 / 解码失败 → 返回 nil（解码失败时同时删除损坏文件，避免长期占空间）。
-    /// 命中时 touch 文件 mtime 让 LRU 视其为"最近访问"。
+    /// 读取完整 session。发送请求与复制完整对话需要完整历史；普通首屏不要走这条。
     func loadSession(owner: String, repo: String, sessionId: UUID) throws -> ChatSession? {
-        let fileURL = try sessionFile(owner: owner, repo: repo, sessionId: sessionId)
-        guard fileManager.fileExists(atPath: fileURL.path) else { return nil }
-
-        let data: Data
-        do {
-            data = try Data(contentsOf: fileURL)
-        } catch {
-            AppLog.ai.warning("Chat history: read failed owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) sid=\(sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+        guard let metadata = try loadMetadata(owner: owner, repo: repo, sessionId: sessionId) else {
             return nil
         }
-
         do {
-            let session = try decoder.decode(ChatSession.self, from: data)
-            try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: fileURL.path)
-            return session
+            let messages = try loadMessages(owner: owner, repo: repo, sessionId: sessionId, range: 0..<metadata.messageCount)
+            touchSession(owner: owner, repo: repo, sessionId: sessionId)
+            return metadata.makeSession(messages: messages)
         } catch {
-            AppLog.ai.warning("Chat history: decode failed, removing owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) sid=\(sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
-            try? fileManager.removeItem(at: fileURL)
-            try? syncIndexAfterRemove(owner: owner, repo: repo, sessionId: sessionId)
+            AppLog.ai.warning("Chat history: full load failed, removing owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) sid=\(sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            try? deleteSession(owner: owner, repo: repo, sessionId: sessionId)
             return nil
         }
     }
 
-    /// 后台读取并解码完整 session。聊天历史增长后，JSON 大小不再影响主线程输入和动画。
-    /// 解码失败沿用同步入口的清理语义，确保损坏文件和 index 能继续自愈。
+    /// 后台读取并解码完整 session。用于发送前组装 prompt 历史和复制完整对话。
     func loadSessionAsync(owner: String, repo: String, sessionId: UUID) async throws -> ChatSession? {
-        let fileURL = try sessionFile(owner: owner, repo: repo, sessionId: sessionId)
-        guard fileManager.fileExists(atPath: fileURL.path) else { return nil }
+        let sessionDir = try sessionDirectory(owner: owner, repo: repo, sessionId: sessionId)
+        guard fileManager.fileExists(atPath: sessionDir.path) else { return nil }
 
         do {
             return try await Task.detached(priority: .userInitiated) {
-                let data = try Data(contentsOf: fileURL)
                 let decoder = JSONDecoder()
                 decoder.dateDecodingStrategy = .iso8601
-                let session = try decoder.decode(ChatSession.self, from: data)
+                let metadataURL = sessionDir.appendingPathComponent("metadata.json")
+                let metadata = try decoder.decode(ChatSessionMetadata.self, from: Data(contentsOf: metadataURL))
+                let messages = try Self.loadMessagesDetached(
+                    sessionDir: sessionDir,
+                    range: 0..<metadata.messageCount,
+                    decoder: decoder
+                )
                 try? FileManager.default.setAttributes(
                     [.modificationDate: Date()],
-                    ofItemAtPath: fileURL.path
+                    ofItemAtPath: metadataURL.path
                 )
-                return session
+                return metadata.makeSession(messages: messages)
             }.value
         } catch {
-            AppLog.ai.warning("Chat history: async read/decode failed, removing owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) sid=\(sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
-            try? fileManager.removeItem(at: fileURL)
-            try? syncIndexAfterRemove(owner: owner, repo: repo, sessionId: sessionId)
+            AppLog.ai.warning("Chat history: async full load failed, removing owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) sid=\(sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            try? deleteSession(owner: owner, repo: repo, sessionId: sessionId)
             return nil
         }
     }
 
+    /// 读取 session 尾部一页。`tailCount` 传 2 即首屏只渲染最近两条消息。
+    func loadSessionTailAsync(owner: String, repo: String, sessionId: UUID, tailCount: Int) async throws -> ChatSessionPage? {
+        let sessionDir = try sessionDirectory(owner: owner, repo: repo, sessionId: sessionId)
+        guard fileManager.fileExists(atPath: sessionDir.path) else { return nil }
+
+        do {
+            return try await Task.detached(priority: .userInitiated) {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let metadataURL = sessionDir.appendingPathComponent("metadata.json")
+                let metadata = try decoder.decode(ChatSessionMetadata.self, from: Data(contentsOf: metadataURL))
+                let start = max(0, metadata.messageCount - max(0, tailCount))
+                let messages = try Self.loadMessagesDetached(
+                    sessionDir: sessionDir,
+                    range: start..<metadata.messageCount,
+                    decoder: decoder
+                )
+                try? FileManager.default.setAttributes(
+                    [.modificationDate: Date()],
+                    ofItemAtPath: metadataURL.path
+                )
+                return ChatSessionPage(
+                    session: metadata.makeSession(messages: messages),
+                    messageStartIndex: start,
+                    totalMessageCount: metadata.messageCount
+                )
+            }.value
+        } catch {
+            AppLog.ai.warning("Chat history: async tail load failed, removing owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) sid=\(sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            try? deleteSession(owner: owner, repo: repo, sessionId: sessionId)
+            return nil
+        }
+    }
+
+    /// 读取 `[start, end)` 范围内的消息。调用方负责传入合法窗口；本方法会自动夹紧。
+    func loadMessagesAsync(owner: String, repo: String, sessionId: UUID, start: Int, end: Int) async throws -> [ChatMessage] {
+        let sessionDir = try sessionDirectory(owner: owner, repo: repo, sessionId: sessionId)
+        guard fileManager.fileExists(atPath: sessionDir.path), start < end else { return [] }
+
+        return try await Task.detached(priority: .userInitiated) {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let metadataURL = sessionDir.appendingPathComponent("metadata.json")
+            let metadata = try decoder.decode(ChatSessionMetadata.self, from: Data(contentsOf: metadataURL))
+            let clampedStart = max(0, min(start, metadata.messageCount))
+            let clampedEnd = max(clampedStart, min(end, metadata.messageCount))
+            return try Self.loadMessagesDetached(
+                sessionDir: sessionDir,
+                range: clampedStart..<clampedEnd,
+                decoder: decoder
+            )
+        }.value
+    }
+
     /// 写入 / 覆盖整个 session。同时更新 `index.json`。
-    ///
-    /// 顺序：先写 `<id>.json` 再更新 `index.json`——半失败时 index 还停留在旧状态，
-    /// 下次 listSessions 自愈重建即可。
     func saveSession(owner: String, repo: String, session: ChatSession) throws {
         let dir = try projectDirectory(owner: owner, repo: repo)
         try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        let fileURL = dir.appendingPathComponent("\(session.id.uuidString).json")
-        let data = try encoder.encode(session)
-        try data.write(to: fileURL, options: .atomic)
+        let sessionDir = try sessionDirectory(owner: owner, repo: repo, sessionId: session.id)
+        let tmpDir = dir.appendingPathComponent(".\(session.id.uuidString).tmp-\(UUID().uuidString)", isDirectory: true)
+        let chunksDir = tmpDir.appendingPathComponent("chunks", isDirectory: true)
+        try fileManager.createDirectory(at: chunksDir, withIntermediateDirectories: true)
 
-        let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? Int64(data.count)
+        let metadata = ChatSessionMetadata(session: session, messageCount: session.messages.count)
+        try encoder.encode(metadata).write(
+            to: tmpDir.appendingPathComponent("metadata.json"),
+            options: .atomic
+        )
+
+        for (chunkIndex, start) in stride(from: 0, to: session.messages.count, by: Self.messagesPerChunk).enumerated() {
+            let end = min(start + Self.messagesPerChunk, session.messages.count)
+            let chunk = ChatMessageChunk(startIndex: start, messages: Array(session.messages[start..<end]))
+            try encoder.encode(chunk).write(
+                to: chunksDir.appendingPathComponent(Self.chunkFileName(chunkIndex)),
+                options: .atomic
+            )
+        }
+
+        if fileManager.fileExists(atPath: sessionDir.path) {
+            try fileManager.removeItem(at: sessionDir)
+        }
+        try fileManager.moveItem(at: tmpDir, to: sessionDir)
+
+        let size = directorySize(sessionDir)
         try upsertIndex(
             owner: owner,
             repo: repo,
@@ -239,16 +285,16 @@ final class DiskChatHistoryStore {
         try maybeTriggerLRUSweep()
     }
 
-    /// 删某 session（用户主动"删对话"入口）。
+    /// 删某 session（用户主动“删对话”入口）。
     func deleteSession(owner: String, repo: String, sessionId: UUID) throws {
-        let fileURL = try sessionFile(owner: owner, repo: repo, sessionId: sessionId)
-        try? fileManager.removeItem(at: fileURL)
+        let dir = try sessionDirectory(owner: owner, repo: repo, sessionId: sessionId)
+        try? fileManager.removeItem(at: dir)
         try syncIndexAfterRemove(owner: owner, repo: repo, sessionId: sessionId)
         try? removeEmptyProjectDirectory(owner: owner, repo: repo)
         reload()
     }
 
-    /// 删某 repo 全部 session（AI 窗口右上角"清除当前 repo 对话"入口）。
+    /// 删某 repo 全部 session。
     func deleteAllForRepo(owner: String, repo: String) throws {
         let dir = try projectDirectory(owner: owner, repo: repo)
         if fileManager.fileExists(atPath: dir.path) {
@@ -258,7 +304,7 @@ final class DiskChatHistoryStore {
         reload()
     }
 
-    /// 清掉全部 chat-history（设置页"清除全部对话历史"按钮入口）。
+    /// 清掉全部 chat-history。
     func deleteEverything() throws {
         let root = try rootURL()
         if fileManager.fileExists(atPath: root.path) {
@@ -270,44 +316,29 @@ final class DiskChatHistoryStore {
 
     // MARK: - LRU sweep
 
-    /// 触发 LRU 淘汰：若总量 > 100 MB 则按 session 文件 mtime 升序删（最久未访问优先）。
-    ///
-    /// **与翻译缓存差异**：chat-history 无 TTL（用户"无过期时间"约束），仅按总量裁剪。
-    /// **不在 read 路径触发**：由 saveSession 累计 5 次后调一次。
     func lruSweep() throws {
         let root = try rootURL()
         guard fileManager.fileExists(atPath: root.path) else { return }
 
         var entries: [(url: URL, owner: String, repo: String, sessionId: UUID, mtime: Date, size: Int64)] = []
-
-        let ownerDirs = (try? fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
-        for ownerDir in ownerDirs where ownerDir.hasDirectoryPath {
-            let owner = ownerDir.lastPathComponent
-            let repoDirs = (try? fileManager.contentsOfDirectory(at: ownerDir, includingPropertiesForKeys: nil)) ?? []
-            for repoDir in repoDirs where repoDir.hasDirectoryPath {
-                let repo = repoDir.lastPathComponent
-                let files = (try? fileManager.contentsOfDirectory(at: repoDir, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey])) ?? []
-                for file in files where file.pathExtension == "json" && file.lastPathComponent != "index.json" {
-                    guard let sid = UUID(uuidString: file.deletingPathExtension().lastPathComponent) else { continue }
-                    let size = Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-                    let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                    entries.append((file, owner, repo, sid, mtime, size))
-                }
-            }
+        for (owner, repo, sessionDir, sessionId) in collectSessionDirectories(under: root) {
+            let metadataURL = sessionDir.appendingPathComponent("metadata.json")
+            let mtime = (try? metadataURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            entries.append((sessionDir, owner, repo, sessionId, mtime, directorySize(sessionDir)))
         }
 
-        var totalBytes: Int64 = entries.reduce(0) { $0 + $1.size }
-        guard totalBytes > maxTotalBytes else {
+        var bytes = entries.reduce(0) { $0 + $1.size }
+        guard bytes > maxTotalBytes else {
             saveCountSinceLastSweep = 0
             return
         }
 
         entries.sort { $0.mtime < $1.mtime }
         for entry in entries {
-            guard totalBytes > maxTotalBytes else { break }
+            guard bytes > maxTotalBytes else { break }
             try? fileManager.removeItem(at: entry.url)
             try? syncIndexAfterRemove(owner: entry.owner, repo: entry.repo, sessionId: entry.sessionId)
-            totalBytes -= entry.size
+            bytes -= entry.size
         }
 
         cleanEmptyDirectories()
@@ -317,39 +348,34 @@ final class DiskChatHistoryStore {
 
     // MARK: - 索引维护
 
-    /// 从某 repo 的 session 文件全量重建 index.json，返回重建后的 summary 列表。
-    /// 用于 `listSessions` 在 index 缺失 / 损坏时自愈。
     @discardableResult
     func rebuildIndex(owner: String, repo: String) throws -> [ChatSessionSummary] {
         let dir = try projectDirectory(owner: owner, repo: repo)
         guard fileManager.fileExists(atPath: dir.path) else { return [] }
 
-        let files = (try? fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+        let children = (try? fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         var summaries: [ChatSessionSummary] = []
-        for file in files where file.pathExtension == "json" && file.lastPathComponent != "index.json" {
-            guard UUID(uuidString: file.deletingPathExtension().lastPathComponent) != nil else { continue }
-            guard let data = try? Data(contentsOf: file),
-                  let session = try? decoder.decode(ChatSession.self, from: data)
-            else { continue }
-            let size = Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        for sessionDir in children where sessionDir.hasDirectoryPath {
+            guard let sessionId = UUID(uuidString: sessionDir.lastPathComponent),
+                  let metadata = try? readMetadata(at: sessionDir.appendingPathComponent("metadata.json")) else {
+                continue
+            }
             summaries.append(ChatSessionSummary(
-                id: session.id,
-                title: session.title,
-                createdAt: session.createdAt,
-                updatedAt: session.updatedAt,
-                messageCount: session.messages.count,
-                bytes: size
+                id: sessionId,
+                title: metadata.title,
+                createdAt: metadata.createdAt,
+                updatedAt: metadata.updatedAt,
+                messageCount: metadata.messageCount,
+                bytes: directorySize(sessionDir)
             ))
         }
 
         let index = ChatSessionIndex(sessions: summaries)
         let indexURL = try indexFile(owner: owner, repo: repo)
-        let data = try encoder.encode(index)
-        try data.write(to: indexURL, options: .atomic)
+        try encoder.encode(index).write(to: indexURL, options: .atomic)
         return summaries
     }
 
-    /// 单条 upsert：读 index.json → 替换 / 追加 → 写回。
     private func upsertIndex(owner: String, repo: String, summary: ChatSessionSummary) throws {
         let indexURL = try indexFile(owner: owner, repo: repo)
         var index: ChatSessionIndex
@@ -367,11 +393,9 @@ final class DiskChatHistoryStore {
             index.sessions.append(summary)
         }
 
-        let data = try encoder.encode(index)
-        try data.write(to: indexURL, options: .atomic)
+        try encoder.encode(index).write(to: indexURL, options: .atomic)
     }
 
-    /// 删 session 后从 index 移除对应项；index 为空时连 index.json 一起删。
     private func syncIndexAfterRemove(owner: String, repo: String, sessionId: UUID) throws {
         let indexURL = try indexFile(owner: owner, repo: repo)
         guard fileManager.fileExists(atPath: indexURL.path),
@@ -383,53 +407,101 @@ final class DiskChatHistoryStore {
         if index.sessions.isEmpty {
             try? fileManager.removeItem(at: indexURL)
         } else {
-            let newData = try encoder.encode(index)
-            try newData.write(to: indexURL, options: .atomic)
+            try encoder.encode(index).write(to: indexURL, options: .atomic)
         }
     }
 
-    // MARK: - 重扫盘：刷新 totalBytes / sessionCount / repoCount
+    // MARK: - 汇总统计
 
-    /// 扫盘更新派生量。**与 lruSweep 不同**：reload 不删任何文件，纯只读统计。
     func reload() {
-        var totalBytes: Int64 = 0
-        var sessionCount: Int = 0
-        var repoCount: Int = 0
+        var bytes: Int64 = 0
+        var sessions = 0
+        var repos = 0
 
         guard let root = try? rootURL(),
               fileManager.fileExists(atPath: root.path) else {
-            self.totalBytes = 0
-            self.sessionCount = 0
-            self.repoCount = 0
+            totalBytes = 0
+            sessionCount = 0
+            repoCount = 0
             return
+        }
+
+        for (_, _, sessionDir, _) in collectSessionDirectories(under: root) {
+            bytes += directorySize(sessionDir)
+            sessions += 1
         }
 
         let ownerDirs = (try? fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
         for ownerDir in ownerDirs where ownerDir.hasDirectoryPath {
             let repoDirs = (try? fileManager.contentsOfDirectory(at: ownerDir, includingPropertiesForKeys: nil)) ?? []
             for repoDir in repoDirs where repoDir.hasDirectoryPath {
-                var hasSessionInThisRepo = false
-                let files = (try? fileManager.contentsOfDirectory(at: repoDir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
-                for file in files where file.pathExtension == "json" {
-                    if let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                        totalBytes += Int64(size)
-                    }
-                    if file.lastPathComponent != "index.json",
-                       UUID(uuidString: file.deletingPathExtension().lastPathComponent) != nil {
-                        sessionCount += 1
-                        hasSessionInThisRepo = true
-                    }
+                let children = (try? fileManager.contentsOfDirectory(at: repoDir, includingPropertiesForKeys: nil)) ?? []
+                if children.contains(where: { $0.hasDirectoryPath && UUID(uuidString: $0.lastPathComponent) != nil }) {
+                    repos += 1
                 }
-                if hasSessionInThisRepo { repoCount += 1 }
+                if let indexSize = try? repoDir.appendingPathComponent("index.json").resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                    bytes += Int64(indexSize)
+                }
             }
         }
 
-        self.totalBytes = totalBytes
-        self.sessionCount = sessionCount
-        self.repoCount = repoCount
+        totalBytes = bytes
+        sessionCount = sessions
+        repoCount = repos
     }
 
-    // MARK: - 私有
+    // MARK: - 私有读取
+
+    private func loadMetadata(owner: String, repo: String, sessionId: UUID) throws -> ChatSessionMetadata? {
+        let metadataURL = try metadataFile(owner: owner, repo: repo, sessionId: sessionId)
+        guard fileManager.fileExists(atPath: metadataURL.path) else { return nil }
+        do {
+            return try readMetadata(at: metadataURL)
+        } catch {
+            AppLog.ai.warning("Chat history: metadata decode failed, removing sid=\(sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            try? deleteSession(owner: owner, repo: repo, sessionId: sessionId)
+            return nil
+        }
+    }
+
+    private func readMetadata(at url: URL) throws -> ChatSessionMetadata {
+        try decoder.decode(ChatSessionMetadata.self, from: Data(contentsOf: url))
+    }
+
+    private func loadMessages(owner: String, repo: String, sessionId: UUID, range: Range<Int>) throws -> [ChatMessage] {
+        let sessionDir = try sessionDirectory(owner: owner, repo: repo, sessionId: sessionId)
+        return try Self.loadMessagesDetached(sessionDir: sessionDir, range: range, decoder: decoder)
+    }
+
+    nonisolated private static func loadMessagesDetached(sessionDir: URL, range: Range<Int>, decoder: JSONDecoder) throws -> [ChatMessage] {
+        guard !range.isEmpty else { return [] }
+        let startChunk = range.lowerBound / messagesPerChunk
+        let endChunk = (range.upperBound - 1) / messagesPerChunk
+        var result: [ChatMessage] = []
+        result.reserveCapacity(range.count)
+
+        for chunkIndex in startChunk...endChunk {
+            let url = sessionDir
+                .appendingPathComponent("chunks", isDirectory: true)
+                .appendingPathComponent(chunkFileName(chunkIndex))
+            let chunk = try decoder.decode(ChatMessageChunk.self, from: Data(contentsOf: url))
+            let chunkStart = chunk.startIndex
+            for (offset, message) in chunk.messages.enumerated() {
+                let absoluteIndex = chunkStart + offset
+                if range.contains(absoluteIndex) {
+                    result.append(message)
+                }
+            }
+        }
+        return result
+    }
+
+    private func touchSession(owner: String, repo: String, sessionId: UUID) {
+        guard let metadataURL = try? metadataFile(owner: owner, repo: repo, sessionId: sessionId) else { return }
+        try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: metadataURL.path)
+    }
+
+    // MARK: - 文件系统辅助
 
     private func maybeTriggerLRUSweep() throws {
         guard saveCountSinceLastSweep >= saveCountSweepThreshold else { return }
@@ -471,6 +543,40 @@ final class DiskChatHistoryStore {
         }
     }
 
+    private func directorySize(_ url: URL) -> Int64 {
+        var total: Int64 = 0
+        let enumerator = fileManager.enumerator(
+            at: url,
+            includingPropertiesForKeys: [.fileSizeKey],
+            options: [.skipsHiddenFiles]
+        )
+        while let file = enumerator?.nextObject() as? URL {
+            total += Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+        return total
+    }
+
+    private func collectSessionDirectories(under root: URL) -> [(owner: String, repo: String, sessionDir: URL, sessionId: UUID)] {
+        var result: [(String, String, URL, UUID)] = []
+        let ownerDirs = (try? fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        for ownerDir in ownerDirs where ownerDir.hasDirectoryPath {
+            let owner = ownerDir.lastPathComponent
+            let repoDirs = (try? fileManager.contentsOfDirectory(at: ownerDir, includingPropertiesForKeys: nil)) ?? []
+            for repoDir in repoDirs where repoDir.hasDirectoryPath {
+                let repo = repoDir.lastPathComponent
+                let sessionDirs = (try? fileManager.contentsOfDirectory(at: repoDir, includingPropertiesForKeys: nil)) ?? []
+                for sessionDir in sessionDirs where sessionDir.hasDirectoryPath {
+                    guard let sessionId = UUID(uuidString: sessionDir.lastPathComponent),
+                          fileManager.fileExists(atPath: sessionDir.appendingPathComponent("metadata.json").path) else {
+                        continue
+                    }
+                    result.append((owner, repo, sessionDir, sessionId))
+                }
+            }
+        }
+        return result
+    }
+
     // MARK: - 路径构造
 
     private func rootURL() throws -> URL {
@@ -497,9 +603,18 @@ final class DiskChatHistoryStore {
         try projectDirectory(owner: owner, repo: repo).appendingPathComponent("index.json")
     }
 
-    private func sessionFile(owner: String, repo: String, sessionId: UUID) throws -> URL {
+    private func sessionDirectory(owner: String, repo: String, sessionId: UUID) throws -> URL {
         try projectDirectory(owner: owner, repo: repo)
-            .appendingPathComponent("\(sessionId.uuidString).json")
+            .appendingPathComponent(sessionId.uuidString, isDirectory: true)
+    }
+
+    private func metadataFile(owner: String, repo: String, sessionId: UUID) throws -> URL {
+        try sessionDirectory(owner: owner, repo: repo, sessionId: sessionId)
+            .appendingPathComponent("metadata.json")
+    }
+
+    nonisolated private static func chunkFileName(_ index: Int) -> String {
+        String(format: "%06d.json", index)
     }
 
     /// 防御 path traversal：禁止 `.` / `..` / `/` 出现在 path component 中。
@@ -512,10 +627,40 @@ final class DiskChatHistoryStore {
 
 // MARK: - 内部 schema
 
-/// `index.json` 文件实际编解码用的结构。
-///
-/// 单字段 wrapper 是为将来扩展留口子（如 `schemaVersion` / `lastRebuiltAt`）——
-/// 直接序列化 `[ChatSessionSummary]` 顶层数组会让加字段成为破坏性变更。
 private struct ChatSessionIndex: Codable {
     var sessions: [ChatSessionSummary]
+}
+
+private struct ChatSessionMetadata: Codable {
+    let id: UUID
+    var title: String
+    let createdAt: Date
+    var updatedAt: Date
+    var carriedOverSummary: String?
+    var messageCount: Int
+
+    init(session: ChatSession, messageCount: Int) {
+        self.id = session.id
+        self.title = session.title
+        self.createdAt = session.createdAt
+        self.updatedAt = session.updatedAt
+        self.carriedOverSummary = session.carriedOverSummary
+        self.messageCount = messageCount
+    }
+
+    func makeSession(messages: [ChatMessage]) -> ChatSession {
+        ChatSession(
+            id: id,
+            title: title,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            messages: messages,
+            carriedOverSummary: carriedOverSummary
+        )
+    }
+}
+
+private struct ChatMessageChunk: Codable {
+    let startIndex: Int
+    var messages: [ChatMessage]
 }

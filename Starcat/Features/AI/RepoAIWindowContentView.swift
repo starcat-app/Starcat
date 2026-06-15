@@ -151,7 +151,6 @@ struct RepoAIWindowContentView: View {
 
             activePanel
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .transition(.opacity)
 
             panelToggleBar
 
@@ -1069,6 +1068,11 @@ struct RepoAIWindowContentView: View {
                                 chatEmptyState
                                     .padding(.top, 60)
                             } else {
+                                if chat.hasEarlierMessages {
+                                    loadEarlierMessagesButton(chat: chat)
+                                        .padding(.horizontal, 16)
+                                }
+
                                 ForEach(chat.messages) { message in
                                     AIChatBubble(
                                         message: message,
@@ -1157,6 +1161,44 @@ struct RepoAIWindowContentView: View {
             return false
         }
         return !carryOverDismissedSessions.contains(sid)
+    }
+
+    /// 分页加载更早历史。
+    ///
+    /// 首屏只渲染最近 2 条消息，避免大量 Markdown 气泡拖慢 AI 窗口和输入框。用户确实
+    /// 要回看历史时再按 20 条一个 chunk 向前加载；按钮放在滚动内容顶部，语义上等价于
+    /// 常见聊天 App 的“加载更早消息”。
+    private func loadEarlierMessagesButton(chat: RepoAIChatViewModel) -> some View {
+        HStack {
+            Spacer()
+            Button {
+                Task { await chat.loadEarlierMessages(repo: repo) }
+            } label: {
+                HStack(spacing: 6) {
+                    if chat.isLoadingEarlierMessages {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "chevron.up.circle")
+                    }
+                    Text(chat.isLoadingEarlierMessages
+                         ? "ai.assistant.chat.history.loadingEarlier"
+                         : "ai.assistant.chat.history.loadEarlier")
+                        .font(.caption.weight(.medium))
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.secondary.opacity(0.10))
+                )
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .disabled(chat.isLoadingEarlierMessages)
+            .help("ai.assistant.chat.history.loadEarlier.help")
+            Spacer()
+        }
     }
 
     /// HOM-70 v2：「承接自上一对话」banner —— 用户点上下文溢出 banner 的「新建并承接」

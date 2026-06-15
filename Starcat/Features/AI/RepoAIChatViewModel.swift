@@ -142,14 +142,28 @@ final class RepoAIChatViewModel {
 
     // MARK: - 可观察状态
 
-    /// 完整对话记录。顺序：第一条最早，最后一条最新。
+    /// 当前已经加载进 UI 的对话窗口。顺序：第一条最早，最后一条最新。
     ///
-    /// 这里只保存已经完成的消息。流式 assistant 单独放在 `streamingMessage`，
-    /// 避免每个 partial 都改写整个数组并让全部历史 Markdown 参与 SwiftUI diff。
+    /// 注意：这里不再等于完整历史。磁盘层按 20 条一个 chunk 存储，首次进入聊天只
+    /// 加载最后 2 条，用户点击「加载更早消息」才向前追加 20 条。发送请求 / 复制完整
+    /// 对话这类确实需要全量历史的路径，会按需从 `DiskChatHistoryStore` 读取完整 session。
     private(set) var messages: [ChatMessage] = []
 
     /// 当前正在生成的 assistant 消息；nil 表示没有进行中的流式回答。
     private(set) var streamingMessage: ChatMessage?
+
+    /// `messages.first` 在完整 session messages 数组中的下标。0 表示已经加载到最早消息。
+    private(set) var messageStartIndex: Int = 0
+
+    /// 当前 session 的完整消息数（不含 `streamingMessage`）。
+    private(set) var totalMessageCount: Int = 0
+
+    /// 点击「加载更早消息」时的防重入状态。
+    private(set) var isLoadingEarlierMessages: Bool = false
+
+    var hasEarlierMessages: Bool {
+        messageStartIndex > 0
+    }
 
     /// 当前 session id（nil = 尚未初始化）。所有 send / load / 切换路径都围绕此 id。
     private(set) var currentSessionId: UUID?
@@ -195,6 +209,9 @@ final class RepoAIChatViewModel {
     ///   等到完成（即便被 cancel 也从 Task.value 正常返回），保持 API 行为兼容。
     private var sendTask: Task<Void, Never>?
 
+    private static let initialVisibleMessageCount = 2
+    private static let earlierMessagePageSize = DiskChatHistoryStore.messagesPerChunk
+
     init(service: RepoAIInsightService) {
         self.service = service
         self.historyStore = .shared
@@ -232,12 +249,13 @@ final class RepoAIChatViewModel {
     private func performBootstrap(repo: Repo) async {
         await refreshSessions(repo: repo)
         if let latest = sessions.first,
-           let session = (try? await historyStore.loadSessionAsync(
+           let page = (try? await historyStore.loadSessionTailAsync(
                owner: repo.owner,
                repo: repo.name,
-               sessionId: latest.id
+               sessionId: latest.id,
+               tailCount: Self.initialVisibleMessageCount
            )) ?? nil {
-            applySession(session)
+            applySessionPage(page)
         } else {
             startEmptySession()
         }
@@ -247,13 +265,14 @@ final class RepoAIChatViewModel {
     func switchSession(to sessionId: UUID, repo: Repo) async {
         guard !isSending else { return }
         guard sessionId != currentSessionId else { return }
-        guard let session = (try? await historyStore.loadSessionAsync(
+        guard let page = (try? await historyStore.loadSessionTailAsync(
             owner: repo.owner,
             repo: repo.name,
-            sessionId: sessionId
+            sessionId: sessionId,
+            tailCount: Self.initialVisibleMessageCount
         )) ?? nil
         else { return }
-        applySession(session)
+        applySessionPage(page)
     }
 
     /// 主动新建一个空 session（用户点「+ 新增对话」入口）。
@@ -269,11 +288,12 @@ final class RepoAIChatViewModel {
     /// 对话转成摘要文案，写入新 session 的 `carriedOverSummary`。
     func startNewSessionAfterOverflow(repo: Repo) async {
         guard !isSending else { return }
-        let summary = makeCarryOverSummary(from: messages)
+        let fullMessages = await loadFullMessagesForCurrentSession(repo: repo) ?? messages
+        let summary = makeCarryOverSummary(from: fullMessages)
         let new = ChatSession(carriedOverSummary: summary)
         applySession(new)
         // 立即落盘让该 carry-over session 出现在列表里（避免用户切走又切回来后空白）。
-        try? historyStore.saveSession(owner: repo.owner, repo: repo.name, session: makeSnapshot())
+        try? historyStore.saveSession(owner: repo.owner, repo: repo.name, session: makeSnapshot(messages: []))
         await refreshSessions(repo: repo)
     }
 
@@ -293,12 +313,13 @@ final class RepoAIChatViewModel {
         if currentSessionId == sessionId {
             await refreshSessions(repo: repo)
             if let next = sessions.first,
-               let session = (try? await historyStore.loadSessionAsync(
+               let page = (try? await historyStore.loadSessionTailAsync(
                    owner: repo.owner,
                    repo: repo.name,
-                   sessionId: next.id
+                   sessionId: next.id,
+                   tailCount: Self.initialVisibleMessageCount
                )) ?? nil {
-                applySession(session)
+                applySessionPage(page)
             } else {
                 startEmptySession()
             }
@@ -310,6 +331,32 @@ final class RepoAIChatViewModel {
     /// 刷新列表 (popover 打开 / saveSession 之后)。
     func refreshSessions(repo: Repo) async {
         sessions = (try? await historyStore.listSessionsAsync(owner: repo.owner, repo: repo.name)) ?? []
+    }
+
+    /// 向前加载更早的消息。每次最多读取一个 chunk（20 条），并 prepend 到当前渲染窗口。
+    func loadEarlierMessages(repo: Repo) async {
+        guard !isSending, !isLoadingEarlierMessages, hasEarlierMessages else { return }
+        guard let currentSessionId else { return }
+
+        isLoadingEarlierMessages = true
+        defer { isLoadingEarlierMessages = false }
+
+        let end = messageStartIndex
+        let start = max(0, end - Self.earlierMessagePageSize)
+        let earlier = (try? await historyStore.loadMessagesAsync(
+            owner: repo.owner,
+            repo: repo.name,
+            sessionId: currentSessionId,
+            start: start,
+            end: end
+        )) ?? []
+        guard !earlier.isEmpty else {
+            messageStartIndex = 0
+            return
+        }
+
+        messages.insert(contentsOf: earlier, at: 0)
+        messageStartIndex = start
     }
 
     // MARK: - 动作
@@ -360,9 +407,10 @@ final class RepoAIChatViewModel {
         let userMessage = ChatMessage(role: .user, content: trimmed)
         let assistantPlaceholder = ChatMessage(role: .assistant, content: "", isStreaming: true)
 
-        // 用历史（不含本轮新加的两条）拼 history。`sendMessage` 之前的 messages
-        // 序列里只可能存在"已完成"消息（isStreaming = false），可以安全转换。
-        let history = messages.map { message in
+        // 用完整磁盘历史（不含本轮新加的两条）拼 prompt history。UI 里的 `messages`
+        // 可能只加载了尾部 2 条，不能用它直接发给模型，否则长对话会丢上下文。
+        let persistedMessages = await loadFullMessagesForCurrentSession(repo: repo) ?? messages
+        let history = persistedMessages.map { message in
             AIChatMessage(
                 role: message.role == .user ? .user : .assistant,
                 content: message.content
@@ -370,12 +418,14 @@ final class RepoAIChatViewModel {
         }
 
         messages.append(userMessage)
+        totalMessageCount += 1
         // 首条消息触发：用文案生成 title（30 字符截断）。后续轮次保留首条 title。
-        if messages.filter({ $0.role == .user }).count == 1 {
+        if persistedMessages.allSatisfy({ $0.role != .user }) {
             currentSessionTitle = Self.makeTitle(from: trimmed)
         }
         // 落盘 user message（即便 stream 挂了也不丢）。
-        persistCurrentSession(repo: repo)
+        var sessionMessagesForPersist = persistedMessages + [userMessage]
+        persistCurrentSession(repo: repo, messages: sessionMessagesForPersist)
 
         streamingMessage = assistantPlaceholder
 
@@ -440,9 +490,11 @@ final class RepoAIChatViewModel {
                 completed.content = final
                 completed.isStreaming = false
                 messages.append(completed)
+                totalMessageCount += 1
+                sessionMessagesForPersist.append(completed)
             }
             streamingMessage = nil
-            persistCurrentSession(repo: repo)
+            persistCurrentSession(repo: repo, messages: sessionMessagesForPersist)
             await refreshSessions(repo: repo)
         } catch {
             // 用户主动取消（点了"停止"按钮）→ 当作正常完成处理，把累积内容作为
@@ -467,11 +519,13 @@ final class RepoAIChatViewModel {
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmedStopped.isEmpty {
                         messages.append(stopped)
+                        totalMessageCount += 1
+                        sessionMessagesForPersist.append(stopped)
                     }
                 }
                 streamingMessage = nil
                 // errorMessage 不写、isContextOverflow 不动 —— 取消不是错误。
-                persistCurrentSession(repo: repo)
+                persistCurrentSession(repo: repo, messages: sessionMessagesForPersist)
                 await refreshSessions(repo: repo)
                 return
             }
@@ -500,10 +554,12 @@ final class RepoAIChatViewModel {
                     : prefix
                 failed.isStreaming = false
                 messages.append(failed)
+                totalMessageCount += 1
+                sessionMessagesForPersist.append(failed)
             }
             streamingMessage = nil
             // 失败 turn 也落盘（保留用户消息 + 失败占位，便于回看 / 复制问题反馈）。
-            persistCurrentSession(repo: repo)
+            persistCurrentSession(repo: repo, messages: sessionMessagesForPersist)
             await refreshSessions(repo: repo)
         }
     }
@@ -525,6 +581,8 @@ final class RepoAIChatViewModel {
         guard !isSending else { return }
         messages.removeAll()
         streamingMessage = nil
+        messageStartIndex = 0
+        totalMessageCount = 0
         errorMessage = nil
         isContextOverflow = false
     }
@@ -544,6 +602,8 @@ final class RepoAIChatViewModel {
         currentCarriedOverSummary = nil
         messages.removeAll()
         streamingMessage = nil
+        messageStartIndex = 0
+        totalMessageCount = 0
         errorMessage = nil
         isContextOverflow = false
     }
@@ -555,28 +615,55 @@ final class RepoAIChatViewModel {
         currentCarriedOverSummary = session.carriedOverSummary
         messages = session.messages
         streamingMessage = nil
+        messageStartIndex = 0
+        totalMessageCount = session.messages.count
         errorMessage = nil
         isContextOverflow = false
     }
 
-    private func makeSnapshot() -> ChatSession {
+    private func applySessionPage(_ page: ChatSessionPage) {
+        currentSessionId = page.session.id
+        currentSessionTitle = page.session.title
+        currentSessionCreatedAt = page.session.createdAt
+        currentCarriedOverSummary = page.session.carriedOverSummary
+        messages = page.session.messages
+        streamingMessage = nil
+        messageStartIndex = page.messageStartIndex
+        totalMessageCount = page.totalMessageCount
+        errorMessage = nil
+        isContextOverflow = false
+    }
+
+    private func makeSnapshot(messages snapshotMessages: [ChatMessage]) -> ChatSession {
         ChatSession(
             id: currentSessionId ?? UUID(),
             title: currentSessionTitle,
             createdAt: currentSessionCreatedAt,
             updatedAt: Date(),
-            messages: messages,
+            messages: snapshotMessages,
             carriedOverSummary: currentCarriedOverSummary
         )
     }
 
-    private func persistCurrentSession(repo: Repo) {
+    private func persistCurrentSession(repo: Repo, messages snapshotMessages: [ChatMessage]) {
         guard currentSessionId != nil else { return }
         do {
-            try historyStore.saveSession(owner: repo.owner, repo: repo.name, session: makeSnapshot())
+            try historyStore.saveSession(owner: repo.owner, repo: repo.name, session: makeSnapshot(messages: snapshotMessages))
         } catch {
             AppLog.ai.warning("Chat history persist failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    private func loadFullMessagesForCurrentSession(repo: Repo) async -> [ChatMessage]? {
+        guard let currentSessionId else { return nil }
+        guard let session = (try? await historyStore.loadSessionAsync(
+            owner: repo.owner,
+            repo: repo.name,
+            sessionId: currentSessionId
+        )) ?? nil else {
+            return nil
+        }
+        return session.messages
     }
 
     /// 从对话末尾 6 条消息生成"承接上一对话"摘要文案。
@@ -686,6 +773,18 @@ final class RepoAIChatViewModel {
     /// - 模型名取 `service.resolvedChatModelName`：与 `chatStream` 内部模型解析
     ///   逻辑完全一致，保证用户看到的"由 X 生成"就是真实跑回答的模型。
     func markdownExport(repo: Repo, userLogin: String? = nil) -> String {
+        let exportMessages: [ChatMessage] = {
+            guard let currentSessionId,
+                  let session = try? historyStore.loadSession(
+                      owner: repo.owner,
+                      repo: repo.name,
+                      sessionId: currentSessionId
+                  ) else {
+                return messages
+            }
+            return session.messages
+        }()
+
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -726,12 +825,12 @@ final class RepoAIChatViewModel {
         lines.append("")
         lines.append("- **\(repoLabel)**: [\(repo.fullName)](\(repo.htmlUrl))")
         lines.append("- **\(exportedAtLabel)**: \(exportedAt)")
-        lines.append("- **\(messageCountLabel)**: \(messages.count)")
+        lines.append("- **\(messageCountLabel)**: \(exportMessages.count)")
         lines.append("")
         lines.append("---")
         lines.append("")
 
-        for (index, message) in messages.enumerated() {
+        for (index, message) in exportMessages.enumerated() {
             // 在每个 user 消息前（除第一条）插 `---`，划分新一轮 turn 起点。
             // 这样视觉上"问 + 答"成对，turn 之间有明显边界。
             if index > 0, message.role == .user {
@@ -768,7 +867,7 @@ final class RepoAIChatViewModel {
         // 真实消息时输出（空对话不署名，避免出现"由 X 生成"却没有任何内容
         // 这种诡异情况——虽然 UI 流程上空对话也不会触发复制按钮，但 API 层
         // 多一道保险）。
-        if !messages.isEmpty {
+        if !exportMessages.isEmpty {
             let generatedBy = String(
                 format: String(localized: "ai.assistant.chat.export.generatedByFormat"),
                 service.resolvedChatModelName

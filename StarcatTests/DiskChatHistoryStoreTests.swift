@@ -6,7 +6,7 @@
 //
 //  关注点：
 //  - listSessions：index.json 读到 / 损坏自愈重建 / 完全缺失从 session 文件重建；
-//  - saveSession：单条 upsert 维护 index；同一 sessionId 重复保存覆盖不重复；
+//  - saveSession：metadata + chunks 写入并维护 index；同一 sessionId 重复保存覆盖不重复；
 //  - deleteSession：清 session 文件 + index 同步移除；删完最后一个 → index.json 也删；
 //  - deleteAllForRepo：清整个 <owner>/<repo>/ 目录；
 //  - deleteEverything：清整个 chat-history 根目录；
@@ -123,6 +123,45 @@ struct DiskChatHistoryStoreTests {
         #expect(loaded?.id == session.id)
         #expect(loaded?.title == "async-load")
         #expect(loaded?.messages.map(\.content) == ["msg-0", "msg-1", "msg-2", "msg-3"])
+    }
+
+    @Test("loadSessionTailAsync 首屏只读取尾部 2 条消息")
+    func loadSessionTailAsync() async throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let session = makeSession(title: "tail", messageCount: 25)
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        let page = try await store.loadSessionTailAsync(
+            owner: "octo",
+            repo: "demo",
+            sessionId: session.id,
+            tailCount: 2
+        )
+
+        #expect(page?.messageStartIndex == 23)
+        #expect(page?.totalMessageCount == 25)
+        #expect(page?.session.messages.map(\.content) == ["msg-23", "msg-24"])
+    }
+
+    @Test("loadMessagesAsync 可跨 chunk 读取更早 20 条消息")
+    func loadEarlierMessagesAcrossChunks() async throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let session = makeSession(title: "chunks", messageCount: 45)
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        let messages = try await store.loadMessagesAsync(
+            owner: "octo",
+            repo: "demo",
+            sessionId: session.id,
+            start: 23,
+            end: 43
+        )
+
+        #expect(messages.count == 20)
+        #expect(messages.first?.content == "msg-23")
+        #expect(messages.last?.content == "msg-42")
     }
 
     @Test("loadSession 未命中返回 nil")
@@ -291,17 +330,17 @@ struct DiskChatHistoryStoreTests {
 
     // MARK: - 损坏 session 文件
 
-    @Test("loadSession decode 失败 → 返 nil 且删损坏文件 + 同步 index")
+    @Test("loadSession decode 失败 → 返 nil 且删损坏 session 目录 + 同步 index")
     func corruptedSessionRemoved() throws {
         let (store, root) = try makeIsolatedStore()
         defer { cleanup(root) }
         let id = UUID()
-        let dir = root.appendingPathComponent("octo/demo", isDirectory: true)
+        let dir = root.appendingPathComponent("octo/demo/\(id.uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let badPath = dir.appendingPathComponent("\(id.uuidString).json")
-        try Data("{ not a session }".utf8).write(to: badPath)
+        let badPath = dir.appendingPathComponent("metadata.json")
+        try Data("{ not metadata }".utf8).write(to: badPath)
         // 也写一个伪 index 让自愈逻辑早期返回它，避免 fallback 路径覆盖结果
-        let indexPath = dir.appendingPathComponent("index.json")
+        let indexPath = root.appendingPathComponent("octo/demo/index.json")
         let fakeIndex = """
         { "sessions": [
             { "id": "\(id.uuidString)", "title": "fake", "createdAt": "\(ISO8601DateFormatter().string(from: Date()))", "updatedAt": "\(ISO8601DateFormatter().string(from: Date()))", "messageCount": 0, "bytes": 0 }
@@ -311,8 +350,8 @@ struct DiskChatHistoryStoreTests {
 
         let loaded = try store.loadSession(owner: "octo", repo: "demo", sessionId: id)
         #expect(loaded == nil)
-        // 损坏文件被删
-        #expect(!FileManager.default.fileExists(atPath: badPath.path))
+        // 损坏 session 目录被删
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
         // index 同步更新（id 移除）
         let list = try store.listSessions(owner: "octo", repo: "demo")
         #expect(list.allSatisfy { $0.id != id })
