@@ -28,6 +28,7 @@ struct RepoAIInsightY9Tests {
     /// 只需要给个稳定 mock 值塞进调用，让现有 7 个 case 编译通过；
     /// 各 case 内的 `#expect` 也不断言这个值——只关心其它占位符的拼接逻辑没回归。
     private static let testRuntimeContext = "(runtime-context-mock)"
+    private static let testStarcatResources = "(starcat-resources-mock)"
 
     // MARK: - Codable 兼容性
 
@@ -156,6 +157,7 @@ struct RepoAIInsightY9Tests {
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "English",
             runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "Repository: foo/bar\nDescription: hi",
             readme: "# Hello",
             codeContext: "",
@@ -192,6 +194,7 @@ struct RepoAIInsightY9Tests {
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "Simplified Chinese",
             runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "Repository: foo/bar",
             readme: "README body",
             codeContext: "",
@@ -218,6 +221,7 @@ struct RepoAIInsightY9Tests {
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "English",
             runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "Repository: foo/bar",
             readme: "",
             codeContext: "",
@@ -243,6 +247,7 @@ struct RepoAIInsightY9Tests {
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "English",
             runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "Repository: foo/bar",
             readme: "body",
             codeContext: "",
@@ -263,6 +268,7 @@ struct RepoAIInsightY9Tests {
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "Simplified Chinese",
             runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "M-DATA",
             readme: "R-DATA",
             codeContext: "C-DATA",
@@ -304,6 +310,7 @@ struct RepoAIInsightY9Tests {
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "Simplified Chinese",
             runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "Repository: foo/bar",
             readme: "README body",
             codeContext: "",
@@ -337,6 +344,7 @@ struct RepoAIInsightY9Tests {
             template: AIDefaultPrompts.chat.systemPrompt,
             outputLanguage: "English",
             runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "Repository: foo/bar",
             readme: "body",
             codeContext: "",
@@ -364,6 +372,7 @@ struct RepoAIInsightY9Tests {
             template: customTemplate,
             outputLanguage: "English",
             runtimeContext: Self.testRuntimeContext,
+            starcatResources: Self.testStarcatResources,
             metadata: "M-DATA",
             readme: "",
             codeContext: "",

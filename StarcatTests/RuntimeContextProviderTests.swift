@@ -167,7 +167,10 @@ struct RuntimeContextProviderTests {
             timeZone: TimeZone(identifier: "UTC")!,
             infoDictionary: Self.mockInfo
         )
-        #expect(result.contains("- User timezone: UTC (UTC+0)"))
+        // ⚠️ Foundation 在 macOS 上把 `TimeZone(identifier: "UTC").identifier` 归一化成 "GMT"，
+        // 不是 "UTC"。语义上 GMT == UTC+0，AI 看到 `GMT (UTC+0)` 不会困惑，所以这里直接断言
+        // 实际输出，不再为了"好看"在 provider 里特判一次（特判会增加复杂度且没收益）。
+        #expect(result.contains("- User timezone: GMT (UTC+0)"))
     }
 
     // MARK: - 版本号兜底
