@@ -175,18 +175,33 @@ final class RepoAIChatViewModel {
     /// 调用 `startNewSessionAfterOverflow(repo:)` 后自动清零。
     private(set) var isContextOverflow: Bool = false
 
-    /// 输入框文本。@Observable 双向绑定 SwiftUI `TextField`。
-    var inputText: String = ""
-
     // MARK: - 依赖
 
     private let service: RepoAIInsightService
     private let historyStore: DiskChatHistoryStore
+    /// 面板切换 task 与“在摘要页直接发送”可能同时触发 bootstrap。共享同一个 Task，
+    /// 防止重复读盘后较晚返回的旧结果覆盖用户刚发送的新消息。
+    private var bootstrapTask: Task<Void, Never>?
+    private var hasBootstrapped: Bool = false
 
-    init(
-        service: RepoAIInsightService,
-        historyStore: DiskChatHistoryStore = .shared
-    ) {
+    /// 当前正在执行的发送 / 流式 Task 句柄（2026-06-15 13:12 dong4j 反馈"AI 输出时
+    /// 发送按钮要变成终止按钮"，需要把 Task 句柄交给 UI 层 cancel）。
+    ///
+    /// 为什么把 Task 句柄收在 vm：
+    /// - async 函数自身无法获取所在 Task —— 必须在 Task 创建时存好句柄；
+    /// - 视图层只持有 chatVM 引用，不直接知道 Task；让 vm 自己持有句柄符合"状态归
+    ///   集到 ViewModel"的模式；
+    /// - `sendMessage(_:repo:)` 内部把核心 stream 逻辑包到 Task 里，外层 await 仍然
+    ///   等到完成（即便被 cancel 也从 Task.value 正常返回），保持 API 行为兼容。
+    private var sendTask: Task<Void, Never>?
+
+    init(service: RepoAIInsightService) {
+        self.service = service
+        self.historyStore = .shared
+    }
+
+    /// 测试可注入隔离磁盘目录，生产代码统一使用进程级 store。
+    init(service: RepoAIInsightService, historyStore: DiskChatHistoryStore) {
         self.service = service
         self.historyStore = historyStore
     }
@@ -195,13 +210,33 @@ final class RepoAIChatViewModel {
 
     /// 进入对话时调用：加载该 repo 的所有 session，自动选中最近的一个；都没有就新建一个空 session。
     ///
-    /// **必须在 UI 首次显示前调用**——`RepoAIWindowContentView.initializeViewModelsIfNeeded`
-    /// 创建完 VM 后立刻 await 这个方法，等返回再让用户操作输入框，避免空 session 状态下
-    /// 用户发的第一条消息丢失 sessionId 关联。
+    /// 只在聊天面板首次显示或用户首次发送时调用。重复调用会复用同一加载任务，
+    /// 避免 SwiftUI `.task` 与发送动作并发 bootstrap。
     func bootstrap(repo: Repo) async {
+        if hasBootstrapped { return }
+        if let bootstrapTask {
+            await bootstrapTask.value
+            return
+        }
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.performBootstrap(repo: repo)
+        }
+        bootstrapTask = task
+        await task.value
+        bootstrapTask = nil
+        hasBootstrapped = true
+    }
+
+    private func performBootstrap(repo: Repo) async {
         await refreshSessions(repo: repo)
         if let latest = sessions.first,
-           let session = (try? historyStore.loadSession(owner: repo.owner, repo: repo.name, sessionId: latest.id)) ?? nil {
+           let session = (try? await historyStore.loadSessionAsync(
+               owner: repo.owner,
+               repo: repo.name,
+               sessionId: latest.id
+           )) ?? nil {
             applySession(session)
         } else {
             startEmptySession()
@@ -209,10 +244,14 @@ final class RepoAIChatViewModel {
     }
 
     /// 主动切换到另一个已有 session。
-    func switchSession(to sessionId: UUID, repo: Repo) {
+    func switchSession(to sessionId: UUID, repo: Repo) async {
         guard !isSending else { return }
         guard sessionId != currentSessionId else { return }
-        guard let session = (try? historyStore.loadSession(owner: repo.owner, repo: repo.name, sessionId: sessionId)) ?? nil
+        guard let session = (try? await historyStore.loadSessionAsync(
+            owner: repo.owner,
+            repo: repo.name,
+            sessionId: sessionId
+        )) ?? nil
         else { return }
         applySession(session)
     }
@@ -254,7 +293,11 @@ final class RepoAIChatViewModel {
         if currentSessionId == sessionId {
             await refreshSessions(repo: repo)
             if let next = sessions.first,
-               let session = (try? historyStore.loadSession(owner: repo.owner, repo: repo.name, sessionId: next.id)) ?? nil {
+               let session = (try? await historyStore.loadSessionAsync(
+                   owner: repo.owner,
+                   repo: repo.name,
+                   sessionId: next.id
+               )) ?? nil {
                 applySession(session)
             } else {
                 startEmptySession()
@@ -266,22 +309,51 @@ final class RepoAIChatViewModel {
 
     /// 刷新列表 (popover 打开 / saveSession 之后)。
     func refreshSessions(repo: Repo) async {
-        sessions = (try? historyStore.listSessions(owner: repo.owner, repo: repo.name)) ?? []
+        sessions = (try? await historyStore.listSessionsAsync(owner: repo.owner, repo: repo.name)) ?? []
     }
 
     // MARK: - 动作
 
-    /// 发送当前 `inputText` 给 AI；流式累积助手回答；按 turn 落盘。
+    /// 发送输入组件提交的文本；流式累积助手回答；按 turn 落盘。
     ///
     /// 流程（HOM-70 修订版）：
     /// 1. 守门：去空白 + 拦截并发 + 确保 currentSessionId 已就绪；
     /// 2. 用户消息追加到 `messages` 末尾，**立即落盘**（保证就算 stream 挂了，user 消息也不丢）；
     /// 3. 助手 placeholder 占位 + `isStreaming = true`；
     /// 4. service.chatStream 增量回调原地改写助手 content（与 HOM-150 同款）；
-    /// 5. **完成**（成功 / 失败）后翻 `isStreaming = false`，**再次落盘**整段 session；
+    /// 5. **完成**（成功 / 失败 / 取消）后翻 `isStreaming = false`，**再次落盘**整段 session；
     /// 6. 失败时若错误关键字命中 context-overflow → 设 `isContextOverflow = true`，UI 给 banner。
-    func sendMessage(repo: Repo) async {
-        let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+    ///
+    /// 2026-06-15 13:12 dong4j 反馈"AI 输出时发送按钮要变成终止按钮"：
+    /// - 在外层包一层内部 Task 并把句柄存到 `sendTask`,`cancelStreaming()` 调
+    ///   `sendTask?.cancel()` 中断流式（cancellation 顺着 `await` 链传到
+    ///   `client.chatStream` 内的 URLSession,网络停止接收下一片 chunk）；
+    /// - catch 块新增 `Task.isCancelled` 分支：把已累积的 partial 当作正常完成的
+    ///   助手消息保存（ChatGPT / Claude 行为：取消不是错误,生成到一半的内容不丢）。
+    /// - 外层 `await sendMessage(...)` 行为不变：内部 Task 完成 / 被 cancel 后,
+    ///   `await task.value` 都会正常返回,sendTask 清 nil,isSending 已经在内部 defer
+    ///   翻 false。
+    func sendMessage(_ text: String, repo: Repo) async {
+        let task = Task<Void, Never> { [weak self] in
+            await self?.performSendMessage(text: text, repo: repo)
+        }
+        sendTask = task
+        await task.value
+        sendTask = nil
+    }
+
+    /// 用户在 AI 输出时点"停止"按钮：cancel 当前 sendTask。
+    ///
+    /// cancel 后 `performSendMessage` 内的 `for try await` 会抛 CancellationError
+    /// → catch 块走 `Task.isCancelled` 分支，把已累积的 partial 作为正常完成的
+    /// 助手消息保存（不报错、不丢内容）。
+    func cancelStreaming() {
+        sendTask?.cancel()
+    }
+
+    /// 实际执行 stream 流程（被 `sendMessage` 内部 Task 包裹,允许从外面 cancel）。
+    private func performSendMessage(text: String, repo: Repo) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isSending else { return }
         if currentSessionId == nil { startEmptySession() }
 
@@ -307,7 +379,6 @@ final class RepoAIChatViewModel {
 
         streamingMessage = assistantPlaceholder
 
-        inputText = ""
         isSending = true
         errorMessage = nil
         isContextOverflow = false
@@ -374,6 +445,37 @@ final class RepoAIChatViewModel {
             persistCurrentSession(repo: repo)
             await refreshSessions(repo: repo)
         } catch {
+            // 用户主动取消（点了"停止"按钮）→ 当作正常完成处理，把累积内容作为
+            // 助手消息保存（ChatGPT / Claude 同款行为：取消不是错误，生成到一半
+            // 的内容不丢）。
+            //
+            // 判定根据 `Task.isCancelled`，而不是 `error is CancellationError`：
+            // 底层 URLSession 在 cancel 时抛的是 `URLError(.cancelled)` 不是
+            // CancellationError；只要 vm 的 sendTask 被 cancel,Task.isCancelled
+            // 就是 true,统一靠这个判。
+            if Task.isCancelled {
+                if var stopped = streamingMessage {
+                    // 节流尾巴 flush：取消瞬间可能有未 commit 的最新 partial。
+                    if let unflushed = pendingPartial,
+                       unflushed.count > stopped.content.count {
+                        stopped.content = unflushed
+                    }
+                    stopped.isStreaming = false
+                    // 内容为空（用户在首个 token 之前就取消）→ 不留空助手消息，
+                    // 避免出现一条"空气泡"。否则正常 append 到 messages。
+                    let trimmedStopped = stopped.content
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmedStopped.isEmpty {
+                        messages.append(stopped)
+                    }
+                }
+                streamingMessage = nil
+                // errorMessage 不写、isContextOverflow 不动 —— 取消不是错误。
+                persistCurrentSession(repo: repo)
+                await refreshSessions(repo: repo)
+                return
+            }
+
             let description = error.localizedDescription
             errorMessage = description
             if Self.looksLikeContextOverflow(description) {

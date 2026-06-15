@@ -94,7 +94,11 @@ struct AIChatBubble: View, Equatable {
             Button {
                 onEditUserMessage(message.content)
             } label: {
-                Image(systemName: "pencil")
+                // 2026-06-15 13:42 dong4j 反馈把"编辑"图标从 `pencil` 改成 U-turn
+                // 箭头 `arrow.uturn.backward`（macOS 系统经典"撤销 / 返回"图标,
+                // 与"把历史问题回填到输入框重新编辑"的语义更贴合 —— pencil 更像
+                // "原地编辑",U-turn 更像"回到上一步重写"）。
+                Image(systemName: "arrow.uturn.backward")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -106,10 +110,21 @@ struct AIChatBubble: View, Equatable {
                 providesContent: { message.content },
                 tooltip: "ai.assistant.chat.copyQuestion.tooltip"
             ) { didCopy in
+                // 2026-06-15 13:12 dong4j 反馈"复制按钮点击后抖动 + 图标太细"：
+                // 抖动根因 = `doc.on.doc`（瘦描边）和 `checkmark.circle.fill`（正圆）
+                // 的 SF Symbol 内在宽高不一致,切换时 HStack 重新布局让 timestamp
+                // 横向位置抖动 → 用固定 frame 锁死容器尺寸杜绝 layout 重排。
+                //
+                // 13:29 dong4j 反馈"图标大了"：13 → 11。
+                // 13:37 dong4j 反馈"还要小"：11 → 9。
+                // 13:42 dong4j 确认"太细"原本指的是**左边的编辑按钮 pencil**,不是复制按钮
+                //   → 回退 medium weight,恢复 SF Symbol 默认 weight；保留 size 9 / frame 10×10
+                //   （字号、防抖 frame 都是用户自己确认过的尺寸,与"太细"无关）。
                 Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                    .font(.caption2)
+                    .font(.system(size: 9))
                     .foregroundStyle(didCopy ? Color.green : .secondary)
                     .contentTransition(.symbolEffect(.replace))
+                    .frame(width: 10, height: 10)
             }
 
             timestampLabel
@@ -213,10 +228,13 @@ struct AIChatBubble: View, Equatable {
                 providesContent: { message.content },
                 tooltip: "ai.assistant.chat.copyReply.tooltip"
             ) { didCopy in
+                // 与 userFooter 复制按钮规格保持一致：size 9 默认 weight / frame 10×10。
+                // 详见 userFooter 注释（含 size 13 → 11 → 9 降档 + 13:42 weight 回退的反馈记录）。
                 Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                    .font(.caption2)
+                    .font(.system(size: 9))
                     .foregroundStyle(didCopy ? Color.green : .secondary)
                     .contentTransition(.symbolEffect(.replace))
+                    .frame(width: 10, height: 10)
             }
         }
     }

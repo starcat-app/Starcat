@@ -8,13 +8,13 @@
 //  - 把"AI 摘要"和"AI 对话"放在同一个浮动窗口里，但状态完全独立：
 //    重新生成摘要不会清空对话；发送消息不会丢失摘要。
 //  - 单面板模式（HOM-150 dong4j 2026-06-04 15:30 重设计）：
-//    任一时刻只展示「摘要」**或**「对话」之一，中间一根 segmented toggle bar 切换。
+//    任一时刻只创建并展示「摘要」**或**「对话」之一，中间 segmented toggle 切换。
 //  - 摘要部分复用既有的 `RepoAIInsightViewModel`（生成 / 缓存 / 标签推荐三段），
 //    对话部分由新的 `RepoAIChatViewModel` 承担。
 //
 //  关键约束（HOM-150 累计 4 轮 dong4j 反馈整合）：
 //  - **单面板互斥**（dong4j 2026-06-04 15:30）：用 `AIPanelMode` 枚举控制当前激活
-//    哪一边，另一边折叠到 height = 0；segmented bar 用户可主动切换；初始默认
+//    哪一边，非活动面板不进入视图树；segmented bar 用户可主动切换；初始默认
 //    `.summary`（最大化摘要），用户发送任何消息后自动切到 `.chat`（最大化对话）。
 //  - **顶部下拉展开摘要**（dong4j 2026-06-04 15:30）：在 `.chat` 模式下，用户把
 //    对话滚到顶部后再下拉到 -60pt overscroll → 切回 `.summary`；这是替代旧 32/8pt
@@ -44,9 +44,9 @@ import SwiftUI
 /// 3. 与 dong4j 2026-06-04 15:30 的明确要求一致：「打开默认最大化摘要，
 ///    输入后切对话」。
 enum AIPanelMode: String, CaseIterable, Identifiable, Hashable {
-    /// 摘要面板撑满，对话面板折叠到 0。
+    /// 只创建摘要面板。
     case summary
-    /// 对话面板撑满，摘要面板折叠到 0。
+    /// 只创建对话面板。
     case chat
 
     var id: String { rawValue }
@@ -74,6 +74,9 @@ struct RepoAIWindowContentView: View {
 
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
+    /// 历史消息的“修改”操作通过一次性请求回填输入组件。正常键入只改输入组件
+    /// 内部 `@State`，不会让本窗口根视图跟着每个字符失效。
+    @State private var pendingChatDraftReplacement: String?
     @FocusState private var isChatInputFocused: Bool
 
     /// AI 窗口打开瞬间冻结的 star 状态（R-01 §3.2.7 Step 8）。
@@ -146,27 +149,27 @@ struct RepoAIWindowContentView: View {
 
             Divider()
 
-            summarySection
-                .frame(maxWidth: .infinity, alignment: .top)
-                // 单面板互斥：当前不激活的面板 maxHeight 切到 0。另一面板会撑
-                // 满 VStack 的全部剩余空间。clipped 防止 0 高度时内部 padding
-                // 溢出顶到下方面板。
-                .frame(maxHeight: panelMode == .summary ? .infinity : 0)
-                .clipped()
-                .allowsHitTesting(panelMode == .summary)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: panelMode)
+            activePanel
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .transition(.opacity)
 
             panelToggleBar
 
-            chatSection
-                .frame(maxWidth: .infinity, alignment: .top)
-                .frame(maxHeight: panelMode == .chat ? .infinity : 0)
-                .clipped()
-                .allowsHitTesting(panelMode == .chat)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: panelMode)
+            Divider()
 
-            // 对话上下文状态提示（Y8，2026-06-14）：在 chat 输入框上方显示一行
-            // 轻量 caption，让用户随时知道本次对话是不是带上了代码上下文。
+            AIChatInputView(
+                pendingReplacement: $pendingChatDraftReplacement,
+                focus: $isChatInputFocused,
+                isSending: chatVM?.isSending ?? false,
+                onSend: sendChatMessage,
+                onCancel: cancelChatStreaming
+            )
+
+            // 对话上下文状态提示（Y8，2026-06-14；2026-06-15 13:05 dong4j 反馈把它
+            // 移到输入框**下方**）：原设计放在 chat 输入框上方，与 macOS 习惯不符——
+            // macOS 常见模式是「输入主体在上 / 状态条在下」（Xcode 编辑器底栏、Mail
+            // 写信底栏都是这个布局）。把 caption 紧贴底部，让上下文标签作为输入框的
+            // 辅助状态信息，而不是 banner-style 横在头顶。
             //
             // 关键设计：
             //   - **数据源复用摘要 vm**：`insight.contextMetadata` / `vm.contextDegradationReason`
@@ -177,18 +180,8 @@ struct RepoAIWindowContentView: View {
             //     让"轻量"原则真的轻量——只在有明确信号时给反馈。
             if panelMode == .chat {
                 chatContextStatusRow
-                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: panelMode)
+                    .transition(.opacity)
             }
-
-            Divider()
-
-            AIChatInputView(
-                text: chatInputBinding,
-                focus: $isChatInputFocused,
-                isSending: chatVM?.isSending ?? false,
-                onSend: sendChatMessage
-            )
         }
         .background(Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -203,8 +196,24 @@ struct RepoAIWindowContentView: View {
             // 我们也重新捕获一次（视为"等价于关闭再打开"）——通过 nil-check 之后
             // 直接覆盖式赋值实现，每次 task 重跑都重新读取当前 registry。
             starredAtOpen = dependencies.starredRegistry.contains(ghRepoId: repo.id)
-            await initializeViewModelsIfNeeded()
+            await initializeInsightViewModelIfNeeded()
             await insightVM?.load(repo: repo)
+        }
+        .task(id: panelMode) {
+            guard panelMode == .chat else { return }
+            await prepareChatIfNeeded()
+        }
+    }
+
+    /// 任一时刻只让当前面板进入 SwiftUI 视图树。旧实现把另一面板压到高度 0，
+    /// 但隐藏的 Markdown 仍会解析、布局并响应状态变化，是输入和切换卡顿的主因。
+    @ViewBuilder
+    private var activePanel: some View {
+        switch panelMode {
+        case .summary:
+            summarySection
+        case .chat:
+            chatSection
         }
     }
 
@@ -246,12 +255,12 @@ struct RepoAIWindowContentView: View {
 
     // MARK: - 初始化
 
-    /// 首次进入窗口时构造两个 VM。
+    /// 首次进入窗口时只构造摘要 VM；聊天 VM 延迟到首次使用。
     ///
     /// 用 `@State` 包一层而不是在 init 里直接创建，是因为 SwiftUI struct init 不能
     /// 安全地访问 @Environment（环境在 body 求值时才注入）；放进 `.task` 拿到环境
     /// 后再创建可靠得多。
-    private func initializeViewModelsIfNeeded() async {
+    private func initializeInsightViewModelIfNeeded() async {
         if insightVM == nil {
             let ivm = RepoAIInsightViewModel(
                 service: dependencies.repoAIInsightService,
@@ -268,15 +277,20 @@ struct RepoAIWindowContentView: View {
             }
             insightVM = ivm
         }
-        if chatVM == nil {
-            let vm = RepoAIChatViewModel(service: dependencies.repoAIInsightService)
-            chatVM = vm
-            // HOM-70：进入窗口立刻 bootstrap，让最新 session 在 UI 首帧就到位，
-            // 避免空白闪烁。bootstrap 内会先 listSessions（磁盘读 ~1 ms），命中
-            // 则 loadSession（同步 IO < 5 ms），未命中则 startEmptySession（纯
-            // 内存赋值），整体耗时人眼无感。
-            await vm.bootstrap(repo: repo)
+    }
+
+    /// 聊天历史只在用户首次进入聊天面板或首次发送时加载。窗口默认展示摘要，
+    /// 首帧不应该为不可见的聊天 Markdown 支付解析和布局成本。
+    private func prepareChatIfNeeded() async {
+        let vm: RepoAIChatViewModel
+        if let chatVM {
+            vm = chatVM
+        } else {
+            let newVM = RepoAIChatViewModel(service: dependencies.repoAIInsightService)
+            chatVM = newVM
+            vm = newVM
         }
+        await vm.bootstrap(repo: repo)
     }
 
     // MARK: - 摘要段
@@ -778,13 +792,12 @@ struct RepoAIWindowContentView: View {
     /// - 用原生 `Picker(.segmented)`：macOS 上渲染为 `NSSegmentedControl` 风格，
     ///   与系统视觉一致，不抢戏；
     /// - icon + 文字双标识："✨ AI 摘要" / "💬 AI 对话"，扫一眼即可分辨；
-    /// - selection 绑定 `panelMode` 并带 0.28s easeInOut 动画，与上下两段
-    ///   `frame(maxHeight: ...)` 的折叠动画完全同节奏；
+    /// - selection 只做 0.12s opacity 过渡，不再插值两棵 Markdown 树的高度；
     /// - bar 自带细分隔线（`.bar` 材质 + Divider 上下），视觉上是上下两段
     ///   面板的边界，无需额外加 `Divider()`。
     private var panelToggleBar: some View {
         HStack(spacing: 0) {
-            Picker("", selection: $panelMode.animation(reduceMotion ? nil : .easeInOut(duration: 0.28))) {
+            Picker("", selection: panelModeBinding) {
                 Label("ai.assistant.toggle.summary", systemImage: "sparkles").tag(AIPanelMode.summary)
                 Label("ai.assistant.toggle.chat", systemImage: "bubble.left.and.bubble.right").tag(AIPanelMode.chat)
             }
@@ -989,10 +1002,25 @@ struct RepoAIWindowContentView: View {
         .padding(.vertical, 8)
         .contentShape(Rectangle())
         .onTapGesture {
-            chat.switchSession(to: summary.id, repo: repo)
-            isSessionListPresented = false
+            Task {
+                await chat.switchSession(to: summary.id, repo: repo)
+                isSessionListPresented = false
+            }
         }
         .background(isCurrent ? Color.accentColor.opacity(0.06) : Color.clear)
+    }
+
+    /// 把切换动画限制在 `panelMode` 赋值事务内，避免根视图上的隐式 animation
+    /// 把同一帧其它状态变化也纳入动画计算。
+    private var panelModeBinding: Binding<AIPanelMode> {
+        Binding(
+            get: { panelMode },
+            set: { newMode in
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) {
+                    panelMode = newMode
+                }
+            }
+        )
     }
 
     private func displayTitle(for chat: RepoAIChatViewModel) -> String {
@@ -1302,12 +1330,15 @@ struct RepoAIWindowContentView: View {
     /// `RepoAIChatViewModel.markdownExport` 注释）；providesContent 是 closure，
     /// 按下瞬间才拼字符串，避免每次 view 重绘都做 N 条消息的字符串拼接。
     ///
-    /// Y9.2（2026-06-14 dong4j 反馈玻璃态主题适配）：
-    ///   - 原方案 `Color(nsColor: .controlBackgroundColor)` 是固定的 system 控件背景色，
-    ///     在 NSVisualEffectView popover 玻璃态背景上会渲染成不透明纯白（浅色）/纯黑（深色），
-    ///     与玻璃态主题脱节，看着像贴了一片白纸；
-    ///   - 改用 `.thinMaterial` 让 capsule 与玻璃态融合，保留半透明质感跟随主题；
-    ///   - 描边从 `0.10` 提到 `0.18` 增强在玻璃态下的可识别度。
+    /// 2026-06-15 13:12 dong4j 反馈"不要圆形边框了,简单点即可"：去掉 capsule fill
+    /// 和 strokeBorder,只保留 icon + 文字 + hover 反馈。原方案的 `.thinMaterial`
+    /// capsule + 0.18 描边在玻璃态背景上虽然可读,但视觉权重偏重,与"次级操作"
+    /// 定位不符。简化为"裸 icon + 文字"是 ChatGPT / Claude 等 AI 对话框底部
+    /// 工具行的主流做法。
+    /// - icon 与 user/assistant 气泡复制按钮同款（13pt medium + 14×14 frame）,杜绝
+    ///   切换抖动；
+    /// - 文字保持 `.caption`,与"次级辅助操作"层级一致；
+    /// - `pressableHover` 保留作为唯一的"我可点击"暗示,鼠标悬停 + 按下时有微动反馈。
     private func conversationCopyRow(chat: RepoAIChatViewModel) -> some View {
         HStack {
             Spacer()
@@ -1316,24 +1347,22 @@ struct RepoAIWindowContentView: View {
                 tooltip: "ai.assistant.chat.copyAll.tooltip"
             ) { didCopy in
                 HStack(spacing: 6) {
+                    // 13:46 dong4j 反馈"复制图标要和字体大小匹配"：原 `system(size: 13)`
+                    // 让 icon 比文字 `.caption`(~12pt) 大一档。统一用 `.font(.caption)`
+                    // 让 SwiftUI 系统级保证 icon 与文字字号一致；frame 14×14 保留作为
+                    // 防抖容器(SF Symbol 内在尺寸约 ~14pt,容器紧贴不留多余白)。
                     Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
                         .font(.caption)
                         .contentTransition(.symbolEffect(.replace))
+                        .frame(width: 14, height: 14)
                     Text(didCopy ? "ai.assistant.copy.copied" : "ai.assistant.chat.copyAll.label")
                         .font(.caption)
                 }
                 .foregroundStyle(didCopy ? Color.green : .secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .fill(.thinMaterial)
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
-                        )
-                )
-                .pressableHover(opacity: 0.75, scale: 1.04)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+                .pressableHover(opacity: 0.65, scale: 1.03)
             }
             Spacer()
         }
@@ -1351,16 +1380,9 @@ struct RepoAIWindowContentView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var chatInputBinding: Binding<String> {
-        Binding(
-            get: { chatVM?.inputText ?? "" },
-            set: { chatVM?.inputText = $0 }
-        )
-    }
-
     /// 把历史用户问题回填到底部输入框并聚焦，用户确认后再发送。
     private func editUserMessage(_ content: String) {
-        chatVM?.inputText = content
+        pendingChatDraftReplacement = content
         Task { @MainActor in
             // 等 binding 先把文本提交给 TextField，再请求焦点，避免焦点切换抢在内容更新前。
             await Task.yield()
@@ -1407,15 +1429,28 @@ struct RepoAIWindowContentView: View {
     /// dong4j 2026-06-04 15:30 反馈："用户输入对话时折叠 AI 摘要，展开 AI 对话框
     /// 面板"——所以发送时如果当前不在 `.chat` 模式则切过去，并不区分"是不是第
     /// 一条"。若已经在 `.chat`，跳过切换避免无谓动画。
-    private func sendChatMessage() {
-        guard let chatVM else { return }
+    private func sendChatMessage(_ text: String) {
         let repoSnapshot = repo
-        Task { await chatVM.sendMessage(repo: repoSnapshot) }
+        Task {
+            await prepareChatIfNeeded()
+            await chatVM?.sendMessage(text, repo: repoSnapshot)
+        }
         if panelMode != .chat {
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) {
                 panelMode = .chat
             }
         }
+    }
+
+    /// 2026-06-15 13:12 dong4j 反馈"AI 输出时发送按钮变成终止按钮"：用户在流式
+    /// 期间点击 stop,vm 内 sendTask cancel → 已累积的 partial 被当作正常完成的
+    /// 助手消息保存（ChatGPT / Claude 同款）。
+    ///
+    /// 本函数只做透传,不做任何"是否真的在流式"判定 —— AIChatInputView 自身根据
+    /// `isSending` 切换图标与点击语义,只有处于流式态时按钮才会触发这条路径,
+    /// 重复防护交给 vm 的 `cancelStreaming()`（sendTask 为 nil 时调 cancel 安全）。
+    private func cancelChatStreaming() {
+        chatVM?.cancelStreaming()
     }
 
     // MARK: - 错误条
@@ -1535,6 +1570,10 @@ struct RepoAIWindowContentView: View {
     }
 
     /// 降级 banner（沿用 Y4 / Y8 风格）。
+    ///
+    /// 2026-06-15 13:31 dong4j 反馈"和上方输入框间距太大"：把 `.vertical 6` 拆成
+    /// 不对称的 `top 2 / bottom 6`,与输入框底部 4pt 合计 6pt 紧凑视觉；
+    /// 底部 6pt 保留作为窗口底边的呼吸距。`summarizedStatusRow` 同步。
     private func degradationStatusRow(reason: ContextDegradationReason) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -1544,7 +1583,8 @@ struct RepoAIWindowContentView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 6)
+        .padding(.top, 2)
+        .padding(.bottom, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -1607,8 +1647,12 @@ struct RepoAIWindowContentView: View {
                     }
                 }
             }
+            // 2026-06-15 13:31 dong4j 反馈"和上方输入框间距太大"：拆成不对称的
+            // top 2 / bottom 6,与输入框底部 4pt 合计 6pt 紧凑间距；底部 6 保留作为
+            // 窗口底边的呼吸距。详见 degradationStatusRow 同款注释。
             .padding(.horizontal, 20)
-            .padding(.vertical, 6)
+            .padding(.top, 2)
+            .padding(.bottom, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         // 三者都为 false：返回隐含 EmptyView，配合外层 frame(maxHeight: 0) 完全不占位。
