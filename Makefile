@@ -135,3 +135,6 @@ start-supports: ## 启动 supports/ 目录下的后端服务总入口
 	# Make 每条 recipe 行独立 shell，cd 与执行必须在同一行用 && 串起来，
 	# 否则 cd 在子 shell 退出后失效，./start-all.sh 会找不到。
 	cd supports && ./start-all.sh
+
+stop-supports: ## 停止 supports/ 目录下的后端服务总入口
+	cd supports && ./start-all.sh --stop
