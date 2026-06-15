@@ -41,7 +41,7 @@ struct TrendingView: View {
     @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(AppSettings.self) private var settings
     @Environment(AppDependencies.self) private var dependencies
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var viewModel: TrendingViewModel
     @State private var showLoginSheet: Bool = false
     @Binding private var selectedLanguage: TrendingLanguage

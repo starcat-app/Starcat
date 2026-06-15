@@ -2529,19 +2529,53 @@
         }
       }
     },
-    "ai.assistant.summary.footer.contextMetaFormat" : {
-      "extractionState" : "stale",
+    "ai.assistant.summary.footer.contextMeta.commit.help" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Based on %1$@ (%2$d tokens · %3$d files)"
+            "value" : "View this commit on GitHub"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "基于 %1$@（%2$d tokens · %3$d files）"
+            "value" : "在 GitHub 上查看此 commit"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.footer.contextMeta.prefix" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Based on"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基于"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.footer.contextMeta.statsFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(%1$d tokens · %2$d files)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "（%1$d tokens · %2$d files）"
           }
         }
       }
@@ -11102,6 +11136,22 @@
         }
       }
     },
+    "settings.general.accessibility" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessibility"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无障碍"
+          }
+        }
+      }
+    },
     "settings.general.appearance" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -11148,6 +11198,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "跟随系统自动切换,或强制使用浅色 / 深色。Starcat 默认深色,视觉层次更分明。"
+          }
+        }
+      }
+    },
+    "settings.general.disableAnimations.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disables Starcat's custom view transitions, hover feedback, and list reveal animations. System-level animations (sheets, windows, menus) are controlled by macOS and are not affected by this setting."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭 Starcat 自定义的视图过渡、悬停反馈和列表展开动画。系统级动画（sheet、窗口、菜单）由 macOS 控制,不受此设置影响。"
+          }
+        }
+      }
+    },
+    "settings.general.disableAnimations.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disable in-app animations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭应用内动画"
           }
         }
       }

@@ -39,6 +39,9 @@ struct HomeView: View {
     @Environment(AuthSession.self) private var authSession
     @Environment(SyncManager.self) private var syncManager
     @Environment(AppSettings.self) private var settings
+    /// 2026-06-15:搜索浮层弹出/收起的 .snappy 动画在关动画时跳过。
+    /// 与系统「减少动态效果」OR 合并(`AnimationOverrideModifier`)。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     /// HOM-47：拿到 ReleasePoller 启动后台调度。
     @Environment(AppDependencies.self) private var dependencies
 
@@ -271,7 +274,7 @@ struct HomeView: View {
         //   贴近 Spotlight / Raycast 命令面板的体感。
         // - value 仅监听 isPresented，不会污染浮层内其他状态的动画（scope 切换、
         //   ProgressView spinner 等照旧无动画）。
-        .animation(.snappy(duration: 0.22), value: searchCenterViewModel.isPresented)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: searchCenterViewModel.isPresented)
         // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
         .background {
             Button("") { searchCenterViewModel.present() }

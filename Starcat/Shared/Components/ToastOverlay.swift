@@ -25,6 +25,10 @@ private struct ToastModifier: ViewModifier {
     let icon: String
     let duration: TimeInterval
 
+    /// 2026-06-15:Toast 进出场 0.25s snappy 在「关闭应用内动画」时跳过,
+    /// 直接显示/隐藏避免吸引视线。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottom) {
             if let message {
@@ -38,7 +42,7 @@ private struct ToastModifier: ViewModifier {
                 .background(.regularMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.15)))
                 .padding(.bottom, 16)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 .id(message) // 切换 message 重置动画
                 // task(id:) 跟随 message 重置；duration 后清空
                 .task(id: message) {
@@ -49,7 +53,7 @@ private struct ToastModifier: ViewModifier {
                 }
             }
         }
-        .animation(.snappy(duration: 0.25), value: message)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: message)
     }
 }
 

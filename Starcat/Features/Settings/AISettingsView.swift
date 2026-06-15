@@ -31,6 +31,9 @@ struct AISettingsTab: View {
     /// 2026-06-12 向量索引改进：AI 索引 Section 的"开始 / 暂停 / 全量重建"按钮需要
     /// 直接调度 `SemanticIndexBuilder`。从 AppDependencies 拿。
     @Environment(AppDependencies.self) private var dependencies
+    /// 2026-06-15:disclosureLabel / 草稿 Provider 收/放 / 已发现模型展开等
+    /// 多处 0.18-0.2s 动画在「关闭应用内动画」时跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     /// HOM-AIPROVIDERS-PERSIST-2026-06-06 (dong4j 反馈)：
     /// 之前用 `@State private var selectedProfileID: String?` 保存当前选中的服务商
@@ -302,7 +305,7 @@ struct AISettingsTab: View {
                 Button {
                     // HOM-AIPROVIDERS-HIDE-PROVIDER-2026-06-12：包 withAnimation 让下方
                     // Provider 行 + 输入区伴随 transition 滑入，而不是瞬切。
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                         beginDraft(provider: .openAICompatible)
                     }
                 } label: {
@@ -364,7 +367,7 @@ struct AISettingsTab: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
 
             if let profile = activeProfile {
@@ -621,7 +624,7 @@ struct AISettingsTab: View {
     /// 标题瞬切、点 chevron 平滑"的不一致体感。
     private func disclosureLabel(_ title: String, isExpanded: Binding<Bool>) -> some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.18)) {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                 isExpanded.wrappedValue.toggle()
             }
         } label: {
@@ -1751,7 +1754,7 @@ struct AISettingsTab: View {
                 setSelectedProfileID(profile.id)
                 // HOM-AIPROVIDERS-HIDE-PROVIDER-2026-06-12：包 withAnimation 让
                 // Provider 行随草稿晋升收起，与点 + 时的滑入动画对称。
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                     draftProfile = nil
                     draftAPIKey = ""
                 }
@@ -1768,7 +1771,7 @@ struct AISettingsTab: View {
             // 不用手动去展开折叠组。withAnimation 与 disclosureLabel 的展开动画
             // 走同一条曲线（easeInOut 0.18），视觉一致。
             if !models.isEmpty {
-                withAnimation(.easeInOut(duration: 0.18)) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                     isDiscoveredModelsExpanded = true
                 }
             }

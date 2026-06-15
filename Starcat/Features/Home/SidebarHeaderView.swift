@@ -28,7 +28,7 @@ struct SidebarHeaderView: View {
     /// 用于打开 macOS 原生设置窗口（SettingsLink 的 programmatic 等效方式）
     @Environment(\.openSettings) private var openSettings
     /// 系统级"减少动效"开关，开启时把"渐变流动"退化为静态版（仍保留四周淡出 + 颜色切换补间）。
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     /// HOM-173：分享卡需要消费贡献草坪 payload；ContributionService 已在 AppDependencies 注入。
     @Environment(ContributionService.self) private var contributionService
     /// HOM-174：Pro 用户标识需要从 AppSettings 获取。
@@ -160,7 +160,7 @@ struct SidebarHeaderView: View {
     ///
     /// 持续流动动效：两层 mask 的关键 stops 位置随时间正弦漂移，周期解耦
     /// （vertical 16s / horizontal 13s）形成 Lissajous-like 自然呼吸轨迹。
-    /// `@Environment(\.accessibilityReduceMotion)` 开启时退化为静态 stops 避免前庭不适。
+    /// `@Environment(\.starcatReduceMotion)` 开启时退化为静态 stops 避免前庭不适。
     ///
     /// 关键技术铁律（已踩坑，**不要再犯**）：
     /// SwiftUI 的 `LinearGradient(colors:)` / `RadialGradient(colors:)` 中 colors 数组
@@ -174,7 +174,8 @@ struct SidebarHeaderView: View {
             .fill(sidebarTintColor.opacity(0.35))
             .mask(verticalFadeMask)
             .mask(horizontalFadeMask)
-            .animation(.easeInOut(duration: 0.45), value: sidebarTintColor)
+            // 2026-06-15：tint 颜色切换 0.45s 渐变在「关闭应用内动画」时直接瞬切。
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: sidebarTintColor)
             .allowsHitTesting(false)
     }
 

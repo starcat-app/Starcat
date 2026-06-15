@@ -162,7 +162,7 @@ private struct AboutBrandPanel: View {
 /// 开启“减少动态效果”时退化为静态背景。
 private struct AboutBrandAnimatedBackground: View {
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var isAnimating = false
 
@@ -249,6 +249,9 @@ private struct AboutBadge: View {
 private struct AboutPageContent: View {
     let page: AboutPage
 
+    /// 2026-06-15:页面切换 0.18s snappy 渐变在「关闭应用内动画」时跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     var body: some View {
         Group {
             switch page {
@@ -266,7 +269,7 @@ private struct AboutPageContent: View {
                 PrivacyPage()
             }
         }
-        .animation(.snappy(duration: 0.18), value: page)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: page)
     }
 }
 

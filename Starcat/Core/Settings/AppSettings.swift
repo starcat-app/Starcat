@@ -749,6 +749,22 @@ final class AppSettings {
         didSet { persist(key: Keys.readmeTranslationLanguage, value: readmeTranslationLanguage.rawValue) }
     }
 
+    // MARK: - 无障碍 / 动画（2026-06-15 dong4j 需求）
+
+    /// 「关闭应用内动画」用户偏好。默认 `false`（动画全开）。
+    ///
+    /// 设计：通过 `AnimationOverrideModifier` 在 root view 上覆盖
+    /// `accessibilityReduceMotion` 环境值，让全工程 30+ 个已实现
+    /// `@Environment(\.starcatReduceMotion)` 兜底的视图零改动
+    /// 自动尊重本设置。与系统「减少动态效果」是 OR 关系。
+    /// 详见 `Shared/Components/AnimationOverrideModifier.swift` 文件头。
+    ///
+    /// **不影响**系统级动画（sheet 弹出 / 窗口切换 / Form 滚动惯性 /
+    /// Picker 下拉），那些由 macOS AppKit 驱动 SwiftUI 不参与。
+    var disableAnimations: Bool {
+        didSet { persistBool(key: Keys.disableAnimations, value: disableAnimations) }
+    }
+
     /// Pro 订阅模拟状态（HOM-151）。
     ///
     /// 真实 Apple 订阅接入前，设置页的"开通 Pro"按钮先写本地状态，用于串联：
@@ -1127,6 +1143,10 @@ final class AppSettings {
 
         self.isProUser = defaults.object(forKey: Keys.isProUser) as? Bool ?? false
 
+        // 2026-06-15:无障碍——「关闭应用内动画」用户偏好。
+        // 缺失值时默认 false(动画全开),老用户首启不受影响。
+        self.disableAnimations = defaults.object(forKey: Keys.disableAnimations) as? Bool ?? false
+
         // HOM-126：自动整理偏好。缺失时回落到 `AutoTidySettings.default`（总开关关 +
         // 启动/同步触发 + 50 个 + 最近 star + 仅标签 + 90% 阈值），与任务描述一致。
         self.autoTidySettings = Self.decodeJSON(AutoTidySettings.self, key: Keys.autoTidySettings, defaults: defaults) ?? .default
@@ -1352,6 +1372,7 @@ final class AppSettings {
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
         static let isProUser = "settings.pro.isProUser"  // HOM-151
+        static let disableAnimations = "settings.general.disableAnimations.v1"  // 2026-06-15
         static let autoTidySettings = "settings.ai.autoTidy.v1"  // HOM-126
         static let customServiceURLs = "settings.services.customURLs.v1"  // 2026-06-08
         // R-01 v1.2 2026-06-09 引入；2026-06-10 迁 Keychain。

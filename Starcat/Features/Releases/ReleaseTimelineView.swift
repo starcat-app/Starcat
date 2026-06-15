@@ -25,6 +25,8 @@ struct ReleaseTimelineView: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.dismiss) private var dismiss
+    /// 2026-06-15:toast 出/收的 0.18s 滑入与「关闭应用内动画」联动跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var viewModel: ReleaseTimelineViewModel?
     @State private var copyToast: String?
@@ -63,7 +65,7 @@ struct ReleaseTimelineView: View {
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.regularMaterial, in: Capsule())
                     .padding(.bottom, 16)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
             }
         }
     }
@@ -175,12 +177,14 @@ struct ReleaseTimelineView: View {
     private func copyToPasteboard(_ url: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url, forType: .string)
-        withAnimation(.easeOut(duration: 0.18)) {
+        // 2026-06-15:reduceMotion 兜底——toast 直接瞬切显示/隐藏。
+        let toastAnimation: Animation? = reduceMotion ? nil : .easeOut(duration: 0.18)
+        withAnimation(toastAnimation) {
             copyToast = String(localized: "releases.assetCopied")
         }
         Task {
             try? await Task.sleep(for: .seconds(1.5))
-            withAnimation(.easeOut(duration: 0.18)) {
+            withAnimation(toastAnimation) {
                 copyToast = nil
             }
         }
@@ -201,7 +205,7 @@ private struct ReleaseCheckNowButton: View {
     /// 用 `@State` 单独追踪 rotation，配 `withAnimation` repeatForever 才能保持
     /// 转圈顺滑——直接对 `isChecking` 做 .rotationEffect 动画在状态切换瞬间会跳。
     @State private var rotation: Double = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -231,8 +235,12 @@ private struct ReleaseCheckNowButton: View {
                 rotation = 360
             }
         } else {
-            withAnimation(.easeOut(duration: 0.2)) {
+            if reduceMotion {
                 rotation = 0
+            } else {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    rotation = 0
+                }
             }
         }
     }
@@ -315,6 +323,9 @@ private struct ReleaseTimelineRow: View {
     let onCopyAsset: (String) -> Void
 
     @State private var isExpanded: Bool = false
+
+    /// 2026-06-15:tap 展开/折叠的 0.18s 平滑过渡与「关闭应用内动画」联动跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -425,7 +436,7 @@ private struct ReleaseTimelineRow: View {
         .padding(.vertical, 6)
         .contentShape(Rectangle())
         .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.18)) {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                 isExpanded.toggle()
             }
         }

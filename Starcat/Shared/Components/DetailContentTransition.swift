@@ -90,13 +90,13 @@ extension View {
 /// 详情页 root 切换 transition 实现（私有,通过 `.detailContentTransition()`
 /// extension 暴露使用入口）。
 ///
-/// `@Environment(\.accessibilityReduceMotion)` 必须在 ViewModifier 内部读取
+/// `@Environment(\.starcatReduceMotion)` 必须在 ViewModifier 内部读取
 /// 而非暴露给调用方,因为 SwiftUI environment 只有在 view tree 内才有效;
 /// 把环境读取下沉到 modifier 让调用方完全无需关心 reduceMotion 兜底逻辑。
 private struct DetailContentTransitionModifier: ViewModifier {
 
     /// 系统级"减少动效"开关,开启时退化为仅 opacity 淡入（不再上滑）。
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content.transition(transition)

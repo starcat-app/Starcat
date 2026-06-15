@@ -51,6 +51,12 @@ struct StarcatApp: App {
     var body: some Scene {
         WindowGroup("Starcat") {
             contentRoot
+                // 2026-06-15:必须挂在所有 `.environment(...)` 之前(modifier 链
+                // 越靠前 = 子树端,SwiftUI 把 environment 注入按"链中靠后 = 父层"
+                // 解析)。AnimationOverrideModifier 内部 `@Environment(AppSettings)`
+                // 需要 settings 在它的 ancestor 链上,所以 settings env 必须挂在
+                // 这一行之后。详见 Shared/Components/AnimationOverrideModifier.swift。
+                .starcatAnimationOverride()
                 .environment(dependencies)
                 .environment(dependencies.authSession)
                 .environment(dependencies.syncManager)
@@ -97,7 +103,12 @@ struct StarcatApp: App {
                 // 关键约束：macOS NSWindow titlebar / chrome 由 AppKit 即时切换
                 // effectiveAppearance，SwiftUI 动画系统覆盖不到，所以 titlebar
                 // 仍是瞬切；视图内容区（动态色 / 材质 / 文字色）会跟随过渡。
-                .animation(.easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
+                //
+                // 2026-06-15:用户「关闭应用内动画」时直接 nil,主题切换瞬切;
+                // 这一层用 settings.disableAnimations 守卫(而非 reduceMotion 环境
+                // 值),因为 `.animation(_:value:)` 是硬动画,不会自动尊重
+                // AnimationOverrideModifier 注入的 reduceMotion 环境值。
+                .animation(dependencies.settings.disableAnimations ? nil : .easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
                 .task {
                     await dependencies.authSession.restoreSessionIfAvailable()
                 }
@@ -123,6 +134,12 @@ struct StarcatApp: App {
         // macOS 原生 Settings 窗口（Cmd+,）
         Settings {
             SettingsView()
+                // 2026-06-15:Settings 是独立 SwiftUI scene root,主窗口的
+                // 同款 modifier 不会传播到这里,必须再挂一次让 Settings 子树
+                // 的所有动画（如 List row 切换、Tab 切换）也尊重用户偏好。
+                // 必须挂在 environment 之前(链中靠前 = 子树端),让 modifier 内部
+                // `@Environment(AppSettings.self)` 能向上找到 settings。
+                .starcatAnimationOverride()
                 .environment(dependencies)        // W4-4 D4：StorageSettingsTab 需要 readmeRepository
                 .environment(dependencies.settings)
                 // HOM-126：AI 设置「自动整理」分组的「立刻手动触发一次」按钮直接
@@ -134,7 +151,9 @@ struct StarcatApp: App {
                 // Settings 窗口是 NSApp 的子窗口，effectiveAppearance 自动跟随。
                 // 但还是挂一道 `.animation(_:value:)` 让 Settings 内部视图
                 // 颜色变化跟主窗口节奏一致（0.3s easeInOut）。
-                .animation(.easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
+                //
+                // 2026-06-15:与主窗口同款守卫,见上方 WindowGroup 内同名 modifier。
+                .animation(dependencies.settings.disableAnimations ? nil : .easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
         }
     }
 

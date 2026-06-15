@@ -157,7 +157,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     // v2.1 修订（2026-06-11）：原 `@State private var isRefreshing: Bool` 已删除。
     // 该状态曾给浮动刷新按钮用,现统一由 cacheFooter 内的 `readmeVM.isRefreshing` 驱动。
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     /// 顶部面板折叠/展开动画。轻阻尼 spring，让 README WebView 让位时跟手。
     private var metadataPanelAnimation: Animation {
@@ -213,7 +213,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .navigationTitle(repo.name)
         .navigationSubtitle(repo.owner)
         .onChange(of: repo.id) { _, _ in
-            withAnimation(metadataPanelAnimation) {
+            withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
                 metadataPanelCollapseProgress = 0
             }
         }

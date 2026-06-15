@@ -381,7 +381,7 @@ private struct ActivityRowSurface<Content: View>: View {
     let isSelected: Bool
     private let content: Content
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
     init(item: ActivityItem, isSelected: Bool, @ViewBuilder content: () -> Content) {
