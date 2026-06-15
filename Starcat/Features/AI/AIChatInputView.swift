@@ -126,6 +126,7 @@ struct AIChatInputView: View {
             placeholder: String(localized: "ai.assistant.input.placeholder"),
             isEnabled: !isSending,
             isFocused: focus,
+            requiresCommandReturn: settings.aiChatRequiresCommandReturn,
             onEmptyStateChange: { isEmpty in
                 hasText = !isEmpty
             },
@@ -338,6 +339,7 @@ private struct AIChatNativeTextEditor: NSViewRepresentable {
     let placeholder: String
     let isEnabled: Bool
     let isFocused: FocusState<Bool>.Binding
+    let requiresCommandReturn: Bool
     let onEmptyStateChange: (Bool) -> Void
     let onHeightChange: (CGFloat) -> Void
     let onSubmit: () -> Void
@@ -388,13 +390,15 @@ private struct AIChatNativeTextEditor: NSViewRepresentable {
         scrollView.onHeightChange = onHeightChange
         state.connect(textView)
 
+        // FocusState 在 NSViewRepresentable 更新周期里可能比 AppKit first responder
+        // 慢一拍：首字符让发送按钮 enabled、或输入跨行改变高度时都会触发这里重跑。
+        // 若把瞬时 false 解释为“主动失焦”，就会中断英文连续输入和中文 marked text。
+        // 因此该 binding 只承担外部“请求聚焦”；真实失焦由 textDidEndEditing 反向同步。
         if isFocused.wrappedValue, textView.window?.firstResponder !== textView {
             DispatchQueue.main.async {
                 guard isFocused.wrappedValue else { return }
                 textView.window?.makeFirstResponder(textView)
             }
-        } else if !isFocused.wrappedValue, textView.window?.firstResponder === textView {
-            textView.window?.makeFirstResponder(nil)
         }
     }
 
@@ -432,7 +436,14 @@ private struct AIChatNativeTextEditor: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
-            if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+            let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+            if parent.requiresCommandReturn {
+                if modifiers.contains(.command) {
+                    parent.onSubmit()
+                } else {
+                    textView.insertNewlineIgnoringFieldEditor(nil)
+                }
+            } else if modifiers.contains(.shift) {
                 textView.insertNewlineIgnoringFieldEditor(nil)
             } else {
                 parent.onSubmit()
