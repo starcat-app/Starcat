@@ -164,20 +164,28 @@ final class ScrollTailController {
     }
 }
 
-/// 「跟随最新」浮动按钮（参考 GitHub Actions Logs 同款）。
+/// 「跟随最新」浮动按钮（参考 GitHub Actions Logs / Slack 频道底部跳转按钮同款）。
 ///
 /// 当用户上滚导致 `ScrollTailController.isFollowing == false` 时显示。
 /// 点击 → 调用方负责 `tail.reengage()` + `proxy.scrollTo(.bottom)`。
 ///
 /// 视觉规范：
-///   - 胶囊形 + .regularMaterial 玻璃态背景（与项目其它浮层风格一致）；
-///   - "↓ 跟随最新" 单一文案，10pt monospaced + semibold + .primary 前景；
-///   - 复用 `pressableHover`：默认 hover opacity=0.78, scale=1.04，
-///     悬停时给出"这是可点击的"反馈，与项目其它按钮一致；
+///   - **2026-06-15 dong4j 反馈** "右下角的跟随最新使用图标，不要展示文本了"，
+///     从初版 "Capsule + ↓ + 跟随最新" 改为 **32×32 圆形 icon-only 按钮**。
+///     设计理由：① 浮在 ScrollView 右下角的"跳到底部"是公认 idiom（GitHub /
+///     Slack / iMessage 等都用纯 icon 圆形按钮），用户对图标的认知成本接近零；
+///     ② 文案改 tooltip 后，鼠标 hover 才显示，既不占视觉重量也保留可达性；
+///     ③ 圆形比胶囊更紧凑，不会与右下角内容产生横向"压舱物"感。
+///   - **32×32 pt 圆形 + .regularMaterial 玻璃态** 与项目其它浮层风格一致；
+///   - **arrow.down 12pt semibold + `.primary`** 前景，明暗主题自适应；
+///   - **`.accessibilityLabel("scroll.followTail.label")`** 让 VoiceOver
+///     仍朗读"跟随最新"，文案"看不见"但语义保留；
+///   - **`.help("scroll.followTail.help")`** 鼠标 hover 出 tooltip
+///     "跳转到最新内容并恢复自动跟随"；
+///   - 复用 `pressableHover`：默认 hover opacity=0.78, scale=1.04，悬停反馈；
 ///   - 必须挂 `.focusEffectDisabled()`，禁用 macOS 默认蓝框（项目硬性规范）；
 ///   - `.transition(.opacity.combined(with: .move(edge: .bottom)))`
-///     由调用方在 ZStack 外层 `.animation(_:value:)` 配合，进出场动画
-///     就是从底部轻轻浮上来 / 沉下去，不抢戏。
+///     由调用方在 ZStack 外层 `.animation(_:value:)` 配合。
 struct FollowTailFloatingButton: View {
 
     /// 用户点击时的回调。调用方在里面置位 `controller.reengage()` 并调
@@ -186,28 +194,24 @@ struct FollowTailFloatingButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.down")
-                    .font(.system(size: 10, weight: .bold))
-                Text("scroll.followTail.label")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            }
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(.regularMaterial)
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
-                    )
-                    .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 2)
-            )
-            .pressableHover(opacity: 0.78, scale: 1.04)
+            Image(systemName: "arrow.down")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 32, height: 32)
+                .background(
+                    Circle()
+                        .fill(.regularMaterial)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
+                        )
+                        .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 2)
+                )
+                .pressableHover(opacity: 0.78, scale: 1.04)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .help("scroll.followTail.help")
+        .accessibilityLabel(Text("scroll.followTail.label"))
     }
 }
