@@ -774,6 +774,16 @@ final class AppSettings {
         didSet { persistBool(key: Keys.disableAnimations, value: disableAnimations) }
     }
 
+    /// 开启后 AI 多行输入必须按 Command+Return 才发送；普通 Return 始终换行。
+    var aiChatRequiresCommandReturn: Bool {
+        didSet { persistBool(key: Keys.aiChatRequiresCommandReturn, value: aiChatRequiresCommandReturn) }
+    }
+
+    /// 全局搜索入口快捷键，默认 Command+K。值对象在写入设置页前已完成合法性校验。
+    var globalSearchShortcut: KeyboardShortcutConfiguration {
+        didSet { persistJSON(key: Keys.globalSearchShortcut, value: globalSearchShortcut) }
+    }
+
     /// Pro 订阅模拟状态（HOM-151）。
     ///
     /// 真实 Apple 订阅接入前，设置页的"开通 Pro"按钮先写本地状态，用于串联：
@@ -1157,6 +1167,17 @@ final class AppSettings {
         // 2026-06-15:无障碍——「关闭应用内动画」用户偏好。
         // 缺失值时默认 false(动画全开),老用户首启不受影响。
         self.disableAnimations = defaults.object(forKey: Keys.disableAnimations) as? Bool ?? false
+        self.aiChatRequiresCommandReturn = defaults.object(forKey: Keys.aiChatRequiresCommandReturn) as? Bool ?? false
+        let storedSearchShortcut = Self.decodeJSON(
+            KeyboardShortcutConfiguration.self,
+            key: Keys.globalSearchShortcut,
+            defaults: defaults
+        )
+        if let storedSearchShortcut, storedSearchShortcut.validationError == nil {
+            self.globalSearchShortcut = storedSearchShortcut
+        } else {
+            self.globalSearchShortcut = .globalSearchDefault
+        }
 
         // HOM-126：自动整理偏好。缺失时回落到 `AutoTidySettings.default`（总开关关 +
         // 启动/同步触发 + 50 个 + 最近 star + 仅标签 + 90% 阈值），与任务描述一致。
@@ -1385,6 +1406,8 @@ final class AppSettings {
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
         static let isProUser = "settings.pro.isProUser"  // HOM-151
         static let disableAnimations = "settings.general.disableAnimations.v1"  // 2026-06-15
+        static let aiChatRequiresCommandReturn = "settings.general.shortcuts.aiCommandReturn.v1"
+        static let globalSearchShortcut = "settings.general.shortcuts.globalSearch.v1"
         static let autoTidySettings = "settings.ai.autoTidy.v1"  // HOM-126
         static let customServiceURLs = "settings.services.customURLs.v1"  // 2026-06-08
         // R-01 v1.2 2026-06-09 引入；2026-06-10 迁 Keychain。
