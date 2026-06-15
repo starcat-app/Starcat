@@ -96,9 +96,9 @@ struct RepoListView: View {
                     onOpenSearchCenter?()
                 } label: {
                     ToolbarIcon("sparkle.magnifyingglass")
-                        .accessibilityLabel(Text("全局搜索"))
+                        .accessibilityLabel(Text("toolbar.globalSearch"))
                 }
-                .help("全局搜索 (⌘K)")
+                .help("toolbar.globalSearchHelp")
             }
             // W12 toolbar 专项 PR-1：toolbar 内容按 selectedPage 派发到对应 spec builder。
             // 当前只有 manage 走完整 spec，trending / activity 返回 .empty —— 它们各自

@@ -51,7 +51,7 @@ struct ProSettingsTab: View {
                                 }
                             }
 
-                            Text(settings.isProUser ? "已开通 Pro，头像会显示专属 PRO 标识。" : "开通后可立即预览 Pro 成功反馈与头像标识。")
+                            Text(settings.isProUser ? "settings.pro.subtitle.active" : "settings.pro.subtitle.preview")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -61,16 +61,28 @@ struct ProSettingsTab: View {
                     Divider()
 
                     VStack(alignment: .leading, spacing: 8) {
-                        ProBenefitRow(systemImage: "sparkles", title: "AI 能力优先体验", detail: "后续 Pro 专属 AI 功能会优先在这里接入。")
-                        ProBenefitRow(systemImage: "paintpalette.fill", title: "专属身份标识", detail: "登录用户头像右下角展示醒目的 PRO 徽章。")
-                        ProBenefitRow(systemImage: "party.popper.fill", title: "开通成功礼炮", detail: "模拟开通成功后立即播放彩纸动画。")
+                        ProBenefitRow(
+                            systemImage: "sparkles",
+                            titleKey: "settings.pro.benefit.ai.title",
+                            detailKey: "settings.pro.benefit.ai.detail"
+                        )
+                        ProBenefitRow(
+                            systemImage: "paintpalette.fill",
+                            titleKey: "settings.pro.benefit.badge.title",
+                            detailKey: "settings.pro.benefit.badge.detail"
+                        )
+                        ProBenefitRow(
+                            systemImage: "party.popper.fill",
+                            titleKey: "settings.pro.benefit.confetti.title",
+                            detailKey: "settings.pro.benefit.confetti.detail"
+                        )
                     }
 
                     HStack {
                         Button {
                             simulateUpgrade(settings: settings)
                         } label: {
-                            Label(settings.isProUser ? "已开通 Pro" : "模拟开通 Pro", systemImage: settings.isProUser ? "checkmark.seal.fill" : "crown.fill")
+                            Label(settings.isProUser ? "settings.pro.button.active" : "settings.pro.button.simulate", systemImage: settings.isProUser ? "checkmark.seal.fill" : "crown.fill")
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(settings.isProUser)
@@ -80,7 +92,7 @@ struct ProSettingsTab: View {
                                 settings.isProUser = false
                                 showSuccessMessage = false
                             } label: {
-                                Label("重置模拟状态", systemImage: "arrow.counterclockwise")
+                                Label("settings.pro.button.reset", systemImage: "arrow.counterclockwise")
                             }
                             .buttonStyle(.bordered)
                         }
@@ -88,12 +100,12 @@ struct ProSettingsTab: View {
                 }
                 .padding(.vertical, 2)
             } footer: {
-                Text("当前为前端模拟流程，不会发起 Apple 订阅或扣费。真实订阅接入后将复用同一套成功反馈。")
+                Text("settings.pro.footer")
             }
 
             if showSuccessMessage {
                 Section {
-                    Label("Pro 已开通，欢迎加入 Starcat Pro。", systemImage: "checkmark.seal.fill")
+                    Label("settings.pro.successBanner", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(.green)
                         .font(.callout.weight(.medium))
                 }
@@ -138,8 +150,8 @@ struct ProSettingsTab: View {
 private struct ProBenefitRow: View {
 
     let systemImage: String
-    let title: String
-    let detail: String
+    let titleKey: LocalizedStringKey
+    let detailKey: LocalizedStringKey
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -148,9 +160,9 @@ private struct ProBenefitRow: View {
                 .foregroundStyle(.orange)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(titleKey)
                     .font(.callout.weight(.medium))
-                Text(detail)
+                Text(detailKey)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

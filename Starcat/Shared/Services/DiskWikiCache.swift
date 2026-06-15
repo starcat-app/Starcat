@@ -44,9 +44,9 @@ enum DiskWikiCacheError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .applicationSupportUnavailable:
-            return "无法定位 Wiki 缓存目录，请重试或重启应用。"
+            return String(localized: "cache.wiki.error.applicationSupportUnavailable")
         case .unsafePathComponent(let value):
-            return "Wiki 缓存路径段含非法字符：\(value)。"
+            return String(format: String(localized: "cache.wiki.error.unsafePathComponentFormat"), value)
         }
     }
 }

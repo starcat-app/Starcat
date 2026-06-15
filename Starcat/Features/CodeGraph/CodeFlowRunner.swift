@@ -21,15 +21,24 @@ enum CodeFlowError: LocalizedError, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .privateRepository: return "首版代码图谱仅支持公开仓库。"
-        case .invalidGitHubURL: return "无法生成 GitHub API 地址。"
-        case .requestFailed(let statusCode): return "GitHub 请求失败（HTTP \(statusCode)）。"
-        case .archiveTooLarge: return "仓库 ZIP 超过当前 100 MB 下载上限。"
-        case .emptyArchive: return "GitHub 返回了空的 ZIP 文件。"
-        case .templateMissing: return "Starcat 安装包中缺少 CodeFlow 页面。"
-        case .invalidTemplate: return "CodeFlow 页面缺少 Starcat ZIP 注入入口。"
-        case .branchMissing: return "仓库没有可用于生成代码图谱的分支。"
-        case .branchNotFound(let name): return "生成分支 \(name) 已不存在，请选择其它分支。"
+        case .privateRepository:
+            return String(localized: "codeFlow.error.privateRepository")
+        case .invalidGitHubURL:
+            return String(localized: "codeFlow.error.invalidGitHubURL")
+        case .requestFailed(let statusCode):
+            return String(format: String(localized: "codeFlow.error.requestFailedFormat"), statusCode)
+        case .archiveTooLarge:
+            return String(localized: "codeFlow.error.archiveTooLarge")
+        case .emptyArchive:
+            return String(localized: "codeFlow.error.emptyArchive")
+        case .templateMissing:
+            return String(localized: "codeFlow.error.templateMissing")
+        case .invalidTemplate:
+            return String(localized: "codeFlow.error.invalidTemplate")
+        case .branchMissing:
+            return String(localized: "codeFlow.error.branchMissing")
+        case .branchNotFound(let name):
+            return String(format: String(localized: "codeFlow.error.branchNotFoundFormat"), name)
         }
     }
 }

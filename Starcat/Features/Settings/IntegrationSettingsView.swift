@@ -26,9 +26,9 @@ struct IntegrationSettingsTab: View {
             anySearchSection
             Section("CodeFlow") {
                 VStack(alignment: .leading, spacing: 5) {
-                    Label("代码图谱输出目录", systemImage: "point.3.connected.trianglepath.dotted")
+                    Label("settings.integration.codeFlow.outputDir.title", systemImage: "point.3.connected.trianglepath.dotted")
                         .font(.headline)
-                    Text("切换目录时会迁移现有 CodeFlow HTML 与 metadata；共享源码 ZIP 仍保存在应用容器。")
+                    Text("settings.integration.codeFlow.outputDir.subtitle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -42,14 +42,14 @@ struct IntegrationSettingsTab: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .layoutPriority(-1)
                     Spacer()
-                    Button("选择目录") { chooseOutputDirectory() }
+                    Button("settings.integration.codeFlow.outputDir.choose") { chooseOutputDirectory() }
                         .fixedSize()
                     Button {
                         revealOutputDirectory()
                     } label: {
                         Image(systemName: "folder")
                     }
-                    .help("在 Finder 中显示")
+                    .help("settings.integration.codeFlow.outputDir.revealHelp")
                     .fixedSize()
                     Button {
                         resetOutputDirectory()
@@ -57,16 +57,19 @@ struct IntegrationSettingsTab: View {
                         Image(systemName: "arrow.counterclockwise")
                     }
                     .disabled(!storage.hasCustomOutputDirectory)
-                    .help("迁移到 App Container 默认目录")
+                    .help("settings.integration.codeFlow.outputDir.resetHelp")
                     .fixedSize()
                 }
 
                 HStack(spacing: 18) {
-                    stat(title: "项目", value: "\(storage.projects.count)")
-                    stat(title: "占用", value: ByteCountFormatter.string(fromByteCount: storage.totalBytes, countStyle: .file))
-                    stat(title: "累计生成", value: "\(storage.totalGenerationCount) 次")
+                    stat(titleKey: "settings.integration.codeFlow.stat.projects", value: "\(storage.projects.count)")
+                    stat(titleKey: "settings.integration.codeFlow.stat.usage", value: ByteCountFormatter.string(fromByteCount: storage.totalBytes, countStyle: .file))
+                    stat(
+                        titleKey: "settings.integration.codeFlow.stat.totalGenerated",
+                        value: String(format: String(localized: "settings.integration.codeFlow.stat.totalGeneratedFormat"), storage.totalGenerationCount)
+                    )
                     if let date = storage.latestGeneratedAt {
-                        stat(title: "最后生成", value: date.formatted(date: .abbreviated, time: .shortened))
+                        stat(titleKey: "settings.integration.codeFlow.stat.lastGenerated", value: date.formatted(date: .abbreviated, time: .shortened))
                     }
                     Spacer()
                 }
@@ -76,7 +79,7 @@ struct IntegrationSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 } else if storage.projects.isEmpty {
-                    Text("当前目录还没有 CodeFlow 生成项目。")
+                    Text("settings.integration.codeFlow.empty")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
@@ -89,13 +92,13 @@ struct IntegrationSettingsTab: View {
         .formStyle(.grouped)
         .task { storage.reload() }
         .task { anySearchAPIKey = settings.anySearchAPIKey() ?? "" }
-        .alert("CodeFlow 操作失败", isPresented: Binding(
+        .alert("settings.integration.codeFlow.actionFailedTitle", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
         )) {
-            Button("好") { actionError = nil }
+            Button("common.ok") { actionError = nil }
         } message: {
-            Text(actionError ?? "未知错误")
+            Text(actionError ?? String(localized: "common.unknownError"))
         }
     }
 
@@ -222,9 +225,9 @@ struct IntegrationSettingsTab: View {
         }
     }
 
-    private func stat(title: String, value: String) -> some View {
+    private func stat(titleKey: LocalizedStringKey, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption2).foregroundStyle(.tertiary)
+            Text(titleKey).font(.caption2).foregroundStyle(.secondary)
             Text(value).font(.caption.weight(.medium))
         }
     }
@@ -241,21 +244,33 @@ struct IntegrationSettingsTab: View {
                         .lineLimit(1)
                     Text(project.metadata.generation.generatedAt.formatted(date: .abbreviated, time: .shortened))
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
-                // 语义约定：预览 = 浏览器查看图谱；打开 = Finder 定位生成文件。
-                Button("预览") { preview(project) }
-                Button("打开") { reveal(project) }
-                Button("删除", role: .destructive) { delete(project) }
+                // 语义约定:预览 = 浏览器查看图谱;打开 = Finder 定位生成文件。
+                Button("settings.integration.codeFlow.project.preview") { preview(project) }
+                Button("settings.integration.codeFlow.project.open") { reveal(project) }
+                Button("settings.integration.codeFlow.project.delete", role: .destructive) { delete(project) }
             }
 
-            DisclosureGroup("详情") {
+            DisclosureGroup("settings.integration.codeFlow.project.details") {
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                    GridRow { Text("页面路径"); Text(project.pageURL.path).textSelection(.enabled) }
-                    GridRow { Text("生成次数"); Text("\(project.metadata.generation.generationCount)") }
-                    GridRow { Text("最近耗时"); Text("\(project.metadata.generation.lastDurationMilliseconds) ms") }
-                    GridRow { Text("CodeFlow 版本"); Text(String(project.metadata.generator.codeFlowCommit.prefix(7))).monospaced() }
+                    GridRow {
+                        Text("settings.integration.codeFlow.project.pagePath")
+                        Text(project.pageURL.path).textSelection(.enabled)
+                    }
+                    GridRow {
+                        Text("settings.integration.codeFlow.project.generationCount")
+                        Text("\(project.metadata.generation.generationCount)")
+                    }
+                    GridRow {
+                        Text("settings.integration.codeFlow.project.lastDuration")
+                        Text("\(project.metadata.generation.lastDurationMilliseconds) ms")
+                    }
+                    GridRow {
+                        Text("settings.integration.codeFlow.project.codeFlowVersion")
+                        Text(String(project.metadata.generator.codeFlowCommit.prefix(7))).monospaced()
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -266,8 +281,8 @@ struct IntegrationSettingsTab: View {
 
     private func chooseOutputDirectory() {
         let panel = NSOpenPanel()
-        panel.title = "选择 CodeFlow 输出目录"
-        panel.prompt = "选择并迁移"
+        panel.title = String(localized: "settings.integration.codeFlow.openPanel.title")
+        panel.prompt = String(localized: "settings.integration.codeFlow.openPanel.prompt")
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
