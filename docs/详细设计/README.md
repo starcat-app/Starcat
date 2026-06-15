@@ -33,6 +33,7 @@
 | 28 | [搜索增强最终方案](28-搜索增强最终方案.md) | 保留 Manage 快速过滤，新增 `⌘K` 全局搜索中心，聚合 Local / GitHub / AnySearch Web 并复用现有详情与动作体系 |
 | 29 | [关键词与全文检索设计](29-关键词与全文检索设计.md) | 双引擎落地实现：FTS5（repos_fts unicode61 + notes_fts trigram + BM25 排序）+ 向量语义（A 显示重标定 + B 字面 boost + C FTS hit 加权 + tier 1-4★）+ 示例走查 + 后期优化方向 |
 | 30 | [本地 RAG 设计](30-本地RAG设计.md) | 探索性方案 v0.1（P2 远期）：把 1810+ 已 star 仓库做成本地 RAG，三层架构（chunk-level retrieve + 可选 rerank + LLM 生成 + 引用 chip）、UI / UX 草案、功能列表与落地路线 |
+| 31 | [Trending / Weekly 多级缓存改造](31-Trending-Weekly缓存改造.md) | R-06 完整记录：客户端 SQLite TTL（Trending 24h / Weekly 12h）+ 后端内存缓存（trending 分桶 1h/6h/24h + ETag、weekly 6h + pre-gzip + bulk endpoint）+ Weekly 渐进式 SWR 双轨制（dataSource .local/.remote）、3 个永久陷阱、关键决策一览、4 个项目共 33 个新测试用例验证 |
 
 ---
 
@@ -67,6 +68,8 @@
 
 | 日期 | 更新内容 |
 |------|---------|
+| 2026-06-15 | 31 文档微调：BulkCache TTL 60s → 6h（多客户端并发 / 主动刷新风暴场景下减少反复 build；与 trending weekly 桶对齐；演进记录写入 §8） |
+| 2026-06-15 | 新增 31 文档：R-06 Trending / Weekly 多级缓存改造收尾记录（客户端 SQLite TTL + 后端内存缓存 + Weekly 渐进式 SWR 双轨制 + 3 个永久陷阱 + 关键决策一览） |
 | 2026-06-15 | 新增 29 / 30 两份文档：29 把已实施的关键词 + 向量语义双引擎搜索逻辑沉淀为单一信任源（含三段式加权常量 / 示例走查 / 后期优化方向）；30 探索把已 star 仓库做成本地 RAG 的产品愿景（chunk-level retrieve + 引用约束 + UI/UX 草案 + 功能优先级 + 落地路线） |
 | 2026-06-13 | 新增搜索增强最终方案：结合 AnySearch / GitHub 搜索需求、`d9bd9f7` 命令搜索浮层与当前主线代码，收敛为“Manage 快速过滤 + 全局搜索中心”双入口 |
 | 2026-06-12 | 文档命名规范化：详细设计 21~25 + 需求讨论 4 份重命名（详见 `工程进度/功能实现总览.md` §10）；本次同步：补齐 21/22/23/24/25 索引行，统一描述风格 |
