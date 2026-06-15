@@ -258,6 +258,8 @@ struct SettingsView: View {
 /// 缓存统计与清理面板。
 private struct StorageSettingsTab: View {
 
+    @Environment(AppSettings.self) private var settings
+
     let readmeRepository: ReadmeRepository
 
     @State private var stats: CacheStatistics = .empty
@@ -344,7 +346,22 @@ private struct StorageSettingsTab: View {
 
     var body: some View {
         let cleaner = CacheCleaner(readmeRepository: readmeRepository)
+        @Bindable var settings = settings
         return Form {
+            Section("settings.storage.chatHistoryBackend.section") {
+                Picker("settings.storage.chatHistoryBackend.title", selection: $settings.chatHistoryStorageKind) {
+                    ForEach(ChatHistoryStorageKind.allCases) { kind in
+                        Text(LocalizedStringKey(kind.displayNameKey))
+                            .tag(kind)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Text("settings.storage.chatHistoryBackend.help")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("settings.storage.cacheUsage") {
                 usageRow(
                     titleKey: "settings.storage.readme",

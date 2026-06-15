@@ -32,6 +32,15 @@ struct DiskChatHistoryStoreTests {
         return (store, root)
     }
 
+    private func makeIsolatedSQLiteStore(file: StaticString = #filePath, line: UInt = #line) throws
+        -> (store: DiskChatHistoryStore, root: URL)
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-chat-history-sqlite-test-\(UUID().uuidString)", isDirectory: true)
+        let store = DiskChatHistoryStore(rootOverride: root, storageKind: .sqlite)
+        return (store, root)
+    }
+
     private func cleanup(_ root: URL) {
         try? FileManager.default.removeItem(at: root)
     }
@@ -407,5 +416,73 @@ struct DiskChatHistoryStoreTests {
         let id = try #require(list.first?.id)
         let loaded = try store.loadSession(owner: "octo", repo: "demo", sessionId: id)
         #expect(loaded?.carriedOverSummary == nil)
+    }
+
+    // MARK: - SQLite 后端
+
+    @Test("SQLite 后端：save/list/load 完整往返")
+    func sqliteSaveListLoadRoundTrip() throws {
+        let (store, root) = try makeIsolatedSQLiteStore()
+        defer { cleanup(root) }
+
+        let session = makeSession(title: "sqlite", messageCount: 5)
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        let list = try store.listSessions(owner: "octo", repo: "demo")
+        #expect(list.count == 1)
+        #expect(list.first?.id == session.id)
+        #expect(list.first?.title == "sqlite")
+        #expect(list.first?.messageCount == 5)
+
+        let loaded = try store.loadSession(owner: "octo", repo: "demo", sessionId: session.id)
+        #expect(loaded?.messages.map(\.content) == ["msg-0", "msg-1", "msg-2", "msg-3", "msg-4"])
+        #expect(store.storageKind == .sqlite)
+        #expect(store.totalBytes > 0)
+    }
+
+    @Test("SQLite 后端：尾部 2 条与加载更早 20 条")
+    func sqliteTailAndEarlierMessages() async throws {
+        let (store, root) = try makeIsolatedSQLiteStore()
+        defer { cleanup(root) }
+
+        let session = makeSession(title: "sqlite-page", messageCount: 45)
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        let tail = try await store.loadSessionTailAsync(
+            owner: "octo",
+            repo: "demo",
+            sessionId: session.id,
+            tailCount: 2
+        )
+        #expect(tail?.messageStartIndex == 43)
+        #expect(tail?.totalMessageCount == 45)
+        #expect(tail?.session.messages.map(\.content) == ["msg-43", "msg-44"])
+
+        let earlier = try await store.loadMessagesAsync(
+            owner: "octo",
+            repo: "demo",
+            sessionId: session.id,
+            start: 23,
+            end: 43
+        )
+        #expect(earlier.count == 20)
+        #expect(earlier.first?.content == "msg-23")
+        #expect(earlier.last?.content == "msg-42")
+    }
+
+    @Test("SQLite 后端：deleteEverything 清空独立数据库")
+    func sqliteDeleteEverything() throws {
+        let (store, root) = try makeIsolatedSQLiteStore()
+        defer { cleanup(root) }
+
+        try store.saveSession(owner: "octo", repo: "demo", session: makeSession())
+        try store.saveSession(owner: "octo", repo: "other", session: makeSession())
+        #expect(store.sessionCount == 2)
+        #expect(store.repoCount == 2)
+
+        try store.deleteEverything()
+        #expect(store.sessionCount == 0)
+        #expect(store.repoCount == 0)
+        #expect(try store.listSessions(owner: "octo", repo: "demo").isEmpty)
     }
 }

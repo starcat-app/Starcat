@@ -803,9 +803,28 @@ struct RepoListView: View {
             return String(localized: "activity.title")
         }
         if viewModel.isSearching {
-            return String(format: String(localized: "search.searching"), viewModel.searchQuery)
+            return String(format: String(localized: "search.searching"), truncatedSearchQueryForTitle)
         }
         return localizedTitle(for: viewModel.selection)
+    }
+
+    /// 给 `.navigationTitle` 用的搜索词截断版本。
+    ///
+    /// **为什么必须在拼字符串时就截断**：`.navigationTitle(_:)` 接的是裸 `String`，
+    /// 直接绑到 macOS 窗口 chrome / NavigationStack title 区，**SwiftUI 没有 modifier 能
+    /// 在 view 层 truncate**（`.lineLimit` 对 system title 无效）。任由 query 过长会
+    /// 把 toolbar 撑出列表栏右侧或挤掉计数副标题。
+    ///
+    /// **阈值 24 个 grapheme cluster**：经验值，覆盖典型搜索 90%+ 场景；中英混排在
+    /// 280–400pt 列表栏宽度内不溢出。超长则后接 `…`（U+2026 HORIZONTAL ELLIPSIS
+    /// 单字符省略号，符合 Apple HIG，不用三个 ASCII 点）。
+    ///
+    /// **不动 `viewModel.searchQuery` 本体**：截断仅作显示用，FTS / 语义搜索仍按完整
+    /// query 跑；这里只防 title 视觉溢出。
+    private var truncatedSearchQueryForTitle: String {
+        let raw = viewModel.searchQuery
+        let limit = 24
+        return raw.count > limit ? "\(raw.prefix(limit))…" : raw
     }
 
     /// Navigation title 需要 plain String；静态入口走 localization，用户标签/语言按原样显示。

@@ -676,6 +676,15 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.aiChatTask, value: aiChatTask) }
     }
 
+    /// AI 对话历史存储后端。默认 `.jsonFiles`，保留当前 metadata + chunks 写入路径；
+    /// 选择 `.sqlite` 后，下一次创建 `DiskChatHistoryStore.shared` 会使用独立 SQLite 文件。
+    ///
+    /// 关键约束：运行中的 store 不做热切换，避免同一个会话窗口生命周期内一半写 JSON、
+    /// 一半写 SQLite。切换设置后重启应用即可使用新后端；迁移以后做显式工具，不自动搬数据。
+    var chatHistoryStorageKind: ChatHistoryStorageKind {
+        didSet { persist(key: Keys.chatHistoryStorageKind, value: chatHistoryStorageKind.rawValue) }
+    }
+
     /// 搜索栏当前模式。默认 keyword，避免用户未配置 AI 时误触发付费 API。
     var smartSearchMode: SmartSearchMode {
         didSet { persist(key: Keys.smartSearchMode, value: smartSearchMode.rawValue) }
@@ -1114,6 +1123,8 @@ final class AppSettings {
             modelName: resolvedAIChatModel
         )
         self.aiChatTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiChatTask, defaults: defaults) ?? defaultChatTask
+        let chatHistoryStorageRaw = defaults.string(forKey: Keys.chatHistoryStorageKind)
+        self.chatHistoryStorageKind = chatHistoryStorageRaw.flatMap(ChatHistoryStorageKind.init(rawValue:)) ?? .jsonFiles
         let searchModeRaw = defaults.string(forKey: Keys.smartSearchMode)
         self.smartSearchMode = searchModeRaw.flatMap(SmartSearchMode.init(rawValue:)) ?? .keyword
         self.anySearchEnabled = defaults.object(forKey: Keys.anySearchEnabled) as? Bool ?? false
@@ -1363,6 +1374,7 @@ final class AppSettings {
         static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
         static let aiTranslationTask = "settings.ai.task.translation.v2"  // HOM-68 follow-up
         static let aiChatTask = "settings.ai.task.chat.v1"  // 2026-06-14 v4 占位符化（chat 提到 task 平级）
+        static let chatHistoryStorageKind = "settings.ai.chatHistory.storageKind.v1"
         static let smartSearchMode = "settings.search.mode"
         static let anySearchEnabled = "settings.search.anysearch.enabled.v1"
         static let anySearchAnonymousMode = "settings.search.anysearch.anonymous.v1"
