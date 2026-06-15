@@ -49,6 +49,11 @@ struct SettingsView: View {
     /// (root view 的 `AnimationOverrideModifier` 已 OR 合并)。
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
+    /// 2026-06-15 dong4j 需求:用户面向的语言切换状态容器。
+    /// `LocaleStore` 是 `@MainActor @Observable` 单例,主窗口与 Settings 共享同一份;
+    /// `@Bindable` 让下方 Picker 可以直接 `$localeStore.selection` 双向绑定。
+    @State private var localeStore = LocaleStore.shared
+
     @State private var selectedTab: SettingsTab = .general
 
     /// Settings 各 Tab 的内容尺寸。
@@ -131,6 +136,9 @@ struct SettingsView: View {
 
     private var generalTab: some View {
         @Bindable var settings = settings
+        // 2026-06-15:`@State` 持有的 `@Observable` 单例需要 `@Bindable` 局部转换,
+        // 才能用 `$localeStore.selection` 的双向 binding 写法,与上面 settings 同款。
+        @Bindable var localeStore = localeStore
 
         return Form {
             Section("settings.general.appearance") {
@@ -198,6 +206,39 @@ struct SettingsView: View {
                 Text("settings.snakeStyle.description")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            // 2026-06-15 dong4j 需求：用户面向的语言切换。
+            //
+            // 设计要点：
+            // 1. `LocaleStore` 是 `@MainActor @Observable` 单例，主窗口与 Settings
+            //    两个 scene 共享同一份选择；切换后由 `StarcatApp` 在 `.environment(\.locale, _)`
+            //    + `.id(...)` 配合下整棵 view 树立刻重建，不需要重启 App。
+            // 2. 默认 `system`：跟随系统设置，`Locale.autoupdatingCurrent` 让
+            //    macOS Language & Region 改变时 Starcat 自动同步。
+            // 3. 选项标签 `English` / `简体中文` 故意用其原生写法（不走 i18n
+            //    查表），与 macOS Language & Region 列出语言时的惯例一致——
+            //    哪怕用户误切到看不懂的语言，也能从原生写法找回入口。
+            // 4. 已知局限（与 DEBUG 菜单 picker 一致，写在 `LocaleStore.swift`
+            //    顶部注释里）：`.environment(\.locale, _)` 只覆盖 SwiftUI 视图层
+            //    `Text("key")` 等查表行为；macOS 顶部菜单栏 NSMenu 与部分
+            //    AppKit 弹窗的字符串走 `Bundle.main.localized*` 在 App 启动时
+            //    一次性加载，**不**会跟随 environment 切换刷新。如果用户期望连
+            //    菜单栏一起切，必须重启 App（说明文字里已提示）。
+            Section("settings.general.language") {
+                Picker(selection: $localeStore.selection) {
+                    ForEach(AppLocale.allCases) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                } label: {
+                    Text("settings.general.language.label")
+                }
+                .pickerStyle(.menu)
+
+                Text("settings.general.language.description")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             // 2026-06-15 dong4j 需求：无障碍 / 动画偏好。
