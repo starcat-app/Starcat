@@ -93,7 +93,7 @@ linguist: ## 生成 Linguist 语言元数据（LINGUIST_ARGS="--local file.yml"�
 	@python3 scripts/generate_linguist_metadata.py $(LINGUIST_ARGS)
 
 show-data: ## 在 Finder 中打开 App Support 目录
-	@open -R "$(APP_SUPPORT)"
+	@open -R "$(APP_SUPPORT)/users"
 	
 reset-db: ## 清空所有本地数据库文件（destructive）
 	@echo "即将删除：$(APP_SUPPORT)/users"
