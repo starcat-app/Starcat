@@ -189,10 +189,27 @@ final class RepoAIChatViewModel {
     /// 调用 `startNewSessionAfterOverflow(repo:)` 后自动清零。
     private(set) var isContextOverflow: Bool = false
 
+    /// 当前 repo 的已索引外部 Wiki 镜像链接（2026-06-15 v4.y）。
+    ///
+    /// 由 `bootstrap` 阶段从 `WikiContextService` 同步读盘填充（cache hit fresh /
+    /// stale 都走这里取值）；session 寿命内复用 —— 不在每条 sendMessage 重新读盘，
+    /// 让 dong4j 拍板的"探测一次复用整个对话"语义落地。
+    ///
+    /// **注意**：bootstrap 期同时会触发 `refreshInBackground`，刷新结果写回磁盘
+    /// `DiskWikiCache` 但**不**回填本字段。下次详情页重开 AI 窗口（bootstrap 重跑）
+    /// 才用上最新值。这是有意为之 —— 避免 stream 期间字段变更引起 SwiftUI 闪动。
+    private(set) var wikiLinks: [WikiLink] = []
+
+    /// 当前 repo 的本地 CodeFlow 调用图 `file://` URL（2026-06-15 v4.y）。
+    /// nil = 没生成过 / 被删了 / 输出目录授权失败。同 `wikiLinks` 的复用策略。
+    private(set) var codeFlowPageURL: URL?
+
     // MARK: - 依赖
 
     private let service: RepoAIInsightService
     private let historyStore: DiskChatHistoryStore
+    private let wikiContextService: WikiContextService?
+    private let codeFlowStorage: CodeFlowStorage
     /// 面板切换 task 与“在摘要页直接发送”可能同时触发 bootstrap。共享同一个 Task，
     /// 防止重复读盘后较晚返回的旧结果覆盖用户刚发送的新消息。
     private var bootstrapTask: Task<Void, Never>?
@@ -212,15 +229,23 @@ final class RepoAIChatViewModel {
     private static let initialVisibleMessageCount = 2
     private static let earlierMessagePageSize = DiskChatHistoryStore.messagesPerChunk
 
-    init(service: RepoAIInsightService) {
+    /// 主 init（生产路径 / 测试都走这一个，2026-06-15 v4.y 收敛）。
+    ///
+    /// - `wikiContextService`：**必填**，没有默认。原因：项目未上线，让编译器逼着
+    ///   所有 callsite 显式传依赖，避免新增对话 VM 实例化路径漏注入。传 nil 等价于
+    ///   "本会话不消费 wiki 资源"（测试 fast path / 不关心 wiki 注入的单测用）。
+    /// - `historyStore` / `codeFlowStorage`：进程级单例默认即可，测试要隔离 disk
+    ///   时再注入 `rootOverride` 版本。
+    init(
+        service: RepoAIInsightService,
+        wikiContextService: WikiContextService?,
+        historyStore: DiskChatHistoryStore = .shared,
+        codeFlowStorage: CodeFlowStorage = .shared
+    ) {
         self.service = service
-        self.historyStore = .shared
-    }
-
-    /// 测试可注入隔离磁盘目录，生产代码统一使用进程级 store。
-    init(service: RepoAIInsightService, historyStore: DiskChatHistoryStore) {
-        self.service = service
+        self.wikiContextService = wikiContextService
         self.historyStore = historyStore
+        self.codeFlowStorage = codeFlowStorage
     }
 
     // MARK: - Session 生命周期
@@ -259,6 +284,47 @@ final class RepoAIChatViewModel {
         } else {
             startEmptySession()
         }
+        prefetchStarcatResources(repo: repo)
+    }
+
+    /// 进入对话时一次性把"Starcat 衍生资源"（Wiki / CodeFlow）从磁盘读出，存进
+    /// 内存供本 session 所有 sendMessage 复用（2026-06-15 v4.y dong4j 拍板形态 C/E1）。
+    ///
+    /// 行为细节：
+    /// - Wiki：`cachedLinks(owner:repo:)` 同步读盘 —— miss 直接拿空数组，hit 直接拿
+    ///   `[WikiLink]`（不管 fresh / stale 一并使用）；
+    /// - Wiki 后台刷新：cache miss 或 stale 时调 `refreshInBackground` 触发一次网络
+    ///   往返写盘；**写盘结果不回填本 session 的 `wikiLinks`**，下次详情页重开 AI
+    ///   窗口（bootstrap 重跑）才用上新值 —— 避免 stream 期间字段变更引起 UI 闪动；
+    /// - CodeFlow：同步调 `CodeFlowStorage.existingProject(...)?.pageURL`，throw 时
+    ///   直接吞错（最常见的是输出目录授权失败，用户没设置过 CodeFlow 即正常状态）。
+    private func prefetchStarcatResources(repo: Repo) {
+        if let wikiContextService {
+            self.wikiLinks = wikiContextService.cachedLinks(owner: repo.owner, repo: repo.name)
+            // 决策：cache miss 一定触发后台刷新；cache hit 时按 snapshot.freshness 判
+            // —— stale 才刷新，fresh 完全跳过（省 API + 网络）。
+            let snapshot = wikiContextService.cachedSnapshot(owner: repo.owner, repo: repo.name)
+            let shouldRefresh: Bool
+            if let snapshot {
+                shouldRefresh = snapshot.freshness() == .stale
+            } else {
+                shouldRefresh = true
+            }
+            if shouldRefresh {
+                wikiContextService.refreshInBackground(owner: repo.owner, repo: repo.name)
+            }
+        } else {
+            self.wikiLinks = []
+        }
+
+        // `existingProject` 是 throwing 方法且返回值本身是可选，所以 `try?` 平铺出来
+        // 是 `CodeFlowStoredProject??`。`?? nil` 把双层 optional 收成单层，再 `?.pageURL`。
+        // 这种"throws + Optional"组合的解包模式在本 VM 的 historyStore 路径里已大量出现。
+        let stored = (try? codeFlowStorage.existingProject(
+            owner: repo.owner,
+            name: repo.name
+        )) ?? nil
+        self.codeFlowPageURL = stored?.pageURL
     }
 
     /// 主动切换到另一个已有 session。
@@ -470,7 +536,9 @@ final class RepoAIChatViewModel {
                 for: repo,
                 history: history,
                 userMessage: trimmed,
-                carriedOverSummary: currentCarriedOverSummary
+                carriedOverSummary: currentCarriedOverSummary,
+                wikiLinks: wikiLinks,
+                codeFlowPageURL: codeFlowPageURL
             ) { [weak self] partial in
                 guard let self else { return }
                 pendingPartial = partial

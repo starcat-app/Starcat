@@ -98,6 +98,14 @@ struct RepoAIWindowContentView: View {
     /// 摘要"的快捷手势。两个方向都靠中间的 segmented toggle bar 主动切换兜底。
     @State private var panelMode: AIPanelMode = .summary
 
+    /// 首次切到对话时，历史 session 需要异步读盘。准备完成前继续保留摘要面板，
+    /// 避免先插入空 chat view、随后又在同一个动画事务里替换成真实聊天内容。
+    @State private var isPreparingChat: Bool = false
+
+    /// 面板结构替换本身始终瞬时完成；目标面板插入后只做单向淡入。
+    /// 这样旧面板不会以 transition snapshot 的形式与新文字交叉叠加。
+    @State private var panelContentOpacity: Double = 1
+
     /// 摘要 / 对话各自的"跟随尾部"状态机（2026-06-15 dong4j 反馈）。
     ///
     /// 用户痛点：流式生成 AI 摘要 / 对话时，UI 强制 scrollTo(.bottom) 会把
@@ -151,6 +159,7 @@ struct RepoAIWindowContentView: View {
 
             activePanel
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .opacity(panelContentOpacity)
 
             panelToggleBar
 
@@ -197,10 +206,6 @@ struct RepoAIWindowContentView: View {
             starredAtOpen = dependencies.starredRegistry.contains(ghRepoId: repo.id)
             await initializeInsightViewModelIfNeeded()
             await insightVM?.load(repo: repo)
-        }
-        .task(id: panelMode) {
-            guard panelMode == .chat else { return }
-            await prepareChatIfNeeded()
         }
     }
 
@@ -285,7 +290,10 @@ struct RepoAIWindowContentView: View {
         if let chatVM {
             vm = chatVM
         } else {
-            let newVM = RepoAIChatViewModel(service: dependencies.repoAIInsightService)
+            let newVM = RepoAIChatViewModel(
+                service: dependencies.repoAIInsightService,
+                wikiContextService: dependencies.wikiContextService
+            )
             chatVM = newVM
             vm = newVM
         }
@@ -791,7 +799,9 @@ struct RepoAIWindowContentView: View {
     /// - 用原生 `Picker(.segmented)`：macOS 上渲染为 `NSSegmentedControl` 风格，
     ///   与系统视觉一致，不抢戏；
     /// - icon + 文字双标识："✨ AI 摘要" / "💬 AI 对话"，扫一眼即可分辨；
-    /// - selection 只做 0.12s opacity 过渡，不再插值两棵 Markdown 树的高度；
+    /// - 首次进入聊天先异步准备数据，期间保留摘要内容并在右侧显示进度；
+    /// - 面板结构无动画替换，下一帧仅让目标面板做 0.12s 单向淡入，旧、新文字
+    ///   永远不会同时存在；
     /// - bar 自带细分隔线（`.bar` 材质 + Divider 上下），视觉上是上下两段
     ///   面板的边界，无需额外加 `Divider()`。
     private var panelToggleBar: some View {
@@ -805,6 +815,7 @@ struct RepoAIWindowContentView: View {
             // 限宽避免在大窗口下 segmented 被拉成超长条带；居中通过外层
             // `.frame(maxWidth: .infinity)` + Picker 自身有限宽实现。
             .frame(maxWidth: 280)
+            .disabled(isPreparingChat)
             .help("ai.assistant.toggle.help")
         }
         .frame(maxWidth: .infinity)
@@ -819,6 +830,13 @@ struct RepoAIWindowContentView: View {
             Rectangle()
                 .fill(Color.primary.opacity(0.06))
                 .frame(height: 0.5)
+        }
+        .overlay(alignment: .trailing) {
+            if isPreparingChat {
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(.trailing, 16)
+            }
         }
     }
 
@@ -1009,17 +1027,46 @@ struct RepoAIWindowContentView: View {
         .background(isCurrent ? Color.accentColor.opacity(0.06) : Color.clear)
     }
 
-    /// 把切换动画限制在 `panelMode` 赋值事务内，避免根视图上的隐式 animation
-    /// 把同一帧其它状态变化也纳入动画计算。
+    /// Picker 只表达用户意图，真正切换统一交给 `requestPanelMode(_:)`。
+    /// 准备聊天期间让 segmented 先显示目标项，但内容仍保留摘要，避免空白闪烁。
     private var panelModeBinding: Binding<AIPanelMode> {
         Binding(
-            get: { panelMode },
+            get: { isPreparingChat ? .chat : panelMode },
             set: { newMode in
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) {
-                    panelMode = newMode
-                }
+                guard !isPreparingChat else { return }
+                Task { await requestPanelMode(newMode) }
             }
         )
+    }
+
+    /// 面板切换的唯一入口。
+    ///
+    /// 首次进入 chat 必须等 bootstrap 完成，确保插入视图树的第一帧就是完整聊天内容。
+    /// 提交时禁用 transaction animation，让旧面板立刻离树；随后下一帧只把新面板
+    /// 从透明淡入，因此不存在 cross-fade 导致的文字重合。
+    @MainActor
+    private func requestPanelMode(_ newMode: AIPanelMode) async {
+        guard newMode != panelMode else { return }
+
+        if newMode == .chat {
+            guard !isPreparingChat else { return }
+            isPreparingChat = true
+            await prepareChatIfNeeded()
+        }
+
+        var replacement = Transaction()
+        replacement.disablesAnimations = true
+        withTransaction(replacement) {
+            isPreparingChat = false
+            panelMode = newMode
+            panelContentOpacity = reduceMotion ? 1 : 0
+        }
+
+        guard !reduceMotion else { return }
+        await Task.yield()
+        withAnimation(.easeOut(duration: 0.12)) {
+            panelContentOpacity = 1
+        }
     }
 
     private func displayTitle(for chat: RepoAIChatViewModel) -> String {
@@ -1359,9 +1406,7 @@ struct RepoAIWindowContentView: View {
         }
 
         guard offsetY < overscrollExpandThreshold else { return }
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
-            panelMode = .summary
-        }
+        Task { await requestPanelMode(.summary) }
     }
 
     /// 对话底部"复制全部对话"区域。
@@ -1474,13 +1519,11 @@ struct RepoAIWindowContentView: View {
     private func sendChatMessage(_ text: String) {
         let repoSnapshot = repo
         Task {
+            await requestPanelMode(.chat)
+            // 已经在 chat 时 requestPanelMode 会立即返回；仍需确保 VM 存在，
+            // 覆盖用户直接在默认摘要页输入并发送的首次路径。
             await prepareChatIfNeeded()
             await chatVM?.sendMessage(text, repo: repoSnapshot)
-        }
-        if panelMode != .chat {
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) {
-                panelMode = .chat
-            }
         }
     }
 

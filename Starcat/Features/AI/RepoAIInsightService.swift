@@ -414,11 +414,20 @@ final class RepoAIInsightService {
     /// `{previousSessionCarryOver}` section，让 AI 知道上一对话末尾聊到哪儿。
     /// 普通 session 传 `nil` —— 项目未上线不给默认值，强制 callsite 显式声明意图，
     /// 避免未来新增对话路径漏注入承接段。
+    ///
+    /// 2026-06-15 v4.y：再加 `wikiLinks` / `codeFlowPageURL` 两个必填入参 —— 把已收录
+    /// 的外部 Wiki 镜像 + 本地 CodeFlow `file://` 链接注入 system prompt 的
+    /// `{starcatResources}` section，由 `StarcatResourcesProvider.snapshot(...)` 渲染。
+    /// 调用方（`RepoAIChatViewModel.sendMessage`）从 bootstrap 期缓存的内存值
+    /// （`wikiContextService.cachedLinks(...)` + `CodeFlowStorage.existingProject(...).pageURL`）
+    /// 透传过来；无资源时传空数组 / nil，section 渲染为空 header（LLM 自动忽略）。
     func chatStream(
         for repo: Repo,
         history: [AIChatMessage],
         userMessage: String,
         carriedOverSummary: String?,
+        wikiLinks: [WikiLink],
+        codeFlowPageURL: URL?,
         onDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
         let source = try await makeSource(for: repo)
@@ -435,7 +444,9 @@ final class RepoAIInsightService {
             repo: repo,
             source: source,
             cached: cached,
-            carriedOverSummary: carriedOverSummary
+            carriedOverSummary: carriedOverSummary,
+            wikiLinks: wikiLinks,
+            codeFlowPageURL: codeFlowPageURL
         )
 
         let request = AIChatRequest(
@@ -473,7 +484,9 @@ final class RepoAIInsightService {
         repo: Repo,
         source: Source,
         cached: RepoAIInsight?,
-        carriedOverSummary: String?
+        carriedOverSummary: String?,
+        wikiLinks: [WikiLink],
+        codeFlowPageURL: URL?
     ) -> String {
         let externalAllowed = AnySearchContextProvider.allowsExternalContext(
             repoIsPrivate: repo.isPrivate,
@@ -486,10 +499,17 @@ final class RepoAIInsightService {
             : ""
         // 2026-06-15：每次组装都实时抓 runtimeContext。UTC 时间到整点精度，
         // 同一小时内字符串完全相同，服务端 prompt cache 仍能命中；跨小时才 miss 一次。
+        // 2026-06-15 v4.y：starcatResources 走纯函数 provider，wiki / codeflow 数据由
+        // viewModel bootstrap 期缓存好（cache hit 秒返回，miss 后台刷新），这里直接拼字符串。
+        let starcatResources = StarcatResourcesProvider.snapshot(
+            wikiLinks: wikiLinks,
+            codeFlowPageURL: codeFlowPageURL
+        )
         return Self.assembleChatSystemPrompt(
             template: settings.aiChatTask.prompt.systemPrompt,
             outputLanguage: Self.outputLanguageDescriptor(),
             runtimeContext: RuntimeContextProvider.snapshot(),
+            starcatResources: starcatResources,
             metadata: source.metadata,
             readme: source.readme,
             codeContext: source.codeContext,
@@ -520,6 +540,7 @@ final class RepoAIInsightService {
         template: String,
         outputLanguage: String,
         runtimeContext: String,
+        starcatResources: String,
         metadata: String,
         readme: String,
         codeContext: String,
@@ -534,12 +555,15 @@ final class RepoAIInsightService {
         // 所有 callsite 一并升级，避免后续新增对话路径漏注入。具体到本函数：
         // - `previousSessionCarryOver` 普通 session 传 `""`（承接段为空 section header）；
         // - `runtimeContext` 调用方应传 `RuntimeContextProvider.snapshot()`，不留兜底空串
-        //   入口避免"忘了调 provider 还能编译过"的潜在 bug。
+        //   入口避免"忘了调 provider 还能编译过"的潜在 bug；
+        // - `starcatResources` 调用方传 `StarcatResourcesProvider.snapshot(wikiLinks:codeFlowPageURL:)`
+        //   的结果（全空时本身就是空串，section 自然为空 header）。
         AIPromptConfiguration.render(
             template: template,
             placeholders: [
                 "outputLanguage": outputLanguage,
                 "runtimeContext": runtimeContext,
+                "starcatResources": starcatResources,
                 "metadata": metadata,
                 "readme": readme,
                 "codeContext": codeContext,
