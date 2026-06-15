@@ -98,10 +98,29 @@ final class HomeViewModel {
     }
     #endif
 
-    /// 当前中栏列表（经过 filter + sort 后的可见数据）。
-    /// 重新加载策略：每次 selection / searchQuery 变化都重算（rebuild 比 diff 简单）。
-    /// D-04：`private(set)` 收敛——只有 ViewModel 内部 `applyView()` 能改，避免外部 View 直接覆写引发状态漂移。
+    /// 当前 UI 实际渲染的"当前页切片"。
+    ///
+    /// **R-07（2026-06-15）语义变化**：从"filter + sort 后的全集"改为
+    /// "filteredSorted 的前 `currentPage * pageSize` 条切片"。原因是 1800+ 全量
+    /// 渲染会让 SwiftUI List view-tree 构建主线程时间数百 ms，与 Weekly 同款
+    /// 20 条/页客户端分页对齐后滚动 / 切详情都不再卡。
+    ///
+    /// 数据流向：`rawItems` →（applyView 内 filter + sort）→ `filteredSorted` →
+    /// （sliceToCurrentPage）→ `items` → UI。
+    ///
+    /// D-04：`private(set)` 收敛——只有 ViewModel 内部 `sliceToCurrentPage()`
+    /// 能改，避免外部 View 直接覆写引发状态漂移。
     private(set) var items: [Repo] = []
+
+    /// R-07（2026-06-15）：当前 filter + sort 后的"全集"。
+    ///
+    /// 两个关键消费者：
+    /// - `sliceToCurrentPage()` 从这里取 prefix 填 `items`
+    /// - `RepoListView` 的 **Cmd+A / multi-select retain** 必须读这个集合
+    ///   而不是 `items`（避免"只能多选当前页"的反直觉），见 `RepoListView.swift`
+    ///
+    /// 不暴露给真正的 UI 渲染（不用于 ForEach），只作"理论可见集合"语义。
+    private(set) var filteredSorted: [Repo] = []
 
     /// 当前列表快照版本。
     ///
@@ -109,9 +128,25 @@ final class HomeViewModel {
     /// 如果直接让 SwiftUI `List` 用旧 identity 做 diff，macOS 会尝试把几千行逐个 move，
     /// 这部分差分 / 隐式动画发生在主线程，表现就是排序菜单点完后 UI 卡住数秒。
     ///
-    /// `RepoListView` 把这个版本号挂到 `List.id(...)` 上；每次 applyView 产出新快照时
-    /// 版本递增，List 会按"新快照"重建，而不是做大规模 row move diff。
+    /// `RepoListView` 把这个版本号挂到 `List.id(...)` 上；每次 sliceToCurrentPage
+    /// 产出新切片时版本递增，List 会按"新快照"重建，而不是做大规模 row move diff。
+    ///
+    /// **R-07 例外**：`loadMoreIfNeeded()` 追加下一页时**故意不 bump** revision，
+    /// 让 SwiftUI 走"增量插入新行"路径保持滚动位置，与切分类 / 切排序的"整栏重建"
+    /// 路径区分开（详见 `sliceToCurrentPage()` 内注释）。
     private(set) var itemsRevision: Int = 0
+
+    /// R-07（2026-06-15）：客户端分页 —— 当前已展示到第几页（1-based）。
+    /// `items.count` ≈ `currentPage * pageSize`（最后一页可能不足）。
+    private(set) var currentPage: Int = 1
+
+    /// R-07：是否还有更多页可追加。
+    /// `RepoListView` 根据这个值决定是否 attach `.onAppear` 触发 `loadMoreIfNeeded()`。
+    private(set) var hasMore: Bool = false
+
+    /// R-07：客户端分页页大小。与 Weekly `localPageSize` 同款 20，
+    /// 经验值兼顾"首屏立即可见 + 滚动 1 屏才需要追加"。
+    static let pageSize: Int = 20
 
     /// W4-4 D2：原始 fetch 结果（未经 filter / sort）。
     /// `items` 是 rawItems 的派生 — sort / filter 改变时只需重跑 `applyView()` 而不必重 fetch。
@@ -131,10 +166,15 @@ final class HomeViewModel {
     var selectedRepoID: Int64?
 
     /// 派生：当前详情选中的 Repo 值。
-    /// 找不到（items 已变，旧 selection 还在）时返回 nil；调用方可据此显示空态。
+    /// 找不到（filteredSorted 已变，旧 selection 还在）时返回 nil；调用方可据此显示空态。
+    ///
+    /// **R-07 修订**：从 `items` 切到 `filteredSorted` 查找——`items` 现在只是
+    /// 当前页切片，外部跳转 / SearchCenter 选中 page 5 的 repo 时它不在 items 内
+    /// 但确实在用户可见集合（filteredSorted）里。详情页能正确渲染，列表那一边
+    /// 由 `ensureRepoVisible(repoId:)` 负责把 currentPage 推到对应页。
     var selectedRepo: Repo? {
         guard let id = selectedRepoID else { return nil }
-        return items.first { $0.id == id }
+        return filteredSorted.first { $0.id == id }
     }
 
     /// 中栏列表加载中（首次加载，无缓存可用）。
@@ -360,7 +400,8 @@ final class HomeViewModel {
     fileprivate func applyStatusChange(repoId: Int64, status: RepoStatus) {
         guard statusMap[repoId] != status else { return }
         statusMap[repoId] = status
-        applyView()
+        // R-07：详情页改 status 不应抢用户滚动位置，传 resetPage: false。
+        applyView(resetPage: false)
     }
 
     /// 订阅 `.repoStatusDidChange` 通知，让详情页改 status 后主列表角标即时刷新（v2，2026-06-12）。
@@ -487,6 +528,10 @@ final class HomeViewModel {
         selectedTagIds = []
 
         items = []
+        // R-07：客户端分页全套字段也要复位，避免新账号沿用旧账号的页位置 / hasMore
+        filteredSorted = []
+        currentPage = 1
+        hasMore = false
         itemsRevision &+= 1
 
         totalCount = 0
@@ -539,7 +584,8 @@ final class HomeViewModel {
                 self.selectedTagIds.subtract(stale) // didSet 会触发 applyView
             } else if !self.selectedTagIds.isEmpty {
                 // 即使 id 没变，repoTagsMap 内容可能变（刚刚打/卸标签）→ 主动 applyView
-                self.applyView()
+                // R-07：refreshSidebar 是后台数据刷新（非用户主动 sort/filter），保用户滚动位置
+                self.applyView(resetPage: false)
             }
         } catch {
             AppLog.database.error("refreshSidebar failed: \(error.localizedDescription, privacy: .public)")
@@ -786,10 +832,12 @@ final class HomeViewModel {
                     AppLog.ui.notice("[switch-cat] T6' bg fetch identical, skipped applyView +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
                     #endif
                 } else {
-                    // 数据真的变了（同步刚结束 / 用户操作改了 status 等）→ 走完整 applyView
+                    // 数据真的变了（同步刚结束 / 用户操作改了 status / R-07 firstPageWrittenAt 触发等）
+                    // → 走完整 applyView，但 resetPage: false 保留用户滚动位置
+                    // （preserveScrollPosition：A 收尾的"100 → 1800"切换对用户透明的关键）。
                     self.rawItems = fetched
                     self.statusMap = fetchedStatusMap
-                    self.applyView()
+                    self.applyView(resetPage: false)
                     #if DEBUG
                     AppLog.ui.notice("[switch-cat] T6 applyView done after bg fetch +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
                     #endif
@@ -935,7 +983,47 @@ final class HomeViewModel {
     /// - W12 toolbar PR-5：多选状态清理（formIntersection）已下移到 RepoListView
     ///   `.onChange(of: itemsRevision)` 调 `manageMultiSelectionStore.retain(visibleIDs:)`，
     ///   viewModel 不再持 store 引用（A2 路线 / 解耦保持）。
-    private func applyView() {
+    /// **R-07（2026-06-15）**：算出 filteredSorted 后切片到 items；resetPage = true
+    /// 把 currentPage 重置回 1（典型场景：切分类 / 排序 / 过滤），false 时保留
+    /// （典型场景：SWR / forceRefresh 数据变化，preserveScrollPosition）。
+    private func applyView(resetPage: Bool = true) {
+        let newFilteredSorted = computeFilteredSorted()
+
+        // no-op 短路：filteredSorted 完全一致 → 数据无任何变化
+        let filteredIdentical = newFilteredSorted.count == filteredSorted.count &&
+                                zip(newFilteredSorted, filteredSorted).allSatisfy { $0.id == $1.id }
+
+        if filteredIdentical {
+            // selection 清理仍要做：即使数据未变，selectedRepoID 可能已不在过滤集合内
+            if let id = selectedRepoID, !newFilteredSorted.contains(where: { $0.id == id }) {
+                selectedRepoID = nil
+            }
+            return
+        }
+
+        filteredSorted = newFilteredSorted
+
+        if resetPage {
+            currentPage = 1
+        } else {
+            // preserveScrollPosition：但要保证 currentPage 不超出新的最大页
+            // 例：用户停在 page 5（100 行），unstar 后 filteredSorted 变 80 条 → 最大 page 4
+            let maxPage = max(1, Int(ceil(Double(newFilteredSorted.count) / Double(Self.pageSize))))
+            if currentPage > maxPage { currentPage = maxPage }
+        }
+
+        sliceToCurrentPage(reason: .recompute)
+
+        // selection 清理始终要做：即便 items 没换，statusFilter / hideArchived 改了也可能让选中行隐身
+        if let id = selectedRepoID, !filteredSorted.contains(where: { $0.id == id }) {
+            selectedRepoID = nil
+        }
+        // 多选模式的 prune 已迁到 RepoListView.onChange(of: itemsRevision)（W12 toolbar PR-5）
+    }
+
+    /// R-07：把 filter + sort 计算从 applyView 拆出。
+    /// 纯函数：只读 rawItems / statusMap / repoTagsMap / 各 filter 字段。
+    private func computeFilteredSorted() -> [Repo] {
         var view = rawItems
         if hideArchived { view.removeAll { $0.isArchived } }
         if hideForks    { view.removeAll { $0.isFork } }
@@ -981,20 +1069,66 @@ final class HomeViewModel {
         if !isSemanticSearching {
             view.sort(by: sortOption.comparator)
         }
+        return view
+    }
 
-        // no-op 短路：id 序列完全一致就不动 items / itemsRevision
-        let viewIdentical = view.count == items.count &&
-                            zip(view, items).allSatisfy { $0.id == $1.id }
-        if !viewIdentical {
-            items = view
-            itemsRevision += 1
-        }
+    /// R-07：切片调用方意图，决定是否 bump itemsRevision。
+    /// - `.recompute`：filter / sort / data 变化触发整栏重算 → bump（List 整栏重建）
+    /// - `.append`：loadMoreIfNeeded 追加下一页 → 不 bump（SwiftUI 走增量插入路径保滚动位置）
+    /// - `.jump`：ensureRepoVisible 外部跳转推进 currentPage → bump（视觉上需要立刻能看到目标行）
+    private enum SliceReason { case recompute, append, jump }
 
-        // selection 清理始终要做：即便 items 没换，statusFilter / hideArchived 改了也可能让选中行隐身
-        if let id = selectedRepoID, !view.contains(where: { $0.id == id }) {
-            selectedRepoID = nil
+    /// R-07：根据 currentPage 把 filteredSorted 切片到 items；hasMore 同步更新。
+    ///
+    /// **itemsRevision 策略**（决定流畅度的关键）：
+    /// - `.recompute` / `.jump`：bump → List 重建（切分类 / 排序时整栏入场动画，符合直觉）
+    /// - `.append`：不 bump → SwiftUI 看到 items.count 增加但 .id 不变，走增量插入路径
+    ///   不重建已有行，新行追加不打断当前滚动；如果 bump 反而会触发 listRowReveal
+    ///   stagger 动画把已经看了的 20 行重新淡入，体感极糟。
+    private func sliceToCurrentPage(reason: SliceReason) {
+        let endIndex = min(currentPage * Self.pageSize, filteredSorted.count)
+        let newItems = Array(filteredSorted.prefix(endIndex))
+
+        let itemsIdentical = newItems.count == items.count &&
+                             zip(newItems, items).allSatisfy { $0.id == $1.id }
+
+        if !itemsIdentical {
+            items = newItems
+            switch reason {
+            case .recompute, .jump:
+                itemsRevision += 1
+            case .append:
+                break  // 故意不 bump：让 SwiftUI 走增量插入路径，不重建已有行
+            }
         }
-        // 多选模式的 prune 已迁到 RepoListView.onChange(of: itemsRevision)（W12 toolbar PR-5）
+        hasMore = filteredSorted.count > items.count
+    }
+
+    /// R-07：列表滚到底部（倒数第 3 行 `.onAppear`）触发；纯本地切片增长，不调网络 / DB。
+    /// `loadMoreIfNeeded` 是同步方法 —— 不需要 race 防护（不像 reloadItems 走异步 DB / 网络）。
+    /// 调用频率：每页 20 条 × 1800 条 ≈ 90 次/次完整滚动，开销可忽略。
+    func loadMoreIfNeeded() {
+        guard hasMore else { return }
+        currentPage += 1
+        sliceToCurrentPage(reason: .append)
+    }
+
+    /// R-07：外部跳转（SearchCenter / 详情页"上一篇/下一篇" / unhandled 跳转）
+    /// 要求某个 repo 出现在 items 切片内时调用。
+    ///
+    /// 行为：
+    /// - 已在 items 内 → no-op
+    /// - 不在 items 内但在 filteredSorted 内 → 把 currentPage 推到能包含目标 index 的页
+    /// - 不在 filteredSorted 内（被 filter 过滤掉 / 不属于当前分类）→ no-op，不强行切
+    ///   （强行切到该 repo 等于偷偷改 filter，违反用户预期；调用方应自己处理）
+    func ensureRepoVisible(repoId: Int64) {
+        guard !items.contains(where: { $0.id == repoId }) else { return }
+        guard let index = filteredSorted.firstIndex(where: { $0.id == repoId }) else { return }
+        let pageNeeded = (index / Self.pageSize) + 1
+        if pageNeeded > currentPage {
+            currentPage = pageNeeded
+            sliceToCurrentPage(reason: .jump)
+        }
     }
 }
 
