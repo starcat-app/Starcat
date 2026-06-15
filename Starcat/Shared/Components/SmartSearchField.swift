@@ -328,16 +328,27 @@ private struct SmartSearchAIGlow: View {
     )
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { timeline in
-            let hue = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
-                .truncatingRemainder(dividingBy: 6) / 6 * 42
-
-            Capsule(style: .continuous)
-                .strokeBorder(gradient, lineWidth: isActive ? 1.45 : 1.05)
-                .hueRotation(.degrees(hue))
-                .shadow(color: .cyan.opacity(isActive ? 0.24 : 0.13), radius: isActive ? 7 : 4)
-                .shadow(color: .pink.opacity(isActive ? 0.18 : 0.10), radius: isActive ? 9 : 5)
-                .padding(1)
+        Group {
+            if reduceMotion || !isActive {
+                glow(hue: 0)
+            } else {
+                // 光晕只在语义搜索正在交互/索引时流动；静置搜索框不应
+                // 长期占用 display-link。色相 6 秒才转 42°，15 FPS 已足够平滑。
+                TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { timeline in
+                    let hue = timeline.date.timeIntervalSinceReferenceDate
+                        .truncatingRemainder(dividingBy: 6) / 6 * 42
+                    glow(hue: hue)
+                }
+            }
         }
+    }
+
+    private func glow(hue: Double) -> some View {
+        Capsule(style: .continuous)
+            .strokeBorder(gradient, lineWidth: isActive ? 1.45 : 1.05)
+            .hueRotation(.degrees(hue))
+            .shadow(color: .cyan.opacity(isActive ? 0.24 : 0.13), radius: isActive ? 7 : 4)
+            .shadow(color: .pink.opacity(isActive ? 0.18 : 0.10), radius: isActive ? 9 : 5)
+            .padding(1)
     }
 }

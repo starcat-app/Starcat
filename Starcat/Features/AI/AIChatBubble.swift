@@ -23,6 +23,7 @@ struct AIChatBubble: View, Equatable {
 
     let message: ChatMessage
     let onEditUserMessage: (String) -> Void
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     static func == (lhs: AIChatBubble, rhs: AIChatBubble) -> Bool {
         // action 始终路由到同一个窗口输入框，真正决定气泡是否需要重绘的只有消息值。
@@ -123,7 +124,7 @@ struct AIChatBubble: View, Equatable {
                 Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
                     .font(.system(size: 9))
                     .foregroundStyle(didCopy ? Color.green : .secondary)
-                    .contentTransition(.symbolEffect(.replace))
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                     .frame(width: 10, height: 10)
             }
 
@@ -208,7 +209,7 @@ struct AIChatBubble: View, Equatable {
                 .symbolEffect(
                     .variableColor.iterative.dimInactiveLayers,
                     options: .repeating,
-                    isActive: true
+                    isActive: !reduceMotion
                 )
             Text("ai.assistant.chat.generating")
                 .font(.caption2)
@@ -233,7 +234,7 @@ struct AIChatBubble: View, Equatable {
                 Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
                     .font(.system(size: 9))
                     .foregroundStyle(didCopy ? Color.green : .secondary)
-                    .contentTransition(.symbolEffect(.replace))
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                     .frame(width: 10, height: 10)
             }
         }

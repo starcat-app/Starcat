@@ -466,7 +466,7 @@ struct RepoAIWindowContentView: View {
         ) { didCopy in
             Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
                 .foregroundStyle(didCopy ? Color.green : Color.primary)
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
         }
     }
 
@@ -1395,7 +1395,7 @@ struct RepoAIWindowContentView: View {
                     // 防抖容器(SF Symbol 内在尺寸约 ~14pt,容器紧贴不留多余白)。
                     Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
                         .font(.caption)
-                        .contentTransition(.symbolEffect(.replace))
+                        .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                         .frame(width: 14, height: 14)
                     Text(didCopy ? "ai.assistant.copy.copied" : "ai.assistant.chat.copyAll.label")
                         .font(.caption)

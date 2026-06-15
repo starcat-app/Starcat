@@ -143,7 +143,7 @@ struct ShareCardSheet: View {
             // - `background: .clear` 不传也是默认值，但显式写出来便于排查
             //   "为什么背景被盖住了"——见 DotsFlowBackground.swift 文件头第 3 条约束。
             //
-            // 性能：单实例 60fps 重绘，M1 GPU 占用 ~ 1-3%；sheet 关闭后
+            // 性能：单实例最多 30 FPS 重绘；关闭应用内动画时渲染静态帧，sheet 关闭后
             // `TimelineView` 自动停。不要叠多个。
             //
             // 注意：导出图（performSave / performShareToX 经 ImageRenderer）不会包含

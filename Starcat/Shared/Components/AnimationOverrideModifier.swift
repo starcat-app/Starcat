@@ -61,14 +61,18 @@
 //     "用户在 Starcat 关闭 toggle 但开了系统减少动态效果"会丢失
 //     无障碍兜底。
 //
-//  4. **挂载位置**：主窗口的 `contentRoot` + Settings 窗口的
-//     `SettingsView()` 都要挂一次（两个独立的 SwiftUI scene root），
-//     已在 `StarcatApp.swift` 完成接线。
+//  4. **挂载位置**：每个独立 SwiftUI root 都必须挂一次。除主窗口和
+//     Settings scene 外，AppKit 手动创建的 AI / About hosting controller
+//     也必须注入，否则设置开关无法穿透到这些独立 view tree。
 //
 //  5. **AppSettings 必须先注入**：modifier 通过 `@Environment(AppSettings.self)`
 //     读 `disableAnimations`，调用方需保证 `.environment(dependencies.settings)`
 //     在 `.starcatAnimationOverride()` 之前——已在 `StarcatApp.swift`
 //     按这个顺序挂上。
+//
+//  6. **关闭动画是双层保障**：视图仍应读取 `starcatReduceMotion`，在关闭时
+//     不创建 TimelineView / shader 等持续刷新源；root transaction 负责兜住
+//     遗漏的 implicit animation、`withAnimation` 和 symbol transition。
 //
 
 import SwiftUI
@@ -113,7 +117,18 @@ struct AnimationOverrideModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         let effective = systemReduceMotion || settings.disableAnimations
-        content.environment(\.starcatReduceMotion, effective)
+        content
+            .environment(\.starcatReduceMotion, effective)
+            // Environment 值用于让持续动画改走静态分支；transaction
+            // 则是全局兜底，会截断遗漏的隐式动画、withAnimation 和
+            // SF Symbol content transition。两者缺一不可：单纯禁用
+            // transaction 无法停止 TimelineView/display-link，单纯 Environment
+            // 又要求每个后续调用点都永不遗漏。
+            .transaction { transaction in
+                guard effective else { return }
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
     }
 }
 

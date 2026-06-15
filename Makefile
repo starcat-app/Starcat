@@ -130,6 +130,7 @@ clean: ## 删除 build/ 目录（清掉 xcodebuild 的 DerivedData 与产物）
 	@rm -rf build
 	@echo "已删除 build/，下次 make run 会重新跑 xcodegen + 全量构建。"
 
+## 启动 supports/ 目录下的后端服务总入口
 start-supports: ## 启动 supports/ 目录下的后端服务总入口
 	# Make 每条 recipe 行独立 shell，cd 与执行必须在同一行用 && 串起来，
 	# 否则 cd 在子 shell 退出后失效，./start-all.sh 会找不到。

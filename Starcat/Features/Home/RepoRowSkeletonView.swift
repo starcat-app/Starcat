@@ -21,13 +21,12 @@
 //  动画正在跑时，`repeatForever` 这条 implicit 动画上下文会被吞掉，结果只跑半个 cycle
 //  就停在 opacity 0.6，UI 看起来像"定格"。
 //
-//  正确做法（本文件采用）：
-//  1. 用声明式 `.animation(.repeatForever, value: isAnimating)` 修饰符显式把动画绑到值
-//     变化上，不依赖 onAppear 那一帧的动画上下文。
-//  2. 用 `.task` 替代 `.onAppear` —— `.task` 在视图真正稳定后才跑，绕开 transition 重叠期。
-//  3. shimmer 改用 `TimelineView(.animation)` 驱动的"移动高光带"，由 display link 直接驱动，
-//     完全独立于 SwiftUI 动画系统/transition，即使外层有任何动画干扰也保证一直在跑。
-//  4. 给每行加 stagger phase offset，让 shimmer 形成"波浪传递"，比齐刷刷亮灭更接近真实
+//  当前做法（2026-06-15 性能重构）：
+//  1. 整张骨架列表只保留一个 `TimelineView`，当前 phase 作为普通值下发到每行。
+//     旧实现在每行的每个占位块上都建一个 30 FPS display-link，8 行会同时
+//     运行几十个时钟，这是加载期列表与窗口明显卡顿的根因。
+//  2. 脉冲透明度和 shimmer 共用同一 phase，不再另建 repeatForever 事务。
+//  3. 给每行加 stagger phase offset，让 shimmer 形成"波浪传递"，比齐刷刷亮灭更接近真实
 //     加载反馈。
 //
 
@@ -39,13 +38,15 @@ import SwiftUI
 ///   - phaseOffset: 0...1 的相位偏移；同一时刻不同行用不同 offset，shimmer 会形成波浪效果
 struct RepoRowSkeletonView: View {
     let phaseOffset: Double
+    let phase: Double
 
-    init(phaseOffset: Double = 0) {
+    init(phaseOffset: Double = 0, phase: Double = 0) {
         self.phaseOffset = phaseOffset
+        self.phase = phase
     }
 
     var body: some View {
-        RepoRowSkeletonCard(phaseOffset: phaseOffset)
+        RepoRowSkeletonCard(phaseOffset: phaseOffset, phase: phase)
     }
 }
 
@@ -53,58 +54,59 @@ struct RepoRowSkeletonView: View {
 
 private struct RepoRowSkeletonCard: View {
     let phaseOffset: Double
-    @State private var pulse = false
-    /// 2026-06-15:skeleton 1.2s 脉冲动画在「关闭应用内动画」时跳过,
-    /// 直接显示静态 0.85 半透明占位条避免持续闪烁。
-    @Environment(\.starcatReduceMotion) private var reduceMotion
+    let phase: Double
+
+    private var effectivePhase: Double {
+        (phase + phaseOffset).truncatingRemainder(dividingBy: 1)
+    }
+
+    private var pulseOpacity: Double {
+        0.925 + sin(effectivePhase * .pi * 2) * 0.075
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             RoundedRectangle(cornerRadius: 20)
                 .fill(Color.skeletonBase)
                 .frame(width: 40, height: 40)
-                .shimmer(phaseOffset: phaseOffset)
+                .shimmer(phase: effectivePhase)
 
             VStack(alignment: .leading, spacing: 6) {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(Color.skeletonBase)
                     .frame(width: 160, height: 14)
-                    .shimmer(phaseOffset: phaseOffset)
+                    .shimmer(phase: effectivePhase)
 
                 RoundedRectangle(cornerRadius: 4)
                     .fill(Color.skeletonBase)
                     .frame(height: 12)
-                    .shimmer(phaseOffset: phaseOffset)
+                    .shimmer(phase: effectivePhase)
 
                 RoundedRectangle(cornerRadius: 4)
                     .fill(Color.skeletonBase)
                     .frame(width: 200, height: 12)
-                    .shimmer(phaseOffset: phaseOffset)
+                    .shimmer(phase: effectivePhase)
 
                 HStack(spacing: 8) {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Color.skeletonBase)
                         .frame(width: 50, height: 12)
-                        .shimmer(phaseOffset: phaseOffset)
+                        .shimmer(phase: effectivePhase)
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Color.skeletonBase)
                         .frame(width: 40, height: 12)
-                        .shimmer(phaseOffset: phaseOffset)
+                        .shimmer(phase: effectivePhase)
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Color.skeletonBase)
                         .frame(width: 60, height: 12)
-                        .shimmer(phaseOffset: phaseOffset)
+                        .shimmer(phase: effectivePhase)
                 }
             }
 
             Spacer(minLength: 0)
         }
         .padding(.vertical, 6)
-        .opacity(pulse ? 0.85 : 1.0)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulse)
-        .task {
-            pulse = true
-        }
+        .opacity(pulseOpacity)
     }
 }
 
@@ -112,33 +114,19 @@ private struct RepoRowSkeletonCard: View {
 
 /// 骨架占位上叠加的"移动高光带"修饰符。
 ///
-/// 为什么用 `TimelineView(.animation)` 而不是 `.animation(_:value:)`：
-/// - shimmer 的"扫光"位置是连续的（每帧一个新值），不是离散 state 翻转；用普通 animation
-///   要么写一堆中间 state 一样不雅，要么靠 implicit 动画走，又会被父层 transition 干扰。
-/// - `TimelineView(.animation)` 由系统 display link 直接驱动，**完全独立于 SwiftUI 动画系统**。
-///   任何外层 transition / animation modifier 都不会停掉它，从根上消除"定格"。
-/// - 渲染开销低于全屏 opacity 切换：仅一个 LinearGradient overlay 在 mask 内做平移。
+/// Shimmer 只消费父层共享的 phase，自身不建时钟。
 private extension View {
-    func shimmer(phaseOffset: Double = 0) -> some View {
-        modifier(ShimmerModifier(phaseOffset: phaseOffset))
+    func shimmer(phase: Double) -> some View {
+        modifier(ShimmerModifier(phase: phase))
     }
 }
 
 private struct ShimmerModifier: ViewModifier {
-    /// 0...1 的相位偏移；同一时刻不同行用不同 offset，形成波浪。
-    let phaseOffset: Double
-
-    /// 单次扫光周期（秒）。1.4s 与 macOS 系统 progress shimmer 节奏接近。
-    private let period: TimeInterval = 1.4
+    let phase: Double
 
     func body(content: Content) -> some View {
         content.overlay {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { ctx in
-                // 把当前时间映射到 [0, 1) 周期相位；加 offset 让不同行错峰。
-                let t = ctx.date.timeIntervalSinceReferenceDate / period
-                let phase = (t + phaseOffset).truncatingRemainder(dividingBy: 1.0)
-
-                // gradient 中心从 -0.3 扫到 1.3，留出进出余量保证高光带平滑划过整个 frame。
+            // gradient 中心从 -0.3 扫到 1.3，留出进出余量保证高光带平滑划过整个 frame。
                 // center 本身可以越界 [0, 1]（视觉上代表"高光带在屏幕外"），
                 // 但 SwiftUI 要求 gradient stop locations **必须在 [0, 1] 且单调非降**，
                 // 否则会抛 "Gradient stop locations must be ordered." 警告（每帧刷屏）。
@@ -148,23 +136,22 @@ private struct ShimmerModifier: ViewModifier {
                 // 本身单调，clamp 是单调操作，clamp 后依然单调（允许相等）。
                 // 当 center 越界时，多个 stop 会塌缩到同一边界（0 或 1），
                 // 视觉表现是"高光带已完全离开 frame"，正是预期。
-                let center = phase * 1.6 - 0.3
-                let leftLoc  = min(max(center - 0.25, 0), 1)
-                let midLoc   = min(max(center,        0), 1)
-                let rightLoc = min(max(center + 0.25, 0), 1)
+            let center = phase * 1.6 - 0.3
+            let leftLoc  = min(max(center - 0.25, 0), 1)
+            let midLoc   = min(max(center,        0), 1)
+            let rightLoc = min(max(center + 0.25, 0), 1)
 
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear,                  location: leftLoc),
-                        .init(color: Color.skeletonHighlight, location: midLoc),
-                        .init(color: .clear,                  location: rightLoc)
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .blendMode(.plusLighter)
-                .allowsHitTesting(false)
-            }
+            LinearGradient(
+                stops: [
+                    .init(color: .clear,                  location: leftLoc),
+                    .init(color: Color.skeletonHighlight, location: midLoc),
+                    .init(color: .clear,                  location: rightLoc)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .blendMode(.plusLighter)
+            .allowsHitTesting(false)
         }
         // overlay 必须裁剪到 content 形状，避免高光溢出占位块。
         // content 自己（Circle / RoundedRectangle）已经决定了边界，用 mask 把 overlay 限到 content 形状。
@@ -194,18 +181,38 @@ private extension Color {
 /// 行间 `phaseOffset` 按 index 错峰，shimmer 会形成"波浪传递"，避免所有行齐刷刷亮灭。
 struct RepoSkeletonListView: View {
     let rowCount: Int
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    /// 15 FPS 对 1.4s 的慢扫光已足够连续，避免加载期与 List / WebView 抢帧预算。
+    private let period: TimeInterval = 1.4
 
     init(rowCount: Int = 8) {
         self.rowCount = rowCount
     }
 
     var body: some View {
+        Group {
+            if reduceMotion {
+                skeletonRows(phase: 0)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { context in
+                    let phase = context.date.timeIntervalSinceReferenceDate
+                        .truncatingRemainder(dividingBy: period) / period
+                    skeletonRows(phase: phase)
+                }
+            }
+        }
+        // 禁用 ScrollView 自身手势：占位期不需要滚动，避免误触把骨架滚走。
+        .scrollDisabled(true)
+    }
+
+    private func skeletonRows(phase: Double) -> some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 0) {
                 ForEach(0..<rowCount, id: \.self) { index in
                     // 每行相位错开 0.08 周期，10 行刚好分布在 0.8 个周期内，视觉上呈现传递感。
                     let offset = Double(index) * 0.08
-                    RepoRowSkeletonView(phaseOffset: offset)
+                    RepoRowSkeletonView(phaseOffset: offset, phase: phase)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
 
@@ -213,7 +220,5 @@ struct RepoSkeletonListView: View {
                 }
             }
         }
-        // 禁用 ScrollView 自身手势：占位期不需要滚动，避免误触把骨架滚走。
-        .scrollDisabled(true)
     }
 }

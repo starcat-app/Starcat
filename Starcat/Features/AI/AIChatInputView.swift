@@ -46,6 +46,7 @@
 import SwiftUI
 
 struct AIChatInputView: View {
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     /// 输入草稿属于输入组件自己的瞬时 UI 状态。不能放进窗口根级 ViewModel，
     /// 否则每个按键都会让摘要和聊天 Markdown 子树重新参与依赖检查。
@@ -259,7 +260,7 @@ struct AIChatInputView: View {
                 Image(systemName: isSending ? "stop.fill" : "arrow.up")
                     .font(.system(size: isSending ? 10 : 12, weight: .bold))
                     .foregroundStyle(.white)
-                    .contentTransition(.symbolEffect(.replace))
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
             }
         }
         .buttonStyle(.plain)
