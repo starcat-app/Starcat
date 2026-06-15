@@ -302,4 +302,43 @@ struct DiskChatHistoryStoreTests {
         try store.lruSweep()
         #expect(store.sessionCount == before)
     }
+
+    // MARK: - HOM-70 v2 carry-over 持久化
+
+    /// HOM-70 v2：carry-over 字段必须穿越落盘 → load → 完整 round-trip。
+    /// 这是 v2 闭环的"持久化端"防线 —— v1 漏掉 prompt 注入是另一端（service），
+    /// 持久化这边历来没问题，但加 case 防止后续重构把 `carriedOverSummary` 字段
+    /// 从 ChatSession 的 Codable keys 里漏掉。
+    @Test("carriedOverSummary 字段：save 后 load 出来还在（含 markdown 与换行）")
+    func carriedOverSummaryRoundTrip() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+
+        let carry = """
+        - 上一轮我们聊了 SwiftUI ScrollView geometry 监听；
+        - 然后扯到 LazyVStack id 复用引发的卡顿。
+        """
+        var session = makeSession(title: "carry-over session", messageCount: 1)
+        session.carriedOverSummary = carry
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        let loaded = try store.loadSession(owner: "octo", repo: "demo", sessionId: session.id)
+        #expect(loaded?.carriedOverSummary == carry)
+        // 多行 markdown 应原样保留（不应被 JSON encode/decode 折断换行符）
+        #expect((loaded?.carriedOverSummary ?? "").contains("\n"))
+    }
+
+    /// HOM-70 v2：默认 session（无承接）carriedOverSummary 必须是 nil，
+    /// 而不是空字符串 —— 空字符串与 nil 在 view 端 `shouldShowCarryOverBanner` 都
+    /// 判定不显示 banner，但 nil 语义更清晰（"没有承接" vs "承接段被清空了"）。
+    @Test("默认 session：carriedOverSummary 持久化后仍为 nil（非空字符串）")
+    func defaultSessionCarryOverIsNil() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        try store.saveSession(owner: "octo", repo: "demo", session: makeSession())
+        let list = try store.listSessions(owner: "octo", repo: "demo")
+        let id = try #require(list.first?.id)
+        let loaded = try store.loadSession(owner: "octo", repo: "demo", sessionId: id)
+        #expect(loaded?.carriedOverSummary == nil)
+    }
 }

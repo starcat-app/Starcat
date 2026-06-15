@@ -111,6 +111,21 @@ struct RepoAIWindowContentView: View {
     /// HOM-70：session 列表 popover 显示状态。
     @State private var isSessionListPresented: Bool = false
 
+    /// HOM-70 v2：「承接自上一对话」banner 的 view-端 dismiss 跟踪。
+    ///
+    /// **关键解耦**：dismiss 仅翻 view 端状态隐藏 banner UI，**不动**
+    /// `chat.currentCarriedOverSummary` —— AI 仍能从 system prompt 的
+    /// `{previousSessionCarryOver}` section 看到承接段，让"AI 知道" vs "用户视觉"
+    /// 完全独立。用户点 ✕ 表达"我不需要继续看到这个提醒"而不是"清除上文承接"。
+    ///
+    /// 用 `Set<UUID>` 按 session id 跟踪：切回已 dismiss 的 session 不再弹 banner；
+    /// 切到其它带承接的 session 仍正常显示。@State 仅生命周期内有效，重启窗口
+    /// 后所有 dismiss 清零（行为可接受，用户重新打开 = 给一次提醒机会）。
+    @State private var carryOverDismissedSessions: Set<UUID> = []
+    /// HOM-70 v2：「承接自上一对话」banner 的展开/收起跟踪（按 session 独立）。
+    /// 承接摘要末 6 条对话拼的 markdown 可能比较长，默认 3 行预览 + 用户点击展开看全文。
+    @State private var carryOverExpandedSessions: Set<UUID> = []
+
     /// HOM-70：清除当前 repo 对话历史的确认弹窗状态。
     @State private var pendingClearCurrentRepoConfirm: Bool = false
 
@@ -1024,6 +1039,14 @@ struct RepoAIWindowContentView: View {
                 ZStack(alignment: .bottomTrailing) {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 14) {
+                            // HOM-70 v2：「承接自上一对话」banner —— 放在 ScrollView 内部最顶部，
+                            // 跟随滚动（聊久了自动滚出视野不占屏）；空 session（刚承接还没消息）
+                            // 也显示，让用户立刻知道"这是承接自上一对话的新 session"。
+                            if shouldShowCarryOverBanner(chat: chat) {
+                                carriedOverSummaryBanner(chat: chat)
+                                    .padding(.horizontal, 16)
+                            }
+
                             if chat.messages.isEmpty {
                                 chatEmptyState
                                     .padding(.top, 60)
@@ -1108,6 +1131,96 @@ struct RepoAIWindowContentView: View {
                 .padding(.bottom, 8)
             }
         }
+    }
+
+    /// HOM-70 v2：是否应该在 chatScrollArea 顶部展示「承接自上一对话」banner。
+    ///
+    /// 三个条件全满足：① 当前 session 有非空 `carriedOverSummary` 字段；
+    /// ② 当前 session id 存在；③ 用户没在本 session 主动 dismiss 过 banner。
+    /// 切到无承接的 session / 用户已 dismiss 的 session → 不显示。
+    private func shouldShowCarryOverBanner(chat: RepoAIChatViewModel) -> Bool {
+        guard let summary = chat.currentCarriedOverSummary, !summary.isEmpty,
+              let sid = chat.currentSessionId else {
+            return false
+        }
+        return !carryOverDismissedSessions.contains(sid)
+    }
+
+    /// HOM-70 v2：「承接自上一对话」banner —— 用户点上下文溢出 banner 的「新建并承接」
+    /// 后，新 session 的 `currentCarriedOverSummary` 拿到上一对话末 6 条 turn 的 markdown
+    /// 摘要。本 banner 让用户**看到**承接段（视觉），与 AI 通过 system prompt 的
+    /// `{previousSessionCarryOver}` section **读到**承接段（prompt）相互独立。
+    ///
+    /// 视觉：紫色 `arrow.uturn.backward.circle.fill` icon + 标题"承接自上一对话" +
+    /// 默认 3 行 markdown 预览（lineLimit:3 + .textSelection 让用户能复制）+
+    /// 展开/收起按钮（按 session 跟踪独立状态）+ 右上 ✕ dismiss（仅翻 view 端 @State
+    /// 不动 VM 数据，AI 仍能从 prompt 看到承接段）。
+    ///
+    /// 紫色与 sparkles AI icon 同色系，与 contextOverflowBanner 黄色（系统警告色）/
+    /// chatErrorBanner 红色（错误色）形成语义区分：紫色 = "AI 元信息"。
+    private func carriedOverSummaryBanner(chat: RepoAIChatViewModel) -> some View {
+        let summaryText = chat.currentCarriedOverSummary ?? ""
+        let sid = chat.currentSessionId
+        let isExpanded = sid.map { carryOverExpandedSessions.contains($0) } ?? false
+
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "arrow.uturn.backward.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.purple)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("ai.assistant.chat.carryOver.title")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text(summaryText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(isExpanded ? nil : 3)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    guard let sid else { return }
+                    if isExpanded {
+                        carryOverExpandedSessions.remove(sid)
+                    } else {
+                        carryOverExpandedSessions.insert(sid)
+                    }
+                } label: {
+                    Text(isExpanded
+                         ? "ai.assistant.chat.carryOver.collapse"
+                         : "ai.assistant.chat.carryOver.expand")
+                        .font(.caption2.weight(.medium))
+                }
+                .buttonStyle(.borderless)
+                .focusEffectDisabled()
+            }
+
+            Spacer(minLength: 4)
+
+            Button {
+                if let sid {
+                    carryOverDismissedSessions.insert(sid)
+                }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("ai.assistant.chat.carryOver.dismiss.help")
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.purple.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.purple.opacity(0.30), lineWidth: 0.5)
+        )
     }
 
     /// HOM-70：上下文溢出 banner。

@@ -13262,6 +13262,74 @@
         }
       }
     },
+    "ai.assistant.chat.carryOver.collapse" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.carryOver.dismiss.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide this recap (AI still sees the carried-over context)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起承接提示（AI 仍会看到承接的上下文）。"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.carryOver.expand" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show full recap"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展开全文"
+          }
+        }
+      }
+    },
+    "ai.assistant.chat.carryOver.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carried over from previous conversation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "承接自上一对话"
+          }
+        }
+      }
+    },
     "ai.assistant.chat.contextOverflow.message" : {
       "extractionState" : "manual",
       "localizations" : {

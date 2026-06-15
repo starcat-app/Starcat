@@ -408,10 +408,17 @@ final class RepoAIInsightService {
     /// `cacheModelKey` / `source.hash` 失效 → cachedInsight 拿不到 → 对话退化成
     /// README-only（含 Code XML if 开），与摘要面板 "[设置已变更, 重新生成]" 提示
     /// 形成对偶反馈链。
+    /// HOM-70 v2（2026-06-15）：新增 `carriedOverSummary: String?` 必填入参——本 session 由
+    /// 「上下文溢出 → 新建并承接」诞生时，调用方（`RepoAIChatViewModel.sendMessage`）
+    /// 把 `currentCarriedOverSummary` 透传进来，service 注入 system prompt 的
+    /// `{previousSessionCarryOver}` section，让 AI 知道上一对话末尾聊到哪儿。
+    /// 普通 session 传 `nil` —— 项目未上线不给默认值，强制 callsite 显式声明意图，
+    /// 避免未来新增对话路径漏注入承接段。
     func chatStream(
         for repo: Repo,
         history: [AIChatMessage],
         userMessage: String,
+        carriedOverSummary: String?,
         onDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
         let source = try await makeSource(for: repo)
@@ -424,7 +431,12 @@ final class RepoAIInsightService {
         let task = settings.aiChatTask
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "对话")
 
-        let systemPrompt = buildChatSystemPrompt(repo: repo, source: source, cached: cached)
+        let systemPrompt = buildChatSystemPrompt(
+            repo: repo,
+            source: source,
+            cached: cached,
+            carriedOverSummary: carriedOverSummary
+        )
 
         let request = AIChatRequest(
             systemPrompt: systemPrompt,
@@ -456,7 +468,12 @@ final class RepoAIInsightService {
     ///
     /// 实质渲染逻辑下沉到 `assembleChatSystemPrompt(...)` 静态函数（internal 可测），
     /// 本方法负责"读 settings + 私仓门控 + 拆 source 字段"等 actor-bound 准备工作。
-    private func buildChatSystemPrompt(repo: Repo, source: Source, cached: RepoAIInsight?) -> String {
+    private func buildChatSystemPrompt(
+        repo: Repo,
+        source: Source,
+        cached: RepoAIInsight?,
+        carriedOverSummary: String?
+    ) -> String {
         let externalAllowed = AnySearchContextProvider.allowsExternalContext(
             repoIsPrivate: repo.isPrivate,
             enabled: settings.anySearchEnabled && settings.aiExternalContextEnabled,
@@ -473,7 +490,8 @@ final class RepoAIInsightService {
             readme: source.readme,
             codeContext: source.codeContext,
             summary: cached?.summaryMarkdown ?? "",
-            externalContext: externalContext
+            externalContext: externalContext,
+            previousSessionCarryOver: carriedOverSummary ?? ""
         )
     }
 
@@ -500,10 +518,16 @@ final class RepoAIInsightService {
         readme: String,
         codeContext: String,
         summary: String,
-        externalContext: String
+        externalContext: String,
+        previousSessionCarryOver: String
     ) -> String {
         // 复用 AIPromptConfiguration.render（{key} → value，dict 没有的 key 保留字面量
         // 让 LLM 看到便于排错），与 Summary / Tags 任务的渲染语义统一。
+        //
+        // HOM-70 v2 强制 `previousSessionCarryOver` 必填（不给默认值）：项目未上线，
+        // 让编译器帮我找到所有 callsite 一并升级，避免后续新增对话路径漏注入承接段。
+        // 普通 session 调用方传 `""` 即可（template 会渲染出空 section header，
+        // LLM 自然忽略，跟 codeContext / summary / externalContext 空 section 同款）。
         AIPromptConfiguration.render(
             template: template,
             placeholders: [
@@ -512,7 +536,8 @@ final class RepoAIInsightService {
                 "readme": readme,
                 "codeContext": codeContext,
                 "summary": summary,
-                "externalContext": externalContext
+                "externalContext": externalContext,
+                "previousSessionCarryOver": previousSessionCarryOver
             ]
         )
     }

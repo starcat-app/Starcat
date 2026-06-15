@@ -309,11 +309,17 @@ final class RepoAIChatViewModel {
 
         defer { isSending = false }
 
+        // HOM-70 v2：把 carriedOverSummary 显式透传给 service —— 如果本 session 是
+        // 「上下文溢出 → 新建并承接」诞生的，每条用户消息都让 AI 看到上一对话的承接段
+        // （写在 system prompt 里，不耗对话轮次，但 session 寿命内一直在 prompt 头部）。
+        // 普通 session `currentCarriedOverSummary == nil`，service 渲染出空 section
+        // header，LLM 自然忽略，token 浪费 < 10 可接受。
         do {
             let final = try await service.chatStream(
                 for: repo,
                 history: history,
-                userMessage: trimmed
+                userMessage: trimmed,
+                carriedOverSummary: currentCarriedOverSummary
             ) { [weak self] partial in
                 guard let self else { return }
                 // chunk 回调可能在任意 stream tick 触发，但 @MainActor 已保证主线程。

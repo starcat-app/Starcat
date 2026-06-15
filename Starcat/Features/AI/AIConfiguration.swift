@@ -649,17 +649,24 @@ enum AIDefaultPrompts {
         """
     )
 
-    /// Chat 任务占位符（dong4j 2026-06-14 v4 拍板，i18n 策略 C：全英文指令 + Locale 仅控输出语言）：
+    /// Chat 任务占位符（dong4j 2026-06-14 v4 拍板，i18n 策略 C：全英文指令 + Locale 仅控输出语言；
+    /// 2026-06-15 HOM-70 v2 新增 `{previousSessionCarryOver}` 占位符闭合 carry-over 链路）：
     ///
-    /// **system 层 6 占位符**：
+    /// **system 层 7 占位符**：
     /// - `{outputLanguage}`：跟 `Locale.current` 派发为 `Simplified Chinese` / `English` /
     ///   `Japanese` 等；驱动正文语言 + 兜底句"无法从上下文确认"自然翻译；
     /// - `{metadata}`：repo 元数据（fullName / description / language / topics / license / stars / forks / homepage），
     ///   与 Summary / Tags 任务共用同一份元数据块；
     /// - `{readme}`：清洗 + 截断后的 README 纯文本；
     /// - `{codeContext}`：RepoContextPacker 生成的代码 XML（关闭或拉取失败时为空字符串）；
-    /// - `{summary}`：缓存命中的 AI 摘要 markdown（未生成过摘要时为空字符串）；
-    /// - `{externalContext}`：AnySearch 生成的外部网页检索 markdown（关闭或拉取失败时为空字符串）。
+    /// - `{summary}`：**repo 级**缓存命中的 AI 摘要 markdown（未生成过摘要时为空字符串）；
+    /// - `{externalContext}`：AnySearch 生成的外部网页检索 markdown（关闭或拉取失败时为空字符串）；
+    /// - `{previousSessionCarryOver}`：**session 级**承接摘要（仅当本 session 由「上下文溢出
+    ///   → 新建并承接」诞生时非空）。**与 `{summary}` 的语义差异**：summary 是 repo 维度
+    ///   一次性 AI 分析输出，carryOver 是上一对话末尾 6 条 user/assistant turn 的 markdown
+    ///   摘录——前者告诉 AI "这个 repo 是什么"，后者告诉 AI "上一轮我们聊到哪儿了"。
+    ///   两者完全正交，必须独立占位符。HOM-70 v1 漏了这个占位符 → carriedOverSummary
+    ///   字段存在但 AI prompt 没注入 → 「承接」是空架子；v2 闭合。
     ///
     /// **userPromptTemplate 留空**（与 embedding 镜像）：
     /// - embedding API 不接受 system prompt → systemPrompt 留空；
@@ -725,6 +732,11 @@ enum AIDefaultPrompts {
 
         ## External References
         {externalContext}
+
+        # Previous Session Carry-over
+        The user previously hit the context length limit and started a new session, carrying over the last few turns of the prior conversation as the recap below. Treat this as recent context the user expects you to remember; pick up the conversation naturally without re-introducing yourself or summarizing this recap back to them. If this section is empty, ignore it.
+
+        {previousSessionCarryOver}
         """,
         userPromptTemplate: ""
     )
