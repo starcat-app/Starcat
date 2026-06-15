@@ -93,9 +93,10 @@ struct AISettingsTab: View {
     // 选模型"完整路径时不需要手动展开折叠组。
     @SceneStorage("settings.ai.discoveredModels.expanded") private var isDiscoveredModelsExpanded: Bool = false
     @SceneStorage("settings.ai.taskModels.expanded") private var isTaskModelsExpanded: Bool = false
-    /// HOM-126：「自动整理」分组的展开偏好。默认展开——这是 HOM-126 的核心新增，
-    /// 用户第一次进入 AI 设置时希望直接看到开关，而不是再点一次折叠组。
-    @SceneStorage("settings.ai.autoTidy.expanded") private var isAutoTidyExpanded: Bool = true
+    /// 「自动整理」分组的展开偏好。默认折叠——与同 Tab 内其他 DisclosureGroup
+    /// （已发现模型 / 模型配置 / Prompt / AI 索引 / AI 代码上下文）的默认折叠风格统一，
+    /// 避免设置页一进来一堆分组同时展开造成视觉拥挤；用户主动展开后由 SceneStorage 持久化。
+    @SceneStorage("settings.ai.autoTidy.expanded") private var isAutoTidyExpanded: Bool = false
 
     /// 2026-06-12 向量索引改进："AI 索引"分组默认收起，避免设置页一进来 6 个分组太挤；
     /// 用户主动点开后偏好持久化。
@@ -647,8 +648,8 @@ struct AISettingsTab: View {
     /// HOM-126：「自动整理」分组。
     ///
     /// 设计：
-    /// - 用 DisclosureGroup 默认展开（与其他折叠组的"默认收起"不同）：自动整理是
-    ///   本期主推功能，第一次进 AI 设置应直接看到开关而不是再点一次折叠组。
+    /// - 用 DisclosureGroup 默认折叠（与同 Tab 其他折叠组统一），用户主动展开后由
+    ///   `isAutoTidyExpanded` SceneStorage 持久化。
     /// - 总开关 OFF 时下面所有子项 `.disabled(true)` + `.opacity(0.5)`，符合 HOM-126
     ///   验收"总开关关闭时所有子项 disabled"。
     /// - 触发时机用三个独立 Toggle（启动 / 同步 / 定时），UI 简单直接；不用 Picker
