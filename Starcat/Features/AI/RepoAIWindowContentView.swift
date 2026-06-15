@@ -767,6 +767,14 @@ struct RepoAIWindowContentView: View {
             )) {
                 Text(meta.commitShaShort)
                     .font(.caption2.monospaced())
+                    // 显式 `.tint`(accent 色)覆盖外层 footer 的
+                    // `.foregroundStyle(.secondary)`。SwiftUI 的 `Link` 默认
+                    // 用 accent 色，**但一旦外层显式设了 foregroundStyle，
+                    // Link 内的 Text 会继承外层值**——这是 02:43 dong4j 反馈
+                    // "没有系统蓝"的根因。用 `.tint` 而非 `.blue`：① 适配
+                    // 明暗主题 ② 跟随用户系统 accent 设置 ③ macOS 网页链接
+                    // 色约定。
+                    .foregroundStyle(.tint)
             }
             .help("ai.assistant.summary.footer.contextMeta.commit.help")
             Text(
