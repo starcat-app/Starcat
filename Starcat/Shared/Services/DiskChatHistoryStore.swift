@@ -135,6 +135,26 @@ final class DiskChatHistoryStore {
         return rebuilt.sorted { $0.updatedAt > $1.updatedAt }
     }
 
+    /// 常规命中路径在后台线程读取并解码 index，避免首次进入聊天面板时阻塞主线程。
+    /// index 缺失或损坏仍回到主 actor 执行原有自愈逻辑；该路径属于低频异常路径。
+    func listSessionsAsync(owner: String, repo: String) async throws -> [ChatSessionSummary] {
+        let indexURL = try indexFile(owner: owner, repo: repo)
+        let indexed = await Task.detached(priority: .userInitiated) {
+            guard FileManager.default.fileExists(atPath: indexURL.path),
+                  let data = try? Data(contentsOf: indexURL) else {
+                return Optional<[ChatSessionSummary]>.none
+            }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try? decoder.decode(ChatSessionIndex.self, from: data).sessions
+        }.value
+
+        if let indexed {
+            return indexed.sorted { $0.updatedAt > $1.updatedAt }
+        }
+        return try listSessions(owner: owner, repo: repo)
+    }
+
     /// 读单个 session 的完整内容（messages + carriedOverSummary 等）。
     /// 文件不存在 / 解码失败 → 返回 nil（解码失败时同时删除损坏文件，避免长期占空间）。
     /// 命中时 touch 文件 mtime 让 LRU 视其为"最近访问"。
@@ -156,6 +176,32 @@ final class DiskChatHistoryStore {
             return session
         } catch {
             AppLog.ai.warning("Chat history: decode failed, removing owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) sid=\(sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            try? fileManager.removeItem(at: fileURL)
+            try? syncIndexAfterRemove(owner: owner, repo: repo, sessionId: sessionId)
+            return nil
+        }
+    }
+
+    /// 后台读取并解码完整 session。聊天历史增长后，JSON 大小不再影响主线程输入和动画。
+    /// 解码失败沿用同步入口的清理语义，确保损坏文件和 index 能继续自愈。
+    func loadSessionAsync(owner: String, repo: String, sessionId: UUID) async throws -> ChatSession? {
+        let fileURL = try sessionFile(owner: owner, repo: repo, sessionId: sessionId)
+        guard fileManager.fileExists(atPath: fileURL.path) else { return nil }
+
+        do {
+            return try await Task.detached(priority: .userInitiated) {
+                let data = try Data(contentsOf: fileURL)
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let session = try decoder.decode(ChatSession.self, from: data)
+                try? FileManager.default.setAttributes(
+                    [.modificationDate: Date()],
+                    ofItemAtPath: fileURL.path
+                )
+                return session
+            }.value
+        } catch {
+            AppLog.ai.warning("Chat history: async read/decode failed, removing owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) sid=\(sessionId.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
             try? fileManager.removeItem(at: fileURL)
             try? syncIndexAfterRemove(owner: owner, repo: repo, sessionId: sessionId)
             return nil

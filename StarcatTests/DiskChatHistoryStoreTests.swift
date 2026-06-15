@@ -97,6 +97,34 @@ struct DiskChatHistoryStoreTests {
         #expect(loaded?.messages.count == 3)
     }
 
+    @Test("异步 listSessions 与同步入口结果一致")
+    func listSessionsAsync() async throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let session = makeSession(title: "async-list")
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        let list = try await store.listSessionsAsync(owner: "octo", repo: "demo")
+        #expect(list.map(\.id) == [session.id])
+    }
+
+    @Test("异步 loadSession 完整解码消息")
+    func loadSessionAsync() async throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+        let session = makeSession(title: "async-load", messageCount: 4)
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        let loaded = try await store.loadSessionAsync(
+            owner: "octo",
+            repo: "demo",
+            sessionId: session.id
+        )
+        #expect(loaded?.id == session.id)
+        #expect(loaded?.title == "async-load")
+        #expect(loaded?.messages.map(\.content) == ["msg-0", "msg-1", "msg-2", "msg-3"])
+    }
+
     @Test("loadSession 未命中返回 nil")
     func loadMissing() throws {
         let (store, root) = try makeIsolatedStore()
