@@ -35,7 +35,7 @@ LINGUIST_ARGS ?=
 help: ## 列出所有可用命令
 	@echo "Starcat 常用命令："
 	@echo ""
-	@echo "  make run                    执行 scripts/run-debug.sh（xcodegen + Debug 构建 + 启动 App）"
+	@echo "  make run                    执行 scripts/run-debug.sh（kill 旧进程 + xcodegen + Debug 构建 + 启动 App）"
 	@echo "  make test                   跑全量单测（xcodegen + xcodebuild test）"
 	@echo "  make build-dmg VERSION=0.1.0 打包 Release DMG（调用 scripts/build-dmg.sh）"
 	@echo "  make release VERSION=v0.1.0  发版总入口：tag + DMG + push tag（调用 scripts/release.sh）"
@@ -52,7 +52,7 @@ help: ## 列出所有可用命令
 	@echo "  make start-supports         启动 supports/ 目录下的所有后端服务（trending / wiki / weekly / sharing）"
 	@echo ""
 
-run: ## 执行 scripts/run-debug.sh
+run: ## 执行 scripts/run-debug.sh（先 kill 旧 Starcat，再 xcodegen + Debug 构建 + 启动）
 	@bash scripts/run-debug.sh
 
 test: ## 跑全量单测（先 xcodegen 同步项目，再 xcodebuild test）
