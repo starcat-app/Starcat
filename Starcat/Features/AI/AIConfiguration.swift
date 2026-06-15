@@ -93,9 +93,9 @@ enum AIProviderTestStatus: Codable, Equatable, Sendable {
     var displayText: String {
         switch self {
         case .notTested:
-            return "未测试"
+            return String(localized: "ai.connectionTest.notTested")
         case .success(let modelCount):
-            return "连接正常，发现 \(modelCount) 个模型"
+            return String(format: String(localized: "ai.connectionTest.successFormat"), modelCount)
         case .failed(let message):
             return message
         }
@@ -215,11 +215,11 @@ enum AIModelTask: String, Codable, CaseIterable, Identifiable, Sendable {
     /// 业务语义对齐：摘要 = 仓库 AI 摘要；标签 = 自动推荐 + 应用标签；向量化 = embedding 索引；翻译 = README 翻译；对话 = 详情页 AI 助手。
     var displayName: String {
         switch self {
-        case .summary:     return "摘要"
-        case .tags:        return "标签"
-        case .embedding:   return "向量化"
-        case .translation: return "翻译"
-        case .chat:        return "对话"
+        case .summary:     return String(localized: "ai.task.summary")
+        case .tags:        return String(localized: "ai.task.tags")
+        case .embedding:   return String(localized: "ai.task.embedding")
+        case .translation: return String(localized: "ai.task.translation")
+        case .chat:        return String(localized: "ai.task.chat")
         }
     }
 
@@ -788,15 +788,15 @@ extension AIServiceProvider {
         case .azureOpenAI:      return "Azure OpenAI"
         case .githubModels:     return "GitHub Models"
         case .mistral:          return "Mistral AI"
-        case .doubao:           return "豆包"
+        case .doubao:           return String(localized: "ai.provider.doubao.name")
         case .grok:             return "Grok"
-        case .hunyuan:          return "混元"
+        case .hunyuan:          return String(localized: "ai.provider.hunyuan.name")
         case .moonshot:         return "Moonshot"
-        case .qianwen:          return "通义千问"
-        case .siliconflow:      return "硅基流动"
+        case .qianwen:          return String(localized: "ai.provider.qianwen.name")
+        case .siliconflow:      return String(localized: "ai.provider.siliconflow.name")
         case .iflow:            return "IFlow"
         case .modelscope:       return "ModelScope"
-        case .zhipu:            return "智谱 AI"
+        case .zhipu:            return String(localized: "ai.provider.zhipu.name")
         case .zai:              return "Z.AI"
         }
     }

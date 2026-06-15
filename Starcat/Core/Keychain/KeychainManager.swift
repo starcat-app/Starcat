@@ -35,9 +35,9 @@ enum KeychainError: Error, LocalizedError {
         case .deleteFailed(let error):
             return String(format: String(localized: "keychain.error.deleteFailedFormat"), error.localizedDescription)
         case .encryptionFailed(let error):
-            return "加密失败: \(error.localizedDescription)"
+            return String(format: String(localized: "keychain.error.encryptionFailedFormat"), error.localizedDescription)
         case .decryptionFailed(let error):
-            return "解密失败: \(error.localizedDescription)"
+            return String(format: String(localized: "keychain.error.decryptionFailedFormat"), error.localizedDescription)
         case .selfCheckMismatch:
             return String(localized: "keychain.error.selfCheckMismatch")
         }

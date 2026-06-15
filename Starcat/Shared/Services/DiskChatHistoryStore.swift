@@ -30,9 +30,9 @@ enum DiskChatHistoryStoreError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .applicationSupportUnavailable:
-            return "无法定位对话历史目录，请重试或重启应用。"
+            return String(localized: "store.chatHistory.error.applicationSupportUnavailable")
         case .invalidPathComponent(let value):
-            return "对话历史路径包含非法字符：\(value)。"
+            return String(format: String(localized: "store.chatHistory.error.invalidPathComponentFormat"), value)
         }
     }
 }
