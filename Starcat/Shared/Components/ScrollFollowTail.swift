@@ -3,8 +3,8 @@
 //  Starcat
 //
 //  「跟随尾部 (Follow Tail)」共享组件：让任何流式更新的 ScrollView
-//  在用户没主动上滚时自动滚到底部，在用户上滚后停止跟随，
-//  在用户重新滚回底部时再自动恢复跟随。
+//  在用户没有主动滚动时自动滚到底部；用户开始滚动就立即停止跟随，
+//  只有用户结束滚动且停在底部时才自动恢复跟随。
 //
 //  ┌──────────────────────────────────────────────────────────────────┐
 //  │ 为什么单独抽这个文件                                              │
@@ -16,8 +16,8 @@
 //  │   3. 未来批量队列日志 / 任意其它 streaming 输出                    │
 //  │ 三者的"跟随策略"完全一致：                                          │
 //  │   - 流式中且用户在底部 → 自动 scrollTo(.bottom)                     │
-//  │   - 用户向上滚远了 → 停止跟随                                       │
-//  │   - 用户滚回底部 → 恢复跟随                                         │
+//  │   - 用户开始主动滚动 → 立即停止跟随                                 │
+//  │   - 用户结束滚动且停在底部 → 恢复跟随                               │
 //  │ 把状态机抽到 ScrollTailController + 把浮按钮抽到                    │
 //  │ FollowTailFloatingButton，调用方就不用各自维护一组散落的           │
 //  │ @State / phase / offset，否则改一处必漏另一处。                     │
@@ -28,35 +28,22 @@
 //  1. **不能用 `offset == maxOffset` 浮点判等**：macOS ScrollView 的
 //     bouncing 行为会让 contentOffset.y 在到底瞬间溢出几 pt 进负值或
 //     超出 maxOffset；scrollTo(anchor: .bottom) 也会停在锚点像素的 1pt
-//     之外。判等永远不稳。改用 distanceFromBottom + 双阈值滞回区。
+//     之外。判等永远不稳。改用带容差的 distanceFromBottom 判断最终位置。
 //
-//  2. **必须门控 ScrollPhase**：scrollTo(...) 自己触发的 geometry change
-//     phase 是 `.animating` 而非用户手势。如果不门控，组件自身的
-//     "跟随→滚动→geometry 变化"会立刻被识别成"用户上滚"，把跟随关
-//     掉——典型的反馈循环 bug。只接受 `.tracking / .interacting /
-//     .decelerating` 这三种"用户手势驱动"的相位才更新跟随态。
+//  2. **必须按 ScrollPhase 生命周期判断用户意图**：`scrollTo(...)` 自己触发的
+//     phase 是 `.animating`，不能暂停跟随；`.tracking / .interacting /
+//     .decelerating` 表示用户正在控制滚动，一进入就立即暂停；只有从用户 phase
+//     回到 `.idle`，并且 phase context 的最终 geometry 已经在底部，才恢复跟随。
 //
-//  3. **双阈值滞回区（hysteresis）**：
-//        distanceFromBottom > 1pt  才关闭跟随
-//        distanceFromBottom < 8pt 才恢复跟随
-//     2026-06-15 dong4j 二次反馈"80pt 太大，只要滚动就该停止"，
-//     从初版的 80/24 收紧到 1/8。设计意图变化：
-//       - 关闭阈值 1pt（而非 0pt）：留 1pt 浮点防护——macOS ScrollView
-//         bouncing 行为下 contentOffset.y 在底部 phase 切到 .tracking
-//         的瞬间可能有 0~1pt 浮点抖动，纯 0 判定会被噪声误触关闭跟随；
-//         1pt 足够吸收浮点噪声，又对用户视觉零感知（1pt ≈ 0.4 行像素）。
-//       - 恢复阈值 8pt（而非 0pt）：留 bouncing 与"接近底部"的视觉余量
-//         ——用户滚回底部时手势惯性常停在 4~6pt，<8pt 让"几乎到底"也算
-//         恢复，避免最后几 pt 反复挪鼠标恢复跟随的强迫体验。
-//     滞回区（disengage > reengage）虽然只剩 7pt 仍然保留：用户停在
-//     distance=5pt 时 is_following 已是 false，内容流式增长 → distance
-//     继续增大不会反弹回 reengage 区，单调发散方向上不抖动。
+//  3. **geometry callback 只记录位置，不直接切换状态**：流式内容增长、Markdown
+//     重新布局、浮动按钮显隐都会改变 geometry。若每次 geometry change 都尝试恢复
+//     或暂停，就会把布局变化误判成用户意图，造成乱跳甚至反馈循环。
 //
 //  4. **初始 isFollowing = true**：用户打开窗口默认期待"自动跟随最
 //     新输出"，这个默认值与生成流程的预期 100% 吻合。
 //
 //  5. **不主动判 contentSize ≤ containerSize 的"内容还很短"情况**：
-//     内容短时 distanceFromBottom 永远 < 24，所以会一直保持跟随，与
+//     内容短时 distanceFromBottom 通常 ≤ 0，所以会一直保持跟随，与
 //     预期一致，无需特殊逻辑。
 //
 
@@ -85,8 +72,9 @@ struct ScrollFollowTailMetrics: Equatable {
 /// 调用方需要做 3 件事：
 ///   1. `@State private var tail = ScrollTailController()`，在 ScrollViewReader
 ///      内部读 `tail.isFollowing` 决定要不要 scrollTo；
-///   2. 在 ScrollView 上挂 `.onScrollPhaseChange { _, p in tail.updatePhase(p) }`
-///      与 `.onScrollGeometryChange(...)` 提供 distanceFromBottom；
+///   2. 在 ScrollView 上挂三参数 `.onScrollPhaseChange`，把 context 中的最终
+///      distanceFromBottom 传给 `updatePhase`；geometry change 只调用
+///      `updateGeometry` 记录最新位置；
 ///   3. 当流式 trigger 变化时 `if tail.isFollowing { proxy.scrollTo(...) }`。
 ///
 /// 浮动按钮 `FollowTailFloatingButton` 是配套 UI，调用方按需放到 ZStack 右下角。
@@ -103,55 +91,57 @@ final class ScrollTailController {
 
     /// 最近一次的滚动相位。
     ///
-    /// 主要给本控制器自身门控用——只在用户手势相位下更新 isFollowing。
-    /// 也暴露成 public 让对话段那种"还需要顺带判 overscroll"的场景复用
-    /// 同一个 phase 状态，避免一个 view 上挂两个 onScrollPhaseChange。
+    /// 主要给本控制器识别完整用户滚动生命周期。也暴露给对话段那种
+    /// "还需要顺带判 overscroll"的场景复用同一个 phase 状态，避免一个
+    /// view 上挂两个 onScrollPhaseChange。
     private(set) var lastPhase: ScrollPhase = .idle
 
-    /// 关闭跟随的阈值（pt）。distance > 此值且为用户手势相位 → 关闭。
-    ///
-    /// 2026-06-15 dong4j 反馈"只要滚动就停止跟随"，从 80pt 收紧到 1pt。
-    /// 1pt 而非 0pt 的原因见文件头注释 §3——留浮点防护，避开底部 bouncing
-    /// 时 contentOffset.y 的 0~1pt 抖动误触。
-    private let disengageThreshold: CGFloat = 1
+    /// 最近一次 geometry callback 观察到的底部距离，供诊断与无 context 调用兜底。
+    private var latestDistanceFromBottom: CGFloat = 0
 
-    /// 恢复跟随的阈值（pt）。distance < 此值且为用户手势相位 → 恢复。
-    ///
-    /// 2026-06-15 dong4j 反馈"只要滚动就停止跟随"配套调整，从 24pt 收紧到 8pt。
-    /// 8pt 留 bouncing + "接近底部"视觉余量；与 disengage=1 的 7pt 滞回区
-    /// 足够避免边界抖动（用户滚到 distance>1 → 关闭 → 内容增长 → distance
-    /// 继续增大，单调方向不会反弹回 reengage 区）。
-    private let reengageThreshold: CGFloat = 8
+    /// 当前滚动生命周期是否由用户手势发起。
+    private var isUserScrollInProgress: Bool = false
 
-    /// SwiftUI 把 `.onScrollPhaseChange` 的最新值递给我们。
-    func updatePhase(_ phase: ScrollPhase) {
+    /// 底部容差（pt）。macOS bounce / 锚点像素误差会让真正底部落在 0 附近。
+    private let bottomTolerance: CGFloat = 8
+
+    /// SwiftUI 把 phase 与该切换时刻的最终底部距离递给控制器。
+    func updatePhase(_ phase: ScrollPhase, distanceFromBottom: CGFloat? = nil) {
+        if let distanceFromBottom {
+            latestDistanceFromBottom = distanceFromBottom
+        }
         lastPhase = phase
+
+        switch phase {
+        case .tracking, .interacting, .decelerating:
+            // 用户一接管滚动就立即暂停，不能等距离变化；否则下一次流式 token
+            // 可能抢先 scrollTo(.bottom)，覆盖用户刚开始的滚动操作。
+            isUserScrollInProgress = true
+            isFollowing = false
+        case .idle:
+            guard isUserScrollInProgress else { return }
+            isUserScrollInProgress = false
+            // 仅在用户滚动生命周期结束后恢复。滚动过程中即使经过底部也不恢复，
+            // 避免 bounce / 惯性尚未结束时被新 token 再次拉动。
+            if latestDistanceFromBottom <= bottomTolerance {
+                isFollowing = true
+            }
+        case .animating:
+            // 程序化 scrollTo 不代表用户接管，保持当前跟随状态。
+            break
+        @unknown default:
+            break
+        }
     }
 
-    /// SwiftUI 把"内容相对底部的距离"递给我们后调用本方法。
+    /// SwiftUI 把"内容相对底部的距离"递给我们后调用本方法，仅记录位置。
     ///
     /// `distanceFromBottom` 计算式由调用方负责（用 onScrollGeometryChange
     /// 的 transform 算出来）：
     ///     `contentSize.height - contentOffset.y - containerSize.height`
     /// 用户在最底部时该值约 = 0；上滚 100pt 该值 = 100。
     func updateGeometry(distanceFromBottom: CGFloat) {
-        // 反馈循环防护：只接受用户手势驱动的相位变化才更新 isFollowing。
-        // 程序化 scrollTo 触发的 `.animating` 一律忽略，避免组件把自己
-        // 触发的滚动当作用户操作。
-        switch lastPhase {
-        case .tracking, .interacting, .decelerating:
-            break
-        case .idle, .animating:
-            return
-        @unknown default:
-            return
-        }
-
-        if isFollowing, distanceFromBottom > disengageThreshold {
-            isFollowing = false
-        } else if !isFollowing, distanceFromBottom < reengageThreshold {
-            isFollowing = true
-        }
+        latestDistanceFromBottom = distanceFromBottom
     }
 
     /// 用户主动点了浮动按钮"跟随最新" / 或调用方明确要求恢复跟随时调。
@@ -160,6 +150,7 @@ final class ScrollTailController {
     /// 直接置 true 不需要校验。配套地，调用方应在调用本方法**之后**
     /// 用 ScrollViewReader 的 proxy.scrollTo(.bottom) 把视图滚到底。
     func reengage() {
+        isUserScrollInProgress = false
         isFollowing = true
     }
 }
@@ -184,8 +175,8 @@ final class ScrollTailController {
 ///     "跳转到最新内容并恢复自动跟随"；
 ///   - 复用 `pressableHover`：默认 hover opacity=0.78, scale=1.04，悬停反馈；
 ///   - 必须挂 `.focusEffectDisabled()`，禁用 macOS 默认蓝框（项目硬性规范）；
-///   - `.transition(.opacity.combined(with: .move(edge: .bottom)))`
-///     由调用方在 ZStack 外层 `.animation(_:value:)` 配合。
+///   - 显隐不加 transition / 隐式动画：按钮状态由滚动 geometry 驱动，动画会
+///     反向改变布局并再次触发 geometry callback。
 struct FollowTailFloatingButton: View {
 
     /// 用户点击时的回调。调用方在里面置位 `controller.reengage()` 并调

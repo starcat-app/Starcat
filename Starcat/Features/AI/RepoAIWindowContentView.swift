@@ -345,8 +345,12 @@ struct RepoAIWindowContentView: View {
                             .padding(.vertical, 12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .onScrollPhaseChange { _, newPhase in
-                            summaryTail.updatePhase(newPhase)
+                        .onScrollPhaseChange { _, newPhase, context in
+                            let geometry = context.geometry
+                            let distance = geometry.contentSize.height
+                                - geometry.contentOffset.y
+                                - geometry.containerSize.height
+                            summaryTail.updatePhase(newPhase, distanceFromBottom: distance)
                         }
                         .onScrollGeometryChange(for: CGFloat.self) { geo in
                             // distanceFromBottom = 内容总高 - 当前偏移 - 可视高度
@@ -373,10 +377,8 @@ struct RepoAIWindowContentView: View {
                             }
                             .padding(.trailing, 12)
                             .padding(.bottom, 10)
-                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
                         }
                     }
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: summaryTail.isFollowing)
                 }
             }
         } else {
@@ -1038,7 +1040,13 @@ struct RepoAIWindowContentView: View {
                 //     取 offsetY + distanceFromBottom 两个量，避免挂两个 modifier。
                 ZStack(alignment: .bottomTrailing) {
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 14) {
+                        // 2026-06-15 dong4j 反馈：历史对话滚动像按消息分块跳跃。
+                        // AI 回复是高度差异很大的 Markdown；LazyVStack 会在长消息进入
+                        // 可视区时才实例化并重新测量 cell，随后修正此前估算的 content
+                        // offset，表现为跨消息边界时整块跳动。对话受模型上下文限制，
+                        // 单 session 消息规模可控，因此这里主动换取一次性准确布局，
+                        // 使用 VStack 保证连续滚动，不做惰性高度估算。
+                        VStack(alignment: .leading, spacing: 14) {
                             // HOM-70 v2：「承接自上一对话」banner —— 放在 ScrollView 内部最顶部，
                             // 跟随滚动（聊久了自动滚出视野不占屏）；空 session（刚承接还没消息）
                             // 也显示，让用户立刻知道"这是承接自上一对话的新 session"。
@@ -1053,7 +1061,6 @@ struct RepoAIWindowContentView: View {
                             } else {
                                 ForEach(chat.messages) { message in
                                     AIChatBubble(message: message)
-                                        .id(message.id)
                                 }
 
                                 // 对话底部"复制全部"区域：流式中（chat.isSending）暂时
@@ -1088,8 +1095,12 @@ struct RepoAIWindowContentView: View {
                     }
                     // dong4j 2026-06-04 15:30 重设计：识别"顶部下拉 overscroll"切回摘要面板。
                     // dong4j 2026-06-15 复用：同一份 phase / geometry 同时给"跟随尾部"用。
-                    .onScrollPhaseChange { _, newPhase in
-                        chatTail.updatePhase(newPhase)
+                    .onScrollPhaseChange { _, newPhase, context in
+                        let geometry = context.geometry
+                        let distance = geometry.contentSize.height
+                            - geometry.contentOffset.y
+                            - geometry.containerSize.height
+                        chatTail.updatePhase(newPhase, distanceFromBottom: distance)
                     }
                     .onScrollGeometryChange(for: ScrollFollowTailMetrics.self) { geo in
                         let distance = geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height
@@ -1098,6 +1109,23 @@ struct RepoAIWindowContentView: View {
                             distanceFromBottom: distance
                         )
                     } action: { _, new in
+                        // 2026-06-15 11:15 phase 门控防御加固（dong4j 流式 CPU 100% 复盘）：
+                        // 即便流式 markdown 已经节流到 30Hz，流式期间 ScrollView contentSize
+                        // 增长仍会每帧触发本 action（与滚动 phase 无关，纯几何变化即触发）。
+                        // 内部 chatTail.updateGeometry / handleChatOverscroll 各自已 phase
+                        // 门控 return，但入口 early return 收益：① 流式滚动 `.animating`
+                        // 期间整个 action 零工作不入函数；② 避免重复 read chatTail.lastPhase
+                        // 引发 @Observable 依赖追踪噪音（虽然 action 闭包不参与 view body
+                        // 追踪，但 SwiftUI 5/6 的 Observation 框架对 actor-isolated read
+                        // 的精确语义随版本调整，留一道防御更稳）。
+                        switch chatTail.lastPhase {
+                        case .tracking, .interacting, .decelerating:
+                            break
+                        case .idle, .animating:
+                            return
+                        @unknown default:
+                            return
+                        }
                         chatTail.updateGeometry(distanceFromBottom: new.distanceFromBottom)
                         handleChatOverscroll(
                             offsetY: new.offsetY,
@@ -1105,6 +1133,8 @@ struct RepoAIWindowContentView: View {
                         )
                     }
 
+                    // 不给按钮显隐加 transition / 隐式动画：它由滚动 geometry 驱动，
+                    // 动画会反过来改变布局尺寸并再次触发 geometry callback，形成反馈循环。
                     if chatTail.isFollowing == false, !chat.messages.isEmpty {
                         FollowTailFloatingButton {
                             chatTail.reengage()
@@ -1114,10 +1144,8 @@ struct RepoAIWindowContentView: View {
                         }
                         .padding(.trailing, 12)
                         .padding(.bottom, 10)
-                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: chatTail.isFollowing)
 
             if chat.isContextOverflow {
                 contextOverflowBanner(chat: chat)
