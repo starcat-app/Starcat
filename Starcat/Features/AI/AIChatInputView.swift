@@ -25,6 +25,7 @@ import SwiftUI
 struct AIChatInputView: View {
 
     @Binding var text: String
+    let focus: FocusState<Bool>.Binding
     let isSending: Bool
     let onSend: () -> Void
 
@@ -40,6 +41,7 @@ struct AIChatInputView: View {
 
         HStack(alignment: .center, spacing: 8) {
             TextField("ai.assistant.input.placeholder", text: $text)
+                .focused(focus)
                 .textFieldStyle(.plain)
                 .font(.body)
                 .padding(.horizontal, 12)
@@ -165,10 +167,11 @@ struct AIChatInputView: View {
 private struct StatefulPreview: View {
     @State private var text: String = ""
     @State private var sending: Bool = false
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         VStack {
-            AIChatInputView(text: $text, isSending: sending) {
+            AIChatInputView(text: $text, focus: $isFocused, isSending: sending) {
                 sending = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     sending = false

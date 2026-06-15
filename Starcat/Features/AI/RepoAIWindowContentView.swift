@@ -74,6 +74,7 @@ struct RepoAIWindowContentView: View {
 
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
+    @FocusState private var isChatInputFocused: Bool
 
     /// AI 窗口打开瞬间冻结的 star 状态（R-01 §3.2.7 Step 8）。
     ///
@@ -107,6 +108,8 @@ struct RepoAIWindowContentView: View {
     /// （overscroll 切回摘要面板时的 phase 门控），不再单独维护一份 state。
     @State private var summaryTail = ScrollTailController()
     @State private var chatTail = ScrollTailController()
+    /// 合并同一 run-loop 内的多个流式更新，避免连续向 ScrollViewReader 排队 scrollTo。
+    @State private var isChatTailScrollScheduled: Bool = false
 
     /// HOM-70：session 列表 popover 显示状态。
     @State private var isSessionListPresented: Bool = false
@@ -182,6 +185,7 @@ struct RepoAIWindowContentView: View {
 
             AIChatInputView(
                 text: chatInputBinding,
+                focus: $isChatInputFocused,
                 isSending: chatVM?.isSending ?? false,
                 onSend: sendChatMessage
             )
@@ -290,8 +294,6 @@ struct RepoAIWindowContentView: View {
                 // 自动停止跟随，滚回底部后自动恢复。具体见
                 // `Starcat/Shared/Components/ScrollFollowTail.swift` 的设计注释。
                 //
-                // ZStack 右下角浮一个「↓ 跟随最新」胶囊按钮：仅在 isFollowing == false
-                // 时显示，点击 → reengage + 滚到底，等同于 GitHub Actions Logs 体验。
                 ScrollViewReader { proxy in
                     ZStack(alignment: .bottomTrailing) {
                         ScrollView {
@@ -340,24 +342,16 @@ struct RepoAIWindowContentView: View {
                                 Color.clear
                                     .frame(height: 1)
                                     .id(Self.summaryBottomAnchorID)
+                                    .onScrollVisibilityChange(threshold: 0.5) { isVisible in
+                                        summaryTail.updateBottomVisibility(isVisible)
+                                    }
                             }
                             .padding(.horizontal, 20)
                             .padding(.vertical, 12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .onScrollPhaseChange { _, newPhase, context in
-                            let geometry = context.geometry
-                            let distance = geometry.contentSize.height
-                                - geometry.contentOffset.y
-                                - geometry.containerSize.height
-                            summaryTail.updatePhase(newPhase, distanceFromBottom: distance)
-                        }
-                        .onScrollGeometryChange(for: CGFloat.self) { geo in
-                            // distanceFromBottom = 内容总高 - 当前偏移 - 可视高度
-                            // 用户在最底部时 ≈ 0；向上滚 100pt → 值 = 100。
-                            geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height
-                        } action: { _, newDistance in
-                            summaryTail.updateGeometry(distanceFromBottom: newDistance)
+                        .onScrollPhaseChange { _, newPhase in
+                            summaryTail.updatePhase(newPhase)
                         }
                         .onChange(of: vm.streamingSummaryText ?? "") { _, newValue in
                             guard !newValue.isEmpty, summaryTail.isFollowing else { return }
@@ -368,16 +362,6 @@ struct RepoAIWindowContentView: View {
                             proxy.scrollTo(Self.summaryBottomAnchorID, anchor: .bottom)
                         }
 
-                        if !summaryTail.isFollowing {
-                            FollowTailFloatingButton {
-                                summaryTail.reengage()
-                                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
-                                    proxy.scrollTo(Self.summaryBottomAnchorID, anchor: .bottom)
-                                }
-                            }
-                            .padding(.trailing, 12)
-                            .padding(.bottom, 10)
-                        }
                     }
                 }
             }
@@ -1031,15 +1015,13 @@ struct RepoAIWindowContentView: View {
     private func chatScrollArea(chat: RepoAIChatViewModel) -> some View {
         ScrollViewReader { proxy in
                 // 2026-06-15 dong4j 优化：与摘要段同源接入 ScrollTailController。
-                // ZStack 让"跟随最新"浮按钮叠在 ScrollView 右下角。
                 //
                 // 对话段比摘要段多一件事：还要监听顶部下拉 overscroll（≤ -60pt）
                 // 来切回摘要面板。两个滚动驱动行为共享同一份 phase / geometry：
                 //   - `chatTail.lastPhase` 同时给"跟随"判定 + "overscroll"门控用；
-                //   - `onScrollGeometryChange` 用 `ScrollFollowTailMetrics` 一次性
-                //     取 offsetY + distanceFromBottom 两个量，避免挂两个 modifier。
-                ZStack(alignment: .bottomTrailing) {
-                    ScrollView {
+                //   - `onScrollGeometryChange` 只读取顶部 overscroll 所需的 offsetY；
+                //   - 是否到底由底部 sentinel 可见性独立判断，不再读 content geometry。
+                ScrollView {
                         // 2026-06-15 dong4j 反馈：历史对话滚动像按消息分块跳跃。
                         // AI 回复是高度差异很大的 Markdown；LazyVStack 会在长消息进入
                         // 可视区时才实例化并重新测量 cell，随后修正此前估算的 content
@@ -1060,7 +1042,19 @@ struct RepoAIWindowContentView: View {
                                     .padding(.top, 60)
                             } else {
                                 ForEach(chat.messages) { message in
-                                    AIChatBubble(message: message)
+                                    AIChatBubble(
+                                        message: message,
+                                        onEditUserMessage: editUserMessage
+                                    )
+                                    .equatable()
+                                }
+
+                                if let streaming = chat.streamingMessage {
+                                    AIChatBubble(
+                                        message: streaming,
+                                        onEditUserMessage: editUserMessage
+                                    )
+                                    .equatable()
                                 }
 
                                 // 对话底部"复制全部"区域：流式中（chat.isSending）暂时
@@ -1076,76 +1070,39 @@ struct RepoAIWindowContentView: View {
                                 Color.clear
                                     .frame(height: 1)
                                     .id(Self.chatBottomAnchorID)
+                                    .onScrollVisibilityChange(threshold: 0.5) { isVisible in
+                                        chatTail.updateBottomVisibility(isVisible)
+                                    }
                             }
                         }
                         .padding(.vertical, 16)
                     }
                     .background(Color.clear)
                     .onChange(of: chat.messages.count) { _, _ in
-                        guard chatTail.isFollowing else { return }
-                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
-                            proxy.scrollTo(Self.chatBottomAnchorID, anchor: .bottom)
-                        }
+                        scheduleChatTailScroll(proxy: proxy)
                     }
-                    .onChange(of: chat.messages.last?.content ?? "") { _, _ in
-                        // 流式 token 进来时也滚一下，否则长回答会被滚动条卡在中间。
-                        // 但只在用户没主动上滚时才滚（dong4j 2026-06-15 反馈）。
-                        guard chatTail.isFollowing else { return }
-                        proxy.scrollTo(Self.chatBottomAnchorID, anchor: .bottom)
+                    .onChange(of: chat.streamingMessage?.content ?? "") { _, _ in
+                        scheduleChatTailScroll(proxy: proxy)
+                    }
+                    .onChange(of: chat.isSending) { _, isSending in
+                        // 流式结束后会插入“复制完整对话”行，它位于 sentinel 之前；
+                        // 高度变化也要补一次尾部对齐，否则视觉上会停在按钮上方。
+                        guard !isSending else { return }
+                        scheduleChatTailScroll(proxy: proxy)
                     }
                     // dong4j 2026-06-04 15:30 重设计：识别"顶部下拉 overscroll"切回摘要面板。
                     // dong4j 2026-06-15 复用：同一份 phase / geometry 同时给"跟随尾部"用。
-                    .onScrollPhaseChange { _, newPhase, context in
-                        let geometry = context.geometry
-                        let distance = geometry.contentSize.height
-                            - geometry.contentOffset.y
-                            - geometry.containerSize.height
-                        chatTail.updatePhase(newPhase, distanceFromBottom: distance)
+                    .onScrollPhaseChange { _, newPhase in
+                        chatTail.updatePhase(newPhase)
                     }
                     .onScrollGeometryChange(for: ScrollFollowTailMetrics.self) { geo in
-                        let distance = geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height
-                        return ScrollFollowTailMetrics(
-                            offsetY: geo.contentOffset.y,
-                            distanceFromBottom: distance
-                        )
+                        ScrollFollowTailMetrics(offsetY: geo.contentOffset.y)
                     } action: { _, new in
-                        // 2026-06-15 11:15 phase 门控防御加固（dong4j 流式 CPU 100% 复盘）：
-                        // 即便流式 markdown 已经节流到 30Hz，流式期间 ScrollView contentSize
-                        // 增长仍会每帧触发本 action（与滚动 phase 无关，纯几何变化即触发）。
-                        // 内部 chatTail.updateGeometry / handleChatOverscroll 各自已 phase
-                        // 门控 return，但入口 early return 收益：① 流式滚动 `.animating`
-                        // 期间整个 action 零工作不入函数；② 避免重复 read chatTail.lastPhase
-                        // 引发 @Observable 依赖追踪噪音（虽然 action 闭包不参与 view body
-                        // 追踪，但 SwiftUI 5/6 的 Observation 框架对 actor-isolated read
-                        // 的精确语义随版本调整，留一道防御更稳）。
-                        switch chatTail.lastPhase {
-                        case .tracking, .interacting, .decelerating:
-                            break
-                        case .idle, .animating:
-                            return
-                        @unknown default:
-                            return
-                        }
-                        chatTail.updateGeometry(distanceFromBottom: new.distanceFromBottom)
                         handleChatOverscroll(
                             offsetY: new.offsetY,
-                            hasMessages: !chat.messages.isEmpty
+                            hasMessages: !chat.messages.isEmpty || chat.streamingMessage != nil
                         )
                     }
-
-                    // 不给按钮显隐加 transition / 隐式动画：它由滚动 geometry 驱动，
-                    // 动画会反过来改变布局尺寸并再次触发 geometry callback，形成反馈循环。
-                    if chatTail.isFollowing == false, !chat.messages.isEmpty {
-                        FollowTailFloatingButton {
-                            chatTail.reengage()
-                            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
-                                proxy.scrollTo(Self.chatBottomAnchorID, anchor: .bottom)
-                            }
-                        }
-                        .padding(.trailing, 12)
-                        .padding(.bottom, 10)
-                    }
-                }
 
             if chat.isContextOverflow {
                 contextOverflowBanner(chat: chat)
@@ -1399,6 +1356,38 @@ struct RepoAIWindowContentView: View {
             get: { chatVM?.inputText ?? "" },
             set: { chatVM?.inputText = $0 }
         )
+    }
+
+    /// 把历史用户问题回填到底部输入框并聚焦，用户确认后再发送。
+    private func editUserMessage(_ content: String) {
+        chatVM?.inputText = content
+        Task { @MainActor in
+            // 等 binding 先把文本提交给 TextField，再请求焦点，避免焦点切换抢在内容更新前。
+            await Task.yield()
+            isChatInputFocused = true
+        }
+    }
+
+    /// 合并同一主线程周期内的尾部滚动请求。
+    ///
+    /// 流式 Markdown 每次提交会同时改变文本高度和 sentinel 位置；直接在每个
+    /// onChange 中 scrollTo 会堆积程序化滚动。这里最多保留一个待执行请求，且自动
+    /// 跟随不使用动画，用户一旦开始滚动，执行前的二次 guard 会立即取消拉底。
+    private func scheduleChatTailScroll(proxy: ScrollViewProxy) {
+        guard chatTail.isFollowing, !isChatTailScrollScheduled else { return }
+        isChatTailScrollScheduled = true
+
+        Task { @MainActor in
+            await Task.yield()
+            defer { isChatTailScrollScheduled = false }
+            guard chatTail.isFollowing else { return }
+
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(Self.chatBottomAnchorID, anchor: .bottom)
+            }
+        }
     }
 
     /// 当前登录用户的 GitHub username（如 `dong4j`）。
