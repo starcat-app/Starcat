@@ -68,6 +68,10 @@ struct RepoAIWindowContentView: View {
     /// `chatContextStatusRow` 能即时刷新；与 `AIChatInputView` 共用同一份注入。
     @Environment(AppSettings.self) private var settings
 
+    /// 2026-06-15:摘要 / chat panel 切换、tail follow toggle 等多处
+    /// 0.2-0.3s 隐式动画在「关闭应用内动画」时全部跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
 
@@ -132,7 +136,7 @@ struct RepoAIWindowContentView: View {
                 .frame(maxHeight: panelMode == .summary ? .infinity : 0)
                 .clipped()
                 .allowsHitTesting(panelMode == .summary)
-                .animation(.easeInOut(duration: 0.28), value: panelMode)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: panelMode)
 
             panelToggleBar
 
@@ -141,7 +145,7 @@ struct RepoAIWindowContentView: View {
                 .frame(maxHeight: panelMode == .chat ? .infinity : 0)
                 .clipped()
                 .allowsHitTesting(panelMode == .chat)
-                .animation(.easeInOut(duration: 0.28), value: panelMode)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: panelMode)
 
             // 对话上下文状态提示（Y8，2026-06-14）：在 chat 输入框上方显示一行
             // 轻量 caption，让用户随时知道本次对话是不是带上了代码上下文。
@@ -155,8 +159,8 @@ struct RepoAIWindowContentView: View {
             //     让"轻量"原则真的轻量——只在有明确信号时给反馈。
             if panelMode == .chat {
                 chatContextStatusRow
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    .animation(.easeInOut(duration: 0.28), value: panelMode)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: panelMode)
             }
 
             Divider()
@@ -348,16 +352,16 @@ struct RepoAIWindowContentView: View {
                         if !summaryTail.isFollowing {
                             FollowTailFloatingButton {
                                 summaryTail.reengage()
-                                withAnimation(.easeOut(duration: 0.2)) {
+                                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                                     proxy.scrollTo(Self.summaryBottomAnchorID, anchor: .bottom)
                                 }
                             }
                             .padding(.trailing, 12)
                             .padding(.bottom, 10)
-                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
                         }
                     }
-                    .animation(.easeInOut(duration: 0.2), value: summaryTail.isFollowing)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: summaryTail.isFollowing)
                 }
             }
         } else {
@@ -719,17 +723,40 @@ struct RepoAIWindowContentView: View {
         .foregroundStyle(.secondary)
     }
 
-    /// Y2：代码上下文元信息行。展示 "<commit-7位> · N tokens · M files"。
+    /// Y2：代码上下文元信息行。展示 "基于 <commit-7位> (N tokens · M files)"。
     ///
-    /// 文案格式化用 `String(format:)` + i18n 模板，与上面的 generatedBy 行同款手法
-    /// （避免 SwiftUI Text 拼接造成 key 名漂移）。
+    /// **2026-06-15 dong4j**：commit short sha 改为可点击的 `Link`，点击跳转 GitHub commit 详情页。
+    ///
+    /// 设计选择：
+    /// - **i18n 拆三段** 而非 `String(format:)` 整段拼接 —— 因为中间要嵌入 `Link`（不是文本），无法
+    ///   走 `%@` 占位符。拆成 prefix（"基于"）+ Link（short sha）+ statsFormat（"(N tokens · M
+    ///   files)"）三个 SwiftUI 元素，HStack 拼装。这种拆法在多语言里仍然成立：英文 "Based on
+    ///   <link> (N tokens · M files)" 与中文 "基于 <link>（N tokens · M files）" 语法结构相同
+    ///   （前缀 + 链接 + 括号统计段），翻译方不会出现"语序错位 → 词组拆碎"问题。
+    /// - **用 SwiftUI 原生 `Link`** 而非自定义 Button + openURL —— `Link` 自动渲染为系统 accent 色
+    ///   + hover 下划线 + 鼠标变手型指针，符合 macOS 原生网页链接约定，零代码实现"看起来就是链
+    ///   接"的视觉。`Link` 也自带 accessibility role，VoiceOver 会朗读为"链接"。
+    /// - **URL 用 full sha 而非 commitShaShort** —— `RepoAIInsightContextMeta.commitSha` 是 40 字符
+    ///   full sha，传给 GitHub 不会有碰撞风险也不会触发 302 重定向。展示层用 short（commitShaShort）
+    ///   只是为了视觉简洁。
+    /// - **link label 字体显式 `.font(.caption2.monospaced())`** —— HStack 外层已设 `.caption2`，但
+    ///   `Link` 会继承文本字体；commit sha 是 hex 字符串，等宽体更易扫读，与项目其它 hash 展示一致。
     private func contextMetaFooterRow(_ meta: RepoAIInsightContextMeta) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             Image(systemName: "doc.text.magnifyingglass")
+            Text("ai.assistant.summary.footer.contextMeta.prefix")
+            Link(destination: GitHubURLs.repoCommit(
+                owner: repo.owner,
+                repo: repo.name,
+                sha: meta.commitSha
+            )) {
+                Text(meta.commitShaShort)
+                    .font(.caption2.monospaced())
+            }
+            .help("ai.assistant.summary.footer.contextMeta.commit.help")
             Text(
                 String(
-                    format: String(localized: "ai.assistant.summary.footer.contextMetaFormat"),
-                    meta.commitShaShort,
+                    format: String(localized: "ai.assistant.summary.footer.contextMeta.statsFormat"),
                     meta.actualTokens,
                     meta.totalFiles
                 )
@@ -756,7 +783,7 @@ struct RepoAIWindowContentView: View {
     ///   面板的边界，无需额外加 `Divider()`。
     private var panelToggleBar: some View {
         HStack(spacing: 0) {
-            Picker("", selection: $panelMode.animation(.easeInOut(duration: 0.28))) {
+            Picker("", selection: $panelMode.animation(reduceMotion ? nil : .easeInOut(duration: 0.28))) {
                 Label("ai.assistant.toggle.summary", systemImage: "sparkles").tag(AIPanelMode.summary)
                 Label("ai.assistant.toggle.chat", systemImage: "bubble.left.and.bubble.right").tag(AIPanelMode.chat)
             }
@@ -1026,7 +1053,7 @@ struct RepoAIWindowContentView: View {
                     .background(Color.clear)
                     .onChange(of: chat.messages.count) { _, _ in
                         guard chatTail.isFollowing else { return }
-                        withAnimation(.easeOut(duration: 0.15)) {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
                             proxy.scrollTo(Self.chatBottomAnchorID, anchor: .bottom)
                         }
                     }
@@ -1058,16 +1085,16 @@ struct RepoAIWindowContentView: View {
                     if chatTail.isFollowing == false, !chat.messages.isEmpty {
                         FollowTailFloatingButton {
                             chatTail.reengage()
-                            withAnimation(.easeOut(duration: 0.2)) {
+                            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                                 proxy.scrollTo(Self.chatBottomAnchorID, anchor: .bottom)
                             }
                         }
                         .padding(.trailing, 12)
                         .padding(.bottom, 10)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
-                .animation(.easeInOut(duration: 0.2), value: chatTail.isFollowing)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: chatTail.isFollowing)
 
             if chat.isContextOverflow {
                 contextOverflowBanner(chat: chat)
@@ -1164,7 +1191,7 @@ struct RepoAIWindowContentView: View {
         }
 
         guard offsetY < overscrollExpandThreshold else { return }
-        withAnimation(.easeInOut(duration: 0.3)) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
             panelMode = .summary
         }
     }
@@ -1255,7 +1282,7 @@ struct RepoAIWindowContentView: View {
         let repoSnapshot = repo
         Task { await chatVM.sendMessage(repo: repoSnapshot) }
         if panelMode != .chat {
-            withAnimation(.easeInOut(duration: 0.3)) {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
                 panelMode = .chat
             }
         }

@@ -52,7 +52,7 @@ struct RepoListView: View {
     /// 全局搜索中心由 HomeView 承载；列表 toolbar 只负责触发，不持有浮层状态。
     var onOpenSearchCenter: (() -> Void)?
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     // 顶部 clone 按钮现在属于中栏 toolbar；复制成功提示也跟着放在列表栏上。
     @State private var toastMessage: String?
@@ -740,8 +740,14 @@ struct RepoListView: View {
             // 仅在非 nil 时滚（nil 表示"清空选中"，不该跳动）。
             .onChange(of: selection.wrappedValue) { _, newValue in
                 guard let id = newValue else { return }
-                withAnimation(.easeInOut(duration: 0.2)) {
+                // 2026-06-15:reduceMotion 时跳过 0.2s 平滑滚动,直接 jump-to(scrollTo
+                // 在裸 closure 内不挂 transaction = 瞬切)。
+                if reduceMotion {
                     proxy.scrollTo(id, anchor: .center)
+                } else {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        proxy.scrollTo(id, anchor: .center)
+                    }
                 }
             }
         }

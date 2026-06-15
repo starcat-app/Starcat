@@ -54,6 +54,9 @@ struct RepoRowSkeletonView: View {
 private struct RepoRowSkeletonCard: View {
     let phaseOffset: Double
     @State private var pulse = false
+    /// 2026-06-15:skeleton 1.2s 脉冲动画在「关闭应用内动画」时跳过,
+    /// 直接显示静态 0.85 半透明占位条避免持续闪烁。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -98,7 +101,7 @@ private struct RepoRowSkeletonCard: View {
         }
         .padding(.vertical, 6)
         .opacity(pulse ? 0.85 : 1.0)
-        .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulse)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulse)
         .task {
             pulse = true
         }

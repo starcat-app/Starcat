@@ -44,6 +44,10 @@ struct SettingsView: View {
 
     @Environment(AppSettings.self) private var settings
     @Environment(AppDependencies.self) private var dependencies
+    /// 2026-06-15:用于在主题切换的 withAnimation 处兜底跳过动画。
+    /// 系统「减少动态效果」或用户「关闭应用内动画」任一为真时生效
+    /// (root view 的 `AnimationOverrideModifier` 已 OR 合并)。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var selectedTab: SettingsTab = .general
 
@@ -145,8 +149,15 @@ struct SettingsView: View {
                 Picker("settings.general.appearanceMode", selection: Binding(
                     get: { settings.appearanceMode },
                     set: { newValue in
-                        withAnimation(.easeInOut(duration: 0.6)) {
+                        // 2026-06-15:reduceMotion 兜底——主题切换的颜色淡变在
+                        // 关动画时改为瞬切。`withAnimation(nil)` 让 binding 写入
+                        // 不挂任何 transaction,@Observable 属性变化按默认无包裹路径。
+                        if reduceMotion {
                             settings.appearanceMode = newValue
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.6)) {
+                                settings.appearanceMode = newValue
+                            }
                         }
                     }
                 )) {
@@ -187,6 +198,29 @@ struct SettingsView: View {
                 Text("settings.snakeStyle.description")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            // 2026-06-15 dong4j 需求：无障碍 / 动画偏好。
+            //
+            // 单独起一个 Section 而不是夹在「外观」里——「关闭应用内动画」
+            // 是无障碍语义（与系统「辅助功能 → 减少动态效果」同源），与外观
+            // 主题（视觉偏好）属于不同维度；后续若新增其它无障碍配置
+            // （如字号缩放、对比度增强），都归在本 Section。
+            //
+            // 实现机制：toggle ON 时由 `AnimationOverrideModifier` 在 root view
+            // 上覆盖 `accessibilityReduceMotion` 环境值，全工程 30+ 个已实现
+            // reduceMotion 兜底路径的视图自动尊重新偏好（与系统级减少动态
+            // 效果走同一套代码路径）。详见 `Shared/Components/AnimationOverrideModifier.swift`。
+            Section("settings.general.accessibility") {
+                Toggle(isOn: $settings.disableAnimations) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.general.disableAnimations.title")
+                        Text("settings.general.disableAnimations.help")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         }
         .formStyle(.grouped)

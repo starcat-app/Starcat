@@ -114,7 +114,7 @@ struct SyncIconButton: View {
     @State private var enforcedStartedAt: Date?
     @State private var stopTask: Task<Void, Never>?
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     // MARK: - Init（带默认值，常用场景一行调用）
 

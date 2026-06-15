@@ -49,7 +49,7 @@ struct SmartSearchField: View {
     /// 禁用态的 tooltip 文案 key。仅 `isDisabled == true` 时生效。
     var disabledHelpKey: LocalizedStringKey = "search.disabledInPage"
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var draftText = ""
     @State private var isExpanded = false
@@ -314,7 +314,7 @@ struct SmartSearchField: View {
 private struct SmartSearchAIGlow: View {
     let isActive: Bool
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     private let gradient = AngularGradient(
         colors: [

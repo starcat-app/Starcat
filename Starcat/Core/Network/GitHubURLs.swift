@@ -64,6 +64,21 @@ enum GitHubURLs {
         URL(string: "\(baseURL.absoluteString)/\(fullName)") ?? baseURL
     }
 
+    // MARK: - Commit 详情
+
+    /// 仓库 commit 详情页：`https://github.com/{owner}/{repo}/commit/{sha}`。
+    ///
+    /// `sha` 接受 short（7 位）/ full（40 位）任意长度，GitHub 会自动解析并 302 跳到 canonical full
+    /// sha。出于稳定性与可读性考虑，**调用方应优先传 full sha**（40 字符），short sha 仅在缺少
+    /// full 时降级使用 —— 理由有二：① short sha 在大仓库存在碰撞风险，full 永远唯一；② GitHub UI
+    /// 在比对 commit 时会以 URL 段为准，full sha 直达，short 会多一次 302。
+    static func repoCommit(owner: String, repo: String, sha: String) -> URL {
+        baseURL.appendingPathComponent(owner)
+            .appendingPathComponent(repo)
+            .appendingPathComponent("commit")
+            .appendingPathComponent(sha)
+    }
+
     // MARK: - Private
 
     /// 用户主页 + 任意 tab 的公共拼装。

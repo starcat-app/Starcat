@@ -30,10 +30,17 @@ struct RepoDetailView: View {
     @Environment(HomeViewModel.self) private var viewModel
     // W4 B1：取消 star 需要的依赖
     @Environment(AppDependencies.self) private var dependencies
-    // D-28 修订（2026-06-11）：原 `@Environment(\.accessibilityReduceMotion) reduceMotion`
+    // D-28 修订（2026-06-11）：原 `@Environment(\.starcatReduceMotion) reduceMotion`
     // 移除 —— 该开关唯一消费点 `private var detailContentTransition` 已抽到
     // `Shared/Components/DetailContentTransition.swift` 共享 modifier,reduceMotion 由
     // modifier 内部读取,本 view 不再需要持有该 environment。
+    //
+    // 2026-06-15 修订:为支持「关闭应用内动画」用户偏好,需要再消费 reduceMotion
+    // 给 line 154 的 `.animation(.easeOut(duration: 0.4), value: detailContentID)`
+    // 与 line 544 翻译按钮 hover 切图标的 0.15s 淡入做"关动画"兜底。modifier 那
+    // 一份不动(包内闭合,view 透明),这里独立持一份是 SwiftUI Environment 的
+    // 标准模式,view 之间不共享 @Environment 实例,各 view 按需读取无副作用。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     /// v1.4 修订 (2026-06-10)：trailingActions(.share/.ai) 加 isAuthenticated 守卫的依赖。
     /// Manage 场景业务上必须登录才能看到 repo 列表（HomeViewModel 从本地 starred_repos
     /// 拉数据,登出会清 token + StarredRegistry,但本地 starred_repos 表不清,理论上多账号
@@ -151,7 +158,7 @@ struct RepoDetailView: View {
         // 之前 0.28s 太快，transition 在 WebView 还没出内容时就结束了，肉眼几乎
         // 看不见"轻轻落下"。0.4s 是经验值，比 README 首帧渲染稍慢一点，让用户
         // 能明确感受到内容从上方滑入。
-        .animation(.easeOut(duration: 0.4), value: detailContentID)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: detailContentID)
     }
 
     /// 当前 detail 内容的标识符，用作 `.animation(_:value:)` 的触发 key。
@@ -442,6 +449,9 @@ struct ReadmeTranslationFooterButton: View {
     ///   - 默认 ProgressView 转圈：脱离 hover 时仍清晰看到"在跑"。
     @State private var isHoveringWhileTranslating: Bool = false
 
+    /// 2026-06-15:hover 切图标的 0.15s 淡入在「关闭应用内动画」时跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     private var translationVM: ReadmeTranslationViewModel { control.translationVM }
     private var settings: AppSettings { control.settings }
 
@@ -541,7 +551,7 @@ struct ReadmeTranslationFooterButton: View {
                     .opacity(isHoveringWhileTranslating ? 1 : 0)
             }
             .frame(width: 12, height: 12)
-            .animation(.easeInOut(duration: 0.15), value: isHoveringWhileTranslating)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHoveringWhileTranslating)
         } else {
             Image(systemName: isShowingTranslation
                   ? "character.bubble.fill"

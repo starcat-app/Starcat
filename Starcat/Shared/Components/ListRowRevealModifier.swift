@@ -42,7 +42,7 @@ private struct ListRowRevealModifier: ViewModifier {
     let snapshotID: Int
     let skipAnimation: Bool
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var isVisible = false
 
     /// 是否跳过动画。reduceMotion(无障碍)与 skipAnimation(缓存命中)任意一个为真即跳过。

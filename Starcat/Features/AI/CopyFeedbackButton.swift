@@ -66,6 +66,9 @@ struct CopyFeedbackButton<Label: View>: View {
     /// 2. 整个 view 是 SwiftUI / @MainActor，Task 完成回到 main 不需要额外 hop。
     @State private var resetTask: Task<Void, Never>?
 
+    /// 2026-06-15:已复制反馈态切换 0.15s/0.2s 渐变在「关闭应用内动画」时跳过。
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     var body: some View {
         Button(action: performCopy) {
             label(didCopy)
@@ -84,13 +87,13 @@ struct CopyFeedbackButton<Label: View>: View {
         NSPasteboard.general.setString(content, forType: .string)
 
         resetTask?.cancel()
-        withAnimation(.easeOut(duration: 0.15)) {
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
             didCopy = true
         }
         resetTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled else { return }
-            withAnimation(.easeIn(duration: 0.2)) {
+            withAnimation(reduceMotion ? nil : .easeIn(duration: 0.2)) {
                 didCopy = false
             }
         }
