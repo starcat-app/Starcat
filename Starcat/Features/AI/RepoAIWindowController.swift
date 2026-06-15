@@ -139,8 +139,11 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
             }
         )
             // AI 助手是 AppKit 自建 NSWindow，不在 StarcatApp.WindowGroup
-            // 环境子树内；必须独立挂动画策略，否则设置开关在此窗口失效。
+            // 环境子树内；必须独立挂动画策略 + 语言切换订阅,否则用户在设置页
+            // 切到 English 后此窗口仍按系统 locale 显示中文(dong4j 2026-06-16
+            // 验收发现 AI 摘要 / AI 对话页面整页未跟随语言切换)。
             .starcatAnimationOverride()
+            .appLocaleEnvironment()
             .environment(dependencies)
             .environment(dependencies.authSession)
             .environment(dependencies.settings)

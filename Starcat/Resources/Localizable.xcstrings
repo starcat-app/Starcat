@@ -16073,6 +16073,190 @@
         }
       }
     },
+    "settings.general.shortcuts" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keyboard Shortcuts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快捷键"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.aiCommandReturn.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When enabled, Return inserts a new line and Command+Return sends the message."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用后，Return 用于换行，需按 ⌘ + Return 才能发送。"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.aiCommandReturn.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Require Command+Return to send AI messages"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需按 ⌘ + 回车键发送 AI 问题"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.error.invalidKey" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use a single letter or number."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请使用单个英文字母或数字。"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.error.missingModifier" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Command, Option, Control, or Shift to avoid interfering with text input."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请至少搭配 Command、Option、Control 或 Shift，避免影响正常输入。"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.error.reserved" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This shortcut is already used by Starcat. Choose another combination."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该快捷键已被 Starcat 使用，请选择其他组合。"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.recording" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press shortcut…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请按快捷键…"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.restoreDefault" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore Default"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复默认"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.search.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click the shortcut field, then press a modifier plus one letter or number. The default is Command+K."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击快捷键区域后，按修饰键与一个字母或数字。默认快捷键为 ⌘K。"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.search.help" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to record a new global search shortcut"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击录制新的全局搜索快捷键"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.search.title" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Global Search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全局搜索"
+          }
+        }
+      }
+    },
     "settings.general.title" : {
       "extractionState" : "stale",
       "localizations" : {
