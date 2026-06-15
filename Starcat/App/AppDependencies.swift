@@ -553,7 +553,13 @@ final class AppDependencies {
         // HOM-PROFILE 2026-06-05：贡献草坪服务。
         // 直接持有具体 GitHubAPIClient（actor），不走 protocol——因为 graphql<T> 是泛型方法，
         // 未挂在协议上以保持 Mock 简单（详见 ContributionService.swift 注释）。
-        self.contributionService = ContributionService(apiClient: api)
+        let contributionSvc = ContributionService(apiClient: api)
+        self.contributionService = contributionSvc
+        // 2026-06-15 修复(切换账号草坪不刷新):把 service 挂到 AuthSession,让 signOut /
+        // invalidateSession / restore 401 三处的"登出联动清理"都能 reset 草坪缓存,
+        // 否则 B 登录后 sidebar `.task` 触发的 `load(login: B)` 会因 lastFetchedAt 还在
+        // A 那次成功的 3h TTL 窗口内被 no-op 掉,草坪一直挂着 A 的数据(详见 AuthSession 字段注释)。
+        session.contributionService = contributionSvc
 
         // 2026-06-06 A 方案：用户 profile 缓存。
         // 装配三步：① 建 service；② 接到 session（双向，session 强持 service / service weak 反向 → session）；
