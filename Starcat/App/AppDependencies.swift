@@ -185,12 +185,26 @@ final class AppDependencies {
     let releaseSubscriptionRepository: any ReleaseSubscriptionRepositoryProtocol
     /// Release 元数据缓存 Repository。
     let releaseRepository: any ReleaseRepositoryProtocol
-    /// Release 巡检协调器：拉一页 Releases → 比对游标 → 写库 → 推通知。
+    /// Release 巡检协调器:拉一页 Releases → 比对游标 → 写库 → 推通知。
     let releaseMonitor: ReleaseMonitor
     /// Release 系统通知封装（UNUserNotificationCenter）。
     let releaseNotificationService: ReleaseNotificationService
     /// Release 后台轮询调度器（NSBackgroundActivityScheduler）。
     let releasePoller: ReleasePoller
+
+    // MARK: - Activity 公告与关注（PR-1，2026-06-16）
+
+    /// following 分类 GitHub Events feed 本地缓存 Repository。
+    /// PR-1 仅装配，PR-2 接 `GitHubEventsAPI` 后由 ActivityViewModel 消费。
+    let activityEventRepository: any ActivityEventRepositoryProtocol
+
+    /// announcement 分类双源公告（blog / security）本地缓存 Repository。
+    /// PR-1 仅装配，PR-3 接 `GitHubBlogRSSAPI` + `GitHubSecurityAdvisoryAPI` 后由 ActivityViewModel 消费。
+    let activityAnnouncementRepository: any ActivityAnnouncementRepositoryProtocol
+
+    /// Activity 数据接入单行 meta 表 Repository（per-source ETag + lastFetchedAt + lastCleanupAt）。
+    /// PR-2/PR-3 读取它判 TTL 与 304 短路，并写回最新 ETag。
+    let activitySyncStateRepository: any ActivitySyncStateRepositoryProtocol
 
     // MARK: - HOM-PROFILE 贡献草坪（2026-06-05）
 
@@ -574,6 +588,13 @@ final class AppDependencies {
         let notificationService = ReleaseNotificationService()
         self.releaseNotificationService = notificationService
         self.releasePoller = ReleasePoller(monitor: monitor, notificationService: notificationService)
+
+        // Activity 公告与关注 PR-1（2026-06-16）：纯本地 CRUD Repository，不接网络。
+        // PR-2/PR-3 在外层 ActivityViewModel 里组合「GitHub Events API + RSS + Security Advisory」
+        // 与这 3 个 repo 完成 SWR。装配顺序：3 个 repo 互相独立，与 Release section 并列即可。
+        self.activityEventRepository = GRDBActivityEventRepository(database: db)
+        self.activityAnnouncementRepository = GRDBActivityAnnouncementRepository(database: db)
+        self.activitySyncStateRepository = GRDBActivitySyncStateRepository(database: db)
 
         // HOM-PROFILE 2026-06-05：贡献草坪服务。
         // 直接持有具体 GitHubAPIClient（actor），不走 protocol——因为 graphql<T> 是泛型方法，
