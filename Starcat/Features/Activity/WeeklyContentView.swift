@@ -176,7 +176,10 @@ struct WeeklyContentView: View {
                     // 与 manage / trending 视觉同款；周刊期号通过 `CardBadge.weeklyIssue`
                     // 在 chip 行显示，星标 ✓ 由 `StarredRegistry` 驱动联动。
                     UnifiedRepoRow(
-                        card: project.asCardData(registry: registry),
+                        card: project.asCardData(
+                            registry: registry,
+                            openSSFScore: dependencies.openSSFScoreStore.badge(for: project.ghRepoId)
+                        ),
                         isSelected: multiStore.isActive
                             ? multiStore.contains(ghRepoId: project.ghRepoId)
                             : (selection.selectedItem?.id == project.id),
@@ -243,6 +246,9 @@ struct WeeklyContentView: View {
             .keyboardShortcut("a", modifiers: .command)
             .disabled(!multiStore.isActive)
             .hidden()
+        }
+        .task(id: viewModel.itemsRevision) {
+            await dependencies.openSSFScoreStore.loadCachedScores(for: viewModel.items.map(\.ghRepoId))
         }
     }
 

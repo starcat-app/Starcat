@@ -179,7 +179,11 @@ struct UnifiedRepoRow: View {
                                 .padding(.leading, 3)
                         }
 
-                        Spacer(minLength: 0)
+                        Spacer(minLength: 8)
+
+                        if let score = card.openSSFScore {
+                            OpenSSFScoreBadge(score: score)
+                        }
 
                         // v2.0（2026-06-11 dong4j 决策）：Activity 卡片右上角 RelativeDateBadge 已删。
                         // 原渲染 `item.createdAt` 在 `.star`(=starredAt) / `.repository` & `.suggestion`
@@ -441,6 +445,45 @@ struct SemanticScoreBadge: View {
     /// tier 在 SemanticSearchService 计算时已 clamp 到 1-4，这里安全 unwrap。
     private var tierStars: String {
         String(repeating: "★", count: max(1, min(4, hit.tier)))
+    }
+}
+
+// MARK: - OpenSSFScoreBadge
+
+/// OpenSSF Scorecard 行内评分徽章。
+///
+/// 只展示图标 + 分数，不带说明文字；放在 `full_name` 行最右侧，避免占用 chip 行。
+/// 颜色只用于背景/描边表达风险层级，文字和图标保持 `.primary`，遵守浅色主题对比度规则。
+struct OpenSSFScoreBadge: View {
+    let score: OpenSSFScoreBadgeData
+
+    private var tint: Color {
+        if score.score >= 7.5 { return .green }
+        if score.score >= 5 { return .yellow }
+        return .red
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "checkmark.shield.fill")
+                .font(.system(size: 9, weight: .semibold))
+            Text(verbatim: score.formattedScore)
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .monospacedDigit()
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(tint.opacity(0.13), in: Capsule())
+        .overlay {
+            Capsule()
+                .stroke(tint.opacity(0.32), lineWidth: 0.5)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .help("openssf.badge.help")
+        .accessibilityLabel(Text("openssf.badge.accessibility"))
+        .accessibilityValue(Text(verbatim: score.formattedScore))
     }
 }
 

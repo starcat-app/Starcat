@@ -131,10 +131,15 @@ struct TrendingScaffoldShell: View {
     /// ephemeral 显式 false)。star/unstar 后 `handleStarTapped` 会调 `resolveRepo()`
     /// 重新解析,trailingActions 自动重计算。
     private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
-        guard authSession.state.isAuthenticated, repo.isStarred else {
+        guard repo.isStarred else {
             return []
         }
-        return [.share, .ai]
+        var actions: [RepoDetailAction] = [.securityScore]
+        if authSession.state.isAuthenticated {
+            actions.append(.share)
+            actions.append(.ai)
+        }
+        return actions
     }
 
     // MARK: - Repo 解析
