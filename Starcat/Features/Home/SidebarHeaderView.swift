@@ -192,6 +192,9 @@ struct SidebarHeaderView: View {
             .fill(sidebarTintColor.opacity(0.35))
             .mask(verticalFadeMask(time: time))
             .mask(horizontalFadeMask(time: time))
+            // HomeView 的 toolbar 背景透明后，把光晕继续绘制到标题栏区域；只忽略
+            // 顶部 safe area，避免改变 SidebarHeaderView 自身的布局尺寸和命中区域。
+            .ignoresSafeArea(edges: .top)
     }
 
     /// 头像卡背景的 alpha mask：径向"中心亮 → 四周柔和淡出"形态，并按时间做"漂移 + 呼吸"。
