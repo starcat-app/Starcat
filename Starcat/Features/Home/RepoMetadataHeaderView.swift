@@ -64,6 +64,12 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     let headerSourceBadge: RepoDetailHeaderSourceBadge?
     private let trailingActions: TrailingActions
 
+    /// v2.0（2026-06-16, dong4j）：OpenSSF 入口从 Scaffold trailing actions 迁移到
+    /// 此处 `full_name` 同行 —— 与 source badge 同行的轻量 inline 标识，让用户在
+    /// 看到仓库名时立刻能看到安全评分。点击弹出 `OpenSSFScoreSheet`。sheet state
+    /// 挂在 Header 内部，避免 4 个 scaffold shell 重复维护相同状态。
+    @State private var showSecurityScoreSheet = false
+
     init(
         repo: Repo,
         fallbackAccentColor: Color = .accentColor,
@@ -96,6 +102,10 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
                 fallbackAccentColor: fallbackAccentColor
             )
         }
+        .sheet(isPresented: $showSecurityScoreSheet) {
+            OpenSSFScoreSheet(repo: repo)
+                .appLocaleEnvironment()
+        }
     }
 
     private var header: some View {
@@ -111,6 +121,14 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
                         .truncationMode(.tail)
                         .textSelection(.enabled)
                         .help(repo.fullName)
+
+                    // v2.0（2026-06-16）：OpenSSF 入口紧贴 full_name 之后、source badge 之前。
+                    // 显示条件仅 `repo.isStarred` —— 未 star 仓库本来就拿不到本地缓存评分。
+                    if repo.isStarred {
+                        OpenSSFInlineBadge(repo: repo) {
+                            showSecurityScoreSheet = true
+                        }
+                    }
 
                     if let headerSourceBadge, headerSourceBadge.isVisible {
                         RepoDetailHeaderSourceBadgeView(badge: headerSourceBadge)
@@ -578,6 +596,58 @@ private struct RepoBadgeChip: View {
         .padding(.horizontal, 6).padding(.vertical, 2)
         .background(tint.opacity(0.15), in: Capsule())
         .foregroundStyle(tint)
+    }
+}
+
+/// `full_name` 同行的 OpenSSF Scorecard 安全评分入口。
+///
+/// v2.0（2026-06-16, dong4j）：原入口在 Scaffold trailing actions（右上工具栏），
+/// 反馈说位置不够突出。现在迁到 hero `full_name` 之后，作为与 source badge 同行的
+/// inline 标识 —— 用户看到仓库名时一并看到评分。
+///
+/// ## v3 修订（2026-06-16, dong4j 反馈"卡片图标和详情页图标不一样"）
+///
+/// 1. **直接复用 `OpenSSFScoreBadge`**（list 卡片同款，详情页传 `size: .regular`）
+///    —— 两边图标 / 视觉风格 / 镭射渐变完全一致，避免漂移。
+/// 2. **无缓存评分时的 fallback**：依旧灰底胶囊，但图标改成 `checkmark.shield.fill`
+///    + 同款镭射渐变前景，保证"加载中 / 已加载"两态视觉延续。
+private struct OpenSSFInlineBadge: View {
+    let repo: Repo
+    let onTap: () -> Void
+
+    @Environment(AppDependencies.self) private var dependencies
+
+    var body: some View {
+        // 读取 store 的 badge —— store 是 @Observable，缓存变化会触发本 view 重渲染。
+        // store.badge(for:) 仅在 fetchStatus == .success && aggregateScore != nil 时返回。
+        let badge = dependencies.openSSFScoreStore.badge(for: repo.id)
+
+        Button(action: onTap) {
+            if let badge {
+                OpenSSFScoreBadge(score: badge, size: .regular)
+            } else {
+                fallbackBadge
+            }
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pressableHover()
+        .help("openssf.action.securityScore")
+    }
+
+    /// 无缓存评分时的占位 badge：与有评分态共用容器尺寸 + 同款镭射图标，
+    /// 仅去掉数字 + 背景改为中性灰（用户视觉上能感知到「评分还没拉到」）。
+    private var fallbackBadge: some View {
+        Image(systemName: "checkmark.shield.fill")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(OpenSSFScoreBadge.iridescentForeground)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.secondary.opacity(0.10), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Color.secondary.opacity(0.20), lineWidth: 0.5)
+            }
     }
 }
 

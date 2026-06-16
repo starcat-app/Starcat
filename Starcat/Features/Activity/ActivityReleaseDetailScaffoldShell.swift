@@ -86,7 +86,9 @@ struct ActivityReleaseDetailScaffoldShell: View {
         guard repo.isStarred else {
             return []
         }
-        var actions: [RepoDetailAction] = [.securityScore]
+        // v2.0（2026-06-16, dong4j）：OpenSSF 入口迁移到 hero `full_name` 同行，
+        // 不再放在 trailing actions 数组里。
+        var actions: [RepoDetailAction] = []
         if authSession.state.isAuthenticated {
             actions.append(.share)
             actions.append(.ai)

@@ -217,8 +217,10 @@ enum RepoDetailAction: Identifiable {
     /// **不带 handler**——同 `.share` 决策，AI 窗口行为对所有 repo 一致。
     case ai
 
-    /// OpenSSF Scorecard 安全评估入口。
-    case securityScore
+    // v2.0（2026-06-16, dong4j 反馈）：原 `.securityScore` 已删除。OpenSSF 入口
+    // 从右上 trailing actions 迁移到 hero `full_name` 同行的 inline badge
+    // （见 `RepoMetadataHeaderView.OpenSSFInlineBadge`），不再走 trailingActions
+    // 注入。4 个 scaffold shell 同步删除了 `.securityScore` 注入语句。
 
     /// Weekly 场景独有：跳到该期周刊原文。
     case weeklyIssue(number: Int, url: URL)
@@ -234,7 +236,6 @@ enum RepoDetailAction: Identifiable {
         switch self {
         case .share: return "share"
         case .ai: return "ai"
-        case .securityScore: return "securityScore"
         case .weeklyIssue: return "weeklyIssue"
         case .custom(let id, _, _, _): return "custom-\(id)"
         }

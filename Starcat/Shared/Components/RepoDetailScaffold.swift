@@ -154,8 +154,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 顶部面板自然高度（由 CollapsibleRepoMetadataPanel 内部回填）。
     @State private var metadataPanelHeight: CGFloat = 0
 
-    /// OpenSSF Scorecard 安全评估 sheet。
-    @State private var showSecurityScoreSheet = false
+    // v2.2 修订（2026-06-16, dong4j）：原 `@State private var showSecurityScoreSheet`
+    // 已下沉到 `RepoMetadataHeaderView` —— OpenSSF 入口图标从右上 trailing actions
+    // 迁移到 hero `full_name` 同行，sheet state 跟随入口本地化，不再由 Scaffold 维护。
 
     // v2.1 修订（2026-06-11）：原 `@State private var isRefreshing: Bool` 已删除。
     // 该状态曾给浮动刷新按钮用,现统一由 cacheFooter 内的 `readmeVM.isRefreshing` 驱动。
@@ -215,10 +216,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .id(repo.id)
         .navigationTitle(repo.name)
         .navigationSubtitle(repo.owner)
-        .sheet(isPresented: $showSecurityScoreSheet) {
-            OpenSSFScoreSheet(repo: repo)
-                .appLocaleEnvironment()
-        }
         .onChange(of: repo.id) { _, _ in
             withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
                 metadataPanelCollapseProgress = 0
@@ -333,19 +330,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         case .ai:
             // 复用现有 RepoAIOpenButton：内部通过 RepoAIWindowController 弹窗。
             RepoAIOpenButton(repo: repo)
-
-        case .securityScore:
-            Button {
-                showSecurityScoreSheet = true
-            } label: {
-                Image(systemName: "checkmark.shield")
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(width: 24, height: 24)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .pressableHover()
-            .help("openssf.action.securityScore")
 
         case .weeklyIssue(let number, let url):
             Link(destination: url) {
