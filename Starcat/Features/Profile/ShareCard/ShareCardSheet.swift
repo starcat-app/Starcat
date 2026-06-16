@@ -161,6 +161,14 @@ struct ShareCardSheet: View {
             // 调用方 SidebarHeaderView.onChange(of: authSession.state) 会重建 sheet 透传新的 user。
             userProfileService.load(login: user.login, force: true)
         }
+        // 2026-06-16 i18n root cause #4：SwiftUI sheet 在 macOS 上 **不会**自动从父
+        // scene 继承 `\.locale` environment(实测分享卡 sheet 子树查到的 locale 是
+        // `Locale.autoupdatingCurrent` = 系统中文,无视主 scene 注入的 LocaleStore)。
+        // `appLocaleEnvironment()` 显式挂回 LocaleStore.shared.selection.effectiveLocale,
+        // 让 `Text("key")` / `Label("key", ...)` 等 SwiftUI 路径能拿到正确 locale。
+        // 这与 `LocaleStore.swift` 顶部"sheet 自动继承"注释的假设矛盾,该假设已被
+        // 实测打脸,需要一并更新。详见 `Starcat/Shared/Utilities/L10n.swift`。
+        .appLocaleEnvironment()
     }
 
     /// 保存 / 导出反馈。放在 header 同一行，避免盖住底部按钮。
@@ -598,7 +606,7 @@ struct ShareCardSheet: View {
             userLogin: user.login,
             theme: theme
         ) {
-            showFeedback(String(format: String(localized: "sharecard.feedback.saved"), url.lastPathComponent))
+            showFeedback(String(format: String.l10n("sharecard.feedback.saved"), url.lastPathComponent))
         }
     }
 
@@ -611,7 +619,7 @@ struct ShareCardSheet: View {
         let content = currentContent
         let ok = ShareCardExporter.shareToX(content: content, userLogin: user.login)
         if ok {
-            showFeedback(String(localized: "sharecard.feedback.sharedToX"))
+            showFeedback(String.l10n("sharecard.feedback.sharedToX"))
         }
     }
 
@@ -631,7 +639,7 @@ struct ShareCardSheet: View {
         // HOM-174 v4：进度文案分阶段更新，给用户清晰的"App 在做什么"反馈。
         // 阶段一：fetching → 阶段二：渲染（HTML 含拉摘要/标签/头像，最耗时；
         // markdown 渲染瞬时）。defer 兜底确保任何返回路径都清掉 overlay。
-        exportProgressMessage = String(localized: "sharecard.export.loading.fetching")
+        exportProgressMessage = String.l10n("sharecard.export.loading.fetching")
         defer {
             isExporting = false
             exportProgressMessage = nil
@@ -642,18 +650,18 @@ struct ShareCardSheet: View {
             repos = try await dependencies.repoRepository.fetchAllStarred()
         } catch {
             AppLog.ui.error("performExportStarred: fetchAllStarred failed: \(error.localizedDescription, privacy: .public)")
-            showFeedback(String(localized: "sharecard.feedback.exportFailed"))
+            showFeedback(String.l10n("sharecard.feedback.exportFailed"))
             return
         }
 
         guard !repos.isEmpty else {
-            showFeedback(String(localized: "sharecard.feedback.exportEmpty"))
+            showFeedback(String.l10n("sharecard.feedback.exportEmpty"))
             return
         }
 
         // 阶段二文案：按格式区分（HTML 显式提示有摘要/标签/头像拉取，
         // 防止用户在数秒内以为 App 卡死；Markdown 文案简短）
-        exportProgressMessage = String(localized: format == .html
+        exportProgressMessage = String.l10n(format == .html
             ? "sharecard.export.loading.html"
             : "sharecard.export.loading.markdown")
 
@@ -663,7 +671,7 @@ struct ShareCardSheet: View {
             format: format,
             dependencies: dependencies
         ) {
-            showFeedback(String(format: String(localized: "sharecard.feedback.exported"), url.lastPathComponent))
+            showFeedback(String(format: String.l10n("sharecard.feedback.exported"), url.lastPathComponent))
         }
         // 用户取消保存面板 → 不弹反馈，保持沉默体验，对齐 `performSave` 的同款行为
     }

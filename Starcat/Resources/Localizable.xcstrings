@@ -16168,18 +16168,17 @@
       }
     },
     "settings.general.shortcuts.recording" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Press shortcut…"
+            "value" : "Record"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请按快捷键…"
+            "value" : "录制"
           }
         }
       }
@@ -19904,23 +19903,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tags"
-          }
-        }
-      }
-    },
-    "sidebar.unknownLanguage" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unknown"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未知"
           }
         }
       }

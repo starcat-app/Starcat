@@ -81,8 +81,8 @@ enum ShareCardExporter {
         }
 
         let panel = NSSavePanel()
-        panel.title = String(localized: "sharecard.savePanel.title")
-        panel.message = String(localized: "sharecard.savePanel.message")
+        panel.title = String.l10n("sharecard.savePanel.title")
+        panel.message = String.l10n("sharecard.savePanel.message")
         panel.allowedContentTypes = [.png]
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = "starcat-\(userLogin)-\(theme.rawValue).png"
@@ -142,9 +142,9 @@ enum ShareCardExporter {
         guard copyToPasteboard(content: content) else { return false }
 
         // X.com Web Intent：query 里只能带 text，图片必须用户手动粘贴（X 无公开图片直传接口）
-        // text 用 Bundle locale 决定中英文模板（中文用户看到中文推文）；
+        // text 跟随 LocaleStore 决定中英文模板（中文用户看到中文推文）；
         // 不带 url 参数避免 X 自动展开为卡片链接遮住用户的图
-        let text = String(localized: "sharecard.shareToX.tweetText")
+        let text = String.l10n("sharecard.shareToX.tweetText")
         var components = URLComponents(string: "https://x.com/intent/post")
         components?.queryItems = [URLQueryItem(name: "text", value: text)]
 
