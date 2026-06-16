@@ -92,39 +92,19 @@ struct ShareCardSheet: View {
         VStack(spacing: 0) {
             header
 
-            ScrollView {
-                VStack(spacing: 12) {
-                    themePicker
+            VStack(spacing: 12) {
+                themePicker
 
-                    cardPreview
+                cardPreview
 
-                    // 反馈区：进行中（progress pill 带菊花）优先级高于已完成（feedback pill）。
-                    // 同位置切换：用同一胶囊外观+尺寸，只换内容（菊花 ↔ 对勾），视觉上是
-                    // "在做事 → 做完了"的连续过渡，无位移、无突兀的 overlay。
-                    if let msg = exportProgressMessage {
-                        progressPill(text: msg)
-                            .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
-                    } else if let feedback = lastActionFeedback {
-                        feedbackPill(text: feedback)
-                            .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
-                    }
-
-                    actionButtons
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 4)
+                actionButtons
             }
-            .scrollIndicators(.hidden)
-            // HOM-173 v3 关键修复：macOS 上 ScrollView 默认有不透明的
-            // `.controlBackgroundColor` 背景，会把外层 VStack `.background` 加的
-            // DotsFlowBackground 完全盖住——这就是 dong4j 首次截图看不到 flow 的
-            // 根因。iOS 上 ScrollView 默认透明所以 ShipSwift 原 demo 没踩到，
-            // 移植到 macOS 时必须显式 hide ScrollView 自己的内容背景，让底层
-            // 的 Metal shader 能透上来。
-            // macOS 13+ API；Starcat macOS 15 满足。
-            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 4)
         }
-        .frame(width: 480, height: 820)
+        // 分享卡本体保持 400×560；这里只裁掉 sheet 旧版 820pt 高度留下的底部背景空白。
+        // 内容总高低于主窗口初始化高度 763pt，初始窗口下不会再向底部凸出。
+        .frame(width: 480, height: 760)
         .background {
             // HOM-173 v3：sheet 整体动态背景（Metal `swDotsFlow` 流场）。
             //
@@ -181,17 +161,44 @@ struct ShareCardSheet: View {
             // 调用方 SidebarHeaderView.onChange(of: authSession.state) 会重建 sheet 透传新的 user。
             userProfileService.load(login: user.login, force: true)
         }
+        // 2026-06-16 i18n root cause #4：SwiftUI sheet 在 macOS 上 **不会**自动从父
+        // scene 继承 `\.locale` environment(实测分享卡 sheet 子树查到的 locale 是
+        // `Locale.autoupdatingCurrent` = 系统中文,无视主 scene 注入的 LocaleStore)。
+        // `appLocaleEnvironment()` 显式挂回 LocaleStore.shared.selection.effectiveLocale,
+        // 让 `Text("key")` / `Label("key", ...)` 等 SwiftUI 路径能拿到正确 locale。
+        // 这与 `LocaleStore.swift` 顶部"sheet 自动继承"注释的假设矛盾,该假设已被
+        // 实测打脸,需要一并更新。详见 `Starcat/Shared/Utilities/L10n.swift`。
+        .appLocaleEnvironment()
+    }
+
+    /// 保存 / 导出反馈。放在 header 同一行，避免盖住底部按钮。
+    @ViewBuilder
+    private var feedbackOverlay: some View {
+        if let msg = exportProgressMessage {
+            progressPill(text: msg)
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity))
+        } else if let feedback = lastActionFeedback {
+            feedbackPill(text: feedback)
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity))
+        }
     }
 
     // MARK: - 顶部标题栏
 
-    /// 顶部标题栏：标题 + 关闭按钮。
+    /// 顶部标题栏：标题 + 同行反馈 + 关闭按钮。
     @ViewBuilder
     private var header: some View {
         HStack(alignment: .center) {
             Text("sharecard.title")
                 .font(.system(size: 16, weight: .semibold))
+
             Spacer()
+
+            feedbackOverlay
+                .frame(maxWidth: 270)
+
+            Spacer()
+
             Button {
                 onClose()
             } label: {
@@ -202,7 +209,7 @@ struct ShareCardSheet: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .help(Text("sharecard.close"))
+            .help(Text("sharecard.action.close"))
             .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 24)
@@ -215,17 +222,12 @@ struct ShareCardSheet: View {
     /// 主题选择 Picker：gacha 风格的卡片式选择器。
     /// HOM-174 follow-up：只显示主题卡片，移除标签文字。
     ///
-    /// **2026-06-06 性能修复（dong4j 反馈切主题卡顿）**：原来这里的 onTap 用
-    /// `withAnimation(.easeInOut(duration: 0.18)) { theme = t }` 包了一层动画
-    /// transaction，而 `cardPreview` 上又挂了一份 `.animation(_, value: theme)`。
-    /// 两条动画路径会在 magazine ↔ idCard 切换（layout 完全不同）时互相打架——
-    /// transaction A 还在跑，用户点下一个主题进入 transaction B，SwiftUI 把它合并
-    /// 成 noop，外观就是「点了但没反应」。
-    /// 修复：这里直接赋值不包 withAnimation，让 `cardPreview.animation` 那一处
-    /// 单点驱动主题切换动画即可。
+    /// 主题切换必须优先保证点击响应。这里不再给 `cardPreview` 挂 theme 动画：
+    /// magazine / idCard 两种布局切换时会重建头像、QR、草坪等较重 view，连续点击
+    /// 期间如果还叠隐式动画，SwiftUI 可能短暂合并 transaction，表现为随机点不动。
     @ViewBuilder
     private var themePicker: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             ForEach(ShareCardTheme.allCases) { t in
                 ThemeCardButton(
                     theme: t,
@@ -244,12 +246,17 @@ struct ShareCardSheet: View {
         let isSelected: Bool
         let action: () -> Void
 
+        @Environment(\.starcatReduceMotion) private var reduceMotion
+        @State private var isHovered = false
+
         var body: some View {
             Button(action: action) {
                 // 主题预览色块
                 themePreview
-                    .frame(width: 36, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .frame(width: 30, height: 22)
+                    .padding(4)
+                    .contentShape(Rectangle())
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
                     .overlay(
                         // 描边策略（2026-06-06 dong4j 反馈适配深浅主题）：
                         // - 选中态：`Color.accentColor` 2pt 加粗描边，强表达"选中"。
@@ -257,26 +264,33 @@ struct ShareCardSheet: View {
                         //   `Color.primary` 在 light 模式→黑、dark 模式→白，自动适配。
                         //   由于色块已通过 `pickerSwatch` 避开纯黑/纯白，0.5pt 极细
                         //   "提示线"足够勾出边缘而不会抢视觉权重。
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: 5)
                             .stroke(
-                                isSelected ? Color.accentColor : Color.primary.opacity(0.18),
-                                lineWidth: isSelected ? 2 : 0.5
+                                isSelected ? Color.accentColor : Color.primary.opacity(isHovered ? 0.34 : 0.18),
+                                lineWidth: isSelected ? 2 : (isHovered ? 1 : 0.5)
                             )
                     )
                     .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.primary.opacity(isHovered ? 0.08 : 0))
                     )
+                    .shadow(color: .black.opacity(isHovered ? 0.18 : 0), radius: 4, y: 1)
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .help(Text(theme.localizationKey))
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.12)) {
+                    isHovered = hovering
+                }
+            }
         }
 
         /// 主题预览色块：显示主题的主要配色。
         ///
         /// 用 `theme.pickerSwatch` 而**不是** `theme.palette` 的 cardBackground/accent
         /// （见 `ShareCardTheme.pickerSwatch` 的详细注释）：导出图色板可能出现纯黑/纯白，
-        /// 在 picker 36×28 小色块里会刺眼或融背景；pickerSwatch 是为 picker 单独调过的
+        /// 在 picker 30×22 小色块里会刺眼或融背景；pickerSwatch 是为 picker 单独调过的
         /// 柔和色对，保留色相记忆点同时兼容 light/dark 两种主题。
         private var themePreview: some View {
             HStack(spacing: 1) {
@@ -301,8 +315,6 @@ struct ShareCardSheet: View {
             theme: theme,
             isProUser: isProUser
         )
-        // 主题切换时给一点淡入淡出动画，让预览过渡不生硬
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: theme)
         // 卡片下方加柔和阴影区分 sheet material
         .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
     }
@@ -567,16 +579,17 @@ struct ShareCardSheet: View {
                 .foregroundStyle(.green)
             Text(text)
                 .font(.system(size: 12, weight: .medium))
-                .lineLimit(2)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
                 .multilineTextAlignment(.leading)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(.background.tertiary)
         )
-        .frame(width: 400)
+        .frame(maxWidth: 270)
     }
 
     // MARK: - 动作执行
@@ -593,7 +606,7 @@ struct ShareCardSheet: View {
             userLogin: user.login,
             theme: theme
         ) {
-            showFeedback(String(format: String(localized: "sharecard.feedback.saved"), url.lastPathComponent))
+            showFeedback(String(format: String.l10n("sharecard.feedback.saved"), url.lastPathComponent))
         }
     }
 
@@ -606,7 +619,7 @@ struct ShareCardSheet: View {
         let content = currentContent
         let ok = ShareCardExporter.shareToX(content: content, userLogin: user.login)
         if ok {
-            showFeedback(String(localized: "sharecard.feedback.sharedToX"))
+            showFeedback(String.l10n("sharecard.feedback.sharedToX"))
         }
     }
 
@@ -626,7 +639,7 @@ struct ShareCardSheet: View {
         // HOM-174 v4：进度文案分阶段更新，给用户清晰的"App 在做什么"反馈。
         // 阶段一：fetching → 阶段二：渲染（HTML 含拉摘要/标签/头像，最耗时；
         // markdown 渲染瞬时）。defer 兜底确保任何返回路径都清掉 overlay。
-        exportProgressMessage = String(localized: "sharecard.export.loading.fetching")
+        exportProgressMessage = String.l10n("sharecard.export.loading.fetching")
         defer {
             isExporting = false
             exportProgressMessage = nil
@@ -637,18 +650,18 @@ struct ShareCardSheet: View {
             repos = try await dependencies.repoRepository.fetchAllStarred()
         } catch {
             AppLog.ui.error("performExportStarred: fetchAllStarred failed: \(error.localizedDescription, privacy: .public)")
-            showFeedback(String(localized: "sharecard.feedback.exportFailed"))
+            showFeedback(String.l10n("sharecard.feedback.exportFailed"))
             return
         }
 
         guard !repos.isEmpty else {
-            showFeedback(String(localized: "sharecard.feedback.exportEmpty"))
+            showFeedback(String.l10n("sharecard.feedback.exportEmpty"))
             return
         }
 
         // 阶段二文案：按格式区分（HTML 显式提示有摘要/标签/头像拉取，
         // 防止用户在数秒内以为 App 卡死；Markdown 文案简短）
-        exportProgressMessage = String(localized: format == .html
+        exportProgressMessage = String.l10n(format == .html
             ? "sharecard.export.loading.html"
             : "sharecard.export.loading.markdown")
 
@@ -658,7 +671,7 @@ struct ShareCardSheet: View {
             format: format,
             dependencies: dependencies
         ) {
-            showFeedback(String(format: String(localized: "sharecard.feedback.exported"), url.lastPathComponent))
+            showFeedback(String(format: String.l10n("sharecard.feedback.exported"), url.lastPathComponent))
         }
         // 用户取消保存面板 → 不弹反馈，保持沉默体验，对齐 `performSave` 的同款行为
     }
@@ -682,16 +695,17 @@ struct ShareCardSheet: View {
                 .frame(width: 16, height: 16)
             Text(text)
                 .font(.system(size: 12, weight: .medium))
-                .lineLimit(2)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
                 .multilineTextAlignment(.leading)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(.background.tertiary)
         )
-        .frame(width: 400)
+        .frame(maxWidth: 270)
     }
 
     /// 当前要渲染的卡片内容（主题切换不重新构造卡片实例，但导出时要用最新值）。

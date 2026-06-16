@@ -27,7 +27,14 @@ final class WeeklyLanguageStore {
         case failed(String)
     }
 
+    /// 后端不可达时的兜底列表。
+    ///
+    /// 顺序与后端 `/api/v1/repos/languages` SQL 排序一致(dong4j 2026-06-16 调整):
+    /// **未分类排第 1 位**,其余按 count desc(兜底数据 count 全为 0,等价于按字母序),
+    /// 客户端 picker 会再 prepend `""`「全部」哨兵,所以最终展示:
+    /// 全部 → 未分类 → JavaScript → TypeScript → Python → Go → Rust → Swift → Java → Shell。
     static let fallbackList: [TrendingLanguageAggregateDTO] = [
+        .init(key: TrendingLanguage.uncategorizedKey, label: "Uncategorized", count: 0),
         .init(key: "JavaScript", label: "JavaScript", count: 0),
         .init(key: "TypeScript", label: "TypeScript", count: 0),
         .init(key: "Python", label: "Python", count: 0),
@@ -36,7 +43,6 @@ final class WeeklyLanguageStore {
         .init(key: "Swift", label: "Swift", count: 0),
         .init(key: "Java", label: "Java", count: 0),
         .init(key: "Shell", label: "Shell", count: 0),
-        .init(key: TrendingLanguage.uncategorizedKey, label: "Uncategorized", count: 0),
     ]
 
     private let api: WeeklyAPI

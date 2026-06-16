@@ -2,7 +2,7 @@
 //  ShareCardTheme.swift
 //  Starcat
 //
-//  HOM-173 用户分享卡片：三种封面主题的色彩 / 调色板定义。
+//  HOM-173 用户分享卡片：封面主题的色彩 / 调色板定义。
 //
 //  设计动机（来自 issue HOM-173 dong4j 最终方案）：
 //  - 卡片布局必须三套主题保持一致（Magazine v2），仅切换配色。
@@ -39,6 +39,10 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
     case heatOrange = "heatOrange"
     /// GitHub Green：深绿底 + GitHub 经典草坪绿。"我是 GitHub 玩家"的最直接表达。
     case githubGreen = "githubGreen"
+    /// Aurora Blue：深海蓝底 + 青蓝高光。冷静、科技感，适合技术向分享。
+    case auroraBlue = "auroraBlue"
+    /// Berry Purple：深莓紫底 + 粉紫高光。更偏社交传播，补足暖橙之外的亮色选择。
+    case berryPurple = "berryPurple"
 
     // MARK: - ID Card 布局（HOM-173 v2，2026-06-06 新增）
 
@@ -57,6 +61,8 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
         case .minimal:      return "sharecard.theme.minimal"
         case .heatOrange:   return "sharecard.theme.heatOrange"
         case .githubGreen:  return "sharecard.theme.githubGreen"
+        case .auroraBlue:   return "sharecard.theme.auroraBlue"
+        case .berryPurple:  return "sharecard.theme.berryPurple"
         case .lightCard:    return "sharecard.theme.lightCard"
         case .darkCard:     return "sharecard.theme.darkCard"
         }
@@ -68,6 +74,8 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
         case .minimal:      return "circle.lefthalf.filled"
         case .heatOrange:   return "flame.fill"
         case .githubGreen:  return "leaf.fill"
+        case .auroraBlue:   return "sparkles"
+        case .berryPurple:  return "camera.filters"
         case .lightCard:    return "person.text.rectangle"
         case .darkCard:     return "person.text.rectangle.fill"
         }
@@ -79,6 +87,8 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
         case .minimal:      return .minimalPalette
         case .heatOrange:   return .heatOrangePalette
         case .githubGreen:  return .githubGreenPalette
+        case .auroraBlue:   return .auroraBluePalette
+        case .berryPurple:  return .berryPurplePalette
         case .lightCard:    return .lightCardPalette
         case .darkCard:     return .darkCardPalette
         }
@@ -102,8 +112,8 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
     var pickerSwatch: (background: Color, accent: Color) {
         switch self {
         case .minimal:
-            // 极简：深石墨 + 近白。比纯黑 #0B0B0F 柔一档，保留"克制中性"语义。
-            return (Color.fromHex6(0x2C2C2E), Color.fromHex6(0xF5F5F7))
+            // 极简：靛蓝灰 + 冰蓝。避开黑/白极端值，仍保留"克制中性"语义。
+            return (Color.fromHex6(0x27324A), Color.fromHex6(0xB8D7FF))
         case .heatOrange:
             // 热力橙：深暖棕 + 火焰橙。背景从 #1A0F0A 提亮到 #3A201A，
             // 减少"黑感"突出"棕暖"，accent 维持 palette 取色保持火焰识别度。
@@ -112,15 +122,18 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
             // GitHub Green：墨绿 + 草坪绿。背景从 GitHub 蓝黑 #0D1117 提亮到 #0F2A1A，
             // 让"绿主题"在 picker 里更绿少黑，accent 维持草坪 #39D353。
             return (Color.fromHex6(0x0F2A1A), Color.fromHex6(0x39D353))
+        case .auroraBlue:
+            // 极光蓝：深海蓝 + 高亮青蓝，和 GitHub Green 区分开。
+            return (Color.fromHex6(0x102A43), Color.fromHex6(0x38BDF8))
+        case .berryPurple:
+            // 莓紫：葡萄紫 + 莓粉，补足现有主题里缺少的紫粉系。
+            return (Color.fromHex6(0x3B1D4A), Color.fromHex6(0xF472B6))
         case .lightCard:
-            // 白卡：近白 + 深石墨。背景从纯白 #FFFFFF 微调到 #F5F5F7（macOS systemGray6），
-            // 在 light sheet 里仍能与 sheet 背景区分；accent 从纯黑 #0A0A0A 提到 #3A3A3C
-            // 让"白卡 + 黑徽章"对比柔和不刺眼。
-            return (Color.fromHex6(0xF5F5F7), Color.fromHex6(0x3A3A3C))
+            // 白卡：浅青 + 深海蓝，不再用白/黑切块，避免在明亮/黑暗 sheet 下都不明显。
+            return (Color.fromHex6(0xD8F3F0), Color.fromHex6(0x155E75))
         case .darkCard:
-            // 黑卡：中度石墨 + 近白。比 minimal 浅整整一档（#48484A vs #2C2C2E），
-            // 用"中灰 vs 深灰"双卡区分 minimal vs darkCard；accent 维持近白。
-            return (Color.fromHex6(0x48484A), Color.fromHex6(0xF5F5F7))
+            // 黑卡：紫灰 + 亮薰衣草，不再用黑/白切块，避免和 sheet 背景或白色面板融合。
+            return (Color.fromHex6(0x4C3A64), Color.fromHex6(0xC4B5FD))
         }
     }
 
@@ -131,7 +144,7 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
     /// 把"加新主题"的影响半径锁在新文件 / 新分支内，避免回归。
     var layout: ShareCardLayout {
         switch self {
-        case .minimal, .heatOrange, .githubGreen:
+        case .minimal, .heatOrange, .githubGreen, .auroraBlue, .berryPurple:
             return .magazine
         case .lightCard, .darkCard:
             return .idCard
@@ -283,6 +296,68 @@ extension ShareCardPalette {
             l2:   Color.fromHex6(0x006D32),
             l3:   Color.fromHex6(0x26A641),
             l4:   Color.fromHex6(0x39D353)
+        )
+    )
+
+    // MARK: - Aurora Blue
+
+    /// Aurora Blue：深海蓝底 + 青蓝高光。
+    ///
+    /// 配色逻辑：
+    /// - 背景：#071927 → #102A43，保持深色科技感，但比 GitHub Green 更冷、更蓝。
+    /// - 草坪：青蓝梯度，none 用低饱和海军蓝，l4 用 #38BDF8 形成"极光"高光。
+    /// - 强调色：#38BDF8。按钮 / 数字在深蓝底上对比明确，适合技术内容分享。
+    static let auroraBluePalette = ShareCardPalette(
+        cardBackground: Color.fromHex6(0x071927),
+        cardBackgroundSecondary: Color.fromHex6(0x102A43),
+        cardBorder: Color.fromHex6(0x1E4E6D),
+
+        primaryText: Color.fromHex6(0xE0F2FE),
+        secondaryText: Color.fromHex6(0x93C5FD),
+        tertiaryText: Color.fromHex6(0x5B8FB9),
+
+        accent: Color.fromHex6(0x38BDF8),
+        onAccent: Color.fromHex6(0x071927),
+
+        divider: Color.fromHex6(0x1E4E6D),
+
+        contribution: ContributionPalette(
+            none: Color.fromHex6(0x0B2638),
+            l1:   Color.fromHex6(0x075985),
+            l2:   Color.fromHex6(0x0284C7),
+            l3:   Color.fromHex6(0x0EA5E9),
+            l4:   Color.fromHex6(0x38BDF8)
+        )
+    )
+
+    // MARK: - Berry Purple
+
+    /// Berry Purple：深莓紫底 + 粉紫高光。
+    ///
+    /// 配色逻辑：
+    /// - 背景：#1F102A → #321845，和既有橙 / 绿 / 蓝拉开色相距离。
+    /// - 草坪：紫到莓粉的 5 档梯度，视觉更社交、更适合发图传播。
+    /// - 强调色：#F472B6；onAccent 用深紫，保证粉色按钮和数字区域的可读性。
+    static let berryPurplePalette = ShareCardPalette(
+        cardBackground: Color.fromHex6(0x1F102A),
+        cardBackgroundSecondary: Color.fromHex6(0x321845),
+        cardBorder: Color.fromHex6(0x5B2D73),
+
+        primaryText: Color.fromHex6(0xFDF2F8),
+        secondaryText: Color.fromHex6(0xF0ABFC),
+        tertiaryText: Color.fromHex6(0xA77AB8),
+
+        accent: Color.fromHex6(0xF472B6),
+        onAccent: Color.fromHex6(0x1F102A),
+
+        divider: Color.fromHex6(0x5B2D73),
+
+        contribution: ContributionPalette(
+            none: Color.fromHex6(0x2A1638),
+            l1:   Color.fromHex6(0x6B21A8),
+            l2:   Color.fromHex6(0xA21CAF),
+            l3:   Color.fromHex6(0xDB2777),
+            l4:   Color.fromHex6(0xF472B6)
         )
     )
 

@@ -74,8 +74,8 @@ enum StarredExporter {
 
         // 2. 弹保存面板
         let panel = NSSavePanel()
-        panel.title = String(localized: "sharecard.exportStarred.savePanel.title")
-        panel.message = String(localized: "sharecard.exportStarred.savePanel.message")
+        panel.title = String.l10n("sharecard.exportStarred.savePanel.title")
+        panel.message = String.l10n("sharecard.exportStarred.savePanel.message")
         panel.allowedContentTypes = allowedContentTypes(for: format)
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = format.defaultFileName(userLogin: user.login)

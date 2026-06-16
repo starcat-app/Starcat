@@ -859,7 +859,8 @@ struct RepoListView: View {
             return String(localized: "sidebar.untagged")
         case .language(let language):
             // Navigation title 同样走短名（详见 LanguageDisplayName）。
-            return language.map(LanguageDisplayName.shortened(for:)) ?? String(localized: "sidebar.unknownLanguage")
+            // 无主语言（nil）统一硬编码为 "Uncategorized"（dong4j 2026-06-16，不做 i18n）。
+            return language.map(LanguageDisplayName.shortened(for:)) ?? "Uncategorized"
         case .tag(let id):
             return viewModel.tags.first { $0.id == id }?.name ?? String(localized: "sidebar.tagFallback")
         }

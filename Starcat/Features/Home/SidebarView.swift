@@ -173,7 +173,10 @@ struct SidebarView: View {
                     .controlSize(.mini)
                     // 让 indeterminate spinner 与文字基线对齐（macOS 默认会偏高 1-2pt）
                     .frame(width: 12, height: 12)
-                Text(String(format: String(localized: "sidebar.autoTidy.runningFormat"),
+                // 2026-06-16:走 `String.l10n(_:)` wrapper,绕开 `String(localized:)`
+                // 不响应 LocaleStore 的问题(实测 `locale:` 参数无效)。
+                // 详见 `Starcat/Shared/Utilities/L10n.swift` 顶部注释。
+                Text(String(format: String.l10n("sidebar.autoTidy.runningFormat"),
                             autoTidyScheduler.autoTidyProgressText))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
