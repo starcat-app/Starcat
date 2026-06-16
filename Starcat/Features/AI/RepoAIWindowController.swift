@@ -189,10 +189,10 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         ])
         window.contentView = glassView
 
-        // 窗口标题走 String(localized:) + format：AppKit NSWindow.title 是 String，
+        // 窗口标题走 String.l10n(...) + format：AppKit NSWindow.title 是 String，
         // 不像 SwiftUI Text 那样自动解析 LocalizedStringKey，必须显式跑一次本地化。
         window.title = String(
-            format: String(localized: "ai.assistant.window.titleFormat"),
+            format: String.l10n("ai.assistant.window.titleFormat"),
             repo.fullName
         )
         window.setContentSize(RepoAIWindowMetrics.defaultContentSize)

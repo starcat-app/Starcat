@@ -31,7 +31,7 @@ struct BatchAIUntaggedBanner: View {
                 .foregroundStyle(.tint)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(String(format: String(localized: "batchAI.banner.titleFormat"), untaggedCount))
+                Text(String(format: String.l10n("batchAI.banner.titleFormat"), untaggedCount))
                     .font(.subheadline.weight(.medium))
                 Text(secondaryText)
                     .font(.caption)
@@ -82,13 +82,13 @@ struct BatchAIUntaggedBanner: View {
     private var secondaryText: String {
         if service.isRunning {
             if service.isPaused {
-                return String(format: String(localized: "batchAI.banner.runningPausedFormat"), service.finishedCount, service.totalCount)
+                return String(format: String.l10n("batchAI.banner.runningPausedFormat"), service.finishedCount, service.totalCount)
             }
-            return String(format: String(localized: "batchAI.banner.runningFormat"), service.finishedCount, service.totalCount)
+            return String(format: String.l10n("batchAI.banner.runningFormat"), service.finishedCount, service.totalCount)
         }
         if service.isFinished {
-            return String(format: String(localized: "batchAI.banner.finishedFormat"), service.completedCount, service.failedCount)
+            return String(format: String.l10n("batchAI.banner.finishedFormat"), service.completedCount, service.failedCount)
         }
-        return String(localized: "batchAI.banner.hint")
+        return String.l10n("batchAI.banner.hint")
     }
 }

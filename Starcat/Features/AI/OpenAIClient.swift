@@ -172,7 +172,7 @@ struct OpenAIClient: AIClientProtocol {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
-            throw AIClientError.modelListRequestFailed(String(localized: "ai.client.modelList.noHTTPResponse"))
+            throw AIClientError.modelListRequestFailed(String.l10n("ai.client.modelList.noHTTPResponse"))
         }
         guard (200..<300).contains(http.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? ""

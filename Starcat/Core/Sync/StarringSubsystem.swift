@@ -343,7 +343,7 @@ enum StarActionError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notAuthenticated:
-            return String(localized: "starAction.error.notAuthenticated")
+            return String.l10n("starAction.error.notAuthenticated")
         }
     }
 }

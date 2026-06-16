@@ -77,7 +77,7 @@ final class ActivityViewModel {
             lastRefreshedAt = Date()
             loadError = nil
         } catch {
-            loadError = String(localized: "activity.error.loadFailed")
+            loadError = String.l10n("activity.error.loadFailed")
         }
     }
 
@@ -175,9 +175,9 @@ final class ActivityViewModel {
             id: "announcement:activity-v1",
             kind: .announcement,
             category: .announcement,
-            title: String(localized: "activity.announcement.activityV1.title"),
-            subtitle: String(localized: "activity.announcement.activityV1.subtitle"),
-            body: String(localized: "activity.announcement.activityV1.body"),
+            title: String.l10n("activity.announcement.activityV1.title"),
+            subtitle: String.l10n("activity.announcement.activityV1.subtitle"),
+            body: String.l10n("activity.announcement.activityV1.body"),
             createdAt: Date(),
             htmlURL: nil,
             repo: nil,
@@ -233,7 +233,7 @@ final class ActivityViewModel {
                     kind: .star,
                     category: .star,
                     title: repo.fullName,
-                    subtitle: String(localized: "activity.star.subtitle"),
+                    subtitle: String.l10n("activity.star.subtitle"),
                     body: repo.description,
                     createdAt: Self.parseDate(repo.starredAt),
                     htmlURL: URL(string: repo.htmlUrl),
@@ -256,7 +256,7 @@ final class ActivityViewModel {
                     kind: .repository,
                     category: .repository,
                     title: repo.fullName,
-                    subtitle: String(localized: "activity.repository.subtitle"),
+                    subtitle: String.l10n("activity.repository.subtitle"),
                     body: repo.description,
                     createdAt: Self.parseDate(repo.pushedAt) ?? Self.parseDate(repo.updatedAt),
                     htmlURL: URL(string: repo.htmlUrl),
@@ -284,7 +284,7 @@ final class ActivityViewModel {
                     kind: .suggestion,
                     category: .suggestion,
                     title: repo.fullName,
-                    subtitle: String(localized: "activity.suggestion.subtitle"),
+                    subtitle: String.l10n("activity.suggestion.subtitle"),
                     body: repo.description,
                     createdAt: Self.parseDate(repo.pushedAt) ?? Self.parseDate(repo.updatedAt),
                     htmlURL: URL(string: repo.htmlUrl),

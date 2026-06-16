@@ -48,9 +48,9 @@ enum SemanticSearchError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return String(localized: "ai.semanticSearch.error.missingAPIKey")
+            return String.l10n("ai.semanticSearch.error.missingAPIKey")
         case .noVectors:
-            return String(localized: "ai.semanticSearch.error.noVectors")
+            return String.l10n("ai.semanticSearch.error.noVectors")
         }
     }
 }
@@ -462,20 +462,20 @@ final class SemanticSearchService {
         let scoreText = "\(Int((max(0, min(displayScore, 1)) * 100).rounded()))%"
         let lowerQuery = query.localizedLowercase
         if repo.fullName.localizedLowercase.contains(lowerQuery) {
-            return String(format: String(localized: "ai.semanticSearch.reason.nameMatchFormat"), scoreText)
+            return String(format: String.l10n("ai.semanticSearch.reason.nameMatchFormat"), scoreText)
         }
         if let description = repo.description, description.localizedLowercase.contains(lowerQuery) {
-            return String(format: String(localized: "ai.semanticSearch.reason.descriptionMatchFormat"), scoreText)
+            return String(format: String.l10n("ai.semanticSearch.reason.descriptionMatchFormat"), scoreText)
         }
         if let topics = repo.topics, topics.localizedLowercase.contains(lowerQuery) {
-            return String(format: String(localized: "ai.semanticSearch.reason.topicsMatchFormat"), scoreText)
+            return String(format: String.l10n("ai.semanticSearch.reason.topicsMatchFormat"), scoreText)
         }
         if ftsHit {
-            return String(format: String(localized: "ai.semanticSearch.reason.notesMatchFormat"), scoreText)
+            return String(format: String.l10n("ai.semanticSearch.reason.notesMatchFormat"), scoreText)
         }
         // literalHit == false && ftsHit == false：纯语义召回
         _ = literalHit
-        return String(format: String(localized: "ai.semanticSearch.reason.vectorOnlyFormat"), scoreText)
+        return String(format: String.l10n("ai.semanticSearch.reason.vectorOnlyFormat"), scoreText)
     }
 }
 

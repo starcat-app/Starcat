@@ -30,9 +30,9 @@ enum DiskChatHistoryStoreError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .applicationSupportUnavailable:
-            return String(localized: "store.chatHistory.error.applicationSupportUnavailable")
+            return String.l10n("store.chatHistory.error.applicationSupportUnavailable")
         case .invalidPathComponent(let value):
-            return String(format: String(localized: "store.chatHistory.error.invalidPathComponentFormat"), value)
+            return String(format: String.l10n("store.chatHistory.error.invalidPathComponentFormat"), value)
         }
     }
 }

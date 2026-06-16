@@ -149,6 +149,7 @@ struct RepoNotesSection: View {
                 content: $editingContent,
                 onFlush: { await flushContent() }
             )
+            .appLocaleEnvironment()
         }
     }
 
@@ -196,7 +197,7 @@ struct RepoNotesSection: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let edited = viewModel?.note?.editedAt {
-                    Text(String(format: String(localized: "repo.lastEditedFormat"), formattedEditedAt(edited)))
+                    Text(String(format: String.l10n("repo.lastEditedFormat"), formattedEditedAt(edited)))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

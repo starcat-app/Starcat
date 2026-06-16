@@ -229,7 +229,7 @@ struct ServicesSettingsTab: View {
                     .foregroundStyle(.tertiary)
                 // 显示"当前生效"的 URL——已保存生效值（AppEndpoints.resolved(for:)），
                 // 不是 draft；这样能让用户看到"我保存前 vs 保存后"的差别。
-                Text(String(format: String(localized: "settings.services.effective"), AppEndpoints.resolved(for: service).absoluteString))
+                Text(String(format: String.l10n("settings.services.effective"), AppEndpoints.resolved(for: service).absoluteString))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

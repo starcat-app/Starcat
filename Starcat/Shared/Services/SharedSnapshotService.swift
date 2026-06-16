@@ -48,17 +48,17 @@ enum SharedSnapshotError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .privateRepository:
-            return String(localized: "snapshot.error.privateRepository")
+            return String.l10n("snapshot.error.privateRepository")
         case .invalidGitHubURL:
-            return String(localized: "snapshot.error.invalidGitHubURL")
+            return String.l10n("snapshot.error.invalidGitHubURL")
         case .requestFailed(let statusCode):
-            return String(format: String(localized: "snapshot.error.requestFailedFormat"), statusCode)
+            return String(format: String.l10n("snapshot.error.requestFailedFormat"), statusCode)
         case .archiveTooLarge:
-            return String(localized: "snapshot.error.archiveTooLarge")
+            return String.l10n("snapshot.error.archiveTooLarge")
         case .emptyArchive:
-            return String(localized: "snapshot.error.emptyArchive")
+            return String.l10n("snapshot.error.emptyArchive")
         case .branchNotFound(let name):
-            return String(format: String(localized: "snapshot.error.branchNotFoundFormat"), name)
+            return String(format: String.l10n("snapshot.error.branchNotFoundFormat"), name)
         }
     }
 }

@@ -88,7 +88,7 @@ final class CodeFlowViewModel {
             await checkSelectedBranchVersion()
         } catch {
             versionStatus = .unavailable(
-                String(format: String(localized: "codeFlow.runtime.branchLoadFailedFormat"), error.localizedDescription)
+                String(format: String.l10n("codeFlow.runtime.branchLoadFailedFormat"), error.localizedDescription)
             )
         }
     }
@@ -141,7 +141,7 @@ final class CodeFlowViewModel {
 
                 let branch = try await runStep(
                     id: "resolveRevision",
-                    runningDetail: String(format: String(localized: "codeFlow.runtime.resolveRevisionFormat"), selectedBranchName)
+                    runningDetail: String(format: String.l10n("codeFlow.runtime.resolveRevisionFormat"), selectedBranchName)
                 ) {
                     try await runner.resolveBranch(repo: repo, name: selectedBranchName)
                 } successDetail: { "\($0.name) · \($0.shortSHA)" }
@@ -150,20 +150,20 @@ final class CodeFlowViewModel {
                 state = .downloading
                 let archive = try await runStep(
                     id: "download",
-                    runningDetail: String(localized: "codeFlow.runtime.downloadingZip")
+                    runningDetail: String.l10n("codeFlow.runtime.downloadingZip")
                 ) {
                     try await runner.archiveIfNeeded(repo: repo, commitSHA: branch.commitSHA)
                 } successDetail: { archive in
                     let bytes = Self.byteText(archive.bytes)
                     if archive.wasDownloaded {
-                        return String(format: String(localized: "codeFlow.runtime.downloadedZipFormat"), bytes)
+                        return String(format: String.l10n("codeFlow.runtime.downloadedZipFormat"), bytes)
                     }
-                    return String(format: String(localized: "codeFlow.runtime.cachedZipFormat"), bytes)
+                    return String(format: String.l10n("codeFlow.runtime.cachedZipFormat"), bytes)
                 }
 
                 try Task.checkCancellation()
                 state = .preparing
-                setStep(id: "generatePage", status: .running, detail: String(localized: "codeFlow.runtime.injectingZip"))
+                setStep(id: "generatePage", status: .running, detail: String.l10n("codeFlow.runtime.injectingZip"))
                 let generateStartedAt = Date()
                 let persistedSteps = successfulMetadataSteps(excluding: ["generatePage", "openBrowser", "browserAnalysis"])
                 let project = try runner.makeVisualizationPage(
@@ -177,19 +177,19 @@ final class CodeFlowViewModel {
                 setStep(
                     id: "generatePage",
                     status: .succeeded,
-                    detail: String(localized: "codeFlow.runtime.pageWritten"),
+                    detail: String.l10n("codeFlow.runtime.pageWritten"),
                     duration: CodeFlowRunner.milliseconds(from: generateStartedAt)
                 )
 
                 try Task.checkCancellation()
                 state = .opening
                 let openStartedAt = Date()
-                setStep(id: "openBrowser", status: .running, detail: String(localized: "codeFlow.runtime.handingToBrowser"))
+                setStep(id: "openBrowser", status: .running, detail: String.l10n("codeFlow.runtime.handingToBrowser"))
                 guard try runner.openVisualization(project.pageURL) else {
                     throw NSError(
                         domain: "Starcat.CodeFlow",
                         code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: String(localized: "codeFlow.error.browserOpenFailed")]
+                        userInfo: [NSLocalizedDescriptionKey: String.l10n("codeFlow.error.browserOpenFailed")]
                     )
                 }
                 setStep(
@@ -198,7 +198,7 @@ final class CodeFlowViewModel {
                     detail: project.pageURL.path,
                     duration: CodeFlowRunner.milliseconds(from: openStartedAt)
                 )
-                setStep(id: "browserAnalysis", status: .handedOff, detail: String(localized: "codeFlow.runtime.handedToBrowser"))
+                setStep(id: "browserAnalysis", status: .handedOff, detail: String.l10n("codeFlow.runtime.handedToBrowser"))
 
                 let finalProject = try runner.updateExecution(
                     project: project,
@@ -222,7 +222,7 @@ final class CodeFlowViewModel {
         state = .opening
         do {
             guard try runner.openVisualization(pageURL) else {
-                state = .failed(message: String(localized: "codeFlow.error.browserOpenFailed"))
+                state = .failed(message: String.l10n("codeFlow.error.browserOpenFailed"))
                 return
             }
             state = .succeeded
@@ -269,7 +269,7 @@ final class CodeFlowViewModel {
                 : .updateAvailable(generated: String(generatedSHA.prefix(7)), latest: latest.shortSHA)
         } catch {
             versionStatus = .unavailable(
-                String(format: String(localized: "codeFlow.version.checkFailedFormat"), error.localizedDescription)
+                String(format: String.l10n("codeFlow.version.checkFailedFormat"), error.localizedDescription)
             )
         }
     }
@@ -354,36 +354,36 @@ final class CodeFlowViewModel {
     }
 
     private static func emptySteps() -> [RuntimeStep] {
-        let pendingDetail = String(localized: "codeFlow.step.detail.pending")
-        let handoffDetail = String(localized: "codeFlow.step.detail.awaitingHandoff")
+        let pendingDetail = String.l10n("codeFlow.step.detail.pending")
+        let handoffDetail = String.l10n("codeFlow.step.detail.awaitingHandoff")
         return [
             RuntimeStep(
                 id: "resolveRevision",
-                title: String(localized: "codeFlow.step.resolveRevision.title"),
+                title: String.l10n("codeFlow.step.resolveRevision.title"),
                 detail: pendingDetail,
                 status: .pending
             ),
             RuntimeStep(
                 id: "download",
-                title: String(localized: "codeFlow.step.download.title"),
+                title: String.l10n("codeFlow.step.download.title"),
                 detail: pendingDetail,
                 status: .pending
             ),
             RuntimeStep(
                 id: "generatePage",
-                title: String(localized: "codeFlow.step.generatePage.title"),
+                title: String.l10n("codeFlow.step.generatePage.title"),
                 detail: pendingDetail,
                 status: .pending
             ),
             RuntimeStep(
                 id: "openBrowser",
-                title: String(localized: "codeFlow.step.openBrowser.title"),
+                title: String.l10n("codeFlow.step.openBrowser.title"),
                 detail: pendingDetail,
                 status: .pending
             ),
             RuntimeStep(
                 id: "browserAnalysis",
-                title: String(localized: "codeFlow.step.browserAnalysis.title"),
+                title: String.l10n("codeFlow.step.browserAnalysis.title"),
                 detail: handoffDetail,
                 status: .pending
             )

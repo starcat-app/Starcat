@@ -60,6 +60,7 @@ struct ContentView: View {
         .animation(reduceMotion ? nil : .smooth, value: authSession.state)
         .sheet(isPresented: showAuthViewBinding) {
             GithubAuthView()
+                .appLocaleEnvironment()
         }
     }
 }

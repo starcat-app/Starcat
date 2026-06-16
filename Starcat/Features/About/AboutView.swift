@@ -784,7 +784,7 @@ private struct AboutVersion {
     }
 
     var fullText: String {
-        String(format: String(localized: "about.version.fullFormat"), marketing, displayBuild)
+        String(format: String.l10n("about.version.fullFormat"), marketing, displayBuild)
     }
 }
 

@@ -42,9 +42,9 @@ enum WikiSource: Codable, Sendable, Hashable {
 
     var displayName: String {
         switch self {
-        case .deepWiki: return String(localized: "wiki.source.deepwiki")
-        case .zread: return String(localized: "wiki.source.zread")
-        case .codeWiki: return String(localized: "wiki.source.codewiki")
+        case .deepWiki: return String.l10n("wiki.source.deepwiki")
+        case .zread: return String.l10n("wiki.source.zread")
+        case .codeWiki: return String.l10n("wiki.source.codewiki")
         case .unknown(let raw): return raw
         }
     }

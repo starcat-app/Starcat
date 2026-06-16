@@ -29,17 +29,17 @@ enum KeychainError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .writeFailed(let error):
-            return String(format: String(localized: "keychain.error.writeFailedFormat"), error.localizedDescription)
+            return String(format: String.l10n("keychain.error.writeFailedFormat"), error.localizedDescription)
         case .readFailed(let error):
-            return String(format: String(localized: "keychain.error.readFailedFormat"), error.localizedDescription)
+            return String(format: String.l10n("keychain.error.readFailedFormat"), error.localizedDescription)
         case .deleteFailed(let error):
-            return String(format: String(localized: "keychain.error.deleteFailedFormat"), error.localizedDescription)
+            return String(format: String.l10n("keychain.error.deleteFailedFormat"), error.localizedDescription)
         case .encryptionFailed(let error):
-            return String(format: String(localized: "keychain.error.encryptionFailedFormat"), error.localizedDescription)
+            return String(format: String.l10n("keychain.error.encryptionFailedFormat"), error.localizedDescription)
         case .decryptionFailed(let error):
-            return String(format: String(localized: "keychain.error.decryptionFailedFormat"), error.localizedDescription)
+            return String(format: String.l10n("keychain.error.decryptionFailedFormat"), error.localizedDescription)
         case .selfCheckMismatch:
-            return String(localized: "keychain.error.selfCheckMismatch")
+            return String.l10n("keychain.error.selfCheckMismatch")
         }
     }
 }

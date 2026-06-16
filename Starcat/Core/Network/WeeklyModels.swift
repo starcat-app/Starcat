@@ -44,7 +44,7 @@ enum WeeklySource: Decodable, Hashable, Sendable {
 
     var displayName: String {
         switch self {
-        case .weekly: return String(localized: "weekly.source.ruanyf")
+        case .weekly: return String.l10n("weekly.source.ruanyf")
         case .zread: return "ZRead"
         case .discovery: return "Hacker News"
         case .unknown(let raw): return raw

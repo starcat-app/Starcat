@@ -62,7 +62,7 @@ final class AboutWindowController: NSWindowController, NSWindowDelegate {
         let hostingController = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hostingController)
 
-        window.title = String(localized: "app.about")
+        window.title = String.l10n("app.about")
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.setContentSize(AboutWindowMetrics.defaultContentSize)
         // AboutView 只声明最小可用布局，固定尺寸边界必须由 AppKit 窗口层控制。

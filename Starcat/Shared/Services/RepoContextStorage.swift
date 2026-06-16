@@ -91,9 +91,9 @@ enum RepoContextStorageError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .outputDirectoryUnavailable:
-            return String(localized: "repoContext.storage.error.outputDirectoryUnavailable")
+            return String.l10n("repoContext.storage.error.outputDirectoryUnavailable")
         case .invalidBookmark:
-            return String(localized: "repoContext.storage.error.invalidBookmark")
+            return String.l10n("repoContext.storage.error.invalidBookmark")
         }
     }
 }
@@ -140,7 +140,7 @@ final class RepoContextStorage {
 
     var outputDirectoryDisplayPath: String {
         _ = directoryConfigurationRevision
-        return (try? resolveOutputRoot().url.path) ?? String(localized: "storage.outputDirectory.bookmarkExpired")
+        return (try? resolveOutputRoot().url.path) ?? String.l10n("storage.outputDirectory.bookmarkExpired")
     }
 
     var totalBytes: Int64 { projects.reduce(0) { $0 + $1.totalBytes } }

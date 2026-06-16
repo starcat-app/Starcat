@@ -49,9 +49,9 @@ enum DiskReadmeTranslationCacheError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .applicationSupportUnavailable:
-            return String(localized: "cache.readmeTranslation.error.applicationSupportUnavailable")
+            return String.l10n("cache.readmeTranslation.error.applicationSupportUnavailable")
         case .invalidPathComponent(let value):
-            return String(format: String(localized: "cache.readmeTranslation.error.invalidPathComponentFormat"), value)
+            return String(format: String.l10n("cache.readmeTranslation.error.invalidPathComponentFormat"), value)
         }
     }
 }

@@ -74,6 +74,7 @@ struct BatchActionBar: View {
                     }
                 }
             )
+            .appLocaleEnvironment()
         }
         .sheet(isPresented: $showUnstarConfirm) {
             let targets = selectedTargets()
@@ -87,6 +88,7 @@ struct BatchActionBar: View {
                 },
                 onCancel: { showUnstarConfirm = false }
             )
+            .appLocaleEnvironment()
         }
         // 监听 batchStarService.completionSummary：写一次后立即 consume，避免下次切换时残留。
         .onChange(of: dependencies.batchStarService.completionSummary) { _, newValue in
@@ -108,7 +110,7 @@ struct BatchActionBar: View {
     private var idleContent: some View {
         let count = store.count
         return HStack(spacing: 10) {
-            Text(String(format: String(localized: "batch.selectedCountFormat"), count))
+            Text(String(format: String.l10n("batch.selectedCountFormat"), count))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -158,7 +160,7 @@ struct BatchActionBar: View {
                 .progressViewStyle(.linear)
                 .frame(width: 110)
 
-            Text(String(format: String(localized: "batch.progress.processingFormat"), p.completed, p.total))
+            Text(String(format: String.l10n("batch.progress.processingFormat"), p.completed, p.total))
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
 
@@ -220,9 +222,9 @@ struct BatchActionBar: View {
     /// 使用 plain String 而非 LocalizedStringKey：toast 组件需要 String 类型。
     private func formatSummary(_ s: BatchStarService.Summary) -> String {
         let actionKey = s.action == .unstar ? "batch.summary.unstar" : "batch.summary.star"
-        let prefix = String(localized: String.LocalizationValue(actionKey))
+        let prefix = String.l10n(actionKey)
         return String(
-            format: String(localized: "batch.summary.format"),
+            format: String.l10n("batch.summary.format"),
             prefix,
             s.succeeded,
             s.skipped,
@@ -273,19 +275,22 @@ struct RemoteBatchActionBar: View {
         .overlay(alignment: .top) { Divider() }
         .toast(message: $toastMessage, icon: "checkmark.circle.fill", duration: 3.0)
         .sheet(isPresented: $showConfirm) {
-            if let action = pendingAction {
-                let targets = store.targets
-                BatchStarConfirmSheet(
-                    action: action,
-                    targets: targets,
-                    estimatedSkipped: estimatedSkipped(targets: targets, action: action),
-                    onConfirm: {
-                        showConfirm = false
-                        startBatch(action: action, targets: targets)
-                    },
-                    onCancel: { showConfirm = false }
-                )
+            Group {
+                if let action = pendingAction {
+                    let targets = store.targets
+                    BatchStarConfirmSheet(
+                        action: action,
+                        targets: targets,
+                        estimatedSkipped: estimatedSkipped(targets: targets, action: action),
+                        onConfirm: {
+                            showConfirm = false
+                            startBatch(action: action, targets: targets)
+                        },
+                        onCancel: { showConfirm = false }
+                    )
+                }
             }
+            .appLocaleEnvironment()
         }
         .onChange(of: dependencies.batchStarService.completionSummary) { _, newValue in
             guard let summary = newValue else { return }
@@ -303,7 +308,7 @@ struct RemoteBatchActionBar: View {
         let starWeight = starButtonWeight()
 
         return HStack(spacing: 10) {
-            Text(String(format: String(localized: "batch.selectedCountFormat"), count))
+            Text(String(format: String.l10n("batch.selectedCountFormat"), count))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -352,7 +357,7 @@ struct RemoteBatchActionBar: View {
                 .progressViewStyle(.linear)
                 .frame(width: 110)
 
-            Text(String(format: String(localized: "batch.progress.processingFormat"), p.completed, p.total))
+            Text(String(format: String.l10n("batch.progress.processingFormat"), p.completed, p.total))
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
 
@@ -417,9 +422,9 @@ struct RemoteBatchActionBar: View {
 
     private func formatSummary(_ s: BatchStarService.Summary) -> String {
         let actionKey = s.action == .unstar ? "batch.summary.unstar" : "batch.summary.star"
-        let prefix = String(localized: String.LocalizationValue(actionKey))
+        let prefix = String.l10n(actionKey)
         return String(
-            format: String(localized: "batch.summary.format"),
+            format: String.l10n("batch.summary.format"),
             prefix,
             s.succeeded,
             s.skipped,
@@ -461,7 +466,7 @@ private struct BatchTagSheet: View {
                 Text("batch.addTags")
                     .font(.headline)
                 Spacer()
-                Text(String(format: String(localized: "batch.applyToReposFormat"), repoIds.count))
+                Text(String(format: String.l10n("batch.applyToReposFormat"), repoIds.count))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

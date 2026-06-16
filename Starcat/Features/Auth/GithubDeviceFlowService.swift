@@ -57,7 +57,7 @@ actor GithubDeviceFlowService: GithubOAuthServiceProtocol {
 
     func beginDeviceFlow() async throws -> OAuthDeviceCodeInfo {
         guard !clientID.isEmpty, !clientID.hasPrefix("<") else {
-            throw GithubOAuthError.configurationMissing(reason: String(localized: "auth.error.clientIdMissing"))
+            throw GithubOAuthError.configurationMissing(reason: String.l10n("auth.error.clientIdMissing"))
         }
 
         let url = AppEndpoints.appendPath(AppEndpoints.GitHubOAuth.Paths.deviceCode, to: oauthBaseURL)
@@ -118,10 +118,10 @@ actor GithubDeviceFlowService: GithubOAuthServiceProtocol {
 
     func awaitAccessToken() async throws -> String {
         guard let deviceCode = self.deviceCode else {
-            throw GithubOAuthError.configurationMissing(reason: String(localized: "auth.error.deviceFlowNotStarted"))
+            throw GithubOAuthError.configurationMissing(reason: String.l10n("auth.error.deviceFlowNotStarted"))
         }
         guard let expiresAt = self.expiresAt else {
-            throw GithubOAuthError.configurationMissing(reason: String(localized: "auth.error.expiresAtMissing"))
+            throw GithubOAuthError.configurationMissing(reason: String.l10n("auth.error.expiresAtMissing"))
         }
 
         while true {

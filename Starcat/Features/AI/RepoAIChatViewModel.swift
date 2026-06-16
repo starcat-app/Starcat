@@ -629,7 +629,7 @@ final class RepoAIChatViewModel {
                 let prefix = failed.content
                 failed.content = prefix.isEmpty
                     ? String(
-                        format: String(localized: "ai.assistant.chat.failureFormat"),
+                        format: String.l10n("ai.assistant.chat.failureFormat"),
                         description
                     )
                     : prefix
@@ -904,7 +904,7 @@ final class RepoAIChatViewModel {
                !login.isEmpty {
                 return login
             }
-            return String(localized: "ai.assistant.chat.export.userFallback")
+            return String.l10n("ai.assistant.chat.export.userFallback")
         }()
 
         // 全套导出模板都走本地化（HOM-150 dong4j 2026-06-04 16:05 反馈：
@@ -912,13 +912,13 @@ final class RepoAIChatViewModel {
         // 是英文版"Starcat AI Chat · ... / Repo: / Exported: / Messages:"，
         // 而不是夹杂中英文的混合体。模板里 `%@` 由 `String(format:)` 注入。
         let docTitle = String(
-            format: String(localized: "ai.assistant.chat.export.docTitleFormat"),
+            format: String.l10n("ai.assistant.chat.export.docTitleFormat"),
             repo.fullName
         )
-        let repoLabel = String(localized: "ai.assistant.chat.export.repoLabel")
-        let exportedAtLabel = String(localized: "ai.assistant.chat.export.exportedAtLabel")
-        let messageCountLabel = String(localized: "ai.assistant.chat.export.messageCountLabel")
-        let emptyContentPlaceholder = String(localized: "ai.assistant.chat.export.emptyContent")
+        let repoLabel = String.l10n("ai.assistant.chat.export.repoLabel")
+        let exportedAtLabel = String.l10n("ai.assistant.chat.export.exportedAtLabel")
+        let messageCountLabel = String.l10n("ai.assistant.chat.export.messageCountLabel")
+        let emptyContentPlaceholder = String.l10n("ai.assistant.chat.export.emptyContent")
 
         var lines: [String] = []
         lines.append("# \(docTitle)")
@@ -969,7 +969,7 @@ final class RepoAIChatViewModel {
         // 多一道保险）。
         if !exportMessages.isEmpty {
             let generatedBy = String(
-                format: String(localized: "ai.assistant.chat.export.generatedByFormat"),
+                format: String.l10n("ai.assistant.chat.export.generatedByFormat"),
                 service.resolvedChatModelName
             )
             lines.append("---")
