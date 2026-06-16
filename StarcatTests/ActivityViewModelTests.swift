@@ -44,6 +44,7 @@ struct ActivityViewModelTests {
     private final class Harness {
         let viewModel: ActivityViewModel
         let mockClient: MockGitHubAPIClient
+        let mockBlogClient: MockGitHubBlogRSSClient
         let eventRepo: GRDBActivityEventRepository
         let announcementRepo: GRDBActivityAnnouncementRepository
         let syncStateRepo: GRDBActivitySyncStateRepository
@@ -52,16 +53,29 @@ struct ActivityViewModelTests {
         init(login: String? = "octocat") throws {
             let db = try InMemoryDatabaseManager()
             let mock = MockGitHubAPIClient()
+            let mockBlog = MockGitHubBlogRSSClient()
             let er = GRDBActivityEventRepository(database: db)
             let ar = GRDBActivityAnnouncementRepository(database: db)
             let sr = GRDBActivitySyncStateRepository(database: db)
             let counter = PollCounter()
 
             self.mockClient = mock
+            self.mockBlogClient = mockBlog
             self.eventRepo = er
             self.announcementRepo = ar
             self.syncStateRepo = sr
             self.pollCounter = counter
+
+            // PR-3：默认 events 返回空数组，避免未设 handler 的测试 fatalError。
+            mock.receivedEventsHandler = { _, _, _ in
+                APIResponse(
+                    value: [],
+                    linkHeader: LinkHeader(nextPage: nil, lastPage: nil),
+                    rateLimit: RateLimitInfo(limit: nil, remaining: nil, reset: nil),
+                    statusCode: 200,
+                    etag: "\"default-events\""
+                )
+            }
 
             self.viewModel = ActivityViewModel(
                 repoRepository: GRDBRepoRepository(database: db),
@@ -71,6 +85,7 @@ struct ActivityViewModelTests {
                 activityAnnouncementRepository: ar,
                 activitySyncStateRepository: sr,
                 apiClient: mock,
+                blogRSSClient: mockBlog,
                 currentLoginProvider: { @MainActor in login }
             )
         }
@@ -486,5 +501,210 @@ struct ActivityViewModelTests {
         #expect(h.viewModel.items.first?.id == "announcement:activity-v1")
         // network handler 完全没被调（因为 login 为 nil 直接 skip events fetch）
         #expect(h.mockClient.receivedEventsCalls.count == 0)
+    }
+
+    // MARK: - PR-3 announcement
+
+    @Test("blog RSS 12h TTL 内不走网络")
+    func blogTTLInsideSkipsNetwork() async throws {
+        let h = try Harness()
+        try await h.syncStateRepo.updateBlogRss(etag: "\"b\"", lastFetchedAt: Date())
+        try await h.syncStateRepo.updateSecurity(lastFetchedAt: Date())
+        try await h.syncStateRepo.updateEvents(etag: "\"e\"", lastFetchedAt: Date())
+
+        h.mockBlogClient.fetchFeedHandler = { _ in
+            Issue.record("blog TTL 内不应走网络")
+            throw NetworkError.invalidResponse
+        }
+
+        await h.viewModel.load(category: .announcement)
+
+        #expect(h.mockBlogClient.fetchFeedCalls.count == 0)
+    }
+
+    @Test("blog RSS 拉取后写入 announcements + 隐藏内置占位")
+    func blogRSSPersistsAndHidesBuiltin() async throws {
+        let h = try Harness()
+        h.mockBlogClient.fetchFeedHandler = { _ in
+            APIResponse(
+                value: [
+                    GitHubBlogRSSItemDTO(
+                        guid: "?p=1",
+                        title: "Hello Blog",
+                        link: "https://github.blog/hello/",
+                        author: "Staff",
+                        pubDate: "Mon, 16 Jun 2026 12:00:00 +0000",
+                        categories: ["AI & ML"],
+                        descriptionHTML: "<p>Short</p>",
+                        contentHTML: "<p>Full <b>HTML</b></p>"
+                    ),
+                ],
+                linkHeader: LinkHeader(nextPage: nil, lastPage: nil),
+                rateLimit: RateLimitInfo(limit: nil, remaining: nil, reset: nil),
+                statusCode: 200,
+                etag: "\"rss-new\""
+            )
+        }
+
+        await h.viewModel.load(category: .announcement)
+
+        let announcements = h.viewModel.items.filter { $0.kind == .announcement }
+        #expect(announcements.count == 1)
+        #expect(announcements[0].id == "blog:?p=1")
+        #expect(announcements[0].announcement?.source == .blog)
+        #expect(announcements[0].announcement?.htmlBody?.contains("<b>HTML</b>") == true)
+        #expect(!h.viewModel.items.contains { $0.id == "announcement:activity-v1" })
+
+        let stored = try await h.announcementRepo.fetchAll(limit: 10)
+        #expect(stored.count == 1)
+        #expect(stored[0].title == "Hello Blog")
+    }
+
+    @Test("blog 304 touch lastBlogFetchedAt")
+    func blog304TouchesTimestamp() async throws {
+        let h = try Harness()
+        let thirteenHoursAgo = Date().addingTimeInterval(-13 * 3600)
+        try await h.syncStateRepo.updateBlogRss(etag: "\"old\"", lastFetchedAt: thirteenHoursAgo)
+        try await h.syncStateRepo.updateSecurity(lastFetchedAt: Date())
+        try await h.syncStateRepo.updateEvents(etag: "\"e\"", lastFetchedAt: Date())
+
+        h.mockBlogClient.fetchFeedHandler = { etag in
+            #expect(etag == "\"old\"")
+            throw NetworkError.notModified(etag: "\"old\"")
+        }
+
+        await h.viewModel.load(category: .announcement)
+
+        let state = try await h.syncStateRepo.current()
+        let parsed = try #require(state?.lastBlogFetchedAt.flatMap(ActivityViewModel.parseDate))
+        #expect(Date().timeIntervalSince(parsed) < 5)
+    }
+
+    @Test("security 仅扫描最近 30 天 push 的 starred repo")
+    func securityScansRecentStarredOnly() async throws {
+        let recent = makeRepo(id: 1, fullName: "a/r1", pushedAt: ActivityViewModel.isoString(Date()))
+        let old = makeRepo(id: 2, fullName: "a/r2", pushedAt: ActivityViewModel.isoString(Date().addingTimeInterval(-40 * 86_400)))
+        let unstarred = makeRepo(id: 3, fullName: "a/r3", pushedAt: ActivityViewModel.isoString(Date()), isStarred: false)
+
+        let result = ActivityViewModel.starredReposRecentlyPushed(repos: [recent, old, unstarred])
+        #expect(result.map(\.id) == [1])
+    }
+
+    @Test("security per-repo 404 静默跳过")
+    func security404Skipped() async throws {
+        let db = try InMemoryDatabaseManager()
+        let recentPushed = ActivityViewModel.isoString(Date())
+        try await insertStarredRepo(db: db, id: 101, fullName: "org/missing", pushedAt: recentPushed)
+        try await insertStarredRepo(db: db, id: 102, fullName: "org/hit", pushedAt: recentPushed)
+
+        let repoRepo = GRDBRepoRepository(database: db)
+        let syncStateRepo = GRDBActivitySyncStateRepository(database: db)
+        try await syncStateRepo.updateEvents(etag: "\"e\"", lastFetchedAt: Date())
+        try await syncStateRepo.updateBlogRss(etag: "\"b\"", lastFetchedAt: Date())
+
+        let mockBlog = MockGitHubBlogRSSClient()
+        let mockAPI = MockGitHubAPIClient()
+        mockAPI.securityAdvisoriesHandler = { owner, repo in
+            if owner == "org", repo == "missing" {
+                throw NetworkError.notFound
+            }
+            return APIResponse(
+                value: [
+                    GitHubSecurityAdvisoryDTO(
+                        ghsaId: "GHSA-xxxx",
+                        summary: "CVE fix",
+                        description: "Details",
+                        htmlUrl: "https://github.com/advisories/GHSA-xxxx",
+                        publishedAt: "2026-06-10T00:00:00Z",
+                        severity: "high"
+                    ),
+                ],
+                linkHeader: LinkHeader(nextPage: nil, lastPage: nil),
+                rateLimit: RateLimitInfo(limit: nil, remaining: nil, reset: nil),
+                statusCode: 200,
+                etag: nil
+            )
+        }
+
+        let vm = ActivityViewModel(
+            repoRepository: repoRepo,
+            releaseRepository: GRDBReleaseRepository(database: db),
+            releasePollerRunner: {},
+            activityEventRepository: GRDBActivityEventRepository(database: db),
+            activityAnnouncementRepository: GRDBActivityAnnouncementRepository(database: db),
+            activitySyncStateRepository: syncStateRepo,
+            apiClient: mockAPI,
+            blogRSSClient: mockBlog,
+            currentLoginProvider: { "octocat" }
+        )
+
+        await vm.load(category: .announcement)
+
+        let stored = try await GRDBActivityAnnouncementRepository(database: db).fetchAll(limit: 10)
+        #expect(stored.count == 1)
+        #expect(stored[0].id == "security:GHSA-xxxx")
+        #expect(mockAPI.securityAdvisoriesCalls.count == 2)
+    }
+
+    // MARK: - PR-3 helpers
+
+    private func insertStarredRepo(
+        db: InMemoryDatabaseManager,
+        id: Int64,
+        fullName: String,
+        pushedAt: String
+    ) async throws {
+        let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return }
+        try await db.writer.write { database in
+            try database.execute(
+                sql: """
+                INSERT INTO repos (
+                    id, owner, name, full_name, description, language,
+                    stars_count, forks_count, watchers_count, topics, license,
+                    homepage, html_url, clone_url, ssh_url,
+                    is_private, is_fork, is_archived, is_starred,
+                    pushed_at, created_at, updated_at, starred_at, cached_at
+                ) VALUES (
+                    ?, ?, ?, ?, NULL, NULL,
+                    0, 0, 0, NULL, NULL,
+                    NULL, ?, NULL, NULL,
+                    0, 0, 0, 1,
+                    ?, NULL, NULL, '2026-01-01T00:00:00Z', NULL
+                )
+                """,
+                arguments: [id, parts[0], parts[1], fullName, "https://github.com/\(fullName)", pushedAt]
+            )
+        }
+    }
+
+    private func makeRepo(id: Int64, fullName: String, pushedAt: String, isStarred: Bool = true) -> Repo {
+        let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
+        return Repo(
+            id: id,
+            owner: parts[0],
+            name: parts[1],
+            fullName: fullName,
+            description: nil,
+            language: nil,
+            starsCount: 10,
+            forksCount: 1,
+            watchersCount: 1,
+            topics: nil,
+            license: nil,
+            homepage: nil,
+            htmlUrl: "https://github.com/\(fullName)",
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            isFork: false,
+            isArchived: false,
+            isStarred: isStarred,
+            pushedAt: pushedAt,
+            createdAt: nil,
+            updatedAt: pushedAt,
+            starredAt: "2026-01-01T00:00:00Z",
+            cachedAt: nil
+        )
     }
 }
