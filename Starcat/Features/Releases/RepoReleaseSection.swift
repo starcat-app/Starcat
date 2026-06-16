@@ -216,7 +216,7 @@ final class RepoReleaseSectionViewModel {
             self.latestRelease = try await latestTask
             errorMessage = nil
         } catch {
-            errorMessage = String(localized: "releases.error.loadFailed")
+            errorMessage = String.l10n("releases.error.loadFailed")
         }
     }
 
@@ -273,10 +273,10 @@ final class RepoReleaseSectionViewModel {
                 await notificationService.ensureAuthorized()
                 await loadFor(repo: makeRepoStub(id: repoId, owner: owner, name: repoName))
             } catch {
-                errorMessage = String(localized: "releases.error.subscribeFailed")
+                errorMessage = String.l10n("releases.error.subscribeFailed")
             }
         } catch {
-            errorMessage = String(localized: "releases.error.subscribeFailed")
+            errorMessage = String.l10n("releases.error.subscribeFailed")
         }
     }
 
@@ -288,7 +288,7 @@ final class RepoReleaseSectionViewModel {
             // 重新读一次 → subscription.isSubscribed = false（行保留）
             self.subscription = try await subscriptionRepository.find(repoId: repoId)
         } catch {
-            errorMessage = String(localized: "releases.error.unsubscribeFailed")
+            errorMessage = String.l10n("releases.error.unsubscribeFailed")
         }
     }
 
@@ -299,7 +299,7 @@ final class RepoReleaseSectionViewModel {
             try await subscriptionRepository.setNotifyEnabled(repoId: repoId, enabled: enabled)
             self.subscription = try await subscriptionRepository.find(repoId: repoId)
         } catch {
-            errorMessage = String(localized: "releases.error.toggleNotifyFailed")
+            errorMessage = String.l10n("releases.error.toggleNotifyFailed")
         }
     }
 

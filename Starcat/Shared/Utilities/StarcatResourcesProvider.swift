@@ -15,7 +15,7 @@
 //
 //  2. **Wiki 来源名硬编码英文**（"DeepWiki" / "ZRead" / "CodeWiki"），不用
 //     `WikiSource.displayName`：
-//     - displayName 走 `String(localized:)`，会按 locale 翻译成 "深维基" 等；
+//     - displayName 走 `String.l10n(...)`，会按 locale 翻译成 "深维基" 等；
 //     - chat system prompt 整段是英文，混 zh-Hans 翻译破坏 LLM 解析一致性；
 //     - 与 `RuntimeContextProvider` 硬编码英文 weekday 同款决策。
 //

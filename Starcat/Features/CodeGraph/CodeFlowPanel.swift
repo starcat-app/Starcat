@@ -353,6 +353,7 @@ private struct CodeFlowBranchPicker: View {
                 .frame(width: 300, height: 240)
             }
             .padding(10)
+            .appLocaleEnvironment()
         }
     }
 }

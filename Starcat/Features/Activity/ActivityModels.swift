@@ -53,14 +53,14 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
 
     var localizedTitle: String {
         switch self {
-        case .all:          return String(localized: "activity.category.all")
-        case .announcement: return String(localized: "activity.category.announcement")
-        case .release:      return String(localized: "activity.category.release")
-        case .star:         return String(localized: "activity.category.star")
-        case .repository:   return String(localized: "activity.category.repository")
-        case .following:    return String(localized: "activity.category.following")
-        case .suggestion:   return String(localized: "activity.category.suggestion")
-        case .weekly:       return String(localized: "activity.category.weekly")
+        case .all:          return String.l10n("activity.category.all")
+        case .announcement: return String.l10n("activity.category.announcement")
+        case .release:      return String.l10n("activity.category.release")
+        case .star:         return String.l10n("activity.category.star")
+        case .repository:   return String.l10n("activity.category.repository")
+        case .following:    return String.l10n("activity.category.following")
+        case .suggestion:   return String.l10n("activity.category.suggestion")
+        case .weekly:       return String.l10n("activity.category.weekly")
         }
     }
 

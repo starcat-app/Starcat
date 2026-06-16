@@ -22,23 +22,23 @@ enum CodeFlowError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .privateRepository:
-            return String(localized: "codeFlow.error.privateRepository")
+            return String.l10n("codeFlow.error.privateRepository")
         case .invalidGitHubURL:
-            return String(localized: "codeFlow.error.invalidGitHubURL")
+            return String.l10n("codeFlow.error.invalidGitHubURL")
         case .requestFailed(let statusCode):
-            return String(format: String(localized: "codeFlow.error.requestFailedFormat"), statusCode)
+            return String(format: String.l10n("codeFlow.error.requestFailedFormat"), statusCode)
         case .archiveTooLarge:
-            return String(localized: "codeFlow.error.archiveTooLarge")
+            return String.l10n("codeFlow.error.archiveTooLarge")
         case .emptyArchive:
-            return String(localized: "codeFlow.error.emptyArchive")
+            return String.l10n("codeFlow.error.emptyArchive")
         case .templateMissing:
-            return String(localized: "codeFlow.error.templateMissing")
+            return String.l10n("codeFlow.error.templateMissing")
         case .invalidTemplate:
-            return String(localized: "codeFlow.error.invalidTemplate")
+            return String.l10n("codeFlow.error.invalidTemplate")
         case .branchMissing:
-            return String(localized: "codeFlow.error.branchMissing")
+            return String.l10n("codeFlow.error.branchMissing")
         case .branchNotFound(let name):
-            return String(format: String(localized: "codeFlow.error.branchNotFoundFormat"), name)
+            return String(format: String.l10n("codeFlow.error.branchNotFoundFormat"), name)
         }
     }
 }

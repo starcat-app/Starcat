@@ -87,7 +87,7 @@ public struct DefaultContextWriter: ContextWriting {
                 underlying: NSError(
                     domain: "RepoContextPacker",
                     code: -1,
-                    userInfo: [NSLocalizedDescriptionKey: String(localized: "packer.error.xmlEncodingFailed")]
+                    userInfo: [NSLocalizedDescriptionKey: String.l10n("packer.error.xmlEncodingFailed")]
                 )
             )
         }

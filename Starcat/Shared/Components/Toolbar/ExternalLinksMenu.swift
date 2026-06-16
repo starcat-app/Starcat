@@ -169,6 +169,7 @@ private struct FeaturedExternalLinksControl: View {
                     },
                     onDismiss: { isPresented = false }
                 )
+                .appLocaleEnvironment()
             }
         }
         .controlSize(.regular)

@@ -175,6 +175,7 @@ struct AIModelListView: View {
                     parametersBinding(focused).wrappedValue = nil
                 }
             )
+            .appLocaleEnvironment()
         }
     }
 

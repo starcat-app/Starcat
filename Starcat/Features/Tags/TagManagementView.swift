@@ -78,6 +78,7 @@ struct TagManagementView: View {
                 let ok = await viewModel.create(name: name, color: color, icon: icon)
                 if ok { showNewSheet = false }
             }
+            .appLocaleEnvironment()
         }
         .alert("tagManagement.deleteTitle", isPresented: $showDeleteAlert) {
             Button("action.delete", role: .destructive) {
@@ -86,7 +87,7 @@ struct TagManagementView: View {
             Button("general.cancel", role: .cancel) {}
         } message: {
             let n = viewModel.selection.count
-            Text(String(format: String(localized: "tagManagement.deleteMessageFormat"), n))
+            Text(String(format: String.l10n("tagManagement.deleteMessageFormat"), n))
         }
         .alert("tagManagement.mergeTitle", isPresented: $showMergeAlert, presenting: mergeTargetId) { targetId in
             Button("action.merge", role: .destructive) {
@@ -98,7 +99,7 @@ struct TagManagementView: View {
         } message: { targetId in
             let targetName = viewModel.tags.first { $0.id == targetId }?.name ?? "?"
             let others = viewModel.selection.count - 1
-            Text(String(format: String(localized: "tagManagement.mergeMessageFormat"), others, targetName))
+            Text(String(format: String.l10n("tagManagement.mergeMessageFormat"), others, targetName))
         }
     }
 
@@ -229,7 +230,7 @@ struct TagManagementView: View {
 
                 Spacer()
 
-                Text(String(format: String(localized: "tagManagement.tagCountFormat"), viewModel.tags.count))
+                Text(String(format: String.l10n("tagManagement.tagCountFormat"), viewModel.tags.count))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

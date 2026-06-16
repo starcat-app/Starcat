@@ -66,7 +66,7 @@ struct IntegrationSettingsTab: View {
                     stat(titleKey: "settings.integration.codeFlow.stat.usage", value: ByteCountFormatter.string(fromByteCount: storage.totalBytes, countStyle: .file))
                     stat(
                         titleKey: "settings.integration.codeFlow.stat.totalGenerated",
-                        value: String(format: String(localized: "settings.integration.codeFlow.stat.totalGeneratedFormat"), storage.totalGenerationCount)
+                        value: String(format: String.l10n("settings.integration.codeFlow.stat.totalGeneratedFormat"), storage.totalGenerationCount)
                     )
                     if let date = storage.latestGeneratedAt {
                         stat(titleKey: "settings.integration.codeFlow.stat.lastGenerated", value: date.formatted(date: .abbreviated, time: .shortened))
@@ -98,7 +98,7 @@ struct IntegrationSettingsTab: View {
         )) {
             Button("common.ok") { actionError = nil }
         } message: {
-            Text(actionError ?? String(localized: "common.unknownError"))
+            Text(actionError ?? String.l10n("common.unknownError"))
         }
     }
 
@@ -281,8 +281,8 @@ struct IntegrationSettingsTab: View {
 
     private func chooseOutputDirectory() {
         let panel = NSOpenPanel()
-        panel.title = String(localized: "settings.integration.codeFlow.openPanel.title")
-        panel.prompt = String(localized: "settings.integration.codeFlow.openPanel.prompt")
+        panel.title = String.l10n("settings.integration.codeFlow.openPanel.title")
+        panel.prompt = String.l10n("settings.integration.codeFlow.openPanel.prompt")
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true

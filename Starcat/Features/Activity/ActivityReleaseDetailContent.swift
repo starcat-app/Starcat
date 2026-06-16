@@ -193,7 +193,7 @@ struct ActivityReleaseDetailContent: View {
                 }
                 .padding(.top, 4)
             } label: {
-                Text(String(format: String(localized: "releases.row.assetsCountFormat"), assets.count))
+                Text(String(format: String.l10n("releases.row.assetsCountFormat"), assets.count))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

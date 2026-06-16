@@ -44,9 +44,9 @@ enum DiskWikiCacheError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .applicationSupportUnavailable:
-            return String(localized: "cache.wiki.error.applicationSupportUnavailable")
+            return String.l10n("cache.wiki.error.applicationSupportUnavailable")
         case .unsafePathComponent(let value):
-            return String(format: String(localized: "cache.wiki.error.unsafePathComponentFormat"), value)
+            return String(format: String.l10n("cache.wiki.error.unsafePathComponentFormat"), value)
         }
     }
 }

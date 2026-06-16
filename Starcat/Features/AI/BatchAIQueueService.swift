@@ -299,7 +299,7 @@ final class BatchAIQueueService {
             // 用户取消时，把可能停在 .processing 的孤儿 job 收尾，避免 UI 留"永远转圈"行。
             if cancelRequested {
                 let now = Date()
-                let reason = String(localized: "batchAI.panel.cancelledByUser")
+                let reason = String.l10n("batchAI.panel.cancelledByUser")
                 for idx in jobs.indices where jobs[idx].status == .processing {
                     jobs[idx].status = .failed
                     jobs[idx].errorMessage = reason

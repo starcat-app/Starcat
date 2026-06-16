@@ -101,7 +101,7 @@ struct BatchAIQueuePanel: View {
     private var progressSummary: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 6) {
-                Text(String(format: String(localized: "batchAI.panel.progressFormat"), service.finishedCount, service.totalCount))
+                Text(String(format: String.l10n("batchAI.panel.progressFormat"), service.finishedCount, service.totalCount))
                     .font(.subheadline.weight(.medium))
                     .monospacedDigit()
                 if service.isCancelling {
@@ -158,7 +158,7 @@ struct BatchAIQueuePanel: View {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
-                Text(String(format: String(localized: "batchAI.panel.currentFormat"), currentJob.repoFullName))
+                Text(String(format: String.l10n("batchAI.panel.currentFormat"), currentJob.repoFullName))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -214,7 +214,7 @@ struct BatchAIQueuePanel: View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
-            Text(String(format: String(localized: "batchAI.panel.failedSummaryFormat"), service.failedCount))
+            Text(String(format: String.l10n("batchAI.panel.failedSummaryFormat"), service.failedCount))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
@@ -237,10 +237,10 @@ struct BatchAIQueuePanel: View {
 
     private func formattedRemaining(_ seconds: TimeInterval) -> String {
         if seconds < 60 {
-            return String(format: String(localized: "batchAI.panel.remainingSecondsFormat"), Int(seconds.rounded()))
+            return String(format: String.l10n("batchAI.panel.remainingSecondsFormat"), Int(seconds.rounded()))
         }
         let minutes = Int((seconds / 60).rounded())
-        return String(format: String(localized: "batchAI.panel.remainingMinutesFormat"), minutes)
+        return String(format: String.l10n("batchAI.panel.remainingMinutesFormat"), minutes)
     }
 }
 
@@ -314,22 +314,22 @@ private struct JobRow: View {
         case .queued:
             return nil
         case .processing:
-            return String(localized: "batchAI.panel.row.processing")
+            return String.l10n("batchAI.panel.row.processing")
         case .completed:
             if !job.appliedTagNames.isEmpty {
                 let tagsStr = job.appliedTagNames.prefix(5).joined(separator: ", ")
-                return String(format: String(localized: "batchAI.panel.row.appliedTagsFormat"), tagsStr)
+                return String(format: String.l10n("batchAI.panel.row.appliedTagsFormat"), tagsStr)
             }
             return job.didGenerateSummary
-                ? String(localized: "batchAI.panel.row.summaryOnly")
-                : String(localized: "batchAI.panel.row.completedNoTags")
+                ? String.l10n("batchAI.panel.row.summaryOnly")
+                : String.l10n("batchAI.panel.row.completedNoTags")
         case .ignored:
             let names = job.ignoredTagsBelowThreshold.prefix(3).map { suggestion in
                 "\(suggestion.name)(\(Int((suggestion.confidence * 100).rounded()))%)"
             }.joined(separator: ", ")
-            return String(format: String(localized: "batchAI.panel.row.ignoredFormat"), names)
+            return String(format: String.l10n("batchAI.panel.row.ignoredFormat"), names)
         case .failed:
-            return job.errorMessage ?? String(localized: "batchAI.panel.row.failedUnknown")
+            return job.errorMessage ?? String.l10n("batchAI.panel.row.failedUnknown")
         }
     }
 }

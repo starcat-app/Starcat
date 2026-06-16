@@ -272,6 +272,25 @@ Button { ... }
 
 > 与之配套的常驻提醒已在 `AboutView.swift` 顶部 `AboutDependency` 注释中复述，避免后续协作者只看代码不看文档时漏登记。
 
+### 国际化规范（i18n，强制）
+
+> ⚠️ **新增 / 修改任何国际化代码前，必读** [`docs/i18n军规.md`](docs/i18n军规.md)（单一信任源，含决策矩阵 / 5 大 root cause / 反例对照 / 实战参考文件）。
+
+**最小必知（违反任一项即不合规）**：
+
+1. **新代码禁止** `String(localized:)` 与 `NSLocalizedString`。返回 `String` 的本地化场景一律走 `String.l10n("key")`。
+2. SwiftUI `Text` / `Label` / `Button` 等接 `LocalizedStringKey` 的 view **直接写** `Text("key")`，不要套 `String.l10n`。
+3. **每个** `.sheet { }` / `.popover { }` 闭包内根视图、**每个**自建 `NSWindow` / `NSPanel` 的 hostingView 根，**必须**挂 `.appLocaleEnvironment()`。
+4. 任何 Foundation formatter（`RelativeDateTimeFormatter` / `Date.RelativeFormatStyle` / `DateFormatter` / `NumberFormatter`）默认走系统 locale，**必须**视图内 `@Environment(\.locale)` + `formatter.locale = locale`（或链式 `.locale(locale)`）显式注入。
+5. 字符串目录：`Starcat/Resources/Localizable.xcstrings`，新增 key **必须**同时填 en + zh-Hans 双语，命名 `{section}.{subsection}.{component}`，禁用 `_`。
+
+提交前自检：
+
+```bash
+rg "String\(localized:" --type swift Starcat/   # 必须只出现在注释里
+rg "NSLocalizedString"  --type swift Starcat/   # 必须只出现在注释里
+```
+
 ### 问题处理
 
 - 发现文档间不一致时，以 `开发前问题清单.md` 中的决策为准
@@ -279,7 +298,7 @@ Button { ... }
 
 ---
 
-*最后更新：2026-06-14*
+*最后更新：2026-06-16*
 
 
 <claude-mem-context>

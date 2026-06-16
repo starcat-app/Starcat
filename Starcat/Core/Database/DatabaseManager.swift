@@ -50,11 +50,11 @@ enum DatabaseError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .applicationSupportNotFound:
-            return String(localized: "database.error.applicationSupportNotFound")
+            return String.l10n("database.error.applicationSupportNotFound")
         case .migrationFailed(let error):
-            return String(format: String(localized: "database.error.migrationFailedFormat"), error.localizedDescription)
+            return String(format: String.l10n("database.error.migrationFailedFormat"), error.localizedDescription)
         case .openFailed(let error):
-            return String(format: String(localized: "database.error.openFailedFormat"), error.localizedDescription)
+            return String(format: String.l10n("database.error.openFailedFormat"), error.localizedDescription)
         }
     }
 }

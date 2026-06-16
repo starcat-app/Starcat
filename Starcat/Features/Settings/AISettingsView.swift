@@ -34,6 +34,9 @@ struct AISettingsTab: View {
     /// 2026-06-15:disclosureLabel / 草稿 Provider 收/放 / 已发现模型展开等
     /// 多处 0.18-0.2s 动画在「关闭应用内动画」时跳过。
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    /// 2026-06-16:`RelativeDateTimeFormatter` 默认走系统 locale,需显式注入跟随
+    /// LocaleStore 切换。Settings scene 已挂 `appLocaleEnvironment()`。
+    @Environment(\.locale) private var locale
 
     /// HOM-AIPROVIDERS-PERSIST-2026-06-06 (dong4j 反馈)：
     /// 之前用 `@State private var selectedProfileID: String?` 保存当前选中的服务商
@@ -147,14 +150,14 @@ struct AISettingsTab: View {
             privacySection
         }
         .confirmationDialog(
-            String(localized: "settings.aiIndex.rebuildAll.confirmTitle"),
+            String.l10n("settings.aiIndex.rebuildAll.confirmTitle"),
             isPresented: $pendingRebuildAllConfirm,
             titleVisibility: .visible
         ) {
-            Button(String(localized: "settings.aiIndex.rebuildAll.confirm"), role: .destructive) {
+            Button(String.l10n("settings.aiIndex.rebuildAll.confirm"), role: .destructive) {
                 dependencies.semanticIndexBuilder.rebuildAll()
             }
-            Button(String(localized: "general.cancel"), role: .cancel) {}
+            Button(String.l10n("general.cancel"), role: .cancel) {}
         } message: {
             Text("settings.aiIndex.rebuildAll.confirmMessage")
         }
@@ -785,7 +788,7 @@ struct AISettingsTab: View {
                 }
                 Slider(value: autoTidyBinding(\.confidenceThreshold), in: 0.5...1.0, step: 0.05)
                     .controlSize(.mini)
-                Text(String(format: String(localized: "settings.autoTidy.threshold.hintFormat"), thresholdPercentString))
+                Text(String(format: String.l10n("settings.autoTidy.threshold.hintFormat"), thresholdPercentString))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -858,13 +861,14 @@ struct AISettingsTab: View {
     private var lastRunSummaryText: String {
         guard let last = settings.autoTidySettings.lastRunAt,
               let stats = settings.autoTidySettings.lastRunStats else {
-            return String(localized: "settings.autoTidy.status.neverRun")
+            return String.l10n("settings.autoTidy.status.neverRun")
         }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
+        formatter.locale = locale
         let timeAgo = formatter.localizedString(for: last, relativeTo: Date())
         return String(
-            format: String(localized: "settings.autoTidy.status.lastRunFormat"),
+            format: String.l10n("settings.autoTidy.status.lastRunFormat"),
             timeAgo, stats.applied, stats.ignored, stats.failed
         )
     }
@@ -1162,15 +1166,15 @@ struct AISettingsTab: View {
         HStack(spacing: 10) {
             switch builder.status {
             case .idle, .completed, .alreadyUpToDate, .failed:
-                Button(String(localized: "settings.aiIndex.prefetch.start")) {
+                Button(String.l10n("settings.aiIndex.prefetch.start")) {
                     builder.start()
                 }
             case .running:
-                Button(String(localized: "settings.aiIndex.prefetch.pause")) {
+                Button(String.l10n("settings.aiIndex.prefetch.pause")) {
                     builder.pause()
                 }
             case .paused:
-                Button(String(localized: "settings.aiIndex.prefetch.resume")) {
+                Button(String.l10n("settings.aiIndex.prefetch.resume")) {
                     builder.resume()
                 }
             }
@@ -1210,7 +1214,7 @@ struct AISettingsTab: View {
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(Color.white, Color(red: 0.12, green: 0.42, blue: 0.18))
                 .font(.callout)
-            Text(String(format: String(localized: "settings.aiIndex.prefetch.alreadyUpToDateFmt"), total))
+            Text(String(format: String.l10n("settings.aiIndex.prefetch.alreadyUpToDateFmt"), total))
                 .font(.caption)
                 .fontWeight(.medium)
                 .foregroundStyle(Color(red: 0.12, green: 0.42, blue: 0.18))
@@ -1224,17 +1228,17 @@ struct AISettingsTab: View {
             return ""
         case .running, .paused:
             return String(
-                format: String(localized: "settings.aiIndex.prefetch.progressFmt"),
+                format: String.l10n("settings.aiIndex.prefetch.progressFmt"),
                 b.processed, b.total, b.failures
             )
         case .completed(let p, let t):
-            return String(format: String(localized: "settings.aiIndex.prefetch.completedFmt"), p, t)
+            return String(format: String.l10n("settings.aiIndex.prefetch.completedFmt"), p, t)
         case .alreadyUpToDate(let total):
             // builderProgressView 会优先走 alreadyUpToDateBadge 分支，这里只是为了
             // switch 穷举性兜底，理论上不会被调用到。返回 i18n 文案保持安全。
-            return String(format: String(localized: "settings.aiIndex.prefetch.alreadyUpToDateFmt"), total)
+            return String(format: String.l10n("settings.aiIndex.prefetch.alreadyUpToDateFmt"), total)
         case .failed(let msg):
-            return String(format: String(localized: "settings.aiIndex.prefetch.failedFmt"), msg)
+            return String(format: String.l10n("settings.aiIndex.prefetch.failedFmt"), msg)
         }
     }
 
@@ -1473,7 +1477,7 @@ struct AISettingsTab: View {
                 aiContextStat(titleKey: "ai.context.storage.statBytes",
                               value: ByteCountFormatter.string(fromByteCount: aiContextStorage.totalBytes, countStyle: .file))
                 aiContextStat(titleKey: "ai.context.storage.statGenerations",
-                              value: String(format: String(localized: "ai.context.storage.statGenerationsFormat"),
+                              value: String(format: String.l10n("ai.context.storage.statGenerationsFormat"),
                                             aiContextStorage.totalGenerationCount))
                 if let date = aiContextStorage.latestGeneratedAt {
                     aiContextStat(titleKey: "ai.context.storage.statLast",
@@ -1547,8 +1551,8 @@ struct AISettingsTab: View {
     /// 选择新的产物输出目录（NSOpenPanel）。失败走 aiContextActionError alert。
     private func chooseAIContextOutputDirectory() {
         let panel = NSOpenPanel()
-        panel.title = String(localized: "ai.context.storage.choosePanelTitle")
-        panel.prompt = String(localized: "ai.context.storage.choosePanelPrompt")
+        panel.title = String.l10n("ai.context.storage.choosePanelTitle")
+        panel.prompt = String.l10n("ai.context.storage.choosePanelPrompt")
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
@@ -1649,15 +1653,15 @@ struct AISettingsTab: View {
     private var promptPlaceholderHint: String {
         switch promptTask {
         case .summary:
-            return String(localized: "settings.ai.prompt.placeholders.summary")
+            return String.l10n("settings.ai.prompt.placeholders.summary")
         case .tags:
-            return String(localized: "settings.ai.prompt.placeholders.tags")
+            return String.l10n("settings.ai.prompt.placeholders.tags")
         case .translation:
-            return String(localized: "settings.ai.prompt.placeholders.translation")
+            return String.l10n("settings.ai.prompt.placeholders.translation")
         case .embedding:
-            return String(localized: "settings.ai.prompt.placeholders.embedding")
+            return String.l10n("settings.ai.prompt.placeholders.embedding")
         case .chat:
-            return String(localized: "settings.ai.prompt.placeholders.chat")
+            return String.l10n("settings.ai.prompt.placeholders.chat")
         }
     }
 

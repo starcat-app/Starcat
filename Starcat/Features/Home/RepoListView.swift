@@ -123,6 +123,7 @@ struct RepoListView: View {
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
         .sheet(item: $codeFlowSheetRepo) { repo in
             CodeFlowPanel(repo: repo)
+                .appLocaleEnvironment()
         }
         // W12 PR-4：切页面时主动 exit 非活跃 store，避免"切到 trending 时 weekly 还显示
         // 底部多选栏"的视觉穿帮。同一时刻只允许一份处于 isActive，由本视图集中保证。
@@ -785,7 +786,7 @@ struct RepoListView: View {
         let visibleTotal = viewModel.filteredSorted.count
         if manageStore.isActive {
             return String(
-                format: String(localized: "list.selectedCountFormat"),
+                format: String.l10n("list.selectedCountFormat"),
                 manageStore.count,
                 visibleTotal
             )
@@ -793,23 +794,23 @@ struct RepoListView: View {
         if viewModel.isRefreshing {
             if viewModel.isSemanticSearching {
                 return String(
-                    format: String(localized: "search.semantic.refreshingFormat"),
+                    format: String.l10n("search.semantic.refreshingFormat"),
                     visibleTotal
                 )
             }
             return String(
-                format: String(localized: "list.refreshingFormat"),
+                format: String.l10n("list.refreshingFormat"),
                 visibleTotal
             )
         }
         if viewModel.isSemanticSearching {
             return String(
-                format: String(localized: "search.semantic.resultCountFormat"),
+                format: String.l10n("search.semantic.resultCountFormat"),
                 visibleTotal
             )
         }
         return String(
-            format: String(localized: "list.repoCountFormat"),
+            format: String.l10n("list.repoCountFormat"),
             visibleTotal
         )
     }
@@ -818,13 +819,13 @@ struct RepoListView: View {
 
     private var navigationTitle: String {
         if selectedPage == .trending {
-            return String(localized: "trending.title")
+            return String.l10n("trending.title")
         }
         if selectedPage == .activity {
-            return String(localized: "activity.title")
+            return String.l10n("activity.title")
         }
         if viewModel.isSearching {
-            return String(format: String(localized: "search.searching"), truncatedSearchQueryForTitle)
+            return String(format: String.l10n("search.searching"), truncatedSearchQueryForTitle)
         }
         return localizedTitle(for: viewModel.selection)
     }
@@ -852,17 +853,17 @@ struct RepoListView: View {
     private func localizedTitle(for item: SidebarItem) -> String {
         switch item {
         case .trending:
-            return String(localized: "trending.title")
+            return String.l10n("trending.title")
         case .allStars:
-            return String(localized: "sidebar.allRepos")
+            return String.l10n("sidebar.allRepos")
         case .untagged:
-            return String(localized: "sidebar.untagged")
+            return String.l10n("sidebar.untagged")
         case .language(let language):
             // Navigation title 同样走短名（详见 LanguageDisplayName）。
             // 无主语言（nil）统一硬编码为 "Uncategorized"（dong4j 2026-06-16，不做 i18n）。
             return language.map(LanguageDisplayName.shortened(for:)) ?? "Uncategorized"
         case .tag(let id):
-            return viewModel.tags.first { $0.id == id }?.name ?? String(localized: "sidebar.tagFallback")
+            return viewModel.tags.first { $0.id == id }?.name ?? String.l10n("sidebar.tagFallback")
         }
     }
 
