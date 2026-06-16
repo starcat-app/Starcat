@@ -880,6 +880,12 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright 2024 Kazuki Yamada",
             url: URL(string: "https://github.com/yamadashy/repomix")
         ),
+        AboutDependency(
+            name: "OpenSSF Scorecard API",
+            license: "CDLA Permissive 2.0 (API data), Apache 2.0 (project)",
+            copyright: "Copyright 2020 OpenSSF Scorecard Authors",
+            url: URL(string: "https://github.com/ossf/scorecard")
+        ),
 
         // MARK: 第三方品牌标识（非开源代码，但仍登记以保持透明）
         //

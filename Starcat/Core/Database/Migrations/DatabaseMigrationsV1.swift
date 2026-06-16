@@ -87,6 +87,8 @@ enum DatabaseMigrations {
             try createWeeklyBulkRepos(db)
             try createWeeklyBulkLanguages(db)
             try createWeeklyBulkMeta(db)
+            // OpenSSF Scorecard 公开安全评分缓存（仅 starred repo，失败态也落库冷却）。
+            try createOpenSSFScores(db)
             // 原 createReadmeTranslations 已删除（2026-06-15 HOM-68 v2 砍 DB 改纯磁盘）。
             // 翻译缓存现走 `DiskReadmeTranslationCache`，详见文件头「原 v7」段说明。
         }
@@ -707,6 +709,32 @@ enum DatabaseMigrations {
             t.column("generated_at", .text)                    // 后端 envelope.meta.generated_at
             t.column("total", .integer).notNull().defaults(to: 0) // = len(repos)
         }
+    }
+
+    /// OpenSSF Scorecard 评分缓存。
+    ///
+    /// **产品语义**：只服务已 star repo。表通过 `repo_id -> repos.id ON DELETE CASCADE`
+    /// 绑定本地仓库缓存，取消 star 后如果未来清理 repos 行，评分缓存自然随行消失。
+    ///
+    /// **`fetched_at` 语义**：最近一次尝试时间，而不是最近一次成功时间。success / 404 /
+    /// networkError / parseError 都会写入，避免失败状态在详情页或后台任务里连续重试。
+    ///
+    /// **`checks_json` 原始 payload**：OpenSSF 响应当前约 7KB~50KB，直接存 BLOB
+    /// 比拆 18 维明细表更简单。雷达图读取时再 decode；后续展示 scorecard version /
+    /// documentation / details 不需要重新拉历史数据。
+    private static func createOpenSSFScores(_ db: Database) throws {
+        try db.create(table: "open_ssf_scores") { t in
+            t.column("repo_id", .integer).primaryKey()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("fetch_status", .text).notNull()
+            t.column("aggregate_score", .double)
+            t.column("checks_json", .blob)
+            t.column("score_date", .text)
+            t.column("fetched_at", .text).notNull()
+            t.column("last_error", .text)
+        }
+
+        try db.create(index: "idx_open_ssf_scores_status_fetched", on: "open_ssf_scores", columns: ["fetch_status", "fetched_at"])
     }
 
     // MARK: - repo_embeddings / ai_summaries（AI 语义搜索 + 单仓智能化）

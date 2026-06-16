@@ -165,6 +165,9 @@ struct WeeklyDetailScaffoldShell: View {
     /// 只保留通用详情动作，避免同一个阮一峰期号在 header 两个位置重复出现。
     private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
         var actions: [RepoDetailAction] = []
+        if repo.isStarred {
+            actions.append(.securityScore)
+        }
         if authSession.state.isAuthenticated, repo.isStarred {
             actions.append(.share)
             actions.append(.ai)

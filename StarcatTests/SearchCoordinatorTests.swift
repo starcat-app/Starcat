@@ -60,7 +60,8 @@ struct SearchCoordinatorTests {
             weeklySources: [],
             weeklySourceLabel: nil,
             inlineMetadata: nil,
-            readStatus: nil
+            readStatus: nil,
+            openSSFScore: nil
         )
         let remote = RepositoryCandidate(
             identity: RepoIdentity(ghRepoID: 42, owner: "openai", name: "codex"),

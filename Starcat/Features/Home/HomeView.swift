@@ -339,11 +339,13 @@ struct HomeView: View {
         .onChange(of: authSession.state) { _, newState in
             if newState.isAuthenticated {
                 dependencies.releasePoller.start()
+                dependencies.openSSFScorePoller.start()
                 if !TestEnvironment.isRunning, settings.aiIndexAutoPrefetchEnabled {
                     dependencies.semanticIndexBuilder.start()
                 }
             } else {
                 dependencies.releasePoller.stop()
+                dependencies.openSSFScorePoller.stop()
                 dependencies.semanticIndexBuilder.cancel()
             }
         }
