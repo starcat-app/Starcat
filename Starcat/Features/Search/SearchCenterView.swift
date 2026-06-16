@@ -345,8 +345,14 @@ struct SearchCenterView: View {
         if viewModel.lastSubmittedQuery.isEmpty {
             historyContent
         } else if viewModel.candidates.isEmpty, viewModel.isSearching {
-            ProgressView("search.searching")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 注意:ProgressView 这里不能直接传 LocalizedStringKey,
+            // 因为 "search.searching" 的 value 是 "搜索：%@",需要把当前查询代进去。
+            // 直接走 LocalizedStringKey 不会做 printf 格式化,会原样显示 %@。
+            // 与 RepoListView 标题栏的写法保持一致,统一用 String(format:) 注入 query。
+            ProgressView {
+                Text(String(format: String.l10n("search.searching"), viewModel.lastSubmittedQuery))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.candidates.isEmpty {
             // 必须撑满剩余空间，否则 ContentUnavailableView 只占自身 intrinsic 高度,
             // 浮层 VStack 是固定 620pt 高度,子视图总高小于 frame 时 SwiftUI 会把

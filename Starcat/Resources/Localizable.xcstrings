@@ -14082,7 +14082,7 @@
       }
     },
     "search.searching" : {
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
