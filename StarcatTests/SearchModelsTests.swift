@@ -65,7 +65,8 @@ struct SearchModelsTests {
             isArchived: false, isFork: false, isPrivate: false,
             isStarred: false, badge: nil,
             weeklySources: [], weeklySourceLabel: nil,
-            inlineMetadata: nil, readStatus: nil
+            inlineMetadata: nil, readStatus: nil,
+            openSSFScore: nil
         )
         let candidate = RepositoryCandidate(
             identity: RepoIdentity(ghRepoID: 1, owner: "a", name: "b"),

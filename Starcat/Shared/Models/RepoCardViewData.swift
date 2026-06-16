@@ -114,6 +114,12 @@ struct RepoCardViewData: Identifiable, Hashable, Sendable {
     /// **目前已接入路径**：Manage（`RepoListView`）
     /// **暂未接入**：Trending / Weekly / Activity（保持 nil；后续按需扩展）
     let readStatus: RepoStatus?
+
+    /// OpenSSF Scorecard 安全评分徽章。
+    ///
+    /// nil 表示本地没有可展示的成功评分；列表 row 必须整块不渲染，也不能在
+    /// body 里触发网络请求。刷新由后台 poller 或详情页 fire-and-forget 预拉负责。
+    let openSSFScore: OpenSSFScoreBadgeData?
 }
 
 struct RepoCardInlineMetadata: Hashable, Sendable {
@@ -169,7 +175,8 @@ extension Repo {
     func asCardData(
         badge: CardBadge? = nil,
         inlineMetadata: RepoCardInlineMetadata? = nil,
-        readStatus: RepoStatus? = nil
+        readStatus: RepoStatus? = nil,
+        openSSFScore: OpenSSFScoreBadgeData? = nil
     ) -> RepoCardViewData {
         RepoCardViewData(
             ghRepoId: self.id,
@@ -189,7 +196,8 @@ extension Repo {
             weeklySources: [],
             weeklySourceLabel: nil,
             inlineMetadata: inlineMetadata,
-            readStatus: readStatus
+            readStatus: readStatus,
+            openSSFScore: openSSFScore
         )
     }
 }
@@ -205,7 +213,11 @@ extension StarcatRepoCardDTO {
     ///   - badge: 场景独有徽章；通常由 ViewModel 在 `dto.toCardData(...)` 调用处决定
     /// - Returns: 视图数据；`isStarred` = `registry.contains(ghRepoId:)`
     @MainActor
-    func asCardData(registry: StarredRegistry, badge: CardBadge? = nil) -> RepoCardViewData {
+    func asCardData(
+        registry: StarredRegistry,
+        badge: CardBadge? = nil,
+        openSSFScore: OpenSSFScoreBadgeData? = nil
+    ) -> RepoCardViewData {
         RepoCardViewData(
             ghRepoId: self.ghRepoId,
             fullName: self.fullName,
@@ -224,7 +236,8 @@ extension StarcatRepoCardDTO {
             weeklySources: [],
             weeklySourceLabel: nil,
             inlineMetadata: nil,
-            readStatus: nil
+            readStatus: nil,
+            openSSFScore: openSSFScore
         )
     }
 }
@@ -247,7 +260,8 @@ extension TrendingRepo {
     @MainActor
     func asCardData(
         registry: StarredRegistry,
-        badge: CardBadge? = nil
+        badge: CardBadge? = nil,
+        openSSFScore: OpenSSFScoreBadgeData? = nil
     ) -> RepoCardViewData {
         let resolvedBadge = badge ?? .trendingChange(self.starsInPeriod)
         return RepoCardViewData(
@@ -268,7 +282,8 @@ extension TrendingRepo {
             weeklySources: [],
             weeklySourceLabel: nil,
             inlineMetadata: nil,
-            readStatus: nil
+            readStatus: nil,
+            openSSFScore: openSSFScore
         )
     }
 }
@@ -286,7 +301,8 @@ extension WeeklyFeedItem {
     @MainActor
     func asCardData(
         registry: StarredRegistry,
-        badge: CardBadge? = nil
+        badge: CardBadge? = nil,
+        openSSFScore: OpenSSFScoreBadgeData? = nil
     ) -> RepoCardViewData {
         return RepoCardViewData(
             ghRepoId: card.ghRepoId,
@@ -306,7 +322,8 @@ extension WeeklyFeedItem {
             weeklySources: sourceTypes,
             weeklySourceLabel: shortSourceLabel,
             inlineMetadata: nil,
-            readStatus: nil
+            readStatus: nil,
+            openSSFScore: openSSFScore
         )
     }
 }

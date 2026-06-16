@@ -714,7 +714,10 @@ struct RepoListView: View {
                         // 详情页改 status → NotificationCenter post → HomeViewModel 局部
                         // 更新 statusMap → 本 row 重新渲染（角标即时刷新），无需 reloadItems。
                         UnifiedRepoRow(
-                            card: repo.asCardData(readStatus: viewModel.readStatus(for: repo.id)),
+                            card: repo.asCardData(
+                                readStatus: viewModel.readStatus(for: repo.id),
+                                openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id)
+                            ),
                             isSelected: store.isActive
                                 ? store.contains(ghRepoId: repo.id)
                                 : (selection.wrappedValue == repo.id),
@@ -751,6 +754,9 @@ struct RepoListView: View {
             // task 与 view lifetime 绑定（view 退出自动 cancel），不会泄漏 NotificationCenter observer。
             .task {
                 await viewModel.observeRepoStatusChanges()
+            }
+            .task(id: viewModel.itemsRevision) {
+                await dependencies.openSSFScoreStore.loadCachedScores(for: viewModel.items.map(\.id))
             }
             // selectedRepoID 变化 → 把目标行滚到视口中部。
             // - 用户点击 row 触发的变化：目标行已在视口内，scrollTo 是 no-op

@@ -166,6 +166,19 @@ final class AppDependencies {
     /// 触发后台刷新；未来详情页 toolbar wiki popover 也接入这里。
     let wikiContextService: WikiContextService
 
+    // MARK: - OpenSSF Scorecard
+
+    /// OpenSSF Scorecard 公开 API 客户端（无鉴权）。
+    let openSSFScoreAPI: OpenSSFScoreAPI
+    /// OpenSSF Scorecard 本地缓存仓库。
+    let openSSFScoreRepository: any OpenSSFScoreRepositoryProtocol
+    /// OpenSSF Scorecard 刷新协调服务。
+    let openSSFScoreService: OpenSSFScoreService
+    /// OpenSSF Scorecard UI 状态缓存，列表与详情页同步读取。
+    let openSSFScoreStore: OpenSSFScoreStore
+    /// OpenSSF Scorecard 后台刷新调度器。
+    let openSSFScorePoller: OpenSSFScorePoller
+
     // MARK: - HOM-47 Release 订阅追踪
 
     /// Release 订阅记录 Repository。
@@ -528,6 +541,18 @@ final class AppDependencies {
             cache: .shared,
             fetcher: wikiAPIInstance
         )
+
+        // OpenSSF Scorecard：公开 API + 本地缓存 + 非阻塞 UI store。
+        // 注意：这里不启动网络请求；HomeView 登录态门控负责启动后台 poller，
+        // 详情页/列表也只通过 store 发起 fire-and-forget 异步预拉。
+        let openSSFAPI = OpenSSFScoreAPI()
+        self.openSSFScoreAPI = openSSFAPI
+        let openSSFRepo = GRDBOpenSSFScoreRepository(database: db)
+        self.openSSFScoreRepository = openSSFRepo
+        let openSSFService = OpenSSFScoreService(api: openSSFAPI, repository: openSSFRepo)
+        self.openSSFScoreService = openSSFService
+        self.openSSFScoreStore = OpenSSFScoreStore(service: openSSFService)
+        self.openSSFScorePoller = OpenSSFScorePoller(service: openSSFService)
 
         // 2026-06-08：第三方服务健康检查 actor。独立 ephemeral session + 5s 超时。
         self.serviceHealthChecker = ServiceHealthChecker()

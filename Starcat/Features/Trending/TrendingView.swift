@@ -349,7 +349,10 @@ struct TrendingView: View {
                     }
                 } label: {
                     UnifiedRepoRow(
-                        card: repo.asCardData(registry: dependencies.starredRegistry),
+                        card: repo.asCardData(
+                            registry: dependencies.starredRegistry,
+                            openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.ghRepoId)
+                        ),
                         isSelected: store.isActive
                             ? store.contains(ghRepoId: repo.ghRepoId)
                             : (selectedRepoID == repo.id),
@@ -374,6 +377,9 @@ struct TrendingView: View {
         .refreshable {
             // Pull-to-refresh = 用户主动要新数据，绕过 24h TTL（R-06.1）
             await viewModel.reload(cachePolicy: .forceNetwork)
+        }
+        .task(id: viewModel.reposRevision) {
+            await dependencies.openSSFScoreStore.loadCachedScores(for: viewModel.repos.map(\.ghRepoId))
         }
         // W12 PR-5：Cmd+A 全选当前可见 trending repo（仅 multi-select active 时生效）。
         // 4 场景同款机制：隐藏按钮 + keyboardShortcut。
