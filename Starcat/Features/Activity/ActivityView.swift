@@ -292,6 +292,7 @@ struct ActivityView: View {
             activityAnnouncementRepository: dependencies.activityAnnouncementRepository,
             activitySyncStateRepository: dependencies.activitySyncStateRepository,
             apiClient: dependencies.apiClient,
+            blogRSSClient: dependencies.blogRSSClient,
             currentLoginProvider: { [weak session] in session?.state.user?.login }
         )
         viewModel = model
@@ -388,6 +389,8 @@ private struct ActivityRowView: View {
         // 比 repo owner avatar 更切题。PR-2 引入，2026-06-16。
         if item.kind == .following, let avatarURL = item.following?.actorAvatarURL {
             RemoteAvatar(urlString: avatarURL.absoluteString, size: size, showBorder: size > 24)
+        } else if item.kind == .announcement, let announcement = item.announcement {
+            announcementIcon(source: announcement.source, size: size)
         } else if let repo = item.repo {
             RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: size, showBorder: size > 24)
         } else {
@@ -400,6 +403,21 @@ private struct ActivityRowView: View {
             }
             .frame(width: size, height: size)
         }
+    }
+
+    /// announcement 行图标：blog = newspaper；security = shield（橙 tint）。
+    @ViewBuilder
+    private func announcementIcon(source: AnnouncementSource, size: CGFloat) -> some View {
+        let tint: Color = source == .security ? Color.orange : item.accentColor
+        let symbol = source == .security ? "shield.lefthalf.filled" : "newspaper"
+        ZStack {
+            Circle()
+                .fill(tint.opacity(0.18))
+            Image(systemName: symbol)
+                .font(.system(size: size > 24 ? 17 : 11, weight: .semibold))
+                .foregroundStyle(tint)
+        }
+        .frame(width: size, height: size)
     }
 }
 

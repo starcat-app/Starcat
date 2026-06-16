@@ -206,6 +206,9 @@ final class AppDependencies {
     /// PR-2/PR-3 读取它判 TTL 与 304 短路，并写回最新 ETag。
     let activitySyncStateRepository: any ActivitySyncStateRepositoryProtocol
 
+    /// PR-3：GitHub Blog RSS 客户端（`github.blog/feed/`，独立 host）。
+    let blogRSSClient: any GitHubBlogRSSAPIProtocol
+
     // MARK: - HOM-PROFILE 贡献草坪（2026-06-05）
 
     /// 用户贡献草坪服务（GraphQL + 3h 缓存 + UserDefaults 持久化）。
@@ -595,6 +598,7 @@ final class AppDependencies {
         self.activityEventRepository = GRDBActivityEventRepository(database: db)
         self.activityAnnouncementRepository = GRDBActivityAnnouncementRepository(database: db)
         self.activitySyncStateRepository = GRDBActivitySyncStateRepository(database: db)
+        self.blogRSSClient = GitHubBlogRSSClient()
 
         // HOM-PROFILE 2026-06-05：贡献草坪服务。
         // 直接持有具体 GitHubAPIClient（actor），不走 protocol——因为 graphql<T> 是泛型方法，
