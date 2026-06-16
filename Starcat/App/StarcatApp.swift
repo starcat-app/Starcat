@@ -247,6 +247,14 @@ struct StarcatApp: App {
     // MARK: - Bootstrap
 
     private static func bootstrap() {
+        // 2026-06-16 root cause #2 修复:把 `Bundle.main` 的 ISA 换成
+        // `LocalizedBundle`,让所有 `String(localized:)` / `NSLocalizedString(...)`
+        // 调用都跟随 `LocaleStore.shared.selection` 实时切换,而非锁定系统 locale。
+        // 必须放在 `AppLog.general.info` 之前——log 也走本地化路径(虽然 OSLog
+        // 内部不走 String(localized:),但保险起见早装早安心)。详见
+        // `Starcat/Core/Settings/LocalizedBundle.swift` 顶部注释。
+        LocalizedBundle.install()
+
         AppLog.general.info("Starcat starting (bundle=\(AppConstants.bundleIdentifier, privacy: .public))")
 
         // 2026-06-12 多账号 DB 隔离：DatabaseManager 不再是单例，由 AppDependencies init
