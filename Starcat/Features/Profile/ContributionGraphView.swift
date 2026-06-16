@@ -76,6 +76,9 @@ struct ContributionGraphView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    /// 2026-06-16:Date.RelativeFormatStyle 默认按 `Locale.current` 渲染相对时间,
+    /// 显式从 `\.locale` 读才会跟随 LocaleStore 切换。
+    @Environment(\.locale) private var locale
     /// HOM-SNAKE-MODES：读取用户选的玩法。
     @Environment(AppSettings.self) private var settings
 
@@ -190,7 +193,7 @@ struct ContributionGraphView: View {
                 HStack(spacing: 3) {
                     Image(systemName: "clock")
                         .font(.system(size: 9))
-                    Text(lastFetchedAt, format: .relative(presentation: .numeric, unitsStyle: .narrow))
+                    Text(lastFetchedAt, format: .relative(presentation: .numeric, unitsStyle: .narrow).locale(locale))
                         .monospacedDigit()
                 }
                 .font(.system(size: 10))

@@ -67,7 +67,7 @@ struct BatchAIOptionsSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("batchAI.options.title")
                     .font(.headline)
-                Text(String(format: String(localized: "batchAI.options.subtitleFormat"), pendingCount))
+                Text(String(format: String.l10n("batchAI.options.subtitleFormat"), pendingCount))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -84,7 +84,7 @@ struct BatchAIOptionsSheet: View {
         return HStack(spacing: 4) {
             Image(systemName: "clock")
                 .font(.caption2)
-            Text(String(format: String(localized: "batchAI.options.estimateFormat"), minutes))
+            Text(String(format: String.l10n("batchAI.options.estimateFormat"), minutes))
                 .font(.caption.monospacedDigit())
         }
         .foregroundStyle(.secondary)
@@ -168,7 +168,7 @@ struct BatchAIOptionsSheet: View {
 
             // 2026-06-14 D-31 follow-up：.tertiary → .secondary。
             // hint 仍需要能读清（百分比阈值是关键提示），与 D-31 全局对比度修正对齐。
-            Text(String(format: String(localized: "batchAI.options.threshold.hintFormat"), percentString(options.confidenceThreshold)))
+            Text(String(format: String.l10n("batchAI.options.threshold.hintFormat"), percentString(options.confidenceThreshold)))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -194,7 +194,7 @@ struct BatchAIOptionsSheet: View {
             Button {
                 onStart()
             } label: {
-                Text(String(format: String(localized: "batchAI.options.startFormat"), pendingCount))
+                Text(String(format: String.l10n("batchAI.options.startFormat"), pendingCount))
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)

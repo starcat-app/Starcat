@@ -50,31 +50,31 @@ enum NetworkError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return String(localized: "network.error.invalidURL")
+            return String.l10n("network.error.invalidURL")
         case .invalidResponse:
-            return String(localized: "network.error.invalidResponse")
+            return String.l10n("network.error.invalidResponse")
         case .unauthorized:
-            return String(localized: "network.error.unauthorized")
+            return String.l10n("network.error.unauthorized")
         case .rateLimited(let retryAfter):
             let seconds = Int(retryAfter.rounded())
-            return String(format: String(localized: "network.error.rateLimitedFormat"), seconds)
+            return String(format: String.l10n("network.error.rateLimitedFormat"), seconds)
         case .notModified:
-            return String(localized: "network.error.notModified")
+            return String.l10n("network.error.notModified")
         case .notFound:
-            return String(localized: "network.error.notFound")
+            return String.l10n("network.error.notFound")
         case .serverError(let code):
-            return String(format: String(localized: "network.error.serverFormat"), code)
+            return String(format: String.l10n("network.error.serverFormat"), code)
         case .clientError(let code, let message):
             if let message {
-                return String(format: String(localized: "network.error.clientWithMessageFormat"), code, message)
+                return String(format: String.l10n("network.error.clientWithMessageFormat"), code, message)
             }
-            return String(format: String(localized: "network.error.clientFormat"), code)
+            return String(format: String.l10n("network.error.clientFormat"), code)
         case .decodingError(let error):
-            return String(format: String(localized: "network.error.decodingFormat"), error.localizedDescription)
+            return String(format: String.l10n("network.error.decodingFormat"), error.localizedDescription)
         case .transport(let error):
-            return String(format: String(localized: "network.error.transportFormat"), error.localizedDescription)
+            return String(format: String.l10n("network.error.transportFormat"), error.localizedDescription)
         case .cancelled:
-            return String(localized: "network.error.cancelled")
+            return String.l10n("network.error.cancelled")
         }
     }
 }

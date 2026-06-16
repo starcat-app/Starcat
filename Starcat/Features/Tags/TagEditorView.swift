@@ -87,17 +87,17 @@ struct TagEditorView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     // 名字
-                    section(title: String(localized: "tagEditor.sectionName", defaultValue: "NAME")) {
+                    section(title: String.l10n("tagEditor.sectionName", defaultValue: "NAME")) {
                         TextField("tagEditor.tagNamePlaceholder", text: $editingName)
                             .textFieldStyle(.roundedBorder)
                     }
 
                     // 颜色：预设 swatch + 自定义
-                    section(title: String(localized: "tagEditor.sectionColor", defaultValue: "COLOR")) {
+                    section(title: String.l10n("tagEditor.sectionColor", defaultValue: "COLOR")) {
                         VStack(alignment: .leading, spacing: 8) {
                             colorSwatches
                             HStack {
-                                ColorPicker(String(localized: "tagEditor.customColor", defaultValue: "Custom"), selection: customColorBinding, supportsOpacity: false)
+                                ColorPicker(String.l10n("tagEditor.customColor", defaultValue: "Custom"), selection: customColorBinding, supportsOpacity: false)
                                     .labelsHidden()
                                 Text(editingColor.uppercased())
                                     .font(.system(.caption, design: .monospaced))
@@ -108,7 +108,7 @@ struct TagEditorView: View {
                     }
 
                     // 图标
-                    section(title: String(localized: "tagEditor.sectionIcon", defaultValue: "ICON")) {
+                    section(title: String.l10n("tagEditor.sectionIcon", defaultValue: "ICON")) {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Button {

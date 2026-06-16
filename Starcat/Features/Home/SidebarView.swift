@@ -148,6 +148,7 @@ struct SidebarView: View {
         .background(.bar)
         .sheet(isPresented: $showLoginSheet) {
             GithubAuthView()
+                .appLocaleEnvironment()
         }
     }
 

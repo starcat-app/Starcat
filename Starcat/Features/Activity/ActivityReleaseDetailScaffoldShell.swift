@@ -78,7 +78,7 @@ struct ActivityReleaseDetailScaffoldShell: View {
             systemImage: "calendar",
             label: Self.absoluteDate(date),
             url: URL(string: latest.htmlUrl),
-            help: String(localized: "activity.release.latestPublishedAt")
+            help: String.l10n("activity.release.latestPublishedAt")
         )
     }
 

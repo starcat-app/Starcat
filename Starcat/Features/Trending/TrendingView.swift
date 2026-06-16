@@ -107,6 +107,7 @@ struct TrendingView: View {
         }
         .sheet(isPresented: $showLoginSheet) {
             GithubAuthView()
+                .appLocaleEnvironment()
         }
         .onChange(of: authSession.state.isAuthenticated) { _, isAuthenticated in
             if isAuthenticated {
@@ -205,10 +206,10 @@ struct TrendingView: View {
     /// 没有 lastRefreshedAt 时显示"还未刷新过"。
     private var absoluteFreshnessHelpText: String {
         guard let date = viewModel.lastRefreshedAt else {
-            return String(localized: "trending.freshness.neverRefreshed")
+            return String.l10n("trending.freshness.neverRefreshed")
         }
         return String(
-            format: String(localized: "trending.freshness.lastRefreshedAtFormat"),
+            format: String.l10n("trending.freshness.lastRefreshedAtFormat"),
             absoluteTimeFormatter.string(from: date)
         )
     }
@@ -216,15 +217,15 @@ struct TrendingView: View {
     /// 刷新按钮 tooltip：根据状态切换文案。
     private var refreshButtonHelpText: String {
         if viewModel.isRefreshing {
-            return String(localized: "trending.refresh.inProgress")
+            return String.l10n("trending.refresh.inProgress")
         }
         if let date = viewModel.lastRefreshedAt {
             return String(
-                format: String(localized: "trending.refresh.tooltipWithLastFormat"),
+                format: String.l10n("trending.refresh.tooltipWithLastFormat"),
                 absoluteTimeFormatter.string(from: date)
             )
         }
-        return String(localized: "trending.refresh.tooltip")
+        return String.l10n("trending.refresh.tooltip")
     }
 
     /// 绝对时间格式化器（"6 月 2 日 22:48" 简洁形式）。

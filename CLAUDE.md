@@ -246,60 +246,23 @@ Button { ... }
 
 > 与之配套的常驻提醒已在 `AboutView.swift` 顶部 `AboutDependency` 注释中复述，避免后续协作者只看代码不看文档时漏登记。
 
-### 国际化规范（i18n）
+### 国际化规范（i18n，强制）
 
-**所有用户可见文本必须使用 String Catalog 本地化键**，禁止硬编码。
+> ⚠️ **新增 / 修改任何国际化代码前，必读** [`docs/i18n军规.md`](docs/i18n军规.md)（单一信任源，含决策矩阵 / 5 大 root cause / 反例对照 / 实战参考文件）。
 
-#### 键命名规范
-格式：`{section}.{subsection}.{component}`，使用 `.` 分隔，禁止使用 `_`。
+**最小必知（违反任一项即不合规）**：
 
-#### 代码规范
-```swift
-// ✅ 正确：SwiftUI 自动解析字符串字面量
-Text("settings.general.title")
-Label("sidebar.allRepos", systemImage: "star.fill")
+1. **新代码禁止** `String(localized:)` 与 `NSLocalizedString`。返回 `String` 的本地化场景一律走 `String.l10n("key")`。
+2. SwiftUI `Text` / `Label` / `Button` 等接 `LocalizedStringKey` 的 view **直接写** `Text("key")`，不要套 `String.l10n`。
+3. **每个** `.sheet { }` / `.popover { }` 闭包内根视图、**每个**自建 `NSWindow` / `NSPanel` 的 hostingView 根，**必须**挂 `.appLocaleEnvironment()`。
+4. 任何 Foundation formatter（`RelativeDateTimeFormatter` / `Date.RelativeFormatStyle` / `DateFormatter` / `NumberFormatter`）默认走系统 locale，**必须**视图内 `@Environment(\.locale)` + `formatter.locale = locale`（或链式 `.locale(locale)`）显式注入。
+5. 字符串目录：`Starcat/Resources/Localizable.xcstrings`，新增 key **必须**同时填 en + zh-Hans 双语，命名 `{section}.{subsection}.{component}`，禁用 `_`。
 
-// ✅ 正确：带参数的本地化字符串
-Text("batch.selectedCount", args: ["count": viewModel.multiSelectedRepoIDs.count])
+提交前自检：
 
-// ❌ 错误：硬编码
-Text("设置")
-Text("已选 \(count) 个")
-```
-
-#### 枚举 displayName 规范
-枚举的本地化显示名应使用 `displayNameKey` 属性返回 String Catalog 键名：
-```swift
-enum RepoListDensity: String, CaseIterable, Identifiable {
-    case compact
-    case card
-
-    var displayNameKey: String {
-        switch self {
-        case .compact: return "settings.listDensity.compact"
-        case .card:    return "settings.listDensity.card"
-        }
-    }
-}
-```
-
-#### 资源文件
-- 字符串目录：`Starcat/Resources/Localizable.xcstrings`
-- 新增字符串时需同时添加 en 和 zh-Hans 翻译
-- SF Symbols 无需本地化（系统已处理）
-
-#### 多语言预览
-使用 `.environment(\.locale, _)` 在 #Preview 中预览不同语言：
-```swift
-#Preview("English") {
-    SettingsView()
-        .environment(\.locale, Locale(identifier: "en"))
-}
-
-#Preview("简体中文") {
-    SettingsView()
-        .environment(\.locale, Locale(identifier: "zh-Hans"))
-}
+```bash
+rg "String\(localized:" --type swift Starcat/   # 必须只出现在注释里
+rg "NSLocalizedString"  --type swift Starcat/   # 必须只出现在注释里
 ```
 
 ---
@@ -317,4 +280,4 @@ enum RepoListDensity: String, CaseIterable, Identifiable {
 
 ---
 
-*最后更新：2026-06-14*
+*最后更新：2026-06-16*

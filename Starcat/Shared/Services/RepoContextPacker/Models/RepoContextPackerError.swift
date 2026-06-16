@@ -69,27 +69,27 @@ public enum RepoContextPackerError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .zipFileNotFound(let url):
-            return String(format: String(localized: "packer.error.zipFileNotFoundFormat"), url.path)
+            return String(format: String.l10n("packer.error.zipFileNotFoundFormat"), url.path)
         case .zipTooLarge(let actual, let max):
-            return String(format: String(localized: "packer.error.zipTooLargeFormat"), actual, max)
+            return String(format: String.l10n("packer.error.zipTooLargeFormat"), actual, max)
         case .extractedDirectoryTooLarge(let actual, let max):
-            return String(format: String(localized: "packer.error.extractedTooLargeFormat"), actual, max)
+            return String(format: String.l10n("packer.error.extractedTooLargeFormat"), actual, max)
         case .zipEmpty:
-            return String(localized: "packer.error.zipEmpty")
+            return String.l10n("packer.error.zipEmpty")
         case .zipExtractionFailed(let error):
-            return String(format: String(localized: "packer.error.zipExtractionFailedFormat"), error.localizedDescription)
+            return String(format: String.l10n("packer.error.zipExtractionFailedFormat"), error.localizedDescription)
         case .zipSlipDetected(let path):
-            return String(format: String(localized: "packer.error.zipSlipDetectedFormat"), path)
+            return String(format: String.l10n("packer.error.zipSlipDetectedFormat"), path)
         case .noFilesAfterFiltering:
-            return String(localized: "packer.error.noFilesAfterFiltering")
+            return String.l10n("packer.error.noFilesAfterFiltering")
         case .outputDirectoryNotWritable(let url, let error):
-            return String(format: String(localized: "packer.error.outputDirectoryNotWritableFormat"), url.path, error.localizedDescription)
+            return String(format: String.l10n("packer.error.outputDirectoryNotWritableFormat"), url.path, error.localizedDescription)
         case .xmlBuildFailed(let error):
-            return String(format: String(localized: "packer.error.xmlBuildFailedFormat"), error.localizedDescription)
+            return String(format: String.l10n("packer.error.xmlBuildFailedFormat"), error.localizedDescription)
         case .writeFailed(let url, let error):
-            return String(format: String(localized: "packer.error.writeFailedFormat"), url.path, error.localizedDescription)
+            return String(format: String.l10n("packer.error.writeFailedFormat"), url.path, error.localizedDescription)
         case .cancelled:
-            return String(localized: "packer.error.cancelled")
+            return String.l10n("packer.error.cancelled")
         }
     }
 

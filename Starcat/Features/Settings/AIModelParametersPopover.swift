@@ -109,15 +109,15 @@ struct AIModelParametersPopover: View {
 
         intField("Top K", value: clampedInt($parameters.topK, in: 0...500), unit: nil, disabled: isEmbedding)
         intField(
-            String(localized: "settings.ai.modelParams.maxTokens"),
+            String.l10n("settings.ai.modelParams.maxTokens"),
             value: maxTokensKBinding,
             unit: "K",
             disabled: isEmbedding
         )
         intField(
-            String(localized: "settings.ai.modelParams.timeout"),
+            String.l10n("settings.ai.modelParams.timeout"),
             value: timeoutSecondsBinding,
-            unit: String(localized: "settings.ai.modelParams.unit.seconds"),
+            unit: String.l10n("settings.ai.modelParams.unit.seconds"),
             disabled: false
         )
 

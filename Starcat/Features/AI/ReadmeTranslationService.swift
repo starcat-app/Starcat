@@ -52,13 +52,13 @@ enum ReadmeTranslationError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingProvider:
-            return String(localized: "readme.translate.error.missingProvider")
+            return String.l10n("readme.translate.error.missingProvider")
         case .missingAPIKey:
-            return String(localized: "readme.translate.error.missingAPIKey")
+            return String.l10n("readme.translate.error.missingAPIKey")
         case .emptySource:
-            return String(localized: "readme.translate.error.emptySource")
+            return String.l10n("readme.translate.error.emptySource")
         case .structureBroken:
-            return String(localized: "readme.translate.error.structureBroken")
+            return String.l10n("readme.translate.error.structureBroken")
         }
     }
 }

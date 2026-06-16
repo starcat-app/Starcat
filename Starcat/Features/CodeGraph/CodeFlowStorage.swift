@@ -108,9 +108,9 @@ enum CodeFlowStorageError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .outputDirectoryUnavailable:
-            return String(localized: "codeFlow.storage.error.outputDirectoryUnavailable")
+            return String.l10n("codeFlow.storage.error.outputDirectoryUnavailable")
         case .invalidBookmark:
-            return String(localized: "codeFlow.storage.error.invalidBookmark")
+            return String.l10n("codeFlow.storage.error.invalidBookmark")
         }
     }
 }
@@ -153,7 +153,7 @@ final class CodeFlowStorage {
 
     var outputDirectoryDisplayPath: String {
         _ = directoryConfigurationRevision
-        return (try? resolveOutputRoot().url.path) ?? String(localized: "storage.outputDirectory.bookmarkExpired")
+        return (try? resolveOutputRoot().url.path) ?? String.l10n("storage.outputDirectory.bookmarkExpired")
     }
 
     var totalBytes: Int64 { projects.reduce(0) { $0 + $1.totalBytes } }

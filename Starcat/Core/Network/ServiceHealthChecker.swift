@@ -152,7 +152,7 @@ actor ServiceHealthChecker {
         do {
             let (_, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
-                return .networkError(reason: String(localized: "network.error.serverGeneric"))
+                return .networkError(reason: String.l10n("network.error.serverGeneric"))
             }
             let code = http.statusCode
             switch code {

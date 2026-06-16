@@ -305,9 +305,9 @@ enum TrendingPeriod: String, CaseIterable, Identifiable {
     /// 需要 plain String 的 API 使用，例如 navigationSubtitle。
     var localizedDisplayName: String {
         switch self {
-        case .daily:   return String(localized: "trending.period.daily")
-        case .weekly:  return String(localized: "trending.period.weekly")
-        case .monthly: return String(localized: "trending.period.monthly")
+        case .daily:   return String.l10n("trending.period.daily")
+        case .weekly:  return String.l10n("trending.period.weekly")
+        case .monthly: return String.l10n("trending.period.monthly")
         }
     }
 
@@ -350,10 +350,10 @@ struct TrendingLanguage: Hashable, Identifiable, Sendable {
     /// 「全部」/「未分类」走本地化（i18n 决定文案，独立于后端 label）。
     var localizedDisplayName: String {
         if rawValue.isEmpty {
-            return String(localized: "trending.allLanguages")
+            return String.l10n("trending.allLanguages")
         }
         if isUncategorized {
-            return String(localized: "trending.language.uncategorized")
+            return String.l10n("trending.language.uncategorized")
         }
         return rawValue
     }

@@ -75,7 +75,7 @@ actor ReleaseNotificationService {
         for item in notifications {
             let content = UNMutableNotificationContent()
             // 标题：用仓库 fullName 替代单独的 owner / name，便于用户在通知中心一眼看到来源。
-            content.title = String(format: String(localized: "release.notification.titleFormat"), item.repo.fullName)
+            content.title = String(format: String.l10n("release.notification.titleFormat"), item.repo.fullName)
             content.body = makeBody(for: item.release)
             content.sound = .default
             content.userInfo = [
@@ -103,7 +103,7 @@ actor ReleaseNotificationService {
 
     private func makeBody(for release: ReleaseRecord) -> String {
         if let name = release.name, !name.isEmpty, name != release.tagName {
-            return String(format: String(localized: "release.notification.bodyFormat"), release.tagName, name)
+            return String(format: String.l10n("release.notification.bodyFormat"), release.tagName, name)
         }
         return release.tagName
     }

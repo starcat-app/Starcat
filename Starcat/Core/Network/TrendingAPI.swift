@@ -24,13 +24,13 @@ enum TrendingAPIError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return String(localized: "network.error.invalidURL")
+            return String.l10n("network.error.invalidURL")
         case .transport(let error):
-            return String(format: String(localized: "network.error.transportFormat"), error.localizedDescription)
+            return String(format: String.l10n("network.error.transportFormat"), error.localizedDescription)
         case .decodingError(let error):
-            return String(format: String(localized: "network.error.decodingFormat"), error.localizedDescription)
+            return String(format: String.l10n("network.error.decodingFormat"), error.localizedDescription)
         case .serverError(let message):
-            return message ?? String(localized: "network.error.serverGeneric")
+            return message ?? String.l10n("network.error.serverGeneric")
         }
     }
 }

@@ -180,7 +180,7 @@ struct ReleaseTimelineView: View {
         // 2026-06-15:reduceMotion 兜底——toast 直接瞬切显示/隐藏。
         let toastAnimation: Animation? = reduceMotion ? nil : .easeOut(duration: 0.18)
         withAnimation(toastAnimation) {
-            copyToast = String(localized: "releases.assetCopied")
+            copyToast = String.l10n("releases.assetCopied")
         }
         Task {
             try? await Task.sleep(for: .seconds(1.5))
@@ -282,7 +282,7 @@ final class ReleaseTimelineViewModel {
             unreadCount = try await countTask
             errorMessage = nil
         } catch {
-            errorMessage = String(localized: "releases.timeline.error.loadFailed")
+            errorMessage = String.l10n("releases.timeline.error.loadFailed")
         }
     }
 
@@ -299,7 +299,7 @@ final class ReleaseTimelineViewModel {
             try await releaseRepository.markRead(releaseId: entry.release.id, isRead: isRead)
             await reload()
         } catch {
-            errorMessage = String(localized: "releases.timeline.error.markReadFailed")
+            errorMessage = String.l10n("releases.timeline.error.markReadFailed")
         }
     }
 
@@ -308,7 +308,7 @@ final class ReleaseTimelineViewModel {
             try await releaseRepository.markAllRead()
             await reload()
         } catch {
-            errorMessage = String(localized: "releases.timeline.error.markAllReadFailed")
+            errorMessage = String.l10n("releases.timeline.error.markAllReadFailed")
         }
     }
 }
@@ -316,6 +316,10 @@ final class ReleaseTimelineViewModel {
 // MARK: - Row
 
 private struct ReleaseTimelineRow: View {
+
+    /// 2026-06-16:`RelativeDateTimeFormatter` 默认走系统 locale,需显式注入 SwiftUI
+    /// `\.locale` 才会跟随 LocaleStore 切换;父级 `.sheet { }` 已挂 `appLocaleEnvironment()`。
+    @Environment(\.locale) private var locale
 
     let entry: ReleaseTimelineEntry
     let assetFilter: String
@@ -454,7 +458,7 @@ private struct ReleaseTimelineRow: View {
                 }
                 .padding(.top, 4)
             } label: {
-                Text(String(format: String(localized: "releases.row.assetsCountFormat"), assets.count))
+                Text(String(format: String.l10n("releases.row.assetsCountFormat"), assets.count))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -481,6 +485,7 @@ private struct ReleaseTimelineRow: View {
         guard let iso, let date = ISO8601DateFormatter.shared.date(from: iso) else { return nil }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
+        formatter.locale = locale
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 }

@@ -45,6 +45,10 @@ struct ActivityView: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
+
+    /// 2026-06-16:`RelativeDateTimeFormatter` 默认走系统 locale,需显式注入跟随
+    /// LocaleStore 切换。这里读 SwiftUI `\.locale`,父级已挂 `appLocaleEnvironment()`。
+    @Environment(\.locale) private var locale
     // R-01 §3.1.4 Step 7.3：refreshRow 改用 SyncIconButton 后顶层 reduceMotion 已不需要。
     // ActivityRowView 内部仍保留自己的 reduceMotion env 处理 isSelected 动画。
 
@@ -208,7 +212,7 @@ struct ActivityView: View {
         // SyncIconButton（图标 / 旋转动画 / hover / disabled / reduceMotion 一并统一）。
         HStack {
             if let last = viewModel.lastRefreshedAt {
-                Text(String(format: String(localized: "activity.lastRefreshedFormat"), Self.relativeDate(last)))
+                Text(String(format: String.l10n("activity.lastRefreshedFormat"), relativeDate(last)))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -216,7 +220,7 @@ struct ActivityView: View {
             SyncIconButton(
                 isRefreshing: viewModel.isRefreshing,
                 disabled: viewModel.isRefreshing,
-                tooltip: String(localized: "activity.refresh")
+                tooltip: String.l10n("activity.refresh")
             ) {
                 Task {
                     await viewModel.refresh(category: selectedCategory)
@@ -283,9 +287,10 @@ struct ActivityView: View {
         selectedItem = items.first
     }
 
-    private static func relativeDate(_ date: Date) -> String {
+    private func relativeDate(_ date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
+        formatter.locale = locale
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 
@@ -323,7 +328,7 @@ private struct ActivityRowView: View {
                         .truncationMode(.middle)
 
                     if item.kind == .release, item.isRead == false {
-                        MetaBadge(systemImage: "circle.fill", text: String(localized: "activity.unread"), tint: .accentColor)
+                        MetaBadge(systemImage: "circle.fill", text: String.l10n("activity.unread"), tint: .accentColor)
                     }
                 }
 

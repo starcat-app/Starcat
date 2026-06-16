@@ -123,7 +123,7 @@ struct AIChatInputView: View {
     private var textEditor: some View {
         AIChatNativeTextEditor(
             state: editorState,
-            placeholder: String(localized: "ai.assistant.input.placeholder"),
+            placeholder: String.l10n("ai.assistant.input.placeholder"),
             isEnabled: !isSending,
             isFocused: focus,
             requiresCommandReturn: settings.aiChatRequiresCommandReturn,
