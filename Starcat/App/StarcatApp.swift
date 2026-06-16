@@ -29,16 +29,12 @@ struct StarcatApp: App {
     // scene 都通过 `.environment(\.locale, _)` 注入；切换时 `.id(...)` 强制
     // 整棵 view 树重建，避免某些缓存了 Locale 的 formatter（如
     // `RelativeDateTimeFormatter` 实例缓存）不刷新。
-    @State private var localeStore = LocaleStore.shared
-
-    // MARK: - DEBUG-only: 运行时语言覆盖
     //
-    // 与生产 `localeStore` 共存：debug menu 注入靠子树端，**临时覆盖**生产选择，
-    // 让开发者在不动用户偏好的前提下跳着试 i18n；选回 "system" 就回退到生产值。
-    // Release 包整段不参与编译。
-    #if DEBUG
-    @State private var debugLocaleStore = DebugLocaleStore.shared
-    #endif
+    // 2026-06-16 dong4j 删除了 DEBUG-only `DebugLocaleStore`：语言切换正式入口
+    // 已在「设置 → 通用 → 语言」落地，调试期切语言走同一份 `LocaleStore`。
+    // Debug 菜单本身保留作为后续调试入口的容器（清缓存 / Dump DB 等），但
+    // 当前不再承载语言切换。
+    @State private var localeStore = LocaleStore.shared
 
     init() {
         Self.bootstrap()
@@ -131,12 +127,13 @@ struct StarcatApp: App {
                 .keyboardShortcut("I", modifiers: .command)
             }
 
-            // DEBUG-only 菜单：当前只承载语言切换，未来可继续追加其他调试入口
-            // （例如清缓存、强制制造网络错误、Dump 数据库等）。
-            // Release 包整段不存在；菜单本身的标题 / 选项标签都用 verbatim 文本，
+            // DEBUG-only 菜单：作为后续调试入口的容器（清缓存 / 强制制造网络
+            // 错误 / Dump 数据库等）。语言切换 2026-06-16 移除（已在设置页落地）。
+            // 当前菜单内只放一个 disabled 占位项，等加入第一个真功能时移除占位。
+            // Release 包整段不存在；菜单标题 / 选项标签都用 verbatim 文本，
             // 不进入 String Catalog——避免"切到英文后调试菜单也变英文"的循环噩梦。
             #if DEBUG
-            DebugMenuCommands(localeStore: debugLocaleStore)
+            DebugMenuCommands()
             #endif
         }
 
@@ -168,32 +165,20 @@ struct StarcatApp: App {
 
     // MARK: - 内容根视图
 
-    /// 包了一层 builder 是为了让 DEBUG-only 的 `.environment(\.locale, _)` 修饰符
-    /// 不污染 Release 构建——`#if DEBUG` 在 ViewBuilder 内部合法，但放在 `.modifier`
-    /// 链上不行。
+    /// 包了一层 builder 是为了把 locale 注入和 identity 重建集中在一处，未来要
+    /// 加调试期临时覆盖（如 DEBUG 入参）也只需在这里改。
     ///
-    /// **modifier 链顺序与 SwiftUI environment 解析规则**：
-    /// - SwiftUI 中，`.environment(_, _)` 链上**靠子树端（链中后调用）的值**生效
-    /// - 所以这里**先**注入生产 `localeStore`，**再**注入 `debugLocaleStore` —— DEBUG
-    ///   期间 debug 菜单选了非 `.system` 时覆盖生产；选回 `.system`（其
-    ///   `effectiveLocale = .autoupdatingCurrent`）等价于不强制 locale，
-    ///   生产 localeStore 选择透出来。
-    /// - `.id(...)` 拼接两个 selection 的 rawValue：任一 store 变化都强制重建
-    ///   ContentView，避免缓存 Locale 的子视图（如 RelativeDateTimeFormatter
-    ///   实例缓存）不刷新——dong4j 历史截图反馈"切语言后部分时间格式没变"就是
-    ///   少了 identity 重建。
+    /// **关键约束**：
+    /// - SwiftUI 中 `.environment(_, _)` 链上**靠子树端（链中后调用）的值**生效，
+    ///   所以这里只注入生产 `localeStore`。
+    /// - `.id(localeStore.selection.rawValue)` 强制重建 ContentView，避免缓存
+    ///   Locale 的子视图（如 `RelativeDateTimeFormatter` 实例缓存）不刷新——
+    ///   dong4j 历史截图反馈"切语言后部分时间格式没变"就是少了 identity 重建。
     @ViewBuilder
     private var contentRoot: some View {
-        #if DEBUG
-        ContentView()
-            .environment(\.locale, localeStore.selection.effectiveLocale)
-            .environment(\.locale, debugLocaleStore.selection.effectiveLocale)
-            .id("\(localeStore.selection.rawValue)|\(debugLocaleStore.selection.rawValue)")
-        #else
         ContentView()
             .environment(\.locale, localeStore.selection.effectiveLocale)
             .id(localeStore.selection.rawValue)
-        #endif
     }
 
     /// Settings scene 的语言注入与重建逻辑，与 `contentRoot` 完全对称。
@@ -205,16 +190,9 @@ struct StarcatApp: App {
     /// `selection`，任意一方写入都会让两个 scene 同步重渲染。
     @ViewBuilder
     private var settingsRoot: some View {
-        #if DEBUG
-        SettingsView()
-            .environment(\.locale, localeStore.selection.effectiveLocale)
-            .environment(\.locale, debugLocaleStore.selection.effectiveLocale)
-            .id("\(localeStore.selection.rawValue)|\(debugLocaleStore.selection.rawValue)")
-        #else
         SettingsView()
             .environment(\.locale, localeStore.selection.effectiveLocale)
             .id(localeStore.selection.rawValue)
-        #endif
     }
 
     // MARK: - 主题应用
@@ -290,43 +268,21 @@ struct StarcatApp: App {
 ///   类型里加 `CommandGroup` / `CommandMenu`，主 `StarcatApp.body` 不会被撑大
 /// - `CommandMenu("Debug")` 在 menubar 上插入一个顶级菜单（位置由 SwiftUI 决定，
 ///   一般在 View 菜单之后），不与系统标准菜单冲突
-/// - 语言切换走 SwiftUI 原生 `Picker` —— SwiftUI 会自动把它渲染成菜单内的
-///   一组可勾选项（带 checkmark），不需要手动维护选中态
+///
+/// 2026-06-16 dong4j 删除了「语言切换」子菜单（语言切换正式入口已在「设置 →
+/// 通用 → 语言」落地）。Debug 菜单本身保留作为后续调试入口的容器；菜单内
+/// 当前只有一个 disabled 占位项，避免空 `CommandMenu` 在某些 SwiftUI 版本下
+/// 不渲染菜单栏标题——加入第一个真功能时移除占位。
 struct DebugMenuCommands: Commands {
 
-    /// 直接拿 store 而不是再包一层 binding——`@Bindable` 在 macOS 15 SwiftUI
-    /// commands 上下文里可用（Commands 内部能正确订阅 @Observable）。
-    @Bindable var localeStore: DebugLocaleStore
-
     var body: some Commands {
-        // 第一个菜单：Debug
-        // 注意菜单标题用 verbatim 字面量（避免被 String Catalog 提取后跟随
-        // .environment(\.locale, _) 切换），保证不管当前 locale 是什么，开发者
+        // 菜单标题用 verbatim 字面量（避免被 String Catalog 提取后跟随
+        // `.environment(\.locale, _)` 切换），保证不管当前 locale 是什么，开发者
         // 都能在菜单栏看到固定的"Debug"字样找到入口。
         CommandMenu("Debug") {
-            languageSubmenu
-            // 占位：未来追加其他调试入口（清缓存 / Dump DB / 强制 429 等）
-        }
-    }
-
-    /// 语言切换子菜单——用 `Picker` 让 SwiftUI 自动渲染成"radio 组"。
-    ///
-    /// Picker 在 CommandMenu 里的行为：菜单项前会出现一个 ✓ 标记表示选中项；
-    /// 点击其他项立即触发 `selection` 写入。比手写多个 Button + checkmark 简洁。
-    ///
-    /// `pickerStyle(.inline)` 让选项平铺在 Debug 菜单第一层，而不是嵌套子菜单——
-    /// 调试场景下"少一次点击"比"菜单整洁"更重要。
-    @ViewBuilder
-    private var languageSubmenu: some View {
-        Section("Language / 语言") {
-            Picker(selection: $localeStore.selection) {
-                ForEach(DebugLocale.allCases) { option in
-                    Text(verbatim: option.displayName).tag(option)
-                }
-            } label: {
-                Text(verbatim: "Locale Override")
-            }
-            .pickerStyle(.inline)
+            // 占位项：保留菜单架构与可见性。加入真功能时直接删除这一行。
+            Button("(no debug actions yet)") { }
+                .disabled(true)
         }
     }
 }
