@@ -89,6 +89,10 @@ enum DatabaseMigrations {
             try createWeeklyBulkMeta(db)
             // OpenSSF Scorecard 公开安全评分缓存（仅 starred repo，失败态也落库冷却）。
             try createOpenSSFScores(db)
+            // Activity 公告与关注（2026-06-16）：following events / 双源 announcement / 单行 sync_state 三表。
+            try createActivityEvents(db)
+            try createActivityAnnouncements(db)
+            try createActivitySyncState(db)
             // 原 createReadmeTranslations 已删除（2026-06-15 HOM-68 v2 砍 DB 改纯磁盘）。
             // 翻译缓存现走 `DiskReadmeTranslationCache`，详见文件头「原 v7」段说明。
         }
@@ -849,6 +853,146 @@ enum DatabaseMigrations {
         // 时间线主查询：按 published_at desc 排序所有订阅 repo 的 releases
         try db.create(index: "idx_releases_repo_published", on: "releases", columns: ["repo_id", "published_at"])
         try db.create(index: "idx_releases_published", on: "releases", columns: ["published_at"])
+    }
+
+    // MARK: - activity_events / activity_announcements / activity_sync_state（Activity 公告与关注 PR-1，2026-06-16）
+
+    /// activity_events：following 分类 GitHub Events feed 缓存。
+    ///
+    /// **数据源**：`GET /users/{username}/received_events/public`（一次拉当前用户「关注的所有人」
+    /// 30 天内最多 300 条 public events 聚合 feed）。
+    ///
+    /// **设计决策（dong4j 2026-06-16 方案 v2 拍板，详见
+    /// `docs/需求讨论/activity-公告与关注-数据接入方案.md`）**：
+    ///
+    /// - **`id` 用 TEXT PRIMARY KEY**：GitHub event id 在 API 里是数字字符串，但跨 actor
+    ///   全局唯一即可当 PK；与 `releases.id (Int64)` 不同——后者是 Release-level 数字 id，
+    ///   而 events 的 id 在 GitHub 内部本就是字符串型。
+    ///
+    /// - **`payload_json` 全量直存**：与 `releases.assets_json` 同款模式。每种 EventType
+    ///   payload schema 完全不同（WatchEvent 只有 `action`，PullRequestEvent 嵌套整个
+    ///   `pull_request` 对象），开关联表毫无价值；ViewModel 按 event_type 走 switch
+    ///   反解码到具体子类型，不命中时 fallback 到事件名本身的文案。
+    ///
+    /// - **`is_read` device-local，不挂 CloudKit**（决策 M2）：Activity 是 ephemeral feed，
+    ///   跨设备同步「上次看到哪条 feed」价值低；30 天 × 多设备会推高 zone 体积。
+    ///
+    /// - **`repo_id` + `repo_name` 都存**：repo_id 是 GitHub repo 数字 id（INTEGER），
+    ///   repo_name 是 "owner/repo" 字符串（TEXT）。同时存避免 ViewModel 渲染时还要查
+    ///   `repos` 表（events 里的 repo 大多不是用户 starred）；id 做反查索引，name 做显示。
+    ///
+    /// - **过滤 ReleaseEvent**（决策 Q1）：网络层从 GitHub 拉回来直接丢弃 ReleaseEvent
+    ///   类型行，不写入此表。避免与已有 `release_subscriptions` + `releases` 表（HOM-47）
+    ///   的「订阅 release」语义双显困惑。本表只承载剩 7 类 event：Watch / Fork / Create /
+    ///   Push / Issues / PullRequest / Discussion。schema 不强制约束 event_type 取值
+    ///   （SQLite 没 enum），由 Repository 写入层做过滤。
+    ///
+    /// **索引选择**：
+    /// - `created_at`：主查询路径——按时间倒序展示 feed
+    /// - `event_type`：分组渲染 / 按类型过滤
+    /// - `repo_id`：未来「该 repo 的 following 活动」反查（详情页扩展）
+    private static func createActivityEvents(_ db: Database) throws {
+        try db.create(table: "activity_events") { t in
+            t.column("id", .text).primaryKey()                  // GitHub event id（数字字符串）
+            t.column("event_type", .text).notNull()             // "WatchEvent" / "ForkEvent" / ...
+            t.column("actor_login", .text).notNull()
+            t.column("actor_avatar_url", .text)
+            t.column("repo_name", .text).notNull()              // "owner/repo"
+            t.column("repo_id", .integer).notNull()             // GitHub repo 数字 id
+            t.column("payload_json", .text).notNull()           // 完整 payload（同 releases.assets_json 模式）
+            t.column("is_read", .boolean).notNull().defaults(to: false)
+            t.column("created_at", .text).notNull()             // GitHub 事件时间 ISO8601
+            t.column("fetched_at", .text).notNull()             // 本地抓取时间 ISO8601
+        }
+        try db.create(index: "idx_activity_events_created", on: "activity_events", columns: ["created_at"])
+        try db.create(index: "idx_activity_events_type",    on: "activity_events", columns: ["event_type"])
+        try db.create(index: "idx_activity_events_repo",    on: "activity_events", columns: ["repo_id"])
+    }
+
+    /// activity_announcements：announcement 分类双源公告聚合缓存。
+    ///
+    /// **数据源**：
+    /// - GitHub Blog RSS（`github.blog/feed/`）：100% 覆盖率，所有用户都看到 GitHub 平台公告
+    /// - GitHub Security Advisory（`GET /repos/{o}/{r}/security-advisories`）：~2-3% 覆盖率，
+    ///   仅查「最近 30 天有 push」的 starred repo（约 50~200 个，避免 1810 repo 全打
+    ///   导致 rate limit 爆掉）
+    ///
+    /// **删除的源**（dong4j 2026-06-16 决策 Q2）：GitHub Discussions GraphQL `search` 在
+    /// starred repos 范围拉 Announcements 类别 discussion。删除原因：① 启用 Discussions
+    /// 的 repo < 15%、再启用 Announcements 类别的 < 5%，命中率极低；② 1810 repo 拼
+    /// query string 接近 GraphQL 50KB 上限，技术风险高。
+    ///
+    /// **设计决策**：
+    ///
+    /// - **`id` 加 source 前缀做命名空间隔离**（决策 P1）：`"blog:96773"` /
+    ///   `"security:GHSA-xxxx-..."`。debug 时一眼看出来源，与 `ActivityItem.id`（如
+    ///   `"star:42:..."` / `"release-repo:123"`）命名风格一致。本表 schema 仅约束
+    ///   `id TEXT PRIMARY KEY`，前缀语义由 Repository 写入层 enforce。
+    ///
+    /// - **`body_markdown` 字段名沿用「markdown」语义**：实际 RSS 拉到的是 HTML
+    ///   片段（`content:encoded`），UI 走 WKWebView 渲染（复用 `ReadmeWebView`）；
+    ///   命名 markdown 是为了与 `releases.body_markdown` 风格统一（都是「正文 blob」语义），
+    ///   不限定具体 markup 格式。
+    ///
+    /// - **`repo_name` nullable**：blog 来源没有 repo（GitHub 平台公告非个性化），
+    ///   security 来源有（绑定具体 repo 的 GHSA）。
+    ///
+    /// - **`categories` JSON 数组字符串**：RSS 单条公告可有多 category（如
+    ///   `["AI & ML", "Security"]`）；与 `repos.topics` 同款 JSON 直存策略。
+    ///
+    /// - **`is_read` device-local，不挂 CloudKit**（决策 M2）：同 activity_events 理由。
+    ///
+    /// **索引选择**：
+    /// - `created_at`：主查询路径——按发布时间倒序
+    /// - `source`：按来源过滤（blog 全展示 / security 仅显示与 starred repo 相关）
+    private static func createActivityAnnouncements(_ db: Database) throws {
+        try db.create(table: "activity_announcements") { t in
+            t.column("id", .text).primaryKey()                  // "blog:..." / "security:GHSA-..."
+            t.column("source", .text).notNull()                 // "blog" / "security"
+            t.column("title", .text).notNull()
+            t.column("body_markdown", .text)                    // 正文（实为 HTML，命名沿用 markdown 语义）
+            t.column("author", .text)
+            t.column("url", .text).notNull()
+            t.column("repo_name", .text)                        // security 有，blog 无
+            t.column("categories", .text)                       // JSON 数组字符串
+            t.column("is_read", .boolean).notNull().defaults(to: false)
+            t.column("created_at", .text).notNull()             // 发布时间 ISO8601
+            t.column("fetched_at", .text).notNull()             // 本地抓取时间 ISO8601
+        }
+        try db.create(index: "idx_activity_announcements_created", on: "activity_announcements", columns: ["created_at"])
+        try db.create(index: "idx_activity_announcements_source",  on: "activity_announcements", columns: ["source"])
+    }
+
+    /// activity_sync_state：Activity 数据接入的单行 meta 表（PK 固定 `"singleton"`）。
+    ///
+    /// **设计动机**：
+    ///
+    /// 1. **ETag 304 短路**（决策 P3）：GitHub Events / Blog RSS 都支持 `If-None-Match`
+    ///    → 304 短路。把 etag 落库让跨 App 重启也能复用，省 rate limit + 网络带宽。
+    ///    参考 `sync_state.stars_etag`（W4-4 C2 同款模式）。
+    ///
+    /// 2. **数据清理 ≥ 24h 判定**（决策 P6）：30 天数据清理不放主刷新路径（避免阻塞
+    ///    UI loading），而是在 ViewModel `reload` 完成网络刷新后异步派发
+    ///    `cleanupIfNeeded()`——读 `last_cleanup_at` 判断「距上次清理 > 24h」才跑。
+    ///
+    /// **单行设计**：与 `weekly_bulk_meta` 同款风格——PK 固定字符串 `"singleton"`
+    /// 比「meta 表只有 1 行还做唯一约束」干净。本类型唯一字段都是「全局会话级元数据」，
+    /// 不存在分行存储语义。
+    ///
+    /// **per-source ETag 字段**：Events / Blog RSS 各自一列，因为两源生命周期独立，
+    /// 一源 ETag 失效不影响另一源命中率。Security Advisory 是 per-repo 端点（每个 repo
+    /// 一次独立请求），ETag 落到每个请求自管不在这里集中存（如未来要做 per-repo etag
+    /// 缓存，应该走独立的 `activity_security_etag(repo_id, etag, ...)` 表，不挤进这里）。
+    private static func createActivitySyncState(_ db: Database) throws {
+        try db.create(table: "activity_sync_state") { t in
+            t.column("id", .text).primaryKey()                  // 固定值 "singleton"
+            t.column("events_etag", .text)                      // /users/{u}/received_events ETag
+            t.column("blog_rss_etag", .text)                    // github.blog/feed/ ETag
+            t.column("last_events_fetched_at", .text)           // 上次成功拉 events 时间 ISO8601
+            t.column("last_blog_fetched_at", .text)             // 上次成功拉 blog rss 时间 ISO8601
+            t.column("last_security_fetched_at", .text)         // 上次成功拉 security advisory 时间 ISO8601
+            t.column("last_cleanup_at", .text)                  // 上次跑 30 天清理时间 ISO8601
+        }
     }
 
     // MARK: - readme_translations（已删除，2026-06-15 HOM-68 v2）

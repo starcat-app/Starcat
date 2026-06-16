@@ -1369,6 +1369,38 @@
         }
       }
     },
+    "activity.announcement.source.blog" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub Blog"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub Blog"
+          }
+        }
+      }
+    },
+    "activity.announcement.source.security" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security Advisory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安全公告"
+          }
+        }
+      }
+    },
     "activity.category.all" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1737,6 +1769,210 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "活动不可用"
+          }
+        }
+      }
+    },
+    "activity.following.event.create.branch.format" : {
+      "comment" : "%1$@ = actor login, %2$@ = branch ref, %3$@ = repo full name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ created branch %2$@ in %3$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 在 %3$@ 创建了分支 %2$@"
+          }
+        }
+      }
+    },
+    "activity.following.event.create.repository.format" : {
+      "comment" : "%1$@ = actor login, %2$@ = repo full name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ created repository %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 创建了仓库 %2$@"
+          }
+        }
+      }
+    },
+    "activity.following.event.create.tag.format" : {
+      "comment" : "%1$@ = actor login, %2$@ = tag ref, %3$@ = repo full name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ created tag %2$@ in %3$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 在 %3$@ 创建了标签 %2$@"
+          }
+        }
+      }
+    },
+    "activity.following.event.discussion.format" : {
+      "comment" : "%1$@ = actor login, %2$@ = repo full name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ started a discussion in %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 在 %2$@ 发起了讨论"
+          }
+        }
+      }
+    },
+    "activity.following.event.fork.format" : {
+      "comment" : "%1$@ = actor login, %2$@ = source repo full name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ forked %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ fork 了 %2$@"
+          }
+        }
+      }
+    },
+    "activity.following.event.issues.closed.format" : {
+      "comment" : "%1$@ = actor login, %2$@ = repo full name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ closed an issue in %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 在 %2$@ 关闭了 Issue"
+          }
+        }
+      }
+    },
+    "activity.following.event.issues.opened.format" : {
+      "comment" : "%1$@ = actor login, %2$@ = repo full name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ opened an issue in %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 在 %2$@ 打开了 Issue"
+          }
+        }
+      }
+    },
+    "activity.following.event.pullRequest.closed.format" : {
+      "comment" : "%1$@ = actor login, %2$@ = repo full name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ closed a pull request in %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 在 %2$@ 关闭了 PR"
+          }
+        }
+      }
+    },
+    "activity.following.event.pullRequest.merged.format" : {
+      "comment" : "%1$@ = actor login, %2$@ = repo full name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ merged a pull request in %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 在 %2$@ 合并了 PR"
+          }
+        }
+      }
+    },
+    "activity.following.event.pullRequest.opened.format" : {
+      "comment" : "%1$@ = actor login, %2$@ = repo full name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ opened a pull request in %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 在 %2$@ 打开了 PR"
+          }
+        }
+      }
+    },
+    "activity.following.event.push.format" : {
+      "comment" : "%1$@ = actor login, %2$@ = branch ref, %3$@ = repo full name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ pushed to %2$@ on %3$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 推送到 %3$@ 的 %2$@ 分支"
+          }
+        }
+      }
+    },
+    "activity.following.event.watch.format" : {
+      "comment" : "%1$@ = actor login, %2$@ = starred repo full name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ starred %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ star 了 %2$@"
           }
         }
       }
