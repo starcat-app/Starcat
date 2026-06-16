@@ -38,7 +38,8 @@ final class TrendingLanguageStore {
 
     // MARK: - 状态
 
-    /// 当前后端聚合结果（含 `__uncategorized__` 项，按 count DESC 排好；空数组 = 还未拉到 / 后端返空）。
+    /// 当前后端聚合结果(dong4j 2026-06-16 调整: **未分类排第 1 位**, 其余按 count DESC 排好;
+    /// 空数组 = 还未拉到 / 后端返空)。
     ///
     /// SidebarView 直接 ForEach 这个数组，转换成 `TrendingLanguage` row 渲染。
     /// 数组**不**包含 `.all`——「全部语言」是 sidebar 的固定首行，由 view 层独立渲染。
@@ -62,9 +63,14 @@ final class TrendingLanguageStore {
     ///
     /// 选用与 GitHub Linguist top languages 高度重合的一组常见语言；count 字段填 0
     /// 让 sidebar 行尾不显示数字（与「真聚合且 count > 0」的视觉差异由 view 层决定是否展示 count）。
-    /// 已包含 `__uncategorized__` 一项（即使后端没返也保证用户能用「未分类」入口，
-    /// 进入后由 trending repo 列表自己处理空数据）。
+    ///
+    /// 顺序与后端 `/api/v1/languages` SQL 排序一致(dong4j 2026-06-16 调整):
+    /// **未分类排第 1 位**, 其余按 count desc(兜底数据 count 全为 0,等价于按字母序)。
+    /// SidebarView 已经把「全部」作为 sidebar 的固定首行独立渲染,本数组不再 prepend `.all`。
     static let fallbackList: [TrendingLanguageAggregateDTO] = [
+        .init(key: TrendingLanguage.uncategorizedKey,
+              label: "Uncategorized",
+              count: 0),
         .init(key: "JavaScript", label: "JavaScript", count: 0),
         .init(key: "TypeScript", label: "TypeScript", count: 0),
         .init(key: "Python", label: "Python", count: 0),
@@ -75,9 +81,6 @@ final class TrendingLanguageStore {
         .init(key: "C++", label: "C++", count: 0),
         .init(key: "C", label: "C", count: 0),
         .init(key: "Shell", label: "Shell", count: 0),
-        .init(key: TrendingLanguage.uncategorizedKey,
-              label: "Uncategorized",
-              count: 0),
     ]
 
     // MARK: - 依赖
