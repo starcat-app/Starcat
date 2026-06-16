@@ -119,18 +119,16 @@ struct WeeklyContentView: View {
             .pickerStyle(.menu)
             .fixedSize()
 
-            Picker(selection: Binding(
-                get: { viewModel.selectedLanguage },
-                set: { viewModel.changeLanguage(to: $0) }
-            )) {
-                ForEach(viewModel.languageOptions, id: \.self) { lang in
-                    Text(languageDisplayName(lang)).tag(lang)
-                }
-            } label: {
-                Text("weekly.filter.language")
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
+            // 自定义语言下拉（替代受 NSMenu 限制无法显示彩色图标的 Picker）。
+            // 详见 Starcat/Shared/Components/LanguagePickerMenu.swift 文件头注释。
+            LanguagePickerMenu(
+                selection: Binding(
+                    get: { viewModel.selectedLanguage },
+                    set: { viewModel.changeLanguage(to: $0) }
+                ),
+                aggregates: viewModel.languageAggregates,
+                labelPrefix: "weekly.filter.language"
+            )
 
             Spacer()
 
@@ -152,17 +150,6 @@ struct WeeklyContentView: View {
         ) {
             Task { await viewModel.reload() }
         }
-    }
-
-    private func languageDisplayName(_ raw: String) -> String {
-        if raw.isEmpty {
-            return String(localized: "weekly.filter.allLanguages")
-        }
-        if raw == TrendingLanguage.uncategorizedKey {
-            return String(localized: "trending.language.uncategorized")
-        }
-        // 短名（"Jupyter Notebook" → "Jupyter"），picker label 宽度有限，详见 LanguageDisplayName。
-        return LanguageDisplayName.shortened(for: raw)
     }
 
     // MARK: - Project List
@@ -384,8 +371,21 @@ final class WeeklyContentViewModel {
     /// 排序当前值；setter 由 `changeSort(to:)` 控制以保证副作用统一。
     private(set) var selectedSort: WeeklyFeedSort = .latestEventAt
     private(set) var selectedLanguage: String = ""
-    var languageOptions: [String] {
-        [""] + languageStore.displayList.map(\.key)
+
+    /// 语言下拉数据源（含 count，供 `LanguagePickerMenu` 渲染图标 + 名称 + 数量）。
+    ///
+    /// 不在这里 prepend「全部」哨兵——`LanguagePickerMenu` 内部会自动加在最前，
+    /// ViewModel 只关心后端聚合数据本身。
+    var languageAggregates: [TrendingLanguageAggregateDTO] {
+        languageStore.displayList
+    }
+
+    /// 仅用于 `loadLanguagesIfNeeded` 校验当前 selection 是否还在合法集合内。
+    /// 避免后端语言列表刷新后落到一个已不存在的 key。
+    private var validLanguageKeys: Set<String> {
+        var set = Set<String>(languageStore.displayList.map(\.key))
+        set.insert("")  // 「全部」哨兵
+        return set
     }
 
     // MARK: - Local cache state
@@ -453,7 +453,7 @@ final class WeeklyContentViewModel {
 
     func loadLanguagesIfNeeded() async {
         await languageStore.reloadIfNeeded()
-        if !selectedLanguage.isEmpty, !languageOptions.contains(selectedLanguage) {
+        if !selectedLanguage.isEmpty, !validLanguageKeys.contains(selectedLanguage) {
             selectedLanguage = ""
             await reload()
         }

@@ -39,8 +39,9 @@ struct LanguageStat: FetchableRecord, Codable, Equatable, Identifiable {
     /// Identifiable id：直接用 language（空串也是合法 id）。
     var id: String { language }
 
-    /// 渲染用：空语言显示为本地化的 Unknown，真实语言名按 GitHub 返回值原样显示。
-    var displayName: String { language.isEmpty ? String(localized: "sidebar.unknownLanguage") : language }
+    /// 渲染用：空语言统一硬编码显示为 "Uncategorized"（dong4j 2026-06-16 决定不做国际化，
+    /// 中英文均显示英文原词），真实语言名按 GitHub 返回值原样显示。
+    var displayName: String { language.isEmpty ? "Uncategorized" : language }
 
     /// 实际语言筛选用：空串对应数据库里 NULL（fetchByLanguage(nil)）。
     var languageOrNil: String? { language.isEmpty ? nil : language }

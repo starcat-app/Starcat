@@ -168,7 +168,12 @@ struct ContributionGraphView: View {
     private var headerRow: some View {
         HStack(spacing: 6) {
             if let count = payload?.totalContributions {
-                Text(String(format: String(localized: "contribution.totalCount"), count))
+                // 2026-06-16 i18n root cause #3:`String(localized:)` 在 macOS 上的
+                // `locale:` 参数仅用于 plural/number/date 格式化,**不**用于选 lproj
+                // (实测硬编码 `Locale("en")` 也返回中文)。改用 `String.l10n(_:)`
+                // wrapper 直接走 LocaleStore 选 lproj 子 bundle 查表。
+                // 详见 `Starcat/Shared/Utilities/L10n.swift` 顶部注释。
+                Text(String(format: String.l10n("contribution.totalCount"), count))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             } else {

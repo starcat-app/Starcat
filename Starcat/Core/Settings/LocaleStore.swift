@@ -134,9 +134,23 @@ final class LocaleStore {
 /// `.id(...)` 与主窗口同款做法，强制重建子树避免缓存了 Locale 的子视图（如
 /// `RelativeDateTimeFormatter`）不刷新。
 ///
-/// **注意**：sheet / popover 通常仍在 scene tree 内（SwiftUI sheet host window 是
-/// scene 子节点），主窗口已注入的 `\.locale` 会自动传播，不需要再挂这道 modifier。
-/// 只在 AppKit 独立 NSWindow 入口处挂一次。
+/// **重要**（2026-06-16 dong4j 实测修订老版注释）：
+///
+/// 不只是 AppKit 独立 NSWindow —— **SwiftUI `.sheet` / `.popover` 在 macOS 上的
+/// host window 也不会自动从父 scene 继承 `\.locale` environment**（实测分享卡
+/// sheet 子树查到的 locale 是 `Locale.autoupdatingCurrent` = 系统语言,无视主
+/// scene 注入的 LocaleStore）。**所有 sheet / popover 的根 view 都必须显式挂
+/// 这道 modifier**,否则切到 English 时 sheet 内的 `Text("key")` 仍显示中文。
+///
+/// 老版注释假设"sheet/popover 在 scene tree 内自动继承 `\.locale`",该假设
+/// 已被打脸 —— 可能是 SwiftUI 在 macOS 上把 sheet/popover 实现为独立 hosting
+/// window 的代价(与 iOS 行为不一致)。
+///
+/// 调用清单（每新增一个 sheet/popover/AppKit NSWindow 都要登记）：
+/// - `RepoAIWindowController`（AppKit NSWindow）
+/// - `AboutWindowController`（AppKit NSWindow）
+/// - `ShareCardSheet`（SwiftUI sheet,2026-06-16 补挂）
+/// - 新增的 sheet / popover：在根 view body 最外层挂一次
 private struct AppLocaleEnvironmentModifier: ViewModifier {
 
     @State private var localeStore = LocaleStore.shared

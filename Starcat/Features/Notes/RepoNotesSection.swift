@@ -196,7 +196,7 @@ struct RepoNotesSection: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let edited = viewModel?.note?.editedAt {
-                    Text(String(format: String(localized: "repo.lastEditedFormat"), relativeDate(edited)))
+                    Text(String(format: String(localized: "repo.lastEditedFormat"), formattedEditedAt(edited)))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -363,10 +363,32 @@ struct RepoNotesSection: View {
         }
     }
 
-    private func relativeDate(_ iso: String) -> String {
-        let f = ISO8601DateFormatter()
-        guard let d = f.date(from: iso) else { return iso }
-        return d.formatted(.relative(presentation: .named))
+    /// 把数据库里的 ISO8601 时间戳格式化为「yyyy-MM-dd HH:mm:ss」（当前系统时区，24 小时制）。
+    ///
+    /// 关键约束 / 已踩过的坑：
+    /// - DB 写入的是带毫秒的 ISO8601（如 `2026-06-16T07:12:01.590Z`）。默认配置的
+    ///   `ISO8601DateFormatter()` **不开启 `.withFractionalSeconds`**，解析这种字符串
+    ///   会返回 nil → 旧实现 fallback 直接把原字符串显示在 UI 上,所以截图里看到了带 `Z`
+    ///   的 raw ISO。这里同时尝试两种 formatOptions：先带毫秒,再退回不带毫秒,
+    ///   兼容历史数据 / 第三方写入。
+    /// - 用 `DateFormatter` + 固定 `dateFormat` 而不是 `Date.formatted(.dateTime...)`：
+    ///   后者输出会因 locale 变成「2026年6月16日 15:12:01」之类的本地化形式,无法保证
+    ///   字面格式稳定。`Locale(identifier: "en_US_POSIX")` 是 Apple 推荐的"固定格式"
+    ///   习惯用法,避免不同地区下 `HH` 被改写或数字使用本地数字。
+    /// - `timeZone` 不显式赋值 → 默认 `.current`,即用户设备所在时区,符合需求。
+    private func formattedEditedAt(_ iso: String) -> String {
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var date = parser.date(from: iso)
+        if date == nil {
+            parser.formatOptions = [.withInternetDateTime]
+            date = parser.date(from: iso)
+        }
+        guard let date else { return iso }
+        let out = DateFormatter()
+        out.locale = Locale(identifier: "en_US_POSIX")
+        out.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return out.string(from: date)
     }
 
     private var hasNoteContent: Bool {
