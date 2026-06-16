@@ -453,9 +453,42 @@ struct SemanticScoreBadge: View {
 /// OpenSSF Scorecard 行内评分徽章。
 ///
 /// 只展示图标 + 分数，不带说明文字；放在 `full_name` 行最右侧，避免占用 chip 行。
-/// 颜色只用于背景/描边表达风险层级，文字和图标保持 `.primary`，遵守浅色主题对比度规则。
+/// 颜色只用于背景/描边表达风险层级，文字保持 `.primary` 遵守浅色主题对比度规则。
+///
+/// ## v3 修订（2026-06-16, dong4j 反馈）
+///
+/// 1. **盾牌图标改"镭射"渐变填充**：`checkmark.shield.fill` 用 `Self.iridescentForeground`
+///    （粉/紫/蓝/青/薄荷线性渐变）着色，与 Apple Intelligence 同款 iridescent 视觉。
+///    数字仍走 `.primary` 保持对比度。
+/// 2. **新增 `size` 入参**：`.compact`（列表卡片 9pt 图标 + caption2 数字）与
+///    `.regular`（详情页 hero 11pt 图标 + footnote 数字）—— 让卡片和详情页用同一个
+///    View 类型，只在尺寸维度做适配，避免两边视觉风格漂移。
 struct OpenSSFScoreBadge: View {
+
+    enum Size {
+        /// 列表卡片用：9pt 图标 + caption2 数字。
+        case compact
+        /// 详情页 hero 用：11pt 图标 + footnote 数字。
+        case regular
+    }
+
     let score: OpenSSFScoreBadgeData
+    let size: Size
+
+    init(score: OpenSSFScoreBadgeData, size: Size = .compact) {
+        self.score = score
+        self.size = size
+    }
+
+    /// 镭射渐变前景。详情页 fallback 图标也复用同一引用，保证两处视觉一致。
+    ///
+    /// 取色思路：粉/紫/蓝/青/薄荷绿 = Apple Intelligence 同款 iridescent 色域，
+    /// 左上→右下 45° 走向避免与水平 capsule 长轴平行造成视觉单调。
+    static let iridescentForeground = LinearGradient(
+        colors: [.pink, .purple, .blue, .cyan, .mint],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
 
     private var tint: Color {
         if score.score >= 7.5 { return .green }
@@ -463,16 +496,25 @@ struct OpenSSFScoreBadge: View {
         return .red
     }
 
+    private var iconSize: CGFloat {
+        size == .compact ? 9 : 11
+    }
+
+    private var textFont: Font {
+        size == .compact ? .caption2 : .footnote
+    }
+
     var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "checkmark.shield.fill")
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: iconSize, weight: .semibold))
+                .foregroundStyle(Self.iridescentForeground)
             Text(verbatim: score.formattedScore)
-                .font(.caption2)
+                .font(textFont)
                 .fontWeight(.semibold)
                 .monospacedDigit()
+                .foregroundStyle(.primary)
         }
-        .foregroundStyle(.primary)
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
         .background(tint.opacity(0.13), in: Capsule())

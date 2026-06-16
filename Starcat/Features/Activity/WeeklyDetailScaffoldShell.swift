@@ -164,10 +164,9 @@ struct WeeklyDetailScaffoldShell: View {
     /// Weekly 来源已经在 `full_name` 行用 source badge 展示并负责跳转，右侧 actions
     /// 只保留通用详情动作，避免同一个阮一峰期号在 header 两个位置重复出现。
     private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
+        // v2.0（2026-06-16, dong4j）：OpenSSF 入口迁移到 hero `full_name` 同行，
+        // 不再放在 trailing actions 数组里。
         var actions: [RepoDetailAction] = []
-        if repo.isStarred {
-            actions.append(.securityScore)
-        }
         if authSession.state.isAuthenticated, repo.isStarred {
             actions.append(.share)
             actions.append(.ai)
