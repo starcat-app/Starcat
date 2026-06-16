@@ -272,14 +272,27 @@ struct ActivityView: View {
         .padding()
     }
 
+    @Environment(AuthSession.self) private var authSession
+
     private func ensureViewModel() -> ActivityViewModel {
         if let viewModel {
             return viewModel
         }
+        // PR-2（2026-06-16）：装配 4 路 SWR 所需的额外依赖。
+        // `currentLoginProvider` 闭包从 AuthSession 取当前 user.login —— 与
+        // `StarActionService.userIDProvider` 同款注入 pattern，让 ViewModel 不
+        // 直接持 AuthSession，便于测试用 stub `{ "octocat" }` 替换。
+        let session = authSession
+        let poller = dependencies.releasePoller
         let model = ActivityViewModel(
             repoRepository: dependencies.repoRepository,
             releaseRepository: dependencies.releaseRepository,
-            releasePoller: dependencies.releasePoller
+            releasePollerRunner: { _ = await poller.runNow() },
+            activityEventRepository: dependencies.activityEventRepository,
+            activityAnnouncementRepository: dependencies.activityAnnouncementRepository,
+            activitySyncStateRepository: dependencies.activitySyncStateRepository,
+            apiClient: dependencies.apiClient,
+            currentLoginProvider: { [weak session] in session?.state.user?.login }
         )
         viewModel = model
         return model
@@ -371,7 +384,11 @@ private struct ActivityRowView: View {
 
     @ViewBuilder
     private func leadingIcon(size: CGFloat) -> some View {
-        if let repo = item.repo {
+        // following kind：优先用 actor avatar（语义 = 「关注的人在干啥」），
+        // 比 repo owner avatar 更切题。PR-2 引入，2026-06-16。
+        if item.kind == .following, let avatarURL = item.following?.actorAvatarURL {
+            RemoteAvatar(urlString: avatarURL.absoluteString, size: size, showBorder: size > 24)
+        } else if let repo = item.repo {
             RemoteAvatar(urlString: RepoAvatarURL.from(owner: repo.owner), size: size, showBorder: size > 24)
         } else {
             ZStack {

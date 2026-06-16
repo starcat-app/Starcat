@@ -105,6 +105,20 @@ protocol GitHubAPIClientProtocol: Sendable {
 
     /// 拉取一页 Releases（按 GitHub 默认排序，最新在前）。
     func releases(owner: String, repo: String, perPage: Int) async throws -> APIResponse<[GitHubReleaseDTO]>
+
+    // MARK: - Events（Activity 公告与关注 PR-2，2026-06-16）
+
+    /// 拉取「我关注的人/组织」最近的公开活动 feed。
+    ///
+    /// - Parameter ifNoneMatch: 上次响应保存的 ETag；304 命中时实现方抛
+    ///   `NetworkError.notModified(etag:)`，与 Stars / Readme 端点同款契约。
+    /// - Returns: `APIResponse<[GitHubEventDTO]>` —— linkHeader 永远为 `(nil, nil)`
+    ///   （events 不分页，是 30 天滑动窗口）。
+    func receivedEvents(
+        username: String,
+        perPage: Int,
+        ifNoneMatch: String?
+    ) async throws -> APIResponse<[GitHubEventDTO]>
 }
 
 // MARK: - Conformance

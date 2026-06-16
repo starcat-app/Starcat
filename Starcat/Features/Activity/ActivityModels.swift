@@ -118,6 +118,39 @@ enum ActivityKind: String, Sendable {
     case suggestion
 }
 
+/// following 分类卡片专属 payload（PR-2，2026-06-16）。
+///
+/// 设计动机：`ActivityItem.repo` 类型是完整 `Repo`（map 数据库行），但 GitHub Events
+/// API 返回的 `repo.{id,name,url}` 只有 3 个字段，**没法重建完整 Repo**（缺
+/// stars / language / topics / ...）。强行造一个 99% 空字段的 Repo 既污染下游
+/// `RepoCardViewData` 派生，又会让用户误以为 "已 star/已收藏"。
+///
+/// 选择：following row 保持 `item.repo = nil`，actor + repo 信息全塞这里；
+/// `ActivityRowView.leadingIcon` 在 `following` kind 下读 `actorAvatarURL`
+/// 画头像（语义是「关注的人在干啥」，actor 头像比 repo 头像更切题）。
+///
+/// 未来如果 ActivityViewModel 检测到 `repoId` 命中本地 `repos` 表（用户也 star
+/// 过这个 repo），可以填回完整 `item.repo` 让卡片走 UnifiedRepoRow；这是 PR-2.x
+/// 优化项，PR-2 本期不做。
+struct ActivityFollowingPayload: Equatable, Sendable {
+
+    /// GitHub Event 类型（`"WatchEvent"` / `"ForkEvent"` / ...）。UI / 文案选择依据。
+    let eventType: String
+
+    /// 行动者登录名（如 `"torvalds"`）。
+    let actorLogin: String
+
+    /// 行动者头像 URL（GitHub `avatar_url`）。可能为 nil（罕见但 schema 允许）。
+    let actorAvatarURL: URL?
+
+    /// 事件发生的仓库 full_name（`"torvalds/linux"`）。
+    let repoFullName: String
+
+    /// GitHub 仓库数字 id。点击 row 跳转详情页时按 id 走 `RepoResolver` 链路；
+    /// 若用户也 star 过这个 repo 则本地命中，否则走 GitHub 回源。
+    let repoId: Int64
+}
+
 /// Activity 中栏与右栏共享的展示模型。
 ///
 /// 这里保留 `repo` / `release` 引用，而不是把字段全部摊平成字符串，是因为右侧详情页
@@ -139,6 +172,14 @@ struct ActivityItem: Identifiable, Equatable {
     /// 详情页首帧无需再做一次 DB 查询；详情 shell 仍会按 repoId 后台刷新最新缓存。
     let releases: [ReleaseRecord]
     let isRead: Bool
+
+    /// following 分类专属（PR-2，2026-06-16）。`kind != .following` 时永远为 nil。
+    /// 设计动机详见 `ActivityFollowingPayload` 文档注释。
+    ///
+    /// **默认值 nil 的目的**：让现有 5 个 builder（makeAnnouncement / makeRelease /
+    /// makeStar / makeRepository / makeSuggestion）的 memberwise init 调用方
+    /// 不必逐个补 `following: nil`，新增字段对 PR-2 之前的代码透明。
+    var following: ActivityFollowingPayload? = nil
 
     /// 行 / 详情头部 accent 配色：
     /// - 若卡片关联到具体 repo 且 repo 有主语言，复用语言色，维持与 RepoRowView 一致的视觉
