@@ -210,8 +210,22 @@ struct ActivityDetailView: View {
 
     private func announcementDetail(_ item: ActivityItem) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let body = item.body {
-                Text(body)
+            if let payload = item.announcement, payload.source == .blog,
+               let html = payload.htmlBody, !html.isEmpty
+            {
+                // blog 正文是 HTML 片段，复用 ReadmeWebView 渲染（GFM 主题 CSS + 链接外跳）。
+                ReadmeWebView(
+                    htmlFragment: html,
+                    baseURL: URL(string: "https://github.blog/")
+                )
+                .frame(minHeight: 240)
+            } else if let body = item.body {
+                Text(verbatim: body)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+            } else if let fullBody = item.announcement.flatMap({ $0.htmlBody }), !fullBody.isEmpty {
+                Text(verbatim: HTMLTextExtractor.plainText(from: fullBody))
                     .font(.body)
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
