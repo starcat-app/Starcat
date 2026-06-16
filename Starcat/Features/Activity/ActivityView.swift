@@ -137,6 +137,10 @@ struct ActivityView: View {
                 .disabled(!multiStore.isActive)
                 .hidden()
             }
+            .task(id: viewModel.itemsRevision) {
+                let repoIds = viewModel.items.compactMap { $0.repo?.id }
+                await dependencies.openSSFScoreStore.loadCachedScores(for: repoIds)
+            }
         }
     }
 
@@ -170,7 +174,8 @@ struct ActivityView: View {
             UnifiedRepoRow(
                 card: repo.asCardData(
                     badge: .activityKind(item.category),
-                    inlineMetadata: inlineMetadata(for: item)
+                    inlineMetadata: inlineMetadata(for: item),
+                    openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id)
                 ),
                 isSelected: isSelected
             )

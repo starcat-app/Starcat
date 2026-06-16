@@ -125,10 +125,15 @@ struct ActivityDetailScaffoldShell: View {
     /// trailingActions 守卫——与 manage / trending / weekly 4 详情页同构。
     /// 守卫绑 `Repo.isStarred`(本地 DB `is_starred` 列的内存镜像)。
     private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
-        guard authSession.state.isAuthenticated, repo.isStarred else {
+        guard repo.isStarred else {
             return []
         }
-        return [.share, .ai]
+        var actions: [RepoDetailAction] = [.securityScore]
+        if authSession.state.isAuthenticated {
+            actions.append(.share)
+            actions.append(.ai)
+        }
+        return actions
     }
 
     // MARK: - README

@@ -193,10 +193,15 @@ struct RepoDetailView: View {
     /// 列表 → selectedRepo 切到 nil 或新 repo → 这个 detail view 自动重渲染。
     /// 4 场景同构 + 不依赖 registry async 时序,详见 `RepoLocalSections.swift` 文件头。
     private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
-        guard authSession.state.isAuthenticated, repo.isStarred else {
+        guard repo.isStarred else {
             return []
         }
-        return [.share, .ai]
+        var actions: [RepoDetailAction] = [.securityScore]
+        if authSession.state.isAuthenticated {
+            actions.append(.share)
+            actions.append(.ai)
+        }
+        return actions
     }
 
     /// hero ⭐/☆ chip 点击(**v2.0 修订**):

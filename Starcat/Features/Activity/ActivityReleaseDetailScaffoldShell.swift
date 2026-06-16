@@ -83,10 +83,15 @@ struct ActivityReleaseDetailScaffoldShell: View {
     }
 
     private func trailingActions(for repo: Repo) -> [RepoDetailAction] {
-        guard authSession.state.isAuthenticated, repo.isStarred else {
+        guard repo.isStarred else {
             return []
         }
-        return [.share, .ai]
+        var actions: [RepoDetailAction] = [.securityScore]
+        if authSession.state.isAuthenticated {
+            actions.append(.share)
+            actions.append(.ai)
+        }
+        return actions
     }
 
     private func reloadReleases() async {
