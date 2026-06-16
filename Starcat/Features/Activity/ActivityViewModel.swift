@@ -22,6 +22,11 @@
 //  → 写入 `activity_events` 表 → 写回 `activity_sync_state.events_etag` + `last_events_fetched_at`。
 //  PR-3 会再接 blog RSS + Security Advisory，届时 4 路并行的网络层从 1 升到 3。
 //
+//  **v3 = Activity 公告与关注 PR-3（2026-06-17）**：announcement 双源网络
+//  - Blog RSS：`GET https://github.blog/feed/` + ETag → `activity_announcements`
+//  - Security：`GET /repos/{o}/{r}/security-advisories` 仅扫最近 30 天 push 的 starred
+//  - 有真实 announcement 时隐藏内置占位 `announcement:activity-v1`
+//
 //  Following payload 解析约束（详见 `makeFollowingItems` 注释）：
 //  - 仅 7 个 event type（WatchEvent / ForkEvent / PushEvent / IssuesEvent /
 //    PullRequestEvent / CreateEvent / DiscussionEvent）有 i18n 文案，其它丢弃
@@ -58,6 +63,15 @@ final class ActivityViewModel {
     /// `torvalds` / `gaearon`），4h 内会积累 10+ 条新事件，2h 是体感新鲜度
     /// 与配额节流的平衡点。2h 内重复进入 activity 页 → 短路网络（304 + ETag 进一步降本）。
     static let eventsTTL: TimeInterval = 7_200
+
+    /// announcement 双源（blog + security）网络 TTL：12 小时（方案 §3.2）。
+    static let announcementsTTL: TimeInterval = 43_200
+
+    /// Security Advisory 扫描：仅最近 N 天内有 push 的 starred repo。
+    static let securityLookbackDays = 30
+
+    /// Security 扫描 repo 上限，防止 starred 过多时 API 风暴。
+    static let securityScanMaxRepos = 200
 
     /// 30 天数据清理冷却：24 小时（方案 §5.4 决策 P6）。
     ///
@@ -113,6 +127,8 @@ final class ActivityViewModel {
     private let activitySyncStateRepository: any ActivitySyncStateRepositoryProtocol
     /// PR-2 新增：拉 events 用的 GitHub API client。
     private let apiClient: any GitHubAPIClientProtocol
+    /// PR-3 新增：GitHub Blog RSS 客户端（独立 host，不走 api.github.com）。
+    private let blogRSSClient: any GitHubBlogRSSAPIProtocol
     /// PR-2 新增：当前登录用户 login 提供者（注入闭包不直接持 AuthSession，
     /// 单测注入 stub `{ "octocat" }` 即可，与 `StarActionService.userIDProvider` 同款）。
     private let currentLoginProvider: @MainActor () -> String?
@@ -130,6 +146,7 @@ final class ActivityViewModel {
         activityAnnouncementRepository: any ActivityAnnouncementRepositoryProtocol,
         activitySyncStateRepository: any ActivitySyncStateRepositoryProtocol,
         apiClient: any GitHubAPIClientProtocol,
+        blogRSSClient: any GitHubBlogRSSAPIProtocol,
         currentLoginProvider: @escaping @MainActor () -> String?
     ) {
         self.repoRepository = repoRepository
@@ -139,6 +156,7 @@ final class ActivityViewModel {
         self.activityAnnouncementRepository = activityAnnouncementRepository
         self.activitySyncStateRepository = activitySyncStateRepository
         self.apiClient = apiClient
+        self.blogRSSClient = blogRSSClient
         self.currentLoginProvider = currentLoginProvider
     }
 
@@ -209,14 +227,22 @@ final class ActivityViewModel {
             self.loadError = nil
             self.isLoading = !hasUsableCache
 
-            // ③ 决定是否走 events 网络（PR-2 仅 1 路）
+            // ③ 决定是否走 3 路网络（events + blog RSS + security）
             let shouldFetchEvents = Self.shouldFetchEvents(
+                cachePolicy: cachePolicy,
+                syncState: initialSyncState
+            )
+            let shouldFetchBlog = Self.shouldFetchBlogRSS(
+                cachePolicy: cachePolicy,
+                syncState: initialSyncState
+            )
+            let shouldFetchSecurity = Self.shouldFetchSecurityAdvisories(
                 cachePolicy: cachePolicy,
                 syncState: initialSyncState
             )
 
             // 后台刷新指示器：仅在"有缓存 + 走网络"时点亮（与 Trending 同款）
-            if hasUsableCache && (shouldFetchEvents || shouldPollReleases) {
+            if hasUsableCache && (shouldFetchEvents || shouldFetchBlog || shouldFetchSecurity || shouldPollReleases) {
                 self.isRefreshing = true
             }
 
@@ -226,8 +252,10 @@ final class ActivityViewModel {
             }
             guard !Task.isCancelled else { return }
 
-            // ⑤ events 网络刷新
+            // ⑤ 三路网络刷新（events / blog / security）
             var refreshedEvents = cachedEvents
+            var refreshedAnnouncements = cachedAnnouncements
+
             if shouldFetchEvents, let login = self.currentLoginProvider() {
                 let result = await self.fetchAndPersistEvents(
                     login: login,
@@ -241,7 +269,6 @@ final class ActivityViewModel {
                 case .notModified:
                     self.lastRefreshedAt = Date()
                 case .failed(let error):
-                    // 4 路降级：events 失败不阻断其它（releases poll 已成功，本地三路已上屏）
                     if !hasUsableCache {
                         self.loadError = error.localizedDescription
                     } else {
@@ -252,8 +279,36 @@ final class ActivityViewModel {
                 }
             }
 
+            if shouldFetchBlog {
+                let result = await self.fetchAndPersistBlogRSS(etag: initialSyncState?.blogRssEtag)
+                guard !Task.isCancelled else { return }
+                switch result {
+                case .updated, .notModified:
+                    refreshedAnnouncements = (try? await self.activityAnnouncementRepository.fetchAll(limit: 100))
+                        ?? refreshedAnnouncements
+                case .failed(let error):
+                    AppLog.network.warning(
+                        "Activity blog RSS refresh failed: \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
+
+            if shouldFetchSecurity {
+                let result = await self.fetchAndPersistSecurityAdvisories(repos: cachedRepos)
+                guard !Task.isCancelled else { return }
+                switch result {
+                case .updated, .notModified:
+                    refreshedAnnouncements = (try? await self.activityAnnouncementRepository.fetchAll(limit: 100))
+                        ?? refreshedAnnouncements
+                case .failed(let error):
+                    AppLog.network.warning(
+                        "Activity security refresh failed: \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
+
             // ⑥ 重读 releases（Release 巡检可能写入新行）+ 重组装 items
-            if shouldFetchEvents || shouldPollReleases {
+            if shouldFetchEvents || shouldFetchBlog || shouldFetchSecurity || shouldPollReleases {
                 let refreshedReleases = (try? await self.releaseRepository.fetchTimeline(limit: 120)) ?? cachedReleases
                 guard !Task.isCancelled else { return }
 
@@ -261,7 +316,7 @@ final class ActivityViewModel {
                     repos: cachedRepos,
                     releases: refreshedReleases,
                     events: refreshedEvents,
-                    announcements: cachedAnnouncements
+                    announcements: refreshedAnnouncements
                 )
                 let filtered = self.filter(refreshedItems, by: category)
                 let oldIDs = self.items.map(\.id)
@@ -381,6 +436,184 @@ final class ActivityViewModel {
                 return true // 没刷新过 → 必拉
             }
             return Date().timeIntervalSince(last) > eventsTTL
+        }
+    }
+
+    // MARK: - Announcement 网络获取（PR-3，2026-06-17）
+
+    /// announcement 网络拉取结果（blog / security 共用三态）。
+    enum AnnouncementFetchResult {
+        case updated
+        case notModified
+        case failed(Error)
+    }
+
+    /// Blog RSS 拉取 + 落库。ETag 存 `activity_sync_state.blog_rss_etag`。
+    private func fetchAndPersistBlogRSS(etag: String?) async -> AnnouncementFetchResult {
+        do {
+            let response = try await blogRSSClient.fetchFeed(ifNoneMatch: etag)
+            let now = Date()
+            let nowISO = Self.isoString(now)
+
+            let records = response.value.map { dto -> ActivityAnnouncementRecord in
+                let bodyHTML = dto.contentHTML ?? dto.descriptionHTML
+                let createdAtISO = Self.parseRFC2822Date(dto.pubDate).map(Self.isoString)
+                    ?? nowISO
+                return ActivityAnnouncementRecord(
+                    id: AnnouncementSource.blog.makeId(nativeId: dto.guid),
+                    source: AnnouncementSource.blog.rawValue,
+                    title: dto.title,
+                    bodyMarkdown: bodyHTML,
+                    author: dto.author,
+                    url: dto.link,
+                    repoName: nil,
+                    categories: AnnouncementCategoriesCodec.encode(dto.categories),
+                    isRead: false,
+                    createdAt: createdAtISO,
+                    fetchedAt: nowISO
+                )
+            }
+
+            if !records.isEmpty {
+                try await activityAnnouncementRepository.upsertMany(records)
+            }
+            try await activitySyncStateRepository.updateBlogRss(etag: response.etag, lastFetchedAt: now)
+            AppLog.network.info("Activity blog RSS refreshed: count=\(records.count, privacy: .public)")
+            return .updated
+
+        } catch NetworkError.notModified(let receivedEtag) {
+            do {
+                try await activitySyncStateRepository.updateBlogRss(
+                    etag: receivedEtag ?? etag,
+                    lastFetchedAt: Date()
+                )
+            } catch {
+                AppLog.network.warning(
+                    "Activity blog sync_state touch after 304 failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+            return .notModified
+
+        } catch {
+            return .failed(error)
+        }
+    }
+
+    /// Security Advisory 批量扫描 + 落库。无 per-repo ETag，只 touch `last_security_fetched_at`。
+    ///
+    /// **范围收窄**：`is_starred = 1` 且 `pushed_at >= now - 30 days`，上限 200 repo。
+    /// 单 repo 404 / 403 静默跳过，不阻断整批。
+    private func fetchAndPersistSecurityAdvisories(repos: [Repo]) async -> AnnouncementFetchResult {
+        let candidates = Self.starredReposRecentlyPushed(repos: repos)
+        guard !candidates.isEmpty else {
+            do {
+                try await activitySyncStateRepository.updateSecurity(lastFetchedAt: Date())
+            } catch {
+                AppLog.network.warning(
+                    "Activity security touch (empty scan) failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+            return .updated
+        }
+
+        let now = Date()
+        let nowISO = Self.isoString(now)
+        var allRecords: [ActivityAnnouncementRecord] = []
+
+        for repo in candidates {
+            let parts = repo.fullName.split(separator: "/", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            let owner = parts[0]
+            let name = parts[1]
+
+            do {
+                let response = try await apiClient.securityAdvisories(owner: owner, repo: name)
+                let records = response.value.map { dto -> ActivityAnnouncementRecord in
+                    let url = dto.htmlUrl ?? "https://github.com/advisories/\(dto.ghsaId)"
+                    let createdAtISO = dto.publishedAt ?? nowISO
+                    return ActivityAnnouncementRecord(
+                        id: AnnouncementSource.security.makeId(nativeId: dto.ghsaId),
+                        source: AnnouncementSource.security.rawValue,
+                        title: dto.summary,
+                        bodyMarkdown: dto.description,
+                        author: nil,
+                        url: url,
+                        repoName: repo.fullName,
+                        categories: dto.severity.map { AnnouncementCategoriesCodec.encode([$0]) } ?? nil,
+                        isRead: false,
+                        createdAt: createdAtISO,
+                        fetchedAt: nowISO
+                    )
+                }
+                allRecords.append(contentsOf: records)
+            } catch NetworkError.notFound {
+                continue
+            } catch NetworkError.clientError(let code, _) where code == 403 || code == 404 {
+                continue
+            } catch {
+                AppLog.network.warning(
+                    "Activity security skip \(repo.fullName): \(error.localizedDescription, privacy: .public)"
+                )
+                continue
+            }
+        }
+
+        do {
+            if !allRecords.isEmpty {
+                try await activityAnnouncementRepository.upsertMany(allRecords)
+            }
+            try await activitySyncStateRepository.updateSecurity(lastFetchedAt: now)
+            AppLog.network.info(
+                "Activity security refreshed: repos=\(candidates.count, privacy: .public), advisories=\(allRecords.count, privacy: .public)"
+            )
+            return .updated
+        } catch {
+            return .failed(error)
+        }
+    }
+
+    /// 最近 30 天有 push 的 starred repo，按 pushed_at 倒序，上限 200。
+    nonisolated static func starredReposRecentlyPushed(repos: [Repo]) -> [Repo] {
+        let cutoff = Date().addingTimeInterval(-TimeInterval(securityLookbackDays * 86_400))
+        return repos
+            .filter { repo in
+                guard repo.isStarred, let pushedAt = parseDate(repo.pushedAt) else { return false }
+                return pushedAt >= cutoff
+            }
+            .sorted { lhs, rhs in
+                (parseDate(lhs.pushedAt) ?? .distantPast) > (parseDate(rhs.pushedAt) ?? .distantPast)
+            }
+            .prefix(securityScanMaxRepos)
+            .map { $0 }
+    }
+
+    nonisolated static func shouldFetchBlogRSS(
+        cachePolicy: ActivityCachePolicy,
+        syncState: ActivitySyncStateRecord?
+    ) -> Bool {
+        switch cachePolicy {
+        case .forceNetwork:
+            return true
+        case .respectTTL:
+            guard let timestamp = syncState?.lastBlogFetchedAt,
+                  let last = parseDate(timestamp)
+            else { return true }
+            return Date().timeIntervalSince(last) > announcementsTTL
+        }
+    }
+
+    nonisolated static func shouldFetchSecurityAdvisories(
+        cachePolicy: ActivityCachePolicy,
+        syncState: ActivitySyncStateRecord?
+    ) -> Bool {
+        switch cachePolicy {
+        case .forceNetwork:
+            return true
+        case .respectTTL:
+            guard let timestamp = syncState?.lastSecurityFetchedAt,
+                  let last = parseDate(timestamp)
+            else { return true }
+            return Date().timeIntervalSince(last) > announcementsTTL
         }
     }
 
@@ -513,10 +746,12 @@ final class ActivityViewModel {
         announcements: [ActivityAnnouncementRecord]
     ) -> [ActivityItem] {
         var result: [ActivityItem] = []
-        // 占位 announcement：PR-2 仍保留，让首启动 announcement 表为空时分类不全空。
-        // PR-3 接 RSS 后真实数据会盖过这条（按 createdAt 排序）；本占位 createdAt = now。
-        result.append(makeBuiltinAnnouncement())
-        result.append(contentsOf: makeAnnouncementItems(announcements))
+        let realAnnouncements = makeAnnouncementItems(announcements)
+        // 有真实 announcement 时隐藏内置占位（PR-3）。
+        if realAnnouncements.isEmpty {
+            result.append(makeBuiltinAnnouncement())
+        }
+        result.append(contentsOf: realAnnouncements)
         result.append(contentsOf: makeReleaseItems(releases))
         result.append(contentsOf: makeStarItems(repos))
         result.append(contentsOf: makeRepositoryItems(repos))
@@ -542,30 +777,60 @@ final class ActivityViewModel {
         )
     }
 
-    /// announcement 表行 → ActivityItem。PR-2 阶段表常为空（PR-3 RSS / Advisory
-    /// 接入后才有数据），此方法当下仅做 schema 映射，UI 层无差异。
+    /// announcement 表行 → ActivityItem。blog 正文走 HTML 摘要截断；security 保留纯文本。
     private func makeAnnouncementItems(_ records: [ActivityAnnouncementRecord]) -> [ActivityItem] {
-        records.prefix(40).map { record in
+        records.prefix(40).compactMap { record -> ActivityItem? in
+            guard let source = AnnouncementSource(rawValue: record.source) else { return nil }
+
             let sourceTitle: String = {
-                switch AnnouncementSource(rawValue: record.source) {
+                switch source {
                 case .blog:     return String.l10n("activity.announcement.source.blog")
                 case .security: return String.l10n("activity.announcement.source.security")
-                case .none:     return record.source
                 }
             }()
+
+            let categories = AnnouncementCategoriesCodec.decode(record.categories)
+            let subtitle: String = {
+                if categories.isEmpty { return sourceTitle }
+                return "\(sourceTitle) · \(categories.prefix(2).joined(separator: ", "))"
+            }()
+
+            let bodySummary: String? = {
+                guard let raw = record.bodyMarkdown, !raw.isEmpty else { return nil }
+                switch source {
+                case .blog:
+                    return HTMLTextExtractor.plainText(from: raw, maxLength: 120)
+                case .security:
+                    let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if text.count > 120 {
+                        return String(text.prefix(120)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+                    }
+                    return text
+                }
+            }()
+
+            let payload = ActivityAnnouncementPayload(
+                source: source,
+                categories: categories,
+                author: record.author,
+                htmlBody: source == .blog ? record.bodyMarkdown : nil,
+                repoName: record.repoName
+            )
+
             return ActivityItem(
-                id: record.id, // 已经是 "blog:..." / "security:..." 命名空间，无需再加前缀
+                id: record.id,
                 kind: .announcement,
                 category: .announcement,
                 title: record.title,
-                subtitle: sourceTitle,
-                body: record.bodyMarkdown,
+                subtitle: subtitle,
+                body: bodySummary,
                 createdAt: Self.parseDate(record.createdAt),
                 htmlURL: URL(string: record.url),
                 repo: nil,
                 release: nil,
                 releases: [],
-                isRead: record.isRead
+                isRead: record.isRead,
+                announcement: payload
             )
         }
     }
@@ -854,5 +1119,15 @@ final class ActivityViewModel {
     /// Date → ISO8601 字符串（带 fractional seconds，与 GitHub API 同款格式）。
     nonisolated static func isoString(_ date: Date) -> String {
         ISO8601DateFormatter.shared.string(from: date)
+    }
+
+    /// RSS `pubDate`（RFC 2822）→ `Date`。解析失败返回 nil，由调用方 fallback 到 now。
+    nonisolated static func parseRFC2822Date(_ value: String) -> Date? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss Z"
+        return formatter.date(from: trimmed)
     }
 }

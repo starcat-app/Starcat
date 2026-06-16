@@ -151,6 +151,19 @@ struct ActivityFollowingPayload: Equatable, Sendable {
     let repoId: Int64
 }
 
+/// announcement 分类专属 payload（PR-3，2026-06-17）。
+///
+/// `bodyMarkdown` 在 DB 里可能是完整 HTML（blog）或 Markdown（security）；
+/// 列表行用 `HTMLTextExtractor` 截摘要，详情页按 `htmlBody` 走 `ReadmeWebView` 或纯文本。
+struct ActivityAnnouncementPayload: Equatable, Sendable {
+    let source: AnnouncementSource
+    let categories: [String]
+    let author: String?
+    /// blog 来源的完整 HTML 正文（详情 WebView 用）。security 来源为 nil。
+    let htmlBody: String?
+    let repoName: String?
+}
+
 /// Activity 中栏与右栏共享的展示模型。
 ///
 /// 这里保留 `repo` / `release` 引用，而不是把字段全部摊平成字符串，是因为右侧详情页
@@ -176,10 +189,12 @@ struct ActivityItem: Identifiable, Equatable {
     /// following 分类专属（PR-2，2026-06-16）。`kind != .following` 时永远为 nil。
     /// 设计动机详见 `ActivityFollowingPayload` 文档注释。
     ///
-    /// **默认值 nil 的目的**：让现有 5 个 builder（makeAnnouncement / makeRelease /
-    /// makeStar / makeRepository / makeSuggestion）的 memberwise init 调用方
+    /// **默认值 nil 的目的**：让现有 5 个 builder 的 memberwise init 调用方
     /// 不必逐个补 `following: nil`，新增字段对 PR-2 之前的代码透明。
     var following: ActivityFollowingPayload? = nil
+
+    /// announcement 分类专属（PR-3，2026-06-17）。`kind != .announcement` 时永远为 nil。
+    var announcement: ActivityAnnouncementPayload? = nil
 
     /// 行 / 详情头部 accent 配色：
     /// - 若卡片关联到具体 repo 且 repo 有主语言，复用语言色，维持与 RepoRowView 一致的视觉
