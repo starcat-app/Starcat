@@ -220,3 +220,67 @@ struct GitHubReleaseAssetDTO: Decodable, Equatable {
     let downloadCount: Int
     let createdAt: String?
 }
+
+// MARK: - Events（Activity 公告与关注 PR-2，2026-06-16）
+
+/// `GET /users/{username}/received_events/public` 单条事件。
+///
+/// **不实现 Decodable**：原因是 `payload` 子对象在不同 `type` 下字段完全不同
+/// （WatchEvent 只有 `action`；PushEvent 有 `ref` / `commits`；PullRequestEvent
+/// 有 `pull_request` 这种嵌套大对象 …）。如果把 payload 解码成 strongly-typed
+/// struct，需要为每个 event type 写一份 DTO，且未来 GitHub 加字段时容易 silent fail。
+///
+/// 采用「网络层把 payload 子对象 reserialize 成 JSON 字符串」的方案：
+/// - `EventsAPI` 用 `JSONSerialization` 解析顶层数组、把 `payload` 子树重新 dump 成 String
+/// - ViewModel 层按 `type` 二次解析 `payloadJson`（如 PullRequestEvent 取 `pull_request.title`）
+/// - DB 持久化时直接落 `activity_events.payload_json TEXT NOT NULL`，无信息丢失
+struct GitHubEventDTO: Equatable {
+
+    /// GitHub 事件 ID（字符串数字，如 `"45628942691"`）。GitHub 用 String 不是 Int64。
+    let id: String
+
+    /// 事件类型（如 `"WatchEvent"` / `"ForkEvent"` / `"PushEvent"` /
+    /// `"IssuesEvent"` / `"PullRequestEvent"` / `"CreateEvent"` /
+    /// `"DiscussionEvent"`）。第一版排除：`ReleaseEvent`（决策 Q1，与 releases
+    /// 表语义重复）/ `GollumEvent` / `PublicEvent` / `MemberEvent`（信噪比低）。
+    let type: String
+
+    /// 行动者（被关注的那个人）。
+    let actor: GitHubEventActorDTO
+
+    /// 事件发生的仓库。注意 GitHub events 端点的 `repo.name` 是 full_name 形式
+    /// （如 `"torvalds/linux"`），与 `/repos/{owner}/{repo}` 端点的 `name` 字段
+    /// （仅 `"linux"`）不同。
+    let repo: GitHubEventRepoDTO
+
+    /// payload 子对象的原始 JSON 字符串（已 `.sortedKeys` 规范化，便于 diff）。
+    /// ViewModel 二次解析；DB 直接落库。
+    let payloadJson: String
+
+    /// 事件创建时间，ISO8601 字符串。
+    let createdAt: String
+}
+
+/// Event actor（被关注的用户 / 组织）。
+///
+/// `displayLogin` 字段是 GitHub 在 events 端点专门给出的「显示名」，与 `login`
+/// 通常相同，但用户改 login 后 GitHub 会用 displayLogin 显示历史事件的旧名。
+/// 解码可选，ViewModel 优先用 `login`。
+struct GitHubEventActorDTO: Equatable {
+    let id: Int64
+    let login: String
+    let displayLogin: String?
+    let avatarUrl: String?
+}
+
+/// Event repo（事件发生的仓库）。
+///
+/// 注意：events 端点只返回 `id` / `name` (full_name) / `url`，没有 stars /
+/// language / description 等元数据。如果 ViewModel 需要这些信息，需要按 `id`
+/// 反查本地 `repos` 表（用户 star 过的话有）或留空白。
+struct GitHubEventRepoDTO: Equatable {
+    let id: Int64
+    /// full_name 形式（`"owner/repo"`）。
+    let name: String
+    let url: String?
+}

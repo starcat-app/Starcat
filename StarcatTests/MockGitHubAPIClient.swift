@@ -48,6 +48,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var releasesHandler: ((_ owner: String, _ repo: String, _ perPage: Int) async throws -> APIResponse<[GitHubReleaseDTO]>)?
     /// 2026-06-08：单仓库元数据 API mock handler（Weekly 详情页本地缓存未命中时调）。
     var repoHandler: ((_ owner: String, _ repo: String) async throws -> GitHubRepoDTO)?
+    /// 2026-06-16 Activity 公告与关注 PR-2：received_events feed mock handler。
+    var receivedEventsHandler: ((_ username: String, _ perPage: Int, _ ifNoneMatch: String?) async throws -> APIResponse<[GitHubEventDTO]>)?
 
     // MARK: - 调用记录（供断言用）
 
@@ -60,6 +62,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     private(set) var unstarCalls: [(owner: String, repo: String)] = []
     /// HOM-47：releases 调用日志，便于断言"是否拉过 / 拉了几次"。
     private(set) var releasesCalls: [(owner: String, repo: String, perPage: Int)] = []
+    /// 2026-06-16 Activity 公告与关注 PR-2：events 调用日志，便于断言「ETag 是否被回传」/「是否真的发了请求」。
+    private(set) var receivedEventsCalls: [(username: String, perPage: Int, ifNoneMatch: String?)] = []
 
     // MARK: - Protocol conformance
 
@@ -145,6 +149,18 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
             fatalError("MockGitHubAPIClient.repoHandler 未设置")
         }
         return try await handler(owner, repo)
+    }
+
+    func receivedEvents(
+        username: String,
+        perPage: Int,
+        ifNoneMatch: String?
+    ) async throws -> APIResponse<[GitHubEventDTO]> {
+        receivedEventsCalls.append((username, perPage, ifNoneMatch))
+        guard let handler = receivedEventsHandler else {
+            fatalError("MockGitHubAPIClient.receivedEventsHandler 未设置")
+        }
+        return try await handler(username, perPage, ifNoneMatch)
     }
 }
 

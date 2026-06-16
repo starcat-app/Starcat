@@ -234,6 +234,20 @@ enum AppEndpoints {
                 "/repos/\(owner)/\(repo)/subscription"
             }
 
+            // —— Events（Activity 公告与关注 PR-2，2026-06-16）——
+
+            /// `GET /users/{username}/received_events/public` —— 当前用户收到的「我关注的人/仓库」的公开活动 feed。
+            ///
+            /// 选 `public` 子端点而非 `received_events`：私有 feed 会包含 Starcat 不展示的私有仓库
+            /// 信号（noise）+ 触发 GitHub 服务端「私有事件」鉴权链路（额外延迟）；
+            /// public 子集对「我关注的人在干啥」这个产品诉求已经够覆盖（参考方案 §3.1）。
+            ///
+            /// GitHub Events API 有 ~5 分钟服务端缓存延迟（官方文档明示），UI 不要承诺「实时」语义。
+            /// 与之配套：客户端 TTL 设 2h，ETag 304 进一步节流配额。
+            static func userReceivedEvents(username: String) -> String {
+                "/users/\(username)/received_events/public"
+            }
+
             // —— GraphQL ——
             /// `POST /graphql` —— GraphQL 入口（与 REST 同一 baseURL）。
             static let graphql = "/graphql"
