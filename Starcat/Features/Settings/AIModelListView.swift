@@ -53,20 +53,20 @@ struct AIModelListView: View {
 
     private var header: some View {
         HStack {
-            Text("\(profile.models.count) 个模型")
+            Text("settings.ai.modelList.totalFormat \(profile.models.count)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("匹配 \(filteredModels.count) 个")
+                Text("settings.ai.modelList.matchedFormat \(filteredModels.count)")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
         }
     }
 
     private var searchField: some View {
-        TextField("过滤模型名称、owner 或能力", text: $query)
+        TextField("settings.ai.modelList.searchPlaceholder", text: $query)
             .textFieldStyle(.roundedBorder)
             .disableAutocorrection(true)
     }
@@ -75,7 +75,7 @@ struct AIModelListView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if filteredModels.isEmpty {
-                    Text("没有匹配的模型。")
+                    Text("settings.ai.modelList.empty")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -162,7 +162,7 @@ struct AIModelListView: View {
             // (docs/详细设计/07-UI交互设计.md §1.2)——所有 .buttonStyle(.plain) 必
             // 须紧跟 .focusEffectDisabled() 抑制 macOS 15+ 默认蓝色 focus ring。
             .focusEffectDisabled()
-            .help("模型参数")
+            .help("settings.ai.modelList.parametersHelp")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)

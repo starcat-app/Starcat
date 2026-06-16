@@ -53,8 +53,11 @@ final class AboutWindowController: NSWindowController, NSWindowDelegate {
     private init() {
         // About 同样是 AppKit 独立窗口，不继承 WindowGroup 的环境。
         // modifier 必须写在 environment 之前，让其内部能读到 AppSettings。
+        // `.appLocaleEnvironment()` 同理:订阅 LocaleStore.shared 让用户在设置页
+        // 切语言后此窗口同步刷新(否则永远跟随系统 locale 显示)。
         let content = AboutView()
             .starcatAnimationOverride()
+            .appLocaleEnvironment()
             .environment(AppSettings.shared)
         let hostingController = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hostingController)

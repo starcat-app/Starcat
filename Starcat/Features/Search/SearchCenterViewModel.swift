@@ -102,9 +102,9 @@ final class SearchCenterViewModel {
     var githubResultSummary: String? {
         guard case .loaded(let page) = coordinator.status(for: .github), let total = page.totalCount else { return nil }
         if total > 1_000 {
-            return "GitHub 命中 \(total) 条，仅可浏览前 1000 条"
+            return String(format: String(localized: "search.github.summary.cappedFormat"), total)
         }
-        return "GitHub 命中 \(total) 条"
+        return String(format: String(localized: "search.github.summary.format"), total)
     }
 
     /// 网页搜索（AnySearch）成功响应后的页级元信息。

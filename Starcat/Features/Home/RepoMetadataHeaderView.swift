@@ -376,6 +376,9 @@ struct RepoMetadataGradientBackground: View {
             startPoint: .top,
             endPoint: .bottom
         )
+        // 与透明 window toolbar 配合，让详情页语言色从标题栏自然向下衰减，
+        // 避免渐变从 metadata header 顶边才开始而形成明显横向分界。
+        .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
     }
 

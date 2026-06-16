@@ -138,7 +138,7 @@ struct SearchCenterView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("搜索本地 Stars、GitHub 与网页", text: $viewModel.query)
+            TextField("search.searchField.placeholder", text: $viewModel.query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 18))
                 .focused($isSearchFocused)
@@ -189,7 +189,7 @@ struct SearchCenterView: View {
                 } label: {
                     HStack(spacing: 7) {
                         Image(systemName: "line.3.horizontal.decrease.circle")
-                        Text("GitHub 筛选")
+                        Text("search.github.filterTitle")
                             .fontWeight(.semibold)
                         Image(systemName: viewModel.isGitHubFiltersExpanded ? "chevron.up" : "chevron.down")
                             .font(.caption2.weight(.semibold))
@@ -200,19 +200,22 @@ struct SearchCenterView: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 Spacer()
-                Label(
-                    isGitHubAuthenticated ? "已登录" : "匿名搜索",
-                    systemImage: isGitHubAuthenticated ? "person.crop.circle.badge.checkmark" : "person.crop.circle"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                if isGitHubAuthenticated {
+                    Label("search.github.signedIn", systemImage: "person.crop.circle.badge.checkmark")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Label("search.github.anonymous", systemImage: "person.crop.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if let summary = viewModel.githubResultSummary {
                     Text(summary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 if viewModel.canLoadMoreGitHub {
-                    Button("加载更多") { Task { await viewModel.loadMoreGitHub() } }
+                    Button("search.github.loadMore") { Task { await viewModel.loadMoreGitHub() } }
                         .buttonStyle(.plain)
                         .focusEffectDisabled()
                 }
@@ -229,42 +232,42 @@ struct SearchCenterView: View {
                     HStack(alignment: .bottom, spacing: 12) {
                         githubLanguagePicker
                         githubTextFilter(
-                            title: "Topic",
-                            placeholder: "例如 macOS",
+                            titleKey: "search.github.filter.topic",
+                            placeholderKey: "search.github.filter.topic.placeholder",
                             text: optionalBinding(\.topic)
                         )
                         VStack(alignment: .leading, spacing: 5) {
-                            filterFieldLabel("最低 Stars")
-                            TextField("不限", value: $viewModel.githubFilters.minimumStars, format: .number)
+                            filterFieldLabel("search.github.filter.minStars")
+                            TextField("search.github.filter.minStars.placeholder", value: $viewModel.githubFilters.minimumStars, format: .number)
                                 .textFieldStyle(.roundedBorder)
                         }
                         .frame(width: 112)
                         Spacer(minLength: 0)
 
-                        Button("应用筛选") {
+                        Button("search.github.filter.apply") {
                             Task { await viewModel.applyGitHubFilters() }
                         }
                         .buttonStyle(.borderedProminent)
                     }
 
                     HStack(alignment: .bottom, spacing: 12) {
-                        githubPicker(title: "排序方式", width: 130) {
-                            Picker("排序方式", selection: $viewModel.githubFilters.sort) {
-                                Text("最佳匹配").tag(GitHubSearchSort.bestMatch)
+                        githubPicker(titleKey: "search.github.filter.sortBy", width: 130) {
+                            Picker("search.github.filter.sortBy", selection: $viewModel.githubFilters.sort) {
+                                Text("search.github.sort.bestMatch").tag(GitHubSearchSort.bestMatch)
                                 Text("Stars").tag(GitHubSearchSort.stars)
                                 Text("Forks").tag(GitHubSearchSort.forks)
-                                Text("最近更新").tag(GitHubSearchSort.updated)
+                                Text("search.github.sort.updated").tag(GitHubSearchSort.updated)
                             }
                         }
-                        githubPicker(title: "顺序", width: 90) {
-                            Picker("顺序", selection: $viewModel.githubFilters.order) {
-                                Text("降序").tag(SearchOrder.descending)
-                                Text("升序").tag(SearchOrder.ascending)
+                        githubPicker(titleKey: "search.github.filter.order", width: 90) {
+                            Picker("search.github.filter.order", selection: $viewModel.githubFilters.order) {
+                                Text("search.github.order.descending").tag(SearchOrder.descending)
+                                Text("search.github.order.ascending").tag(SearchOrder.ascending)
                             }
                         }
-                        githubDateFilter(title: "创建时间晚于", keyPath: \.createdAfter)
-                        githubDateFilter(title: "推送时间晚于", keyPath: \.pushedAfter)
-                        Button("清除日期") {
+                        githubDateFilter(titleKey: "search.github.filter.createdAfter", keyPath: \.createdAfter)
+                        githubDateFilter(titleKey: "search.github.filter.pushedAfter", keyPath: \.pushedAfter)
+                        Button("search.github.filter.clearDates") {
                             viewModel.githubFilters.createdAfter = nil
                             viewModel.githubFilters.pushedAfter = nil
                         }
@@ -294,7 +297,7 @@ struct SearchCenterView: View {
                 } label: {
                     HStack(spacing: 7) {
                         Image(systemName: "globe")
-                        Text("Web 筛选")
+                        Text("search.web.filterTitle")
                             .fontWeight(.semibold)
                         Image(systemName: viewModel.isAnySearchFiltersExpanded ? "chevron.up" : "chevron.down")
                             .font(.caption2.weight(.semibold))
@@ -323,7 +326,7 @@ struct SearchCenterView: View {
                     anySearchMaxResultsField
                     Spacer(minLength: 0)
 
-                    Button("应用筛选") {
+                    Button("search.github.filter.apply") {
                         Task { await viewModel.applyAnySearchFilters() }
                     }
                     .buttonStyle(.borderedProminent)
@@ -341,7 +344,7 @@ struct SearchCenterView: View {
         if viewModel.lastSubmittedQuery.isEmpty {
             historyContent
         } else if viewModel.candidates.isEmpty, viewModel.isSearching {
-            ProgressView("正在搜索…")
+            ProgressView("search.searching")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.candidates.isEmpty {
             // 必须撑满剩余空间，否则 ContentUnavailableView 只占自身 intrinsic 高度,
@@ -351,9 +354,9 @@ struct SearchCenterView: View {
             // 上方 chrome（搜索框 / scope picker / GitHub 筛选栏）位置不变,
             // 仅在结果区域内展示空状态提示。
             ContentUnavailableView(
-                "没有找到结果",
+                "search.empty.title",
                 systemImage: "magnifyingglass",
-                description: Text(viewModel.errorMessages.first ?? "尝试更换关键词或搜索范围")
+                description: Text(viewModel.errorMessages.first ?? String(localized: "search.empty.description"))
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -379,16 +382,20 @@ struct SearchCenterView: View {
                 .accessibilityAction { activate(candidate) }
                 .contextMenu {
                     if case .repository(let repository) = candidate {
-                        Button("在 GitHub 打开") { onOpenURL(repository) }
-                        Button("复制 URL") { onCopyURL(repository) }
+                        Button("search.contextMenu.openInGitHub") { onOpenURL(repository) }
+                        Button("search.contextMenu.copyURL") { onCopyURL(repository) }
                         if let repo = repository.displayRepo {
                             Divider()
-                            Button("Ask / AI 摘要") { onOpenAI(repo) }
-                            Button(isStarred(repo.id) ? "取消 Star" : "Star") { onToggleStar(repo) }
+                            Button("search.contextMenu.aiSummary") { onOpenAI(repo) }
+                            if isStarred(repo.id) {
+                                Button("search.contextMenu.unstar") { onToggleStar(repo) }
+                            } else {
+                                Button("search.contextMenu.star") { onToggleStar(repo) }
+                            }
                         }
                     } else if case .reference(let reference) = candidate {
-                        Button("在浏览器打开") { NSWorkspace.shared.open(reference.originalURL) }
-                        Button("复制 URL") {
+                        Button("search.contextMenu.openInBrowser") { NSWorkspace.shared.open(reference.originalURL) }
+                        Button("search.contextMenu.copyURL") {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(reference.originalURL.absoluteString, forType: .string)
                         }
@@ -433,9 +440,9 @@ struct SearchCenterView: View {
                 // 同 resultContent 的"没有找到结果"分支,空历史也要撑满,
                 // 否则首次打开浮层时搜索框会被居中下沉。
                 ContentUnavailableView(
-                    "搜索 Starcat",
+                    "search.history.empty.title",
                     systemImage: "sparkle.magnifyingglass",
-                    description: Text("输入关键词后按 Return")
+                    description: Text("search.history.empty.description")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -462,16 +469,16 @@ struct SearchCenterView: View {
             }
         }
         .confirmationDialog(
-            "确定要清空全部搜索历史吗?",
+            "search.history.clearConfirm.title",
             isPresented: $showingClearHistoryAlert,
             titleVisibility: .visible
         ) {
-            Button("清空全部", role: .destructive) {
+            Button("search.history.clearAll", role: .destructive) {
                 Task { await viewModel.clearHistory() }
             }
-            Button("取消", role: .cancel) {}
+            Button("common.cancel", role: .cancel) {}
         } message: {
-            Text("此操作不可恢复。")
+            Text("search.history.clearConfirm.message")
         }
     }
 
@@ -479,20 +486,20 @@ struct SearchCenterView: View {
     /// 单独抽出来避免 ScrollView 把标题也卷进去；这样在历史项很多时标题保持悬停在顶部。
     private var historyHeader: some View {
         HStack {
-            Text("最近搜索")
+            Text("search.history.recent")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
             Spacer()
             Button {
                 showingClearHistoryAlert = true
             } label: {
-                Label("清空全部", systemImage: "trash")
+                Label("search.history.clearAll", systemImage: "trash")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .help("清空全部搜索历史")
+            .help("search.history.clearAll.help")
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
@@ -797,10 +804,10 @@ struct SearchCenterView: View {
 
     private func scopeTitle(_ scope: SearchScope) -> String {
         switch scope {
-        case .all: return "全部"
-        case .local: return "本地"
+        case .all: return String(localized: "search.scope.all")
+        case .local: return String(localized: "search.scope.local")
         case .github: return "GitHub"
-        case .web: return "网页"
+        case .web: return String(localized: "search.scope.web")
         }
     }
 
@@ -813,10 +820,10 @@ struct SearchCenterView: View {
         )
     }
 
-    private func githubTextFilter(title: String, placeholder: String, text: Binding<String>) -> some View {
+    private func githubTextFilter(titleKey: LocalizedStringKey, placeholderKey: LocalizedStringKey, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            filterFieldLabel(title)
-            TextField(placeholder, text: text)
+            filterFieldLabel(titleKey)
+            TextField(placeholderKey, text: text)
                 .textFieldStyle(.roundedBorder)
         }
         .frame(maxWidth: .infinity)
@@ -825,9 +832,9 @@ struct SearchCenterView: View {
     /// “全部语言”对应 nil，不生成 GitHub `language:` qualifier；其余选项直接来自
     /// Starcat 本地 Star 列表的 languageStats，与 Sidebar 的语言口径保持一致。
     private var githubLanguagePicker: some View {
-        githubPicker(title: "语言", width: 128) {
-            Picker("语言", selection: optionalLanguageBinding) {
-                Text("全部语言").tag("")
+        githubPicker(titleKey: "search.github.filter.language", width: 128) {
+            Picker("search.github.filter.language", selection: optionalLanguageBinding) {
+                Text("search.github.filter.language.all").tag("")
                 ForEach(languages) { stat in
                     Text(stat.displayName).tag(stat.language)
                 }
@@ -842,8 +849,8 @@ struct SearchCenterView: View {
         )
     }
 
-    private func filterFieldLabel(_ title: String) -> some View {
-        Text(title)
+    private func filterFieldLabel(_ titleKey: LocalizedStringKey) -> some View {
+        Text(titleKey)
             .font(.caption)
             .fontWeight(.medium)
             .foregroundStyle(.secondary)
@@ -852,12 +859,12 @@ struct SearchCenterView: View {
     /// Picker 的标题放到控件上方，避免 macOS 自动把 label 挤在选择框左侧，造成
     /// “排序 Best m…”这类横向截断。调用方仍传原生 Picker，交互行为不变。
     private func githubPicker<Content: View>(
-        title: String,
+        titleKey: LocalizedStringKey,
         width: CGFloat,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            filterFieldLabel(title)
+            filterFieldLabel(titleKey)
             content()
                 .labelsHidden()
         }
@@ -874,11 +881,11 @@ struct SearchCenterView: View {
     /// + `.graphical` DatePicker，绕开 `.compact` 在新版 macOS 上的样式 fallback，
     /// 同时把"点击 → 弹出可视化月历选择"的交互固化下来。
     private func githubDateFilter(
-        title: String,
+        titleKey: LocalizedStringKey,
         keyPath: WritableKeyPath<GitHubSearchFilters, Date?>
     ) -> some View {
         GitHubDateFilterField(
-            title: title,
+            titleKey: titleKey,
             date: Binding(
                 get: { viewModel.githubFilters[keyPath: keyPath] },
                 set: { viewModel.githubFilters[keyPath: keyPath] = $0 }
@@ -894,11 +901,11 @@ struct SearchCenterView: View {
     /// 22 项来自官方 enum（hard-code 在 `Self.allAnySearchDomains`）。domain 是 API
     /// 关键字，**不本地化**；中文用户可通过括号注释快速辨识（如 `code（代码）`）。
     private var anySearchDomainPicker: some View {
-        githubPicker(title: "域 (Domain)", width: 158) {
+        githubPicker(titleKey: "search.anysearch.domain", width: 158) {
             Picker("Domain", selection: anySearchDomainBinding) {
-                Text("自动").tag("")
+                Text("search.anysearch.domain.auto").tag("")
                 ForEach(Self.allAnySearchDomains, id: \.0) { pair in
-                    Text(pair.1).tag(pair.0)
+                    Text(LocalizedStringKey(pair.1)).tag(pair.0)
                 }
             }
         }
@@ -916,10 +923,10 @@ struct SearchCenterView: View {
     /// 官方文档未给完整枚举，先开 3 个最常见的；按反馈再加（写入注释固化范围）。
     private var anySearchContentTypesField: some View {
         VStack(alignment: .leading, spacing: 5) {
-            filterFieldLabel("内容类型")
+            filterFieldLabel("search.anysearch.contentTypes")
             Menu {
                 ForEach(Self.allAnySearchContentTypes, id: \.0) { pair in
-                    Toggle(pair.1, isOn: anySearchContentTypeBinding(pair.0))
+                    Toggle(LocalizedStringKey(pair.1), isOn: anySearchContentTypeBinding(pair.0))
                 }
             } label: {
                 Text(anySearchContentTypesLabel)
@@ -947,19 +954,21 @@ struct SearchCenterView: View {
 
     private var anySearchContentTypesLabel: String {
         let selected = viewModel.anySearchFilters.contentTypes
-        if selected.isEmpty { return "自动" }
+        if selected.isEmpty { return String(localized: "search.anysearch.zone.auto") }
         // 用预定义顺序输出（Set 迭代顺序不稳定），与摘要保持一致体验
-        let ordered = Self.allAnySearchContentTypes.compactMap { selected.contains($0.0) ? $0.0 : nil }
+        let ordered = Self.allAnySearchContentTypes.compactMap { pair in
+            selected.contains(pair.0) ? String(localized: String.LocalizationValue(pair.1)) : nil
+        }
         return ordered.joined(separator: ", ")
     }
 
     /// AnySearch zone 下拉。首项「自动」对应 nil，跟随网关自动路由。
     private var anySearchZonePicker: some View {
-        githubPicker(title: "地区", width: 100) {
+        githubPicker(titleKey: "search.anysearch.zone", width: 100) {
             Picker("Zone", selection: anySearchZoneBinding) {
-                Text("自动").tag("")
-                Text("国内").tag(AnySearchZone.cn.rawValue)
-                Text("全球").tag(AnySearchZone.intl.rawValue)
+                Text("search.anysearch.zone.auto").tag("")
+                Text("search.anysearch.zone.cn").tag(AnySearchZone.cn.rawValue)
+                Text("search.anysearch.zone.intl").tag(AnySearchZone.intl.rawValue)
             }
         }
     }
@@ -987,7 +996,7 @@ struct SearchCenterView: View {
     ///   不需要 blur / 提交才触发。空值 / 负数同样压到下界 1
     private var anySearchMaxResultsField: some View {
         VStack(alignment: .leading, spacing: 5) {
-            filterFieldLabel("结果数")
+            filterFieldLabel("search.anysearch.maxResults")
             TextField("10", value: clampedMaxResultsBinding, format: .number.grouping(.never))
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12))
@@ -1023,50 +1032,58 @@ struct SearchCenterView: View {
             parts.append(ordered.joined(separator: ","))
         }
         if let zone = f.zone {
-            parts.append(zone == .cn ? "国内" : "全球")
+            parts.append(zone == .cn
+                ? String(localized: "search.anysearch.zone.cn")
+                : String(localized: "search.anysearch.zone.intl"))
         }
-        if f.maxResults != 10 { parts.append("\(f.maxResults) 条") }
-        return parts.isEmpty ? "自动（按 query 路由）" : parts.joined(separator: " · ")
+        if f.maxResults != 10 {
+            parts.append(String(format: String(localized: "search.anysearch.summary.count"), f.maxResults))
+        }
+        return parts.isEmpty
+            ? String(localized: "search.anysearch.summary.auto")
+            : parts.joined(separator: " · ")
     }
 
     /// AnySearch 22 个 domain 显示对照表。
     ///
-    /// 元组 `(rawValue, displayName)`：rawValue 直接传给 API（不本地化），
-    /// displayName 给中文用户加括号注释方便快速辨识。完整顺序照搬官方文档：
+    /// 元组 `(rawValue, i18nKey)`：rawValue 直接传给 API（不本地化），
+    /// i18nKey 通过 `String(localized:)` / `Text(LocalizedStringKey(...))` 渲染本地化文案。
+    /// 完整顺序照搬官方文档：
     /// https://www.anysearch.com/docs → Enum Reference → Domains (22 values)
     ///
     /// 维护提示：API 端新增 domain 时同步追加；保持与官方枚举顺序一致便于查阅。
     private static let allAnySearchDomains: [(String, String)] = [
-        ("general", "general（综合）"),
-        ("code", "code（代码）"),
-        ("tech", "tech（科技）"),
-        ("fashion", "fashion（时尚）"),
-        ("travel", "travel（旅行）"),
-        ("home", "home（家居）"),
-        ("ecommerce", "ecommerce（电商）"),
-        ("gaming", "gaming（游戏）"),
-        ("film", "film（影视）"),
-        ("music", "music（音乐）"),
-        ("finance", "finance（财经）"),
-        ("academic", "academic（学术）"),
-        ("legal", "legal（法律）"),
-        ("business", "business（商业）"),
-        ("ip", "ip（知识产权）"),
-        ("security", "security（安全）"),
-        ("education", "education（教育）"),
-        ("health", "health（健康）"),
-        ("religion", "religion（宗教）"),
-        ("geo", "geo（地理）"),
-        ("environment", "environment（环境）"),
-        ("energy", "energy（能源）")
+        ("general", "search.anysearch.domain.general"),
+        ("code", "search.anysearch.domain.code"),
+        ("tech", "search.anysearch.domain.tech"),
+        ("fashion", "search.anysearch.domain.fashion"),
+        ("travel", "search.anysearch.domain.travel"),
+        ("home", "search.anysearch.domain.home"),
+        ("ecommerce", "search.anysearch.domain.ecommerce"),
+        ("gaming", "search.anysearch.domain.gaming"),
+        ("film", "search.anysearch.domain.film"),
+        ("music", "search.anysearch.domain.music"),
+        ("finance", "search.anysearch.domain.finance"),
+        ("academic", "search.anysearch.domain.academic"),
+        ("legal", "search.anysearch.domain.legal"),
+        ("business", "search.anysearch.domain.business"),
+        ("ip", "search.anysearch.domain.ip"),
+        ("security", "search.anysearch.domain.security"),
+        ("education", "search.anysearch.domain.education"),
+        ("health", "search.anysearch.domain.health"),
+        ("religion", "search.anysearch.domain.religion"),
+        ("geo", "search.anysearch.domain.geo"),
+        ("environment", "search.anysearch.domain.environment"),
+        ("energy", "search.anysearch.domain.energy")
     ]
 
     /// content_types 预设选项。官方文档未给完整枚举，先开 3 个最常见的；
     /// 用户反馈需要其他类型（如 image / video）时再扩展。
+    /// 元组 `(rawValue, i18nKey)`：i18nKey 渲染时走本地化查找。
     private static let allAnySearchContentTypes: [(String, String)] = [
-        ("web", "网页"),
-        ("news", "新闻"),
-        ("doc", "文档")
+        ("web", "search.anysearch.contentType.web"),
+        ("news", "search.anysearch.contentType.news"),
+        ("doc", "search.anysearch.contentType.doc")
     ]
 }
 
@@ -1102,7 +1119,7 @@ struct SearchCenterView: View {
 /// 用户会困惑「该用哪个」。所以这里保持单一职责：popover 只负责选日期，清除
 /// 由外部统一处理。
 private struct GitHubDateFilterField: View {
-    let title: String
+    let titleKey: LocalizedStringKey
     /// 真实数据源。nil 表示「用户未指定该筛选条件」，写筛选时不生成 qualifier；
     /// popover 内只要用户点过任一日期就写入真实值，binding setter 立刻把 nil
     /// 升级为具体 Date。
@@ -1124,7 +1141,7 @@ private struct GitHubDateFilterField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title)
+            Text(titleKey)
                 .font(.caption)
                 .fontWeight(.medium)
                 .foregroundStyle(.secondary)
@@ -1206,7 +1223,7 @@ private struct GitHubDateFilterField: View {
             // 按钮始终贴右；不能用 HStack { Spacer(); Button } —— 后者会让 HStack
             // 占据父 VStack 全宽，与 .fixedSize() 行为冲突（VStack 取最大子宽时
             // 会陷入循环假设，月历再次被拉伸出空白）。
-            Button("完成") {
+            Button("search.github.dateField.done") {
                 isPresented = false
             }
             .buttonStyle(.borderedProminent)
@@ -1218,7 +1235,7 @@ private struct GitHubDateFilterField: View {
     }
 
     private var displayText: String {
-        guard let date else { return "选择日期" }
+        guard let date else { return String(localized: "search.github.dateField.placeholder") }
         return Self.displayFormatter.string(from: date)
     }
 }
@@ -1310,7 +1327,7 @@ private struct HistoryChip: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .padding(.trailing, 4)
-                .help("删除这条历史")
+                .help("search.history.removeOne.help")
                 .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.85)))
             }
         }
@@ -1318,16 +1335,16 @@ private struct HistoryChip: View {
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) { isHovered = hovering }
         }
         .contextMenu {
-            Button("使用此关键词") { onUse() }
+            Button("search.history.menu.useThis") { onUse() }
             Divider()
-            Button("删除这条历史", role: .destructive) { onRemove() }
+            Button("search.history.menu.removeOne", role: .destructive) { onRemove() }
         }
     }
 
     /// 系统 tooltip 内容：useCount > 1 时附带次数信息便于用户知道分数怎么来的。
     private var chipTooltip: String {
         guard entry.useCount > 1 else { return entry.query }
-        return "\(entry.query) — 使用 \(entry.useCount) 次"
+        return String(format: String(localized: "search.history.tooltip.useCountFormat"), entry.query, entry.useCount)
     }
 }
 

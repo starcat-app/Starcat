@@ -47,12 +47,18 @@ enum SharedSnapshotError: LocalizedError, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .privateRepository: return "操作仅支持公开仓库。"
-        case .invalidGitHubURL: return "无法生成 GitHub API 地址。"
-        case .requestFailed(let statusCode): return "GitHub 请求失败（HTTP \(statusCode)）。"
-        case .archiveTooLarge: return "仓库 ZIP 超过 100 MB 上限。"
-        case .emptyArchive: return "GitHub 返回了空的 ZIP 文件。"
-        case .branchNotFound(let name): return "分支 \(name) 不存在。"
+        case .privateRepository:
+            return String(localized: "snapshot.error.privateRepository")
+        case .invalidGitHubURL:
+            return String(localized: "snapshot.error.invalidGitHubURL")
+        case .requestFailed(let statusCode):
+            return String(format: String(localized: "snapshot.error.requestFailedFormat"), statusCode)
+        case .archiveTooLarge:
+            return String(localized: "snapshot.error.archiveTooLarge")
+        case .emptyArchive:
+            return String(localized: "snapshot.error.emptyArchive")
+        case .branchNotFound(let name):
+            return String(format: String(localized: "snapshot.error.branchNotFoundFormat"), name)
         }
     }
 }

@@ -251,7 +251,7 @@ struct CodeFlowFeaturedTile: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("CodeFlow")
                         .font(.system(size: 14, weight: .bold))
-                    Text("可视化项目代码结构")
+                    Text("toolbar.codeFlow.subtitle")
                         .font(.system(size: 10, weight: .medium))
                         .opacity(0.82)
                 }

@@ -75,7 +75,7 @@ struct AIModelParametersPopover: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     if hasOverride {
-                        Text("已自定义")
+                        Text("settings.ai.modelParams.overridden")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.orange)
                             .padding(.horizontal, 6)
@@ -91,12 +91,12 @@ struct AIModelParametersPopover: View {
             Button {
                 onReset()
             } label: {
-                Label("重置默认", systemImage: "arrow.counterclockwise")
+                Label("settings.ai.modelParams.resetDefault", systemImage: "arrow.counterclockwise")
             }
             .disabled(!hasOverride)
             .help(hasOverride
-                  ? "清除该模型的参数覆盖，下次调用回到 \(model.capability.displayName) 默认值"
-                  : "尚无覆盖，无需重置")
+                  ? Text("settings.ai.modelParams.resetHelp.activeFormat \(model.capability.displayName)")
+                  : Text("settings.ai.modelParams.resetHelp.empty"))
         }
     }
 
@@ -108,11 +108,21 @@ struct AIModelParametersPopover: View {
         slider("Top P", value: $parameters.topP, range: 0...1, disabled: isEmbedding)
 
         intField("Top K", value: clampedInt($parameters.topK, in: 0...500), unit: nil, disabled: isEmbedding)
-        intField("最大 Token", value: maxTokensKBinding, unit: "K", disabled: isEmbedding)
-        intField("超时时间", value: timeoutSecondsBinding, unit: "秒", disabled: false)
+        intField(
+            String(localized: "settings.ai.modelParams.maxTokens"),
+            value: maxTokensKBinding,
+            unit: "K",
+            disabled: isEmbedding
+        )
+        intField(
+            String(localized: "settings.ai.modelParams.timeout"),
+            value: timeoutSecondsBinding,
+            unit: String(localized: "settings.ai.modelParams.unit.seconds"),
+            disabled: false
+        )
 
         HStack {
-            Text("优先使用流式响应")
+            Text("settings.ai.modelParams.streamPreferred")
             Spacer(minLength: 8)
             Toggle("", isOn: $parameters.streamEnabled)
                 .labelsHidden()
