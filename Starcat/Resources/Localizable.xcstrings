@@ -19383,6 +19383,40 @@
         }
       }
     },
+    "sharecard.theme.auroraBlue" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aurora Blue"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "极光蓝"
+          }
+        }
+      }
+    },
+    "sharecard.theme.berryPurple" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Berry Purple"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "莓果紫"
+          }
+        }
+      }
+    },
     "sharecard.theme.darkCard" : {
       "extractionState" : "stale",
       "localizations" : {

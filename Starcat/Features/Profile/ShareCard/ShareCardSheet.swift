@@ -92,39 +92,24 @@ struct ShareCardSheet: View {
         VStack(spacing: 0) {
             header
 
-            ScrollView {
-                VStack(spacing: 12) {
-                    themePicker
+            VStack(spacing: 12) {
+                themePicker
 
-                    cardPreview
+                cardPreview
 
-                    // 反馈区：进行中（progress pill 带菊花）优先级高于已完成（feedback pill）。
-                    // 同位置切换：用同一胶囊外观+尺寸，只换内容（菊花 ↔ 对勾），视觉上是
-                    // "在做事 → 做完了"的连续过渡，无位移、无突兀的 overlay。
-                    if let msg = exportProgressMessage {
-                        progressPill(text: msg)
-                            .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
-                    } else if let feedback = lastActionFeedback {
-                        feedbackPill(text: feedback)
-                            .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
-                    }
-
-                    actionButtons
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 4)
+                actionButtons
             }
-            .scrollIndicators(.hidden)
-            // HOM-173 v3 关键修复：macOS 上 ScrollView 默认有不透明的
-            // `.controlBackgroundColor` 背景，会把外层 VStack `.background` 加的
-            // DotsFlowBackground 完全盖住——这就是 dong4j 首次截图看不到 flow 的
-            // 根因。iOS 上 ScrollView 默认透明所以 ShipSwift 原 demo 没踩到，
-            // 移植到 macOS 时必须显式 hide ScrollView 自己的内容背景，让底层
-            // 的 Metal shader 能透上来。
-            // macOS 13+ API；Starcat macOS 15 满足。
-            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 4)
         }
-        .frame(width: 480, height: 820)
+        // 分享卡本体保持 400×560；这里只裁掉 sheet 旧版 820pt 高度留下的底部背景空白。
+        // 内容总高低于主窗口初始化高度 763pt，初始窗口下不会再向底部凸出。
+        .frame(width: 480, height: 760)
+        .overlay(alignment: .bottom) {
+            // 反馈不参与布局，避免保存 / 导出后的 pill 把按钮往下顶导致重新溢出。
+            feedbackOverlay
+                .padding(.bottom, 96)
+        }
         .background {
             // HOM-173 v3：sheet 整体动态背景（Metal `swDotsFlow` 流场）。
             //
@@ -183,6 +168,18 @@ struct ShareCardSheet: View {
         }
     }
 
+    /// 保存 / 导出反馈浮层。它不占据主布局高度，避免临时提示破坏 sheet 的固定收口高度。
+    @ViewBuilder
+    private var feedbackOverlay: some View {
+        if let msg = exportProgressMessage {
+            progressPill(text: msg)
+                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+        } else if let feedback = lastActionFeedback {
+            feedbackPill(text: feedback)
+                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+        }
+    }
+
     // MARK: - 顶部标题栏
 
     /// 顶部标题栏：标题 + 关闭按钮。
@@ -225,7 +222,7 @@ struct ShareCardSheet: View {
     /// 单点驱动主题切换动画即可。
     @ViewBuilder
     private var themePicker: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             ForEach(ShareCardTheme.allCases) { t in
                 ThemeCardButton(
                     theme: t,
@@ -248,8 +245,8 @@ struct ShareCardSheet: View {
             Button(action: action) {
                 // 主题预览色块
                 themePreview
-                    .frame(width: 36, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .frame(width: 30, height: 22)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
                     .overlay(
                         // 描边策略（2026-06-06 dong4j 反馈适配深浅主题）：
                         // - 选中态：`Color.accentColor` 2pt 加粗描边，强表达"选中"。
@@ -257,14 +254,14 @@ struct ShareCardSheet: View {
                         //   `Color.primary` 在 light 模式→黑、dark 模式→白，自动适配。
                         //   由于色块已通过 `pickerSwatch` 避开纯黑/纯白，0.5pt 极细
                         //   "提示线"足够勾出边缘而不会抢视觉权重。
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: 5)
                             .stroke(
                                 isSelected ? Color.accentColor : Color.primary.opacity(0.18),
                                 lineWidth: isSelected ? 2 : 0.5
                             )
                     )
                     .background(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: 5)
                             .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
                     )
             }
@@ -276,7 +273,7 @@ struct ShareCardSheet: View {
         ///
         /// 用 `theme.pickerSwatch` 而**不是** `theme.palette` 的 cardBackground/accent
         /// （见 `ShareCardTheme.pickerSwatch` 的详细注释）：导出图色板可能出现纯黑/纯白，
-        /// 在 picker 36×28 小色块里会刺眼或融背景；pickerSwatch 是为 picker 单独调过的
+        /// 在 picker 30×22 小色块里会刺眼或融背景；pickerSwatch 是为 picker 单独调过的
         /// 柔和色对，保留色相记忆点同时兼容 light/dark 两种主题。
         private var themePreview: some View {
             HStack(spacing: 1) {
