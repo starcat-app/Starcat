@@ -325,7 +325,7 @@ struct ShareCardContent: View {
                     .foregroundStyle(palette.tertiaryText)
                 Spacer()
                 if let total = contribution?.totalContributions {
-                    Text(String(format: String(localized: "sharecard.contribution.totalCount"), total))
+                    Text(String(format: String.l10n("sharecard.contribution.totalCount"), total))
                         .font(.system(size: 9, weight: .semibold, design: .monospaced))
                         .foregroundStyle(palette.secondaryText)
                 }
