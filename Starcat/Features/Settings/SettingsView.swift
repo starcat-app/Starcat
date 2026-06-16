@@ -413,16 +413,16 @@ private struct StorageSettingsTab: View {
         }
         var confirmTitle: String {
             switch self {
-            case .readme:       return String(localized: "settings.storage.clearReadme.confirm")
-            case .image:        return String(localized: "settings.storage.clearImage.confirm")
-            case .archive:      return String(localized: "settings.storage.clearArchive.confirm")
-            case .translation:  return String(localized: "settings.storage.clearTranslation.confirm")
-            case .anySearch:    return String(localized: "settings.storage.clearAnySearch.confirm")
-            case .wiki:         return String(localized: "settings.storage.clearWiki.confirm")
-            case .chatHistory:  return String(localized: "settings.storage.clearChatHistory.confirm")
-            case .aiContext:    return String(localized: "settings.storage.clearAiContext.confirm")
-            case .codeFlow:     return String(localized: "settings.storage.clearCodeFlow.confirm")
-            case .all:          return String(localized: "settings.storage.clearAll.confirm")
+            case .readme:       return String.l10n("settings.storage.clearReadme.confirm")
+            case .image:        return String.l10n("settings.storage.clearImage.confirm")
+            case .archive:      return String.l10n("settings.storage.clearArchive.confirm")
+            case .translation:  return String.l10n("settings.storage.clearTranslation.confirm")
+            case .anySearch:    return String.l10n("settings.storage.clearAnySearch.confirm")
+            case .wiki:         return String.l10n("settings.storage.clearWiki.confirm")
+            case .chatHistory:  return String.l10n("settings.storage.clearChatHistory.confirm")
+            case .aiContext:    return String.l10n("settings.storage.clearAiContext.confirm")
+            case .codeFlow:     return String.l10n("settings.storage.clearCodeFlow.confirm")
+            case .all:          return String.l10n("settings.storage.clearAll.confirm")
             }
         }
         var confirmMessageKey: LocalizedStringKey {
@@ -726,7 +726,7 @@ private struct StorageSettingsTab: View {
 
     private var readmeUsageText: String {
         String(
-            format: String(localized: "settings.storage.readmeUsageFormat"),
+            format: String.l10n("settings.storage.readmeUsageFormat"),
             stats.readmeCount,
             stats.readmeBytes.formattedByteSize
         )
@@ -734,7 +734,7 @@ private struct StorageSettingsTab: View {
 
     private var archiveUsageText: String {
         String(
-            format: String(localized: "settings.storage.archiveUsageFormat"),
+            format: String.l10n("settings.storage.archiveUsageFormat"),
             stats.archiveCount,
             stats.archiveBytes.formattedByteSize
         )
@@ -743,10 +743,10 @@ private struct StorageSettingsTab: View {
     /// 翻译磁盘缓存用量行文案：`X 项 · YY KB`。空缓存显示"未生成"。
     private var translationUsageText: String {
         if translationCache.itemCount == 0 {
-            return String(localized: "settings.storage.translation.empty")
+            return String.l10n("settings.storage.translation.empty")
         }
         return String(
-            format: String(localized: "settings.storage.translationUsageFormat"),
+            format: String.l10n("settings.storage.translationUsageFormat"),
             translationCache.itemCount,
             translationCache.totalBytes.formattedByteSize
         )
@@ -755,10 +755,10 @@ private struct StorageSettingsTab: View {
     /// AnySearch 磁盘缓存用量行文案（global + ai-summary 合计）。
     private var anySearchUsageText: String {
         if anySearchCache.itemCount == 0 {
-            return String(localized: "settings.storage.anySearch.empty")
+            return String.l10n("settings.storage.anySearch.empty")
         }
         return String(
-            format: String(localized: "settings.storage.anySearchUsageFormat"),
+            format: String.l10n("settings.storage.anySearchUsageFormat"),
             anySearchCache.itemCount,
             anySearchCache.totalBytes.formattedByteSize
         )
@@ -768,10 +768,10 @@ private struct StorageSettingsTab: View {
     /// translation / anySearch 同款（`X 项 · YY KB`）保持视觉一致。
     private var wikiUsageText: String {
         if wikiCache.itemCount == 0 {
-            return String(localized: "settings.storage.wiki.empty")
+            return String.l10n("settings.storage.wiki.empty")
         }
         return String(
-            format: String(localized: "settings.storage.wikiUsageFormat"),
+            format: String.l10n("settings.storage.wikiUsageFormat"),
             wikiCache.itemCount,
             wikiCache.totalBytes.formattedByteSize
         )
@@ -780,10 +780,10 @@ private struct StorageSettingsTab: View {
     /// AI 对话历史用量行文案：`X 场对话 · YY 个仓库 · ZZ KB`。空显示"未生成"。
     private var chatHistoryUsageText: String {
         if chatHistoryStore.sessionCount == 0 {
-            return String(localized: "settings.storage.chatHistory.empty")
+            return String.l10n("settings.storage.chatHistory.empty")
         }
         return String(
-            format: String(localized: "settings.storage.chatHistoryUsageFormat"),
+            format: String.l10n("settings.storage.chatHistoryUsageFormat"),
             chatHistoryStore.sessionCount,
             chatHistoryStore.repoCount,
             chatHistoryStore.totalBytes.formattedByteSize
@@ -793,10 +793,10 @@ private struct StorageSettingsTab: View {
     /// AI 代码上下文用量：`X 项 · YY KB`。空显示"未生成"。
     private var aiContextUsageText: String {
         if aiContextStorage.projects.isEmpty {
-            return String(localized: "settings.storage.aiContext.empty")
+            return String.l10n("settings.storage.aiContext.empty")
         }
         return String(
-            format: String(localized: "settings.storage.aiContextUsageFormat"),
+            format: String.l10n("settings.storage.aiContextUsageFormat"),
             aiContextStorage.projects.count,
             aiContextStorage.totalBytes.formattedByteSize
         )
@@ -805,10 +805,10 @@ private struct StorageSettingsTab: View {
     /// CodeFlow 用量：同 AI 上下文格式。
     private var codeFlowUsageText: String {
         if codeFlowStorage.projects.isEmpty {
-            return String(localized: "settings.storage.codeFlow.empty")
+            return String.l10n("settings.storage.codeFlow.empty")
         }
         return String(
-            format: String(localized: "settings.storage.codeFlowUsageFormat"),
+            format: String.l10n("settings.storage.codeFlowUsageFormat"),
             codeFlowStorage.projects.count,
             codeFlowStorage.totalBytes.formattedByteSize
         )

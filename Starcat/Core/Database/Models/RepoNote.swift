@@ -96,9 +96,9 @@ enum RepoStatus: String, CaseIterable, Codable {
     /// 需要 plain String 的 API（例如 accessibilityLabel / navigationSubtitle）使用。
     var localizedDisplayName: String {
         switch self {
-        case .unread: return String(localized: "repo.status.unread")
-        case .read:   return String(localized: "repo.status.read")
-        case .using:  return String(localized: "repo.status.using")
+        case .unread: return String.l10n("repo.status.unread")
+        case .read:   return String.l10n("repo.status.read")
+        case .using:  return String.l10n("repo.status.using")
         }
     }
 }

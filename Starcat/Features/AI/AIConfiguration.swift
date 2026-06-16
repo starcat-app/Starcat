@@ -93,9 +93,9 @@ enum AIProviderTestStatus: Codable, Equatable, Sendable {
     var displayText: String {
         switch self {
         case .notTested:
-            return String(localized: "ai.connectionTest.notTested")
+            return String.l10n("ai.connectionTest.notTested")
         case .success(let modelCount):
-            return String(format: String(localized: "ai.connectionTest.successFormat"), modelCount)
+            return String(format: String.l10n("ai.connectionTest.successFormat"), modelCount)
         case .failed(let message):
             return message
         }
@@ -215,11 +215,11 @@ enum AIModelTask: String, Codable, CaseIterable, Identifiable, Sendable {
     /// 业务语义对齐：摘要 = 仓库 AI 摘要；标签 = 自动推荐 + 应用标签；向量化 = embedding 索引；翻译 = README 翻译；对话 = 详情页 AI 助手。
     var displayName: String {
         switch self {
-        case .summary:     return String(localized: "ai.task.summary")
-        case .tags:        return String(localized: "ai.task.tags")
-        case .embedding:   return String(localized: "ai.task.embedding")
-        case .translation: return String(localized: "ai.task.translation")
-        case .chat:        return String(localized: "ai.task.chat")
+        case .summary:     return String.l10n("ai.task.summary")
+        case .tags:        return String.l10n("ai.task.tags")
+        case .embedding:   return String.l10n("ai.task.embedding")
+        case .translation: return String.l10n("ai.task.translation")
+        case .chat:        return String.l10n("ai.task.chat")
         }
     }
 
@@ -788,15 +788,15 @@ extension AIServiceProvider {
         case .azureOpenAI:      return "Azure OpenAI"
         case .githubModels:     return "GitHub Models"
         case .mistral:          return "Mistral AI"
-        case .doubao:           return String(localized: "ai.provider.doubao.name")
+        case .doubao:           return String.l10n("ai.provider.doubao.name")
         case .grok:             return "Grok"
-        case .hunyuan:          return String(localized: "ai.provider.hunyuan.name")
+        case .hunyuan:          return String.l10n("ai.provider.hunyuan.name")
         case .moonshot:         return "Moonshot"
-        case .qianwen:          return String(localized: "ai.provider.qianwen.name")
-        case .siliconflow:      return String(localized: "ai.provider.siliconflow.name")
+        case .qianwen:          return String.l10n("ai.provider.qianwen.name")
+        case .siliconflow:      return String.l10n("ai.provider.siliconflow.name")
         case .iflow:            return "IFlow"
         case .modelscope:       return "ModelScope"
-        case .zhipu:            return String(localized: "ai.provider.zhipu.name")
+        case .zhipu:            return String.l10n("ai.provider.zhipu.name")
         case .zai:              return "Z.AI"
         }
     }

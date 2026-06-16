@@ -49,7 +49,7 @@ struct BatchStarConfirmSheet: View {
                 if estimatedSkipped > 0 {
                     summaryRow(label: "batch.confirm.estSkipped", value: "\(estimatedSkipped)")
                 }
-                summaryRow(label: "batch.confirm.estDuration", value: String(format: String(localized: "batch.confirm.estDurationSecondsFormat"), estimatedSeconds))
+                summaryRow(label: "batch.confirm.estDuration", value: String(format: String.l10n("batch.confirm.estDurationSecondsFormat"), estimatedSeconds))
             }
             .font(.subheadline)
 
@@ -106,7 +106,7 @@ struct BatchStarConfirmSheet: View {
                     }
                 }
                 if remaining > 0 {
-                    Text(String(format: String(localized: "batch.confirm.moreReposFormat"), remaining))
+                    Text(String(format: String.l10n("batch.confirm.moreReposFormat"), remaining))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)

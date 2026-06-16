@@ -271,17 +271,17 @@ enum StarcatEnvelopeNetworkError: Error, LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return String(localized: "network.error.invalidURL")
+            return String.l10n("network.error.invalidURL")
         case .transport(let error):
-            return String(format: String(localized: "network.error.transportFormat"), error.localizedDescription)
+            return String(format: String.l10n("network.error.transportFormat"), error.localizedDescription)
         case .decoding(let error):
-            return String(format: String(localized: "network.error.decodingFormat"), error.localizedDescription)
+            return String(format: String.l10n("network.error.decodingFormat"), error.localizedDescription)
         case .serverError(let status, let code, let message):
             // 后端 code 存在时优先展示「[CODE] message」；否则只展示 status + message。
             if let code, !code.isEmpty {
                 return "[\(code)] \(message)"
             }
-            return String(format: String(localized: "network.error.serverStatusFormat"), status) + ": " + message
+            return String(format: String.l10n("network.error.serverStatusFormat"), status) + ": " + message
         }
     }
 

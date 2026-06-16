@@ -98,6 +98,7 @@ struct SearchCenterView: View {
                 onOpenInGitHub: { onOpenURL(candidate) },
                 onCopyURL: { onCopyURL(candidate) }
             )
+            .appLocaleEnvironment()
         }
         .onKeyPress(.upArrow) {
             viewModel.moveSelection(by: -1)
@@ -356,7 +357,7 @@ struct SearchCenterView: View {
             ContentUnavailableView(
                 "search.empty.title",
                 systemImage: "magnifyingglass",
-                description: Text(viewModel.errorMessages.first ?? String(localized: "search.empty.description"))
+                description: Text(viewModel.errorMessages.first ?? String.l10n("search.empty.description"))
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -659,7 +660,7 @@ struct SearchCenterView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 9, weight: .semibold))
             Text(String(
-                format: String(localized: "search.web.summaryFormat"),
+                format: String.l10n("search.web.summaryFormat"),
                 totalResults,
                 Double(timeMs) / 1000.0
             ))
@@ -679,8 +680,8 @@ struct SearchCenterView: View {
     private func sourceCountChip(_ entry: ResultSourceCount) -> some View {
         HStack(spacing: 4) {
             Text(String(
-                format: String(localized: "search.footer.summaryFormat"),
-                String(localized: String.LocalizationValue(entry.labelKey)),
+                format: String.l10n("search.footer.summaryFormat"),
+                String.l10n(entry.labelKey),
                 entry.count
             ))
             .font(.system(size: 11, weight: .medium).monospacedDigit())
@@ -716,7 +717,7 @@ struct SearchCenterView: View {
         return HStack(spacing: 4) {
             Circle().fill(color).frame(width: 6, height: 6)
             Text(String(
-                format: String(localized: "search.web.rate.usedFormat"),
+                format: String.l10n("search.web.rate.usedFormat"),
                 rateLimit.sessionUsed,
                 rateLimit.limit
             ))
@@ -736,7 +737,7 @@ struct SearchCenterView: View {
     /// 同步加强对比度（背景 22% + 描边 + .semibold），与 normalRateLimitChip 统一。
     private func exhaustedRateLimitChip(_ rateLimit: WebRateLimit) -> some View {
         let resetText = Self.shortResetText(from: rateLimit.resetAt)
-        let title = String(format: String(localized: "search.web.rate.exhaustedFormat"), resetText)
+        let title = String(format: String.l10n("search.web.rate.exhaustedFormat"), resetText)
         return HStack(spacing: 4) {
             Circle().fill(Color.red).frame(width: 6, height: 6)
             Text(title)
@@ -757,7 +758,7 @@ struct SearchCenterView: View {
     private func rateLimitTooltip(_ rateLimit: WebRateLimit) -> String {
         let resetText = Self.shortResetText(from: rateLimit.resetAt)
         return String(
-            format: String(localized: "search.web.rate.tooltipFormat"),
+            format: String.l10n("search.web.rate.tooltipFormat"),
             rateLimit.sessionUsed,
             rateLimit.limit,
             resetText
@@ -804,10 +805,10 @@ struct SearchCenterView: View {
 
     private func scopeTitle(_ scope: SearchScope) -> String {
         switch scope {
-        case .all: return String(localized: "search.scope.all")
-        case .local: return String(localized: "search.scope.local")
+        case .all: return String.l10n("search.scope.all")
+        case .local: return String.l10n("search.scope.local")
         case .github: return "GitHub"
-        case .web: return String(localized: "search.scope.web")
+        case .web: return String.l10n("search.scope.web")
         }
     }
 
@@ -954,10 +955,10 @@ struct SearchCenterView: View {
 
     private var anySearchContentTypesLabel: String {
         let selected = viewModel.anySearchFilters.contentTypes
-        if selected.isEmpty { return String(localized: "search.anysearch.zone.auto") }
+        if selected.isEmpty { return String.l10n("search.anysearch.zone.auto") }
         // 用预定义顺序输出（Set 迭代顺序不稳定），与摘要保持一致体验
         let ordered = Self.allAnySearchContentTypes.compactMap { pair in
-            selected.contains(pair.0) ? String(localized: String.LocalizationValue(pair.1)) : nil
+            selected.contains(pair.0) ? String.l10n(pair.1) : nil
         }
         return ordered.joined(separator: ", ")
     }
@@ -1033,14 +1034,14 @@ struct SearchCenterView: View {
         }
         if let zone = f.zone {
             parts.append(zone == .cn
-                ? String(localized: "search.anysearch.zone.cn")
-                : String(localized: "search.anysearch.zone.intl"))
+                ? String.l10n("search.anysearch.zone.cn")
+                : String.l10n("search.anysearch.zone.intl"))
         }
         if f.maxResults != 10 {
-            parts.append(String(format: String(localized: "search.anysearch.summary.count"), f.maxResults))
+            parts.append(String(format: String.l10n("search.anysearch.summary.count"), f.maxResults))
         }
         return parts.isEmpty
-            ? String(localized: "search.anysearch.summary.auto")
+            ? String.l10n("search.anysearch.summary.auto")
             : parts.joined(separator: " · ")
     }
 
@@ -1155,6 +1156,7 @@ private struct GitHubDateFilterField: View {
             .focusEffectDisabled()
             .popover(isPresented: $isPresented, arrowEdge: .bottom) {
                 calendarPopover
+                    .appLocaleEnvironment()
             }
         }
         .frame(width: Self.fieldWidth, alignment: .leading)
@@ -1235,7 +1237,7 @@ private struct GitHubDateFilterField: View {
     }
 
     private var displayText: String {
-        guard let date else { return String(localized: "search.github.dateField.placeholder") }
+        guard let date else { return String.l10n("search.github.dateField.placeholder") }
         return Self.displayFormatter.string(from: date)
     }
 }
@@ -1344,7 +1346,7 @@ private struct HistoryChip: View {
     /// 系统 tooltip 内容：useCount > 1 时附带次数信息便于用户知道分数怎么来的。
     private var chipTooltip: String {
         guard entry.useCount > 1 else { return entry.query }
-        return String(format: String(localized: "search.history.tooltip.useCountFormat"), entry.query, entry.useCount)
+        return String(format: String.l10n("search.history.tooltip.useCountFormat"), entry.query, entry.useCount)
     }
 }
 
@@ -1436,6 +1438,11 @@ private struct SearchRemoteRepoDetailView: View {
     /// `AppDependencies` 已在 `StarcatApp` 主 scene 注入 environment，sheet
     /// 默认继承 environment，所以这里直接 `@Environment` 拿到。
     @Environment(AppDependencies.self) private var dependencies
+
+    /// 2026-06-16:跟随 LocaleStore 的 effective locale,用于 `RelativeDateTimeFormatter`
+    /// 的 locale 注入(否则 formatter 默认走系统 locale,英文 App 仍会输出"3 小时前")。
+    /// 父级 `.sheet { }` 闭包已挂 `appLocaleEnvironment()`,这里 `\.locale` 自动拿到正确值。
+    @Environment(\.locale) private var locale
 
     /// 已确认 indexed 的外部 wiki 链接（DeepWiki / ZRead / CodeWiki）。
     /// `.task(id: candidate.identity)` 触发 fetch，未收录 / 失败时保持空数组
@@ -1616,7 +1623,7 @@ private struct SearchRemoteRepoDetailView: View {
     private func scoreBadge(score: Double) -> some View {
         // 显示精度：保留两位小数足够区分 0.95 / 0.97 / 1.0；更高位无信息密度。
         let formatted = String(format: "%.2f", score)
-        let label = String(format: String(localized: "search.detail.score.format"), formatted)
+        let label = String(format: String.l10n("search.detail.score.format"), formatted)
         return Label {
             Text(label)
                 .font(.system(size: 10, weight: .semibold))
@@ -1756,7 +1763,7 @@ private struct SearchRemoteRepoDetailView: View {
                 .foregroundStyle(.tertiary)
 
             if let created = createdRelative {
-                Text(String(format: String(localized: "search.detail.time.created.format"), created))
+                Text(String(format: String.l10n("search.detail.time.created.format"), created))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -1768,7 +1775,7 @@ private struct SearchRemoteRepoDetailView: View {
             }
 
             if let pushed = pushedRelative {
-                Text(String(format: String(localized: "search.detail.time.updated.format"), pushed))
+                Text(String(format: String.l10n("search.detail.time.updated.format"), pushed))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -1801,6 +1808,7 @@ private struct SearchRemoteRepoDetailView: View {
         guard let date = parsed else { return nil }
         let rel = RelativeDateTimeFormatter()
         rel.unitsStyle = .full
+        rel.locale = locale
         return rel.localizedString(for: date, relativeTo: Date())
     }
 
@@ -1981,9 +1989,11 @@ private struct SearchRemoteRepoDetailView: View {
         .help("search.detail.action.more.tooltip")
         .popover(isPresented: $isOverflowPresented, arrowEdge: .top) {
             overflowPopoverContent(repo: repo)
+                .appLocaleEnvironment()
         }
         .sheet(item: $codeFlowSheetRepo) { sheetRepo in
             CodeFlowPanel(repo: sheetRepo)
+                .appLocaleEnvironment()
         }
     }
 

@@ -231,7 +231,7 @@ struct RepoAIWindowContentView: View {
 
             Text(
                 verbatim: String(
-                    format: String(localized: "ai.assistant.window.titleFormat"),
+                    format: String.l10n("ai.assistant.window.titleFormat"),
                     repo.fullName
                 )
             )
@@ -556,7 +556,7 @@ struct RepoAIWindowContentView: View {
         if starredAtOpen == true, let tagError = vm.tagErrorMessage {
             errorBanner(
                 message: String(
-                    format: String(localized: "ai.assistant.tags.parseErrorFormat"),
+                    format: String.l10n("ai.assistant.tags.parseErrorFormat"),
                     tagError
                 )
             )
@@ -730,7 +730,7 @@ struct RepoAIWindowContentView: View {
                 // 不会被改文案时连带破坏（key 名是稳定 identifier）。
                 Text(
                     String(
-                        format: String(localized: "ai.assistant.summary.footer.generatedByFormat"),
+                        format: String.l10n("ai.assistant.summary.footer.generatedByFormat"),
                         insight.model,
                         formattedDate(insight.generatedAt)
                     )
@@ -778,7 +778,7 @@ struct RepoAIWindowContentView: View {
             )
             Text(
                 String(
-                    format: String(localized: "ai.assistant.summary.footer.contextMeta.statsFormat"),
+                    format: String.l10n("ai.assistant.summary.footer.contextMeta.statsFormat"),
                     meta.actualTokens,
                     meta.totalFiles
                 )
@@ -900,6 +900,7 @@ struct RepoAIWindowContentView: View {
             .help("ai.assistant.chat.session.list.help")
             .popover(isPresented: $isSessionListPresented, arrowEdge: .top) {
                 sessionListPopover(chat: chat)
+                    .appLocaleEnvironment()
             }
 
             Menu {
@@ -923,7 +924,7 @@ struct RepoAIWindowContentView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .confirmationDialog(
-            String(localized: "ai.assistant.chat.session.clearCurrentRepo.confirm"),
+            String.l10n("ai.assistant.chat.session.clearCurrentRepo.confirm"),
             isPresented: $pendingClearCurrentRepoConfirm,
             titleVisibility: .visible
         ) {
@@ -994,7 +995,7 @@ struct RepoAIWindowContentView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: summary.title.isEmpty
-                     ? String(localized: "ai.assistant.chat.session.untitled")
+                     ? String.l10n("ai.assistant.chat.session.untitled")
                      : summary.title)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.primary)
@@ -1073,13 +1074,13 @@ struct RepoAIWindowContentView: View {
         if let current = chat.sessions.first(where: { $0.id == chat.currentSessionId }), !current.title.isEmpty {
             return current.title
         }
-        return String(localized: "ai.assistant.chat.session.untitled")
+        return String.l10n("ai.assistant.chat.session.untitled")
     }
 
     private func formattedSessionMeta(_ summary: ChatSessionSummary) -> String {
         let relative = summary.updatedAt.formatted(date: .abbreviated, time: .shortened)
         return String(
-            format: String(localized: "ai.assistant.chat.session.list.metaFormat"),
+            format: String.l10n("ai.assistant.chat.session.list.metaFormat"),
             summary.messageCount,
             relative
         )

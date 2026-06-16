@@ -67,6 +67,7 @@ struct LanguagePickerMenu: View {
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             popoverContent
                 .frame(minWidth: 240, idealWidth: 260, maxWidth: 340)
+                .appLocaleEnvironment()
         }
     }
 
@@ -212,10 +213,10 @@ struct LanguagePickerMenu: View {
 
     private func displayName(for key: String) -> String {
         if key == Self.allKey {
-            return String(localized: "weekly.filter.allLanguages")
+            return String.l10n("weekly.filter.allLanguages")
         }
         if key == TrendingLanguage.uncategorizedKey {
-            return String(localized: "trending.language.uncategorized")
+            return String.l10n("trending.language.uncategorized")
         }
         return LanguageDisplayName.shortened(for: key)
     }

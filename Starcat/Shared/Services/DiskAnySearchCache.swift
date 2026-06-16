@@ -46,9 +46,9 @@ enum DiskAnySearchCacheError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .applicationSupportUnavailable:
-            return String(localized: "cache.anySearch.error.applicationSupportUnavailable")
+            return String.l10n("cache.anySearch.error.applicationSupportUnavailable")
         case .unsafeKey(let value):
-            return String(format: String(localized: "cache.anySearch.error.unsafeKeyFormat"), value)
+            return String(format: String.l10n("cache.anySearch.error.unsafeKeyFormat"), value)
         }
     }
 }

@@ -103,15 +103,15 @@ enum AIClientError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return String(localized: "ai.client.error.missingAPIKey")
+            return String.l10n("ai.client.error.missingAPIKey")
         case .invalidBaseURL(let url):
-            return String(format: String(localized: "ai.client.error.invalidBaseURLFormat"), url)
+            return String(format: String.l10n("ai.client.error.invalidBaseURLFormat"), url)
         case .emptyResponse:
-            return String(localized: "ai.client.error.emptyResponse")
+            return String.l10n("ai.client.error.emptyResponse")
         case .responseTruncated:
-            return String(localized: "ai.client.error.responseTruncated")
+            return String.l10n("ai.client.error.responseTruncated")
         case .modelListRequestFailed(let message):
-            return String(format: String(localized: "ai.client.error.modelListRequestFailedFormat"), message)
+            return String(format: String.l10n("ai.client.error.modelListRequestFailedFormat"), message)
         }
     }
 }

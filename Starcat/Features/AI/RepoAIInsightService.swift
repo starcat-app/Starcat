@@ -27,11 +27,11 @@ enum RepoAIInsightError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return String(localized: "ai.insight.error.missingAPIKey")
+            return String.l10n("ai.insight.error.missingAPIKey")
         case .missingProvider(let task):
-            return String(format: String(localized: "ai.insight.error.missingProviderFormat"), task)
+            return String(format: String.l10n("ai.insight.error.missingProviderFormat"), task)
         case .invalidJSON:
-            return String(localized: "ai.insight.error.invalidJSON")
+            return String.l10n("ai.insight.error.invalidJSON")
         }
     }
 }
@@ -290,7 +290,7 @@ final class RepoAIInsightService {
             let links = context.sources.map { "- [\($0.host ?? $0.absoluteString)](\($0.absoluteString))" }
             // 2026-06-14 v4：footer 标题走 i18n。旧版硬编码"## 外部参考来源"导致英文
             // 系统下生成的摘要混杂中文标题，与 prompt 的 {outputLanguage} 策略冲突。
-            let footerTitle = String(localized: "ai.assistant.summary.externalReferences.title")
+            let footerTitle = String.l10n("ai.assistant.summary.externalReferences.title")
             summaryText += "\n\n## \(footerTitle)\n" + links.joined(separator: "\n")
         }
         let tagErrorMessage: String? = {
@@ -440,7 +440,7 @@ final class RepoAIInsightService {
         let cached = try? await loadCachedInsight(source: source, repo: repo)
 
         let task = settings.aiChatTask
-        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: String(localized: "ai.taskName.chat"))
+        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: String.l10n("ai.taskName.chat"))
 
         let systemPrompt = buildChatSystemPrompt(
             repo: repo,
@@ -593,7 +593,7 @@ final class RepoAIInsightService {
         onDelta: (@MainActor (String) -> Void)?
     ) async throws -> String {
         let task = settings.aiSummaryTask
-        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: String(localized: "ai.taskName.summary"))
+        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: String.l10n("ai.taskName.summary"))
         let params = settings.effectiveParameters(for: task)
         // Summary 任务占位符（v4，2026-06-14）：
         // - system: `{outputLanguage}`
@@ -652,7 +652,7 @@ final class RepoAIInsightService {
     /// 反过来用户多写了占位符也无害（dict 没有就保留字面量，让 LLM 直接看到便于排错）。
     private func generateTags(source: Source, hints: AITagHints) async throws -> [AITagSuggestion] {
         let task = settings.aiTagsTask
-        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: String(localized: "ai.taskName.tagRecommendation"))
+        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: String.l10n("ai.taskName.tagRecommendation"))
 
         let outputLanguage = Self.outputLanguageDescriptor()
         let systemPrompt = task.prompt.renderedSystemPrompt(placeholders: [

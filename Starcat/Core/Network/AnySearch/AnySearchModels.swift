@@ -170,46 +170,46 @@ enum AnySearchError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .disabled:
-            return String(localized: "anySearch.error.disabled")
+            return String.l10n("anySearch.error.disabled")
         case .invalidURL:
-            return String(localized: "anySearch.error.invalidURL")
+            return String.l10n("anySearch.error.invalidURL")
         case .invalidRequest(let message):
-            return String(format: String(localized: "anySearch.error.invalidRequestFormat"), message)
+            return String(format: String.l10n("anySearch.error.invalidRequestFormat"), message)
         case .invalidAPIKey(let reason):
             switch reason {
-            case .invalid: return String(localized: "anySearch.error.apiKey.invalid")
-            case .malformedHeader: return String(localized: "anySearch.error.apiKey.malformedHeader")
-            case .expired: return String(localized: "anySearch.error.apiKey.expired")
+            case .invalid: return String.l10n("anySearch.error.apiKey.invalid")
+            case .malformedHeader: return String.l10n("anySearch.error.apiKey.malformedHeader")
+            case .expired: return String.l10n("anySearch.error.apiKey.expired")
             }
         case .accountDisabled:
-            return String(localized: "anySearch.error.accountDisabled")
+            return String.l10n("anySearch.error.accountDisabled")
         case .capabilityNotEnabled(let message):
-            return String(format: String(localized: "anySearch.error.capabilityNotEnabledFormat"), message)
+            return String(format: String.l10n("anySearch.error.capabilityNotEnabledFormat"), message)
         case .anonymousQuotaExhausted:
-            return String(localized: "anySearch.error.anonymousQuotaExhausted")
+            return String.l10n("anySearch.error.anonymousQuotaExhausted")
         case .keyQuotaExhausted(let limit, let used):
             if let limit, let used {
-                return String(format: String(localized: "anySearch.error.keyQuotaExhaustedFormat"), used, limit)
+                return String(format: String.l10n("anySearch.error.keyQuotaExhaustedFormat"), used, limit)
             }
-            return String(localized: "anySearch.error.keyQuotaExhausted")
+            return String.l10n("anySearch.error.keyQuotaExhausted")
         case .rateLimited(_, let retryAfter):
             if let retryAfter {
-                return String(format: String(localized: "anySearch.error.rateLimitedFormat"), retryAfter)
+                return String(format: String.l10n("anySearch.error.rateLimitedFormat"), retryAfter)
             }
-            return String(localized: "anySearch.error.rateLimited")
+            return String.l10n("anySearch.error.rateLimited")
         case .serviceUnavailable(let message):
             if let message {
-                return String(format: String(localized: "anySearch.error.serviceUnavailableFormat"), message)
+                return String(format: String.l10n("anySearch.error.serviceUnavailableFormat"), message)
             }
-            return String(localized: "anySearch.error.serviceUnavailable")
+            return String.l10n("anySearch.error.serviceUnavailable")
         case .server(let code):
-            return String(format: String(localized: "anySearch.error.serverFormat"), code)
+            return String(format: String.l10n("anySearch.error.serverFormat"), code)
         case .invalidResponse:
-            return String(localized: "anySearch.error.invalidResponse")
+            return String.l10n("anySearch.error.invalidResponse")
         case .api(_, let message):
             return message
         case .decoding:
-            return String(localized: "anySearch.error.decoding")
+            return String.l10n("anySearch.error.decoding")
         case .transport(let message):
             return message
         }

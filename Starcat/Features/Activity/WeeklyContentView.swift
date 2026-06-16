@@ -146,7 +146,7 @@ struct WeeklyContentView: View {
         SyncIconButton(
             isRefreshing: viewModel.isLoading,
             disabled: viewModel.isLoading,
-            tooltip: String(localized: "weekly.refresh")
+            tooltip: String.l10n("weekly.refresh")
         ) {
             Task { await viewModel.reload() }
         }
@@ -712,11 +712,11 @@ extension WeeklyFeedSort {
     var localizedTitle: String {
         switch self {
         case .latestEventAt:
-            return String(localized: "weekly.sort.latestEvent")
+            return String.l10n("weekly.sort.latestEvent")
         case .stars:
-            return String(localized: "weekly.sort.starsDesc")
+            return String.l10n("weekly.sort.starsDesc")
         case .pushedAt:
-            return String(localized: "weekly.sort.pushedAt")
+            return String.l10n("weekly.sort.pushedAt")
         }
     }
 }

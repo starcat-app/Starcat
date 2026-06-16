@@ -96,20 +96,23 @@ struct RepoTagsSection: View {
         .buttonStyle(.borderless)
         .focusEffectDisabled()
         .popover(isPresented: $showPicker, arrowEdge: .top) {
-            if let vm = viewModel {
-                TagPickerView(
-                    allTags: vm.allTags,
-                    initiallySelected: Set(vm.assigned.map(\.id)),
-                    isLoading: vm.isLoading,
-                    onCommit: { newSelection in
-                        Task {
-                            await vm.commit(repoId: repo.id, tagIds: newSelection)
-                            showPicker = false
-                        }
-                    },
-                    onCancel: { showPicker = false }
-                )
+            Group {
+                if let vm = viewModel {
+                    TagPickerView(
+                        allTags: vm.allTags,
+                        initiallySelected: Set(vm.assigned.map(\.id)),
+                        isLoading: vm.isLoading,
+                        onCommit: { newSelection in
+                            Task {
+                                await vm.commit(repoId: repo.id, tagIds: newSelection)
+                                showPicker = false
+                            }
+                        },
+                        onCancel: { showPicker = false }
+                    )
+                }
             }
+            .appLocaleEnvironment()
         }
     }
 }
@@ -150,7 +153,7 @@ final class RepoTagsSectionViewModel {
             allTags = try await allTask
             errorMessage = nil
         } catch {
-            errorMessage = String(format: String(localized: "repoTags.error.loadFailedFormat"), error.localizedDescription)
+            errorMessage = String(format: String.l10n("repoTags.error.loadFailedFormat"), error.localizedDescription)
         }
     }
 
@@ -161,7 +164,7 @@ final class RepoTagsSectionViewModel {
             await loadFor(repoId: repoId)
             onTagsChanged?()
         } catch {
-            errorMessage = String(format: String(localized: "repoTags.error.removeFailedFormat"), error.localizedDescription)
+            errorMessage = String(format: String.l10n("repoTags.error.removeFailedFormat"), error.localizedDescription)
         }
     }
 
@@ -172,7 +175,7 @@ final class RepoTagsSectionViewModel {
             await loadFor(repoId: repoId)
             onTagsChanged?()
         } catch {
-            errorMessage = String(format: String(localized: "repoTags.error.saveFailedFormat"), error.localizedDescription)
+            errorMessage = String(format: String.l10n("repoTags.error.saveFailedFormat"), error.localizedDescription)
         }
     }
 }
@@ -227,7 +230,7 @@ struct TagPickerView: View {
 
             HStack {
                 if !selected.isEmpty {
-                    Text(String(format: String(localized: "tagPicker.selectedCountFormat"), selected.count))
+                    Text(String(format: String.l10n("tagPicker.selectedCountFormat"), selected.count))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

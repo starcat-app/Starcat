@@ -342,21 +342,21 @@ final class TrendingViewModel {
     var formattedFreshness: String? {
         guard let secs = secondsSinceLastRefresh else { return nil }
         if secs < 30 {
-            return String(localized: "trending.freshness.justNow")
+            return String.l10n("trending.freshness.justNow")
         }
         if secs < 60 {
-            return String(localized: "trending.freshness.lessThanMinute")
+            return String.l10n("trending.freshness.lessThanMinute")
         }
         let minutes = Int(secs / 60)
         if minutes < 60 {
-            return String(format: String(localized: "trending.freshness.minutesAgoFormat"), minutes)
+            return String(format: String.l10n("trending.freshness.minutesAgoFormat"), minutes)
         }
         let hours = Int(secs / 3600)
         if hours < 24 {
-            return String(format: String(localized: "trending.freshness.hoursAgoFormat"), hours)
+            return String(format: String.l10n("trending.freshness.hoursAgoFormat"), hours)
         }
         let days = Int(secs / 86400)
-        return String(format: String(localized: "trending.freshness.daysAgoFormat"), days)
+        return String(format: String.l10n("trending.freshness.daysAgoFormat"), days)
     }
 
     /// 请求 AI 摘要
@@ -369,9 +369,9 @@ final class TrendingViewModel {
         // 临时模拟：2 秒后返回占位文本
         try? await Task.sleep(nanoseconds: 2_000_000_000)
 
-        let language = repo.language ?? String(localized: "trending.summary.openSource")
+        let language = repo.language ?? String.l10n("trending.summary.openSource")
         summaryCache[repo.fullName] = String(
-            format: String(localized: "trending.summary.placeholderFormat"),
+            format: String.l10n("trending.summary.placeholderFormat"),
             language
         )
 

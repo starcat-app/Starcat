@@ -91,12 +91,22 @@ extension String {
     /// - Returns: 当前 LocaleStore 选择对应 lproj 中的翻译字符串;找不到则兜底走
     ///   `Bundle.main.localizedString(...)`(即 LocalizedBundle ISA swap 路径)。
     static func l10n(_ key: String) -> String {
+        l10n(key, defaultValue: nil)
+    }
+
+    /// 带 `defaultValue` 兜底的重载:当 key 在 xcstrings 中找不到时返回 `defaultValue`,
+    /// 而非直接返回 key 字符串。等价于 `String(localized: key, defaultValue: ...)`。
+    ///
+    /// - Parameters:
+    ///   - key: String Catalog 中的 key。
+    ///   - defaultValue: key 缺失时的兜底字符串(传给 `Bundle.localizedString` 的 `value:`)。
+    static func l10n(_ key: String, defaultValue: String?) -> String {
         let raw = UserDefaults.standard.string(forKey: "AppLocaleOverride") ?? "system"
 
         // system 模式:不强制 locale,走 Bundle.main 默认查表(可能被 LocalizedBundle
         // ISA swap 拦到 → 但 swap 在 .system 分支也是直接 super,所以等价于系统行为)。
         guard raw != "system" else {
-            return Bundle.main.localizedString(forKey: key, value: nil, table: nil)
+            return Bundle.main.localizedString(forKey: key, value: defaultValue, table: nil)
         }
 
         // raw 由 AppLocale rawValue 严格控制为 "en" / "zh-Hans"。
@@ -104,8 +114,8 @@ extension String {
         // 或加载子 bundle 失败 → 退化为 Bundle.main 的默认查表行为。
         guard let path = Bundle.main.path(forResource: raw, ofType: "lproj"),
               let bundle = Bundle(path: path) else {
-            return Bundle.main.localizedString(forKey: key, value: nil, table: nil)
+            return Bundle.main.localizedString(forKey: key, value: defaultValue, table: nil)
         }
-        return bundle.localizedString(forKey: key, value: nil, table: nil)
+        return bundle.localizedString(forKey: key, value: defaultValue, table: nil)
     }
 }

@@ -85,6 +85,7 @@ struct SidebarHeaderView: View {
         .fixedSize(horizontal: false, vertical: true)
         .sheet(isPresented: $showLoginSheet) {
             GithubAuthView()
+                .appLocaleEnvironment()
         }
         // HOM-173：分享卡 sheet。仅在登录态可触发（按钮本身只在 authenticated 行渲染）。
         // 闭包里取 user 是为了避开 SwiftUI sheet 闭包捕获 outer state 的延迟问题——
@@ -435,21 +436,21 @@ struct SidebarHeaderView: View {
             StatCell(
                 value: viewModel.totalCount,
                 label: "sidebar.stats.starred",
-                helpText: String(localized: "sidebar.openGithubStarred"),
+                helpText: String.l10n("sidebar.openGithubStarred"),
                 url: GitHubURLs.userStarsTab(login: user.login)
             )
             Divider().frame(height: 26)
             StatCell(
                 value: user.followers ?? 0,
                 label: "sidebar.stats.followers",
-                helpText: String(localized: "sidebar.openGithubFollowers"),
+                helpText: String.l10n("sidebar.openGithubFollowers"),
                 url: GitHubURLs.userFollowersTab(login: user.login)
             )
             Divider().frame(height: 26)
             StatCell(
                 value: user.following ?? 0,
                 label: "sidebar.stats.following",
-                helpText: String(localized: "sidebar.openGithubFollowing"),
+                helpText: String.l10n("sidebar.openGithubFollowing"),
                 url: GitHubURLs.userFollowingTab(login: user.login)
             )
         }
