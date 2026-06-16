@@ -78,6 +78,70 @@ struct AppSettingsTests {
         #expect(s2.lastActivityCategoryRaw == "release")
     }
 
+    // MARK: - 快捷键偏好
+
+    @Test("快捷键: 默认 AI 用 Return 发送，全局搜索为 Command+K")
+    func shortcutDefaults() {
+        let settings = AppSettings(defaults: makeIsolatedDefaults())
+        #expect(settings.aiChatRequiresCommandReturn == false)
+        #expect(settings.globalSearchShortcut == .globalSearchDefault)
+    }
+
+    @Test("快捷键: AI 发送方式与全局搜索组合应持久化")
+    func shortcutSettingsPersist() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        settings.aiChatRequiresCommandReturn = true
+        settings.globalSearchShortcut = .init(
+            key: "p",
+            command: true,
+            option: true,
+            control: false,
+            shift: false
+        )
+
+        let restored = AppSettings(defaults: defaults)
+        #expect(restored.aiChatRequiresCommandReturn == true)
+        #expect(restored.globalSearchShortcut.displayText == "⌥⌘P")
+    }
+
+    @Test("快捷键: 损坏或不合法的持久化值回退 Command+K")
+    func invalidShortcutFallsBack() throws {
+        let defaults = makeIsolatedDefaults()
+        let invalid = KeyboardShortcutConfiguration(
+            key: "x",
+            command: false,
+            option: false,
+            control: false,
+            shift: false
+        )
+        let data = try JSONEncoder().encode(invalid)
+        defaults.set(
+            String(decoding: data, as: UTF8.self),
+            forKey: AppSettings.Keys.globalSearchShortcut
+        )
+
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.globalSearchShortcut == .globalSearchDefault)
+    }
+
+    @Test("快捷键: 普通字符无修饰键非法，应用内固定组合不可覆盖")
+    func shortcutValidation() {
+        let plainK = KeyboardShortcutConfiguration(
+            key: "k", command: false, option: false, control: false, shift: false
+        )
+        let commandI = KeyboardShortcutConfiguration(
+            key: "i", command: true, option: false, control: false, shift: false
+        )
+        let shiftOnlyK = KeyboardShortcutConfiguration(
+            key: "k", command: false, option: false, control: false, shift: true
+        )
+        #expect(plainK.validationError == .missingModifier)
+        #expect(shiftOnlyK.validationError == .missingModifier)
+        #expect(commandI.validationError == .reserved)
+        #expect(KeyboardShortcutConfiguration.globalSearchDefault.validationError == nil)
+    }
+
     // MARK: - AI BYOK 设置
 
     @Test("AI: 默认使用 OpenAI-compatible + keyword 搜索")

@@ -48,9 +48,9 @@ enum SemanticSearchError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return "请先在 Settings → AI 填写 API Key，再使用 AI 语义搜索。"
+            return String(localized: "ai.semanticSearch.error.missingAPIKey")
         case .noVectors:
-            return "没有可用的语义索引。"
+            return String(localized: "ai.semanticSearch.error.noVectors")
         }
     }
 }
@@ -462,20 +462,20 @@ final class SemanticSearchService {
         let scoreText = "\(Int((max(0, min(displayScore, 1)) * 100).rounded()))%"
         let lowerQuery = query.localizedLowercase
         if repo.fullName.localizedLowercase.contains(lowerQuery) {
-            return "仓库名直接相关，语义相似度 \(scoreText)"
+            return String(format: String(localized: "ai.semanticSearch.reason.nameMatchFormat"), scoreText)
         }
         if let description = repo.description, description.localizedLowercase.contains(lowerQuery) {
-            return "描述包含相关概念，语义相似度 \(scoreText)"
+            return String(format: String(localized: "ai.semanticSearch.reason.descriptionMatchFormat"), scoreText)
         }
         if let topics = repo.topics, topics.localizedLowercase.contains(lowerQuery) {
-            return "Topics 命中相关方向，语义相似度 \(scoreText)"
+            return String(format: String(localized: "ai.semanticSearch.reason.topicsMatchFormat"), scoreText)
         }
         if ftsHit {
-            return "笔记 / 字段关键词命中，语义相似度 \(scoreText)"
+            return String(format: String(localized: "ai.semanticSearch.reason.notesMatchFormat"), scoreText)
         }
         // literalHit == false && ftsHit == false：纯语义召回
         _ = literalHit
-        return "AI 向量相似度 \(scoreText)"
+        return String(format: String(localized: "ai.semanticSearch.reason.vectorOnlyFormat"), scoreText)
     }
 }
 

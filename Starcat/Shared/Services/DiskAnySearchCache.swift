@@ -46,9 +46,9 @@ enum DiskAnySearchCacheError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .applicationSupportUnavailable:
-            return "无法定位搜索缓存目录，请重试或重启应用。"
+            return String(localized: "cache.anySearch.error.applicationSupportUnavailable")
         case .unsafeKey(let value):
-            return "搜索缓存键包含非法字符：\(value)。"
+            return String(format: String(localized: "cache.anySearch.error.unsafeKeyFormat"), value)
         }
     }
 }

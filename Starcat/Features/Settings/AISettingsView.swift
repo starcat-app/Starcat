@@ -192,19 +192,21 @@ struct AISettingsTab: View {
         // 用 `pendingDeleteProfileID` 而非整个 profile 作为状态源，避免数组刷新
         // 期间引用悬空（见 `pendingDeleteProfileID` 注释）。
         .confirmationDialog(
-            "确认删除服务商",
+            "settings.ai.provider.deleteConfirm.title",
             isPresented: deleteConfirmationBinding,
             titleVisibility: .visible,
             presenting: pendingDeleteProfile
         ) { profile in
-            Button("删除「\(profile.displayName)」", role: .destructive) {
+            Button(role: .destructive) {
                 deleteProfile(id: profile.id)
+            } label: {
+                Text("settings.ai.provider.deleteConfirm.confirmFormat \(profile.displayName)")
             }
-            Button("取消", role: .cancel) {
+            Button("settings.common.cancel", role: .cancel) {
                 pendingDeleteProfileID = nil
             }
         } message: { profile in
-            Text("删除「\(profile.displayName)」后无法恢复。")
+            Text("settings.ai.provider.deleteConfirm.messageFormat \(profile.displayName)")
         }
         // HOM-68 v3 (2026-06-15)：AI 代码上下文产物管理从存储 Tab 搬过来后,
         // 进入 AI Tab 时强制重扫描产物目录,让用户刚生成的产物立即可见。
@@ -284,11 +286,11 @@ struct AISettingsTab: View {
                     // zero state 文案补充行动指引——之前只说「暂无已验证服务商」是
                     // 状态描述，用户不知道下一步要做什么。改成「...点右侧 + 新增」
                     // 让新用户直接看到入口。
-                    Text("暂无已验证服务商，点击右侧 + 新增")
+                    Text("settings.ai.provider.empty")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    Picker("服务商配置", selection: selectedProfileBinding) {
+                    Picker("settings.ai.provider.pickerLabel", selection: selectedProfileBinding) {
                         ForEach(verifiedProfiles) { profile in
                             Label {
                                 Text(profile.displayName)
@@ -310,10 +312,10 @@ struct AISettingsTab: View {
                         beginDraft(provider: .openAICompatible)
                     }
                 } label: {
-                    Label("新增", systemImage: "plus")
+                    Label("settings.ai.provider.add", systemImage: "plus")
                         .labelStyle(.iconOnly)
                 }
-                .help("新增服务商")
+                .help("settings.ai.provider.addHelp")
                 .disabled(draftProfile != nil)
 
                 Button(role: .destructive) {
@@ -321,10 +323,10 @@ struct AISettingsTab: View {
                     // dialog 内点「删除」才真正执行 `deleteProfile(id:)`。
                     pendingDeleteProfileID = selectedProfileID
                 } label: {
-                    Label("删除", systemImage: "trash")
+                    Label("settings.ai.provider.delete", systemImage: "trash")
                         .labelStyle(.iconOnly)
                 }
-                .help("删除当前服务商")
+                .help("settings.ai.provider.deleteHelp")
                 .disabled(selectedProfile == nil)
             }
 
@@ -389,10 +391,10 @@ struct AISettingsTab: View {
                         if isTestingProfileID == profile.id {
                             HStack(spacing: 4) {
                                 ProgressView().controlSize(.small)
-                                Text("测试并获取模型")
+                                Text("settings.ai.provider.testButton")
                             }
                         } else {
-                            Label("测试并获取模型", systemImage: "network")
+                            Label("settings.ai.provider.testButton", systemImage: "network")
                         }
                     }
                     .disabled(isTestingProfileID != nil || !canTest(profile))
@@ -405,9 +407,9 @@ struct AISettingsTab: View {
                 }
             }
         } header: {
-            Text("AI 服务商")
+            Text("settings.ai.provider.sectionTitle")
         } footer: {
-            Text("测试会调用模型列表接口；Ollama / LM Studio 等本地服务 API Key 可留空；如果服务商返回的模型能力不完整，可在下方手动修正 Chat / Embedding 类型。")
+            Text("settings.ai.provider.sectionFooter")
         }
     }
 
@@ -425,7 +427,7 @@ struct AISettingsTab: View {
                 VStack(spacing: 14) {
                     if let profile = selectedProfile {
                         if profile.models.isEmpty {
-                            Text("暂无模型。点击“测试并获取模型”，或在默认设置中使用自定义模型名。")
+                            Text("settings.ai.discoveredModels.empty")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -440,7 +442,7 @@ struct AISettingsTab: View {
                     }
                 }
             } label: {
-                disclosureLabel("已发现模型", isExpanded: $isDiscoveredModelsExpanded)
+                disclosureLabel("settings.ai.discoveredModels.title", isExpanded: $isDiscoveredModelsExpanded)
             }
         }
     }
@@ -458,7 +460,7 @@ struct AISettingsTab: View {
         Section {
             DisclosureGroup(isExpanded: $isTaskModelsExpanded) {
                 VStack(spacing: 14) {
-                    Picker("任务", selection: $taskModelTask) {
+                    Picker("settings.ai.task.pickerLabel", selection: $taskModelTask) {
                         ForEach(AIModelTask.allCases) { task in
                             Text(task.displayName).tag(task)
                         }
@@ -470,7 +472,7 @@ struct AISettingsTab: View {
                     taskModelRow(taskModelTask)
                 }
             } label: {
-                disclosureLabel("模型配置", isExpanded: $isTaskModelsExpanded)
+                disclosureLabel("settings.ai.taskModels.title", isExpanded: $isTaskModelsExpanded)
             }
         }
     }
@@ -517,9 +519,9 @@ struct AISettingsTab: View {
                 .labelsHidden()
                 .frame(maxWidth: .infinity)
 
-                Picker("模型", selection: taskModelBinding(task)) {
+                Picker("settings.ai.task.modelLabel", selection: taskModelBinding(task)) {
                     if availableModels.isEmpty {
-                        Text("（无可用模型，请测试并获取模型，或勾选「自定义」）")
+                        Text("settings.ai.task.noAvailableModel")
                             .tag("")
                     } else {
                         ForEach(availableModels) { model in
@@ -530,13 +532,13 @@ struct AISettingsTab: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: .infinity)
 
-                Toggle("自定义", isOn: taskCustomEnabledBinding(task))
+                Toggle("settings.ai.task.customToggle", isOn: taskCustomEnabledBinding(task))
                     .toggleStyle(.checkbox)
                     .fixedSize()
             }
 
             if taskConfig(task).useCustomModel {
-                TextField("自定义模型名", text: taskCustomModelBinding(task))
+                TextField("settings.ai.task.customModelPlaceholder", text: taskCustomModelBinding(task))
                     .textFieldStyle(.roundedBorder)
                     .disableAutocorrection(true)
             }
@@ -575,9 +577,9 @@ struct AISettingsTab: View {
         let rowHeight: CGFloat = 52
 
         VStack(spacing: 0) {
-            providerInputRow(label: "显示名称", labelWidth: labelWidth, columnSpacing: columnSpacing, rowHeight: rowHeight) {
+            providerInputRow(label: "settings.ai.provider.displayName", labelWidth: labelWidth, columnSpacing: columnSpacing, rowHeight: rowHeight) {
                 ProviderSingleLineTextField(text: editableProfileTextBinding(keyPath: \.displayName))
-                    .accessibilityLabel("显示名称")
+                    .accessibilityLabel("settings.ai.provider.displayName")
             }
             Divider()
             providerInputRow(label: "Base URL", labelWidth: labelWidth, columnSpacing: columnSpacing, rowHeight: rowHeight) {
@@ -623,14 +625,14 @@ struct AISettingsTab: View {
     ///
     /// 用 withAnimation 让展开/折叠跟 chevron 旋转走同一条动画曲线，避免"点
     /// 标题瞬切、点 chevron 平滑"的不一致体感。
-    private func disclosureLabel(_ title: String, isExpanded: Binding<Bool>) -> some View {
+    private func disclosureLabel(_ titleKey: LocalizedStringKey, isExpanded: Binding<Bool>) -> some View {
         Button {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                 isExpanded.wrappedValue.toggle()
             }
         } label: {
             HStack {
-                Text(title)
+                Text(titleKey)
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
@@ -663,7 +665,7 @@ struct AISettingsTab: View {
             DisclosureGroup(isExpanded: $isAutoTidyExpanded) {
                 autoTidyContent
             } label: {
-                disclosureLabel(String(localized: "settings.autoTidy.section"), isExpanded: $isAutoTidyExpanded)
+                disclosureLabel("settings.autoTidy.section", isExpanded: $isAutoTidyExpanded)
             }
         }
     }
@@ -921,7 +923,7 @@ struct AISettingsTab: View {
             DisclosureGroup(isExpanded: $isPromptExpanded) {
                 VStack(spacing: 14) {
                     HStack(spacing: 12) {
-                        Picker("任务", selection: $promptTask) {
+                        Picker("settings.ai.prompt.task.pickerLabel", selection: $promptTask) {
                             ForEach([AIModelTask.summary, .tags, .embedding, .translation]) { task in
                                 Text(task.displayName).tag(task)
                             }
@@ -937,7 +939,7 @@ struct AISettingsTab: View {
                         } label: {
                             Image(systemName: "arrow.counterclockwise")
                         }
-                        .help("恢复 \(promptTask.displayName) 的默认 Prompt")
+                        .help(Text("settings.ai.prompt.restoreHelpFormat \(promptTask.displayName)"))
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -972,7 +974,7 @@ struct AISettingsTab: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } label: {
-                disclosureLabel("Prompt", isExpanded: $isPromptExpanded)
+                disclosureLabel("settings.ai.prompt.title", isExpanded: $isPromptExpanded)
             }
         }
     }
@@ -1016,7 +1018,7 @@ struct AISettingsTab: View {
                 }
                 .padding(.vertical, 4)
             } label: {
-                disclosureLabel(String(localized: "settings.aiIndex.section"), isExpanded: $isAIIndexExpanded)
+                disclosureLabel("settings.aiIndex.section", isExpanded: $isAIIndexExpanded)
             }
         }
     }
@@ -1115,7 +1117,7 @@ struct AISettingsTab: View {
             }
             .padding(.vertical, 4)
         } label: {
-            disclosureLabel(String(localized: "settings.aiIndex.advanced"), isExpanded: $isAIIndexAdvancedExpanded)
+            disclosureLabel("settings.aiIndex.advanced", isExpanded: $isAIIndexAdvancedExpanded)
         }
     }
 
@@ -1346,7 +1348,7 @@ struct AISettingsTab: View {
                 }
                 .padding(.vertical, 4)
             } label: {
-                disclosureLabel(String(localized: "ai.context.settings.title"), isExpanded: $isRepoContextExpanded)
+                disclosureLabel("ai.context.settings.title", isExpanded: $isRepoContextExpanded)
             }
         }
     }
@@ -1390,7 +1392,7 @@ struct AISettingsTab: View {
             Text("ai.context.settings.tier1MaxLines")
                 .font(.callout)
             Spacer()
-            Text("\(settings.aiRepoContextTier1MaxLines) 行")
+            Text("ai.context.settings.tier1MaxLinesValueFormat \(settings.aiRepoContextTier1MaxLines)")
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 60, alignment: .trailing)
@@ -1662,7 +1664,7 @@ struct AISettingsTab: View {
     private var privacySection: some View {
         Section {
             Label {
-                Text("Starcat 不经过自建服务器转发 AI 请求。摘要、推荐标签和语义搜索会把必要的仓库元数据 / README 摘要发送给你选择的 Provider。")
+                Text("settings.ai.privacy.notice")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } icon: {

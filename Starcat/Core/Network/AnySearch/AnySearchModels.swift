@@ -169,39 +169,49 @@ enum AnySearchError: Error, LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .disabled: return "AnySearch 未启用"
-        case .invalidURL: return "AnySearch URL 无效"
+        case .disabled:
+            return String(localized: "anySearch.error.disabled")
+        case .invalidURL:
+            return String(localized: "anySearch.error.invalidURL")
         case .invalidRequest(let message):
-            return "请求参数无效：\(message)"
+            return String(format: String(localized: "anySearch.error.invalidRequestFormat"), message)
         case .invalidAPIKey(let reason):
             switch reason {
-            case .invalid: return "AnySearch API Key 无效或已被禁用"
-            case .malformedHeader: return "AnySearch API Key 头格式错误"
-            case .expired: return "AnySearch API Key 已过期"
+            case .invalid: return String(localized: "anySearch.error.apiKey.invalid")
+            case .malformedHeader: return String(localized: "anySearch.error.apiKey.malformedHeader")
+            case .expired: return String(localized: "anySearch.error.apiKey.expired")
             }
         case .accountDisabled:
-            return "AnySearch 账号已禁用，请联系 support@anysearch.com"
+            return String(localized: "anySearch.error.accountDisabled")
         case .capabilityNotEnabled(let message):
-            return "该能力未对当前 API Key 开放：\(message)"
+            return String(format: String(localized: "anySearch.error.capabilityNotEnabledFormat"), message)
         case .anonymousQuotaExhausted:
-            return "AnySearch 匿名免费额度已用尽，绑定 API Key 可继续使用"
+            return String(localized: "anySearch.error.anonymousQuotaExhausted")
         case .keyQuotaExhausted(let limit, let used):
             if let limit, let used {
-                return "AnySearch 配额已用尽（\(used)/\(limit)），请升级套餐或等待下个计费周期"
+                return String(format: String(localized: "anySearch.error.keyQuotaExhaustedFormat"), used, limit)
             }
-            return "AnySearch 配额已用尽，请升级套餐或等待下个计费周期"
+            return String(localized: "anySearch.error.keyQuotaExhausted")
         case .rateLimited(_, let retryAfter):
             if let retryAfter {
-                return "AnySearch 请求过于频繁，\(retryAfter) 秒后重试"
+                return String(format: String(localized: "anySearch.error.rateLimitedFormat"), retryAfter)
             }
-            return "AnySearch 请求过于频繁，请稍候重试"
+            return String(localized: "anySearch.error.rateLimited")
         case .serviceUnavailable(let message):
-            return message.map { "AnySearch 服务暂时异常：\($0)" } ?? "AnySearch 服务暂时异常，请稍后重试"
-        case .server(let code): return "AnySearch 服务异常（HTTP \(code)）"
-        case .invalidResponse: return "AnySearch 返回了无效响应"
-        case .api(_, let message): return message
-        case .decoding: return "AnySearch 响应解析失败"
-        case .transport(let message): return message
+            if let message {
+                return String(format: String(localized: "anySearch.error.serviceUnavailableFormat"), message)
+            }
+            return String(localized: "anySearch.error.serviceUnavailable")
+        case .server(let code):
+            return String(format: String(localized: "anySearch.error.serverFormat"), code)
+        case .invalidResponse:
+            return String(localized: "anySearch.error.invalidResponse")
+        case .api(_, let message):
+            return message
+        case .decoding:
+            return String(localized: "anySearch.error.decoding")
+        case .transport(let message):
+            return message
         }
     }
 }

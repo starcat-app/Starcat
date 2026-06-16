@@ -103,15 +103,15 @@ enum AIClientError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return "请先填写 API Key。"
+            return String(localized: "ai.client.error.missingAPIKey")
         case .invalidBaseURL(let url):
-            return "Base URL 无效：\(url)"
+            return String(format: String(localized: "ai.client.error.invalidBaseURLFormat"), url)
         case .emptyResponse:
-            return "AI 服务返回了空内容。"
+            return String(localized: "ai.client.error.emptyResponse")
         case .responseTruncated:
-            return "AI 服务输出达到最大 token 限制，请调大最大 token 或缩短输入内容。"
+            return String(localized: "ai.client.error.responseTruncated")
         case .modelListRequestFailed(let message):
-            return "获取模型列表失败：\(message)"
+            return String(format: String(localized: "ai.client.error.modelListRequestFailedFormat"), message)
         }
     }
 }

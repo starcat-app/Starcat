@@ -87,7 +87,9 @@ final class CodeFlowViewModel {
             }
             await checkSelectedBranchVersion()
         } catch {
-            versionStatus = .unavailable("分支列表加载失败：\(error.localizedDescription)")
+            versionStatus = .unavailable(
+                String(format: String(localized: "codeFlow.runtime.branchLoadFailedFormat"), error.localizedDescription)
+            )
         }
     }
 
@@ -139,7 +141,7 @@ final class CodeFlowViewModel {
 
                 let branch = try await runStep(
                     id: "resolveRevision",
-                    runningDetail: "正在解析 \(selectedBranchName) 最新提交"
+                    runningDetail: String(format: String(localized: "codeFlow.runtime.resolveRevisionFormat"), selectedBranchName)
                 ) {
                     try await runner.resolveBranch(repo: repo, name: selectedBranchName)
                 } successDetail: { "\($0.name) · \($0.shortSHA)" }
@@ -148,16 +150,20 @@ final class CodeFlowViewModel {
                 state = .downloading
                 let archive = try await runStep(
                     id: "download",
-                    runningDetail: "正在获取固定 commit ZIP"
+                    runningDetail: String(localized: "codeFlow.runtime.downloadingZip")
                 ) {
                     try await runner.archiveIfNeeded(repo: repo, commitSHA: branch.commitSHA)
-                } successDetail: {
-                    $0.wasDownloaded ? "GitHub ZIP 下载完成 · \(Self.byteText($0.bytes))" : "命中共享源码快照 · \(Self.byteText($0.bytes))"
+                } successDetail: { archive in
+                    let bytes = Self.byteText(archive.bytes)
+                    if archive.wasDownloaded {
+                        return String(format: String(localized: "codeFlow.runtime.downloadedZipFormat"), bytes)
+                    }
+                    return String(format: String(localized: "codeFlow.runtime.cachedZipFormat"), bytes)
                 }
 
                 try Task.checkCancellation()
                 state = .preparing
-                setStep(id: "generatePage", status: .running, detail: "正在注入 ZIP 并生成页面")
+                setStep(id: "generatePage", status: .running, detail: String(localized: "codeFlow.runtime.injectingZip"))
                 let generateStartedAt = Date()
                 let persistedSteps = successfulMetadataSteps(excluding: ["generatePage", "openBrowser", "browserAnalysis"])
                 let project = try runner.makeVisualizationPage(
@@ -171,19 +177,19 @@ final class CodeFlowViewModel {
                 setStep(
                     id: "generatePage",
                     status: .succeeded,
-                    detail: "HTML 与 metadata.json 写入完成",
+                    detail: String(localized: "codeFlow.runtime.pageWritten"),
                     duration: CodeFlowRunner.milliseconds(from: generateStartedAt)
                 )
 
                 try Task.checkCancellation()
                 state = .opening
                 let openStartedAt = Date()
-                setStep(id: "openBrowser", status: .running, detail: "正在交给系统默认浏览器")
+                setStep(id: "openBrowser", status: .running, detail: String(localized: "codeFlow.runtime.handingToBrowser"))
                 guard try runner.openVisualization(project.pageURL) else {
                     throw NSError(
                         domain: "Starcat.CodeFlow",
                         code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "默认浏览器无法打开 CodeFlow 页面。"]
+                        userInfo: [NSLocalizedDescriptionKey: String(localized: "codeFlow.error.browserOpenFailed")]
                     )
                 }
                 setStep(
@@ -192,7 +198,7 @@ final class CodeFlowViewModel {
                     detail: project.pageURL.path,
                     duration: CodeFlowRunner.milliseconds(from: openStartedAt)
                 )
-                setStep(id: "browserAnalysis", status: .handedOff, detail: "已交给 JSZip 解压、分析和渲染")
+                setStep(id: "browserAnalysis", status: .handedOff, detail: String(localized: "codeFlow.runtime.handedToBrowser"))
 
                 let finalProject = try runner.updateExecution(
                     project: project,
@@ -216,7 +222,7 @@ final class CodeFlowViewModel {
         state = .opening
         do {
             guard try runner.openVisualization(pageURL) else {
-                state = .failed(message: "默认浏览器无法打开 CodeFlow 页面。")
+                state = .failed(message: String(localized: "codeFlow.error.browserOpenFailed"))
                 return
             }
             state = .succeeded
@@ -262,7 +268,9 @@ final class CodeFlowViewModel {
                 ? .current
                 : .updateAvailable(generated: String(generatedSHA.prefix(7)), latest: latest.shortSHA)
         } catch {
-            versionStatus = .unavailable("暂时无法检查更新：\(error.localizedDescription)")
+            versionStatus = .unavailable(
+                String(format: String(localized: "codeFlow.version.checkFailedFormat"), error.localizedDescription)
+            )
         }
     }
 
@@ -346,12 +354,39 @@ final class CodeFlowViewModel {
     }
 
     private static func emptySteps() -> [RuntimeStep] {
-        [
-            RuntimeStep(id: "resolveRevision", title: "解析所选分支 HEAD", detail: "等待执行", status: .pending),
-            RuntimeStep(id: "download", title: "获取固定 commit ZIP", detail: "等待执行", status: .pending),
-            RuntimeStep(id: "generatePage", title: "生成并保存 CodeFlow 页面", detail: "等待执行", status: .pending),
-            RuntimeStep(id: "openBrowser", title: "默认浏览器打开生成页", detail: "等待执行", status: .pending),
-            RuntimeStep(id: "browserAnalysis", title: "CodeFlow 浏览器端处理", detail: "等待交接", status: .pending)
+        let pendingDetail = String(localized: "codeFlow.step.detail.pending")
+        let handoffDetail = String(localized: "codeFlow.step.detail.awaitingHandoff")
+        return [
+            RuntimeStep(
+                id: "resolveRevision",
+                title: String(localized: "codeFlow.step.resolveRevision.title"),
+                detail: pendingDetail,
+                status: .pending
+            ),
+            RuntimeStep(
+                id: "download",
+                title: String(localized: "codeFlow.step.download.title"),
+                detail: pendingDetail,
+                status: .pending
+            ),
+            RuntimeStep(
+                id: "generatePage",
+                title: String(localized: "codeFlow.step.generatePage.title"),
+                detail: pendingDetail,
+                status: .pending
+            ),
+            RuntimeStep(
+                id: "openBrowser",
+                title: String(localized: "codeFlow.step.openBrowser.title"),
+                detail: pendingDetail,
+                status: .pending
+            ),
+            RuntimeStep(
+                id: "browserAnalysis",
+                title: String(localized: "codeFlow.step.browserAnalysis.title"),
+                detail: handoffDetail,
+                status: .pending
+            )
         ]
     }
 

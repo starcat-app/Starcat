@@ -5,7 +5,7 @@
 //  AI 助手窗口底部固定的输入条（HOM-150 / Y9 增强 / 2026-06-15 多行毛玻璃重写）。
 //
 //  设计要点：
-//  - AppKit NSTextView + 圆角毛玻璃容器：默认 1 行高、自动撑到 4 行、超出内部滚动；
+//  - AppKit NSTextView + 圆角毛玻璃容器：默认 2 行高、自动撑到 4 行、超出内部滚动；
 //  - Return 直接发送 / Shift+Return 换行（主流 ChatGPT / Claude 行为）；
 //  - 发送过程禁用编辑器，避免并发触发 stream；
 //  - 输入为空或正在发送时按钮 disabled，按钮的颜色 / 透明度由 SwiftUI 系统行为提供
@@ -50,6 +50,9 @@ struct AIChatInputView: View {
     /// 普通字符输入不会再让窗口根视图执行属性图更新；只有空/非空切换才刷新发送按钮。
     @State private var editorState = AIChatTextEditorState()
     @State private var hasText = false
+    /// `NSScrollView` 的 intrinsic height 在 SwiftUI 弹性 VStack 中不是强约束，必须
+    /// 显式锁定 frame。默认值按系统正文 2 行计算，避免首帧先撑满再回缩。
+    @State private var editorHeight = AIChatEditorMetrics.defaultHeight
 
     /// 外部"草稿回填"通道（如点击"编辑历史问题"把旧内容塞回输入框）。
     /// 子组件捕获后写回内部 `text` 并把 binding 置 nil，单次生效不会重复覆盖。
@@ -111,7 +114,7 @@ struct AIChatInputView: View {
 
     // MARK: - 文本编辑区
 
-    /// AppKit 多行文本编辑器，软上限 1-4 行。
+    /// AppKit 多行文本编辑器，默认 2 行、软上限 4 行。
     ///
     /// 关键技术点：
     /// - 文本和 selection 全部留在 `NSTextView`，每个按键不写 SwiftUI `@State`；
@@ -123,11 +126,19 @@ struct AIChatInputView: View {
             placeholder: String(localized: "ai.assistant.input.placeholder"),
             isEnabled: !isSending,
             isFocused: focus,
+            requiresCommandReturn: settings.aiChatRequiresCommandReturn,
             onEmptyStateChange: { isEmpty in
                 hasText = !isEmpty
             },
+            onHeightChange: { height in
+                guard abs(editorHeight - height) >= 0.5 else { return }
+                editorHeight = height
+            },
             onSubmit: trySend
         )
+        // NSViewRepresentable 放在可扩展 VStack 中时，AppKit intrinsicContentSize 只
+        // 参与优先级协商，不能阻止父容器把 NSScrollView 拉满。显式高度才是边界。
+        .frame(height: editorHeight)
         .padding(.horizontal, 14)
         .padding(.top, 8)
         .padding(.bottom, 4)
@@ -328,7 +339,9 @@ private struct AIChatNativeTextEditor: NSViewRepresentable {
     let placeholder: String
     let isEnabled: Bool
     let isFocused: FocusState<Bool>.Binding
+    let requiresCommandReturn: Bool
     let onEmptyStateChange: (Bool) -> Void
+    let onHeightChange: (CGFloat) -> Void
     let onSubmit: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -362,6 +375,7 @@ private struct AIChatNativeTextEditor: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
+        scrollView.onHeightChange = onHeightChange
         scrollView.connect(textView: textView)
         state.connect(textView)
         return scrollView
@@ -373,15 +387,18 @@ private struct AIChatNativeTextEditor: NSViewRepresentable {
 
         textView.isEditable = isEnabled
         textView.isSelectable = isEnabled
+        scrollView.onHeightChange = onHeightChange
         state.connect(textView)
 
+        // FocusState 在 NSViewRepresentable 更新周期里可能比 AppKit first responder
+        // 慢一拍：首字符让发送按钮 enabled、或输入跨行改变高度时都会触发这里重跑。
+        // 若把瞬时 false 解释为“主动失焦”，就会中断英文连续输入和中文 marked text。
+        // 因此该 binding 只承担外部“请求聚焦”；真实失焦由 textDidEndEditing 反向同步。
         if isFocused.wrappedValue, textView.window?.firstResponder !== textView {
             DispatchQueue.main.async {
                 guard isFocused.wrappedValue else { return }
                 textView.window?.makeFirstResponder(textView)
             }
-        } else if !isFocused.wrappedValue, textView.window?.firstResponder === textView {
-            textView.window?.makeFirstResponder(nil)
         }
     }
 
@@ -419,7 +436,14 @@ private struct AIChatNativeTextEditor: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             guard commandSelector == #selector(NSResponder.insertNewline(_:)) else { return false }
-            if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+            let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+            if parent.requiresCommandReturn {
+                if modifiers.contains(.command) {
+                    parent.onSubmit()
+                } else {
+                    textView.insertNewlineIgnoringFieldEditor(nil)
+                }
+            } else if modifiers.contains(.shift) {
                 textView.insertNewlineIgnoringFieldEditor(nil)
             } else {
                 parent.onSubmit()
@@ -429,10 +453,23 @@ private struct AIChatNativeTextEditor: NSViewRepresentable {
     }
 }
 
-/// 只在文本真实跨行时改变 intrinsic height；1～4 行之外由内部滚动承接。
+/// 输入框高度常量集中在这里，SwiftUI 首帧与 AppKit 后续测量必须使用同一公式。
+private enum AIChatEditorMetrics {
+    static let minimumLines: CGFloat = 2
+    static let maximumLines: CGFloat = 4
+    static let verticalInset: CGFloat = 4
+
+    static var defaultHeight: CGFloat {
+        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        return ceil(NSLayoutManager().defaultLineHeight(for: font) * minimumLines + verticalInset)
+    }
+}
+
+/// 默认 2 行，只在文本真实跨行时改变高度；4 行之外由内部滚动承接。
 private final class AIChatIntrinsicScrollView: NSScrollView {
     private weak var managedTextView: NSTextView?
-    private var measuredHeight: CGFloat = 24
+    private var measuredHeight = AIChatEditorMetrics.defaultHeight
+    var onHeightChange: ((CGFloat) -> Void)?
 
     override var intrinsicContentSize: NSSize {
         NSSize(width: NSView.noIntrinsicMetric, height: measuredHeight)
@@ -461,7 +498,9 @@ private final class AIChatIntrinsicScrollView: NSScrollView {
         layoutManager.ensureLayout(for: textContainer)
         let lineHeight = layoutManager.defaultLineHeight(for: textView.font ?? .systemFont(ofSize: 13))
         let contentHeight = ceil(layoutManager.usedRect(for: textContainer).height + textView.textContainerInset.height * 2)
-        let nextHeight = min(max(contentHeight, lineHeight + 4), lineHeight * 4 + 4)
+        let minimumHeight = lineHeight * AIChatEditorMetrics.minimumLines + AIChatEditorMetrics.verticalInset
+        let maximumHeight = lineHeight * AIChatEditorMetrics.maximumLines + AIChatEditorMetrics.verticalInset
+        let nextHeight = min(max(contentHeight, minimumHeight), maximumHeight)
         let documentHeight = max(contentHeight, nextHeight)
         if abs(textView.frame.height - documentHeight) >= 0.5 {
             textView.setFrameSize(NSSize(width: textView.frame.width, height: documentHeight))
@@ -469,6 +508,10 @@ private final class AIChatIntrinsicScrollView: NSScrollView {
         guard abs(nextHeight - measuredHeight) >= 0.5 else { return }
         measuredHeight = nextHeight
         invalidateIntrinsicContentSize()
+        // 避免在 AppKit layout 栈内同步写 SwiftUI State；回到下一主线程周期提交低频高度档位。
+        DispatchQueue.main.async { [weak self] in
+            self?.onHeightChange?(nextHeight)
+        }
     }
 }
 

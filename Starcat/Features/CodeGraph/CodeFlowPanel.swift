@@ -41,7 +41,7 @@ struct CodeFlowPanel: View {
                             .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                     }
 
-                    DisclosureGroup("执行详情", isExpanded: $showsDetails) {
+                    DisclosureGroup("codeFlow.panel.executionDetails", isExpanded: $showsDetails) {
                         VStack(spacing: 0) {
                             ForEach(Array(viewModel.steps.enumerated()), id: \.element.id) { index, step in
                                 executionRow(step)
@@ -86,7 +86,7 @@ struct CodeFlowPanel: View {
                 .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("CodeFlow 代码图谱").font(.headline)
+                Text("codeFlow.panel.title").font(.headline)
                 Text(repo.fullName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -102,7 +102,7 @@ struct CodeFlowPanel: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .foregroundStyle(.secondary)
-            .help("关闭")
+            .help("common.close")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
@@ -111,8 +111,8 @@ struct CodeFlowPanel: View {
     private var branchSection: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("生成分支").font(.callout.weight(.medium))
-                Text("下载所选分支最新 commit 的源码快照")
+                Text("codeFlow.panel.branch.title").font(.callout.weight(.medium))
+                Text("codeFlow.panel.branch.subtitle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -137,19 +137,19 @@ struct CodeFlowPanel: View {
         case .unknown:
             EmptyView()
         case .checking:
-            Label("正在检查所选分支最新版本…", systemImage: "arrow.triangle.2.circlepath")
+            Label("codeFlow.version.checking", systemImage: "arrow.triangle.2.circlepath")
                 .foregroundStyle(.secondary)
                 .font(.caption)
         case .current:
-            Label("当前图谱已是所选分支最新版本", systemImage: "checkmark.circle.fill")
+            Label("codeFlow.version.current", systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .font(.caption)
         case .updateAvailable(let generated, let latest):
-            Label("仓库有新提交：\(generated) → \(latest)，建议重新生成", systemImage: "arrow.up.circle.fill")
+            Label("codeFlow.version.updateAvailableFormat \(generated) \(latest)", systemImage: "arrow.up.circle.fill")
                 .foregroundStyle(.orange)
                 .font(.caption)
         case .branchChanged(let generated, let selected):
-            Label("当前图谱来自 \(generated)，已选择 \(selected)，需要重新生成", systemImage: "arrow.triangle.branch")
+            Label("codeFlow.version.branchChangedFormat \(generated) \(selected)", systemImage: "arrow.triangle.branch")
                 .foregroundStyle(.orange)
                 .font(.caption)
         case .unavailable(let message):
@@ -161,11 +161,23 @@ struct CodeFlowPanel: View {
 
     private var overviewCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            overviewRow("下载仓库 ZIP", detail: "固定 commit 共享快照", statuses: ["resolveRevision", "download"])
+            overviewRow(
+                titleKey: "codeFlow.overview.download.title",
+                detailKey: "codeFlow.overview.download.detail",
+                statuses: ["resolveRevision", "download"]
+            )
             Divider().padding(.leading, 34)
-            overviewRow("准备 CodeFlow 页面", detail: "注入源码并写入 HTML 与 metadata", statuses: ["generatePage"])
+            overviewRow(
+                titleKey: "codeFlow.overview.prepare.title",
+                detailKey: "codeFlow.overview.prepare.detail",
+                statuses: ["generatePage"]
+            )
             Divider().padding(.leading, 34)
-            overviewRow("浏览器打开", detail: "使用默认浏览器展示代码图谱", statuses: ["openBrowser", "browserAnalysis"])
+            overviewRow(
+                titleKey: "codeFlow.overview.openBrowser.title",
+                detailKey: "codeFlow.overview.openBrowser.detail",
+                statuses: ["openBrowser", "browserAnalysis"]
+            )
         }
         .padding(.horizontal, 14)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
@@ -179,9 +191,9 @@ struct CodeFlowPanel: View {
         HStack(spacing: 12) {
             Text(footerStatus).font(.caption).foregroundStyle(.secondary)
             Spacer()
-            if isRunning { Button("取消") { viewModel.cancel() } }
+            if isRunning { Button("common.cancel") { viewModel.cancel() } }
             if viewModel.storedProject != nil, !isRunning {
-                Button("重新生成") { viewModel.regenerate() }
+                Button("codeFlow.action.regenerate") { viewModel.regenerate() }
                     .disabled(!viewModel.canGenerate)
             }
             Button(actionTitle) { viewModel.start() }
@@ -199,8 +211,11 @@ struct CodeFlowPanel: View {
         }
     }
 
-    private var actionTitle: String {
-        viewModel.storedProject == nil ? (isFailed ? "重试" : "打开代码图谱") : "打开已有图谱"
+    private var actionTitle: LocalizedStringKey {
+        if viewModel.storedProject == nil {
+            return isFailed ? "codeFlow.action.retry" : "codeFlow.action.open"
+        }
+        return "codeFlow.action.openExisting"
     }
 
     private var isFailed: Bool {
@@ -208,19 +223,23 @@ struct CodeFlowPanel: View {
         return false
     }
 
-    private var footerStatus: String {
+    private var footerStatus: LocalizedStringKey {
         switch viewModel.state {
-        case .idle: return "准备就绪"
-        case .ready: return "本地代码图谱已就绪"
-        case .downloading: return "正在获取源码快照…"
-        case .preparing: return "正在生成页面…"
-        case .opening: return "正在打开浏览器…"
-        case .succeeded: return "代码图谱已在浏览器中打开"
-        case .failed: return "执行失败，请查看详情"
+        case .idle: return "codeFlow.state.idle"
+        case .ready: return "codeFlow.state.ready"
+        case .downloading: return "codeFlow.state.downloading"
+        case .preparing: return "codeFlow.state.preparing"
+        case .opening: return "codeFlow.state.opening"
+        case .succeeded: return "codeFlow.state.succeeded"
+        case .failed: return "codeFlow.state.failed"
         }
     }
 
-    private func overviewRow(_ title: String, detail: String, statuses ids: Set<String>) -> some View {
+    private func overviewRow(
+        titleKey: LocalizedStringKey,
+        detailKey: LocalizedStringKey,
+        statuses ids: Set<String>
+    ) -> some View {
         let rows = viewModel.steps.filter { ids.contains($0.id) }
         let status: CodeFlowViewModel.RuntimeStepStatus
         if rows.contains(where: { $0.status == .failed }) { status = .failed }
@@ -231,8 +250,8 @@ struct CodeFlowPanel: View {
         return HStack(spacing: 12) {
             statusIcon(status)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.callout.weight(.medium))
-                Text(detail).font(.caption).foregroundStyle(.secondary)
+                Text(titleKey).font(.callout.weight(.medium))
+                Text(detailKey).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             if status == .running { ProgressView().controlSize(.small) }
@@ -294,14 +313,18 @@ private struct CodeFlowBranchPicker: View {
         Button { isPresented.toggle() } label: {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.branch")
-                Text(selection.isEmpty ? "选择分支" : selection).lineLimit(1)
+                if selection.isEmpty {
+                    Text("codeFlow.branchPicker.selectPrompt").lineLimit(1)
+                } else {
+                    Text(selection).lineLimit(1)
+                }
                 Image(systemName: "chevron.down").font(.caption2)
             }
         }
         .buttonStyle(.bordered)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             VStack(spacing: 8) {
-                TextField("搜索分支", text: $query)
+                TextField("codeFlow.branchPicker.searchPlaceholder", text: $query)
                     .textFieldStyle(.roundedBorder)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {

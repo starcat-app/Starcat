@@ -87,7 +87,7 @@ public struct DefaultContextWriter: ContextWriting {
                 underlying: NSError(
                     domain: "RepoContextPacker",
                     code: -1,
-                    userInfo: [NSLocalizedDescriptionKey: "XML 转 UTF-8 失败"]
+                    userInfo: [NSLocalizedDescriptionKey: String(localized: "packer.error.xmlEncodingFailed")]
                 )
             )
         }

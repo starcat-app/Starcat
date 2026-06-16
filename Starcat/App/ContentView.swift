@@ -53,6 +53,10 @@ struct ContentView: View {
             minWidth: MainWindowFrameDefaults.contentMinSize.width,
             minHeight: MainWindowFrameDefaults.contentMinSize.height
         )
+        // 让三栏内容背景延伸到 window toolbar 下方，避免 toolbar 的独立实色背景
+        // 与 Sidebar / Repo detail 顶部渐变形成横向硬分界。各栏仍自行决定背景颜色，
+        // 这里只移除系统 toolbar 的遮挡，不改变 toolbar item 的布局与交互。
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .animation(reduceMotion ? nil : .smooth, value: authSession.state)
         .sheet(isPresented: showAuthViewBinding) {
             GithubAuthView()

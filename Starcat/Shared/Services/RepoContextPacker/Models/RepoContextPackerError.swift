@@ -69,27 +69,27 @@ public enum RepoContextPackerError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .zipFileNotFound(let url):
-            return "ZIP 文件不存在：\(url.path)"
+            return String(format: String(localized: "packer.error.zipFileNotFoundFormat"), url.path)
         case .zipTooLarge(let actual, let max):
-            return "ZIP 文件过大：\(actual) bytes（上限 \(max) bytes）"
+            return String(format: String(localized: "packer.error.zipTooLargeFormat"), actual, max)
         case .extractedDirectoryTooLarge(let actual, let max):
-            return "解压后目录过大：\(actual) bytes（上限 \(max) bytes，疑似 ZIP bomb）"
+            return String(format: String(localized: "packer.error.extractedTooLargeFormat"), actual, max)
         case .zipEmpty:
-            return "ZIP 解压后无任何文件"
+            return String(localized: "packer.error.zipEmpty")
         case .zipExtractionFailed(let error):
-            return "ZIP 解压失败：\(error.localizedDescription)"
+            return String(format: String(localized: "packer.error.zipExtractionFailedFormat"), error.localizedDescription)
         case .zipSlipDetected(let path):
-            return "Zip slip 攻击防护触发：\(path) 超出 root 子树"
+            return String(format: String(localized: "packer.error.zipSlipDetectedFormat"), path)
         case .noFilesAfterFiltering:
-            return "经过 ignore 规则过滤后无任何文件可处理"
+            return String(localized: "packer.error.noFilesAfterFiltering")
         case .outputDirectoryNotWritable(let url, let error):
-            return "输出目录不可写：\(url.path)（\(error.localizedDescription)）"
+            return String(format: String(localized: "packer.error.outputDirectoryNotWritableFormat"), url.path, error.localizedDescription)
         case .xmlBuildFailed(let error):
-            return "XML 构建失败：\(error.localizedDescription)"
+            return String(format: String(localized: "packer.error.xmlBuildFailedFormat"), error.localizedDescription)
         case .writeFailed(let url, let error):
-            return "写入失败：\(url.path)（\(error.localizedDescription)）"
+            return String(format: String(localized: "packer.error.writeFailedFormat"), url.path, error.localizedDescription)
         case .cancelled:
-            return "Packer 已取消"
+            return String(localized: "packer.error.cancelled")
         }
     }
 

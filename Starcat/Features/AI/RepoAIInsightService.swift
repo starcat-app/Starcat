@@ -27,11 +27,11 @@ enum RepoAIInsightError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return "请先在 Settings → AI 配置对应 Provider 的 API Key，再生成 AI 摘要。"
+            return String(localized: "ai.insight.error.missingAPIKey")
         case .missingProvider(let task):
-            return "AI 任务 \(task) 没有可用的 Provider 配置。"
+            return String(format: String(localized: "ai.insight.error.missingProviderFormat"), task)
         case .invalidJSON:
-            return "AI 返回内容不是可解析的结构化 JSON。"
+            return String(localized: "ai.insight.error.invalidJSON")
         }
     }
 }
@@ -440,7 +440,7 @@ final class RepoAIInsightService {
         let cached = try? await loadCachedInsight(source: source, repo: repo)
 
         let task = settings.aiChatTask
-        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "对话")
+        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: String(localized: "ai.taskName.chat"))
 
         let systemPrompt = buildChatSystemPrompt(
             repo: repo,
@@ -593,7 +593,7 @@ final class RepoAIInsightService {
         onDelta: (@MainActor (String) -> Void)?
     ) async throws -> String {
         let task = settings.aiSummaryTask
-        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "摘要")
+        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: String(localized: "ai.taskName.summary"))
         let params = settings.effectiveParameters(for: task)
         // Summary 任务占位符（v4，2026-06-14）：
         // - system: `{outputLanguage}`
@@ -652,7 +652,7 @@ final class RepoAIInsightService {
     /// 反过来用户多写了占位符也无害（dict 没有就保留字面量，让 LLM 直接看到便于排错）。
     private func generateTags(source: Source, hints: AITagHints) async throws -> [AITagSuggestion] {
         let task = settings.aiTagsTask
-        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: "推荐标签")
+        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: String(localized: "ai.taskName.tagRecommendation"))
 
         let outputLanguage = Self.outputLanguageDescriptor()
         let systemPrompt = task.prompt.renderedSystemPrompt(placeholders: [

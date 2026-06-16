@@ -278,7 +278,10 @@ struct HomeView: View {
         // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
         .background {
             Button("") { searchCenterViewModel.present() }
-                .keyboardShortcut("k", modifiers: .command)
+                .keyboardShortcut(
+                    settings.globalSearchShortcut.keyEquivalent,
+                    modifiers: settings.globalSearchShortcut.eventModifiers
+                )
                 .hidden()
         }
         .sheet(isPresented: $showTagManagement, onDismiss: {

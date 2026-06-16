@@ -91,9 +91,9 @@ enum RepoContextStorageError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .outputDirectoryUnavailable:
-            return "AI 代码上下文输出目录不可用，请在设置中重新选择。"
+            return String(localized: "repoContext.storage.error.outputDirectoryUnavailable")
         case .invalidBookmark:
-            return "无法恢复输出目录授权，请重新选择目录。"
+            return String(localized: "repoContext.storage.error.invalidBookmark")
         }
     }
 }
@@ -140,7 +140,7 @@ final class RepoContextStorage {
 
     var outputDirectoryDisplayPath: String {
         _ = directoryConfigurationRevision
-        return (try? resolveOutputRoot().url.path) ?? "输出目录授权已失效"
+        return (try? resolveOutputRoot().url.path) ?? String(localized: "storage.outputDirectory.bookmarkExpired")
     }
 
     var totalBytes: Int64 { projects.reduce(0) { $0 + $1.totalBytes } }

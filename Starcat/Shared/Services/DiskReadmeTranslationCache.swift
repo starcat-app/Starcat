@@ -49,9 +49,9 @@ enum DiskReadmeTranslationCacheError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .applicationSupportUnavailable:
-            return "无法定位翻译缓存目录，请重试或重启应用。"
+            return String(localized: "cache.readmeTranslation.error.applicationSupportUnavailable")
         case .invalidPathComponent(let value):
-            return "翻译缓存路径包含非法字符：\(value)。"
+            return String(format: String(localized: "cache.readmeTranslation.error.invalidPathComponentFormat"), value)
         }
     }
 }
