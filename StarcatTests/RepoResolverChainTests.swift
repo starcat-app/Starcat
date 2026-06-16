@@ -241,4 +241,8 @@ private final class CountingMockClient: GitHubAPIClientProtocol, @unchecked Send
     func receivedEvents(username: String, perPage: Int, ifNoneMatch: String?) async throws -> APIResponse<[GitHubEventDTO]> {
         fatalError("not used in chain tests")
     }
+
+    func securityAdvisories(owner: String, repo: String) async throws -> APIResponse<[GitHubSecurityAdvisoryDTO]> {
+        fatalError("not used in chain tests")
+    }
 }

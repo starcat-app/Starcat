@@ -50,6 +50,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var repoHandler: ((_ owner: String, _ repo: String) async throws -> GitHubRepoDTO)?
     /// 2026-06-16 Activity 公告与关注 PR-2：received_events feed mock handler。
     var receivedEventsHandler: ((_ username: String, _ perPage: Int, _ ifNoneMatch: String?) async throws -> APIResponse<[GitHubEventDTO]>)?
+    /// 2026-06-17 Activity 公告与关注 PR-3：security-advisories mock handler。
+    var securityAdvisoriesHandler: ((_ owner: String, _ repo: String) async throws -> APIResponse<[GitHubSecurityAdvisoryDTO]>)?
 
     // MARK: - 调用记录（供断言用）
 
@@ -64,6 +66,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     private(set) var releasesCalls: [(owner: String, repo: String, perPage: Int)] = []
     /// 2026-06-16 Activity 公告与关注 PR-2：events 调用日志，便于断言「ETag 是否被回传」/「是否真的发了请求」。
     private(set) var receivedEventsCalls: [(username: String, perPage: Int, ifNoneMatch: String?)] = []
+    /// 2026-06-17 Activity 公告与关注 PR-3：security-advisories 调用日志。
+    private(set) var securityAdvisoriesCalls: [(owner: String, repo: String)] = []
 
     // MARK: - Protocol conformance
 
@@ -161,6 +165,14 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
             fatalError("MockGitHubAPIClient.receivedEventsHandler 未设置")
         }
         return try await handler(username, perPage, ifNoneMatch)
+    }
+
+    func securityAdvisories(owner: String, repo: String) async throws -> APIResponse<[GitHubSecurityAdvisoryDTO]> {
+        securityAdvisoriesCalls.append((owner, repo))
+        guard let handler = securityAdvisoriesHandler else {
+            fatalError("MockGitHubAPIClient.securityAdvisoriesHandler 未设置")
+        }
+        return try await handler(owner, repo)
     }
 }
 

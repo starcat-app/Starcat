@@ -119,6 +119,11 @@ protocol GitHubAPIClientProtocol: Sendable {
         perPage: Int,
         ifNoneMatch: String?
     ) async throws -> APIResponse<[GitHubEventDTO]>
+
+    // MARK: - Security Advisories（Activity 公告与关注 PR-3，2026-06-17）
+
+    /// 拉取单个仓库的 Security Advisory 列表（可能为空数组）。
+    func securityAdvisories(owner: String, repo: String) async throws -> APIResponse<[GitHubSecurityAdvisoryDTO]>
 }
 
 // MARK: - Conformance
