@@ -774,6 +774,38 @@ struct RepoListView: View {
                     }
                 }
             }
+            // R-07.1 follow-up（2026-06-16 dong4j）：hasMore false → true 时主动 push 一次 loadMoreIfNeeded。
+            //
+            // 场景（dong4j 真机回归发现）：sync 还在跑期间用户已手动滚动到 items 尾部触发 loadMoreIfNeeded × N,
+            // items 从 20 一路涨到 currentPage * 20,hasMore 在抵达 filteredSorted.count 那一刻翻 false。
+            // 等 sync 完成（state = .completed）,HomeView 调 reloadItems(forceRefresh: true)：
+            //   - filteredSorted 从快照 100 → 1800
+            //   - currentPage 保留（preserveScrollPosition,R-07 既有设计）
+            //   - sliceToCurrentPage 算出 newItems 与现有 items 前 N 条同 ID 同序 → itemsIdentical
+            //     short-circuit → items 不变 / itemsRevision 不 bump
+            //   - 但 hasMore 被无条件设置为 true（1800 > items.count）
+            //
+            // 后果：列表 UI 看似数据未变,但 hasMore 状态翻转后,已显示行的 .onAppear **不会** 重触发
+            // （SwiftUI 只在 row 首次进入视口时调 onAppear）；用户被困在原 items 尾部,往下滚是橡皮筋
+            // 回弹,无法触发后续 loadMore,"卡在 100 条尾部"无法看到完整 1800 条列表。
+            //
+            // 修复：监听 hasMore 边沿 false → true,主动调一次 loadMoreIfNeeded 让 items 增长一页。
+            // sliceToCurrentPage(reason: .append) 不 bump itemsRevision,滚动位置自然保留；用户继续
+            // 向下滚动时,新行的倒数第 3 个 .onAppear 会触发后续 loadMore,自然推进到 filteredSorted.count。
+            //
+            // 用 Task { @MainActor in } 包一层：避免在 SwiftUI body 更新期间同步写 viewModel 状态
+            // 触发"Modifying state during view update"警告。loadMoreIfNeeded 内部 guard hasMore
+            // 天然幂等,多次触发不会引发 currentPage 失控。
+            //
+            // 副作用（可接受）：首屏 page 1 写入触发 firstPageWrittenAt → reloadItems 让 hasMore
+            // 从 false → true 时也会命中本分支,首屏 items 从 20 → 40 条。首屏视口只显示 ~10 行,
+            // 用户视觉无感；R-07 既有 .append 分支不重建已有行,亦无入场动画干扰。
+            .onChange(of: viewModel.hasMore) { wasMore, hasMore in
+                guard !wasMore, hasMore else { return }
+                Task { @MainActor in
+                    viewModel.loadMoreIfNeeded()
+                }
+            }
         }
     }
 

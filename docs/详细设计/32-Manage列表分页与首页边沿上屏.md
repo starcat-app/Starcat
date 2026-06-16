@@ -235,4 +235,73 @@ if page == 1 {
 
 ---
 
-*最后更新：2026-06-15 22:30（方案冻结，待实施）*
+## 8. R-07.1 follow-up：hasMore false → true 视图层主动 push（2026-06-16）
+
+### 8.1 漏洞描述（dong4j 真机回归发现）
+
+§3.1 bump 策略表第 5 行写「SWR / forceRefresh 完成但用户已滚动（currentPage > 1） | 不变 | ❌（preserveScrollPosition）」、§2.2 表 T+25s 行假设「用户没滚 → page=1 → 无感」——**漏掉一个真实场景**：
+
+**用户在 sync 期间已主动滚动到 items 尾部**：
+- 用户登录后看到首页 20 条（firstPageWrittenAt 触发上屏）
+- 用户**主动向下滚动**，倒数第 3 行 `.onAppear` × N 触发 `loadMoreIfNeeded()`，currentPage 推到 5
+- items 涨到 100（与 `filteredSorted` 等长）→ `hasMore = filteredSorted.count > items.count` = `100 > 100` = **false**
+- 此后用户停在第 100 条尾部，SyncManager 继续静默拉 page 2..N
+
+**sync 完成（state = .completed）触发 reloadItems(forceRefresh: true)**：
+- `loadFromCache(stale 100 条)` → `applyView(resetPage: true)` 早 return（filteredIdentical = true，**resetPage 在早 return 路径不生效**）
+- 后台 fetch DB 全集（1800 条）→ `idsIdentical = (1800 == 100)` false → `applyView(resetPage: false)`
+  - `filteredSorted = 1800` ✓
+  - `currentPage` 保留 5（preserveScrollPosition）
+  - `sliceToCurrentPage(.recompute)` 算 `endIndex = min(100, 1800) = 100`，`newItems` 前 100 条
+  - 与现有 `items` 前 100 条按 starred_at desc 同 ID 同序 → **`itemsIdentical = true` → `items` 不变 / `itemsRevision` 不 bump**
+  - 但 `hasMore = filteredSorted.count > items.count = 1800 > 100 = true` ✓
+
+**用户视角**：
+- 列表 UI 看似数据没变（itemsRevision 不变 → List 不重建）
+- `hasMore` 翻 false → true，但**已显示行的 `.onAppear` 不会重触发**（SwiftUI 只在 row 首次进入视口时调 onAppear）
+- 用户在第 100 条尾部往下滚 → 橡皮筋回弹 → 永远卡在 100 条，看不到完整 1800 条
+
+### 8.2 修复方案
+
+在 `RepoListView.unifiedListContent(_:)` 的 List 上加 `.onChange(of: viewModel.hasMore)`，监听 false → true 边沿，主动调一次 `viewModel.loadMoreIfNeeded()`：
+
+```swift
+.onChange(of: viewModel.hasMore) { wasMore, hasMore in
+    guard !wasMore, hasMore else { return }
+    Task { @MainActor in
+        viewModel.loadMoreIfNeeded()
+    }
+}
+```
+
+**关键约束**：
+
+1. **用 `Task { @MainActor in }` 包一层**：避免在 SwiftUI body 更新期间同步写 `@Observable` 状态触发"Modifying state during view update"警告。`loadMoreIfNeeded` 是同步 `@MainActor` 方法，但 view body 内同步调用 viewModel 写操作有潜在风险，异步派发更稳。
+2. **只 false → true 触发**：true → false（用户加载到底）/ false → false（无变化）/ true → true（持续加载）都不动，防止反复触发。
+3. **不破坏 R-07 既有 contract**：`loadMoreIfNeeded` 走 `sliceToCurrentPage(reason: .append)` 不 bump `itemsRevision`（R-07 原设计），滚动位置自然保留；用户继续向下滚动时，新行（位置 100-119）入视口后倒数第 3 行的 `.onAppear` 自然触发后续 loadMore，自然推进到 `filteredSorted.count`。
+4. **副作用可接受**：首屏 page 1 写入触发 `firstPageWrittenAt` → reloadItems 让 `hasMore` 从 false → true 时也会命中本分支，首屏 items 从 20 → 40 条。首屏视口只显示 ~10 行，用户视觉无感；既有 `.append` 分支不重建已有行，亦无入场动画干扰。
+
+### 8.3 改造范围
+
+| 文件 | 改动 |
+|---|---|
+| `Starcat/Features/Home/RepoListView.swift` | +`.onChange(of: viewModel.hasMore)` 在 false→true 边沿调 `loadMoreIfNeeded` |
+| `StarcatTests/HomeViewModelPaginationTests.swift` | **新增文件**：R-07 基础行为（4 个）+ R-07.1 修复 contract（2 个）共 6 个用例 |
+
+### 8.4 验收
+
+- [x] 新增 6 个单测全绿（4 R-07 基础 + 2 R-07.1 修复 contract）
+- [x] 现有 870 测试 0 回归（合计 876 全绿）
+- [ ] dong4j 真机回归：清 keychain + DB，重新登录，sync 期间手动滚到 100 条尾部，等 sync 完成，验证：
+  - 列表底部能继续往下滚（自动多出 20 条，用户视觉上看到"列表又长了一节"）
+  - 继续滚动能自然加载到 1800 条全部
+  - sidebar "全部仓库" 计数与 repo 列表底部计数最终一致
+
+### 8.5 长期改进方向（未做，留 P2）
+
+- **SyncManager 增量进度信号**：每写完 N 页（如每 5 页 = 500 条）翻一次中间边沿，让列表逐步增长而非到最后憋一次性追上。优点是 sidebar 与列表的"边沿一致性"更好；缺点是 sync 期间多次刷新增加抖动概率，与 R-07 "page 2..N 静默写库无感知"的设计意图冲突，需要重新平衡。
+- **applyView 早 return 路径修复 resetPage**：当前 `applyView(resetPage: true)` 在 `filteredIdentical = true` 时直接 return，`resetPage` 不生效；这是个独立小漏洞（不影响 R-07.1 修复路径），未来如有其它路径依赖"filteredSorted 相同时也要重置 currentPage"再修。
+
+---
+
+*最后更新：2026-06-16 20:30（R-07.1 follow-up 上线）*
