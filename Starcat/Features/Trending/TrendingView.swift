@@ -257,18 +257,35 @@ struct TrendingView: View {
         viewModel.repos.enumerated().map { IndexedTrendingRepo(index: $0.offset, repo: $0.element) }
     }
 
-    /// 中栏 Trending 内容过渡身份键。
+    /// 中栏 Trending 内容**三态过渡身份键**（loading / error / content）。
     ///
-    /// 与 Manage 列表保持同一策略：分类 / 周期 / reload 结果变化时做整块轻过渡，
-    /// row 本身只做可视区域内 reveal，不引入真正分页。
+    /// 关键约束（2026-06-16 dong4j 反馈"切 day/week/month 列表先变暗再亮"修复）：
+    /// 这个 key **不**依赖 period / language / reposRevision 等"内容身份"，
+    /// 仅在三态之间切换时变化。切桶（day↔week↔month / 切语言）走的是 content → content，
+    /// `mainContentView` 的 `.id(...)` 不变 → 外层不重建 → 不播 `.opacity` 的淡出淡入。
+    ///
+    /// 为什么之前的设计有问题：
+    /// - 旧 key 包含 `period.id` / `language.id`，切桶时 key 变化 → SwiftUI 销毁旧
+    ///   `mainContentView` → 播 `removal: .opacity`（"变暗"）→ 重建新 `mainContentView` →
+    ///   播 `insertion: .opacity`（"再亮"）→ 用户视觉上看到列表整块"先变暗再展示新数据"
+    /// - dong4j 的诉求是"直接切换数据"，与切语言体感对齐（其实切语言之前也有同款过渡，
+    ///   只是视觉焦点在左侧 sidebar 没注意到，借此次机会一并修掉）
+    ///
+    /// 改后的分工：
+    /// - **外层 transition**（本 ID 驱动）：只管三态间切换的过渡（如 loading → content）
+    /// - **List 内数据替换**：靠 `ForEach + Identifiable` 的天然 in-place diff，
+    ///   旧 repo row 被新 repo row 直接替换，不走整块 transition
+    /// - **row reveal**：由 `reposRevision` 驱动（参见 `.listRowReveal(snapshotID:)`），
+    ///   缓存上屏 / identity 变化的网络刷新均会让 row 重新渐进入场
+    /// - **数值字段（stars / forks）**：ForEach in-place diff 默默更新，三层动画都不参与
     private var contentAnimationID: String {
         if viewModel.isLoading && viewModel.repos.isEmpty {
-            return "trending-loading-\(viewModel.selectedPeriod.id)-\(viewModel.selectedLanguage.id)"
+            return "trending-loading"
         }
         if let error = viewModel.loadError, viewModel.repos.isEmpty {
-            return "trending-error-\(viewModel.selectedPeriod.id)-\(viewModel.selectedLanguage.id)-\(error)"
+            return "trending-error-\(error)"
         }
-        return "trending-repos-\(viewModel.selectedPeriod.id)-\(viewModel.selectedLanguage.id)-\(viewModel.reposRevision)"
+        return "trending-content"
     }
 
     private var contentAnimation: Animation? {
