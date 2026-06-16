@@ -248,6 +248,15 @@ enum AppEndpoints {
                 "/users/\(username)/received_events/public"
             }
 
+            /// `GET /repos/{owner}/{repo}/security-advisories` —— 仓库安全公告列表。
+            ///
+            /// Activity PR-3（2026-06-17）：仅扫「最近 30 天有 push」的 starred repo 子集
+            /// （典型 50~200 个），避免对全部 starred 仓库 burst 打爆 rate limit。
+            /// 无 per-repo ETag；`activity_sync_state.last_security_fetched_at` 只记整批扫描时间。
+            static func repoSecurityAdvisories(owner: String, repo: String) -> String {
+                "/repos/\(owner)/\(repo)/security-advisories"
+            }
+
             // —— GraphQL ——
             /// `POST /graphql` —— GraphQL 入口（与 REST 同一 baseURL）。
             static let graphql = "/graphql"
@@ -257,6 +266,16 @@ enum AppEndpoints {
         static func url(_ path: String) -> URL {
             appendPath(path, to: baseURL)
         }
+    }
+
+    // MARK: - GitHub Blog（Activity PR-3，2026-06-17）
+
+    /// GitHub 官方博客 RSS feed。不走 `api.github.com`，独立 host。
+    enum GitHubBlog {
+        /// `GET https://github.blog/feed/` —— GitHub 平台公告主源（WordPress RSS 2.0）。
+        ///
+        /// 支持 ETag / If-None-Match → 304 短路，etag 存 `activity_sync_state.blog_rss_etag`。
+        static let feedURL = URL(string: "https://github.blog/feed/")!
     }
 
     // MARK: - GitHub OAuth（Device Flow）

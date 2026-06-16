@@ -284,3 +284,40 @@ struct GitHubEventRepoDTO: Equatable {
     let name: String
     let url: String?
 }
+
+// MARK: - Announcements（Activity 公告与关注 PR-3，2026-06-17）
+
+/// `GET https://github.blog/feed/` 单条 RSS item（解析后）。
+struct GitHubBlogRSSItemDTO: Equatable {
+    /// RSS `<guid>` 原生 id（如 `?p=96773`）。入库时加 `blog:` 前缀。
+    let guid: String
+    let title: String
+    let link: String
+    let author: String?
+    /// RFC 2822 原文（写入层转 ISO8601 入库）。
+    let pubDate: String
+    let categories: [String]
+    /// `<description>` HTML 摘要片段。
+    let descriptionHTML: String?
+    /// `<content:encoded>` 完整 HTML 正文。
+    let contentHTML: String?
+}
+
+/// `GET /repos/{owner}/{repo}/security-advisories` 单条 GHSA。
+struct GitHubSecurityAdvisoryDTO: Decodable, Equatable {
+    let ghsaId: String
+    let summary: String
+    let description: String?
+    let htmlUrl: String?
+    let publishedAt: String?
+    let severity: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ghsaId = "ghsa_id"
+        case summary
+        case description
+        case htmlUrl = "html_url"
+        case publishedAt = "published_at"
+        case severity
+    }
+}
