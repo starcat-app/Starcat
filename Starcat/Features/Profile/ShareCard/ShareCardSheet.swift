@@ -105,11 +105,6 @@ struct ShareCardSheet: View {
         // 分享卡本体保持 400×560；这里只裁掉 sheet 旧版 820pt 高度留下的底部背景空白。
         // 内容总高低于主窗口初始化高度 763pt，初始窗口下不会再向底部凸出。
         .frame(width: 480, height: 760)
-        .overlay(alignment: .bottom) {
-            // 反馈不参与布局，避免保存 / 导出后的 pill 把按钮往下顶导致重新溢出。
-            feedbackOverlay
-                .padding(.bottom, 96)
-        }
         .background {
             // HOM-173 v3：sheet 整体动态背景（Metal `swDotsFlow` 流场）。
             //
@@ -168,27 +163,34 @@ struct ShareCardSheet: View {
         }
     }
 
-    /// 保存 / 导出反馈浮层。它不占据主布局高度，避免临时提示破坏 sheet 的固定收口高度。
+    /// 保存 / 导出反馈。放在 header 同一行，避免盖住底部按钮。
     @ViewBuilder
     private var feedbackOverlay: some View {
         if let msg = exportProgressMessage {
             progressPill(text: msg)
-                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity))
         } else if let feedback = lastActionFeedback {
             feedbackPill(text: feedback)
-                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity))
         }
     }
 
     // MARK: - 顶部标题栏
 
-    /// 顶部标题栏：标题 + 关闭按钮。
+    /// 顶部标题栏：标题 + 同行反馈 + 关闭按钮。
     @ViewBuilder
     private var header: some View {
         HStack(alignment: .center) {
             Text("sharecard.title")
                 .font(.system(size: 16, weight: .semibold))
+
             Spacer()
+
+            feedbackOverlay
+                .frame(maxWidth: 270)
+
+            Spacer()
+
             Button {
                 onClose()
             } label: {
@@ -199,7 +201,7 @@ struct ShareCardSheet: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .help(Text("sharecard.close"))
+            .help(Text("sharecard.action.close"))
             .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 24)
@@ -212,14 +214,9 @@ struct ShareCardSheet: View {
     /// 主题选择 Picker：gacha 风格的卡片式选择器。
     /// HOM-174 follow-up：只显示主题卡片，移除标签文字。
     ///
-    /// **2026-06-06 性能修复（dong4j 反馈切主题卡顿）**：原来这里的 onTap 用
-    /// `withAnimation(.easeInOut(duration: 0.18)) { theme = t }` 包了一层动画
-    /// transaction，而 `cardPreview` 上又挂了一份 `.animation(_, value: theme)`。
-    /// 两条动画路径会在 magazine ↔ idCard 切换（layout 完全不同）时互相打架——
-    /// transaction A 还在跑，用户点下一个主题进入 transaction B，SwiftUI 把它合并
-    /// 成 noop，外观就是「点了但没反应」。
-    /// 修复：这里直接赋值不包 withAnimation，让 `cardPreview.animation` 那一处
-    /// 单点驱动主题切换动画即可。
+    /// 主题切换必须优先保证点击响应。这里不再给 `cardPreview` 挂 theme 动画：
+    /// magazine / idCard 两种布局切换时会重建头像、QR、草坪等较重 view，连续点击
+    /// 期间如果还叠隐式动画，SwiftUI 可能短暂合并 transaction，表现为随机点不动。
     @ViewBuilder
     private var themePicker: some View {
         HStack(spacing: 8) {
@@ -241,11 +238,16 @@ struct ShareCardSheet: View {
         let isSelected: Bool
         let action: () -> Void
 
+        @Environment(\.starcatReduceMotion) private var reduceMotion
+        @State private var isHovered = false
+
         var body: some View {
             Button(action: action) {
                 // 主题预览色块
                 themePreview
                     .frame(width: 30, height: 22)
+                    .padding(4)
+                    .contentShape(Rectangle())
                     .clipShape(RoundedRectangle(cornerRadius: 5))
                     .overlay(
                         // 描边策略（2026-06-06 dong4j 反馈适配深浅主题）：
@@ -256,17 +258,24 @@ struct ShareCardSheet: View {
                         //   "提示线"足够勾出边缘而不会抢视觉权重。
                         RoundedRectangle(cornerRadius: 5)
                             .stroke(
-                                isSelected ? Color.accentColor : Color.primary.opacity(0.18),
-                                lineWidth: isSelected ? 2 : 0.5
+                                isSelected ? Color.accentColor : Color.primary.opacity(isHovered ? 0.34 : 0.18),
+                                lineWidth: isSelected ? 2 : (isHovered ? 1 : 0.5)
                             )
                     )
                     .background(
                         RoundedRectangle(cornerRadius: 5)
-                            .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
+                            .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.primary.opacity(isHovered ? 0.08 : 0))
                     )
+                    .shadow(color: .black.opacity(isHovered ? 0.18 : 0), radius: 4, y: 1)
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .help(Text(theme.localizationKey))
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.12)) {
+                    isHovered = hovering
+                }
+            }
         }
 
         /// 主题预览色块：显示主题的主要配色。
@@ -298,8 +307,6 @@ struct ShareCardSheet: View {
             theme: theme,
             isProUser: isProUser
         )
-        // 主题切换时给一点淡入淡出动画，让预览过渡不生硬
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: theme)
         // 卡片下方加柔和阴影区分 sheet material
         .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
     }
@@ -564,16 +571,17 @@ struct ShareCardSheet: View {
                 .foregroundStyle(.green)
             Text(text)
                 .font(.system(size: 12, weight: .medium))
-                .lineLimit(2)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
                 .multilineTextAlignment(.leading)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(.background.tertiary)
         )
-        .frame(width: 400)
+        .frame(maxWidth: 270)
     }
 
     // MARK: - 动作执行
@@ -679,16 +687,17 @@ struct ShareCardSheet: View {
                 .frame(width: 16, height: 16)
             Text(text)
                 .font(.system(size: 12, weight: .medium))
-                .lineLimit(2)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
                 .multilineTextAlignment(.leading)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(.background.tertiary)
         )
-        .frame(width: 400)
+        .frame(maxWidth: 270)
     }
 
     /// 当前要渲染的卡片内容（主题切换不重新构造卡片实例，但导出时要用最新值）。
