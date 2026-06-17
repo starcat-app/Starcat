@@ -280,7 +280,7 @@
 | `NSWindow.StyleMask` | `AboutWindowController` 通过不包含 `.resizable` 固定关于窗口尺寸；窗口是否能拖拽调整必须由 AppKit styleMask 控制 | "NSWindow styleMask resizable SwiftUI hosting" |
 | `NSWindow.setFrameAutosaveName` | `MainWindowFrameModifier` 保存 / 恢复主窗口尺寸与位置 | "NSWindow setFrameAutosaveName setFrameUsingName" |
 | `NSWindow.contentMinSize` / `minSize` / `maxSize` | `MainWindowFrameModifier` 设置主窗口硬下限；`AboutWindowController` 用同一个 680×450 同时设置关于窗口 min/max，固定尺寸并避免默认底部空白过多 | "NSWindow contentMinSize minSize maxSize setFrame" |
-| Keychain | `KeychainManager`（**有 DEBUG 临时 fallback，D-16 待还**） | "Keychain Services API macOS" |
+| Keychain / 本地加密凭证 | `KeychainManager` + `CryptoManager`（D-16 已收口：AES-GCM `credentials.json`，2026-06-01） | "CryptoKit AES-GCM file storage macOS" |
 | App Sandbox / Entitlements | `Starcat.entitlements` | "App Sandbox macOS entitlements" |
 | `NSBackgroundActivityScheduler` | W6 Release 轮询会用 | "NSBackgroundActivityScheduler macOS" |
 | `os.Logger` / `os_log` | 项目自包装为 `AppLog.*`（见 `Core/Logging/AppLog.swift`） | "Apple Unified Logging Logger" |
