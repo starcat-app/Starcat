@@ -4167,13 +4167,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI Code Context (Experimental)"
+            "value" : "Code Contex"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 代码上下文（实验）"
+            "value" : "代码上下文"
           }
         }
       }
@@ -4200,13 +4200,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI Code Context Action Failed"
+            "value" : "Code Contex Action Failed"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 代码上下文操作失败"
+            "value" : "代码上下文操作失败"
           }
         }
       }
@@ -4251,13 +4251,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose AI Code Context Output Directory"
+            "value" : "Choose Code Contex Output Directory"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择 AI 代码上下文输出目录"
+            "value" : "选择 代码上下文输出目录"
           }
         }
       }
@@ -4302,13 +4302,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clear all AI code contexts?"
+            "value" : "Clear all Code Contexs?"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除全部 AI 代码上下文？"
+            "value" : "清除全部 代码上下文？"
           }
         }
       }
@@ -4318,13 +4318,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No AI code contexts in current directory yet."
+            "value" : "No Code Contexs in current directory yet."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前目录还没有 AI 代码上下文。"
+            "value" : "当前目录还没有 代码上下文。"
           }
         }
       }
@@ -4418,13 +4418,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI Code Context"
+            "value" : "Code Contex"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 代码上下文"
+            "value" : "代码上下文"
           }
         }
       }
@@ -12438,7 +12438,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 代码上下文输出目录不可用，请在设置中重新选择。"
+            "value" : "代码上下文输出目录不可用，请在设置中重新选择。"
           }
         }
       }
@@ -16210,13 +16210,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vector Index"
+            "value" : "Full-text Index"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "向量化索引"
+            "value" : "全文索引"
           }
         }
       }
@@ -18043,13 +18043,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Leave empty to use the production default"
+            "value" : "Leave empty to use the default"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "留空使用 production 默认 Key"
+            "value" : "留空使用默认服务"
           }
         }
       }
@@ -18294,13 +18294,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI Share Card API"
+            "value" : "Share API"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 分享卡 API"
+            "value" : "分享 API"
           }
         }
       }
@@ -18401,7 +18401,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "解析阮一峰周刊推荐的 GitHub 项目，为 活动 → 周刊 视图提供数据。"
+            "value" : "解析推荐周刊的 GitHub 项目，为 活动 → 周刊 视图提供数据。"
           }
         }
       }
@@ -18412,13 +18412,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ruanyf Weekly API"
+            "value" : "Weekly API"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "阮一峰周刊 API"
+            "value" : "周刊 API"
           }
         }
       }
@@ -18446,13 +18446,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "External Wiki API"
+            "value" : "Wiki API"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "外部 Wiki API"
+            "value" : "Wiki API"
           }
         }
       }
@@ -18462,13 +18462,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose how the snake traverses the contribution graph. Greedy (snk-style) follows your contribution data."
+            "value" : "Choose how the snake traverses the contribution graph. Greedy follows your contribution data."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择贪吃蛇遍历草坪的方式。贪心（snk 同款）会跟随你的贡献分布动态规划路径。"
+            "value" : "选择贪吃蛇遍历草坪的方式。贪心会跟随你的贡献分布动态规划路径。"
           }
         }
       }
@@ -18496,13 +18496,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Greedy (snk-style)"
+            "value" : "Greedy"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "贪心吃绿（snk 同款）"
+            "value" : "贪心吃绿"
           }
         }
       }
@@ -18801,13 +18801,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI Code Context"
+            "value" : "Code Contex"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 代码上下文"
+            "value" : "代码上下文"
           }
         }
       }
@@ -19156,13 +19156,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clear all AI code context?"
+            "value" : "Clear all Code Contex?"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除全部 AI 代码上下文?"
+            "value" : "清除全部代码上下文?"
           }
         }
       }
@@ -19224,13 +19224,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Same as clearing every cache above (README, images, downloaded ZIPs, translation, search, AI code context, CodeFlow)."
+            "value" : "Same as clearing every cache above (README, images, downloaded ZIPs, translation, search, Code Contex, CodeFlow)."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "等同于一次性清理上面所有缓存（README、图片、已下载的仓库 ZIP、翻译、搜索、AI 代码上下文、CodeFlow）。"
+            "value" : "等同于一次性清理上面所有缓存（README、图片、已下载的仓库 ZIP、翻译、搜索、代码上下文、CodeFlow）。"
           }
         }
       }
@@ -19349,7 +19349,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下次生成 CodeFlow 或 AI 代码上下文时会按需重新下载。"
+            "value" : "下次生成 CodeFlow 或 代码上下文时会按需重新下载。"
           }
         }
       }
@@ -23063,13 +23063,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ruan Yi-feng Weekly"
+            "value" : "Weekly"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "阮一峰周刊"
+            "value" : "周刊"
           }
         }
       }
