@@ -101,6 +101,43 @@ struct CodeFlowStoredProject: Identifiable, Equatable, Sendable {
     }
 }
 
+/// HOM-203：CodeFlow 产物根目录的汇总缓存（落盘为 `<root>/.starcat-summary.json`）。
+///
+/// 与 `RepoContextSummary` 同款设计——UI 渲染 4 列汇总用，per-project metadata.json
+/// 仍是真源。CodeFlow 项目数通常远少于 RepoContext，但保持对称便于 UI 复用且
+/// 防止集成 Tab 同样进入 O(n) 扫描卡顿。
+struct CodeFlowSummary: Codable, Sendable, Equatable {
+    let schemaVersion: Int
+    let projectCount: Int
+    let totalBytes: Int64
+    let totalGenerationCount: Int
+    let latestGeneratedAt: Date?
+    let updatedAt: Date
+
+    static let currentSchemaVersion: Int = 1
+    static let filename: String = ".starcat-summary.json"
+
+    static let empty: CodeFlowSummary = .init(
+        schemaVersion: currentSchemaVersion,
+        projectCount: 0,
+        totalBytes: 0,
+        totalGenerationCount: 0,
+        latestGeneratedAt: nil,
+        updatedAt: .distantPast
+    )
+
+    func withUpdatedAt(_ date: Date) -> CodeFlowSummary {
+        .init(
+            schemaVersion: schemaVersion,
+            projectCount: projectCount,
+            totalBytes: totalBytes,
+            totalGenerationCount: totalGenerationCount,
+            latestGeneratedAt: latestGeneratedAt,
+            updatedAt: date
+        )
+    }
+}
+
 enum CodeFlowStorageError: LocalizedError {
     case outputDirectoryUnavailable
     case invalidBookmark
@@ -132,7 +169,9 @@ final class CodeFlowStorage {
     private let defaults: UserDefaults
     private let fixedRootURL: URL?
 
-    private(set) var projects: [CodeFlowStoredProject] = []
+    /// HOM-203：UI 渲染唯一来源（与 `RepoContextStorage.summary` 对称）。
+    /// nil 表示尚未加载，首次进入设置页时由 `reload()` 触发加载。
+    private(set) var summary: CodeFlowSummary?
     private(set) var lastErrorMessage: String?
     private var directoryConfigurationRevision: Int = 0
 
@@ -156,15 +195,13 @@ final class CodeFlowStorage {
         return (try? resolveOutputRoot().url.path) ?? String.l10n("storage.outputDirectory.bookmarkExpired")
     }
 
-    var totalBytes: Int64 { projects.reduce(0) { $0 + $1.totalBytes } }
+    var totalBytes: Int64 { summary?.totalBytes ?? 0 }
 
-    var totalGenerationCount: Int {
-        projects.reduce(0) { $0 + $1.metadata.generation.generationCount }
-    }
+    var totalGenerationCount: Int { summary?.totalGenerationCount ?? 0 }
 
-    var latestGeneratedAt: Date? {
-        projects.map(\.metadata.generation.generatedAt).max()
-    }
+    var latestGeneratedAt: Date? { summary?.latestGeneratedAt }
+
+    var projectCount: Int { summary?.projectCount ?? 0 }
 
     /// 保存用户通过 NSOpenPanel 主动选择的目录，并把当前 CodeFlow 项目迁移过去。
     ///
@@ -214,14 +251,30 @@ final class CodeFlowStorage {
         reload()
     }
 
+    /// HOM-203：与 RepoContextStorage 同款 summary 优先策略。
+    /// summary 文件存在 + schemaVersion 匹配 + 一级目录数偏差 ≤ 阈值 → O(1) 命中；
+    /// 否则降级 `rebuildSummaryOnDisk`（O(n) 扫子目录 + 重写 summary）。
     func reload() {
         do {
-            projects = try withOutputRoot { root in
-                try scanProjects(root: root)
+            try withOutputRoot { root in
+                try loadOrRebuildSummary(root: root)
             }
             lastErrorMessage = nil
         } catch {
-            projects = []
+            summary = .empty
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    /// 强制完整重扫 + 重写 summary。手工调试 / 故障排查用，业务路径走 `reload()`。
+    func rebuildSummary() {
+        do {
+            try withOutputRoot { root in
+                try rebuildSummaryOnDisk(root: root)
+            }
+            lastErrorMessage = nil
+        } catch {
+            summary = .empty
             lastErrorMessage = error.localizedDescription
         }
     }
@@ -235,20 +288,21 @@ final class CodeFlowStorage {
     func write(pageHTML: String, metadata: CodeFlowMetadata, owner: String, name: String) throws -> CodeFlowStoredProject {
         try withOutputRoot { root in
             let directory = projectDirectory(root: root, owner: owner, name: name)
+            // HOM-203：写入前先取旧项目快照（如果有），用于 summary 增量推算。
+            let existing = try? loadProject(directory: directory)
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
             let pageURL = directory.appendingPathComponent("index.html")
             let metadataURL = directory.appendingPathComponent("metadata.json")
             try pageHTML.write(to: pageURL, atomically: true, encoding: .utf8)
 
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            encoder.dateEncodingStrategy = .iso8601
+            let encoder = Self.metadataEncoder
             try encoder.encode(metadata).write(to: metadataURL, options: .atomic)
 
             guard let project = try loadProject(directory: directory) else {
                 throw CocoaError(.fileReadCorruptFile)
             }
+            updateSummaryAfterWrite(root: root, newProject: project, oldProject: existing)
             return project
         }
     }
@@ -257,13 +311,13 @@ final class CodeFlowStorage {
         try withOutputRoot { root in
             let directory = projectDirectory(root: root, owner: owner, name: name)
             let metadataURL = directory.appendingPathComponent("metadata.json")
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            encoder.dateEncodingStrategy = .iso8601
+            let existing = try? loadProject(directory: directory)
+            let encoder = Self.metadataEncoder
             try encoder.encode(metadata).write(to: metadataURL, options: .atomic)
             guard let project = try loadProject(directory: directory) else {
                 throw CocoaError(.fileReadCorruptFile)
             }
+            updateSummaryAfterWrite(root: root, newProject: project, oldProject: existing)
             return project
         }
     }
@@ -271,11 +325,12 @@ final class CodeFlowStorage {
     func deleteProject(owner: String, name: String) throws {
         try withOutputRoot { root in
             let directory = projectDirectory(root: root, owner: owner, name: name)
+            let removed = try? loadProject(directory: directory)
             if fileManager.fileExists(atPath: directory.path) {
                 try fileManager.removeItem(at: directory)
             }
+            updateSummaryAfterDelete(root: root, removed: removed)
         }
-        reload()
     }
 
     /// 只删除项目子目录，保留用户主动选择的输出根目录本身。
@@ -291,9 +346,18 @@ final class CodeFlowStorage {
                     try? fileManager.removeItem(at: ownerDirectory)
                 }
             }
+            writeSummary(.empty.withUpdatedAt(.now), root: root)
+            summary = .empty.withUpdatedAt(.now)
         }
-        reload()
     }
+
+    /// 共享的 metadata encoder（与 `loadProject` decoder 对称）。
+    private static let metadataEncoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
 
     func outputRootURL() throws -> URL {
         try resolveOutputRoot().url
@@ -313,6 +377,159 @@ final class CodeFlowStorage {
             try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
             NSWorkspace.shared.open(root)
         }
+    }
+
+    // MARK: - Summary 缓存（HOM-203）
+
+    /// 与 `RepoContextStorage.loadOrRebuildSummary` 同款策略：summary 命中走 O(1)，
+    /// 否则降级 rebuild。
+    private func loadOrRebuildSummary(root: URL) throws {
+        guard fileManager.fileExists(atPath: root.path) else {
+            try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+            let empty = CodeFlowSummary.empty.withUpdatedAt(.now)
+            writeSummary(empty, root: root)
+            summary = empty
+            return
+        }
+        if let cached = readSummary(root: root) {
+            if cached.schemaVersion != CodeFlowSummary.currentSchemaVersion {
+                try rebuildSummaryOnDisk(root: root)
+                return
+            }
+            let approximate = try approximateProjectCount(root: root)
+            let drift = abs(approximate - cached.projectCount)
+            let tolerance = max(10, cached.projectCount / 10)
+            if drift <= tolerance {
+                summary = cached
+                return
+            }
+        }
+        try rebuildSummaryOnDisk(root: root)
+    }
+
+    private func rebuildSummaryOnDisk(root: URL) throws {
+        let scanned = try scanProjects(root: root)
+        let computed = CodeFlowSummary(
+            schemaVersion: CodeFlowSummary.currentSchemaVersion,
+            projectCount: scanned.count,
+            totalBytes: scanned.reduce(0) { $0 + $1.totalBytes },
+            totalGenerationCount: scanned.reduce(0) { $0 + $1.metadata.generation.generationCount },
+            latestGeneratedAt: scanned.map(\.metadata.generation.generatedAt).max(),
+            updatedAt: .now
+        )
+        writeSummary(computed, root: root)
+        summary = computed
+    }
+
+    /// 与 RepoContext 同款：summary 缺失时退化到全量重建（重建结果包含本次写入）。
+    private func updateSummaryAfterWrite(
+        root: URL,
+        newProject: CodeFlowStoredProject,
+        oldProject: CodeFlowStoredProject?
+    ) {
+        guard let base = summary ?? readSummary(root: root) else {
+            try? rebuildSummaryOnDisk(root: root)
+            return
+        }
+        let projectCount = base.projectCount + (oldProject == nil ? 1 : 0)
+        let totalBytes = base.totalBytes + (newProject.totalBytes - (oldProject?.totalBytes ?? 0))
+        // CodeFlow 的 generationCount 语义：单个项目的累计生成次数，整体汇总按
+        // 各项目当前 generationCount 求和。重 pack（已有项目）总和增量是
+        // `new - old`；新建则是 `+ new`。
+        let countDelta = newProject.metadata.generation.generationCount
+            - (oldProject?.metadata.generation.generationCount ?? 0)
+        let totalGenerationCount = max(0, base.totalGenerationCount + countDelta)
+        let latestGeneratedAt: Date? = {
+            let candidate = newProject.metadata.generation.generatedAt
+            if let existing = base.latestGeneratedAt {
+                return max(existing, candidate)
+            }
+            return candidate
+        }()
+        let updated = CodeFlowSummary(
+            schemaVersion: CodeFlowSummary.currentSchemaVersion,
+            projectCount: projectCount,
+            totalBytes: totalBytes,
+            totalGenerationCount: totalGenerationCount,
+            latestGeneratedAt: latestGeneratedAt,
+            updatedAt: .now
+        )
+        writeSummary(updated, root: root)
+        summary = updated
+    }
+
+    private func updateSummaryAfterDelete(
+        root: URL,
+        removed: CodeFlowStoredProject?
+    ) {
+        guard let removed else {
+            summary = (summary ?? .empty).withUpdatedAt(.now)
+            return
+        }
+        guard let base = summary ?? readSummary(root: root) else {
+            try? rebuildSummaryOnDisk(root: root)
+            return
+        }
+        let nextCount = max(0, base.projectCount - 1)
+        let nextBytes = max(0, base.totalBytes - removed.totalBytes)
+        let nextGen = max(0, base.totalGenerationCount - removed.metadata.generation.generationCount)
+        let nextLatest: Date? = {
+            if nextCount == 0 { return nil }
+            return base.latestGeneratedAt
+        }()
+        let updated = CodeFlowSummary(
+            schemaVersion: CodeFlowSummary.currentSchemaVersion,
+            projectCount: nextCount,
+            totalBytes: nextBytes,
+            totalGenerationCount: nextGen,
+            latestGeneratedAt: nextLatest,
+            updatedAt: .now
+        )
+        writeSummary(updated, root: root)
+        summary = updated
+    }
+
+    private func readSummary(root: URL) -> CodeFlowSummary? {
+        let url = root.appendingPathComponent(CodeFlowSummary.filename, isDirectory: false)
+        guard fileManager.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(CodeFlowSummary.self, from: data)
+    }
+
+    private func writeSummary(_ summary: CodeFlowSummary, root: URL) {
+        let url = root.appendingPathComponent(CodeFlowSummary.filename, isDirectory: false)
+        do {
+            let data = try Self.metadataEncoder.encode(summary)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // best-effort：缓存写失败不应阻止真源（per-project metadata.json）。
+            // CodeFlow 没有专用 logger，落到 stderr。
+            FileHandle.standardError.write(Data("[CodeFlowStorage] summary write failed: \(error.localizedDescription)\n".utf8))
+        }
+    }
+
+    private func approximateProjectCount(root: URL) throws -> Int {
+        let owners = try fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        var count = 0
+        for owner in owners where (try? owner.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+            let repos = try fileManager.contentsOfDirectory(
+                at: owner,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+            count += repos.filter {
+                (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+            }.count
+        }
+        return count
     }
 
     private func withOutputRoot<T>(_ operation: (URL) throws -> T) throws -> T {
@@ -396,6 +613,9 @@ final class CodeFlowStorage {
                         try? fileManager.removeItem(at: ownerDirectory)
                     }
                 }
+                // HOM-203：源端 summary 也清掉，避免下次切回时被旧缓存误导。
+                let sourceSummary = sourceRoot.appendingPathComponent(CodeFlowSummary.filename, isDirectory: false)
+                try? fileManager.removeItem(at: sourceSummary)
             }
         }
     }

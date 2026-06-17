@@ -87,8 +87,11 @@ struct EndToEndIntegrationTests {
         #expect(xmlString.hasSuffix("</repository>\n") || xmlString.hasSuffix("</repository>"))
 
         // ② metadata.json 存在且能反序列化
+        // HOM-203：PackMetadata.generatedAt 已改为 Date 类型，必须用
+        // PackMetadataCoder.decoder（带 lenient ISO-8601 策略）解码，否则默认
+        // JSONDecoder 不会解析 String → Date 转换，导致测试在 Date 字段处抛错。
         let metadataData = try Data(contentsOf: output.metadataURL)
-        let decoded = try JSONDecoder().decode(PackMetadata.self, from: metadataData)
+        let decoded = try PackMetadataCoder.decoder.decode(PackMetadata.self, from: metadataData)
         #expect(decoded.owner == Self.fixtureOwner)
         #expect(decoded.repo == Self.fixtureRepo)
         #expect(decoded.commitSha == Self.fixtureCommitSha)
