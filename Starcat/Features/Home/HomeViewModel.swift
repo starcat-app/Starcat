@@ -165,6 +165,13 @@ final class HomeViewModel {
     /// - selectedRepo（值）通过 computed property 从 items 派生即可。
     var selectedRepoID: Int64?
 
+    /// 外部导航（SearchCenter / 命令面板）写入 `selectedRepoID` 前置 `true`，
+    /// 让 `RepoListView` 只在该场景下 `scrollTo` 目标行。
+    ///
+    /// 用户点击列表行时保持 `false`——否则 `scrollTo(.center)` 会把视口硬顶到
+    /// 下一行，体感像「点 A 却定位到 B」（dong4j 2026-06-17 Manage 回归）。
+    var shouldScrollSelectedRepoIntoView = false
+
     /// 派生：当前详情选中的 Repo 值。
     /// 找不到（filteredSorted 已变，旧 selection 还在）时返回 nil；调用方可据此显示空态。
     ///
@@ -539,6 +546,7 @@ final class HomeViewModel {
         tagCounts = [:]
 
         selectedRepoID = nil
+        shouldScrollSelectedRepoIntoView = false
         searchQuery = ""
         searchSubmissionID &+= 1
 

@@ -727,6 +727,7 @@ struct HomeView: View {
             searchCenterViewModel.dismiss()
             Task {
                 await viewModel.reloadItems(forceRefresh: true)
+                viewModel.shouldScrollSelectedRepoIntoView = true
                 viewModel.selectedRepoID = repo.id
             }
         case .reference(let reference):

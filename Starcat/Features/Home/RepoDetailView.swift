@@ -319,8 +319,12 @@ struct ReadmeStateView: View {
                     baseURL: baseURL,
                     onScrollReportChange: onScrollReportChange
                 )
+                // 与 ActivityReleaseDetailContent 对齐：body slot 必须吃满 Scaffold 剩余
+                // 高度，否则 WKWebView 在 VStack 里按零 intrinsic 高度布局 → 闪一下后空白。
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 cacheFooter(cachedAt: cachedAt, sourceHtml: html)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .empty:
             EmptyStateView(

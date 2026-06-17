@@ -858,14 +858,12 @@ struct RepoListView: View {
             .task(id: viewModel.itemsRevision) {
                 await dependencies.openSSFScoreStore.loadCachedScores(for: viewModel.items.map(\.id))
             }
-            // selectedRepoID 变化 → 把目标行滚到视口中部。
-            // - 用户点击 row 触发的变化：目标行已在视口内，scrollTo 是 no-op
-            // - 详情区"上一篇/下一篇"或外部 navigate（SearchCenter）触发：行可能在视口外，需要滚
-            // 仅在非 nil 时滚（nil 表示"清空选中"，不该跳动）。
+            // 仅外部导航（SearchCenter / 命令面板）滚到目标行；列表行点击不写
+            // `shouldScrollSelectedRepoIntoView`，避免 scrollTo(.center) 错位到下一卡片。
             .onChange(of: selection.wrappedValue) { _, newValue in
                 guard let id = newValue else { return }
-                // 2026-06-15:reduceMotion 时跳过 0.2s 平滑滚动,直接 jump-to(scrollTo
-                // 在裸 closure 内不挂 transaction = 瞬切)。
+                guard viewModel.shouldScrollSelectedRepoIntoView else { return }
+                viewModel.shouldScrollSelectedRepoIntoView = false
                 if reduceMotion {
                     proxy.scrollTo(id, anchor: .center)
                 } else {

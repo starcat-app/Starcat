@@ -268,12 +268,14 @@ struct ReadmeWebView: NSViewRepresentable {
                 } else {
                     overflow = nil
                 }
-                onScrollReportChange(
-                    RepoDetailScrollReport(
-                        offsetY: CGFloat(truncating: yValue),
-                        scrollOverflow: overflow
-                    )
+                let report = RepoDetailScrollReport(
+                    offsetY: CGFloat(truncating: yValue),
+                    scrollOverflow: overflow
                 )
+                // 避免在 WebKit 回调栈内同步触发 SwiftUI 重排，干扰 loadHTMLString 首帧。
+                Task { @MainActor in
+                    self.onScrollReportChange(report)
+                }
             }
         }
 
