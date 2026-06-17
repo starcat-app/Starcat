@@ -129,6 +129,9 @@ struct TrendingView: View {
 
     /// 三段布局：周期 picker **真居中** / 刷新组（freshness 文本 + 刷新 icon）右上角浮动。
     ///
+    /// 顶栏外边距与 `WeeklyContentView.filterBar` / `ActivityView` 顶栏对齐：
+    /// horizontal 14、top 8、bottom 6（dong4j 2026-06-18 反馈 trending 顶栏过高）。
+    ///
     /// 设计要点（2026-06-02 dong4j 反馈"应该固定周期切换组件"调整）：
     /// - **周期 picker 真居中**（左右 Spacer 各占一半），与 toolbar 整体宽度对齐，
     ///   不会因左右两侧内容长度变化而漂移位置
@@ -153,22 +156,19 @@ struct TrendingView: View {
                 refreshButton
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
     }
 
     private var periodPicker: some View {
         @Bindable var vm = viewModel
 
-        return Picker("", selection: $vm.selectedPeriod) {
-            ForEach(TrendingPeriod.allCases) { period in
-                Text(period.displayName)
-                    .font(.headline)
-                    .tag(period)
-            }
-        }
-        .pickerStyle(.segmented)
-        .frame(maxWidth: 320)
+        return PillSegmentedControl(
+            items: Array(TrendingPeriod.allCases),
+            selection: $vm.selectedPeriod,
+            title: \.displayName
+        )
     }
 
     /// "12 分钟前" 新鲜度提示。

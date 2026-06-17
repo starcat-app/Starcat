@@ -1409,6 +1409,64 @@ private struct SearchHistoryFlowLayout: Layout {
 
 // MARK: - Remote Repo Detail
 
+/// 搜索详情卡底部操作 chip：图标 + 短标签 + capsule 底。
+/// 视觉语言对齐同卡 `topicsRow` / `wikiChip`（secondary 10% capsule），
+/// hover 时底加深到 16%，比光秃秃图标更有层次，又比 `.borderedProminent` 克制。
+private struct SearchDetailActionChip: View {
+    let systemImage: String
+    /// 为 `nil` 时仅渲染图标（如 ··· 折叠菜单）。
+    var titleKey: LocalizedStringKey?
+    let helpKey: LocalizedStringKey
+    /// 已 star 等「当前态」：图标/文字改 primary，底用橙色浅 tint 与 score badge 同族。
+    var isEmphasized: Bool = false
+    let action: () -> Void
+
+    @State private var isHovered = false
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if let titleKey {
+                    HStack(spacing: 5) {
+                        chipIcon
+                        Text(titleKey)
+                            .font(.system(size: 11, weight: .medium))
+                            .lineLimit(1)
+                    }
+                } else {
+                    chipIcon
+                }
+            }
+            .foregroundStyle(isEmphasized ? Color.primary : Color.secondary)
+            .padding(.horizontal, titleKey == nil ? 8 : 10)
+            .padding(.vertical, 5)
+            .background(chipBackground, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(helpKey)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.15)) {
+                isHovered = hovering
+            }
+        }
+    }
+
+    private var chipIcon: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 11, weight: .semibold))
+    }
+
+    private var chipBackground: Color {
+        if isEmphasized {
+            return Color.orange.opacity(isHovered ? 0.18 : 0.12)
+        }
+        return Color.secondary.opacity(isHovered ? 0.16 : 0.10)
+    }
+}
+
 /// GitHub 搜索结果的会话级详情卡（SEARCH-RICH 2026-06-14 重构）。
 ///
 /// 设计目标：在不打额外 GitHub API 调用、不入库的前提下，把搜索接口已经返回
@@ -1925,34 +1983,29 @@ private struct SearchRemoteRepoDetailView: View {
 
     // MARK: - Action row
 
-    /// 主操作行：Star / Ask AI / 在 GitHub 打开 + ··· 折叠菜单
+    /// 主操作行：Star / Ask AI / 在 GitHub 打开 + ··· 折叠菜单。
+    /// `SearchDetailActionChip`：capsule 底 + 图标短标签，与同卡 topic/wiki chip 同族。
     private func actionRow(repo: Repo) -> some View {
         HStack(spacing: 8) {
-            Button {
-                onToggleStar()
-            } label: {
-                Label(
-                    isStarred
-                        ? "search.detail.action.unstar"
-                        : "search.detail.action.star",
-                    systemImage: isStarred ? "star.slash" : "star"
-                )
-            }
-            .buttonStyle(.borderedProminent)
-
-            Button {
-                onOpenAI()
-            } label: {
-                Label("search.detail.action.askAI", systemImage: "sparkles")
-            }
-            .buttonStyle(.borderedProminent)
-
-            Button {
-                onOpenInGitHub()
-            } label: {
-                Label("search.detail.action.openOnGitHub", systemImage: "arrow.up.right.square")
-            }
-            .buttonStyle(.borderedProminent)
+            SearchDetailActionChip(
+                systemImage: isStarred ? "star.fill" : "star",
+                titleKey: isStarred ? "search.detail.action.unstar" : "search.detail.action.star",
+                helpKey: isStarred ? "search.detail.action.unstar" : "search.detail.action.star",
+                isEmphasized: isStarred,
+                action: onToggleStar
+            )
+            SearchDetailActionChip(
+                systemImage: "sparkles",
+                titleKey: "search.detail.action.askAI",
+                helpKey: "search.detail.action.askAI",
+                action: onOpenAI
+            )
+            SearchDetailActionChip(
+                systemImage: "arrow.up.right.square",
+                titleKey: "search.detail.action.openOnGitHub",
+                helpKey: "search.detail.action.openOnGitHub",
+                action: onOpenInGitHub
+            )
 
             Spacer(minLength: 0)
 
@@ -1980,19 +2033,11 @@ private struct SearchRemoteRepoDetailView: View {
     /// 与 `FeaturedExternalLinksControl` 同款"避免双 presentation 同帧竞争"做法。
     @ViewBuilder
     private func overflowMenu(repo: Repo) -> some View {
-        Button {
-            isOverflowPresented.toggle()
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .help("search.detail.action.more.tooltip")
+        SearchDetailActionChip(
+            systemImage: "ellipsis.circle",
+            helpKey: "search.detail.action.more.tooltip",
+            action: { isOverflowPresented.toggle() }
+        )
         .popover(isPresented: $isOverflowPresented, arrowEdge: .top) {
             overflowPopoverContent(repo: repo)
                 .appLocaleEnvironment()
