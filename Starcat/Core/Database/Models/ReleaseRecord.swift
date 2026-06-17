@@ -99,6 +99,10 @@ struct ReleaseAsset: Codable, Equatable, Hashable, Identifiable {
     /// 直接下载 URL（GitHub 的 browser_download_url）。
     var browserDownloadUrl: String
 
+    /// GitHub REST Asset 端点（`GET .../releases/assets/{id}` + octet-stream）。
+    /// 与 `browserDownloadUrl` 互补：browser 403 时 fallback。
+    var apiUrl: String?
+
     /// GitHub 统计的下载次数。
     var downloadCount: Int
 

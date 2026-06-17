@@ -8,7 +8,7 @@
 //  - `ReleaseTimelineView` (View)：sheet / 独立窗口的根视图
 //  - `ReleaseTimelineViewModel` (@MainActor @Observable)：数据加载 / 已读切换 / 立即刷新
 //  - `ReleaseTimelineRow` (View)：单条 release 行 + 资产展开
-//  - `ReleaseAssetRow` (View)：单个资产 + 复制下载链接 + 平台 / 类型过滤已通过 ViewModel 传入的 query 处理
+//  - `ReleaseAssetRowView`：单个资产 + 复制 + 应用内下载
 //
 //  设计目标：
 //  - 独立路径展示所有订阅的 Release，不复用 RepoListView 的复杂状态机
@@ -453,7 +453,7 @@ private struct ReleaseTimelineRow: View {
             DisclosureGroup(isExpanded: $isExpanded) {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(assets) { asset in
-                        ReleaseAssetRow(asset: asset, onCopy: onCopyAsset)
+                        ReleaseAssetRowView(asset: asset, layout: .compact, onCopyLink: onCopyAsset)
                     }
                 }
                 .padding(.top, 4)
@@ -487,65 +487,5 @@ private struct ReleaseTimelineRow: View {
         formatter.unitsStyle = .short
         formatter.locale = locale
         return formatter.localizedString(for: date, relativeTo: Date())
-    }
-}
-
-// MARK: - AssetRow
-
-private struct ReleaseAssetRow: View {
-    let asset: ReleaseAsset
-    let onCopy: (String) -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: assetIcon)
-                .foregroundStyle(.secondary)
-                .font(.caption)
-                .frame(width: 16)
-            Text(verbatim: asset.name)
-                .font(.caption)
-                .lineLimit(1)
-            Spacer()
-            Text(verbatim: ByteCountFormatter.string(fromByteCount: Int64(asset.size), countStyle: .file))
-                .font(.caption2.monospaced())
-                .foregroundStyle(.secondary)
-            Button {
-                onCopy(asset.browserDownloadUrl)
-            } label: {
-                Label("releases.copyDownloadLink", systemImage: "doc.on.clipboard")
-                    .font(.caption2)
-                    .labelStyle(.iconOnly)
-            }
-            .buttonStyle(.borderless)
-            .focusEffectDisabled()
-            .help("releases.copyDownloadLink")
-            Button {
-                if let url = URL(string: asset.browserDownloadUrl) {
-                    NSWorkspace.shared.open(url)
-                }
-            } label: {
-                Label("releases.downloadAsset", systemImage: "arrow.down.circle")
-                    .font(.caption2)
-                    .labelStyle(.iconOnly)
-            }
-            .buttonStyle(.borderless)
-            .focusEffectDisabled()
-            .help("releases.downloadAsset")
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-    }
-
-    /// 按文件扩展名 / contentType 给个有视觉区分度的图标。
-    /// 没有命中规则就回退默认 `doc`，避免 UI 突兀。
-    private var assetIcon: String {
-        let lower = asset.name.lowercased()
-        if lower.hasSuffix(".dmg") { return "internaldrive" }
-        if lower.hasSuffix(".pkg") { return "shippingbox.fill" }
-        if lower.hasSuffix(".zip") || lower.hasSuffix(".tar.gz") || lower.hasSuffix(".tgz") { return "doc.zipper" }
-        if lower.hasSuffix(".exe") || lower.hasSuffix(".msi") { return "pc" }
-        if lower.hasSuffix(".deb") || lower.hasSuffix(".rpm") || lower.hasSuffix(".appimage") { return "terminal" }
-        if lower.hasSuffix(".app") { return "macwindow" }
-        return "doc"
     }
 }
