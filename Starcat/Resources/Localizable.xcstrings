@@ -11466,13 +11466,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Private Notes"
+            "value" : "Notes"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "私有笔记"
+            "value" : "笔记"
           }
         }
       }
@@ -11600,13 +11600,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Collapse private notes"
+            "value" : "Collapse notes"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点击收起私有笔记"
+            "value" : "点击收起笔记"
           }
         }
       }
@@ -11616,13 +11616,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Expand private notes"
+            "value" : "Expand notes"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点击展开私有笔记"
+            "value" : "点击展开笔记"
           }
         }
       }
@@ -11683,13 +11683,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Private Notes"
+            "value" : "Notes"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "私有笔记"
+            "value" : "笔记"
           }
         }
       }
