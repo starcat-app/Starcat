@@ -95,6 +95,9 @@ final class ActivityViewModel {
     /// 列表客户端分页：首屏 + 滚到底增量加载（对齐 Weekly `localPageSize`）。
     static let pageSize = 30
 
+    /// 超过该条数的 filter 走后台线程（`.all` 始终后台）。
+    static let asyncFilterItemThreshold = 400
+
     /// 受支持的 GitHub Event 类型集合。
     ///
     /// **排除清单**（决策 Q1 + §7.7）：
@@ -120,6 +123,8 @@ final class ActivityViewModel {
     private(set) var itemsRevision: Int = 0
     /// P2：切分类时让 `listRowReveal` 走 instant（不 stagger）；排序切换仍为 animated。
     private(set) var skipListRowReveal = false
+    /// 后台 filter / dedupe（尤其 `.all`）进行中；UI 应显示骨架屏而非空态。
+    private(set) var isApplyingCategoryFilter = false
     /// 当前分类是否还有未上屏的 filtered 行（滚到底加载更多）。
     private(set) var hasMoreItems: Bool = false
 
@@ -151,6 +156,12 @@ final class ActivityViewModel {
 
     /// 切分类后补拉专属网络的 in-flight 任务（测试可 await）。
     private var supplementNetworkTask: Task<Void, Never>?
+
+    /// 分类 filter 缓存；`allItems` 变化时清空。`.all` 去重+排序较重，可预热带入缓存。
+    private var filteredItemsCache: [ActivityCategory: [ActivityItem]] = [:]
+
+    /// 进行中的后台 filter；新切分类会 cancel 旧任务。
+    private var categoryFilterTask: Task<Void, Never>?
 
     /// 本会话是否已按「含 events 的分类」跑过 events 网络决策（含 TTL 短路）。
     private var didPrimeEventsNetwork = false
@@ -225,16 +236,17 @@ final class ActivityViewModel {
         currentCategory = category
         if isAggregateLoaded {
             markCategorySwitchForListReveal()
-            applyFilterForCurrentCategory(bumpRevision: false)
+            applyCategoryFilter(category, bumpRevision: false)
             return
         }
+        isLoading = true
         await primeCategoryCacheIfAvailable(for: category)
         await reload(category: category, shouldPollReleases: false, cachePolicy: .respectTTL)
     }
 
     /// 滚到底加载下一页（纯本地切片，零网络）。
     func loadMoreIfNeeded() {
-        guard hasMoreItems, !isLoading else { return }
+        guard hasMoreItems, !isLoading, !isApplyingCategoryFilter else { return }
         visiblePage += 1
         items = paginatedSlice(from: filteredItems, page: visiblePage)
         hasMoreItems = filteredItems.count > items.count
@@ -265,7 +277,8 @@ final class ActivityViewModel {
         guard sort != timeSort(for: currentCategory) else { return }
         skipListRowReveal = false
         timeSortByCategory[currentCategory] = sort
-        applyFilterForCurrentCategory(bumpRevision: true)
+        filteredItemsCache.removeValue(forKey: currentCategory)
+        applyCategoryFilter(currentCategory, bumpRevision: true)
     }
 
     /// 清空关注分类本地缓存（`activity_events` 全表删除 + 重建聚合列表）。
@@ -284,7 +297,8 @@ final class ActivityViewModel {
             publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
         } else {
             allItems.removeAll { $0.kind == .following }
-            applyFilterForCurrentCategory(bumpRevision: true)
+            filteredItemsCache.removeAll()
+            applyCategoryFilter(currentCategory, bumpRevision: true)
         }
         loadError = nil
     }
@@ -307,22 +321,25 @@ final class ActivityViewModel {
             publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
         } else {
             allItems.removeAll { $0.kind == .announcement }
-            applyFilterForCurrentCategory(bumpRevision: true)
+            filteredItemsCache.removeAll()
+            applyCategoryFilter(currentCategory, bumpRevision: true)
         }
         loadError = nil
     }
 
     /// 侧边栏切分类：只 refilter `allItems`；若该分类专属网络尚未拉过则后台补拉。
     ///
-    /// **性能约束（HOM-46 同款）**：切分类走 `applyFilterForCurrentCategory(bumpRevision: false)`，
+    /// **性能约束（HOM-46 同款）**：切分类走 `applyCategoryFilter(bumpRevision: false)`，
     /// 不因可见 ID 变化 bump `itemsRevision`，避免 30 行 `listRowReveal` stagger 占满主线程。
     func selectCategory(_ category: ActivityCategory) {
         currentCategory = category
         markCategorySwitchForListReveal()
+        categoryFilterTask?.cancel()
         if isAggregateLoaded || !allItems.isEmpty {
-            applyFilterForCurrentCategory(bumpRevision: false)
+            applyCategoryFilter(category, bumpRevision: false)
         }
         if items.isEmpty, !isAggregateLoaded {
+            isLoading = true
             Task { await self.primeCategoryCacheIfAvailable(for: category) }
         }
         guard isAggregateLoaded else { return }
@@ -351,6 +368,7 @@ final class ActivityViewModel {
     func awaitPendingBackgroundWorkForTesting() async {
         await supplementNetworkTask?.value
         await securityBackgroundTask?.value
+        await categoryFilterTask?.value
     }
 
     /// SWR 核心入口（PR-2 重构，复刻 `TrendingViewModel.reload` 同款套路）。
@@ -370,6 +388,7 @@ final class ActivityViewModel {
     func reload(category: ActivityCategory, shouldPollReleases: Bool, cachePolicy: ActivityCachePolicy) async {
         currentCategory = category
         currentReloadTask?.cancel()
+        isLoading = true
 
         let task = Task { [weak self] in
             guard let self else { return }
@@ -650,8 +669,58 @@ final class ActivityViewModel {
     ///   **禁止**因可见 ID 变化而 bump `itemsRevision`——否则 30 行 `listRowReveal`
     ///   同时 stagger，主线程卡顿会连带 sidebar 蛇动画掉帧。
     /// - 排序切换等仍用 `bumpRevision: true` 保留 reveal。
-    private func applyFilterForCurrentCategory(bumpRevision: Bool, resetPage: Bool = true) {
-        filteredItems = filter(allItems, by: currentCategory)
+    ///
+    /// **`.all` 专项（2026-06-17）**：去重+全量排序走 `Task.detached`，避免主线程彩虹圈；
+    /// 命中 `filteredItemsCache` 时同步上屏。
+    private func applyCategoryFilter(
+        _ category: ActivityCategory,
+        bumpRevision: Bool,
+        resetPage: Bool = true
+    ) {
+        if let cached = filteredItemsCache[category] {
+            commitFilteredSlice(from: cached, bumpRevision: bumpRevision, resetPage: resetPage)
+            return
+        }
+
+        let source = allItems
+        guard !source.isEmpty else {
+            commitFilteredSlice(from: [], bumpRevision: bumpRevision, resetPage: resetPage)
+            return
+        }
+
+        let sort = timeSort(for: category)
+        let needsAsyncFilter = category == .all || source.count > Self.asyncFilterItemThreshold
+
+        if !needsAsyncFilter {
+            let filtered = Self.computeFilteredItems(source: source, category: category, timeSort: sort)
+            filteredItemsCache[category] = filtered
+            commitFilteredSlice(from: filtered, bumpRevision: bumpRevision, resetPage: resetPage)
+            return
+        }
+
+        isApplyingCategoryFilter = true
+        categoryFilterTask?.cancel()
+        categoryFilterTask = Task { [weak self] in
+            let filtered = await Task.detached(priority: .userInitiated) {
+                Self.computeFilteredItems(source: source, category: category, timeSort: sort)
+            }.value
+            guard let self, !Task.isCancelled else { return }
+            guard self.currentCategory == category else {
+                self.isApplyingCategoryFilter = false
+                return
+            }
+            self.filteredItemsCache[category] = filtered
+            self.commitFilteredSlice(from: filtered, bumpRevision: bumpRevision, resetPage: resetPage)
+            self.isApplyingCategoryFilter = false
+        }
+    }
+
+    private func commitFilteredSlice(
+        from filtered: [ActivityItem],
+        bumpRevision: Bool,
+        resetPage: Bool = true
+    ) {
+        filteredItems = filtered
         if resetPage {
             visiblePage = 1
         }
@@ -662,9 +731,27 @@ final class ActivityViewModel {
         if bumpRevision {
             itemsRevision += 1
         } else if !resetPage && oldIDs != slice.map(\.id) {
-            // 分页追加等同分类内的局部 ID 变化（loadMore 不走此路径，留作防御）。
             itemsRevision += 1
         }
+    }
+
+    /// 后台预热分类 filter 缓存（不阻塞 UI）。
+    private func prewarmFilterCache(for category: ActivityCategory) {
+        guard filteredItemsCache[category] == nil else { return }
+        let source = allItems
+        guard !source.isEmpty else { return }
+        let sort = timeSort(for: category)
+        Task.detached(priority: .utility) { [source, category, sort] in
+            let filtered = Self.computeFilteredItems(source: source, category: category, timeSort: sort)
+            await MainActor.run { [weak self] in
+                guard let self, self.filteredItemsCache[category] == nil else { return }
+                self.filteredItemsCache[category] = filtered
+            }
+        }
+    }
+
+    private func applyFilterForCurrentCategory(bumpRevision: Bool, resetPage: Bool = true) {
+        applyCategoryFilter(currentCategory, bumpRevision: bumpRevision, resetPage: resetPage)
     }
 
     private func paginatedSlice(from source: [ActivityItem], page: Int) -> [ActivityItem] {
@@ -686,14 +773,27 @@ final class ActivityViewModel {
             aggregateSnapshot = snapshot
         }
         isAggregateLoaded = true
-        // 后台 reload / 网络回填：仅当「当前分类可见列表」真的变了才 bump revision，
-        // 避免用户已看到缓存后又被第二波动画打断（Manage HOM-46 同款）。
-        applyFilterForCurrentCategory(bumpRevision: false)
+        filteredItemsCache.removeAll()
+        categoryFilterTask?.cancel()
+        isApplyingCategoryFilter = false
+
+        let filtered = Self.computeFilteredItems(
+            source: source,
+            category: currentCategory,
+            timeSort: timeSort(for: currentCategory)
+        )
+        filteredItemsCache[currentCategory] = filtered
+        commitFilteredSlice(from: filtered, bumpRevision: false, resetPage: true)
+
+        if currentCategory != .all {
+            prewarmFilterCache(for: .all)
+        }
     }
 
     private func makeItems(snapshot: AggregateSnapshot) -> [ActivityItem] {
-        makeItems(
-            repos: snapshot.repos,
+        let repos = Self.reposForItemAssembly(snapshot.repos)
+        return makeItems(
+            repos: repos,
             releases: snapshot.releases,
             events: snapshot.events,
             announcements: snapshot.announcements
@@ -1072,33 +1172,55 @@ final class ActivityViewModel {
 
     // MARK: - 视图模型组装
 
-    private func filter(_ source: [ActivityItem], by category: ActivityCategory) -> [ActivityItem] {
+    /// 全表 starred repos 只取近期 `primeStarredLimit` 条参与 star/repo/suggestion 三类 builder，
+    /// 避免 `fetchAllStarred` 数千行时在主线程做三次全量 sort。
+    nonisolated static func reposForItemAssembly(_ repos: [Repo]) -> [Repo] {
+        guard repos.count > primeStarredLimit else { return repos }
+        return repos
+            .filter { $0.isStarred }
+            .sorted { ($0.starredAt ?? "") > ($1.starredAt ?? "") }
+            .prefix(primeStarredLimit)
+            .map { $0 }
+    }
+
+    /// 分类 filter + sort（可在 `Task.detached` 调用，避免 `.all` 去重堵主线程）。
+    nonisolated static func computeFilteredItems(
+        source: [ActivityItem],
+        category: ActivityCategory,
+        timeSort: ActivityTimeSort
+    ) -> [ActivityItem] {
         let filtered: [ActivityItem]
         if category == .all {
-            // `.all` 视图专属去重：makeStarItems / makeRepositoryItems / makeSuggestionItems
-            // 三个 builder 都派生自同一份 starred repos，同一个 repo 在 .all 视图会同时
-            // 出现 .star / .repository / .suggestion 三条卡片（id 前缀不同，Identifiable
-            // 不会去重）。dong4j 2026-06-11 反馈视觉冗余 → 这里做一次「按 repo.id」去重。
-            //
-            // 单独的具体分类（.star / .repository / .suggestion）不在这里走，因为：
-            //  - 它们各自就是单一 kind 视角（按 starredAt / pushedAt / stars 数排序），
-            //    用户主动选择「看 push 活动」或「看推荐」时不应被去重剥夺信号；
-            //  - 单一 kind 内同 repo 本就不会重复（每个 repo 在每个 builder 里最多 1 条）。
             filtered = deduplicateForAllView(source)
         } else {
             filtered = source.filter { $0.category == category }
         }
-        return sortFilteredItems(filtered, category: category)
+        return sortFilteredItems(filtered, timeSort: timeSort)
+    }
+
+    private func filter(_ source: [ActivityItem], by category: ActivityCategory) -> [ActivityItem] {
+        Self.computeFilteredItems(
+            source: source,
+            category: category,
+            timeSort: timeSort(for: category)
+        )
     }
 
     /// 分类列表最终排序：尊重各分类 `timeSort`（默认最新优先）。
-    private func sortFilteredItems(_ items: [ActivityItem], category: ActivityCategory) -> [ActivityItem] {
-        let ascending = timeSort(for: category) == .oldestFirst
+    nonisolated static func sortFilteredItems(
+        _ items: [ActivityItem],
+        timeSort: ActivityTimeSort
+    ) -> [ActivityItem] {
+        let ascending = timeSort == .oldestFirst
         return items.sorted { lhs, rhs in
             let l = lhs.createdAt ?? .distantPast
             let r = rhs.createdAt ?? .distantPast
             return ascending ? (l < r) : (l > r)
         }
+    }
+
+    private func sortFilteredItems(_ items: [ActivityItem], category: ActivityCategory) -> [ActivityItem] {
+        Self.sortFilteredItems(items, timeSort: timeSort(for: category))
     }
 
     /// `.all` 视图按 `repo.id` 在 `.star` / `.repository` / `.suggestion` 三类间去重。
@@ -1108,7 +1230,7 @@ final class ActivityViewModel {
     ///  - `.release`：独立事件源（用户订阅过的版本发布），与同 repo 的 star 语义并存；
     ///  - `.following`：每条对应一个 GitHub event id（unique），即便同 repo 同 actor
     ///    也是不同时间不同动作的独立事件，不去重。
-    private func deduplicateForAllView(_ source: [ActivityItem]) -> [ActivityItem] {
+    nonisolated static func deduplicateForAllView(_ source: [ActivityItem]) -> [ActivityItem] {
         var bestByRepoId: [Int64: ActivityItem] = [:]
         var nonDedupItems: [ActivityItem] = []
 
@@ -1125,7 +1247,7 @@ final class ActivityViewModel {
         return nonDedupItems + Array(bestByRepoId.values)
     }
 
-    private static func isDedupableKind(_ kind: ActivityKind) -> Bool {
+    nonisolated private static func isDedupableKind(_ kind: ActivityKind) -> Bool {
         switch kind {
         case .star, .repository, .suggestion:
             return true
@@ -1134,7 +1256,7 @@ final class ActivityViewModel {
         }
     }
 
-    private static func shouldReplace(existing: ActivityItem?, with candidate: ActivityItem) -> Bool {
+    nonisolated private static func shouldReplace(existing: ActivityItem?, with candidate: ActivityItem) -> Bool {
         guard let existing else { return true }
         let lhs = existing.createdAt ?? .distantPast
         let rhs = candidate.createdAt ?? .distantPast
@@ -1145,7 +1267,7 @@ final class ActivityViewModel {
 
     /// kind 优先级（仅 tiebreaker 用，越高越优先保留）。
     /// star 是用户行为信号最强；repository 是 push 活动；suggestion 是启发式推荐。
-    private static func kindPriority(_ kind: ActivityKind) -> Int {
+    nonisolated private static func kindPriority(_ kind: ActivityKind) -> Int {
         switch kind {
         case .star:         return 3
         case .repository:   return 2

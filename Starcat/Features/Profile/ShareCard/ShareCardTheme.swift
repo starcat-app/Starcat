@@ -150,16 +150,6 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
             return .idCard
         }
     }
-
-    /// 是否为 Pro 专属主题（ID 卡布局：简约白卡 / 极夜黑卡）。
-    var requiresPro: Bool {
-        switch self {
-        case .lightCard, .darkCard:
-            return true
-        default:
-            return false
-        }
-    }
 }
 
 /// 卡片布局类型。

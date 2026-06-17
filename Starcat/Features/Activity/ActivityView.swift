@@ -118,7 +118,7 @@ struct ActivityView: View {
             activityFilterBar(viewModel)
             Divider()
 
-            if viewModel.isLoading && viewModel.items.isEmpty {
+            if shouldShowActivitySkeleton(viewModel) {
                 RepoSkeletonListView(rowCount: 8)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = viewModel.loadError, viewModel.items.isEmpty {
@@ -418,6 +418,15 @@ struct ActivityView: View {
         formatter.unitsStyle = .short
         formatter.locale = locale
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    /// 加载中 / 后台 filter 中 / 聚合未就绪 → 骨架屏，避免误显示「暂无活动」空态。
+    private func shouldShowActivitySkeleton(_ viewModel: ActivityViewModel) -> Bool {
+        if viewModel.isApplyingCategoryFilter { return true }
+        if viewModel.items.isEmpty && (viewModel.isLoading || !viewModel.isAggregateReady) {
+            return true
+        }
+        return false
     }
 
     static func absoluteDate(_ date: Date) -> String {

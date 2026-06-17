@@ -195,28 +195,9 @@ struct ShareCardContent: View {
                         Circle().stroke(palette.accent, lineWidth: 2)
                     )
 
-                // Pro 用户标识：彩虹渐变徽章
+                // Pro 用户标识：彩虹渐变徽章（杂志卡圆形头像挂在右下角）
                 if isProUser {
-                    Text("PRO")
-                        .font(.system(size: 8, weight: .black))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background {
-                            Capsule()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [.yellow, .orange, .pink],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
-                        }
-                        .overlay {
-                            Capsule()
-                                .stroke(.white.opacity(0.75), lineWidth: 0.7)
-                        }
+                    shareCardProBadge
                         .offset(x: 8, y: 0)
                 }
             }
@@ -413,6 +394,31 @@ struct ShareCardContent: View {
 
     // MARK: - 通用元素
 
+    /// Pro 用户彩虹渐变徽章。杂志卡 / ID 卡共用，由调用方决定挂载位置。
+    @ViewBuilder
+    private var shareCardProBadge: some View {
+        Text("PRO")
+            .font(.system(size: 8, weight: .black))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background {
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [.yellow, .orange, .pink],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+            }
+            .overlay {
+                Capsule()
+                    .stroke(.white.opacity(0.75), lineWidth: 0.7)
+            }
+    }
+
     /// 全宽细分隔线（顶/中/底分区用）。
     private var divider: some View {
         Rectangle()
@@ -511,6 +517,14 @@ struct ShareCardContent: View {
                     bottomTrailingRadius: 18
                 )
             )
+        }
+        .frame(width: avatarSide, height: avatarHeight)
+        .overlay(alignment: .topTrailing) {
+            // ID 卡大圆角头像：Pro 徽章挂在右上角（杂志卡圆形头像在右下角）
+            if isProUser {
+                shareCardProBadge
+                    .offset(x: -10, y: 10)
+            }
         }
         .frame(maxWidth: .infinity)
     }
