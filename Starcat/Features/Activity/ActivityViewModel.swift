@@ -126,11 +126,8 @@ final class ActivityViewModel {
     /// 当前侧边栏选中的分类（`selectCategory` / `reload` 入口都会更新）。
     private var currentCategory: ActivityCategory = .all
 
-    /// 公告分类列表排序（仅 `.announcement` filter 时生效）。
-    private(set) var announcementSort: ActivityAnnouncementSort = .newestFirst
-
-    /// 关注分类列表排序（仅 `.following` filter 时生效）。
-    private(set) var followingSort: ActivityFollowingSort = .newestFirst
+    /// 各分类独立记忆的时间排序（默认 `.newestFirst`）。
+    private var timeSortByCategory: [ActivityCategory: ActivityTimeSort] = [:]
 
     /// 后台 security 扫描任务（可取消；完成后再合并进 `allItems`）。
     private var securityBackgroundTask: Task<Void, Never>?
@@ -222,19 +219,17 @@ final class ActivityViewModel {
         await reload(category: category, shouldPollReleases: false, cachePolicy: .respectTTL)
     }
 
-    /// 公告分类切换排序：纯本地 refilter，零网络。
-    func changeAnnouncementSort(to sort: ActivityAnnouncementSort) {
-        guard sort != announcementSort else { return }
-        announcementSort = sort
-        guard currentCategory == .announcement else { return }
-        applyFilterForCurrentCategory(bumpRevision: true)
+    /// 指定分类的时间排序（各分类独立记忆，默认最新优先）。
+    func timeSort(for category: ActivityCategory) -> ActivityTimeSort {
+        guard category.showsActivityFilterBar else { return .newestFirst }
+        return timeSortByCategory[category] ?? .newestFirst
     }
 
-    /// 关注分类切换排序：纯本地 refilter，零网络。
-    func changeFollowingSort(to sort: ActivityFollowingSort) {
-        guard sort != followingSort else { return }
-        followingSort = sort
-        guard currentCategory == .following else { return }
+    /// 切换当前分类排序：纯本地 refilter，零网络。
+    func changeTimeSort(to sort: ActivityTimeSort) {
+        guard currentCategory.showsActivityFilterBar else { return }
+        guard sort != timeSort(for: currentCategory) else { return }
+        timeSortByCategory[currentCategory] = sort
         applyFilterForCurrentCategory(bumpRevision: true)
     }
 
@@ -963,18 +958,9 @@ final class ActivityViewModel {
         return sortFilteredItems(filtered, category: category)
     }
 
-    /// 分类列表最终排序。公告 / 关注尊重各自 sort；其它分类默认时间倒序。
+    /// 分类列表最终排序：尊重各分类 `timeSort`（默认最新优先）。
     private func sortFilteredItems(_ items: [ActivityItem], category: ActivityCategory) -> [ActivityItem] {
-        let ascending: Bool = {
-            switch category {
-            case .announcement:
-                return announcementSort == .oldestFirst
-            case .following:
-                return followingSort == .oldestFirst
-            default:
-                return false
-            }
-        }()
+        let ascending = timeSort(for: category) == .oldestFirst
         return items.sorted { lhs, rhs in
             let l = lhs.createdAt ?? .distantPast
             let r = rhs.createdAt ?? .distantPast

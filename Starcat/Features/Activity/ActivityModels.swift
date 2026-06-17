@@ -108,11 +108,13 @@ extension ActivityCategory {
     }
 }
 
-/// 公告分类列表排序（对齐 Weekly `WeeklyFeedSort` 的 Picker 交互，仅时间维度）。
-enum ActivityAnnouncementSort: String, CaseIterable, Identifiable, Sendable {
-    /// 发布时间从新到旧（默认）。
+/// Activity 本地聚合分类共用的时间排序（对齐 Weekly `WeeklyFeedSort` 的 Picker 交互）。
+///
+/// 适用：全部 / 公告 / 发新版 / 星标 / 仓库 / 关注 / 建议（`.weekly` 走独立 ViewModel）。
+enum ActivityTimeSort: String, CaseIterable, Identifiable, Sendable {
+    /// 活动时间从新到旧（各分类默认）。
     case newestFirst
-    /// 发布时间从旧到新。
+    /// 活动时间从旧到新。
     case oldestFirst
 
     var id: String { rawValue }
@@ -120,27 +122,17 @@ enum ActivityAnnouncementSort: String, CaseIterable, Identifiable, Sendable {
     var localizedTitle: String {
         switch self {
         case .newestFirst:
-            return String.l10n("activity.announcement.sort.newest")
+            return String.l10n("activity.sort.newest")
         case .oldestFirst:
-            return String.l10n("activity.announcement.sort.oldest")
+            return String.l10n("activity.sort.oldest")
         }
     }
 }
 
-/// 关注分类列表排序（与 `ActivityAnnouncementSort` 同款交互）。
-enum ActivityFollowingSort: String, CaseIterable, Identifiable, Sendable {
-    case newestFirst
-    case oldestFirst
-
-    var id: String { rawValue }
-
-    var localizedTitle: String {
-        switch self {
-        case .newestFirst:
-            return String.l10n("activity.following.sort.newest")
-        case .oldestFirst:
-            return String.l10n("activity.following.sort.oldest")
-        }
+extension ActivityCategory {
+    /// 本地聚合分类顶栏：排序 + 刷新（`.weekly` 由 `WeeklyContentView` 自管）。
+    var showsActivityFilterBar: Bool {
+        self != .weekly
     }
 }
 

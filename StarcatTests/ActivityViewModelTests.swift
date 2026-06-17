@@ -529,7 +529,7 @@ struct ActivityViewModelTests {
         await h.viewModel.ensureLoaded(category: .following)
         #expect(h.viewModel.items.first?.title == "org/new")
 
-        h.viewModel.changeFollowingSort(to: .oldestFirst)
+        h.viewModel.changeTimeSort(to: .oldestFirst)
         #expect(h.viewModel.items.first?.title == "org/old")
     }
 
@@ -578,7 +578,7 @@ struct ActivityViewModelTests {
         await h.viewModel.ensureLoaded(category: .announcement)
         #expect(h.viewModel.items.first?.title == "New")
 
-        h.viewModel.changeAnnouncementSort(to: .oldestFirst)
+        h.viewModel.changeTimeSort(to: .oldestFirst)
         #expect(h.viewModel.items.first?.title == "Old")
     }
 
