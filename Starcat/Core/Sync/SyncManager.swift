@@ -92,6 +92,21 @@ final class SyncManager {
     /// 触发点；本字段只负责"首屏边沿"，两者协作不互斥。
     var firstPageWrittenAt: Date?
 
+    /// 上一轮 `runSync` **成功完成**时是否向 DB 写入了 starred repo 行。
+    ///
+    /// 用途：让 `HomeView` 在 `state == .completed` 时区分「304 / 无新数据早退」与
+    /// 「真的 upsert 了新 stars」——前者不必 `reloadItems(forceRefresh: true)`，
+    /// 避免同账号重开 App 时多跑一轮 ~700ms 的 GRDB 全量查询。
+    ///
+    /// 赋值规则（每轮 runSync 开头先置 false）：
+    /// - page 1 **304 早退** → 保持 false
+    /// - 主路径 `totalSynced > 0` → true
+    /// - page 1 即空 / 失败 / 取消 → false
+    private(set) var lastRunWroteRepos: Bool = false
+
+    /// 启动期自动同步 TTL，与 `HomeViewModel.listCache` 5min TTL 对齐。
+    static let defaultAutoSyncMaxAge: TimeInterval = 300
+
     // MARK: - 依赖
 
     /// D-02：依赖协议而非具体 actor，便于单测注入 Mock。
@@ -142,6 +157,31 @@ final class SyncManager {
         }
     }
 
+    /// 启动期自动同步：仅当本地 `lastSyncAt` 超过 `maxAge` 才走网络。
+    ///
+    /// 与 `performFullSync` 的区别：同账号短时间内重开 App 时直接 no-op，
+    /// 避免无谓的 ETag 条件请求 + `HomeView` 侧 forceRefresh 链式 DB 重查。
+    /// 账号切换 / 用户手动刷新仍走 `performFullSync`。
+    func performFullSyncIfStale(
+        userID: Int64,
+        maxAge: TimeInterval = SyncManager.defaultAutoSyncMaxAge,
+        force: Bool = false
+    ) {
+        guard !isSyncing else { return }
+        runningTask = Task { [weak self] in
+            guard let self else { return }
+
+            if !force, await self.isLastSyncFresh(userID: userID, maxAge: maxAge) {
+                AppLog.sync.info(
+                    "Auto sync skipped (lastSyncAt within \(Int(maxAge), privacy: .public)s TTL)"
+                )
+                return
+            }
+
+            await self.runSync(userID: userID, force: force)
+        }
+    }
+
     /// 取消进行中的同步。
     func cancel() {
         runningTask?.cancel()
@@ -156,6 +196,7 @@ final class SyncManager {
     // MARK: - 实现
 
     private func runSync(userID: Int64, force: Bool) async {
+        lastRunWroteRepos = false
         state = .syncing
         progress = SyncProgress(current: 0, total: nil, currentPage: 1)
 
@@ -239,6 +280,7 @@ final class SyncManager {
                         await hook()
                     }
 
+                    lastRunWroteRepos = false
                     state = .completed(at: Date())
                     runningTask = nil
                     return
@@ -329,6 +371,7 @@ final class SyncManager {
                 await hook()
             }
 
+            lastRunWroteRepos = totalSynced > 0
             state = .completed(at: Date())
             AppLog.sync.info("Sync complete (incremental=\(incrementalMode, privacy: .public)): wrote \(totalSynced, privacy: .public), local total \(finalCount, privacy: .public) in \(Int(Date().timeIntervalSince(syncStartedAt)), privacy: .public)s")
         } catch is CancellationError {
@@ -353,6 +396,15 @@ final class SyncManager {
         }
 
         runningTask = nil
+    }
+
+    /// 判断本地 `lastSyncAt` 是否在 TTL 内。解析失败 / 无记录 → 视为过期（需要 sync）。
+    private func isLastSyncFresh(userID: Int64, maxAge: TimeInterval) async -> Bool {
+        guard let iso = try? await repository.fetchLastSyncAt(userID: userID),
+              let lastSync = ISO8601DateFormatter.shared.date(from: iso) else {
+            return false
+        }
+        return Date().timeIntervalSince(lastSync) < maxAge
     }
 
     // MARK: - C1：Rate Limit 主动等待

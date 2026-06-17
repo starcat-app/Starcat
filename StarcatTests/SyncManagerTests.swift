@@ -208,6 +208,7 @@ struct SyncManagerTests {
         sync.performFullSync(userID: 777)
         try await waitForState(sync) { if case .completed = $0 { return true } else { return false } }
 
+        #expect(sync.lastRunWroteRepos == false, "304 早退不应标记 wroteRepos")
         #expect(attempts.value == 1, "304 应早退,不应触发分页循环额外请求")
         // 本地数据不应被清空
         let count = try await repo.starredCount()
@@ -232,6 +233,49 @@ struct SyncManagerTests {
 
         #expect(observedHeader.value == .some(nil), "force=true 时 If-None-Match 应该是 nil")
         #expect(try await repo.fetchStarsETag(userID: 888) == "\"fresh\"", "新 ETag 应被持久化")
+    }
+
+    @Test("启动期 performFullSyncIfStale: lastSyncAt 在 TTL 内则跳过网络")
+    func performFullSyncIfStaleSkipsWhenFresh() async throws {
+        let (sync, mock, repo) = try makeSUT()
+        let userID: Int64 = 901
+        try await repo.updateSyncState(userID: userID, starredCount: 1, syncedCount: 1, status: "idle")
+
+        mock.starredReposHandler = { _, _, _ in
+            Issue.record("不应发起 starredRepos 网络请求")
+            return self.makeOnePageResponse(dtos: [self.makeDTO(id: 1)])
+        }
+
+        sync.performFullSyncIfStale(userID: userID, maxAge: 300)
+        try await Task.sleep(for: .milliseconds(80))
+
+        #expect(sync.state == .idle, "TTL 内应完全跳过 sync")
+    }
+
+    @Test("启动期 performFullSyncIfStale: 无 lastSyncAt 时仍走同步")
+    func performFullSyncIfStaleRunsWhenNoLastSync() async throws {
+        let (sync, mock, _) = try makeSUT()
+        mock.starredReposHandler = { _, _, _ in
+            self.makeOnePageResponse(dtos: [self.makeDTO(id: 2)], etag: "\"etag-2\"")
+        }
+
+        sync.performFullSyncIfStale(userID: 902, maxAge: 300)
+        try await waitForState(sync) { if case .completed = $0 { return true } else { return false } }
+
+        #expect(sync.lastRunWroteRepos == true)
+    }
+
+    @Test("正常同步写入后 lastRunWroteRepos 为 true")
+    func lastRunWroteReposTrueAfterUpsert() async throws {
+        let (sync, mock, _) = try makeSUT()
+        mock.starredReposHandler = { _, _, _ in
+            self.makeOnePageResponse(dtos: [self.makeDTO(id: 3)])
+        }
+
+        sync.performFullSync(userID: 903)
+        try await waitForState(sync) { if case .completed = $0 { return true } else { return false } }
+
+        #expect(sync.lastRunWroteRepos == true)
     }
 }
 
