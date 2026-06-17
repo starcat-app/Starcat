@@ -89,6 +89,12 @@ final class ActivityViewModel {
     /// `cleanupIfNeeded()` 物理删除（不保留 tombstone —— device-local 数据 + 不挂 CloudKit）。
     static let retentionDays: Int = 30
 
+    /// Activity 首屏 prime：`fetchRecentStarred` 上限（足够覆盖各 kind 的 `.prefix(30)`）。
+    static let primeStarredLimit = 150
+
+    /// 列表客户端分页：首屏 + 滚到底增量加载（对齐 Weekly `localPageSize`）。
+    static let pageSize = 30
+
     /// 受支持的 GitHub Event 类型集合。
     ///
     /// **排除清单**（决策 Q1 + §7.7）：
@@ -112,10 +118,19 @@ final class ActivityViewModel {
     private(set) var loadError: String?
     private(set) var lastRefreshedAt: Date?
     private(set) var itemsRevision: Int = 0
+    /// 当前分类是否还有未上屏的 filtered 行（滚到底加载更多）。
+    private(set) var hasMoreItems: Bool = false
+
+    /// 是否已完成至少一次 `publishItems`（含 prime 快路径）。ActivityView 离 weekly 切回时判断要不要 `ensureLoaded`。
+    var isAggregateReady: Bool { isAggregateLoaded }
 
     /// 未按侧边栏分类过滤的完整聚合列表（`makeItems` 输出）。
     /// 切分类只对它做 `filter`，避免重复读库 + 全量 `makeItems`。
     private var allItems: [ActivityItem] = []
+
+    /// 当前分类 filter + sort 后的完整列表；`items` 是其分页切片。
+    private var filteredItems: [ActivityItem] = []
+    private var visiblePage: Int = 1
 
     /// 重建 `allItems` 用的原始四路输入；security 后台扫完只增量换 announcements 再重建。
     private var aggregateSnapshot: AggregateSnapshot?
@@ -210,13 +225,23 @@ final class ActivityViewModel {
             applyFilterForCurrentCategory(bumpRevision: false)
             return
         }
-        // 公告 / 关注：先读本地缓存上屏，避免等 fetchAllStarred 等重查询挡首屏。
-        if category == .announcement {
-            await primeAnnouncementCacheIfAvailable()
-        } else if category == .following {
-            await primeFollowingCacheIfAvailable()
-        }
+        await primeCategoryCacheIfAvailable(for: category)
         await reload(category: category, shouldPollReleases: false, cachePolicy: .respectTTL)
+    }
+
+    /// 滚到底加载下一页（纯本地切片，零网络）。
+    func loadMoreIfNeeded() {
+        guard hasMoreItems, !isLoading else { return }
+        visiblePage += 1
+        items = paginatedSlice(from: filteredItems, page: visiblePage)
+        hasMoreItems = filteredItems.count > items.count
+    }
+
+    /// 倒数第 3 行触发加载更多（对齐 Weekly）。
+    func shouldTriggerLoadMore(at index: Int) -> Bool {
+        guard hasMoreItems, !isLoading else { return false }
+        let threshold = max(items.count - 3, 0)
+        return index >= threshold
     }
 
     /// 指定分类的时间排序（各分类独立记忆，默认最新优先）。
@@ -287,11 +312,8 @@ final class ActivityViewModel {
         if isAggregateLoaded || !allItems.isEmpty {
             applyFilterForCurrentCategory(bumpRevision: false)
         }
-        if category == .announcement, items.isEmpty, !isAggregateLoaded {
-            Task { await self.primeAnnouncementCacheIfAvailable() }
-        }
-        if category == .following, items.isEmpty, !isAggregateLoaded {
-            Task { await self.primeFollowingCacheIfAvailable() }
+        if items.isEmpty, !isAggregateLoaded {
+            Task { await self.primeCategoryCacheIfAvailable(for: category) }
         }
         guard isAggregateLoaded else { return }
 
@@ -466,6 +488,60 @@ final class ActivityViewModel {
 
     // MARK: - 分类切换 / 聚合发布
 
+    /// 分类首屏快路径：LIMIT 读库 + 局部 snapshot，不等 `fetchAllStarred` 全表。
+    private func primeCategoryCacheIfAvailable(for category: ActivityCategory) async {
+        switch category {
+        case .weekly:
+            return
+        case .announcement:
+            await primeAnnouncementCacheIfAvailable()
+        case .following:
+            await primeFollowingCacheIfAvailable()
+        case .release:
+            let releases = (try? await releaseRepository.fetchTimeline(limit: 120)) ?? []
+            guard !releases.isEmpty else { return }
+            publishPrimeSnapshot(AggregateSnapshot(
+                repos: aggregateSnapshot?.repos ?? [],
+                releases: releases,
+                events: aggregateSnapshot?.events ?? [],
+                announcements: aggregateSnapshot?.announcements ?? []
+            ))
+        case .star, .repository, .suggestion:
+            let repos = (try? await repoRepository.fetchRecentStarred(limit: Self.primeStarredLimit)) ?? []
+            guard !repos.isEmpty else { return }
+            publishPrimeSnapshot(AggregateSnapshot(
+                repos: repos,
+                releases: aggregateSnapshot?.releases ?? [],
+                events: aggregateSnapshot?.events ?? [],
+                announcements: aggregateSnapshot?.announcements ?? []
+            ))
+        case .all:
+            async let reposTask = repoRepository.fetchRecentStarred(limit: Self.primeStarredLimit)
+            async let releasesTask = releaseRepository.fetchTimeline(limit: 120)
+            async let eventsTask = activityEventRepository.fetchAll(limit: 200)
+            async let announcementsTask = activityAnnouncementRepository.fetchAll(limit: 100)
+            let repos = (try? await reposTask) ?? []
+            let releases = (try? await releasesTask) ?? []
+            let events = (try? await eventsTask) ?? []
+            let announcements = (try? await announcementsTask) ?? []
+            guard !(repos.isEmpty && releases.isEmpty && events.isEmpty && announcements.isEmpty) else {
+                return
+            }
+            publishPrimeSnapshot(AggregateSnapshot(
+                repos: repos,
+                releases: releases,
+                events: events,
+                announcements: announcements
+            ))
+        }
+    }
+
+    /// prime 快路径上屏：与 `publishItems` 相同，但额外清 `isLoading` 让骨架屏立刻消失。
+    private func publishPrimeSnapshot(_ snapshot: AggregateSnapshot) {
+        publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+        isLoading = false
+    }
+
     /// 公告分类首屏快路径：只读 `activity_announcements`，不等 starred repos 全表扫描。
     private func primeAnnouncementCacheIfAvailable() async {
         let cachedAnnouncements = (try? await activityAnnouncementRepository.fetchAll(limit: 100)) ?? []
@@ -559,15 +635,23 @@ final class ActivityViewModel {
         }
     }
 
-    private func applyFilterForCurrentCategory(bumpRevision: Bool) {
-        let filtered = filter(allItems, by: currentCategory)
+    private func applyFilterForCurrentCategory(bumpRevision: Bool, resetPage: Bool = true) {
+        filteredItems = filter(allItems, by: currentCategory)
+        if resetPage {
+            visiblePage = 1
+        }
+        let slice = paginatedSlice(from: filteredItems, page: visiblePage)
         let oldIDs = items.map(\.id)
-        items = filtered
-        // bumpRevision=true：排序切换等需要强制 List 快照刷新。
-        // 否则仅当当前分类可见 ID 序列变化时才 bump（切分类若结果相同则不动画）。
-        if bumpRevision || oldIDs != filtered.map(\.id) {
+        items = slice
+        hasMoreItems = filteredItems.count > slice.count
+        if bumpRevision || oldIDs != slice.map(\.id) {
             itemsRevision += 1
         }
+    }
+
+    private func paginatedSlice(from source: [ActivityItem], page: Int) -> [ActivityItem] {
+        let upper = min(page * Self.pageSize, source.count)
+        return Array(source.prefix(upper))
     }
 
     private func publishItems(from source: [ActivityItem], snapshot: AggregateSnapshot? = nil) {

@@ -197,6 +197,17 @@ struct RepoRepositoryTests {
         #expect(all.count == 5)
     }
 
+    @Test("fetchRecentStarred 只返回最近 N 条且仍按 starred_at 倒序")
+    func fetchRecentStarred_respectsLimit() async throws {
+        let (repo, _) = try makeRepo()
+        try await seedDataset(repo)
+
+        let recent = try await repo.fetchRecentStarred(limit: 2)
+        #expect(recent.count == 2)
+        let all = try await repo.fetchAllStarred()
+        #expect(recent.map(\.id) == Array(all.prefix(2).map(\.id)))
+    }
+
     @Test("fetchUntagged 无 tag 时等于全部")
     func fetchUntagged_returnsAllWhenNoTags() async throws {
         let (repo, _) = try makeRepo()

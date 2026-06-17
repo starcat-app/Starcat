@@ -213,6 +213,17 @@ struct GRDBRepoRepository {
         }
     }
 
+    /// Activity 首屏快路径：只拉最近 N 条 starred，避免全表读挡 UI。
+    func fetchRecentStarred(limit: Int) async throws -> [Repo] {
+        let safeLimit = max(1, limit)
+        return try await database.writer.read { db in
+            try Repo.filter(Column("is_starred") == true)
+                .order(Column("starred_at").desc)
+                .limit(safeLimit)
+                .fetchAll(db)
+        }
+    }
+
     /// HOM-47：按 GitHub repo id 找单条记录（含 is_starred=0 的"曾经 star 过"行）。
     func findById(_ repoId: Int64) async throws -> Repo? {
         try await database.writer.read { db in
