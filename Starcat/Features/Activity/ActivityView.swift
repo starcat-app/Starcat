@@ -164,7 +164,7 @@ struct ActivityView: View {
     private func activityItemList(_ viewModel: ActivityViewModel) -> some View {
         let multiStore = dependencies.activityMultiSelectionStore
         List {
-            ForEach(Array(viewModel.items.enumerated()), id: \.element.id) { index, item in
+            ForEach(viewModel.items) { item in
                 Button {
                     if multiStore.isActive, let repo = item.repo {
                         multiStore.toggle(SelectionSnapshot(
@@ -180,11 +180,15 @@ struct ActivityView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .listRowReveal(index: index, snapshotID: viewModel.itemsRevision)
+                .listRowReveal(
+                    index: Self.listRevealStaggerIndex(for: item.id),
+                    snapshotID: viewModel.itemsRevision,
+                    skipAnimation: viewModel.skipListRowReveal
+                )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .onAppear {
-                    if viewModel.shouldTriggerLoadMore(at: index) {
+                    if viewModel.shouldTriggerLoadMore(for: item) {
                         viewModel.loadMoreIfNeeded()
                     }
                 }
@@ -422,6 +426,11 @@ struct ActivityView: View {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current
         return formatter.string(from: date)
+    }
+
+    /// `listRowReveal` stagger 用：由 item id 派生，避免 `Array(enumerated())` 每帧分配。
+    private static func listRevealStaggerIndex(for itemID: String) -> Int {
+        abs(itemID.hashValue % 14)
     }
 }
 

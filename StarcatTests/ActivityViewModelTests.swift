@@ -627,6 +627,22 @@ struct ActivityViewModelTests {
         #expect(h.viewModel.itemsRevision == revisionAfterLoad)
     }
 
+    @Test("切分类 selectCategory 标记 skipListRowReveal，排序切换恢复 animated")
+    func selectCategorySetsSkipListRowReveal() async throws {
+        let h = try Harness()
+        await h.viewModel.ensureLoaded(category: .star)
+
+        h.viewModel.selectCategory(.repository)
+        #expect(h.viewModel.skipListRowReveal == true)
+
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(h.viewModel.skipListRowReveal == false)
+
+        h.viewModel.changeTimeSort(to: .oldestFirst)
+        #expect(h.viewModel.skipListRowReveal == false)
+        #expect(h.viewModel.itemsRevision > 0)
+    }
+
     @Test("切分类 selectCategory 不重复拉 events")
     func selectCategorySkipsDuplicateEventsNetwork() async throws {
         let h = try Harness()
