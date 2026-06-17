@@ -80,8 +80,23 @@ struct ActivityView: View {
             restoreSelection(from: model.items)
         }
         .onChange(of: selectedCategory) { _, newCategory in
-            // 切分类：只 refilter 已聚合的 allItems，不触发全量 reload（v3.1 卡顿修复）。
-            guard newCategory != .weekly, let viewModel else { return }
+            guard newCategory != .weekly else { return }
+            if viewModel == nil {
+                let model = ensureViewModel()
+                Task {
+                    await model.ensureLoaded(category: newCategory)
+                    restoreSelection(from: model.items)
+                }
+                return
+            }
+            guard let viewModel else { return }
+            if !viewModel.isAggregateReady {
+                Task {
+                    await viewModel.ensureLoaded(category: newCategory)
+                    restoreSelection(from: viewModel.items)
+                }
+                return
+            }
             viewModel.selectCategory(newCategory)
             restoreSelection(from: viewModel.items)
         }
@@ -165,6 +180,11 @@ struct ActivityView: View {
                 .listRowReveal(index: index, snapshotID: viewModel.itemsRevision)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
+                .onAppear {
+                    if viewModel.shouldTriggerLoadMore(at: index) {
+                        viewModel.loadMoreIfNeeded()
+                    }
+                }
             }
         }
         .listStyle(.inset)

@@ -50,6 +50,12 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 全部已 star 的 repo（按 starred_at 倒序）。
     func fetchAllStarred() async throws -> [Repo]
 
+    /// 最近 star 的 repo（`ORDER BY starred_at DESC LIMIT ?`）。
+    ///
+    /// Activity 首屏 prime 用：避免 `fetchAllStarred()` 全表扫描挡首屏。
+    /// Manage 仍走 `fetchAllStarred()`。
+    func fetchRecentStarred(limit: Int) async throws -> [Repo]
+
     /// 按 GitHub repo id 查找。HOM-47 ReleaseMonitor 巡检每个订阅时需要拿 owner/name。
     /// 不存在返回 nil（不抛错），调用方决定后续行为（如跳过该次巡检）。
     func findById(_ repoId: Int64) async throws -> Repo?

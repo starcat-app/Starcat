@@ -824,6 +824,38 @@ struct ActivityViewModelTests {
         #expect(mockAPI.securityAdvisoriesCalls.count == 2)
     }
 
+    @Test("following 分类首屏 pageSize 条，loadMore 追加剩余")
+    func followingPaginationLoadMore() async throws {
+        let h = try Harness()
+        var records: [ActivityEventRecord] = []
+        for index in 0..<35 {
+            let day = String(format: "%02d", index + 1)
+            records.append(
+                ActivityEventRecord(
+                    id: "ev-\(index)",
+                    eventType: "WatchEvent",
+                    actorLogin: "actor\(index)",
+                    actorAvatarUrl: nil,
+                    repoName: "org/repo\(index)",
+                    repoId: Int64(index + 1),
+                    payloadJson: #"{"action":"started"}"#,
+                    isRead: false,
+                    createdAt: "2026-06-\(day)T12:00:00Z",
+                    fetchedAt: "2026-06-\(day)T12:00:00Z"
+                )
+            )
+        }
+        try await h.eventRepo.upsertMany(records)
+
+        await h.viewModel.ensureLoaded(category: .following)
+        #expect(h.viewModel.items.count == ActivityViewModel.pageSize)
+        #expect(h.viewModel.hasMoreItems)
+
+        h.viewModel.loadMoreIfNeeded()
+        #expect(h.viewModel.items.count == 35)
+        #expect(h.viewModel.hasMoreItems == false)
+    }
+
     // MARK: - PR-3 helpers
 
     private func insertStarredRepo(
