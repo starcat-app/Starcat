@@ -24,13 +24,6 @@ struct SidebarView: View {
     /// 静态界面的用户增加负担。与项目内 `ListRowRevealModifier` / `RepoLocalSections`
     /// / `SmartSearchField` 等动画路径处理方式一致。
     @Environment(\.starcatReduceMotion) private var reduceMotion
-    /// HOM-PROFILE 2026-06-05：贡献草坪数据来源。@Observable，payload 变化时 sidebar 自动重渲染。
-    @Environment(ContributionService.self) private var contributionService
-    /// 2026-06-06 A 方案：用户 profile 缓存服务。Sidebar `.task(id: user.login)`
-    /// 会调 `load(login:force: false)` 让 30min TTL 到期后自动后台刷新。
-    /// 数据通过 service 拉到后反向 push 给 `AuthSession.acceptRefreshedUser` →
-    /// sidebar 观察 `authSession.state` 自动更新，本视图不直接读 service.profile。
-    @Environment(UserProfileService.self) private var userProfileService
     /// HOM-126：自动整理调度器。Sidebar 底部观察 `isAutoTidyRunning` 决定是否
     /// 显示「AI 自动整理中 N/M」轻量行。这是该功能的唯一可视入口（不弹 sheet / panel）。
     @Environment(AutoTidyScheduler.self) private var autoTidyScheduler
@@ -211,30 +204,9 @@ struct SidebarView: View {
                 activityTintColor: currentActivityTintColor
             )
 
-            // 贡献草坪：登录后才有效；首次显示触发 .task 拉取（命中 TTL 自动 no-op）。
-            // 2026-06-05 follow-up：透传 `lastFetchedAt` 给草坪显示"更新于 X 分前"。
-            if case .authenticated(let user) = authSession.state {
-                ContributionGraphView(
-                    payload: contributionService.payload,
-                    isLoading: contributionService.isLoading,
-                    lastFetchedAt: contributionService.lastFetchedAt,
-                    login: user.login
-                )
-                .padding(.horizontal, 14)
-                .padding(.top, 4)
-                // 2026-06-05 v3 follow-up：dong4j 反馈"管理/趋势/活动 再上移 1/3"。
-                // 原 .bottom 8 + rootNavigationBar.top 10 = 18pt 间距，减 1/3 → 12pt。
-                // 拆成 bottom 4 + top 8 = 12pt，对称收缩、视觉更聚拢。
-                .padding(.bottom, 4)
-                .task(id: user.login) {
-                    // 用 user.login 作为 task id：账号切换时自动重新加载。
-                    // ContributionService / UserProfileService 内部各自做 TTL 与 inflight 互斥，重复调用安全。
-                    contributionService.load(login: user.login)
-                    // 2026-06-06 A 方案：profile TTL 到期后自动后台刷新（30min）；
-                    // 命中 TTL 直接 no-op，无网络。
-                    userProfileService.load(login: user.login)
-                }
-            }
+            // 贡献草坪：与 Activity 选中/tint 完全解耦；固定 id 保持 TimelineView identity。
+            SidebarContributionGraphSection()
+                .id("sidebar-contribution-graph")
 
             rootNavigationBar
                 .padding(.horizontal, 8)
@@ -349,6 +321,8 @@ struct SidebarView: View {
     private var activitySidebarContent: some View {
         Section {
             activityCategoryRow(.all)
+            // MUL-176：周刊紧跟「全部」常驻，不折叠进子列表（dong4j 2026-06-17 调整顺序）。
+            activityCategoryRow(.weekly)
 
             if activityCategoriesExpanded {
                 // disclosureRowTransition：与 Manage / Trending 同款"顶部滑入 + 淡入"。
@@ -391,10 +365,9 @@ struct SidebarView: View {
         .help(disclosureHelp(isExpanded: activityCategoriesExpanded))
     }
 
-    /// Activity 的 All 行常驻在 section 顶部，header 计数只统计可展开的具体分类；
-    /// 这个口径与 Trending 的 Languages header 一致：`全部语言` 不计入右侧数字。
+    /// Activity 可折叠子分类（不含 `.all` / `.weekly`——二者常驻在 section 顶部）。
     private var activityLeafCategories: [ActivityCategory] {
-        ActivityCategory.allCases.filter { $0 != .all }
+        ActivityCategory.allCases.filter { $0 != .all && $0 != .weekly }
     }
 
     @ViewBuilder

@@ -98,7 +98,10 @@ struct ActivityView: View {
                 return
             }
             viewModel.selectCategory(newCategory)
-            restoreSelection(from: viewModel.items)
+            // 延后一帧再改 selection，避免与中栏 List diff 同帧抢主线程。
+            DispatchQueue.main.async {
+                restoreSelection(from: viewModel.items)
+            }
         }
     }
 

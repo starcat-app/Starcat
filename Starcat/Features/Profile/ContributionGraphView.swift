@@ -449,6 +449,89 @@ private extension Color {
     }
 }
 
+// MARK: - Sidebar 隔离宿主（Equatable）
+
+/// Sidebar 贡献草坪独立分区 — **与 Activity / Manage / Trending 选中态零耦合**。
+///
+/// Activity 切分类时 `SidebarView` 会因 `currentActivityTintColor` 重算 body，但草坪只
+/// 订阅 `ContributionService` + 用户 login + snakeStyle 等；内层 `EquatableContributionGraphHost`
+/// 判等时不含任何 Activity 字段 → SwiftUI 跳过重渲染，`TimelineView` 与 `@State animator`
+/// 持续运行，蛇已吃格状态不会回弹。
+///
+/// 固定 `.id("sidebar-contribution-graph")` 由 `SidebarView` 挂载，保证 SwiftUI identity 稳定。
+struct SidebarContributionGraphSection: View {
+
+    @Environment(ContributionService.self) private var contributionService
+    @Environment(AuthSession.self) private var authSession
+    @Environment(UserProfileService.self) private var userProfileService
+    @Environment(AppSettings.self) private var settings
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        if case .authenticated(let user) = authSession.state {
+            EquatableContributionGraphHost(
+                login: user.login,
+                payload: contributionService.payload,
+                isLoading: contributionService.isLoading,
+                lastFetchedAt: contributionService.lastFetchedAt,
+                snakeStyle: settings.snakeStyle,
+                colorScheme: colorScheme,
+                localeID: locale.identifier
+            )
+            .equatable()
+            .padding(.horizontal, 14)
+            .padding(.top, 4)
+            // 2026-06-05 v3 follow-up：dong4j 反馈"管理/趋势/活动 再上移 1/3"。
+            // 原 .bottom 8 + rootNavigationBar.top 10 = 18pt 间距，减 1/3 → 12pt。
+            // 拆成 bottom 4 + top 8 = 12pt，对称收缩、视觉更聚拢。
+            .padding(.bottom, 4)
+            .task(id: user.login) {
+                // 用 user.login 作为 task id：账号切换时自动重新加载。
+                // ContributionService / UserProfileService 内部各自做 TTL 与 inflight 互斥，重复调用安全。
+                contributionService.load(login: user.login)
+                userProfileService.load(login: user.login)
+            }
+        }
+    }
+}
+
+/// 贡献草坪 Equatable 宿主：仅当草坪快照变化时才允许 SwiftUI 重建子树。
+///
+/// 判等字段刻意**不包含** Activity tint / Sidebar selection —— 那些变化与草坪无关。
+/// `payload` 用 `totalContributions + weeks.count` 轻量比对，避免每帧对 53×7 格做深比较；
+/// 与 `ContributionGraphView.onChange(of: payload?.totalContributions)` 语义对齐。
+private struct EquatableContributionGraphHost: View, Equatable {
+
+    let login: String
+    let payload: ContributionCalendarPayload?
+    let isLoading: Bool
+    let lastFetchedAt: Date?
+    let snakeStyle: SnakeStyle
+    let colorScheme: ColorScheme
+    let localeID: String
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.login == rhs.login
+            && lhs.isLoading == rhs.isLoading
+            && lhs.lastFetchedAt == rhs.lastFetchedAt
+            && lhs.snakeStyle == rhs.snakeStyle
+            && lhs.colorScheme == rhs.colorScheme
+            && lhs.localeID == rhs.localeID
+            && lhs.payload?.totalContributions == rhs.payload?.totalContributions
+            && lhs.payload?.weeks.count == rhs.payload?.weeks.count
+    }
+
+    var body: some View {
+        ContributionGraphView(
+            payload: payload,
+            isLoading: isLoading,
+            lastFetchedAt: lastFetchedAt,
+            login: login
+        )
+    }
+}
+
 // MARK: - Preview
 
 #Preview("Contribution Graph - 已加载（含贪吃蛇）") {
