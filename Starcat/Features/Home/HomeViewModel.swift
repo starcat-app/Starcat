@@ -483,10 +483,8 @@ final class HomeViewModel {
     /// 3. Sidebar 行数（`totalCount` / `untaggedCount` / `languageStats` / `tags`）
     ///    全是旧账号的，新账号看到的导航全错。
     ///
-    /// **调用时机**（**只有这一处**）：`HomeView` 监听到 `authSession.state.user?.id`
-    /// 变化时（含登入 / 登出 / 切换账号三条路径）。**不要从其它地方调**：
-    /// - 不是任何手动 refresh 路径，那条路径用 `reloadItems(forceRefresh: true)`；
-    /// - 不是 sidebar selection 变化路径，那条已有 didSet 处理。
+    /// **调用时机**：`HomeView.handleAuthenticatedEntry` 在**真换账号**路径调用。
+    /// 会话恢复（`oldUserID == nil`）不调用——进程内无旧账号内存快照。
     ///
     /// **清空的字段（与账号强绑定）**：列表与 Sidebar 全套数据 + 选择/搜索状态。
     ///

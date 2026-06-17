@@ -107,6 +107,10 @@ struct HomeView: View {
     /// 切换到 Trending 再回来时恢复，避免用户丢失浏览上下文。
     @State private var savedManageSelection: SidebarItem = .allStars
 
+    /// 去重「会话恢复 / 登录」激活路径：`handleAuthenticatedEntry` 在 onChange 与
+    /// `.task` 都可能被调到，用 user.id 记一次避免双份 refreshSidebar + reloadItems。
+    @State private var lastActivatedUserID: Int64?
+
     /// Trending 页面记住上次选择的语言。
     /// 切换到 Manage 再回来时恢复，避免用户丢失浏览上下文。
     @State private var savedTrendingLanguage: TrendingLanguage = .all
@@ -422,24 +426,19 @@ struct HomeView: View {
             savedActivityCategory = ActivityCategory(persistedRawValue: settings.lastActivityCategoryRaw)
 
             // 决定初始页面：
-            // - 已登录 → Manage + 上次分类，并触发一次后台全量同步
+            // - 已登录 → Manage + 上次分类（同步策略见 `handleAuthenticatedEntry`）
             // - 未登录 → Trending
             //
             // 注意：启动期 Keychain 恢复登录是异步的（见 AuthSession.restoreSessionIfAvailable），
             // 多数情况下这里跑到时 state 还是 .unauthenticated（恢复未完成）→ 先进 Trending，
             // 待恢复完成由下方 onChange(of: authSession.state) 纠正到 Manage。
-            if authSession.state.isAuthenticated {
-                selectedSidebarPage = .manage
-                viewModel.selection = savedManageSelection
-                if case .authenticated(let user) = authSession.state {
-                    syncManager.performFullSync(userID: user.id)
-                }
+            if case .authenticated(let user) = authSession.state {
+                handleAuthenticatedEntry(oldUserID: nil, user: user)
             } else {
                 selectedSidebarPage = .trending
                 viewModel.selection = .trending
+                await viewModel.refreshSidebar()
             }
-
-            await viewModel.refreshSidebar()
 
             // 2026-06-11 dong4j：trending sidebar 语言列表改用后端聚合接口驱动。
             // 启动后异步拉一次（不阻塞 UI），后端不可达 / 401 时 store 内部退化到 fallbackList。
@@ -447,16 +446,6 @@ struct HomeView: View {
             // 而后端 `/api/v1/languages` 不依赖 GitHub OAuth，仅依赖 Bearer Auth（用户 API Key 已就位）。
             Task {
                 await dependencies.trendingLanguageStore.reload()
-            }
-
-            // 校验恢复的分类是否仍存在（如 tag / language 已被删 / 无 repo）→ 回落 allStars。
-            // refreshSidebar 已把 tags / languageStats 从本地库加载完毕，可安全校验。
-            if selectedSidebarPage == .manage, !isManageSelectionValid(viewModel.selection) {
-                viewModel.selection = .allStars
-            }
-
-            if selectedSidebarPage == .manage {
-                await viewModel.reloadItems()
             }
         }
         // selection 变化 → 重新加载列表
@@ -478,9 +467,10 @@ struct HomeView: View {
         .task(id: viewModel.smartSearchMode) {
             settings.smartSearchMode = viewModel.smartSearchMode
         }
-        // 同步完成 → 刷新 Sidebar + 当前列表
+        // 同步完成 → 仅当本轮真的写入了 repo 行时才 forceRefresh 列表。
+        // 304 早退 / performFullSyncIfStale 跳过等路径 lastRunWroteRepos=false，避免无谓 DB 重查。
         .task(id: syncManager.state) {
-            if case .completed = syncManager.state {
+            if case .completed = syncManager.state, syncManager.lastRunWroteRepos {
                 await viewModel.refreshSidebar()
                 await viewModel.reloadItems(forceRefresh: true)
             }
@@ -611,34 +601,10 @@ struct HomeView: View {
             guard oldUserID != newUserID else { return }
 
             if let newUser = newState.user {
-                // 真正的"登录新账号"路径（含启动恢复 / 手动 Device Flow / 退出再登）。
-                //
-                // D-30 follow-up（2026-06-13）：必须按"先清缓存 → 再切 selection → 异步重载 + sync"的
-                // 顺序，否则 viewModel.selection didSet 内的 eager cache load（HomeViewModel.swift
-                // line 66-75）会先用旧账号 listCache 渲一帧 → 用户感知到"先看到 A 的数据闪一下再被
-                // 覆盖"。详细原理见 `HomeViewModel.resetAllStateForUserSwitch` 注释。
-                viewModel.resetAllStateForUserSwitch()
-
-                selectedSidebarPage = .manage
-                let restored = savedManageSelection
-                viewModel.selection = isManageSelectionValid(restored) ? restored : .allStars
-
-                // 拉新账号的 sidebar + items + 全量 sync。**必须用 Task @MainActor 异步发起**：
-                // - onChange 闭包是同步的，不能直接 await;
-                // - syncManager.performFullSync 是同步入口（内部派发到自己的 actor），无需 await。
-                // 顺序：① reset 已清旧缓存 → ② refreshSidebar 拉新 sidebar 计数 →
-                //       ③ reloadItems(forceRefresh: true) 强制查 DB（此时 D-30 已切到 newUser 的 DB,
-                //          但 DB 里可能还是空的，所以 ④ 拉远端 sync 把 stars 落库）→
-                //       ④ performFullSync 拉 GitHub stars 写入新 DB，sync 完成后 .onChange(of:
-                //          syncManager.state) 会再触发一次 reloadItems，新数据上屏。
-                Task { @MainActor in
-                    await viewModel.refreshSidebar()
-                    if selectedSidebarPage == .manage {
-                        await viewModel.reloadItems(forceRefresh: true)
-                    }
-                    syncManager.performFullSync(userID: newUser.id)
-                }
+                // 登录态变化统一走 `handleAuthenticatedEntry`（区分会话恢复 vs 真换账号）。
+                handleAuthenticatedEntry(oldUserID: oldUserID, user: newUser)
             } else if oldUserID != nil {
+                lastActivatedUserID = nil
                 // 登出（newUserID == nil 且 oldUserID != nil）：保存当前 Manage selection（排除
                 // trending）, 强制切回 Trending 并清除选择 + 清缓存。
                 //
@@ -869,6 +835,45 @@ struct HomeView: View {
         guard !untagged.isEmpty else { return }
         dependencies.batchAIQueueService.start(repos: untagged, options: batchAIOptions)
         showBatchAIPanel = true
+    }
+
+    /// 登录态变为已认证时的统一入口（冷启动恢复 / Device Flow / 账号切换）。
+    ///
+    /// **关键分支**（2026-06-17 dong4j 回归修复）：
+    /// - `oldUserID == nil` → 会话恢复或首次登录：进程内无旧账号内存快照，**不** reset；
+    ///   走本地 DB 上屏 + `performFullSyncIfStale`（5min TTL）。
+    /// - `oldUserID != nil && oldUserID != user.id` → 真换账号：reset + forceRefresh + 全量 sync。
+    ///
+    /// `lastActivatedUserID` 去重 onChange 与 `.task` 双路径重复激活。
+    private func handleAuthenticatedEntry(oldUserID: Int64?, user: GitHubUserDTO) {
+        guard lastActivatedUserID != user.id else { return }
+        lastActivatedUserID = user.id
+
+        let isAccountSwitch = oldUserID != nil && oldUserID != user.id
+        if isAccountSwitch {
+            viewModel.resetAllStateForUserSwitch()
+        }
+
+        selectedSidebarPage = .manage
+        viewModel.selection = savedManageSelection
+
+        Task { @MainActor in
+            await viewModel.refreshSidebar()
+
+            if !isManageSelectionValid(viewModel.selection) {
+                viewModel.selection = .allStars
+            }
+
+            if selectedSidebarPage == .manage {
+                await viewModel.reloadItems(forceRefresh: isAccountSwitch)
+            }
+
+            if isAccountSwitch {
+                syncManager.performFullSync(userID: user.id)
+            } else {
+                syncManager.performFullSyncIfStale(userID: user.id)
+            }
+        }
     }
 
     /// 校验一个 Manage 分类当前是否仍然有效（用于跨启动恢复时兜底）。
