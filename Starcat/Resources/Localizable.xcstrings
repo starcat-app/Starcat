@@ -9461,6 +9461,22 @@
         }
       }
     },
+    "list.lastSyncedFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synced %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同步于 %@"
+          }
+        }
+      }
+    },
     "list.sort" : {
       "extractionState" : "stale",
       "localizations" : {

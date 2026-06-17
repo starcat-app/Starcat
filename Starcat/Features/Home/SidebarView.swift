@@ -746,10 +746,6 @@ struct SidebarView: View {
                 Spacer(minLength: 4)
 
                 HStack(spacing: 4) {
-                    if item == .allStars {
-                        SidebarSyncButton()
-                    }
-
                     Spacer(minLength: 0)
 
                     if let count {
@@ -884,106 +880,6 @@ struct SidebarView: View {
             if isHovering {
                 for candidate in item.prefetchCandidates {
                     viewModel.prefetch(selection: candidate)
-                }
-            }
-        }
-    }
-}
-
-/// 放置在「全部 Stars」右侧的同步按钮
-private struct SidebarSyncButton: View {
-    @Environment(SyncManager.self) private var syncManager
-    @Environment(AuthSession.self) private var authSession
-    /// 2026-06-15:同步按钮 SF Symbol 旋转在「关闭应用内动画」时跳过,
-    /// 仅瞬切到 360°/0° 给"刷新中"提示但不持续转动。
-    @Environment(\.starcatReduceMotion) private var reduceMotion
-    @State private var isHovering = false
-
-    // 我们用单独的 state 追踪动画状态，确保旋转顺滑
-    @State private var rotation: Double = 0
-
-    var body: some View {
-        Button {
-            if syncManager.state == .syncing {
-                syncManager.cancel()
-            } else if case .rateLimited = syncManager.state {
-                syncManager.cancel()
-            } else {
-                if case .authenticated(let user) = authSession.state {
-                    syncManager.performFullSync(userID: user.id)
-                }
-            }
-        } label: {
-            // 注：曾尝试给 Image 加 `.frame(width: 16, height: 16)` 解决"不同 SF Symbol
-            // 几何中心在 18×18 容器内居中渲染时视觉位置偏移"的问题；但实测发现：
-            // ① 主要抖动其实来自 List selection 切换时 trailing 容器 layout 重测（已通过
-            //    外层 `.frame(width: trailingFixedWidth)` 在 row()/tagRow()/languageRow()
-            //    侧统一锁死解决）
-            // ② 加内层 frame 会在 selection 切换时增加 layout 工作量，反而可能加剧抖动
-            // 所以保持最简：Image 不加 frame，由外层 .frame(18, 18) 锁 Button 容器即可。
-            Image(systemName: iconName)
-                .font(.caption)
-                .rotationEffect(.degrees(rotation))
-                .foregroundStyle(.secondary)
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .frame(width: 18, height: 18)
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            isHovering = hovering
-        }
-        .onAppear {
-            updateRotation(isSyncing: isSyncing)
-        }
-        .onChange(of: isSyncing) { _, newValue in
-            updateRotation(isSyncing: newValue)
-        }
-        .help(helpText)
-    }
-
-    private var isSyncing: Bool {
-        if case .syncing = syncManager.state { return true }
-        return false
-    }
-
-    private var iconName: String {
-        switch syncManager.state {
-        case .syncing:
-            return isHovering ? "xmark.circle.fill" : "arrow.triangle.2.circlepath"
-        case .rateLimited:
-            return isHovering ? "xmark.circle.fill" : "hourglass"
-        case .idle, .completed, .failed:
-            return "arrow.triangle.2.circlepath"
-        }
-    }
-
-    private var helpText: Text {
-        switch syncManager.state {
-        case .syncing:
-            return Text("action.cancelSync")
-        case .rateLimited:
-            return Text("action.syncRateLimited")
-        case .idle, .completed, .failed:
-            return Text("action.syncInProgress")
-        }
-    }
-
-    private func updateRotation(isSyncing: Bool) {
-        if isSyncing {
-            if reduceMotion {
-                rotation = 360
-            } else {
-                withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
-                    rotation = 360
-                }
-            }
-        } else {
-            if reduceMotion {
-                rotation = 0
-            } else {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    rotation = 0
                 }
             }
         }
