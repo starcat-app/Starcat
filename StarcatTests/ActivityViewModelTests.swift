@@ -505,6 +505,58 @@ struct ActivityViewModelTests {
 
     // MARK: - PR-3 announcement
 
+    @Test("切分类 selectCategory 不重复拉 events")
+    func selectCategorySkipsDuplicateEventsNetwork() async throws {
+        let h = try Harness()
+
+        await h.viewModel.ensureLoaded(category: .following)
+        let callsAfterLoad = h.mockClient.receivedEventsCalls.count
+
+        h.mockClient.receivedEventsHandler = { _, _, _ in
+            Issue.record("切分类不应重复走 events 网络")
+            throw NetworkError.invalidResponse
+        }
+
+        h.viewModel.selectCategory(.repository)
+
+        #expect(h.mockClient.receivedEventsCalls.count == callsAfterLoad)
+    }
+
+    @Test("先 following 后 announcement → selectCategory 懒补 blog")
+    func selectCategorySupplementsAnnouncementNetwork() async throws {
+        let h = try Harness()
+
+        await h.viewModel.ensureLoaded(category: .following)
+        #expect(h.mockBlogClient.fetchFeedCalls.isEmpty)
+
+        h.viewModel.selectCategory(.announcement)
+        await h.viewModel.awaitPendingBackgroundWorkForTesting()
+
+        #expect(h.mockBlogClient.fetchFeedCalls.count == 1)
+        #expect(h.viewModel.items.contains { $0.kind == .announcement })
+    }
+
+    @Test("announcement 分类不触发 events 网络")
+    func announcementCategorySkipsEventsNetwork() async throws {
+        let h = try Harness()
+        var eventsCalled = false
+        h.mockClient.receivedEventsHandler = { _, _, _ in
+            eventsCalled = true
+            return APIResponse(
+                value: [],
+                linkHeader: LinkHeader(nextPage: nil, lastPage: nil),
+                rateLimit: RateLimitInfo(limit: nil, remaining: nil, reset: nil),
+                statusCode: 200,
+                etag: "\"e\""
+            )
+        }
+
+        await h.viewModel.ensureLoaded(category: .announcement)
+
+        #expect(eventsCalled == false)
+        #expect(h.mockBlogClient.fetchFeedCalls.count == 1)
+    }
+
     @Test("blog RSS 12h TTL 内不走网络")
     func blogTTLInsideSkipsNetwork() async throws {
         let h = try Harness()
@@ -639,6 +691,7 @@ struct ActivityViewModelTests {
         )
 
         await vm.load(category: .announcement)
+        await vm.awaitPendingBackgroundWorkForTesting()
 
         let stored = try await GRDBActivityAnnouncementRepository(database: db).fetchAll(limit: 10)
         #expect(stored.count == 1)
