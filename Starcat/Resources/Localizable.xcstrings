@@ -614,13 +614,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starcat transforms your flat GitHub Stars collection into a searchable, taggable, private-note-enabled knowledge base. MVP focuses on local data reliability and smooth reading experience first, then gradually adds AI summarization and tag recommendations."
+            "value" : "Organize — Sync Stars from GitHub to a fast local library.\nUnderstand — Tags, private notes, and native README reading.\nRediscover — Search and filter your way back to the right repo."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starcat 将扁平的 GitHub 收藏转化为可搜索、可打标签、可写私有笔记的知识库。MVP 阶段优先保证本地数据可靠、阅读体验顺滑，再逐步接入 AI 摘要与标签推荐。"
+            "value" : "整理 — 从 GitHub 拉取 Stars，本地缓存，告别网页翻找。\n理解 — 标签分类、私有笔记、README 原生渲染，把仓库读懂。\n找回 — 全文搜索与多维筛选，让收藏真正为你所用。"
           }
         }
       }
@@ -631,13 +631,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Summaries, tag suggestions, and semantic search all write back to user data only after confirmation."
+            "value" : "Abstract, AI repository chat, code maps, tag suggestions, and semantic search have been fully integrated with AI."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "摘要、标签建议和语义搜索都采用用户确认后写入。"
+            "value" : "摘要、AI仓库对话、代码图谱、标签建议和语义搜索已全面接入 AI。"
           }
         }
       }
@@ -654,7 +654,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 预留"
+            "value" : "AI 能力"
           }
         }
       }
@@ -4167,7 +4167,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Code Contex"
+            "value" : "Code Context"
           }
         },
         "zh-Hans" : {
@@ -4200,7 +4200,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Code Contex Action Failed"
+            "value" : "Code Context Action Failed"
           }
         },
         "zh-Hans" : {
@@ -4251,7 +4251,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose Code Contex Output Directory"
+            "value" : "Choose Code Context Output Directory"
           }
         },
         "zh-Hans" : {
@@ -4418,7 +4418,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Code Contex"
+            "value" : "Code Context"
           }
         },
         "zh-Hans" : {
@@ -18801,7 +18801,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Code Contex"
+            "value" : "Code Context"
           }
         },
         "zh-Hans" : {
@@ -19156,7 +19156,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clear all Code Contex?"
+            "value" : "Clear all Code Context?"
           }
         },
         "zh-Hans" : {
@@ -19224,7 +19224,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Same as clearing every cache above (README, images, downloaded ZIPs, translation, search, Code Contex, CodeFlow)."
+            "value" : "Same as clearing every cache above (README, images, downloaded ZIPs, translation, search, Code Context, CodeFlow)."
           }
         },
         "zh-Hans" : {
