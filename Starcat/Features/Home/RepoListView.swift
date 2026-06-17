@@ -28,6 +28,9 @@ struct RepoListView: View {
     /// 批量 star/unstar 必须调 GitHub API 携带 token，未登录态点按钮无任何效果，
     /// 直接在源头 disable 比让用户点了报错友好。
     @Environment(AuthSession.self) private var authSession
+    @Environment(SyncManager.self) private var syncManager
+    /// `RelativeDateTimeFormatter` 须显式注入 locale（对齐 ActivityView）。
+    @Environment(\.locale) private var locale
 
     /// HOM-54：TrendingRepository，用于渲染 Trending 页面。
     var trendingRepository: (any TrendingRepositoryProtocol)?
@@ -59,6 +62,8 @@ struct RepoListView: View {
     /// toolbar spec 会通过 `AnyView` 频繁重建，sheet 必须由稳定的页面根节点承载。
     /// 否则关闭 CodeFlow 时 presentation host 被替换，窗口会短暂再次出现。
     @State private var codeFlowSheetRepo: Repo?
+    /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
+    @State private var lastSyncedAt: Date?
 
     var body: some View {
         @Bindable var vm = viewModel
@@ -418,10 +423,8 @@ struct RepoListView: View {
         )
     }
 
-    /// Manage 页面 toolbar：filter / sort / multiSelect / external / clone / search。
-    ///
-    /// W12 PR-1：把原 inline 实现拆到独立组件（ExternalLinksMenu / CloneMenu /
-    /// MultiSelectButton / UnifiedSortMenu / UnifiedFilterMenu），本方法只做组装。
+    /// Manage 页面 toolbar：filter / multiSelect / external / clone / search。
+    /// 排序与 Stars 同步已迁到列表顶栏 `manageFilterBar`（对齐 Weekly / Activity）。
     @MainActor
     private func makeManageToolbarSpec() -> PageToolbarSpec {
         // @Bindable 让 `$vm.statusFilter` 等可派生 Binding，传给下游 picker / toggle。
@@ -463,21 +466,6 @@ struct RepoListView: View {
                 }
                 .onChange(of: viewModel.statusFilter) { _, newValue in
                     settings.statusFilter = newValue
-                }
-
-                UnifiedSortMenu(
-                    selection: $vm.sortOption,
-                    options: RepoSortOption.allCases,
-                    displayName: { $0.displayName },
-                    systemImage: { $0.systemImage }
-                )
-                .onAppear {
-                    if viewModel.sortOption != settings.repoSortOption {
-                        viewModel.sortOption = settings.repoSortOption
-                    }
-                }
-                .onChange(of: viewModel.sortOption) { _, newValue in
-                    settings.repoSortOption = newValue
                 }
 
                 // W12 PR-5：Manage 多选按钮直接驱动 manageMultiSelectionStore（替代原
@@ -546,8 +534,23 @@ struct RepoListView: View {
                     selectedCategory: $selectedActivityCategory,
                     selectedItem: $selectedActivityItem
                 )
-            } else if viewModel.isLoading {
-                // HOM-46：无缓存分类加载时直接切到骨架屏，避免旧分类列表停留在中栏造成"没反应"的错觉。
+            } else {
+                // Manage：顶栏（排序 + 同步）始终可见，排序作用于当前侧边栏分类子集。
+                manageCategoryContent(vm)
+            }
+        }
+    }
+
+    /// Manage 全部分类共用：列表顶栏 + 下方内容（横幅 / 列表 / 骨架 / 空态）。
+    @ViewBuilder
+    private func manageCategoryContent(_ vm: HomeViewModel) -> some View {
+        @Bindable var bindableVM = vm
+
+        VStack(spacing: 0) {
+            manageFilterBar(sortOption: $bindableVM.sortOption)
+            Divider()
+
+            if viewModel.isLoading && viewModel.items.isEmpty {
                 RepoSkeletonListView(rowCount: 10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = viewModel.loadError, viewModel.items.isEmpty {
@@ -555,11 +558,74 @@ struct RepoListView: View {
             } else if viewModel.items.isEmpty {
                 emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
             } else {
-                // W12 PR-5：单选 / 多选共用同一 list 路径（plain Button + 条件 toggle），
-                // 对齐 Trending/Weekly/Activity 的实现模式。multiSelectList(_:) 已删除。
-                listWithOptionalBanner { unifiedListContent($vm.selectedRepoID) }
+                listWithOptionalBanner { unifiedListContent($bindableVM.selectedRepoID) }
             }
         }
+        .task(id: authSession.state) {
+            await refreshLastSyncedAt()
+        }
+        .onChange(of: syncManager.state) { _, newState in
+            if case .completed(let at) = newState {
+                lastSyncedAt = at
+            }
+        }
+    }
+
+    /// Manage 列表顶栏：当前分类内排序 + 同步于 + Stars 同步按钮（对齐 Weekly / Activity）。
+    private func manageFilterBar(sortOption: Binding<RepoSortOption>) -> some View {
+        HStack(spacing: 10) {
+            Picker(selection: sortOption) {
+                ForEach(RepoSortOption.allCases) { option in
+                    Text(verbatim: option.localizedTitle).tag(option)
+                }
+            } label: {
+                Text("list.sort")
+            }
+            .pickerStyle(.menu)
+            .fixedSize()
+
+            Spacer()
+
+            if let lastSyncedAt {
+                Text(String(format: String.l10n("list.lastSyncedFormat"), relativeDate(lastSyncedAt)))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            StarsSyncButton()
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .onAppear {
+            if viewModel.sortOption != settings.repoSortOption {
+                viewModel.sortOption = settings.repoSortOption
+            }
+        }
+        .onChange(of: viewModel.sortOption) { _, newValue in
+            settings.repoSortOption = newValue
+        }
+    }
+
+    private func refreshLastSyncedAt() async {
+        if case .completed(let at) = syncManager.state {
+            lastSyncedAt = at
+            return
+        }
+        guard case .authenticated(let user) = authSession.state else {
+            lastSyncedAt = nil
+            return
+        }
+        if let iso = try? await dependencies.repoRepository.fetchLastSyncAt(userID: user.id),
+           let date = ISO8601DateFormatter.shared.date(from: iso) {
+            lastSyncedAt = date
+        }
+    }
+
+    private func relativeDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        formatter.locale = locale
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     /// HOM-52：仅在 Untagged 视图非空时，在列表顶部插入"批量 AI 整理"入口横幅。

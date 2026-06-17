@@ -98,7 +98,21 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// 本地化显示名。
+    /// 本地化显示名（Picker 菜单项用 `Text(verbatim:)` 渲染，走 `String.l10n`）。
+    var localizedTitle: String {
+        switch self {
+        case .starredAtDesc: return String.l10n("settings.sort.starredAtDesc")
+        case .starredAtAsc:  return String.l10n("settings.sort.starredAtAsc")
+        case .nameAsc:       return String.l10n("settings.sort.nameAsc")
+        case .nameDesc:      return String.l10n("settings.sort.nameDesc")
+        case .starsDesc:     return String.l10n("settings.sort.starsDesc")
+        case .starsAsc:      return String.l10n("settings.sort.starsAsc")
+        case .updatedDesc:   return String.l10n("settings.sort.updatedDesc")
+        case .updatedAsc:    return String.l10n("settings.sort.updatedAsc")
+        }
+    }
+
+    /// 本地化显示名（SwiftUI `Label` / `LocalizedStringKey` 场景）。
     var displayName: LocalizedStringKey {
         switch self {
         case .starredAtDesc: return "settings.sort.starredAtDesc"
