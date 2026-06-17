@@ -326,13 +326,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Summary shown here; complete legal text to be added before distribution"
+            "value" : " "
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这里展示摘要，正式分发前应补齐完整法律文本"
+            "value" : " "
           }
         }
       }
@@ -1004,7 +1004,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Submit reproduction steps, screenshots, and Console logs"
+            "value" : "Submit an issue or your request"
           }
         },
         "zh-Hans" : {
