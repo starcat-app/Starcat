@@ -76,6 +76,10 @@ struct RepoListView: View {
         #endif
 
         contentBody
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // 与 Sidebar 头像区 / 右侧详情 hero 联动：透明 toolbar 下中栏顶部也绘制 accent 光晕。
+        .detailHeroTintBackground(tint: listColumnTintColor)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: listColumnTintColor)
         .id(contentAnimationID)
         .transition(contentTransition)
         .animation(contentAnimation, value: contentAnimationID)
@@ -236,6 +240,31 @@ struct RepoListView: View {
                 if weekly.isActive { weekly.exit() }
             }
         }
+    }
+
+    // MARK: - 中栏顶部 accent 光晕（与 Sidebar / 详情列联动）
+
+    /// 中栏 tint 取色优先级与 `SidebarHeaderView.sidebarTintColor` 对齐。
+    ///
+    /// Activity weekly 走 `WeeklySelectionService` 真源（与 `HomeView.derivedActivityTintColor` 同款）。
+    private var listColumnTintColor: Color {
+        if selectedPage == .activity, selectedActivityCategory == .weekly,
+           let project = dependencies.weeklySelectionService.selectedItem {
+            return DetailHeroTintBackground.accentColor(
+                language: project.language,
+                fallback: ActivityCategory.weekly.iconColor
+            )
+        }
+        if let language = viewModel.selectedRepo?.language, !language.isEmpty {
+            return LanguageColor.color(for: language)
+        }
+        if let language = selectedTrendingRepo?.language, !language.isEmpty {
+            return LanguageColor.color(for: language)
+        }
+        if let item = selectedActivityItem {
+            return item.accentColor
+        }
+        return .accentColor
     }
 
     // MARK: - Toolbar spec 派发
