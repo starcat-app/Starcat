@@ -70,13 +70,18 @@ struct ActivityView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .task(id: selectedCategory) {
-            // weekly 分类的数据加载由 WeeklyContentView 自行 .task 触发，
-            // 这里不该再去走 ActivityViewModel.load，否则会做无意义的本地聚合。
+        .task {
+            // 首次进入 Activity：全量 ensureLoaded。weekly 由 WeeklyContentView 自己加载。
             guard selectedCategory != .weekly else { return }
             let model = ensureViewModel()
-            await model.load(category: selectedCategory)
+            await model.ensureLoaded(category: selectedCategory)
             restoreSelection(from: model.items)
+        }
+        .onChange(of: selectedCategory) { _, newCategory in
+            // 切分类：只 refilter 已聚合的 allItems，不触发全量 reload（v3.1 卡顿修复）。
+            guard newCategory != .weekly, let viewModel else { return }
+            viewModel.selectCategory(newCategory)
+            restoreSelection(from: viewModel.items)
         }
     }
 

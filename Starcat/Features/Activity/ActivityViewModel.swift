@@ -27,6 +27,11 @@
 //  - Security：`GET /repos/{o}/{r}/security-advisories` 仅扫最近 30 天 push 的 starred
 //  - 有真实 announcement 时隐藏内置占位 `announcement:activity-v1`
 //
+//  **v3.1（2026-06-17 dong4j 反馈卡顿）**：切分类 ≠ 全量 reload
+//  - `allItems` 缓存未过滤聚合；`selectCategory` 只 refilter，零网络、零 makeItems 全量重建
+//  - 网络按当前分类裁剪：following 只拉 events；announcement 只拉 blog + security
+//  - security 扫描 detached 后台跑，不阻塞首屏；reload 用 defer 复位 loading 状态
+//
 //  Following payload 解析约束（详见 `makeFollowingItems` 注释）：
 //  - 仅 7 个 event type（WatchEvent / ForkEvent / PushEvent / IssuesEvent /
 //    PullRequestEvent / CreateEvent / DiscussionEvent）有 i18n 文案，其它丢弃
@@ -108,6 +113,39 @@ final class ActivityViewModel {
     private(set) var lastRefreshedAt: Date?
     private(set) var itemsRevision: Int = 0
 
+    /// 未按侧边栏分类过滤的完整聚合列表（`makeItems` 输出）。
+    /// 切分类只对它做 `filter`，避免重复读库 + 全量 `makeItems`。
+    private var allItems: [ActivityItem] = []
+
+    /// 重建 `allItems` 用的原始四路输入；security 后台扫完只增量换 announcements 再重建。
+    private var aggregateSnapshot: AggregateSnapshot?
+
+    /// 是否已完成至少一次 `reload` 并成功 `publishItems`。
+    private var isAggregateLoaded = false
+
+    /// 当前侧边栏选中的分类（`selectCategory` / `reload` 入口都会更新）。
+    private var currentCategory: ActivityCategory = .all
+
+    /// 后台 security 扫描任务（可取消；完成后再合并进 `allItems`）。
+    private var securityBackgroundTask: Task<Void, Never>?
+
+    /// 切分类后补拉专属网络的 in-flight 任务（测试可 await）。
+    private var supplementNetworkTask: Task<Void, Never>?
+
+    /// 本会话是否已按「含 events 的分类」跑过 events 网络决策（含 TTL 短路）。
+    private var didPrimeEventsNetwork = false
+
+    /// 本会话是否已按「含 announcement 的分类」跑过 blog/security 网络决策。
+    private var didPrimeAnnouncementsNetwork = false
+
+    /// `makeItems` 四路输入快照，供 security 后台完成后局部重建。
+    private struct AggregateSnapshot {
+        var repos: [Repo]
+        var releases: [ReleaseTimelineEntry]
+        var events: [ActivityEventRecord]
+        var announcements: [ActivityAnnouncementRecord]
+    }
+
     // MARK: - 依赖
 
     private let repoRepository: any RepoRepositoryProtocol
@@ -162,14 +200,46 @@ final class ActivityViewModel {
 
     // MARK: - Public Actions
 
-    /// 进入页面 / 切分类入口：尊重 TTL，2h 内不走 events 网络。
-    func load(category: ActivityCategory) async {
+    /// 进入 Activity 页：首次全量 reload；已加载过则只切分类 filter。
+    func ensureLoaded(category: ActivityCategory) async {
+        currentCategory = category
+        if isAggregateLoaded {
+            applyFilterForCurrentCategory(bumpRevision: true)
+            return
+        }
         await reload(category: category, shouldPollReleases: false, cachePolicy: .respectTTL)
     }
 
-    /// 用户主动刷新（toolbar 按钮）：强制走 events 网络 + 跑一次 Release 巡检。
+    /// 侧边栏切分类：只 refilter `allItems`；若该分类专属网络尚未拉过则后台补拉。
+    func selectCategory(_ category: ActivityCategory) {
+        currentCategory = category
+        guard isAggregateLoaded else { return }
+        applyFilterForCurrentCategory(bumpRevision: true)
+
+        let missingEvents = Self.needsEventsNetwork(for: category) && !didPrimeEventsNetwork
+        let missingAnnouncements = Self.needsAnnouncementsNetwork(for: category) && !didPrimeAnnouncementsNetwork
+        guard missingEvents || missingAnnouncements else { return }
+
+        supplementNetworkTask = Task { [weak self] in
+            await self?.supplementNetworks(for: category, cachePolicy: .respectTTL)
+        }
+    }
+
+    /// 进入页面入口（保留给测试 / 外部直调）：等同 `ensureLoaded`。
+    func load(category: ActivityCategory) async {
+        await ensureLoaded(category: category)
+    }
+
+    /// 用户主动刷新（toolbar 按钮）：强制走当前分类相关网络 + Release 巡检。
     func refresh(category: ActivityCategory) async {
+        currentCategory = category
         await reload(category: category, shouldPollReleases: true, cachePolicy: .forceNetwork)
+    }
+
+    /// 测试专用：等待后台 supplement / security 扫描结束（避免 flaky）。
+    func awaitPendingBackgroundWorkForTesting() async {
+        await supplementNetworkTask?.value
+        await securityBackgroundTask?.value
     }
 
     /// SWR 核心入口（PR-2 重构，复刻 `TrendingViewModel.reload` 同款套路）。
@@ -178,7 +248,7 @@ final class ActivityViewModel {
     /// | 入口 | cachePolicy | 缓存空 | 缓存有 + TTL 内 | 缓存有 + TTL 过期 |
     /// |------|-------------|--------|------------------|---------------------|
     /// | 进入页面 (.task) | .respectTTL | 走网络 + isLoading | 上屏缓存 + 不走网络 | 上屏缓存 + 后台刷新 |
-    /// | 切分类 | .respectTTL | 走网络 + isLoading | 上屏缓存 + 不走网络 | 上屏缓存 + 后台刷新 |
+    /// | 切分类 | `selectCategory` | — | 只 refilter allItems | 只 refilter | 零网络 |
     /// | 主动刷新按钮 | .forceNetwork | 走网络 + isLoading | 上屏缓存 + 后台刷新 | 上屏缓存 + 后台刷新 |
     ///
     /// SWR 关键约束：
@@ -187,10 +257,15 @@ final class ActivityViewModel {
     /// - events 网络失败 + 有缓存 → 保留已显示，仅 log（loadError 不动以免与 Release poller 错误串）
     /// - events 网络失败 + 无缓存 → loadError 显示，UI 空状态
     func reload(category: ActivityCategory, shouldPollReleases: Bool, cachePolicy: ActivityCachePolicy) async {
+        currentCategory = category
         currentReloadTask?.cancel()
 
         let task = Task { [weak self] in
             guard let self else { return }
+            defer {
+                self.isLoading = false
+                self.isRefreshing = false
+            }
 
             // ① 读 sync_state，先把 lastRefreshedAt 顶到 UI（toolbar 新鲜度提示首屏可见）
             let initialSyncState = try? await self.activitySyncStateRepository.current()
@@ -202,7 +277,6 @@ final class ActivityViewModel {
             guard !Task.isCancelled else { return }
 
             // ② 第一阶段：本地 4 路并行读
-            //   4 路任一失败不影响其它路（try? + ?? 空集合兜底）；这是 SWR 「永远先上屏可用数据」的实现。
             async let cachedReposTask = self.repoRepository.fetchAllStarred()
             async let cachedReleasesTask = self.releaseRepository.fetchTimeline(limit: 120)
             async let cachedEventsTask = self.activityEventRepository.fetchAll(limit: 200)
@@ -216,33 +290,33 @@ final class ActivityViewModel {
             let hasUsableCache = !(cachedRepos.isEmpty && cachedReleases.isEmpty
                 && cachedEvents.isEmpty && cachedAnnouncements.isEmpty)
 
-            let cachedItems = self.makeItems(
+            var snapshot = AggregateSnapshot(
                 repos: cachedRepos,
                 releases: cachedReleases,
                 events: cachedEvents,
                 announcements: cachedAnnouncements
             )
-            self.items = self.filter(cachedItems, by: category)
-            self.itemsRevision += 1
+            self.publishItems(from: self.makeItems(snapshot: snapshot), snapshot: snapshot)
             self.loadError = nil
             self.isLoading = !hasUsableCache
 
-            // ③ 决定是否走 3 路网络（events + blog RSS + security）
-            let shouldFetchEvents = Self.shouldFetchEvents(
-                cachePolicy: cachePolicy,
-                syncState: initialSyncState
-            )
-            let shouldFetchBlog = Self.shouldFetchBlogRSS(
-                cachePolicy: cachePolicy,
-                syncState: initialSyncState
-            )
-            let shouldFetchSecurity = Self.shouldFetchSecurityAdvisories(
-                cachePolicy: cachePolicy,
-                syncState: initialSyncState
-            )
+            // ③ 按当前分类裁剪网络（避免看「关注」时扫 200 个 security）
+            let shouldFetchEvents = Self.needsEventsNetwork(for: category)
+                && Self.shouldFetchEvents(cachePolicy: cachePolicy, syncState: initialSyncState)
+            let shouldFetchBlog = Self.needsAnnouncementsNetwork(for: category)
+                && Self.shouldFetchBlogRSS(cachePolicy: cachePolicy, syncState: initialSyncState)
+            let shouldFetchSecurity = Self.needsAnnouncementsNetwork(for: category)
+                && Self.shouldFetchSecurityAdvisories(cachePolicy: cachePolicy, syncState: initialSyncState)
+            let willScheduleSecurityInBackground = shouldFetchSecurity
 
-            // 后台刷新指示器：仅在"有缓存 + 走网络"时点亮（与 Trending 同款）
-            if hasUsableCache && (shouldFetchEvents || shouldFetchBlog || shouldFetchSecurity || shouldPollReleases) {
+            if Self.needsEventsNetwork(for: category) {
+                didPrimeEventsNetwork = true
+            }
+            if Self.needsAnnouncementsNetwork(for: category) {
+                didPrimeAnnouncementsNetwork = true
+            }
+
+            if hasUsableCache && (shouldFetchEvents || shouldFetchBlog || willScheduleSecurityInBackground || shouldPollReleases) {
                 self.isRefreshing = true
             }
 
@@ -252,9 +326,8 @@ final class ActivityViewModel {
             }
             guard !Task.isCancelled else { return }
 
-            // ⑤ 三路网络刷新（events / blog / security）
-            var refreshedEvents = cachedEvents
-            var refreshedAnnouncements = cachedAnnouncements
+            // ⑤ 前台网络：events + blog（security 走后台，不阻塞本路径）
+            var didMutateAggregate = false
 
             if shouldFetchEvents, let login = self.currentLoginProvider() {
                 let result = await self.fetchAndPersistEvents(
@@ -265,17 +338,12 @@ final class ActivityViewModel {
                 switch result {
                 case .updated:
                     self.lastRefreshedAt = Date()
-                    refreshedEvents = (try? await self.activityEventRepository.fetchAll(limit: 200)) ?? cachedEvents
+                    snapshot.events = (try? await self.activityEventRepository.fetchAll(limit: 200)) ?? snapshot.events
+                    didMutateAggregate = true
                 case .notModified:
                     self.lastRefreshedAt = Date()
                 case .failed(let error):
-                    if !hasUsableCache {
-                        self.loadError = error.localizedDescription
-                    } else {
-                        AppLog.network.warning(
-                            "Activity events refresh failed but cache shown: \(error.localizedDescription, privacy: .public)"
-                        )
-                    }
+                    self.recordEventsLoadError(error, category: category, snapshot: snapshot)
                 }
             }
 
@@ -284,8 +352,9 @@ final class ActivityViewModel {
                 guard !Task.isCancelled else { return }
                 switch result {
                 case .updated, .notModified:
-                    refreshedAnnouncements = (try? await self.activityAnnouncementRepository.fetchAll(limit: 100))
-                        ?? refreshedAnnouncements
+                    snapshot.announcements = (try? await self.activityAnnouncementRepository.fetchAll(limit: 100))
+                        ?? snapshot.announcements
+                    didMutateAggregate = true
                 case .failed(let error):
                     AppLog.network.warning(
                         "Activity blog RSS refresh failed: \(error.localizedDescription, privacy: .public)"
@@ -294,42 +363,17 @@ final class ActivityViewModel {
             }
 
             if shouldFetchSecurity {
-                let result = await self.fetchAndPersistSecurityAdvisories(repos: cachedRepos)
-                guard !Task.isCancelled else { return }
-                switch result {
-                case .updated, .notModified:
-                    refreshedAnnouncements = (try? await self.activityAnnouncementRepository.fetchAll(limit: 100))
-                        ?? refreshedAnnouncements
-                case .failed(let error):
-                    AppLog.network.warning(
-                        "Activity security refresh failed: \(error.localizedDescription, privacy: .public)"
-                    )
-                }
+                self.scheduleSecurityScan(repos: cachedRepos)
             }
 
-            // ⑥ 重读 releases（Release 巡检可能写入新行）+ 重组装 items
-            if shouldFetchEvents || shouldFetchBlog || shouldFetchSecurity || shouldPollReleases {
-                let refreshedReleases = (try? await self.releaseRepository.fetchTimeline(limit: 120)) ?? cachedReleases
-                guard !Task.isCancelled else { return }
-
-                let refreshedItems = self.makeItems(
-                    repos: cachedRepos,
-                    releases: refreshedReleases,
-                    events: refreshedEvents,
-                    announcements: refreshedAnnouncements
-                )
-                let filtered = self.filter(refreshedItems, by: category)
-                let oldIDs = self.items.map(\.id)
-                let newIDs = filtered.map(\.id)
-                self.items = filtered
-                // 智能 revision：身份序列变化才 bump，避免无意义动画重播
-                if oldIDs != newIDs {
-                    self.itemsRevision += 1
+            // ⑥ 前台路径有数据变化 → 重组装；Release 巡检也可能写入新 release
+            if didMutateAggregate || shouldPollReleases {
+                if shouldPollReleases {
+                    snapshot.releases = (try? await self.releaseRepository.fetchTimeline(limit: 120)) ?? snapshot.releases
                 }
+                guard !Task.isCancelled else { return }
+                self.publishItems(from: self.makeItems(snapshot: snapshot), snapshot: snapshot)
             }
-
-            self.isLoading = false
-            self.isRefreshing = false
 
             // ⑦ 后台清理（≥ 24h 触发，detached Task 不阻塞主路径）
             Task.detached(priority: .background) { [weak self] in
@@ -339,6 +383,148 @@ final class ActivityViewModel {
 
         currentReloadTask = task
         await task.value
+    }
+
+    // MARK: - 分类切换 / 聚合发布
+
+    /// 切分类后补拉尚未 prime 的网络（不取消 in-flight reload、不重建本地四路读）。
+    private func supplementNetworks(for category: ActivityCategory, cachePolicy: ActivityCachePolicy) async {
+        guard var snapshot = aggregateSnapshot else { return }
+
+        let syncState = try? await activitySyncStateRepository.current()
+        let shouldFetchEvents = Self.needsEventsNetwork(for: category)
+            && Self.shouldFetchEvents(cachePolicy: cachePolicy, syncState: syncState)
+        let shouldFetchBlog = Self.needsAnnouncementsNetwork(for: category)
+            && Self.shouldFetchBlogRSS(cachePolicy: cachePolicy, syncState: syncState)
+        let shouldFetchSecurity = Self.needsAnnouncementsNetwork(for: category)
+            && Self.shouldFetchSecurityAdvisories(cachePolicy: cachePolicy, syncState: syncState)
+
+        if Self.needsEventsNetwork(for: category) {
+            didPrimeEventsNetwork = true
+        }
+        if Self.needsAnnouncementsNetwork(for: category) {
+            didPrimeAnnouncementsNetwork = true
+        }
+
+        guard shouldFetchEvents || shouldFetchBlog || shouldFetchSecurity else { return }
+
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        var didMutateAggregate = false
+
+        if shouldFetchEvents, let login = currentLoginProvider() {
+            let result = await fetchAndPersistEvents(login: login, etag: syncState?.eventsEtag)
+            switch result {
+            case .updated:
+                lastRefreshedAt = Date()
+                snapshot.events = (try? await activityEventRepository.fetchAll(limit: 200)) ?? snapshot.events
+                didMutateAggregate = true
+            case .notModified:
+                lastRefreshedAt = Date()
+            case .failed(let error):
+                recordEventsLoadError(error, category: category, snapshot: snapshot)
+            }
+        }
+
+        if shouldFetchBlog {
+            let result = await fetchAndPersistBlogRSS(etag: syncState?.blogRssEtag)
+            switch result {
+            case .updated, .notModified:
+                snapshot.announcements = (try? await activityAnnouncementRepository.fetchAll(limit: 100))
+                    ?? snapshot.announcements
+                didMutateAggregate = true
+            case .failed(let error):
+                AppLog.network.warning(
+                    "Activity blog RSS supplement failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
+        if shouldFetchSecurity {
+            scheduleSecurityScan(repos: snapshot.repos)
+        }
+
+        if didMutateAggregate {
+            publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+        }
+    }
+
+    private func applyFilterForCurrentCategory(bumpRevision: Bool) {
+        let filtered = filter(allItems, by: currentCategory)
+        let oldIDs = items.map(\.id)
+        items = filtered
+        if bumpRevision || oldIDs != filtered.map(\.id) {
+            itemsRevision += 1
+        }
+    }
+
+    private func publishItems(from source: [ActivityItem], snapshot: AggregateSnapshot? = nil) {
+        allItems = source
+        if let snapshot {
+            aggregateSnapshot = snapshot
+        }
+        isAggregateLoaded = true
+        applyFilterForCurrentCategory(bumpRevision: true)
+    }
+
+    private func makeItems(snapshot: AggregateSnapshot) -> [ActivityItem] {
+        makeItems(
+            repos: snapshot.repos,
+            releases: snapshot.releases,
+            events: snapshot.events,
+            announcements: snapshot.announcements
+        )
+    }
+
+    /// events 失败时：无 following 可展示则给当前分类可见的错误（不再静默吞掉）。
+    private func recordEventsLoadError(_ error: Error, category: ActivityCategory, snapshot: AggregateSnapshot) {
+        let followingCount = makeFollowingItems(snapshot.events).count
+        let shouldSurface = (category == .following || category == .all) && followingCount == 0
+        if shouldSurface {
+            loadError = error.localizedDescription
+        } else {
+            AppLog.network.warning(
+                "Activity events refresh failed: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    /// Security 扫描放后台：最多 200 个串行 API，不能挡切分类 / 首屏。
+    private func scheduleSecurityScan(repos: [Repo]) {
+        securityBackgroundTask?.cancel()
+        isRefreshing = true
+        securityBackgroundTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.isRefreshing = false }
+            let result = await self.fetchAndPersistSecurityAdvisories(repos: repos)
+            guard !Task.isCancelled else { return }
+            await self.integrateSecurityScanResult(result)
+        }
+    }
+
+    private func integrateSecurityScanResult(_ result: AnnouncementFetchResult) async {
+        switch result {
+        case .updated, .notModified:
+            guard var snapshot = aggregateSnapshot else { return }
+            snapshot.announcements = (try? await activityAnnouncementRepository.fetchAll(limit: 100))
+                ?? snapshot.announcements
+            publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+        case .failed(let error):
+            AppLog.network.warning(
+                "Activity security refresh failed: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    /// 当前分类是否需要 events 网络。
+    nonisolated static func needsEventsNetwork(for category: ActivityCategory) -> Bool {
+        category == .all || category == .following
+    }
+
+    /// 当前分类是否需要 announcement 网络（blog + security）。
+    nonisolated static func needsAnnouncementsNetwork(for category: ActivityCategory) -> Bool {
+        category == .all || category == .announcement
     }
 
     // MARK: - Events 网络获取（PR-2，2026-06-16）
