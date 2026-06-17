@@ -3682,9 +3682,6 @@
         }
       }
     },
-    "ai.context.settings.tier1MaxLinesValueFormat %@" : {
-
-    },
     "ai.context.settings.title" : {
       "extractionState" : "stale",
       "localizations" : {

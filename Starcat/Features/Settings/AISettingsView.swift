@@ -1391,12 +1391,22 @@ struct AISettingsTab: View {
 
     /// Tier 1 关键文件保留行数 Stepper 行。范围 40-200、步进 20。
     /// 单 Stepper 占一行（与 aiIndexSection 的 ratioRow 同样的「标题 + 读数 + 控件」横向布局）。
+    ///
+    /// HOM-203：右侧读数原本写成 `Text("ai.context...Format \(value)")`，被 SwiftUI
+    /// 编译成 LocalizedStringKey `"ai.context...Format %@"`，xcstrings 中该带 `%@`
+    /// 的 entry 是空壳，运行时找不到翻译就回退成"显示 key 字面量"，于是用户看到
+    /// `ai.context.settings.tier1MaxLinesValueFormat 100` 这种纯 key。改成显式
+    /// `String.l10n + String(format:)`，与本视图其它行（如 line 1480 的统计 cell）
+    /// 风格保持一致；翻译模板里把 `%lld` 当行数占位符使用。
     private var repoContextTier1MaxLinesRow: some View {
         HStack {
             Text("ai.context.settings.tier1MaxLines")
                 .font(.callout)
             Spacer()
-            Text("ai.context.settings.tier1MaxLinesValueFormat \(settings.aiRepoContextTier1MaxLines)")
+            Text(String(
+                format: String.l10n("ai.context.settings.tier1MaxLinesValueFormat"),
+                settings.aiRepoContextTier1MaxLines
+            ))
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 60, alignment: .trailing)
@@ -1411,23 +1421,24 @@ struct AISettingsTab: View {
         }
     }
 
-    // MARK: - AI 代码上下文产物管理面板（HOM-68 v3 / 2026-06-15）
+    // MARK: - AI 代码上下文产物管理面板（HOM-68 v3 / 2026-06-15；HOM-203 性能改造）
     //
     // 历史背景：原方案只在 AI 设置里放一个「管理已生成的上下文 →」跳转按钮，把完整
     // 的输出目录 / 项目列表 / 单项删除面板放在 存储 Tab。dong4j 拍板把"精细化操作"
     // 集中到对应功能 Tab、把"全局汇总 + 一键清除"集中到 存储 Tab，因此本面板从
     // 存储 Tab 搬过来；存储 Tab 那边只保留汇总数字 + 行内"清理"按钮。
     //
+    // **HOM-203（2026-06-16）改造**：用户反馈 576 个 repo 时本面板的 ForEach 渲染
+    // 让设置页明显卡顿；同时 per-repo "打开 / 删除" 已被存储 Tab 的"全部清除"覆盖。
+    // 决议：移除 ForEach + 单项 "打开 / 删除" 按钮；汇总统计源切到 `summary` 缓存
+    // （`.starcat-summary.json`），UI 一次磁盘读取拿到 4 个数字，不再 O(n) 解析
+    // metadata.json。详见 `RepoContextStorage` 的 HOM-203 注释。
+    //
     // 视觉对照 `IntegrationSettingsView.codeFlowSection`，保持两类产物（CodeFlow /
     // RepoContextPacker）的 UI 节奏一致：
     //   1. 输出目录路径行 + 「选择目录 / 在 Finder 显示 / 重置默认」3 个按钮；
     //   2. 4 列汇总统计（项目数 / 占用 / 累计生成 / 最后生成）；
-    //   3. 错误状态 / 空状态 / 项目列表三态切换；
-    //   4. 项目列表中每行：仓库名 + 元信息 caption + 「打开 / 删除」按钮。
-    //
-    // 与 CodeFlow 的差异：
-    //   - **不提供"预览"按钮**：context.xml 不是给用户直接看的，没有"预览页面"概念。
-    //   - **不提供"一键清除"按钮**：搬到 存储 Tab 作为汇总入口；本地仅保留单项删除。
+    //   3. 错误状态 / 空状态 提示。
 
     /// AI 代码上下文产物管理面板。
     @ViewBuilder
@@ -1473,7 +1484,7 @@ struct AISettingsTab: View {
 
             HStack(spacing: 18) {
                 aiContextStat(titleKey: "ai.context.storage.statRepos",
-                              value: "\(aiContextStorage.projects.count)")
+                              value: "\(aiContextStorage.projectCount)")
                 aiContextStat(titleKey: "ai.context.storage.statBytes",
                               value: ByteCountFormatter.string(fromByteCount: aiContextStorage.totalBytes, countStyle: .file))
                 aiContextStat(titleKey: "ai.context.storage.statGenerations",
@@ -1493,14 +1504,10 @@ struct AISettingsTab: View {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.red)
-            } else if aiContextStorage.projects.isEmpty {
+            } else if aiContextStorage.projectCount == 0 {
                 Text("ai.context.storage.empty")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else {
-                ForEach(aiContextStorage.projects) { project in
-                    aiContextProjectRow(project)
-                }
             }
         }
         .disabled(!settings.aiRepoContextEnabled)
@@ -1512,37 +1519,6 @@ struct AISettingsTab: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(titleKey).font(.caption2).foregroundStyle(.secondary)
             Text(value).font(.caption.weight(.medium))
-        }
-    }
-
-    /// 单个产物行（一个 `<owner>/<repo>` 项目）。绑定 `RepoContextStoredProject`。
-    /// 与 CodeFlow projectRow 不同点：① 不提供"预览"按钮；② 不显示"详情" disclosure
-    /// （context.xml metadata 不需要让用户深扒）。
-    private func aiContextProjectRow(_ project: RepoContextStoredProject) -> some View {
-        let metadata = project.metadata
-        let commitShortSHA = String(metadata.commitSha.prefix(7))
-        let xmlBytesStr = ByteCountFormatter.string(fromByteCount: Int64(metadata.stats.contextXmlBytes), countStyle: .file)
-        let actualTokens = metadata.stats.actualTokens
-        let totalFiles = metadata.stats.totalFiles
-        return HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("\(metadata.owner)/\(metadata.repo)")
-                    .font(.callout.weight(.medium))
-                Text("\(metadata.ref) · \(commitShortSHA) · XML \(xmlBytesStr) · \(actualTokens) tokens · \(totalFiles) files")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Text(project.generatedAtDate.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button("ai.context.storage.menuReveal") {
-                revealAIContextProject(project)
-            }
-            Button("ai.context.storage.menuDelete", role: .destructive) {
-                deleteAIContextProject(project)
-            }
         }
     }
 
@@ -1581,21 +1557,9 @@ struct AISettingsTab: View {
         }
     }
 
-    private func revealAIContextProject(_ project: RepoContextStoredProject) {
-        do {
-            try aiContextStorage.revealProject(project)
-        } catch {
-            aiContextActionError = error.localizedDescription
-        }
-    }
-
-    private func deleteAIContextProject(_ project: RepoContextStoredProject) {
-        do {
-            try aiContextStorage.deleteProject(owner: project.metadata.owner, repo: project.metadata.repo)
-        } catch {
-            aiContextActionError = error.localizedDescription
-        }
-    }
+    // HOM-203：单项 reveal / delete 已经移除——repo 列表整体砍掉，"全部清除"
+    // 在 设置 → 存储 Tab 已有入口，不再需要单项操作。`storage.revealProject`
+    // 和 `storage.deleteProject` API 仍保留供未来使用 / 单测。
 
     /// Token 预算 Int↔Double 适配 binding。
     /// SwiftUI Slider 要求 `BinaryFloatingPoint` 值类型，但 `aiRepoContextTokenBudget` 是 Int

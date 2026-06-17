@@ -20,6 +20,10 @@ struct IntegrationSettingsTab: View {
     // HOM-68 v3 (2026-06-15)：CodeFlow"一键清除"按钮搬到 存储 Tab → 缓存用量。
     // 本 Tab 仅保留"精细化操作"（输出目录配置、单项目预览/打开/删除）。
     // → 与 AISettingsView.repoContextManageStorageRow 同款职责划分。
+    //
+    // HOM-203（2026-06-16）：与 AISettingsView 同款改造，移除项目明细列表 +
+    // per-project 预览/打开/删除按钮——大数据量下 ForEach 渲染会卡顿，且"全部
+    // 清除"在存储 Tab 已有入口。汇总 4 项数据切到 `summary` 缓存。
 
     var body: some View {
         Form {
@@ -62,7 +66,7 @@ struct IntegrationSettingsTab: View {
                 }
 
                 HStack(spacing: 18) {
-                    stat(titleKey: "settings.integration.codeFlow.stat.projects", value: "\(storage.projects.count)")
+                    stat(titleKey: "settings.integration.codeFlow.stat.projects", value: "\(storage.projectCount)")
                     stat(titleKey: "settings.integration.codeFlow.stat.usage", value: ByteCountFormatter.string(fromByteCount: storage.totalBytes, countStyle: .file))
                     stat(
                         titleKey: "settings.integration.codeFlow.stat.totalGenerated",
@@ -78,14 +82,10 @@ struct IntegrationSettingsTab: View {
                     Label(message, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.red)
-                } else if storage.projects.isEmpty {
+                } else if storage.projectCount == 0 {
                     Text("settings.integration.codeFlow.empty")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                } else {
-                    ForEach(storage.projects) { project in
-                        projectRow(project)
-                    }
                 }
             }
         }
@@ -232,52 +232,10 @@ struct IntegrationSettingsTab: View {
         }
     }
 
-    private func projectRow(_ project: CodeFlowStoredProject) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(project.metadata.repository.fullName)
-                        .font(.callout.weight(.medium))
-                    Text("\(project.metadata.sourceRevision.branch) · \(project.metadata.sourceRevision.shortSHA) · HTML \(ByteCountFormatter.string(fromByteCount: project.metadata.artifact.pageBytes, countStyle: .file)) · ZIP \(ByteCountFormatter.string(fromByteCount: project.metadata.artifact.sourceArchiveBytes, countStyle: .file))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Text(project.metadata.generation.generatedAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                // 语义约定:预览 = 浏览器查看图谱;打开 = Finder 定位生成文件。
-                Button("settings.integration.codeFlow.project.preview") { preview(project) }
-                Button("settings.integration.codeFlow.project.open") { reveal(project) }
-                Button("settings.integration.codeFlow.project.delete", role: .destructive) { delete(project) }
-            }
-
-            DisclosureGroup("settings.integration.codeFlow.project.details") {
-                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                    GridRow {
-                        Text("settings.integration.codeFlow.project.pagePath")
-                        Text(project.pageURL.path).textSelection(.enabled)
-                    }
-                    GridRow {
-                        Text("settings.integration.codeFlow.project.generationCount")
-                        Text("\(project.metadata.generation.generationCount)")
-                    }
-                    GridRow {
-                        Text("settings.integration.codeFlow.project.lastDuration")
-                        Text("\(project.metadata.generation.lastDurationMilliseconds) ms")
-                    }
-                    GridRow {
-                        Text("settings.integration.codeFlow.project.codeFlowVersion")
-                        Text(String(project.metadata.generator.codeFlowCommit.prefix(7))).monospaced()
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.top, 4)
-            }
-        }
-    }
+    // HOM-203：projectRow 已移除。per-project 详情 / 预览 / 打开 / 删除按钮全部
+    // 砍掉，"全部清除"已在 设置 → 存储 Tab 提供。`storage.openPage` /
+    // `revealPage` / `deleteProject` API 仍保留供后续视图（如未来的 CodeFlow
+    // Tab）使用。
 
     private func chooseOutputDirectory() {
         let panel = NSOpenPanel()
@@ -306,35 +264,6 @@ struct IntegrationSettingsTab: View {
     private func revealOutputDirectory() {
         do {
             try storage.revealOutputRoot()
-        } catch {
-            actionError = error.localizedDescription
-        }
-    }
-
-    private func preview(_ project: CodeFlowStoredProject) {
-        do {
-            guard try storage.openPage(project.pageURL) else {
-                throw CocoaError(.fileNoSuchFile)
-            }
-        } catch {
-            actionError = error.localizedDescription
-        }
-    }
-
-    private func reveal(_ project: CodeFlowStoredProject) {
-        do {
-            try storage.revealPage(project.pageURL)
-        } catch {
-            actionError = error.localizedDescription
-        }
-    }
-
-    private func delete(_ project: CodeFlowStoredProject) {
-        do {
-            try storage.deleteProject(
-                owner: project.metadata.repository.owner,
-                name: project.metadata.repository.name
-            )
         } catch {
             actionError = error.localizedDescription
         }
