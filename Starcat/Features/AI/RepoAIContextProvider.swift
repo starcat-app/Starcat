@@ -280,7 +280,8 @@ struct RepoAIContextProvider {
         output: PackOutput,
         tokenEstimatorVersion: String
     ) -> PackMetadata {
-        let isoNow = ISO8601DateFormatter.starcatPackerFormatter.string(from: .now)
+        // HOM-203：metadata 字段已是 Date 类型，直接传 .now 即可。
+        let now = Date()
         return PackMetadata(
             schemaVersion: 1,
             tierRulesVersion: TierRules.tierRulesVersion,
@@ -289,13 +290,13 @@ struct RepoAIContextProvider {
             repo: input.repo,
             ref: input.ref,
             commitSha: input.commitSha,
-            generatedAt: isoNow,
+            generatedAt: now,
             tokenBudget: input.tokenBudget,
             stats: output.stats,
             skippedFiles: [],
             warnings: ["metadataReadFallback"],
             tier1MaxLines: input.tier1MaxLines,
-            lastAccessedAt: isoNow,
+            lastAccessedAt: now,
             generationCount: 1
         )
     }

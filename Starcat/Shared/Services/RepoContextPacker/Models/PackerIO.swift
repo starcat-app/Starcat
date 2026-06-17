@@ -237,6 +237,16 @@ public struct XmlBuildResult: Sendable {
 ///     声明为 Optional，**保证向后兼容**——旧版 `metadata.json`（不含这些字段）
 ///     反序列化时为 nil，UI / 缓存命中逻辑要做空值兜底。
 ///   - 加字段不 bump `schemaVersion`：Optional 即兼容，无需走 migration 路径。
+///
+/// **HOM-203（2026-06-16）日期类型对齐**：
+///   - `generatedAt` / `lastAccessedAt` 由 `String`（手写 ISO-8601）改为 `Date`，
+///     与 `CodeFlowMetadata` 同款，统一交给 `JSONEncoder/Decoder` 的 `.iso8601`
+///     策略处理，杜绝写读双方 `formatOptions` 不一致导致的 `.distantPast` 兜底
+///     灾难（曾把"最后生成"渲染成 `1年1月1日 8:05`）。
+///   - 解码端为兼容旧文件提供 lenient 策略：旧 `lastAccessedAt` 带 fractional
+///     seconds、旧 `generatedAt` 不带，两种格式都能解析为同一个 Date。详见
+///     `PackMetadataCoder.lenientDecoder`。
+///   - JSON 线协议**不变**：仍然落盘为 ISO-8601 字符串，旧 metadata 无需迁移。
 public struct PackMetadata: Codable, Sendable {
     public let schemaVersion: Int
     public let tierRulesVersion: String
@@ -246,8 +256,8 @@ public struct PackMetadata: Codable, Sendable {
     public let ref: String
     public let commitSha: String
 
-    /// ISO-8601 with `Z` 后缀（UTC）。
-    public let generatedAt: String
+    /// 生成时间（落盘为 ISO-8601 with `Z`）。
+    public let generatedAt: Date
 
     public let tokenBudget: Int
     public let stats: PackStats
@@ -266,11 +276,11 @@ public struct PackMetadata: Codable, Sendable {
     /// 也就是 80 处理；nil 时缓存判定额外检查 `settings 当前值 == 80` 才命中）。
     public let tier1MaxLines: Int?
 
-    /// W7：最近一次被 AI 摘要消费的时间（ISO-8601 with `Z`）。
+    /// W7：最近一次被 AI 摘要消费的时间（落盘为 ISO-8601 with `Z`）。
     ///
     /// 用于 StorageSettingsTab 按"最近使用"排序，以及未来 V2 加 LRU 自动清理。
     /// 每次 `RepoAIContextProvider.context(for:)` 命中缓存或 pack 完成都会被刷新。
-    public let lastAccessedAt: String?
+    public let lastAccessedAt: Date?
 
     /// W7：累计生成次数（首次写盘 1，后续 `existing.generationCount + 1`）。
     ///
@@ -286,13 +296,13 @@ public struct PackMetadata: Codable, Sendable {
         repo: String,
         ref: String,
         commitSha: String,
-        generatedAt: String,
+        generatedAt: Date,
         tokenBudget: Int,
         stats: PackStats,
         skippedFiles: [SkippedFile],
         warnings: [String],
         tier1MaxLines: Int? = nil,
-        lastAccessedAt: String? = nil,
+        lastAccessedAt: Date? = nil,
         generationCount: Int? = nil
     ) {
         self.schemaVersion = schemaVersion
@@ -311,6 +321,62 @@ public struct PackMetadata: Codable, Sendable {
         self.lastAccessedAt = lastAccessedAt
         self.generationCount = generationCount
     }
+}
+
+// MARK: - PackMetadataCoder（HOM-203）
+
+/// `PackMetadata` 与磁盘上 `metadata.json` 之间编解码的统一入口。
+///
+/// 历史包袱：早期版本写 `generatedAt` 用 `[.withInternetDateTime]`，写 `lastAccessedAt`
+/// 用 `[.withInternetDateTime, .withFractionalSeconds]`，读端却统一要求带 fractional
+/// seconds，导致 `generatedAt` 解析失败 → `.distantPast` 兜底 → 设置页"最后生成"
+/// 显示成 `1年1月1日 8:05`（HOM-203）。
+///
+/// 修法：所有读写都改走本文件提供的两个静态实例，**写端固定输出无 fractional
+/// seconds**（与 `CodeFlowMetadata` 一致，`JSONEncoder.dateEncodingStrategy = .iso8601`
+/// 默认行为），**读端用 `.custom` 策略对带/不带 fractional seconds 的字符串都接受**，
+/// 保证 576 个历史 metadata 不需要重 pack 也能立刻显示出真实时间。
+public enum PackMetadataCoder {
+    /// 写端 encoder。`.iso8601` 策略默认输出 `2026-06-13T16:23:00Z`（不带毫秒）。
+    public static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
+
+    /// 读端 decoder。先按"无 fractional seconds"格式解析，失败再退化到带 fractional
+    /// seconds 的解析；两个分支都失败才抛错。
+    public static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let raw = try container.decode(String.self)
+            if let date = lenientPlainFormatter.date(from: raw) {
+                return date
+            }
+            if let date = lenientFractionalFormatter.date(from: raw) {
+                return date
+            }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid ISO-8601 date string: \(raw)"
+            )
+        }
+        return decoder
+    }()
+
+    private static let lenientPlainFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let lenientFractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 }
 
 // MARK: - 10. PackStats（metadata.stats 子结构）

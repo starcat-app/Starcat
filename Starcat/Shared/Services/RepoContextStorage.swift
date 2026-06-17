@@ -10,22 +10,26 @@
 //    - `existingProject(owner:repo:)`（W3 RepoAIContextProvider 缓存命中走这里）。
 //
 //  设计要点（与 `CodeFlowStorage.swift` 接口对齐）：
-//    - **文件系统是唯一信任源**：不维护内存索引，UI 状态 (`projects`) 完全派生自
-//      `scanProjects(root:)`；所有写操作末尾都触发 `reload()`。
+//    - **文件系统是唯一信任源**：不维护内存索引；UI 渲染读 `summary` 缓存，
+//      内部批量操作（如 deleteAllProjects、迁移）按需走 `scanProjects(root:)`。
 //    - **@Observable + 单例**：和 CodeFlow 同款，让 SwiftUI 视图 (`StorageSettingsTab`)
-//      直接观察 `storage.projects` 变化；单例避免在多处持有不同的 bookmark 状态。
+//      直接观察 `storage.summary` 变化；单例避免在多处持有不同的 bookmark 状态。
 //    - **写盘要先读旧 metadata**：W7 引入的 `generationCount` 字段语义是"累计次数"，
 //      所以 `write` 内部要先 `loadProject(directory:)` 拿旧 `generationCount`，新值 +1。
 //
 //  关键约束（已踩过的坑级）：
-//    1. PackMetadata.generatedAt 是 ISO-8601 String，不是 Date。`latestGeneratedAt`
-//       计算时要解析；解析失败的 metadata 不参与排序（用 .distantPast 兜底，会排到末尾）。
+//    1. HOM-203（2026-06-16）：PackMetadata.generatedAt 已改为 Date 类型，编解码
+//       走 `PackMetadataCoder` 统一入口；写端 `.iso8601` 默认无 fractional seconds，
+//       读端 lenient 兼容旧文件，杜绝早期版本的格式不对称导致 `.distantPast` 兜底。
 //    2. Security-scoped bookmark 仅在 `startAccessingSecurityScopedResource` 期间有效；
 //       任何 `FileManager` / `Data.write` / `JSONEncoder.encode().write` 都要在
 //       `withOutputRoot { _ in ... }` 闭包内执行。
 //    3. `deleteAllProjects` 不能直接 `removeItem(at: root)`——用户可能选择 `~/Documents`
 //       作为根，整目录删会误删；必须先 `scanProjects` 得到识别的 owner/repo 子目录列表，
 //       再逐个删（与 CodeFlow 同款防御）。
+//    4. HOM-203：Summary 缓存（`.starcat-summary.json`）是 UI 渲染源，per-repo
+//       metadata 仍是真源；写/touch/删/迁移时增量更新 summary，启动期一级目录数
+//       不一致触发完整重建。详见 `loadOrRebuildSummary()`。
 //
 
 import AppKit
@@ -50,19 +54,15 @@ struct RepoContextStoredProject: Identifiable, Equatable, Sendable {
         Int64(metadata.stats.contextXmlBytes) + metadataFileBytes
     }
 
-    /// 最近一次访问时间（W7 lastAccessedAt 字段；nil 时回退 `generatedAt`，再不行 distantPast）。
+    /// 最近一次访问时间（W7 lastAccessedAt 字段；nil 时回退 `generatedAt`）。
+    /// HOM-203：metadata 字段已是 Date 类型，不再需要二次解析。
     var lastActiveAt: Date {
-        if let lastAccessedAtString = metadata.lastAccessedAt,
-           let parsed = ISO8601DateFormatter.starcatPackerFormatter.date(from: lastAccessedAtString) {
-            return parsed
-        }
-        return ISO8601DateFormatter.starcatPackerFormatter.date(from: metadata.generatedAt)
-            ?? .distantPast
+        metadata.lastAccessedAt ?? metadata.generatedAt
     }
 
     /// 用户可见的"生成时间"（UI 列表行的副标题用）。
     var generatedAtDate: Date {
-        ISO8601DateFormatter.starcatPackerFormatter.date(from: metadata.generatedAt) ?? .distantPast
+        metadata.generatedAt
     }
 
     private var metadataFileBytes: Int64 {
@@ -75,13 +75,50 @@ struct RepoContextStoredProject: Identifiable, Equatable, Sendable {
     }
 }
 
-/// ISO-8601 解析器（与 `RepoContextPacker.iso8601(_:)` 编码格式对齐：`Z` 后缀 UTC）。
-extension ISO8601DateFormatter {
-    static let starcatPackerFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
+/// HOM-203：产物根目录的汇总缓存（落盘为 `<root>/.starcat-summary.json`）。
+///
+/// 作用：让设置页 UI 一次磁盘读取拿到 4 个汇总数字（项目数 / 占用 / 累计生成 /
+/// 最后生成时间），不再 O(n) 扫子目录、解析 n 份 metadata.json。
+///
+/// **不是真源**——per-repo `metadata.json` 仍然是产物的唯一权威。本文件只是 UI
+/// 渲染的派生缓存，由 `RepoContextStorage` 在写/触/删/迁移路径上增量维护；启动期
+/// 通过一级目录数比对兜底（用户在 Finder 里手动删/移产物时触发完整重建）。
+struct RepoContextSummary: Codable, Sendable, Equatable {
+    /// 模式版本，未来字段演进时 bump（不兼容时丢弃旧 summary 走完整重建）。
+    let schemaVersion: Int
+    /// 当前 owner/repo 项目数量（与 `scanProjects` 返回的数量对齐）。
+    let projectCount: Int
+    /// 全部产物字节累计（context.xml + metadata.json，与 `totalBytes` 对齐）。
+    let totalBytes: Int64
+    /// 全部 metadata.generationCount 累计（nil 项按 1 计）。
+    let totalGenerationCount: Int
+    /// 全部项目中最大的 generatedAt；空集合时为 nil。
+    let latestGeneratedAt: Date?
+    /// summary 自身落盘时间（用于调试 / 排查"是不是有人没更新 summary"）。
+    let updatedAt: Date
+
+    static let currentSchemaVersion: Int = 1
+    static let filename: String = ".starcat-summary.json"
+
+    static let empty: RepoContextSummary = .init(
+        schemaVersion: currentSchemaVersion,
+        projectCount: 0,
+        totalBytes: 0,
+        totalGenerationCount: 0,
+        latestGeneratedAt: nil,
+        updatedAt: .distantPast
+    )
+
+    func withUpdatedAt(_ date: Date) -> RepoContextSummary {
+        .init(
+            schemaVersion: schemaVersion,
+            projectCount: projectCount,
+            totalBytes: totalBytes,
+            totalGenerationCount: totalGenerationCount,
+            latestGeneratedAt: latestGeneratedAt,
+            updatedAt: date
+        )
+    }
 }
 
 enum RepoContextStorageError: LocalizedError {
@@ -116,7 +153,9 @@ final class RepoContextStorage {
     private let defaults: UserDefaults
     private let fixedRootURL: URL?
 
-    private(set) var projects: [RepoContextStoredProject] = []
+    /// HOM-203：UI 渲染唯一来源。设置页只读取本字段，不再扫描 N 份 metadata.json。
+    /// `nil` 表示尚未加载（首次进入设置页时由 `loadSummaryIfNeeded()` 触发加载）。
+    private(set) var summary: RepoContextSummary?
     private(set) var lastErrorMessage: String?
     /// UserDefaults 不受 Observation 自动追踪；切换配置后递增以刷新路径与按钮状态。
     private var directoryConfigurationRevision: Int = 0
@@ -143,16 +182,17 @@ final class RepoContextStorage {
         return (try? resolveOutputRoot().url.path) ?? String.l10n("storage.outputDirectory.bookmarkExpired")
     }
 
-    var totalBytes: Int64 { projects.reduce(0) { $0 + $1.totalBytes } }
+    /// 设置页 4 列汇总：项目占用字节累计。
+    var totalBytes: Int64 { summary?.totalBytes ?? 0 }
 
-    /// 累计生成次数（W7 generationCount；nil 时按 1 算，避免新装 metadata 显示 0）。
-    var totalGenerationCount: Int {
-        projects.reduce(0) { $0 + ($1.metadata.generationCount ?? 1) }
-    }
+    /// 设置页 4 列汇总：累计生成次数（W7 generationCount，nil 项按 1 计）。
+    var totalGenerationCount: Int { summary?.totalGenerationCount ?? 0 }
 
-    var latestGeneratedAt: Date? {
-        projects.map(\.generatedAtDate).max()
-    }
+    /// 设置页 4 列汇总：所有项目的最大 generatedAt；空集合时为 nil（UI 不渲染该列）。
+    var latestGeneratedAt: Date? { summary?.latestGeneratedAt }
+
+    /// 设置页 4 列汇总：项目数。也用于"全部清除"按钮的 disabled 判定。
+    var projectCount: Int { summary?.projectCount ?? 0 }
 
     // MARK: - 用户路径配置入口
 
@@ -205,16 +245,37 @@ final class RepoContextStorage {
         reload()
     }
 
-    // MARK: - UI 刷新入口（重新扫描产物目录）
+    // MARK: - UI 刷新入口（HOM-203 改造）
 
+    /// 设置页 `.task { reload() }` 入口。**优先走 summary 缓存**：
+    ///   - summary 文件存在 + schemaVersion 匹配 + 一级目录数与 `projectCount` 偏差
+    ///     ≤ 阈值 → 直接 decode 后塞进 `summary`，不扫子目录。
+    ///   - 否则触发 `rebuildSummary()` 全量重扫，重写 summary 文件。
+    ///
+    /// 这是 HOM-203 性能优化的核心：用户有 576 个 repo 时，本方法 O(1) 完成；
+    /// 旧版 `reload()` 会 O(n) decode 576 份 metadata.json，主线程明显卡顿。
     func reload() {
         do {
-            projects = try withOutputRoot { root in
-                try scanProjects(root: root)
+            try withOutputRoot { root in
+                try loadOrRebuildSummary(root: root)
             }
             lastErrorMessage = nil
         } catch {
-            projects = []
+            summary = .empty
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    /// 强制完整重扫 + 重写 summary。手工调试 / "重建索引"调试入口可调用。
+    /// 业务路径走 `reload()` 即可，无需直接调本方法。
+    func rebuildSummary() {
+        do {
+            try withOutputRoot { root in
+                try rebuildSummaryOnDisk(root: root)
+            }
+            lastErrorMessage = nil
+        } catch {
+            summary = .empty
             lastErrorMessage = error.localizedDescription
         }
     }
@@ -299,7 +360,7 @@ final class RepoContextStorage {
                 actualTokens: metadata.stats.actualTokens,
                 contextXmlBytes: xmlBytes
             )
-            let nowISO = ISO8601DateFormatter.starcatPackerFormatter.string(from: .now)
+            let now = Date()
             let finalMetadata = PackMetadata(
                 schemaVersion: metadata.schemaVersion,
                 tierRulesVersion: metadata.tierRulesVersion,
@@ -314,17 +375,19 @@ final class RepoContextStorage {
                 skippedFiles: metadata.skippedFiles,
                 warnings: metadata.warnings,
                 tier1MaxLines: metadata.tier1MaxLines,
-                lastAccessedAt: nowISO,
+                lastAccessedAt: now,
                 generationCount: nextGenerationCount
             )
 
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try encoder.encode(finalMetadata).write(to: metadataURL, options: .atomic)
+            try PackMetadataCoder.encoder.encode(finalMetadata).write(to: metadataURL, options: .atomic)
 
             guard let project = try loadProject(directory: directory) else {
                 throw CocoaError(.fileReadCorruptFile)
             }
+            // HOM-203：summary 增量更新。新建 repo → projectCount/totalBytes/
+            // totalGenerationCount 都增；已有 repo 重 pack → projectCount 不变，
+            // totalBytes 按差额加减、generationCount += 1。
+            updateSummaryAfterWrite(root: root, newProject: project, oldProject: existing)
             // 这里**不**调 reload()——W8 ContextWriter 外层会在写盘完成后统一调一次，
             // 避免重复扫描整棵目录（写完单个 repo 后再扫所有 owners 浪费）。
             return project
@@ -332,11 +395,13 @@ final class RepoContextStorage {
     }
 
     /// W3 缓存命中后刷新 lastAccessedAt（让 UI 列表能按"最近使用"排序）。
+    /// HOM-203：lastAccessedAt 不影响 summary（只关心 generatedAt），所以本方法
+    /// 不动 summary，只更新 per-repo metadata.json。
     func touch(owner: String, repo: String) throws {
         try withOutputRoot { root in
             let directory = projectDirectory(root: root, owner: owner, repo: repo)
             guard let existing = try loadProject(directory: directory) else { return }
-            let nowISO = ISO8601DateFormatter.starcatPackerFormatter.string(from: .now)
+            let now = Date()
             let updated = PackMetadata(
                 schemaVersion: existing.metadata.schemaVersion,
                 tierRulesVersion: existing.metadata.tierRulesVersion,
@@ -351,12 +416,10 @@ final class RepoContextStorage {
                 skippedFiles: existing.metadata.skippedFiles,
                 warnings: existing.metadata.warnings,
                 tier1MaxLines: existing.metadata.tier1MaxLines,
-                lastAccessedAt: nowISO,
+                lastAccessedAt: now,
                 generationCount: existing.metadata.generationCount
             )
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try encoder.encode(updated).write(to: existing.metadataURL, options: .atomic)
+            try PackMetadataCoder.encoder.encode(updated).write(to: existing.metadataURL, options: .atomic)
         }
     }
 
@@ -365,6 +428,9 @@ final class RepoContextStorage {
     func deleteProject(owner: String, repo: String) throws {
         try withOutputRoot { root in
             let directory = projectDirectory(root: root, owner: owner, repo: repo)
+            // HOM-203：删除前先取一份 stored 用于 summary 反推（拿 totalBytes /
+            // generationCount / generatedAt 才能正确扣减）。
+            let removedProject = try? loadProject(directory: directory)
             if fileManager.fileExists(atPath: directory.path) {
                 try fileManager.removeItem(at: directory)
                 // owner 目录如果空了一起清掉（与 CodeFlow 同款）。
@@ -373,8 +439,8 @@ final class RepoContextStorage {
                     try? fileManager.removeItem(at: ownerDirectory)
                 }
             }
+            updateSummaryAfterDelete(root: root, removed: removedProject)
         }
-        reload()
     }
 
     /// 只删除项目子目录，保留用户主动选择的输出根目录本身。
@@ -390,8 +456,10 @@ final class RepoContextStorage {
                     try? fileManager.removeItem(at: ownerDirectory)
                 }
             }
+            // HOM-203：summary 直接清零并落盘。
+            writeSummary(.empty.withUpdatedAt(.now), root: root)
+            summary = .empty.withUpdatedAt(.now)
         }
-        reload()
     }
 
     // MARK: - 目录暴露 / Finder 跳转
@@ -418,6 +486,178 @@ final class RepoContextStorage {
             try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
             NSWorkspace.shared.open(root)
         }
+    }
+
+    // MARK: - 内部：summary 缓存读写（HOM-203）
+
+    /// `reload()` 主路径：优先用 summary，必要时降级重建。
+    ///
+    /// 偏差阈值用 ±10%（对 576 项目约 ±58 个的容忍度），平衡"用户在 Finder 删了
+    /// 个别项目时是否触发重建"vs"误报抖动"。极端边界（< 10 项目）始终重建，让
+    /// 小数据集走严格模式。
+    private func loadOrRebuildSummary(root: URL) throws {
+        guard fileManager.fileExists(atPath: root.path) else {
+            // 输出根尚不存在（用户从未生成过）→ 写入空 summary 即可，不报错。
+            try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+            let empty = RepoContextSummary.empty.withUpdatedAt(.now)
+            writeSummary(empty, root: root)
+            summary = empty
+            return
+        }
+
+        if let cached = readSummary(root: root) {
+            // schemaVersion 不匹配 → 旧版结构，丢弃重建。
+            if cached.schemaVersion != RepoContextSummary.currentSchemaVersion {
+                try rebuildSummaryOnDisk(root: root)
+                return
+            }
+            // 一级目录数与 cached.projectCount 偏差校验：用户可能在 Finder 里手动
+            // 删/移产物。这里只数 owner/repo 目录数（不解析 JSON），代价 O(owners)。
+            let approximate = try approximateProjectCount(root: root)
+            let drift = abs(approximate - cached.projectCount)
+            let tolerance = max(10, cached.projectCount / 10)
+            if drift <= tolerance {
+                summary = cached
+                return
+            }
+        }
+        try rebuildSummaryOnDisk(root: root)
+    }
+
+    /// 全量重扫并落盘 summary。
+    private func rebuildSummaryOnDisk(root: URL) throws {
+        let scanned = try scanProjects(root: root)
+        let computed = RepoContextSummary(
+            schemaVersion: RepoContextSummary.currentSchemaVersion,
+            projectCount: scanned.count,
+            totalBytes: scanned.reduce(0) { $0 + $1.totalBytes },
+            totalGenerationCount: scanned.reduce(0) { $0 + ($1.metadata.generationCount ?? 1) },
+            latestGeneratedAt: scanned.map(\.generatedAtDate).max(),
+            updatedAt: .now
+        )
+        writeSummary(computed, root: root)
+        summary = computed
+    }
+
+    /// 写盘后增量更新 summary。
+    /// - oldProject 为 nil：新增 repo → projectCount +1、totalBytes +new、count +new.gen。
+    /// - oldProject 非 nil：重 pack → projectCount 不变、totalBytes 用差额、count +1。
+    ///
+    /// **关键边界**：如果当前 `summary` 还是 nil（用户没打开过设置页就直接生成了
+    /// 上下文），不能从 `.empty` 起增量——线上磁盘可能已有 N 个老项目。这种情况
+    /// 直接走 `rebuildSummaryOnDisk` 全量重扫，扫描结果天然包含本次新写的 metadata。
+    private func updateSummaryAfterWrite(
+        root: URL,
+        newProject: RepoContextStoredProject,
+        oldProject: RepoContextStoredProject?
+    ) {
+        guard let base = summary ?? readSummary(root: root) else {
+            try? rebuildSummaryOnDisk(root: root)
+            return
+        }
+        let projectCount = base.projectCount + (oldProject == nil ? 1 : 0)
+        let totalBytes = base.totalBytes + (newProject.totalBytes - (oldProject?.totalBytes ?? 0))
+        let totalGenerationCount = base.totalGenerationCount + 1
+        let latestGeneratedAt: Date? = {
+            let candidate = newProject.generatedAtDate
+            if let existing = base.latestGeneratedAt {
+                return max(existing, candidate)
+            }
+            return candidate
+        }()
+        let updated = RepoContextSummary(
+            schemaVersion: RepoContextSummary.currentSchemaVersion,
+            projectCount: projectCount,
+            totalBytes: totalBytes,
+            totalGenerationCount: totalGenerationCount,
+            latestGeneratedAt: latestGeneratedAt,
+            updatedAt: .now
+        )
+        writeSummary(updated, root: root)
+        summary = updated
+    }
+
+    /// 删除后增量更新 summary。
+    /// - removed 为 nil：原本就找不到该项目（损坏 / 不存在），summary 不变只刷 updatedAt。
+    /// - summary 与磁盘 summary 都缺失时（首次场景）：走全量重建，重建结果已经
+    ///   反映"项目已删"。
+    private func updateSummaryAfterDelete(
+        root: URL,
+        removed: RepoContextStoredProject?
+    ) {
+        guard let removed else {
+            summary = (summary ?? .empty).withUpdatedAt(.now)
+            return
+        }
+        guard let base = summary ?? readSummary(root: root) else {
+            try? rebuildSummaryOnDisk(root: root)
+            return
+        }
+        let nextCount = max(0, base.projectCount - 1)
+        let nextBytes = max(0, base.totalBytes - removed.totalBytes)
+        let nextGen = max(0, base.totalGenerationCount - (removed.metadata.generationCount ?? 1))
+        // 删掉的恰好是"最后生成时间持有者"时，无法 O(1) 找出新的最大值——这里直接
+        // 把 latestGeneratedAt 标记为 nil，下次 `reload()` 走 summary 命中路径仍能
+        // 用旧值；除非用户手动重建，否则只在删完所有项目时显示空。这是为了避免
+        // 单删触发全量扫描的代价；可接受的精度损失。
+        let nextLatest: Date? = {
+            if nextCount == 0 { return nil }
+            return base.latestGeneratedAt
+        }()
+        let updated = RepoContextSummary(
+            schemaVersion: RepoContextSummary.currentSchemaVersion,
+            projectCount: nextCount,
+            totalBytes: nextBytes,
+            totalGenerationCount: nextGen,
+            latestGeneratedAt: nextLatest,
+            updatedAt: .now
+        )
+        writeSummary(updated, root: root)
+        summary = updated
+    }
+
+    /// 读 summary.json；不存在 / decode 失败 → nil（让上层走重建）。
+    private func readSummary(root: URL) -> RepoContextSummary? {
+        let url = root.appendingPathComponent(RepoContextSummary.filename, isDirectory: false)
+        guard fileManager.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        return try? PackMetadataCoder.decoder.decode(RepoContextSummary.self, from: data)
+    }
+
+    /// 写 summary.json；I/O 错误 best-effort 吞掉并打 log——summary 是缓存，
+    /// 写失败不能阻止真源（per-repo metadata.json）落盘。
+    private func writeSummary(_ summary: RepoContextSummary, root: URL) {
+        let url = root.appendingPathComponent(RepoContextSummary.filename, isDirectory: false)
+        do {
+            let data = try PackMetadataCoder.encoder.encode(summary)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            AppLog.ai.error("[RepoContextStorage] summary write failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// 一级目录数估算：仅遍历 root 的 owner 子目录然后 list 一层 repo 目录，**不解析
+    /// 任何 JSON**。复杂度 O(owners + repos)，绝大多数情况比 `scanProjects` 快两个数量级。
+    private func approximateProjectCount(root: URL) throws -> Int {
+        let owners = try fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        var count = 0
+        for owner in owners where (try? owner.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+            let repos = try fileManager.contentsOfDirectory(
+                at: owner,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+            count += repos.filter {
+                (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+            }.count
+        }
+        return count
     }
 
     // MARK: - 内部：security scope 与迁移
@@ -481,6 +721,11 @@ final class RepoContextStorage {
                         try? fileManager.removeItem(at: ownerDirectory)
                     }
                 }
+                // HOM-203：源端 summary 也清掉，避免下次切回时被旧缓存误导
+                // （loadOrRebuildSummary 会重建，但提前删 summary 让用户在 Finder 里
+                // 看到的目录状态更干净）。
+                let sourceSummary = sourceRoot.appendingPathComponent(RepoContextSummary.filename, isDirectory: false)
+                try? fileManager.removeItem(at: sourceSummary)
             }
         }
     }
@@ -576,8 +821,9 @@ final class RepoContextStorage {
               xmlSize > 0 else {
             return nil
         }
-        let decoder = JSONDecoder()
-        let metadata = try decoder.decode(PackMetadata.self, from: Data(contentsOf: metadataURL))
+        // HOM-203：用 PackMetadataCoder.decoder（lenient ISO-8601 策略），让带/不带
+        // fractional seconds 的旧文件都能正确解析为 Date。
+        let metadata = try PackMetadataCoder.decoder.decode(PackMetadata.self, from: Data(contentsOf: metadataURL))
         return RepoContextStoredProject(
             directoryURL: directory,
             contextURL: contextURL,

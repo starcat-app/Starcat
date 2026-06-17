@@ -158,7 +158,7 @@ public struct RepoContextPacker {
             repo: input.repo,
             ref: input.ref,
             commitSha: input.commitSha,
-            generatedAt: Self.iso8601(generatedAt),
+            generatedAt: generatedAt,
             tokenBudget: input.tokenBudget,
             stats: PackStats(
                 totalFiles: plan.items.count,
@@ -197,13 +197,5 @@ public struct RepoContextPacker {
         )
 
         return output
-    }
-
-    // MARK: - 工具
-
-    private static func iso8601(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
     }
 }
