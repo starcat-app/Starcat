@@ -179,16 +179,13 @@ struct NoteEditorSheet: View {
             .background(Color(nsColor: .textBackgroundColor))
             .overlay(alignment: .topLeading) {
                 if content.isEmpty {
-                    // v2.1（2026-06-13）光标 ↔ placeholder 对齐精算（与 inline RepoNotesSection 同款）：
-                    // 外层 padding(16) → TextEditor 起点 (16, 16)
-                    // NSTextView 默认 lineFragmentPadding = 5pt（水平）+ textContainerInset = (0, 5)（垂直）
-                    //   → 光标实际位置 = (16+5, 16+5) = (21, 21)
-                    // placeholder padding(.horizontal, 21).padding(.vertical, 21) → 起点 (21, 21) 完美对齐
+                    // v2.2（2026-06-17）与 inline RepoNotesSection 同款：首行光标 Y 不再叠加
+                    // textContainerInset.height，实际位置 = (16+5, 16) = (21, 16)。
                     Text("repo.notesPlaceholder")
-                        .font(.body)
+                        .font(.system(.body, design: .default))
                         .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 21)
-                        .padding(.vertical, 21)
+                        .padding(.leading, 21)
+                        .padding(.top, 16)
                         .allowsHitTesting(false)
                 }
             }
