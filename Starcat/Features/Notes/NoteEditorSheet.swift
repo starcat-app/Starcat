@@ -183,7 +183,7 @@ struct NoteEditorSheet: View {
                     // textContainerInset.height，实际位置 = (16+5, 16) = (21, 16)。
                     Text("repo.notesPlaceholder")
                         .font(.system(.body, design: .default))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .padding(.leading, 21)
                         .padding(.top, 16)
                         .allowsHitTesting(false)

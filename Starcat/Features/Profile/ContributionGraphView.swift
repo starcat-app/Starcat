@@ -197,7 +197,7 @@ struct ContributionGraphView: View {
                         .monospacedDigit()
                 }
                 .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .help(Text("contribution.lastUpdated"))
             }
         }

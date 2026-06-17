@@ -98,7 +98,7 @@ struct BatchStarConfirmSheet: View {
                     HStack(spacing: 6) {
                         Image(systemName: "circle.fill")
                             .font(.system(size: 4))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                         Text(verbatim: target.fullName)
                             .font(.system(size: 12, weight: .regular, design: .monospaced))
                             .lineLimit(1)

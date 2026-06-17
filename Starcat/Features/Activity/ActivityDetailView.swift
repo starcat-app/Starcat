@@ -380,7 +380,7 @@ struct ActivityDetailView: View {
                     .truncationMode(.middle)
                 Text(verbatim: ByteCountFormatter.string(fromByteCount: Int64(asset.size), countStyle: .file))
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             CopyFeedbackButton(

@@ -167,7 +167,7 @@ struct BatchActionBar: View {
             if let current = p.currentFullName {
                 Text(verbatim: current)
                     .font(.caption.monospaced())
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -364,7 +364,7 @@ struct RemoteBatchActionBar: View {
             if let current = p.currentFullName {
                 Text(verbatim: current)
                     .font(.caption.monospaced())
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }

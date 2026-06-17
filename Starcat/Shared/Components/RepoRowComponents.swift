@@ -208,7 +208,7 @@ public struct RelativeDateBadge: View {
                 .font(.caption2)
                 .lineLimit(1)
         }
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(.secondary)
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
         .background(.primary.opacity(0.06), in: Capsule())
