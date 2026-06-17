@@ -62,11 +62,11 @@ struct ActivityReleaseDetailScaffoldShell: View {
             onStarTapped: {
                 try await handleStarTapped(repo: repo)
             }
-        ) { onScrollOffset in
+        ) { onScrollReport in
             ActivityReleaseDetailContent(
                 repo: repo,
                 releases: releases,
-                onScrollOffset: onScrollOffset
+                onScrollReport: onScrollReport
             )
         }
     }

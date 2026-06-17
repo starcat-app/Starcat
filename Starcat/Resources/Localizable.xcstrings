@@ -11202,6 +11202,38 @@
         }
       }
     },
+    "releases.row.collapseNotes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse release notes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起 Release 说明"
+          }
+        }
+      }
+    },
+    "releases.row.expandNotes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to expand release notes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击展开 Release 说明"
+          }
+        }
+      }
+    },
     "releases.row.assetsCountFormat" : {
       "extractionState" : "stale",
       "localizations" : {

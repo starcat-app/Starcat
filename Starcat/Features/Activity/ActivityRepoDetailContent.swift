@@ -41,7 +41,7 @@ struct ActivityRepoDetailContent: View {
     let repo: Repo
 
     /// 由 Scaffold 注入：把 scroll offset 上报回去用于驱动顶部面板折叠。
-    let onScrollOffset: (CGFloat) -> Void
+    let onScrollReport: (RepoDetailScrollReport) -> Void
 
     @Environment(ReadmeViewModel.self) private var readmeVM
     @Environment(ReadmeTranslationViewModel.self) private var translationVM
@@ -54,7 +54,7 @@ struct ActivityRepoDetailContent: View {
         ReadmeStateView(
             state: readmeVM.state,
             baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
-            onScrollOffsetChange: onScrollOffset,
+            onScrollReportChange: onScrollReport,
             translationControl: ReadmeTranslationControl(
                 repo: repo,
                 translationVM: translationVM,

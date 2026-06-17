@@ -108,9 +108,10 @@ import SwiftUI
 
 /// R-01 详情页通用骨架。
 ///
-/// body slot 接受一个 `(CGFloat) -> Void` 闭包参数 —— body 里的 ReadmeStateView 等
-/// 滚动型组件应该把 scroll offset 通过这个闭包回传，Scaffold 内部把它换算成顶部
-/// 折叠面板的 collapse progress（0...1）。
+/// body slot 接受一个 `(RepoDetailScrollReport) -> Void` 闭包参数 —— body 里的
+/// ReadmeStateView 等滚动型组件应该把 scroll offset + 可滚动余量通过这个闭包回传，
+/// Scaffold 内部换算成顶部折叠面板的 collapse progress（0...1），并在余量不足时
+/// 禁止折叠以避免「半折叠 ↔ 展开」振荡。
 ///
 /// 这样设计的理由（vs PreferenceKey）：
 /// - PreferenceKey 需要在 body 里手动叠 `.preference(...)`，对调用方不友好
@@ -146,13 +147,16 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     // (4 场景共用),Manage 场景下 onRetry 闭包内并发触发 README + reloadItems。
 
     private let heroExtension_: () -> HeroExt
-    private let body_: (@escaping (CGFloat) -> Void) -> Body
+    private let body_: (@escaping (RepoDetailScrollReport) -> Void) -> Body
 
     /// 顶部面板折叠进度（0 = 完全展开，1 = 完全折叠）。
     @State private var metadataPanelCollapseProgress: CGFloat = 0
 
     /// 顶部面板自然高度（由 CollapsibleRepoMetadataPanel 内部回填）。
     @State private var metadataPanelHeight: CGFloat = 0
+
+    /// README / Release 时间线在 Hero 展开时的可滚动余量（由 body slot 上报）。
+    @State private var readmeScrollOverflow: CGFloat?
 
     // v2.2 修订（2026-06-16, dong4j）：原 `@State private var showSecurityScoreSheet`
     // 已下沉到 `RepoMetadataHeaderView` —— OpenSSF 入口图标从右上 trailing actions
@@ -175,7 +179,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         starHelpKey: LocalizedStringKey = "repo.unstar",
         onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder heroExtension: @escaping () -> HeroExt,
-        @ViewBuilder body: @escaping (@escaping (CGFloat) -> Void) -> Body
+        @ViewBuilder body: @escaping (@escaping (RepoDetailScrollReport) -> Void) -> Body
     ) {
         self.repo = repo
         self.viewData = viewData
@@ -193,7 +197,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         onStarTapped: @escaping () async throws -> Void,
-        @ViewBuilder body: @escaping (@escaping (CGFloat) -> Void) -> Body
+        @ViewBuilder body: @escaping (@escaping (RepoDetailScrollReport) -> Void) -> Body
     ) where HeroExt == EmptyView {
         self.init(
             repo: repo,
@@ -211,7 +215,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         // 按钮已删除（与 cacheFooter 内置按钮视觉重叠造成 bug,详见文件头 v2.1 修订段）。
         VStack(alignment: .leading, spacing: 0) {
             metadataPanel
-            body_(updateScrollOffset)
+            body_(updateScrollReport)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // 根节点 tint：必须在 `CollapsibleRepoMetadataPanel` 外，否则 `.clipped()` 裁掉
@@ -229,18 +233,46 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .onChange(of: repo.id) { _, _ in
             withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
                 metadataPanelCollapseProgress = 0
+                readmeScrollOverflow = nil
+            }
+        }
+        .onChange(of: metadataPanelHeight) { _, newHeight in
+            guard metadataPanelCollapseProgress > 0 else { return }
+            guard !Self.canCollapseHero(
+                scrollOverflow: readmeScrollOverflow,
+                panelHeight: newHeight
+            ) else { return }
+            withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
+                metadataPanelCollapseProgress = 0
             }
         }
     }
 
-    /// 接收 body 内部上报的 scroll offset，换算成顶部面板折叠 progress。
+    /// 接收 body 内部上报的滚动度量，换算成顶部面板折叠 progress。
     ///
-    /// 与现有 `RepoDetailView.updateMetadataPanelVisibility` 函数一致的算法（8pt 起步、
-    /// 64pt 行程、变化 < 0.01 跳过避免过密 SwiftUI 重排）。
-    private func updateScrollOffset(_ offsetY: CGFloat) {
-        let progress = Self.metadataCollapseProgress(for: offsetY)
+    /// v2.3（2026-06-17）：增加「可折叠资格门控」——当 Hero 展开时的可滚动余量小于
+    /// 面板自然高度时禁止折叠。否则折叠会压缩下方 WebView 可视高度 → max scroll 回弹 →
+    /// progress 回落 → Hero 再展开，形成「半折叠 ↔ 展开」振荡（HelloGitHub 等短 README
+    /// 边界场景）。
+    private func updateScrollReport(_ report: RepoDetailScrollReport) {
+        if let overflow = report.scrollOverflow {
+            readmeScrollOverflow = overflow
+        }
+
+        let canCollapse = Self.canCollapseHero(
+            scrollOverflow: readmeScrollOverflow,
+            panelHeight: metadataPanelHeight
+        )
+        let rawProgress = Self.metadataCollapseProgress(for: report.offsetY)
+        let progress = canCollapse ? rawProgress : 0
         guard abs(progress - metadataPanelCollapseProgress) > 0.01 else { return }
         metadataPanelCollapseProgress = progress
+    }
+
+    /// Hero 是否具备稳定折叠资格：余量未知或面板未测高时保守禁止；余量须 ≥ 面板高度。
+    static func canCollapseHero(scrollOverflow: CGFloat?, panelHeight: CGFloat) -> Bool {
+        guard let scrollOverflow, panelHeight > 0 else { return false }
+        return scrollOverflow >= panelHeight
     }
 
     /// 将 scroll offset 映射为顶部元信息面板的折叠进度。

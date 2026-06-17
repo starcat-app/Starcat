@@ -52,7 +52,7 @@ struct WeeklyDetailContent: View {
     let repo: Repo
 
     /// 由 Scaffold 注入：把 scroll offset 上报回去用于驱动顶部面板折叠。
-    let onScrollOffset: (CGFloat) -> Void
+    let onScrollReport: (RepoDetailScrollReport) -> Void
 
     /// 周刊详情专用 readmeVM（由父 view 持有，与全局 readmeVM 解耦）。
     let readmeVM: ReadmeViewModel
@@ -68,7 +68,7 @@ struct WeeklyDetailContent: View {
             state: readmeVM.state,
             // 与其他详情页共用目录型 base URL，末尾 `/` 是相对链接保留 HEAD 的关键。
             baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
-            onScrollOffsetChange: onScrollOffset,
+            onScrollReportChange: onScrollReport,
             // R-01 v1.0 设计 ⑬：翻译按钮覆盖所有 repo 详情。
             // 仅本地命中（repo.id != 0）才接入——ephemeral repo 用 id=0 走翻译
             // 缓存会撞坏 `readme_translations(repo_id)` 命名空间。

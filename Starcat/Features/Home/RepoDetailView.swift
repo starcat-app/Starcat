@@ -119,8 +119,8 @@ struct RepoDetailView: View {
                     // Manage 场景同时承担 README + reloadItems 双职责,详见
                     // `ManageDetailContent.swift` 文件头 v2.1 修订段 +
                     // `RepoDetailScaffold.swift` 文件头 v2.1 修订段。
-                ) { onScrollOffset in
-                    ManageDetailContent(repo: repo, onScrollOffset: onScrollOffset)
+                ) { onScrollReport in
+                    ManageDetailContent(repo: repo, onScrollReport: onScrollReport)
                 }
                 // D-28 修订（2026-06-11）：从 `.transition(detailContentTransition)` 切到
                 // 共享 modifier `.detailContentTransition()`,与 activity / weekly 详情页
@@ -270,7 +270,7 @@ struct ReadmeStateView: View {
 
     let state: ReadmeViewModel.LoadState
     let baseURL: URL?
-    let onScrollOffsetChange: (CGFloat) -> Void
+    let onScrollReportChange: (RepoDetailScrollReport) -> Void
     /// HOM-68：可选的 README 翻译控件描述。nil 时不渲染翻译入口
     /// （Trending 详情页不接翻译，传 nil；Manage 详情页传具体值）。
     let translationControl: ReadmeTranslationControl?
@@ -284,14 +284,14 @@ struct ReadmeStateView: View {
     init(
         state: ReadmeViewModel.LoadState,
         baseURL: URL?,
-        onScrollOffsetChange: @escaping (CGFloat) -> Void,
+        onScrollReportChange: @escaping (RepoDetailScrollReport) -> Void,
         translationControl: ReadmeTranslationControl? = nil,
         onRetry: @escaping () -> Void,
         onLogin: @escaping () -> Void
     ) {
         self.state = state
         self.baseURL = baseURL
-        self.onScrollOffsetChange = onScrollOffsetChange
+        self.onScrollReportChange = onScrollReportChange
         self.translationControl = translationControl
         self.onRetry = onRetry
         self.onLogin = onLogin
@@ -317,7 +317,7 @@ struct ReadmeStateView: View {
                 ReadmeWebView(
                     htmlFragment: renderedHtml,
                     baseURL: baseURL,
-                    onScrollOffsetChange: onScrollOffsetChange
+                    onScrollReportChange: onScrollReportChange
                 )
                 cacheFooter(cachedAt: cachedAt, sourceHtml: html)
             }

@@ -30,6 +30,8 @@ struct ReleaseTimelineView: View {
 
     @State private var viewModel: ReleaseTimelineViewModel?
     @State private var copyToast: String?
+    /// 折叠/展开前锚定当前 release 行，避免 ScrollView 因高度突变乱跳。
+    @State private var scrollAnchorReleaseID: Int64?
 
     /// 资产过滤关键字（空 = 不过滤）。
     @State private var assetFilter: String = ""
@@ -142,21 +144,33 @@ struct ReleaseTimelineView: View {
             } else if vm.entries.isEmpty {
                 emptyState
             } else {
-                List {
-                    ForEach(vm.entries) { entry in
-                        ReleaseTimelineRow(
-                            entry: entry,
-                            assetFilter: assetFilter,
-                            onToggleRead: { isRead in
-                                Task { await vm.markRead(entry: entry, isRead: isRead) }
-                            },
-                            onCopyAsset: { url in
-                                copyToPasteboard(url)
-                            }
-                        )
+                // 不用 List：macOS 上 List 行高固定，嵌套 DisclosureGroup / 多行资产会被裁切，
+                // 用户只能看到「资产 N 个」标题，看不到文件名与下载按钮（dong4j 2026-06-17 反馈）。
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(vm.entries) { entry in
+                            ReleaseTimelineRow(
+                                entry: entry,
+                                assetFilter: assetFilter,
+                                onPinScrollAnchor: { scrollAnchorReleaseID = entry.id },
+                                onToggleRead: { isRead in
+                                    Task { await vm.markRead(entry: entry, isRead: isRead) }
+                                },
+                                onCopyAsset: { url in
+                                    copyToPasteboard(url)
+                                }
+                            )
+                            .id(entry.id)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            Divider()
+                                .padding(.leading, 16)
+                        }
                     }
+                    .scrollTargetLayout()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .listStyle(.inset)
+                .scrollPosition(id: $scrollAnchorReleaseID, anchor: .top)
             }
         }
     }
@@ -323,13 +337,13 @@ private struct ReleaseTimelineRow: View {
 
     let entry: ReleaseTimelineEntry
     let assetFilter: String
+    /// 布局高度即将变化前调用，把 ScrollView 锚定到本行。
+    let onPinScrollAnchor: () -> Void
     let onToggleRead: (Bool) -> Void
     let onCopyAsset: (String) -> Void
 
-    @State private var isExpanded: Bool = false
-
-    /// 2026-06-15:tap 展开/折叠的 0.18s 平滑过渡与「关闭应用内动画」联动跳过。
-    @Environment(\.starcatReduceMotion) private var reduceMotion
+    /// Release notes 全文展开（点击摘要区切换）。
+    @State private var isBodyExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -423,46 +437,73 @@ private struct ReleaseTimelineRow: View {
 
             if let body = entry.release.bodyMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
                !body.isEmpty {
-                if isExpanded {
-                    Markdown(body)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    Text(verbatim: body)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
+                notesSection(body)
             }
 
             assetsSection
         }
         .padding(.vertical, 6)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
-                isExpanded.toggle()
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func notesSection(_ body: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Button {
+                pinAndToggleBody()
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isBodyExpanded ? 90 : 0))
+                    .frame(width: 16, height: 16)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(isBodyExpanded ? Text("releases.row.collapseNotes") : Text("releases.row.expandNotes"))
+
+            if isBodyExpanded {
+                Markdown(body)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(verbatim: body)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        pinAndToggleBody()
+                    }
+                    .help("releases.row.expandNotes")
             }
         }
+    }
+
+    private func pinAndToggleBody() {
+        onPinScrollAnchor()
+        // 不用 withAnimation：高度突变 + ScrollView 动画会导致滚动条乱跳。
+        isBodyExpanded.toggle()
     }
 
     @ViewBuilder
     private var assetsSection: some View {
         let assets = filteredAssets
         if !assets.isEmpty {
-            DisclosureGroup(isExpanded: $isExpanded) {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(assets) { asset in
-                        ReleaseAssetRowView(asset: asset, layout: .compact, onCopyLink: onCopyAsset)
-                    }
-                }
-                .padding(.top, 4)
-            } label: {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(String(format: String.l10n("releases.row.assetsCountFormat"), assets.count))
-                    .font(.caption2)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+
+                ForEach(assets) { asset in
+                    ReleaseAssetRowView(asset: asset, layout: .compact, onCopyLink: onCopyAsset)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 2)
+                        .background(.bar.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+                }
             }
-            .disclosureGroupStyle(.automatic)
+            .padding(.top, 6)
         } else if !assetFilter.isEmpty {
             // 用户在过滤但本条没匹配资产，给一个占位提示
             Text("releases.row.noMatchingAsset")

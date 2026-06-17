@@ -19,7 +19,7 @@ struct ActivityReleaseDetailContent: View {
 
     let repo: Repo
     let releases: [ReleaseRecord]
-    let onScrollOffset: (CGFloat) -> Void
+    let onScrollReport: (RepoDetailScrollReport) -> Void
 
     /// 默认展开最新一条 Release，其余折叠。
     ///
@@ -28,6 +28,10 @@ struct ActivityReleaseDetailContent: View {
     /// 符合 dong4j 对初始状态的要求。
     @State private var expandedReleaseIDs: Set<Int64> = []
     @State private var expansionSnapshotIDs: [Int64] = []
+    /// 折叠/展开前锚定当前 release 卡片，避免 ScrollView 因高度突变乱跳。
+    @State private var scrollAnchorReleaseID: Int64?
+    /// 展开/折叠布局重算期间暂停向 Scaffold 上报滚动，避免 hero 折叠 progress 跟着抖。
+    @State private var isExpansionLayoutPass = false
 
     var body: some View {
         ScrollView {
@@ -38,18 +42,26 @@ struct ActivityReleaseDetailContent: View {
                     header
                     ForEach(releases, id: \.id) { release in
                         releaseCard(release)
+                            .id(release.id)
                     }
                 }
+                .scrollTargetLayout()
                 .padding(.horizontal, 24)
                 .padding(.top, 18)
                 .padding(.bottom, 32)
             }
         }
+        .scrollPosition(id: $scrollAnchorReleaseID, anchor: .top)
         .detailScrollViewStyle()
-        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-            max(0, geometry.contentOffset.y)
-        } action: { _, newOffset in
-            onScrollOffset(newOffset)
+        .onScrollGeometryChange(for: RepoDetailScrollReport.self) { geometry in
+            let overflow = max(0, geometry.contentSize.height - geometry.containerSize.height)
+            return RepoDetailScrollReport(
+                offsetY: max(0, geometry.contentOffset.y),
+                scrollOverflow: overflow
+            )
+        } action: { _, report in
+            guard !isExpansionLayoutPass else { return }
+            onScrollReport(report)
         }
         .onAppear {
             syncDefaultExpansionIfNeeded(force: true)
@@ -213,10 +225,16 @@ struct ActivityReleaseDetailContent: View {
     }
 
     private func toggleReleaseExpansion(_ releaseID: Int64) {
+        scrollAnchorReleaseID = releaseID
+        isExpansionLayoutPass = true
         if expandedReleaseIDs.contains(releaseID) {
             expandedReleaseIDs.remove(releaseID)
         } else {
             expandedReleaseIDs.insert(releaseID)
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            isExpansionLayoutPass = false
         }
     }
 
