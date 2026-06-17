@@ -88,157 +88,129 @@ struct ActivityView: View {
 
     @ViewBuilder
     private func content(_ viewModel: ActivityViewModel) -> some View {
-        if viewModel.isLoading && viewModel.items.isEmpty {
-            RepoSkeletonListView(rowCount: 8)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = viewModel.loadError, viewModel.items.isEmpty {
-            emptyState(systemImage: "exclamationmark.triangle", title: "activity.error.title", subtitleText: error)
-        } else if viewModel.items.isEmpty {
-            emptyState(systemImage: selectedCategory.systemImage, title: "activity.empty.title", subtitle: emptySubtitle)
-        } else {
-            // W12 PR-4：activity 多选 store。仅含 repo 关联的 ActivityItem 能被选中
-            // （announcement / following 这类 repo == nil 的项继续走单选）。
-            let multiStore = dependencies.activityMultiSelectionStore
-            VStack(spacing: 0) {
-                if selectedCategory == .announcement {
-                    announcementFilterBar(viewModel)
-                    Divider()
-                } else if selectedCategory == .following {
-                    followingFilterBar(viewModel)
-                    Divider()
-                }
-                List {
-                    if selectedCategory != .announcement && selectedCategory != .following {
-                        refreshRow(viewModel)
-                    }
-                    ForEach(Array(viewModel.items.enumerated()), id: \.element.id) { index, item in
-                    Button {
-                        if multiStore.isActive, let repo = item.repo {
-                            multiStore.toggle(SelectionSnapshot(
-                                ghRepoId: repo.id,
-                                owner: repo.owner,
-                                name: repo.name
-                            ))
-                        } else if !multiStore.isActive {
-                            selectedItem = item
-                        }
-                        // multiStore.isActive 但 item.repo == nil 时 no-op：
-                        // 无法构造 SelectionSnapshot，UI 也不应让用户错觉「选中了」。
-                    } label: {
-                        rowContent(for: item, multiSelectActive: multiStore.isActive, multiStore: multiStore)
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .listRowReveal(index: index, snapshotID: viewModel.itemsRevision)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+        // 除 weekly 外所有分类：顶栏（排序 + 刷新）始终可见，空列表时也能刷新。
+        categoryToolbarContent(viewModel)
+    }
+
+    /// 本地聚合分类：顶栏固定 + 下方内容区（列表 / 骨架 / 空态）。
+    @ViewBuilder
+    private func categoryToolbarContent(_ viewModel: ActivityViewModel) -> some View {
+        VStack(spacing: 0) {
+            activityFilterBar(viewModel)
+            Divider()
+
+            if viewModel.isLoading && viewModel.items.isEmpty {
+                RepoSkeletonListView(rowCount: 8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = viewModel.loadError, viewModel.items.isEmpty {
+                emptyState(systemImage: "exclamationmark.triangle", title: "activity.error.title", subtitleText: error)
+            } else if viewModel.items.isEmpty {
+                emptyState(systemImage: selectedCategory.systemImage, title: "activity.empty.title", subtitle: emptySubtitle)
+            } else {
+                activityItemList(viewModel)
+            }
+        }
+        .confirmationDialog(
+            "activity.following.clear.confirm",
+            isPresented: $showClearFollowingConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("activity.following.clear.action", role: .destructive) {
+                Task {
+                    await viewModel.clearFollowingFeed()
+                    restoreSelection(from: viewModel.items)
                 }
             }
-            .listStyle(.inset)
-            .alternatingRowBackgrounds()
-            // W12 PR-5：Cmd+A 全选当前可见 activity item（仅 multi-select active 时生效）。
-            // 4 场景同款机制。`item.repo == nil` 的 announcement / following 项跳过——它们
-            // 在 row 层级也无法被 toggle 进 store，全选也应该尊重这条约束。
-            .background {
+        } message: {
+            Text("activity.following.clear.message")
+        }
+    }
+
+    /// 活动列表主体（刷新已挪到顶栏 `activityFilterBar`）。
+    @ViewBuilder
+    private func activityItemList(_ viewModel: ActivityViewModel) -> some View {
+        let multiStore = dependencies.activityMultiSelectionStore
+        List {
+            ForEach(Array(viewModel.items.enumerated()), id: \.element.id) { index, item in
                 Button {
-                    let snapshots = viewModel.items.compactMap { item -> SelectionSnapshot? in
-                        guard let repo = item.repo else { return nil }
-                        return SelectionSnapshot(ghRepoId: repo.id, owner: repo.owner, name: repo.name)
+                    if multiStore.isActive, let repo = item.repo {
+                        multiStore.toggle(SelectionSnapshot(
+                            ghRepoId: repo.id,
+                            owner: repo.owner,
+                            name: repo.name
+                        ))
+                    } else if !multiStore.isActive {
+                        selectedItem = item
                     }
-                    multiStore.selectAll(snapshots)
                 } label: {
-                    EmptyView()
+                    rowContent(for: item, multiSelectActive: multiStore.isActive, multiStore: multiStore)
                 }
-                .keyboardShortcut("a", modifiers: .command)
-                .disabled(!multiStore.isActive)
-                .hidden()
-            }
-            }
-            .task(id: viewModel.itemsRevision) {
-                let repoIds = viewModel.items.compactMap { $0.repo?.id }
-                await dependencies.openSSFScoreStore.loadCachedScores(for: repoIds)
-            }
-            .confirmationDialog(
-                "activity.following.clear.confirm",
-                isPresented: $showClearFollowingConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button("activity.following.clear.action", role: .destructive) {
-                    Task {
-                        await viewModel.clearFollowingFeed()
-                        restoreSelection(from: viewModel.items)
-                    }
-                }
-            } message: {
-                Text("activity.following.clear.message")
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .listRowReveal(index: index, snapshotID: viewModel.itemsRevision)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
         }
-    }
-
-    /// 公告分类顶部栏：排序 + 刷新时间 + 刷新按钮（对齐 `WeeklyContentView.filterBar` 单行布局）。
-    private func announcementFilterBar(_ viewModel: ActivityViewModel) -> some View {
-        HStack(spacing: 10) {
-            Picker(selection: Binding(
-                get: { viewModel.announcementSort },
-                set: { viewModel.changeAnnouncementSort(to: $0) }
-            )) {
-                ForEach(ActivityAnnouncementSort.allCases) { sort in
-                    Text(verbatim: sort.localizedTitle).tag(sort)
-                }
-            } label: {
-                Text("activity.announcement.filter.sort")
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
-
-            Spacer()
-
-            if let last = viewModel.lastRefreshedAt {
-                Text(String(format: String.l10n("activity.lastRefreshedFormat"), relativeDate(last)))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            activityRefreshButton(viewModel)
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
-    }
-
-    /// 关注分类顶部栏：排序 + 刷新 + 清空（对齐公告 `announcementFilterBar`）。
-    private func followingFilterBar(_ viewModel: ActivityViewModel) -> some View {
-        HStack(spacing: 10) {
-            Picker(selection: Binding(
-                get: { viewModel.followingSort },
-                set: { viewModel.changeFollowingSort(to: $0) }
-            )) {
-                ForEach(ActivityFollowingSort.allCases) { sort in
-                    Text(verbatim: sort.localizedTitle).tag(sort)
-                }
-            } label: {
-                Text("activity.following.filter.sort")
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
-
-            Spacer()
-
-            if let last = viewModel.lastRefreshedAt {
-                Text(String(format: String.l10n("activity.lastRefreshedFormat"), relativeDate(last)))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            activityRefreshButton(viewModel)
+        .listStyle(.inset)
+        .alternatingRowBackgrounds()
+        .background {
             Button {
-                showClearFollowingConfirmation = true
+                let snapshots = viewModel.items.compactMap { item -> SelectionSnapshot? in
+                    guard let repo = item.repo else { return nil }
+                    return SelectionSnapshot(ghRepoId: repo.id, owner: repo.owner, name: repo.name)
+                }
+                multiStore.selectAll(snapshots)
             } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 13, weight: .semibold))
+                EmptyView()
+            }
+            .keyboardShortcut("a", modifiers: .command)
+            .disabled(!multiStore.isActive)
+            .hidden()
+        }
+        .task(id: viewModel.itemsRevision) {
+            let repoIds = viewModel.items.compactMap { $0.repo?.id }
+            await dependencies.openSSFScoreStore.loadCachedScores(for: repoIds)
+        }
+    }
+
+    /// 本地聚合分类顶部栏：时间排序 + 刷新时间 + 刷新按钮（关注额外清空）。
+    private func activityFilterBar(_ viewModel: ActivityViewModel) -> some View {
+        HStack(spacing: 10) {
+            Picker(selection: Binding(
+                get: { viewModel.timeSort(for: selectedCategory) },
+                set: { viewModel.changeTimeSort(to: $0) }
+            )) {
+                ForEach(ActivityTimeSort.allCases) { sort in
+                    Text(verbatim: sort.localizedTitle).tag(sort)
+                }
+            } label: {
+                Text("activity.filter.sort")
+            }
+            .pickerStyle(.menu)
+            .fixedSize()
+
+            Spacer()
+
+            if let last = viewModel.lastRefreshedAt {
+                Text(String(format: String.l10n("activity.lastRefreshedFormat"), relativeDate(last)))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("activity.following.clear.help")
+            activityRefreshButton(viewModel)
+
+            if selectedCategory == .following {
+                Button {
+                    showClearFollowingConfirmation = true
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("activity.following.clear.help")
+            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 8)
@@ -311,24 +283,6 @@ struct ActivityView: View {
     private func inlineMetadata(for item: ActivityItem) -> RepoCardInlineMetadata? {
         guard item.kind == .release, let date = item.createdAt else { return nil }
         return RepoCardInlineMetadata(systemImage: "calendar", text: Self.absoluteDate(date))
-    }
-
-    private func refreshRow(_ viewModel: ActivityViewModel) -> some View {
-        // R-01 §3.1.4 Step 7.3：自写 rotationEffect + repeatForever 改用统一的
-        // SyncIconButton（图标 / 旋转动画 / hover / disabled / reduceMotion 一并统一）。
-        HStack {
-            if let last = viewModel.lastRefreshedAt {
-                Text(String(format: String.l10n("activity.lastRefreshedFormat"), relativeDate(last)))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            activityRefreshButton(viewModel)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
     }
 
     private func activityRefreshButton(_ viewModel: ActivityViewModel) -> some View {
