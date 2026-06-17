@@ -255,6 +255,14 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// progress 回落 → Hero 再展开，形成「半折叠 ↔ 展开」振荡（HelloGitHub 等短 README
     /// 边界场景）。
     private func updateScrollReport(_ report: RepoDetailScrollReport) {
+        // WKScriptMessageHandler / updateNSView 可能在 SwiftUI layout 栈内回调；
+        // 推迟到下一 run loop 写 @State，避免重入打断 WebView 首帧 loadHTMLString。
+        Task { @MainActor in
+            applyScrollReport(report)
+        }
+    }
+
+    private func applyScrollReport(_ report: RepoDetailScrollReport) {
         if let overflow = report.scrollOverflow {
             readmeScrollOverflow = overflow
         }
