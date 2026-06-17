@@ -5,8 +5,8 @@
 //  右侧详情页顶部 accent 色光晕（延伸到 window toolbar 区域）。
 //
 //  ────────────────────────────────────────────────────────────────────────────
-//  设计意图（2026-06-17）：4 详情页（Manage / Trending / Activity / Weekly）根节点
-//  统一顶部 accent 光晕，延伸到透明 window toolbar。
+//  设计意图（2026-06-17）：4 详情页 + 中栏 repo 列表根节点统一顶部 accent 光晕，
+//  延伸到透明 window toolbar（`ContentView.toolbarBackground(.hidden)`）。
 //  ────────────────────────────────────────────────────────────────────────────
 //
 //  `ContentView` 已 `.toolbarBackground(.hidden, for: .windowToolbar)`，toolbar
