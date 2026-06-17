@@ -62,6 +62,8 @@ struct ShareCardSheet: View {
     /// 当前正在执行的动作（"保存中…" / "导出中…"），用于禁用按钮防止重复点击。
     @State private var isExporting: Bool = false
 
+    @Environment(\.colorScheme) private var colorScheme
+
     /// HOM-174 v4：导出进行时显示的进度文案；nil 表示无活动导出。
     /// HTML 导出会经历"读 starred → 拉摘要/标签/头像 → 渲染"几个阶段，单纯禁用按钮
     /// 用户没有可视反馈（尤其 Kingfisher cache miss 时 owner 头像批量下载耗时数秒）。
@@ -142,16 +144,11 @@ struct ShareCardSheet: View {
             // `.blendMode(.plusLighter)` 让黑色像素"加 0 = 不变"自动消失，
             // 只把亮的 dot 加到 sheet 原 material 上，形成"亮点流动"叠加效果。
             //
-            // 视觉效果：sheet 自身的 macOS material 灰色保持不变，
-            // 上面浮现 accentColor 流动小点，是"装饰背景"的最佳实现方式。
-            DotsFlowBackground(
-                tint: .accentColor,
-                background: .black,
-                speed: 0.35,
-                brightness: 0.9,
-                vignette: 0.0
-            )
-            .blendMode(.plusLighter)
+            // v3.1（2026-06-17）明亮主题适配：dark 下 `accentColor + plusLighter` 在
+            // material 灰底上对比足够；light 下 accent 偏浅、加亮后几乎融进白底看不见。
+            // light 改走 `饱和蓝 tint + multiply`——shader 白底上画深蓝点，multiply 压暗
+            // 浅灰 sheet，纹理可见且仍保持"装饰背景"语义。
+            sheetDotsFlowBackground
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: exportProgressMessage)
         .task {
@@ -169,6 +166,30 @@ struct ShareCardSheet: View {
         // 这与 `LocaleStore.swift` 顶部"sheet 自动继承"注释的假设矛盾,该假设已被
         // 实测打脸,需要一并更新。详见 `Starcat/Shared/Utilities/L10n.swift`。
         .appLocaleEnvironment()
+    }
+
+    /// sheet 动态背景：dark / light 各走一套 blend，保证两种系统主题下点阵都可见。
+    @ViewBuilder
+    private var sheetDotsFlowBackground: some View {
+        if colorScheme == .dark {
+            DotsFlowBackground(
+                tint: .accentColor,
+                background: .black,
+                speed: 0.35,
+                brightness: 0.9,
+                vignette: 0.0
+            )
+            .blendMode(.plusLighter)
+        } else {
+            DotsFlowBackground(
+                tint: Color.fromHex6(0x2563EB),
+                background: .white,
+                speed: 0.35,
+                brightness: 0.75,
+                vignette: 0.0
+            )
+            .blendMode(.multiply)
+        }
     }
 
     /// 保存 / 导出反馈。放在 header 同一行，避免盖住底部按钮。
@@ -231,23 +252,35 @@ struct ShareCardSheet: View {
             ForEach(ShareCardTheme.allCases) { t in
                 ThemeCardButton(
                     theme: t,
-                    isSelected: theme == t
+                    isSelected: theme == t,
+                    isProUser: isProUser
                 ) {
-                    theme = t
+                    selectTheme(t)
                 }
             }
         }
     }
 
+    /// 主题切换：Pro 专属主题（ID 卡两款）未开通时拒绝选中。
+    private func selectTheme(_ newTheme: ShareCardTheme) {
+        guard !newTheme.requiresPro || isProUser else { return }
+        theme = newTheme
+    }
+
     /// 单个主题卡片按钮。
-    /// 只包含主题预览色块，无文字。
+    /// 只包含主题预览色块，无文字。Pro 专属主题在未开通时显示 PRO 角标并降低不透明度。
     private struct ThemeCardButton: View {
         let theme: ShareCardTheme
         let isSelected: Bool
+        let isProUser: Bool
         let action: () -> Void
 
         @Environment(\.starcatReduceMotion) private var reduceMotion
         @State private var isHovered = false
+
+        private var isLocked: Bool {
+            theme.requiresPro && !isProUser
+        }
 
         var body: some View {
             Button(action: action) {
@@ -257,6 +290,12 @@ struct ShareCardSheet: View {
                     .padding(4)
                     .contentShape(Rectangle())
                     .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .overlay(alignment: .topTrailing) {
+                        if isLocked {
+                            ThemeProBadge()
+                                .offset(x: 3, y: -3)
+                        }
+                    }
                     .overlay(
                         // 描边策略（2026-06-06 dong4j 反馈适配深浅主题）：
                         // - 选中态：`Color.accentColor` 2pt 加粗描边，强表达"选中"。
@@ -278,7 +317,8 @@ struct ShareCardSheet: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .help(Text(theme.localizationKey))
+            .opacity(isLocked ? 0.55 : 1.0)
+            .help(Text(isLocked ? "sharecard.theme.proRequired" : theme.localizationKey))
             .onHover { hovering in
                 withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.12)) {
                     isHovered = hovering
@@ -299,6 +339,32 @@ struct ShareCardSheet: View {
                 Rectangle()
                     .fill(theme.pickerSwatch.accent)
             }
+        }
+    }
+
+    /// 主题选择器上的 Pro 角标（尺寸比头像 PRO 徽章更小，适配 30×22 色块）。
+    private struct ThemeProBadge: View {
+        var body: some View {
+            Text("PRO")
+                .font(.system(size: 5, weight: .black))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 3)
+                .padding(.vertical, 1)
+                .background {
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [.yellow, .orange, .pink],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .shadow(color: .black.opacity(0.22), radius: 1, y: 0.5)
+                }
+                .overlay {
+                    Capsule()
+                        .stroke(.white.opacity(0.75), lineWidth: 0.5)
+                }
         }
     }
 
