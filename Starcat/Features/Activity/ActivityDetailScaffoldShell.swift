@@ -113,10 +113,10 @@ struct ActivityDetailScaffoldShell: View {
             onStarTapped: {
                 try await handleStarTapped(repo: repo)
             }
-        ) { onScrollOffset in
+        ) { onScrollReport in
             ActivityRepoDetailContent(
                 repo: repo,
-                onScrollOffset: onScrollOffset
+                onScrollReport: onScrollReport
             )
             .environment(readmeVM)
         }

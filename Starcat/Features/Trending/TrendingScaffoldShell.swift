@@ -110,8 +110,8 @@ struct TrendingScaffoldShell: View {
             heroExtension: {
                 TrendingContributorsSection(contributors: trending.contributors)
             },
-            body: { onScrollOffset in
-                TrendingDetailContent(repo: repo, onScrollOffset: onScrollOffset)
+            body: { onScrollReport in
+                TrendingDetailContent(repo: repo, onScrollReport: onScrollReport)
             }
         )
     }

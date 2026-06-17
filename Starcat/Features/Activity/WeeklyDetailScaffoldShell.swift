@@ -149,10 +149,10 @@ struct WeeklyDetailScaffoldShell: View {
             // R-01 v1.5 / v2.0:tooltip 与 toggle 行为对齐,直接派生自 `repo.isStarred`。
             starHelpKey: starHelpKey(repo: repo),
             onStarTapped: { try await handleStarTapped(repo: repo) },
-            body: { onScrollOffset in
+            body: { onScrollReport in
                 WeeklyDetailContent(
                     repo: repo,
-                    onScrollOffset: onScrollOffset,
+                    onScrollReport: onScrollReport,
                     readmeVM: readmeVM
                 )
             }

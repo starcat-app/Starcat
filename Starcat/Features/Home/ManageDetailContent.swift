@@ -36,8 +36,8 @@
 //    合理的(用户在详情页点刷新自然期望全刷),不引入额外按钮分裂 UI。② Scaffold 同步
 //    删除 `onRefresh` 参数 + overlay,详见 `RepoDetailScaffold.swift` 文件头 v2.1 修订段。
 //
-//  滚动 → 折叠：把 ReadmeStateView 的 `onScrollOffsetChange` 上报到 Scaffold
-//  传入的 `onScrollOffset` closure,由 Scaffold 内部换算成 collapse progress,
+//  滚动 → 折叠：把 ReadmeStateView 的 `onScrollReportChange` 上报到 Scaffold
+//  传入的 `onScrollReport` closure,由 Scaffold 内部换算成 collapse progress,
 //  Scaffold 的 metadataPanel（含 hero + RepoLocalSections）整段同步折叠。
 //
 //  ────────────────────────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ struct ManageDetailContent: View {
     let repo: Repo
 
     /// 由 Scaffold 注入：把 scroll offset 上报回去用于驱动顶部面板折叠。
-    let onScrollOffset: (CGFloat) -> Void
+    let onScrollReport: (RepoDetailScrollReport) -> Void
 
     @Environment(ReadmeViewModel.self) private var readmeVM
     @Environment(ReadmeTranslationViewModel.self) private var translationVM
@@ -76,7 +76,7 @@ struct ManageDetailContent: View {
             state: readmeVM.state,
             // 统一构造带末尾 `/` 的目录 URL，避免 WebKit 把 HEAD 当文件名后丢掉分支段。
             baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
-            onScrollOffsetChange: onScrollOffset,
+            onScrollReportChange: onScrollReport,
             translationControl: ReadmeTranslationControl(
                 repo: repo,
                 translationVM: translationVM,

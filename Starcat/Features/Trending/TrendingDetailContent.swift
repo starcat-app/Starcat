@@ -46,7 +46,7 @@ struct TrendingDetailContent: View {
     let repo: Repo
 
     /// 由 Scaffold 注入：把 scroll offset 上报回去用于驱动顶部面板折叠。
-    let onScrollOffset: (CGFloat) -> Void
+    let onScrollReport: (RepoDetailScrollReport) -> Void
 
     @Environment(ReadmeViewModel.self) private var readmeVM
     @Environment(ReadmeTranslationViewModel.self) private var translationVM
@@ -59,7 +59,7 @@ struct TrendingDetailContent: View {
         ReadmeStateView(
             state: readmeVM.state,
             baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
-            onScrollOffsetChange: onScrollOffset,
+            onScrollReportChange: onScrollReport,
             // R-01：仅本地命中（id != 0）的 repo 才提供翻译入口。
             // 避免 ephemeral repo 用 id=0 走翻译缓存造成串扰。
             translationControl: repo.id != 0 ? ReadmeTranslationControl(

@@ -68,12 +68,12 @@ struct ReadmeWebView: NSViewRepresentable {
     /// 绝对 URL，**渲染层不再依赖 baseURL 解析图片**；baseURL 仅用于链接解析。
     let baseURL: URL?
 
-    /// README 内部滚动位置变化回调。
+    /// README 内部滚动度量变化回调。
     ///
     /// 背景：README 由 WKWebView 自己滚动，外层 SwiftUI 看不到 ScrollView offset。
-    /// 详情页需要在用户阅读时收起顶部元信息面板，所以这里把 WebView 的 scroll offset
-    /// 作为一个窄回调往外透出；不把 WKWebView / NSScrollView 暴露给业务层。
-    var onScrollOffsetChange: (CGFloat) -> Void = { _ in }
+    /// 详情页需要在用户阅读时收起顶部元信息面板，所以这里把 scroll offset 与可滚动
+    /// 余量一并透出；不把 WKWebView / NSScrollView 暴露给业务层。
+    var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -99,13 +99,13 @@ struct ReadmeWebView: NSViewRepresentable {
         webView.setValue(false, forKey: "drawsBackground") // 透明背景，跟随系统主题底色
 
         context.coordinator.webView = webView
-        context.coordinator.onScrollOffsetChange = onScrollOffsetChange
+        context.coordinator.onScrollReportChange = onScrollReportChange
         loadIfNeeded(into: webView, context: context)
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
-        context.coordinator.onScrollOffsetChange = onScrollOffsetChange
+        context.coordinator.onScrollReportChange = onScrollReportChange
         loadIfNeeded(into: webView, context: context)
     }
 
@@ -168,7 +168,7 @@ struct ReadmeWebView: NSViewRepresentable {
 
         weak var webView: WKWebView?
         var lastLoadedKey: ReadmeKey?
-        var onScrollOffsetChange: (CGFloat) -> Void = { _ in }
+        var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
         private weak var userContentController: WKUserContentController?
 
         /// 由 `loadIfNeeded` 在调用 `loadHTMLString` 前置 true，
@@ -208,6 +208,7 @@ struct ReadmeWebView: NSViewRepresentable {
         private static let scrollReportingScript = """
         (function() {
             var lastY = -1;
+            var lastOverflow = -1;
             var ticking = false;
 
             function currentY() {
@@ -217,12 +218,29 @@ struct ReadmeWebView: NSViewRepresentable {
                     0;
             }
 
+            function currentOverflow() {
+                var scrollHeight = Math.max(
+                    document.documentElement.scrollHeight || 0,
+                    document.body.scrollHeight || 0
+                );
+                var clientHeight = window.innerHeight ||
+                    document.documentElement.clientHeight ||
+                    0;
+                return Math.max(0, scrollHeight - clientHeight);
+            }
+
             function report() {
                 ticking = false;
                 var y = currentY();
-                if (Math.abs(y - lastY) < 1) { return; }
+                var overflow = currentOverflow();
+                if (Math.abs(y - lastY) < 1 && Math.abs(overflow - lastOverflow) < 1) { return; }
                 lastY = y;
-                window.webkit.messageHandlers.\(scrollMessageName).postMessage(y);
+                lastOverflow = overflow;
+                window.webkit.messageHandlers.\(scrollMessageName).postMessage({
+                    y: y,
+                    scrollHeight: overflow + (window.innerHeight || document.documentElement.clientHeight || 0),
+                    clientHeight: window.innerHeight || document.documentElement.clientHeight || 0
+                });
             }
 
             function schedule() {
@@ -232,6 +250,7 @@ struct ReadmeWebView: NSViewRepresentable {
             }
 
             window.addEventListener('scroll', schedule, { passive: true });
+            window.addEventListener('resize', schedule, { passive: true });
             window.addEventListener('load', report);
             setTimeout(report, 0);
         })();
@@ -239,8 +258,22 @@ struct ReadmeWebView: NSViewRepresentable {
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.name == Self.scrollMessageName else { return }
-            if let value = message.body as? NSNumber {
-                onScrollOffsetChange(CGFloat(truncating: value))
+            if let payload = message.body as? [String: Any],
+               let yValue = payload["y"] as? NSNumber {
+                let scrollHeight = (payload["scrollHeight"] as? NSNumber).map { CGFloat(truncating: $0) }
+                let clientHeight = (payload["clientHeight"] as? NSNumber).map { CGFloat(truncating: $0) }
+                let overflow: CGFloat?
+                if let scrollHeight, let clientHeight {
+                    overflow = max(0, scrollHeight - clientHeight)
+                } else {
+                    overflow = nil
+                }
+                onScrollReportChange(
+                    RepoDetailScrollReport(
+                        offsetY: CGFloat(truncating: yValue),
+                        scrollOverflow: overflow
+                    )
+                )
             }
         }
 
