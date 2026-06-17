@@ -118,6 +118,8 @@ final class ActivityViewModel {
     private(set) var loadError: String?
     private(set) var lastRefreshedAt: Date?
     private(set) var itemsRevision: Int = 0
+    /// P2：切分类时让 `listRowReveal` 走 instant（不 stagger）；排序切换仍为 animated。
+    private(set) var skipListRowReveal = false
     /// 当前分类是否还有未上屏的 filtered 行（滚到底加载更多）。
     private(set) var hasMoreItems: Bool = false
 
@@ -222,6 +224,7 @@ final class ActivityViewModel {
     func ensureLoaded(category: ActivityCategory) async {
         currentCategory = category
         if isAggregateLoaded {
+            markCategorySwitchForListReveal()
             applyFilterForCurrentCategory(bumpRevision: false)
             return
         }
@@ -244,6 +247,12 @@ final class ActivityViewModel {
         return index >= threshold
     }
 
+    /// `ForEach(items)` 路径下的 loadMore 触发（按 item 查下标）。
+    func shouldTriggerLoadMore(for item: ActivityItem) -> Bool {
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return false }
+        return shouldTriggerLoadMore(at: index)
+    }
+
     /// 指定分类的时间排序（各分类独立记忆，默认最新优先）。
     func timeSort(for category: ActivityCategory) -> ActivityTimeSort {
         guard category.showsActivityFilterBar else { return .newestFirst }
@@ -254,6 +263,7 @@ final class ActivityViewModel {
     func changeTimeSort(to sort: ActivityTimeSort) {
         guard currentCategory.showsActivityFilterBar else { return }
         guard sort != timeSort(for: currentCategory) else { return }
+        skipListRowReveal = false
         timeSortByCategory[currentCategory] = sort
         applyFilterForCurrentCategory(bumpRevision: true)
     }
@@ -308,6 +318,7 @@ final class ActivityViewModel {
     /// 不因可见 ID 变化 bump `itemsRevision`，避免 30 行 `listRowReveal` stagger 占满主线程。
     func selectCategory(_ category: ActivityCategory) {
         currentCategory = category
+        markCategorySwitchForListReveal()
         if isAggregateLoaded || !allItems.isEmpty {
             applyFilterForCurrentCategory(bumpRevision: false)
         }
@@ -659,6 +670,14 @@ final class ActivityViewModel {
     private func paginatedSlice(from source: [ActivityItem], page: Int) -> [ActivityItem] {
         let upper = min(page * Self.pageSize, source.count)
         return Array(source.prefix(upper))
+    }
+
+    /// 切分类后本帧 List 行 instant 显示；下一 run loop 恢复，loadMore 新行仍可 reveal。
+    private func markCategorySwitchForListReveal() {
+        skipListRowReveal = true
+        DispatchQueue.main.async { [weak self] in
+            self?.skipListRowReveal = false
+        }
     }
 
     private func publishItems(from source: [ActivityItem], snapshot: AggregateSnapshot? = nil) {

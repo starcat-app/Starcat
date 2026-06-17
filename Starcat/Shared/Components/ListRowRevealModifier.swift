@@ -22,8 +22,8 @@ extension View {
     /// - Parameters:
     ///   - index: row 在当前快照中的顺序，只用于计算短 stagger delay。
     ///   - snapshotID: 列表快照版本；快照变化时重新播放 reveal。
-    ///   - skipAnimation: 少数调用方可显式跳过行动画（例如 Reduce Motion 之外的特殊性能兜底）。
-    ///     默认 false，保留首次加载 / 切分类 / 排序切换的渐进入场体验。
+    ///   - skipAnimation: 少数调用方可显式跳过行动画（例如 Activity 切分类性能兜底）。
+    ///     默认 false；排序切换 / 首次加载仍保留 reveal。
     func listRowReveal(index: Int, snapshotID: Int, skipAnimation: Bool = false) -> some View {
         modifier(ListRowRevealModifier(index: index, snapshotID: snapshotID, skipAnimation: skipAnimation))
     }

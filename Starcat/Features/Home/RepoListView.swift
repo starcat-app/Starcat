@@ -672,12 +672,17 @@ struct RepoListView: View {
     /// - 现在外层 transition 只在**视图状态层级**（loading / empty / error / has-data）切换时跑；
     ///   已有缓存的分类之间切换保持同一个 `"repos-\(mode)"` 身份，交给内层 List 快照更新。
     /// - 用户感受：缓存命中时没有外层 transition，配合 didSet 急切缓存加载，第一次 body 渲染就是新数据。
+    /// **Activity P0（2026-06-17 dong4j 切分类卡顿）**：本地聚合分类（全部/公告/星标…）
+    /// 共享 `"activity-local"` identity，**不**再按 `selectedActivityCategory.id` 分 id。
+    /// 旧写法 `activity-\(category.id)` 会让每次切分类销毁重建整棵 `ActivityView` + 跑
+    /// 0.22s 外层 transition（Manage HOM-46 已在 has-data 态规避同类问题）。
+    /// 仅 weekly ↔ 其它 数据源/根视图不同，保留 `"activity-weekly"` / `"activity-local"` 二分。
     private var contentAnimationID: String {
         if selectedPage == .trending {
             return "trending-\(selectedTrendingLanguage.id)"
         }
         if selectedPage == .activity {
-            return "activity-\(selectedActivityCategory.id)"
+            return selectedActivityCategory == .weekly ? "activity-weekly" : "activity-local"
         }
         // W12 PR-5：多选状态迁到 manageMultiSelectionStore；contentAnimationID 用 store.isActive 派生。
         let mode = dependencies.manageMultiSelectionStore.isActive ? "multi" : "single"
