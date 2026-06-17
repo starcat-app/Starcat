@@ -58,6 +58,7 @@ struct RemoteAvatar: View {
 
     @ViewBuilder
     private var placeholder: some View {
+        // 故意弱化：头像加载失败 / URL 为空时的 SF Symbol 占位，非可读正文（CLAUDE.md UI 颜色规范例外）。
         Image(systemName: fallbackSymbol)
             .resizable()
             .scaledToFit()
@@ -113,6 +114,7 @@ struct UserAvatar: View {
                 .frame(width: size + 10, height: size + 6)
                 .frame(maxWidth: .infinity)
             } else {
+                // 故意弱化：未登录 sidebar 占位头像，非操作主文案（CLAUDE.md UI 颜色规范例外）。
                 Image(systemName: "person.crop.circle.fill")
                     .resizable()
                     .frame(width: size, height: size)

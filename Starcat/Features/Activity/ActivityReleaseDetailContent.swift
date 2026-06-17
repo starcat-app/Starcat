@@ -212,7 +212,7 @@ struct ActivityReleaseDetailContent: View {
             Spacer()
             Text(verbatim: ByteCountFormatter.string(fromByteCount: Int64(asset.size), countStyle: .file))
                 .font(.caption2.monospacedDigit())
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
             if let url = URL(string: asset.browserDownloadUrl) {
                 Button {
                     NSWorkspace.shared.open(url)

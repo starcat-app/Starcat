@@ -80,7 +80,7 @@ struct RepoTagsSection: View {
         } else {
             Text("repoTags.noTags")
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
     }
 

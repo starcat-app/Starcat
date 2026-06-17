@@ -92,7 +92,8 @@ struct RemoteFavicon: View {
         fallbackURL ?? Self.primaryURL(for: host)
     }
 
-    /// SF Symbol globe 占位，色彩同 RemoteAvatar.placeholder 的 `.tertiary`。
+    /// SF Symbol globe 占位，色彩同 RemoteAvatar.placeholder。
+    /// 故意弱化：favicon 加载前 / 失败时的装饰占位，非可读正文（CLAUDE.md UI 颜色规范例外）。
     @ViewBuilder
     private var placeholder: some View {
         Image(systemName: "globe")

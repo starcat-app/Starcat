@@ -292,7 +292,7 @@ private struct JobRow: View {
         switch job.status {
         case .queued:
             Image(systemName: "circle")
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         case .processing:
             ProgressView()
                 .controlSize(.small)

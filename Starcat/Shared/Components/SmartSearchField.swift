@@ -245,7 +245,7 @@ struct SmartSearchField: View {
         } label: {
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .frame(width: 22, height: 22)
                 .contentShape(Circle())
         }

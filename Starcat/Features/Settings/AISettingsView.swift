@@ -790,7 +790,7 @@ struct AISettingsTab: View {
                     .controlSize(.mini)
                 Text(String(format: String.l10n("settings.autoTidy.threshold.hintFormat"), thresholdPercentString))
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
             .disabled(!settings.autoTidySettings.useConfidenceThreshold)
             .opacity(settings.autoTidySettings.useConfidenceThreshold ? 1.0 : 0.5)

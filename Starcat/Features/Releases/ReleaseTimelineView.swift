@@ -467,7 +467,7 @@ private struct ReleaseTimelineRow: View {
             // 用户在过滤但本条没匹配资产，给一个占位提示
             Text("releases.row.noMatchingAsset")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -508,7 +508,7 @@ private struct ReleaseAssetRow: View {
             Spacer()
             Text(verbatim: ByteCountFormatter.string(fromByteCount: Int64(asset.size), countStyle: .file))
                 .font(.caption2.monospaced())
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
             Button {
                 onCopy(asset.browserDownloadUrl)
             } label: {

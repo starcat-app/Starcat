@@ -7,7 +7,8 @@
 //  设计参考 dong4j 提供的 Radian 风格截图：卡片式布局 + 顶部 hero 视觉插图 +
 //  标题 / 副标题 + 全宽主按钮 + 暖色渐变 user_code 卡片。
 //
-//  与 Legacy 版（`GithubAuthViewLegacy.swift`）的差异：
+//  2026-06-17：旧版 `GithubAuthViewLegacy` 已删除（V2 生产路径稳定后不再保留回滚副本）。
+//  与早期 Legacy 版的主要差异：
 //  - 视觉：卡片 / 圆角 / 暖色渐变 code 卡，旧版是平铺式系统控件
 //  - awaitingCode 交互：
 //      · 点 code 主区 → 复制 + 切到 "✓ 已复制" + 1.5s 后自动开浏览器

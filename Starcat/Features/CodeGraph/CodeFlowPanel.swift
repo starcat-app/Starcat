@@ -271,7 +271,7 @@ struct CodeFlowPanel: View {
             }
             Spacer()
             if let duration = step.durationMilliseconds {
-                Text("\(duration) ms").font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                Text("\(duration) ms").font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
             } else if step.status == .running {
                 ProgressView().controlSize(.small)
             }

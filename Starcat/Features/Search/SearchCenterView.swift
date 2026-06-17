@@ -1506,7 +1506,7 @@ private struct SearchRemoteRepoDetailView: View {
             } else {
                 Text("search.detail.empty.description")
                     .font(.system(size: 13))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .italic()
             }
 
@@ -1766,7 +1766,7 @@ private struct SearchRemoteRepoDetailView: View {
         return HStack(spacing: 8) {
             Image(systemName: "clock")
                 .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
 
             if let created = createdRelative {
                 Text(String(format: String.l10n("search.detail.time.created.format"), created))
@@ -1777,7 +1777,7 @@ private struct SearchRemoteRepoDetailView: View {
             if createdRelative != nil && pushedRelative != nil {
                 Text(verbatim: "·")
                     .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
 
             if let pushed = pushedRelative {
@@ -2137,7 +2137,7 @@ struct SearchOverflowActionRow: View {
                 Spacer()
             }
             .font(.system(size: 13))
-            .foregroundStyle(isDisabled ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+            .foregroundStyle(isDisabled ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
             .padding(.horizontal, 10)
             .frame(height: 28)
             .background(

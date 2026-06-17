@@ -199,7 +199,7 @@ struct RepoNotesSection: View {
                 if let edited = viewModel?.note?.editedAt {
                     Text(String(format: String.l10n("repo.lastEditedFormat"), formattedEditedAt(edited)))
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 SaveIndicator(state: saveState, hasUnsaved: hasUnsavedChanges)
@@ -259,7 +259,7 @@ struct RepoNotesSection: View {
                     // padding 把文字整体下推导致「光标在上、提示在下」。
                     Text("repo.notesPlaceholder")
                         .font(.system(.body, design: .default))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .padding(.leading, 13)
                         .padding(.top, 6)
                         .allowsHitTesting(false)

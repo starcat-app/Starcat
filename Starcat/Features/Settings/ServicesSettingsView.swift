@@ -226,7 +226,7 @@ struct ServicesSettingsTab: View {
         case .empty, .valid:
             HStack(spacing: 4) {
                 Image(systemName: "info.circle")
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                 // 显示"当前生效"的 URL——已保存生效值（AppEndpoints.resolved(for:)），
                 // 不是 draft；这样能让用户看到"我保存前 vs 保存后"的差别。
                 Text(String(format: String.l10n("settings.services.effective"), AppEndpoints.resolved(for: service).absoluteString))
