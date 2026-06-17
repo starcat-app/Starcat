@@ -442,14 +442,15 @@ private struct StorageSettingsTab: View {
     }
 
     /// 9 类缓存全空时,"清除全部缓存"按钮 disabled,避免无意义点击。
+    /// HOM-203：AI 上下文 / CodeFlow 改读 summary.projectCount，避免触发 projects 扫描。
     private var isAllCachesEmpty: Bool {
         stats.totalBytes == 0
             && translationCache.itemCount == 0
             && anySearchCache.itemCount == 0
             && wikiCache.itemCount == 0
             && chatHistoryStore.sessionCount == 0
-            && aiContextStorage.projects.isEmpty
-            && codeFlowStorage.projects.isEmpty
+            && aiContextStorage.projectCount == 0
+            && codeFlowStorage.projectCount == 0
     }
 
     var body: some View {
@@ -515,13 +516,13 @@ private struct StorageSettingsTab: View {
                 usageRow(
                     titleKey: "settings.storage.aiContext",
                     usageText: aiContextUsageText,
-                    isEmpty: aiContextStorage.projects.isEmpty,
+                    isEmpty: aiContextStorage.projectCount == 0,
                     action: .aiContext
                 )
                 usageRow(
                     titleKey: "settings.storage.codeFlow",
                     usageText: codeFlowUsageText,
-                    isEmpty: codeFlowStorage.projects.isEmpty,
+                    isEmpty: codeFlowStorage.projectCount == 0,
                     action: .codeFlow
                 )
             }
@@ -791,25 +792,26 @@ private struct StorageSettingsTab: View {
     }
 
     /// AI 代码上下文用量：`X 项 · YY KB`。空显示"未生成"。
+    /// HOM-203：直接读 summary 的 projectCount / totalBytes，避免遍历 projects 数组。
     private var aiContextUsageText: String {
-        if aiContextStorage.projects.isEmpty {
+        if aiContextStorage.projectCount == 0 {
             return String.l10n("settings.storage.aiContext.empty")
         }
         return String(
             format: String.l10n("settings.storage.aiContextUsageFormat"),
-            aiContextStorage.projects.count,
+            aiContextStorage.projectCount,
             aiContextStorage.totalBytes.formattedByteSize
         )
     }
 
     /// CodeFlow 用量：同 AI 上下文格式。
     private var codeFlowUsageText: String {
-        if codeFlowStorage.projects.isEmpty {
+        if codeFlowStorage.projectCount == 0 {
             return String.l10n("settings.storage.codeFlow.empty")
         }
         return String(
             format: String.l10n("settings.storage.codeFlowUsageFormat"),
-            codeFlowStorage.projects.count,
+            codeFlowStorage.projectCount,
             codeFlowStorage.totalBytes.formattedByteSize
         )
     }

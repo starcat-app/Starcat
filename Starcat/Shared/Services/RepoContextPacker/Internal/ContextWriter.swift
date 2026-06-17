@@ -208,10 +208,11 @@ public struct DefaultContextWriter: ContextWriting {
             warnings: metadata.warnings
         )
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
-            return try encoder.encode(updated)
+            // HOM-203：使用 PackMetadataCoder.encoder（dateEncodingStrategy = .iso8601）
+            // 让 generatedAt / lastAccessedAt 落盘为标准 `2026-06-13T16:23:00Z`，
+            // 与 RepoContextStorage 读端的 lenient decoder 保证对称。
+            return try PackMetadataCoder.encoder.encode(updated)
         } catch {
             throw RepoContextPackerError.xmlBuildFailed(underlying: error)
         }
