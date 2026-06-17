@@ -57,6 +57,7 @@ struct ActivityView: View {
 
     @State private var viewModel: ActivityViewModel?
     @State private var showClearFollowingConfirmation = false
+    @State private var showClearAnnouncementConfirmation = false
 
     var body: some View {
         Group {
@@ -124,6 +125,20 @@ struct ActivityView: View {
         } message: {
             Text("activity.following.clear.message")
         }
+        .confirmationDialog(
+            "activity.announcement.clear.confirm",
+            isPresented: $showClearAnnouncementConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("activity.announcement.clear.action", role: .destructive) {
+                Task {
+                    await viewModel.clearAnnouncementFeed()
+                    restoreSelection(from: viewModel.items)
+                }
+            }
+        } message: {
+            Text("activity.announcement.clear.message")
+        }
     }
 
     /// 活动列表主体（刷新已挪到顶栏 `activityFilterBar`）。
@@ -174,7 +189,7 @@ struct ActivityView: View {
         }
     }
 
-    /// 本地聚合分类顶部栏：时间排序 + 刷新时间 + 刷新按钮（关注额外清空）。
+    /// 本地聚合分类顶部栏：时间排序 + 刷新时间 + 刷新按钮（公告 / 关注额外清空）。
     private func activityFilterBar(_ viewModel: ActivityViewModel) -> some View {
         HStack(spacing: 10) {
             Picker(selection: Binding(
@@ -199,9 +214,13 @@ struct ActivityView: View {
             }
             activityRefreshButton(viewModel)
 
-            if selectedCategory == .following {
+            if selectedCategory == .announcement || selectedCategory == .following {
                 Button {
-                    showClearFollowingConfirmation = true
+                    if selectedCategory == .announcement {
+                        showClearAnnouncementConfirmation = true
+                    } else {
+                        showClearFollowingConfirmation = true
+                    }
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 13, weight: .semibold))
@@ -209,7 +228,9 @@ struct ActivityView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .help("activity.following.clear.help")
+                .help(selectedCategory == .announcement
+                    ? "activity.announcement.clear.help"
+                    : "activity.following.clear.help")
             }
         }
         .padding(.horizontal, 14)
