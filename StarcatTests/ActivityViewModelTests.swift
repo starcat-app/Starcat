@@ -605,8 +605,8 @@ struct ActivityViewModelTests {
         #expect(h.viewModel.items.first?.title == "Old")
     }
 
-    @Test("切分类到不同 ID 列表才 bump itemsRevision")
-    func selectCategoryBumpsRevisionOnlyWhenVisibleIDsChange() async throws {
+    @Test("切分类 selectCategory 不 bump itemsRevision（避免 listRowReveal 风暴）")
+    func selectCategoryDoesNotBumpItemsRevision() async throws {
         let h = try Harness()
         try await h.eventRepo.upsertMany([
             ActivityEventRecord(
@@ -620,14 +620,11 @@ struct ActivityViewModelTests {
         await h.viewModel.ensureLoaded(category: .following)
         let revisionAfterLoad = h.viewModel.itemsRevision
 
-        // 切到无 following 数据的分类：可见 ID 变了 → revision 应 bump
         h.viewModel.selectCategory(.announcement)
-        #expect(h.viewModel.itemsRevision > revisionAfterLoad)
+        #expect(h.viewModel.itemsRevision == revisionAfterLoad)
 
-        let revisionOnAnnouncement = h.viewModel.itemsRevision
-        // 再切回 following：又一次 ID 变化
         h.viewModel.selectCategory(.following)
-        #expect(h.viewModel.itemsRevision > revisionOnAnnouncement)
+        #expect(h.viewModel.itemsRevision == revisionAfterLoad)
     }
 
     @Test("切分类 selectCategory 不重复拉 events")

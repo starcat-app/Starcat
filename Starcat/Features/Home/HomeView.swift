@@ -724,6 +724,8 @@ struct HomeView: View {
             guard selectedSidebarPage == .activity else { return }
             savedActivityCategory = newCategory
             settings.lastActivityCategoryRaw = newCategory.persistedRawValue
+            // 过渡期间仅抑制头像 tint 补间；草坪蛇不参与（见 SidebarAnimationCoordinator）。
+            dependencies.sidebarAnimationCoordinator.beginActivityCategoryTransition()
             // 切走 weekly 分类时清掉周刊详情选中；切到 weekly 时不动（首次进入由列表点击触发）。
             if newCategory != .weekly {
                 dependencies.weeklySelectionService.clearSelection()

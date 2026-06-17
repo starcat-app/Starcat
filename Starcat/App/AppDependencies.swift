@@ -132,6 +132,9 @@ final class AppDependencies {
     /// 详见 `WeeklySelectionService` 文件头注释。
     let weeklySelectionService: WeeklySelectionService
 
+    /// Sidebar 装饰动画与 Activity 切分类的协调（仅头像 tint；草坪不参与）。
+    let sidebarAnimationCoordinator: SidebarAnimationCoordinator
+
     /// Weekly 三源聚合语言筛选 Store。首次进入 Weekly 时懒加载。
     let weeklyLanguageStore: WeeklyLanguageStore
 
@@ -530,6 +533,7 @@ final class AppDependencies {
 
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
+        self.sidebarAnimationCoordinator = SidebarAnimationCoordinator()
         self.weeklyLanguageStore = WeeklyLanguageStore(api: weeklyAPIInstance)
 
         // R-06.4: 客户端 bulk 缓存仓库。注入同一 weeklyAPI actor 实例，让 bulk 端点

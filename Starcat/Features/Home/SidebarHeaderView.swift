@@ -33,6 +33,7 @@ struct SidebarHeaderView: View {
     @Environment(ContributionService.self) private var contributionService
     /// HOM-174：Pro 用户标识需要从 AppSettings 获取。
     @Environment(AppSettings.self) private var appSettings
+    @Environment(AppDependencies.self) private var dependencies
     /// 2026-06-06 A 方案：accountMenu 中"刷新个人信息"项触发 `load(force: true)`，
     /// 同时让贡献草坪也跟着刷一下（用户主动刷新时一并更新）。
     @Environment(UserProfileService.self) private var userProfileService
@@ -184,7 +185,12 @@ struct SidebarHeaderView: View {
                 }
             }
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: sidebarTintColor)
+        .animation(
+            reduceMotion || dependencies.sidebarAnimationCoordinator.suppressSidebarTintAnimation
+                ? nil
+                : .easeInOut(duration: 0.45),
+            value: sidebarTintColor
+        )
         .allowsHitTesting(false)
     }
 

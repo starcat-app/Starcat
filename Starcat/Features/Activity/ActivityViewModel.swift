@@ -304,9 +304,8 @@ final class ActivityViewModel {
 
     /// 侧边栏切分类：只 refilter `allItems`；若该分类专属网络尚未拉过则后台补拉。
     ///
-    /// **性能约束（HOM-46 同款）**：切分类是纯本地 filter，禁止 `bumpRevision: true`。
-    /// 否则每次切换都会 `itemsRevision += 1` → 全列表 `listRowReveal` 重跑 0.22s 渐显，
-    /// 数据明明已在内存里却像「重新加载」一样卡。
+    /// **性能约束（HOM-46 同款）**：切分类走 `applyFilterForCurrentCategory(bumpRevision: false)`，
+    /// 不因可见 ID 变化 bump `itemsRevision`，避免 30 行 `listRowReveal` stagger 占满主线程。
     func selectCategory(_ category: ActivityCategory) {
         currentCategory = category
         if isAggregateLoaded || !allItems.isEmpty {
@@ -635,6 +634,11 @@ final class ActivityViewModel {
         }
     }
 
+    /// **性能约束（HOM-46 同款 + 2026-06-17 修订）**：
+    /// - `selectCategory` 走 `bumpRevision: false` + 默认 `resetPage: true` 时，
+    ///   **禁止**因可见 ID 变化而 bump `itemsRevision`——否则 30 行 `listRowReveal`
+    ///   同时 stagger，主线程卡顿会连带 sidebar 蛇动画掉帧。
+    /// - 排序切换等仍用 `bumpRevision: true` 保留 reveal。
     private func applyFilterForCurrentCategory(bumpRevision: Bool, resetPage: Bool = true) {
         filteredItems = filter(allItems, by: currentCategory)
         if resetPage {
@@ -644,7 +648,10 @@ final class ActivityViewModel {
         let oldIDs = items.map(\.id)
         items = slice
         hasMoreItems = filteredItems.count > slice.count
-        if bumpRevision || oldIDs != slice.map(\.id) {
+        if bumpRevision {
+            itemsRevision += 1
+        } else if !resetPage && oldIDs != slice.map(\.id) {
+            // 分页追加等同分类内的局部 ID 变化（loadMore 不走此路径，留作防御）。
             itemsRevision += 1
         }
     }
