@@ -254,6 +254,29 @@ final class ActivityViewModel {
         loadError = nil
     }
 
+    /// 清空公告分类本地缓存（`activity_announcements` 全表删除 + 重建聚合列表）。
+    ///
+    /// 清空后若表内无真实公告，`makeItems` 会回退显示内置占位 `announcement:activity-v1`。
+    func clearAnnouncementFeed() async {
+        do {
+            try await activityAnnouncementRepository.clearAll()
+        } catch {
+            AppLog.database.warning(
+                "Activity announcement clear failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return
+        }
+
+        if var snapshot = aggregateSnapshot {
+            snapshot.announcements = []
+            publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+        } else {
+            allItems.removeAll { $0.kind == .announcement }
+            applyFilterForCurrentCategory(bumpRevision: true)
+        }
+        loadError = nil
+    }
+
     /// 侧边栏切分类：只 refilter `allItems`；若该分类专属网络尚未拉过则后台补拉。
     ///
     /// **性能约束（HOM-46 同款）**：切分类是纯本地 filter，禁止 `bumpRevision: true`。

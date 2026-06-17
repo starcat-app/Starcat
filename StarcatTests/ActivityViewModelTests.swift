@@ -555,6 +555,29 @@ struct ActivityViewModelTests {
         #expect(stored.isEmpty)
     }
 
+    @Test("clearAnnouncementFeed 清空 activity_announcements 并回退内置占位")
+    func clearAnnouncementFeedRemovesItems() async throws {
+        let h = try Harness()
+        try await h.announcementRepo.upsertMany([
+            ActivityAnnouncementRecord(
+                id: "blog:test", source: AnnouncementSource.blog.rawValue,
+                title: "Test", bodyMarkdown: "body", author: nil, url: "https://github.blog/test",
+                repoName: nil, categories: nil, isRead: false,
+                createdAt: "2026-06-16T12:00:00Z", fetchedAt: "2026-06-16T12:00:00Z"
+            ),
+        ])
+
+        await h.viewModel.ensureLoaded(category: .announcement)
+        #expect(h.viewModel.items.contains { $0.id == "blog:test" })
+
+        await h.viewModel.clearAnnouncementFeed()
+
+        #expect(h.viewModel.items.contains { $0.id == "blog:test" } == false)
+        #expect(h.viewModel.items.contains { $0.id == "announcement:activity-v1" })
+        let stored = try await h.announcementRepo.fetchAll(limit: 10)
+        #expect(stored.isEmpty)
+    }
+
     @Test("公告排序 oldestFirst 反转列表顺序")
     func announcementSortOldestFirst() async throws {
         let h = try Harness()

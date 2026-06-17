@@ -1369,6 +1369,70 @@
         }
       }
     },
+    "activity.announcement.clear.action" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear All"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部清空"
+          }
+        }
+      }
+    },
+    "activity.announcement.clear.confirm" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear announcements?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清空公告？"
+          }
+        }
+      }
+    },
+    "activity.announcement.clear.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear all cached announcements"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清空本地公告缓存"
+          }
+        }
+      }
+    },
+    "activity.announcement.clear.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All locally cached announcements will be removed. Refresh to fetch from GitHub again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将删除本机全部公告。刷新后可从 GitHub 重新拉取。"
+          }
+        }
+      }
+    },
     "activity.announcement.source.blog" : {
       "localizations" : {
         "en" : {
