@@ -312,7 +312,7 @@ struct ActivityDetailView: View {
                         Text("activity.detail.assets")
                             .font(.headline)
                         ForEach(assets) { asset in
-                            assetRow(asset)
+                            ReleaseAssetRowView(asset: asset)
                         }
                     }
                 }
@@ -366,44 +366,6 @@ struct ActivityDetailView: View {
                     .textSelection(.enabled)
             }
         }
-    }
-
-    private func assetRow(_ asset: ReleaseAsset) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: assetIcon(asset.name))
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: asset.name)
-                    .font(.caption)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(verbatim: ByteCountFormatter.string(fromByteCount: Int64(asset.size), countStyle: .file))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            CopyFeedbackButton(
-                providesContent: { asset.browserDownloadUrl },
-                tooltip: "releases.copyDownloadLink"
-            ) { didCopy in
-                Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.clipboard")
-                    .foregroundStyle(didCopy ? Color.green : Color.primary)
-                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
-            }
-
-            if let url = URL(string: asset.browserDownloadUrl) {
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Image(systemName: "arrow.down.circle")
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("releases.downloadAsset")
-            }
-        }
-        .padding(.vertical, 4)
     }
 
     // MARK: - 空态
@@ -472,17 +434,6 @@ struct ActivityDetailView: View {
         case .announcement, .release, .following:
             return false
         }
-    }
-
-    private func assetIcon(_ name: String) -> String {
-        let lower = name.lowercased()
-        if lower.hasSuffix(".dmg") { return "internaldrive" }
-        if lower.hasSuffix(".pkg") { return "shippingbox.fill" }
-        if lower.hasSuffix(".zip") || lower.hasSuffix(".tar.gz") || lower.hasSuffix(".tgz") { return "doc.zipper" }
-        if lower.hasSuffix(".exe") || lower.hasSuffix(".msi") { return "pc" }
-        if lower.hasSuffix(".deb") || lower.hasSuffix(".rpm") || lower.hasSuffix(".appimage") { return "terminal" }
-        if lower.hasSuffix(".app") { return "macwindow" }
-        return "doc"
     }
 }
 

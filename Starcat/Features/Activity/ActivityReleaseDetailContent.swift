@@ -188,7 +188,7 @@ struct ActivityReleaseDetailContent: View {
             DisclosureGroup {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(assets) { asset in
-                        assetRow(asset)
+                        ReleaseAssetRowView(asset: asset)
                     }
                 }
                 .padding(.top, 4)
@@ -200,52 +200,12 @@ struct ActivityReleaseDetailContent: View {
         }
     }
 
-    private func assetRow(_ asset: ReleaseAsset) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: assetIcon(asset.name))
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
-            Text(verbatim: asset.name)
-                .font(.caption)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer()
-            Text(verbatim: ByteCountFormatter.string(fromByteCount: Int64(asset.size), countStyle: .file))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary)
-            if let url = URL(string: asset.browserDownloadUrl) {
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Label("releases.downloadAsset", systemImage: "arrow.down.circle")
-                        .font(.caption2)
-                        .labelStyle(.iconOnly)
-                }
-                .buttonStyle(.borderless)
-                .focusEffectDisabled()
-                .help("releases.downloadAsset")
-            }
-        }
-        .padding(.vertical, 3)
-    }
-
     private static func releaseDate(_ release: ReleaseRecord) -> Date? {
         ActivityReleaseDetailScaffoldShell.releaseDate(release)
     }
 
     private static func absoluteDate(_ date: Date) -> String {
         ActivityReleaseDetailScaffoldShell.absoluteDate(date)
-    }
-
-    private func assetIcon(_ name: String) -> String {
-        let lower = name.lowercased()
-        if lower.hasSuffix(".dmg") { return "internaldrive" }
-        if lower.hasSuffix(".pkg") { return "shippingbox.fill" }
-        if lower.hasSuffix(".zip") || lower.hasSuffix(".tar.gz") || lower.hasSuffix(".tgz") { return "doc.zipper" }
-        if lower.hasSuffix(".exe") || lower.hasSuffix(".msi") { return "pc" }
-        if lower.hasSuffix(".deb") || lower.hasSuffix(".rpm") || lower.hasSuffix(".appimage") { return "terminal" }
-        if lower.hasSuffix(".app") { return "macwindow" }
-        return "doc"
     }
 
     private var releaseIDs: [Int64] {

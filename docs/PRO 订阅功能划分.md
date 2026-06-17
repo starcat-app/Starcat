@@ -285,7 +285,7 @@ Pro 订阅（$29.99/年 或 $79.99 买断）：AI 功能 + Release 订阅通知 
 | 新 Release 通知（UNUserNotificationCenter） | ✅ | 同上 |
 | Release 时间线视图 + 已读/未读 | ✅ | |
 | 智能资产过滤 + 一键复制下载链接 | ✅ | |
-| 直接下载资产 | ⏳ | |
+| 直接下载资产 | ✅ | NSSavePanel + URLSession.download；browser / API 双路径 fallback |
 
 ### 5.6 Trending / Discovery / Activity（混合：基础浏览免费 + AI 增强 Pro，原则③ 例外）
 

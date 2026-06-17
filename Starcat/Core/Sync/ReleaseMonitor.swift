@@ -219,6 +219,7 @@ actor ReleaseMonitor {
             contentType: dto.contentType,
             size: dto.size,
             browserDownloadUrl: dto.browserDownloadUrl,
+            apiUrl: dto.url,
             downloadCount: dto.downloadCount,
             createdAt: dto.createdAt
         )

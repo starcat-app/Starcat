@@ -216,6 +216,8 @@ struct GitHubReleaseAssetDTO: Decodable, Equatable {
     let name: String
     let contentType: String?
     let size: Int
+    /// REST API 下载端点（非 browser 跳转 URL）。
+    let url: String?
     let browserDownloadUrl: String
     let downloadCount: Int
     let createdAt: String?
