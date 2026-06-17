@@ -108,6 +108,42 @@ extension ActivityCategory {
     }
 }
 
+/// 公告分类列表排序（对齐 Weekly `WeeklyFeedSort` 的 Picker 交互，仅时间维度）。
+enum ActivityAnnouncementSort: String, CaseIterable, Identifiable, Sendable {
+    /// 发布时间从新到旧（默认）。
+    case newestFirst
+    /// 发布时间从旧到新。
+    case oldestFirst
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .newestFirst:
+            return String.l10n("activity.announcement.sort.newest")
+        case .oldestFirst:
+            return String.l10n("activity.announcement.sort.oldest")
+        }
+    }
+}
+
+/// 关注分类列表排序（与 `ActivityAnnouncementSort` 同款交互）。
+enum ActivityFollowingSort: String, CaseIterable, Identifiable, Sendable {
+    case newestFirst
+    case oldestFirst
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .newestFirst:
+            return String.l10n("activity.following.sort.newest")
+        case .oldestFirst:
+            return String.l10n("activity.following.sort.oldest")
+        }
+    }
+}
+
 /// Activity 卡片类型。
 enum ActivityKind: String, Sendable {
     case announcement

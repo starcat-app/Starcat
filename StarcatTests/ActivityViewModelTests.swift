@@ -146,6 +146,7 @@ struct ActivityViewModelTests {
 
         let following = h.viewModel.items.filter { $0.kind == .following }
         #expect(following.count == 1)
+        #expect(following[0].title == "torvalds/linux")
         #expect(following[0].following?.actorLogin == "ruanyf")
         #expect(h.viewModel.lastRefreshedAt != nil)
         #expect(h.viewModel.isLoading == false)
@@ -458,10 +459,10 @@ struct ActivityViewModelTests {
         #expect(watchItem.following?.eventType == "WatchEvent")
         #expect(watchItem.following?.actorAvatarURL != nil)
 
-        // 检 PR merged 与 PR closed 标题不同（分别走 .merged.format / .closed.format）
+        // 检 PR merged 与 PR closed 副标题不同（分别走 .merged.format / .closed.format）
         let prM = try #require(following.first { $0.id.hasSuffix(":pr-m") })
         let prC = try #require(following.first { $0.id.hasSuffix(":pr-c") })
-        #expect(prM.title != prC.title)
+        #expect(prM.subtitle != prC.subtitle)
     }
 
     @Test("makeFollowingItems: 不支持的 type 不应出现（本地数据混入也跳过）")
@@ -504,6 +505,107 @@ struct ActivityViewModelTests {
     }
 
     // MARK: - PR-3 announcement
+
+    @Test("关注排序 oldestFirst 反转列表顺序")
+    func followingSortOldestFirst() async throws {
+        let h = try Harness()
+        let older = "2026-06-10T12:00:00Z"
+        let newer = "2026-06-16T12:00:00Z"
+        try await h.eventRepo.upsertMany([
+            ActivityEventRecord(
+                id: "ev-old", eventType: "WatchEvent", actorLogin: "a",
+                actorAvatarUrl: nil, repoName: "org/old", repoId: 1,
+                payloadJson: #"{"action":"started"}"#, isRead: false,
+                createdAt: older, fetchedAt: older
+            ),
+            ActivityEventRecord(
+                id: "ev-new", eventType: "ForkEvent", actorLogin: "b",
+                actorAvatarUrl: nil, repoName: "org/new", repoId: 2,
+                payloadJson: #"{"action":"created"}"#, isRead: false,
+                createdAt: newer, fetchedAt: newer
+            ),
+        ])
+
+        await h.viewModel.ensureLoaded(category: .following)
+        #expect(h.viewModel.items.first?.title == "org/new")
+
+        h.viewModel.changeFollowingSort(to: .oldestFirst)
+        #expect(h.viewModel.items.first?.title == "org/old")
+    }
+
+    @Test("clearFollowingFeed 清空 activity_events 并移除列表项")
+    func clearFollowingFeedRemovesItems() async throws {
+        let h = try Harness()
+        try await h.eventRepo.upsertMany([
+            ActivityEventRecord(
+                id: "ev1", eventType: "WatchEvent", actorLogin: "a",
+                actorAvatarUrl: nil, repoName: "org/r", repoId: 1,
+                payloadJson: #"{"action":"started"}"#, isRead: false,
+                createdAt: "2026-06-16T12:00:00Z", fetchedAt: "2026-06-16T12:00:00Z"
+            ),
+        ])
+
+        await h.viewModel.ensureLoaded(category: .following)
+        #expect(h.viewModel.items.contains { $0.kind == .following })
+
+        await h.viewModel.clearFollowingFeed()
+
+        #expect(h.viewModel.items.filter { $0.kind == .following }.isEmpty)
+        let stored = try await h.eventRepo.fetchAll(limit: 10)
+        #expect(stored.isEmpty)
+    }
+
+    @Test("公告排序 oldestFirst 反转列表顺序")
+    func announcementSortOldestFirst() async throws {
+        let h = try Harness()
+        let older = "2026-06-10T12:00:00Z"
+        let newer = "2026-06-16T12:00:00Z"
+        try await h.announcementRepo.upsertMany([
+            ActivityAnnouncementRecord(
+                id: "blog:old", source: AnnouncementSource.blog.rawValue,
+                title: "Old", bodyMarkdown: "a", author: nil, url: "https://github.blog/old",
+                repoName: nil, categories: nil, isRead: false,
+                createdAt: older, fetchedAt: older
+            ),
+            ActivityAnnouncementRecord(
+                id: "blog:new", source: AnnouncementSource.blog.rawValue,
+                title: "New", bodyMarkdown: "b", author: nil, url: "https://github.blog/new",
+                repoName: nil, categories: nil, isRead: false,
+                createdAt: newer, fetchedAt: newer
+            ),
+        ])
+
+        await h.viewModel.ensureLoaded(category: .announcement)
+        #expect(h.viewModel.items.first?.title == "New")
+
+        h.viewModel.changeAnnouncementSort(to: .oldestFirst)
+        #expect(h.viewModel.items.first?.title == "Old")
+    }
+
+    @Test("切分类到不同 ID 列表才 bump itemsRevision")
+    func selectCategoryBumpsRevisionOnlyWhenVisibleIDsChange() async throws {
+        let h = try Harness()
+        try await h.eventRepo.upsertMany([
+            ActivityEventRecord(
+                id: "ev1", eventType: "WatchEvent", actorLogin: "a",
+                actorAvatarUrl: nil, repoName: "org/r", repoId: 1,
+                payloadJson: #"{"action":"started"}"#, isRead: false,
+                createdAt: "2026-06-16T12:00:00Z", fetchedAt: "2026-06-16T12:00:00Z"
+            ),
+        ])
+
+        await h.viewModel.ensureLoaded(category: .following)
+        let revisionAfterLoad = h.viewModel.itemsRevision
+
+        // 切到无 following 数据的分类：可见 ID 变了 → revision 应 bump
+        h.viewModel.selectCategory(.announcement)
+        #expect(h.viewModel.itemsRevision > revisionAfterLoad)
+
+        let revisionOnAnnouncement = h.viewModel.itemsRevision
+        // 再切回 following：又一次 ID 变化
+        h.viewModel.selectCategory(.following)
+        #expect(h.viewModel.itemsRevision > revisionOnAnnouncement)
+    }
 
     @Test("切分类 selectCategory 不重复拉 events")
     func selectCategorySkipsDuplicateEventsNetwork() async throws {

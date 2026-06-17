@@ -99,6 +99,19 @@ struct ActivityDetailView: View {
                     ActivityDetailScaffoldShell(item: item)
                         .id(item.id)
                         .detailContentTransition()
+                } else if usesBlogWebViewLayout(item) {
+                    // Blog 正文走 WKWebView 内部滚动；不能塞进外层 ScrollView（会截断为 minHeight）。
+                    VStack(spacing: 0) {
+                        announcementHeaderPanel(item)
+                        Divider()
+                        ReadmeWebView(
+                            htmlFragment: item.announcement!.htmlBody!,
+                            baseURL: URL(string: "https://github.blog/")
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .id(item.id)
+                    .detailContentTransition()
                 } else {
                     // non-repo kind(announcement / release / following / 无 repo 的 corner case):
                     // 自绘 metadataPanel + ScrollView,同样挂 .id(item.id) + .detailContentTransition()
@@ -140,6 +153,26 @@ struct ActivityDetailView: View {
         .background(alignment: .top) {
             activityGradientBackground(for: item)
         }
+    }
+
+    /// Blog 公告详情：仅 hero 区（正文由外层 `ReadmeWebView` 独占剩余空间）。
+    private func announcementHeaderPanel(_ item: ActivityItem) -> some View {
+        header(item)
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(alignment: .top) {
+                activityGradientBackground(for: item)
+            }
+    }
+
+    private func usesBlogWebViewLayout(_ item: ActivityItem) -> Bool {
+        guard item.kind == .announcement,
+              let payload = item.announcement,
+              payload.source == .blog,
+              let html = payload.htmlBody,
+              !html.isEmpty
+        else { return false }
+        return true
     }
 
     /// Activity 详情 hero 区渐变背景。
@@ -202,24 +235,67 @@ struct ActivityDetailView: View {
         case .repository:
             repoDetail(item, titleKey: "activity.detail.repositoryTitle")
         case .following:
-            announcementDetail(item)
+            followingDetail(item)
         case .suggestion:
             repoDetail(item, titleKey: "activity.detail.suggestionTitle")
         }
     }
 
+    private func followingDetail(_ item: ActivityItem) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let payload = item.following {
+                HStack(spacing: 10) {
+                    if let avatarURL = payload.actorAvatarURL {
+                        RemoteAvatar(urlString: avatarURL.absoluteString, size: 36, showBorder: true)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("activity.detail.following.actor")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(verbatim: payload.actorLogin)
+                            .font(.headline)
+                    }
+                }
+            }
+
+            if let subtitle = item.subtitle, !subtitle.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("activity.detail.following.summary")
+                        .font(.headline)
+                    Text(verbatim: subtitle)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                }
+            }
+
+            if let body = item.body, !body.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("activity.detail.following.eventTitle")
+                        .font(.headline)
+                    Text(verbatim: body)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                }
+            }
+
+            if let url = item.htmlURL {
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Label("activity.detail.following.openOnGitHub", systemImage: "arrow.up.right.square")
+                }
+                .buttonStyle(.bordered)
+                .focusEffectDisabled()
+            }
+        }
+    }
+
     private func announcementDetail(_ item: ActivityItem) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let payload = item.announcement, payload.source == .blog,
-               let html = payload.htmlBody, !html.isEmpty
-            {
-                // blog 正文是 HTML 片段，复用 ReadmeWebView 渲染（GFM 主题 CSS + 链接外跳）。
-                ReadmeWebView(
-                    htmlFragment: html,
-                    baseURL: URL(string: "https://github.blog/")
-                )
-                .frame(minHeight: 240)
-            } else if let body = item.body {
+            // Blog HTML 走 `usesBlogWebViewLayout` 分支，此处只处理 security / 内置占位 / 纯文本。
+            if let body = item.body {
                 Text(verbatim: body)
                     .font(.body)
                     .foregroundStyle(.primary)

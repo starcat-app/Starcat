@@ -126,6 +126,12 @@ final class ActivityViewModel {
     /// 当前侧边栏选中的分类（`selectCategory` / `reload` 入口都会更新）。
     private var currentCategory: ActivityCategory = .all
 
+    /// 公告分类列表排序（仅 `.announcement` filter 时生效）。
+    private(set) var announcementSort: ActivityAnnouncementSort = .newestFirst
+
+    /// 关注分类列表排序（仅 `.following` filter 时生效）。
+    private(set) var followingSort: ActivityFollowingSort = .newestFirst
+
     /// 后台 security 扫描任务（可取消；完成后再合并进 `allItems`）。
     private var securityBackgroundTask: Task<Void, Never>?
 
@@ -204,17 +210,72 @@ final class ActivityViewModel {
     func ensureLoaded(category: ActivityCategory) async {
         currentCategory = category
         if isAggregateLoaded {
-            applyFilterForCurrentCategory(bumpRevision: true)
+            applyFilterForCurrentCategory(bumpRevision: false)
             return
+        }
+        // 公告 / 关注：先读本地缓存上屏，避免等 fetchAllStarred 等重查询挡首屏。
+        if category == .announcement {
+            await primeAnnouncementCacheIfAvailable()
+        } else if category == .following {
+            await primeFollowingCacheIfAvailable()
         }
         await reload(category: category, shouldPollReleases: false, cachePolicy: .respectTTL)
     }
 
+    /// 公告分类切换排序：纯本地 refilter，零网络。
+    func changeAnnouncementSort(to sort: ActivityAnnouncementSort) {
+        guard sort != announcementSort else { return }
+        announcementSort = sort
+        guard currentCategory == .announcement else { return }
+        applyFilterForCurrentCategory(bumpRevision: true)
+    }
+
+    /// 关注分类切换排序：纯本地 refilter，零网络。
+    func changeFollowingSort(to sort: ActivityFollowingSort) {
+        guard sort != followingSort else { return }
+        followingSort = sort
+        guard currentCategory == .following else { return }
+        applyFilterForCurrentCategory(bumpRevision: true)
+    }
+
+    /// 清空关注分类本地缓存（`activity_events` 全表删除 + 重建聚合列表）。
+    func clearFollowingFeed() async {
+        do {
+            try await activityEventRepository.clearAll()
+        } catch {
+            AppLog.database.warning(
+                "Activity following clear failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return
+        }
+
+        if var snapshot = aggregateSnapshot {
+            snapshot.events = []
+            publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+        } else {
+            allItems.removeAll { $0.kind == .following }
+            applyFilterForCurrentCategory(bumpRevision: true)
+        }
+        loadError = nil
+    }
+
     /// 侧边栏切分类：只 refilter `allItems`；若该分类专属网络尚未拉过则后台补拉。
+    ///
+    /// **性能约束（HOM-46 同款）**：切分类是纯本地 filter，禁止 `bumpRevision: true`。
+    /// 否则每次切换都会 `itemsRevision += 1` → 全列表 `listRowReveal` 重跑 0.22s 渐显，
+    /// 数据明明已在内存里却像「重新加载」一样卡。
     func selectCategory(_ category: ActivityCategory) {
         currentCategory = category
+        if isAggregateLoaded || !allItems.isEmpty {
+            applyFilterForCurrentCategory(bumpRevision: false)
+        }
+        if category == .announcement, items.isEmpty, !isAggregateLoaded {
+            Task { await self.primeAnnouncementCacheIfAvailable() }
+        }
+        if category == .following, items.isEmpty, !isAggregateLoaded {
+            Task { await self.primeFollowingCacheIfAvailable() }
+        }
         guard isAggregateLoaded else { return }
-        applyFilterForCurrentCategory(bumpRevision: true)
 
         let missingEvents = Self.needsEventsNetwork(for: category) && !didPrimeEventsNetwork
         let missingAnnouncements = Self.needsAnnouncementsNetwork(for: category) && !didPrimeAnnouncementsNetwork
@@ -387,6 +448,36 @@ final class ActivityViewModel {
 
     // MARK: - 分类切换 / 聚合发布
 
+    /// 公告分类首屏快路径：只读 `activity_announcements`，不等 starred repos 全表扫描。
+    private func primeAnnouncementCacheIfAvailable() async {
+        let cachedAnnouncements = (try? await activityAnnouncementRepository.fetchAll(limit: 100)) ?? []
+        guard !cachedAnnouncements.isEmpty else { return }
+
+        let snapshot = AggregateSnapshot(
+            repos: aggregateSnapshot?.repos ?? [],
+            releases: aggregateSnapshot?.releases ?? [],
+            events: aggregateSnapshot?.events ?? [],
+            announcements: cachedAnnouncements
+        )
+        publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+        isLoading = false
+    }
+
+    /// 关注分类首屏快路径：只读 `activity_events`，不等 starred repos 全表扫描。
+    private func primeFollowingCacheIfAvailable() async {
+        let cachedEvents = (try? await activityEventRepository.fetchAll(limit: 200)) ?? []
+        guard !cachedEvents.isEmpty else { return }
+
+        let snapshot = AggregateSnapshot(
+            repos: aggregateSnapshot?.repos ?? [],
+            releases: aggregateSnapshot?.releases ?? [],
+            events: cachedEvents,
+            announcements: aggregateSnapshot?.announcements ?? []
+        )
+        publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+        isLoading = false
+    }
+
     /// 切分类后补拉尚未 prime 的网络（不取消 in-flight reload、不重建本地四路读）。
     private func supplementNetworks(for category: ActivityCategory, cachePolicy: ActivityCachePolicy) async {
         guard var snapshot = aggregateSnapshot else { return }
@@ -454,6 +545,8 @@ final class ActivityViewModel {
         let filtered = filter(allItems, by: currentCategory)
         let oldIDs = items.map(\.id)
         items = filtered
+        // bumpRevision=true：排序切换等需要强制 List 快照刷新。
+        // 否则仅当当前分类可见 ID 序列变化时才 bump（切分类若结果相同则不动画）。
         if bumpRevision || oldIDs != filtered.map(\.id) {
             itemsRevision += 1
         }
@@ -465,7 +558,9 @@ final class ActivityViewModel {
             aggregateSnapshot = snapshot
         }
         isAggregateLoaded = true
-        applyFilterForCurrentCategory(bumpRevision: true)
+        // 后台 reload / 网络回填：仅当「当前分类可见列表」真的变了才 bump revision，
+        // 避免用户已看到缓存后又被第二波动画打断（Manage HOM-46 同款）。
+        applyFilterForCurrentCategory(bumpRevision: false)
     }
 
     private func makeItems(snapshot: AggregateSnapshot) -> [ActivityItem] {
@@ -865,8 +960,25 @@ final class ActivityViewModel {
         } else {
             filtered = source.filter { $0.category == category }
         }
-        return filtered.sorted { lhs, rhs in
-            (lhs.createdAt ?? .distantPast) > (rhs.createdAt ?? .distantPast)
+        return sortFilteredItems(filtered, category: category)
+    }
+
+    /// 分类列表最终排序。公告 / 关注尊重各自 sort；其它分类默认时间倒序。
+    private func sortFilteredItems(_ items: [ActivityItem], category: ActivityCategory) -> [ActivityItem] {
+        let ascending: Bool = {
+            switch category {
+            case .announcement:
+                return announcementSort == .oldestFirst
+            case .following:
+                return followingSort == .oldestFirst
+            default:
+                return false
+            }
+        }()
+        return items.sorted { lhs, rhs in
+            let l = lhs.createdAt ?? .distantPast
+            let r = rhs.createdAt ?? .distantPast
+            return ascending ? (l < r) : (l > r)
         }
     }
 
@@ -1144,7 +1256,7 @@ final class ActivityViewModel {
     ///   保证 makeItems 最终聚合行数可控。
     private func makeFollowingItems(_ records: [ActivityEventRecord]) -> [ActivityItem] {
         records.prefix(60).compactMap { record -> ActivityItem? in
-            guard let title = formatFollowingTitle(record) else { return nil }
+            guard let eventSummary = formatFollowingTitle(record) else { return nil }
             let payload = ActivityFollowingPayload(
                 eventType: record.eventType,
                 actorLogin: record.actorLogin,
@@ -1156,8 +1268,8 @@ final class ActivityViewModel {
                 id: "following:\(record.id)",
                 kind: .following,
                 category: .following,
-                title: title,
-                subtitle: record.repoName,
+                title: record.repoName,
+                subtitle: eventSummary,
                 body: extractFollowingBody(record),
                 createdAt: Self.parseDate(record.createdAt),
                 htmlURL: extractFollowingURL(record),
