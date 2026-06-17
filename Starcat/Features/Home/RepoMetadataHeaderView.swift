@@ -96,12 +96,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         .padding(.top, 16)
         .padding(.bottom, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(alignment: .top) {
-            RepoMetadataGradientBackground(
-                language: repo.language,
-                fallbackAccentColor: fallbackAccentColor
-            )
-        }
+        // hero tint 由 `RepoDetailScaffold` 根节点 `DetailHeroTintBackground` 统一绘制。
         .sheet(isPresented: $showSecurityScoreSheet) {
             OpenSSFScoreSheet(repo: repo)
                 .appLocaleEnvironment()
@@ -380,31 +375,6 @@ private struct RepoDetailHeaderSourceBadgeView: View {
                 .clipShape(Circle())
                 .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
         }
-    }
-}
-
-struct RepoMetadataGradientBackground: View {
-    let language: String?
-    let fallbackAccentColor: Color
-
-    var body: some View {
-        let tint = accentColor
-        LinearGradient(
-            colors: [tint.opacity(0.18), tint.opacity(0.0)],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        // 与透明 window toolbar 配合，让详情页语言色从标题栏自然向下衰减，
-        // 避免渐变从 metadata header 顶边才开始而形成明显横向分界。
-        .ignoresSafeArea(edges: .top)
-        .allowsHitTesting(false)
-    }
-
-    private var accentColor: Color {
-        if let language, !language.isEmpty {
-            return LanguageColor.color(for: language)
-        }
-        return fallbackAccentColor
     }
 }
 

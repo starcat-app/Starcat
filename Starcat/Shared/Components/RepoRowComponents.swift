@@ -310,7 +310,7 @@ public extension Int {
 ///     - `LanguageColor.color(for:)` 颜色查表（switch case key 是 raw "Jupyter Notebook"）
 ///     - `LinguistLanguages.all` 元数据查询
 ///     - `LanguageIconView(language:)` 图标查表
-///     - `RepoMetadataGradientBackground(language:)` 渐变背景
+///     - `DetailHeroTintBackground.accentColor(language:fallback:)` 渐变取色
 ///     - AI prompt 拼接的 "Language: ..." 字段
 ///     - 分享卡 / Markdown / HTML 导出的 group key
 ///   一旦把短名落到这些通道，会跟 GitHub Linguist 规范名对不上，破坏数据一致性。
