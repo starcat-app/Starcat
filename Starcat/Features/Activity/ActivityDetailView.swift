@@ -100,28 +100,10 @@ struct ActivityDetailView: View {
                         .id(item.id)
                         .detailContentTransition()
                 } else if usesBlogWebViewLayout(item) {
-                    // Blog 正文走 WKWebView 内部滚动；不能塞进外层 ScrollView（会截断为 minHeight）。
-                    VStack(spacing: 0) {
-                        announcementHeaderPanel(item)
-                        Divider()
-                        ReadmeWebView(
-                            htmlFragment: item.announcement!.htmlBody!,
-                            baseURL: URL(string: "https://github.blog/")
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                    .id(item.id)
-                    .detailContentTransition()
+                    announcementBlogDetail(item)
                 } else {
-                    // non-repo kind(announcement / release / following / 无 repo 的 corner case):
-                    // 自绘 metadataPanel + ScrollView,同样挂 .id(item.id) + .detailContentTransition()
-                    // 让切换走"轻轻落下"动画。
-                    ScrollView {
-                        activityMetadataPanel(item)
-                    }
-                    .detailScrollViewStyle()
-                    .id(item.id)
-                    .detailContentTransition()
+                    // 非 repo-backed 自绘详情：根节点 tint + 固定 hero + ScrollView 正文。
+                    nonRepoScrollDetail(item)
                 }
             } else {
                 emptyState
@@ -135,34 +117,50 @@ struct ActivityDetailView: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: item?.id ?? "activity-empty")
     }
 
-    // MARK: - non-repo 详情自绘（announcement / release / following 等）
+    // MARK: - 非 repo-backed 自绘详情
 
-    /// Activity 详情顶部面板（non-repo kind 走这条分支）。
-    ///
-    /// Manage / Trending 详情页顶部都有"语言色 → 透明"的 hero 背景，用来让当前选择
-    /// 和右侧详情形成同一视觉锚点。Activity 没有统一的 repo 模型，因此直接使用
-    /// `ActivityItem.accentColor`：有 repo 主语言时取语言色，没有语言标识时回退分类色。
-    private func activityMetadataPanel(_ item: ActivityItem) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            header(item)
+    /// Blog 公告：hero + `ReadmeWebView` 分栏；tint 挂在根 VStack 延伸到 toolbar。
+    private func announcementBlogDetail(_ item: ActivityItem) -> some View {
+        VStack(spacing: 0) {
+            nonRepoDetailHeader(item)
             Divider()
-            detailBody(item)
+            ReadmeWebView(
+                htmlFragment: item.announcement!.htmlBody!,
+                baseURL: URL(string: "https://github.blog/")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(alignment: .top) {
-            activityGradientBackground(for: item)
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .detailHeroTintBackground(tint: item.accentColor)
+        .id(item.id)
+        .detailContentTransition()
     }
 
-    /// Blog 公告详情：仅 hero 区（正文由外层 `ReadmeWebView` 独占剩余空间）。
-    private func announcementHeaderPanel(_ item: ActivityItem) -> some View {
+    /// 公告 / release / following 等：固定 hero + 正文 ScrollView。
+    private func nonRepoScrollDetail(_ item: ActivityItem) -> some View {
+        VStack(spacing: 0) {
+            nonRepoDetailHeader(item)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Divider()
+                    detailBody(item)
+                }
+                .padding(.horizontal, 18)
+                .padding(.bottom, 18)
+            }
+            .detailScrollViewStyle()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .detailHeroTintBackground(tint: item.accentColor)
+        .id(item.id)
+        .detailContentTransition()
+    }
+
+    /// 非 repo-backed 详情 hero 区（tint 在分支根节点 `DetailHeroTintBackground`）。
+    private func nonRepoDetailHeader(_ item: ActivityItem) -> some View {
         header(item)
             .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(alignment: .top) {
-                activityGradientBackground(for: item)
-            }
     }
 
     private func usesBlogWebViewLayout(_ item: ActivityItem) -> Bool {
@@ -173,21 +171,6 @@ struct ActivityDetailView: View {
               !html.isEmpty
         else { return false }
         return true
-    }
-
-    /// Activity 详情 hero 区渐变背景。
-    ///
-    /// 透明度与 `RepoDetailView.metadataGradientBackground(language:)` 保持一致：
-    /// 顶部 0.18、底部 0，既能表达当前卡片的 accent，又不会干扰正文 / README 阅读。
-    @ViewBuilder
-    private func activityGradientBackground(for item: ActivityItem) -> some View {
-        let tint = item.accentColor
-        LinearGradient(
-            colors: [tint.opacity(0.18), tint.opacity(0.0)],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .allowsHitTesting(false)
     }
 
     private func header(_ item: ActivityItem) -> some View {

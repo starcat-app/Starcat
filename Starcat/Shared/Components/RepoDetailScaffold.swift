@@ -213,6 +213,16 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             metadataPanel
             body_(updateScrollOffset)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // 根节点 tint：必须在 `CollapsibleRepoMetadataPanel` 外，否则 `.clipped()` 裁掉
+        // 向上延伸；滚 README 折叠 hero 时同步淡出。
+        .detailHeroTintBackground(
+            tint: DetailHeroTintBackground.accentColor(
+                language: repo.language,
+                fallback: fallbackAccentColor
+            ),
+            opacity: 1 - metadataPanelCollapseProgress
+        )
         .id(repo.id)
         .navigationTitle(repo.name)
         .navigationSubtitle(repo.owner)
