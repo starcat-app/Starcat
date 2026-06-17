@@ -251,18 +251,17 @@ struct RepoNotesSection: View {
             )
             .overlay(alignment: .topLeading) {
                 if editingContent.isEmpty {
-                    // v2.1（2026-06-13）光标 ↔ placeholder 对齐精算：
-                    // 容器外层 padding(.horizontal, 8).padding(.vertical, 6) → TextEditor 起点 (8, 6)
-                    // NSTextView 默认 lineFragmentPadding = 5pt（水平）+ textContainerInset = (0, 5)（垂直）
-                    //   → 实际光标位置 = (8+5, 6+5) = (13, 11)
-                    // placeholder Text 用 padding(.horizontal, 13).padding(.vertical, 11) → 起点 (13, 11)
-                    //   → 与光标完美对齐
-                    // v1 用的 14/14 横向差 1pt(轻微) + 纵向差 3pt(明显),用户截图反馈"不在同一水平线"。
+                    // v2.2（2026-06-17）光标 ↔ placeholder 对齐修正：
+                    // SwiftUI TextEditor 包装的 NSTextView 在 macOS 15+ 上首行 insertion point 的 Y
+                    // 不再额外叠加 textContainerInset.height（实测与 v2.1 假设的 +5pt 不符），
+                    // 光标实际落在「外层 padding」之后的第一行基线，即 (8+5, 6) = (13, 6)。
+                    // placeholder 必须与 TextEditor 同字体，且只用 leading/top 偏移，避免 vertical
+                    // padding 把文字整体下推导致「光标在上、提示在下」。
                     Text("repo.notesPlaceholder")
-                        .font(.body)
+                        .font(.system(.body, design: .default))
                         .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 11)
+                        .padding(.leading, 13)
+                        .padding(.top, 6)
                         .allowsHitTesting(false)
                 }
             }
