@@ -919,7 +919,8 @@ final class RepoAIInsightService {
                     tokenBudget: result.metadata.tokenBudget,
                     actualTokens: result.metadata.stats.actualTokens,
                     totalFiles: result.metadata.stats.totalFiles,
-                    generatedAt: result.metadata.generatedAt
+                    // PackMetadata.generatedAt 已是 Date（HOM-203）；UI 投影仍存 ISO-8601 字符串。
+                    generatedAt: ISO8601DateFormatter.shared.string(from: result.metadata.generatedAt)
                 )
             case .featureDisabled:
                 // 用户主动关：不显示 banner，degradationReason 留 nil
