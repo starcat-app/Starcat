@@ -124,47 +124,52 @@ struct ActivityReleaseDetailContent: View {
             Button {
                 toggleReleaseExpansion(release.id)
             } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .frame(width: 18, height: 18)
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .frame(width: 18, height: 18)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Text(verbatim: release.name?.isEmpty == false ? release.name! : release.tagName)
+                                .font(.headline)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+
+                            Text(verbatim: release.tagName)
+                                .font(.caption.monospaced())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.bar, in: Capsule())
+
+                            if release.isPrerelease {
+                                Text("releases.row.prerelease")
+                                    .font(.caption2)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(Color.orange.opacity(0.18), in: Capsule())
+                                    .foregroundStyle(Color.orange)
+                            }
+                        }
+
+                        if let date = Self.releaseDate(release) {
+                            Label(Self.absoluteDate(date), systemImage: "calendar")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .contentShape(Rectangle())
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(verbatim: release.name?.isEmpty == false ? release.name! : release.tagName)
-                        .font(.headline)
-                        .lineLimit(2)
-                        .textSelection(.enabled)
-
-                    Text(verbatim: release.tagName)
-                        .font(.caption.monospaced())
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.bar, in: Capsule())
-
-                    if release.isPrerelease {
-                        Text("releases.row.prerelease")
-                            .font(.caption2)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Color.orange.opacity(0.18), in: Capsule())
-                            .foregroundStyle(Color.orange)
-                    }
-                }
-
-                if let date = Self.releaseDate(release) {
-                    Label(Self.absoluteDate(date), systemImage: "calendar")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer(minLength: 0)
+            .pressableHover()
+            .help(isExpanded ? Text("releases.row.collapseNotes") : Text("releases.row.expandNotes"))
 
             if let url = URL(string: release.htmlUrl) {
                 Button {
