@@ -252,35 +252,23 @@ struct ShareCardSheet: View {
             ForEach(ShareCardTheme.allCases) { t in
                 ThemeCardButton(
                     theme: t,
-                    isSelected: theme == t,
-                    isProUser: isProUser
+                    isSelected: theme == t
                 ) {
-                    selectTheme(t)
+                    theme = t
                 }
             }
         }
     }
 
-    /// 主题切换：Pro 专属主题（ID 卡两款）未开通时拒绝选中。
-    private func selectTheme(_ newTheme: ShareCardTheme) {
-        guard !newTheme.requiresPro || isProUser else { return }
-        theme = newTheme
-    }
-
     /// 单个主题卡片按钮。
-    /// 只包含主题预览色块，无文字。Pro 专属主题在未开通时显示 PRO 角标并降低不透明度。
+    /// 只包含主题预览色块，无文字。
     private struct ThemeCardButton: View {
         let theme: ShareCardTheme
         let isSelected: Bool
-        let isProUser: Bool
         let action: () -> Void
 
         @Environment(\.starcatReduceMotion) private var reduceMotion
         @State private var isHovered = false
-
-        private var isLocked: Bool {
-            theme.requiresPro && !isProUser
-        }
 
         var body: some View {
             Button(action: action) {
@@ -290,12 +278,6 @@ struct ShareCardSheet: View {
                     .padding(4)
                     .contentShape(Rectangle())
                     .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .overlay(alignment: .topTrailing) {
-                        if isLocked {
-                            ThemeProBadge()
-                                .offset(x: 3, y: -3)
-                        }
-                    }
                     .overlay(
                         // 描边策略（2026-06-06 dong4j 反馈适配深浅主题）：
                         // - 选中态：`Color.accentColor` 2pt 加粗描边，强表达"选中"。
@@ -317,8 +299,7 @@ struct ShareCardSheet: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .opacity(isLocked ? 0.55 : 1.0)
-            .help(Text(isLocked ? "sharecard.theme.proRequired" : theme.localizationKey))
+            .help(Text(theme.localizationKey))
             .onHover { hovering in
                 withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.12)) {
                     isHovered = hovering
@@ -339,32 +320,6 @@ struct ShareCardSheet: View {
                 Rectangle()
                     .fill(theme.pickerSwatch.accent)
             }
-        }
-    }
-
-    /// 主题选择器上的 Pro 角标（尺寸比头像 PRO 徽章更小，适配 30×22 色块）。
-    private struct ThemeProBadge: View {
-        var body: some View {
-            Text("PRO")
-                .font(.system(size: 5, weight: .black))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 3)
-                .padding(.vertical, 1)
-                .background {
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [.yellow, .orange, .pink],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .shadow(color: .black.opacity(0.22), radius: 1, y: 0.5)
-                }
-                .overlay {
-                    Capsule()
-                        .stroke(.white.opacity(0.75), lineWidth: 0.5)
-                }
         }
     }
 

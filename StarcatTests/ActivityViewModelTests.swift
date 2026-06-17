@@ -621,9 +621,11 @@ struct ActivityViewModelTests {
         let revisionAfterLoad = h.viewModel.itemsRevision
 
         h.viewModel.selectCategory(.announcement)
+        await h.viewModel.awaitPendingBackgroundWorkForTesting()
         #expect(h.viewModel.itemsRevision == revisionAfterLoad)
 
         h.viewModel.selectCategory(.following)
+        await h.viewModel.awaitPendingBackgroundWorkForTesting()
         #expect(h.viewModel.itemsRevision == revisionAfterLoad)
     }
 
