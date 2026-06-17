@@ -20427,6 +20427,23 @@
         }
       }
     },
+    "sharecard.theme.proRequired" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro exclusive theme"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro 专属主题"
+          }
+        }
+      }
+    },
     "sharecard.title" : {
       "localizations" : {
         "en" : {
