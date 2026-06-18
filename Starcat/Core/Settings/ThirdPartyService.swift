@@ -56,6 +56,16 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    /// `Info.plist` / xcconfig 里该服务 baked-in production API Key 的字段名。
+    var productionAPIKeyInfoPlistKey: String {
+        switch self {
+        case .trending: return "STARCAT_PRODUCTION_API_KEY_TRENDING"
+        case .weekly:   return "STARCAT_PRODUCTION_API_KEY_WEEKLY"
+        case .sharing:  return "STARCAT_PRODUCTION_API_KEY_SHARING"
+        case .wiki:     return "STARCAT_PRODUCTION_API_KEY_WIKI"
+        }
+    }
+
     // MARK: - 展示元数据
 
     /// 设置页卡片标题（i18n key）。

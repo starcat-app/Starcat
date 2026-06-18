@@ -29,7 +29,13 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>STARCAT_PRODUCTION_API_KEY</key>
-	<string>$(STARCAT_PRODUCTION_API_KEY)</string>
+	<key>STARCAT_PRODUCTION_API_KEY_TRENDING</key>
+	<string>$(STARCAT_PRODUCTION_API_KEY_TRENDING)</string>
+	<key>STARCAT_PRODUCTION_API_KEY_WEEKLY</key>
+	<string>$(STARCAT_PRODUCTION_API_KEY_WEEKLY)</string>
+	<key>STARCAT_PRODUCTION_API_KEY_SHARING</key>
+	<string>$(STARCAT_PRODUCTION_API_KEY_SHARING)</string>
+	<key>STARCAT_PRODUCTION_API_KEY_WIKI</key>
+	<string>$(STARCAT_PRODUCTION_API_KEY_WIKI)</string>
 </dict>
 </plist>

@@ -37,17 +37,11 @@ struct StarcatAPIKeyTests {
 
     // MARK: - StarcatAPIKeyDefaults
 
-    @Test("CI 期 Secrets.xcconfig 缺失 → productionKeyOrNil = nil")
+    @Test("CI 期 Secrets.xcconfig 缺失 → 各服务 productionKeyOrNil = nil")
     func productionKeyMissingInCI() {
-        // CI 环境下 Secrets.xcconfig 不存在 / 字段空字符串 → productionKeyOrNil 应为 nil。
-        // 这是「BYOK-only 模式」工作的前提。如果 dong4j 本地 Secrets.xcconfig 填了真实
-        // key 后跑测试，本断言会失败——这是预期行为，提示开发者「跑测试前先 stash 掉
-        // Secrets.xcconfig，或单独跑」。
-        //
-        // 决策（2026-06-10）：测试期不强制隔离 Bundle.main.infoDictionary（隔离需要 swizzle
-        // 或自建 Bundle.test，复杂度过高）；接受「本地填了 Key 跑测会标红」的成本。
-        // CI（GitHub Actions / 公开 fork）保证 Secrets.xcconfig 缺失，测试稳定为 nil。
-        #expect(StarcatAPIKeyDefaults.productionKeyOrNil == nil)
+        for service in ThirdPartyService.allCases {
+            #expect(StarcatAPIKeyDefaults.productionKeyOrNil(for: service) == nil)
+        }
     }
 
     // MARK: - StarcatAPIKeyResolver

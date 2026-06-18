@@ -123,7 +123,7 @@ actor ServiceHealthChecker {
     ///   - service: 用于决定 ping URL 路径拼接策略（sharing 特殊，因 baseURL 含 `/api`）。
     ///   - baseURL: 当前生效的 baseURL（持久化值或用户草稿都行）。
     ///   - apiKey: BYOK API Key 草稿值；nil / 空串表示「不带 Authorization 头」（让后端 401 → unauthorized）。
-    ///     如果调用方想测「production 默认 Key」，传 `StarcatAPIKeyDefaults.productionKeyOrNil`。
+    ///     如果调用方想测「production 默认 Key」，传 `StarcatAPIKeyDefaults.productionKeyOrNil(for:)`。
     /// - Returns: 探测结果。**永不抛错**——任何异常都映射成 `.networkError` 或 `.serverError`。
     ///
     /// 状态机：

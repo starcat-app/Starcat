@@ -18,17 +18,14 @@
 // 3. project.yml `info.properties` 段加 `MY_NEW_SECRET: $(MY_NEW_SECRET)` 让值进 Info.plist
 // 4. 代码里通过 `Bundle.main.infoDictionary["MY_NEW_SECRET"] as? String` 读取
 
-// MARK: - R-01 自建后端 production 默认 API Key（占位，dong4j 在 Secrets.xcconfig 覆盖）
+// MARK: - R-01 自建后端 production 默认 API Key（每服务独立，Secrets.xcconfig 覆盖）
 //
-// 三个自建后端（trending / weekly / sharing）改造后强制 Bearer Token 鉴权（详见
-// docs/详细设计/18-三场景共用架构.md §6.4）。本字段为编译期 baked-in 的 production
-// 默认 Key（让用户零感知开箱即用）；BYOK 用户可以在「设置 → 服务」Tab 填自己的 Key
-// 覆盖本默认值（走 KeychainManager 加密本地文件存储）。
-//
-// 默认空字符串：BYOK-only 模式（用户必须自己填 Key 否则任何 trending / weekly / sharing
-// 请求都会被后端拒 401）。要走 baked-in 模式：cp Secrets.xcconfig.template → Secrets.xcconfig
-// 后填入 production 真实 key，**不要 commit Secrets.xcconfig**（已 gitignore）。
-STARCAT_PRODUCTION_API_KEY =
+// trending / weekly / sharing / wiki 各自一条。默认空 = 该服务 BYOK-only。
+// 自动化：make setup-production-api-keys（从 supports/*/ .env 读取）
+STARCAT_PRODUCTION_API_KEY_TRENDING =
+STARCAT_PRODUCTION_API_KEY_WEEKLY =
+STARCAT_PRODUCTION_API_KEY_SHARING =
+STARCAT_PRODUCTION_API_KEY_WIKI =
 
 // MARK: - 引入私密配置（可选）
 //

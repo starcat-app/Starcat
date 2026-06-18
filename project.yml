@@ -87,11 +87,13 @@ targets:
           - CFBundleURLName: com.starcat.app
             CFBundleURLSchemes:
               - starcat
-        # R-01 v1.2 私密配置注入：xcconfig 变量 `$(STARCAT_PRODUCTION_API_KEY)` 在 build
-        # 期会被 Xcode 替换为 Configs/Build.xcconfig（或它包含的 Secrets.xcconfig）里的值。
-        # 缺失时被替换为空字符串，App 运行期表现为 BYOK-only 模式。
-        # 读取入口：`Starcat/Core/Network/StarcatAPIKey.swift` 的 `StarcatAPIKeyDefaults.productionKey`。
-        STARCAT_PRODUCTION_API_KEY: $(STARCAT_PRODUCTION_API_KEY)
+        # R-01 v1.2 私密配置注入：每个自建后端独立 production API Key（xcconfig → Info.plist）。
+        # 缺失时被替换为空字符串，该服务表现为 BYOK-only。
+        # 读取入口：`StarcatAPIKeyDefaults.productionKeyOrNil(for:)`。
+        STARCAT_PRODUCTION_API_KEY_TRENDING: $(STARCAT_PRODUCTION_API_KEY_TRENDING)
+        STARCAT_PRODUCTION_API_KEY_WEEKLY: $(STARCAT_PRODUCTION_API_KEY_WEEKLY)
+        STARCAT_PRODUCTION_API_KEY_SHARING: $(STARCAT_PRODUCTION_API_KEY_SHARING)
+        STARCAT_PRODUCTION_API_KEY_WIKI: $(STARCAT_PRODUCTION_API_KEY_WIKI)
     dependencies:
       - package: GRDB
       - package: KeychainAccess
