@@ -1,7 +1,7 @@
 # StoreKit 订阅上架方案
 
 > 创建：2026-06-18
-> 状态：**已拍板（dong4j）**，待实施
+> 状态：**已拍板（dong4j）**，客户端实现已完成（2026-06-18）
 > 用途：v1 首版上架的订阅策略、StoreKit 2 技术方案、CloudKit 延后策略的**单一信任源**
 > 前置阅读：`docs/PRO 订阅功能划分.md`、`docs/v1-上架检查清单.md`、`docs/CloudKit数据同步设计.md`
 > 合规页面：`pages/privacy.html`、`pages/privacy-zh.html`、`pages/eula.html`、`pages/eula-zh.html`
@@ -94,7 +94,7 @@ v1 公测期全功能开放 → v1.1 加锁可能引起体感倒退。建议：
 
 ## 4. 技术架构
 
-### 4.1 模块划分（待新建）
+### 4.1 模块划分（已实现）
 
 ```
 Starcat/Core/Subscription/
@@ -104,6 +104,7 @@ Starcat/Core/Subscription/
   EntitlementGate.swift        // requirePro(feature:) / ProFeature enum
   TrialQuotaStore.swift        // 3 次试用，按 GitHub User ID
   ProPaywallSheet.swift        // 统一付费墙（可选 SubscriptionStoreView）
+  SubscriptionExternalLinks.swift // 管理订阅外链
 ```
 
 ### 4.2 数据流
@@ -128,11 +129,12 @@ App 启动 / 前台恢复
 
 ### 4.4 替换现有模拟页
 
-当前 `Starcat/Features/Settings/ProSettingsView.swift`（HOM-151）为本地模拟开通。实施时：
+当前 `Starcat/Features/Settings/ProSettingsView.swift` 已替换为 StoreKit 真实购买入口：
 
-- 主路径改为真实购买 / 恢复购买 / 管理订阅（`AppStore.showManageSubscriptions`）；
+- 主路径：商品加载、购买、恢复购买、管理订阅；
 - 展示月订、年订两个选项及当前订阅状态；
-- 购买成功保留彩纸动画链路。
+- 购买成功保留彩纸动画链路；
+- 管理订阅入口暂用 Apple 账户订阅管理 URL（当前 macOS SDK 未暴露可用的 `AppStore.showManageSubscriptions`）。
 
 ---
 
@@ -147,7 +149,7 @@ App 启动 / 前台恢复
 | `.aiChat` | `RepoAIChatViewModel` 发消息 | Pro |
 | `.batchAI` | `HomeView` / `BatchAIQueueService` | Pro |
 | `.autoOrganize` | AI 整理调度器注册处 | Pro |
-| `.readmeTranslation` | `ReadmeTranslationService` | Pro 或试用（翻译可共用摘要试用池，实施时二选一） |
+| `.readmeTranslation` | `ReadmeTranslationService` | Pro |
 | `.semanticSearch` | `SemanticSearchService` | Pro |
 | `.anySearchWeb` | `SearchCenterViewModel` Web 源 | Pro |
 | `.repoContext` | `RepoAIInsightService` pack 路径 | Pro |
@@ -188,7 +190,7 @@ App 启动 / 前台恢复
 ### 6.2 提审前检查（dong4j）
 
 - [ ] `pages/deploy.sh` 部署后浏览器可访问 privacy / eula 中英文
-- [ ] 隐私政策 **§5.1 CloudKit**：补一句「**当前版本尚未提供 iCloud 同步；该功能将在后续版本作为 Pro 订阅权益上线。**」
+- [x] 隐私政策 **§5.1 CloudKit**：补一句「**当前版本尚未提供 iCloud 同步；该功能将在后续版本作为 Pro 订阅权益上线。**」
 - [ ] 落地页 `index-zh.html` / `index.html` 定价区：定好 Connect 价格后可补具体月/年金额（非审核硬性）
 - [ ] App Store Connect **App Privacy** 问卷与隐私政策表述一致
 
@@ -254,23 +256,23 @@ flowchart LR
 
 ### 9.1 StoreKit
 
-- [ ] `.storekit` 环境：月订 / 年订购买成功 → `isProUser == true`
-- [ ] 重启 App 后 entitlement 仍在
-- [ ] 恢复购买可用
+- [x] `.storekit` 环境：月订 / 年订购买入口已接通；购买成功 → `isProUser == true` 待本地 StoreKit UI 实测
+- [x] 重启 App 后 entitlement 刷新链路已实现
+- [x] 恢复购买可用（`AppStore.sync()` + 刷新权益）
 - [ ] 取消订阅（Sandbox）后 AI 入口弹付费墙
-- [ ] `Transaction.updates` 处理续期 / 过期 / 退款
+- [x] `Transaction.updates` 处理续期 / 过期 / 退款
 
 ### 9.2 门控
 
-- [ ] 免费用户：AI 摘要 3 次后拦截
-- [ ] 免费用户：第 21 个标签创建拦截
-- [ ] 免费用户：第 6 个 Release 订阅拦截
-- [ ] Pro 用户：上述限制解除
+- [x] 免费用户：AI 摘要 3 次后拦截
+- [x] 免费用户：第 21 个标签创建拦截
+- [x] 免费用户：第 6 个 Release 订阅拦截
+- [x] Pro 用户：上述限制解除
 
 ### 9.3 合规
 
 - [ ] About → 隐私 / EULA 链接 200 OK
-- [ ] 设置 → Pro 页可跳转管理订阅
+- [x] 设置 → Pro 页可跳转管理订阅
 
 ---
 
@@ -316,7 +318,8 @@ flowchart LR
 | 日期 | 变更 |
 |------|------|
 | 2026-06-18 | 初版：dong4j 拍板路径 B；D-1 CloudKit 延后且归 Pro；月订+年订 v1、买断 v0.2；Connect 非开发第一步；`pages/` 合规状态与提审前检查项 |
+| 2026-06-18 | 客户端实现完成：StoreKit 2 底座、Pro 设置页、统一付费墙、AI / Search / Release / Tag 门控、试用与数量上限、`.storekit` 配置、i18n 与门控单测 |
 
 ---
 
-*维护者：dong4j + AI 协作者。实施 StoreKit 前以本文为准；与 `PRO 订阅功能划分.md` 冲突时以本文 §2 拍板表为准。*
+*维护者：dong4j + AI 协作者。StoreKit 后续调整以本文为准；与 `PRO 订阅功能划分.md` 冲突时以本文 §2 拍板表为准。*

@@ -103,6 +103,30 @@
 - 月度 AI 总次数池
 - 菜单栏、Spotlight、Widget 等未实现功能的门控
 
+## 5. 实施结果（2026-06-18）
+
+### 已完成
+
+- StoreKit 2 底座：`SubscriptionManager` 加载商品、购买、恢复购买、刷新当前权益、监听 `Transaction.updates`。
+- 本地 StoreKit 配置：`Starcat/Resources/Products.storekit` 定义月订与年订两个商品。
+- Pro 设置页：`ProSettingsView` 改为真实商品列表、购买、恢复购买、管理订阅与当前权益状态。
+- 统一付费墙：`ProPaywallSheet` 接入批量 AI、网页搜索、AI 窗口、README 翻译、Release 订阅、标签管理等入口。
+- 硬门控：`RepoAIInsightService`、`BatchAIQueueService`、`AutoTidyScheduler`、`SemanticSearchService`、`ReadmeTranslationService`、`AnySearchWebProvider`、`GatedTagRepository`、`GatedReleaseSubscriptionRepository` 均在业务边界拦截。
+- i18n：补齐 StoreKit、付费墙、Pro 设置页与门控错误 en / zh-Hans 文案。
+- 测试：新增 `EntitlementGateTests`，覆盖 AI 试用、Pro 不消耗试用、标签上限与 Release 订阅上限。
+
+### 验证
+
+- `xcodegen generate` 通过。
+- `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build` 通过。
+- 定向测试 `AppSettingsTests` + `EntitlementGateTests` 已通过编译；本机执行阶段被 test host 启动问题拦截：`Early unexpected exit, operation never finished bootstrapping`。该问题与项目既有 `xcodebuild test` / `testmanagerd` 风险一致，需关闭 Xcode IDE 后复测。
+
+### 后续必须由 dong4j 完成 / 复核
+
+- App Store Connect 创建订阅组与两个 Product ID，确保与 `ProProductID` 完全一致。
+- 使用 Sandbox Tester 验证购买、续期、取消、退款、恢复购买。
+- 提审前确认 privacy / eula 页面线上可访问，并补充 CloudKit 当前版本未提供的说明。
+
 ---
 
 后续如果实施过程中出现需要 dong4j 决策的问题，AI 会先按最小可上架、最少架构债的方案实现，并把决策追加到本文。
