@@ -50,6 +50,14 @@ enum AIPanelMode: String, CaseIterable, Identifiable, Hashable {
     case chat
 
     var id: String { rawValue }
+
+    /// 分段切换器展示文案（与 Trending `TrendingPeriod.displayName` 同模式）。
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .summary: return "ai.assistant.toggle.summary"
+        case .chat: return "ai.assistant.toggle.chat"
+        }
+    }
 }
 
 struct RepoAIWindowContentView: View {
@@ -796,25 +804,19 @@ struct RepoAIWindowContentView: View {
     /// 摘要 / 对话之间的 segmented 切换条。
     ///
     /// 设计要点：
-    /// - 用原生 `Picker(.segmented)`：macOS 上渲染为 `NSSegmentedControl` 风格，
-    ///   与系统视觉一致，不抢戏；
-    /// - icon + 文字双标识："✨ AI 摘要" / "💬 AI 对话"，扫一眼即可分辨；
+    /// - 复用 `PillSegmentedControl`（与 Trending 顶栏「今日 / 本周 / 本月」同款）：
+    ///   胶囊外框 + 内嵌选中 pill，替代系统 `Picker(.segmented)` 的灰底蓝块风格；
     /// - 首次进入聊天先异步准备数据，期间保留摘要内容并在右侧显示进度；
     /// - 面板结构无动画替换，下一帧仅让目标面板做 0.12s 单向淡入，旧、新文字
     ///   永远不会同时存在；
-    /// - bar 自带细分隔线（`.bar` 材质 + Divider 上下），视觉上是上下两段
-    ///   面板的边界，无需额外加 `Divider()`。
+    /// - bar 自带细分隔线，视觉上是上下两段面板的边界。
     private var panelToggleBar: some View {
         HStack(spacing: 0) {
-            Picker("", selection: panelModeBinding) {
-                Label("ai.assistant.toggle.summary", systemImage: "sparkles").tag(AIPanelMode.summary)
-                Label("ai.assistant.toggle.chat", systemImage: "bubble.left.and.bubble.right").tag(AIPanelMode.chat)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            // 限宽避免在大窗口下 segmented 被拉成超长条带；居中通过外层
-            // `.frame(maxWidth: .infinity)` + Picker 自身有限宽实现。
-            .frame(maxWidth: 280)
+            PillSegmentedControl(
+                items: Array(AIPanelMode.allCases),
+                selection: panelModeBinding,
+                title: \.displayName
+            )
             .disabled(isPreparingChat)
             .help("ai.assistant.toggle.help")
         }

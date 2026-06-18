@@ -17,6 +17,7 @@
 //
 //  使用范围（截至 2026-06-18）：
 //  - `TrendingView.periodPicker`（尺寸对齐 Activity / Weekly 顶栏 filter bar 行高）
+//  - `RepoAIWindowContentView.panelToggleBar`（AI 摘要 / AI 对话切换）
 //
 
 import SwiftUI
