@@ -6,54 +6,61 @@
     <meta name="description" content="Starcat 应用隐私政策。详细说明我们如何收集、使用、存储与保护您的个人信息,符合 Apple App Store 要求、GDPR、以及中国《个人信息保护法》等法律法规。">
     <meta name="robots" content="index, follow">
     <title>隐私政策 · Starcat</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⭐%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="starcat-logo.png">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
     <style>
         /* =====================================================================
-         * Starcat — 法律文档样式系统(明亮主题)
+         * Starcat — 法律文档样式系统（暗色主题，与落地页一致）
          * --------------------------------------------------------------------
-         * 与 eula-zh.html 共用同一套设计变量与组件,保持两份文档视觉一致
+         * 与 eula-zh.html 共用同一套设计变量与组件，保持两份文档视觉一致
          * 设计原则:
-         *   1. Apple 法律页风格:大量留白、克制色板、清晰字阶
-         *   2. 双栏布局(桌面):左侧目录 sticky,右侧正文卡片
-         *   3. 移动端折叠为单栏,目录变为顶部展开式
-         *   4. 排版优先 SF Pro / PingFang SC,确保中英混排美观
+         *   1. 暗色代码主题：深蓝黑基底 + 低饱和度玻璃卡片
+         *   2. 双栏布局（桌面）：左侧目录 sticky，右侧正文卡片
+         *   3. 移动端折叠为单栏，目录变为顶部展开式
+         *   4. JetBrains Mono 标题 + IBM Plex Sans 正文
          *   5. 表格用于披露 Apple "数据类型 — 用途 — 是否关联用户"清单
          * ===================================================================== */
 
         :root {
-            --color-bg: #ffffff;
-            --color-bg-soft: #fbfbfd;
-            --color-card: #ffffff;
-            --color-border: #d2d2d7;
-            --color-border-soft: #e5e5e7;
-            --color-text: #1d1d1f;
-            --color-text-secondary: #424245;
-            --color-text-tertiary: #6e6e73;
-            --color-primary: #0071e3;
-            --color-primary-hover: #0077ed;
-            --color-accent: #ff9500;
-            --color-success: #30a46c;
-            --color-warning-bg: #fff8e6;
-            --color-warning-border: #ffd60a;
-            --color-info-bg: #f0f7ff;
-            --color-info-border: #b3d7ff;
-            --color-success-bg: #ecfdf3;
-            --color-success-border: #b6e8c8;
+            --color-bg:         #0F172A;
+            --color-bg-soft:    #1E293B;
+            --color-card:       rgba(30, 41, 59, 0.6);
+            --color-border:     rgba(148, 163, 184, 0.12);
+            --color-border-soft:rgba(148, 163, 184, 0.08);
+            --color-border-hover: rgba(148, 163, 184, 0.25);
+            --color-text:       #F8FAFC;
+            --color-text-secondary: #94A3B8;
+            --color-text-tertiary:  #64748B;
+            --color-primary:    #38BDF8;
+            --color-primary-hover: #7DD3FC;
+            --color-cta:        #22C55E;
+            --color-accent:     #FBBF24;
+            --color-pro:        #A78BFA;
+            --color-success:    #4ADE80;
+            --color-warning-bg:     rgba(251, 191, 36, 0.1);
+            --color-warning-border: rgba(251, 191, 36, 0.3);
+            --color-info-bg:        rgba(56, 189, 248, 0.1);
+            --color-info-border:    rgba(56, 189, 248, 0.25);
+            --color-success-bg:     rgba(34, 197, 94, 0.1);
+            --color-success-border: rgba(34, 197, 94, 0.25);
 
-            --fs-hero: 48px;
-            --fs-h2: 28px;
+            --fs-hero: clamp(28px, 4vw, 40px);
+            --fs-h2: clamp(22px, 3vw, 28px);
             --fs-h3: 20px;
-            --fs-body: 17px;
+            --fs-body: 16px;
             --fs-small: 14px;
 
             --space-section: 64px;
             --radius: 14px;
             --radius-sm: 8px;
 
-            --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text",
-                         "PingFang SC", "Microsoft YaHei", "Helvetica Neue",
-                         Arial, sans-serif;
-            --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+            --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
         }
 
         * { box-sizing: border-box; }
@@ -65,14 +72,18 @@
 
         body {
             margin: 0;
-            background: var(--color-bg-soft);
+            background: var(--color-bg);
             color: var(--color-text);
             font-family: var(--font-sans);
             font-size: var(--fs-body);
-            line-height: 1.6;
-            letter-spacing: 0.01em;
+            line-height: 1.7;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+        }
+
+        ::selection {
+            background: rgba(34, 197, 94, 0.3);
+            color: var(--color-text);
         }
 
         a {
@@ -80,15 +91,15 @@
             text-decoration: none;
             transition: color .15s ease;
         }
-        a:hover { color: var(--color-primary-hover); text-decoration: underline; }
+        a:hover { color: var(--color-primary-hover); }
 
         code {
-            background: #f0f0f3;
+            background: rgba(148, 163, 184, 0.12);
             border-radius: 4px;
             padding: 2px 6px;
             font-family: var(--font-mono);
             font-size: 0.9em;
-            color: #1d1d1f;
+            color: var(--color-text);
         }
 
         /* ─────────────  顶部导航  ───────────── */
@@ -96,10 +107,10 @@
             position: sticky;
             top: 0;
             z-index: 50;
-            background: rgba(255, 255, 255, .8);
-            backdrop-filter: saturate(180%) blur(20px);
-            -webkit-backdrop-filter: saturate(180%) blur(20px);
-            border-bottom: 1px solid var(--color-border-soft);
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-bottom: 1px solid var(--color-border);
         }
         .topbar-inner {
             max-width: 1200px;
@@ -111,34 +122,38 @@
         }
         .brand {
             display: flex; align-items: center; gap: 10px;
-            font-weight: 600; font-size: 17px; color: var(--color-text);
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700; font-size: 17px; color: var(--color-text);
         }
         .brand-logo {
             width: 28px; height: 28px; border-radius: 7px;
-            background: linear-gradient(135deg, #0071e3 0%, #5e9eff 100%);
+            background: linear-gradient(135deg, var(--color-cta) 0%, var(--color-primary) 100%);
             display: inline-flex; align-items: center; justify-content: center;
-            color: #fff; font-size: 16px;
+            color: #0F172A; font-size: 16px;
         }
         .topbar-nav { display: flex; gap: 28px; font-size: 14px; }
-        .topbar-nav a { color: var(--color-text-secondary); font-weight: 400; }
+        .topbar-nav a { color: var(--color-text-secondary); font-weight: 400; transition: color .15s ease; }
+        .topbar-nav a:hover { color: var(--color-text); text-decoration: none; }
         .topbar-nav a.active { color: var(--color-text); font-weight: 500; }
 
         /* ─────────────  Hero  ───────────── */
         .hero {
-            background: linear-gradient(180deg, #ffffff 0%, var(--color-bg-soft) 100%);
+            background: linear-gradient(180deg, var(--color-bg) 0%, var(--color-bg-soft) 100%);
             padding: 72px 24px 56px;
-            border-bottom: 1px solid var(--color-border-soft);
+            border-bottom: 1px solid var(--color-border);
         }
         .hero-inner { max-width: 1200px; margin: 0 auto; }
         .hero-eyebrow {
+            font-family: 'JetBrains Mono', monospace;
             font-size: 13px;
             text-transform: uppercase;
             letter-spacing: 0.15em;
-            color: var(--color-primary);
+            color: var(--color-cta);
             font-weight: 600;
             margin: 0 0 12px;
         }
         .hero h1 {
+            font-family: 'JetBrains Mono', monospace;
             font-size: var(--fs-hero);
             font-weight: 700;
             margin: 0 0 16px;
@@ -174,7 +189,8 @@
             padding-right: 8px;
         }
         .toc-title {
-            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 0.12em;
             color: var(--color-text-tertiary);
@@ -204,7 +220,7 @@
             font-weight: 500;
         }
         .toc a:hover {
-            background: #f0f0f3;
+            background: rgba(148, 163, 184, 0.08);
             color: var(--color-text);
             text-decoration: none;
         }
@@ -224,7 +240,7 @@
         }
         .lead strong { color: var(--color-text); }
 
-        /* 隐私承诺卡片(置顶,突出我们"不做什么") */
+        /* 隐私承诺卡片（置顶，突出我们"不做什么"） */
         .pledge {
             background: var(--color-success-bg);
             border: 1px solid var(--color-success-border);
@@ -235,7 +251,7 @@
         .pledge h3 {
             margin: 0 0 14px;
             font-size: 18px;
-            color: #0a6b3d;
+            color: var(--color-success);
             display: flex; align-items: center; gap: 8px;
         }
         .pledge ul {
@@ -247,7 +263,7 @@
             gap: 10px 24px;
         }
         .pledge li {
-            color: #18452f;
+            color: var(--color-text-secondary);
             font-size: 14.5px;
             line-height: 1.5;
             padding-left: 22px;
@@ -263,20 +279,23 @@
 
         section.chapter {
             background: var(--color-card);
-            border: 1px solid var(--color-border-soft);
+            border: 1px solid var(--color-border);
             border-radius: var(--radius);
             padding: 36px 40px;
             margin: 0 0 28px;
             scroll-margin-top: 88px;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
         }
         section.chapter h2 {
+            font-family: 'JetBrains Mono', monospace;
             font-size: var(--fs-h2);
             font-weight: 700;
             letter-spacing: -0.015em;
             color: var(--color-text);
             margin: 0 0 8px;
             padding-bottom: 14px;
-            border-bottom: 1px solid var(--color-border-soft);
+            border-bottom: 1px solid var(--color-border);
         }
         section.chapter h2 .num {
             display: inline-block;
@@ -288,6 +307,7 @@
             vertical-align: 0.18em;
         }
         section.chapter h3 {
+            font-family: 'JetBrains Mono', monospace;
             font-size: var(--fs-h3);
             font-weight: 600;
             color: var(--color-text);
@@ -305,12 +325,12 @@
             border-collapse: collapse;
             margin: 18px 0;
             font-size: 14.5px;
-            border: 1px solid var(--color-border-soft);
+            border: 1px solid var(--color-border);
             border-radius: var(--radius-sm);
             overflow: hidden;
         }
         .data-table th {
-            background: #f5f5f7;
+            background: rgba(148, 163, 184, 0.08);
             color: var(--color-text);
             font-weight: 600;
             text-align: left;
@@ -318,17 +338,17 @@
             font-size: 13px;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            border-bottom: 1px solid var(--color-border-soft);
+            border-bottom: 1px solid var(--color-border);
         }
         .data-table td {
             padding: 14px 16px;
             color: var(--color-text-secondary);
-            border-bottom: 1px solid var(--color-border-soft);
+            border-bottom: 1px solid var(--color-border);
             vertical-align: top;
             line-height: 1.55;
         }
         .data-table tr:last-child td { border-bottom: none; }
-        .data-table tr:hover td { background: #fafafa; }
+        .data-table tr:hover td { background: rgba(148, 163, 184, 0.04); }
         .data-table .col-cat { font-weight: 600; color: var(--color-text); width: 22%; }
         .data-table .col-cat .sub {
             display: block;
@@ -348,10 +368,10 @@
             text-transform: uppercase;
             letter-spacing: 0.04em;
         }
-        .badge-local { background: #ecfdf3; color: #0a6b3d; }
-        .badge-cloud { background: #e6f4ff; color: #0958d9; }
-        .badge-keychain { background: #fff4e6; color: #ad6800; }
-        .badge-server { background: #fff0f6; color: #c41d7f; }
+        .badge-local { background: rgba(34, 197, 94, 0.15); color: var(--color-success); }
+        .badge-cloud { background: rgba(56, 189, 248, 0.15); color: var(--color-primary); }
+        .badge-keychain { background: rgba(251, 191, 36, 0.15); color: var(--color-accent); }
+        .badge-server { background: rgba(167, 139, 250, 0.15); color: var(--color-pro); }
 
         /* Callouts */
         .callout {
@@ -361,7 +381,7 @@
             font-size: 15px;
             line-height: 1.65;
             border-left: 3px solid var(--color-border);
-            background: var(--color-bg-soft);
+            background: rgba(148, 163, 184, 0.05);
             color: var(--color-text-secondary);
         }
         .callout.warning { background: var(--color-warning-bg); border-left-color: var(--color-warning-border); }
@@ -370,6 +390,7 @@
         .callout strong { color: var(--color-text); }
         .callout .label {
             display: block;
+            font-family: 'JetBrains Mono', monospace;
             font-weight: 700;
             font-size: 12px;
             text-transform: uppercase;
@@ -379,21 +400,21 @@
         }
 
         /* 定义列表 */
-        .deflist { margin: 16px 0; border-top: 1px solid var(--color-border-soft); }
+        .deflist { margin: 16px 0; border-top: 1px solid var(--color-border); }
         .deflist > div {
             display: grid;
             grid-template-columns: 200px 1fr;
             gap: 24px;
             padding: 14px 0;
-            border-bottom: 1px solid var(--color-border-soft);
+            border-bottom: 1px solid var(--color-border);
         }
         .deflist dt { font-weight: 600; color: var(--color-text); font-size: 15px; }
         .deflist dd { margin: 0; color: var(--color-text-secondary); font-size: 15px; }
 
         /* ─────────────  Footer  ───────────── */
         footer.site-footer {
-            background: #ffffff;
-            border-top: 1px solid var(--color-border-soft);
+            background: var(--color-bg);
+            border-top: 1px solid var(--color-border);
             padding: 40px 24px;
             color: var(--color-text-tertiary);
             font-size: 13px;
@@ -403,7 +424,8 @@
             display: flex; justify-content: center; gap: 28px;
             margin-bottom: 16px; flex-wrap: wrap;
         }
-        footer.site-footer .links a { color: var(--color-text-tertiary); }
+        footer.site-footer .links a { color: var(--color-text-tertiary); transition: color .15s ease; }
+        footer.site-footer .links a:hover { color: var(--color-text-secondary); text-decoration: none; }
         footer.site-footer .copyright { color: var(--color-text-tertiary); font-size: 12px; margin: 0; }
 
         /* ─────────────  响应式  ───────────── */
@@ -415,10 +437,12 @@
             }
             .toc {
                 position: relative; top: auto; max-height: none;
-                background: #ffffff;
-                border: 1px solid var(--color-border-soft);
+                background: var(--color-card);
+                border: 1px solid var(--color-border);
                 border-radius: var(--radius);
                 padding: 16px;
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
             }
             .hero { padding: 48px 16px 36px; }
             .hero h1 { font-size: 34px; }
@@ -434,8 +458,8 @@
         @media print {
             .topbar, .toc, footer .links { display: none; }
             .layout { grid-template-columns: 1fr; padding: 0; }
-            section.chapter { border: none; padding: 16px 0; page-break-inside: avoid; }
-            body { background: #fff; }
+            section.chapter { border: none; padding: 16px 0; page-break-inside: avoid; background: transparent; }
+            body { background: #fff; color: #1d1d1f; }
         }
     </style>
 </head>
@@ -444,8 +468,8 @@
 <!-- 顶部导航 -->
 <header class="topbar" role="banner">
     <div class="topbar-inner">
-        <a class="brand" href="#">
-            <span class="brand-logo">⭐</span>
+        <a class="brand" href="./index.html">
+            <img src="starcat-logo.png" alt="Starcat" class="brand-logo" width="28" height="28">
             <span>Starcat</span>
         </a>
         <nav class="topbar-nav" aria-label="法律文档导航">
@@ -497,49 +521,49 @@
     <article class="content" role="main">
 
         <div class="lead">
-            <strong>Starcat 高度重视您的隐私。</strong> 本《隐私政策》旨在以清晰、透明的方式说明 Starcat(以下简称"<strong>本应用</strong>"或"<strong>我们</strong>")<strong>如何</strong>收集、使用、存储、共享和保护您的个人信息,以及您对自身个人信息所享有的权利。本政策符合 <strong>Apple App Store 审核指南</strong>、<strong>中华人民共和国《个人信息保护法》《数据安全法》《网络安全法》</strong>、以及<strong>欧盟《通用数据保护条例》(GDPR)</strong>等相关法律法规的要求。请您在使用本应用前认真阅读本政策。
+            <strong>Starcat 高度重视您的隐私。</strong> 本《隐私政策》旨在以清晰、透明的方式说明 Starcat（以下简称"<strong>本应用</strong>"或"<strong>我们</strong>"）<strong>如何</strong>收集、使用、存储、共享和保护您的个人信息，以及您对自身个人信息所享有的权利。本政策符合 <strong>Apple App Store 审核指南</strong>、<strong>中华人民共和国《个人信息保护法》《数据安全法》《网络安全法》</strong>、以及<strong>欧盟《通用数据保护条例》（GDPR）</strong>等相关法律法规的要求。请您在使用本应用前认真阅读本政策。
         </div>
 
-        <!-- 隐私承诺(突出"我们不做什么") -->
+        <!-- 隐私承诺（突出"我们不做什么"） -->
         <div class="pledge" role="region" aria-label="隐私承诺">
             <h3>🛡️ 我们的隐私承诺</h3>
             <ul>
                 <li><strong>不</strong>出售您的任何个人信息</li>
                 <li><strong>不</strong>在应用内投放广告</li>
                 <li><strong>不</strong>追踪您的跨应用行为</li>
-                <li><strong>不</strong>读取您的 GitHub 密码(仅 OAuth)</li>
+                <li><strong>不</strong>读取您的 GitHub 密码（仅 OAuth）</li>
                 <li><strong>不</strong>上传您的 AI API Key 至我们服务器</li>
                 <li><strong>不</strong>将您的笔记用于训练 AI 模型</li>
                 <li>核心数据<strong>仅</strong>本地存储或您自己的 iCloud</li>
-                <li>采用最小必要原则,只收集必须收集的信息</li>
+                <li>采用最小必要原则，只收集必须收集的信息</li>
             </ul>
         </div>
 
         <!-- 第 1 节 -->
         <section class="chapter" id="sec-1">
             <h2><span class="num">01</span>引言</h2>
-            <p>本应用是面向 Apple 平台的 GitHub Star 管理工具,核心定位为"<strong>本地优先</strong>"的个人知识管理应用。除非您主动启用云同步或 AI 功能,绝大多数数据处理过程均在您本地的 Apple 设备上完成。</p>
-            <p>本政策适用于您通过 Apple App Store 下载、安装和使用 Starcat 应用的全部场景。本应用的开发与运营主体(以下简称"<strong>我们</strong>")为本政策项下的"<strong>个人信息处理者</strong>"。</p>
-            <p>请注意,本政策<strong>不涉及</strong>第三方服务(如 GitHub、Apple、AI 提供商等)对您信息的处理,这些第三方各自适用其自身的隐私政策。</p>
+            <p>本应用是面向 Apple 平台的 GitHub Star 管理工具，核心定位为"<strong>本地优先</strong>"的个人知识管理应用。除非您主动启用云同步或 AI 功能，绝大多数数据处理过程均在您本地的 Apple 设备上完成。</p>
+            <p>本政策适用于您通过 Apple App Store 下载、安装和使用 Starcat 应用的全部场景。本应用的开发与运营主体（以下简称"<strong>我们</strong>"）为本政策项下的"<strong>个人信息处理者</strong>"。</p>
+            <p>请注意，本政策<strong>不涉及</strong>第三方服务（如 GitHub、Apple、AI 提供商等）对您信息的处理，这些第三方各自适用其自身的隐私政策。</p>
         </section>
 
         <!-- 第 2 节 -->
         <section class="chapter" id="sec-2">
             <h2><span class="num">02</span>基本原则</h2>
-            <p>我们在处理您的个人信息时遵循以下原则:</p>
+            <p>我们在处理您的个人信息时遵循以下原则：</p>
             <ul>
-                <li><strong>合法、正当、必要原则</strong>:仅在具备明确法律依据且为实现具体业务目的所必需时,才收集个人信息;</li>
-                <li><strong>最小化原则</strong>:严格限制收集范围,不收集与提供本应用功能无关的信息;</li>
-                <li><strong>透明性原则</strong>:以清晰易懂的语言告知您信息处理规则;</li>
-                <li><strong>用户控制原则</strong>:为您提供查阅、修改、删除、导出、撤回授权的便捷途径;</li>
-                <li><strong>安全保障原则</strong>:采取必要的技术与管理措施保护您的信息安全。</li>
+                <li><strong>合法、正当、必要原则</strong>：仅在具备明确法律依据且为实现具体业务目的所必需时，才收集个人信息；</li>
+                <li><strong>最小化原则</strong>：严格限制收集范围，不收集与提供本应用功能无关的信息；</li>
+                <li><strong>透明性原则</strong>：以清晰易懂的语言告知您信息处理规则；</li>
+                <li><strong>用户控制原则</strong>：为您提供查阅、修改、删除、导出、撤回授权的便捷途径；</li>
+                <li><strong>安全保障原则</strong>：采取必要的技术与管理措施保护您的信息安全。</li>
             </ul>
         </section>
 
         <!-- 第 3 节 -->
         <section class="chapter" id="sec-3">
             <h2><span class="num">03</span>我们收集的信息</h2>
-            <p>下表参照 Apple App Store 的"应用隐私详情"分类标准,完整披露本应用收集的全部数据类型、用途、关联性,以及是否用于追踪。</p>
+            <p>下表参照 Apple App Store 的"应用隐私详情"分类标准，完整披露本应用收集的全部数据类型、用途、关联性，以及是否用于追踪。</p>
 
             <table class="data-table">
                 <thead>
@@ -571,7 +595,7 @@
                     </tr>
                     <tr>
                         <td class="col-cat">购买项目<span class="sub">订阅 / 买断记录</span></td>
-                        <td>仅 Apple 处理,我们只接收凭据</td>
+                        <td>仅 Apple 处理，我们只接收凭据</td>
                         <td>权益验证、恢复购买</td>
                         <td>是</td>
                     </tr>
@@ -583,9 +607,9 @@
                     </tr>
                     <tr>
                         <td class="col-cat">诊断数据<span class="sub">崩溃日志、性能</span></td>
-                        <td>可选,默认关闭</td>
+                        <td>可选，默认关闭</td>
                         <td>修复缺陷、提升稳定性</td>
-                        <td>否(去标识化)</td>
+                        <td>否（去标识化）</td>
                     </tr>
                     <tr>
                         <td class="col-cat">位置信息</td>
@@ -604,53 +628,53 @@
 
             <h3>3.1 您主动提供的信息</h3>
             <ul>
-                <li><strong>GitHub 账户授权信息</strong>:通过 OAuth 流程获取的 access token、您的 GitHub 用户名、头像 URL、邮箱(可见时)、ID。本应用申请的权限范围为 <code>read:user</code> 与 <code>public_repo</code>,<strong>无法</strong>读取您的 GitHub 密码,<strong>无法</strong>访问您的私有仓库内容。</li>
-                <li><strong>用户内容</strong>:您在本应用中创建的自定义标签、私有笔记、阅读状态、收藏分类、保存的搜索条件等。</li>
-                <li><strong>AI 服务凭证</strong>(可选):当您选择"<strong>BYOK(自带密钥)</strong>"模式时,您提供的 AI 服务商 API Key。该 Key <strong>仅保存在您本地 Apple 设备的 Keychain 中</strong>,<strong>绝不</strong>上传至我们的服务器。</li>
-                <li><strong>支持沟通信息</strong>:当您通过邮件联系我们时,您的邮件地址与沟通内容。</li>
+                <li><strong>GitHub 账户授权信息</strong>：通过 OAuth 流程获取的 access token、您的 GitHub 用户名、头像 URL、邮箱（可见时）、ID。本应用申请的权限范围为 <code>read:user</code> 与 <code>public_repo</code>，<strong>无法</strong>读取您的 GitHub 密码，<strong>无法</strong>访问您的私有仓库内容。</li>
+                <li><strong>用户内容</strong>：您在本应用中创建的自定义标签、私有笔记、阅读状态、收藏分类、保存的搜索条件等。</li>
+                <li><strong>AI 服务凭证</strong>（可选）：当您选择"<strong>BYOK（自带密钥）</strong>"模式时，您提供的 AI 服务商 API Key。该 Key <strong>仅保存在您本地 Apple 设备的 Keychain 中</strong>，<strong>绝不</strong>上传至我们的服务器。</li>
+                <li><strong>支持沟通信息</strong>：当您通过邮件联系我们时，您的邮件地址与沟通内容。</li>
             </ul>
 
             <h3>3.2 我们从第三方获取的信息</h3>
             <ul>
-                <li><strong>来自 GitHub 的仓库数据</strong>:为提供 Star 管理服务,通过 GitHub API 获取您 Star 过的公开仓库元数据(名称、描述、语言、许可证、Star 数、Fork 数、更新时间、README 文本、Release 列表等);</li>
-                <li><strong>来自 Apple 的购买凭据</strong>:通过 StoreKit 2 获取的订阅或买断收据,用于验证您的 Pro 权益;</li>
-                <li><strong>来自 AI 服务的响应</strong>:当您启用 AI 功能时,来自您所选 AI 提供商的响应内容(摘要、标签建议、健康度评估等)。</li>
+                <li><strong>来自 GitHub 的仓库数据</strong>：为提供 Star 管理服务，通过 GitHub API 获取您 Star 过的公开仓库元数据（名称、描述、语言、许可证、Star 数、Fork 数、更新时间、README 文本、Release 列表等）；</li>
+                <li><strong>来自 Apple 的购买凭据</strong>：通过 StoreKit 2 获取的订阅或买断收据，用于验证您的 Pro 权益；</li>
+                <li><strong>来自 AI 服务的响应</strong>：当您启用 AI 功能时，来自您所选 AI 提供商的响应内容（摘要、标签建议、健康度评估等）。</li>
             </ul>
 
             <h3>3.3 自动收集的信息</h3>
             <ul>
-                <li><strong>设备与运行环境信息</strong>(仅在崩溃发生且您已选择上报时):设备型号、macOS 版本、本应用版本、调用栈、内存使用情况。<strong>不</strong>包含您的具体内容数据;</li>
-                <li><strong>IP 地址</strong>:仅在您直接与我们的自建 AI 代理服务器通信时,服务器会临时记录访问 IP 用于安全审计与滥用防范,<strong>保留期不超过 30 天</strong>。</li>
+                <li><strong>设备与运行环境信息</strong>（仅在崩溃发生且您已选择上报时）：设备型号、macOS 版本、本应用版本、调用栈、内存使用情况。<strong>不</strong>包含您的具体内容数据；</li>
+                <li><strong>IP 地址</strong>：仅在您直接与我们的自建 AI 代理服务器通信时，服务器会临时记录访问 IP 用于安全审计与滥用防范，<strong>保留期不超过 30 天</strong>。</li>
             </ul>
 
             <div class="callout warning">
                 <span class="label">⚠ 关于 Apple 隐私清单</span>
-                根据 Apple <strong>Privacy Manifest</strong> 要求,我们在本应用中声明了使用 <code>UserDefaults</code>、<code>File timestamp</code>、<code>System boot time</code>、<code>Disk space</code> 等需要"声明 API"(Required Reason API),所有使用均为合规理由,详见我们提交至 App Store Connect 的应用隐私详情。
+                根据 Apple <strong>Privacy Manifest</strong> 要求，我们在本应用中声明了使用 <code>UserDefaults</code>、<code>File timestamp</code>、<code>System boot time</code>、<code>Disk space</code> 等需要"声明 API"（Required Reason API），所有使用均为合规理由，详见我们提交至 App Store Connect 的应用隐私详情。
             </div>
         </section>
 
         <!-- 第 4 节 -->
         <section class="chapter" id="sec-4">
             <h2><span class="num">04</span>信息的用途</h2>
-            <p>我们仅在以下场景内使用收集到的信息:</p>
+            <p>我们仅在以下场景内使用收集到的信息：</p>
             <ol>
-                <li><strong>提供与维护核心功能</strong>:同步 Stars、本地全文搜索、标签管理、笔记保存、CloudKit 同步;</li>
-                <li><strong>验证您的身份与订阅权益</strong>:通过 GitHub OAuth 与 Apple StoreKit 验证;</li>
-                <li><strong>提供 AI 增强能力</strong>(需您主动启用):AI 摘要、标签推荐、语义搜索、推荐与健康度评估;</li>
-                <li><strong>修复缺陷与改进体验</strong>:基于您自愿上报的诊断信息;</li>
-                <li><strong>响应您的客户支持请求</strong>;</li>
-                <li><strong>履行法律义务</strong>:在必要范围内配合主管机关的合法要求。</li>
+                <li><strong>提供与维护核心功能</strong>：同步 Stars、本地全文搜索、标签管理、笔记保存、CloudKit 同步；</li>
+                <li><strong>验证您的身份与订阅权益</strong>：通过 GitHub OAuth 与 Apple StoreKit 验证；</li>
+                <li><strong>提供 AI 增强能力</strong>（需您主动启用）：AI 摘要、标签推荐、语义搜索、推荐与健康度评估；</li>
+                <li><strong>修复缺陷与改进体验</strong>：基于您自愿上报的诊断信息；</li>
+                <li><strong>响应您的客户支持请求</strong>；</li>
+                <li><strong>履行法律义务</strong>：在必要范围内配合主管机关的合法要求。</li>
             </ol>
             <div class="callout info">
                 <span class="label">承诺</span>
-                我们<strong>不会</strong>将您的笔记、标签、收藏内容用于训练 AI 模型,<strong>不会</strong>将您的个人信息出售给任何第三方,<strong>不会</strong>用于任何形式的精准营销或广告。
+                我们<strong>不会</strong>将您的笔记、标签、收藏内容用于训练 AI 模型，<strong>不会</strong>将您的个人信息出售给任何第三方，<strong>不会</strong>用于任何形式的精准营销或广告。
             </div>
         </section>
 
         <!-- 第 5 节 -->
         <section class="chapter" id="sec-5">
             <h2><span class="num">05</span>信息存储位置</h2>
-            <p>本应用秉持"<strong>本地优先</strong>"理念,采用分层存储设计:</p>
+            <p>本应用秉持"<strong>本地优先</strong>"理念，采用分层存储设计：</p>
 
             <table class="data-table">
                 <thead>
@@ -667,24 +691,24 @@
                         <td>Apple Secure Enclave 加密</td>
                     </tr>
                     <tr>
-                        <td>AI API Key(BYOK)</td>
+                        <td>AI API Key（BYOK）</td>
                         <td><span class="badge badge-keychain">设备 Keychain</span></td>
                         <td>Apple Secure Enclave 加密</td>
                     </tr>
                     <tr>
-                        <td>Star 仓库缓存(可重建)</td>
+                        <td>Star 仓库缓存（可重建）</td>
                         <td><span class="badge badge-local">本地 SQLite</span></td>
                         <td>受 macOS FileVault 全盘加密保护</td>
                     </tr>
                     <tr>
-                        <td>用户内容(标签、笔记、状态)</td>
-                        <td><span class="badge badge-local">本地 SQLite</span> + <span class="badge badge-cloud">iCloud(可选)</span></td>
+                        <td>用户内容（标签、笔记、状态）</td>
+                        <td><span class="badge badge-local">本地 SQLite</span> + <span class="badge badge-cloud">iCloud（可选）</span></td>
                         <td>FileVault + iCloud 端到端加密</td>
                     </tr>
                     <tr>
                         <td>AI 请求与响应</td>
                         <td><span class="badge badge-server">所选 AI 提供商</span></td>
-                        <td>HTTPS(TLS 1.2+)</td>
+                        <td>HTTPS（TLS 1.2+）</td>
                     </tr>
                     <tr>
                         <td>支付凭据</td>
@@ -695,28 +719,28 @@
             </table>
 
             <h3>5.1 CloudKit 同步</h3>
-            <p>启用 iCloud 同步后,您的用户内容将通过 Apple CloudKit 存储在<strong>您自己的 iCloud 私有数据库</strong>中(而非我们的服务器)。我们<strong>无法</strong>访问您 iCloud 中的任何内容。同步遵循 Apple 公布的端到端加密机制,详见 <a href="https://support.apple.com/zh-cn/HT202303" target="_blank" rel="noopener">Apple iCloud 数据安全说明</a>。</p>
-            <h3>5.2 自建 AI 代理(选用)</h3>
-            <p>当您选择使用我们提供的"Starcat Pro"AI 代理时,请求将通过我们部署的服务器中转至底层 AI 提供商。我们的代理:<strong>不</strong>持久化您的请求内容;<strong>不</strong>使用您的内容训练模型;仅保留必要的<strong>请求时间、配额计数、错误码</strong>用于配额管理与故障排查。</p>
+            <p>启用 iCloud 同步后，您的用户内容将通过 Apple CloudKit 存储在<strong>您自己的 iCloud 私有数据库</strong>中（而非我们的服务器）。我们<strong>无法</strong>访问您 iCloud 中的任何内容。同步遵循 Apple 公布的端到端加密机制，详见 <a href="https://support.apple.com/zh-cn/HT202303" target="_blank" rel="noopener">Apple iCloud 数据安全说明</a>。</p>
+            <h3>5.2 自建 AI 代理（选用）</h3>
+            <p>当您选择使用我们提供的"Starcat Pro"AI 代理时，请求将通过我们部署的服务器中转至底层 AI 提供商。我们的代理：<strong>不</strong>持久化您的请求内容；<strong>不</strong>使用您的内容训练模型；仅保留必要的<strong>请求时间、配额计数、错误码</strong>用于配额管理与故障排查。</p>
         </section>
 
         <!-- 第 6 节 -->
         <section class="chapter" id="sec-6">
             <h2><span class="num">06</span>信息的共享与披露</h2>
-            <p>我们<strong>不会</strong>主动向任何第三方共享您的个人信息,以下情形除外:</p>
+            <p>我们<strong>不会</strong>主动向任何第三方共享您的个人信息，以下情形除外：</p>
             <ul>
-                <li><strong>已取得您的明确同意</strong>;</li>
-                <li><strong>提供您所选功能所必需</strong>:例如,当您启用 AI 功能时,将相关请求转发至您所选的 AI 提供商;</li>
-                <li><strong>履行法定义务</strong>:根据有管辖权的司法机关、行政机关或监管机构的合法要求;</li>
-                <li><strong>维护合法权益</strong>:在不违反法律的前提下,为保护用户、公众或我们自身的人身、财产或权利安全所必需;</li>
-                <li><strong>业务转让</strong>:如发生合并、收购或资产转让,我们将在事前以合理方式通知您,并要求受让方继续受本政策约束。</li>
+                <li><strong>已取得您的明确同意</strong>；</li>
+                <li><strong>提供您所选功能所必需</strong>：例如，当您启用 AI 功能时，将相关请求转发至您所选的 AI 提供商；</li>
+                <li><strong>履行法定义务</strong>：根据有管辖权的司法机关、行政机关或监管机构的合法要求；</li>
+                <li><strong>维护合法权益</strong>：在不违反法律的前提下，为保护用户、公众或我们自身的人身、财产或权利安全所必需；</li>
+                <li><strong>业务转让</strong>：如发生合并、收购或资产转让，我们将在事前以合理方式通知您，并要求受让方继续受本政策约束。</li>
             </ul>
         </section>
 
         <!-- 第 7 节 -->
         <section class="chapter" id="sec-7">
             <h2><span class="num">07</span>第三方服务</h2>
-            <p>本应用集成或可能与以下第三方服务交互。这些服务由其各自的提供方独立运营,适用其自身的隐私政策:</p>
+            <p>本应用集成或可能与以下第三方服务交互。这些服务由其各自的提供方独立运营，适用其自身的隐私政策：</p>
             <dl class="deflist">
                 <div>
                     <dt>GitHub</dt>
@@ -747,111 +771,111 @@
                     <dd>可选 AI 提供商。<a href="https://www.deepseek.com/privacy" target="_blank" rel="noopener">DeepSeek 隐私政策 ↗</a></dd>
                 </div>
                 <div>
-                    <dt>Ollama(本地)</dt>
-                    <dd>可选本地模型运行时,数据不离开您的设备。</dd>
+                    <dt>Ollama（本地）</dt>
+                    <dd>可选本地模型运行时，数据不离开您的设备。</dd>
                 </div>
             </dl>
             <div class="callout">
                 <span class="label">您的选择权</span>
-                您可以随时在本应用的"<em>设置 → AI 服务</em>"中关闭 AI 功能,或切换为本地 Ollama 模型,以最大化数据隐私。
+                您可以随时在本应用的"<em>设置 → AI 服务</em>"中关闭 AI 功能，或切换为本地 Ollama 模型，以最大化数据隐私。
             </div>
         </section>
 
         <!-- 第 8 节 -->
         <section class="chapter" id="sec-8">
             <h2><span class="num">08</span>数据安全</h2>
-            <p>我们采取符合行业标准的技术与管理措施保护您的个人信息:</p>
+            <p>我们采取符合行业标准的技术与管理措施保护您的个人信息：</p>
             <ul>
-                <li><strong>传输安全</strong>:所有网络通信均采用 HTTPS / TLS 1.2 及以上协议加密;</li>
-                <li><strong>存储安全</strong>:敏感凭据存储于 Apple Keychain,受 Secure Enclave 硬件级加密保护;本地数据库受 macOS FileVault 全盘加密保护;</li>
-                <li><strong>访问控制</strong>:对凭据采用严格的 Access Control List,仅本应用进程可访问;</li>
-                <li><strong>最小权限</strong>:仅申请实现功能所必需的系统权限,不申请位置、通讯录、相机、麦克风等无关权限;</li>
-                <li><strong>沙盒隔离</strong>:启用 Apple App Sandbox,限制应用对系统资源的访问;</li>
-                <li><strong>定期安全审计</strong>:对代码、依赖库、网络通信进行定期审计。</li>
+                <li><strong>传输安全</strong>：所有网络通信均采用 HTTPS / TLS 1.2 及以上协议加密；</li>
+                <li><strong>存储安全</strong>：敏感凭据存储于 Apple Keychain，受 Secure Enclave 硬件级加密保护；本地数据库受 macOS FileVault 全盘加密保护；</li>
+                <li><strong>访问控制</strong>：对凭据采用严格的 Access Control List，仅本应用进程可访问；</li>
+                <li><strong>最小权限</strong>：仅申请实现功能所必需的系统权限，不申请位置、通讯录、相机、麦克风等无关权限；</li>
+                <li><strong>沙盒隔离</strong>：启用 Apple App Sandbox，限制应用对系统资源的访问；</li>
+                <li><strong>定期安全审计</strong>：对代码、依赖库、网络通信进行定期审计。</li>
             </ul>
             <div class="callout warning">
                 <span class="label">⚠ 您的责任</span>
-                请妥善保管您的 Apple ID、设备锁屏密码、生物识别凭证。本应用的安全在很大程度上依赖于您 Apple 设备本身的安全。如发现账户异常,请立即在 GitHub 与 Apple ID 后台撤销授权。
+                请妥善保管您的 Apple ID、设备锁屏密码、生物识别凭证。本应用的安全在很大程度上依赖于您 Apple 设备本身的安全。如发现账户异常，请立即在 GitHub 与 Apple ID 后台撤销授权。
             </div>
         </section>
 
         <!-- 第 9 节 -->
         <section class="chapter" id="sec-9">
             <h2><span class="num">09</span>数据保留与删除</h2>
-            <p>我们采用差异化的数据保留策略:</p>
+            <p>我们采用差异化的数据保留策略：</p>
             <dl class="deflist">
                 <div><dt>本地 SQLite 数据</dt><dd>保留至您主动删除或卸载本应用</dd></div>
                 <div><dt>Keychain 凭证</dt><dd>保留至您主动退出登录或卸载本应用</dd></div>
-                <div><dt>iCloud / CloudKit 数据</dt><dd>由您 iCloud 设置决定,可通过 iCloud 设置面板清空</dd></div>
-                <div><dt>AI 代理日志</dt><dd>最长保留 <strong>30 天</strong>,仅用于故障排查与配额计算</dd></div>
-                <div><dt>客户支持邮件</dt><dd>保留 <strong>12 个月</strong>,处理完成后定期清理</dd></div>
+                <div><dt>iCloud / CloudKit 数据</dt><dd>由您 iCloud 设置决定，可通过 iCloud 设置面板清空</dd></div>
+                <div><dt>AI 代理日志</dt><dd>最长保留 <strong>30 天</strong>，仅用于故障排查与配额计算</dd></div>
+                <div><dt>客户支持邮件</dt><dd>保留 <strong>12 个月</strong>，处理完成后定期清理</dd></div>
                 <div><dt>支付凭据</dt><dd>由 Apple 按其策略保留</dd></div>
             </dl>
-            <p>当您卸载本应用时:</p>
+            <p>当您卸载本应用时：</p>
             <ul>
-                <li>本地 SQLite 与配置文件将随沙盒一同被 macOS 自动删除;</li>
-                <li>Keychain 凭证会保留(macOS 行为),如需彻底删除请在"<em>钥匙串访问</em>"中手动删除 Starcat 项;</li>
-                <li>iCloud 同步数据如需删除,请在系统"<em>设置 → Apple ID → iCloud → 管理账户存储</em>"中删除 Starcat 数据。</li>
+                <li>本地 SQLite 与配置文件将随沙盒一同被 macOS 自动删除；</li>
+                <li>Keychain 凭证会保留（macOS 行为），如需彻底删除请在"<em>钥匙串访问</em>"中手动删除 Starcat 项；</li>
+                <li>iCloud 同步数据如需删除，请在系统"<em>设置 → Apple ID → iCloud → 管理账户存储</em>"中删除 Starcat 数据。</li>
             </ul>
         </section>
 
         <!-- 第 10 节 -->
         <section class="chapter" id="sec-10">
             <h2><span class="num">10</span>您的权利</h2>
-            <p>根据相关法律法规,您对自身个人信息享有以下权利:</p>
+            <p>根据相关法律法规，您对自身个人信息享有以下权利：</p>
             <ul>
-                <li><strong>知情权</strong>:通过本政策了解我们的信息处理规则;</li>
-                <li><strong>访问权</strong>:本应用内您所有的数据均可直接查看,部分数据可通过 JSON 格式<strong>导出</strong>;</li>
-                <li><strong>更正权</strong>:您可随时在本应用内修改您的笔记、标签等内容;</li>
-                <li><strong>删除权</strong>:您可在应用内逐条删除,或一键清空本地数据库,或卸载本应用;</li>
-                <li><strong>可携带权</strong>:本应用支持<strong>导出 JSON 格式</strong>的全部用户内容,兼容 OhMyStar、Astral 等同类应用;</li>
-                <li><strong>撤回同意权</strong>:您可随时关闭 AI 功能、撤销 GitHub 授权、关闭 iCloud 同步、关闭诊断数据上报;</li>
-                <li><strong>反对自动化决策权</strong>:本应用不存在对您产生重大影响的自动化决策;AI 建议仅供参考,均需您手动确认;</li>
-                <li><strong>申诉与投诉权</strong>:您有权向监管机构(如中国国家网信办、欧盟数据保护机构)投诉。</li>
+                <li><strong>知情权</strong>：通过本政策了解我们的信息处理规则；</li>
+                <li><strong>访问权</strong>：本应用内您所有的数据均可直接查看，部分数据可通过 JSON 格式<strong>导出</strong>；</li>
+                <li><strong>更正权</strong>：您可随时在本应用内修改您的笔记、标签等内容；</li>
+                <li><strong>删除权</strong>：您可在应用内逐条删除，或一键清空本地数据库，或卸载本应用；</li>
+                <li><strong>可携带权</strong>：本应用支持<strong>导出 JSON 格式</strong>的全部用户内容，兼容 OhMyStar、Astral 等同类应用；</li>
+                <li><strong>撤回同意权</strong>：您可随时关闭 AI 功能、撤销 GitHub 授权、关闭 iCloud 同步、关闭诊断数据上报；</li>
+                <li><strong>反对自动化决策权</strong>：本应用不存在对您产生重大影响的自动化决策；AI 建议仅供参考，均需您手动确认；</li>
+                <li><strong>申诉与投诉权</strong>：您有权向监管机构（如中国国家网信办、欧盟数据保护机构）投诉。</li>
             </ul>
-            <p>如需行使上述权利,请通过本政策第 16 节联系方式联系我们,我们将在<strong>不超过 15 个工作日内</strong>响应您的请求。我们将通过合理方式核验您的身份,以保护账户安全。</p>
+            <p>如需行使上述权利，请通过本政策第 16 节联系方式联系我们，我们将在<strong>不超过 15 个工作日内</strong>响应您的请求。我们将通过合理方式核验您的身份，以保护账户安全。</p>
         </section>
 
         <!-- 第 11 节 -->
         <section class="chapter" id="sec-11">
             <h2><span class="num">11</span>跨境数据传输</h2>
-            <p>由于本应用集成的第三方服务(GitHub、Apple iCloud、AI 提供商等)总部或服务器可能位于<strong>中国境外</strong>,您启用相关功能时,部分数据将不可避免地跨境传输。具体而言:</p>
+            <p>由于本应用集成的第三方服务（GitHub、Apple iCloud、AI 提供商等）总部或服务器可能位于<strong>中国境外</strong>，您启用相关功能时，部分数据将不可避免地跨境传输。具体而言：</p>
             <ul>
-                <li><strong>GitHub API 通信</strong>:数据传输至 GitHub 服务器(主要位于美国);</li>
-                <li><strong>Apple iCloud 同步</strong>:中国大陆用户由"云上贵州"运营,境外用户由 Apple 全球数据中心运营;</li>
-                <li><strong>境外 AI 提供商</strong>:数据传输至 OpenAI(美国)、Anthropic(美国)、Google(全球)等;</li>
-                <li><strong>DeepSeek 等中国境内 AI 提供商</strong>:数据保留在中国境内。</li>
+                <li><strong>GitHub API 通信</strong>：数据传输至 GitHub 服务器（主要位于美国）；</li>
+                <li><strong>Apple iCloud 同步</strong>：中国大陆用户由"云上贵州"运营，境外用户由 Apple 全球数据中心运营；</li>
+                <li><strong>境外 AI 提供商</strong>：数据传输至 OpenAI（美国）、Anthropic（美国）、Google（全球）等；</li>
+                <li><strong>DeepSeek 等中国境内 AI 提供商</strong>：数据保留在中国境内。</li>
             </ul>
-            <p>我们会通过<strong>合同条款</strong>、<strong>选择合规的服务提供商</strong>等方式,尽合理努力保障跨境传输的安全。您一旦启用 AI 功能或 iCloud 同步,即表示<strong>同意此类必要的跨境传输</strong>。如您对此存有顾虑,可选择仅使用本应用的本地功能,或切换为 Ollama 本地模型。</p>
+            <p>我们会通过<strong>合同条款</strong>、<strong>选择合规的服务提供商</strong>等方式，尽合理努力保障跨境传输的安全。您一旦启用 AI 功能或 iCloud 同步，即表示<strong>同意此类必要的跨境传输</strong>。如您对此存有顾虑，可选择仅使用本应用的本地功能，或切换为 Ollama 本地模型。</p>
         </section>
 
         <!-- 第 12 节 -->
         <section class="chapter" id="sec-12">
             <h2><span class="num">12</span>儿童隐私</h2>
-            <p>本应用<strong>不面向 14 周岁以下的儿童</strong>。我们不会有意收集 14 周岁以下儿童的任何个人信息。如您是 14 周岁以下儿童的父母或监护人,发现您的孩子在未经同意的情况下使用了本应用,请通过第 16 节方式联系我们,我们将立即删除相关信息并停止处理。</p>
-            <p>对于 14 周岁以上的未成年人,我们建议您在父母或监护人陪同下阅读本政策,并由其代为决定是否使用本应用。</p>
+            <p>本应用<strong>不面向 14 周岁以下的儿童</strong>。我们不会有意收集 14 周岁以下儿童的任何个人信息。如您是 14 周岁以下儿童的父母或监护人，发现您的孩子在未经同意的情况下使用了本应用，请通过第 16 节方式联系我们，我们将立即删除相关信息并停止处理。</p>
+            <p>对于 14 周岁以上的未成年人，我们建议您在父母或监护人陪同下阅读本政策，并由其代为决定是否使用本应用。</p>
         </section>
 
         <!-- 第 13 节 -->
         <section class="chapter" id="sec-13">
             <h2><span class="num">13</span>追踪与广告</h2>
-            <p>本应用<strong>不集成任何第三方广告 SDK</strong>,<strong>不向您展示任何广告</strong>,<strong>不与广告商共享数据</strong>。</p>
-            <p>根据 Apple App Tracking Transparency(ATT)框架定义,本应用<strong>不进行任何形式的"追踪"</strong>:</p>
+            <p>本应用<strong>不集成任何第三方广告 SDK</strong>，<strong>不向您展示任何广告</strong>，<strong>不与广告商共享数据</strong>。</p>
+            <p>根据 Apple App Tracking Transparency（ATT）框架定义，本应用<strong>不进行任何形式的"追踪"</strong>：</p>
             <ul>
-                <li>不收集 IDFA(广告标识符);</li>
-                <li>不将您的信息与第三方数据关联用于定向广告;</li>
+                <li>不收集 IDFA（广告标识符）；</li>
+                <li>不将您的信息与第三方数据关联用于定向广告；</li>
                 <li>不向数据代理商共享您的信息。</li>
             </ul>
-            <p>因此,本应用<strong>不会向您弹出 ATT 授权请求</strong>。</p>
+            <p>因此，本应用<strong>不会向您弹出 ATT 授权请求</strong>。</p>
         </section>
 
         <!-- 第 14 节 -->
         <section class="chapter" id="sec-14">
             <h2><span class="num">14</span>Cookies 与类似技术</h2>
-            <p>作为原生 macOS 应用,本应用本身<strong>不使用</strong>浏览器 Cookies。但在以下场景中,系统组件可能涉及类似机制:</p>
+            <p>作为原生 macOS 应用，本应用本身<strong>不使用</strong>浏览器 Cookies。但在以下场景中，系统组件可能涉及类似机制：</p>
             <ul>
-                <li>渲染 README 的内嵌 WebView:可能使用临时 Cookies 完成 GitHub 资源加载,关闭应用后随之清理;</li>
-                <li>GitHub OAuth 登录流程:由 Apple <code>ASWebAuthenticationSession</code> 在独立隔离的浏览器会话中处理,与您系统浏览器的 Cookies 完全隔离。</li>
+                <li>渲染 README 的内嵌 WebView：可能使用临时 Cookies 完成 GitHub 资源加载，关闭应用后随之清理；</li>
+                <li>GitHub OAuth 登录流程：由 Apple <code>ASWebAuthenticationSession</code> 在独立隔离的浏览器会话中处理，与您系统浏览器的 Cookies 完全隔离。</li>
             </ul>
             <p>本应用<strong>不通过</strong>上述机制对您进行追踪或行为分析。</p>
         </section>
@@ -859,33 +883,31 @@
         <!-- 第 15 节 -->
         <section class="chapter" id="sec-15">
             <h2><span class="num">15</span>政策更新</h2>
-            <p>我们可能不时更新本政策。当我们对本政策作出<strong>重大变更</strong>(包括但不限于:扩大个人信息收集范围、变更使用目的、变更共享或跨境传输规则、变更您的权利或行使方式)时,我们将通过以下方式之一通知您:</p>
+            <p>我们可能不时更新本政策。当我们对本政策作出<strong>重大变更</strong>（包括但不限于：扩大个人信息收集范围、变更使用目的、变更共享或跨境传输规则、变更您的权利或行使方式）时，我们将通过以下方式之一通知您：</p>
             <ul>
-                <li>在应用首次启动时以醒目方式提示;</li>
-                <li>通过应用内消息推送;</li>
+                <li>在应用首次启动时以醒目方式提示；</li>
+                <li>通过应用内消息推送；</li>
                 <li>在官方网站发布更新公告。</li>
             </ul>
-            <p>重大变更生效前,如您不同意更新后的政策,您可以选择停止使用本应用。继续使用即视为同意更新后的政策。</p>
-            <p>本政策的历史版本将归档在我们的官方网站,供您随时查阅。</p>
+            <p>重大变更生效前，如您不同意更新后的政策，您可以选择停止使用本应用。继续使用即视为同意更新后的政策。</p>
+            <p>本政策的历史版本将归档在我们的官方网站，供您随时查阅。</p>
         </section>
 
         <!-- 第 16 节 -->
         <section class="chapter" id="sec-16">
             <h2><span class="num">16</span>联系我们</h2>
-            <p>如您对本政策有任何疑问、意见、投诉,或需行使您的数据主体权利,请通过以下方式联系我们:</p>
+            <p>如您对本政策有任何疑问、意见、投诉，或需行使您的数据主体权利，请通过以下方式联系我们：</p>
             <dl class="deflist">
-                <div><dt>隐私事务专员</dt><dd><a href="mailto:privacy@starcat.app">privacy@starcat.app</a>(优先回复)</dd></div>
-                <div><dt>法务咨询</dt><dd><a href="mailto:legal@starcat.app">legal@starcat.app</a></dd></div>
-                <div><dt>技术支持</dt><dd><a href="mailto:support@starcat.app">support@starcat.app</a></dd></div>
-                <div><dt>官方网站</dt><dd><a href="https://starcat.app" target="_blank" rel="noopener">https://starcat.app</a></dd></div>
+                <div><dt>技术支持</dt><dd><a href="mailto:dong4j@gmail.com">dong4j@gmail.com</a></dd></div>
+                <div><dt>官方网站</dt><dd><a href="https://starcat.ink" target="_blank" rel="noopener">https://starcat.ink</a></dd></div>
                 <div><dt>App Store 反馈</dt><dd>在 App Store 中本应用页面提交反馈或评分</dd></div>
             </dl>
             <div class="callout success">
                 <span class="label">承诺响应</span>
-                我们将<strong>在 15 个工作日内</strong>回复您的隐私相关请求。若您的请求需要核验身份,我们将以最小化方式收集核验所需信息,并在核验完成后立即删除。
+                我们将<strong>在 15 个工作日内</strong>回复您的隐私相关请求。若您的请求需要核验身份，我们将以最小化方式收集核验所需信息，并在核验完成后立即删除。
             </div>
             <p style="margin-top: 24px; color: var(--color-text-tertiary); font-size: 14px;">
-                如您认为我们的个人信息处理行为损害了您的合法权益,且经我们处理后仍未得到妥善解决,您还可以向有管辖权的<strong>个人信息保护监管部门</strong>(中国大陆:国家网信办;欧盟:所在国数据保护机构 DPA)进行投诉或举报。
+                如您认为我们的个人信息处理行为损害了您的合法权益，且经我们处理后仍未得到妥善解决，您还可以向有管辖权的<strong>个人信息保护监管部门</strong>（中国大陆：国家网信办；欧盟：所在国数据保护机构 DPA）进行投诉或举报。
             </p>
         </section>
 
@@ -897,8 +919,8 @@
     <div class="links">
         <a href="./eula-zh.html">用户许可协议</a>
         <a href="./privacy-zh.html">隐私政策</a>
-        <a href="mailto:support@starcat.app">联系我们</a>
-        <a href="https://starcat.app" target="_blank" rel="noopener">官方网站</a>
+        <a href="mailto:dong4j@gmail.com">联系我们</a>
+        <a href="https://starcat.ink" target="_blank" rel="noopener">官方网站</a>
     </div>
     <p class="copyright">Copyright © 2026 Starcat. All rights reserved.</p>
 </footer>
