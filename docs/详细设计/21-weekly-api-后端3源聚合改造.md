@@ -637,9 +637,10 @@ OFFSET 分页在当前规模可接受。所有排序都必须带 `gh_repo_id` �
 
 **R-04 实施细节（启动与手动触发）**：
 
-1. `Scheduler.Start()` 当前仍按“首次 weekly 全量同步 → 注册 cron → 立即启动 discovery goroutine”的顺序执行。由于首次 weekly 会逐条 GitHub enrich，冷启动删库后 `source=discovery` 可能在一段时间内为空，这是预期的运行时状态，不表示 `/api/v1/repos?source=discovery` 查询契约有问题。
-2. `POST /internal/sync/discovery` 使用 `ADMIN_API_KEYS` 鉴权，不能复用客户端 `API_KEYS`。本地 `.env` 未配置 `ADMIN_API_KEYS` 时，该手动端点返回 401，日志会打印 `ADMIN_API_KEYS not configured; admin discovery sync is disabled`。如果需要立即采集 Show HN 数据，需要先配置 `ADMIN_API_KEYS` 并重启服务，再手动触发。
-3. 客户端 R-05 不能假设三源在首次启动时同时有数据；`source_types` 和三源快照以服务端当前已采集结果为准。`source=discovery` 返回空列表是合法状态。
+1. `Scheduler.Start()` **先注册并启动 cron，再并行触发三源冷启动**（`go weekly sync` + `go zread` + `go discovery`）。weekly 冷启动可能因 GitHub enrich 耗时很久，**不得**阻塞 discovery / zread。
+2. weekly `sync()` 对已入库期号默认跳过；仅当 DB 无记录，或本地 `issue-*.md` 的 mtime 晚于上次 `ParsedAt`，才重新 parse + enrich（redeploy 不再无条件重跑「最近 10 期」）。
+3. `POST /internal/sync/discovery` 使用 `ADMIN_API_KEYS` 鉴权，不能复用客户端 `API_KEYS`。本地 `.env` 未配置 `ADMIN_API_KEYS` 时，该手动端点返回 401，日志会打印 `ADMIN_API_KEYS not configured; admin discovery sync is disabled`。如果需要立即采集 Show HN 数据，需要先配置 `ADMIN_API_KEYS` 并重启服务，再手动触发。
+4. 客户端 R-05 不能假设三源在首次启动时同时有数据；`source_types` 和三源快照以服务端当前已采集结果为准。`source=discovery` 返回空列表在冷启动窗口内是合法状态，但不应因 weekly 阻塞而无限延长。
 
 ---
 
