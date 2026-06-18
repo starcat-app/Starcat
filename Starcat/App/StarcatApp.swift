@@ -66,6 +66,8 @@ struct StarcatApp: App {
                 .environment(dependencies.authSession)
                 .environment(dependencies.syncManager)
                 .environment(dependencies.settings)
+                .environment(dependencies.subscriptionManager)
+                .environment(dependencies.entitlementGate)
                 // HOM-PROFILE 2026-06-05：贡献草坪服务，Sidebar 直接消费 @Observable 实例。
                 .environment(dependencies.contributionService)
                 // 2026-06-06 A 方案：用户 profile 缓存服务。Sidebar / ShareCardSheet 会调
@@ -148,6 +150,8 @@ struct StarcatApp: App {
                 .starcatAnimationOverride()
                 .environment(dependencies)        // W4-4 D4：StorageSettingsTab 需要 readmeRepository
                 .environment(dependencies.settings)
+                .environment(dependencies.subscriptionManager)
+                .environment(dependencies.entitlementGate)
                 // HOM-126：AI 设置「自动整理」分组的「立刻手动触发一次」按钮直接
                 // 调 scheduler.triggerManually()。不依赖 AppDependencies 间接路径，
                 // 让 Settings tab 与 scheduler 解耦但显式可见。

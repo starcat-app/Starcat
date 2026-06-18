@@ -798,13 +798,13 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.globalSearchShortcut, value: globalSearchShortcut) }
     }
 
-    /// Pro 订阅模拟状态（HOM-151）。
+    /// Pro 订阅状态镜像（HOM-151 → StoreKit）。
     ///
-    /// 真实 Apple 订阅接入前，设置页的"开通 Pro"按钮先写本地状态，用于串联：
-    /// - 开通成功反馈（彩纸动画 + 成功提示）
+    /// 真实订阅接入后，StoreKit 权益是单一真相源，本字段只作为 UI 读模型：
     /// - 用户头像右下角 PRO 标识
-    /// 后续接入 StoreKit 后，只需要把订阅校验结果同步到这个状态入口。
-    var isProUser: Bool {
+    /// - 分享卡 / 关于页等不需要直接依赖 StoreKit 的轻量展示
+    /// 不允许设置页或功能入口直接写入，避免本地模拟状态绕过真实订阅。
+    private(set) var isProUser: Bool {
         didSet { persistBool(key: Keys.isProUser, value: isProUser) }
     }
 
@@ -1245,6 +1245,16 @@ final class AppSettings {
                 }
             }
         }
+    }
+
+    /// 由订阅权益链路更新 Pro 镜像。
+    ///
+    /// StoreKit 的 `Transaction.currentEntitlements` / `Transaction.updates` 是真实来源；
+    /// AppSettings 只负责把最终布尔值持久化给头像标识等轻量 UI 使用。把写入口收口到
+    /// 一个方法里，是为了避免再次出现 HOM-151 阶段设置页直接改 `isProUser` 的临时路径。
+    func updateProEntitlementMirror(isPro: Bool) {
+        guard isProUser != isPro else { return }
+        isProUser = isPro
     }
 
     // MARK: - 内部

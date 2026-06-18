@@ -89,7 +89,7 @@ struct ProSettingsTab: View {
 
                         if settings.isProUser {
                             Button {
-                                settings.isProUser = false
+                                settings.updateProEntitlementMirror(isPro: false)
                                 showSuccessMessage = false
                             } label: {
                                 Label("settings.pro.button.reset", systemImage: "arrow.counterclockwise")
@@ -136,7 +136,7 @@ struct ProSettingsTab: View {
     }
 
     private func simulateUpgrade(settings: AppSettings) {
-        settings.isProUser = true
+        settings.updateProEntitlementMirror(isPro: true)
         showSuccessMessage = true
         confettiTrigger += 1
 

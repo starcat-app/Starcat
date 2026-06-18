@@ -39,6 +39,10 @@ final class AppDependencies {
     let repoRepository: any RepoRepositoryProtocol
     /// Week 3 引入：用户偏好（列表密度等）。
     let settings: AppSettings
+    /// StoreKit 2 订阅协调器。它是 Pro 权益的单一真相源。
+    let subscriptionManager: SubscriptionManager
+    /// 统一 Pro 门控服务。业务层通过它判断是否放行，而不是直接读 `settings.isProUser`。
+    let entitlementGate: EntitlementGate
     /// Week 4 引入：README 缓存 Repository。
     let readmeRepository: ReadmeRepository
     /// Week 4 引入：README HTML 抓取 + 缓存协调。
@@ -379,6 +383,14 @@ final class AppDependencies {
         self.repoRepository = repo
         self.syncManager = SyncManager(apiClient: api, repository: repo)
         self.settings = AppSettings.shared
+        let subscriptions = SubscriptionManager(settings: self.settings)
+        self.subscriptionManager = subscriptions
+        self.entitlementGate = EntitlementGate(
+            entitlementProvider: subscriptions,
+            userIDProvider: { [weak session] in
+                session?.state.user?.id
+            }
+        )
 
         // Week 4 新增：README 子系统
         let readmeRepo = ReadmeRepository(database: db)
