@@ -306,6 +306,7 @@ flowchart LR
 | 文档 | 关系 |
 |------|------|
 | `docs/Pro付费墙验证清单.md` | 免费用户触发 Pro 能力 → 付费墙的人工验收走查清单 |
+| `docs/App-Store-Connect-Offer-Code配置指南.md` | Connect 创建订阅 Offer Code + App 内兑换 SOP |
 | `docs/PRO 订阅功能划分.md` | 功能级免费/Pro 详单；§8 已由本文 §2 覆盖 |
 | `docs/v1-上架检查清单.md` | 上架走查；路径 B 已选 |
 | `docs/CloudKit数据同步设计.md` | CloudKit 技术设计；v1 不实施，D-1=Pro |

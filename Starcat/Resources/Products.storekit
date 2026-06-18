@@ -25,11 +25,21 @@
           "adHocOffers" : [
           ],
           "codeOffers" : [
+            {
+              "displayPrice" : "19.99",
+              "eligibility" : [
+                "new",
+                "existing",
+                "expired"
+              ],
+              "internalID" : "STARCAT-OFFER-EARLY-BIRD",
+              "numberOfPeriods" : 1,
+              "offerID" : "early_bird_yearly",
+              "paymentMode" : "payUpFront",
+              "referenceName" : "Early Bird Yearly",
+              "subscriptionPeriod" : "P1Y"
+            }
           ],
-          "displayPrice" : "29.99",
-          "familyShareable" : false,
-          "groupNumber" : 1,
-          "internalID" : "STARCAT-PRO-YEARLY",
           "introductoryOffer" : null,
           "localizations" : [
             {

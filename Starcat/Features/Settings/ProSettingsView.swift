@@ -22,6 +22,7 @@ struct ProSettingsTab: View {
 
     @State private var confettiTrigger: Int = 0
     @State private var showSuccessMessage: Bool = false
+    @State private var isOfferCodeRedemptionPresented = false
 
     var body: some View {
         Form {
@@ -35,6 +36,14 @@ struct ProSettingsTab: View {
             #endif
         }
         .formStyle(.grouped)
+        .starcatOfferCodeRedemption(isPresented: $isOfferCodeRedemptionPresented) {
+            showSuccessMessage = true
+            confettiTrigger += 1
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(4))
+                showSuccessMessage = false
+            }
+        }
         .task {
             await subscriptionManager.loadProducts()
             await subscriptionManager.refreshEntitlements()
@@ -177,11 +186,19 @@ struct ProSettingsTab: View {
                 .disabled(subscriptionManager.isRestoring)
 
                 Button {
+                    isOfferCodeRedemptionPresented = true
+                } label: {
+                    Label("settings.pro.button.redeemOfferCode", systemImage: "giftcard")
+                }
+
+                Button {
                     openURL(SubscriptionExternalLinks.manageSubscriptions)
                 } label: {
                     Label("settings.pro.button.manage", systemImage: "person.crop.circle.badge.checkmark")
                 }
             }
+        } footer: {
+            Text("settings.pro.offerCode.footer")
         }
     }
 

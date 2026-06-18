@@ -39,6 +39,7 @@ struct ProPaywallSheet: View {
     @Environment(\.openURL) private var openURL
 
     @State private var didActivate: Bool = false
+    @State private var isOfferCodeRedemptionPresented = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -49,6 +50,13 @@ struct ProPaywallSheet: View {
         }
         .padding(22)
         .frame(width: 420)
+        .starcatOfferCodeRedemption(isPresented: $isOfferCodeRedemptionPresented) {
+            didActivate = true
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                dismiss()
+            }
+        }
         .task {
             await subscriptionManager.loadProducts()
             await subscriptionManager.refreshEntitlements()
@@ -133,6 +141,10 @@ struct ProPaywallSheet: View {
                 Task { await subscriptionManager.restorePurchases() }
             }
             .disabled(subscriptionManager.isRestoring)
+
+            Button("paywall.button.redeemOfferCode") {
+                isOfferCodeRedemptionPresented = true
+            }
 
             Button("paywall.button.manage") {
                 openURL(SubscriptionExternalLinks.manageSubscriptions)

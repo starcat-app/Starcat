@@ -17,6 +17,7 @@ enum SubscriptionError: Error, LocalizedError, Equatable {
     case purchasePending
     case purchaseCancelled
     case restoreFailed
+    case offerCodeRedemptionFailed
     case unknown(String)
 
     var errorDescription: String? {
@@ -31,6 +32,8 @@ enum SubscriptionError: Error, LocalizedError, Equatable {
             return String.l10n("subscription.error.purchaseCancelled")
         case .restoreFailed:
             return String.l10n("subscription.error.restoreFailed")
+        case .offerCodeRedemptionFailed:
+            return String.l10n("subscription.error.offerCodeRedemptionFailed")
         case .unknown(let message):
             return String(format: String.l10n("subscription.error.unknownFormat"), message)
         }

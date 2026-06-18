@@ -18186,6 +18186,23 @@
         }
       }
     },
+    "paywall.button.redeemOfferCode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redeem Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "兑换优惠码"
+          }
+        }
+      }
+    },
     "paywall.subtitleFormat" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18373,6 +18390,40 @@
         }
       }
     },
+    "settings.pro.button.redeemOfferCode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redeem Offer Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "兑换优惠码"
+          }
+        }
+      }
+    },
+    "settings.pro.offerCode.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offer codes are created in App Store Connect. Starcat opens Apple's redemption sheet — codes are not validated on Starcat servers."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优惠码在 App Store Connect 创建。Starcat 会打开 Apple 官方兑换窗口，不在自建服务器校验。"
+          }
+        }
+      }
+    },
     "settings.pro.debug.activate" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18556,6 +18607,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "恢复购买失败。"
+          }
+        }
+      }
+    },
+    "subscription.error.offerCodeWindowUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to open the offer code sheet. Make sure the Starcat window is active and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法打开优惠码兑换窗口。请确保 Starcat 主窗口在前台后重试。"
+          }
+        }
+      }
+    },
+    "subscription.error.offerCodeRedemptionFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offer code redemption failed. Check the code and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优惠码兑换失败，请检查码是否有效后重试。"
           }
         }
       }

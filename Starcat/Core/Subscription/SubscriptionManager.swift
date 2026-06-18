@@ -192,6 +192,35 @@ final class SubscriptionManager: ProEntitlementProviding {
         }
     }
 
+    /// 处理 `offerCodeRedemption` sheet 关闭后的结果并刷新 Pro 权益。
+    @MainActor
+    func handleOfferCodeRedemptionResult(_ result: Result<Void, Error>) async -> Bool {
+        switch result {
+        case .success:
+            await refreshEntitlements()
+            if entitlement.isActive {
+                lastErrorMessage = nil
+                return true
+            }
+            return false
+        case .failure(let error):
+            if Self.isUserCancelledOfferCodeError(error) {
+                lastErrorMessage = nil
+            } else {
+                lastErrorMessage = SubscriptionError.offerCodeRedemptionFailed.localizedDescription
+                AppLog.general.error("[subscription] offer code redemption failed: \(error.localizedDescription, privacy: .public)")
+            }
+            return false
+        }
+    }
+
+    private static func isUserCancelledOfferCodeError(_ error: Error) -> Bool {
+        if let storeKit = error as? StoreKitError, case .userCancelled = storeKit {
+            return true
+        }
+        return (error as NSError).code == NSUserCancelledError
+    }
+
     private func listenForTransactionUpdates() async {
         for await result in Transaction.updates {
             do {
