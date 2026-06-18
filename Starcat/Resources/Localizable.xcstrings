@@ -18193,30 +18193,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wrong service"
+            "value" : "Service verification failed"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "服务不匹配"
-          }
-        }
-      }
-    },
-    "settings.services.health.serviceMismatch.detail" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Expected %1$@, got %2$@ (HTTP %3$lld)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "期望 %1$@，实际 %2$@（HTTP %3$lld）"
+            "value" : "服务验证失败"
           }
         }
       }

@@ -52,7 +52,8 @@ enum HealthCheckOutcome: Equatable {
     /// `statusCode` 一般是 200，留参数是为了未来后端可能扩展到 2xx 其它码（如 204）。
     case ok(statusCode: Int)
     /// ping 返回 200，但 `data.service` 与当前设置项不一致（典型：端口 / 服务填错）。
-    case serviceMismatch(expected: String, actual: String, statusCode: Int)
+    /// UI 不暴露期望 / 实际服务名，只提示验证失败。
+    case serviceMismatch
     /// API Key 错（缺 Authorization / 无效 token / 过期 token；后端 middleware 统一返 401）。
     /// `statusCode` 一般是 401，留参数让用户排查时也能确认到底是 401 还是 403（虽然现在都用 401）。
     case unauthorized(statusCode: Int)
@@ -89,13 +90,7 @@ enum HealthCheckOutcome: Equatable {
     var subtitle: String {
         switch self {
         case .ok(let code): return "HTTP \(code)"
-        case .serviceMismatch(let expected, let actual, let code):
-            return String(
-                format: String.l10n("settings.services.health.serviceMismatch.detail"),
-                expected,
-                actual,
-                code
-            )
+        case .serviceMismatch: return ""
         case .unauthorized(let code): return "HTTP \(code)"
         case .serverError(let code): return "HTTP \(code)"
         case .networkError(let reason): return reason
@@ -218,11 +213,7 @@ actor ServiceHealthChecker {
             }
             let expected = expectedService.rawValue
             guard payload.service == expected else {
-                return .serviceMismatch(
-                    expected: expected,
-                    actual: payload.service,
-                    statusCode: 200
-                )
+                return .serviceMismatch
             }
             return .ok(statusCode: 200)
         } catch {

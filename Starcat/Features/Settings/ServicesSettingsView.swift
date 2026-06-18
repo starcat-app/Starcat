@@ -145,11 +145,13 @@ struct ServicesSettingsTab: View {
                         Text(outcome.titleKey)
                             .foregroundStyle(colorForOutcome(outcome))
                             .font(.caption)
-                        Text(verbatim: outcome.subtitle)
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+                        if !outcome.subtitle.isEmpty {
+                            Text(verbatim: outcome.subtitle)
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
                     }
                 }
                 Spacer()
