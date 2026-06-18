@@ -107,7 +107,8 @@ struct ServicesSettingsTab: View {
                         get: { draft(for: service) },
                         set: { newValue in draftURLs[service.id] = newValue }
                     ),
-                    prompt: Text(service.productionURL.absoluteString)
+                    // 留空时不展示 production URL，避免把内置 fly.io 端点暴露给用户。
+                    prompt: Text("settings.services.url.placeholder")
                 )
                 .textFieldStyle(.roundedBorder)
                 .disableAutocorrection(true)
@@ -227,13 +228,21 @@ struct ServicesSettingsTab: View {
             HStack(spacing: 4) {
                 Image(systemName: "info.circle")
                     .foregroundStyle(.secondary)
-                // 显示"当前生效"的 URL——已保存生效值（AppEndpoints.resolved(for:)），
-                // 不是 draft；这样能让用户看到"我保存前 vs 保存后"的差别。
-                Text(String(format: String.l10n("settings.services.effective"), AppEndpoints.resolved(for: service).absoluteString))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                // 已保存自定义 URL 时展示具体地址；走内置默认时不暴露 production 端点。
+                Group {
+                    if hasCustomURL(for: service) {
+                        Text(String(
+                            format: String.l10n("settings.services.effective"),
+                            AppEndpoints.resolved(for: service).absoluteString
+                        ))
+                    } else {
+                        Text("settings.services.effective.builtin")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
             }
         }
     }

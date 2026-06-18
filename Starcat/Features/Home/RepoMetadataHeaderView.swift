@@ -540,13 +540,17 @@ struct RepoShareButton: View {
             )
 
             let request = ShareRepoRequest(repo: shareRepoDTO, aiSummary: shareAISummaryDTO)
-            // 2026-06-08：从 environment 注入的 `dependencies.shareAPI` 取共享实例，
-            // 不再每次分享 new 一个；端点配置统一走 `AppEndpoints.sharing`，
-            // 本地联调改 env `STARCAT_SHARING_API_URL` 即可切到 127.0.0.1。
             let response = try await dependencies.shareAPI.shareRepo(request: request)
 
             shareUrl = response.shareUrl
             showSharePopup = true
+        } catch let error as RepoAIInsightError {
+            switch error {
+            case .missingAPIKey:
+                shareError = String.l10n("repo.share.error.missingAIConfig")
+            case .missingProvider, .invalidJSON:
+                shareError = error.localizedDescription
+            }
         } catch {
             shareError = error.localizedDescription
         }
