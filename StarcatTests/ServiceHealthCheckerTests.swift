@@ -78,7 +78,7 @@ struct ServiceHealthCheckerTests {
         let checker = makeChecker()
         stubPingOK(service: .sharing)
         let outcome = await checker.check(service: .trending, baseURL: fakeBaseURL, apiKey: "sk-real")
-        #expect(outcome == .serviceMismatch(expected: "trending", actual: "sharing", statusCode: 200))
+        #expect(outcome == .serviceMismatch)
     }
 
     @Test("401 → unauthorized(401)：缺 Authorization / 错 token 都走这里")
