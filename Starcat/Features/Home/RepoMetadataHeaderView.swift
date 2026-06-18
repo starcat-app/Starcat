@@ -68,6 +68,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     /// 此处 `full_name` 同行 —— 与 source badge 同行的轻量 inline 标识，让用户在
     /// 看到仓库名时立刻能看到安全评分。点击弹出 `OpenSSFScoreSheet`。sheet state
     /// 挂在 Header 内部，避免 4 个 scaffold shell 重复维护相同状态。
+    @Environment(AppDependencies.self) private var dependencies
     @State private var showSecurityScoreSheet = false
 
     init(
@@ -99,7 +100,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         // hero tint 由 `RepoDetailScaffold` 根节点 `DetailHeroTintBackground` 统一绘制。
         .sheet(isPresented: $showSecurityScoreSheet) {
             OpenSSFScoreSheet(repo: repo)
-                .appLocaleEnvironment()
+                .appSheetRootEnvironment(dependencies)
         }
     }
 

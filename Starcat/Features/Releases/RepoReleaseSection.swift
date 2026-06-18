@@ -82,8 +82,7 @@ struct RepoReleaseStatItem: View {
             await viewModel?.loadFor(repo: repo)
         }
         .sheet(item: releasePaywallBinding) { context in
-            ProPaywallSheet(context: context)
-                .appLocaleEnvironment()
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
     }
 

@@ -26,6 +26,11 @@ struct ProPaywallContext: Identifiable, Equatable {
 /// 统一 Pro 付费墙。
 ///
 /// 产品策略：只在用户触发 Pro 能力或免费限额耗尽时出现；基础 stars 管理工作流不主动打扰。
+///
+/// **Environment 约束**：本视图依赖 `@Environment(SubscriptionManager.self)`。SwiftUI
+/// `.sheet` 根视图与 AppKit 自建 `NSHostingController` **不会**自动继承主窗订阅环境；
+/// 必须通过 `ProPaywallSheet.hosted(context:subscriptionManager:)` 注入，否则访问
+/// environment 会触发 SwiftUI 运行时断言崩溃（`EnvironmentValues.subscript.getter`）。
 struct ProPaywallSheet: View {
     let context: ProPaywallContext
 
@@ -158,5 +163,17 @@ struct ProPaywallSheet: View {
         didActivate = true
         try? await Task.sleep(for: .seconds(1))
         dismiss()
+    }
+}
+
+extension ProPaywallSheet {
+    /// 付费墙 sheet 根视图的标准装配。
+    @MainActor
+    static func hosted(
+        context: ProPaywallContext,
+        dependencies: AppDependencies
+    ) -> some View {
+        ProPaywallSheet(context: context)
+            .appSheetRootEnvironment(dependencies)
     }
 }

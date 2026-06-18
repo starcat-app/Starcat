@@ -301,13 +301,12 @@ struct HomeView: View {
             }
         }) {
             TagManagementView(viewModel: tagMgmtVM)
-                .appLocaleEnvironment()
+                .appSheetRootEnvironment(dependencies)
         }
         // HOM-47：Release 时间线 sheet（独立窗口承载，不污染三栏布局）
         .sheet(isPresented: $showReleaseTimeline) {
             ReleaseTimelineView()
-                .environment(dependencies)
-                .appLocaleEnvironment()
+                .appSheetRootEnvironment(dependencies)
         }
         // HOM-52：批量 AI 整理"操作选择" sheet
         .sheet(isPresented: $showBatchAIOptions) {
@@ -335,8 +334,7 @@ struct HomeView: View {
             .appLocaleEnvironment()
         }
         .sheet(item: homePaywallBinding) { context in
-            ProPaywallSheet(context: context)
-                .appLocaleEnvironment()
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         // HOM-47：登录后启动后台 Release 轮询；登出时停。
         // 与 SyncManager 不同：Release Poller 自调度（NSBackgroundActivityScheduler），

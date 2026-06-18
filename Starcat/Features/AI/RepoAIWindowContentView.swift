@@ -216,8 +216,7 @@ struct RepoAIWindowContentView: View {
             await insightVM?.load(repo: repo)
         }
         .sheet(item: aiPaywallBinding) { context in
-            ProPaywallSheet(context: context)
-                .appLocaleEnvironment()
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
     }
 

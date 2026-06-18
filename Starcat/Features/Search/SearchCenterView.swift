@@ -20,6 +20,7 @@ struct SearchCenterView: View {
     let isStarred: (Int64) -> Bool
     let isGitHubAuthenticated: Bool
 
+    @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @FocusState private var isSearchFocused: Bool
     /// SEARCH-RICH 2026-06-14：从 `Repo?` 改为 `RepositoryCandidate?` —— 弹窗
@@ -98,11 +99,10 @@ struct SearchCenterView: View {
                 onOpenInGitHub: { onOpenURL(candidate) },
                 onCopyURL: { onCopyURL(candidate) }
             )
-            .appLocaleEnvironment()
+            .appSheetRootEnvironment(dependencies)
         }
         .sheet(item: $viewModel.paywallContext) { context in
-            ProPaywallSheet(context: context)
-                .appLocaleEnvironment()
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         .onKeyPress(.upArrow) {
             viewModel.moveSelection(by: -1)
@@ -1534,6 +1534,7 @@ private struct SearchRemoteRepoDetailView: View {
     /// 触发流程仍保留"先关 popover → DispatchQueue.main.async 后再赋值 item"
     /// 的时序，避免 popover 与 sheet 同帧 presentation 竞争。
     @State private var codeFlowSheetRepo: Repo?
+    @State private var paywallContext: ProPaywallContext?
 
     /// 卡片宽度。480pt 足以容纳 owner / repo 双行 + 头像 + 顶栏徽章；再窄
     /// 顶栏会挤压 license / score 徽章；再宽就显得空旷不像「快速决策卡」。
@@ -2046,9 +2047,12 @@ private struct SearchRemoteRepoDetailView: View {
             overflowPopoverContent(repo: repo)
                 .appLocaleEnvironment()
         }
+        .sheet(item: $paywallContext) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
+        }
         .sheet(item: $codeFlowSheetRepo) { sheetRepo in
             CodeFlowPanel(repo: sheetRepo)
-                .appLocaleEnvironment()
+                .appSheetRootEnvironment(dependencies)
         }
     }
 
@@ -2070,7 +2074,7 @@ private struct SearchRemoteRepoDetailView: View {
                     // 关 popover 后下一帧再赋值 item 弹 sheet，避免 popover
                     // 与 sheet 同帧 presentation 竞争（参考
                     // FeaturedExternalLinksControl 同款时序）。
-                    DispatchQueue.main.async { codeFlowSheetRepo = repo }
+                    DispatchQueue.main.async { openCodeFlow(for: repo) }
                 }
 
                 Divider()
@@ -2159,6 +2163,15 @@ private struct SearchRemoteRepoDetailView: View {
     private func openOwnerPage(login: String) {
         guard let url = URL(string: "https://github.com/\(login)") else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    private func openCodeFlow(for repo: Repo) {
+        do {
+            try dependencies.entitlementGate.requirePro(.codeFlow)
+            codeFlowSheetRepo = repo
+        } catch {
+            paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
+        }
     }
 }
 
