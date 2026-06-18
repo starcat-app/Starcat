@@ -17835,13 +17835,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Upcoming Pro-only AI capabilities will land here first."
+            "value" : "AI summaries, tag suggestions, chat, batch cleanup, and README translation."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "后续 Pro 专属 AI 功能会优先在这里接入。"
+            "value" : "AI 摘要、标签推荐、对话、批量整理与 README 翻译。"
           }
         }
       }
@@ -17988,13 +17988,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This is a front-end simulation only — no Apple subscription or charge is triggered. Real subscriptions will reuse the same success flow."
+            "value" : "Subscriptions are processed by Apple. You can restore purchases or manage the subscription from your Apple Account at any time."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前为前端模拟流程，不会发起 Apple 订阅或扣费。真实订阅接入后将复用同一套成功反馈。"
+            "value" : "订阅由 Apple 处理。你可以随时恢复购买，或前往 Apple 账户管理订阅。"
           }
         }
       }
@@ -18022,13 +18022,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Activate to preview the Pro success feedback and avatar badge."
+            "value" : "Subscribe to unlock Pro features for AI, search, release tracking, and higher local limits."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "开通后可立即预览 Pro 成功反馈与头像标识。"
+            "value" : "订阅后解锁 AI、搜索、Release 追踪与更高本地额度。"
           }
         }
       }
@@ -18048,6 +18048,662 @@
             "value" : "Pro 已开通，欢迎加入 Starcat Pro。"
           }
         }
+      }
+    },
+    "paywall.activated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro is active."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro 已开通。"
+          }
+        }
+      }
+    },
+    "paywall.benefit.ai" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI summaries, tag suggestions, chat, and batch cleanup"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 摘要、标签推荐、对话与批量整理"
+          }
+        }
+      }
+    },
+    "paywall.benefit.limits" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Higher limits for tags and release subscriptions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更高的标签与 Release 订阅额度"
+          }
+        }
+      }
+    },
+    "paywall.benefit.release" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release tracking beyond the free limit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "超过免费额度的 Release 追踪"
+          }
+        }
+      }
+    },
+    "paywall.benefit.search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Semantic search and web search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语义搜索与网页搜索"
+          }
+        }
+      }
+    },
+    "paywall.button.close" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        }
+      }
+    },
+    "paywall.button.manage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理"
+          }
+        }
+      }
+    },
+    "paywall.button.restore" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复购买"
+          }
+        }
+      }
+    },
+    "paywall.subtitleFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ requires Starcat Pro."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 需要 Starcat Pro。"
+          }
+        }
+      }
+    },
+    "paywall.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock Starcat Pro"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解锁 Starcat Pro"
+          }
+        }
+      }
+    },
+    "settings.pro.benefit.cloud.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloud sync is reserved for a later Pro milestone."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CloudKit 同步预留给后续 Pro 里程碑。"
+          }
+        }
+      }
+    },
+    "settings.pro.benefit.cloud.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloud sync ready"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CloudKit 同步预留"
+          }
+        }
+      }
+    },
+    "settings.pro.benefit.release.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Track more repositories for release updates and notifications."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追踪更多仓库的 Release 更新与通知。"
+          }
+        }
+      }
+    },
+    "settings.pro.benefit.release.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release tracking"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release 追踪"
+          }
+        }
+      }
+    },
+    "settings.pro.benefit.search.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use embeddings and web results for deeper repository discovery."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用向量索引与网页结果进行更深入的仓库发现。"
+          }
+        }
+      }
+    },
+    "settings.pro.benefit.search.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Advanced search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高级搜索"
+          }
+        }
+      }
+    },
+    "settings.pro.benefits.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Included"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含权益"
+          }
+        }
+      }
+    },
+    "settings.pro.button.manage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage Subscription"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理订阅"
+          }
+        }
+      }
+    },
+    "settings.pro.button.restore" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore Purchases"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复购买"
+          }
+        }
+      }
+    },
+    "settings.pro.debug.activate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activate debug Pro"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调试开通 Pro"
+          }
+        }
+      }
+    },
+    "settings.pro.debug.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Debug controls only change the local entitlement mirror."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调试按钮只修改本地权益镜像。"
+          }
+        }
+      }
+    },
+    "settings.pro.debug.reset" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset debug Pro"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置调试 Pro"
+          }
+        }
+      }
+    },
+    "settings.pro.debug.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Debug"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调试"
+          }
+        }
+      }
+    },
+    "settings.pro.products.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No subscription products are available. Check App Store Connect or the local StoreKit configuration."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前没有可用订阅商品，请检查 App Store Connect 或本地 StoreKit 配置。"
+          }
+        }
+      }
+    },
+    "settings.pro.products.loading" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading products…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加载商品…"
+          }
+        }
+      }
+    },
+    "settings.pro.products.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plans"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅方案"
+          }
+        }
+      }
+    },
+    "subscription.error.productsUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subscription products are unavailable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅商品暂不可用。"
+          }
+        }
+      }
+    },
+    "subscription.error.purchaseCancelled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purchase was cancelled."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "购买已取消。"
+          }
+        }
+      }
+    },
+    "subscription.error.purchasePending" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purchase is pending approval."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "购买正在等待批准。"
+          }
+        }
+      }
+    },
+    "subscription.error.restoreFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to restore purchases."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复购买失败。"
+          }
+        }
+      }
+    },
+    "subscription.error.unknownFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subscription failed: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅失败：%@"
+          }
+        }
+      }
+    },
+    "subscription.error.unverifiedTransaction" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The transaction could not be verified."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "交易无法通过验证。"
+          }
+        }
+      }
+    },
+    "subscription.feature.aiChat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI chat" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 对话" } }
+      }
+    },
+    "subscription.feature.aiSummary" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI summary" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 摘要" } }
+      }
+    },
+    "subscription.feature.aiTags" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI tag suggestions" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 标签推荐" } }
+      }
+    },
+    "subscription.feature.anySearchWeb" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "web search" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网页搜索" } }
+      }
+    },
+    "subscription.feature.autoOrganize" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "automatic organization" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自动整理" } }
+      }
+    },
+    "subscription.feature.batchAI" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "batch AI cleanup" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "批量 AI 整理" } }
+      }
+    },
+    "subscription.feature.cloudSync" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "CloudKit sync" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "CloudKit 同步" } }
+      }
+    },
+    "subscription.feature.readmeTranslation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "README translation" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "README 翻译" } }
+      }
+    },
+    "subscription.feature.releaseSubscription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "release subscriptions" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Release 订阅" } }
+      }
+    },
+    "subscription.feature.repoContext" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "repository code context" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库代码上下文" } }
+      }
+    },
+    "subscription.feature.semanticSearch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "semantic search" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语义搜索" } }
+      }
+    },
+    "subscription.feature.tagCreation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "more tags" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "更多标签" } }
+      }
+    },
+    "subscription.gate.releaseLimitFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Free users can track up to %d release subscriptions." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "免费用户最多可追踪 %d 个 Release 订阅。" } }
+      }
+    },
+    "subscription.gate.requiresProFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ requires Starcat Pro." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 需要 Starcat Pro。" } }
+      }
+    },
+    "subscription.gate.tagLimitFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Free users can create up to %d tags." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "免费用户最多可创建 %d 个标签。" } }
+      }
+    },
+    "subscription.gate.trialExceededFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The free trial quota for %@ has been used (%d times)." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 的免费试用次数已用完（%d 次）。" } }
       }
     },
     "settings.services.apiKey" : {
