@@ -66,6 +66,14 @@
 - 永久授权一旦写入，后续撤回成本高。
 - 如 dong4j 后续需要早鸟权益，可基于 `EntitlementGate` 增加本地 grant 或服务端 grant。
 
+### D-StoreKit-7：管理订阅入口使用 Apple 账户订阅管理 URL
+
+实施时用 `https://apps.apple.com/account/subscriptions` 打开 Apple 账户订阅管理页，暂不调用 `AppStore.showManageSubscriptions`。原因：
+
+- 当前本机 macOS SDK 对 `AppStore.showManageSubscriptions` 做 `swiftc -typecheck` 校验时不可用；
+- v1 提审要求是用户能找到管理 / 取消订阅入口，官方账户订阅管理 URL 可以满足；
+- 后续 SDK 提供 macOS 原生管理面板后，只需替换 `SubscriptionExternalLinks.manageSubscriptions`。
+
 ## 3. 本轮门控边界
 
 ### Pro 或试用
