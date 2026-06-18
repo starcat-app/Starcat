@@ -25,6 +25,7 @@ enum ProFeature: String, CaseIterable, Sendable {
     case releaseSubscription
     case tagCreation
     case cloudSync
+    case codeFlow
 
     var title: String {
         switch self {
@@ -40,6 +41,7 @@ enum ProFeature: String, CaseIterable, Sendable {
         case .releaseSubscription: return String.l10n("subscription.feature.releaseSubscription")
         case .tagCreation: return String.l10n("subscription.feature.tagCreation")
         case .cloudSync: return String.l10n("subscription.feature.cloudSync")
+        case .codeFlow: return String.l10n("subscription.feature.codeFlow")
         }
     }
 

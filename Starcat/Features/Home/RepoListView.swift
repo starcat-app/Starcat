@@ -62,6 +62,8 @@ struct RepoListView: View {
     /// toolbar spec 会通过 `AnyView` 频繁重建，sheet 必须由稳定的页面根节点承载。
     /// 否则关闭 CodeFlow 时 presentation host 被替换，窗口会短暂再次出现。
     @State private var codeFlowSheetRepo: Repo?
+    /// CodeFlow 为 Pro 功能；免费用户点入口时弹出统一付费墙，不打开执行面板。
+    @State private var paywallContext: ProPaywallContext?
     /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
     @State private var lastSyncedAt: Date?
 
@@ -130,9 +132,12 @@ struct RepoListView: View {
             }
         }
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
+        .sheet(item: $paywallContext) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
+        }
         .sheet(item: $codeFlowSheetRepo) { repo in
             CodeFlowPanel(repo: repo)
-                .appLocaleEnvironment()
+                .appSheetRootEnvironment(dependencies)
         }
         // W12 PR-4：切页面时主动 exit 非活跃 store，避免"切到 trending 时 weekly 还显示
         // 底部多选栏"的视觉穿帮。同一时刻只允许一份处于 isActive，由本视图集中保证。
@@ -348,7 +353,7 @@ struct RepoListView: View {
                         ExternalLinksMenu(
                             selection: sel,
                             codeFlowRepo: codeFlowRepo.isPrivate ? nil : codeFlowRepo,
-                            onOpenCodeFlow: { codeFlowSheetRepo = $0 }
+                            onOpenCodeFlow: openCodeFlow(for:)
                         )
                         CloneMenu(selection: sel) { toastKey in
                             toastMessage = toastKey
@@ -407,7 +412,7 @@ struct RepoListView: View {
                         ExternalLinksMenu(
                             selection: sel,
                             codeFlowRepo: item.isAvailable && !codeFlowRepo.isPrivate ? codeFlowRepo : nil,
-                            onOpenCodeFlow: { codeFlowSheetRepo = $0 }
+                            onOpenCodeFlow: openCodeFlow(for:)
                         )
                         CloneMenu(selection: sel) { toastKey in
                             toastMessage = toastKey
@@ -425,7 +430,7 @@ struct RepoListView: View {
                         ExternalLinksMenu(
                             selection: sel,
                             codeFlowRepo: repo.isPrivate ? nil : repo,
-                            onOpenCodeFlow: { codeFlowSheetRepo = $0 }
+                            onOpenCodeFlow: openCodeFlow(for:)
                         )
                         CloneMenu(selection: sel) { toastKey in
                             toastMessage = toastKey
@@ -518,7 +523,7 @@ struct RepoListView: View {
                     ExternalLinksMenu(
                         selection: selection,
                         codeFlowRepo: repo.isPrivate ? nil : repo,
-                        onOpenCodeFlow: { codeFlowSheetRepo = $0 }
+                        onOpenCodeFlow: openCodeFlow(for:)
                     )
                     CloneMenu(selection: selection) { toastKey in
                         toastMessage = toastKey
@@ -1065,6 +1070,16 @@ struct RepoListView: View {
         case .unread: return "envelope.badge"
         case .read:   return "envelope.open"
         case .using:  return "checkmark.seal"
+        }
+    }
+
+    /// CodeFlow 为 Pro 能力：入口统一走权益门控，免费用户只看到付费墙。
+    private func openCodeFlow(for repo: Repo) {
+        do {
+            try dependencies.entitlementGate.requirePro(.codeFlow)
+            codeFlowSheetRepo = repo
+        } catch {
+            paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
         }
     }
 }

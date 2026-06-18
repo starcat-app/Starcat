@@ -154,12 +154,13 @@ App 启动 / 前台恢复
 | `.anySearchWeb` | `SearchCenterViewModel` Web 源 | Pro |
 | `.repoContext` | `RepoAIInsightService` pack 路径 | Pro |
 | `.releaseSubscription` | `ReleaseSubscriptionRepository.subscribe` | 免费 ≤5，Pro 无限 |
+| `.codeFlow` | `RepoListView` / `SearchRemoteRepoDetailView` / `CodeFlowPanel` | Pro |
 
 ### 5.2 不做门控（保持免费）
 
 - GitHub Stars 同步、FTS 搜索、⌘K Local + GitHub
 - 标签 / 笔记 / 状态浏览与编辑（标签 **创建** 受 20 个上限）
-- README WebView、三栏布局、HTML/MD 导出、分享卡、CodeFlow
+- README WebView、三栏布局、HTML/MD 导出、分享卡
 - Activity / Trending **列表浏览**（AI 摘要部分走 P0）
 - 设置、关于、主题、语言
 

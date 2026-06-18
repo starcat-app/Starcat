@@ -18643,6 +18643,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "CloudKit 同步" } }
       }
     },
+    "subscription.feature.codeFlow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "CodeFlow code graph" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "CodeFlow 代码图谱" } }
+      }
+    },
     "subscription.feature.readmeTranslation" : {
       "extractionState" : "manual",
       "localizations" : {
