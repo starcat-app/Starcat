@@ -368,7 +368,7 @@ struct ServicesSettingsTab: View {
         } else if let saved = settings.customServiceAPIKey(for: service), !saved.isEmpty {
             probeKey = saved
         } else {
-            probeKey = StarcatAPIKeyDefaults.productionKeyOrNil
+            probeKey = StarcatAPIKeyDefaults.productionKeyOrNil(for: service)
         }
 
         // —— 第 3 步：发 ping 探测 —— //

@@ -14,10 +14,10 @@
 //    1. 用户在「设置 → 服务」Tab 填的 BYOK Key
 //       → 持久化在 KeychainManager 加密本地文件（`Starcat/Core/Keychain/KeychainManager.swift`）
 //       → AppSettings.customServiceAPIKey(for:) 读取
-//    2. xcconfig 注入的 baked-in production 默认 Key
-//       → `Configs/Secrets.xcconfig` 里的 `STARCAT_PRODUCTION_API_KEY` 字段
+//    2. xcconfig 注入的 baked-in production 默认 Key（**每服务独立**）
+//       → `Configs/Secrets.xcconfig` 的 `STARCAT_PRODUCTION_API_KEY_<SERVICE>`
 //       → 经 project.yml `info.properties` 写入 `Info.plist`
-//       → 本文件 `StarcatAPIKeyDefaults.productionKey` 读 Bundle.main.infoDictionary
+//       → `StarcatAPIKeyDefaults.productionKeyOrNil(for:)` 读 Bundle.main.infoDictionary
 //    3. 都没填 → nil（API actor 不会注入 `Authorization: Bearer` 头，后端必返 401，
 //       UI 应在收到 401 时引导用户去设置页填 Key）
 //
@@ -38,36 +38,16 @@ import Foundation
 
 // MARK: - Production 默认 API Key（编译期 baked-in）
 
-/// production 后端 fly.io 部署的默认 API Key，从 `Info.plist` 读取（来源是
-/// `Configs/Secrets.xcconfig` 的 `STARCAT_PRODUCTION_API_KEY` 字段）。
+/// production 后端 fly.io 部署的默认 API Key（按服务从 `Info.plist` 读取）。
 ///
-/// **当 `Secrets.xcconfig` 不存在或字段为空时**：
-///   - `productionKey` 解析为 `nil`
-///   - App 运行期表现为「BYOK-only 模式」：用户必须在「设置 → 服务」Tab 填自己的 Key
-///     否则任何 trending / weekly / sharing 请求都会被后端拒 401
-///
-/// **当 `Secrets.xcconfig` 填了真实 Key 时**：
-///   - `productionKey` 解析为该 Key
-///   - 用户首次启动可零配置直接用 production 服务（BYOK 仍可在设置页覆盖）
-///
-/// 替换方式：见 `Configs/Secrets.xcconfig.template` 文件头说明。
+/// 四个服务各自一条 xcconfig / plist 字段，允许 Fly 上 `API_KEYS` 白名单互不相同。
+/// 自动化写入：`make setup-production-api-keys`（读 supports/*/ .env）。
 enum StarcatAPIKeyDefaults {
 
-    /// `Info.plist` 里 production 默认 Key 的 key 名（与 project.yml `info.properties` 对齐）。
-    private static let infoPlistKey = "STARCAT_PRODUCTION_API_KEY"
-
-    /// production 默认 Key（可能为 nil 或空字符串，调用方需进一步判空）。
-    ///
-    /// 读取 `Bundle.main.infoDictionary[infoPlistKey] as? String`：
-    /// - 缺失（key 不在 Info.plist）→ nil
-    /// - 空字符串（xcconfig 未填值，Xcode 会保留空字符串）→ ""
-    /// - 真实 Key → "sk-starcat-..."
-    ///
-    /// 调用方应通过 `productionKeyOrNil` 一步走，避免重复判空。
-    static var productionKeyOrNil: String? {
-        let raw = Bundle.main.infoDictionary?[infoPlistKey] as? String
+    /// 读取指定服务的 production 默认 Key；缺失或空 → nil。
+    static func productionKeyOrNil(for service: ThirdPartyService) -> String? {
+        let raw = Bundle.main.infoDictionary?[service.productionAPIKeyInfoPlistKey] as? String
         guard let raw, !raw.isEmpty else { return nil }
-        // 防御性 trim：xcconfig 编辑器易混入末尾空白
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
@@ -105,6 +85,6 @@ enum StarcatAPIKeyResolver {
            !custom.isEmpty {
             return custom
         }
-        return StarcatAPIKeyDefaults.productionKeyOrNil
+        return StarcatAPIKeyDefaults.productionKeyOrNil(for: service)
     }
 }
