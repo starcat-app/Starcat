@@ -184,6 +184,7 @@ final class RepoAIChatViewModel {
 
     /// 最近一次错误（非 nil 时 UI 渲染错误条）。
     private(set) var errorMessage: String?
+    private(set) var paywallContext: ProPaywallContext?
 
     /// 上下文窗口溢出标志（HOM-70）。
     ///
@@ -618,6 +619,9 @@ final class RepoAIChatViewModel {
             }
 
             let description = error.localizedDescription
+            if let gateError = error as? EntitlementGateError {
+                paywallContext = ProPaywallContext(feature: gateError.feature, message: description)
+            }
             errorMessage = description
             if Self.looksLikeContextOverflow(description) {
                 isContextOverflow = true
@@ -650,6 +654,10 @@ final class RepoAIChatViewModel {
     /// 显式清空错误条。
     func dismissError() {
         errorMessage = nil
+    }
+
+    func dismissPaywall() {
+        paywallContext = nil
     }
 
     /// 显式清空 context-overflow 标志（UI 上 "关闭 banner" 入口；不影响 errorMessage）。

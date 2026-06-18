@@ -81,6 +81,21 @@ struct RepoReleaseStatItem: View {
             }
             await viewModel?.loadFor(repo: repo)
         }
+        .sheet(item: releasePaywallBinding) { context in
+            ProPaywallSheet(context: context)
+                .appLocaleEnvironment()
+        }
+    }
+
+    private var releasePaywallBinding: Binding<ProPaywallContext?> {
+        Binding(
+            get: { viewModel?.paywallContext },
+            set: { newValue in
+                if newValue == nil {
+                    viewModel?.dismissPaywall()
+                }
+            }
+        )
     }
 
     /// 第一行:图标 + 文字,作为订阅 / 取消订阅的主交互入口。
@@ -188,6 +203,7 @@ final class RepoReleaseSectionViewModel {
     private(set) var isLoading: Bool = false
     private(set) var isMutating: Bool = false
     private(set) var errorMessage: String?
+    private(set) var paywallContext: ProPaywallContext?
 
     private let apiClient: any GitHubAPIClientProtocol
     private let subscriptionRepository: any ReleaseSubscriptionRepositoryProtocol
@@ -273,9 +289,11 @@ final class RepoReleaseSectionViewModel {
                 await notificationService.ensureAuthorized()
                 await loadFor(repo: makeRepoStub(id: repoId, owner: owner, name: repoName))
             } catch {
+                presentPaywallIfNeeded(error)
                 errorMessage = String.l10n("releases.error.subscribeFailed")
             }
         } catch {
+            presentPaywallIfNeeded(error)
             errorMessage = String.l10n("releases.error.subscribeFailed")
         }
     }
@@ -303,7 +321,16 @@ final class RepoReleaseSectionViewModel {
         }
     }
 
+    func dismissPaywall() {
+        paywallContext = nil
+    }
+
     // MARK: - 工具
+
+    private func presentPaywallIfNeeded(_ error: Error) {
+        guard let gateError = error as? EntitlementGateError else { return }
+        paywallContext = ProPaywallContext(feature: gateError.feature, message: gateError.localizedDescription)
+    }
 
     /// loadFor(repo:) 需要 Repo，但 unsubscribe 之后我们只持有 id。这里造一个 stub
     /// 仅用于 task 的 id 一致性，不参与展示路径。

@@ -130,6 +130,7 @@ final class RepoAIInsightService {
     private let settings: AppSettings
     private let keychain: any KeychainManaging
     private let externalContextProvider: AnySearchContextProvider
+    private let entitlementGate: EntitlementGate?
 
     /// X4（2026-06-13）：注入 RepoContextPacker 的代码上下文。
     ///
@@ -157,6 +158,7 @@ final class RepoAIInsightService {
         settings: AppSettings,
         keychain: any KeychainManaging = KeychainManager.shared,
         repoAIContextProvider: RepoAIContextProvider? = nil,
+        entitlementGate: EntitlementGate? = nil,
         onSummaryGenerated: (@MainActor (Repo) -> Void)? = nil
     ) {
         self.summaryRepository = summaryRepository
@@ -165,6 +167,7 @@ final class RepoAIInsightService {
         self.keychain = keychain
         self.externalContextProvider = AnySearchContextProvider(settings: settings)
         self.repoAIContextProvider = repoAIContextProvider
+        self.entitlementGate = entitlementGate
         self.onSummaryGenerated = onSummaryGenerated
     }
 
@@ -216,6 +219,7 @@ final class RepoAIInsightService {
         allowExternalContext: Bool = true,
         onSummaryDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> RepoAIInsightGeneration {
+        try enforceGenerationEntitlement(includeSummary: includeSummary, includeTags: includeTags)
         let source = try await makeSource(for: repo)
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
         let resolvedExternalContext: AIExternalContext?
@@ -432,6 +436,7 @@ final class RepoAIInsightService {
         // service、UI 三层各复制一次不断增长的完整字符串。
         onDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
+        try entitlementGate?.requirePro(.aiChat)
         let source = try await makeSource(for: repo)
 
         // Y9：复用同一份 source 做缓存比对（避免 makeSource 被调两次造成重复网络 IO）。
@@ -474,6 +479,20 @@ final class RepoAIInsightService {
         // 这里兜底用累积值；若仍为空才抛 emptyResponse。
         guard let final = accumulated.nilIfBlank else { throw AIClientError.emptyResponse }
         return final
+    }
+
+    /// 生成摘要 / 标签前的付费边界。
+    ///
+    /// 试用次数在真正发起生成前消耗，避免用户通过反复取消或绕过 UI 无限命中 LLM。
+    /// 如果后续要改成“仅成功后扣次”，只需要把本方法拆成 validate + consume 两段。
+    private func enforceGenerationEntitlement(includeSummary: Bool, includeTags: Bool) throws {
+        guard let entitlementGate else { return }
+        if includeSummary {
+            try entitlementGate.consumeTrialOrRequirePro(.aiSummary)
+        }
+        if includeTags {
+            try entitlementGate.consumeTrialOrRequirePro(.aiTags)
+        }
     }
 
     /// 2026-06-14 v4 重构：拼装对话路径的 system prompt，走 `aiChatTask.prompt` 模板

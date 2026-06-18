@@ -31,6 +31,7 @@ final class TagManagementViewModel {
     private(set) var isLoading: Bool = false
     /// 失败提示，nil 表示无错。每次写入操作开始时清空。
     private(set) var errorMessage: String?
+    private(set) var paywallContext: ProPaywallContext?
 
     /// 多选 List 的选择集合（SwiftUI 双向绑定）。
     /// - 单选编辑 ↔ count == 1
@@ -113,6 +114,7 @@ final class TagManagementViewModel {
             selection = [tag.id]
             return true
         } catch {
+            presentPaywallIfNeeded(error)
             errorMessage = String(format: String.l10n("tagManagement.error.createFailedFormat"), error.localizedDescription)
             return false
         }
@@ -191,5 +193,14 @@ final class TagManagementViewModel {
     /// UI 主动清错（用户点关闭横幅时调用）。
     func dismissError() {
         errorMessage = nil
+    }
+
+    func dismissPaywall() {
+        paywallContext = nil
+    }
+
+    private func presentPaywallIfNeeded(_ error: Error) {
+        guard let gateError = error as? EntitlementGateError else { return }
+        paywallContext = ProPaywallContext(feature: gateError.feature, message: gateError.localizedDescription)
     }
 }

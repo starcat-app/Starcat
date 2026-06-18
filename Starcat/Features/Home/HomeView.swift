@@ -78,6 +78,8 @@ struct HomeView: View {
     @State private var showBatchAIPanel: Bool = false
     /// HOM-52：当前正在编辑的 Options（启动 sheet 时初始化，跨 sheet 关闭保留以记住上次选择）。
     @State private var batchAIOptions: BatchAIQueueOptions = BatchAIQueueOptions()
+    /// 当前需要展示的 Pro 付费墙上下文。由批量 AI 等主窗口入口触发。
+    @State private var paywallContext: ProPaywallContext?
 
     /// 三栏显示状态。
     ///
@@ -149,7 +151,8 @@ struct HomeView: View {
         semanticSearchService: SemanticSearchService? = nil,
         trendingRepository: any TrendingRepositoryProtocol,
         githubAPIClient: any GitHubAPIClientProtocol,
-        readmeTranslationService: ReadmeTranslationService
+        readmeTranslationService: ReadmeTranslationService,
+        entitlementGate: EntitlementGate
     ) {
         _viewModel = State(initialValue: HomeViewModel(
             repository: repository,
@@ -173,12 +176,13 @@ struct HomeView: View {
             coordinator: SearchCoordinator(providers: [
                 LocalKeywordSearchProvider(repository: repository),
                 GitHubRepositorySearchProvider(client: githubAPIClient),
-                AnySearchWebProvider()
+                AnySearchWebProvider(entitlementGate: entitlementGate)
             ]),
             historyRepository: searchHistoryRepository,
             includeWebInAll: {
                 AppSettings.shared.anySearchEnabled && AppSettings.shared.searchIncludeWebInAll
-            }
+            },
+            entitlementGate: entitlementGate
         ))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
             tagRepository: tagRepository,
@@ -329,6 +333,10 @@ struct HomeView: View {
                 onClose: { showBatchAIPanel = false }
             )
             .appLocaleEnvironment()
+        }
+        .sheet(item: homePaywallBinding) { context in
+            ProPaywallSheet(context: context)
+                .appLocaleEnvironment()
         }
         // HOM-47：登录后启动后台 Release 轮询；登出时停。
         // 与 SyncManager 不同：Release Poller 自调度（NSBackgroundActivityScheduler），
@@ -826,6 +834,12 @@ struct HomeView: View {
     /// 错误处理：fetchUntagged 失败仅记日志，不弹错——这是用户主动触发的场景，
     /// 失败时按钮仍可继续点（dependencies 状态未变，第二次点击会重试）。
     private func startBatchAIIntegration() async {
+        do {
+            try dependencies.entitlementGate.requirePro(.batchAI)
+        } catch {
+            paywallContext = ProPaywallContext(feature: .batchAI, message: error.localizedDescription)
+            return
+        }
         let untagged: [Repo]
         do {
             untagged = try await dependencies.repoRepository.fetchUntagged()
@@ -836,6 +850,22 @@ struct HomeView: View {
         guard !untagged.isEmpty else { return }
         dependencies.batchAIQueueService.start(repos: untagged, options: batchAIOptions)
         showBatchAIPanel = true
+    }
+
+    private var homePaywallBinding: Binding<ProPaywallContext?> {
+        Binding(
+            get: {
+                paywallContext ?? translationVM.paywallContext
+            },
+            set: { newValue in
+                if newValue == nil {
+                    paywallContext = nil
+                    translationVM.dismissPaywall()
+                } else {
+                    paywallContext = newValue
+                }
+            }
+        )
     }
 
     /// 登录态变为已认证时的统一入口（冷启动恢复 / Device Flow / 账号切换）。

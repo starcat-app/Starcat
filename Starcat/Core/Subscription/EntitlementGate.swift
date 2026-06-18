@@ -71,6 +71,17 @@ enum EntitlementGateError: Error, LocalizedError, Equatable {
             return String(format: String.l10n("subscription.gate.releaseLimitFormat"), limit)
         }
     }
+
+    var feature: ProFeature {
+        switch self {
+        case .requiresPro(let feature), .trialQuotaExceeded(let feature, _):
+            return feature
+        case .tagLimitReached:
+            return .tagCreation
+        case .releaseSubscriptionLimitReached:
+            return .releaseSubscription
+        }
+    }
 }
 
 /// 统一权益门控。

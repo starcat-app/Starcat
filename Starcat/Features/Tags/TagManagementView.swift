@@ -80,6 +80,10 @@ struct TagManagementView: View {
             }
             .appLocaleEnvironment()
         }
+        .sheet(item: tagPaywallBinding) { context in
+            ProPaywallSheet(context: context)
+                .appLocaleEnvironment()
+        }
         .alert("tagManagement.deleteTitle", isPresented: $showDeleteAlert) {
             Button("action.delete", role: .destructive) {
                 Task { await viewModel.delete(ids: viewModel.selection) }
@@ -104,6 +108,17 @@ struct TagManagementView: View {
     }
 
     // MARK: - 子视图
+
+    private var tagPaywallBinding: Binding<ProPaywallContext?> {
+        Binding(
+            get: { viewModel.paywallContext },
+            set: { newValue in
+                if newValue == nil {
+                    viewModel.dismissPaywall()
+                }
+            }
+        )
+    }
 
     private var titleBar: some View {
         HStack {

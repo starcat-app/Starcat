@@ -35,6 +35,9 @@ final class SearchCenterViewModel {
     /// AnySearch 筛选条件（domain / contentTypes / zone / maxResults）。
     /// 默认 `.empty` 表示「自动」，与未做本次改造前的行为完全一致。
     var anySearchFilters: AnySearchFilters = .empty
+    /// 当前搜索入口触发的 Pro 付费墙。只在用户明确进入网页搜索时弹出，避免 `.all`
+    /// 搜索里本地/GitHub 结果也被一起挡住。
+    var paywallContext: ProPaywallContext?
 
     private(set) var lastSubmittedQuery: String = ""
     /// 历史记录（按 `decayedScore` 降序排列；UI 直接遍历即可）。
@@ -45,15 +48,18 @@ final class SearchCenterViewModel {
     let coordinator: SearchCoordinator
     private let historyRepository: any SearchHistoryRepositoryProtocol
     private let includeWebInAll: () -> Bool
+    private let entitlementGate: EntitlementGate?
 
     init(
         coordinator: SearchCoordinator,
         historyRepository: any SearchHistoryRepositoryProtocol,
-        includeWebInAll: @escaping () -> Bool = { false }
+        includeWebInAll: @escaping () -> Bool = { false },
+        entitlementGate: EntitlementGate? = nil
     ) {
         self.coordinator = coordinator
         self.historyRepository = historyRepository
         self.includeWebInAll = includeWebInAll
+        self.entitlementGate = entitlementGate
 
         // 历史加载放在 `present()` 触发，不在 init 做。
         //
@@ -183,6 +189,7 @@ final class SearchCenterViewModel {
             selectedIndex = nil
             return
         }
+        guard canRunExplicitWebSearch(request) else { return }
 
         lastSubmittedQuery = request.query
         // 历史记录持久化 + 重新加载：try? 静默吞错避免 SQLite 异常炸 UI；
@@ -197,6 +204,7 @@ final class SearchCenterViewModel {
 
     func changeScope(_ newScope: SearchScope) async {
         scope = newScope
+        guard canRunExplicitWebSearch(makeRequest(query: query)) else { return }
         guard !lastSubmittedQuery.isEmpty else { return }
         query = lastSubmittedQuery
         selectedIndex = nil
@@ -245,6 +253,7 @@ final class SearchCenterViewModel {
     /// 纳入，新筛选不会复用旧结果。
     func applyAnySearchFilters() async {
         guard !lastSubmittedQuery.isEmpty else { return }
+        guard canRunExplicitWebSearch(makeRequest(query: lastSubmittedQuery)) else { return }
         currentGitHubPage = 1
         selectedIndex = nil
         await coordinator.search(makeRequest(query: lastSubmittedQuery))
@@ -299,6 +308,17 @@ final class SearchCenterViewModel {
             page: currentGitHubPage,
             includeWebInAll: includeWebInAll()
         )
+    }
+
+    private func canRunExplicitWebSearch(_ request: SearchRequest) -> Bool {
+        guard request.scope == .web else { return true }
+        do {
+            try entitlementGate?.requirePro(.anySearchWeb)
+            return true
+        } catch {
+            paywallContext = ProPaywallContext(feature: .anySearchWeb, message: error.localizedDescription)
+            return false
+        }
     }
 
     /// 从 repository 拉最新历史，按 `decayedScore` 降序写入 `history`。

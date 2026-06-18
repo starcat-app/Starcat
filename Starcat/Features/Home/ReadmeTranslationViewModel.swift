@@ -52,6 +52,7 @@ final class ReadmeTranslationViewModel {
 
     /// 翻译错误消息（已本地化）。
     private(set) var errorMessage: String?
+    private(set) var paywallContext: ProPaywallContext?
 
     /// 缓存翻译与当前源 HTML 不再匹配时为 true，UI 提示"原 README 已更新，建议重新翻译"。
     ///
@@ -189,6 +190,7 @@ final class ReadmeTranslationViewModel {
                     targetLanguage: targetLanguage
                 )
             } catch {
+                self.presentPaywallIfNeeded(error)
                 self.errorMessage = error.localizedDescription
             }
         }
@@ -214,6 +216,10 @@ final class ReadmeTranslationViewModel {
     /// UI 显式清除当前错误（按 X 关闭错误条时调用）。
     func dismissError() {
         errorMessage = nil
+    }
+
+    func dismissPaywall() {
+        paywallContext = nil
     }
 
     /// 用户主动取消当前翻译任务（2026-06-14 dong4j 反馈：详情页右下角翻译按钮没有
@@ -298,9 +304,15 @@ final class ReadmeTranslationViewModel {
             streamingHtml = nil
         } catch {
             // 失败保留原 README（HOM-68 验收要求）：不动 displayMode。
+            presentPaywallIfNeeded(error)
             errorMessage = error.localizedDescription
             streamingHtml = nil
             AppLog.ai.error("README translation failed repo=\(repo.fullName, privacy: .public) language=\(targetLanguage.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    private func presentPaywallIfNeeded(_ error: Error) {
+        guard let gateError = error as? EntitlementGateError else { return }
+        paywallContext = ProPaywallContext(feature: gateError.feature, message: gateError.localizedDescription)
     }
 }

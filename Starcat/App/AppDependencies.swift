@@ -435,7 +435,8 @@ final class AppDependencies {
             summaryRepository: summaryRepo,
             readmeRepository: readmeRepo,
             settings: self.settings,
-            repoAIContextProvider: repoAIContextProvider
+            repoAIContextProvider: repoAIContextProvider,
+            entitlementGate: self.entitlementGate
         )
         self.repoAIInsightService = aiInsight
 
@@ -451,11 +452,13 @@ final class AppDependencies {
         self.readmeTranslationRepository = DiskReadmeTranslationCache.shared
         self.readmeTranslationService = ReadmeTranslationService(
             translationRepository: DiskReadmeTranslationCache.shared,
-            settings: self.settings
+            settings: self.settings,
+            entitlementGate: self.entitlementGate
         )
 
         // W4 Batch A1：标签 / 关联 / 笔记+状态 Repository
-        let tagRepo = GRDBTagRepository(database: db)
+        let rawTagRepo = GRDBTagRepository(database: db)
+        let tagRepo = GatedTagRepository(base: rawTagRepo, entitlementGate: self.entitlementGate)
         let repoTagRepo = GRDBRepoTagRepository(database: db)
         self.tagRepository = tagRepo
         self.repoTagRepository = repoTagRepo
@@ -468,7 +471,8 @@ final class AppDependencies {
             insightService: aiInsight,
             tagRepository: tagRepo,
             repoTagRepository: repoTagRepo,
-            aiSummaryRepository: summaryRepo
+            aiSummaryRepository: summaryRepo,
+            entitlementGate: self.entitlementGate
         )
         self.batchAIQueueService = batchSvc
 
@@ -479,7 +483,8 @@ final class AppDependencies {
             settings: self.settings,
             repoRepository: repo,
             batchService: batchSvc,
-            syncManager: self.syncManager
+            syncManager: self.syncManager,
+            entitlementGate: self.entitlementGate
         )
         let embeddingRepo = GRDBRepoEmbeddingRepository(database: db)
         self.repoEmbeddingRepository = embeddingRepo
@@ -491,7 +496,8 @@ final class AppDependencies {
             settings: self.settings,
             readmeRepository: readmeRepo,
             noteRepository: self.repoNoteRepository,
-            summaryRepository: summaryRepo
+            summaryRepository: summaryRepo,
+            entitlementGate: self.entitlementGate
         )
         self.semanticSearchService = semantic
 
@@ -593,7 +599,11 @@ final class AppDependencies {
         // HOM-47：Release 订阅追踪。
         // 装配顺序：Repository → Monitor（依赖 API + Repository + RepoRepository）
         //         → NotificationService → Poller（依赖 Monitor + NotificationService）。
-        let releaseSubRepo = GRDBReleaseSubscriptionRepository(database: db)
+        let rawReleaseSubRepo = GRDBReleaseSubscriptionRepository(database: db)
+        let releaseSubRepo = GatedReleaseSubscriptionRepository(
+            base: rawReleaseSubRepo,
+            entitlementGate: self.entitlementGate
+        )
         self.releaseSubscriptionRepository = releaseSubRepo
         let releaseRecordRepo = GRDBReleaseRepository(database: db)
         self.releaseRepository = releaseRecordRepo

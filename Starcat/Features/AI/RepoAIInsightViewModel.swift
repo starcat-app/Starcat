@@ -43,6 +43,7 @@ final class RepoAIInsightViewModel {
     private(set) var tagErrorMessage: String?
     private(set) var streamingSummaryText: String?
     private(set) var appliedTagNames: Set<String> = []
+    private(set) var paywallContext: ProPaywallContext?
 
     /// Y1：摘要生成阶段（仅在 `isGenerating == true` 期间有意义）。
     /// `nil` 表示当前不在生成中。
@@ -92,6 +93,7 @@ final class RepoAIInsightViewModel {
             // Y9.3：anysearch 降级原因同款生命周期，load 路径一并清零。
             externalContextDegradationReason = nil
         } catch {
+            presentPaywallIfNeeded(error)
             errorMessage = error.localizedDescription
         }
     }
@@ -144,6 +146,7 @@ final class RepoAIInsightViewModel {
             externalContextDegradationReason = result.externalContextDegradationReason
             errorMessage = nil
         } catch {
+            presentPaywallIfNeeded(error)
             errorMessage = error.localizedDescription
         }
     }
@@ -158,6 +161,7 @@ final class RepoAIInsightViewModel {
             onTagsChanged?()
             errorMessage = nil
         } catch {
+            presentPaywallIfNeeded(error)
             errorMessage = error.localizedDescription
         }
     }
@@ -193,6 +197,15 @@ final class RepoAIInsightViewModel {
         )
         try await tagRepository.create(tag)
         return tag
+    }
+
+    func dismissPaywall() {
+        paywallContext = nil
+    }
+
+    private func presentPaywallIfNeeded(_ error: Error) {
+        guard let gateError = error as? EntitlementGateError else { return }
+        paywallContext = ProPaywallContext(feature: gateError.feature, message: gateError.localizedDescription)
     }
 }
 

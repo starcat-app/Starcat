@@ -100,6 +100,10 @@ struct SearchCenterView: View {
             )
             .appLocaleEnvironment()
         }
+        .sheet(item: $viewModel.paywallContext) { context in
+            ProPaywallSheet(context: context)
+                .appLocaleEnvironment()
+        }
         .onKeyPress(.upArrow) {
             viewModel.moveSelection(by: -1)
             return .handled

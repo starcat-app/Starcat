@@ -65,6 +65,7 @@ final class SemanticSearchService {
     private let settings: AppSettings
     private let keychain: any KeychainManaging
     private let batchSize: Int
+    private let entitlementGate: EntitlementGate?
 
     init(
         embeddingRepository: any RepoEmbeddingRepositoryProtocol,
@@ -72,6 +73,7 @@ final class SemanticSearchService {
         readmeRepository: ReadmeRepository? = nil,
         noteRepository: (any RepoNoteRepositoryProtocol)? = nil,
         summaryRepository: (any AISummaryRepositoryProtocol)? = nil,
+        entitlementGate: EntitlementGate? = nil,
         keychain: any KeychainManaging = KeychainManager.shared,
         batchSize: Int = 32
     ) {
@@ -82,6 +84,7 @@ final class SemanticSearchService {
         self.settings = settings
         self.keychain = keychain
         self.batchSize = batchSize
+        self.entitlementGate = entitlementGate
     }
 
     /// 对传入候选 repo 做语义搜索（2026-06-14 A+B+C 改造）。
@@ -112,6 +115,7 @@ final class SemanticSearchService {
         ftsHitIDs: Set<Int64> = [],
         limit: Int = 80
     ) async throws -> [SemanticSearchHit] {
+        try entitlementGate?.requirePro(.semanticSearch)
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
         guard !candidates.isEmpty else { return [] }
@@ -176,6 +180,7 @@ final class SemanticSearchService {
     /// `@discardableResult` 让既有 callsite 无需修改（HomeViewModel 等只关心异常）。
     @discardableResult
     func refreshIndex(for repos: [Repo]) async throws -> Int {
+        try entitlementGate?.requirePro(.semanticSearch)
         guard !repos.isEmpty else { return 0 }
         let (client, model) = try makeClient(task: settings.aiEmbeddingTask)
         return try await ensureIndexed(repos, model: model, client: client, force: true)
@@ -200,9 +205,12 @@ final class SemanticSearchService {
     @discardableResult
     func refreshIndexIfChanged(for repo: Repo) async -> Bool {
         do {
+            try entitlementGate?.requirePro(.semanticSearch)
             let (client, model) = try makeClient(task: settings.aiEmbeddingTask)
             let rebuilt = try await ensureIndexed([repo], model: model, client: client)
             return rebuilt > 0
+        } catch EntitlementGateError.requiresPro {
+            return false
         } catch SemanticSearchError.missingAPIKey {
             // 静默：用户没配 AI，不打扰
             return false
