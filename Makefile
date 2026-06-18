@@ -30,7 +30,7 @@ LINGUIST_ARGS ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help run test reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release release-dry-run pr-helper bump-version linguist
+.PHONY: help run test reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release release-dry-run pr-helper bump-version linguist sync-fly-secrets setup-production-api-key
 
 help: ## 列出所有可用命令
 	@echo "Starcat 常用命令："
@@ -50,6 +50,8 @@ help: ## 列出所有可用命令
 	@echo "  make show-data              在 Finder 中打开 App 的 Application Support 目录"
 	@echo "  make clean                  删除 build/ 目录（清掉 xcodebuild 的 DerivedData 与产物）"
 	@echo "  make start-supports         启动 supports/ 目录下的所有后端服务（trending / wiki / weekly / sharing）"
+	@echo "  make sync-fly-secrets       从 supports 各 API .env 同步 secrets 到 Fly.io（4 个 App）"
+	@echo "  make setup-production-api-key KEY=sk-starcat-...  写入 Configs/Secrets.xcconfig（发版 baked-in Key）"
 	@echo ""
 
 run: ## 执行 scripts/run-debug.sh（先 kill 旧 Starcat，再 xcodegen + Debug 构建 + 启动）
@@ -62,11 +64,13 @@ test: ## 跑全量单测（先 xcodegen 同步项目，再 xcodebuild test）
 	xcodegen generate
 	xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 
-build-dmg: ## 打包 Release DMG（VERSION=0.1.0）
+## 打包 Release DMG（VERSION=0.1.0）
+build-dmg: 
 	# 内部会跑 xcodegen + xcodebuild Release；脚本要求版本号为 X.Y.Z。
 	@bash scripts/build-dmg.sh "$(VERSION)"
 
-release: ## 发版总入口（VERSION=v0.1.0 RELEASE_FLAGS="--skip-push"）
+## 发版总入口（VERSION=v0.1.0 RELEASE_FLAGS="--skip-push"）
+release: 
 	# release.sh 会打本地 tag、构建 DMG，并按参数决定是否 push tag。
 	# 这是发版动作，必须显式传 VERSION，避免误用默认 0.0.1 发版。
 	@if [ "$(origin VERSION)" = "file" ]; then \
@@ -75,7 +79,8 @@ release: ## 发版总入口（VERSION=v0.1.0 RELEASE_FLAGS="--skip-push"）
 	fi
 	@bash scripts/release.sh "$(VERSION)" $(RELEASE_FLAGS)
 
-release-dry-run: ## 演练发版流程（VERSION=v0.1.0）
+## 演练发版流程（VERSION=v0.1.0）
+release-dry-run: 
 	@if [ "$(origin VERSION)" = "file" ]; then \
 		echo "请显式传版本号，例如：make release-dry-run VERSION=v0.1.0"; \
 		exit 1; \
@@ -138,3 +143,26 @@ start-supports: ## 启动 supports/ 目录下的后端服务总入口
 
 stop-supports: ## 停止 supports/ 目录下的后端服务总入口
 	cd supports && ./start-all.sh --stop
+
+sync-fly-secrets: ## 从 supports 各 API .env 同步 fly secrets（4 个 App）
+	@$(MAKE) -C supports fly-secrets-all
+
+## 写入 Configs/Secrets.xcconfig（KEY=sk-starcat-...，发版 baked-in）
+setup-production-api-key:  
+	@if [ -z "$(KEY)" ]; then \
+		echo "用法: make setup-production-api-key KEY=sk-starcat-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"; \
+		echo "说明: 写入 Configs/Secrets.xcconfig（已 gitignore），须与 Fly 四端 API_KEYS 白名单一致。"; \
+		echo "      详见 supports/docs/fly-io-环境变量.md"; \
+		exit 1; \
+	fi
+	@if ! echo "$(KEY)" | grep -qE '^sk-starcat-[A-Z2-7]{32}$$'; then \
+		echo "Error: KEY 格式应为 sk-starcat- + 32 位 base32 大写（用 supports/scripts/gen-api-key.sh 生成）"; \
+		exit 1; \
+	fi
+	@if [ ! -f Configs/Secrets.xcconfig ]; then \
+		cp Configs/Secrets.xcconfig.template Configs/Secrets.xcconfig; \
+		echo "已创建 Configs/Secrets.xcconfig（来自 template）"; \
+	fi
+	@sed -i '' 's/^STARCAT_PRODUCTION_API_KEY = .*/STARCAT_PRODUCTION_API_KEY = $(KEY)/' Configs/Secrets.xcconfig
+	@echo "✓ STARCAT_PRODUCTION_API_KEY 已写入 Configs/Secrets.xcconfig"
+	@echo "  下一步: make -C supports fly-secrets-all  确保 Fly 四端 API_KEYS 含同一把 key"
