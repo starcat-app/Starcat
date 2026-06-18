@@ -302,7 +302,7 @@ enum AppEndpoints {
     // MARK: - 公共辅助
 
     /// `ThirdPartyService` → 生效 baseURL 的 dispatch。
-    /// 给 `ThirdPartyService.productionURL` / `ServicesSettingsView`(captionRow 显示"当前生效") 用。
+    /// 给 `ThirdPartyService.productionURL` / `ServicesSettingsView`(captionRow 显示自定义 URL) 用。
     @MainActor
     static func resolved(for service: ThirdPartyService) -> URL {
         switch service {
@@ -314,7 +314,7 @@ enum AppEndpoints {
     }
 
     /// `ThirdPartyService` → 生产默认 URL 的 dispatch。
-    /// 给 `ThirdPartyService.productionURL` / 重置按钮 / TextField placeholder 用。
+    /// 给 `ThirdPartyService.productionURL` / 重置按钮 / 未配置时回退用。
     static func production(for service: ThirdPartyService) -> URL {
         switch service {
         case .weekly:   return Weekly.productionURL

@@ -11949,6 +11949,23 @@
         }
       }
     },
+    "repo.share.error.missingAIConfig" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sharing uses an AI summary for the share page. No AI provider is configured yet — open Settings → AI, add an API key for the Summary task, then try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享会附带 AI 摘要生成分享页。当前尚未配置 AI 服务，请前往「设置 → AI」为摘要任务配置 Provider 的 API Key 后重试。"
+          }
+        }
+      }
+    },
     "repo.share.error.retry" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -18085,6 +18102,23 @@
         }
       }
     },
+    "settings.services.effective.builtin" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In effect: Built-in service"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前生效：内置服务"
+          }
+        }
+      }
+    },
     "settings.services.error.invalidFormat" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -18382,6 +18416,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "地址"
+          }
+        }
+      }
+    },
+    "settings.services.url.placeholder" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Built-in service will be used if not configured"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未配置将使用内置服务"
           }
         }
       }
