@@ -1,6 +1,6 @@
 # Starcat
 
-![starcat](starcat.webp)
+![20260618205538_4cHWbTNy](./banner.png)
 
 > 面向重度 GitHub 用户的 Apple 平台 Star 管理与 AI 知识整理工具
 

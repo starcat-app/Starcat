@@ -127,7 +127,7 @@ private struct AboutBrandPanel: View {
             SafeExternalLink(
                 title: "about.brand.getSupport",
                 systemImage: "lifepreserver",
-                url: URL(string: "https://starcat.app/support")
+                url: URL(string: "https://starcat.ink/support")
             )
             .buttonStyle(.plain)
             .focusEffectDisabled()
@@ -301,7 +301,7 @@ private struct SupportPage: View {
                     title: "about.support.email.title",
                     detail: "about.support.email.detail",
                     systemImage: "envelope",
-                    url: URL(string: "mailto:support@starcat.app")
+                    url: URL(string: "mailto:dong4j@gmail.com")
                 )
                 SupportRow(
                     title: "about.support.issues.title",
@@ -313,7 +313,7 @@ private struct SupportPage: View {
                     title: "about.support.website.title",
                     detail: "about.support.website.detail",
                     systemImage: "safari",
-                    url: URL(string: "https://starcat.app")
+                    url: URL(string: "https://starcat.ink")
                 )
 
                 Divider().padding(.vertical, 4)
@@ -353,7 +353,7 @@ private struct EULAPage: View {
                     SafeExternalLink(
                         title: "about.eula.viewFull",
                         systemImage: "arrow.up.right.square",
-                        url: URL(string: "https://starcat.app/eula")
+                        url: URL(string: "https://starcat.ink/eula")
                     )
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
@@ -397,7 +397,7 @@ private struct PrivacyPage: View {
                     SafeExternalLink(
                         title: "about.privacy.viewFull",
                         systemImage: "arrow.up.right.square",
-                        url: URL(string: "https://starcat.app/privacy")
+                        url: URL(string: "https://starcat.ink/privacy")
                     )
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
