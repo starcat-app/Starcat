@@ -447,6 +447,7 @@ struct RepoShareButton: View {
     @State private var showSharePopup = false
     @State private var shareUrl: String?
     @State private var shareError: String?
+    @State private var paywallContext: ProPaywallContext?
 
     var body: some View {
         Button {
@@ -501,6 +502,9 @@ struct RepoShareButton: View {
         } message: {
             if let error = shareError { Text(error) }
         }
+        .sheet(item: $paywallContext) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
+        }
     }
 
     private func shareRepo() async {
@@ -552,6 +556,9 @@ struct RepoShareButton: View {
             case .missingProvider, .invalidJSON:
                 shareError = error.localizedDescription
             }
+        } catch let error as EntitlementGateError {
+            // 试用耗尽 / 需 Pro：走统一付费墙，避免「分享失败 + 重试」误导用户。
+            paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
         } catch {
             shareError = error.localizedDescription
         }
