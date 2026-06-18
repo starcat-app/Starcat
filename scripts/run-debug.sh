@@ -40,4 +40,14 @@ xcodebuild \
   -derivedDataPath build/DerivedData \
   build
 
-open "$PROJECT_ROOT/build/DerivedData/Build/Products/Debug/Starcat.app"
+APP_PATH="$PROJECT_ROOT/build/DerivedData/Build/Products/Debug/Starcat.app"
+
+# Xcode Debug 默认启用 ENABLE_DEBUG_DYLIB：主二进制只留 stub，真实代码在
+# Starcat.debug.dylib。经 `open`/Finder 冷启动时，macOS 26+ 对 ad-hoc 签名的
+# debug dylib 校验更严，会 dyld abort（crash log: Library not loaded /
+# code signature ... not valid for use in process）。
+# 从 Xcode Run 不受影响；run-debug.sh 在 open 前对整个 .app deep ad-hoc 重签。
+echo "==> 对 Debug 产物 ad-hoc 重签（修复 debug.dylib 经 open 启动失败）..."
+codesign --force --deep --sign - "$APP_PATH"
+
+open "$APP_PATH"
