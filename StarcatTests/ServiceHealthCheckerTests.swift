@@ -53,14 +53,32 @@ struct ServiceHealthCheckerTests {
         }
     }
 
+    /// 构造 ping 200 的标准 envelope body（`data.service` 与探测目标一致）。
+    private func pingOKBody(for service: ThirdPartyService) -> Data {
+        let json = #"{"schema_version":1,"data":{"service":"\#(service.rawValue)","ok":true}}"#
+        return Data(json.utf8)
+    }
+
+    private func stubPingOK(service: ThirdPartyService, statusCode: Int = 200) {
+        stubAll(statusCode: statusCode, body: pingOKBody(for: service))
+    }
+
     // MARK: - 单步探测状态机（R-03 2026-06-11）
 
-    @Test("200 → ok(200)")
+    @Test("200 + service 匹配 → ok(200)")
     func ping200ReturnsOk() async {
         let checker = makeChecker()
-        stubAll(statusCode: 200, body: #"{"schema_version":1,"data":{"service":"trending","ok":true}}"#.data(using: .utf8)!)
+        stubPingOK(service: .trending)
         let outcome = await checker.check(service: .trending, baseURL: fakeBaseURL, apiKey: "sk-real")
         #expect(outcome == .ok(statusCode: 200))
+    }
+
+    @Test("200 但 service 不匹配 → serviceMismatch（典型：地址填错端口 / 服务）")
+    func ping200WrongServiceReturnsMismatch() async {
+        let checker = makeChecker()
+        stubPingOK(service: .sharing)
+        let outcome = await checker.check(service: .trending, baseURL: fakeBaseURL, apiKey: "sk-real")
+        #expect(outcome == .serviceMismatch(expected: "trending", actual: "sharing", statusCode: 200))
     }
 
     @Test("401 → unauthorized(401)：缺 Authorization / 错 token 都走这里")
@@ -110,7 +128,7 @@ struct ServiceHealthCheckerTests {
     @Test("apiKey 非 nil 非空 → 请求带 Authorization: Bearer <key>")
     func pingIncludesBearerHeaderWhenKeyPresent() async {
         let checker = makeChecker()
-        stubAll(statusCode: 200)
+        stubPingOK(service: .trending)
         _ = await checker.check(service: .trending, baseURL: fakeBaseURL, apiKey: "sk-test-key")
 
         #expect(URLProtocolStub.receivedRequests.count == 1)
@@ -146,7 +164,7 @@ struct ServiceHealthCheckerTests {
     func pingURLPathForAllServices() async {
         for service in ThirdPartyService.allCases {
             let checker = makeChecker()
-            stubAll(statusCode: 200)
+            stubPingOK(service: service)
             _ = await checker.check(service: service, baseURL: fakeBaseURL, apiKey: "sk-any")
 
             let request = URLProtocolStub.receivedRequests.first
@@ -161,7 +179,7 @@ struct ServiceHealthCheckerTests {
         // pingURL 内部 normalizedBaseURL 会剥末尾 `/api`，最终命中标准路径。
         let checker = makeChecker()
         let legacySharingBase = URL(string: "https://share.test.invalid/api")!
-        stubAll(statusCode: 200)
+        stubPingOK(service: .sharing)
         _ = await checker.check(service: .sharing, baseURL: legacySharingBase, apiKey: "sk-any")
 
         let request = URLProtocolStub.receivedRequests.first
@@ -176,7 +194,7 @@ struct ServiceHealthCheckerTests {
         for service in ThirdPartyService.allCases {
             let checker = makeChecker()
             let baseWithSlash = URL(string: "http://127.0.0.1:5004/")!
-            stubAll(statusCode: 200)
+            stubPingOK(service: service)
             _ = await checker.check(service: service, baseURL: baseWithSlash, apiKey: "sk-any")
 
             let request = URLProtocolStub.receivedRequests.first

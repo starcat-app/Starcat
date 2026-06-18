@@ -431,6 +431,7 @@ struct ServicesSettingsTab: View {
     private func colorForOutcome(_ outcome: HealthCheckOutcome) -> Color {
         switch outcome {
         case .ok: return .green
+        case .serviceMismatch: return .orange
         case .unauthorized: return .red
         case .serverError: return .orange
         case .networkError: return .red

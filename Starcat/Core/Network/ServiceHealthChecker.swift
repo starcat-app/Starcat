@@ -6,7 +6,8 @@
 //
 //  约定：每个后端都暴露 `GET /api/v1/ping`（sharing 是 `/v1/ping`，因为它 baseURL 含 `/api`），
 //  由 BearerAuth middleware 保护。`ServiceHealthChecker` 用本端点单步探测：
-//   - 200 → 服务可达 + Key 正确
+//   - 200 + body.data.service 与期望服务一致 + ok=true → 服务可达 + Key 正确 + 地址没配错
+//   - 200 但 service 不匹配 → serviceMismatch（典型：把 trending 端口填到 sharing）
 //   - 401 → Key 错（缺 Authorization / 错 token 都走这里，后端 middleware 统一返 401）
 //   - 其他 4xx/5xx → 服务有问题（含状态码透传给 UI）
 //   - 网络错（DNS / timeout / refused / SSL 等）→ 完全连不上
@@ -32,15 +33,26 @@
 import Foundation
 import SwiftUI
 
+/// `GET /api/v1/ping` 200 响应里 envelope `data` 段的结构。
+///
+/// 与后端 `handler/ping.go` 的 `pingResponse` 对齐；四个 API 各自在路由注册时
+/// 传入固定 service 名（`trending` / `weekly` / `sharing` / `wiki`）。
+struct ServicePingPayload: Decodable, Sendable, Equatable {
+    let service: String
+    let ok: Bool
+}
+
 /// 健康检查结果。文案走 i18n key，UI 用 `LocalizedStringKey` 渲染。
 ///
 /// **R-03 2026-06-11 重设计**：从 5 态压缩到 4 态。所有 case 都带「状态码 / 原因」字段，
 /// 让 subtitle 永远能展示具体值方便排查（旧版有 `unauthorized` 不带 statusCode、
 /// `unreachable` 用 String 不利于结构化）。
 enum HealthCheckOutcome: Equatable {
-    /// 服务可达 + Key 正确（HTTP 200）。
+    /// 服务可达 + Key 正确 + ping 响应 service 与设置项一致（HTTP 200）。
     /// `statusCode` 一般是 200，留参数是为了未来后端可能扩展到 2xx 其它码（如 204）。
     case ok(statusCode: Int)
+    /// ping 返回 200，但 `data.service` 与当前设置项不一致（典型：端口 / 服务填错）。
+    case serviceMismatch(expected: String, actual: String, statusCode: Int)
     /// API Key 错（缺 Authorization / 无效 token / 过期 token；后端 middleware 统一返 401）。
     /// `statusCode` 一般是 401，留参数让用户排查时也能确认到底是 401 还是 403（虽然现在都用 401）。
     case unauthorized(statusCode: Int)
@@ -55,6 +67,7 @@ enum HealthCheckOutcome: Equatable {
     var systemImage: String {
         switch self {
         case .ok: return "checkmark.circle.fill"
+        case .serviceMismatch: return "arrow.triangle.swap"
         case .unauthorized: return "lock.trianglebadge.exclamationmark.fill"
         case .serverError: return "exclamationmark.triangle.fill"
         case .networkError: return "xmark.octagon.fill"
@@ -65,6 +78,7 @@ enum HealthCheckOutcome: Equatable {
     var titleKey: LocalizedStringKey {
         switch self {
         case .ok: return "settings.services.health.ok"
+        case .serviceMismatch: return "settings.services.health.serviceMismatch"
         case .unauthorized: return "settings.services.health.unauthorized"
         case .serverError: return "settings.services.health.serverError"
         case .networkError: return "settings.services.health.unreachable"
@@ -75,6 +89,13 @@ enum HealthCheckOutcome: Equatable {
     var subtitle: String {
         switch self {
         case .ok(let code): return "HTTP \(code)"
+        case .serviceMismatch(let expected, let actual, let code):
+            return String(
+                format: String.l10n("settings.services.health.serviceMismatch.detail"),
+                expected,
+                actual,
+                code
+            )
         case .unauthorized(let code): return "HTTP \(code)"
         case .serverError(let code): return "HTTP \(code)"
         case .networkError(let reason): return reason
@@ -129,10 +150,12 @@ actor ServiceHealthChecker {
     /// 状态机：
     /// ```
     /// 网络错（DNS / timeout / refused / SSL）→ networkError(reason)
-    /// HTTP 200                                → ok(200)
-    /// HTTP 401                                → unauthorized(401)
-    /// HTTP 其他（4xx / 5xx）                  → serverError(code)
-    /// 响应不是 HTTPURLResponse（极罕见）       → networkError(generic)
+    /// HTTP 200 + service 匹配 + ok       → ok(200)
+    /// HTTP 200 + service 不匹配          → serviceMismatch(...)
+    /// HTTP 200 + body 无法解析           → serverError(200)
+    /// HTTP 401                           → unauthorized(401)
+    /// HTTP 其他（4xx / 5xx）             → serverError(code)
+    /// 响应不是 HTTPURLResponse（极罕见）   → networkError(generic)
     /// ```
     func check(
         service: ThirdPartyService,
@@ -150,14 +173,18 @@ actor ServiceHealthChecker {
         }
 
         do {
-            let (_, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
                 return .networkError(reason: String.l10n("network.error.serverGeneric"))
             }
             let code = http.statusCode
             switch code {
             case 200:
-                return .ok(statusCode: code)
+                return Self.evaluatePingBody(
+                    data: data,
+                    response: response,
+                    expectedService: service
+                )
             case 401:
                 return .unauthorized(statusCode: code)
             default:
@@ -167,6 +194,39 @@ actor ServiceHealthChecker {
             return .networkError(reason: urlError.localizedDescription)
         } catch {
             return .networkError(reason: error.localizedDescription)
+        }
+    }
+
+    // MARK: - Private
+
+    /// 解析 ping 200 响应体，校验 `data.service` 与 `data.ok`。
+    private static func evaluatePingBody(
+        data: Data,
+        response: URLResponse,
+        expectedService: ThirdPartyService
+    ) -> HealthCheckOutcome {
+        let decoder = JSONDecoder()
+        do {
+            let payload = try StarcatEnvelopeDecoder.decode(
+                ServicePingPayload.self,
+                data: data,
+                response: response,
+                decoder: decoder
+            )
+            guard payload.ok else {
+                return .serverError(statusCode: 200)
+            }
+            let expected = expectedService.rawValue
+            guard payload.service == expected else {
+                return .serviceMismatch(
+                    expected: expected,
+                    actual: payload.service,
+                    statusCode: 200
+                )
+            }
+            return .ok(statusCode: 200)
+        } catch {
+            return .serverError(statusCode: 200)
         }
     }
 }

@@ -18187,6 +18187,40 @@
         }
       }
     },
+    "settings.services.health.serviceMismatch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wrong service"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务不匹配"
+          }
+        }
+      }
+    },
+    "settings.services.health.serviceMismatch.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expected %1$@, got %2$@ (HTTP %3$lld)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期望 %1$@，实际 %2$@（HTTP %3$lld）"
+          }
+        }
+      }
+    },
     "settings.services.health.serverError" : {
       "extractionState" : "stale",
       "localizations" : {

@@ -22,7 +22,8 @@
 //  现在统一走 **`/api/v1/ping`**（R-03.1 起 sharing 也走绝对 `/api/v1/ping`，
 //  不再因 baseURL 含 `/api` 而特殊），这是后端专门为 Starcat 客户端「测试连接」按钮
 //  加的端点，行为完全标准化：
-//   - 200 → 服务可达 + Key 正确
+//   - 200 + `data.service` 匹配 + `data.ok` → 服务可达 + Key 正确 + 地址没配错
+//   - 200 但 `data.service` 不匹配 → 客户端报 serviceMismatch（防端口 / 服务填错）
 //   - 401 → Key 错（缺 Authorization 头 / 错 token 都走这里）
 //   - 其他 4xx/5xx → 服务有问题（含状态码）
 //   - 网络错 → 完全连不上
