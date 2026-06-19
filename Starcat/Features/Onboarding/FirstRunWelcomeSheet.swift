@@ -7,7 +7,7 @@
 //
 //  步骤：欢迎 → Trending → 登录同步 → 标签搜索 →「开始使用」
 //
-//  - 「开始使用 / 跳过」统一走欢迎退出动画后再露出主窗口
+//  - 「开始使用 / 跳过」统一走欢迎退出动画后再露出主窗口（含欢迎收束短音效）
 //
 //  关键约束：
 //  - overlay 根挂 `.appLocaleEnvironment()`（i18n 军规 #3）
@@ -433,6 +433,8 @@ struct FirstRunOnboardingView: View {
     /// 「开始使用 / 跳过」统一走欢迎收束动画，再移除 overlay 露出主窗口。
     private func beginWelcomeExit() {
         isExitInProgress = true
+        // 点击瞬间即播，贯穿后续收起 → 欢迎 → 淡出整段动画（约 3.2s 音效 + 视觉 ~5s）
+        OnboardingWelcomeSound.playWelcomeIfAvailable()
 
         if reduceMotion {
             exitPhase = .welcome
