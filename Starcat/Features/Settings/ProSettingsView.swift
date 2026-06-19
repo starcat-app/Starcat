@@ -27,8 +27,8 @@ struct ProSettingsTab: View {
     var body: some View {
         Form {
             heroSection
-            productSection
             benefitsSection
+            productSection
             actionSection
 
             #if DEBUG
@@ -74,7 +74,7 @@ struct ProSettingsTab: View {
     private var heroSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 14) {
+                HStack(alignment: .center, spacing: 14) {
                     ProCrownIcon(size: 48)
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -93,9 +93,17 @@ struct ProSettingsTab: View {
                     }
                 }
 
+                Label(LocalizedStringKey(settings.isProUser ? "settings.pro.status.active" : "settings.pro.status.free"),
+                      systemImage: settings.isProUser ? "checkmark.seal.fill" : "lock.open")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(settings.isProUser ? .green : .secondary)
+
                 if let expiration = subscriptionManager.entitlement.expirationDate, settings.isProUser {
                     Label {
-                        Text(expiration, style: .date)
+                        HStack(spacing: 4) {
+                            Text("settings.pro.status.expiration")
+                            Text(expiration, style: .date)
+                        }
                     } icon: {
                         Image(systemName: "calendar.badge.clock")
                     }
@@ -118,12 +126,12 @@ struct ProSettingsTab: View {
             }
             .padding(.vertical, 2)
         } footer: {
-            Text("settings.pro.footer")
+            Text("settings.pro.status.footer")
         }
     }
 
     private var productSection: some View {
-        Section("settings.pro.products.section") {
+        Section {
             if subscriptionManager.isLoadingProducts {
                 HStack(spacing: 8) {
                     ProgressView()
@@ -145,39 +153,50 @@ struct ProSettingsTab: View {
                     }
                 }
             }
+        } header: {
+            Text("settings.pro.products.section")
+        } footer: {
+            Text("settings.pro.footer")
         }
     }
 
     private var benefitsSection: some View {
-        Section("settings.pro.benefits.section") {
-            VStack(alignment: .leading, spacing: 8) {
-                ProBenefitRow(
+        Section {
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: 8),
+                GridItem(.flexible(), spacing: 8)
+            ], alignment: .leading, spacing: 8) {
+                ProBenefitTile(
                     systemImage: "sparkles",
                     titleKey: "settings.pro.benefit.ai.title",
                     detailKey: "settings.pro.benefit.ai.detail"
                 )
-                ProBenefitRow(
+                ProBenefitTile(
                     systemImage: "magnifyingglass.circle.fill",
                     titleKey: "settings.pro.benefit.search.title",
                     detailKey: "settings.pro.benefit.search.detail"
                 )
-                ProBenefitRow(
+                ProBenefitTile(
                     systemImage: "bell.badge.fill",
                     titleKey: "settings.pro.benefit.release.title",
                     detailKey: "settings.pro.benefit.release.detail"
                 )
-                ProBenefitRow(
+                ProBenefitTile(
                     systemImage: "icloud.fill",
                     titleKey: "settings.pro.benefit.cloud.title",
                     detailKey: "settings.pro.benefit.cloud.detail"
                 )
             }
+        } header: {
+            Text("settings.pro.benefits.section")
+        } footer: {
+            Text("settings.pro.benefits.footer")
         }
     }
 
     private var actionSection: some View {
         Section {
-            HStack {
+            VStack(alignment: .leading, spacing: 8) {
                 Button {
                     Task { await subscriptionManager.restorePurchases() }
                 } label: {
@@ -197,8 +216,11 @@ struct ProSettingsTab: View {
                     Label("settings.pro.button.manage", systemImage: "person.crop.circle.badge.checkmark")
                 }
             }
+            .controlSize(.small)
+        } header: {
+            Text("settings.pro.account.section")
         } footer: {
-            Text("settings.pro.offerCode.footer")
+            Text("settings.pro.account.footer")
         }
     }
 
@@ -248,62 +270,88 @@ private struct ProProductRow: View {
     let onPurchase: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(product.displayName)
                         .font(.callout.weight(.semibold))
-                    if isCurrent {
-                        ProStatusBadge()
-                    }
+                    Text(product.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text(product.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
 
-            Spacer(minLength: 12)
+                Spacer(minLength: 12)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(product.displayPrice)
+                        .font(.title3.weight(.semibold))
+                    Text(LocalizedStringKey(isCurrent ? "settings.pro.plan.current" : "settings.pro.plan.available"))
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(isCurrent ? .green : .secondary)
+                }
+            }
 
             Button {
                 onPurchase()
             } label: {
-                if isBusy {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Text(product.displayPrice)
-                        .font(.callout.weight(.semibold))
+                HStack {
+                    Spacer(minLength: 0)
+                    if isBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else if isCurrent {
+                        Label("settings.pro.plan.current", systemImage: "checkmark.seal.fill")
+                    } else {
+                        Text(String(format: String.l10n("settings.pro.plan.subscribeFormat"),
+                                    product.displayPrice))
+                            .font(.callout.weight(.semibold))
+                    }
+                    Spacer(minLength: 0)
                 }
             }
             .buttonStyle(.borderedProminent)
             .disabled(isBusy || isCurrent)
         }
-        .padding(.vertical, 4)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.secondary.opacity(isCurrent ? 0.08 : 0.05))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(isCurrent ? Color.green.opacity(0.45) : Color.secondary.opacity(0.16), lineWidth: 1)
+        }
     }
 }
 
-private struct ProBenefitRow: View {
+private struct ProBenefitTile: View {
 
     let systemImage: String
     let titleKey: LocalizedStringKey
     let detailKey: LocalizedStringKey
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             Image(systemName: systemImage)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.orange)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(titleKey)
-                    .font(.callout.weight(.medium))
-                Text(detailKey)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                .frame(width: 20, height: 20, alignment: .leading)
+
+            Text(titleKey)
+                .font(.caption.weight(.semibold))
+
+            Text(detailKey)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.secondary.opacity(0.05))
+        )
     }
 }
 

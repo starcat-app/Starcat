@@ -18533,6 +18533,166 @@
         }
       }
     },
+    "settings.pro.account.footer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offer codes are redeemed with Apple's sheet. Subscription management opens your Apple Account page."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优惠码通过 Apple 官方窗口兑换；订阅管理会打开你的 Apple 账户页面。"
+          }
+        }
+      }
+    },
+    "settings.pro.account.section" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "账户"
+          }
+        }
+      }
+    },
+    "settings.pro.benefits.footer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro focuses on advanced workflows first. Reserved items stay visible so the subscription scope is explicit."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro 优先覆盖进阶工作流；预留项会明确展示，避免订阅范围含糊。"
+          }
+        }
+      }
+    },
+    "settings.pro.plan.available" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Available plan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选方案"
+          }
+        }
+      }
+    },
+    "settings.pro.plan.current" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current plan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前方案"
+          }
+        }
+      }
+    },
+    "settings.pro.plan.subscribeFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subscribe · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅 · %@"
+          }
+        }
+      }
+    },
+    "settings.pro.status.active" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro access is active on this Mac."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 Mac 已启用 Pro 权益。"
+          }
+        }
+      }
+    },
+    "settings.pro.status.expiration" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renews or expires on"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "续订或到期时间"
+          }
+        }
+      }
+    },
+    "settings.pro.status.footer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Pro entitlement is read from StoreKit and mirrored locally for feature gates."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro 权益来自 StoreKit，并同步到本地镜像用于功能门控。"
+          }
+        }
+      }
+    },
+    "settings.pro.status.free" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You are using the free plan."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前使用免费方案。"
+          }
+        }
+      }
+    },
     "paywall.activated" : {
       "extractionState" : "manual",
       "localizations" : {
