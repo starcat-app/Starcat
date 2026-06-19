@@ -22,33 +22,37 @@
 |----|------|
 | 账号状态 | `设置 → Pro` 显示**未订阅** |
 | StoreKit | 开发期用 Xcode `.storekit` 配置；TestFlight 用 Sandbox Tester |
-| 试用配额 | AI 摘要 / AI 标签各 **3 次**免费试用（`TrialQuotaStore`，按 GitHub User ID 分桶） |
+| AI 策略 | 免费版零 AI；BYOK 配置与 AI 工作流均为 Pro-only |
 | 数量上限 | 标签 **≤20**；Release 订阅 **≤5**（已订阅的不占新增名额） |
-
-**重置试用配额（仅开发调试）**：清 `UserDefaults` 键前缀 `subscription.trialQuota.*`（详见 `Starcat/Core/Subscription/TrialQuotaStore.swift`）。
 
 ### 0.3 推荐验收顺序
 
 ```
-分享 → AI 生成摘要 → AI 发消息 → CodeFlow → ⌘K Web → 第 21 标签 → 第 6 Release 订阅
+AI 设置页锁定态 → 分享 → AI 生成摘要 → AI 发消息 → CodeFlow → ⌘K Web → 第 21 标签 → 第 6 Release 订阅
 → README 翻译 → Untagged 批量整理 → 语义搜索 / 自动整理（对照已知缺口）
 ```
 
 ---
 
-## 1. 试用耗尽 → 付费墙（各 3 次免费）
+## 1. 免费用户触发 AI → 付费墙（无 App 内次数试用）
 
-门控：`EntitlementGate.consumeTrialOrRequirePro(.aiSummary | .aiTags)`  
-错误类型：`EntitlementGateError.trialQuotaExceeded`
+门控：`EntitlementGate.requirePro(.aiSummary | .aiTags | .aiChat | ...)`  
+错误类型：`EntitlementGateError.requiresPro`
+
+### 1.0 AI 设置页 `BYOK`
+
+| # | 操作路径 | 触发条件 | 通过 |
+|---|----------|----------|------|
+| A0 | 设置 → **AI 服务** | 未订阅 Pro | 仅显示 Pro 锁定态与升级入口，不显示 Provider / API Key 表单 [ ] |
 
 ### 1.1 AI 摘要 `aiSummary`
 
 | # | 操作路径 | 触发条件 | 通过 |
 |---|----------|----------|------|
-| A1 | 仓库详情 → **AI** → 摘要 Tab → **生成摘要** | 第 4 次生成（无缓存） | [ ] |
+| A1 | 仓库详情 → **AI** → 摘要 Tab → **生成摘要** | 免费用户首次生成（无缓存） | [ ] |
 | A2 | 同上 → 空态 **「开始分析」** | 同上 | [ ] |
 | A3 | 已有摘要 → **设置已变更，重新生成** banner | 同上 | [ ] |
-| A4 | 仓库详情 → **分享** | 无缓存时需先生成摘要；试用耗尽应弹付费墙（非「分享失败 + 重试」） | [ ] |
+| A4 | 仓库详情 → **分享** | 无缓存时需先生成摘要；免费用户应弹付费墙（非「分享失败 + 重试」） | [ ] |
 
 **代码入口**：`RepoAIInsightService.enforceGenerationEntitlement` → `RepoAIInsightViewModel` / `RepoShareButton`  
 **付费墙承载**：AI 窗口 `RepoAIWindowContentView`；分享 `RepoShareButton` 本地 sheet
@@ -205,8 +209,8 @@
 
 | ProFeature | 门控方式 | 主要 UI 入口 |
 |------------|----------|--------------|
-| `.aiSummary` | 试用 3 次 | AI 摘要生成、分享 |
-| `.aiTags` | 试用 3 次 | AI 摘要（含标签）、应用标签 |
+| `.aiSummary` | Pro only | AI 摘要生成、分享 |
+| `.aiTags` | Pro only | AI 摘要（含标签）、应用标签 |
 | `.aiChat` | Pro only | AI 对话发送 |
 | `.batchAI` | Pro only | Untagged 批量整理 |
 | `.autoOrganize` | Pro only | 自动整理调度（⚠️ 无付费墙 UI） |

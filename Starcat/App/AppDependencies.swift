@@ -83,6 +83,8 @@ final class AppDependencies {
     let aiSummaryRepository: any AISummaryRepositoryProtocol
     /// W6 AI：单仓 AI 摘要与标签推荐服务。
     let repoAIInsightService: RepoAIInsightService
+    /// AI 对话历史磁盘存储。由依赖容器显式装配，避免 ViewModel 默认参数读取 MainActor 单例。
+    let diskChatHistoryStore: DiskChatHistoryStore
 
     /// HOM-52：批量未分类仓库 AI 整理队列服务（会话级单例）。
     ///
@@ -439,6 +441,7 @@ final class AppDependencies {
             entitlementGate: self.entitlementGate
         )
         self.repoAIInsightService = aiInsight
+        self.diskChatHistoryStore = .shared
 
         // HOM-68：README 翻译。复用 AppSettings.aiTranslationTask 的 provider/model 选择
         // 与 Keychain API Key，独立 Service 承载严格保结构的翻译 prompt + 纯磁盘缓存。

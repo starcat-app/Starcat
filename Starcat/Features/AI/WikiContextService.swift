@@ -61,7 +61,7 @@ final class WikiContextService {
     /// 同一 `(owner, repo)` 的并发去重：fire-and-forget refresh 之间互相复用。
     private var inFlightRefreshes: [WikiRepoKey: Task<Void, Never>] = [:]
 
-    init(cache: DiskWikiCache = .shared, fetcher: WikiStatusFetching) {
+    init(cache: DiskWikiCache, fetcher: WikiStatusFetching) {
         self.cache = cache
         self.fetcher = fetcher
     }
@@ -141,4 +141,3 @@ final class WikiContextService {
         }
     }
 }
-

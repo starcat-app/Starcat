@@ -43,17 +43,17 @@
 - 直接删除会扩大改动面。
 - 作为只读镜像能兼容现有 UI，同时避免本地模拟状态污染真实订阅逻辑。
 
-### D-StoreKit-4：试用配额先按 GitHub User ID + 本机持久化记录
+### D-StoreKit-4：免费版零 AI，BYOK 配置归 Pro
 
-免费 AI 试用次数按当前 GitHub User ID 计数；未登录时使用 `_anonymous` 命名空间。原因：
+2026-06-19 修订：不再提供 App 内 AI 次数试用；免费用户不能配置 AI Provider / API Key，也不能发起 AI 摘要、标签、Chat、翻译、语义搜索等调用。原因：
 
-- 现有应用主工作流依赖 GitHub 登录，GitHub User ID 是最稳定的本地用户标识。
-- v1 不引入服务端账号系统，不做跨设备防重装绕过。
-- 后续如果接服务器，可把同一抽象替换为远端 quota。
+- dong4j 明确不希望出现“用户自带 Key 配好了，但仍被 Starcat 次数限制”的双重收费体感。
+- BYOK 是 Pro 用户接入模型的方式，不是免费绕过 Pro 的通道。
+- 如需试用，优先走 App Store Introductory Offer / Offer Code，体验完整 Pro，而不是拆成零散 AI 次数。
 
 ### D-StoreKit-5：已生成/已缓存数据继续可读，只拦截新增高成本动作
 
-免费用户仍可查看已有 AI 摘要、已有 README 翻译、已有向量索引产生的普通列表数据；但重新生成、搜索时创建 embedding、AI Chat、批量整理等新动作需要 Pro 或试用配额。原因：
+免费用户仍可查看已有 AI 摘要、已有 README 翻译、已有向量索引产生的普通列表数据；但重新生成、搜索时创建 embedding、AI Chat、批量整理等新动作需要 Pro。原因：
 
 - 避免早期开发期用户已有数据突然不可见。
 - 付费边界应拦在成本动作，而不是拦历史内容读取。
@@ -76,13 +76,11 @@
 
 ## 3. 本轮门控边界
 
-### Pro 或试用
-
-- 单仓 AI 摘要
-- 单仓 AI 标签推荐
-
 ### Pro only
 
+- AI Provider / API Key 配置（BYOK）
+- 单仓 AI 摘要
+- 单仓 AI 标签推荐
 - AI Chat
 - 批量 AI 整理
 - 自动后台 AI 整理
@@ -113,7 +111,7 @@
 - 统一付费墙：`ProPaywallSheet` 接入批量 AI、网页搜索、AI 窗口、README 翻译、Release 订阅、标签管理等入口。
 - 硬门控：`RepoAIInsightService`、`BatchAIQueueService`、`AutoTidyScheduler`、`SemanticSearchService`、`ReadmeTranslationService`、`AnySearchWebProvider`、`GatedTagRepository`、`GatedReleaseSubscriptionRepository` 均在业务边界拦截。
 - i18n：补齐 StoreKit、付费墙、Pro 设置页与门控错误 en / zh-Hans 文案。
-- 测试：新增 `EntitlementGateTests`，覆盖 AI 试用、Pro 不消耗试用、标签上限与 Release 订阅上限。
+- 测试：新增 `EntitlementGateTests`，覆盖 AI Pro-only、标签上限与 Release 订阅上限。
 
 ### 验证
 

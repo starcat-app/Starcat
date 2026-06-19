@@ -483,15 +483,16 @@ final class RepoAIInsightService {
 
     /// 生成摘要 / 标签前的付费边界。
     ///
-    /// 试用次数在真正发起生成前消耗，避免用户通过反复取消或绕过 UI 无限命中 LLM。
-    /// 如果后续要改成“仅成功后扣次”，只需要把本方法拆成 validate + consume 两段。
+    /// 2026-06-19 商业边界调整：BYOK 本身也属于 Pro 能力。免费版不开放 AI 设置，
+    /// 也不再提供单独的 AI 试用次数；因此摘要 / 标签与 Chat、翻译、语义搜索等
+    /// AI 工作流统一走 Pro-only 门控，避免“用户自带 Key 但仍被次数限制”的混乱体验。
     private func enforceGenerationEntitlement(includeSummary: Bool, includeTags: Bool) throws {
         guard let entitlementGate else { return }
         if includeSummary {
-            try entitlementGate.consumeTrialOrRequirePro(.aiSummary)
+            try entitlementGate.requirePro(.aiSummary)
         }
         if includeTags {
-            try entitlementGate.consumeTrialOrRequirePro(.aiTags)
+            try entitlementGate.requirePro(.aiTags)
         }
     }
 

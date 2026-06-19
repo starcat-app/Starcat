@@ -33,9 +33,9 @@ dong4j 2026-06-18 确认采用 **路径 B**：
 | ID | 议题 | **拍板** | 备注 |
 |----|------|----------|------|
 | **D-1** | CloudKit 多端同步归属 | **Pro** | v1 **不实现** CloudKit；上线后设置页「iCloud 同步」需 `requirePro(.cloudSync)` |
-| **D-2** | AI 摘要 / 标签试用次数 | **3 次**（各算 1 次） | 按 GitHub User ID 计数，防同账号重装需另评估 |
+| **D-2** | AI 摘要 / 标签试用次数 | **0 次，免费版零 AI** | 2026-06-19 修订：不做 App 内 AI 次数试用；需要体验 AI 走 App Store 订阅试用 / 兑换码 |
 | **D-3** | 免费版标签上限 | **20 个** | 创建入口拦截 |
-| **D-4** | BYOK 是否需 Pro | **需要** | 配置 UI 可见，**调用** AI 需 Pro 或试用配额 |
+| **D-4** | BYOK 是否需 Pro | **需要** | 免费用户不可配置 AI；Pro 解锁 BYOK 配置与 AI 工作流，模型费用由用户 Provider 账户承担 |
 | **D-5** | 自动后台 AI 整理 | **v1 简化为全自动 = Pro only** | 免费不开放手动批量整理；D-5 选项 B（单次手动 5 repo）留 v0.2 评估 |
 | **D-6** | 菜单栏 / Spotlight / Widget | **暂不实施** | 功能本身未做，门控留 v0.2 |
 | **D-7** | AI Discovery 客户端 | **列表免费 / AI 增强 Pro**（预埋） | 客户端未开始 |
@@ -68,7 +68,7 @@ dong4j 2026-06-18 确认采用 **路径 B**：
 v1 公测期全功能开放 → v1.1 加锁可能引起体感倒退。建议：
 
 - 在 `AppSettings` 记录 `firstInstallDate` 或 `legacyProGrant`；
-- **某截止日期前**首次安装的用户永久 Pro（或永久试用配额翻倍）；
+- **某截止日期前**首次安装的用户永久 Pro；
 - 截止日期在实施门控前由 dong4j 拍板写入本文件 §变更日志。
 
 ---
@@ -102,7 +102,6 @@ Starcat/Core/Subscription/
   ProEntitlement.swift         // isPro / expiration / isInTrial
   SubscriptionManager.swift    // StoreKit 2：加载、购买、恢复、Transaction.updates
   EntitlementGate.swift        // requirePro(feature:) / ProFeature enum
-  TrialQuotaStore.swift        // 3 次试用，按 GitHub User ID
   ProPaywallSheet.swift        // 统一付费墙（可选 SubscriptionStoreView）
   SubscriptionExternalLinks.swift // 管理订阅外链
 ```
@@ -144,8 +143,8 @@ App 启动 / 前台恢复
 
 | ProFeature | 入口 / 文件 | 规则 |
 |------------|-------------|------|
-| `.aiSummary` | `RepoAIInsightViewModel.generate` | Pro 或试用配额 |
-| `.aiTags` | 同上 `includeTags` | Pro 或试用配额 |
+| `.aiSummary` | `RepoAIInsightViewModel.generate` | Pro |
+| `.aiTags` | 同上 `includeTags` | Pro |
 | `.aiChat` | `RepoAIChatViewModel` 发消息 | Pro |
 | `.batchAI` | `HomeView` / `BatchAIQueueService` | Pro |
 | `.autoOrganize` | AI 整理调度器注册处 | Pro |
@@ -223,7 +222,7 @@ flowchart LR
 
 1. Subscription Group：`Starcat Pro`
 2. 产品：`com.starcat.app.pro.monthly`、`com.starcat.app.pro.yearly`
-3. 年订 Introductory Offer：14 天免费试用（可选）
+3. 年订 Introductory Offer：14 天订阅试用（可选，作为完整 Pro 体验，不是 App 内 AI 次数试用）
 4. 本地化描述（中/英）：突出 AI 摘要、整理、Release 订阅、未来云同步
 5. Sandbox Tester ≥ 2 个
 
@@ -242,14 +241,14 @@ flowchart LR
 | **0** | 本文档拍板 + Connect SKU（并行） | dong4j + AI | 0.5～1 天 |
 | **1** | `SubscriptionManager` + `.storekit` + `isProUser` 链路 | AI | 2～3 天 |
 | **2** | `ProSettingsTab` 真实购买 UI + `ProPaywallSheet` + i18n | AI | 1～2 天 |
-| **3** | `EntitlementGate` + P0 门控 + 试用/标签/Release 限制 | AI | 3～4 天 |
+| **3** | `EntitlementGate` + P0 门控 + 标签/Release 免费上限 | AI | 3～4 天 |
 | **4** | Sandbox 联调 + 冒烟 + 单测 + `pages` 部署核对 | dong4j + AI | 2 天 |
 
 **v1 明确不做**：
 
 - CloudKit / iCloud entitlement
 - Lifetime 买断 SKU
-- 复杂月度 AI Quota（500 次/月）；v1 Pro = 无限（或仅试用计数）
+- 复杂月度 AI Quota（500 次/月）；v1 Pro + BYOK 不做 App 内次数限制
 
 ---
 
@@ -265,7 +264,7 @@ flowchart LR
 
 ### 9.2 门控
 
-- [x] 免费用户：AI 摘要 3 次后拦截
+- [x] 免费用户：AI 设置页锁定，AI 摘要 / 标签首次调用即拦截
 - [x] 免费用户：第 21 个标签创建拦截
 - [x] 免费用户：第 6 个 Release 订阅拦截
 - [x] Pro 用户：上述限制解除
@@ -321,7 +320,8 @@ flowchart LR
 | 日期 | 变更 |
 |------|------|
 | 2026-06-18 | 初版：dong4j 拍板路径 B；D-1 CloudKit 延后且归 Pro；月订+年订 v1、买断 v0.2；Connect 非开发第一步；`pages/` 合规状态与提审前检查项 |
-| 2026-06-18 | 客户端实现完成：StoreKit 2 底座、Pro 设置页、统一付费墙、AI / Search / Release / Tag 门控、试用与数量上限、`.storekit` 配置、i18n 与门控单测 |
+| 2026-06-18 | 客户端实现完成：StoreKit 2 底座、Pro 设置页、统一付费墙、AI / Search / Release / Tag 门控、数量上限、`.storekit` 配置、i18n 与门控单测 |
+| 2026-06-19 | 修订 Pro 定位：免费版零 AI；BYOK 配置与所有 AI 工作流均为 Pro-only；删除 App 内 AI 次数试用与 `TrialQuotaStore` 路径 |
 
 ---
 

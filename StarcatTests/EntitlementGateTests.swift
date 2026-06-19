@@ -13,40 +13,29 @@ import Testing
 @Suite("EntitlementGate")
 struct EntitlementGateTests {
 
-    @Test("AI 摘要免费试用 3 次，第四次需要 Pro")
-    func aiSummaryTrialQuota() throws {
-        let defaults = isolatedDefaults()
+    @Test("AI 摘要免费用户直接需要 Pro")
+    func aiSummaryRequiresPro() throws {
         let gate = makeGate(
             isPro: false,
-            defaults: defaults,
             userID: 42
         )
 
-        try gate.consumeTrialOrRequirePro(.aiSummary)
-        try gate.consumeTrialOrRequirePro(.aiSummary)
-        try gate.consumeTrialOrRequirePro(.aiSummary)
-
         do {
-            try gate.consumeTrialOrRequirePro(.aiSummary)
-            Issue.record("第四次 AI 摘要试用应被门控拦截")
+            try gate.requirePro(.aiSummary)
+            Issue.record("免费用户生成 AI 摘要应被 Pro 门控拦截")
         } catch let error as EntitlementGateError {
-            #expect(error == .trialQuotaExceeded(feature: .aiSummary, limit: 3))
+            #expect(error == .requiresPro(feature: .aiSummary))
         }
     }
 
-    @Test("Pro 用户不消耗 AI 免费试用配额")
-    func proDoesNotConsumeTrialQuota() throws {
-        let defaults = isolatedDefaults()
+    @Test("Pro 用户可使用 AI 标签推荐")
+    func proCanUseAITags() throws {
         let gate = makeGate(
             isPro: true,
-            defaults: defaults,
             userID: 7
         )
 
-        try gate.consumeTrialOrRequirePro(.aiTags)
-
-        let store = TrialQuotaStore(defaults: defaults)
-        #expect(store.usedCount(kind: .aiTags, userID: 7) == 0)
+        try gate.requirePro(.aiTags)
     }
 
     @Test("免费用户最多创建 20 个标签")
@@ -81,22 +70,12 @@ struct EntitlementGateTests {
 
     private func makeGate(
         isPro: Bool,
-        defaults: UserDefaults? = nil,
         userID: Int64? = nil
     ) -> EntitlementGate {
-        let resolvedDefaults = defaults ?? isolatedDefaults()
         return EntitlementGate(
             entitlementProvider: MockProEntitlementProvider(isPro: isPro),
-            trialQuotaStore: TrialQuotaStore(defaults: resolvedDefaults),
             userIDProvider: { userID }
         )
-    }
-
-    private func isolatedDefaults() -> UserDefaults {
-        let suiteName = "test.starcat.entitlement.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        return defaults
     }
 }
 

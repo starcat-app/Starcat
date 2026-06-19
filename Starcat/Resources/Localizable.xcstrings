@@ -15327,6 +15327,62 @@
         }
       }
     },
+    "settings.ai.locked.benefit.billing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model usage is billed by your own provider account" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型调用费用由你自己的服务商账户承担" } }
+      }
+    },
+    "settings.ai.locked.benefit.byok" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Configure OpenAI-compatible providers with your own API keys" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "配置 OpenAI-compatible 服务商和自己的 API Key" } }
+      }
+    },
+    "settings.ai.locked.benefit.workflow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unlock summaries, tags, chat, translation, semantic search, and batch cleanup" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "解锁摘要、标签、对话、翻译、语义搜索与批量整理" } }
+      }
+    },
+    "settings.ai.locked.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Pro unlocks the AI workflow layer. Your API keys remain local and are never sent to Starcat servers." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Pro 解锁 AI 工作流层；你的 API Key 仍只保存在本机，不会发送到 Starcat 服务器。" } }
+      }
+    },
+    "settings.ai.locked.paywallMessage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI service configuration and BYOK workflows require Starcat Pro." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 服务配置与 BYOK 工作流需要 Starcat Pro。" } }
+      }
+    },
+    "settings.ai.locked.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Bring your own key after upgrading. Pro unlocks Starcat's AI workflow layer; provider API costs still belong to your account." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "升级后即可使用自己的 Key。Pro 解锁 Starcat 的 AI 工作流层，服务商 API 费用仍由你的账户承担。" } }
+      }
+    },
+    "settings.ai.locked.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI service is a Pro feature" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 服务是 Pro 功能" } }
+      }
+    },
+    "settings.ai.locked.upgrade" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Upgrade to Pro" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "升级到 Pro" } }
+      }
+    },
     "settings.ai.discoveredModels.empty" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18318,13 +18374,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI summaries, tag suggestions, chat, batch cleanup, and README translation."
+            "value" : "BYOK configuration plus summaries, tags, chat, batch cleanup, README translation, and semantic search."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 摘要、标签推荐、对话、批量整理与 README 翻译。"
+            "value" : "BYOK 配置，以及摘要、标签、对话、批量整理、README 翻译与语义搜索。"
           }
         }
       }
@@ -18335,13 +18391,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Early access to AI features"
+            "value" : "AI workflows with your own key"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 能力优先体验"
+            "value" : "自带 Key 的 AI 工作流"
           }
         }
       }
@@ -18716,13 +18772,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI summaries, tag suggestions, chat, and batch cleanup"
+            "value" : "BYOK AI configuration, summaries, tags, chat, and batch cleanup"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 摘要、标签推荐、对话与批量整理"
+            "value" : "BYOK AI 配置、摘要、标签、对话与批量整理"
           }
         }
       }
@@ -19432,13 +19488,6 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Free users can create up to %d tags." } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "免费用户最多可创建 %d 个标签。" } }
-      }
-    },
-    "subscription.gate.trialExceededFormat" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "The free trial quota for %@ has been used (%d times)." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 的免费试用次数已用完（%d 次）。" } }
       }
     },
     "settings.services.apiKey" : {

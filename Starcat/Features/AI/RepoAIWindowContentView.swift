@@ -317,7 +317,8 @@ struct RepoAIWindowContentView: View {
         } else {
             let newVM = RepoAIChatViewModel(
                 service: dependencies.repoAIInsightService,
-                wikiContextService: dependencies.wikiContextService
+                wikiContextService: dependencies.wikiContextService,
+                historyStore: dependencies.diskChatHistoryStore
             )
             chatVM = newVM
             vm = newVM

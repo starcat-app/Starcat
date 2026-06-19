@@ -105,7 +105,7 @@ final class SyncManager {
     private(set) var lastRunWroteRepos: Bool = false
 
     /// 启动期自动同步 TTL，与 `HomeViewModel.listCache` 5min TTL 对齐。
-    static let defaultAutoSyncMaxAge: TimeInterval = 300
+    nonisolated static let defaultAutoSyncMaxAge: TimeInterval = 300
 
     // MARK: - 依赖
 

@@ -244,12 +244,14 @@ final class RepoAIChatViewModel {
     /// - `wikiContextService`：**必填**，没有默认。原因：项目未上线，让编译器逼着
     ///   所有 callsite 显式传依赖，避免新增对话 VM 实例化路径漏注入。传 nil 等价于
     ///   "本会话不消费 wiki 资源"（测试 fast path / 不关心 wiki 注入的单测用）。
-    /// - `historyStore` / `codeFlowStorage`：进程级单例默认即可，测试要隔离 disk
-    ///   时再注入 `rootOverride` 版本。
+    /// - `historyStore`：由 `AppDependencies` 显式注入进程级单例，避免默认参数在
+    ///   nonisolated 上下文求值 `@MainActor` 单例。
+    /// - `codeFlowStorage`：进程级单例默认即可，测试要隔离 disk 时再注入
+    ///   `rootOverride` 版本。
     init(
         service: RepoAIInsightService,
         wikiContextService: WikiContextService?,
-        historyStore: DiskChatHistoryStore = .shared,
+        historyStore: DiskChatHistoryStore,
         codeFlowStorage: CodeFlowStorage = .shared
     ) {
         self.service = service
