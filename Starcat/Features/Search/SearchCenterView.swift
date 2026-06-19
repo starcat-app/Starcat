@@ -35,6 +35,12 @@ struct SearchCenterView: View {
     /// 放在视图层是因为"是否要二次确认"是 UI 决策而非业务状态；ViewModel 的
     /// `clearHistory()` 仍保持单纯执行删除，不被弹窗逻辑污染。
     @State private var showingClearHistoryAlert = false
+    /// 高级筛选右侧抽屉可见性。
+    ///
+    /// 这是纯视图状态，不放进 `SearchCenterViewModel`：筛选值本身仍由 ViewModel 持有，
+    /// 但“抽屉是否展开”只影响当前浮层布局。Local scope 没有 GitHub / Web 筛选，
+    /// 切过去时会自动收起，避免右侧出现空抽屉。
+    @State private var isFilterDrawerPresented = false
 
     var body: some View {
         ZStack {
@@ -55,17 +61,24 @@ struct SearchCenterView: View {
                 searchHeader
                 themedSeparator
                 scopePicker
-                if viewModel.scope == .all || viewModel.scope == .github {
-                    githubFilterBar
-                }
-                if viewModel.scope == .all || viewModel.scope == .web {
-                    anySearchFilterBar
-                }
                 themedSeparator
-                resultContent
-                webResultFooter
+                HStack(spacing: 0) {
+                    VStack(spacing: 0) {
+                        resultContent
+                        webResultFooter
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    if shouldShowFilterDrawer {
+                        themedVerticalSeparator
+                        filterDrawer
+                            .frame(width: 250)
+                            .transition(reduceMotion ? .identity : .move(edge: .trailing).combined(with: .opacity))
+                    }
+                }
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: shouldShowFilterDrawer)
             }
-            .frame(width: 760, height: 620)
+            .frame(width: searchPanelWidth, height: 620)
             // 浮层背景（dong4j 2026-06-14 终版）：
             // 极简：用 `windowBackgroundColor` 实底，浮层颜色直接 = 主窗口未压暗时的颜色。
             // 主窗口被 dim 蒙层压暗后，浮层不受 dim 影响自然凸显——这就是 Spotlight 的视觉模型。
@@ -127,6 +140,11 @@ struct SearchCenterView: View {
             viewModel.dismiss()
             return .handled
         }
+        .onChange(of: viewModel.scope) { _, _ in
+            if !filtersAvailable {
+                isFilterDrawerPresented = false
+            }
+        }
     }
 
     /// 浮层内部的分隔线。
@@ -137,6 +155,27 @@ struct SearchCenterView: View {
         Rectangle()
             .fill(Color(nsColor: .separatorColor))
             .frame(height: 1)
+    }
+
+    /// 右侧筛选抽屉分隔线。单独定义为 vertical，避免用旋转 Divider 造成像素模糊。
+    private var themedVerticalSeparator: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1)
+    }
+
+    private var filtersAvailable: Bool {
+        viewModel.scope == .all || viewModel.scope == .github || viewModel.scope == .web
+    }
+
+    private var shouldShowFilterDrawer: Bool {
+        isFilterDrawerPresented && filtersAvailable
+    }
+
+    /// 默认保持 Spotlight 紧凑 760pt；展开 Filters 后给右侧抽屉增加 250pt。
+    /// 980pt 仍明显小于 Starcat 主窗口 1440pt 下限，不会压迫背景内容。
+    private var searchPanelWidth: CGFloat {
+        shouldShowFilterDrawer ? 980 : 760
     }
 
     private var searchHeader: some View {
@@ -178,6 +217,25 @@ struct SearchCenterView: View {
                 .focusEffectDisabled()
             }
             Spacer()
+            if filtersAvailable {
+                Button {
+                    isFilterDrawerPresented.toggle()
+                } label: {
+                    Label("search.filters.toggle", systemImage: "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 12, weight: .semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            isFilterDrawerPresented
+                                ? Color.accentColor.opacity(0.20)
+                                : Color.secondary.opacity(0.10),
+                            in: Capsule()
+                        )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("search.filters.toggle.help")
+            }
             if viewModel.isSearching {
                 ProgressView().controlSize(.small)
             }
@@ -186,162 +244,139 @@ struct SearchCenterView: View {
         .frame(height: 46)
     }
 
-    private var githubFilterBar: some View {
-        VStack(spacing: 10) {
-            HStack {
+    /// 右侧筛选抽屉。只承载高级筛选，不再挤占结果区顶部高度。
+    private var filterDrawer: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text("search.filters.title")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
                 Button {
-                    viewModel.isGitHubFiltersExpanded.toggle()
+                    isFilterDrawerPresented = false
                 } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                        Text("search.github.filterTitle")
-                            .fontWeight(.semibold)
-                        Image(systemName: viewModel.isGitHubFiltersExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .contentShape(Rectangle())
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                Spacer()
-                if isGitHubAuthenticated {
-                    Label("search.github.signedIn", systemImage: "person.crop.circle.badge.checkmark")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Label("search.github.anonymous", systemImage: "person.crop.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if let summary = viewModel.githubResultSummary {
-                    Text(summary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if viewModel.canLoadMoreGitHub {
-                    Button("search.github.loadMore") { Task { await viewModel.loadMoreGitHub() } }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                }
+                .help("common.close")
             }
+            .padding(.horizontal, 14)
+            .frame(height: 42)
 
-            if viewModel.isGitHubFiltersExpanded {
-                // 两行布局（dong4j 2026-06-14 反馈调整）：
-                // - 第一行：核心内容筛选（语言 / Topic / 最低 Stars）+ 主 CTA「应用筛选」
-                //   把 CTA 放在视觉显眼的右上角，与命令面板的「主操作位于右上」惯例一致
-                // - 第二行：排序与时间相关（排序方式 / 顺序 / 两个日期 / 清除日期）
-                //   把「排序」与「时间过滤」归在一起，因为它们都是「调整结果呈现/范围」
-                //   而非「定义内容」的辅助维度。这样第一行专注 What，第二行专注 How
-                VStack(spacing: 12) {
-                    HStack(alignment: .bottom, spacing: 12) {
-                        githubLanguagePicker
-                        githubTextFilter(
-                            titleKey: "search.github.filter.topic",
-                            placeholderKey: "search.github.filter.topic.placeholder",
-                            text: optionalBinding(\.topic)
-                        )
-                        VStack(alignment: .leading, spacing: 5) {
-                            filterFieldLabel("search.github.filter.minStars")
-                            TextField("search.github.filter.minStars.placeholder", value: $viewModel.githubFilters.minimumStars, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        .frame(width: 112)
-                        Spacer(minLength: 0)
+            themedSeparator
 
-                        Button("search.github.filter.apply") {
-                            Task { await viewModel.applyGitHubFilters() }
-                        }
-                        .buttonStyle(.borderedProminent)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if viewModel.scope == .all || viewModel.scope == .github {
+                        githubFilterSection
                     }
-
-                    HStack(alignment: .bottom, spacing: 12) {
-                        githubPicker(titleKey: "search.github.filter.sortBy", width: 130) {
-                            Picker("search.github.filter.sortBy", selection: $viewModel.githubFilters.sort) {
-                                Text("search.github.sort.bestMatch").tag(GitHubSearchSort.bestMatch)
-                                Text("Stars").tag(GitHubSearchSort.stars)
-                                Text("Forks").tag(GitHubSearchSort.forks)
-                                Text("search.github.sort.updated").tag(GitHubSearchSort.updated)
-                            }
-                        }
-                        githubPicker(titleKey: "search.github.filter.order", width: 90) {
-                            Picker("search.github.filter.order", selection: $viewModel.githubFilters.order) {
-                                Text("search.github.order.descending").tag(SearchOrder.descending)
-                                Text("search.github.order.ascending").tag(SearchOrder.ascending)
-                            }
-                        }
-                        githubDateFilter(titleKey: "search.github.filter.createdAfter", keyPath: \.createdAfter)
-                        githubDateFilter(titleKey: "search.github.filter.pushedAfter", keyPath: \.pushedAfter)
-                        Button("search.github.filter.clearDates") {
-                            viewModel.githubFilters.createdAfter = nil
-                            viewModel.githubFilters.pushedAfter = nil
-                        }
-                        .buttonStyle(.bordered)
-                        Spacer(minLength: 0)
+                    if viewModel.scope == .all || viewModel.scope == .web {
+                        anySearchFilterSection
                     }
                 }
-                .padding(12)
-                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .scrollContentBackground(.hidden)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .background(Color.primary.opacity(0.018))
     }
 
-    /// AnySearch（网页）筛选条。结构与 `githubFilterBar` 对称：
-    /// - 折叠态：标题 + 当前已选筛选摘要 + 展开 chevron
-    /// - 展开态：单行 4 个控件（domain / contentTypes / zone / maxResults）+ 应用筛选
-    ///
-    /// scope 是 `.web` 或 `.all` 时显示；与 GitHub 筛选条共存时呈上下两条独立栏目，
-    /// 避免把不同源的筛选耦合到一个折叠区域里造成认知割裂。
-    private var anySearchFilterBar: some View {
-        VStack(spacing: 10) {
+    private var githubFilterSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Button {
-                    viewModel.isAnySearchFiltersExpanded.toggle()
-                } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: "globe")
-                        Text("search.web.filterTitle")
-                            .fontWeight(.semibold)
-                        Image(systemName: viewModel.isAnySearchFiltersExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
+                Label("search.github.filterTitle", systemImage: "line.3.horizontal.decrease.circle")
+                    .font(.system(size: 12, weight: .semibold))
                 Spacer()
-                // 折叠态显示一句话筛选摘要（如「code · web,doc · 全球 · 10 条」），
-                // 让用户即便不展开也能一眼看到当前生效的非默认筛选。完全默认时
-                // 显示「自动」提示当前走网关自动路由。
-                Text(anySearchFiltersSummary)
+            }
+
+            Label(
+                isGitHubAuthenticated ? "search.github.signedIn" : "search.github.anonymous",
+                systemImage: isGitHubAuthenticated ? "person.crop.circle.badge.checkmark" : "person.crop.circle"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            if let summary = viewModel.githubResultSummary {
+                Text(summary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .truncationMode(.tail)
             }
 
-            if viewModel.isAnySearchFiltersExpanded {
-                HStack(alignment: .bottom, spacing: 12) {
-                    anySearchDomainPicker
-                    anySearchContentTypesField
-                    anySearchZonePicker
-                    anySearchMaxResultsField
-                    Spacer(minLength: 0)
+            githubLanguagePicker(width: 222)
+            githubTextFilter(
+                titleKey: "search.github.filter.topic",
+                placeholderKey: "search.github.filter.topic.placeholder",
+                text: optionalBinding(\.topic)
+            )
+            VStack(alignment: .leading, spacing: 5) {
+                filterFieldLabel("search.github.filter.minStars")
+                TextField("search.github.filter.minStars.placeholder", value: $viewModel.githubFilters.minimumStars, format: .number)
+                    .textFieldStyle(.roundedBorder)
+            }
 
-                    Button("search.github.filter.apply") {
-                        Task { await viewModel.applyAnySearchFilters() }
-                    }
-                    .buttonStyle(.borderedProminent)
+            HStack(alignment: .bottom, spacing: 10) {
+                githubSortPicker(width: 132)
+                githubOrderPicker(width: 80)
+            }
+
+            githubDateFilter(titleKey: "search.github.filter.createdAfter", keyPath: \.createdAfter)
+            githubDateFilter(titleKey: "search.github.filter.pushedAfter", keyPath: \.pushedAfter)
+
+            HStack(spacing: 8) {
+                Button("search.github.filter.apply") {
+                    Task { await viewModel.applyGitHubFilters() }
                 }
-                .padding(12)
-                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .buttonStyle(.borderedProminent)
+
+                Button("search.github.filter.clearDates") {
+                    viewModel.githubFilters.createdAfter = nil
+                    viewModel.githubFilters.pushedAfter = nil
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if viewModel.canLoadMoreGitHub {
+                Button("search.github.loadMore") { Task { await viewModel.loadMoreGitHub() } }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(12)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// Web / AnySearch 筛选抽屉 section。保持原有筛选值与 apply 行为，只改变布局容器。
+    private var anySearchFilterSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("search.web.filterTitle", systemImage: "globe")
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+            }
+
+            Text(anySearchFiltersSummary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+            anySearchDomainPicker(width: 222)
+            anySearchContentTypesField(width: 222)
+            HStack(alignment: .bottom, spacing: 10) {
+                anySearchZonePicker(width: 106)
+                anySearchMaxResultsField(width: 106)
+            }
+
+            Button("search.github.filter.apply") {
+                Task { await viewModel.applyAnySearchFilters() }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(12)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     @ViewBuilder
@@ -842,8 +877,8 @@ struct SearchCenterView: View {
 
     /// “全部语言”对应 nil，不生成 GitHub `language:` qualifier；其余选项直接来自
     /// Starcat 本地 Star 列表的 languageStats，与 Sidebar 的语言口径保持一致。
-    private var githubLanguagePicker: some View {
-        githubPicker(titleKey: "search.github.filter.language", width: 128) {
+    private func githubLanguagePicker(width: CGFloat = 128) -> some View {
+        githubPicker(titleKey: "search.github.filter.language", width: width) {
             Picker("search.github.filter.language", selection: optionalLanguageBinding) {
                 Text("search.github.filter.language.all").tag("")
                 ForEach(languages) { stat in
@@ -858,6 +893,26 @@ struct SearchCenterView: View {
             get: { viewModel.githubFilters.language ?? "" },
             set: { viewModel.githubFilters.language = $0.isEmpty ? nil : $0 }
         )
+    }
+
+    private func githubSortPicker(width: CGFloat) -> some View {
+        githubPicker(titleKey: "search.github.filter.sortBy", width: width) {
+            Picker("search.github.filter.sortBy", selection: $viewModel.githubFilters.sort) {
+                Text("search.github.sort.bestMatch").tag(GitHubSearchSort.bestMatch)
+                Text("Stars").tag(GitHubSearchSort.stars)
+                Text("Forks").tag(GitHubSearchSort.forks)
+                Text("search.github.sort.updated").tag(GitHubSearchSort.updated)
+            }
+        }
+    }
+
+    private func githubOrderPicker(width: CGFloat) -> some View {
+        githubPicker(titleKey: "search.github.filter.order", width: width) {
+            Picker("search.github.filter.order", selection: $viewModel.githubFilters.order) {
+                Text("search.github.order.descending").tag(SearchOrder.descending)
+                Text("search.github.order.ascending").tag(SearchOrder.ascending)
+            }
+        }
     }
 
     private func filterFieldLabel(_ titleKey: LocalizedStringKey) -> some View {
@@ -911,8 +966,8 @@ struct SearchCenterView: View {
     /// 首项「自动」对应 nil（不传 `domain` 给 API，网关按 query 自动路由），其余
     /// 22 项来自官方 enum（hard-code 在 `Self.allAnySearchDomains`）。domain 是 API
     /// 关键字，**不本地化**；中文用户可通过括号注释快速辨识（如 `code（代码）`）。
-    private var anySearchDomainPicker: some View {
-        githubPicker(titleKey: "search.anysearch.domain", width: 158) {
+    private func anySearchDomainPicker(width: CGFloat = 158) -> some View {
+        githubPicker(titleKey: "search.anysearch.domain", width: width) {
             Picker("Domain", selection: anySearchDomainBinding) {
                 Text("search.anysearch.domain.auto").tag("")
                 ForEach(Self.allAnySearchDomains, id: \.0) { pair in
@@ -932,7 +987,7 @@ struct SearchCenterView: View {
     /// content_types 三选 Toggle（web / news / doc）。
     /// 用 Menu + 内部 Toggle 实现紧凑多选；空集 = 自动（不传 API）。
     /// 官方文档未给完整枚举，先开 3 个最常见的；按反馈再加（写入注释固化范围）。
-    private var anySearchContentTypesField: some View {
+    private func anySearchContentTypesField(width: CGFloat = 140) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             filterFieldLabel("search.anysearch.contentTypes")
             Menu {
@@ -947,7 +1002,7 @@ struct SearchCenterView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(width: 140)
+        .frame(width: width)
     }
 
     private func anySearchContentTypeBinding(_ key: String) -> Binding<Bool> {
@@ -974,8 +1029,8 @@ struct SearchCenterView: View {
     }
 
     /// AnySearch zone 下拉。首项「自动」对应 nil，跟随网关自动路由。
-    private var anySearchZonePicker: some View {
-        githubPicker(titleKey: "search.anysearch.zone", width: 100) {
+    private func anySearchZonePicker(width: CGFloat = 100) -> some View {
+        githubPicker(titleKey: "search.anysearch.zone", width: width) {
             Picker("Zone", selection: anySearchZoneBinding) {
                 Text("search.anysearch.zone.auto").tag("")
                 Text("search.anysearch.zone.cn").tag(AnySearchZone.cn.rawValue)
@@ -1005,7 +1060,7 @@ struct SearchCenterView: View {
     ///   字母 / 符号 / 千分号
     /// - 范围：[1, 100]。在 binding setter 流式钳制 —— 用户输入 999 会被即时压回 100，
     ///   不需要 blur / 提交才触发。空值 / 负数同样压到下界 1
-    private var anySearchMaxResultsField: some View {
+    private func anySearchMaxResultsField(width: CGFloat = 130) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             filterFieldLabel("search.anysearch.maxResults")
             TextField("10", value: clampedMaxResultsBinding, format: .number.grouping(.never))
@@ -1014,7 +1069,7 @@ struct SearchCenterView: View {
                 .multilineTextAlignment(.center)
                 .frame(width: 60)
         }
-        .frame(width: 130, alignment: .leading)
+        .frame(width: width, alignment: .leading)
     }
 
     /// `anySearchFilters.maxResults` 的钳制 binding。
@@ -1125,10 +1180,10 @@ struct SearchCenterView: View {
 ///
 /// ## 不在 popover 内放「清除」按钮的原因
 ///
-/// 调用方（`SearchCenterView.githubFilterBar`）已经在第二行末尾提供「清除日期」
+/// 调用方（`SearchCenterView.githubFilterSection`）已经在 section 底部提供「清除日期」
 /// 按钮，会同时把创建时间和推送时间复位。如果 popover 内再放一个单字段「清除」，
 /// 用户会困惑「该用哪个」。所以这里保持单一职责：popover 只负责选日期，清除
-/// 由外部统一处理。
+/// 由筛选 section 统一处理。
 private struct GitHubDateFilterField: View {
     let titleKey: LocalizedStringKey
     /// 真实数据源。nil 表示「用户未指定该筛选条件」，写筛选时不生成 qualifier；
