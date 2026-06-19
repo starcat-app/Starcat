@@ -52,6 +52,11 @@ struct SidebarView: View {
     @Binding var showTagManagement: Bool
     /// HOM-47：触发 Release 时间线 sheet。
     @Binding var showReleaseTimeline: Bool
+    /// Root page 切换允许 HomeView 在写入 `selectedPage` 前先准备跨页状态。
+    ///
+    /// 这里保持 Sidebar 只表达“用户想切到哪个 root page”，真正的 Manage /
+    /// Trending 状态恢复仍由 HomeView 统一处理，避免 Sidebar 持有 saved selection。
+    var onSelectRootPage: ((SidebarRootPage) -> Void)?
     /// HOM-126 follow-up：Sidebar 自动整理 popover 的「查看队列」入口。
     /// 由 HomeView 承载 sheet 状态，Sidebar 只发起动作，避免左栏持有批量整理面板。
     var onShowBatchAIPanel: (() -> Void)?
@@ -582,7 +587,11 @@ struct SidebarView: View {
 
     private func selectRootPage(_ page: SidebarRootPage) {
         guard selectedPage != page else { return }
-        selectedPage = page
+        if let onSelectRootPage {
+            onSelectRootPage(page)
+        } else {
+            selectedPage = page
+        }
     }
 
     /// HOM-43：Tags header 需要同时有"整行可折叠"和独立的标签管理按钮。

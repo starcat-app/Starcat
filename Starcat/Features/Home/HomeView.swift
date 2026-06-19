@@ -200,6 +200,7 @@ struct HomeView: View {
                 selectedActivityCategory: $selectedActivityCategory,
                 showTagManagement: $showTagManagement,
                 showReleaseTimeline: $showReleaseTimeline,
+                onSelectRootPage: selectSidebarRootPage,
                 onShowBatchAIPanel: {
                     showBatchAIPanel = true
                 },
@@ -783,6 +784,24 @@ struct HomeView: View {
                 AppLog.network.error("Search star toggle failed: \(error.localizedDescription, privacy: .public)")
             }
         }
+    }
+
+    /// Sidebar 顶部 root page 切换入口。
+    ///
+    /// 为什么不让 Sidebar 直接写 `selectedSidebarPage`：
+    /// 从 Trending / Activity 回 Manage 时，Manage 中栏马上会重新挂载。如果先切
+    /// `selectedSidebarPage`，再在 `.onChange` 里恢复 `viewModel.selection`，SwiftUI
+    /// 可能经历一帧“Manage 页面 + 旧 selection”的中间态，随后又按真实 selection
+    /// 重建列表。这里在进入 Manage 前先把 selection 准备好，让首帧就是目标分类。
+    ///
+    /// 只提前处理 `.manage`：切到 Trending 时仍由既有 `.onChange` 写 `.trending`，
+    /// 避免当前 Manage 列表在离场前先被 `.trending` selection 清空。
+    private func selectSidebarRootPage(_ page: SidebarRootPage) {
+        guard selectedSidebarPage != page else { return }
+        if page == .manage, viewModel.selection.isTrending {
+            viewModel.selection = savedManageSelection
+        }
+        selectedSidebarPage = page
     }
 
     // MARK: - 辅助
