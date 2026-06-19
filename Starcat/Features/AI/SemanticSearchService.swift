@@ -204,19 +204,28 @@ final class SemanticSearchService {
     /// （摘要回调 / 笔记保存 / README backfill）不关心结果，靠 `@discardableResult` 静默。
     @discardableResult
     func refreshIndexIfChanged(for repo: Repo) async -> Bool {
+        await refreshIndexIfChanged(for: [repo]) > 0
+    }
+
+    /// 批量按 diff 阈值刷新语义索引。
+    ///
+    /// `SemanticIndexBuilder` 会先按 GitHub 限速逐个补 README Markdown，再把一批 repo
+    /// 交给这里。批量入口让 `ensureIndexed` 的 snapshot 准备、AI 摘要批量查询与 embedding
+    /// API 的 `inputs` 批处理真正生效；单 repo 入口保留给笔记保存 / 摘要生成等即时路径。
+    @discardableResult
+    func refreshIndexIfChanged(for repos: [Repo]) async -> Int {
         do {
             try entitlementGate?.requirePro(.semanticSearch)
             let (client, model) = try makeClient(task: settings.aiEmbeddingTask)
-            let rebuilt = try await ensureIndexed([repo], model: model, client: client)
-            return rebuilt > 0
+            return try await ensureIndexed(repos, model: model, client: client)
         } catch EntitlementGateError.requiresPro {
-            return false
+            return 0
         } catch SemanticSearchError.missingAPIKey {
             // 静默：用户没配 AI，不打扰
-            return false
+            return 0
         } catch {
-            AppLog.ai.error("refreshIndexIfChanged failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            return false
+            AppLog.ai.error("refreshIndexIfChanged batch failed: \(error.localizedDescription, privacy: .public)")
+            return 0
         }
     }
 
