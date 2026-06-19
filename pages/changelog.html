@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Starcat Changelog — 版本更新记录">
+    <meta name="robots" content="index, follow">
+    <title>更新记录 · Starcat</title>
+    <link rel="icon" type="image/png" href="starcat-logo.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --color-bg:         #0F172A;
+            --color-bg-soft:    #1E293B;
+            --color-card:       rgba(30, 41, 59, 0.6);
+            --color-border:     rgba(148, 163, 184, 0.12);
+            --color-border-hover: rgba(148, 163, 184, 0.25);
+            --color-text:       #F8FAFC;
+            --color-text-secondary: #94A3B8;
+            --color-text-tertiary:  #64748B;
+            --color-primary:    #38BDF8;
+            --color-primary-hover: #7DD3FC;
+            --color-cta:        #22C55E;
+            --color-success:    #4ADE80;
+            --color-accent:     #FBBF24;
+            --color-pro:        #A78BFA;
+            --fs-hero: clamp(28px, 4vw, 40px);
+            --fs-h2: clamp(22px, 3vw, 28px);
+            --fs-h3: 20px;
+            --fs-body: 16px;
+            --fs-small: 14px;
+            --radius: 14px; --radius-sm: 8px;
+            --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+        }
+
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+        body {
+            margin: 0; background: var(--color-bg); color: var(--color-text);
+            font-family: var(--font-sans); font-size: var(--fs-body); line-height: 1.7;
+            -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+        }
+        ::selection { background: rgba(34, 197, 94, 0.3); color: var(--color-text); }
+        a { color: var(--color-primary); text-decoration: none; transition: color .15s ease; }
+        a:hover { color: var(--color-primary-hover); }
+        code {
+            background: rgba(148, 163, 184, 0.12); border-radius: 4px;
+            padding: 2px 6px; font-family: var(--font-mono); font-size: 0.9em; color: var(--color-text);
+        }
+
+        .topbar { position: sticky; top: 0; z-index: 50; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-bottom: 1px solid var(--color-border); }
+        .topbar-inner { max-width: 900px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
+        .brand { display: flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 17px; color: var(--color-text); }
+        .brand-logo { width: 28px; height: 28px; border-radius: 7px; }
+        .topbar-nav { display: flex; gap: 28px; font-size: 14px; }
+        .topbar-nav a { color: var(--color-text-secondary); font-weight: 400; transition: color .15s ease; }
+        .topbar-nav a:hover { color: var(--color-text); text-decoration: none; }
+
+        .hero { background: linear-gradient(180deg, var(--color-bg) 0%, var(--color-bg-soft) 100%); padding: 72px 24px 56px; border-bottom: 1px solid var(--color-border); }
+        .hero-inner { max-width: 900px; margin: 0 auto; }
+        .hero-eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 13px; text-transform: uppercase; letter-spacing: 0.15em; color: var(--color-cta); font-weight: 600; margin: 0 0 12px; }
+        .hero h1 { font-family: 'JetBrains Mono', monospace; font-size: var(--fs-hero); font-weight: 700; margin: 0 0 16px; letter-spacing: -0.02em; }
+
+        main { max-width: 900px; margin: 0 auto; padding: 48px 24px 96px; }
+        .changelog-content { background: var(--color-card); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 48px 56px; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+
+        .changelog-content h1 { font-family: 'JetBrains Mono', monospace; font-size: var(--fs-hero); font-weight: 700; margin: 0 0 8px; color: var(--color-text); }
+        .changelog-content h2 { font-family: 'JetBrains Mono', monospace; font-size: var(--fs-h2); font-weight: 700; margin: 48px 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--color-border); color: var(--color-text); }
+        .changelog-content h2:first-of-type { margin-top: 0; }
+        .changelog-content h3 { font-family: 'JetBrains Mono', monospace; font-size: var(--fs-h3); font-weight: 600; margin: 32px 0 12px; color: var(--color-cta); }
+        .changelog-content p { margin: 12px 0; color: var(--color-text-secondary); line-height: 1.7; }
+        .changelog-content ul { padding-left: 20px; margin: 12px 0; list-style: none; }
+        .changelog-content ul li { margin: 10px 0; color: var(--color-text-secondary); line-height: 1.6; position: relative; padding-left: 16px; }
+        .changelog-content ul li::before { content: "·"; position: absolute; left: 0; color: var(--color-text-tertiary); font-weight: 700; }
+        .changelog-content strong { color: var(--color-text); font-weight: 600; }
+        .changelog-content a { color: var(--color-primary); }
+        .changelog-content a:hover { color: var(--color-primary-hover); }
+        .changelog-content hr { border: none; border-top: 1px solid var(--color-border); margin: 40px 0; }
+        .changelog-content blockquote { border-left: 3px solid var(--color-border); padding: 8px 16px; margin: 16px 0; color: var(--color-text-tertiary); font-style: italic; background: rgba(148,163,184,0.05); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+        .changelog-content blockquote p { color: var(--color-text-tertiary); }
+
+        footer.site-footer { background: var(--color-bg); border-top: 1px solid var(--color-border); padding: 40px 24px; color: var(--color-text-tertiary); font-size: 13px; text-align: center; }
+        footer.site-footer .links { display: flex; justify-content: center; gap: 28px; margin-bottom: 16px; flex-wrap: wrap; }
+        footer.site-footer .links a { color: var(--color-text-tertiary); transition: color .15s ease; }
+        footer.site-footer .links a:hover { color: var(--color-text-secondary); text-decoration: none; }
+        footer.site-footer .copyright { color: var(--color-text-tertiary); font-size: 12px; margin: 0; }
+
+        @media (max-width: 767px) {
+            .changelog-content { padding: 28px 22px; }
+            .topbar-nav { display: none; }
+            .hero { padding: 48px 16px 36px; }
+            .hero h1 { font-size: 28px; }
+        }
+    </style>
+</head>
+<body>
+
+<header class="topbar" role="banner">
+    <div class="topbar-inner">
+        <a class="brand" href="./index.html">
+            <img src="starcat-logo.png" alt="Starcat" class="brand-logo" width="28" height="28">
+            <span>Starcat</span>
+        </a>
+        <nav class="topbar-nav" aria-label="导航">
+            <a href="./index.html">Home</a>
+            <a href="./privacy.html">Privacy</a>
+            <a href="./changelog.html" style="color:var(--color-text);font-weight:500;">Changelog</a>
+        </nav>
+    </div>
+</header>
+
+<section class="hero">
+    <div class="hero-inner">
+        <p class="hero-eyebrow">Release Notes</p>
+        <h1>Changelog</h1>
+    </div>
+</section>
+
+<main>
+    <div class="changelog-content">
+<h1>Starcat Changelog</h1>
+<blockquote>
+<p>All notable changes to Starcat. Format based on <a href="https://keepachangelog.com/en/1.1.0/" target="_blank" rel="noopener">Keep a Changelog</a>.</p>
+<p>Starcat follows <a href="https://semver.org/" target="_blank" rel="noopener">Semantic Versioning</a>.</p>
+</blockquote>
+<hr>
+<h2>[1.0.0] — 2026-06-19</h2>
+<h3>Account & Sync</h3>
+<ul>
+<li><strong>GitHub OAuth Login</strong> — Device Flow authentication, token stored in Apple Keychain (Secure Enclave encryption), <code>read:user</code> + <code>public_repo</code> scopes.</li>
+<li><strong>Full + Incremental Stars Sync</strong> — Paginated fetch with progress callback; incremental sync skips unchanged pages via <code>starred_at</code> cutoff; ETag cache reduces redundant requests.</li>
+<li><strong>Rate Limit Management</strong> — Parses <code>X-RateLimit-*</code> headers, proactive backoff on limit with countdown UI.</li>
+</ul>
+<h3>Main Interface (macOS Three-Column Layout)</h3>
+<ul>
+<li><strong>NavigationSplitView</strong> — Sidebar + repo list + detail panes, window frame persistence.</li>
+<li><strong>Sidebar</strong> — User card (avatar / username / stats / profile entry), collapsible Tags & Languages groups with counts.</li>
+<li><strong>Contribution Graph + Snake Animation</strong> — GitHub-style 53-week heatmap, 7 selectable snake game modes.</li>
+<li><strong>User Share Cards</strong> — 5 themes (minimal B&W / thermal orange / GitHub green / white ID card / dark ID card), export as hi-res PNG or share to X, dynamic Metal flow background.</li>
+</ul>
+<h3>Repository List</h3>
+<ul>
+<li><strong>All Repos / Untagged / Languages / Tags</strong> — Multi-dimension browsing; list caching + skeleton screens to avoid blank states on category switch.</li>
+<li><strong>Compact / Card Density</strong> — Two density modes, persisted in Settings.</li>
+<li><strong>8 Sort Options</strong> — By name / stars / last updated, etc.</li>
+<li><strong>FTS5 Full-Text Search</strong> — Indexes repo name / description / owner / notes, BM25 ranking, CJK trigram tokenizer.</li>
+<li><strong>Structured Filtering</strong> — Combine language / tag / status / archived / fork filters, save complex query presets.</li>
+</ul>
+<h3>Repository Detail</h3>
+<ul>
+<li><strong>Metadata Card</strong> — Name / description / language / stars / forks / created / updated / topics / license.</li>
+<li><strong>README WebView Rendering</strong> — WKWebView with local cache + ETag + SWR strategy, no repeated requests on 404.</li>
+<li><strong>GitHub Shortcuts</strong> — Issues / Pull Requests / Releases / Homepage links open in default browser.</li>
+<li><strong>HTTPS / SSH Clone URL Copy</strong> — One-click clipboard copy + toast feedback.</li>
+<li><strong>Unstar</strong> — Detail page action + confirmation alert + GitHub API sync.</li>
+</ul>
+<h3>Organization</h3>
+<ul>
+<li><strong>Tag CRUD</strong> — Create / edit / delete / merge tags, 12 preset colors (Apple HIG) + 30 SF Symbol icons + custom ColorPicker.</li>
+<li><strong>Batch Tagging</strong> — Multi-select mode + floating bottom action bar.</li>
+<li><strong>Private Notes</strong> — Per-repo Markdown notes, 800ms debounced auto-save, save status indicator.</li>
+<li><strong>Status Management</strong> — Unread / Reading / Using / Archived, SF Symbol picker with instant persistence.</li>
+</ul>
+<h3>Data Management</h3>
+<ul>
+<li><strong>Local SQLite Cache</strong> — GRDB 7 + DatabasePool, 10 tables + FTS5 + 4 triggers.</li>
+<li><strong>Cache Cleanup</strong> — README + images (Kingfisher) + diagnostic logs, one-click from Settings.</li>
+<li><strong>Starred Export</strong> — Single-file HTML / Markdown export; HTML version includes search / sort / filter / light-dark theme toggle / AI summary.</li>
+</ul>
+<h3>AI Features (Pro / BYOK)</h3>
+<ul>
+<li><strong>AI Repo Summaries</strong> — Auto-analyze README to generate structured summaries (what it does / tech stack / use cases), cached per repo, prompt to regenerate when source changes.</li>
+<li><strong>AI Tag Suggestions</strong> — Recommends 3–8 tags with confidence scores, 14 preset category taxonomies, synonymous tag detection.</li>
+<li><strong>AI Chat</strong> — Repository-level contextual chat, multi-turn memory, code + docs linked.</li>
+<li><strong>BYOK Multi-Model</strong> — Self-hosted proxy / Gemini / DeepSeek / OpenAI-compatible / Ollama local models. API keys stored only in local Keychain.</li>
+<li><strong>Hybrid Semantic Search</strong> — BM25 keyword + Embedding semantic search + RRF fusion ranking.</li>
+<li><strong>AI Settings Panel</strong> — Multi-model switching, fine-grained quota control.</li>
+</ul>
+<h3>Trending & Discovery</h3>
+<ul>
+<li><strong>GitHub Trending</strong> — Daily / weekly trending repos, 24h TTL cache.</li>
+<li><strong>Weekly 3-Source Aggregation</strong> — Ruan Yifeng Weekly /潮流周刊 / HelloGitHub aggregated via backend services, categorized in client, source articles rendered in WebView.</li>
+<li><strong>Zread Trending</strong> — zread.com weekly trending data source.</li>
+<li><strong>Backend Services</strong> — 4 Go services (trending / weekly / sharing / wiki), deployed on Fly.io, Bearer Token auth.</li>
+</ul>
+<h3>Release Tracking</h3>
+<ul>
+<li><strong>Release Subscription</strong> — Subscribe to repos, push notifications on new releases, unified timeline with read/unread state.</li>
+<li><strong>Asset Filtering & Download</strong> — Smart filtering by platform / file type, one-click asset download.</li>
+<li><strong>OpenSSF Scorecard</strong> — Integrated security scoring, radar chart visualization across multiple dimensions, cooldown-based smart refresh.</li>
+</ul>
+<h3>Settings & System</h3>
+<ul>
+<li><strong>Cmd+, Settings Panel</strong> — General / AI Service / Storage / About tabs.</li>
+<li><strong>About Window</strong> — Cmd+I native About Panel, open-source credits list.</li>
+<li><strong>Window Management</strong> — Default 1800×900, close / minimize / fullscreen, frame persistence.</li>
+<li><strong>macOS Native</strong> — Liquid Glass design language, Apple App Sandbox, Hardened Runtime.</li>
+</ul>
+<h3>Internationalization</h3>
+<ul>
+<li><strong>English & Chinese</strong> — String Catalog (<code>Localizable.xcstrings</code>) for all localized strings, supports en + zh-Hans.</li>
+</ul>
+<h3>Internal Tooling</h3>
+<ul>
+<li><strong>CodeFlow</strong> — Built-in code graph, dependency visualization, branch-level code analysis.</li>
+<li><strong>Secrets.xcconfig.template</strong> — Automated script to inject multi-service API keys from <code>.env</code>.</li>
+<li><strong>Makefile</strong> — <code>setup-production-api-keys</code> / <code>sync-fly-secrets</code> one-command workflows.</li>
+</ul>
+<hr>
+<p>[1.0.0]: https://github.com/dong4j/starcat/releases/tag/1.0.0</p>
+    </div>
+</main>
+
+<footer class="site-footer" role="contentinfo">
+    <div class="links">
+        <a href="./index.html">Home</a>
+        <a href="./privacy.html">Privacy Policy</a>
+        <a href="./changelog.html">Changelog</a>
+        <a href="mailto:dong4j@gmail.com">Contact</a>
+    </div>
+    <p class="copyright">Copyright &copy; 2026 Starcat. All rights reserved.</p>
+</footer>
+
+</body>
+</html>
