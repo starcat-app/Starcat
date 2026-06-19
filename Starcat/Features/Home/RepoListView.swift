@@ -74,7 +74,7 @@ struct RepoListView: View {
         // ⏱️ 切分类性能诊断：body 重算是性能瓶颈的重灾区，记录每次重算的时机和距 T0 的 elapsed。
         // body 是 computed property，print 会在每次 SwiftUI 决定调用 body 时打一次。
         // 用 .notice 保证 Xcode console 实时可见（.debug / .info 在 macOS 上会被吞）。
-        let _ = AppLog.ui.notice("[switch-cat] RepoListView.body recomputed (items=\(self.viewModel.items.count), itemsRev=\(self.viewModel.itemsRevision), animID=\(self.contentAnimationID, privacy: .public))  +\(HomeViewModel.msSinceT0, format: .fixed(precision: 1))ms")
+        let _ = AppLog.ui.notice("[switch-cat] RepoListView.body recomputed (items=\(self.viewModel.items.count), itemsRev=\(self.viewModel.itemsRevision), state=\(self.contentStateKey, privacy: .public))  +\(HomeViewModel.msSinceT0, format: .fixed(precision: 1))ms")
         #endif
 
         contentBody
@@ -82,9 +82,6 @@ struct RepoListView: View {
         // 与 Sidebar 头像区 / 右侧详情 hero 联动：透明 toolbar 下中栏顶部也绘制 accent 光晕。
         .detailHeroTintBackground(tint: listColumnTintColor)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: listColumnTintColor)
-        .id(contentAnimationID)
-        .transition(contentTransition)
-        .animation(contentAnimation, value: contentAnimationID)
         .navigationTitle(navigationTitle)
         .navigationSubtitle(navigationSubtitle)
         // W4 A5：多选模式底部浮动操作栏；W12 PR-4 扩展到 trending/weekly/activity；
@@ -525,10 +522,10 @@ struct RepoListView: View {
 
     /// 中栏主体内容。
     ///
-    /// 单独抽出是为了让外层用 `contentAnimationID` 给整块内容做过渡动画；
-    /// `List` 本身仍用 `itemsRevision` 重建快照，避免排序/过滤时几千行逐个 move；
+    /// 单独抽出是为了让 root page 分支保持清晰；
+    /// Manage 内部 `List` 仍用 `itemsRevision` 重建快照，避免排序/过滤时几千行逐个 move；
     /// row 只做可视区域内的轻量 reveal。缓存命中分类不再跳过 row reveal：
-    /// 外层 transition 已稳定，保留行级 0.22s 动画不会回到整栏卡顿，同时能恢复列表加载的生命感。
+    /// 保留行级 0.22s 动画不会回到整栏卡顿，同时能恢复列表加载的生命感。
     @ViewBuilder
     private var contentBody: some View {
         @Bindable var vm = viewModel
@@ -650,7 +647,7 @@ struct RepoListView: View {
     ///
     /// 之所以包成 ViewBuilder + closure 而不是把 banner 塞进每个 list view：
     /// unifiedListContent 是带泛型 selection 的 List，加 banner 会破坏 List 滚动语义；
-    /// 在外层 VStack 拼接更稳，且 banner 也参与 contentAnimationID 触发的过渡动画。
+    /// 在外层 VStack 拼接更稳，避免破坏 List 自身滚动与 selection 语义。
     @ViewBuilder
     private func listWithOptionalBanner<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         if selectedPage == .manage, viewModel.selection == .untagged {
@@ -678,10 +675,13 @@ struct RepoListView: View {
         viewModel.items.enumerated().map { IndexedRepo(index: $0.offset, repo: $0.element) }
     }
 
-    /// 中栏内容切换动画的身份键。
+    /// 中栏内容状态签名，仅用于调试日志。
     ///
-    /// 外层 `.id(contentAnimationID)` 控制 contentBody 何时被销毁重建 + 何时跑外层 transition。
-    /// 内层 `List.id(viewModel.itemsRevision)` 单独控制 List 快照重建（排序/过滤后避免几千行逐个 move diff）。
+    /// 2026-06-19：这里不再挂到外层 `.id(...)`。
+    /// 原先用这个 key 强制销毁重建 `contentBody`，从 Trending / Activity 回 Manage 时
+    /// 会把中栏外壳、toolbar、列表 task 一起重挂，和 Manage selection 恢复叠加后形成
+    /// 明显卡顿。现在只保留内层 `List.id(viewModel.itemsRevision)` 控制真正需要的
+    /// 列表快照重建（排序/过滤后避免几千行逐个 move diff）。
     ///
     /// **HOM-46 性能补丁 #2（2026-06-02）**：移除 has-data 稳定态里的 selection / itemsRevision。
     /// - 之前包含 itemsRevision 会让"数据刷新"也触发外层 transition：
@@ -695,14 +695,14 @@ struct RepoListView: View {
     /// 旧写法 `activity-\(category.id)` 会让每次切分类销毁重建整棵 `ActivityView` + 跑
     /// 0.22s 外层 transition（Manage HOM-46 已在 has-data 态规避同类问题）。
     /// 仅 weekly ↔ 其它 数据源/根视图不同，保留 `"activity-weekly"` / `"activity-local"` 二分。
-    private var contentAnimationID: String {
+    private var contentStateKey: String {
         if selectedPage == .trending {
             return "trending-\(selectedTrendingLanguage.id)"
         }
         if selectedPage == .activity {
             return selectedActivityCategory == .weekly ? "activity-weekly" : "activity-local"
         }
-        // W12 PR-5：多选状态迁到 manageMultiSelectionStore；contentAnimationID 用 store.isActive 派生。
+        // W12 PR-5：多选状态迁到 manageMultiSelectionStore；状态签名用 store.isActive 派生。
         let mode = dependencies.manageMultiSelectionStore.isActive ? "multi" : "single"
         if viewModel.isLoading {
             return "loading-\(viewModel.selection.id)-\(mode)"
@@ -714,17 +714,6 @@ struct RepoListView: View {
             return "empty-\(viewModel.selection.id)-\(mode)"
         }
         return "repos-\(mode)"
-    }
-
-    private var contentAnimation: Animation? {
-        reduceMotion ? nil : .easeOut(duration: 0.22)
-    }
-
-    private var contentTransition: AnyTransition {
-        reduceMotion ? .identity : .asymmetric(
-            insertion: .opacity.combined(with: .offset(y: 8)),
-            removal: .opacity
-        )
     }
 
     // MARK: - 顶部操作栏组件
