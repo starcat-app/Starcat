@@ -277,9 +277,10 @@ struct RepoListView: View {
     /// 按 `selectedPage` 派发当前 toolbar 内容。
     ///
     /// 设计参见 `PageToolbarSpec` 文件头：
-    /// - PR-1：Manage 走完整 spec，其它页面 leading/trailing 仍为 nil（保留自绘 toolbar）；
-    /// - PR-2：所有页面统一注入 `searchField` —— 非 Manage 页面以 `isDisabled = true`
-    ///   显示，tooltip 提示"该搜索仅在 Manage 页面可用"，为未来 GitHub 搜索模式铺路。
+    /// - Manage 走完整 spec，并显示本地关键词 / 语义搜索入口；
+    /// - Trending / Activity 隐藏本地搜索入口，只保留主窗口级 `⌘K` 全局搜索。
+    ///   这样避免用户在非 Manage 页面看到一个 disabled 搜索框，却误以为当前页支持
+    ///   本地 FTS5 / 向量搜索。
     /// W12 PR-4：根据当前 page 选择对应的多选 BatchActionBar 实现。
     /// W12 PR-5：Manage 也走 MultiSelectionStore，但保留独立 BatchActionBar（暴露
     /// 「打标签」+「Unstar」业务语义按钮，与 RemoteBatchActionBar 的「Star」+「Unstar」不同）。
@@ -312,17 +313,6 @@ struct RepoListView: View {
         case .trending:  return makeTrendingToolbarSpec()
         case .activity:  return makeActivityToolbarSpec()
         }
-    }
-
-    /// 非 Manage 页面共用的 SmartSearchField 注入（PR-2）。
-    ///
-    /// 禁用判定：当前 `mode` 是 `.keyword` / `.semantic` 时禁用——它们都依赖
-    /// Manage 的本地 FTS5 / 向量索引。未来 `.github` 模式上线时，此处放开 `isDisabled`。
-    @MainActor
-    private func nonManageSearchField() -> AnyView {
-        let mode = viewModel.smartSearchMode
-        let needsManageData = (mode == .keyword || mode == .semantic)
-        return AnyView(smartSearchField(isDisabled: needsManageData))
     }
 
     /// Trending 页面 toolbar spec（W12 PR-4）：
@@ -373,10 +363,7 @@ struct RepoListView: View {
             )
         }()
 
-        return PageToolbarSpec(
-            trailingPrimary: trailing,
-            searchField: nonManageSearchField()
-        )
+        return PageToolbarSpec(trailingPrimary: trailing)
     }
 
     /// Activity 页面 toolbar spec（W12 PR-4）：
@@ -451,10 +438,7 @@ struct RepoListView: View {
             }
         )
 
-        return PageToolbarSpec(
-            trailingPrimary: trailing,
-            searchField: nonManageSearchField()
-        )
+        return PageToolbarSpec(trailingPrimary: trailing)
     }
 
     /// Manage 页面 toolbar：filter / multiSelect / external / clone / search。
