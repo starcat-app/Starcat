@@ -285,9 +285,13 @@ struct DebugMenuCommands: Commands {
         // `.environment(\.locale, _)` 切换），保证不管当前 locale 是什么，开发者
         // 都能在菜单栏看到固定的"Debug"字样找到入口。
         CommandMenu("Debug") {
-            // 占位项：保留菜单架构与可见性。加入真功能时直接删除这一行。
-            Button("(no debug actions yet)") { }
-                .disabled(true)
+            Button("Replay First-Run Onboarding") {
+                FirstRunOnboardingPreferences.resetForDebugReplay()
+                NotificationCenter.default.post(
+                    name: FirstRunOnboardingPreferences.debugReplayNotification,
+                    object: nil
+                )
+            }
         }
     }
 }

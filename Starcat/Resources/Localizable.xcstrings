@@ -9817,6 +9817,390 @@
         }
       }
     },
+    "onboarding.action.getStarted" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get Started"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始使用"
+          }
+        }
+      }
+    },
+    "onboarding.exit.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Everything is ready. Happy exploring."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一切就绪，尽情探索吧。"
+          }
+        }
+      }
+    },
+    "onboarding.exit.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome aboard!"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "欢迎加入 Starcat"
+          }
+        }
+      }
+    },
+    "onboarding.action.next" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一步"
+          }
+        }
+      }
+    },
+    "onboarding.action.skip" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳过"
+          }
+        }
+      }
+    },
+    "onboarding.step1.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn your flat GitHub Stars into a searchable, organized knowledge base — all on your Mac."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把扁平的 GitHub 收藏，变成可搜索、可整理的本地知识库。"
+          }
+        }
+      }
+    },
+    "onboarding.step1.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome to Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "欢迎使用 Starcat"
+          }
+        }
+      }
+    },
+    "onboarding.step2.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Trending to explore what's hot on GitHub — no sign-in required to get started."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 Trending 浏览 GitHub 热门仓库，无需登录即可开始探索。"
+          }
+        }
+      }
+    },
+    "onboarding.step2.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start with Trending"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 Trending 开始"
+          }
+        }
+      }
+    },
+    "onboarding.step3.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in with GitHub to pull your Stars locally and keep them in sync as you browse."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 GitHub 登录，将 Stars 拉取到本地，并在浏览时保持同步更新。"
+          }
+        }
+      }
+    },
+    "onboarding.step3.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync your Stars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录同步 Stars"
+          }
+        }
+      }
+    },
+    "onboarding.step4.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add tags, write notes, set statuses, and find any repo instantly with powerful search."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打标签、写笔记、设状态，再用强大的搜索瞬间找回任意仓库。"
+          }
+        }
+      }
+    },
+    "onboarding.step4.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organize & search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整理与搜索"
+          }
+        }
+      }
+    },
+    "onboarding.stepCounterFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Step %lld of %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %lld / %lld 步"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.action.browse" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browse first"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先逛逛"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.action.login" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in with GitHub"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "去登录"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.feature.organize.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add tags, notes, and statuses, then find repos instantly with search."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "给仓库打标签、写笔记、设状态，再用搜索快速找回。"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.feature.organize.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organize with tags & search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签与搜索整理"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.feature.sync.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to pull your GitHub Stars locally and keep them in sync."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录后拉取 GitHub Stars 到本地，并保持同步更新。"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.feature.sync.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync your Stars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录同步 Stars"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.feature.trending.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Explore what's hot on GitHub — no sign-in required."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览 GitHub 热门仓库，无需登录即可开始。"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.feature.trending.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start with Trending"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 Trending 开始"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn your flat GitHub Stars into a searchable knowledge base."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把扁平的 GitHub 收藏，变成可搜索的知识库。"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome to Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "欢迎使用 Starcat"
+          }
+        }
+      }
+    },
     "openssf.action.openViewer" : {
       "extractionState" : "manual",
       "localizations" : {

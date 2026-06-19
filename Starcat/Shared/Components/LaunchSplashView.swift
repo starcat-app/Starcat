@@ -65,6 +65,10 @@ struct LaunchSplashContainer<Content: View>: View {
 
     /// 测试 host 直接跳过；正常冷启动从 true 开始，`.task` 结束后置 false。
     @State private var isSplashVisible = !TestEnvironment.isRunning
+    /// splash 时序是否已跑完（与 overlay 是否可见解耦，供 onboarding 单独监听）。
+    @State private var splashSequenceFinished = TestEnvironment.isRunning
+    /// splash 淡出后、首次安装时展示分步引导 overlay。
+    @State private var showFirstRunOnboarding = false
 
     init(@ViewBuilder content: @escaping () -> Content) {
         self.content = content
@@ -76,6 +80,8 @@ struct LaunchSplashContainer<Content: View>: View {
 
             if isSplashVisible {
                 LaunchSplashView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea(.container, edges: .all)
                     .transition(
                         reduceMotion
                             ? .identity
@@ -83,19 +89,47 @@ struct LaunchSplashContainer<Content: View>: View {
                     )
                     .zIndex(999)
             }
+            if showFirstRunOnboarding {
+                FirstRunOnboardingView {
+                    showFirstRunOnboarding = false
+                }
+                .appLocaleEnvironment()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea(.container, edges: .all)
+                .transition(reduceMotion ? .identity : .opacity)
+                .zIndex(1_000)
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.firstRunOnboardingActive, showFirstRunOnboarding || isSplashVisible)
         .animation(
             reduceMotion ? nil : .easeOut(duration: LaunchSplashTiming.dismissAnimationSeconds),
             value: isSplashVisible
         )
         .task {
-            await dismissSplashWhenReady()
+            await runSplashSequenceIfNeeded()
         }
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.debugReplayNotification)) { _ in
+            FirstRunOnboardingPreferences.resetForDebugReplay()
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.42)) {
+                showFirstRunOnboarding = true
+            }
+        }
+        #endif
     }
 
-    /// 并行等待「会话恢复」与「最短展示时长」，首次启动额外等首屏数据（有超时）。
-    private func dismissSplashWhenReady() async {
-        guard isSplashVisible, !TestEnvironment.isRunning else { return }
+    /// 冷启动 splash 时序；完成后置 `splashSequenceFinished`，onboarding 由 onChange 触发。
+    private func runSplashSequenceIfNeeded() async {
+        guard !TestEnvironment.isRunning else {
+            splashSequenceFinished = true
+            return
+        }
+
+        guard isSplashVisible else {
+            splashSequenceFinished = true
+            return
+        }
 
         let isFirstLaunch = LaunchSplashPreferences.isFirstColdStart
         let minimumDisplay: Duration = {
@@ -115,6 +149,20 @@ struct LaunchSplashContainer<Content: View>: View {
 
         LaunchSplashPreferences.markColdStartCompleted()
         isSplashVisible = false
+        splashSequenceFinished = true
+        await presentFirstRunOnboardingIfNeeded()
+    }
+
+    /// splash 淡出动画结束后再展示首次安装分步引导 overlay。
+    private func presentFirstRunOnboardingIfNeeded() async {
+        guard FirstRunOnboardingPreferences.shouldShow else { return }
+
+        let postSplashDelay: Duration = reduceMotion ? .zero : .milliseconds(520)
+        try? await Task.sleep(for: postSplashDelay)
+
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.42)) {
+            showFirstRunOnboarding = true
+        }
     }
 
     /// 首次启动在 minimum 之后继续等首屏数据，避免 splash 一撤就露出 loading 骨架。
