@@ -116,9 +116,6 @@ struct StarcatApp: App {
                 // 值),因为 `.animation(_:value:)` 是硬动画,不会自动尊重
                 // AnimationOverrideModifier 注入的 reduceMotion 环境值。
                 .animation(dependencies.settings.disableAnimations ? nil : .easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
-                .task {
-                    await dependencies.authSession.restoreSessionIfAvailable()
-                }
         }
         .commands {
             // 替换系统默认的"关于 Starcat"菜单项，打开自定义 SwiftUI 关于窗口。
@@ -180,9 +177,13 @@ struct StarcatApp: App {
     ///   dong4j 历史截图反馈"切语言后部分时间格式没变"就是少了 identity 重建。
     @ViewBuilder
     private var contentRoot: some View {
-        ContentView()
-            .environment(\.locale, localeStore.selection.effectiveLocale)
-            .id(localeStore.selection.rawValue)
+        // LaunchSplashContainer 必须在 `.id(localeStore...)` 外层，否则切语言会重播 splash。
+        // Auth restore 时序已迁入 Container 的 `.task`，与最短展示时长并行等待。
+        LaunchSplashContainer {
+            ContentView()
+                .environment(\.locale, localeStore.selection.effectiveLocale)
+                .id(localeStore.selection.rawValue)
+        }
     }
 
     /// Settings scene 的语言注入与重建逻辑，与 `contentRoot` 完全对称。
