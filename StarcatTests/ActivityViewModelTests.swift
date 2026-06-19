@@ -871,6 +871,38 @@ struct ActivityViewModelTests {
         #expect(h.viewModel.hasMoreItems == false)
     }
 
+    @Test("首次进入全部分类复用后台 filter 管线，完成后正常上屏且不 bump revision")
+    func allCategoryInitialLoadUsesFilterPipeline() async throws {
+        let h = try Harness()
+        var records: [ActivityEventRecord] = []
+        for index in 0..<35 {
+            let day = String(format: "%02d", (index % 28) + 1)
+            records.append(
+                ActivityEventRecord(
+                    id: "all-ev-\(index)",
+                    eventType: "WatchEvent",
+                    actorLogin: "actor\(index)",
+                    actorAvatarUrl: nil,
+                    repoName: "org/repo\(index)",
+                    repoId: Int64(index + 1),
+                    payloadJson: #"{"action":"started"}"#,
+                    isRead: false,
+                    createdAt: "2026-06-\(day)T12:00:00Z",
+                    fetchedAt: "2026-06-\(day)T12:00:00Z"
+                )
+            )
+        }
+        try await h.eventRepo.upsertMany(records)
+
+        await h.viewModel.ensureLoaded(category: .all)
+        await h.viewModel.awaitPendingBackgroundWorkForTesting()
+
+        #expect(h.viewModel.isApplyingCategoryFilter == false)
+        #expect(h.viewModel.items.count == ActivityViewModel.pageSize)
+        #expect(h.viewModel.hasMoreItems)
+        #expect(h.viewModel.itemsRevision == 0)
+    }
+
     // MARK: - PR-3 helpers
 
     private func insertStarredRepo(

@@ -804,13 +804,11 @@ final class ActivityViewModel {
         categoryFilterTask?.cancel()
         isApplyingCategoryFilter = false
 
-        let filtered = Self.computeFilteredItems(
-            source: source,
-            category: currentCategory,
-            timeSort: timeSort(for: currentCategory)
-        )
-        filteredItemsCache[currentCategory] = filtered
-        commitFilteredSlice(from: filtered, bumpRevision: false, resetPage: true)
+        // `.all` 的去重 + 排序在数据多时会明显占用 CPU。这里必须复用
+        // `applyCategoryFilter` 的后台分支，不能在 publish 阶段直接同步调用
+        // `computeFilteredItems`，否则首次从 Manage / Trending 切进 Activity All
+        // 会绕过 v3.1 的主线程保护并造成卡顿。
+        applyCategoryFilter(currentCategory, bumpRevision: false, resetPage: true)
 
         if currentCategory != .all {
             prewarmFilterCache(for: .all)
