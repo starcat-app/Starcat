@@ -90,8 +90,9 @@ struct LaunchSplashContainer<Content: View>: View {
                     .zIndex(999)
             }
             if showFirstRunOnboarding {
-                FirstRunOnboardingView {
+                FirstRunOnboardingView { completion in
                     showFirstRunOnboarding = false
+                    handleFirstRunCompletion(completion)
                 }
                 .appLocaleEnvironment()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -162,6 +163,26 @@ struct LaunchSplashContainer<Content: View>: View {
 
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.42)) {
             showFirstRunOnboarding = true
+        }
+    }
+
+    /// 把引导层的选择映射回 App 既有入口。
+    ///
+    /// 约束：
+    /// - 登录必须复用 `AuthSession.signIn()`，让 Device Flow sheet、错误处理和取消逻辑保持单一来源。
+    /// - Trending 路由交给 `HomeView` 响应通知，避免启动容器反向持有三栏页面状态。
+    /// - `.skip` 不做路由；如果用户已登录，保留启动恢复后的 Manage，未登录则自然停在 Trending。
+    private func handleFirstRunCompletion(_ completion: FirstRunOnboardingCompletion) {
+        switch completion {
+        case .browseTrending:
+            NotificationCenter.default.post(
+                name: FirstRunOnboardingPreferences.browseTrendingNotification,
+                object: nil
+            )
+        case .signIn:
+            authSession.signIn()
+        case .skip:
+            break
         }
     }
 

@@ -2,12 +2,12 @@
 //  FirstRunWelcomeSheet.swift
 //  Starcat
 //
-//  首次安装分步引导（4 步）：splash 淡出后占满整个主窗口，逐步切换说明内容
-//  （不高亮主界面控件），带步骤进度、滑入切换与每步入场动画。
+//  首次安装分步引导（4 步）：splash 淡出后占满整个主窗口，逐步讲清 Starcat
+//  的核心能力（发现 → 理解 → 找回 → 沉淀），不高亮主界面控件。
 //
-//  步骤：欢迎 → Trending → 登录同步 → 标签搜索 →「开始使用」
+//  步骤：发现项目 → AI 理解仓库 → 搜索找回 → 登录后沉淀知识库 →「浏览 / 登录」分流。
 //
-//  - 「开始使用 / 跳过」统一走欢迎退出动画后再露出主窗口（含欢迎收束短音效）
+//  - 「浏览 / 登录 / 跳过」统一走欢迎退出动画后再露出主窗口（含欢迎收束短音效）
 //
 //  关键约束：
 //  - overlay 根挂 `.appLocaleEnvironment()`（i18n 军规 #3）
@@ -44,6 +44,9 @@ enum FirstRunOnboardingPreferences {
     /// Debug 菜单触发重看时广播；`LaunchSplashContainer` 监听并 present overlay。
     static let debugReplayNotification = Notification.Name("starcat.debug.replayFirstRunOnboarding")
     #endif
+
+    /// 首次引导选择「先逛 Trending」后广播给 `HomeView`，让已登录用户也能明确进入 Trending。
+    static let browseTrendingNotification = Notification.Name("starcat.onboarding.browseTrending")
 }
 
 // MARK: - Environment
@@ -93,10 +96,36 @@ private struct FirstRunOnboardingStep: Identifiable {
     let systemImage: String
     let title: LocalizedStringKey
     let detail: LocalizedStringKey
+    let highlights: [LocalizedStringKey]
+    /// 用户后续提供的真实截图资源名。资源缺失时渲染同风格 fallback，避免发布包出现空白。
+    let screenshotAssetName: String
+    /// 真实截图未就位时的抽象预览类型；不展示「占位」字样，避免最终包看起来像未完成。
+    let screenshotFallback: OnboardingScreenshotFallback
     /// 每步 hero 区强调色（与 About / splash 金色体系一致，逐步微调色相）。
     let tint: Color
-    /// 第 0 步用 App Icon 替代 SF Symbol。
+    /// 需要品牌收束感的步骤用 App Icon 替代 SF Symbol。
     let usesAppIcon: Bool
+}
+
+/// 首次引导截图未就位时的抽象预览类型。
+///
+/// 后续 dong4j 提供截图后，只需要在 Assets.xcassets 放入同名 imageset；
+/// 运行时会自动从 fallback 切换到真实截图。
+private enum OnboardingScreenshotFallback {
+    case discover
+    case intelligence
+    case search
+    case library
+}
+
+/// 首次引导完成后的用户意图，由 `LaunchSplashContainer` 统一映射到现有 App 入口。
+///
+/// 不把登录逻辑塞进 Onboarding View，是为了让引导层只负责表达和收束动画；
+/// 真正的业务动作仍复用 App 根部已经装好的 `AuthSession` / `HomeView` 路由。
+enum FirstRunOnboardingCompletion {
+    case browseTrending
+    case signIn
+    case skip
 }
 
 // MARK: - Onboarding View
@@ -104,7 +133,7 @@ private struct FirstRunOnboardingStep: Identifiable {
 /// 首次运行 4 步引导，占满主窗口（由 `LaunchSplashContainer` 在 splash 结束后 present）。
 struct FirstRunOnboardingView: View {
 
-    var onFinish: () -> Void = {}
+    var onFinish: (FirstRunOnboardingCompletion) -> Void = { _ in }
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
@@ -133,35 +162,63 @@ struct FirstRunOnboardingView: View {
     private static let steps: [FirstRunOnboardingStep] = [
         FirstRunOnboardingStep(
             id: 0,
-            systemImage: "star.fill",
+            systemImage: "chart.line.uptrend.xyaxis",
             title: "onboarding.step1.title",
             detail: "onboarding.step1.detail",
+            highlights: [
+                "onboarding.step1.highlight.trending",
+                "onboarding.step1.highlight.weekly",
+                "onboarding.step1.highlight.recommendations"
+            ],
+            screenshotAssetName: "OnboardingDiscover",
+            screenshotFallback: .discover,
             tint: Color(red: 1.0, green: 0.74, blue: 0.28),
-            usesAppIcon: true
+            usesAppIcon: false
         ),
         FirstRunOnboardingStep(
             id: 1,
-            systemImage: "chart.line.uptrend.xyaxis",
+            systemImage: "sparkles",
             title: "onboarding.step2.title",
             detail: "onboarding.step2.detail",
+            highlights: [
+                "onboarding.step2.highlight.summary",
+                "onboarding.step2.highlight.codeflow",
+                "onboarding.step2.highlight.readme"
+            ],
+            screenshotAssetName: "OnboardingUnderstand",
+            screenshotFallback: .intelligence,
             tint: Color(red: 0.98, green: 0.55, blue: 0.38),
             usesAppIcon: false
         ),
         FirstRunOnboardingStep(
             id: 2,
-            systemImage: "arrow.triangle.2.circlepath",
+            systemImage: "magnifyingglass.circle.fill",
             title: "onboarding.step3.title",
             detail: "onboarding.step3.detail",
+            highlights: [
+                "onboarding.step3.highlight.global",
+                "onboarding.step3.highlight.semantic",
+                "onboarding.step3.highlight.filters"
+            ],
+            screenshotAssetName: "OnboardingSearch",
+            screenshotFallback: .search,
             tint: Color(red: 0.45, green: 0.78, blue: 1.0),
             usesAppIcon: false
         ),
         FirstRunOnboardingStep(
             id: 3,
-            systemImage: "tag.fill",
+            systemImage: "tray.and.arrow.down.fill",
             title: "onboarding.step4.title",
             detail: "onboarding.step4.detail",
+            highlights: [
+                "onboarding.step4.highlight.sync",
+                "onboarding.step4.highlight.notes",
+                "onboarding.step4.highlight.releases"
+            ],
+            screenshotAssetName: "OnboardingLibrary",
+            screenshotFallback: .library,
             tint: Color(red: 0.62, green: 0.88, blue: 0.55),
-            usesAppIcon: false
+            usesAppIcon: true
         )
     ]
 
@@ -348,10 +405,10 @@ struct FirstRunOnboardingView: View {
         }
     }
 
-    /// 第 1–3 步：跳过 │ 步数 │ 下一步，三列对齐。
+    /// 第 1–4 步：跳过 │ 步数 │ 下一步，三列对齐。
     private var steppingActionBar: some View {
         HStack(spacing: 16) {
-            Button(action: finish) {
+            Button(action: { finish(.skip) }) {
                 Text("onboarding.action.skip")
                     .font(.subheadline.weight(.medium))
                     .padding(.horizontal, 14)
@@ -390,7 +447,7 @@ struct FirstRunOnboardingView: View {
         }
     }
 
-    /// 第 4 步：步数居中 +「开始使用」。
+    /// 最后一步：步数居中 +「先逛 Trending / 登录同步 Stars」明确分流。
     private var lastStepActionBar: some View {
         VStack(spacing: 14) {
             Text(stepCounterLabel)
@@ -400,17 +457,40 @@ struct FirstRunOnboardingView: View {
                 .contentTransition(reduceMotion ? .identity : .numericText())
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: currentStep)
 
-            Button(action: finish) {
-                Text("onboarding.action.getStarted")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 7)
+            HStack(spacing: 12) {
+                Button(action: { finish(.browseTrending) }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "safari")
+                            .font(.subheadline.weight(.semibold))
+                        Text("onboarding.action.browseTrending")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+                    .frame(minWidth: 160)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .focusEffectDisabled()
+                .disabled(isExitInProgress)
+
+                Button(action: { finish(.signIn) }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.subheadline.weight(.semibold))
+                        Text("onboarding.action.signInSync")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+                    .frame(minWidth: 180)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .focusEffectDisabled()
+                .keyboardShortcut(.defaultAction)
+                .disabled(isExitInProgress)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
-            .focusEffectDisabled()
-            .keyboardShortcut(.defaultAction)
-            .disabled(isExitInProgress)
         }
         .frame(maxWidth: .infinity)
     }
@@ -425,13 +505,13 @@ struct FirstRunOnboardingView: View {
         }
     }
 
-    private func finish() {
+    private func finish(_ completion: FirstRunOnboardingCompletion) {
         guard !isExitInProgress else { return }
-        beginWelcomeExit()
+        beginWelcomeExit(completion: completion)
     }
 
-    /// 「开始使用 / 跳过」统一走欢迎收束动画，再移除 overlay 露出主窗口。
-    private func beginWelcomeExit() {
+    /// 「浏览 / 登录 / 跳过」统一走欢迎收束动画，再移除 overlay 露出主窗口。
+    private func beginWelcomeExit(completion: FirstRunOnboardingCompletion) {
         isExitInProgress = true
         // 点击瞬间即播，贯穿后续收起 → 欢迎 → 淡出整段动画（约 3.2s 音效 + 视觉 ~5s）
         OnboardingWelcomeSound.playWelcomeIfAvailable()
@@ -443,7 +523,7 @@ struct FirstRunOnboardingView: View {
             overlayOpacity = 0
             Task { @MainActor in
                 try? await Task.sleep(for: FirstRunOnboardingExitTiming.reduceMotionTotal)
-                completeImmediately()
+                completeImmediately(completion)
             }
             return
         }
@@ -485,13 +565,13 @@ struct FirstRunOnboardingView: View {
             }
 
             try? await Task.sleep(for: FirstRunOnboardingExitTiming.overlayFade)
-            completeImmediately()
+            completeImmediately(completion)
         }
     }
 
-    private func completeImmediately() {
+    private func completeImmediately(_ completion: FirstRunOnboardingCompletion) {
         FirstRunOnboardingPreferences.markCompleted()
-        onFinish()
+        onFinish(completion)
     }
 }
 
@@ -602,7 +682,7 @@ private struct FirstRunWelcomeExitPanel: View {
 
 // MARK: - Step Panel
 
-/// 单步说明面板：hero 图标区 + 标题 + 正文，带分步入场动画。
+/// 单步说明面板：能力说明 + 截图预览，带分步入场动画。
 private struct FirstRunOnboardingStepPanel: View {
 
     let step: FirstRunOnboardingStep
@@ -621,29 +701,91 @@ private struct FirstRunOnboardingStepPanel: View {
     }
 
     var body: some View {
-        VStack(spacing: 28) {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 44) {
+                narrativeColumn(alignment: .leading, textAlignment: .leading, chipAlignment: .leading)
+                    .frame(width: 430, alignment: .leading)
+
+                screenshotPreview
+                    .frame(width: 560, height: 330)
+            }
+
+            VStack(spacing: 24) {
+                narrativeColumn(alignment: .center, textAlignment: .center, chipAlignment: .center)
+                    .frame(maxWidth: 560)
+
+                screenshotPreview
+                    .frame(maxWidth: 560)
+                    .frame(height: 280)
+            }
+        }
+        .padding(.horizontal, 44)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { runEntrance() }
+    }
+
+    private func narrativeColumn(
+        alignment: HorizontalAlignment,
+        textAlignment: TextAlignment,
+        chipAlignment: Alignment
+    ) -> some View {
+        VStack(alignment: alignment, spacing: 18) {
             heroVisual
                 .scaleEffect(revealPhase >= .hero ? 1 : 0.82)
                 .opacity(revealPhase >= .hero ? 1 : 0)
 
-            VStack(spacing: 14) {
+            VStack(alignment: alignment, spacing: 14) {
                 Text(step.title)
                     .font(.system(size: 34, weight: .semibold, design: .rounded))
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(textAlignment)
                     .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Text(step.detail)
                     .font(.title3)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(textAlignment)
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
+
+                highlightRow(alignment: chipAlignment)
             }
             .opacity(revealPhase >= .text ? 1 : 0)
             .offset(y: revealPhase >= .text ? 0 : 18)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { runEntrance() }
+    }
+
+    private var screenshotPreview: some View {
+        OnboardingScreenshotPreview(step: step)
+            .opacity(revealPhase >= .text ? 1 : 0)
+            .offset(y: revealPhase >= .text ? 0 : 18)
+    }
+
+    private func highlightRow(alignment: Alignment) -> some View {
+        HStack(spacing: 8) {
+            ForEach(Array(step.highlights.enumerated()), id: \.offset) { _, title in
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                    Text(title)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(step.tint.opacity(0.16))
+                )
+                .overlay {
+                    Capsule(style: .continuous)
+                        .stroke(step.tint.opacity(0.28), lineWidth: 1)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: alignment)
+        .padding(.top, 4)
     }
 
     private var heroVisual: some View {
@@ -661,11 +803,11 @@ private struct FirstRunOnboardingStepPanel: View {
                         endRadius: 140
                     )
                 )
-                .frame(width: 280, height: 280)
+                .frame(width: 180, height: 180)
 
             Circle()
                 .fill(step.tint.opacity(0.12))
-                .frame(width: 168, height: 168)
+                .frame(width: 112, height: 112)
                 .overlay {
                     Circle()
                         .stroke(step.tint.opacity(0.24), lineWidth: 1.5)
@@ -675,22 +817,22 @@ private struct FirstRunOnboardingStepPanel: View {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: 96, height: 90)
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .frame(width: 68, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .shadow(color: .black.opacity(0.14), radius: 16, x: 0, y: 10)
                     .shadow(color: step.tint.opacity(0.35), radius: 24, x: 0, y: 6)
             } else if reduceMotion {
                 Image(systemName: step.systemImage)
-                    .font(.system(size: 56, weight: .semibold))
+                    .font(.system(size: 42, weight: .semibold))
                     .foregroundStyle(step.tint)
             } else {
                 Image(systemName: step.systemImage)
-                    .font(.system(size: 56, weight: .semibold))
+                    .font(.system(size: 42, weight: .semibold))
                     .foregroundStyle(step.tint)
                     .symbolEffect(.bounce, value: revealPhase)
             }
         }
-        .frame(height: 280)
+        .frame(width: 180, height: 180)
     }
 
     private func runEntrance() {
@@ -708,6 +850,264 @@ private struct FirstRunOnboardingStepPanel: View {
             withAnimation(.easeOut(duration: 0.42)) {
                 revealPhase = .text
             }
+        }
+    }
+}
+
+// MARK: - Screenshot Preview
+
+/// 每步右侧的截图区域。
+///
+/// 真实截图资源命名约定：
+/// - `OnboardingDiscover`
+/// - `OnboardingUnderstand`
+/// - `OnboardingSearch`
+/// - `OnboardingLibrary`
+///
+/// 这里故意用运行时 `NSImage(named:)` 检测资源是否存在，而不是直接 `Image("...")`：
+/// 截图由 dong4j 后续补充，当前版本必须在资源缺失时仍能编译并显示完整的现代化预览。
+private struct OnboardingScreenshotPreview: View {
+
+    let step: FirstRunOnboardingStep
+
+    var body: some View {
+        ZStack {
+            if let image = NSImage(named: NSImage.Name(step.screenshotAssetName)) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            } else {
+                fallbackPreview
+                    .padding(22)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.regularMaterial)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            step.tint.opacity(0.55),
+                            Color.primary.opacity(0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .shadow(color: .black.opacity(0.18), radius: 24, x: 0, y: 18)
+        .shadow(color: step.tint.opacity(0.18), radius: 34, x: 0, y: 16)
+    }
+
+    @ViewBuilder
+    private var fallbackPreview: some View {
+        switch step.screenshotFallback {
+        case .discover:
+            discoverPreview
+        case .intelligence:
+            intelligencePreview
+        case .search:
+            searchPreview
+        case .library:
+            libraryPreview
+        }
+    }
+
+    private var discoverPreview: some View {
+        VStack(spacing: 14) {
+            previewChrome
+
+            HStack(spacing: 14) {
+                metricTile(icon: "flame.fill", width: 84)
+                metricTile(icon: "newspaper.fill", width: 104)
+                metricTile(icon: "sparkles", width: 94)
+            }
+
+            VStack(spacing: 10) {
+                previewRepoRow(icon: "star.fill", primaryWidth: 188, secondaryWidth: 132, accent: step.tint)
+                previewRepoRow(icon: "chart.line.uptrend.xyaxis", primaryWidth: 220, secondaryWidth: 158, accent: Color.orange)
+                previewRepoRow(icon: "bolt.fill", primaryWidth: 172, secondaryWidth: 118, accent: Color.blue)
+            }
+        }
+    }
+
+    private var intelligencePreview: some View {
+        HStack(spacing: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                previewChrome
+                previewLine(width: 180, height: 12, opacity: 0.22)
+                previewLine(width: 230, height: 8, opacity: 0.12)
+                previewLine(width: 206, height: 8, opacity: 0.10)
+                previewLine(width: 150, height: 8, opacity: 0.10)
+
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+                    .frame(height: 86)
+                    .overlay(alignment: .topLeading) {
+                        Image(systemName: "sparkles")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(step.tint)
+                            .padding(12)
+                    }
+            }
+
+            nodeGraphPreview
+                .frame(width: 190)
+        }
+    }
+
+    private var searchPreview: some View {
+        VStack(spacing: 14) {
+            previewChrome
+
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.08))
+                .frame(height: 44)
+                .overlay(alignment: .leading) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(step.tint)
+                        previewLine(width: 210, height: 8, opacity: 0.16)
+                    }
+                    .padding(.horizontal, 14)
+                }
+
+            HStack(spacing: 10) {
+                metricTile(icon: "text.magnifyingglass", width: 116)
+                metricTile(icon: "brain.head.profile", width: 128)
+                metricTile(icon: "tag.fill", width: 86)
+            }
+
+            VStack(spacing: 9) {
+                previewRepoRow(icon: "scope", primaryWidth: 210, secondaryWidth: 160, accent: step.tint)
+                previewRepoRow(icon: "point.3.connected.trianglepath.dotted", primaryWidth: 186, secondaryWidth: 122, accent: Color.purple)
+            }
+        }
+    }
+
+    private var libraryPreview: some View {
+        HStack(spacing: 14) {
+            VStack(spacing: 10) {
+                ForEach(0..<5, id: \.self) { index in
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(index == 1 ? step.tint.opacity(0.22) : Color.primary.opacity(0.07))
+                        .frame(width: 92, height: 24)
+                }
+                Spacer(minLength: 0)
+            }
+
+            VStack(spacing: 10) {
+                previewRepoRow(icon: "tray.and.arrow.down.fill", primaryWidth: 172, secondaryWidth: 112, accent: step.tint)
+                previewRepoRow(icon: "bookmark.fill", primaryWidth: 204, secondaryWidth: 142, accent: Color.blue)
+                previewRepoRow(icon: "bell.badge.fill", primaryWidth: 158, secondaryWidth: 120, accent: Color.green)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 48, height: 46)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                previewLine(width: 136, height: 12, opacity: 0.20)
+                previewLine(width: 160, height: 8, opacity: 0.12)
+                previewLine(width: 118, height: 8, opacity: 0.10)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var previewChrome: some View {
+        HStack(spacing: 6) {
+            Circle().fill(Color.red.opacity(0.5)).frame(width: 8, height: 8)
+            Circle().fill(Color.yellow.opacity(0.55)).frame(width: 8, height: 8)
+            Circle().fill(Color.green.opacity(0.5)).frame(width: 8, height: 8)
+            Spacer()
+            previewLine(width: 88, height: 7, opacity: 0.12)
+        }
+    }
+
+    private var nodeGraphPreview: some View {
+        ZStack {
+            ForEach(0..<7, id: \.self) { index in
+                Circle()
+                    .fill(index == 0 ? step.tint.opacity(0.85) : Color.primary.opacity(0.13))
+                    .frame(width: index == 0 ? 42 : 28, height: index == 0 ? 42 : 28)
+                    .offset(nodeOffset(index))
+            }
+
+            Path { path in
+                path.move(to: CGPoint(x: 95, y: 92))
+                path.addLine(to: CGPoint(x: 38, y: 40))
+                path.move(to: CGPoint(x: 95, y: 92))
+                path.addLine(to: CGPoint(x: 152, y: 45))
+                path.move(to: CGPoint(x: 95, y: 92))
+                path.addLine(to: CGPoint(x: 56, y: 152))
+                path.move(to: CGPoint(x: 95, y: 92))
+                path.addLine(to: CGPoint(x: 152, y: 148))
+            }
+            .stroke(step.tint.opacity(0.28), lineWidth: 1.4)
+        }
+        .frame(width: 190, height: 188)
+    }
+
+    private func metricTile(icon: String, width: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(step.tint.opacity(0.14))
+            .frame(width: width, height: 52)
+            .overlay {
+                Image(systemName: icon)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(step.tint)
+            }
+    }
+
+    private func previewRepoRow(icon: String, primaryWidth: CGFloat, secondaryWidth: CGFloat, accent: Color) -> some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(accent.opacity(0.22))
+                .frame(width: 36, height: 36)
+                .overlay {
+                    Image(systemName: icon)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(accent)
+                }
+
+            VStack(alignment: .leading, spacing: 7) {
+                previewLine(width: primaryWidth, height: 9, opacity: 0.20)
+                previewLine(width: secondaryWidth, height: 7, opacity: 0.11)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(Color.primary.opacity(0.055))
+        )
+    }
+
+    private func previewLine(width: CGFloat, height: CGFloat, opacity: Double) -> some View {
+        RoundedRectangle(cornerRadius: height / 2, style: .continuous)
+            .fill(Color.primary.opacity(opacity))
+            .frame(width: width, height: height)
+    }
+
+    private func nodeOffset(_ index: Int) -> CGSize {
+        switch index {
+        case 1: return CGSize(width: -57, height: -52)
+        case 2: return CGSize(width: 57, height: -47)
+        case 3: return CGSize(width: -39, height: 60)
+        case 4: return CGSize(width: 57, height: 56)
+        case 5: return CGSize(width: -72, height: 9)
+        case 6: return CGSize(width: 74, height: 5)
+        default: return .zero
         }
     }
 }

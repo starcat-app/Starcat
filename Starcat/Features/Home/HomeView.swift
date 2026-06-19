@@ -692,6 +692,9 @@ struct HomeView: View {
                 selectedActivityCategory = savedActivityCategory
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.browseTrendingNotification)) { _ in
+            openTrendingFromFirstRunOnboarding()
+        }
         .onChange(of: selectedActivityCategory) { _, newCategory in
             guard selectedSidebarPage == .activity else { return }
             savedActivityCategory = newCategory
@@ -744,6 +747,15 @@ struct HomeView: View {
     private func openSearchRepositoryURL(_ candidate: RepositoryCandidate) {
         guard let url = URL(string: "https://github.com/\(candidate.identity.owner)/\(candidate.identity.name)") else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    /// 首次引导的「先逛 Trending」选择只负责路由，不触发登录 / 同步副作用。
+    ///
+    /// 未登录首启时底层本来就停在 Trending；这个入口主要覆盖 Debug 重看引导、
+    /// 或已登录用户首次看到新版引导后明确选择先浏览热门项目的场景。
+    private func openTrendingFromFirstRunOnboarding() {
+        guard selectedSidebarPage != .trending else { return }
+        selectedSidebarPage = .trending
     }
 
     private func copySearchRepositoryURL(_ candidate: RepositoryCandidate) {
