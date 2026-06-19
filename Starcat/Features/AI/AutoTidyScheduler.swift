@@ -336,4 +336,12 @@ final class AutoTidyScheduler {
         let total = batchService.totalCount
         return "\(finished)/\(total)"
     }
+
+    /// Sidebar popover 需要展示更细的实时计数，但不应该直接依赖 BatchAIQueueService。
+    /// 这里保持只读转发，让自动整理的 UI 状态仍由调度器统一收口。
+    var autoTidyFinishedCount: Int { batchService.finishedCount }
+    var autoTidyTotalCount: Int { batchService.totalCount }
+    var autoTidyCompletedCount: Int { batchService.completedCount }
+    var autoTidyIgnoredCount: Int { batchService.ignoredCount }
+    var autoTidyFailedCount: Int { batchService.failedCount }
 }

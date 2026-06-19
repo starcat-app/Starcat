@@ -200,6 +200,9 @@ struct HomeView: View {
                 selectedActivityCategory: $selectedActivityCategory,
                 showTagManagement: $showTagManagement,
                 showReleaseTimeline: $showReleaseTimeline,
+                onShowBatchAIPanel: {
+                    showBatchAIPanel = true
+                },
                 // 2026-06-02 21:38：透传给 SidebarHeaderView 让头像背景的语言色在 Trending 页也能联动
                 currentTrendingRepo: selectedTrendingRepo,
                 // 2026-06-05：Activity 页没有统一 Repo 模型，直接透传 ActivityItem 收口后的 accent 色。
