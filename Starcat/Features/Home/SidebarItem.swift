@@ -56,6 +56,8 @@ enum SidebarItem: Hashable, Identifiable {
     case trending
     case allStars
     case untagged
+    case smartCollectionsHome
+    case smartCollection(SmartCollectionKind)
     case language(String?)
     /// W4 A6：按 tag id 过滤。tagId 是 Tag.id（UUID 字符串）。
     /// 显示名/颜色/图标 由 SidebarView 从 HomeViewModel.tags 字典里查。
@@ -67,6 +69,8 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "section.trending"
         case .allStars:                return "section.all"
         case .untagged:                return "section.untagged"
+        case .smartCollectionsHome:    return "smartCollections.home"
+        case .smartCollection(let kind): return "smartCollections.\(kind.rawValue)"
         case .language(let lang):      return "language.\(lang ?? "<nil>")"
         case .tag(let tagId):          return "tag.\(tagId)"
         }
@@ -78,6 +82,8 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "trending.title"
         case .allStars:                return "sidebar.allRepos"
         case .untagged:                return "sidebar.untagged"
+        case .smartCollectionsHome:    return "smartCollections.title"
+        case .smartCollection(let kind): return kind.titleKey
         // language 走短名（详见 LanguageDisplayName）。LocalizedStringKey 兜底：
         // 短名不会有 String Catalog 条目，SwiftUI 找不到翻译会原样吐 raw 字符串。
         // 无主语言（nil）统一显示 "Uncategorized"（dong4j 2026-06-16，不做 i18n）。
@@ -93,6 +99,8 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "trending.title"
         case .allStars:                return "sidebar.allRepos"
         case .untagged:                return "sidebar.untagged"
+        case .smartCollectionsHome:    return "smartCollections.title"
+        case .smartCollection(let kind): return "smartCollections.\(kind.rawValue).title"
         case .language(let lang):      return lang.map(LanguageDisplayName.shortened(for:)) ?? "Uncategorized"
         case .tag(let tagId):          return tagId
         }
@@ -104,6 +112,8 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "chart.line.uptrend.xyaxis"
         case .allStars:                return "star.fill"
         case .untagged:                return "tag.slash"
+        case .smartCollectionsHome:    return "line.3.horizontal.decrease.circle"
+        case .smartCollection(let kind): return kind.systemImage
         case .language:                return "chevron.left.forwardslash.chevron.right"
         case .tag:                     return "tag.fill"
         }
@@ -124,6 +134,8 @@ extension SidebarItem {
         switch self {
         case .trending, .allStars: return "allStars"
         case .untagged:            return "untagged"
+        case .smartCollectionsHome: return "smartCollectionsHome"
+        case .smartCollection(let kind): return "smartCollection:\(kind.rawValue)"
         case .language(let lang):  return "language:\(lang ?? "")"
         case .tag(let tagId):      return "tag:\(tagId)"
         }
@@ -136,6 +148,11 @@ extension SidebarItem {
     init(persistedRawValue raw: String) {
         if raw == "untagged" {
             self = .untagged
+        } else if raw == "smartCollectionsHome" {
+            self = .smartCollectionsHome
+        } else if raw.hasPrefix("smartCollection:") {
+            let value = String(raw.dropFirst("smartCollection:".count))
+            self = SmartCollectionKind(rawValue: value).map(SidebarItem.smartCollection) ?? .allStars
         } else if raw.hasPrefix("language:") {
             let lang = String(raw.dropFirst("language:".count))
             // 空 payload 代表 GitHub 无主语言（.language(nil)）

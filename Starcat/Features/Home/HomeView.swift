@@ -147,6 +147,7 @@ struct HomeView: View {
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
+        repoHealthRepository: (any RepoHealthRepositoryProtocol)? = nil,
         searchHistoryRepository: any SearchHistoryRepositoryProtocol,
         semanticSearchService: SemanticSearchService? = nil,
         trendingRepository: any TrendingRepositoryProtocol,
@@ -159,6 +160,7 @@ struct HomeView: View {
             tagRepository: tagRepository,
             repoTagRepository: repoTagRepository,
             repoNoteRepository: repoNoteRepository,
+            repoHealthRepository: repoHealthRepository,
             semanticSearchService: semanticSearchService
         ))
         // HOM-201 P0-4（2026-06-14）：原 manage 路径 README 拉到后的 backfill closure
@@ -952,7 +954,7 @@ struct HomeView: View {
         case .trending:
             // .trending 不是合法的 Manage 分类（属于 Trending 页），恢复时应回落 allStars
             return false
-        case .allStars, .untagged:
+        case .allStars, .untagged, .smartCollectionsHome, .smartCollection:
             return true
         case .language(let lang):
             // SidebarItem.language(nil) 对应 LanguageStat.language == ""（GitHub 无主语言）

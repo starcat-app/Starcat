@@ -445,6 +445,10 @@ final class HomeViewModel {
     /// W4-4 D3：按状态过滤需要 repoNoteRepository.fetchStatusMap。
     private let repoNoteRepository: any RepoNoteRepositoryProtocol
 
+    /// Repo Health 快照用于 Smart Collections 的 Needs Review / High Value 等集合。
+    /// 可选是为了不破坏既有单测构造；缺失时集合按 repo 元数据保守降级。
+    private let repoHealthRepository: (any RepoHealthRepositoryProtocol)?
+
     /// W6 AI：语义搜索服务。测试可传 nil，生产由 AppDependencies 注入。
     private let semanticSearchService: SemanticSearchService?
 
@@ -461,12 +465,14 @@ final class HomeViewModel {
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
+        repoHealthRepository: (any RepoHealthRepositoryProtocol)? = nil,
         semanticSearchService: SemanticSearchService? = nil
     ) {
         self.repository = repository
         self.tagRepository = tagRepository
         self.repoTagRepository = repoTagRepository
         self.repoNoteRepository = repoNoteRepository
+        self.repoHealthRepository = repoHealthRepository
         self.semanticSearchService = semanticSearchService
     }
 
@@ -622,7 +628,7 @@ final class HomeViewModel {
         // 用户后续可显式切到 .language(...) 形成 AND 组合。
         if !next.isEmpty {
             switch selection {
-            case .untagged, .tag:
+            case .untagged, .tag, .smartCollectionsHome, .smartCollection:
                 selection = .allStars
             case .allStars, .language, .trending:
                 break
@@ -666,6 +672,17 @@ final class HomeViewModel {
         AppLog.ui.notice("[switch-cat] T1 reloadItems entered  +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
         #endif
         currentReloadTask?.cancel()
+
+        if selection == .smartCollectionsHome, !isSearching {
+            rawItems = []
+            filteredSorted = []
+            items = []
+            hasMore = false
+            isLoading = false
+            isRefreshing = false
+            loadError = nil
+            return
+        }
 
         // HOM-46：stale-while-revalidate 优化。
         // 先检查缓存：若有且未过期，立即展示缓存，后台刷新。
@@ -760,6 +777,22 @@ final class HomeViewModel {
                             repos = try await self.repository.fetchAllStarred()
                         case .untagged:
                             repos = try await self.repository.fetchUntagged()
+                        case .smartCollectionsHome:
+                            repos = []
+                        case .smartCollection(let kind):
+                            if kind == .noTags {
+                                repos = try await self.repository.fetchUntagged()
+                            } else {
+                                let all = try await self.repository.fetchAllStarred()
+                                let snapshots = try await self.repoHealthRepository?.snapshots(for: all.map(\.id)) ?? [:]
+                                repos = all.filter { repo in
+                                    Self.matchesSmartCollection(
+                                        repo: repo,
+                                        health: snapshots[repo.id],
+                                        kind: kind
+                                    )
+                                }
+                            }
                         case .language(let lang):
                             repos = try await self.repository.fetchByLanguage(lang)
                         case .tag(let tagId):
@@ -944,6 +977,17 @@ final class HomeViewModel {
                         return try await self.repository.fetchAllStarred()
                     case .untagged:
                         return try await self.repository.fetchUntagged()
+                    case .smartCollectionsHome:
+                        return nil
+                    case .smartCollection(let kind):
+                        if kind == .noTags {
+                            return try await self.repository.fetchUntagged()
+                        }
+                        let all = try await self.repository.fetchAllStarred()
+                        let snapshots = try await self.repoHealthRepository?.snapshots(for: all.map(\.id)) ?? [:]
+                        return all.filter { repo in
+                            Self.matchesSmartCollection(repo: repo, health: snapshots[repo.id], kind: kind)
+                        }
                     case .language(let lang):
                         return try await self.repository.fetchByLanguage(lang)
                     case .tag(let tagId):
@@ -1148,6 +1192,49 @@ final class HomeViewModel {
             sliceToCurrentPage(reason: .jump)
         }
     }
+
+    // MARK: - Smart Collections
+
+    /// Smart Collections 第一版的系统集合筛选规则。
+    ///
+    /// 规则刻意保持确定性和可解释：
+    /// - 只使用本地 repo metadata + Repo Health 快照，不发网络。
+    /// - Health 缺失时保守降级：不会把 repo 算进 High Value，但 archived / 元数据缺失
+    ///   仍能进入 Needs Review。
+    /// - 日期窗口使用固定天数，后续如需用户可调再提升到设置项。
+    static func matchesSmartCollection(
+        repo: Repo,
+        health: RepoHealthSnapshot?,
+        kind: SmartCollectionKind,
+        now: Date = Date()
+    ) -> Bool {
+        switch kind {
+        case .needsReview:
+            return repo.isArchived
+                || health.map { $0.overallScore < 60 } == true
+                || repo.license?.isEmpty != false
+                || repo.topicsArray.isEmpty
+        case .unmaintained:
+            if repo.isArchived { return true }
+            guard let pushedAt = repo.pushedAt.flatMap(ISO8601DateFormatter.shared.date(from:)) else {
+                return false
+            }
+            return now.timeIntervalSince(pushedAt) > 365 * 24 * 60 * 60
+        case .highValue:
+            guard !repo.isArchived else { return false }
+            if let health {
+                return repo.starsCount >= 1_000 && health.overallScore >= 75
+            }
+            return repo.starsCount >= 5_000
+        case .noTags:
+            return false
+        case .recentlyActive:
+            guard let pushedAt = repo.pushedAt.flatMap(ISO8601DateFormatter.shared.date(from:)) else {
+                return false
+            }
+            return now.timeIntervalSince(pushedAt) <= 30 * 24 * 60 * 60
+        }
+    }
 }
 
 // MARK: - SidebarItem 扩展
@@ -1166,9 +1253,13 @@ extension SidebarItem {
         case .trending:
             return [.allStars, .untagged]
         case .allStars:
-            return [.untagged]
+            return [.untagged, .smartCollectionsHome]
         case .untagged:
             return [.allStars]
+        case .smartCollectionsHome:
+            return [.allStars, .untagged]
+        case .smartCollection:
+            return [.smartCollectionsHome, .allStars]
         case .language:
             return [.allStars, .untagged]
         case .tag:

@@ -570,18 +570,22 @@ struct RepoListView: View {
         @Bindable var bindableVM = vm
 
         VStack(spacing: 0) {
-            manageFilterBar(sortOption: $bindableVM.sortOption)
-            Divider()
+            if viewModel.selection == .smartCollectionsHome {
+                SmartCollectionsOverviewView()
+            } else {
+                manageFilterBar(sortOption: $bindableVM.sortOption)
+                Divider()
 
-            if viewModel.isLoading && viewModel.items.isEmpty {
+                if viewModel.isLoading && viewModel.items.isEmpty {
                 RepoSkeletonListView(rowCount: 10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = viewModel.loadError, viewModel.items.isEmpty {
+                } else if let error = viewModel.loadError, viewModel.items.isEmpty {
                 emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitleText: error)
-            } else if viewModel.items.isEmpty {
+                } else if viewModel.items.isEmpty {
                 emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
-            } else {
+                } else {
                 listWithOptionalBanner { unifiedListContent($bindableVM.selectedRepoID) }
+                }
             }
         }
         .task(id: authSession.state) {
@@ -980,6 +984,10 @@ struct RepoListView: View {
             return String.l10n("sidebar.allRepos")
         case .untagged:
             return String.l10n("sidebar.untagged")
+        case .smartCollectionsHome:
+            return String.l10n("smartCollections.title")
+        case .smartCollection(let kind):
+            return String.l10n("smartCollections.\(kind.rawValue).title")
         case .language(let language):
             // Navigation title 同样走短名（详见 LanguageDisplayName）。
             // 无主语言（nil）统一硬编码为 "Uncategorized"（dong4j 2026-06-16，不做 i18n）。
@@ -997,6 +1005,8 @@ struct RepoListView: View {
         case .trending:  return "chart.line.uptrend.xyaxis"
         case .allStars:  return "star"
         case .untagged:  return "tag.slash"
+        case .smartCollectionsHome: return "line.3.horizontal.decrease.circle"
+        case .smartCollection: return "tray"
         case .language:  return "chevron.left.forwardslash.chevron.right"
         case .tag:       return "tag.slash"
         }
@@ -1008,6 +1018,8 @@ struct RepoListView: View {
         case .trending:        return "empty.trendingUnavailable"
         case .allStars:        return "empty.noStars"
         case .untagged:        return "empty.allTagged"
+        case .smartCollectionsHome: return "smartCollections.empty.title"
+        case .smartCollection: return "smartCollections.empty.collection"
         case .language:        return "empty.noReposInLanguage"
         case .tag:             return "empty.noReposInTag"
         }
@@ -1019,6 +1031,8 @@ struct RepoListView: View {
         case .trending:        return "empty.trendingComingSoon"
         case .allStars:        return "empty.syncPrompt"
         case .untagged:        return "empty.untaggedHint"
+        case .smartCollectionsHome: return "smartCollections.empty.subtitle"
+        case .smartCollection: return "smartCollections.empty.collectionSubtitle"
         case .language:        return "empty.languageHint"
         case .tag:             return "empty.tagHint"
         }
