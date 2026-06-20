@@ -190,6 +190,17 @@ final class AppDependencies {
     /// OpenSSF Scorecard 后台刷新调度器。
     let openSSFScorePoller: OpenSSFScorePoller
 
+    // MARK: - Repo Health
+
+    /// Repo Health 本地快照仓库。
+    let repoHealthRepository: any RepoHealthRepositoryProtocol
+    /// Repo Health 刷新协调服务。
+    let repoHealthService: RepoHealthService
+    /// Repo Health UI 状态缓存。
+    let repoHealthStore: RepoHealthStore
+    /// Repo Health 后台刷新调度器。
+    let repoHealthPoller: RepoHealthPoller
+
     // MARK: - HOM-47 Release 订阅追踪
 
     /// Release 订阅记录 Repository。
@@ -664,6 +675,19 @@ final class AppDependencies {
         )
         self.releaseMonitor = monitor
         self.releasePoller = ReleasePoller(monitor: monitor, notificationService: notificationService)
+
+        // Repo Health：第一版只聚合已有本地缓存（repos / releases / OpenSSF），
+        // 不在详情页实时打额外 GitHub API。装配必须晚于 Release / OpenSSF 仓库。
+        let healthRepo = GRDBRepoHealthRepository(database: db)
+        self.repoHealthRepository = healthRepo
+        let healthService = RepoHealthService(
+            repository: healthRepo,
+            releaseRepository: releaseRecordRepo,
+            openSSFRepository: openSSFRepo
+        )
+        self.repoHealthService = healthService
+        self.repoHealthStore = RepoHealthStore(service: healthService)
+        self.repoHealthPoller = RepoHealthPoller(service: healthService)
 
         // Activity 公告与关注 PR-1（2026-06-16）：纯本地 CRUD Repository，不接网络。
         // PR-2/PR-3 在外层 ActivityViewModel 里组合「GitHub Events API + RSS + Security Advisory」

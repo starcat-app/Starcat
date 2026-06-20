@@ -354,12 +354,14 @@ struct HomeView: View {
             if newState.isAuthenticated {
                 dependencies.releasePoller.start()
                 dependencies.openSSFScorePoller.start()
+                dependencies.repoHealthPoller.start()
                 if !TestEnvironment.isRunning, settings.aiIndexAutoPrefetchEnabled {
                     dependencies.semanticIndexBuilder.start()
                 }
             } else {
                 dependencies.releasePoller.stop()
                 dependencies.openSSFScorePoller.stop()
+                dependencies.repoHealthPoller.stop()
                 dependencies.semanticIndexBuilder.cancel()
             }
         }

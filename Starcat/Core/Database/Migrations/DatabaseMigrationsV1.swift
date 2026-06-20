@@ -89,6 +89,8 @@ enum DatabaseMigrations {
             try createWeeklyBulkMeta(db)
             // OpenSSF Scorecard 公开安全评分缓存（仅 starred repo，失败态也落库冷却）。
             try createOpenSSFScores(db)
+            // Repo Health 派生缓存：聚合 repos / releases / OpenSSF 的健康度快照。
+            try createRepoHealthSnapshots(db)
             // Activity 公告与关注（2026-06-16）：following events / 双源 announcement / 单行 sync_state 三表。
             try createActivityEvents(db)
             try createActivityAnnouncements(db)
@@ -739,6 +741,33 @@ enum DatabaseMigrations {
         }
 
         try db.create(index: "idx_open_ssf_scores_status_fetched", on: "open_ssf_scores", columns: ["fetch_status", "fetched_at"])
+    }
+
+    /// repo_health_snapshots：Repo Health 总分与解释 payload 缓存。
+    ///
+    /// 关键设计：
+    /// - 这是派生缓存，不是用户数据；产品未上线阶段直接摊平进 v1-initial。
+    /// - `payload_json` 存维度证据，避免 UI 只看到不可解释的总分。
+    /// - `stale_after` 是后台调度的唯一 TTL 判定字段，后续调整评分策略时只需重算快照。
+    private static func createRepoHealthSnapshots(_ db: Database) throws {
+        try db.create(table: "repo_health_snapshots") { t in
+            t.column("repo_id", .integer).primaryKey()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("overall_score", .double).notNull()
+            t.column("grade", .text).notNull()
+            t.column("maintenance_score", .double).notNull()
+            t.column("popularity_score", .double).notNull()
+            t.column("quality_score", .double).notNull()
+            t.column("security_score", .double).notNull()
+            t.column("payload_json", .text).notNull()
+            t.column("computed_at", .text).notNull()
+            t.column("stale_after", .text).notNull()
+            t.column("fetch_status", .text).notNull()
+            t.column("last_error", .text)
+        }
+
+        try db.create(index: "idx_repo_health_stale_after", on: "repo_health_snapshots", columns: ["stale_after"])
+        try db.create(index: "idx_repo_health_overall_score", on: "repo_health_snapshots", columns: ["overall_score"])
     }
 
     // MARK: - repo_embeddings / ai_summaries（AI 语义搜索 + 单仓智能化）
