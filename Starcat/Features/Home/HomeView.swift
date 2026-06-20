@@ -78,6 +78,8 @@ struct HomeView: View {
     @State private var showBatchAIPanel: Bool = false
     /// HOM-52：当前正在编辑的 Options（启动 sheet 时初始化，跨 sheet 关闭保留以记住上次选择）。
     @State private var batchAIOptions: BatchAIQueueOptions = BatchAIQueueOptions()
+    /// 当前需要展示的 Pro 付费墙上下文。由批量 AI 等主窗口入口触发。
+    @State private var paywallContext: ProPaywallContext?
 
     /// 三栏显示状态。
     ///
@@ -149,7 +151,8 @@ struct HomeView: View {
         semanticSearchService: SemanticSearchService? = nil,
         trendingRepository: any TrendingRepositoryProtocol,
         githubAPIClient: any GitHubAPIClientProtocol,
-        readmeTranslationService: ReadmeTranslationService
+        readmeTranslationService: ReadmeTranslationService,
+        entitlementGate: EntitlementGate
     ) {
         _viewModel = State(initialValue: HomeViewModel(
             repository: repository,
@@ -173,12 +176,13 @@ struct HomeView: View {
             coordinator: SearchCoordinator(providers: [
                 LocalKeywordSearchProvider(repository: repository),
                 GitHubRepositorySearchProvider(client: githubAPIClient),
-                AnySearchWebProvider()
+                AnySearchWebProvider(entitlementGate: entitlementGate)
             ]),
             historyRepository: searchHistoryRepository,
             includeWebInAll: {
                 AppSettings.shared.anySearchEnabled && AppSettings.shared.searchIncludeWebInAll
-            }
+            },
+            entitlementGate: entitlementGate
         ))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
             tagRepository: tagRepository,
@@ -196,6 +200,10 @@ struct HomeView: View {
                 selectedActivityCategory: $selectedActivityCategory,
                 showTagManagement: $showTagManagement,
                 showReleaseTimeline: $showReleaseTimeline,
+                onSelectRootPage: selectSidebarRootPage,
+                onShowBatchAIPanel: {
+                    showBatchAIPanel = true
+                },
                 // 2026-06-02 21:38：透传给 SidebarHeaderView 让头像背景的语言色在 Trending 页也能联动
                 currentTrendingRepo: selectedTrendingRepo,
                 // 2026-06-05：Activity 页没有统一 Repo 模型，直接透传 ActivityItem 收口后的 accent 色。
@@ -297,13 +305,12 @@ struct HomeView: View {
             }
         }) {
             TagManagementView(viewModel: tagMgmtVM)
-                .appLocaleEnvironment()
+                .appSheetRootEnvironment(dependencies)
         }
         // HOM-47：Release 时间线 sheet（独立窗口承载，不污染三栏布局）
         .sheet(isPresented: $showReleaseTimeline) {
             ReleaseTimelineView()
-                .environment(dependencies)
-                .appLocaleEnvironment()
+                .appSheetRootEnvironment(dependencies)
         }
         // HOM-52：批量 AI 整理"操作选择" sheet
         .sheet(isPresented: $showBatchAIOptions) {
@@ -329,6 +336,9 @@ struct HomeView: View {
                 onClose: { showBatchAIPanel = false }
             )
             .appLocaleEnvironment()
+        }
+        .sheet(item: homePaywallBinding) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         // HOM-47：登录后启动后台 Release 轮询；登出时停。
         // 与 SyncManager 不同：Release Poller 自调度（NSBackgroundActivityScheduler），
@@ -686,6 +696,9 @@ struct HomeView: View {
                 selectedActivityCategory = savedActivityCategory
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.browseTrendingNotification)) { _ in
+            openTrendingFromFirstRunOnboarding()
+        }
         .onChange(of: selectedActivityCategory) { _, newCategory in
             guard selectedSidebarPage == .activity else { return }
             savedActivityCategory = newCategory
@@ -740,6 +753,15 @@ struct HomeView: View {
         NSWorkspace.shared.open(url)
     }
 
+    /// 首次引导的「先逛 Trending」选择只负责路由，不触发登录 / 同步副作用。
+    ///
+    /// 未登录首启时底层本来就停在 Trending；这个入口主要覆盖 Debug 重看引导、
+    /// 或已登录用户首次看到新版引导后明确选择先浏览热门项目的场景。
+    private func openTrendingFromFirstRunOnboarding() {
+        guard selectedSidebarPage != .trending else { return }
+        selectedSidebarPage = .trending
+    }
+
     private func copySearchRepositoryURL(_ candidate: RepositoryCandidate) {
         let value = "https://github.com/\(candidate.identity.owner)/\(candidate.identity.name)"
         NSPasteboard.general.clearContents()
@@ -762,6 +784,24 @@ struct HomeView: View {
                 AppLog.network.error("Search star toggle failed: \(error.localizedDescription, privacy: .public)")
             }
         }
+    }
+
+    /// Sidebar 顶部 root page 切换入口。
+    ///
+    /// 为什么不让 Sidebar 直接写 `selectedSidebarPage`：
+    /// 从 Trending / Activity 回 Manage 时，Manage 中栏马上会重新挂载。如果先切
+    /// `selectedSidebarPage`，再在 `.onChange` 里恢复 `viewModel.selection`，SwiftUI
+    /// 可能经历一帧“Manage 页面 + 旧 selection”的中间态，随后又按真实 selection
+    /// 重建列表。这里在进入 Manage 前先把 selection 准备好，让首帧就是目标分类。
+    ///
+    /// 只提前处理 `.manage`：切到 Trending 时仍由既有 `.onChange` 写 `.trending`，
+    /// 避免当前 Manage 列表在离场前先被 `.trending` selection 清空。
+    private func selectSidebarRootPage(_ page: SidebarRootPage) {
+        guard selectedSidebarPage != page else { return }
+        if page == .manage, viewModel.selection.isTrending {
+            viewModel.selection = savedManageSelection
+        }
+        selectedSidebarPage = page
     }
 
     // MARK: - 辅助
@@ -826,6 +866,12 @@ struct HomeView: View {
     /// 错误处理：fetchUntagged 失败仅记日志，不弹错——这是用户主动触发的场景，
     /// 失败时按钮仍可继续点（dependencies 状态未变，第二次点击会重试）。
     private func startBatchAIIntegration() async {
+        do {
+            try dependencies.entitlementGate.requirePro(.batchAI)
+        } catch {
+            paywallContext = ProPaywallContext(feature: .batchAI, message: error.localizedDescription)
+            return
+        }
         let untagged: [Repo]
         do {
             untagged = try await dependencies.repoRepository.fetchUntagged()
@@ -836,6 +882,22 @@ struct HomeView: View {
         guard !untagged.isEmpty else { return }
         dependencies.batchAIQueueService.start(repos: untagged, options: batchAIOptions)
         showBatchAIPanel = true
+    }
+
+    private var homePaywallBinding: Binding<ProPaywallContext?> {
+        Binding(
+            get: {
+                paywallContext ?? translationVM.paywallContext
+            },
+            set: { newValue in
+                if newValue == nil {
+                    paywallContext = nil
+                    translationVM.dismissPaywall()
+                } else {
+                    paywallContext = newValue
+                }
+            }
+        )
     }
 
     /// 登录态变为已认证时的统一入口（冷启动恢复 / Device Flow / 账号切换）。

@@ -175,20 +175,30 @@ actor ServiceHealthChecker {
             let code = http.statusCode
             switch code {
             case 200:
-                return Self.evaluatePingBody(
+                let outcome = Self.evaluatePingBody(
                     data: data,
                     response: response,
                     expectedService: service
                 )
+                recordOutcome(outcome, service: service)
+                return outcome
             case 401:
-                return .unauthorized(statusCode: code)
+                let outcome = HealthCheckOutcome.unauthorized(statusCode: code)
+                recordOutcome(outcome, service: service)
+                return outcome
             default:
-                return .serverError(statusCode: code)
+                let outcome = HealthCheckOutcome.serverError(statusCode: code)
+                recordOutcome(outcome, service: service)
+                return outcome
             }
         } catch let urlError as URLError {
-            return .networkError(reason: urlError.localizedDescription)
+            let outcome = HealthCheckOutcome.networkError(reason: urlError.localizedDescription)
+            recordOutcome(outcome, service: service)
+            return outcome
         } catch {
-            return .networkError(reason: error.localizedDescription)
+            let outcome = HealthCheckOutcome.networkError(reason: error.localizedDescription)
+            recordOutcome(outcome, service: service)
+            return outcome
         }
     }
 
@@ -218,6 +228,55 @@ actor ServiceHealthChecker {
             return .ok(statusCode: 200)
         } catch {
             return .serverError(statusCode: 200)
+        }
+    }
+
+    /// 健康检查是用户主动排障入口，失败结果需要进入诊断包；成功只记 debug，避免噪音。
+    private nonisolated func recordOutcome(_ outcome: HealthCheckOutcome, service: ThirdPartyService) {
+        switch outcome {
+        case .ok:
+            DiagnosticLogStore.record(
+                level: .debug,
+                category: "network",
+                operation: "serviceHealthCheck",
+                message: "Service health check succeeded",
+                service: service.rawValue
+            )
+        case .serviceMismatch:
+            DiagnosticLogStore.record(
+                level: .warning,
+                category: "network",
+                operation: "serviceHealthCheck",
+                message: "Service health check mismatch",
+                service: service.rawValue
+            )
+        case .unauthorized(let code):
+            DiagnosticLogStore.record(
+                level: .warning,
+                category: "network",
+                operation: "serviceHealthCheck",
+                message: "Service health check unauthorized",
+                service: service.rawValue,
+                statusCode: code
+            )
+        case .serverError(let code):
+            DiagnosticLogStore.record(
+                level: .warning,
+                category: "network",
+                operation: "serviceHealthCheck",
+                message: "Service health check server error",
+                service: service.rawValue,
+                statusCode: code
+            )
+        case .networkError(let reason):
+            DiagnosticLogStore.record(
+                level: .warning,
+                category: "network",
+                operation: "serviceHealthCheck",
+                message: "Service health check network error",
+                service: service.rawValue,
+                underlying: reason
+            )
         }
     }
 }

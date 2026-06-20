@@ -130,6 +130,7 @@ final class RepoAIInsightService {
     private let settings: AppSettings
     private let keychain: any KeychainManaging
     private let externalContextProvider: AnySearchContextProvider
+    private let entitlementGate: EntitlementGate?
 
     /// X4（2026-06-13）：注入 RepoContextPacker 的代码上下文。
     ///
@@ -157,6 +158,7 @@ final class RepoAIInsightService {
         settings: AppSettings,
         keychain: any KeychainManaging = KeychainManager.shared,
         repoAIContextProvider: RepoAIContextProvider? = nil,
+        entitlementGate: EntitlementGate? = nil,
         onSummaryGenerated: (@MainActor (Repo) -> Void)? = nil
     ) {
         self.summaryRepository = summaryRepository
@@ -165,6 +167,7 @@ final class RepoAIInsightService {
         self.keychain = keychain
         self.externalContextProvider = AnySearchContextProvider(settings: settings)
         self.repoAIContextProvider = repoAIContextProvider
+        self.entitlementGate = entitlementGate
         self.onSummaryGenerated = onSummaryGenerated
     }
 
@@ -216,6 +219,7 @@ final class RepoAIInsightService {
         allowExternalContext: Bool = true,
         onSummaryDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> RepoAIInsightGeneration {
+        try enforceGenerationEntitlement(includeSummary: includeSummary, includeTags: includeTags)
         let source = try await makeSource(for: repo)
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
         let resolvedExternalContext: AIExternalContext?
@@ -432,6 +436,7 @@ final class RepoAIInsightService {
         // service、UI 三层各复制一次不断增长的完整字符串。
         onDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
+        try entitlementGate?.requirePro(.aiChat)
         let source = try await makeSource(for: repo)
 
         // Y9：复用同一份 source 做缓存比对（避免 makeSource 被调两次造成重复网络 IO）。
@@ -474,6 +479,21 @@ final class RepoAIInsightService {
         // 这里兜底用累积值；若仍为空才抛 emptyResponse。
         guard let final = accumulated.nilIfBlank else { throw AIClientError.emptyResponse }
         return final
+    }
+
+    /// 生成摘要 / 标签前的付费边界。
+    ///
+    /// 2026-06-19 商业边界调整：BYOK 本身也属于 Pro 能力。免费版不开放 AI 设置，
+    /// 也不再提供单独的 AI 试用次数；因此摘要 / 标签与 Chat、翻译、语义搜索等
+    /// AI 工作流统一走 Pro-only 门控，避免“用户自带 Key 但仍被次数限制”的混乱体验。
+    private func enforceGenerationEntitlement(includeSummary: Bool, includeTags: Bool) throws {
+        guard let entitlementGate else { return }
+        if includeSummary {
+            try entitlementGate.requirePro(.aiSummary)
+        }
+        if includeTags {
+            try entitlementGate.requirePro(.aiTags)
+        }
     }
 
     /// 2026-06-14 v4 重构：拼装对话路径的 system prompt，走 `aiChatTask.prompt` 模板

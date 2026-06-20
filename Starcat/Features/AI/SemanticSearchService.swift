@@ -65,6 +65,7 @@ final class SemanticSearchService {
     private let settings: AppSettings
     private let keychain: any KeychainManaging
     private let batchSize: Int
+    private let entitlementGate: EntitlementGate?
 
     init(
         embeddingRepository: any RepoEmbeddingRepositoryProtocol,
@@ -72,6 +73,7 @@ final class SemanticSearchService {
         readmeRepository: ReadmeRepository? = nil,
         noteRepository: (any RepoNoteRepositoryProtocol)? = nil,
         summaryRepository: (any AISummaryRepositoryProtocol)? = nil,
+        entitlementGate: EntitlementGate? = nil,
         keychain: any KeychainManaging = KeychainManager.shared,
         batchSize: Int = 32
     ) {
@@ -82,6 +84,7 @@ final class SemanticSearchService {
         self.settings = settings
         self.keychain = keychain
         self.batchSize = batchSize
+        self.entitlementGate = entitlementGate
     }
 
     /// 对传入候选 repo 做语义搜索（2026-06-14 A+B+C 改造）。
@@ -112,6 +115,7 @@ final class SemanticSearchService {
         ftsHitIDs: Set<Int64> = [],
         limit: Int = 80
     ) async throws -> [SemanticSearchHit] {
+        try entitlementGate?.requirePro(.semanticSearch)
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
         guard !candidates.isEmpty else { return [] }
@@ -176,6 +180,7 @@ final class SemanticSearchService {
     /// `@discardableResult` 让既有 callsite 无需修改（HomeViewModel 等只关心异常）。
     @discardableResult
     func refreshIndex(for repos: [Repo]) async throws -> Int {
+        try entitlementGate?.requirePro(.semanticSearch)
         guard !repos.isEmpty else { return 0 }
         let (client, model) = try makeClient(task: settings.aiEmbeddingTask)
         return try await ensureIndexed(repos, model: model, client: client, force: true)
@@ -199,16 +204,28 @@ final class SemanticSearchService {
     /// （摘要回调 / 笔记保存 / README backfill）不关心结果，靠 `@discardableResult` 静默。
     @discardableResult
     func refreshIndexIfChanged(for repo: Repo) async -> Bool {
+        await refreshIndexIfChanged(for: [repo]) > 0
+    }
+
+    /// 批量按 diff 阈值刷新语义索引。
+    ///
+    /// `SemanticIndexBuilder` 会先按 GitHub 限速逐个补 README Markdown，再把一批 repo
+    /// 交给这里。批量入口让 `ensureIndexed` 的 snapshot 准备、AI 摘要批量查询与 embedding
+    /// API 的 `inputs` 批处理真正生效；单 repo 入口保留给笔记保存 / 摘要生成等即时路径。
+    @discardableResult
+    func refreshIndexIfChanged(for repos: [Repo]) async -> Int {
         do {
+            try entitlementGate?.requirePro(.semanticSearch)
             let (client, model) = try makeClient(task: settings.aiEmbeddingTask)
-            let rebuilt = try await ensureIndexed([repo], model: model, client: client)
-            return rebuilt > 0
+            return try await ensureIndexed(repos, model: model, client: client)
+        } catch EntitlementGateError.requiresPro {
+            return 0
         } catch SemanticSearchError.missingAPIKey {
             // 静默：用户没配 AI，不打扰
-            return false
+            return 0
         } catch {
-            AppLog.ai.error("refreshIndexIfChanged failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            return false
+            AppLog.ai.error("refreshIndexIfChanged batch failed: \(error.localizedDescription, privacy: .public)")
+            return 0
         }
     }
 
@@ -273,9 +290,14 @@ final class SemanticSearchService {
         // 用户在 Settings 编辑过的 embedding template（默认值见 AIDefaultPrompts.embedding）。
         // template 是用户层面可改的，每次重建索引都拿当前最新值。
         let embeddingTemplate = settings.aiEmbeddingTask.prompt.userPromptTemplate
+        let summaryLookup = await loadAISummaryLookup()
 
         for repo in repos {
-            let snapshot = await buildSnapshot(for: repo, truncateLength: truncateLen)
+            let snapshot = await buildSnapshot(
+                for: repo,
+                truncateLength: truncateLen,
+                summaryLookup: summaryLookup
+            )
             let renderedText = IndexedTextBuilder.render(
                 snapshot: snapshot,
                 userPromptTemplate: embeddingTemplate
@@ -320,9 +342,13 @@ final class SemanticSearchService {
     /// **README 取数策略**：优先用 `readmes.content`（raw markdown，决策 E3）；为空回退
     /// `rendered_html`（HTML 路径，决策 A3 的 stripHTML 兜底）。两者都没有 → readmePlainText = nil，
     /// `IndexedTextBuilder.chooseBody` 走 description+topics 兜底。
-    private func buildSnapshot(for repo: Repo, truncateLength: Int) async -> IndexedSnapshot {
+    private func buildSnapshot(
+        for repo: Repo,
+        truncateLength: Int,
+        summaryLookup: [Int64: AISummaryRecord]
+    ) async -> IndexedSnapshot {
         let readme = await loadReadmeText(repoId: repo.id, truncateLength: truncateLength)
-        let summary = await loadAISummaryText(repoId: repo.id)
+        let summary = loadAISummaryText(repoId: repo.id, summaryLookup: summaryLookup)
         let note = await loadNoteText(repoId: repo.id)
         return IndexedTextBuilder.buildSnapshot(
             repo: repo,
@@ -353,20 +379,27 @@ final class SemanticSearchService {
         }
     }
 
-    private func loadAISummaryText(repoId: Int64) async -> String? {
-        guard let summaryRepo = summaryRepository else { return nil }
+    /// 一次索引任务内批量读取 AI 摘要，避免每个 repo 都全表扫描 `ai_summaries`。
+    ///
+    /// `fetchLatestPerRepo()` 本身会按 `generated_at DESC` 读全表并在应用层去重；
+    /// 如果在 `buildSnapshot` 的 per-repo 循环里调用，语义搜索 1.8K stars 时会退化为
+    /// 1.8K 次全表扫描。这里在 `ensureIndexed` 开头只读一次，后续按 repo id 查字典。
+    private func loadAISummaryLookup() async -> [Int64: AISummaryRecord] {
+        guard let summaryRepo = summaryRepository else { return [:] }
         do {
-            let records = try await summaryRepo.fetchLatestPerRepo()
-            guard let record = records[repoId] else { return nil }
-            // summary_json 是 RepoAIInsight 编码：优先用 summaryMarkdown，回退 summary 旧字段
-            let insight = try? RepoAIInsightService.decodeInsight(json: record.summaryJson)
-            let text = insight?.summaryMarkdown?.nilIfBlank
-                ?? insight?.summary.nilIfBlank
-            return text
+            return try await summaryRepo.fetchLatestPerRepo()
         } catch {
-            AppLog.ai.error("loadAISummaryText failed for \(repoId): \(error.localizedDescription, privacy: .public)")
-            return nil
+            AppLog.ai.error("loadAISummaryLookup failed: \(error.localizedDescription, privacy: .public)")
+            return [:]
         }
+    }
+
+    private func loadAISummaryText(repoId: Int64, summaryLookup: [Int64: AISummaryRecord]) -> String? {
+        guard let record = summaryLookup[repoId] else { return nil }
+        // summary_json 是 RepoAIInsight 编码：优先用 summaryMarkdown，回退 summary 旧字段
+        let insight = try? RepoAIInsightService.decodeInsight(json: record.summaryJson)
+        return insight?.summaryMarkdown?.nilIfBlank
+            ?? insight?.summary.nilIfBlank
     }
 
     private func loadNoteText(repoId: Int64) async -> String? {

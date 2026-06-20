@@ -33,7 +33,7 @@ struct AppSettingsTests {
         let s1 = AppSettings(defaults: defaults)
         #expect(s1.isProUser == false)
 
-        s1.isProUser = true
+        s1.updateProEntitlementMirror(isPro: true)
 
         let s2 = AppSettings(defaults: defaults)
         #expect(s2.isProUser == true)

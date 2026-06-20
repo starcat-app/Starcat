@@ -43,6 +43,7 @@ final class RepoAIInsightViewModel {
     private(set) var tagErrorMessage: String?
     private(set) var streamingSummaryText: String?
     private(set) var appliedTagNames: Set<String> = []
+    private(set) var paywallContext: ProPaywallContext?
 
     /// Y1：摘要生成阶段（仅在 `isGenerating == true` 期间有意义）。
     /// `nil` 表示当前不在生成中。
@@ -92,7 +93,14 @@ final class RepoAIInsightViewModel {
             // Y9.3：anysearch 降级原因同款生命周期，load 路径一并清零。
             externalContextDegradationReason = nil
         } catch {
-            errorMessage = error.localizedDescription
+            presentPaywallIfNeeded(error)
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.loadAIInsight"),
+                service: "AI"
+            )
+            errorMessage = friendly.message
+            friendly.record(category: "ai", operation: "insight.load", service: "ai-provider")
         }
     }
 
@@ -144,7 +152,14 @@ final class RepoAIInsightViewModel {
             externalContextDegradationReason = result.externalContextDegradationReason
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            presentPaywallIfNeeded(error)
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.generateAIInsight"),
+                service: "AI"
+            )
+            errorMessage = friendly.message
+            friendly.record(category: "ai", operation: "insight.generate", service: "ai-provider")
         }
     }
 
@@ -158,7 +173,14 @@ final class RepoAIInsightViewModel {
             onTagsChanged?()
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            presentPaywallIfNeeded(error)
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.applyAITag"),
+                service: "Starcat"
+            )
+            errorMessage = friendly.message
+            friendly.record(category: "ai", operation: "tag.apply", service: "local-database")
         }
     }
 
@@ -193,6 +215,15 @@ final class RepoAIInsightViewModel {
         )
         try await tagRepository.create(tag)
         return tag
+    }
+
+    func dismissPaywall() {
+        paywallContext = nil
+    }
+
+    private func presentPaywallIfNeeded(_ error: Error) {
+        guard let gateError = error as? EntitlementGateError else { return }
+        paywallContext = ProPaywallContext(feature: gateError.feature, message: gateError.localizedDescription)
     }
 }
 

@@ -57,14 +57,17 @@ struct AnySearchWebProvider: SearchProvider {
     /// 测试场景：传 `diskCache: nil` 完全关闭磁盘路径；或传 `DiskAnySearchCache(rootOverride:)`
     /// 的实例隔离不污染真实路径。
     private let diskCache: DiskAnySearchCache?
+    private let entitlementGate: EntitlementGate?
 
     init(
         cache: SearchSessionCache<SearchProviderPage> = SearchSessionCache(ttl: 15 * 60),
         counter: AnySearchUsageCounter = AnySearchUsageCounter(),
-        diskCache: DiskAnySearchCache? = nil
+        diskCache: DiskAnySearchCache? = nil,
+        entitlementGate: EntitlementGate? = nil
     ) {
         self.cache = cache
         self.counter = counter
+        self.entitlementGate = entitlementGate
         // 默认在主线程构造 → 引用 .shared 单例；非主线程构造（理论不会发生）则置 nil。
         // 测试显式传 nil 可彻底关闭磁盘路径，避免污染真实 appSupport 目录。
         if let injected = diskCache {
@@ -78,6 +81,9 @@ struct AnySearchWebProvider: SearchProvider {
 
     func search(_ request: SearchRequest) async throws -> SearchProviderPage {
         guard request.scope == .web || (request.scope == .all && request.includeWebInAll) else { return .empty }
+        try await MainActor.run {
+            try entitlementGate?.requirePro(.anySearchWeb)
+        }
         let config = await MainActor.run {
             let settings = AppSettings.shared
             return (

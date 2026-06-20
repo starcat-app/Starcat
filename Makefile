@@ -30,7 +30,7 @@ LINGUIST_ARGS ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help run test reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release release-dry-run pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys
+.PHONY: help run test reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release release-dry-run pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-nginx
 
 help: ## 列出所有可用命令
 	@echo "Starcat 常用命令："
@@ -52,6 +52,8 @@ help: ## 列出所有可用命令
 	@echo "  make start-supports         启动 supports/ 目录下的所有后端服务（trending / wiki / weekly / sharing）"
 	@echo "  make sync-fly-secrets              从 supports 各 API .env 并行同步 secrets 到 Fly.io"
 	@echo "  make setup-production-api-keys    从 supports 各 API .env 写入 Configs/Secrets.xcconfig（每服务独立 key）"
+	@echo "  make deploy-pages                部署 pages/ 静态资源到 aliyun:/var/www/starcat/"
+	@echo "  make deploy-nginx                上传 nginx 配置到 aliyun 并重载 nginx"
 	@echo ""
 
 run: ## 执行 scripts/run-debug.sh（先 kill 旧 Starcat，再 xcodegen + Debug 构建 + 启动）
@@ -149,3 +151,9 @@ sync-fly-secrets: ## 从 supports 各 API .env 同步 fly secrets（4 个 App）
 
 setup-production-api-keys: ## 从 supports 各 API .env 写入 Secrets.xcconfig（每服务独立 key）
 	@bash scripts/sync-production-api-keys-from-env.sh
+
+deploy-pages: ## 部署 pages/ 静态资源到 aliyun:/var/www/starcat/
+	@cd pages && ./deploy.sh
+
+deploy-nginx: ## 上传 nginx 配置到 aliyun 并重载 nginx
+	@cd pages && ./deploy.sh -n

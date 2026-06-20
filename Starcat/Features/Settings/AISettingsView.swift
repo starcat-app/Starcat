@@ -26,6 +26,7 @@ import SwiftUI
 struct AISettingsTab: View {
 
     @Environment(AppSettings.self) private var settings
+    @Environment(SubscriptionManager.self) private var subscriptionManager
     /// HOM-126：「立刻手动触发一次」按钮直接调度。@Environment 注入自 StarcatApp。
     @Environment(AutoTidyScheduler.self) private var autoTidyScheduler
     /// 2026-06-12 向量索引改进：AI 索引 Section 的"开始 / 暂停 / 全量重建"按钮需要
@@ -124,8 +125,19 @@ struct AISettingsTab: View {
 
     /// "全量重建"二次确认。
     @State private var pendingRebuildAllConfirm: Bool = false
+    /// 免费用户点击 AI 设置页升级入口时展示统一 Pro 付费墙。
+    @State private var paywallContext: ProPaywallContext?
 
+    @ViewBuilder
     var body: some View {
+        if subscriptionManager.entitlement.isActive {
+            aiConfigurationForm
+        } else {
+            lockedAISettings
+        }
+    }
+
+    private var aiConfigurationForm: some View {
         // HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
         // 删除独立的"模型参数"区。原因：参数与"任务"绑定有歧义——同一模型被
         // 摘要 / 标签 / 翻译复用时，按任务调参数会出现"在'模型参数 → 摘要'调
@@ -227,6 +239,53 @@ struct AISettingsTab: View {
             Button("general.ok") { aiContextActionError = nil }
         } message: {
             Text(aiContextActionError ?? "")
+        }
+    }
+
+    private var lockedAISettings: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .center, spacing: 14) {
+                        ProCrownIcon(size: 44)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("settings.ai.locked.title")
+                                .font(.title3.weight(.semibold))
+                            Text("settings.ai.locked.subtitle")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("settings.ai.locked.benefit.byok", systemImage: "key.fill")
+                        Label("settings.ai.locked.benefit.workflow", systemImage: "sparkles")
+                        Label("settings.ai.locked.benefit.billing", systemImage: "creditcard")
+                    }
+                    .font(.callout)
+
+                    Button {
+                        paywallContext = ProPaywallContext(
+                            feature: .aiSummary,
+                            message: String.l10n("settings.ai.locked.paywallMessage")
+                        )
+                    } label: {
+                        Label("settings.ai.locked.upgrade", systemImage: "crown.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                }
+                .padding(.vertical, 4)
+            } footer: {
+                Text("settings.ai.locked.footer")
+            }
+        }
+        .formStyle(.grouped)
+        .sheet(item: $paywallContext) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
     }
 

@@ -39,6 +39,12 @@ final class AppDependencies {
     let repoRepository: any RepoRepositoryProtocol
     /// Week 3 引入：用户偏好（列表密度等）。
     let settings: AppSettings
+    /// StoreKit 2 订阅协调器。它是 Pro 权益的单一真相源。
+    let subscriptionManager: SubscriptionManager
+    /// 统一 Pro 门控服务。业务层通过它判断是否放行，而不是直接读 `settings.isProUser`。
+    let entitlementGate: EntitlementGate
+    /// 本机 MCP Service。Pro 用户可开启，让本机 Agent 通过 MCP 读取 Starcat 上下文。
+    let mcpService: StarcatMCPService
     /// Week 4 引入：README 缓存 Repository。
     let readmeRepository: ReadmeRepository
     /// Week 4 引入：README HTML 抓取 + 缓存协调。
@@ -79,6 +85,8 @@ final class AppDependencies {
     let aiSummaryRepository: any AISummaryRepositoryProtocol
     /// W6 AI：单仓 AI 摘要与标签推荐服务。
     let repoAIInsightService: RepoAIInsightService
+    /// AI 对话历史磁盘存储。由依赖容器显式装配，避免 ViewModel 默认参数读取 MainActor 单例。
+    let diskChatHistoryStore: DiskChatHistoryStore
 
     /// HOM-52：批量未分类仓库 AI 整理队列服务（会话级单例）。
     ///
@@ -323,7 +331,11 @@ final class AppDependencies {
     // MARK: - 初始化
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
-    init() {
+    ///
+    /// 数据库是 Starcat 的核心数据载体。初始化失败时不能继续构造半可用依赖树，
+    /// 否则后续 Repository 可能在错误路径上读写。这里向上抛出，由 `StarcatApp`
+    /// 展示受控启动失败页，并保留诊断包导出入口。
+    init() throws {
         // 启动期记录四个自建后端 API 的实际 baseURL（DEBUG 会标 `[DEV]`，方便确认
         // 当前到底打的是 fly.dev 生产端点还是 127.0.0.1 本地端点）。
         // 详见 `AppEndpoints.swift` 头注释里的"使用方式"。
@@ -332,12 +344,18 @@ final class AppDependencies {
         // 2026-06-12 多账号 DB 隔离：DatabaseManager 不再单例，启动期用 `userId: nil`
         // 走 `users/_anonymous` 占位 DB；AuthSession 在登录成功后通过 onUserSessionChanged
         // closure 触发 `database.reopen(userId:)` 切到该 user 的 DB。
-        // 失败 fatalError —— 与原 DatabaseManager.shared 失败行为一致（DB 是核心数据载体）。
         let db: any DatabaseManaging
         do {
             db = try DatabaseManager(userId: nil)
         } catch {
-            fatalError("Failed to initialize DatabaseManager: \(error)")
+            DiagnosticLogStore.record(
+                level: .critical,
+                category: "database",
+                operation: "startup.openDatabase",
+                message: "Failed to initialize database",
+                underlying: error.localizedDescription
+            )
+            throw error
         }
         self.database = db
 
@@ -379,6 +397,14 @@ final class AppDependencies {
         self.repoRepository = repo
         self.syncManager = SyncManager(apiClient: api, repository: repo)
         self.settings = AppSettings.shared
+        let subscriptions = SubscriptionManager(settings: self.settings)
+        self.subscriptionManager = subscriptions
+        self.entitlementGate = EntitlementGate(
+            entitlementProvider: subscriptions,
+            userIDProvider: { [weak session] in
+                session?.state.user?.id
+            }
+        )
 
         // Week 4 新增：README 子系统
         let readmeRepo = ReadmeRepository(database: db)
@@ -423,9 +449,11 @@ final class AppDependencies {
             summaryRepository: summaryRepo,
             readmeRepository: readmeRepo,
             settings: self.settings,
-            repoAIContextProvider: repoAIContextProvider
+            repoAIContextProvider: repoAIContextProvider,
+            entitlementGate: self.entitlementGate
         )
         self.repoAIInsightService = aiInsight
+        self.diskChatHistoryStore = .shared
 
         // HOM-68：README 翻译。复用 AppSettings.aiTranslationTask 的 provider/model 选择
         // 与 Keychain API Key，独立 Service 承载严格保结构的翻译 prompt + 纯磁盘缓存。
@@ -439,11 +467,13 @@ final class AppDependencies {
         self.readmeTranslationRepository = DiskReadmeTranslationCache.shared
         self.readmeTranslationService = ReadmeTranslationService(
             translationRepository: DiskReadmeTranslationCache.shared,
-            settings: self.settings
+            settings: self.settings,
+            entitlementGate: self.entitlementGate
         )
 
         // W4 Batch A1：标签 / 关联 / 笔记+状态 Repository
-        let tagRepo = GRDBTagRepository(database: db)
+        let rawTagRepo = GRDBTagRepository(database: db)
+        let tagRepo = GatedTagRepository(base: rawTagRepo, entitlementGate: self.entitlementGate)
         let repoTagRepo = GRDBRepoTagRepository(database: db)
         self.tagRepository = tagRepo
         self.repoTagRepository = repoTagRepo
@@ -456,7 +486,8 @@ final class AppDependencies {
             insightService: aiInsight,
             tagRepository: tagRepo,
             repoTagRepository: repoTagRepo,
-            aiSummaryRepository: summaryRepo
+            aiSummaryRepository: summaryRepo,
+            entitlementGate: self.entitlementGate
         )
         self.batchAIQueueService = batchSvc
 
@@ -467,7 +498,8 @@ final class AppDependencies {
             settings: self.settings,
             repoRepository: repo,
             batchService: batchSvc,
-            syncManager: self.syncManager
+            syncManager: self.syncManager,
+            entitlementGate: self.entitlementGate
         )
         let embeddingRepo = GRDBRepoEmbeddingRepository(database: db)
         self.repoEmbeddingRepository = embeddingRepo
@@ -479,9 +511,39 @@ final class AppDependencies {
             settings: self.settings,
             readmeRepository: readmeRepo,
             noteRepository: self.repoNoteRepository,
-            summaryRepository: summaryRepo
+            summaryRepository: summaryRepo,
+            entitlementGate: self.entitlementGate
         )
         self.semanticSearchService = semantic
+
+        let mcpFacade = StarcatMCPFacade(
+            repoRepository: repo,
+            readmeRepository: readmeRepo,
+            tagRepository: tagRepo,
+            repoTagRepository: repoTagRepo,
+            repoNoteRepository: self.repoNoteRepository,
+            semanticSearchService: semantic,
+            settings: self.settings
+        )
+        let mcpWriteFacade = StarcatMCPWriteFacade(
+            repoRepository: repo,
+            tagRepository: tagRepo,
+            repoTagRepository: repoTagRepo,
+            repoNoteRepository: self.repoNoteRepository,
+            settings: self.settings,
+            entitlementGate: self.entitlementGate,
+            refreshSemanticIndex: { [weak semantic] repo in
+                Task { @MainActor in
+                    await semantic?.refreshIndexIfChanged(for: repo)
+                }
+            }
+        )
+        self.mcpService = StarcatMCPService(
+            settings: self.settings,
+            entitlementGate: self.entitlementGate,
+            facade: mcpFacade,
+            writeFacade: mcpWriteFacade
+        )
 
         // 2026-06-12 向量索引改进：摘要生成成功后触发单 repo 向量重建。
         // weak 捕获避免 `aiInsight ↔ semantic` 形成强循环（两者都是 @MainActor final class，
@@ -581,7 +643,11 @@ final class AppDependencies {
         // HOM-47：Release 订阅追踪。
         // 装配顺序：Repository → Monitor（依赖 API + Repository + RepoRepository）
         //         → NotificationService → Poller（依赖 Monitor + NotificationService）。
-        let releaseSubRepo = GRDBReleaseSubscriptionRepository(database: db)
+        let rawReleaseSubRepo = GRDBReleaseSubscriptionRepository(database: db)
+        let releaseSubRepo = GatedReleaseSubscriptionRepository(
+            base: rawReleaseSubRepo,
+            entitlementGate: self.entitlementGate
+        )
         self.releaseSubscriptionRepository = releaseSubRepo
         let releaseRecordRepo = GRDBReleaseRepository(database: db)
         self.releaseRepository = releaseRecordRepo
@@ -727,6 +793,7 @@ final class AppDependencies {
             Task { [bootstrapper] in
                 await bootstrapper.reload()
             }
+            self.mcpService.refreshForCurrentSettings()
         }
     }
 

@@ -215,6 +215,23 @@ struct RepoAIWindowContentView: View {
             await initializeInsightViewModelIfNeeded()
             await insightVM?.load(repo: repo)
         }
+        .sheet(item: aiPaywallBinding) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
+        }
+    }
+
+    private var aiPaywallBinding: Binding<ProPaywallContext?> {
+        Binding(
+            get: {
+                insightVM?.paywallContext ?? chatVM?.paywallContext
+            },
+            set: { newValue in
+                if newValue == nil {
+                    insightVM?.dismissPaywall()
+                    chatVM?.dismissPaywall()
+                }
+            }
+        )
     }
 
     /// 任一时刻只让当前面板进入 SwiftUI 视图树。旧实现把另一面板压到高度 0，
@@ -300,7 +317,8 @@ struct RepoAIWindowContentView: View {
         } else {
             let newVM = RepoAIChatViewModel(
                 service: dependencies.repoAIInsightService,
-                wikiContextService: dependencies.wikiContextService
+                wikiContextService: dependencies.wikiContextService,
+                historyStore: dependencies.diskChatHistoryStore
             )
             chatVM = newVM
             vm = newVM

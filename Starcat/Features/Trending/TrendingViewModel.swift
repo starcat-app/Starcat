@@ -300,13 +300,25 @@ final class TrendingViewModel {
                 }
                 if hasUsableCache {
                     // 缓存还能用 → 保持已上屏，仅记录错误（UI 在 toolbar 显示刷新失败提示）
-                    self.loadError = error.localizedDescription
+                    let friendly = UserFacingError.map(
+                        error,
+                        operation: String.l10n("diagnostics.operation.loadTrending"),
+                        service: "Trending"
+                    )
+                    self.loadError = friendly.message
                     AppLog.network.warning("Trending 后台刷新失败但本地有缓存，保持已显示: \(error.localizedDescription, privacy: .public)")
+                    friendly.record(level: .warning, category: "network", operation: "trending.reload", service: "trending")
                 } else {
                     // 没缓存又拉失败 → 走原 errorView 流程
-                    self.loadError = error.localizedDescription
+                    let friendly = UserFacingError.map(
+                        error,
+                        operation: String.l10n("diagnostics.operation.loadTrending"),
+                        service: "Trending"
+                    )
+                    self.loadError = friendly.message
                     self.repos = []
                     self.reposRevision += 1
+                    friendly.record(category: "network", operation: "trending.reload", service: "trending")
                 }
             }
 

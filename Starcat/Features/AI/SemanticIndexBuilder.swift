@@ -14,10 +14,9 @@
 //  - 暂停 / 恢复：基于 Task.cancel + 内部 paused 标志的协作式停止。
 //
 //  关键约束：
-//  - **单 Task 串行**：双队列概念上独立（README 拉取 + Embedding 调用），但 Embedding
-//    流程已经在 `SemanticSearchService.ensureIndexed` 内部 batch 化（默认 batchSize=32），
-//    所以这里实际上是"逐个 repo 串行：补 Markdown → 调一次 refreshIndexIfChanged"。
-//    保留"双队列"设计文档语义，等后续 Embedding 也需要独立限速时再拆。
+//  - **README 串行 + Embedding 批量**：README 拉取受 GitHub rate limit 约束，仍逐个 repo
+//    补 Markdown；Embedding 不受这个限速约束，按小批量提交给 `SemanticSearchService`，
+//    让 provider 的 batch endpoint 与本地 snapshot 准备都能摊薄开销。
 //  - **限速实现**：拉一次 README sleep `intervalMillis` 毫秒（默认 800ms ≈ 4500/h）。
 //    用 Task.sleep 而非外部计时器，让 cancel 立即生效。
 //  - **错误隔离**：单个 repo 失败 → 累加 `failureCount`，继续下一个，不打断整体进度。
@@ -90,6 +89,12 @@ final class SemanticIndexBuilder {
     /// 单条 README 拉取之间的限速间隔（毫秒）。
     /// 默认 800ms ≈ 4500 req/h，留 500 给同步流程，详见模块注释。
     private let intervalMillis: Int
+
+    /// Embedding 重建批大小。
+    ///
+    /// 与 `SemanticSearchService` 默认 batchSize 保持一致：32 足以显著减少逐仓库请求开销，
+    /// 又不会把单次 prompt payload 做得过大，适合 OpenAI-compatible provider。
+    private let embeddingChunkSize = 32
 
     private var runningTask: Task<Void, Never>?
 
@@ -222,20 +227,27 @@ final class SemanticIndexBuilder {
             }
 
             let toProcess = Array(repos.dropFirst(processed))
-            for repo in toProcess {
+            for chunk in toProcess.chunked(into: embeddingChunkSize) {
                 if Task.isCancelled { break }
-                let didRebuild = await processOne(repo: repo, force: force)
-                if !didRebuild {
-                    skipped += 1
-                }
-                processed += 1
 
-                if Task.isCancelled { break }
-                // 限速：单条 README 拉取后 sleep。注意此处用 Task.sleep（cancel 时立刻抛错），
-                // 不能用 DispatchQueue.asyncAfter，否则 pause 时进度会卡住等定时器结束。
-                if intervalMillis > 0 {
-                    try? await Task.sleep(for: .milliseconds(intervalMillis))
+                var indexCandidates: [Repo] = []
+                indexCandidates.reserveCapacity(chunk.count)
+                for repo in chunk {
+                    if Task.isCancelled { break }
+                    await refreshMarkdownForIndexing(repo)
+                    indexCandidates.append(repo)
+                    processed += 1
+
+                    if Task.isCancelled { break }
+                    // 限速：单条 README 拉取后 sleep。注意此处用 Task.sleep（cancel 时立刻抛错），
+                    // 不能用 DispatchQueue.asyncAfter，否则 pause 时进度会卡住等定时器结束。
+                    if intervalMillis > 0 {
+                        try? await Task.sleep(for: .milliseconds(intervalMillis))
+                    }
                 }
+
+                guard !indexCandidates.isEmpty, !Task.isCancelled else { continue }
+                await rebuildIndexChunk(indexCandidates, force: force)
             }
 
             if Task.isCancelled {
@@ -270,38 +282,47 @@ final class SemanticIndexBuilder {
         }
     }
 
-    /// 单条 repo 的处理：
-    /// 1. 拉 readme markdown（仅在 `readmes.content` 为 nil 时真发请求）
-    /// 2. 调 `refreshIndexIfChanged` / `refreshIndex` 让 SemanticSearchService 处理向量
+    /// 单仓库补全 README Markdown。
     ///
-    /// 失败时只累加 `failures`，不抛出。
-    ///
-    /// **返回值（2026-06-13 dong4j 反馈"开始预拉闪烁"改造）**：
-    /// - `true`：实际调用了 embedding API 重建（包括 force=true 路径的正常成功）；
-    /// - `false`：被 diff 阈值跳过（无 API 调用）/ 缺 API Key 静默 no-op / 抛错。
-    ///
-    /// 调用方据此累加 `skipped` 计数，决定完成态用 `.alreadyUpToDate` 还是 `.completed`。
-    /// 注意失败 case 也回 `false`——但调用方在调本函数前已经看到 `failures` 增量，
-    /// `execute()` 完成时根据 `failures == 0` 兜底，不会把"全失败"误认为"已是最新"。
-    private func processOne(repo: Repo, force: Bool) async -> Bool {
+    /// Markdown 失败不计入 `failures`：snapshot 仍可走 HTML / metadata 兜底，embedding
+    /// 是否需要重建由后续批量 `SemanticSearchService` 决定。
+    private func refreshMarkdownForIndexing(_ repo: Repo) async {
         let mdResult = await readmeAPI.refreshMarkdownIfNeeded(for: repo)
         if case .failed(let error) = mdResult {
             AppLog.ai.warning("refreshMarkdownIfNeeded failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            // 不直接 failures++：Markdown 失败不影响向量重建（snapshot 走 HTML 兜底）
         }
+    }
 
-        // 向量重建：force=true 时调 refreshIndex（强制）；force=false 走 diff 判定
+    /// 批量重建 / 按 diff 刷新 embedding。
+    ///
+    /// 这里把 README 限速与 embedding 批处理拆开：前者保护 GitHub rate limit，后者降低
+    /// OpenAI-compatible embedding endpoint 的请求次数。`processed` 已在 README 阶段递增，
+    /// 本方法只维护 `skipped` 与 `failures`。
+    private func rebuildIndexChunk(_ repos: [Repo], force: Bool) async {
+        guard !repos.isEmpty else { return }
+
         if force {
             do {
-                let rebuilt = try await semanticSearchService.refreshIndex(for: [repo])
-                return rebuilt > 0
+                _ = try await semanticSearchService.refreshIndex(for: repos)
             } catch {
-                failures += 1
-                AppLog.ai.warning("rebuild vector failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                return false
+                failures += repos.count
+                AppLog.ai.warning("rebuild vector chunk failed count=\(repos.count, privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
         } else {
-            return await semanticSearchService.refreshIndexIfChanged(for: repo)
+            let rebuilt = await semanticSearchService.refreshIndexIfChanged(for: repos)
+            skipped += max(0, repos.count - rebuilt)
+        }
+    }
+}
+
+private extension Array {
+    /// 文件内小工具：按固定大小切 chunk。
+    ///
+    /// 这里保持 private，避免为了 `SemanticIndexBuilder` 的一个批处理循环扩大成全工程 API。
+    func chunked(into size: Int) -> [[Element]] {
+        guard size > 0 else { return [self] }
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
         }
     }
 }

@@ -47,6 +47,7 @@ final class AutoTidyScheduler {
     private let repoRepository: any RepoRepositoryProtocol
     private let batchService: BatchAIQueueService
     private let syncManager: SyncManager
+    private let entitlementGate: EntitlementGate?
 
     // MARK: - 内部状态
 
@@ -85,12 +86,14 @@ final class AutoTidyScheduler {
         repoRepository: any RepoRepositoryProtocol,
         batchService: BatchAIQueueService,
         syncManager: SyncManager,
+        entitlementGate: EntitlementGate? = nil,
         minTriggerInterval: TimeInterval = 300
     ) {
         self.settings = settings
         self.repoRepository = repoRepository
         self.batchService = batchService
         self.syncManager = syncManager
+        self.entitlementGate = entitlementGate
         self.minTriggerInterval = minTriggerInterval
     }
 
@@ -241,6 +244,13 @@ final class AutoTidyScheduler {
             AppLog.ai.debug("[autoTidy] runOnce(\(reason, privacy: .public)) skipped: no action enabled")
             return
         }
+        do {
+            try entitlementGate?.requirePro(.autoOrganize)
+        } catch {
+            // 自动整理是后台触发，不能弹 sheet；记录原因并静默跳过，前台设置入口会负责提示。
+            AppLog.ai.info("[autoTidy] runOnce(\(reason, privacy: .public)) skipped: \(error.localizedDescription, privacy: .public)")
+            return
+        }
         // 反抖动
         if !skipDebounce, let last = lastTriggerAt {
             let elapsed = Date().timeIntervalSince(last)
@@ -326,4 +336,12 @@ final class AutoTidyScheduler {
         let total = batchService.totalCount
         return "\(finished)/\(total)"
     }
+
+    /// Sidebar popover 需要展示更细的实时计数，但不应该直接依赖 BatchAIQueueService。
+    /// 这里保持只读转发，让自动整理的 UI 状态仍由调度器统一收口。
+    var autoTidyFinishedCount: Int { batchService.finishedCount }
+    var autoTidyTotalCount: Int { batchService.totalCount }
+    var autoTidyCompletedCount: Int { batchService.completedCount }
+    var autoTidyIgnoredCount: Int { batchService.ignoredCount }
+    var autoTidyFailedCount: Int { batchService.failedCount }
 }

@@ -105,7 +105,7 @@ final class SyncManager {
     private(set) var lastRunWroteRepos: Bool = false
 
     /// 启动期自动同步 TTL，与 `HomeViewModel.listCache` 5min TTL 对齐。
-    static let defaultAutoSyncMaxAge: TimeInterval = 300
+    nonisolated static let defaultAutoSyncMaxAge: TimeInterval = 300
 
     // MARK: - 依赖
 
@@ -384,15 +384,44 @@ final class SyncManager {
             let retryAt = Date().addingTimeInterval(retryAfter)
             state = .rateLimited(retryAt: retryAt)
             AppLog.sync.warning("Rate limited; retry at \(retryAt, privacy: .public)")
+            DiagnosticLogStore.record(
+                level: .warning,
+                category: "sync",
+                operation: "github.fullSync",
+                message: "GitHub rate limited sync",
+                service: "github",
+                statusCode: 403,
+                context: ["retryAt": ISO8601DateFormatter.shared.string(from: retryAt)]
+            )
         } catch NetworkError.unauthorized {
             state = .failed(message: String.l10n("sync.error.tokenExpired"))
             AppLog.sync.error("Unauthorized during sync")
+            DiagnosticLogStore.record(
+                level: .error,
+                category: "sync",
+                operation: "github.fullSync",
+                message: "GitHub sync unauthorized",
+                service: "github",
+                statusCode: 401
+            )
         } catch let error as LocalizedError {
-            state = .failed(message: error.localizedDescription)
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.syncStars"),
+                service: "GitHub"
+            )
+            state = .failed(message: friendly.message)
             AppLog.sync.error("Sync failed: \(error.localizedDescription, privacy: .public)")
+            friendly.record(category: "sync", operation: "github.fullSync", service: "github")
         } catch {
-            state = .failed(message: error.localizedDescription)
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.syncStars"),
+                service: "GitHub"
+            )
+            state = .failed(message: friendly.message)
             AppLog.sync.error("Sync failed (unknown): \(error.localizedDescription, privacy: .public)")
+            friendly.record(category: "sync", operation: "github.fullSync", service: "github")
         }
 
         runningTask = nil

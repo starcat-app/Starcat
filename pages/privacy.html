@@ -219,7 +219,7 @@
                 <li>We <strong>do not</strong> access your GitHub password (OAuth only)</li>
                 <li>We <strong>do not</strong> upload your AI API Keys to our servers</li>
                 <li>We <strong>do not</strong> use your notes to train AI models</li>
-                <li>Core data is stored <strong>only</strong> locally or in your own iCloud</li>
+                <li>Core data is stored <strong>only</strong> locally; iCloud sync is planned as a future Pro feature</li>
                 <li>We follow the principle of data minimization</li>
             </ul>
         </div>
@@ -294,7 +294,7 @@
             <h2><span class="num">04</span>How We Use Information</h2>
             <p>We use collected information only in the following contexts:</p>
             <ol>
-                <li><strong>Provide &amp; maintain core functionality</strong>: Star sync, local full-text search, tag management, notes, CloudKit sync;</li>
+                <li><strong>Provide &amp; maintain core functionality</strong>: Star sync, local full-text search, tag management, notes, and future CloudKit sync;</li>
                 <li><strong>Verify identity &amp; subscription</strong>: Via GitHub OAuth and Apple StoreKit;</li>
                 <li><strong>Provide AI capabilities</strong> (requires opt-in): Summaries, tag suggestions, semantic search, health scoring;</li>
                 <li><strong>Fix bugs &amp; improve experience</strong>: Based on voluntarily submitted diagnostics;</li>
@@ -322,7 +322,7 @@
                 </tbody>
             </table>
             <h3>5.1 CloudKit Sync</h3>
-            <p>When iCloud sync is enabled, your user content is stored in <strong>your own iCloud private database</strong> (not our servers). We <strong>cannot</strong> access any content in your iCloud. Sync follows Apple's published end-to-end encryption. See <a href="https://support.apple.com/en-us/HT202303" target="_blank" rel="noopener">Apple iCloud Security Overview</a>.</p>
+            <p><strong>The current version of Starcat does not provide iCloud / CloudKit sync.</strong> This feature is planned for a future release as a Starcat Pro benefit. When iCloud sync becomes available and you enable it, your user content will be stored in <strong>your own iCloud private database</strong> (not our servers). We <strong>cannot</strong> access any content in your iCloud. Sync follows Apple's published end-to-end encryption. See <a href="https://support.apple.com/en-us/HT202303" target="_blank" rel="noopener">Apple iCloud Security Overview</a>.</p>
             <h3>5.2 Self-Hosted AI Proxy (optional)</h3>
             <p>When using our "Starcat Pro" AI proxy, requests transit through our server to the underlying AI provider. Our proxy: <strong>does not</strong> persist your request content; <strong>does not</strong> use your content for training; retains only necessary <strong>request time, quota count, error codes</strong> for quota management and troubleshooting.</p>
         </section>
@@ -472,6 +472,7 @@
     <div class="links">
         <a href="./eula.html">EULA</a>
         <a href="./privacy.html">Privacy Policy</a>
+        <a href="./changelog.html">Changelog</a>
         <a href="mailto:dong4j@gmail.com">Contact</a>
         <a href="https://starcat.ink" target="_blank" rel="noopener">Website</a>
     </div>

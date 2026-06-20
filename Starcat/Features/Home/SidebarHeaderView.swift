@@ -100,6 +100,8 @@ struct SidebarHeaderView: View {
                     isProUser: appSettings.isProUser,
                     onClose: { showShareCardSheet = false }
                 )
+                .environment(dependencies.userProfileService)
+                .appSheetRootEnvironment(dependencies)
             }
         }
         .onChange(of: authSession.state) { _, newState in

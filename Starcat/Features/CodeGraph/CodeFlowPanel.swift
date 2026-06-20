@@ -9,8 +9,10 @@ import SwiftUI
 
 struct CodeFlowPanel: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppDependencies.self) private var dependencies
     @State private var viewModel: CodeFlowViewModel
     @State private var showsDetails: Bool
+    @State private var paywallContext: ProPaywallContext?
     private let repo: Repo
 
     init(repo: Repo) {
@@ -70,7 +72,13 @@ struct CodeFlowPanel: View {
             footer
         }
         .frame(width: 520)
-        .task { await viewModel.prepare() }
+        .task {
+            guard requireCodeFlowAccess() else { return }
+            await viewModel.prepare()
+        }
+        .sheet(item: $paywallContext) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
+        }
         .onDisappear { viewModel.cancel() }
         .onChange(of: viewModel.state) { _, state in
             if case .failed = state { showsDetails = true }
@@ -193,10 +201,16 @@ struct CodeFlowPanel: View {
             Spacer()
             if isRunning { Button("common.cancel") { viewModel.cancel() } }
             if viewModel.storedProject != nil, !isRunning {
-                Button("codeFlow.action.regenerate") { viewModel.regenerate() }
+                Button("codeFlow.action.regenerate") {
+                    guard requireCodeFlowAccess() else { return }
+                    viewModel.regenerate()
+                }
                     .disabled(!viewModel.canGenerate)
             }
-            Button(actionTitle) { viewModel.start() }
+            Button(actionTitle) {
+                guard requireCodeFlowAccess() else { return }
+                viewModel.start()
+            }
                 .buttonStyle(.borderedProminent)
                 .disabled(isRunning || (viewModel.storedProject == nil && !viewModel.canGenerate))
         }
@@ -292,6 +306,18 @@ struct CodeFlowPanel: View {
             Image(systemName: "arrow.right.circle.fill").foregroundStyle(Color.accentColor)
         case .failed:
             Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+        }
+    }
+
+    /// 面板内二次校验：防止 Pro 过期后仍能通过已打开 sheet 继续生成。
+    @discardableResult
+    private func requireCodeFlowAccess() -> Bool {
+        do {
+            try dependencies.entitlementGate.requirePro(.codeFlow)
+            return true
+        } catch {
+            paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
+            return false
         }
     }
 }

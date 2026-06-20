@@ -19,7 +19,13 @@ import AppKit  // W4-5 D1 follow-up：NSApp.appearance 控制主题（preferredC
 struct StarcatApp: App {
 
     /// 应用级依赖容器，必须在 init 中创建并通过 environment 传给 ContentView。
-    @State private var dependencies: AppDependencies
+    ///
+    /// 这里允许为 nil，是为了把数据库初始化失败这类启动期硬错误从 `fatalError`
+    /// 改成受控失败页。依赖为空时不进入主界面，避免半初始化状态继续读写本地数据。
+    @State private var dependencies: AppDependencies?
+
+    /// 启动期核心依赖失败时给用户展示的友好错误。
+    @State private var startupError: UserFacingError?
 
     // MARK: - 用户语言切换（生产可用）
     //
@@ -38,8 +44,16 @@ struct StarcatApp: App {
 
     init() {
         Self.bootstrap()
-        // 注意：AppDependencies 是 @MainActor，App init 已在 main thread
-        _dependencies = State(initialValue: AppDependencies())
+        // 注意：AppDependencies 是 @MainActor，App init 已在 main thread。
+        do {
+            _dependencies = State(initialValue: try AppDependencies())
+            _startupError = State(initialValue: nil)
+        } catch {
+            let friendly = UserFacingError.map(error, operation: String.l10n("diagnostics.operation.startup"), service: "Starcat")
+            friendly.record(level: .critical, category: "startup", operation: "appDependencies")
+            _dependencies = State(initialValue: nil)
+            _startupError = State(initialValue: friendly)
+        }
 
         // ⚠️ 不要在这里调 `Self.applyAppearance(...)` / `NSApp.appearance = ...`！
         // `NSApp` 是 implicitly unwrapped optional，`@main App.init()` 阶段
@@ -55,68 +69,7 @@ struct StarcatApp: App {
 
     var body: some Scene {
         WindowGroup("Starcat") {
-            contentRoot
-                // 2026-06-15:必须挂在所有 `.environment(...)` 之前(modifier 链
-                // 越靠前 = 子树端,SwiftUI 把 environment 注入按"链中靠后 = 父层"
-                // 解析)。AnimationOverrideModifier 内部 `@Environment(AppSettings)`
-                // 需要 settings 在它的 ancestor 链上,所以 settings env 必须挂在
-                // 这一行之后。详见 Shared/Components/AnimationOverrideModifier.swift。
-                .starcatAnimationOverride()
-                .environment(dependencies)
-                .environment(dependencies.authSession)
-                .environment(dependencies.syncManager)
-                .environment(dependencies.settings)
-                // HOM-PROFILE 2026-06-05：贡献草坪服务，Sidebar 直接消费 @Observable 实例。
-                .environment(dependencies.contributionService)
-                // 2026-06-06 A 方案：用户 profile 缓存服务。Sidebar / ShareCardSheet 会调
-                // userProfileService.load(force:) 主动触发 TTL 刷新或 force refresh。
-                .environment(dependencies.userProfileService)
-                // HOM-126：自动后台 AI 整理调度器。Sidebar 直接观察 `isAutoTidyRunning`
-                // 决定是否展示「AI 自动整理中 N/M」轻量行；设置页观察其触发结果展示
-                // 「运行状态」。调度器的 `start()` 由 HomeView 在 .task 里调。
-                .environment(dependencies.autoTidyScheduler)
-                // W4-5 D1 follow-up（2026-06-03 23:26）：用户主题应用到全 App。
-                //
-                // 为什么不用 SwiftUI `.preferredColorScheme(_:)` 而用 AppKit 的
-                // `NSApp.appearance` ——
-                // dong4j 验收（截图：light → system 时主窗口左半浅色 / 右半深色）
-                // 暴露 SwiftUI on macOS 的已知 bug：`.preferredColorScheme(nil)`
-                // 不能可靠地"撤销"之前强制过的非 nil 值，导致内部 view tree 的
-                // colorScheme state 部分卡住、部分更新（截图里 sidebar / 列表
-                // 浅色但右侧详情区深色就是 SwiftUI 没完成传播的中间态）。
-                //
-                // AppKit 标准做法：`NSApp.appearance = nil` 干净地撤销强制外观，
-                // 所有 NSWindow（主窗口 + Settings + About）的 effectiveAppearance
-                // 自动跟随系统切换；SwiftUI 通过 environment(\.colorScheme) 接收
-                // NSWindow.effectiveAppearance 也会同步更新视图层。
-                //
-                // 实现：① `.onAppear` 启动时根据当前 settings 应用一次（处理冷启动
-                // 恢复 + Window 重建场景）② `.onChange` 监听 settings.appearanceMode
-                // 变化（兜底所有切主题入口，无论从 Picker / 菜单 / 快捷键还是未来的
-                // URL scheme，只要 settings 改了就触发应用）。
-                .onAppear {
-                    applyAppearance(dependencies.settings.appearanceMode)
-                }
-                .onChange(of: dependencies.settings.appearanceMode) { _, newMode in
-                    applyAppearance(newMode)
-                }
-                // W4-5 D1 follow-up：隐式动画兜底。SettingsView 的 Picker 已经在
-                // setter 里包了 `withAnimation(.easeInOut(0.3))`，这里再挂一道
-                // `.animation(_:value:)` 让 colorScheme 相关的视图重渲染都自动
-                // 0.3s 淡变，覆盖未来其他入口（菜单 / 快捷键 / URL scheme）。
-                //
-                // 关键约束：macOS NSWindow titlebar / chrome 由 AppKit 即时切换
-                // effectiveAppearance，SwiftUI 动画系统覆盖不到，所以 titlebar
-                // 仍是瞬切；视图内容区（动态色 / 材质 / 文字色）会跟随过渡。
-                //
-                // 2026-06-15:用户「关闭应用内动画」时直接 nil,主题切换瞬切;
-                // 这一层用 settings.disableAnimations 守卫(而非 reduceMotion 环境
-                // 值),因为 `.animation(_:value:)` 是硬动画,不会自动尊重
-                // AnimationOverrideModifier 注入的 reduceMotion 环境值。
-                .animation(dependencies.settings.disableAnimations ? nil : .easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
-                .task {
-                    await dependencies.authSession.restoreSessionIfAvailable()
-                }
+            windowRoot
         }
         .commands {
             // 替换系统默认的"关于 Starcat"菜单项，打开自定义 SwiftUI 关于窗口。
@@ -139,6 +92,52 @@ struct StarcatApp: App {
 
         // macOS 原生 Settings 窗口（Cmd+,）
         Settings {
+            settingsSceneRoot
+        }
+    }
+
+    // MARK: - 内容根视图
+
+    @ViewBuilder
+    private var windowRoot: some View {
+        if let dependencies {
+            contentRoot(dependencies: dependencies)
+                // 2026-06-15:必须挂在所有 `.environment(...)` 之前(modifier 链
+                // 越靠前 = 子树端,SwiftUI 把 environment 注入按"链中靠后 = 父层"
+                // 解析)。AnimationOverrideModifier 内部 `@Environment(AppSettings)`
+                // 需要 settings 在它的 ancestor 链上,所以 settings env 必须挂在
+                // 这一行之后。详见 Shared/Components/AnimationOverrideModifier.swift。
+                .starcatAnimationOverride()
+                .environment(dependencies)
+                .environment(dependencies.authSession)
+                .environment(dependencies.syncManager)
+                .environment(dependencies.settings)
+                .environment(dependencies.subscriptionManager)
+                .environment(dependencies.entitlementGate)
+                // HOM-PROFILE 2026-06-05：贡献草坪服务，Sidebar 直接消费 @Observable 实例。
+                .environment(dependencies.contributionService)
+                // 2026-06-06 A 方案：用户 profile 缓存服务。Sidebar / ShareCardSheet 会调
+                // userProfileService.load(force:) 主动触发 TTL 刷新或 force refresh。
+                .environment(dependencies.userProfileService)
+                // HOM-126：自动后台 AI 整理调度器。Sidebar 直接观察 `isAutoTidyRunning`
+                // 决定是否展示「AI 自动整理中 N/M」轻量行；设置页观察其触发结果展示
+                // 「运行状态」。调度器的 `start()` 由 HomeView 在 .task 里调。
+                .environment(dependencies.autoTidyScheduler)
+                .onAppear {
+                    applyAppearance(dependencies.settings.appearanceMode)
+                }
+                .onChange(of: dependencies.settings.appearanceMode) { _, newMode in
+                    applyAppearance(newMode)
+                }
+                .animation(dependencies.settings.disableAnimations ? nil : .easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
+        } else {
+            StartupFailureView(error: startupError ?? UserFacingError.map(DatabaseError.applicationSupportNotFound, operation: String.l10n("diagnostics.operation.startup"), service: "Starcat"))
+        }
+    }
+
+    @ViewBuilder
+    private var settingsSceneRoot: some View {
+        if let dependencies {
             settingsRoot
                 // 2026-06-15:Settings 是独立 SwiftUI scene root,主窗口的
                 // 同款 modifier 不会传播到这里,必须再挂一次让 Settings 子树
@@ -148,22 +147,17 @@ struct StarcatApp: App {
                 .starcatAnimationOverride()
                 .environment(dependencies)        // W4-4 D4：StorageSettingsTab 需要 readmeRepository
                 .environment(dependencies.settings)
+                .environment(dependencies.subscriptionManager)
+                .environment(dependencies.entitlementGate)
                 // HOM-126：AI 设置「自动整理」分组的「立刻手动触发一次」按钮直接
                 // 调 scheduler.triggerManually()。不依赖 AppDependencies 间接路径，
                 // 让 Settings tab 与 scheduler 解耦但显式可见。
                 .environment(dependencies.autoTidyScheduler)
-                // W4-5 D1 follow-up：Settings 窗口不需要再调 NSApp.appearance —
-                // 主窗口的 onAppear / onChange 已经设置了**全局** NSApp.appearance，
-                // Settings 窗口是 NSApp 的子窗口，effectiveAppearance 自动跟随。
-                // 但还是挂一道 `.animation(_:value:)` 让 Settings 内部视图
-                // 颜色变化跟主窗口节奏一致（0.3s easeInOut）。
-                //
-                // 2026-06-15:与主窗口同款守卫,见上方 WindowGroup 内同名 modifier。
                 .animation(dependencies.settings.disableAnimations ? nil : .easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
+        } else {
+            StartupFailureView(error: startupError ?? UserFacingError.map(DatabaseError.applicationSupportNotFound, operation: String.l10n("diagnostics.operation.startup"), service: "Starcat"))
         }
     }
-
-    // MARK: - 内容根视图
 
     /// 包了一层 builder 是为了把 locale 注入和 identity 重建集中在一处，未来要
     /// 加调试期临时覆盖（如 DEBUG 入参）也只需在这里改。
@@ -175,10 +169,14 @@ struct StarcatApp: App {
     ///   Locale 的子视图（如 `RelativeDateTimeFormatter` 实例缓存）不刷新——
     ///   dong4j 历史截图反馈"切语言后部分时间格式没变"就是少了 identity 重建。
     @ViewBuilder
-    private var contentRoot: some View {
-        ContentView()
-            .environment(\.locale, localeStore.selection.effectiveLocale)
-            .id(localeStore.selection.rawValue)
+    private func contentRoot(dependencies: AppDependencies) -> some View {
+        // LaunchSplashContainer 必须在 `.id(localeStore...)` 外层，否则切语言会重播 splash。
+        // Auth restore 时序已迁入 Container 的 `.task`，与最短展示时长并行等待。
+        LaunchSplashContainer {
+            ContentView()
+                .environment(\.locale, localeStore.selection.effectiveLocale)
+                .id(localeStore.selection.rawValue)
+        }
     }
 
     /// Settings scene 的语言注入与重建逻辑，与 `contentRoot` 完全对称。
@@ -280,9 +278,13 @@ struct DebugMenuCommands: Commands {
         // `.environment(\.locale, _)` 切换），保证不管当前 locale 是什么，开发者
         // 都能在菜单栏看到固定的"Debug"字样找到入口。
         CommandMenu("Debug") {
-            // 占位项：保留菜单架构与可见性。加入真功能时直接删除这一行。
-            Button("(no debug actions yet)") { }
-                .disabled(true)
+            Button("Replay First-Run Onboarding") {
+                FirstRunOnboardingPreferences.resetForDebugReplay()
+                NotificationCenter.default.post(
+                    name: FirstRunOnboardingPreferences.debugReplayNotification,
+                    object: nil
+                )
+            }
         }
     }
 }

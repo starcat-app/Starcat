@@ -537,7 +537,13 @@ final class WeeklyContentViewModel {
             selectionService?.applyTotal(result.total)
         } catch {
             guard myGen == generation else { return }
-            loadError = error.localizedDescription
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.loadWeekly"),
+                service: "Weekly"
+            )
+            loadError = friendly.message
+            friendly.record(category: "network", operation: "weekly.loadMore", service: "weekly")
             // 分页失败保留已有数据与 hasMore，用户滚动/刷新可继续重试。
         }
     }
@@ -616,11 +622,17 @@ final class WeeklyContentViewModel {
             selectionService?.applyTotal(result.total)
         } catch {
             guard myGen == generation else { return }
-            loadError = error.localizedDescription
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.loadWeekly"),
+                service: "Weekly"
+            )
+            loadError = friendly.message
             if items.isEmpty {
                 total = 0
                 hasMore = false
             }
+            friendly.record(category: "network", operation: "weekly.loadRemotePage", service: "weekly")
         }
     }
 

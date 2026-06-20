@@ -444,7 +444,7 @@ struct ServicesSettingsTab: View {
 #Preview("简体中文") {
     ServicesSettingsTab()
         .environment(AppSettings.shared)
-        .environment(AppDependencies())
+        .environment(try! AppDependencies())
         .environment(\.locale, Locale(identifier: "zh-Hans"))
         .frame(width: 560, height: 600)
 }
@@ -452,7 +452,7 @@ struct ServicesSettingsTab: View {
 #Preview("English") {
     ServicesSettingsTab()
         .environment(AppSettings.shared)
-        .environment(AppDependencies())
+        .environment(try! AppDependencies())
         .environment(\.locale, Locale(identifier: "en"))
         .frame(width: 560, height: 600)
 }

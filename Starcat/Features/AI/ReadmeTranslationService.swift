@@ -76,15 +76,18 @@ final class ReadmeTranslationService {
     private let translationRepository: any ReadmeTranslationRepositoryProtocol
     private let settings: AppSettings
     private let keychain: any KeychainManaging
+    private let entitlementGate: EntitlementGate?
 
     init(
         translationRepository: any ReadmeTranslationRepositoryProtocol,
         settings: AppSettings,
+        entitlementGate: EntitlementGate? = nil,
         keychain: any KeychainManaging = KeychainManager.shared
     ) {
         self.translationRepository = translationRepository
         self.settings = settings
         self.keychain = keychain
+        self.entitlementGate = entitlementGate
     }
 
     // MARK: - 公开接口
@@ -132,6 +135,7 @@ final class ReadmeTranslationService {
         request: ReadmeTranslationRequest,
         onDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> ReadmeTranslation {
+        try entitlementGate?.requirePro(.readmeTranslation)
         let trimmedSource = request.sourceHtml.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedSource.isEmpty else { throw ReadmeTranslationError.emptySource }
 

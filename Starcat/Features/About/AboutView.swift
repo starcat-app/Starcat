@@ -847,6 +847,12 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright (c) 2017-2026 Thomas Zoechling",
             url: URL(string: "https://github.com/weichsel/ZIPFoundation")
         ),
+        AboutDependency(
+            name: "MCP Swift SDK",
+            license: "Apache 2.0 / MIT",
+            copyright: "Copyright (c) 2024-2025 Model Context Protocol a Series of LF Projects, LLC.",
+            url: URL(string: "https://github.com/modelcontextprotocol/swift-sdk")
+        ),
 
         // MARK: 嵌入式资源 / 生成代码（非 SPM，但同样属于第三方开源）
 

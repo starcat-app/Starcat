@@ -184,6 +184,7 @@ final class RepoAIChatViewModel {
 
     /// 最近一次错误（非 nil 时 UI 渲染错误条）。
     private(set) var errorMessage: String?
+    private(set) var paywallContext: ProPaywallContext?
 
     /// 上下文窗口溢出标志（HOM-70）。
     ///
@@ -243,12 +244,14 @@ final class RepoAIChatViewModel {
     /// - `wikiContextService`：**必填**，没有默认。原因：项目未上线，让编译器逼着
     ///   所有 callsite 显式传依赖，避免新增对话 VM 实例化路径漏注入。传 nil 等价于
     ///   "本会话不消费 wiki 资源"（测试 fast path / 不关心 wiki 注入的单测用）。
-    /// - `historyStore` / `codeFlowStorage`：进程级单例默认即可，测试要隔离 disk
-    ///   时再注入 `rootOverride` 版本。
+    /// - `historyStore`：由 `AppDependencies` 显式注入进程级单例，避免默认参数在
+    ///   nonisolated 上下文求值 `@MainActor` 单例。
+    /// - `codeFlowStorage`：进程级单例默认即可，测试要隔离 disk 时再注入
+    ///   `rootOverride` 版本。
     init(
         service: RepoAIInsightService,
         wikiContextService: WikiContextService?,
-        historyStore: DiskChatHistoryStore = .shared,
+        historyStore: DiskChatHistoryStore,
         codeFlowStorage: CodeFlowStorage = .shared
     ) {
         self.service = service
@@ -617,11 +620,21 @@ final class RepoAIChatViewModel {
                 return
             }
 
-            let description = error.localizedDescription
+            let rawDescription = error.localizedDescription
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.aiChat"),
+                service: "AI"
+            )
+            let description = friendly.message
+            if let gateError = error as? EntitlementGateError {
+                paywallContext = ProPaywallContext(feature: gateError.feature, message: error.localizedDescription)
+            }
             errorMessage = description
-            if Self.looksLikeContextOverflow(description) {
+            if Self.looksLikeContextOverflow(rawDescription) {
                 isContextOverflow = true
             }
+            friendly.record(category: "ai", operation: "chat.stream", service: "ai-provider")
             if var failed = streamingMessage {
                 failed.content = accumulated
                 // 不留空占位（避免 UI 上看到一条"灰色光标但无文字"的助手消息）。
@@ -650,6 +663,10 @@ final class RepoAIChatViewModel {
     /// 显式清空错误条。
     func dismissError() {
         errorMessage = nil
+    }
+
+    func dismissPaywall() {
+        paywallContext = nil
     }
 
     /// 显式清空 context-overflow 标志（UI 上 "关闭 banner" 入口；不影响 errorMessage）。

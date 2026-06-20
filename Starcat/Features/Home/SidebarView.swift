@@ -20,12 +20,13 @@ struct SidebarView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(AuthSession.self) private var authSession
+    @Environment(\.openSettings) private var openSettings
     /// 系统级"减少动效"开关。开启时把 spring 折叠动画退化为瞬切，避免给晕动症 / 偏好
     /// 静态界面的用户增加负担。与项目内 `ListRowRevealModifier` / `RepoLocalSections`
     /// / `SmartSearchField` 等动画路径处理方式一致。
     @Environment(\.starcatReduceMotion) private var reduceMotion
     /// HOM-126：自动整理调度器。Sidebar 底部观察 `isAutoTidyRunning` 决定是否
-    /// 显示「AI 自动整理中 N/M」轻量行。这是该功能的唯一可视入口（不弹 sheet / panel）。
+    /// 显示「AI 自动整理中 N/M」轻量行；点击 / hover 可查看 popover 详情。
     @Environment(AutoTidyScheduler.self) private var autoTidyScheduler
     /// MUL-176 followup：周刊分类计数徽章数据源。
     /// 仅在 Activity 选中 .weekly 时使用，其余路径完全不读，开销可忽略。
@@ -51,6 +52,14 @@ struct SidebarView: View {
     @Binding var showTagManagement: Bool
     /// HOM-47：触发 Release 时间线 sheet。
     @Binding var showReleaseTimeline: Bool
+    /// Root page 切换允许 HomeView 在写入 `selectedPage` 前先准备跨页状态。
+    ///
+    /// 这里保持 Sidebar 只表达“用户想切到哪个 root page”，真正的 Manage /
+    /// Trending 状态恢复仍由 HomeView 统一处理，避免 Sidebar 持有 saved selection。
+    var onSelectRootPage: ((SidebarRootPage) -> Void)?
+    /// HOM-126 follow-up：Sidebar 自动整理 popover 的「查看队列」入口。
+    /// 由 HomeView 承载 sheet 状态，Sidebar 只发起动作，避免左栏持有批量整理面板。
+    var onShowBatchAIPanel: (() -> Void)?
 
     /// 当前在 Trending 页面选中的 repo，仅用于透传给 `SidebarHeaderView` 让头像背景的
     /// 语言色在 Trending 页也能联动（2026-06-02 21:38 接入）。Manage 页面应为 nil。
@@ -63,6 +72,8 @@ struct SidebarView: View {
 
     /// HOM-73：控制登录 sheet 的显示。
     @State private var showLoginSheet: Bool = false
+    /// 自动整理 popover 显示状态。点击 footer 或 hover 进入时打开，跑完自动关闭。
+    @State private var showAutoTidyPopover: Bool = false
 
     /// row() / tagRow() 内 trailing 区域（sync icon + count）的**整体固定宽度**（pt）。
     ///
@@ -143,6 +154,11 @@ struct SidebarView: View {
             GithubAuthView()
                 .appLocaleEnvironment()
         }
+        .onChange(of: autoTidyScheduler.isAutoTidyRunning) { _, isRunning in
+            if !isRunning {
+                showAutoTidyPopover = false
+            }
+        }
     }
 
     // MARK: - HOM-126：自动整理底部指示
@@ -153,39 +169,154 @@ struct SidebarView: View {
     /// - 仅在 `autoTidyScheduler.isAutoTidyRunning == true` 时挂入，跑完整体消失。
     ///   零进度时也立刻消失而非保留"上次跑了 X"残留——那是设置页「运行状态」区的
     ///   职责，sidebar 只反映"当前是否在跑"。
-    /// - 不接 hover popover、不接点击跳转：HOM-126 任务描述写"hover 显示 popover
-    ///   看详情，点击进入设置「运行状态」区域"，但 macOS Settings scene 缺乏程序化
-    ///   切换到指定 Tab 的标准入口（NSApplication.shared.sendAction(#selector:Settings 
-    ///   缺自定义 selector）。第一版只放静态指示行，hover/click 留 P2。
+    /// - 点击 / hover 展示 popover：进度、成功 / 忽略 / 失败计数、查看队列、打开 AI 设置。
+    ///   Settings Tab 跳转复用 `starcatJumpToSettingsTab`，不新增跨 scene 路由机制。
     /// - 没有 .padding(.bottom) 是因为 background(.bar) 已经画到底；放在 VStack
     ///   末尾天然贴底，与 sidebarList 之间有 4pt 视觉间隙（通过 padding(.top, 4) 实现）。
     @ViewBuilder
     private var autoTidyFooter: some View {
         if autoTidyScheduler.isAutoTidyRunning {
-            HStack(spacing: 6) {
-                ProgressView()
-                    .controlSize(.mini)
-                    // 让 indeterminate spinner 与文字基线对齐（macOS 默认会偏高 1-2pt）
-                    .frame(width: 12, height: 12)
-                // 2026-06-16:走 `String.l10n(_:)` wrapper,绕开 `String(localized:)`
-                // 不响应 LocaleStore 的问题(实测 `locale:` 参数无效)。
-                // 详见 `Starcat/Shared/Utilities/L10n.swift` 顶部注释。
-                Text(String(format: String.l10n("sidebar.autoTidy.runningFormat"),
-                            autoTidyScheduler.autoTidyProgressText))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 0)
+            Button {
+                showAutoTidyPopover.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.mini)
+                        // 让 indeterminate spinner 与文字基线对齐（macOS 默认会偏高 1-2pt）
+                        .frame(width: 12, height: 12)
+                    // 2026-06-16:走 `String.l10n(_:)` wrapper,绕开 `String(localized:)`
+                    // 不响应 LocaleStore 的问题(实测 `locale:` 参数无效)。
+                    // 详见 `Starcat/Shared/Utilities/L10n.swift` 顶部注释。
+                    Text(String(format: String.l10n("sidebar.autoTidy.runningFormat"),
+                                autoTidyScheduler.autoTidyProgressText))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
             }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
             .background(Color.secondary.opacity(0.06))
             .help(Text("sidebar.autoTidy.tooltip"))
+            .onHover { hovering in
+                if hovering {
+                    showAutoTidyPopover = true
+                }
+            }
+            .popover(isPresented: $showAutoTidyPopover, arrowEdge: .bottom) {
+                autoTidyPopover
+                    .appLocaleEnvironment()
+            }
             // 2026-06-15:reduceMotion 兜底——transition 降为 .identity 瞬切,
             // 外层 .animation 同步置 nil,避免 0.2s 包裹。
             .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: autoTidyScheduler.isAutoTidyRunning)
+        }
+    }
+
+    private var autoTidyPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.purple)
+                Text("sidebar.autoTidy.popover.title")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    showAutoTidyPopover = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                ProgressView(
+                    value: Double(autoTidyScheduler.autoTidyFinishedCount),
+                    total: Double(max(autoTidyScheduler.autoTidyTotalCount, 1))
+                )
+                Text(String(format: String.l10n("sidebar.autoTidy.popover.progressFormat"),
+                            autoTidyScheduler.autoTidyFinishedCount,
+                            autoTidyScheduler.autoTidyTotalCount))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            HStack(spacing: 8) {
+                autoTidyCounter(
+                    title: "sidebar.autoTidy.popover.completed",
+                    count: autoTidyScheduler.autoTidyCompletedCount,
+                    color: .green,
+                    backgroundOpacity: 0.12
+                )
+                autoTidyCounter(
+                    title: "sidebar.autoTidy.popover.ignored",
+                    count: autoTidyScheduler.autoTidyIgnoredCount,
+                    color: .secondary,
+                    backgroundOpacity: 0.08
+                )
+                autoTidyCounter(
+                    title: "sidebar.autoTidy.popover.failed",
+                    count: autoTidyScheduler.autoTidyFailedCount,
+                    color: .red,
+                    backgroundOpacity: 0.12
+                )
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    showAutoTidyPopover = false
+                    onShowBatchAIPanel?()
+                } label: {
+                    Label("sidebar.autoTidy.popover.viewQueue", systemImage: "rectangle.stack")
+                }
+
+                Button {
+                    showAutoTidyPopover = false
+                    openAISettings()
+                } label: {
+                    Label("sidebar.autoTidy.popover.openAISettings", systemImage: "gearshape")
+                }
+            }
+            .controlSize(.small)
+        }
+        .padding(14)
+        .frame(width: 290)
+    }
+
+    private func autoTidyCounter(
+        title: LocalizedStringKey,
+        count: Int,
+        color: Color,
+        backgroundOpacity: Double
+    ) -> some View {
+        VStack(spacing: 2) {
+            Text(verbatim: "\(count)")
+                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .foregroundStyle(color)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .background(color.opacity(backgroundOpacity), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private func openAISettings() {
+        openSettings()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: "ai")
         }
     }
 
@@ -456,7 +587,11 @@ struct SidebarView: View {
 
     private func selectRootPage(_ page: SidebarRootPage) {
         guard selectedPage != page else { return }
-        selectedPage = page
+        if let onSelectRootPage {
+            onSelectRootPage(page)
+        } else {
+            selectedPage = page
+        }
     }
 
     /// HOM-43：Tags header 需要同时有"整行可折叠"和独立的标签管理按钮。

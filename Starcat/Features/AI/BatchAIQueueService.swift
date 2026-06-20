@@ -71,6 +71,7 @@ final class BatchAIQueueService {
     private let tagRepository: any TagRepositoryProtocol
     private let repoTagRepository: any RepoTagRepositoryProtocol
     private let aiSummaryRepository: any AISummaryRepositoryProtocol
+    private let entitlementGate: EntitlementGate?
 
     /// 标签应用后通知外部刷新 Sidebar 计数 / 当前列表。
     /// 设计上用闭包而非 NotificationCenter，避免跨模块字符串通知名飘移。
@@ -90,12 +91,14 @@ final class BatchAIQueueService {
         insightService: RepoAIInsightService,
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
-        aiSummaryRepository: any AISummaryRepositoryProtocol
+        aiSummaryRepository: any AISummaryRepositoryProtocol,
+        entitlementGate: EntitlementGate? = nil
     ) {
         self.insightService = insightService
         self.tagRepository = tagRepository
         self.repoTagRepository = repoTagRepository
         self.aiSummaryRepository = aiSummaryRepository
+        self.entitlementGate = entitlementGate
     }
 
     // MARK: - 派生状态（panel UI 用）
@@ -142,6 +145,14 @@ final class BatchAIQueueService {
     func start(repos: [Repo], options: BatchAIQueueOptions, silent: Bool = false) {
         guard !isRunning else {
             AppLog.ai.warning("[batch-ai] start() ignored: already running")
+            return
+        }
+        do {
+            try entitlementGate?.requirePro(.batchAI)
+        } catch {
+            // 批量整理可能由 UI 或自动调度器触发。这里做底层硬门控，避免绕过付费墙后
+            // 仍能直接启动队列；UI 入口会把同一个错误转换成 ProPaywallSheet。
+            AppLog.ai.warning("[batch-ai] start() blocked by entitlement: \(error.localizedDescription, privacy: .public)")
             return
         }
         guard options.isValidForStart, !repos.isEmpty else {

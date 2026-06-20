@@ -34,6 +34,7 @@ import SwiftUI
 struct TagManagementView: View {
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppDependencies.self) private var dependencies
 
     /// 由 HomeView 注入；@Bindable 让 selection 双向绑定到 List。
     @State var viewModel: TagManagementViewModel
@@ -80,6 +81,9 @@ struct TagManagementView: View {
             }
             .appLocaleEnvironment()
         }
+        .sheet(item: tagPaywallBinding) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
+        }
         .alert("tagManagement.deleteTitle", isPresented: $showDeleteAlert) {
             Button("action.delete", role: .destructive) {
                 Task { await viewModel.delete(ids: viewModel.selection) }
@@ -104,6 +108,17 @@ struct TagManagementView: View {
     }
 
     // MARK: - 子视图
+
+    private var tagPaywallBinding: Binding<ProPaywallContext?> {
+        Binding(
+            get: { viewModel.paywallContext },
+            set: { newValue in
+                if newValue == nil {
+                    viewModel.dismissPaywall()
+                }
+            }
+        )
+    }
 
     private var titleBar: some View {
         HStack {

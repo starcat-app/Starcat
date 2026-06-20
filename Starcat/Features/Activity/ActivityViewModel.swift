@@ -78,6 +78,12 @@ final class ActivityViewModel {
     /// Security 扫描 repo 上限，防止 starred 过多时 API 风暴。
     static let securityScanMaxRepos = 200
 
+    /// Security Advisory 扫描并发上限。
+    ///
+    /// 原实现最多 200 个 repo 串行请求，后台刷新会挂很久；这里采用小并发池，既缩短
+    /// announcement 刷新时间，又避免对 GitHub API 造成突发洪峰。
+    private let securityScanConcurrency = 6
+
     /// 30 天数据清理冷却：24 小时（方案 §5.4 决策 P6）。
     ///
     /// `cleanupIfNeeded()` 读 `activity_sync_state.last_cleanup_at`，距上次清理 < 24h 直接跳过。
@@ -175,6 +181,27 @@ final class ActivityViewModel {
         var releases: [ReleaseTimelineEntry]
         var events: [ActivityEventRecord]
         var announcements: [ActivityAnnouncementRecord]
+    }
+
+    /// Security 扫描任务输入。只保留请求和日志需要的字符串，确保 TaskGroup 捕获值可 Sendable。
+    private struct SecurityScanJob: Sendable {
+        let owner: String
+        let repo: String
+        let fullName: String
+    }
+
+    /// Security Advisory 网络结果草稿。
+    ///
+    /// 不直接从 TaskGroup 返回 `ActivityAnnouncementRecord`，避免把 GRDB Record 为了并发实现
+    /// 细节扩大标注为 Sendable；回到 ViewModel 后再组装持久化 Record。
+    private struct SecurityAnnouncementDraft: Sendable {
+        let ghsaId: String
+        let summary: String
+        let description: String?
+        let htmlUrl: String?
+        let severity: String?
+        let publishedAt: String?
+        let repoFullName: String
     }
 
     // MARK: - 依赖
@@ -489,6 +516,12 @@ final class ActivityViewModel {
                     AppLog.network.warning(
                         "Activity blog RSS refresh failed: \(error.localizedDescription, privacy: .public)"
                     )
+                    let friendly = UserFacingError.map(
+                        error,
+                        operation: String.l10n("diagnostics.operation.loadActivityAnnouncements"),
+                        service: "GitHub Blog"
+                    )
+                    friendly.record(level: .warning, category: "activity", operation: "blogRSS.refresh", service: "github-blog")
                 }
             }
 
@@ -652,6 +685,12 @@ final class ActivityViewModel {
                 AppLog.network.warning(
                     "Activity blog RSS supplement failed: \(error.localizedDescription, privacy: .public)"
                 )
+                let friendly = UserFacingError.map(
+                    error,
+                    operation: String.l10n("diagnostics.operation.loadActivityAnnouncements"),
+                    service: "GitHub Blog"
+                )
+                friendly.record(level: .warning, category: "activity", operation: "blogRSS.supplement", service: "github-blog")
             }
         }
 
@@ -777,13 +816,11 @@ final class ActivityViewModel {
         categoryFilterTask?.cancel()
         isApplyingCategoryFilter = false
 
-        let filtered = Self.computeFilteredItems(
-            source: source,
-            category: currentCategory,
-            timeSort: timeSort(for: currentCategory)
-        )
-        filteredItemsCache[currentCategory] = filtered
-        commitFilteredSlice(from: filtered, bumpRevision: false, resetPage: true)
+        // `.all` 的去重 + 排序在数据多时会明显占用 CPU。这里必须复用
+        // `applyCategoryFilter` 的后台分支，不能在 publish 阶段直接同步调用
+        // `computeFilteredItems`，否则首次从 Manage / Trending 切进 Activity All
+        // 会绕过 v3.1 的主线程保护并造成卡顿。
+        applyCategoryFilter(currentCategory, bumpRevision: false, resetPage: true)
 
         if currentCategory != .all {
             prewarmFilterCache(for: .all)
@@ -804,13 +841,19 @@ final class ActivityViewModel {
     private func recordEventsLoadError(_ error: Error, category: ActivityCategory, snapshot: AggregateSnapshot) {
         let followingCount = makeFollowingItems(snapshot.events).count
         let shouldSurface = (category == .following || category == .all) && followingCount == 0
+        let friendly = UserFacingError.map(
+            error,
+            operation: String.l10n("diagnostics.operation.loadActivity"),
+            service: "GitHub"
+        )
         if shouldSurface {
-            loadError = error.localizedDescription
+            loadError = friendly.message
         } else {
             AppLog.network.warning(
                 "Activity events refresh failed: \(error.localizedDescription, privacy: .public)"
             )
         }
+        friendly.record(level: shouldSurface ? .error : .warning, category: "activity", operation: "events.refresh", service: "github")
     }
 
     /// Security 扫描放后台：最多 200 个串行 API，不能挡切分类 / 首屏。
@@ -837,6 +880,12 @@ final class ActivityViewModel {
             AppLog.network.warning(
                 "Activity security refresh failed: \(error.localizedDescription, privacy: .public)"
             )
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.loadActivitySecurity"),
+                service: "GitHub"
+            )
+            friendly.record(level: .warning, category: "activity", operation: "security.refresh", service: "github")
         }
     }
 
@@ -1027,44 +1076,25 @@ final class ActivityViewModel {
 
         let now = Date()
         let nowISO = Self.isoString(now)
-        var allRecords: [ActivityAnnouncementRecord] = []
-
-        for repo in candidates {
-            let parts = repo.fullName.split(separator: "/", maxSplits: 1).map(String.init)
-            guard parts.count == 2 else { continue }
-            let owner = parts[0]
-            let name = parts[1]
-
-            do {
-                let response = try await apiClient.securityAdvisories(owner: owner, repo: name)
-                let records = response.value.map { dto -> ActivityAnnouncementRecord in
-                    let url = dto.htmlUrl ?? "https://github.com/advisories/\(dto.ghsaId)"
-                    let createdAtISO = dto.publishedAt ?? nowISO
-                    return ActivityAnnouncementRecord(
-                        id: AnnouncementSource.security.makeId(nativeId: dto.ghsaId),
-                        source: AnnouncementSource.security.rawValue,
-                        title: dto.summary,
-                        bodyMarkdown: dto.description,
-                        author: nil,
-                        url: url,
-                        repoName: repo.fullName,
-                        categories: dto.severity.map { AnnouncementCategoriesCodec.encode([$0]) } ?? nil,
-                        isRead: false,
-                        createdAt: createdAtISO,
-                        fetchedAt: nowISO
-                    )
-                }
-                allRecords.append(contentsOf: records)
-            } catch NetworkError.notFound {
-                continue
-            } catch NetworkError.clientError(let code, _) where code == 403 || code == 404 {
-                continue
-            } catch {
-                AppLog.network.warning(
-                    "Activity security skip \(repo.fullName): \(error.localizedDescription, privacy: .public)"
-                )
-                continue
-            }
+        let jobs = candidates.compactMap(Self.makeSecurityScanJob(repo:))
+        let drafts = await fetchSecurityAnnouncementDrafts(
+            jobs: jobs,
+            concurrencyLimit: securityScanConcurrency
+        )
+        let allRecords = drafts.map { draft -> ActivityAnnouncementRecord in
+            ActivityAnnouncementRecord(
+                id: AnnouncementSource.security.makeId(nativeId: draft.ghsaId),
+                source: AnnouncementSource.security.rawValue,
+                title: draft.summary,
+                bodyMarkdown: draft.description,
+                author: nil,
+                url: draft.htmlUrl ?? "https://github.com/advisories/\(draft.ghsaId)",
+                repoName: draft.repoFullName,
+                categories: draft.severity.map { AnnouncementCategoriesCodec.encode([$0]) } ?? nil,
+                isRead: false,
+                createdAt: draft.publishedAt ?? nowISO,
+                fetchedAt: nowISO
+            )
         }
 
         do {
@@ -1073,11 +1103,94 @@ final class ActivityViewModel {
             }
             try await activitySyncStateRepository.updateSecurity(lastFetchedAt: now)
             AppLog.network.info(
-                "Activity security refreshed: repos=\(candidates.count, privacy: .public), advisories=\(allRecords.count, privacy: .public)"
+                "Activity security refreshed: repos=\(jobs.count, privacy: .public), advisories=\(allRecords.count, privacy: .public)"
             )
             return .updated
         } catch {
             return .failed(error)
+        }
+    }
+
+    private static func makeSecurityScanJob(repo: Repo) -> SecurityScanJob? {
+        let parts = repo.fullName.split(separator: "/", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        return SecurityScanJob(owner: parts[0], repo: parts[1], fullName: repo.fullName)
+    }
+
+    /// 受限并发拉取 Security Advisory 草稿。
+    ///
+    /// 每个子任务只返回 Sendable 草稿；404/403 与串行旧实现一致静默跳过，其它错误只 log
+    /// 后跳过，不影响整批扫描。
+    private func fetchSecurityAnnouncementDrafts(
+        jobs: [SecurityScanJob],
+        concurrencyLimit: Int
+    ) async -> [SecurityAnnouncementDraft] {
+        guard !jobs.isEmpty else { return [] }
+        let apiClient = self.apiClient
+        let limit = max(1, concurrencyLimit)
+
+        return await withTaskGroup(of: [SecurityAnnouncementDraft].self) { group in
+            var nextIndex = 0
+
+            func scheduleNext() {
+                guard nextIndex < jobs.count else { return }
+                let job = jobs[nextIndex]
+                nextIndex += 1
+                group.addTask {
+                    await Self.fetchSecurityAnnouncementDrafts(for: job, apiClient: apiClient)
+                }
+            }
+
+            for _ in 0..<min(limit, jobs.count) {
+                scheduleNext()
+            }
+
+            var result: [SecurityAnnouncementDraft] = []
+            while let batch = await group.next() {
+                result.append(contentsOf: batch)
+                scheduleNext()
+            }
+            return result
+        }
+    }
+
+    nonisolated private static func fetchSecurityAnnouncementDrafts(
+        for job: SecurityScanJob,
+        apiClient: any GitHubAPIClientProtocol
+    ) async -> [SecurityAnnouncementDraft] {
+        do {
+            let response = try await apiClient.securityAdvisories(owner: job.owner, repo: job.repo)
+            return response.value.map { dto in
+                SecurityAnnouncementDraft(
+                    ghsaId: dto.ghsaId,
+                    summary: dto.summary,
+                    description: dto.description,
+                    htmlUrl: dto.htmlUrl,
+                    severity: dto.severity,
+                    publishedAt: dto.publishedAt,
+                    repoFullName: job.fullName
+                )
+            }
+        } catch NetworkError.notFound {
+            return []
+        } catch NetworkError.clientError(let code, _) where code == 403 || code == 404 {
+            return []
+        } catch {
+            AppLog.network.warning(
+                "Activity security skip \(job.fullName): \(error.localizedDescription, privacy: .public)"
+            )
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.loadActivitySecurity"),
+                service: "GitHub"
+            )
+            friendly.record(
+                level: .warning,
+                category: "activity",
+                operation: "securityAdvisories.fetch",
+                service: "github"
+            )
+            return []
         }
     }
 

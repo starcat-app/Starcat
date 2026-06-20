@@ -536,7 +536,7 @@
                 <li><strong>不</strong>读取您的 GitHub 密码（仅 OAuth）</li>
                 <li><strong>不</strong>上传您的 AI API Key 至我们服务器</li>
                 <li><strong>不</strong>将您的笔记用于训练 AI 模型</li>
-                <li>核心数据<strong>仅</strong>本地存储或您自己的 iCloud</li>
+                <li>核心数据<strong>仅</strong>本地存储；iCloud 同步计划作为后续 Pro 功能上线</li>
                 <li>采用最小必要原则，只收集必须收集的信息</li>
             </ul>
         </div>
@@ -660,7 +660,7 @@
             <h2><span class="num">04</span>信息的用途</h2>
             <p>我们仅在以下场景内使用收集到的信息：</p>
             <ol>
-                <li><strong>提供与维护核心功能</strong>：同步 Stars、本地全文搜索、标签管理、笔记保存、CloudKit 同步；</li>
+                <li><strong>提供与维护核心功能</strong>：同步 Stars、本地全文搜索、标签管理、笔记保存，以及后续 CloudKit 同步；</li>
                 <li><strong>验证您的身份与订阅权益</strong>：通过 GitHub OAuth 与 Apple StoreKit 验证；</li>
                 <li><strong>提供 AI 增强能力</strong>（需您主动启用）：AI 摘要、标签推荐、语义搜索、推荐与健康度评估；</li>
                 <li><strong>修复缺陷与改进体验</strong>：基于您自愿上报的诊断信息；</li>
@@ -721,7 +721,7 @@
             </table>
 
             <h3>5.1 CloudKit 同步</h3>
-            <p>启用 iCloud 同步后，您的用户内容将通过 Apple CloudKit 存储在<strong>您自己的 iCloud 私有数据库</strong>中（而非我们的服务器）。我们<strong>无法</strong>访问您 iCloud 中的任何内容。同步遵循 Apple 公布的端到端加密机制，详见 <a href="https://support.apple.com/zh-cn/HT202303" target="_blank" rel="noopener">Apple iCloud 数据安全说明</a>。</p>
+            <p><strong>当前版本的 Starcat 尚未提供 iCloud / CloudKit 同步。</strong>该功能计划在后续版本作为 Starcat Pro 权益上线。未来当 iCloud 同步可用且由您主动启用后，您的用户内容将通过 Apple CloudKit 存储在<strong>您自己的 iCloud 私有数据库</strong>中（而非我们的服务器）。我们<strong>无法</strong>访问您 iCloud 中的任何内容。同步遵循 Apple 公布的端到端加密机制，详见 <a href="https://support.apple.com/zh-cn/HT202303" target="_blank" rel="noopener">Apple iCloud 数据安全说明</a>。</p>
             <h3>5.2 自建 AI 代理（选用）</h3>
             <p>当您选择使用我们提供的"Starcat Pro"AI 代理时，请求将通过我们部署的服务器中转至底层 AI 提供商。我们的代理：<strong>不</strong>持久化您的请求内容；<strong>不</strong>使用您的内容训练模型；仅保留必要的<strong>请求时间、配额计数、错误码</strong>用于配额管理与故障排查。</p>
         </section>
@@ -921,6 +921,7 @@
     <div class="links">
         <a href="./eula-zh.html">用户许可协议</a>
         <a href="./privacy-zh.html">隐私政策</a>
+        <a href="./changelog.html">更新记录</a>
         <a href="mailto:dong4j@gmail.com">联系我们</a>
         <a href="https://starcat.ink" target="_blank" rel="noopener">官方网站</a>
     </div>

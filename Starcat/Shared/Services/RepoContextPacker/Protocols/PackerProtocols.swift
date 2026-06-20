@@ -126,7 +126,7 @@ public struct XmlMetadata: Sendable {
 
 // MARK: - Pass 4：ContextWriter
 
-public protocol ContextWriting: Sendable {
+public protocol ContextWriting {
     /// 原子写盘：`context.xml` + `metadata.json` 到 `outputBaseDir/<owner>/<repo>/`。
     /// 用 `.tmp → rename` 保证半成品不被消费方读到。
     ///

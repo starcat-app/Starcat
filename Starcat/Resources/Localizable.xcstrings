@@ -9817,6 +9817,438 @@
         }
       }
     },
+    "onboarding.action.browseTrending" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browse Trending"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先逛 Trending"
+          }
+        }
+      }
+    },
+    "onboarding.action.signInSync" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in & Sync Stars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录同步 Stars"
+          }
+        }
+      }
+    },
+    "onboarding.exit.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Everything is ready. Happy exploring."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一切就绪，尽情探索吧。"
+          }
+        }
+      }
+    },
+    "onboarding.exit.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome aboard!"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "欢迎加入 Starcat"
+          }
+        }
+      }
+    },
+    "onboarding.action.next" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一步"
+          }
+        }
+      }
+    },
+    "onboarding.action.skip" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳过"
+          }
+        }
+      }
+    },
+    "onboarding.step1.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start from Trending, Weekly picks, and AI-assisted recommendations to find projects worth starring before they disappear in the feed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 Trending、周刊精选和 AI 辅助推荐开始，先发现真正值得收藏的项目。"
+          }
+        }
+      }
+    },
+    "onboarding.step1.highlight.recommendations" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI recommendations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 推荐"
+          }
+        }
+      }
+    },
+    "onboarding.step1.highlight.trending" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trending"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "热门项目"
+          }
+        }
+      }
+    },
+    "onboarding.step1.highlight.weekly" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weekly picks"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "周刊精选"
+          }
+        }
+      }
+    },
+    "onboarding.step1.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discover what is worth starring"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发现值得收藏的项目"
+          }
+        }
+      }
+    },
+    "onboarding.step2.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open a repository and let Starcat help you read it: AI summaries explain the project, CodeFlow reveals structure, and README stays one click away."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开一个仓库后，Starcat 用 AI 摘要解释项目，用 CodeFlow 展示结构，并保留完整 README 阅读体验。"
+          }
+        }
+      }
+    },
+    "onboarding.step2.highlight.codeflow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodeFlow graph"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码图谱"
+          }
+        }
+      }
+    },
+    "onboarding.step2.highlight.readme" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README reading"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README 阅读"
+          }
+        }
+      }
+    },
+    "onboarding.step2.highlight.summary" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI summary"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 摘要"
+          }
+        }
+      }
+    },
+    "onboarding.step2.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Understand a repo faster"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更快理解一个仓库"
+          }
+        }
+      }
+    },
+    "onboarding.step3.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use global search and semantic search to find the repo you vaguely remember, even when the exact name or language is gone from memory."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用全局搜索和语义搜索找回那些只记得大概用途、却忘了名字和语言的仓库。"
+          }
+        }
+      }
+    },
+    "onboarding.step3.highlight.filters" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filters"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "过滤器"
+          }
+        }
+      }
+    },
+    "onboarding.step3.highlight.global" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Global search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全局搜索"
+          }
+        }
+      }
+    },
+    "onboarding.step3.highlight.semantic" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Semantic search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语义搜索"
+          }
+        }
+      }
+    },
+    "onboarding.step3.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find anything again"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再次找回任何收藏"
+          }
+        }
+      }
+    },
+    "onboarding.step4.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in when you are ready. Starcat syncs your Stars locally, keeps private notes and status, and tracks releases for the projects that matter."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备好后登录 GitHub，Starcat 会本地同步你的 Stars，保存私有笔记和状态，并追踪重要项目的 Release。"
+          }
+        }
+      }
+    },
+    "onboarding.step4.highlight.notes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Private notes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "私有笔记"
+          }
+        }
+      }
+    },
+    "onboarding.step4.highlight.releases" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release tracking"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release 追踪"
+          }
+        }
+      }
+    },
+    "onboarding.step4.highlight.sync" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stars sync"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stars 同步"
+          }
+        }
+      }
+    },
+    "onboarding.step4.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Build your developer knowledge base"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "构建你的开发者知识库"
+          }
+        }
+      }
+    },
+    "onboarding.stepCounterFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Step %lld of %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %lld / %lld 步"
+          }
+        }
+      }
+    },
     "openssf.action.openViewer" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13826,6 +14258,57 @@
         }
       }
     },
+    "search.filters.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filters"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "筛选"
+          }
+        }
+      }
+    },
+    "search.filters.toggle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filters"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "筛选"
+          }
+        }
+      }
+    },
+    "search.filters.toggle.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show or hide advanced filters"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示或隐藏高级筛选"
+          }
+        }
+      }
+    },
     "search.github.anonymous" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14842,6 +15325,62 @@
             "value" : "自定义模型..."
           }
         }
+      }
+    },
+    "settings.ai.locked.benefit.billing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model usage is billed by your own provider account" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型调用费用由你自己的服务商账户承担" } }
+      }
+    },
+    "settings.ai.locked.benefit.byok" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Configure OpenAI-compatible providers with your own API keys" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "配置 OpenAI-compatible 服务商和自己的 API Key" } }
+      }
+    },
+    "settings.ai.locked.benefit.workflow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unlock summaries, tags, chat, translation, semantic search, and batch cleanup" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "解锁摘要、标签、对话、翻译、语义搜索与批量整理" } }
+      }
+    },
+    "settings.ai.locked.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Pro unlocks the AI workflow layer. Your API keys remain local and are never sent to Starcat servers." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Pro 解锁 AI 工作流层；你的 API Key 仍只保存在本机，不会发送到 Starcat 服务器。" } }
+      }
+    },
+    "settings.ai.locked.paywallMessage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI service configuration and BYOK workflows require Starcat Pro." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 服务配置与 BYOK 工作流需要 Starcat Pro。" } }
+      }
+    },
+    "settings.ai.locked.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Bring your own key after upgrading. Pro unlocks Starcat's AI workflow layer; provider API costs still belong to your account." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "升级后即可使用自己的 Key。Pro 解锁 Starcat 的 AI 工作流层，服务商 API 费用仍由你的账户承担。" } }
+      }
+    },
+    "settings.ai.locked.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI service is a Pro feature" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 服务是 Pro 功能" } }
+      }
+    },
+    "settings.ai.locked.upgrade" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Upgrade to Pro" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "升级到 Pro" } }
       }
     },
     "settings.ai.discoveredModels.empty" : {
@@ -17835,13 +18374,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Upcoming Pro-only AI capabilities will land here first."
+            "value" : "BYOK configuration plus summaries, tags, chat, batch cleanup, README translation, and semantic search."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "后续 Pro 专属 AI 功能会优先在这里接入。"
+            "value" : "BYOK 配置，以及摘要、标签、对话、批量整理、README 翻译与语义搜索。"
           }
         }
       }
@@ -17852,13 +18391,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Early access to AI features"
+            "value" : "AI workflows with your own key"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI 能力优先体验"
+            "value" : "自带 Key 的 AI 工作流"
           }
         }
       }
@@ -17988,13 +18527,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This is a front-end simulation only — no Apple subscription or charge is triggered. Real subscriptions will reuse the same success flow."
+            "value" : "Subscriptions are processed by Apple. You can restore purchases or manage the subscription from your Apple Account at any time."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前为前端模拟流程，不会发起 Apple 订阅或扣费。真实订阅接入后将复用同一套成功反馈。"
+            "value" : "订阅由 Apple 处理。你可以随时恢复购买，或前往 Apple 账户管理订阅。"
           }
         }
       }
@@ -18022,13 +18561,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Activate to preview the Pro success feedback and avatar badge."
+            "value" : "Subscribe to unlock Pro features for AI, search, release tracking, and higher local limits."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "开通后可立即预览 Pro 成功反馈与头像标识。"
+            "value" : "订阅后解锁 AI、搜索、Release 追踪与更高本地额度。"
           }
         }
       }
@@ -18048,6 +18587,907 @@
             "value" : "Pro 已开通，欢迎加入 Starcat Pro。"
           }
         }
+      }
+    },
+    "settings.pro.account.footer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offer codes are redeemed with Apple's sheet. Subscription management opens your Apple Account page."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优惠码通过 Apple 官方窗口兑换；订阅管理会打开你的 Apple 账户页面。"
+          }
+        }
+      }
+    },
+    "settings.pro.account.section" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "账户"
+          }
+        }
+      }
+    },
+    "settings.pro.benefits.footer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro focuses on advanced workflows first. Reserved items stay visible so the subscription scope is explicit."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro 优先覆盖进阶工作流；预留项会明确展示，避免订阅范围含糊。"
+          }
+        }
+      }
+    },
+    "settings.pro.plan.available" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Available plan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选方案"
+          }
+        }
+      }
+    },
+    "settings.pro.plan.current" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current plan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前方案"
+          }
+        }
+      }
+    },
+    "settings.pro.plan.subscribeFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subscribe · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅 · %@"
+          }
+        }
+      }
+    },
+    "settings.pro.status.active" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro access is active on this Mac."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 Mac 已启用 Pro 权益。"
+          }
+        }
+      }
+    },
+    "settings.pro.status.expiration" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renews or expires on"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "续订或到期时间"
+          }
+        }
+      }
+    },
+    "settings.pro.status.footer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Pro entitlement is read from StoreKit and mirrored locally for feature gates."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro 权益来自 StoreKit，并同步到本地镜像用于功能门控。"
+          }
+        }
+      }
+    },
+    "settings.pro.status.free" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You are using the free plan."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前使用免费方案。"
+          }
+        }
+      }
+    },
+    "paywall.activated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro is active."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro 已开通。"
+          }
+        }
+      }
+    },
+    "paywall.benefit.ai" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "BYOK AI configuration, summaries, tags, chat, and batch cleanup"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "BYOK AI 配置、摘要、标签、对话与批量整理"
+          }
+        }
+      }
+    },
+    "paywall.benefit.limits" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Higher limits for tags and release subscriptions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更高的标签与 Release 订阅额度"
+          }
+        }
+      }
+    },
+    "paywall.benefit.release" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release tracking beyond the free limit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "超过免费额度的 Release 追踪"
+          }
+        }
+      }
+    },
+    "paywall.benefit.search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Semantic search and web search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语义搜索与网页搜索"
+          }
+        }
+      }
+    },
+    "paywall.button.close" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        }
+      }
+    },
+    "paywall.button.manage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理"
+          }
+        }
+      }
+    },
+    "paywall.button.restore" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复购买"
+          }
+        }
+      }
+    },
+    "paywall.button.redeemOfferCode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redeem Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "兑换优惠码"
+          }
+        }
+      }
+    },
+    "paywall.subtitleFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ requires Starcat Pro."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 需要 Starcat Pro。"
+          }
+        }
+      }
+    },
+    "paywall.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock Starcat Pro"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解锁 Starcat Pro"
+          }
+        }
+      }
+    },
+    "settings.pro.benefit.cloud.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloud sync is reserved for a later Pro milestone."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CloudKit 同步预留给后续 Pro 里程碑。"
+          }
+        }
+      }
+    },
+    "settings.pro.benefit.cloud.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloud sync ready"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CloudKit 同步预留"
+          }
+        }
+      }
+    },
+    "settings.pro.benefit.release.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Track more repositories for release updates and notifications."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追踪更多仓库的 Release 更新与通知。"
+          }
+        }
+      }
+    },
+    "settings.pro.benefit.release.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release tracking"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release 追踪"
+          }
+        }
+      }
+    },
+    "settings.pro.benefit.search.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use embeddings and web results for deeper repository discovery."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用向量索引与网页结果进行更深入的仓库发现。"
+          }
+        }
+      }
+    },
+    "settings.pro.benefit.search.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Advanced search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高级搜索"
+          }
+        }
+      }
+    },
+    "settings.pro.benefits.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Included"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含权益"
+          }
+        }
+      }
+    },
+    "settings.pro.button.manage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage Subscription"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理订阅"
+          }
+        }
+      }
+    },
+    "settings.pro.button.restore" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore Purchases"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复购买"
+          }
+        }
+      }
+    },
+    "settings.pro.button.redeemOfferCode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redeem Offer Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "兑换优惠码"
+          }
+        }
+      }
+    },
+    "settings.pro.offerCode.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offer codes are created in App Store Connect. Starcat opens Apple's redemption sheet — codes are not validated on Starcat servers."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优惠码在 App Store Connect 创建。Starcat 会打开 Apple 官方兑换窗口，不在自建服务器校验。"
+          }
+        }
+      }
+    },
+    "settings.pro.debug.activate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activate debug Pro"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调试开通 Pro"
+          }
+        }
+      }
+    },
+    "settings.pro.debug.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Debug controls only change the local entitlement mirror."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调试按钮只修改本地权益镜像。"
+          }
+        }
+      }
+    },
+    "settings.pro.debug.reset" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset debug Pro"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置调试 Pro"
+          }
+        }
+      }
+    },
+    "settings.pro.debug.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Debug"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调试"
+          }
+        }
+      }
+    },
+    "settings.pro.products.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No subscription products are available. Check App Store Connect or the local StoreKit configuration."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前没有可用订阅商品，请检查 App Store Connect 或本地 StoreKit 配置。"
+          }
+        }
+      }
+    },
+    "settings.pro.products.loading" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading products…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加载商品…"
+          }
+        }
+      }
+    },
+    "settings.pro.products.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plans"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅方案"
+          }
+        }
+      }
+    },
+    "subscription.error.productsUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subscription products are unavailable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅商品暂不可用。"
+          }
+        }
+      }
+    },
+    "subscription.error.purchaseCancelled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purchase was cancelled."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "购买已取消。"
+          }
+        }
+      }
+    },
+    "subscription.error.purchasePending" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purchase is pending approval."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "购买正在等待批准。"
+          }
+        }
+      }
+    },
+    "subscription.error.restoreFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to restore purchases."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复购买失败。"
+          }
+        }
+      }
+    },
+    "subscription.error.offerCodeWindowUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to open the offer code sheet. Make sure the Starcat window is active and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法打开优惠码兑换窗口。请确保 Starcat 主窗口在前台后重试。"
+          }
+        }
+      }
+    },
+    "subscription.error.offerCodeRedemptionFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offer code redemption failed. Check the code and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优惠码兑换失败，请检查码是否有效后重试。"
+          }
+        }
+      }
+    },
+    "subscription.error.unknownFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subscription failed: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅失败：%@"
+          }
+        }
+      }
+    },
+    "subscription.error.unverifiedTransaction" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The transaction could not be verified."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "交易无法通过验证。"
+          }
+        }
+      }
+    },
+    "subscription.feature.aiChat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI chat" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 对话" } }
+      }
+    },
+    "subscription.feature.aiSummary" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI summary" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 摘要" } }
+      }
+    },
+    "subscription.feature.aiTags" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI tag suggestions" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 标签推荐" } }
+      }
+    },
+    "subscription.feature.anySearchWeb" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "web search" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网页搜索" } }
+      }
+    },
+    "subscription.feature.autoOrganize" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "automatic organization" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自动整理" } }
+      }
+    },
+    "subscription.feature.batchAI" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "batch AI cleanup" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "批量 AI 整理" } }
+      }
+    },
+    "subscription.feature.cloudSync" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "CloudKit sync" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "CloudKit 同步" } }
+      }
+    },
+    "subscription.feature.codeFlow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "CodeFlow code graph" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "CodeFlow 代码图谱" } }
+      }
+    },
+    "subscription.feature.readmeTranslation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "README translation" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "README 翻译" } }
+      }
+    },
+    "subscription.feature.releaseSubscription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "release subscriptions" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Release 订阅" } }
+      }
+    },
+    "subscription.feature.repoContext" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "repository code context" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库代码上下文" } }
+      }
+    },
+    "subscription.feature.semanticSearch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "semantic search" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语义搜索" } }
+      }
+    },
+    "subscription.feature.tagCreation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "more tags" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "更多标签" } }
+      }
+    },
+    "subscription.gate.releaseLimitFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Free users can track up to %d release subscriptions." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "免费用户最多可追踪 %d 个 Release 订阅。" } }
+      }
+    },
+    "subscription.gate.requiresProFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ requires Starcat Pro." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 需要 Starcat Pro。" } }
+      }
+    },
+    "subscription.gate.tagLimitFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Free users can create up to %d tags." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "免费用户最多可创建 %d 个标签。" } }
       }
     },
     "settings.services.apiKey" : {
@@ -20815,6 +22255,118 @@
         }
       }
     },
+    "sidebar.autoTidy.popover.completed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已应用"
+          }
+        }
+      }
+    },
+    "sidebar.autoTidy.popover.failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败"
+          }
+        }
+      }
+    },
+    "sidebar.autoTidy.popover.ignored" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ignored"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已忽略"
+          }
+        }
+      }
+    },
+    "sidebar.autoTidy.popover.openAISettings" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 设置"
+          }
+        }
+      }
+    },
+    "sidebar.autoTidy.popover.progressFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$lld processed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已处理 %1$lld / %2$lld"
+          }
+        }
+      }
+    },
+    "sidebar.autoTidy.popover.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Auto-Tidy"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 自动整理"
+          }
+        }
+      }
+    },
+    "sidebar.autoTidy.popover.viewQueue" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Queue"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看队列"
+          }
+        }
+      }
+    },
     "sidebar.autoTidy.tooltip" : {
       "localizations" : {
         "en" : {
@@ -23293,6 +24845,1451 @@
     },
     "𝕏" : {
 
+    },
+    "diagnostics.export.button" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Debug Logs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出调试日志"
+          }
+        }
+      }
+    },
+    "diagnostics.export.failed.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出失败"
+          }
+        }
+      }
+    },
+    "diagnostics.export.successFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exported to %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已导出到 %@"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.aiChat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI chat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 对话"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.applyAITag" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "applying AI tags"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用 AI 标签"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.generateAIInsight" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "generating AI summary"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成 AI 摘要"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.loadAIInsight" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "loading AI summary"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载 AI 摘要"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.loadActivity" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "loading Activity"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载活动"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.loadActivityAnnouncements" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "loading announcements"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载公告"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.loadActivitySecurity" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "loading security advisories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载安全公告"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.loadStars" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "loading starred repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载 Star 仓库"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.loadTrending" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "loading Trending"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载 Trending"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.loadWeekly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "loading Weekly"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载 Weekly"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.refreshSemanticIndex" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "refreshing semantic index"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新语义索引"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.startup" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "starting Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动 Starcat"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.syncStars" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "syncing GitHub stars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同步 GitHub Stars"
+          }
+        }
+      }
+    },
+    "diagnostics.operation.translateReadme" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "translating README"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译 README"
+          }
+        }
+      }
+    },
+    "diagnostics.quit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quit Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出 Starcat"
+          }
+        }
+      }
+    },
+    "error.user.aiConfiguration.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ needs a valid %@ AI configuration before it can continue."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 需要有效的 %@ AI 配置后才能继续。"
+          }
+        }
+      }
+    },
+    "error.user.aiConfiguration.recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings and check the provider Base URL, API Key, and model names."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请打开设置，检查服务商 Base URL、API Key 和模型名称。"
+          }
+        }
+      }
+    },
+    "error.user.aiConfiguration.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI configuration needs attention"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 配置需要检查"
+          }
+        }
+      }
+    },
+    "error.user.aiProvider.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ could not complete because %@ returned an unexpected response."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 未能完成，因为 %@ 返回了异常响应。"
+          }
+        }
+      }
+    },
+    "error.user.aiProvider.recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again later, or switch to another provider/model in AI Settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请稍后重试，或在 AI 设置中切换服务商/模型。"
+          }
+        }
+      }
+    },
+    "error.user.aiProvider.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI service did not respond correctly"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 服务响应异常"
+          }
+        }
+      }
+    },
+    "error.user.decoding.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ received data from %@ that this Starcat version cannot read."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 收到了来自 %@ 的数据，但当前 Starcat 版本无法读取。"
+          }
+        }
+      }
+    },
+    "error.user.decoding.recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try updating Starcat. If it still fails, export debug logs and send them to dong4j."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请尝试更新 Starcat；如果仍失败，请导出调试日志发给 dong4j。"
+          }
+        }
+      }
+    },
+    "error.user.decoding.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Data format is not supported"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据格式暂不支持"
+          }
+        }
+      }
+    },
+    "error.user.localData.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ could not access Starcat local data."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 无法访问 Starcat 本地数据。"
+          }
+        }
+      }
+    },
+    "error.user.localData.recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restart Starcat. If the problem remains, export debug logs before deleting any local files."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请重启 Starcat；如果问题仍然存在，请先导出调试日志，不要直接删除本地文件。"
+          }
+        }
+      }
+    },
+    "error.user.localData.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local data is unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地数据不可用"
+          }
+        }
+      }
+    },
+    "error.user.network.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ could not reach %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 无法连接到 %@。"
+          }
+        }
+      }
+    },
+    "error.user.network.recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check your network connection, VPN/proxy, and service address, then try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请检查网络连接、VPN/代理和服务地址后重试。"
+          }
+        }
+      }
+    },
+    "error.user.network.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Network connection failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网络连接失败"
+          }
+        }
+      }
+    },
+    "error.user.notFound.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ could not find the requested resource on %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 未能在 %@ 找到请求的资源。"
+          }
+        }
+      }
+    },
+    "error.user.notFound.recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The repository or service endpoint may have moved or been deleted."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库或服务端点可能已移动或删除。"
+          }
+        }
+      }
+    },
+    "error.user.notFound.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resource not found"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "资源不存在"
+          }
+        }
+      }
+    },
+    "error.user.rateLimited.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ was temporarily limited by %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 被 %@ 暂时限流。"
+          }
+        }
+      }
+    },
+    "error.user.rateLimited.recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wait for the limit window to reset, then try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请等待限流窗口恢复后再试。"
+          }
+        }
+      }
+    },
+    "error.user.rateLimited.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rate limit reached"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请求已被限流"
+          }
+        }
+      }
+    },
+    "error.user.secureStorage.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ could not access secure storage on %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 无法访问 %@ 的安全存储。"
+          }
+        }
+      }
+    },
+    "error.user.secureStorage.recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check macOS Keychain permission prompts, then try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请检查 macOS 钥匙串授权提示后重试。"
+          }
+        }
+      }
+    },
+    "error.user.secureStorage.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Secure storage is unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安全存储不可用"
+          }
+        }
+      }
+    },
+    "error.user.service.default" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the service"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务"
+          }
+        }
+      }
+    },
+    "error.user.service.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ could not complete because %@ is unavailable or returned an error."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 未能完成，因为 %@ 不可用或返回了错误。"
+          }
+        }
+      }
+    },
+    "error.user.service.recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again later. If you use a custom service URL or API Key, test it in Settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请稍后重试；如果你使用自定义服务地址或 API Key，请在设置中测试连接。"
+          }
+        }
+      }
+    },
+    "error.user.service.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Service is unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务暂时不可用"
+          }
+        }
+      }
+    },
+    "error.user.unauthorized.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ could not authenticate with %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 无法通过 %@ 鉴权。"
+          }
+        }
+      }
+    },
+    "error.user.unauthorized.recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in again or check the API Key configured for this service."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请重新登录，或检查该服务配置的 API Key。"
+          }
+        }
+      }
+    },
+    "error.user.unauthorized.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Authentication failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "鉴权失败"
+          }
+        }
+      }
+    },
+    "error.user.unknown.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ failed while talking to %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 在访问 %@ 时失败。"
+          }
+        }
+      }
+    },
+    "error.user.unknown.recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again. If it repeats, export debug logs and send them to dong4j."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请重试；如果重复出现，请导出调试日志发给 dong4j。"
+          }
+        }
+      }
+    },
+    "error.user.unknown.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something went wrong"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "操作失败"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.export.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create a local zip archive with recent Starcat diagnostic events, app version, and non-sensitive settings. Use this when dong4j needs logs to investigate an issue."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建一个本地 zip 包，包含最近的 Starcat 诊断事件、应用版本和非敏感设置。dong4j 需要日志定位问题时使用。"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.export.running" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing diagnostic archive..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在准备诊断包…"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.export.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.privacy.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The archive is designed to exclude GitHub tokens, API keys, AI prompts, README bodies, and private notes. It may include service names, status codes, repository full names, local file paths, and error summaries."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "诊断包设计上不包含 GitHub token、API Key、AI prompt、README 正文和私有笔记。它可能包含服务名、状态码、仓库 full name、本地文件路径和错误摘要。"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.privacy.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐私"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagnostics"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "诊断"
+          }
+        }
+      }
+    },
+    "settings.mcp.batchWrites.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow future batch write tools to update multiple repositories in one request. P0 write tools still use per-request limits."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许后续批量写入工具在一次请求中更新多个仓库。P0 写入工具仍按单次请求限制执行。"
+          }
+        }
+      }
+    },
+    "settings.mcp.batchWrites.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow batch writes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许批量写入"
+          }
+        }
+      }
+    },
+    "settings.mcp.copyConfig" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy client config"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制客户端配置"
+          }
+        }
+      }
+    },
+    "settings.mcp.destructiveWrites.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow replace/delete-style local writes such as replacing all tags on a repository. Keep this off unless the connected agent is trusted."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许替换/删除式本地写入，例如替换某个仓库的全部标签。只有信任连接的 Agent 时才开启。"
+          }
+        }
+      }
+    },
+    "settings.mcp.destructiveWrites.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow replace/delete writes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许替换/删除式写入"
+          }
+        }
+      }
+    },
+    "settings.mcp.enabled.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expose Starcat capabilities to local agents through a Pro-only localhost MCP endpoint."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过仅限 Pro 的 localhost MCP endpoint 向本机 Agent 暴露 Starcat 能力。"
+          }
+        }
+      }
+    },
+    "settings.mcp.enabled.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable MCP Service"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用 MCP Service"
+          }
+        }
+      }
+    },
+    "settings.mcp.endpoint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Endpoint"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Endpoint"
+          }
+        }
+      }
+    },
+    "settings.mcp.localWrites.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow local MCP tools to write notes, statuses, and tags. This never performs GitHub remote star/unstar actions."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许本地 MCP 工具写入笔记、状态和标签。此开关不会执行 GitHub 远端 star/unstar 操作。"
+          }
+        }
+      }
+    },
+    "settings.mcp.localWrites.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow local writes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许本地写入"
+          }
+        }
+      }
+    },
+    "settings.mcp.port" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Port"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口"
+          }
+        }
+      }
+    },
+    "settings.mcp.privateNotes.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow MCP tools to read repository private notes and reading status. Keep this off unless the connected agent should see that data."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许 MCP 工具读取仓库私有笔记和阅读状态。只有当连接的 Agent 应该看到这些数据时才开启。"
+          }
+        }
+      }
+    },
+    "settings.mcp.privateNotes.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expose private notes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暴露私有笔记"
+          }
+        }
+      }
+    },
+    "settings.mcp.proOnly.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MCP Service is available to Pro users only. The endpoint listens on 127.0.0.1 and requires the Bearer token above."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MCP Service 仅 Pro 用户可用。Endpoint 只监听 127.0.0.1，并要求使用上方 Bearer token。"
+          }
+        }
+      }
+    },
+    "settings.mcp.rotateToken" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotate token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轮换 token"
+          }
+        }
+      }
+    },
+    "settings.mcp.section.connection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接"
+          }
+        }
+      }
+    },
+    "settings.mcp.section.service" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Service"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务"
+          }
+        }
+      }
+    },
+    "settings.mcp.section.writes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write permissions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "写入权限"
+          }
+        }
+      }
+    },
+    "settings.mcp.status" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "状态"
+          }
+        }
+      }
+    },
+    "settings.mcp.status.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败"
+          }
+        }
+      }
+    },
+    "settings.mcp.status.running" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行中"
+          }
+        }
+      }
+    },
+    "settings.mcp.status.stopped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已停止"
+          }
+        }
+      }
+    },
+    "settings.mcp.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MCP"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MCP"
+          }
+        }
+      }
+    },
+    "settings.mcp.token" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bearer token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bearer token"
+          }
+        }
+      }
+    },
+    "settings.mcp.token.hide" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏"
+          }
+        }
+      }
+    },
+    "settings.mcp.token.reveal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reveal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示"
+          }
+        }
+      }
+    },
+    "subscription.feature.mcpService" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MCP Service"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MCP Service"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -60,6 +60,9 @@ packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation
     from: "0.9.20"
+  MCPSwiftSDK:
+    url: https://github.com/modelcontextprotocol/swift-sdk
+    from: "0.12.1"
 
 targets:
   Starcat:
@@ -102,6 +105,8 @@ targets:
       - package: OpenAI
       - package: ConfettiSwiftUI
       - package: ZIPFoundation
+      - package: MCPSwiftSDK
+        product: MCP
     # 在所有 build phase 跑完之后、codesign 之前执行：
     # 用 git 元数据改写产物 Info.plist 的 CFBundleVersion / CFBundleShortVersionString。
     # 详见 scripts/bump-version.sh 文件头注释。
