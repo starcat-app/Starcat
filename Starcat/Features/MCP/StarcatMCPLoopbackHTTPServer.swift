@@ -43,7 +43,12 @@ final class StarcatMCPLoopbackHTTPServer {
             throw StarcatMCPError.invalidArguments("Invalid MCP port: \(port)")
         }
         let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(IPv4Address.loopback), port: nwPort)
+        // ⚠️ macOS 26 (Darwin 25) Network.framework 校验更严格：
+        // requiredLocalEndpoint 与 NWListener(using:on:) 同时指定相同端口会触发
+        // NWError.posix(.EINVAL)（Invalid argument）。
+        // 端口统一交由 `on:` 参数控制，requiredLocalEndpoint 端口用 .any，
+        // 仍限制监听地址为 127.0.0.1，安全边界不变。
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(IPv4Address.loopback), port: .any)
 
         let listener = try NWListener(using: parameters, on: nwPort)
         listener.newConnectionHandler = { [weak self] connection in

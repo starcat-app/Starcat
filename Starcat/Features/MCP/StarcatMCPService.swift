@@ -110,8 +110,10 @@ final class StarcatMCPService {
         stop()
 
         let port = settings.mcpServicePort
-        if let message = StarcatMCPPortAvailability.unavailableMessage(for: port) {
-            state = .failed(message)
+
+        // 端口范围校验同步做（纯数学检查，不需要等旧 listener 释放）
+        guard (1024...65_535).contains(port) else {
+            state = .failed(String(format: String.l10n("settings.mcp.port.error.invalidFormat"), port))
             return
         }
 
@@ -130,6 +132,11 @@ final class StarcatMCPService {
 
         Task { @MainActor in
             do {
+                // NWListener.cancel() 是异步的，重启场景下旧 listener 的 socket
+                // 释放有延迟；这里重试最多 5 次（每次等 200ms，累计 1s），
+                // 避免用户看到「端口占用」误报。
+                try await waitForPortAvailable(port: port)
+
                 await registry.register(on: server)
                 try await server.start(transport: transport)
                 let httpServer = StarcatMCPLoopbackHTTPServer(
@@ -166,6 +173,28 @@ final class StarcatMCPService {
             }
         }
         state = .stopped
+    }
+
+    /// 端口可用性预检，带重试。
+    ///
+    /// `NWListener.cancel()` 是异步操作，重启场景下旧 listener 的 socket 释放
+    /// 有延迟（通常 < 50ms）。这里用 POSIX `bind` 做同步探测，连续失败则等 200ms
+    /// 重试，最多 5 次（累计 1s）。真正被其他进程占用时，5 次后仍会正确报错。
+    private func waitForPortAvailable(
+        port: Int,
+        maxRetries: Int = 5,
+        delayInMS: UInt64 = 200
+    ) async throws {
+        for attempt in 0..<maxRetries {
+            if let message = StarcatMCPPortAvailability.unavailableMessage(for: port) {
+                if attempt < maxRetries - 1 {
+                    try await Task.sleep(nanoseconds: delayInMS * 1_000_000)
+                    continue
+                }
+                throw StarcatMCPError.invalidArguments(message)
+            }
+            return  // 端口可用
+        }
     }
 
     func rotateToken() {
