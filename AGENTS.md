@@ -300,6 +300,30 @@ rg "NSLocalizedString"  --type swift Starcat/   # 必须只出现在注释里
 
 *最后更新：2026-06-16*
 
+---
+
+## Cursor Cloud specific instructions
+
+> 本节面向后续 Cloud Agent。环境为 **Linux x86_64**，与本项目主产品的目标平台（Apple）不一致，存在硬性平台限制，先读完再动手。
+
+### ⚠️ 主产品（Starcat macOS App）无法在本 Cloud 环境构建 / 运行 / 测试
+
+- Starcat 是 **macOS 15+ 原生 App**（SwiftUI + AppKit + WebKit + CloudKit + Keychain，遍布 100+ 个 `.swift` 文件），构建链是 `xcodegen` + `xcodebuild`。
+- Cloud Agent VM 是 **Linux**，没有 Swift / Xcode / xcodegen，且这些 Apple 框架与 `xcodebuild`/`xcodegen` 在 Linux 上根本不存在。**即使安装 Linux 版 Swift 也无法编译**（SwiftUI/AppKit 等是 Apple-only）。
+- 因此 AGENTS.md「如何跑单测」一节里的 `xcodegen generate` / `xcodebuild ... test`、`make run` / `make test`、`scripts/run-debug.sh` 等命令在本环境 **全部不可用**，需在 macOS + Xcode 上执行。改动 Swift 代码后，**lint/build/test 必须由人在 macOS 上验证**。
+
+### 本环境实际可运行的部分
+
+1. **落地页（`pages/`）** —— 纯静态 HTML（`index.html` 英文 / `index-zh.html` 中文 + `privacy*.html` / `eula*.html`），无构建步骤。本地预览：
+   ```bash
+   cd pages && python3 -m http.server 8080   # 然后浏览器开 http://localhost:8080/index.html
+   ```
+   `pages/deploy.sh` 仅用 rsync 把静态文件推到远端服务器，本环境无需执行。
+2. **Python 开发脚本（`scripts/`）** —— `xcstrings_patch.py`（仅标准库）、`generate_linguist_metadata.py`（依赖 `pyyaml`，需联网拉数据）。`python3` 与 `pyyaml` 在基础镜像中已就绪，**无需额外安装**。
+
+### 依赖刷新说明
+
+- Linux 可运行部分（静态页 + Python 脚本）**没有需要安装的第三方依赖**（无 `requirements.txt` / `package.json`；`pyyaml` 系统自带）。启动脚本因此保持空操作即可，不要往里塞 macOS 构建命令。
 
 <claude-mem-context>
 # Memory Context
