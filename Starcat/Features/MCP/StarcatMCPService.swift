@@ -62,6 +62,7 @@ final class StarcatMCPService {
         {
           "mcpServers": {
             "starcat": {
+              "type": "http",
               "url": "\(endpointURL)",
               "headers": {
                 "Authorization": "Bearer \(bearerToken)"

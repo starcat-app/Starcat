@@ -42,15 +42,17 @@ final class StarcatMCPLoopbackHTTPServer {
         guard let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else {
             throw StarcatMCPError.invalidArguments("Invalid MCP port: \(port)")
         }
+        // R-06.4 2026-06-21 dong4j MCP 30s timeout 根因：
+        // 在 macOS 26 (Darwin 25) 上，NWParameters.tcp 默认会让 NWListener
+        // 进入 IPv6 dual-stack，最终 listen 在 `*:5551`（IPv6 wildcard）；
+        // Claude / curl 走 IPv4 127.0.0.1 发起连接，macOS 不做 IPv4-mapped IPv6
+        // 转发，结果 TCP 握手成功但 server 不 accept，客户端 30s 超时。
+        // 修复：显式要求 IPv4 loopback + 端口放 requiredLocalEndpoint，on: .any
+        // 规避 commit 579bc46 提到的「requiredLocalEndpoint 与 on: 同时指定同端口
+        // 触发 EINVAL」。
         let parameters = NWParameters.tcp
-        // ⚠️ macOS 26 (Darwin 25) Network.framework 校验更严格：
-        // requiredLocalEndpoint 与 NWListener(using:on:) 同时指定相同端口会触发
-        // NWError.posix(.EINVAL)（Invalid argument）。
-        // 端口统一交由 `on:` 参数控制，requiredLocalEndpoint 端口用 .any，
-        // 仍限制监听地址为 127.0.0.1，安全边界不变。
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(IPv4Address.loopback), port: .any)
-
-        let listener = try NWListener(using: parameters, on: nwPort)
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(IPv4Address.loopback), port: nwPort)
+        let listener = try NWListener(using: parameters, on: .any)
         listener.newConnectionHandler = { [weak self] connection in
             Task { @MainActor in
                 self?.accept(connection)
