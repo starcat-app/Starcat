@@ -56,6 +56,10 @@ struct RepoHealthSnapshot: Codable, FetchableRecord, MutablePersistableRecord, E
         ISO8601DateFormatter.shared.date(from: staleAfter)
     }
 
+    var computedDate: Date? {
+        ISO8601DateFormatter.shared.date(from: computedAt)
+    }
+
     var badgeData: RepoHealthBadgeData? {
         guard fetchStatus != .failed else { return nil }
         return RepoHealthBadgeData(score: overallScore, grade: grade)
@@ -71,4 +75,3 @@ struct RepoHealthBadgeData: Hashable, Sendable {
         Int(score.rounded())
     }
 }
-

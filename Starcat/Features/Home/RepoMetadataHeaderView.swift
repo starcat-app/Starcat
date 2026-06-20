@@ -64,12 +64,11 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     let headerSourceBadge: RepoDetailHeaderSourceBadge?
     private let trailingActions: TrailingActions
 
-    /// v2.0（2026-06-16, dong4j）：OpenSSF 入口从 Scaffold trailing actions 迁移到
-    /// 此处 `full_name` 同行 —— 与 source badge 同行的轻量 inline 标识，让用户在
-    /// 看到仓库名时立刻能看到安全评分。点击弹出 `OpenSSFScoreSheet`。sheet state
-    /// 挂在 Header 内部，避免 4 个 scaffold shell 重复维护相同状态。
+    /// Repo Health 入口放在 `full_name` 同行。它替代原本直接暴露的 OpenSSF badge：
+    /// OpenSSF 仍是 Health 面板里的 Security 维度，但详情页主入口用更总括的健康度，
+    /// 避免用户把单一安全评分误读成项目整体质量。
     @Environment(AppDependencies.self) private var dependencies
-    @State private var showSecurityScoreSheet = false
+    @State private var showRepoHealthSheet = false
 
     init(
         repo: Repo,
@@ -98,8 +97,8 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         .padding(.bottom, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         // hero tint 由 `RepoDetailScaffold` 根节点 `DetailHeroTintBackground` 统一绘制。
-        .sheet(isPresented: $showSecurityScoreSheet) {
-            OpenSSFScoreSheet(repo: repo)
+        .sheet(isPresented: $showRepoHealthSheet) {
+            RepoHealthSheet(repo: repo)
                 .appSheetRootEnvironment(dependencies)
         }
     }
@@ -118,11 +117,11 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
                         .textSelection(.enabled)
                         .help(repo.fullName)
 
-                    // v2.0（2026-06-16）：OpenSSF 入口紧贴 full_name 之后、source badge 之前。
-                    // 显示条件仅 `repo.isStarred` —— 未 star 仓库本来就拿不到本地缓存评分。
+                    // 2026-06-20：Health 入口紧贴 full_name 之后、source badge 之前。
+                    // 显示条件仅 `repo.isStarred` —— 未 star 的 ephemeral repo 不写本地健康度缓存。
                     if repo.isStarred {
-                        OpenSSFInlineBadge(repo: repo) {
-                            showSecurityScoreSheet = true
+                        RepoHealthInlineBadge(repo: repo) {
+                            showRepoHealthSheet = true
                         }
                     }
 
@@ -581,32 +580,22 @@ private struct RepoBadgeChip: View {
     }
 }
 
-/// `full_name` 同行的 OpenSSF Scorecard 安全评分入口。
+/// `full_name` 同行的 Repo Health 总评分入口。
 ///
-/// v2.0（2026-06-16, dong4j）：原入口在 Scaffold trailing actions（右上工具栏），
-/// 反馈说位置不够突出。现在迁到 hero `full_name` 之后，作为与 source badge 同行的
-/// inline 标识 —— 用户看到仓库名时一并看到评分。
-///
-/// ## v3 修订（2026-06-16, dong4j 反馈"卡片图标和详情页图标不一样"）
-///
-/// 1. **直接复用 `OpenSSFScoreBadge`**（list 卡片同款，详情页传 `size: .regular`）
-///    —— 两边图标 / 视觉风格 / 镭射渐变完全一致，避免漂移。
-/// 2. **无缓存评分时的 fallback**：依旧灰底胶囊，但图标改成 `checkmark.shield.fill`
-///    + 同款镭射渐变前景，保证"加载中 / 已加载"两态视觉延续。
-private struct OpenSSFInlineBadge: View {
+/// 它故意不复用 OpenSSFScoreBadge：OpenSSF 是单一安全维度，Health 是聚合评分。
+/// 两者视觉需要相近但语义不同，避免用户误认为 Health 分就是 OpenSSF 分。
+private struct RepoHealthInlineBadge: View {
     let repo: Repo
     let onTap: () -> Void
 
     @Environment(AppDependencies.self) private var dependencies
 
     var body: some View {
-        // 读取 store 的 badge —— store 是 @Observable，缓存变化会触发本 view 重渲染。
-        // store.badge(for:) 仅在 fetchStatus == .success && aggregateScore != nil 时返回。
-        let badge = dependencies.openSSFScoreStore.badge(for: repo.id)
+        let badge = dependencies.repoHealthStore.badge(for: repo.id)
 
         Button(action: onTap) {
             if let badge {
-                OpenSSFScoreBadge(score: badge, size: .regular)
+                healthBadge(badge)
             } else {
                 fallbackBadge
             }
@@ -614,15 +603,42 @@ private struct OpenSSFInlineBadge: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pressableHover()
-        .help("openssf.action.securityScore")
+        .help("repoHealth.action.open")
+        .task(id: repo.id) {
+            await dependencies.repoHealthStore.loadCachedSnapshots(for: [repo.id])
+            dependencies.repoHealthStore.prefetchIfNeeded(repo: repo)
+        }
     }
 
-    /// 无缓存评分时的占位 badge：与有评分态共用容器尺寸 + 同款镭射图标，
-    /// 仅去掉数字 + 背景改为中性灰（用户视觉上能感知到「评分还没拉到」）。
+    private func healthBadge(_ badge: RepoHealthBadgeData) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "gauge.with.dots.needle.67percent")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(healthTint(badge.score))
+            Text(verbatim: "\(badge.roundedScore)")
+                .font(.footnote)
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+            Text(verbatim: badge.grade)
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundStyle(healthTint(badge.score))
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(healthTint(badge.score).opacity(0.13), in: Capsule())
+        .overlay {
+            Capsule()
+                .stroke(healthTint(badge.score).opacity(0.32), lineWidth: 0.5)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
     private var fallbackBadge: some View {
-        Image(systemName: "checkmark.shield.fill")
+        Image(systemName: "gauge.with.dots.needle.67percent")
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(OpenSSFScoreBadge.iridescentForeground)
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(Color.secondary.opacity(0.10), in: Capsule())
@@ -630,6 +646,12 @@ private struct OpenSSFInlineBadge: View {
                 Capsule()
                     .stroke(Color.secondary.opacity(0.20), lineWidth: 0.5)
             }
+    }
+
+    private func healthTint(_ score: Double) -> Color {
+        if score >= 80 { return .green }
+        if score >= 60 { return .yellow }
+        return .red
     }
 }
 
