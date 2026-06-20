@@ -118,8 +118,9 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
                         .help(repo.fullName)
 
                     // 2026-06-20：Health 入口紧贴 full_name 之后、source badge 之前。
-                    // 显示条件仅 `repo.isStarred` —— 未 star 的 ephemeral repo 不写本地健康度缓存。
-                    if repo.isStarred {
+                    // 必须是本地已持久化的 starred repo：Health 快照表外键指向 `repos.id`，
+                    // ephemeral repo 即使 id 是 GitHub repo id，也不保证本地 `repos` 有行。
+                    if repo.hasLocalHealthCacheBacking {
                         RepoHealthInlineBadge(repo: repo) {
                             showRepoHealthSheet = true
                         }
@@ -605,6 +606,7 @@ private struct RepoHealthInlineBadge: View {
         .pressableHover()
         .help("repoHealth.action.open")
         .task(id: repo.id) {
+            guard repo.hasLocalHealthCacheBacking else { return }
             await dependencies.repoHealthStore.loadCachedSnapshots(for: [repo.id])
             dependencies.repoHealthStore.prefetchIfNeeded(repo: repo)
         }
@@ -652,6 +654,15 @@ private struct RepoHealthInlineBadge: View {
         if score >= 80 { return .green }
         if score >= 60 { return .yellow }
         return .red
+    }
+}
+
+private extension Repo {
+    /// Repo Health 是 `repo_health_snapshots -> repos.id` 的派生缓存，只有本地
+    /// `repos` 表已有行的 starred repo 才能写入。`cachedAt == nil` 的 repo 可能是
+    /// Trending / Weekly / backend hint 构造的 ephemeral 展示对象，不能拿来建快照。
+    var hasLocalHealthCacheBacking: Bool {
+        isStarred && id > 0 && cachedAt != nil
     }
 }
 

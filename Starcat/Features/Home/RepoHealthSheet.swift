@@ -20,6 +20,7 @@ struct RepoHealthSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
     @State private var showOpenSSFScoreSheet = false
+    @State private var didRequestInitialSnapshot = false
 
     private var store: RepoHealthStore { dependencies.repoHealthStore }
     private var snapshot: RepoHealthSnapshot? { store.snapshot(for: repo.id) }
@@ -37,10 +38,12 @@ struct RepoHealthSheet: View {
         .frame(minWidth: 560, idealWidth: 620, maxWidth: 820,
                minHeight: 520, idealHeight: 580, maxHeight: 720)
         .task(id: repo.id) {
+            didRequestInitialSnapshot = false
             await store.loadCachedSnapshots(for: [repo.id])
             if store.snapshot(for: repo.id) == nil {
                 store.prefetchIfNeeded(repo: repo)
             }
+            didRequestInitialSnapshot = true
         }
         .sheet(isPresented: $showOpenSSFScoreSheet) {
             OpenSSFScoreSheet(repo: repo)
@@ -95,8 +98,10 @@ struct RepoHealthSheet: View {
                 }
                 .padding(16)
             }
-        } else {
+        } else if store.isLoading(repoId: repo.id) || !didRequestInitialSnapshot {
             loadingContent
+        } else {
+            unavailableContent
         }
     }
 
@@ -227,6 +232,31 @@ struct RepoHealthSheet: View {
         .padding(24)
     }
 
+    private var unavailableContent: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text("repoHealth.unavailable")
+                .font(.headline)
+            Text("repoHealth.unavailable.hint")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                Task { await store.refresh(repo: repo, force: true) }
+            } label: {
+                Label("repoHealth.action.refresh", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.bordered)
+            .disabled(store.isLoading(repoId: repo.id))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
+    }
+
     private func statusText(_ snapshot: RepoHealthSnapshot) -> String {
         switch snapshot.fetchStatus {
         case .success:
@@ -252,4 +282,3 @@ struct RepoHealthSheet: View {
         return formatter.string(from: date)
     }
 }
-

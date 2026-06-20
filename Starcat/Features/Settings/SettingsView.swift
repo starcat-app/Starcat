@@ -388,12 +388,16 @@ private struct DiagnosticsSettingsTab: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Button {
-                        Task { await exportDiagnostics() }
-                    } label: {
-                        Label("diagnostics.export.button", systemImage: "square.and.arrow.up")
+                    HStack {
+                        Spacer()
+
+                        Button {
+                            Task { await exportDiagnostics() }
+                        } label: {
+                            Label("diagnostics.export.button", systemImage: "square.and.arrow.up")
+                        }
+                        .disabled(isExporting)
                     }
-                    .disabled(isExporting)
 
                     if isExporting {
                         HStack(spacing: 8) {

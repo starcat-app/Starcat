@@ -196,7 +196,7 @@ struct ProSettingsTab: View {
 
     private var actionSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
                 Button {
                     Task { await subscriptionManager.restorePurchases() }
                 } label: {
@@ -228,6 +228,8 @@ struct ProSettingsTab: View {
     private var debugSection: some View {
         Section {
             HStack {
+                Spacer()
+
                 Button {
                     subscriptionManager.applyDebugProOverride(active: true)
                     confettiTrigger += 1
@@ -292,11 +294,12 @@ private struct ProProductRow: View {
                 }
             }
 
-            Button {
-                onPurchase()
-            } label: {
-                HStack {
-                    Spacer(minLength: 0)
+            HStack {
+                Spacer()
+
+                Button {
+                    onPurchase()
+                } label: {
                     if isBusy {
                         ProgressView()
                             .controlSize(.small)
@@ -307,11 +310,10 @@ private struct ProProductRow: View {
                                     product.displayPrice))
                             .font(.callout.weight(.semibold))
                     }
-                    Spacer(minLength: 0)
                 }
+                .buttonStyle(.borderedProminent)
+                .disabled(isBusy || isCurrent)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(isBusy || isCurrent)
         }
         .padding(10)
         .background(

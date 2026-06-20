@@ -89,6 +89,35 @@ struct GitHubAPIClientTests {
         #expect(req.value(forHTTPHeaderField: "Authorization") == nil)
     }
 
+    @Test("securityAdvisories: summary 缺失时用 description 降级，避免整批解析失败")
+    func securityAdvisoriesMissingSummaryFallback() async throws {
+        let client = makeClient(token: "abc123")
+        URLProtocolStub.requestHandler = { request in
+            let body = """
+            [
+              {
+                "ghsa_id": "GHSA-abcd-1234-efgh",
+                "description": "Detailed advisory body.",
+                "html_url": "https://github.com/example/repo/security/advisories/GHSA-abcd-1234-efgh",
+                "published_at": "2026-06-20T00:00:00Z",
+                "severity": "high"
+              }
+            ]
+            """.data(using: .utf8)!
+            return (httpResponse(200, request.url!), body)
+        }
+
+        let response = try await client.securityAdvisories(owner: "example", repo: "repo")
+
+        let advisory = try #require(response.value.first)
+        #expect(advisory.ghsaId == "GHSA-abcd-1234-efgh")
+        #expect(advisory.summary == "Detailed advisory body.")
+        #expect(advisory.severity == "high")
+
+        let req = try #require(URLProtocolStub.receivedRequests.first)
+        #expect(req.url?.path == "/repos/example/repo/security-advisories")
+    }
+
     // MARK: - perform<T> 错误路径
 
     @Test("get<T>: 401 → NetworkError.unauthorized")

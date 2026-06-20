@@ -107,13 +107,15 @@ struct MCPSettingsTab: View {
                 SecureTokenRow(token: mcpService.bearerToken)
 
                 HStack {
-                    Button("settings.mcp.copyConfig") {
-                        copy(mcpService.clientConfigSnippet)
-                    }
-                    .focusEffectDisabled()
+                    Spacer()
 
                     Button("settings.mcp.rotateToken") {
                         mcpService.rotateToken()
+                    }
+                    .focusEffectDisabled()
+
+                    Button("settings.mcp.copyConfig") {
+                        copy(mcpService.clientConfigSnippet)
                     }
                     .focusEffectDisabled()
                 }
@@ -206,7 +208,7 @@ private enum MCPPortValidation: Equatable {
     }
 }
 
-/// MCP 端口行：标签在上、输入框 + 重启在同一行，下方固定说明 / 错误提示。
+/// MCP 端口行：标签、输入框、重启按钮在同一行，下方固定说明 / 错误提示。
 ///
 /// 不用 `LabeledContent` / Form 双列布局 —— macOS 会把 placeholder 或 Int 值
 /// 额外渲染一列，出现孤零零的 `5555` 和换行输入框（dong4j 2026-06-20 反馈）。
@@ -222,9 +224,11 @@ private struct MCPPortEditorRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("settings.mcp.port")
-
             HStack(spacing: 8) {
+                Text("settings.mcp.port")
+
+                Spacer()
+
                 TextField("", text: $portDraft, prompt: Text(verbatim: "5555"))
                     .textFieldStyle(.plain)
                     .font(.system(.body, design: .monospaced))

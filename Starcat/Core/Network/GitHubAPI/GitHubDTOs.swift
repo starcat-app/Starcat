@@ -315,11 +315,55 @@ struct GitHubSecurityAdvisoryDTO: Decodable, Equatable {
     let severity: String?
 
     enum CodingKeys: String, CodingKey {
-        case ghsaId = "ghsa_id"
+        // `GitHubAPIClient` 的 decoder 已统一启用 `.convertFromSnakeCase`。这里的 raw
+        // value 必须保持 camelCase，否则自定义 `init(from:)` 会把 `ghsa_id` 再匹配
+        // 成 `ghsa_id`，导致 GitHub 实际响应里的字段被错判为缺失。
+        case ghsaId
         case summary
         case description
-        case htmlUrl = "html_url"
-        case publishedAt = "published_at"
+        case htmlUrl
+        case publishedAt
         case severity
+    }
+
+    init(
+        ghsaId: String,
+        summary: String,
+        description: String?,
+        htmlUrl: String?,
+        publishedAt: String?,
+        severity: String?
+    ) {
+        self.ghsaId = ghsaId
+        self.summary = summary
+        self.description = description
+        self.htmlUrl = htmlUrl
+        self.publishedAt = publishedAt
+        self.severity = severity
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ghsaId = try container.decode(String.self, forKey: .ghsaId)
+
+        // GitHub 的 repository security advisory 响应由维护者填写，偶发会缺少
+        // `summary` 这类展示字段。Activity feed 只需要跳过或降级展示，不应因
+        // 单条 advisory 字段不完整让整批安全公告扫描解析失败。
+        let decodedSummary = try container.decodeIfPresent(String.self, forKey: .summary)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        summary = decodedSummary?.nilIfBlank
+            ?? description?.nilIfBlank
+            ?? ghsaId
+
+        htmlUrl = try container.decodeIfPresent(String.self, forKey: .htmlUrl)
+        publishedAt = try container.decodeIfPresent(String.self, forKey: .publishedAt)
+        severity = try container.decodeIfPresent(String.self, forKey: .severity)
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

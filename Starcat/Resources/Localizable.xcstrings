@@ -27044,13 +27044,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "MCP Service is available to Pro users only. The endpoint listens on 127.0.0.1 and requires the Bearer token above."
+            "value" : "MCP Service is available to Pro users only. The endpoint listens on 127.0.0.1 and requires the Token above."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "MCP Service 仅 Pro 用户可用。Endpoint 只监听 127.0.0.1，并要求使用上方 Bearer token。"
+            "value" : "MCP Service 仅 Pro 用户可用。Endpoint 只监听 127.0.0.1，并要求使用上方 Token。"
           }
         }
       }
@@ -27061,13 +27061,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rotate token"
+            "value" : "Rotate Token"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "轮换 token"
+            "value" : "轮换 Token"
           }
         }
       }
@@ -27231,13 +27231,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bearer token"
+            "value" : "Token"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bearer token"
+            "value" : "Token"
           }
         }
       }
@@ -27442,6 +27442,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Starcat 正在使用本地元数据、Release 与 OpenSSF 缓存。"
+          }
+        }
+      }
+    },
+    "repoHealth.unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health report is unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "健康度报告暂不可用"
+          }
+        }
+      }
+    },
+    "repoHealth.unavailable.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This repo may not have a local cached record yet, or the snapshot refresh failed. Try refreshing after sync finishes."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个仓库可能还没有本地缓存记录，或快照刷新失败。同步完成后可以再刷新。"
           }
         }
       }
