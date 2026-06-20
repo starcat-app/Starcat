@@ -216,7 +216,6 @@ struct ProSettingsTab: View {
                     Label("settings.pro.button.manage", systemImage: "person.crop.circle.badge.checkmark")
                 }
             }
-            .controlSize(.small)
         } header: {
             Text("settings.pro.account.section")
         } footer: {
@@ -294,10 +293,7 @@ private struct ProProductRow: View {
                 }
             }
 
-            HStack {
-                Spacer()
-
-                Button {
+            Button {
                     onPurchase()
                 } label: {
                     if isBusy {
@@ -313,7 +309,8 @@ private struct ProProductRow: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isBusy || isCurrent)
-            }
+                .fixedSize()
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(10)
         .background(
