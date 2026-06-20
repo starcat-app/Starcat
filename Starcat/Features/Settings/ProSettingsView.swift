@@ -229,14 +229,14 @@ struct ProSettingsTab: View {
         Section {
             HStack {
                 Button {
-                    settings.updateProEntitlementMirror(isPro: true)
+                    subscriptionManager.applyDebugProOverride(active: true)
                     confettiTrigger += 1
                 } label: {
                     Label("settings.pro.debug.activate", systemImage: "ladybug")
                 }
 
                 Button {
-                    settings.updateProEntitlementMirror(isPro: false)
+                    subscriptionManager.applyDebugProOverride(active: false)
                 } label: {
                     Label("settings.pro.debug.reset", systemImage: "arrow.uturn.backward")
                 }

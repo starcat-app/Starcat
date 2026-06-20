@@ -41,6 +41,10 @@ struct SearchCenterView: View {
     /// 但“抽屉是否展开”只影响当前浮层布局。Local scope 没有 GitHub / Web 筛选，
     /// 切过去时会自动收起，避免右侧出现空抽屉。
     @State private var isFilterDrawerPresented = false
+    /// GitHub「最低 Stars」输入草稿；点「应用筛选」时写入 `githubFilters.minimumStars`。
+    @State private var minStarsDraft = ""
+    /// Web「结果数」输入草稿；点「应用筛选」时写入 `anySearchFilters.maxResults`。
+    @State private var maxResultsDraft = ""
 
     var body: some View {
         ZStack {
@@ -282,6 +286,7 @@ struct SearchCenterView: View {
             .scrollContentBackground(.hidden)
         }
         .background(Color.primary.opacity(0.018))
+        .onAppear { syncNumericFilterDrafts() }
     }
 
     private var githubFilterSection: some View {
@@ -290,14 +295,14 @@ struct SearchCenterView: View {
                 Label("search.github.filterTitle", systemImage: "line.3.horizontal.decrease.circle")
                     .font(.system(size: 12, weight: .semibold))
                 Spacer()
+                HStack(spacing: 4) {
+                    Image(systemName: isGitHubAuthenticated ? "person.crop.circle.badge.checkmark" : "person.crop.circle")
+                        .foregroundStyle(isGitHubAuthenticated ? .green : .secondary)
+                    Text(isGitHubAuthenticated ? "search.github.signedIn" : "search.github.anonymous")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption)
             }
-
-            Label(
-                isGitHubAuthenticated ? "search.github.signedIn" : "search.github.anonymous",
-                systemImage: isGitHubAuthenticated ? "person.crop.circle.badge.checkmark" : "person.crop.circle"
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
 
             if let summary = viewModel.githubResultSummary {
                 Text(summary)
@@ -313,9 +318,16 @@ struct SearchCenterView: View {
                 text: optionalBinding(\.topic)
             )
             VStack(alignment: .leading, spacing: 5) {
-                filterFieldLabel("search.github.filter.minStars")
-                TextField("search.github.filter.minStars.placeholder", value: $viewModel.githubFilters.minimumStars, format: .number)
-                    .textFieldStyle(.roundedBorder)
+                SearchFilterNumericField(
+                    titleKey: "search.github.filter.minStars",
+                    placeholder: String.l10n("search.github.filter.minStars.placeholder"),
+                    hintKey: "search.github.filter.minStars.hint",
+                    draft: $minStarsDraft,
+                    minimum: 1,
+                    maximum: nil,
+                    maxDigitCount: 12,
+                    allowsEmpty: true
+                )
             }
 
             HStack(alignment: .bottom, spacing: 10) {
@@ -328,6 +340,7 @@ struct SearchCenterView: View {
 
             HStack(spacing: 8) {
                 Button("search.github.filter.apply") {
+                    guard commitMinStarsDraft() else { return }
                     Task { await viewModel.applyGitHubFilters() }
                 }
                 .buttonStyle(.borderedProminent)
@@ -364,13 +377,23 @@ struct SearchCenterView: View {
                 .lineLimit(2)
 
             anySearchDomainPicker(width: 222)
-            anySearchContentTypesField(width: 222)
             HStack(alignment: .bottom, spacing: 10) {
+                anySearchContentTypesField(width: 106)
                 anySearchZonePicker(width: 106)
-                anySearchMaxResultsField(width: 106)
             }
+            SearchFilterNumericField(
+                titleKey: "search.anysearch.maxResults",
+                placeholder: "10",
+                hintKey: "search.anysearch.maxResults.hint",
+                draft: $maxResultsDraft,
+                minimum: 1,
+                maximum: 100,
+                maxDigitCount: 3,
+                allowsEmpty: false
+            )
 
             Button("search.github.filter.apply") {
+                guard commitMaxResultsDraft() else { return }
                 Task { await viewModel.applyAnySearchFilters() }
             }
             .buttonStyle(.borderedProminent)
@@ -984,48 +1007,17 @@ struct SearchCenterView: View {
         )
     }
 
-    /// content_types 三选 Toggle（web / news / doc）。
-    /// 用 Menu + 内部 Toggle 实现紧凑多选；空集 = 自动（不传 API）。
-    /// 官方文档未给完整枚举，先开 3 个最常见的；按反馈再加（写入注释固化范围）。
+    /// content_types 多选：macOS 原生 `Picker` 不支持 Set 多选（会退化为单选），
+    /// 故用 Popover + Toggle。触发器视觉对齐 `GitHubDateFilterField` / 同行 Picker。
     private func anySearchContentTypesField(width: CGFloat = 140) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            filterFieldLabel("search.anysearch.contentTypes")
-            Menu {
-                ForEach(Self.allAnySearchContentTypes, id: \.0) { pair in
-                    Toggle(LocalizedStringKey(pair.1), isOn: anySearchContentTypeBinding(pair.0))
-                }
-            } label: {
-                Text(anySearchContentTypesLabel)
-                    .font(.system(size: 12))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .frame(width: width)
-    }
-
-    private func anySearchContentTypeBinding(_ key: String) -> Binding<Bool> {
-        Binding(
-            get: { viewModel.anySearchFilters.contentTypes.contains(key) },
-            set: { isOn in
-                if isOn {
-                    viewModel.anySearchFilters.contentTypes.insert(key)
-                } else {
-                    viewModel.anySearchFilters.contentTypes.remove(key)
-                }
-            }
+        AnySearchContentTypesField(
+            contentTypes: Binding(
+                get: { viewModel.anySearchFilters.contentTypes },
+                set: { viewModel.anySearchFilters.contentTypes = $0 }
+            ),
+            options: Self.allAnySearchContentTypes,
+            width: width
         )
-    }
-
-    private var anySearchContentTypesLabel: String {
-        let selected = viewModel.anySearchFilters.contentTypes
-        if selected.isEmpty { return String.l10n("search.anysearch.zone.auto") }
-        // 用预定义顺序输出（Set 迭代顺序不稳定），与摘要保持一致体验
-        let ordered = Self.allAnySearchContentTypes.compactMap { pair in
-            selected.contains(pair.0) ? String.l10n(pair.1) : nil
-        }
-        return ordered.joined(separator: ", ")
     }
 
     /// AnySearch zone 下拉。首项「自动」对应 nil，跟随网关自动路由。
@@ -1046,42 +1038,6 @@ struct SearchCenterView: View {
                 viewModel.anySearchFilters.zone = newValue.isEmpty
                     ? nil
                     : AnySearchZone(rawValue: newValue)
-            }
-        )
-    }
-
-    /// 单次结果数（1...100，对齐官方 API 上限，default 10）。
-    ///
-    /// 用 TextField + `.number` format 而非 Stepper：用户调到大值时（如 80）按 Stepper
-    /// 要点很多下，直接输入更顺。
-    ///
-    /// **输入验证**：
-    /// - 类型：`.number.grouping(.never)` formatter 只接受数字字符（自带过滤），不允许
-    ///   字母 / 符号 / 千分号
-    /// - 范围：[1, 100]。在 binding setter 流式钳制 —— 用户输入 999 会被即时压回 100，
-    ///   不需要 blur / 提交才触发。空值 / 负数同样压到下界 1
-    private func anySearchMaxResultsField(width: CGFloat = 130) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            filterFieldLabel("search.anysearch.maxResults")
-            TextField("10", value: clampedMaxResultsBinding, format: .number.grouping(.never))
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12))
-                .multilineTextAlignment(.center)
-                .frame(width: 60)
-        }
-        .frame(width: width, alignment: .leading)
-    }
-
-    /// `anySearchFilters.maxResults` 的钳制 binding。
-    ///
-    /// 关键约束：写入永远压到 [1, 100]。AnySearchRequest.init 与 AnySearchWebProvider
-    /// 也会再钳一次，这里是 UI 层第一道防线 —— 让用户在输入框看到的就是最终值，
-    /// 而不是先收下 999 再到网络层悄悄改 100 造成"我明明输入了 999"的错觉。
-    private var clampedMaxResultsBinding: Binding<Int> {
-        Binding(
-            get: { viewModel.anySearchFilters.maxResults },
-            set: { newValue in
-                viewModel.anySearchFilters.maxResults = min(max(1, newValue), 100)
             }
         )
     }
@@ -1113,7 +1069,7 @@ struct SearchCenterView: View {
     /// AnySearch 22 个 domain 显示对照表。
     ///
     /// 元组 `(rawValue, i18nKey)`：rawValue 直接传给 API（不本地化），
-    /// i18nKey 通过 `String(localized:)` / `Text(LocalizedStringKey(...))` 渲染本地化文案。
+    /// i18nKey 通过 `String.l10n` / `Text(LocalizedStringKey(...))` 渲染本地化文案。
     /// 完整顺序照搬官方文档：
     /// https://www.anysearch.com/docs → Enum Reference → Domains (22 values)
     ///
@@ -1151,6 +1107,249 @@ struct SearchCenterView: View {
         ("news", "search.anysearch.contentType.news"),
         ("doc", "search.anysearch.contentType.doc")
     ]
+
+    /// 筛选抽屉打开时把已生效的数值筛选复制到输入草稿。
+    ///
+    /// 数值输入不直接绑定 ViewModel：用户可能只是在编辑草稿，只有点「应用筛选」
+    /// 才代表要触发远端搜索。这样不会出现输入到一半就发请求或把非法值写进筛选条件。
+    private func syncNumericFilterDrafts() {
+        minStarsDraft = viewModel.githubFilters.minimumStars.map(String.init) ?? ""
+        maxResultsDraft = String(viewModel.anySearchFilters.maxResults)
+    }
+
+    /// 提交 GitHub 最低 Stars。空值表示“不限制”；非空必须是正整数。
+    private func commitMinStarsDraft() -> Bool {
+        let validation = SearchFilterNumericField.validate(
+            minStarsDraft,
+            minimum: 1,
+            maximum: nil,
+            allowsEmpty: true
+        )
+        switch validation {
+        case .empty:
+            viewModel.githubFilters.minimumStars = nil
+            return true
+        case .ok:
+            viewModel.githubFilters.minimumStars = Int(minStarsDraft)
+            return true
+        case .emptyRequired, .nonNumericAttempt, .belowMinimum, .aboveMaximum:
+            return false
+        }
+    }
+
+    /// 提交 Web 结果数。AnySearch API 上限是 100，UI 层先做一次正整数范围校验。
+    private func commitMaxResultsDraft() -> Bool {
+        let validation = SearchFilterNumericField.validate(
+            maxResultsDraft,
+            minimum: 1,
+            maximum: 100,
+            allowsEmpty: false
+        )
+        guard case .ok = validation, let value = Int(maxResultsDraft) else {
+            return false
+        }
+        viewModel.anySearchFilters.maxResults = value
+        return true
+    }
+}
+
+// MARK: - Search Filter Numeric Field
+
+/// 搜索筛选抽屉里的正整数输入框。
+///
+/// SwiftUI `TextField(value:format:)` 在 macOS 上对空值、粘贴字母、局部非法输入的反馈
+/// 不够稳定；这里改用 `String` 草稿，只保留数字字符，并在提交前按字段自己的范围校验。
+private struct SearchFilterNumericField: View {
+    let titleKey: LocalizedStringKey
+    let placeholder: String
+    let hintKey: String
+    @Binding var draft: String
+    let minimum: Int
+    let maximum: Int?
+    let maxDigitCount: Int
+    let allowsEmpty: Bool
+
+    @State private var validation: SearchFilterNumericValidation = .empty
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(titleKey)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+
+            TextField(placeholder, text: $draft)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, design: .monospaced))
+                .multilineTextAlignment(.leading)
+                .lineLimit(1)
+                .onChange(of: draft) { _, newValue in
+                    let hadInvalidChars = newValue.contains { !$0.isNumber }
+                    let filtered = String(newValue.filter(\.isNumber).prefix(maxDigitCount))
+                    if filtered != newValue {
+                        draft = filtered
+                    }
+                    validation = Self.validate(
+                        filtered,
+                        minimum: minimum,
+                        maximum: maximum,
+                        allowsEmpty: allowsEmpty,
+                        hadInvalidChars: hadInvalidChars
+                    )
+                }
+
+            Text(verbatim: validation.hintText(defaultKey: hintKey, minimum: minimum, maximum: maximum))
+                .font(.caption2)
+                .foregroundStyle(validation.isError ? .red : .secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onAppear {
+            validation = Self.validate(draft, minimum: minimum, maximum: maximum, allowsEmpty: allowsEmpty)
+        }
+    }
+
+    static func validate(
+        _ draft: String,
+        minimum: Int,
+        maximum: Int?,
+        allowsEmpty: Bool,
+        hadInvalidChars: Bool = false
+    ) -> SearchFilterNumericValidation {
+        if hadInvalidChars { return .nonNumericAttempt }
+        if draft.isEmpty { return allowsEmpty ? .empty : .emptyRequired }
+        guard let value = Int(draft) else { return .nonNumericAttempt }
+        if value < minimum { return .belowMinimum }
+        if let maximum, value > maximum { return .aboveMaximum }
+        return .ok
+    }
+}
+
+private enum SearchFilterNumericValidation: Equatable {
+    case empty
+    case emptyRequired
+    case ok
+    case nonNumericAttempt
+    case belowMinimum
+    case aboveMaximum
+
+    var isError: Bool {
+        switch self {
+        case .empty, .ok: return false
+        case .emptyRequired, .nonNumericAttempt, .belowMinimum, .aboveMaximum: return true
+        }
+    }
+
+    func hintText(defaultKey: String, minimum: Int, maximum: Int?) -> String {
+        switch self {
+        case .empty, .ok:
+            return String.l10n(defaultKey)
+        case .emptyRequired:
+            return String.l10n("search.filter.numeric.error.required")
+        case .nonNumericAttempt:
+            return String.l10n("search.filter.numeric.error.digitsOnly")
+        case .belowMinimum:
+            return String(format: String.l10n("search.filter.numeric.error.tooLowFormat"), minimum)
+        case .aboveMaximum:
+            return String(format: String.l10n("search.filter.numeric.error.tooHighFormat"), maximum ?? minimum)
+        }
+    }
+}
+
+// MARK: - AnySearch Content Types Field
+
+/// Web 筛选「内容类型」多选字段。
+///
+/// macOS SwiftUI 的 `Picker(selection: Set)` 实测无法多选（会当作单选），
+/// `Menu + Toggle` 又因 `.menuStyle(.borderlessButton)` 与自绘 label 冲突而变形。
+/// 本组件用 **Popover + Toggle** 保证多选可用，触发器沿用 `GitHubDateFilterField`
+/// 的圆角描边样式，与同行 Picker / TextField 等高对齐。
+private struct AnySearchContentTypesField: View {
+    @Binding var contentTypes: Set<String>
+    let options: [(String, String)]
+    let width: CGFloat
+
+    @State private var isPresented = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("search.anysearch.contentTypes")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+
+            Button {
+                isPresented.toggle()
+            } label: {
+                fieldLabel
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+                selectionPopover
+                    .appLocaleEnvironment()
+            }
+        }
+        .frame(width: width, alignment: .leading)
+    }
+
+    /// 触发器：仿 `.roundedBorder` / 原生 PopUpButton，右侧 chevron 与 zone Picker 一致。
+    private var fieldLabel: some View {
+        HStack(spacing: 6) {
+            Text(displayText)
+                .font(.system(size: 12))
+                .foregroundStyle(contentTypes.isEmpty ? .secondary : .primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        )
+        .contentShape(Rectangle())
+    }
+
+    /// Popover 内 Toggle 可多选；勾选即时写回 binding，点击外部或 Esc 关闭即可。
+    private var selectionPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(options, id: \.0) { pair in
+                Toggle(LocalizedStringKey(pair.1), isOn: toggleBinding(for: pair.0))
+            }
+        }
+        .padding(14)
+        .fixedSize()
+    }
+
+    private func toggleBinding(for key: String) -> Binding<Bool> {
+        Binding(
+            get: { contentTypes.contains(key) },
+            set: { isOn in
+                if isOn {
+                    contentTypes.insert(key)
+                } else {
+                    contentTypes.remove(key)
+                }
+            }
+        )
+    }
+
+    /// 空集显示「自动」；非空按 `options` 定义序拼接本地化名称。
+    private var displayText: String {
+        if contentTypes.isEmpty { return String.l10n("search.anysearch.zone.auto") }
+        return options
+            .compactMap { contentTypes.contains($0.0) ? String.l10n($0.1) : nil }
+            .joined(separator: ", ")
+    }
 }
 
 // MARK: - GitHub Date Filter Field

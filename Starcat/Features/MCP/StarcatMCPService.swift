@@ -73,11 +73,25 @@ final class StarcatMCPService {
     }
 
     func refreshForCurrentSettings() {
-        if settings.mcpServiceEnabled, entitlementGate.isProUser {
-            start()
-        } else {
+        guard settings.mcpServiceEnabled else {
             stop()
+            return
         }
+        guard entitlementGate.isProUser else {
+            stop()
+            state = .failed(String.l10n("settings.mcp.status.requiresPro"))
+            return
+        }
+        start()
+    }
+
+    /// 设置页「重启」的显式入口。
+    ///
+    /// `start()` 会在“已经运行且端口没变”时直接返回，适合自动 refresh；
+    /// 但用户点击重启时需要真实释放旧 listener，再做端口占用预检并重新启动。
+    func restartForCurrentSettings() {
+        stop()
+        refreshForCurrentSettings()
     }
 
     func start() {
@@ -94,6 +108,12 @@ final class StarcatMCPService {
             return
         }
         stop()
+
+        let port = settings.mcpServicePort
+        if let message = StarcatMCPPortAvailability.unavailableMessage(for: port) {
+            state = .failed(message)
+            return
+        }
 
         let transport = StatelessHTTPServerTransport()
         let server = Server(
@@ -113,7 +133,7 @@ final class StarcatMCPService {
                 await registry.register(on: server)
                 try await server.start(transport: transport)
                 let httpServer = StarcatMCPLoopbackHTTPServer(
-                    port: settings.mcpServicePort,
+                    port: port,
                     transport: transport,
                     requestValidator: { [weak self] request in
                         self?.validate(request)
@@ -123,8 +143,8 @@ final class StarcatMCPService {
                 self.server = server
                 self.transport = transport
                 self.httpServer = httpServer
-                self.state = .running(port: self.settings.mcpServicePort)
-                AppLog.network.info("MCP Service started on 127.0.0.1:\(self.settings.mcpServicePort, privacy: .public)")
+                self.state = .running(port: port)
+                AppLog.network.info("MCP Service started on 127.0.0.1:\(port, privacy: .public)")
             } catch {
                 await transport.disconnect()
                 self.state = .failed(error.localizedDescription)

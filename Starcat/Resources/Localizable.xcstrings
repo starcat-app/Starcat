@@ -13673,6 +13673,23 @@
         }
       }
     },
+    "search.anysearch.maxResults.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter a positive integer from 1 to 100."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入 1 到 100 之间的正整数。"
+          }
+        }
+      }
+    },
     "search.anysearch.summary.auto" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14469,6 +14486,74 @@
         }
       }
     },
+    "search.filter.numeric.error.required" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter a positive integer."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入正整数。"
+          }
+        }
+      }
+    },
+    "search.filter.numeric.error.digitsOnly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only digits are allowed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只能输入数字。"
+          }
+        }
+      }
+    },
+    "search.filter.numeric.error.tooLowFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Value must be at least %d."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数值不能小于 %d。"
+          }
+        }
+      }
+    },
+    "search.filter.numeric.error.tooHighFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Value cannot exceed %d."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数值不能超过 %d。"
+          }
+        }
+      }
+    },
     "search.github.anonymous" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14635,6 +14720,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不限"
+          }
+        }
+      }
+    },
+    "search.github.filter.minStars.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leave empty for no limit, or enter a positive integer."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "留空表示不限；如填写，必须是正整数。"
           }
         }
       }
@@ -26773,13 +26875,149 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Port"
+            "value" : "Port (1024–65535)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "端口"
+            "value" : "端口(1024-65535)"
+          }
+        }
+      }
+    },
+    "settings.mcp.restart" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restart"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重启"
+          }
+        }
+      }
+    },
+    "settings.mcp.port.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Digits only. Leave empty and tap Restart to use default port 5555."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只能输入数字。留空后点「重启」将使用默认端口 5555。"
+          }
+        }
+      }
+    },
+    "settings.mcp.port.error.digitsOnly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Port must contain digits only."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口只能包含数字。"
+          }
+        }
+      }
+    },
+    "settings.mcp.port.error.tooLow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Port must be at least 1024."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口号不能小于 1024。"
+          }
+        }
+      }
+    },
+    "settings.mcp.port.error.tooHigh" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Port cannot exceed 65535."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口号不能超过 65535。"
+          }
+        }
+      }
+    },
+    "settings.mcp.port.error.invalidFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Port %d is invalid. Use a number from 1024 to 65535."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口 %d 无效，请输入 1024 到 65535 之间的数字。"
+          }
+        }
+      }
+    },
+    "settings.mcp.port.error.inUseFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Port %d is already in use. Choose another port and restart MCP Service."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口 %d 已被占用，请换一个端口后重启 MCP Service。"
+          }
+        }
+      }
+    },
+    "settings.mcp.port.error.checkFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not verify this port. Try another port or restart Starcat."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法确认这个端口是否可用，请换一个端口或重启 Starcat 后再试。"
           }
         }
       }
@@ -26967,6 +27205,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已停止"
+          }
+        }
+      }
+    },
+    "settings.mcp.status.requiresPro" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requires Starcat Pro"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要 Starcat Pro"
           }
         }
       }

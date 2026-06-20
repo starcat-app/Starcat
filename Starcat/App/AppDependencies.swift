@@ -820,6 +820,9 @@ final class AppDependencies {
             Task { [bootstrapper] in
                 await bootstrapper.reload()
             }
+            subscriptions.onEntitlementDidChange = { [weak self] in
+                self?.mcpService.refreshForCurrentSettings()
+            }
             self.mcpService.refreshForCurrentSettings()
         }
     }

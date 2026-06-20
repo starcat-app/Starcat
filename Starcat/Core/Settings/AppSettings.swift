@@ -568,6 +568,9 @@ final class AppSettings {
 
     static let shared = AppSettings()
 
+    /// MCP 默认监听端口（设置页可改，有效范围 1024...65535）。
+    static let defaultMCPServicePort = 5555
+
     // MARK: - 偏好项
 
     /// 应用外观主题(W4-5 D1,dong4j 2026-06-03 需求)。
@@ -835,7 +838,7 @@ final class AppSettings {
         didSet { persistBool(key: Keys.mcpServiceEnabled, value: mcpServiceEnabled) }
     }
 
-    /// MCP HTTP 监听端口。默认 8765，监听地址固定为 127.0.0.1。
+    /// MCP HTTP 监听端口。默认 `defaultMCPServicePort`（5555），监听地址固定为 127.0.0.1。
     ///
     /// 端口保留为设置项，是为了让用户避开本机已有服务；host 不开放配置，避免误把
     /// Starcat 私人数据暴露到局域网。
@@ -1274,8 +1277,8 @@ final class AppSettings {
         self.syncIssueNotificationsEnabled = defaults.object(forKey: Keys.syncIssueNotificationsEnabled) as? Bool ?? true
         self.mcpIssueNotificationsEnabled = defaults.object(forKey: Keys.mcpIssueNotificationsEnabled) as? Bool ?? true
         self.mcpServiceEnabled = defaults.object(forKey: Keys.mcpServiceEnabled) as? Bool ?? false
-        let storedMCPPort = defaults.object(forKey: Keys.mcpServicePort) as? Int ?? 8765
-        self.mcpServicePort = (1024...65535).contains(storedMCPPort) ? storedMCPPort : 8765
+        let storedMCPPort = defaults.object(forKey: Keys.mcpServicePort) as? Int ?? Self.defaultMCPServicePort
+        self.mcpServicePort = (1024...65535).contains(storedMCPPort) ? storedMCPPort : Self.defaultMCPServicePort
         self.mcpExposePrivateNotes = defaults.object(forKey: Keys.mcpExposePrivateNotes) as? Bool ?? false
         self.mcpAllowLocalWrites = defaults.object(forKey: Keys.mcpAllowLocalWrites) as? Bool ?? false
         self.mcpAllowBatchWrites = defaults.object(forKey: Keys.mcpAllowBatchWrites) as? Bool ?? false

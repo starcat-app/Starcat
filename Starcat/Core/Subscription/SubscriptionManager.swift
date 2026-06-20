@@ -29,12 +29,18 @@ final class SubscriptionManager: ProEntitlementProviding {
     private(set) var entitlement: ProEntitlement = .inactive {
         didSet {
             settings.updateProEntitlementMirror(isPro: entitlement.isActive)
+            if oldValue != entitlement {
+                onEntitlementDidChange?()
+            }
         }
     }
     private(set) var isLoadingProducts: Bool = false
     private(set) var isPurchasing: Bool = false
     private(set) var isRestoring: Bool = false
     private(set) var lastErrorMessage: String?
+
+    /// 权益变化回调（AppDependencies 注入）。StoreKit 异步刷新完成后需重启 MCP 等 Pro 门控服务。
+    var onEntitlementDidChange: (@MainActor () -> Void)?
 
     init(
         settings: AppSettings,
@@ -251,4 +257,20 @@ final class SubscriptionManager: ProEntitlementProviding {
         }
         return true
     }
+
+    #if DEBUG
+    /// DEBUG 专用：把 Pro 权益切到 `debugOverride`，让 `EntitlementGate` 与 StoreKit 真相源一致。
+    /// 不要只改 `AppSettings.isProUser` 镜像——MCP 等门控读的是本类 `entitlement`。
+    func applyDebugProOverride(active: Bool) {
+        entitlement = active
+            ? ProEntitlement(
+                isActive: true,
+                productID: "debug.starcat.pro",
+                expirationDate: nil,
+                verifiedAt: Date(),
+                source: .debugOverride
+            )
+            : .inactive
+    }
+    #endif
 }
