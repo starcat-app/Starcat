@@ -72,6 +72,7 @@ final class BatchAIQueueService {
     private let repoTagRepository: any RepoTagRepositoryProtocol
     private let aiSummaryRepository: any AISummaryRepositoryProtocol
     private let entitlementGate: EntitlementGate?
+    private let notificationService: ReleaseNotificationService?
 
     /// 标签应用后通知外部刷新 Sidebar 计数 / 当前列表。
     /// 设计上用闭包而非 NotificationCenter，避免跨模块字符串通知名飘移。
@@ -92,13 +93,15 @@ final class BatchAIQueueService {
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
         aiSummaryRepository: any AISummaryRepositoryProtocol,
-        entitlementGate: EntitlementGate? = nil
+        entitlementGate: EntitlementGate? = nil,
+        notificationService: ReleaseNotificationService? = nil
     ) {
         self.insightService = insightService
         self.tagRepository = tagRepository
         self.repoTagRepository = repoTagRepository
         self.aiSummaryRepository = aiSummaryRepository
         self.entitlementGate = entitlementGate
+        self.notificationService = notificationService
     }
 
     // MARK: - 派生状态（panel UI 用）
@@ -325,6 +328,12 @@ final class BatchAIQueueService {
                 // 让"上次运行状态"反映用户**完整跑完**的成果。cancel 时不触发，
                 // 避免半截结果污染 AutoTidySettings.lastRunStats。
                 onBatchFinished?(completedCount, ignoredCount, failedCount, totalCount)
+                await notificationService?.dispatchBatchAIFinished(
+                    completed: completedCount,
+                    ignored: ignoredCount,
+                    failed: failedCount,
+                    total: totalCount
+                )
             }
         }
     }

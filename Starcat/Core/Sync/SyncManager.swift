@@ -113,6 +113,8 @@ final class SyncManager {
     private let apiClient: any GitHubAPIClientProtocol
     /// D-01：依赖协议而非具体 struct，便于单测注入 Mock。
     private let repository: any RepoRepositoryProtocol
+    /// 系统通知入口。只在需要用户回来处理的失败态使用，普通同步完成不通知。
+    private let notificationService: ReleaseNotificationService?
     /// C1：Rate Limit 退避时额外多等多少秒（吸收时钟漂移）。
     /// 默认 5；单测里传 0 让重试逻辑近乎瞬时完成。
     private let rateLimitBufferSeconds: TimeInterval
@@ -135,10 +137,12 @@ final class SyncManager {
     init(
         apiClient: any GitHubAPIClientProtocol,
         repository: any RepoRepositoryProtocol,
+        notificationService: ReleaseNotificationService? = nil,
         rateLimitBufferSeconds: TimeInterval = 5
     ) {
         self.apiClient = apiClient
         self.repository = repository
+        self.notificationService = notificationService
         self.rateLimitBufferSeconds = rateLimitBufferSeconds
     }
 
@@ -384,6 +388,10 @@ final class SyncManager {
             let retryAt = Date().addingTimeInterval(retryAfter)
             state = .rateLimited(retryAt: retryAt)
             AppLog.sync.warning("Rate limited; retry at \(retryAt, privacy: .public)")
+            await notificationService?.dispatchSyncIssue(
+                kind: .rateLimited,
+                message: String(format: String.l10n("notification.sync.rateLimited.bodyFormat"), retryAt.formatted(date: .omitted, time: .shortened))
+            )
             DiagnosticLogStore.record(
                 level: .warning,
                 category: "sync",
@@ -396,6 +404,10 @@ final class SyncManager {
         } catch NetworkError.unauthorized {
             state = .failed(message: String.l10n("sync.error.tokenExpired"))
             AppLog.sync.error("Unauthorized during sync")
+            await notificationService?.dispatchSyncIssue(
+                kind: .unauthorized,
+                message: String.l10n("notification.sync.unauthorized.body")
+            )
             DiagnosticLogStore.record(
                 level: .error,
                 category: "sync",
@@ -412,6 +424,7 @@ final class SyncManager {
             )
             state = .failed(message: friendly.message)
             AppLog.sync.error("Sync failed: \(error.localizedDescription, privacy: .public)")
+            await notificationService?.dispatchSyncIssue(kind: .failed, message: friendly.message)
             friendly.record(category: "sync", operation: "github.fullSync", service: "github")
         } catch {
             let friendly = UserFacingError.map(
@@ -421,6 +434,7 @@ final class SyncManager {
             )
             state = .failed(message: friendly.message)
             AppLog.sync.error("Sync failed (unknown): \(error.localizedDescription, privacy: .public)")
+            await notificationService?.dispatchSyncIssue(kind: .failed, message: friendly.message)
             friendly.record(category: "sync", operation: "github.fullSync", service: "github")
         }
 

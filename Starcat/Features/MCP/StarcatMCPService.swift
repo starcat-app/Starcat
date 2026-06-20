@@ -28,6 +28,7 @@ final class StarcatMCPService {
     private let tokenStore: StarcatMCPTokenStore
     private let facade: StarcatMCPFacade
     private let writeFacade: StarcatMCPWriteFacade
+    private let notificationService: ReleaseNotificationService?
     private var server: Server?
     private var transport: StatelessHTTPServerTransport?
     private var httpServer: StarcatMCPLoopbackHTTPServer?
@@ -40,13 +41,15 @@ final class StarcatMCPService {
         entitlementGate: EntitlementGate,
         tokenStore: StarcatMCPTokenStore = StarcatMCPTokenStore(),
         facade: StarcatMCPFacade,
-        writeFacade: StarcatMCPWriteFacade
+        writeFacade: StarcatMCPWriteFacade,
+        notificationService: ReleaseNotificationService? = nil
     ) {
         self.settings = settings
         self.entitlementGate = entitlementGate
         self.tokenStore = tokenStore
         self.facade = facade
         self.writeFacade = writeFacade
+        self.notificationService = notificationService
         self.bearerToken = tokenStore.loadOrCreateToken()
     }
 
@@ -126,6 +129,7 @@ final class StarcatMCPService {
                 await transport.disconnect()
                 self.state = .failed(error.localizedDescription)
                 AppLog.network.error("MCP Service failed: \(error.localizedDescription, privacy: .public)")
+                await self.notificationService?.dispatchMCPFailure(message: error.localizedDescription)
             }
         }
     }

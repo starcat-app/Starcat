@@ -798,6 +798,33 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.globalSearchShortcut, value: globalSearchShortcut) }
     }
 
+    // MARK: - 通知（2026-06-20）
+
+    /// 系统通知总开关。只控制 Starcat 主动发出的 macOS 通知，不影响 App 内状态面板。
+    var notificationsEnabled: Bool {
+        didSet { persistBool(key: Keys.notificationsEnabled, value: notificationsEnabled) }
+    }
+
+    /// Release 订阅发现新版本时通知。默认开启，沿用 HOM-47 既有行为。
+    var releaseNotificationsEnabled: Bool {
+        didSet { persistBool(key: Keys.releaseNotificationsEnabled, value: releaseNotificationsEnabled) }
+    }
+
+    /// 批量 AI 队列整批结束时通知。单个 repo 完成不通知，避免刷屏。
+    var batchAINotificationsEnabled: Bool {
+        didSet { persistBool(key: Keys.batchAINotificationsEnabled, value: batchAINotificationsEnabled) }
+    }
+
+    /// 同步进入需要用户处理的失败态时通知。普通完成和短暂失败不通知。
+    var syncIssueNotificationsEnabled: Bool {
+        didSet { persistBool(key: Keys.syncIssueNotificationsEnabled, value: syncIssueNotificationsEnabled) }
+    }
+
+    /// MCP Service 启动失败时通知。正常启动 / 停止不通知。
+    var mcpIssueNotificationsEnabled: Bool {
+        didSet { persistBool(key: Keys.mcpIssueNotificationsEnabled, value: mcpIssueNotificationsEnabled) }
+    }
+
     // MARK: - MCP Service（2026-06-20）
 
     /// 本机 MCP Service 总开关。
@@ -1239,8 +1266,13 @@ final class AppSettings {
         if let storedSearchShortcut, storedSearchShortcut.validationError == nil {
             self.globalSearchShortcut = storedSearchShortcut
         } else {
-            self.globalSearchShortcut = .globalSearchDefault
+        self.globalSearchShortcut = .globalSearchDefault
         }
+        self.notificationsEnabled = defaults.object(forKey: Keys.notificationsEnabled) as? Bool ?? true
+        self.releaseNotificationsEnabled = defaults.object(forKey: Keys.releaseNotificationsEnabled) as? Bool ?? true
+        self.batchAINotificationsEnabled = defaults.object(forKey: Keys.batchAINotificationsEnabled) as? Bool ?? true
+        self.syncIssueNotificationsEnabled = defaults.object(forKey: Keys.syncIssueNotificationsEnabled) as? Bool ?? true
+        self.mcpIssueNotificationsEnabled = defaults.object(forKey: Keys.mcpIssueNotificationsEnabled) as? Bool ?? true
         self.mcpServiceEnabled = defaults.object(forKey: Keys.mcpServiceEnabled) as? Bool ?? false
         let storedMCPPort = defaults.object(forKey: Keys.mcpServicePort) as? Int ?? 8765
         self.mcpServicePort = (1024...65535).contains(storedMCPPort) ? storedMCPPort : 8765
@@ -1488,6 +1520,11 @@ final class AppSettings {
         static let disableAnimations = "settings.general.disableAnimations.v1"  // 2026-06-15
         static let aiChatRequiresCommandReturn = "settings.general.shortcuts.aiCommandReturn.v1"
         static let globalSearchShortcut = "settings.general.shortcuts.globalSearch.v1"
+        static let notificationsEnabled = "settings.notifications.enabled.v1"
+        static let releaseNotificationsEnabled = "settings.notifications.release.enabled.v1"
+        static let batchAINotificationsEnabled = "settings.notifications.batchAI.enabled.v1"
+        static let syncIssueNotificationsEnabled = "settings.notifications.syncIssues.enabled.v1"
+        static let mcpIssueNotificationsEnabled = "settings.notifications.mcpIssues.enabled.v1"
         static let mcpServiceEnabled = "settings.mcp.enabled.v1"
         static let mcpServicePort = "settings.mcp.port.v1"
         static let mcpExposePrivateNotes = "settings.mcp.exposePrivateNotes.v1"

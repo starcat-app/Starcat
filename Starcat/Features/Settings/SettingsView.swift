@@ -300,6 +300,30 @@ struct SettingsView: View {
                 }
             }
 
+            // 2026-06-20：系统通知策略入口。
+            // 通知只用于「用户离开 App 后需要回来处理」的低频事件；普通状态变化继续留在
+            // toolbar 状态面板，避免把通知中心变成运行日志。
+            Section("settings.notifications.title") {
+                Toggle(isOn: $settings.notificationsEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.notifications.enabled.title")
+                        Text("settings.notifications.enabled.help")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Toggle("settings.notifications.release.title", isOn: $settings.releaseNotificationsEnabled)
+                    .disabled(!settings.notificationsEnabled)
+                Toggle("settings.notifications.batchAI.title", isOn: $settings.batchAINotificationsEnabled)
+                    .disabled(!settings.notificationsEnabled)
+                Toggle("settings.notifications.syncIssues.title", isOn: $settings.syncIssueNotificationsEnabled)
+                    .disabled(!settings.notificationsEnabled)
+                Toggle("settings.notifications.mcpIssues.title", isOn: $settings.mcpIssueNotificationsEnabled)
+                    .disabled(!settings.notificationsEnabled)
+            }
+
             // 2026-06-15 dong4j 需求：无障碍 / 动画偏好。
             //
             // 单独起一个 Section 而不是夹在「外观」里——「关闭应用内动画」

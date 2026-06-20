@@ -395,9 +395,12 @@ final class AppDependencies {
         // D-01：构造时用具体类型 GRDBRepoRepository，字段类型是协议 any RepoRepositoryProtocol
         let repo = GRDBRepoRepository(database: db)
         self.repoRepository = repo
-        self.syncManager = SyncManager(apiClient: api, repository: repo)
-        self.settings = AppSettings.shared
-        let subscriptions = SubscriptionManager(settings: self.settings)
+        let settings = AppSettings.shared
+        self.settings = settings
+        let notificationService = ReleaseNotificationService(settings: settings)
+        self.releaseNotificationService = notificationService
+        self.syncManager = SyncManager(apiClient: api, repository: repo, notificationService: notificationService)
+        let subscriptions = SubscriptionManager(settings: settings)
         self.subscriptionManager = subscriptions
         self.entitlementGate = EntitlementGate(
             entitlementProvider: subscriptions,
@@ -487,7 +490,8 @@ final class AppDependencies {
             tagRepository: tagRepo,
             repoTagRepository: repoTagRepo,
             aiSummaryRepository: summaryRepo,
-            entitlementGate: self.entitlementGate
+            entitlementGate: self.entitlementGate,
+            notificationService: notificationService
         )
         self.batchAIQueueService = batchSvc
 
@@ -542,7 +546,8 @@ final class AppDependencies {
             settings: self.settings,
             entitlementGate: self.entitlementGate,
             facade: mcpFacade,
-            writeFacade: mcpWriteFacade
+            writeFacade: mcpWriteFacade,
+            notificationService: notificationService
         )
 
         // 2026-06-12 向量索引改进：摘要生成成功后触发单 repo 向量重建。
@@ -658,8 +663,6 @@ final class AppDependencies {
             repoRepo: repo
         )
         self.releaseMonitor = monitor
-        let notificationService = ReleaseNotificationService()
-        self.releaseNotificationService = notificationService
         self.releasePoller = ReleasePoller(monitor: monitor, notificationService: notificationService)
 
         // Activity 公告与关注 PR-1（2026-06-16）：纯本地 CRUD Repository，不接网络。
