@@ -12,6 +12,16 @@
 
 import Foundation
 
+/// 诊断日志给 UI 展示用的轻量摘要。
+///
+/// 只统计 warning 及以上级别，避免 debug/info 健康检查日志让 toolbar 状态看起来像故障。
+struct DiagnosticLogSummary: Equatable, Sendable {
+    var issueCount: Int
+    var latestIssue: DiagnosticEvent?
+
+    static let empty = DiagnosticLogSummary(issueCount: 0, latestIssue: nil)
+}
+
 /// 轻量 JSONL 诊断日志。
 ///
 /// actor 串行化文件写入，避免多个 async 任务同时 append 导致行交错。日志按文件大小
@@ -69,6 +79,32 @@ actor DiagnosticLogStore {
             .joined(separator: "")
     }
 
+    /// 读取最近诊断问题摘要。
+    ///
+    /// 这是 toolbar 状态面板的只读入口：它不新增日志、不触发外部请求，只解析本机 JSONL。
+    /// 失败行会被跳过，避免半行写入或旧格式日志让状态面板不可用。
+    func issueSummary(since cutoff: Date = Date().addingTimeInterval(-24 * 60 * 60)) async -> DiagnosticLogSummary {
+        let files = await exportableFiles()
+        let decoder = JSONDecoder()
+        var issues: [DiagnosticEvent] = []
+
+        for file in files {
+            guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            for line in text.split(separator: "\n") {
+                guard let data = String(line).data(using: .utf8),
+                      let event = try? decoder.decode(DiagnosticEvent.self, from: data),
+                      event.isUserVisibleIssue,
+                      event.date >= cutoff else {
+                    continue
+                }
+                issues.append(event)
+            }
+        }
+
+        let latest = issues.max { $0.date < $1.date }
+        return DiagnosticLogSummary(issueCount: issues.count, latestIssue: latest)
+    }
+
     private static func defaultDirectoryURL(fileManager: FileManager) -> URL {
         let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.temporaryDirectory
@@ -105,6 +141,21 @@ actor DiagnosticLogStore {
     }
 }
 
+private extension DiagnosticEvent {
+    var date: Date {
+        ISO8601DateFormatter.shared.date(from: timestamp) ?? .distantPast
+    }
+
+    var isUserVisibleIssue: Bool {
+        switch level {
+        case .warning, .error, .critical:
+            return true
+        case .debug, .info:
+            return false
+        }
+    }
+}
+
 extension DiagnosticLogStore {
 
     /// Fire-and-forget 便捷入口，适合 catch 分支和 UI action 调用。
@@ -135,4 +186,3 @@ extension DiagnosticLogStore {
         }
     }
 }
-

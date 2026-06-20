@@ -108,6 +108,14 @@ struct RepoListView: View {
                 }
                 .help("toolbar.globalSearchHelp")
             }
+            ToolbarItem(placement: .primaryAction) {
+                // 全局状态入口放在中栏 toolbar：它汇总同步、后台 AI 队列、MCP 与诊断问题，
+                // 点击后打开 popover，不额外占用主界面纵向空间。
+                AppStatusToolbarButton(
+                    lastSyncedAt: lastSyncedAt,
+                    onShowBatchAIPanel: onShowBatchAIPanel
+                )
+            }
             // W12 toolbar 专项 PR-1：toolbar 内容按 selectedPage 派发到对应 spec builder。
             // 当前只有 manage 走完整 spec，trending / activity 返回 .empty —— 它们各自
             // 仍在中栏自绘 toolbar，PR-2/3/4 阶段再迁过来。
