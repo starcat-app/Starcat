@@ -516,6 +516,12 @@ final class ActivityViewModel {
                     AppLog.network.warning(
                         "Activity blog RSS refresh failed: \(error.localizedDescription, privacy: .public)"
                     )
+                    let friendly = UserFacingError.map(
+                        error,
+                        operation: String.l10n("diagnostics.operation.loadActivityAnnouncements"),
+                        service: "GitHub Blog"
+                    )
+                    friendly.record(level: .warning, category: "activity", operation: "blogRSS.refresh", service: "github-blog")
                 }
             }
 
@@ -679,6 +685,12 @@ final class ActivityViewModel {
                 AppLog.network.warning(
                     "Activity blog RSS supplement failed: \(error.localizedDescription, privacy: .public)"
                 )
+                let friendly = UserFacingError.map(
+                    error,
+                    operation: String.l10n("diagnostics.operation.loadActivityAnnouncements"),
+                    service: "GitHub Blog"
+                )
+                friendly.record(level: .warning, category: "activity", operation: "blogRSS.supplement", service: "github-blog")
             }
         }
 
@@ -829,13 +841,19 @@ final class ActivityViewModel {
     private func recordEventsLoadError(_ error: Error, category: ActivityCategory, snapshot: AggregateSnapshot) {
         let followingCount = makeFollowingItems(snapshot.events).count
         let shouldSurface = (category == .following || category == .all) && followingCount == 0
+        let friendly = UserFacingError.map(
+            error,
+            operation: String.l10n("diagnostics.operation.loadActivity"),
+            service: "GitHub"
+        )
         if shouldSurface {
-            loadError = error.localizedDescription
+            loadError = friendly.message
         } else {
             AppLog.network.warning(
                 "Activity events refresh failed: \(error.localizedDescription, privacy: .public)"
             )
         }
+        friendly.record(level: shouldSurface ? .error : .warning, category: "activity", operation: "events.refresh", service: "github")
     }
 
     /// Security 扫描放后台：最多 200 个串行 API，不能挡切分类 / 首屏。
@@ -862,6 +880,12 @@ final class ActivityViewModel {
             AppLog.network.warning(
                 "Activity security refresh failed: \(error.localizedDescription, privacy: .public)"
             )
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.loadActivitySecurity"),
+                service: "GitHub"
+            )
+            friendly.record(level: .warning, category: "activity", operation: "security.refresh", service: "github")
         }
     }
 
@@ -1154,6 +1178,17 @@ final class ActivityViewModel {
         } catch {
             AppLog.network.warning(
                 "Activity security skip \(job.fullName): \(error.localizedDescription, privacy: .public)"
+            )
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.loadActivitySecurity"),
+                service: "GitHub"
+            )
+            friendly.record(
+                level: .warning,
+                category: "activity",
+                operation: "securityAdvisories.fetch",
+                service: "github"
             )
             return []
         }

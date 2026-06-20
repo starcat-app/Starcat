@@ -1,0 +1,138 @@
+//
+//  DiagnosticLogStore.swift
+//  Starcat
+//
+//  用户可导出的本机诊断日志存储。
+//
+//  设计目标：
+//  - 用 app-owned JSONL 保存关键 warning/error，用户主动导出时可直接打包；
+//  - 不替代 OSLog，OSLog 继续承担开发期 Console.app 调试；
+//  - 写入失败只记 OSLog，不影响主流程，避免诊断系统反过来拖垮 App。
+//
+
+import Foundation
+
+/// 轻量 JSONL 诊断日志。
+///
+/// actor 串行化文件写入，避免多个 async 任务同时 append 导致行交错。日志按文件大小
+/// 滚动，保留当前文件和一个 `.1` 备份，足够覆盖最近问题，同时不会无限增长。
+actor DiagnosticLogStore {
+
+    static let shared = DiagnosticLogStore()
+
+    private static let directoryName = "diagnostics"
+    private static let fileName = "diagnostic-log.jsonl"
+    private static let rotatedFileName = "diagnostic-log.1.jsonl"
+    private static let maxBytes: UInt64 = 2 * 1024 * 1024
+
+    private let fileManager: FileManager
+    private let encoder: JSONEncoder
+    private let directoryURL: URL
+    private let fileURL: URL
+    private let rotatedFileURL: URL
+
+    init(
+        fileManager: FileManager = .default,
+        directoryURL: URL? = nil
+    ) {
+        self.fileManager = fileManager
+        self.encoder = JSONEncoder()
+        self.encoder.outputFormatting = [.sortedKeys]
+
+        let baseURL = directoryURL ?? Self.defaultDirectoryURL(fileManager: fileManager)
+        self.directoryURL = baseURL
+        self.fileURL = baseURL.appendingPathComponent(Self.fileName)
+        self.rotatedFileURL = baseURL.appendingPathComponent(Self.rotatedFileName)
+    }
+
+    /// 追加一条诊断事件。
+    func record(_ event: DiagnosticEvent) async {
+        do {
+            try ensureDirectory()
+            try rotateIfNeeded()
+            let data = try encoder.encode(event)
+            try append(data)
+        } catch {
+            AppLog.general.error("Diagnostic log write failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// 返回当前可导出的日志文件，旧文件排前，方便人工按时间阅读。
+    func exportableFiles() async -> [URL] {
+        [rotatedFileURL, fileURL].filter { fileManager.fileExists(atPath: $0.path) }
+    }
+
+    /// 测试和导出器使用：读取所有 JSONL 文本。
+    func readAllText() async -> String {
+        let files = await exportableFiles()
+        return files.compactMap { try? String(contentsOf: $0, encoding: .utf8) }
+            .joined(separator: "")
+    }
+
+    private static func defaultDirectoryURL(fileManager: FileManager) -> URL {
+        let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fileManager.temporaryDirectory
+        return support
+            .appendingPathComponent(AppConstants.bundleIdentifier, isDirectory: true)
+            .appendingPathComponent(Self.directoryName, isDirectory: true)
+    }
+
+    private func ensureDirectory() throws {
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+    }
+
+    private func rotateIfNeeded() throws {
+        guard fileManager.fileExists(atPath: fileURL.path) else { return }
+        let attributes = try fileManager.attributesOfItem(atPath: fileURL.path)
+        let size = attributes[.size] as? UInt64 ?? 0
+        guard size >= Self.maxBytes else { return }
+
+        if fileManager.fileExists(atPath: rotatedFileURL.path) {
+            try fileManager.removeItem(at: rotatedFileURL)
+        }
+        try fileManager.moveItem(at: fileURL, to: rotatedFileURL)
+    }
+
+    private func append(_ data: Data) throws {
+        if !fileManager.fileExists(atPath: fileURL.path) {
+            fileManager.createFile(atPath: fileURL.path, contents: nil)
+        }
+        let handle = try FileHandle(forWritingTo: fileURL)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: data)
+        try handle.write(contentsOf: Data("\n".utf8))
+    }
+}
+
+extension DiagnosticLogStore {
+
+    /// Fire-and-forget 便捷入口，适合 catch 分支和 UI action 调用。
+    nonisolated static func record(
+        level: DiagnosticEvent.Level,
+        category: String,
+        operation: String,
+        message: String,
+        service: String? = nil,
+        statusCode: Int? = nil,
+        errorCode: String? = nil,
+        underlying: String? = nil,
+        context: [String: String] = [:]
+    ) {
+        let event = DiagnosticEvent(
+            level: level,
+            category: category,
+            operation: operation,
+            message: message,
+            service: service,
+            statusCode: statusCode,
+            errorCode: errorCode,
+            underlying: underlying,
+            context: context
+        )
+        Task {
+            await DiagnosticLogStore.shared.record(event)
+        }
+    }
+}
+

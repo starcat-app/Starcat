@@ -191,7 +191,13 @@ final class ReadmeTranslationViewModel {
                 )
             } catch {
                 self.presentPaywallIfNeeded(error)
-                self.errorMessage = error.localizedDescription
+                let friendly = UserFacingError.map(
+                    error,
+                    operation: String.l10n("diagnostics.operation.translateReadme"),
+                    service: "AI"
+                )
+                self.errorMessage = friendly.message
+                friendly.record(category: "ai", operation: "readmeTranslation.start", service: "ai-provider")
             }
         }
     }
@@ -305,9 +311,19 @@ final class ReadmeTranslationViewModel {
         } catch {
             // 失败保留原 README（HOM-68 验收要求）：不动 displayMode。
             presentPaywallIfNeeded(error)
-            errorMessage = error.localizedDescription
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.translateReadme"),
+                service: "AI"
+            )
+            errorMessage = friendly.message
             streamingHtml = nil
             AppLog.ai.error("README translation failed repo=\(repo.fullName, privacy: .public) language=\(targetLanguage.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            friendly.record(
+                category: "ai",
+                operation: "readmeTranslation.perform",
+                service: "ai-provider"
+            )
         }
     }
 

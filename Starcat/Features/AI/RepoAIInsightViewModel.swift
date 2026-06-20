@@ -94,7 +94,13 @@ final class RepoAIInsightViewModel {
             externalContextDegradationReason = nil
         } catch {
             presentPaywallIfNeeded(error)
-            errorMessage = error.localizedDescription
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.loadAIInsight"),
+                service: "AI"
+            )
+            errorMessage = friendly.message
+            friendly.record(category: "ai", operation: "insight.load", service: "ai-provider")
         }
     }
 
@@ -147,7 +153,13 @@ final class RepoAIInsightViewModel {
             errorMessage = nil
         } catch {
             presentPaywallIfNeeded(error)
-            errorMessage = error.localizedDescription
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.generateAIInsight"),
+                service: "AI"
+            )
+            errorMessage = friendly.message
+            friendly.record(category: "ai", operation: "insight.generate", service: "ai-provider")
         }
     }
 
@@ -162,7 +174,13 @@ final class RepoAIInsightViewModel {
             errorMessage = nil
         } catch {
             presentPaywallIfNeeded(error)
-            errorMessage = error.localizedDescription
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.applyAITag"),
+                service: "Starcat"
+            )
+            errorMessage = friendly.message
+            friendly.record(category: "ai", operation: "tag.apply", service: "local-database")
         }
     }
 

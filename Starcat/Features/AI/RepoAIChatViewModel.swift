@@ -620,14 +620,21 @@ final class RepoAIChatViewModel {
                 return
             }
 
-            let description = error.localizedDescription
+            let rawDescription = error.localizedDescription
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.aiChat"),
+                service: "AI"
+            )
+            let description = friendly.message
             if let gateError = error as? EntitlementGateError {
-                paywallContext = ProPaywallContext(feature: gateError.feature, message: description)
+                paywallContext = ProPaywallContext(feature: gateError.feature, message: error.localizedDescription)
             }
             errorMessage = description
-            if Self.looksLikeContextOverflow(description) {
+            if Self.looksLikeContextOverflow(rawDescription) {
                 isContextOverflow = true
             }
+            friendly.record(category: "ai", operation: "chat.stream", service: "ai-provider")
             if var failed = streamingMessage {
                 failed.content = accumulated
                 // 不留空占位（避免 UI 上看到一条"灰色光标但无文字"的助手消息）。

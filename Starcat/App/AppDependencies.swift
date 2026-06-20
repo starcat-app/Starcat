@@ -43,6 +43,8 @@ final class AppDependencies {
     let subscriptionManager: SubscriptionManager
     /// 统一 Pro 门控服务。业务层通过它判断是否放行，而不是直接读 `settings.isProUser`。
     let entitlementGate: EntitlementGate
+    /// 本机 MCP Service。Pro 用户可开启，让本机 Agent 通过 MCP 读取 Starcat 上下文。
+    let mcpService: StarcatMCPService
     /// Week 4 引入：README 缓存 Repository。
     let readmeRepository: ReadmeRepository
     /// Week 4 引入：README HTML 抓取 + 缓存协调。
@@ -329,7 +331,11 @@ final class AppDependencies {
     // MARK: - 初始化
 
     /// 生产环境构造：使用真实 DatabaseManager + 根据 useMockOAuth 选择 OAuth Service。
-    init() {
+    ///
+    /// 数据库是 Starcat 的核心数据载体。初始化失败时不能继续构造半可用依赖树，
+    /// 否则后续 Repository 可能在错误路径上读写。这里向上抛出，由 `StarcatApp`
+    /// 展示受控启动失败页，并保留诊断包导出入口。
+    init() throws {
         // 启动期记录四个自建后端 API 的实际 baseURL（DEBUG 会标 `[DEV]`，方便确认
         // 当前到底打的是 fly.dev 生产端点还是 127.0.0.1 本地端点）。
         // 详见 `AppEndpoints.swift` 头注释里的"使用方式"。
@@ -338,12 +344,18 @@ final class AppDependencies {
         // 2026-06-12 多账号 DB 隔离：DatabaseManager 不再单例，启动期用 `userId: nil`
         // 走 `users/_anonymous` 占位 DB；AuthSession 在登录成功后通过 onUserSessionChanged
         // closure 触发 `database.reopen(userId:)` 切到该 user 的 DB。
-        // 失败 fatalError —— 与原 DatabaseManager.shared 失败行为一致（DB 是核心数据载体）。
         let db: any DatabaseManaging
         do {
             db = try DatabaseManager(userId: nil)
         } catch {
-            fatalError("Failed to initialize DatabaseManager: \(error)")
+            DiagnosticLogStore.record(
+                level: .critical,
+                category: "database",
+                operation: "startup.openDatabase",
+                message: "Failed to initialize database",
+                underlying: error.localizedDescription
+            )
+            throw error
         }
         self.database = db
 
@@ -503,6 +515,35 @@ final class AppDependencies {
             entitlementGate: self.entitlementGate
         )
         self.semanticSearchService = semantic
+
+        let mcpFacade = StarcatMCPFacade(
+            repoRepository: repo,
+            readmeRepository: readmeRepo,
+            tagRepository: tagRepo,
+            repoTagRepository: repoTagRepo,
+            repoNoteRepository: self.repoNoteRepository,
+            semanticSearchService: semantic,
+            settings: self.settings
+        )
+        let mcpWriteFacade = StarcatMCPWriteFacade(
+            repoRepository: repo,
+            tagRepository: tagRepo,
+            repoTagRepository: repoTagRepo,
+            repoNoteRepository: self.repoNoteRepository,
+            settings: self.settings,
+            entitlementGate: self.entitlementGate,
+            refreshSemanticIndex: { [weak semantic] repo in
+                Task { @MainActor in
+                    await semantic?.refreshIndexIfChanged(for: repo)
+                }
+            }
+        )
+        self.mcpService = StarcatMCPService(
+            settings: self.settings,
+            entitlementGate: self.entitlementGate,
+            facade: mcpFacade,
+            writeFacade: mcpWriteFacade
+        )
 
         // 2026-06-12 向量索引改进：摘要生成成功后触发单 repo 向量重建。
         // weak 捕获避免 `aiInsight ↔ semantic` 形成强循环（两者都是 @MainActor final class，
@@ -752,6 +793,7 @@ final class AppDependencies {
             Task { [bootstrapper] in
                 await bootstrapper.reload()
             }
+            self.mcpService.refreshForCurrentSettings()
         }
     }
 

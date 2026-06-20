@@ -798,6 +798,55 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.globalSearchShortcut, value: globalSearchShortcut) }
     }
 
+    // MARK: - MCP Service（2026-06-20）
+
+    /// 本机 MCP Service 总开关。
+    ///
+    /// 这里只保存用户意图，真实放行仍必须经过 `EntitlementGate.requirePro(.mcpService)`。
+    /// 这样订阅过期时不会因为旧的 UserDefaults 值继续开放本地 agent 入口。
+    var mcpServiceEnabled: Bool {
+        didSet { persistBool(key: Keys.mcpServiceEnabled, value: mcpServiceEnabled) }
+    }
+
+    /// MCP HTTP 监听端口。默认 8765，监听地址固定为 127.0.0.1。
+    ///
+    /// 端口保留为设置项，是为了让用户避开本机已有服务；host 不开放配置，避免误把
+    /// Starcat 私人数据暴露到局域网。
+    var mcpServicePort: Int {
+        didSet { defaults.set(mcpServicePort, forKey: Keys.mcpServicePort) }
+    }
+
+    /// 是否允许 MCP 读取用户私有笔记。
+    ///
+    /// 默认 false：repo 元数据和 README 是低敏只读上下文，私有笔记属于用户主动写入的
+    /// 私人数据，必须显式开启才暴露给 agent。
+    var mcpExposePrivateNotes: Bool {
+        didSet { persistBool(key: Keys.mcpExposePrivateNotes, value: mcpExposePrivateNotes) }
+    }
+
+    /// 是否允许 MCP 工具写入本地用户数据（notes / status / tags）。
+    ///
+    /// 读取与写入分开授权：用户可能愿意让 agent 整理标签和写新笔记，但不希望它读取
+    /// 已有私有笔记内容。具体工具仍会在 facade 层做二次校验和审计。
+    var mcpAllowLocalWrites: Bool {
+        didSet { persistBool(key: Keys.mcpAllowLocalWrites, value: mcpAllowLocalWrites) }
+    }
+
+    /// 是否允许 MCP 批量写入。
+    ///
+    /// P0 先作为权限边界落地；批量工具后续接入时必须走这个开关和单次数量限制。
+    var mcpAllowBatchWrites: Bool {
+        didSet { persistBool(key: Keys.mcpAllowBatchWrites, value: mcpAllowBatchWrites) }
+    }
+
+    /// 是否允许 MCP 执行替换式写入（例如 set_repo_tags）。
+    ///
+    /// 替换式操作会删除未出现在新集合里的旧关联，比 add/remove 更容易被 agent 误用，
+    /// 因此单独开关且默认关闭。
+    var mcpAllowDestructiveWrites: Bool {
+        didSet { persistBool(key: Keys.mcpAllowDestructiveWrites, value: mcpAllowDestructiveWrites) }
+    }
+
     /// Pro 订阅状态镜像（HOM-151 → StoreKit）。
     ///
     /// 真实订阅接入后，StoreKit 权益是单一真相源，本字段只作为 UI 读模型：
@@ -1192,6 +1241,13 @@ final class AppSettings {
         } else {
             self.globalSearchShortcut = .globalSearchDefault
         }
+        self.mcpServiceEnabled = defaults.object(forKey: Keys.mcpServiceEnabled) as? Bool ?? false
+        let storedMCPPort = defaults.object(forKey: Keys.mcpServicePort) as? Int ?? 8765
+        self.mcpServicePort = (1024...65535).contains(storedMCPPort) ? storedMCPPort : 8765
+        self.mcpExposePrivateNotes = defaults.object(forKey: Keys.mcpExposePrivateNotes) as? Bool ?? false
+        self.mcpAllowLocalWrites = defaults.object(forKey: Keys.mcpAllowLocalWrites) as? Bool ?? false
+        self.mcpAllowBatchWrites = defaults.object(forKey: Keys.mcpAllowBatchWrites) as? Bool ?? false
+        self.mcpAllowDestructiveWrites = defaults.object(forKey: Keys.mcpAllowDestructiveWrites) as? Bool ?? false
 
         // HOM-126：自动整理偏好。缺失时回落到 `AutoTidySettings.default`（总开关关 +
         // 启动/同步触发 + 50 个 + 最近 star + 仅标签 + 90% 阈值），与任务描述一致。
@@ -1432,6 +1488,12 @@ final class AppSettings {
         static let disableAnimations = "settings.general.disableAnimations.v1"  // 2026-06-15
         static let aiChatRequiresCommandReturn = "settings.general.shortcuts.aiCommandReturn.v1"
         static let globalSearchShortcut = "settings.general.shortcuts.globalSearch.v1"
+        static let mcpServiceEnabled = "settings.mcp.enabled.v1"
+        static let mcpServicePort = "settings.mcp.port.v1"
+        static let mcpExposePrivateNotes = "settings.mcp.exposePrivateNotes.v1"
+        static let mcpAllowLocalWrites = "settings.mcp.allowLocalWrites.v1"
+        static let mcpAllowBatchWrites = "settings.mcp.allowBatchWrites.v1"
+        static let mcpAllowDestructiveWrites = "settings.mcp.allowDestructiveWrites.v1"
         static let autoTidySettings = "settings.ai.autoTidy.v1"  // HOM-126
         static let customServiceURLs = "settings.services.customURLs.v1"  // 2026-06-08
         // R-01 v1.2 2026-06-09 引入；2026-06-10 迁 Keychain。

@@ -776,5 +776,5 @@ struct ShareCardSheet: View {
         isProUser: false,
         onClose: {}
     )
-    .environment(AppDependencies())
+    .environment(try! AppDependencies())
 }

@@ -35,8 +35,8 @@ import SwiftUI
 //   2. 未识别的 object 字符串直接忽略，不 crash；
 //   3. 名字加 `starcat.` 前缀防止与系统 / 三方框架冲突。
 extension Notification.Name {
-    /// 跨 Settings Tab 跳转。`object: String` 取值：`"general"` / `"storage"` /
-    /// `"pro"` / `"ai"` / `"services"` / `"integrations"`。
+/// 跨 Settings Tab 跳转。`object: String` 取值：`"general"` / `"storage"` /
+    /// `"pro"` / `"ai"` / `"services"` / `"integrations"` / `"diagnostics"`。
     static let starcatJumpToSettingsTab: Notification.Name = .init("starcat.settings.jumpToTab")
 }
 
@@ -71,11 +71,13 @@ struct SettingsView: View {
         case general
         case pro
         case ai
+        case mcp
         /// 2026-06-08 新增：第三方 / 自建后端服务的 URL 配置。
         case services
         /// 直接嵌入 Starcat 的第三方工具，与后端服务配置分开管理。
         case integrations
         case storage
+        case diagnostics
     }
 
     /// 统一的内容尺寸——所有 Tab 共用，避免切 Tab 时窗口尺寸跳变。
@@ -103,6 +105,11 @@ struct SettingsView: View {
                     Label("settings.ai.title", systemImage: "sparkles")
                 }
                 .tag(SettingsTab.ai)
+            MCPSettingsTab()
+                .tabItem {
+                    Label("settings.mcp.title", systemImage: "point.3.connected.trianglepath.dotted")
+                }
+                .tag(SettingsTab.mcp)
             ServicesSettingsTab()
                 .tabItem {
                     Label("settings.services.title", systemImage: "network")
@@ -118,6 +125,11 @@ struct SettingsView: View {
                     Label("settings.storage.title", systemImage: "internaldrive")
                 }
                 .tag(SettingsTab.storage)
+            DiagnosticsSettingsTab()
+                .tabItem {
+                    Label("settings.diagnostics.title", systemImage: "stethoscope")
+                }
+                .tag(SettingsTab.diagnostics)
         }
         .frame(width: Self.contentSize.width, height: Self.contentSize.height)
         .scenePadding()
@@ -127,9 +139,11 @@ struct SettingsView: View {
             case "general":      selectedTab = .general
             case "pro":          selectedTab = .pro
             case "ai":           selectedTab = .ai
+            case "mcp":          selectedTab = .mcp
             case "services":     selectedTab = .services
             case "integrations": selectedTab = .integrations
             case "storage":      selectedTab = .storage
+            case "diagnostics":  selectedTab = .diagnostics
             default: break
             }
         }
@@ -322,6 +336,92 @@ struct SettingsView: View {
             return "settings.general.shortcuts.error.missingModifier"
         case .reserved:
             return "settings.general.shortcuts.error.reserved"
+        }
+    }
+}
+
+// MARK: - 诊断 Tab（2026-06-20）
+
+/// 调试日志导出面板。
+///
+/// 这里不是“日志清理”功能：系统 OSLog 仍由 Console.app 管理。本 Tab 只负责把 Starcat
+/// 自己记录的关键诊断事件打包，便于用户遇到外部服务不可用、AI provider 异常或本地
+/// 数据问题时，把最小必要证据交给 dong4j 排查。
+private struct DiagnosticsSettingsTab: View {
+
+    @Environment(AppSettings.self) private var settings
+
+    @State private var isExporting = false
+    @State private var lastExportPath: String?
+    @State private var exportError: String?
+
+    var body: some View {
+        Form {
+            Section("settings.diagnostics.export.section") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("settings.diagnostics.export.description")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button {
+                        Task { await exportDiagnostics() }
+                    } label: {
+                        Label("diagnostics.export.button", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(isExporting)
+
+                    if isExporting {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("settings.diagnostics.export.running")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if let lastExportPath {
+                        Text(verbatim: lastExportPath)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
+
+            Section("settings.diagnostics.privacy.section") {
+                Text("settings.diagnostics.privacy.description")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+        .alert(
+            "diagnostics.export.failed.title",
+            isPresented: Binding(
+                get: { exportError != nil },
+                set: { if !$0 { exportError = nil } }
+            )
+        ) {
+            Button("general.ok") { exportError = nil }
+        } message: {
+            Text(exportError ?? "")
+        }
+    }
+
+    @MainActor
+    private func exportDiagnostics() async {
+        isExporting = true
+        defer { isExporting = false }
+
+        switch await DiagnosticBundleExporter.exportFromPanel(settings: settings) {
+        case .exported(let url):
+            lastExportPath = String(format: String.l10n("diagnostics.export.successFormat"), url.path)
+        case .cancelled:
+            break
+        case .failed(let message):
+            exportError = message
         }
     }
 }

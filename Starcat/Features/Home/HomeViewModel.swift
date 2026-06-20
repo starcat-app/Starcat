@@ -850,12 +850,18 @@ final class HomeViewModel {
                 }
             case .failure(let error):
                 self.semanticHitMap = [:]
-                self.loadError = error.localizedDescription
+                let friendly = UserFacingError.map(
+                    error,
+                    operation: String.l10n("diagnostics.operation.loadStars"),
+                    service: "Starcat"
+                )
+                self.loadError = friendly.message
                 // 缓存加载已展示过的数据，失败不清理
                 if self.rawItems.isEmpty {
                     self.items = []
                 }
                 AppLog.database.error("reloadItems failed: \(error.localizedDescription, privacy: .public)")
+                friendly.record(category: "home", operation: "reloadItems", service: "local-database")
             }
         }
 
@@ -887,8 +893,14 @@ final class HomeViewModel {
                 await reloadItems(forceRefresh: true)
             }
         } catch {
-            loadError = error.localizedDescription
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.refreshSemanticIndex"),
+                service: "Starcat"
+            )
+            loadError = friendly.message
             AppLog.database.error("refreshSemanticIndex failed: \(error.localizedDescription, privacy: .public)")
+            friendly.record(category: "home", operation: "refreshSemanticIndex", service: "semantic-search")
         }
     }
 
