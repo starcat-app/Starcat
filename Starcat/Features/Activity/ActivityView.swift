@@ -414,6 +414,9 @@ struct ActivityView: View {
     }
 
     private func relativeDate(_ date: Date) -> String {
+        if abs(date.timeIntervalSinceNow) < 1 {
+            return String.l10n("relative.justNow")
+        }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
         formatter.locale = locale

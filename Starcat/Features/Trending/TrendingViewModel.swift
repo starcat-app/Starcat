@@ -354,10 +354,10 @@ final class TrendingViewModel {
     var formattedFreshness: String? {
         guard let secs = secondsSinceLastRefresh else { return nil }
         if secs < 30 {
-            return String.l10n("trending.freshness.justNow")
+            return String.l10n("relative.justNow")
         }
         if secs < 60 {
-            return String.l10n("trending.freshness.lessThanMinute")
+            return String.l10n("relative.justNow")
         }
         let minutes = Int(secs / 60)
         if minutes < 60 {

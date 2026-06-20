@@ -215,6 +215,7 @@ private struct MCPPortEditorRow: View {
     let onRestart: () -> Void
 
     @State private var validation: MCPPortValidation = .empty
+    @FocusState private var isPortFieldFocused: Bool
 
     /// 5 位 monospaced 数字（65535）固定宽度，禁止 Form 把输入框挤换行。
     private static let fieldWidth: CGFloat = 96
@@ -225,12 +226,28 @@ private struct MCPPortEditorRow: View {
 
             HStack(spacing: 8) {
                 TextField("", text: $portDraft, prompt: Text(verbatim: "5555"))
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
                     .font(.system(.body, design: .monospaced))
                     .multilineTextAlignment(.trailing)
                     .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(width: Self.fieldWidth - 20)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color(nsColor: .textBackgroundColor).opacity(0.6))
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(
+                                isPortFieldFocused
+                                    ? Color.accentColor
+                                    : Color(nsColor: .separatorColor).opacity(0.65),
+                                lineWidth: isPortFieldFocused ? 2 : 1
+                            )
+                    }
                     .frame(width: Self.fieldWidth)
+                    .focused($isPortFieldFocused)
                     .accessibilityLabel(Text("settings.mcp.port"))
                     .onChange(of: portDraft) { _, newValue in
                         let hadInvalidChars = newValue.contains { !$0.isNumber }

@@ -14,6 +14,7 @@
 //  - 全屏 overlay 需 `ignoresSafeArea()` 盖住 window toolbar 区域
 //  - Auth restore 从 `StarcatApp` 迁入 Container 的 `.task`，避免与 splash 时序分叉
 //  - 首次冷启动最短展示更长，且已登录时尽量等到 sync 首页写入再淡出（有超时兜底）
+//  - Auth restore 网络请求不能无限阻塞 splash；启动页有独立超时，避免离线 / GitHub 慢响应时卡首屏
 //
 
 import SwiftUI
@@ -33,6 +34,8 @@ private enum LaunchSplashTiming {
     static let firstLaunchDataWaitCap: Duration = .milliseconds(3_200)
     /// 首次启动 + 未登录：Trending 在 splash 下方异步拉取，额外多等一小段。
     static let firstLaunchTrendingGrace: Duration = .milliseconds(900)
+    /// Auth restore 最多占用 splash 的时间。超时后进入主界面，token 仍由 AuthSession 自己决定保留或清理。
+    static let authRestoreWaitCap: Duration = .seconds(3)
     /// 淡出 transition 时长（与 `.animation(..., value: isSplashVisible)` 对齐）。
     static let dismissAnimationSeconds = 0.56
     /// 轮询 sync 首页是否就绪的间隔。
@@ -49,6 +52,21 @@ private enum LaunchSplashPreferences {
 
     static func markColdStartCompleted() {
         UserDefaults.standard.set(true, forKey: hasCompletedColdStartKey)
+    }
+}
+
+/// splash 等待 Auth restore 时使用的一次性回调闸门。
+///
+/// 这里不用 `withTaskGroup` race，是因为 task group 离开作用域前仍会等待子任务结束；
+/// 如果被取消的网络请求没有立刻收尾，仍可能把启动页拖住。这个 actor 只负责保证
+/// restore 完成和 timeout 两条非结构化路径里只有第一条能恢复 continuation。
+private actor LaunchSplashRestoreGate {
+    private var hasResumed = false
+
+    func resumeOnce(_ continuation: CheckedContinuation<Bool, Never>, result: Bool) {
+        guard !hasResumed else { return }
+        hasResumed = true
+        continuation.resume(returning: result)
     }
 }
 
@@ -138,11 +156,15 @@ struct LaunchSplashContainer<Content: View>: View {
             return isFirstLaunch ? LaunchSplashTiming.firstLaunchMinimum : LaunchSplashTiming.standardMinimum
         }()
 
-        async let restore: Void = authSession.restoreSessionIfAvailable()
+        async let restoreCompleted: Bool = restoreSessionWithinSplashBudget()
         async let minWait: Void = {
             try? await Task.sleep(for: minimumDisplay)
         }()
-        _ = await (restore, minWait)
+        let (didFinishRestore, _) = await (restoreCompleted, minWait)
+
+        if !didFinishRestore {
+            AppLog.auth.warning("restore: splash budget exceeded; continuing startup without blocking UI")
+        }
 
         if isFirstLaunch {
             await waitForWarmContentIfNeeded()
@@ -152,6 +174,36 @@ struct LaunchSplashContainer<Content: View>: View {
         isSplashVisible = false
         splashSequenceFinished = true
         await presentFirstRunOnboardingIfNeeded()
+    }
+
+    /// 只给启动页等待登录恢复一个短预算。
+    ///
+    /// `AuthSession.restoreSessionIfAvailable()` 会访问 GitHub `/user` 校验 token，
+    /// 网络层超时较长；如果这里直接 await，离线或 GitHub 慢响应时用户会长时间停在
+    /// splash。启动页的职责是避免首屏闪烁，不应该承担完整网络恢复的等待成本。
+    private func restoreSessionWithinSplashBudget() async -> Bool {
+        let gate = LaunchSplashRestoreGate()
+        let restoreTask = Task { @MainActor in
+            await authSession.restoreSessionIfAvailable()
+            return true
+        }
+
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                Task {
+                    _ = await restoreTask.value
+                    await gate.resumeOnce(continuation, result: true)
+                }
+
+                Task {
+                    try? await Task.sleep(for: LaunchSplashTiming.authRestoreWaitCap)
+                    restoreTask.cancel()
+                    await gate.resumeOnce(continuation, result: false)
+                }
+            }
+        } onCancel: {
+            restoreTask.cancel()
+        }
     }
 
     /// splash 淡出动画结束后再展示首次安装分步引导 overlay。

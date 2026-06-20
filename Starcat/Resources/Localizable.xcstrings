@@ -12121,6 +12121,22 @@
         }
       }
     },
+    "relative.justNow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Just now"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刚刚"
+          }
+        }
+      }
+    },
     "repo.archived" : {
       "localizations" : {
         "en" : {
@@ -24677,23 +24693,6 @@
         }
       }
     },
-    "trending.freshness.justNow" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Just now"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刚刚"
-          }
-        }
-      }
-    },
     "trending.freshness.lastRefreshedAtFormat" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -24707,23 +24706,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上次刷新于 %@"
-          }
-        }
-      }
-    },
-    "trending.freshness.lessThanMinute" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Just now"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刚刚"
           }
         }
       }
