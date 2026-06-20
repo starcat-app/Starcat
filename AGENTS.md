@@ -145,6 +145,31 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
 
 ---
 
+## UI 规范（强制）
+
+### 设置页按钮右对齐（2026-06-21 起生效）
+
+**所有**设置页内的独立操作按钮必须**右对齐**。
+
+```swift
+// ✅ 正确：HStack + Spacer 推到右边
+Section {
+    HStack {
+        Spacer()
+        Button("导出 / 重置 / 清除") { ... }
+    }
+}
+
+// ❌ 错误：按钮左对齐
+Section {
+    Button("导出 / 重置 / 清除") { ... }
+}
+```
+
+**适用**：重置、清除、导出等一次性操作按钮。**不适用**：Toggle、Picker 等表单控件。
+
+---
+
 ## MVP 范围
 
 ### P0 必须功能

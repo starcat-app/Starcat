@@ -128,14 +128,12 @@ struct LaunchSplashContainer<Content: View>: View {
         .task {
             await runSplashSequenceIfNeeded()
         }
-        #if DEBUG
         .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.debugReplayNotification)) { _ in
             FirstRunOnboardingPreferences.resetForDebugReplay()
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.42)) {
                 showFirstRunOnboarding = true
             }
         }
-        #endif
     }
 
     /// 冷启动 splash 时序；完成后置 `splashSequenceFinished`，onboarding 由 onChange 触发。
@@ -232,6 +230,7 @@ struct LaunchSplashContainer<Content: View>: View {
                 object: nil
             )
         case .signIn:
+            guard !authSession.state.isAuthenticated else { return }
             authSession.signIn()
         case .skip:
             break

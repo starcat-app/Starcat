@@ -35,15 +35,13 @@ enum FirstRunOnboardingPreferences {
         UserDefaults.standard.set(true, forKey: hasCompletedKey)
     }
 
-    #if DEBUG
-    /// Debug 菜单「重看首次引导」用：清标记并重置展示状态。
+    /// 重看首次引导：清标记并重置展示状态（Debug 菜单 / 设置页均可触发）。
     static func resetForDebugReplay() {
         UserDefaults.standard.removeObject(forKey: hasCompletedKey)
     }
 
-    /// Debug 菜单触发重看时广播；`LaunchSplashContainer` 监听并 present overlay。
+    /// 重看首次引导时广播；`LaunchSplashContainer` 监听并 present overlay。
     static let debugReplayNotification = Notification.Name("starcat.debug.replayFirstRunOnboarding")
-    #endif
 
     /// 首次引导选择「先逛 Trending」后广播给 `HomeView`，让已登录用户也能明确进入 Trending。
     static let browseTrendingNotification = Notification.Name("starcat.onboarding.browseTrending")

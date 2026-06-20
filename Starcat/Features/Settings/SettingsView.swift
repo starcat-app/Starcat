@@ -346,6 +346,23 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            Section {
+                HStack {
+                    Spacer()
+
+                    Button {
+                        NSApp.keyWindow?.close()
+                        FirstRunOnboardingPreferences.resetForDebugReplay()
+                        NotificationCenter.default.post(
+                            name: FirstRunOnboardingPreferences.debugReplayNotification,
+                            object: nil
+                        )
+                    } label: {
+                        Label("settings.general.resetOnboarding", systemImage: "arrow.counterclockwise")
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
     }

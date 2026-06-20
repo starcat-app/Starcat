@@ -17921,6 +17921,23 @@
         }
       }
     },
+    "settings.general.resetOnboarding" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset Onboarding"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置引导"
+          }
+        }
+      }
+    },
     "settings.general.hideArchived" : {
       "extractionState" : "stale",
       "localizations" : {
