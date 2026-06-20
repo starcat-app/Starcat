@@ -31,9 +31,6 @@ struct ProSettingsTab: View {
             productSection
             actionSection
 
-            #if DEBUG
-            debugSection
-            #endif
         }
         .formStyle(.grouped)
         .starcatOfferCodeRedemption(isPresented: $isOfferCodeRedemptionPresented) {
@@ -223,32 +220,6 @@ struct ProSettingsTab: View {
         }
     }
 
-    #if DEBUG
-    private var debugSection: some View {
-        Section {
-            HStack {
-                Spacer()
-
-                Button {
-                    subscriptionManager.applyDebugProOverride(active: true)
-                    confettiTrigger += 1
-                } label: {
-                    Label("settings.pro.debug.activate", systemImage: "ladybug")
-                }
-
-                Button {
-                    subscriptionManager.applyDebugProOverride(active: false)
-                } label: {
-                    Label("settings.pro.debug.reset", systemImage: "arrow.uturn.backward")
-                }
-            }
-        } header: {
-            Text("settings.pro.debug.section")
-        } footer: {
-            Text("settings.pro.debug.footer")
-        }
-    }
-    #endif
 
     private func purchase(_ product: Product) async {
         let didActivate = await subscriptionManager.purchase(product)

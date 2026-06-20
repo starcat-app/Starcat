@@ -123,6 +123,10 @@ struct StarcatApp: App {
                 // 决定是否展示「AI 自动整理中 N/M」轻量行；设置页观察其触发结果展示
                 // 「运行状态」。调度器的 `start()` 由 HomeView 在 .task 里调。
                 .environment(dependencies.autoTidyScheduler)
+                .onReceive(NotificationCenter.default.publisher(for: DebugMenuCommands.debugProOverrideNotification)) { notification in
+                    guard let active = notification.userInfo?[DebugMenuCommands.debugProOverrideActiveKey] as? Bool else { return }
+                    dependencies.subscriptionManager.applyDebugProOverride(active: active)
+                }
                 .onAppear {
                     applyAppearance(dependencies.settings.appearanceMode)
                 }
@@ -271,21 +275,40 @@ struct StarcatApp: App {
 /// 通用 → 语言」落地）。Debug 菜单本身保留作为后续调试入口的容器；菜单内
 /// 当前只有一个 disabled 占位项，避免空 `CommandMenu` 在某些 SwiftUI 版本下
 /// 不渲染菜单栏标题——加入第一个真功能时移除占位。
-struct DebugMenuCommands: Commands {
+	struct DebugMenuCommands: Commands {
+		/// 通知 `StarcatApp.contentRoot` 切换 Pro 调试覆盖。
+		static let debugProOverrideNotification = Notification.Name("DebugMenuCommands.debugProOverride")
+		/// userInfo key：Bool，true = 激活，false = 重置。
+		static let debugProOverrideActiveKey = "active"
 
-    var body: some Commands {
-        // 菜单标题用 verbatim 字面量（避免被 String Catalog 提取后跟随
-        // `.environment(\.locale, _)` 切换），保证不管当前 locale 是什么，开发者
-        // 都能在菜单栏看到固定的"Debug"字样找到入口。
-        CommandMenu("Debug") {
-            Button("Replay First-Run Onboarding") {
-                FirstRunOnboardingPreferences.resetForDebugReplay()
-                NotificationCenter.default.post(
-                    name: FirstRunOnboardingPreferences.debugReplayNotification,
-                    object: nil
-                )
-            }
-        }
-    }
-}
+		var body: some Commands {
+			CommandMenu("Debug") {
+				Button("Replay First-Run Onboarding") {
+					FirstRunOnboardingPreferences.resetForDebugReplay()
+					NotificationCenter.default.post(
+						name: FirstRunOnboardingPreferences.debugReplayNotification,
+						object: nil
+					)
+				}
+
+				Divider()
+
+				Button("Activate Pro (Debug)") {
+					NotificationCenter.default.post(
+						name: Self.debugProOverrideNotification,
+						object: nil,
+						userInfo: [Self.debugProOverrideActiveKey: true]
+					)
+				}
+
+				Button("Reset Pro (Debug)") {
+					NotificationCenter.default.post(
+						name: Self.debugProOverrideNotification,
+						object: nil,
+						userInfo: [Self.debugProOverrideActiveKey: false]
+					)
+				}
+			}
+		}
+	}
 #endif
