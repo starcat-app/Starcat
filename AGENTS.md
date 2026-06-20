@@ -238,6 +238,24 @@ Button { ... }
 
 > 注意：`.buttonStyle(.borderedProminent)` 通常已遮挡 focus ring，但安全起见也建议添加。
 
+### UI 规范：禁止 Stepper（强制，2026-06-20 起生效）
+
+**禁止**在新 UI 中使用 SwiftUI `Stepper` 组件。
+
+数值输入一律用 `TextField` + 数字过滤 + 范围钳制（参考 `MCPSettingsView.mcpPortTextBinding`、`SearchCenterView.anySearchMaxResultsTextBinding`）。
+
+范围较大或需要连续调节时用 `Slider`（参考 `AISettingsView` 阈值滑杆）。
+
+**反例（必须避免）**：
+- ❌ `Stepper(value:in:step:)` 调端口 / 结果数 / 行数
+- ✅ `TextField` + binding 内 `filter(\.isNumber)` + `min(max(...))`
+
+提交前自检：
+
+```bash
+rg "Stepper\(" --type swift Starcat/   # 新增代码不应再引入 Stepper
+```
+
 ### 开源致谢同步规则（强制，2026-06-07 起生效）
 
 **任何**集成进 Starcat 的外部开源项目，**必须**在「关于页 → 开源致谢（Credits）」列表中追加一条对应的引用。
@@ -298,7 +316,7 @@ rg "NSLocalizedString"  --type swift Starcat/   # 必须只出现在注释里
 
 ---
 
-*最后更新：2026-06-16*
+*最后更新：2026-06-20*
 
 
 <claude-mem-context>
