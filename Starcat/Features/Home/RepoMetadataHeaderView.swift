@@ -657,6 +657,13 @@ private struct OpenSSFInlineBadge: View {
 ///
 /// 它故意不复用 OpenSSFScoreBadge：OpenSSF 是单一安全维度，Health 是聚合评分。
 /// 两者视觉需要相近但语义不同，避免用户误认为 Health 分就是 OpenSSF 分。
+///
+/// v1.1（2026-06-21，dong4j 反馈"列表 row 也加 Health badge"）：
+/// 提取公共 `RepoHealthBadge` 后，详情页只保留两个职责——
+/// 1) 缓存命中时复用公共 `RepoHealthBadge` 渲染分数胶囊；
+/// 2) 缓存未命中时显示 `fallbackBadge`（占位 icon + 渐变前景），引导用户点击。
+/// 列表 row 不需要 fallback——`RepoHealthStore.badge(for:)` 在无缓存时返回 nil，
+/// `UnifiedRepoRow` 短路不渲染。
 private struct RepoHealthInlineBadge: View {
     let repo: Repo
     let onTap: () -> Void
@@ -668,7 +675,7 @@ private struct RepoHealthInlineBadge: View {
 
         Button(action: onTap) {
             if let badge {
-                healthBadge(badge)
+                RepoHealthBadge(data: badge)
             } else {
                 fallbackBadge
             }
@@ -683,31 +690,9 @@ private struct RepoHealthInlineBadge: View {
         }
     }
 
-    private func healthBadge(_ badge: RepoHealthBadgeData) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "gauge.with.dots.needle.67percent")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(healthTint(badge.score))
-            Text(verbatim: "\(badge.roundedScore)")
-                .font(.footnote)
-                .fontWeight(.semibold)
-                .monospacedDigit()
-                .foregroundStyle(.primary)
-            Text(verbatim: badge.grade)
-                .font(.caption2)
-                .fontWeight(.semibold)
-                .foregroundStyle(healthTint(badge.score))
-        }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(healthTint(badge.score).opacity(0.13), in: Capsule())
-        .overlay {
-            Capsule()
-                .stroke(healthTint(badge.score).opacity(0.32), lineWidth: 0.5)
-        }
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
+    /// 缓存未命中时的占位胶囊。
+    /// 详情页独有：Pro 用户即使没缓存也能看到入口，点了触发 Pro gate / 自动补算。
+    /// 列表场景不需要这种"占位"——`asCardData(healthBadge: nil)` 直接不显示 row badge。
     private var fallbackBadge: some View {
         Image(systemName: "gauge.with.dots.needle.67percent")
             .font(.system(size: 11, weight: .semibold))
@@ -727,12 +712,6 @@ private struct RepoHealthInlineBadge: View {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
-
-    private func healthTint(_ score: Double) -> Color {
-        if score >= 80 { return .green }
-        if score >= 60 { return .yellow }
-        return .red
-    }
 }
 
 private extension Repo {

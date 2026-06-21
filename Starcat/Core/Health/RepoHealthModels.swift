@@ -34,6 +34,9 @@ struct RepoHealthPayload: Codable, Equatable, Sendable {
     var dimensions: [RepoHealthDimensionScore]
     var latestReleaseTag: String?
     var latestReleasePublishedAt: String?
+    /// 2026-06-21 dong4j 反馈:Release 行加可点击链接,跳到 GitHub release 页面。
+    /// Release 缺失时为 nil;UI 层据此决定该行是否可点。
+    var latestReleaseUrl: String?
     var openSSFScore: Double?
     var notes: [String]
 }

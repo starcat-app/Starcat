@@ -120,6 +120,16 @@ struct RepoCardViewData: Identifiable, Hashable, Sendable {
     /// nil 表示本地没有可展示的成功评分；列表 row 必须整块不渲染，也不能在
     /// body 里触发网络请求。刷新由后台 poller 或详情页 fire-and-forget 预拉负责。
     let openSSFScore: OpenSSFScoreBadgeData?
+
+    /// Repo Health 聚合健康度徽章（2026-06-21 dong4j 反馈"列表 row 也加 Health badge"）。
+    ///
+    /// 渲染语义与 `openSSFScore` 对称：
+    /// - nil → row 不渲染（无本地缓存，由 `RepoHealthStore.badge(for:)` 返回 nil）
+    /// - 非 nil → row 渲染胶囊（gauge icon + 分数 + 等级）
+    ///
+    /// Pro gate 由详情页入口负责（`entitlementGate.requirePro(.repoHealth)`），
+    /// 列表行不做 gate：缓存存在即可视化，与 OpenSSF 行为一致。
+    let healthBadge: RepoHealthBadgeData?
 }
 
 struct RepoCardInlineMetadata: Hashable, Sendable {
@@ -176,7 +186,8 @@ extension Repo {
         badge: CardBadge? = nil,
         inlineMetadata: RepoCardInlineMetadata? = nil,
         readStatus: RepoStatus? = nil,
-        openSSFScore: OpenSSFScoreBadgeData? = nil
+        openSSFScore: OpenSSFScoreBadgeData? = nil,
+        healthBadge: RepoHealthBadgeData? = nil
     ) -> RepoCardViewData {
         RepoCardViewData(
             ghRepoId: self.id,
@@ -197,7 +208,8 @@ extension Repo {
             weeklySourceLabel: nil,
             inlineMetadata: inlineMetadata,
             readStatus: readStatus,
-            openSSFScore: openSSFScore
+            openSSFScore: openSSFScore,
+            healthBadge: healthBadge
         )
     }
 }
@@ -216,7 +228,8 @@ extension StarcatRepoCardDTO {
     func asCardData(
         registry: StarredRegistry,
         badge: CardBadge? = nil,
-        openSSFScore: OpenSSFScoreBadgeData? = nil
+        openSSFScore: OpenSSFScoreBadgeData? = nil,
+        healthBadge: RepoHealthBadgeData? = nil
     ) -> RepoCardViewData {
         RepoCardViewData(
             ghRepoId: self.ghRepoId,
@@ -237,7 +250,8 @@ extension StarcatRepoCardDTO {
             weeklySourceLabel: nil,
             inlineMetadata: nil,
             readStatus: nil,
-            openSSFScore: openSSFScore
+            openSSFScore: openSSFScore,
+            healthBadge: healthBadge
         )
     }
 }
@@ -261,7 +275,8 @@ extension TrendingRepo {
     func asCardData(
         registry: StarredRegistry,
         badge: CardBadge? = nil,
-        openSSFScore: OpenSSFScoreBadgeData? = nil
+        openSSFScore: OpenSSFScoreBadgeData? = nil,
+        healthBadge: RepoHealthBadgeData? = nil
     ) -> RepoCardViewData {
         let resolvedBadge = badge ?? .trendingChange(self.starsInPeriod)
         return RepoCardViewData(
@@ -283,7 +298,8 @@ extension TrendingRepo {
             weeklySourceLabel: nil,
             inlineMetadata: nil,
             readStatus: nil,
-            openSSFScore: openSSFScore
+            openSSFScore: openSSFScore,
+            healthBadge: healthBadge
         )
     }
 }
@@ -302,7 +318,8 @@ extension WeeklyFeedItem {
     func asCardData(
         registry: StarredRegistry,
         badge: CardBadge? = nil,
-        openSSFScore: OpenSSFScoreBadgeData? = nil
+        openSSFScore: OpenSSFScoreBadgeData? = nil,
+        healthBadge: RepoHealthBadgeData? = nil
     ) -> RepoCardViewData {
         return RepoCardViewData(
             ghRepoId: card.ghRepoId,
@@ -323,7 +340,8 @@ extension WeeklyFeedItem {
             weeklySourceLabel: shortSourceLabel,
             inlineMetadata: nil,
             readStatus: nil,
-            openSSFScore: openSSFScore
+            openSSFScore: openSSFScore,
+            healthBadge: healthBadge
         )
     }
 }

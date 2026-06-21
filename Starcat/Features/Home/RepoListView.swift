@@ -809,7 +809,8 @@ struct RepoListView: View {
                         UnifiedRepoRow(
                             card: repo.asCardData(
                                 readStatus: viewModel.readStatus(for: repo.id),
-                                openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id)
+                                openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id),
+                                healthBadge: dependencies.repoHealthStore.badge(for: repo.id)
                             ),
                             isSelected: store.isActive
                                 ? store.contains(ghRepoId: repo.id)
@@ -850,6 +851,11 @@ struct RepoListView: View {
             }
             .task(id: viewModel.itemsRevision) {
                 await dependencies.openSSFScoreStore.loadCachedScores(for: viewModel.items.map(\.id))
+            }
+            // Repo Health 健康度缓存预加载(2026-06-21 接入,与 OpenSSF 对称):
+            // 让 Manage 列表第一屏渲染前就拿到缓存,health badge 即时显示。
+            .task(id: viewModel.itemsRevision) {
+                await dependencies.repoHealthStore.loadCachedSnapshots(for: viewModel.items.map(\.id))
             }
             // 仅外部导航（SearchCenter / 命令面板）滚到目标行；列表行点击不写
             // `shouldScrollSelectedRepoIntoView`，避免 scrollTo(.center) 错位到下一卡片。

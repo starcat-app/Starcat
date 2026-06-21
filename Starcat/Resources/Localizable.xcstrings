@@ -14448,6 +14448,23 @@
         }
       }
     },
+    "repoHealth.badge.a11y" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health score %d, grade %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "健康度 %d 分,等级 %@"
+          }
+        }
+      }
+    },
     "repoHealth.rules.formula" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14614,6 +14631,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最新 Release"
+          }
+        }
+      }
+    },
+    "repoHealth.sources.openRelease" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open release on GitHub"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 打开 Release"
           }
         }
       }

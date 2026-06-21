@@ -210,11 +210,15 @@ struct RepoHealthSheet: View {
     }
 
     private func dimensionGrid(_ snapshot: RepoHealthSnapshot) -> some View {
+        // 4 个 icon 全部走"圆形填充"风格,与详情页 inline badge 视觉一致。
+        // 旧版混用 line 风格(wrench.and.screwdriver / checklist)导致
+        // SF Symbol 渲染时 baseline 飘忽,卡片之间图标大小不统一
+        // (dong4j 2026-06-21 反馈)。
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            dimensionCard(title: "repoHealth.dimension.maintenance", score: snapshot.maintenanceScore, systemImage: "wrench.and.screwdriver")
-            dimensionCard(title: "repoHealth.dimension.popularity", score: snapshot.popularityScore, systemImage: "star.circle")
-            dimensionCard(title: "repoHealth.dimension.quality", score: snapshot.qualityScore, systemImage: "checklist")
-            dimensionCard(title: "repoHealth.dimension.security", score: snapshot.securityScore, systemImage: "checkmark.shield")
+            dimensionCard(title: "repoHealth.dimension.maintenance", score: snapshot.maintenanceScore, systemImage: "wrench.and.screwdriver.fill")
+            dimensionCard(title: "repoHealth.dimension.popularity", score: snapshot.popularityScore, systemImage: "star.circle.fill")
+            dimensionCard(title: "repoHealth.dimension.quality", score: snapshot.qualityScore, systemImage: "checklist.checked")
+            dimensionCard(title: "repoHealth.dimension.security", score: snapshot.securityScore, systemImage: "checkmark.shield.fill")
         }
     }
 
@@ -251,11 +255,28 @@ struct RepoHealthSheet: View {
             Text("repoHealth.sources.title")
                 .font(.headline)
 
-            metadataRow(
-                icon: "tag",
-                title: "repoHealth.sources.latestRelease",
-                value: payload?.latestReleaseTag ?? String.l10n("repoHealth.sources.missing")
-            )
+            // Release 行:有 htmlUrl 时整行可点跳转 GitHub release 页面
+            // (2026-06-21 dong4j 反馈);无值时退化为普通 metadataRow。
+            if let urlString = payload?.latestReleaseUrl,
+               let url = URL(string: urlString) {
+                Link(destination: url) {
+                    metadataRowContent(
+                        icon: "tag",
+                        title: "repoHealth.sources.latestRelease",
+                        value: payload?.latestReleaseTag ?? String.l10n("repoHealth.sources.missing"),
+                        showLinkChevron: true
+                    )
+                }
+                .buttonStyle(.plain)
+                .help("repoHealth.sources.openRelease")
+            } else {
+                metadataRow(
+                    icon: "tag",
+                    title: "repoHealth.sources.latestRelease",
+                    value: payload?.latestReleaseTag ?? String.l10n("repoHealth.sources.missing")
+                )
+            }
+
             metadataRow(
                 icon: "checkmark.shield",
                 title: "repoHealth.sources.openSSF",
@@ -342,25 +363,25 @@ struct RepoHealthSheet: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 ruleRow(
-                    icon: "wrench.and.screwdriver",
+                    icon: "wrench.and.screwdriver.fill",
                     title: "repoHealth.dimension.maintenance",
                     detail: "repoHealth.rules.maintenance",
                     tint: healthTint(snapshot.maintenanceScore)
                 )
                 ruleRow(
-                    icon: "star.circle",
+                    icon: "star.circle.fill",
                     title: "repoHealth.dimension.popularity",
                     detail: "repoHealth.rules.popularity",
                     tint: healthTint(snapshot.popularityScore)
                 )
                 ruleRow(
-                    icon: "checklist",
+                    icon: "checklist.checked",
                     title: "repoHealth.dimension.quality",
                     detail: "repoHealth.rules.quality",
                     tint: healthTint(snapshot.qualityScore)
                 )
                 ruleRow(
-                    icon: "checkmark.shield",
+                    icon: "checkmark.shield.fill",
                     title: "repoHealth.dimension.security",
                     detail: "repoHealth.rules.security",
                     tint: healthTint(snapshot.securityScore)
@@ -401,6 +422,18 @@ struct RepoHealthSheet: View {
     }
 
     private func metadataRow(icon: String, title: LocalizedStringKey, value: String) -> some View {
+        metadataRowContent(icon: icon, title: title, value: value, showLinkChevron: false)
+    }
+
+    /// metadataRow 共享内容。
+    /// - showLinkChevron: true 时在右侧多渲染一个箭头 icon,用于 `Link` 包裹的整行可点场景
+    ///   (2026-06-21 dong4j 反馈"Release 改成链接")。
+    private func metadataRowContent(
+        icon: String,
+        title: LocalizedStringKey,
+        value: String,
+        showLinkChevron: Bool
+    ) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .foregroundStyle(.secondary)
@@ -411,8 +444,15 @@ struct RepoHealthSheet: View {
             Text(verbatim: value)
                 .fontWeight(.medium)
                 .lineLimit(1)
+            if showLinkChevron {
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
         }
         .font(.subheadline)
+        // hover 时整行高亮,提示可点击(Lift 风格;依赖 Link 默认行为足够,不强加自定义 button style)
+        .contentShape(Rectangle())
     }
 
     private var loadingContent: some View {

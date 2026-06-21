@@ -40,6 +40,7 @@ enum RepoHealthCalculator {
             dimensions: [maintenance, popularity, quality, security],
             latestReleaseTag: latestRelease?.tagName,
             latestReleasePublishedAt: latestRelease?.publishedAt,
+            latestReleaseUrl: latestRelease?.htmlUrl,
             openSSFScore: openSSF?.aggregateScore,
             notes: status == .partial ? ["OpenSSF score is missing or not indexed."] : []
         )

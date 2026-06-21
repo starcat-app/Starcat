@@ -185,6 +185,14 @@ struct UnifiedRepoRow: View {
                             OpenSSFScoreBadge(score: score)
                         }
 
+                        // Repo Health 聚合健康度徽章（2026-06-21 接入）。
+                        // 位置：紧跟 OpenSSF 之后,与详情页 hero 顺序保持一致。
+                        // gate: 缓存未命中(card.healthBadge == nil)→ 不渲染;
+                        // Pro 用户权限校验由详情页入口负责,列表行不做 gate。
+                        if let health = card.healthBadge {
+                            RepoHealthBadge(data: health)
+                        }
+
                         // v2.0（2026-06-11 dong4j 决策）：Activity 卡片右上角 RelativeDateBadge 已删。
                         // 原渲染 `item.createdAt` 在 `.star`(=starredAt) / `.repository` & `.suggestion`
                         // (=pushedAt) 之间语义漂移，`.all` 视图同框时用户分不清「5 分钟前」指 star
