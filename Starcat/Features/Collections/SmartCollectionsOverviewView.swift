@@ -18,13 +18,10 @@ struct SmartCollectionsOverviewView: View {
 
     @State private var systemCounts: [SmartCollectionKind: Int] = [:]
     @State private var userCounts: [String: Int] = [:]
-    @State private var isLoading = false
+    @State private var isLoadingSystemCounts = false
+    @State private var isLoadingUserCounts = false
     @State private var deleteError: String?
     @State private var editTarget: UserSmartCollection?
-
-    private var summaryContext: SmartCollectionRuleSummary.Context {
-        viewModel.smartCollectionSummaryContext()
-    }
 
     var body: some View {
         ScrollView {
@@ -77,7 +74,7 @@ struct SmartCollectionsOverviewView: View {
             .padding(.vertical, 16)
         }
         .task {
-            await reloadCounts()
+            await reloadAllCounts()
         }
         .sheet(item: $editTarget) { collection in
             SmartCollectionRuleEditorSheet(
@@ -85,7 +82,7 @@ struct SmartCollectionsOverviewView: View {
                 onCancel: { editTarget = nil },
                 onSaved: {
                     editTarget = nil
-                    Task { await reloadCounts() }
+                    Task { await reloadUserCounts() }
                 }
             )
             .appLocaleEnvironment()
@@ -116,7 +113,7 @@ struct SmartCollectionsOverviewView: View {
 
                 Spacer(minLength: 8)
 
-                if isLoading {
+                if isLoadingSystemCounts {
                     ProgressView()
                         .controlSize(.mini)
                 } else {
@@ -148,24 +145,17 @@ struct SmartCollectionsOverviewView: View {
                 .frame(width: 24, height: 24)
 
             VStack(alignment: .leading, spacing: 4) {
-                if let rule = collection.rule {
-                    Text(verbatim: SmartCollectionRuleSummary.compact(rule: rule, context: summaryContext))
-                        .font(.callout)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .lineLimit(2)
-                } else {
-                    Text(collection.name)
-                        .font(.callout)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
+                Text(collection.name)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 8)
 
             VStack(alignment: .trailing, spacing: 6) {
-                if isLoading {
+                if isLoadingUserCounts {
                     ProgressView()
                         .controlSize(.mini)
                 } else {
@@ -220,9 +210,16 @@ struct SmartCollectionsOverviewView: View {
         .foregroundStyle(.secondary)
     }
 
-    private func reloadCounts() async {
-        isLoading = true
-        defer { isLoading = false }
+    private func reloadAllCounts() async {
+        async let system: Void = reloadSystemCounts()
+        async let user: Void = reloadUserCounts()
+        _ = await (system, user)
+    }
+
+    /// 内置集合计数：与删除用户集合无关，仅在首屏 / 显式刷新时重算。
+    private func reloadSystemCounts() async {
+        isLoadingSystemCounts = true
+        defer { isLoadingSystemCounts = false }
 
         do {
             let repos = try await dependencies.repoRepository.fetchAllStarred()
@@ -245,25 +242,30 @@ struct SmartCollectionsOverviewView: View {
                 }
             }
             systemCounts = nextSystem
-
-            var nextUser: [String: Int] = [:]
-            for collection in viewModel.userSmartCollections {
-                guard let rule = collection.rule else {
-                    nextUser[collection.id] = 0
-                    continue
-                }
-                if let count = try? await viewModel.countRepos(matching: rule) {
-                    nextUser[collection.id] = count
-                } else {
-                    nextUser[collection.id] = 0
-                }
-            }
-            userCounts = nextUser
         } catch {
-            AppLog.database.warning("Smart Collections counts load failed: \(error.localizedDescription, privacy: .public)")
+            AppLog.database.warning("Smart Collections system counts load failed: \(error.localizedDescription, privacy: .public)")
             systemCounts = [:]
-            userCounts = [:]
         }
+    }
+
+    /// 用户集合计数：编辑规则后重算；删除时只改本地字典，不走 loading。
+    private func reloadUserCounts() async {
+        isLoadingUserCounts = true
+        defer { isLoadingUserCounts = false }
+
+        var nextUser: [String: Int] = [:]
+        for collection in viewModel.userSmartCollections {
+            guard let rule = collection.rule else {
+                nextUser[collection.id] = 0
+                continue
+            }
+            if let count = try? await viewModel.countRepos(matching: rule) {
+                nextUser[collection.id] = count
+            } else {
+                nextUser[collection.id] = 0
+            }
+        }
+        userCounts = nextUser
     }
 
     private func delete(_ collection: UserSmartCollection) async {
@@ -273,7 +275,8 @@ struct SmartCollectionsOverviewView: View {
             if viewModel.selection == .userSmartCollection(collection.id) {
                 viewModel.selectSidebar(.smartCollectionsHome)
             }
-            await reloadCounts()
+            // 删除不影响内置集合命中数，只移除本地用户计数，避免整页 spinner。
+            userCounts.removeValue(forKey: collection.id)
         } catch {
             deleteError = error.localizedDescription
         }
