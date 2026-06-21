@@ -116,6 +116,9 @@ struct GitHubAPIClientTests {
 
         let req = try #require(URLProtocolStub.receivedRequests.first)
         #expect(req.url?.path == "/repos/example/repo/security-advisories")
+        let queryItems = URLComponents(url: try #require(req.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        #expect(queryItems.contains(URLQueryItem(name: "state", value: "published")))
+        #expect(queryItems.contains(URLQueryItem(name: "per_page", value: "100")))
     }
 
     // MARK: - perform<T> 错误路径

@@ -15,12 +15,20 @@ import Foundation
 
 extension GitHubAPIClient {
 
-    /// 拉取单个仓库的 Security Advisory 列表。
+    /// 拉取单个仓库已发布的 Security Advisory 列表。
     ///
-    /// - Returns: 可能为空数组（仓库无 GHSA）；404 表示仓库不存在或无权限，由调用方决定降级。
+    /// Activity feed 只展示已经公开发布的 GHSA。显式加 `state=published` 是为了避免
+    /// 维护者 token 看到 triage / draft / closed 等工作流中间态；这些记录不一定具备
+    /// 公开 GHSA 展示所需字段，直接解码会把整批安全公告扫描误报为解析失败。
+    ///
+    /// - Returns: 可能为空数组（仓库无已发布 GHSA）；404 表示仓库不存在或无权限，由调用方决定降级。
     func securityAdvisories(owner: String, repo: String) async throws -> APIResponse<[GitHubSecurityAdvisoryDTO]> {
         try await get(
-            path: AppEndpoints.GitHubREST.Paths.repoSecurityAdvisories(owner: owner, repo: repo)
+            path: AppEndpoints.GitHubREST.Paths.repoSecurityAdvisories(owner: owner, repo: repo),
+            queryItems: [
+                URLQueryItem(name: "state", value: "published"),
+                URLQueryItem(name: "per_page", value: "100"),
+            ]
         )
     }
 }
