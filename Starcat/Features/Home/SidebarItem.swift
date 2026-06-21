@@ -58,6 +58,7 @@ enum SidebarItem: Hashable, Identifiable {
     case untagged
     case smartCollectionsHome
     case smartCollection(SmartCollectionKind)
+    case userSmartCollection(String)
     case language(String?)
     /// W4 A6：按 tag id 过滤。tagId 是 Tag.id（UUID 字符串）。
     /// 显示名/颜色/图标 由 SidebarView 从 HomeViewModel.tags 字典里查。
@@ -71,6 +72,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .untagged:                return "section.untagged"
         case .smartCollectionsHome:    return "smartCollections.home"
         case .smartCollection(let kind): return "smartCollections.\(kind.rawValue)"
+        case .userSmartCollection(let id): return "userSmartCollections.\(id)"
         case .language(let lang):      return "language.\(lang ?? "<nil>")"
         case .tag(let tagId):          return "tag.\(tagId)"
         }
@@ -84,6 +86,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .untagged:                return "sidebar.untagged"
         case .smartCollectionsHome:    return "smartCollections.title"
         case .smartCollection(let kind): return kind.titleKey
+        case .userSmartCollection(let id): return LocalizedStringKey(id)
         // language 走短名（详见 LanguageDisplayName）。LocalizedStringKey 兜底：
         // 短名不会有 String Catalog 条目，SwiftUI 找不到翻译会原样吐 raw 字符串。
         // 无主语言（nil）统一显示 "Uncategorized"（dong4j 2026-06-16，不做 i18n）。
@@ -101,6 +104,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .untagged:                return "sidebar.untagged"
         case .smartCollectionsHome:    return "smartCollections.title"
         case .smartCollection(let kind): return "smartCollections.\(kind.rawValue).title"
+        case .userSmartCollection(let id): return id
         case .language(let lang):      return lang.map(LanguageDisplayName.shortened(for:)) ?? "Uncategorized"
         case .tag(let tagId):          return tagId
         }
@@ -114,6 +118,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .untagged:                return "tag.slash"
         case .smartCollectionsHome:    return "line.3.horizontal.decrease.circle"
         case .smartCollection(let kind): return kind.systemImage
+        case .userSmartCollection:     return "line.3.horizontal.decrease.circle"
         case .language:                return "chevron.left.forwardslash.chevron.right"
         case .tag:                     return "tag.fill"
         }
@@ -136,6 +141,7 @@ extension SidebarItem {
         case .untagged:            return "untagged"
         case .smartCollectionsHome: return "smartCollectionsHome"
         case .smartCollection(let kind): return "smartCollection:\(kind.rawValue)"
+        case .userSmartCollection(let id): return "userSmartCollection:\(id)"
         case .language(let lang):  return "language:\(lang ?? "")"
         case .tag(let tagId):      return "tag:\(tagId)"
         }
@@ -153,6 +159,8 @@ extension SidebarItem {
         } else if raw.hasPrefix("smartCollection:") {
             let value = String(raw.dropFirst("smartCollection:".count))
             self = SmartCollectionKind(rawValue: value).map(SidebarItem.smartCollection) ?? .allStars
+        } else if raw.hasPrefix("userSmartCollection:") {
+            self = .userSmartCollection(String(raw.dropFirst("userSmartCollection:".count)))
         } else if raw.hasPrefix("language:") {
             let lang = String(raw.dropFirst("language:".count))
             // 空 payload 代表 GitHub 无主语言（.language(nil)）

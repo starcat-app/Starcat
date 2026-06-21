@@ -42,6 +42,11 @@ final class HomeViewModel {
             Self.selectionChangeStartedAt = Date()
             AppLog.ui.notice("[switch-cat] T0 selection didSet \(String(describing: oldValue), privacy: .public) → \(String(describing: self.selection), privacy: .public)")
             #endif
+            if case .userSmartCollection = selection {
+                // 规则会在 reloadItems 里随 collection 重新读取。
+            } else {
+                activeUserSmartCollectionRule = nil
+            }
 
             // ⚡ HOM-46 性能补丁 #2（2026-06-02）：急切缓存加载（eager cache load）
             //
@@ -271,6 +276,8 @@ final class HomeViewModel {
     private(set) var tags: [Tag] = []
     /// W4 A6：tagId → starred repo count（Sidebar Tags 行右侧计数）。
     private(set) var tagCounts: [String: Int] = [:]
+    /// 用户自定义智能集合。内置集合由 `SmartCollectionKind` 提供，不入库。
+    private(set) var userSmartCollections: [UserSmartCollection] = []
 
     // MARK: - HOM-179：标签墙多选过滤
 
@@ -448,6 +455,10 @@ final class HomeViewModel {
     /// Repo Health 快照用于 Smart Collections 的 Needs Review / High Value 等集合。
     /// 可选是为了不破坏既有单测构造；缺失时集合按 repo 元数据保守降级。
     private let repoHealthRepository: (any RepoHealthRepositoryProtocol)?
+    private let smartCollectionRepository: (any SmartCollectionRepositoryProtocol)?
+
+    /// 当前用户智能集合的规则快照。进入非用户集合时清空，避免旧规则污染普通列表。
+    private var activeUserSmartCollectionRule: SmartCollectionRule?
 
     /// W6 AI：语义搜索服务。测试可传 nil，生产由 AppDependencies 注入。
     private let semanticSearchService: SemanticSearchService?
@@ -466,6 +477,7 @@ final class HomeViewModel {
         repoTagRepository: any RepoTagRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
         repoHealthRepository: (any RepoHealthRepositoryProtocol)? = nil,
+        smartCollectionRepository: (any SmartCollectionRepositoryProtocol)? = nil,
         semanticSearchService: SemanticSearchService? = nil
     ) {
         self.repository = repository
@@ -473,6 +485,7 @@ final class HomeViewModel {
         self.repoTagRepository = repoTagRepository
         self.repoNoteRepository = repoNoteRepository
         self.repoHealthRepository = repoHealthRepository
+        self.smartCollectionRepository = smartCollectionRepository
         self.semanticSearchService = semanticSearchService
     }
 
@@ -577,6 +590,7 @@ final class HomeViewModel {
             async let langs = repository.languageStats()
             async let tagsResult = tagRepository.fetchAll()
             async let tagCountsResult = repoTagRepository.repoCountsByTag()
+            async let smartCollectionsResult = fetchUserSmartCollections()
             // HOM-179：一并刷新 repo→tagIds 映射，让 selectedTagIds 多选过滤实时生效。
             // 与 sidebar 其他统计同步刷新，避免新增/删除 tag 后 wall 多选还按旧映射过滤。
             async let tagAssignmentsResult = repoTagRepository.fetchAllTagAssignments()
@@ -586,6 +600,7 @@ final class HomeViewModel {
             self.languageStats = try await langs
             self.tags = try await tagsResult
             self.tagCounts = try await tagCountsResult
+            self.userSmartCollections = try await smartCollectionsResult
             let assignments = try await tagAssignmentsResult
             self.repoTagsMap = assignments.mapValues { Set($0.map(\.id)) }
 
@@ -601,6 +616,92 @@ final class HomeViewModel {
             }
         } catch {
             AppLog.database.error("refreshSidebar failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func userSmartCollection(id: String) -> UserSmartCollection? {
+        userSmartCollections.first { $0.id == id }
+    }
+
+    /// 把当前 Manage 筛选快照转换成可保存的用户智能集合规则。
+    ///
+    /// 第一版不允许从系统 / 用户智能集合继续保存，避免出现集合嵌套集合的解释成本。
+    func makeRuleFromCurrentManageFilters() -> SmartCollectionRule? {
+        let scope: SmartCollectionRule.Scope
+        switch selection {
+        case .allStars:
+            scope = .allStars
+        case .untagged:
+            scope = .untagged
+        case .language(let language):
+            scope = .language(language)
+        case .tag(let id):
+            scope = .tag(id)
+        case .trending, .smartCollectionsHome, .smartCollection, .userSmartCollection:
+            return nil
+        }
+
+        let trimmedQuery = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return SmartCollectionRule(
+            scope: scope,
+            query: trimmedQuery.isEmpty ? nil : trimmedQuery,
+            searchModeRaw: smartSearchMode.rawValue,
+            statusRaw: statusFilter?.rawValue,
+            selectedTagIDs: selectedTagIds.sorted(),
+            hideArchived: hideArchived,
+            hideForks: hideForks,
+            sortRaw: sortOption.rawValue
+        )
+    }
+
+    private func fetchUserSmartCollections() async throws -> [UserSmartCollection] {
+        guard let smartCollectionRepository else { return [] }
+        return try await smartCollectionRepository.fetchAll()
+    }
+
+    private func fetchUserSmartCollectionRule(id: String) async throws -> SmartCollectionRule {
+        guard let smartCollectionRepository,
+              let collection = try await smartCollectionRepository.find(id: id),
+              let rule = collection.rule else {
+            throw DatabaseError.openFailed(underlying: NSError(
+                domain: "SmartCollection",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: String.l10n("smartCollections.error.missingRule")]
+            ))
+        }
+        return rule
+    }
+
+    private func fetchRepos(matching rule: SmartCollectionRule) async throws -> (repos: [Repo], semanticHitMap: [Int64: SemanticSearchHit]) {
+        let base: [Repo]
+        switch rule.scope {
+        case .allStars:
+            base = try await repository.fetchAllStarred()
+        case .untagged:
+            base = try await repository.fetchUntagged()
+        case .language(let language):
+            base = try await repository.fetchByLanguage(language)
+        case .tag(let tagID):
+            base = try await repoTagRepository.fetchRepos(forTag: tagID)
+        }
+
+        guard let query = rule.query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty else {
+            return (base, [:])
+        }
+
+        if rule.searchMode == .semantic {
+            guard let semanticSearchService else {
+                throw SemanticSearchError.missingAPIKey
+            }
+            let ftsHitIDs = Set((try await repository.searchFTS(query: query)).map(\.id))
+            let hits = try await semanticSearchService.search(query: query, candidates: base, ftsHitIDs: ftsHitIDs)
+            return (
+                repos: hits.map(\.repo),
+                semanticHitMap: Dictionary(uniqueKeysWithValues: hits.map { ($0.repo.id, $0) })
+            )
+        } else {
+            let hitIDs = Set((try await repository.searchFTS(query: query)).map(\.id))
+            return (base.filter { hitIDs.contains($0.id) }, [:])
         }
     }
 
@@ -628,7 +729,7 @@ final class HomeViewModel {
         // 用户后续可显式切到 .language(...) 形成 AND 组合。
         if !next.isEmpty {
             switch selection {
-            case .untagged, .tag, .smartCollectionsHome, .smartCollection:
+            case .untagged, .tag, .smartCollectionsHome, .smartCollection, .userSmartCollection:
                 selection = .allStars
             case .allStars, .language, .trending:
                 break
@@ -687,7 +788,11 @@ final class HomeViewModel {
         // HOM-46：stale-while-revalidate 优化。
         // 先检查缓存：若有且未过期，立即展示缓存，后台刷新。
         // 若无缓存，先显示 isLoading=true 直到首次数据到达。
-        let shouldUseListCache = !isSearching
+        let isUserSmartCollectionSelection: Bool = {
+            if case .userSmartCollection = selection { return true }
+            return false
+        }()
+        let shouldUseListCache = !isSearching && !isUserSmartCollectionSelection
         let cached = shouldUseListCache ? listCache[selection] : nil
         let hasStaleCache = cached != nil
 
@@ -782,6 +887,8 @@ final class HomeViewModel {
                         case .smartCollection(let kind):
                             if kind == .noTags {
                                 repos = try await self.repository.fetchUntagged()
+                            } else if kind == .using {
+                                repos = try await self.repoNoteRepository.fetchRepos(byStatus: .using)
                             } else {
                                 let all = try await self.repository.fetchAllStarred()
                                 let snapshots = try await self.repoHealthRepository?.snapshots(for: all.map(\.id)) ?? [:]
@@ -789,10 +896,16 @@ final class HomeViewModel {
                                     Self.matchesSmartCollection(
                                         repo: repo,
                                         health: snapshots[repo.id],
+                                        status: nil,
                                         kind: kind
                                     )
                                 }
                             }
+                        case .userSmartCollection(let id):
+                            let rule = try await self.fetchUserSmartCollectionRule(id: id)
+                            let result = try await self.fetchRepos(matching: rule)
+                            self.activeUserSmartCollectionRule = rule
+                            return result
                         case .language(let lang):
                             repos = try await self.repository.fetchByLanguage(lang)
                         case .tag(let tagId):
@@ -982,12 +1095,16 @@ final class HomeViewModel {
                     case .smartCollection(let kind):
                         if kind == .noTags {
                             return try await self.repository.fetchUntagged()
+                        } else if kind == .using {
+                            return try await self.repoNoteRepository.fetchRepos(byStatus: .using)
                         }
                         let all = try await self.repository.fetchAllStarred()
                         let snapshots = try await self.repoHealthRepository?.snapshots(for: all.map(\.id)) ?? [:]
                         return all.filter { repo in
-                            Self.matchesSmartCollection(repo: repo, health: snapshots[repo.id], kind: kind)
+                            Self.matchesSmartCollection(repo: repo, health: snapshots[repo.id], status: nil, kind: kind)
                         }
+                    case .userSmartCollection:
+                        return nil
                     case .language(let lang):
                         return try await self.repository.fetchByLanguage(lang)
                     case .tag(let tagId):
@@ -1087,11 +1204,18 @@ final class HomeViewModel {
     /// 纯函数：只读 rawItems / statusMap / repoTagsMap / 各 filter 字段。
     private func computeFilteredSorted() -> [Repo] {
         var view = rawItems
-        if hideArchived { view.removeAll { $0.isArchived } }
-        if hideForks    { view.removeAll { $0.isFork } }
+        let rule = activeUserSmartCollectionRule
+        let effectiveHideArchived = rule?.hideArchived ?? hideArchived
+        let effectiveHideForks = rule?.hideForks ?? hideForks
+        let effectiveStatus = rule?.status ?? statusFilter
+        let effectiveTagIDs = rule.map { Set($0.selectedTagIDs) } ?? selectedTagIds
+        let effectiveSort = rule?.sortOption ?? sortOption
+
+        if effectiveHideArchived { view.removeAll { $0.isArchived } }
+        if effectiveHideForks    { view.removeAll { $0.isFork } }
         // W4-4 D3：状态过滤 — 未在 repo_notes 表登记的视为 implicit "unread"。
         // 这样新同步进来的 repo 默认被 unread 过滤命中,符合"未读 = 还没看过"的直觉。
-        if let status = statusFilter {
+        if let status = effectiveStatus {
             view.removeAll { repo in
                 let actual = statusMap[repo.id] ?? .unread
                 return actual != status
@@ -1103,10 +1227,10 @@ final class HomeViewModel {
         //   - 与 selection（Languages 等）AND：因为 `view` 此时已是 selection 派生的 base set
         // 实现：用 repoTagsMap 查每个 repo 的 tagIds，看与 selectedTagIds 是否有交集。
         // 没有交集（即"没有任何已选 tag"）→ 移除。
-        if !selectedTagIds.isEmpty {
+        if !effectiveTagIDs.isEmpty {
             view.removeAll { repo in
                 let tagsOfRepo = repoTagsMap[repo.id] ?? []
-                return tagsOfRepo.isDisjoint(with: selectedTagIds)
+                return tagsOfRepo.isDisjoint(with: effectiveTagIDs)
             }
         }
         // HOM-197（2026-06-13 dong4j）：AI 语义搜索结果按相似度阈值过滤。
@@ -1128,8 +1252,9 @@ final class HomeViewModel {
             }
         }
         // 语义搜索结果的排序来自 cosine similarity；再套用户的 stars/name 排序会破坏 AI 排名。
-        if !isSemanticSearching {
-            view.sort(by: sortOption.comparator)
+        let userRuleIsSemantic = rule?.searchMode == .semantic && rule?.query?.isEmpty == false
+        if !isSemanticSearching && !userRuleIsSemantic {
+            view.sort(by: effectiveSort.comparator)
         }
         return view
     }
@@ -1205,6 +1330,7 @@ final class HomeViewModel {
     static func matchesSmartCollection(
         repo: Repo,
         health: RepoHealthSnapshot?,
+        status: RepoStatus? = nil,
         kind: SmartCollectionKind,
         now: Date = Date()
     ) -> Bool {
@@ -1228,6 +1354,10 @@ final class HomeViewModel {
             return repo.starsCount >= 5_000
         case .noTags:
             return false
+        case .using:
+            // `.using` 是用户显式标记的私有状态，不属于 repo metadata；
+            // 调用方必须传入从 repo_notes 派生的 status，缺失时保守不命中。
+            return status == .using
         case .recentlyActive:
             guard let pushedAt = repo.pushedAt.flatMap(ISO8601DateFormatter.shared.date(from:)) else {
                 return false
@@ -1259,6 +1389,8 @@ extension SidebarItem {
         case .smartCollectionsHome:
             return [.allStars, .untagged]
         case .smartCollection:
+            return [.smartCollectionsHome, .allStars]
+        case .userSmartCollection:
             return [.smartCollectionsHome, .allStars]
         case .language:
             return [.allStars, .untagged]

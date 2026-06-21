@@ -42,6 +42,7 @@ struct ContentView: View {
             repoTagRepository: dependencies.repoTagRepository,
             repoNoteRepository: dependencies.repoNoteRepository,
             repoHealthRepository: dependencies.repoHealthRepository,
+            smartCollectionRepository: dependencies.smartCollectionRepository,
             searchHistoryRepository: dependencies.searchHistoryRepository,
             semanticSearchService: dependencies.semanticSearchService,
             trendingRepository: dependencies.trendingRepository,

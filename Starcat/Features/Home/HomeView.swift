@@ -148,6 +148,7 @@ struct HomeView: View {
         repoTagRepository: any RepoTagRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
         repoHealthRepository: (any RepoHealthRepositoryProtocol)? = nil,
+        smartCollectionRepository: (any SmartCollectionRepositoryProtocol)? = nil,
         searchHistoryRepository: any SearchHistoryRepositoryProtocol,
         semanticSearchService: SemanticSearchService? = nil,
         trendingRepository: any TrendingRepositoryProtocol,
@@ -161,6 +162,7 @@ struct HomeView: View {
             repoTagRepository: repoTagRepository,
             repoNoteRepository: repoNoteRepository,
             repoHealthRepository: repoHealthRepository,
+            smartCollectionRepository: smartCollectionRepository,
             semanticSearchService: semanticSearchService
         ))
         // HOM-201 P0-4（2026-06-14）：原 manage 路径 README 拉到后的 backfill closure
@@ -956,6 +958,8 @@ struct HomeView: View {
             return false
         case .allStars, .untagged, .smartCollectionsHome, .smartCollection:
             return true
+        case .userSmartCollection(let id):
+            return viewModel.userSmartCollections.contains { $0.id == id }
         case .language(let lang):
             // SidebarItem.language(nil) 对应 LanguageStat.language == ""（GitHub 无主语言）
             return viewModel.languageStats.contains { $0.language == (lang ?? "") }

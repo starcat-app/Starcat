@@ -35,7 +35,7 @@ struct AppStatusToolbarButton: View {
                 Image(systemName: overallStatusIcon)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(overallStatusColor)
-                    .font(.system(size: ToolbarIconMetrics.fontSize, weight: .regular))
+                    .font(.system(size: ToolbarIconMetrics.defaultFontSize, weight: .regular))
                     .frame(
                         width: ToolbarIconMetrics.frameSize,
                         height: ToolbarIconMetrics.frameSize,

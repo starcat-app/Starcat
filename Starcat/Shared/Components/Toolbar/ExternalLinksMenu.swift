@@ -152,8 +152,11 @@ private struct FeaturedExternalLinksControl: View {
                 isPresented.toggle()
             } label: {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 12, height: 18)
+                    .font(.system(size: ToolbarIconMetrics.chevronFontSize, weight: .semibold))
+                    .frame(
+                        width: ToolbarIconMetrics.chevronFrameWidth,
+                        height: ToolbarIconMetrics.chevronFrameHeight
+                    )
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("externalLinks.hint")

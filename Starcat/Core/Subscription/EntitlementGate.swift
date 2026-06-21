@@ -28,6 +28,7 @@ enum ProFeature: String, CaseIterable, Sendable {
     case codeFlow
     case repoHealth
     case mcpService
+    case smartCollections
 
     var title: String {
         switch self {
@@ -46,6 +47,7 @@ enum ProFeature: String, CaseIterable, Sendable {
         case .codeFlow: return String.l10n("subscription.feature.codeFlow")
         case .repoHealth: return String.l10n("subscription.feature.repoHealth")
         case .mcpService: return String.l10n("subscription.feature.mcpService")
+        case .smartCollections: return String.l10n("subscription.feature.smartCollections")
         }
     }
 
@@ -56,6 +58,7 @@ enum EntitlementGateError: Error, LocalizedError, Equatable {
     case requiresPro(feature: ProFeature)
     case tagLimitReached(limit: Int)
     case releaseSubscriptionLimitReached(limit: Int)
+    case smartCollectionLimitReached(limit: Int)
 
     var errorDescription: String? {
         switch self {
@@ -65,6 +68,8 @@ enum EntitlementGateError: Error, LocalizedError, Equatable {
             return String(format: String.l10n("subscription.gate.tagLimitFormat"), limit)
         case .releaseSubscriptionLimitReached(let limit):
             return String(format: String.l10n("subscription.gate.releaseLimitFormat"), limit)
+        case .smartCollectionLimitReached(let limit):
+            return String(format: String.l10n("subscription.gate.smartCollectionLimitFormat"), limit)
         }
     }
 
@@ -76,6 +81,8 @@ enum EntitlementGateError: Error, LocalizedError, Equatable {
             return .tagCreation
         case .releaseSubscriptionLimitReached:
             return .releaseSubscription
+        case .smartCollectionLimitReached:
+            return .smartCollections
         }
     }
 }
@@ -89,6 +96,7 @@ enum EntitlementGateError: Error, LocalizedError, Equatable {
 final class EntitlementGate {
     static let freeTagLimit = 20
     static let freeReleaseSubscriptionLimit = 5
+    static let freeSmartCollectionLimit = 4
 
     private let entitlementProvider: any ProEntitlementProviding
     private let userIDProvider: @MainActor () -> Int64?
@@ -119,5 +127,10 @@ final class EntitlementGate {
     func validateReleaseSubscription(activeSubscriptionCount: Int, isAlreadySubscribed: Bool) throws {
         guard !isProUser, !isAlreadySubscribed, activeSubscriptionCount >= Self.freeReleaseSubscriptionLimit else { return }
         throw EntitlementGateError.releaseSubscriptionLimitReached(limit: Self.freeReleaseSubscriptionLimit)
+    }
+
+    func validateSmartCollectionCreation(currentCount: Int) throws {
+        guard !isProUser, currentCount >= Self.freeSmartCollectionLimit else { return }
+        throw EntitlementGateError.smartCollectionLimitReached(limit: Self.freeSmartCollectionLimit)
     }
 }

@@ -71,6 +71,7 @@ enum DatabaseMigrations {
             try createReadmes(db)
             try createReadmeContents(db)
             try createSavedSearches(db)
+            try createSmartCollections(db)
             try createSearchHistory(db)
             try createSyncState(db)
             try createTagStatsCache(db)
@@ -440,6 +441,25 @@ enum DatabaseMigrations {
             t.column("updated_at", .text).notNull()
             t.column("last_used_at", .text)
         }
+    }
+
+    /// smart_collections：用户自定义智能集合。
+    ///
+    /// 只存规则定义，不存命中结果。命中列表仍由 HomeViewModel 每次按 rule 即时派生，
+    /// 避免 repo/tag/status 改动后需要维护额外同步表。
+    private static func createSmartCollections(_ db: Database) throws {
+        try db.create(table: "smart_collections") { t in
+            t.column("id", .text).primaryKey()
+            t.column("name", .text).notNull()
+            t.column("icon", .text).notNull().defaults(to: "line.3.horizontal.decrease.circle")
+            t.column("color", .text)
+            t.column("rule_json", .text).notNull()
+            t.column("sort_order", .integer).notNull().defaults(to: 0)
+            t.column("created_at", .text).notNull()
+            t.column("updated_at", .text).notNull()
+        }
+
+        try db.create(index: "idx_smart_collections_sort", on: "smart_collections", columns: ["sort_order", "created_at"])
     }
 
     /// search_history：搜索浮层 `⌘K` 的关键词历史。

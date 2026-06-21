@@ -64,6 +64,8 @@ struct RepoListView: View {
     @State private var codeFlowSheetRepo: Repo?
     /// CodeFlow 为 Pro 功能；免费用户点入口时弹出统一付费墙，不打开执行面板。
     @State private var paywallContext: ProPaywallContext?
+    @State private var showSaveSmartCollectionSheet = false
+    @State private var smartCollectionSaveError: String?
     /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
     @State private var lastSyncedAt: Date?
 
@@ -139,6 +141,18 @@ struct RepoListView: View {
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
+        }
+        .sheet(isPresented: $showSaveSmartCollectionSheet) {
+            SaveSmartCollectionSheet(
+                defaultName: defaultSmartCollectionName,
+                errorMessage: smartCollectionSaveError,
+                onCancel: {
+                    showSaveSmartCollectionSheet = false
+                    smartCollectionSaveError = nil
+                },
+                onSave: saveSmartCollection(named:)
+            )
+            .appLocaleEnvironment()
         }
         .sheet(item: $codeFlowSheetRepo) { repo in
             CodeFlowPanel(repo: repo)
@@ -474,6 +488,15 @@ struct RepoListView: View {
 
         let leading = AnyView(
             Group {
+                Button {
+                    smartCollectionSaveError = nil
+                    showSaveSmartCollectionSheet = true
+                } label: {
+                    ToolbarIcon("line.3.horizontal.decrease.circle.badge.plus")
+                }
+                .disabled(viewModel.makeRuleFromCurrentManageFilters() == nil)
+                .help("smartCollections.save.help")
+
                 UnifiedFilterMenu(
                     items: filterItems,
                     isAnyFilterActive: viewModel.hasActiveFilter,
@@ -526,6 +549,50 @@ struct RepoListView: View {
             trailingPrimary: trailing,
             searchField: AnyView(smartSearchField())
         )
+    }
+
+    private var defaultSmartCollectionName: String {
+        switch viewModel.selection {
+        case .allStars:
+            return String.l10n("sidebar.allRepos")
+        case .untagged:
+            return String.l10n("sidebar.untagged")
+        case .language(let language):
+            return language.map(LanguageDisplayName.shortened(for:)) ?? "Uncategorized"
+        case .tag(let id):
+            return viewModel.tags.first { $0.id == id }?.name ?? String.l10n("sidebar.tagFallback")
+        case .trending, .smartCollectionsHome, .smartCollection, .userSmartCollection:
+            return String.l10n("smartCollections.new.defaultName")
+        }
+    }
+
+    private func saveSmartCollection(named name: String) {
+        guard let rule = viewModel.makeRuleFromCurrentManageFilters() else { return }
+        Task {
+            do {
+                let now = ISO8601DateFormatter.shared.string(from: Date())
+                let collection = UserSmartCollection(
+                    id: UUID().uuidString,
+                    name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                    icon: "line.3.horizontal.decrease.circle",
+                    color: nil,
+                    ruleJSON: try SmartCollectionRule.encode(rule),
+                    sortOrder: viewModel.userSmartCollections.count,
+                    createdAt: now,
+                    updatedAt: now
+                )
+                try await dependencies.smartCollectionRepository.create(collection)
+                await viewModel.refreshSidebar()
+                showSaveSmartCollectionSheet = false
+                smartCollectionSaveError = nil
+            } catch let error as EntitlementGateError {
+                showSaveSmartCollectionSheet = false
+                smartCollectionSaveError = nil
+                paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
+            } catch {
+                smartCollectionSaveError = error.localizedDescription
+            }
+        }
     }
 
     /// 中栏主体内容。
@@ -997,6 +1064,8 @@ struct RepoListView: View {
             return String.l10n("smartCollections.title")
         case .smartCollection(let kind):
             return String.l10n("smartCollections.\(kind.rawValue).title")
+        case .userSmartCollection(let id):
+            return viewModel.userSmartCollection(id: id)?.name ?? String.l10n("smartCollections.mine.fallback")
         case .language(let language):
             // Navigation title 同样走短名（详见 LanguageDisplayName）。
             // 无主语言（nil）统一硬编码为 "Uncategorized"（dong4j 2026-06-16，不做 i18n）。
@@ -1016,6 +1085,7 @@ struct RepoListView: View {
         case .untagged:  return "tag.slash"
         case .smartCollectionsHome: return "line.3.horizontal.decrease.circle"
         case .smartCollection: return "tray"
+        case .userSmartCollection: return "line.3.horizontal.decrease.circle"
         case .language:  return "chevron.left.forwardslash.chevron.right"
         case .tag:       return "tag.slash"
         }
@@ -1029,6 +1099,7 @@ struct RepoListView: View {
         case .untagged:        return "empty.allTagged"
         case .smartCollectionsHome: return "smartCollections.empty.title"
         case .smartCollection: return "smartCollections.empty.collection"
+        case .userSmartCollection: return "smartCollections.empty.collection"
         case .language:        return "empty.noReposInLanguage"
         case .tag:             return "empty.noReposInTag"
         }
@@ -1042,6 +1113,7 @@ struct RepoListView: View {
         case .untagged:        return "empty.untaggedHint"
         case .smartCollectionsHome: return "smartCollections.empty.subtitle"
         case .smartCollection: return "smartCollections.empty.collectionSubtitle"
+        case .userSmartCollection: return "smartCollections.empty.collectionSubtitle"
         case .language:        return "empty.languageHint"
         case .tag:             return "empty.tagHint"
         }
@@ -1085,6 +1157,49 @@ struct RepoListView: View {
         } catch {
             paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
         }
+    }
+}
+
+private struct SaveSmartCollectionSheet: View {
+    let defaultName: String
+    let errorMessage: String?
+    let onCancel: () -> Void
+    let onSave: (String) -> Void
+
+    @State private var name: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("smartCollections.save.title", systemImage: "line.3.horizontal.decrease.circle.badge.plus")
+                .font(.headline)
+
+            TextField("smartCollections.save.name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .onAppear {
+                    if name.isEmpty { name = defaultName }
+                }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                Spacer()
+                Button("general.cancel") {
+                    onCancel()
+                }
+                Button("smartCollections.save.confirm") {
+                    onSave(name)
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
     }
 }
 

@@ -211,6 +211,23 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.hasActiveFilter)
     }
 
+    @Test("Smart Collections: .using 仅展示显式标记正在使用的 repo")
+    func smartCollectionUsing() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/a", stars: 0, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/b", stars: 0, starredAt: "2026-05-02T00:00:00Z")
+        try await insertRepo(db, id: 3, fullName: "o/c", stars: 0, starredAt: "2026-05-03T00:00:00Z")
+        try await noteRepo.updateStatus(repoId: 1, status: .using)
+        try await noteRepo.updateStatus(repoId: 2, status: .read)
+        try await noteRepo.updateStatus(repoId: 3, status: .using)
+
+        vm.selectSidebar(.smartCollection(.using))
+        await vm.reloadItems(forceRefresh: true)
+
+        // Smart Collection 复用 repo_notes 的显式 using 状态；无 note / read 不应混入。
+        #expect(vm.items.map(\.id) == [3, 1])
+    }
+
     @Test("D3: 按 .unread 过滤包含 implicit unread(无 note)与 explicit unread")
     func statusFilterUnreadIncludesImplicit() async throws {
         let (vm, db, noteRepo) = try makeSUT()

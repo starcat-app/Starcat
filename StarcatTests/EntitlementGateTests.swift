@@ -68,6 +68,23 @@ struct EntitlementGateTests {
         }
     }
 
+    @Test("免费用户最多创建 4 个自定义智能集合")
+    func freeSmartCollectionLimit() throws {
+        let freeGate = makeGate(isPro: false)
+        try freeGate.validateSmartCollectionCreation(currentCount: 3)
+
+        do {
+            try freeGate.validateSmartCollectionCreation(currentCount: 4)
+            Issue.record("第 5 个自定义智能集合应被门控拦截")
+        } catch let error as EntitlementGateError {
+            #expect(error == .smartCollectionLimitReached(limit: 4))
+            #expect(error.feature == .smartCollections)
+        }
+
+        let proGate = makeGate(isPro: true)
+        try proGate.validateSmartCollectionCreation(currentCount: 40)
+    }
+
     private func makeGate(
         isPro: Bool,
         userID: Int64? = nil

@@ -24,7 +24,7 @@ struct DatabaseMigrationsV1Tests {
         let db = try makeDB()
         let expectedTables = [
             "repos", "starred_repos", "tags", "repo_tags",
-            "repo_notes", "readmes", "saved_searches",
+            "repo_notes", "readmes", "saved_searches", "smart_collections",
             "sync_state", "tag_stats_cache", "open_ssf_scores"
         ]
         try db.read { db in

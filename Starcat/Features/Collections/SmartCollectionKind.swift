@@ -16,6 +16,7 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
     case unmaintained
     case highValue
     case noTags
+    case using
     case recentlyActive
 
     var id: String { rawValue }
@@ -26,6 +27,7 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
         case .unmaintained: return "smartCollections.unmaintained.title"
         case .highValue: return "smartCollections.highValue.title"
         case .noTags: return "smartCollections.noTags.title"
+        case .using: return "smartCollections.using.title"
         case .recentlyActive: return "smartCollections.recentlyActive.title"
         }
     }
@@ -36,6 +38,7 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
         case .unmaintained: return "smartCollections.unmaintained.subtitle"
         case .highValue: return "smartCollections.highValue.subtitle"
         case .noTags: return "smartCollections.noTags.subtitle"
+        case .using: return "smartCollections.using.subtitle"
         case .recentlyActive: return "smartCollections.recentlyActive.subtitle"
         }
     }
@@ -46,6 +49,7 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
         case .unmaintained: return "clock.badge.exclamationmark"
         case .highValue: return "star.circle.fill"
         case .noTags: return "tag.slash"
+        case .using: return "checkmark.seal.fill"
         case .recentlyActive: return "bolt.circle.fill"
         }
     }
@@ -56,8 +60,8 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
         case .unmaintained: return .red
         case .highValue: return .green
         case .noTags: return .blue
+        case .using: return .accentColor
         case .recentlyActive: return .mint
         }
     }
 }
-

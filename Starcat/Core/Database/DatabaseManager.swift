@@ -249,6 +249,22 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
                 CREATE INDEX IF NOT EXISTS idx_repo_health_overall_score
                 ON repo_health_snapshots(overall_score)
                 """)
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS smart_collections (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    icon TEXT NOT NULL DEFAULT 'line.3.horizontal.decrease.circle',
+                    color TEXT,
+                    rule_json TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_smart_collections_sort
+                ON smart_collections(sort_order, created_at)
+                """)
         }
     }
 

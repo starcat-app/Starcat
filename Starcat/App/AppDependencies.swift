@@ -75,6 +75,8 @@ final class AppDependencies {
     let repoNoteRepository: any RepoNoteRepositoryProtocol
     /// 搜索浮层 `⌘K` 的关键词历史 Repository（GRDB SQLite，CloudKit-ready 字段已就绪，W5 同步接入）。
     let searchHistoryRepository: any SearchHistoryRepositoryProtocol
+    /// 用户自定义智能集合 Repository。内置集合不入库，只有用户保存的规则在这里。
+    let smartCollectionRepository: any SmartCollectionRepositoryProtocol
     /// W6 AI：repo embedding SQLite 缓存。
     let repoEmbeddingRepository: any RepoEmbeddingRepositoryProtocol
     /// W6 AI：语义搜索服务，使用 BYOK 设置 + SQLite 向量缓存。
@@ -496,6 +498,10 @@ final class AppDependencies {
         self.repoTagRepository = repoTagRepo
         self.repoNoteRepository = GRDBRepoNoteRepository(database: db)
         self.searchHistoryRepository = GRDBSearchHistoryRepository(database: db)
+        self.smartCollectionRepository = GatedSmartCollectionRepository(
+            base: GRDBSmartCollectionRepository(database: db),
+            entitlementGate: self.entitlementGate
+        )
 
         // HOM-52：批量整理服务装在 AI insight + 标签 + 标签关联 + AI 摘要 Repo 之后。
         // 注：onTagsChanged 由 HomeView 在 environment 注入后挂接，刷新 Sidebar 计数。
