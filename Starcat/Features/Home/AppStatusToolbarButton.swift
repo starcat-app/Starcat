@@ -5,8 +5,9 @@
 //  主窗口 toolbar 的全局状态入口。
 //
 //  设计约束：
-//  - 只展示“同步 / 后台任务 / 服务配置 / 诊断问题”的轻量概览，不在打开面板时主动请求网络；
+//  - 只展示“同步 / 后台任务 / 服务可用性 / MCP / 诊断问题”的轻量概览；
 //  - 诊断问题从本机 JSONL 摘要读取，避免把状态面板变成新的错误来源；
+//  - 服务可用性走四个自建 API 的 `/healthz`，打开面板时实时刷新，后台每 10 分钟巡检；
 //  - 跳转复用 SettingsView 已有的 Notification 路由，不新增主窗口路由状态。
 //
 
@@ -56,7 +57,7 @@ struct AppStatusToolbarButton: View {
                 mcpState: dependencies.mcpService.state,
                 mcpEnabled: settings.mcpServiceEnabled,
                 mcpEndpointURL: dependencies.mcpService.endpointURL,
-                customServiceCount: configuredServiceCount,
+                serviceSummary: dependencies.serviceAvailabilityMonitor.summary,
                 diagnosticSummary: diagnosticSummary,
                 relativeDate: relativeDate,
                 onOpenDiagnostics: { openSettings(tab: "diagnostics") },
@@ -69,6 +70,7 @@ struct AppStatusToolbarButton: View {
             .appLocaleEnvironment()
             .task {
                 await refreshDiagnostics()
+                await dependencies.serviceAvailabilityMonitor.refreshNow()
             }
         }
         .task {
@@ -79,7 +81,10 @@ struct AppStatusToolbarButton: View {
         }
         .onChange(of: isPresented) { _, newValue in
             guard newValue else { return }
-            Task { await refreshDiagnostics() }
+            Task {
+                await refreshDiagnostics()
+                await dependencies.serviceAvailabilityMonitor.refreshNow()
+            }
         }
     }
 
@@ -89,14 +94,8 @@ struct AppStatusToolbarButton: View {
         return max(0, batch.totalCount - batch.finishedCount)
     }
 
-    private var configuredServiceCount: Int {
-        ThirdPartyService.allCases.filter {
-            settings.customServiceURL(for: $0) != nil || settings.customServiceAPIKey(for: $0) != nil
-        }.count
-    }
-
     private var hasIssue: Bool {
-        diagnosticSummary.issueCount > 0 || isMCPFailed
+        diagnosticSummary.issueCount > 0 || isMCPFailed || dependencies.serviceAvailabilityMonitor.summary.hasIssue
     }
 
     private var isMCPFailed: Bool {
@@ -151,7 +150,7 @@ private struct AppStatusPanel: View {
     let mcpState: StarcatMCPService.State
     let mcpEnabled: Bool
     let mcpEndpointURL: String
-    let customServiceCount: Int
+    let serviceSummary: ServiceAvailabilitySummary
     let diagnosticSummary: DiagnosticLogSummary
     let relativeDate: (Date) -> String
     let onOpenDiagnostics: () -> Void
@@ -340,15 +339,40 @@ private struct AppStatusPanel: View {
     }
 
     private var serviceIcon: String {
-        customServiceCount > 0 ? "globe" : "globe.badge.chevron.backward"
+        if serviceSummary.isChecking { return "arrow.triangle.2.circlepath" }
+        if serviceSummary.hasIssue { return "exclamationmark.triangle.fill" }
+        if serviceSummary.isAllAvailable { return "checkmark.circle.fill" }
+        return "globe"
     }
 
     private var serviceTint: Color {
-        customServiceCount > 0 ? .green : .secondary
+        if serviceSummary.hasIssue { return .orange }
+        if serviceSummary.isAllAvailable { return .green }
+        if serviceSummary.isChecking { return .accentColor }
+        return .secondary
     }
 
     private var serviceSubtitle: String {
-        String(format: String.l10n("toolbar.status.services.configuredFormat"), customServiceCount, ThirdPartyService.allCases.count)
+        if serviceSummary.isChecking && !serviceSummary.hasChecked {
+            return String.l10n("toolbar.status.services.checking")
+        }
+        guard serviceSummary.hasChecked else {
+            return String.l10n("toolbar.status.services.notChecked")
+        }
+        if serviceSummary.failedServices.isEmpty {
+            return String(
+                format: String.l10n("toolbar.status.services.availableFormat"),
+                serviceSummary.availableCount,
+                serviceSummary.totalCount
+            )
+        }
+        let failed = serviceSummary.failedServices.map(\.rawValue).joined(separator: ", ")
+        return String(
+            format: String.l10n("toolbar.status.services.failedFormat"),
+            serviceSummary.availableCount,
+            serviceSummary.totalCount,
+            failed
+        )
     }
 
     private var mcpIcon: String {

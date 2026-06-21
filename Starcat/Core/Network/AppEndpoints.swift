@@ -25,6 +25,8 @@
 //    业务全 404（路径会少一段 `/api`）。现在统一与其它 3 个服务对齐：productionURL 不含
 //    `/api`，Paths 写绝对 `/api/v1/...`。历史用户已存的 `*/api` 后缀 baseURL 由
 //    `ThirdPartyService.normalizedBaseURL(_:)` 在保存阶段自动剥除，向后兼容。
+//  - v6（2026-06-21）：客户端状态栏新增 4 个 API 的 `/healthz` 可用性巡检；`ping` 仍只给
+//    设置页「测试连接」做 API Key 校验，两个入口语义分开。
 //
 //  非 REST 链接（GitHub 网页跳转、第三方装饰链接）**不**放本文件：
 //    - GitHub 网页跳转（github.com/{login}, github.com/{owner}/{repo} 等）→ `GitHubURLs.swift`
@@ -38,6 +40,8 @@
 //    由 BearerAuth 保护。避免借用业务 endpoint 作 auth probe 的副作用（sharing 的 GET /share
 //    返 405、wiki 的 GET /wikis 缺参数返 400 等需要客户端特判的尴尬场景）。
 //    详见 ServiceHealthChecker.swift。
+//  - 客户端「状态栏服务可用性」走 `/healthz`，不带鉴权，只判断四个后端进程是否活着；
+//    详见 ServiceAvailabilityMonitor.swift。
 //  - `Paths.xxx` 全部以 `/` 开头，便于源码 grep 时直观；`url(_:)` 内部做 trim。
 //
 
@@ -87,6 +91,8 @@ enum AppEndpoints {
             /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点（R-03 2026-06-11）。
             /// 需要 Bearer Auth，鉴权通过返回 200。详见 supports/starcat-weekly-api/internal/handler/ping.go。
             static let ping = "/api/v1/ping"
+            /// `GET /healthz` —— 状态栏服务可用性巡检端点；无鉴权，只判断后端是否在线。
+            static let healthz = "/healthz"
         }
 
         /// 把 `Paths.xxx` 拼到当前 baseURL 上。
@@ -120,6 +126,8 @@ enum AppEndpoints {
             /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点（R-03 2026-06-11）。
             /// 需要 Bearer Auth，鉴权通过返回 200。详见 supports/starcat-trending-api/internal/handler/ping.go。
             static let ping = "/api/v1/ping"
+            /// `GET /healthz` —— 状态栏服务可用性巡检端点；无鉴权，只判断后端是否在线。
+            static let healthz = "/healthz"
         }
 
         @MainActor
@@ -158,9 +166,8 @@ enum AppEndpoints {
             /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点（R-03 2026-06-11）。
             /// 需要 Bearer Auth，鉴权通过返回 200。详见 supports/starcat-sharing-api/internal/handler/ping.go。
             static let ping = "/api/v1/ping"
-            // 注意：本服务**未列** healthz path。客户端探活已统一收敛到 `ping`（R-03 2026-06-11），
-            // 不再调 healthz；后端 healthz 仍在跑（fly.io 健康检查用），但本目录是「Starcat
-            // 客户端用到的」端点目录，不调用就不列。
+            /// `GET /healthz` —— 状态栏服务可用性巡检端点；无鉴权，只判断后端是否在线。
+            static let healthz = "/healthz"
         }
 
         @MainActor
@@ -186,6 +193,8 @@ enum AppEndpoints {
             /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点（R-03 2026-06-11）。
             /// 需要 Bearer Auth，鉴权通过返回 200。详见 supports/starcat-wiki-api/internal/handler/ping.go。
             static let ping = "/api/v1/ping"
+            /// `GET /healthz` —— 状态栏服务可用性巡检端点；无鉴权，只判断后端是否在线。
+            static let healthz = "/healthz"
         }
 
         @MainActor

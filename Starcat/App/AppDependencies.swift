@@ -129,6 +129,9 @@ final class AppDependencies {
     /// 设置页"测试连接"按钮 → `await serviceHealthChecker.check(service:baseURL:)`。
     /// 独立 actor + 短超时（5s），不复用业务 API session。
     let serviceHealthChecker: ServiceHealthChecker
+    /// 状态栏四个自建 API 的 `/healthz` 可用性巡检。
+    /// 与 `serviceHealthChecker` 分开：前者只判断后端进程是否在线，后者校验 URL + API Key。
+    let serviceAvailabilityMonitor: ServiceAvailabilityMonitor
 
     // MARK: - MUL-176 Weekly（阮一峰周刊）
 
@@ -655,6 +658,9 @@ final class AppDependencies {
 
         // 2026-06-08：第三方服务健康检查 actor。独立 ephemeral session + 5s 超时。
         self.serviceHealthChecker = ServiceHealthChecker()
+        // 2026-06-21：状态栏 API 可用性巡检。构造期不阻塞网络；启动后由后台任务立刻检查一次，
+        // 后续每 10 分钟刷新，失败会通过 @Observable 状态更新 toolbar。
+        self.serviceAvailabilityMonitor = ServiceAvailabilityMonitor()
 
         // HOM-47：Release 订阅追踪。
         // 装配顺序：Repository → Monitor（依赖 API + Repository + RepoRepository）
@@ -826,6 +832,7 @@ final class AppDependencies {
                 self?.mcpService.refreshForCurrentSettings()
             }
             self.mcpService.refreshForCurrentSettings()
+            self.serviceAvailabilityMonitor.startPeriodicChecks()
         }
     }
 
@@ -875,6 +882,9 @@ final class AppDependencies {
             weeklyLanguageStore.invalidate()
             await weeklyLanguageStore.reload()
         }
+
+        // 状态栏服务状态走 `/healthz`，URL 改动后应立即重新检测，避免 toolbar 继续显示旧端点结果。
+        await serviceAvailabilityMonitor.refreshNow()
     }
 
     /// 清空某服务的自定义 URL，等价于 `setServiceURL(nil, for:)`。

@@ -14,7 +14,7 @@
 //  即可，**不需要**改设置页 UI（`ServicesSettingsView` 用 `ThirdPartyService.allCases`
 //  自动渲染）。
 //
-//  健康检查约定（R-03 2026-06-11 重构）：
+//  测试连接约定（R-03 2026-06-11 重构）：
 //  以前用「/healthz（无鉴权）+ 业务 endpoint（带鉴权）」两阶段探测，体验上有坑——
 //  sharing 的 GET /api/v1/share 返 404/405、wiki 的 GET /api/v1/wikis 缺参数返 400，
 //  客户端要写一堆「这个状态码其实算 ok」的特殊判定。
@@ -28,6 +28,11 @@
 //   - 其他 4xx/5xx → 服务有问题（含状态码）
 //   - 网络错 → 完全连不上
 //  `ServiceHealthChecker` 基于本端点单步探测。
+//
+//  状态栏可用性约定（2026-06-21）：
+//  状态栏只需要知道 4 个 API 进程是否在线，因此走后端专门暴露的无鉴权 `GET /healthz`。
+//  它不校验 API Key，也不替代设置页「测试连接」；两个入口语义分离，避免状态面板把
+//  “Key 错”误报成“服务不可用”。
 //
 //  URL 规范化（R-03.1 2026-06-11）：
 //  用户在设置页可能输入各种形态——`http://127.0.0.1:5004`、`http://127.0.0.1:5004/`
@@ -164,6 +169,24 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
             return AppEndpoints.appendPath(AppEndpoints.Sharing.Paths.ping, to: normalized)
         case .wiki:
             return AppEndpoints.appendPath(AppEndpoints.Wiki.Paths.ping, to: normalized)
+        }
+    }
+
+    /// 给定生效 baseURL 构造状态栏服务可用性巡检 URL（2026-06-21）。
+    ///
+    /// `/healthz` 是后端进程级健康检查，不需要 Authorization。状态栏用它做轻量实时巡检；
+    /// 设置页「测试连接」仍走 `pingURL(base:)`，负责校验服务类型 + API Key。
+    func healthURL(base: URL) -> URL {
+        let normalized = normalizedBaseURL(base)
+        switch self {
+        case .weekly:
+            return AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.healthz, to: normalized)
+        case .trending:
+            return AppEndpoints.appendPath(AppEndpoints.Trending.Paths.healthz, to: normalized)
+        case .sharing:
+            return AppEndpoints.appendPath(AppEndpoints.Sharing.Paths.healthz, to: normalized)
+        case .wiki:
+            return AppEndpoints.appendPath(AppEndpoints.Wiki.Paths.healthz, to: normalized)
         }
     }
 

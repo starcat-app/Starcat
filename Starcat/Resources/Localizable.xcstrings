@@ -27202,6 +27202,40 @@
         }
       }
     },
+    "toolbar.status.services.availableFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d/%d API services available"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d/%d 个 API 服务可用"
+          }
+        }
+      }
+    },
+    "toolbar.status.services.checking" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking API services..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在检测 API 服务..."
+          }
+        }
+      }
+    },
     "toolbar.status.services.configuredFormat" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -27215,6 +27249,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d/%d 个服务已自定义"
+          }
+        }
+      }
+    },
+    "toolbar.status.services.failedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d/%d API services available · unavailable: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d/%d 个 API 服务可用 · 不可用：%@"
           }
         }
       }
@@ -27283,6 +27334,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "MCP 已停止"
+          }
+        }
+      }
+    },
+    "toolbar.status.services.notChecked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API services have not been checked yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 服务尚未检测。"
           }
         }
       }

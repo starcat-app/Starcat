@@ -69,10 +69,13 @@ struct RepoHealthSheet: View {
 
     /// sheet 折叠态的基础 idealHeight。
     ///
-    /// 由 header(50) + content(自然高度约 420,含 padding) + rulesFooterBar(50) 累加而来。
-    /// v4 scoreSummary 加了维度预览条(+约 36pt),整体 content 略增高。
+    /// 分段估算（v4 scoreSummary 含进度弧 + 四维预览条）：
+    /// - header ≈ 58 + divider 1
+    /// - content padding 32 + scoreSummary ≈ 168 + grid ≈ 112 + metadata ≈ 132 + 段间距 32 ≈ 476
+    /// - rulesFooterBar ≈ 50
+    /// 合计 ≈ 585；留少量余量避免底部「评分规则」触发条被裁切。
     /// 展开态在下面 + Self.rulesPanelHeight 撑高。
-    private static let collapsedIdealHeight: CGFloat = 510
+    private static let collapsedIdealHeight: CGFloat = 590
 
     /// 评分规则面板区高度(展开时)。
     private static let rulesPanelHeight: CGFloat = 280
@@ -93,7 +96,7 @@ struct RepoHealthSheet: View {
         // maxHeight 给 .infinity 是为了让 macOS 允许用户手动拉大,
         // 但默认 idealHeight 已经够紧凑,不会自动留白。
         .frame(minWidth: 560, idealWidth: 620, maxWidth: 820,
-               minHeight: 520,
+               minHeight: Self.collapsedIdealHeight,
                idealHeight: isRulesExpanded ? Self.collapsedIdealHeight + Self.rulesPanelHeight : Self.collapsedIdealHeight,
                maxHeight: .infinity)
         .animation(.easeInOut(duration: 0.25), value: isRulesExpanded)

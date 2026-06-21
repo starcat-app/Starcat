@@ -187,4 +187,21 @@ struct ThirdPartyServiceTests {
                     "sharing base=\(input.absoluteString) → path=\(url.path), expected /api/v1/ping")
         }
     }
+
+    // MARK: - healthURL
+
+    @Test("healthURL: 4 个服务统一命中 /healthz")
+    func healthURLUnifiedPath() {
+        for service in ThirdPartyService.allCases {
+            let url = service.healthURL(base: URL(string: "https://api.local")!)
+            #expect(url.path == "/healthz",
+                    "service=\(service.rawValue) should hit /healthz, got \(url.path)")
+        }
+    }
+
+    @Test("healthURL: sharing 历史 baseURL `*/api` 也能正确命中 /healthz")
+    func healthURLForLegacySharingApiSuffix() {
+        let url = ThirdPartyService.sharing.healthURL(base: URL(string: "https://share.local/api")!)
+        #expect(url.path == "/healthz")
+    }
 }
