@@ -26,12 +26,30 @@
 //
 
 import Foundation
+import os.lock
 @testable import Starcat
 
 /// `GitHubAPIClientProtocol` 的可注入 Mock。
 /// 每个方法都对应一个 handler 闭包；未设置的 handler 调用会 fatalError。
 ///
-/// `final class` + `@unchecked Sendable`：协议要求 Sendable；mock 假定测试单线程串行使用，不做严格 isolation。
+/// ────────────────────────────────────────────────────────────────────────────
+/// **线程安全约定（2026-06-21 加锁）**
+/// ────────────────────────────────────────────────────────────────────────────
+///
+/// 7 个 `*Calls` 调用记录数组（readmeHTMLCalls / readmeMarkdownCalls / starCalls /
+/// unstarCalls / releasesCalls / receivedEventsCalls / securityAdvisoriesCalls）
+/// 全部用 `OSAllocatedUnfairLock` 保护。原因：`ActivityViewModel.fetchSecurityAnnouncementDrafts`
+/// 用 `withTaskGroup` 并发拉 security advisory（`securityScanConcurrency = 6`），多
+/// 个子任务并发调 `apiClient.securityAdvisories(...)` 时，没锁的 Swift `Array` 并发
+/// `append` 会丢条目（debug 跑出过：两次调用只记 1 条），具体见
+/// `StarcatTests/ActivityViewModelTests.swift::security404Skipped` 的失败 log。
+///
+/// 公开 API 暴露计算 property 快照，调用方零改动（`mock.securityAdvisoriesCalls.count`
+/// 继续用）。私有 storage 用 `_xxxCalls` 前缀 + `OSAllocatedUnfairLock<[...]>` 锁。
+///
+/// ────────────────────────────────────────────────────────────────────────────
+/// `final class` + `@unchecked Sendable`：协议要求 Sendable，calls 数组已上锁满足
+/// "并发安全 mutation" 要求；handler closure 本身的并发调用由用户保证。
 final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
 
     // MARK: - Handlers（每方法一个）
@@ -54,20 +72,46 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var securityAdvisoriesHandler: ((_ owner: String, _ repo: String) async throws -> APIResponse<[GitHubSecurityAdvisoryDTO]>)?
 
     // MARK: - 调用记录（供断言用）
+    //
+    // 全部用 OSAllocatedUnfairLock 保护，原因见文件头"线程安全约定"。
+    // 公开 API 用 getter 暴露快照，私有 storage 用 _xxxCalls 前缀。
 
-    private(set) var readmeHTMLCalls: [(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)] = []
+    private let _readmeHTMLCalls = OSAllocatedUnfairLock<[(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)]>(initialState: [])
     /// 2026-06-12 向量索引改进：README Markdown 调用日志，便于断言"按需懒补全是否真的发请求"。
-    private(set) var readmeMarkdownCalls: [(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)] = []
-    private(set) var starCalls: [(owner: String, repo: String)] = []
+    private let _readmeMarkdownCalls = OSAllocatedUnfairLock<[(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)]>(initialState: [])
+    private let _starCalls = OSAllocatedUnfairLock<[(owner: String, repo: String)]>(initialState: [])
     /// W12 PR-3：批量 unstar 测试需要断言 API 调用次数。
     /// 与 starCalls 对称，每次进入 `unstar(owner:repo:)` 都 append（无论 handler 是否抛错）。
-    private(set) var unstarCalls: [(owner: String, repo: String)] = []
+    private let _unstarCalls = OSAllocatedUnfairLock<[(owner: String, repo: String)]>(initialState: [])
     /// HOM-47：releases 调用日志，便于断言"是否拉过 / 拉了几次"。
-    private(set) var releasesCalls: [(owner: String, repo: String, perPage: Int)] = []
+    private let _releasesCalls = OSAllocatedUnfairLock<[(owner: String, repo: String, perPage: Int)]>(initialState: [])
     /// 2026-06-16 Activity 公告与关注 PR-2：events 调用日志，便于断言「ETag 是否被回传」/「是否真的发了请求」。
-    private(set) var receivedEventsCalls: [(username: String, perPage: Int, ifNoneMatch: String?)] = []
+    private let _receivedEventsCalls = OSAllocatedUnfairLock<[(username: String, perPage: Int, ifNoneMatch: String?)]>(initialState: [])
     /// 2026-06-17 Activity 公告与关注 PR-3：security-advisories 调用日志。
-    private(set) var securityAdvisoriesCalls: [(owner: String, repo: String)] = []
+    private let _securityAdvisoriesCalls = OSAllocatedUnfairLock<[(owner: String, repo: String)]>(initialState: [])
+
+    /// 快照 getter：测试断言用 `mock.readmeHTMLCalls.count` 继续生效。
+    var readmeHTMLCalls: [(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)] {
+        _readmeHTMLCalls.withLock { $0 }
+    }
+    var readmeMarkdownCalls: [(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)] {
+        _readmeMarkdownCalls.withLock { $0 }
+    }
+    var starCalls: [(owner: String, repo: String)] {
+        _starCalls.withLock { $0 }
+    }
+    var unstarCalls: [(owner: String, repo: String)] {
+        _unstarCalls.withLock { $0 }
+    }
+    var releasesCalls: [(owner: String, repo: String, perPage: Int)] {
+        _releasesCalls.withLock { $0 }
+    }
+    var receivedEventsCalls: [(username: String, perPage: Int, ifNoneMatch: String?)] {
+        _receivedEventsCalls.withLock { $0 }
+    }
+    var securityAdvisoriesCalls: [(owner: String, repo: String)] {
+        _securityAdvisoriesCalls.withLock { $0 }
+    }
 
     // MARK: - Protocol conformance
 
@@ -79,7 +123,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
 
     func unstar(owner: String, repo: String) async throws {
-        unstarCalls.append((owner, repo))
+        _unstarCalls.withLock { $0.append((owner, repo)) }
         guard let handler = unstarHandler else {
             fatalError("MockGitHubAPIClient.unstarHandler 未设置")
         }
@@ -87,7 +131,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
 
     func star(owner: String, repo: String) async throws {
-        starCalls.append((owner, repo))
+        _starCalls.withLock { $0.append((owner, repo)) }
         guard let handler = starHandler else {
             fatalError("MockGitHubAPIClient.starHandler 未设置")
         }
@@ -107,7 +151,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
         ifNoneMatch: String?,
         ifModifiedSince: String?
     ) async throws -> BytesResponse {
-        readmeHTMLCalls.append((owner, repo, ifNoneMatch, ifModifiedSince))
+        _readmeHTMLCalls.withLock { $0.append((owner, repo, ifNoneMatch, ifModifiedSince)) }
         guard let handler = readmeHTMLHandler else {
             fatalError("MockGitHubAPIClient.readmeHTMLHandler 未设置")
         }
@@ -120,7 +164,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
         ifNoneMatch: String?,
         ifModifiedSince: String?
     ) async throws -> BytesResponse {
-        readmeMarkdownCalls.append((owner, repo, ifNoneMatch, ifModifiedSince))
+        _readmeMarkdownCalls.withLock { $0.append((owner, repo, ifNoneMatch, ifModifiedSince)) }
         guard let handler = readmeMarkdownHandler else {
             fatalError("MockGitHubAPIClient.readmeMarkdownHandler 未设置")
         }
@@ -141,7 +185,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
 
     func releases(owner: String, repo: String, perPage: Int) async throws -> APIResponse<[GitHubReleaseDTO]> {
-        releasesCalls.append((owner, repo, perPage))
+        _releasesCalls.withLock { $0.append((owner, repo, perPage)) }
         guard let handler = releasesHandler else {
             fatalError("MockGitHubAPIClient.releasesHandler 未设置")
         }
@@ -160,7 +204,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
         perPage: Int,
         ifNoneMatch: String?
     ) async throws -> APIResponse<[GitHubEventDTO]> {
-        receivedEventsCalls.append((username, perPage, ifNoneMatch))
+        _receivedEventsCalls.withLock { $0.append((username, perPage, ifNoneMatch)) }
         guard let handler = receivedEventsHandler else {
             fatalError("MockGitHubAPIClient.receivedEventsHandler 未设置")
         }
@@ -168,7 +212,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
 
     func securityAdvisories(owner: String, repo: String) async throws -> APIResponse<[GitHubSecurityAdvisoryDTO]> {
-        securityAdvisoriesCalls.append((owner, repo))
+        _securityAdvisoriesCalls.withLock { $0.append((owner, repo)) }
         guard let handler = securityAdvisoriesHandler else {
             fatalError("MockGitHubAPIClient.securityAdvisoriesHandler 未设置")
         }

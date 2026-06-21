@@ -461,6 +461,8 @@ final class HomeViewModel {
     /// Repo Health 快照用于 Smart Collections 的 Needs Review / High Value 等集合。
     /// 可选是为了不破坏既有单测构造；缺失时集合按 repo 元数据保守降级。
     private let repoHealthRepository: (any RepoHealthRepositoryProtocol)?
+    private let releaseRepository: (any ReleaseRepositoryProtocol)?
+    private let openSSFScoreRepository: (any OpenSSFScoreRepositoryProtocol)?
     private let smartCollectionRepository: (any SmartCollectionRepositoryProtocol)?
 
     /// 当前用户智能集合的规则快照。进入非用户集合时清空，避免旧规则污染普通列表。
@@ -489,6 +491,8 @@ final class HomeViewModel {
         repoTagRepository: any RepoTagRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
         repoHealthRepository: (any RepoHealthRepositoryProtocol)? = nil,
+        releaseRepository: (any ReleaseRepositoryProtocol)? = nil,
+        openSSFScoreRepository: (any OpenSSFScoreRepositoryProtocol)? = nil,
         smartCollectionRepository: (any SmartCollectionRepositoryProtocol)? = nil,
         semanticSearchService: SemanticSearchService? = nil
     ) {
@@ -497,6 +501,8 @@ final class HomeViewModel {
         self.repoTagRepository = repoTagRepository
         self.repoNoteRepository = repoNoteRepository
         self.repoHealthRepository = repoHealthRepository
+        self.releaseRepository = releaseRepository
+        self.openSSFScoreRepository = openSSFScoreRepository
         self.smartCollectionRepository = smartCollectionRepository
         self.semanticSearchService = semanticSearchService
     }
@@ -575,6 +581,7 @@ final class HomeViewModel {
         languageStats = []
         tags = []
         tagCounts = [:]
+        userSmartCollections = []
 
         selectedRepoID = nil
         shouldScrollSelectedRepoIntoView = false
@@ -640,6 +647,23 @@ final class HomeViewModel {
         SmartCollectionRuleSummary.Context.from(tags: tags)
     }
 
+    /// 用户智能集合的完整生效规则：Manage toolbar 快照 + DB 存盘的高阶 predicate。
+    ///
+    /// **为什么必须 merge**：
+    /// - toolbar 只覆盖 scope / 搜索 / Manage 基础筛选；
+    /// - Health / OpenSSF / Release 等 advanced 字段只存在 DB `ruleJSON` 里。
+    /// - `buildSmartCollectionFilterContext` 与 `SmartCollectionRuleFilter` 必须共用同一份
+    ///   merged rule，否则会出现「总览 countRepos=60、列表 filter 后=0」：
+    ///   context 按 toolbar（无 healthScoreMin）跳过 Health 加载，filter 却按 merged 规则
+    ///   要求 health 分 → 空 snapshots 把全部 repo 滤掉。
+    private func effectiveUserSmartCollectionRule() -> SmartCollectionRule? {
+        guard let stored = activeUserSmartCollectionRule else { return nil }
+        if let toolbar = makeRuleFromCurrentManageFilters() {
+            return toolbar.mergingAdvanced(from: stored)
+        }
+        return stored
+    }
+
     /// 进入用户智能集合后，把 DB 规则灌进 Manage toolbar，让列表与控件一致。
     ///
     /// 刻意不同步 AppSettings：离开集合时不应把 draft 写进全局默认筛选。
@@ -658,25 +682,58 @@ final class HomeViewModel {
 
     /// 统计规则命中仓库数（scope 查询 + 完整 rule filter）。
     func countRepos(matching rule: SmartCollectionRule) async throws -> Int {
-        let (repos, _) = try await fetchRepos(matching: rule)
-        let context = try await buildSmartCollectionFilterContext(for: repos)
+        let (repos, semanticHitMap) = try await fetchRepos(matching: rule)
+        let context = try await buildSmartCollectionFilterContext(
+            for: repos,
+            rule: rule,
+            semanticHitMap: semanticHitMap
+        )
         return SmartCollectionRuleFilter.apply(repos: repos, rule: rule, context: context).count
     }
 
-    func buildSmartCollectionFilterContext(for repos: [Repo]) async throws -> SmartCollectionRuleFilterContext {
+    func buildSmartCollectionFilterContext(
+        for repos: [Repo],
+        rule: SmartCollectionRule? = nil,
+        semanticHitMap: [Int64: SemanticSearchHit] = [:]
+    ) async throws -> SmartCollectionRuleFilterContext {
         async let statusMap = repoNoteRepository.fetchAllStatusMap()
         async let noteIDs = repoNoteRepository.fetchRepoIdsWithNonEmptyContent()
+        let repoIds = repos.map(\.id)
+
+        let shouldLoadHealth = rule == nil || rule?.needsHealthSnapshots == true
         let health: [Int64: RepoHealthSnapshot]
-        if let repoHealthRepository, !repos.isEmpty {
-            health = try await repoHealthRepository.snapshots(for: repos.map(\.id))
+        if let repoHealthRepository, !repos.isEmpty, shouldLoadHealth {
+            health = try await repoHealthRepository.snapshots(for: repoIds)
         } else {
             health = [:]
         }
+
+        let openSSFScores: [Int64: Double]
+        if rule?.needsOpenSSFContext == true, let openSSFScoreRepository, !repoIds.isEmpty {
+            let records = try await openSSFScoreRepository.records(for: repoIds)
+            openSSFScores = records.compactMapValues { record in
+                guard record.fetchStatus == .success, let score = record.aggregateScore else { return nil }
+                return score
+            }
+        } else {
+            openSSFScores = [:]
+        }
+
+        let latestReleasePublishedAt: [Int64: String]
+        if rule?.needsReleaseContext == true, let releaseRepository, !repoIds.isEmpty {
+            latestReleasePublishedAt = try await releaseRepository.latestPublishedAtByRepoIds(repoIds)
+        } else {
+            latestReleasePublishedAt = [:]
+        }
+
         return SmartCollectionRuleFilterContext(
             statusMap: try await statusMap,
             repoTagsMap: repoTagsMap,
             healthSnapshots: health,
             repoIdsWithNotes: try await noteIDs,
+            openSSFScores: openSSFScores,
+            latestReleasePublishedAt: latestReleasePublishedAt,
+            semanticHitMap: semanticHitMap,
             now: Date()
         )
     }
@@ -1004,9 +1061,13 @@ final class HomeViewModel {
                             let storedRule = try await self.fetchUserSmartCollectionRule(id: id)
                             self.activeUserSmartCollectionRule = storedRule
                             self.hydrateManageFilters(from: storedRule)
-                            let effectiveRule = self.makeRuleFromCurrentManageFilters() ?? storedRule
-                            let result = try await self.fetchRepos(matching: effectiveRule)
-                            self.smartCollectionFilterContext = try await self.buildSmartCollectionFilterContext(for: result.repos)
+                            let fullRule = self.effectiveUserSmartCollectionRule() ?? storedRule
+                            let result = try await self.fetchRepos(matching: fullRule)
+                            self.smartCollectionFilterContext = try await self.buildSmartCollectionFilterContext(
+                                for: result.repos,
+                                rule: fullRule,
+                                semanticHitMap: result.semanticHitMap
+                            )
                             return result
                         case .language(let lang):
                             repos = try await self.repository.fetchByLanguage(lang)
@@ -1076,8 +1137,11 @@ final class HomeViewModel {
                 let idsIdentical = fetched.count == self.rawItems.count &&
                                    zip(fetched, self.rawItems).allSatisfy { $0.id == $1.id }
                 let statusIdentical = fetchedStatusMap == self.statusMap
+                // 用户智能集合：rawItems ID 序列可能与 All Stars 相同，但 filter context / 规则不同，
+                // 不能走静默跳过，否则 items 仍停留在上一分类的 filteredSorted（常见表现：空列表）。
+                let mustReapplyView = isUserSmartCollectionSelection
 
-                if idsIdentical && statusIdentical {
+                if idsIdentical && statusIdentical && !mustReapplyView {
                     // 静默更新底层引用（rawItems / statusMap 是 private 属性，不参与视图重建）。
                     // 不动 items / itemsRevision → 不触发 SwiftUI re-render，避免第二波动画。
                     self.rawItems = fetched
@@ -1307,9 +1371,7 @@ final class HomeViewModel {
     private func computeFilteredSorted() -> [Repo] {
         var view = rawItems
 
-        if let stored = activeUserSmartCollectionRule,
-           let toolbarRule = makeRuleFromCurrentManageFilters() {
-            let effective = toolbarRule.mergingAdvanced(from: stored)
+        if let effective = effectiveUserSmartCollectionRule() {
             view = SmartCollectionRuleFilter.apply(
                 repos: view,
                 rule: effective,

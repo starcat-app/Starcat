@@ -30,7 +30,8 @@ struct GatedSmartCollectionRepository: SmartCollectionRepositoryProtocol {
     }
 
     func create(_ collection: UserSmartCollection) async throws {
-        let currentCount = try await base.count()
+        // 与 Tag 门控一致：以 fetchAll 可见集合为准，不用裸 fetchCount。
+        let currentCount = try await base.fetchAll().count
         try entitlementGate.validateSmartCollectionCreation(currentCount: currentCount)
         try await base.create(collection)
     }

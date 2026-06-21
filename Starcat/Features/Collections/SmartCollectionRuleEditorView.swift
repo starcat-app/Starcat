@@ -12,6 +12,9 @@
 
 import SwiftUI
 
+/// 表单输入框统一宽度（label 左 / 输入框右，无 dash 分隔符）。
+private let smartCollectionInputFieldWidth: CGFloat = 200
+
 /// 三态 optional-Bool 过滤（不限 / 是 / 否）。
 private enum SmartCollectionTriState: String, CaseIterable, Identifiable {
     case any
@@ -62,7 +65,9 @@ struct SmartCollectionRuleEditorSheet: View {
     @State private var draft: SmartCollectionRule
     @State private var name: String
     @State private var matchCount: Int?
+    /// 仅首次预览计数前为 true；后续 debounce 刷新静默更新数字，不再闪 spinner。
     @State private var isLoadingCount = false
+    @State private var previewReloadGeneration = 0
     @State private var saveError: String?
     @State private var paywallContext: ProPaywallContext?
 
@@ -75,7 +80,7 @@ struct SmartCollectionRuleEditorSheet: View {
             _draft = State(initialValue: rule)
             _name = State(initialValue: "")
         case .edit(let collection):
-            _draft = State(initialValue: collection.rule ?? SmartCollectionRule.fallback)
+            _draft = State(initialValue: collection.rule ?? SmartCollectionRule.baseline)
             _name = State(initialValue: collection.name)
         }
     }
@@ -85,7 +90,11 @@ struct SmartCollectionRuleEditorSheet: View {
     }
 
     private var previewTaskID: String {
-        (try? SmartCollectionRule.encode(draft)) ?? UUID().uuidString
+        if let encoded = try? SmartCollectionRule.encode(draft) {
+            return encoded
+        }
+        // encode 失败时用 scope + 基础字段拼稳定 key，避免 UUID 导致 task 无限重启。
+        return "\(draft.scope)-\(draft.sortRaw)-\(draft.hideArchived)-\(draft.hideForks)"
     }
 
     var body: some View {
@@ -99,7 +108,34 @@ struct SmartCollectionRuleEditorSheet: View {
             ScrollView {
                 Form {
                     Section("smartCollections.editor.section.name") {
-                        TextField("smartCollections.save.name", text: $name)
+                        HStack {
+                            Text("smartCollections.save.name")
+                                .lineLimit(1)
+                            Spacer()
+                            TextField("smartCollections.save.name", text: $name)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: smartCollectionInputFieldWidth)
+                        }
+                    }
+
+                    Section("smartCollections.editor.section.presets") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(SmartCollectionKind.allCases) { kind in
+                                    Button {
+                                        applyPreset(kind)
+                                    } label: {
+                                        Text(kind.titleKey)
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .focusEffectDisabled()
+                                }
+                            }
+                        }
+                        Text("smartCollections.editor.presets.hint")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
 
                     Section("smartCollections.editor.section.scope") {
@@ -107,7 +143,14 @@ struct SmartCollectionRuleEditorSheet: View {
                     }
 
                     Section("smartCollections.editor.section.search") {
-                        TextField("smartCollections.editor.search.placeholder", text: searchQueryBinding)
+                        HStack {
+                            Text("smartCollections.editor.search.placeholder")
+                                .lineLimit(1)
+                            Spacer()
+                            TextField("smartCollections.editor.search.placeholder", text: searchQueryBinding)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: smartCollectionInputFieldWidth)
+                        }
                         Picker("smartCollections.editor.search.mode", selection: $draft.searchModeRaw) {
                             ForEach(SmartSearchMode.allCases) { mode in
                                 Text(mode.displayName).tag(mode.rawValue)
@@ -139,70 +182,119 @@ struct SmartCollectionRuleEditorSheet: View {
                         }
                     }
 
-                    if !viewModel.tags.isEmpty {
-                        Section("smartCollections.editor.section.tags") {
-                            ForEach(viewModel.tags) { tag in
-                                Toggle(tag.name, isOn: tagToggleBinding(tag.id))
-                            }
+                    if !viewModel.languageStats.isEmpty {
+                        Section("smartCollections.editor.section.languages") {
+                            SmartCollectionMultiSelectField(
+                                titleKey: "smartCollections.editor.section.languages",
+                                showsInlineTitle: false,
+                                selectedIDs: $draft.filterLanguages,
+                                options: viewModel.languageStats.map {
+                                    SmartCollectionMultiSelectOption(
+                                        id: $0.language,
+                                        label: languageOptionLabel(for: $0)
+                                    )
+                                }
+                            )
                         }
                     }
 
-                    Section("smartCollections.editor.section.advanced") {
-                        optionalIntRow(
-                            titleKey: "smartCollections.editor.starsMin",
-                            value: $draft.starsMin,
-                            range: 0...1_000_000
-                        )
-                        optionalIntRow(
-                            titleKey: "smartCollections.editor.starsMax",
-                            value: $draft.starsMax,
-                            range: 0...1_000_000
-                        )
-                        optionalIntRow(
-                            titleKey: "smartCollections.editor.pushedWithinDays",
-                            value: $draft.pushedWithinDays,
-                            range: 1...3_650
-                        )
-                        optionalIntRow(
-                            titleKey: "smartCollections.editor.pushedOlderDays",
-                            value: $draft.pushedOlderThanDays,
-                            range: 1...3_650
-                        )
+                    if !viewModel.tags.isEmpty {
+                        Section("smartCollections.editor.section.tags") {
+                            Picker("smartCollections.editor.tagMatchMode", selection: $draft.tagMatchModeRaw) {
+                                Text("smartCollections.editor.tagMatch.any").tag(SmartCollectionTagMatchMode.any.rawValue)
+                                Text("smartCollections.editor.tagMatch.all").tag(SmartCollectionTagMatchMode.all.rawValue)
+                            }
+                            SmartCollectionMultiSelectField(
+                                titleKey: "smartCollections.editor.tags.include",
+                                selectedIDs: $draft.selectedTagIDs,
+                                options: viewModel.tags.map {
+                                    SmartCollectionMultiSelectOption(id: $0.id, label: $0.name)
+                                }
+                            )
+                            SmartCollectionMultiSelectField(
+                                titleKey: "smartCollections.editor.tags.exclude",
+                                selectedIDs: $draft.excludedTagIDs,
+                                options: viewModel.tags.map {
+                                    SmartCollectionMultiSelectOption(id: $0.id, label: $0.name)
+                                }
+                            )
+                        }
+                    }
+
+                    Section("smartCollections.editor.section.popularity") {
+                        optionalIntRow(titleKey: "smartCollections.editor.starsMin", value: $draft.starsMin, range: 0...1_000_000)
+                        optionalIntRow(titleKey: "smartCollections.editor.starsMax", value: $draft.starsMax, range: 0...1_000_000)
+                        optionalIntRow(titleKey: "smartCollections.editor.forksMin", value: $draft.forksMin, range: 0...1_000_000)
+                        optionalIntRow(titleKey: "smartCollections.editor.forksMax", value: $draft.forksMax, range: 0...1_000_000)
+                        optionalIntRow(titleKey: "smartCollections.editor.watchersMin", value: $draft.watchersMin, range: 0...1_000_000)
+                        optionalIntRow(titleKey: "smartCollections.editor.watchersMax", value: $draft.watchersMax, range: 0...1_000_000)
+                    }
+
+                    Section("smartCollections.editor.section.activity") {
+                        optionalIntRow(titleKey: "smartCollections.editor.pushedWithinDays", value: $draft.pushedWithinDays, range: 1...3_650)
+                        optionalIntRow(titleKey: "smartCollections.editor.pushedOlderDays", value: $draft.pushedOlderThanDays, range: 1...3_650)
+                        optionalIntRow(titleKey: "smartCollections.editor.starredWithinDays", value: $draft.starredWithinDays, range: 1...3_650)
+                        optionalIntRow(titleKey: "smartCollections.editor.starredOlderDays", value: $draft.starredOlderThanDays, range: 1...3_650)
+                        optionalIntRow(titleKey: "smartCollections.editor.updatedWithinDays", value: $draft.updatedWithinDays, range: 1...3_650)
+                        optionalIntRow(titleKey: "smartCollections.editor.updatedOlderDays", value: $draft.updatedOlderThanDays, range: 1...3_650)
+                        optionalIntRow(titleKey: "smartCollections.editor.createdWithinDays", value: $draft.createdWithinDays, range: 1...3_650)
+                        optionalIntRow(titleKey: "smartCollections.editor.createdOlderDays", value: $draft.createdOlderThanDays, range: 1...3_650)
+                        optionalIntRow(titleKey: "smartCollections.editor.releaseWithinDays", value: $draft.releaseWithinDays, range: 1...3_650)
+                    }
+
+                    Section("smartCollections.editor.section.content") {
+                        triStatePicker(titleKey: "smartCollections.editor.description", value: $draft.requireDescription)
+                        triStatePicker(titleKey: "smartCollections.editor.homepage", value: $draft.requireHomepage)
+                        triStatePicker(titleKey: "smartCollections.editor.license", value: $draft.requireLicense)
+                        topicsRow
+                        triStatePicker(titleKey: "smartCollections.editor.note", value: $draft.requireNote)
+                    }
+
+                    Section("smartCollections.editor.section.repoHealth") {
                         if dependencies.entitlementGate.isProUser {
-                            optionalIntRow(
-                                titleKey: "smartCollections.editor.healthMin",
-                                value: $draft.healthScoreMin,
-                                range: 0...100
-                            )
-                            optionalIntRow(
-                                titleKey: "smartCollections.editor.healthMax",
-                                value: $draft.healthScoreMax,
-                                range: 0...100
-                            )
+                            optionalIntRow(titleKey: "smartCollections.editor.healthMin", value: $draft.healthScoreMin, range: 0...100)
+                            optionalIntRow(titleKey: "smartCollections.editor.healthMax", value: $draft.healthScoreMax, range: 0...100)
+                            SmartCollectionGradePicker(selectedGrades: $draft.healthGrades)
                         } else {
                             Text("smartCollections.editor.health.proLocked")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        triStatePicker(
-                            titleKey: "smartCollections.editor.license",
-                            value: $draft.requireLicense
-                        )
-                        triStatePicker(
-                            titleKey: "smartCollections.editor.topics",
-                            value: $draft.requireTopics
-                        )
-                        triStatePicker(
-                            titleKey: "smartCollections.editor.note",
-                            value: $draft.requireNote
-                        )
+                    }
+
+                    Section("smartCollections.editor.section.quality") {
+                        if dependencies.entitlementGate.isProUser {
+                            optionalIntRow(titleKey: "smartCollections.editor.maintenanceMin", value: $draft.maintenanceScoreMin, range: 0...100)
+                            optionalIntRow(titleKey: "smartCollections.editor.popularityHealthMin", value: $draft.popularityScoreMin, range: 0...100)
+                            optionalIntRow(titleKey: "smartCollections.editor.qualityMin", value: $draft.qualityScoreMin, range: 0...100)
+                            optionalIntRow(titleKey: "smartCollections.editor.securityMin", value: $draft.securityScoreMin, range: 0...100)
+                        } else {
+                            Text("smartCollections.editor.qualityDimensions.proLocked")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        optionalIntRow(titleKey: "smartCollections.editor.openSSFMin", value: $draft.openSSFScoreMin, range: 0...10)
+                    }
+
+                    if draft.searchMode == .semantic {
+                        Section("smartCollections.editor.section.semantic") {
+                            optionalIntRow(titleKey: "smartCollections.editor.semanticMin", value: $draft.semanticScoreMin, range: 0...100)
+                        }
                     }
 
                     Section {
+                        ForEach(SmartCollectionRuleValidation.warnings(for: draft), id: \.self) { warning in
+                            Text(warning)
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
                         SmartCollectionRuleSummaryView(
                             lines: SmartCollectionRuleSummary.lines(rule: draft, context: summaryContext)
                         )
-                        SmartCollectionMatchCountRow(matchCount: matchCount, isLoadingCount: isLoadingCount)
+                        SmartCollectionMatchCountRow(
+                            matchCount: matchCount,
+                            isLoadingCount: isLoadingCount
+                        )
                     } header: {
                         Text("smartCollections.editor.section.preview")
                     }
@@ -227,14 +319,18 @@ struct SmartCollectionRuleEditorSheet: View {
             }
             .padding(20)
         }
-        .frame(width: 520, height: 640)
+        .frame(width: 560, height: 720)
         .onAppear {
             if case .create(let defaultName, _) = mode, name.isEmpty {
                 name = defaultName
             }
         }
         .task(id: previewTaskID) {
-            await reloadPreviewCount()
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            previewReloadGeneration += 1
+            let generation = previewReloadGeneration
+            await reloadPreviewCount(expectedGeneration: generation)
         }
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
@@ -260,7 +356,7 @@ struct SmartCollectionRuleEditorSheet: View {
             Text("smartCollections.rule.scope.allStars").tag(ScopeSelection.allStars)
             Text("smartCollections.rule.scope.untagged").tag(ScopeSelection.untagged)
             ForEach(viewModel.languageStats, id: \.language) { stat in
-                Text(LanguageDisplayName.shortened(for: stat.language))
+                Text(languageOptionLabel(for: stat))
                     .tag(ScopeSelection.language(stat.language))
             }
             ForEach(viewModel.tags) { tag in
@@ -312,19 +408,42 @@ struct SmartCollectionRuleEditorSheet: View {
         )
     }
 
-    private func tagToggleBinding(_ tagID: String) -> Binding<Bool> {
+    private var topicContainsBinding: Binding<String> {
         Binding(
-            get: { draft.selectedTagIDs.contains(tagID) },
-            set: { isOn in
-                if isOn {
-                    if !draft.selectedTagIDs.contains(tagID) {
-                        draft.selectedTagIDs.append(tagID)
-                    }
-                } else {
-                    draft.selectedTagIDs.removeAll { $0 == tagID }
-                }
+            get: { draft.topicContains ?? "" },
+            set: { newValue in
+                let filtered = String(newValue.prefix(80))
+                let trimmed = filtered.trimmingCharacters(in: .whitespacesAndNewlines)
+                draft.topicContains = trimmed.isEmpty ? nil : trimmed
             }
         )
+    }
+
+    private var topicsRow: some View {
+        HStack {
+            Text("smartCollections.editor.topics")
+                .lineLimit(1)
+            Spacer()
+            TextField("smartCollections.editor.topics.placeholder", text: topicContainsBinding)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: smartCollectionInputFieldWidth)
+        }
+    }
+
+    private func languageOptionLabel(for stat: LanguageStat) -> String {
+        if stat.language.isEmpty {
+            return String.l10n("smartCollections.rule.scope.uncategorizedLanguage")
+        }
+        return LanguageDisplayName.shortened(for: stat.language)
+    }
+
+    private func applyPreset(_ kind: SmartCollectionKind) {
+        let preservedName = name
+        draft = SmartCollectionRule.template(for: kind)
+        if case .create = mode,
+           preservedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            name = SmartCollectionRule.defaultName(for: kind)
+        }
     }
 
     private func triStatePicker(titleKey: LocalizedStringKey, value: Binding<Bool?>) -> some View {
@@ -345,10 +464,12 @@ struct SmartCollectionRuleEditorSheet: View {
     ) -> some View {
         HStack {
             Text(titleKey)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
             Spacer()
             TextField("smartCollections.editor.optionalPlaceholder", text: optionalIntTextBinding(value, range: range))
                 .textFieldStyle(.roundedBorder)
-                .frame(width: 88)
+                .frame(width: smartCollectionInputFieldWidth)
                 .multilineTextAlignment(.trailing)
         }
     }
@@ -359,7 +480,8 @@ struct SmartCollectionRuleEditorSheet: View {
                 value.wrappedValue.map(String.init) ?? ""
             },
             set: { newValue in
-                let filtered = String(newValue.filter(\.isNumber).prefix(8))
+                let maxDigits = String(range.upperBound).count
+                let filtered = String(newValue.filter(\.isNumber).prefix(maxDigits))
                 if filtered.isEmpty {
                     value.wrappedValue = nil
                     return
@@ -379,10 +501,22 @@ struct SmartCollectionRuleEditorSheet: View {
         }
     }
 
-    private func reloadPreviewCount() async {
-        isLoadingCount = true
-        defer { isLoadingCount = false }
-        matchCount = try? await viewModel.countRepos(matching: draft)
+    private func reloadPreviewCount(expectedGeneration: Int) async {
+        guard !Task.isCancelled else { return }
+
+        let isInitialLoad = matchCount == nil
+        if isInitialLoad {
+            isLoadingCount = true
+        }
+        defer {
+            if isInitialLoad {
+                isLoadingCount = false
+            }
+        }
+
+        guard let count = try? await viewModel.countRepos(matching: draft) else { return }
+        guard !Task.isCancelled, expectedGeneration == previewReloadGeneration else { return }
+        matchCount = count
     }
 
     /// 用 Manage toolbar 当前筛选覆盖 scope / 搜索 / 状态 / 标签 / 隐藏项 / 排序；保留高级 predicate。
@@ -392,7 +526,7 @@ struct SmartCollectionRuleEditorSheet: View {
     }
 
     private func save() {
-        if draft.usesHealthPredicates {
+        if draft.usesProPredicates {
             do {
                 try dependencies.entitlementGate.requirePro(.repoHealth)
             } catch let error as EntitlementGateError {
@@ -412,13 +546,14 @@ struct SmartCollectionRuleEditorSheet: View {
                 switch mode {
                 case .create:
                     let now = ISO8601DateFormatter.shared.string(from: Date())
+                    let existing = try await dependencies.smartCollectionRepository.fetchAll()
                     let collection = UserSmartCollection(
                         id: UUID().uuidString,
                         name: trimmedName,
                         icon: "line.3.horizontal.decrease.circle",
                         color: nil,
                         ruleJSON: try SmartCollectionRule.encode(draft),
-                        sortOrder: viewModel.userSmartCollections.count,
+                        sortOrder: existing.count,
                         createdAt: now,
                         updatedAt: now
                     )
@@ -450,41 +585,16 @@ struct SmartCollectionMatchCountRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            ProgressView()
-                .controlSize(.small)
-                .opacity(isLoadingCount ? 1 : 0)
-                .frame(width: 16, height: 16)
-
-            if let matchCount, !isLoadingCount {
+            if let matchCount {
                 Text(String(format: String.l10n("smartCollections.rule.matchCountFormat"), locale: locale, matchCount))
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .animation(.easeInOut(duration: 0.15), value: matchCount)
+            } else if isLoadingCount {
+                ProgressView()
+                    .controlSize(.small)
             }
         }
-        .frame(height: 22, alignment: .leading)
-    }
-}
-
-private extension SmartCollectionRule {
-    static var fallback: SmartCollectionRule {
-        SmartCollectionRule(
-            scope: .allStars,
-            query: nil,
-            searchModeRaw: SmartSearchMode.keyword.rawValue,
-            statusRaw: nil,
-            selectedTagIDs: [],
-            hideArchived: false,
-            hideForks: false,
-            sortRaw: RepoSortOption.starredAtDesc.rawValue,
-            starsMin: nil,
-            starsMax: nil,
-            pushedWithinDays: nil,
-            pushedOlderThanDays: nil,
-            healthScoreMin: nil,
-            healthScoreMax: nil,
-            requireLicense: nil,
-            requireTopics: nil,
-            requireNote: nil
-        )
+        .frame(minHeight: 22, alignment: .leading)
     }
 }

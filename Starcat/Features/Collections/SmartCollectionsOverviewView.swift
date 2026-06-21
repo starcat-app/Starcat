@@ -22,6 +22,7 @@ struct SmartCollectionsOverviewView: View {
     @State private var isLoadingUserCounts = false
     @State private var deleteError: String?
     @State private var editTarget: UserSmartCollection?
+    @State private var createFromTemplateKind: SmartCollectionKind?
 
     var body: some View {
         ScrollView {
@@ -33,7 +34,7 @@ struct SmartCollectionsOverviewView: View {
                 LazyVGrid(
                     columns: [GridItem(.flexible(), alignment: .top), GridItem(.flexible(), alignment: .top)],
                     alignment: .leading,
-                    spacing: 10
+                    spacing: 12
                 ) {
                     ForEach(SmartCollectionKind.allCases) { kind in
                         systemCollectionCard(kind)
@@ -74,6 +75,9 @@ struct SmartCollectionsOverviewView: View {
             .padding(.vertical, 16)
         }
         .task {
+            // 进入总览页先同步 sidebar 列表，避免 userSmartCollections 仍为空/过期时
+            // 用户看不到旧集合、但 create 门控仍按 DB 行数拦截。
+            await viewModel.refreshSidebar()
             await reloadAllCounts()
         }
         .sheet(item: $editTarget) { collection in
@@ -87,96 +91,144 @@ struct SmartCollectionsOverviewView: View {
             )
             .appLocaleEnvironment()
         }
+        .sheet(item: $createFromTemplateKind) { kind in
+            SmartCollectionRuleEditorSheet(
+                mode: .create(
+                    defaultName: SmartCollectionRule.defaultName(for: kind),
+                    initialRule: SmartCollectionRule.template(for: kind)
+                ),
+                onCancel: { createFromTemplateKind = nil },
+                onSaved: {
+                    createFromTemplateKind = nil
+                    Task { await reloadUserCounts() }
+                }
+            )
+            .appLocaleEnvironment()
+        }
     }
 
     private func systemCollectionCard(_ kind: SmartCollectionKind) -> some View {
-        Button {
-            viewModel.selectSidebar(.smartCollection(kind))
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: kind.systemImage)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(kind.tint)
-                    .frame(width: 24, height: 24)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 6) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(kind.iconBadgeBackground)
+                        .frame(width: 30, height: 30)
+                    Image(systemName: kind.systemImage)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(kind.tint)
+                }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(kind.titleKey)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                    Text(kind.subtitleKey)
+                Spacer(minLength: 4)
+
+                systemCountLabel(for: kind)
+
+                Menu {
+                    Button("smartCollections.saveAsTemplate") {
+                        createFromTemplateKind = kind
+                    }
+                } label: {
+                    Image(systemName: "square.and.pencil")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .lineLimit(2)
                 }
-
-                Spacer(minLength: 8)
-
-                if isLoadingSystemCounts {
-                    ProgressView()
-                        .controlSize(.mini)
-                } else {
-                    Text(verbatim: "\(systemCounts[kind] ?? 0)")
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .monospacedDigit()
-                        .foregroundStyle(.primary)
-                }
+                .menuStyle(.borderlessButton)
+                .focusEffectDisabled()
+                .help("smartCollections.saveAsTemplate")
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(12)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(kind.tint.opacity(0.18), lineWidth: 1)
-            }
+
+            Text(kind.titleKey)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+
+            Text(kind.subtitleKey)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
+        .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
+        .padding(12)
+        .background(kind.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(kind.cardBorder, lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onTapGesture {
+            viewModel.selectSidebar(.smartCollection(kind))
+        }
         .pressableHover()
     }
 
+    @ViewBuilder
+    private func systemCountLabel(for kind: SmartCollectionKind) -> some View {
+        if isLoadingSystemCounts {
+            ProgressView()
+                .controlSize(.mini)
+        } else {
+            Text(verbatim: "\(systemCounts[kind] ?? 0)")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .foregroundStyle(kind.tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
     private func userCollectionCard(_ collection: UserSmartCollection) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: collection.icon)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 24, height: 24)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 6) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.18))
+                        .frame(width: 30, height: 30)
+                    Image(systemName: collection.icon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(collection.name)
-                    .font(.callout)
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                Spacer(minLength: 4)
 
-            Spacer(minLength: 8)
-
-            VStack(alignment: .trailing, spacing: 6) {
                 if isLoadingUserCounts {
                     ProgressView()
                         .controlSize(.mini)
                 } else {
                     Text(verbatim: "\(userCounts[collection.id] ?? 0)")
-                        .font(.title3)
+                        .font(.subheadline)
                         .fontWeight(.semibold)
                         .monospacedDigit()
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Color.accentColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
+            }
 
+            Text(collection.name)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+
+            HStack {
+                Spacer(minLength: 0)
                 userCollectionActions(for: collection)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
         .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.accentColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.accentColor.opacity(0.18), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.accentColor.opacity(0.22), lineWidth: 1)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onTapGesture {
             viewModel.selectSidebar(.userSmartCollection(collection.id))
         }

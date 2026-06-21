@@ -8,6 +8,18 @@
 import Foundation
 import GRDB
 
+/// 用户自定义智能集合持久化错误。
+enum SmartCollectionRepositoryError: Error, LocalizedError, Equatable {
+    case notFound(id: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .notFound(let id):
+            return String(format: String.l10n("smartCollections.error.notFoundFormat"), id)
+        }
+    }
+}
+
 struct GRDBSmartCollectionRepository: SmartCollectionRepositoryProtocol {
     private let database: any DatabaseManaging
 
@@ -30,9 +42,9 @@ struct GRDBSmartCollectionRepository: SmartCollectionRepositoryProtocol {
     }
 
     func count() async throws -> Int {
-        try await database.writer.read { db in
-            try UserSmartCollection.fetchCount(db)
-        }
+        // 与 UI 列表共用 fetchAll 结果计数，避免 fetchCount 与可见集合不一致时
+        // 免费版门控误拦（用户已删光卡片但仍被算进限额）。
+        try await fetchAll().count
     }
 
     func create(_ collection: UserSmartCollection) async throws {
@@ -50,7 +62,9 @@ struct GRDBSmartCollectionRepository: SmartCollectionRepositoryProtocol {
 
     func delete(id: String) async throws {
         try await database.writer.write { db in
-            _ = try UserSmartCollection.deleteOne(db, key: id)
+            guard try UserSmartCollection.deleteOne(db, key: id) else {
+                throw SmartCollectionRepositoryError.notFound(id: id)
+            }
         }
     }
 }

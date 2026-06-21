@@ -148,6 +148,8 @@ struct HomeView: View {
         repoTagRepository: any RepoTagRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
         repoHealthRepository: (any RepoHealthRepositoryProtocol)? = nil,
+        releaseRepository: (any ReleaseRepositoryProtocol)? = nil,
+        openSSFScoreRepository: (any OpenSSFScoreRepositoryProtocol)? = nil,
         smartCollectionRepository: (any SmartCollectionRepositoryProtocol)? = nil,
         searchHistoryRepository: any SearchHistoryRepositoryProtocol,
         semanticSearchService: SemanticSearchService? = nil,
@@ -162,6 +164,8 @@ struct HomeView: View {
             repoTagRepository: repoTagRepository,
             repoNoteRepository: repoNoteRepository,
             repoHealthRepository: repoHealthRepository,
+            releaseRepository: releaseRepository,
+            openSSFScoreRepository: openSSFScoreRepository,
             smartCollectionRepository: smartCollectionRepository,
             semanticSearchService: semanticSearchService
         ))

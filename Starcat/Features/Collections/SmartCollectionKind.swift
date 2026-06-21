@@ -64,4 +64,19 @@ enum SmartCollectionKind: String, CaseIterable, Identifiable, Hashable, Sendable
         case .recentlyActive: return .mint
         }
     }
+
+    /// 总览卡片铺底色：用集合主题色轻微染色，便于两列网格里快速扫视区分。
+    var cardBackground: Color {
+        tint.opacity(0.11)
+    }
+
+    /// 总览卡片描边：比背景略深，明暗主题下都保持可读对比。
+    var cardBorder: Color {
+        tint.opacity(0.24)
+    }
+
+    /// 图标徽章底：比整卡背景再深一档，让 SF Symbol 更聚焦。
+    var iconBadgeBackground: Color {
+        tint.opacity(0.18)
+    }
 }

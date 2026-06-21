@@ -87,6 +87,45 @@ struct SmartCollectionRepositoryTests {
         #expect(try await base.count() == EntitlementGate.freeSmartCollectionLimit)
     }
 
+    @Test("删除全部自定义集合后，免费用户可再次创建")
+    func gatedRepositoryAllowsCreateAfterDeleteAll() async throws {
+        let base = try makeRepo()
+        let gate = EntitlementGate(
+            entitlementProvider: SmartCollectionTestEntitlementProvider(isPro: false),
+            userIDProvider: { 42 }
+        )
+        let gated = GatedSmartCollectionRepository(base: base, entitlementGate: gate)
+
+        var ids: [String] = []
+        for index in 0..<EntitlementGate.freeSmartCollectionLimit {
+            let id = "slot-\(index)"
+            ids.append(id)
+            try await gated.create(try makeCollection(id: id, name: "Slot \(index)", sortOrder: index))
+        }
+
+        for id in ids {
+            try await gated.delete(id: id)
+        }
+        #expect(try await base.fetchAll().isEmpty)
+        #expect(try await base.count() == 0)
+
+        try await gated.create(try makeCollection(id: "after-delete", name: "After Delete", sortOrder: 0))
+        #expect(try await base.count() == 1)
+    }
+
+    @Test("count 与 fetchAll 条数始终一致")
+    func countMatchesFetchAll() async throws {
+        let repo = try makeRepo()
+        try await repo.create(try makeCollection(id: "a", name: "A", sortOrder: 0))
+        try await repo.create(try makeCollection(id: "b", name: "B", sortOrder: 1))
+        let fetched = try await repo.fetchAll()
+        #expect(try await repo.count() == fetched.count)
+
+        try await repo.delete(id: "a")
+        #expect(try await repo.count() == 1)
+        #expect(try await repo.fetchAll().count == 1)
+    }
+
     private func makeRepo() throws -> GRDBSmartCollectionRepository {
         let db = try InMemoryDatabaseManager()
         return GRDBSmartCollectionRepository(database: db)

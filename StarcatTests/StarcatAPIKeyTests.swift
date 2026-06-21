@@ -17,6 +17,17 @@ import Testing
 import Foundation
 @testable import Starcat
 
+/// CI 环境检测：CI runner 通常会设 `CI=true`（GitHub Actions / CircleCI /
+/// GitLab CI / Travis / Jenkins 等都遵循此约定）。
+///
+/// 配合 `Configs/Secrets.xcconfig` 是 .gitignore 的设计：
+/// - 本地填了 `Secrets.xcconfig` → 6 个 CI-only 测试会挂（预期，断言 nil 但 production key 非空）
+/// - CI 没填 + `CI=true` → production key 真的为 nil，6 个测试跑过
+///
+/// 用 Swift Testing 的 `disabled(if:)` trait 在本地跳过、CI 跑——既保留断言覆盖
+/// CI 期"production key 缺失"的合约，又不让本地开发者被预期内的失败噪音淹没。
+private let isCIEnv = ProcessInfo.processInfo.environment["CI"] == "true"
+
 @MainActor
 @Suite("StarcatAPIKey")
 struct StarcatAPIKeyTests {
@@ -37,7 +48,8 @@ struct StarcatAPIKeyTests {
 
     // MARK: - StarcatAPIKeyDefaults
 
-    @Test("CI 期 Secrets.xcconfig 缺失 → 各服务 productionKeyOrNil = nil")
+    @Test("CI 期 Secrets.xcconfig 缺失 → 各服务 productionKeyOrNil = nil",
+          .disabled(if: !isCIEnv))
     func productionKeyMissingInCI() {
         for service in ThirdPartyService.allCases {
             #expect(StarcatAPIKeyDefaults.productionKeyOrNil(for: service) == nil)
@@ -46,7 +58,8 @@ struct StarcatAPIKeyTests {
 
     // MARK: - StarcatAPIKeyResolver
 
-    @Test("无 BYOK + 无 production 默认 → resolve 返回 nil（BYOK-only 模式）")
+    @Test("无 BYOK + 无 production 默认 → resolve 返回 nil（BYOK-only 模式）",
+          .disabled(if: !isCIEnv))
     func resolveAllMissing() {
         let settings = makeIsolatedSettings()
         // 隔离 settings 必然没有 customServiceAPIKey；CI 期 productionKeyOrNil 为 nil
@@ -66,7 +79,8 @@ struct StarcatAPIKeyTests {
         #expect(StarcatAPIKeyResolver.resolve(for: .trending, settings: settings) == userKey)
     }
 
-    @Test("BYOK 仅对配置的服务生效，其他服务仍走默认（即 nil 在 CI 期）")
+    @Test("BYOK 仅对配置的服务生效，其他服务仍走默认（即 nil 在 CI 期）",
+          .disabled(if: !isCIEnv))
     func resolvePerServiceIsolation() {
         let settings = makeIsolatedSettings()
         settings.setCustomAPIKey("sk-starcat-only-trending", for: .trending)
@@ -79,7 +93,8 @@ struct StarcatAPIKeyTests {
         #expect(StarcatAPIKeyResolver.resolve(for: .wiki, settings: settings) == nil)
     }
 
-    @Test("BYOK 写空字符串 → 等价 reset，resolve 回退默认")
+    @Test("BYOK 写空字符串 → 等价 reset，resolve 回退默认",
+          .disabled(if: !isCIEnv))
     func resolveEmptyStringTreatedAsReset() {
         let settings = makeIsolatedSettings()
         settings.setCustomAPIKey("sk-starcat-real", for: .weekly)
@@ -90,7 +105,8 @@ struct StarcatAPIKeyTests {
         #expect(StarcatAPIKeyResolver.resolve(for: .weekly, settings: settings) == nil)
     }
 
-    @Test("BYOK 仅含空白字符 → trim 后等价 reset")
+    @Test("BYOK 仅含空白字符 → trim 后等价 reset",
+          .disabled(if: !isCIEnv))
     func resolveWhitespaceOnlyTreatedAsReset() {
         let settings = makeIsolatedSettings()
         settings.setCustomAPIKey("sk-starcat-real", for: .sharing)
@@ -110,7 +126,8 @@ struct StarcatAPIKeyTests {
         #expect(StarcatAPIKeyResolver.resolve(for: .trending, settings: settings) == "sk-starcat-padded")
     }
 
-    @Test("resetCustomAPIKey 后 resolve 回退默认")
+    @Test("resetCustomAPIKey 后 resolve 回退默认",
+          .disabled(if: !isCIEnv))
     func resolveAfterReset() {
         let settings = makeIsolatedSettings()
         settings.setCustomAPIKey("sk-starcat-temp", for: .trending)

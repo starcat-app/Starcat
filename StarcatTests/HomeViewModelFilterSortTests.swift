@@ -303,6 +303,87 @@ struct HomeViewModelFilterSortTests {
         task.cancel()
     }
 
+    // MARK: - 用户智能集合：countRepos 与列表 filter 一致
+
+    @Test("用户智能集合含 healthScoreMin 时，列表条数与 countRepos 一致")
+    func userSmartCollectionListMatchesCountRepos() async throws {
+        let db = try InMemoryDatabaseManager()
+        let repo = GRDBRepoRepository(database: db)
+        let tagRepo = GRDBTagRepository(database: db)
+        let rtRepo = GRDBRepoTagRepository(database: db)
+        let noteRepo = GRDBRepoNoteRepository(database: db)
+        let healthRepo = GRDBRepoHealthRepository(database: db)
+        let smartRepo = GRDBSmartCollectionRepository(database: db)
+
+        try await insertRepo(db, id: 1, fullName: "o/low", stars: 10, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/mid", stars: 20, starredAt: "2026-05-02T00:00:00Z")
+        try await insertRepo(db, id: 3, fullName: "o/high", stars: 30, starredAt: "2026-05-03T00:00:00Z")
+
+        let now = "2026-06-21T12:00:00.000Z"
+        let stale = "2026-07-21T12:00:00.000Z"
+        for (repoId, score) in [(Int64(1), 40.0), (Int64(2), 75.0), (Int64(3), 95.0)] {
+            try await healthRepo.upsert(
+                RepoHealthSnapshot(
+                    repoId: repoId,
+                    overallScore: score,
+                    grade: "B",
+                    maintenanceScore: score,
+                    popularityScore: score,
+                    qualityScore: score,
+                    securityScore: score,
+                    payloadJSON: "{}",
+                    computedAt: now,
+                    staleAfter: stale,
+                    fetchStatus: .success,
+                    lastError: nil
+                )
+            )
+        }
+
+        let rule = SmartCollectionRule(
+            scope: .allStars,
+            query: nil,
+            searchModeRaw: SmartSearchMode.keyword.rawValue,
+            statusRaw: nil,
+            selectedTagIDs: [],
+            hideArchived: false,
+            hideForks: false,
+            sortRaw: RepoSortOption.starredAtDesc.rawValue,
+            healthScoreMin: 60
+        )
+        try await smartRepo.create(
+            UserSmartCollection(
+                id: "health-test",
+                name: "Health 60+",
+                icon: "line.3.horizontal.decrease.circle",
+                color: nil,
+                ruleJSON: try SmartCollectionRule.encode(rule),
+                sortOrder: 0,
+                createdAt: now,
+                updatedAt: now
+            )
+        )
+
+        let vm = HomeViewModel(
+            repository: repo,
+            tagRepository: tagRepo,
+            repoTagRepository: rtRepo,
+            repoNoteRepository: noteRepo,
+            repoHealthRepository: healthRepo,
+            smartCollectionRepository: smartRepo
+        )
+
+        let expectedCount = try await vm.countRepos(matching: rule)
+        #expect(expectedCount == 2)
+
+        await vm.refreshSidebar()
+        vm.selectSidebar(.userSmartCollection("health-test"))
+        await vm.reloadItems()
+
+        #expect(vm.items.map(\.id) == [3, 2], "healthScoreMin=60 应保留 mid/high，且按 starredAtDesc 排序")
+        #expect(vm.items.count == expectedCount)
+    }
+
     /// 周期性检查条件，最多等待 `timeout` 秒；条件成立立即返回。
     /// 用于异步状态更新的等待，避免硬编码 sleep。
     ///

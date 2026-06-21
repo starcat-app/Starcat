@@ -76,6 +76,22 @@ struct SmartCollectionRuleFilterTests {
         #expect(result.map(\.id) == [2])
     }
 
+    @Test("healthScoreMin 在空 health context 下会误滤掉全部 repo（context 必须按 merged rule 加载）")
+    func healthScoreMinRequiresHealthContext() {
+        let repos = [
+            Self.makeRepo(id: 1),
+            Self.makeRepo(id: 2)
+        ]
+        var contextWithHealth = Self.emptyContext()
+        contextWithHealth.healthSnapshots = [
+            1: Self.makeHealth(repoId: 1, score: 40),
+            2: Self.makeHealth(repoId: 2, score: 80)
+        ]
+        let rule = Self.baseRule(healthScoreMin: 60)
+        #expect(SmartCollectionRuleFilter.apply(repos: repos, rule: rule, context: contextWithHealth).map(\.id) == [2])
+        #expect(SmartCollectionRuleFilter.apply(repos: repos, rule: rule, context: Self.emptyContext()).isEmpty)
+    }
+
     @Test("requireLicense / requireTopics / requireNote 三态过滤")
     func metadataTriStateFilters() {
         let repos = [
@@ -102,6 +118,74 @@ struct SmartCollectionRuleFilterTests {
         #expect(SmartCollectionRuleFilter.apply(repos: repos, rule: noNoteRule, context: context).map(\.id) == [2, 3])
     }
 
+    @Test("healthGrades 按项目健康度等级过滤")
+    func healthGradesFilter() {
+        let repos = [
+            Self.makeRepo(id: 1),
+            Self.makeRepo(id: 2),
+            Self.makeRepo(id: 3)
+        ]
+        var context = Self.emptyContext()
+        context.healthSnapshots = [
+            1: Self.makeHealth(repoId: 1, score: 95, grade: "A"),
+            2: Self.makeHealth(repoId: 2, score: 75, grade: "C"),
+            3: Self.makeHealth(repoId: 3, score: 55, grade: "E")
+        ]
+        var rule = Self.baseRule()
+        rule.healthGrades = ["A", "B"]
+        #expect(SmartCollectionRuleFilter.apply(repos: repos, rule: rule, context: context).map(\.id) == [1])
+    }
+
+    @Test("starredWithinDays / filterLanguages / tagMatch all")
+    func v22Filters() {
+        let recentStar = Self.iso(Self.now.addingTimeInterval(-3 * 86_400))
+        let oldStar = Self.iso(Self.now.addingTimeInterval(-90 * 86_400))
+        let repos = [
+            Self.makeRepo(id: 1, language: "Swift", starredAt: recentStar),
+            Self.makeRepo(id: 2, language: "Go", starredAt: oldStar),
+            Self.makeRepo(id: 3, language: "Swift", starredAt: oldStar)
+        ]
+        var context = Self.emptyContext()
+        context.repoTagsMap = [
+            1: ["t1", "t2"],
+            2: ["t1"],
+            3: ["t2"]
+        ]
+
+        let starredRule = Self.baseRule(starredWithinDays: 30)
+        #expect(SmartCollectionRuleFilter.apply(repos: repos, rule: starredRule, context: context).map(\.id) == [1])
+
+        let langRule = Self.baseRule(filterLanguages: ["Swift"])
+        #expect(SmartCollectionRuleFilter.apply(repos: repos, rule: langRule, context: context).map(\.id) == [1, 3])
+
+        var allTagsRule = Self.baseRule(selectedTagIDs: ["t1", "t2"])
+        allTagsRule.tagMatchModeRaw = SmartCollectionTagMatchMode.all.rawValue
+        #expect(SmartCollectionRuleFilter.apply(repos: repos, rule: allTagsRule, context: context).map(\.id) == [1])
+    }
+
+    @Test("topicContains / excludedTagIDs / semanticScoreMin")
+    func v24Filters() {
+        let repos = [
+            Self.makeRepo(id: 1, topics: "[\"machine-learning\"]"),
+            Self.makeRepo(id: 2, topics: "[\"swift\"]")
+        ]
+        var context = Self.emptyContext()
+        context.repoTagsMap = [1: ["keep"], 2: ["drop"]]
+        context.semanticHitMap = [
+            1: SemanticSearchHit(repo: repos[0], score: 0.8, displayScore: 0.82, tier: 3, reason: "test"),
+            2: SemanticSearchHit(repo: repos[1], score: 0.4, displayScore: 0.45, tier: 2, reason: "test")
+        ]
+
+        let topicRule = Self.baseRule(topicContains: "machine")
+        #expect(SmartCollectionRuleFilter.apply(repos: repos, rule: topicRule, context: context).map(\.id) == [1])
+
+        let excludeRule = Self.baseRule(excludedTagIDs: ["drop"])
+        #expect(SmartCollectionRuleFilter.apply(repos: repos, rule: excludeRule, context: context).map(\.id) == [1])
+
+        let semanticRule = Self.baseRule(semanticScoreMin: 50)
+        #expect(SmartCollectionRuleFilter.apply(repos: repos, rule: semanticRule, context: context).map(\.id) == [1])
+    }
+
     // MARK: - Helpers
 
     private static func baseRule(
@@ -113,14 +197,20 @@ struct SmartCollectionRuleFilterTests {
         healthScoreMax: Int? = nil,
         requireLicense: Bool? = nil,
         requireTopics: Bool? = nil,
-        requireNote: Bool? = nil
+        requireNote: Bool? = nil,
+        starredWithinDays: Int? = nil,
+        filterLanguages: [String] = [],
+        selectedTagIDs: [String] = [],
+        excludedTagIDs: [String] = [],
+        topicContains: String? = nil,
+        semanticScoreMin: Int? = nil
     ) -> SmartCollectionRule {
         SmartCollectionRule(
             scope: .allStars,
             query: nil,
             searchModeRaw: SmartSearchMode.keyword.rawValue,
             statusRaw: nil,
-            selectedTagIDs: [],
+            selectedTagIDs: selectedTagIDs,
             hideArchived: false,
             hideForks: false,
             sortRaw: RepoSortOption.starredAtDesc.rawValue,
@@ -132,7 +222,12 @@ struct SmartCollectionRuleFilterTests {
             healthScoreMax: healthScoreMax,
             requireLicense: requireLicense,
             requireTopics: requireTopics,
-            requireNote: requireNote
+            requireNote: requireNote,
+            starredWithinDays: starredWithinDays,
+            filterLanguages: filterLanguages,
+            excludedTagIDs: excludedTagIDs,
+            topicContains: topicContains,
+            semanticScoreMin: semanticScoreMin
         )
     }
 
@@ -142,6 +237,9 @@ struct SmartCollectionRuleFilterTests {
             repoTagsMap: [:],
             healthSnapshots: [:],
             repoIdsWithNotes: [],
+            openSSFScores: [:],
+            latestReleasePublishedAt: [:],
+            semanticHitMap: [:],
             now: now
         )
     }
@@ -151,7 +249,9 @@ struct SmartCollectionRuleFilterTests {
         stars: Int = 10,
         license: String? = "MIT",
         topics: String? = "[\"swift\"]",
-        pushedAt: String? = nil
+        pushedAt: String? = nil,
+        language: String? = "Swift",
+        starredAt: String? = nil
     ) -> Repo {
         Repo(
             id: id,
@@ -159,7 +259,7 @@ struct SmartCollectionRuleFilterTests {
             name: "repo-\(id)",
             fullName: "owner/repo-\(id)",
             description: "desc",
-            language: "Swift",
+            language: language,
             starsCount: stars,
             forksCount: 0,
             watchersCount: 0,
@@ -176,16 +276,16 @@ struct SmartCollectionRuleFilterTests {
             pushedAt: pushedAt,
             createdAt: nil,
             updatedAt: nil,
-            starredAt: nil,
+            starredAt: starredAt,
             cachedAt: nil
         )
     }
 
-    private static func makeHealth(repoId: Int64, score: Double) -> RepoHealthSnapshot {
+    private static func makeHealth(repoId: Int64, score: Double, grade: String = "B") -> RepoHealthSnapshot {
         RepoHealthSnapshot(
             repoId: repoId,
             overallScore: score,
-            grade: "B",
+            grade: grade,
             maintenanceScore: score,
             popularityScore: score,
             qualityScore: score,

@@ -576,18 +576,8 @@ struct RepoListView: View {
     }
 
     private var defaultSmartCollectionName: String {
-        switch viewModel.selection {
-        case .allStars:
-            return String.l10n("sidebar.allRepos")
-        case .untagged:
-            return String.l10n("sidebar.untagged")
-        case .language(let language):
-            return language.map(LanguageDisplayName.shortened(for:)) ?? "Uncategorized"
-        case .tag(let id):
-            return viewModel.tags.first { $0.id == id }?.name ?? String.l10n("sidebar.tagFallback")
-        case .trending, .smartCollectionsHome, .smartCollection, .userSmartCollection:
-            return String.l10n("smartCollections.new.defaultName")
-        }
+        // 创建时不用 sidebar 分类名（如「全部仓库」）当集合名，避免标题与侧边栏入口混淆。
+        String.l10n("smartCollections.new.defaultName")
     }
 
     /// 中栏主体内容。
@@ -1003,18 +993,6 @@ struct RepoListView: View {
         if viewModel.isSemanticSearching {
             return String(
                 format: String.l10n("search.semantic.resultCountFormat"),
-                visibleTotal
-            )
-        }
-        if case .userSmartCollection(let id) = viewModel.selection,
-           let rule = viewModel.userSmartCollection(id: id)?.rule {
-            let summary = SmartCollectionRuleSummary.compact(
-                rule: rule,
-                context: viewModel.smartCollectionSummaryContext()
-            )
-            return String(
-                format: String.l10n("smartCollections.list.subtitleFormat"),
-                summary,
                 visibleTotal
             )
         }

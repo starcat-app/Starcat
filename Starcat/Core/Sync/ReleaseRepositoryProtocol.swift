@@ -28,6 +28,9 @@ protocol ReleaseRepositoryProtocol: Sendable {
     /// 取某 repo 缓存到的最新一条 Release（按 published_at desc 取首条）。
     func latest(forRepo repoId: Int64) async throws -> ReleaseRecord?
 
+    /// 批量取各 repo 最新 release 时间（ISO8601），无缓存则不含该 repo_id。
+    func latestPublishedAtByRepoIds(_ repoIds: [Int64]) async throws -> [Int64: String]
+
     /// 取某 repo 缓存到的所有 Releases，按 published_at desc。
     func fetch(forRepo repoId: Int64, limit: Int) async throws -> [ReleaseRecord]
 

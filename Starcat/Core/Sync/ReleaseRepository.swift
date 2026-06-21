@@ -38,6 +38,31 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
         }
     }
 
+    func latestPublishedAtByRepoIds(_ repoIds: [Int64]) async throws -> [Int64: String] {
+        guard !repoIds.isEmpty else { return [:] }
+        let placeholders = Array(repeating: "?", count: repoIds.count).joined(separator: ", ")
+        return try await database.writer.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT repo_id,
+                       MAX(COALESCE(published_at, created_at_remote, fetched_at)) AS latest_at
+                FROM releases
+                WHERE repo_id IN (\(placeholders))
+                GROUP BY repo_id
+                """,
+                arguments: StatementArguments(repoIds)
+            )
+            var result: [Int64: String] = [:]
+            for row in rows {
+                if let repoId: Int64 = row["repo_id"], let latest: String = row["latest_at"] {
+                    result[repoId] = latest
+                }
+            }
+            return result
+        }
+    }
+
     func fetch(forRepo repoId: Int64, limit: Int) async throws -> [ReleaseRecord] {
         try await database.writer.read { db in
             try ReleaseRecord.fetchAll(
