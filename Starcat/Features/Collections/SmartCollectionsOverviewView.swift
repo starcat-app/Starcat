@@ -16,9 +16,16 @@ struct SmartCollectionsOverviewView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var viewModel
 
-    @State private var counts: [SmartCollectionKind: Int] = [:]
+    @State private var systemCounts: [SmartCollectionKind: Int] = [:]
+    @State private var userCounts: [String: Int] = [:]
     @State private var isLoading = false
     @State private var deleteError: String?
+    @State private var renameTarget: UserSmartCollection?
+    @State private var renameError: String?
+
+    private var summaryContext: SmartCollectionRuleSummary.Context {
+        viewModel.smartCollectionSummaryContext()
+    }
 
     var body: some View {
         ScrollView {
@@ -65,6 +72,20 @@ struct SmartCollectionsOverviewView: View {
         .task {
             await reloadCounts()
         }
+        .sheet(item: $renameTarget) { collection in
+            RenameSmartCollectionSheet(
+                currentName: collection.name,
+                errorMessage: renameError,
+                onCancel: {
+                    renameTarget = nil
+                    renameError = nil
+                },
+                onConfirm: { newName in
+                    Task { await rename(collection, to: newName) }
+                }
+            )
+            .appLocaleEnvironment()
+        }
     }
 
     private func systemCollectionCard(_ kind: SmartCollectionKind) -> some View {
@@ -82,7 +103,7 @@ struct SmartCollectionsOverviewView: View {
                         ProgressView()
                             .controlSize(.mini)
                     } else {
-                        Text(verbatim: "\(counts[kind] ?? 0)")
+                        Text(verbatim: "\(systemCounts[kind] ?? 0)")
                             .font(.title3)
                             .fontWeight(.semibold)
                             .monospacedDigit()
@@ -119,6 +140,33 @@ struct SmartCollectionsOverviewView: View {
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 28, height: 28)
                 Spacer()
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else {
+                    Text(verbatim: "\(userCounts[collection.id] ?? 0)")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
+                }
+            }
+
+            HStack(spacing: 6) {
+                Text(collection.name)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                Spacer(minLength: 0)
+                Button {
+                    renameError = nil
+                    renameTarget = collection
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("smartCollections.rename.help")
                 Button {
                     Task { await delete(collection) }
                 } label: {
@@ -129,13 +177,17 @@ struct SmartCollectionsOverviewView: View {
                 .help("smartCollections.delete")
             }
 
-            Text(collection.name)
-                .font(.headline)
-                .foregroundStyle(.primary)
-            Text("smartCollections.mine.subtitle")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if let rule = collection.rule {
+                Text(verbatim: SmartCollectionRuleSummary.compact(rule: rule, context: summaryContext))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(3)
+            } else {
+                Text("smartCollections.mine.subtitle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 126, alignment: .topLeading)
         .padding(14)
@@ -144,7 +196,6 @@ struct SmartCollectionsOverviewView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.accentColor.opacity(0.18), lineWidth: 1)
         }
-        // 保留删除按钮的独立点击区域，卡片本体只负责进入自定义智能集合。
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .onTapGesture {
             viewModel.selectSidebar(.userSmartCollection(collection.id))
@@ -161,12 +212,12 @@ struct SmartCollectionsOverviewView: View {
             async let statusMapAsync = dependencies.repoNoteRepository.fetchAllStatusMap()
             let health = try await dependencies.repoHealthRepository.snapshots(for: repos.map(\.id))
             let statusMap = (try? await statusMapAsync) ?? [:]
-            var next: [SmartCollectionKind: Int] = [:]
+            var nextSystem: [SmartCollectionKind: Int] = [:]
             for kind in SmartCollectionKind.allCases {
                 if kind == .noTags {
-                    next[kind] = try await dependencies.repoRepository.fetchUntagged().count
+                    nextSystem[kind] = try await dependencies.repoRepository.fetchUntagged().count
                 } else {
-                    next[kind] = repos.filter { repo in
+                    nextSystem[kind] = repos.filter { repo in
                         HomeViewModel.matchesSmartCollection(
                             repo: repo,
                             health: health[repo.id],
@@ -176,10 +227,25 @@ struct SmartCollectionsOverviewView: View {
                     }.count
                 }
             }
-            counts = next
+            systemCounts = nextSystem
+
+            var nextUser: [String: Int] = [:]
+            for collection in viewModel.userSmartCollections {
+                guard let rule = collection.rule else {
+                    nextUser[collection.id] = 0
+                    continue
+                }
+                if let count = try? await viewModel.countRepos(matching: rule) {
+                    nextUser[collection.id] = count
+                } else {
+                    nextUser[collection.id] = 0
+                }
+            }
+            userCounts = nextUser
         } catch {
             AppLog.database.warning("Smart Collections counts load failed: \(error.localizedDescription, privacy: .public)")
-            counts = [:]
+            systemCounts = [:]
+            userCounts = [:]
         }
     }
 
@@ -190,8 +256,19 @@ struct SmartCollectionsOverviewView: View {
             if viewModel.selection == .userSmartCollection(collection.id) {
                 viewModel.selectSidebar(.smartCollectionsHome)
             }
+            await reloadCounts()
         } catch {
             deleteError = error.localizedDescription
+        }
+    }
+
+    private func rename(_ collection: UserSmartCollection, to name: String) async {
+        do {
+            try await viewModel.renameUserSmartCollection(id: collection.id, name: name)
+            renameTarget = nil
+            renameError = nil
+        } catch {
+            renameError = error.localizedDescription
         }
     }
 }

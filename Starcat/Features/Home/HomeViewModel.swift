@@ -297,6 +297,7 @@ final class HomeViewModel {
     var selectedTagIds: Set<String> = [] {
         didSet {
             guard oldValue != selectedTagIds else { return }
+            guard !isHydratingManageFilters else { return }
             applyView()
         }
     }
@@ -329,6 +330,7 @@ final class HomeViewModel {
     var sortOption: RepoSortOption = .starredAtDesc {
         didSet {
             guard oldValue != sortOption else { return }
+            guard !isHydratingManageFilters else { return }
             applyView()
         }
     }
@@ -339,6 +341,7 @@ final class HomeViewModel {
     var hideArchived: Bool = false {
         didSet {
             guard oldValue != hideArchived else { return }
+            guard !isHydratingManageFilters else { return }
             applyView()
         }
     }
@@ -347,6 +350,7 @@ final class HomeViewModel {
     var hideForks: Bool = false {
         didSet {
             guard oldValue != hideForks else { return }
+            guard !isHydratingManageFilters else { return }
             applyView()
         }
     }
@@ -358,6 +362,7 @@ final class HomeViewModel {
     var statusFilter: RepoStatus? = nil {
         didSet {
             guard oldValue != statusFilter else { return }
+            guard !isHydratingManageFilters else { return }
             applyView()
         }
     }
@@ -459,6 +464,9 @@ final class HomeViewModel {
 
     /// 当前用户智能集合的规则快照。进入非用户集合时清空，避免旧规则污染普通列表。
     private var activeUserSmartCollectionRule: SmartCollectionRule?
+
+    /// hydrate 批量写入 toolbar 字段时抑制 filter didSet 触发的 applyView。
+    private var isHydratingManageFilters = false
 
     /// W6 AI：语义搜索服务。测试可传 nil，生产由 AppDependencies 注入。
     private let semanticSearchService: SemanticSearchService?
@@ -623,9 +631,76 @@ final class HomeViewModel {
         userSmartCollections.first { $0.id == id }
     }
 
+    /// 规则摘要格式化上下文（tag id → 显示名）。
+    func smartCollectionSummaryContext() -> SmartCollectionRuleSummary.Context {
+        SmartCollectionRuleSummary.Context.from(tags: tags)
+    }
+
+    /// 进入用户智能集合后，把 DB 规则灌进 Manage toolbar，让列表与控件一致。
+    ///
+    /// 刻意不同步 AppSettings：离开集合时不应把 draft 写进全局默认筛选。
+    func hydrateManageFilters(from rule: SmartCollectionRule) {
+        isHydratingManageFilters = true
+        defer { isHydratingManageFilters = false }
+
+        hideArchived = rule.hideArchived
+        hideForks = rule.hideForks
+        statusFilter = rule.status
+        selectedTagIds = Set(rule.selectedTagIDs)
+        sortOption = rule.sortOption
+        smartSearchMode = rule.searchMode
+        searchQuery = rule.query ?? ""
+    }
+
+    /// 统计规则命中仓库数（scope 查询 + 规则内 filter；含语义搜索时需 API key）。
+    func countRepos(matching rule: SmartCollectionRule) async throws -> Int {
+        let (repos, _) = try await fetchRepos(matching: rule)
+        let statusMap = try await repoNoteRepository.fetchAllStatusMap()
+        return SmartCollectionRuleFilter.apply(
+            repos: repos,
+            rule: rule,
+            statusMap: statusMap,
+            repoTagsMap: repoTagsMap
+        ).count
+    }
+
+    func renameUserSmartCollection(id: String, name: String) async throws {
+        guard let smartCollectionRepository,
+              var collection = try await smartCollectionRepository.find(id: id) else {
+            throw DatabaseError.openFailed(underlying: NSError(
+                domain: "SmartCollection",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: String.l10n("smartCollections.error.missingRule")]
+            ))
+        }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        collection.name = trimmed
+        collection.updatedAt = ISO8601DateFormatter.shared.string(from: Date())
+        try await smartCollectionRepository.update(collection)
+        await refreshSidebar()
+    }
+
+    func updateUserSmartCollectionRule(id: String, rule: SmartCollectionRule) async throws {
+        guard let smartCollectionRepository,
+              var collection = try await smartCollectionRepository.find(id: id) else {
+            throw DatabaseError.openFailed(underlying: NSError(
+                domain: "SmartCollection",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: String.l10n("smartCollections.error.missingRule")]
+            ))
+        }
+        collection.ruleJSON = try SmartCollectionRule.encode(rule)
+        collection.updatedAt = ISO8601DateFormatter.shared.string(from: Date())
+        try await smartCollectionRepository.update(collection)
+        activeUserSmartCollectionRule = rule
+        await refreshSidebar()
+        await reloadItems(forceRefresh: true)
+    }
+
     /// 把当前 Manage 筛选快照转换成可保存的用户智能集合规则。
     ///
-    /// 第一版不允许从系统 / 用户智能集合继续保存，避免出现集合嵌套集合的解释成本。
+    /// 在用户智能集合内 scope 固定为已保存规则，toolbar 其余字段可编辑后更新。
     func makeRuleFromCurrentManageFilters() -> SmartCollectionRule? {
         let scope: SmartCollectionRule.Scope
         switch selection {
@@ -637,7 +712,10 @@ final class HomeViewModel {
             scope = .language(language)
         case .tag(let id):
             scope = .tag(id)
-        case .trending, .smartCollectionsHome, .smartCollection, .userSmartCollection:
+        case .userSmartCollection:
+            guard let activeScope = activeUserSmartCollectionRule?.scope else { return nil }
+            scope = activeScope
+        case .trending, .smartCollectionsHome, .smartCollection:
             return nil
         }
 
@@ -851,6 +929,10 @@ final class HomeViewModel {
                 //   - 不需要额外 cancel 管理
                 let fetchedTask: () async throws -> (repos: [Repo], semanticHitMap: [Int64: SemanticSearchHit]) = {
                     if self.isSearching {
+                        if case .userSmartCollection = self.selection,
+                           let scopedRule = self.makeRuleFromCurrentManageFilters() {
+                            return try await self.fetchRepos(matching: scopedRule)
+                        }
                         if self.smartSearchMode == .semantic {
                             guard let semanticSearchService = self.semanticSearchService else {
                                 throw SemanticSearchError.missingAPIKey
@@ -902,9 +984,11 @@ final class HomeViewModel {
                                 }
                             }
                         case .userSmartCollection(let id):
-                            let rule = try await self.fetchUserSmartCollectionRule(id: id)
-                            let result = try await self.fetchRepos(matching: rule)
-                            self.activeUserSmartCollectionRule = rule
+                            let storedRule = try await self.fetchUserSmartCollectionRule(id: id)
+                            self.activeUserSmartCollectionRule = storedRule
+                            self.hydrateManageFilters(from: storedRule)
+                            let effectiveRule = self.makeRuleFromCurrentManageFilters() ?? storedRule
+                            let result = try await self.fetchRepos(matching: effectiveRule)
                             return result
                         case .language(let lang):
                             repos = try await self.repository.fetchByLanguage(lang)
@@ -1204,33 +1288,22 @@ final class HomeViewModel {
     /// 纯函数：只读 rawItems / statusMap / repoTagsMap / 各 filter 字段。
     private func computeFilteredSorted() -> [Repo] {
         var view = rawItems
-        let rule = activeUserSmartCollectionRule
-        let effectiveHideArchived = rule?.hideArchived ?? hideArchived
-        let effectiveHideForks = rule?.hideForks ?? hideForks
-        let effectiveStatus = rule?.status ?? statusFilter
-        let effectiveTagIDs = rule.map { Set($0.selectedTagIDs) } ?? selectedTagIds
-        let effectiveSort = rule?.sortOption ?? sortOption
 
-        if effectiveHideArchived { view.removeAll { $0.isArchived } }
-        if effectiveHideForks    { view.removeAll { $0.isFork } }
+        if hideArchived { view.removeAll { $0.isArchived } }
+        if hideForks    { view.removeAll { $0.isFork } }
         // W4-4 D3：状态过滤 — 未在 repo_notes 表登记的视为 implicit "unread"。
         // 这样新同步进来的 repo 默认被 unread 过滤命中,符合"未读 = 还没看过"的直觉。
-        if let status = effectiveStatus {
+        if let status = statusFilter {
             view.removeAll { repo in
                 let actual = statusMap[repo.id] ?? .unread
                 return actual != status
             }
         }
         // HOM-179：标签墙多选 OR 过滤。
-        // 用户口径：
-        //   - 多个 tag 之间 OR：命中任意一个就保留
-        //   - 与 selection（Languages 等）AND：因为 `view` 此时已是 selection 派生的 base set
-        // 实现：用 repoTagsMap 查每个 repo 的 tagIds，看与 selectedTagIds 是否有交集。
-        // 没有交集（即"没有任何已选 tag"）→ 移除。
-        if !effectiveTagIDs.isEmpty {
+        if !selectedTagIds.isEmpty {
             view.removeAll { repo in
                 let tagsOfRepo = repoTagsMap[repo.id] ?? []
-                return tagsOfRepo.isDisjoint(with: effectiveTagIDs)
+                return tagsOfRepo.isDisjoint(with: selectedTagIds)
             }
         }
         // HOM-197（2026-06-13 dong4j）：AI 语义搜索结果按相似度阈值过滤。
@@ -1251,10 +1324,12 @@ final class HomeViewModel {
                 return score < threshold
             }
         }
-        // 语义搜索结果的排序来自 cosine similarity；再套用户的 stars/name 排序会破坏 AI 排名。
-        let userRuleIsSemantic = rule?.searchMode == .semantic && rule?.query?.isEmpty == false
-        if !isSemanticSearching && !userRuleIsSemantic {
-            view.sort(by: effectiveSort.comparator)
+        // 用户智能集合内嵌搜索 + 语义模式：排序保留 API 返回顺序。
+        let userCollectionSemanticSearch = activeUserSmartCollectionRule != nil
+            && smartSearchMode == .semantic
+            && !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if !isSemanticSearching && !userCollectionSemanticSearch {
+            view.sort(by: sortOption.comparator)
         }
         return view
     }

@@ -65,7 +65,11 @@ struct RepoListView: View {
     /// CodeFlow 为 Pro 功能；免费用户点入口时弹出统一付费墙，不打开执行面板。
     @State private var paywallContext: ProPaywallContext?
     @State private var showSaveSmartCollectionSheet = false
+    @State private var showUpdateSmartCollectionSheet = false
     @State private var smartCollectionSaveError: String?
+    @State private var smartCollectionUpdateError: String?
+    /// 打开 Sheet 时快照规则，避免 Sheet 内读 live toolbar 且与父视图刷新解耦。
+    @State private var pendingSmartCollectionRule: SmartCollectionRule?
     /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
     @State private var lastSyncedAt: Date?
 
@@ -143,16 +147,40 @@ struct RepoListView: View {
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         .sheet(isPresented: $showSaveSmartCollectionSheet) {
-            SaveSmartCollectionSheet(
-                defaultName: defaultSmartCollectionName,
-                errorMessage: smartCollectionSaveError,
-                onCancel: {
-                    showSaveSmartCollectionSheet = false
-                    smartCollectionSaveError = nil
-                },
-                onSave: saveSmartCollection(named:)
-            )
-            .appLocaleEnvironment()
+            if let rule = pendingSmartCollectionRule {
+                SaveSmartCollectionSheet(
+                    rule: rule,
+                    summaryContext: viewModel.smartCollectionSummaryContext(),
+                    defaultName: defaultSmartCollectionName,
+                    errorMessage: smartCollectionSaveError,
+                    onCancel: {
+                        showSaveSmartCollectionSheet = false
+                        smartCollectionSaveError = nil
+                        pendingSmartCollectionRule = nil
+                    },
+                    onSave: saveSmartCollection(named:rule:)
+                )
+                .appLocaleEnvironment()
+            }
+        }
+        .sheet(isPresented: $showUpdateSmartCollectionSheet) {
+            if case .userSmartCollection(let id) = viewModel.selection,
+               let collection = viewModel.userSmartCollection(id: id),
+               let rule = pendingSmartCollectionRule {
+                UpdateSmartCollectionSheet(
+                    rule: rule,
+                    summaryContext: viewModel.smartCollectionSummaryContext(),
+                    collectionName: collection.name,
+                    errorMessage: smartCollectionUpdateError,
+                    onCancel: {
+                        showUpdateSmartCollectionSheet = false
+                        smartCollectionUpdateError = nil
+                        pendingSmartCollectionRule = nil
+                    },
+                    onConfirm: { updateSmartCollectionRules(id: id, rule: $0) }
+                )
+                .appLocaleEnvironment()
+            }
         }
         .sheet(item: $codeFlowSheetRepo) { repo in
             CodeFlowPanel(repo: repo)
@@ -490,12 +518,25 @@ struct RepoListView: View {
             Group {
                 Button {
                     smartCollectionSaveError = nil
+                    pendingSmartCollectionRule = viewModel.makeRuleFromCurrentManageFilters()
                     showSaveSmartCollectionSheet = true
                 } label: {
-                    ToolbarIcon("line.3.horizontal.decrease.circle.badge.plus")
+                    ToolbarIcon("line.3.horizontal.decrease.circle")
                 }
-                .disabled(viewModel.makeRuleFromCurrentManageFilters() == nil)
+                .disabled(!canSaveSmartCollection)
                 .help("smartCollections.save.help")
+
+                if case .userSmartCollection = viewModel.selection {
+                    Button {
+                        smartCollectionUpdateError = nil
+                        pendingSmartCollectionRule = viewModel.makeRuleFromCurrentManageFilters()
+                        showUpdateSmartCollectionSheet = true
+                    } label: {
+                        ToolbarIcon("arrow.triangle.2.circlepath")
+                    }
+                    .disabled(viewModel.makeRuleFromCurrentManageFilters() == nil)
+                    .help("smartCollections.update.help")
+                }
 
                 UnifiedFilterMenu(
                     items: filterItems,
@@ -551,6 +592,12 @@ struct RepoListView: View {
         )
     }
 
+    private var canSaveSmartCollection: Bool {
+        guard viewModel.makeRuleFromCurrentManageFilters() != nil else { return false }
+        if case .userSmartCollection = viewModel.selection { return false }
+        return true
+    }
+
     private var defaultSmartCollectionName: String {
         switch viewModel.selection {
         case .allStars:
@@ -566,8 +613,7 @@ struct RepoListView: View {
         }
     }
 
-    private func saveSmartCollection(named name: String) {
-        guard let rule = viewModel.makeRuleFromCurrentManageFilters() else { return }
+    private func saveSmartCollection(named name: String, rule: SmartCollectionRule) {
         Task {
             do {
                 let now = ISO8601DateFormatter.shared.string(from: Date())
@@ -585,12 +631,27 @@ struct RepoListView: View {
                 await viewModel.refreshSidebar()
                 showSaveSmartCollectionSheet = false
                 smartCollectionSaveError = nil
+                pendingSmartCollectionRule = nil
             } catch let error as EntitlementGateError {
                 showSaveSmartCollectionSheet = false
                 smartCollectionSaveError = nil
+                pendingSmartCollectionRule = nil
                 paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
             } catch {
                 smartCollectionSaveError = error.localizedDescription
+            }
+        }
+    }
+
+    private func updateSmartCollectionRules(id: String, rule: SmartCollectionRule) {
+        Task {
+            do {
+                try await viewModel.updateUserSmartCollectionRule(id: id, rule: rule)
+                showUpdateSmartCollectionSheet = false
+                smartCollectionUpdateError = nil
+                pendingSmartCollectionRule = nil
+            } catch {
+                smartCollectionUpdateError = error.localizedDescription
             }
         }
     }
@@ -1011,6 +1072,18 @@ struct RepoListView: View {
                 visibleTotal
             )
         }
+        if case .userSmartCollection(let id) = viewModel.selection,
+           let rule = viewModel.userSmartCollection(id: id)?.rule {
+            let summary = SmartCollectionRuleSummary.compact(
+                rule: rule,
+                context: viewModel.smartCollectionSummaryContext()
+            )
+            return String(
+                format: String.l10n("smartCollections.list.subtitleFormat"),
+                summary,
+                visibleTotal
+            )
+        }
         return String(
             format: String.l10n("list.repoCountFormat"),
             visibleTotal
@@ -1157,49 +1230,6 @@ struct RepoListView: View {
         } catch {
             paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
         }
-    }
-}
-
-private struct SaveSmartCollectionSheet: View {
-    let defaultName: String
-    let errorMessage: String?
-    let onCancel: () -> Void
-    let onSave: (String) -> Void
-
-    @State private var name: String = ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Label("smartCollections.save.title", systemImage: "line.3.horizontal.decrease.circle.badge.plus")
-                .font(.headline)
-
-            TextField("smartCollections.save.name", text: $name)
-                .textFieldStyle(.roundedBorder)
-                .onAppear {
-                    if name.isEmpty { name = defaultName }
-                }
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack {
-                Spacer()
-                Button("general.cancel") {
-                    onCancel()
-                }
-                Button("smartCollections.save.confirm") {
-                    onSave(name)
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(20)
-        .frame(width: 380)
     }
 }
 
