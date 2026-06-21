@@ -14,8 +14,10 @@ import SwiftUI
 
 /// 表单输入框统一宽度（label 左 / 输入框右，无 dash 分隔符）。
 ///
-/// **为什么不用 HStack**：SwiftUI `Form` + `.grouped` 样式会自动识别 `HStack { Text; ...; Control }` 为 label/content 对并插入 dash 分隔符。
-/// `Grid` 不会被识别，所以用它来强制两列布局。
+/// **为什么不用 SwiftUI Form**：`.formStyle(.grouped)` 会自动把"label Text + Control"识别为 LabeledContent
+/// 并插入 dash 分隔符，该规则覆盖 `HStack` / `Grid + GridRow` 等多种容器，无法关闭。
+/// 因此整个表单改用 `ScrollView + VStack + 自定义 FormSection / FormRow` 实现，
+/// 完全绕开 Form 的隐式布局逻辑。
 private let smartCollectionInputFieldWidth: CGFloat = 400
 
 /// 三态 optional-Bool 过滤（不限 / 是 / 否）。
@@ -109,65 +111,79 @@ struct SmartCollectionRuleEditorSheet: View {
                 .padding(.bottom, 12)
 
             ScrollView {
-                Form {
-                    Section("smartCollections.editor.section.name") {
-                        Grid(alignment: .center, horizontalSpacing: 12) {
-                            GridRow {
-                                Text("smartCollections.editor.section.name")
-                                    .lineLimit(1)
-                                    .gridColumnAlignment(.leading)
-                                TextField("smartCollections.save.name", text: $name)
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: smartCollectionInputFieldWidth)
-                                    .gridColumnAlignment(.trailing)
-                            }
+                VStack(spacing: 16) {
+                    // 名称：不带 Section header（label 行充当）
+                    FormSection(titleKey: nil) {
+                        FormRow {
+                            Text("smartCollections.editor.section.name")
+                                .lineLimit(1)
+                        } control: {
+                            TextField("smartCollections.save.name", text: $name)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: smartCollectionInputFieldWidth)
                         }
                     }
 
-                    Section("smartCollections.editor.section.presets") {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(SmartCollectionKind.allCases) { kind in
-                                    Button {
-                                        applyPreset(kind)
-                                    } label: {
-                                        Text(kind.titleKey)
-                                            .font(.caption)
+                    // 预设模板
+                    FormSection(titleKey: "smartCollections.editor.section.presets") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(SmartCollectionKind.allCases) { kind in
+                                        Button {
+                                            applyPreset(kind)
+                                        } label: {
+                                            Text(kind.titleKey)
+                                                .font(.caption)
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .focusEffectDisabled()
                                     }
-                                    .buttonStyle(.bordered)
-                                    .focusEffectDisabled()
                                 }
                             }
+                            Text("smartCollections.editor.presets.hint")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        Text("smartCollections.editor.presets.hint")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        .padding(12)
                     }
 
-                    Section("smartCollections.editor.section.scope") {
-                        scopePicker
+                    // 范围
+                    FormSection(titleKey: "smartCollections.editor.section.scope") {
+                        FormRow {
+                            Text("smartCollections.editor.scope")
+                                .lineLimit(1)
+                        } control: {
+                            scopePicker
+                                .labelsHidden()
+                        }
                     }
 
-                    Section("smartCollections.editor.section.search") {
-                        Grid(alignment: .center, horizontalSpacing: 12) {
-                            GridRow {
-                                Text("smartCollections.editor.section.search")
-                                    .lineLimit(1)
-                                    .gridColumnAlignment(.leading)
-                                TextField("smartCollections.editor.search.placeholder", text: searchQueryBinding)
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: smartCollectionInputFieldWidth)
-                                    .gridColumnAlignment(.trailing)
+                    // 搜索：不带 Section header（label 行充当）
+                    FormSection(titleKey: nil) {
+                        FormRow {
+                            Text("smartCollections.editor.section.search")
+                                .lineLimit(1)
+                        } control: {
+                            TextField("smartCollections.editor.search.placeholder", text: searchQueryBinding)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: smartCollectionInputFieldWidth)
+                        }
+                        FormRow {
+                            Text("smartCollections.editor.search.mode")
+                                .lineLimit(1)
+                        } control: {
+                            Picker("", selection: $draft.searchModeRaw) {
+                                ForEach(SmartSearchMode.allCases) { mode in
+                                    Text(mode.displayName).tag(mode.rawValue)
+                                }
                             }
-                        }
-                        Picker("smartCollections.editor.search.mode", selection: $draft.searchModeRaw) {
-                            ForEach(SmartSearchMode.allCases) { mode in
-                                Text(mode.displayName).tag(mode.rawValue)
-                            }
+                            .labelsHidden()
                         }
                     }
 
-                    Section("smartCollections.editor.section.filters") {
+                    // 筛选
+                    FormSection(titleKey: "smartCollections.editor.section.filters") {
                         HStack {
                             Spacer()
                             Button("smartCollections.editor.importFromToolbar") {
@@ -175,24 +191,44 @@ struct SmartCollectionRuleEditorSheet: View {
                             }
                             .disabled(viewModel.makeRuleFromCurrentManageFilters() == nil)
                         }
-                        Picker("list.filter.status", selection: statusBinding) {
-                            Label("general.all", systemImage: "tray.full").tag(Optional<RepoStatus>.none)
-                            ForEach(RepoStatus.allCases, id: \.self) { status in
-                                Label(status.displayName, systemImage: statusIcon(for: status))
-                                    .tag(Optional<RepoStatus>.some(status))
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
+                        FormRow {
+                            Text("list.filter.status").lineLimit(1)
+                        } control: {
+                            Picker("", selection: statusBinding) {
+                                Label("general.all", systemImage: "tray.full").tag(Optional<RepoStatus>.none)
+                                ForEach(RepoStatus.allCases, id: \.self) { status in
+                                    Label(status.displayName, systemImage: statusIcon(for: status))
+                                        .tag(Optional<RepoStatus>.some(status))
+                                }
                             }
+                            .labelsHidden()
                         }
-                        Toggle("settings.general.hideArchived", isOn: $draft.hideArchived)
-                        Toggle("settings.general.hideForks", isOn: $draft.hideForks)
-                        Picker("list.sort", selection: $draft.sortRaw) {
-                            ForEach(RepoSortOption.allCases) { option in
-                                Text(option.displayName).tag(option.rawValue)
+                        FormRow {
+                            Text("settings.general.hideArchived").lineLimit(1)
+                        } control: {
+                            Toggle("", isOn: $draft.hideArchived).labelsHidden()
+                        }
+                        FormRow {
+                            Text("settings.general.hideForks").lineLimit(1)
+                        } control: {
+                            Toggle("", isOn: $draft.hideForks).labelsHidden()
+                        }
+                        FormRow {
+                            Text("list.sort").lineLimit(1)
+                        } control: {
+                            Picker("", selection: $draft.sortRaw) {
+                                ForEach(RepoSortOption.allCases) { option in
+                                    Text(option.displayName).tag(option.rawValue)
+                                }
                             }
+                            .labelsHidden()
                         }
                     }
 
                     if !viewModel.languageStats.isEmpty {
-                        Section {
+                        FormSection(titleKey: nil) {
                             SmartCollectionMultiSelectField(
                                 titleKey: "smartCollections.editor.section.languages",
                                 showsInlineTitle: true,
@@ -208,10 +244,15 @@ struct SmartCollectionRuleEditorSheet: View {
                     }
 
                     if !viewModel.tags.isEmpty {
-                        Section("smartCollections.editor.section.tags") {
-                            Picker("smartCollections.editor.tagMatchMode", selection: $draft.tagMatchModeRaw) {
-                                Text("smartCollections.editor.tagMatch.any").tag(SmartCollectionTagMatchMode.any.rawValue)
-                                Text("smartCollections.editor.tagMatch.all").tag(SmartCollectionTagMatchMode.all.rawValue)
+                        FormSection(titleKey: "smartCollections.editor.section.tags") {
+                            FormRow {
+                                Text("smartCollections.editor.tagMatchMode").lineLimit(1)
+                            } control: {
+                                Picker("", selection: $draft.tagMatchModeRaw) {
+                                    Text("smartCollections.editor.tagMatch.any").tag(SmartCollectionTagMatchMode.any.rawValue)
+                                    Text("smartCollections.editor.tagMatch.all").tag(SmartCollectionTagMatchMode.all.rawValue)
+                                }
+                                .labelsHidden()
                             }
                             SmartCollectionMultiSelectField(
                                 titleKey: "smartCollections.editor.tags.include",
@@ -230,7 +271,8 @@ struct SmartCollectionRuleEditorSheet: View {
                         }
                     }
 
-                    Section("smartCollections.editor.section.popularity") {
+                    // 热度
+                    FormSection(titleKey: "smartCollections.editor.section.popularity") {
                         optionalIntRow(titleKey: "smartCollections.editor.starsMin", value: $draft.starsMin, range: 0...1_000_000)
                         optionalIntRow(titleKey: "smartCollections.editor.starsMax", value: $draft.starsMax, range: 0...1_000_000)
                         optionalIntRow(titleKey: "smartCollections.editor.forksMin", value: $draft.forksMin, range: 0...1_000_000)
@@ -239,7 +281,8 @@ struct SmartCollectionRuleEditorSheet: View {
                         optionalIntRow(titleKey: "smartCollections.editor.watchersMax", value: $draft.watchersMax, range: 0...1_000_000)
                     }
 
-                    Section("smartCollections.editor.section.activity") {
+                    // 活跃度
+                    FormSection(titleKey: "smartCollections.editor.section.activity") {
                         optionalIntRow(titleKey: "smartCollections.editor.pushedWithinDays", value: $draft.pushedWithinDays, range: 1...3_650)
                         optionalIntRow(titleKey: "smartCollections.editor.pushedOlderDays", value: $draft.pushedOlderThanDays, range: 1...3_650)
                         optionalIntRow(titleKey: "smartCollections.editor.starredWithinDays", value: $draft.starredWithinDays, range: 1...3_650)
@@ -251,7 +294,8 @@ struct SmartCollectionRuleEditorSheet: View {
                         optionalIntRow(titleKey: "smartCollections.editor.releaseWithinDays", value: $draft.releaseWithinDays, range: 1...3_650)
                     }
 
-                    Section("smartCollections.editor.section.content") {
+                    // 内容
+                    FormSection(titleKey: "smartCollections.editor.section.content") {
                         triStatePicker(titleKey: "smartCollections.editor.description", value: $draft.requireDescription)
                         triStatePicker(titleKey: "smartCollections.editor.homepage", value: $draft.requireHomepage)
                         triStatePicker(titleKey: "smartCollections.editor.license", value: $draft.requireLicense)
@@ -259,7 +303,8 @@ struct SmartCollectionRuleEditorSheet: View {
                         triStatePicker(titleKey: "smartCollections.editor.note", value: $draft.requireNote)
                     }
 
-                    Section("smartCollections.editor.section.repoHealth") {
+                    // 仓库健康度
+                    FormSection(titleKey: "smartCollections.editor.section.repoHealth") {
                         if dependencies.entitlementGate.isProUser {
                             optionalIntRow(titleKey: "smartCollections.editor.healthMin", value: $draft.healthScoreMin, range: 0...100)
                             optionalIntRow(titleKey: "smartCollections.editor.healthMax", value: $draft.healthScoreMax, range: 0...100)
@@ -268,10 +313,12 @@ struct SmartCollectionRuleEditorSheet: View {
                             Text("smartCollections.editor.health.proLocked")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .padding(12)
                         }
                     }
 
-                    Section("smartCollections.editor.section.quality") {
+                    // 质量
+                    FormSection(titleKey: "smartCollections.editor.section.quality") {
                         if dependencies.entitlementGate.isProUser {
                             optionalIntRow(titleKey: "smartCollections.editor.maintenanceMin", value: $draft.maintenanceScoreMin, range: 0...100)
                             optionalIntRow(titleKey: "smartCollections.editor.popularityHealthMin", value: $draft.popularityScoreMin, range: 0...100)
@@ -281,35 +328,38 @@ struct SmartCollectionRuleEditorSheet: View {
                             Text("smartCollections.editor.qualityDimensions.proLocked")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .padding(12)
                         }
                         optionalIntRow(titleKey: "smartCollections.editor.openSSFMin", value: $draft.openSSFScoreMin, range: 0...10)
                     }
 
                     if draft.searchMode == .semantic {
-                        Section("smartCollections.editor.section.semantic") {
+                        FormSection(titleKey: "smartCollections.editor.section.semantic") {
                             optionalIntRow(titleKey: "smartCollections.editor.semanticMin", value: $draft.semanticScoreMin, range: 0...100)
                         }
                     }
 
-                    Section {
-                        ForEach(SmartCollectionRuleValidation.warnings(for: draft), id: \.self) { warning in
-                            Text(warning)
-                                .font(.caption)
-                                .foregroundStyle(.orange)
+                    // 预览
+                    FormSection(titleKey: "smartCollections.editor.section.preview") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(SmartCollectionRuleValidation.warnings(for: draft), id: \.self) { warning in
+                                Text(warning)
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                            SmartCollectionRuleSummaryView(
+                                lines: SmartCollectionRuleSummary.lines(rule: draft, context: summaryContext)
+                            )
+                            SmartCollectionMatchCountRow(
+                                matchCount: matchCount,
+                                isLoadingCount: isLoadingCount
+                            )
                         }
-                        SmartCollectionRuleSummaryView(
-                            lines: SmartCollectionRuleSummary.lines(rule: draft, context: summaryContext)
-                        )
-                        SmartCollectionMatchCountRow(
-                            matchCount: matchCount,
-                            isLoadingCount: isLoadingCount
-                        )
-                    } header: {
-                        Text("smartCollections.editor.section.preview")
+                        .padding(12)
                     }
                 }
-                .formStyle(.grouped)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
 
             if let saveError {
@@ -429,16 +479,13 @@ struct SmartCollectionRuleEditorSheet: View {
     }
 
     private var topicsRow: some View {
-        Grid(alignment: .center, horizontalSpacing: 12) {
-            GridRow {
-                Text("smartCollections.editor.topics")
-                    .lineLimit(1)
-                    .gridColumnAlignment(.leading)
-                TextField("", text: topicContainsBinding)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: smartCollectionInputFieldWidth)
-                    .gridColumnAlignment(.trailing)
-            }
+        FormRow {
+            Text("smartCollections.editor.topics")
+                .lineLimit(1)
+        } control: {
+            TextField("", text: topicContainsBinding)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: smartCollectionInputFieldWidth)
         }
     }
 
@@ -459,13 +506,18 @@ struct SmartCollectionRuleEditorSheet: View {
     }
 
     private func triStatePicker(titleKey: LocalizedStringKey, value: Binding<Bool?>) -> some View {
-        Picker(titleKey, selection: Binding(
-            get: { SmartCollectionTriState.from(optional: value.wrappedValue) },
-            set: { value.wrappedValue = $0.optionalBool }
-        )) {
-            ForEach(SmartCollectionTriState.allCases) { state in
-                Text(state.labelKey).tag(state)
+        FormRow {
+            Text(titleKey).lineLimit(1)
+        } control: {
+            Picker("", selection: Binding(
+                get: { SmartCollectionTriState.from(optional: value.wrappedValue) },
+                set: { value.wrappedValue = $0.optionalBool }
+            )) {
+                ForEach(SmartCollectionTriState.allCases) { state in
+                    Text(state.labelKey).tag(state)
+                }
             }
+            .labelsHidden()
         }
     }
 
@@ -474,18 +526,15 @@ struct SmartCollectionRuleEditorSheet: View {
         value: Binding<Int?>,
         range: ClosedRange<Int>
     ) -> some View {
-        Grid(alignment: .center, horizontalSpacing: 12) {
-            GridRow {
-                Text(titleKey)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                    .gridColumnAlignment(.leading)
-                TextField("smartCollections.editor.optionalPlaceholder", text: optionalIntTextBinding(value, range: range))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: smartCollectionInputFieldWidth)
-                    .multilineTextAlignment(.trailing)
-                    .gridColumnAlignment(.trailing)
-            }
+        FormRow {
+            Text(titleKey)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        } control: {
+            TextField("smartCollections.editor.optionalPlaceholder", text: optionalIntTextBinding(value, range: range))
+                .textFieldStyle(.roundedBorder)
+                .frame(width: smartCollectionInputFieldWidth)
+                .multilineTextAlignment(.trailing)
         }
     }
 
@@ -586,6 +635,61 @@ struct SmartCollectionRuleEditorSheet: View {
             } catch {
                 saveError = error.localizedDescription
             }
+        }
+    }
+}
+
+// MARK: - 自定义 Form 组件（替代 SwiftUI Form）
+
+/// 自定义分组容器：圆角背景 + 可选 header。
+///
+/// **替代 SwiftUI Form 的原因**：`.formStyle(.grouped)` 自动把"label Text + Control"识别为
+/// LabeledContent 并插入 dash 分隔符，该规则覆盖 `HStack` / `Grid + GridRow`，且无法关闭。
+/// 自己实现 Section + Row 才能保证视觉一致。
+private struct FormSection<Content: View>: View {
+    let titleKey: LocalizedStringKey?
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let titleKey {
+                Text(titleKey)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
+            }
+            VStack(spacing: 0) {
+                content
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            )
+        }
+    }
+}
+
+/// 单行：label 左 / 控件右，底部自带 Divider（被 FormSection 的 clipShape 裁掉最后一行的多余 Divider）。
+private struct FormRow<Label: View, Control: View>: View {
+    @ViewBuilder let label: () -> Label
+    @ViewBuilder let control: () -> Control
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 12) {
+                label()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                control()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            Divider().padding(.leading, 12)
         }
     }
 }

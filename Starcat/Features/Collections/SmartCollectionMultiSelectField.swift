@@ -17,10 +17,6 @@ struct SmartCollectionMultiSelectOption: Identifiable, Hashable, Sendable {
 }
 
 /// Popover 多选：语言 / 标签等长列表。
-///
-/// **为什么用 Grid 而不是 HStack 配 label 左 / button 右**：跟 `SmartCollectionRuleEditorView`
-/// 里的输入框一致 —— SwiftUI `Form` + `.formStyle(.grouped)` 会自动识别 `HStack { Text; Control }`
-/// 为 label/content 对并插入 dash 分隔符；`Grid + GridRow` 不会触发该识别。
 struct SmartCollectionMultiSelectField: View {
     let titleKey: LocalizedStringKey
     var showsInlineTitle: Bool = true
@@ -31,16 +27,15 @@ struct SmartCollectionMultiSelectField: View {
 
     var body: some View {
         if showsInlineTitle {
-            Grid(alignment: .center, horizontalSpacing: 12) {
-                GridRow {
-                    Text(titleKey)
-                        .font(.callout)
-                        .lineLimit(1)
-                        .gridColumnAlignment(.leading)
-                    popoverButton
-                        .gridColumnAlignment(.trailing)
-                }
+            HStack(alignment: .center, spacing: 12) {
+                Text(titleKey)
+                    .font(.callout)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                popoverButton
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         } else {
             popoverButton
         }
@@ -130,13 +125,18 @@ struct SmartCollectionMultiSelectField: View {
 }
 
 /// 健康度 A–E：仅 5 档，用 macOS `.button` Toggle 横排，无需下拉。
+///
+/// 布局与 `FormRow` 一致（label 左 / 控件右，整行铺满），不再用 `LabeledContent` 以避免内容居中。
 struct SmartCollectionGradePicker: View {
     @Binding var selectedGrades: [String]
 
     private static let grades = ["A", "B", "C", "D", "E"]
 
     var body: some View {
-        LabeledContent {
+        HStack(alignment: .center, spacing: 12) {
+            Text("smartCollections.editor.healthGrades")
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 6) {
                 ForEach(Self.grades, id: \.self) { grade in
                     Toggle(grade, isOn: gradeBinding(grade))
@@ -144,10 +144,9 @@ struct SmartCollectionGradePicker: View {
                         .controlSize(.small)
                 }
             }
-        } label: {
-            Text("smartCollections.editor.healthGrades")
-                .lineLimit(1)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private func gradeBinding(_ grade: String) -> Binding<Bool> {

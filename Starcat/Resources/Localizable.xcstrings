@@ -31581,7 +31581,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Release 于（天内）"
+            "value": "新版本于（天内）"
           }
         }
       }
@@ -31700,7 +31700,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "最低 OpenSSF 分"
+            "value": "OpenSSF 最低分"
           }
         }
       }
