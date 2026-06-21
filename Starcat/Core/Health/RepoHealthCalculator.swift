@@ -87,7 +87,7 @@ enum RepoHealthCalculator {
             ))
         }
 
-        if let pushedAt = repo.pushedAt.flatMap(ISO8601DateFormatter.shared.date(from:)) {
+        if let pushedAt = ISO8601DateFormatter.githubDate(from: repo.pushedAt) {
             let days = Int(now.timeIntervalSince(pushedAt) / 86_400)
             switch days {
             case ..<30:
@@ -131,7 +131,8 @@ enum RepoHealthCalculator {
             facts.append(missingFact(key: "pushedAt", labelKey: "repoHealth.fact.pushedAt.label"))
         }
 
-        if let releaseDate = latestRelease?.publishedAt.flatMap(ISO8601DateFormatter.shared.date(from:)) {
+        if let releaseDate = ISO8601DateFormatter.githubDate(from: latestRelease?.publishedAt)
+            ?? ISO8601DateFormatter.githubDate(from: latestRelease?.createdAtRemote) {
             let days = Int(now.timeIntervalSince(releaseDate) / 86_400)
             let releaseTone: RepoHealthFactTone = days < 180 ? .good : (days > 365 ? .bad : .neutral)
             if days < 180 { score += 15 } else if days > 365 { score -= 10 }
@@ -153,6 +154,15 @@ enum RepoHealthCalculator {
                     tone: releaseTone
                 ))
             }
+        } else if let tag = latestRelease?.tagName, !tag.isEmpty {
+            // 有 tag 但 published_at 不可解析(或草稿态)——仍展示 tag,不标「未知」。
+            facts.append(fact(
+                key: "release",
+                labelKey: "repoHealth.fact.release.label",
+                valueKey: "repoHealth.fact.release.tagOnly.format",
+                valueArgs: [tag],
+                tone: .neutral
+            ))
         } else {
             facts.append(missingFact(key: "release", labelKey: "repoHealth.fact.release.label"))
         }
@@ -236,11 +246,15 @@ enum RepoHealthCalculator {
 
         if let homepage = repo.homepage, !homepage.isEmpty {
             score += 10
+            let link = Self.normalizedHTTPURL(homepage)
+            let display = URL(string: link)?.host ?? homepage
             facts.append(fact(
                 key: "homepage",
                 labelKey: "repoHealth.fact.homepage.label",
-                valueKey: "repoHealth.fact.homepage.yes",
-                tone: .good
+                valueKey: "repoHealth.fact.homepage.link.format",
+                valueArgs: [display],
+                tone: .good,
+                linkURL: link
             ))
         } else {
             facts.append(fact(
@@ -251,18 +265,8 @@ enum RepoHealthCalculator {
             ))
         }
 
-        if let branch = repo.defaultBranch, !branch.isEmpty {
-            score += 10
-            facts.append(fact(
-                key: "defaultBranch",
-                labelKey: "repoHealth.fact.defaultBranch.label",
-                valueKey: "repoHealth.fact.defaultBranch.value.format",
-                valueArgs: [branch],
-                tone: .good
-            ))
-        } else {
-            facts.append(missingFact(key: "defaultBranch", labelKey: "repoHealth.fact.defaultBranch.label"))
-        }
+        // 不展示 defaultBranch(dong4j 2026-06-21);open PR 数本地缓存暂无独立字段,
+        // GitHub `/repos` 只给含 PR 的 open_issues_count,不在此混淆展示。
 
         if let openIssues = repo.openIssuesCount {
             if openIssues <= 20 {
@@ -338,9 +342,17 @@ enum RepoHealthCalculator {
         labelKey: String,
         valueKey: String,
         valueArgs: [String] = [],
-        tone: RepoHealthFactTone
+        tone: RepoHealthFactTone,
+        linkURL: String? = nil
     ) -> RepoHealthFact {
-        RepoHealthFact(key: key, labelKey: labelKey, valueKey: valueKey, valueArgs: valueArgs, tone: tone)
+        RepoHealthFact(
+            key: key,
+            labelKey: labelKey,
+            valueKey: valueKey,
+            valueArgs: valueArgs,
+            tone: tone,
+            linkURL: linkURL
+        )
     }
 
     private static func missingFact(key: String, labelKey: String) -> RepoHealthFact {
@@ -350,6 +362,15 @@ enum RepoHealthCalculator {
             valueKey: "repoHealth.fact.value.unknownConservative",
             tone: .missing
         )
+    }
+
+    /// Homepage 等外链：GitHub 有时只给域名,补 `https://` 以便 Link 跳转。
+    private static func normalizedHTTPURL(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
+            return trimmed
+        }
+        return "https://\(trimmed)"
     }
 
     static func grade(for score: Double) -> String {

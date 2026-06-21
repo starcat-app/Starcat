@@ -35,6 +35,12 @@ struct AppStatusToolbarButton: View {
                 Image(systemName: overallStatusIcon)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(overallStatusColor)
+                    .font(.system(size: ToolbarIconMetrics.fontSize, weight: .regular))
+                    .frame(
+                        width: ToolbarIconMetrics.frameSize,
+                        height: ToolbarIconMetrics.frameSize,
+                        alignment: .center
+                    )
                 if activeTaskCount > 0 {
                     Text("\(activeTaskCount)")
                         .font(.caption2.weight(.semibold))
@@ -61,6 +67,9 @@ struct AppStatusToolbarButton: View {
                 diagnosticSummary: diagnosticSummary,
                 relativeDate: relativeDate,
                 onOpenDiagnostics: { openSettings(tab: "diagnostics") },
+                onClearDiagnostics: {
+                    Task { await clearDiagnostics() }
+                },
                 onOpenServices: { openSettings(tab: "services") },
                 onOpenMCP: { openSettings(tab: "mcp") },
                 onShowBatchAIPanel: onShowBatchAIPanel
@@ -126,6 +135,11 @@ struct AppStatusToolbarButton: View {
         diagnosticSummary = await DiagnosticLogStore.shared.issueSummary()
     }
 
+    private func clearDiagnostics() async {
+        await DiagnosticLogStore.shared.markIssuesAcknowledged()
+        await refreshDiagnostics()
+    }
+
     private func relativeDate(_ date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
@@ -154,6 +168,7 @@ private struct AppStatusPanel: View {
     let diagnosticSummary: DiagnosticLogSummary
     let relativeDate: (Date) -> String
     let onOpenDiagnostics: () -> Void
+    let onClearDiagnostics: () -> Void
     let onOpenServices: () -> Void
     let onOpenMCP: () -> Void
     let onShowBatchAIPanel: (() -> Void)?
@@ -207,14 +222,26 @@ private struct AppStatusPanel: View {
                 tint: diagnosticTint,
                 title: "toolbar.status.diagnostics.title",
                 subtitle: diagnosticSubtitle,
-                accessory: {
-                    Button("toolbar.status.diagnostics.open") {
-                        onOpenDiagnostics()
-                    }
-                    .controlSize(.small)
-                    .focusEffectDisabled()
-                }
+                accessory: { diagnosticAccessory }
             )
+        }
+    }
+
+    @ViewBuilder
+    private var diagnosticAccessory: some View {
+        HStack(spacing: 6) {
+            if diagnosticSummary.issueCount > 0 {
+                Button("toolbar.status.diagnostics.clear") {
+                    onClearDiagnostics()
+                }
+                .controlSize(.small)
+                .focusEffectDisabled()
+            }
+            Button("toolbar.status.diagnostics.open") {
+                onOpenDiagnostics()
+            }
+            .controlSize(.small)
+            .focusEffectDisabled()
         }
     }
 

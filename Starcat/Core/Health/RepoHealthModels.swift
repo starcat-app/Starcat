@@ -36,6 +36,8 @@ struct RepoHealthFact: Codable, Equatable, Sendable {
     var valueKey: String
     var valueArgs: [String]
     var tone: RepoHealthFactTone
+    /// 非 nil 时 UI 把值渲染为可点击外链（如 Homepage）。
+    var linkURL: String?
 }
 
 /// 单个维度的评分与证据。

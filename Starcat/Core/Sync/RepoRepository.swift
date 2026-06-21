@@ -484,4 +484,17 @@ extension ISO8601DateFormatter {
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
+
+    /// 解析 GitHub REST 返回的 ISO8601 时间字符串。
+    ///
+    /// `shared` 带 `.withFractionalSeconds`,对不带毫秒的 `"2024-01-01T00:00:00Z"`
+    /// 会解析失败(Health 算分 / Search 相对时间等多处已踩坑)。
+    /// 双 try:先 fractional,再纯 internet date time。
+    static func githubDate(from raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        if let date = shared.date(from: raw) { return date }
+        let fallback = ISO8601DateFormatter()
+        fallback.formatOptions = [.withInternetDateTime]
+        return fallback.date(from: raw)
+    }
 }
