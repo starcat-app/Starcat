@@ -164,26 +164,39 @@ struct RepoHealthSheet: View {
     private func scoreSummary(_ snapshot: RepoHealthSnapshot) -> some View {
         // alignment: .top —— 圆卡与右侧文字顶部平齐,
         // 避免 HStack 默认 center 让圆卡在视觉上"悬空"。
-        // **关键**:圆卡不再固定 118pt,而是用 .frame(width: cardSize, height: cardSize)
-        // 根据分数位数自适应(2 位数 88pt / 3 位数 104pt),否则固定 118pt
-        // 会让 HStack 行高度 = 圆卡高度,即使右侧文字只有 60pt 高也会留下空白。
+        //
+        // v2（2026-06-21, dong4j 反馈"突出等级,弱化分数"）：
+        // 圆环内"等级在上大写突出"+"分数在下小字弱化"。
+        // 圆环本身：tint 色描边（2pt）+ 同色 0.08 opacity 浅填充,
+        // 视觉更像一个"等级徽章"而非"分数表盘"。
         let rounded = Int(snapshot.overallScore.rounded())
-        let cardSize: CGFloat = rounded >= 100 ? 104 : 88
-        let scoreFontSize: CGFloat = rounded >= 100 ? 38 : 34
+        let cardSize: CGFloat = 96
+        let tint = healthTint(snapshot.overallScore)
 
         return HStack(alignment: .top, spacing: 14) {
             ZStack {
+                // 双层圆环：外圈细描边 + 内圈超浅填充,营造"等级徽章"质感
                 Circle()
-                    .fill(healthTint(snapshot.overallScore).opacity(0.14))
+                    .fill(
+                        RadialGradient(
+                            colors: [tint.opacity(0.18), tint.opacity(0.04)],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: cardSize / 2
+                        )
+                    )
                 Circle()
-                    .stroke(healthTint(snapshot.overallScore).opacity(0.42), lineWidth: 1)
-                VStack(spacing: 0) {
-                    Text(verbatim: "\(rounded)")
-                        .font(.system(size: scoreFontSize, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
+                    .stroke(tint.opacity(0.55), lineWidth: 2)
+                VStack(spacing: -2) {
+                    // 等级:大字 36pt + bold + tint 色,视觉中心
                     Text(verbatim: snapshot.grade)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(healthTint(snapshot.overallScore))
+                        .font(.system(size: 36, weight: .heavy, design: .rounded))
+                        .foregroundStyle(tint)
+                    // 分数:小字 12pt + secondary 色,弱化
+                    Text(verbatim: "\(rounded) 分")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
                 }
             }
             .frame(width: cardSize, height: cardSize)
@@ -214,19 +227,31 @@ struct RepoHealthSheet: View {
         // 旧版混用 line 风格(wrench.and.screwdriver / checklist)导致
         // SF Symbol 渲染时 baseline 飘忽,卡片之间图标大小不统一
         // (dong4j 2026-06-21 反馈)。
+        //
+        // v2（2026-06-21 第二轮反馈）:把 `checklist.checked`(macOS 16+ 才稳定,
+        // macOS 26 在 hierarchical 渲染下会降级回 line 风格)换为
+        // `list.bullet.clipboard.fill`(macOS 13+ 稳定 fill,四个图标现在都能
+        // 强制 hierarchical + symbolRenderingMode 走 fill 路径)。
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
             dimensionCard(title: "repoHealth.dimension.maintenance", score: snapshot.maintenanceScore, systemImage: "wrench.and.screwdriver.fill")
             dimensionCard(title: "repoHealth.dimension.popularity", score: snapshot.popularityScore, systemImage: "star.circle.fill")
-            dimensionCard(title: "repoHealth.dimension.quality", score: snapshot.qualityScore, systemImage: "checklist.checked")
+            dimensionCard(title: "repoHealth.dimension.quality", score: snapshot.qualityScore, systemImage: "list.bullet.clipboard.fill")
             dimensionCard(title: "repoHealth.dimension.security", score: snapshot.securityScore, systemImage: "checkmark.shield.fill")
         }
     }
 
     private func dimensionCard(title: LocalizedStringKey, score: Double, systemImage: String) -> some View {
         HStack(spacing: 10) {
-            // SF Symbol 不同图标的 baseline / metric 不一致,直接设字号会导致
-            // 4 张卡片图标视觉重量飘忽。统一 24x24 画布 + imageScale(.large) +
-            // symbolRenderingMode(.hierarchical) 让所有 symbol 走同一视觉层级。
+            // SF Symbol line 风格 vs fill 风格混合使用时,line 风格自带描边
+            // 在 16pt 下视觉重量明显偏小;4 张卡片混用时大小看起来不一致
+            // (dong4j 2026-06-21 反馈)。统一用 fill 风格 + 24x24 画布 +
+            // imageScale(.large) + symbolRenderingMode(.hierarchical) 让所有
+            // symbol 走同一渲染路径,避免 baseline / 描边 / metric 差异。
+            //
+            // 命名约束(dong4j 2026-06-21 v2 反馈):
+            // - checklist.checked 在 macOS 26 hierarchical 模式下会回退到 line,
+            //   所以 quality 用 list.bullet.clipboard.fill(macOS 13+ 稳定)。
+            // - 其它 3 个 fill 名字在 macOS 12+ 都稳定。
             Image(systemName: systemImage)
                 .font(.system(size: 16, weight: .semibold))
                 .imageScale(.large)
@@ -375,7 +400,7 @@ struct RepoHealthSheet: View {
                     tint: healthTint(snapshot.popularityScore)
                 )
                 ruleRow(
-                    icon: "checklist.checked",
+                    icon: "list.bullet.clipboard.fill",
                     title: "repoHealth.dimension.quality",
                     detail: "repoHealth.rules.quality",
                     tint: healthTint(snapshot.qualityScore)

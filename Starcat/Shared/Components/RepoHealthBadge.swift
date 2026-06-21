@@ -24,18 +24,13 @@ struct RepoHealthBadge: View {
     let data: RepoHealthBadgeData
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             Image(systemName: "gauge.with.dots.needle.67percent")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(tint)
-            Text(verbatim: "\(data.roundedScore)")
-                .font(.footnote)
-                .fontWeight(.semibold)
-                .monospacedDigit()
-                .foregroundStyle(.primary)
             Text(verbatim: data.grade)
-                .font(.caption2)
-                .fontWeight(.semibold)
+                .font(.footnote)
+                .fontWeight(.bold)
                 .foregroundStyle(tint)
         }
         .padding(.horizontal, 7)
@@ -47,6 +42,7 @@ struct RepoHealthBadge: View {
         }
         .fixedSize(horizontal: true, vertical: false)
         // 详情页 + 列表行共用同一个无障碍文案，避免在两处分别实现。
+        // 屏幕阅读器仍读出分数 + 等级(数字可访问性比纯字母 grade 强)。
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             String(
