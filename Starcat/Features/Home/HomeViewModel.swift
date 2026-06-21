@@ -1360,8 +1360,7 @@ final class HomeViewModel {
                     self.isDatabasePageAppendInFlight = false
                 }
             }
-            let result: Result<[Repo], Error>
-            let statusResult: Result<[Int64: RepoStatus], Error>
+            let result: Result<([Repo], [Int64: RepoStatus]), Error>
             let countResult: Result<Int, Error>
             do {
                 async let reposTask = self.repository.fetchListPage(
@@ -1371,14 +1370,18 @@ final class HomeViewModel {
                     limit: queryLimit,
                     offset: queryOffset
                 )
-                async let statusTask = self.repoNoteRepository.fetchAllStatusMap()
                 async let countTask = self.repository.fetchListCount(scope: scope, filters: filters)
-                result = .success(try await reposTask)
-                statusResult = .success((try? await statusTask) ?? [:])
+                let rowsWithSentinel = try await reposTask
+                let pageRows = Array(rowsWithSentinel.prefix(requestedLimit))
+                // R-07.4：DB 分页路径只读取当前落到 UI 的 rows 的状态。
+                // `fetchAllStatusMap()` 曾适合“全量 repos 已在内存”的旧路径；真实分页后每次 append
+                // 都全表扫 repo_notes 会把滚动成本重新绑回用户数据总量。
+                let visibleStatusIDs = pageRows.map(\.id)
+                let pageStatusMap = (try? await self.repoNoteRepository.fetchStatusMap(repoIds: visibleStatusIDs)) ?? [:]
+                result = .success((rowsWithSentinel, pageStatusMap))
                 countResult = .success((try? await countTask) ?? self.visibleRepoTotalCount)
             } catch {
                 result = .failure(error)
-                statusResult = .success([:])
                 countResult = .success(self.visibleRepoTotalCount)
             }
 
@@ -1387,7 +1390,7 @@ final class HomeViewModel {
             self.isRefreshing = false
 
             switch result {
-            case .success(let rowsWithSentinel):
+            case .success(let (rowsWithSentinel, pageStatusMap)):
                 let pageRows = Array(rowsWithSentinel.prefix(requestedLimit))
                 let nextHasMore = rowsWithSentinel.count > requestedLimit
                 let queryTotalCount = (try? countResult.get()) ?? self.visibleRepoTotalCount
@@ -1404,7 +1407,7 @@ final class HomeViewModel {
                     self.visibleRepoTotalCount = queryTotalCount
                     self.hasMore = nextHasMore
                     self.currentPage = max(1, Int(ceil(Double(self.items.count) / Double(Self.pageSize))))
-                    self.statusMap = (try? statusResult.get()) ?? [:]
+                    self.statusMap.merge(pageStatusMap) { _, new in new }
                 } else {
                     let visibleRows = pageRows
                     let idsIdentical = visibleRows.count == self.items.count &&
@@ -1418,7 +1421,7 @@ final class HomeViewModel {
                     if !idsIdentical {
                         self.itemsRevision &+= 1
                     }
-                    self.statusMap = (try? statusResult.get()) ?? [:]
+                    self.statusMap = pageStatusMap
                 }
                 self.listCache.removeValue(forKey: self.selection)
 

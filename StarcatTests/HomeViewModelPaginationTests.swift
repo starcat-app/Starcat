@@ -191,6 +191,33 @@ struct HomeViewModelPaginationTests {
                 "后续 92 次左右 append 都不应 bump snapshot，否则 List 会持续重建并掉帧")
     }
 
+    @Test("DB Paging: 状态角标只加载当前页和追加页,不回退到全表 statusMap")
+    func databasePagingLoadsStatusMapForVisiblePagesOnly() async throws {
+        let (vm, db) = try makeSUT()
+        let noteRepo = GRDBRepoNoteRepository(database: db)
+        for i in 1...100 {
+            try await insertRepo(db, id: Int64(i), fullName: "o/r\(i)", starredAt: starredAt(forID: i))
+        }
+        try await noteRepo.updateStatus(repoId: 1, status: .using)
+        try await noteRepo.updateStatus(repoId: 50, status: .read)
+        try await noteRepo.updateStatus(repoId: 90, status: .using)
+
+        await vm.reloadItems()
+
+        #expect(vm.statusMap[1] == .using, "首屏状态应可立即显示")
+        #expect(vm.statusMap[50] == nil, "未加载页的状态不应被全表预读")
+        #expect(vm.statusMap[90] == nil, "远端页状态不应污染当前分页快照")
+
+        vm.loadMoreIfNeeded()
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.statusMap[50] == nil, "第二页仍未包含 repo 50,状态 map 不应提前全表扩张")
+
+        vm.loadMoreIfNeeded()
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.statusMap[50] == .read, "第三页加载后再合并该页状态")
+        #expect(vm.statusMap[90] == nil, "尚未加载到的第 90 条仍不应出现")
+    }
+
     // MARK: - R-07.1 修复 follow-up（2026-06-16 dong4j）
 
     @Test("R-07.1: sync 完成后 filteredSorted 扩张 → hasMore 必须翻 false→true（view 层 .onChange 触发的前提）")

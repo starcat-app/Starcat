@@ -369,5 +369,23 @@ DB 分页路径改为真正的 `OFFSET + LIMIT`：
 - 若后续要进一步优化 10k+ 深分页，可在 Repository 层从 `OFFSET` 升级为 keyset cursor，但 ViewModel 的 append contract 不应再变。
 - `filteredSorted` 在 DB 分页模式下只镜像已加载 rows；Cmd+A / 多选全集语义继续使用 `selectionSnapshotsForCurrentQuery()` 的轻量 projection。
 
+### 9.5 R-07.4：DB 分页状态角标改为按页读取（2026-06-22）
+
+R-07.2 后列表 rows 已经是真分页，但状态角标仍在每次 reset / append 时调用 `fetchAllStatusMap()`。
+这在旧的全量内存列表里合理，因为 repos 与 status 可并行全表读；但进入真实分页后，滚动到下一页只需要新增
+20 条左右 repo 的状态，继续全表扫 `repo_notes` 会让 append 成本重新跟用户累计笔记 / 状态数据量绑定。
+
+修正：
+
+- reset / refresh：只对当前首屏或当前已加载前缀 repo ids 调 `fetchStatusMap(repoIds:)`。
+- append：只对新增页 repo ids 调 `fetchStatusMap(repoIds:)`，再 merge 到现有 `statusMap`。
+- 不改变 `items.append`、`filteredSorted = items`、append 不 bump `itemsRevision` 这些滚动稳定性 contract。
+
+验收：
+
+- [x] `HomeViewModelPaginationTests.databasePagingLoadsStatusMapForVisiblePagesOnly`：验证未加载页状态不会被全表预读，滚到对应页后才合并。
+- [x] `HomeViewModelPaginationTests` 全 suite 通过。
+- [x] `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/HomeViewModelPaginationTests test` 通过。
+
 ---
-*最后更新：2026-06-22 01:45（R-07.2 DB 分页 OFFSET append 修正）*
+*最后更新：2026-06-22 02:55（R-07.4 DB 分页状态角标按页读取）*
