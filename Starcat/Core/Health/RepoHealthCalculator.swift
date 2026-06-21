@@ -32,7 +32,9 @@ enum RepoHealthCalculator {
             + quality.score * 0.20
             + security.score * 0.25
         )
-        let status: RepoHealthFetchStatus = security.missing.isEmpty ? .success : .partial
+        let status: RepoHealthFetchStatus = security.facts.contains(where: { $0.tone == .missing && $0.key == "openSSF" })
+            ? .partial
+            : .success
         let generatedAt = ISO8601DateFormatter.shared.string(from: now)
         let payload = RepoHealthPayload(
             generatedAt: generatedAt,
@@ -62,55 +64,104 @@ enum RepoHealthCalculator {
         )
     }
 
+    // MARK: - Dimension scorers
+
     private static func maintenanceScore(repo: Repo, latestRelease: ReleaseRecord?, now: Date) -> RepoHealthDimensionScore {
         var score = 50.0
-        var evidence: [String] = []
-        var missing: [String] = []
+        var facts: [RepoHealthFact] = []
 
         if repo.isArchived {
             score -= 45
-            evidence.append("Repository is archived.")
+            facts.append(fact(
+                key: "archived",
+                labelKey: "repoHealth.fact.archived.label",
+                valueKey: "repoHealth.fact.archived.yes",
+                tone: .bad
+            ))
+        } else {
+            facts.append(fact(
+                key: "archived",
+                labelKey: "repoHealth.fact.archived.label",
+                valueKey: "repoHealth.fact.archived.no",
+                tone: .good
+            ))
         }
 
         if let pushedAt = repo.pushedAt.flatMap(ISO8601DateFormatter.shared.date(from:)) {
-            let days = now.timeIntervalSince(pushedAt) / 86_400
+            let days = Int(now.timeIntervalSince(pushedAt) / 86_400)
             switch days {
             case ..<30:
                 score += 30
-                evidence.append("Pushed within 30 days.")
+                facts.append(fact(
+                    key: "pushedAt",
+                    labelKey: "repoHealth.fact.pushedAt.label",
+                    valueKey: "repoHealth.fact.daysAgo.format",
+                    valueArgs: ["\(days)"],
+                    tone: .good
+                ))
             case ..<180:
                 score += 15
-                evidence.append("Pushed within 180 days.")
+                facts.append(fact(
+                    key: "pushedAt",
+                    labelKey: "repoHealth.fact.pushedAt.label",
+                    valueKey: "repoHealth.fact.daysAgo.format",
+                    valueArgs: ["\(days)"],
+                    tone: .neutral
+                ))
             case ..<365:
                 score -= 5
-                evidence.append("No push in the last 180 days.")
+                facts.append(fact(
+                    key: "pushedAt",
+                    labelKey: "repoHealth.fact.pushedAt.label",
+                    valueKey: "repoHealth.fact.daysAgo.format",
+                    valueArgs: ["\(days)"],
+                    tone: .bad
+                ))
             default:
                 score -= 20
-                evidence.append("No push in the last year.")
+                facts.append(fact(
+                    key: "pushedAt",
+                    labelKey: "repoHealth.fact.pushedAt.label",
+                    valueKey: "repoHealth.fact.daysAgo.format",
+                    valueArgs: ["\(days)"],
+                    tone: .bad
+                ))
             }
         } else {
-            missing.append("pushed_at")
+            facts.append(missingFact(key: "pushedAt", labelKey: "repoHealth.fact.pushedAt.label"))
         }
 
         if let releaseDate = latestRelease?.publishedAt.flatMap(ISO8601DateFormatter.shared.date(from:)) {
-            let days = now.timeIntervalSince(releaseDate) / 86_400
-            if days < 180 {
-                score += 15
-                evidence.append("Recent release found.")
-            } else if days > 365 {
-                score -= 10
-                evidence.append("Latest release is older than one year.")
+            let days = Int(now.timeIntervalSince(releaseDate) / 86_400)
+            let releaseTone: RepoHealthFactTone = days < 180 ? .good : (days > 365 ? .bad : .neutral)
+            if days < 180 { score += 15 } else if days > 365 { score -= 10 }
+
+            if let tag = latestRelease?.tagName, !tag.isEmpty {
+                facts.append(fact(
+                    key: "release",
+                    labelKey: "repoHealth.fact.release.label",
+                    valueKey: "repoHealth.fact.release.detail.format",
+                    valueArgs: [tag, "\(days)"],
+                    tone: releaseTone
+                ))
+            } else {
+                facts.append(fact(
+                    key: "release",
+                    labelKey: "repoHealth.fact.release.label",
+                    valueKey: "repoHealth.fact.release.daysOnly.format",
+                    valueArgs: ["\(days)"],
+                    tone: releaseTone
+                ))
             }
         } else {
-            missing.append("latest_release")
+            facts.append(missingFact(key: "release", labelKey: "repoHealth.fact.release.label"))
         }
 
         return RepoHealthDimensionScore(
             dimension: .maintenance,
             score: clamp(score),
             summaryKey: "repoHealth.dimension.maintenance",
-            evidence: evidence,
-            missing: missing
+            facts: facts
         )
     }
 
@@ -122,64 +173,134 @@ enum RepoHealthCalculator {
             dimension: .popularity,
             score: clamp(starScore + forkScore + watcherScore),
             summaryKey: "repoHealth.dimension.popularity",
-            evidence: [
-                "Stars: \(repo.starsCount)",
-                "Forks: \(repo.forksCount)",
-                "Watchers: \(repo.watchersCount)"
-            ],
-            missing: []
+            facts: [
+                fact(
+                    key: "stars",
+                    labelKey: "repoHealth.fact.stars.label",
+                    valueKey: "repoHealth.fact.count.format",
+                    valueArgs: ["\(repo.starsCount)"],
+                    tone: .neutral
+                ),
+                fact(
+                    key: "forks",
+                    labelKey: "repoHealth.fact.forks.label",
+                    valueKey: "repoHealth.fact.count.format",
+                    valueArgs: ["\(repo.forksCount)"],
+                    tone: .neutral
+                ),
+                fact(
+                    key: "watchers",
+                    labelKey: "repoHealth.fact.watchers.label",
+                    valueKey: "repoHealth.fact.count.format",
+                    valueArgs: ["\(repo.watchersCount)"],
+                    tone: .neutral
+                ),
+            ]
         )
     }
 
     private static func qualityScore(repo: Repo) -> RepoHealthDimensionScore {
         var score = 35.0
-        var evidence: [String] = []
-        var missing: [String] = []
+        var facts: [RepoHealthFact] = []
 
-        if repo.license?.isEmpty == false {
+        if let license = repo.license, !license.isEmpty {
             score += 15
-            evidence.append("License is declared.")
+            facts.append(fact(
+                key: "license",
+                labelKey: "repoHealth.fact.license.label",
+                valueKey: "repoHealth.fact.license.value.format",
+                valueArgs: [license],
+                tone: .good
+            ))
         } else {
-            missing.append("license")
+            facts.append(missingFact(key: "license", labelKey: "repoHealth.fact.license.label"))
         }
 
         if !repo.topicsArray.isEmpty {
             score += 15
-            evidence.append("Topics are declared.")
+            facts.append(fact(
+                key: "topics",
+                labelKey: "repoHealth.fact.topics.label",
+                valueKey: "repoHealth.fact.topics.count.format",
+                valueArgs: ["\(repo.topicsArray.count)"],
+                tone: .good
+            ))
         } else {
-            missing.append("topics")
+            facts.append(fact(
+                key: "topics",
+                labelKey: "repoHealth.fact.topics.label",
+                valueKey: "repoHealth.fact.topics.none",
+                tone: .bad
+            ))
         }
 
-        if repo.homepage?.isEmpty == false {
+        if let homepage = repo.homepage, !homepage.isEmpty {
             score += 10
-            evidence.append("Homepage is declared.")
+            facts.append(fact(
+                key: "homepage",
+                labelKey: "repoHealth.fact.homepage.label",
+                valueKey: "repoHealth.fact.homepage.yes",
+                tone: .good
+            ))
+        } else {
+            facts.append(fact(
+                key: "homepage",
+                labelKey: "repoHealth.fact.homepage.label",
+                valueKey: "repoHealth.fact.homepage.no",
+                tone: .neutral
+            ))
         }
 
-        if repo.defaultBranch?.isEmpty == false {
+        if let branch = repo.defaultBranch, !branch.isEmpty {
             score += 10
-            evidence.append("Default branch is known.")
+            facts.append(fact(
+                key: "defaultBranch",
+                labelKey: "repoHealth.fact.defaultBranch.label",
+                valueKey: "repoHealth.fact.defaultBranch.value.format",
+                valueArgs: [branch],
+                tone: .good
+            ))
         } else {
-            missing.append("default_branch")
+            facts.append(missingFact(key: "defaultBranch", labelKey: "repoHealth.fact.defaultBranch.label"))
         }
 
         if let openIssues = repo.openIssuesCount {
             if openIssues <= 20 {
                 score += 10
-                evidence.append("Open issues count is low.")
+                facts.append(fact(
+                    key: "openIssues",
+                    labelKey: "repoHealth.fact.openIssues.label",
+                    valueKey: "repoHealth.fact.count.format",
+                    valueArgs: ["\(openIssues)"],
+                    tone: .good
+                ))
             } else if openIssues > 500 {
                 score -= 10
-                evidence.append("Open issues count is high.")
+                facts.append(fact(
+                    key: "openIssues",
+                    labelKey: "repoHealth.fact.openIssues.label",
+                    valueKey: "repoHealth.fact.count.format",
+                    valueArgs: ["\(openIssues)"],
+                    tone: .bad
+                ))
+            } else {
+                facts.append(fact(
+                    key: "openIssues",
+                    labelKey: "repoHealth.fact.openIssues.label",
+                    valueKey: "repoHealth.fact.count.format",
+                    valueArgs: ["\(openIssues)"],
+                    tone: .neutral
+                ))
             }
         } else {
-            missing.append("open_issues_count")
+            facts.append(missingFact(key: "openIssues", labelKey: "repoHealth.fact.openIssues.label"))
         }
 
         return RepoHealthDimensionScore(
             dimension: .quality,
             score: clamp(score),
             summaryKey: "repoHealth.dimension.quality",
-            evidence: evidence,
-            missing: missing
+            facts: facts
         )
     }
 
@@ -189,17 +310,45 @@ enum RepoHealthCalculator {
                 dimension: .security,
                 score: 50,
                 summaryKey: "repoHealth.dimension.security",
-                evidence: [],
-                missing: ["openssf_score"]
+                facts: [missingFact(key: "openSSF", labelKey: "repoHealth.fact.openSSF.label")]
             )
         }
 
+        let tone: RepoHealthFactTone = aggregate >= 7 ? .good : (aggregate >= 5 ? .neutral : .bad)
         return RepoHealthDimensionScore(
             dimension: .security,
             score: clamp(aggregate * 10),
             summaryKey: "repoHealth.dimension.security",
-            evidence: ["OpenSSF Scorecard: \(String(format: "%.1f", aggregate))"],
-            missing: []
+            facts: [
+                fact(
+                    key: "openSSF",
+                    labelKey: "repoHealth.fact.openSSF.label",
+                    valueKey: "repoHealth.fact.openSSF.score.format",
+                    valueArgs: [String(format: "%.1f", aggregate)],
+                    tone: tone
+                ),
+            ]
+        )
+    }
+
+    // MARK: - Fact builders
+
+    private static func fact(
+        key: String,
+        labelKey: String,
+        valueKey: String,
+        valueArgs: [String] = [],
+        tone: RepoHealthFactTone
+    ) -> RepoHealthFact {
+        RepoHealthFact(key: key, labelKey: labelKey, valueKey: valueKey, valueArgs: valueArgs, tone: tone)
+    }
+
+    private static func missingFact(key: String, labelKey: String) -> RepoHealthFact {
+        fact(
+            key: key,
+            labelKey: labelKey,
+            valueKey: "repoHealth.fact.value.unknownConservative",
+            tone: .missing
         )
     }
 
@@ -217,4 +366,3 @@ enum RepoHealthCalculator {
         min(100, max(0, value))
     }
 }
-

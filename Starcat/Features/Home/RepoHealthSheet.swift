@@ -6,20 +6,18 @@
 //
 //  设计约束：
 //  - Sheet 只读 `RepoHealthStore` 的缓存快照；无缓存时触发非阻塞刷新。
-//  - 第一版不在 UI 中展示 payload_json 里的英文证据句，避免未本地化文本直出。
-//  - OpenSSF 行入口策略（2026-06-21 三段式演进）：
+//  - 维度卡展示 payload 结构化 facts（子项标签 + 当前值/状态）,见 RepoHealthFact。
+//  - 评分规则改为 popover（2026-06-21 v5,dong4j 反馈）：
+//    与 OpenSSF 雷达图一致,点「评分规则」行弹出非模态 popover,失焦自动关闭;
+//    不再用底部折叠面板,避免 sheet 高度难控。
+//
 //      v1 → 内嵌完整 sheet（被移除,理由与 badge 入口重复）
 //      v2 → 完全不内嵌入口（被回滚,dong4j 反馈"右侧也是可点击的"）
 //      v3 → 内嵌 popover（当前）：有 OpenSSF 聚合分时整行可点 → 弹出非模态
 //           popover 展示雷达图（行为同 MenuBarExtra 状态栏面板）；无数据时
 //           退化为普通 metadataRow。完整 checks 列表仍走 repo 详情头部
 //           `OpenSSFInlineBadge → OpenSSFScoreSheet`,本入口只做「瞄一眼分布」。
-//  - 评分规则做成"底部面板切换"模式（2026-06-21 v2 方案）：
-//    折叠态渲染触发条、展开态渲染面板,**同一位置根据状态切换**,
-//    不用 overlay 弹层。overlay 路线在展开时会让 sheet 撑高
-//    多出来的空间滞留在 content 与面板之间形成大片空白
-//    (dong4j 2026-06-21 反馈),v2 改用 VStack footer 切换彻底解决。
-//
+//  - OpenSSF 行入口策略（2026-06-21 三段式演进）：
 
 import SwiftUI
 
@@ -30,9 +28,8 @@ struct RepoHealthSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
     @State private var didRequestInitialSnapshot = false
-    /// 评分规则面板展开状态。默认折叠(@State 而非 @AppStorage),
-    /// 保证每次打开 sheet 都是折叠态,符合 dong4j 在 2026-06-21 的要求。
-    @State private var isRulesExpanded = false
+    /// 评分规则 popover（2026-06-21 v5）——与 OpenSSF 行 popover 同一交互模型。
+    @State private var isRulesPopoverPresented = false
     /// OpenSSF 行 popover 展示状态(2026-06-21 dong4j 反馈)。
     /// SwiftUI `.popover` 默认「点击外部自动关闭」,与「状态栏图标弹出面板」
     /// 行为一致;这里只持有 Bool,实际渲染在 `metadataSection` 里挂载。
@@ -67,39 +64,22 @@ struct RepoHealthSheet: View {
         (openSSFPayload?.checks ?? []).filter(\.isEvaluated)
     }
 
-    /// sheet 折叠态的基础 idealHeight。
+    /// sheet 固定 idealHeight（v5：维度卡含 facts 行,去掉底部折叠 footer）。
     ///
-    /// 分段估算（v4 scoreSummary 含进度弧 + 四维预览条）：
-    /// - header ≈ 58 + divider 1
-    /// - content padding 32 + scoreSummary ≈ 168 + grid ≈ 112 + metadata ≈ 132 + 段间距 32 ≈ 476
-    /// - rulesFooterBar ≈ 50
-    /// 合计 ≈ 585；留少量余量避免底部「评分规则」触发条被裁切。
-    /// 展开态在下面 + Self.rulesPanelHeight 撑高。
-    private static let collapsedIdealHeight: CGFloat = 590
-
-    /// 评分规则面板区高度(展开时)。
-    private static let rulesPanelHeight: CGFloat = 280
+    /// 分段估算：header ≈ 58 + divider 1 + content（summary ≈ 170 + grid ≈ 290
+    /// + metadata ≈ 180 + 段间距/padding ≈ 64）≈ 704,取 710 留余量。
+    private static let sheetIdealHeight: CGFloat = 710
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
             content
-            // footer 区根据 isRulesExpanded 在两个 view 之间切换:
-            // - 折叠:rulesFooterBar(50pt,触发条)
-            // - 展开:scoringRulesPanel(280pt,完整面板)
-            // 同一 VStack 槽位,不引入 overlay → content 高度永远不会
-            // 因为面板展开而被向下推(dong4j 2026-06-21 v2 方案)。
-            rulesSection
         }
-        // sheet 高度根据 isRulesExpanded 动态变化。
-        // maxHeight 给 .infinity 是为了让 macOS 允许用户手动拉大,
-        // 但默认 idealHeight 已经够紧凑,不会自动留白。
         .frame(minWidth: 560, idealWidth: 620, maxWidth: 820,
-               minHeight: Self.collapsedIdealHeight,
-               idealHeight: isRulesExpanded ? Self.collapsedIdealHeight + Self.rulesPanelHeight : Self.collapsedIdealHeight,
+               minHeight: Self.sheetIdealHeight,
+               idealHeight: Self.sheetIdealHeight,
                maxHeight: .infinity)
-        .animation(.easeInOut(duration: 0.25), value: isRulesExpanded)
         .task(id: repo.id) {
             didRequestInitialSnapshot = false
             await store.loadCachedSnapshots(for: [repo.id])
@@ -119,16 +99,6 @@ struct RepoHealthSheet: View {
             if dependencies.openSSFScoreStore.record(for: repo.id) == nil {
                 dependencies.openSSFScoreStore.prefetchIfNeeded(repo: repo)
             }
-        }
-    }
-
-    /// footer 区——根据展开状态切换触发条 / 面板。
-    @ViewBuilder
-    private var rulesSection: some View {
-        if isRulesExpanded, let snapshot {
-            scoringRulesPanel(snapshot)
-        } else {
-            rulesFooterBar
         }
     }
 
@@ -293,14 +263,18 @@ struct RepoHealthSheet: View {
         }
     }
 
-    /// 四个维度的 title / score / icon —— preview 条与 dimensionGrid 共用,避免 symbol 漂移。
-    private func healthDimensions(for snapshot: RepoHealthSnapshot) -> [(titleKey: String, score: Double, systemImage: String)] {
+    /// 四个维度的 dimension / title / score / icon —— preview、grid 共用。
+    private func healthDimensions(for snapshot: RepoHealthSnapshot) -> [(dimension: RepoHealthDimension, titleKey: String, score: Double, systemImage: String)] {
         [
-            ("repoHealth.dimension.maintenance", snapshot.maintenanceScore, "gearshape.circle.fill"),
-            ("repoHealth.dimension.popularity", snapshot.popularityScore, "star.circle.fill"),
-            ("repoHealth.dimension.quality", snapshot.qualityScore, "doc.circle.fill"),
-            ("repoHealth.dimension.security", snapshot.securityScore, "checkmark.shield.fill"),
+            (.maintenance, "repoHealth.dimension.maintenance", snapshot.maintenanceScore, "gearshape.circle.fill"),
+            (.popularity, "repoHealth.dimension.popularity", snapshot.popularityScore, "star.circle.fill"),
+            (.quality, "repoHealth.dimension.quality", snapshot.qualityScore, "doc.circle.fill"),
+            (.security, "repoHealth.dimension.security", snapshot.securityScore, "checkmark.shield.fill"),
         ]
+    }
+
+    private func facts(for dimension: RepoHealthDimension) -> [RepoHealthFact] {
+        payload?.dimensions.first { $0.dimension == dimension }?.facts ?? []
     }
 
     private func statusSystemImage(_ status: RepoHealthFetchStatus) -> String {
@@ -328,43 +302,87 @@ struct RepoHealthSheet: View {
                 dimensionCard(
                     title: LocalizedStringKey(dimension.titleKey),
                     score: dimension.score,
-                    systemImage: dimension.systemImage
+                    systemImage: dimension.systemImage,
+                    facts: facts(for: dimension.dimension)
                 )
             }
         }
     }
 
-    private func dimensionCard(title: LocalizedStringKey, score: Double, systemImage: String) -> some View {
-        HStack(spacing: 10) {
-            // SF Symbol line 风格 vs fill 风格混合使用时,line 风格自带描边
-            // 在 16pt 下视觉重量明显偏小;4 张卡片混用时大小看起来不一致
-            // (dong4j 2026-06-21 反馈)。统一用 fill 风格 + 24x24 画布 +
-            // imageScale(.large) + symbolRenderingMode(.hierarchical) 让所有
-            // symbol 走同一渲染路径,避免 baseline / 描边 / metric 差异。
-            //
-            // 命名约束:四个维度都用容器型 symbol（*.circle.fill / *.shield.fill）,
-            // 避免裸 fill 与 circle/shield 混排时 bounding box 不一致。
-            Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .semibold))
-                .imageScale(.large)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(healthTint(score))
-                .frame(width: 24, height: 24)
-            VStack(alignment: .leading, spacing: 4) {
+    private func dimensionCard(
+        title: LocalizedStringKey,
+        score: Double,
+        systemImage: String,
+        facts: [RepoHealthFact]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 16, weight: .semibold))
+                    .imageScale(.large)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(healthTint(score))
+                    .frame(width: 24, height: 24)
                 Text(title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                ProgressView(value: score, total: 100)
-                    .tint(healthTint(score))
+                Spacer(minLength: 0)
+                Text(verbatim: "\(Int(score.rounded()))")
+                    .font(.headline)
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
             }
-            Spacer()
-            Text(verbatim: "\(Int(score.rounded()))")
-                .font(.headline)
-                .monospacedDigit()
-                .foregroundStyle(.primary)
+            ProgressView(value: score, total: 100)
+                .tint(healthTint(score))
+            if !facts.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(facts, id: \.key) { fact in
+                        factRow(fact)
+                    }
+                }
+            }
         }
         .padding(10)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// 单条 fact：左标签（secondary）+ 右当前值（按 tone 染色）。
+    private func factRow(_ fact: RepoHealthFact) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(LocalizedStringKey(fact.labelKey))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            Text(verbatim: factDisplayValue(fact))
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(factValueColor(fact.tone))
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func factDisplayValue(_ fact: RepoHealthFact) -> String {
+        let template = String.l10n(fact.valueKey)
+        switch fact.valueArgs.count {
+        case 0:
+            return template
+        case 1:
+            return String(format: template, fact.valueArgs[0])
+        case 2:
+            return String(format: template, fact.valueArgs[0], fact.valueArgs[1])
+        default:
+            return template
+        }
+    }
+
+    private func factValueColor(_ tone: RepoHealthFactTone) -> Color {
+        switch tone {
+        case .good: return .green
+        case .neutral: return .primary
+        case .bad: return .red
+        case .missing: return .secondary
+        }
     }
 
     private func metadataSection(_ snapshot: RepoHealthSnapshot) -> some View {
@@ -426,140 +444,29 @@ struct RepoHealthSheet: View {
                     value: String.l10n("repoHealth.sources.missing")
                 )
             }
+
+            // 评分规则:popover 展示（2026-06-21 v5）,与 OpenSSF 行交互一致。
+            Button {
+                isRulesPopoverPresented.toggle()
+            } label: {
+                metadataRowContent(
+                    icon: "list.bullet.rectangle",
+                    title: "repoHealth.rules.title",
+                    value: String.l10n("repoHealth.rules.openPopover"),
+                    showLinkChevron: true,
+                    chevronSystemImage: "chevron.right.circle"
+                )
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("repoHealth.rules.openPopover")
+            .popover(isPresented: $isRulesPopoverPresented, arrowEdge: .trailing) {
+                RepoHealthRulesPopover(snapshot: snapshot)
+                    .appLocaleEnvironment()
+            }
         }
         .padding(14)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    /// 底部触发条:仅在折叠态显示,展开态由 `scoringRulesPanel` 接管 footer 槽位。
-    ///
-    /// 设计要点(2026-06-21 v2):
-    /// - 不再用 overlay 弹层,改用"footer 槽位"切换——同一 VStack 位置
-    ///   根据 `isRulesExpanded` 在触发条和面板之间二选一,避免之前 overlay
-    ///   路线带来的"展开时 content 区域被向下推形成大片空白"问题;
-    /// - chevron 折叠时朝上(暗示"点我展开"),展开后此 view 不在视图中,
-    ///   面板内自带 x 关闭按钮。
-    /// - `.buttonStyle(.plain) + .focusEffectDisabled()` 遵守项目 UI 规范
-    ///   (禁用 macOS 默认蓝色 focus ring,见 CLAUDE.md)。
-    private var rulesFooterBar: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                isRulesExpanded = true
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Text("repoHealth.rules.title")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Spacer()
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .contentShape(Rectangle())
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) { Divider() }
-        .accessibilityHint("repoHealth.rules.a11y.expand")
-    }
-
-    /// 评分规则面板(展开时)。
-    ///
-    /// 由 `rulesSection` 在 footer 槽位渲染;高度由 `rulesPanelHeight` 控制。
-    /// 顶部带一个 HStack:左标题 + 右 x 关闭按钮,展开后用户从这里关闭。
-    /// 4 条规则图标按各自维度当前分数染色,与上方 dimensionGrid 卡片颜色一致。
-    private func scoringRulesPanel(_ snapshot: RepoHealthSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // 顶部一行:标题 + x 关闭按钮
-            HStack(alignment: .center) {
-                Text("repoHealth.rules.title")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Spacer()
-                Button {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        isRulesExpanded = false
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("common.close")
-                .accessibilityLabel("common.close")
-            }
-
-            Text("repoHealth.rules.formula")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            VStack(alignment: .leading, spacing: 8) {
-                ruleRow(
-                    icon: "gearshape.circle.fill",
-                    title: "repoHealth.dimension.maintenance",
-                    detail: "repoHealth.rules.maintenance",
-                    tint: healthTint(snapshot.maintenanceScore)
-                )
-                ruleRow(
-                    icon: "star.circle.fill",
-                    title: "repoHealth.dimension.popularity",
-                    detail: "repoHealth.rules.popularity",
-                    tint: healthTint(snapshot.popularityScore)
-                )
-                ruleRow(
-                    icon: "doc.circle.fill",
-                    title: "repoHealth.dimension.quality",
-                    detail: "repoHealth.rules.quality",
-                    tint: healthTint(snapshot.qualityScore)
-                )
-                ruleRow(
-                    icon: "checkmark.shield.fill",
-                    title: "repoHealth.dimension.security",
-                    detail: "repoHealth.rules.security",
-                    tint: healthTint(snapshot.securityScore)
-                )
-            }
-
-            Text("repoHealth.rules.missing")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(.regularMaterial)
-        .overlay(alignment: .top) { Divider() }
-    }
-
-    private func ruleRow(icon: String, title: LocalizedStringKey, detail: LocalizedStringKey, tint: Color) -> some View {
-        // 图标颜色与上方 dimensionCard 同色 —— 让"规则说明"和"当前分数"
-        // 在视觉上能直接对应(dong4j 2026-06-21 反馈:规则区太单调)。
-        // 染色逻辑来自 `healthTint(score)`:绿(>=80) / 黄(>=60) / 红(<60),
-        // 与 dimensionCard 完全一致,用户一眼能看出每条规则对应哪个维度的状态。
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
     }
 
     private func metadataRow(icon: String, title: LocalizedStringKey, value: String) -> some View {
@@ -723,5 +630,85 @@ private struct HealthScoreArcGauge: View {
                 grade
             )
         )
+    }
+}
+
+// MARK: - RepoHealthRulesPopover
+
+/// 评分规则 popover（2026-06-21 v5）——行为同 `OpenSSFChartPopover`,失焦自动关闭。
+struct RepoHealthRulesPopover: View {
+    let snapshot: RepoHealthSnapshot
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("repoHealth.rules.title")
+                    .font(.headline)
+
+                Text("repoHealth.rules.formula")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    ruleRow(
+                        icon: "gearshape.circle.fill",
+                        title: "repoHealth.dimension.maintenance",
+                        detail: "repoHealth.rules.maintenance",
+                        tint: healthTint(snapshot.maintenanceScore)
+                    )
+                    ruleRow(
+                        icon: "star.circle.fill",
+                        title: "repoHealth.dimension.popularity",
+                        detail: "repoHealth.rules.popularity",
+                        tint: healthTint(snapshot.popularityScore)
+                    )
+                    ruleRow(
+                        icon: "doc.circle.fill",
+                        title: "repoHealth.dimension.quality",
+                        detail: "repoHealth.rules.quality",
+                        tint: healthTint(snapshot.qualityScore)
+                    )
+                    ruleRow(
+                        icon: "checkmark.shield.fill",
+                        title: "repoHealth.dimension.security",
+                        detail: "repoHealth.rules.security",
+                        tint: healthTint(snapshot.securityScore)
+                    )
+                }
+
+                Text("repoHealth.rules.missing")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+        }
+        .frame(width: 420)
+        .frame(maxHeight: 360)
+    }
+
+    private func ruleRow(icon: String, title: LocalizedStringKey, detail: LocalizedStringKey, tint: Color) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func healthTint(_ score: Double) -> Color {
+        if score >= 80 { return .green }
+        if score >= 60 { return .yellow }
+        return .red
     }
 }

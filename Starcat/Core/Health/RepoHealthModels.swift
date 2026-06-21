@@ -7,6 +7,9 @@
 //  payload 会持久化到 repo_health_snapshots.payload_json，目的是让 UI 能解释
 //  “为什么是这个分数”，而不是只展示一个无法追溯的数字。
 //
+//  v2（2026-06-21）：`evidence` / `missing` 英文字符串改为结构化 `facts[]`,
+//  每条 fact 走 i18n key + 参数,维度卡可直接展示「子项标签 + 当前值」。
+//
 
 import Foundation
 
@@ -18,13 +21,29 @@ enum RepoHealthDimension: String, Codable, CaseIterable, Sendable {
     case security
 }
 
+/// 单条 fact 的语义色调 —— UI 用其决定值的 foregroundStyle。
+enum RepoHealthFactTone: String, Codable, Sendable {
+    case good
+    case neutral
+    case bad
+    case missing
+}
+
+/// 单个维度的可展示 fact（标签 + 本地化值 + 色调）。
+struct RepoHealthFact: Codable, Equatable, Sendable {
+    var key: String
+    var labelKey: String
+    var valueKey: String
+    var valueArgs: [String]
+    var tone: RepoHealthFactTone
+}
+
 /// 单个维度的评分与证据。
 struct RepoHealthDimensionScore: Codable, Equatable, Sendable {
     var dimension: RepoHealthDimension
     var score: Double
     var summaryKey: String
-    var evidence: [String]
-    var missing: [String]
+    var facts: [RepoHealthFact]
 }
 
 /// Repo Health 持久化解释 payload。
@@ -40,4 +59,3 @@ struct RepoHealthPayload: Codable, Equatable, Sendable {
     var openSSFScore: Double?
     var notes: [String]
 }
-

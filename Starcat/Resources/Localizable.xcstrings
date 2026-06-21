@@ -14329,6 +14329,205 @@
         }
       }
     },
+    "repoHealth.fact.value.unknownConservative" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown (conservative default applied)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未知（按保守分计算）"
+          }
+        }
+      }
+    },
+    "repoHealth.fact.archived.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Archived" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "归档" } }
+      }
+    },
+    "repoHealth.fact.archived.yes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Yes" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已归档" } }
+      }
+    },
+    "repoHealth.fact.archived.no" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未归档" } }
+      }
+    },
+    "repoHealth.fact.pushedAt.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Last push" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最近 push" } }
+      }
+    },
+    "repoHealth.fact.daysAgo.format" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ days ago" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 天前" } }
+      }
+    },
+    "repoHealth.fact.release.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Release" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Release" } }
+      }
+    },
+    "repoHealth.fact.release.detail.format" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ · %@ days ago" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ · %@ 天前" } }
+      }
+    },
+    "repoHealth.fact.release.daysOnly.format" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ days ago" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 天前" } }
+      }
+    },
+    "repoHealth.fact.stars.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stars" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Stars" } }
+      }
+    },
+    "repoHealth.fact.forks.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Forks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Forks" } }
+      }
+    },
+    "repoHealth.fact.watchers.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Watchers" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Watchers" } }
+      }
+    },
+    "repoHealth.fact.count.format" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@" } }
+      }
+    },
+    "repoHealth.fact.license.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "License" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "License" } }
+      }
+    },
+    "repoHealth.fact.license.value.format" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@" } }
+      }
+    },
+    "repoHealth.fact.topics.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Topics" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Topics" } }
+      }
+    },
+    "repoHealth.fact.topics.count.format" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ items" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 个" } }
+      }
+    },
+    "repoHealth.fact.topics.none" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "None" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无" } }
+      }
+    },
+    "repoHealth.fact.homepage.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Homepage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Homepage" } }
+      }
+    },
+    "repoHealth.fact.homepage.yes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Present" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "有" } }
+      }
+    },
+    "repoHealth.fact.homepage.no" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "None" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无" } }
+      }
+    },
+    "repoHealth.fact.defaultBranch.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Default branch" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "默认分支" } }
+      }
+    },
+    "repoHealth.fact.defaultBranch.value.format" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@" } }
+      }
+    },
+    "repoHealth.fact.openIssues.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Open issues" } }
+      }
+    },
+    "repoHealth.fact.openSSF.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF" } }
+      }
+    },
+    "repoHealth.fact.openSSF.score.format" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@" } }
+      }
+    },
+    "repoHealth.rules.openPopover" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "View scoring rules" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看评分规则" } }
+      }
+    },
     "repoHealth.dimension.maintenance" : {
       "extractionState" : "manual",
       "localizations" : {
