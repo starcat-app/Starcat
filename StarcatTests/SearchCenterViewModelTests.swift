@@ -71,7 +71,8 @@ struct SearchCenterViewModelTests {
             weeklySourceLabel: nil,
             inlineMetadata: nil,
             readStatus: nil,
-            openSSFScore: nil
+            openSSFScore: nil,
+            healthBadge: nil
         )
         return RepositoryCandidate(
             identity: RepoIdentity(ghRepoID: 1, owner: "apple", name: "swift"),

@@ -732,3 +732,38 @@ private struct OpenSSFRadarChart: View {
         return name.prefix(13) + "…"
     }
 }
+
+/// OpenSSF 雷达图 popover(2026-06-21 dong4j 反馈"OpenSSF 行加非模态弹窗")。
+///
+/// 嵌入 `RepoHealthSheet.metadataSection` 的 OpenSSF 行点击触发;
+/// 行为与 macOS 状态栏图标(MenuBarExtra)点击弹出的面板一致——
+/// SwiftUI `.popover` 默认「点击外部自动关闭」,无需手写 NSWindowDelegate。
+///
+/// 故意只放 radar + hint:
+/// - 完整 checks 列表 + 大分数字 + 跳转 scorecard.dev 仍走 repo 详情头部
+///   `OpenSSFInlineBadge → OpenSSFScoreSheet`(本文件主类型);
+/// - 此处只做「瞄一眼分布」的轻量入口,避免一个指标在两个深度入口中重复。
+///
+/// 为什么放在本文件而不是 `RepoHealthSheet.swift`:`OpenSSFRadarChart` 是
+/// `private struct`(同文件内可见),跨文件访问不到。本 popover 与 radar
+/// 是天然耦合的"画图 + 画图外壳"关系,放在同文件用 file-internal 默认
+/// 访问级别即可暴露给 `RepoHealthSheet` 使用,不需要提升 radar 可见性。
+///
+/// 数据容错:`OpenSSFRadarChart` 内部已经处理 `checks.count < 3` 的兜底
+/// (显示 `openssf.chart.notEnoughData` 本地化文案),所以这里直接把
+/// 过滤后的 `evaluatedChecks` 传进去即可,不需要再做空态分支。
+struct OpenSSFChartPopover: View {
+    let checks: [OpenSSFScoreCheck]
+
+    var body: some View {
+        VStack(spacing: 6) {
+            OpenSSFRadarChart(checks: checks)
+                .frame(width: 360, height: 360)
+            Text("openssf.chart.hint")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(width: 400)
+    }
+}

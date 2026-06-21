@@ -14686,6 +14686,23 @@
         }
       }
     },
+    "repoHealth.sources.openSSFChart" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show OpenSSF scorecard radar chart"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展示 OpenSSF 评分卡雷达图"
+          }
+        }
+      }
+    },
     "repoHealth.sources.title" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -27062,6 +27079,108 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Starcat 状态"
+          }
+        }
+      }
+    },
+    "toolbar.status.mcp.disabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disabled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未开启"
+          }
+        }
+      }
+    },
+    "toolbar.status.mcp.failedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动失败：%@"
+          }
+        }
+      }
+    },
+    "toolbar.status.mcp.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MCP"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MCP"
+          }
+        }
+      }
+    },
+    "toolbar.status.mcp.running" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listening"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在监听"
+          }
+        }
+      }
+    },
+    "toolbar.status.mcp.stopped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已停止"
+          }
+        }
+      }
+    },
+    "toolbar.status.mcp.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MCP"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MCP"
           }
         }
       }

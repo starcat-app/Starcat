@@ -7,8 +7,13 @@
 //  设计约束：
 //  - Sheet 只读 `RepoHealthStore` 的缓存快照；无缓存时触发非阻塞刷新。
 //  - 第一版不在 UI 中展示 payload_json 里的英文证据句，避免未本地化文本直出。
-//  - 不内嵌 OpenSSF 详情入口（2026-06-21 dong4j 反馈移除）；
-//    OpenSSF 数据作为 Security 维度的来源在 `metadataSection` 里展示即可。
+//  - OpenSSF 行入口策略（2026-06-21 三段式演进）：
+//      v1 → 内嵌完整 sheet（被移除,理由与 badge 入口重复）
+//      v2 → 完全不内嵌入口（被回滚,dong4j 反馈"右侧也是可点击的"）
+//      v3 → 内嵌 popover（当前）：有 OpenSSF 聚合分时整行可点 → 弹出非模态
+//           popover 展示雷达图（行为同 MenuBarExtra 状态栏面板）；无数据时
+//           退化为普通 metadataRow。完整 checks 列表仍走 repo 详情头部
+//           `OpenSSFInlineBadge → OpenSSFScoreSheet`,本入口只做「瞄一眼分布」。
 //  - 评分规则做成"底部面板切换"模式（2026-06-21 v2 方案）：
 //    折叠态渲染触发条、展开态渲染面板,**同一位置根据状态切换**,
 //    不用 overlay 弹层。overlay 路线在展开时会让 sheet 撑高
@@ -28,6 +33,10 @@ struct RepoHealthSheet: View {
     /// 评分规则面板展开状态。默认折叠(@State 而非 @AppStorage),
     /// 保证每次打开 sheet 都是折叠态,符合 dong4j 在 2026-06-21 的要求。
     @State private var isRulesExpanded = false
+    /// OpenSSF 行 popover 展示状态(2026-06-21 dong4j 反馈)。
+    /// SwiftUI `.popover` 默认「点击外部自动关闭」,与「状态栏图标弹出面板」
+    /// 行为一致;这里只持有 Bool,实际渲染在 `metadataSection` 里挂载。
+    @State private var isOpenSSFPopoverPresented = false
 
     private var store: RepoHealthStore { dependencies.repoHealthStore }
     private var snapshot: RepoHealthSnapshot? { store.snapshot(for: repo.id) }
@@ -38,6 +47,24 @@ struct RepoHealthSheet: View {
     private var payload: RepoHealthPayload? {
         guard let raw = snapshot?.payloadJSON.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(RepoHealthPayload.self, from: raw)
+    }
+    /// OpenSSF 雷达图数据源(2026-06-21)。
+    /// 与 `payload.openSSFScore`(聚合分,只用于行内文字)不同:这里取的是
+    /// `OpenSSFScoreStore` 缓存里的 `checksJSON`,解码出 per-check 分项,
+    /// 才能渲染 `OpenSSFRadarChart`。两套数据正常情况同步存在
+    /// (RepoHealth 拉取时会一并写入 OpenSSF store),但分两个 store 持有
+    /// 是历史决定,这里尊重现状。
+    private var openSSFPayload: OpenSSFScorePayload? {
+        guard let data = dependencies.openSSFScoreStore.record(for: repo.id)?.checksJSON
+        else { return nil }
+        return try? JSONDecoder().decode(OpenSSFScorePayload.self, from: data)
+    }
+    /// 过滤后用于雷达图的检查项——`isEvaluated = false` 的项 score == -1,
+    /// 直接画进雷达会让整张图塌成一点,所以这里先滤掉。
+    /// 与 `OpenSSFScoreSheet.scoreContent` 走同一份 `evaluated` 过滤,保证
+    /// 行内 popover 与独立 sheet 看到完全一样的形状。
+    private var evaluatedOpenSSFChecks: [OpenSSFScoreCheck] {
+        (openSSFPayload?.checks ?? []).filter(\.isEvaluated)
     }
 
     /// sheet 折叠态的基础 idealHeight。
@@ -81,6 +108,14 @@ struct RepoHealthSheet: View {
                 _ = await store.refresh(repo: repo, force: false)
             }
             didRequestInitialSnapshot = true
+            // 同步预拉 OpenSSF 缓存(2026-06-21):
+            // 进入 sheet 时即拉 radar 所需的 checksJSON,用户点 OpenSSF 行时
+            // popover 可秒开,避免「点开 → 看到「暂无数据」→ 几秒后才填上」的
+            // 视觉跳变。`prefetchIfNeeded` 是 fire-and-forget,不会阻塞 task。
+            await dependencies.openSSFScoreStore.loadCachedScores(for: [repo.id])
+            if dependencies.openSSFScoreStore.record(for: repo.id) == nil {
+                dependencies.openSSFScoreStore.prefetchIfNeeded(repo: repo)
+            }
         }
     }
 
@@ -223,19 +258,13 @@ struct RepoHealthSheet: View {
     }
 
     private func dimensionGrid(_ snapshot: RepoHealthSnapshot) -> some View {
-        // 4 个 icon 全部走"圆形填充"风格,与详情页 inline badge 视觉一致。
-        // 旧版混用 line 风格(wrench.and.screwdriver / checklist)导致
-        // SF Symbol 渲染时 baseline 飘忽,卡片之间图标大小不统一
-        // (dong4j 2026-06-21 反馈)。
-        //
-        // v2（2026-06-21 第二轮反馈）:把 `checklist.checked`(macOS 16+ 才稳定,
-        // macOS 26 在 hierarchical 渲染下会降级回 line 风格)换为
-        // `list.bullet.clipboard.fill`(macOS 13+ 稳定 fill,四个图标现在都能
-        // 强制 hierarchical + symbolRenderingMode 走 fill 路径)。
+        // 4 个 icon 统一走"容器型 fill"（circle / shield）,与 star.circle.fill、
+        // checkmark.shield.fill 同一视觉重量;裸 fill（wrench / clipboard）在
+        // 24×24 画布下会显得比右侧两个大(dong4j 2026-06-21 第三轮反馈)。
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            dimensionCard(title: "repoHealth.dimension.maintenance", score: snapshot.maintenanceScore, systemImage: "wrench.and.screwdriver.fill")
+            dimensionCard(title: "repoHealth.dimension.maintenance", score: snapshot.maintenanceScore, systemImage: "gearshape.circle.fill")
             dimensionCard(title: "repoHealth.dimension.popularity", score: snapshot.popularityScore, systemImage: "star.circle.fill")
-            dimensionCard(title: "repoHealth.dimension.quality", score: snapshot.qualityScore, systemImage: "list.bullet.clipboard.fill")
+            dimensionCard(title: "repoHealth.dimension.quality", score: snapshot.qualityScore, systemImage: "doc.circle.fill")
             dimensionCard(title: "repoHealth.dimension.security", score: snapshot.securityScore, systemImage: "checkmark.shield.fill")
         }
     }
@@ -248,10 +277,8 @@ struct RepoHealthSheet: View {
             // imageScale(.large) + symbolRenderingMode(.hierarchical) 让所有
             // symbol 走同一渲染路径,避免 baseline / 描边 / metric 差异。
             //
-            // 命名约束(dong4j 2026-06-21 v2 反馈):
-            // - checklist.checked 在 macOS 26 hierarchical 模式下会回退到 line,
-            //   所以 quality 用 list.bullet.clipboard.fill(macOS 13+ 稳定)。
-            // - 其它 3 个 fill 名字在 macOS 12+ 都稳定。
+            // 命名约束:四个维度都用容器型 symbol（*.circle.fill / *.shield.fill）,
+            // 避免裸 fill 与 circle/shield 混排时 bounding box 不一致。
             Image(systemName: systemImage)
                 .font(.system(size: 16, weight: .semibold))
                 .imageScale(.large)
@@ -302,14 +329,38 @@ struct RepoHealthSheet: View {
                 )
             }
 
-            metadataRow(
-                icon: "checkmark.shield",
-                title: "repoHealth.sources.openSSF",
-                value: payload?.openSSFScore.map { String(format: "%.1f", $0) } ?? String.l10n("repoHealth.sources.missing")
-            )
-            // 不再内嵌"查看 OpenSSF 详情"入口:
-            // 用户需要看 OpenSSF 细节时,从 repo 详情顶部 OpenSSFInlineBadge 进。
-            // 这里只在 metadataSection 展示分数本身,避免与详情头部入口重复。
+            // OpenSSF 行:有聚合分时整行可点击,弹出非模态 popover 展示雷达图
+            // (2026-06-21 dong4j 反馈);无值时退化为普通 metadataRow。
+            // 视觉提示用 `chevron.right.circle`(与 Release 行的 `arrow.up.right.square`
+            // 区分语义:Release 是「跳到外站」,这里是「就地展开面板」)。
+            // 完整 checks 列表仍走 repo 详情头部 OpenSSFInlineBadge → OpenSSFScoreSheet,
+            // popover 只做「瞄一眼分布」的轻量入口,避免一个指标在两个深度入口中重复。
+            if payload?.openSSFScore != nil {
+                Button {
+                    isOpenSSFPopoverPresented.toggle()
+                } label: {
+                    metadataRowContent(
+                        icon: "checkmark.shield",
+                        title: "repoHealth.sources.openSSF",
+                        value: payload?.openSSFScore.map { String(format: "%.1f", $0) } ?? String.l10n("repoHealth.sources.missing"),
+                        showLinkChevron: true,
+                        chevronSystemImage: "chevron.right.circle"
+                    )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("repoHealth.sources.openSSFChart")
+                .popover(isPresented: $isOpenSSFPopoverPresented, arrowEdge: .trailing) {
+                    OpenSSFChartPopover(checks: evaluatedOpenSSFChecks)
+                        .appLocaleEnvironment()
+                }
+            } else {
+                metadataRow(
+                    icon: "checkmark.shield",
+                    title: "repoHealth.sources.openSSF",
+                    value: String.l10n("repoHealth.sources.missing")
+                )
+            }
         }
         .padding(14)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
@@ -388,7 +439,7 @@ struct RepoHealthSheet: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 ruleRow(
-                    icon: "wrench.and.screwdriver.fill",
+                    icon: "gearshape.circle.fill",
                     title: "repoHealth.dimension.maintenance",
                     detail: "repoHealth.rules.maintenance",
                     tint: healthTint(snapshot.maintenanceScore)
@@ -400,7 +451,7 @@ struct RepoHealthSheet: View {
                     tint: healthTint(snapshot.popularityScore)
                 )
                 ruleRow(
-                    icon: "list.bullet.clipboard.fill",
+                    icon: "doc.circle.fill",
                     title: "repoHealth.dimension.quality",
                     detail: "repoHealth.rules.quality",
                     tint: healthTint(snapshot.qualityScore)
@@ -451,13 +502,16 @@ struct RepoHealthSheet: View {
     }
 
     /// metadataRow 共享内容。
-    /// - showLinkChevron: true 时在右侧多渲染一个箭头 icon,用于 `Link` 包裹的整行可点场景
-    ///   (2026-06-21 dong4j 反馈"Release 改成链接")。
+    /// - showLinkChevron: true 时在右侧多渲染一个箭头 icon,用于 `Link` / `Button` 包裹的整行可点场景
+    ///   (2026-06-21 dong4j 反馈"Release 改成链接" → 新增"OpenSSF 行 popover")。
+    /// - chevronSystemImage: 箭头 SF Symbol;默认 `arrow.up.right.square`(跳外站语义);
+    ///   OpenSSF 行传 `chevron.right.circle`(就地展开语义)。
     private func metadataRowContent(
         icon: String,
         title: LocalizedStringKey,
         value: String,
-        showLinkChevron: Bool
+        showLinkChevron: Bool,
+        chevronSystemImage: String = "arrow.up.right.square"
     ) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
@@ -470,7 +524,7 @@ struct RepoHealthSheet: View {
                 .fontWeight(.medium)
                 .lineLimit(1)
             if showLinkChevron {
-                Image(systemName: "arrow.up.right.square")
+                Image(systemName: chevronSystemImage)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
