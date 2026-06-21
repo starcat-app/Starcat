@@ -26424,23 +26424,6 @@
         }
       }
     },
-    "subscription.feature.anySearchWeb" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "web search"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "网页搜索"
-          }
-        }
-      }
-    },
     "subscription.feature.autoOrganize" : {
       "extractionState" : "manual",
       "localizations" : {

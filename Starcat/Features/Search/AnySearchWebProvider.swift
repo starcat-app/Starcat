@@ -81,9 +81,12 @@ struct AnySearchWebProvider: SearchProvider {
 
     func search(_ request: SearchRequest) async throws -> SearchProviderPage {
         guard request.scope == .web || (request.scope == .all && request.includeWebInAll) else { return .empty }
-        try await MainActor.run {
-            try entitlementGate?.requirePro(.anySearchWeb)
-        }
+        // 2026-06-21 dong4j 拍板：网页搜索对所有用户开放，删 Pro 拦截。
+        // 旧实现：`try entitlementGate?.requirePro(.anySearchWeb)` → 失败时上层
+        // SearchCenterViewModel 设 paywallContext 弹付费墙。
+        // 现版本：entitlementGate 字段保留（其他能力仍在用），provider 这一层不再抛
+        // `EntitlementGateError.requiresPro` —— AnySearch 永远不阻挡 free 用户。
+        // 未来若加"每日 N 次免费"等软限速，仍可复用 entitlementGate 注入配额检查器。
         let config = await MainActor.run {
             let settings = AppSettings.shared
             return (

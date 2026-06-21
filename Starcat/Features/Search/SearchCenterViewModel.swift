@@ -311,14 +311,30 @@ final class SearchCenterViewModel {
     }
 
     private func canRunExplicitWebSearch(_ request: SearchRequest) -> Bool {
+        // 2026-06-21 dong4j 拍板放开 Pro 后的 stub 钩子。
+        //
+        // 历史行为：曾调用 `entitlementGate?.requirePro(.anySearchWeb)` 拦截非 Pro
+        // 用户的 `.web` scope 搜索，失败时设 `paywallContext` 弹付费墙。
+        //
+        // 现在：网页搜索对所有用户开放 → body 退化为「.web scope 直接放行」。
+        // 函数本身**保留**而非删除，理由：
+        //  1. 调用点已经分布在 submit() / changeScope() 两条主路径，删函数要动
+        //     两处调用 + 改 return 语义，diff 噪音大于收益
+        //  2. 这是 free 用户「软限速」最自然的入口（每日 N 次 / 配额耗尽 → 付费墙
+        //     或提示升级），未来加 AnySearch 免费配额时直接在这里补 return false 分支
+        //     即可，无需重新引入函数
+        //  3. 删除再复活会让 git blame 丢失"曾经放开过"的历史信号
+        //
+        // 未来接入示例（占位写法，**不要现在就实现**）：
+        //   do {
+        //       try entitlementGate?.requireFreeQuota(.anySearch, used: dailyCounter)
+        //       return true
+        //   } catch {
+        //       paywallContext = ProPaywallContext(...)
+        //       return false
+        //   }
         guard request.scope == .web else { return true }
-        do {
-            try entitlementGate?.requirePro(.anySearchWeb)
-            return true
-        } catch {
-            paywallContext = ProPaywallContext(feature: .anySearchWeb, message: error.localizedDescription)
-            return false
-        }
+        return true
     }
 
     /// 从 repository 拉最新历史，按 `decayedScore` 降序写入 `history`。

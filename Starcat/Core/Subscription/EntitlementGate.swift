@@ -12,6 +12,14 @@ import Observation
 ///
 /// 枚举放在 Core/Subscription，是为了让业务层只表达“我要使用哪个能力”，不关心
 /// StoreKit 或数量上限的具体实现。
+///
+/// **历史变更（dong4j 2026-06-21 拍板放开）**：曾有 `case anySearchWeb`，对应
+/// AnySearch Web 搜索的 Pro 拦截。dong4j 决定网页搜索对所有用户开放后：
+///  - 该 case 整体删除（含 `title` switch 分支）
+///  - `EntitlementGate.requirePro(.anySearchWeb)` 调用点全部撤除
+///  - `subscription.feature.anySearchWeb` i18n key 一并清理（orphan）
+///  - `SearchCenterViewModel.canRunExplicitWebSearch` 改保留为 stub 函数，
+///    详见该函数顶部 doc comment
 enum ProFeature: String, CaseIterable, Sendable {
     case aiSummary
     case aiTags
@@ -20,7 +28,6 @@ enum ProFeature: String, CaseIterable, Sendable {
     case autoOrganize
     case readmeTranslation
     case semanticSearch
-    case anySearchWeb
     case repoContext
     case releaseSubscription
     case tagCreation
@@ -39,7 +46,6 @@ enum ProFeature: String, CaseIterable, Sendable {
         case .autoOrganize: return String.l10n("subscription.feature.autoOrganize")
         case .readmeTranslation: return String.l10n("subscription.feature.readmeTranslation")
         case .semanticSearch: return String.l10n("subscription.feature.semanticSearch")
-        case .anySearchWeb: return String.l10n("subscription.feature.anySearchWeb")
         case .repoContext: return String.l10n("subscription.feature.repoContext")
         case .releaseSubscription: return String.l10n("subscription.feature.releaseSubscription")
         case .tagCreation: return String.l10n("subscription.feature.tagCreation")
