@@ -3678,6 +3678,142 @@
         }
       }
     },
+    "ai.assistant.prep.step.resolvingBranch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resolving branch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解析分支"
+          }
+        }
+      }
+    },
+    "ai.assistant.prep.step.downloadingArchive" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading archive"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载项目代码"
+          }
+        }
+      }
+    },
+    "ai.assistant.prep.step.packingContext" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Packing context"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解压并生成上下文"
+          }
+        }
+      }
+    },
+    "ai.assistant.prep.accessibility.done" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "completed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已完成"
+          }
+        }
+      }
+    },
+    "ai.assistant.prep.accessibility.active" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "in progress"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "进行中"
+          }
+        }
+      }
+    },
+    "ai.assistant.prep.accessibility.pending" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "pending"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待中"
+          }
+        }
+      }
+    },
+    "ai.assistant.prep.accessibility.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败"
+          }
+        }
+      }
+    },
+    "ai.assistant.prep.accessibility.running" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing context"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在准备上下文"
+          }
+        }
+      }
+    },
     "ai.assistant.tags.applied" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -14402,6 +14538,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 天前" } }
       }
     },
+    "repoHealth.fact.release.tagOnly.format" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@" } }
+      }
+    },
     "repoHealth.fact.stars.label" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14472,11 +14615,11 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Homepage" } }
       }
     },
-    "repoHealth.fact.homepage.yes" : {
+    "repoHealth.fact.homepage.link.format" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Present" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "有" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@" } }
       }
     },
     "repoHealth.fact.homepage.no" : {
@@ -14503,8 +14646,8 @@
     "repoHealth.fact.openIssues.label" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open issues" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Open issues" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "PR + issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "PR + issues" } }
       }
     },
     "repoHealth.fact.openSSF.label" : {
@@ -14755,13 +14898,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uses license, topics, homepage, default branch, and open issue count."
+            "value" : "Uses license, topics, homepage, and PR + issues count."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用许可证、topics、主页、默认分支、open issue 数量。"
+            "value" : "使用许可证、topics、主页、PR + issues 数量。"
           }
         }
       }
@@ -14925,13 +15068,47 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Signals"
+            "value" : "Score sources"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "信号来源"
+            "value" : "评分来源"
+          }
+        }
+      }
+    },
+    "repoHealth.sources.repoMetadata" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Project metadata"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "项目元数据"
+          }
+        }
+      }
+    },
+    "repoHealth.sources.repoMetadata.value" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub /repos · local cache"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub /repos · 本地缓存"
           }
         }
       }
@@ -27176,6 +27353,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "过去 24 小时没有 warning、error 或 critical 诊断事件。"
+          }
+        }
+      }
+    },
+    "toolbar.status.diagnostics.clear" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除"
           }
         }
       }

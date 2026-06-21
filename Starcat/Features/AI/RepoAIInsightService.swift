@@ -14,6 +14,9 @@
 //  - 不自动触发批量生成；只有用户在详情页点击生成 / 重新生成才调用 chat。
 //  - 不自动写标签；标签推荐只进入 UI 确认流。
 //  - 摘要和标签是两个独立 AI 任务。标签 JSON 失败不应让已生成的摘要文本丢失。
+//  - W4（2026-06-21）：新增 `cachedInsightFast(for:)` 与 `prepareContextForGeneration(for:onStep:)`
+//    两个公开方法，分别给 ViewModel 提供「启动期秒显已缓存摘要」与「后台 prep + 进度回调」
+//    两条快速路径。`cachedInsightFast` 不做 hash 校验，hash 校验推迟到 `generate` 路径。
 //
 
 import CryptoKit
@@ -195,6 +198,53 @@ final class RepoAIInsightService {
     func cachedInsight(for repo: Repo) async throws -> RepoAIInsight? {
         let source = try await makeSource(for: repo)
         return try await loadCachedInsight(source: source, repo: repo)
+    }
+
+    /// W4（2026-06-21）：快速读取已缓存的 insight（**不做** hash 校验）。
+    ///
+    /// 与 `cachedInsight(for:)` 的关键差别：
+    /// - `cachedInsight(for:)`：DB 查记录 → 算 `makeSource`（含 ZIP 下载 / pack）→ 比对
+    ///   `sourceHash` → 命中才返回 insight。**首屏打开 AI 面板**时这条路径会把网络 +
+    ///   packer 全跑一遍，UI 卡在「正在读取本地 AI 缓存…」几秒到十几秒。
+    /// - `cachedInsightFast(for:)`：仅 DB 查 + JSON decode，**跳过** makeSource 与 hash
+    ///   校验。让 ViewModel 启动期能"秒显"已有摘要；hash 校验推迟到用户主动点「重新
+    ///   生成」时（`generate` 路径里现有的 `makeSource` 会照常 hash 比对，发现不一致
+    ///   就走重生成逻辑）。
+    ///
+    /// 副作用：若 README / topics / commit SHA 变了导致 hash 失效，会显示「略过期」的摘要
+    /// 直到用户主动 regenerate。这是显式权衡的延迟校验（tradeoff: 启动延迟 vs 数据新鲜度），
+    /// 与 HOM-199 「缓存稳定化」（剔除 stars/forks 等流量字段）的设计目标一致——只有
+    /// 语义级变更才该让缓存失效。
+    func cachedInsightFast(for repo: Repo) async throws -> RepoAIInsight? {
+        guard let record = try await summaryRepository.find(repoId: repo.id, model: cacheModelKey()) else {
+            return nil
+        }
+        return try Self.decodeInsight(json: record.summaryJson)
+    }
+
+    /// W4（2026-06-21）：后台准备代码上下文（不进 `makeSource`，可独立调用）。
+    ///
+    /// 与 `cachedInsight(for:)` / `generateInsight(for:)` 内嵌的 context 准备逻辑一致，
+    /// 但**独立**暴露给 ViewModel 用于「打开面板即启动后台 prep」——UI 此时已经显示
+    /// 「生成摘要」按钮，prep 进度通过 `onStep` 回调驱动 chip 行更新，按钮可点不被阻塞。
+    ///
+    /// 调用方（ViewModel）的处理约定：
+    ///   - 用户在 prep 期间点击「生成摘要」：ViewModel 会先 `await prepTask` 再调
+    ///     `generateInsight`，LLM 永远拿最新 context（避免钱白烧）；
+    ///   - prep 失败（`.degraded`）：按钮仍然可点，generate 走降级路径（README-only）。
+    ///
+    /// - Parameter onStep: 进度回调，3 个边界点对应 prep pipeline 的 resolveBranch /
+    ///   archiveIfNeeded / pack。
+    /// - Returns: 与 `contextOutcome(for:)` 完全一致的 3 态结果。
+    func prepareContextForGeneration(
+        for repo: Repo,
+        onStep: @escaping RepoAIContextProgressCallback
+    ) async throws -> RepoAIContextOutcome {
+        guard let provider = repoAIContextProvider else {
+            // 与「toggle off」语义对齐：provider 没注入 → 全链路跳过，UI 不显示降级提示。
+            return .featureDisabled
+        }
+        return try await provider.contextOutcome(for: repo, onProgress: onStep)
     }
 
     /// Y9（2026-06-14）：根据已经算好的 `Source` 加载缓存 insight。

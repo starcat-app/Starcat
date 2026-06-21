@@ -11,6 +11,9 @@
 //    任一时刻只创建并展示「摘要」**或**「对话」之一，中间 segmented toggle 切换。
 //  - 摘要部分复用既有的 `RepoAIInsightViewModel`（生成 / 缓存 / 标签推荐三段），
 //    对话部分由新的 `RepoAIChatViewModel` 承担。
+//  - W4（2026-06-21）：`emptySummaryState` 新增 prep step chip 行 + 失败降级 banner，
+//    在「生成摘要」按钮上方实时展示「解析分支 → 下载项目代码 → 解压并生成上下文」
+//    进度，让按钮不被前置 IO 阻塞可点。
 //
 //  关键约束（HOM-150 累计 4 轮 dong4j 反馈整合）：
 //  - **单面板互斥**（dong4j 2026-06-04 15:30）：用 `AIPanelMode` 枚举控制当前激活
@@ -366,14 +369,14 @@ struct RepoAIWindowContentView: View {
                                     externalContextDegradationBanner(reason)
                                 }
 
-                                if vm.isLoading {
-                                    HStack(spacing: 8) {
-                                        ProgressView().controlSize(.small)
-                                        Text("ai.assistant.summary.loadingCache")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                } else if vm.isGenerating, vm.phase == .preparingContext {
+                                // W4（2026-06-21）：原 `if vm.isLoading` 分支承载「正在读取本地 AI 缓存…」
+                                // 文案，但该文案承诺的是"读本地缓存"，实际行为却跑 resolveBranch +
+                                // ZIP 下载 + packer（详见 `RepoAIInsightService.cachedInsight` 旧注释）。
+                                // 现改为：打开面板时 load 路径只查 DB + JSON decode（`cachedInsightFast`），
+                                // 耗时 ~10ms 不可见；context prep 改为后台跑，UI 在 `emptySummaryState`
+                                // 里的 chip 行展示真实进度。这里去掉旧的 loadingCache 分支，让首次进
+                                // 入直接落到 `emptySummaryState`（含生成摘要按钮 + prep chip 行）。
+                                if vm.isGenerating, vm.phase == .preparingContext {
                                     // Y1：摘要生成首阶段 -- RepoContextPacker 正在打包代码上下文。
                                     // 此时 streamingSummaryText 还是空字符串（service 还没收到 LLM
                                     // 的第一个 delta），需要单独 UI 提示用户"在做事，别关窗口"。
@@ -512,6 +515,34 @@ struct RepoAIWindowContentView: View {
             Text("ai.assistant.summary.empty.description")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            // W4（2026-06-21）：后台 prep 进度 chip 行（持续展示，不藏）。
+            //
+            // dong4j 2026-06-21 反馈修正：chip 行一旦展示就不该再藏——`.ready` 状态下
+            // chip 显示全部 ✓（"数据已就绪"信号），让用户在点击「生成摘要」前/中都能
+            // 看到 prep 已经完成。视觉流是「chip 行（状态）+ 按钮（操作）」，按钮变
+            // ProgressView 时 chip 仍保留，提示"数据已就绪，等 LLM 回包"。
+            //
+            // 触发条件：仅在「prep 真启动过」时显示——
+            //   - `.idle`：toggle off 或 provider 未注入，本来就没活干，不显示
+            //   - `.preparing(step:)`：prep 中，3 段 chip + 当前段 spinner + 已完成段 ✓
+            //   - `.ready`：prep 完成，3 段全 ✓（持续保留直到用户生成成功 / 切 repo）
+            //   - `.failed(reason)`：prep 失败，chip 全暗 + 下方降级 banner 给出原因
+            //
+            // 关键约束：prep chip 行放在按钮**上方**，与下方按钮形成「上方进度 + 下方
+            // 操作」的自然视线流；按钮本身维持可点（不因为 prep 未完而禁用），让用户
+            // 能"边等边点"，点了之后 generate 会 await prep 完成再发 LLM 请求。
+            if shouldShowPrepChipRow(vm: vm) {
+                prepStepChipRow(vm: vm)
+            }
+
+            // W4：prep 失败时复用现有降级 banner 给出具体原因（ZIP 下载失败 / packer
+            // 错误等），让用户知道"我点了会怎样"。banner 复用 `contextDegradationBanner`
+            // 而非自己造样式，保持与 generate 失败时一致外观。
+            if case let .failed(reason) = vm.prepProgress {
+                contextDegradationBanner(reason)
+            }
+
             Button {
                 // R-01 §3.2.7 Step 8：includeTags 由窗口打开瞬间冻结的 star 状态决定。
                 Task { await vm.generate(repo: repo, includeTags: starredAtOpen == true) }
@@ -526,6 +557,157 @@ struct RepoAIWindowContentView: View {
             .focusEffectDisabled()
             .disabled(vm.isGenerating)
         }
+    }
+
+    /// W4：prep chip 行是否要展示的判定，集中一处便于 review。
+    ///
+    /// dong4j 2026-06-21 修正语义：**chip 展示了就不藏**。`.ready` 状态下 chip 显示
+    /// 全部 ✓ 作为"数据已就绪"信号，让用户在点击「生成摘要」前能看到 prep 已完成；
+    /// 点完按钮之后 chip 也保留（按钮变 ProgressView），形成"数据已就绪 + 等 LLM"
+    /// 的双重视觉提示。仅 `.idle`（prep 没启动过，例如 toggle off）才不显示——
+    /// 这种场景下没有「状态」可显示，不应该用空 chip 占位。
+    private func shouldShowPrepChipRow(vm: RepoAIInsightViewModel) -> Bool {
+        switch vm.prepProgress {
+        case .idle:
+            return false
+        case .preparing, .ready, .failed:
+            return true
+        }
+    }
+
+    /// W4：prep 步骤 chip 行 —— 3 个 step 横排，每段带 SF Symbol 状态指示。
+    ///
+    /// 视觉规则：
+    ///   - 已完成：✓（绿色）+ 当前 step 之前的所有 step 都打 ✓
+    ///   - 进行中：旋转 spinner（仅当前 step）
+    ///   - 未开始：空心 circle（dim 灰色）
+    ///   - 失败态：chip 行所有 step 都用 pending 样式（暗），具体原因由降级 banner 给出
+    ///
+    /// 字体与间距：caption2 + 4pt icon-label gap，与现有 `preparingContextPlaceholder`
+    /// 的 caption2 风格对齐，避免引入新的字号层次。
+    @ViewBuilder
+    private func prepStepChipRow(vm: RepoAIInsightViewModel) -> some View {
+        let order: [PrepStep] = [.resolvingBranch, .downloadingArchive, .packingContext]
+        HStack(spacing: 6) {
+            ForEach(Array(order.enumerated()), id: \.offset) { index, step in
+                prepStepChip(step: step, vm: vm)
+                if index < order.count - 1 {
+                    Image(systemName: "circle.dotted")
+                        .font(.caption2)
+                        // 故意用 .tertiary + 低 opacity：纯装饰连接符，不承载语义信息。
+                        .foregroundStyle(.tertiary)
+                        .opacity(0.4)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(prepChipRowAccessibilityLabel(vm: vm))
+    }
+
+    @ViewBuilder
+    private func prepStepChip(step: PrepStep, vm: RepoAIInsightViewModel) -> some View {
+        let state = prepStepState(step: step, vm: vm)
+        HStack(spacing: 4) {
+            prepStepIcon(state: state)
+            Text(step.displayKey)
+                .font(.caption2)
+                .foregroundStyle(prepStepTextColor(state: state))
+        }
+        .opacity(prepStepOpacity(state: state))
+    }
+
+    @ViewBuilder
+    private func prepStepIcon(state: PrepStepState) -> some View {
+        switch state {
+        case .done:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .active:
+            ProgressView()
+                .controlSize(.mini)
+        case .pending:
+            Image(systemName: "circle")
+                // 故意用 .tertiary：pending 是「视觉降级」态，需要明显比 active 暗一档。
+                // 此处属"刻意弱化的装饰性图标占位"例外，详见 CLAUDE.md UI 颜色规范说明。
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    private enum PrepStepState { case done, active, pending }
+
+    private func prepStepState(step: PrepStep, vm: RepoAIInsightViewModel) -> PrepStepState {
+        switch vm.prepProgress {
+        case .ready:
+            // dong4j 2026-06-21 反馈修正：`.ready` 状态下 chip 持续展示，
+            // 全部 step 显示 done 让用户感知「数据已就绪」。
+            return .done
+        case .preparing(let current):
+            let order: [PrepStep] = [.resolvingBranch, .downloadingArchive, .packingContext]
+            guard let currentIdx = order.firstIndex(of: current),
+                  let stepIdx = order.firstIndex(of: step) else { return .pending }
+            if stepIdx == currentIdx { return .active }
+            return stepIdx < currentIdx ? .done : .pending
+        case .failed:
+            // 失败态：chip 行所有 step 全暗，具体失败原因由 contextDegradationBanner 给出。
+            return .pending
+        case .idle:
+            // idle 状态下不显示 chip 行（被 `shouldShowPrepChipRow` 过滤），
+            // 此处返回 pending 是兜底（函数不应该被 idle 状态调用）。
+            return .pending
+        }
+    }
+
+    private func prepStepTextColor(state: PrepStepState) -> Color {
+        switch state {
+        case .done: return .secondary
+        case .active: return .primary
+        case .pending: return .secondary
+        }
+    }
+
+    private func prepStepOpacity(state: PrepStepState) -> Double {
+        switch state {
+        case .done, .active: return 1.0
+        case .pending: return 0.55
+        }
+    }
+
+    /// W4：prep chip 行的 VoiceOver 标签，3 段拼成一句完整描述。
+    /// 不读出每个 chip 的图标，只朗读「解析分支完成 / 下载项目代码进行中」这种语义。
+    ///
+    /// dong4j 2026-06-21 修正：`.ready` 也拼 segment（每段都是 done），让 VoiceOver 用户
+    /// 能听到"代码上下文已就绪"的语义（与视觉 ✓ 三段对齐）。`.idle` 返回空（不该触发，
+    /// 但兜底防 crash）。
+    private func prepChipRowAccessibilityLabel(vm: RepoAIInsightViewModel) -> String {
+        let order: [PrepStep] = [.resolvingBranch, .downloadingArchive, .packingContext]
+        let segments: [String]
+        switch vm.prepProgress {
+        case .preparing(let current):
+            guard let currentIdx = order.firstIndex(of: current) else {
+                return String.l10n("ai.assistant.prep.accessibility.running")
+            }
+            segments = order.enumerated().map { idx, step in
+                let stateLabel: String
+                if idx < currentIdx { stateLabel = String.l10n("ai.assistant.prep.accessibility.done") }
+                else if idx == currentIdx { stateLabel = String.l10n("ai.assistant.prep.accessibility.active") }
+                else { stateLabel = String.l10n("ai.assistant.prep.accessibility.pending") }
+                return "\(step.displayName): \(stateLabel)"
+            }
+        case .ready:
+            // chip 持续展示状态，每段都是 done；VoiceOver 与视觉 ✓ 三段对齐。
+            segments = order.map { step in
+                "\(step.displayName): \(String.l10n("ai.assistant.prep.accessibility.done"))"
+            }
+        case .failed:
+            segments = order.map { step in
+                "\(step.displayName): \(String.l10n("ai.assistant.prep.accessibility.failed"))"
+            }
+        case .idle:
+            // 不显示 chip 行（被 shouldShowPrepChipRow 过滤），此处兜底返回空。
+            return ""
+        }
+        return segments.joined(separator: ", ")
     }
 
     private func streamingSummary(_ text: String) -> some View {
@@ -1842,5 +2024,30 @@ private extension String {
     var trimmingNormalized: String {
         trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+    }
+}
+
+/// W4：prep step 在 UI 层的展示文案扩展。
+///
+/// 与 VM 里的 `PrepStep` raw 值一一对应；集中在此而非 VM 内，便于以后调整 UI 文案时
+/// 不污染状态机本身。i18n key 必须与 `Localizable.xcstrings` 里的条目对齐。
+extension PrepStep {
+    /// SwiftUI `Text` 直接消费的 `LocalizedStringKey`（用于 `Text(step.displayKey)`）。
+    var displayKey: LocalizedStringKey {
+        switch self {
+        case .resolvingBranch: return "ai.assistant.prep.step.resolvingBranch"
+        case .downloadingArchive: return "ai.assistant.prep.step.downloadingArchive"
+        case .packingContext: return "ai.assistant.prep.step.packingContext"
+        }
+    }
+
+    /// VoiceOver / accessibility label 用的原生 String 文案（绕过 LocalizedStringKey，
+    /// 因为 `accessibilityLabel` 接 `String`），返回用户语言下的 step 名。
+    var displayName: String {
+        switch self {
+        case .resolvingBranch: return String.l10n("ai.assistant.prep.step.resolvingBranch")
+        case .downloadingArchive: return String.l10n("ai.assistant.prep.step.downloadingArchive")
+        case .packingContext: return String.l10n("ai.assistant.prep.step.packingContext")
+        }
     }
 }

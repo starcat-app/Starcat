@@ -12,7 +12,12 @@
 //  关键约束：
 //  - 只在用户操作时调用 AI，不自动批量生成；
 //  - 标签应用是显式动作，AI 结果本身不会直接修改用户数据；
-//  - 成功应用标签后通知 HomeViewModel 刷新 Sidebar 计数与当前列表。
+//  - 成功应用标签后通知 HomeViewModel 刷新 Sidebar 计数与当前列表；
+//  - W4（2026-06-21）：新增 `prepProgress` / `prepTask` 状态机与
+//    `startBackgroundContextPrep(repo:)` 方法。打开 AI 面板时若 DB 里没有
+//    cached insight，就立刻起后台 prep（解析分支 → 下载 ZIP → pack context.xml），
+//    期间「生成摘要」按钮可点，UI 在按钮上方显示 step chip。`generate(repo:)`
+//    入口先 await prep 完成再进入主流程，保证 LLM 拿到最新 context。
 //
 
 import Foundation
@@ -32,6 +37,42 @@ enum SummaryPhase: Sendable {
     case streamingSummary
 }
 
+/// W4（2026-06-21）：打开 AI 面板时的「后台准备代码上下文」进度状态。
+///
+/// 设计动机：原 `load(repo:)` 在入口 await `service.cachedInsight(for:)`，里面会跑
+/// `makeSource`（GitHub branches API + 可能 ZIP 下载 + RepoContextPacker.pack），
+/// 用户体感是「打开面板后好几秒看到按钮」。把代码上下文准备拆成「后台 prep + 按
+/// 钮即时可点」两条路径后：
+///   - 按钮不再被前置 IO 阻塞；
+///   - prep 进度通过 step 行可视化（解析分支 / 下载项目代码 / 解压并生成上下文）；
+///   - 用户在 prep 期间点「生成摘要」会先 await prep 完成再进入 generate，保证 LLM
+///     拿到最新 context（避免钱白烧）。
+///
+/// 状态转移：
+///   - `.idle`（未启动 prep） → toggle off / 已有 cached insight / 未切换 repo
+///   - `.preparing(.resolvingBranch)` → 进入 `RepoAIContextProvider.contextOutcome`
+///   - `.preparing(.downloadingArchive)` → 进入 `archiveIfNeeded`（cache 命中分支跳过此步）
+///   - `.preparing(.packingContext)` → 进入 `RepoContextPacker.pack`
+///   - `.ready` → prep 成功；generate 路径会复用此结果（cache hit 路径下走内部 makeSource 复用）
+///   - `.failed(reason)` → prep 失败（如 ZIP 下载失败 / packer 抛错），按钮仍可点，
+///     generate 走降级路径（README-only）+ UI 显示降级 banner
+enum PrepProgress: Sendable, Equatable {
+    case idle
+    case preparing(step: PrepStep)
+    case ready
+    case failed(reason: ContextDegradationReason)
+}
+
+/// W4：prep 步骤枚举。对应 `RepoAIContextProgress`，但限定到 ViewModel 关心的 3 段。
+enum PrepStep: String, Sendable, Equatable {
+    /// 正在解析 default branch 拿 commit SHA（GitHub `/branches/:name`）。
+    case resolvingBranch
+    /// 正在下载仓库 ZIP（cache 命中时不会进入此步骤）。
+    case downloadingArchive
+    /// 正在解压并生成 context.xml（`RepoContextPacker.pack`）。
+    case packingContext
+}
+
 @MainActor
 @Observable
 final class RepoAIInsightViewModel {
@@ -48,6 +89,14 @@ final class RepoAIInsightViewModel {
     /// Y1：摘要生成阶段（仅在 `isGenerating == true` 期间有意义）。
     /// `nil` 表示当前不在生成中。
     private(set) var phase: SummaryPhase?
+
+    /// W4：后台 prep 代码上下文的进度状态。`idle` 表示当前没有 prep 在跑或已 ready。
+    /// UI（`emptySummaryState`）根据此状态在按钮上方显示 step chip 行。
+    private(set) var prepProgress: PrepProgress = .idle
+
+    /// W4：当前进行中的后台 prep task。仅在 `prepProgress == .preparing(step:)` 期间非 nil。
+    /// 用户点「生成摘要」时 `generate(repo:)` 会先 `await prepTask?.value` 等其完成。
+    private var prepTask: Task<Void, Never>?
 
     /// Y4：本次摘要生成时代码上下文的降级原因（nil = 成功 或 用户主动关）。
     /// 由 `generate(repo:)` 写入；缓存命中（`load`）路径不写，保持旧摘要 UI 状态干净。
@@ -81,7 +130,17 @@ final class RepoAIInsightViewModel {
         isLoading = true
         defer { isLoading = false }
         do {
-            insight = try await service.cachedInsight(for: repo)
+            // W4：换成 fast 路径——只查 DB + JSON decode，**不做** hash 校验。
+            // 旧 `cachedInsight(for:)` 内部 await `makeSource`（含 ZIP 下载 / pack），
+            // 首屏打开 AI 面板会被前置 IO 阻塞几秒到十几秒，UI 只能显示
+            // 「正在读取本地 AI 缓存…」静态文案。
+            //
+            // hash 校验推迟到 `generate` 路径：用户主动点「重新生成」时 `makeSource`
+            // 会照常算 hash 并对比 `record.sourceHash`，发现不一致就走重生成。
+            // 这是显式的 tradeoff（启动延迟 vs 数据新鲜度），与 HOM-199 缓存稳定化
+            // 设计目标一致。
+            let cached = try await service.cachedInsightFast(for: repo)
+            insight = cached
             let currentTags = try await repoTagRepository.fetchTags(forRepo: repo.id)
             appliedTagNames = Set(currentTags.map { $0.name.normalizedTagName })
             errorMessage = nil
@@ -92,6 +151,15 @@ final class RepoAIInsightViewModel {
             contextDegradationReason = nil
             // Y9.3：anysearch 降级原因同款生命周期，load 路径一并清零。
             externalContextDegradationReason = nil
+
+            // W4：只有当「无 cached insight」时才需要 prep code context——
+            // 有 cached insight 的 repo 走「重新生成」按钮时由 `generate` 路径内部
+            // 的 `makeSource` 顺带做 context 检查（cache hit 直接复用，免下载）。
+            // 顺便：repo 切换时必须 cancel 上一个 prep task，避免「切到新 repo 时旧
+            // prep 的 chip 状态机串到新 repo 上」这种串扰。
+            if cached == nil {
+                startBackgroundContextPrep(repo: repo)
+            }
         } catch {
             presentPaywallIfNeeded(error)
             let friendly = UserFacingError.map(
@@ -104,6 +172,71 @@ final class RepoAIInsightViewModel {
         }
     }
 
+    /// W4：在后台启动「准备代码上下文」pipeline，进度通过 `prepProgress` 暴露给 UI。
+    ///
+    /// 设计要点：
+    ///   - **不阻塞 UI**：本方法立刻返回，pipeline 在 detached task 里跑，按钮在
+    ///     `prepProgress == .preparing(step:)` 期间保持可点；
+    ///   - **重新进入前 cancel 上一个 task**：repo 切换 / VM 重建场景下防止串扰；
+    ///   - **失败也保留按钮可点**：`.failed(reason)` 让 UI 显示降级 banner，但
+    ///     `generate(repo:)` 路径仍可触发（走 README-only 降级生成）。
+    ///   - **`toggle off` 时 provider 不存在**：`service.prepareContextForGeneration`
+    ///     会立刻返回 `.featureDisabled`，prep 状态停留在 `.idle`，按钮秒到。
+    private func startBackgroundContextPrep(repo: Repo) {
+        // 防御：repo 切换时上一个 prep task 还没完，先 cancel 避免 chip 状态串到新 repo。
+        prepTask?.cancel()
+        prepProgress = .preparing(step: .resolvingBranch)
+        let service = self.service
+
+        // detached：避免继承 ViewModel 的 cancellation（ViewModel 自身没有 cancel，
+        // 但 task 用 [weak self] 即可在 self 释放时让闭包内的 self 变 nil 自然退出）。
+        let task = Task { [weak self] in
+            let outcome: RepoAIContextOutcome
+            do {
+                outcome = try await service.prepareContextForGeneration(for: repo) { step in
+                    // onProgress 回调本身已被 provider 强制 `@MainActor`，直接同步
+                    // 改 prepProgress 即可。但因为外层 Task 没有强制 MainActor，这里
+                    // 通过 MainActor.run 包一层保险（@Observable 必须主线程写）。
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        self.prepProgress = .preparing(step: Self.mapStep(step))
+                    }
+                }
+            } catch {
+                outcome = .degraded(.networkUnavailable)
+            }
+            await MainActor.run {
+                guard let self else { return }
+                switch outcome {
+                case .success:
+                    // prep 完成。generate 路径会在 cache 命中分支里直接复用本地 xml，
+                    // 不再重跑 prep pipeline。
+                    self.prepProgress = .ready
+                case .featureDisabled:
+                    // 用户关了 toggle（或 provider 没注入）——prep 没启动。
+                    // chip 行淡出，按钮照常可点，generate 走 README-only 路径。
+                    self.prepProgress = .idle
+                case .degraded(let reason):
+                    self.prepProgress = .failed(reason: reason)
+                    AppLog.ai.warning(
+                        "[RepoAIInsightViewModel] background prep degraded for \(repo.fullName, privacy: .public): \(String(describing: reason), privacy: .public)"
+                    )
+                }
+            }
+        }
+        prepTask = task
+    }
+
+    /// W4：把 provider 给的 `RepoAIContextProgress` 映射成 ViewModel 自己的 `PrepStep`。
+    /// 抽取成纯函数便于测试 + 强制 exhaustive switch（漏 case 编译失败）。
+    private static func mapStep(_ progress: RepoAIContextProgress) -> PrepStep {
+        switch progress {
+        case .resolvingBranch: return .resolvingBranch
+        case .downloadingArchive: return .downloadingArchive
+        case .packingContext: return .packingContext
+        }
+    }
+
     /// 触发生成 AI 摘要（含可选的标签推荐）。
     ///
     /// R-01 §3.2.7 Step 8：`includeTags` 由调用方根据「窗口打开瞬间冻结的 star 状态」决定。
@@ -111,6 +244,16 @@ final class RepoAIInsightViewModel {
     /// - 未 star（`includeTags == false`）：仅摘要，**不发**标签生成请求
     ///   （未 star 的 repo 没有"绑定标签"语义，强行让 AI 生成无意义且浪费 token）
     func generate(repo: Repo, includeTags: Bool = true) async {
+        // W4：如果后台 prep 还在跑（用户秒点「生成摘要」），先等 prep 完成再进入
+        // generate 主流程——LLM 必须拿到最新 context，不能在 ZIP 下载到一半时就发
+        // 请求。prep 已 ready / idle / failed 都直接跳过 await。
+        // 关键约束：await 期间 UI 仍能看到 `isGenerating == true`（下面赋值），
+        // 按钮会显示 ProgressView（现有 `emptySummaryState` 行为），用户体感是
+        // 「点击后看到加载 → 等了一会 → 开始流式」。
+        if let task = prepTask {
+            _ = await task.value
+        }
+
         isGenerating = true
         streamingSummaryText = ""
         // Y1：入口先设 preparingContext，让 UI 在 makeSource（含 RepoContextPacker）期间
@@ -120,6 +263,9 @@ final class RepoAIInsightViewModel {
             isGenerating = false
             streamingSummaryText = nil
             phase = nil
+            // W4：清掉 prepTask 引用，让下一次 `load(repo:)` 重新判断要不要启动新 prep。
+            // prepProgress 保留 .ready/.failed 不清零，避免用户在 generate 期间看到
+            // chip 行"抖回去"。
         }
         do {
             // 2026-06-14 dong4j 反馈：单仓路径之前漏传 hints，AI 不知道用户已有标签库 →

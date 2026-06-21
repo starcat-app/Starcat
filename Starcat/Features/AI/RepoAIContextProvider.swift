@@ -3,9 +3,13 @@
 //  Starcat
 //
 //  W3：把"为某个 repo 准备一份 context.xml 喂给 LLM"这件事的全部门面（2026-06-13）。
+//  W4（2026-06-21）：新增 `onProgress` 回调（`RepoAIContextProgressCallback`），
+//     在 resolveBranch / archiveIfNeeded / pack 三个边界发 `RepoAIContextProgress`
+//     事件，让 AI 面板能在「生成摘要」按钮上方显示「解析分支 → 下载项目代码 → 解压并
+//     生成上下文」进度 chip，不再被前置 IO 阻塞按钮可点状态。
 //
-//  对外只暴露一个方法 `context(for repo:) async throws -> URL?`，nil 表示「未启用 /
-//  静默失败」。内部三步：
+//  对外只暴露一个方法 `contextOutcome(for:onProgress:) async throws -> RepoAIContextOutcome`
+//  （+ 兼容旧 `context(for:)` / 新 `prepareContextForGeneration` 走 service 层），内部三步：
 //    ① `SharedSnapshotService.resolveBranch + archiveIfNeeded` 拿 ZIP；
 //    ② 查 `RepoContextStorage.existingProject(owner:repo:)` 看缓存是否命中
 //       （commitSha + tokenBudget + tier1MaxLines + tierRulesVersion 四件套全等）；
@@ -68,6 +72,33 @@ enum RepoAIContextOutcome: Sendable {
     case degraded(ContextDegradationReason)
 }
 
+/// W4（2026-06-21）：context 准备步骤事件。
+///
+/// 给 `contextOutcome(for:onProgress:)` 的回调参数用——把原本黑盒的"下载 ZIP + pack"
+/// pipeline 拆成三个可观察的边界点，让 AI 面板能在用户等待期间显示「解析分支 →
+/// 下载项目代码 → 解压并生成上下文」进度行。
+///
+/// - 设计动机：原 `cachedInsight` 路径在 ViewModel 入口一次性 `await makeSource`，
+///   UI 只能展示静态「正在读取本地 AI 缓存…」文案。用户体感是「点开 AI 面板后好几秒
+///   看到按钮」。把 pipeline 拆成可观察 step 后，UI 可以**先显示「生成摘要」按钮**、
+///   在按钮上方铺进度 chip，让按钮不被前置 IO 阻塞。
+/// - 不在 `RepoContextPacker.pack` 内部继续拆"解压"与"生成 XML"两步：packer 本身是
+///   一个内部事务（ZIPFoundation 流式遍历 + 单文件写出），强行拆需要把 packer 改成
+///   AsyncStream 风格，scope 太大。当前粒度（3 段）覆盖了 90% 的用户感知耗时
+///   （resolveBranch / archiveIfNeeded / pack 三个网络+磁盘边界）。
+enum RepoAIContextProgress: Sendable, Equatable {
+    /// 即将调 `SharedSnapshotService.resolveBranch`（GitHub `/branches/:name` API）。
+    case resolvingBranch
+    /// 即将调 `SharedSnapshotService.archiveIfNeeded`（命中本地 ZIP 缓存时**不**发此事件）。
+    case downloadingArchive
+    /// 即将调 `RepoContextPacker.pack`（解压 + 全仓文件遍历 + 写 context.xml）。
+    case packingContext
+}
+
+/// 进度回调签名。强制 `@MainActor`：consumer（ViewModel）要把 step 写入
+/// `@Observable` 状态，必须主线程；provider 在任意 actor 上调用回调即可。
+typealias RepoAIContextProgressCallback = @MainActor (RepoAIContextProgress) -> Void
+
 struct RepoAIContextProvider {
 
     private let snapshotService: SharedSnapshotService
@@ -102,8 +133,14 @@ struct RepoAIContextProvider {
 
     /// 给 `RepoAIInsightService.makeSource(for:)` 用的入口（Y4 引入 3 态 outcome）。
     ///
+    /// - Parameter onProgress: 进度回调，consumer 在 step 切换时显示 UI 进度。
+    ///   默认 `nil`，保持现有调用方（`makeSource`）零改动。**调用方**必须是 MainActor
+    ///   才能把 step 写进 @Observable 状态，所以回调本身也强制 `@MainActor`。
     /// - Throws: 只抛 `CancellationError`，其它错误内部静默吞并映射为 `.degraded(reason)`。
-    func contextOutcome(for repo: Repo) async throws -> RepoAIContextOutcome {
+    func contextOutcome(
+        for repo: Repo,
+        onProgress: RepoAIContextProgressCallback? = nil
+    ) async throws -> RepoAIContextOutcome {
         // 先把 settings 快照到本地（一次性跨 MainActor 调用，后续 pipeline 用快照）。
         let snapshot = await snapshotSettings()
 
@@ -111,7 +148,7 @@ struct RepoAIContextProvider {
         guard snapshot.enabled else { return .featureDisabled }
 
         do {
-            return .success(try await prepareContext(for: repo, snapshot: snapshot))
+            return .success(try await prepareContext(for: repo, snapshot: snapshot, onProgress: onProgress))
         } catch is CancellationError {
             // 透传 cancellation 让上层 task tree 能优雅退出
             throw CancellationError()
@@ -197,9 +234,16 @@ struct RepoAIContextProvider {
 
     // MARK: - 内部 pipeline
 
-    private func prepareContext(for repo: Repo, snapshot: SettingsSnapshot) async throws -> RepoAIContextResult {
+    private func prepareContext(
+        for repo: Repo,
+        snapshot: SettingsSnapshot,
+        onProgress: RepoAIContextProgressCallback?
+    ) async throws -> RepoAIContextResult {
         // ② 解析分支 → 拿 commit SHA
         let defaultBranchName = repo.defaultBranch ?? "main"
+        // W4：先发 progress 事件，再 await 网络。UI 在 `resolveBranch` 期间就能切换 chip
+        // 到「解析分支」态，不至于让用户在 commit SHA 拿到前看到空白 chip。
+        await onProgress?(.resolvingBranch)
         let branch = try await snapshotService.resolveBranch(repo: repo, name: defaultBranchName)
 
         // ③ 缓存命中判定四件套：用入口处快照的 settings 值
@@ -227,12 +271,19 @@ struct RepoAIContextProvider {
             AppLog.ai.debug(
                 "[RepoAIContextProvider] cache hit for \(repo.fullName, privacy: .public) sha=\(branch.commitSHA.prefix(7), privacy: .public)"
             )
+            // W4：缓存命中时**不**发 `.downloadingArchive` 事件——chip 行要直接切到
+            // 「全部完成」或保持 idle（具体由 consumer 决定），避免误导用户「明明秒开
+            // 却看到下载步骤」。这里不调用 onProgress，让 consumer 自己判断 ready。
             return RepoAIContextResult(url: existing.contextURL, xml: xml, metadata: existing.metadata)
         }
 
         // ④ 不命中 → 走完整 pipeline：下载 ZIP + Packer
+        // W4：发 `.downloadingArchive` 让 UI 把 chip 切到「下载项目代码」。
+        await onProgress?(.downloadingArchive)
         let archive = try await snapshotService.archiveIfNeeded(repo: repo, commitSHA: branch.commitSHA)
 
+        // W4：发 `.packingContext` 让 UI 把 chip 切到「解压并生成上下文」。
+        await onProgress?(.packingContext)
         let packer = try RepoContextPacker(writer: DefaultContextWriter(storage: storage))
         // PackInput.outputBaseDir 在 storage 注入路径下被忽略，但字段是 non-optional，
         // 这里给一个语义清晰的默认（storage 的 root URL），不会被实际使用。
