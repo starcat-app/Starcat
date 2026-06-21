@@ -14312,6 +14312,23 @@
         }
       }
     },
+    "repoHealth.preview.dimensionFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, score %d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，%d 分"
+          }
+        }
+      }
+    },
     "repoHealth.dimension.maintenance" : {
       "extractionState" : "manual",
       "localizations" : {

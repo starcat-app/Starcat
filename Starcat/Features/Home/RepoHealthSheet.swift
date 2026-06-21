@@ -69,10 +69,10 @@ struct RepoHealthSheet: View {
 
     /// sheet 折叠态的基础 idealHeight。
     ///
-    /// 由 header(50) + content(自然高度约 380,含 padding 412) + rulesFooterBar(50) 累加而来。
-    /// 圆卡从固定 118pt 改为自适应 88/104pt 后 content 高度下降约 30pt。
+    /// 由 header(50) + content(自然高度约 420,含 padding) + rulesFooterBar(50) 累加而来。
+    /// v4 scoreSummary 加了维度预览条(+约 36pt),整体 content 略增高。
     /// 展开态在下面 + Self.rulesPanelHeight 撑高。
-    private static let collapsedIdealHeight: CGFloat = 470
+    private static let collapsedIdealHeight: CGFloat = 510
 
     /// 评分规则面板区高度(展开时)。
     private static let rulesPanelHeight: CGFloat = 280
@@ -197,64 +197,123 @@ struct RepoHealthSheet: View {
     }
 
     private func scoreSummary(_ snapshot: RepoHealthSnapshot) -> some View {
-        // alignment: .top —— 圆卡与右侧文字顶部平齐,
-        // 避免 HStack 默认 center 让圆卡在视觉上"悬空"。
-        //
-        // v2（2026-06-21, dong4j 反馈"突出等级,弱化分数"）：
-        // 圆环内"等级在上大写突出"+"分数在下小字弱化"。
-        // 圆环本身：tint 色描边（2pt）+ 同色 0.08 opacity 浅填充,
-        // 视觉更像一个"等级徽章"而非"分数表盘"。
+        // v4（2026-06-21, dong4j 反馈「综合健康度太单调」）：
+        // A) 270° 进度弧 + 中心等级/分数；状态改 Label+icon；卡片浅 tint wash
+        // B) 底部四维 mini 预览条,与下方 dimensionGrid 视觉呼应
         let rounded = Int(snapshot.overallScore.rounded())
-        let cardSize: CGFloat = 96
         let tint = healthTint(snapshot.overallScore)
 
-        return HStack(alignment: .top, spacing: 14) {
-            ZStack {
-                // 双层圆环：外圈细描边 + 内圈超浅填充,营造"等级徽章"质感
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [tint.opacity(0.18), tint.opacity(0.04)],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: cardSize / 2
-                        )
-                    )
-                Circle()
-                    .stroke(tint.opacity(0.55), lineWidth: 2)
-                VStack(spacing: -2) {
-                    // 等级:大字 36pt + bold + tint 色,视觉中心
-                    Text(verbatim: snapshot.grade)
-                        .font(.system(size: 36, weight: .heavy, design: .rounded))
-                        .foregroundStyle(tint)
-                    // 分数:小字 12pt + secondary 色,弱化
-                    Text(verbatim: "\(rounded) 分")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: cardSize, height: cardSize)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 14) {
+                HealthScoreArcGauge(
+                    score: snapshot.overallScore,
+                    grade: snapshot.grade,
+                    scoreLabel: "\(rounded) 分",
+                    tint: tint
+                )
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("repoHealth.score.overall")
-                    .font(.headline)
-                Text(statusText(snapshot))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let computed = snapshot.computedDate {
-                    Text(String(format: String.l10n("repoHealth.computedAtFormat"), formattedDate(computed)))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("repoHealth.score.overall")
+                        .font(.headline)
+                    statusLabel(snapshot)
+                    if let computed = snapshot.computedDate {
+                        Text(String(format: String.l10n("repoHealth.computedAtFormat"), formattedDate(computed)))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
                 }
+
+                Spacer(minLength: 0)
             }
 
-            Spacer()
+            dimensionPreviewStrip(snapshot)
         }
         .padding(14)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .background {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [tint.opacity(0.10), tint.opacity(0.03)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        }
+    }
+
+    /// 四维 mini 预览条 —— summary 底部一行,让用户不用扫 2×2 grid 就知道哪项拖后腿。
+    private func dimensionPreviewStrip(_ snapshot: RepoHealthSnapshot) -> some View {
+        HStack(spacing: 8) {
+            ForEach(Array(healthDimensions(for: snapshot).enumerated()), id: \.offset) { _, dimension in
+                HStack(spacing: 5) {
+                    Image(systemName: dimension.systemImage)
+                        .font(.system(size: 11, weight: .semibold))
+                        .imageScale(.small)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(healthTint(dimension.score))
+                    Text(verbatim: "\(Int(dimension.score.rounded()))")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    String(
+                        format: String.l10n("repoHealth.preview.dimensionFormat"),
+                        String.l10n(dimension.titleKey),
+                        Int(dimension.score.rounded())
+                    )
+                )
+            }
+        }
+    }
+
+    /// fetch 状态行 —— icon + 文案,比纯 secondary 文字更有层次。
+    private func statusLabel(_ snapshot: RepoHealthSnapshot) -> some View {
+        Label {
+            Text(statusText(snapshot))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: statusSystemImage(snapshot.fetchStatus))
+                .font(.system(size: 13, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(statusTint(snapshot.fetchStatus))
+        }
+    }
+
+    /// 四个维度的 title / score / icon —— preview 条与 dimensionGrid 共用,避免 symbol 漂移。
+    private func healthDimensions(for snapshot: RepoHealthSnapshot) -> [(titleKey: String, score: Double, systemImage: String)] {
+        [
+            ("repoHealth.dimension.maintenance", snapshot.maintenanceScore, "gearshape.circle.fill"),
+            ("repoHealth.dimension.popularity", snapshot.popularityScore, "star.circle.fill"),
+            ("repoHealth.dimension.quality", snapshot.qualityScore, "doc.circle.fill"),
+            ("repoHealth.dimension.security", snapshot.securityScore, "checkmark.shield.fill"),
+        ]
+    }
+
+    private func statusSystemImage(_ status: RepoHealthFetchStatus) -> String {
+        switch status {
+        case .success: return "checkmark.circle.fill"
+        case .partial: return "info.circle.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func statusTint(_ status: RepoHealthFetchStatus) -> Color {
+        switch status {
+        case .success: return .green
+        case .partial: return .yellow
+        case .failed: return .red
+        }
     }
 
     private func dimensionGrid(_ snapshot: RepoHealthSnapshot) -> some View {
@@ -262,10 +321,13 @@ struct RepoHealthSheet: View {
         // checkmark.shield.fill 同一视觉重量;裸 fill（wrench / clipboard）在
         // 24×24 画布下会显得比右侧两个大(dong4j 2026-06-21 第三轮反馈)。
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            dimensionCard(title: "repoHealth.dimension.maintenance", score: snapshot.maintenanceScore, systemImage: "gearshape.circle.fill")
-            dimensionCard(title: "repoHealth.dimension.popularity", score: snapshot.popularityScore, systemImage: "star.circle.fill")
-            dimensionCard(title: "repoHealth.dimension.quality", score: snapshot.qualityScore, systemImage: "doc.circle.fill")
-            dimensionCard(title: "repoHealth.dimension.security", score: snapshot.securityScore, systemImage: "checkmark.shield.fill")
+            ForEach(Array(healthDimensions(for: snapshot).enumerated()), id: \.offset) { _, dimension in
+                dimensionCard(
+                    title: LocalizedStringKey(dimension.titleKey),
+                    score: dimension.score,
+                    systemImage: dimension.systemImage
+                )
+            }
         }
     }
 
@@ -589,5 +651,74 @@ struct RepoHealthSheet: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - HealthScoreArcGauge
+
+/// 综合健康度 270° 进度弧 —— 底轨 + tint 前景,中心等级大字 + 分数小字。
+///
+/// 为什么 270° 而非整圆:底部留 90° 缺口,进度条有明确起止方向,
+/// 比静态描边圆环更能传达「63/100」的比例感(dong4j 2026-06-21 v4)。
+private struct HealthScoreArcGauge: View {
+    let score: Double
+    let grade: String
+    let scoreLabel: String
+    let tint: Color
+
+    private let size: CGFloat = 96
+    /// 270° / 360°
+    private let arcFraction: CGFloat = 0.75
+    private let lineWidth: CGFloat = 7
+    /// 让 270° 弧的缺口居中落在底部
+    private let startRotation: Double = 135
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [tint.opacity(0.14), tint.opacity(0.03)],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: size / 2
+                    )
+                )
+
+            Circle()
+                .trim(from: 0, to: arcFraction)
+                .stroke(
+                    Color.primary.opacity(0.08),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(startRotation))
+
+            Circle()
+                .trim(from: 0, to: arcFraction * CGFloat(min(max(score, 0), 100) / 100))
+                .stroke(
+                    tint,
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(startRotation))
+
+            VStack(spacing: -2) {
+                Text(verbatim: grade)
+                    .font(.system(size: 36, weight: .heavy, design: .rounded))
+                    .foregroundStyle(tint)
+                Text(verbatim: scoreLabel)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            String(
+                format: String.l10n("repoHealth.badge.a11y"),
+                Int(score.rounded()),
+                grade
+            )
+        )
     }
 }
