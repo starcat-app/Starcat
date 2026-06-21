@@ -41,9 +41,14 @@ final class OpenSSFScoreStore {
         guard !missing.isEmpty else { return }
         do {
             let fetched = try await service.cachedRecords(for: missing)
+            guard !fetched.isEmpty else { return }
+            // 列表行都会同步读取 badge；逐条写 records 会让很多 row 连续重算。
+            // 这里先合并再一次性赋值，把缓存加载压成一次可观察状态变更。
+            var merged = records
             for (id, record) in fetched {
-                records[id] = record
+                merged[id] = record
             }
+            records = merged
         } catch {
             AppLog.database.warning("OpenSSF cached score load failed: \(error.localizedDescription, privacy: .public)")
         }

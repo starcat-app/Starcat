@@ -41,6 +41,10 @@ struct RepoHealthSheet: View {
             didRequestInitialSnapshot = false
             await store.loadCachedSnapshots(for: [repo.id])
             if store.snapshot(for: repo.id) == nil {
+                // 避开 sheet presentation 的首帧动画窗口：无快照时仍自动计算，
+                // 但先让 SwiftUI 完成弹层布局/过渡，再触发 DB 读写与 Store 回写。
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                guard !Task.isCancelled else { return }
                 _ = await store.refresh(repo: repo, force: false)
             }
             didRequestInitialSnapshot = true

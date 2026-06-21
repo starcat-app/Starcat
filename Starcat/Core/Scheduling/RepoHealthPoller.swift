@@ -7,18 +7,23 @@
 //  只在登录态启动，登出停止。它不持有 UI 状态；单次任务委托给
 //  RepoHealthService，服务层按 stale_after 决定实际刷新集合。
 //
+//  后台健康度是“持续温和铺底”：每小时最多处理 100 条 stale repo，repo 之间留出
+//  固定间隔，避免集中读写 SQLite。若上一轮还没结束，下一轮直接跳过，不并发叠加。
+//
 
 import Foundation
 
 @MainActor
 final class RepoHealthPoller {
-    nonisolated static let defaultInterval: TimeInterval = 24 * 60 * 60
-    nonisolated static let defaultTolerance: TimeInterval = 60 * 60
+    nonisolated static let defaultInterval: TimeInterval = 60 * 60
+    nonisolated static let defaultTolerance: TimeInterval = 10 * 60
+    nonisolated static let defaultDelayBetweenRepos: TimeInterval = 1
 
     private let service: RepoHealthService
     private var scheduler: NSBackgroundActivityScheduler?
 
     private(set) var isRunning = false
+    private(set) var isRefreshing = false
     private(set) var lastRunAt: Date?
     private(set) var lastRefreshCount: Int = 0
 
@@ -67,9 +72,19 @@ final class RepoHealthPoller {
     }
 
     private func performRefresh() async {
-        let count = await service.refreshStaleStarredRepos(limit: 100)
+        guard !isRefreshing else {
+            AppLog.general.info("RepoHealthPoller skipped because previous refresh is still running")
+            return
+        }
+
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        let count = await service.refreshStaleStarredRepos(
+            limit: 100,
+            delayBetweenRepos: Self.defaultDelayBetweenRepos
+        )
         lastRunAt = Date()
         lastRefreshCount = count
     }
 }
-

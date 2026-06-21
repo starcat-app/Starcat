@@ -643,7 +643,7 @@ final class AppDependencies {
 
         // OpenSSF Scorecard：公开 API + 本地缓存 + 非阻塞 UI store。
         // 注意：这里不启动网络请求；HomeView 登录态门控负责启动后台 poller，
-        // 详情页/列表也只通过 store 发起 fire-and-forget 异步预拉。
+        // Health 相关入口只读本地库，避免把 OpenSSF 的缺失/慢响应带到前台动画里。
         let openSSFAPI = OpenSSFScoreAPI()
         self.openSSFScoreAPI = openSSFAPI
         let openSSFRepo = GRDBOpenSSFScoreRepository(database: db)
@@ -676,17 +676,16 @@ final class AppDependencies {
         self.releaseMonitor = monitor
         self.releasePoller = ReleasePoller(monitor: monitor, notificationService: notificationService)
 
-        // Repo Health：后台/自动预取只聚合已有本地缓存；用户点击 Health 面板刷新时
-        // 通过 GitHub Releases + OpenSSF 服务主动更新信号缓存后再重算。
-        // 装配必须晚于 Release / OpenSSF 仓库与服务。
+        // Repo Health：自动路径只聚合已有本地缓存；用户点击 Health 面板刷新时只主动
+        // 更新 GitHub Releases 信号，OpenSSF 交给后台 poller 缓慢补齐。
+        // 装配必须晚于 Release / OpenSSF 仓库。
         let healthRepo = GRDBRepoHealthRepository(database: db)
         self.repoHealthRepository = healthRepo
         let healthService = RepoHealthService(
             repository: healthRepo,
             releaseRepository: releaseRecordRepo,
             openSSFRepository: openSSFRepo,
-            apiClient: api,
-            openSSFService: openSSFService
+            apiClient: api
         )
         self.repoHealthService = healthService
         self.repoHealthStore = RepoHealthStore(service: healthService)

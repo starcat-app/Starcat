@@ -39,9 +39,14 @@ final class RepoHealthStore {
         guard !missing.isEmpty else { return }
         do {
             let fetched = try await service.cachedSnapshots(for: missing)
+            guard !fetched.isEmpty else { return }
+            // 批量加载用于列表/详情首屏，必须一次性替换字典，避免每条快照都触发
+            // Observation invalidation，放大 SwiftUI 重绘成本。
+            var merged = snapshots
             for (id, snapshot) in fetched {
-                snapshots[id] = snapshot
+                merged[id] = snapshot
             }
+            snapshots = merged
         } catch {
             AppLog.database.warning("RepoHealth cached snapshot load failed: \(error.localizedDescription, privacy: .public)")
         }

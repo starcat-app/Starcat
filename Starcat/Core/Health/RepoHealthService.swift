@@ -7,9 +7,9 @@
 //  自动刷新只聚合已有本地缓存：Repo 元数据、Release 缓存、OpenSSF 缓存。
 //  这能让后台任务批量计算且不消耗额外 GitHub REST 配额。
 //
-//  用户主动点击 Health 面板刷新时例外：先拉取最新 Release 首页和 OpenSSF Scorecard，
-//  写入各自缓存后再计算快照。这样“主动刷新”有真实网络含义，同时不污染 Release
-//  订阅游标和未读通知。
+//  用户主动点击 Health 面板刷新时例外：只拉取最新 Release 首页，OpenSSF 仍读取
+//  本地缓存。OpenSSF Scorecard 大多数 repo 没有数据，且已有后台 poller 慢速补齐；
+//  Health 入口不再把它变成前台网络开销。
 //
 
 import Foundation
@@ -19,21 +19,18 @@ actor RepoHealthService {
     private let releaseRepository: any ReleaseRepositoryProtocol
     private let openSSFRepository: any OpenSSFScoreRepositoryProtocol
     private let apiClient: any GitHubAPIClientProtocol
-    private let openSSFService: OpenSSFScoreService
     private var inFlight: [Int64: Task<RepoHealthSnapshot, Error>] = [:]
 
     init(
         repository: any RepoHealthRepositoryProtocol,
         releaseRepository: any ReleaseRepositoryProtocol,
         openSSFRepository: any OpenSSFScoreRepositoryProtocol,
-        apiClient: any GitHubAPIClientProtocol,
-        openSSFService: OpenSSFScoreService
+        apiClient: any GitHubAPIClientProtocol
     ) {
         self.repository = repository
         self.releaseRepository = releaseRepository
         self.openSSFRepository = openSSFRepository
         self.apiClient = apiClient
-        self.openSSFService = openSSFService
     }
 
     func cachedSnapshot(for repoId: Int64) async throws -> RepoHealthSnapshot? {
@@ -67,34 +64,42 @@ actor RepoHealthService {
         return try await task.value
     }
 
-    /// 用户主动刷新入口：直接走网络更新 Release / OpenSSF 缓存，然后重算 Health。
+    /// 用户主动刷新入口：走网络更新 Release 缓存，然后重算 Health。
     ///
     /// Release 这里按“健康度信号刷新”处理，新插入的 release 直接标已读，避免用户只是
     /// 看健康度却在 Release 时间线里看到未读 badge。真正的未读通知仍由 ReleaseMonitor
     /// 维护，它有独立的订阅游标和轮询语义。
+    ///
+    /// OpenSSF 刻意只读本地库：大多数 repo 没有 Scorecard 数据，前台刷新直接打
+    /// OpenSSF 会放大 Health sheet 卡顿；后台 `OpenSSFScorePoller` 已负责慢速补齐。
     func refreshWithLatestSignals(repo: Repo) async throws -> RepoHealthSnapshot {
         async let latestRelease = refreshLatestReleaseSignal(repo: repo)
-        async let openSSF = refreshOpenSSFSignal(repo: repo)
+        async let openSSF = openSSFRepository.record(for: repo.id)
 
         let snapshot = RepoHealthCalculator.makeSnapshot(
             repo: repo,
             latestRelease: await latestRelease,
-            openSSF: await openSSF
+            openSSF: try? await openSSF
         )
         try await repository.upsert(snapshot)
         return snapshot
     }
 
-    func refreshStaleStarredRepos(limit: Int) async -> Int {
+    func refreshStaleStarredRepos(limit: Int, delayBetweenRepos: TimeInterval = 0) async -> Int {
         do {
             let repos = try await repository.staleStarredRepos(now: Date(), limit: limit)
             var refreshed = 0
-            for repo in repos {
+            for (index, repo) in repos.enumerated() {
+                guard !Task.isCancelled else { break }
                 do {
                     _ = try await refreshIfNeeded(repo: repo)
                     refreshed += 1
                 } catch {
                     AppLog.general.warning("RepoHealth background refresh failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                }
+
+                if index < repos.count - 1, delayBetweenRepos > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(delayBetweenRepos * 1_000_000_000))
                 }
             }
             return refreshed
@@ -145,15 +150,6 @@ actor RepoHealthService {
         }
 
         return try? await releaseRepository.latest(forRepo: repo.id)
-    }
-
-    private func refreshOpenSSFSignal(repo: Repo) async -> OpenSSFScoreRecord? {
-        do {
-            return try await openSSFService.refresh(repo: repo)
-        } catch {
-            AppLog.general.warning("RepoHealth OpenSSF signal refresh failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            return try? await openSSFRepository.record(for: repo.id)
-        }
     }
 
     private static func dtoToAsset(_ dto: GitHubReleaseAssetDTO) -> ReleaseAsset {

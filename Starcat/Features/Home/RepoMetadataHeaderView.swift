@@ -610,9 +610,8 @@ private struct RepoBadgeChip: View {
 
 /// `full_name` 同行的 OpenSSF Scorecard 入口。
 ///
-/// 入口本身在所有详情页可见；只有本地已持久化 repo 才预拉缓存，因为 OpenSSF 缓存表
-/// 外键指向 `repos.id`。未持久化的发现页 repo 仍可打开 sheet，等用户 star 后会走同一套
-/// 本地缓存路径。
+/// 入口本身在所有详情页可见；这里只读本地缓存，不触发 OpenSSF 网络请求。
+/// OpenSSF 数据由后台 poller 慢速补齐，避免多数无 Scorecard 的 repo 在详情首屏放大卡顿。
 private struct OpenSSFInlineBadge: View {
     let repo: Repo
     let onTap: () -> Void
@@ -636,7 +635,6 @@ private struct OpenSSFInlineBadge: View {
         .task(id: repo.id) {
             guard repo.hasLocalHealthCacheBacking else { return }
             await dependencies.openSSFScoreStore.loadCachedScores(for: [repo.id])
-            dependencies.openSSFScoreStore.prefetchIfNeeded(repo: repo)
         }
     }
 
@@ -682,7 +680,6 @@ private struct RepoHealthInlineBadge: View {
         .task(id: repo.id) {
             guard repo.hasLocalHealthCacheBacking else { return }
             await dependencies.repoHealthStore.loadCachedSnapshots(for: [repo.id])
-            dependencies.repoHealthStore.prefetchIfNeeded(repo: repo)
         }
     }
 
