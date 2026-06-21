@@ -102,13 +102,13 @@ struct HomeViewModelPaginationTests {
 
         await vm.reloadItems()
 
-        #expect(vm.items.count == HomeViewModel.pageSize, "首屏只切 pageSize=20 条")
+        #expect(vm.items.count == HomeViewModel.pageSize, "首屏只切 pageSize 条")
         #expect(vm.items.map(\.id).prefix(3) == [1, 2, 3], "按 starred_at desc 排序后 id 升序在前")
         #expect(vm.filteredSorted.count == HomeViewModel.pageSize, "数据库分页模式下 filteredSorted 只镜像已加载页")
         #expect(vm.visibleRepoTotalCount == 100, "标题总数必须是当前查询全量,不能只显示已加载页")
         #expect(await vm.selectionSnapshotsForCurrentQuery().count == 100, "全集语义改走 id/owner/name 轻量 projection")
         #expect(vm.currentPage == 1)
-        #expect(vm.hasMore == true, "100 > 20 → 还有更多可加载")
+        #expect(vm.hasMore == true, "100 > pageSize → 还有更多可加载")
     }
 
     @Test("R-07: loadMoreIfNeeded 推进 currentPage 让 items 增长一页")
@@ -122,10 +122,10 @@ struct HomeViewModelPaginationTests {
         vm.loadMoreIfNeeded()
         await vm.awaitPendingListReloadForTesting()
 
-        #expect(vm.items.count == 40, "20 → 40,增长一页")
+        #expect(vm.items.count == HomeViewModel.pageSize * 2, "增长一页")
         #expect(vm.visibleRepoTotalCount == 100, "append 后标题总数仍应保持当前查询全量")
         #expect(vm.currentPage == 2)
-        #expect(vm.hasMore == true, "100 > 40,后续仍有更多")
+        #expect(vm.hasMore == true, "100 > 已加载条数,后续仍有更多")
     }
 
     @Test("R-07: loadMoreIfNeeded 在 hasMore = false 时幂等不动 currentPage")
@@ -210,12 +210,12 @@ struct HomeViewModelPaginationTests {
 
         vm.loadMoreIfNeeded()
         await vm.awaitPendingListReloadForTesting()
-        #expect(vm.statusMap[50] == nil, "第二页仍未包含 repo 50,状态 map 不应提前全表扩张")
+        #expect(vm.statusMap[50] == .read, "第二页加载后应合并 repo 50 的状态")
+        #expect(vm.statusMap[90] == nil, "第二页仍未包含 repo 90,状态 map 不应提前全表扩张")
 
         vm.loadMoreIfNeeded()
         await vm.awaitPendingListReloadForTesting()
-        #expect(vm.statusMap[50] == .read, "第三页加载后再合并该页状态")
-        #expect(vm.statusMap[90] == nil, "尚未加载到的第 90 条仍不应出现")
+        #expect(vm.statusMap[90] == .using, "第三页加载后再合并 repo 90 的状态")
     }
 
     // MARK: - R-07.1 修复 follow-up（2026-06-16 dong4j）
@@ -229,13 +229,16 @@ struct HomeViewModelPaginationTests {
         }
         await vm.reloadItems()
 
-        // 模拟用户在 sync 期间滚到底,触发 loadMoreIfNeeded × 4 让 items 涨到 100
-        for _ in 0..<4 {
+        // 模拟用户在 sync 期间滚到底,触发 loadMoreIfNeeded 直到 items 涨到 100
+        var initialDrainGuard = 0
+        while vm.hasMore {
+            initialDrainGuard += 1
+            #expect(initialDrainGuard < 20, "防止分页状态异常导致测试死循环")
             vm.loadMoreIfNeeded()
             await vm.awaitPendingListReloadForTesting()
         }
         #expect(vm.items.count == 100)
-        #expect(vm.currentPage == 5)
+        let pageBeforeExpansion = vm.currentPage
         #expect(vm.hasMore == false, "用户已把 items 滚到 filteredSorted 末尾")
 
         // 模拟 sync 继续拉,DB 总数从 100 → 200
@@ -247,7 +250,7 @@ struct HomeViewModelPaginationTests {
         await vm.reloadItems(forceRefresh: true)
 
         // R-07 既有 preserveScrollPosition contract：不抢用户滚动位置
-        #expect(vm.currentPage == 5, "preserveScrollPosition: currentPage 不应被重置")
+        #expect(vm.currentPage == pageBeforeExpansion, "preserveScrollPosition: currentPage 不应被重置")
         #expect(vm.items.count == 100, "sliceToCurrentPage itemsIdentical short-circuit: items 切片不应抖动")
         #expect(vm.filteredSorted.count == 100, "数据库分页模式下 filteredSorted 只镜像当前累计页")
         #expect(await vm.selectionSnapshotsForCurrentQuery().count == 200, "DB 总数扩张后全集 projection 应反映 200 条")
@@ -266,7 +269,10 @@ struct HomeViewModelPaginationTests {
             try await insertRepo(db, id: Int64(i), fullName: "o/r\(i)", starredAt: starredAt(forID: i))
         }
         await vm.reloadItems()
-        for _ in 0..<4 {
+        var initialDrainGuard = 0
+        while vm.hasMore {
+            initialDrainGuard += 1
+            #expect(initialDrainGuard < 20, "防止分页状态异常导致测试死循环")
             vm.loadMoreIfNeeded()
             await vm.awaitPendingListReloadForTesting()
         }
@@ -285,8 +291,8 @@ struct HomeViewModelPaginationTests {
         vm.loadMoreIfNeeded()
         await vm.awaitPendingListReloadForTesting()
 
-        #expect(vm.items.count == 120, "loadMoreIfNeeded 让 items 增长一页(20 条),用户能继续向下滚动")
-        #expect(vm.currentPage == 6)
-        #expect(vm.hasMore == true, "200 > 120,后续仍有更多可加载")
+        #expect(vm.items.count == 100 + HomeViewModel.pageSize,
+                "loadMoreIfNeeded 让 items 增长一页,用户能继续向下滚动")
+        #expect(vm.hasMore == true, "200 > 已加载条数,后续仍有更多可加载")
     }
 }

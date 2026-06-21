@@ -387,5 +387,25 @@ R-07.2 后列表 rows 已经是真分页，但状态角标仍在每次 reset / a
 - [x] `HomeViewModelPaginationTests` 全 suite 通过。
 - [x] `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/HomeViewModelPaginationTests test` 通过。
 
+### 9.6 R-07.5：Manage DB 分页页大小 20 → 40（2026-06-22）
+
+R-07.2 / R-07.4 后，普通 Manage 列表的追加成本已经固定为：
+
+- `fetchListPage(limit: pageSize + 1, offset: items.count)`
+- 新增页 repo ids 的 `fetchStatusMap(repoIds:)`
+- `items.append(contentsOf:)`，不 bump `itemsRevision`
+
+在这个前提下，把 `HomeViewModel.pageSize` 从 20 提到 40，属于明确的空间换时间：
+
+- 1800+ 仓库从约 92 次 append 降到约 46 次 append。
+- 每次多持有 20 条 `Repo` 模型，List 仍只渲染可见行。
+- 首屏 SQL 多取 20 行，但仍远小于旧路径的全量 1800+ / 10k 读取。
+
+验收：
+
+- [x] `HomeViewModelPaginationTests` 改为用 `HomeViewModel.pageSize` 推导断言，避免再写死 20。
+- [x] 1856 条滚到底用例继续验证最终全量可加载且 append 不 bump `itemsRevision`。
+- [x] `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/HomeViewModelPaginationTests test` 通过。
+
 ---
-*最后更新：2026-06-22 02:55（R-07.4 DB 分页状态角标按页读取）*
+*最后更新：2026-06-22 03:00（R-07.5 Manage DB 分页 pageSize 40）*

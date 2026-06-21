@@ -156,9 +156,12 @@ final class HomeViewModel {
     /// `RepoListView` 根据这个值决定是否 attach `.onAppear` 触发 `loadMoreIfNeeded()`。
     private(set) var hasMore: Bool = false
 
-    /// R-07：客户端分页页大小。与 Weekly `localPageSize` 同款 20，
-    /// 经验值兼顾"首屏立即可见 + 滚动 1 屏才需要追加"。
-    static let pageSize: Int = 20
+    /// R-07：客户端分页页大小。
+    ///
+    /// R-07.5：Manage 已改成 DB `OFFSET + append` 后，单页查询和状态读取成本稳定；
+    /// 把 pageSize 从 20 提到 40，可以把 1800+ 仓库滚到底的 append 次数近似减半。
+    /// SwiftUI List 仍只渲染可见行，多保留 20 条模型数据属于明确的空间换时间。
+    static let pageSize: Int = 40
 
     /// Manage 普通分类的数据库分页模式。
     ///
