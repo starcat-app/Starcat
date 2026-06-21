@@ -15,6 +15,7 @@
 //  - Auth restore 从 `StarcatApp` 迁入 Container 的 `.task`，避免与 splash 时序分叉
 //  - 首次冷启动最短展示更长，且已登录时尽量等到 sync 首页写入再淡出（有超时兜底）
 //  - Auth restore 网络请求不能无限阻塞 splash；启动页有独立超时，避免离线 / GitHub 慢响应时卡首屏
+//  - 主窗口 content 在 overlay 下预先挂载但保持 blur；splash / 引导撤下时 blur → clear 渐显
 //
 
 import SwiftUI
@@ -38,6 +39,12 @@ private enum LaunchSplashTiming {
     static let authRestoreWaitCap: Duration = .seconds(3)
     /// 淡出 transition 时长（与 `.animation(..., value: isSplashVisible)` 对齐）。
     static let dismissAnimationSeconds = 0.56
+    /// splash 撤下后主窗口「模糊 → 清晰」时长（略长于 splash 淡出，形成交叠）。
+    static let mainContentRevealSeconds = 0.72
+    /// 引导收束淡出阶段主窗口变清晰时长（与 `FirstRunOnboardingExitTiming.overlayFade` 对齐）。
+    static let onboardingMainContentRevealSeconds = 2.1
+    /// 主窗口被 overlay 遮住时的最大 blur（pt）。
+    static let mainContentObscuredBlurRadius: CGFloat = 14
     /// 轮询 sync 首页是否就绪的间隔。
     static let dataPollInterval: Duration = .milliseconds(80)
 }
@@ -87,6 +94,8 @@ struct LaunchSplashContainer<Content: View>: View {
     @State private var splashSequenceFinished = TestEnvironment.isRunning
     /// splash 淡出后、首次安装时展示分步引导 overlay。
     @State private var showFirstRunOnboarding = false
+    /// 0 = 被 splash / 引导遮住（模糊），1 = 主窗口完全清晰。overlay 在 ZStack 上层，本层只管 content 视觉。
+    @State private var mainContentRevealProgress: Double = TestEnvironment.isRunning ? 1 : 0
 
     init(@ViewBuilder content: @escaping () -> Content) {
         self.content = content
@@ -94,7 +103,7 @@ struct LaunchSplashContainer<Content: View>: View {
 
     var body: some View {
         ZStack {
-            content()
+            obscuredMainContent
 
             if isSplashVisible {
                 LaunchSplashView()
@@ -108,10 +117,18 @@ struct LaunchSplashContainer<Content: View>: View {
                     .zIndex(999)
             }
             if showFirstRunOnboarding {
-                FirstRunOnboardingView { completion in
-                    showFirstRunOnboarding = false
-                    handleFirstRunCompletion(completion)
-                }
+                FirstRunOnboardingView(
+                    onFinish: { completion in
+                        showFirstRunOnboarding = false
+                        handleFirstRunCompletion(completion)
+                    },
+                    onMainContentRevealBegin: {
+                        revealMainContent(
+                            duration: LaunchSplashTiming.onboardingMainContentRevealSeconds,
+                            curve: .easeInOut(duration: LaunchSplashTiming.onboardingMainContentRevealSeconds)
+                        )
+                    }
+                )
                 .appLocaleEnvironment()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea(.container, edges: .all)
@@ -130,9 +147,48 @@ struct LaunchSplashContainer<Content: View>: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.debugReplayNotification)) { _ in
             FirstRunOnboardingPreferences.resetForDebugReplay()
+            obscureMainContent()
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.42)) {
                 showFirstRunOnboarding = true
             }
+        }
+    }
+
+    /// 主窗口 content：overlay 撤下时从 blur + 略透明 → 清晰，避免「突然露出」。
+    private var obscuredMainContent: some View {
+        content()
+            .blur(radius: mainContentBlurRadius)
+            .opacity(mainContentOpacity)
+            .scaleEffect(mainContentScale, anchor: .center)
+    }
+
+    private var mainContentBlurRadius: CGFloat {
+        guard !reduceMotion else { return 0 }
+        return LaunchSplashTiming.mainContentObscuredBlurRadius * CGFloat(1 - mainContentRevealProgress)
+    }
+
+    private var mainContentOpacity: Double {
+        guard !reduceMotion else { return 1 }
+        return 0.76 + 0.24 * mainContentRevealProgress
+    }
+
+    private var mainContentScale: CGFloat {
+        guard !reduceMotion else { return 1 }
+        return 0.986 + 0.014 * mainContentRevealProgress
+    }
+
+    private func obscureMainContent() {
+        guard !reduceMotion else { return }
+        mainContentRevealProgress = 0
+    }
+
+    private func revealMainContent(duration: TimeInterval, curve: Animation) {
+        if reduceMotion {
+            mainContentRevealProgress = 1
+            return
+        }
+        withAnimation(curve) {
+            mainContentRevealProgress = 1
         }
     }
 
@@ -169,8 +225,15 @@ struct LaunchSplashContainer<Content: View>: View {
         }
 
         LaunchSplashPreferences.markColdStartCompleted()
+        let willShowOnboarding = FirstRunOnboardingPreferences.shouldShow
         isSplashVisible = false
         splashSequenceFinished = true
+        if !willShowOnboarding {
+            revealMainContent(
+                duration: LaunchSplashTiming.mainContentRevealSeconds,
+                curve: .easeOut(duration: LaunchSplashTiming.mainContentRevealSeconds)
+            )
+        }
         await presentFirstRunOnboardingIfNeeded()
     }
 
@@ -211,6 +274,7 @@ struct LaunchSplashContainer<Content: View>: View {
         let postSplashDelay: Duration = reduceMotion ? .zero : .milliseconds(520)
         try? await Task.sleep(for: postSplashDelay)
 
+        obscureMainContent()
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.42)) {
             showFirstRunOnboarding = true
         }
@@ -268,6 +332,7 @@ struct LaunchSplashContainer<Content: View>: View {
 struct LaunchSplashView: View {
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 分阶段揭示：hidden → icon → text → complete
     @State private var revealPhase = RevealPhase.hidden
@@ -275,26 +340,27 @@ struct LaunchSplashView: View {
 
     /// 与 About 页品牌区同源的金色，保持 Starcat 视觉一致性。
     private let starGold = Color(red: 1.0, green: 0.74, blue: 0.28)
+    /// light 下 starGold 过浅，柔光 / 点阵改用深琥珀（与引导页一致）。
+    private let lightBrandTint = Color.fromHex6(0xB45309)
+
+    /// dark 用 plusLighter 已足够；light 走 multiply，略提高 opacity 保证纹理可见。
+    private var splashDotsOverlayOpacity: Double {
+        colorScheme == .dark ? 0.42 : 0.54
+    }
+
+    /// 柔光 tint：dark 金色，light 深琥珀。
+    private var splashGlowTint: Color {
+        colorScheme == .dark ? starGold : lightBrandTint
+    }
 
     var body: some View {
         ZStack {
             Color(nsColor: .windowBackgroundColor)
                 .ignoresSafeArea()
 
-            // Metal 星流：黑底 + plusLighter 只留亮点，叠在 window 背景上
-            DotsFlowBackground(
-                tint: starGold,
-                background: .black,
-                speed: 0.28,
-                brightness: 0.75,
-                dotSize: 0.95,
-                gridDensity: 1.05,
-                patternScale: 0.92,
-                vignette: 0.35
-            )
-            .blendMode(.plusLighter)
-            .opacity(0.42)
-            .ignoresSafeArea()
+            splashDotsFlowBackground
+                .opacity(splashDotsOverlayOpacity)
+                .ignoresSafeArea()
 
             brandGlowLayer
 
@@ -327,14 +393,49 @@ struct LaunchSplashView: View {
 
     // MARK: - Subviews
 
+    /// 星流点阵：与首次引导页同一套 light/dark 方案（见 FirstRunOnboardingView）。
+    @ViewBuilder
+    private var splashDotsFlowBackground: some View {
+        if colorScheme == .dark {
+            DotsFlowBackground(
+                tint: starGold,
+                background: .black,
+                speed: 0.28,
+                brightness: 0.75,
+                dotSize: 0.95,
+                gridDensity: 1.05,
+                patternScale: 0.92,
+                vignette: 0.35
+            )
+            .blendMode(.plusLighter)
+        } else {
+            DotsFlowBackground(
+                tint: lightBrandTint,
+                background: .white,
+                speed: 0.28,
+                brightness: 0.82,
+                dotSize: 0.95,
+                gridDensity: 1.05,
+                patternScale: 0.92,
+                vignette: 0.35
+            )
+            .blendMode(.multiply)
+        }
+    }
+
     private var appIcon: some View {
         Image(nsImage: NSApp.applicationIconImage)
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: 96, height: 90)
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .shadow(color: .black.opacity(0.22), radius: 22, x: 0, y: 12)
-            .shadow(color: starGold.opacity(0.35), radius: 28, x: 0, y: 4)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.22 : 0.12), radius: 22, x: 0, y: 12)
+            .shadow(
+                color: splashGlowTint.opacity(colorScheme == .dark ? 0.35 : 0.22),
+                radius: 28,
+                x: 0,
+                y: 4
+            )
     }
 
     /// Icon 背后的双层金色柔光，reduceMotion 时静态居中。
@@ -344,12 +445,12 @@ struct LaunchSplashView: View {
 
             ZStack {
                 glowOrb(
-                    color: starGold.opacity(0.16),
+                    color: splashGlowTint.opacity(colorScheme == .dark ? 0.16 : 0.12),
                     diameter: min(size.width, size.height) * 0.72,
                     offset: glowDrift ? CGPoint(x: 12, y: -8) : CGPoint(x: -10, y: 10)
                 )
                 glowOrb(
-                    color: starGold.opacity(0.09),
+                    color: splashGlowTint.opacity(colorScheme == .dark ? 0.09 : 0.07),
                     diameter: min(size.width, size.height) * 0.95,
                     offset: glowDrift ? CGPoint(x: -14, y: 12) : CGPoint(x: 16, y: -10)
                 )
@@ -418,9 +519,18 @@ private enum RevealPhase: Int, Comparable {
 
 // MARK: - Preview
 
-#Preview("Launch Splash") {
+#Preview("Launch Splash — Dark") {
     LaunchSplashView()
         .frame(width: 960, height: 640)
+        .preferredColorScheme(.dark)
+        .starcatAnimationOverride()
+        .environment(AppSettings())
+}
+
+#Preview("Launch Splash — Light") {
+    LaunchSplashView()
+        .frame(width: 960, height: 640)
+        .preferredColorScheme(.light)
         .starcatAnimationOverride()
         .environment(AppSettings())
 }

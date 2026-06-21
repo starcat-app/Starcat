@@ -132,8 +132,11 @@ enum FirstRunOnboardingCompletion {
 struct FirstRunOnboardingView: View {
 
     var onFinish: (FirstRunOnboardingCompletion) -> Void = { _ in }
+    /// 引导收束淡出开始时回调，供 `LaunchSplashContainer` 同步主窗口 blur → clear。
+    var onMainContentRevealBegin: (() -> Void)? = nil
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var currentStep = 0
     @State private var stepRevealToken = 0
@@ -299,19 +302,9 @@ struct FirstRunOnboardingView: View {
             Color(nsColor: .windowBackgroundColor)
                 .ignoresSafeArea()
 
-            DotsFlowBackground(
-                tint: starGold,
-                background: .black,
-                speed: 0.22,
-                brightness: 0.65,
-                dotSize: 0.9,
-                gridDensity: 1.0,
-                patternScale: 0.88,
-                vignette: 0.35
-            )
-            .blendMode(.plusLighter)
-            .opacity(0.42 * backdropIntensity)
-            .ignoresSafeArea()
+            onboardingDotsFlowBackground
+                .opacity(0.42 * backdropIntensity)
+                .ignoresSafeArea()
 
             RadialGradient(
                 colors: [
@@ -331,6 +324,37 @@ struct FirstRunOnboardingView: View {
             )
         }
         .allowsHitTesting(false)
+    }
+
+    /// 星流点阵：dark 走 gold + plusLighter；light 下 gold 加亮会融进白底，
+    /// 改深琥珀 tint + multiply 压暗 window 背景，与 ShareCardSheet 同类方案。
+    @ViewBuilder
+    private var onboardingDotsFlowBackground: some View {
+        if colorScheme == .dark {
+            DotsFlowBackground(
+                tint: starGold,
+                background: .black,
+                speed: 0.22,
+                brightness: 0.65,
+                dotSize: 0.9,
+                gridDensity: 1.0,
+                patternScale: 0.88,
+                vignette: 0.35
+            )
+            .blendMode(.plusLighter)
+        } else {
+            DotsFlowBackground(
+                tint: Color.fromHex6(0xB45309),
+                background: .white,
+                speed: 0.22,
+                brightness: 0.72,
+                dotSize: 0.9,
+                gridDensity: 1.0,
+                patternScale: 0.88,
+                vignette: 0.35
+            )
+            .blendMode(.multiply)
+        }
     }
 
     // MARK: - Progress
@@ -518,6 +542,7 @@ struct FirstRunOnboardingView: View {
             exitPhase = .welcome
             welcomeContentVisible = true
             welcomeTextVisible = true
+            onMainContentRevealBegin?()
             overlayOpacity = 0
             Task { @MainActor in
                 try? await Task.sleep(for: FirstRunOnboardingExitTiming.reduceMotionTotal)
@@ -553,8 +578,9 @@ struct FirstRunOnboardingView: View {
 
             try? await Task.sleep(for: FirstRunOnboardingExitTiming.welcomeHold)
 
-            // 3) 整层放大 + 模糊 + 淡出，主窗口从下方渐露
+            // 3) 整层放大 + 模糊 + 淡出；主窗口与 overlay 同步从 blur → clear
             exitPhase = .fading
+            onMainContentRevealBegin?()
             withAnimation(.easeInOut(duration: 2.1)) {
                 overlayOpacity = 0
                 overlayScale = 1.1
