@@ -43,6 +43,9 @@ protocol RepoNoteRepositoryProtocol: Sendable {
     /// - 按 starred_at desc 排序
     func fetchRepos(byStatus status: RepoStatus) async throws -> [Repo]
 
+    /// 返回有非空笔记内容的 repo id（Smart Collections `requireNote` 过滤用）。
+    func fetchRepoIdsWithNonEmptyContent() async throws -> Set<Int64>
+
     /// 每个状态下的 repo 数量（Sidebar 状态分组渲染用，一次拉全部）。
     /// 注意：从未写过 repo_notes 行的 repo 不算 "unread"（它压根没记录），
     /// 不在本统计内。UI 端如需"未读 = 全部 - 已写笔记 + 笔记 status=unread" 自行计算。

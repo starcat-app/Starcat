@@ -96,6 +96,17 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
         }
     }
 
+    /// 有非空私有笔记的 repo id 集合（`requireNote` predicate 用）。
+    func fetchRepoIdsWithNonEmptyContent() async throws -> Set<Int64> {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT repo_id FROM repo_notes
+                WHERE content IS NOT NULL AND TRIM(content) != ''
+                """)
+            return Set(rows.map { $0["repo_id"] as Int64 })
+        }
+    }
+
     func statusCounts() async throws -> [RepoStatus: Int] {
         try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: """

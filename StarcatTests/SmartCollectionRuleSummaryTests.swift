@@ -36,6 +36,38 @@ struct SmartCollectionRuleSummaryTests {
         #expect(lines.last?.contains(RepoSortOption.updatedDesc.localizedTitle) == true)
     }
 
+    @Test("lines 覆盖高阶 predicate 摘要")
+    func advancedSummaryLines() {
+        let context = SmartCollectionRuleSummary.Context { _ in "Tag" }
+        let rule = SmartCollectionRule(
+            scope: .allStars,
+            query: nil,
+            searchModeRaw: SmartSearchMode.keyword.rawValue,
+            statusRaw: nil,
+            selectedTagIDs: [],
+            hideArchived: false,
+            hideForks: false,
+            sortRaw: RepoSortOption.starredAtDesc.rawValue,
+            starsMin: 100,
+            starsMax: 10_000,
+            pushedWithinDays: 30,
+            pushedOlderThanDays: nil,
+            healthScoreMin: 60,
+            healthScoreMax: nil,
+            requireLicense: true,
+            requireTopics: false,
+            requireNote: true
+        )
+
+        let lines = SmartCollectionRuleSummary.lines(rule: rule, context: context)
+        #expect(lines.contains { $0.contains("100") && $0.contains("10000") || $0.contains("10,000") })
+        #expect(lines.contains { $0.contains("30") })
+        #expect(lines.contains { $0.contains("60") })
+        #expect(lines.contains { $0 == String.l10n("smartCollections.rule.requireLicenseYes") })
+        #expect(lines.contains { $0 == String.l10n("smartCollections.rule.requireTopicsNo") })
+        #expect(lines.contains { $0 == String.l10n("smartCollections.rule.requireNoteYes") })
+    }
+
     @Test("compact 用分隔符合并多行")
     func compactSummary() {
         let context = SmartCollectionRuleSummary.Context { _ in "Tag" }

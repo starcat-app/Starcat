@@ -44,9 +44,9 @@ struct UserSmartCollection: Codable, FetchableRecord, MutablePersistableRecord, 
     }
 }
 
-/// 用户智能集合第一版规则。
+/// 用户智能集合规则（scope + Manage 筛选 + 高阶 metadata / Health predicate）。
 ///
-/// 规则只表达当前 Manage 列表已经存在的筛选能力；不支持 OR / nested group，是刻意收窄。
+/// 高阶字段可选；nil 表示不参与过滤。字段之间 AND，不支持 OR / 嵌套组。
 struct SmartCollectionRule: Codable, Equatable, Sendable {
     enum Scope: Codable, Equatable, Sendable {
         case allStars
@@ -64,6 +64,18 @@ struct SmartCollectionRule: Codable, Equatable, Sendable {
     var hideForks: Bool
     var sortRaw: String
 
+    // MARK: - 高阶 predicate（v2.1+）
+
+    var starsMin: Int? = nil
+    var starsMax: Int? = nil
+    var pushedWithinDays: Int? = nil
+    var pushedOlderThanDays: Int? = nil
+    var healthScoreMin: Int? = nil
+    var healthScoreMax: Int? = nil
+    var requireLicense: Bool? = nil
+    var requireTopics: Bool? = nil
+    var requireNote: Bool? = nil
+
     var searchMode: SmartSearchMode {
         SmartSearchMode(rawValue: searchModeRaw) ?? .keyword
     }
@@ -74,6 +86,24 @@ struct SmartCollectionRule: Codable, Equatable, Sendable {
 
     var sortOption: RepoSortOption {
         RepoSortOption(rawValue: sortRaw) ?? .starredAtDesc
+    }
+
+    func mergingAdvanced(from stored: SmartCollectionRule) -> SmartCollectionRule {
+        var merged = self
+        merged.starsMin = stored.starsMin
+        merged.starsMax = stored.starsMax
+        merged.pushedWithinDays = stored.pushedWithinDays
+        merged.pushedOlderThanDays = stored.pushedOlderThanDays
+        merged.healthScoreMin = stored.healthScoreMin
+        merged.healthScoreMax = stored.healthScoreMax
+        merged.requireLicense = stored.requireLicense
+        merged.requireTopics = stored.requireTopics
+        merged.requireNote = stored.requireNote
+        return merged
+    }
+
+    var usesHealthPredicates: Bool {
+        healthScoreMin != nil || healthScoreMax != nil
     }
 
     static func encode(_ rule: SmartCollectionRule) throws -> String {

@@ -18,6 +18,12 @@
 import SwiftUI
 import AppKit
 
+/// 规则编辑器 Sheet 载荷（`sheet(item:)` 避免首帧空白 sheet）。
+private struct SmartCollectionRuleEditorItem: Identifiable {
+    let id = UUID()
+    let mode: SmartCollectionRuleEditorSheet.Mode
+}
+
 struct RepoListView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
@@ -64,12 +70,7 @@ struct RepoListView: View {
     @State private var codeFlowSheetRepo: Repo?
     /// CodeFlow 为 Pro 功能；免费用户点入口时弹出统一付费墙，不打开执行面板。
     @State private var paywallContext: ProPaywallContext?
-    @State private var showSaveSmartCollectionSheet = false
-    @State private var showUpdateSmartCollectionSheet = false
-    @State private var smartCollectionSaveError: String?
-    @State private var smartCollectionUpdateError: String?
-    /// 打开 Sheet 时快照规则，避免 Sheet 内读 live toolbar 且与父视图刷新解耦。
-    @State private var pendingSmartCollectionRule: SmartCollectionRule?
+    @State private var ruleEditorSheetItem: SmartCollectionRuleEditorItem?
     /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
     @State private var lastSyncedAt: Date?
 
@@ -146,41 +147,17 @@ struct RepoListView: View {
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
-        .sheet(isPresented: $showSaveSmartCollectionSheet) {
-            if let rule = pendingSmartCollectionRule {
-                SaveSmartCollectionSheet(
-                    rule: rule,
-                    summaryContext: viewModel.smartCollectionSummaryContext(),
-                    defaultName: defaultSmartCollectionName,
-                    errorMessage: smartCollectionSaveError,
-                    onCancel: {
-                        showSaveSmartCollectionSheet = false
-                        smartCollectionSaveError = nil
-                        pendingSmartCollectionRule = nil
-                    },
-                    onSave: saveSmartCollection(named:rule:)
-                )
-                .appLocaleEnvironment()
-            }
-        }
-        .sheet(isPresented: $showUpdateSmartCollectionSheet) {
-            if case .userSmartCollection(let id) = viewModel.selection,
-               let collection = viewModel.userSmartCollection(id: id),
-               let rule = pendingSmartCollectionRule {
-                UpdateSmartCollectionSheet(
-                    rule: rule,
-                    summaryContext: viewModel.smartCollectionSummaryContext(),
-                    collectionName: collection.name,
-                    errorMessage: smartCollectionUpdateError,
-                    onCancel: {
-                        showUpdateSmartCollectionSheet = false
-                        smartCollectionUpdateError = nil
-                        pendingSmartCollectionRule = nil
-                    },
-                    onConfirm: { updateSmartCollectionRules(id: id, rule: $0) }
-                )
-                .appLocaleEnvironment()
-            }
+        .sheet(item: $ruleEditorSheetItem) { item in
+            SmartCollectionRuleEditorSheet(
+                mode: item.mode,
+                onCancel: {
+                    ruleEditorSheetItem = nil
+                },
+                onSaved: {
+                    ruleEditorSheetItem = nil
+                }
+            )
+            .appLocaleEnvironment()
         }
         .sheet(item: $codeFlowSheetRepo) { repo in
             CodeFlowPanel(repo: repo)
@@ -517,26 +494,12 @@ struct RepoListView: View {
         let leading = AnyView(
             Group {
                 Button {
-                    smartCollectionSaveError = nil
-                    pendingSmartCollectionRule = viewModel.makeRuleFromCurrentManageFilters()
-                    showSaveSmartCollectionSheet = true
+                    openSmartCollectionEditor()
                 } label: {
                     ToolbarIcon("line.3.horizontal.decrease.circle")
                 }
-                .disabled(!canSaveSmartCollection)
-                .help("smartCollections.save.help")
-
-                if case .userSmartCollection = viewModel.selection {
-                    Button {
-                        smartCollectionUpdateError = nil
-                        pendingSmartCollectionRule = viewModel.makeRuleFromCurrentManageFilters()
-                        showUpdateSmartCollectionSheet = true
-                    } label: {
-                        ToolbarIcon("arrow.triangle.2.circlepath")
-                    }
-                    .disabled(viewModel.makeRuleFromCurrentManageFilters() == nil)
-                    .help("smartCollections.update.help")
-                }
+                .disabled(!canOpenSmartCollectionEditor)
+                .help("smartCollections.editor.help")
 
                 UnifiedFilterMenu(
                     items: filterItems,
@@ -592,10 +555,24 @@ struct RepoListView: View {
         )
     }
 
-    private var canSaveSmartCollection: Bool {
-        guard viewModel.makeRuleFromCurrentManageFilters() != nil else { return false }
-        if case .userSmartCollection = viewModel.selection { return false }
-        return true
+    private var canOpenSmartCollectionEditor: Bool {
+        if case .userSmartCollection(let id) = viewModel.selection {
+            return viewModel.userSmartCollection(id: id) != nil
+        }
+        return viewModel.makeRuleFromCurrentManageFilters() != nil
+    }
+
+    private func openSmartCollectionEditor() {
+        let mode: SmartCollectionRuleEditorSheet.Mode
+        if case .userSmartCollection(let id) = viewModel.selection,
+           let collection = viewModel.userSmartCollection(id: id) {
+            mode = .edit(collection)
+        } else if let rule = viewModel.makeRuleFromCurrentManageFilters() {
+            mode = .create(defaultName: defaultSmartCollectionName, initialRule: rule)
+        } else {
+            return
+        }
+        ruleEditorSheetItem = SmartCollectionRuleEditorItem(mode: mode)
     }
 
     private var defaultSmartCollectionName: String {
@@ -610,49 +587,6 @@ struct RepoListView: View {
             return viewModel.tags.first { $0.id == id }?.name ?? String.l10n("sidebar.tagFallback")
         case .trending, .smartCollectionsHome, .smartCollection, .userSmartCollection:
             return String.l10n("smartCollections.new.defaultName")
-        }
-    }
-
-    private func saveSmartCollection(named name: String, rule: SmartCollectionRule) {
-        Task {
-            do {
-                let now = ISO8601DateFormatter.shared.string(from: Date())
-                let collection = UserSmartCollection(
-                    id: UUID().uuidString,
-                    name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                    icon: "line.3.horizontal.decrease.circle",
-                    color: nil,
-                    ruleJSON: try SmartCollectionRule.encode(rule),
-                    sortOrder: viewModel.userSmartCollections.count,
-                    createdAt: now,
-                    updatedAt: now
-                )
-                try await dependencies.smartCollectionRepository.create(collection)
-                await viewModel.refreshSidebar()
-                showSaveSmartCollectionSheet = false
-                smartCollectionSaveError = nil
-                pendingSmartCollectionRule = nil
-            } catch let error as EntitlementGateError {
-                showSaveSmartCollectionSheet = false
-                smartCollectionSaveError = nil
-                pendingSmartCollectionRule = nil
-                paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
-            } catch {
-                smartCollectionSaveError = error.localizedDescription
-            }
-        }
-    }
-
-    private func updateSmartCollectionRules(id: String, rule: SmartCollectionRule) {
-        Task {
-            do {
-                try await viewModel.updateUserSmartCollectionRule(id: id, rule: rule)
-                showUpdateSmartCollectionSheet = false
-                smartCollectionUpdateError = nil
-                pendingSmartCollectionRule = nil
-            } catch {
-                smartCollectionUpdateError = error.localizedDescription
-            }
         }
     }
 

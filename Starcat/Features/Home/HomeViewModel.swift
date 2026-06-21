@@ -46,6 +46,7 @@ final class HomeViewModel {
                 // 规则会在 reloadItems 里随 collection 重新读取。
             } else {
                 activeUserSmartCollectionRule = nil
+                smartCollectionFilterContext = nil
             }
 
             // ⚡ HOM-46 性能补丁 #2（2026-06-02）：急切缓存加载（eager cache load）
@@ -468,6 +469,9 @@ final class HomeViewModel {
     /// hydrate 批量写入 toolbar 字段时抑制 filter didSet 触发的 applyView。
     private var isHydratingManageFilters = false
 
+    /// 用户智能集合 filter 所需的 Health / 笔记上下文；进入集合时构建，离开时清空。
+    private var smartCollectionFilterContext: SmartCollectionRuleFilterContext?
+
     /// W6 AI：语义搜索服务。测试可传 nil，生产由 AppDependencies 注入。
     private let semanticSearchService: SemanticSearchService?
 
@@ -652,16 +656,29 @@ final class HomeViewModel {
         searchQuery = rule.query ?? ""
     }
 
-    /// 统计规则命中仓库数（scope 查询 + 规则内 filter；含语义搜索时需 API key）。
+    /// 统计规则命中仓库数（scope 查询 + 完整 rule filter）。
     func countRepos(matching rule: SmartCollectionRule) async throws -> Int {
         let (repos, _) = try await fetchRepos(matching: rule)
-        let statusMap = try await repoNoteRepository.fetchAllStatusMap()
-        return SmartCollectionRuleFilter.apply(
-            repos: repos,
-            rule: rule,
-            statusMap: statusMap,
-            repoTagsMap: repoTagsMap
-        ).count
+        let context = try await buildSmartCollectionFilterContext(for: repos)
+        return SmartCollectionRuleFilter.apply(repos: repos, rule: rule, context: context).count
+    }
+
+    func buildSmartCollectionFilterContext(for repos: [Repo]) async throws -> SmartCollectionRuleFilterContext {
+        async let statusMap = repoNoteRepository.fetchAllStatusMap()
+        async let noteIDs = repoNoteRepository.fetchRepoIdsWithNonEmptyContent()
+        let health: [Int64: RepoHealthSnapshot]
+        if let repoHealthRepository, !repos.isEmpty {
+            health = try await repoHealthRepository.snapshots(for: repos.map(\.id))
+        } else {
+            health = [:]
+        }
+        return SmartCollectionRuleFilterContext(
+            statusMap: try await statusMap,
+            repoTagsMap: repoTagsMap,
+            healthSnapshots: health,
+            repoIdsWithNotes: try await noteIDs,
+            now: Date()
+        )
     }
 
     func renameUserSmartCollection(id: String, name: String) async throws {
@@ -989,6 +1006,7 @@ final class HomeViewModel {
                             self.hydrateManageFilters(from: storedRule)
                             let effectiveRule = self.makeRuleFromCurrentManageFilters() ?? storedRule
                             let result = try await self.fetchRepos(matching: effectiveRule)
+                            self.smartCollectionFilterContext = try await self.buildSmartCollectionFilterContext(for: result.repos)
                             return result
                         case .language(let lang):
                             repos = try await self.repository.fetchByLanguage(lang)
@@ -1289,21 +1307,28 @@ final class HomeViewModel {
     private func computeFilteredSorted() -> [Repo] {
         var view = rawItems
 
-        if hideArchived { view.removeAll { $0.isArchived } }
-        if hideForks    { view.removeAll { $0.isFork } }
-        // W4-4 D3：状态过滤 — 未在 repo_notes 表登记的视为 implicit "unread"。
-        // 这样新同步进来的 repo 默认被 unread 过滤命中,符合"未读 = 还没看过"的直觉。
-        if let status = statusFilter {
-            view.removeAll { repo in
-                let actual = statusMap[repo.id] ?? .unread
-                return actual != status
+        if let stored = activeUserSmartCollectionRule,
+           let toolbarRule = makeRuleFromCurrentManageFilters() {
+            let effective = toolbarRule.mergingAdvanced(from: stored)
+            view = SmartCollectionRuleFilter.apply(
+                repos: view,
+                rule: effective,
+                context: smartCollectionFilterContext ?? .empty
+            )
+        } else {
+            if hideArchived { view.removeAll { $0.isArchived } }
+            if hideForks    { view.removeAll { $0.isFork } }
+            if let status = statusFilter {
+                view.removeAll { repo in
+                    let actual = statusMap[repo.id] ?? .unread
+                    return actual != status
+                }
             }
-        }
-        // HOM-179：标签墙多选 OR 过滤。
-        if !selectedTagIds.isEmpty {
-            view.removeAll { repo in
-                let tagsOfRepo = repoTagsMap[repo.id] ?? []
-                return tagsOfRepo.isDisjoint(with: selectedTagIds)
+            if !selectedTagIds.isEmpty {
+                view.removeAll { repo in
+                    let tagsOfRepo = repoTagsMap[repo.id] ?? []
+                    return tagsOfRepo.isDisjoint(with: selectedTagIds)
+                }
             }
         }
         // HOM-197（2026-06-13 dong4j）：AI 语义搜索结果按相似度阈值过滤。

@@ -2,8 +2,7 @@
 //  SmartCollectionRuleSummary.swift
 //  Starcat
 //
-//  用户智能集合规则的人类可读摘要。Save / 编辑 Sheet、总览卡片、列表 subtitle 共用，
-//  避免三处各自拼字符串导致文案漂移。
+//  用户智能集合规则摘要 + 统一 filter 评估。
 //
 
 import Foundation
@@ -11,7 +10,6 @@ import Foundation
 /// 把 `SmartCollectionRule` 格式化为多行摘要（每行一个维度）。
 enum SmartCollectionRuleSummary {
 
-    /// 标签 id → 显示名；缺失时回退 id 前缀。
     struct Context: Sendable {
         var tagName: @Sendable (String) -> String
 
@@ -23,7 +21,6 @@ enum SmartCollectionRuleSummary {
         }
     }
 
-    /// 返回非空摘要行；顺序固定，便于用户扫读。
     static func lines(rule: SmartCollectionRule, context: Context) -> [String] {
         var result: [String] = [scopeLine(rule.scope, context: context)]
         if let query = trimmedQuery(rule.query) {
@@ -36,6 +33,7 @@ enum SmartCollectionRuleSummary {
         if let status = rule.status {
             result.append(String(format: String.l10n("smartCollections.rule.statusFormat"), status.localizedDisplayName))
         }
+        appendAdvancedLines(rule: rule, to: &result)
         var toggles: [String] = []
         if rule.hideArchived {
             toggles.append(String.l10n("smartCollections.rule.hideArchived"))
@@ -50,9 +48,46 @@ enum SmartCollectionRuleSummary {
         return result
     }
 
-    /// 单行紧凑摘要（列表 subtitle 用）。
     static func compact(rule: SmartCollectionRule, context: Context) -> String {
         lines(rule: rule, context: context).joined(separator: String.l10n("smartCollections.rule.compactSeparator"))
+    }
+
+    private static func appendAdvancedLines(rule: SmartCollectionRule, to result: inout [String]) {
+        if let min = rule.starsMin, let max = rule.starsMax {
+            result.append(String(format: String.l10n("smartCollections.rule.starsRangeFormat"), min, max))
+        } else if let min = rule.starsMin {
+            result.append(String(format: String.l10n("smartCollections.rule.starsMinFormat"), min))
+        } else if let max = rule.starsMax {
+            result.append(String(format: String.l10n("smartCollections.rule.starsMaxFormat"), max))
+        }
+        if let days = rule.pushedWithinDays {
+            result.append(String(format: String.l10n("smartCollections.rule.pushedWithinFormat"), days))
+        }
+        if let days = rule.pushedOlderThanDays {
+            result.append(String(format: String.l10n("smartCollections.rule.pushedOlderFormat"), days))
+        }
+        if let min = rule.healthScoreMin, let max = rule.healthScoreMax {
+            result.append(String(format: String.l10n("smartCollections.rule.healthRangeFormat"), min, max))
+        } else if let min = rule.healthScoreMin {
+            result.append(String(format: String.l10n("smartCollections.rule.healthMinFormat"), min))
+        } else if let max = rule.healthScoreMax {
+            result.append(String(format: String.l10n("smartCollections.rule.healthMaxFormat"), max))
+        }
+        if let requireLicense = rule.requireLicense {
+            result.append(requireLicense
+                ? String.l10n("smartCollections.rule.requireLicenseYes")
+                : String.l10n("smartCollections.rule.requireLicenseNo"))
+        }
+        if let requireTopics = rule.requireTopics {
+            result.append(requireTopics
+                ? String.l10n("smartCollections.rule.requireTopicsYes")
+                : String.l10n("smartCollections.rule.requireTopicsNo"))
+        }
+        if let requireNote = rule.requireNote {
+            result.append(requireNote
+                ? String.l10n("smartCollections.rule.requireNoteYes")
+                : String.l10n("smartCollections.rule.requireNoteNo"))
+        }
     }
 
     private static func trimmedQuery(_ query: String?) -> String? {
@@ -87,16 +122,30 @@ enum SmartCollectionRuleSummary {
     }
 }
 
-/// 对 scope 查询结果应用规则内的 Manage 筛选（hide / status / tags）。
-///
-/// 搜索词在 `fetchRepos(matching:)` 阶段处理；这里只做与 `computeFilteredSorted` 一致的过滤。
+/// Smart Collections 规则 filter 所需的本地上下文。
+struct SmartCollectionRuleFilterContext: Sendable {
+    var statusMap: [Int64: RepoStatus]
+    var repoTagsMap: [Int64: Set<String>]
+    var healthSnapshots: [Int64: RepoHealthSnapshot]
+    var repoIdsWithNotes: Set<Int64>
+    var now: Date
+
+    static let empty = SmartCollectionRuleFilterContext(
+        statusMap: [:],
+        repoTagsMap: [:],
+        healthSnapshots: [:],
+        repoIdsWithNotes: [],
+        now: Date()
+    )
+}
+
+/// 对 scope / 搜索之后的结果应用完整规则（Manage 筛选 + 高阶 predicate）。
 enum SmartCollectionRuleFilter {
 
     static func apply(
         repos: [Repo],
         rule: SmartCollectionRule,
-        statusMap: [Int64: RepoStatus],
-        repoTagsMap: [Int64: Set<String>]
+        context: SmartCollectionRuleFilterContext
     ) -> [Repo] {
         var view = repos
         if rule.hideArchived {
@@ -107,17 +156,89 @@ enum SmartCollectionRuleFilter {
         }
         if let status = rule.status {
             view.removeAll { repo in
-                let actual = statusMap[repo.id] ?? .unread
+                let actual = context.statusMap[repo.id] ?? .unread
                 return actual != status
             }
         }
         let tagIDs = Set(rule.selectedTagIDs)
         if !tagIDs.isEmpty {
             view.removeAll { repo in
-                let tagsOfRepo = repoTagsMap[repo.id] ?? []
+                let tagsOfRepo = context.repoTagsMap[repo.id] ?? []
                 return tagsOfRepo.isDisjoint(with: tagIDs)
             }
         }
+        if let min = rule.starsMin {
+            view.removeAll { $0.starsCount < min }
+        }
+        if let max = rule.starsMax {
+            view.removeAll { $0.starsCount > max }
+        }
+        if let days = rule.pushedWithinDays {
+            view.removeAll { repo in
+                guard let pushedAt = ISO8601DateFormatter.githubDate(from: repo.pushedAt) else {
+                    return true
+                }
+                return context.now.timeIntervalSince(pushedAt) > Double(days) * 86_400
+            }
+        }
+        if let days = rule.pushedOlderThanDays {
+            view.removeAll { repo in
+                guard let pushedAt = ISO8601DateFormatter.githubDate(from: repo.pushedAt) else {
+                    return true
+                }
+                return context.now.timeIntervalSince(pushedAt) <= Double(days) * 86_400
+            }
+        }
+        if let min = rule.healthScoreMin {
+            view.removeAll { repo in
+                guard let score = context.healthSnapshots[repo.id]?.overallScore else { return true }
+                return score < Double(min)
+            }
+        }
+        if let max = rule.healthScoreMax {
+            view.removeAll { repo in
+                guard let score = context.healthSnapshots[repo.id]?.overallScore else { return true }
+                return score > Double(max)
+            }
+        }
+        if let requireLicense = rule.requireLicense {
+            view.removeAll { repo in
+                let hasLicense = repo.license?.isEmpty == false
+                return requireLicense ? !hasLicense : hasLicense
+            }
+        }
+        if let requireTopics = rule.requireTopics {
+            view.removeAll { repo in
+                let hasTopics = !repo.topicsArray.isEmpty
+                return requireTopics ? !hasTopics : hasTopics
+            }
+        }
+        if let requireNote = rule.requireNote {
+            view.removeAll { repo in
+                let hasNote = context.repoIdsWithNotes.contains(repo.id)
+                return requireNote ? !hasNote : hasNote
+            }
+        }
         return view
+    }
+
+    /// 旧签名：无 Health / 笔记上下文时的高阶字段会被保守跳过（仅 Manage 筛选生效）。
+    static func apply(
+        repos: [Repo],
+        rule: SmartCollectionRule,
+        statusMap: [Int64: RepoStatus],
+        repoTagsMap: [Int64: Set<String>]
+    ) -> [Repo] {
+        apply(
+            repos: repos,
+            rule: rule,
+            context: SmartCollectionRuleFilterContext(
+                statusMap: statusMap,
+                repoTagsMap: repoTagsMap,
+                healthSnapshots: [:],
+                repoIdsWithNotes: [],
+                now: Date()
+            )
+        )
     }
 }
