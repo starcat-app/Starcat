@@ -279,8 +279,16 @@ final class ActivityViewModel {
     /// 滚到底加载下一页（纯本地切片，零网络）。
     func loadMoreIfNeeded() {
         guard hasMoreItems, !isLoading, !isApplyingCategoryFilter else { return }
-        visiblePage += 1
-        items = paginatedSlice(from: filteredItems, page: visiblePage)
+        let nextRows = nextPageSlice(from: filteredItems, alreadyVisibleCount: items.count)
+        guard !nextRows.isEmpty else {
+            hasMoreItems = false
+            return
+        }
+        // Activity 追加页只做尾部 append，不重建 `prefix(page * pageSize)`。
+        // 这样滚动越深，单次 loadMore 成本仍然固定在一页大小，List 也不会收到整段
+        // prefix replacement。
+        items.append(contentsOf: nextRows)
+        visiblePage = max(1, Int(ceil(Double(items.count) / Double(Self.pageSize))))
         hasMoreItems = filteredItems.count > items.count
     }
 
@@ -815,6 +823,12 @@ final class ActivityViewModel {
     private func paginatedSlice(from source: [ActivityItem], page: Int) -> [ActivityItem] {
         let upper = min(page * Self.pageSize, source.count)
         return Array(source.prefix(upper))
+    }
+
+    private func nextPageSlice(from source: [ActivityItem], alreadyVisibleCount: Int) -> [ActivityItem] {
+        guard alreadyVisibleCount < source.count else { return [] }
+        let upper = min(alreadyVisibleCount + Self.pageSize, source.count)
+        return Array(source[alreadyVisibleCount..<upper])
     }
 
     /// 切分类后本帧 List 行 instant 显示；下一 run loop 恢复，loadMore 新行仍可 reveal。

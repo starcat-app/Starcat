@@ -81,3 +81,16 @@
     - `ActivityViewModelTests` 运行期间仍出现过 SwiftUI 的 `Publishing changes from background threads is not allowed` 日志；显式 `@MainActor` 后仍存在，出现时点靠近测试 fixture 切换，暂未确认是 Activity 本轮改动、测试宿主全局状态，还是既有后台任务残留。后续若真实切页仍卡或日志持续出现，需要单独开线程发布专项排查。
   - 下一步判定：
     - 如果真实 App 内 Manage ↔ Activity 切换仍有彩虹圈，进入 Phase 2：把 Activity feed 查询改成按分类/分页直接读取，减少 SwiftUI 侧一次性 diff 和全量 `allItems` 缓存。
+- 2026-06-22：Phase 2 先落地一项低风险分页优化。
+  - 问题：
+    - `ActivityViewModel.loadMoreIfNeeded()` 原先每次滚到底都用 `Array(source.prefix(page * pageSize))`
+      重建完整已加载前缀。数据量不大时可接受，但页数越深，单次 loadMore 的复制成本越高，
+      也更容易让 SwiftUI 把它当作整段 replacement。
+  - 改动：
+    1. 新增 `nextPageSlice(from:alreadyVisibleCount:)`，每次只取下一页。
+    2. `loadMoreIfNeeded()` 改为 `items.append(contentsOf:)`，不重建前缀、不 bump `itemsRevision`。
+    3. 保持现有 UI、分类、排序和 `hasMoreItems` 语义不变。
+  - 验证：
+    - 新增 `ActivityViewModelTests.followingPaginationAppendsWithoutReplacingPrefix`，覆盖 60 条 following 数据下：
+      首屏 30 条，append 后 60 条，第一页 ID 前缀不变，`itemsRevision` 不变。
+    - `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/ActivityViewModelTests test` 通过。

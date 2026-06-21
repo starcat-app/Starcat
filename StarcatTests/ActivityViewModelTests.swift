@@ -871,6 +871,43 @@ struct ActivityViewModelTests {
         #expect(h.viewModel.hasMoreItems == false)
     }
 
+    @Test("following 分页追加只尾部 append,不 bump itemsRevision")
+    func followingPaginationAppendsWithoutReplacingPrefix() async throws {
+        let h = try Harness()
+        var records: [ActivityEventRecord] = []
+        for index in 0..<60 {
+            let day = String(format: "%02d", (index % 28) + 1)
+            records.append(
+                ActivityEventRecord(
+                    id: "append-ev-\(index)",
+                    eventType: "WatchEvent",
+                    actorLogin: "actor\(index)",
+                    actorAvatarUrl: nil,
+                    repoName: "org/repo\(index)",
+                    repoId: Int64(index + 1),
+                    payloadJson: #"{"action":"started"}"#,
+                    isRead: false,
+                    createdAt: "2026-06-\(day)T12:00:00Z",
+                    fetchedAt: "2026-06-\(day)T12:00:00Z"
+                )
+            )
+        }
+        try await h.eventRepo.upsertMany(records)
+
+        await h.viewModel.ensureLoaded(category: .following)
+        let firstPageIDs = h.viewModel.items.map(\.id)
+        let revisionBeforeAppend = h.viewModel.itemsRevision
+
+        h.viewModel.loadMoreIfNeeded()
+
+        #expect(h.viewModel.items.count == 60)
+        #expect(Array(h.viewModel.items.map(\.id).prefix(ActivityViewModel.pageSize)) == firstPageIDs,
+                "append 后前一页 identity 必须保持原顺序,避免 List 误判为整段替换")
+        #expect(h.viewModel.itemsRevision == revisionBeforeAppend,
+                "本地分页 append 不应 bump revision,否则会触发整栏 reveal / 重建")
+        #expect(h.viewModel.hasMoreItems == false)
+    }
+
     @Test("首次进入全部分类复用后台 filter 管线，完成后正常上屏且不 bump revision")
     func allCategoryInitialLoadUsesFilterPipeline() async throws {
         let h = try Harness()
