@@ -33,6 +33,7 @@ actor DiagnosticLogStore {
     private static let directoryName = "diagnostics"
     private static let fileName = "diagnostic-log.jsonl"
     private static let rotatedFileName = "diagnostic-log.1.jsonl"
+    private static let acknowledgedFileName = "diagnostic-log-acknowledged-at.txt"
     private static let maxBytes: UInt64 = 2 * 1024 * 1024
 
     private let fileManager: FileManager
@@ -40,6 +41,7 @@ actor DiagnosticLogStore {
     private let directoryURL: URL
     private let fileURL: URL
     private let rotatedFileURL: URL
+    private let acknowledgedFileURL: URL
 
     init(
         fileManager: FileManager = .default,
@@ -53,6 +55,7 @@ actor DiagnosticLogStore {
         self.directoryURL = baseURL
         self.fileURL = baseURL.appendingPathComponent(Self.fileName)
         self.rotatedFileURL = baseURL.appendingPathComponent(Self.rotatedFileName)
+        self.acknowledgedFileURL = baseURL.appendingPathComponent(Self.acknowledgedFileName)
     }
 
     /// 追加一条诊断事件。
@@ -62,6 +65,7 @@ actor DiagnosticLogStore {
             try rotateIfNeeded()
             let data = try encoder.encode(event)
             try append(data)
+            NotificationCenter.default.post(name: .diagnosticIssuesDidChange, object: nil)
         } catch {
             AppLog.general.error("Diagnostic log write failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -79,6 +83,21 @@ actor DiagnosticLogStore {
             .joined(separator: "")
     }
 
+    /// 把当前及更早的诊断问题标记为“用户已处理”。
+    ///
+    /// 这里只写一个 marker，而不删除 JSONL 本体：用户导出的诊断包仍然保留完整证据；
+    /// toolbar 状态面板则从 marker 之后重新开始统计，避免旧 warning 一直压着状态栏。
+    func markIssuesAcknowledged(upTo date: Date = Date()) async {
+        do {
+            try ensureDirectory()
+            let text = ISO8601DateFormatter.shared.string(from: date)
+            try text.write(to: acknowledgedFileURL, atomically: true, encoding: .utf8)
+            NotificationCenter.default.post(name: .diagnosticIssuesDidChange, object: nil)
+        } catch {
+            AppLog.general.error("Diagnostic issue acknowledgement failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// 读取最近诊断问题摘要。
     ///
     /// 这是 toolbar 状态面板的只读入口：它不新增日志、不触发外部请求，只解析本机 JSONL。
@@ -86,6 +105,7 @@ actor DiagnosticLogStore {
     func issueSummary(since cutoff: Date = Date().addingTimeInterval(-24 * 60 * 60)) async -> DiagnosticLogSummary {
         let files = await exportableFiles()
         let decoder = JSONDecoder()
+        let acknowledgedAt = acknowledgedAt()
         var issues: [DiagnosticEvent] = []
 
         for file in files {
@@ -94,7 +114,8 @@ actor DiagnosticLogStore {
                 guard let data = String(line).data(using: .utf8),
                       let event = try? decoder.decode(DiagnosticEvent.self, from: data),
                       event.isUserVisibleIssue,
-                      event.date >= cutoff else {
+                      event.date >= cutoff,
+                      acknowledgedAt.map({ event.date > $0 }) ?? true else {
                     continue
                 }
                 issues.append(event)
@@ -138,6 +159,13 @@ actor DiagnosticLogStore {
         try handle.seekToEnd()
         try handle.write(contentsOf: data)
         try handle.write(contentsOf: Data("\n".utf8))
+    }
+
+    private func acknowledgedAt() -> Date? {
+        guard let text = try? String(contentsOf: acknowledgedFileURL, encoding: .utf8) else {
+            return nil
+        }
+        return ISO8601DateFormatter.shared.date(from: text.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 
@@ -185,4 +213,11 @@ extension DiagnosticLogStore {
             await DiagnosticLogStore.shared.record(event)
         }
     }
+}
+
+extension Notification.Name {
+    /// 诊断日志新增或状态面板问题被用户确认后发出。
+    ///
+    /// toolbar 状态按钮用它刷新本地摘要；不携带 payload，避免把诊断内容通过通知广播。
+    static let diagnosticIssuesDidChange = Notification.Name("StarcatDiagnosticIssuesDidChange")
 }

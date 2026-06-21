@@ -63,5 +63,41 @@ struct DiagnosticsTests {
         #expect(text.contains("token=<redacted>"))
         #expect(!text.contains("secret"))
     }
-}
 
+    @Test("确认诊断问题后状态摘要只统计新问题")
+    func diagnosticLogStoreAcknowledgesOldIssues() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-diagnostics-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = DiagnosticLogStore(directoryURL: root)
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        await store.record(DiagnosticEvent(
+            timestamp: base,
+            level: .warning,
+            category: "activity",
+            operation: "old",
+            message: "old warning"
+        ))
+
+        let beforeAcknowledgement = await store.issueSummary(since: base.addingTimeInterval(-1))
+        #expect(beforeAcknowledgement.issueCount == 1)
+
+        await store.markIssuesAcknowledged(upTo: base.addingTimeInterval(1))
+
+        let afterAcknowledgement = await store.issueSummary(since: base.addingTimeInterval(-1))
+        #expect(afterAcknowledgement.issueCount == 0)
+
+        await store.record(DiagnosticEvent(
+            timestamp: base.addingTimeInterval(2),
+            level: .warning,
+            category: "activity",
+            operation: "new",
+            message: "new warning"
+        ))
+
+        let afterNewIssue = await store.issueSummary(since: base.addingTimeInterval(-1))
+        #expect(afterNewIssue.issueCount == 1)
+        #expect(afterNewIssue.latestIssue?.operation == "new")
+    }
+}

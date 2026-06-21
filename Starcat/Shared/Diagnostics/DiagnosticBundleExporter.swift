@@ -66,6 +66,7 @@ enum DiagnosticBundleExporter {
     @MainActor
     static func export(to destination: URL, settings: AppSettings? = nil) async throws -> URL {
         let fileManager = FileManager.default
+        let acknowledgedAt = Date()
         let tempRoot = fileManager.temporaryDirectory
             .appendingPathComponent("starcat-diagnostics-\(UUID().uuidString)", isDirectory: true)
         let payloadRoot = tempRoot.appendingPathComponent("starcat-diagnostics", isDirectory: true)
@@ -82,6 +83,7 @@ enum DiagnosticBundleExporter {
         }
         try fileManager.zipItem(at: payloadRoot, to: destination, shouldKeepParent: true)
 
+        await DiagnosticLogStore.shared.markIssuesAcknowledged(upTo: acknowledgedAt)
         DiagnosticLogStore.record(
             level: .info,
             category: "diagnostics",

@@ -34,9 +34,6 @@ struct AppStatusToolbarButton: View {
                 Image(systemName: overallStatusIcon)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(overallStatusColor)
-                Text(statusCaption)
-                    .font(.caption)
-                    .monospacedDigit()
                 if activeTaskCount > 0 {
                     Text("\(activeTaskCount)")
                         .font(.caption2.weight(.semibold))
@@ -47,6 +44,7 @@ struct AppStatusToolbarButton: View {
                 }
             }
             .accessibilityLabel(Text("toolbar.status.label"))
+            .accessibilityValue(Text(statusCaption))
         }
         .help("toolbar.status.help")
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
@@ -57,6 +55,7 @@ struct AppStatusToolbarButton: View {
                 batchService: dependencies.batchAIQueueService,
                 mcpState: dependencies.mcpService.state,
                 mcpEnabled: settings.mcpServiceEnabled,
+                mcpEndpointURL: dependencies.mcpService.endpointURL,
                 customServiceCount: configuredServiceCount,
                 diagnosticSummary: diagnosticSummary,
                 relativeDate: relativeDate,
@@ -74,6 +73,9 @@ struct AppStatusToolbarButton: View {
         }
         .task {
             await refreshDiagnostics()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .diagnosticIssuesDidChange)) { _ in
+            Task { await refreshDiagnostics() }
         }
         .onChange(of: isPresented) { _, newValue in
             guard newValue else { return }
@@ -148,6 +150,7 @@ private struct AppStatusPanel: View {
     let batchService: BatchAIQueueService
     let mcpState: StarcatMCPService.State
     let mcpEnabled: Bool
+    let mcpEndpointURL: String
     let customServiceCount: Int
     let diagnosticSummary: DiagnosticLogSummary
     let relativeDate: (Date) -> String
@@ -188,6 +191,19 @@ private struct AppStatusPanel: View {
                 }
             )
             statusRow(
+                icon: mcpIcon,
+                tint: mcpTint,
+                title: "toolbar.status.mcp.title",
+                subtitle: mcpSubtitle,
+                accessory: {
+                    Button("toolbar.status.mcp.open") {
+                        onOpenMCP()
+                    }
+                    .controlSize(.small)
+                    .focusEffectDisabled()
+                }
+            )
+            statusRow(
                 icon: diagnosticIcon,
                 tint: diagnosticTint,
                 title: "toolbar.status.diagnostics.title",
@@ -208,11 +224,6 @@ private struct AppStatusPanel: View {
             Label("toolbar.status.panel.title", systemImage: "waveform.path.ecg")
                 .font(.headline)
             Spacer()
-            Button("MCP") {
-                onOpenMCP()
-            }
-            .controlSize(.small)
-            .focusEffectDisabled()
         }
     }
 
@@ -329,29 +340,40 @@ private struct AppStatusPanel: View {
     }
 
     private var serviceIcon: String {
+        customServiceCount > 0 ? "globe" : "globe.badge.chevron.backward"
+    }
+
+    private var serviceTint: Color {
+        customServiceCount > 0 ? .green : .secondary
+    }
+
+    private var serviceSubtitle: String {
+        String(format: String.l10n("toolbar.status.services.configuredFormat"), customServiceCount, ThirdPartyService.allCases.count)
+    }
+
+    private var mcpIcon: String {
         if case .failed = mcpState { return "exclamationmark.triangle.fill" }
         if case .running = mcpState { return "network" }
         return "network.slash"
     }
 
-    private var serviceTint: Color {
+    private var mcpTint: Color {
         if case .failed = mcpState { return .orange }
         if case .running = mcpState { return .green }
         return .secondary
     }
 
-    private var serviceSubtitle: String {
-        let mcpText: String
+    private var mcpSubtitle: String {
+        let statusText: String
         switch mcpState {
-        case .running(let port):
-            mcpText = String(format: String.l10n("toolbar.status.services.mcpRunningFormat"), port)
-        case .failed:
-            mcpText = String.l10n("toolbar.status.services.mcpFailed")
+        case .running:
+            statusText = String.l10n("toolbar.status.mcp.running")
+        case .failed(let message):
+            statusText = String(format: String.l10n("toolbar.status.mcp.failedFormat"), message)
         case .stopped:
-            mcpText = mcpEnabled ? String.l10n("toolbar.status.services.mcpStopped") : String.l10n("toolbar.status.services.mcpDisabled")
+            statusText = mcpEnabled ? String.l10n("toolbar.status.mcp.stopped") : String.l10n("toolbar.status.mcp.disabled")
         }
-        let configured = String(format: String.l10n("toolbar.status.services.configuredFormat"), customServiceCount, ThirdPartyService.allCases.count)
-        return "\(mcpText) · \(configured)"
+        return "\(statusText) · \(mcpEndpointURL)"
     }
 
     private var diagnosticIcon: String {
