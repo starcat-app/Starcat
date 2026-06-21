@@ -361,6 +361,27 @@ struct GRDBRepoRepository {
         }
     }
 
+    /// 当前 Manage 查询下的真实总数。
+    ///
+    /// 只做 `COUNT(*)`，不实例化 repo 行；用于分页列表的标题/副标题展示。
+    func fetchListCount(
+        scope: RepoListScope,
+        filters: RepoListFilters
+    ) async throws -> Int {
+        let query = Self.makeListQuery(
+            projection: "COUNT(*)",
+            scope: scope,
+            filters: filters,
+            sort: .starredAtDesc,
+            limit: nil,
+            offset: nil,
+            includeOrderBy: false
+        )
+        return try await database.writer.read { db in
+            try Int.fetchOne(db, sql: query.sql, arguments: query.arguments) ?? 0
+        }
+    }
+
     /// 当前 Manage 查询下的全部 repo id。
     ///
     /// 只投影 `r.id`，服务 Cmd+A 这类全集语义；避免重新加载完整 repo 行。
@@ -417,9 +438,10 @@ struct GRDBRepoRepository {
         filters: RepoListFilters,
         sort: RepoSortOption,
         limit: Int?,
-        offset: Int?
+        offset: Int?,
+        includeOrderBy: Bool = true
     ) -> (sql: String, arguments: StatementArguments) {
-        var joins: [String] = []
+        let joins: [String] = []
         var whereClauses: [String] = ["r.is_starred = 1"]
         var args: [any DatabaseValueConvertible] = []
 
@@ -512,8 +534,10 @@ struct GRDBRepoRepository {
             FROM repos r
             \(joins.joined(separator: "\n"))
             WHERE \(whereClauses.joined(separator: "\nAND "))
-            ORDER BY \(orderBy)
             """
+        if includeOrderBy {
+            sql += "\nORDER BY \(orderBy)"
+        }
         if let limit {
             sql += "\nLIMIT ?"
             args.append(limit)

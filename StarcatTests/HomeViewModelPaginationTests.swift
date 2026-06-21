@@ -105,6 +105,7 @@ struct HomeViewModelPaginationTests {
         #expect(vm.items.count == HomeViewModel.pageSize, "首屏只切 pageSize=20 条")
         #expect(vm.items.map(\.id).prefix(3) == [1, 2, 3], "按 starred_at desc 排序后 id 升序在前")
         #expect(vm.filteredSorted.count == HomeViewModel.pageSize, "数据库分页模式下 filteredSorted 只镜像已加载页")
+        #expect(vm.visibleRepoTotalCount == 100, "标题总数必须是当前查询全量,不能只显示已加载页")
         #expect(await vm.selectionSnapshotsForCurrentQuery().count == 100, "全集语义改走 id/owner/name 轻量 projection")
         #expect(vm.currentPage == 1)
         #expect(vm.hasMore == true, "100 > 20 → 还有更多可加载")
@@ -122,6 +123,7 @@ struct HomeViewModelPaginationTests {
         await vm.awaitPendingListReloadForTesting()
 
         #expect(vm.items.count == 40, "20 → 40,增长一页")
+        #expect(vm.visibleRepoTotalCount == 100, "append 后标题总数仍应保持当前查询全量")
         #expect(vm.currentPage == 2)
         #expect(vm.hasMore == true, "100 > 40,后续仍有更多")
     }
@@ -181,6 +183,7 @@ struct HomeViewModelPaginationTests {
         }
 
         #expect(vm.items.count == total, "滚到底后必须加载出全部 starred repos")
+        #expect(vm.visibleRepoTotalCount == total, "1856 大数量下标题总数应等于当前查询全量")
         #expect(vm.filteredSorted.count == total,
                 "DB 分页模式下 filteredSorted 镜像已加载全集")
         #expect(vm.currentPage == Int(ceil(Double(total) / Double(HomeViewModel.pageSize))))

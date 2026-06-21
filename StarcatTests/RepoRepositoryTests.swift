@@ -429,6 +429,9 @@ struct RepoRepositoryTests {
         #expect(firstPage.count == 21, "首屏查询只取 pageSize + sentinel,不能退回全量 10k")
         #expect(firstPage.first?.id == 1)
 
+        let totalCount = try await repo.fetchListCount(scope: .allStars, filters: .empty)
+        #expect(totalCount == total, "分页首屏只取 21 行,但标题总数必须来自 COUNT(*) 全量")
+
         let snapshots = try await repo.fetchListSelectionSnapshots(
             scope: .allStars,
             filters: .empty,
@@ -437,5 +440,28 @@ struct RepoRepositoryTests {
         #expect(snapshots.count == total)
         #expect(snapshots.first?.ghRepoId == 1)
         #expect(snapshots.first?.fullName == "owner/repo-1")
+    }
+
+    @Test("DB Paging: fetchListCount 遵守当前 Manage 筛选条件")
+    func listCountHonorsManageFilters() async throws {
+        let (repo, db) = try makeRepo()
+        try await seedDataset(repo)
+
+        try await db.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET is_fork = 1 WHERE id = 2")
+            try db.execute(sql: "UPDATE repos SET is_archived = 1 WHERE id = 3")
+        }
+
+        #expect(try await repo.fetchListCount(scope: .allStars, filters: .empty) == 5)
+        #expect(try await repo.fetchListCount(
+            scope: .allStars,
+            filters: RepoListFilters(hideArchived: false, hideForks: true, status: nil, selectedTagIDs: [])
+        ) == 4)
+        #expect(try await repo.fetchListCount(
+            scope: .allStars,
+            filters: RepoListFilters(hideArchived: true, hideForks: true, status: nil, selectedTagIDs: [])
+        ) == 3)
+        #expect(try await repo.fetchListCount(scope: .language("Swift"), filters: .empty) == 2)
+        #expect(try await repo.fetchListCount(scope: .language(nil), filters: .empty) == 1)
     }
 }

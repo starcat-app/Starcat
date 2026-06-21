@@ -97,6 +97,15 @@ protocol RepoRepositoryProtocol: Sendable {
         offset: Int
     ) async throws -> [Repo]
 
+    /// 当前 Manage 查询下的真实总数。
+    ///
+    /// 列表 UI 采用分页加载后，`items.count / filteredSorted.count` 只代表已加载前缀；
+    /// 标题、副标题这类总量展示必须走 `COUNT(*)`，否则 1800+ 仓库只显示 20 / 40。
+    func fetchListCount(
+        scope: RepoListScope,
+        filters: RepoListFilters
+    ) async throws -> Int
+
     /// 当前 Manage 查询下的全部 repo id。
     ///
     /// 仅用于 Cmd+A / 少数全集语义；只投影 `id`，避免加载完整 `Repo` 行。

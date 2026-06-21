@@ -967,11 +967,10 @@ struct RepoListView: View {
             return selectedActivityCategory.localizedTitle
         }
         // W12 PR-5：多选数从 manageMultiSelectionStore 派生（替代原 viewModel.multiSelectedRepoIDs）。
-        // **R-07 修订**：subtitle 显示的"共 N 个"用户视角是「过滤后的总数」，应读
-        // `filteredSorted.count` 而非 `items.count`（分页切片）。否则用户看到
-        // "已选 5 / 共 20"，往下滚一屏又变成"共 40"，体感诡异。
+        // **R-07.2 修订**：DB 分页模式下 filteredSorted 只镜像已加载前缀，标题数量
+        // 必须读 ViewModel 的真实查询总数，避免 1800+ 仓库首屏只显示 20。
         let manageStore = dependencies.manageMultiSelectionStore
-        let visibleTotal = viewModel.filteredSorted.count
+        let visibleTotal = viewModel.visibleRepoTotalCount
         if manageStore.isActive {
             return String(
                 format: String.l10n("list.selectedCountFormat"),

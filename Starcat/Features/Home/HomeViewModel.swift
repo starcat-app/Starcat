@@ -128,6 +128,12 @@ final class HomeViewModel {
     /// 不暴露给真正的 UI 渲染（不用于 ForEach），只作"理论可见集合"语义。
     private(set) var filteredSorted: [Repo] = []
 
+    /// 当前查询条件下的真实 repo 总数。
+    ///
+    /// 普通 Manage 列表进入 DB 分页模式后，`items` / `filteredSorted` 只代表已加载前缀。
+    /// 标题、副标题这类总量展示必须读这里，由 Repository 的轻量 `COUNT(*)` 填充。
+    private(set) var visibleRepoTotalCount: Int = 0
+
     /// 当前列表快照版本。
     ///
     /// 为什么需要它：排序切换时 `items` 里是同一批 repo，只是顺序大幅变化。
@@ -604,6 +610,7 @@ final class HomeViewModel {
         items = []
         // R-07：客户端分页全套字段也要复位，避免新账号沿用旧账号的页位置 / hasMore
         filteredSorted = []
+        visibleRepoTotalCount = 0
         currentPage = 1
         hasMore = false
         itemsRevision &+= 1
@@ -1043,6 +1050,7 @@ final class HomeViewModel {
         if selection == .smartCollectionsHome, !isSearching {
             rawItems = []
             filteredSorted = []
+            visibleRepoTotalCount = 0
             items = []
             hasMore = false
             isLoading = false
@@ -1354,6 +1362,7 @@ final class HomeViewModel {
             }
             let result: Result<[Repo], Error>
             let statusResult: Result<[Int64: RepoStatus], Error>
+            let countResult: Result<Int, Error>
             do {
                 async let reposTask = self.repository.fetchListPage(
                     scope: scope,
@@ -1363,11 +1372,14 @@ final class HomeViewModel {
                     offset: queryOffset
                 )
                 async let statusTask = self.repoNoteRepository.fetchAllStatusMap()
+                async let countTask = self.repository.fetchListCount(scope: scope, filters: filters)
                 result = .success(try await reposTask)
                 statusResult = .success((try? await statusTask) ?? [:])
+                countResult = .success((try? await countTask) ?? self.visibleRepoTotalCount)
             } catch {
                 result = .failure(error)
                 statusResult = .success([:])
+                countResult = .success(self.visibleRepoTotalCount)
             }
 
             guard !Task.isCancelled else { return }
@@ -1378,15 +1390,18 @@ final class HomeViewModel {
             case .success(let rowsWithSentinel):
                 let pageRows = Array(rowsWithSentinel.prefix(requestedLimit))
                 let nextHasMore = rowsWithSentinel.count > requestedLimit
+                let queryTotalCount = (try? countResult.get()) ?? self.visibleRepoTotalCount
 
                 if isAppend {
                     guard !pageRows.isEmpty else {
                         self.hasMore = false
+                        self.visibleRepoTotalCount = queryTotalCount
                         return
                     }
                     self.items.append(contentsOf: pageRows)
                     self.rawItems = self.items
                     self.filteredSorted = self.items
+                    self.visibleRepoTotalCount = queryTotalCount
                     self.hasMore = nextHasMore
                     self.currentPage = max(1, Int(ceil(Double(self.items.count) / Double(Self.pageSize))))
                     self.statusMap = (try? statusResult.get()) ?? [:]
@@ -1396,6 +1411,7 @@ final class HomeViewModel {
                                        zip(visibleRows, self.items).allSatisfy { $0.id == $1.id }
                     self.rawItems = visibleRows
                     self.filteredSorted = visibleRows
+                    self.visibleRepoTotalCount = queryTotalCount
                     self.items = visibleRows
                     self.hasMore = nextHasMore
                     self.currentPage = max(1, Int(ceil(Double(visibleRows.count) / Double(Self.pageSize))))
@@ -1419,6 +1435,7 @@ final class HomeViewModel {
                 if self.items.isEmpty {
                     self.rawItems = []
                     self.filteredSorted = []
+                    self.visibleRepoTotalCount = 0
                     self.hasMore = false
                 }
                 AppLog.database.error("reloadDatabasePagedItems failed: \(error.localizedDescription, privacy: .public)")
@@ -1579,6 +1596,7 @@ final class HomeViewModel {
     /// （典型场景：SWR / forceRefresh 数据变化，preserveScrollPosition）。
     private func applyView(resetPage: Bool = true) {
         let newFilteredSorted = computeFilteredSorted()
+        visibleRepoTotalCount = newFilteredSorted.count
 
         // no-op 短路：filteredSorted 完全一致 → 数据无任何变化
         let filteredIdentical = newFilteredSorted.count == filteredSorted.count &&
