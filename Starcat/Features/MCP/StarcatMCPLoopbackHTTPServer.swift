@@ -2,7 +2,7 @@
 //  StarcatMCPLoopbackHTTPServer.swift
 //  Starcat
 //
-//  `StatelessHTTPServerTransport` 的本机 HTTP 适配器。
+//  `StarcatMCPRuntime` 的本机 HTTP 适配器。
 //
 //  MCP Swift SDK 的 server transport 是 framework-agnostic：它负责把 HTTPRequest 转成
 //  JSON-RPC，但不负责监听端口。Starcat 是 macOS 原生 App，不需要为了一个 loopback
@@ -21,7 +21,7 @@ import Network
 @MainActor
 final class StarcatMCPLoopbackHTTPServer {
     private let port: Int
-    private let transport: StatelessHTTPServerTransport
+    private let runtime: StarcatMCPRuntime
     private let requestValidator: @MainActor (StarcatHTTPServerRequest) -> StarcatHTTPServerError?
     private let queue = DispatchQueue(label: "com.starcat.mcp.http")
     private var listener: NWListener?
@@ -29,11 +29,11 @@ final class StarcatMCPLoopbackHTTPServer {
 
     init(
         port: Int,
-        transport: StatelessHTTPServerTransport,
+        runtime: StarcatMCPRuntime,
         requestValidator: @escaping @MainActor (StarcatHTTPServerRequest) -> StarcatHTTPServerError?
     ) {
         self.port = port
-        self.transport = transport
+        self.runtime = runtime
         self.requestValidator = requestValidator
     }
 
@@ -105,7 +105,7 @@ final class StarcatMCPLoopbackHTTPServer {
                 body: request.body,
                 path: request.path
             )
-            let response = await transport.handleRequest(httpRequest)
+            let response = await runtime.handle(httpRequest)
             send(Self.httpData(for: response), on: connection)
         } catch {
             send(StarcatHTTPServerError.badRequest(error.localizedDescription).httpData, on: connection)

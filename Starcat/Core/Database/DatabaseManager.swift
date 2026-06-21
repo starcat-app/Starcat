@@ -207,6 +207,7 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
 
         do {
             try migrator.migrate(writer)
+            try repairPrelaunchDevelopmentSchema(on: writer)
             let applied = try writer.read { db in
                 try migrator.appliedMigrations(db)
             }
@@ -214,6 +215,40 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
         } catch {
             AppLog.database.error("Migration failed: \(error.localizedDescription, privacy: .public)")
             throw DatabaseError.migrationFailed(underlying: error)
+        }
+    }
+
+    /// 修正未上线阶段本地开发库的 schema 形态。
+    ///
+    /// `repo_health_snapshots` 被并入 v1-initial 后，新库没有问题；但已经跑过 v1-initial
+    /// 的本机开发库不会再次执行该迁移闭包。项目尚未上线、无线上数据，这里直接补齐当前
+    /// 期望表结构，让派生缓存能被重新生成。
+    private static func repairPrelaunchDevelopmentSchema(on writer: any DatabaseWriter) throws {
+        try writer.write { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS repo_health_snapshots (
+                    repo_id INTEGER PRIMARY KEY REFERENCES repos(id) ON DELETE CASCADE,
+                    overall_score DOUBLE NOT NULL,
+                    grade TEXT NOT NULL,
+                    maintenance_score DOUBLE NOT NULL,
+                    popularity_score DOUBLE NOT NULL,
+                    quality_score DOUBLE NOT NULL,
+                    security_score DOUBLE NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    computed_at TEXT NOT NULL,
+                    stale_after TEXT NOT NULL,
+                    fetch_status TEXT NOT NULL,
+                    last_error TEXT
+                )
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_repo_health_stale_after
+                ON repo_health_snapshots(stale_after)
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_repo_health_overall_score
+                ON repo_health_snapshots(overall_score)
+                """)
         }
     }
 

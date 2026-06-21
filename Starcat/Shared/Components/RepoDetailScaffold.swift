@@ -141,6 +141,12 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// Stars stat chip 的 tooltip 本地化键（透传给 RepoMetadataHeaderView）。
     let starHelpKey: LocalizedStringKey
 
+    /// 是否显示 Pro 项目健康度入口。
+    ///
+    /// 产品约束：Health 只在 Manage 详情开放。Trending / Weekly / Activity 详情继续只展示
+    /// OpenSSF 入口，避免把 Pro 私人功能暴露到公共发现页。
+    let showsRepoHealthEntry: Bool
+
     // v2.1 修订（2026-06-11）：原 `onRefresh: (() async -> Void)?` 入参已删除。
     // 该字段曾给 §3.2.9「右下角浮动刷新按钮」用,但与 cacheFooter 内置 SyncIconButton
     // 视觉重叠造成 bug,详见文件头 v2.1 修订段。现刷新入口统一收口到 cacheFooter
@@ -177,6 +183,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         viewData: RepoDetailViewData,
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
+        showsRepoHealthEntry: Bool = false,
         onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder heroExtension: @escaping () -> HeroExt,
         @ViewBuilder body: @escaping (@escaping (RepoDetailScrollReport) -> Void) -> Body
@@ -185,6 +192,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         self.viewData = viewData
         self.fallbackAccentColor = fallbackAccentColor
         self.starHelpKey = starHelpKey
+        self.showsRepoHealthEntry = showsRepoHealthEntry
         self.onStarTapped = onStarTapped
         self.heroExtension_ = heroExtension
         self.body_ = body
@@ -196,6 +204,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         viewData: RepoDetailViewData,
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
+        showsRepoHealthEntry: Bool = false,
         onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder body: @escaping (@escaping (RepoDetailScrollReport) -> Void) -> Body
     ) where HeroExt == EmptyView {
@@ -204,6 +213,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             viewData: viewData,
             fallbackAccentColor: fallbackAccentColor,
             starHelpKey: starHelpKey,
+            showsRepoHealthEntry: showsRepoHealthEntry,
             onStarTapped: onStarTapped,
             heroExtension: { EmptyView() },
             body: body
@@ -322,6 +332,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     fallbackAccentColor: fallbackAccentColor,
                     starHelpKey: starHelpKey,
                     headerSourceBadge: viewData.headerSourceBadge,
+                    showsRepoHealthEntry: showsRepoHealthEntry,
                     onStarTapped: onStarTapped
                 ) {
                     trailingActionsView

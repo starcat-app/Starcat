@@ -108,6 +108,7 @@ struct RepoDetailView: View {
                     // **v2.0 修订**:tooltip 与 toggle 行为对齐——已 star 显示「取消 star」,
                     // 未 star 显示「star」。从 `Repo.isStarred` 直接派生(同 trailingActions)。
                     starHelpKey: repo.isStarred ? "repo.unstar" : "repo.star",
+                    showsRepoHealthEntry: true,
                     onStarTapped: {
                         // §3.2.3 状态机：throws 让 StarStatChipButton 抖动 + 短暂红色（不弹 alert）
                         try await handleStarTapped(repo: repo)

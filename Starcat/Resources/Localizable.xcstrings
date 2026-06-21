@@ -19862,6 +19862,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库代码上下文" } }
       }
     },
+    "subscription.feature.repoHealth" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "repo health report" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "项目健康度" } }
+      }
+    },
     "subscription.feature.semanticSearch" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -27340,6 +27347,125 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刷新"
+          }
+        }
+      }
+    },
+    "repoHealth.rules.formula" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overall score = Maintenance 35% + Security 25% + Popularity 20% + Project information 20%."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "综合分 = 维护活跃度 35% + 安全信号 25% + 社区热度 20% + 项目信息 20%。"
+          }
+        }
+      }
+    },
+    "repoHealth.rules.maintenance" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uses archived state, latest push time, and latest release freshness."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用归档状态、最近 push 时间、最新 Release 新鲜度。"
+          }
+        }
+      }
+    },
+    "repoHealth.rules.missing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Missing signals use conservative defaults, so a partial report may score lower than a fully indexed project."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缺失信号会使用保守默认值，因此部分数据缺失的报告分数可能低于完整收录项目。"
+          }
+        }
+      }
+    },
+    "repoHealth.rules.popularity" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uses stars, forks, and watchers with logarithmic scaling."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 stars、forks、watchers，并按对数缩放避免大项目过度拉开差距。"
+          }
+        }
+      }
+    },
+    "repoHealth.rules.quality" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uses license, topics, homepage, default branch, and open issue count."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用许可证、topics、主页、默认分支、open issue 数量。"
+          }
+        }
+      }
+    },
+    "repoHealth.rules.security" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uses OpenSSF Scorecard when available; missing OpenSSF falls back to a neutral 50."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优先使用 OpenSSF Scorecard；缺失时安全维度按中性 50 分计算。"
+          }
+        }
+      }
+    },
+    "repoHealth.rules.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scoring rules"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "评分规则"
           }
         }
       }

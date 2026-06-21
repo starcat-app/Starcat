@@ -11,7 +11,6 @@
 //
 
 import Foundation
-import MCP
 import Observation
 
 @MainActor
@@ -29,9 +28,10 @@ final class StarcatMCPService {
     private let facade: StarcatMCPFacade
     private let writeFacade: StarcatMCPWriteFacade
     private let notificationService: ReleaseNotificationService?
-    private var server: Server?
-    private var transport: StatelessHTTPServerTransport?
+    private var runtime: StarcatMCPRuntime?
     private var httpServer: StarcatMCPLoopbackHTTPServer?
+    private var startupTask: Task<Void, Never>?
+    private var lifecycleGeneration = 0
 
     private(set) var state: State = .stopped
     private(set) var bearerToken: String
@@ -118,43 +118,44 @@ final class StarcatMCPService {
             return
         }
 
-        let transport = StatelessHTTPServerTransport()
-        let server = Server(
-            name: "starcat",
-            version: "0.1.0",
-            title: "Starcat",
-            instructions: "Expose Starcat starred repository context to local agents. Write tools are Pro-only, local-data-only, settings-gated, and audited.",
-            capabilities: .init(
-                resources: .init(listChanged: false),
-                tools: .init(listChanged: false)
-            )
-        )
-        let registry = StarcatMCPToolRegistry(facade: facade, writeFacade: writeFacade)
+        lifecycleGeneration += 1
+        let generation = lifecycleGeneration
+        let runtime = StarcatMCPRuntime(facade: facade, writeFacade: writeFacade)
 
-        Task { @MainActor in
+        startupTask = Task { @MainActor in
             do {
                 // NWListener.cancel() 是异步的，重启场景下旧 listener 的 socket
-                // 释放有延迟；这里重试最多 5 次（每次等 200ms，累计 1s），
+                // 释放有延迟；这里重试最多 10 次（每次等 200ms，累计 2s），
                 // 避免用户看到「端口占用」误报。
+                try Task.checkCancellation()
                 try await waitForPortAvailable(port: port)
+                try Task.checkCancellation()
 
-                await registry.register(on: server)
-                try await server.start(transport: transport)
+                try await runtime.start()
                 let httpServer = StarcatMCPLoopbackHTTPServer(
                     port: port,
-                    transport: transport,
+                    runtime: runtime,
                     requestValidator: { [weak self] request in
                         self?.validate(request)
                     }
                 )
                 try httpServer.start()
-                self.server = server
-                self.transport = transport
+
+                guard !Task.isCancelled, generation == self.lifecycleGeneration else {
+                    httpServer.stop()
+                    await runtime.shutdown()
+                    return
+                }
+
+                self.runtime = runtime
                 self.httpServer = httpServer
                 self.state = .running(port: port)
                 AppLog.network.info("MCP Service started on 127.0.0.1:\(port, privacy: .public)")
+            } catch is CancellationError {
+                await runtime.shutdown()
             } catch {
-                await transport.disconnect()
+                await runtime.shutdown()
+                guard generation == self.lifecycleGeneration else { return }
                 self.state = .failed(error.localizedDescription)
                 AppLog.network.error("MCP Service failed: \(error.localizedDescription, privacy: .public)")
                 await self.notificationService?.dispatchMCPFailure(message: error.localizedDescription)
@@ -163,14 +164,16 @@ final class StarcatMCPService {
     }
 
     func stop() {
+        lifecycleGeneration += 1
+        startupTask?.cancel()
+        startupTask = nil
         httpServer?.stop()
         httpServer = nil
-        let transport = transport
-        self.transport = nil
-        self.server = nil
-        if transport != nil {
+        let runtime = runtime
+        self.runtime = nil
+        if runtime != nil {
             Task {
-                await transport?.disconnect()
+                await runtime?.shutdown()
             }
         }
         state = .stopped
@@ -180,10 +183,10 @@ final class StarcatMCPService {
     ///
     /// `NWListener.cancel()` 是异步操作，重启场景下旧 listener 的 socket 释放
     /// 有延迟（通常 < 50ms）。这里用 POSIX `bind` 做同步探测，连续失败则等 200ms
-    /// 重试，最多 5 次（累计 1s）。真正被其他进程占用时，5 次后仍会正确报错。
+    /// 重试，最多 10 次（累计 2s）。真正被其他进程占用时，10 次后仍会正确报错。
     private func waitForPortAvailable(
         port: Int,
-        maxRetries: Int = 5,
+        maxRetries: Int = 10,
         delayInMS: UInt64 = 200
     ) async throws {
         for attempt in 0..<maxRetries {

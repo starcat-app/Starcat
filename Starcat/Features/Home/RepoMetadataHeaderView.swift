@@ -62,19 +62,23 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     /// 行为对齐,避免误导用户。
     let starHelpKey: LocalizedStringKey
     let headerSourceBadge: RepoDetailHeaderSourceBadge?
+    let showsRepoHealthEntry: Bool
     private let trailingActions: TrailingActions
 
-    /// Repo Health 入口放在 `full_name` 同行。它替代原本直接暴露的 OpenSSF badge：
-    /// OpenSSF 仍是 Health 面板里的 Security 维度，但详情页主入口用更总括的健康度，
-    /// 避免用户把单一安全评分误读成项目整体质量。
+    /// OpenSSF 与 Repo Health 都放在 `full_name` 同行。
+    /// OpenSSF 是公开安全信号，所有详情页可见；Repo Health 是 Manage 专属 Pro 能力，
+    /// 由 Scaffold 通过 `showsRepoHealthEntry` 明确放行。
     @Environment(AppDependencies.self) private var dependencies
+    @State private var showOpenSSFScoreSheet = false
     @State private var showRepoHealthSheet = false
+    @State private var paywallContext: ProPaywallContext?
 
     init(
         repo: Repo,
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         headerSourceBadge: RepoDetailHeaderSourceBadge? = nil,
+        showsRepoHealthEntry: Bool = false,
         onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder trailingActions: () -> TrailingActions
     ) {
@@ -82,6 +86,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         self.fallbackAccentColor = fallbackAccentColor
         self.starHelpKey = starHelpKey
         self.headerSourceBadge = headerSourceBadge
+        self.showsRepoHealthEntry = showsRepoHealthEntry
         self.onStarTapped = onStarTapped
         self.trailingActions = trailingActions()
     }
@@ -97,9 +102,16 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         .padding(.bottom, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         // hero tint 由 `RepoDetailScaffold` 根节点 `DetailHeroTintBackground` 统一绘制。
+        .sheet(isPresented: $showOpenSSFScoreSheet) {
+            OpenSSFScoreSheet(repo: repo)
+                .appSheetRootEnvironment(dependencies)
+        }
         .sheet(isPresented: $showRepoHealthSheet) {
             RepoHealthSheet(repo: repo)
                 .appSheetRootEnvironment(dependencies)
+        }
+        .sheet(item: $paywallContext) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
     }
 
@@ -117,12 +129,15 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
                         .textSelection(.enabled)
                         .help(repo.fullName)
 
-                    // 2026-06-20：Health 入口紧贴 full_name 之后、source badge 之前。
-                    // 必须是本地已持久化的 starred repo：Health 快照表外键指向 `repos.id`，
-                    // ephemeral repo 即使 id 是 GitHub repo id，也不保证本地 `repos` 有行。
-                    if repo.hasLocalHealthCacheBacking {
+                    OpenSSFInlineBadge(repo: repo) {
+                        showOpenSSFScoreSheet = true
+                    }
+
+                    // Health 只在 Manage 详情开放；按钮保留可见性，但点击前先过 Pro gate。
+                    // 必须是本地已持久化的 starred repo：Health 快照表外键指向 `repos.id`。
+                    if showsRepoHealthEntry && repo.hasLocalHealthCacheBacking {
                         RepoHealthInlineBadge(repo: repo) {
-                            showRepoHealthSheet = true
+                            openRepoHealth()
                         }
                     }
 
@@ -137,6 +152,18 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 
             Spacer()
             trailingActions
+        }
+    }
+
+    private func openRepoHealth() {
+        guard showsRepoHealthEntry else { return }
+        do {
+            try dependencies.entitlementGate.requirePro(.repoHealth)
+            showRepoHealthSheet = true
+        } catch let error as EntitlementGateError {
+            paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
+        } catch {
+            paywallContext = ProPaywallContext(feature: .repoHealth, message: error.localizedDescription)
         }
     }
 
@@ -581,6 +608,53 @@ private struct RepoBadgeChip: View {
     }
 }
 
+/// `full_name` 同行的 OpenSSF Scorecard 入口。
+///
+/// 入口本身在所有详情页可见；只有本地已持久化 repo 才预拉缓存，因为 OpenSSF 缓存表
+/// 外键指向 `repos.id`。未持久化的发现页 repo 仍可打开 sheet，等用户 star 后会走同一套
+/// 本地缓存路径。
+private struct OpenSSFInlineBadge: View {
+    let repo: Repo
+    let onTap: () -> Void
+
+    @Environment(AppDependencies.self) private var dependencies
+
+    var body: some View {
+        let badge = dependencies.openSSFScoreStore.badge(for: repo.id)
+
+        Button(action: onTap) {
+            if let badge {
+                OpenSSFScoreBadge(score: badge, size: .regular)
+            } else {
+                fallbackBadge
+            }
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pressableHover()
+        .help("openssf.badge.help")
+        .task(id: repo.id) {
+            guard repo.hasLocalHealthCacheBacking else { return }
+            await dependencies.openSSFScoreStore.loadCachedScores(for: [repo.id])
+            dependencies.openSSFScoreStore.prefetchIfNeeded(repo: repo)
+        }
+    }
+
+    private var fallbackBadge: some View {
+        Image(systemName: "checkmark.shield.fill")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(OpenSSFScoreBadge.iridescentForeground)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.accentColor.opacity(0.10), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Color.accentColor.opacity(0.22), lineWidth: 0.5)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
 /// `full_name` 同行的 Repo Health 总评分入口。
 ///
 /// 它故意不复用 OpenSSFScoreBadge：OpenSSF 是单一安全维度，Health 是聚合评分。
@@ -640,15 +714,22 @@ private struct RepoHealthInlineBadge: View {
     private var fallbackBadge: some View {
         Image(systemName: "gauge.with.dots.needle.67percent")
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Self.healthForeground)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(Color.secondary.opacity(0.10), in: Capsule())
+            .background(Color.accentColor.opacity(0.10), in: Capsule())
             .overlay {
                 Capsule()
-                    .stroke(Color.secondary.opacity(0.20), lineWidth: 0.5)
+                    .stroke(Color.accentColor.opacity(0.22), lineWidth: 0.5)
             }
+            .fixedSize(horizontal: true, vertical: false)
     }
+
+    private static let healthForeground = LinearGradient(
+        colors: [.green, .teal, .blue, .orange],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
 
     private func healthTint(_ score: Double) -> Color {
         if score >= 80 { return .green }

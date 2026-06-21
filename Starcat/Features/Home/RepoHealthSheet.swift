@@ -41,7 +41,7 @@ struct RepoHealthSheet: View {
             didRequestInitialSnapshot = false
             await store.loadCachedSnapshots(for: [repo.id])
             if store.snapshot(for: repo.id) == nil {
-                store.prefetchIfNeeded(repo: repo)
+                _ = await store.refresh(repo: repo, force: false)
             }
             didRequestInitialSnapshot = true
         }
@@ -65,7 +65,7 @@ struct RepoHealthSheet: View {
             Spacer()
 
             Button {
-                Task { await store.refresh(repo: repo, force: true) }
+                Task { await store.refreshFromNetwork(repo: repo) }
             } label: {
                 Label("repoHealth.action.refresh", systemImage: "arrow.clockwise")
             }
@@ -95,6 +95,7 @@ struct RepoHealthSheet: View {
                     scoreSummary(snapshot)
                     dimensionGrid(snapshot)
                     metadataSection(snapshot)
+                    scoringRulesSection
                 }
                 .padding(16)
             }
@@ -203,6 +204,49 @@ struct RepoHealthSheet: View {
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
     }
 
+    private var scoringRulesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("repoHealth.rules.title")
+                .font(.headline)
+            Text("repoHealth.rules.formula")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 8) {
+                ruleRow(icon: "wrench.and.screwdriver", title: "repoHealth.dimension.maintenance", detail: "repoHealth.rules.maintenance")
+                ruleRow(icon: "star.circle", title: "repoHealth.dimension.popularity", detail: "repoHealth.rules.popularity")
+                ruleRow(icon: "checklist", title: "repoHealth.dimension.quality", detail: "repoHealth.rules.quality")
+                ruleRow(icon: "checkmark.shield", title: "repoHealth.dimension.security", detail: "repoHealth.rules.security")
+            }
+
+            Text("repoHealth.rules.missing")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func ruleRow(icon: String, title: LocalizedStringKey, detail: LocalizedStringKey) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     private func metadataRow(icon: String, title: LocalizedStringKey, value: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
@@ -245,13 +289,6 @@ struct RepoHealthSheet: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button {
-                Task { await store.refresh(repo: repo, force: true) }
-            } label: {
-                Label("repoHealth.action.refresh", systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(.bordered)
-            .disabled(store.isLoading(repoId: repo.id))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)

@@ -81,5 +81,19 @@ final class RepoHealthStore {
             return snapshots[repo.id]
         }
     }
-}
 
+    func refreshFromNetwork(repo: Repo) async -> RepoHealthSnapshot? {
+        guard !loadingRepoIDs.contains(repo.id) else { return snapshots[repo.id] }
+        loadingRepoIDs.insert(repo.id)
+        defer { loadingRepoIDs.remove(repo.id) }
+
+        do {
+            let snapshot = try await service.refreshWithLatestSignals(repo: repo)
+            snapshots[repo.id] = snapshot
+            return snapshot
+        } catch {
+            AppLog.general.warning("RepoHealth network refresh failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return snapshots[repo.id]
+        }
+    }
+}

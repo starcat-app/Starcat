@@ -676,14 +676,17 @@ final class AppDependencies {
         self.releaseMonitor = monitor
         self.releasePoller = ReleasePoller(monitor: monitor, notificationService: notificationService)
 
-        // Repo Health：第一版只聚合已有本地缓存（repos / releases / OpenSSF），
-        // 不在详情页实时打额外 GitHub API。装配必须晚于 Release / OpenSSF 仓库。
+        // Repo Health：后台/自动预取只聚合已有本地缓存；用户点击 Health 面板刷新时
+        // 通过 GitHub Releases + OpenSSF 服务主动更新信号缓存后再重算。
+        // 装配必须晚于 Release / OpenSSF 仓库与服务。
         let healthRepo = GRDBRepoHealthRepository(database: db)
         self.repoHealthRepository = healthRepo
         let healthService = RepoHealthService(
             repository: healthRepo,
             releaseRepository: releaseRecordRepo,
-            openSSFRepository: openSSFRepo
+            openSSFRepository: openSSFRepo,
+            apiClient: api,
+            openSSFService: openSSFService
         )
         self.repoHealthService = healthService
         self.repoHealthStore = RepoHealthStore(service: healthService)
