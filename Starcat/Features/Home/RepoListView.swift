@@ -99,6 +99,16 @@ struct RepoListView: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                // 全局状态入口放在中栏 toolbar：它汇总同步、后台 AI 队列、MCP 与诊断问题，
+                // 点击后打开 popover，不额外占用主界面纵向空间。
+                // 顺序：W12 toolbar 专项 PR-5 followup，状态按钮提到搜索按钮之前（最左侧），
+                // 让"应用健康度"成为用户进首页第一眼就能看到的状态指示。
+                AppStatusToolbarButton(
+                    lastSyncedAt: lastSyncedAt,
+                    onShowBatchAIPanel: onShowBatchAIPanel
+                )
+            }
+            ToolbarItem(placement: .primaryAction) {
                 // 视觉对齐：与 UnifiedFilterMenu / UnifiedSortMenu / MultiSelectButton 等
                 // 邻位控件一致，统一走 `Button { ToolbarIcon(...) }` 让 macOS toolbar
                 // 自行渲染默认圆角矩形按钮，避免之前 `.buttonStyle(.bordered) + minWidth: 62`
@@ -114,14 +124,6 @@ struct RepoListView: View {
                         .accessibilityLabel(Text("toolbar.globalSearch"))
                 }
                 .help("toolbar.globalSearchHelp")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                // 全局状态入口放在中栏 toolbar：它汇总同步、后台 AI 队列、MCP 与诊断问题，
-                // 点击后打开 popover，不额外占用主界面纵向空间。
-                AppStatusToolbarButton(
-                    lastSyncedAt: lastSyncedAt,
-                    onShowBatchAIPanel: onShowBatchAIPanel
-                )
             }
             // W12 toolbar 专项 PR-1：toolbar 内容按 selectedPage 派发到对应 spec builder。
             // 当前只有 manage 走完整 spec，trending / activity 返回 .empty —— 它们各自
