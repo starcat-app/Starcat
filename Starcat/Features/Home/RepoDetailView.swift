@@ -123,11 +123,12 @@ struct RepoDetailView: View {
                 ) { onScrollReport in
                     ManageDetailContent(repo: repo, onScrollReport: onScrollReport)
                 }
-                // D-28 修订（2026-06-11）：从 `.transition(detailContentTransition)` 切到
-                // 共享 modifier `.detailContentTransition()`,与 activity / weekly 详情页
-                // 4 处入场动画**完全同构**(共享逻辑沉淀在
-                // `Shared/Components/DetailContentTransition.swift`)。
-                .detailContentTransition()
+                // 2026-06-21 性能修订：
+                // Manage 详情的 body 是 README WKWebView。root transition 会让旧 repo
+                // 的 WebView 和新 repo 的 WebView 在 0.4s 内同时存在，repo 快速切换时
+                // 会触发大量 WebContent 子进程日志并放大卡顿。Manage 同分支切 repo 现在
+                // 交给 Scaffold/ReadmeViewModel 直接切换；Trending/Activity/Weekly 仍保留
+                // 共享 transition，因为它们的 root 切换语义更依赖入场反馈。
             } else if let trending = selectedTrendingRepo {
                 // R-01 §3.2.3 Phase B3（2026-06-10）：trending 详情切到 RepoDetailScaffold
                 // + TrendingDetailContent 共用骨架。`TrendingScaffoldShell` 内部维护
@@ -709,6 +710,7 @@ struct WatchersMenu: View {
     }
     
     @State private var watchState: WatchState = .loading
+    @State private var loadedRepoId: Int64?
     
     var body: some View {
         Menu {
@@ -770,38 +772,80 @@ struct WatchersMenu: View {
         // `.pressableHover()`，让用户感知 Watchers 数字是可点击的（点开下拉菜单）。
         .pressableHover()
         .help("repo.watch")
-        .task(id: repo.id) {
-            await fetchSubscription()
+        .simultaneousGesture(TapGesture().onEnded {
+            loadSubscriptionWhenUserOpensMenu()
+        })
+        .onAppear {
+            applyCachedSubscriptionState()
+        }
+        .onChange(of: repo.id) { _, _ in
+            applyCachedSubscriptionState()
         }
     }
     
+    private func loadSubscriptionWhenUserOpensMenu() {
+        if applyCachedSubscriptionState() {
+            return
+        }
+        Task { await fetchSubscription() }
+    }
+
+    @discardableResult
+    private func applyCachedSubscriptionState() -> Bool {
+        if let cached = WatchSubscriptionSessionCache.state(for: repo.id) {
+            watchState = cached
+            loadedRepoId = repo.id
+            return true
+        }
+        // GitHub Watch 状态只在用户打开菜单时才需要；切换 repo 不再自动打
+        // `/subscription`，避免详情切换路径抢网络和触发额外状态更新。
+        watchState = .loading
+        loadedRepoId = nil
+        return false
+    }
+
     private func fetchSubscription() async {
+        let requestedRepoId = repo.id
+        if loadedRepoId == requestedRepoId, watchState != .error {
+            return
+        }
         watchState = .loading
         do {
             let dto = try await dependencies.apiClient.getSubscription(owner: repo.owner, repo: repo.name)
+            let resolvedState: WatchState
             if dto.subscribed {
-                watchState = .allActivity
+                resolvedState = .allActivity
             } else if dto.ignored {
-                watchState = .ignore
+                resolvedState = .ignore
             } else {
-                watchState = .custom
+                resolvedState = .custom
             }
+            guard repo.id == requestedRepoId else { return }
+            watchState = resolvedState
+            loadedRepoId = requestedRepoId
+            WatchSubscriptionSessionCache.set(resolvedState, for: requestedRepoId)
         } catch NetworkError.notFound {
             // 404 在 GitHub Watch API 是预期行为：表示用户对这个 repo 没有显式
             // 订阅记录、保持默认 Participating 级别（不是"repo 不存在"）。
             // 完整语义见 `StarsAPI.getSubscription` 的 doc comment。
+            guard repo.id == requestedRepoId else { return }
             watchState = .participating
+            loadedRepoId = requestedRepoId
+            WatchSubscriptionSessionCache.set(.participating, for: requestedRepoId)
         } catch {
+            guard repo.id == requestedRepoId else { return }
             watchState = .error
         }
     }
     
     private func updateSubscription(subscribed: Bool, ignored: Bool) async {
+        let repoId = repo.id
         let previousState = watchState
         watchState = .loading
         do {
             if !subscribed && !ignored {
                 try await dependencies.apiClient.deleteSubscription(owner: repo.owner, repo: repo.name)
+                guard repo.id == repoId else { return }
                 watchState = .participating
             } else {
                 let dto = try await dependencies.apiClient.putSubscription(
@@ -810,6 +854,7 @@ struct WatchersMenu: View {
                     subscribed: subscribed,
                     ignored: ignored
                 )
+                guard repo.id == repoId else { return }
                 if dto.subscribed {
                     watchState = .allActivity
                 } else if dto.ignored {
@@ -818,10 +863,25 @@ struct WatchersMenu: View {
                     watchState = .custom
                 }
             }
+            WatchSubscriptionSessionCache.set(watchState, for: repoId)
+            loadedRepoId = repoId
         } catch {
             AppLog.sync.error("Update subscription failed: \(error.localizedDescription, privacy: .public)")
             watchState = previousState
         }
+    }
+}
+
+@MainActor
+private enum WatchSubscriptionSessionCache {
+    private static var states: [Int64: WatchersMenu.WatchState] = [:]
+
+    static func state(for repoId: Int64) -> WatchersMenu.WatchState? {
+        states[repoId]
+    }
+
+    static func set(_ state: WatchersMenu.WatchState, for repoId: Int64) {
+        states[repoId] = state
     }
 }
 

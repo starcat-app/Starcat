@@ -9,8 +9,11 @@
 //  - 第一版不在 UI 中展示 payload_json 里的英文证据句，避免未本地化文本直出。
 //  - 不内嵌 OpenSSF 详情入口（2026-06-21 dong4j 反馈移除）；
 //    OpenSSF 数据作为 Security 维度的来源在 `metadataSection` 里展示即可。
-//  - 评分规则做成"底部弹出面板"模式：默认折叠、整行触发条可点，
-//    展开后从底部上滑出独立面板（不挤占主内容），符合 macOS inspector 语义。
+//  - 评分规则做成"底部面板切换"模式（2026-06-21 v2 方案）：
+//    折叠态渲染触发条、展开态渲染面板,**同一位置根据状态切换**,
+//    不用 overlay 弹层。overlay 路线在展开时会让 sheet 撑高
+//    多出来的空间滞留在 content 与面板之间形成大片空白
+//    (dong4j 2026-06-21 反馈),v2 改用 VStack footer 切换彻底解决。
 //
 
 import SwiftUI
@@ -37,10 +40,14 @@ struct RepoHealthSheet: View {
         return try? JSONDecoder().decode(RepoHealthPayload.self, from: raw)
     }
 
-    /// 评分规则面板固定高度。
+    /// sheet 折叠态的基础 idealHeight。
     ///
-    /// 内容是 1 公式 + 4 规则行 + 1 缺失说明,固定 280pt 视觉最稳定。
-    /// 改自适应会让用户每次展开时面板高度抖动,体验反而不好。
+    /// 由 header(50) + content(自然高度约 380,含 padding 412) + rulesFooterBar(50) 累加而来。
+    /// 圆卡从固定 118pt 改为自适应 88/104pt 后 content 高度下降约 30pt。
+    /// 展开态在下面 + Self.rulesPanelHeight 撑高。
+    private static let collapsedIdealHeight: CGFloat = 470
+
+    /// 评分规则面板区高度(展开时)。
     private static let rulesPanelHeight: CGFloat = 280
 
     var body: some View {
@@ -48,22 +55,20 @@ struct RepoHealthSheet: View {
             header
             Divider()
             content
-            rulesFooterBar
+            // footer 区根据 isRulesExpanded 在两个 view 之间切换:
+            // - 折叠:rulesFooterBar(50pt,触发条)
+            // - 展开:scoringRulesPanel(280pt,完整面板)
+            // 同一 VStack 槽位,不引入 overlay → content 高度永远不会
+            // 因为面板展开而被向下推(dong4j 2026-06-21 v2 方案)。
+            rulesSection
         }
+        // sheet 高度根据 isRulesExpanded 动态变化。
+        // maxHeight 给 .infinity 是为了让 macOS 允许用户手动拉大,
+        // 但默认 idealHeight 已经够紧凑,不会自动留白。
         .frame(minWidth: 560, idealWidth: 620, maxWidth: 820,
-               minHeight: 520, idealHeight: 620, maxHeight: .infinity)
-        .overlay(alignment: .bottom) {
-            // 评分规则面板作为"附属于窗口的二级面板",从底部上滑出。
-            // 用 overlay 而不是放在 content 内,这样:
-            // 1) 主内容(scoreSummary / dimensionGrid / metadataSection)
-            //    始终稳定可见,不被规则面板挤掉;
-            // 2) 面板展开/折叠动画只影响面板自身,不会触发主内容 frame 重排。
-            if isRulesExpanded, let snapshot {
-                scoringRulesPanel(snapshot)
-                    .frame(height: Self.rulesPanelHeight)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
+               minHeight: 520,
+               idealHeight: isRulesExpanded ? Self.collapsedIdealHeight + Self.rulesPanelHeight : Self.collapsedIdealHeight,
+               maxHeight: .infinity)
         .animation(.easeInOut(duration: 0.25), value: isRulesExpanded)
         .task(id: repo.id) {
             didRequestInitialSnapshot = false
@@ -76,6 +81,16 @@ struct RepoHealthSheet: View {
                 _ = await store.refresh(repo: repo, force: false)
             }
             didRequestInitialSnapshot = true
+        }
+    }
+
+    /// footer 区——根据展开状态切换触发条 / 面板。
+    @ViewBuilder
+    private var rulesSection: some View {
+        if isRulesExpanded, let snapshot {
+            scoringRulesPanel(snapshot)
+        } else {
+            rulesFooterBar
         }
     }
 
@@ -128,19 +143,17 @@ struct RepoHealthSheet: View {
     @ViewBuilder
     private var content: some View {
         if let snapshot {
-            // 不再套 ScrollView:三段都是固定高度,自然铺完即满,
-            // 配合 maxHeight: .infinity,窗口能按内容自适应,
-            // 避免出现滚动条(dong4j 2026-06-21 反馈)。
-            // .frame(maxHeight: .infinity, alignment: .top) 强制顶部对齐:
-            // maxHeight 给了 sheet 弹性空间,但内容自身不撑满时不应在
-            // 顶部或底部留白(dong4j 2026-06-21 反馈)。
+            // 三段固定高度铺完即满,无 ScrollView。
+            // .frame(maxWidth: .infinity, alignment: .leading) 仅横向撑满 + 左对齐,
+            // **不**设 maxHeight,让 content 用自然高度,避免撑出空白。
+            // 顶部对齐由外层 VStack(alignment: .leading) + sheet 顶部边距保证。
             VStack(alignment: .leading, spacing: 16) {
                 scoreSummary(snapshot)
                 dimensionGrid(snapshot)
                 metadataSection(snapshot)
             }
             .padding(16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         } else if store.isLoading(repoId: repo.id) || !didRequestInitialSnapshot {
             loadingContent
         } else {
@@ -149,25 +162,31 @@ struct RepoHealthSheet: View {
     }
 
     private func scoreSummary(_ snapshot: RepoHealthSnapshot) -> some View {
-        // alignment: .top —— 原 .center 会让圆卡固定 118pt 撑高整行,
-        // 右侧文字高度不到 118pt 时留下顶部空白(dong4j 2026-06-21 反馈)。
-        // 改为 top 对齐后圆卡与右侧文字顶部平齐,空白自然消失。
-        HStack(alignment: .top, spacing: 14) {
+        // alignment: .top —— 圆卡与右侧文字顶部平齐,
+        // 避免 HStack 默认 center 让圆卡在视觉上"悬空"。
+        // **关键**:圆卡不再固定 118pt,而是用 .frame(width: cardSize, height: cardSize)
+        // 根据分数位数自适应(2 位数 88pt / 3 位数 104pt),否则固定 118pt
+        // 会让 HStack 行高度 = 圆卡高度,即使右侧文字只有 60pt 高也会留下空白。
+        let rounded = Int(snapshot.overallScore.rounded())
+        let cardSize: CGFloat = rounded >= 100 ? 104 : 88
+        let scoreFontSize: CGFloat = rounded >= 100 ? 38 : 34
+
+        return HStack(alignment: .top, spacing: 14) {
             ZStack {
                 Circle()
                     .fill(healthTint(snapshot.overallScore).opacity(0.14))
                 Circle()
                     .stroke(healthTint(snapshot.overallScore).opacity(0.42), lineWidth: 1)
                 VStack(spacing: 0) {
-                    Text(verbatim: "\(Int(snapshot.overallScore.rounded()))")
-                        .font(.system(size: 42, weight: .semibold, design: .rounded))
+                    Text(verbatim: "\(rounded)")
+                        .font(.system(size: scoreFontSize, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                     Text(verbatim: snapshot.grade)
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(healthTint(snapshot.overallScore))
                 }
             }
-            .frame(width: 118, height: 118)
+            .frame(width: cardSize, height: cardSize)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("repoHealth.score.overall")
@@ -250,19 +269,20 @@ struct RepoHealthSheet: View {
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
     }
 
-    /// 底部固定触发条：始终在窗口底部显示,整行可点切换评分规则面板展开/折叠。
+    /// 底部触发条:仅在折叠态显示,展开态由 `scoringRulesPanel` 接管 footer 槽位。
     ///
-    /// 设计要点:
-    /// - 不再嵌套在 metadataSection 内,而是作为窗口的固定 footer,
-    ///   视觉上明确"评分规则是附属于窗口的一个二级面板的触发入口";
-    /// - chevron 旋转方向:`chevron.up` 展开时旋转 180°(箭头朝上指向会展开的方向),
-    ///   折叠时回正(箭头朝下),符合 macOS inspector 的视觉习惯;
+    /// 设计要点(2026-06-21 v2):
+    /// - 不再用 overlay 弹层,改用"footer 槽位"切换——同一 VStack 位置
+    ///   根据 `isRulesExpanded` 在触发条和面板之间二选一,避免之前 overlay
+    ///   路线带来的"展开时 content 区域被向下推形成大片空白"问题;
+    /// - chevron 折叠时朝上(暗示"点我展开"),展开后此 view 不在视图中,
+    ///   面板内自带 x 关闭按钮。
     /// - `.buttonStyle(.plain) + .focusEffectDisabled()` 遵守项目 UI 规范
     ///   (禁用 macOS 默认蓝色 focus ring,见 CLAUDE.md)。
     private var rulesFooterBar: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.25)) {
-                isRulesExpanded.toggle()
+                isRulesExpanded = true
             }
         } label: {
             HStack(spacing: 6) {
@@ -273,8 +293,6 @@ struct RepoHealthSheet: View {
                 Image(systemName: "chevron.up")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(isRulesExpanded ? 180 : 0))
-                    .animation(.easeInOut(duration: 0.25), value: isRulesExpanded)
             }
             .contentShape(Rectangle())
             .padding(.horizontal, 16)
@@ -284,23 +302,17 @@ struct RepoHealthSheet: View {
         .focusEffectDisabled()
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) { Divider() }
-        .accessibilityHint(isRulesExpanded ? "repoHealth.rules.a11y.collapse" : "repoHealth.rules.a11y.expand")
+        .accessibilityHint("repoHealth.rules.a11y.expand")
     }
 
-    /// 评分规则面板内容(展开时从底部上滑出)。
+    /// 评分规则面板(展开时)。
     ///
-    /// 由 `body` 的 `.overlay(alignment: .bottom)` 挂载;高度由 `rulesPanelHeight` 控制。
-    /// 与旧的 `scoringRulesSection` 不同:这里不再嵌在 metadata 后面,
-    /// 而是作为独立的二级面板,展开时不挤占主内容、只覆盖底部。
-    ///
-    /// 面板**自带右上 x 关闭按钮**:展开后底部的 `rulesFooterBar` 被面板遮住,
-    /// 用户无法从外部折叠,所以必须在面板内提供折叠入口(dong4j 2026-06-21 反馈)。
-    ///
-    /// 接收 `snapshot` 让 4 条规则图标按各自维度当前分数染色,
-    /// 与上方 dimensionGrid 卡片颜色一致(dong4j 2026-06-21 反馈)。
+    /// 由 `rulesSection` 在 footer 槽位渲染;高度由 `rulesPanelHeight` 控制。
+    /// 顶部带一个 HStack:左标题 + 右 x 关闭按钮,展开后用户从这里关闭。
+    /// 4 条规则图标按各自维度当前分数染色,与上方 dimensionGrid 卡片颜色一致。
     private func scoringRulesPanel(_ snapshot: RepoHealthSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // 顶部一行:标题居左 + x 关闭按钮居右
+            // 顶部一行:标题 + x 关闭按钮
             HStack(alignment: .center) {
                 Text("repoHealth.rules.title")
                     .font(.headline)
@@ -361,7 +373,7 @@ struct RepoHealthSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(.regularMaterial)
         .overlay(alignment: .top) { Divider() }
     }

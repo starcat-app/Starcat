@@ -11355,6 +11355,23 @@
         }
       }
     },
+    "openssf.action.refreshing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refreshing…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新中…"
+          }
+        }
+      }
+    },
     "openssf.action.securityScore" : {
       "extractionState" : "manual",
       "localizations" : {

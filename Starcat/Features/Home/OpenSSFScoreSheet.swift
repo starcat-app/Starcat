@@ -174,10 +174,19 @@ struct OpenSSFScoreSheet: View {
             Button {
                 Task { await store.refresh(repo: repo, force: true) }
             } label: {
-                Label("openssf.action.refresh", systemImage: "arrow.clockwise")
+                // 与 RepoHealthSheet 刷新按钮保持一致:纯图标 + loading 时切换 ProgressView。
+                if store.isLoading(repoId: repo.id) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .progressViewStyle(.circular)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
             }
             .buttonStyle(.bordered)
             .disabled(store.isLoading(repoId: repo.id))
+            .help(store.isLoading(repoId: repo.id) ? "openssf.action.refreshing" : "openssf.action.refresh")
+            .accessibilityLabel(store.isLoading(repoId: repo.id) ? "openssf.action.refreshing" : "openssf.action.refresh")
 
             Button {
                 dismiss()
