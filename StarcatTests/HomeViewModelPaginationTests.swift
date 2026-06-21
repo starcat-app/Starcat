@@ -158,8 +158,34 @@ struct HomeViewModelPaginationTests {
         vm.loadMoreIfNeeded()
         await vm.awaitPendingListReloadForTesting()
 
-        #expect(vm.itemsRevision >= revisionBefore,
-                "数据库分页追加会异步发布累计页；UI 仍保持同一列表结构增量扩展")
+        #expect(vm.itemsRevision == revisionBefore,
+                "数据库分页追加必须保持同一 List snapshot，避免滚动过程中整栏重建")
+    }
+
+    @Test("DB Paging: 1856 条一路滚到底能全部 offset append，且 append 不 bump itemsRevision")
+    func databasePagingLoadsLargeListToEndWithStableRevision() async throws {
+        let (vm, db) = try makeSUT()
+        let total = 1_856
+        for i in 1...total {
+            try await insertRepo(db, id: Int64(i), fullName: "o/r\(i)", starredAt: starredAt(forID: i))
+        }
+        await vm.reloadItems()
+        let revisionAfterFirstPage = vm.itemsRevision
+
+        var guardCount = 0
+        while vm.hasMore {
+            guardCount += 1
+            #expect(guardCount < 200, "防止分页状态异常导致测试死循环")
+            vm.loadMoreIfNeeded()
+            await vm.awaitPendingListReloadForTesting()
+        }
+
+        #expect(vm.items.count == total, "滚到底后必须加载出全部 starred repos")
+        #expect(vm.filteredSorted.count == total,
+                "DB 分页模式下 filteredSorted 镜像已加载全集")
+        #expect(vm.currentPage == Int(ceil(Double(total) / Double(HomeViewModel.pageSize))))
+        #expect(vm.itemsRevision == revisionAfterFirstPage,
+                "后续 92 次左右 append 都不应 bump snapshot，否则 List 会持续重建并掉帧")
     }
 
     // MARK: - R-07.1 修复 follow-up（2026-06-16 dong4j）

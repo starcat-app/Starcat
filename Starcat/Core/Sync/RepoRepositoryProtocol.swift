@@ -87,13 +87,14 @@ protocol RepoRepositoryProtocol: Sendable {
     /// Manage 大数据量列表分页查询。
     ///
     /// 该接口用于替代 UI 主路径的 `fetchAllStarred() -> in-memory filter/sort/page`。
-    /// `limit` 由 ViewModel 传入“当前累计页大小 + 1”，Repository 只返回这一小段数据，
-    /// 让页面切换成本与当前可见页数相关，而不是与用户 star 总量相关。
+    /// `limit` 由 ViewModel 传入“单页大小 + 1”，`offset` 是已加载行数。
+    /// Repository 只返回下一小段数据，让滚动追加成本与单页大小相关，而不是随已加载行数增长。
     func fetchListPage(
         scope: RepoListScope,
         filters: RepoListFilters,
         sort: RepoSortOption,
-        limit: Int
+        limit: Int,
+        offset: Int
     ) async throws -> [Repo]
 
     /// 当前 Manage 查询下的全部 repo id。

@@ -335,22 +335,26 @@ struct GRDBRepoRepository {
 
     /// Manage 大数据量分页查询。
     ///
-    /// 关键约束：列表主路径只取当前累计页需要的行，不再把所有 starred repo 拉到
-    /// `HomeViewModel` 后做内存分页。调用方会传 `page * pageSize + 1`，多出来的一行
-    /// 用于判断 `hasMore`，不会进入 UI。
+    /// 关键约束：列表主路径只取下一页需要的行，不再把所有 starred repo 拉到
+    /// `HomeViewModel` 后做内存分页。调用方会传 `pageSize + 1`，多出来的一行
+    /// 用于判断 `hasMore`，不会进入 UI。`offset` 是已经展示的行数，避免滚到底时
+    /// 反复重查累计前 N 条导致 SwiftUI 大数组 diff 掉帧。
     func fetchListPage(
         scope: RepoListScope,
         filters: RepoListFilters,
         sort: RepoSortOption,
-        limit: Int
+        limit: Int,
+        offset: Int
     ) async throws -> [Repo] {
         let safeLimit = max(1, limit)
+        let safeOffset = max(0, offset)
         let query = Self.makeListQuery(
             projection: "r.*",
             scope: scope,
             filters: filters,
             sort: sort,
-            limit: safeLimit
+            limit: safeLimit,
+            offset: safeOffset
         )
         return try await database.writer.read { db in
             try Repo.fetchAll(db, sql: query.sql, arguments: query.arguments)
@@ -370,7 +374,8 @@ struct GRDBRepoRepository {
             scope: scope,
             filters: filters,
             sort: sort,
-            limit: nil
+            limit: nil,
+            offset: nil
         )
         return try await database.writer.read { db in
             try Int64.fetchAll(db, sql: query.sql, arguments: query.arguments)
@@ -391,7 +396,8 @@ struct GRDBRepoRepository {
             scope: scope,
             filters: filters,
             sort: sort,
-            limit: nil
+            limit: nil,
+            offset: nil
         )
         return try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: query.sql, arguments: query.arguments)
@@ -410,7 +416,8 @@ struct GRDBRepoRepository {
         scope: RepoListScope,
         filters: RepoListFilters,
         sort: RepoSortOption,
-        limit: Int?
+        limit: Int?,
+        offset: Int?
     ) -> (sql: String, arguments: StatementArguments) {
         var joins: [String] = []
         var whereClauses: [String] = ["r.is_starred = 1"]
@@ -510,6 +517,10 @@ struct GRDBRepoRepository {
         if let limit {
             sql += "\nLIMIT ?"
             args.append(limit)
+        }
+        if let offset {
+            sql += "\nOFFSET ?"
+            args.append(offset)
         }
         return (sql, StatementArguments(args))
     }

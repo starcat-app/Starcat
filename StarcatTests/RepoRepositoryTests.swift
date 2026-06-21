@@ -423,7 +423,8 @@ struct RepoRepositoryTests {
             scope: .allStars,
             filters: .empty,
             sort: .starredAtDesc,
-            limit: 21
+            limit: 21,
+            offset: 0
         )
         #expect(firstPage.count == 21, "首屏查询只取 pageSize + sentinel,不能退回全量 10k")
         #expect(firstPage.first?.id == 1)

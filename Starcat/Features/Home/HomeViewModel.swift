@@ -163,6 +163,12 @@ final class HomeViewModel {
     /// - Cmd+A 这类全集语义改走轻量 projection（见 `selectionSnapshotsForCurrentQuery`）。
     private var isDatabasePagingActive = false
 
+    /// DB 分页追加中的轻量互斥。
+    ///
+    /// 列表尾部 row 的 `.onAppear` 在快速滚动/布局回收时可能连续触发；这里避免同一个
+    /// offset 被重复查询并追加两次。它不参与 UI 渲染，只保护加载管线。
+    private var isDatabasePageAppendInFlight = false
+
     /// W4-4 D2：原始 fetch 结果（未经 filter / sort）。
     /// `items` 是 rawItems 的派生 — sort / filter 改变时只需重跑 `applyView()` 而不必重 fetch。
     /// 私有：不暴露给 UI，保持单向流: rawItems → applyView → items → UI。
@@ -647,7 +653,7 @@ final class HomeViewModel {
         }
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.reloadDatabasePagedItems(scope: scope, resetPage: true)
+            await self.reloadDatabasePagedItems(scope: scope, reason: .reset)
         }
         currentListActionTask = task
     }
@@ -1025,8 +1031,10 @@ final class HomeViewModel {
         currentReloadTask?.cancel()
 
         if let scope = currentRepoListScopeForDatabasePaging(), !isSearching {
-            let shouldResetPage = !(forceRefresh && isDatabasePagingActive)
-            await reloadDatabasePagedItems(scope: scope, resetPage: shouldResetPage)
+            let reason: DatabasePageReloadReason = (forceRefresh && isDatabasePagingActive)
+                ? .refreshPreservingPage
+                : .reset
+            await reloadDatabasePagedItems(scope: scope, reason: reason)
             return
         }
 
@@ -1290,31 +1298,60 @@ final class HomeViewModel {
         await task.value
     }
 
+    /// 数据库分页加载意图。
+    ///
+    /// 分开建模是为了避免“滚动追加”和“整栏刷新”共用同一套状态写入：
+    /// - `.append` 只追加下一页，不 bump `itemsRevision`，让 List 保持滚动上下文；
+    /// - `.reset` 用于筛选/排序/首次进入，允许重建快照；
+    /// - `.refreshPreservingPage` 用于同步完成后的后台刷新，保留已加载页数。
+    private enum DatabasePageReloadReason: Equatable {
+        case reset
+        case append
+        case refreshPreservingPage
+    }
+
     /// 普通 Manage 分类的数据库分页加载。
     ///
-    /// `resetPage=true` 用于首次加载/切筛选/切排序；`false` 用于滚到底追加下一页。
-    /// 查询时多取 1 行判断 `hasMore`，但提交给 UI 的仍是当前累计页大小。
-    private func reloadDatabasePagedItems(scope: RepoListScope, resetPage: Bool) async {
+    /// 核心约束：触底追加必须是真正的 `OFFSET + LIMIT`，不能重新查询并替换
+    /// “已加载累计前缀”。否则数据量越大，SwiftUI 每次滚到底要 diff 的数组越长，
+    /// 1800+ 条时就会出现滚动不顺滑甚至跳回顶部。
+    private func reloadDatabasePagedItems(scope: RepoListScope, reason: DatabasePageReloadReason) async {
         currentReloadTask?.cancel()
         isDatabasePagingActive = true
 
-        if resetPage {
+        if reason == .reset {
             currentPage = 1
         }
 
-        let requestedLimit = max(1, currentPage * Self.pageSize)
-        let queryLimit = requestedLimit + 1
+        let isAppend = reason == .append
+        let requestedLimit: Int
+        let queryLimit: Int
+        let queryOffset: Int
+        if isAppend {
+            requestedLimit = Self.pageSize
+            queryLimit = Self.pageSize + 1
+            queryOffset = items.count
+        } else {
+            requestedLimit = max(Self.pageSize, reason == .refreshPreservingPage ? items.count : Self.pageSize)
+            queryLimit = requestedLimit + 1
+            queryOffset = 0
+        }
         let filters = currentRepoListFiltersForDatabasePaging()
 
         if items.isEmpty {
             isLoading = true
-        } else {
+        } else if !isAppend {
             isRefreshing = true
         }
         loadError = nil
 
         let task = Task { [weak self] in
             guard let self else { return }
+            defer {
+                if isAppend {
+                    self.isDatabasePageAppendInFlight = false
+                }
+            }
             let result: Result<[Repo], Error>
             let statusResult: Result<[Int64: RepoStatus], Error>
             do {
@@ -1322,7 +1359,8 @@ final class HomeViewModel {
                     scope: scope,
                     filters: filters,
                     sort: self.sortOption,
-                    limit: queryLimit
+                    limit: queryLimit,
+                    offset: queryOffset
                 )
                 async let statusTask = self.repoNoteRepository.fetchAllStatusMap()
                 result = .success(try await reposTask)
@@ -1338,17 +1376,37 @@ final class HomeViewModel {
 
             switch result {
             case .success(let rowsWithSentinel):
-                let visibleRows = Array(rowsWithSentinel.prefix(requestedLimit))
-                let hasMore = rowsWithSentinel.count > requestedLimit
-                self.rawItems = visibleRows
-                self.filteredSorted = visibleRows
-                self.items = visibleRows
-                self.hasMore = hasMore
-                self.statusMap = (try? statusResult.get()) ?? [:]
-                self.listCache.removeValue(forKey: self.selection)
-                self.itemsRevision &+= 1
+                let pageRows = Array(rowsWithSentinel.prefix(requestedLimit))
+                let nextHasMore = rowsWithSentinel.count > requestedLimit
 
-                if let id = self.selectedRepoID, !visibleRows.contains(where: { $0.id == id }) {
+                if isAppend {
+                    guard !pageRows.isEmpty else {
+                        self.hasMore = false
+                        return
+                    }
+                    self.items.append(contentsOf: pageRows)
+                    self.rawItems = self.items
+                    self.filteredSorted = self.items
+                    self.hasMore = nextHasMore
+                    self.currentPage = max(1, Int(ceil(Double(self.items.count) / Double(Self.pageSize))))
+                    self.statusMap = (try? statusResult.get()) ?? [:]
+                } else {
+                    let visibleRows = pageRows
+                    let idsIdentical = visibleRows.count == self.items.count &&
+                                       zip(visibleRows, self.items).allSatisfy { $0.id == $1.id }
+                    self.rawItems = visibleRows
+                    self.filteredSorted = visibleRows
+                    self.items = visibleRows
+                    self.hasMore = nextHasMore
+                    self.currentPage = max(1, Int(ceil(Double(visibleRows.count) / Double(Self.pageSize))))
+                    if !idsIdentical {
+                        self.itemsRevision &+= 1
+                    }
+                    self.statusMap = (try? statusResult.get()) ?? [:]
+                }
+                self.listCache.removeValue(forKey: self.selection)
+
+                if let id = self.selectedRepoID, !self.filteredSorted.contains(where: { $0.id == id }) {
                     self.selectedRepoID = nil
                 }
             case .failure(let error):
@@ -1641,20 +1699,22 @@ final class HomeViewModel {
         hasMore = filteredSorted.count > items.count
     }
 
-    /// R-07：列表滚到底部（倒数第 3 行 `.onAppear`）触发；纯本地切片增长，不调网络 / DB。
-    /// `loadMoreIfNeeded` 是同步方法 —— 不需要 race 防护（不像 reloadItems 走异步 DB / 网络）。
+    /// R-07：列表滚到底部附近 row `.onAppear` 触发。
+    /// DB 分页路径会异步加载下一页；内存分页路径只做本地切片增长。
     /// 调用频率：每页 20 条 × 1800 条 ≈ 90 次/次完整滚动，开销可忽略。
     func loadMoreIfNeeded() {
         guard hasMore else { return }
         guard !isLoading, !isRefreshing else { return }
-        currentPage += 1
         if let scope = currentRepoListScopeForDatabasePaging(), isDatabasePagingActive, !isSearching {
+            guard !isDatabasePageAppendInFlight else { return }
+            isDatabasePageAppendInFlight = true
             let task = Task { [weak self] in
                 guard let self else { return }
-                await self.reloadDatabasePagedItems(scope: scope, resetPage: false)
+                await self.reloadDatabasePagedItems(scope: scope, reason: .append)
             }
             currentListActionTask = task
         } else {
+            currentPage += 1
             sliceToCurrentPage(reason: .append)
         }
     }

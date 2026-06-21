@@ -1,6 +1,6 @@
 # Manage 列表客户端分页 + 首次登录第一页上屏（R-07）
 
-> **状态**：📝 方案冻结（2026-06-15 22:30），待实施
+> **状态**：✅ 已实施；2026-06-22 补充 DB 分页 `OFFSET + append` 修正
 > **范围**：客户端 Starcat（macOS）—— `HomeViewModel` / `RepoListView` / `HomeView` / `SyncManager`
 > **关联**：进度文档 `工程进度/功能实现总览.md` §6.6 R-07
 > **互补文档**：R-06.4 `31-Trending-Weekly缓存改造.md`（Weekly 同款客户端分页范式来源）
@@ -304,4 +304,70 @@ if page == 1 {
 
 ---
 
-*最后更新：2026-06-16 20:30（R-07.1 follow-up 上线）*
+## 9. R-07.2 follow-up：DB 分页改为真实 OFFSET 追加（2026-06-22）
+
+### 9.1 问题复盘
+
+dong4j 真机回归发现 Manage 有两个问题：
+
+- 列表已有数据后仍闪一次，像是又刷新了一遍。
+- 1800+ stars 滚到底没有加载完，且触底后可能被自动定位回顶部。
+
+根因不是“分页页大小不够”，而是旧 DB 分页实现仍按“累计前缀”工作：
+
+```text
+loadMoreIfNeeded
+  currentPage += 1
+  fetchListPage(limit: currentPage * pageSize + 1)
+  items = visibleRows
+  itemsRevision += 1
+```
+
+这会导致每次触底都重新查询并替换已加载的全部 rows。第 90 页附近不是追加 20 条，而是让 SwiftUI 重新 diff/替换 1800 条左右的数组；如果同时 bump `itemsRevision`，`List.id(itemsRevision)` 会整栏重建，滚动位置也可能丢失。
+
+### 9.2 修正方案
+
+DB 分页路径改为真正的 `OFFSET + LIMIT`：
+
+```text
+首次 / 筛选 / 排序：
+  fetchListPage(limit: pageSize + 1, offset: 0)
+  items = firstPage
+  itemsRevision += 1（仅 ID 序列变化时）
+
+滚动触底：
+  fetchListPage(limit: pageSize + 1, offset: items.count)
+  items.append(nextPage)
+  rawItems = items
+  filteredSorted = items
+  不 bump itemsRevision
+
+同步完成保页刷新：
+  fetchListPage(limit: max(pageSize, items.count) + 1, offset: 0)
+  若已加载前缀 ID 不变，不 bump itemsRevision
+```
+
+关键约束：
+
+1. `RepoRepositoryProtocol.fetchListPage` 新增 `offset` 参数，Repository SQL 追加 `OFFSET ?`。
+2. `HomeViewModel.reloadDatabasePagedItems` 拆分 `.reset / .append / .refreshPreservingPage` 三种意图，避免追加和刷新共用同一套“整栏替换”状态写入。
+3. DB append 有 `isDatabasePageAppendInFlight` 互斥，防止尾部 row 连续 `.onAppear` 时同一 offset 重复追加。
+4. `RepoListView` 仍沿用 R-07 的倒数第 3 行 `.onAppear` 触发方式；ViewModel 侧用 `OFFSET + append` 承接下一页。
+
+### 9.3 验收
+
+- [x] `HomeViewModelPaginationTests`：新增 1856 条一路滚到底用例，验证最终 `items.count == 1856`。
+- [x] 同一用例验证所有 append 都不 bump `itemsRevision`，避免滚动过程整栏重建。
+- [x] `RepoRepositoryTests`：10k starred repos 首屏查询仍只取 `limit` 行，全集多选继续走轻量 projection。
+- [x] `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/HomeViewModelPaginationTests test` 通过。
+- [x] `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/RepoRepositoryTests test` 通过。
+- [x] `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build` 通过。
+
+### 9.4 后续注意
+
+- 普通 Manage DB 分页不要再回退到“累计前缀替换”；触底追加成本必须稳定在单页大小。
+- 若后续要进一步优化 10k+ 深分页，可在 Repository 层从 `OFFSET` 升级为 keyset cursor，但 ViewModel 的 append contract 不应再变。
+- `filteredSorted` 在 DB 分页模式下只镜像已加载 rows；Cmd+A / 多选全集语义继续使用 `selectionSnapshotsForCurrentQuery()` 的轻量 projection。
+
+---
+*最后更新：2026-06-22 01:45（R-07.2 DB 分页 OFFSET append 修正）*
