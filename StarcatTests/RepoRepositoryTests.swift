@@ -381,4 +381,60 @@ struct RepoRepositoryTests {
         let codegraphHits = hits.filter { $0.id == 101 }
         #expect(codegraphHits.count == 1, "同 repo 在两个 fts 表都命中时不应重复返回")
     }
+
+    @Test("DB Paging: 10k starred repos 首屏只返回 limit 行,全集多选走轻量 projection")
+    func listPagingScalesWithLargeDataset() async throws {
+        let (repo, db) = try makeRepo()
+        let total = 10_000
+
+        try await db.writer.write { db in
+            for i in 1...total {
+                let id = Int64(i)
+                let starredAt = String(format: "%04d-12-31T23:59:59Z", 20_000 - i)
+                try db.execute(
+                    sql: """
+                    INSERT INTO repos (
+                        id, owner, name, full_name, description, language,
+                        stars_count, forks_count, watchers_count, topics, license,
+                        homepage, html_url, clone_url, ssh_url,
+                        is_private, is_fork, is_archived, is_starred,
+                        pushed_at, created_at, updated_at, starred_at, cached_at
+                    ) VALUES (
+                        ?, 'owner', ?, ?, 'large fixture', 'Swift',
+                        ?, 0, 0, '[]', NULL,
+                        NULL, ?, NULL, NULL,
+                        0, 0, 0, 1,
+                        NULL, NULL, NULL, ?, '2026-06-21T00:00:00Z'
+                    )
+                    """,
+                    arguments: [
+                        id,
+                        "repo-\(i)",
+                        "owner/repo-\(i)",
+                        i,
+                        "https://github.com/owner/repo-\(i)",
+                        starredAt
+                    ]
+                )
+            }
+        }
+
+        let firstPage = try await repo.fetchListPage(
+            scope: .allStars,
+            filters: .empty,
+            sort: .starredAtDesc,
+            limit: 21
+        )
+        #expect(firstPage.count == 21, "首屏查询只取 pageSize + sentinel,不能退回全量 10k")
+        #expect(firstPage.first?.id == 1)
+
+        let snapshots = try await repo.fetchListSelectionSnapshots(
+            scope: .allStars,
+            filters: .empty,
+            sort: .starredAtDesc
+        )
+        #expect(snapshots.count == total)
+        #expect(snapshots.first?.ghRepoId == 1)
+        #expect(snapshots.first?.fullName == "owner/repo-1")
+    }
 }

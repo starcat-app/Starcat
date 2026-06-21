@@ -90,7 +90,7 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.items.map(\.id) == [2, 1], "默认 starredAtDesc → 最近 star 在前")
     }
 
-    @Test("D1: sortOption 改成 starsDesc → items 立即重排,不重 fetch")
+    @Test("D1: sortOption 改成 starsDesc → 通过数据库分页重查当前页")
     func switchSortReorders() async throws {
         let (vm, db, _) = try makeSUT()
         try await insertRepo(db, id: 1, fullName: "o/aaa", stars: 100, starredAt: "2026-05-01T00:00:00Z")
@@ -99,12 +99,13 @@ struct HomeViewModelFilterSortTests {
         let revisionAfterReload = vm.itemsRevision
 
         vm.sortOption = .starsDesc
+        await vm.awaitPendingListReloadForTesting()
 
         #expect(vm.items.map(\.id) == [1, 2], "starsDesc: 100 stars 在前")
         #expect(vm.itemsRevision == revisionAfterReload + 1, "排序切换应发布新的列表快照版本，避免 SwiftUI 对旧 List 做大规模 move diff")
     }
 
-    @Test("HOM-46: 普通 reload 命中未过期缓存,forceRefresh 才重查数据库")
+    @Test("DB Paging: 普通 reload 直接读取当前页,不再依赖全量列表缓存")
     func cacheHitSkipsDatabaseUntilForced() async throws {
         let (vm, db, _) = try makeSUT()
         try await insertRepo(db, id: 1, fullName: "o/old", stars: 1, starredAt: "2026-05-01T00:00:00Z")
@@ -113,11 +114,11 @@ struct HomeViewModelFilterSortTests {
 
         try await insertRepo(db, id: 2, fullName: "o/new", stars: 1, starredAt: "2026-05-02T00:00:00Z")
 
-        // 普通分类切换路径复用未过期缓存，避免刚上屏又做一次 DB 重查造成末尾卡顿。
+        // 数据库分页模式下普通 reload 只读取当前页，不再依赖旧的全量列表缓存。
         await vm.reloadItems()
-        #expect(vm.items.map(\.id) == [1])
+        #expect(vm.items.map(\.id) == [2, 1])
 
-        // 同步完成、标签/状态变更等真实数据变化路径必须强制刷新，不能被缓存挡住。
+        // forceRefresh 仍应保持同样结果，且不退回旧缓存。
         await vm.reloadItems(forceRefresh: true)
         #expect(vm.items.map(\.id) == [2, 1])
     }
@@ -133,6 +134,7 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.items.count == 2)
 
         vm.hideArchived = true
+        await vm.awaitPendingListReloadForTesting()
 
         #expect(vm.items.map(\.id) == [2])
     }
@@ -145,6 +147,7 @@ struct HomeViewModelFilterSortTests {
         await vm.reloadItems()
 
         vm.hideForks = true
+        await vm.awaitPendingListReloadForTesting()
 
         #expect(vm.items.map(\.id) == [2])
     }
@@ -159,6 +162,7 @@ struct HomeViewModelFilterSortTests {
 
         vm.hideArchived = true
         vm.hideForks = true
+        await vm.awaitPendingListReloadForTesting()
 
         #expect(vm.items.map(\.id) == [1])
         #expect(vm.hasActiveFilter)
@@ -173,6 +177,7 @@ struct HomeViewModelFilterSortTests {
         vm.selectedRepoID = 1
 
         vm.hideArchived = true
+        await vm.awaitPendingListReloadForTesting()
 
         #expect(vm.selectedRepoID == nil, "选中的 archived repo 被过滤后应清空 selection")
     }
@@ -184,9 +189,11 @@ struct HomeViewModelFilterSortTests {
         try await insertRepo(db, id: 2, fullName: "o/y", stars: 0, starredAt: "2026-05-02T00:00:00Z")
         await vm.reloadItems()
         vm.hideArchived = true
+        await vm.awaitPendingListReloadForTesting()
         #expect(vm.items.count == 1)
 
         vm.hideArchived = false
+        await vm.awaitPendingListReloadForTesting()
 
         #expect(vm.items.count == 2)
         #expect(vm.hasActiveFilter == false)
@@ -206,6 +213,7 @@ struct HomeViewModelFilterSortTests {
         await vm.reloadItems()
 
         vm.statusFilter = .using
+        await vm.awaitPendingListReloadForTesting()
 
         #expect(vm.items.map(\.id) == [1])
         #expect(vm.hasActiveFilter)
@@ -240,6 +248,7 @@ struct HomeViewModelFilterSortTests {
         await vm.reloadItems()
 
         vm.statusFilter = .unread
+        await vm.awaitPendingListReloadForTesting()
 
         #expect(Set(vm.items.map(\.id)) == [1, 2], "implicit unread(1) + explicit unread(2) 都应通过")
     }

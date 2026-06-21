@@ -333,6 +333,187 @@ struct GRDBRepoRepository {
         }
     }
 
+    /// Manage 大数据量分页查询。
+    ///
+    /// 关键约束：列表主路径只取当前累计页需要的行，不再把所有 starred repo 拉到
+    /// `HomeViewModel` 后做内存分页。调用方会传 `page * pageSize + 1`，多出来的一行
+    /// 用于判断 `hasMore`，不会进入 UI。
+    func fetchListPage(
+        scope: RepoListScope,
+        filters: RepoListFilters,
+        sort: RepoSortOption,
+        limit: Int
+    ) async throws -> [Repo] {
+        let safeLimit = max(1, limit)
+        let query = Self.makeListQuery(
+            projection: "r.*",
+            scope: scope,
+            filters: filters,
+            sort: sort,
+            limit: safeLimit
+        )
+        return try await database.writer.read { db in
+            try Repo.fetchAll(db, sql: query.sql, arguments: query.arguments)
+        }
+    }
+
+    /// 当前 Manage 查询下的全部 repo id。
+    ///
+    /// 只投影 `r.id`，服务 Cmd+A 这类全集语义；避免重新加载完整 repo 行。
+    func fetchListIDs(
+        scope: RepoListScope,
+        filters: RepoListFilters,
+        sort: RepoSortOption
+    ) async throws -> [Int64] {
+        let query = Self.makeListQuery(
+            projection: "r.id",
+            scope: scope,
+            filters: filters,
+            sort: sort,
+            limit: nil
+        )
+        return try await database.writer.read { db in
+            try Int64.fetchAll(db, sql: query.sql, arguments: query.arguments)
+        }
+    }
+
+    /// 当前 Manage 查询下的全部多选快照。
+    ///
+    /// Cmd+A 需要保持“当前筛选全集”语义，但批量操作只需要 id/owner/name。这里用
+    /// Row projection 避免实例化完整 `Repo`，数据量 10k+ 时内存和解码成本都更可控。
+    func fetchListSelectionSnapshots(
+        scope: RepoListScope,
+        filters: RepoListFilters,
+        sort: RepoSortOption
+    ) async throws -> [SelectionSnapshot] {
+        let query = Self.makeListQuery(
+            projection: "r.id AS id, r.owner AS owner, r.name AS name",
+            scope: scope,
+            filters: filters,
+            sort: sort,
+            limit: nil
+        )
+        return try await database.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: query.sql, arguments: query.arguments)
+            return rows.map { row in
+                SelectionSnapshot(
+                    ghRepoId: row["id"],
+                    owner: row["owner"],
+                    name: row["name"]
+                )
+            }
+        }
+    }
+
+    private static func makeListQuery(
+        projection: String,
+        scope: RepoListScope,
+        filters: RepoListFilters,
+        sort: RepoSortOption,
+        limit: Int?
+    ) -> (sql: String, arguments: StatementArguments) {
+        var joins: [String] = []
+        var whereClauses: [String] = ["r.is_starred = 1"]
+        var args: [any DatabaseValueConvertible] = []
+
+        switch scope {
+        case .allStars:
+            break
+        case .untagged:
+            whereClauses.append("""
+                NOT EXISTS (
+                    SELECT 1 FROM repo_tags rt_scope
+                    WHERE rt_scope.repo_id = r.id
+                )
+                """)
+        case .language(let language):
+            if let language {
+                whereClauses.append("r.language = ?")
+                args.append(language)
+            } else {
+                whereClauses.append("r.language IS NULL")
+            }
+        case .tag(let tagID):
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM repo_tags rt_scope
+                    WHERE rt_scope.repo_id = r.id AND rt_scope.tag_id = ?
+                )
+                """)
+            args.append(tagID)
+        }
+
+        if filters.hideArchived {
+            whereClauses.append("r.is_archived = 0")
+        }
+        if filters.hideForks {
+            whereClauses.append("r.is_fork = 0")
+        }
+        if let status = filters.status {
+            if status == .unread {
+                whereClauses.append("""
+                    COALESCE((
+                        SELECT rn.status FROM repo_notes rn
+                        WHERE rn.repo_id = r.id
+                    ), 'unread') = ?
+                    """)
+            } else {
+                whereClauses.append("""
+                    EXISTS (
+                        SELECT 1 FROM repo_notes rn
+                        WHERE rn.repo_id = r.id AND rn.status = ?
+                    )
+                    """)
+            }
+            args.append(status.rawValue)
+        }
+        if !filters.selectedTagIDs.isEmpty {
+            let tagIDs = Array(filters.selectedTagIDs).sorted()
+            let placeholders = Array(repeating: "?", count: tagIDs.count).joined(separator: ", ")
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM repo_tags rt_filter
+                    WHERE rt_filter.repo_id = r.id
+                      AND rt_filter.tag_id IN (\(placeholders))
+                )
+                """)
+            args.append(contentsOf: tagIDs)
+        }
+
+        let orderBy: String
+        switch sort {
+        case .starredAtDesc:
+            orderBy = "r.starred_at DESC, r.id DESC"
+        case .starredAtAsc:
+            orderBy = "r.starred_at IS NULL ASC, r.starred_at ASC, r.id ASC"
+        case .nameAsc:
+            orderBy = "LOWER(r.full_name) ASC, r.id ASC"
+        case .nameDesc:
+            orderBy = "LOWER(r.full_name) DESC, r.id DESC"
+        case .starsDesc:
+            orderBy = "r.stars_count DESC, r.id DESC"
+        case .starsAsc:
+            orderBy = "r.stars_count ASC, r.id ASC"
+        case .updatedDesc:
+            orderBy = "r.pushed_at DESC, r.id DESC"
+        case .updatedAsc:
+            orderBy = "r.pushed_at IS NULL ASC, r.pushed_at ASC, r.id ASC"
+        }
+
+        var sql = """
+            SELECT \(projection)
+            FROM repos r
+            \(joins.joined(separator: "\n"))
+            WHERE \(whereClauses.joined(separator: "\nAND "))
+            ORDER BY \(orderBy)
+            """
+        if let limit {
+            sql += "\nLIMIT ?"
+            args.append(limit)
+        }
+        return (sql, StatementArguments(args))
+    }
+
     // MARK: - 同步状态
 
     /// 更新 sync_state 表中当前用户的统计。

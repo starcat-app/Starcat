@@ -190,12 +190,11 @@ struct RepoListView: View {
         .onChange(of: viewModel.itemsRevision) { _, _ in
             let store = dependencies.manageMultiSelectionStore
             guard store.isActive else { return }
-            // R-07：retain 用 filteredSorted（理论可见集合）而非 items（当前页切片）。
-            // 否则用户多选了第 1 页若干 row 后滚到 page 3，loadMore append 新 items
-            // 不会动 itemsRevision，但若改了 filter 又触发 retain → 第 1 页那些选中
-            // 因为不在 items 切片里被误删；用 filteredSorted 才符合"理论上仍可见"语义。
-            let visibleIDs = Set(viewModel.filteredSorted.map(\.id))
-            store.retain(visibleIDs: visibleIDs)
+            Task {
+                let snapshots = await viewModel.selectionSnapshotsForCurrentQuery()
+                let visibleIDs = Set(snapshots.map(\.ghRepoId))
+                store.retain(visibleIDs: visibleIDs)
+            }
         }
         // W12 PR-5：Cmd+A 全选 — 4 场景统一注入一个隐藏按钮承载快捷键。
         // 仅当**当前 page 对应的 store** 处于多选模式时生效（disabled 否则）。Shift 区间选不补。
@@ -221,10 +220,10 @@ struct RepoListView: View {
     private var selectAllShortcutButton: some View {
         let store = dependencies.manageMultiSelectionStore
         Button {
-            let snapshots = viewModel.filteredSorted.map {
-                SelectionSnapshot(ghRepoId: $0.id, owner: $0.owner, name: $0.name)
+            Task {
+                let snapshots = await viewModel.selectionSnapshotsForCurrentQuery()
+                store.selectAll(snapshots)
             }
-            store.selectAll(snapshots)
         } label: {
             EmptyView()
         }

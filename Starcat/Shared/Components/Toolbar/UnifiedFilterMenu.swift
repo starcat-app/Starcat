@@ -85,9 +85,38 @@ struct UnifiedFilterMenu: View {
                 }
             }
         } label: {
-            ToolbarIcon(isAnyFilterActive ? "circle.grid.2x1.fill" : "circle.grid.2x1")
-                .accessibilityLabel(accessibilityLabel)
+            filterIcon
         }
         .help(isAnyFilterActive ? Text("list.filter.active") : Text(helpKey))
+    }
+
+    /// 筛选激活态必须足够明显：仅把 symbol 从空心换成实心，在透明 toolbar 上不容易被注意到。
+    /// 这里用浅 accent 背景 + 描边 + 角标提示“当前列表被筛选”，但不改变 Menu 行为。
+    private var filterIcon: some View {
+        ZStack(alignment: .topTrailing) {
+            ToolbarIcon(isAnyFilterActive ? "circle.grid.2x1.fill" : "circle.grid.2x1")
+                .foregroundStyle(.primary)
+                .accessibilityLabel(accessibilityLabel)
+
+            if isAnyFilterActive {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 6, height: 6)
+                    .offset(x: 2, y: -2)
+            }
+        }
+        .frame(width: 28, height: 24)
+        .background {
+            if isAnyFilterActive {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.16))
+            }
+        }
+        .overlay {
+            if isAnyFilterActive {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+            }
+        }
     }
 }

@@ -84,6 +84,36 @@ protocol RepoRepositoryProtocol: Sendable {
     /// FTS5 全文搜索（空 query 退化为 fetchAllStarred）。
     func searchFTS(query: String) async throws -> [Repo]
 
+    /// Manage 大数据量列表分页查询。
+    ///
+    /// 该接口用于替代 UI 主路径的 `fetchAllStarred() -> in-memory filter/sort/page`。
+    /// `limit` 由 ViewModel 传入“当前累计页大小 + 1”，Repository 只返回这一小段数据，
+    /// 让页面切换成本与当前可见页数相关，而不是与用户 star 总量相关。
+    func fetchListPage(
+        scope: RepoListScope,
+        filters: RepoListFilters,
+        sort: RepoSortOption,
+        limit: Int
+    ) async throws -> [Repo]
+
+    /// 当前 Manage 查询下的全部 repo id。
+    ///
+    /// 仅用于 Cmd+A / 少数全集语义；只投影 `id`，避免加载完整 `Repo` 行。
+    func fetchListIDs(
+        scope: RepoListScope,
+        filters: RepoListFilters,
+        sort: RepoSortOption
+    ) async throws -> [Int64]
+
+    /// 当前 Manage 查询下的全部多选快照。
+    ///
+    /// 只投影批量操作需要的 `id / owner / name`，供 Cmd+A 保持“当前筛选全集”语义。
+    func fetchListSelectionSnapshots(
+        scope: RepoListScope,
+        filters: RepoListFilters,
+        sort: RepoSortOption
+    ) async throws -> [SelectionSnapshot]
+
     // MARK: - 同步状态
 
     /// 更新 sync_state 表中当前用户的同步统计。

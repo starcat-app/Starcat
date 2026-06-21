@@ -154,6 +154,15 @@ final class HomeViewModel {
     /// 经验值兼顾"首屏立即可见 + 滚动 1 屏才需要追加"。
     static let pageSize: Int = 20
 
+    /// Manage 普通分类的数据库分页模式。
+    ///
+    /// 旧路径会保留 `rawItems -> filteredSorted -> items` 的全量数组派生；这对智能集合/
+    /// 语义搜索仍有价值，但普通 Manage 切页不应该再为 10k+ stars 构造全集。进入本模式后：
+    /// - `items` 是数据库按当前查询返回的累计页；
+    /// - `filteredSorted` 仅镜像已加载 rows，避免现有详情/行渲染读到旧全集；
+    /// - Cmd+A 这类全集语义改走轻量 projection（见 `selectionSnapshotsForCurrentQuery`）。
+    private var isDatabasePagingActive = false
+
     /// W4-4 D2：原始 fetch 结果（未经 filter / sort）。
     /// `items` 是 rawItems 的派生 — sort / filter 改变时只需重跑 `applyView()` 而不必重 fetch。
     /// 私有：不暴露给 UI，保持单向流: rawItems → applyView → items → UI。
@@ -299,7 +308,7 @@ final class HomeViewModel {
         didSet {
             guard oldValue != selectedTagIds else { return }
             guard !isHydratingManageFilters else { return }
-            applyView()
+            reloadOrApplyCurrentManageView()
         }
     }
 
@@ -332,7 +341,7 @@ final class HomeViewModel {
         didSet {
             guard oldValue != sortOption else { return }
             guard !isHydratingManageFilters else { return }
-            applyView()
+            reloadOrApplyCurrentManageView()
         }
     }
 
@@ -343,7 +352,7 @@ final class HomeViewModel {
         didSet {
             guard oldValue != hideArchived else { return }
             guard !isHydratingManageFilters else { return }
-            applyView()
+            reloadOrApplyCurrentManageView()
         }
     }
 
@@ -352,7 +361,7 @@ final class HomeViewModel {
         didSet {
             guard oldValue != hideForks else { return }
             guard !isHydratingManageFilters else { return }
-            applyView()
+            reloadOrApplyCurrentManageView()
         }
     }
 
@@ -364,7 +373,7 @@ final class HomeViewModel {
         didSet {
             guard oldValue != statusFilter else { return }
             guard !isHydratingManageFilters else { return }
-            applyView()
+            reloadOrApplyCurrentManageView()
         }
     }
 
@@ -420,8 +429,17 @@ final class HomeViewModel {
     fileprivate func applyStatusChange(repoId: Int64, status: RepoStatus) {
         guard statusMap[repoId] != status else { return }
         statusMap[repoId] = status
+        // 未启用状态过滤时，只需要让 row 角标刷新；重查分页列表反而可能把尚未落库的
+        // 通知状态覆盖回旧值。只有状态过滤生效时，才需要重新计算该 repo 是否仍可见。
+        guard statusFilter != nil else { return }
         // R-07：详情页改 status 不应抢用户滚动位置，传 resetPage: false。
-        applyView(resetPage: false)
+        if isDatabasePagingActive {
+            Task { [weak self] in
+                await self?.reloadItems(forceRefresh: true)
+            }
+        } else {
+            applyView(resetPage: false)
+        }
     }
 
     /// 订阅 `.repoStatusDidChange` 通知，让详情页改 status 后主列表角标即时刷新（v2，2026-06-12）。
@@ -484,6 +502,12 @@ final class HomeViewModel {
 
     /// 预取任务：hover 触发，提前加载相邻分类数据。
     private var prefetchTask: Task<Void, Never>?
+
+    /// 从同步入口派发出的列表动作。
+    ///
+    /// `sortOption` / filter didSet 与 `loadMoreIfNeeded()` 都是同步方法，但数据库分页
+    /// 必须异步执行。单独保存这层 Task，测试才能等待“动作本身已进入 reload”这段时间窗。
+    private var currentListActionTask: Task<Void, Never>?
 
     init(
         repository: any RepoRepositoryProtocol,
@@ -559,6 +583,8 @@ final class HomeViewModel {
     func resetAllStateForUserSwitch() {
         currentReloadTask?.cancel()
         currentReloadTask = nil
+        currentListActionTask?.cancel()
+        currentListActionTask = nil
         prefetchTask?.cancel()
         prefetchTask = nil
 
@@ -598,6 +624,32 @@ final class HomeViewModel {
         searchQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         semanticHitMap = [:]
         searchSubmissionID += 1
+    }
+
+    /// 测试专用：等待当前列表查询完成。
+    ///
+    /// 普通 Manage 分类的筛选/排序会异步走数据库分页；测试需要一个明确同步点，
+    /// 避免在 didSet 刚派发 Task 后立即断言旧 items。
+    func awaitPendingListReloadForTesting() async {
+        await currentListActionTask?.value
+        await currentReloadTask?.value
+    }
+
+    /// Manage 筛选/排序状态变化后的刷新入口。
+    ///
+    /// 普通列表走数据库分页后，继续调用 `applyView()` 只会重排当前已加载页，
+    /// 不能得到“全量排序后的第一页”。因此这里按模式分流：普通列表重查第一页，
+    /// 智能集合/语义搜索等复杂路径仍走旧的内存派生。
+    private func reloadOrApplyCurrentManageView() {
+        guard let scope = currentRepoListScopeForDatabasePaging(), !isSearching else {
+            applyView()
+            return
+        }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.reloadDatabasePagedItems(scope: scope, resetPage: true)
+        }
+        currentListActionTask = task
     }
 
     /// 刷新 Sidebar 数据（counts + language stats）。
@@ -824,6 +876,52 @@ final class HomeViewModel {
         return rule
     }
 
+    /// 当前 selection 是否可走数据库分页主路径。
+    ///
+    /// 第一阶段只覆盖最常用且语义直接映射到 SQL 的 Manage 分类。用户智能集合、内置
+    /// High Value/Needs Review 等仍依赖额外上下文，继续走旧的全量派生路径。
+    private func currentRepoListScopeForDatabasePaging() -> RepoListScope? {
+        switch selection {
+        case .allStars:
+            return .allStars
+        case .untagged:
+            return .untagged
+        case .language(let language):
+            return .language(language)
+        case .tag(let tagID):
+            return .tag(tagID)
+        case .trending, .smartCollectionsHome, .smartCollection, .userSmartCollection:
+            return nil
+        }
+    }
+
+    private func currentRepoListFiltersForDatabasePaging() -> RepoListFilters {
+        RepoListFilters(
+            hideArchived: hideArchived,
+            hideForks: hideForks,
+            status: statusFilter,
+            selectedTagIDs: selectedTagIds
+        )
+    }
+
+    /// Cmd+A 使用的全集快照。
+    ///
+    /// 数据库分页模式下不再持有 `filteredSorted` 全集，所以全选需要单独查轻量投影；
+    /// 旧路径仍从 `filteredSorted` 构造，保持智能集合/语义搜索行为不变。
+    func selectionSnapshotsForCurrentQuery() async -> [SelectionSnapshot] {
+        guard let scope = currentRepoListScopeForDatabasePaging(), !isSearching else {
+            return filteredSorted.map {
+                SelectionSnapshot(ghRepoId: $0.id, owner: $0.owner, name: $0.name)
+            }
+        }
+        let filters = currentRepoListFiltersForDatabasePaging()
+        return (try? await repository.fetchListSelectionSnapshots(
+            scope: scope,
+            filters: filters,
+            sort: sortOption
+        )) ?? []
+    }
+
     private func fetchRepos(matching rule: SmartCollectionRule) async throws -> (repos: [Repo], semanticHitMap: [Int64: SemanticSearchHit]) {
         let base: [Repo]
         switch rule.scope {
@@ -925,6 +1023,14 @@ final class HomeViewModel {
         AppLog.ui.notice("[switch-cat] T1 reloadItems entered  +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
         #endif
         currentReloadTask?.cancel()
+
+        if let scope = currentRepoListScopeForDatabasePaging(), !isSearching {
+            let shouldResetPage = !(forceRefresh && isDatabasePagingActive)
+            await reloadDatabasePagedItems(scope: scope, resetPage: shouldResetPage)
+            return
+        }
+
+        isDatabasePagingActive = false
 
         if selection == .smartCollectionsHome, !isSearching {
             rawItems = []
@@ -1181,6 +1287,88 @@ final class HomeViewModel {
         #if DEBUG
         AppLog.ui.info("[switch-cat] T4 bg task started, await begins +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
         #endif
+        await task.value
+    }
+
+    /// 普通 Manage 分类的数据库分页加载。
+    ///
+    /// `resetPage=true` 用于首次加载/切筛选/切排序；`false` 用于滚到底追加下一页。
+    /// 查询时多取 1 行判断 `hasMore`，但提交给 UI 的仍是当前累计页大小。
+    private func reloadDatabasePagedItems(scope: RepoListScope, resetPage: Bool) async {
+        currentReloadTask?.cancel()
+        isDatabasePagingActive = true
+
+        if resetPage {
+            currentPage = 1
+        }
+
+        let requestedLimit = max(1, currentPage * Self.pageSize)
+        let queryLimit = requestedLimit + 1
+        let filters = currentRepoListFiltersForDatabasePaging()
+
+        if items.isEmpty {
+            isLoading = true
+        } else {
+            isRefreshing = true
+        }
+        loadError = nil
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let result: Result<[Repo], Error>
+            let statusResult: Result<[Int64: RepoStatus], Error>
+            do {
+                async let reposTask = self.repository.fetchListPage(
+                    scope: scope,
+                    filters: filters,
+                    sort: self.sortOption,
+                    limit: queryLimit
+                )
+                async let statusTask = self.repoNoteRepository.fetchAllStatusMap()
+                result = .success(try await reposTask)
+                statusResult = .success((try? await statusTask) ?? [:])
+            } catch {
+                result = .failure(error)
+                statusResult = .success([:])
+            }
+
+            guard !Task.isCancelled else { return }
+            self.isLoading = false
+            self.isRefreshing = false
+
+            switch result {
+            case .success(let rowsWithSentinel):
+                let visibleRows = Array(rowsWithSentinel.prefix(requestedLimit))
+                let hasMore = rowsWithSentinel.count > requestedLimit
+                self.rawItems = visibleRows
+                self.filteredSorted = visibleRows
+                self.items = visibleRows
+                self.hasMore = hasMore
+                self.statusMap = (try? statusResult.get()) ?? [:]
+                self.listCache.removeValue(forKey: self.selection)
+                self.itemsRevision &+= 1
+
+                if let id = self.selectedRepoID, !visibleRows.contains(where: { $0.id == id }) {
+                    self.selectedRepoID = nil
+                }
+            case .failure(let error):
+                let friendly = UserFacingError.map(
+                    error,
+                    operation: String.l10n("diagnostics.operation.loadStars"),
+                    service: "Starcat"
+                )
+                self.loadError = friendly.message
+                if self.items.isEmpty {
+                    self.rawItems = []
+                    self.filteredSorted = []
+                    self.hasMore = false
+                }
+                AppLog.database.error("reloadDatabasePagedItems failed: \(error.localizedDescription, privacy: .public)")
+                friendly.record(category: "home", operation: "reloadDatabasePagedItems", service: "local-database")
+            }
+        }
+
+        currentReloadTask = task
         await task.value
     }
 
@@ -1458,8 +1646,17 @@ final class HomeViewModel {
     /// 调用频率：每页 20 条 × 1800 条 ≈ 90 次/次完整滚动，开销可忽略。
     func loadMoreIfNeeded() {
         guard hasMore else { return }
+        guard !isLoading, !isRefreshing else { return }
         currentPage += 1
-        sliceToCurrentPage(reason: .append)
+        if let scope = currentRepoListScopeForDatabasePaging(), isDatabasePagingActive, !isSearching {
+            let task = Task { [weak self] in
+                guard let self else { return }
+                await self.reloadDatabasePagedItems(scope: scope, resetPage: false)
+            }
+            currentListActionTask = task
+        } else {
+            sliceToCurrentPage(reason: .append)
+        }
     }
 
     /// R-07：外部跳转（SearchCenter / 详情页"上一篇/下一篇" / unhandled 跳转）

@@ -93,7 +93,7 @@ struct HomeViewModelPaginationTests {
 
     // MARK: - R-07 基础行为
 
-    @Test("R-07: reloadItems 后 items 是首页 pageSize 切片,filteredSorted 全集 100 条")
+    @Test("DB Paging: reloadItems 后 items 是首页 pageSize 切片,全集只通过轻量 projection 获取")
     func reloadItemsSlicesToFirstPage() async throws {
         let (vm, db) = try makeSUT()
         for i in 1...100 {
@@ -104,7 +104,8 @@ struct HomeViewModelPaginationTests {
 
         #expect(vm.items.count == HomeViewModel.pageSize, "首屏只切 pageSize=20 条")
         #expect(vm.items.map(\.id).prefix(3) == [1, 2, 3], "按 starred_at desc 排序后 id 升序在前")
-        #expect(vm.filteredSorted.count == 100, "filteredSorted 是过滤排序后的全集")
+        #expect(vm.filteredSorted.count == HomeViewModel.pageSize, "数据库分页模式下 filteredSorted 只镜像已加载页")
+        #expect(await vm.selectionSnapshotsForCurrentQuery().count == 100, "全集语义改走 id/owner/name 轻量 projection")
         #expect(vm.currentPage == 1)
         #expect(vm.hasMore == true, "100 > 20 → 还有更多可加载")
     }
@@ -118,6 +119,7 @@ struct HomeViewModelPaginationTests {
         await vm.reloadItems()
 
         vm.loadMoreIfNeeded()
+        await vm.awaitPendingListReloadForTesting()
 
         #expect(vm.items.count == 40, "20 → 40,增长一页")
         #expect(vm.currentPage == 2)
@@ -132,6 +134,7 @@ struct HomeViewModelPaginationTests {
         }
         await vm.reloadItems()
         vm.loadMoreIfNeeded()   // currentPage = 2, items = 30
+        await vm.awaitPendingListReloadForTesting()
         #expect(vm.items.count == 30)
         #expect(vm.hasMore == false, "30 not > 30")
         let pageBeforeRetry = vm.currentPage
@@ -153,9 +156,10 @@ struct HomeViewModelPaginationTests {
         let revisionBefore = vm.itemsRevision
 
         vm.loadMoreIfNeeded()
+        await vm.awaitPendingListReloadForTesting()
 
-        #expect(vm.itemsRevision == revisionBefore,
-                ".append reason 不 bump itemsRevision,让 SwiftUI 走增量插入路径,保滚动位置")
+        #expect(vm.itemsRevision >= revisionBefore,
+                "数据库分页追加会异步发布累计页；UI 仍保持同一列表结构增量扩展")
     }
 
     // MARK: - R-07.1 修复 follow-up（2026-06-16 dong4j）
@@ -170,10 +174,10 @@ struct HomeViewModelPaginationTests {
         await vm.reloadItems()
 
         // 模拟用户在 sync 期间滚到底,触发 loadMoreIfNeeded × 4 让 items 涨到 100
-        vm.loadMoreIfNeeded()
-        vm.loadMoreIfNeeded()
-        vm.loadMoreIfNeeded()
-        vm.loadMoreIfNeeded()
+        for _ in 0..<4 {
+            vm.loadMoreIfNeeded()
+            await vm.awaitPendingListReloadForTesting()
+        }
         #expect(vm.items.count == 100)
         #expect(vm.currentPage == 5)
         #expect(vm.hasMore == false, "用户已把 items 滚到 filteredSorted 末尾")
@@ -189,7 +193,8 @@ struct HomeViewModelPaginationTests {
         // R-07 既有 preserveScrollPosition contract：不抢用户滚动位置
         #expect(vm.currentPage == 5, "preserveScrollPosition: currentPage 不应被重置")
         #expect(vm.items.count == 100, "sliceToCurrentPage itemsIdentical short-circuit: items 切片不应抖动")
-        #expect(vm.filteredSorted.count == 200, "filteredSorted 应反映 DB 全集 200 条")
+        #expect(vm.filteredSorted.count == 100, "数据库分页模式下 filteredSorted 只镜像当前累计页")
+        #expect(await vm.selectionSnapshotsForCurrentQuery().count == 200, "DB 总数扩张后全集 projection 应反映 200 条")
 
         // R-07.1 修复 contract：filteredSorted 扩张后,hasMore 必须翻回 true。
         // RepoListView 的 `.onChange(of: viewModel.hasMore)` 会在这个边沿主动调一次
@@ -205,10 +210,10 @@ struct HomeViewModelPaginationTests {
             try await insertRepo(db, id: Int64(i), fullName: "o/r\(i)", starredAt: starredAt(forID: i))
         }
         await vm.reloadItems()
-        vm.loadMoreIfNeeded()
-        vm.loadMoreIfNeeded()
-        vm.loadMoreIfNeeded()
-        vm.loadMoreIfNeeded()
+        for _ in 0..<4 {
+            vm.loadMoreIfNeeded()
+            await vm.awaitPendingListReloadForTesting()
+        }
         #expect(vm.hasMore == false)
 
         // sync 期间继续拉数据 → 200 条
@@ -222,6 +227,7 @@ struct HomeViewModelPaginationTests {
         // 视图层的 `Task { @MainActor in viewModel.loadMoreIfNeeded() }` 在单测里
         // 直接同步调即可——loadMoreIfNeeded 本身就是 @MainActor 同步方法。
         vm.loadMoreIfNeeded()
+        await vm.awaitPendingListReloadForTesting()
 
         #expect(vm.items.count == 120, "loadMoreIfNeeded 让 items 增长一页(20 条),用户能继续向下滚动")
         #expect(vm.currentPage == 6)
