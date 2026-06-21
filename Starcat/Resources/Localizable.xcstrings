@@ -30379,23 +30379,6 @@
         }
       }
     },
-    "smartCollections.editor.topics.placeholder": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "keyword"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关键词"
-          }
-        }
-      }
-    },
     "smartCollections.editor.note": {
       "extractionState": "manual",
       "localizations": {

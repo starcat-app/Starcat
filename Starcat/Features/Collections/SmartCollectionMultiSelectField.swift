@@ -17,6 +17,10 @@ struct SmartCollectionMultiSelectOption: Identifiable, Hashable, Sendable {
 }
 
 /// Popover 多选：语言 / 标签等长列表。
+///
+/// **为什么用 Grid 而不是 HStack 配 label 左 / button 右**：跟 `SmartCollectionRuleEditorView`
+/// 里的输入框一致 —— SwiftUI `Form` + `.formStyle(.grouped)` 会自动识别 `HStack { Text; Control }`
+/// 为 label/content 对并插入 dash 分隔符；`Grid + GridRow` 不会触发该识别。
 struct SmartCollectionMultiSelectField: View {
     let titleKey: LocalizedStringKey
     var showsInlineTitle: Bool = true
@@ -26,23 +30,33 @@ struct SmartCollectionMultiSelectField: View {
     @State private var isPresented = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if showsInlineTitle {
-                Text(titleKey)
-                    .font(.callout)
+        if showsInlineTitle {
+            Grid(alignment: .center, horizontalSpacing: 12) {
+                GridRow {
+                    Text(titleKey)
+                        .font(.callout)
+                        .lineLimit(1)
+                        .gridColumnAlignment(.leading)
+                    popoverButton
+                        .gridColumnAlignment(.trailing)
+                }
             }
+        } else {
+            popoverButton
+        }
+    }
 
-            Button {
-                isPresented.toggle()
-            } label: {
-                fieldLabel
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-                selectionPopover
-                    .appLocaleEnvironment()
-            }
+    private var popoverButton: some View {
+        Button {
+            isPresented.toggle()
+        } label: {
+            fieldLabel
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            selectionPopover
+                .appLocaleEnvironment()
         }
     }
 

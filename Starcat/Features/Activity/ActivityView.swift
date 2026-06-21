@@ -425,7 +425,9 @@ struct ActivityView: View {
 
     /// 加载中 / 后台 filter 中 / 聚合未就绪 → 骨架屏，避免误显示「暂无活动」空态。
     private func shouldShowActivitySkeleton(_ viewModel: ActivityViewModel) -> Bool {
-        if viewModel.isApplyingCategoryFilter { return true }
+        // 已有 prime 首屏时，后台 filter 继续跑但不回退到骨架屏，避免 Activity 全部类型
+        // 首次进入出现“列表出现 → 骨架 → 列表”的二次刷新感。
+        if viewModel.isApplyingCategoryFilter && !viewModel.hasVisibleItems { return true }
         if viewModel.items.isEmpty && (viewModel.isLoading || !viewModel.isAggregateReady) {
             return true
         }

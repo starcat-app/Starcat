@@ -13,7 +13,10 @@
 import SwiftUI
 
 /// 表单输入框统一宽度（label 左 / 输入框右，无 dash 分隔符）。
-private let smartCollectionInputFieldWidth: CGFloat = 200
+///
+/// **为什么不用 HStack**：SwiftUI `Form` + `.grouped` 样式会自动识别 `HStack { Text; ...; Control }` 为 label/content 对并插入 dash 分隔符。
+/// `Grid` 不会被识别，所以用它来强制两列布局。
+private let smartCollectionInputFieldWidth: CGFloat = 400
 
 /// 三态 optional-Bool 过滤（不限 / 是 / 否）。
 private enum SmartCollectionTriState: String, CaseIterable, Identifiable {
@@ -108,13 +111,16 @@ struct SmartCollectionRuleEditorSheet: View {
             ScrollView {
                 Form {
                     Section("smartCollections.editor.section.name") {
-                        HStack {
-                            Text("smartCollections.save.name")
-                                .lineLimit(1)
-                            Spacer()
-                            TextField("smartCollections.save.name", text: $name)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: smartCollectionInputFieldWidth)
+                        Grid(alignment: .center, horizontalSpacing: 12) {
+                            GridRow {
+                                Text("smartCollections.editor.section.name")
+                                    .lineLimit(1)
+                                    .gridColumnAlignment(.leading)
+                                TextField("smartCollections.save.name", text: $name)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: smartCollectionInputFieldWidth)
+                                    .gridColumnAlignment(.trailing)
+                            }
                         }
                     }
 
@@ -143,13 +149,16 @@ struct SmartCollectionRuleEditorSheet: View {
                     }
 
                     Section("smartCollections.editor.section.search") {
-                        HStack {
-                            Text("smartCollections.editor.search.placeholder")
-                                .lineLimit(1)
-                            Spacer()
-                            TextField("smartCollections.editor.search.placeholder", text: searchQueryBinding)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: smartCollectionInputFieldWidth)
+                        Grid(alignment: .center, horizontalSpacing: 12) {
+                            GridRow {
+                                Text("smartCollections.editor.section.search")
+                                    .lineLimit(1)
+                                    .gridColumnAlignment(.leading)
+                                TextField("smartCollections.editor.search.placeholder", text: searchQueryBinding)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: smartCollectionInputFieldWidth)
+                                    .gridColumnAlignment(.trailing)
+                            }
                         }
                         Picker("smartCollections.editor.search.mode", selection: $draft.searchModeRaw) {
                             ForEach(SmartSearchMode.allCases) { mode in
@@ -183,10 +192,10 @@ struct SmartCollectionRuleEditorSheet: View {
                     }
 
                     if !viewModel.languageStats.isEmpty {
-                        Section("smartCollections.editor.section.languages") {
+                        Section {
                             SmartCollectionMultiSelectField(
                                 titleKey: "smartCollections.editor.section.languages",
-                                showsInlineTitle: false,
+                                showsInlineTitle: true,
                                 selectedIDs: $draft.filterLanguages,
                                 options: viewModel.languageStats.map {
                                     SmartCollectionMultiSelectOption(
@@ -420,13 +429,16 @@ struct SmartCollectionRuleEditorSheet: View {
     }
 
     private var topicsRow: some View {
-        HStack {
-            Text("smartCollections.editor.topics")
-                .lineLimit(1)
-            Spacer()
-            TextField("smartCollections.editor.topics.placeholder", text: topicContainsBinding)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: smartCollectionInputFieldWidth)
+        Grid(alignment: .center, horizontalSpacing: 12) {
+            GridRow {
+                Text("smartCollections.editor.topics")
+                    .lineLimit(1)
+                    .gridColumnAlignment(.leading)
+                TextField("", text: topicContainsBinding)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: smartCollectionInputFieldWidth)
+                    .gridColumnAlignment(.trailing)
+            }
         }
     }
 
@@ -462,15 +474,18 @@ struct SmartCollectionRuleEditorSheet: View {
         value: Binding<Int?>,
         range: ClosedRange<Int>
     ) -> some View {
-        HStack {
-            Text(titleKey)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-            Spacer()
-            TextField("smartCollections.editor.optionalPlaceholder", text: optionalIntTextBinding(value, range: range))
-                .textFieldStyle(.roundedBorder)
-                .frame(width: smartCollectionInputFieldWidth)
-                .multilineTextAlignment(.trailing)
+        Grid(alignment: .center, horizontalSpacing: 12) {
+            GridRow {
+                Text(titleKey)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .gridColumnAlignment(.leading)
+                TextField("smartCollections.editor.optionalPlaceholder", text: optionalIntTextBinding(value, range: range))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: smartCollectionInputFieldWidth)
+                    .multilineTextAlignment(.trailing)
+                    .gridColumnAlignment(.trailing)
+            }
         }
     }
 

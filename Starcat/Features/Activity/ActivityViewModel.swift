@@ -133,6 +133,11 @@ final class ActivityViewModel {
     private(set) var isApplyingCategoryFilter = false
     /// 当前分类是否还有未上屏的 filtered 行（滚到底加载更多）。
     private(set) var hasMoreItems: Bool = false
+    /// 当前已经有可见列表内容。View 层用它区分“后台过滤中但已有首屏”与“真的空白加载中”。
+    ///
+    /// 约束：不要让 `isApplyingCategoryFilter` 在已有 prime 首屏时重新切回骨架屏，否则
+    /// 首次进入 Activity 全部类型会出现“列表出现 → 骨架 → 列表”的二次刷新感。
+    var hasVisibleItems: Bool { !items.isEmpty }
 
     /// 是否已完成至少一次 `publishItems`（含 prime 快路径）。ActivityView 离 weekly 切回时判断要不要 `ensureLoaded`。
     var isAggregateReady: Bool { isAggregateLoaded }
@@ -433,8 +438,14 @@ final class ActivityViewModel {
             }
             guard !Task.isCancelled else { return }
 
-            // ② 第一阶段：本地 4 路并行读
-            async let cachedReposTask = self.repoRepository.fetchAllStarred()
+            // ② 第一阶段：本地 4 路并行读。
+            //
+            // `.all` 的 repo 类卡片最终只消费 `primeStarredLimit` 条近期 starred repo
+            // （见 `reposForItemAssembly`）。首次切入 Activity All 时继续全表读取只会拖慢
+            // 本地阶段，并且通常组装出与 prime 快路径相同的首屏，造成无意义二次发布。
+            async let cachedReposTask = category == .all
+                ? self.repoRepository.fetchRecentStarred(limit: Self.primeStarredLimit)
+                : self.repoRepository.fetchAllStarred()
             async let cachedReleasesTask = self.releaseRepository.fetchTimeline(limit: 120)
             async let cachedEventsTask = self.activityEventRepository.fetchAll(limit: 200)
             async let cachedAnnouncementsTask = self.activityAnnouncementRepository.fetchAll(limit: 100)
@@ -453,7 +464,7 @@ final class ActivityViewModel {
                 events: cachedEvents,
                 announcements: cachedAnnouncements
             )
-            self.publishItems(from: self.makeItems(snapshot: snapshot), snapshot: snapshot)
+            self.publishItemsIfChanged(from: self.makeItems(snapshot: snapshot), snapshot: snapshot)
             self.loadError = nil
             self.isLoading = !hasUsableCache
 
@@ -535,7 +546,7 @@ final class ActivityViewModel {
                     snapshot.releases = (try? await self.releaseRepository.fetchTimeline(limit: 120)) ?? snapshot.releases
                 }
                 guard !Task.isCancelled else { return }
-                self.publishItems(from: self.makeItems(snapshot: snapshot), snapshot: snapshot)
+                self.publishItemsIfChanged(from: self.makeItems(snapshot: snapshot), snapshot: snapshot)
             }
 
             // ⑦ 后台清理（≥ 24h 触发，detached Task 不阻塞主路径）
@@ -699,7 +710,7 @@ final class ActivityViewModel {
         }
 
         if didMutateAggregate {
-            publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+            publishItemsIfChanged(from: makeItems(snapshot: snapshot), snapshot: snapshot)
         }
     }
 
@@ -827,6 +838,51 @@ final class ActivityViewModel {
         }
     }
 
+    /// 发布前做轻量 fingerprint 判断，避免后台刷新把同一批 Activity 行重复推给 SwiftUI。
+    ///
+    /// 为什么不用 `ActivityItem ==`：
+    /// - 卡顿问题来自“同一批行”反复触发 filter / List 重建，而不是内容字段差异；
+    /// - `.all` 内置公告会用 `Date()` 生成时间，做全字段比较会把同一条占位公告误判为变化；
+    /// - 真有新增 / 删除 / 换序时 ID 序列会变化，仍走完整发布。
+    /// - 同一远端公告 ID 的标题 / 正文变化必须刷新，所以不能只比 ID。
+    ///
+    /// 即便跳过 UI 发布，也要更新 `aggregateSnapshot`，让后续 security / blog 合并基于最新
+    /// 原始输入，不因为 no-op 优化丢失后台状态。
+    private func publishItemsIfChanged(from source: [ActivityItem], snapshot: AggregateSnapshot? = nil) {
+        if let snapshot {
+            aggregateSnapshot = snapshot
+        }
+        let oldFingerprint = allItems.map(Self.publishFingerprint)
+        let newFingerprint = source.map(Self.publishFingerprint)
+        guard oldFingerprint != newFingerprint else {
+            isAggregateLoaded = true
+            return
+        }
+        publishItems(from: source, snapshot: snapshot)
+    }
+
+    private nonisolated static func publishFingerprint(for item: ActivityItem) -> String {
+        let createdAt: String
+        if item.id == "announcement:activity-v1" {
+            // 内置占位公告的 Date 只用于排序，不代表业务内容变化；忽略它才能让 no-op
+            // 判断稳定，避免 Activity All 首次进入后被同一占位公告反复重发。
+            createdAt = ""
+        } else {
+            createdAt = item.createdAt.map { String($0.timeIntervalSince1970) } ?? ""
+        }
+        let subtitle = item.subtitle ?? ""
+        let body = item.body ?? ""
+        let readState = item.isRead ? "read" : "unread"
+        let repoID = item.repo.map { String($0.id) } ?? ""
+        let releaseID = item.release.map { String($0.id) } ?? ""
+        let releaseCount = String(item.releases.count)
+        let parts: [String] = [
+            item.id, item.title, subtitle, body, createdAt,
+            readState, repoID, releaseID, releaseCount
+        ]
+        return parts.joined(separator: "|")
+    }
+
     private func makeItems(snapshot: AggregateSnapshot) -> [ActivityItem] {
         let repos = Self.reposForItemAssembly(snapshot.repos)
         return makeItems(
@@ -875,7 +931,7 @@ final class ActivityViewModel {
             guard var snapshot = aggregateSnapshot else { return }
             snapshot.announcements = (try? await activityAnnouncementRepository.fetchAll(limit: 100))
                 ?? snapshot.announcements
-            publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+            publishItemsIfChanged(from: makeItems(snapshot: snapshot), snapshot: snapshot)
         case .failed(let error):
             AppLog.network.warning(
                 "Activity security refresh failed: \(error.localizedDescription, privacy: .public)"
