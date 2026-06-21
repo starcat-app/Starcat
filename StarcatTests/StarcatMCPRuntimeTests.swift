@@ -35,6 +35,14 @@ struct StarcatMCPRuntimeTests {
         let tools = try #require((listJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
         #expect(tools.count == 12)
         #expect(tools.contains { $0["name"] as? String == "starcat.search_repos" })
+        let searchTool = try #require(tools.first { $0["name"] as? String == "starcat.search_repos" })
+        let inputSchema = try #require(searchTool["inputSchema"] as? [String: Any])
+        let properties = try #require(inputSchema["properties"] as? [String: Any])
+        let querySchema = try #require(properties["query"] as? [String: Any])
+        let limitSchema = try #require(properties["limit"] as? [String: Any])
+        #expect(querySchema["type"] as? String == "string")
+        #expect(limitSchema["type"] as? String == "integer")
+        #expect(limitSchema["default"] as? Int == 20)
 
         let call = await runtime.handle(Self.request(
             id: 3,

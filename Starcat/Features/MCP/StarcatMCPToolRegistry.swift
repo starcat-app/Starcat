@@ -71,8 +71,8 @@ final class StarcatMCPToolRegistry {
                 title: "Search Starcat repositories",
                 description: "Search the user's starred repositories cached in Starcat using local keyword/FTS data.",
                 inputSchema: Self.objectSchema([
-                    "query": .string("Optional keyword query. Empty or omitted returns recent/all starred repositories."),
-                    "limit": .int(20)
+                    "query": Self.stringSchema("Optional keyword query. Empty or omitted returns recent/all starred repositories."),
+                    "limit": Self.integerSchema("Maximum number of repositories to return.", defaultValue: 20, minimum: 1, maximum: 100)
                 ]),
                 annotations: .init(readOnlyHint: true, openWorldHint: false)
             ),
@@ -81,8 +81,8 @@ final class StarcatMCPToolRegistry {
                 title: "Semantic search Starcat repositories",
                 description: "Use Starcat's local embedding index and configured BYOK provider to semantically search starred repositories.",
                 inputSchema: Self.objectSchema([
-                    "query": .string("Required semantic search query."),
-                    "limit": .int(20)
+                    "query": Self.stringSchema("Required semantic search query."),
+                    "limit": Self.integerSchema("Maximum number of semantic matches to return.", defaultValue: 20, minimum: 1, maximum: 80)
                 ], required: ["query"]),
                 annotations: .init(readOnlyHint: true, openWorldHint: false)
             ),
@@ -120,8 +120,8 @@ final class StarcatMCPToolRegistry {
                 description: "Write or clear a repository private note. Requires MCP local writes in Starcat Settings. Passing an empty content clears the note body.",
                 inputSchema: Self.objectSchema(
                     Self.repoSelectorProperties().merging([
-                        "content": .string("Markdown note content. Empty string clears the note body."),
-                        "dry_run": .bool(false)
+                        "content": Self.stringSchema("Markdown note content. Empty string clears the note body."),
+                        "dry_run": Self.booleanSchema("Validate the write without persisting it.", defaultValue: false)
                     ]) { _, new in new }
                 ),
                 annotations: .init(readOnlyHint: false, openWorldHint: false)
@@ -132,8 +132,8 @@ final class StarcatMCPToolRegistry {
                 description: "Set a repository status to unread, read, or using. Requires MCP local writes in Starcat Settings.",
                 inputSchema: Self.objectSchema(
                     Self.repoSelectorProperties().merging([
-                        "status": .string("One of: unread, read, using."),
-                        "dry_run": .bool(false)
+                        "status": Self.stringSchema("Repository reading status.", enumValues: ["unread", "read", "using"]),
+                        "dry_run": Self.booleanSchema("Validate the write without persisting it.", defaultValue: false)
                     ]) { _, new in new },
                     required: ["status"]
                 ),
@@ -144,10 +144,10 @@ final class StarcatMCPToolRegistry {
                 title: "Create Starcat tag",
                 description: "Create a user tag. Existing tag names are returned as unchanged. Requires MCP local writes in Starcat Settings.",
                 inputSchema: Self.objectSchema([
-                    "name": .string("Tag name."),
-                    "color": .string("Optional hex color, e.g. #0A84FF."),
-                    "icon": .string("Optional SF Symbol name."),
-                    "dry_run": .bool(false)
+                    "name": Self.stringSchema("Tag name."),
+                    "color": Self.stringSchema("Optional hex color, e.g. #0A84FF."),
+                    "icon": Self.stringSchema("Optional SF Symbol name."),
+                    "dry_run": Self.booleanSchema("Validate the write without persisting it.", defaultValue: false)
                 ], required: ["name"]),
                 annotations: .init(readOnlyHint: false, openWorldHint: false)
             ),
@@ -158,8 +158,8 @@ final class StarcatMCPToolRegistry {
                 inputSchema: Self.objectSchema(
                     Self.repoSelectorProperties().merging([
                         "tags": Self.stringArraySchema("Tag names to add."),
-                        "create_missing": .bool(true),
-                        "dry_run": .bool(false)
+                        "create_missing": Self.booleanSchema("Create tags that do not already exist.", defaultValue: true),
+                        "dry_run": Self.booleanSchema("Validate the write without persisting it.", defaultValue: false)
                     ]) { _, new in new },
                     required: ["tags"]
                 ),
@@ -172,7 +172,7 @@ final class StarcatMCPToolRegistry {
                 inputSchema: Self.objectSchema(
                     Self.repoSelectorProperties().merging([
                         "tags": Self.stringArraySchema("Tag names to remove."),
-                        "dry_run": .bool(false)
+                        "dry_run": Self.booleanSchema("Validate the write without persisting it.", defaultValue: false)
                     ]) { _, new in new },
                     required: ["tags"]
                 ),
@@ -185,8 +185,8 @@ final class StarcatMCPToolRegistry {
                 inputSchema: Self.objectSchema(
                     Self.repoSelectorProperties().merging([
                         "tags": Self.stringArraySchema("Complete tag names that should remain on the repository."),
-                        "create_missing": .bool(true),
-                        "dry_run": .bool(false)
+                        "create_missing": Self.booleanSchema("Create tags that do not already exist.", defaultValue: true),
+                        "dry_run": Self.booleanSchema("Validate the write without persisting it.", defaultValue: false)
                     ]) { _, new in new },
                     required: ["tags"]
                 ),
@@ -339,9 +339,9 @@ final class StarcatMCPToolRegistry {
 
     private static func repoSelectorProperties() -> [String: Value] {
         [
-            "repo_id": .int(0),
-            "owner": .string("Repository owner, e.g. apple"),
-            "name": .string("Repository name, e.g. swift")
+            "repo_id": integerSchema("Starcat/GitHub repository id.", minimum: 1),
+            "owner": stringSchema("Repository owner, e.g. apple."),
+            "name": stringSchema("Repository name, e.g. swift.")
         ]
     }
 
@@ -350,6 +350,47 @@ final class StarcatMCPToolRegistry {
             "type": .string("object"),
             "properties": .object(properties),
             "required": .array(required.map(Value.string))
+        ])
+    }
+
+    private static func stringSchema(_ description: String, enumValues: [String]? = nil) -> Value {
+        var schema: [String: Value] = [
+            "type": .string("string"),
+            "description": .string(description)
+        ]
+        if let enumValues {
+            schema["enum"] = .array(enumValues.map(Value.string))
+        }
+        return .object(schema)
+    }
+
+    private static func integerSchema(
+        _ description: String,
+        defaultValue: Int? = nil,
+        minimum: Int? = nil,
+        maximum: Int? = nil
+    ) -> Value {
+        var schema: [String: Value] = [
+            "type": .string("integer"),
+            "description": .string(description)
+        ]
+        if let defaultValue {
+            schema["default"] = .int(defaultValue)
+        }
+        if let minimum {
+            schema["minimum"] = .int(minimum)
+        }
+        if let maximum {
+            schema["maximum"] = .int(maximum)
+        }
+        return .object(schema)
+    }
+
+    private static func booleanSchema(_ description: String, defaultValue: Bool) -> Value {
+        .object([
+            "type": .string("boolean"),
+            "description": .string(description),
+            "default": .bool(defaultValue)
         ])
     }
 
