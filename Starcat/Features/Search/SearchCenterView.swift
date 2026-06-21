@@ -176,6 +176,19 @@ struct SearchCenterView: View {
         isFilterDrawerPresented && filtersAvailable
     }
 
+    /// 专属空态判定：.web scope + AnySearch 处于关闭态。
+    ///
+    /// 限制条件：
+    /// - 只看 `.web` scope —— `.all` scope 下 AnySearch 只是可选聚合项之一，
+    ///   用「未启用」提示会掩盖真正的失败原因（GitHub / 本地 FTS）。
+    /// - 直接读 `AppSettings.shared` 而不是绕到 ViewModel：SearchCenterViewModel
+    ///   没有暴露「当前是否启用 AnySearch」的状态，且本判定属于 UI 分流决策，
+    ///   不属于业务状态——VM 不应承载。SearchCenterView 在 MainActor 读取安全。
+    /// - 不需要再判 `candidates.isEmpty`：调用方已经走过那条分支作为前置条件。
+    private var isAnySearchDisabledEmpty: Bool {
+        viewModel.scope == .web && !AppSettings.shared.anySearchEnabled
+    }
+
     /// 默认保持 Spotlight 紧凑 760pt；展开 Filters 后给右侧抽屉增加 250pt。
     /// 980pt 仍明显小于 Starcat 主窗口 1440pt 下限，不会压迫背景内容。
     private var searchPanelWidth: CGFloat {
@@ -413,6 +426,29 @@ struct SearchCenterView: View {
             // 与 RepoListView 标题栏的写法保持一致,统一用 String(format:) 注入 query。
             ProgressView {
                 Text(String(format: String.l10n("search.searching"), viewModel.lastSubmittedQuery))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if isAnySearchDisabledEmpty {
+            // 专属空态：.web scope + AnySearch 未启用。
+            // 通用 "search.empty.title" 走的 errorMessages 拼接会带 "web:" 前缀
+            // ("web: AnySearch 未启用"),且不可点击。这里走专属文案 + Button 一键启用，
+            // 启用后自动重跑当前 query，避免用户还要再敲回车。
+            // 只在 .web scope 触发：.all scope 下 AnySearch 仅是可选聚合项之一，
+            // 用这条提示会误导（空态可能源自 GitHub/本地失败）。
+            ContentUnavailableView {
+                Text("search.empty.anySearchDisabled.title")
+            } description: {
+                // 故意留空：标题已经表达核心信息，按钮文案承担"下一步"指引，
+                // 再加一行描述反而稀释点击焦点。
+            } actions: {
+                Button("search.empty.anySearchDisabled.action") {
+                    AppSettings.shared.anySearchEnabled = true
+                    // 重跑搜索：翻开关后当前 query 即可搜，submit() 内部会
+                    // 走 coordinator.search → AnySearchWebProvider 此时 enabled
+                    // 已为 true，会真正发起 HTTP 请求。
+                    Task { await viewModel.submit() }
+                }
+                .buttonStyle(.borderedProminent)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.candidates.isEmpty {
