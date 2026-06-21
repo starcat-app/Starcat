@@ -67,16 +67,16 @@ final class ActivityViewModel {
     /// 选 2h 不选 4h / 8h：GitHub Events feed 在用户主动关注的人较活跃时（如
     /// `torvalds` / `gaearon`），4h 内会积累 10+ 条新事件，2h 是体感新鲜度
     /// 与配额节流的平衡点。2h 内重复进入 activity 页 → 短路网络（304 + ETag 进一步降本）。
-    static let eventsTTL: TimeInterval = 7_200
+    nonisolated static let eventsTTL: TimeInterval = 7_200
 
     /// announcement 双源（blog + security）网络 TTL：12 小时（方案 §3.2）。
-    static let announcementsTTL: TimeInterval = 43_200
+    nonisolated static let announcementsTTL: TimeInterval = 43_200
 
     /// Security Advisory 扫描：仅最近 N 天内有 push 的 starred repo。
-    static let securityLookbackDays = 30
+    nonisolated static let securityLookbackDays = 30
 
     /// Security 扫描 repo 上限，防止 starred 过多时 API 风暴。
-    static let securityScanMaxRepos = 200
+    nonisolated static let securityScanMaxRepos = 200
 
     /// Security Advisory 扫描并发上限。
     ///
@@ -89,20 +89,20 @@ final class ActivityViewModel {
     /// `cleanupIfNeeded()` 读 `activity_sync_state.last_cleanup_at`，距上次清理 < 24h 直接跳过。
     /// 不在主刷新路径里跑，由 reload 末尾 detached Task 异步派发；24h 一次足够
     /// 控制 events / announcements 表行数（30 天滚动窗口 × 平均 60 行/天 ≈ 1800 行上限）。
-    static let cleanupCooldown: TimeInterval = 86_400
+    nonisolated static let cleanupCooldown: TimeInterval = 86_400
 
     /// 数据保留天数：30 天（方案 §3.2）。30 天前的 events / announcements 被
     /// `cleanupIfNeeded()` 物理删除（不保留 tombstone —— device-local 数据 + 不挂 CloudKit）。
-    static let retentionDays: Int = 30
+    nonisolated static let retentionDays: Int = 30
 
     /// Activity 首屏 prime：`fetchRecentStarred` 上限（足够覆盖各 kind 的 `.prefix(30)`）。
-    static let primeStarredLimit = 150
+    nonisolated static let primeStarredLimit = 150
 
     /// 列表客户端分页：首屏 + 滚到底增量加载（对齐 Weekly `localPageSize`）。
-    static let pageSize = 30
+    nonisolated static let pageSize = 30
 
     /// 超过该条数的 filter 走后台线程（`.all` 始终后台）。
-    static let asyncFilterItemThreshold = 400
+    nonisolated static let asyncFilterItemThreshold = 400
 
     /// 受支持的 GitHub Event 类型集合。
     ///
@@ -113,7 +113,7 @@ final class ActivityViewModel {
     ///
     /// 任何不在此集合内的 event type 在 `fetchAndPersistEvents` 里直接丢弃，不入库。
     /// 未来要支持新 event 加在这里 + `formatFollowingTitle` 加 case + i18n 加 key 即可。
-    static let supportedEventTypes: Set<String> = [
+    nonisolated static let supportedEventTypes: Set<String> = [
         "WatchEvent", "ForkEvent", "PushEvent",
         "IssuesEvent", "PullRequestEvent",
         "CreateEvent", "DiscussionEvent",
@@ -326,7 +326,8 @@ final class ActivityViewModel {
 
         if var snapshot = aggregateSnapshot {
             snapshot.events = []
-            publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+            let items = await buildItems(from: snapshot, reason: "clearFollowing")
+            publishItems(from: items, snapshot: snapshot)
         } else {
             allItems.removeAll { $0.kind == .following }
             filteredItemsCache.removeAll()
@@ -350,7 +351,8 @@ final class ActivityViewModel {
 
         if var snapshot = aggregateSnapshot {
             snapshot.announcements = []
-            publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+            let items = await buildItems(from: snapshot, reason: "clearAnnouncement")
+            publishItems(from: items, snapshot: snapshot)
         } else {
             allItems.removeAll { $0.kind == .announcement }
             filteredItemsCache.removeAll()
@@ -372,7 +374,7 @@ final class ActivityViewModel {
         }
         if items.isEmpty, !isAggregateLoaded {
             isLoading = true
-            Task { await self.primeCategoryCacheIfAvailable(for: category) }
+            Task { @MainActor in await self.primeCategoryCacheIfAvailable(for: category) }
         }
         guard isAggregateLoaded else { return }
 
@@ -380,7 +382,7 @@ final class ActivityViewModel {
         let missingAnnouncements = Self.needsAnnouncementsNetwork(for: category) && !didPrimeAnnouncementsNetwork
         guard missingEvents || missingAnnouncements else { return }
 
-        supplementNetworkTask = Task { [weak self] in
+        supplementNetworkTask = Task { @MainActor [weak self] in
             await self?.supplementNetworks(for: category, cachePolicy: .respectTTL)
         }
     }
@@ -422,7 +424,7 @@ final class ActivityViewModel {
         currentReloadTask?.cancel()
         isLoading = true
 
-        let task = Task { [weak self] in
+        let task = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
                 self.isLoading = false
@@ -464,7 +466,8 @@ final class ActivityViewModel {
                 events: cachedEvents,
                 announcements: cachedAnnouncements
             )
-            self.publishItemsIfChanged(from: self.makeItems(snapshot: snapshot), snapshot: snapshot)
+            let cachedItems = await self.buildItems(from: snapshot, reason: "reload.cached")
+            self.publishItemsIfChanged(from: cachedItems, snapshot: snapshot)
             self.loadError = nil
             self.isLoading = !hasUsableCache
 
@@ -546,7 +549,8 @@ final class ActivityViewModel {
                     snapshot.releases = (try? await self.releaseRepository.fetchTimeline(limit: 120)) ?? snapshot.releases
                 }
                 guard !Task.isCancelled else { return }
-                self.publishItemsIfChanged(from: self.makeItems(snapshot: snapshot), snapshot: snapshot)
+                let refreshedItems = await self.buildItems(from: snapshot, reason: "reload.refreshed")
+                self.publishItemsIfChanged(from: refreshedItems, snapshot: snapshot)
             }
 
             // ⑦ 后台清理（≥ 24h 触发，detached Task 不阻塞主路径）
@@ -573,7 +577,7 @@ final class ActivityViewModel {
         case .release:
             let releases = (try? await releaseRepository.fetchTimeline(limit: 120)) ?? []
             guard !releases.isEmpty else { return }
-            publishPrimeSnapshot(AggregateSnapshot(
+            await publishPrimeSnapshot(AggregateSnapshot(
                 repos: aggregateSnapshot?.repos ?? [],
                 releases: releases,
                 events: aggregateSnapshot?.events ?? [],
@@ -582,7 +586,7 @@ final class ActivityViewModel {
         case .star, .repository, .suggestion:
             let repos = (try? await repoRepository.fetchRecentStarred(limit: Self.primeStarredLimit)) ?? []
             guard !repos.isEmpty else { return }
-            publishPrimeSnapshot(AggregateSnapshot(
+            await publishPrimeSnapshot(AggregateSnapshot(
                 repos: repos,
                 releases: aggregateSnapshot?.releases ?? [],
                 events: aggregateSnapshot?.events ?? [],
@@ -600,7 +604,7 @@ final class ActivityViewModel {
             guard !(repos.isEmpty && releases.isEmpty && events.isEmpty && announcements.isEmpty) else {
                 return
             }
-            publishPrimeSnapshot(AggregateSnapshot(
+            await publishPrimeSnapshot(AggregateSnapshot(
                 repos: repos,
                 releases: releases,
                 events: events,
@@ -610,8 +614,9 @@ final class ActivityViewModel {
     }
 
     /// prime 快路径上屏：与 `publishItems` 相同，但额外清 `isLoading` 让骨架屏立刻消失。
-    private func publishPrimeSnapshot(_ snapshot: AggregateSnapshot) {
-        publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+    private func publishPrimeSnapshot(_ snapshot: AggregateSnapshot) async {
+        let items = await buildItems(from: snapshot, reason: "prime")
+        publishItems(from: items, snapshot: snapshot)
         isLoading = false
     }
 
@@ -626,7 +631,8 @@ final class ActivityViewModel {
             events: aggregateSnapshot?.events ?? [],
             announcements: cachedAnnouncements
         )
-        publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+        let items = await buildItems(from: snapshot, reason: "prime.announcement")
+        publishItems(from: items, snapshot: snapshot)
         isLoading = false
     }
 
@@ -641,7 +647,8 @@ final class ActivityViewModel {
             events: cachedEvents,
             announcements: aggregateSnapshot?.announcements ?? []
         )
-        publishItems(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+        let items = await buildItems(from: snapshot, reason: "prime.following")
+        publishItems(from: items, snapshot: snapshot)
         isLoading = false
     }
 
@@ -710,7 +717,8 @@ final class ActivityViewModel {
         }
 
         if didMutateAggregate {
-            publishItemsIfChanged(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+            let items = await buildItems(from: snapshot, reason: "supplement")
+            publishItemsIfChanged(from: items, snapshot: snapshot)
         }
     }
 
@@ -750,7 +758,7 @@ final class ActivityViewModel {
 
         isApplyingCategoryFilter = true
         categoryFilterTask?.cancel()
-        categoryFilterTask = Task { [weak self] in
+        categoryFilterTask = Task { @MainActor [weak self] in
             let filtered = await Task.detached(priority: .userInitiated) {
                 Self.computeFilteredItems(source: source, category: category, timeSort: sort)
             }.value
@@ -883,7 +891,29 @@ final class ActivityViewModel {
         return parts.joined(separator: "|")
     }
 
-    private func makeItems(snapshot: AggregateSnapshot) -> [ActivityItem] {
+    /// Activity row 组装包含排序、payload JSON 解析、HTML 摘要提取和本地化格式化。
+    /// 这些操作单次数量不大，但在页面切换首帧跑在 MainActor 上会直接造成彩虹圈；
+    /// 所以所有发布前的组装统一从这里进入后台任务，主线程只做最终数组赋值和 SwiftUI diff。
+    private func buildItems(from snapshot: AggregateSnapshot, reason: String) async -> [ActivityItem] {
+        #if DEBUG
+        let start = ContinuousClock.now
+        #endif
+
+        let items = await Task.detached(priority: .userInitiated) {
+            Self.makeItems(snapshot: snapshot)
+        }.value
+
+        #if DEBUG
+        let duration = start.duration(to: ContinuousClock.now)
+        AppLog.ui.debug(
+            "Activity makeItems[\(reason, privacy: .public)] repos=\(snapshot.repos.count, privacy: .public) releases=\(snapshot.releases.count, privacy: .public) events=\(snapshot.events.count, privacy: .public) announcements=\(snapshot.announcements.count, privacy: .public) items=\(items.count, privacy: .public) elapsed=\(String(describing: duration), privacy: .public)"
+        )
+        #endif
+
+        return items
+    }
+
+    private nonisolated static func makeItems(snapshot: AggregateSnapshot) -> [ActivityItem] {
         let repos = Self.reposForItemAssembly(snapshot.repos)
         return makeItems(
             repos: repos,
@@ -895,7 +925,7 @@ final class ActivityViewModel {
 
     /// events 失败时：无 following 可展示则给当前分类可见的错误（不再静默吞掉）。
     private func recordEventsLoadError(_ error: Error, category: ActivityCategory, snapshot: AggregateSnapshot) {
-        let followingCount = makeFollowingItems(snapshot.events).count
+        let followingCount = Self.makeFollowingItems(snapshot.events).count
         let shouldSurface = (category == .following || category == .all) && followingCount == 0
         let friendly = UserFacingError.map(
             error,
@@ -916,7 +946,7 @@ final class ActivityViewModel {
     private func scheduleSecurityScan(repos: [Repo]) {
         securityBackgroundTask?.cancel()
         isRefreshing = true
-        securityBackgroundTask = Task { [weak self] in
+        securityBackgroundTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.isRefreshing = false }
             let result = await self.fetchAndPersistSecurityAdvisories(repos: repos)
@@ -931,7 +961,8 @@ final class ActivityViewModel {
             guard var snapshot = aggregateSnapshot else { return }
             snapshot.announcements = (try? await activityAnnouncementRepository.fetchAll(limit: 100))
                 ?? snapshot.announcements
-            publishItemsIfChanged(from: makeItems(snapshot: snapshot), snapshot: snapshot)
+            let items = await buildItems(from: snapshot, reason: "security.integrate")
+            publishItemsIfChanged(from: items, snapshot: snapshot)
         case .failed(let error):
             AppLog.network.warning(
                 "Activity security refresh failed: \(error.localizedDescription, privacy: .public)"
@@ -1447,7 +1478,7 @@ final class ActivityViewModel {
     }
 
     /// 4 路本地数据聚合为 ActivityItem 列表（PR-2 升级签名加 events / announcements）。
-    private func makeItems(
+    private nonisolated static func makeItems(
         repos: [Repo],
         releases: [ReleaseTimelineEntry],
         events: [ActivityEventRecord],
@@ -1468,7 +1499,7 @@ final class ActivityViewModel {
         return result
     }
 
-    private func makeBuiltinAnnouncement() -> ActivityItem {
+    private nonisolated static func makeBuiltinAnnouncement() -> ActivityItem {
         ActivityItem(
             id: "announcement:activity-v1",
             kind: .announcement,
@@ -1486,7 +1517,7 @@ final class ActivityViewModel {
     }
 
     /// announcement 表行 → ActivityItem。blog 正文走 HTML 摘要截断；security 保留纯文本。
-    private func makeAnnouncementItems(_ records: [ActivityAnnouncementRecord]) -> [ActivityItem] {
+    private nonisolated static func makeAnnouncementItems(_ records: [ActivityAnnouncementRecord]) -> [ActivityItem] {
         records.prefix(40).compactMap { record -> ActivityItem? in
             guard let source = AnnouncementSource(rawValue: record.source) else { return nil }
 
@@ -1548,7 +1579,7 @@ final class ActivityViewModel {
     /// 原实现是一条 ReleaseTimelineEntry 生成一张卡片，导致同一个 repo 有多个版本时
     /// 中栏出现多张几乎相同的卡片。现在列表主体回到 repo：同一 repo 只显示一张，
     /// 用最新 release 的发布时间排序，详情页再展开该 repo 下所有 cached releases。
-    private func makeReleaseItems(_ entries: [ReleaseTimelineEntry]) -> [ActivityItem] {
+    private nonisolated static func makeReleaseItems(_ entries: [ReleaseTimelineEntry]) -> [ActivityItem] {
         let grouped = Dictionary(grouping: entries, by: { $0.repo.id })
         return grouped.values.compactMap { group -> ActivityItem? in
             guard let first = group.first else { return nil }
@@ -1574,11 +1605,11 @@ final class ActivityViewModel {
         }
     }
 
-    private static func releaseSortDate(_ release: ReleaseRecord) -> Date {
+    nonisolated private static func releaseSortDate(_ release: ReleaseRecord) -> Date {
         parseDate(release.publishedAt) ?? parseDate(release.createdAtRemote) ?? parseDate(release.fetchedAt) ?? .distantPast
     }
 
-    private func makeStarItems(_ repos: [Repo]) -> [ActivityItem] {
+    private nonisolated static func makeStarItems(_ repos: [Repo]) -> [ActivityItem] {
         repos
             .filter { $0.isStarred }
             .sorted { ($0.starredAt ?? "") > ($1.starredAt ?? "") }
@@ -1601,7 +1632,7 @@ final class ActivityViewModel {
             }
     }
 
-    private func makeRepositoryItems(_ repos: [Repo]) -> [ActivityItem] {
+    private nonisolated static func makeRepositoryItems(_ repos: [Repo]) -> [ActivityItem] {
         repos
             .filter { $0.isStarred }
             .sorted { ($0.pushedAt ?? $0.updatedAt ?? "") > ($1.pushedAt ?? $1.updatedAt ?? "") }
@@ -1624,7 +1655,7 @@ final class ActivityViewModel {
             }
     }
 
-    private func makeSuggestionItems(_ repos: [Repo]) -> [ActivityItem] {
+    private nonisolated static func makeSuggestionItems(_ repos: [Repo]) -> [ActivityItem] {
         repos
             .filter { $0.isStarred && !$0.isArchived }
             .sorted { lhs, rhs in
@@ -1664,7 +1695,7 @@ final class ActivityViewModel {
     ///   其它 event 上屏。
     /// - **prefix(60)** 截断：DB 端 `fetchAll(limit: 200)` 已截，这里再截一刀
     ///   保证 makeItems 最终聚合行数可控。
-    private func makeFollowingItems(_ records: [ActivityEventRecord]) -> [ActivityItem] {
+    private nonisolated static func makeFollowingItems(_ records: [ActivityEventRecord]) -> [ActivityItem] {
         records.prefix(60).compactMap { record -> ActivityItem? in
             guard let eventSummary = formatFollowingTitle(record) else { return nil }
             let payload = ActivityFollowingPayload(
@@ -1696,7 +1727,7 @@ final class ActivityViewModel {
     ///
     /// 返回 nil 表示该事件没有对应的本地化文案 → 跳过（不展示空行）。
     /// 文案 key 详见 `Localizable.xcstrings` 里的 `activity.following.event.*.format`。
-    private func formatFollowingTitle(_ record: ActivityEventRecord) -> String? {
+    private nonisolated static func formatFollowingTitle(_ record: ActivityEventRecord) -> String? {
         let actor = record.actorLogin
         let repo = record.repoName
         let payload = Self.decodePayload(record.payloadJson)
@@ -1771,7 +1802,7 @@ final class ActivityViewModel {
     }
 
     /// 抽取 row body 文本（issue / PR / discussion 标题）。其它 event type 返回 nil。
-    private func extractFollowingBody(_ record: ActivityEventRecord) -> String? {
+    private nonisolated static func extractFollowingBody(_ record: ActivityEventRecord) -> String? {
         let payload = Self.decodePayload(record.payloadJson)
         switch record.eventType {
         case "IssuesEvent":
@@ -1787,7 +1818,7 @@ final class ActivityViewModel {
 
     /// 抽取 row click 跳转的 HTML URL。
     /// 优先 issue / PR / discussion 的 `html_url`；其它类型回退到 repo 主页。
-    private func extractFollowingURL(_ record: ActivityEventRecord) -> URL? {
+    private nonisolated static func extractFollowingURL(_ record: ActivityEventRecord) -> URL? {
         let payload = Self.decodePayload(record.payloadJson)
         let candidates: [Any?] = [
             (payload["pull_request"] as? [String: Any])?["html_url"],
