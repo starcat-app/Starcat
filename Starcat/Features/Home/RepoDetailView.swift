@@ -279,6 +279,7 @@ enum ReadmeContentScope: Equatable {
 struct ReadmeStateView: View {
 
     @Environment(ReadmeViewModel.self) private var readmeVM
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     /// 2026-06-16:跟随 `LocaleStore` 的 effective locale,用于 `Date.RelativeFormatStyle`
     /// 的 locale 注入(否则 `cachedAt.formatted(.relative(...))` 默认走系统 locale,
@@ -317,15 +318,44 @@ struct ReadmeStateView: View {
         self.onLogin = onLogin
     }
 
+    /// 骨架 → 真实 README 的轻微 reveal（与 splash 主窗口 0.72s 相比更短，避免拖慢阅读）。
+    private enum ReadmeRevealTiming {
+        static let contentRevealSeconds = 0.36
+    }
+
     var body: some View {
-        Group {
+        ZStack(alignment: .topLeading) {
             if showsReadmePlaceholder {
                 readmePlaceholder
-            } else {
+                    .transition(readmePlaceholderTransition)
+                    .zIndex(0)
+            }
+
+            if !showsReadmePlaceholder {
                 resolvedReadmeContent
+                    .transition(readmeContentTransition)
+                    .zIndex(1)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: ReadmeRevealTiming.contentRevealSeconds),
+            value: showsReadmePlaceholder
+        )
+    }
+
+    private var readmePlaceholderTransition: AnyTransition {
+        reduceMotion ? .identity : .opacity
+    }
+
+    /// 内容从略缩小 + 透明淡入，骨架同步 opacity 淡出，形成轻微 crossfade。
+    private var readmeContentTransition: AnyTransition {
+        guard !reduceMotion else { return .identity }
+        return .asymmetric(
+            insertion: .opacity.combined(with: .scale(scale: 0.992, anchor: .topLeading)),
+            removal: .opacity
+        )
     }
 
     /// 切换 repo 时 `state` 可能仍停留在上一个 `.loaded`（onChange 晚于 body 一帧）；
