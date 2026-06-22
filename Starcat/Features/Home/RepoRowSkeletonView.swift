@@ -56,50 +56,57 @@ private struct RepoRowSkeletonCard: View {
     let phaseOffset: Double
     let phase: Double
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: SkeletonPalette {
+        SkeletonPalette.forColorScheme(colorScheme)
+    }
+
     private var effectivePhase: Double {
         (phase + phaseOffset).truncatingRemainder(dividingBy: 1)
     }
 
+    /// 轻微呼吸，幅度收窄——旧版 0.925±0.075 叠低对比底色后几乎「隐形」。
     private var pulseOpacity: Double {
-        0.925 + sin(effectivePhase * .pi * 2) * 0.075
+        0.97 + sin(effectivePhase * .pi * 2) * 0.03
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             RoundedRectangle(cornerRadius: 20)
-                .fill(Color.skeletonBase)
+                .fill(palette.base)
                 .frame(width: 40, height: 40)
-                .shimmer(phase: effectivePhase)
+                .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
 
             VStack(alignment: .leading, spacing: 6) {
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.skeletonBase)
+                    .fill(palette.base)
                     .frame(width: 160, height: 14)
-                    .shimmer(phase: effectivePhase)
+                    .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
 
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.skeletonBase)
+                    .fill(palette.base)
                     .frame(height: 12)
-                    .shimmer(phase: effectivePhase)
+                    .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
 
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.skeletonBase)
+                    .fill(palette.base)
                     .frame(width: 200, height: 12)
-                    .shimmer(phase: effectivePhase)
+                    .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
 
                 HStack(spacing: 8) {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.skeletonBase)
+                        .fill(palette.base)
                         .frame(width: 50, height: 12)
-                        .shimmer(phase: effectivePhase)
+                        .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.skeletonBase)
+                        .fill(palette.base)
                         .frame(width: 40, height: 12)
-                        .shimmer(phase: effectivePhase)
+                        .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.skeletonBase)
+                        .fill(palette.base)
                         .frame(width: 60, height: 12)
-                        .shimmer(phase: effectivePhase)
+                        .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
                 }
             }
 
@@ -116,13 +123,15 @@ private struct RepoRowSkeletonCard: View {
 ///
 /// Shimmer 只消费父层共享的 phase，自身不建时钟。
 private extension View {
-    func shimmer(phase: Double) -> some View {
-        modifier(ShimmerModifier(phase: phase))
+    func shimmer(phase: Double, highlight: Color, blendMode: BlendMode) -> some View {
+        modifier(ShimmerModifier(phase: phase, highlight: highlight, blendMode: blendMode))
     }
 }
 
 private struct ShimmerModifier: ViewModifier {
     let phase: Double
+    let highlight: Color
+    let blendMode: BlendMode
 
     func body(content: Content) -> some View {
         content.overlay {
@@ -144,13 +153,13 @@ private struct ShimmerModifier: ViewModifier {
             LinearGradient(
                 stops: [
                     .init(color: .clear,                  location: leftLoc),
-                    .init(color: Color.skeletonHighlight, location: midLoc),
+                    .init(color: highlight,               location: midLoc),
                     .init(color: .clear,                  location: rightLoc)
                 ],
                 startPoint: .leading,
                 endPoint: .trailing
             )
-            .blendMode(.plusLighter)
+            .blendMode(blendMode)
             .allowsHitTesting(false)
         }
         // overlay 必须裁剪到 content 形状，避免高光溢出占位块。
@@ -161,15 +170,35 @@ private struct ShimmerModifier: ViewModifier {
 
 // MARK: - 骨架专用配色
 
-private extension Color {
-    /// 占位块底色：浅色模式偏深灰、深色模式偏浅灰，contrast 适中不刺眼。
-    static var skeletonBase: Color {
-        Color(nsColor: .quaternaryLabelColor)
-    }
+/// 占位块 / shimmer 配色。不用 `quaternaryLabelColor`——在 window 背景上对比度不足，
+/// dark / light 下都会「几乎看不见」（2026-06-22 实测）。
+private struct SkeletonPalette {
+    let base: Color
+    let highlight: Color
+    let shimmerBlendMode: BlendMode
 
-    /// shimmer 高光颜色：低饱和高亮，搭配 plusLighter blendMode 在底色上做"扫光"。
-    static var skeletonHighlight: Color {
-        Color.white.opacity(0.18)
+    static func forColorScheme(_ scheme: ColorScheme) -> SkeletonPalette {
+        switch scheme {
+        case .dark:
+            return SkeletonPalette(
+                base: Color.white.opacity(0.16),
+                highlight: Color.white.opacity(0.34),
+                shimmerBlendMode: .plusLighter
+            )
+        case .light:
+            // light：实色灰块；0.72 偏深，0.78 在 window 白底上仍清晰但不抢视线。
+            return SkeletonPalette(
+                base: Color(white: 0.85),
+                highlight: Color.white.opacity(0.88),
+                shimmerBlendMode: .overlay
+            )
+        @unknown default:
+            return SkeletonPalette(
+                base: Color.secondary.opacity(0.22),
+                highlight: Color.white.opacity(0.40),
+                shimmerBlendMode: .plusLighter
+            )
+        }
     }
 }
 
@@ -182,6 +211,7 @@ private extension Color {
 struct RepoSkeletonListView: View {
     let rowCount: Int
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 15 FPS 对 1.4s 的慢扫光已足够连续，避免加载期与 List / WebView 抢帧预算。
     private let period: TimeInterval = 1.4
@@ -216,7 +246,8 @@ struct RepoSkeletonListView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
 
-                    Divider().opacity(0.4)
+                    Divider()
+                        .opacity(colorScheme == .dark ? 0.28 : 0.45)
                 }
             }
         }
