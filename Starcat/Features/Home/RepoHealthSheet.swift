@@ -464,6 +464,7 @@ struct RepoHealthSheet: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .focusEffectDisabled()
                 .help("repoHealth.sources.openRelease")
             } else {
                 metadataRow(

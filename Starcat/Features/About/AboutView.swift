@@ -11,6 +11,7 @@
 //
 
 import AppKit
+import StoreKit
 import SwiftUI
 
 /// 关于窗口的页面选择。
@@ -294,6 +295,8 @@ private struct OverviewPage: View {
 }
 
 private struct SupportPage: View {
+    @Environment(\.requestReview) private var requestReview
+
     var body: some View {
         AboutSection(title: "about.support.title", subtitle: "about.support.subtitle") {
             VStack(alignment: .leading, spacing: 12) {
@@ -315,6 +318,11 @@ private struct SupportPage: View {
                     systemImage: "safari",
                     url: URL(string: "https://starcat.ink")
                 )
+                SupportReviewRow {
+                    // StoreKit 会自行判断当前环境是否适合展示评分面板；这里不做自定义弹窗，
+                    // 避免打断用户，也符合 Apple 对应用评分请求的限制与展示策略。
+                    requestReview()
+                }
 
                 Divider().padding(.vertical, 4)
 
@@ -488,6 +496,50 @@ private struct SupportRow: View {
             SafeExternalLink(title: "about.externalLink.open", systemImage: "arrow.up.right", url: url)
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(.quaternary, lineWidth: 1)
+        }
+    }
+}
+
+private struct SupportReviewRow: View {
+    let onRequestReview: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "star.bubble")
+                .font(.title3)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("about.support.rate.title")
+                    .font(.headline)
+                Text("about.support.rate.detail")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button(action: onRequestReview) {
+                Label("about.support.rate.action", systemImage: "star")
+                    .labelStyle(.titleAndIcon)
+                    .font(.callout.weight(.medium))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay {
+                        Capsule().stroke(.quaternary, lineWidth: 1)
+                    }
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("about.support.rate.help")
         }
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
