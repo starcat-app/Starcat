@@ -74,6 +74,7 @@ struct ManageDetailContent: View {
         // 本 ContentView body 仅剩 ReadmeStateView,无需再包 VStack。
         ReadmeStateView(
             state: readmeVM.state,
+            contentScope: .manage(repoId: repo.id),
             // 统一构造带末尾 `/` 的目录 URL，避免 WebKit 把 HEAD 当文件名后丢掉分支段。
             baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
             onScrollReportChange: onScrollReport,

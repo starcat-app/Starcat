@@ -58,6 +58,7 @@ struct TrendingDetailContent: View {
         // 本 ContentView body 仅剩 ReadmeStateView,无需再包 VStack。
         ReadmeStateView(
             state: readmeVM.state,
+            contentScope: .trending(owner: repo.owner, repo: repo.name),
             baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
             onScrollReportChange: onScrollReport,
             // R-01：仅本地命中（id != 0）的 repo 才提供翻译入口。

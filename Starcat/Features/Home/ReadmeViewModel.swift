@@ -98,9 +98,15 @@ final class ReadmeViewModel {
     private(set) var state: LoadState = .idle
     private(set) var isRefreshing: Bool = false
 
+    /// UI 判断 `state` 是否仍服务当前 manage 详情（与 `ReadmeStateView.contentScope` 对齐）。
+    private(set) var activeRepoId: Int64?
+
+    /// UI 判断 `state` 是否仍服务当前 trending / weekly 详情。
+    private(set) var activeTrendingKey: String?
+
     private let api: ReadmeAPI
 
-    /// 当前加载中的 repoId，用于"切换 repo 时丢弃旧响应"。
+    /// 当前加载中的 repoId，用于"切换 repo 时丢弃旧响应"（与 `activeRepoId` 同步写入）。
     private var currentRepoId: Int64?
 
     /// 当前 in-flight 任务。新请求来时先 cancel。
@@ -169,14 +175,13 @@ final class ReadmeViewModel {
     /// 重置到 idle（视图从 selected → unselected 时调用）。
     func reset() {
         currentTask?.cancel()
-        currentRepoId = nil
-        currentTrendingKey = nil
+        clearActiveTargets()
         state = .idle
     }
 
     // MARK: - Trending Repo 支持
 
-    /// 当前 Trending repo 的标识（owner/repo），用于判断是否切换了 repo。
+    /// 当前 Trending repo 的标识（owner/repo），用于判断是否切换了 repo（与 `activeTrendingKey` 同步写入）。
     private var currentTrendingKey: String?
 
     /// 加载 Trending repo 的 README（W7+ 起：SWR 模式，与 manage `loadInternal` 同构）。
@@ -217,16 +222,14 @@ final class ReadmeViewModel {
         // selectedTrendingRepoID 不变 → onChange 不重触发 loadTrending,但内部 key
         // 还是上一个 repo,后续命中"同 repo 不变 state"的快速路径会出错。
         guard isLoggedIn else {
-            currentTrendingKey = key
-            currentRepoId = nil
+            bindTrendingTarget(fullName: key)
             state = .requiresLogin
             return
         }
 
         // 切到新 repo 时立即同步设 .loading 占位（race 防护）
         let isSameRepo = (currentTrendingKey == key)
-        currentTrendingKey = key
-        currentRepoId = nil // 进 trending 路径时清掉 manage 路径的 race key
+        bindTrendingTarget(fullName: key)
 
         if !isSameRepo {
             state = .loading
@@ -329,7 +332,7 @@ final class ReadmeViewModel {
     private func loadInternal(repo: Repo?, forceRefresh: Bool, isLoggedIn: Bool) {
         currentTask?.cancel()
         guard let repo else {
-            currentRepoId = nil
+            clearActiveTargets()
             state = .idle
             return
         }
@@ -359,7 +362,7 @@ final class ReadmeViewModel {
         // - 放在 `guard let repo else` 之后,nil repo 仍走 .idle（取消选择不弹登录）;
         // - 不影响登录用户的 SWR 体验——已登录用户分支完全没动。
         guard isLoggedIn else {
-            currentRepoId = repo.id
+            bindManageTarget(repoId: repo.id)
             state = .requiresLogin
             return
         }
@@ -370,7 +373,7 @@ final class ReadmeViewModel {
         if forceRefresh {
             availability.clearNotFound(repoId: repo.id)
         } else if availability.isKnownNotFound(repoId: repo.id) {
-            currentRepoId = repo.id
+            bindManageTarget(repoId: repo.id)
             state = .empty
             return
         }
@@ -380,7 +383,7 @@ final class ReadmeViewModel {
         // 同一 repo + .error 也清掉转 .loading，给用户"正在重试"反馈。
         // 同一 repo + .loaded：保持显示，后台 refresh 时再无感更新（SWR 体验）。
         let isSameRepo = (currentRepoId == repo.id)
-        currentRepoId = repo.id
+        bindManageTarget(repoId: repo.id)
         let requestedId = repo.id
 
         if !isSameRepo {
@@ -556,5 +559,26 @@ final class ReadmeViewModel {
     /// 把 readmes.cached_at 的 ISO8601 字符串解析回 Date，便于 UI 格式化显示。
     private static func parseISO8601(_ s: String) -> Date? {
         ISO8601DateFormatter.shared.date(from: s)
+    }
+
+    private func bindManageTarget(repoId: Int64) {
+        currentRepoId = repoId
+        activeRepoId = repoId
+        currentTrendingKey = nil
+        activeTrendingKey = nil
+    }
+
+    private func bindTrendingTarget(fullName: String) {
+        currentTrendingKey = fullName
+        activeTrendingKey = fullName
+        currentRepoId = nil
+        activeRepoId = nil
+    }
+
+    private func clearActiveTargets() {
+        currentRepoId = nil
+        activeRepoId = nil
+        currentTrendingKey = nil
+        activeTrendingKey = nil
     }
 }

@@ -53,6 +53,7 @@ struct ActivityRepoDetailContent: View {
         // 本 ContentView body 仅剩 ReadmeStateView,无需再包 VStack。
         ReadmeStateView(
             state: readmeVM.state,
+            contentScope: .manage(repoId: repo.id),
             baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
             onScrollReportChange: onScrollReport,
             translationControl: ReadmeTranslationControl(

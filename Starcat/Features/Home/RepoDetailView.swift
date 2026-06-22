@@ -256,6 +256,21 @@ struct RepoDetailView: View {
 
 // MARK: - README 状态视图
 
+/// 详情页 README 内容与 `ReadmeViewModel` 活跃目标的对应关系。
+enum ReadmeContentScope: Equatable {
+    case manage(repoId: Int64)
+    case trending(owner: String, repo: String)
+
+    fileprivate var trendingKey: String? {
+        switch self {
+        case .manage:
+            return nil
+        case .trending(let owner, let repo):
+            return "\(owner)/\(repo)"
+        }
+    }
+}
+
 /// 把 ReadmeViewModel.LoadState 翻译为视觉。
 ///
 /// 拆成独立 View 的好处：
@@ -271,6 +286,7 @@ struct ReadmeStateView: View {
     @Environment(\.locale) private var locale
 
     let state: ReadmeViewModel.LoadState
+    let contentScope: ReadmeContentScope
     let baseURL: URL?
     let onScrollReportChange: (RepoDetailScrollReport) -> Void
     /// HOM-68：可选的 README 翻译控件描述。nil 时不渲染翻译入口
@@ -285,6 +301,7 @@ struct ReadmeStateView: View {
     /// 仓库标识来跑正则,这两个参数从 4 个 DetailContent 的调用现场也一并清理。
     init(
         state: ReadmeViewModel.LoadState,
+        contentScope: ReadmeContentScope,
         baseURL: URL?,
         onScrollReportChange: @escaping (RepoDetailScrollReport) -> Void,
         translationControl: ReadmeTranslationControl? = nil,
@@ -292,6 +309,7 @@ struct ReadmeStateView: View {
         onLogin: @escaping () -> Void
     ) {
         self.state = state
+        self.contentScope = contentScope
         self.baseURL = baseURL
         self.onScrollReportChange = onScrollReportChange
         self.translationControl = translationControl
@@ -300,15 +318,47 @@ struct ReadmeStateView: View {
     }
 
     var body: some View {
+        Group {
+            if showsReadmePlaceholder {
+                readmePlaceholder
+            } else {
+                resolvedReadmeContent
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 切换 repo 时 `state` 可能仍停留在上一个 `.loaded`（onChange 晚于 body 一帧）；
+    /// 此时只显示不透明骨架，避免叠在旧 WebView 上。
+    private var showsReadmePlaceholder: Bool {
+        if isStateStaleForScope { return true }
         switch state {
         case .idle, .loading:
-            VStack(spacing: 10) {
-                ProgressView()
-                Text("readme.loading")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            return true
+        case .loaded, .empty, .requiresLogin, .error:
+            return false
+        }
+    }
+
+    private var isStateStaleForScope: Bool {
+        switch contentScope {
+        case .manage(let repoId):
+            return readmeVM.activeRepoId != repoId
+        case .trending(let owner, let repo):
+            return readmeVM.activeTrendingKey != "\(owner)/\(repo)"
+        }
+    }
+
+    private var readmePlaceholder: some View {
+        ReadmeSkeletonView()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var resolvedReadmeContent: some View {
+        switch state {
+        case .idle, .loading:
+            readmePlaceholder
 
         case .loaded(let html, let cachedAt):
             VStack(spacing: 0) {
@@ -321,6 +371,7 @@ struct ReadmeStateView: View {
                     baseURL: baseURL,
                     onScrollReportChange: onScrollReportChange
                 )
+                .id(readmeWebViewIdentity)
                 // 与 ActivityReleaseDetailContent 对齐：body slot 必须吃满 Scaffold 剩余
                 // 高度，否则 WKWebView 在 VStack 里按零 intrinsic 高度布局 → 闪一下后空白。
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -373,6 +424,15 @@ struct ReadmeStateView: View {
                     .focusEffectDisabled()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var readmeWebViewIdentity: String {
+        switch contentScope {
+        case .manage(let repoId):
+            return "manage-\(repoId)"
+        case .trending(let owner, let repo):
+            return "trending-\(owner)/\(repo)"
         }
     }
 

@@ -76,37 +76,37 @@ private struct RepoRowSkeletonCard: View {
             RoundedRectangle(cornerRadius: 20)
                 .fill(palette.base)
                 .frame(width: 40, height: 40)
-                .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
+                .skeletonShimmer(phase: effectivePhase, palette: palette)
 
             VStack(alignment: .leading, spacing: 6) {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(palette.base)
                     .frame(width: 160, height: 14)
-                    .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
+                    .skeletonShimmer(phase: effectivePhase, palette: palette)
 
                 RoundedRectangle(cornerRadius: 4)
                     .fill(palette.base)
                     .frame(height: 12)
-                    .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
+                    .skeletonShimmer(phase: effectivePhase, palette: palette)
 
                 RoundedRectangle(cornerRadius: 4)
                     .fill(palette.base)
                     .frame(width: 200, height: 12)
-                    .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
+                    .skeletonShimmer(phase: effectivePhase, palette: palette)
 
                 HStack(spacing: 8) {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(palette.base)
                         .frame(width: 50, height: 12)
-                        .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
+                        .skeletonShimmer(phase: effectivePhase, palette: palette)
                     RoundedRectangle(cornerRadius: 4)
                         .fill(palette.base)
                         .frame(width: 40, height: 12)
-                        .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
+                        .skeletonShimmer(phase: effectivePhase, palette: palette)
                     RoundedRectangle(cornerRadius: 4)
                         .fill(palette.base)
                         .frame(width: 60, height: 12)
-                        .shimmer(phase: effectivePhase, highlight: palette.highlight, blendMode: palette.shimmerBlendMode)
+                        .skeletonShimmer(phase: effectivePhase, palette: palette)
                 }
             }
 
@@ -114,91 +114,6 @@ private struct RepoRowSkeletonCard: View {
         }
         .padding(.vertical, 6)
         .opacity(pulseOpacity)
-    }
-}
-
-// MARK: - Shimmer 高光带（TimelineView 驱动）
-
-/// 骨架占位上叠加的"移动高光带"修饰符。
-///
-/// Shimmer 只消费父层共享的 phase，自身不建时钟。
-private extension View {
-    func shimmer(phase: Double, highlight: Color, blendMode: BlendMode) -> some View {
-        modifier(ShimmerModifier(phase: phase, highlight: highlight, blendMode: blendMode))
-    }
-}
-
-private struct ShimmerModifier: ViewModifier {
-    let phase: Double
-    let highlight: Color
-    let blendMode: BlendMode
-
-    func body(content: Content) -> some View {
-        content.overlay {
-            // gradient 中心从 -0.3 扫到 1.3，留出进出余量保证高光带平滑划过整个 frame。
-                // center 本身可以越界 [0, 1]（视觉上代表"高光带在屏幕外"），
-                // 但 SwiftUI 要求 gradient stop locations **必须在 [0, 1] 且单调非降**，
-                // 否则会抛 "Gradient stop locations must be ordered." 警告（每帧刷屏）。
-                //
-                // 解决：三个 stop 的 location 都 clamp 到 [0, 1]。因为
-                //   center - 0.25 < center < center + 0.25
-                // 本身单调，clamp 是单调操作，clamp 后依然单调（允许相等）。
-                // 当 center 越界时，多个 stop 会塌缩到同一边界（0 或 1），
-                // 视觉表现是"高光带已完全离开 frame"，正是预期。
-            let center = phase * 1.6 - 0.3
-            let leftLoc  = min(max(center - 0.25, 0), 1)
-            let midLoc   = min(max(center,        0), 1)
-            let rightLoc = min(max(center + 0.25, 0), 1)
-
-            LinearGradient(
-                stops: [
-                    .init(color: .clear,                  location: leftLoc),
-                    .init(color: highlight,               location: midLoc),
-                    .init(color: .clear,                  location: rightLoc)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .blendMode(blendMode)
-            .allowsHitTesting(false)
-        }
-        // overlay 必须裁剪到 content 形状，避免高光溢出占位块。
-        // content 自己（Circle / RoundedRectangle）已经决定了边界，用 mask 把 overlay 限到 content 形状。
-        .mask(content)
-    }
-}
-
-// MARK: - 骨架专用配色
-
-/// 占位块 / shimmer 配色。不用 `quaternaryLabelColor`——在 window 背景上对比度不足，
-/// dark / light 下都会「几乎看不见」（2026-06-22 实测）。
-private struct SkeletonPalette {
-    let base: Color
-    let highlight: Color
-    let shimmerBlendMode: BlendMode
-
-    static func forColorScheme(_ scheme: ColorScheme) -> SkeletonPalette {
-        switch scheme {
-        case .dark:
-            return SkeletonPalette(
-                base: Color.white.opacity(0.16),
-                highlight: Color.white.opacity(0.34),
-                shimmerBlendMode: .plusLighter
-            )
-        case .light:
-            // light：实色灰块；0.72 偏深，0.78 在 window 白底上仍清晰但不抢视线。
-            return SkeletonPalette(
-                base: Color(white: 0.85),
-                highlight: Color.white.opacity(0.88),
-                shimmerBlendMode: .overlay
-            )
-        @unknown default:
-            return SkeletonPalette(
-                base: Color.secondary.opacity(0.22),
-                highlight: Color.white.opacity(0.40),
-                shimmerBlendMode: .plusLighter
-            )
-        }
     }
 }
 
@@ -210,29 +125,16 @@ private struct SkeletonPalette {
 /// 行间 `phaseOffset` 按 index 错峰，shimmer 会形成"波浪传递"，避免所有行齐刷刷亮灭。
 struct RepoSkeletonListView: View {
     let rowCount: Int
-    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
-
-    /// 15 FPS 对 1.4s 的慢扫光已足够连续，避免加载期与 List / WebView 抢帧预算。
-    private let period: TimeInterval = 1.4
 
     init(rowCount: Int = 8) {
         self.rowCount = rowCount
     }
 
     var body: some View {
-        Group {
-            if reduceMotion {
-                skeletonRows(phase: 0)
-            } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { context in
-                    let phase = context.date.timeIntervalSinceReferenceDate
-                        .truncatingRemainder(dividingBy: period) / period
-                    skeletonRows(phase: phase)
-                }
-            }
+        SkeletonAnimatedPhase { phase in
+            skeletonRows(phase: phase)
         }
-        // 禁用 ScrollView 自身手势：占位期不需要滚动，避免误触把骨架滚走。
         .scrollDisabled(true)
     }
 

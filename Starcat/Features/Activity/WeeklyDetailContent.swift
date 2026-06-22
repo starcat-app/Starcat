@@ -66,6 +66,7 @@ struct WeeklyDetailContent: View {
     var body: some View {
         ReadmeStateView(
             state: readmeVM.state,
+            contentScope: .trending(owner: repo.owner, repo: repo.name),
             // 与其他详情页共用目录型 base URL，末尾 `/` 是相对链接保留 HEAD 的关键。
             baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
             onScrollReportChange: onScrollReport,
