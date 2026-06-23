@@ -121,15 +121,14 @@ struct SmartCollectionsOverviewView: View {
 
                 systemCountLabel(for: kind)
 
-                Menu {
-                    Button("smartCollections.saveAsTemplate") {
-                        createFromTemplateKind = kind
-                    }
+                // 内置集合仅「另存为自定义」一个动作，用 Button 避免 Menu 自带 chevron 与图标重复。
+                Button {
+                    createFromTemplateKind = kind
                 } label: {
                     Image(systemName: "square.and.pencil")
                         .font(.caption)
                 }
-                .menuStyle(.borderlessButton)
+                .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .help("smartCollections.saveAsTemplate")
             }
