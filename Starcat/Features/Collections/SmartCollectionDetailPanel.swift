@@ -98,18 +98,14 @@ struct SmartCollectionDetailPanel: View {
         }
         .task(id: viewModel.itemsRevision) {
             visibleCount = Self.pageSize
-            healthSnapshots = [:]
+            resetHealthCache()
             refreshMasonryLayout()
-            await loadHealthSnapshots(for: visibleRepos.map(\.id))
         }
         .onChange(of: contentWidth) { _, _ in
             refreshMasonryLayout()
         }
-        .onChange(of: visibleCount) { oldCount, newCount in
+        .onChange(of: visibleCount) { _, _ in
             refreshMasonryLayout()
-            guard newCount > oldCount else { return }
-            let newIDs = Array(repos.prefix(newCount).suffix(newCount - oldCount)).map(\.id)
-            Task { await loadHealthSnapshots(for: newIDs) }
         }
         .onChange(of: viewModel.selectedRepoID) { _, _ in
             refreshMasonryLayout()
@@ -148,6 +144,7 @@ struct SmartCollectionDetailPanel: View {
                         viewModel.selectedRepoID = item.id
                     }
                     .onAppear {
+                        requestHealthLoad(for: item.id)
                         if item.id == lastVisibleRepoID {
                             scheduleLoadNextPage()
                         }
@@ -294,17 +291,59 @@ struct SmartCollectionDetailPanel: View {
         visibleCount = min(visibleCount + Self.pageSize, repos.count)
     }
 
-    /// 只查询缓存中缺失的 repo id，分页追加时不重复打 GRDB。
+    private func resetHealthCache() {
+        healthSnapshots = [:]
+        healthResolvedRepoIDs = []
+        pendingHealthRepoIDs = []
+        healthLoadInFlightIDs = []
+        loadHealthTask?.cancel()
+        loadHealthTask = nil
+    }
+
+    /// 卡片进入 LazyVStack 视口时登记 health 需求；短 debounce 合并同帧多条 onAppear。
+    private func requestHealthLoad(for repoID: Int64) {
+        guard healthSnapshots[repoID] == nil,
+              !healthResolvedRepoIDs.contains(repoID),
+              !healthLoadInFlightIDs.contains(repoID) else { return }
+        pendingHealthRepoIDs.insert(repoID)
+        scheduleHealthLoad()
+    }
+
+    private func scheduleHealthLoad() {
+        loadHealthTask?.cancel()
+        loadHealthTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: Self.healthLoadDebounceNs)
+            guard !Task.isCancelled else { return }
+            await flushPendingHealthLoads()
+        }
+    }
+
+    private func flushPendingHealthLoads() async {
+        let ids = Array(pendingHealthRepoIDs)
+        pendingHealthRepoIDs.removeAll()
+        await loadHealthSnapshots(for: ids)
+    }
+
+    /// 只查询缓存中缺失且尚未尝试过的 repo id；滚动 onAppear 驱动，不随分页预取。
     private func loadHealthSnapshots(for ids: [Int64]) async {
-        let missing = ids.filter { healthSnapshots[$0] == nil }
+        let missing = ids.filter {
+            healthSnapshots[$0] == nil
+                && !healthResolvedRepoIDs.contains($0)
+                && !healthLoadInFlightIDs.contains($0)
+        }
         guard !missing.isEmpty else { return }
 
+        healthLoadInFlightIDs.formUnion(missing)
         isLoadingHealth = true
-        defer { isLoadingHealth = false }
+        defer {
+            healthLoadInFlightIDs.subtract(missing)
+            isLoadingHealth = !healthLoadInFlightIDs.isEmpty
+        }
 
         do {
             let loaded = try await dependencies.repoHealthRepository.snapshots(for: missing)
             healthSnapshots.merge(loaded) { _, new in new }
+            healthResolvedRepoIDs.formUnion(missing)
             refreshMasonryLayout()
         } catch {
             AppLog.database.warning("Smart Collection detail health load failed: \(error.localizedDescription, privacy: .public)")
