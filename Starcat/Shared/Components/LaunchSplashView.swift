@@ -12,10 +12,13 @@
 //  - 必须读 `\.starcatReduceMotion`：关动画时入口瞬显、退出无 transition
 //  - `LaunchSplashContainer` 放在 `.id(localeStore...)` **外层**，避免切语言时重播
 //  - 全屏 overlay 需 `ignoresSafeArea()` 盖住 window toolbar 区域
+//  - splash / 引导期间隐藏 window toolbar（overlay 盖不住 AppKit 标题栏层）
+//  - Manage 排序行在 safeAreaInset；标题仍走 `.navigationTitle`，与 Trending 顶区对齐
 //  - Auth restore 从 `StarcatApp` 迁入 Container 的 `.task`，避免与 splash 时序分叉
 //  - 首次冷启动最短展示更长，且已登录时尽量等到 sync 首页写入再淡出（有超时兜底）
 //  - Auth restore 网络请求不能无限阻塞 splash；启动页有独立超时，避免离线 / GitHub 慢响应时卡首屏
-//  - 主窗口 content 在 overlay 下预先挂载但保持 blur；splash / 引导撤下时 blur → clear 渐显
+//  - 主窗口 content 在 splash 下保持清晰（不透明 overlay 已完全遮挡）；仅首次引导
+//    收束淡出时才 blur → clear 渐显，避免冷启动 splash 撤下时顶栏与列表顶区错层跳动
 //
 
 import SwiftUI
@@ -94,8 +97,9 @@ struct LaunchSplashContainer<Content: View>: View {
     @State private var splashSequenceFinished = TestEnvironment.isRunning
     /// splash 淡出后、首次安装时展示分步引导 overlay。
     @State private var showFirstRunOnboarding = false
-    /// 0 = 被 splash / 引导遮住（模糊），1 = 主窗口完全清晰。overlay 在 ZStack 上层，本层只管 content 视觉。
-    @State private var mainContentRevealProgress: Double = TestEnvironment.isRunning ? 1 : 0
+    /// 0 = 首次引导收束期主窗口模糊，1 = 完全清晰。冷启动 splash 期间保持 1——
+    /// splash 本身不透明，无需在底下再做 blur/scale，否则淡出时会露出错层顶栏。
+    @State private var mainContentRevealProgress: Double = 1
 
     init(@ViewBuilder content: @escaping () -> Content) {
         self.content = content
@@ -137,6 +141,7 @@ struct LaunchSplashContainer<Content: View>: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // splash / 引导期间隐藏 window toolbar。排序行在 safeAreaInset，标题走系统 navigation chrome。
         .environment(\.firstRunOnboardingActive, showFirstRunOnboarding || isSplashVisible)
         .animation(
             reduceMotion ? nil : .easeOut(duration: LaunchSplashTiming.dismissAnimationSeconds),
@@ -154,12 +159,12 @@ struct LaunchSplashContainer<Content: View>: View {
         }
     }
 
-    /// 主窗口 content：overlay 撤下时从 blur + 略透明 → 清晰，避免「突然露出」。
+    /// 主窗口 content：仅首次引导收束时做 blur / 透明度渐显；冷启动不做 scale，
+    /// 避免 NavigationSplitView 顶栏在缩放期间与列表顶区错层。
     private var obscuredMainContent: some View {
         content()
             .blur(radius: mainContentBlurRadius)
             .opacity(mainContentOpacity)
-            .scaleEffect(mainContentScale, anchor: .center)
     }
 
     private var mainContentBlurRadius: CGFloat {
@@ -170,11 +175,6 @@ struct LaunchSplashContainer<Content: View>: View {
     private var mainContentOpacity: Double {
         guard !reduceMotion else { return 1 }
         return 0.76 + 0.24 * mainContentRevealProgress
-    }
-
-    private var mainContentScale: CGFloat {
-        guard !reduceMotion else { return 1 }
-        return 0.986 + 0.014 * mainContentRevealProgress
     }
 
     private func obscureMainContent() {
@@ -225,15 +225,10 @@ struct LaunchSplashContainer<Content: View>: View {
         }
 
         LaunchSplashPreferences.markColdStartCompleted()
-        let willShowOnboarding = FirstRunOnboardingPreferences.shouldShow
         isSplashVisible = false
         splashSequenceFinished = true
-        if !willShowOnboarding {
-            revealMainContent(
-                duration: LaunchSplashTiming.mainContentRevealSeconds,
-                curve: .easeOut(duration: LaunchSplashTiming.mainContentRevealSeconds)
-            )
-        }
+        // 常规冷启动：主界面在 splash 下已是清晰最终布局，淡出 overlay 即可。
+        // 首次引导会在 `presentFirstRunOnboardingIfNeeded` 里主动 obscureMainContent。
         await presentFirstRunOnboardingIfNeeded()
     }
 

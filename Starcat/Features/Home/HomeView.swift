@@ -385,6 +385,11 @@ struct HomeView: View {
                 dependencies.semanticIndexBuilder.pause()
             }
         }
+        .onAppear {
+            // 首帧即拉回三栏展开，避免 autosave 折叠态与后续 `.task` 纠正之间
+            // 出现中栏顶区（navigationTitle + 列表顶栏）错层跳动。
+            columnVisibility = .all
+        }
         .task {
             // 启动 / 重新进入 HomeView 时默认回三栏展开。运行期用户手动缩窗时，
             // 系统仍可按窗口宽度自动折叠 sidebar；这里只负责启动态保真。

@@ -19,7 +19,7 @@ struct ContentView: View {
     /// 任一为真时,跳过登录态切换的 .smooth 隐式动画,避免内容树瞬切时
     /// 仍有 SwiftUI 默认 spring 残留。
     @Environment(\.starcatReduceMotion) private var reduceMotion
-    /// splash / 首次引导期间隐藏 window toolbar，避免顶栏透出主界面控件。
+    /// splash / 首次引导期间隐藏 window toolbar。
     @Environment(\.firstRunOnboardingActive) private var firstRunOnboardingActive
 
     /// 当用户主动点击"登录"按钮时（isAuthenticating = true）显示 GithubAuthView sheet。
@@ -65,7 +65,6 @@ struct ContentView: View {
         // 这里只移除系统 toolbar 的遮挡，不改变 toolbar item 的布局与交互。
         .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbarVisibility(firstRunOnboardingActive ? .hidden : .visible, for: .windowToolbar)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.55), value: firstRunOnboardingActive)
         .animation(reduceMotion ? nil : .smooth, value: authSession.state)
         .sheet(isPresented: showAuthViewBinding) {
             GithubAuthView()

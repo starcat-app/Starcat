@@ -84,67 +84,18 @@ struct RepoListView: View {
         let _ = AppLog.ui.notice("[switch-cat] RepoListView.body recomputed (items=\(self.viewModel.items.count), itemsRev=\(self.viewModel.itemsRevision), state=\(self.contentStateKey, privacy: .public))  +\(HomeViewModel.msSinceT0, format: .fixed(precision: 1))ms")
         #endif
 
-        contentBody
+        ZStack(alignment: .top) {
+            // 全列底层光晕：必须做 ZStack 底层，不能挂在 contentBody 的 `.background` 上——
+            // `safeAreaInset` / List 默认底色会在上层盖住 background 修饰器（2026-06-23 回归）。
+            DetailHeroTintBackground(tint: listColumnTintColor)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .allowsHitTesting(false)
+
+            listColumnChrome
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        // 与 Sidebar 头像区 / 右侧详情 hero 联动：透明 toolbar 下中栏顶部也绘制 accent 光晕。
-        .detailHeroTintBackground(tint: listColumnTintColor)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: listColumnTintColor)
-        .navigationTitle(navigationTitle)
-        .navigationSubtitle(navigationSubtitle)
-        // W4 A5：多选模式底部浮动操作栏；W12 PR-4 扩展到 trending/weekly/activity；
-        // W12 PR-5：Manage 也走 MultiSelectionStore 但保留独立 BatchActionBar（业务语义差异：
-        // 「打标签」+「Unstar」vs RemoteBatchActionBar 的「Star」+「Unstar」）。
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            currentBatchActionBar
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                // 全局状态入口放在中栏 toolbar：它汇总同步、后台 AI 队列、MCP 与诊断问题，
-                // 点击后打开 popover，不额外占用主界面纵向空间。
-                // 顺序：W12 toolbar 专项 PR-5 followup，状态按钮提到搜索按钮之前（最左侧），
-                // 让"应用健康度"成为用户进首页第一眼就能看到的状态指示。
-                AppStatusToolbarButton(
-                    lastSyncedAt: lastSyncedAt,
-                    onShowBatchAIPanel: onShowBatchAIPanel
-                )
-            }
-            ToolbarItem(placement: .primaryAction) {
-                // 视觉对齐：与 UnifiedFilterMenu / UnifiedSortMenu / MultiSelectButton 等
-                // 邻位控件一致，统一走 `Button { ToolbarIcon(...) }` 让 macOS toolbar
-                // 自行渲染默认圆角矩形按钮，避免之前 `.buttonStyle(.bordered) + minWidth: 62`
-                // 强制成的宽椭圆比其它按钮"高/宽一圈"造成的视觉失衡。
-                // 图标语义：`sparkle.magnifyingglass` 同时表达「搜索 + 聚合/增强」——
-                // 本入口聚合 Local Stars / GitHub / Web（详见 SearchCenterView 三 provider），
-                // 比裸 `magnifyingglass`（普通字段搜索）更准确地传达「聚合搜索中心」。
-                // ⌘K 快捷键由 HomeView 内隐藏按钮独立注册，这里不重复绑定避免冲突。
-                Button {
-                    onOpenSearchCenter?()
-                } label: {
-                    ToolbarIcon("sparkle.magnifyingglass")
-                        .accessibilityLabel(Text("toolbar.globalSearch"))
-                }
-                .help("toolbar.globalSearchHelp")
-            }
-            // W12 toolbar 专项 PR-1：toolbar 内容按 selectedPage 派发到对应 spec builder。
-            // 当前只有 manage 走完整 spec，trending / activity 返回 .empty —— 它们各自
-            // 仍在中栏自绘 toolbar，PR-2/3/4 阶段再迁过来。
-            let spec = currentToolbarSpec
-            if let leading = spec.leadingPrimary {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    leading
-                }
-            }
-            if let trailing = spec.trailingPrimary {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    trailing
-                }
-            }
-            if let search = spec.searchField {
-                ToolbarItem(placement: .primaryAction) {
-                    search
-                }
-            }
-        }
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
@@ -230,6 +181,61 @@ struct RepoListView: View {
         .keyboardShortcut("a", modifiers: .command)
         .disabled(!store.isActive || selectedPage != .manage)
         .hidden()
+    }
+
+    /// 中栏前景层：navigation / inset / toolbar / 列表内容（叠在 `DetailHeroTintBackground` 上）。
+    @ViewBuilder
+    private var listColumnChrome: some View {
+        contentBody
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(.clear)
+            .navigationTitle(navigationTitle)
+            .navigationSubtitle(navigationSubtitle)
+            // Manage 排序 / 同步行放进 top safeAreaInset，贴在 navigation chrome 正下方。
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if selectedPage == .manage {
+                    manageListTopInset
+                }
+            }
+            // W4 A5：多选模式底部浮动操作栏；W12 PR-4 扩展到 trending/weekly/activity；
+            // W12 PR-5：Manage 也走 MultiSelectionStore 但保留独立 BatchActionBar（业务语义差异：
+            // 「打标签」+「Unstar」vs RemoteBatchActionBar 的「Star」+「Unstar」）。
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                currentBatchActionBar
+            }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    AppStatusToolbarButton(
+                        lastSyncedAt: lastSyncedAt,
+                        onShowBatchAIPanel: onShowBatchAIPanel
+                    )
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        onOpenSearchCenter?()
+                    } label: {
+                        ToolbarIcon("sparkle.magnifyingglass")
+                            .accessibilityLabel(Text("toolbar.globalSearch"))
+                    }
+                    .help("toolbar.globalSearchHelp")
+                }
+                let spec = currentToolbarSpec
+                if let leading = spec.leadingPrimary {
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        leading
+                    }
+                }
+                if let trailing = spec.trailingPrimary {
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        trailing
+                    }
+                }
+                if let search = spec.searchField {
+                    ToolbarItem(placement: .primaryAction) {
+                        search
+                    }
+                }
+            }
     }
 
     /// 把三个远端 store 全部 exit。登出 / token 失效场景调用。
@@ -633,27 +639,39 @@ struct RepoListView: View {
     private func manageCategoryContent(_ vm: HomeViewModel) -> some View {
         @Bindable var bindableVM = vm
 
+        Group {
+            if viewModel.selection.isSmartCollectionsSurface {
+                SmartCollectionsOverviewView()
+            } else if viewModel.isLoading && viewModel.items.isEmpty {
+                RepoSkeletonListView(rowCount: 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = viewModel.loadError, viewModel.items.isEmpty {
+                emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitleText: error)
+            } else if viewModel.items.isEmpty {
+                emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
+            } else {
+                listWithOptionalBanner { unifiedListContent($bindableVM.selectedRepoID) }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(.clear)
+    }
+
+    /// Manage 中栏列表顶栏（排序 / 同步 / Smart Collections 规则行）+ 底部分割线。
+    @ViewBuilder
+    private var manageListTopInset: some View {
+        @Bindable var bindableVM = viewModel
+
         VStack(spacing: 0) {
             if viewModel.selection.isSmartCollectionsSurface {
                 smartCollectionsSurfaceFilterBar
-                Divider()
-                SmartCollectionsOverviewView()
             } else {
                 manageFilterBar(sortOption: $bindableVM.sortOption)
-                Divider()
-
-                if viewModel.isLoading && viewModel.items.isEmpty {
-                RepoSkeletonListView(rowCount: 10)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error = viewModel.loadError, viewModel.items.isEmpty {
-                emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitleText: error)
-                } else if viewModel.items.isEmpty {
-                emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
-                } else {
-                listWithOptionalBanner { unifiedListContent($bindableVM.selectedRepoID) }
-                }
             }
+            Divider()
         }
+        // 顶栏背景透明，让外层 `detailHeroTintBackground` 光晕能透到标题 / 排序行背后。
+        .background(.clear)
         .task(id: authSession.state) {
             await refreshLastSyncedAt()
         }
@@ -921,6 +939,8 @@ struct RepoListView: View {
             }
             .id(viewModel.itemsRevision)
             .listStyle(.inset)
+            // 透出底层 `DetailHeroTintBackground`；系统 List 默认实色底会盖住顶栏光晕。
+            .scrollContentBackground(.hidden)
             .alternatingRowBackgrounds()
             // 阅读状态 v2（2026-06-12）：订阅 .repoStatusDidChange，详情页改 status 后
             // HomeViewModel.statusMap 局部更新 → UnifiedRepoRow.readStatus 重渲染 → 角标即时刷新。

@@ -49,7 +49,7 @@ enum FirstRunOnboardingPreferences {
 
 // MARK: - Environment
 
-/// 主窗口是否处于 splash / 首次引导等沉浸式覆盖态（用于隐藏 window toolbar）。
+/// 主窗口是否处于 splash / 首次引导沉浸式覆盖态（用于隐藏 window toolbar）。
 private struct FirstRunOnboardingActiveKey: EnvironmentKey {
     static let defaultValue = false
 }
