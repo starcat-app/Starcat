@@ -264,7 +264,6 @@ struct HomeView: View {
         .environment(viewModel)
         .environment(readmeVM)
         .environment(translationVM)
-        .mainWindowFrameAutosave()
         // 调试用：右上角浮动 W×H 胶囊，仅 DEBUG 包 + 设了 launch arg `-DebugLayoutOverlay YES` 时显示。
         // 详见 `Shared/Utilities/DebugFlags.swift` 的类型文档（含 Xcode Scheme / LLDB / defaults 三种切换方式）。
         .overlay(alignment: .topTrailing) {

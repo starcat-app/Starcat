@@ -17,11 +17,9 @@
 //  正确做法：在 AppKit 层用 `contentMinSize` 设硬下限（这是 NSWindow 的"内容区
 //  最小尺寸"属性，含义就是 SwiftUI contentView 不能小于这个值，到达后用户拖不动）。
 //
-//  当前数值（2026-06-23 v11）：启动默认 content 为 1440×878，换算外框约
-//  1440×900，方便直接产出 Mac App Store 2880×1800 截图；运行期硬下限
-//  仍保留 1440×763。dong4j 实测 1190 最小宽度下重新展开 sidebar 时右上角
-//  会短暂出现 `>>` toolbar overflow；手动拉到 1440 后该问题消失。因此这里
-//  不再保留折叠态 1190 下限，也不做 sidebar 展开时的主动扩窗。
+//  当前数值（2026-06-23 v12）：启动默认 content 为 1440×878；运行期硬下限
+//  1440×763。autosave 恢复只卡 contentMinSize，不再用 defaultSize 过滤——
+//  否则用户拖到 1440×800 等合法尺寸后，每次重启都会被强行拉回 1440×878。
 //
 
 import AppKit
@@ -42,11 +40,11 @@ enum MainWindowFrameDefaults {
     /// 1440×900pt；在 Retina @2x 下可直接裁出 Apple 接受的 2880×1800 PNG。
     ///
     /// 设计意图：
-    /// - 每次进入 HomeView 时都避免从"sidebar 已折叠"的 autosave frame 启动；
-    ///   低于 defaultSize 的保存记录会被丢弃并重新居中到 1440×878
-    /// - 大于等于 defaultSize 的 autosave 记录仍恢复，保留用户主动拉大的窗口
-    /// - 运行期最小高度仍是 763，这是 dong4j 实测能完整渲染 Sidebar 的下限；
-    ///   默认高度提高只为更舒展的首屏和截图，不强迫用户一直保持 900pt 高窗口
+    /// - **仅首次启动**（无 autosave 记录）使用本常量居中到 1440×878
+    /// - **有 autosave 记录**时无条件恢复用户上次尺寸与位置，只经
+    ///   `contentMinSize` 兜底（旧版 1190 宽等异常记录会被抬到 1440×763）
+    /// - 不要把 defaultSize 当作恢复门槛——2026-06-23 截图改动曾误把
+    ///   `isAtLeast(defaultSize)` 加进恢复路径，导致合法小窗每次重启丢失
     ///
     /// 已知约束：屏幕可视高度 < 默认外框高度时会裁到屏幕内，但仍不低于
     /// contentMinSize；运行期拖拽下限固定为 1440×763。
@@ -88,7 +86,7 @@ private struct MainWindowFrameModifier: ViewModifier {
 /// 通过一个不可见 NSView 拿到承载当前 SwiftUI View 的 NSWindow。
 ///
 /// 约束：不要把这个 reader 放到 Settings 或其他独立窗口里，否则会复用同一个
-/// autosaveName，导致不同窗口互相覆盖 frame。当前只在 HomeView 根节点挂载。
+/// autosaveName，导致不同窗口互相覆盖 frame。当前挂在 `ContentView` 根节点。
 private struct MainWindowFrameReader: NSViewRepresentable {
     let defaultSize: CGSize
     let contentMinSize: CGSize
@@ -118,6 +116,13 @@ private struct MainWindowFrameReader: NSViewRepresentable {
         var defaultSize: CGSize
         var contentMinSize: CGSize
         private var didConfigure = false
+        private var persistenceObservers: [NSObjectProtocol] = []
+
+        deinit {
+            persistenceObservers.forEach {
+                NotificationCenter.default.removeObserver($0)
+            }
+        }
 
         init(defaultSize: CGSize, contentMinSize: CGSize) {
             self.defaultSize = defaultSize
@@ -138,54 +143,82 @@ private struct MainWindowFrameReader: NSViewRepresentable {
             }
             didConfigure = true
 
-            // 先设硬下限，再做 autosave 恢复。
-            //
-            // contentMinSize 是运行期唯一硬下限。它只负责阻止窗口被拖回旧的
-            // ContentView 800×600 一类过小尺寸；sidebar 是否折叠、展开交给
-            // NavigationSplitView 自己协商，避免这里二次 setFrame 造成视觉跳动。
-            //
-            // **特殊情况**：autosave 恢复出的尺寸如果**小于** contentMinSize（例如
-            // 用户在更小窗口下限版本里拖小过窗口，新版本提高了下限），AppKit 不会
-            // 自动放大恢复出的 frame——所以下面 setFrameUsingName 后还要兜底
-            // 检查并放大。
             let hasSavedFrame = UserDefaults.standard.object(
                 forKey: MainWindowFrameDefaults.defaultsKey
             ) != nil
 
-            // setFrameAutosaveName 启用 AppKit 原生持久化：用户拖拽修改尺寸/位置后,
-            // AppKit 会写入 UserDefaults,并在下次设置相同 autosaveName 时恢复。
             window.setFrameAutosaveName(MainWindowFrameDefaults.autosaveName)
+            registerTerminateSave(for: window)
 
-            if hasSavedFrame, window.setFrameUsingName(MainWindowFrameDefaults.autosaveName) {
-                // 启动期只信任"三栏展开态及以上"的 autosave。
-                //
-                // 旧版本允许运行期缩到 1190×763 后，AppKit 会把这个 frame 保存下来；
-                // 如果下次启动继续恢复它，首页就可能直接进入窄布局。这里把
-                // 启动视觉宽度统一到 1440，避免恢复旧窄窗口；高度则以 defaultSize
-                // 过滤过矮的截图/首屏不理想窗口。
-                if restoredContentSize(in: window).isAtLeast(defaultSize) {
-                    enforceMinSize(window: window)
-                    return
-                }
-
-                // 保存记录太小，说明上次关闭时处于折叠态或旧版本异常小窗。
-                // 不清 UserDefaults key，直接用本次 setFrame 覆盖；AppKit autosave
-                // 已开启，后续会把 1440×878 content 对应的 frame 写回同一个 autosaveName。
+            if hasSavedFrame {
+                // 有历史记录时**绝不**走 applyInitialFrame——即使首轮
+                // setFrameUsingName 失败（SwiftUI 首帧 window 未就绪），也不能
+                // 把用户上次尺寸覆盖成 1440×878 默认。
+                restoreSavedFrame(to: window)
+                scheduleDeferredRestores(to: window)
+            } else {
                 applyInitialFrame(to: window)
-                return
             }
-
-            applyInitialFrame(to: window)
         }
 
-        private func restoredContentSize(in window: NSWindow) -> CGSize {
-            // 优先用 contentView.bounds，因为 defaultSize / contentMinSize 都是内容区尺寸。
-            // 极早期 contentView 还没挂好时，退回 contentRect(forFrameRect:) 换算。
-            if let contentSize = window.contentView?.bounds.size {
-                return contentSize
+        /// 从 UserDefaults 恢复上次窗口 frame；成功返回 true。
+        @discardableResult
+        private func restoreSavedFrame(to window: NSWindow) -> Bool {
+            guard UserDefaults.standard.object(
+                forKey: MainWindowFrameDefaults.defaultsKey
+            ) != nil else {
+                return false
             }
 
-            return window.contentRect(forFrameRect: window.frame).size
+            // force: true —— SwiftUI WindowGroup 首帧 window 可能已 visible，
+            // 默认 setFrameUsingName 会拒绝写入；这是恢复失败的主因之一。
+            let restored = window.setFrameUsingName(
+                MainWindowFrameDefaults.autosaveName,
+                force: true
+            )
+            if restored {
+                enforceMinSize(window: window)
+            }
+            return restored
+        }
+
+        /// SwiftUI 首帧 layout 可能在 configure 之后再次改写 window frame；
+        /// 延迟两轮恢复，抢在 NavigationSplitView 稳定布局之后写回 autosave。
+        private func scheduleDeferredRestores(to window: NSWindow) {
+            DispatchQueue.main.async { [weak self, weak window] in
+                guard let self, let window else { return }
+                self.restoreSavedFrame(to: window)
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self, weak window] in
+                guard let self, let window else { return }
+                self.restoreSavedFrame(to: window)
+            }
+        }
+
+        /// 退出 / 失活前显式 saveFrame，避免仅依赖 AppKit 隐式 autosave 在 SwiftUI 生命周期下漏写。
+        private func registerTerminateSave(for window: NSWindow) {
+            guard persistenceObservers.isEmpty else { return }
+
+            persistenceObservers.append(
+                NotificationCenter.default.addObserver(
+                    forName: NSApplication.willTerminateNotification,
+                    object: nil,
+                    queue: .main
+                ) { [weak window] _ in
+                    window?.saveFrameIfNeeded()
+                }
+            )
+
+            persistenceObservers.append(
+                NotificationCenter.default.addObserver(
+                    forName: NSApplication.didResignActiveNotification,
+                    object: nil,
+                    queue: .main
+                ) { [weak window] _ in
+                    window?.saveFrameIfNeeded()
+                }
+            )
         }
 
         private func applyInitialFrame(to window: NSWindow) {
@@ -270,12 +303,6 @@ private struct MainWindowFrameReader: NSViewRepresentable {
     }
 }
 
-private extension CGSize {
-    func isAtLeast(_ other: CGSize) -> Bool {
-        width >= other.width && height >= other.height
-    }
-}
-
 private final class WindowReaderView: NSView {
     var onMoveToWindow: ((NSWindow?) -> Void)?
 
@@ -285,11 +312,19 @@ private final class WindowReaderView: NSView {
     }
 }
 
+private extension NSWindow {
+    /// 仅主窗口写入 autosave，避免误伤 Settings / sheet host。
+    func saveFrameIfNeeded() {
+        guard frameAutosaveName == MainWindowFrameDefaults.autosaveName else { return }
+        saveFrame(usingName: MainWindowFrameDefaults.autosaveName)
+    }
+}
+
 extension View {
     /// 为登录后的主窗口启用默认尺寸 + AppKit frame autosave + 硬最小尺寸约束。
     ///
-    /// 使用方式：挂在 HomeView 根节点，确保登录页小窗口不会被强制放大、用户关闭
-    /// /重开 App 后能恢复上次的窗口尺寸和位置、用户拖窗口不能拖到 contentMinSize 以下。
+    /// 使用方式：挂在 `ContentView` 根节点，确保冷启动 splash 期间也能尽早接入
+    /// autosave；用户关闭 / 重开 App 后能恢复上次的窗口尺寸和位置。
     ///
     /// - Parameters:
     ///   - defaultSize: 首次启动（无 autosave 记录时）的默认窗口尺寸。
