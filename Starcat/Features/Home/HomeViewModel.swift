@@ -710,6 +710,18 @@ final class HomeViewModel {
         userSmartCollections.first { $0.id == id }
     }
 
+    /// 返回某个 repo 已绑定的用户标签，供 Smart Collections 右栏卡片做只读展示。
+    ///
+    /// 这里故意不暴露 `repoTagsMap` 本体：右栏只需要显示名称 / 颜色 / 图标，
+    /// 不应该获得可变映射或依赖内部 tagId 集合结构，避免浏览面板反向污染筛选状态。
+    func tags(for repoId: Int64) -> [Tag] {
+        let ids = repoTagsMap[repoId] ?? []
+        guard !ids.isEmpty else { return [] }
+        return tags
+            .filter { ids.contains($0.id) }
+            .sorted { $0.sortOrder == $1.sortOrder ? $0.name < $1.name : $0.sortOrder < $1.sortOrder }
+    }
+
     /// 规则摘要格式化上下文（tag id → 显示名）。
     func smartCollectionSummaryContext() -> SmartCollectionRuleSummary.Context {
         SmartCollectionRuleSummary.Context.from(tags: tags)

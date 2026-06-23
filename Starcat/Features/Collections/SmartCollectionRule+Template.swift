@@ -10,6 +10,9 @@ import Foundation
 extension SmartCollectionRule {
 
     /// 从内置集合 kind 生成可编辑模板。系统集合部分条件为 OR，模板只保留 AND 可表达子集。
+    ///
+    /// 用途：规则编辑器「从内置集合创建」时的初始草稿；**不是**内置集合详情面板的规则展示来源
+    /// （展示走 `SmartCollectionSystemRuleSummary`，与 `matchesSmartCollection` 对齐）。
     static func template(for kind: SmartCollectionKind) -> SmartCollectionRule {
         var rule = baseline
         switch kind {

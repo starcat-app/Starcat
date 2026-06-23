@@ -108,7 +108,9 @@ struct SmartCollectionsOverviewView: View {
     }
 
     private func systemCollectionCard(_ kind: SmartCollectionKind) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let isSelected = viewModel.selection == .smartCollection(kind)
+
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 6) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -151,10 +153,17 @@ struct SmartCollectionsOverviewView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
         .padding(12)
-        .background(kind.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background((isSelected ? kind.tint.opacity(0.18) : kind.cardBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(kind.tint)
+                .frame(width: isSelected ? 3 : 0)
+                .padding(.vertical, 8)
+                .opacity(isSelected ? 1 : 0)
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(kind.cardBorder, lineWidth: 1)
+                .stroke(isSelected ? kind.tint.opacity(0.42) : kind.cardBorder, lineWidth: 1)
         }
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onTapGesture {
@@ -181,7 +190,9 @@ struct SmartCollectionsOverviewView: View {
     }
 
     private func userCollectionCard(_ collection: UserSmartCollection) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let isSelected = viewModel.selection == .userSmartCollection(collection.id)
+
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 6) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -223,10 +234,17 @@ struct SmartCollectionsOverviewView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
         .padding(12)
-        .background(Color.accentColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color.accentColor.opacity(isSelected ? 0.18 : 0.09), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(Color.accentColor)
+                .frame(width: isSelected ? 3 : 0)
+                .padding(.vertical, 8)
+                .opacity(isSelected ? 1 : 0)
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.accentColor.opacity(0.22), lineWidth: 1)
+                .stroke(Color.accentColor.opacity(isSelected ? 0.42 : 0.22), lineWidth: 1)
         }
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onTapGesture {

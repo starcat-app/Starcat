@@ -86,12 +86,13 @@ struct RepoDetailView: View {
         // 内容在 Z 轴上突然居中再回到左上。
         ZStack(alignment: .topLeading) {
             if let repo = viewModel.selectedRepo {
-                // R-01 §3.2.3：Manage 详情迁移到 RepoDetailScaffold + ManageDetailContent。
-                // - 删除原 `showUnstarConfirm` / `isUnstarring` / `unstarError` 三个 @State + 对应 alert
-                //   （dong4j Q5-A 决策：unstar 即点即生效，无 confirm；失败时 chip 抖动 + 红色 ~600ms，不弹 toast）
-                // - star/unstar 调用统一走 `dependencies.starActionService.toggle(repo:)`
-                //   （v1.7 修订：4 详情页同构,toggle 内部按 StarredRegistry 派生 star/unstar）
-                RepoDetailScaffold(
+                VStack(alignment: .leading, spacing: 0) {
+                    if viewModel.selection.isSmartCollectionDetailContext {
+                        smartCollectionBackBar
+                    }
+
+                    // R-01 §3.2.3：Manage 详情迁移到 RepoDetailScaffold + ManageDetailContent。
+                    RepoDetailScaffold(
                     repo: repo,
                     viewData: RepoDetailViewData(
                         hero: RepoDetailHero(repo: repo),
@@ -123,6 +124,8 @@ struct RepoDetailView: View {
                 ) { onScrollReport in
                     ManageDetailContent(repo: repo, onScrollReport: onScrollReport)
                 }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // 2026-06-21 性能修订：
                 // Manage 详情的 body 是 README WKWebView。root transition 会让旧 repo
                 // 的 WebView 和新 repo 的 WebView 在 0.4s 内同时存在，repo 快速切换时
@@ -142,6 +145,10 @@ struct RepoDetailView: View {
                 // 路径不依赖网络。同 trending 内切 repo 也触发 transition,体验丝滑。
                 TrendingScaffoldShell(trending: trending)
                     .id(trending.id)
+                    .detailContentTransition()
+            } else if viewModel.selection.isSmartCollectionDetailContext {
+                SmartCollectionDetailPanel()
+                    .id("smart-collection-panel-\(viewModel.selection.id)")
                     .detailContentTransition()
             } else {
                 emptyState
@@ -163,6 +170,27 @@ struct RepoDetailView: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: detailContentID)
     }
 
+    /// 智能集合卡片 → 详情时，在 hero 上方占一行返回入口（不用 overlay，避免遮挡头像）。
+    private var smartCollectionBackBar: some View {
+        Button {
+            viewModel.selectedRepoID = nil
+        } label: {
+            Label("smartCollections.panel.backToCollection", systemImage: "chevron.left")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .labelStyle(.titleAndIcon)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.regularMaterial, in: Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .padding(.horizontal, 24)
+        .padding(.top, 10)
+        .padding(.bottom, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     /// 当前 detail 内容的标识符，用作 `.animation(_:value:)` 的触发 key。
     ///
     /// 三种状态：Manage repo（id 形如 "12345"）/ Trending repo（id 形如 "owner/name"）
@@ -171,6 +199,7 @@ struct RepoDetailView: View {
     private var detailContentID: String {
         if let id = viewModel.selectedRepo?.id { return "manage-\(id)" }
         if let id = selectedTrendingRepo?.id { return "trending-\(id)" }
+        if viewModel.selection.isSmartCollectionDetailContext { return "smart-collection-panel-\(viewModel.selection.id)" }
         return "empty"
     }
 
@@ -252,6 +281,18 @@ struct RepoDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+}
+
+private extension SidebarItem {
+    /// 右栏是否应该在未选中 repo 时展示 Smart Collections 浏览面板。
+    var isSmartCollectionDetailContext: Bool {
+        switch self {
+        case .smartCollection, .userSmartCollection:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 // MARK: - README 状态视图

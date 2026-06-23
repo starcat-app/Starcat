@@ -623,7 +623,7 @@ struct RepoListView: View {
         @Bindable var bindableVM = vm
 
         VStack(spacing: 0) {
-            if viewModel.selection == .smartCollectionsHome {
+            if viewModel.selection.isSmartCollectionsSurface {
                 SmartCollectionsOverviewView()
             } else {
                 manageFilterBar(sortOption: $bindableVM.sortOption)
@@ -1141,6 +1141,21 @@ struct RepoListView: View {
             codeFlowSheetRepo = repo
         } catch {
             paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
+        }
+    }
+}
+
+private extension SidebarItem {
+    /// Smart Collections 在中栏始终展示集合卡片总览。
+    ///
+    /// 具体集合 selection 只驱动右栏浏览面板和数据查询；中栏不切到 repo list，
+    /// 避免「点集合卡片后卡片区消失」造成导航上下文丢失。
+    var isSmartCollectionsSurface: Bool {
+        switch self {
+        case .smartCollectionsHome, .smartCollection, .userSmartCollection:
+            return true
+        default:
+            return false
         }
     }
 }
