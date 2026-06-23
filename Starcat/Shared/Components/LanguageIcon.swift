@@ -16,6 +16,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 // MARK: - 数据模型
 
@@ -95,7 +96,7 @@ private let validDeviconAssets: Set<String> = [
     "aarch64", "adonisjs", "aerospike", "aframe", "aftereffects", "akka", "algolia", "almalinux",
     "alpinejs", "anaconda", "android", "androidstudio", "angular", "angularjs", "angular_material",
     "ansible", "ansys", "antdesign", "apache", "apacheairflow", "apachekafka", "apachespark",
-    "apex", "apl", "apollographql", "appcelerator", "apple", "appwrite", "archlinux", "arduino",
+    "apex", "apl", "apollographql", "appcelerator", "apple", "applescript", "appwrite", "archlinux", "arduino",
     "argocd", "artixlinux", "astro", "atom", "awk", "azure", "azuredevops", "azuresqldatabase",
     "babel", "babylonjs", "backbonejs", "ballerina", "bamboo", "bash", "bazel", "beats", "behance",
     "bevyengine", "biome", "bitbucket", "blazor", "blender", "bootstrap", "bower", "browserstack",
@@ -105,7 +106,7 @@ private let validDeviconAssets: Set<String> = [
     "coffeescript", "composer", "confluence", "consul", "contao", "corejs", "cosmosdb",
     "couchbase", "couchdb", "cpanel", "cplusplus", "crystal", "csharp", "css3", "cypressio",
     "d3js", "dart", "datadog", "datagrip", "dataspell", "datatables", "dbeaver", "debian",
-    "delphi", "denojs", "devicon", "digitalocean", "discloud", "discordjs", "djangorest", "docker",
+    "delphi", "denojs", "devicon", "digitalocean", "discloud", "discordjs", "djangorest", "docker", "dockerfile",
     "doctrine", "dot-net", "dotnetcore", "dovecot", "dreamweaver", "dropwizard", "drupal",
     "duckdb", "dyalog", "dynamodb", "dynatrace", "eclipse", "ecto", "elasticsearch", "electron",
     "eleventy", "elixir", "elm", "emacs", "embeddedc", "ember", "entityframeworkcore", "envoy",
@@ -1033,7 +1034,15 @@ enum LanguageIconResolver {
 // MARK: - SwiftUI 视图
 
 /// 语言图标视图：显示语言 logo 或 fallback badge
-/// 使用场景：SidebarView 的 Languages 列表行
+///
+/// 使用场景：SidebarView Languages / Trending 语言行、`LanguagePickerMenu` 等。
+///
+/// 布局约束（dong4j 2026-06-23 Manage Languages 截图反馈）：
+/// 1. macOS `List(.sidebar)` 的 `Label` icon 槽（NSTableView cell）会裁切自定义
+///    raster/SVG logo——`fixedSize` 挡不住。Sidebar 语言行改走 inline HStack（见
+///    `SidebarView.sidebarLeadingIconColumnWidth`），**不要**再把 Devicon 塞进 Label icon。
+/// 2. 其余场景（Picker popover、chip 等）走 NSImage 显式 `.size` 固化，与
+///    `AIProviderIconView` 同理，避免 Asset Catalog 默认 viewBox 与 SwiftUI `.frame` 打架。
 struct LanguageIconView: View {
     let language: String
     let size: CGFloat
@@ -1046,20 +1055,43 @@ struct LanguageIconView: View {
     var body: some View {
         let result = LanguageIconResolver.resolve(language: language)
 
-        switch result.type {
-        case .localSVG(let assetName):
-            Image(assetName)
-                .resizable()
-                .scaledToFill()
-                .frame(width: size, height: size)
-                .clipped()
+        Group {
+            switch result.type {
+            case .localSVG(let assetName):
+                if let nsImage = sizedNSImage(assetName: assetName) {
+                    Image(nsImage: nsImage)
+                        .interpolation(.high)
+                        .frame(width: size, height: size)
+                } else {
+                    // Asset 缺失时的退路；正常 Devicon 不会走到这里。
+                    Image(assetName)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: size, height: size)
+                }
 
-        case .badge(let colorHex, _):
-            // Fallback: 只显示彩色圆形，不显示字母
-            let color = Color(hex: colorHex) ?? .gray
-            Circle()
-                .fill(color)
-                .frame(width: size, height: size)
+            case .badge(let colorHex, _):
+                // Fallback: 只显示彩色圆形，不显示字母
+                let color = Color(hex: colorHex) ?? .gray
+                Circle()
+                    .fill(color)
+                    .frame(width: size, height: size)
+            }
         }
+        .imageScale(.medium)
+        .fixedSize()
+        .accessibilityHidden(true)
+    }
+
+    /// 从 Asset Catalog 取独立 NSImage 副本并固化 `.size`。
+    ///
+    /// 必须 `.copy()` 再改 size，避免污染 `NSImage(named:)` 全局缓存（同
+    /// `AIProviderIconView.sizedNSImage` 注释）。
+    private func sizedNSImage(assetName: String) -> NSImage? {
+        guard let base = NSImage(named: assetName) else { return nil }
+        guard let copy = base.copy() as? NSImage else { return base }
+        copy.size = NSSize(width: size, height: size)
+        return copy
     }
 }

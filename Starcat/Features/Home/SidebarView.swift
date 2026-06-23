@@ -104,6 +104,13 @@ struct SidebarView: View {
     /// 用户超过 100,000 stars 概率极低，不需要为此牺牲稳定性。
     private static let trailingFixedWidth: CGFloat = 60
 
+    /// Sidebar `List(.sidebar)` 行首 icon 列宽（pt），与系统 `Label { } icon:` 槽视觉对齐。
+    ///
+    /// Languages / Trending 语言行**禁止**把 Devicon logo 塞进 Label icon 槽——macOS
+    /// NSTableView 会裁切自定义位图（Swift 橙底 + 鸟右侧 / 顶部被切平，dong4j 2026-06-23
+    /// 截图）。改 inline `HStack` + 此常量锁宽，与主行 SF Symbol 左缘对齐。
+    private static let sidebarLeadingIconColumnWidth: CGFloat = 16
+
     // MARK: - 折叠动画规格（2026-06-11 dong4j 体验优化：对齐 Xcode 文件树的丝滑感）
 
     /// Sidebar 折叠/展开统一动画曲线。
@@ -761,9 +768,18 @@ struct SidebarView: View {
     // 历史代码可在 git blame / commit `trending sidebar 切换到后端聚合接口` 之前的版本里找回。
 
     /// Trending 语言行。`count` 为 nil 时不展示行尾计数（fallbackList / All 行）。
+    ///
+    /// 不用 `Label` icon 槽承载 Devicon（会被 List 裁切），与 `languageRow` 同款 inline 布局。
     @ViewBuilder
     private func trendingLanguageRow(_ language: TrendingLanguage, count: Int?) -> some View {
-        Label {
+        HStack(alignment: .center, spacing: 6) {
+            trendingLanguageIcon(language)
+                .frame(
+                    width: Self.sidebarLeadingIconColumnWidth,
+                    height: Self.sidebarLeadingIconColumnWidth,
+                    alignment: .center
+                )
+
             HStack(spacing: 4) {
                 trendingLanguageTitle(language)
                     .lineLimit(1)
@@ -777,8 +793,6 @@ struct SidebarView: View {
                         .monospacedDigit()
                 }
             }
-        } icon: {
-            trendingLanguageIcon(language)
         }
         .tag(language)
     }
@@ -787,10 +801,12 @@ struct SidebarView: View {
     private func trendingLanguageIcon(_ language: TrendingLanguage) -> some View {
         if language == .all {
             Image(systemName: "chevron.left.forwardslash.chevron.right")
+                .imageScale(.medium)
         } else if language.isUncategorized {
             // 「未分类」用问号占位（与 Manage Languages 里 `language=nil` 行的视觉对齐）。
             Image(systemName: "questionmark.circle")
                 .foregroundStyle(.secondary)
+                .imageScale(.medium)
         } else {
             LanguageIconView(language: language.rawValue, size: 14)
         }
@@ -948,17 +964,30 @@ struct SidebarView: View {
     }
 
     /// Languages 专属行——
-    /// 每个语言显示对应的彩色圆形图标（与 GitHub 语言点风格一致）+ 语言名 + 计数
+    /// 每个语言显示对应的 Devicon logo（或 Linguist 色点 fallback）+ 语言名 + 计数。
+    ///
+    /// 布局：inline `HStack` 承载行首 icon，**不走** `Label` icon 槽（macOS List 会裁切
+    /// Devicon SVG，见 `sidebarLeadingIconColumnWidth` 注释）。
     @ViewBuilder
     private func languageRow(_ stat: LanguageStat) -> some View {
         let item = SidebarItem.language(stat.languageOrNil)
-        Label {
-            // Sidebar count bugfix v4：与 row() 同款保护——trailing 容器整体 fixed width 锁死。
-            // 详细根因见 `trailingFixedWidth` 常量上方的大注释。
+        HStack(alignment: .center, spacing: 6) {
+            Group {
+                if let lang = stat.languageOrNil, !lang.isEmpty {
+                    LanguageIconView(language: lang, size: 14)
+                } else {
+                    Image(systemName: "questionmark.circle")
+                        .foregroundStyle(.secondary)
+                        .imageScale(.medium)
+                }
+            }
+            .frame(
+                width: Self.sidebarLeadingIconColumnWidth,
+                height: Self.sidebarLeadingIconColumnWidth,
+                alignment: .center
+            )
+
             HStack {
-                // 短名：避免 "Jupyter Notebook" 这种长名在侧边栏窄行被 tail truncate
-                // 成 "Jupyter Note…"。stat.displayName 已对 isEmpty 兜底（"Unknown" 等），
-                // 未命中映射时原样返回，安全。详见 LanguageDisplayName。
                 Text(verbatim: LanguageDisplayName.shortened(for: stat.displayName))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -972,15 +1001,6 @@ struct SidebarView: View {
                         .lineLimit(1)
                 }
                 .frame(width: Self.trailingFixedWidth, alignment: .trailing)
-            }
-        } icon: {
-            // 使用语言对应的彩色圆形图标
-            if let lang = stat.languageOrNil, !lang.isEmpty {
-                LanguageIconView(language: lang, size: 14)
-            } else {
-                // 无主语言（nil / Unknown）显示问号占位
-                Image(systemName: "questionmark.circle")
-                    .foregroundStyle(.secondary)
             }
         }
         .tag(item)
