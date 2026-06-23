@@ -98,12 +98,9 @@ struct AIChatInputView: View {
                 .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
         )
         .padding(.horizontal, 12)
-        // 2026-06-15 13:31 dong4j 反馈"和下方上下文行之间空白太多"：原 `.vertical 10`
-        // 让卡片下方有 10pt + chatContextStatusRow 顶部 6pt = 16pt 空白。把**底部**
-        // 收到 4pt（与上下文行顶部 2pt 合计 6pt 紧凑间距）；顶部保持 10pt 让卡片
-        // 与上方 Divider 有呼吸感。
-        .padding(.top, 10)
-        .padding(.bottom, 4)
+        // 2026-06-23 dong4j 反馈：输入框顶边到上方 Divider、底边到窗口底边应对称。
+        // 统一 8pt；对话模式下 chatContextStatusRow 另有自己的上下 padding。
+        .padding(.vertical, 8)
         .onChange(of: pendingReplacement) { _, replacement in
             guard let replacement else { return }
             editorState.replaceText(replacement)

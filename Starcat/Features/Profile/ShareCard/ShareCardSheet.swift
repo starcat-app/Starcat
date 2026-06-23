@@ -105,7 +105,7 @@ struct ShareCardSheet: View {
             .padding(.vertical, 4)
         }
         // 分享卡本体保持 400×560；这里只裁掉 sheet 旧版 820pt 高度留下的底部背景空白。
-        // 内容总高低于主窗口初始化高度 763pt，初始窗口下不会再向底部凸出。
+        // 内容总高低于主窗口运行期最小 content 高度 763pt，初始窗口下不会再向底部凸出。
         .frame(width: 480, height: 760)
         .background {
             // HOM-173 v3：sheet 整体动态背景（Metal `swDotsFlow` 流场）。

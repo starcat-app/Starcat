@@ -4,9 +4,10 @@
 //
 //  登录后的主界面：NavigationSplitView 三栏。
 //
-//  布局（2026-06-02 调整 v10，三栏展开默认和运行期硬下限统一为 1440×763）：
+//  布局（2026-06-23 调整 v11，默认外框约 1440×900，运行期硬下限仍为 content 1440×763）：
 //  Sidebar（240-320pt, ideal 260）│ RepoList（420-520pt, ideal 420）│ RepoDetail（自适应）
-//  - HomeView 首次进入默认 1440×763
+//  - HomeView 首次进入默认 content 1440×878，换算外层窗口约 1440×900，方便直接截
+//    Mac App Store 2880×1800 图
 //  - 运行期 `NSWindow.contentMinSize` / `window.minSize` 固定为 1440×763
 //    （见 `MainWindowFrameModifier.swift`，AppKit 层卡死，用户不能继续压缩中栏/右栏）
 //  - **关键经验**：SwiftUI 的 `.navigationSplitViewColumnWidth(min:)` 和
@@ -14,12 +15,12 @@
 //    要真正卡死窗口最小尺寸必须走 `NSWindow.contentMinSize`（AppKit 层）。
 //    2026-06-02 之前 v2 错误地以为 SwiftUI minWidth 能反向约束，dong4j 拖窗口拖到
 //    ~920pt 后 sidebar 被压成不可见、列表行被裁掉，截图反馈后才发现此事。
-//  - **启动尺寸 == 硬下限**：1190 折叠态下限在重新展开 sidebar 时会让右上角
+//  - **启动宽度 == 硬下限**：1190 折叠态下限在重新展开 sidebar 时会让右上角
 //    短暂出现 `>>` toolbar overflow；dong4j 手动拉到 1440 后问题消失，所以
 //    直接把 AppKit 硬下限提升到 1440，不再做展开时扩窗或动态 minSize。
 //  - RepoList 的 min == ideal == 420：默认贴 min 启动，往大可拖到 520，往小拖不动
-//  - 高度 763pt：刚好够 Sidebar 完整渲染（头像+统计+主导航+Tags+Languages 前 ~10 项）
-//  - 小屏限制：MacBook 13" 1280×800 仍差 130pt，需主屏横放或外接显示器
+//  - 最小高度 763pt：刚好够 Sidebar 完整渲染（头像+统计+主导航+Tags+Languages 前 ~10 项）
+//  - 小屏限制：MacBook 13" 1280×800 仍低于 1440pt 最小宽度，需主屏横放或外接显示器
 //
 //  顶部操作按三栏职责拆分：
 //  - Sidebar：同步、标签管理
@@ -86,7 +87,7 @@ struct HomeView: View {
     /// 为什么显式持有：
     /// `NavigationSplitView` 在窗口缩窄时会自动折叠 sidebar，并把可见性状态改成
     /// detail/content 优先。如果 AppKit autosave 曾保存过窄窗口，下次启动即使我们
-    /// 立即把窗口放大回 1410×763，SplitView 也可能停留在折叠可见性，导致左栏以
+    /// 立即把窗口放大回默认三栏尺寸，SplitView 也可能停留在折叠可见性，导致左栏以
     /// 抽屉/半截形态出现。启动时把它重置为 `.all`，让默认状态始终是三栏展开。
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 

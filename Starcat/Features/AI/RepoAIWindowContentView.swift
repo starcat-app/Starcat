@@ -1855,9 +1855,8 @@ struct RepoAIWindowContentView: View {
 
     /// 降级 banner（沿用 Y4 / Y8 风格）。
     ///
-    /// 2026-06-15 13:31 dong4j 反馈"和上方输入框间距太大"：把 `.vertical 6` 拆成
-    /// 不对称的 `top 2 / bottom 6`,与输入框底部 4pt 合计 6pt 紧凑视觉；
-    /// 底部 6pt 保留作为窗口底边的呼吸距。`summarizedStatusRow` 同步。
+    /// 顶 2pt 与输入框底部 8pt 合计 10pt 间距；底 6pt 作为窗口底边呼吸距。
+    /// `summarizedStatusRow` 同步。
     private func degradationStatusRow(reason: ContextDegradationReason) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -1931,9 +1930,7 @@ struct RepoAIWindowContentView: View {
                     }
                 }
             }
-            // 2026-06-15 13:31 dong4j 反馈"和上方输入框间距太大"：拆成不对称的
-            // top 2 / bottom 6,与输入框底部 4pt 合计 6pt 紧凑间距；底部 6 保留作为
-            // 窗口底边的呼吸距。详见 degradationStatusRow 同款注释。
+            // 顶 2pt + 输入框底 8pt = 10pt；底 6pt 窗口底边呼吸距。详见 degradationStatusRow。
             .padding(.horizontal, 20)
             .padding(.top, 2)
             .padding(.bottom, 6)
