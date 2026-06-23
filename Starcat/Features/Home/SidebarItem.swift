@@ -125,6 +125,30 @@ enum SidebarItem: Hashable, Identifiable {
     }
 }
 
+// MARK: - Smart Collections 导航语义
+
+extension SidebarItem {
+    /// Smart Collections 在中栏始终展示集合卡片总览（具体集合 selection 不切到 repo list）。
+    var isSmartCollectionsSurface: Bool {
+        switch self {
+        case .smartCollectionsHome, .smartCollection, .userSmartCollection:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// 右栏在未选中 repo 时展示 Smart Collections 浏览面板。
+    var isSmartCollectionDetailContext: Bool {
+        switch self {
+        case .smartCollection, .userSmartCollection:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 // MARK: - 持久化编解码
 
 extension SidebarItem {

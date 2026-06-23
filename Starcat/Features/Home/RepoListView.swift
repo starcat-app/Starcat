@@ -494,6 +494,17 @@ struct RepoListView: View {
 
         let leading = AnyView(
             Group {
+                // 智能集合：从右栏 repo 详情退回集合浏览面板，放在中栏 toolbar 不占右栏纵向空间。
+                if viewModel.selection.isSmartCollectionDetailContext, viewModel.selectedRepo != nil {
+                    Button {
+                        viewModel.selectedRepoID = nil
+                    } label: {
+                        ToolbarIcon("arrow.left.to.line")
+                            .accessibilityLabel(Text("smartCollections.panel.backToCollection"))
+                    }
+                    .help("smartCollections.panel.backToCollection")
+                }
+
                 Button {
                     openSmartCollectionEditor()
                 } label: {
@@ -1141,21 +1152,6 @@ struct RepoListView: View {
             codeFlowSheetRepo = repo
         } catch {
             paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
-        }
-    }
-}
-
-private extension SidebarItem {
-    /// Smart Collections 在中栏始终展示集合卡片总览。
-    ///
-    /// 具体集合 selection 只驱动右栏浏览面板和数据查询；中栏不切到 repo list，
-    /// 避免「点集合卡片后卡片区消失」造成导航上下文丢失。
-    var isSmartCollectionsSurface: Bool {
-        switch self {
-        case .smartCollectionsHome, .smartCollection, .userSmartCollection:
-            return true
-        default:
-            return false
         }
     }
 }

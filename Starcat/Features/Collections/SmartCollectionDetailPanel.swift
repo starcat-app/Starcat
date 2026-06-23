@@ -8,10 +8,26 @@
 //  - 中栏保持 Smart Collections 卡片总览；右栏承载具体集合的浏览视图。
 //  - 卡片容器复用 `RepoRowSurface`，保证背景 / hover / selected 视觉与中栏 repo row 同源。
 //  - 右栏自己分页增量渲染，避免大集合一次性创建大量卡片造成明显卡顿。
+//  - 仓库卡片用 Masonry 瀑布流（`SmartCollectionMasonryLayout`），高度随内容伸缩。
+//
+//  P0 性能（2026-06-23）：
+//  - 卡片 ViewModel 预计算 + Equatable 隔离，避免 HomeViewModel 任意字段变化整树重绘；
+//  - Masonry 分列 bucket 预计算，避免 body 内 O(n×列数) 扫描；
+//  - Health 只查缺失 id；分页 debounce，减少快速滚动时瞬时建 view。
 //
 
 import SwiftUI
 import AppKit
+
+/// 右栏卡片渲染快照：在 panel 层一次性组装，供 Equatable 卡片做 diff。
+private struct SmartCollectionCardItem: Identifiable, Equatable {
+    var id: Int64 { repo.id }
+    let repo: Repo
+    let status: RepoStatus
+    let userTags: [Tag]
+    let health: RepoHealthSnapshot?
+    let isSelected: Bool
+}
 
 struct SmartCollectionDetailPanel: View {
     @Environment(HomeViewModel.self) private var viewModel
@@ -21,8 +37,13 @@ struct SmartCollectionDetailPanel: View {
     @State private var isLoadingHealth = false
     @State private var visibleCount = pageSize
     @State private var isRuleExpanded = false
+    /// ScrollView 可用宽度；用 background GeometryReader 读取，避免外层 GeometryReader 包裹整棵 scroll 树。
+    @State private var contentWidth: CGFloat = 720
+    @State private var masonryColumns: [[SmartCollectionCardItem]] = []
+    @State private var loadNextPageTask: Task<Void, Never>?
 
-    private static let pageSize = 24
+    private static let pageSize = 16
+    private static let pageLoadDebounceNs: UInt64 = 300_000_000
     private static let cardSpacing: CGFloat = 12
     private static let minCardWidth: CGFloat = 280
     /// 与中栏 `SmartCollectionsOverviewView` 集合卡片同高，避免右栏顶区错层。
@@ -39,68 +60,89 @@ struct SmartCollectionDetailPanel: View {
         Array(repos.prefix(visibleCount))
     }
 
-    var body: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: Self.overviewSectionSpacing) {
-                    collectionHeaderCard
+    private var lastVisibleRepoID: Int64? {
+        visibleRepos.last?.id
+    }
 
-                    if viewModel.isLoading && repos.isEmpty {
-                        SmartCollectionCardSkeletonGrid(
-                            columns: columns(for: proxy.size.width),
-                            spacing: Self.cardSpacing
-                        )
-                    } else if repos.isEmpty {
-                        EmptyStateView(
-                            systemImage: "line.3.horizontal.decrease.circle",
-                            title: "smartCollections.empty.collection",
-                            subtitle: "smartCollections.empty.collectionSubtitle",
-                            spacing: 12
-                        )
-                        .frame(maxWidth: .infinity, minHeight: 260)
-                    } else {
-                        LazyVGrid(
-                            columns: columns(for: proxy.size.width),
-                            alignment: .leading,
-                            spacing: Self.cardSpacing
-                        ) {
-                            ForEach(visibleRepos) { repo in
-                                SmartCollectionRepoCard(
-                                    repo: repo,
-                                    status: viewModel.readStatus(for: repo.id),
-                                    userTags: viewModel.tags(for: repo.id),
-                                    health: healthSnapshots[repo.id],
-                                    isSelected: viewModel.selectedRepoID == repo.id,
-                                    onSelect: {
-                                        viewModel.selectedRepoID = repo.id
-                                    }
-                                )
-                                .onAppear {
-                                    loadNextPageIfNeeded(repo)
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Self.overviewSectionSpacing) {
+                collectionHeaderCard
+
+                if viewModel.isLoading && repos.isEmpty {
+                    SmartCollectionCardSkeletonMasonry(
+                        columnCount: columnCount(for: contentWidth),
+                        spacing: Self.cardSpacing
+                    )
+                } else if repos.isEmpty {
+                    EmptyStateView(
+                        systemImage: "line.3.horizontal.decrease.circle",
+                        title: "smartCollections.empty.collection",
+                        subtitle: "smartCollections.empty.collectionSubtitle",
+                        spacing: 12
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 260)
+                } else {
+                    SmartCollectionMasonryStack(
+                        columns: masonryColumns,
+                        spacing: Self.cardSpacing
+                    ) { item in
+                        SmartCollectionRepoCard(item: item)
+                            .equatable()
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                viewModel.selectedRepoID = item.id
+                            }
+                            .onAppear {
+                                if item.id == lastVisibleRepoID {
+                                    scheduleLoadNextPage()
                                 }
                             }
-                        }
+                    }
 
-                        if visibleCount < repos.count {
-                            HStack {
-                                Spacer()
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .onAppear(perform: loadNextPage)
-                                Spacer()
-                            }
-                            .padding(.vertical, 10)
+                    if visibleCount < repos.count {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .controlSize(.small)
+                                .onAppear(perform: scheduleLoadNextPage)
+                            Spacer()
                         }
+                        .padding(.vertical, 10)
                     }
                 }
-                .padding(.horizontal, Self.overviewOuterPadding)
-                .padding(.vertical, Self.overviewOuterPadding)
             }
-            .scrollIndicators(.visible)
+            .padding(.horizontal, Self.overviewOuterPadding)
+            .padding(.vertical, Self.overviewOuterPadding)
+        }
+        .scrollIndicators(.visible)
+        .background {
+            // 只读宽度，不参与 ScrollView 内容测量，全屏 resize 时比外层 GeometryReader 更轻。
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { contentWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { _, width in
+                        contentWidth = width
+                    }
+            }
         }
         .task(id: viewModel.itemsRevision) {
             visibleCount = Self.pageSize
-            await loadHealthSnapshots()
+            healthSnapshots = [:]
+            refreshMasonryLayout()
+            await loadHealthSnapshots(for: visibleRepos.map(\.id))
+        }
+        .onChange(of: contentWidth) { _, _ in
+            refreshMasonryLayout()
+        }
+        .onChange(of: visibleCount) { oldCount, newCount in
+            refreshMasonryLayout()
+            guard newCount > oldCount else { return }
+            let newIDs = Array(repos.prefix(newCount).suffix(newCount - oldCount)).map(\.id)
+            Task { await loadHealthSnapshots(for: newIDs) }
+        }
+        .onChange(of: viewModel.selectedRepoID) { _, _ in
+            refreshMasonryLayout()
         }
         .onChange(of: viewModel.selection) { _, _ in
             isRuleExpanded = false
@@ -259,18 +301,49 @@ struct SmartCollectionDetailPanel: View {
         }
     }
 
-    private func columns(for width: CGFloat) -> [GridItem] {
+    private func columnCount(for width: CGFloat) -> Int {
         let available = max(width - Self.overviewOuterPadding * 2, Self.minCardWidth)
-        let count = max(1, Int((available + Self.cardSpacing) / (Self.minCardWidth + Self.cardSpacing)))
-        return Array(
-            repeating: GridItem(.flexible(minimum: Self.minCardWidth), spacing: Self.cardSpacing, alignment: .top),
-            count: count
+        return max(1, Int((available + Self.cardSpacing) / (Self.minCardWidth + Self.cardSpacing)))
+    }
+
+    /// 一次性组装卡片快照 + 分列 bucket；仅在 width / 可见集 / 选中 / health 变化时调用。
+    private func refreshMasonryLayout() {
+        let visible = visibleRepos
+        guard !visible.isEmpty else {
+            masonryColumns = []
+            return
+        }
+
+        let tagsByRepoID = Self.tagsByRepoID(for: visible, viewModel: viewModel)
+        let selectedID = viewModel.selectedRepoID
+        let items = visible.map { repo in
+            SmartCollectionCardItem(
+                repo: repo,
+                status: viewModel.readStatus(for: repo.id),
+                userTags: tagsByRepoID[repo.id] ?? [],
+                health: healthSnapshots[repo.id],
+                isSelected: selectedID == repo.id
+            )
+        }
+        masonryColumns = SmartCollectionMasonryDistribution.distribute(
+            items,
+            columnCount: columnCount(for: contentWidth)
         )
     }
 
-    private func loadNextPageIfNeeded(_ repo: Repo) {
-        guard repo.id == visibleRepos.last?.id else { return }
-        loadNextPage()
+    /// 批量预取 tags，避免在 SwiftUI body 里对每张卡重复 filter 全量 tags 数组。
+    private static func tagsByRepoID(for repos: [Repo], viewModel: HomeViewModel) -> [Int64: [Tag]] {
+        Dictionary(uniqueKeysWithValues: repos.map { ($0.id, viewModel.tags(for: $0.id)) })
+    }
+
+    private func scheduleLoadNextPage() {
+        guard visibleCount < repos.count else { return }
+        loadNextPageTask?.cancel()
+        loadNextPageTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: Self.pageLoadDebounceNs)
+            guard !Task.isCancelled else { return }
+            loadNextPage()
+        }
     }
 
     private func loadNextPage() {
@@ -278,41 +351,43 @@ struct SmartCollectionDetailPanel: View {
         visibleCount = min(visibleCount + Self.pageSize, repos.count)
     }
 
-    private func loadHealthSnapshots() async {
-        let ids = repos.map(\.id)
-        guard !ids.isEmpty else {
-            healthSnapshots = [:]
-            return
-        }
+    /// 只查询缓存中缺失的 repo id，分页追加时不重复打 GRDB。
+    private func loadHealthSnapshots(for ids: [Int64]) async {
+        let missing = ids.filter { healthSnapshots[$0] == nil }
+        guard !missing.isEmpty else { return }
 
         isLoadingHealth = true
         defer { isLoadingHealth = false }
 
         do {
-            healthSnapshots = try await dependencies.repoHealthRepository.snapshots(for: ids)
+            let loaded = try await dependencies.repoHealthRepository.snapshots(for: missing)
+            healthSnapshots.merge(loaded) { _, new in new }
+            refreshMasonryLayout()
         } catch {
             AppLog.database.warning("Smart Collection detail health load failed: \(error.localizedDescription, privacy: .public)")
-            healthSnapshots = [:]
         }
     }
 
 }
 
-private struct SmartCollectionRepoCard: View {
+private struct SmartCollectionRepoCard: View, Equatable {
     private static let sectionSpacing: CGFloat = 6
     private static let chipRowHeight: CGFloat = 18
     private static let chipRowSpacing: CGFloat = 4
-    /// topics + 用户标签两行固定占位，保证 Grid 内卡片等高（无 topics 时也保留空行）。
-    private static let tagAreaHeight: CGFloat = chipRowHeight * 2 + chipRowSpacing
 
-    let repo: Repo
-    let status: RepoStatus
-    let userTags: [Tag]
-    let health: RepoHealthSnapshot?
-    let isSelected: Bool
-    let onSelect: () -> Void
+    let item: SmartCollectionCardItem
 
     @Environment(\.locale) private var locale
+
+    static func == (lhs: SmartCollectionRepoCard, rhs: SmartCollectionRepoCard) -> Bool {
+        lhs.item == rhs.item
+    }
+
+    private var repo: Repo { item.repo }
+    private var status: RepoStatus { item.status }
+    private var userTags: [Tag] { item.userTags }
+    private var health: RepoHealthSnapshot? { item.health }
+    private var isSelected: Bool { item.isSelected }
 
     private var accentColor: Color {
         if let language = repo.language, !language.isEmpty {
@@ -333,8 +408,6 @@ private struct SmartCollectionRepoCard: View {
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
     }
 
     private var header: some View {
@@ -346,7 +419,7 @@ private struct SmartCollectionRepoCard: View {
                 }
             } label: {
                 RemoteAvatar(
-                    urlString: repo.ownerAvatar,
+                    urlString: repo.ownerAvatar ?? RepoAvatarURL.from(owner: repo.owner),
                     size: 32,
                     fallbackSymbol: "shippingbox.circle.fill"
                 )
@@ -382,24 +455,23 @@ private struct SmartCollectionRepoCard: View {
         .clipped()
     }
 
+    @ViewBuilder
     private var description: some View {
-        Group {
-            if let description = repo.description, !description.isEmpty {
-                Text(description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            } else {
-                Text("smartCollections.panel.noDescription")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+        if let description = repo.description, !description.isEmpty {
+            Text(description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text("smartCollections.panel.noDescription")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
-        .frame(height: 32, alignment: .topLeading)
-        .clipped()
     }
 
+    @ViewBuilder
     private var topicAndTagArea: some View {
         let topicChips = repo.topicsArray.prefix(3).map { topic in
             SmartCollectionInfoChip(text: topic, systemImage: "number", tint: .secondary)
@@ -412,22 +484,16 @@ private struct SmartCollectionRepoCard: View {
             )
         }
 
-        return VStack(alignment: .leading, spacing: Self.chipRowSpacing) {
-            chipRowSlot(topicChips)
-            chipRowSlot(tagChips)
-        }
-        .frame(minWidth: 0, maxWidth: .infinity, minHeight: Self.tagAreaHeight, maxHeight: Self.tagAreaHeight, alignment: .topLeading)
-        .clipped()
-    }
-
-    /// 固定 18pt 行高：有 chip 则渲染，无 chip 则透明占位。
-    @ViewBuilder
-    private func chipRowSlot(_ chips: [SmartCollectionInfoChip]) -> some View {
-        if chips.isEmpty {
-            Color.clear
-                .frame(minWidth: 0, maxWidth: .infinity, minHeight: Self.chipRowHeight, maxHeight: Self.chipRowHeight)
-        } else {
-            chipRow(chips)
+        if !topicChips.isEmpty || !tagChips.isEmpty {
+            VStack(alignment: .leading, spacing: Self.chipRowSpacing) {
+                if !topicChips.isEmpty {
+                    chipRow(topicChips)
+                }
+                if !tagChips.isEmpty {
+                    chipRow(tagChips)
+                }
+            }
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
         }
     }
 
@@ -445,31 +511,38 @@ private struct SmartCollectionRepoCard: View {
             Spacer(minLength: 0)
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-        .frame(height: 22, alignment: .leading)
-        .clipped()
+        .fixedSize(horizontal: false, vertical: true)
     }
 
+    @ViewBuilder
     private var footer: some View {
-        HStack(alignment: .center, spacing: 8) {
-            if let health, health.fetchStatus != .failed {
-                healthDimensionStrip(health)
-            } else if repo.isArchived {
-                ArchivedBadge(iconOnly: true)
-            } else if repo.isFork {
-                MetaBadge(systemImage: "tuningfork", text: "Fork", tint: .secondary)
-            }
+        if showsFooter {
+            HStack(alignment: .center, spacing: 8) {
+                if let health, health.fetchStatus != .failed {
+                    healthDimensionStrip(health)
+                } else if repo.isArchived {
+                    ArchivedBadge(iconOnly: true)
+                } else if repo.isFork {
+                    MetaBadge(systemImage: "tuningfork", text: "Fork", tint: .secondary)
+                }
 
-            Spacer(minLength: 8)
+                Spacer(minLength: 8)
 
-            if let pushedAt = relativeDate(repo.pushedAt) {
-                Label(pushedAt, systemImage: "clock")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if let pushedAt = relativeDate(repo.pushedAt) {
+                    Label(pushedAt, systemImage: "clock")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
         }
-        .frame(height: 18, alignment: .center)
-        .clipped()
+    }
+
+    private var showsFooter: Bool {
+        (health.map { $0.fetchStatus != .failed } == true)
+            || repo.isArchived
+            || repo.isFork
+            || relativeDate(repo.pushedAt) != nil
     }
 
     @ViewBuilder
@@ -487,15 +560,21 @@ private struct SmartCollectionRepoCard: View {
         }
     }
 
-    /// topic / 标签 chip 行：短 topic 保持自然宽度；总宽超出卡片时在最后一个 chip 内截断，其余隐藏。
+    /// topic / 标签 chip 行：列宽由 Masonry 列约束，行末裁剪，不用 GeometryReader（避免布局死循环）。
     private func chipRow(_ chips: [SmartCollectionInfoChip]) -> some View {
-        GeometryReader { proxy in
-            SmartCollectionFittingChipRow(
-                chips: chips,
-                availableWidth: max(0, proxy.size.width)
-            )
+        HStack(spacing: 6) {
+            ForEach(chips) { chip in
+                SmartCollectionCompactInfoChip(
+                    systemImage: chip.systemImage,
+                    text: chip.text,
+                    tint: chip.tint
+                )
+            }
+            Spacer(minLength: 0)
         }
-        .frame(minWidth: 0, maxWidth: .infinity, minHeight: Self.chipRowHeight, maxHeight: Self.chipRowHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: Self.chipRowHeight, alignment: .leading)
+        .clipped()
     }
 
     private func healthDimensionStrip(_ snapshot: RepoHealthSnapshot) -> some View {
@@ -530,84 +609,11 @@ private struct SmartCollectionInfoChip: Identifiable {
     let tint: Color
 }
 
-/// 单行 topic / 标签布局：按可用宽度贪心排布，绝不向 LazyVGrid 上报超宽 ideal size。
-private struct SmartCollectionFittingChipRow: View {
-    let chips: [SmartCollectionInfoChip]
-    let availableWidth: CGFloat
-
-    private static let spacing: CGFloat = 6
-    private static let minChipWidth: CGFloat = 40
-
-    var body: some View {
-        let layoutItems = Self.layoutItems(chips: chips, availableWidth: availableWidth)
-
-        HStack(spacing: Self.spacing) {
-            ForEach(layoutItems) { item in
-                SmartCollectionCompactInfoChip(
-                    systemImage: item.chip.systemImage,
-                    text: item.chip.text,
-                    tint: item.chip.tint,
-                    maxWidth: item.maxWidth
-                )
-            }
-        }
-        .frame(width: availableWidth, height: 18, alignment: .leading)
-        .clipped()
-    }
-
-    private struct LayoutItem: Identifiable {
-        let id: String
-        let chip: SmartCollectionInfoChip
-        /// nil = 自然宽度；非 nil = 限制最大宽并在胶囊内截断文案。
-        let maxWidth: CGFloat?
-    }
-
-    /// 贪心：能完整放下就完整放；最后一个放不下的 chip 用剩余宽度截断；再后面的直接丢弃。
-    private static func layoutItems(
-        chips: [SmartCollectionInfoChip],
-        availableWidth: CGFloat
-    ) -> [LayoutItem] {
-        guard availableWidth > 0, !chips.isEmpty else { return [] }
-
-        var result: [LayoutItem] = []
-        var usedWidth: CGFloat = 0
-
-        for chip in chips {
-            let gap = result.isEmpty ? 0 : spacing
-            let remaining = availableWidth - usedWidth - gap
-            guard remaining >= minChipWidth else { break }
-
-            let naturalWidth = estimatedChipWidth(text: chip.text)
-            if naturalWidth <= remaining {
-                result.append(LayoutItem(id: chip.id, chip: chip, maxWidth: nil))
-                usedWidth += gap + naturalWidth
-            } else {
-                result.append(LayoutItem(id: chip.id, chip: chip, maxWidth: remaining))
-                break
-            }
-        }
-
-        return result
-    }
-
-    /// 用 NSFont 估算 chip 自然宽，避免 SwiftUI ideal size 把 HStack 撑破 Grid 列。
-    private static func estimatedChipWidth(text: String) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        let textWidth = (text as NSString).size(withAttributes: [.font: font]).width
-        // icon(8) + icon/text spacing(3) + horizontal padding(14)
-        return ceil(textWidth) + 25
-    }
-}
-
-/// 右栏集合卡片专用 chip。
-///
-/// GitHub topics / 用户标签名都不是受控文案；短 topic 保持紧凑，长 topic 在胶囊内截断。
-/// 行容器由 `SmartCollectionFittingChipRow` 按卡片实际宽度裁剪，禁止向 Grid 上报超宽 ideal size。
+/// 右栏集合卡片专用 chip。列宽由 Masonry 约束，过长文案在胶囊内截断，行容器 `.clipped()` 防溢出。
 private struct SmartCollectionCompactInfoChip: View {
     let systemImage: String
     let text: String
     let tint: Color
-    var maxWidth: CGFloat?
 
     var body: some View {
         HStack(spacing: 3) {
@@ -623,22 +629,32 @@ private struct SmartCollectionCompactInfoChip: View {
         .padding(.horizontal, 7)
         .padding(.vertical, 2)
         .background(tint.opacity(0.12), in: Capsule())
-        .frame(maxWidth: maxWidth, alignment: .leading)
-        .fixedSize(horizontal: maxWidth == nil, vertical: false)
+        .fixedSize(horizontal: true, vertical: false)
         .clipped()
     }
 }
 
-private struct SmartCollectionCardSkeletonGrid: View {
-    let columns: [GridItem]
+private struct SmartCollectionCardSkeletonMasonry: View {
+    let columnCount: Int
     let spacing: CGFloat
+
+    private struct SkeletonItem: Identifiable {
+        let id: Int
+        let variant: Int
+    }
 
     var body: some View {
         SkeletonAnimatedPhase { phase in
-            LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
-                ForEach(0..<8, id: \.self) { index in
-                    SmartCollectionCardSkeleton(phase: phase, phaseOffset: Double(index) * 0.08)
-                }
+            SmartCollectionMasonryStack(
+                items: (0..<8).map { SkeletonItem(id: $0, variant: $0 % 3) },
+                columnCount: columnCount,
+                spacing: spacing
+            ) { item in
+                SmartCollectionCardSkeleton(
+                    phase: phase,
+                    phaseOffset: Double(item.id) * 0.08,
+                    variant: item.variant
+                )
             }
         }
     }
@@ -647,6 +663,8 @@ private struct SmartCollectionCardSkeletonGrid: View {
 private struct SmartCollectionCardSkeleton: View {
     let phase: Double
     let phaseOffset: Double
+    /// 0/1/2 三种骨架高度，瀑布流加载时视觉更接近真实参差卡片。
+    let variant: Int
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -668,14 +686,25 @@ private struct SmartCollectionCardSkeleton: View {
                 }
 
                 SkeletonBlock(maxWidth: .infinity, height: 11, phase: phase, phaseOffset: phaseOffset + 0.1, palette: palette)
-                SkeletonBlock(maxWidth: .infinity, height: 11, phase: phase, phaseOffset: phaseOffset + 0.14, palette: palette)
+                if variant >= 1 {
+                    SkeletonBlock(maxWidth: .infinity, height: 11, phase: phase, phaseOffset: phaseOffset + 0.14, palette: palette)
+                }
+                if variant >= 2 {
+                    SkeletonBlock(maxWidth: .infinity, height: 11, phase: phase, phaseOffset: phaseOffset + 0.16, palette: palette)
+                }
+
+                if variant != 1 {
+                    HStack(spacing: 6) {
+                        SkeletonBlock(width: 54, height: 18, cornerRadius: 9, phase: phase, phaseOffset: phaseOffset + 0.2, palette: palette)
+                        SkeletonBlock(width: 48, height: 18, cornerRadius: 9, phase: phase, phaseOffset: phaseOffset + 0.22, palette: palette)
+                    }
+                }
 
                 HStack(spacing: 6) {
-                    SkeletonBlock(width: 54, height: 18, cornerRadius: 9, phase: phase, phaseOffset: phaseOffset + 0.2, palette: palette)
-                    SkeletonBlock(width: 48, height: 18, cornerRadius: 9, phase: phase, phaseOffset: phaseOffset + 0.22, palette: palette)
-                    SkeletonBlock(width: 42, height: 18, cornerRadius: 9, phase: phase, phaseOffset: phaseOffset + 0.24, palette: palette)
+                    SkeletonBlock(width: 54, height: 18, cornerRadius: 9, phase: phase, phaseOffset: phaseOffset + 0.28, palette: palette)
+                    SkeletonBlock(width: 48, height: 18, cornerRadius: 9, phase: phase, phaseOffset: phaseOffset + 0.3, palette: palette)
+                    SkeletonBlock(width: 42, height: 18, cornerRadius: 9, phase: phase, phaseOffset: phaseOffset + 0.32, palette: palette)
                 }
-                .frame(height: 40, alignment: .topLeading)
 
                 SkeletonBlock(width: 72, height: 5, cornerRadius: 3, phase: phase, phaseOffset: phaseOffset + 0.36, palette: palette)
             }

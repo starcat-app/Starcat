@@ -8,12 +8,55 @@
 //  - 用 Kingfisher 替代 AsyncImage：内置内存 + 磁盘缓存，列表滑动时不会重复请求
 //  - 圆形裁剪（GitHub avatar 风格），可选描边
 //  - 三态：加载中（占位 SF symbol）/ 成功 / 失败（fallback symbol）
-//  - GitHub 头像支持 `?s=128` 调整尺寸；caller 不强制管，Kingfisher 缓存键基于完整 URL
+//  - GitHub 头像支持 `?s=` / `?size=` 调整尺寸；`RemoteAvatar` 按显示直径自动注入，
+//    降低列表 / 瀑布流首屏 Kingfisher 解码压力（Kingfisher cache key = 完整 URL）。
 //
 
 import SwiftUI
 import Kingfisher
 import AppKit
+
+/// GitHub 头像 URL 按 UI 显示尺寸推导 CDN 像素参数。
+///
+/// 关键约束：
+/// - `avatars.githubusercontent.com` 用 `s`（像素）；
+/// - `github.com/{owner}.png` redirect 端点用 `size`；
+/// - 默认按 @2x 屏推导并钳制在 32…256，避免 32pt 圆仍拉原图。
+enum GitHubAvatarURL {
+    static func imageURL(from urlString: String?, displayDiameter: CGFloat) -> URL? {
+        guard let urlString, !urlString.isEmpty else { return nil }
+        guard var components = URLComponents(string: urlString) else {
+            return URL(string: urlString)
+        }
+
+        let host = components.host?.lowercased() ?? ""
+        let pixelSize = clampedPixelSize(for: displayDiameter)
+
+        if host == "avatars.githubusercontent.com" {
+            upsertQueryItem(name: "s", value: "\(pixelSize)", on: &components)
+            return components.url
+        }
+
+        if host == "github.com", components.path.hasSuffix(".png") {
+            upsertQueryItem(name: "size", value: "\(pixelSize)", on: &components)
+            return components.url
+        }
+
+        return components.url ?? URL(string: urlString)
+    }
+
+    private static func clampedPixelSize(for displayDiameter: CGFloat) -> Int {
+        let scaled = Int(ceil(displayDiameter * 2))
+        return min(max(scaled, 32), 256)
+    }
+
+    private static func upsertQueryItem(name: String, value: String, on components: inout URLComponents) {
+        var items = components.queryItems ?? []
+        items.removeAll { $0.name == name }
+        items.append(URLQueryItem(name: name, value: value))
+        components.queryItems = items
+    }
+}
 
 /// 远程加载的圆形头像。
 ///
@@ -37,7 +80,7 @@ struct RemoteAvatar: View {
 
     var body: some View {
         Group {
-            if let url = urlString.flatMap(URL.init(string:)) {
+            if let url = GitHubAvatarURL.imageURL(from: urlString, displayDiameter: size) {
                 KFImage(url)
                     .resizable()
                     .placeholder { placeholder }

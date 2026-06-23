@@ -14,6 +14,7 @@
 //  设计约束：
 //  - 无选中行时显示空态
 //  - 顶部外链 / clone 按钮由 RepoListView toolbar 统一承载，避免 detail toolbar 落到右栏左边
+//  - 智能集合从 repo 详情退回集合浏览：中栏 Manage toolbar 左侧 chevron（2026-06-23）
 //  - README 加载通过 ReadmeViewModel 协调（由 HomeView 持有并通过 .onChange 驱动）
 //
 //  状态归属：
@@ -86,13 +87,7 @@ struct RepoDetailView: View {
         // 内容在 Z 轴上突然居中再回到左上。
         ZStack(alignment: .topLeading) {
             if let repo = viewModel.selectedRepo {
-                VStack(alignment: .leading, spacing: 0) {
-                    if viewModel.selection.isSmartCollectionDetailContext {
-                        smartCollectionBackBar
-                    }
-
-                    // R-01 §3.2.3：Manage 详情迁移到 RepoDetailScaffold + ManageDetailContent。
-                    RepoDetailScaffold(
+                RepoDetailScaffold(
                     repo: repo,
                     viewData: RepoDetailViewData(
                         hero: RepoDetailHero(repo: repo),
@@ -123,7 +118,6 @@ struct RepoDetailView: View {
                     // `RepoDetailScaffold.swift` 文件头 v2.1 修订段。
                 ) { onScrollReport in
                     ManageDetailContent(repo: repo, onScrollReport: onScrollReport)
-                }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // 2026-06-21 性能修订：
@@ -168,27 +162,6 @@ struct RepoDetailView: View {
         // 看不见"轻轻落下"。0.4s 是经验值，比 README 首帧渲染稍慢一点，让用户
         // 能明确感受到内容从上方滑入。
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: detailContentID)
-    }
-
-    /// 智能集合卡片 → 详情时，在 hero 上方占一行返回入口（不用 overlay，避免遮挡头像）。
-    private var smartCollectionBackBar: some View {
-        Button {
-            viewModel.selectedRepoID = nil
-        } label: {
-            Label("smartCollections.panel.backToCollection", systemImage: "chevron.left")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .labelStyle(.titleAndIcon)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.regularMaterial, in: Capsule(style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .padding(.horizontal, 24)
-        .padding(.top, 10)
-        .padding(.bottom, 2)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 当前 detail 内容的标识符，用作 `.animation(_:value:)` 的触发 key。
@@ -281,18 +254,6 @@ struct RepoDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-}
-
-private extension SidebarItem {
-    /// 右栏是否应该在未选中 repo 时展示 Smart Collections 浏览面板。
-    var isSmartCollectionDetailContext: Bool {
-        switch self {
-        case .smartCollection, .userSmartCollection:
-            return true
-        default:
-            return false
-        }
-    }
 }
 
 // MARK: - README 状态视图
