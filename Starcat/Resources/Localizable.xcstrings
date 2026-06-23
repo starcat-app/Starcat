@@ -25911,6 +25911,23 @@
         }
       }
     },
+    "smartCollections.collectionCountFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d collections"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个集合"
+          }
+        }
+      }
+    },
     "smartCollections.delete" : {
       "extractionState" : "manual",
       "localizations" : {

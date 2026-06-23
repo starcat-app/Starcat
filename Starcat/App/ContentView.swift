@@ -65,7 +65,9 @@ struct ContentView: View {
         // 这里只移除系统 toolbar 的遮挡，不改变 toolbar item 的布局与交互。
         .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbarVisibility(firstRunOnboardingActive ? .hidden : .visible, for: .windowToolbar)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.55), value: firstRunOnboardingActive)
+        // 不给 `firstRunOnboardingActive` 挂整棵主界面的隐式动画：toolbar 显隐会触发
+        // macOS 重新计算顶部 safe area，如果把这个布局变化动画化，就会在欢迎页淡出时
+        // 暴露“内容先顶到 titlebar 再回落”的中间帧。
         .animation(reduceMotion ? nil : .smooth, value: authSession.state)
         .sheet(isPresented: showAuthViewBinding) {
             GithubAuthView()

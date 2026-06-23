@@ -159,7 +159,6 @@ struct LaunchSplashContainer<Content: View>: View {
         content()
             .blur(radius: mainContentBlurRadius)
             .opacity(mainContentOpacity)
-            .scaleEffect(mainContentScale, anchor: .center)
     }
 
     private var mainContentBlurRadius: CGFloat {
@@ -170,11 +169,6 @@ struct LaunchSplashContainer<Content: View>: View {
     private var mainContentOpacity: Double {
         guard !reduceMotion else { return 1 }
         return 0.76 + 0.24 * mainContentRevealProgress
-    }
-
-    private var mainContentScale: CGFloat {
-        guard !reduceMotion else { return 1 }
-        return 0.986 + 0.014 * mainContentRevealProgress
     }
 
     private func obscureMainContent() {

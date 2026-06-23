@@ -992,6 +992,13 @@ struct RepoListView: View {
         if selectedPage == .activity {
             return selectedActivityCategory.localizedTitle
         }
+        // Smart Collections 总览：副标题是集合数量（与 sidebar 计数一致），不是仓库数。
+        if case .smartCollectionsHome = viewModel.selection {
+            return String(
+                format: String.l10n("smartCollections.collectionCountFormat"),
+                smartCollectionsTotalCount
+            )
+        }
         // W12 PR-5：多选数从 manageMultiSelectionStore 派生（替代原 viewModel.multiSelectedRepoIDs）。
         // **R-07.2 修订**：DB 分页模式下 filteredSorted 只镜像已加载前缀，标题数量
         // 必须读 ViewModel 的真实查询总数，避免 1800+ 仓库首屏只显示 20。
@@ -1026,6 +1033,11 @@ struct RepoListView: View {
             format: String.l10n("list.repoCountFormat"),
             visibleTotal
         )
+    }
+
+    /// 内置 + 自定义智能集合总数；与 `SidebarView` smartCollectionsHome 行计数同源。
+    private var smartCollectionsTotalCount: Int {
+        SmartCollectionKind.allCases.count + viewModel.userSmartCollections.count
     }
 
     // MARK: - 标题派生
