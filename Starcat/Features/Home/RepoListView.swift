@@ -499,7 +499,7 @@ struct RepoListView: View {
                     Button {
                         viewModel.selectedRepoID = nil
                     } label: {
-                        ToolbarIcon("arrow.left.to.line")
+                        ToolbarIcon("chevron.left.circle")
                             .accessibilityLabel(Text("smartCollections.panel.backToCollection"))
                     }
                     .help("smartCollections.panel.backToCollection")
@@ -635,6 +635,8 @@ struct RepoListView: View {
 
         VStack(spacing: 0) {
             if viewModel.selection.isSmartCollectionsSurface {
+                smartCollectionsSurfaceFilterBar
+                Divider()
                 SmartCollectionsOverviewView()
             } else {
                 manageFilterBar(sortOption: $bindableVM.sortOption)
@@ -684,9 +686,9 @@ struct RepoListView: View {
             }
             StarsSyncButton()
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
+        .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+        .padding(.top, ManageListFilterBarMetrics.topPadding)
+        .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
         .onAppear {
             if viewModel.sortOption != settings.repoSortOption {
                 viewModel.sortOption = settings.repoSortOption
@@ -695,6 +697,19 @@ struct RepoListView: View {
         .onChange(of: viewModel.sortOption) { _, newValue in
             settings.repoSortOption = newValue
         }
+    }
+
+    /// Smart Collections 总览顶栏：与 `manageFilterBar` 同高，保证中栏与「全部仓库」顶区对齐。
+    private var smartCollectionsSurfaceFilterBar: some View {
+        HStack(spacing: 10) {
+            Text("smartCollections.builtIn.title")
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+            Spacer()
+        }
+        .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+        .padding(.top, ManageListFilterBarMetrics.topPadding)
+        .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
     }
 
     private func refreshLastSyncedAt() async {

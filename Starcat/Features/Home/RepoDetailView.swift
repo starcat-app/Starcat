@@ -142,6 +142,7 @@ struct RepoDetailView: View {
                     .detailContentTransition()
             } else if viewModel.selection.isSmartCollectionDetailContext {
                 SmartCollectionDetailPanel()
+                    .detailHeroTintBackground(tint: smartCollectionPanelTint)
                     .id("smart-collection-panel-\(viewModel.selection.id)")
                     .detailContentTransition()
             } else {
@@ -252,6 +253,18 @@ struct RepoDetailView: View {
             spacing: 12
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Smart Collections 右栏浏览面板顶部光晕 tint（与集合 kind / 用户集合 accent 对齐）。
+    private var smartCollectionPanelTint: Color {
+        switch viewModel.selection {
+        case .smartCollection(let kind):
+            return kind.tint
+        case .userSmartCollection:
+            return .accentColor
+        default:
+            return .accentColor
+        }
     }
 
 }

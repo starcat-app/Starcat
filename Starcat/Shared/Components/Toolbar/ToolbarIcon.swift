@@ -30,8 +30,7 @@ enum ToolbarIconMetrics {
         switch systemName {
         // compass 笔画细，且在 ExternalLinksMenu 的 ControlGroup 左半格内更显小。
         case "safari": 14.5
-        // macOS「返回列表」箭头略宽，与 chevron 区分且命中区更好认。
-        case "arrow.left.to.line": 14
+        case "chevron.left.circle", "arrow.left.circle": 14
         default: defaultFontSize
         }
     }

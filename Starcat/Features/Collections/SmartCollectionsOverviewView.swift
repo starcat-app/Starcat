@@ -27,10 +27,6 @@ struct SmartCollectionsOverviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("smartCollections.builtIn.title")
-                    .font(.headline)
-                    .padding(.horizontal, 16)
-
                 LazyVGrid(
                     columns: [GridItem(.flexible(), alignment: .top), GridItem(.flexible(), alignment: .top)],
                     alignment: .leading,

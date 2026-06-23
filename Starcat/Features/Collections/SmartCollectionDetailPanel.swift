@@ -10,10 +10,9 @@
 //  - 右栏自己分页增量渲染，避免大集合一次性创建大量卡片造成明显卡顿。
 //  - 仓库卡片用 Masonry 瀑布流（`SmartCollectionMasonryLayout`），高度随内容伸缩。
 //
-//  P0 性能（2026-06-23）：
-//  - 卡片 ViewModel 预计算 + Equatable 隔离，避免 HomeViewModel 任意字段变化整树重绘；
-//  - Masonry 分列 bucket 预计算，避免 body 内 O(n×列数) 扫描；
-//  - Health 只查缺失 id；分页 debounce，减少快速滚动时瞬时建 view。
+//  - 右栏顶区与 Manage `manageFilterBar` 同构：`.navigationTitle` / `.navigationSubtitle` +
+//    规则行 + Divider + ScrollView（卡片区），不靠黑色 safeArea 遮挡。
+//  - Footer / 头图健康徽章：卡片 `onAppear` 才批量查 GRDB，避免首屏 16 条全量 health 查询。
 //
 
 import SwiftUI
@@ -34,6 +33,10 @@ struct SmartCollectionDetailPanel: View {
     @Environment(AppDependencies.self) private var dependencies
 
     @State private var healthSnapshots: [Int64: RepoHealthSnapshot] = [:]
+    /// 已尝试过加载（含 DB 无记录），防止滚动反复 onAppear 打 GRDB。
+    @State private var healthResolvedRepoIDs: Set<Int64> = []
+    @State private var pendingHealthRepoIDs: Set<Int64> = []
+    @State private var healthLoadInFlightIDs: Set<Int64> = []
     @State private var isLoadingHealth = false
     @State private var visibleCount = pageSize
     @State private var isRuleExpanded = false
@@ -41,16 +44,14 @@ struct SmartCollectionDetailPanel: View {
     @State private var contentWidth: CGFloat = 720
     @State private var masonryColumns: [[SmartCollectionCardItem]] = []
     @State private var loadNextPageTask: Task<Void, Never>?
+    @State private var loadHealthTask: Task<Void, Never>?
 
     private static let pageSize = 16
     private static let pageLoadDebounceNs: UInt64 = 300_000_000
+    private static let healthLoadDebounceNs: UInt64 = 80_000_000
     private static let cardSpacing: CGFloat = 12
     private static let minCardWidth: CGFloat = 280
-    /// 与中栏 `SmartCollectionsOverviewView` 集合卡片同高，避免右栏顶区错层。
-    private static let overviewCardMinHeight: CGFloat = 88
-    private static let overviewCardPadding: CGFloat = 12
-    private static let overviewOuterPadding: CGFloat = 16
-    private static let overviewSectionSpacing: CGFloat = 12
+    private static let masonryOuterPadding: CGFloat = 16
 
     private var repos: [Repo] {
         viewModel.filteredSorted
@@ -65,59 +66,28 @@ struct SmartCollectionDetailPanel: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Self.overviewSectionSpacing) {
-                collectionHeaderCard
+        VStack(spacing: 0) {
+            collectionFilterBar
 
-                if viewModel.isLoading && repos.isEmpty {
-                    SmartCollectionCardSkeletonMasonry(
-                        columnCount: columnCount(for: contentWidth),
-                        spacing: Self.cardSpacing
-                    )
-                } else if repos.isEmpty {
-                    EmptyStateView(
-                        systemImage: "line.3.horizontal.decrease.circle",
-                        title: "smartCollections.empty.collection",
-                        subtitle: "smartCollections.empty.collectionSubtitle",
-                        spacing: 12
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 260)
-                } else {
-                    SmartCollectionMasonryStack(
-                        columns: masonryColumns,
-                        spacing: Self.cardSpacing
-                    ) { item in
-                        SmartCollectionRepoCard(item: item)
-                            .equatable()
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                viewModel.selectedRepoID = item.id
-                            }
-                            .onAppear {
-                                if item.id == lastVisibleRepoID {
-                                    scheduleLoadNextPage()
-                                }
-                            }
-                    }
-
-                    if visibleCount < repos.count {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                                .controlSize(.small)
-                                .onAppear(perform: scheduleLoadNextPage)
-                            Spacer()
-                        }
-                        .padding(.vertical, 10)
-                    }
-                }
+            if isRuleExpanded {
+                expandedRulesSection
             }
-            .padding(.horizontal, Self.overviewOuterPadding)
-            .padding(.vertical, Self.overviewOuterPadding)
+
+            Divider()
+
+            ScrollView {
+                collectionScrollContent
+                    .padding(.horizontal, Self.masonryOuterPadding)
+                    .padding(.top, 12)
+                    .padding(.bottom, Self.masonryOuterPadding)
+            }
+            .scrollIndicators(.visible)
+            .detailScrollViewStyle()
         }
-        .scrollIndicators(.visible)
+        // 与 Manage `RepoDetailScaffold` 同构：标题进 navigation chrome，避免 ScrollView 顶穿透明 toolbar。
+        .navigationTitle(title)
+        .navigationSubtitle(navigationSubtitleText)
         .background {
-            // 只读宽度，不参与 ScrollView 内容测量，全屏 resize 时比外层 GeometryReader 更轻。
             GeometryReader { proxy in
                 Color.clear
                     .onAppear { contentWidth = proxy.size.width }
@@ -147,110 +117,103 @@ struct SmartCollectionDetailPanel: View {
         .onChange(of: viewModel.selection) { _, _ in
             isRuleExpanded = false
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    /// 与中栏集合入口卡片同构：折叠态固定 88pt 内容高，展开规则时再向下撑开。
-    private var collectionHeaderCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 6) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(headerTint.opacity(0.18))
-                        .frame(width: 30, height: 30)
-                    Image(systemName: headerIcon)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(headerTint)
-                }
-
-                Spacer(minLength: 4)
-
-                Text(verbatim: "\(repos.count)")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .monospacedDigit()
-                    .foregroundStyle(headerTint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .fixedSize(horizontal: true, vertical: false)
-
-                if isLoadingHealth {
-                    ProgressView()
-                        .controlSize(.mini)
-                }
-
-                Button {
-                    withAnimation(.easeOut(duration: 0.18)) {
-                        isRuleExpanded.toggle()
+    /// Masonry 卡片区（仅在 ScrollView 内滚动；顶栏规则行固定于 ScrollView 外）。
+    @ViewBuilder
+    private var collectionScrollContent: some View {
+        if viewModel.isLoading && repos.isEmpty {
+            SmartCollectionCardSkeletonMasonry(
+                columnCount: columnCount(for: contentWidth),
+                spacing: Self.cardSpacing
+            )
+        } else if repos.isEmpty {
+            EmptyStateView(
+                systemImage: "line.3.horizontal.decrease.circle",
+                title: "smartCollections.empty.collection",
+                subtitle: "smartCollections.empty.collectionSubtitle",
+                spacing: 12
+            )
+            .frame(maxWidth: .infinity, minHeight: 260)
+        } else {
+            SmartCollectionMasonryStack(
+                columns: masonryColumns,
+                spacing: Self.cardSpacing
+            ) { item in
+                SmartCollectionRepoCard(item: item)
+                    .equatable()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        viewModel.selectedRepoID = item.id
                     }
-                } label: {
-                    HStack(spacing: 3) {
-                        Text("smartCollections.panel.rules")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                        Image(systemName: isRuleExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
+                    .onAppear {
+                        if item.id == lastVisibleRepoID {
+                            scheduleLoadNextPage()
+                        }
                     }
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 4)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
             }
 
-            Text(verbatim: title)
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-
-            if isRuleExpanded {
-                VStack(alignment: .leading, spacing: 5) {
-                    ForEach(ruleLines, id: \.self) { line in
-                        Text(verbatim: line)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
+            if visibleCount < repos.count {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                        .controlSize(.small)
+                        .onAppear(perform: scheduleLoadNextPage)
+                    Spacer()
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            } else {
-                Text(verbatim: collapsedSubtitle)
+                .padding(.vertical, 10)
+            }
+        }
+    }
+
+    /// 与中栏 `manageFilterBar` 同高的规则行；标题 / 数量走 `.navigationTitle` / `.navigationSubtitle`。
+    private var collectionFilterBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    isRuleExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text("smartCollections.panel.rules")
+                        .font(.subheadline)
+                    Image(systemName: isRuleExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+
+            Spacer()
+
+            if isLoadingHealth {
+                ProgressView()
+                    .controlSize(.mini)
+            }
+        }
+        .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+        .padding(.top, ManageListFilterBarMetrics.topPadding)
+        .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
+    }
+
+    private var expandedRulesSection: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(ruleLines, id: \.self) { line in
+                Text(verbatim: line)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .lineLimit(2)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: Self.overviewCardMinHeight, alignment: .topLeading)
-        .padding(Self.overviewCardPadding)
-        .background(headerTint.opacity(0.18), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(headerTint)
-                .frame(width: 3)
-                .padding(.vertical, 8)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(headerTint.opacity(0.42), lineWidth: 1)
-        }
+        .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+        .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
-    /// 折叠态第三行：与中栏卡片 subtitle 对齐，避免顶区高度漂移。
-    private var collapsedSubtitle: String {
-        switch viewModel.selection {
-        case .smartCollection(let kind):
-            return String.l10n("smartCollections.\(kind.rawValue).subtitle")
-        case .userSmartCollection(let id):
-            guard let rule = viewModel.userSmartCollection(id: id)?.rule else {
-                return String.l10n("smartCollections.mine.fallback")
-            }
-            let context = viewModel.smartCollectionSummaryContext()
-            return SmartCollectionRuleSummary.compact(rule: rule, context: context)
-        default:
-            return String.l10n("smartCollections.title")
-        }
+    private var navigationSubtitleText: String {
+        String(format: String.l10n("list.repoCountFormat"), repos.count)
     }
 
     private var title: String {
@@ -261,26 +224,6 @@ struct SmartCollectionDetailPanel: View {
             return viewModel.userSmartCollection(id: id)?.name ?? String.l10n("smartCollections.mine.fallback")
         default:
             return String.l10n("smartCollections.title")
-        }
-    }
-
-    private var headerIcon: String {
-        switch viewModel.selection {
-        case .smartCollection(let kind):
-            return kind.systemImage
-        case .userSmartCollection(let id):
-            return viewModel.userSmartCollection(id: id)?.icon ?? "line.3.horizontal.decrease.circle"
-        default:
-            return "line.3.horizontal.decrease.circle"
-        }
-    }
-
-    private var headerTint: Color {
-        switch viewModel.selection {
-        case .smartCollection(let kind):
-            return kind.tint
-        default:
-            return .accentColor
         }
     }
 
@@ -302,7 +245,7 @@ struct SmartCollectionDetailPanel: View {
     }
 
     private func columnCount(for width: CGFloat) -> Int {
-        let available = max(width - Self.overviewOuterPadding * 2, Self.minCardWidth)
+        let available = max(width - Self.masonryOuterPadding * 2, Self.minCardWidth)
         return max(1, Int((available + Self.cardSpacing) / (Self.minCardWidth + Self.cardSpacing)))
     }
 
