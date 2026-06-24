@@ -177,3 +177,116 @@ struct WeeklyFeedListResultTests {
         #expect(result.hasMore == false)
     }
 }
+
+@Suite("WeeklyAPI source filter", .serialized)
+struct WeeklyAPISourceFilterTests {
+
+    @Test("fetchRepos: 非全部来源时发送 source query")
+    func fetchReposSendsSourceQuery() async throws {
+        URLProtocolStub.reset()
+        let api = WeeklyAPI(
+            baseURL: URL(string: "https://weekly.test.invalid")!,
+            session: URLProtocolStub.ephemeralSession()
+        )
+        URLProtocolStub.requestHandler = { request in
+            (
+                weeklyHTTPResponse(200, request.url!),
+                Self.listFixtureBody()
+            )
+        }
+
+        _ = try await api.fetchRepos(query: WeeklyFeedQuery(
+            source: .zread,
+            language: "Swift",
+            sort: .stars,
+            page: 2,
+            pageSize: 10
+        ))
+
+        let request = try #require(URLProtocolStub.receivedRequests.first)
+        let query = Dictionary(uniqueKeysWithValues:
+            (URLComponents(url: try #require(request.url), resolvingAgainstBaseURL: false)?.queryItems ?? [])
+                .compactMap { item in item.value.map { (item.name, $0) } }
+        )
+        #expect(query["source"] == "zread")
+        #expect(query["lang"] == "Swift")
+        #expect(query["sort"] == "stars")
+        #expect(query["page"] == "2")
+        #expect(query["page_size"] == "10")
+    }
+
+    @Test("fetchRepos: 全部来源不发送 source query")
+    func fetchReposOmitsSourceForAll() async throws {
+        URLProtocolStub.reset()
+        let api = WeeklyAPI(
+            baseURL: URL(string: "https://weekly.test.invalid")!,
+            session: URLProtocolStub.ephemeralSession()
+        )
+        URLProtocolStub.requestHandler = { request in
+            (
+                weeklyHTTPResponse(200, request.url!),
+                Self.listFixtureBody()
+            )
+        }
+
+        _ = try await api.fetchRepos(query: WeeklyFeedQuery(source: .all))
+
+        let request = try #require(URLProtocolStub.receivedRequests.first)
+        let names = Set(URLComponents(url: try #require(request.url), resolvingAgainstBaseURL: false)?.queryItems?.map(\.name) ?? [])
+        #expect(!names.contains("source"))
+    }
+
+    private static func listFixtureBody() -> Data {
+        #"""
+        {
+          "schema_version": 1,
+          "data": [
+            {
+              "gh_repo_id": 100001,
+              "full_name": "alice/awesome-tool",
+              "owner": "alice",
+              "repo": "awesome-tool",
+              "stars": 1234,
+              "forks": 100,
+              "watchers": 1234,
+              "subscribers": 50,
+              "topics": [],
+              "is_archived": false,
+              "is_fork": false,
+              "is_private": false,
+              "open_issues": 5,
+              "html_url": "https://github.com/alice/awesome-tool",
+              "is_available": true,
+              "source_types": ["zread"],
+              "first_event_at": "2024-05-02T00:00:00Z",
+              "latest_event_at": "2026-05-02T00:00:00Z",
+              "zread": {
+                "week_start": "2026-05-01",
+                "week_end": "2026-05-07",
+                "week_label": "Week 18",
+                "rank_in_week": 2
+              }
+            }
+          ],
+          "meta": {
+            "page": 1,
+            "page_size": 20,
+            "total": 1
+          }
+        }
+        """#.data(using: .utf8)!
+    }
+}
+
+private func weeklyHTTPResponse(
+    _ statusCode: Int,
+    _ url: URL,
+    _ headers: [String: String] = [:]
+) -> HTTPURLResponse {
+    HTTPURLResponse(
+        url: url,
+        statusCode: statusCode,
+        httpVersion: "HTTP/1.1",
+        headerFields: headers
+    )!
+}

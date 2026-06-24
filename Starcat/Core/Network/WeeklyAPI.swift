@@ -119,8 +119,8 @@ actor WeeklyAPI {
 
     /// 拉取三源聚合 repo feed。
     ///
-    /// 后端负责聚合、排序和去重；客户端不发送 source filter，不用 owner/name
-    /// 推导 identity，只消费 `gh_repo_id`。
+    /// 后端负责聚合、排序和去重；客户端可发送 `source` 过滤，但 identity 仍只消费
+    /// `gh_repo_id`，不再用 owner/name 推导同一项目。
     func fetchRepos(query: WeeklyFeedQuery = WeeklyFeedQuery()) async throws -> WeeklyFeedListResult {
         let url = try buildReposURL(query: query)
         let (data, response) = try await performRequestWithResponse(url: url)
@@ -286,6 +286,9 @@ actor WeeklyAPI {
         ]
         if let language = query.language, !language.isEmpty {
             queryItems.append(URLQueryItem(name: "lang", value: language))
+        }
+        if let source = query.source.queryValue {
+            queryItems.append(URLQueryItem(name: "source", value: source))
         }
         components?.queryItems = queryItems
         guard let url = components?.url else {

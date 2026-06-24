@@ -4,7 +4,8 @@
 //
 //  Activity 页 `weekly` 分类的中栏视图 + ViewModel。
 //
-//  数据源：阮一峰周刊（ruanyf/weekly）通过独立 Go 后端服务暴露的 REST API。
+//  数据源：三源聚合周刊（ruanyf/weekly + ZRead + Hacker News）通过独立 Go 后端服务
+//  暴露的 REST API。
 //  契约见 `WeeklyAPI.swift` / 后端仓库 README。
 //
 //  设计约束：
@@ -28,8 +29,8 @@
 //    切到 `.local`；命中且 12h TTL 内 → 不再发请求；命中但 TTL 过期 → 后台触发
 //    bulkSync 静默刷新（不阻塞 UI）；③ 未命中 → fallback 老分页 `fetchRepos(page=1)`
 //    立刻出图（200ms 级体感），同时后台启动 bulkSync 把 4000 条落盘；下次入场切 `.local`。
-//  - **切 sort / lang**：`.local` 模式纯本地 sort + filter + 客户端分页（瞬时无网络）；
-//    `.remote` 模式仍走老分页 API。
+//  - **切 source / sort / lang**：`.local` 模式纯本地 filter + sort + 客户端分页
+//    （瞬时无网络）；`.remote` 模式仍走分页 API。
 //  - **主动刷新**：toolbar 刷新按钮 / pull-to-refresh 永远调 bulkSync（不论 dataSource），
 //    完成后强制切到 `.local`，让 12h TTL 重新计时。
 //  - **客户端 12h TTL**：判断在 ViewModel 层，Repository 不掺和；与 trending 24h TTL
@@ -100,23 +101,49 @@ struct WeeklyContentView: View {
 
     // MARK: - Filter Bar
 
-    /// 顶部筛选栏：排序 + 语言下拉。
+    /// 顶部筛选栏：来源 / 排序 + 语言下拉。
     ///
     /// 期号筛选目前没有用 picker 暴露——后端 `/issues` 还在补，列表也不强需要；
     /// 后续要做时增加一个 Menu 即可，结构上已经在 ViewModel 留了 `selectedIssue`。
     private func filterBar(_ viewModel: WeeklyContentViewModel) -> some View {
         HStack(spacing: 10) {
-            Picker(selection: Binding(
-                get: { viewModel.selectedSort },
-                set: { viewModel.changeSort(to: $0) }
-            )) {
-                ForEach(WeeklyFeedSort.allCases) { sort in
-                    Text(sort.localizedTitle).tag(sort)
+            Menu {
+                Section("weekly.filter.source") {
+                    ForEach(WeeklySourceFilter.allCases) { source in
+                        Button {
+                            viewModel.changeSource(to: source)
+                        } label: {
+                            filterMenuRow(
+                                title: source.localizedTitle,
+                                isSelected: source == viewModel.selectedSource
+                            )
+                        }
+                    }
+                }
+
+                Section("weekly.filter.sort") {
+                    ForEach(WeeklyFeedSort.allCases) { sort in
+                        Button {
+                            viewModel.changeSort(to: sort)
+                        } label: {
+                            filterMenuRow(
+                                title: sort.localizedTitle,
+                                isSelected: sort == viewModel.selectedSort
+                            )
+                        }
+                    }
                 }
             } label: {
-                Text("weekly.filter.sort")
+                HStack(spacing: 6) {
+                    Text("weekly.filter.title")
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .foregroundStyle(.secondary)
+                    Text(viewModel.filterSummaryTitle)
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            .pickerStyle(.menu)
             .fixedSize()
 
             // 自定义语言下拉（替代受 NSMenu 限制无法显示彩色图标的 Picker）。
@@ -133,6 +160,15 @@ struct WeeklyContentView: View {
             Spacer()
 
             refreshButton(viewModel)
+        }
+    }
+
+    @ViewBuilder
+    private func filterMenuRow(title: String, isSelected: Bool) -> some View {
+        if isSelected {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
         }
     }
 
@@ -328,7 +364,7 @@ struct WeeklyContentView: View {
 /// 当前数据源标识。
 ///
 /// R-06.4 双轨制：UI 不关心走哪条路径，但 ViewModel 内部要靠这个 flag 决定
-/// changeSort / changeLanguage / loadMoreIfNeeded 走"本地纯计算"还是"远端分页"。
+/// changeSource / changeSort / changeLanguage / loadMoreIfNeeded 走"本地纯计算"还是"远端分页"。
 enum WeeklyDataSource: Sendable, Equatable {
     /// 本地缓存模式：所有筛选 / 排序 / 分页都在已经落盘的 4000 条上做。
     case local
@@ -339,7 +375,7 @@ enum WeeklyDataSource: Sendable, Equatable {
 /// Weekly 分类专用 ViewModel。
 ///
 /// R-06.4 渐进式 SWR 双轨制（详见文件头 §渐进式 SWR 双轨制 注释）：
-/// - `.local` 模式：sort + lang 在本地全量集合上做，客户端分页只是切到当前 page * pageSize
+/// - `.local` 模式：source + sort + lang 在本地全量集合上做，客户端分页只是切到当前 page * pageSize
 /// - `.remote` 模式：保持旧分页 API 行为完全等同。
 /// - `itemsRevision` 仍保持原语义：筛选切换 / 重新加载时 bump，分页追加 / 内部切片不 bump。
 @MainActor
@@ -374,9 +410,15 @@ final class WeeklyContentViewModel {
     /// 当前数据源；UI 可读以便将来展示"本地"徽章（暂未做）。
     private(set) var dataSource: WeeklyDataSource = .remote
 
+    /// 来源筛选当前值；setter 由 `changeSource(to:)` 控制以保证副作用统一。
+    private(set) var selectedSource: WeeklySourceFilter = .all
     /// 排序当前值；setter 由 `changeSort(to:)` 控制以保证副作用统一。
     private(set) var selectedSort: WeeklyFeedSort = .latestEventAt
     private(set) var selectedLanguage: String = ""
+
+    var filterSummaryTitle: String {
+        "\(selectedSource.localizedTitle) / \(selectedSort.localizedTitle)"
+    }
 
     /// 语言下拉数据源（含 count，供 `LanguagePickerMenu` 渲染图标 + 名称 + 数量）。
     ///
@@ -396,8 +438,8 @@ final class WeeklyContentViewModel {
 
     // MARK: - Local cache state
 
-    /// `.local` 模式下持有的当前 sort + lang 筛选结果**全量**（未分页切片前）。
-    /// 切 sort / lang 时只需重排重过滤这个数组再切片，零网络。
+    /// `.local` 模式下持有的当前 source + sort + lang 筛选结果**全量**（未分页切片前）。
+    /// 切 source / sort / lang 时只需重排重过滤这个数组再切片，零网络。
     private var filteredLocalItems: [WeeklyFeedItem] = []
     /// bulk 缓存的"原始全量"——`filteredLocalItems` 是它的过滤+排序产物。
     private var bulkAllItems: [WeeklyFeedItem] = []
@@ -521,6 +563,7 @@ final class WeeklyContentViewModel {
         do {
             let result = try await api.fetchRepos(
                 query: WeeklyFeedQuery(
+                    source: selectedSource,
                     language: selectedLanguage.isEmpty ? nil : selectedLanguage,
                     sort: selectedSort,
                     page: nextPage
@@ -545,6 +588,16 @@ final class WeeklyContentViewModel {
             loadError = friendly.message
             friendly.record(category: "network", operation: "weekly.loadMore", service: "weekly")
             // 分页失败保留已有数据与 hasMore，用户滚动/刷新可继续重试。
+        }
+    }
+
+    func changeSource(to newValue: WeeklySourceFilter) {
+        guard newValue != selectedSource else { return }
+        selectedSource = newValue
+        if dataSource == .local {
+            applyFiltersLocally(bumpRevision: true)
+        } else {
+            Task { await reload() }
         }
     }
 
@@ -607,6 +660,7 @@ final class WeeklyContentViewModel {
         do {
             let result = try await api.fetchRepos(
                 query: WeeklyFeedQuery(
+                    source: selectedSource,
                     language: selectedLanguage.isEmpty ? nil : selectedLanguage,
                     sort: selectedSort,
                     page: 1
@@ -636,7 +690,7 @@ final class WeeklyContentViewModel {
         }
     }
 
-    /// 把 bulk 缓存 snapshot 应用到当前状态，切到 `.local` 并应用 sort/lang。
+    /// 把 bulk 缓存 snapshot 应用到当前状态，切到 `.local` 并应用 source/sort/lang。
     /// `bumpRevision`：reload 路径要刷新入场动画；首次入场不刷（避免列表上来就抖一次）。
     private func applyLocalSnapshot(_ snapshot: WeeklyBulkCachedSnapshot, bumpRevision: Bool) {
         bulkAllItems = snapshot.items
@@ -646,9 +700,9 @@ final class WeeklyContentViewModel {
         applyFiltersLocally(bumpRevision: bumpRevision)
     }
 
-    /// 在 `bulkAllItems` 基础上按当前 sort + lang 重过滤重排序，切片到 page 1 上屏。
+    /// 在 `bulkAllItems` 基础上按当前 source + sort + lang 重过滤重排序，切片到 page 1 上屏。
     private func applyFiltersLocally(bumpRevision: Bool) {
-        var filtered = bulkAllItems
+        var filtered = bulkAllItems.filter { selectedSource.matches($0) }
         if !selectedLanguage.isEmpty {
             filtered = filtered.filter { item in
                 if selectedLanguage == TrendingLanguage.uncategorizedKey {

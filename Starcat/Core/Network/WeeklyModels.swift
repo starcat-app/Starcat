@@ -61,6 +61,53 @@ enum WeeklySource: Decodable, Hashable, Sendable {
     }
 }
 
+/// Weekly 列表顶部的来源筛选。
+///
+/// 它刻意独立于 `WeeklySource`：`WeeklySource` 表示后端 wire 里的真实来源，
+/// 而这里多了 `.all` 这个 UI 哨兵值。这样可以把"全部来源"留在前端状态层，
+/// 不污染后端 source 枚举，也避免把来源筛选误当成排序。
+enum WeeklySourceFilter: String, CaseIterable, Identifiable, Sendable {
+    case all
+    case weekly
+    case zread
+    case discovery
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .all:
+            return String.l10n("weekly.filter.source.all")
+        case .weekly:
+            return String.l10n("weekly.filter.source.ruanyf")
+        case .zread:
+            return "ZRead"
+        case .discovery:
+            return "Hacker News"
+        }
+    }
+
+    /// 后端 `/api/v1/repos` 的 `source` 参数值；`.all` 不发送参数。
+    var queryValue: String? {
+        source?.rawValue
+    }
+
+    /// 对应的真实 wire source。`.all` 是 UI 哨兵，不映射到后端枚举。
+    private var source: WeeklySource? {
+        switch self {
+        case .all:       return nil
+        case .weekly:    return .weekly
+        case .zread:     return .zread
+        case .discovery: return .discovery
+        }
+    }
+
+    func matches(_ item: WeeklyFeedItem) -> Bool {
+        guard let source else { return true }
+        return item.sourceTypes.contains(source)
+    }
+}
+
 // MARK: - Snapshots
 
 // R-06.4：三个 Snapshot 都升级到 `Codable`（= `Decodable + Encodable`）。
@@ -358,6 +405,7 @@ struct WeeklyFeedItem: Identifiable, Equatable, Sendable {
 // MARK: - Query parameters
 
 struct WeeklyFeedQuery: Equatable, Sendable {
+    let source: WeeklySourceFilter
     let language: String?
     let sort: WeeklyFeedSort
     let order: WeeklyFeedOrder
@@ -365,12 +413,14 @@ struct WeeklyFeedQuery: Equatable, Sendable {
     let pageSize: Int
 
     init(
+        source: WeeklySourceFilter = .all,
         language: String? = nil,
         sort: WeeklyFeedSort = .latestEventAt,
         order: WeeklyFeedOrder = .desc,
         page: Int = 1,
         pageSize: Int = WeeklyAPI.defaultPageSize
     ) {
+        self.source = source
         self.language = language
         self.sort = sort
         self.order = order

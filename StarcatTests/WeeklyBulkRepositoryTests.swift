@@ -44,7 +44,8 @@ private func bulkFixtureBody(
     repos: [(String, String?, Int, String)],
     languages: [(String, String, Int)] = [],
     generatedAt: String? = "2026-06-15T12:00:00Z",
-    total: Int? = nil
+    total: Int? = nil,
+    sourcesByFullName: [String: [String]] = [:]
 ) -> Data {
     // Wire payload 是**扁平**对象：card 字段（gh_repo_id / full_name / owner / ...）
     // 与 feed 字段（is_available / source_types / weekly / ...）同级，由
@@ -69,7 +70,7 @@ private func bulkFixtureBody(
             "open_issues": 0,
             "name": name,
             "is_available": true,
-            "source_types": ["weekly"],
+            "source_types": sourcesByFullName[tuple.0] ?? ["weekly"],
             "first_event_at": tuple.3,
             "latest_event_at": tuple.3,
             "weekly": [
@@ -311,5 +312,46 @@ struct WeeklyBulkRepositoryTests {
     @Test("WeeklyContentViewModel.bulkTTL: 12 小时")
     func bulkTTLValue() {
         #expect(WeeklyContentViewModel.bulkTTL == 12 * 60 * 60)
+    }
+
+    @MainActor
+    @Test("WeeklyContentViewModel: 本地 bulk 模式按来源过滤")
+    func localBulkFiltersBySource() async throws {
+        let (repo, _) = try makeRepository { request in
+            let body = bulkFixtureBody(
+                repos: [
+                    ("owner/weekly", "Swift", 300, "2026-06-15T10:00:00Z"),
+                    ("owner/zread", "Go", 200, "2026-06-15T11:00:00Z"),
+                    ("owner/hn", "Rust", 100, "2026-06-15T12:00:00Z")
+                ],
+                sourcesByFullName: [
+                    "owner/weekly": ["weekly"],
+                    "owner/zread": ["zread"],
+                    "owner/hn": ["discovery"]
+                ]
+            )
+            return (bulkHTTPResponse(200, request.url!), body)
+        }
+        _ = try await repo.fetchBulk()
+
+        let api = WeeklyAPI(baseURL: URL(string: "https://weekly.test.invalid")!)
+        let viewModel = WeeklyContentViewModel(
+            api: api,
+            languageStore: WeeklyLanguageStore(api: api),
+            bulkRepository: repo
+        )
+
+        await viewModel.loadInitialIfNeeded()
+        #expect(viewModel.dataSource == .local)
+        #expect(viewModel.total == 3)
+
+        viewModel.changeSource(to: .zread)
+        #expect(viewModel.selectedSource == .zread)
+        #expect(viewModel.total == 1)
+        #expect(viewModel.items.map(\.fullName) == ["owner/zread"])
+
+        viewModel.changeSource(to: .discovery)
+        #expect(viewModel.total == 1)
+        #expect(viewModel.items.map(\.fullName) == ["owner/hn"])
     }
 }
