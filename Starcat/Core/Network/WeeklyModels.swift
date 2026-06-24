@@ -108,6 +108,108 @@ enum WeeklySourceFilter: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// 来源覆盖强度筛选。
+///
+/// 这里看的是同一个 GitHub repo 被几个发现源收录，不关心具体来源是哪一个。
+/// 和 `WeeklySourceFilter` 可以组合使用：例如“ZRead + 多来源”表示“出现在 ZRead，
+/// 且至少还被另一个来源收录”。
+enum WeeklySourceCoverageFilter: String, CaseIterable, Identifiable, Sendable {
+    case all
+    case multipleSources
+    case singleSource
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .all:
+            return String.l10n("weekly.filter.coverage.all")
+        case .multipleSources:
+            return String.l10n("weekly.filter.coverage.multiple")
+        case .singleSource:
+            return String.l10n("weekly.filter.coverage.single")
+        }
+    }
+
+    func matches(_ item: WeeklyFeedItem) -> Bool {
+        switch self {
+        case .all:
+            return true
+        case .multipleSources:
+            return item.sourceTypes.count >= 2
+        case .singleSource:
+            return item.sourceTypes.count == 1
+        }
+    }
+}
+
+/// Stars 阈值筛选。
+///
+/// 使用固定档位而不是任意数字输入，是为了让菜单保持轻量；复杂数值筛选更适合
+/// Manage 的高级筛选，不适合 Weekly 这个发现流入口。
+enum WeeklyStarsFilter: Int, CaseIterable, Identifiable, Sendable {
+    case all = 0
+    case min100 = 100
+    case min1000 = 1_000
+    case min10000 = 10_000
+
+    var id: Int { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .all:
+            return String.l10n("weekly.filter.stars.all")
+        case .min100:
+            return String.l10n("weekly.filter.stars.min100")
+        case .min1000:
+            return String.l10n("weekly.filter.stars.min1k")
+        case .min10000:
+            return String.l10n("weekly.filter.stars.min10k")
+        }
+    }
+
+    func matches(_ item: WeeklyFeedItem) -> Bool {
+        guard rawValue > 0 else { return true }
+        return item.stars >= rawValue
+    }
+}
+
+/// 最近 push 时间窗筛选。
+///
+/// `pushed_at` 是 GitHub 原生 metadata。这里筛的是仓库代码推送时间，不是周刊来源的
+/// 收录时间；缺失时按“不满足时间窗”处理，避免未 enrich 完整的项目误进结果。
+enum WeeklyPushedRecencyFilter: Int, CaseIterable, Identifiable, Sendable {
+    case all = 0
+    case days30 = 30
+    case days90 = 90
+    case days365 = 365
+
+    var id: Int { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .all:
+            return String.l10n("weekly.filter.activity.all")
+        case .days30:
+            return String.l10n("weekly.filter.activity.pushed30d")
+        case .days90:
+            return String.l10n("weekly.filter.activity.pushed90d")
+        case .days365:
+            return String.l10n("weekly.filter.activity.pushed365d")
+        }
+    }
+
+    func matches(_ item: WeeklyFeedItem, now: Date = Date()) -> Bool {
+        guard rawValue > 0 else { return true }
+        guard let raw = item.card.pushedAt,
+              let pushedAt = String.weeklyDate(from: raw),
+              let cutoff = Calendar(identifier: .gregorian).date(byAdding: .day, value: -rawValue, to: now) else {
+            return false
+        }
+        return pushedAt >= cutoff
+    }
+}
+
 // MARK: - Snapshots
 
 // R-06.4：三个 Snapshot 都升级到 `Codable`（= `Decodable + Encodable`）。
@@ -471,7 +573,7 @@ extension String {
         return formatter
     }()
 
-    private static func weeklyDate(from raw: String) -> Date? {
+    fileprivate static func weeklyDate(from raw: String) -> Date? {
         weeklyDateFormatter.date(from: raw) ?? weeklyFractionalDateFormatter.date(from: raw)
     }
 }

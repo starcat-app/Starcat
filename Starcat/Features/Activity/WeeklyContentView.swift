@@ -29,8 +29,9 @@
 //    切到 `.local`；命中且 12h TTL 内 → 不再发请求；命中但 TTL 过期 → 后台触发
 //    bulkSync 静默刷新（不阻塞 UI）；③ 未命中 → fallback 老分页 `fetchRepos(page=1)`
 //    立刻出图（200ms 级体感），同时后台启动 bulkSync 把 4000 条落盘；下次入场切 `.local`。
-//  - **切 source / sort / lang**：`.local` 模式纯本地 filter + sort + 客户端分页
-//    （瞬时无网络）；`.remote` 模式仍走分页 API。
+//  - **切 source / sort / lang / 高级筛选**：`.local` 模式纯本地 filter + sort +
+//    客户端分页（瞬时无网络）；`.remote` 模式下高级筛选会先拉 bulk，再本地过滤，
+//    避免对远端分页第一页做不完整过滤导致 total 不准。
 //  - **主动刷新**：toolbar 刷新按钮 / pull-to-refresh 永远调 bulkSync（不论 dataSource），
 //    完成后强制切到 `.local`，让 12h TTL 重新计时。
 //  - **客户端 12h TTL**：判断在 ViewModel 层，Repository 不掺和；与 trending 24h TTL
@@ -101,7 +102,7 @@ struct WeeklyContentView: View {
 
     // MARK: - Filter Bar
 
-    /// 顶部筛选栏：来源 / 排序 + 语言下拉。
+    /// 顶部筛选栏：来源 / 收录强度 / 状态 / 热度 / 推送时间 / 排序 + 语言下拉。
     ///
     /// 期号筛选目前没有用 picker 暴露——后端 `/issues` 还在补，列表也不强需要；
     /// 后续要做时增加一个 Menu 即可，结构上已经在 ViewModel 留了 `selectedIssue`。
@@ -116,6 +117,64 @@ struct WeeklyContentView: View {
                             filterMenuRow(
                                 title: source.localizedTitle,
                                 isSelected: source == viewModel.selectedSource
+                            )
+                        }
+                    }
+                }
+
+                Section("weekly.filter.coverage") {
+                    ForEach(WeeklySourceCoverageFilter.allCases) { coverage in
+                        Button {
+                            viewModel.changeCoverage(to: coverage)
+                        } label: {
+                            filterMenuRow(
+                                title: coverage.localizedTitle,
+                                isSelected: coverage == viewModel.selectedCoverage
+                            )
+                        }
+                    }
+                }
+
+                Section("weekly.filter.repoState") {
+                    Button {
+                        viewModel.changeHideArchivedRepos(to: !viewModel.hideArchivedRepos)
+                    } label: {
+                        filterMenuRow(
+                            title: String.l10n("weekly.filter.repoState.hideArchived"),
+                            isSelected: viewModel.hideArchivedRepos
+                        )
+                    }
+                    Button {
+                        viewModel.changeHideForkRepos(to: !viewModel.hideForkRepos)
+                    } label: {
+                        filterMenuRow(
+                            title: String.l10n("weekly.filter.repoState.hideForks"),
+                            isSelected: viewModel.hideForkRepos
+                        )
+                    }
+                }
+
+                Section("weekly.filter.stars") {
+                    ForEach(WeeklyStarsFilter.allCases) { starsFilter in
+                        Button {
+                            viewModel.changeStarsFilter(to: starsFilter)
+                        } label: {
+                            filterMenuRow(
+                                title: starsFilter.localizedTitle,
+                                isSelected: starsFilter == viewModel.selectedStarsFilter
+                            )
+                        }
+                    }
+                }
+
+                Section("weekly.filter.activity") {
+                    ForEach(WeeklyPushedRecencyFilter.allCases) { pushedFilter in
+                        Button {
+                            viewModel.changePushedRecency(to: pushedFilter)
+                        } label: {
+                            filterMenuRow(
+                                title: pushedFilter.localizedTitle,
+                                isSelected: pushedFilter == viewModel.selectedPushedRecency
                             )
                         }
                     }
@@ -375,7 +434,8 @@ enum WeeklyDataSource: Sendable, Equatable {
 /// Weekly 分类专用 ViewModel。
 ///
 /// R-06.4 渐进式 SWR 双轨制（详见文件头 §渐进式 SWR 双轨制 注释）：
-/// - `.local` 模式：source + sort + lang 在本地全量集合上做，客户端分页只是切到当前 page * pageSize
+/// - `.local` 模式：source + coverage + repo state + stars + pushed + sort + lang
+///   在本地全量集合上做，客户端分页只是切到当前 page * pageSize
 /// - `.remote` 模式：保持旧分页 API 行为完全等同。
 /// - `itemsRevision` 仍保持原语义：筛选切换 / 重新加载时 bump，分页追加 / 内部切片不 bump。
 @MainActor
@@ -412,12 +472,47 @@ final class WeeklyContentViewModel {
 
     /// 来源筛选当前值；setter 由 `changeSource(to:)` 控制以保证副作用统一。
     private(set) var selectedSource: WeeklySourceFilter = .all
+    /// 收录强度筛选当前值。
+    private(set) var selectedCoverage: WeeklySourceCoverageFilter = .all
+    /// 是否隐藏 GitHub archived 仓库。默认不隐藏，保证初始列表和后端 feed 一致。
+    private(set) var hideArchivedRepos = false
+    /// 是否隐藏 fork 仓库。默认不隐藏，避免误伤优秀 fork 项目。
+    private(set) var hideForkRepos = false
+    /// Stars 阈值筛选当前值。
+    private(set) var selectedStarsFilter: WeeklyStarsFilter = .all
+    /// 最近 push 时间窗筛选当前值。
+    private(set) var selectedPushedRecency: WeeklyPushedRecencyFilter = .all
     /// 排序当前值；setter 由 `changeSort(to:)` 控制以保证副作用统一。
     private(set) var selectedSort: WeeklyFeedSort = .latestEventAt
     private(set) var selectedLanguage: String = ""
 
     var filterSummaryTitle: String {
-        "\(selectedSource.localizedTitle) / \(selectedSort.localizedTitle)"
+        guard activeFilterCount > 0 else {
+            return selectedSort.localizedTitle
+        }
+        let filters = String(format: String.l10n("weekly.filter.summary.activeFormat"), activeFilterCount)
+        let resultCount = String(format: String.l10n("weekly.filter.summary.resultCountFormat"), total)
+        return "\(filters) · \(resultCount) / \(selectedSort.localizedTitle)"
+    }
+
+    private var activeFilterCount: Int {
+        var count = 0
+        if selectedSource != .all { count += 1 }
+        if selectedCoverage != .all { count += 1 }
+        if hideArchivedRepos { count += 1 }
+        if hideForkRepos { count += 1 }
+        if selectedStarsFilter != .all { count += 1 }
+        if selectedPushedRecency != .all { count += 1 }
+        return count
+    }
+
+    /// 这些筛选后端分页接口暂不支持，必须基于 bulk 全量数据过滤。
+    private var usesLocalOnlyFilters: Bool {
+        selectedCoverage != .all ||
+        hideArchivedRepos ||
+        hideForkRepos ||
+        selectedStarsFilter != .all ||
+        selectedPushedRecency != .all
     }
 
     /// 语言下拉数据源（含 count，供 `LanguagePickerMenu` 渲染图标 + 名称 + 数量）。
@@ -531,6 +626,23 @@ final class WeeklyContentViewModel {
             applyLocalSnapshot(snapshot, bumpRevision: true)
         } catch {
             guard myGen == generation else { return }
+            if usesLocalOnlyFilters {
+                let friendly = UserFacingError.map(
+                    error,
+                    operation: String.l10n("diagnostics.operation.loadWeekly"),
+                    service: "Weekly"
+                )
+                loadError = friendly.message
+                if items.isEmpty {
+                    total = 0
+                    hasMore = false
+                }
+                friendly.record(category: "network", operation: "weekly.reloadBulkForFilters", service: "weekly")
+                if myGen == generation {
+                    isLoading = false
+                }
+                return
+            }
             // bulk 失败 → 退到分页 API 拿第一页（保证刷新按钮不空手而归）
             AppLog.network.warning("Weekly reload bulkSync failed, falling back to paginated API: \(error.localizedDescription, privacy: .public)")
             await loadRemotePage()
@@ -594,26 +706,57 @@ final class WeeklyContentViewModel {
     func changeSource(to newValue: WeeklySourceFilter) {
         guard newValue != selectedSource else { return }
         selectedSource = newValue
-        if dataSource == .local {
-            applyFiltersLocally(bumpRevision: true)
-        } else {
-            Task { await reload() }
+        reapplyFilters()
+    }
+
+    func changeCoverage(to newValue: WeeklySourceCoverageFilter) {
+        guard newValue != selectedCoverage else { return }
+        selectedCoverage = newValue
+        reapplyFilters()
+    }
+
+    func changeHideArchivedRepos(to newValue: Bool) {
+        guard newValue != hideArchivedRepos else { return }
+        hideArchivedRepos = newValue
+        reapplyFilters()
+    }
+
+    func changeHideForkRepos(to newValue: Bool) {
+        guard newValue != hideForkRepos else { return }
+        hideForkRepos = newValue
+        reapplyFilters()
+    }
+
+    func changeStarsFilter(to newValue: WeeklyStarsFilter) {
+        guard newValue != selectedStarsFilter else { return }
+        selectedStarsFilter = newValue
+        reapplyFilters()
+    }
+
+    func changePushedRecency(to newValue: WeeklyPushedRecencyFilter) {
+        guard newValue != selectedPushedRecency else { return }
+        selectedPushedRecency = newValue
+        if newValue != .all, selectedSort == .latestEventAt {
+            // 用户选择 push 时间窗时，继续按“最近收录”排序会让第一屏变化很弱；
+            // 只在默认排序下自动切到 pushed_at，保留用户主动选过的 stars 排序。
+            selectedSort = .pushedAt
         }
+        reapplyFilters()
     }
 
     func changeSort(to newValue: WeeklyFeedSort) {
         guard newValue != selectedSort else { return }
         selectedSort = newValue
-        if dataSource == .local {
-            applyFiltersLocally(bumpRevision: true)
-        } else {
-            Task { await reload() }
-        }
+        reapplyFilters()
     }
 
     func changeLanguage(to newValue: String) {
         guard newValue != selectedLanguage else { return }
         selectedLanguage = newValue
+        reapplyFilters()
+    }
+
+    private func reapplyFilters() {
         if dataSource == .local {
             applyFiltersLocally(bumpRevision: true)
         } else {
@@ -690,7 +833,7 @@ final class WeeklyContentViewModel {
         }
     }
 
-    /// 把 bulk 缓存 snapshot 应用到当前状态，切到 `.local` 并应用 source/sort/lang。
+    /// 把 bulk 缓存 snapshot 应用到当前状态，切到 `.local` 并应用全部筛选。
     /// `bumpRevision`：reload 路径要刷新入场动画；首次入场不刷（避免列表上来就抖一次）。
     private func applyLocalSnapshot(_ snapshot: WeeklyBulkCachedSnapshot, bumpRevision: Bool) {
         bulkAllItems = snapshot.items
@@ -700,9 +843,19 @@ final class WeeklyContentViewModel {
         applyFiltersLocally(bumpRevision: bumpRevision)
     }
 
-    /// 在 `bulkAllItems` 基础上按当前 source + sort + lang 重过滤重排序，切片到 page 1 上屏。
+    /// 在 `bulkAllItems` 基础上按当前筛选条件重过滤重排序，切片到 page 1 上屏。
     private func applyFiltersLocally(bumpRevision: Bool) {
         var filtered = bulkAllItems.filter { selectedSource.matches($0) }
+        filtered = filtered.filter { selectedCoverage.matches($0) }
+        if hideArchivedRepos {
+            filtered = filtered.filter { !$0.card.isArchived }
+        }
+        if hideForkRepos {
+            filtered = filtered.filter { !$0.card.isFork }
+        }
+        filtered = filtered.filter { selectedStarsFilter.matches($0) }
+        let now = Date()
+        filtered = filtered.filter { selectedPushedRecency.matches($0, now: now) }
         if !selectedLanguage.isEmpty {
             filtered = filtered.filter { item in
                 if selectedLanguage == TrendingLanguage.uncategorizedKey {

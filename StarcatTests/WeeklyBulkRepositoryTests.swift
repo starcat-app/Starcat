@@ -45,7 +45,10 @@ private func bulkFixtureBody(
     languages: [(String, String, Int)] = [],
     generatedAt: String? = "2026-06-15T12:00:00Z",
     total: Int? = nil,
-    sourcesByFullName: [String: [String]] = [:]
+    sourcesByFullName: [String: [String]] = [:],
+    archivedFullNames: Set<String> = [],
+    forkFullNames: Set<String> = [],
+    pushedAtByFullName: [String: String] = [:]
 ) -> Data {
     // Wire payload 是**扁平**对象：card 字段（gh_repo_id / full_name / owner / ...）
     // 与 feed 字段（is_available / source_types / weekly / ...）同级，由
@@ -64,8 +67,8 @@ private func bulkFixtureBody(
             "watchers": tuple.2,
             "subscribers": 0,
             "topics": [],
-            "is_archived": false,
-            "is_fork": false,
+            "is_archived": archivedFullNames.contains(tuple.0),
+            "is_fork": forkFullNames.contains(tuple.0),
             "is_private": false,
             "open_issues": 0,
             "name": name,
@@ -80,6 +83,9 @@ private func bulkFixtureBody(
         ]
         if let lang = tuple.1 {
             dict["language"] = lang
+        }
+        if let pushedAt = pushedAtByFullName[tuple.0] {
+            dict["pushed_at"] = pushedAt
         }
         return dict
     }
@@ -105,6 +111,11 @@ private func bulkFixtureBody(
         "meta": meta
     ]
     return try! JSONSerialization.data(withJSONObject: envelope, options: [])
+}
+
+private func isoDaysAgo(_ days: Int) -> String {
+    let date = Date().addingTimeInterval(TimeInterval(-days * 24 * 60 * 60))
+    return ISO8601DateFormatter().string(from: date)
 }
 
 @Suite("WeeklyBulkRepository", .serialized)
@@ -353,5 +364,84 @@ struct WeeklyBulkRepositoryTests {
         viewModel.changeSource(to: .discovery)
         #expect(viewModel.total == 1)
         #expect(viewModel.items.map(\.fullName) == ["owner/hn"])
+    }
+
+    @MainActor
+    @Test("WeeklyContentViewModel: 本地 bulk 模式组合筛选收录强度 / 状态 / 热度 / 推送时间")
+    func localBulkFiltersByAdvancedCriteria() async throws {
+        let recentPush = isoDaysAgo(10)
+        let stalePush = isoDaysAgo(400)
+        let (repo, _) = try makeRepository { request in
+            let body = bulkFixtureBody(
+                repos: [
+                    ("owner/good", "Swift", 5_000, "2026-06-15T15:00:00Z"),
+                    ("owner/archived", "Swift", 5_000, "2026-06-15T14:00:00Z"),
+                    ("owner/fork", "Swift", 5_000, "2026-06-15T13:00:00Z"),
+                    ("owner/low", "Swift", 50, "2026-06-15T12:00:00Z"),
+                    ("owner/stale", "Swift", 5_000, "2026-06-15T11:00:00Z"),
+                    ("owner/single", "Swift", 5_000, "2026-06-15T10:00:00Z")
+                ],
+                sourcesByFullName: [
+                    "owner/good": ["weekly", "zread"],
+                    "owner/archived": ["weekly", "zread"],
+                    "owner/fork": ["weekly", "zread"],
+                    "owner/low": ["weekly", "zread"],
+                    "owner/stale": ["weekly", "zread"],
+                    "owner/single": ["weekly"]
+                ],
+                archivedFullNames: ["owner/archived"],
+                forkFullNames: ["owner/fork"],
+                pushedAtByFullName: [
+                    "owner/good": recentPush,
+                    "owner/archived": recentPush,
+                    "owner/fork": recentPush,
+                    "owner/low": recentPush,
+                    "owner/stale": stalePush,
+                    "owner/single": recentPush
+                ]
+            )
+            return (bulkHTTPResponse(200, request.url!), body)
+        }
+        _ = try await repo.fetchBulk()
+
+        let api = WeeklyAPI(baseURL: URL(string: "https://weekly.test.invalid")!)
+        let viewModel = WeeklyContentViewModel(
+            api: api,
+            languageStore: WeeklyLanguageStore(api: api),
+            bulkRepository: repo
+        )
+
+        await viewModel.loadInitialIfNeeded()
+        #expect(viewModel.total == 6)
+
+        viewModel.changeCoverage(to: .multipleSources)
+        #expect(viewModel.total == 5)
+        #expect(Set(viewModel.items.map(\.fullName)) == [
+            "owner/good",
+            "owner/archived",
+            "owner/fork",
+            "owner/low",
+            "owner/stale"
+        ])
+
+        viewModel.changeHideArchivedRepos(to: true)
+        #expect(viewModel.total == 4)
+        #expect(!viewModel.items.map(\.fullName).contains("owner/archived"))
+
+        viewModel.changeHideForkRepos(to: true)
+        #expect(viewModel.total == 3)
+        #expect(!viewModel.items.map(\.fullName).contains("owner/fork"))
+
+        viewModel.changeStarsFilter(to: .min1000)
+        #expect(viewModel.total == 2)
+        #expect(Set(viewModel.items.map(\.fullName)) == ["owner/good", "owner/stale"])
+
+        viewModel.changePushedRecency(to: .days90)
+        #expect(viewModel.total == 1)
+        #expect(viewModel.items.map(\.fullName) == ["owner/good"])
+        #expect(viewModel.selectedSort == .pushedAt)
+        #expect(viewModel.filterSummaryTitle.contains("5"))
+        #expect(viewModel.filterSummaryTitle.contains("1"))
+        #expect(viewModel.filterSummaryTitle.contains(WeeklyFeedSort.pushedAt.localizedTitle))
     }
 }
