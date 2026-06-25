@@ -68,7 +68,7 @@ enum AppConstants {
     static let githubOAuthClientID = "Ov23li4suXj1nNsWtHHG"
 
     /// OAuth scope，已最小化（见 docs/GitHub OAuth 设计.md）。
-    static let githubOAuthScopes = ["read:user", "public_repo"]
+    static let githubOAuthScopes = ["read:user", "public_repo", "user"]
 
     // MARK: - 网络
 
