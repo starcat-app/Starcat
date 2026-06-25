@@ -280,7 +280,12 @@ struct SettingsView: View {
                     }
                 }
 
-                LabeledContent("settings.general.shortcuts.search.title") {
+                HStack(spacing: 12) {
+                    Text("settings.general.shortcuts.search.title")
+                        .lineLimit(1)
+
+                    Spacer()
+
                     HStack(spacing: 8) {
                         ShortcutRecorderView(
                             shortcut: $settings.globalSearchShortcut,
@@ -290,18 +295,27 @@ struct SettingsView: View {
                             shortcutValidationError = nil
                         }
 
-                        Button("settings.general.shortcuts.restoreDefault") {
+                        // 右侧恢复操作用图标承载，避免通用设置行被长文案撑成两行。
+                        Button {
                             settings.globalSearchShortcut = .globalSearchDefault
                             shortcutValidationError = nil
+                        } label: {
+                            Image(systemName: "arrow.counterclockwise")
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.plain)
                         .focusEffectDisabled()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                        .help(Text("settings.general.shortcuts.restoreDefault"))
+                        .accessibilityLabel(Text("settings.general.shortcuts.restoreDefault"))
                     }
                 }
 
                 Text("settings.general.shortcuts.search.description")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let shortcutValidationError {
