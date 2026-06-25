@@ -26,7 +26,7 @@ enum StarredExportFormat {
     }
 
     /// 默认保存文件名（不含路径）。
-    /// 命名规范：`starcat-{login}-starred-{yyyyMMdd}.{ext}`，与卡片图导出 `starcat-{login}-{theme}.png` 同前缀。
+    /// 命名规范：`starcat-{login}-starred-{yyyyMMdd}.{ext}`；卡片图导出为 `{login}-card.png`。
     func defaultFileName(userLogin: String) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd"

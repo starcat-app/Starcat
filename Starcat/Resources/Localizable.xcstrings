@@ -25449,13 +25449,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Minimal"
+            "value" : "Indigo Ice"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "极简黑白"
+            "value" : "靛蓝冰蓝"
           }
         }
       }

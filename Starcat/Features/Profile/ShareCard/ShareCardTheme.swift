@@ -6,7 +6,7 @@
 //
 //  设计动机（来自 issue HOM-173 dong4j 最终方案）：
 //  - 卡片布局必须三套主题保持一致（Magazine v2），仅切换配色。
-//  - 既能表达"我是 GitHub 玩家"（绿色草坪），也能切到品牌中性色（黑白）或
+//  - 既能表达"我是 GitHub 玩家"（绿色草坪），也能切到品牌中性色（靛蓝冰蓝）或
 //    传播向暖色（橙），让用户在不同社交平台都能选到合适的封面。
 //
 //  把"主题色板"独立成数据结构而不是散落在 View 里，是为了：
@@ -33,7 +33,7 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
 
     // MARK: - Magazine 布局（既有 3 个，HOM-173 v1）
 
-    /// 极简黑白：纯黑底 + 白字 + 灰阶草坪。中性、克制，适合 LinkedIn / 简历类传播。
+    /// 靛蓝冰蓝：靛蓝灰底 + 冰蓝高光 + 蓝阶草坪。中性克制，适合 LinkedIn / 简历类传播。
     case minimal = "minimal"
     /// 热力橙：深炭底 + 橙金高光。暖色驱动情绪，适合朋友圈 / 小红书。
     case heatOrange = "heatOrange"
@@ -191,7 +191,7 @@ struct ShareCardPalette {
 
     /// 草坪 5 档色（none / l1 / l2 / l3 / l4），与 GitHub 主页同结构。
     /// 之所以独立一份而不是复用 `ContributionPalette`：
-    /// - 极简主题需要灰阶草坪（none → 4 档不同灰度）
+    /// - 靛蓝冰蓝主题需要蓝阶草坪（none → 4 档靛蓝到冰蓝）
     /// - 热力橙主题需要橙色梯度
     /// - GitHub Green 主题才用经典绿
     /// 三套都自己持有，View 渲染时直接 `palette.contribution.color(for: level)`，
@@ -201,35 +201,34 @@ struct ShareCardPalette {
 
 extension ShareCardPalette {
 
-    // MARK: - 极简黑白
+    // MARK: - 靛蓝冰蓝
 
-    /// 极简黑白：纯黑底 + 灰阶草坪。
+    /// 靛蓝冰蓝：靛蓝灰底 + 冰蓝高光 + 蓝阶草坪。
     ///
-    /// 配色逻辑：
-    /// - 背景：#0B0B0F（近黑微蓝）→ #15151A（顶部稍亮一点形成柔和渐变）
-    /// - 草坪：5 档纯灰梯度，none 用 #1F1F24（与背景区分但不抢眼），
-    ///   l4 是 #FFFFFF（最贡献日 = 高光纯白），形成"贡献越多越亮"的极简观感。
-    /// - 强调色：纯白 #FFFFFF。"分享到 X" 按钮也是白底黑字，呼应 X.com 的极简品牌。
+    /// 配色逻辑（2026-06-25 dong4j 反馈：第一个主题不要黑白灰，草坪要有色相）：
+    /// - 背景：#1E2840（靛蓝灰）→ #27324A（顶部稍亮），与 picker 色块一致。
+    /// - 草坪：5 档靛蓝→冰蓝梯度，none 贴近背景，l4 用 #B8D7FF 与 accent 呼应。
+    /// - 强调色：#B8D7FF 冰蓝；onAccent 用深靛蓝保证按钮 / 数字可读。
     static let minimalPalette = ShareCardPalette(
-        cardBackground: Color.fromHex6(0x0B0B0F),
-        cardBackgroundSecondary: Color.fromHex6(0x15151A),
-        cardBorder: Color.fromHex6(0x2A2A30),
+        cardBackground: Color.fromHex6(0x1E2840),
+        cardBackgroundSecondary: Color.fromHex6(0x27324A),
+        cardBorder: Color.fromHex6(0x3A4A66),
 
-        primaryText: Color.fromHex6(0xFFFFFF),
-        secondaryText: Color.fromHex6(0xB8B8BE),
-        tertiaryText: Color.fromHex6(0x6E6E76),
+        primaryText: Color.fromHex6(0xF0F4FF),
+        secondaryText: Color.fromHex6(0xA8BDE0),
+        tertiaryText: Color.fromHex6(0x6B7FA3),
 
-        accent: Color.fromHex6(0xFFFFFF),
-        onAccent: Color.fromHex6(0x0B0B0F),
+        accent: Color.fromHex6(0xB8D7FF),
+        onAccent: Color.fromHex6(0x1E2840),
 
-        divider: Color.fromHex6(0x2A2A30),
+        divider: Color.fromHex6(0x3A4A66),
 
         contribution: ContributionPalette(
-            none: Color.fromHex6(0x1F1F24),
-            l1:   Color.fromHex6(0x4A4A52),
-            l2:   Color.fromHex6(0x7A7A82),
-            l3:   Color.fromHex6(0xB0B0B6),
-            l4:   Color.fromHex6(0xFFFFFF)
+            none: Color.fromHex6(0x1A2236),
+            l1:   Color.fromHex6(0x2A4266),
+            l2:   Color.fromHex6(0x4A6E99),
+            l3:   Color.fromHex6(0x7AA8D4),
+            l4:   Color.fromHex6(0xB8D7FF)
         )
     )
 

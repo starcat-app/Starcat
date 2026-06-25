@@ -68,12 +68,10 @@ enum ShareCardExporter {
     ///
     /// - Parameters:
     ///   - content: 待渲染的卡片视图。
-    ///   - userLogin: 用户登录名，用于建议文件名（`starcat-{login}-{theme}.png`）。
-    ///   - theme: 当前主题，仅用于文件名后缀。
+    ///   - userLogin: 用户登录名，用于建议文件名（`{login}-card.png`）。
     /// - Returns: 写入成功的 URL；用户取消或写入失败返回 nil。
     static func saveImage(content: ShareCardContent,
-                          userLogin: String,
-                          theme: ShareCardTheme) -> URL? {
+                          userLogin: String) -> URL? {
         guard let nsImage = renderImage(content: content) else { return nil }
         guard let pngData = pngData(from: nsImage) else {
             AppLog.ui.error("ShareCardExporter: failed to encode NSImage as PNG")
@@ -85,7 +83,7 @@ enum ShareCardExporter {
         panel.message = String.l10n("sharecard.savePanel.message")
         panel.allowedContentTypes = [.png]
         panel.canCreateDirectories = true
-        panel.nameFieldStringValue = "starcat-\(userLogin)-\(theme.rawValue).png"
+        panel.nameFieldStringValue = "\(userLogin)-card.png"
         panel.isExtensionHidden = false
 
         // runModal() 阻塞当前 runloop 等用户选择；Sheet 在主窗口上层不会冲突

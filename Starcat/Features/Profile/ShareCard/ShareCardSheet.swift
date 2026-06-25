@@ -9,7 +9,7 @@
 //  - 主题选择 segmented Picker（极简黑白 / 热力橙 / GitHub Green）
 //  - 卡片预览区（实时跟随主题切换）
 //  - 三个动作按钮：保存为图片 / 分享到 X / 关闭
-//  - 底部品牌注脚（"由 Starcat 生成"，可点击跳到 starcat.app）
+//  - 底部品牌注脚（"由 Starcat 生成"，可点击跳到 starcat.ink）
 //
 //  设计权衡：
 //  - 把"主题选择 + 预览 + 动作"放在 sheet 而不是 popover：
@@ -102,7 +102,8 @@ struct ShareCardSheet: View {
                 actionButtons
             }
             .padding(.horizontal, 24)
-            .padding(.vertical, 4)
+            .padding(.top, 4)
+            .padding(.bottom, 24)
         }
         // 分享卡本体保持 400×560；这里只裁掉 sheet 旧版 820pt 高度留下的底部背景空白。
         // 内容总高低于主窗口运行期最小 content 高度 763pt，初始窗口下不会再向底部凸出。
@@ -234,7 +235,10 @@ struct ShareCardSheet: View {
             .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 24)
-        .padding(.vertical, 10)
+        // 2026-06-25：加大 top 内边距，避免标题 / 反馈 pill / 关闭钮贴窗口顶缘；
+        // 垂直预算从主题 picker 色块尺寸回收（见 ThemeCardButton）。
+        .padding(.top, 16)
+        .padding(.bottom, 10)
         .background(.bar)
     }
 
@@ -248,7 +252,7 @@ struct ShareCardSheet: View {
     /// 期间如果还叠隐式动画，SwiftUI 可能短暂合并 transaction，表现为随机点不动。
     @ViewBuilder
     private var themePicker: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             ForEach(ShareCardTheme.allCases) { t in
                 ThemeCardButton(
                     theme: t,
@@ -263,6 +267,12 @@ struct ShareCardSheet: View {
     /// 单个主题卡片按钮。
     /// 只包含主题预览色块，无文字。
     private struct ThemeCardButton: View {
+        /// 色块尺寸（2026-06-25 从 30×22 缩到 26×18）。
+        /// sheet 固定 760pt 高，顶部标题栏加大上内边距时从这里回收垂直空间。
+        private static let swatchWidth: CGFloat = 26
+        private static let swatchHeight: CGFloat = 18
+        private static let chromePadding: CGFloat = 3
+
         let theme: ShareCardTheme
         let isSelected: Bool
         let action: () -> Void
@@ -274,10 +284,10 @@ struct ShareCardSheet: View {
             Button(action: action) {
                 // 主题预览色块
                 themePreview
-                    .frame(width: 30, height: 22)
-                    .padding(4)
+                    .frame(width: Self.swatchWidth, height: Self.swatchHeight)
+                    .padding(Self.chromePadding)
                     .contentShape(Rectangle())
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
                     .overlay(
                         // 描边策略（2026-06-06 dong4j 反馈适配深浅主题）：
                         // - 选中态：`Color.accentColor` 2pt 加粗描边，强表达"选中"。
@@ -285,14 +295,14 @@ struct ShareCardSheet: View {
                         //   `Color.primary` 在 light 模式→黑、dark 模式→白，自动适配。
                         //   由于色块已通过 `pickerSwatch` 避开纯黑/纯白，0.5pt 极细
                         //   "提示线"足够勾出边缘而不会抢视觉权重。
-                        RoundedRectangle(cornerRadius: 5)
+                        RoundedRectangle(cornerRadius: 4)
                             .stroke(
                                 isSelected ? Color.accentColor : Color.primary.opacity(isHovered ? 0.34 : 0.18),
                                 lineWidth: isSelected ? 2 : (isHovered ? 1 : 0.5)
                             )
                     )
                     .background(
-                        RoundedRectangle(cornerRadius: 5)
+                        RoundedRectangle(cornerRadius: 4)
                             .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.primary.opacity(isHovered ? 0.08 : 0))
                     )
                     .shadow(color: .black.opacity(isHovered ? 0.18 : 0), radius: 4, y: 1)
@@ -311,7 +321,7 @@ struct ShareCardSheet: View {
         ///
         /// 用 `theme.pickerSwatch` 而**不是** `theme.palette` 的 cardBackground/accent
         /// （见 `ShareCardTheme.pickerSwatch` 的详细注释）：导出图色板可能出现纯黑/纯白，
-        /// 在 picker 30×22 小色块里会刺眼或融背景；pickerSwatch 是为 picker 单独调过的
+        /// 在 picker 26×18 小色块里会刺眼或融背景；pickerSwatch 是为 picker 单独调过的
         /// 柔和色对，保留色相记忆点同时兼容 light/dark 两种主题。
         private var themePreview: some View {
             HStack(spacing: 1) {
@@ -624,8 +634,7 @@ struct ShareCardSheet: View {
         let content = currentContent
         if let url = ShareCardExporter.saveImage(
             content: content,
-            userLogin: user.login,
-            theme: theme
+            userLogin: user.login
         ) {
             showFeedback(String(format: String.l10n("sharecard.feedback.saved"), url.lastPathComponent))
         }
