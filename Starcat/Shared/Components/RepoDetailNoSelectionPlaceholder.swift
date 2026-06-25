@@ -23,12 +23,20 @@ struct RepoDetailNoSelectionPlaceholder: View {
     private static let illustrationAspectRatio = illustrationBaseSize.width / illustrationBaseSize.height
     private static let horizontalPadding: CGFloat = 48
     private static let verticalPadding: CGFloat = 64
-    private static let messageLineHeight: CGFloat = 22
-    private static let messageSpacing: CGFloat = 28
-    private static let illustrationVisualBleed: CGFloat = 28
+    private static let captionReservedHeight: CGFloat = 34
+    private static let minimumMessageSpacing: CGFloat = 36
+    private static let maximumMessageSpacing: CGFloat = 68
+    private static let baseIllustrationVisualBleed: CGFloat = 28
+    private static let maximumIllustrationVisualBleed: CGFloat = 72
     private static let compactMaximumWidth: CGFloat = 520
     private static let expandedMaximumWidth: CGFloat = 760
     private static let widthFillRatio: CGFloat = 0.48
+
+    private struct LayoutMetrics {
+        let illustrationSize: CGSize
+        let illustrationScale: CGFloat
+        let messageSpacing: CGFloat
+    }
 
     private let messageKey: LocalizedStringKey
 
@@ -38,17 +46,19 @@ struct RepoDetailNoSelectionPlaceholder: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let illustrationSize = illustrationSize(in: proxy.size)
-            let illustrationScale = illustrationSize.width / Self.illustrationBaseSize.width
+            let metrics = layoutMetrics(in: proxy.size)
 
-            VStack(spacing: Self.messageSpacing) {
+            VStack(spacing: 0) {
                 RepoDetailNoSelectionIllustration()
                     .frame(
                         width: Self.illustrationBaseSize.width,
                         height: Self.illustrationBaseSize.height
                     )
-                    .scaleEffect(illustrationScale)
-                    .frame(width: illustrationSize.width, height: illustrationSize.height)
+                    .scaleEffect(metrics.illustrationScale)
+                    .frame(width: metrics.illustrationSize.width, height: metrics.illustrationSize.height)
+
+                Spacer(minLength: 0)
+                    .frame(height: metrics.messageSpacing)
 
                 Text(messageKey)
                     .font(.callout)
@@ -56,6 +66,7 @@ struct RepoDetailNoSelectionPlaceholder: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(minHeight: Self.captionReservedHeight, alignment: .top)
             }
             .padding(.horizontal, Self.horizontalPadding)
             .frame(width: proxy.size.width, height: proxy.size.height)
@@ -63,32 +74,56 @@ struct RepoDetailNoSelectionPlaceholder: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func illustrationSize(in containerSize: CGSize) -> CGSize {
+    private func layoutMetrics(in containerSize: CGSize) -> LayoutMetrics {
         // 以 360x222 为设计基准，只在外层整体缩放，避免内部每条 mock line 的比例散掉。
         //
         // 这里不能只看容器高度做粗略 reserve：示意图自带 shadow / glow，视觉边界会
-        // 超出自身 frame。先扣掉文字行高、图文间距和视觉溢出余量，窗口变矮时优先
-        // 缩小示意图，避免底部提示被边框或阴影压住。
+        // 超出自身 frame，且这个溢出会随 scale 一起变大。先按详情区宽度估算一个
+        // tentative scale，再用这个 scale 扣掉图文间距和视觉溢出；窗口变矮时优先
+        // 缩小示意图，窗口变宽时也不会让底部提示贴到边框上。
         let availableWidth = max(160, containerSize.width - Self.horizontalPadding * 2)
+        let responsiveMaximumWidth = responsiveMaximumWidth(for: availableWidth)
+        let tentativeWidth = min(responsiveMaximumWidth, availableWidth)
+        let tentativeScale = tentativeWidth / Self.illustrationBaseSize.width
+        let reservedMessageSpacing = messageSpacing(for: tentativeScale)
+        let reservedVisualBleed = illustrationVisualBleed(for: tentativeScale)
+
         let availableHeight = max(
             120,
             containerSize.height
                 - Self.verticalPadding * 2
-                - Self.messageLineHeight
-                - Self.messageSpacing
-                - Self.illustrationVisualBleed
+                - Self.captionReservedHeight
+                - reservedMessageSpacing
+                - reservedVisualBleed
         )
         let heightLimitedWidth = availableHeight * Self.illustrationAspectRatio
-        let responsiveMaximumWidth = min(
-            Self.expandedMaximumWidth,
-            max(Self.compactMaximumWidth, availableWidth * Self.widthFillRatio)
-        )
         let maximumWidth = max(160, min(responsiveMaximumWidth, availableWidth, heightLimitedWidth))
         let minimumWidth = min(240, maximumWidth)
         let preferredWidth = min(availableWidth * Self.widthFillRatio, maximumWidth)
         let width = max(minimumWidth, preferredWidth)
+        let scale = width / Self.illustrationBaseSize.width
 
-        return CGSize(width: width, height: width / Self.illustrationAspectRatio)
+        return LayoutMetrics(
+            illustrationSize: CGSize(width: width, height: width / Self.illustrationAspectRatio),
+            illustrationScale: scale,
+            messageSpacing: messageSpacing(for: scale)
+        )
+    }
+
+    private func responsiveMaximumWidth(for availableWidth: CGFloat) -> CGFloat {
+        min(
+            Self.expandedMaximumWidth,
+            max(Self.compactMaximumWidth, availableWidth * Self.widthFillRatio)
+        )
+    }
+
+    private func messageSpacing(for scale: CGFloat) -> CGFloat {
+        let scaled = Self.minimumMessageSpacing + max(0, scale - 1) * 22
+        return min(Self.maximumMessageSpacing, scaled)
+    }
+
+    private func illustrationVisualBleed(for scale: CGFloat) -> CGFloat {
+        min(Self.maximumIllustrationVisualBleed, Self.baseIllustrationVisualBleed * max(1, scale))
     }
 }
 
