@@ -92,25 +92,26 @@ struct TrendingView: View {
             if viewModel.selectedLanguage != selectedLanguage {
                 viewModel.selectedLanguage = selectedLanguage
             }
-            // 切换语言或页面时，列表数据变化，清除之前的 repo 选中状态
-            // 避免详情页显示不属于当前列表的 repo
-            if selectedRepoID != nil {
-                selectedRepoID = nil
-                selectedTrendingRepo = nil
-            }
+            // 切换语言或页面时先清详情，避免新列表加载完成前右栏残留旧 repo。
+            clearTrendingDetailSelection()
             // 首次进入页面：按 TTL 决定是否拉网络（R-06.1，2026-06-15）
             //   - 缓存命中且 24h 内 → 不走网络（零打扰，避免"二次入场动画"）
             //   - 缓存命中但 TTL 过期 → 上屏旧缓存 + 后台静默刷新
             //   - 缓存空 → 必拉
             // 用户主动按刷新按钮 / pull-to-refresh / 错误重试时改用 `.forceNetwork` 绕过 TTL
             await viewModel.reload(cachePolicy: .respectTTL)
+            applyTrendingDetailSelectionPolicy()
             reportRepoCount()
         }
         .onChange(of: homeViewModel.languageStats) { _, stats in
             viewModel.updateLanguagePreferences(from: stats)
         }
         .onChange(of: selectedLanguage) { _, language in
+            clearTrendingDetailSelection()
             viewModel.selectedLanguage = language
+        }
+        .onChange(of: viewModel.selectedPeriod) { _, _ in
+            clearTrendingDetailSelection()
         }
         .sheet(isPresented: $showLoginSheet) {
             GithubAuthView()
@@ -132,11 +133,57 @@ struct TrendingView: View {
         .onChange(of: viewModel.repos.count) { _, count in
             onRepoCountChange(count)
         }
+        .onChange(of: viewModel.reposRevision) { _, _ in
+            applyTrendingDetailSelectionPolicy()
+        }
+        .onChange(of: settings.openFirstDetailOnCategoryChange) { _, enabled in
+            guard enabled else { return }
+            applyTrendingDetailSelectionPolicy()
+        }
         .environment(\.trendingViewModel, viewModel)
     }
 
     private func reportRepoCount() {
         onRepoCountChange(viewModel.repos.count)
+    }
+
+    private func clearTrendingDetailSelection() {
+        selectedRepoID = nil
+        selectedTrendingRepo = nil
+    }
+
+    private func applyTrendingDetailSelectionPolicy() {
+        guard !viewModel.repos.isEmpty else {
+            clearTrendingDetailSelection()
+            return
+        }
+        guard settings.openFirstDetailOnCategoryChange else {
+            refreshSelectedTrendingRepoFromCurrentList()
+            return
+        }
+        if let id = selectedRepoID,
+           let repo = viewModel.repos.first(where: { $0.id == id }) {
+            selectedTrendingRepo = repo
+            return
+        }
+        guard let first = viewModel.repos.first else {
+            clearTrendingDetailSelection()
+            return
+        }
+        selectedRepoID = first.id
+        selectedTrendingRepo = first
+    }
+
+    private func refreshSelectedTrendingRepoFromCurrentList() {
+        guard let id = selectedRepoID else {
+            selectedTrendingRepo = nil
+            return
+        }
+        guard let repo = viewModel.repos.first(where: { $0.id == id }) else {
+            clearTrendingDetailSelection()
+            return
+        }
+        selectedTrendingRepo = repo
     }
 
     // MARK: - Toolbar

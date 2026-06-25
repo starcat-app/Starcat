@@ -99,14 +99,6 @@ struct WeeklyDetailView: View {
     }
 
     private var emptyState: some View {
-        EmptyStateView(
-            systemImage: "newspaper",
-            title: "weekly.detail.emptyTitle",
-            subtitle: "weekly.detail.emptySubtitle",
-            iconSize: 42,
-            spacing: 12
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
+        RepoDetailNoSelectionPlaceholder()
     }
 }

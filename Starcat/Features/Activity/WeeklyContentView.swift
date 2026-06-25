@@ -67,6 +67,7 @@ struct WeeklyContentView: View {
         .task {
             let model = ensureViewModel()
             await model.loadInitialIfNeeded()
+            applyWeeklyDetailSelectionPolicy(from: model.items)
         }
     }
 
@@ -97,6 +98,14 @@ struct WeeklyContentView: View {
         }
         .task {
             await viewModel.loadLanguagesIfNeeded()
+            applyWeeklyDetailSelectionPolicy(from: viewModel.items)
+        }
+        .onChange(of: viewModel.itemsRevision) { _, _ in
+            applyWeeklyDetailSelectionPolicy(from: viewModel.items)
+        }
+        .onChange(of: settings.openFirstDetailOnCategoryChange) { _, enabled in
+            guard enabled else { return }
+            applyWeeklyDetailSelectionPolicy(from: viewModel.items)
         }
     }
 
@@ -112,6 +121,7 @@ struct WeeklyContentView: View {
                 Section("weekly.filter.source") {
                     ForEach(WeeklySourceFilter.allCases) { source in
                         Button {
+                            clearWeeklyDetailSelectionIfChanging(source != viewModel.selectedSource)
                             viewModel.changeSource(to: source)
                         } label: {
                             filterMenuRow(
@@ -125,6 +135,7 @@ struct WeeklyContentView: View {
                 Section("weekly.filter.coverage") {
                     ForEach(WeeklySourceCoverageFilter.allCases) { coverage in
                         Button {
+                            clearWeeklyDetailSelectionIfChanging(coverage != viewModel.selectedCoverage)
                             viewModel.changeCoverage(to: coverage)
                         } label: {
                             filterMenuRow(
@@ -137,6 +148,7 @@ struct WeeklyContentView: View {
 
                 Section("weekly.filter.repoState") {
                     Button {
+                        clearWeeklyDetailSelection()
                         viewModel.changeHideArchivedRepos(to: !viewModel.hideArchivedRepos)
                     } label: {
                         filterMenuRow(
@@ -145,6 +157,7 @@ struct WeeklyContentView: View {
                         )
                     }
                     Button {
+                        clearWeeklyDetailSelection()
                         viewModel.changeHideForkRepos(to: !viewModel.hideForkRepos)
                     } label: {
                         filterMenuRow(
@@ -157,6 +170,7 @@ struct WeeklyContentView: View {
                 Section("weekly.filter.stars") {
                     ForEach(WeeklyStarsFilter.allCases) { starsFilter in
                         Button {
+                            clearWeeklyDetailSelectionIfChanging(starsFilter != viewModel.selectedStarsFilter)
                             viewModel.changeStarsFilter(to: starsFilter)
                         } label: {
                             filterMenuRow(
@@ -170,6 +184,7 @@ struct WeeklyContentView: View {
                 Section("weekly.filter.activity") {
                     ForEach(WeeklyPushedRecencyFilter.allCases) { pushedFilter in
                         Button {
+                            clearWeeklyDetailSelectionIfChanging(pushedFilter != viewModel.selectedPushedRecency)
                             viewModel.changePushedRecency(to: pushedFilter)
                         } label: {
                             filterMenuRow(
@@ -183,6 +198,7 @@ struct WeeklyContentView: View {
                 Section("weekly.filter.sort") {
                     ForEach(WeeklyFeedSort.allCases) { sort in
                         Button {
+                            clearWeeklyDetailSelectionIfChanging(sort != viewModel.selectedSort)
                             viewModel.changeSort(to: sort)
                         } label: {
                             filterMenuRow(
@@ -210,7 +226,10 @@ struct WeeklyContentView: View {
             LanguagePickerMenu(
                 selection: Binding(
                     get: { viewModel.selectedLanguage },
-                    set: { viewModel.changeLanguage(to: $0) }
+                    set: { language in
+                        clearWeeklyDetailSelectionIfChanging(language != viewModel.selectedLanguage)
+                        viewModel.changeLanguage(to: language)
+                    }
                 ),
                 aggregates: viewModel.languageAggregates,
                 labelPrefix: "weekly.filter.language"
@@ -369,6 +388,35 @@ struct WeeklyContentView: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+    }
+
+    private func clearWeeklyDetailSelection() {
+        dependencies.weeklySelectionService.clearSelection()
+    }
+
+    private func clearWeeklyDetailSelectionIfChanging(_ isChanging: Bool) {
+        guard isChanging else { return }
+        clearWeeklyDetailSelection()
+    }
+
+    private func applyWeeklyDetailSelectionPolicy(from items: [WeeklyFeedItem]) {
+        let selection = dependencies.weeklySelectionService
+        guard !items.isEmpty else {
+            selection.clearSelection()
+            return
+        }
+        guard settings.openFirstDetailOnCategoryChange else {
+            if let selected = selection.selectedItem,
+               !items.contains(where: { $0.id == selected.id }) {
+                selection.clearSelection()
+            }
+            return
+        }
+        if let selected = selection.selectedItem,
+           items.contains(where: { $0.id == selected.id }) {
+            return
+        }
+        selection.select(items.first)
     }
 
     /// 空 / 错误状态视图。

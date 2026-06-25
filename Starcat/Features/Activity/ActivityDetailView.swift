@@ -371,15 +371,7 @@ struct ActivityDetailView: View {
     // MARK: - 空态
 
     private var emptyState: some View {
-        EmptyStateView(
-            systemImage: "tray.full",
-            title: "activity.detail.emptyTitle",
-            subtitle: "activity.detail.emptySubtitle",
-            iconSize: 42,
-            spacing: 12
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
+        RepoDetailNoSelectionPlaceholder()
     }
 
     // MARK: - 图标 / 路由 helper

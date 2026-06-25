@@ -20556,6 +20556,22 @@
         }
       }
     },
+    "settings.general.detailBehavior" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detail behavior"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "详情行为"
+          }
+        }
+      }
+    },
     "settings.general.disableAnimations.help" : {
       "localizations" : {
         "en" : {
@@ -20584,6 +20600,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭应用内动画"
+          }
+        }
+      }
+    },
+    "settings.general.openFirstDetailOnCategoryChange.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When enabled, switching a category or filter opens the first item in the new list. Leave it off to load details only after you choose an item."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启后,切换分类或筛选会自动打开新列表的第一条。关闭时,详情只在你手动选择条目后加载。"
+          }
+        }
+      }
+    },
+    "settings.general.openFirstDetailOnCategoryChange.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the first detail automatically"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动打开第一条详情"
           }
         }
       }

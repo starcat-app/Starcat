@@ -390,115 +390,24 @@ struct HomeView: View {
             columnVisibility = .all
         }
         .task {
-            // 启动 / 重新进入 HomeView 时默认回三栏展开。运行期用户手动缩窗时，
-            // 系统仍可按窗口宽度自动折叠 sidebar；这里只负责启动态保真。
-            columnVisibility = .all
-
-            // HOM-52：批量整理服务挂接 Sidebar 刷新回调。
-            // 每应用一批标签就 refreshSidebar，让 Sidebar Tags 段计数实时跟随；
-            // 不在 viewModel.reloadItems()——避免大批次每个 repo 都全量重拉列表。
-            dependencies.batchAIQueueService.onTagsChanged = {
-                Task { @MainActor in
-                    await viewModel.refreshSidebar()
-                }
-            }
-
-            // HOM-126：启动自动后台 AI 整理调度器。
-            // - `start()` 内部幂等，HomeView 多次进入只装一次。
-            // - 启动后挂启动延迟（60s 后触发一次）+ 24h 定时器 + onBatchFinished 回调。
-            // - 同步完成事件由下方 `.onChange(of: syncManager.state)` 转发给调度器
-            //   （理由见 AutoTidyScheduler.notifySyncStateChanged 文档）。
-            dependencies.autoTidyScheduler.start()
-
-            // 2026-06-13 dong4j 补救 A：「启动时自动后台预拉」首启即时门控。
-            // 多数首启场景下登录态恢复未完成，这里走不到 isAuthenticated 分支；
-            // 实际启动由上方 `.onChange(of: authSession.state)` 在恢复完成后触发。
-            // 当用户重进 HomeView 时（已登录态稳定）则在这里直接启动。
-            // `start()` 对 `.running` 幂等，与 onChange 路径不会双启。
-            if !TestEnvironment.isRunning,
-               authSession.state.isAuthenticated,
-               settings.aiIndexAutoPrefetchEnabled {
-                dependencies.semanticIndexBuilder.start()
-            }
-
-            // W4-4 D1/D2:把持久化的视图偏好同步到 viewModel,避免首次 reloadItems 用默认值
-            // 然后 onAppear 才纠正导致列表抖动一次。
-            if viewModel.sortOption != settings.repoSortOption {
-                viewModel.sortOption = settings.repoSortOption
-            }
-            if viewModel.hideArchived != settings.hideArchived {
-                viewModel.hideArchived = settings.hideArchived
-            }
-            if viewModel.hideForks != settings.hideForks {
-                viewModel.hideForks = settings.hideForks
-            }
-            if viewModel.statusFilter != settings.statusFilter {
-                viewModel.statusFilter = settings.statusFilter
-            }
-            if viewModel.smartSearchMode != settings.smartSearchMode {
-                viewModel.smartSearchMode = settings.smartSearchMode
-            }
-            // HOM-197（2026-06-13 dong4j）：把语义搜索过滤阈值从 settings 注入 viewModel。
-            // 与 sortOption / hideArchived / hideForks / statusFilter 同款"View 启动期单向同步"。
-            // viewModel 内 didSet 会自动调 applyView()，但首启时 items 还没填充，applyView
-            // 是 no-op；真正生效在第一次 reloadItems 完成 + applyView 后。
-            if viewModel.semanticScoreThreshold != settings.aiSemanticSearchScoreThreshold {
-                viewModel.semanticScoreThreshold = settings.aiSemanticSearchScoreThreshold
-            }
-            
-            // 恢复上次保存的 Manage 分类（跨启动）。无记录时 persistedRawValue 解码回落 allStars。
-            savedManageSelection = SidebarItem(persistedRawValue: settings.lastManageSelectionRaw)
-            savedActivityCategory = ActivityCategory(persistedRawValue: settings.lastActivityCategoryRaw)
-
-            // 决定初始页面：
-            // - 已登录 → Manage + 上次分类（同步策略见 `handleAuthenticatedEntry`）
-            // - 未登录 → Trending
-            //
-            // 注意：启动期 Keychain 恢复登录是异步的（见 AuthSession.restoreSessionIfAvailable），
-            // 多数情况下这里跑到时 state 还是 .unauthenticated（恢复未完成）→ 先进 Trending，
-            // 待恢复完成由下方 onChange(of: authSession.state) 纠正到 Manage。
-            if case .authenticated(let user) = authSession.state {
-                handleAuthenticatedEntry(oldUserID: nil, user: user)
-            } else {
-                selectedSidebarPage = .trending
-                viewModel.selection = .trending
-                await viewModel.refreshSidebar()
-            }
-
-            // 2026-06-11 dong4j：trending sidebar 语言列表改用后端聚合接口驱动。
-            // 启动后异步拉一次（不阻塞 UI），后端不可达 / 401 时 store 内部退化到 fallbackList。
-            // 不放在 if isAuthenticated 分支：未登录用户进 Trending 也需要语言列表，
-            // 而后端 `/api/v1/languages` 不依赖 GitHub OAuth，仅依赖 Bearer Auth（用户 API Key 已就位）。
-            Task {
-                await dependencies.trendingLanguageStore.reload()
-            }
+            await bootstrapHome()
         }
         // selection 变化 → 重新加载列表
         .task(id: viewModel.selection) {
-            // HOM-46：selection.didSet 已经把未过期缓存同步上屏。
-            // 这里如果再进 reloadItems()，即便最终命中 cache early-return，也会创建一次
-            // 无意义的异步任务并触发若干同值状态写入；这条路径在 1 条 repo 的分类上也会被用户感知为顿挫。
-            // 过期缓存 / 无缓存仍继续 reload，保留首次加载和 SWR 刷新语义。
-            guard selectedSidebarPage == .manage, !viewModel.hasCachedItems else { return }
-            await viewModel.reloadItems()
+            await reloadManageSelectionIfNeeded()
         }
         // 搜索框按 Return / 清空后才提交搜索；普通 FTS5 与 AI 语义搜索都不再逐字符实时查询。
         .task(id: viewModel.searchSubmissionID) {
-            // Trending / Activity 有自己的数据模型；这里不应触发 Manage reload。
-            guard selectedSidebarPage == .manage else { return }
-            await viewModel.reloadItems()
+            await reloadManageSearchIfNeeded()
         }
         // 搜索模式变化只更新持久化偏好，不立刻发起查询；用户按 Return 后才用新模式搜索。
         .task(id: viewModel.smartSearchMode) {
-            settings.smartSearchMode = viewModel.smartSearchMode
+            syncSmartSearchModeToSettings()
         }
         // 同步完成 → 仅当本轮真的写入了 repo 行时才 forceRefresh 列表。
         // 304 早退 / performFullSyncIfStale 跳过等路径 lastRunWroteRepos=false，避免无谓 DB 重查。
         .task(id: syncManager.state) {
-            if case .completed = syncManager.state, syncManager.lastRunWroteRepos {
-                await viewModel.refreshSidebar()
-                await viewModel.reloadItems(forceRefresh: true)
-            }
+            await reloadAfterSyncIfNeeded()
         }
         // R-07（2026-06-15）：SyncManager 写完第一页后立即刷一次列表，让首次登录 1~2s 内看到前 20 条。
         //
@@ -514,6 +423,7 @@ struct HomeView: View {
             Task { @MainActor in
                 await viewModel.refreshSidebar()
                 await viewModel.reloadItems(forceRefresh: true)
+                applyManageDetailSelectionPolicy()
             }
         }
         // HOM-126：把同步状态变化转发给 AutoTidyScheduler，让它做"同步完成 → 自动整理"
@@ -652,6 +562,8 @@ struct HomeView: View {
             guard selectedSidebarPage == .manage, !newSelection.isTrending else { return }
             savedManageSelection = newSelection
             settings.lastManageSelectionRaw = newSelection.persistedRawValue
+            resetSmartCollectionRepoSelectionIfNeeded(for: newSelection)
+            applyManageDetailSelectionPolicy()
         }
         .onChange(of: settings.smartSearchMode) { _, newMode in
             if viewModel.smartSearchMode != newMode {
@@ -718,15 +630,12 @@ struct HomeView: View {
             guard selectedSidebarPage == .activity else { return }
             savedActivityCategory = newCategory
             settings.lastActivityCategoryRaw = newCategory.persistedRawValue
-            // Activity 分类切换只负责更新中栏列表；详情页必须由用户明确点击触发，
-            // 避免列表加载完成后又自动加载第一条详情造成额外等待。
+            // Activity 分类切换先清空旧详情；是否在新列表稳定后自动选第一条由
+            // settings.openFirstDetailOnCategoryChange 统一决定。
             selectedActivityItem = nil
+            dependencies.weeklySelectionService.clearSelection()
             // 过渡期间仅抑制头像 tint 补间；草坪蛇不参与（见 SidebarAnimationCoordinator）。
             dependencies.sidebarAnimationCoordinator.beginActivityCategoryTransition()
-            // 切走 weekly 分类时清掉周刊详情选中；切到 weekly 时不动（首次进入由列表点击触发）。
-            if newCategory != .weekly {
-                dependencies.weeklySelectionService.clearSelection()
-            }
         }
     }
 
@@ -823,6 +732,147 @@ struct HomeView: View {
     }
 
     // MARK: - 辅助
+
+    /// HomeView 首次挂载时的启动编排。
+    ///
+    /// 这段逻辑原本直接写在 `.task {}` modifier 内；随着主界面状态监听增加，
+    /// SwiftUI 的整条 body modifier 链开始触发 type-check 超时。抽成普通 async 方法后，
+    /// 业务顺序不变，但编译器不需要在巨型 View 表达式里推断整段启动流程。
+    private func bootstrapHome() async {
+        // 启动 / 重新进入 HomeView 时默认回三栏展开。运行期用户手动缩窗时，
+        // 系统仍可按窗口宽度自动折叠 sidebar；这里只负责启动态保真。
+        columnVisibility = .all
+
+        // HOM-52：批量整理服务挂接 Sidebar 刷新回调。
+        // 每应用一批标签就 refreshSidebar，让 Sidebar Tags 段计数实时跟随；
+        // 不在 viewModel.reloadItems()——避免大批次每个 repo 都全量重拉列表。
+        dependencies.batchAIQueueService.onTagsChanged = {
+            Task { @MainActor in
+                await viewModel.refreshSidebar()
+            }
+        }
+
+        // HOM-126：启动自动后台 AI 整理调度器。
+        // - `start()` 内部幂等，HomeView 多次进入只装一次。
+        // - 启动后挂启动延迟（60s 后触发一次）+ 24h 定时器 + onBatchFinished 回调。
+        // - 同步完成事件由下方 `.onChange(of: syncManager.state)` 转发给调度器
+        //   （理由见 AutoTidyScheduler.notifySyncStateChanged 文档）。
+        dependencies.autoTidyScheduler.start()
+
+        // 2026-06-13 dong4j 补救 A：「启动时自动后台预拉」首启即时门控。
+        // 多数首启场景下登录态恢复未完成，这里走不到 isAuthenticated 分支；
+        // 实际启动由上方 `.onChange(of: authSession.state)` 在恢复完成后触发。
+        // 当用户重进 HomeView 时（已登录态稳定）则在这里直接启动。
+        // `start()` 对 `.running` 幂等，与 onChange 路径不会双启。
+        if !TestEnvironment.isRunning,
+           authSession.state.isAuthenticated,
+           settings.aiIndexAutoPrefetchEnabled {
+            dependencies.semanticIndexBuilder.start()
+        }
+
+        syncViewModelSettingsFromAppSettings()
+
+        // 恢复上次保存的 Manage 分类（跨启动）。无记录时 persistedRawValue 解码回落 allStars。
+        savedManageSelection = SidebarItem(persistedRawValue: settings.lastManageSelectionRaw)
+        savedActivityCategory = ActivityCategory(persistedRawValue: settings.lastActivityCategoryRaw)
+
+        // 决定初始页面：
+        // - 已登录 → Manage + 上次分类（同步策略见 `handleAuthenticatedEntry`）
+        // - 未登录 → Trending
+        //
+        // 注意：启动期 Keychain 恢复登录是异步的（见 AuthSession.restoreSessionIfAvailable），
+        // 多数情况下这里跑到时 state 还是 .unauthenticated（恢复未完成）→ 先进 Trending，
+        // 待恢复完成由下方 onChange(of: authSession.state) 纠正到 Manage。
+        if case .authenticated(let user) = authSession.state {
+            handleAuthenticatedEntry(oldUserID: nil, user: user)
+        } else {
+            selectedSidebarPage = .trending
+            viewModel.selection = .trending
+            await viewModel.refreshSidebar()
+        }
+
+        // 2026-06-11 dong4j：trending sidebar 语言列表改用后端聚合接口驱动。
+        // 启动后异步拉一次（不阻塞 UI），后端不可达 / 401 时 store 内部退化到 fallbackList。
+        // 不放在 if isAuthenticated 分支：未登录用户进 Trending 也需要语言列表，
+        // 而后端 `/api/v1/languages` 不依赖 GitHub OAuth，仅依赖 Bearer Auth（用户 API Key 已就位）。
+        Task {
+            await dependencies.trendingLanguageStore.reload()
+        }
+    }
+
+    private func syncViewModelSettingsFromAppSettings() {
+        // W4-4 D1/D2:把持久化的视图偏好同步到 viewModel,避免首次 reloadItems 用默认值
+        // 然后 onAppear 才纠正导致列表抖动一次。
+        if viewModel.sortOption != settings.repoSortOption {
+            viewModel.sortOption = settings.repoSortOption
+        }
+        if viewModel.hideArchived != settings.hideArchived {
+            viewModel.hideArchived = settings.hideArchived
+        }
+        if viewModel.hideForks != settings.hideForks {
+            viewModel.hideForks = settings.hideForks
+        }
+        if viewModel.statusFilter != settings.statusFilter {
+            viewModel.statusFilter = settings.statusFilter
+        }
+        if viewModel.smartSearchMode != settings.smartSearchMode {
+            viewModel.smartSearchMode = settings.smartSearchMode
+        }
+        // HOM-197（2026-06-13 dong4j）：把语义搜索过滤阈值从 settings 注入 viewModel。
+        // 与 sortOption / hideArchived / hideForks / statusFilter 同款"View 启动期单向同步"。
+        // viewModel 内 didSet 会自动调 applyView()，但首启时 items 还没填充，applyView
+        // 是 no-op；真正生效在第一次 reloadItems 完成 + applyView 后。
+        if viewModel.semanticScoreThreshold != settings.aiSemanticSearchScoreThreshold {
+            viewModel.semanticScoreThreshold = settings.aiSemanticSearchScoreThreshold
+        }
+    }
+
+    private func reloadManageSelectionIfNeeded() async {
+        // HOM-46：selection.didSet 已经把未过期缓存同步上屏。
+        // 这里如果再进 reloadItems()，即便最终命中 cache early-return，也会创建一次
+        // 无意义的异步任务并触发若干同值状态写入；这条路径在 1 条 repo 的分类上也会被用户感知为顿挫。
+        // 过期缓存 / 无缓存仍继续 reload，保留首次加载和 SWR 刷新语义。
+        guard selectedSidebarPage == .manage, !viewModel.hasCachedItems else { return }
+        await viewModel.reloadItems()
+        applyManageDetailSelectionPolicy()
+    }
+
+    private func reloadManageSearchIfNeeded() async {
+        // Trending / Activity 有自己的数据模型；这里不应触发 Manage reload。
+        guard selectedSidebarPage == .manage else { return }
+        await viewModel.reloadItems()
+        applyManageDetailSelectionPolicy()
+    }
+
+    private func syncSmartSearchModeToSettings() {
+        settings.smartSearchMode = viewModel.smartSearchMode
+    }
+
+    private func reloadAfterSyncIfNeeded() async {
+        guard case .completed = syncManager.state, syncManager.lastRunWroteRepos else { return }
+        await viewModel.refreshSidebar()
+        await viewModel.reloadItems(forceRefresh: true)
+        applyManageDetailSelectionPolicy()
+    }
+
+    private func applyManageDetailSelectionPolicy() {
+        guard selectedSidebarPage == .manage else { return }
+        guard settings.openFirstDetailOnCategoryChange else { return }
+        // Smart Collections 的 nil selection 是右栏集合浏览入口，不能被“选第一条”覆盖。
+        guard !viewModel.selection.isSmartCollectionsSurface else { return }
+        guard !viewModel.isLoading, viewModel.loadError == nil else { return }
+        guard viewModel.selectedRepo == nil, let first = viewModel.items.first else { return }
+        viewModel.selectedRepoID = first.id
+    }
+
+    private func resetSmartCollectionRepoSelectionIfNeeded(for selection: SidebarItem) {
+        guard selection.isSmartCollectionsSurface, viewModel.selectedRepoID != nil else { return }
+        // Smart Collections 用 nil 表达两种产品态：
+        // - 首页：右栏显示未选中占位示意图
+        // - 具体集合：右栏显示集合浏览面板
+        // 切入这个 surface 时必须退出上一分类/上一集合的 repo 详情，且不受“自动打开第一条”偏好影响。
+        viewModel.selectedRepoID = nil
+    }
 
     /// Activity 页面顶部头像卡的 tint 色派生（**D-29 修订**, 2026-06-11）。
     ///
@@ -947,6 +997,7 @@ struct HomeView: View {
 
             if selectedSidebarPage == .manage {
                 await viewModel.reloadItems(forceRefresh: isAccountSwitch)
+                applyManageDetailSelectionPolicy()
             }
 
             if isAccountSwitch {

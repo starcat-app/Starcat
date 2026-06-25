@@ -97,7 +97,7 @@ struct ActivityView: View {
             }
             let model = ensureViewModel()
             await model.ensureLoaded(category: selectedCategory)
-            clearSelectionIfMissing(from: model.items)
+            applySelectionPolicy(from: model.items)
             reportItemCount(model)
         }
         .onChange(of: selectedCategory) { _, newCategory in
@@ -110,7 +110,7 @@ struct ActivityView: View {
                 prefetchWeeklyTotalIfNeeded()
                 Task {
                     await model.ensureLoaded(category: newCategory)
-                    clearSelectionIfMissing(from: model.items)
+                    applySelectionPolicy(from: model.items)
                     reportItemCount(model)
                 }
                 return
@@ -119,7 +119,7 @@ struct ActivityView: View {
             if !viewModel.isAggregateReady {
                 Task {
                     await viewModel.ensureLoaded(category: newCategory)
-                    clearSelectionIfMissing(from: viewModel.items)
+                    applySelectionPolicy(from: viewModel.items)
                     reportItemCount(viewModel)
                 }
                 return
@@ -127,11 +127,15 @@ struct ActivityView: View {
             viewModel.selectCategory(newCategory)
             prefetchWeeklyTotalIfNeeded()
             reportItemCount(viewModel)
-            clearSelectionIfMissing(from: viewModel.items)
+            scheduleSelectionPolicy(for: newCategory, viewModel: viewModel)
         }
         .onChange(of: dependencies.weeklySelectionService.total) { _, total in
             guard let total else { return }
             dependencies.activityCategoryCountService.applyWeeklyTotal(total)
+        }
+        .onChange(of: settings.openFirstDetailOnCategoryChange) { _, enabled in
+            guard enabled, selectedCategory != .weekly, let viewModel else { return }
+            applySelectionPolicy(from: viewModel.items)
         }
     }
 
@@ -167,7 +171,7 @@ struct ActivityView: View {
             Button("activity.following.clear.action", role: .destructive) {
                 Task {
                     await viewModel.clearFollowingFeed()
-                    clearSelectionIfMissing(from: viewModel.items)
+                    applySelectionPolicy(from: viewModel.items)
                     reportItemCount(viewModel)
                 }
             }
@@ -182,7 +186,7 @@ struct ActivityView: View {
             Button("activity.announcement.clear.action", role: .destructive) {
                 Task {
                     await viewModel.clearAnnouncementFeed()
-                    clearSelectionIfMissing(from: viewModel.items)
+                    applySelectionPolicy(from: viewModel.items)
                     reportItemCount(viewModel)
                 }
             }
@@ -379,7 +383,7 @@ struct ActivityView: View {
         ) {
             Task {
                 await viewModel.refresh(category: selectedCategory)
-                clearSelectionIfMissing(from: viewModel.items)
+                applySelectionPolicy(from: viewModel.items)
                 reportItemCount(viewModel)
             }
         }
@@ -488,6 +492,29 @@ struct ActivityView: View {
             return
         }
         self.selectedItem = nil
+    }
+
+    private func applySelectionPolicy(from items: [ActivityItem]) {
+        // 默认只清掉不属于当前分类的旧详情；用户开启偏好后，才在列表稳定后选第一条。
+        guard settings.openFirstDetailOnCategoryChange else {
+            clearSelectionIfMissing(from: items)
+            return
+        }
+        if let selectedItem, items.contains(where: { $0.id == selectedItem.id }) {
+            return
+        }
+        selectedItem = items.first
+    }
+
+    private func scheduleSelectionPolicy(for category: ActivityCategory, viewModel: ActivityViewModel) {
+        // HomeView 也监听 selectedActivityCategory，并会先清空右侧旧详情。
+        // ActivityViewModel 的切分类快路径为了性能不 bump itemsRevision，所以这里延后一拍：
+        // 让父层清空动作先完成，再按用户偏好自动打开当前分类第一条。
+        Task { @MainActor in
+            await Task.yield()
+            guard selectedCategory == category, category != .weekly else { return }
+            applySelectionPolicy(from: viewModel.items)
+        }
     }
 
     private func reportItemCount(_ viewModel: ActivityViewModel) {

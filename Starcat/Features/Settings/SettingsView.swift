@@ -223,6 +223,18 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("settings.general.detailBehavior") {
+                Toggle(isOn: $settings.openFirstDetailOnCategoryChange) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.general.openFirstDetailOnCategoryChange.title")
+                        Text("settings.general.openFirstDetailOnCategoryChange.help")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
             // 2026-06-15 dong4j 需求：用户面向的语言切换。
             //
             // 设计要点：

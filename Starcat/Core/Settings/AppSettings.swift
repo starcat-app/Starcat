@@ -624,6 +624,14 @@ final class AppSettings {
         didSet { persist(key: Keys.lastActivityCategory, value: lastActivityCategoryRaw) }
     }
 
+    /// 切换列表分类后是否自动打开当前列表第一条详情。
+    ///
+    /// 默认 false：切分类只更新中栏列表，详情由用户显式点击触发，避免列表加载后继续加载详情。
+    /// Smart Collections 右栏集合浏览面板不受此偏好影响，因为 nil selection 是产品入口。
+    var openFirstDetailOnCategoryChange: Bool {
+        didSet { persistBool(key: Keys.openFirstDetailOnCategoryChange, value: openFirstDetailOnCategoryChange) }
+    }
+
     /// AI 服务商配置。API Key 不进 UserDefaults，单独走 KeychainManager 的加密文件。
     var aiProvider: AIServiceProvider {
         didSet { persist(key: Keys.aiProvider, value: aiProvider.rawValue) }
@@ -1173,6 +1181,10 @@ final class AppSettings {
         // 上次 Activity 分类：缺失则空串，由 ActivityCategory 解码时回落 all
         self.lastActivityCategoryRaw = defaults.string(forKey: Keys.lastActivityCategory) ?? ""
 
+        self.openFirstDetailOnCategoryChange = defaults.object(
+            forKey: Keys.openFirstDetailOnCategoryChange
+        ) as? Bool ?? false
+
         let aiProviderRaw = defaults.string(forKey: Keys.aiProvider)
         let resolvedAIProvider = aiProviderRaw.flatMap(AIServiceProvider.init(rawValue:)) ?? .openAICompatible
         let resolvedAIBaseURL = defaults.string(forKey: Keys.aiBaseURL) ?? resolvedAIProvider.defaultBaseURL
@@ -1500,6 +1512,7 @@ final class AppSettings {
         static let statusFilter = "settings.statusFilter"
         static let lastManageSelection = "settings.lastManageSelection"
         static let lastActivityCategory = "settings.lastActivityCategory"
+        static let openFirstDetailOnCategoryChange = "settings.detail.openFirstOnCategoryChange.v1"
         static let aiProvider = "settings.ai.provider"
         static let aiBaseURL = "settings.ai.baseURL"
         static let aiChatModel = "settings.ai.chatModel"
