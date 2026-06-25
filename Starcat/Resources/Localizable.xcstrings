@@ -26157,6 +26157,70 @@
         }
       }
     },
+    "githubStarLists.context.addTo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add to..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加到..."
+          }
+        }
+      }
+    },
+    "githubStarLists.context.moveTo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move to..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动到..."
+          }
+        }
+      }
+    },
+    "githubStarLists.context.noGroups" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No groups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无分组"
+          }
+        }
+      }
+    },
+    "githubStarLists.context.removeFromGroup" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移出分组"
+          }
+        }
+      }
+    },
     "githubStarLists.editor.delete.message" : {
       "localizations" : {
         "en" : {
@@ -26265,6 +26329,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存中..."
+          }
+        }
+      }
+    },
+    "githubStarLists.toast.failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed to update group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新分组失败"
+          }
+        }
+      }
+    },
+    "githubStarLists.toast.updated" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Group updated"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分组已更新"
           }
         }
       }

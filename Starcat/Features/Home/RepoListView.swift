@@ -930,6 +930,9 @@ struct RepoListView: View {
                     .readmePrefetch { [readmeAPI = dependencies.readmeAPI] in
                         await readmeAPI.prefetch(for: repo)
                     }
+                    .contextMenu {
+                        githubStarListContextMenu(for: repo)
+                    }
                     // R-07：滚到倒数第 3 行 → 追加下一页（Weekly 同款范式）。
                     // 用 `viewModel.items.count` 实时读，配合 hasMore 守卫天然幂等：
                     // loadMoreIfNeeded 内部 guard hasMore 防止已加载完后继续追加。
@@ -1005,6 +1008,70 @@ struct RepoListView: View {
                 Task { @MainActor in
                     viewModel.loadMoreIfNeeded()
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func githubStarListContextMenu(for repo: Repo) -> some View {
+        if selectedPage == .manage {
+            if case .githubStarList(let currentListID) = viewModel.selection {
+                Button("githubStarLists.context.removeFromGroup") {
+                    mutateGitHubStarListMembership {
+                        try await dependencies.githubStarListSyncService.removeRepo(repo, fromList: currentListID)
+                    }
+                }
+
+                Menu("githubStarLists.context.moveTo") {
+                    let targets = viewModel.githubStarLists.filter { $0.id != currentListID }
+                    if targets.isEmpty {
+                        Text("githubStarLists.context.noGroups")
+                    } else {
+                        ForEach(targets) { list in
+                            Button {
+                                mutateGitHubStarListMembership {
+                                    try await dependencies.githubStarListSyncService.moveRepo(
+                                        repo,
+                                        from: currentListID,
+                                        to: list.id
+                                    )
+                                }
+                            } label: {
+                                Text(verbatim: list.name)
+                            }
+                        }
+                    }
+                }
+            } else {
+                Menu("githubStarLists.context.addTo") {
+                    if viewModel.githubStarLists.isEmpty {
+                        Text("githubStarLists.context.noGroups")
+                    } else {
+                        ForEach(viewModel.githubStarLists) { list in
+                            Button {
+                                mutateGitHubStarListMembership {
+                                    try await dependencies.githubStarListSyncService.addRepo(repo, toList: list.id)
+                                }
+                            } label: {
+                                Text(verbatim: list.name)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func mutateGitHubStarListMembership(_ operation: @escaping () async throws -> Void) {
+        Task {
+            do {
+                try await operation()
+                await viewModel.refreshSidebar()
+                await viewModel.reloadItems(forceRefresh: true)
+                toastMessage = "githubStarLists.toast.updated"
+            } catch {
+                AppLog.network.error("GitHub star list mutation failed: \(error.localizedDescription, privacy: .public)")
+                toastMessage = "githubStarLists.toast.failed"
             }
         }
     }
