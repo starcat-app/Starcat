@@ -55,9 +55,23 @@ struct ActivityView: View {
     @Binding var selectedCategory: ActivityCategory
     @Binding var selectedItem: ActivityItem?
 
+    /// 当前分类数量回传给父视图的 navigation subtitle。
+    private let onItemCountChange: (Int) -> Void
+
     @State private var viewModel: ActivityViewModel?
+    @State private var weeklyTotalPrefetchTask: Task<Void, Never>?
     @State private var showClearFollowingConfirmation = false
     @State private var showClearAnnouncementConfirmation = false
+
+    init(
+        selectedCategory: Binding<ActivityCategory>,
+        selectedItem: Binding<ActivityItem?>,
+        onItemCountChange: @escaping (Int) -> Void = { _ in }
+    ) {
+        _selectedCategory = selectedCategory
+        _selectedItem = selectedItem
+        self.onItemCountChange = onItemCountChange
+    }
 
     var body: some View {
         Group {
@@ -73,19 +87,31 @@ struct ActivityView: View {
             }
         }
         .task {
+            if selectedCategory != .weekly {
+                prefetchWeeklyTotalIfNeeded()
+            }
             // 首次进入 Activity：全量 ensureLoaded。weekly 由 WeeklyContentView 自己加载。
-            guard selectedCategory != .weekly else { return }
+            guard selectedCategory != .weekly else {
+                onItemCountChange(0)
+                return
+            }
             let model = ensureViewModel()
             await model.ensureLoaded(category: selectedCategory)
             restoreSelection(from: model.items)
+            reportItemCount(model)
         }
         .onChange(of: selectedCategory) { _, newCategory in
-            guard newCategory != .weekly else { return }
+            guard newCategory != .weekly else {
+                onItemCountChange(0)
+                return
+            }
             if viewModel == nil {
                 let model = ensureViewModel()
+                prefetchWeeklyTotalIfNeeded()
                 Task {
                     await model.ensureLoaded(category: newCategory)
                     restoreSelection(from: model.items)
+                    reportItemCount(model)
                 }
                 return
             }
@@ -94,14 +120,22 @@ struct ActivityView: View {
                 Task {
                     await viewModel.ensureLoaded(category: newCategory)
                     restoreSelection(from: viewModel.items)
+                    reportItemCount(viewModel)
                 }
                 return
             }
             viewModel.selectCategory(newCategory)
+            prefetchWeeklyTotalIfNeeded()
+            reportItemCount(viewModel)
             // 延后一帧再改 selection，避免与中栏 List diff 同帧抢主线程。
             DispatchQueue.main.async {
                 restoreSelection(from: viewModel.items)
+                reportItemCount(viewModel)
             }
+        }
+        .onChange(of: dependencies.weeklySelectionService.total) { _, total in
+            guard let total else { return }
+            dependencies.activityCategoryCountService.applyWeeklyTotal(total)
         }
     }
 
@@ -138,6 +172,7 @@ struct ActivityView: View {
                 Task {
                     await viewModel.clearFollowingFeed()
                     restoreSelection(from: viewModel.items)
+                    reportItemCount(viewModel)
                 }
             }
         } message: {
@@ -152,10 +187,17 @@ struct ActivityView: View {
                 Task {
                     await viewModel.clearAnnouncementFeed()
                     restoreSelection(from: viewModel.items)
+                    reportItemCount(viewModel)
                 }
             }
         } message: {
             Text("activity.announcement.clear.message")
+        }
+        .onAppear {
+            reportItemCount(viewModel)
+        }
+        .onChange(of: viewModel.filteredItemTotalCount) { _, count in
+            onItemCountChange(count)
         }
     }
 
@@ -342,6 +384,7 @@ struct ActivityView: View {
             Task {
                 await viewModel.refresh(category: selectedCategory)
                 restoreSelection(from: viewModel.items)
+                reportItemCount(viewModel)
             }
         }
     }
@@ -400,10 +443,46 @@ struct ActivityView: View {
             activitySyncStateRepository: dependencies.activitySyncStateRepository,
             apiClient: dependencies.apiClient,
             blogRSSClient: dependencies.blogRSSClient,
-            currentLoginProvider: { [weak session] in session?.state.user?.login }
+            currentLoginProvider: { [weak session] in session?.state.user?.login },
+            categoryCountService: dependencies.activityCategoryCountService
         )
         viewModel = model
         return model
+    }
+
+    private func prefetchWeeklyTotalIfNeeded() {
+        let selectionService = dependencies.weeklySelectionService
+        let countService = dependencies.activityCategoryCountService
+        if let existingTotal = selectionService.total {
+            countService.applyWeeklyTotal(existingTotal)
+            return
+        }
+        guard weeklyTotalPrefetchTask == nil else { return }
+        countService.beginWeeklyTotalLoad()
+        let bulkRepository = dependencies.weeklyBulkRepository
+        let api = dependencies.weeklyAPI
+        weeklyTotalPrefetchTask = Task { @MainActor in
+            defer { weeklyTotalPrefetchTask = nil }
+            if let existingTotal = selectionService.total {
+                countService.applyWeeklyTotal(existingTotal)
+                return
+            }
+            if let cachedTotal = await bulkRepository.cachedTotal() {
+                selectionService.applyTotal(cachedTotal)
+                countService.applyWeeklyTotal(cachedTotal)
+                return
+            }
+            do {
+                let result = try await api.fetchRepos(query: WeeklyFeedQuery(page: 1, pageSize: 1))
+                selectionService.applyTotal(result.total)
+                countService.applyWeeklyTotal(result.total)
+            } catch {
+                countService.finishWeeklyTotalLoadWithoutValue()
+                AppLog.network.warning(
+                    "Weekly total prefetch failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
     }
 
     private func restoreSelection(from items: [ActivityItem]) {
@@ -411,6 +490,10 @@ struct ActivityView: View {
             return
         }
         selectedItem = items.first
+    }
+
+    private func reportItemCount(_ viewModel: ActivityViewModel) {
+        onItemCountChange(viewModel.filteredItemTotalCount)
     }
 
     private func relativeDate(_ date: Date) -> String {

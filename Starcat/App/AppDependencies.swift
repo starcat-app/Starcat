@@ -145,6 +145,9 @@ final class AppDependencies {
     /// 详见 `WeeklySelectionService` 文件头注释。
     let weeklySelectionService: WeeklySelectionService
 
+    /// Activity 本地分类计数：只复用 ActivityViewModel 已加载的内存快照，不触发额外 IO。
+    let activityCategoryCountService: ActivityCategoryCountService
+
     /// Sidebar 装饰动画与 Activity 切分类的协调（仅头像 tint；草坪不参与）。
     let sidebarAnimationCoordinator: SidebarAnimationCoordinator
 
@@ -620,6 +623,7 @@ final class AppDependencies {
 
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
+        self.activityCategoryCountService = ActivityCategoryCountService()
         self.sidebarAnimationCoordinator = SidebarAnimationCoordinator()
         self.weeklyLanguageStore = WeeklyLanguageStore(api: weeklyAPIInstance)
 

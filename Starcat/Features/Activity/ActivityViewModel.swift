@@ -133,6 +133,8 @@ final class ActivityViewModel {
     private(set) var isApplyingCategoryFilter = false
     /// 当前分类是否还有未上屏的 filtered 行（滚到底加载更多）。
     private(set) var hasMoreItems: Bool = false
+    /// 当前分类 filter + sort 后的完整数量；`items.count` 只是已分页上屏的数量，不能用于标题计数。
+    var filteredItemTotalCount: Int { filteredItems.count }
     /// 当前已经有可见列表内容。View 层用它区分“后台过滤中但已有首屏”与“真的空白加载中”。
     ///
     /// 约束：不要让 `isApplyingCategoryFilter` 在已有 prime 首屏时重新切回骨架屏，否则
@@ -233,6 +235,9 @@ final class ActivityViewModel {
     /// PR-2 新增：当前登录用户 login 提供者（注入闭包不直接持 AuthSession，
     /// 单测注入 stub `{ "octocat" }` 即可，与 `StarActionService.userIDProvider` 同款）。
     private let currentLoginProvider: @MainActor () -> String?
+    /// Sidebar 分类计数共享状态。它只接收本 ViewModel 已经发布的 `allItems` 统计结果，
+    /// 不参与加载决策，避免侧边栏徽章触发额外 DB / 网络工作。
+    private let categoryCountService: ActivityCategoryCountService?
 
     /// 当前 in-flight 的 reload 任务（切分类 / 重复刷新时取消老任务）。
     private var currentReloadTask: Task<Void, Never>?
@@ -248,7 +253,8 @@ final class ActivityViewModel {
         activitySyncStateRepository: any ActivitySyncStateRepositoryProtocol,
         apiClient: any GitHubAPIClientProtocol,
         blogRSSClient: any GitHubBlogRSSAPIProtocol,
-        currentLoginProvider: @escaping @MainActor () -> String?
+        currentLoginProvider: @escaping @MainActor () -> String?,
+        categoryCountService: ActivityCategoryCountService? = nil
     ) {
         self.repoRepository = repoRepository
         self.releaseRepository = releaseRepository
@@ -259,6 +265,7 @@ final class ActivityViewModel {
         self.apiClient = apiClient
         self.blogRSSClient = blogRSSClient
         self.currentLoginProvider = currentLoginProvider
+        self.categoryCountService = categoryCountService
     }
 
     // MARK: - Public Actions
@@ -339,6 +346,7 @@ final class ActivityViewModel {
         } else {
             allItems.removeAll { $0.kind == .following }
             filteredItemsCache.removeAll()
+            publishCategoryCounts(from: allItems)
             applyCategoryFilter(currentCategory, bumpRevision: true)
         }
         loadError = nil
@@ -364,6 +372,7 @@ final class ActivityViewModel {
         } else {
             allItems.removeAll { $0.kind == .announcement }
             filteredItemsCache.removeAll()
+            publishCategoryCounts(from: allItems)
             applyCategoryFilter(currentCategory, bumpRevision: true)
         }
         loadError = nil
@@ -846,6 +855,7 @@ final class ActivityViewModel {
         }
         isAggregateLoaded = true
         filteredItemsCache.removeAll()
+        publishCategoryCounts(from: source)
         categoryFilterTask?.cancel()
         isApplyingCategoryFilter = false
 
@@ -881,6 +891,27 @@ final class ActivityViewModel {
             return
         }
         publishItems(from: source, snapshot: snapshot)
+    }
+
+    /// 供 sidebar 使用的分类计数：复用已发布的 `allItems`，不额外加载任何分类。
+    ///
+    /// `.all` 必须沿用列表自身的去重口径，否则左侧“全部分类”数字会比中栏实际
+    /// 可见总数偏大；其它本地分类直接按 `item.category` 计数。
+    nonisolated static func categoryCounts(from source: [ActivityItem]) -> [ActivityCategory: Int] {
+        var counts = Dictionary(
+            uniqueKeysWithValues: ActivityCategory.allCases
+                .filter { $0 != .weekly }
+                .map { ($0, 0) }
+        )
+        for item in source {
+            counts[item.category, default: 0] += 1
+        }
+        counts[.all] = deduplicateForAllView(source).count
+        return counts
+    }
+
+    private func publishCategoryCounts(from source: [ActivityItem]) {
+        categoryCountService?.applyLocalCounts(Self.categoryCounts(from: source))
     }
 
     private nonisolated static func publishFingerprint(for item: ActivityItem) -> String {

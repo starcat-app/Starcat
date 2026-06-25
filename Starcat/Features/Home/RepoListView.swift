@@ -26,6 +26,9 @@ private struct SmartCollectionRuleEditorItem: Identifiable {
 
 struct RepoListView: View {
 
+    private static let navigationBreadcrumbSeparator = " › "
+    private static let navigationBreadcrumbSegmentLimit = 24
+
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(AppSettings.self) private var settings
     /// HOM-52：批量 AI 整理入口横幅需要查询队列状态。
@@ -73,6 +76,9 @@ struct RepoListView: View {
     @State private var ruleEditorSheetItem: SmartCollectionRuleEditorItem?
     /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
     @State private var lastSyncedAt: Date?
+    /// Trending / Activity 的计数来自各自子视图内部筛选结果，父视图只负责把它显示到导航副标题。
+    @State private var trendingRepoCount = 0
+    @State private var activityItemCount = 0
 
     var body: some View {
         @Bindable var vm = viewModel
@@ -617,7 +623,8 @@ struct RepoListView: View {
                         githubAPIClient: githubAPIClient,
                         selectedLanguage: $selectedTrendingLanguage,
                         selectedRepoID: $selectedTrendingRepoID,
-                        selectedTrendingRepo: $selectedTrendingRepo
+                        selectedTrendingRepo: $selectedTrendingRepo,
+                        onRepoCountChange: { trendingRepoCount = $0 }
                     )
                 } else {
                     emptyState(systemImage: "chart.line.uptrend.xyaxis", title: "empty.trendingUnavailable", subtitle: "empty.trendingComingSoon")
@@ -625,7 +632,8 @@ struct RepoListView: View {
             } else if selectedPage == .activity {
                 ActivityView(
                     selectedCategory: $selectedActivityCategory,
-                    selectedItem: $selectedActivityItem
+                    selectedItem: $selectedActivityItem,
+                    onItemCountChange: { activityItemCount = $0 }
                 )
             } else {
                 // Manage：顶栏（排序 + 同步）始终可见，排序作用于当前侧边栏分类子集。
@@ -1007,10 +1015,10 @@ struct RepoListView: View {
 
     private var navigationSubtitle: String {
         if selectedPage == .trending {
-            return selectedTrendingLanguage.localizedDisplayName
+            return repoCountSubtitle(trendingRepoCount)
         }
         if selectedPage == .activity {
-            return selectedActivityCategory.localizedTitle
+            return activityNavigationSubtitle
         }
         // Smart Collections 总览：副标题是集合数量（与 sidebar 计数一致），不是仓库数。
         if case .smartCollectionsHome = viewModel.selection {
@@ -1019,39 +1027,31 @@ struct RepoListView: View {
                 smartCollectionsTotalCount
             )
         }
-        // W12 PR-5：多选数从 manageMultiSelectionStore 派生（替代原 viewModel.multiSelectedRepoIDs）。
         // **R-07.2 修订**：DB 分页模式下 filteredSorted 只镜像已加载前缀，标题数量
         // 必须读 ViewModel 的真实查询总数，避免 1800+ 仓库首屏只显示 20。
-        let manageStore = dependencies.manageMultiSelectionStore
-        let visibleTotal = viewModel.visibleRepoTotalCount
-        if manageStore.isActive {
-            return String(
-                format: String.l10n("list.selectedCountFormat"),
-                manageStore.count,
-                visibleTotal
-            )
+        return repoCountSubtitle(viewModel.visibleRepoTotalCount)
+    }
+
+    private var activityNavigationSubtitle: String {
+        let count: Int
+        if selectedActivityCategory == .weekly {
+            count = dependencies.weeklySelectionService.total ?? 0
+        } else {
+            count = activityItemCount
         }
-        if viewModel.isRefreshing {
-            if viewModel.isSemanticSearching {
-                return String(
-                    format: String.l10n("search.semantic.refreshingFormat"),
-                    visibleTotal
-                )
-            }
-            return String(
-                format: String.l10n("list.refreshingFormat"),
-                visibleTotal
-            )
-        }
-        if viewModel.isSemanticSearching {
-            return String(
-                format: String.l10n("search.semantic.resultCountFormat"),
-                visibleTotal
-            )
+        if selectedActivityCategory.usesRepositoryCountSubtitle {
+            return repoCountSubtitle(count)
         }
         return String(
+            format: String.l10n("activity.itemCountFormat"),
+            count
+        )
+    }
+
+    private func repoCountSubtitle(_ count: Int) -> String {
+        String(
             format: String.l10n("list.repoCountFormat"),
-            visibleTotal
+            count
         )
     }
 
@@ -1064,15 +1064,34 @@ struct RepoListView: View {
 
     private var navigationTitle: String {
         if selectedPage == .trending {
-            return String.l10n("trending.title")
+            return breadcrumbTitle(
+                root: String.l10n("trending.title"),
+                leaf: selectedTrendingLanguage.localizedDisplayName
+            )
         }
         if selectedPage == .activity {
-            return String.l10n("activity.title")
+            return breadcrumbTitle(
+                root: String.l10n("activity.title"),
+                leaf: selectedActivityCategory.localizedTitle
+            )
         }
-        if viewModel.isSearching {
-            return String(format: String.l10n("search.searching"), truncatedSearchQueryForTitle)
-        }
-        return localizedTitle(for: viewModel.selection)
+        let leaf = viewModel.isSearching
+            ? String(format: String.l10n("search.searching"), truncatedSearchQueryForTitle)
+            : localizedTitle(for: viewModel.selection)
+        return breadcrumbTitle(root: String.l10n("nav.manage"), leaf: leaf)
+    }
+
+    /// macOS 原生 navigation title 不能套自定义 breadcrumb view，这里用稳定的纯文本面包屑。
+    private func breadcrumbTitle(root: String, leaf: String) -> String {
+        let normalizedLeaf = leaf.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedLeaf.isEmpty, normalizedLeaf != root else { return root }
+        return "\(root)\(Self.navigationBreadcrumbSeparator)\(truncatedBreadcrumbSegment(normalizedLeaf))"
+    }
+
+    /// 同搜索标题一样先在字符串层截断，避免长标签 / 智能集合名撑开系统标题栏。
+    private func truncatedBreadcrumbSegment(_ raw: String) -> String {
+        let limit = Self.navigationBreadcrumbSegmentLimit
+        return raw.count > limit ? "\(raw.prefix(limit))…" : raw
     }
 
     /// 给 `.navigationTitle` 用的搜索词截断版本。

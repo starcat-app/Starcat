@@ -35,6 +35,11 @@ import GRDB
 
 /// WeeklyBulkRepository 协议。便于测试时注入 Mock。
 protocol WeeklyBulkRepositoryProtocol: Sendable {
+    /// 只读取本地 bulk meta 里的 total，不加载 repos / languages。
+    ///
+    /// Sidebar 只需要周刊总数时走这个轻路径，避免为了一个数字把本地 bulk 明细全读出来。
+    func cachedTotal() async -> Int?
+
     /// 纯读本地缓存，不发网络。
     ///
     /// 返回结构与 `WeeklyAPI.fetchBulkRepos` 等价；缓存为空时返回 `nil`。
@@ -87,6 +92,20 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
     }
 
     // MARK: - SWR
+
+    func cachedTotal() async -> Int? {
+        do {
+            let meta = try await database.writer.read { db in
+                try WeeklyBulkMetaRecord
+                    .filter(Column("id") == WeeklyBulkMetaRecord.singletonID)
+                    .fetchOne(db)
+            }
+            return meta?.total
+        } catch {
+            AppLog.network.warning("WeeklyBulk cachedTotal read failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
 
     func cachedBulk() async -> WeeklyBulkCachedSnapshot? {
         do {

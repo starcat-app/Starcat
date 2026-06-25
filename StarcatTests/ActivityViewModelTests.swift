@@ -48,6 +48,7 @@ struct ActivityViewModelTests {
         let eventRepo: GRDBActivityEventRepository
         let announcementRepo: GRDBActivityAnnouncementRepository
         let syncStateRepo: GRDBActivitySyncStateRepository
+        let countService: ActivityCategoryCountService
         let pollCounter: PollCounter
 
         init(login: String? = "octocat") throws {
@@ -57,6 +58,7 @@ struct ActivityViewModelTests {
             let er = GRDBActivityEventRepository(database: db)
             let ar = GRDBActivityAnnouncementRepository(database: db)
             let sr = GRDBActivitySyncStateRepository(database: db)
+            let cs = ActivityCategoryCountService()
             let counter = PollCounter()
 
             self.mockClient = mock
@@ -64,6 +66,7 @@ struct ActivityViewModelTests {
             self.eventRepo = er
             self.announcementRepo = ar
             self.syncStateRepo = sr
+            self.countService = cs
             self.pollCounter = counter
 
             // PR-3：默认 events 返回空数组，避免未设 handler 的测试 fatalError。
@@ -86,7 +89,8 @@ struct ActivityViewModelTests {
                 activitySyncStateRepository: sr,
                 apiClient: mock,
                 blogRSSClient: mockBlog,
-                currentLoginProvider: { @MainActor in login }
+                currentLoginProvider: { @MainActor in login },
+                categoryCountService: cs
             )
         }
     }
@@ -152,6 +156,52 @@ struct ActivityViewModelTests {
         #expect(h.viewModel.isLoading == false)
         #expect(h.viewModel.isRefreshing == false)
         #expect(h.mockClient.receivedEventsCalls.count == 1)
+    }
+
+    @Test("load 发布 allItems 后回写 Activity sidebar 分类计数")
+    func loadPublishesSidebarCategoryCounts() async throws {
+        let h = try Harness()
+        h.mockClient.receivedEventsHandler = { _, _, _ in
+            self.makeAPIResponse([
+                self.makeEventDTO(id: "ev-count", type: "WatchEvent"),
+            ])
+        }
+
+        await h.viewModel.load(category: .following)
+
+        #expect(h.countService.count(for: .following) == 1)
+        #expect(h.countService.count(for: .announcement) == 1)
+        #expect(h.countService.count(for: .all) == 2)
+        #expect(h.countService.count(for: .star) == 0)
+        #expect(h.countService.count(for: .weekly) == nil)
+    }
+
+    @Test("ActivityCategoryCountService: weekly 与本地分类同批对 Sidebar 可见")
+    func categoryCountServicePublishesWeeklyAndLocalCountsTogether() async throws {
+        let service = ActivityCategoryCountService()
+
+        service.beginWeeklyTotalLoad()
+        service.applyLocalCounts([.all: 2, .following: 1, .announcement: 1])
+        #expect(service.count(for: .all) == nil)
+        #expect(service.count(for: .weekly) == nil)
+
+        service.applyWeeklyTotal(2_984)
+        #expect(service.count(for: .all) == 2)
+        #expect(service.count(for: .following) == 1)
+        #expect(service.count(for: .weekly) == 2_984)
+    }
+
+    @Test("ActivityCategoryCountService: weekly 失败时放开本地分类显示")
+    func categoryCountServiceReleasesLocalCountsWhenWeeklyTotalFails() async throws {
+        let service = ActivityCategoryCountService()
+
+        service.beginWeeklyTotalLoad()
+        service.applyLocalCounts([.all: 2, .following: 1, .announcement: 1])
+        service.finishWeeklyTotalLoadWithoutValue()
+
+        #expect(service.count(for: .all) == 2)
+        #expect(service.count(for: .following) == 1)
+        #expect(service.count(for: .weekly) == nil)
     }
 
     // MARK: - SWR：TTL 内不走网络

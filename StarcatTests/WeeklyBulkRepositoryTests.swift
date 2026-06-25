@@ -6,6 +6,7 @@
 //
 //  覆盖：
 //  - cachedBulk 空表 → 返回 nil
+//  - cachedTotal 只读 meta → 返回 total，不展开 repos/languages
 //  - fetchBulk 网络成功 → 写入 DB，cachedBulk 后续命中（含 languages / meta）
 //  - fetchBulk 整批替换：第二次拉到不同数据，旧行被全部清掉
 //  - 网络失败 + 缓存非空 → fallback 返回缓存（不抛错）
@@ -150,6 +151,17 @@ struct WeeklyBulkRepositoryTests {
         #expect(cached == nil)
     }
 
+    @Test("cachedTotal: 空表返回 nil")
+    func cachedTotalEmpty() async throws {
+        URLProtocolStub.reset()
+        let db = try InMemoryDatabaseManager()
+        let api = WeeklyAPI(baseURL: URL(string: "https://weekly.test.invalid")!)
+        let repo = WeeklyBulkRepository(api: api, database: db)
+
+        let total = await repo.cachedTotal()
+        #expect(total == nil)
+    }
+
     @Test("lastRefreshedAt: 空表返回 nil")
     func lastRefreshedAtEmpty() async throws {
         URLProtocolStub.reset()
@@ -197,6 +209,8 @@ struct WeeklyBulkRepositoryTests {
         // owner/b 的 latest_event_at 更晚 → 排在前面（cachedBulk 按 latest_event_at DESC 出）
         #expect(cached.items.first?.fullName == "owner/b")
         #expect(cached.items.last?.fullName == "owner/a")
+        // Sidebar 预取周刊数量只需要 meta.total，不应该依赖 cachedBulk 读全量明细。
+        #expect(await repo.cachedTotal() == 2)
     }
 
     @Test("fetchBulk 整批替换：第二次拉新数据，旧行被全部清掉")

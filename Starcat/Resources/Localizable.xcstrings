@@ -1957,6 +1957,22 @@
         }
       }
     },
+    "activity.itemCountFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d activities"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 条活动"
+          }
+        }
+      }
+    },
     "activity.following.clear.action" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10621,7 +10637,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "管理"
+            "value" : "星标"
           }
         }
       }

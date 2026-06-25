@@ -28,8 +28,9 @@ struct SidebarView: View {
     /// HOM-126：自动整理调度器。Sidebar 底部观察 `isAutoTidyRunning` 决定是否
     /// 显示「AI 自动整理中 N/M」轻量行；点击 / hover 可查看 popover 详情。
     @Environment(AutoTidyScheduler.self) private var autoTidyScheduler
-    /// MUL-176 followup：周刊分类计数徽章数据源。
-    /// 仅在 Activity 选中 .weekly 时使用，其余路径完全不读，开销可忽略。
+    /// Activity 分类计数徽章数据源。
+    /// `.weekly` 读远端分页 total；其它本地分类读 ActivityViewModel 已发布的内存统计，
+    /// 不在 sidebar 里主动触发任何加载。
     @Environment(AppDependencies.self) private var dependencies
 
     /// 当前打开/收起 Languages 组的状态。
@@ -505,29 +506,7 @@ struct SidebarView: View {
     @ViewBuilder
     private func activityCategoryRow(_ category: ActivityCategory) -> some View {
         Label {
-            // MUL-176 followup：周刊分类右侧带计数徽章（仿 Trending Languages 同款样式）。
-            // 计数来自 `WeeklySelectionService.total`，由 `WeeklyContentViewModel`
-            // 拉取分页结果时回写。total 为 nil 时（首次进入还没拉过）只显示分类名，
-            // 不预占位、不显示 0，避免新用户首屏看到 "0 项" 误以为列表为空。
-            if category == .weekly, let total = dependencies.weeklySelectionService.total, total > 0 {
-                HStack {
-                    Text(category.titleKey)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    HStack(spacing: 4) {
-                        Spacer(minLength: 0)
-                        Text(total.formatted())
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                            .lineLimit(1)
-                    }
-                    .frame(width: Self.trailingFixedWidth, alignment: .trailing)
-                }
-            } else {
-                Text(category.titleKey)
-                    .lineLimit(1)
-            }
+            activityCategoryLabel(category)
         } icon: {
             // 分类色点：故意不复用 LanguageIconView，因为后者会优先匹配 Devicon SVG，
             // 渲染出 Swift / JS / Go 这类语言 logo，与"分类"语义冲突。
@@ -537,6 +516,34 @@ struct SidebarView: View {
                 .frame(width: 14, height: 14)
         }
         .tag(category)
+    }
+
+    @ViewBuilder
+    private func activityCategoryLabel(_ category: ActivityCategory) -> some View {
+        if let count = activityCategoryCount(for: category) {
+            HStack {
+                Text(category.titleKey)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                HStack(spacing: 4) {
+                    Spacer(minLength: 0)
+                    Text(count.formatted())
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+                .frame(width: Self.trailingFixedWidth, alignment: .trailing)
+            }
+        } else {
+            Text(category.titleKey)
+                .lineLimit(1)
+        }
+    }
+
+    /// Activity 行右侧数量。nil 表示对应数据源尚未加载，sidebar 保持空白。
+    private func activityCategoryCount(for category: ActivityCategory) -> Int? {
+        return dependencies.activityCategoryCountService.count(for: category)
     }
 
     /// 头像 / 统计数据下方的三入口切换。

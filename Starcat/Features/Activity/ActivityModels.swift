@@ -134,6 +134,19 @@ extension ActivityCategory {
     var showsActivityFilterBar: Bool {
         self != .weekly
     }
+
+    /// 导航副标题的数量单位。
+    ///
+    /// Activity 里并非所有分类都等价于“仓库”：公告 / 关注是 feed item，
+    /// 全部分类也会混入公告、release 等活动项；只有纯仓库型分类用 repo count 文案。
+    var usesRepositoryCountSubtitle: Bool {
+        switch self {
+        case .star, .repository, .suggestion, .weekly:
+            return true
+        case .all, .announcement, .release, .following:
+            return false
+        }
+    }
 }
 
 /// Activity 卡片类型。

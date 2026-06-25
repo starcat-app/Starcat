@@ -52,12 +52,16 @@ struct TrendingView: View {
     /// 当前选中的 Trending repo 完整数据（用于右侧详情页元信息展示）。
     @Binding private var selectedTrendingRepo: TrendingRepo?
 
+    /// 当前榜单数量上报给父视图，用于 macOS navigation subtitle。
+    private let onRepoCountChange: (Int) -> Void
+
     init(
         repository: any TrendingRepositoryProtocol,
         githubAPIClient: any GitHubAPIClientProtocol,
         selectedLanguage: Binding<TrendingLanguage>,
         selectedRepoID: Binding<String?> = .constant(nil),
-        selectedTrendingRepo: Binding<TrendingRepo?> = .constant(nil)
+        selectedTrendingRepo: Binding<TrendingRepo?> = .constant(nil),
+        onRepoCountChange: @escaping (Int) -> Void = { _ in }
     ) {
         _viewModel = State(initialValue: TrendingViewModel(
             repository: repository,
@@ -66,6 +70,7 @@ struct TrendingView: View {
         _selectedLanguage = selectedLanguage
         _selectedRepoID = selectedRepoID
         _selectedTrendingRepo = selectedTrendingRepo
+        self.onRepoCountChange = onRepoCountChange
     }
 
     var body: some View {
@@ -82,6 +87,7 @@ struct TrendingView: View {
                 .animation(contentAnimation, value: contentAnimationID)
         }
         .task {
+            reportRepoCount()
             viewModel.updateLanguagePreferences(from: homeViewModel.languageStats)
             if viewModel.selectedLanguage != selectedLanguage {
                 viewModel.selectedLanguage = selectedLanguage
@@ -98,6 +104,7 @@ struct TrendingView: View {
             //   - 缓存空 → 必拉
             // 用户主动按刷新按钮 / pull-to-refresh / 错误重试时改用 `.forceNetwork` 绕过 TTL
             await viewModel.reload(cachePolicy: .respectTTL)
+            reportRepoCount()
         }
         .onChange(of: homeViewModel.languageStats) { _, stats in
             viewModel.updateLanguagePreferences(from: stats)
@@ -122,7 +129,14 @@ struct TrendingView: View {
                 selectedTrendingRepo = nil
             }
         }
+        .onChange(of: viewModel.repos.count) { _, count in
+            onRepoCountChange(count)
+        }
         .environment(\.trendingViewModel, viewModel)
+    }
+
+    private func reportRepoCount() {
+        onRepoCountChange(viewModel.repos.count)
     }
 
     // MARK: - Toolbar
@@ -198,6 +212,7 @@ struct TrendingView: View {
         ) {
             Task {
                 await viewModel.reload(cachePolicy: .forceNetwork)
+                reportRepoCount()
             }
         }
     }
@@ -377,6 +392,7 @@ struct TrendingView: View {
         .refreshable {
             // Pull-to-refresh = 用户主动要新数据，绕过 24h TTL（R-06.1）
             await viewModel.reload(cachePolicy: .forceNetwork)
+            reportRepoCount()
         }
         .task(id: viewModel.reposRevision) {
             await dependencies.openSSFScoreStore.loadCachedScores(for: viewModel.repos.map(\.ghRepoId))
