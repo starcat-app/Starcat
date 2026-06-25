@@ -37,6 +37,7 @@ extension View {
             .environment(dependencies.entitlementGate)
             .environment(dependencies.contributionService)
             .environment(dependencies.userProfileService)
+            .environment(dependencies.developerLanguageService)
             .environment(dependencies.autoTidyScheduler)
 
         if let homeViewModel {
@@ -57,6 +58,7 @@ extension View {
             .environment(dependencies)
             .environment(dependencies.authSession)
             .environment(dependencies.subscriptionManager)
+            .environment(dependencies.developerLanguageService)
             .appLocaleEnvironment()
     }
 }

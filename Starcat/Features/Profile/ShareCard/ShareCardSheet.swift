@@ -36,6 +36,9 @@ struct ShareCardSheet: View {
     /// 贡献草坪 payload（可能为 nil；nil 时分享卡显示空网格但仍可分享）。
     let contribution: ContributionCalendarPayload?
 
+    /// 用户自己公开仓库的开发语言快照。nil 时卡片显示加载/空态，不再误用 starred 语言分布。
+    let developerLanguages: DeveloperLanguageSnapshot?
+
     /// 当前用户是否为 Pro 用户。Pro 用户头像显示 Pro 标识。
     let isProUser: Bool
 
@@ -92,6 +95,9 @@ struct ShareCardSheet: View {
     /// 行动按钮 hover 反馈的动画时长（秒）。reduceMotion 模式下归零。
     /// 抽出来是为了三个按钮的 hover 动画时长保持一致。
     @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    /// 分享卡 Top Languages 的开发语言服务。sheet 打开时触发一次 TTL 加载，导出时读取最新快照。
+    @Environment(DeveloperLanguageService.self) private var developerLanguageService
 
     var body: some View {
         VStack(spacing: 0) {
@@ -166,6 +172,7 @@ struct ShareCardSheet: View {
             // 拿到新数据后通过 acceptRefreshedUser 回写 AuthSession.state，
             // 调用方 SidebarHeaderView.onChange(of: authSession.state) 会重建 sheet 透传新的 user。
             userProfileService.load(login: user.login, force: true)
+            developerLanguageService.load(login: user.login)
         }
         // 2026-06-16 i18n root cause #4：SwiftUI sheet 在 macOS 上 **不会**自动从父
         // scene 继承 `\.locale` environment(实测分享卡 sheet 子树查到的 locale 是
@@ -371,35 +378,44 @@ struct ShareCardSheet: View {
                         miniSquare
                     }
                 }
-            case .poster:
+            case .social:
                 VStack(spacing: 3) {
                     miniCircle
-                    miniLine(width: 18)
+                    HStack(spacing: 2) {
+                        miniSquare
+                        miniSquare
+                        miniSquare
+                    }
                     miniLine(width: 24)
-                }
-            case .dashboard:
-                VStack(spacing: 3) {
-                    HStack(spacing: 3) {
-                        miniSquare
-                        miniSquare
-                        miniSquare
-                    }
-                    miniGrid
-                }
-            case .pass:
-                HStack(spacing: 3) {
-                    miniTallBlock
-                    VStack(spacing: 3) {
-                        miniLine(width: 14)
-                        miniLine(width: 18)
-                        miniLine(width: 12)
-                    }
                 }
             case .terminal:
                 VStack(alignment: .leading, spacing: 3) {
                     miniLine(width: 20)
                     miniLine(width: 14)
                     miniLine(width: 23)
+                }
+            case .adventure:
+                ZStack(alignment: .bottomLeading) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.orange.opacity(0.18))
+                    VStack(alignment: .leading, spacing: 2) {
+                        miniCircle
+                        miniLine(width: 18)
+                        miniGrid
+                    }
+                }
+            case .spotlight:
+                VStack(spacing: 3) {
+                    HStack(spacing: 3) {
+                        miniCircle
+                        miniLine(width: 16)
+                    }
+                    HStack(spacing: 3) {
+                        miniSquare
+                        miniSquare
+                        miniSquare
+                    }
+                    miniGrid
                 }
             }
         }
@@ -497,6 +513,7 @@ struct ShareCardSheet: View {
             user: user,
             starredCount: starredCount,
             contribution: contribution,
+            developerLanguages: developerLanguageService.snapshot ?? developerLanguages,
             style: selectedStyle,
             colorSet: selectedColor,
             isProUser: isProUser
@@ -896,6 +913,7 @@ struct ShareCardSheet: View {
             user: user,
             starredCount: starredCount,
             contribution: contribution,
+            developerLanguages: developerLanguageService.snapshot ?? developerLanguages,
             style: selectedStyle,
             colorSet: selectedColor,
             isProUser: isProUser
@@ -935,6 +953,7 @@ struct ShareCardSheet: View {
         user: mockUser,
         starredCount: 4823,
         contribution: nil,
+        developerLanguages: nil,
         isProUser: false,
         onClose: {}
     )

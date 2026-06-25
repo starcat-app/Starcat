@@ -90,6 +90,13 @@ final class AuthSession {
     /// 装配末尾回填 `session.contributionService = contributionService`。
     var contributionService: ContributionService?
 
+    /// 分享卡开发语言服务联动：登录 / 恢复成功后后台预热，登出 / 401 时清缓存。
+    ///
+    /// 这份数据统计“用户自己拥有的公开仓库语言”，不同于 HomeViewModel 的 starred 语言分布。
+    /// 挂在 AuthSession 上的原因与 ContributionService 相同：账号切换时必须同步 reset，
+    /// 否则 B 登录后分享卡可能短暂显示 A 的语言画像。
+    var developerLanguageService: DeveloperLanguageService?
+
     /// R-01（2026-06-09）：登出 / 会话失效时的回调。
     ///
     /// 注入方：`AppDependencies` 用此 hook 让 `StarredRegistryBootstrapper.clearOnSignOut()`
@@ -187,6 +194,8 @@ final class AuthSession {
             self.state = .authenticated(user: user)
             // ② 用真实数据覆盖 prime 出来的快照，并让 service 写盘
             userProfileService?.acceptFromAuth(user)
+            contributionService?.load(login: user.login)
+            developerLanguageService?.load(login: user.login)
             AppLog.auth.info("restore: success login=\(user.login, privacy: .public)")
         } catch NetworkError.unauthorized {
             AppLog.auth.warning("restore: token invalid (401); clearing")
@@ -198,6 +207,7 @@ final class AuthSession {
             // 启动期 401 极少能命中(此时 ContributionService 多半还没 load 过、payload/lastFetchedAt 都是 nil),
             // 但保持与 signOut / invalidateSession 三处对称,任何"token 失效"路径都同款清理,语义更可靠。
             contributionService?.reset(login: staleLogin)
+            developerLanguageService?.reset(login: staleLogin)
             // 多账号 DB 隔离：token 失效 = 进入未登录态，DB 切到 _anonymous
             await onUserSessionChanged?(nil)
             self.state = .unauthenticated
@@ -256,6 +266,8 @@ final class AuthSession {
             self.state = .authenticated(user: user)
             // 让 UserProfileService 持久化这次 user，下次启动可以秒显
             userProfileService?.acceptFromAuth(user)
+            contributionService?.load(login: user.login)
+            developerLanguageService?.load(login: user.login)
             AppLog.auth.info("Sign-in complete: login=\(user.login, privacy: .public)")
         } catch is CancellationError {
             AppLog.auth.info("Sign-in cancelled by user")
@@ -295,6 +307,7 @@ final class AuthSession {
         // 否则切到 B 账号后 sidebar `.task` 触发 `load(login: B)` 会因 lastFetchedAt 还在 A
         // 那次成功的 3h TTL 窗口内被直接 no-op,草坪一直挂着 A 的数据(详见 contributionService 字段注释)。
         contributionService?.reset(login: currentLogin)
+        developerLanguageService?.reset(login: currentLogin)
         state = .unauthenticated
         lastError = nil
         // R-01：清空 StarredRegistry，避免下个用户登录看到上个用户的 star 状态
@@ -335,6 +348,7 @@ final class AuthSession {
         userProfileService?.reset(login: currentLogin)
         // 2026-06-15 修复:与 signOut 路径同步清草坪 service,避免 B 登录后 sidebar 显示 A 的草坪。
         contributionService?.reset(login: currentLogin)
+        developerLanguageService?.reset(login: currentLogin)
         state = .unauthenticated
         // 复用 network.error.unauthorized 文案（"未授权，请重新登录。"）在登录页提示用户。
         lastError = NetworkError.unauthorized

@@ -409,6 +409,38 @@
         }
       }
     },
+    "about.eula.term4.text" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This software is provided \"as is\" without warranties of any kind. To the maximum extent permitted by law, the developer is not liable for direct or indirect damages arising from your use of this software."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本软件按「现状」提供，不附带任何明示或暗示的保证。在法律允许的最大范围内，开发者不对因使用本软件而产生的直接或间接损失承担责任。"
+          }
+        }
+      }
+    },
+    "about.eula.term4.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disclaimer"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "免责声明"
+          }
+        }
+      }
+    },
     "about.eula.title" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -948,22 +980,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "邮件支持"
-          }
-        }
-      }
-    },
-    "about.support.feedbackHint" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "When reporting issues, please include: Starcat version, macOS version, whether you just finished syncing, and reproducible steps."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "建议反馈问题时附上：Starcat 版本、macOS 版本、是否刚完成同步、可复现的操作路径。"
           }
         }
       }
@@ -25001,6 +25017,54 @@
         }
       }
     },
+    "sharecard.languages.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No public repository language data yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无公开仓库语言数据。"
+          }
+        }
+      }
+    },
+    "sharecard.languages.loading" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading coding languages…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加载开发语言…"
+          }
+        }
+      }
+    },
+    "sharecard.languages.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top Languages"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主要开发语言"
+          }
+        }
+      }
+    },
     "sharecard.export.loading.fetching" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -25560,6 +25624,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "杂志卡"
+          }
+        }
+      }
+    },
+    "sharecard.style.adventure" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adventure"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "草地冒险"
+          }
+        }
+      }
+    },
+    "sharecard.style.social" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Social"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "社交卡"
+          }
+        }
+      }
+    },
+    "sharecard.style.spotlight" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聚光海报"
           }
         }
       }

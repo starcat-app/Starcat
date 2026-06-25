@@ -197,12 +197,6 @@ struct RepoListView: View {
             .background(.clear)
             .navigationTitle(navigationTitle)
             .navigationSubtitle(navigationSubtitle)
-            // Manage 排序 / 同步行放进 top safeAreaInset，贴在 navigation chrome 正下方。
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if selectedPage == .manage {
-                    manageListTopInset
-                }
-            }
             // W4 A5：多选模式底部浮动操作栏；W12 PR-4 扩展到 trending/weekly/activity；
             // W12 PR-5：Manage 也走 MultiSelectionStore 但保留独立 BatchActionBar（业务语义差异：
             // 「打标签」+「Unstar」vs RemoteBatchActionBar 的「Star」+「Unstar」）。
@@ -647,19 +641,27 @@ struct RepoListView: View {
     private func manageCategoryContent(_ vm: HomeViewModel) -> some View {
         @Bindable var bindableVM = vm
 
-        Group {
-            if viewModel.selection.isSmartCollectionsSurface {
-                SmartCollectionsOverviewView()
-            } else if viewModel.isLoading && viewModel.items.isEmpty {
-                RepoSkeletonListView(rowCount: 10)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = viewModel.loadError, viewModel.items.isEmpty {
-                emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitleText: error)
-            } else if viewModel.items.isEmpty {
-                emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
-            } else {
-                listWithOptionalBanner { unifiedListContent($bindableVM.selectedRepoID) }
+        VStack(spacing: 0) {
+            // 顶栏必须占据真实布局高度，而不是通过 `safeAreaInset` 叠在 List 上方。
+            // macOS List 的滚动内容会绘制到透明 inset 背后；放进 VStack 后滚动边界从 Divider
+            // 下方开始，保持与 Trending / Activity 中栏一致。
+            manageListTopInset
+
+            Group {
+                if viewModel.selection.isSmartCollectionsSurface {
+                    SmartCollectionsOverviewView()
+                } else if viewModel.isLoading && viewModel.items.isEmpty {
+                    RepoSkeletonListView(rowCount: 10)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = viewModel.loadError, viewModel.items.isEmpty {
+                    emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitleText: error)
+                } else if viewModel.items.isEmpty {
+                    emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
+                } else {
+                    listWithOptionalBanner { unifiedListContent($bindableVM.selectedRepoID) }
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(.clear)

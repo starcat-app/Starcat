@@ -71,6 +71,9 @@ struct ShareCardContent: View {
     /// 贡献草坪 payload。nil 时显示 7×53 占位灰格（不阻塞分享）。
     let contribution: ContributionCalendarPayload?
 
+    /// 用户自己公开仓库的开发语言统计。nil 时显示加载/空态，不回退到 starred 语言分布。
+    let developerLanguages: DeveloperLanguageSnapshot?
+
     /// 当前版式。版式决定卡片结构，不再和颜色绑死。
     let style: ShareCardStyle
 
@@ -79,6 +82,9 @@ struct ShareCardContent: View {
 
     /// 当前用户是否为 Pro 用户。Pro 用户头像显示 Pro 标识。
     var isProUser: Bool = false
+
+    /// 草坪月份标注需要跟随 App 内语言环境。这里显式读取 locale，避免导出图仍使用系统语言。
+    @Environment(\.locale) private var locale
 
     /// 卡片宽度。固定 400pt，导出时通过 `ImageRenderer.scale` 放大到 @3x。
     static let canvasWidth: CGFloat = 400
@@ -98,6 +104,22 @@ struct ShareCardContent: View {
     /// 分享卡 QR / 链接统一指向用户 GitHub 主页。
     private var profileURLString: String {
         "https://github.com/\(user.login)"
+    }
+
+    /// 第 3 套白色社交卡需要脱离纯黑白观感：头像金色、统计彩色、草坪绿色。
+    /// 这里集中成一个判定，避免影响同样使用 lightCard 配色的其它版式。
+    private var isSocialLightCard: Bool {
+        style == .social && colorSet == .lightCard
+    }
+
+    /// 第 3 套样式所有颜色都使用语义彩色统计图标，避免只有白色主题被特殊处理。
+    private var usesSocialColoredStats: Bool {
+        style == .social
+    }
+
+    /// 第 4 套终端卡走像素风，外框圆角收窄；其它样式保持原来的大圆角分享卡质感。
+    private var cardCornerRadius: CGFloat {
+        style == .terminal ? 12 : 24
     }
 
     /// 卡片背景：双色线性渐变（顶部稍亮 → 底部主色），让深色卡片有微弱呼吸感。
@@ -120,24 +142,79 @@ struct ShareCardContent: View {
                 magazineBody
             case .idCard:
                 idCardBody
-            case .poster:
-                posterBody
-            case .dashboard:
-                dashboardBody
-            case .pass:
-                passBody
+            case .social:
+                socialBody
             case .terminal:
                 terminalBody
+            case .adventure:
+                adventureBody
+            case .spotlight:
+                spotlightBody
             }
         }
         .frame(width: Self.canvasWidth, height: Self.canvasHeight)
-        .background(backgroundGradient)
+        .background { cardBackground }
         .overlay(
             // 极细 1pt 描边让卡片边界与外层 sheet 背景区分
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: cardCornerRadius)
                 .stroke(palette.cardBorder, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .clipShape(RoundedRectangle(cornerRadius: cardCornerRadius))
+    }
+
+    /// 卡片背景。magazine / adventure 使用用户给的背景图，其余样式仍走固定主题渐变。
+    @ViewBuilder
+    private var cardBackground: some View {
+        if style == .magazine {
+            Image("ShareCardMagazineBackground")
+                .resizable()
+                .scaledToFill()
+                .frame(width: Self.canvasWidth, height: Self.canvasHeight)
+                .clipped()
+                .overlay {
+                    // 图片本身亮度变化较大，叠固定深色遮罩让头像、链接、统计和草坪在导出图里稳定可读。
+                    LinearGradient(
+                        colors: [
+                            palette.cardBackground.opacity(0.34),
+                            palette.cardBackground.opacity(0.20),
+                            palette.cardBackground.opacity(0.62)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                .overlay {
+                    LinearGradient(
+                        colors: [
+                            palette.cardBackground.opacity(0.56),
+                            Color.clear,
+                            palette.cardBackground.opacity(0.52)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                }
+        } else if style == .adventure {
+            Image("ShareCardAdventureBackground")
+                .resizable()
+                .scaledToFill()
+                .frame(width: Self.canvasWidth, height: Self.canvasHeight)
+                .clipped()
+                .overlay {
+                    // 第 5 套的背景图已经按 400×560 画布完整生成；这里只加极轻的左侧可读性遮罩。
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.18),
+                            Color.white.opacity(0.04),
+                            Color.clear
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                }
+        } else {
+            backgroundGradient
+        }
     }
 
     // MARK: - Magazine 布局（HOM-173 v1，既有主题）
@@ -149,20 +226,20 @@ struct ShareCardContent: View {
         VStack(spacing: 0) {
             topBar
             avatarSection
-                .padding(.top, 18)
-                .padding(.bottom, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
             // HOM-174：链接行 + QR 码
             magazineLinksSection
-                .padding(.bottom, 14)
+                .padding(.bottom, 10)
             divider
             statsSection
-                .padding(.vertical, 18)
+                .padding(.vertical, 12)
             divider
             contributionSection
-                .padding(.vertical, 18)
+                .padding(.vertical, 12)
             divider
             footerBar
-                .padding(.top, 10)
+                .padding(.top, 8)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 20)
@@ -188,16 +265,32 @@ struct ShareCardContent: View {
     private var topBar: some View {
         HStack(alignment: .center, spacing: 8) {
             Text("✦ STARCAT")
-                .font(.system(size: 12, weight: .black, design: .rounded))
+                .font(.system(size: 13, weight: .black, design: .rounded))
                 .foregroundStyle(palette.primaryText)
                 .tracking(2)
 
             Spacer()
 
-            Text("sharecard.card.tagline")
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .foregroundStyle(palette.tertiaryText)
-                .tracking(1.5)
+            HStack(spacing: 5) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(palette.accent)
+
+                Text("sharecard.card.tagline")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(palette.secondaryText)
+                    .tracking(1.2)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(palette.cardBackgroundSecondary.opacity(0.58))
+                    .overlay(
+                        Capsule()
+                            .stroke(palette.divider.opacity(0.85), lineWidth: 0.8)
+                    )
+            )
         }
     }
 
@@ -208,20 +301,8 @@ struct ShareCardContent: View {
     /// Pro 用户在头像右下角显示 Pro 徽章。
     @ViewBuilder
     private var avatarSection: some View {
-        VStack(spacing: 10) {
-            ZStack(alignment: .bottomTrailing) {
-                // 96pt 头像 + 描边（用 accent 色 2pt 描边强化主题感）
-                RemoteAvatar(urlString: user.avatarUrl, size: 96, showBorder: false)
-                    .overlay(
-                        Circle().stroke(palette.accent, lineWidth: 2)
-                    )
-
-                // Pro 用户标识：彩虹渐变徽章（杂志卡圆形头像挂在右下角）
-                if isProUser {
-                    shareCardProBadge
-                        .offset(x: 8, y: 0)
-                }
-            }
+        VStack(spacing: 8) {
+            magazineAvatarRing
 
             VStack(spacing: 2) {
                 // 显示名（name 优先，缺失 fallback login）
@@ -243,7 +324,7 @@ struct ShareCardContent: View {
             // Bio：非空才渲染。Bio 中 GitHub 不渲染 @mention/markdown，原样平文本展示。
             if let bio = user.bio, !bio.isEmpty {
                 Text("“\(bio)”")
-                    .font(.system(size: 12, weight: .regular))
+                    .font(.system(size: 11.5, weight: .regular))
                     .italic()
                     .foregroundStyle(palette.secondaryText)
                     .multilineTextAlignment(.center)
@@ -255,18 +336,79 @@ struct ShareCardContent: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// Magazine 头像外圈：内层暗色圆盘 + 蓝紫渐变双环 + 轻微 glow。
+    ///
+    /// 第二张参考图的重点不是换头像，而是让头像像“被光环托起”的主视觉。
+    /// 这里保持头像位置和 PRO 徽章锚点不变，只加强外圈层次，避免影响下方 QR 布局。
+    @ViewBuilder
+    private var magazineAvatarRing: some View {
+        let avatarSize: CGFloat = 96
+        ZStack(alignment: .bottomTrailing) {
+            ZStack {
+                Circle()
+                    .fill(palette.cardBackgroundSecondary.opacity(0.72))
+                    .frame(width: avatarSize + 18, height: avatarSize + 18)
+                    .shadow(color: palette.accent.opacity(0.28), radius: 16, y: 4)
+
+                Circle()
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.fromHex6(0x8B5CF6),
+                                palette.accent,
+                                Color.fromHex6(0x38BDF8)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 3
+                    )
+                    .frame(width: avatarSize + 14, height: avatarSize + 14)
+
+                Circle()
+                    .stroke(palette.primaryText.opacity(0.18), lineWidth: 1)
+                    .frame(width: avatarSize + 6, height: avatarSize + 6)
+
+                RemoteAvatar(urlString: user.avatarUrl, size: avatarSize, showBorder: false)
+                    .overlay(
+                        Circle()
+                            .stroke(palette.cardBackground.opacity(0.88), lineWidth: 1.5)
+                    )
+            }
+
+            if isProUser {
+                shareCardProBadge
+                    .offset(x: 10, y: 0)
+            }
+        }
+        .frame(width: avatarSize + 20, height: avatarSize + 20)
+    }
+
     // MARK: - 三栏统计
 
     /// 三栏：Starred / Followers / Following。
     /// Starred 走本地 `starredCount`（与 sidebar 同源），followers/following 走 `/user` 字段。
     @ViewBuilder
     private var statsSection: some View {
-        HStack(spacing: 0) {
-            statCell(value: starredCount, labelKey: "sharecard.stats.starred", symbol: "star.fill")
-            statDivider
-            statCell(value: user.followers ?? 0, labelKey: "sharecard.stats.followers", symbol: "person.2.fill")
-            statDivider
-            statCell(value: user.following ?? 0, labelKey: "sharecard.stats.following", symbol: "person.fill")
+        HStack(spacing: 8) {
+            statCell(
+                value: starredCount,
+                labelKey: "sharecard.stats.starred",
+                symbol: "star.fill",
+                iconColor: Color.fromHex6(0xFFD43B)
+            )
+            statCell(
+                value: user.followers ?? 0,
+                labelKey: "sharecard.stats.followers",
+                symbol: "person.2.fill",
+                iconColor: Color.fromHex6(0x38BDF8)
+            )
+            statCell(
+                value: user.following ?? 0,
+                labelKey: "sharecard.stats.following",
+                symbol: "person.fill",
+                iconColor: Color.fromHex6(0x7CFC3A)
+            )
         }
     }
 
@@ -277,17 +419,17 @@ struct ShareCardContent: View {
             .frame(width: 1, height: 32)
     }
 
-    /// 单栏统计：图标 + 数字（大字）+ label（小字 secondary）。
+    /// 单栏统计卡：图标 + 数字（大字）+ label（小字 secondary）。
     /// 数字用 SF Rounded + monospacedDigit 保证三栏对齐。
     @ViewBuilder
-    private func statCell(value: Int, labelKey: LocalizedStringKey, symbol: String) -> some View {
+    private func statCell(value: Int, labelKey: LocalizedStringKey, symbol: String, iconColor: Color) -> some View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(palette.accent)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(iconColor)
                 Text(formatCompact(value))
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .font(.system(size: 20, weight: .heavy, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(palette.primaryText)
             }
@@ -297,7 +439,17 @@ struct ShareCardContent: View {
                 .tracking(1)
                 .textCase(.uppercase)
         }
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(palette.cardBackgroundSecondary.opacity(0.58))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(palette.divider.opacity(0.72), lineWidth: 0.8)
+                )
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
+        )
     }
 
     /// 新版式复用的紧凑统计胶囊。
@@ -498,12 +650,81 @@ struct ShareCardContent: View {
 
             ContributionStaticGrid(
                 payload: contribution,
-                palette: palette.contribution
+                palette: palette.contribution,
+                pixelated: style == .terminal
             )
-            .aspectRatio(53.0 / 7.0 * (10.0 / 12.0), contentMode: .fit)
+            .aspectRatio(style == .terminal ? 53.0 / 7.0 : 53.0 / 7.0 * (10.0 / 12.0), contentMode: .fit)
             // 53 列 × 7 行 = aspect 7.57:1（10pt 宽 × 12pt 高）；
             // 卡片可用宽度 ~352pt（400 - 24×2 padding），渲染高度 ~46pt 视觉合适
+
+            contributionMonthAxis
         }
+    }
+
+    /// 草坪月份标注：尽量从 GraphQL 返回的每周日期推导，数据为空时使用最近一年占位。
+    @ViewBuilder
+    private var contributionMonthAxis: some View {
+        HStack {
+            ForEach(contributionMonthTicks) { tick in
+                Text(tick.label)
+                    .font(.system(size: 8.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.top, 1)
+    }
+
+    /// 取 7 个近似列位置标月份，覆盖从一年前到当前月的读图路径。
+    private var contributionMonthTicks: [ContributionMonthTick] {
+        let columns = [0, 9, 18, 27, 36, 45, 52]
+        return columns.enumerated().map { index, column in
+            ContributionMonthTick(id: index, label: contributionMonthLabel(forColumn: column))
+        }
+    }
+
+    private func contributionMonthLabel(forColumn column: Int) -> String {
+        let date = contributionDate(forColumn: column) ?? fallbackContributionDate(forColumn: column)
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.setLocalizedDateFormatFromTemplate("MMM")
+        return formatter.string(from: date)
+    }
+
+    private func contributionDate(forColumn column: Int) -> Date? {
+        guard let weeks = contribution?.weeks, !weeks.isEmpty else { return nil }
+
+        let startColumn = max(0, 53 - weeks.count)
+        let rawWeekIndex = column - startColumn
+        guard rawWeekIndex >= 0 else { return nil }
+
+        let weekIndex = min(rawWeekIndex, weeks.count - 1)
+        guard let dateString = weeks[weekIndex].contributionDays.first?.date
+                ?? weeks[weekIndex].contributionDays.last?.date else {
+            return nil
+        }
+        return parseGitHubDate(dateString)
+    }
+
+    private func fallbackContributionDate(forColumn column: Int) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = locale
+        let now = Date()
+        let start = calendar.date(byAdding: .month, value: -12, to: now) ?? now
+        let monthOffset = Int((Double(column) / 52.0 * 12.0).rounded())
+        return calendar.date(byAdding: .month, value: monthOffset, to: start) ?? now
+    }
+
+    private func parseGitHubDate(_ value: String) -> Date? {
+        let parts = value.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var components = DateComponents()
+        components.calendar = Calendar(identifier: .gregorian)
+        components.year = parts[0]
+        components.month = parts[1]
+        components.day = parts[2]
+        return components.date
     }
 
     // MARK: - 链接行（HOM-174 新增）
@@ -574,6 +795,119 @@ struct ShareCardContent: View {
         }
 
         return items
+    }
+
+    // MARK: - 开发语言块（分享卡专用）
+
+    /// 前 5 个开发语言切片。数据口径来自 DeveloperLanguageService，不回退到 starred 项目语言。
+    private var languageSlices: [ShareCardLanguageSlice] {
+        guard let developerLanguages, developerLanguages.totalBytes > 0 else { return [] }
+        return developerLanguages.languages.prefix(5).map { entry in
+            ShareCardLanguageSlice(
+                name: entry.name,
+                ratio: entry.ratio,
+                color: LanguageColor.color(for: entry.name)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var languageEmptyState: some View {
+        let key = developerLanguages == nil ? "sharecard.languages.loading" : "sharecard.languages.empty"
+        Text(LocalizedStringKey(key))
+            .font(.system(size: 10, weight: .medium, design: style == .terminal ? .monospaced : .rounded))
+            .foregroundStyle(palette.secondaryText)
+            .lineLimit(2)
+            .minimumScaleFactor(0.78)
+    }
+
+    @ViewBuilder
+    private func languageStackedBar(width: CGFloat, height: CGFloat) -> some View {
+        let slices = languageSlices
+        let spacing: CGFloat = 2
+        let visibleRatio = max(slices.reduce(0) { $0 + $1.ratio }, 0.0001)
+        let availableWidth = max(0, width - CGFloat(max(0, slices.count - 1)) * spacing)
+
+        HStack(spacing: spacing) {
+            ForEach(slices) { slice in
+                RoundedRectangle(cornerRadius: height / 2)
+                    .fill(slice.color)
+                    .frame(width: max(5, availableWidth * slice.ratio / visibleRatio), height: height)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(width: width, height: height, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: height / 2)
+                .fill(palette.divider.opacity(0.45))
+        )
+    }
+
+    @ViewBuilder
+    private var languageLegendGrid: some View {
+        let slices = languageSlices
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(stride(from: 0, to: slices.count, by: 2)), id: \.self) { start in
+                HStack(spacing: 8) {
+                    languageLegendItem(slices[start])
+                    if start + 1 < slices.count {
+                        languageLegendItem(slices[start + 1])
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func languageLegendItem(_ slice: ShareCardLanguageSlice) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(slice.color)
+                .frame(width: 6, height: 6)
+            Text(verbatim: "\(slice.name) \(formatPercent(slice.ratio))")
+                .font(.system(size: 8.2, weight: .semibold, design: .rounded))
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+        }
+        .frame(maxWidth: 145, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func terminalLanguageRow(_ slice: ShareCardLanguageSlice) -> some View {
+        let maxRatio = max(languageSlices.first?.ratio ?? slice.ratio, 0.0001)
+        let segmentCount = 24
+        let filledSegments = max(1, Int(ceil(Double(segmentCount) * slice.ratio / maxRatio)))
+
+        HStack(spacing: 7) {
+            Text(verbatim: slice.name)
+                .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(palette.accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+                .frame(width: 78, alignment: .leading)
+
+            HStack(spacing: 2) {
+                ForEach(0..<segmentCount, id: \.self) { index in
+                    Rectangle()
+                        .fill(index < filledSegments ? slice.color : palette.accent.opacity(0.10))
+                        .frame(width: 6, height: 7)
+                }
+            }
+            .frame(width: 190, alignment: .leading)
+
+            Text(verbatim: formatPercent(slice.ratio))
+                .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(palette.accent)
+                .monospacedDigit()
+                .frame(width: 42, alignment: .trailing)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func formatPercent(_ ratio: Double) -> String {
+        String(format: "%.1f%%", max(0, ratio) * 100)
     }
 
     // MARK: - 通用元素
@@ -962,78 +1296,714 @@ struct ShareCardContent: View {
         }
     }
 
-    // MARK: - Terminal 布局
+    // MARK: - Prototype 布局（2026-06-25 新增四类）
 
-    /// 终端布局：用 monospaced 信息层级表达开发者身份，适合偏技术传播。
+    /// 社交资料卡：原型 1/2 合并。深色 / 浅色差异完全由 `colorSet` 承担。
     @ViewBuilder
-    private var terminalBody: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text(verbatim: "$ GitHub Profile")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(palette.accent)
-                Spacer()
-                Text("sharecard.card.tagline")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundStyle(palette.tertiaryText)
-            }
+    private var socialBody: some View {
+        VStack(spacing: 9) {
+            topBar
+            prototypeIdentityBlock(avatarSize: 88, showsQRCode: true)
+            prototypeStatsPanel
+            prototypeLanguagePanel
+            prototypeContributionPanel
+            footerBar
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
+        .overlay(alignment: .topTrailing) {
+            Circle()
+                .fill(palette.accent.opacity(colorSet == .lightCard ? 0.10 : 0.18))
+                .frame(width: 92, height: 92)
+                .blur(radius: 18)
+                .offset(x: 28, y: -30)
+        }
+    }
 
-            HStack(alignment: .center, spacing: 16) {
-                ZStack(alignment: .bottomTrailing) {
-                    RemoteAvatar(urlString: user.avatarUrl, size: 92, showBorder: false)
-                        .overlay(Circle().stroke(palette.accent, lineWidth: 2))
+    /// 冒险背景卡：还原原型 5 的“左侧资料 + 右侧完整插画背景 + 底部语言面板”结构。
+    ///
+    /// 这套不复用 prototype 四面板布局。原型的重点是插画背景作为主视觉，
+    /// 如果继续叠头像 / QR / 草坪大面板，会把背景里的猫和草地都遮掉，视觉就偏离了。
+    @ViewBuilder
+    private var adventureBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            adventureIdentityText
+                .padding(.top, 38)
 
-                    if isProUser {
-                        shareCardProBadge
-                            .offset(x: 8, y: 0)
-                    }
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    terminalLine(key: "name", value: displayName)
-                    terminalLine(key: "login", value: "@\(user.login)")
-                    if let bio = user.bio, !bio.isEmpty {
-                        terminalLine(key: "bio", value: bio)
-                    }
-                }
-            }
-
-            terminalStatsBlock
-
-            profileLinksSection
-
-            divider
-
-            contributionSection
+            adventureStatsRow
+                .padding(.top, 34)
 
             Spacer(minLength: 0)
 
-            HStack(alignment: .bottom, spacing: 16) {
-                qrCodeView
-                footerBar
-            }
+            adventureLanguagePanel
+                .padding(.bottom, 14)
+
+            footerBar
+                .padding(.bottom, 4)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 20)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 18)
     }
 
-    /// 终端版式的三行统计输出。
     @ViewBuilder
-    private var terminalStatsBlock: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            terminalLine(key: "stars", value: formatCompact(starredCount))
-            terminalLine(key: "followers", value: formatCompact(user.followers ?? 0))
-            terminalLine(key: "following", value: formatCompact(user.following ?? 0))
+    private var adventureIdentityText: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(displayName)
+                    .font(.system(size: 34, weight: .heavy, design: .rounded))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.55)
+
+                Text(verbatim: "@\(user.login)")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.primaryText.opacity(0.84))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+
+            HStack(spacing: 6) {
+                Image(systemName: "sun.max.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.fromHex6(0xFBBF24))
+                Text(verbatim: "Code · Explore · Build")
+                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.primaryText.opacity(0.78))
+                    .lineLimit(1)
+            }
+
+            Text(user.bio?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                 ? user.bio!.trimmingCharacters(in: .whitespacesAndNewlines)
+                 : "Passionate developer focused on creating high-quality, impactful software.")
+                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(palette.primaryText.opacity(0.72))
+                .lineSpacing(3)
+                .lineLimit(3)
+                .minimumScaleFactor(0.78)
+        }
+        .frame(width: 246, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var adventureStatsRow: some View {
+        HStack(spacing: 12) {
+            adventureStatItem(symbol: "shippingbox.fill",
+                              value: user.publicRepos ?? 0,
+                              labelKey: "sharecard.stats.repos",
+                              color: Color.fromHex6(0x2AA7B8))
+            adventureStatItem(symbol: "person.2.fill",
+                              value: user.followers ?? 0,
+                              labelKey: "sharecard.stats.followers",
+                              color: Color.fromHex6(0x34B981))
+            adventureStatItem(symbol: "person.2.fill",
+                              value: user.following ?? 0,
+                              labelKey: "sharecard.stats.following",
+                              color: Color.fromHex6(0x3B82F6))
+            adventureStatItem(symbol: "star.fill",
+                              value: starredCount,
+                              labelKey: "sharecard.stats.starred",
+                              color: Color.fromHex6(0xF59E0B))
+        }
+        .frame(width: 304, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func adventureStatItem(symbol: String, value: Int, labelKey: LocalizedStringKey, color: Color) -> some View {
+        VStack(spacing: 5) {
+            Image(systemName: symbol)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(color)
+                .frame(width: 24, height: 24)
+                .shadow(color: color.opacity(0.22), radius: 5, y: 2)
+
+            Text(formatCompact(value))
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundStyle(palette.primaryText)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text(labelKey)
+                .font(.system(size: 8.2, weight: .semibold, design: .rounded))
+                .foregroundStyle(palette.primaryText.opacity(0.68))
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+        }
+        .frame(width: 67)
+    }
+
+    @ViewBuilder
+    private var adventureLanguagePanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("sharecard.languages.title")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(palette.primaryText.opacity(0.82))
+
+            if languageSlices.isEmpty {
+                languageEmptyState
+                    .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+            } else {
+                languageStackedBar(width: 326, height: 9)
+                adventureLanguageLegendRow
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(width: 356, height: 104, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.fromHex6(0xFFE8A6).opacity(0.42))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.52), lineWidth: 0.8)
+                )
+                .shadow(color: Color.fromHex6(0xB7791F).opacity(0.10), radius: 10, y: 5)
+        )
+    }
+
+    @ViewBuilder
+    private var adventureLanguageLegendRow: some View {
+        HStack(spacing: 7) {
+            ForEach(languageSlices.prefix(5)) { slice in
+                HStack(spacing: 3.5) {
+                    Circle()
+                        .fill(slice.color)
+                        .frame(width: 6, height: 6)
+                    Text(verbatim: "\(slice.name) \(formatPercent(slice.ratio))")
+                        .font(.system(size: 7.4, weight: .semibold, design: .rounded))
+                        .foregroundStyle(palette.primaryText.opacity(0.72))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.48)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 聚光海报卡：原型 4/5 的渐变海报版本，布局与 adventure 同构但视觉更偏社交传播。
+    @ViewBuilder
+    private var spotlightBody: some View {
+        ZStack {
+            decorativeSpotlightOrnaments
+
+            VStack(spacing: 10) {
+                prototypeIdentityBlock(avatarSize: 84, showsQRCode: true)
+                prototypeStatsPanel
+                prototypeLanguagePanel
+                prototypeContributionPanel
+                footerBar
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 18)
+        }
+    }
+
+    /// 终端布局：原型 3，保留命令行视觉，但同样按“身份 / 统计 / 语言 / 草坪”四段组织。
+    @ViewBuilder
+    private var terminalBody: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text(verbatim: "> \(displayName)")
+                    .font(.system(size: 22, weight: .bold, design: .monospaced))
+                    .foregroundStyle(palette.accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Spacer()
+                Text(verbatim: "GitHub")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(palette.accent)
+            }
+
+            terminalIdentityBlock
+            terminalStatsBlock
+            terminalLanguagePanel
+            prototypeContributionPanel
+
+            HStack {
+                Text(verbatim: "$ github.com/\(user.login)")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(palette.accent)
+                    .lineLimit(1)
+                Spacer()
+                Text("sharecard.card.generatedBy")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(palette.tertiaryText)
+            }
+        }
+        .overlay(terminalPixelOverlay)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 18)
+    }
+
+    /// 原型头像 + 基础信息块。右侧 QR 仅在空间足够的新版式中展示。
+    @ViewBuilder
+    private func prototypeIdentityBlock(avatarSize: CGFloat, showsQRCode: Bool) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            decoratedAvatar(size: avatarSize, borderWidth: 2)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(displayName)
+                    .font(.system(size: 27, weight: .heavy, design: .rounded))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+
+                Text(verbatim: "@\(user.login)")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(palette.secondaryText)
+                    .lineLimit(1)
+
+                if let bio = user.bio?.trimmingCharacters(in: .whitespacesAndNewlines), !bio.isEmpty {
+                    Text(bio)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.82)
+                } else {
+                    Text(verbatim: "Code · Explore · Build")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(palette.accent)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            if showsQRCode {
+                compactQRCodeView
+            }
         }
         .padding(12)
+        .frame(height: 116)
+        .background(prototypePanelBackground(cornerRadius: 18, opacity: style == .adventure ? 0.62 : 0.72))
+    }
+
+    /// 终端身份块：头像 + 命令输出 + 小 QR。
+    @ViewBuilder
+    private var terminalIdentityBlock: some View {
+        HStack(spacing: 12) {
+            decoratedAvatar(size: 74, borderWidth: 2)
+
+            VStack(alignment: .leading, spacing: 5) {
+                terminalLine(key: "login", value: "@\(user.login)")
+                if let bio = user.bio?.trimmingCharacters(in: .whitespacesAndNewlines), !bio.isEmpty {
+                    terminalLine(key: "bio", value: bio)
+                } else {
+                    terminalLine(key: "role", value: "open-source developer")
+                }
+            }
+
+            Spacer(minLength: 0)
+            compactQRCodeView
+        }
+        .padding(10)
+        .frame(height: 96)
+        .background(prototypePanelBackground(cornerRadius: 8, opacity: 0.80))
+    }
+
+    /// 后四类共享的四项统计块。
+    @ViewBuilder
+    private var prototypeStatsPanel: some View {
+        HStack(spacing: 0) {
+            prototypeStatTile(
+                symbol: "shippingbox.fill",
+                value: user.publicRepos ?? 0,
+                labelKey: "sharecard.stats.repos",
+                iconColor: Color.fromHex6(0x2563EB)
+            )
+            prototypeStatDivider
+            prototypeStatTile(
+                symbol: "star.fill",
+                value: starredCount,
+                labelKey: "sharecard.stats.starred",
+                iconColor: Color.fromHex6(0xF59E0B)
+            )
+            prototypeStatDivider
+            prototypeStatTile(
+                symbol: "person.2.fill",
+                value: user.followers ?? 0,
+                labelKey: "sharecard.stats.followers",
+                iconColor: Color.fromHex6(0x06B6D4)
+            )
+            prototypeStatDivider
+            prototypeStatTile(
+                symbol: "person.fill",
+                value: user.following ?? 0,
+                labelKey: "sharecard.stats.following",
+                iconColor: Color.fromHex6(0x22C55E)
+            )
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, usesSocialColoredStats ? 12 : 10)
+        .frame(height: usesSocialColoredStats ? 82 : 70)
+        .background(prototypePanelBackground(cornerRadius: 16, opacity: style == .adventure ? 0.66 : 0.76))
+    }
+
+    @ViewBuilder
+    private func prototypeStatTile(
+        symbol: String,
+        value: Int,
+        labelKey: LocalizedStringKey,
+        iconColor: Color
+    ) -> some View {
+        let renderedIconColor = usesSocialColoredStats ? iconColor : palette.accent
+
+        VStack(spacing: usesSocialColoredStats ? 6 : 5) {
+            Image(systemName: symbol)
+                .font(.system(size: usesSocialColoredStats ? 12 : 13, weight: .bold))
+                .foregroundStyle(renderedIconColor)
+                .frame(width: usesSocialColoredStats ? 24 : 14, height: usesSocialColoredStats ? 24 : 14)
+                .background {
+                    if usesSocialColoredStats {
+                        Circle()
+                            .fill(renderedIconColor.opacity(0.13))
+                    }
+                }
+
+            Text(formatCompact(value))
+                .font(.system(size: usesSocialColoredStats ? 17 : 16, weight: .heavy, design: .rounded))
+                .foregroundStyle(palette.primaryText)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text(labelKey)
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var prototypeStatDivider: some View {
+        Rectangle()
+            .fill(palette.divider.opacity(usesSocialColoredStats ? 0.62 : (style == .adventure ? 0.55 : 0.85)))
+            .frame(width: 0.7, height: usesSocialColoredStats ? 50 : 42)
+    }
+
+    /// 后四类共享的 Top Languages 块，数据来自用户自有公开仓库语言统计。
+    @ViewBuilder
+    private var prototypeLanguagePanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            prototypeSectionHeader(titleKey: "sharecard.languages.title", symbol: "chevron.left.forwardslash.chevron.right")
+
+            if languageSlices.isEmpty {
+                languageEmptyState
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            } else {
+                languageStackedBar(width: 316, height: 10)
+                languageLegendGrid
+            }
+        }
+        .padding(12)
+        .frame(height: 100)
+        .background(prototypePanelBackground(cornerRadius: 16, opacity: style == .adventure ? 0.66 : 0.76))
+    }
+
+    /// 终端语言块用行式进度条，更贴近原型 3。
+    @ViewBuilder
+    private var terminalLanguagePanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(verbatim: "TOP LANGUAGES")
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.accent)
+                .tracking(1.0)
+
+            if languageSlices.isEmpty {
+                languageEmptyState
+                    .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+            } else {
+                VStack(spacing: 4) {
+                    ForEach(languageSlices.prefix(5)) { slice in
+                        terminalLanguageRow(slice)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(height: 112)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(palette.cardBackgroundSecondary.opacity(0.65))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(palette.divider, lineWidth: 0.7)
+        .background(prototypePanelBackground(cornerRadius: 8, opacity: 0.80))
+    }
+
+    /// 后四类共享的草坪块。
+    @ViewBuilder
+    private var prototypeContributionPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "square.grid.3x3.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(palette.accent)
+                Text("sharecard.contribution.title")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                if let total = contribution?.totalContributions {
+                    Text(String(format: String.l10n("sharecard.contribution.totalCount"), total))
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+            }
+
+            ContributionStaticGrid(
+                payload: contribution,
+                palette: palette.contribution,
+                pixelated: style == .terminal
+            )
+            .aspectRatio(style == .terminal ? 53.0 / 7.0 : 53.0 / 7.0 * (10.0 / 12.0), contentMode: .fit)
+
+            contributionMonthAxis
+        }
+        .padding(12)
+        .frame(height: 120)
+        .background(prototypePanelBackground(cornerRadius: style == .terminal ? 8 : 16,
+                                             opacity: style == .adventure ? 0.66 : 0.76))
+    }
+
+    @ViewBuilder
+    private func prototypeSectionHeader(titleKey: LocalizedStringKey, symbol: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(palette.accent)
+            Text(titleKey)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundStyle(palette.primaryText)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private func decoratedAvatar(size: CGFloat, borderWidth: CGFloat) -> some View {
+        let avatarAccent = isSocialLightCard ? Color.fromHex6(0xF59E0B) : palette.accent
+        let avatarRingColors = isSocialLightCard
+            ? [Color.fromHex6(0xFDE68A), Color.fromHex6(0xF59E0B), Color.fromHex6(0xD97706)]
+            : [palette.accent, palette.primaryText.opacity(0.72)]
+
+        ZStack(alignment: .bottomTrailing) {
+            RemoteAvatar(urlString: user.avatarUrl, size: size, showBorder: false)
+                .background(
+                    Circle()
+                        .fill(avatarAccent.opacity(style == .adventure ? 0.18 : 0.26))
+                        .blur(radius: isSocialLightCard ? 12 : 10)
                 )
-        )
+                .overlay(
+                    Circle()
+                        .stroke(
+                            LinearGradient(
+                                colors: avatarRingColors,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: borderWidth
+                        )
+                )
+                .shadow(color: avatarAccent.opacity(style == .adventure ? 0.16 : 0.28), radius: 10, y: 4)
+
+            if isProUser {
+                shareCardProBadge
+                    .offset(x: size * 0.08, y: size * 0.02)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func prototypePanelBackground(cornerRadius: CGFloat, opacity: Double) -> some View {
+        let fillOpacity = isSocialLightCard ? max(opacity, 0.96) : opacity
+        let strokeOpacity = isSocialLightCard ? 0.95 : (style == .terminal ? 0.62 : (style == .adventure ? 0.52 : 0.78))
+        let shadowOpacity = isSocialLightCard ? 0.08 : (style == .terminal ? 0.10 : (style == .adventure ? 0.08 : 0.18))
+
+        if style == .terminal {
+            Rectangle()
+                .fill(prototypePanelFill.opacity(max(fillOpacity, 0.90)))
+                .overlay {
+                    terminalPanelTexture
+                }
+                .overlay(
+                    Rectangle()
+                        .stroke(palette.cardBorder.opacity(strokeOpacity), lineWidth: 1)
+                )
+                .overlay {
+                    // 外层再压一圈像素风虚线，强调“屏幕面板”而不是普通卡片。
+                    Rectangle()
+                        .stroke(
+                            palette.accent.opacity(0.28),
+                            style: StrokeStyle(lineWidth: 1, dash: [3, 3])
+                        )
+                }
+                .shadow(color: .black.opacity(shadowOpacity), radius: 4, y: 2)
+        } else {
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(prototypePanelFill.opacity(fillOpacity))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .stroke(palette.cardBorder.opacity(strokeOpacity), lineWidth: 0.7)
+                )
+                .shadow(color: .black.opacity(shadowOpacity), radius: 10, y: 4)
+        }
+    }
+
+    private var prototypePanelFill: Color {
+        switch style {
+        case .adventure:
+            return Color.white
+        case .terminal:
+            return palette.cardBackgroundSecondary
+        case .social where colorSet == .lightCard:
+            return Color.white
+        default:
+            return palette.cardBackgroundSecondary
+        }
+    }
+
+    @ViewBuilder
+    private var decorativeSpotlightOrnaments: some View {
+        ZStack {
+            Circle()
+                .fill(palette.accent.opacity(0.18))
+                .frame(width: 180, height: 180)
+                .blur(radius: 28)
+                .offset(x: 130, y: -170)
+            Circle()
+                .fill(palette.primaryText.opacity(0.10))
+                .frame(width: 130, height: 130)
+                .blur(radius: 22)
+                .offset(x: -160, y: 170)
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// 终端样式的轻量像素纹理。只叠在内容层，不参与命中测试，也不改变布局尺寸。
+    @ViewBuilder
+    private var terminalPixelOverlay: some View {
+        Canvas { context, size in
+            let step: CGFloat = 10
+            let dotSize: CGFloat = 1.3
+            let dotColor = palette.accent.opacity(0.14)
+            let scanlineColor = palette.accent.opacity(0.045)
+
+            var y: CGFloat = 0
+            while y <= size.height {
+                if Int(y / step).isMultiple(of: 2) {
+                    context.fill(
+                        Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
+                        with: .color(scanlineColor)
+                    )
+                }
+
+                var x: CGFloat = 0
+                while x <= size.width {
+                    let rect = CGRect(x: x, y: y, width: dotSize, height: dotSize)
+                    context.fill(Path(rect), with: .color(dotColor))
+                    x += step
+                }
+                y += step
+            }
+        }
+        .blendMode(.screen)
+        .allowsHitTesting(false)
+    }
+
+    /// 终端面板内部的扫描线和网格。与 body 纹理分开，是为了让每张小卡片自己有像素屏边界。
+    @ViewBuilder
+    private var terminalPanelTexture: some View {
+        Canvas { context, size in
+            let lineColor = palette.accent.opacity(0.055)
+            let verticalColor = palette.accent.opacity(0.035)
+            var y: CGFloat = 4
+            while y < size.height {
+                context.fill(
+                    Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
+                    with: .color(lineColor)
+                )
+                y += 8
+            }
+
+            var x: CGFloat = 6
+            while x < size.width {
+                context.fill(
+                    Path(CGRect(x: x, y: 0, width: 1, height: size.height)),
+                    with: .color(verticalColor)
+                )
+                x += 12
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// 终端版式的四项统计输出。
+    @ViewBuilder
+    private var terminalStatsBlock: some View {
+        HStack(spacing: 0) {
+            terminalMetric(symbol: "shippingbox.fill",
+                           label: "REPOS",
+                           value: user.publicRepos ?? 0,
+                           iconColor: Color.fromHex6(0x60A5FA))
+            terminalDivider
+            terminalMetric(symbol: "star.fill",
+                           label: "STARS",
+                           value: starredCount,
+                           iconColor: Color.fromHex6(0xFBBF24))
+            terminalDivider
+            terminalMetric(symbol: "person.2.fill",
+                           label: "FOLLOWERS",
+                           value: user.followers ?? 0,
+                           iconColor: Color.fromHex6(0x22D3EE))
+            terminalDivider
+            terminalMetric(symbol: "person.fill",
+                           label: "FOLLOWING",
+                           value: user.following ?? 0,
+                           iconColor: Color.fromHex6(0x4ADE80))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .frame(height: 78)
+        .background(prototypePanelBackground(cornerRadius: 8, opacity: 0.80))
+    }
+
+    @ViewBuilder
+    private func terminalMetric(symbol: String, label: String, value: Int, iconColor: Color) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: symbol)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 16, height: 16)
+                    .background(
+                        Rectangle()
+                            .fill(iconColor.opacity(0.14))
+                            .overlay(
+                                Rectangle()
+                                    .stroke(iconColor.opacity(0.46), lineWidth: 1)
+                            )
+                    )
+                Text(verbatim: label)
+                    .font(.system(size: 7.2, weight: .bold, design: .monospaced))
+                    .foregroundStyle(palette.accent.opacity(0.82))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+            }
+
+            Text(formatCompact(value))
+                .font(.system(size: 17, weight: .bold, design: .monospaced))
+                .foregroundStyle(palette.accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var terminalDivider: some View {
+        Rectangle()
+            .fill(palette.accent.opacity(0.32))
+            .frame(width: 0.7, height: 38)
     }
 
     /// ID 卡顶部头像区。
@@ -1227,6 +2197,31 @@ struct ShareCardContent: View {
                     .foregroundStyle(palette.accent)
             }
         }
+            .accessibilityLabel(Text(verbatim: url))
+    }
+
+    /// 新版原型卡右侧使用的小二维码，避免 76pt QR 把第一块信息挤窄。
+    @ViewBuilder
+    private var compactQRCodeView: some View {
+        let url = profileURLString
+        let qrImage = QRCodeGenerator.generate(text: url, sizePoints: 48)
+
+        ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(palette.onAccent)
+                .frame(width: 58, height: 58)
+
+            if let qrImage {
+                Image(nsImage: qrImage)
+                    .interpolation(.none)
+                    .resizable()
+                    .frame(width: 48, height: 48)
+            } else {
+                Image(systemName: "qrcode")
+                    .font(.system(size: 28, weight: .regular))
+                    .foregroundStyle(palette.accent)
+            }
+        }
         .accessibilityLabel(Text(verbatim: url))
     }
 
@@ -1254,6 +2249,21 @@ private struct ShareCardLinkItem: Identifiable {
     let displayText: String
 
     var id: String { displayText }
+}
+
+/// 分享卡语言条的展示切片。
+private struct ShareCardLanguageSlice: Identifiable {
+    let name: String
+    let ratio: Double
+    let color: Color
+
+    var id: String { name }
+}
+
+/// Magazine 草坪月份刻度。
+private struct ContributionMonthTick: Identifiable {
+    let id: Int
+    let label: String
 }
 
 /// 数据看板 facts 区的一行静态数据。
@@ -1319,18 +2329,20 @@ private struct CachedShareCardAvatar: View, Equatable {
 /// - 不渲染贪吃蛇动画，纯静态网格。
 /// - 不渲染顶部"贡献总数 + 更新于…"行（外层 `contributionSection` 已渲染）。
 ///
-/// 单元格尺寸：横向 8pt × 纵向 10pt（aspect 0.8）；与 sidebar 内 10×14（aspect 0.71）
-/// 略不同——分享卡总宽度更受限（350pt 可用），需要更扁的格子才能放下 53 列。
+/// 默认单元格保持横向略扁的分享卡草坪；第 4 套终端卡使用正方形无圆角像素块。
+/// 这两个模式共用数据和调色板，只分离绘制几何，避免后续修贡献数据时改漏某个样式。
 private struct ContributionStaticGrid: View {
 
     let payload: ContributionCalendarPayload?
     let palette: ContributionPalette
+    let pixelated: Bool
 
     /// 53 列 × 7 行的固有尺寸（基础值，外层 aspectRatio 缩放）。
-    private let cellWidth: CGFloat = 10
-    private let cellHeight: CGFloat = 12
-    private let cellSpacing: CGFloat = 1.5
-    private let cellCornerRadius: CGFloat = 1.5
+    /// 第 4 套终端卡要像素块观感：方形、无圆角、间距略大；其它卡片沿用长圆角草坪。
+    private var cellWidth: CGFloat { 10 }
+    private var cellHeight: CGFloat { pixelated ? 10 : 12 }
+    private var cellSpacing: CGFloat { pixelated ? 2 : 1.5 }
+    private var cellCornerRadius: CGFloat { pixelated ? 0 : 1.5 }
 
     /// 整图固有尺寸——外层 aspectRatio 取这个比例。
     private var intrinsicWidth: CGFloat {
@@ -1389,6 +2401,22 @@ private struct ContributionStaticGrid: View {
 
 // MARK: - Preview
 
+private func makeMockDeveloperLanguages() -> DeveloperLanguageSnapshot {
+    DeveloperLanguageSnapshot(
+        login: "dong4j",
+        fetchedAt: Date(),
+        repositoryCount: 48,
+        totalBytes: 100_000,
+        languages: [
+            DeveloperLanguageEntry(name: "Swift", bytes: 42_300, ratio: 0.423),
+            DeveloperLanguageEntry(name: "TypeScript", bytes: 28_700, ratio: 0.287),
+            DeveloperLanguageEntry(name: "Python", bytes: 16_400, ratio: 0.164),
+            DeveloperLanguageEntry(name: "Go", bytes: 7_600, ratio: 0.076),
+            DeveloperLanguageEntry(name: "HTML", bytes: 5_000, ratio: 0.050)
+        ]
+    )
+}
+
 #Preview("ShareCard - GitHub Green") {
     let mockUser = GitHubUserDTO(
         id: 1, login: "dong4j", name: "DONG Jianjun",
@@ -1400,7 +2428,8 @@ private struct ContributionStaticGrid: View {
     )
     return ShareCardContent(
         user: mockUser, starredCount: 4823,
-        contribution: nil, style: .magazine, colorSet: .githubGreen
+        contribution: nil, developerLanguages: makeMockDeveloperLanguages(),
+        style: .magazine, colorSet: .githubGreen
     )
     .padding()
     .background(Color.gray.opacity(0.2))
@@ -1417,7 +2446,8 @@ private struct ContributionStaticGrid: View {
     )
     return ShareCardContent(
         user: mockUser, starredCount: 1284,
-        contribution: nil, style: .poster, colorSet: .heatOrange
+        contribution: nil, developerLanguages: makeMockDeveloperLanguages(),
+        style: .spotlight, colorSet: .berryPurple
     )
     .padding()
     .background(Color.gray.opacity(0.2))
@@ -1433,7 +2463,8 @@ private struct ContributionStaticGrid: View {
     )
     return ShareCardContent(
         user: mockUser, starredCount: 999,
-        contribution: nil, style: .terminal, colorSet: .minimal
+        contribution: nil, developerLanguages: makeMockDeveloperLanguages(),
+        style: .terminal, colorSet: .githubGreen
     )
     .padding()
     .background(Color.white)

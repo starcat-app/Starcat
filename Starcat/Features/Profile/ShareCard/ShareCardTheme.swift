@@ -23,22 +23,22 @@ import SwiftUI
 
 /// 分享卡版式枚举。
 ///
-/// 2026-06-25 设计调整：把原先"主题 = 版式 + 配色"拆成两个维度。
-/// 原编号 1-5 现在是同一个 `.magazine` 版式的 5 套配色；编号 6-7 是 `.idCard`
-/// 版式的白/黑两套配色；新增版式默认复用 5 套传播向配色。
+/// 2026-06-25 二次调整：保留最早的 2 种版式，其余 4 种按 dong4j 给的原型重做。
+/// 原型里只因颜色不同而重复的样式（1/2、4/5）在这里合并为同一个 case，由
+/// `supportedColors` 区分颜色，避免为了换色复制整套布局。
 enum ShareCardStyle: String, CaseIterable, Identifiable, Hashable {
     /// 杂志卡：顶栏 + 头像 + 三栏统计 + 草坪 + 注脚。HOM-173 v1。
     case magazine = "magazine"
     /// ID 卡：大头像 + 身份区 + QR。HOM-173 v2。
     case idCard = "idCard"
-    /// 海报：大头像居中 + 统计横幅，适合社交媒体首屏扫读。
-    case poster = "poster"
-    /// 数据看板：统计和草坪优先，适合强调 GitHub 活跃数据。
-    case dashboard = "dashboard"
-    /// 通行证：左侧身份 + 右侧 QR，模拟开发者 badge。
-    case pass = "pass"
-    /// 终端卡：命令行视觉，用等宽文本表达开发者身份。
+    /// 社交资料卡：原型 1/2 合并，深色 / 浅色由配色区分。
+    case social = "social"
+    /// 终端卡：原型 3，命令行视觉 + 绿色草坪数据。
     case terminal = "terminal"
+    /// 冒险背景卡：原型 4，使用草地山丘背景图。
+    case adventure = "adventure"
+    /// 聚光海报卡：原型 4/5 的抽象渐变版本，颜色差异由配色区分。
+    case spotlight = "spotlight"
 
     var id: String { rawValue }
 
@@ -47,19 +47,27 @@ enum ShareCardStyle: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .magazine:  return "sharecard.style.magazine"
         case .idCard:    return "sharecard.style.idCard"
-        case .poster:    return "sharecard.style.poster"
-        case .dashboard: return "sharecard.style.dashboard"
-        case .pass:      return "sharecard.style.pass"
+        case .social:    return "sharecard.style.social"
         case .terminal:  return "sharecard.style.terminal"
+        case .adventure: return "sharecard.style.adventure"
+        case .spotlight: return "sharecard.style.spotlight"
         }
     }
 
-    /// 当前版式允许的配色。ID 卡保留黑/白名片语义，其余版式共享传播向 5 色。
+    /// 当前版式允许的配色。原型重复样式通过颜色区分，而不是复制 case。
     var supportedColors: [ShareCardColorSet] {
         switch self {
         case .idCard:
             return [.lightCard, .darkCard]
-        case .magazine, .poster, .dashboard, .pass, .terminal:
+        case .social:
+            return [.githubGreen, .lightCard, .auroraBlue, .berryPurple]
+        case .terminal:
+            return [.githubGreen, .minimal, .heatOrange, .auroraBlue]
+        case .adventure:
+            return [.lightCard]
+        case .spotlight:
+            return [.auroraBlue, .berryPurple]
+        case .magazine:
             return ShareCardColorSet.socialPalette
         }
     }
@@ -69,7 +77,13 @@ enum ShareCardStyle: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .idCard:
             return .lightCard
-        case .magazine, .poster, .dashboard, .pass, .terminal:
+        case .social, .terminal:
+            return .githubGreen
+        case .adventure:
+            return .lightCard
+        case .spotlight:
+            return .auroraBlue
+        case .magazine:
             return .githubGreen
         }
     }
@@ -354,35 +368,32 @@ extension ShareCardPalette {
 
     // MARK: - 简约白卡（ID Card 布局）
 
-    /// 简约白卡：纯白底 + 黑字 + 浅灰描边。
+    /// 简约白卡：纯白底 + 彩色强调 + 绿色草坪。
     ///
-    /// 配色逻辑（参考 dong4j 提供的设计图左侧白卡）：
-    /// - 背景：#FFFFFF 纯白；secondary 给一点不可见的 #FAFAFA 让外层渐变路径不报错。
-    /// - 卡片描边：#E5E7EB（与系统 separator 接近的浅灰），描出实体名片的"边"。
-    /// - 主文字：#0A0A0A 近黑（不死黑，避免印刷感太重）。
-    /// - 强调色：#0A0A0A 黑——`accent` 在 ID 卡布局里用作"verified 徽章背景"和"stats pill 背景"。
-    /// - 草坪色板：白卡不渲染草坪，但 palette 字段必须填——给一份纯灰梯度兜底，
-    ///   防止未来不小心用 `palette.contribution` 时出现透明色。
+    /// 配色逻辑（2026-06-25 dong4j 反馈：第 3 套白色主题不要黑白灰墓碑感）：
+    /// - 背景：#FFFFFF 纯白，secondary 也保持纯白，避免导出卡片发灰。
+    /// - 强调色：蓝色负责链接 / 标题点缀，头像和统计图标在 View 层再做语义色。
+    /// - 草坪：白卡使用 GitHub light 绿色草坪，不再使用灰阶贡献图。
     static let lightCardPalette = ShareCardPalette(
         cardBackground: Color.fromHex6(0xFFFFFF),
-        cardBackgroundSecondary: Color.fromHex6(0xFAFAFA),
-        cardBorder: Color.fromHex6(0xE5E7EB),
+        cardBackgroundSecondary: Color.fromHex6(0xFFFFFF),
+        cardBorder: Color.fromHex6(0xDBEAFE),
 
-        primaryText: Color.fromHex6(0x0A0A0A),
-        secondaryText: Color.fromHex6(0x4B5563),
-        tertiaryText: Color.fromHex6(0x9CA3AF),
+        primaryText: Color.fromHex6(0x111827),
+        secondaryText: Color.fromHex6(0x475569),
+        tertiaryText: Color.fromHex6(0x94A3B8),
 
-        accent: Color.fromHex6(0x0A0A0A),
+        accent: Color.fromHex6(0x2563EB),
         onAccent: Color.fromHex6(0xFFFFFF),
 
-        divider: Color.fromHex6(0xE5E7EB),
+        divider: Color.fromHex6(0xD7DEE8),
 
         contribution: ContributionPalette(
-            none: Color.fromHex6(0xF3F4F6),
-            l1:   Color.fromHex6(0xD1D5DB),
-            l2:   Color.fromHex6(0x9CA3AF),
-            l3:   Color.fromHex6(0x4B5563),
-            l4:   Color.fromHex6(0x0A0A0A)
+            none: Color.fromHex6(0xEBEDF0),
+            l1:   Color.fromHex6(0x9BE9A8),
+            l2:   Color.fromHex6(0x40C463),
+            l3:   Color.fromHex6(0x30A14E),
+            l4:   Color.fromHex6(0x216E39)
         )
     )
 

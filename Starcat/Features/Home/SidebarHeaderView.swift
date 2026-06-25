@@ -35,8 +35,10 @@ struct SidebarHeaderView: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(AppDependencies.self) private var dependencies
     /// 2026-06-06 A 方案：accountMenu 中"刷新个人信息"项触发 `load(force: true)`，
-    /// 同时让贡献草坪也跟着刷一下（用户主动刷新时一并更新）。
+    /// 同时让贡献草坪和开发语言也跟着刷一下（用户主动刷新时一并更新）。
     @Environment(UserProfileService.self) private var userProfileService
+    /// 分享卡 Top Languages 使用用户自有公开仓库语言统计，不使用 starred 项目语言分布。
+    @Environment(DeveloperLanguageService.self) private var developerLanguageService
 
     /// 当前在 Trending 页面选中的 repo（仅在 Trending 页面有效，Manage 页面为 nil）。
     ///
@@ -97,6 +99,7 @@ struct SidebarHeaderView: View {
                     user: user,
                     starredCount: viewModel.totalCount,
                     contribution: contributionService.payload,
+                    developerLanguages: developerLanguageService.snapshot,
                     isProUser: appSettings.isProUser,
                     onClose: { showShareCardSheet = false }
                 )
@@ -383,12 +386,13 @@ struct SidebarHeaderView: View {
             }
 
             // 2026-06-06 A 方案 D5-B：手动刷新个人信息入口。
-            // 触发 UserProfileService 与 ContributionService 同时 force refresh。
-            // 拉到后 service 反向 push 给 AuthSession.state，sidebar 自然更新。
+            // 触发 UserProfileService / ContributionService / DeveloperLanguageService 同时 force refresh。
+            // 拉到后 profile service 反向 push 给 AuthSession.state，sidebar 自然更新；分享卡数据用 service 快照更新。
             if let login = authSession.state.user?.login {
                 Button {
                     userProfileService.load(login: login, force: true)
                     contributionService.load(login: login, force: true)
+                    developerLanguageService.load(login: login, force: true)
                 } label: {
                     Label("sidebar.account.refreshProfile", systemImage: "arrow.clockwise")
                 }
