@@ -119,6 +119,8 @@ struct StarcatApp: App {
                 // 2026-06-06 A 方案：用户 profile 缓存服务。Sidebar / ShareCardSheet 会调
                 // userProfileService.load(force:) 主动触发 TTL 刷新或 force refresh。
                 .environment(dependencies.userProfileService)
+                // 分享卡开发语言统计服务：登录后预热，分享卡读取用户自有公开仓库语言占比。
+                .environment(dependencies.developerLanguageService)
                 // HOM-126：自动后台 AI 整理调度器。Sidebar 直接观察 `isAutoTidyRunning`
                 // 决定是否展示「AI 自动整理中 N/M」轻量行；设置页观察其触发结果展示
                 // 「运行状态」。调度器的 `start()` 由 HomeView 在 .task 里调。

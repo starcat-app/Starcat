@@ -262,6 +262,13 @@ final class AppDependencies {
     /// 同时 session.userProfileService = service（强引用，session 持有 service）。
     let userProfileService: UserProfileService
 
+    /// 分享卡开发语言统计服务（当前用户拥有的公开、非 fork 仓库语言聚合）。
+    ///
+    /// 与 `HomeViewModel.languageStats` 刻意分离：后者统计 starred 项目的语言，表达兴趣；
+    /// 这里统计用户自己的公开仓库，表达开发画像。服务内部有 12h TTL + UserDefaults 快照，
+    /// 登录后异步预热，分享卡打开时直接消费已缓存数据。
+    let developerLanguageService: DeveloperLanguageService
+
     // MARK: - R-01 三场景共用架构（2026-06-09）
 
     /// 全局已 star 仓库 id 集合（@Observable）。
@@ -733,6 +740,12 @@ final class AppDependencies {
         userProfileSvc.authSession = session
         session.userProfileService = userProfileSvc
         self.userProfileService = userProfileSvc
+
+        // 分享卡开发语言服务：从用户拥有的公开仓库聚合 `/languages` 字节数。
+        // 与 ContributionService 同样持有具体 GitHubAPIClient，避免把分享卡专属端点扩进全局 mock 协议。
+        let developerLanguageSvc = DeveloperLanguageService(apiClient: api)
+        session.developerLanguageService = developerLanguageSvc
+        self.developerLanguageService = developerLanguageSvc
 
         // ────────────────────────────────────────────────────────────────────
         // R-01「三场景共用架构」装配（2026-06-09）

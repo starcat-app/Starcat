@@ -215,6 +215,9 @@ enum AppEndpoints {
             // —— 用户 ——
             /// `GET /user` —— 当前登录用户。
             static let currentUser = "/user"
+            /// `GET /user/repos` —— 当前授权用户拥有 / 协作的仓库列表。
+            /// 分享卡只用 `affiliation=owner` 统计用户自己的公开开发语言。
+            static let currentUserRepos = "/user/repos"
             /// `GET /user/starred` —— 当前用户的 starred 列表。
             static let userStarred = "/user/starred"
             /// `PUT/DELETE /user/starred/{owner}/{repo}` —— star / unstar 单仓库。
@@ -229,6 +232,10 @@ enum AppEndpoints {
             /// 拼装临时 Repo 让 UI 复用 `RepoMetadataHeaderView` 渲染。
             static func repo(owner: String, repo: String) -> String {
                 "/repos/\(owner)/\(repo)"
+            }
+            /// `GET /repos/{owner}/{repo}/languages` —— 单仓库语言字节分布。
+            static func repoLanguages(owner: String, repo: String) -> String {
+                "/repos/\(owner)/\(repo)/languages"
             }
             /// `GET /repos/{owner}/{repo}/readme` —— README 内容。
             static func repoReadme(owner: String, repo: String) -> String {
