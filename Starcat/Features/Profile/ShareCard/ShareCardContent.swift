@@ -682,9 +682,17 @@ struct ShareCardContent: View {
 
             Spacer(minLength: 16)
 
-            RemoteAvatar(urlString: user.avatarUrl, size: 126, showBorder: false)
-                .overlay(Circle().stroke(palette.accent, lineWidth: 3))
-                .shadow(color: palette.accent.opacity(0.25), radius: 16, y: 6)
+            ZStack(alignment: .bottomTrailing) {
+                RemoteAvatar(urlString: user.avatarUrl, size: 126, showBorder: false)
+                    .overlay(Circle().stroke(palette.accent, lineWidth: 3))
+                    .shadow(color: palette.accent.opacity(0.25), radius: 16, y: 6)
+
+                // Pro 徽章跟随头像，而不是放进正文信息区，避免不同版式漏显示。
+                if isProUser {
+                    shareCardProBadge
+                        .offset(x: 8, y: 0)
+                }
+            }
 
             VStack(spacing: 4) {
                 Text(displayName)
@@ -747,8 +755,15 @@ struct ShareCardContent: View {
             topBar
 
             HStack(alignment: .center, spacing: 14) {
-                RemoteAvatar(urlString: user.avatarUrl, size: 74, showBorder: false)
-                    .overlay(Circle().stroke(palette.accent, lineWidth: 2))
+                ZStack(alignment: .bottomTrailing) {
+                    RemoteAvatar(urlString: user.avatarUrl, size: 74, showBorder: false)
+                        .overlay(Circle().stroke(palette.accent, lineWidth: 2))
+
+                    if isProUser {
+                        shareCardProBadge
+                            .offset(x: 6, y: 0)
+                    }
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(displayName)
                         .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -871,13 +886,20 @@ struct ShareCardContent: View {
     @ViewBuilder
     private var passIdentityPanel: some View {
         HStack(alignment: .center, spacing: 16) {
-            RemoteAvatar(urlString: user.avatarUrl, size: 104, showBorder: false)
-                .clipShape(RoundedRectangle(cornerRadius: 20))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(palette.accent, lineWidth: 2.2)
-                )
-                .shadow(color: palette.accent.opacity(0.20), radius: 10, y: 4)
+            ZStack(alignment: .bottomTrailing) {
+                RemoteAvatar(urlString: user.avatarUrl, size: 104, showBorder: false)
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle()
+                            .stroke(palette.accent, lineWidth: 2.2)
+                    )
+                    .shadow(color: palette.accent.opacity(0.20), radius: 10, y: 4)
+
+                if isProUser {
+                    shareCardProBadge
+                        .offset(x: 8, y: 0)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 7) {
                 Text(displayName)
@@ -947,7 +969,7 @@ struct ShareCardContent: View {
     private var terminalBody: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("$ starcat profile")
+                Text(verbatim: "$ GitHub Profile")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(palette.accent)
                 Spacer()
@@ -957,8 +979,15 @@ struct ShareCardContent: View {
             }
 
             HStack(alignment: .center, spacing: 16) {
-                RemoteAvatar(urlString: user.avatarUrl, size: 92, showBorder: false)
-                    .overlay(Circle().stroke(palette.accent, lineWidth: 2))
+                ZStack(alignment: .bottomTrailing) {
+                    RemoteAvatar(urlString: user.avatarUrl, size: 92, showBorder: false)
+                        .overlay(Circle().stroke(palette.accent, lineWidth: 2))
+
+                    if isProUser {
+                        shareCardProBadge
+                            .offset(x: 8, y: 0)
+                    }
+                }
                 VStack(alignment: .leading, spacing: 6) {
                     terminalLine(key: "name", value: displayName)
                     terminalLine(key: "login", value: "@\(user.login)")

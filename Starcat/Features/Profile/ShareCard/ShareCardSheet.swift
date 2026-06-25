@@ -150,8 +150,10 @@ struct ShareCardSheet: View {
             //
             // v3.1（2026-06-17）明亮主题适配：dark 下 `accentColor + plusLighter` 在
             // material 灰底上对比足够；light 下 accent 偏浅、加亮后几乎融进白底看不见。
-            // light 改走 `饱和蓝 tint + multiply`——shader 白底上画深蓝点，multiply 压暗
-            // 浅灰 sheet，纹理可见且仍保持"装饰背景"语义。
+            // light 改走 `浅金 tint + multiply`——shader 白底上画金色点，multiply 压暗
+            // 浅灰 sheet，纹理可见且仍保持"装饰背景"语义。注意这里不能靠降低
+            // brightness 让粒子变淡：shader 内部是 `fg = tint * brightness`，在
+            // multiply 下亮度越低越接近黑色，点会反而更深。
             sheetDotsFlowBackground
                 // 背景只是装饰，不允许参与 hit-test。主题按钮很小，明确禁用背景命中可避免
                 // 用户点到按钮边缘时事件落到背景层，表现成 hover/click 随机失效。
@@ -189,10 +191,10 @@ struct ShareCardSheet: View {
             .blendMode(.plusLighter)
         } else {
             DotsFlowBackground(
-                tint: Color.fromHex6(0x2563EB),
+                tint: Color.fromHex6(0xFDE68A),
                 background: .white,
                 speed: 0.35,
-                brightness: 0.75,
+                brightness: 1.0,
                 vignette: 0.0
             )
             .blendMode(.multiply)
