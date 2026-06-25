@@ -40,6 +40,7 @@ struct ContentView: View {
             readmeOnHTMLLoaded: dependencies.makeReadmeOnHTMLLoadedHandler(),
             tagRepository: dependencies.tagRepository,
             repoTagRepository: dependencies.repoTagRepository,
+            githubStarListRepository: dependencies.githubStarListRepository,
             repoNoteRepository: dependencies.repoNoteRepository,
             repoHealthRepository: dependencies.repoHealthRepository,
             releaseRepository: dependencies.releaseRepository,

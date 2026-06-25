@@ -63,6 +63,10 @@ enum SidebarItem: Hashable, Identifiable {
     /// W4 A6：按 tag id 过滤。tagId 是 Tag.id（UUID 字符串）。
     /// 显示名/颜色/图标 由 SidebarView 从 HomeViewModel.tags 字典里查。
     case tag(String)
+    /// GitHub Stars List 虚拟「未分组」。
+    case githubStarListUngrouped
+    /// GitHub Stars List 真实 list。
+    case githubStarList(String)
 
     /// SwiftUI ForEach / List 用的稳定 id。
     var id: String {
@@ -75,6 +79,8 @@ enum SidebarItem: Hashable, Identifiable {
         case .userSmartCollection(let id): return "userSmartCollections.\(id)"
         case .language(let lang):      return "language.\(lang ?? "<nil>")"
         case .tag(let tagId):          return "tag.\(tagId)"
+        case .githubStarListUngrouped: return "githubStarList.ungrouped"
+        case .githubStarList(let id):  return "githubStarList.\(id)"
         }
     }
 
@@ -92,6 +98,8 @@ enum SidebarItem: Hashable, Identifiable {
         // 无主语言（nil）统一显示 "Uncategorized"（dong4j 2026-06-16，不做 i18n）。
         case .language(let lang):      return LocalizedStringKey(lang.map(LanguageDisplayName.shortened(for:)) ?? "Uncategorized")
         case .tag(let tagId):          return LocalizedStringKey(tagId)
+        case .githubStarListUngrouped: return "sidebar.githubStarLists.ungrouped"
+        case .githubStarList(let id):  return LocalizedStringKey(id)
         }
     }
 
@@ -107,6 +115,8 @@ enum SidebarItem: Hashable, Identifiable {
         case .userSmartCollection(let id): return id
         case .language(let lang):      return lang.map(LanguageDisplayName.shortened(for:)) ?? "Uncategorized"
         case .tag(let tagId):          return tagId
+        case .githubStarListUngrouped: return "sidebar.githubStarLists.ungrouped"
+        case .githubStarList(let id):  return id
         }
     }
 
@@ -121,6 +131,8 @@ enum SidebarItem: Hashable, Identifiable {
         case .userSmartCollection:     return "line.3.horizontal.decrease.circle"
         case .language:                return "chevron.left.forwardslash.chevron.right"
         case .tag:                     return "tag.fill"
+        case .githubStarListUngrouped: return "tray"
+        case .githubStarList:          return "folder.fill"
         }
     }
 }
@@ -168,6 +180,8 @@ extension SidebarItem {
         case .userSmartCollection(let id): return "userSmartCollection:\(id)"
         case .language(let lang):  return "language:\(lang ?? "")"
         case .tag(let tagId):      return "tag:\(tagId)"
+        case .githubStarListUngrouped: return "githubStarListUngrouped"
+        case .githubStarList(let id): return "githubStarList:\(id)"
         }
     }
 
@@ -191,6 +205,10 @@ extension SidebarItem {
             self = .language(lang.isEmpty ? nil : lang)
         } else if raw.hasPrefix("tag:") {
             self = .tag(String(raw.dropFirst("tag:".count)))
+        } else if raw == "githubStarListUngrouped" {
+            self = .githubStarListUngrouped
+        } else if raw.hasPrefix("githubStarList:") {
+            self = .githubStarList(String(raw.dropFirst("githubStarList:".count)))
         } else {
             self = .allStars
         }

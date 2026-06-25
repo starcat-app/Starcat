@@ -71,6 +71,10 @@ final class AppDependencies {
     let tagRepository: any TagRepositoryProtocol
     /// W4 Batch A1 引入：repo ↔ tag 关联 + 批量打标签。
     let repoTagRepository: any RepoTagRepositoryProtocol
+    /// GitHub Stars List 本地缓存。
+    let githubStarListRepository: any GitHubStarListRepositoryProtocol
+    /// GitHub Stars List 远端同步与 mutation 协调服务。
+    let githubStarListSyncService: GitHubStarListSyncService
     /// W4 Batch A1 引入：repo 笔记 + 状态管理（同表合并）。
     let repoNoteRepository: any RepoNoteRepositoryProtocol
     /// 搜索浮层 `⌘K` 的关键词历史 Repository（GRDB SQLite，CloudKit-ready 字段已就绪，W5 同步接入）。
@@ -504,8 +508,14 @@ final class AppDependencies {
         let rawTagRepo = GRDBTagRepository(database: db)
         let tagRepo = GatedTagRepository(base: rawTagRepo, entitlementGate: self.entitlementGate)
         let repoTagRepo = GRDBRepoTagRepository(database: db)
+        let githubStarListRepo = GRDBGitHubStarListRepository(database: db)
         self.tagRepository = tagRepo
         self.repoTagRepository = repoTagRepo
+        self.githubStarListRepository = githubStarListRepo
+        self.githubStarListSyncService = GitHubStarListSyncService(
+            apiClient: api,
+            repository: githubStarListRepo
+        )
         self.repoNoteRepository = GRDBRepoNoteRepository(database: db)
         self.searchHistoryRepository = GRDBSearchHistoryRepository(database: db)
         self.smartCollectionRepository = GatedSmartCollectionRepository(
@@ -802,8 +812,11 @@ final class AppDependencies {
 
         // SyncManager 全量 / 增量同步成功完成 → bootstrapper.reload() 同步 registry 到 DB
         // 注：weak 不需要，bootstrapper 与 syncManager 都由 self 强持（生命周期一致）
-        self.syncManager.onSyncCompleted = { [bootstrapper] in
+        self.syncManager.onSyncCompleted = { [bootstrapper, starListSyncService = self.githubStarListSyncService, session] in
             await bootstrapper.reload()
+            if let login = session.state.user?.login {
+                await starListSyncService.sync(login: login)
+            }
         }
 
         // AuthSession 登出 / 失效 → bootstrapper.clearOnSignOut() 清空 registry

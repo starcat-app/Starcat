@@ -393,6 +393,50 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.items.count == expectedCount)
     }
 
+    @Test("refreshSidebar: 加载 GitHub Stars List 与未分组计数")
+    func refreshSidebarLoadsGitHubStarLists() async throws {
+        let db = try InMemoryDatabaseManager()
+        let repo = GRDBRepoRepository(database: db)
+        let tagRepo = GRDBTagRepository(database: db)
+        let rtRepo = GRDBRepoTagRepository(database: db)
+        let noteRepo = GRDBRepoNoteRepository(database: db)
+        let listRepo = GRDBGitHubStarListRepository(database: db)
+
+        try await insertRepo(db, id: 1, fullName: "o/one", stars: 1, starredAt: "2026-06-26T02:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/two", stars: 1, starredAt: "2026-06-26T01:00:00Z")
+        try await listRepo.replaceRemoteSnapshot(
+            lists: [
+                GitHubStarListRemoteRecord(
+                    id: "list-1",
+                    name: "Tools",
+                    description: nil,
+                    isPrivate: false,
+                    position: 0,
+                    createdAt: nil,
+                    updatedAt: nil
+                )
+            ],
+            memberships: [
+                GitHubStarListRemoteMembership(listId: "list-1", repoFullName: "o/one")
+            ],
+            syncedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let vm = HomeViewModel(
+            repository: repo,
+            tagRepository: tagRepo,
+            repoTagRepository: rtRepo,
+            githubStarListRepository: listRepo,
+            repoNoteRepository: noteRepo
+        )
+
+        await vm.refreshSidebar()
+
+        #expect(vm.githubStarLists.map(\.id) == ["list-1"])
+        #expect(vm.githubStarListCounts["list-1"] == 1)
+        #expect(vm.githubStarListUngroupedCount == 1)
+    }
+
     /// 周期性检查条件，最多等待 `timeout` 秒；条件成立立即返回。
     /// 用于异步状态更新的等待，避免硬编码 sleep。
     ///

@@ -147,6 +147,7 @@ struct HomeView: View {
         readmeOnHTMLLoaded: @escaping @MainActor (Repo) -> Void,
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
+        githubStarListRepository: any GitHubStarListRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
         repoHealthRepository: (any RepoHealthRepositoryProtocol)? = nil,
         releaseRepository: (any ReleaseRepositoryProtocol)? = nil,
@@ -163,6 +164,7 @@ struct HomeView: View {
             repository: repository,
             tagRepository: tagRepository,
             repoTagRepository: repoTagRepository,
+            githubStarListRepository: githubStarListRepository,
             repoNoteRepository: repoNoteRepository,
             repoHealthRepository: repoHealthRepository,
             releaseRepository: releaseRepository,
@@ -1028,6 +1030,10 @@ struct HomeView: View {
             return viewModel.languageStats.contains { $0.language == (lang ?? "") }
         case .tag(let tagId):
             return viewModel.tags.contains { $0.id == tagId }
+        case .githubStarListUngrouped:
+            return true
+        case .githubStarList(let id):
+            return viewModel.githubStarLists.contains { $0.id == id }
         }
     }
 

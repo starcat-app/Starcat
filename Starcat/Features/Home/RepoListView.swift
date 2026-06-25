@@ -1130,6 +1130,10 @@ struct RepoListView: View {
             return language.map(LanguageDisplayName.shortened(for:)) ?? "Uncategorized"
         case .tag(let id):
             return viewModel.tags.first { $0.id == id }?.name ?? String.l10n("sidebar.tagFallback")
+        case .githubStarListUngrouped:
+            return String.l10n("sidebar.githubStarLists.ungrouped")
+        case .githubStarList(let id):
+            return viewModel.githubStarLists.first { $0.id == id }?.name ?? String.l10n("sidebar.githubStarLists.fallback")
         }
     }
 
@@ -1146,6 +1150,8 @@ struct RepoListView: View {
         case .userSmartCollection: return "line.3.horizontal.decrease.circle"
         case .language:  return "chevron.left.forwardslash.chevron.right"
         case .tag:       return "tag.slash"
+        case .githubStarListUngrouped: return "tray"
+        case .githubStarList: return "folder"
         }
     }
 
@@ -1160,6 +1166,8 @@ struct RepoListView: View {
         case .userSmartCollection: return "smartCollections.empty.collection"
         case .language:        return "empty.noReposInLanguage"
         case .tag:             return "empty.noReposInTag"
+        case .githubStarListUngrouped: return "empty.noStars"
+        case .githubStarList:  return "empty.noReposInTag"
         }
     }
 
@@ -1174,6 +1182,8 @@ struct RepoListView: View {
         case .userSmartCollection: return "smartCollections.empty.collectionSubtitle"
         case .language:        return "empty.languageHint"
         case .tag:             return "empty.tagHint"
+        case .githubStarListUngrouped: return "empty.syncPrompt"
+        case .githubStarList:  return "empty.tagHint"
         }
     }
 

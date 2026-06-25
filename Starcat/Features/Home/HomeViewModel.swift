@@ -301,6 +301,12 @@ final class HomeViewModel {
     private(set) var tags: [Tag] = []
     /// W4 A6：tagId → starred repo count（Sidebar Tags 行右侧计数）。
     private(set) var tagCounts: [String: Int] = [:]
+    /// GitHub Stars List 列表（Sidebar「仓库分组」）。
+    private(set) var githubStarLists: [GitHubStarList] = []
+    /// GitHub list id → starred repo count。
+    private(set) var githubStarListCounts: [String: Int] = [:]
+    /// 虚拟「未分组」计数。
+    private(set) var githubStarListUngroupedCount: Int = 0
     /// 用户自定义智能集合。内置集合由 `SmartCollectionKind` 提供，不入库。
     private(set) var userSmartCollections: [UserSmartCollection] = []
 
@@ -487,6 +493,7 @@ final class HomeViewModel {
     /// W4 A6：Sidebar Tags 段 + 按 tag 过滤需要这两个 repo。
     private let tagRepository: any TagRepositoryProtocol
     private let repoTagRepository: any RepoTagRepositoryProtocol
+    private let githubStarListRepository: (any GitHubStarListRepositoryProtocol)?
 
     /// W4-4 D3：按状态过滤需要 repoNoteRepository.fetchStatusMap。
     private let repoNoteRepository: any RepoNoteRepositoryProtocol
@@ -528,6 +535,7 @@ final class HomeViewModel {
         repository: any RepoRepositoryProtocol,
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
+        githubStarListRepository: (any GitHubStarListRepositoryProtocol)? = nil,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
         repoHealthRepository: (any RepoHealthRepositoryProtocol)? = nil,
         releaseRepository: (any ReleaseRepositoryProtocol)? = nil,
@@ -538,6 +546,7 @@ final class HomeViewModel {
         self.repository = repository
         self.tagRepository = tagRepository
         self.repoTagRepository = repoTagRepository
+        self.githubStarListRepository = githubStarListRepository
         self.repoNoteRepository = repoNoteRepository
         self.repoHealthRepository = repoHealthRepository
         self.releaseRepository = releaseRepository
@@ -623,6 +632,9 @@ final class HomeViewModel {
         languageStats = []
         tags = []
         tagCounts = [:]
+        githubStarLists = []
+        githubStarListCounts = [:]
+        githubStarListUngroupedCount = 0
         userSmartCollections = []
 
         selectedRepoID = nil
@@ -677,6 +689,9 @@ final class HomeViewModel {
             async let langs = repository.languageStats()
             async let tagsResult = tagRepository.fetchAll()
             async let tagCountsResult = repoTagRepository.repoCountsByTag()
+            async let githubListsResult = fetchGitHubStarLists()
+            async let githubListCountsResult = fetchGitHubStarListCounts()
+            async let githubUngroupedCountResult = fetchGitHubStarListUngroupedCount()
             async let smartCollectionsResult = fetchUserSmartCollections()
             // HOM-179：一并刷新 repo→tagIds 映射，让 selectedTagIds 多选过滤实时生效。
             // 与 sidebar 其他统计同步刷新，避免新增/删除 tag 后 wall 多选还按旧映射过滤。
@@ -687,6 +702,9 @@ final class HomeViewModel {
             self.languageStats = try await langs
             self.tags = try await tagsResult
             self.tagCounts = try await tagCountsResult
+            self.githubStarLists = try await githubListsResult
+            self.githubStarListCounts = try await githubListCountsResult
+            self.githubStarListUngroupedCount = try await githubUngroupedCountResult
             self.userSmartCollections = try await smartCollectionsResult
             let assignments = try await tagAssignmentsResult
             self.repoTagsMap = assignments.mapValues { Set($0.map(\.id)) }
@@ -869,7 +887,7 @@ final class HomeViewModel {
         case .userSmartCollection:
             guard let activeScope = activeUserSmartCollectionRule?.scope else { return nil }
             scope = activeScope
-        case .trending, .smartCollectionsHome, .smartCollection:
+        case .trending, .smartCollectionsHome, .smartCollection, .githubStarList, .githubStarListUngrouped:
             return nil
         }
 
@@ -889,6 +907,21 @@ final class HomeViewModel {
     private func fetchUserSmartCollections() async throws -> [UserSmartCollection] {
         guard let smartCollectionRepository else { return [] }
         return try await smartCollectionRepository.fetchAll()
+    }
+
+    private func fetchGitHubStarLists() async throws -> [GitHubStarList] {
+        guard let githubStarListRepository else { return [] }
+        return try await githubStarListRepository.fetchAllLists()
+    }
+
+    private func fetchGitHubStarListCounts() async throws -> [String: Int] {
+        guard let githubStarListRepository else { return [:] }
+        return try await githubStarListRepository.repoCountsByList()
+    }
+
+    private func fetchGitHubStarListUngroupedCount() async throws -> Int {
+        guard let githubStarListRepository else { return 0 }
+        return try await githubStarListRepository.ungroupedRepoCount()
     }
 
     private func fetchUserSmartCollectionRule(id: String) async throws -> SmartCollectionRule {
@@ -918,6 +951,10 @@ final class HomeViewModel {
             return .language(language)
         case .tag(let tagID):
             return .tag(tagID)
+        case .githubStarList(let listID):
+            return .githubStarList(listID)
+        case .githubStarListUngrouped:
+            return .githubStarListUngrouped
         case .trending, .smartCollectionsHome, .smartCollection, .userSmartCollection:
             return nil
         }
@@ -1007,7 +1044,7 @@ final class HomeViewModel {
         // 用户后续可显式切到 .language(...) 形成 AND 组合。
         if !next.isEmpty {
             switch selection {
-            case .untagged, .tag, .smartCollectionsHome, .smartCollection, .userSmartCollection:
+            case .untagged, .tag, .smartCollectionsHome, .smartCollection, .userSmartCollection, .githubStarList, .githubStarListUngrouped:
                 selection = .allStars
             case .allStars, .language, .trending:
                 break
@@ -1210,6 +1247,22 @@ final class HomeViewModel {
                             repos = try await self.repository.fetchByLanguage(lang)
                         case .tag(let tagId):
                             repos = try await self.repoTagRepository.fetchRepos(forTag: tagId)
+                        case .githubStarList(let listId):
+                            repos = try await self.repository.fetchListPage(
+                                scope: .githubStarList(listId),
+                                filters: self.currentRepoListFiltersForDatabasePaging(),
+                                sort: self.sortOption,
+                                limit: 100_000,
+                                offset: 0
+                            )
+                        case .githubStarListUngrouped:
+                            repos = try await self.repository.fetchListPage(
+                                scope: .githubStarListUngrouped,
+                                filters: self.currentRepoListFiltersForDatabasePaging(),
+                                sort: self.sortOption,
+                                limit: 100_000,
+                                offset: 0
+                            )
                         }
 
                         return (repos: repos, semanticHitMap: [:])
@@ -1556,6 +1609,22 @@ final class HomeViewModel {
                         return try await self.repository.fetchByLanguage(lang)
                     case .tag(let tagId):
                         return try await self.repoTagRepository.fetchRepos(forTag: tagId)
+                    case .githubStarList(let listId):
+                        return try await self.repository.fetchListPage(
+                            scope: .githubStarList(listId),
+                            filters: self.currentRepoListFiltersForDatabasePaging(),
+                            sort: self.sortOption,
+                            limit: 100_000,
+                            offset: 0
+                        )
+                    case .githubStarListUngrouped:
+                        return try await self.repository.fetchListPage(
+                            scope: .githubStarListUngrouped,
+                            filters: self.currentRepoListFiltersForDatabasePaging(),
+                            sort: self.sortOption,
+                            limit: 100_000,
+                            offset: 0
+                        )
                     }
                 }
 
@@ -1850,6 +1919,8 @@ extension SidebarItem {
         case .language:
             return [.allStars, .untagged]
         case .tag:
+            return [.allStars, .untagged]
+        case .githubStarList, .githubStarListUngrouped:
             return [.allStars, .untagged]
         }
     }
