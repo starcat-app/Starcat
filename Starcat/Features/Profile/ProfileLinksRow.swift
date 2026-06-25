@@ -2,21 +2,21 @@
 //  ProfileLinksRow.swift
 //  Starcat
 //
-//  Sidebar 头像卡的个人主页快捷链接行：bio + 一排可点击图标（location / company / blog / twitter / email）。
+//  Sidebar 头像卡的个人主页快捷链接行：bio + 一排紧凑图标（company / blog / twitter / email）。
 //  HOM-PROFILE 2026-06-05 引入。
 //
 //  设计动机：
 //  - GitHub 个人主页有 ~6 个字段（bio / company / location / email / blog / twitter），
 //    全部展示成多行文字会挤爆 sidebar。
 //  - 用"图标 + tooltip"的紧凑模式：① 节省垂直空间；② 一眼能看出"哪些字段已填、哪些没填"。
-//  - 可点击的字段（blog / twitter / email）直接跳浏览器/邮件 app；纯文字字段（location / company）
-//    用 tooltip 显示完整内容。
+//  - 可点击的字段（blog / twitter / email / @company）直接跳浏览器/邮件 app；纯文字 company
+//    用 tooltip 显示完整内容。location 不展示：GitHub 只返回自由文本，Starcat 没有可靠跳转目标。
 //
 //  布局：
 //  ┌────────────────────────────────────────┐
 //  │ bio 文字（如有，最多 2 行折行）             │
 //  ├────────────────────────────────────────┤
-//  │ 📍 🏢 🔗 🐦 ✉️                         │
+//  │ 🏢 🔗 🐦 ✉️                            │
 //  └────────────────────────────────────────┘
 //
 //  关键约束：
@@ -42,9 +42,12 @@ struct ProfileLinksRow: View {
                 Text(bio)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    // Sidebar 用户卡需要高度稳定；超长 bio 只展示两行，完整内容交给 tooltip。
                     .lineLimit(2)
+                    .truncationMode(.tail)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
+                    .help(bio)
             }
 
             // 图标按钮行：每个字段独立判 nil/空，最终至少展示 1 个才渲染该行。
@@ -64,16 +67,6 @@ struct ProfileLinksRow: View {
     /// 只把"非空"的字段构造成 ProfileLinkItem，避免渲染时出现"灰色 disabled 图标"。
     private func makeIconButtons() -> [ProfileLinkItem] {
         var items: [ProfileLinkItem] = []
-
-        if let location = user.location?.trimmed, !location.isEmpty {
-            // location 是纯文本（"Shanghai, China"），不可点击；hover 显示完整文字。
-            items.append(.init(
-                kind: .location,
-                systemImage: "mappin.and.ellipse",
-                tooltip: location,
-                url: nil
-            ))
-        }
 
         if let company = user.company?.trimmed, !company.isEmpty {
             // company 形如 "@apple" 或 "Apple Inc."。以 @ 开头的视为组织名，可跳 GitHub 主页。
@@ -154,7 +147,7 @@ private struct ProfileIconButton: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        // 可点击的（带 url）用 pressableHover；纯文本字段（如 location）也加 hover，
+        // 可点击的（带 url）用 pressableHover；纯文本字段（如普通 company）也加 hover，
         // 让用户感知到"可以 hover 出 tooltip"。scale 设为 1.0 避免无意义放大。
         .pressableHover(scale: item.url == nil ? 1.0 : 1.06)
         .help(item.tooltip)
@@ -176,7 +169,7 @@ private struct ProfileLinkItem: Identifiable {
     var id: String { kind.rawValue }
 
     enum Kind: String {
-        case location, company, blog, twitter, email
+        case company, blog, twitter, email
     }
 }
 
