@@ -42,6 +42,8 @@ struct SidebarView: View {
     /// 与下方 languagesExpanded / trendingLanguagesExpanded / activityCategoriesExpanded
     /// 行为一致：重启 App 后回到折叠默认值）。
     @State private var tagsExpanded: Bool = false
+    /// GitHub Stars List 分组展开/收起状态。
+    @State private var githubStarListsExpanded: Bool = true
     /// Trending 语言列表展开/收起状态。和 Manage 的 Languages 分开，避免互相影响。
     @State private var trendingLanguagesExpanded: Bool = true
     /// Activity 分类列表展开/收起状态。Activity 是独立 root，不能复用 Trending 的展开态。
@@ -75,6 +77,9 @@ struct SidebarView: View {
     @State private var showLoginSheet: Bool = false
     /// 自动整理 popover 显示状态。点击 footer 或 hover 进入时打开，跑完自动关闭。
     @State private var showAutoTidyPopover: Bool = false
+    /// GitHub Stars List 创建 / 编辑 Sheet。
+    @State private var showGitHubStarListEditor: Bool = false
+    @State private var editingGitHubStarList: GitHubStarList?
 
     /// row() / tagRow() 内 trailing 区域（sync icon + count）的**整体固定宽度**（pt）。
     ///
@@ -154,6 +159,17 @@ struct SidebarView: View {
         .sheet(isPresented: $showLoginSheet) {
             GithubAuthView()
                 .appLocaleEnvironment()
+        }
+        .sheet(isPresented: $showGitHubStarListEditor) {
+            GitHubStarListEditorSheet(
+                list: editingGitHubStarList,
+                service: dependencies.githubStarListSyncService,
+                onSaved: {
+                    await viewModel.refreshSidebar()
+                    await viewModel.reloadItems(forceRefresh: true)
+                }
+            )
+            .appLocaleEnvironment()
         }
         .onChange(of: autoTidyScheduler.isAutoTidyRunning) { _, isRunning in
             if !isRunning {
@@ -376,6 +392,22 @@ struct SidebarView: View {
         if authSession.state.isAuthenticated {
             Section("sidebar.mainNavigation") {
                 row(.allStars, count: viewModel.totalCount)
+            }
+
+            Section {
+                if githubStarListsExpanded {
+                    githubStarListUngroupedRow
+                        .transition(Self.disclosureRowTransition)
+                    ForEach(viewModel.githubStarLists) { list in
+                        githubStarListRow(list)
+                            .transition(Self.disclosureRowTransition)
+                    }
+                }
+            } header: {
+                githubStarListSectionHeader
+            }
+
+            Section {
                 row(.untagged, count: viewModel.untaggedCount)
                 row(.smartCollectionsHome, count: SmartCollectionKind.allCases.count + viewModel.userSmartCollections.count)
                 // HOM-47：Release 时间线入口（独立 sheet 承载，避免与三栏导航 selection 冲突）
@@ -673,6 +705,54 @@ struct SidebarView: View {
         .padding(.trailing, 6)
     }
 
+    /// GitHub Stars List 分组 header：整行折叠 + 独立新增按钮。
+    private var githubStarListSectionHeader: some View {
+        HStack(spacing: 6) {
+            Button {
+                toggleGitHubStarLists()
+            } label: {
+                HStack(spacing: 4) {
+                    Text("sidebar.githubStarLists")
+                        .font(.headline)
+                    Spacer(minLength: 8)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(disclosureHelp(isExpanded: githubStarListsExpanded))
+
+            Button {
+                editingGitHubStarList = nil
+                showGitHubStarListEditor = true
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 14, weight: .medium))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(Text("sidebar.githubStarLists.add"))
+
+            Button {
+                toggleGitHubStarLists()
+            } label: {
+                disclosureChevron(isExpanded: githubStarListsExpanded)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(disclosureHelp(isExpanded: githubStarListsExpanded))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.trailing, 6)
+    }
+
     /// HOM-43：Languages 数字是"语言类别数量"，放在右侧 accessory 区域，
     /// 与 Tags header 的 `+` 按钮占位一致，而不是紧跟标题。
     private var languageSectionHeader: some View {
@@ -751,6 +831,12 @@ struct SidebarView: View {
     private func toggleTags() {
         withAnimation(disclosureAnimation) {
             tagsExpanded.toggle()
+        }
+    }
+
+    private func toggleGitHubStarLists() {
+        withAnimation(disclosureAnimation) {
+            githubStarListsExpanded.toggle()
         }
     }
 
@@ -910,6 +996,62 @@ struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+    }
+
+    @ViewBuilder
+    private var githubStarListUngroupedRow: some View {
+        row(.githubStarListUngrouped, count: viewModel.githubStarListUngroupedCount)
+    }
+
+    /// GitHub Stars List 真实分组行：颜色点 + 名称 + 编辑按钮 + 计数。
+    @ViewBuilder
+    private func githubStarListRow(_ list: GitHubStarList) -> some View {
+        let item = SidebarItem.githubStarList(list.id)
+        Label {
+            HStack(spacing: 4) {
+                Text(verbatim: list.name)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
+
+                HStack(spacing: 4) {
+                    Button {
+                        editingGitHubStarList = list
+                        showGitHubStarListEditor = true
+                    } label: {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.system(size: 14, weight: .medium))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18, height: 18)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help(Text("sidebar.githubStarLists.edit"))
+
+                    Spacer(minLength: 0)
+
+                    Text((viewModel.githubStarListCounts[list.id] ?? 0).formatted())
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+                .frame(width: Self.trailingFixedWidth, alignment: .trailing)
+            }
+        } icon: {
+            Image(systemName: "folder.fill")
+                .foregroundStyle(Color(hex: list.colorHex) ?? .accentColor)
+        }
+        .tag(item)
+        .onHover { isHovering in
+            if isHovering {
+                for candidate in item.prefetchCandidates {
+                    viewModel.prefetch(selection: candidate)
+                }
+            }
+        }
     }
 
     /// W4 A6：tag 专属行——
