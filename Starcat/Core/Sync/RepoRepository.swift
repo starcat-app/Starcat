@@ -470,6 +470,21 @@ struct GRDBRepoRepository {
                 )
                 """)
             args.append(tagID)
+        case .githubStarList(let listID):
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM repo_github_star_lists rgl_scope
+                    WHERE rgl_scope.repo_id = r.id AND rgl_scope.list_id = ?
+                )
+                """)
+            args.append(listID)
+        case .githubStarListUngrouped:
+            whereClauses.append("""
+                NOT EXISTS (
+                    SELECT 1 FROM repo_github_star_lists rgl_scope
+                    WHERE rgl_scope.repo_id = r.id
+                )
+                """)
         }
 
         if filters.hideArchived {

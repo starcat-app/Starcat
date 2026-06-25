@@ -464,4 +464,84 @@ struct RepoRepositoryTests {
         #expect(try await repo.fetchListCount(scope: .language("Swift"), filters: .empty) == 2)
         #expect(try await repo.fetchListCount(scope: .language(nil), filters: .empty) == 1)
     }
+
+    @Test("DB Paging: GitHub Star List scope 只返回指定分组 repo")
+    func githubStarListScopeReturnsGroupedRepos() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1, owner: "octo", name: "one", starredAt: "2026-06-26T03:00:00Z")
+        try await db.insertRepoFixture(id: 2, owner: "octo", name: "two", starredAt: "2026-06-26T02:00:00Z")
+        try await db.insertRepoFixture(id: 3, owner: "octo", name: "three", starredAt: "2026-06-26T01:00:00Z")
+
+        let lists = GRDBGitHubStarListRepository(database: db)
+        try await lists.replaceRemoteSnapshot(
+            lists: [
+                GitHubStarListRemoteRecord(
+                    id: "list-1",
+                    name: "Tools",
+                    description: nil,
+                    isPrivate: false,
+                    position: 0,
+                    createdAt: nil,
+                    updatedAt: nil
+                )
+            ],
+            memberships: [
+                GitHubStarListRemoteMembership(listId: "list-1", repoFullName: "octo/one"),
+                GitHubStarListRemoteMembership(listId: "list-1", repoFullName: "octo/three")
+            ],
+            syncedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let page = try await repo.fetchListPage(
+            scope: .githubStarList("list-1"),
+            filters: .empty,
+            sort: .starredAtDesc,
+            limit: 10,
+            offset: 0
+        )
+
+        #expect(page.map(\.id) == [1, 3])
+        #expect(try await repo.fetchListCount(scope: .githubStarList("list-1"), filters: .empty) == 2)
+    }
+
+    @Test("DB Paging: GitHub Star List 未分组 scope 返回没有任何 list 的 starred repo")
+    func githubStarListUngroupedScopeReturnsReposWithoutLists() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1, owner: "octo", name: "one", starredAt: "2026-06-26T03:00:00Z")
+        try await db.insertRepoFixture(id: 2, owner: "octo", name: "two", starredAt: "2026-06-26T02:00:00Z")
+        try await db.insertRepoFixture(id: 3, owner: "octo", name: "three", starredAt: "2026-06-26T01:00:00Z")
+        try await db.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET is_starred = 0 WHERE id = 3")
+        }
+
+        let lists = GRDBGitHubStarListRepository(database: db)
+        try await lists.replaceRemoteSnapshot(
+            lists: [
+                GitHubStarListRemoteRecord(
+                    id: "list-1",
+                    name: "Tools",
+                    description: nil,
+                    isPrivate: false,
+                    position: 0,
+                    createdAt: nil,
+                    updatedAt: nil
+                )
+            ],
+            memberships: [
+                GitHubStarListRemoteMembership(listId: "list-1", repoFullName: "octo/one")
+            ],
+            syncedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let page = try await repo.fetchListPage(
+            scope: .githubStarListUngrouped,
+            filters: .empty,
+            sort: .starredAtDesc,
+            limit: 10,
+            offset: 0
+        )
+
+        #expect(page.map(\.id) == [2])
+        #expect(try await repo.fetchListCount(scope: .githubStarListUngrouped, filters: .empty) == 1)
+    }
 }

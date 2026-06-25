@@ -67,6 +67,8 @@ enum DatabaseMigrations {
             try createStarredRepos(db)
             try createTags(db)
             try createRepoTags(db)
+            try createGitHubStarLists(db)
+            try createRepoGitHubStarLists(db)
             try createRepoNotes(db)
             try createReadmes(db)
             try createReadmeContents(db)
@@ -365,6 +367,42 @@ enum DatabaseMigrations {
         }
 
         try db.create(index: "idx_repo_tags_tag", on: "repo_tags", columns: ["tag_id"])
+    }
+
+    /// github_star_lists：GitHub Stars 页面中的 List 本地镜像。
+    ///
+    /// `color_hex` 是 Starcat 本地字段，GitHub API 不提供颜色；首次同步时按 list id
+    /// 稳定 hash 生成，后续用户修改颜色后远端同步不得覆盖。
+    private static func createGitHubStarLists(_ db: Database) throws {
+        try db.create(table: "github_star_lists") { t in
+            t.column("id", .text).primaryKey()
+            t.column("name", .text).notNull()
+            t.column("description", .text)
+            t.column("is_private", .boolean).notNull().defaults(to: false)
+            t.column("color_hex", .text).notNull()
+            t.column("position", .integer).notNull().defaults(to: 0)
+            t.column("created_at", .text)
+            t.column("updated_at", .text)
+            t.column("synced_at", .text).notNull()
+        }
+
+        try db.create(index: "idx_github_star_lists_position", on: "github_star_lists", columns: ["position", "name"])
+    }
+
+    /// repo_github_star_lists：repo ↔ GitHub Stars List 多对多关系。
+    ///
+    /// 不能在 repos 表放单个 group_id，因为 GitHub 允许一个 repo 同时属于多个 List。
+    private static func createRepoGitHubStarLists(_ db: Database) throws {
+        try db.create(table: "repo_github_star_lists") { t in
+            t.column("repo_id", .integer).notNull()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("list_id", .text).notNull()
+                .references("github_star_lists", column: "id", onDelete: .cascade)
+
+            t.primaryKey(["repo_id", "list_id"])
+        }
+
+        try db.create(index: "idx_repo_github_star_lists_list", on: "repo_github_star_lists", columns: ["list_id"])
     }
 
     /// repo_notes：用户对 repo 的私有笔记 + 阅读状态。

@@ -19,6 +19,8 @@ enum RepoListScope: Equatable, Sendable {
     case untagged
     case language(String?)
     case tag(String)
+    case githubStarList(String)
+    case githubStarListUngrouped
 }
 
 /// Manage 列表的可下推过滤条件。
@@ -38,4 +40,3 @@ struct RepoListFilters: Equatable, Sendable {
         selectedTagIDs: []
     )
 }
-
