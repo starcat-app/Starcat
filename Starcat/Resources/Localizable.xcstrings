@@ -20090,13 +20090,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starcat will quietly tidy untagged stars in the background—no manual click needed."
+            "value" : "Tidy untagged stars automatically in the background."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "开启后 Starcat 会在后台静默整理未分类 stars，无需手动点击。"
+            "value" : "后台自动整理未分类 stars。"
           }
         }
       }
@@ -20393,13 +20393,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Create a local zip archive with recent Starcat diagnostic events, app version, and non-sensitive settings. Use this when dong4j needs logs to investigate an issue."
+            "value" : "Export recent diagnostics to a local zip."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "创建一个本地 zip 包，包含最近的 Starcat 诊断事件、应用版本和非敏感设置。dong4j 需要日志定位问题时使用。"
+            "value" : "将最近诊断信息导出为本地 zip 包。"
           }
         }
       }
@@ -20545,13 +20545,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Follow the system, or force light / dark mode. Starcat defaults to dark for richer visual layering."
+            "value" : "Choose system, light, or dark appearance."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "跟随系统自动切换,或强制使用浅色 / 深色。Starcat 默认深色,视觉层次更分明。"
+            "value" : "选择跟随系统、浅色或深色外观。"
           }
         }
       }
@@ -20577,13 +20577,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Disables Starcat's custom view transitions, hover feedback, and list reveal animations. System-level animations (sheets, windows, menus) are controlled by macOS and are not affected by this setting."
+            "value" : "Turn off Starcat's custom animations."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关闭 Starcat 自定义的视图过渡、悬停反馈和列表展开动画。系统级动画（sheet、窗口、菜单）由 macOS 控制,不受此设置影响。"
+            "value" : "关闭 Starcat 的自定义动画。"
           }
         }
       }
@@ -20609,13 +20609,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "When enabled, switching a category or filter opens the first item in the new list. Leave it off to load details only after you choose an item."
+            "value" : "Open the first item after switching lists."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "开启后,切换分类或筛选会自动打开新列表的第一条。关闭时,详情只在你手动选择条目后加载。"
+            "value" : "切换列表后自动打开第一条。"
           }
         }
       }
@@ -20690,13 +20690,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Switches Starcat's display language. The macOS menu bar and a few system dialogs are loaded once at launch — restart Starcat to apply the new language to those."
+            "value" : "Changes the app language; menus update after restart."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "切换 Starcat 显示语言。macOS 顶部菜单栏与少量系统弹窗在 App 启动时一次性加载,需要重启 Starcat 才会跟随切换。"
+            "value" : "切换应用语言；菜单栏重启后更新。"
           }
         }
       }
@@ -20773,13 +20773,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "When enabled, Return inserts a new line and Command+Return sends the message."
+            "value" : "Return inserts a newline; Command+Return sends."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "启用后，Return 用于换行，需按 ⌘ + Return 才能发送。"
+            "value" : "Return 换行，⌘ + Return 发送。"
           }
         }
       }
@@ -20889,13 +20889,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Click the shortcut field, then press a modifier plus one letter or number. The default is Command+K."
+            "value" : "Click the field, then press the shortcut."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点击快捷键区域后，按修饰键与一个字母或数字。默认快捷键为 ⌘K。"
+            "value" : "点击输入框后按下快捷键。"
           }
         }
       }
@@ -21993,13 +21993,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Only important events that need your attention will use macOS notifications. Routine status changes stay in the toolbar status panel."
+            "value" : "Use macOS notifications for important events."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "只有需要你回来处理的重要事件会使用 macOS 通知。普通状态变化会留在 toolbar 状态面板中。"
+            "value" : "重要事件使用 macOS 通知。"
           }
         }
       }
@@ -23021,13 +23021,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starcat depends on a few self-hosted backends for Trending, Weekly and AI Sharing features. The default URLs point to our free fly.io instances; you can also self-host and fill in your own endpoint."
+            "value" : "Configure custom endpoints for Starcat backend services."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starcat 依赖几个自建后端服务来提供 Trending、周刊、AI 分享等功能。默认使用我们部署在 fly.io 的免费实例；你也可以自部署后填入自己的服务地址。"
+            "value" : "配置 Starcat 后端服务地址。"
           }
         }
       }
@@ -23287,13 +23287,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose how the snake traverses the contribution graph. Greedy follows your contribution data."
+            "value" : "Choose how the contribution graph animation moves."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择贪吃蛇遍历草坪的方式。贪心会跟随你的贡献分布动态规划路径。"
+            "value" : "选择贡献草坪动画方式。"
           }
         }
       }
@@ -23862,13 +23862,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose where new AI chat history is stored. Restart Starcat after changing this setting; existing data is not migrated automatically."
+            "value" : "Choose where new AI chat history is stored."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择新的 AI 对话历史写入位置。修改后重启 Starcat 生效；已有数据不会自动迁移。"
+            "value" : "选择新的 AI 对话历史写入位置。"
           }
         }
       }
