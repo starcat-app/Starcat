@@ -2,17 +2,17 @@
 //  ShareCardTheme.swift
 //  Starcat
 //
-//  HOM-173 用户分享卡片：封面主题的色彩 / 调色板定义。
+//  HOM-173 用户分享卡片：封面版式 / 配色 / 调色板定义。
 //
 //  设计动机（来自 issue HOM-173 dong4j 最终方案）：
-//  - 卡片布局必须三套主题保持一致（Magazine v2），仅切换配色。
+//  - 卡片的"版式"和"配色"必须独立：新增颜色不复制布局，新增布局不复制颜色。
 //  - 既能表达"我是 GitHub 玩家"（绿色草坪），也能切到品牌中性色（靛蓝冰蓝）或
 //    传播向暖色（橙），让用户在不同社交平台都能选到合适的封面。
 //
-//  把"主题色板"独立成数据结构而不是散落在 View 里，是为了：
-//  ① 主题枚举可在 Picker / 单测 / 持久化里复用（rawValue: String）
+//  把"版式 / 配色 / 色板"独立成数据结构而不是散落在 View 里，是为了：
+//  ① 版式和配色枚举可在 Picker / 单测 / 持久化里复用（rawValue: String）
 //  ② 草坪格子色与主标题色严格对齐——避免在 View 里手算配色丢失对照关系
-//  ③ 未来加新主题（赛博紫 / 樱花粉…）只在这个文件加一个 case，不动 View 代码
+//  ③ 未来加新配色（赛博紫 / 樱花粉…）只在这个文件加一个 case，不动 layout 代码
 //
 //  与现有 `ContributionPalette`（草坪色板）解耦：本文件不引用 light/dark 系统
 //  调色板，而是为分享卡专门定义"导出到图片"的固定色——分享图要在任何设备上看
@@ -21,18 +21,65 @@
 
 import SwiftUI
 
-/// 分享卡封面主题枚举。
+/// 分享卡版式枚举。
+///
+/// 2026-06-25 设计调整：把原先"主题 = 版式 + 配色"拆成两个维度。
+/// 原编号 1-5 现在是同一个 `.magazine` 版式的 5 套配色；编号 6-7 是 `.idCard`
+/// 版式的白/黑两套配色；新增版式默认复用 5 套传播向配色。
+enum ShareCardStyle: String, CaseIterable, Identifiable, Hashable {
+    /// 杂志卡：顶栏 + 头像 + 三栏统计 + 草坪 + 注脚。HOM-173 v1。
+    case magazine = "magazine"
+    /// ID 卡：大头像 + 身份区 + QR。HOM-173 v2。
+    case idCard = "idCard"
+    /// 海报：大头像居中 + 统计横幅，适合社交媒体首屏扫读。
+    case poster = "poster"
+    /// 数据看板：统计和草坪优先，适合强调 GitHub 活跃数据。
+    case dashboard = "dashboard"
+    /// 通行证：左侧身份 + 右侧 QR，模拟开发者 badge。
+    case pass = "pass"
+    /// 终端卡：命令行视觉，用等宽文本表达开发者身份。
+    case terminal = "terminal"
+
+    var id: String { rawValue }
+
+    /// 样式按钮 tooltip / accessibility 使用的 i18n key。
+    var localizationKey: LocalizedStringKey {
+        switch self {
+        case .magazine:  return "sharecard.style.magazine"
+        case .idCard:    return "sharecard.style.idCard"
+        case .poster:    return "sharecard.style.poster"
+        case .dashboard: return "sharecard.style.dashboard"
+        case .pass:      return "sharecard.style.pass"
+        case .terminal:  return "sharecard.style.terminal"
+        }
+    }
+
+    /// 当前版式允许的配色。ID 卡保留黑/白名片语义，其余版式共享传播向 5 色。
+    var supportedColors: [ShareCardColorSet] {
+        switch self {
+        case .idCard:
+            return [.lightCard, .darkCard]
+        case .magazine, .poster, .dashboard, .pass, .terminal:
+            return ShareCardColorSet.socialPalette
+        }
+    }
+
+    /// 切换到当前版式时，如果当前配色不被支持，使用这个默认配色。
+    var defaultColor: ShareCardColorSet {
+        switch self {
+        case .idCard:
+            return .lightCard
+        case .magazine, .poster, .dashboard, .pass, .terminal:
+            return .githubGreen
+        }
+    }
+}
+
+/// 分享卡配色枚举。
 ///
 /// `rawValue` 写英文（minimal / heatOrange / lightCard …）便于持久化与单测稳定，
 /// 显示文案走 `Localizable.xcstrings` 的 `sharecard.theme.*` key（中英双语）。
-///
-/// **HOM-173 follow-up（2026-06-06）**：新增 `.lightCard` / `.darkCard` 两个 ID 卡风格主题——
-/// dong4j 反馈"前 3 个杂志卡都好，但希望加个 ID 卡风：去掉草坪、去掉 follow，右下角是二维码"。
-/// 为了不动既有 3 个主题的渲染路径，引入 `layout` 维度区分 magazine / idCard 两种布局。
-enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
-
-    // MARK: - Magazine 布局（既有 3 个，HOM-173 v1）
-
+enum ShareCardColorSet: String, CaseIterable, Identifiable, Hashable {
     /// 靛蓝冰蓝：靛蓝灰底 + 冰蓝高光 + 蓝阶草坪。中性克制，适合 LinkedIn / 简历类传播。
     case minimal = "minimal"
     /// 热力橙：深炭底 + 橙金高光。暖色驱动情绪，适合朋友圈 / 小红书。
@@ -43,15 +90,14 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
     case auroraBlue = "auroraBlue"
     /// Berry Purple：深莓紫底 + 粉紫高光。更偏社交传播，补足暖橙之外的亮色选择。
     case berryPurple = "berryPurple"
-
-    // MARK: - ID Card 布局（HOM-173 v2，2026-06-06 新增）
-
     /// 简约白卡：纯白底 + 黑字 + 大圆角头像 + 右下角 QR。
-    /// 灵感来自 dong4j 提供的 ID 卡设计图（左侧白卡形态）。
     case lightCard = "lightCard"
     /// 极夜黑卡：纯黑底 + 白字 + 大圆角头像 + 右下角 QR。
-    /// 灵感来自 dong4j 提供的 ID 卡设计图（右侧黑卡形态）。
     case darkCard = "darkCard"
+
+    static let socialPalette: [ShareCardColorSet] = [
+        .minimal, .heatOrange, .githubGreen, .auroraBlue, .berryPurple
+    ]
 
     var id: String { rawValue }
 
@@ -68,20 +114,7 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    /// 主题对应的 SF Symbol（Picker 选项前缀图标）。
-    var symbolName: String {
-        switch self {
-        case .minimal:      return "circle.lefthalf.filled"
-        case .heatOrange:   return "flame.fill"
-        case .githubGreen:  return "leaf.fill"
-        case .auroraBlue:   return "sparkles"
-        case .berryPurple:  return "camera.filters"
-        case .lightCard:    return "person.text.rectangle"
-        case .darkCard:     return "person.text.rectangle.fill"
-        }
-    }
-
-    /// 取出该主题的实际色板。
+    /// 取出该配色的实际色板。
     var palette: ShareCardPalette {
         switch self {
         case .minimal:      return .minimalPalette
@@ -96,68 +129,27 @@ enum ShareCardTheme: String, CaseIterable, Identifiable, Hashable {
 
     /// Picker 预览专用的色板对（background / accent 两色）。
     ///
-    /// **为什么不直接复用 `palette.cardBackground` / `palette.accent`**
-    /// （2026-06-06 dong4j 反馈："黑色卡片在明亮模式下太刺眼、暗黑模式下不明显，
-    /// 换成更协调的颜色"）：
-    /// - `palette` 是"导出图"的固定色，必然出现纯黑 `#0A0A0A` / 纯白 `#FFFFFF`
-    /// - 在 picker 36×28pt 的小色块里：
-    ///   * 纯黑在 light 模式下像"挖了个洞"过于刺眼
-    ///   * 纯黑在 dark 模式下又与 sheet 背景融成一片
-    ///   * 纯白在 light 模式下同样会融合（反向问题）
-    /// - 这里返回 picker 专用色，特性：
-    ///   1) 避开 #0A 以下和 #F5 以上的极端值
-    ///   2) 保留每个主题的"色相记忆点"（橙的暖、绿的草、黑卡的灰、白卡的米）
-    ///   3) 5 个主题相互之间视觉上仍可区分（避免 minimal vs darkCard 撞色）
-    /// - 不影响导出图：导出走 `palette`，picker 走 `pickerSwatch`，两条独立路径。
+    /// **为什么不直接复用 `palette.cardBackground` / `palette.accent`**：
+    /// 导出色板可能出现纯黑 / 纯白，在 30pt 小色块里会过暗、过亮或融入背景。
+    /// pickerSwatch 单独避开极端明度，只保留每套配色的色相记忆点。
     var pickerSwatch: (background: Color, accent: Color) {
         switch self {
         case .minimal:
-            // 极简：靛蓝灰 + 冰蓝。避开黑/白极端值，仍保留"克制中性"语义。
             return (Color.fromHex6(0x27324A), Color.fromHex6(0xB8D7FF))
         case .heatOrange:
-            // 热力橙：深暖棕 + 火焰橙。背景从 #1A0F0A 提亮到 #3A201A，
-            // 减少"黑感"突出"棕暖"，accent 维持 palette 取色保持火焰识别度。
             return (Color.fromHex6(0x3A201A), Color.fromHex6(0xFF7A0F))
         case .githubGreen:
-            // GitHub Green：墨绿 + 草坪绿。背景从 GitHub 蓝黑 #0D1117 提亮到 #0F2A1A，
-            // 让"绿主题"在 picker 里更绿少黑，accent 维持草坪 #39D353。
             return (Color.fromHex6(0x0F2A1A), Color.fromHex6(0x39D353))
         case .auroraBlue:
-            // 极光蓝：深海蓝 + 高亮青蓝，和 GitHub Green 区分开。
             return (Color.fromHex6(0x102A43), Color.fromHex6(0x38BDF8))
         case .berryPurple:
-            // 莓紫：葡萄紫 + 莓粉，补足现有主题里缺少的紫粉系。
             return (Color.fromHex6(0x3B1D4A), Color.fromHex6(0xF472B6))
         case .lightCard:
-            // 白卡：浅青 + 深海蓝，不再用白/黑切块，避免在明亮/黑暗 sheet 下都不明显。
             return (Color.fromHex6(0xD8F3F0), Color.fromHex6(0x155E75))
         case .darkCard:
-            // 黑卡：紫灰 + 亮薰衣草，不再用黑/白切块，避免和 sheet 背景或白色面板融合。
             return (Color.fromHex6(0x4C3A64), Color.fromHex6(0xC4B5FD))
         }
     }
-
-    /// 卡片整体布局——magazine（既有杂志卡）或 idCard（新增 ID 卡）。
-    ///
-    /// 引入这个维度是为了让 `ShareCardContent` 在 body 里走两条独立渲染路径——
-    /// **既有 3 个主题（minimal/heatOrange/githubGreen）零改动**，新主题独立加渲染分支，
-    /// 把"加新主题"的影响半径锁在新文件 / 新分支内，避免回归。
-    var layout: ShareCardLayout {
-        switch self {
-        case .minimal, .heatOrange, .githubGreen, .auroraBlue, .berryPurple:
-            return .magazine
-        case .lightCard, .darkCard:
-            return .idCard
-        }
-    }
-}
-
-/// 卡片布局类型。
-enum ShareCardLayout {
-    /// 杂志卡：顶栏 + 头像 + 三栏统计 + 草坪 + 注脚。HOM-173 v1。
-    case magazine
-    /// ID 卡：大圆角头像主图 + 用户名 + Bio + 底部（左 stats + 右 QR）。HOM-173 v2。
-    case idCard
 }
 
 /// 分享卡色板。

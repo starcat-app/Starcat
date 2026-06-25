@@ -6,7 +6,7 @@
 //
 //  这是用户点击 sidebar 头像左侧分享按钮后看到的整个面板，包含：
 //  - 顶部标题栏（标题 + 关闭按钮）
-//  - 主题选择 segmented Picker（极简黑白 / 热力橙 / GitHub Green）
+//  - 版式选择 + 配色选择（先选结构，再选颜色）
 //  - 卡片预览区（实时跟随主题切换）
 //  - 三个动作按钮：保存为图片 / 分享到 X / 关闭
 //  - 底部品牌注脚（"由 Starcat 生成"，可点击跳到 starcat.ink）
@@ -15,7 +15,7 @@
 //  - 把"主题选择 + 预览 + 动作"放在 sheet 而不是 popover：
 //    分享卡需要 ~520pt 高度做完整预览，popover 在 sidebar 旁会被裁切；
 //    sheet 居中浮在主窗口上层，体验更接近"导出图前最后确认"的语义。
-//  - 主题切换不持久化：每次打开默认 `.githubGreen`（最贴合 GitHub 用户群体），
+//  - 选择不持久化：每次打开默认 `.magazine + .githubGreen`（最贴合 GitHub 用户群体），
 //    避免引入额外 AppSettings 字段；用户 365 天里调整一次主题的概率远低于
 //    "每次都按当前心情选"。
 //  - "分享到 X" 按钮触发后**保留 sheet 不关闭**：因为该路径会唤起浏览器，
@@ -52,8 +52,11 @@ struct ShareCardSheet: View {
     /// 上层 sidebar 传给 `user: GitHubUserDTO` 参数会自然更新（SwiftUI re-init）。
     @Environment(UserProfileService.self) private var userProfileService
 
-    /// 当前选中的主题。默认 GitHub Green（最贴合 GitHub 用户群体）。
-    @State private var theme: ShareCardTheme = .githubGreen
+    /// 当前选中的卡片版式。版式负责结构，不再和颜色绑死。
+    @State private var selectedStyle: ShareCardStyle = .magazine
+
+    /// 当前选中的卡片配色。原编号 1-5 的主题现在都是 magazine 版式下的颜色。
+    @State private var selectedColor: ShareCardColorSet = .githubGreen
 
     /// 最近一次操作的反馈文案（"已保存到 …" / "已复制到剪贴板…"）。
     /// 不弹系统 alert，仅在 sheet 内顶部 toast-like 提示，3 秒后自动隐藏。
@@ -105,7 +108,7 @@ struct ShareCardSheet: View {
             .padding(.top, 4)
             .padding(.bottom, 24)
         }
-        // 分享卡本体保持 400×560；这里只裁掉 sheet 旧版 820pt 高度留下的底部背景空白。
+        // 分享卡本体保持 400×560；这里只裁掉 sheet 早期 820pt 高度留下的底部背景空白。
         // 内容总高低于主窗口运行期最小 content 高度 763pt，初始窗口下不会再向底部凸出。
         .frame(width: 480, height: 760)
         .background {
@@ -150,6 +153,9 @@ struct ShareCardSheet: View {
             // light 改走 `饱和蓝 tint + multiply`——shader 白底上画深蓝点，multiply 压暗
             // 浅灰 sheet，纹理可见且仍保持"装饰背景"语义。
             sheetDotsFlowBackground
+                // 背景只是装饰，不允许参与 hit-test。主题按钮很小，明确禁用背景命中可避免
+                // 用户点到按钮边缘时事件落到背景层，表现成 hover/click 随机失效。
+                .allowsHitTesting(false)
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: exportProgressMessage)
         .task {
@@ -236,7 +242,7 @@ struct ShareCardSheet: View {
         }
         .padding(.horizontal, 24)
         // 2026-06-25：加大 top 内边距，避免标题 / 反馈 pill / 关闭钮贴窗口顶缘；
-        // 垂直预算从主题 picker 色块尺寸回收（见 ThemeCardButton）。
+        // 垂直预算从选择器按钮尺寸回收。
         .padding(.top, 16)
         .padding(.bottom, 10)
         .background(.bar)
@@ -244,36 +250,66 @@ struct ShareCardSheet: View {
 
     // MARK: - 主题选择
 
-    /// 主题选择 Picker：gacha 风格的卡片式选择器。
-    /// HOM-174 follow-up：只显示主题卡片，移除标签文字。
+    /// 版式 + 配色选择器。
     ///
-    /// 主题切换必须优先保证点击响应。这里不再给 `cardPreview` 挂 theme 动画：
-    /// magazine / idCard 两种布局切换时会重建头像、QR、草坪等较重 view，连续点击
-    /// 期间如果还叠隐式动画，SwiftUI 可能短暂合并 transaction，表现为随机点不动。
+    /// 2026-06-25：主题被拆成 Style × Color 两个维度。左侧选择版式，右侧只显示
+    /// 当前版式支持的颜色。所有按钮都有固定外框和完整 contentShape，优先解决之前
+    /// 小色块 hover/click 命中不稳定的问题。
     @ViewBuilder
     private var themePicker: some View {
-        HStack(spacing: 6) {
-            ForEach(ShareCardTheme.allCases) { t in
-                ThemeCardButton(
-                    theme: t,
-                    isSelected: theme == t
+        HStack(spacing: 8) {
+            stylePicker
+
+            Spacer(minLength: 6)
+
+            colorPicker
+        }
+    }
+
+    /// 左侧版式选择：6 个无文字 mini layout 预览，靠 tooltip / accessibility 暴露名称。
+    @ViewBuilder
+    private var stylePicker: some View {
+        HStack(spacing: 4) {
+            ForEach(ShareCardStyle.allCases) { style in
+                StyleCardButton(
+                    style: style,
+                    isSelected: selectedStyle == style
                 ) {
-                    theme = t
+                    selectStyle(style)
                 }
             }
         }
     }
 
-    /// 单个主题卡片按钮。
-    /// 只包含主题预览色块，无文字。
-    private struct ThemeCardButton: View {
-        /// 色块尺寸（2026-06-25 从 30×22 缩到 26×18）。
-        /// sheet 固定 760pt 高，顶部标题栏加大上内边距时从这里回收垂直空间。
-        private static let swatchWidth: CGFloat = 26
-        private static let swatchHeight: CGFloat = 18
-        private static let chromePadding: CGFloat = 3
+    /// 右侧配色选择：只显示当前版式支持的颜色。
+    @ViewBuilder
+    private var colorPicker: some View {
+        HStack(spacing: 4) {
+            ForEach(selectedStyle.supportedColors) { colorSet in
+                ColorSwatchButton(
+                    colorSet: colorSet,
+                    isSelected: selectedColor == colorSet
+                ) {
+                    selectedColor = colorSet
+                }
+            }
+        }
+    }
 
-        let theme: ShareCardTheme
+    /// 切换版式时校正配色，避免 ID 卡版式收到 magazine 配色这类无效组合。
+    private func selectStyle(_ style: ShareCardStyle) {
+        selectedStyle = style
+        if !style.supportedColors.contains(selectedColor) {
+            selectedColor = style.defaultColor
+        }
+    }
+
+    /// 单个版式按钮。按钮外框固定，内部画抽象 wireframe，避免新增图片资源。
+    private struct StyleCardButton: View {
+        private static let buttonWidth: CGFloat = 32
+        private static let buttonHeight: CGFloat = 26
+
+        let style: ShareCardStyle
         let isSelected: Bool
         let action: () -> Void
 
@@ -282,34 +318,31 @@ struct ShareCardSheet: View {
 
         var body: some View {
             Button(action: action) {
-                // 主题预览色块
-                themePreview
-                    .frame(width: Self.swatchWidth, height: Self.swatchHeight)
-                    .padding(Self.chromePadding)
-                    .contentShape(Rectangle())
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .overlay(
-                        // 描边策略（2026-06-06 dong4j 反馈适配深浅主题）：
-                        // - 选中态：`Color.accentColor` 2pt 加粗描边，强表达"选中"。
-                        // - 未选中态：`Color.primary.opacity(0.18)` 描 0.5pt 极细边。
-                        //   `Color.primary` 在 light 模式→黑、dark 模式→白，自动适配。
-                        //   由于色块已通过 `pickerSwatch` 避开纯黑/纯白，0.5pt 极细
-                        //   "提示线"足够勾出边缘而不会抢视觉权重。
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(
-                                isSelected ? Color.accentColor : Color.primary.opacity(isHovered ? 0.34 : 0.18),
-                                lineWidth: isSelected ? 2 : (isHovered ? 1 : 0.5)
-                            )
-                    )
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.primary.opacity(isHovered ? 0.08 : 0))
-                    )
-                    .shadow(color: .black.opacity(isHovered ? 0.18 : 0), radius: 4, y: 1)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color.primary.opacity(isHovered ? 0.10 : 0.06))
+
+                    stylePreview
+                        .padding(4)
+                }
+                .frame(width: Self.buttonWidth, height: Self.buttonHeight)
+                .contentShape(Rectangle())
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(
+                            isSelected ? Color.accentColor : Color.primary.opacity(isHovered ? 0.34 : 0.18),
+                            lineWidth: isSelected ? 2 : (isHovered ? 1 : 0.5)
+                        )
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(isSelected ? Color.accentColor.opacity(0.10) : Color.clear)
+                )
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .help(Text(theme.localizationKey))
+            .help(Text(style.localizationKey))
+            .accessibilityLabel(Text(style.localizationKey))
             .onHover { hovering in
                 withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.12)) {
                     isHovered = hovering
@@ -317,18 +350,137 @@ struct ShareCardSheet: View {
             }
         }
 
-        /// 主题预览色块：显示主题的主要配色。
-        ///
-        /// 用 `theme.pickerSwatch` 而**不是** `theme.palette` 的 cardBackground/accent
-        /// （见 `ShareCardTheme.pickerSwatch` 的详细注释）：导出图色板可能出现纯黑/纯白，
-        /// 在 picker 26×18 小色块里会刺眼或融背景；pickerSwatch 是为 picker 单独调过的
-        /// 柔和色对，保留色相记忆点同时兼容 light/dark 两种主题。
-        private var themePreview: some View {
+        /// 抽象版式预览：只表达信息块位置，不承诺最终卡片的像素级细节。
+        @ViewBuilder
+        private var stylePreview: some View {
+            switch style {
+            case .magazine:
+                VStack(spacing: 2) {
+                    miniLine(width: 20)
+                    miniCircle
+                    miniGrid
+                }
+            case .idCard:
+                HStack(spacing: 3) {
+                    miniTallBlock
+                    VStack(spacing: 3) {
+                        miniLine(width: 10)
+                        miniLine(width: 12)
+                        miniSquare
+                    }
+                }
+            case .poster:
+                VStack(spacing: 3) {
+                    miniCircle
+                    miniLine(width: 18)
+                    miniLine(width: 24)
+                }
+            case .dashboard:
+                VStack(spacing: 3) {
+                    HStack(spacing: 3) {
+                        miniSquare
+                        miniSquare
+                        miniSquare
+                    }
+                    miniGrid
+                }
+            case .pass:
+                HStack(spacing: 3) {
+                    miniTallBlock
+                    VStack(spacing: 3) {
+                        miniLine(width: 14)
+                        miniLine(width: 18)
+                        miniLine(width: 12)
+                    }
+                }
+            case .terminal:
+                VStack(alignment: .leading, spacing: 3) {
+                    miniLine(width: 20)
+                    miniLine(width: 14)
+                    miniLine(width: 23)
+                }
+            }
+        }
+
+        private var miniCircle: some View {
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: 7, height: 7)
+        }
+
+        private var miniSquare: some View {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(Color.accentColor.opacity(0.78))
+                .frame(width: 6, height: 6)
+        }
+
+        private var miniTallBlock: some View {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color.accentColor.opacity(0.72))
+                .frame(width: 8, height: 16)
+        }
+
+        private var miniGrid: some View {
             HStack(spacing: 1) {
-                Rectangle()
-                    .fill(theme.pickerSwatch.background)
-                Rectangle()
-                    .fill(theme.pickerSwatch.accent)
+                ForEach(0..<5, id: \.self) { index in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color.accentColor.opacity(index.isMultiple(of: 2) ? 0.75 : 0.28))
+                        .frame(width: 3, height: 3)
+                }
+            }
+        }
+
+        private func miniLine(width: CGFloat) -> some View {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(Color.primary.opacity(0.52))
+                .frame(width: width, height: 2)
+        }
+    }
+
+    /// 单个配色按钮。固定 28×26 外框，内部用左右两色表达背景/强调色。
+    private struct ColorSwatchButton: View {
+        private static let buttonWidth: CGFloat = 28
+        private static let buttonHeight: CGFloat = 26
+
+        let colorSet: ShareCardColorSet
+        let isSelected: Bool
+        let action: () -> Void
+
+        @Environment(\.starcatReduceMotion) private var reduceMotion
+        @State private var isHovered = false
+
+        var body: some View {
+            Button(action: action) {
+                HStack(spacing: 1) {
+                    Rectangle()
+                        .fill(colorSet.pickerSwatch.background)
+                    Rectangle()
+                        .fill(colorSet.pickerSwatch.accent)
+                }
+                .frame(width: Self.buttonWidth, height: Self.buttonHeight)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .contentShape(Rectangle())
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(
+                            isSelected ? Color.accentColor : Color.primary.opacity(isHovered ? 0.34 : 0.18),
+                            lineWidth: isSelected ? 2 : (isHovered ? 1 : 0.5)
+                        )
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(isSelected ? Color.accentColor.opacity(0.10) : Color.clear)
+                )
+                .shadow(color: .black.opacity(isHovered ? 0.18 : 0), radius: 4, y: 1)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(Text(colorSet.localizationKey))
+            .accessibilityLabel(Text(colorSet.localizationKey))
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.12)) {
+                    isHovered = hovering
+                }
             }
         }
     }
@@ -343,7 +495,8 @@ struct ShareCardSheet: View {
             user: user,
             starredCount: starredCount,
             contribution: contribution,
-            theme: theme,
+            style: selectedStyle,
+            colorSet: selectedColor,
             isProUser: isProUser
         )
         // 卡片下方加柔和阴影区分 sheet material
@@ -453,11 +606,12 @@ struct ShareCardSheet: View {
     /// HOM-174 新增：支持导出 Markdown 和 HTML 格式。
     ///
     /// **v8 调整（dong4j 2026-06-06 20:52）**：与 saveImageButton 同款重写为
-    /// `Menu` + 自定义 label（HStack + RoundedRectangle `.regularMaterial` 半
-    /// 透明背景 + `.secondary.opacity(0.3)` 细边框），表达"次行动"视觉层级；
-    /// `.menuStyle(.borderlessButton)` 让 Menu 不画自己的背景，`.menuIndicator
-    /// (.hidden)` 隐藏 Menu 默认的下拉箭头改用自绘的 chevron.down（与 native
-    /// 按钮风格一致但严格遵守 frame(height: actionButtonHeight)）。
+    /// `Menu` + 自定义 label，表达"次行动"视觉层级。
+    ///
+    /// **v8.1（dong4j 2026-06-25）**：背景容器放进 label 最外层，并给 Menu 本体
+    /// 补 `maxWidth + actionButtonHeight`。关键约束是不能用 `.borderlessButton`：
+    /// macOS 会把自定义 label 当成系统默认按钮重画，吃掉背景、边框和 hover。
+    /// `.menuStyle(.button)` + `.buttonStyle(.plain)` 才会保留我们自己画的 label。
     @ViewBuilder
     private var exportStarredButton: some View {
         Menu {
@@ -473,37 +627,33 @@ struct ShareCardSheet: View {
                 Label("sharecard.action.export.html", systemImage: "doc.richtext")
             }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "square.and.arrow.up.on.square")
-                    .font(.system(size: 13, weight: .medium))
-                Text("sharecard.action.exportStarred")
-                    .font(.system(size: 13, weight: .medium))
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .padding(.leading, 2)
+            ZStack {
+                RoundedRectangle(cornerRadius: actionButtonCornerRadius)
+                    .fill(Color.primary.opacity(exportStarredHovered ? 0.08 : 0.055))
+                RoundedRectangle(cornerRadius: actionButtonCornerRadius)
+                    .stroke(Color.secondary.opacity(exportStarredHovered ? 0.5 : 0.3), lineWidth: 0.5)
+
+                HStack(spacing: 6) {
+                    Image(systemName: "square.and.arrow.up.on.square")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("sharecard.action.exportStarred")
+                        .font(.system(size: 13, weight: .medium))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .padding(.leading, 2)
+                }
+                .foregroundStyle(.primary)
+                .opacity(isExporting ? 0.5 : 1.0)
             }
-            .foregroundStyle(.primary)
             .frame(maxWidth: .infinity)
             .frame(height: actionButtonHeight)
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: actionButtonCornerRadius)
-                        .fill(.regularMaterial)
-                    // hover 高亮层：material 上叠 primary 颜色 8% 提亮
-                    // （material 已经是半透明，再叠白色不明显；用 primary 在
-                    // light 模式提到深灰、dark 模式提到浅灰，都能看到反馈）
-                    RoundedRectangle(cornerRadius: actionButtonCornerRadius)
-                        .fill(Color.primary.opacity(exportStarredHovered ? 0.08 : 0))
-                }
-                .overlay(
-                    RoundedRectangle(cornerRadius: actionButtonCornerRadius)
-                        .stroke(Color.secondary.opacity(exportStarredHovered ? 0.5 : 0.3), lineWidth: 0.5)
-                )
-            )
-            .opacity(isExporting ? 0.5 : 1.0)
+            .contentShape(RoundedRectangle(cornerRadius: actionButtonCornerRadius))
         }
-        .menuStyle(.borderlessButton)
+        .frame(maxWidth: .infinity)
+        .frame(height: actionButtonHeight)
+        .menuStyle(.button)
         .menuIndicator(.hidden)
+        .buttonStyle(.plain)
         .focusEffectDisabled()
         .disabled(isExporting)
         .onHover { hovering in
@@ -744,13 +894,14 @@ struct ShareCardSheet: View {
             user: user,
             starredCount: starredCount,
             contribution: contribution,
-            theme: theme,
+            style: selectedStyle,
+            colorSet: selectedColor,
             isProUser: isProUser
         )
     }
 
     /// 显示反馈提示，3 秒后自动隐藏。
-    /// 用 Task.sleep 在主线程异步隐藏；多次调用以最近一次为准（旧 task 自动 cancel
+    /// 用 Task.sleep 在主线程异步隐藏；多次调用以最近一次为准（前一次 task 自动 cancel
     /// 不会发生，因为我们没存它——但反馈语义本就是"显示最新"，覆盖即可）。
     private func showFeedback(_ text: String) {
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {

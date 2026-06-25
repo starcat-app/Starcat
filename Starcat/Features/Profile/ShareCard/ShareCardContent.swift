@@ -53,7 +53,8 @@ import Kingfisher
 ///     user: user,
 ///     starredCount: viewModel.totalCount,
 ///     contribution: contributionService.payload,
-///     theme: .githubGreen,
+///     style: .magazine,
+///     colorSet: .githubGreen,
 ///     isProUser: settings.isProUser
 /// )
 /// .frame(width: 400, height: 560)
@@ -70,8 +71,11 @@ struct ShareCardContent: View {
     /// 贡献草坪 payload。nil 时显示 7×53 占位灰格（不阻塞分享）。
     let contribution: ContributionCalendarPayload?
 
-    /// 当前主题。
-    let theme: ShareCardTheme
+    /// 当前版式。版式决定卡片结构，不再和颜色绑死。
+    let style: ShareCardStyle
+
+    /// 当前配色。原编号 1-5 的主题现在都映射为同一个 magazine 版式下的配色。
+    let colorSet: ShareCardColorSet
 
     /// 当前用户是否为 Pro 用户。Pro 用户头像显示 Pro 标识。
     var isProUser: Bool = false
@@ -83,8 +87,18 @@ struct ShareCardContent: View {
 
     // MARK: - 派生
 
-    /// 当前主题色板（每个 body 计算一次，避免 View tree 内多处重复访问）。
-    private var palette: ShareCardPalette { theme.palette }
+    /// 当前色板（每个 body 计算一次，避免 View tree 内多处重复访问）。
+    private var palette: ShareCardPalette { colorSet.palette }
+
+    /// 显示名优先使用 GitHub name，缺失时回落 login；多个版式共用，避免文案分叉。
+    private var displayName: String {
+        user.name?.isEmpty == false ? user.name! : user.login
+    }
+
+    /// 分享卡 QR / 链接统一指向用户 GitHub 主页。
+    private var profileURLString: String {
+        "https://github.com/\(user.login)"
+    }
 
     /// 卡片背景：双色线性渐变（顶部稍亮 → 底部主色），让深色卡片有微弱呼吸感。
     /// 不做 RadialGradient 是因为分享卡尺寸 400×560 矩形比例下椭圆光斑会偏中心，
@@ -98,16 +112,22 @@ struct ShareCardContent: View {
     }
 
     var body: some View {
-        // **HOM-173 follow-up（2026-06-06）**：按 theme.layout 走两条独立渲染路径——
-        // - magazine：既有 3 个主题（minimal / heatOrange / githubGreen），保持原版本
-        // - idCard：新增白卡 / 黑卡，去掉草坪 + follow stats，右下角换 QR 码
-        // 两条路径完全分离，对既有主题零影响。
+        // 2026-06-25：按版式走渲染路径，配色只通过 palette 注入。
+        // 这样新增颜色不会复制 layout，新增 layout 也不需要复制 5 套颜色。
         Group {
-            switch theme.layout {
+            switch style {
             case .magazine:
                 magazineBody
             case .idCard:
                 idCardBody
+            case .poster:
+                posterBody
+            case .dashboard:
+                dashboardBody
+            case .pass:
+                passBody
+            case .terminal:
+                terminalBody
             }
         }
         .frame(width: Self.canvasWidth, height: Self.canvasHeight)
@@ -205,7 +225,7 @@ struct ShareCardContent: View {
 
             VStack(spacing: 2) {
                 // 显示名（name 优先，缺失 fallback login）
-                Text(user.name?.isEmpty == false ? user.name! : user.login)
+                Text(displayName)
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
@@ -280,6 +300,91 @@ struct ShareCardContent: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// 新版式复用的紧凑统计胶囊。
+    /// 它承载真实数据，不做装饰性渐变；用 cardBackgroundSecondary 保持和当前配色同源。
+    @ViewBuilder
+    private func compactStatPill(symbol: String, value: Int, labelKey: LocalizedStringKey) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(palette.accent)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(formatCompact(value))
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(palette.primaryText)
+                Text(labelKey)
+                    .font(.system(size: 7, weight: .semibold, design: .monospaced))
+                    .tracking(0.5)
+                    .textCase(.uppercase)
+                    .foregroundStyle(palette.tertiaryText)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(palette.cardBackgroundSecondary.opacity(0.72))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(palette.divider, lineWidth: 0.7)
+                )
+        )
+    }
+
+    /// 数据看板的大号统计卡。和 compactStatPill 分开，避免一个组件塞过多参数。
+    @ViewBuilder
+    private func dashboardMetric(symbol: String, value: Int, labelKey: LocalizedStringKey) -> some View {
+        HStack(alignment: .center, spacing: 7) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(palette.accent)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(formatCompact(value))
+                    .font(.system(size: 16, weight: .black, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(palette.primaryText)
+                Text(labelKey)
+                    .font(.system(size: 7, weight: .semibold, design: .monospaced))
+                    .tracking(0.5)
+                    .textCase(.uppercase)
+                    .foregroundStyle(palette.tertiaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(palette.cardBackgroundSecondary.opacity(0.7))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(palette.divider, lineWidth: 0.7)
+                )
+        )
+    }
+
+    /// 终端版式的一行键值输出。key 是固定设计文案，不走 i18n，避免导出图随语言变成伪命令。
+    @ViewBuilder
+    private func terminalLine(key: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(verbatim: "\(key):")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(palette.accent)
+                .frame(width: 70, alignment: .leading)
+            Text(verbatim: value)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+        }
+    }
+
     /// 把整数格式化成紧凑形式（1234 → 1.2K，4823 → 4.8K，999 → 999）。
     /// 卡片宽度受限，5 位以上数字会挤占其他栏，4 位以上自动 K-suffix。
     private func formatCompact(_ n: Int) -> String {
@@ -288,9 +393,87 @@ struct ShareCardContent: View {
         return String(format: "%.1fK", k)
     }
 
+    /// Dashboard facts 里使用的紧凑 key-value 行。
+    @ViewBuilder
+    private func dashboardFactRow(symbol: String, labelKey: LocalizedStringKey, value: String) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(palette.accent)
+                .frame(width: 13)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(labelKey)
+                    .font(.system(size: 6.5, weight: .semibold, design: .monospaced))
+                    .tracking(0.5)
+                    .textCase(.uppercase)
+                    .foregroundStyle(palette.tertiaryText)
+                    .lineLimit(1)
+                Text(value)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(palette.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+        }
+    }
+
+    /// 从 GitHub profile 本地字段组装 Dashboard 的 Profile Facts。
+    private var dashboardProfileFacts: [DashboardFact] {
+        var facts: [DashboardFact] = []
+
+        if let company = trimmed(user.company) {
+            facts.append(DashboardFact(symbol: "building.2.fill", labelKey: "sharecard.dashboard.fact.company", value: company))
+        }
+        if let location = trimmed(user.location) {
+            facts.append(DashboardFact(symbol: "location.fill", labelKey: "sharecard.dashboard.fact.location", value: location))
+        }
+        if let twitter = trimmed(user.twitterUsername) {
+            facts.append(DashboardFact(symbol: "at", labelKey: "sharecard.dashboard.fact.x", value: "@\(twitter)"))
+        }
+        if let email = trimmed(user.email) {
+            facts.append(DashboardFact(symbol: "envelope.fill", labelKey: "sharecard.dashboard.fact.email", value: email))
+        }
+
+        // 用户资料字段可能很少。保底放 GitHub 主页，避免整块 profile facts 只剩一行。
+        if facts.count < 3 {
+            facts.append(DashboardFact(
+                symbol: "link",
+                labelKey: "sharecard.dashboard.fact.github",
+                value: user.htmlUrl ?? "github.com/\(user.login)"
+            ))
+        }
+
+        return Array(facts.prefix(4))
+    }
+
+    /// 从草坪 payload 派生 Dashboard 的 Activity Facts，不额外发起网络请求。
+    private var dashboardActivityFacts: [DashboardFact] {
+        let days = contribution?.weeks.flatMap(\.contributionDays) ?? []
+        let activeDays = days.filter { $0.contributionCount > 0 }.count
+        let activeWeeks = contribution?.weeks.filter { week in
+            week.contributionDays.contains { $0.contributionCount > 0 }
+        }.count ?? 0
+        let bestDay = days.map(\.contributionCount).max() ?? 0
+
+        return [
+            DashboardFact(symbol: "calendar", labelKey: "sharecard.dashboard.fact.activeDays", value: "\(activeDays)"),
+            DashboardFact(symbol: "square.grid.3x3.fill", labelKey: "sharecard.dashboard.fact.activeWeeks", value: "\(activeWeeks)"),
+            DashboardFact(symbol: "bolt.fill", labelKey: "sharecard.dashboard.fact.bestDay", value: "\(bestDay)"),
+            DashboardFact(symbol: "chart.bar.fill", labelKey: "sharecard.dashboard.fact.contributions", value: formatCompact(contribution?.totalContributions ?? 0))
+        ]
+    }
+
+    /// 去掉空白后的可展示字符串。放在本文件内，避免到处重复 trimming。
+    private func trimmed(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
     // MARK: - 草坪
 
-    /// 贡献草坪：53 周 × 7 天，颜色按 `theme.palette.contribution` 渲染。
+    /// 贡献草坪：53 周 × 7 天，颜色按当前 `colorSet.palette.contribution` 渲染。
     ///
     /// 不复用 `ContributionGraphView` 是因为：
     /// - 那个 view 强依赖 `@Environment(\.colorScheme)` 自动切 light/dark 调色板，
@@ -489,6 +672,341 @@ struct ShareCardContent: View {
         }
     }
 
+    // MARK: - Poster 布局
+
+    /// 海报布局：大头像与名字作为第一视觉锚点，下半区放统计、草坪和 QR。
+    @ViewBuilder
+    private var posterBody: some View {
+        VStack(spacing: 0) {
+            topBar
+
+            Spacer(minLength: 16)
+
+            RemoteAvatar(urlString: user.avatarUrl, size: 126, showBorder: false)
+                .overlay(Circle().stroke(palette.accent, lineWidth: 3))
+                .shadow(color: palette.accent.opacity(0.25), radius: 16, y: 6)
+
+            VStack(spacing: 4) {
+                Text(displayName)
+                    .font(.system(size: 28, weight: .black, design: .rounded))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                Text("@\(user.login)")
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(palette.secondaryText)
+            }
+            .padding(.top, 12)
+
+            if let bio = user.bio, !bio.isEmpty {
+                Text("“\(bio)”")
+                    .font(.system(size: 12, weight: .regular))
+                    .italic()
+                    .foregroundStyle(palette.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 8)
+            }
+
+            Spacer(minLength: 18)
+
+            posterStatsRibbon
+                .padding(.bottom, 16)
+
+            HStack(alignment: .bottom, spacing: 18) {
+                contributionSection
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                qrCodeView
+            }
+
+            Spacer(minLength: 14)
+
+            footerBar
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+    }
+
+    /// 海报统计横幅：比 magazine 三栏更紧凑，服务于视觉扫读。
+    @ViewBuilder
+    private var posterStatsRibbon: some View {
+        HStack(spacing: 8) {
+            compactStatPill(symbol: "star.fill", value: starredCount, labelKey: "sharecard.stats.starred")
+            compactStatPill(symbol: "person.2.fill", value: user.followers ?? 0, labelKey: "sharecard.stats.followers")
+            compactStatPill(symbol: "person.fill", value: user.following ?? 0, labelKey: "sharecard.stats.following")
+        }
+    }
+
+    // MARK: - Dashboard 布局
+
+    /// 数据看板布局：统计卡片和草坪优先，适合强调 GitHub 资产与活跃度。
+    @ViewBuilder
+    private var dashboardBody: some View {
+        VStack(spacing: 11) {
+            topBar
+
+            HStack(alignment: .center, spacing: 14) {
+                RemoteAvatar(urlString: user.avatarUrl, size: 74, showBorder: false)
+                    .overlay(Circle().stroke(palette.accent, lineWidth: 2))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(displayName)
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text("@\(user.login)")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(palette.secondaryText)
+                    if let bio = user.bio, !bio.isEmpty {
+                        Text(bio)
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(palette.secondaryText)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 8)
+                qrCodeView
+            }
+
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    dashboardMetric(symbol: "star.fill", value: starredCount, labelKey: "sharecard.stats.starred")
+                    dashboardMetric(symbol: "shippingbox.fill", value: user.publicRepos ?? 0, labelKey: "sharecard.stats.repos")
+                }
+                HStack(spacing: 8) {
+                    dashboardMetric(symbol: "chart.bar.fill", value: contribution?.totalContributions ?? 0, labelKey: "sharecard.dashboard.metric.contributions")
+                    dashboardMetric(symbol: "person.2.fill", value: user.followers ?? 0, labelKey: "sharecard.stats.followers")
+                }
+            }
+
+            divider
+
+            contributionSection
+
+            dashboardFactsPanel
+
+            Spacer(minLength: 0)
+
+            footerBar
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+    }
+
+    /// 数据看板的双列 facts 信息块。
+    ///
+    /// 第 4 种样式的核心目标是“看板”。这里尽量使用已经缓存的 profile / 草坪字段，
+    /// 不为一张分享卡新增网络请求；空 profile 字段会自动跳过。
+    @ViewBuilder
+    private var dashboardFactsPanel: some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 7) {
+                dashboardFactsTitle("sharecard.dashboard.profileFacts")
+                ForEach(dashboardProfileFacts) { fact in
+                    dashboardFactRow(symbol: fact.symbol, labelKey: fact.labelKey, value: fact.value)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 7) {
+                dashboardFactsTitle("sharecard.dashboard.activityFacts")
+                ForEach(dashboardActivityFacts) { fact in
+                    dashboardFactRow(symbol: fact.symbol, labelKey: fact.labelKey, value: fact.value)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(palette.cardBackgroundSecondary.opacity(0.48))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(palette.divider, lineWidth: 0.7)
+                )
+        )
+    }
+
+    @ViewBuilder
+    private func dashboardFactsTitle(_ key: LocalizedStringKey) -> some View {
+        Text(key)
+            .font(.system(size: 7, weight: .bold, design: .monospaced))
+            .tracking(1.2)
+            .textCase(.uppercase)
+            .foregroundStyle(palette.tertiaryText)
+    }
+
+    // MARK: - Pass 布局
+
+    /// 通行证布局：身份信息像 badge 一样分栏展示，QR 是右侧固定识别点。
+    @ViewBuilder
+    private var passBody: some View {
+        VStack(spacing: 0) {
+            topBar
+                .padding(.bottom, 16)
+
+            passIdentityPanel
+
+            passStatsBlock
+                .padding(.top, 14)
+
+            passLinkAndQRPanel
+                .padding(.top, 12)
+
+            divider
+                .padding(.vertical, 14)
+
+            contributionSection
+
+            Spacer(minLength: 0)
+
+            footerBar
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+    }
+
+    /// 通行证身份面板：把头像与身份文本合并成一块，减少截图里“头像一块、文字一块”的割裂感。
+    @ViewBuilder
+    private var passIdentityPanel: some View {
+        HStack(alignment: .center, spacing: 16) {
+            RemoteAvatar(urlString: user.avatarUrl, size: 104, showBorder: false)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(palette.accent, lineWidth: 2.2)
+                )
+                .shadow(color: palette.accent.opacity(0.20), radius: 10, y: 4)
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text(displayName)
+                    .font(.system(size: 25, weight: .black, design: .rounded))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                Text("@\(user.login)")
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(palette.secondaryText)
+                if let bio = user.bio, !bio.isEmpty {
+                    Text(bio)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(3)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(palette.cardBackgroundSecondary.opacity(0.38))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(palette.divider, lineWidth: 0.7)
+                )
+        )
+    }
+
+    /// 通行证的链接与 QR 识别区。QR 放在链接右侧，形成“身份资料 → 可扫码验证”的连续读序。
+    @ViewBuilder
+    private var passLinkAndQRPanel: some View {
+        HStack(alignment: .center, spacing: 14) {
+            profileLinksSection
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            qrCodeView
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(palette.cardBackgroundSecondary.opacity(0.34))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(palette.divider, lineWidth: 0.7)
+                )
+        )
+    }
+
+    /// 通行证下方统计块：横向密度高，避免和顶部身份区抢视觉。
+    @ViewBuilder
+    private var passStatsBlock: some View {
+        HStack(spacing: 8) {
+            compactStatPill(symbol: "star.fill", value: starredCount, labelKey: "sharecard.stats.starred")
+            compactStatPill(symbol: "person.2.fill", value: user.followers ?? 0, labelKey: "sharecard.stats.followers")
+            compactStatPill(symbol: "person.fill", value: user.following ?? 0, labelKey: "sharecard.stats.following")
+        }
+    }
+
+    // MARK: - Terminal 布局
+
+    /// 终端布局：用 monospaced 信息层级表达开发者身份，适合偏技术传播。
+    @ViewBuilder
+    private var terminalBody: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("$ starcat profile")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(palette.accent)
+                Spacer()
+                Text("sharecard.card.tagline")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(palette.tertiaryText)
+            }
+
+            HStack(alignment: .center, spacing: 16) {
+                RemoteAvatar(urlString: user.avatarUrl, size: 92, showBorder: false)
+                    .overlay(Circle().stroke(palette.accent, lineWidth: 2))
+                VStack(alignment: .leading, spacing: 6) {
+                    terminalLine(key: "name", value: displayName)
+                    terminalLine(key: "login", value: "@\(user.login)")
+                    if let bio = user.bio, !bio.isEmpty {
+                        terminalLine(key: "bio", value: bio)
+                    }
+                }
+            }
+
+            terminalStatsBlock
+
+            profileLinksSection
+
+            divider
+
+            contributionSection
+
+            Spacer(minLength: 0)
+
+            HStack(alignment: .bottom, spacing: 16) {
+                qrCodeView
+                footerBar
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+    }
+
+    /// 终端版式的三行统计输出。
+    @ViewBuilder
+    private var terminalStatsBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            terminalLine(key: "stars", value: formatCompact(starredCount))
+            terminalLine(key: "followers", value: formatCompact(user.followers ?? 0))
+            terminalLine(key: "following", value: formatCompact(user.following ?? 0))
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(palette.cardBackgroundSecondary.opacity(0.65))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(palette.divider, lineWidth: 0.7)
+                )
+        )
+    }
+
     /// ID 卡顶部头像区。
     /// 圆角矩形头像（不是圆形）+ 底部渐变虚化，模拟设计图里头像填充上半部分的视觉。
     @ViewBuilder
@@ -575,7 +1093,7 @@ struct ShareCardContent: View {
     @ViewBuilder
     private var idCardIdentity: some View {
         HStack(alignment: .center, spacing: 8) {
-            Text(user.name?.isEmpty == false ? user.name! : user.login)
+            Text(displayName)
                 .font(.system(size: 26, weight: .bold, design: .rounded))
                 .foregroundStyle(palette.primaryText)
                 .lineLimit(1)
@@ -659,7 +1177,7 @@ struct ShareCardContent: View {
     /// （QR 需要高对比度，template tinting 会导致扫码失败）。
     @ViewBuilder
     private var qrCodeView: some View {
-        let url = "https://github.com/\(user.login)"
+        let url = profileURLString
         let qrImage = QRCodeGenerator.generate(text: url, sizePoints: 64)
 
         ZStack {
@@ -707,6 +1225,15 @@ private struct ShareCardLinkItem: Identifiable {
     let displayText: String
 
     var id: String { displayText }
+}
+
+/// 数据看板 facts 区的一行静态数据。
+private struct DashboardFact: Identifiable {
+    let symbol: String
+    let labelKey: LocalizedStringKey
+    let value: String
+
+    var id: String { "\(symbol)-\(value)" }
 }
 
 // MARK: - ID 卡大头像（Equatable 缓存）
@@ -844,7 +1371,7 @@ private struct ContributionStaticGrid: View {
     )
     return ShareCardContent(
         user: mockUser, starredCount: 4823,
-        contribution: nil, theme: .githubGreen
+        contribution: nil, style: .magazine, colorSet: .githubGreen
     )
     .padding()
     .background(Color.gray.opacity(0.2))
@@ -861,7 +1388,7 @@ private struct ContributionStaticGrid: View {
     )
     return ShareCardContent(
         user: mockUser, starredCount: 1284,
-        contribution: nil, theme: .heatOrange
+        contribution: nil, style: .poster, colorSet: .heatOrange
     )
     .padding()
     .background(Color.gray.opacity(0.2))
@@ -877,7 +1404,7 @@ private struct ContributionStaticGrid: View {
     )
     return ShareCardContent(
         user: mockUser, starredCount: 999,
-        contribution: nil, theme: .minimal
+        contribution: nil, style: .terminal, colorSet: .minimal
     )
     .padding()
     .background(Color.white)
