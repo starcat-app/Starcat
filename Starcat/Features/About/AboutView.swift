@@ -323,13 +323,6 @@ private struct SupportPage: View {
                     // 避免打断用户，也符合 Apple 对应用评分请求的限制与展示策略。
                     requestReview()
                 }
-
-                Divider().padding(.vertical, 4)
-
-                Text("about.support.feedbackHint")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(3)
             }
         }
     }
@@ -354,6 +347,7 @@ private struct EULAPage: View {
                 NumberedTerm(number: "1", title: "about.eula.term1.title", text: "about.eula.term1.text")
                 NumberedTerm(number: "2", title: "about.eula.term2.title", text: "about.eula.term2.text")
                 NumberedTerm(number: "3", title: "about.eula.term3.title", text: "about.eula.term3.text")
+                NumberedTerm(number: "4", title: "about.eula.term4.title", text: "about.eula.term4.text")
 
                 HStack {
                     Spacer()
