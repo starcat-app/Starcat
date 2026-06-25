@@ -97,7 +97,7 @@ struct ActivityView: View {
             }
             let model = ensureViewModel()
             await model.ensureLoaded(category: selectedCategory)
-            restoreSelection(from: model.items)
+            clearSelectionIfMissing(from: model.items)
             reportItemCount(model)
         }
         .onChange(of: selectedCategory) { _, newCategory in
@@ -110,7 +110,7 @@ struct ActivityView: View {
                 prefetchWeeklyTotalIfNeeded()
                 Task {
                     await model.ensureLoaded(category: newCategory)
-                    restoreSelection(from: model.items)
+                    clearSelectionIfMissing(from: model.items)
                     reportItemCount(model)
                 }
                 return
@@ -119,7 +119,7 @@ struct ActivityView: View {
             if !viewModel.isAggregateReady {
                 Task {
                     await viewModel.ensureLoaded(category: newCategory)
-                    restoreSelection(from: viewModel.items)
+                    clearSelectionIfMissing(from: viewModel.items)
                     reportItemCount(viewModel)
                 }
                 return
@@ -127,11 +127,7 @@ struct ActivityView: View {
             viewModel.selectCategory(newCategory)
             prefetchWeeklyTotalIfNeeded()
             reportItemCount(viewModel)
-            // 延后一帧再改 selection，避免与中栏 List diff 同帧抢主线程。
-            DispatchQueue.main.async {
-                restoreSelection(from: viewModel.items)
-                reportItemCount(viewModel)
-            }
+            clearSelectionIfMissing(from: viewModel.items)
         }
         .onChange(of: dependencies.weeklySelectionService.total) { _, total in
             guard let total else { return }
@@ -171,7 +167,7 @@ struct ActivityView: View {
             Button("activity.following.clear.action", role: .destructive) {
                 Task {
                     await viewModel.clearFollowingFeed()
-                    restoreSelection(from: viewModel.items)
+                    clearSelectionIfMissing(from: viewModel.items)
                     reportItemCount(viewModel)
                 }
             }
@@ -186,7 +182,7 @@ struct ActivityView: View {
             Button("activity.announcement.clear.action", role: .destructive) {
                 Task {
                     await viewModel.clearAnnouncementFeed()
-                    restoreSelection(from: viewModel.items)
+                    clearSelectionIfMissing(from: viewModel.items)
                     reportItemCount(viewModel)
                 }
             }
@@ -383,7 +379,7 @@ struct ActivityView: View {
         ) {
             Task {
                 await viewModel.refresh(category: selectedCategory)
-                restoreSelection(from: viewModel.items)
+                clearSelectionIfMissing(from: viewModel.items)
                 reportItemCount(viewModel)
             }
         }
@@ -485,11 +481,13 @@ struct ActivityView: View {
         }
     }
 
-    private func restoreSelection(from items: [ActivityItem]) {
-        if let selectedItem, items.contains(where: { $0.id == selectedItem.id }) {
+    private func clearSelectionIfMissing(from items: [ActivityItem]) {
+        // 分类切换、刷新、清空 feed 只维护“旧详情是否仍属于当前列表”这个约束。
+        // 不再默认选中第一条，避免列表加载后又触发详情页的额外加载。
+        guard let selectedItem, !items.contains(where: { $0.id == selectedItem.id }) else {
             return
         }
-        selectedItem = items.first
+        self.selectedItem = nil
     }
 
     private func reportItemCount(_ viewModel: ActivityViewModel) {

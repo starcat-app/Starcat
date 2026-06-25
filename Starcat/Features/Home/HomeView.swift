@@ -718,6 +718,9 @@ struct HomeView: View {
             guard selectedSidebarPage == .activity else { return }
             savedActivityCategory = newCategory
             settings.lastActivityCategoryRaw = newCategory.persistedRawValue
+            // Activity 分类切换只负责更新中栏列表；详情页必须由用户明确点击触发，
+            // 避免列表加载完成后又自动加载第一条详情造成额外等待。
+            selectedActivityItem = nil
             // 过渡期间仅抑制头像 tint 补间；草坪蛇不参与（见 SidebarAnimationCoordinator）。
             dependencies.sidebarAnimationCoordinator.beginActivityCategoryTransition()
             // 切走 weekly 分类时清掉周刊详情选中；切到 weekly 时不动（首次进入由列表点击触发）。

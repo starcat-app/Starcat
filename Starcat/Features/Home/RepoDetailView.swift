@@ -244,24 +244,46 @@ struct RepoDetailView: View {
 
     // MARK: - 空态
 
-    private var emptyState: some View {
-        VStack(spacing: 18) {
-            RepoDetailEmptyIllustration()
-                .frame(width: 360, height: 222)
+    private static let emptyIllustrationBaseSize = CGSize(width: 360, height: 222)
+    private static let emptyIllustrationAspectRatio = emptyIllustrationBaseSize.width / emptyIllustrationBaseSize.height
 
-            VStack(spacing: 7) {
-                Text("empty.noSelection")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
+    private var emptyState: some View {
+        GeometryReader { proxy in
+            let illustrationSize = emptyIllustrationSize(in: proxy.size)
+            let illustrationScale = illustrationSize.width / Self.emptyIllustrationBaseSize.width
+
+            VStack(spacing: 14) {
+                RepoDetailEmptyIllustration()
+                    .frame(
+                        width: Self.emptyIllustrationBaseSize.width,
+                        height: Self.emptyIllustrationBaseSize.height
+                    )
+                    .scaleEffect(illustrationScale)
+                    .frame(width: illustrationSize.width, height: illustrationSize.height)
 
                 Text("empty.selectFromList")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
+            .padding(.horizontal, 48)
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
-        .padding(.horizontal, 48)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func emptyIllustrationSize(in containerSize: CGSize) -> CGSize {
+        // 以 360x222 为设计基准，只在外层整体缩放，避免内部每条 mock line 的比例散掉。
+        let horizontalInset: CGFloat = 96
+        let verticalReserve: CGFloat = 118
+        let availableWidth = max(180, containerSize.width - horizontalInset)
+        let availableHeight = max(140, containerSize.height - verticalReserve)
+        let maximumWidth = min(520, availableWidth)
+        let minimumWidth = min(280, maximumWidth)
+        let preferredWidth = min(availableWidth * 0.62, availableHeight * Self.emptyIllustrationAspectRatio)
+        let width = min(maximumWidth, max(minimumWidth, preferredWidth))
+
+        return CGSize(width: width, height: width / Self.emptyIllustrationAspectRatio)
     }
 
     /// Smart Collections 右栏浏览面板顶部光晕 tint（与集合 kind / 用户集合 accent 对齐）。
@@ -341,23 +363,6 @@ private struct RepoDetailEmptyIllustration: View {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: .black.opacity(0.16), radius: 22, x: 0, y: 14)
             .shadow(color: cyan.opacity(0.14), radius: 34, x: 0, y: 16)
-
-            ZStack {
-                Circle()
-                    .fill(.regularMaterial)
-                    .frame(width: 54, height: 54)
-                    .overlay {
-                        Circle()
-                            .stroke(cyan.opacity(0.52), lineWidth: 1.4)
-                    }
-
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(cyan)
-                    .offset(x: 1, y: 1)
-            }
-            .shadow(color: .black.opacity(0.18), radius: 14, x: 0, y: 8)
-            .offset(x: 94, y: 49)
         }
         .accessibilityHidden(true)
     }
