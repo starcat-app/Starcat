@@ -65,7 +65,8 @@ struct AppStatusToolbarButton: View {
                 mcpEndpointURL: dependencies.mcpService.endpointURL,
                 serviceSummary: dependencies.serviceAvailabilityMonitor.summary,
                 diagnosticSummary: diagnosticSummary,
-                relativeDate: relativeDate,
+                relativePastDate: relativePastDate,
+                relativeFutureDate: relativeFutureDate,
                 onOpenDiagnostics: { openSettings(tab: "diagnostics") },
                 onClearDiagnostics: {
                     Task { await clearDiagnostics() }
@@ -140,11 +141,12 @@ struct AppStatusToolbarButton: View {
         await refreshDiagnostics()
     }
 
-    private func relativeDate(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        formatter.locale = locale
-        return formatter.localizedString(for: date, relativeTo: Date())
+    private func relativePastDate(_ date: Date) -> String {
+        RelativeTimeText.pastEvent(date, locale: locale)
+    }
+
+    private func relativeFutureDate(_ date: Date) -> String {
+        RelativeTimeText.futureDeadline(date, locale: locale)
     }
 
     private func openSettings(tab: String) {
@@ -166,7 +168,8 @@ private struct AppStatusPanel: View {
     let mcpEndpointURL: String
     let serviceSummary: ServiceAvailabilitySummary
     let diagnosticSummary: DiagnosticLogSummary
-    let relativeDate: (Date) -> String
+    let relativePastDate: (Date) -> String
+    let relativeFutureDate: (Date) -> String
     let onOpenDiagnostics: () -> Void
     let onClearDiagnostics: () -> Void
     let onOpenServices: () -> Void
@@ -305,14 +308,17 @@ private struct AppStatusPanel: View {
             }
             return String.l10n("toolbar.status.sync.running")
         case .completed(let at):
-            return String(format: String.l10n("toolbar.status.sync.lastFormat"), relativeDate(at))
+            return String(format: String.l10n("toolbar.status.sync.lastFormat"), relativePastDate(at))
         case .failed(let message):
             return message
         case .rateLimited(let retryAt):
-            return String(format: String.l10n("toolbar.status.sync.rateLimitedFormat"), relativeDate(retryAt))
+            if RelativeTimeText.isImmediateDeadline(retryAt) {
+                return String.l10n("toolbar.status.sync.rateLimitedRetryNow")
+            }
+            return String(format: String.l10n("toolbar.status.sync.rateLimitedFormat"), relativeFutureDate(retryAt))
         case .idle:
             if let lastSyncedAt {
-                return String(format: String.l10n("toolbar.status.sync.lastFormat"), relativeDate(lastSyncedAt))
+                return String(format: String.l10n("toolbar.status.sync.lastFormat"), relativePastDate(lastSyncedAt))
             }
             return String.l10n("toolbar.status.sync.notYet")
         }

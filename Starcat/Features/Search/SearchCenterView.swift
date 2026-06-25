@@ -2165,10 +2165,7 @@ private struct SearchRemoteRepoDetailView: View {
             parsed = formatter.date(from: iso8601)
         }
         guard let date = parsed else { return nil }
-        let rel = RelativeDateTimeFormatter()
-        rel.unitsStyle = .full
-        rel.locale = locale
-        return rel.localizedString(for: date, relativeTo: Date())
+        return RelativeTimeText.pastEvent(date, locale: locale, unitsStyle: .full)
     }
 
     // MARK: - Topics

@@ -37,7 +37,7 @@
 //  - **吃格**：animator 返回的 eatenCells 集合内的格子渲染为 NONE 色，
 //    模拟"被吃掉"。每轮重启时由 animator 自己控制是否清空（zigzag/greedy 等不清，
 //    新一轮通过 currentStep nil → 完整草坪回归）。
-//  - **食物**（FoodChase 专属）：在 foodCells 集合的格子叠一层脉冲高亮圆环。
+//  - **食物**（FoodChase 专属）：在 foodCells 集合的格子叠一层脉冲高亮。
 //  - **reduceMotion**：完全跳过蛇，只静态显示草坪——前庭敏感用户优先。
 //
 //  关键约束：
@@ -76,8 +76,7 @@ struct ContributionGraphView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
-    /// 2026-06-16:Date.RelativeFormatStyle 默认按 `Locale.current` 渲染相对时间,
-    /// 显式从 `\.locale` 读才会跟随 LocaleStore 切换。
+    /// 相对时间 helper 需要显式 `\.locale`，否则 formatter 会回到系统语言。
     @Environment(\.locale) private var locale
     /// HOM-SNAKE-MODES：读取用户选的玩法。
     @Environment(AppSettings.self) private var settings
@@ -164,8 +163,8 @@ struct ContributionGraphView: View {
     /// 顶部一行：左侧"近一年贡献 X 次"，右侧"更新于 X 分前"。
     ///
     /// dong4j 2026-06-05 反馈：去掉右上角跳转链接图标（头像已可点击跳转）；
-    /// 加"更新于 X 分前"但 i18n 要简短。这里用 SwiftUI 自带 `.relative` 时间格式，
-    /// 配合 `unitsStyle: .narrow` 让英文是 `1m` / 中文是 `1分钟前`，自动跟随 locale。
+    /// 加"更新于 X 分前"但 i18n 要简短。使用 `RelativeTimeText` 统一兜底近实时边界，
+    /// 避免刷新瞬间显示没有意义的"0 秒后"。
     /// 加 `clock` 图标省去 "更新于"/"Updated" 文字前缀，更紧凑。
     @ViewBuilder
     private var headerRow: some View {
@@ -193,7 +192,7 @@ struct ContributionGraphView: View {
                 HStack(spacing: 3) {
                     Image(systemName: "clock")
                         .font(.system(size: 9))
-                    Text(lastFetchedAt, format: .relative(presentation: .numeric, unitsStyle: .narrow).locale(locale))
+                    Text(verbatim: RelativeTimeText.pastEvent(lastFetchedAt, locale: locale, unitsStyle: .abbreviated))
                         .monospacedDigit()
                 }
                 .font(.system(size: 10))
@@ -351,37 +350,40 @@ struct ContributionGraphView: View {
 
     /// 绘制食物（仅 FoodChase 玩法非空）。
     ///
-    /// 视觉：在格子上叠一个金黄色脉冲圆环，1Hz 频率呼吸——让用户一眼看出"目标"。
-    /// 圆环用 `.color.opacity(脉冲)` 走 stroke 而非 fill，与蛇头（fill）形成对比。
+    /// 视觉：把目标格子本身染成琥珀色并叠一层内描边，1Hz 频率呼吸。
+    /// 旧版外扩圆环会在草坪最外圈被 Canvas 边界裁切，所以高亮必须完全收在单格内部。
     private func drawFood(ctx: GraphicsContext, scale: CGFloat,
                           food: Set<GridPosition>, time: Date) {
         guard !food.isEmpty else { return }
         let scaledCellW = cellWidth * scale
         let scaledCellH = cellHeight * scale
         let scaledSpacing = cellSpacing * scale
+        let scaledCorner = cellCornerRadius * scale
 
-        // 1Hz 呼吸：sin(2π·t) 映射到 [0.4, 1.0]
+        // 1Hz 呼吸：sin(2π·t) 映射到 [0.4, 1.0]，只影响透明度，不改变格子尺寸。
         let phase = time.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.0)
         let pulse = 0.7 + 0.3 * sin(phase * 2 * .pi)
 
-        let foodColor = Color(.sRGB, red: 1.0, green: 0.78, blue: 0.2, opacity: 1.0)  // 金黄
+        let foodColor = Color(.sRGB, red: 1.0, green: 0.69, blue: 0.18, opacity: 1.0)  // 琥珀色
 
         for pos in food {
             let baseX = CGFloat(pos.col) * (scaledCellW + scaledSpacing)
             let baseY = CGFloat(pos.row) * (scaledCellH + scaledSpacing)
-            // 比格子稍大的圆环，强调"目标"
-            let inflate: CGFloat = 0.4
-            let segW = scaledCellW * (1.0 + inflate)
-            let segH = scaledCellH * (1.0 + inflate)
             let rect = CGRect(
-                x: baseX - (segW - scaledCellW) / 2,
-                y: baseY - (segH - scaledCellH) / 2,
-                width: segW, height: segH
+                x: baseX,
+                y: baseY,
+                width: scaledCellW,
+                height: scaledCellH
             )
+            let path = Path(roundedRect: rect, cornerRadius: scaledCorner)
+            ctx.fill(path, with: .color(foodColor.opacity(0.58 + 0.22 * pulse)))
+
+            let lineWidth = max(0.75, 1.0 * scale)
+            let insetRect = rect.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
             ctx.stroke(
-                Path(ellipseIn: rect),
-                with: .color(foodColor.opacity(pulse)),
-                lineWidth: 1.5 * scale
+                Path(roundedRect: insetRect, cornerRadius: max(0, scaledCorner - lineWidth / 2)),
+                with: .color(foodColor.opacity(0.9)),
+                lineWidth: lineWidth
             )
         }
     }

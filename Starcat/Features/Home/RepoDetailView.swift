@@ -531,9 +531,8 @@ struct ReadmeStateView: View {
     @Environment(ReadmeViewModel.self) private var readmeVM
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
-    /// 2026-06-16:跟随 `LocaleStore` 的 effective locale,用于 `Date.RelativeFormatStyle`
-    /// 的 locale 注入(否则 `cachedAt.formatted(.relative(...))` 默认走系统 locale,
-    /// 英文 App 仍会输出"3 小时前")。已挂 `appLocaleEnvironment()` 的子树自动拿到正确值。
+    /// 相对时间 helper 需要显式 `\.locale`，否则 formatter 会回到系统语言。
+    /// 已挂 `appLocaleEnvironment()` 的子树自动拿到正确值。
     @Environment(\.locale) private var locale
 
     let state: ReadmeViewModel.LoadState
@@ -729,7 +728,7 @@ struct ReadmeStateView: View {
         HStack(spacing: 12) {
             Image(systemName: "clock")
                 .font(.caption2)
-            Text(String(format: String.l10n("readme.cachedAtFormat"), cachedAt.formatted(.relative(presentation: .named).locale(locale))))
+            Text(String(format: String.l10n("readme.cachedAtFormat"), RelativeTimeText.pastEvent(cachedAt, locale: locale)))
                 .font(.caption2)
             Spacer()
             if let control = translationControl {

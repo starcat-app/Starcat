@@ -524,9 +524,6 @@ private struct ReleaseTimelineRow: View {
 
     private func relativeDate(_ iso: String?) -> String? {
         guard let iso, let date = ISO8601DateFormatter.shared.date(from: iso) else { return nil }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        formatter.locale = locale
-        return formatter.localizedString(for: date, relativeTo: Date())
+        return RelativeTimeText.pastEvent(date, locale: locale)
     }
 }

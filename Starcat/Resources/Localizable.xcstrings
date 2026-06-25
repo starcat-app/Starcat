@@ -31241,6 +31241,23 @@
         }
       }
     },
+    "toolbar.status.sync.rateLimitedRetryNow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rate limit is clearing. Try again now."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "限流即将解除，可以重试。"
+          }
+        }
+      }
+    },
     "toolbar.status.sync.running" : {
       "extractionState" : "manual",
       "localizations" : {

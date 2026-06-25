@@ -922,10 +922,7 @@ struct AISettingsTab: View {
               let stats = settings.autoTidySettings.lastRunStats else {
             return String.l10n("settings.autoTidy.status.neverRun")
         }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        formatter.locale = locale
-        let timeAgo = formatter.localizedString(for: last, relativeTo: Date())
+        let timeAgo = RelativeTimeText.pastEvent(last, locale: locale)
         return String(
             format: String.l10n("settings.autoTidy.status.lastRunFormat"),
             timeAgo, stats.applied, stats.ignored, stats.failed

@@ -754,13 +754,7 @@ struct RepoListView: View {
     }
 
     private func relativeDate(_ date: Date) -> String {
-        if abs(date.timeIntervalSinceNow) < 1 {
-            return String.l10n("relative.justNow")
-        }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        formatter.locale = locale
-        return formatter.localizedString(for: date, relativeTo: Date())
+        RelativeTimeText.pastEvent(date, locale: locale)
     }
 
     /// HOM-52：仅在 Untagged 视图非空时，在列表顶部插入"批量 AI 整理"入口横幅。

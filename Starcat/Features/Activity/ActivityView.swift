@@ -495,13 +495,7 @@ struct ActivityView: View {
     }
 
     private func relativeDate(_ date: Date) -> String {
-        if abs(date.timeIntervalSinceNow) < 1 {
-            return String.l10n("relative.justNow")
-        }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        formatter.locale = locale
-        return formatter.localizedString(for: date, relativeTo: Date())
+        RelativeTimeText.pastEvent(date, locale: locale)
     }
 
     /// 加载中 / 后台 filter 中 / 聚合未就绪 → 骨架屏，避免误显示「暂无活动」空态。
