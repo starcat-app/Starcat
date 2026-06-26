@@ -23,7 +23,7 @@ import SwiftUI
 
 /// 分享卡版式枚举。
 ///
-/// 2026-06-25 二次调整：保留最早的 2 种版式，其余 4 种按 dong4j 给的原型重做。
+/// 2026-06-25 二次调整：保留最早的 2 种版式，其余样式按 dong4j 给的原型重做。
 /// 原型里只因颜色不同而重复的样式（1/2、4/5）在这里合并为同一个 case，由
 /// `supportedColors` 区分颜色，避免为了换色复制整套布局。
 enum ShareCardStyle: String, CaseIterable, Identifiable, Hashable {
@@ -37,8 +37,6 @@ enum ShareCardStyle: String, CaseIterable, Identifiable, Hashable {
     case terminal = "terminal"
     /// 冒险背景卡：原型 4，使用草地山丘背景图。
     case adventure = "adventure"
-    /// 聚光海报卡：原型 4/5 的抽象渐变版本，颜色差异由配色区分。
-    case spotlight = "spotlight"
 
     var id: String { rawValue }
 
@@ -50,7 +48,6 @@ enum ShareCardStyle: String, CaseIterable, Identifiable, Hashable {
         case .social:    return "sharecard.style.social"
         case .terminal:  return "sharecard.style.terminal"
         case .adventure: return "sharecard.style.adventure"
-        case .spotlight: return "sharecard.style.spotlight"
         }
     }
 
@@ -65,8 +62,6 @@ enum ShareCardStyle: String, CaseIterable, Identifiable, Hashable {
             return [.githubGreen, .minimal, .heatOrange, .auroraBlue]
         case .adventure:
             return [.lightCard, .adventureSunrise, .adventureShadow, .adventureFel]
-        case .spotlight:
-            return [.auroraBlue, .berryPurple]
         case .magazine:
             return ShareCardColorSet.socialPalette
         }
@@ -81,8 +76,6 @@ enum ShareCardStyle: String, CaseIterable, Identifiable, Hashable {
             return .githubGreen
         case .adventure:
             return .lightCard
-        case .spotlight:
-            return .auroraBlue
         case .magazine:
             return .githubGreen
         }

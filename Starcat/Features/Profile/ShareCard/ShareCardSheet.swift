@@ -404,19 +404,6 @@ struct ShareCardSheet: View {
                         miniGrid
                     }
                 }
-            case .spotlight:
-                VStack(spacing: 3) {
-                    HStack(spacing: 3) {
-                        miniCircle
-                        miniLine(width: 16)
-                    }
-                    HStack(spacing: 3) {
-                        miniSquare
-                        miniSquare
-                        miniSquare
-                    }
-                    miniGrid
-                }
             }
         }
 

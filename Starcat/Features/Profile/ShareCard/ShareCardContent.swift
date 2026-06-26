@@ -172,8 +172,6 @@ struct ShareCardContent: View {
                 terminalBody
             case .adventure:
                 adventureBody
-            case .spotlight:
-                spotlightBody
             }
         }
         .frame(width: Self.canvasWidth, height: Self.canvasHeight)
@@ -1617,24 +1615,6 @@ struct ShareCardContent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// 聚光海报卡：原型 4/5 的渐变海报版本，布局与 adventure 同构但视觉更偏社交传播。
-    @ViewBuilder
-    private var spotlightBody: some View {
-        ZStack {
-            decorativeSpotlightOrnaments
-
-            VStack(spacing: 10) {
-                prototypeIdentityBlock(avatarSize: 84, showsQRCode: true)
-                prototypeStatsPanel
-                prototypeLanguagePanel
-                prototypeContributionPanel
-                footerBar
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 18)
-        }
-    }
-
     /// 终端布局：原型 3，保留命令行视觉，但同样按“身份 / 统计 / 语言 / 草坪”四段组织。
     @ViewBuilder
     private var terminalBody: some View {
@@ -2030,23 +2010,6 @@ struct ShareCardContent: View {
         default:
             return palette.cardBackgroundSecondary
         }
-    }
-
-    @ViewBuilder
-    private var decorativeSpotlightOrnaments: some View {
-        ZStack {
-            Circle()
-                .fill(palette.accent.opacity(0.18))
-                .frame(width: 180, height: 180)
-                .blur(radius: 28)
-                .offset(x: 130, y: -170)
-            Circle()
-                .fill(palette.primaryText.opacity(0.10))
-                .frame(width: 130, height: 130)
-                .blur(radius: 22)
-                .offset(x: -160, y: 170)
-        }
-        .allowsHitTesting(false)
     }
 
     /// 终端样式的轻量像素纹理。只叠在内容层，不参与命中测试，也不改变布局尺寸。
@@ -2599,24 +2562,6 @@ private func makeMockDeveloperLanguages() -> DeveloperLanguageSnapshot {
         user: mockUser, starredCount: 4823,
         contribution: nil, developerLanguages: makeMockDeveloperLanguages(),
         style: .magazine, colorSet: .githubGreen
-    )
-    .padding()
-    .background(Color.gray.opacity(0.2))
-}
-
-#Preview("ShareCard - Heat Orange") {
-    let mockUser = GitHubUserDTO(
-        id: 1, login: "dong4j", name: "DONG Jianjun",
-        avatarUrl: nil,
-        publicRepos: 48, followers: 236, following: 100,
-        bio: "用代码解决真正的问题。", company: nil,
-        location: "Shanghai", email: nil, blog: nil,
-        twitterUsername: nil, htmlUrl: nil
-    )
-    return ShareCardContent(
-        user: mockUser, starredCount: 1284,
-        contribution: nil, developerLanguages: makeMockDeveloperLanguages(),
-        style: .spotlight, colorSet: .berryPurple
     )
     .padding()
     .background(Color.gray.opacity(0.2))

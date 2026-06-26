@@ -26275,22 +26275,6 @@
         }
       }
     },
-    "sharecard.style.spotlight" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spotlight"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "聚光海报"
-          }
-        }
-      }
-    },
     "sharecard.style.pass" : {
       "localizations" : {
         "en" : {
