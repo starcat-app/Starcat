@@ -623,6 +623,14 @@ struct ShareCardContent: View {
         return text.isEmpty ? nil : text
     }
 
+    /// 分享卡内展示 URL 时去掉 scheme / 末尾斜杠，避免小尺寸卡片被 `https://` 占掉有效宽度。
+    private func compactURLDisplay(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
     // MARK: - 草坪
 
     /// 贡献草坪：53 周 × 7 天，颜色按当前 `colorSet.palette.contribution` 渲染。
@@ -1328,18 +1336,22 @@ struct ShareCardContent: View {
     private var adventureBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             adventureIdentityText
-                .padding(.top, 38)
+                .padding(.top, 18)
 
             adventureStatsRow
-                .padding(.top, 34)
+                .padding(.top, 16)
 
             Spacer(minLength: 0)
 
-            adventureLanguagePanel
-                .padding(.bottom, 14)
+            // 冒险背景右侧猫咪占据统计区右半边；底部则需要同时容纳语言与草坪卡片。
+            // 这里用一组紧凑面板替代单个贴底语言卡，避免 Starred 数字压到猫身，同时补回草坪信息。
+            VStack(spacing: 8) {
+                adventureLanguagePanel
+                prototypeContributionPanel
+            }
+            .padding(.bottom, 8)
 
             footerBar
-                .padding(.bottom, 4)
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 18)
@@ -1347,8 +1359,8 @@ struct ShareCardContent: View {
 
     @ViewBuilder
     private var adventureIdentityText: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(displayName)
                     .font(.system(size: 34, weight: .heavy, design: .rounded))
                     .foregroundStyle(palette.primaryText)
@@ -1362,31 +1374,79 @@ struct ShareCardContent: View {
                     .minimumScaleFactor(0.7)
             }
 
-            HStack(spacing: 6) {
-                Image(systemName: "sun.max.fill")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color.fromHex6(0xFBBF24))
-                Text(verbatim: "Code · Explore · Build")
-                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
-                    .foregroundStyle(palette.primaryText.opacity(0.78))
-                    .lineLimit(1)
-            }
+            adventureSocialLinksBlock
 
             Text(user.bio?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                  ? user.bio!.trimmingCharacters(in: .whitespacesAndNewlines)
                  : "Passionate developer focused on creating high-quality, impactful software.")
-                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                .font(.system(size: 10.8, weight: .semibold, design: .rounded))
                 .foregroundStyle(palette.primaryText.opacity(0.72))
-                .lineSpacing(3)
-                .lineLimit(3)
+                .lineSpacing(2)
+                .lineLimit(2)
                 .minimumScaleFactor(0.78)
         }
-        .frame(width: 246, alignment: .leading)
+        .frame(width: 282, alignment: .leading)
+    }
+
+    /// 冒险样式社交信息：替换原先写死的 slogan，把顶部留白变成真实 profile 信息。
+    ///
+    /// 这里只读 `GitHubUserDTO` 已有字段，不新增网络请求；缺失字段用占位文案保留布局稳定。
+    @ViewBuilder
+    private var adventureSocialLinksBlock: some View {
+        let location = trimmed(user.location)
+        let email = trimmed(user.email)
+        let homepage = trimmed(user.blog).map(compactURLDisplay)
+        let social = trimmed(user.twitterUsername).map { "@\($0)" }
+
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                adventureSocialChip(
+                    symbol: "mappin.and.ellipse",
+                    text: location ?? String.l10n("sharecard.social.locationPlaceholder"),
+                    isPlaceholder: location == nil
+                )
+
+                adventureSocialChip(
+                    symbol: "envelope.fill",
+                    text: email ?? String.l10n("sharecard.social.emailPlaceholder"),
+                    isPlaceholder: email == nil
+                )
+            }
+
+            adventureSocialChip(
+                symbol: "link",
+                text: homepage ?? String.l10n("sharecard.social.homepagePlaceholder"),
+                isPlaceholder: homepage == nil
+            )
+
+            adventureSocialChip(
+                symbol: "at",
+                text: social ?? String.l10n("sharecard.social.socialPlaceholder"),
+                isPlaceholder: social == nil
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func adventureSocialChip(symbol: String, text: String, isPlaceholder: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol)
+                .font(.system(size: 8.5, weight: .bold))
+                .foregroundStyle(Color.fromHex6(0xD97706))
+                .frame(width: 12)
+
+            Text(verbatim: text)
+                .font(.system(size: 8.6, weight: .bold, design: .rounded))
+                .foregroundStyle(palette.primaryText.opacity(isPlaceholder ? 0.46 : 0.72))
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+        }
+        .frame(height: 15)
     }
 
     @ViewBuilder
     private var adventureStatsRow: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             adventureStatItem(symbol: "shippingbox.fill",
                               value: user.publicRepos ?? 0,
                               labelKey: "sharecard.stats.repos",
@@ -1404,7 +1464,8 @@ struct ShareCardContent: View {
                               labelKey: "sharecard.stats.starred",
                               color: Color.fromHex6(0xF59E0B))
         }
-        .frame(width: 304, alignment: .leading)
+        .frame(width: 248, alignment: .leading)
+        .offset(x: -6)
     }
 
     @ViewBuilder
@@ -1429,12 +1490,12 @@ struct ShareCardContent: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.55)
         }
-        .frame(width: 67)
+        .frame(width: 56)
     }
 
     @ViewBuilder
     private var adventureLanguagePanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 7) {
             Text("sharecard.languages.title")
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(palette.primaryText.opacity(0.82))
@@ -1447,18 +1508,10 @@ struct ShareCardContent: View {
                 adventureLanguageLegendRow
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(width: 356, height: 104, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.fromHex6(0xFFE8A6).opacity(0.42))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.52), lineWidth: 0.8)
-                )
-                .shadow(color: Color.fromHex6(0xB7791F).opacity(0.10), radius: 10, y: 5)
-        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(width: 356, height: 82, alignment: .topLeading)
+        .background { adventureGlassPanelBackground }
     }
 
     @ViewBuilder
@@ -1762,8 +1815,28 @@ struct ShareCardContent: View {
         }
         .padding(12)
         .frame(height: 120)
-        .background(prototypePanelBackground(cornerRadius: style == .terminal ? 8 : 16,
-                                             opacity: style == .adventure ? 0.66 : 0.76))
+        .background {
+            if style == .adventure {
+                adventureGlassPanelBackground
+            } else {
+                prototypePanelBackground(cornerRadius: style == .terminal ? 8 : 16, opacity: 0.76)
+            }
+        }
+    }
+
+    /// 冒险样式的暖色玻璃面板背景。
+    ///
+    /// Top Languages 与贡献草坪叠在同一张插画草地上，背景色必须一致，
+    /// 否则底部会出现一暖一白两块卡片割裂。其它样式继续走共享 prototype 面板背景。
+    @ViewBuilder
+    private var adventureGlassPanelBackground: some View {
+        RoundedRectangle(cornerRadius: 16)
+            .fill(Color.fromHex6(0xFFE8A6).opacity(0.42))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.white.opacity(0.52), lineWidth: 0.8)
+            )
+            .shadow(color: Color.fromHex6(0xB7791F).opacity(0.10), radius: 10, y: 5)
     }
 
     @ViewBuilder
