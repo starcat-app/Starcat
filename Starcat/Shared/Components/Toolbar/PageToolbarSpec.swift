@@ -33,7 +33,7 @@ struct PageToolbarSpec {
     /// 渲染位置：`ToolbarItemGroup(placement: .primaryAction)` 第 1 组。
     var leadingPrimary: AnyView?
 
-    /// 主操作组：external / clone 等"依赖当前选中项"的右侧按钮。
+    /// 主操作组：wiki / external / clone / share 等"依赖当前选中项"的右侧按钮。
     /// 与 `leadingPrimary` 分组是为了系统在窄 toolbar 下有合理的折叠优先级。
     /// 渲染位置：`ToolbarItemGroup(placement: .primaryAction)` 第 2 组。
     var trailingPrimary: AnyView?

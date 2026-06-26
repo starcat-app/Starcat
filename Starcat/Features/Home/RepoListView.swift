@@ -71,6 +71,11 @@ struct RepoListView: View {
     /// toolbar spec 会通过 `AnyView` 频繁重建，sheet 必须由稳定的页面根节点承载。
     /// 否则关闭 CodeFlow 时 presentation host 被替换，窗口会短暂再次出现。
     @State private var codeFlowSheetRepo: Repo?
+    /// 分享入口已迁到 toolbar；结果 sheet 同样必须由稳定根节点承载，避免 toolbar
+    /// 子树重建时 presentation host 被替换。
+    @State private var shareSheetItem: RepoShareSheetItem?
+    @State private var shareRetryRepo: Repo?
+    @State private var shareInFlightRepoID: Int64?
     /// CodeFlow 为 Pro 功能；免费用户点入口时弹出统一付费墙，不打开执行面板。
     @State private var paywallContext: ProPaywallContext?
     @State private var ruleEditorSheetItem: SmartCollectionRuleEditorItem?
@@ -108,6 +113,14 @@ struct RepoListView: View {
         .sheet(isPresented: $showGitHubStarListOAuthRestrictionSheet) {
             GitHubStarListOAuthRestrictionSheet()
                 .appLocaleEnvironment()
+        }
+        .sheet(item: $shareSheetItem) { item in
+            RepoShareResultSheet(item: item) {
+                guard let repo = shareRetryRepo else { return }
+                shareSheetItem = nil
+                Task { await runShare(repo) }
+            }
+            .appLocaleEnvironment()
         }
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
@@ -354,8 +367,8 @@ struct RepoListView: View {
 
     /// Trending 页面 toolbar spec（W12 PR-4）：
     /// - leading 暂无（period picker 仍在中栏自绘 toolbar，period 是数据切片维度而非排序）；
-    /// - trailing 注入：[external / clone] +「多选按钮」。
-    ///   external / clone 派发 `selectedTrendingRepo` 单选项；多选按钮驱动
+    /// - trailing 注入：[wiki / external / clone / share] +「多选按钮」。
+    ///   wiki / external / clone 派发 `selectedTrendingRepo` 单选项；多选按钮驱动
     ///   `trendingMultiSelectionStore`，由 `TrendingView` 的行点击 toggle 选中状态。
     /// - PR-4 followup：未登录态多选按钮 disable。批量 star/unstar 都需要 token，
     ///   未登录直接 disable 比让用户点了再弹错误友好；如果 store 已经处于 active
@@ -368,23 +381,22 @@ struct RepoListView: View {
 
         let trailing: AnyView = {
             let selectionView: AnyView? = selectedTrendingRepo.map { repo in
+                let isStarred = registry.contains(ghRepoId: repo.ghRepoId)
                 let sel = ToolbarRepoSelection.from(
                     trending: repo,
-                    isStarred: registry.contains(ghRepoId: repo.ghRepoId)
+                    isStarred: isStarred
                 )
                 // Trending 未 star 的仓库没有本地 Repo，复用详情页现有 ephemeral 转换，
                 // 仅作为 CodeFlow 下载参数使用，不写入数据库。
-                let codeFlowRepo = repo.makeEphemeralRepo()
+                let actionRepo = repo.makeEphemeralRepo()
                 return AnyView(
                     Group {
-                        ExternalLinksMenu(
+                        selectedRepoToolbarActions(
                             selection: sel,
-                            codeFlowRepo: codeFlowRepo.isPrivate ? nil : codeFlowRepo,
-                            onOpenCodeFlow: openCodeFlow(for:)
+                            codeFlowRepo: actionRepo.isPrivate ? nil : actionRepo,
+                            shareRepo: actionRepo,
+                            isShareAvailable: isStarred
                         )
-                        CloneMenu(selection: sel) { toastKey in
-                            toastMessage = toastKey
-                        }
                     }
                 )
             }
@@ -405,10 +417,10 @@ struct RepoListView: View {
 
     /// Activity 页面 toolbar spec（W12 PR-4）：
     /// - leading 暂无（weekly 的 sort + language picker 仍在 WeeklyContentView 自绘）；
-    /// - trailing 注入：[external / clone] +「多选按钮」。
-    ///   - weekly 子分类：external/clone 派发 `weeklySelectionService.selectedItem`，多选用
+    /// - trailing 注入：[wiki / external / clone / share] +「多选按钮」。
+    ///   - weekly 子分类：wiki/external/clone 派发 `weeklySelectionService.selectedItem`，多选用
     ///     `weeklyMultiSelectionStore`；
-    ///   - 其它子分类：external/clone 派发 `selectedActivityItem?.repo`（announcement /
+    ///   - 其它子分类：wiki/external/clone 派发 `selectedActivityItem?.repo`（announcement /
     ///     following 这种 repo == nil 时不显示菜单），多选用 `activityMultiSelectionStore`。
     /// - PR-4 followup：未登录态多选按钮 disable（同 trending 同款理由）。activity 其它子分类
     ///   理论上只有登录态才会有 starred 数据，加守卫是防御性编程，不会有副作用。
@@ -424,41 +436,39 @@ struct RepoListView: View {
         let selectionView: AnyView? = {
             if isWeekly {
                 guard let item = dependencies.weeklySelectionService.selectedItem else { return nil }
+                let isStarred = registry.contains(ghRepoId: item.ghRepoId)
                 let sel = ToolbarRepoSelection.from(
                     weekly: item,
-                    isStarred: registry.contains(ghRepoId: item.ghRepoId)
+                    isStarred: isStarred
                 )
                 // Weekly card 已包含生成临时 Repo 所需的 GitHub 元数据。不可访问的历史
                 // 项目不展示 CodeFlow，避免用户进入后必然得到 zipball 404。
-                let codeFlowRepo = item.card.toEphemeralRepo()
+                let actionRepo = item.card.toEphemeralRepo()
                 return AnyView(
                     Group {
-                        ExternalLinksMenu(
+                        selectedRepoToolbarActions(
                             selection: sel,
-                            codeFlowRepo: item.isAvailable && !codeFlowRepo.isPrivate ? codeFlowRepo : nil,
-                            onOpenCodeFlow: openCodeFlow(for:)
+                            codeFlowRepo: item.isAvailable && !actionRepo.isPrivate ? actionRepo : nil,
+                            shareRepo: actionRepo,
+                            isShareAvailable: isStarred
                         )
-                        CloneMenu(selection: sel) { toastKey in
-                            toastMessage = toastKey
-                        }
                     }
                 )
             } else {
                 guard let repo = selectedActivityItem?.repo else { return nil }
+                let isStarred = repo.isStarred || registry.contains(ghRepoId: repo.id)
                 let sel = ToolbarRepoSelection.from(
                     repo: repo,
-                    isStarred: registry.contains(ghRepoId: repo.id)
+                    isStarred: isStarred
                 )
                 return AnyView(
                     Group {
-                        ExternalLinksMenu(
+                        selectedRepoToolbarActions(
                             selection: sel,
                             codeFlowRepo: repo.isPrivate ? nil : repo,
-                            onOpenCodeFlow: openCodeFlow(for:)
+                            shareRepo: repo,
+                            isShareAvailable: isStarred
                         )
-                        CloneMenu(selection: sel) { toastKey in
-                            toastMessage = toastKey
-                        }
                     }
                 )
             }
@@ -554,20 +564,19 @@ struct RepoListView: View {
 
         let trailing: AnyView? = {
             guard let repo = viewModel.selectedRepo else { return nil }
+            let isStarred = repo.isStarred || dependencies.starredRegistry.contains(ghRepoId: repo.id)
             let selection = ToolbarRepoSelection.from(
                 repo: repo,
-                isStarred: dependencies.starredRegistry.contains(ghRepoId: repo.id)
+                isStarred: isStarred
             )
             return AnyView(
                 Group {
-                    ExternalLinksMenu(
+                    selectedRepoToolbarActions(
                         selection: selection,
                         codeFlowRepo: repo.isPrivate ? nil : repo,
-                        onOpenCodeFlow: openCodeFlow(for:)
+                        shareRepo: repo,
+                        isShareAvailable: isStarred
                     )
-                    CloneMenu(selection: selection) { toastKey in
-                        toastMessage = toastKey
-                    }
                 }
             )
         }()
@@ -584,6 +593,110 @@ struct RepoListView: View {
             return viewModel.userSmartCollection(id: id) != nil
         }
         return viewModel.makeRuleFromCurrentManageFilters() != nil
+    }
+
+    /// 当前选中 repo 的 toolbar 操作组。
+    ///
+    /// Wiki / Share 已从详情 hero 迁到 toolbar。Wiki 是公开阅读能力，不依赖登录或
+    /// star 状态；Share 仍沿用旧可见性：必须登录且当前 repo 真实处于 starred 状态。
+    /// Trending / Weekly 的临时 Repo 自身 `isStarred` 恒为 false，所以调用方要先用
+    /// `StarredRegistry` 派生 `isShareAvailable` 再传进来。
+    @ViewBuilder
+    private func selectedRepoToolbarActions(
+        selection: ToolbarRepoSelection,
+        codeFlowRepo: Repo?,
+        shareRepo: Repo,
+        isShareAvailable: Bool
+    ) -> some View {
+        RepoWikiMenu(repo: shareRepo)
+        ExternalLinksMenu(
+            selection: selection,
+            codeFlowRepo: codeFlowRepo,
+            onOpenCodeFlow: openCodeFlow(for:)
+        )
+        CloneMenu(selection: selection) { toastKey in
+            toastMessage = toastKey
+        }
+        if authSession.state.isAuthenticated, isShareAvailable {
+            let targetRepo = toolbarShareRepo(shareRepo, isStarred: true)
+            RepoShareButton(
+                isSharing: shareInFlightRepoID == targetRepo.id,
+                action: {
+                    Task { await runShare(targetRepo) }
+                }
+            )
+        }
+    }
+
+    /// Ephemeral repo 不持有 star 状态；传给分享流程前补齐真实状态，保持与旧 hero
+    /// `trailingActions` 的语义一致。
+    private func toolbarShareRepo(_ repo: Repo, isStarred: Bool) -> Repo {
+        var copy = repo
+        copy.isStarred = isStarred
+        return copy
+    }
+
+    /// 分享请求仍沿用旧 hero 按钮的流程；这里只改变入口与 sheet 承载位置。
+    @MainActor
+    private func runShare(_ repo: Repo) async {
+        shareInFlightRepoID = repo.id
+        shareRetryRepo = repo
+        shareSheetItem = nil
+        defer {
+            if shareInFlightRepoID == repo.id {
+                shareInFlightRepoID = nil
+            }
+        }
+
+        do {
+            var aiInsight: RepoAIInsight?
+            aiInsight = try await dependencies.repoAIInsightService.cachedInsight(for: repo)
+            if aiInsight == nil {
+                let result = try await dependencies.repoAIInsightService.generateInsight(for: repo)
+                aiInsight = result.insight
+            }
+
+            guard let insight = aiInsight else { return }
+
+            let shareRepoDTO = ShareRepoDTO(
+                fullName: repo.fullName,
+                description: repo.description,
+                language: repo.language,
+                starsCount: repo.starsCount,
+                forksCount: repo.forksCount,
+                topics: repo.topicsArray,
+                homepage: repo.homepage,
+                url: repo.htmlUrl
+            )
+
+            let shareTagDTOs = insight.suggestedTags.map { ShareTagDTO(name: $0.name, confidence: $0.confidence) }
+            let shareAISummaryDTO = ShareAISummaryDTO(
+                oneLiner: insight.oneLiner,
+                summary: insight.summary,
+                platforms: insight.platforms,
+                suitableFor: insight.suitableFor,
+                strengths: insight.strengths,
+                risks: insight.risks,
+                suggestedTags: shareTagDTOs
+            )
+
+            let request = ShareRepoRequest(repo: shareRepoDTO, aiSummary: shareAISummaryDTO)
+            let response = try await dependencies.shareAPI.shareRepo(request: request)
+
+            shareSheetItem = .success(response.shareUrl)
+        } catch let error as RepoAIInsightError {
+            switch error {
+            case .missingAPIKey:
+                shareSheetItem = .failure(String.l10n("repo.share.error.missingAIConfig"))
+            case .missingProvider, .invalidJSON:
+                shareSheetItem = .failure(error.localizedDescription)
+            }
+        } catch let error as EntitlementGateError {
+            // 试用耗尽 / 需 Pro：走统一付费墙，避免「分享失败 + 重试」误导用户。
+            paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
+        } catch {
+            shareSheetItem = .failure(error.localizedDescription)
+        }
     }
 
     private func openSmartCollectionEditor() {

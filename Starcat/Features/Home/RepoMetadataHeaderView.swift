@@ -7,7 +7,7 @@
 //  设计目标：
 //  - Manage / Activity 的 repo-backed 详情共享同一套顶部信息结构与交互反馈。
 //  - 顶部面板本身不滚动；README WebView 滚动时由外层折叠容器隐藏。
-//  - 点击头像、Stats、Watchers、AI、分享等交互统一使用 `.buttonStyle(.plain)`、
+//  - 点击头像、Stats、Watchers、AI 等 hero 内交互统一使用 `.buttonStyle(.plain)`、
 //    `.focusEffectDisabled()` 和 `.pressableHover()`，避免不同页面出现不同 hover / focus 体验。
 //
 
@@ -467,112 +467,32 @@ struct RepoAIOpenButton: View {
 }
 
 struct RepoShareButton: View {
-    let repo: Repo
-
-    @Environment(AppDependencies.self) private var dependencies
-    @State private var isSharing = false
-    @State private var shareSheetItem: RepoShareSheetItem?
-    @State private var paywallContext: ProPaywallContext?
+    let isSharing: Bool
+    let action: () -> Void
 
     var body: some View {
-        Button {
-            Task { await shareRepo() }
-        } label: {
-            HStack(spacing: 6) {
+        Button(action: action) {
+            Group {
                 if isSharing {
                     ProgressView()
                         .controlSize(.small)
-                        .frame(width: 14, height: 14)
+                        .frame(
+                            width: ToolbarIconMetrics.frameSize,
+                            height: ToolbarIconMetrics.frameSize
+                        )
                 } else {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 13, weight: .semibold))
+                    ToolbarIcon("square.and.arrow.up")
+                        .accessibilityLabel(Text("repo.share.button.label"))
                 }
-                Text("repo.share.button.label")
-                    .font(.system(size: 13, weight: .semibold))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .foregroundStyle(.primary)
-            .background(
-                Capsule()
-                    .strokeBorder(Color.secondary.opacity(0.3), lineWidth: 1)
-            )
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .pressableHover()
         .disabled(isSharing)
+        .accessibilityLabel(Text("repo.share.button.label"))
         .help("repo.share.button.help")
-        .sheet(item: $shareSheetItem) { item in
-            RepoShareResultSheet(item: item) {
-                shareSheetItem = nil
-                Task { await shareRepo() }
-            }
-            .appLocaleEnvironment()
-        }
-        .sheet(item: $paywallContext) { context in
-            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
-        }
-    }
-
-    private func shareRepo() async {
-        isSharing = true
-        shareSheetItem = nil
-        defer { isSharing = false }
-
-        do {
-            var aiInsight: RepoAIInsight?
-            aiInsight = try await dependencies.repoAIInsightService.cachedInsight(for: repo)
-            if aiInsight == nil {
-                let result = try await dependencies.repoAIInsightService.generateInsight(for: repo)
-                aiInsight = result.insight
-            }
-
-            guard let insight = aiInsight else { return }
-
-            let shareRepoDTO = ShareRepoDTO(
-                fullName: repo.fullName,
-                description: repo.description,
-                language: repo.language,
-                starsCount: repo.starsCount,
-                forksCount: repo.forksCount,
-                topics: repo.topicsArray,
-                homepage: repo.homepage,
-                url: repo.htmlUrl
-            )
-
-            let shareTagDTOs = insight.suggestedTags.map { ShareTagDTO(name: $0.name, confidence: $0.confidence) }
-            let shareAISummaryDTO = ShareAISummaryDTO(
-                oneLiner: insight.oneLiner,
-                summary: insight.summary,
-                platforms: insight.platforms,
-                suitableFor: insight.suitableFor,
-                strengths: insight.strengths,
-                risks: insight.risks,
-                suggestedTags: shareTagDTOs
-            )
-
-            let request = ShareRepoRequest(repo: shareRepoDTO, aiSummary: shareAISummaryDTO)
-            let response = try await dependencies.shareAPI.shareRepo(request: request)
-
-            shareSheetItem = .success(response.shareUrl)
-        } catch let error as RepoAIInsightError {
-            switch error {
-            case .missingAPIKey:
-                shareSheetItem = .failure(String.l10n("repo.share.error.missingAIConfig"))
-            case .missingProvider, .invalidJSON:
-                shareSheetItem = .failure(error.localizedDescription)
-            }
-        } catch let error as EntitlementGateError {
-            // 试用耗尽 / 需 Pro：走统一付费墙，避免「分享失败 + 重试」误导用户。
-            paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
-        } catch {
-            shareSheetItem = .failure(error.localizedDescription)
-        }
     }
 }
 
-private struct RepoShareSheetItem: Identifiable, Equatable {
+struct RepoShareSheetItem: Identifiable, Equatable {
     enum Kind: Equatable {
         case success(String)
         case failure(String)
@@ -590,7 +510,7 @@ private struct RepoShareSheetItem: Identifiable, Equatable {
     }
 }
 
-private struct RepoShareResultSheet: View {
+struct RepoShareResultSheet: View {
     let item: RepoShareSheetItem
     let onRetry: () -> Void
 

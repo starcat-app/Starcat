@@ -348,16 +348,16 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// trailingActions 派发渲染（按 RepoDetailAction enum 类型）。
     ///
     /// Wiki 评审约束（2026-06-11）：Weekly Issue 是 Weekly 分组特有入口，必须永远排第一。
-    /// 因此先渲染 `.weeklyIssue`，再渲染统一 `RepoWikiMenu`，最后渲染 share / ai / custom。
-    /// 其他详情页没有 weeklyIssue，自然得到 `Wiki -> Share -> AI`。这里按 action 类型分组，
-    /// 不引入 priority 数字，也不要求四个场景调用方改造数据模型。
+    /// 因此先渲染 `.weeklyIssue`，最后渲染 AI / custom。
+    /// Share 已迁入 window toolbar：它是当前 repo 的全局操作，不应继续占用 hero
+    /// 内容区的主 CTA 位置。Wiki 同样已迁入 window toolbar；这里仍接收 `.share`，
+    /// 但派发时跳过，避免四个场景调用方为一个展示位置变化同步改数据模型。
     @ViewBuilder
     private var trailingActionsView: some View {
         HStack(spacing: 8) {
             ForEach(weeklyIssueActions) { action in
                 actionButton(for: action)
             }
-            RepoWikiMenu(repo: repo)
             ForEach(remainingActions) { action in
                 actionButton(for: action)
             }
@@ -376,6 +376,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     private var remainingActions: [RepoDetailAction] {
         viewData.trailingActions.filter { action in
             if case .weeklyIssue = action { return false }
+            if case .share = action { return false }
             return true
         }
     }
@@ -384,9 +385,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     private func actionButton(for action: RepoDetailAction) -> some View {
         switch action {
         case .share:
-            // 复用现有 RepoShareButton：自带分享 API 调用 + alert 状态机。
-            // share 行为对所有 repo 一致，不需要场景级 handler 注入。
-            RepoShareButton(repo: repo)
+            EmptyView()
 
         case .ai:
             // 复用现有 RepoAIOpenButton：内部通过 RepoAIWindowController 弹窗。

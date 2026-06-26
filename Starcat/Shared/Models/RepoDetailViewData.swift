@@ -194,20 +194,24 @@ extension RepoDetailHero {
 /// - Weekly: `[.weeklyIssue, .share, .ai]`
 /// - Activity-repo-backed: `[.share, .ai]`
 ///
+/// 2026-06-26 UI 修订：`.share` 的业务可见性仍由各详情 shell 计算，但展示位置
+/// 已迁到 window toolbar；`RepoDetailScaffold` 会跳过 `.share`，只在 hero 内渲染
+/// AI / Weekly Issue / custom 等内容级动作。
+///
 /// **不**在这里加 `.star` —— star/unstar 触发点是 hero stats 行的 ⭐/☆ chip
 /// （v1.0 §3.2.3 决策：避免 trailing actions 与 hero chip 双重入口造成混乱）。
 ///
 /// **v1.3 设计修订（详见 docs/详细设计/18-三场景共用架构.md §3.2.2 amendment）**：
 /// 原设计 `.share(handler: () -> Void)` / `.ai(handler: () -> Void)` 携带 handler 入参，
 /// 但实现落地后 handler 是 dead 参数（4 个场景全传 `{}`），且 Scaffold 内部直接渲染
-/// `RepoShareButton(repo:)` / `RepoAIOpenButton(repo:)` 自治组件，没有外部注入点。
+/// 对应默认动作，没有外部注入点。
 /// 决策：把 `.share` / `.ai` 修订为无参 case；若需场景特化，用 `.custom` 显式注入。
 enum RepoDetailAction: Identifiable {
 
     /// 分享按钮（→ AI 摘要 + 分享卡）。
     ///
-    /// Scaffold 内部用 `RepoShareButton(repo:)` 渲染，业务状态（progress / alert）
-    /// 由该组件自治。**不带 handler**——分享行为对所有 repo 一致，无场景特化点。
+    /// 展示位置由 `RepoListView` 的当前选中 repo toolbar 操作组承载；本 case 只保留
+    /// 旧的业务可见性信号。**不带 handler**——分享行为对所有 repo 一致，无场景特化点。
     /// 若未来需要特化（如 Activity-announcement 想跳别处），改用 `.custom` 显式注入。
     case share
 

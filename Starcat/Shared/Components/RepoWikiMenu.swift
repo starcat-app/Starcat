@@ -2,10 +2,11 @@
 //  RepoWikiMenu.swift
 //  Starcat
 //
-//  Repo 详情页统一的外部 Wiki 下拉入口。
+//  Repo 详情页 toolbar 统一的外部 Wiki 下拉入口。
 //
 //  设计约束：
-//  - 组件挂在 RepoDetailScaffold，Manage / Trending / Weekly / Activity 四类详情页共用。
+//  - 组件挂在当前 repo 的 window toolbar 操作组，Manage / Trending / Weekly / Activity
+//    四类详情页共用。
 //  - Wiki 是公开阅读能力，不依赖 GitHub 登录，也不依赖当前 repo 是否已 Star。
 //  - 请求中、未收录、服务错误都不占 UI 空间；只有服务端确认 indexed 才显示菜单。
 //  - `.task(id:)` 在切换 repo 时自动取消旧请求并重跑，避免旧结果串到新详情页。
@@ -54,7 +55,7 @@
 
 import SwiftUI
 
-/// 详情页 Hero action 区的 Wiki 下拉菜单。
+/// 详情页 toolbar 的 Wiki 下拉菜单。
 struct RepoWikiMenu: View {
     let repo: Repo
 
@@ -97,28 +98,10 @@ struct RepoWikiMenu: View {
         Menu {
             ForEach(links) { link in
                 Link(destination: link.url) {
-                    // v1.4 → v1.5 → v1.6 修订（2026-06-12）：菜单项图标用各家品牌 logo。
-                    // v1.6 视觉再次收敛（dong4j 反馈"尺寸 10,圆角 6,zread 四周有白边,
-                    // deepwiki 没有圆角"）:
-                    // - 尺寸 10×10（v1.5 是 14×14）→ 更小更克制,接近 macOS menu 系统
-                    //   icon 标准字号的紧凑版。
-                    // - cornerRadius 6 → 在 10×10 视图上半径达 60%,接近"圆角胶囊",
-                    //   把 deepwiki 的硬矩形角彻底磨圆,把 zread 反色后的整片白色裁成
-                    //   小圆角方块（视觉上跟 light mode 的黑色圆角方块对称）,3 家最终
-                    //   形状高度一致。
-                    // - `interpolation(.high)` 在 10pt 这种极小尺寸下抗锯齿尤其重要。
                     Label {
                         Text(link.title)
                     } icon: {
-                        if let name = link.source.assetName {
-                            Image(name)
-                                .resizable()
-                                .interpolation(.high)
-                                .frame(width: 10, height: 10)
-                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        } else {
-                            Image(systemName: link.source.fallbackSFSymbol)
-                        }
+                        WikiSourceIcon(source: link.source)
                     }
                 }
             }
@@ -144,7 +127,7 @@ struct RepoWikiMenu: View {
         .menuIndicator(.hidden) // 我们自己画的 chevron.down 已经表达了"下拉"语义
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .pressableHover() // 与 Share / AI 同款 hover 反馈
+        .pressableHover()
         .help(Text("wiki.menu.help"))
         .fixedSize()
     }
@@ -163,5 +146,39 @@ struct RepoWikiMenu: View {
                 "wiki: lookup failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)"
             )
         }
+    }
+}
+
+/// Wiki 来源图标的统一容器。
+///
+/// 各家 logo 原图的留白、背景和边框差异很大；菜单里直接压到 10pt 会导致 DeepWiki /
+/// ZRead / CodeWiki 看起来大小不一。这里固定 16pt 圆角底 + 10pt logo，让品牌图只负
+/// 责识别，视觉尺寸由容器统一控制。
+private struct WikiSourceIcon: View {
+    let source: WikiSource
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.secondary.opacity(0.12))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(Color.secondary.opacity(0.10), lineWidth: 0.5)
+                }
+
+            if let name = source.assetName {
+                Image(name)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 10, height: 10)
+                    .clipShape(RoundedRectangle(cornerRadius: 2.5, style: .continuous))
+            } else {
+                Image(systemName: source.fallbackSFSymbol)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 16, height: 16)
     }
 }
