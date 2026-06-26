@@ -26,6 +26,8 @@ private struct SmartCollectionCardItem: Identifiable, Equatable {
     let userTags: [Tag]
     let health: RepoHealthSnapshot?
     let isSelected: Bool
+    /// 当前浏览的系统集合；用于「维护停滞」等集合专属的 stats 行标识。
+    let collectionKind: SmartCollectionKind?
 }
 
 struct SmartCollectionDetailPanel: View {
@@ -224,6 +226,14 @@ struct SmartCollectionDetailPanel: View {
         }
     }
 
+    /// 用户自定义集合返回 nil；仅系统 Smart Collection 右栏卡片需要集合专属 UI。
+    private var activeSystemCollectionKind: SmartCollectionKind? {
+        if case .smartCollection(let kind) = viewModel.selection {
+            return kind
+        }
+        return nil
+    }
+
     private var ruleLines: [String] {
         switch viewModel.selection {
         case .smartCollection(let kind):
@@ -256,13 +266,15 @@ struct SmartCollectionDetailPanel: View {
 
         let tagsByRepoID = Self.tagsByRepoID(for: visible, viewModel: viewModel)
         let selectedID = viewModel.selectedRepoID
+        let collectionKind = activeSystemCollectionKind
         let items = visible.map { repo in
             SmartCollectionCardItem(
                 repo: repo,
                 status: viewModel.readStatus(for: repo.id),
                 userTags: tagsByRepoID[repo.id] ?? [],
                 health: healthSnapshots[repo.id],
-                isSelected: selectedID == repo.id
+                isSelected: selectedID == repo.id,
+                collectionKind: collectionKind
             )
         }
         masonryColumns = SmartCollectionMasonryDistribution.distribute(
@@ -370,6 +382,7 @@ private struct SmartCollectionRepoCard: View, Equatable {
     private var userTags: [Tag] { item.userTags }
     private var health: RepoHealthSnapshot? { item.health }
     private var isSelected: Bool { item.isSelected }
+    private var collectionKind: SmartCollectionKind? { item.collectionKind }
 
     private var accentColor: Color {
         if let language = repo.language, !language.isEmpty {
@@ -490,10 +503,34 @@ private struct SmartCollectionRepoCard: View, Equatable {
                 text: (repo.openIssuesCount ?? 0).formattedShort,
                 tint: .secondary
             )
+            if let unmaintainedIndicator {
+                unmaintainedStatBadge(unmaintainedIndicator)
+            }
             Spacer(minLength: 0)
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// 「维护停滞」集合命中原因：归档走 archivebox，久未更新走 clock.badge.exclamationmark。
+    private var unmaintainedIndicator: (systemImage: String, accessibilityKey: LocalizedStringKey)? {
+        guard collectionKind == .unmaintained else { return nil }
+        if repo.isArchived {
+            return ("archivebox", "repo.archived")
+        }
+        return ("clock.badge.exclamationmark", "smartCollections.unmaintained.title")
+    }
+
+    /// 维护停滞专用：红色 icon-only 徽章，并入 stats 行与 Stars 同级扫视。
+    private func unmaintainedStatBadge(_ indicator: (systemImage: String, accessibilityKey: LocalizedStringKey)) -> some View {
+        Image(systemName: indicator.systemImage)
+            .font(.system(size: 9, weight: .medium))
+            .foregroundStyle(.red)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(.red.opacity(0.12), in: Capsule())
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityLabel(Text(indicator.accessibilityKey))
     }
 
     @ViewBuilder
@@ -502,7 +539,8 @@ private struct SmartCollectionRepoCard: View, Equatable {
             HStack(alignment: .center, spacing: 8) {
                 if let health, health.fetchStatus != .failed {
                     healthDimensionStrip(health)
-                } else if repo.isArchived {
+                } else if repo.isArchived, collectionKind != .unmaintained {
+                    // 维护停滞：归档标识已上移到 stats 行红色徽章，footer 不再重复。
                     ArchivedBadge(iconOnly: true)
                 } else if repo.isFork {
                     MetaBadge(systemImage: "tuningfork", text: "Fork", tint: .secondary)
@@ -522,7 +560,7 @@ private struct SmartCollectionRepoCard: View, Equatable {
 
     private var showsFooter: Bool {
         (health.map { $0.fetchStatus != .failed } == true)
-            || repo.isArchived
+            || (repo.isArchived && collectionKind != .unmaintained)
             || repo.isFork
             || relativeDate(repo.pushedAt) != nil
     }
