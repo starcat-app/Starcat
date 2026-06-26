@@ -25964,6 +25964,38 @@
         }
       }
     },
+    "sharecard.theme.adventureShadow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shadow"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暗影"
+          }
+        }
+      }
+    },
+    "sharecard.theme.adventureFel" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fel"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邪焰"
+          }
+        }
+      }
+    },
     "sharecard.theme.auroraBlue" : {
       "extractionState" : "stale",
       "localizations" : {

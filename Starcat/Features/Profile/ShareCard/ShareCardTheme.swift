@@ -64,7 +64,7 @@ enum ShareCardStyle: String, CaseIterable, Identifiable, Hashable {
         case .terminal:
             return [.githubGreen, .minimal, .heatOrange, .auroraBlue]
         case .adventure:
-            return [.lightCard, .adventureSunrise]
+            return [.lightCard, .adventureSunrise, .adventureShadow, .adventureFel]
         case .spotlight:
             return [.auroraBlue, .berryPurple]
         case .magazine:
@@ -110,6 +110,10 @@ enum ShareCardColorSet: String, CaseIterable, Identifiable, Hashable {
     case darkCard = "darkCard"
     /// 暖阳冒险：第 5 种样式专属背景图变体，复用浅色文字色板，只替换插画背景。
     case adventureSunrise = "adventureSunrise"
+    /// 暗影冒险：第 5 种样式专属黑暗背景变体，需要独立暗色文字 / 面板 / 草坪色板。
+    case adventureShadow = "adventureShadow"
+    /// 邪焰冒险：第 5 种样式专属黑暗绿光背景变体，使用独立荧绿色板。
+    case adventureFel = "adventureFel"
 
     static let socialPalette: [ShareCardColorSet] = [
         .minimal, .heatOrange, .githubGreen, .auroraBlue, .berryPurple
@@ -128,6 +132,8 @@ enum ShareCardColorSet: String, CaseIterable, Identifiable, Hashable {
         case .lightCard:    return "sharecard.theme.lightCard"
         case .darkCard:     return "sharecard.theme.darkCard"
         case .adventureSunrise: return "sharecard.theme.adventureSunrise"
+        case .adventureShadow:  return "sharecard.theme.adventureShadow"
+        case .adventureFel:     return "sharecard.theme.adventureFel"
         }
     }
 
@@ -145,6 +151,10 @@ enum ShareCardColorSet: String, CaseIterable, Identifiable, Hashable {
             // 这个 case 是第 5 种样式的背景图开关，不引入新的排版或文字色规则；
             // 复用 lightCard 色板能保持现有冒险样式在浅色插画上的可读性。
             return .lightCardPalette
+        case .adventureShadow:
+            return .adventureShadowPalette
+        case .adventureFel:
+            return .adventureFelPalette
         }
     }
 
@@ -171,6 +181,10 @@ enum ShareCardColorSet: String, CaseIterable, Identifiable, Hashable {
             return (Color.fromHex6(0x4C3A64), Color.fromHex6(0xC4B5FD))
         case .adventureSunrise:
             return (Color.fromHex6(0xFFE7A6), Color.fromHex6(0xF59E0B))
+        case .adventureShadow:
+            return (Color.fromHex6(0x241B2A), Color.fromHex6(0xFF6B4A))
+        case .adventureFel:
+            return (Color.fromHex6(0x1D2420), Color.fromHex6(0xA3E635))
         }
     }
 }
@@ -403,6 +417,68 @@ extension ShareCardPalette {
             l2:   Color.fromHex6(0x40C463),
             l3:   Color.fromHex6(0x30A14E),
             l4:   Color.fromHex6(0x216E39)
+        )
+    )
+
+    // MARK: - 暗影冒险（Adventure 布局）
+
+    /// 暗影冒险：深紫黑底 + 熔火红高光 + 暗红草坪。
+    ///
+    /// 这是第 5 种样式的黑暗插画专用色板，不复用 `darkCardPalette`：
+    /// - 黑卡是 ID Card 布局，强调黑白反差；暗影冒险需要和背景里的红云 / 火光同频。
+    /// - 底部语言面板与贡献草坪会覆盖在暗色插画上，必须给足透明深底和暖色描边。
+    /// - 草坪若继续用 GitHub 绿会和背景氛围冲突，所以改成暗红阶梯。
+    static let adventureShadowPalette = ShareCardPalette(
+        cardBackground: Color.fromHex6(0x15111C),
+        cardBackgroundSecondary: Color.fromHex6(0x241B2A),
+        cardBorder: Color.fromHex6(0x5A2B36),
+
+        primaryText: Color.fromHex6(0xFFF1E8),
+        secondaryText: Color.fromHex6(0xD7A6A0),
+        tertiaryText: Color.fromHex6(0x9E6B72),
+
+        accent: Color.fromHex6(0xFF6B4A),
+        onAccent: Color.fromHex6(0x1A0F14),
+
+        divider: Color.fromHex6(0x6B2E3A),
+
+        contribution: ContributionPalette(
+            none: Color.fromHex6(0x261C26),
+            l1:   Color.fromHex6(0x4A1F2E),
+            l2:   Color.fromHex6(0x7A2E39),
+            l3:   Color.fromHex6(0xC2413F),
+            l4:   Color.fromHex6(0xFF6B4A)
+        )
+    )
+
+    // MARK: - 邪焰冒险（Adventure 布局）
+
+    /// 邪焰冒险：近黑绿灰底 + 荧绿高光 + 暗绿草坪。
+    ///
+    /// 这张背景里的高亮集中在绿色裂隙和武器轮廓上，所以色板不复用红色暗影：
+    /// - `accent` 使用偏黄的荧绿，能和背景光源同频，同时在深色面板上保持清晰。
+    /// - `secondaryText` 保留少量暖黄绿，避免纯灰文字在暗紫云层上显脏。
+    /// - 草坪改成暗绿阶梯，让底部贡献图成为背景绿光的延续，而不是额外贴一块 GitHub 绿。
+    static let adventureFelPalette = ShareCardPalette(
+        cardBackground: Color.fromHex6(0x111511),
+        cardBackgroundSecondary: Color.fromHex6(0x1D2420),
+        cardBorder: Color.fromHex6(0x3F5F34),
+
+        primaryText: Color.fromHex6(0xF2F7E8),
+        secondaryText: Color.fromHex6(0xBED7A3),
+        tertiaryText: Color.fromHex6(0x7D9B65),
+
+        accent: Color.fromHex6(0xA3E635),
+        onAccent: Color.fromHex6(0x11160A),
+
+        divider: Color.fromHex6(0x36522E),
+
+        contribution: ContributionPalette(
+            none: Color.fromHex6(0x20251F),
+            l1:   Color.fromHex6(0x2F4626),
+            l2:   Color.fromHex6(0x4F7F2C),
+            l3:   Color.fromHex6(0x76B82A),
+            l4:   Color.fromHex6(0xB8F84A)
         )
     )
 

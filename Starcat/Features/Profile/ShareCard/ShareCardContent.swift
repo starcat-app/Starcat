@@ -112,6 +112,25 @@ struct ShareCardContent: View {
         style == .social && colorSet == .lightCard
     }
 
+    /// 第 5 种样式的黑暗背景变体。它们不只换图，还需要暗色文字、深色面板和定制草坪。
+    private var isDarkAdventureVariant: Bool {
+        style == .adventure && (colorSet == .adventureShadow || colorSet == .adventureFel)
+    }
+
+    /// 第 5 种样式按配色切换背景图；集中在一处，避免每加一个背景就复制 View 分支。
+    private var adventureBackgroundAssetName: String {
+        switch colorSet {
+        case .adventureSunrise:
+            return "ShareCardAdventureSunriseBackground"
+        case .adventureShadow:
+            return "ShareCardAdventureShadowBackground"
+        case .adventureFel:
+            return "ShareCardAdventureFelBackground"
+        default:
+            return "ShareCardAdventureBackground"
+        }
+    }
+
     /// 第 3 套样式所有颜色都使用语义彩色统计图标，避免只有白色主题被特殊处理。
     private var usesSocialColoredStats: Bool {
         style == .social
@@ -195,24 +214,35 @@ struct ShareCardContent: View {
                     )
                 }
         } else if style == .adventure {
-            Image(colorSet == .adventureSunrise
-                  ? "ShareCardAdventureSunriseBackground"
-                  : "ShareCardAdventureBackground")
+            Image(adventureBackgroundAssetName)
                 .resizable()
                 .scaledToFill()
                 .frame(width: Self.canvasWidth, height: Self.canvasHeight)
                 .clipped()
                 .overlay {
-                    // 第 5 套的背景图已经按 400×560 画布完整生成；这里只加极轻的左侧可读性遮罩。
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.18),
-                            Color.white.opacity(0.04),
-                            Color.clear
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
+                    if isDarkAdventureVariant {
+                        // 黑暗冒险图左侧留白本身很暗；这里加轻黑遮罩而非白雾，保持氛围并压住云层纹理。
+                        LinearGradient(
+                            colors: [
+                                Color.black.opacity(0.28),
+                                Color.black.opacity(0.10),
+                                Color.clear
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    } else {
+                        // 浅色冒险图已经按 400×560 画布完整生成；这里只加极轻的左侧可读性遮罩。
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.18),
+                                Color.white.opacity(0.04),
+                                Color.clear
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    }
                 }
         } else {
             backgroundGradient
@@ -1434,7 +1464,7 @@ struct ShareCardContent: View {
         HStack(spacing: 4) {
             Image(systemName: symbol)
                 .font(.system(size: 8.5, weight: .bold))
-                .foregroundStyle(Color.fromHex6(0xD97706))
+                .foregroundStyle(isDarkAdventureVariant ? palette.accent : Color.fromHex6(0xD97706))
                 .frame(width: 12)
 
             Text(verbatim: text)
@@ -1829,16 +1859,27 @@ struct ShareCardContent: View {
     /// 冒险样式的暖色玻璃面板背景。
     ///
     /// Top Languages 与贡献草坪叠在同一张插画草地上，背景色必须一致，
-    /// 否则底部会出现一暖一白两块卡片割裂。其它样式继续走共享 prototype 面板背景。
+    /// 否则底部会出现一暖一白两块卡片割裂。黑暗变体则切到深色面板，避免浅黄玻璃
+    /// 在黑暗背景上突兀发灰。其它样式继续走共享 prototype 面板背景。
     @ViewBuilder
     private var adventureGlassPanelBackground: some View {
-        RoundedRectangle(cornerRadius: 16)
-            .fill(Color.fromHex6(0xFFE8A6).opacity(0.42))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.white.opacity(0.52), lineWidth: 0.8)
-            )
-            .shadow(color: Color.fromHex6(0xB7791F).opacity(0.10), radius: 10, y: 5)
+        if isDarkAdventureVariant {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(palette.cardBackgroundSecondary.opacity(0.68))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(palette.accent.opacity(0.34), lineWidth: 0.8)
+                )
+                .shadow(color: Color.black.opacity(0.22), radius: 12, y: 6)
+        } else {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.fromHex6(0xFFE8A6).opacity(0.42))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.52), lineWidth: 0.8)
+                )
+                .shadow(color: Color.fromHex6(0xB7791F).opacity(0.10), radius: 10, y: 5)
+        }
     }
 
     @ViewBuilder
