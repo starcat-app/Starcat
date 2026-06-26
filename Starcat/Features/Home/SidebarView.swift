@@ -729,6 +729,13 @@ struct SidebarView: View {
             .focusEffectDisabled()
             .help(disclosureHelp(isExpanded: githubStarListsExpanded))
 
+            SyncIconButton(
+                isRefreshing: dependencies.githubStarListSyncService.isSyncing,
+                disabled: dependencies.githubStarListSyncService.isSyncing || authSession.state.user == nil,
+                tooltip: String.l10n("sidebar.githubStarLists.refresh"),
+                action: { refreshGitHubStarLists() }
+            )
+
             Button {
                 gitHubStarListEditorItem = GitHubStarListEditorItem(list: nil)
             } label: {
@@ -742,13 +749,6 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(Text("sidebar.githubStarLists.add"))
-
-            SyncIconButton(
-                isRefreshing: dependencies.githubStarListSyncService.isSyncing,
-                disabled: dependencies.githubStarListSyncService.isSyncing || authSession.state.user == nil,
-                tooltip: String.l10n("sidebar.githubStarLists.refresh"),
-                action: { refreshGitHubStarLists() }
-            )
 
             Button {
                 toggleGitHubStarLists()
