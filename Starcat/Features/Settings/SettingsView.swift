@@ -1146,7 +1146,7 @@ private struct StorageResetAllDataSheet: View {
             .foregroundStyle(.secondary)
         + Text(verbatim: target.login)
             .fontWeight(.semibold)
-            .foregroundStyle(.primary)
+            .foregroundStyle(Color(nsColor: .systemOrange))
         + Text("settings.storage.resetAll.usernamePromptSuffix")
             .foregroundStyle(.secondary)
     }
