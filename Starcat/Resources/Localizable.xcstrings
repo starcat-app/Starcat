@@ -24055,13 +24055,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clear All Data"
+            "value" : "Clear All Local Data"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清空所有数据"
+            "value" : "清空所有本地数据"
           }
         }
       }
@@ -24633,13 +24633,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clear All Cache"
+            "value" : "Delete All Cache"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清理全部缓存"
+            "value" : "删除全部缓存"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAll.clearing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleting cache..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在删除缓存..."
           }
         }
       }
@@ -24650,13 +24667,47 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clear all cache?"
+            "value" : "Delete all cache?"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清空全部缓存?"
+            "value" : "删除全部缓存？"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAll.confirmAction" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete All Cache"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除全部缓存"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAll.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete all rebuildable local cache and generated files. Starcat may need to fetch, translate, or regenerate content again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除所有可重建的本机缓存和生成文件。之后 Starcat 可能需要重新拉取、翻译或生成内容。"
           }
         }
       }
@@ -24674,6 +24725,159 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "等同于一次性清理上面所有缓存（README、图片、已下载的仓库 ZIP、翻译、搜索、代码上下文、CodeFlow）。"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAll.scope.generated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generated Code Context and CodeFlow files."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已生成的 Code Context 与 CodeFlow 文件。"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAll.scope.localDataSafe" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local SQLite data, tags, notes, status, credentials, GitHub, CloudKit, and backend data are not modified."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不会修改本地 SQLite 数据、标签、笔记、状态、凭据、GitHub、CloudKit 或后端数据。"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAll.scope.media" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image cache and downloaded repository ZIP archives."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片缓存和已下载的仓库 ZIP。"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAll.scope.readme" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README cache, AI translation cache, and chat history cache."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README 缓存、AI 翻译缓存和对话历史缓存。"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAll.scope.searchWiki" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search cache and Wiki probe cache."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索缓存和 Wiki 探测缓存。"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAll.scope.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This will delete:"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将删除以下本机缓存："
+          }
+        }
+      }
+    },
+    "settings.storage.clearAll.sheet.note" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No GitHub username confirmation is required because this only removes rebuildable cache."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这只会移除可重建缓存，因此不需要输入 GitHub 用户名确认。"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAll.sheet.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This cannot be undone, but Starcat can rebuild these files when needed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此操作无法撤销，但 Starcat 后续可按需重新构建这些文件。"
+          }
+        }
+      }
+    },
+    "settings.storage.clearAll.sheet.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete All Cache?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除全部缓存？"
           }
         }
       }

@@ -540,6 +540,7 @@ private struct StorageSettingsTab: View {
     @State private var isResettingAllData: Bool = false
     /// 当前显示的确认弹窗类型；nil 表示不显示。
     @State private var pendingAction: PendingAction?
+    @State private var isShowingClearAllCachesSheet = false
     @State private var resetTarget: AppDataResetTarget?
     @State private var resetDidComplete = false
     @State private var storageActionError: String?
@@ -568,9 +569,9 @@ private struct StorageSettingsTab: View {
     /// 设置页 Tab 仅消费汇总数字 + "清除全部"入口，单 session 删除由对话窗口自己管理。
     @State private var chatHistoryStore = DiskChatHistoryStore.shared
 
-    /// 行内"清理"按钮 + 底部"清除全部"按钮的待执行动作。
-    /// 7 类对应缓存 + 1 个全清。每类的 confirm 标题 / 描述键不同，但共用一个
-    /// confirmationDialog（避免视图里铺 7 个独立 alert）。
+    /// 行内"清理"按钮的待执行动作。
+    /// 单项缓存继续共用 confirmationDialog；"删除全部缓存"已经升级为危险区 sheet，
+    /// 但保留 `.all` 作为执行分支，避免复制清理代码。
     private enum PendingAction: Identifiable {
         case readme, image, archive, translation, anySearch, wiki, chatHistory, aiContext, codeFlow, all
         var id: String {
@@ -727,34 +728,30 @@ private struct StorageSettingsTab: View {
                 )
             }
 
-            Section {
-                // 用 HStack + Spacer 把"清除全部缓存"顶到最右边,与 Form 中其它 Section 的
-                // 视觉重心一致(总闸是 destructive 操作,放右边减少误点接近度)。
-                HStack {
-                    Spacer()
-                    Button("settings.storage.clearAll", role: .destructive) {
-                        pendingAction = .all
-                    }
-                    .disabled(shouldDisableStorageActions || isWorking || isAllCachesEmpty)
-                }
-            }
-
             Section("settings.storage.dangerZone") {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("settings.storage.resetAll.description")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    HStack {
-                        Spacer()
-                        Button(role: .destructive) {
-                            resetTarget = currentResetTarget
-                        } label: {
-                            Label("settings.storage.resetAll", systemImage: "trash")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .tint(.red)
-                        .disabled(isWorking || isResettingAllData || currentResetTarget == nil)
+                dangerActionBlock(
+                    descriptionKey: "settings.storage.clearAll.description",
+                    buttonTint: Color(nsColor: .systemYellow),
+                    buttonForeground: .black,
+                    isDisabled: shouldDisableStorageActions || isWorking || isAllCachesEmpty
+                ) {
+                    Button {
+                        isShowingClearAllCachesSheet = true
+                    } label: {
+                        Label("settings.storage.clearAll", systemImage: "exclamationmark.triangle.fill")
+                    }
+                }
+
+                dangerActionBlock(
+                    descriptionKey: "settings.storage.resetAll.description",
+                    buttonTint: .red,
+                    buttonForeground: .white,
+                    isDisabled: isWorking || isResettingAllData || currentResetTarget == nil
+                ) {
+                    Button(role: .destructive) {
+                        resetTarget = currentResetTarget
+                    } label: {
+                        Label("settings.storage.resetAll", systemImage: "trash")
                     }
                 }
             }
@@ -813,6 +810,21 @@ private struct StorageSettingsTab: View {
         } message: {
             Text(storageActionError ?? "")
         }
+        .sheet(isPresented: $isShowingClearAllCachesSheet) {
+            StorageClearAllCachesSheet(
+                isClearing: isWorking,
+                onCancel: {
+                    isShowingClearAllCachesSheet = false
+                },
+                onConfirm: {
+                    Task {
+                        await perform(action: .all, using: cleaner)
+                        isShowingClearAllCachesSheet = false
+                    }
+                }
+            )
+            .appLocaleEnvironment()
+        }
         .sheet(item: $resetTarget) { target in
             StorageResetAllDataSheet(
                 target: target,
@@ -837,6 +849,31 @@ private struct StorageSettingsTab: View {
     }
 
     // MARK: - 行视图 helpers
+
+    /// 危险区操作块：说明在左，按钮右对齐。黄色缓存删除与红色本地数据重置共用布局，
+    /// 避免两个高风险入口在同一分组里产生不同的视觉节奏。
+    private func dangerActionBlock<Action: View>(
+        descriptionKey: LocalizedStringKey,
+        buttonTint: Color,
+        buttonForeground: Color,
+        isDisabled: Bool,
+        @ViewBuilder action: () -> Action
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(descriptionKey)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                action()
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(buttonTint)
+                    .foregroundStyle(buttonForeground)
+                    .disabled(isDisabled)
+            }
+        }
+    }
 
     /// 标准用量行：`<标题>     <用量>  [清理]`。
     /// `isEmpty == true` 时清理按钮 disabled（避免空缓存触发"删空目录"等无意义操作）。
@@ -1110,6 +1147,112 @@ private struct StorageSettingsTab: View {
             codeFlowStorage.projectCount,
             codeFlowStorage.totalBytes.formattedByteSize
         )
+    }
+}
+
+/// Storage 页“删除全部缓存”的确认 sheet。
+///
+/// 这个操作会删除可重建的文件型缓存和生成物，但不会碰本地 SQLite 用户数据或凭据。
+/// 独立成 sheet 是为了让“全部缓存”与危险区语义一致，同时区别于真正的本地数据重置。
+private struct StorageClearAllCachesSheet: View {
+    let isClearing: Bool
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            header
+            warningContent
+            footer
+        }
+        .padding(24)
+        .frame(width: 480)
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title2)
+                .foregroundStyle(Color(nsColor: .systemYellow))
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("settings.storage.clearAll.sheet.title")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text("settings.storage.clearAll.sheet.subtitle")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var warningContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("settings.storage.clearAll.scope.title")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                ForEach(clearAllCacheScopeItems, id: \.self) { item in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "smallcircle.filled.circle")
+                            .font(.system(size: 7))
+                            .foregroundStyle(.secondary)
+                        Text(LocalizedStringKey(item))
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            Text("settings.storage.clearAll.sheet.note")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 10) {
+            Spacer()
+            Button("general.cancel", role: .cancel) {
+                onCancel()
+            }
+            .disabled(isClearing)
+
+            Button {
+                onConfirm()
+            } label: {
+                if isClearing {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("settings.storage.clearAll.clearing")
+                    }
+                } else {
+                    Text("settings.storage.clearAll.confirmAction")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color(nsColor: .systemYellow))
+            .foregroundStyle(.black)
+            .disabled(isClearing)
+            .keyboardShortcut(.defaultAction)
+        }
+    }
+
+    private var clearAllCacheScopeItems: [String] {
+        [
+            "settings.storage.clearAll.scope.readme",
+            "settings.storage.clearAll.scope.media",
+            "settings.storage.clearAll.scope.searchWiki",
+            "settings.storage.clearAll.scope.generated",
+            "settings.storage.clearAll.scope.localDataSafe"
+        ]
     }
 }
 
