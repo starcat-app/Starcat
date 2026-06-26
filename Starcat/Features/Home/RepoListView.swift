@@ -74,8 +74,8 @@ struct RepoListView: View {
     /// CodeFlow 为 Pro 功能；免费用户点入口时弹出统一付费墙，不打开执行面板。
     @State private var paywallContext: ProPaywallContext?
     @State private var ruleEditorSheetItem: SmartCollectionRuleEditorItem?
-    /// GitHub 组织可限制第三方 OAuth App 访问仓库节点；这类错误需要解释原因，不能只弹通用失败 toast。
-    @State private var showGitHubStarListOAuthRestrictionAlert = false
+    /// GitHub 组织可限制第三方 OAuth App 访问仓库节点；这类错误需要结构化解释原因。
+    @State private var showGitHubStarListOAuthRestrictionSheet = false
     /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
     @State private var lastSyncedAt: Date?
     /// Trending / Activity 的计数来自各自子视图内部筛选结果，父视图只负责把它显示到导航副标题。
@@ -105,13 +105,9 @@ struct RepoListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: listColumnTintColor)
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
-        .alert(
-            "githubStarLists.error.orgOAuthRestricted.title",
-            isPresented: $showGitHubStarListOAuthRestrictionAlert
-        ) {
-            Button("common.ok", role: .cancel) {}
-        } message: {
-            Text("githubStarLists.error.orgOAuthRestricted.message")
+        .sheet(isPresented: $showGitHubStarListOAuthRestrictionSheet) {
+            GitHubStarListOAuthRestrictionSheet()
+                .appLocaleEnvironment()
         }
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
@@ -1082,7 +1078,7 @@ struct RepoListView: View {
             } catch {
                 AppLog.network.error("GitHub star list mutation failed: \(error.localizedDescription, privacy: .public)")
                 if isGitHubOrganizationOAuthRestriction(error) {
-                    showGitHubStarListOAuthRestrictionAlert = true
+                    showGitHubStarListOAuthRestrictionSheet = true
                 } else {
                     toastMessage = "githubStarLists.toast.failed"
                 }
@@ -1311,6 +1307,84 @@ struct RepoListView: View {
             codeFlowSheetRepo = repo
         } catch {
             paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
+        }
+    }
+}
+
+/// GitHub 组织限制 OAuth App 访问时的结构化说明。
+///
+/// 不使用系统 Alert：该错误不是一句失败文案能解释清楚，用户需要知道原因、影响范围和可执行处理方式。
+private struct GitHubStarListOAuthRestrictionSheet: View {
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            header
+            details
+            footer
+        }
+        .padding(22)
+        .frame(width: 430)
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(.orange.gradient)
+                    .frame(width: 52, height: 52)
+                    .shadow(color: .orange.opacity(0.28), radius: 18, x: 0, y: 8)
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 23, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("githubStarLists.error.orgOAuthRestricted.title")
+                    .font(.title3.weight(.semibold))
+                Text("githubStarLists.error.orgOAuthRestricted.subtitle")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            restrictionRow("exclamationmark.triangle.fill", "githubStarLists.error.orgOAuthRestricted.reason")
+            restrictionRow("arrow.triangle.2.circlepath", "githubStarLists.error.orgOAuthRestricted.impact")
+            restrictionRow("safari.fill", "githubStarLists.error.orgOAuthRestricted.githubOption")
+            restrictionRow("person.badge.shield.checkmark.fill", "githubStarLists.error.orgOAuthRestricted.adminOption")
+        }
+    }
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("githubStarLists.error.orgOAuthRestricted.note")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Spacer()
+                Button("common.close") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+        }
+    }
+
+    private func restrictionRow(_ systemImage: String, _ key: LocalizedStringKey) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(.orange)
+                .frame(width: 20)
+            Text(key)
+                .font(.callout.weight(.medium))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

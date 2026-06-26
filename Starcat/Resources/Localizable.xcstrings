@@ -26429,6 +26429,102 @@
         }
       }
     },
+    "githubStarLists.error.orgOAuthRestricted.adminOption" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask an organization administrator to approve Starcat's OAuth App."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "让组织管理员允许 Starcat 的 OAuth App。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.githubOption" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can still change this list on GitHub."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你仍然可以在 GitHub 网页端手动操作。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.impact" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat cannot update this repository's list membership through the GitHub API."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 无法通过 GitHub API 修改该仓库的分组。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.note" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is not a local data error, and it does not mean the repository is not starred. It is GitHub's organization-level OAuth App access policy."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这不是本地数据错误，也不是仓库未 Star；这是 GitHub 组织级 OAuth App 访问策略。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.reason" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The repository's organization restricts third-party OAuth App access."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该仓库所属组织限制了第三方 OAuth App 访问。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub blocked this group update before Starcat could write it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub 拦截了这次分组更新，Starcat 无法写入。"
+          }
+        }
+      }
+    },
     "githubStarLists.error.orgOAuthRestricted.title" : {
       "localizations" : {
         "en" : {
