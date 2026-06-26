@@ -637,11 +637,10 @@ private struct StorageSettingsTab: View {
         currentResetTarget != nil
     }
 
-    /// 未登录时禁止 Storage 页所有操作；reset sheet 展示期间由 sheet 自己接管交互。
-    /// 这样可以避免 reset 成功后 AuthSession 已变成未登录，父 Form 的 disabled 环境把
-    /// sheet 内的“退出 Starcat”按钮也连带禁用。
-    private var shouldDisableStorageControls: Bool {
-        isResettingAllData || (!isLoggedIn && resetTarget == nil)
+    /// 未登录时禁止 Storage 页里的实际操作控件，但不能禁用 Form 根视图。
+    /// SwiftUI 会把 `.disabled` 环境传给滚动容器；若挂在 Form 上，未登录提示页也会无法滚动。
+    private var shouldDisableStorageActions: Bool {
+        isResettingAllData || !isLoggedIn
     }
 
     var body: some View {
@@ -664,6 +663,7 @@ private struct StorageSettingsTab: View {
                     }
                 }
                 .pickerStyle(.menu)
+                .disabled(shouldDisableStorageActions)
 
                 Text("settings.storage.chatHistoryBackend.help")
                     .font(.caption)
@@ -734,7 +734,7 @@ private struct StorageSettingsTab: View {
                     Button("settings.storage.clearAll", role: .destructive) {
                         pendingAction = .all
                     }
-                    .disabled(isWorking || isAllCachesEmpty)
+                    .disabled(shouldDisableStorageActions || isWorking || isAllCachesEmpty)
                 }
             }
 
@@ -769,7 +769,6 @@ private struct StorageSettingsTab: View {
             }
         }
         .formStyle(.grouped)
-        .disabled(shouldDisableStorageControls)
         .task(id: isLoggedIn) {
             guard isLoggedIn else {
                 stats = .empty
@@ -853,7 +852,7 @@ private struct StorageSettingsTab: View {
                     pendingAction = action
                 }
                 .controlSize(.small)
-                .disabled(isWorking || isEmpty)
+                .disabled(shouldDisableStorageActions || isWorking || isEmpty)
             }
         } label: {
             Text(titleKey)
@@ -888,11 +887,12 @@ private struct StorageSettingsTab: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .help(Text("settings.storage.archive.revealHelp"))
+                .disabled(shouldDisableStorageActions || isWorking)
                 Button("settings.storage.action.clear") {
                     pendingAction = .archive
                 }
                 .controlSize(.small)
-                .disabled(isWorking || stats.archiveCount == 0)
+                .disabled(shouldDisableStorageActions || isWorking || stats.archiveCount == 0)
             }
         } label: {
             Text("settings.storage.archive")
