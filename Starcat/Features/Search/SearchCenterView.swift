@@ -283,12 +283,6 @@ struct SearchCenterView: View {
             )
     }
 
-    /// 筛选抽屉占位宽度（抽屉 250pt + 分隔线 1pt）。历史区 Clear all 右移同样距离，
-    /// 使其右缘与上方 scope 栏 Filters 胶囊对齐。
-    private var filterDrawerOccupiedWidth: CGFloat {
-        shouldShowFilterDrawer ? 251 : 0
-    }
-
     /// 右侧筛选抽屉。只承载高级筛选，不再挤占结果区顶部高度。
     ///
     /// 不设独立标题行：scope 栏右侧的 Filters 胶囊已是开关（选中态 = 展开，再点即收起），
@@ -602,6 +596,9 @@ struct SearchCenterView: View {
 
     /// "最近搜索" 标题 + 右侧 "清空全部" 触发按钮。
     /// 单独抽出来避免 ScrollView 把标题也卷进去；这样在历史项很多时标题保持悬停在顶部。
+    ///
+    /// Clear all 始终留在左侧结果区：抽屉展开时贴在结果区右缘（面板左侧），
+    /// 不 offset 进 Filters 抽屉，避免与 GitHub filters 内容重叠。
     private var historyHeader: some View {
         HStack(spacing: 0) {
             Text("search.history.recent")
@@ -621,7 +618,6 @@ struct SearchCenterView: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help("search.history.clearAll.help")
-            .offset(x: filterDrawerOccupiedWidth)
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)

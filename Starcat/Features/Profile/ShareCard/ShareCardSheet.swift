@@ -324,6 +324,7 @@ struct ShareCardSheet: View {
         let isSelected: Bool
         let action: () -> Void
 
+        @Environment(\.colorScheme) private var colorScheme
         @Environment(\.starcatReduceMotion) private var reduceMotion
         @State private var isHovered = false
 
@@ -331,7 +332,7 @@ struct ShareCardSheet: View {
             Button(action: action) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 5)
-                        .fill(Color.primary.opacity(isHovered ? 0.10 : 0.06))
+                        .fill(buttonBackgroundColor)
 
                     stylePreview
                         .padding(2.5)
@@ -341,15 +342,19 @@ struct ShareCardSheet: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 5)
                         .stroke(
-                            isSelected ? Color.accentColor : Color.primary.opacity(isHovered ? 0.34 : 0.18),
+                            borderColor,
                             lineWidth: isSelected ? 1.5 : (isHovered ? 0.8 : 0.5)
                         )
                 )
                 .background(
                     RoundedRectangle(cornerRadius: 5)
-                        .fill(isSelected ? Color.accentColor.opacity(0.10) : Color.clear)
+                        .fill(selectedBackgroundColor)
                 )
             }
+            // macOS plain Button 在小图标上偶发只按 label 绘制像素命中。
+            // 外层重复声明同尺寸矩形命中区，保持现有尺寸不变但让 hover/click 走稳定区域。
+            .frame(width: Self.buttonWidth, height: Self.buttonHeight)
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(Text(style.localizationKey))
@@ -399,7 +404,7 @@ struct ShareCardSheet: View {
             case .adventure:
                 ZStack(alignment: .bottomLeading) {
                     RoundedRectangle(cornerRadius: 1.5)
-                        .fill(Color.orange.opacity(0.18))
+                        .fill(adventurePreviewBackgroundColor)
                     VStack(alignment: .leading, spacing: 1.3) {
                         miniCircle
                         miniLine(width: 12)
@@ -411,19 +416,19 @@ struct ShareCardSheet: View {
 
         private var miniCircle: some View {
             Circle()
-                .fill(Color.accentColor)
+                .fill(styleAccentColor)
                 .frame(width: 5, height: 5)
         }
 
         private var miniSquare: some View {
             RoundedRectangle(cornerRadius: 1)
-                .fill(Color.accentColor.opacity(0.78))
+                .fill(styleAccentColor.opacity(colorScheme == .dark ? 0.88 : 0.78))
                 .frame(width: 4, height: 4)
         }
 
         private var miniTallBlock: some View {
             RoundedRectangle(cornerRadius: 1.4)
-                .fill(Color.accentColor.opacity(0.72))
+                .fill(styleAccentColor.opacity(colorScheme == .dark ? 0.84 : 0.72))
                 .frame(width: 5, height: 11)
         }
 
@@ -431,7 +436,7 @@ struct ShareCardSheet: View {
             HStack(spacing: 0.8) {
                 ForEach(0..<5, id: \.self) { index in
                     RoundedRectangle(cornerRadius: 0.7)
-                        .fill(Color.accentColor.opacity(index.isMultiple(of: 2) ? 0.75 : 0.28))
+                        .fill(styleAccentColor.opacity(index.isMultiple(of: 2) ? strongGridOpacity : weakGridOpacity))
                         .frame(width: 2, height: 2)
                 }
             }
@@ -439,8 +444,53 @@ struct ShareCardSheet: View {
 
         private func miniLine(width: CGFloat) -> some View {
             RoundedRectangle(cornerRadius: 0.8)
-                .fill(Color.primary.opacity(0.52))
+                .fill(lineColor)
                 .frame(width: width, height: 1.4)
+        }
+
+        /// 暗色 sheet 的点阵背景会吃掉低透明度 primary；保持按钮尺寸不变，仅提高 chrome 对比度。
+        private var buttonBackgroundColor: Color {
+            colorScheme == .dark
+                ? Color.white.opacity(isHovered ? 0.18 : 0.12)
+                : Color.primary.opacity(isHovered ? 0.10 : 0.06)
+        }
+
+        private var selectedBackgroundColor: Color {
+            isSelected
+                ? Color.accentColor.opacity(colorScheme == .dark ? 0.18 : 0.10)
+                : Color.clear
+        }
+
+        private var borderColor: Color {
+            if isSelected {
+                return Color.accentColor
+            }
+            if colorScheme == .dark {
+                return Color.white.opacity(isHovered ? 0.48 : 0.30)
+            }
+            return Color.primary.opacity(isHovered ? 0.34 : 0.18)
+        }
+
+        private var lineColor: Color {
+            colorScheme == .dark
+                ? Color.white.opacity(0.76)
+                : Color.primary.opacity(0.52)
+        }
+
+        private var styleAccentColor: Color {
+            colorScheme == .dark ? Color.accentColor.opacity(0.96) : Color.accentColor
+        }
+
+        private var strongGridOpacity: Double {
+            colorScheme == .dark ? 0.86 : 0.75
+        }
+
+        private var weakGridOpacity: Double {
+            colorScheme == .dark ? 0.46 : 0.28
+        }
+
+        private var adventurePreviewBackgroundColor: Color {
+            Color.orange.opacity(colorScheme == .dark ? 0.30 : 0.18)
         }
     }
 

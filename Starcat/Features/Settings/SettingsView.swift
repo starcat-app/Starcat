@@ -289,15 +289,47 @@ struct SettingsView: View {
                     HStack(spacing: 8) {
                         ShortcutRecorderView(
                             shortcut: $settings.globalSearchShortcut,
-                            onValidationError: { shortcutValidationError = $0 }
+                            onValidationError: { shortcutValidationError = $0 },
+                            helpKey: "settings.general.shortcuts.search.help"
                         )
                         .onChange(of: settings.globalSearchShortcut) { _, _ in
                             shortcutValidationError = nil
                         }
 
-                        // 右侧恢复操作用图标承载，避免通用设置行被长文案撑成两行。
                         Button {
                             settings.globalSearchShortcut = .globalSearchDefault
+                            shortcutValidationError = nil
+                        } label: {
+                            Image(systemName: "arrow.counterclockwise")
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                        .help(Text("settings.general.shortcuts.restoreDefault"))
+                        .accessibilityLabel(Text("settings.general.shortcuts.restoreDefault"))
+                    }
+                }
+
+                HStack(spacing: 12) {
+                    Text("settings.general.shortcuts.regularSearch.title")
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    HStack(spacing: 8) {
+                        ShortcutRecorderView(
+                            shortcut: $settings.regularSearchShortcut,
+                            onValidationError: { shortcutValidationError = $0 },
+                            helpKey: "settings.general.shortcuts.regularSearch.help"
+                        )
+                        .onChange(of: settings.regularSearchShortcut) { _, _ in
+                            shortcutValidationError = nil
+                        }
+
+                        Button {
+                            settings.regularSearchShortcut = .regularSearchDefault
                             shortcutValidationError = nil
                         } label: {
                             Image(systemName: "arrow.counterclockwise")
@@ -426,20 +458,25 @@ private struct DiagnosticsSettingsTab: View {
         Form {
             Section("settings.diagnostics.export.section") {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("settings.diagnostics.export.description")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .center, spacing: 12) {
+                        // 导出入口需要和说明文字保持同一行；窗口较窄时优先截断说明，
+                        // 避免按钮被 Form 布局挤到第二行。
+                        Text("settings.diagnostics.export.description")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
 
-                    HStack {
                         Spacer()
 
                         Button {
                             Task { await exportDiagnostics() }
                         } label: {
                             Label("diagnostics.export.button", systemImage: "square.and.arrow.up")
+                                .lineLimit(1)
                         }
                         .disabled(isExporting)
+                        .fixedSize(horizontal: true, vertical: false)
                     }
 
                     if isExporting {
@@ -868,6 +905,7 @@ private struct StorageSettingsTab: View {
                 action()
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .font(.headline)
                     .tint(buttonTint)
                     .foregroundStyle(buttonForeground)
                     .disabled(isDisabled)

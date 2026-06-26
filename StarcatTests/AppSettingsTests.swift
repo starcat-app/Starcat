@@ -126,11 +126,12 @@ struct AppSettingsTests {
 
     // MARK: - 快捷键偏好
 
-    @Test("快捷键: 默认 AI 用 Return 发送，全局搜索为 Command+K")
+    @Test("快捷键: 默认 AI 用 Return 发送，全局搜索为 Command+K，常规搜索为 Command+F")
     func shortcutDefaults() {
         let settings = AppSettings(defaults: makeIsolatedDefaults())
         #expect(settings.aiChatRequiresCommandReturn == false)
         #expect(settings.globalSearchShortcut == .globalSearchDefault)
+        #expect(settings.regularSearchShortcut == .regularSearchDefault)
     }
 
     @Test("快捷键: AI 发送方式与全局搜索组合应持久化")
@@ -145,10 +146,18 @@ struct AppSettingsTests {
             control: false,
             shift: false
         )
+        settings.regularSearchShortcut = .init(
+            key: "g",
+            command: true,
+            option: false,
+            control: false,
+            shift: false
+        )
 
         let restored = AppSettings(defaults: defaults)
         #expect(restored.aiChatRequiresCommandReturn == true)
         #expect(restored.globalSearchShortcut.displayText == "⌥⌘P")
+        #expect(restored.regularSearchShortcut.displayText == "⌘G")
     }
 
     @Test("快捷键: 损坏或不合法的持久化值回退 Command+K")
@@ -186,6 +195,7 @@ struct AppSettingsTests {
         #expect(shiftOnlyK.validationError == .missingModifier)
         #expect(commandI.validationError == .reserved)
         #expect(KeyboardShortcutConfiguration.globalSearchDefault.validationError == nil)
+        #expect(KeyboardShortcutConfiguration.regularSearchDefault.validationError == nil)
     }
 
     // MARK: - AI BYOK 设置

@@ -28,6 +28,15 @@ struct KeyboardShortcutConfiguration: Codable, Equatable, Sendable {
         shift: false
     )
 
+    /// 列表 toolbar 常规搜索（SmartSearchField）默认 Command+F。
+    static let regularSearchDefault = KeyboardShortcutConfiguration(
+        key: "f",
+        command: true,
+        option: false,
+        control: false,
+        shift: false
+    )
+
     var keyEquivalent: KeyEquivalent {
         KeyEquivalent(Character(key))
     }

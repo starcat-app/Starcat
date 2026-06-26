@@ -809,6 +809,11 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.globalSearchShortcut, value: globalSearchShortcut) }
     }
 
+    /// 列表 toolbar 常规搜索快捷键，默认 Command+F。展开 SmartSearchField 并聚焦输入框。
+    var regularSearchShortcut: KeyboardShortcutConfiguration {
+        didSet { persistJSON(key: Keys.regularSearchShortcut, value: regularSearchShortcut) }
+    }
+
     // MARK: - 通知（2026-06-20）
 
     /// 系统通知总开关。只控制 Starcat 主动发出的 macOS 通知，不影响 App 内状态面板。
@@ -1283,6 +1288,16 @@ final class AppSettings {
         } else {
         self.globalSearchShortcut = .globalSearchDefault
         }
+        let storedRegularSearchShortcut = Self.decodeJSON(
+            KeyboardShortcutConfiguration.self,
+            key: Keys.regularSearchShortcut,
+            defaults: defaults
+        )
+        if let storedRegularSearchShortcut, storedRegularSearchShortcut.validationError == nil {
+            self.regularSearchShortcut = storedRegularSearchShortcut
+        } else {
+            self.regularSearchShortcut = .regularSearchDefault
+        }
         self.notificationsEnabled = defaults.object(forKey: Keys.notificationsEnabled) as? Bool ?? true
         self.releaseNotificationsEnabled = defaults.object(forKey: Keys.releaseNotificationsEnabled) as? Bool ?? true
         self.batchAINotificationsEnabled = defaults.object(forKey: Keys.batchAINotificationsEnabled) as? Bool ?? true
@@ -1418,6 +1433,7 @@ final class AppSettings {
         disableAnimations = false
         aiChatRequiresCommandReturn = false
         globalSearchShortcut = .globalSearchDefault
+        regularSearchShortcut = .regularSearchDefault
         notificationsEnabled = true
         releaseNotificationsEnabled = true
         batchAINotificationsEnabled = true
@@ -1614,6 +1630,7 @@ final class AppSettings {
         static let disableAnimations = "settings.general.disableAnimations.v1"  // 2026-06-15
         static let aiChatRequiresCommandReturn = "settings.general.shortcuts.aiCommandReturn.v1"
         static let globalSearchShortcut = "settings.general.shortcuts.globalSearch.v1"
+        static let regularSearchShortcut = "settings.general.shortcuts.regularSearch.v1"
         static let notificationsEnabled = "settings.notifications.enabled.v1"
         static let releaseNotificationsEnabled = "settings.notifications.release.enabled.v1"
         static let batchAINotificationsEnabled = "settings.notifications.batchAI.enabled.v1"
@@ -1676,6 +1693,7 @@ final class AppSettings {
             disableAnimations,
             aiChatRequiresCommandReturn,
             globalSearchShortcut,
+            regularSearchShortcut,
             notificationsEnabled,
             releaseNotificationsEnabled,
             batchAINotificationsEnabled,

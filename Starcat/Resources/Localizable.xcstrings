@@ -21127,6 +21127,38 @@
         }
       }
     },
+    "settings.general.shortcuts.regularSearch.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to record a new local search shortcut"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击录制新的常规搜索快捷键"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.regularSearch.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local Search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常规搜索"
+          }
+        }
+      }
+    },
     "settings.general.shortcuts.search.title" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -24038,13 +24070,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in to manage storage. Cache cleanup and local reset are disabled while signed out."
+            "value" : "Sign in to manage storage."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登录后才能管理存储。未登录时缓存清理和本机重置都会禁用。"
+            "value" : "登录后才能管理存储。"
           }
         }
       }
@@ -24837,13 +24869,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No GitHub username confirmation is required because this only removes rebuildable cache."
+            "value" : "Only remove the reconstructible cache, and these data will be recached as needed."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这只会移除可重建缓存，因此不需要输入 GitHub 用户名确认。"
+            "value" : "这只会移除可重建缓存，在必要时会重新缓存这些数据。"
           }
         }
       }

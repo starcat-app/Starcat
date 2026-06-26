@@ -12,6 +12,7 @@ import SwiftUI
 struct ShortcutRecorderView: View {
     @Binding var shortcut: KeyboardShortcutConfiguration
     let onValidationError: (KeyboardShortcutConfiguration.ValidationError) -> Void
+    var helpKey: LocalizedStringKey = "settings.general.shortcuts.search.help"
 
     @State private var isRecording = false
 
@@ -48,7 +49,7 @@ struct ShortcutRecorderView: View {
         }
         // 设置页右侧行内控件：按原 112pt 缩小约 1/3，给恢复图标留出横向空间。
         .frame(width: 76, height: 28)
-        .help("settings.general.shortcuts.search.help")
+        .help(helpKey)
     }
 
     private func capture(_ candidate: KeyboardShortcutConfiguration) {

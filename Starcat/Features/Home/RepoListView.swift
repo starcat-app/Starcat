@@ -213,7 +213,7 @@ struct RepoListView: View {
         .hidden()
     }
 
-    /// Cmd+F 展开当前列表搜索。全局搜索入口仍由显式点击 toolbar 主搜索图标触发。
+    /// 常规搜索（列表 toolbar SmartSearchField）快捷键。默认 Command+F，仅 Manage 页生效。
     private var smartSearchShortcutButton: some View {
         Button {
             viewModel.smartSearchMode = .keyword
@@ -221,7 +221,10 @@ struct RepoListView: View {
         } label: {
             EmptyView()
         }
-        .keyboardShortcut("f", modifiers: .command)
+        .keyboardShortcut(
+            settings.regularSearchShortcut.keyEquivalent,
+            modifiers: settings.regularSearchShortcut.eventModifiers
+        )
         .disabled(selectedPage != .manage)
         .hidden()
     }
