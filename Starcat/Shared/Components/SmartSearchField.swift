@@ -260,7 +260,7 @@ struct SmartSearchField: View {
 
     private var searchBackground: some View {
         Capsule(style: .continuous)
-            .fill(.thinMaterial)
+            .fill(Color(nsColor: .controlBackgroundColor))
             .overlay {
                 if isSemantic {
                     Capsule(style: .continuous)
