@@ -14065,6 +14065,38 @@
         }
       }
     },
+    "repo.share.error.reason" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reason"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败原因"
+          }
+        }
+      }
+    },
+    "repo.share.error.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat could not generate the share page."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 未能生成分享页。"
+          }
+        }
+      }
+    },
     "repo.share.error.title" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -14099,6 +14131,22 @@
         }
       }
     },
+    "repo.share.success.copied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Link copied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "链接已复制"
+          }
+        }
+      }
+    },
     "repo.share.success.copyLink" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -14116,6 +14164,22 @@
         }
       }
     },
+    "repo.share.success.linkLabel" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share link"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享链接"
+          }
+        }
+      }
+    },
     "repo.share.success.openInBrowser" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -14129,6 +14193,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在浏览器打开"
+          }
+        }
+      }
+    },
+    "repo.share.success.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The share page is ready. You can open it or copy the link."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享页已准备好，可以打开或复制链接。"
           }
         }
       }

@@ -471,9 +471,7 @@ struct RepoShareButton: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @State private var isSharing = false
-    @State private var showSharePopup = false
-    @State private var shareUrl: String?
-    @State private var shareError: String?
+    @State private var shareSheetItem: RepoShareSheetItem?
     @State private var paywallContext: ProPaywallContext?
 
     var body: some View {
@@ -505,29 +503,12 @@ struct RepoShareButton: View {
         .pressableHover()
         .disabled(isSharing)
         .help("repo.share.button.help")
-        .alert("repo.share.success.title", isPresented: $showSharePopup) {
-            Button("repo.share.success.openInBrowser") {
-                if let urlString = shareUrl, let url = URL(string: urlString) {
-                    NSWorkspace.shared.open(url)
-                }
-            }
-            Button("repo.share.success.copyLink") {
-                if let url = shareUrl {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(url, forType: .string)
-                }
-            }
-            Button("repo.share.success.close", role: .cancel) {}
-        } message: {
-            Text(shareUrl ?? "")
-        }
-        .alert("repo.share.error.title", isPresented: Binding(get: { shareError != nil }, set: { if !$0 { shareError = nil } })) {
-            Button("repo.share.error.retry") {
+        .sheet(item: $shareSheetItem) { item in
+            RepoShareResultSheet(item: item) {
+                shareSheetItem = nil
                 Task { await shareRepo() }
             }
-            Button("repo.share.error.cancel", role: .cancel) {}
-        } message: {
-            if let error = shareError { Text(error) }
+            .appLocaleEnvironment()
         }
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
@@ -536,7 +517,7 @@ struct RepoShareButton: View {
 
     private func shareRepo() async {
         isSharing = true
-        shareError = nil
+        shareSheetItem = nil
         defer { isSharing = false }
 
         do {
@@ -574,20 +555,172 @@ struct RepoShareButton: View {
             let request = ShareRepoRequest(repo: shareRepoDTO, aiSummary: shareAISummaryDTO)
             let response = try await dependencies.shareAPI.shareRepo(request: request)
 
-            shareUrl = response.shareUrl
-            showSharePopup = true
+            shareSheetItem = .success(response.shareUrl)
         } catch let error as RepoAIInsightError {
             switch error {
             case .missingAPIKey:
-                shareError = String.l10n("repo.share.error.missingAIConfig")
+                shareSheetItem = .failure(String.l10n("repo.share.error.missingAIConfig"))
             case .missingProvider, .invalidJSON:
-                shareError = error.localizedDescription
+                shareSheetItem = .failure(error.localizedDescription)
             }
         } catch let error as EntitlementGateError {
             // 试用耗尽 / 需 Pro：走统一付费墙，避免「分享失败 + 重试」误导用户。
             paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
         } catch {
-            shareError = error.localizedDescription
+            shareSheetItem = .failure(error.localizedDescription)
+        }
+    }
+}
+
+private struct RepoShareSheetItem: Identifiable, Equatable {
+    enum Kind: Equatable {
+        case success(String)
+        case failure(String)
+    }
+
+    let id = UUID()
+    let kind: Kind
+
+    static func success(_ url: String) -> RepoShareSheetItem {
+        RepoShareSheetItem(kind: .success(url))
+    }
+
+    static func failure(_ message: String) -> RepoShareSheetItem {
+        RepoShareSheetItem(kind: .failure(message))
+    }
+}
+
+private struct RepoShareResultSheet: View {
+    let item: RepoShareSheetItem
+    let onRetry: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var didCopy = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            header
+            content
+            actions
+        }
+        .padding(22)
+        .frame(width: 430)
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(headerTint.gradient)
+                    .frame(width: 48, height: 48)
+                    .shadow(color: headerTint.opacity(0.25), radius: 16, x: 0, y: 8)
+                Image(systemName: headerIcon)
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(titleKey)
+                    .font(.title3.weight(.semibold))
+                Text(subtitleKey)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch item.kind {
+        case .success(let url):
+            VStack(alignment: .leading, spacing: 8) {
+                Text("repo.share.success.linkLabel")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(verbatim: url)
+                    .font(.callout.monospaced())
+                    .textSelection(.enabled)
+                    .lineLimit(3)
+                    .truncationMode(.middle)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+                if didCopy {
+                    Label("repo.share.success.copied", systemImage: "checkmark.circle.fill")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.green)
+                }
+            }
+        case .failure(let message):
+            VStack(alignment: .leading, spacing: 8) {
+                Label("repo.share.error.reason", systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.orange)
+                Text(verbatim: message)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var actions: some View {
+        HStack {
+            switch item.kind {
+            case .success(let url):
+                Button("repo.share.success.copyLink") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(url, forType: .string)
+                    didCopy = true
+                }
+                Button("repo.share.success.openInBrowser") {
+                    if let target = URL(string: url) {
+                        NSWorkspace.shared.open(target)
+                    }
+                }
+            case .failure:
+                Button("repo.share.error.retry") {
+                    dismiss()
+                    onRetry()
+                }
+            }
+
+            Spacer()
+
+            Button("repo.share.success.close") {
+                dismiss()
+            }
+            .keyboardShortcut(.cancelAction)
+        }
+    }
+
+    private var titleKey: LocalizedStringKey {
+        switch item.kind {
+        case .success: return "repo.share.success.title"
+        case .failure: return "repo.share.error.title"
+        }
+    }
+
+    private var subtitleKey: LocalizedStringKey {
+        switch item.kind {
+        case .success: return "repo.share.success.subtitle"
+        case .failure: return "repo.share.error.subtitle"
+        }
+    }
+
+    private var headerIcon: String {
+        switch item.kind {
+        case .success: return "link.circle.fill"
+        case .failure: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var headerTint: Color {
+        switch item.kind {
+        case .success: return .accentColor
+        case .failure: return .orange
         }
     }
 }
