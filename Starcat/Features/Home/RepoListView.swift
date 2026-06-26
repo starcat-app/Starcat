@@ -647,6 +647,17 @@ struct RepoListView: View {
     /// 分享请求仍沿用旧 hero 按钮的流程；这里只改变入口与 sheet 承载位置。
     @MainActor
     private func runShare(_ repo: Repo) async {
+        do {
+            // 分享页依赖 AI 摘要内容；先做 Pro preflight，避免免费用户先看到 toolbar loading。
+            try dependencies.entitlementGate.requirePro(.aiSummary)
+        } catch let error as EntitlementGateError {
+            paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
+            return
+        } catch {
+            paywallContext = ProPaywallContext(feature: .aiSummary, message: error.localizedDescription)
+            return
+        }
+
         shareInFlightRepoID = repo.id
         shareRetryRepo = repo
         shareSheetItem = nil
