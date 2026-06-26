@@ -204,8 +204,7 @@ struct LanguagePickerMenu: View {
             Image(systemName: "chevron.left.forwardslash.chevron.right")
                 .foregroundStyle(.secondary)
         } else if key == TrendingLanguage.uncategorizedKey {
-            Image(systemName: "questionmark.circle")
-                .foregroundStyle(.secondary)
+            UncategorizedLanguageIcon(size: size)
         } else {
             LanguageIconView(language: key, size: size)
         }

@@ -1032,6 +1032,30 @@ enum LanguageIconResolver {
 
 // MARK: - SwiftUI 视图
 
+/// 无主语言 / 未分类（`language IS NULL` / `__uncategorized__`）的统一视觉。
+///
+/// 全 App 单一信任源：黄色 `questionmark.circle`。Sidebar Languages、Trending /
+/// Weekly 语言筛选、Manage Languages 列表行、以及 `LanguageIconView` 对空 key 的
+/// 兜底，都必须走本组件，禁止各调用点自行画灰色问号或其它占位。
+struct UncategorizedLanguageIcon: View {
+    var size: CGFloat = 14
+
+    var body: some View {
+        Image(systemName: "questionmark.circle")
+            .font(.system(size: size, weight: .medium))
+            .foregroundStyle(.yellow)
+            .frame(width: size, height: size)
+            .accessibilityLabel(Text("trending.language.uncategorized"))
+    }
+}
+
+enum UncategorizedLanguageKey {
+    /// 空串（Manage `LanguageStat`）与 Trending 哨兵 `__uncategorized__` 均视为未分类。
+    static func matches(_ language: String) -> Bool {
+        language.isEmpty || language == TrendingLanguage.uncategorizedKey
+    }
+}
+
 /// 语言图标视图：显示语言 logo 或 fallback badge
 /// 使用场景：SidebarView 的 Languages 列表行
 struct LanguageIconView: View {
@@ -1043,7 +1067,17 @@ struct LanguageIconView: View {
         self.size = size
     }
 
+    @ViewBuilder
     var body: some View {
+        if UncategorizedLanguageKey.matches(language) {
+            UncategorizedLanguageIcon(size: size)
+        } else {
+            resolvedIcon
+        }
+    }
+
+    @ViewBuilder
+    private var resolvedIcon: some View {
         let result = LanguageIconResolver.resolve(language: language)
 
         switch result.type {

@@ -904,9 +904,7 @@ struct SidebarView: View {
         if language == .all {
             Image(systemName: "chevron.left.forwardslash.chevron.right")
         } else if language.isUncategorized {
-            // 「未分类」用问号占位（与 Manage Languages 里 `language=nil` 行的视觉对齐）。
-            Image(systemName: "questionmark.circle")
-                .foregroundStyle(.secondary)
+            UncategorizedLanguageIcon(size: 14)
         } else {
             LanguageIconView(language: language.rawValue, size: 14)
         }
@@ -1150,9 +1148,7 @@ struct SidebarView: View {
             if let lang = stat.languageOrNil, !lang.isEmpty {
                 LanguageIconView(language: lang, size: 14)
             } else {
-                // 无主语言（nil / Unknown）显示问号占位
-                Image(systemName: "questionmark.circle")
-                    .foregroundStyle(.secondary)
+                UncategorizedLanguageIcon(size: 14)
             }
         }
         .tag(item)
