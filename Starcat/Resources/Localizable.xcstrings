@@ -24038,13 +24038,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starcat has signed out locally and removed the selected user's local database, caches, generated files, settings, and local credentials. Quit and reopen the app, then sign in again."
+            "value" : "Starcat has signed out locally and removed the selected user's local database, caches, generated files, settings, and local credentials. Restart Starcat, or quit and reopen it manually, then sign in again."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starcat 已在本机退出登录，并移除当前用户的本地数据库、缓存、生成文件、设置和本机凭据。请退出并重新打开应用，然后重新登录。"
+            "value" : "Starcat 已在本机退出登录，并移除当前用户的本地数据库、缓存、生成文件、设置和本机凭据。你可以重启 Starcat，或退出后手动重新打开应用，然后重新登录。"
           }
         }
       }
@@ -24164,6 +24164,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在清空本地数据..."
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.restart" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restart Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重启 Starcat"
           }
         }
       }

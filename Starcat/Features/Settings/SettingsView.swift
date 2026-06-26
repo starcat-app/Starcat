@@ -825,7 +825,10 @@ private struct StorageSettingsTab: View {
                     Task { await performResetAllData(target: target) }
                 },
                 onQuit: {
-                    NSApp.terminate(nil)
+                    quitAfterResetCompletion()
+                },
+                onRestart: {
+                    restartAfterResetCompletion()
                 }
             )
             .appLocaleEnvironment()
@@ -992,6 +995,29 @@ private struct StorageSettingsTab: View {
         isResettingAllData = false
     }
 
+    /// reset 完成态需要先让 SwiftUI sheet 正常退场，再在下一轮 main queue 发退出请求。
+    ///
+    /// 直接在 sheet button action 里 `terminate` 容易被当前 modal 事务吞掉；把关闭
+    /// sheet 与 AppKit 生命周期动作拆成两步，用户点击后才会稳定退出 / 重启。
+    private func quitAfterResetCompletion() {
+        dismissResetCompletionSheet()
+        DispatchQueue.main.async {
+            StorageResetAppLifecycle.quit()
+        }
+    }
+
+    private func restartAfterResetCompletion() {
+        dismissResetCompletionSheet()
+        DispatchQueue.main.async {
+            StorageResetAppLifecycle.restart()
+        }
+    }
+
+    private func dismissResetCompletionSheet() {
+        resetTarget = nil
+        resetDidComplete = false
+    }
+
     // MARK: - 用量文案
 
     private var readmeUsageText: String {
@@ -1097,6 +1123,7 @@ private struct StorageResetAllDataSheet: View {
     let onCancel: () -> Void
     let onConfirm: () -> Void
     let onQuit: () -> Void
+    let onRestart: () -> Void
 
     @State private var confirmationText = ""
     @FocusState private var isInputFocused: Bool
@@ -1206,6 +1233,11 @@ private struct StorageResetAllDataSheet: View {
                 Button("settings.storage.resetAll.quit") {
                     onQuit()
                 }
+
+                Button("settings.storage.resetAll.restart") {
+                    onRestart()
+                }
+                .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
             } else {
                 Button("general.cancel", role: .cancel) {
@@ -1243,5 +1275,49 @@ private struct StorageResetAllDataSheet: View {
             "settings.storage.resetAll.scope.credentials",
             "settings.storage.resetAll.scope.remoteSafe"
         ]
+    }
+}
+
+/// Storage reset 完成后的 AppKit 生命周期桥接。
+///
+/// SwiftUI 只表达用户意图；退出 / 重启是应用级 imperative 行为，集中在这个小 helper
+/// 里，避免 sheet 视图直接散落 `NSWorkspace` / `Process` 细节。
+private enum StorageResetAppLifecycle {
+    static func quit() {
+        NSApplication.shared.terminate(nil)
+    }
+
+    static func restart() {
+        let appURL = Bundle.main.bundleURL
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.createsNewApplicationInstance = true
+
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, error in
+            if let error {
+                AppLog.general.error("Restart Starcat failed via NSWorkspace: \(error.localizedDescription, privacy: .public)")
+                restartWithOpenCommand(appURL: appURL)
+            }
+
+            DispatchQueue.main.async {
+                quit()
+            }
+        }
+    }
+
+    /// `NSWorkspace` 启动失败时兜底调用系统 `open -n`。
+    ///
+    /// 这条路径只负责尽量拉起新实例；无论兜底是否成功，当前实例都会退出，避免 reset 后
+    /// 用户继续停留在已清空本机状态的进程里操作旧 UI。
+    private static func restartWithOpenCommand(appURL: URL) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-n", appURL.path]
+
+        do {
+            try process.run()
+        } catch {
+            AppLog.general.error("Restart Starcat fallback failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }
