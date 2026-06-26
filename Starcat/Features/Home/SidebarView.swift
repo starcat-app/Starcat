@@ -1009,24 +1009,25 @@ struct SidebarView: View {
                 Text(verbatim: list.name)
                     .lineLimit(1)
                     .truncationMode(.tail)
+
+                Button {
+                    editingGitHubStarList = list
+                    showGitHubStarListEditor = true
+                } label: {
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.system(size: 14, weight: .medium))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(Text("sidebar.githubStarLists.edit"))
+
                 Spacer(minLength: 4)
 
                 HStack(spacing: 4) {
-                    Button {
-                        editingGitHubStarList = list
-                        showGitHubStarListEditor = true
-                    } label: {
-                        Image(systemName: "pencil.circle.fill")
-                            .font(.system(size: 14, weight: .medium))
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 18, height: 18)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .help(Text("sidebar.githubStarLists.edit"))
-
                     Spacer(minLength: 0)
 
                     Text((viewModel.githubStarListCounts[list.id] ?? 0).formatted())
@@ -1038,8 +1039,9 @@ struct SidebarView: View {
                 .frame(width: Self.trailingFixedWidth, alignment: .trailing)
             }
         } icon: {
-            Image(systemName: "folder.fill")
-                .foregroundStyle(Color(hex: list.colorHex) ?? .accentColor)
+            Circle()
+                .fill(Color(hex: list.colorHex) ?? .accentColor)
+                .frame(width: 14, height: 14)
         }
         .tag(item)
         .onHover { isHovering in
