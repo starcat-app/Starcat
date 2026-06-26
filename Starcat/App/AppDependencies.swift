@@ -886,6 +886,67 @@ final class AppDependencies {
         try await database.reopen(userId: userId)
     }
 
+    // MARK: - 本机恢复出厂
+
+    /// Storage 页“清空所有数据”的单一执行入口。
+    ///
+    /// 这里刻意集中编排，而不是让 SettingsView 直接删文件：
+    /// - 先停 MCP，避免 reset 期间本机 agent 端口继续暴露旧设置；
+    /// - 通过 AuthSession.signOut() 释放当前登录态并切到 `_anonymous` DB；
+    /// - 清文件型缓存 / 生成物；
+    /// - 删除当前 GitHub user id 的本地 DB 目录；
+    /// - 最后恢复 AppSettings / Keychain / UserDefaults 本机配置。
+    ///
+    /// 全流程只动本机，不调用 GitHub / CloudKit / 自建后端删除远端数据。
+    func resetLocalAppData(for target: AppDataResetTarget) async throws {
+        mcpService.stop()
+
+        let resetter = AppDataResetService(
+            database: database,
+            settings: settings
+        )
+        try await resetter.resetLocalData(
+            for: target,
+            releaseCurrentSession: { [authSession] in
+                await authSession.signOut()
+            },
+            clearGeneratedCaches: { [weak self] in
+                await self?.clearGeneratedLocalCachesForFactoryReset()
+            }
+        )
+
+        mcpService.stop()
+    }
+
+    /// 清理不依赖当前用户 SQLite 的全局文件型缓存 / 生成物。
+    ///
+    /// README 缓存位于用户 DB；当前用户 DB 会整体删除，所以这里不需要再通过
+    /// ReadmeRepository 清一次匿名库。用户自选输出目录的 AI Context / CodeFlow
+    /// 删除必须发生在 AppSettings reset 之前，否则 security-scoped bookmark 会先丢失。
+    private func clearGeneratedLocalCachesForFactoryReset() async {
+        let cleaner = CacheCleaner(readmeRepository: readmeRepository)
+        await cleaner.clearImageCache()
+        cleaner.clearArchives()
+
+        do { try await DiskReadmeTranslationCache.shared.deleteEverything() }
+        catch { AppLog.general.warning("Factory reset: translation cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
+
+        do { try await DiskAnySearchCache.shared.deleteEverything() }
+        catch { AppLog.general.warning("Factory reset: AnySearch cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
+
+        do { try DiskWikiCache.shared.deleteEverything() }
+        catch { AppLog.general.warning("Factory reset: Wiki cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
+
+        do { try DiskChatHistoryStore.shared.deleteEverything() }
+        catch { AppLog.general.warning("Factory reset: chat history cleanup failed: \(error.localizedDescription, privacy: .public)") }
+
+        do { try RepoContextStorage.shared.deleteAllProjects() }
+        catch { AppLog.general.warning("Factory reset: AI context cleanup failed: \(error.localizedDescription, privacy: .public)") }
+
+        do { try CodeFlowStorage.shared.deleteAllProjects() }
+        catch { AppLog.general.warning("Factory reset: CodeFlow cleanup failed: \(error.localizedDescription, privacy: .public)") }
+    }
+
     // MARK: - 第三方服务热更新（2026-06-08 新增）
 
     /// 设置页 → 服务 Tab 调用入口：把用户填的 URL 既写入 `AppSettings` 持久化，

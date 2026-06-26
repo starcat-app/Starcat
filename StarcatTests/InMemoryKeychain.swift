@@ -77,6 +77,10 @@ final class InMemoryKeychain: KeychainManaging, @unchecked Sendable {
         setValue(nil, forKey: "service_api_key::\(serviceID)")
     }
 
+    func deleteAllCredentials() throws {
+        reset()
+    }
+
     // MARK: - ping
 
     func ping() throws {

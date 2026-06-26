@@ -529,13 +529,18 @@ private struct DiagnosticsSettingsTab: View {
 private struct StorageSettingsTab: View {
 
     @Environment(AppSettings.self) private var settings
+    @Environment(AppDependencies.self) private var dependencies
+    @Environment(AuthSession.self) private var authSession
 
     let readmeRepository: ReadmeRepository
 
     @State private var stats: CacheStatistics = .empty
     @State private var isWorking: Bool = false
+    @State private var isResettingAllData: Bool = false
     /// 当前显示的确认弹窗类型；nil 表示不显示。
     @State private var pendingAction: PendingAction?
+    @State private var resetTarget: AppDataResetTarget?
+    @State private var resetDidComplete = false
     @State private var storageActionError: String?
 
     /// AI 代码上下文产物（精细化面板已搬到 AISettingsView，本 Tab 仅消费汇总数字
@@ -623,10 +628,34 @@ private struct StorageSettingsTab: View {
             && codeFlowStorage.projectCount == 0
     }
 
+    private var currentResetTarget: AppDataResetTarget? {
+        guard let user = authSession.state.user else { return nil }
+        return AppDataResetTarget(userID: user.id, login: user.login)
+    }
+
+    private var isLoggedIn: Bool {
+        currentResetTarget != nil
+    }
+
+    /// 未登录时禁止 Storage 页所有操作；reset sheet 展示期间由 sheet 自己接管交互。
+    /// 这样可以避免 reset 成功后 AuthSession 已变成未登录，父 Form 的 disabled 环境把
+    /// sheet 内的“退出 Starcat”按钮也连带禁用。
+    private var shouldDisableStorageControls: Bool {
+        isResettingAllData || (!isLoggedIn && resetTarget == nil)
+    }
+
     var body: some View {
         let cleaner = CacheCleaner(readmeRepository: readmeRepository)
         @Bindable var settings = settings
         return Form {
+            if !isLoggedIn {
+                Section {
+                    Text("settings.storage.loginRequired")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("settings.storage.chatHistoryBackend.section") {
                 Picker("settings.storage.chatHistoryBackend.title", selection: $settings.chatHistoryStorageKind) {
                     ForEach(ChatHistoryStorageKind.allCases) { kind in
@@ -709,6 +738,26 @@ private struct StorageSettingsTab: View {
                 }
             }
 
+            Section("settings.storage.dangerZone") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("settings.storage.resetAll.description")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack {
+                        Spacer()
+                        Button(role: .destructive) {
+                            resetTarget = currentResetTarget
+                        } label: {
+                            Label("settings.storage.resetAll", systemImage: "trash")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tint(.red)
+                        .disabled(isWorking || isResettingAllData || currentResetTarget == nil)
+                    }
+                }
+            }
+
             if isWorking {
                 Section {
                     HStack {
@@ -720,10 +769,16 @@ private struct StorageSettingsTab: View {
             }
         }
         .formStyle(.grouped)
-        .task {
+        .disabled(shouldDisableStorageControls)
+        .task(id: isLoggedIn) {
+            guard isLoggedIn else {
+                stats = .empty
+                return
+            }
             stats = await cleaner.loadStatistics()
         }
-        .task {
+        .task(id: isLoggedIn) {
+            guard isLoggedIn else { return }
             // Tab 出现时强制重扫描全部产物 / 缓存目录，让用户刚生成的内容立即可见。
             aiContextStorage.reload()
             codeFlowStorage.reload()
@@ -757,6 +812,24 @@ private struct StorageSettingsTab: View {
             Button("general.ok") { storageActionError = nil }
         } message: {
             Text(storageActionError ?? "")
+        }
+        .sheet(item: $resetTarget) { target in
+            StorageResetAllDataSheet(
+                target: target,
+                isResetting: isResettingAllData,
+                didComplete: resetDidComplete,
+                onCancel: {
+                    resetTarget = nil
+                    resetDidComplete = false
+                },
+                onConfirm: {
+                    Task { await performResetAllData(target: target) }
+                },
+                onQuit: {
+                    NSApp.terminate(nil)
+                }
+            )
+            .appLocaleEnvironment()
         }
     }
 
@@ -835,6 +908,7 @@ private struct StorageSettingsTab: View {
     /// 用户重试即可，没必要做错误聚合。
     @MainActor
     private func perform(action: PendingAction, using cleaner: CacheCleaner) async {
+        guard isLoggedIn else { return }
         isWorking = true
         switch action {
         case .readme:
@@ -891,6 +965,31 @@ private struct StorageSettingsTab: View {
         stats = await cleaner.loadStatistics()
         isWorking = false
         pendingAction = nil
+    }
+
+    /// 执行“本机恢复出厂”。真正的删除逻辑在 AppDependencies / AppDataResetService；
+    /// Settings 页只负责收集用户确认并展示完成状态，避免 UI 层直接拼路径删文件。
+    @MainActor
+    private func performResetAllData(target: AppDataResetTarget) async {
+        guard isLoggedIn else {
+            storageActionError = AppDataResetError.notAuthenticated.localizedDescription
+            return
+        }
+        isResettingAllData = true
+        do {
+            try await dependencies.resetLocalAppData(for: target)
+            stats = .empty
+            translationCache.reload()
+            anySearchCache.reload()
+            wikiCache.reload()
+            chatHistoryStore.reload()
+            aiContextStorage.reload()
+            codeFlowStorage.reload()
+            resetDidComplete = true
+        } catch {
+            storageActionError = error.localizedDescription
+        }
+        isResettingAllData = false
     }
 
     // MARK: - 用量文案
@@ -984,5 +1083,165 @@ private struct StorageSettingsTab: View {
             codeFlowStorage.projectCount,
             codeFlowStorage.totalBytes.formattedByteSize
         )
+    }
+}
+
+/// Storage 页“清空所有数据”的二次确认 sheet。
+///
+/// 这个视图只负责把破坏性操作讲清楚并收集 GitHub username 确认；
+/// 真正删除由 AppDataResetService 执行，避免 UI 层掌握本机路径删除细节。
+private struct StorageResetAllDataSheet: View {
+    let target: AppDataResetTarget
+    let isResetting: Bool
+    let didComplete: Bool
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+    let onQuit: () -> Void
+
+    @State private var confirmationText = ""
+    @FocusState private var isInputFocused: Bool
+
+    private var normalizedInput: String {
+        confirmationText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private var normalizedLogin: String {
+        target.login.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private var canConfirm: Bool {
+        !didComplete && !isResetting && normalizedInput == normalizedLogin
+    }
+
+    private var usernamePrompt: String {
+        String(
+            format: String.l10n("settings.storage.resetAll.usernamePromptFormat"),
+            target.login
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            header
+
+            if didComplete {
+                completionContent
+            } else {
+                warningContent
+            }
+
+            footer
+        }
+        .padding(24)
+        .frame(width: 480)
+        .onAppear {
+            isInputFocused = true
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: didComplete ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .font(.title2)
+                .foregroundStyle(didComplete ? .green : .red)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(didComplete ? "settings.storage.resetAll.completed.title" : "settings.storage.resetAll.sheet.title")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text(didComplete ? "settings.storage.resetAll.completed.message" : "settings.storage.resetAll.sheet.subtitle")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var warningContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("settings.storage.resetAll.scope.title")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                ForEach(resetScopeItems, id: \.self) { item in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "smallcircle.filled.circle")
+                            .font(.system(size: 7))
+                            .foregroundStyle(.secondary)
+                        Text(LocalizedStringKey(item))
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(verbatim: usernamePrompt)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                TextField("settings.storage.resetAll.usernamePlaceholder", text: $confirmationText)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($isInputFocused)
+                    .disabled(isResetting)
+            }
+        }
+    }
+
+    private var completionContent: some View {
+        Text("settings.storage.resetAll.completed.detail")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 10) {
+            Spacer()
+            if didComplete {
+                Button("settings.storage.resetAll.quit") {
+                    onQuit()
+                }
+                .keyboardShortcut(.defaultAction)
+            } else {
+                Button("general.cancel", role: .cancel) {
+                    onCancel()
+                }
+                .disabled(isResetting)
+
+                Button(role: .destructive) {
+                    onConfirm()
+                } label: {
+                    if isResetting {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("settings.storage.resetAll.resetting")
+                        }
+                    } else {
+                        Text("settings.storage.resetAll.confirm")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .disabled(!canConfirm)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+    }
+
+    private var resetScopeItems: [String] {
+        [
+            "settings.storage.resetAll.scope.database",
+            "settings.storage.resetAll.scope.caches",
+            "settings.storage.resetAll.scope.generated",
+            "settings.storage.resetAll.scope.settings",
+            "settings.storage.resetAll.scope.credentials",
+            "settings.storage.resetAll.scope.remoteSafe"
+        ]
     }
 }

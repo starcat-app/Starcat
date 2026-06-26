@@ -23981,6 +23981,380 @@
         }
       }
     },
+    "settings.storage.dangerZone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Danger Zone"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "危险操作"
+          }
+        }
+      }
+    },
+    "settings.storage.loginRequired" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to manage storage. Cache cleanup and local reset are disabled while signed out."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录后才能管理存储。未登录时缓存清理和本机重置都会禁用。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear All Data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清空所有数据"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.completed.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat has signed out locally and removed the selected user's local database, caches, generated files, settings, and local credentials. Quit and reopen the app, then sign in again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 已在本机退出登录，并移除当前用户的本地数据库、缓存、生成文件、设置和本机凭据。请退出并重新打开应用，然后重新登录。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.completed.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restart Starcat and sign in again to rebuild local data."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重启 Starcat 并重新登录后会重新构建本地数据。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.completed.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local Data Cleared"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地数据已清空"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear All Local Data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清空所有本地数据"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Factory reset local Starcat data for the signed-in account. Use this only when local data corruption causes app issues."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将当前登录账号的 Starcat 本机数据恢复到首次安装状态。仅建议在本地数据异常导致应用问题时使用。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.error.notAuthenticated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in before clearing local app data."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先登录，再清空本机应用数据。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.quit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quit Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出 Starcat"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.resetting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clearing local data..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在清空本地数据..."
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.caches" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local README, image, ZIP, translation, search, wiki probe, and chat history caches."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机 README、图片、ZIP、翻译、搜索、Wiki 探测和对话历史缓存。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.credentials" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local encrypted credentials, including GitHub token, AI API keys, and service API keys."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机加密凭据，包括 GitHub token、AI API Key 和服务 API Key。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.database" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The signed-in user's local SQLite database: repo cache, local notes, tags, status, and derived data."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前登录用户的本地 SQLite 数据库：仓库缓存、本地笔记、标签、状态和派生数据。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.generated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generated Code Context and CodeFlow files stored by Starcat."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 生成的 Code Context 与 CodeFlow 文件。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.remoteSafe" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote GitHub stars, CloudKit data, backend service data, and App Store purchases are not modified."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不会修改远端 GitHub stars、CloudKit 数据、后端服务数据或 App Store 购买记录。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local settings such as general preferences, AI providers, service URLs, MCP, shortcuts, and notification toggles."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机配置，包括通用偏好、AI 服务商、服务 URL、MCP、快捷键和通知开关。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This will delete:"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将删除以下本机数据："
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.sheet.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is a local factory reset for the current account. It cannot be undone."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这是针对当前账号的本机恢复出厂操作，无法撤销。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.sheet.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear All Local Data?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清空所有本地数据？"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.usernamePlaceholder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub username"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub 用户名"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.usernamePromptFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type your GitHub username %@ to confirm."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入你的 GitHub 用户名 %@ 后才能确认。"
+          }
+        }
+      }
+    },
     "settings.storage.chatHistory" : {
       "extractionState" : "manual",
       "localizations" : {

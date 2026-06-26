@@ -1360,6 +1360,84 @@ final class AppSettings {
         isProUser = isPro
     }
 
+    /// 将 Starcat 本机配置恢复为首次安装默认值。
+    ///
+    /// 使用场景是 Storage 页“清空所有数据”：它的产品语义是本机恢复出厂，
+    /// 所以这里会同时清 UserDefaults 偏好与加密凭据文件里的 AI / 服务 / MCP Key。
+    /// 不会访问 GitHub、CloudKit、App Store，也不会修改远端订阅购买记录；
+    /// `isProUser` 只是本机 UI 镜像，重启后仍由 StoreKit 权益链路重新刷新。
+    func resetToDefaults() throws {
+        for key in Keys.resettableKeys {
+            defaults.removeObject(forKey: key)
+        }
+        try keychain.deleteAllCredentials()
+        customServiceAPIKeysCache.removeAll()
+
+        appearanceMode = .dark
+        repoSortOption = .starredAtDesc
+        hideArchived = false
+        hideForks = false
+        statusFilter = nil
+        lastManageSelectionRaw = ""
+        lastActivityCategoryRaw = ""
+        openFirstDetailOnCategoryChange = false
+
+        let provider = AIServiceProvider.openAICompatible
+        let baseURL = provider.defaultBaseURL
+        let chatModel = provider.defaultChatModel
+        let embeddingModel = provider.defaultEmbeddingModel
+        let defaultProfile = Self.makeDefaultAIProviderProfile(
+            provider: provider,
+            baseURL: baseURL,
+            chatModel: chatModel,
+            embeddingModel: embeddingModel
+        )
+        aiProvider = provider
+        aiBaseURL = baseURL
+        aiChatModel = chatModel
+        aiEmbeddingModel = embeddingModel
+        aiProviderProfiles = [defaultProfile]
+        aiSummaryTask = Self.makeDefaultTask(task: .summary, profileID: defaultProfile.id, modelName: chatModel)
+        aiTagsTask = Self.makeDefaultTask(task: .tags, profileID: defaultProfile.id, modelName: chatModel)
+        aiEmbeddingTask = Self.makeDefaultTask(task: .embedding, profileID: defaultProfile.id, modelName: embeddingModel)
+        aiTranslationTask = Self.makeDefaultTask(task: .translation, profileID: defaultProfile.id, modelName: chatModel)
+        aiChatTask = Self.makeDefaultTask(task: .chat, profileID: defaultProfile.id, modelName: chatModel)
+
+        chatHistoryStorageKind = .jsonFiles
+        smartSearchMode = .keyword
+        anySearchEnabled = false
+        anySearchAnonymousMode = true
+        searchIncludeWebInAll = false
+        aiExternalContextEnabled = false
+        aiExternalContextAllowPrivateRepos = false
+        aiRepoContextEnabled = true
+        aiRepoContextTokenBudget = 8_000
+        aiRepoContextTier1MaxLines = 80
+        snakeStyle = SnakeStyle.default
+        readmeTranslationLanguage = .defaultForCurrentLocale()
+        disableAnimations = false
+        aiChatRequiresCommandReturn = false
+        globalSearchShortcut = .globalSearchDefault
+        notificationsEnabled = true
+        releaseNotificationsEnabled = true
+        batchAINotificationsEnabled = true
+        syncIssueNotificationsEnabled = true
+        mcpIssueNotificationsEnabled = true
+        mcpServiceEnabled = false
+        mcpServicePort = Self.defaultMCPServicePort
+        mcpExposePrivateNotes = false
+        mcpAllowLocalWrites = false
+        mcpAllowBatchWrites = false
+        mcpAllowDestructiveWrites = false
+        isProUser = false
+        autoTidySettings = .default
+        aiReadmeTruncateLength = ReadmePreprocessor.defaultMaxLength
+        applyAIIndexPreset(.standard)
+        aiIndexAutoPrefetchEnabled = false
+        aiSemanticSearchScoreThreshold = 0.75
+        customServiceURLs = [:]
+    }
+
     // MARK: - 内部
 
     private func persist(key: String, value: String) {
@@ -1565,5 +1643,62 @@ final class AppSettings {
         static let aiRepoContextEnabled = "settings.ai.repoContext.enabled.v1"
         static let aiRepoContextTokenBudget = "settings.ai.repoContext.tokenBudget.v1"
         static let aiRepoContextTier1MaxLines = "settings.ai.repoContext.tier1MaxLines.v1"
+
+        static let resettableKeys: [String] = [
+            appearanceMode,
+            repoSortOption,
+            hideArchived,
+            hideForks,
+            statusFilter,
+            lastManageSelection,
+            lastActivityCategory,
+            openFirstDetailOnCategoryChange,
+            aiProvider,
+            aiBaseURL,
+            aiChatModel,
+            aiEmbeddingModel,
+            aiProviderProfiles,
+            aiSummaryTask,
+            aiTagsTask,
+            aiEmbeddingTask,
+            aiTranslationTask,
+            aiChatTask,
+            chatHistoryStorageKind,
+            smartSearchMode,
+            anySearchEnabled,
+            anySearchAnonymousMode,
+            searchIncludeWebInAll,
+            aiExternalContextEnabled,
+            aiExternalContextAllowPrivateRepos,
+            snakeStyle,
+            readmeTranslationLanguage,
+            isProUser,
+            disableAnimations,
+            aiChatRequiresCommandReturn,
+            globalSearchShortcut,
+            notificationsEnabled,
+            releaseNotificationsEnabled,
+            batchAINotificationsEnabled,
+            syncIssueNotificationsEnabled,
+            mcpIssueNotificationsEnabled,
+            mcpServiceEnabled,
+            mcpServicePort,
+            mcpExposePrivateNotes,
+            mcpAllowLocalWrites,
+            mcpAllowBatchWrites,
+            mcpAllowDestructiveWrites,
+            autoTidySettings,
+            customServiceURLs,
+            customServiceAPIKeys,
+            aiReadmeTruncateLength,
+            aiIndexPreset,
+            aiIndexBodyDiffRatio,
+            aiIndexNotesDiffRatio,
+            aiIndexAutoPrefetchEnabled,
+            aiSemanticSearchScoreThreshold,
+            aiRepoContextEnabled,
+            aiRepoContextTokenBudget,
+            aiRepoContextTier1MaxLines
+        ]
     }
 }

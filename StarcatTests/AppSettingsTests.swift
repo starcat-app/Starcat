@@ -39,6 +39,52 @@ struct AppSettingsTests {
         #expect(s2.isProUser == true)
     }
 
+    @Test("本机恢复出厂: 重置配置并清空本机凭据")
+    func resetToDefaultsClearsLocalPreferencesAndCredentials() throws {
+        let defaults = makeIsolatedDefaults()
+        let keychain = InMemoryKeychain()
+        let settings = AppSettings(defaults: defaults, keychain: keychain)
+
+        settings.appearanceMode = .light
+        settings.repoSortOption = .starsDesc
+        settings.hideArchived = true
+        settings.aiProvider = .ollama
+        settings.aiBaseURL = "http://localhost:11434/v1"
+        settings.aiChatModel = "llama3.2"
+        settings.chatHistoryStorageKind = .sqlite
+        settings.anySearchEnabled = true
+        settings.notificationsEnabled = false
+        settings.mcpServiceEnabled = true
+        settings.mcpServicePort = 7777
+        settings.mcpAllowDestructiveWrites = true
+        settings.setCustomURL("https://example.com", for: .trending)
+        settings.setCustomAPIKey("service-key", for: .weekly)
+        settings.setAnySearchAPIKey("anysearch-key")
+        settings.updateProEntitlementMirror(isPro: true)
+        try keychain.storeGithubToken("github-token")
+        try keychain.storeAIKey("ai-key")
+
+        try settings.resetToDefaults()
+
+        #expect(settings.appearanceMode == .dark)
+        #expect(settings.repoSortOption == .starredAtDesc)
+        #expect(settings.hideArchived == false)
+        #expect(settings.aiProvider == .openAICompatible)
+        #expect(settings.aiBaseURL == "https://api.openai.com/v1")
+        #expect(settings.aiChatModel == "gpt-4o-mini")
+        #expect(settings.chatHistoryStorageKind == .jsonFiles)
+        #expect(settings.anySearchEnabled == false)
+        #expect(settings.notificationsEnabled == true)
+        #expect(settings.mcpServiceEnabled == false)
+        #expect(settings.mcpServicePort == AppSettings.defaultMCPServicePort)
+        #expect(settings.mcpAllowDestructiveWrites == false)
+        #expect(settings.customServiceURL(for: .trending) == nil)
+        #expect(settings.customServiceAPIKey(for: .weekly) == nil)
+        #expect(settings.anySearchAPIKey() == nil)
+        #expect(settings.isProUser == false)
+        #expect(keychain.snapshot.isEmpty)
+    }
+
     // MARK: - W4-4 D1：排序偏好
 
     @Test("D1: 默认排序 = starredAtDesc")

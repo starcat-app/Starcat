@@ -67,6 +67,13 @@ protocol KeychainManaging: Sendable {
     func loadServiceAPIKey(forService serviceID: String) throws -> String?
     func deleteServiceAPIKey(forService serviceID: String) throws
 
+    /// 清空 Starcat 本机加密凭据文件中的全部条目。
+    ///
+    /// 只用于“清空所有数据 / 本地恢复出厂”这类明确的 destructive 操作。
+    /// 不要在普通登出里调用：登出只删 GitHub token，AI Key / 服务 Key 等配置
+    /// 应继续保留；恢复出厂才需要把这些本机配置一并抹掉。
+    func deleteAllCredentials() throws
+
     func ping() throws
 }
 
@@ -240,6 +247,23 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
     func deleteServiceAPIKey(forService serviceID: String) throws {
         try setValue(nil, forAccount: Account.serviceAPIKey(serviceID: serviceID))
         AppLog.keychain.info("Service API key removed: \(serviceID, privacy: .public)")
+    }
+
+    func deleteAllCredentials() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        do {
+            let url = try Self.credentialsFileURL()
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+            AppLog.keychain.info("All local credentials removed")
+        } catch {
+            if error is KeychainError {
+                throw error
+            }
+            throw KeychainError.deleteFailed(underlying: error)
+        }
     }
 
     func ping() throws {

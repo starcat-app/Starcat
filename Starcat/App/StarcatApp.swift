@@ -152,6 +152,7 @@ struct StarcatApp: App {
                 // `@Environment(AppSettings.self)` 能向上找到 settings。
                 .starcatAnimationOverride()
                 .environment(dependencies)        // W4-4 D4：StorageSettingsTab 需要 readmeRepository
+                .environment(dependencies.authSession)
                 .environment(dependencies.settings)
                 .environment(dependencies.subscriptionManager)
                 .environment(dependencies.entitlementGate)
