@@ -26418,13 +26418,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This repository belongs to an organization that restricts third-party OAuth App access. Starcat cannot update its GitHub list membership through the API. You can change this list on GitHub, or ask the organization administrator to approve Starcat's OAuth App."
+            "value" : "This repository belongs to an organization that restricts third-party OAuth App access. Starcat cannot update its GitHub list membership through the API. If you are only a starrer, you may not have a way to request approval; you can still change this list on GitHub."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "该仓库所属组织限制了第三方 OAuth App 访问。Starcat 无法通过 GitHub API 修改它的分组。你可以在 GitHub 网页端操作，或让组织管理员允许 Starcat 的 OAuth App。"
+            "value" : "该仓库所属组织限制了第三方 OAuth App 访问。Starcat 无法通过 GitHub API 修改它的分组。如果你只是普通 Star 用户，通常没有可申请授权的入口；你仍然可以在 GitHub 网页端手动操作。"
           }
         }
       }
@@ -26434,13 +26434,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ask an organization administrator to approve Starcat's OAuth App."
+            "value" : "Only organization members or outside collaborators may be able to request app approval."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "让组织管理员允许 Starcat 的 OAuth App。"
+            "value" : "只有组织成员或外部协作者才可能申请 App 授权。"
           }
         }
       }
@@ -26482,13 +26482,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This is not a local data error, and it does not mean the repository is not starred. It is GitHub's organization-level OAuth App access policy."
+            "value" : "This is not a token scope issue or a local data error. It is GitHub's organization-level OAuth App policy, and ordinary starrers may not have an approval path."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这不是本地数据错误，也不是仓库未 Star；这是 GitHub 组织级 OAuth App 访问策略。"
+            "value" : "这不是 token scope 或本地数据错误，而是 GitHub 组织级 OAuth App 策略；普通 Star 用户通常没有可申请授权的入口。"
           }
         }
       }
@@ -26514,13 +26514,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub blocked this group update before Starcat could write it."
+            "value" : "GitHub blocked this group update because the repository belongs to a restricted organization."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub 拦截了这次分组更新，Starcat 无法写入。"
+            "value" : "该仓库属于受限组织，GitHub 拦截了这次分组更新。"
           }
         }
       }
