@@ -74,6 +74,8 @@ struct RepoListView: View {
     /// CodeFlow 为 Pro 功能；免费用户点入口时弹出统一付费墙，不打开执行面板。
     @State private var paywallContext: ProPaywallContext?
     @State private var ruleEditorSheetItem: SmartCollectionRuleEditorItem?
+    /// GitHub 组织可限制第三方 OAuth App 访问仓库节点；这类错误需要解释原因，不能只弹通用失败 toast。
+    @State private var showGitHubStarListOAuthRestrictionAlert = false
     /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
     @State private var lastSyncedAt: Date?
     /// Trending / Activity 的计数来自各自子视图内部筛选结果，父视图只负责把它显示到导航副标题。
@@ -103,6 +105,14 @@ struct RepoListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: listColumnTintColor)
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
+        .alert(
+            "githubStarLists.error.orgOAuthRestricted.title",
+            isPresented: $showGitHubStarListOAuthRestrictionAlert
+        ) {
+            Button("common.ok", role: .cancel) {}
+        } message: {
+            Text("githubStarLists.error.orgOAuthRestricted.message")
+        }
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
@@ -1071,9 +1081,19 @@ struct RepoListView: View {
                 toastMessage = "githubStarLists.toast.updated"
             } catch {
                 AppLog.network.error("GitHub star list mutation failed: \(error.localizedDescription, privacy: .public)")
-                toastMessage = "githubStarLists.toast.failed"
+                if isGitHubOrganizationOAuthRestriction(error) {
+                    showGitHubStarListOAuthRestrictionAlert = true
+                } else {
+                    toastMessage = "githubStarLists.toast.failed"
+                }
             }
         }
+    }
+
+    private func isGitHubOrganizationOAuthRestriction(_ error: Error) -> Bool {
+        let message = error.localizedDescription.lowercased()
+        return message.contains("organization has enabled oauth app access restrictions")
+            || message.contains("third-parties is limited")
     }
 
     private var navigationSubtitle: String {

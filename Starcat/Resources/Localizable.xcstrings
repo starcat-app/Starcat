@@ -26333,6 +26333,38 @@
         }
       }
     },
+    "githubStarLists.error.orgOAuthRestricted.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This repository belongs to an organization that restricts third-party OAuth App access. Starcat cannot update its GitHub list membership through the API. You can change this list on GitHub, or ask the organization administrator to approve Starcat's OAuth App."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该仓库所属组织限制了第三方 OAuth App 访问。Starcat 无法通过 GitHub API 修改它的分组。你可以在 GitHub 网页端操作，或让组织管理员允许 Starcat 的 OAuth App。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub organization permission required"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要 GitHub 组织授权"
+          }
+        }
+      }
+    },
     "githubStarLists.toast.failed" : {
       "localizations" : {
         "en" : {
