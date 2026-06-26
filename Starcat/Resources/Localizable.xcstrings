@@ -26557,6 +26557,22 @@
         }
       }
     },
+    "sidebar.githubStarLists.refresh" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync repository groups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同步仓库分组"
+          }
+        }
+      }
+    },
     "sidebar.githubStarLists.fallback" : {
       "localizations" : {
         "en" : {

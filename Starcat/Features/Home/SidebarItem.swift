@@ -159,6 +159,16 @@ extension SidebarItem {
             return false
         }
     }
+
+    /// GitHub Stars List 分组上下文。刷新远端 list 后，当前列表内容也需要跟着重载。
+    var isGitHubStarListContext: Bool {
+        switch self {
+        case .githubStarList, .githubStarListUngrouped:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 // MARK: - 持久化编解码

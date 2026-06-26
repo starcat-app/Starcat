@@ -735,6 +735,13 @@ struct SidebarView: View {
             .focusEffectDisabled()
             .help(Text("sidebar.githubStarLists.add"))
 
+            SyncIconButton(
+                isRefreshing: dependencies.githubStarListSyncService.isSyncing,
+                disabled: dependencies.githubStarListSyncService.isSyncing || authSession.state.user == nil,
+                tooltip: String.l10n("sidebar.githubStarLists.refresh"),
+                action: { refreshGitHubStarLists() }
+            )
+
             Button {
                 toggleGitHubStarLists()
             } label: {
@@ -834,6 +841,17 @@ struct SidebarView: View {
     private func toggleGitHubStarLists() {
         withAnimation(disclosureAnimation) {
             githubStarListsExpanded.toggle()
+        }
+    }
+
+    private func refreshGitHubStarLists() {
+        guard let login = authSession.state.user?.login else { return }
+        Task {
+            await dependencies.githubStarListSyncService.sync(login: login)
+            await viewModel.refreshSidebar()
+            if viewModel.selection.isGitHubStarListContext {
+                await viewModel.reloadItems(forceRefresh: true)
+            }
         }
     }
 

@@ -387,12 +387,14 @@ struct SidebarHeaderView: View {
 
             // 2026-06-06 A 方案 D5-B：手动刷新个人信息入口。
             // 触发 UserProfileService / ContributionService / DeveloperLanguageService 同时 force refresh。
+            // GitHub Stars List 属于当前账号的远端资料；用户主动刷新个人信息时也顺手同步一次。
             // 拉到后 profile service 反向 push 给 AuthSession.state，sidebar 自然更新；分享卡数据用 service 快照更新。
             if let login = authSession.state.user?.login {
                 Button {
                     userProfileService.load(login: login, force: true)
                     contributionService.load(login: login, force: true)
                     developerLanguageService.load(login: login, force: true)
+                    Task { await refreshGitHubStarLists(login: login) }
                 } label: {
                     Label("sidebar.account.refreshProfile", systemImage: "arrow.clockwise")
                 }
@@ -471,6 +473,14 @@ struct SidebarHeaderView: View {
 
     private func openGitHubProfile(login: String) {
         NSWorkspace.shared.open(GitHubURLs.userProfile(login: login))
+    }
+
+    private func refreshGitHubStarLists(login: String) async {
+        await dependencies.githubStarListSyncService.sync(login: login)
+        await viewModel.refreshSidebar()
+        if viewModel.selection.isGitHubStarListContext {
+            await viewModel.reloadItems(forceRefresh: true)
+        }
     }
 }
 

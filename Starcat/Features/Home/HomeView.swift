@@ -851,8 +851,14 @@ struct HomeView: View {
     }
 
     private func reloadAfterSyncIfNeeded() async {
-        guard case .completed = syncManager.state, syncManager.lastRunWroteRepos else { return }
-        await viewModel.refreshSidebar()
+        guard case .completed = syncManager.state else { return }
+        if case .authenticated(let user) = authSession.state {
+            await syncGitHubStarListsAndRefreshSidebar(login: user.login)
+        } else {
+            await viewModel.refreshSidebar()
+        }
+        guard syncManager.lastRunWroteRepos else { return }
+        // GitHub Stars List 已在上方随 stars 同步完成刷新；这里只处理 repo 数据写入后的列表重载。
         await viewModel.reloadItems(forceRefresh: true)
         applyManageDetailSelectionPolicy()
     }
@@ -991,7 +997,7 @@ struct HomeView: View {
         viewModel.selection = savedManageSelection
 
         Task { @MainActor in
-            await viewModel.refreshSidebar()
+            await syncGitHubStarListsAndRefreshSidebar(login: user.login)
 
             if !isManageSelectionValid(viewModel.selection) {
                 viewModel.selection = .allStars
@@ -1008,6 +1014,11 @@ struct HomeView: View {
                 syncManager.performFullSyncIfStale(userID: user.id)
             }
         }
+    }
+
+    private func syncGitHubStarListsAndRefreshSidebar(login: String) async {
+        await dependencies.githubStarListSyncService.sync(login: login)
+        await viewModel.refreshSidebar()
     }
 
     /// 校验一个 Manage 分类当前是否仍然有效（用于跨启动恢复时兜底）。
