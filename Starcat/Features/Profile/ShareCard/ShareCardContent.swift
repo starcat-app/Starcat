@@ -112,6 +112,11 @@ struct ShareCardContent: View {
         style == .social && colorSet == .lightCard
     }
 
+    /// 第 5 种样式的前两个浅色配色要用金色头像边框，避免原型 ring 混入黑色显脏。
+    private var usesAdventureGoldAvatarRing: Bool {
+        style == .adventure && (colorSet == .lightCard || colorSet == .adventureSunrise)
+    }
+
     /// 第 5 种样式的黑暗背景变体。它们不只换图，还需要暗色文字、深色面板和定制草坪。
     private var isDarkAdventureVariant: Bool {
         style == .adventure && (colorSet == .adventureShadow || colorSet == .adventureFel)
@@ -1430,6 +1435,7 @@ struct ShareCardContent: View {
                     .minimumScaleFactor(0.65)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
             adventureQRCodeView
         }
@@ -1477,34 +1483,31 @@ struct ShareCardContent: View {
 
     /// 冒险样式专用小 QR。
     ///
-    /// `QRCodeGenerator` 输出黑色码点 + 透明背景；第 5 种样式已有多个黑暗背景，
-    /// 所以这里固定使用白色底板，保证导出图在手机扫码时仍有足够对比度。
+    /// `QRCodeGenerator` 输出黑色码点 + 透明背景；这里不加外部圆角容器，只给 QR 本体
+    /// 垫一张同尺寸白底，保证暗色背景可扫码，同时把空间让给可能较长的用户名。
     @ViewBuilder
     private var adventureQRCodeView: some View {
         let url = profileURLString
-        let qrImage = QRCodeGenerator.generate(text: url, sizePoints: 46)
+        let qrSize: CGFloat = 40
+        let qrImage = QRCodeGenerator.generate(text: url, sizePoints: qrSize)
 
         ZStack {
-            RoundedRectangle(cornerRadius: 12)
+            Rectangle()
                 .fill(Color.white)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(palette.accent.opacity(isDarkAdventureVariant ? 0.46 : 0.24), lineWidth: 1)
-                )
-                .shadow(color: Color.black.opacity(isDarkAdventureVariant ? 0.18 : 0.08), radius: 8, y: 3)
-                .frame(width: 56, height: 56)
+                .frame(width: qrSize, height: qrSize)
 
             if let qrImage {
                 Image(nsImage: qrImage)
                     .interpolation(.none)
                     .resizable()
-                    .frame(width: 46, height: 46)
+                    .frame(width: qrSize, height: qrSize)
             } else {
                 Image(systemName: "qrcode")
-                    .font(.system(size: 26, weight: .regular))
+                    .font(.system(size: 24, weight: .regular))
                     .foregroundStyle(Color.black)
             }
         }
+        .frame(width: qrSize, height: qrSize)
         .accessibilityLabel(Text(verbatim: url))
     }
 
@@ -1947,8 +1950,9 @@ struct ShareCardContent: View {
 
     @ViewBuilder
     private func decoratedAvatar(size: CGFloat, borderWidth: CGFloat) -> some View {
-        let avatarAccent = isSocialLightCard ? Color.fromHex6(0xF59E0B) : palette.accent
-        let avatarRingColors = isSocialLightCard
+        let usesGoldRing = isSocialLightCard || usesAdventureGoldAvatarRing
+        let avatarAccent = usesGoldRing ? Color.fromHex6(0xF59E0B) : palette.accent
+        let avatarRingColors = usesGoldRing
             ? [Color.fromHex6(0xFDE68A), Color.fromHex6(0xF59E0B), Color.fromHex6(0xD97706)]
             : [palette.accent, palette.primaryText.opacity(0.72)]
 
@@ -1957,7 +1961,7 @@ struct ShareCardContent: View {
                 .background(
                     Circle()
                         .fill(avatarAccent.opacity(style == .adventure ? 0.18 : 0.26))
-                        .blur(radius: isSocialLightCard ? 12 : 10)
+                        .blur(radius: usesGoldRing ? 12 : 10)
                 )
                 .overlay(
                     Circle()
