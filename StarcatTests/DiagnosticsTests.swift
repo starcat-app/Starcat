@@ -64,6 +64,55 @@ struct DiagnosticsTests {
         #expect(!text.contains("secret"))
     }
 
+    @Test("诊断日志在阈值内只记录第一条重复事件")
+    func diagnosticLogStoreSuppressesDuplicateEventsInsideWindow() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-diagnostics-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = DiagnosticLogStore(directoryURL: root)
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        await store.record(securityAdvisoryEvent(timestamp: base))
+        await store.record(securityAdvisoryEvent(timestamp: base.addingTimeInterval(30)))
+
+        let lines = await diagnosticLogLines(in: store)
+        #expect(lines.count == 1)
+    }
+
+    @Test("诊断日志超过阈值后允许再次记录相同事件")
+    func diagnosticLogStoreAllowsDuplicateEventsAfterWindow() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-diagnostics-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = DiagnosticLogStore(directoryURL: root)
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        await store.record(securityAdvisoryEvent(timestamp: base))
+        await store.record(securityAdvisoryEvent(timestamp: base.addingTimeInterval(5 * 60 + 1)))
+
+        let lines = await diagnosticLogLines(in: store)
+        #expect(lines.count == 2)
+    }
+
+    @Test("诊断日志不同诊断细节不会被重复去重合并")
+    func diagnosticLogStoreKeepsEventsWithDifferentDetails() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-diagnostics-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = DiagnosticLogStore(directoryURL: root)
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        await store.record(securityAdvisoryEvent(timestamp: base, statusCode: 500))
+        await store.record(securityAdvisoryEvent(timestamp: base.addingTimeInterval(1), statusCode: 503))
+        await store.record(securityAdvisoryEvent(
+            timestamp: base.addingTimeInterval(2),
+            context: ["repo": "owner/name"]
+        ))
+
+        let lines = await diagnosticLogLines(in: store)
+        #expect(lines.count == 3)
+    }
+
     @Test("确认诊断问题后状态摘要只统计新问题")
     func diagnosticLogStoreAcknowledgesOldIssues() async throws {
         let root = FileManager.default.temporaryDirectory
@@ -99,5 +148,28 @@ struct DiagnosticsTests {
         let afterNewIssue = await store.issueSummary(since: base.addingTimeInterval(-1))
         #expect(afterNewIssue.issueCount == 1)
         #expect(afterNewIssue.latestIssue?.operation == "new")
+    }
+
+    private func securityAdvisoryEvent(
+        timestamp: Date,
+        statusCode: Int? = nil,
+        context: [String: String] = [:]
+    ) -> DiagnosticEvent {
+        DiagnosticEvent(
+            timestamp: timestamp,
+            level: .warning,
+            category: "activity",
+            operation: "securityAdvisories.fetch",
+            message: "加载安全公告 在访问 GitHub 时失败。",
+            service: "github",
+            statusCode: statusCode,
+            underlying: "已取消",
+            context: context
+        )
+    }
+
+    private func diagnosticLogLines(in store: DiagnosticLogStore) async -> [String] {
+        let text = await store.readAllText()
+        return text.split(separator: "\n").map(String.init)
     }
 }

@@ -35,6 +35,7 @@ actor DiagnosticLogStore {
     private static let rotatedFileName = "diagnostic-log.1.jsonl"
     private static let acknowledgedFileName = "diagnostic-log-acknowledged-at.txt"
     private static let maxBytes: UInt64 = 2 * 1024 * 1024
+    private static let duplicateSuppressionWindow: TimeInterval = 5 * 60
 
     private let fileManager: FileManager
     private let encoder: JSONEncoder
@@ -42,6 +43,7 @@ actor DiagnosticLogStore {
     private let fileURL: URL
     private let rotatedFileURL: URL
     private let acknowledgedFileURL: URL
+    private var lastRecordedAtByFingerprint: [DiagnosticEventFingerprint: Date] = [:]
 
     init(
         fileManager: FileManager = .default,
@@ -61,10 +63,12 @@ actor DiagnosticLogStore {
     /// 追加一条诊断事件。
     func record(_ event: DiagnosticEvent) async {
         do {
+            guard !shouldSuppress(event) else { return }
             try ensureDirectory()
             try rotateIfNeeded()
             let data = try encoder.encode(event)
             try append(data)
+            markRecorded(event)
             NotificationCenter.default.post(name: .diagnosticIssuesDidChange, object: nil)
         } catch {
             AppLog.general.error("Diagnostic log write failed: \(error.localizedDescription, privacy: .public)")
@@ -167,6 +171,28 @@ actor DiagnosticLogStore {
         }
         return ISO8601DateFormatter.shared.date(from: text.trimmingCharacters(in: .whitespacesAndNewlines))
     }
+
+    private func shouldSuppress(_ event: DiagnosticEvent) -> Bool {
+        let fingerprint = DiagnosticEventFingerprint(event)
+        let eventDate = event.date
+        pruneDuplicateFingerprints(before: eventDate)
+
+        if let lastRecordedAt = lastRecordedAtByFingerprint[fingerprint],
+           eventDate.timeIntervalSince(lastRecordedAt) < Self.duplicateSuppressionWindow {
+            return true
+        }
+
+        return false
+    }
+
+    private func markRecorded(_ event: DiagnosticEvent) {
+        lastRecordedAtByFingerprint[DiagnosticEventFingerprint(event)] = event.date
+    }
+
+    private func pruneDuplicateFingerprints(before date: Date) {
+        let cutoff = date.addingTimeInterval(-Self.duplicateSuppressionWindow)
+        lastRecordedAtByFingerprint = lastRecordedAtByFingerprint.filter { $0.value >= cutoff }
+    }
 }
 
 private extension DiagnosticEvent {
@@ -180,6 +206,45 @@ private extension DiagnosticEvent {
             return true
         case .debug, .info:
             return false
+        }
+    }
+}
+
+private struct DiagnosticEventFingerprint: Hashable {
+    let level: String
+    let category: String
+    let operation: String
+    let message: String
+    let service: String?
+    let statusCode: Int?
+    let errorCode: String?
+    let underlying: String?
+    let context: [ContextPair]
+
+    init(_ event: DiagnosticEvent) {
+        self.level = event.level.rawValue
+        self.category = event.category
+        self.operation = event.operation
+        self.message = event.message
+        self.service = event.service
+        self.statusCode = event.statusCode
+        self.errorCode = event.errorCode
+        self.underlying = event.underlying
+        // `Dictionary` 的枚举顺序不稳定；排序后再做 key，避免相同 context 因顺序不同绕过去重。
+        self.context = event.context
+            .map { ContextPair(key: $0.key, value: $0.value) }
+            .sorted()
+    }
+
+    struct ContextPair: Hashable, Comparable {
+        let key: String
+        let value: String
+
+        static func < (lhs: ContextPair, rhs: ContextPair) -> Bool {
+            if lhs.key == rhs.key {
+                return lhs.value < rhs.value
+            }
+            return lhs.key < rhs.key
         }
     }
 }
