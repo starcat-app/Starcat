@@ -25225,6 +25225,70 @@
         }
       }
     },
+    "sharecard.social.emailPlaceholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Email not public"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邮箱未公开"
+          }
+        }
+      }
+    },
+    "sharecard.social.homepagePlaceholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Homepage not set"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未设置主页"
+          }
+        }
+      }
+    },
+    "sharecard.social.locationPlaceholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Location not set"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未设置位置"
+          }
+        }
+      }
+    },
+    "sharecard.social.socialPlaceholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Social not set"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未设置社交链接"
+          }
+        }
+      }
+    },
     "sharecard.export.loading.fetching" : {
       "extractionState" : "stale",
       "localizations" : {

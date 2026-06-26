@@ -139,14 +139,19 @@ private struct FeaturedExternalLinksControl: View {
 
     @State private var isPresented = false
 
+    private let controlWidth: CGFloat = 58
+    private let controlHeight: CGFloat = 38
+
     var body: some View {
-        ControlGroup {
+        HStack(spacing: 8) {
             Button {
                 open(selection.htmlUrl)
             } label: {
                 ToolbarIcon("safari")
                     .accessibilityLabel("externalLinks.openOnGithub")
             }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
 
             Button {
                 isPresented.toggle()
@@ -159,6 +164,8 @@ private struct FeaturedExternalLinksControl: View {
                     )
                     .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
             .accessibilityLabel("externalLinks.hint")
             // `arrowEdge` 是 Popover 相对触发控件的首选展开边。
             // toolbar 在窗口顶部，使用 `.bottom` 才会优先向下展开。
@@ -175,7 +182,14 @@ private struct FeaturedExternalLinksControl: View {
                 .appLocaleEnvironment()
             }
         }
-        .controlSize(.regular)
+        .padding(.horizontal, 8)
+        .frame(width: controlWidth, height: controlHeight)
+        .background(Color(nsColor: .controlBackgroundColor), in: Capsule(style: .continuous))
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.22), lineWidth: 1)
+        }
+        .contentShape(Capsule(style: .continuous))
     }
 
     private func open(_ url: URL?) {
