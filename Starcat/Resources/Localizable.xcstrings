@@ -24389,19 +24389,36 @@
         }
       }
     },
-    "settings.storage.resetAll.usernamePromptFormat" : {
+    "settings.storage.resetAll.usernamePromptPrefix" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Type your GitHub username %@ to confirm."
+            "value" : "Type your GitHub username "
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "输入你的 GitHub 用户名 %@ 后才能确认。"
+            "value" : "输入你的 GitHub 用户名 "
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.usernamePromptSuffix" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " to confirm."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " 后才能确认。"
           }
         }
       }

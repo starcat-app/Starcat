@@ -1141,11 +1141,14 @@ private struct StorageResetAllDataSheet: View {
         !didComplete && !isResetting && normalizedInput == normalizedLogin
     }
 
-    private var usernamePrompt: String {
-        String(
-            format: String.l10n("settings.storage.resetAll.usernamePromptFormat"),
-            target.login
-        )
+    private var usernamePrompt: Text {
+        Text("settings.storage.resetAll.usernamePromptPrefix")
+            .foregroundStyle(.secondary)
+        + Text(verbatim: target.login)
+            .fontWeight(.semibold)
+            .foregroundStyle(.primary)
+        + Text("settings.storage.resetAll.usernamePromptSuffix")
+            .foregroundStyle(.secondary)
     }
 
     var body: some View {
@@ -1208,9 +1211,8 @@ private struct StorageResetAllDataSheet: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(verbatim: usernamePrompt)
+                usernamePrompt
                     .font(.callout)
-                    .foregroundStyle(.secondary)
 
                 TextField("settings.storage.resetAll.usernamePlaceholder", text: $confirmationText)
                     .textFieldStyle(.roundedBorder)
