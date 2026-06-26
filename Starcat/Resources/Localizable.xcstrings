@@ -6372,6 +6372,86 @@
         }
       }
     },
+    "batch.githubStarLists.move" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动到"
+          }
+        }
+      }
+    },
+    "batch.githubStarLists.move.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move selected repositories to another GitHub list"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将所选仓库移动到其他 GitHub 分组"
+          }
+        }
+      }
+    },
+    "batch.githubStarLists.move.processing" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moving selected repositories..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在移动所选仓库..."
+          }
+        }
+      }
+    },
+    "batch.githubStarLists.move.summaryFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move: %1$d succeeded · %2$d failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动：成功 %1$d / 失败 %2$d"
+          }
+        }
+      }
+    },
+    "batch.githubStarLists.noMoveTargets" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No target groups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有可移动的目标分组"
+          }
+        }
+      }
+    },
     "batch.applyToReposFormat" : {
       "extractionState" : "stale",
       "localizations" : {

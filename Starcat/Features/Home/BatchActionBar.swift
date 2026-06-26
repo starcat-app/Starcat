@@ -22,6 +22,8 @@
 //    `manageMultiSelectionStore`（与 trending/weekly/activity 同款），ghRepoId 即 Repo.id
 //    （同一 Int64 域）直接喂 batchAddTag；UI 文案：「批量打标签」→「打标签」并加 borderedProminent
 //    主显著度。两个组件（BatchActionBar / RemoteBatchActionBar）按业务语义保留独立命名。
+//  - GitHub Stars List 视图额外显示「移动到」入口；真正的 add / move 语义由
+//    GitHubStarListSyncService 根据当前来源分组判断，UI 不拆两个按钮。
 //
 
 import SwiftUI
@@ -42,6 +44,8 @@ struct BatchActionBar: View {
     /// 完成摘要 toast（"成功 X / 跳过 Y / 失败 Z"）。
     /// 用本地 @State 缓存，避免 service.completionSummary 被立即清空时 toast 来不及显示。
     @State private var toastMessage: String?
+    /// GitHub 分组批量移动使用独立状态；不复用 BatchStarService，避免 star/unstar 进度语义串场。
+    @State private var isMovingGitHubStarLists: Bool = false
 
     /// W12 PR-5：抽出 store 引用，便于 idleContent 直接读 count / snapshots 不必每次走依赖链。
     private var store: MultiSelectionStore { dependencies.manageMultiSelectionStore }
@@ -50,6 +54,8 @@ struct BatchActionBar: View {
         Group {
             if dependencies.batchStarService.isRunning {
                 runningContent
+            } else if isMovingGitHubStarLists {
+                movingGitHubStarListsContent
             } else {
                 idleContent
             }
@@ -128,6 +134,10 @@ struct BatchActionBar: View {
             .disabled(count == 0)
             .help(Text("batch.addTags.help"))
 
+            if githubStarListBatchSource != nil {
+                githubStarListMoveMenu
+            }
+
             // W12 PR-3：批量取消 Star。Manage 库内 100% 已 star，无需额外二分判定。
             // tint(.red) 保留：macOS HIG 破坏性操作标准着色，与详情页 Unstar 按钮一致。
             Button {
@@ -182,6 +192,19 @@ struct BatchActionBar: View {
         }
     }
 
+    private var movingGitHubStarListsContent: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+
+            Text("batch.githubStarLists.move.processing")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+        }
+    }
+
     // MARK: - 业务路由
 
     /// 点击「批量取消 Star」：> 5 条走确认 sheet，否则直接 enqueue。
@@ -197,6 +220,47 @@ struct BatchActionBar: View {
 
     private func startBatchUnstar(targets: [BatchStarTarget]) {
         dependencies.batchStarService.enqueue(targets: targets, action: .unstar)
+    }
+
+    private var githubStarListMoveMenu: some View {
+        Menu {
+            let targets = githubStarListMoveTargets
+            if targets.isEmpty {
+                Text("batch.githubStarLists.noMoveTargets")
+            } else {
+                ForEach(targets) { list in
+                    Button {
+                        startGitHubStarListBatchMove(to: list.id)
+                    } label: {
+                        Text(verbatim: list.name)
+                    }
+                }
+            }
+        } label: {
+            Label("batch.githubStarLists.move", systemImage: "arrowshape.turn.up.right.fill")
+        }
+        .disabled(store.count == 0 || isMovingGitHubStarLists)
+        .help(Text("batch.githubStarLists.move.help"))
+    }
+
+    private func startGitHubStarListBatchMove(to targetListID: String) {
+        guard let source = githubStarListBatchSource else { return }
+        let targets = selectedTargets()
+        guard !targets.isEmpty else { return }
+
+        isMovingGitHubStarLists = true
+        Task {
+            let summary = await dependencies.githubStarListSyncService.moveRepos(
+                targets,
+                from: source,
+                to: targetListID
+            )
+            isMovingGitHubStarLists = false
+            toastMessage = formatGitHubStarListMoveSummary(summary)
+            store.exit()
+            await viewModel.refreshSidebar()
+            await viewModel.reloadItems(forceRefresh: true)
+        }
     }
 
     // MARK: - 派生
@@ -229,6 +293,36 @@ struct BatchActionBar: View {
             s.succeeded,
             s.skipped,
             s.failed
+        )
+    }
+
+    private var githubStarListBatchSource: GitHubStarListBatchSource? {
+        switch viewModel.selection {
+        case .githubStarListUngrouped:
+            return .ungrouped
+        case .githubStarList(let listID):
+            return .list(listID)
+        default:
+            return nil
+        }
+    }
+
+    private var githubStarListMoveTargets: [GitHubStarList] {
+        switch githubStarListBatchSource {
+        case .ungrouped:
+            return viewModel.githubStarLists
+        case .list(let currentListID):
+            return viewModel.githubStarLists.filter { $0.id != currentListID }
+        case nil:
+            return []
+        }
+    }
+
+    private func formatGitHubStarListMoveSummary(_ summary: GitHubStarListBatchMoveSummary) -> String {
+        String(
+            format: String.l10n("batch.githubStarLists.move.summaryFormat"),
+            summary.succeeded,
+            summary.failed
         )
     }
 }

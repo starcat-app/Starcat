@@ -14,6 +14,23 @@
 import Foundation
 import GRDB
 
+/// 批量移动 GitHub Stars List 时的来源上下文。
+///
+/// UI 只知道用户当前处在哪个列表；真正的 add / move 差异放在 service 内统一判断。
+enum GitHubStarListBatchSource: Equatable {
+    /// 虚拟「未分组」：目标操作是直接添加到目标 list。
+    case ungrouped
+    /// 真实 GitHub list：目标操作是从当前 list 移除，再加入目标 list。
+    case list(String)
+}
+
+/// 批量移动结束摘要。单条失败不会中断后续仓库，最终由 UI 展示一次汇总。
+struct GitHubStarListBatchMoveSummary: Equatable {
+    let total: Int
+    let succeeded: Int
+    let failed: Int
+}
+
 @MainActor
 @Observable
 final class GitHubStarListSyncService {
@@ -114,6 +131,39 @@ final class GitHubStarListSyncService {
         try await replaceRepoLists(repo, with: Array(listIDs))
     }
 
+    func moveRepos(
+        _ targets: [BatchStarTarget],
+        from source: GitHubStarListBatchSource,
+        to targetListID: String
+    ) async -> GitHubStarListBatchMoveSummary {
+        var succeeded = 0
+        var failed = 0
+
+        for target in targets {
+            do {
+                var listIDs = Set(try await repository.listIds(forRepo: target.ghRepoId))
+                switch source {
+                case .ungrouped:
+                    listIDs.insert(targetListID)
+                case .list(let sourceListID):
+                    listIDs.remove(sourceListID)
+                    listIDs.insert(targetListID)
+                }
+                try await replaceRepoLists(target, with: Array(listIDs))
+                succeeded += 1
+            } catch {
+                failed += 1
+                AppLog.network.error("GitHub star list batch move failed for \(target.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        return GitHubStarListBatchMoveSummary(
+            total: targets.count,
+            succeeded: succeeded,
+            failed: failed
+        )
+    }
+
     private func replaceRepoLists(_ repo: Repo, with listIDs: [String]) async throws {
         let sortedIDs = Array(Set(listIDs)).sorted()
         _ = try await apiClient.updateUserListsForRepository(
@@ -122,6 +172,16 @@ final class GitHubStarListSyncService {
             listIds: sortedIDs
         )
         try await repository.setListIds(forRepo: repo.id, listIds: sortedIDs)
+    }
+
+    private func replaceRepoLists(_ target: BatchStarTarget, with listIDs: [String]) async throws {
+        let sortedIDs = Array(Set(listIDs)).sorted()
+        _ = try await apiClient.updateUserListsForRepository(
+            owner: target.owner,
+            name: target.name,
+            listIds: sortedIDs
+        )
+        try await repository.setListIds(forRepo: target.ghRepoId, listIds: sortedIDs)
     }
 
     private func requireList(id: String) async throws -> GitHubStarList {
@@ -135,4 +195,3 @@ final class GitHubStarListSyncService {
         ))
     }
 }
-
