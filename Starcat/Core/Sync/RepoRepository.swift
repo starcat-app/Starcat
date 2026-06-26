@@ -276,16 +276,17 @@ struct GRDBRepoRepository {
 
     /// 语言聚合统计，用于 Sidebar 的 Languages 分组展示。
     ///
-    /// 排序：`未分类`（`language == ''`）固定排第 1 位，其余按 count 倒序 + 语言名升序。
-    /// `language IS NULL` 的 repo 经 `COALESCE` 归入空串一项。
+    /// 排序：`未分类`（`language IS NULL` 或空串）固定排第 1 位，其余按 count 倒序 + 语言名升序。
+    /// `GROUP BY` / `ORDER BY` 必须统一走 `COALESCE(language, '')`：只判 `language = ''`
+    /// 时 NULL 组匹配不到，仍会按 count 排在 Java 等语言后面（dong4j 2026-06-26 复现）。
     func languageStats() async throws -> [LanguageStat] {
         try await database.writer.read { db in
             try LanguageStat.fetchAll(db, sql: """
                 SELECT COALESCE(language, '') AS language, COUNT(*) AS count
                 FROM repos
                 WHERE is_starred = 1
-                GROUP BY language
-                ORDER BY CASE WHEN language = '' THEN 0 ELSE 1 END ASC,
+                GROUP BY COALESCE(language, '')
+                ORDER BY CASE WHEN COALESCE(language, '') = '' THEN 0 ELSE 1 END ASC,
                          count DESC,
                          language ASC
                 """)
