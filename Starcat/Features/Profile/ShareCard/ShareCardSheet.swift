@@ -273,9 +273,11 @@ struct ShareCardSheet: View {
 
             colorPicker
         }
+        // 顶部选择器跟 400pt 卡片本体同宽，左右边缘分别对齐预览卡片。
+        .frame(width: 400)
     }
 
-    /// 左侧版式选择：6 个无文字 mini layout 预览，靠 tooltip / accessibility 暴露名称。
+    /// 左侧版式选择：无文字 mini layout 预览，靠 tooltip / accessibility 暴露名称。
     @ViewBuilder
     private var stylePicker: some View {
         HStack(spacing: 4) {
@@ -315,8 +317,8 @@ struct ShareCardSheet: View {
 
     /// 单个版式按钮。按钮外框固定，内部画抽象 wireframe，避免新增图片资源。
     private struct StyleCardButton: View {
-        private static let buttonWidth: CGFloat = 32
-        private static let buttonHeight: CGFloat = 26
+        private static let buttonWidth: CGFloat = 22
+        private static let buttonHeight: CGFloat = 18
 
         let style: ShareCardStyle
         let isSelected: Bool
@@ -332,7 +334,7 @@ struct ShareCardSheet: View {
                         .fill(Color.primary.opacity(isHovered ? 0.10 : 0.06))
 
                     stylePreview
-                        .padding(4)
+                        .padding(2.5)
                 }
                 .frame(width: Self.buttonWidth, height: Self.buttonHeight)
                 .contentShape(Rectangle())
@@ -340,7 +342,7 @@ struct ShareCardSheet: View {
                     RoundedRectangle(cornerRadius: 5)
                         .stroke(
                             isSelected ? Color.accentColor : Color.primary.opacity(isHovered ? 0.34 : 0.18),
-                            lineWidth: isSelected ? 2 : (isHovered ? 1 : 0.5)
+                            lineWidth: isSelected ? 1.5 : (isHovered ? 0.8 : 0.5)
                         )
                 )
                 .background(
@@ -364,43 +366,43 @@ struct ShareCardSheet: View {
         private var stylePreview: some View {
             switch style {
             case .magazine:
-                VStack(spacing: 2) {
-                    miniLine(width: 20)
+                VStack(spacing: 1.4) {
+                    miniLine(width: 14)
                     miniCircle
                     miniGrid
                 }
             case .idCard:
-                HStack(spacing: 3) {
+                HStack(spacing: 2) {
                     miniTallBlock
-                    VStack(spacing: 3) {
-                        miniLine(width: 10)
-                        miniLine(width: 12)
+                    VStack(spacing: 2) {
+                        miniLine(width: 7)
+                        miniLine(width: 8)
                         miniSquare
                     }
                 }
             case .social:
-                VStack(spacing: 3) {
+                VStack(spacing: 2) {
                     miniCircle
-                    HStack(spacing: 2) {
+                    HStack(spacing: 1.3) {
                         miniSquare
                         miniSquare
                         miniSquare
                     }
-                    miniLine(width: 24)
+                    miniLine(width: 16)
                 }
             case .terminal:
-                VStack(alignment: .leading, spacing: 3) {
-                    miniLine(width: 20)
+                VStack(alignment: .leading, spacing: 2) {
                     miniLine(width: 14)
-                    miniLine(width: 23)
+                    miniLine(width: 9)
+                    miniLine(width: 15)
                 }
             case .adventure:
                 ZStack(alignment: .bottomLeading) {
-                    RoundedRectangle(cornerRadius: 2)
+                    RoundedRectangle(cornerRadius: 1.5)
                         .fill(Color.orange.opacity(0.18))
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 1.3) {
                         miniCircle
-                        miniLine(width: 18)
+                        miniLine(width: 12)
                         miniGrid
                     }
                 }
@@ -410,42 +412,42 @@ struct ShareCardSheet: View {
         private var miniCircle: some View {
             Circle()
                 .fill(Color.accentColor)
-                .frame(width: 7, height: 7)
+                .frame(width: 5, height: 5)
         }
 
         private var miniSquare: some View {
-            RoundedRectangle(cornerRadius: 1.5)
+            RoundedRectangle(cornerRadius: 1)
                 .fill(Color.accentColor.opacity(0.78))
-                .frame(width: 6, height: 6)
+                .frame(width: 4, height: 4)
         }
 
         private var miniTallBlock: some View {
-            RoundedRectangle(cornerRadius: 2)
+            RoundedRectangle(cornerRadius: 1.4)
                 .fill(Color.accentColor.opacity(0.72))
-                .frame(width: 8, height: 16)
+                .frame(width: 5, height: 11)
         }
 
         private var miniGrid: some View {
-            HStack(spacing: 1) {
+            HStack(spacing: 0.8) {
                 ForEach(0..<5, id: \.self) { index in
-                    RoundedRectangle(cornerRadius: 1)
+                    RoundedRectangle(cornerRadius: 0.7)
                         .fill(Color.accentColor.opacity(index.isMultiple(of: 2) ? 0.75 : 0.28))
-                        .frame(width: 3, height: 3)
+                        .frame(width: 2, height: 2)
                 }
             }
         }
 
         private func miniLine(width: CGFloat) -> some View {
-            RoundedRectangle(cornerRadius: 1)
+            RoundedRectangle(cornerRadius: 0.8)
                 .fill(Color.primary.opacity(0.52))
-                .frame(width: width, height: 2)
+                .frame(width: width, height: 1.4)
         }
     }
 
-    /// 单个配色按钮。固定 28×26 外框，内部用左右两色表达背景/强调色。
+    /// 单个配色按钮。固定小尺寸外框，内部用单色表达当前配色的强调色。
     private struct ColorSwatchButton: View {
-        private static let buttonWidth: CGFloat = 28
-        private static let buttonHeight: CGFloat = 26
+        private static let buttonWidth: CGFloat = 19
+        private static let buttonHeight: CGFloat = 18
 
         let colorSet: ShareCardColorSet
         let isSelected: Bool
@@ -456,27 +458,23 @@ struct ShareCardSheet: View {
 
         var body: some View {
             Button(action: action) {
-                HStack(spacing: 1) {
-                    Rectangle()
-                        .fill(colorSet.pickerSwatch.background)
-                    Rectangle()
-                        .fill(colorSet.pickerSwatch.accent)
-                }
-                .frame(width: Self.buttonWidth, height: Self.buttonHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
-                .contentShape(Rectangle())
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(
-                            isSelected ? Color.accentColor : Color.primary.opacity(isHovered ? 0.34 : 0.18),
-                            lineWidth: isSelected ? 2 : (isHovered ? 1 : 0.5)
-                        )
-                )
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(isSelected ? Color.accentColor.opacity(0.10) : Color.clear)
-                )
-                .shadow(color: .black.opacity(isHovered ? 0.18 : 0), radius: 4, y: 1)
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(colorSet.pickerSwatch.accent)
+                    .frame(width: Self.buttonWidth, height: Self.buttonHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .contentShape(Rectangle())
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5)
+                            .stroke(
+                                isSelected ? Color.accentColor : Color.primary.opacity(isHovered ? 0.34 : 0.18),
+                                lineWidth: isSelected ? 1.5 : (isHovered ? 0.8 : 0.5)
+                            )
+                    )
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(isSelected ? Color.accentColor.opacity(0.10) : Color.clear)
+                    )
+                    .shadow(color: .black.opacity(isHovered ? 0.18 : 0), radius: 4, y: 1)
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
