@@ -262,8 +262,10 @@ struct SmartSearchField: View {
         Capsule(style: .continuous)
             .fill(.thinMaterial)
             .overlay {
-                Capsule(style: .continuous)
-                    .fill((isSemantic ? Color.purple : Color.primary).opacity(isSemantic ? 0.055 : 0.035))
+                if isSemantic {
+                    Capsule(style: .continuous)
+                        .fill(Color.purple.opacity(0.055))
+                }
             }
     }
 

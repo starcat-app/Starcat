@@ -1039,8 +1039,8 @@ struct SidebarView: View {
                 Button {
                     gitHubStarListEditorItem = GitHubStarListEditorItem(list: list)
                 } label: {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 14, weight: .medium))
+                    Image(systemName: "square.and.pencil")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())

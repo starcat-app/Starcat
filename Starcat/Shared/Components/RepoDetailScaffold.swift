@@ -164,6 +164,11 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// README / Release 时间线在 Hero 展开时的可滚动余量（由 body slot 上报）。
     @State private var readmeScrollOverflow: CGFloat?
 
+    /// Wiki 探测结果只影响 hero action 区，不参与 window toolbar，避免异步返回时触发
+    /// toolbar 重排跳动。
+    @State private var wikiRepoKey: String?
+    @State private var wikiLinks: [WikiLink] = []
+
     // v2.2 修订（2026-06-16, dong4j）：原 `@State private var showSecurityScoreSheet`
     // 已下沉到 `RepoMetadataHeaderView` —— OpenSSF 入口图标从右上 trailing actions
     // 迁移到 hero `full_name` 同行，sheet state 跟随入口本地化，不再由 Scaffold 维护。
@@ -172,6 +177,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     // 该状态曾给浮动刷新按钮用,现统一由 cacheFooter 内的 `readmeVM.isRefreshing` 驱动。
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(AppDependencies.self) private var dependencies
 
     /// 顶部面板折叠/展开动画。轻阻尼 spring，让 README WebView 让位时跟手。
     private var metadataPanelAnimation: Animation {
@@ -240,6 +246,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .id(repo.id)
         .navigationTitle(repo.name)
         .navigationSubtitle(repo.owner)
+        .task(id: wikiLookupKey(for: repo)) {
+            await loadWikiLinks(for: repo)
+        }
         .onChange(of: repo.id) { _, _ in
             withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
                 metadataPanelCollapseProgress = 0
@@ -350,13 +359,17 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// Wiki 评审约束（2026-06-11）：Weekly Issue 是 Weekly 分组特有入口，必须永远排第一。
     /// 因此先渲染 `.weeklyIssue`，最后渲染 AI / custom。
     /// Share 已迁入 window toolbar：它是当前 repo 的全局操作，不应继续占用 hero
-    /// 内容区的主 CTA 位置。Wiki 同样已迁入 window toolbar；这里仍接收 `.share`，
-    /// 但派发时跳过，避免四个场景调用方为一个展示位置变化同步改数据模型。
+    /// 内容区的主 CTA 位置。Wiki 保留在 hero action 区并排在 AI 前，避免它的
+    /// 异步服务商探测结果让 toolbar 重排跳动；这里仍接收 `.share`，但派发时跳过，
+    /// 避免四个场景调用方为一个展示位置变化同步改数据模型。
     @ViewBuilder
     private var trailingActionsView: some View {
         HStack(spacing: 8) {
             ForEach(weeklyIssueActions) { action in
                 actionButton(for: action)
+            }
+            if !wikiLinks.isEmpty {
+                RepoWikiMenu(links: wikiLinks)
             }
             ForEach(remainingActions) { action in
                 actionButton(for: action)
@@ -421,6 +434,32 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .pressableHover()
+        }
+    }
+
+    private func wikiLookupKey(for repo: Repo) -> String {
+        "\(repo.owner)/\(repo.name)"
+    }
+
+    /// 每次详情 repo 变化先隐藏旧 Wiki 菜单，再探测当前 repo 是否已有 indexed 服务商。
+    @MainActor
+    private func loadWikiLinks(for repo: Repo) async {
+        wikiLinks = []
+        let key = wikiLookupKey(for: repo)
+        wikiRepoKey = key
+
+        do {
+            let items = try await dependencies.wikiAPI.fetchStatus(owner: repo.owner, repo: repo.name)
+            guard !Task.isCancelled, wikiRepoKey == key else { return }
+            wikiLinks = RepoWikiMenuState.make(items: items)
+        } catch is CancellationError {
+            // 快速切换详情时 SwiftUI 会取消旧任务，这是正常路径。
+        } catch {
+            guard wikiRepoKey == key else { return }
+            wikiLinks = []
+            AppLog.network.warning(
+                "wiki: lookup failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 }

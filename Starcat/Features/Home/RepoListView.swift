@@ -597,8 +597,8 @@ struct RepoListView: View {
 
     /// 当前选中 repo 的 toolbar 操作组。
     ///
-    /// Wiki / Share 已从详情 hero 迁到 toolbar。Wiki 是公开阅读能力，不依赖登录或
-    /// star 状态；Share 仍沿用旧可见性：必须登录且当前 repo 真实处于 starred 状态。
+    /// Share 已从详情 hero 迁到 toolbar，仍沿用旧可见性：必须登录且当前 repo
+    /// 真实处于 starred 状态。Wiki 留在详情 hero，避免异步探测结果让 toolbar 重排跳动。
     /// Trending / Weekly 的临时 Repo 自身 `isStarred` 恒为 false，所以调用方要先用
     /// `StarredRegistry` 派生 `isShareAvailable` 再传进来。
     @ViewBuilder
@@ -608,7 +608,6 @@ struct RepoListView: View {
         shareRepo: Repo,
         isShareAvailable: Bool
     ) -> some View {
-        RepoWikiMenu(repo: shareRepo)
         ExternalLinksMenu(
             selection: selection,
             codeFlowRepo: codeFlowRepo,
