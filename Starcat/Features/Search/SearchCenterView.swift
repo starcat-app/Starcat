@@ -247,16 +247,11 @@ struct SearchCenterView: View {
                 Button {
                     isFilterDrawerPresented.toggle()
                 } label: {
-                    Label("search.filters.toggle", systemImage: "line.3.horizontal.decrease.circle")
-                        .font(.system(size: 12, weight: .semibold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(
-                            isFilterDrawerPresented
-                                ? Color.accentColor.opacity(0.20)
-                                : Color.secondary.opacity(0.10),
-                            in: Capsule()
-                        )
+                    searchToolbarCapsule(
+                        titleKey: "search.filters.toggle",
+                        systemImage: "line.3.horizontal.decrease.circle",
+                        isActive: isFilterDrawerPresented
+                    )
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
@@ -268,6 +263,30 @@ struct SearchCenterView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 46)
+    }
+
+    /// scope 栏 Filters / 历史区 Clear all 共用的右侧胶囊样式。
+    @ViewBuilder
+    private func searchToolbarCapsule(
+        titleKey: LocalizedStringKey,
+        systemImage: String,
+        isActive: Bool
+    ) -> some View {
+        Label(titleKey, systemImage: systemImage)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                isActive ? Color.accentColor.opacity(0.20) : Color.secondary.opacity(0.10),
+                in: Capsule()
+            )
+    }
+
+    /// 筛选抽屉占位宽度（抽屉 250pt + 分隔线 1pt）。历史区 Clear all 右移同样距离，
+    /// 使其右缘与上方 scope 栏 Filters 胶囊对齐。
+    private var filterDrawerOccupiedWidth: CGFloat {
+        shouldShowFilterDrawer ? 251 : 0
     }
 
     /// 右侧筛选抽屉。只承载高级筛选，不再挤占结果区顶部高度。
@@ -584,21 +603,25 @@ struct SearchCenterView: View {
     /// "最近搜索" 标题 + 右侧 "清空全部" 触发按钮。
     /// 单独抽出来避免 ScrollView 把标题也卷进去；这样在历史项很多时标题保持悬停在顶部。
     private var historyHeader: some View {
-        HStack {
+        HStack(spacing: 0) {
             Text("search.history.recent")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
-            Spacer()
+            Spacer(minLength: 8)
             Button {
                 showingClearHistoryAlert = true
             } label: {
                 Label("search.history.clearAll", systemImage: "trash")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.secondary.opacity(0.10), in: Capsule())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help("search.history.clearAll.help")
+            .offset(x: filterDrawerOccupiedWidth)
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
