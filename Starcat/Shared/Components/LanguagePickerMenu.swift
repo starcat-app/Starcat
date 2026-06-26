@@ -201,8 +201,7 @@ struct LanguagePickerMenu: View {
     @ViewBuilder
     private func iconView(for key: String, size: CGFloat) -> some View {
         if key == Self.allKey {
-            Image(systemName: "chevron.left.forwardslash.chevron.right")
-                .foregroundStyle(.secondary)
+            AllLanguagesIcon(size: size)
         } else if key == TrendingLanguage.uncategorizedKey {
             UncategorizedLanguageIcon(size: size)
         } else {

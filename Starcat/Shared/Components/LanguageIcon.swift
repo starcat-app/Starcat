@@ -1032,6 +1032,22 @@ enum LanguageIconResolver {
 
 // MARK: - SwiftUI 视图
 
+/// 「全部语言」筛选入口的统一视觉（Trending Sidebar 首行 / Weekly·Trending 语言 Picker）。
+///
+/// 不用 `chevron.left.forwardslash.chevron.right`：那是「编程语言」元数据语义，容易和
+/// 具体语言 Devicon 混淆；`globe` + 青色更贴近「不限语言 / 全球」的筛选含义。
+struct AllLanguagesIcon: View {
+    var size: CGFloat = 14
+
+    var body: some View {
+        Image(systemName: "globe")
+            .font(.system(size: size, weight: .medium))
+            .foregroundStyle(.cyan)
+            .frame(width: size, height: size)
+            .accessibilityLabel(Text("trending.allLanguages"))
+    }
+}
+
 /// 无主语言 / 未分类（`language IS NULL` / `__uncategorized__`）的统一视觉。
 ///
 /// 全 App 单一信任源：黄色 `questionmark.circle`。Sidebar Languages、Trending /

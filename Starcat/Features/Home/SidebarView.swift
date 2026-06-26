@@ -902,7 +902,7 @@ struct SidebarView: View {
     @ViewBuilder
     private func trendingLanguageIcon(_ language: TrendingLanguage) -> some View {
         if language == .all {
-            Image(systemName: "chevron.left.forwardslash.chevron.right")
+            AllLanguagesIcon(size: 14)
         } else if language.isUncategorized {
             UncategorizedLanguageIcon(size: 14)
         } else {
