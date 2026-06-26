@@ -1368,7 +1368,7 @@ struct ShareCardContent: View {
     private var adventureBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             adventureIdentityText
-                .padding(.top, 18)
+                .padding(.top, 6)
 
             adventureStatsRow
                 .padding(.top, 16)
@@ -1392,20 +1392,7 @@ struct ShareCardContent: View {
     @ViewBuilder
     private var adventureIdentityText: some View {
         VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(displayName)
-                    .font(.system(size: 34, weight: .heavy, design: .rounded))
-                    .foregroundStyle(palette.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.55)
-
-                Text(verbatim: "@\(user.login)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundStyle(palette.primaryText.opacity(0.84))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-
+            adventureIdentityHeader
             adventureSocialLinksBlock
 
             Text(user.bio?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
@@ -1418,6 +1405,35 @@ struct ShareCardContent: View {
                 .minimumScaleFactor(0.78)
         }
         .frame(width: 282, alignment: .leading)
+    }
+
+    /// 冒险样式顶部身份行：头像 + 用户名两行 + 小 QR。
+    ///
+    /// 顶部插画左侧留白足够，头像和 QR 放在同一行能增强识别度；
+    /// 仍限制在 282pt 宽度内，避免压到右侧主视觉。
+    @ViewBuilder
+    private var adventureIdentityHeader: some View {
+        HStack(alignment: .center, spacing: 10) {
+            decoratedAvatar(size: 52, borderWidth: 1.6)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayName)
+                    .font(.system(size: 34, weight: .heavy, design: .rounded))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.45)
+
+                Text(verbatim: "@\(user.login)")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.primaryText.opacity(0.84))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            adventureQRCodeView
+        }
+        .frame(width: 282, height: 62, alignment: .leading)
     }
 
     /// 冒险样式社交信息：替换原先写死的 slogan，把顶部留白变成真实 profile 信息。
@@ -1457,6 +1473,39 @@ struct ShareCardContent: View {
                 isPlaceholder: social == nil
             )
         }
+    }
+
+    /// 冒险样式专用小 QR。
+    ///
+    /// `QRCodeGenerator` 输出黑色码点 + 透明背景；第 5 种样式已有多个黑暗背景，
+    /// 所以这里固定使用白色底板，保证导出图在手机扫码时仍有足够对比度。
+    @ViewBuilder
+    private var adventureQRCodeView: some View {
+        let url = profileURLString
+        let qrImage = QRCodeGenerator.generate(text: url, sizePoints: 46)
+
+        ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(palette.accent.opacity(isDarkAdventureVariant ? 0.46 : 0.24), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(isDarkAdventureVariant ? 0.18 : 0.08), radius: 8, y: 3)
+                .frame(width: 56, height: 56)
+
+            if let qrImage {
+                Image(nsImage: qrImage)
+                    .interpolation(.none)
+                    .resizable()
+                    .frame(width: 46, height: 46)
+            } else {
+                Image(systemName: "qrcode")
+                    .font(.system(size: 26, weight: .regular))
+                    .foregroundStyle(Color.black)
+            }
+        }
+        .accessibilityLabel(Text(verbatim: url))
     }
 
     @ViewBuilder
