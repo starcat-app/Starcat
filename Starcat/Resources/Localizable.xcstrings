@@ -20580,6 +20580,23 @@
         }
       }
     },
+    "settings.diagnostics.export.successMessage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exported debug logs, reset diagnostic status"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已导出调试日志, 重置诊断状态"
+          }
+        }
+      }
+    },
     "settings.diagnostics.export.running" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -20906,6 +20923,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "跟随系统"
+          }
+        }
+      }
+    },
+    "settings.general.other" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他"
           }
         }
       }
@@ -24316,7 +24350,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这是针对当前账号的本机恢复出厂操作，无法撤销。"
+            "value" : "删除并重置当前账号的所有本地数据与配置，无法撤销。"
           }
         }
       }

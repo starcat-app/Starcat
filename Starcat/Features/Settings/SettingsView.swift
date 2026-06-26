@@ -373,7 +373,7 @@ struct SettingsView: View {
                 }
             }
 
-            Section {
+            Section("settings.general.other") {
                 HStack {
                     Spacer()
 
@@ -419,7 +419,7 @@ private struct DiagnosticsSettingsTab: View {
     @Environment(AppSettings.self) private var settings
 
     @State private var isExporting = false
-    @State private var lastExportPath: String?
+    @State private var lastExportMessage: String?
     @State private var exportError: String?
 
     var body: some View {
@@ -450,8 +450,8 @@ private struct DiagnosticsSettingsTab: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                    } else if let lastExportPath {
-                        Text(verbatim: lastExportPath)
+                    } else if let lastExportMessage {
+                        Text(verbatim: lastExportMessage)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -487,8 +487,9 @@ private struct DiagnosticsSettingsTab: View {
         defer { isExporting = false }
 
         switch await DiagnosticBundleExporter.exportFromPanel(settings: settings) {
-        case .exported(let url):
-            lastExportPath = String(format: String.l10n("diagnostics.export.successFormat"), url.path)
+        case .exported(_):
+            // 导出器成功后已经标记诊断问题为已处理；这里用固定反馈同步告知状态已重置。
+            lastExportMessage = String.l10n("settings.diagnostics.export.successMessage")
         case .cancelled:
             break
         case .failed(let message):
