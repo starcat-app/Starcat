@@ -395,6 +395,13 @@ struct SidebarView: View {
             }
 
             Section {
+                row(.untagged, count: viewModel.untaggedCount)
+                row(.smartCollectionsHome, count: SmartCollectionKind.allCases.count + viewModel.userSmartCollections.count)
+                // HOM-47：Release 时间线入口（独立 sheet 承载，避免与三栏导航 selection 冲突）
+                releaseTimelineRow
+            }
+
+            Section {
                 if githubStarListsExpanded {
                     githubStarListUngroupedRow
                         .transition(Self.disclosureRowTransition)
@@ -405,13 +412,6 @@ struct SidebarView: View {
                 }
             } header: {
                 githubStarListSectionHeader
-            }
-
-            Section {
-                row(.untagged, count: viewModel.untaggedCount)
-                row(.smartCollectionsHome, count: SmartCollectionKind.allCases.count + viewModel.userSmartCollections.count)
-                // HOM-47：Release 时间线入口（独立 sheet 承载，避免与三栏导航 selection 冲突）
-                releaseTimelineRow
             }
 
             // W4 A6：Tags 段。
