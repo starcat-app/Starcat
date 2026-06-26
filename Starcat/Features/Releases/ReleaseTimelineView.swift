@@ -102,16 +102,11 @@ struct ReleaseTimelineView: View {
             .buttonStyle(.borderless)
             .focusEffectDisabled()
             .disabled(viewModel?.entries.isEmpty == true)
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("general.close")
+            SheetCloseButton(
+                action: { dismiss() },
+                iconFont: .title3,
+                helpKey: "general.close"
+            )
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -228,6 +223,7 @@ private struct ReleaseCheckNowButton: View {
             } icon: {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .rotationEffect(.degrees(rotation))
+                    .foregroundStyle(isChecking ? Color.accentColor : Color.secondary)
             }
             .font(.caption)
         }

@@ -127,18 +127,12 @@ struct TagManagementView: View {
             Text("tagManagement.title")
                 .font(.headline)
             Spacer()
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .symbolRenderingMode(.hierarchical)
-                    .font(.system(size: 16))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
+            SheetCloseButton(
+                action: { dismiss() },
+                iconFont: .system(size: 16, weight: .medium),
+                helpKey: "action.close"
+            )
             .keyboardShortcut(.cancelAction)
-            .help("action.close")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)

@@ -236,17 +236,10 @@ struct ShareCardSheet: View {
 
             Spacer()
 
-            Button {
-                onClose()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 18))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help(Text("sharecard.action.close"))
+            SheetCloseButton(
+                action: onClose,
+                helpKey: "sharecard.action.close"
+            )
             .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 24)

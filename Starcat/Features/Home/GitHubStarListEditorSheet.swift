@@ -69,17 +69,9 @@ struct GitHubStarListEditorSheet: View {
             Text(isEditing ? "githubStarLists.editor.title.edit" : "githubStarLists.editor.title.create")
                 .font(.headline)
             Spacer()
-            Button {
+            SheetCloseButton {
                 dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 18, weight: .medium))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help(Text("common.close"))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)

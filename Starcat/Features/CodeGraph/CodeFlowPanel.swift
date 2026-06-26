@@ -101,16 +101,11 @@ struct CodeFlowPanel: View {
                     .lineLimit(1)
             }
             Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .foregroundStyle(.secondary)
-            .help("common.close")
+            SheetCloseButton(
+                action: { dismiss() },
+                iconFont: .system(size: 16, weight: .medium),
+                frameSize: 26
+            )
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)

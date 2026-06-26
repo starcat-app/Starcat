@@ -268,17 +268,12 @@ struct RepoAIWindowContentView: View {
 
             Spacer(minLength: 12)
 
-            Button {
-                onClose()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 26, height: 26)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("ai.assistant.window.close.help")
+            SheetCloseButton(
+                action: onClose,
+                iconFont: .system(size: 16, weight: .medium),
+                frameSize: 26,
+                helpKey: "ai.assistant.window.close.help"
+            )
         }
         .padding(.leading, 16)
         .padding(.trailing, 12)

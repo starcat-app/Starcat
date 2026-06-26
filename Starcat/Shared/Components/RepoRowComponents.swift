@@ -117,26 +117,62 @@ public struct MetaBadge: View {
     let systemImage: String
     let text: String
     let tint: Color
+    /// 仅图标模式：不显示文字，胶囊宽度随图标收缩。
+    let iconOnly: Bool
+    /// icon-only 时 VoiceOver 播报文案；非 icon-only 时忽略。
+    let accessibilityLabel: LocalizedStringKey?
 
-    public init(systemImage: String, text: String, tint: Color) {
+    public init(
+        systemImage: String,
+        text: String,
+        tint: Color,
+        iconOnly: Bool = false,
+        accessibilityLabel: LocalizedStringKey? = nil
+    ) {
         self.systemImage = systemImage
         self.text = text
         self.tint = tint
+        self.iconOnly = iconOnly
+        self.accessibilityLabel = accessibilityLabel
     }
 
     public var body: some View {
         HStack(spacing: 3) {
             Image(systemName: systemImage)
                 .font(.system(size: 9, weight: .medium))
-            Text(text)
-                .font(.caption2)
-                .lineLimit(1)
+            if iconOnly {
+                EmptyView()
+            } else {
+                Text(text)
+                    .font(.caption2)
+                    .lineLimit(1)
+            }
         }
         .foregroundStyle(tint)
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
         .background(tint.opacity(0.12), in: Capsule())
         .fixedSize(horizontal: true, vertical: false)
+        .modifier(MetaBadgeAccessibilityModifier(
+            iconOnly: iconOnly,
+            accessibilityLabel: accessibilityLabel
+        ))
+    }
+}
+
+/// icon-only MetaBadge 需合并子视图为单一无障碍元素并注入自定义 label。
+private struct MetaBadgeAccessibilityModifier: ViewModifier {
+    let iconOnly: Bool
+    let accessibilityLabel: LocalizedStringKey?
+
+    func body(content: Content) -> some View {
+        if iconOnly, let accessibilityLabel {
+            content
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(accessibilityLabel))
+        } else {
+            content
+        }
     }
 }
 

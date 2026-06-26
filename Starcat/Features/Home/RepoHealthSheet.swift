@@ -114,34 +114,22 @@ struct RepoHealthSheet: View {
 
             Spacer()
 
-            Button {
+            SyncIconButton(
+                isRefreshing: isRefreshing,
+                disabled: isRefreshing,
+                font: .system(size: 14, weight: .medium),
+                frameSize: 24,
+                tooltip: isRefreshing
+                    ? String.l10n("repoHealth.action.refreshing")
+                    : String.l10n("repoHealth.action.refresh")
+            ) {
                 Task { await store.refreshFromNetwork(repo: repo) }
-            } label: {
-                // loading 时把 arrow.clockwise 替换成 ProgressView 自带旋转,
-                // 比按钮整体脉冲更克制,避免喧宾夺主。
-                if isRefreshing {
-                    ProgressView()
-                        .controlSize(.small)
-                        .progressViewStyle(.circular)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                }
             }
-            .buttonStyle(.bordered)
-            .disabled(isRefreshing)
             .accessibilityLabel(isRefreshing ? "repoHealth.action.refreshing" : "repoHealth.action.refresh")
-            .help(isRefreshing ? "repoHealth.action.refreshing" : "repoHealth.action.refresh")
 
-            Button {
+            SheetCloseButton {
                 dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 18))
-                    .frame(width: 24, height: 24)
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("common.close")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)

@@ -300,26 +300,17 @@ struct SmartSearchField: View {
     }
 
     private var semanticRefreshButton: some View {
-        Button {
-            onRefreshSemanticIndex()
-        } label: {
-            Group {
-                if isIndexing {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 13, weight: .medium))
-                }
-            }
-            .frame(width: 24, height: 24)
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .disabled(isIndexing || isDisabled)
-        .foregroundStyle(isIndexing ? Color.secondary : Color.green)
-        .help(isIndexing ? Text("search.semantic.indexing") : Text("search.semantic.refreshIndex"))
+        SyncIconButton(
+            isRefreshing: isIndexing,
+            disabled: isIndexing || isDisabled,
+            font: .system(size: 13, weight: .medium),
+            frameSize: 24,
+            minVisibleDuration: 0,
+            tooltip: isIndexing
+                ? String.l10n("search.semantic.indexing")
+                : String.l10n("search.semantic.refreshIndex"),
+            action: onRefreshSemanticIndex
+        )
     }
 
     private var clearButton: some View {

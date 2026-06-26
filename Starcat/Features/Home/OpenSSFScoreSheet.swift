@@ -171,33 +171,24 @@ struct OpenSSFScoreSheet: View {
 
             Spacer()
 
-            Button {
+            SyncIconButton(
+                isRefreshing: store.isLoading(repoId: repo.id),
+                disabled: store.isLoading(repoId: repo.id),
+                font: .system(size: 14, weight: .medium),
+                frameSize: 24,
+                tooltip: store.isLoading(repoId: repo.id)
+                    ? String.l10n("openssf.action.refreshing")
+                    : String.l10n("openssf.action.refresh")
+            ) {
                 Task { await store.refresh(repo: repo, force: true) }
-            } label: {
-                // 与 RepoHealthSheet 刷新按钮保持一致:纯图标 + loading 时切换 ProgressView。
-                if store.isLoading(repoId: repo.id) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .progressViewStyle(.circular)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                }
             }
-            .buttonStyle(.bordered)
-            .disabled(store.isLoading(repoId: repo.id))
-            .help(store.isLoading(repoId: repo.id) ? "openssf.action.refreshing" : "openssf.action.refresh")
-            .accessibilityLabel(store.isLoading(repoId: repo.id) ? "openssf.action.refreshing" : "openssf.action.refresh")
+            .accessibilityLabel(
+                store.isLoading(repoId: repo.id) ? "openssf.action.refreshing" : "openssf.action.refresh"
+            )
 
-            Button {
+            SheetCloseButton {
                 dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 18))
-                    .frame(width: 24, height: 24)
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("common.close")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)

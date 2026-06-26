@@ -147,6 +147,10 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
 
 ## UI 规范（强制）
 
+- **Sheet 关闭**：header 右上角用 `SheetCloseButton`（`xmark.circle.fill` + hierarchical + `.secondary`）
+- **刷新 / 同步**：icon-only 触发器用 `SyncIconButton`（`arrow.triangle.2.circlepath`；静止灰、刷新蓝 + 旋转）；Stars 全量同步用 `StarsSyncButton`
+- 详见下文「Sheet 关闭图标」「刷新图标」两节
+
 ### 设置页按钮右对齐（2026-06-21 起生效）
 
 **所有**设置页内的独立操作按钮必须**右对齐**。
@@ -263,6 +267,35 @@ Button { ... }
 
 > 注意：`.buttonStyle(.borderedProminent)` 通常已遮挡 focus ring，但安全起见也建议添加。
 
+### UI 规范：Sheet 关闭图标（强制，2026-06-26 起生效）
+
+**所有**自定义 sheet / 浮层 / 面板 **header 右上角「关闭」** 必须走 `SheetCloseButton`（`Starcat/Shared/Components/SheetCloseButton.swift`）。
+
+- 图标：`xmark.circle.fill` + `.symbolRenderingMode(.hierarchical)` + `.foregroundStyle(.secondary)`
+- 尺寸：用 `iconFont` / `frameSize` 保留各 surface 原占位，**禁止**改图标语义
+- **不适用**：搜索框清空、destructive 红叉、`StarsSyncButton` hover 取消、filter 清除
+
+```swift
+SheetCloseButton { dismiss() }
+```
+
+**参考**：`RepoHealthSheet`、`GitHubStarListEditorSheet`、`ShareCardSheet`、`RepoAIWindowContentView`
+
+### UI 规范：刷新图标（强制，2026-06-26 起生效）
+
+**所有**「刷新 / 重新拉取」类 **icon-only 触发器** 必须走 `SyncIconButton`（`Starcat/Shared/Components/SyncIconButton.swift`）。
+
+- 图标：`arrow.triangle.2.circlepath`
+- 静止：`.secondary`；刷新中：`.accentColor` + 旋转（禁止 `ProgressView` 替代）
+- **禁止**：`arrow.clockwise`、`.symbolEffect(.rotate, value:)` 做刷新动效
+- **特殊**：Manage Stars 全量同步 → `StarsSyncButton`（含 hover 取消）
+
+```swift
+SyncIconButton(isRefreshing: loading, tooltip: "…") { Task { await refresh() } }
+```
+
+**参考**：`SidebarView`（仓库分组）、`RepoListView`（同步于）、`ActivityView`、`RepoHealthSheet`
+
 ### UI 规范：禁止 Stepper（强制，2026-06-20 起生效）
 
 **禁止**在新 UI 中使用 SwiftUI `Stepper` 组件。
@@ -341,7 +374,7 @@ rg "NSLocalizedString"  --type swift Starcat/   # 必须只出现在注释里
 
 ---
 
-*最后更新：2026-06-20*
+*最后更新：2026-06-26*
 
 
 <claude-mem-context>

@@ -13,15 +13,43 @@
 
 import SwiftUI
 
+/// Wiki 入口统一品牌色：indigo 族，light / dark 各一档 hex，与搜索详情 wiki chip 同族。
+enum WikiAccent {
+    static func foreground(colorScheme: ColorScheme) -> Color {
+        Color.fromHex6(colorScheme == .dark ? 0x818CF8 : 0x4F46E5)
+    }
+
+    static func background(colorScheme: ColorScheme) -> Color {
+        let opacity = colorScheme == .dark ? 0.20 : 0.12
+        return foreground(colorScheme: colorScheme).opacity(opacity)
+    }
+}
+
+/// Wiki 入口统一 SF Symbol：`doc.text.magnifyingglass` 表达「可查的外部文档」，
+/// 与编程语言 / 普通书本图标区分。详情 hero `RepoWikiMenu` 与搜索卡 wikis 行共用。
+struct WikiEntryIcon: View {
+    var size: CGFloat = 13
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Image(systemName: "doc.text.magnifyingglass")
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(WikiAccent.foreground(colorScheme: colorScheme))
+    }
+}
+
 /// 详情页 hero action 区的 Wiki 下拉菜单。
 struct RepoWikiMenu: View {
     let links: [WikiLink]
+
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         menuButton
     }
 
-    /// 只保留图标入口；外层胶囊保留和 AI 按钮相邻时的可点击边界，但不再展示文本。
+    /// 只保留图标入口；indigo 浅底 + 有色图标，明暗主题各一档对比度。
     @ViewBuilder
     private var menuButton: some View {
         Menu {
@@ -35,14 +63,12 @@ struct RepoWikiMenu: View {
                 }
             }
         } label: {
-            Image(systemName: "book.closed.fill")
-                .font(.system(size: 13, weight: .semibold))
+            WikiEntryIcon(size: 13)
                 .frame(width: 28, height: 28)
-                .foregroundStyle(.primary)
-                .background(
+                .background {
                     Capsule()
-                        .strokeBorder(Color.secondary.opacity(0.3), lineWidth: 1)
-                )
+                        .fill(WikiAccent.background(colorScheme: colorScheme))
+                }
                 .contentShape(Capsule())
                 .accessibilityLabel(Text("wiki.menu.title"))
         }

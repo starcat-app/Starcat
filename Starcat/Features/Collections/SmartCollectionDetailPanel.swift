@@ -504,7 +504,11 @@ private struct SmartCollectionRepoCard: View, Equatable {
                 tint: .secondary
             )
             if let unmaintainedIndicator {
-                unmaintainedStatBadge(unmaintainedIndicator)
+                MetaBadge(
+                    systemImage: unmaintainedIndicator.systemImage,
+                    text: unmaintainedIndicator.text,
+                    tint: .red
+                )
             }
             Spacer(minLength: 0)
         }
@@ -512,25 +516,13 @@ private struct SmartCollectionRepoCard: View, Equatable {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// 「维护停滞」集合命中原因：归档走 archivebox，久未更新走 clock.badge.exclamationmark。
-    private var unmaintainedIndicator: (systemImage: String, accessibilityKey: LocalizedStringKey)? {
+    /// 「维护停滞」集合命中原因：归档走 archivebox + 已归档文案，久未更新走 clock + 集合标题。
+    private var unmaintainedIndicator: (systemImage: String, text: String)? {
         guard collectionKind == .unmaintained else { return nil }
         if repo.isArchived {
-            return ("archivebox", "repo.archived")
+            return ("archivebox", String.l10n("repo.archived"))
         }
-        return ("clock.badge.exclamationmark", "smartCollections.unmaintained.title")
-    }
-
-    /// 维护停滞专用：红色 icon-only 徽章，并入 stats 行与 Stars 同级扫视。
-    private func unmaintainedStatBadge(_ indicator: (systemImage: String, accessibilityKey: LocalizedStringKey)) -> some View {
-        Image(systemName: indicator.systemImage)
-            .font(.system(size: 9, weight: .medium))
-            .foregroundStyle(.red)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(.red.opacity(0.12), in: Capsule())
-            .fixedSize(horizontal: true, vertical: false)
-            .accessibilityLabel(Text(indicator.accessibilityKey))
+        return ("clock.badge.exclamationmark", String.l10n("smartCollections.unmaintained.title"))
     }
 
     @ViewBuilder

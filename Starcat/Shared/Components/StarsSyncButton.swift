@@ -37,7 +37,7 @@ struct StarsSyncButton: View {
             Image(systemName: iconName)
                 .font(.caption)
                 .rotationEffect(.degrees(rotation))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isSyncing ? Color.accentColor : Color.secondary)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()

@@ -2015,13 +2015,10 @@ private struct SearchRemoteRepoDetailView: View {
                 licenseBadge(license: license)
             }
 
-            Button { dismiss() } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("search.detail.action.close")
+            SheetCloseButton(
+                action: { dismiss() },
+                helpKey: "search.detail.action.close"
+            )
         }
     }
 
@@ -2288,9 +2285,7 @@ private struct SearchRemoteRepoDetailView: View {
     /// 隐藏，零视觉负担（与详情页 `RepoWikiMenu` 的"未收录不占 UI"原则一致）。
     private func wikiLinksRow(links: [WikiLink]) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "book.closed.fill")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
+            WikiEntryIcon(size: 11)
             Text("search.detail.wikis.label")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)

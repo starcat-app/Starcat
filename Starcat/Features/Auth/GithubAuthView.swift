@@ -412,17 +412,15 @@ struct GithubAuthView: View {
     // MARK: - 右上角关闭按钮
 
     private var closeButton: some View {
-        Button {
-            copyResetTask?.cancel()
-            authSession.cancelSignIn()
-            dismiss()
-        } label: {
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 20))
-                .foregroundStyle(.secondary)
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
+        SheetCloseButton(
+            action: {
+                copyResetTask?.cancel()
+                authSession.cancelSignIn()
+                dismiss()
+            },
+            iconFont: .system(size: 20, weight: .medium),
+            frameSize: 28
+        )
     }
 
     // MARK: - 统一按钮 helper
