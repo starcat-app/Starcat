@@ -228,14 +228,29 @@ actor GitHubAPIClient {
         // GraphQL 端点必须显式设 Content-Type，否则 GitHub 返回 400。
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let envelope: APIResponse<GraphQLEnvelope<T>> = try await perform(request)
+        let response = try await performBytes(request)
 
-        if let errs = envelope.value.errors, !errs.isEmpty {
+        // GitHub GraphQL 可能返回 partial data：例如 mutation 失败时
+        // `{ data: { createUserList: null }, errors: [...] }`。如果直接用
+        // `GraphQLEnvelope<T>` 解码，`T` 的非 optional 字段会先失败，调用方只能看到
+        // “数据丢失”这类底层 DecodingError。这里先用非泛型 envelope 只读 errors，
+        // 让 GitHub 的真实业务错误优先暴露给 UI。
+        if let errorEnvelope = try? decoder.decode(GraphQLErrorEnvelope.self, from: response.data),
+           let errs = errorEnvelope.errors,
+           !errs.isEmpty {
             let combined = errs.map(\.message).joined(separator: "; ")
             AppLog.network.error("GraphQL errors: \(combined, privacy: .public)")
             throw NetworkError.clientError(statusCode: 400, message: combined)
         }
-        guard let payload = envelope.value.data else {
+
+        let envelope: GraphQLEnvelope<T>
+        do {
+            envelope = try decoder.decode(GraphQLEnvelope<T>.self, from: response.data)
+        } catch {
+            AppLog.network.error("GraphQL decoding failed for \(String(describing: T.self), privacy: .public): \(error.localizedDescription, privacy: .public)")
+            throw NetworkError.decodingError(underlying: error)
+        }
+        guard let payload = envelope.data else {
             throw NetworkError.invalidResponse
         }
         return payload
@@ -566,6 +581,14 @@ actor GitHubAPIClient {
 /// 局部 struct 会编译报错 "Generic parameters cannot be ..."）。
 struct GraphQLEnvelope<T: Decodable>: Decodable {
     let data: T?
+    let errors: [GraphQLError]?
+}
+
+/// GraphQL error-first 解码专用 envelope。
+///
+/// 只声明 `errors`，让 decoder 忽略任意形态的 `data`。这避免 partial data 与业务
+/// payload 泛型 `T` 不匹配时，把 GitHub 的真实错误覆盖成 DecodingError。
+private struct GraphQLErrorEnvelope: Decodable {
     let errors: [GraphQLError]?
 }
 

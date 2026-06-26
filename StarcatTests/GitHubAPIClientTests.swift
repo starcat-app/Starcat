@@ -38,6 +38,18 @@ private func httpResponse(
     )!
 }
 
+private struct GraphQLMutationPayload: Decodable {
+    let createUserList: CreatedList
+
+    struct CreatedList: Decodable {
+        let list: List
+    }
+
+    struct List: Decodable {
+        let id: String
+    }
+}
+
 @Suite("GitHubAPIClient 网络路径分支", .serialized)
 struct GitHubAPIClientTests {
 
@@ -260,6 +272,42 @@ struct GitHubAPIClientTests {
             // 通过
         } catch {
             Issue.record("期望 decodingError，实际: \(error)")
+        }
+    }
+
+    @Test("graphql<T>: partial data + errors → 优先抛 GitHub errors message")
+    func graphqlPartialDataErrorsPreferredOverDecodingError() async throws {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            let body = """
+            {
+              "data": {
+                "createUserList": null
+              },
+              "errors": [
+                {
+                  "type": "UNPROCESSABLE",
+                  "path": ["createUserList"],
+                  "locations": [{ "line": 2, "column": 3 }],
+                  "message": "Name has already been taken"
+                }
+              ]
+            }
+            """.data(using: .utf8)!
+            return (httpResponse(200, request.url!), body)
+        }
+
+        do {
+            _ = try await client.graphql(
+                query: "mutation { createUserList(input: { name: \"test\" }) { list { id } } }",
+                as: GraphQLMutationPayload.self
+            )
+            Issue.record("期望抛 clientError 但成功返回")
+        } catch let NetworkError.clientError(statusCode, message) {
+            #expect(statusCode == 400)
+            #expect(message == "Name has already been taken")
+        } catch {
+            Issue.record("期望 clientError，实际: \(error)")
         }
     }
 
