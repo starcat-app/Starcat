@@ -271,48 +271,27 @@ struct SearchCenterView: View {
     }
 
     /// 右侧筛选抽屉。只承载高级筛选，不再挤占结果区顶部高度。
+    ///
+    /// 不设独立标题行：scope 栏右侧的 Filters 胶囊已是开关（选中态 = 展开，再点即收起），
+    /// 避免「Filters 按钮 + Filters 标题 + ×」三层重复。
     private var filterDrawer: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Text("search.filters.title")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer(minLength: 8)
-                Button {
-                    isFilterDrawerPresented = false
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if viewModel.scope == .all || viewModel.scope == .github {
+                    githubFilterSection
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("common.close")
-            }
-            .padding(.horizontal, 18)
-            .frame(height: 42)
-
-            themedSeparator
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if viewModel.scope == .all || viewModel.scope == .github {
-                        githubFilterSection
-                    }
-                    if viewModel.scope == .all || viewModel.scope == .web {
-                        anySearchFilterSection
-                    }
+                if viewModel.scope == .all || viewModel.scope == .web {
+                    anySearchFilterSection
                 }
-                .padding(.horizontal, 16)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .scrollContentBackground(.hidden)
-            // 滚动条贴在抽屉右缘内侧，避免与面板外缘重叠。
-            .safeAreaPadding(.trailing, 4)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .scrollContentBackground(.hidden)
+        // 滚动条贴在抽屉右缘内侧，避免与面板外缘重叠。
+        .safeAreaPadding(.trailing, 4)
         .background(Color.primary.opacity(0.018))
         .onAppear { syncNumericFilterDrafts() }
     }
