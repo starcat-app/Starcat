@@ -77,12 +77,18 @@ struct SearchCenterView: View {
                         themedVerticalSeparator
                         filterDrawer
                             .frame(width: 250)
-                            .transition(reduceMotion ? .identity : .move(edge: .trailing).combined(with: .opacity))
+                            // 抽屉内容（含 ScrollView 滚动条）必须裁在面板圆角内；
+                            // 否则 macOS overlay scrollbar 会画到浮层外侧。
+                            .clipped()
+                            .transition(reduceMotion ? .identity : .opacity)
                     }
                 }
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: shouldShowFilterDrawer)
             }
             .frame(width: searchPanelWidth, height: 620)
+            .animation(
+                reduceMotion ? nil : .spring(response: 0.30, dampingFraction: 0.90),
+                value: shouldShowFilterDrawer
+            )
             // 浮层背景（dong4j 2026-06-14 终版）：
             // 极简：用 `windowBackgroundColor` 实底，浮层颜色直接 = 主窗口未压暗时的颜色。
             // 主窗口被 dim 蒙层压暗后，浮层不受 dim 影响自然凸显——这就是 Spotlight 的视觉模型。
@@ -95,8 +101,11 @@ struct SearchCenterView: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(.white.opacity(0.12))
             }
+            // 先裁圆角再投影，避免 ScrollView 滚动条 / 抽屉滑入时画出卡片外。
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: .black.opacity(0.45), radius: 40, y: 16)
-            .transition(reduceMotion ? .opacity : .scale(scale: 0.97).combined(with: .opacity))
+            // 去掉 scale 弹入：Spotlight / 命令面板典型是淡入 + 轻微位移，scale 容易显得「弹」。
+            .transition(reduceMotion ? .opacity : .opacity)
         }
         .onAppear { isSearchFocused = true }
         .sheet(item: $remoteDetailCandidate) { candidate in
@@ -267,19 +276,21 @@ struct SearchCenterView: View {
             HStack(spacing: 8) {
                 Text("search.filters.title")
                     .font(.system(size: 13, weight: .semibold))
-                Spacer()
+                Spacer(minLength: 8)
                 Button {
                     isFilterDrawerPresented = false
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .help("common.close")
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 18)
             .frame(height: 42)
 
             themedSeparator
@@ -293,11 +304,15 @@ struct SearchCenterView: View {
                         anySearchFilterSection
                     }
                 }
-                .padding(14)
+                .padding(.horizontal, 16)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .scrollContentBackground(.hidden)
+            // 滚动条贴在抽屉右缘内侧，避免与面板外缘重叠。
+            .safeAreaPadding(.trailing, 4)
         }
+        .frame(maxHeight: .infinity)
         .background(Color.primary.opacity(0.018))
         .onAppear { syncNumericFilterDrafts() }
     }

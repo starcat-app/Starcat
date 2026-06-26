@@ -49,10 +49,18 @@ struct SmartSearchField: View {
     /// 禁用态的 tooltip 文案 key。仅 `isDisabled == true` 时生效。
     var disabledHelpKey: LocalizedStringKey = "search.disabledInPage"
 
+    /// 外部折叠信号。
+    ///
+    /// 搜索词已提交后，组件默认会保持展开，避免用户忘记当前列表仍被搜索过滤。
+    /// 但点击 repo 行时，中栏 toolbar 空间应回到紧凑态，同时不能清掉搜索条件；
+    /// 调用方每次切换 repo 时传入变化的 token，本组件只收起 UI，不改 `text`。
+    var collapseToken: Int64?
+
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var draftText = ""
     @State private var isExpanded = false
+    @State private var isCollapsedByExternalRequest = false
     @FocusState private var isTextFieldFocused: Bool
     @FocusState private var isCollapsedIconFocused: Bool
 
@@ -70,9 +78,10 @@ struct SmartSearchField: View {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// 空输入但仍聚焦时保持展开；有输入时即便失焦也保持展开，避免用户看不见当前筛选条件。
+    /// 空输入但仍聚焦时保持展开；有输入时默认保持展开，避免用户看不见当前筛选条件。
+    /// 外部折叠请求是唯一例外：切 repo 只收起 toolbar UI，不清除已提交的搜索条件。
     private var shouldExpand: Bool {
-        isExpanded || isTextFieldFocused || hasDraftText || hasCommittedText
+        isExpanded || isTextFieldFocused || (!isCollapsedByExternalRequest && (hasDraftText || hasCommittedText))
     }
 
     var body: some View {
@@ -107,6 +116,9 @@ struct SmartSearchField: View {
             guard !isDisabled else { return }
             expandAndFocusInput()
         }
+        .onChange(of: collapseToken) { _, _ in
+            collapseFromExternalRequest()
+        }
         .onAppear {
             draftText = text
             isExpanded = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -114,6 +126,7 @@ struct SmartSearchField: View {
         .onChange(of: text) { _, newValue in
             guard draftText != newValue else { return }
             draftText = newValue
+            isCollapsedByExternalRequest = false
             isExpanded = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isTextFieldFocused
         }
     }
@@ -289,14 +302,23 @@ struct SmartSearchField: View {
         let submitted = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         draftText = submitted
         onSubmitSearch(submitted)
+        isCollapsedByExternalRequest = false
         isExpanded = true
     }
 
     private func expandAndFocusInput() {
+        isCollapsedByExternalRequest = false
         isExpanded = true
         DispatchQueue.main.async {
             isTextFieldFocused = true
         }
+    }
+
+    private func collapseFromExternalRequest() {
+        isTextFieldFocused = false
+        isCollapsedIconFocused = false
+        isExpanded = false
+        isCollapsedByExternalRequest = true
     }
 
     private func collapseIfPossible() {

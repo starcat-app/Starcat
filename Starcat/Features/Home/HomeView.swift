@@ -289,14 +289,8 @@ struct HomeView: View {
                 .zIndex(100)
             }
         }
-        // 弹出/关闭轻量动画（dong4j 2026-06-14）：
-        // - SearchCenterView 内部已定义 transition（dim opacity / VStack scale+opacity），
-        //   但需要外层用 `.animation(_:value:)` 显式绑定 isPresented 才会触发播放。
-        // - `.snappy(duration: 0.22)` 是 macOS 14+ 的「无超调 spring」，轻快不弹，
-        //   贴近 Spotlight / Raycast 命令面板的体感。
-        // - value 仅监听 isPresented，不会污染浮层内其他状态的动画（scope 切换、
-        //   ProgressView spinner 等照旧无动画）。
-        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: searchCenterViewModel.isPresented)
+        // 弹出/关闭：纯淡入淡出，贴近 Spotlight / 命令面板；不再叠加 scale 弹入。
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.20), value: searchCenterViewModel.isPresented)
         // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
         .background {
             Button("") { searchCenterViewModel.present() }

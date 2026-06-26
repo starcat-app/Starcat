@@ -962,17 +962,25 @@ struct RepoListView: View {
     /// 作为常驻入口，但 mode 为 keyword/semantic 时禁用并显示 tooltip。
     private func smartSearchField(isDisabled: Bool = false) -> some View {
         @Bindable var vm = viewModel
+        let historyRepository = dependencies.searchHistoryRepository
         return SmartSearchField(
             text: $vm.searchQuery,
             mode: $vm.smartSearchMode,
             isIndexing: viewModel.isSemanticIndexing,
             onSubmitSearch: { query in
                 viewModel.submitSearch(query)
+                let submitted = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !submitted.isEmpty {
+                    Task {
+                        try? await historyRepository.record(submitted)
+                    }
+                }
             },
             onRefreshSemanticIndex: {
                 Task { await viewModel.refreshSemanticIndex() }
             },
-            isDisabled: isDisabled
+            isDisabled: isDisabled,
+            collapseToken: viewModel.selectedRepoID
         )
         .onAppear {
             if viewModel.smartSearchMode != settings.smartSearchMode {
