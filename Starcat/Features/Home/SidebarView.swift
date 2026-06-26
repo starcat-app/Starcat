@@ -16,6 +16,16 @@
 
 import SwiftUI
 
+/// GitHub Stars List 编辑器 Sheet 载荷。
+///
+/// 使用 `sheet(item:)` 而不是 `sheet(isPresented:) + 另一个 @State list`：
+/// SwiftUI 首次构建 sheet 内容时可能先看到 isPresented=true，但另一个 state 还没完成同帧更新，
+/// 导致编辑分组第一次被当成新增分组初始化。把 list 放进 item 本身可消除这个首帧竞态。
+private struct GitHubStarListEditorItem: Identifiable {
+    let id = UUID()
+    let list: GitHubStarList?
+}
+
 struct SidebarView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
@@ -78,8 +88,7 @@ struct SidebarView: View {
     /// 自动整理 popover 显示状态。点击 footer 或 hover 进入时打开，跑完自动关闭。
     @State private var showAutoTidyPopover: Bool = false
     /// GitHub Stars List 创建 / 编辑 Sheet。
-    @State private var showGitHubStarListEditor: Bool = false
-    @State private var editingGitHubStarList: GitHubStarList?
+    @State private var gitHubStarListEditorItem: GitHubStarListEditorItem?
 
     /// row() / tagRow() 内 trailing 区域（sync icon + count）的**整体固定宽度**（pt）。
     ///
@@ -160,9 +169,9 @@ struct SidebarView: View {
             GithubAuthView()
                 .appLocaleEnvironment()
         }
-        .sheet(isPresented: $showGitHubStarListEditor) {
+        .sheet(item: $gitHubStarListEditorItem) { item in
             GitHubStarListEditorSheet(
-                list: editingGitHubStarList,
+                list: item.list,
                 service: dependencies.githubStarListSyncService,
                 onSaved: {
                     await viewModel.refreshSidebar()
@@ -721,8 +730,7 @@ struct SidebarView: View {
             .help(disclosureHelp(isExpanded: githubStarListsExpanded))
 
             Button {
-                editingGitHubStarList = nil
-                showGitHubStarListEditor = true
+                gitHubStarListEditorItem = GitHubStarListEditorItem(list: nil)
             } label: {
                 Image(systemName: "plus.circle.fill")
                     .font(.system(size: 14, weight: .medium))
@@ -1029,8 +1037,7 @@ struct SidebarView: View {
                     .truncationMode(.tail)
 
                 Button {
-                    editingGitHubStarList = list
-                    showGitHubStarListEditor = true
+                    gitHubStarListEditorItem = GitHubStarListEditorItem(list: list)
                 } label: {
                     Image(systemName: "pencil.circle.fill")
                         .font(.system(size: 14, weight: .medium))
