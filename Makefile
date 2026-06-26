@@ -18,6 +18,10 @@
 # 而是 Containers/<bundle-id>/Data/... ——沙盒应用永远走 Container 视图。
 APP_SUPPORT := $(HOME)/Library/Containers/com.starcat.app/Data/Library/Application Support/com.starcat.app
 
+# 开发期 ad-hoc / 非沙盒 Debug App 的数据根。当前 `make run` 产物如果没有有效
+# sandbox entitlement，Foundation 的 `.applicationSupportDirectory` 会落到这里。
+DEBUG_APP_SUPPORT := $(HOME)/Library/Application Support/com.starcat.app
+
 # 脚本入口参数。示例：
 #   make build-dmg VERSION=0.1.0
 #   make release VERSION=v0.1.0 RELEASE_FLAGS="--dry-run"
@@ -47,7 +51,7 @@ help: ## 列出所有可用命令
 	@echo "  make reset-anysearch-cache  清空 AnySearch 离线缓存（global / ai-summary 子目录）"
 	@echo "  make reset-chat-cache       清空 AI 聊天历史（用户对话记录，不可恢复）"
 	@echo "  make reset-all              聚合：reset-db + reset-anysearch-cache（故意不含 chat-cache）"
-	@echo "  make show-data              在 Finder 中打开 App 的 Application Support 目录"
+	@echo "  make show-data              在 Finder 中打开沙盒 / 非沙盒两个 App Support 目录"
 	@echo "  make clean                  删除 build/ 目录（清掉 xcodebuild 的 DerivedData 与产物）"
 	@echo "  make start-supports         启动 supports/ 目录下的所有后端服务（trending / wiki / weekly / sharing）"
 	@echo "  make sync-fly-secrets              从 supports 各 API .env 并行同步 secrets 到 Fly.io"
@@ -99,8 +103,9 @@ bump-version: ## 手动调试版本号脚本（正常由 Xcode build phase 调�
 linguist: ## 生成 Linguist 语言元数据（LINGUIST_ARGS="--local file.yml"）
 	@python3 scripts/generate_linguist_metadata.py $(LINGUIST_ARGS)
 
-show-data: ## 在 Finder 中打开 App Support 目录
+show-data: ## 在 Finder 中打开沙盒 / 非沙盒两个 App Support 目录
 	@open -R "$(APP_SUPPORT)/users"
+	@open -R "$(DEBUG_APP_SUPPORT)/users"
 	
 reset-db: ## 清空所有本地数据库文件（destructive）
 	@echo "即将删除：$(APP_SUPPORT)/users"
