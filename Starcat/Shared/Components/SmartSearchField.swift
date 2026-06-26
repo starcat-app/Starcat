@@ -67,12 +67,10 @@ struct SmartSearchField: View {
     @State private var isExpanded = false
     @State private var isCollapsedByExternalRequest = false
     @State private var isHistoryPanelPresented = false
-    @State private var isCollapsedModeMenuPresented = false
     @FocusState private var isTextFieldFocused: Bool
     @FocusState private var isCollapsedIconFocused: Bool
 
     private let collapsedWidth: CGFloat = 42
-    private let globalCollapsedWidth: CGFloat = 58
     private let expandedWidth: CGFloat = 300
     private let height: CGFloat = 38
 
@@ -86,8 +84,14 @@ struct SmartSearchField: View {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var effectiveCollapsedWidth: CGFloat {
-        onOpenGlobalSearch == nil ? collapsedWidth : globalCollapsedWidth
+    private var effectiveControlWidth: CGFloat? {
+        if shouldExpand { return expandedWidth }
+        return onOpenGlobalSearch == nil ? collapsedWidth : nil
+    }
+
+    private var effectiveControlHeight: CGFloat? {
+        if shouldExpand { return height }
+        return onOpenGlobalSearch == nil ? height : nil
     }
 
     /// 空输入但仍聚焦时保持展开；有输入时默认保持展开，避免用户看不见当前筛选条件。
@@ -104,7 +108,7 @@ struct SmartSearchField: View {
                 collapsedButton
             }
         }
-        .frame(width: shouldExpand ? expandedWidth : effectiveCollapsedWidth, height: height)
+        .frame(width: effectiveControlWidth, height: effectiveControlHeight)
         .opacity(isDisabled ? 0.55 : 1.0)
         .help(isDisabled ? disabledHelpKey : (mode == .semantic ? "search.semantic.placeholder" : "search.repoPlaceholder"))
         .animation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.86), value: shouldExpand)
@@ -154,25 +158,28 @@ struct SmartSearchField: View {
     /// 这样可以避免一次点击同时触发“展开”和“打开菜单”的歧义。
     private var collapsedButton: some View {
         Group {
-            if let onOpenGlobalSearch {
-                HStack(spacing: 8) {
+            if onOpenGlobalSearch != nil {
+                Menu {
                     Button {
-                        onOpenGlobalSearch()
+                        mode = .keyword
+                        expandAndFocusInput()
                     } label: {
-                        ToolbarIcon("sparkle.magnifyingglass")
-                            .accessibilityLabel(Text("toolbar.globalSearch"))
+                        Label("search.mode.keyword", systemImage: SmartSearchMode.keyword.systemImage)
                     }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .help("toolbar.globalSearchHelp")
 
-                    collapsedModeMenu
+                    Button {
+                        mode = .semantic
+                        expandAndFocusInput()
+                    } label: {
+                        Label("search.mode.semantic", systemImage: SmartSearchMode.semantic.systemImage)
+                    }
+                } label: {
+                    ToolbarIcon("sparkle.magnifyingglass")
+                        .accessibilityLabel(Text("toolbar.globalSearch"))
+                } primaryAction: {
+                    onOpenGlobalSearch?()
                 }
-                .padding(.horizontal, 8)
-                .frame(width: globalCollapsedWidth, height: height)
-                .background(searchBackground)
-                .overlay(searchBorder)
-                .contentShape(Capsule(style: .continuous))
+                .help("toolbar.globalSearchHelp")
             } else {
                 Button {
                     // PR-2 禁用态：点击 no-op；外层 `.help(disabledHelpKey)` 已说明原因。
@@ -248,45 +255,6 @@ struct SmartSearchField: View {
             )
             .appLocaleEnvironment()
         }
-    }
-
-    private var collapsedModeMenu: some View {
-        Button {
-            isCollapsedModeMenuPresented.toggle()
-        } label: {
-            Image(systemName: "chevron.down")
-                .font(.system(size: ToolbarIconMetrics.chevronFontSize, weight: .semibold))
-                .frame(
-                    width: ToolbarIconMetrics.chevronFrameWidth,
-                    height: ToolbarIconMetrics.chevronFrameHeight
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .disabled(isDisabled)
-        .help("search.mode.hint")
-        .popover(isPresented: $isCollapsedModeMenuPresented, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 2) {
-                collapsedModeMenuRow(.keyword)
-                collapsedModeMenuRow(.semantic)
-            }
-            .padding(6)
-            .frame(width: 200, alignment: .leading)
-            .appLocaleEnvironment()
-        }
-    }
-
-    private func collapsedModeMenuRow(_ option: SmartSearchMode) -> some View {
-        CollapsedModeMenuRow(
-            option: option,
-            isSelected: option == mode,
-            onSelect: {
-                isCollapsedModeMenuPresented = false
-                mode = option
-                expandAndFocusInput()
-            }
-        )
     }
 
     private var modeMenu: some View {
@@ -440,50 +408,6 @@ struct SmartSearchField: View {
                 isExpanded = false
             }
         }
-    }
-}
-
-private struct CollapsedModeMenuRow: View {
-    let option: SmartSearchMode
-    let isSelected: Bool
-    let onSelect: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 10) {
-                Image(systemName: option.systemImage)
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 18)
-                    .foregroundStyle(.secondary)
-
-                Text(option.displayName)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.9)
-
-                Spacer(minLength: 4)
-
-                Image(systemName: isSelected ? "checkmark" : "")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 12)
-                    .foregroundStyle(.tint)
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 32)
-            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .background {
-                if isHovered {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.14))
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .onHover { isHovered = $0 }
     }
 }
 

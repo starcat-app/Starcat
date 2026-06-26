@@ -137,59 +137,52 @@ private struct FeaturedExternalLinksControl: View {
     let selection: ToolbarRepoSelection
     let onOpenCodeFlow: () -> Void
 
-    @State private var isPresented = false
-
-    private let controlWidth: CGFloat = 58
-    private let controlHeight: CGFloat = 38
-
     var body: some View {
-        HStack(spacing: 8) {
+        Menu {
             Button {
-                open(selection.htmlUrl)
+                onOpenCodeFlow()
             } label: {
-                ToolbarIcon("safari")
-                    .accessibilityLabel("externalLinks.openOnGithub")
+                Label {
+                    Text("CodeFlow")
+                } icon: {
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                }
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
+
+            Divider()
 
             Button {
-                isPresented.toggle()
+                open(RepoExternalLinks.issues(owner: selection.owner, name: selection.name))
             } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: ToolbarIconMetrics.chevronFontSize, weight: .semibold))
-                    .frame(
-                        width: ToolbarIconMetrics.chevronFrameWidth,
-                        height: ToolbarIconMetrics.chevronFrameHeight
-                    )
-                    .contentShape(Rectangle())
+                Label("externalLinks.issues", systemImage: "exclamationmark.bubble")
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .accessibilityLabel("externalLinks.hint")
-            // `arrowEdge` 是 Popover 相对触发控件的首选展开边。
-            // toolbar 在窗口顶部，使用 `.bottom` 才会优先向下展开。
-            .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-                ExternalLinksPopover(
-                    selection: selection,
-                    onOpenCodeFlow: {
-                        isPresented = false
-                        // 等 Popover 完成关闭后再呈现 sheet，避免两个 presentation 同帧竞争。
-                        DispatchQueue.main.async { onOpenCodeFlow() }
-                    },
-                    onDismiss: { isPresented = false }
-                )
-                .appLocaleEnvironment()
+
+            Button {
+                open(RepoExternalLinks.pulls(owner: selection.owner, name: selection.name))
+            } label: {
+                Label("externalLinks.pullRequests", systemImage: "arrow.triangle.pull")
             }
+
+            Button {
+                open(RepoExternalLinks.releases(owner: selection.owner, name: selection.name))
+            } label: {
+                Label("externalLinks.releases", systemImage: "tag.circle")
+            }
+
+            if let homepage = selection.homepage {
+                Divider()
+                Button {
+                    NSWorkspace.shared.open(homepage)
+                } label: {
+                    Label("externalLinks.homepage", systemImage: "house")
+                }
+            }
+        } label: {
+            ToolbarIcon("safari")
+                .accessibilityLabel("externalLinks.openOnGithub")
+        } primaryAction: {
+            open(selection.htmlUrl)
         }
-        .padding(.horizontal, 8)
-        .frame(width: controlWidth, height: controlHeight)
-        .background(Color(nsColor: .controlBackgroundColor), in: Capsule(style: .continuous))
-        .overlay {
-            Capsule(style: .continuous)
-                .strokeBorder(Color.secondary.opacity(0.22), lineWidth: 1)
-        }
-        .contentShape(Capsule(style: .continuous))
     }
 
     private func open(_ url: URL?) {
