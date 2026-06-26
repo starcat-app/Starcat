@@ -77,6 +77,18 @@ struct HomeViewModelFilterSortTests {
         return (vm, db, noteRepo)
     }
 
+    private func makeStarList(id: String, name: String, position: Int) -> GitHubStarListRemoteRecord {
+        GitHubStarListRemoteRecord(
+            id: id,
+            name: name,
+            description: nil,
+            isPrivate: false,
+            position: position,
+            createdAt: nil,
+            updatedAt: nil
+        )
+    }
+
     // MARK: - D1 排序
 
     @Test("D1: reloadItems 后按默认 starredAtDesc 排序")
@@ -435,6 +447,90 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.githubStarLists.map(\.id) == ["list-1"])
         #expect(vm.githubStarListCounts["list-1"] == 1)
         #expect(vm.githubStarListUngroupedCount == 1)
+    }
+
+    @Test("GitHub Stars List: 切换分组临时跳过 row reveal")
+    func githubStarListSwitchSkipsRowReveal() async throws {
+        let db = try InMemoryDatabaseManager()
+        let repo = GRDBRepoRepository(database: db)
+        let tagRepo = GRDBTagRepository(database: db)
+        let rtRepo = GRDBRepoTagRepository(database: db)
+        let noteRepo = GRDBRepoNoteRepository(database: db)
+        let listRepo = GRDBGitHubStarListRepository(database: db)
+
+        try await insertRepo(db, id: 1, fullName: "o/one", stars: 1, starredAt: "2026-06-26T02:00:00Z")
+        try await listRepo.replaceRemoteSnapshot(
+            lists: [makeStarList(id: "list-1", name: "Tools", position: 0)],
+            memberships: [GitHubStarListRemoteMembership(listId: "list-1", repoFullName: "o/one")],
+            syncedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let vm = HomeViewModel(
+            repository: repo,
+            tagRepository: tagRepo,
+            repoTagRepository: rtRepo,
+            githubStarListRepository: listRepo,
+            repoNoteRepository: noteRepo
+        )
+        await vm.refreshSidebar()
+
+        vm.selectSidebar(.githubStarList("list-1"))
+
+        #expect(vm.skipListRowReveal == true)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(vm.skipListRowReveal == false)
+    }
+
+    @Test("GitHub Stars List: 切到已知空分组立即清空旧列表")
+    func githubStarListKnownEmptyClearsVisibleItems() async throws {
+        let db = try InMemoryDatabaseManager()
+        let repo = GRDBRepoRepository(database: db)
+        let tagRepo = GRDBTagRepository(database: db)
+        let rtRepo = GRDBRepoTagRepository(database: db)
+        let noteRepo = GRDBRepoNoteRepository(database: db)
+        let listRepo = GRDBGitHubStarListRepository(database: db)
+
+        try await insertRepo(db, id: 1, fullName: "o/one", stars: 1, starredAt: "2026-06-26T02:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/two", stars: 1, starredAt: "2026-06-26T01:00:00Z")
+        try await listRepo.replaceRemoteSnapshot(
+            lists: [
+                makeStarList(id: "list-filled", name: "Filled", position: 0),
+                makeStarList(id: "list-empty", name: "Empty", position: 1),
+            ],
+            memberships: [GitHubStarListRemoteMembership(listId: "list-filled", repoFullName: "o/one")],
+            syncedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let vm = HomeViewModel(
+            repository: repo,
+            tagRepository: tagRepo,
+            repoTagRepository: rtRepo,
+            githubStarListRepository: listRepo,
+            repoNoteRepository: noteRepo
+        )
+        await vm.refreshSidebar()
+        vm.selectSidebar(.githubStarList("list-filled"))
+        await vm.reloadItems()
+        #expect(vm.items.map(\.id) == [1])
+        let revisionAfterFilledList = vm.itemsRevision
+
+        vm.selectSidebar(.githubStarList("list-empty"))
+
+        #expect(vm.isKnownEmptyGitHubStarListSelection == true)
+        #expect(vm.items.isEmpty)
+        #expect(vm.isLoading == false)
+        #expect(vm.hasMore == false)
+        #expect(vm.isGitHubStarListSwitchLoading == false)
+        #expect(vm.itemsRevision == revisionAfterFilledList + 1)
+
+        vm.selectSidebar(.githubStarList("list-filled"))
+        #expect(vm.isGitHubStarListSwitchLoading == true)
+        #expect(vm.items.isEmpty)
+
+        await vm.reloadItems()
+
+        #expect(vm.isGitHubStarListSwitchLoading == false)
+        #expect(vm.items.map(\.id) == [1])
     }
 
     /// 周期性检查条件，最多等待 `timeout` 秒；条件成立立即返回。

@@ -791,6 +791,9 @@ struct RepoListView: View {
             Group {
                 if viewModel.selection.isSmartCollectionsSurface {
                     SmartCollectionsOverviewView()
+                } else if viewModel.isGitHubStarListSwitchLoading && viewModel.items.isEmpty {
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if viewModel.isLoading && viewModel.items.isEmpty {
                     RepoSkeletonListView(rowCount: 10)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1101,7 +1104,11 @@ struct RepoListView: View {
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
-                    .listRowReveal(index: item.index, snapshotID: viewModel.itemsRevision)
+                    .listRowReveal(
+                        index: item.index,
+                        snapshotID: viewModel.itemsRevision,
+                        skipAnimation: viewModel.skipListRowReveal
+                    )
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                     .id(repo.id)

@@ -828,7 +828,9 @@ struct HomeView: View {
         // 这里如果再进 reloadItems()，即便最终命中 cache early-return，也会创建一次
         // 无意义的异步任务并触发若干同值状态写入；这条路径在 1 条 repo 的分类上也会被用户感知为顿挫。
         // 过期缓存 / 无缓存仍继续 reload，保留首次加载和 SWR 刷新语义。
-        guard selectedSidebarPage == .manage, !viewModel.hasCachedItems else { return }
+        guard selectedSidebarPage == .manage,
+              !viewModel.hasCachedItems,
+              !viewModel.isKnownEmptyGitHubStarListSelection else { return }
         await viewModel.reloadItems()
         applyManageDetailSelectionPolicy()
     }

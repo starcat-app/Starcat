@@ -69,7 +69,17 @@ final class HomeViewModel {
             //     所以多次写也只触发一次 render。
             //   - `reloadItems` 仍会被 .task 拉起，里面的 `loadFromCache` 会再调一次 applyView，
             //     此时数据完全相同，要靠 `applyView` 的 no-op 检测短路掉（见 applyView 实现）。
+            if selection.isGitHubStarListContext {
+                skipListRowReveal = true
+                DispatchQueue.main.async { [weak self] in
+                    self?.skipListRowReveal = false
+                }
+            } else if isGitHubStarListSwitchLoading {
+                isGitHubStarListSwitchLoading = false
+            }
+
             if let cached = listCache[selection], !cached.isExpired {
+                if isGitHubStarListSwitchLoading { isGitHubStarListSwitchLoading = false }
                 self.rawItems = cached.rawItems
                 self.statusMap = cached.statusMap
                 self.applyView()             // items / itemsRevision 同步就位
@@ -79,7 +89,28 @@ final class HomeViewModel {
                 #if DEBUG
                 AppLog.ui.notice("[switch-cat] T0' eager cache load done (items=\(self.items.count)) +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
                 #endif
+            } else if isKnownEmptyGitHubStarListSelection {
+                if isGitHubStarListSwitchLoading { isGitHubStarListSwitchLoading = false }
+                // Sidebar 计数已经确认目标分组为空时，立即进入空态，避免先渲染上一组 repo。
+                currentReloadTask?.cancel()
+                currentReloadTask = nil
+                rawItems = []
+                filteredSorted = []
+                visibleRepoTotalCount = 0
+                currentPage = 1
+                hasMore = false
+                statusMap = [:]
+                if !items.isEmpty {
+                    items = []
+                    itemsRevision &+= 1
+                }
+                if self.isLoading { self.isLoading = false }
+                if self.isRefreshing { self.isRefreshing = false }
+                if self.loadError != nil { self.loadError = nil }
             } else {
+                if selection.isGitHubStarListContext {
+                    isGitHubStarListSwitchLoading = true
+                }
                 // 无缓存或过期 → 切到骨架屏，等 reloadItems 拉新数据。
                 // 这里同步设 isLoading=true，避免「先渲列表壳一帧再渲骨架屏」的闪烁。
                 if !self.isLoading { self.isLoading = true }
@@ -147,6 +178,18 @@ final class HomeViewModel {
     /// 让 SwiftUI 走"增量插入新行"路径保持滚动位置，与切分类 / 切排序的"整栏重建"
     /// 路径区分开（详见 `sliceToCurrentPage()` 内注释）。
     private(set) var itemsRevision: Int = 0
+
+    /// GitHub Stars List 分组切换时让行直接显示，跳过 `listRowReveal` 的 stagger 淡入。
+    ///
+    /// DB 分页通常几十毫秒内返回；如果此时整页 row 随 `itemsRevision` 重播 opacity reveal，
+    /// 用户会看到明显闪烁。这个旁路只覆盖仓库分组切换，排序 / 过滤仍保留原快照动画。
+    private(set) var skipListRowReveal = false
+
+    /// GitHub Stars List 分组切换期间的短暂占位状态。
+    ///
+    /// 从 0 repo 分组切到有数据分组时，`items` 在 DB 返回前仍为空；若直接走通用 loading
+    /// 分支会闪一下骨架屏 / 空态。这里让 View 层显示透明占位，等 rows 到位后直接显示列表。
+    private(set) var isGitHubStarListSwitchLoading = false
 
     /// R-07（2026-06-15）：客户端分页 —— 当前已展示到第几页（1-based）。
     /// `items.count` ≈ `currentPage * pageSize`（最后一页可能不足）。
@@ -248,6 +291,20 @@ final class HomeViewModel {
     var hasCachedItems: Bool {
         guard !isSearching else { return false }
         return listCache[selection] != nil && !listCache[selection]!.isExpired
+    }
+
+    /// 当前选中的 GitHub Stars List 是否已由 Sidebar 计数确认为空。
+    ///
+    /// 这里要求 Sidebar 元数据已经加载，避免启动恢复早期把“计数还没回来”误判成空。
+    var isKnownEmptyGitHubStarListSelection: Bool {
+        switch selection {
+        case .githubStarList(let id):
+            return githubStarLists.contains { $0.id == id } && (githubStarListCounts[id] ?? 0) == 0
+        case .githubStarListUngrouped:
+            return totalCount > 0 && githubStarListUngroupedCount == 0
+        default:
+            return false
+        }
     }
 
     // MARK: - 搜索
@@ -1456,6 +1513,9 @@ final class HomeViewModel {
             guard !Task.isCancelled else { return }
             self.isLoading = false
             self.isRefreshing = false
+            if self.isGitHubStarListSwitchLoading {
+                self.isGitHubStarListSwitchLoading = false
+            }
 
             switch result {
             case .success(let (rowsWithSentinel, pageStatusMap)):

@@ -248,8 +248,10 @@ struct RepoRepositoryTests {
         #expect(stats[0].count == 1)
         #expect(stats[1].language == "Swift")
         #expect(stats[1].count == 2)
-        #expect(stats.contains(where: { $0.language == "Python" && $0.count == 1 }))
-        #expect(stats.contains(where: { $0.language == "Rust" && $0.count == 1 }))
+        let pythonStat = stats.first { $0.language == "Python" }
+        let rustStat = stats.first { $0.language == "Rust" }
+        #expect(pythonStat?.count == 1)
+        #expect(rustStat?.count == 1)
     }
 
     @Test("searchFTS 命中 name 关键词")
