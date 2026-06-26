@@ -86,6 +86,8 @@ struct RepoListView: View {
     /// Trending / Activity 的计数来自各自子视图内部筛选结果，父视图只负责把它显示到导航副标题。
     @State private var trendingRepoCount = 0
     @State private var activityItemCount = 0
+    @State private var smartSearchExpandToken = 0
+    @State private var toolbarSearchHistory: [SearchHistory] = []
 
     var body: some View {
         @Bindable var vm = viewModel
@@ -175,7 +177,10 @@ struct RepoListView: View {
         // W12 PR-5：Cmd+A 全选 — 4 场景统一注入一个隐藏按钮承载快捷键。
         // 仅当**当前 page 对应的 store** 处于多选模式时生效（disabled 否则）。Shift 区间选不补。
         .background {
-            selectAllShortcutButton
+            ZStack {
+                selectAllShortcutButton
+                smartSearchShortcutButton
+            }
         }
     }
 
@@ -208,6 +213,19 @@ struct RepoListView: View {
         .hidden()
     }
 
+    /// Cmd+F 展开当前列表搜索。全局搜索入口仍由显式点击 toolbar 主搜索图标触发。
+    private var smartSearchShortcutButton: some View {
+        Button {
+            viewModel.smartSearchMode = .keyword
+            smartSearchExpandToken += 1
+        } label: {
+            EmptyView()
+        }
+        .keyboardShortcut("f", modifiers: .command)
+        .disabled(selectedPage != .manage)
+        .hidden()
+    }
+
     /// 中栏前景层：navigation / inset / toolbar / 列表内容（叠在 `DetailHeroTintBackground` 上）。
     @ViewBuilder
     private var listColumnChrome: some View {
@@ -228,15 +246,6 @@ struct RepoListView: View {
                         lastSyncedAt: lastSyncedAt,
                         onShowBatchAIPanel: onShowBatchAIPanel
                     )
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        onOpenSearchCenter?()
-                    } label: {
-                        ToolbarIcon("sparkle.magnifyingglass")
-                            .accessibilityLabel(Text("toolbar.globalSearch"))
-                    }
-                    .help("toolbar.globalSearchHelp")
                 }
                 let spec = currentToolbarSpec
                 if let leading = spec.leadingPrimary {
@@ -973,14 +982,26 @@ struct RepoListView: View {
                 if !submitted.isEmpty {
                     Task {
                         try? await historyRepository.record(submitted)
+                        await reloadToolbarSearchHistory()
                     }
                 }
             },
             onRefreshSemanticIndex: {
                 Task { await viewModel.refreshSemanticIndex() }
             },
+            onOpenGlobalSearch: {
+                onOpenSearchCenter?()
+            },
             isDisabled: isDisabled,
-            collapseToken: viewModel.selectedRepoID
+            collapseToken: viewModel.selectedRepoID,
+            expandToken: smartSearchExpandToken,
+            historyEntries: toolbarSearchHistory,
+            onRefreshHistory: {
+                Task { await reloadToolbarSearchHistory() }
+            },
+            onRemoveHistory: { entry in
+                Task { await removeToolbarSearchHistory(entry) }
+            }
         )
         .onAppear {
             if viewModel.smartSearchMode != settings.smartSearchMode {
@@ -990,6 +1011,25 @@ struct RepoListView: View {
         .onChange(of: viewModel.smartSearchMode) { _, newValue in
             settings.smartSearchMode = newValue
         }
+    }
+
+    /// Toolbar 搜索历史取自与 Search Center 相同的 SQLite 表，并沿用相同半衰期排序。
+    @MainActor
+    private func reloadToolbarSearchHistory() async {
+        guard let entries = try? await dependencies.searchHistoryRepository.fetchAll() else {
+            toolbarSearchHistory = []
+            return
+        }
+        let now = Date()
+        toolbarSearchHistory = entries.sorted { lhs, rhs in
+            lhs.decayedScore(now: now) > rhs.decayedScore(now: now)
+        }
+    }
+
+    @MainActor
+    private func removeToolbarSearchHistory(_ entry: SearchHistory) async {
+        try? await dependencies.searchHistoryRepository.remove(query: entry.queryLower)
+        await reloadToolbarSearchHistory()
     }
 
     // MARK: - 列表主体

@@ -33,6 +33,7 @@ struct SmartSearchField: View {
     let isIndexing: Bool
     let onSubmitSearch: (String) -> Void
     let onRefreshSemanticIndex: () -> Void
+    var onOpenGlobalSearch: (() -> Void)?
 
     /// W12 toolbar 专项 PR-2：禁用态。
     ///
@@ -55,16 +56,23 @@ struct SmartSearchField: View {
     /// 但点击 repo 行时，中栏 toolbar 空间应回到紧凑态，同时不能清掉搜索条件；
     /// 调用方每次切换 repo 时传入变化的 token，本组件只收起 UI，不改 `text`。
     var collapseToken: Int64?
+    var expandToken: Int = 0
+    var historyEntries: [SearchHistory] = []
+    var onRefreshHistory: (() -> Void)?
+    var onRemoveHistory: ((SearchHistory) -> Void)?
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var draftText = ""
     @State private var isExpanded = false
     @State private var isCollapsedByExternalRequest = false
+    @State private var isHistoryPanelPresented = false
+    @State private var isCollapsedModeMenuPresented = false
     @FocusState private var isTextFieldFocused: Bool
     @FocusState private var isCollapsedIconFocused: Bool
 
     private let collapsedWidth: CGFloat = 42
+    private let globalCollapsedWidth: CGFloat = 58
     private let expandedWidth: CGFloat = 300
     private let height: CGFloat = 38
 
@@ -76,6 +84,10 @@ struct SmartSearchField: View {
 
     private var hasCommittedText: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var effectiveCollapsedWidth: CGFloat {
+        onOpenGlobalSearch == nil ? collapsedWidth : globalCollapsedWidth
     }
 
     /// 空输入但仍聚焦时保持展开；有输入时默认保持展开，避免用户看不见当前筛选条件。
@@ -92,7 +104,7 @@ struct SmartSearchField: View {
                 collapsedButton
             }
         }
-        .frame(width: shouldExpand ? expandedWidth : collapsedWidth, height: height)
+        .frame(width: shouldExpand ? expandedWidth : effectiveCollapsedWidth, height: height)
         .opacity(isDisabled ? 0.55 : 1.0)
         .help(isDisabled ? disabledHelpKey : (mode == .semantic ? "search.semantic.placeholder" : "search.repoPlaceholder"))
         .animation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.86), value: shouldExpand)
@@ -102,6 +114,7 @@ struct SmartSearchField: View {
             guard !isDisabled else { return }
             if focused {
                 isExpanded = true
+                openHistoryPanel()
             } else {
                 collapseIfPossible()
             }
@@ -118,6 +131,10 @@ struct SmartSearchField: View {
         }
         .onChange(of: collapseToken) { _, _ in
             collapseFromExternalRequest()
+        }
+        .onChange(of: expandToken) { _, _ in
+            guard !isDisabled else { return }
+            expandAndFocusInput()
         }
         .onAppear {
             draftText = text
@@ -136,24 +153,47 @@ struct SmartSearchField: View {
     /// 点击时不直接弹模式菜单，而是先展开搜索框；展开后左侧的图标 + chevron 再负责模式切换。
     /// 这样可以避免一次点击同时触发“展开”和“打开菜单”的歧义。
     private var collapsedButton: some View {
-        Button {
-            // PR-2 禁用态：点击 no-op；外层 `.help(disabledHelpKey)` 已说明原因。
-            guard !isDisabled else { return }
-            expandAndFocusInput()
-        } label: {
-            Image(systemName: mode.systemImage)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(isSemantic ? .purple : .secondary)
-                .frame(width: collapsedWidth, height: height)
+        Group {
+            if let onOpenGlobalSearch {
+                HStack(spacing: 8) {
+                    Button {
+                        onOpenGlobalSearch()
+                    } label: {
+                        ToolbarIcon("sparkle.magnifyingglass")
+                            .accessibilityLabel(Text("toolbar.globalSearch"))
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help("toolbar.globalSearchHelp")
+
+                    collapsedModeMenu
+                }
+                .padding(.horizontal, 8)
+                .frame(width: globalCollapsedWidth, height: height)
+                .background(searchBackground)
+                .overlay(searchBorder)
                 .contentShape(Capsule(style: .continuous))
+            } else {
+                Button {
+                    // PR-2 禁用态：点击 no-op；外层 `.help(disabledHelpKey)` 已说明原因。
+                    guard !isDisabled else { return }
+                    expandAndFocusInput()
+                } label: {
+                    Image(systemName: mode.systemImage)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(isSemantic ? .purple : .secondary)
+                        .frame(width: collapsedWidth, height: height)
+                        .contentShape(Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .focused($isCollapsedIconFocused)
+                .disabled(isDisabled)
+                .background(searchBackground)
+                .overlay(searchBorder)
+                .overlay(aiGlow)
+            }
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .focused($isCollapsedIconFocused)
-        .disabled(isDisabled)
-        .background(searchBackground)
-        .overlay(searchBorder)
-        .overlay(aiGlow)
     }
 
     /// 展开态：模式菜单、输入框和右侧操作都收进同一个胶囊里。
@@ -194,10 +234,74 @@ struct SmartSearchField: View {
             guard !isDisabled else { return }
             expandAndFocusInput()
         }
+        .popover(isPresented: $isHistoryPanelPresented, arrowEdge: .bottom) {
+            SmartSearchHistoryPanel(
+                entries: historyEntries,
+                onUse: { entry in
+                    draftText = entry.query
+                    isHistoryPanelPresented = false
+                    commitSearch()
+                },
+                onRemove: { entry in
+                    onRemoveHistory?(entry)
+                }
+            )
+            .appLocaleEnvironment()
+        }
+    }
+
+    private var collapsedModeMenu: some View {
+        Button {
+            isCollapsedModeMenuPresented.toggle()
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: ToolbarIconMetrics.chevronFontSize, weight: .semibold))
+                .frame(
+                    width: ToolbarIconMetrics.chevronFrameWidth,
+                    height: ToolbarIconMetrics.chevronFrameHeight
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(isDisabled)
+        .help("search.mode.hint")
+        .popover(isPresented: $isCollapsedModeMenuPresented, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 2) {
+                collapsedModeMenuRow(.keyword)
+                collapsedModeMenuRow(.semantic)
+            }
+            .padding(6)
+            .frame(width: 200, alignment: .leading)
+            .appLocaleEnvironment()
+        }
+    }
+
+    private func collapsedModeMenuRow(_ option: SmartSearchMode) -> some View {
+        CollapsedModeMenuRow(
+            option: option,
+            isSelected: option == mode,
+            onSelect: {
+                isCollapsedModeMenuPresented = false
+                mode = option
+                expandAndFocusInput()
+            }
+        )
     }
 
     private var modeMenu: some View {
         Menu {
+            if onOpenGlobalSearch != nil {
+                Button {
+                    isHistoryPanelPresented = false
+                    onOpenGlobalSearch?()
+                } label: {
+                    Label("toolbar.globalSearch", systemImage: "sparkle.magnifyingglass")
+                }
+
+                Divider()
+            }
+
             Picker("search.mode.title", selection: $mode) {
                 ForEach(SmartSearchMode.allCases) { option in
                     Label {
@@ -304,11 +408,13 @@ struct SmartSearchField: View {
         onSubmitSearch(submitted)
         isCollapsedByExternalRequest = false
         isExpanded = true
+        isHistoryPanelPresented = false
     }
 
     private func expandAndFocusInput() {
         isCollapsedByExternalRequest = false
         isExpanded = true
+        openHistoryPanel()
         DispatchQueue.main.async {
             isTextFieldFocused = true
         }
@@ -319,6 +425,12 @@ struct SmartSearchField: View {
         isCollapsedIconFocused = false
         isExpanded = false
         isCollapsedByExternalRequest = true
+        isHistoryPanelPresented = false
+    }
+
+    private func openHistoryPanel() {
+        onRefreshHistory?()
+        isHistoryPanelPresented = true
     }
 
     private func collapseIfPossible() {
@@ -327,6 +439,132 @@ struct SmartSearchField: View {
             if !isTextFieldFocused && !hasDraftText && !hasCommittedText {
                 isExpanded = false
             }
+        }
+    }
+}
+
+private struct CollapsedModeMenuRow: View {
+    let option: SmartSearchMode
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 10) {
+                Image(systemName: option.systemImage)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 18)
+                    .foregroundStyle(.secondary)
+
+                Text(option.displayName)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.9)
+
+                Spacer(minLength: 4)
+
+                Image(systemName: isSelected ? "checkmark" : "")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 12)
+                    .foregroundStyle(.tint)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 32)
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background {
+                if isHovered {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.14))
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .onHover { isHovered = $0 }
+    }
+}
+
+/// Toolbar 搜索框的轻量历史面板。
+///
+/// 全局 Search Center 已有完整历史页；toolbar 只承载"快速复用最近关键词"，
+/// 因此用紧凑列表而不是复制 Search Center 的大面积 FlowLayout，避免 toolbar popover 过重。
+private struct SmartSearchHistoryPanel: View {
+    let entries: [SearchHistory]
+    let onUse: (SearchHistory) -> Void
+    let onRemove: (SearchHistory) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("search.history.recent")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+
+            if entries.isEmpty {
+                ContentUnavailableView(
+                    "search.history.empty.title",
+                    systemImage: "sparkle.magnifyingglass",
+                    description: Text("search.history.empty.description")
+                )
+                .frame(width: 260, height: 120)
+            } else {
+                VStack(spacing: 2) {
+                    ForEach(entries.prefix(8), id: \.id) { entry in
+                        historyRow(entry)
+                    }
+                }
+                .frame(width: 280, alignment: .leading)
+            }
+        }
+        .padding(10)
+    }
+
+    private func historyRow(_ entry: SearchHistory) -> some View {
+        HStack(spacing: 6) {
+            Button {
+                onUse(entry)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16)
+                    Text(entry.query)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    if entry.useCount >= 3 {
+                        Text(entry.useCount.formatted())
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(String(format: String.l10n("search.history.tooltip.useCountFormat"), entry.query, entry.useCount))
+
+            Button {
+                onRemove(entry)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18, height: 18)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("search.history.removeOne.help")
         }
     }
 }
