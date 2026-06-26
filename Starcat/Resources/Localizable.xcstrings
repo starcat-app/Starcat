@@ -25948,6 +25948,22 @@
         }
       }
     },
+    "sharecard.theme.adventureSunrise" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sunrise"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暖阳"
+          }
+        }
+      }
+    },
     "sharecard.theme.auroraBlue" : {
       "extractionState" : "stale",
       "localizations" : {

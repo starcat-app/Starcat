@@ -195,7 +195,9 @@ struct ShareCardContent: View {
                     )
                 }
         } else if style == .adventure {
-            Image("ShareCardAdventureBackground")
+            Image(colorSet == .adventureSunrise
+                  ? "ShareCardAdventureSunriseBackground"
+                  : "ShareCardAdventureBackground")
                 .resizable()
                 .scaledToFill()
                 .frame(width: Self.canvasWidth, height: Self.canvasHeight)

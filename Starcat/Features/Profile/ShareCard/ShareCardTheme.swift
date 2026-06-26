@@ -64,7 +64,7 @@ enum ShareCardStyle: String, CaseIterable, Identifiable, Hashable {
         case .terminal:
             return [.githubGreen, .minimal, .heatOrange, .auroraBlue]
         case .adventure:
-            return [.lightCard]
+            return [.lightCard, .adventureSunrise]
         case .spotlight:
             return [.auroraBlue, .berryPurple]
         case .magazine:
@@ -108,6 +108,8 @@ enum ShareCardColorSet: String, CaseIterable, Identifiable, Hashable {
     case lightCard = "lightCard"
     /// 极夜黑卡：纯黑底 + 白字 + 大圆角头像 + 右下角 QR。
     case darkCard = "darkCard"
+    /// 暖阳冒险：第 5 种样式专属背景图变体，复用浅色文字色板，只替换插画背景。
+    case adventureSunrise = "adventureSunrise"
 
     static let socialPalette: [ShareCardColorSet] = [
         .minimal, .heatOrange, .githubGreen, .auroraBlue, .berryPurple
@@ -125,6 +127,7 @@ enum ShareCardColorSet: String, CaseIterable, Identifiable, Hashable {
         case .berryPurple:  return "sharecard.theme.berryPurple"
         case .lightCard:    return "sharecard.theme.lightCard"
         case .darkCard:     return "sharecard.theme.darkCard"
+        case .adventureSunrise: return "sharecard.theme.adventureSunrise"
         }
     }
 
@@ -138,6 +141,10 @@ enum ShareCardColorSet: String, CaseIterable, Identifiable, Hashable {
         case .berryPurple:  return .berryPurplePalette
         case .lightCard:    return .lightCardPalette
         case .darkCard:     return .darkCardPalette
+        case .adventureSunrise:
+            // 这个 case 是第 5 种样式的背景图开关，不引入新的排版或文字色规则；
+            // 复用 lightCard 色板能保持现有冒险样式在浅色插画上的可读性。
+            return .lightCardPalette
         }
     }
 
@@ -162,6 +169,8 @@ enum ShareCardColorSet: String, CaseIterable, Identifiable, Hashable {
             return (Color.fromHex6(0xD8F3F0), Color.fromHex6(0x155E75))
         case .darkCard:
             return (Color.fromHex6(0x4C3A64), Color.fromHex6(0xC4B5FD))
+        case .adventureSunrise:
+            return (Color.fromHex6(0xFFE7A6), Color.fromHex6(0xF59E0B))
         }
     }
 }
