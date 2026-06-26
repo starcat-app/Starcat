@@ -498,10 +498,15 @@ private struct DiagnosticsSettingsTab: View {
             }
 
             Section("settings.diagnostics.privacy.section") {
-                Text("settings.diagnostics.privacy.description")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Label {
+                    Text("settings.diagnostics.privacy.description")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "lock.shield")
+                        .foregroundStyle(.green)
+                }
             }
         }
         .formStyle(.grouped)

@@ -192,27 +192,44 @@ struct ProSettingsTab: View {
     }
 
     private var actionSection: some View {
+        // 方案 A：原生设置行——整行可点、无灰底胶囊，外链行右侧用 ↗ 提示。
         Section {
-            HStack(spacing: 8) {
-                Button {
-                    Task { await subscriptionManager.restorePurchases() }
-                } label: {
-                    Label("settings.pro.button.restore", systemImage: "arrow.clockwise")
-                }
-                .disabled(subscriptionManager.isRestoring)
-
-                Button {
-                    isOfferCodeRedemptionPresented = true
-                } label: {
-                    Label("settings.pro.button.redeemOfferCode", systemImage: "giftcard")
-                }
-
-                Button {
-                    openURL(SubscriptionExternalLinks.manageSubscriptions)
-                } label: {
-                    Label("settings.pro.button.manage", systemImage: "person.crop.circle.badge.checkmark")
-                }
+            Button {
+                Task { await subscriptionManager.restorePurchases() }
+            } label: {
+                ProAccountActionRow(
+                    titleKey: "settings.pro.button.restore",
+                    systemImage: "arrow.clockwise",
+                    trailing: subscriptionManager.isRestoring ? .progress : .none
+                )
             }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .disabled(subscriptionManager.isRestoring)
+
+            Button {
+                isOfferCodeRedemptionPresented = true
+            } label: {
+                ProAccountActionRow(
+                    titleKey: "settings.pro.button.redeemOfferCode",
+                    systemImage: "giftcard",
+                    trailing: .chevron
+                )
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+
+            Button {
+                openURL(SubscriptionExternalLinks.manageSubscriptions)
+            } label: {
+                ProAccountActionRow(
+                    titleKey: "settings.pro.button.manage",
+                    systemImage: "person.crop.circle.badge.checkmark",
+                    trailing: .externalLink
+                )
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
         } header: {
             Text("settings.pro.account.section")
         } footer: {
@@ -230,6 +247,64 @@ struct ProSettingsTab: View {
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(4))
             showSuccessMessage = false
+        }
+    }
+}
+
+/// Pro 设置页 Account 区的单行操作样式（方案 A：macOS 系统设置行语义）。
+///
+/// - 左侧图标 + 标题占满行宽，英文长文案自然展开，不靠灰底胶囊。
+/// - 右侧附件按动作类型区分：App 内 sheet 用 chevron、外链用 ↗、进行中用 ProgressView。
+private struct ProAccountActionRow: View {
+
+    enum Trailing {
+        case none
+        case chevron
+        case externalLink
+        case progress
+    }
+
+    let titleKey: LocalizedStringKey
+    let systemImage: String
+    let trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, alignment: .center)
+
+            Text(titleKey)
+                .font(.body)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 8)
+
+            trailingView
+        }
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var trailingView: some View {
+        switch trailing {
+        case .none:
+            EmptyView()
+        case .chevron:
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+        case .externalLink:
+            Image(systemName: "arrow.up.right.square")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+        case .progress:
+            ProgressView()
+                .controlSize(.small)
         }
     }
 }

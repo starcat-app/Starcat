@@ -136,36 +136,67 @@ struct ProPaywallSheet: View {
     }
 
     private var footerActions: some View {
-        HStack {
-            Button("paywall.button.restore") {
-                Task { await subscriptionManager.restorePurchases() }
-            }
-            .disabled(subscriptionManager.isRestoring)
+        VStack(alignment: .leading, spacing: 10) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    paywallFooterButton("paywall.button.restore") {
+                        Task { await subscriptionManager.restorePurchases() }
+                    }
+                    .disabled(subscriptionManager.isRestoring)
 
-            Button("paywall.button.redeemOfferCode") {
-                isOfferCodeRedemptionPresented = true
+                    paywallFooterButton("paywall.button.redeemOfferCode") {
+                        isOfferCodeRedemptionPresented = true
+                    }
+
+                    paywallFooterButton("paywall.button.manage") {
+                        openURL(SubscriptionExternalLinks.manageSubscriptions)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    paywallFooterButton("paywall.button.restore") {
+                        Task { await subscriptionManager.restorePurchases() }
+                    }
+                    .disabled(subscriptionManager.isRestoring)
+
+                    paywallFooterButton("paywall.button.redeemOfferCode") {
+                        isOfferCodeRedemptionPresented = true
+                    }
+
+                    paywallFooterButton("paywall.button.manage") {
+                        openURL(SubscriptionExternalLinks.manageSubscriptions)
+                    }
+                }
             }
 
-            Button("paywall.button.manage") {
-                openURL(SubscriptionExternalLinks.manageSubscriptions)
+            HStack {
+                Spacer()
+                Button("paywall.button.close") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
             }
+        }
+    }
 
-            Spacer()
-
-            Button("paywall.button.close") {
-                dismiss()
-            }
-            .keyboardShortcut(.cancelAction)
+    private func paywallFooterButton(
+        _ titleKey: LocalizedStringKey,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(titleKey)
+                .fixedSize(horizontal: true, vertical: false)
         }
     }
 
     private func paywallBenefit(_ systemImage: String, _ key: LocalizedStringKey) -> some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .top, spacing: 8) {
             Image(systemName: systemImage)
                 .foregroundStyle(.orange)
-                .frame(width: 18)
+                .frame(width: 18, alignment: .top)
             Text(key)
                 .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

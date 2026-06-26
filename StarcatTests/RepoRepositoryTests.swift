@@ -237,18 +237,19 @@ struct RepoRepositoryTests {
         #expect(noLang.first?.language == nil)
     }
 
-    @Test("languageStats 按 count 倒序，空语言以空串呈现")
+    @Test("languageStats：未分类排第一，其余按 count 倒序")
     func languageStats_orderedByCount() async throws {
         let (repo, _) = try makeRepo()
         try await seedDataset(repo)
 
         let stats = try await repo.languageStats()
-        // Swift=2 排第一；其余各 1 按字母序：'' < Python < Rust
         #expect(stats.count == 4)
-        #expect(stats.first?.language == "Swift")
-        #expect(stats.first?.count == 2)
-        // 空串代表 language NULL，必然包含
-        #expect(stats.contains(where: { $0.language.isEmpty && $0.count == 1 }))
+        #expect(stats[0].language == "")
+        #expect(stats[0].count == 1)
+        #expect(stats[1].language == "Swift")
+        #expect(stats[1].count == 2)
+        #expect(stats.contains(where: { $0.language == "Python" && $0.count == 1 }))
+        #expect(stats.contains(where: { $0.language == "Rust" && $0.count == 1 }))
     }
 
     @Test("searchFTS 命中 name 关键词")

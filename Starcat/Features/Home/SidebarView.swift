@@ -52,8 +52,8 @@ struct SidebarView: View {
     /// 与下方 languagesExpanded / trendingLanguagesExpanded / activityCategoriesExpanded
     /// 行为一致：重启 App 后回到折叠默认值）。
     @State private var tagsExpanded: Bool = false
-    /// GitHub Stars List 分组展开/收起状态。
-    @State private var githubStarListsExpanded: Bool = true
+    /// GitHub Stars List（Repository groups）展开/收起状态。默认折叠，与 Tags 一致。
+    @State private var githubStarListsExpanded: Bool = false
     /// Trending 语言列表展开/收起状态。和 Manage 的 Languages 分开，避免互相影响。
     @State private var trendingLanguagesExpanded: Bool = true
     /// Activity 分类列表展开/收起状态。Activity 是独立 root，不能复用 Trending 的展开态。

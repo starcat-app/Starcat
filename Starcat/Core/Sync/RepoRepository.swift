@@ -274,9 +274,10 @@ struct GRDBRepoRepository {
         }
     }
 
-    /// 语言聚合统计，按 count 倒序。
-    /// 用于 Sidebar 的 Languages 分组展示。
-    /// `language IS NULL` 的 repo 也单独统计为一项（caller 用 `("Unknown", count)` 渲染）。
+    /// 语言聚合统计，用于 Sidebar 的 Languages 分组展示。
+    ///
+    /// 排序：`未分类`（`language == ''`）固定排第 1 位，其余按 count 倒序 + 语言名升序。
+    /// `language IS NULL` 的 repo 经 `COALESCE` 归入空串一项。
     func languageStats() async throws -> [LanguageStat] {
         try await database.writer.read { db in
             try LanguageStat.fetchAll(db, sql: """
@@ -284,7 +285,9 @@ struct GRDBRepoRepository {
                 FROM repos
                 WHERE is_starred = 1
                 GROUP BY language
-                ORDER BY count DESC, language ASC
+                ORDER BY CASE WHEN language = '' THEN 0 ELSE 1 END ASC,
+                         count DESC,
+                         language ASC
                 """)
         }
     }
