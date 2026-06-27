@@ -23274,6 +23274,22 @@
         }
       }
     },
+    "settings.services.status" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Service Status"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务状态"
+          }
+        }
+      }
+    },
     "settings.services.reset.help" : {
       "localizations" : {
         "en" : {

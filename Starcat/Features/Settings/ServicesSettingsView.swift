@@ -25,6 +25,9 @@ import SwiftUI
 
 struct ServicesSettingsTab: View {
 
+    /// Better Stack 公开状态页；非 REST 端点，就近常量（见 AppEndpoints.swift 文件头约定）。
+    private static let serviceStatusURL = URL(string: "https://starcat.betteruptime.com/")!
+
     @Environment(AppSettings.self) private var settings
     @Environment(AppDependencies.self) private var dependencies
 
@@ -45,10 +48,20 @@ struct ServicesSettingsTab: View {
     var body: some View {
         Form {
             Section {
-                Text("settings.services.intro")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 2)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("settings.services.intro")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 12)
+                    Link(destination: Self.serviceStatusURL) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.up.right.square")
+                            Text("settings.services.status")
+                        }
+                        .font(.caption)
+                    }
+                }
+                .padding(.vertical, 2)
             }
 
             ForEach(ThirdPartyService.allCases) { service in
