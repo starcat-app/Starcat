@@ -2,9 +2,10 @@
 
 > 创建：2026-06-18
 > 状态：**已拍板（dong4j）**，客户端实现已完成（2026-06-18）
-> 用途：v1 首版上架的订阅策略、StoreKit 2 技术方案、CloudKit 延后策略的**单一信任源**
+> 用途：v1 首版 **App Store 渠道** 的订阅策略、StoreKit 2 技术方案、CloudKit 延后策略的**单一信任源**
 > 前置阅读：`docs/PRO 订阅功能划分.md`、`docs/v1-上架检查清单.md`、`docs/CloudKit数据同步设计.md`
 > 合规页面：`pages/privacy.html`、`pages/privacy-zh.html`、`pages/eula.html`、`pages/eula-zh.html`
+> Direct 渠道：官网 DMG + Lemon Squeezy 授权码见 `docs/Direct分发与LemonSqueezy授权方案.md`
 
 ---
 
@@ -286,6 +287,7 @@ flowchart LR
 | 门控遗漏 | `rg` 扫 `AIClient` / `generateInsight` / `makeClient` |
 | 审核：订阅说明不清 | EULA §7 + Pro 页列明权益 |
 | 隐私政策写 CloudKit 但 App 无此功能 | §6.2 补「当前版本未提供」 |
+| Direct 授权与 App Store 审核边界混淆 | App Store build 不展示 Lemon Squeezy、license key 或外部购买入口；Direct build 单独走 `docs/Direct分发与LemonSqueezy授权方案.md` |
 
 ---
 
@@ -307,6 +309,7 @@ flowchart LR
 | `docs/Pro付费墙验证清单.md` | 免费用户触发 Pro 能力 → 付费墙的人工验收走查清单 |
 | `docs/App-Store-Connect-Offer-Code配置指南.md` | Connect 创建订阅 Offer Code + App 内兑换 SOP |
 | `docs/PRO 订阅功能划分.md` | 功能级免费/Pro 详单；§8 已由本文 §2 覆盖 |
+| `docs/Direct分发与LemonSqueezy授权方案.md` | 官网 DMG 分发、Lemon Squeezy license 与 Direct build 授权边界 |
 | `docs/v1-上架检查清单.md` | 上架走查；路径 B 已选 |
 | `docs/CloudKit数据同步设计.md` | CloudKit 技术设计；v1 不实施，D-1=Pro |
 | `docs/发版流程.md` | tag / DMG / 提审节奏 |
@@ -322,6 +325,7 @@ flowchart LR
 | 2026-06-18 | 初版：dong4j 拍板路径 B；D-1 CloudKit 延后且归 Pro；月订+年订 v1、买断 v0.2；Connect 非开发第一步；`pages/` 合规状态与提审前检查项 |
 | 2026-06-18 | 客户端实现完成：StoreKit 2 底座、Pro 设置页、统一付费墙、AI / Search / Release / Tag 门控、数量上限、`.storekit` 配置、i18n 与门控单测 |
 | 2026-06-19 | 修订 Pro 定位：免费版零 AI；BYOK 配置与所有 AI 工作流均为 Pro-only；删除 App 内 AI 次数试用与 `TrialQuotaStore` 路径 |
+| 2026-06-27 | 补充渠道边界：本文限定为 App Store / StoreKit 单一信任源；官网 DMG + Lemon Squeezy 授权码独立见 `docs/Direct分发与LemonSqueezy授权方案.md`。 |
 
 ---
 
