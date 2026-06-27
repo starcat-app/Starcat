@@ -899,6 +899,12 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright (c) 2024-2025 Model Context Protocol a Series of LF Projects, LLC.",
             url: URL(string: "https://github.com/modelcontextprotocol/swift-sdk")
         ),
+        AboutDependency(
+            name: "VectorImage",
+            license: "MIT",
+            copyright: "Copyright (c) 2026 Altimir Antonov",
+            url: URL(string: "https://github.com/AltiAntonov/VectorImage")
+        ),
 
         // MARK: 嵌入式资源 / 生成代码（非 SPM，但同样属于第三方开源）
 

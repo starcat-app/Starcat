@@ -110,33 +110,29 @@ struct ServicesSettingsTab: View {
 
             // URL 输入框 + 重置按钮
             //
-            // R-03 (2026-06-11)：原本 URL 旁还有「保存」按钮 + 回车自动保存，已删除。
-            // 现在保存逻辑统一收敛到底部「测试连接」按钮（点它会先把草稿落盘，再发探测请求）。
-            // TextField 的回车键也走「测试连接」语义，与按钮一致。
-            HStack(spacing: 8) {
-                TextField(
-                    "settings.services.url",
+            // 布局：固定标签列宽 + 输入框撑满中间 + 固定 24×24 icon 槽，与 API Key 行右缘对齐。
+            // 不用 TextField 自带 label——Form 里 label  intrinsic 宽度不一（「地址」vs「API Key」）
+            // 会导致两行输入框长度 / 右缘错位。
+            serviceLabeledFieldRow(labelKey: "settings.services.url") {
+                SingleLineTextField(
                     text: Binding(
                         get: { draft(for: service) },
                         set: { newValue in draftURLs[service.id] = newValue }
                     ),
-                    // 留空时不展示 production URL，避免把内置 fly.io 端点暴露给用户。
-                    prompt: Text("settings.services.url.placeholder")
+                    prompt: String.l10n("settings.services.url.placeholder"),
+                    onSubmit: { Task { await testConnection(for: service) } }
                 )
-                .textFieldStyle(.roundedBorder)
-                .disableAutocorrection(true)
-                .onSubmit {
-                    Task { await testConnection(for: service) }
-                }
-
-                Button {
+                .frame(width: ServiceFieldLayout.fieldWidth, height: ServiceFieldLayout.fieldHeight)
+                .accessibilityLabel(Text("settings.services.url"))
+            } trailingIcon: {
+                serviceFieldIconButton(
+                    systemName: "arrow.counterclockwise",
+                    helpKey: "settings.services.reset.help",
+                    disabled: !hasCustomURL(for: service) && draft(for: service).isEmpty
+                        && !hasCustomAPIKey(for: service) && apiKeyDraft(for: service).isEmpty
+                ) {
                     Task { await reset(service: service) }
-                } label: {
-                    Text("general.reset")
                 }
-                .disabled(!hasCustomURL(for: service) && draft(for: service).isEmpty
-                          && !hasCustomAPIKey(for: service) && apiKeyDraft(for: service).isEmpty)
-                .help(Text("settings.services.reset.help"))
             }
 
             // R-01 v1.2 BYOK API Key 输入行（2026-06-10 加）：
@@ -194,36 +190,23 @@ struct ServicesSettingsTab: View {
     private func apiKeyRow(for service: ThirdPartyService) -> some View {
         let isReveal = revealAPIKey[service.id] ?? false
 
-        HStack(spacing: 8) {
-            Group {
-                if isReveal {
-                    TextField(
-                        "settings.services.apiKey",
-                        text: apiKeyBinding(for: service),
-                        prompt: Text("settings.services.apiKey.placeholder")
-                    )
-                } else {
-                    SecureField(
-                        "settings.services.apiKey",
-                        text: apiKeyBinding(for: service),
-                        prompt: Text("settings.services.apiKey.placeholder")
-                    )
-                }
-            }
-            .textFieldStyle(.roundedBorder)
-            .disableAutocorrection(true)
-            .onSubmit {
-                Task { await testConnection(for: service) }
-            }
-
-            Button {
+        serviceLabeledFieldRow(labelKey: "settings.services.apiKey") {
+            SingleLineTextField(
+                text: apiKeyBinding(for: service),
+                isSecure: !isReveal,
+                prompt: String.l10n("settings.services.apiKey.placeholder"),
+                onSubmit: { Task { await testConnection(for: service) } }
+            )
+            .id(isReveal)
+            .frame(width: ServiceFieldLayout.fieldWidth, height: ServiceFieldLayout.fieldHeight)
+            .accessibilityLabel(Text("settings.services.apiKey"))
+        } trailingIcon: {
+            serviceFieldIconButton(
+                systemName: isReveal ? "eye.slash" : "eye",
+                helpKey: isReveal ? "settings.services.apiKey.hide" : "settings.services.apiKey.reveal"
+            ) {
                 revealAPIKey[service.id] = !isReveal
-            } label: {
-                Image(systemName: isReveal ? "eye.slash" : "eye")
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help(Text(isReveal ? "settings.services.apiKey.hide" : "settings.services.apiKey.reveal"))
         }
     }
 
@@ -258,8 +241,70 @@ struct ServicesSettingsTab: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+
+                // Better Stack uptime 徽标：仅 fly.io 内置服务展示（自部署 URL 不显示）。
+                if !hasCustomURL(for: service),
+                   let badgeURL = service.betterStackMonitorBadgeURL,
+                   let linkURL = service.betterStackStatusLinkURL {
+                    BetterStackStatusBadge(badgeURL: badgeURL, linkURL: linkURL)
+                }
             }
         }
+    }
+
+    // MARK: - Field Row Layout
+
+    /// 服务配置行布局常量：标签列 + 固定宽输入框 + 尾部 icon 槽。
+    private enum ServiceFieldLayout {
+        /// 覆盖 en「API Key」/ zh「API Key」等最长标签，保证两行输入框左缘对齐。
+        static let labelWidth: CGFloat = 72
+        /// 绝对固定输入框宽度（Settings 窗口 540pt − padding − 标签 − icon 槽后的安全值）。
+        static let fieldWidth: CGFloat = 340
+        /// NSTextField `.regular` 单行高度，与 roundedBorder TextField 视觉接近。
+        static let fieldHeight: CGFloat = 22
+        /// 与 `SettingsView` 快捷键重置按钮同款 24×24 命中区。
+        static let iconSlotSize: CGFloat = 24
+        static let rowSpacing: CGFloat = 8
+    }
+
+    /// 标签左对齐 + 固定宽输入框与尾部 icon 作为一组靠右贴齐（Form 行宽内 Spacer 吃掉留白）。
+    @ViewBuilder
+    private func serviceLabeledFieldRow<Field: View, Trailing: View>(
+        labelKey: LocalizedStringKey,
+        @ViewBuilder field: () -> Field,
+        @ViewBuilder trailingIcon: () -> Trailing
+    ) -> some View {
+        HStack(alignment: .center, spacing: ServiceFieldLayout.rowSpacing) {
+            Text(labelKey)
+                .frame(width: ServiceFieldLayout.labelWidth, alignment: .leading)
+            Spacer(minLength: ServiceFieldLayout.rowSpacing)
+            field()
+            trailingIcon()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// 输入框右侧 plain icon 按钮（重置 / 显示 Key 等），统一尺寸与 secondary 色。
+    @ViewBuilder
+    private func serviceFieldIconButton(
+        systemName: String,
+        helpKey: LocalizedStringKey,
+        disabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .frame(
+                    width: ServiceFieldLayout.iconSlotSize,
+                    height: ServiceFieldLayout.iconSlotSize
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .foregroundStyle(.secondary)
+        .disabled(disabled)
+        .help(Text(helpKey))
     }
 
     // MARK: - Actions

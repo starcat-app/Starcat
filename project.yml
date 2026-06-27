@@ -63,6 +63,10 @@ packages:
   MCPSwiftSDK:
     url: https://github.com/modelcontextprotocol/swift-sdk
     from: "0.12.1"
+  # 设置页 Better Stack uptime 徽标（远程 SVG 异步栅格化）。
+  VectorImage:
+    url: https://github.com/AltiAntonov/VectorImage
+    from: "0.7.0"
 
 targets:
   Starcat:
@@ -107,6 +111,8 @@ targets:
       - package: ZIPFoundation
       - package: MCPSwiftSDK
         product: MCP
+      - package: VectorImage
+        product: VectorImageUI
     # 在所有 build phase 跑完之后、codesign 之前执行：
     # 用 git 元数据改写产物 Info.plist 的 CFBundleVersion / CFBundleShortVersionString。
     # 详见 scripts/bump-version.sh 文件头注释。

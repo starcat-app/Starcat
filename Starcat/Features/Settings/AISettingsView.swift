@@ -640,17 +640,17 @@ struct AISettingsTab: View {
 
         VStack(spacing: 0) {
             providerInputRow(label: "settings.ai.provider.displayName", labelWidth: labelWidth, columnSpacing: columnSpacing, rowHeight: rowHeight) {
-                ProviderSingleLineTextField(text: editableProfileTextBinding(keyPath: \.displayName))
+                SingleLineTextField(text: editableProfileTextBinding(keyPath: \.displayName))
                     .accessibilityLabel("settings.ai.provider.displayName")
             }
             Divider()
             providerInputRow(label: "Base URL", labelWidth: labelWidth, columnSpacing: columnSpacing, rowHeight: rowHeight) {
-                ProviderSingleLineTextField(text: editableProfileTextBinding(keyPath: \.baseURL))
+                SingleLineTextField(text: editableProfileTextBinding(keyPath: \.baseURL))
                     .accessibilityLabel("Base URL")
             }
             Divider()
             providerInputRow(label: "API Key", labelWidth: labelWidth, columnSpacing: columnSpacing, rowHeight: rowHeight) {
-                ProviderSingleLineTextField(text: editableAPIKeyBinding(), isSecure: true)
+                SingleLineTextField(text: editableAPIKeyBinding(), isSecure: true)
                     .accessibilityLabel("API Key")
             }
         }
@@ -1939,7 +1939,7 @@ struct AISettingsTab: View {
     // (dong4j 反馈"+号后输入框打字会跳回 verified profile" — log 抓到关键证据:
     //  beginDraft(from:) 被错误调用 fromID=verifiedA prevDraftID=newDraft).
     //
-    // 根因:`ProviderSingleLineTextField` 是 NSViewRepresentable,Coordinator 在
+    // 根因:`SingleLineTextField` 是 NSViewRepresentable,Coordinator 在
     // makeCoordinator() 时持有当时的 binding。binding closure 之前 capture 了
     // **当时**的 `profileID`(verified A 的 id)。SwiftUI re-render 创建新 binding
     // (新的 profileID = draft.id),但 NSViewRepresentable 不会重建 Coordinator,
@@ -2222,59 +2222,6 @@ struct AISettingsTab: View {
 
 /// Provider 配置区专用单行输入框。
 ///
-/// 为什么不用 SwiftUI 原生 `TextField`：
-/// macOS `Form(.grouped)` 会把原生 TextField 的内容长度纳入布局协商，Cloudflare
-/// 这类超长 Base URL 容易把行顶成换行或让三行输入框宽度不一致。这里窄范围桥接
-/// AppKit，强制单行、禁 wrap、允许字段内部横向滚动；外层 SwiftUI 仍用
-/// `.frame(maxWidth: .infinity)` 控制三行等宽和右侧铺满。
-private struct ProviderSingleLineTextField: NSViewRepresentable {
-
-    @Binding var text: String
-    var isSecure: Bool = false
-
-    func makeNSView(context: Context) -> NSTextField {
-        let textField: NSTextField = isSecure ? NSSecureTextField() : NSTextField()
-        textField.delegate = context.coordinator
-        textField.isBordered = true
-        textField.isBezeled = true
-        textField.bezelStyle = .roundedBezel
-        textField.drawsBackground = true
-        textField.usesSingleLineMode = true
-        textField.lineBreakMode = .byClipping
-        textField.cell?.wraps = false
-        textField.cell?.isScrollable = true
-        textField.font = .systemFont(ofSize: NSFont.systemFontSize)
-        textField.controlSize = .regular
-        textField.stringValue = text
-        textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return textField
-    }
-
-    func updateNSView(_ textField: NSTextField, context: Context) {
-        if textField.stringValue != text {
-            textField.stringValue = text
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
-    }
-
-    final class Coordinator: NSObject, NSTextFieldDelegate {
-        @Binding private var text: String
-
-        init(text: Binding<String>) {
-            _text = text
-        }
-
-        func controlTextDidChange(_ notification: Notification) {
-            guard let textField = notification.object as? NSTextField else { return }
-            text = textField.stringValue
-        }
-    }
-}
-
 /// HOM-AIPROVIDERS-DRAFT-DISCARD-2026-06-06 (dong4j 反馈):
 /// SwiftUI 桥接 `NSWindow.willCloseNotification` 的窄范围监听器。
 ///
