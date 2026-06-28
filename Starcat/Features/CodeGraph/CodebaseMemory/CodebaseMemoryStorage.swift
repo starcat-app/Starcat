@@ -61,7 +61,7 @@ struct CodebaseMemoryExecutionStep: Codable, Equatable, Identifiable, Sendable {
     }
 
     /// 步骤标识（与 ViewModel 的 7 个步骤对齐）。
-    enum ID: String, Codable, Sendable {
+    enum ID: String, Codable, CaseIterable, Sendable {
         case resolveBinary, resolveRevision, download, extract, index, startUI, openBrowser
     }
 
