@@ -128,25 +128,17 @@ final class RepoDetailWindowController: NSWindowController, NSWindowDelegate {
             backendHint: nil
         )
 
-        // body 槽用 ManageDetailContent —— 已 star 本地 repo 的标准 README 视图。
-        // heroExtension 槽给空 View（Manage / Weekly / Activity 等 manage 场景同款）。
-        let content = RepoDetailScaffold(
+        // 用 `RepoDetailWindowContent` 包装层持有 `ReadmeViewModel` / `ReadmeTranslationViewModel`：
+        // 这两个 VM 是**单 repo 状态机**（与 `HomeView` / `WeeklyDetailScaffoldShell` 同模式），
+        // 不在 `appHostEnvironment` 注入的标准 service 链里，必须在新窗自己 `@State` 创建
+        // 并 `.environment(_:)` 注入，否则 `ManageDetailContent` 里 `@Environment(ReadmeViewModel.self)`
+        // 读不到值会触发 SwiftUI 断言崩溃（首次实机崩溃即此原因）。
+        let content = RepoDetailWindowContent(
             repo: repo,
             viewData: viewData,
-            starHelpKey: "repo.unstar",
-            showsRepoHealthEntry: true,
-            onStarTapped: {
-                // 推荐窗里的 star 点击：本地已 star → 触发 unstar。
-                // StarredRegistry @Observable 变更会自动驱动主窗 list + 主窗 hero
-                // 同步刷新（AppDependencies 共享）。
-                try await dependencies.starActionService.unstar(repo: repo)
-            },
-            heroExtension: { EmptyView() },
-            body: { onScrollReport in
-                ManageDetailContent(repo: repo, onScrollReport: onScrollReport)
-            }
+            dependencies: dependencies,
+            homeViewModel: homeViewModel
         )
-        .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
 
         let hostingController = NSHostingController(rootView: content)
         self.hostedContentController = hostingController
@@ -168,9 +160,89 @@ final class RepoDetailWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// 窗口关闭：从单例 map 中移除自己，下次 `show(repo:)` 会重建一个全新窗口。
-    /// 新窗口走全新 `RepoDetailScaffold` 链路，selectedRepo / readmeVM 等都重新
+    /// 新窗走全新 `RepoDetailScaffold` 链路，selectedRepo / readmeVM 等都重新
     /// 从 `repo` 派生。
     func windowWillClose(_ notification: Notification) {
         Self.instances.removeValue(forKey: repoId)
+    }
+}
+
+// MARK: - RepoDetailWindowContent
+
+/// 推荐详情独立窗的 SwiftUI 根视图（hosting controller 用）。
+///
+/// 关键职责：在 `@State` 里持有**单 repo 状态机**（`ReadmeViewModel` +
+/// `ReadmeTranslationViewModel`），再注入到 environment 链。
+///
+/// 为什么需要这层包装：
+/// - `ReadmeViewModel` / `ReadmeTranslationViewModel` 是按 repo 绑定的状态机（一个
+///   详情窗一个实例，跨详情页不共享），不像 `AppDependencies` 里的全局 service 那样可以
+///   在 `appHostEnvironment` 静态注入。
+/// - `appHostEnvironment` 注入链只覆盖 10 个 service（authSession / settings / 等），
+///   不含 `ReadmeViewModel`。
+/// - `ManageDetailContent` 在 body 里用 `@Environment(ReadmeViewModel.self)` / `@Environment(ReadmeTranslationViewModel.self)`
+///   读这两个 VM。如果不在这层新建并注入，新窗的 manage body 第一次渲染就会触发
+///   `EnvironmentValues.subscript.getter` 的 `_assertionFailure` 崩溃
+///   （实机首次崩溃即此原因，crash log 0x1b89e4e70 → RepoDetailWindowController:154）。
+///
+/// 与 `HomeView`（全局 manage VM）和 `WeeklyDetailScaffoldShell`（每 shell 局部 VM）
+/// 的同款 pattern：每个详情展示位置自己持有 VM 自己注入。
+struct RepoDetailWindowContent: View {
+    let repo: Repo
+    let viewData: RepoDetailViewData
+    let dependencies: AppDependencies
+    let homeViewModel: HomeViewModel
+
+    /// 单 repo README 加载状态机（与 `HomeView._readmeVM` / `WeeklyDetailScaffoldShell.readmeVM` 同模式）。
+    ///
+    /// `api` / `availability` 走 `dependencies` 全局 service，`activeRepoId` 会在
+    /// `body` 里随 repo 变化（这里 repo 固定，所以一次 load 就够）。
+    @State private var readmeVM: ReadmeViewModel
+    /// 翻译浮动入口对应的 VM。
+    @State private var translationVM: ReadmeTranslationViewModel
+
+    init(
+        repo: Repo,
+        viewData: RepoDetailViewData,
+        dependencies: AppDependencies,
+        homeViewModel: HomeViewModel
+    ) {
+        self.repo = repo
+        self.viewData = viewData
+        self.dependencies = dependencies
+        self.homeViewModel = homeViewModel
+        _readmeVM = State(initialValue: ReadmeViewModel(
+            api: dependencies.readmeAPI,
+            availability: dependencies.readmeAvailability
+        ))
+        _translationVM = State(initialValue: ReadmeTranslationViewModel(
+            service: dependencies.readmeTranslationService
+        ))
+    }
+
+    var body: some View {
+        RepoDetailScaffold(
+            repo: repo,
+            viewData: viewData,
+            starHelpKey: "repo.unstar",
+            showsRepoHealthEntry: true,
+            onStarTapped: {
+                // 推荐窗里的 star 点击：本地已 star → 触发 unstar。
+                // StarredRegistry @Observable 变更会自动驱动主窗 list + 主窗 hero
+                // 同步刷新（AppDependencies 共享）。
+                try await dependencies.starActionService.unstar(repo: repo)
+            },
+            heroExtension: { EmptyView() },
+            body: { onScrollReport in
+                ManageDetailContent(repo: repo, onScrollReport: onScrollReport)
+            }
+        )
+        // 先把单 repo VM 注入 environment（`appHostEnvironment` 链不覆盖它们），
+        // 再叠加标准 service 链（authSession / settings / subscriptionManager / 等）。
+        // 顺序很关键：先 readmeVM / translationVM，再 appHostEnvironment，否则
+        // `appHostEnvironment` 内部多次重写环境链时可能覆盖掉前面的注入。
+        .environment(readmeVM)
+        .environment(translationVM)
+        .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
     }
 }
