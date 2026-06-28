@@ -386,4 +386,132 @@ final class AuthSession {
             AppLog.auth.debug("acceptRefreshedUser: state updated for login=\(user.login, privacy: .public)")
         }
     }
+
+    // MARK: - PAT 直接登录（2026-06-29 新增）
+
+    /// 用用户手动粘贴的 GitHub Personal Access Token 登录。
+    ///
+    /// 与 Device Flow (`signIn()` → `runDeviceFlow()`) 的区别：
+    /// - Device Flow 走"beginDeviceFlow → 轮询 token"两阶段，由 `oauthService` 协议包；
+    /// - PAT 直接输入**不**走 `oauthService`——用户已经把 token 拿到手了，只缺 GitHub
+    ///   端的 `/user` 校验。直接复用 `KeychainManager.storeGithubToken` + `getCurrentUser`
+    ///   即可，**不**新增 grant type、不动 `GithubOAuthServiceProtocol`。
+    ///
+    /// 状态机走"无中间态"——不发 `awaitingUserCode`，直接三段：
+    /// ① 临时把 token 写入 Keychain（让 `KeychainTokenProvider.currentToken()` 立刻可用）
+    /// ② `apiClient.getCurrentUser()` 校验
+    /// ③ 成功 → 切 `.authenticated(user)` + 触发 onUserSessionChanged + 让 service 加载；
+    ///    失败 → 回滚 Keychain（防下次启动 `restoreSessionIfAvailable` 误判为已登录）
+    ///    + `lastError` 标记 + 保持 `.unauthenticated`。
+    ///
+    /// 关键约束：
+    /// - 一次只允许一个登录流程进行中（与 `signIn()` 同样的 `isAuthenticating` 守门）。
+    /// - 不强制 token prefix（`ghp_*` / `github_pat_*` / `gho_*` 都接受）—— 校验交给
+    ///   GitHub 服务端 401，靠 `errorDescription` 提示用户。
+    /// - 任何失败路径（401 / 403 / 网络错）都必须回滚 Keychain，**不留垃圾 token**。
+    /// - `lastError` 区分 401 / 403 走 `GithubPATError` 让 UI 给出精准文案；网络错沿用
+    ///   `NetworkError.transport` 文案。
+    /// - 验证后 token 保留（不会因为后续 401 之外的错误丢掉 PAT）——只有失败路径才删。
+    func signInWithPAT(_ token: String) async {
+        // 与 signIn() 同款守门：一次只允许一个登录流程进行中。
+        // 用户在 PAT 折叠区连点两次「使用此 Token 登录」时，第二次 await 立刻返回。
+        guard !isAuthenticating else { return }
+        isAuthenticating = true
+        lastError = nil
+
+        // 阶段 1：临时写入 Keychain
+        // 复用 storeGithubToken，让 KeychainTokenProvider.currentToken() 立刻可用，
+        // 走 `GitHubAPIClient` 内部的 Authorization 注入路径。
+        do {
+            try keychain.storeGithubToken(token)
+            AppLog.auth.info("PAT sign-in: token written to Keychain (length=\(token.count, privacy: .public))")
+        } catch {
+            AppLog.auth.error("PAT sign-in: storeGithubToken failed: \(error.localizedDescription, privacy: .public)")
+            // Keychain 错误通常是 KeychainError（实现 LocalizedError），但 catch 块类型是 any Error，
+            // 这里走 `as? LocalizedError` 安全降级；cast 失败时 lastError 为 nil，UI 走兜底文案。
+            self.lastError = error as? LocalizedError
+            self.state = .unauthenticated
+            isAuthenticating = false
+            return
+        }
+
+        // 阶段 2：拉 /user 校验 + 阶段 3：成功/失败收尾
+        // 把所有 catch 集中到一个 do 块里，避免在每个 catch 里重复写 isAuthenticating = false。
+        do {
+            let user = try await apiClient.getCurrentUser()
+
+            // 成功路径——与 runDeviceFlow 尾段对称
+            // （多账号 DB 隔离 → 必须 await onUserSessionChanged 后再 emit .authenticated）
+            await onUserSessionChanged?(user.id)
+            self.state = .authenticated(user: user)
+            userProfileService?.acceptFromAuth(user)
+            contributionService?.load(login: user.login)
+            developerLanguageService?.load(login: user.login)
+            AppLog.auth.info("PAT sign-in: success login=\(user.login, privacy: .public)")
+            isAuthenticating = false
+        } catch NetworkError.unauthorized {
+            // 401：Token 无效 / 已过期 / 被撤销
+            rollbackPATToken()
+            self.lastError = GithubPATError.invalidToken
+            self.state = .unauthenticated
+            AppLog.auth.warning("PAT sign-in: 401 (token invalid/expired/revoked)")
+            isAuthenticating = false
+        } catch let NetworkError.clientError(statusCode: 403, _) {
+            // 403：scope 不足（典型：用户只勾 repo 没勾 public_repo）
+            // GitHub /user 在 scope 不足时返回 403 而不是 401，所以单独 catch。
+            rollbackPATToken()
+            self.lastError = GithubPATError.insufficientScope
+            self.state = .unauthenticated
+            AppLog.auth.warning("PAT sign-in: 403 (insufficient scope)")
+            isAuthenticating = false
+        } catch {
+            // 网络错 / 其它 4xx / 5xx：回滚 token + 透传 lastError 让 UI 显示原始原因
+            // NetworkError 已实现 LocalizedError，cast 几乎不会失败；cast 失败时 UI 走兜底文案。
+            rollbackPATToken()
+            self.lastError = error as? LocalizedError
+            self.state = .unauthenticated
+            AppLog.auth.error("PAT sign-in: failed: \(error.localizedDescription, privacy: .public)")
+            isAuthenticating = false
+        }
+    }
+
+    /// PAT 登录失败时回滚 Keychain 中的临时 token。
+    ///
+    /// 关键约束（与 runDeviceFlow 路径不同：Device Flow 成功后 token 也保留，
+    /// 失败时由 reset() 兜底；PAT 路径必须在每条 catch 里显式删掉，否则下次启动
+    /// `restoreSessionIfAvailable` 会用失效 token 调 /user → 401 → 误清掉其它状态。
+    ///
+    /// 失败容忍：delete 自身失败也不抛错（已经走到 catch 分支，状态机不能再坏）。
+    private func rollbackPATToken() {
+        do {
+            try keychain.deleteGithubToken()
+        } catch {
+            AppLog.auth.error("PAT sign-in: rollback deleteGithubToken failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+}
+
+// MARK: - PAT 登录错误（2026-06-29 新增）
+
+/// PAT 直接登录路径特有的错误类型。
+///
+/// 与 `NetworkError` 区分：本枚举专门表达"用户手动输入的 PAT 校验失败"——UI 层
+/// 可针对 `invalidToken` / `insufficientScope` 给出"重新粘贴 / 补勾 scope"等精准
+/// 引导，而不必从通用 `NetworkError.unauthorized` / `clientError(403)` 反推。
+///
+/// `Equatable` 让 `AuthSessionPATSignInTests` 可以直接 `#expect(patError == .invalidToken)`。
+enum GithubPATError: LocalizedError, Equatable {
+    /// 401：Token 无效、已过期或被撤销。
+    case invalidToken
+    /// 403：Token 有效但 scope 不足（典型场景：用户只勾了 `repo` 没勾 `public_repo`）。
+    case insufficientScope
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidToken:
+            return String.l10n("authV2.pat.error.invalidToken")
+        case .insufficientScope:
+            return String.l10n("authV2.pat.error.insufficientScope")
+        }
+    }
 }

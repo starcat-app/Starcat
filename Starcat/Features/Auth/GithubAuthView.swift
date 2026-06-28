@@ -57,6 +57,14 @@ struct GithubAuthView: View {
     /// 任意新点击都会 cancel 上一个 task，让两种反馈互斥（用户改主意时不会再触发跳浏览器）。
     @State private var copyResetTask: Task<Void, Never>?
 
+    // 2026-06-29 PAT 折叠区状态
+    /// PAT 输入框文本。trim 后空串判定"未输入"。
+    @State private var patInput: String = ""
+    /// SecureField 明文 / 密文切换。默认 true（密文），点眼睛图标切到明文方便核对 40 字符。
+    @State private var patIsSecure: Bool = true
+    /// PAT 折叠组展开态。默认 false，idle 态点 chevron 才展开。
+    @State private var isPATExpanded: Bool = false
+
     /// 卡片宽度。参考图比例约 380pt 宽；macOS sheet 留外圈 padding 后给到 460pt 视觉舒适。
     private let cardWidth: CGFloat = 460
     /// hero 区高度。4 角圆角"独立插画卡"后做 horizontal 16pt 内缩，
@@ -152,6 +160,14 @@ struct GithubAuthView: View {
 
             stateSection
 
+            // 2026-06-29：idle / error 态下显示「其他登录方式」折叠区。
+            // connecting / awaitingCode / authenticated 态不显示——避免和 Device Flow UI 抢焦点。
+            if case .idle = derivedState {
+                alternativeSection
+            } else if case .error = derivedState {
+                alternativeSection
+            }
+
             if case .error = derivedState {
                 errorBanner
             }
@@ -179,6 +195,176 @@ struct GithubAuthView: View {
     }
 
     // MARK: - 状态视图
+
+    // MARK: - 其他登录方式（2026-06-29 新增）
+
+    /// "其他登录方式"折叠区。
+    ///
+    /// 包含两个子折叠项：
+    /// - **PAT 直接输入**：展开后是 SecureField + 提交按钮（可立即登录）
+    /// - **Web Application Flow**：W6 之前的占位，disabled + 「即将推出」徽章
+    ///
+    /// 设计要点：
+    /// - 只在 idle / error 态显示（其它态由 `contentSection` 条件渲染守门），
+    ///   避免和 Device Flow UI（connecting / awaitingCode）抢焦点。
+    /// - 用 `Divider` + caption "或选择其他方式" 跟主 CTA 视觉分隔，
+    ///   不引入强 Modal 感（用户随时能回到主 CTA）。
+    private var alternativeSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // 分隔线 + caption
+            HStack(spacing: 8) {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(height: 1)
+                Text("authV2.alternative.divider")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(height: 1)
+            }
+            .padding(.top, 4)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text("authV2.alternative.divider"))
+
+            // PAT 折叠项（可展开）
+            patDisclosure
+
+            // Web Application Flow 占位（W6 之前不可用）
+            webFlowDisabledRow
+        }
+    }
+
+    /// PAT 折叠项：点击 chevron 展开 SecureField + 提交按钮。
+    ///
+    /// 关键约束：
+    /// - 输入框 trim 后空串 → 提交按钮 disabled
+    /// - `authSession.isAuthenticating == true` → 输入框 + 提交按钮全 disabled
+    ///   （防止用户在 PAT 流程进行中又去点 Device Flow / Web Flow / 重复提交 PAT）
+    /// - 提交调 `authSession.signInWithPAT(_:)`，UI 不需要手动切 state；
+    ///   AuthSession 成功 → state == .authenticated → ContentView 自动 dismiss sheet
+    /// - 失败时 lastError 会写入，errorBanner 自动渲染
+    /// - macOS 上 SecureField 不能眼睛切换明文，所以用 TextField + `isSecure` 自渲染
+    ///   切换按钮（参考 AISettingsView 的 AI Key 输入同款）
+    /// - 显隐切换按钮遵守项目强制规范：`.buttonStyle(.plain) + .focusEffectDisabled()`
+    private var patDisclosure: some View {
+        DisclosureGroup(isExpanded: $isPATExpanded) {
+            VStack(alignment: .leading, spacing: 10) {
+                // 输入框 + 明文切换眼睛
+                HStack(spacing: 6) {
+                    Group {
+                        if patIsSecure {
+                            SecureField("", text: $patInput, prompt: Text("authV2.pat.placeholder"))
+                        } else {
+                            TextField("", text: $patInput, prompt: Text("authV2.pat.placeholder"))
+                        }
+                    }
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(authSession.isAuthenticating)
+                    .onSubmit(triggerPATSignIn)
+
+                    Button {
+                        patIsSecure.toggle()
+                    } label: {
+                        Image(systemName: patIsSecure ? "eye" : "eye.slash")
+                            .frame(width: 16, height: 16)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .foregroundStyle(.secondary)
+                    .help(patIsSecure ? "authV2.pat.showToken" : "authV2.pat.hideToken")
+                    .disabled(authSession.isAuthenticating)
+                    .accessibilityLabel(patIsSecure ? Text("authV2.pat.showToken") : Text("authV2.pat.hideToken"))
+                }
+
+                // 提交按钮（次按钮样式，与主 CTA 区分开）
+                Button(action: triggerPATSignIn) {
+                    Text("authV2.pat.submit")
+                        .fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .foregroundStyle(.primary)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.secondary.opacity(0.12))
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .disabled(authSession.isAuthenticating || patInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                // 帮助文案 + 获取 Token 外链
+                Text("authV2.pat.help")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    if let url = URL(string: "https://github.com/settings/tokens") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.caption)
+                        Text("authV2.pat.getToken")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.blue)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(Text("authV2.pat.getToken.help"))
+            }
+            .padding(.top, 8)
+            .padding(.leading, 4)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "key.fill")
+                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+                Text("authV2.alternative.pat")
+                    .font(.subheadline)
+            }
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(Text("authV2.alternative.pat"))
+    }
+
+    /// Web Application Flow 占位（W6 之前不可用）。
+    ///
+    /// 视觉规范：灰底 opacity 0.6 + 「即将推出」徽章 + tooltip 解释。
+    /// 遵守项目强制规范：所有 `.buttonStyle(.plain)` 都紧跟 `.focusEffectDisabled()`。
+    /// 这里整体是 HStack 而非真正的可交互按钮——但加 `.allowsHitTesting(false)` 防止误点
+    /// 触发 hover 高亮（让用户视觉上明确"这不是个能点的东西"）。
+    private var webFlowDisabledRow: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "globe")
+                .foregroundStyle(.secondary)
+                .font(.subheadline)
+            Text("authV2.alternative.webflow")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text("authV2.alternative.comingSoon")
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    Capsule(style: .continuous).fill(Color.secondary.opacity(0.15))
+                )
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
+        .opacity(0.6)
+        .allowsHitTesting(false)
+        .help(Text("authV2.alternative.webflow.tooltip"))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("authV2.alternative.webflow.tooltip"))
+    }
 
     /// idle / error 态：全宽蓝色主按钮。
     private var continueWithGitHubButton: some View {
@@ -479,6 +665,20 @@ struct GithubAuthView: View {
     /// state 切换到 .awaitingUserCode 由 AuthSession 异步推送，UI 自动重渲染。
     private func triggerContinue() {
         authSession.signIn()
+    }
+
+    /// 2026-06-29：点 PAT 提交按钮 / 输入框按回车 → 调 AuthSession.signInWithPAT。
+    ///
+    /// 守门：
+    /// - 输入框 trim 后空串 → 直接 return（按钮已 disabled，这里再兜一次防键盘回车）
+    /// - 已经有登录流程在进行（isAuthenticating）→ 直接 return
+    ///
+    /// 成功后 AuthSession.state 切到 .authenticated，由 ContentView 监听自动 dismiss sheet。
+    /// 失败时 AuthSession.lastError 被设置，本视图 `errorBanner` 自动渲染错误。
+    private func triggerPATSignIn() {
+        let trimmed = patInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !authSession.isAuthenticating else { return }
+        Task { await authSession.signInWithPAT(trimmed) }
     }
 
     /// 点 Cancel：取消进行中的 Device Flow + 复位本地 copy 反馈状态。
