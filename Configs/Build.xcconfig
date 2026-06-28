@@ -28,6 +28,13 @@ STARCAT_PRODUCTION_API_KEY_SHARING =
 STARCAT_PRODUCTION_API_KEY_WIKI =
 STARCAT_PRODUCTION_API_KEY_RECOMMEND =
 
+// MARK: - GitHub OAuth（Web Application Flow）
+
+// GitHub OAuth App Client Secret。Web Flow token 交换时 /login/oauth/access_token
+// 要求同时带 client_secret + code_verifier（PKCE 保护 code 不替代 client auth）。
+// Device Flow 和 PAT 不需要这个值。默认空 = Web Flow 退化为错误提示。
+STARCAT_OAUTH_CLIENT_SECRET =
+
 // MARK: - 引入私密配置（可选）
 //
 // `?` 让 include 在文件缺失时静默跳过；新 contributor / CI 不需要 Secrets.xcconfig 也能编译。

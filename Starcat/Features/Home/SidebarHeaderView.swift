@@ -71,7 +71,9 @@ struct SidebarHeaderView: View {
                 // 全部字段为空时该 view 自身不渲染内容，不会浪费垂直空间。
                 ProfileLinksRow(user: user)
                 statsRow(user: user)
-            case .unauthenticated, .awaitingUserCode:
+            case .unauthenticated, .awaitingUserCode, .awaitingWebCallback:
+                // 2026-06-29：把 .awaitingWebCallback 也归到 unauthenticated 显示分支
+                // ——sidebar 头像卡不需要区分"正在走哪个 flow"，反正都是未登录态
                 unauthenticatedAvatarRow()
                 unauthenticatedIdentity()
             }

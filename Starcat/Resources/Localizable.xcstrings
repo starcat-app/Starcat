@@ -6216,6 +6216,22 @@
         }
       }
     },
+    "authV2.cancelSignIn" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        }
+      }
+    },
     "authV2.codeCopied" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6428,6 +6444,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "登录 GitHub，重新认识你 Star 过的每个项目。"
+          }
+        }
+      }
+    },
+    "authV2.alternative.webflow.enabled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in with browser"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用浏览器登录"
+          }
+        }
+      }
+    },
+    "authV2.webflow.waitingHint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for you to complete GitHub authorization…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待完成 GitHub 授权…"
           }
         }
       }

@@ -74,6 +74,8 @@ struct ContentView: View {
         .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbarVisibility(firstRunOnboardingActive ? .hidden : .visible, for: .windowToolbar)
         .animation(reduceMotion ? nil : .smooth, value: authSession.state)
+        // 2026-06-29：.onOpenURL 已移到 StarcatApp 顶层（更早注册 NSAppleEventManager，
+        // 避免 view 还没 mount 时 URL event 丢失）。这里不再重复挂。
         .sheet(isPresented: showAuthViewBinding) {
             GithubAuthView()
                 .appLocaleEnvironment()

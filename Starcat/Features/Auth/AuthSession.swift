@@ -15,6 +15,7 @@
 
 import Foundation
 import Observation
+import AppKit
 
 /// 登录态。
 enum AuthState: Equatable {
@@ -22,11 +23,23 @@ enum AuthState: Equatable {
     case unauthenticated
     /// Device Flow 已发起，等待用户在浏览器输 code。
     case awaitingUserCode(OAuthDeviceCodeInfo)
+    /// 2026-06-29 新增：**专用于 Web Application Flow（PKCE）**——已打开浏览器授权页，
+    /// 等待 GitHub 回调 `starcat://callback?code=...&state=...`。
+    /// 与 `.awaitingUserCode` 区别：Device Flow 让用户去浏览器输 code；Web Flow 让
+    /// 浏览器自动跳回 `starcat://callback` 触发 URL handler（见 `.onOpenURL`）。
+    case awaitingWebCallback(WebFlowStartInfo)
     /// 已登录。
     case authenticated(user: GitHubUserDTO)
 
     var isAuthenticated: Bool {
         if case .authenticated = self { return true }
+        return false
+    }
+
+    /// 2026-06-29：与 `isAuthenticated` 对称，方便调用方判断 Web Flow 中间态。
+    /// 用于测试 / Debug 时不用 `if case .awaitingWebCallback = state` 写一长串。
+    var isAwaitingWebCallback: Bool {
+        if case .awaitingWebCallback = self { return true }
         return false
     }
 
@@ -261,6 +274,142 @@ final class AuthSession {
     func requestLoginSheet() {
         guard !state.isAuthenticated else { return }
         shouldShowLoginSheet = true
+    }
+
+    // MARK: - Web Application Flow / PKCE（2026-06-29 新增）
+
+    /// 触发 Web Application Flow（PKCE 模式）登录。
+    ///
+    /// 与 Device Flow 区别：
+    /// - Device Flow：客户端轮询 `/login/oauth/access_token` 等用户授权
+    /// - Web Flow (PKCE)：客户端**不**轮询，依赖 macOS URL handler `starcat://callback`
+    ///   接收 GitHub 浏览器跳转回来的 code（用户在浏览器里点 Authorize 后 GitHub
+    ///   会跳到 `starcat://callback?code=...&state=...`）
+    ///
+    /// 流程：
+    /// ① 调 `oauthService.beginWebFlow()` 拿到 authorizationURL + state + expiresAt
+    /// ② emit `.awaitingWebCallback(info)`，UI 切到 awaitingWebCallbackView
+    /// ③ `NSWorkspace.open(info.authorizationURL)` 打开浏览器
+    /// ④（异步等）`.onOpenURL` 监听到 `starcat://callback` → `handleWebFlowCallback(url:)`
+    /// ⑤ handleWebFlowCallback 用 code 换 token + 落 Keychain + 拉 /user + emit .authenticated
+    func signInWithWebFlow() {
+        // 与 Device Flow 同款守门：一次只允许一个登录流程进行中
+        guard !isAuthenticating else { return }
+        isAuthenticating = true
+        lastError = nil
+        shouldShowLoginSheet = false  // Web Flow 主动触发（用户在登录页内点 Web Flow 入口）→ 清 flag
+
+        Task { [weak self] in
+            guard let self else { return }
+            await self.runWebFlow()
+        }
+    }
+
+    /// Web Flow 主流程：beginWebFlow → emit state → 打开浏览器 → 等回调。
+    /// 浏览器回调由 `.onOpenURL` 触发 `handleWebFlowCallback(url:)` 处理。
+    private func runWebFlow() async {
+        defer {
+            isAuthenticating = false
+        }
+        do {
+            let info = try await oauthService.beginWebFlow()
+            self.state = .awaitingWebCallback(info)
+            // 打开浏览器（authorization URL 已在 beginWebFlow 拼好）
+            NSWorkspace.shared.open(info.authorizationURL)
+            AppLog.auth.info("Web Flow: opened browser, waiting for starcat://callback")
+        } catch {
+            AppLog.auth.error("Web Flow: begin failed: \(error.localizedDescription, privacy: .public)")
+            self.lastError = error as? LocalizedError
+            self.state = .unauthenticated
+        }
+    }
+
+    /// 取消 Web Flow（用户在 awaitingWebCallback 态点 Cancel）。
+    func cancelWebFlow() {
+        // 复用 cancelSignIn 路径：isAuthenticating 守门 + state 切回 + 重置 actor
+        isAuthenticating = false
+        state = .unauthenticated
+        shouldShowLoginSheet = false
+        Task { await oauthService.resetWebFlow() }
+    }
+
+    /// 处理 `starcat://callback?code=...&state=...` 回调 URL。
+    ///
+    /// 入口：ContentView / StarcatApp 的 `.onOpenURL { url in authSession.handleWebFlowCallback(url: url) }`
+    ///
+    /// 行为：
+    /// 1. 校验当前 state 必须是 `.awaitingWebCallback`（否则忽略，避免误处理 Device Flow 路径
+    ///    或已登出态的回调）
+    /// 2. 校验 callback 的 state 必须匹配（防 CSRF）
+    /// 3. 校验未过期（expiresAt 之后）
+    /// 4. `oauthService.exchangeCodeForToken(code)` 换 token
+    /// 5. 落 Keychain + 拉 /user + emit `.authenticated(user)`
+    /// 6. 失败回滚：state 切回 .unauthenticated + lastError
+    func handleWebFlowCallback(url: URL) async {
+        // 1. URL 合法性校验：scheme == starcat && path == /callback
+        guard url.scheme == AppConstants.oauthCallbackScheme else { return }
+        guard url.host == "callback" else { return }
+
+        // 2. state 必须是 .awaitingWebCallback（防误处理：Device Flow / 登出后收到 URL）
+        guard case .awaitingWebCallback(let info) = state else {
+            AppLog.auth.warning("Web Flow callback ignored: state is not .awaitingWebCallback")
+            return
+        }
+
+        // 3. 解析 query
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let queryItems = components.queryItems else {
+            self.lastError = GithubOAuthError.unexpectedResponse(message: "Callback URL missing query items")
+            self.state = .unauthenticated
+            return
+        }
+        let code = queryItems.first(where: { $0.name == "code" })?.value ?? ""
+        let callbackState = queryItems.first(where: { $0.name == "state" })?.value ?? ""
+
+        // 4. 校验 state 一致（防 CSRF）
+        guard !callbackState.isEmpty, callbackState == info.state else {
+            AppLog.auth.warning("Web Flow callback: state mismatch (expected_prefix=\(info.state.prefix(8), privacy: .public), got=\(callbackState.prefix(8), privacy: .public))")
+            self.lastError = GithubOAuthError.unexpectedResponse(message: "OAuth state mismatch")
+            self.state = .unauthenticated
+            return
+        }
+
+        // 5. 校验未过期
+        guard Date() < info.expiresAt else {
+            AppLog.auth.warning("Web Flow callback: expired (expires_at=\(info.expiresAt, privacy: .public))")
+            self.lastError = GithubOAuthError.codeExpired
+            self.state = .unauthenticated
+            return
+        }
+
+        // 6. 校验 code 非空
+        guard !code.isEmpty else {
+            self.lastError = GithubOAuthError.unexpectedResponse(message: "Callback missing code")
+            self.state = .unauthenticated
+            return
+        }
+
+        // 7. 换 token + 落 Keychain + 拉 /user
+        do {
+            let token = try await oauthService.exchangeCodeForToken(code: code)
+            try keychain.storeGithubToken(token)
+
+            // 8. 拉 /user 验证
+            let user = try await apiClient.getCurrentUser()
+            await onUserSessionChanged?(user.id)
+            self.shouldShowLoginSheet = false
+            self.state = .authenticated(user: user)
+            userProfileService?.acceptFromAuth(user)
+            contributionService?.load(login: user.login)
+            developerLanguageService?.load(login: user.login)
+            AppLog.auth.info("Web Flow: success login=\(user.login, privacy: .public)")
+        } catch {
+            AppLog.auth.error("Web Flow: callback failed: \(error.localizedDescription, privacy: .public)")
+            // 失败回滚：清掉临时写入的 token（如果 storeGithubToken 成功过但后面失败）
+            try? keychain.deleteGithubToken()
+            self.lastError = error as? LocalizedError
+            self.state = .unauthenticated
+        }
     }
 
     /// 取消进行中的登录。

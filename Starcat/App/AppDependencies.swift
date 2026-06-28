@@ -412,8 +412,12 @@ final class AppDependencies {
             AppLog.auth.info("Using MockGithubOAuthService (DEBUG)")
             oauth = MockGithubOAuthService()
         } else {
-            AppLog.auth.info("Using GithubDeviceFlowService")
-            oauth = GithubDeviceFlowService()
+            // 2026-06-29：生产装配用 CombinedGithubOAuthService 包装 Device Flow + Web Flow
+            // 两个 grant type。AuthSession 通过统一 protocol 访问，6 个方法按需路由到对应 actor。
+            // 之前直接用 GithubDeviceFlowService 会导致点 Web Flow 入口抛
+            // "Device Flow actor does not support Web Flow"。
+            AppLog.auth.info("Using CombinedGithubOAuthService (Device Flow + Web Flow)")
+            oauth = CombinedGithubOAuthService()
         }
         self.oauthService = oauth
 

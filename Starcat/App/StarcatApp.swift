@@ -18,6 +18,13 @@ import AppKit  // W4-5 D1 follow-up：NSApp.appearance 控制主题（preferredC
 @main
 struct StarcatApp: App {
 
+    // 2026-06-29：用 NSApplicationDelegateAdaptor 注入 URL event handler
+    // LSMultipleInstancesProhibited 只阻止 Finder/Dock 双开，不阻止 URL scheme
+    // 启动新实例。必须在 NSApplicationDelegate 里注册 NSAppleEventManager handler
+    // 拦截 kAEGetURL——在 Launch Services 决定"要不要开新进程"之前就把 URL event
+    // 消化掉，让它走已有实例的 authSession.handleWebFlowCallback。
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
     /// 应用级依赖容器，必须在 init 中创建并通过 environment 传给 ContentView。
     ///
     /// 这里允许为 nil，是为了把数据库初始化失败这类启动期硬错误从 `fatalError`
@@ -44,6 +51,7 @@ struct StarcatApp: App {
 
     init() {
         Self.bootstrap()
+
         // 注意：AppDependencies 是 @MainActor，App init 已在 main thread。
         do {
             _dependencies = State(initialValue: try AppDependencies())
@@ -67,9 +75,33 @@ struct StarcatApp: App {
         // 可接受的权衡，不要为了消除这点闪烁再回到 init() 里调 NSApp。
     }
 
+    /// 2026-06-29：处理从 macOS URL handler 进来的 `starcat://callback?code=...&state=...`。
+    /// `dependencies` 在 `init()` 失败时为 nil，此时收到 URL 也无法处理（没有 authSession）——
+    /// 直接忽略，让用户手动重新登录。
+    private func handleIncomingURL(_ url: URL) {
+        guard let session = dependencies?.authSession else {
+            AppLog.auth.warning("StarcatApp.handleIncomingURL: dependencies not ready, ignoring \(url.absoluteString, privacy: .public)")
+            return
+        }
+        Task { await session.handleWebFlowCallback(url: url) }
+    }
+
     var body: some Scene {
         WindowGroup("Starcat") {
             windowRoot
+                // 2026-06-29：监听 AppDelegate 转发过来的 starcat://callback URL。
+                // NSAppleEventManager handler 会消费 kAEGetURL 事件 → .onOpenURL 收不到 →
+                // 必须在 AppDelegate handler 里通过 NotificationCenter 显式转发。
+                .onReceive(NotificationCenter.default.publisher(for: AppDelegate.incomingURLNotification)) { notification in
+                    if let url = notification.object as? URL {
+                        handleIncomingURL(url)
+                    }
+                }
+                // 兜底：如果未来 NSAppleEventManager handler 被移除或有其他 URL 来源，
+                // .onOpenURL 仍作为 secondary handler 继续工作。
+                .onOpenURL { url in
+                    handleIncomingURL(url)
+                }
         }
         .commands {
             // 替换系统默认的"关于 Starcat"菜单项，打开自定义 SwiftUI 关于窗口。
