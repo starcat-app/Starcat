@@ -105,6 +105,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 /// R-01 详情页通用骨架。
 ///
@@ -241,9 +242,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             body_(updateScrollReport)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .overlay(alignment: .bottomTrailing) {
-            recommendationOverlay
-        }
         // 根节点 tint：必须在 `CollapsibleRepoMetadataPanel` 外，否则 `.clipped()` 裁掉
         // 向上延伸；滚 README 折叠 hero 时同步淡出。
         .detailHeroTintBackground(
@@ -281,41 +279,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         }
     }
 
-    @ViewBuilder
-    private var recommendationOverlay: some View {
-        if recommendationVM.hasItems {
-            RepoRecommendationFloatingButton(count: recommendationVM.items.count) {
-                showsRecommendations = true
-            }
-            .padding(.trailing, 24)
-            // README 的 cacheFooter 已经使用详情页右下角附近的刷新/翻译入口；推荐按钮上移，
-            // 避免和刷新语义重叠，同时仍保持在详情页内部的右下角。
-            .padding(.bottom, 72)
-            .popover(isPresented: $showsRecommendations, arrowEdge: .bottom) {
-                RepoRecommendationPopover(
-                    items: recommendationVM.items,
-                    hasMore: recommendationVM.hasMore,
-                    isLoadingMore: recommendationVM.isLoadingMore,
-                    errorMessage: recommendationVM.errorMessage,
-                    onOpen: { item in
-                        showsRecommendations = false
-                        Task {
-                            await recommendationVM.open(
-                                item,
-                                repoRepository: dependencies.repoRepository,
-                                homeViewModel: homeViewModel
-                            )
-                        }
-                    },
-                    onLoadMore: {
-                        Task {
-                            await recommendationVM.loadMore(api: dependencies.recommendAPI)
-                        }
-                    }
-                )
-            }
-        }
-    }
+    // recommendationOverlay 已删除（v1.1 推荐按钮从右下角浮动迁到 hero trailing actions），
+    // 渲染逻辑迁到 `trailingActionsView` 内联。
+
 
     /// 接收 body 内部上报的滚动度量，换算成顶部面板折叠 progress。
     ///
@@ -420,6 +386,46 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             }
             if !wikiLinks.isEmpty {
                 RepoWikiMenu(links: wikiLinks)
+            }
+            // 相似推荐入口（v1.1 从右下角浮动按钮迁到 hero trailing actions）。
+            // 位置：Wiki 菜单之后、剩余 actions（.ai 等）之前 —— 即 AI 按钮的左侧。
+            // 显示条件：recommendationVM.hasItems（保持旧浮动按钮的「有就显示、没有就不显示」契约）。
+            if recommendationVM.hasItems {
+                RepoRecommendButton(hasItems: true) {
+                    showsRecommendations = true
+                }
+                .popover(isPresented: $showsRecommendations, arrowEdge: .bottom) {
+                    RepoRecommendationPopover(
+                        items: recommendationVM.items,
+                        hasMore: recommendationVM.hasMore,
+                        isLoading: recommendationVM.isLoading,
+                        isLoadingMore: recommendationVM.isLoadingMore,
+                        errorMessage: recommendationVM.errorMessage,
+                        onOpen: { item in
+                            showsRecommendations = false
+                            Task {
+                                await recommendationVM.open(
+                                    item,
+                                    repoRepository: dependencies.repoRepository,
+                                    homeViewModel: homeViewModel
+                                )
+                            }
+                        },
+                        onOpenInNewWindow: { item in
+                            showsRecommendations = false
+                            // Starcat 当前是单窗口应用，「新窗口」= 系统浏览器打开 GitHub URL
+                            // （与主 repo 列表 Cmd+点击行为一致；如未来支持多 Starcat 窗口再扩展）
+                            if let url = item.githubURL {
+                                NSWorkspace.shared.open(url)
+                            }
+                        },
+                        onLoadMore: {
+                            Task {
+                                await recommendationVM.loadMore(api: dependencies.recommendAPI)
+                            }
+                        }
+                    )
+                }
             }
             ForEach(remainingActions) { action in
                 actionButton(for: action)
