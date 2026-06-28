@@ -13,6 +13,7 @@ struct IntegrationSettingsTab: View {
     @Environment(AppSettings.self) private var settings
     /// CodeFlow 生成物不进数据库，设置页直接观察文件系统扫描结果。
     @State private var storage = CodeFlowStorage.shared
+    @State private var codebaseMemoryStorage = CodebaseMemoryStorage.shared
     @State private var actionError: String?
     @State private var anySearchAPIKey: String = ""
     @State private var showAnySearchAPIKey: Bool = false
@@ -89,8 +90,70 @@ struct IntegrationSettingsTab: View {
                 }
             }
         }
+            Section("CodebaseMemory") {
+                VStack(alignment: .leading, spacing: 5) {
+                    Label("3D Code Graph", systemImage: "point.3.filled.connected.trianglepath.dotted")
+                        .font(.headline)
+                    Text("Tree-sitter index + browser-based 3D visualization")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 8) {
+                    Text(codebaseMemoryStorage.outputDirectoryDisplayPath)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(-1)
+                    Spacer()
+                    Button("settings.integration.codeFlow.outputDir.choose") { chooseCodebaseMemoryOutputDirectory() }
+                        .fixedSize()
+                    Button {
+                        revealCodebaseMemoryOutputDirectory()
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .help("settings.integration.codeFlow.outputDir.revealHelp")
+                    .fixedSize()
+                    Button {
+                        resetCodebaseMemoryOutputDirectory()
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                    }
+                    .disabled(!codebaseMemoryStorage.hasCustomOutputDirectory)
+                    .help("settings.integration.codeFlow.outputDir.resetHelp")
+                    .fixedSize()
+                }
+
+                HStack(spacing: 18) {
+                    stat(titleKey: "settings.integration.codeFlow.stat.projects", value: "\(codebaseMemoryStorage.projectCount)")
+                    stat(titleKey: "settings.integration.codeFlow.stat.usage", value: ByteCountFormatter.string(fromByteCount: codebaseMemoryStorage.totalBytes, countStyle: .file))
+                    stat(
+                        titleKey: "settings.integration.codeFlow.stat.totalGenerated",
+                        value: String(format: String.l10n("settings.integration.codeFlow.stat.totalGeneratedFormat"), codebaseMemoryStorage.totalGenerationCount)
+                    )
+                    if let date = codebaseMemoryStorage.latestGeneratedAt {
+                        stat(titleKey: "settings.integration.codeFlow.stat.lastGenerated", value: date.formatted(date: .abbreviated, time: .shortened))
+                    }
+                    Spacer()
+                }
+
+                if let message = codebaseMemoryStorage.lastErrorMessage {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                } else if codebaseMemoryStorage.projectCount == 0 {
+                    Text("settings.integration.codeFlow.empty")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
         .formStyle(.grouped)
         .task { storage.reload() }
+        .task { codebaseMemoryStorage.reload() }
         .task { anySearchAPIKey = settings.anySearchAPIKey() ?? "" }
         .alert("settings.integration.codeFlow.actionFailedTitle", isPresented: Binding(
             get: { actionError != nil },
@@ -264,6 +327,40 @@ struct IntegrationSettingsTab: View {
     private func revealOutputDirectory() {
         do {
             try storage.revealOutputRoot()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    // MARK: - CodebaseMemory 操作
+
+    private func chooseCodebaseMemoryOutputDirectory() {
+        let panel = NSOpenPanel()
+        panel.title = String.l10n("settings.integration.codeFlow.openPanel.title")
+        panel.prompt = String.l10n("settings.integration.codeFlow.openPanel.prompt")
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try codebaseMemoryStorage.setCustomOutputDirectory(url)
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func resetCodebaseMemoryOutputDirectory() {
+        do {
+            try codebaseMemoryStorage.resetOutputDirectory()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func revealCodebaseMemoryOutputDirectory() {
+        do {
+            try codebaseMemoryStorage.revealOutputRoot()
         } catch {
             actionError = error.localizedDescription
         }

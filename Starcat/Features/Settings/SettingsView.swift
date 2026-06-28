@@ -594,6 +594,8 @@ private struct StorageSettingsTab: View {
     /// CodeFlow 产物（精细化面板留在 IntegrationSettingsView，本 Tab 同 AI 上下文）。
     @State private var codeFlowStorage = CodeFlowStorage.shared
 
+    @State private var codebaseMemoryStorage = CodebaseMemoryStorage.shared
+
     /// 翻译磁盘缓存：`@MainActor @Observable` 单例，UI 直接读 `totalBytes` /
     /// `itemCount`。删除走默认 appSupport 路径，无 bookmark 等额外失败面，
     /// 失败极少；统一走 storageActionError。
@@ -619,7 +621,7 @@ private struct StorageSettingsTab: View {
     /// 单项缓存继续共用 confirmationDialog；"删除全部缓存"已经升级为危险区 sheet，
     /// 但保留 `.all` 作为执行分支，避免复制清理代码。
     private enum PendingAction: Identifiable {
-        case readme, image, archive, translation, anySearch, wiki, recommendation, chatHistory, aiContext, codeFlow, all
+        case readme, image, archive, translation, anySearch, wiki, recommendation, chatHistory, aiContext, codeFlow, codebaseMemory, all
         var id: String {
             switch self {
             case .readme:       return "readme"
@@ -632,6 +634,7 @@ private struct StorageSettingsTab: View {
             case .chatHistory:  return "chatHistory"
             case .aiContext:    return "aiContext"
             case .codeFlow:     return "codeFlow"
+            case .codebaseMemory: return "codebaseMemory"
             case .all:          return "all"
             }
         }
@@ -647,6 +650,7 @@ private struct StorageSettingsTab: View {
             case .chatHistory:  return String.l10n("settings.storage.clearChatHistory.confirm")
             case .aiContext:    return String.l10n("settings.storage.clearAiContext.confirm")
             case .codeFlow:     return String.l10n("settings.storage.clearCodeFlow.confirm")
+            case .codebaseMemory: return String.l10n("settings.storage.clearCodeFlow.confirm")
             case .all:          return String.l10n("settings.storage.clearAll.confirm")
             }
         }
@@ -662,6 +666,7 @@ private struct StorageSettingsTab: View {
             case .chatHistory:  return "settings.storage.clearChatHistory.message"
             case .aiContext:    return "settings.storage.clearAiContext.message"
             case .codeFlow:     return "settings.storage.clearCodeFlow.message"
+            case .codebaseMemory: return "settings.storage.clearCodeFlow.message"
             case .all:          return "settings.storage.clearAll.message"
             }
         }
@@ -678,6 +683,7 @@ private struct StorageSettingsTab: View {
             && chatHistoryStore.sessionCount == 0
             && aiContextStorage.projectCount == 0
             && codeFlowStorage.projectCount == 0
+            && codebaseMemoryStorage.projectCount == 0
     }
 
     private var currentResetTarget: AppDataResetTarget? {
@@ -783,6 +789,12 @@ private struct StorageSettingsTab: View {
                     isEmpty: codeFlowStorage.projectCount == 0,
                     action: .codeFlow
                 )
+                usageRow(
+                    titleKey: "settings.storage.codebaseMemory",
+                    usageText: codebaseMemoryUsageText,
+                    isEmpty: codebaseMemoryStorage.projectCount == 0,
+                    action: .codebaseMemory
+                )
             }
 
             Section("settings.storage.dangerZone") {
@@ -836,6 +848,7 @@ private struct StorageSettingsTab: View {
             // Tab 出现时强制重扫描全部产物 / 缓存目录，让用户刚生成的内容立即可见。
             aiContextStorage.reload()
             codeFlowStorage.reload()
+            codebaseMemoryStorage.reload()
             translationCache.reload()
             anySearchCache.reload()
             chatHistoryStore.reload()
@@ -1037,6 +1050,9 @@ private struct StorageSettingsTab: View {
         case .codeFlow:
             do { try codeFlowStorage.deleteAllProjects() }
             catch { storageActionError = error.localizedDescription }
+        case .codebaseMemory:
+            do { try codebaseMemoryStorage.deleteAllProjects() }
+            catch { storageActionError = error.localizedDescription }
         case .all:
             await cleaner.clearAll()
             // 4 处独立 try：互不阻断；首个失败的 description 留在 storageActionError，
@@ -1067,6 +1083,10 @@ private struct StorageSettingsTab: View {
             catch {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
+            do { try codebaseMemoryStorage.deleteAllProjects() }
+            catch {
+                if storageActionError == nil { storageActionError = error.localizedDescription }
+            }
         }
         stats = await cleaner.loadStatistics()
         isWorking = false
@@ -1092,6 +1112,7 @@ private struct StorageSettingsTab: View {
             chatHistoryStore.reload()
             aiContextStorage.reload()
             codeFlowStorage.reload()
+            codebaseMemoryStorage.reload()
             resetDidComplete = true
         } catch {
             storageActionError = error.localizedDescription
@@ -1224,6 +1245,18 @@ private struct StorageSettingsTab: View {
             format: String.l10n("settings.storage.codeFlowUsageFormat"),
             codeFlowStorage.projectCount,
             codeFlowStorage.totalBytes.formattedByteSize
+        )
+    }
+
+    /// CodebaseMemory 用量：同 CodeFlow 格式。
+    private var codebaseMemoryUsageText: String {
+        if codebaseMemoryStorage.projectCount == 0 {
+            return String.l10n("settings.storage.codeFlow.empty")
+        }
+        return String(
+            format: String.l10n("settings.storage.codeFlowUsageFormat"),
+            codebaseMemoryStorage.projectCount,
+            codebaseMemoryStorage.totalBytes.formattedByteSize
         )
     }
 }

@@ -491,6 +491,7 @@ final class AppDependencies {
         // 测试（init 加默认参数 nil 让旧测试无需改动）。
         let snapshotService = SharedSnapshotService()
         let repoContextStorage = RepoContextStorage.shared
+        let codebaseMemoryStorage = CodebaseMemoryStorage.shared
         let repoAIContextProvider = RepoAIContextProvider(
             snapshotService: snapshotService,
             storage: repoContextStorage,
@@ -982,6 +983,9 @@ final class AppDependencies {
 
         do { try CodeFlowStorage.shared.deleteAllProjects() }
         catch { AppLog.general.warning("Factory reset: CodeFlow cleanup failed: \(error.localizedDescription, privacy: .public)") }
+
+        do { try CodebaseMemoryStorage.shared.deleteAllProjects() }
+        catch { AppLog.general.warning("Factory reset: CodebaseMemory cleanup failed: \(error.localizedDescription, privacy: .public)") }
     }
 
     // MARK: - 第三方服务热更新（2026-06-08 新增）
