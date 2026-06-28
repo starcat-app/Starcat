@@ -36,6 +36,9 @@
 | 31 | [Trending / Weekly 多级缓存改造](31-Trending-Weekly缓存改造.md) | R-06 完整记录：客户端 SQLite TTL（Trending 24h / Weekly 12h）+ 后端内存缓存（trending 分桶 1h/6h/24h + ETag、weekly 6h + pre-gzip + bulk endpoint）+ Weekly 渐进式 SWR 双轨制（dataSource .local/.remote）、3 个永久陷阱、关键决策一览、4 个项目共 33 个新测试用例验证 |
 | 32 | [Manage 列表分页与首页边沿上屏](32-Manage列表分页与首页边沿上屏.md) | Manage 列表分页、首页边沿上屏与滚动体验调整 |
 | 33 | [OpenSSF Scorecard 安全评分设计](33-OpenSSF-Scorecard-安全评分设计.md) | 已 star 仓库 OpenSSF Scorecard 缓存、列表 full_name 行徽章、详情页雷达图、后台刷新、i18n 与测试边界 |
+| 34 | [StarcatCLI 与外部 MCP 桥接设计](34-StarcatCLI与外部MCP桥接设计.md) | stdio MCP adapter + CLI 入口,解决 Codex / 老式 client 不兼容 HTTP MCP 的兼容性问题 |
+| 35 | [GitHub Stars List 分组设计](35-GitHub-Stars-List分组设计.md) | GitHub Stars List 分组侧边栏入口 + OAuth 组织限制处理 |
+| 36 | [CodebaseMemory 集成设计](36-CodebaseMemory集成设计.md) | codebase-memory-mcp 二进制打包进 bundle + 持久解压 + POSIX 端口探测 + Process spawn UI 子进程 + 6 步状态机 + 设置页/Storage Tab 集成 + App Store 沙盒与签名策略 |
 
 ---
 
@@ -70,7 +73,7 @@
 
 | 日期 | 更新内容 |
 |------|---------|
-| 2026-06-16 | 新增 33 文档：OpenSSF Scorecard 安全评分落地设计（公开 API + 本地缓存表 + 非阻塞刷新 + full_name 行图标分数徽章 + 详情页雷达图 + i18n / 测试边界）；补登 32 文档索引 |
+| 2026-06-29 | 新增 36 文档：CodebaseMemory 集成设计（二进制打包进 bundle + POSIX 端口探测 + Process spawn + 6 步状态机 + App Store 沙盒签名策略）；补登 34/35 索引 |
 | 2026-06-15 | 31 文档微调：BulkCache TTL 60s → 6h（多客户端并发 / 主动刷新风暴场景下减少反复 build；与 trending weekly 桶对齐；演进记录写入 §8） |
 | 2026-06-15 | 新增 31 文档：R-06 Trending / Weekly 多级缓存改造收尾记录（客户端 SQLite TTL + 后端内存缓存 + Weekly 渐进式 SWR 双轨制 + 3 个永久陷阱 + 关键决策一览） |
 | 2026-06-15 | 新增 29 / 30 两份文档：29 把已实施的关键词 + 向量语义双引擎搜索逻辑沉淀为单一信任源（含三段式加权常量 / 示例走查 / 后期优化方向）；30 探索把已 star 仓库做成本地 RAG 的产品愿景（chunk-level retrieve + 引用约束 + UI/UX 草案 + 功能优先级 + 落地路线） |
