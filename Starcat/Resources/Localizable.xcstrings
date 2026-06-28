@@ -32289,6 +32289,40 @@
         }
       }
     },
+    "subscription.feature.externalWiki" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "external wiki lookup"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部 Wiki 查阅"
+          }
+        }
+      }
+    },
+    "subscription.feature.repoRecommendations" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "similar repo recommendations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相似仓库推荐"
+          }
+        }
+      }
+    },
     "subscription.gate.releaseLimitFormat" : {
       "extractionState" : "manual",
       "localizations" : {

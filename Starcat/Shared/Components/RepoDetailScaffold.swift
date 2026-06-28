@@ -176,6 +176,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 推荐列表 popover 展示状态。只有 `recommendationVM.items` 非空时才允许打开。
     @State private var showsRecommendations = false
 
+    /// Pro 付费墙展示上下文。Wiki / 推荐入口在已登录但非 Pro 时弹出付费墙。
+    @State private var proPaywallContext: ProPaywallContext?
+
     // v2.2 修订（2026-06-16, dong4j）：原 `@State private var showSecurityScoreSheet`
     // 已下沉到 `RepoMetadataHeaderView` —— OpenSSF 入口图标从右上 trailing actions
     // 迁移到 hero `full_name` 同行，sheet state 跟随入口本地化，不再由 Scaffold 维护。
@@ -184,6 +187,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     // 该状态曾给浮动刷新按钮用,现统一由 cacheFooter 内的 `readmeVM.isRefreshing` 驱动。
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var homeViewModel
 
@@ -262,6 +266,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 repoID: repo.id,
                 service: dependencies.recommendationContextService
             )
+        }
+        .sheet(item: $proPaywallContext) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         .onChange(of: repo.id) { _, _ in
             withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
@@ -388,13 +395,62 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 actionButton(for: action)
             }
             if !wikiLinks.isEmpty {
-                RepoWikiMenu(links: wikiLinks)
+                if dependencies.authSession.state.isAuthenticated {
+                    // 已登录：Pro 门控
+                    if dependencies.entitlementGate.isProUser {
+                        RepoWikiMenu(links: wikiLinks)
+                    } else {
+                        // 非 Pro：点击 Wiki 图标弹出付费墙
+                        Button {
+                            proPaywallContext = ProPaywallContext(feature: .externalWiki)
+                        } label: {
+                            WikiEntryIcon(size: 13)
+                                .frame(width: 28, height: 28)
+                                .background {
+                                    Capsule(style: .continuous)
+                                        .fill(WikiAccent.background(colorScheme: colorScheme))
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .pressableHover()
+                        .help(Text("wiki.menu.help"))
+                        .accessibilityLabel(Text("wiki.menu.title"))
+                        .fixedSize()
+                    }
+                } else {
+                    // 未登录：点击 Wiki 图标弹出登录 sheet
+                    Button {
+                        dependencies.authSession.requestLoginSheet()
+                    } label: {
+                        WikiEntryIcon(size: 13)
+                            .frame(width: 28, height: 28)
+                            .background {
+                                Capsule(style: .continuous)
+                                    .fill(WikiAccent.background(colorScheme: colorScheme))
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .pressableHover()
+                    .help(Text("wiki.menu.help"))
+                    .accessibilityLabel(Text("wiki.menu.title"))
+                    .fixedSize()
+                }
             }
             // 相似推荐入口（v1.1 从右下角浮动按钮迁到 hero trailing actions）。
             // 位置：Wiki 菜单之后、剩余 actions（.ai 等）之前 —— 即 AI 按钮的左侧。
             // 显示条件：recommendationVM.hasItems（保持旧浮动按钮的「有就显示、没有就不显示」契约）。
             if recommendationVM.hasItems {
                 RepoRecommendButton(hasItems: true) {
+                    guard dependencies.authSession.state.isAuthenticated else {
+                        dependencies.authSession.requestLoginSheet()
+                        return
+                    }
+                    guard dependencies.entitlementGate.isProUser else {
+                        proPaywallContext = ProPaywallContext(feature: .repoRecommendations)
+                        return
+                    }
                     showsRecommendations = true
                 }
                 .popover(isPresented: $showsRecommendations, arrowEdge: .bottom) {
