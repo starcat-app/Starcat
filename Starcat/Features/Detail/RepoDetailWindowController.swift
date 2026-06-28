@@ -244,5 +244,28 @@ struct RepoDetailWindowContent: View {
         .environment(readmeVM)
         .environment(translationVM)
         .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
+        // 触发首次 README 加载 + 翻译态准备。
+        //
+        // 为什么需要这个 task：主窗 (`HomeView`) 的初次 README 加载是在
+        // `.onChange(of: viewModel.selectedRepoID)` 里触发的（line 444-470），
+        // 依赖"selectedRepo 变化"作为触发信号。新窗的 `repo` 是固定值（推荐项），
+        // 没有"变化"可监 —— 必须显式 `.task` 在窗体首次出现时调一次
+        // `readmeVM.load(...)`，否则 ReadmeStateView 永远显示 loading 骨架屏
+        // （用户实机复现：hero 正常 + readme 一直在转圈）。
+        //
+        // 同步调 `translationVM.prepare(...)`：与 HomeView 同款（line 457-461），
+        // 让翻译浮动按钮在 README 还没加载时也有占位 UI 状态，避免首次点击
+        // 翻译浮层时拿到 nil 上下文。
+        .task {
+            readmeVM.load(
+                repo: repo,
+                isLoggedIn: dependencies.authSession.state.isAuthenticated
+            )
+            translationVM.prepare(
+                repo: repo,
+                sourceHtml: nil,
+                targetLanguage: dependencies.settings.readmeTranslationLanguage
+            )
+        }
     }
 }
