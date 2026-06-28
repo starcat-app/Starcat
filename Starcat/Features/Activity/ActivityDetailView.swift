@@ -82,6 +82,8 @@ struct ActivityDetailView: View {
     /// 时降级为瞬切。`.detailContentTransition()` modifier 内部已按 reduceMotion
     /// 兜底为 `.opacity`,这里再守住 .animation 包裹时长 = 0,实现完全瞬切。
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    /// Watchers badge 按主题切换紫色(StatSemanticColor.watchers)。
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -339,7 +341,7 @@ struct ActivityDetailView: View {
                 HStack(spacing: 8) {
                     StarsBadge(count: repo.starsCount, style: .full)
                     MetaBadge(systemImage: "tuningfork", text: repo.forksCount.formattedShort, tint: .secondary)
-                    MetaBadge(systemImage: "eye", text: repo.watchersCount.formattedShort, tint: .secondary)
+                    MetaBadge(systemImage: "eye", text: repo.watchersCount.formattedShort, tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme))
                     if repo.isArchived {
                         ArchivedBadge()
                     }

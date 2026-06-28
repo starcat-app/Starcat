@@ -5992,6 +5992,230 @@
         }
       }
     },
+    "authV2.alternative.comingSoon" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coming soon"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即将推出"
+          }
+        }
+      }
+    },
+    "authV2.alternative.divider" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "or use another method"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "或选择其他方式"
+          }
+        }
+      }
+    },
+    "authV2.alternative.pat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personal Access Token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personal Access Token"
+          }
+        }
+      }
+    },
+    "authV2.alternative.webflow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web Application Flow"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web Application Flow"
+          }
+        }
+      }
+    },
+    "authV2.alternative.webflow.tooltip" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Available when the W6 backend is ready"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "W6 或后端就绪后开放"
+          }
+        }
+      }
+    },
+    "authV2.pat.error.insufficientScope" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token scope is insufficient. At least public_repo and read:user are required."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token 权限不足，至少需要 public_repo 和 read:user。"
+          }
+        }
+      }
+    },
+    "authV2.pat.error.invalidToken" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token is invalid, expired, or revoked. Please check and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token 无效、已过期或被撤销，请检查后重试。"
+          }
+        }
+      }
+    },
+    "authV2.pat.getToken" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get a token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "获取 Token"
+          }
+        }
+      }
+    },
+    "authV2.pat.getToken.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open GitHub token settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 GitHub Token 设置页"
+          }
+        }
+      }
+    },
+    "authV2.pat.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generate a token in GitHub → Settings → Developer settings → Personal access tokens, with public_repo and read:user scopes."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在 GitHub → Settings → Developer settings → Personal access tokens 生成 Token，勾选 public_repo 和 read:user 权限。"
+          }
+        }
+      }
+    },
+    "authV2.pat.hideToken" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏 Token"
+          }
+        }
+      }
+    },
+    "authV2.pat.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste your Personal Access Token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "粘贴你的 Personal Access Token"
+          }
+        }
+      }
+    },
+    "authV2.pat.showToken" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示 Token"
+          }
+        }
+      }
+    },
+    "authV2.pat.submit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in with this token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用此 Token 登录"
+          }
+        }
+      }
+    },
     "authV2.codeCopied" : {
       "extractionState" : "stale",
       "localizations" : {

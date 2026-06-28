@@ -804,6 +804,8 @@ private struct DateStatItem: View {
 struct WatchersMenu: View {
     let repo: Repo
     @Environment(AppDependencies.self) private var dependencies
+    /// Watchers 图标用 StatSemanticColor.watchers 紫色(light/dark 双主题)。
+    @Environment(\.colorScheme) private var colorScheme
     
     enum WatchState: Equatable {
         case loading
@@ -868,7 +870,7 @@ struct WatchersMenu: View {
                 }
             }
         } label: {
-            StatItem(label: "repo.watchers", value: repo.watchersCount, systemImage: "eye.fill", tint: .secondary)
+            StatItem(label: "repo.watchers", value: repo.watchersCount, systemImage: "eye.fill", tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
