@@ -65,6 +65,12 @@ struct GithubAuthView: View {
     /// PAT 折叠组展开态。默认 false，idle 态点 chevron 才展开。
     @State private var isPATExpanded: Bool = false
 
+    // 2026-06-29 Device Flow spinner 条件显示
+    /// 2026-06-29 dong4j 反馈："等待浏览器完成授权..." 在用户点 code 按钮前就显示，
+    /// 但浏览器没打开时"等浏览器"是空话。改为只有用户点 code 按钮（`copyAndOpenBrowser`
+    /// 触发了打开浏览器）后才置 true。重新进入 awaitingCode / cancel / 重新 signIn 时重置。
+    @State private var hasOpenedBrowser: Bool = false
+
     /// 卡片宽度。参考图比例约 380pt 宽；macOS sheet 留外圈 padding 后给到 460pt 视觉舒适。
     private let cardWidth: CGFloat = 460
     /// hero 区高度。4 角圆角"独立插画卡"后做 horizontal 16pt 内缩，
@@ -321,16 +327,29 @@ struct GithubAuthView: View {
             .padding(.top, 8)
             .padding(.leading, 4)
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "key.fill")
-                    .foregroundStyle(.secondary)
-                    .font(.subheadline)
-                Text("authV2.alternative.pat")
-                    .font(.subheadline)
+            // 整行包成 Button：用户点 icon / 文字 / chevron 任意位置都能展开/折叠。
+            // SwiftUI `DisclosureGroup` 默认只响应 chevron 区点击，label 内显式 Button
+            // 会捕获点击事件并按 `isPATExpanded.toggle()` 切换——比引导用户"找 chevron"
+            // 更直接，符合 macOS 用户对"整行可点折叠组"的预期。
+            //
+            // 项目强制规范：`.buttonStyle(.plain) + .focusEffectDisabled()` 防蓝框 focus ring。
+            Button {
+                isPATExpanded.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "key.fill")
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                    Text("authV2.alternative.pat")
+                        .font(.subheadline)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .accessibilityLabel(Text("authV2.alternative.pat"))
         }
-        .accessibilityLabel(Text("authV2.alternative.pat"))
     }
 
     /// Web Application Flow 占位（W6 之前不可用）。
@@ -408,13 +427,26 @@ struct GithubAuthView: View {
                 cancelButton
             }
 
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("authV2.waitingHint")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            // 2026-06-29 改造：底部 spinner + "等待浏览器完成授权..." 改为条件显示，
+            // 只有用户在 code 按钮上点了"复制并打开浏览器"（hasOpenedBrowser = true）才显示。
+            // 进入 awaitingCode 态但还没点 code 按钮时，浏览器没打开，"等浏览器"是空话。
+            if hasOpenedBrowser {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("authV2.waitingHint")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
             }
-            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        // 兜底：state 重新进入 .awaitingUserCode（用户重新 signIn 或 cancel 后重试）→ 重置
+        // hasOpenedBrowser，让 spinner 重新按"用户点 code 按钮后"才显示的语义生效。
+        .onChange(of: authSession.state) { _, newState in
+            if case .awaitingUserCode = newState {
+                hasOpenedBrowser = false
+            }
         }
     }
 
@@ -687,6 +719,8 @@ struct GithubAuthView: View {
     private func triggerCancel() {
         copyResetTask?.cancel()
         copyFeedback = .idle
+        // 2026-06-29：取消时同步重置 hasOpenedBrowser，避免下次重新 signIn 时残留 true
+        hasOpenedBrowser = false
         authSession.cancelSignIn()
     }
 
@@ -698,10 +732,17 @@ struct GithubAuthView: View {
         copyToClipboard(info.userCode)
         copyResetTask?.cancel()
         copyFeedback = .copiedAndOpening
+        // 2026-06-29：标记"已触发开浏览器流程"——1.5s 后会真打开浏览器，
+        // 之后 Device Flow 后台轮询继续等用户在浏览器里授权。
+        // spinner 条件 `if hasOpenedBrowser` 在这里打开后一直显示，
+        // 直到 state 切到 .authenticated（成功）或 .unauthenticated（失败）。
+        hasOpenedBrowser = true
         copyResetTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled else { return }
             NSWorkspace.shared.open(info.verificationURI)
+            // 复制反馈的"✓ 已复制"1.5s 后消失，但 hasOpenedBrowser 保持 true，
+            // 让底部 spinner 继续显示直到 Device Flow 走完。
             copyFeedback = .idle
         }
     }

@@ -290,7 +290,10 @@ struct LaunchSplashContainer<Content: View>: View {
             )
         case .signIn:
             guard !authSession.state.isAuthenticated else { return }
-            authSession.signIn()
+            // 2026-06-29：onboarding 阶段用户主动选「Sign in」也是"涉及到需要登录的地方"，
+            // 按 dong4j 统一规则只弹登录 sheet，不强制走 Device Flow——
+            // 用户在 sheet 内自己选 Device Flow / PAT。
+            authSession.requestLoginSheet()
         case .skip:
             break
         }

@@ -109,7 +109,8 @@ struct RepoReleaseStatItem: View {
         Button {
             guard let vm = viewModel else { return }
             guard authSession.state.isAuthenticated else {
-                authSession.signIn()
+                // 2026-06-29：只弹登录 sheet，不强制走 Device Flow
+                authSession.requestLoginSheet()
                 return
             }
             Task {

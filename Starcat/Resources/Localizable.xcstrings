@@ -6437,13 +6437,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Waiting for authorization in your browser…"
+            "value" : "Waiting for you to complete GitHub authorization…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "等待浏览器完成授权…"
+            "value" : "等待完成 GitHub 授权…"
           }
         }
       }

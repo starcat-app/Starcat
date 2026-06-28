@@ -22,12 +22,18 @@ struct ContentView: View {
     /// splash / 首次引导期间隐藏 window toolbar。
     @Environment(\.firstRunOnboardingActive) private var firstRunOnboardingActive
 
-    /// 当用户主动点击"登录"按钮时（isAuthenticating = true）显示 GithubAuthView sheet。
+    /// 当用户主动点击"登录"按钮时（isAuthenticating = true）或 11 个详情页入口请求
+    /// 弹登录 sheet 时（shouldShowLoginSheet = true）显示 GithubAuthView sheet。
+    ///
+    /// 2026-06-29 改造：增加 `shouldShowLoginSheet` 条件，让 11 个详情页的"未登录引导"
+    /// 只弹 sheet 不强制走 Device Flow——sheet 弹出来是 idle 态，用户在 sheet 内自己选
+    /// Device Flow / PAT。
+    ///
     /// 注意：不使用 `!isAuthenticated` 作为条件，是为了避免应用启动时就弹出登录窗口，
     /// 用户需要先浏览 trending，点击详情遇到 403 后才主动登录。
     private var showAuthViewBinding: Binding<Bool> {
         Binding(
-            get: { authSession.isAuthenticating },
+            get: { authSession.isAuthenticating || authSession.shouldShowLoginSheet },
             set: { _ in }
         )
     }

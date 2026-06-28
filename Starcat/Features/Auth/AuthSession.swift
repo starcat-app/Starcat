@@ -55,6 +55,20 @@ final class AuthSession {
     /// 是否处于登录进行中（用于禁用按钮、显示 Spinner）。
     var isAuthenticating: Bool = false
 
+    /// 2026-06-29：是否请求弹出登录 sheet。
+    ///
+    /// 与 `isAuthenticating` 的区别：
+    /// - `isAuthenticating` 是"已经在跑登录流程"（Device Flow 启动了），由 `signIn()` 设 true
+    /// - `shouldShowLoginSheet` 是"有用户希望登录，但还没选 flow"——只设 flag 不启动流程
+    ///
+    /// 调用方：11 个详情页的"未登录引导"调 `requestLoginSheet()`，让 ContentView 弹 sheet
+    /// 展示 idle 态的 `GithubAuthView`（含 Device Flow CTA + PAT 折叠区），用户在 sheet 内
+    /// 自己选 flow。
+    ///
+    /// 收尾路径（5 处）都清 flag：① runDeviceFlow 成功 emit .authenticated ② signInWithPAT
+    /// 成功 emit .authenticated ③ cancelSignIn ④ signOut ⑤ invalidateSession。
+    var shouldShowLoginSheet: Bool = false
+
     // MARK: - 依赖
 
     private let oauthService: any GithubOAuthServiceProtocol
@@ -232,12 +246,31 @@ final class AuthSession {
         }
     }
 
+    /// 2026-06-29：仅请求弹出登录 sheet，不预设走哪个 flow。
+    ///
+    /// 与 `signIn()` 的区别：
+    /// - `signIn()`：立刻启动 Device Flow（`isAuthenticating = true` + 后台 task 跑 beginDeviceFlow），
+    ///   sheet 弹出来已经是 awaitingUserCode 态
+    /// - `requestLoginSheet()`：**只**设 `shouldShowLoginSheet = true`，不启动任何 OAuth 流程。
+    ///   sheet 弹出来是 idle 态，含 Device Flow CTA + PAT 折叠区，让用户自己选
+    ///
+    /// 调用方：11 个详情页的"未登录引导"——用户点这些按钮时**没指定**走哪个 flow，
+    /// 应当给用户选择权，而不是被强制走 Device Flow。
+    ///
+    /// 守门：已经在登录态时（state == .authenticated）清 flag 并 return，避免无意义弹 sheet。
+    func requestLoginSheet() {
+        guard !state.isAuthenticated else { return }
+        shouldShowLoginSheet = true
+    }
+
     /// 取消进行中的登录。
     func cancelSignIn() {
         pollingTask?.cancel()
         pollingTask = nil
         isAuthenticating = false
         state = .unauthenticated
+        // 同步清 flag：用户点 X 关 sheet 时也要走这条路径
+        shouldShowLoginSheet = false
         Task { await oauthService.reset() }
     }
 
@@ -263,6 +296,8 @@ final class AuthSession {
             // 必须在 emit .authenticated 之前完成，否则 HomeView 观察到状态变化
             // 启动的 SyncManager 会把新账号 stars 写到老 DB。
             await onUserSessionChanged?(user.id)
+            // 2026-06-29：登录成功 → 同步清 shouldShowLoginSheet，sheet 自动 dismiss。
+            self.shouldShowLoginSheet = false
             self.state = .authenticated(user: user)
             // 让 UserProfileService 持久化这次 user，下次启动可以秒显
             userProfileService?.acceptFromAuth(user)
@@ -310,6 +345,8 @@ final class AuthSession {
         developerLanguageService?.reset(login: currentLogin)
         state = .unauthenticated
         lastError = nil
+        // 2026-06-29：登出 → 同步清 shouldShowLoginSheet
+        shouldShowLoginSheet = false
         // R-01：清空 StarredRegistry，避免下个用户登录看到上个用户的 star 状态
         onSignOut?()
         // 多账号 DB 隔离：DB 切到 _anonymous 占位库（同步 await，保证返回前 DB 已切换）
@@ -350,6 +387,8 @@ final class AuthSession {
         contributionService?.reset(login: currentLogin)
         developerLanguageService?.reset(login: currentLogin)
         state = .unauthenticated
+        // 2026-06-29：401 被动失效 → 同步清 shouldShowLoginSheet，让 sheet 自动 dismiss
+        shouldShowLoginSheet = false
         // 复用 network.error.unauthorized 文案（"未授权，请重新登录。"）在登录页提示用户。
         lastError = NetworkError.unauthorized
         // R-01：清空 StarredRegistry（与 token 同步失效）
@@ -443,6 +482,8 @@ final class AuthSession {
             // 成功路径——与 runDeviceFlow 尾段对称
             // （多账号 DB 隔离 → 必须 await onUserSessionChanged 后再 emit .authenticated）
             await onUserSessionChanged?(user.id)
+            // 2026-06-29：登录成功 → 同步清 shouldShowLoginSheet
+            self.shouldShowLoginSheet = false
             self.state = .authenticated(user: user)
             userProfileService?.acceptFromAuth(user)
             contributionService?.load(login: user.login)
