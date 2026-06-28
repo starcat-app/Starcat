@@ -18,6 +18,12 @@ import AppKit  // W4-5 D1 follow-up：NSApp.appearance 控制主题（preferredC
 @main
 struct StarcatApp: App {
 
+    /// macOS app 生命周期桥接。
+    ///
+    /// SwiftUI WindowGroup 正常会自动创建主窗口；这里的 delegate 只负责前台应用形态
+    /// 与 Dock reopen 兜底，不承载业务状态，避免和 SwiftUI scene 生命周期打架。
+    @NSApplicationDelegateAdaptor(StarcatAppDelegate.self) private var appDelegate
+
     /// 应用级依赖容器，必须在 init 中创建并通过 environment 传给 ContentView。
     ///
     /// 这里允许为 nil，是为了把数据库初始化失败这类启动期硬错误从 `fatalError`
@@ -259,6 +265,34 @@ struct StarcatApp: App {
         }
 
         AppLog.general.info("Starcat bootstrap complete")
+    }
+}
+
+/// macOS 前台窗口激活兜底。
+///
+/// 约束：不要在这里创建 AppDependencies 或直接操作 SwiftUI 状态。delegate 只处理
+/// AppKit 层的应用激活事件，避免用户关闭主窗口后再次点击 Dock 图标仍停留在无窗口状态。
+final class StarcatAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        activateMainWindowIfPossible()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        activateMainWindowIfPossible()
+        return true
+    }
+
+    private func activateMainWindowIfPossible() {
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.windows
+                .first { !$0.isMiniaturized }
+                .map { window in
+                    window.makeKeyAndOrderFront(nil)
+                    window.orderFrontRegardless()
+                }
+        }
     }
 }
 
