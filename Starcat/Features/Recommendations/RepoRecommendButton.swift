@@ -26,33 +26,32 @@ struct RepoRecommendButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: "point.3.connected.trianglepath.dotted")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("repo.recommendations.button")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .foregroundStyle(.primary)
-            .background {
-                Capsule(style: .continuous)
-                    .fill(Color.clear)
-            }
-            .overlay {
-                Capsule(style: .continuous)
-                    .strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1)
-            }
-            // 8pt accentColor 圆点：表示「有推荐」的低成本信号
-            // alignment 放 topTrailing + offset 把它顶到 icon 右上角外
-            .overlay(alignment: .topTrailing) {
-                if hasItems {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 8, height: 8)
-                        .offset(x: 4, y: -4)
+            // icon-only：去掉文字后 padding(horizontal) 从 12 缩到 8，让 icon 居中。
+            // 视觉上仍是「副按钮胶囊」（bordered + 透明），与 AI 按钮同高。
+            // SR 用户靠 .accessibilityLabel / .help 兜底识别。
+            Image(systemName: "point.3.connected.trianglepath.dotted")
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .foregroundStyle(.primary)
+                .background {
+                    Capsule(style: .continuous)
+                        .fill(Color.clear)
                 }
-            }
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1)
+                }
+                // 8pt accentColor 圆点：表示「有推荐」的低成本信号
+                // alignment 放 topTrailing + offset 把它顶到 icon 右上角外
+                .overlay(alignment: .topTrailing) {
+                    if hasItems {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 8, height: 8)
+                            .offset(x: 4, y: -4)
+                    }
+                }
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
