@@ -9280,6 +9280,40 @@
         }
       }
     },
+    "codebaseMemory.storage.error.invalidBookmark" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The CodebaseMemory bookmark is no longer valid."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory 书签已失效。"
+          }
+        }
+      }
+    },
+    "codebaseMemory.storage.error.outputDirectoryUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The CodebaseMemory output directory is unavailable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory 输出目录不可用。"
+          }
+        }
+      }
+    },
     "common.cancel" : {
       "extractionState" : "manual",
       "localizations" : {
