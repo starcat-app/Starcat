@@ -395,28 +395,41 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     showsRecommendations = true
                 }
                 .popover(isPresented: $showsRecommendations, arrowEdge: .bottom) {
+                    // v1.1 修订：在 popover builder 里用 `StarredRegistry` 一次性把
+                    // `RepoRecommendationItem` 转成 `RecommendationCard`（含 isStarred），
+                    // popover 内纯渲染不再访问 registry / 不调 `asCardData()`。
+                    let cards: [RecommendationCard] = recommendationVM.items.map { item in
+                        RecommendationCard(
+                            item: item,
+                            card: item.asCardData(registry: dependencies.starredRegistry),
+                            hit: item.asSemanticSearchHit()
+                        )
+                    }
                     RepoRecommendationPopover(
-                        items: recommendationVM.items,
+                        items: cards,
                         hasMore: recommendationVM.hasMore,
                         isLoading: recommendationVM.isLoading,
                         isLoadingMore: recommendationVM.isLoadingMore,
                         errorMessage: recommendationVM.errorMessage,
                         onOpen: { item in
                             showsRecommendations = false
+                            // v1.1 修订：所有点击（单击/Cmd/中键）都走这里。
+                            //   - 本地已 star → 走 `RepoDetailWindowController.show` 开新 Starcat 窗
+                            //     （与 AI 按钮开 AI 浮窗的体验一致；同 repo 重复点击不重开）
+                            //   - 非本地 / 未 star → NSWorkspace 打开 GitHub URL（fallback）
+                            // 新窗的好处：detail 不依赖 in-place 导航的 selectedRepo lookup，
+                            // 避免「切 selection 期间 selectedRepoID 被清」造成的卡加载体感。
                             Task {
-                                await recommendationVM.open(
-                                    item,
-                                    repoRepository: dependencies.repoRepository,
-                                    homeViewModel: homeViewModel
-                                )
-                            }
-                        },
-                        onOpenInNewWindow: { item in
-                            showsRecommendations = false
-                            // Starcat 当前是单窗口应用，「新窗口」= 系统浏览器打开 GitHub URL
-                            // （与主 repo 列表 Cmd+点击行为一致；如未来支持多 Starcat 窗口再扩展）
-                            if let url = item.githubURL {
-                                NSWorkspace.shared.open(url)
+                                if let localRepo = try? await dependencies.repoRepository.findById(item.repoID),
+                                   localRepo.isStarred {
+                                    RepoDetailWindowController.show(
+                                        repo: localRepo,
+                                        dependencies: dependencies,
+                                        homeViewModel: homeViewModel
+                                    )
+                                } else if let url = item.githubURL {
+                                    NSWorkspace.shared.open(url)
+                                }
                             }
                         },
                         onLoadMore: {

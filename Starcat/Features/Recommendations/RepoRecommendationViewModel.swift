@@ -6,11 +6,13 @@
 //
 //  关键约束：
 //  - 推荐是详情页的附加能力，加载失败不能影响 README / notes / release 等主内容。
-//  - 点击本地已 star repo 时切到 Manage 的 All Stars 并选中该 repo，保证能打开本地详情；
-//    未命中本地 starred repo 时才打开 GitHub 页面。
+//  - **v1.1 修订（2026-06-29）**：详情打开路由从本 VM 迁到 `RepoDetailScaffold`：
+//    本地已 star → `RepoDetailWindowController.show` 开新 Starcat 窗；
+//    非本地 / 未 star → `NSWorkspace.open(GitHub URL)`。
+//    旧的「in-place 切 selection + selectedRepoID 跳行」逻辑（`open(_:repoRepository:homeViewModel:)`）
+//    已删除（铁律 #1），VM 现在只负责数据 load / loadMore / reset 三件事。
 //
 
-import AppKit
 import Foundation
 import Observation
 
@@ -79,27 +81,15 @@ final class RepoRecommendationViewModel {
         }
     }
 
-    func open(
-        _ item: RepoRecommendationItem,
-        repoRepository: any RepoRepositoryProtocol,
-        homeViewModel: HomeViewModel
-    ) async {
-        do {
-            if let localRepo = try await repoRepository.findById(item.repoID), localRepo.isStarred {
-                homeViewModel.selection = .allStars
-                homeViewModel.shouldScrollSelectedRepoIntoView = true
-                homeViewModel.selectedRepoID = localRepo.id
-                homeViewModel.ensureRepoVisible(repoId: localRepo.id)
-                return
-            }
-        } catch {
-            AppLog.database.warning("recommend: local repo lookup failed for \(item.repoID, privacy: .public): \(error.localizedDescription, privacy: .public)")
-        }
-
-        if let url = item.githubURL {
-            NSWorkspace.shared.open(url)
-        }
-    }
+    // MARK: - 详情打开路由（v1.1 已迁出）
+    //
+    // 旧实现 `open(_:repoRepository:homeViewModel:)` 走 in-place 导航：把主窗 selection
+    // 切到 .allStars + selectedRepoID 跳到对应 repo。体感问题：跨 selection 切换会触发
+    // 异步 reload，期间 selectedRepoID 可能被清，detail 视图表现为「卡加载」。
+    //
+    // v1.1 拆出成「本地已 star → 开新 Starcat 窗」+「非本地 → 浏览器开 GitHub URL」两条
+    // 路径，路由逻辑迁到 `RepoDetailScaffold`（那里有 dependencies / homeViewModel
+    // 上下文），ViewModel 只负责数据 load / loadMore / reset。`open` 方法已删除（铁律 #1）。
 
     private func reset() {
         loadedRepoID = nil

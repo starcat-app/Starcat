@@ -8,6 +8,9 @@
 //  目的：让推荐 popover 内的卡片与主 repo 列表用同一份骨架渲染（Q4 决策），
 //  视觉 100% 还原。转换层只承担数据适配，不引入新的 UI 组件。
 //
+//  v1.1 修订（2026-06-29）：`asCardData` 加 `registry:` 重载，从 `StarredRegistry`
+//  查 `isStarred` 用于在卡片上显示绿色 ✓ 标记（与 Trending 列表同款行为）。
+//
 
 import Foundation
 
@@ -17,11 +20,13 @@ extension RepoRecommendationItem {
     ///
     /// 字段映射策略：
     /// - `owner` / `repo` 从 `fullName` 用 "/" 拆出（推荐接口只给完整名）
-    /// - `isStarred` = false（推荐场景不查 starred registry，避免增加不必要的 DB 读）
+    /// - `isStarred` 从 `registry.contains(ghRepoId:)` 查 → 用于 `UnifiedRepoRow`
+    ///   的绿色 ✓ 标记（与 Trending / Weekly 列表的 `showStarredCheckmark` 行为一致）
     /// - 所有「场景独有徽章」字段传 nil —— 推荐列表不是 trending / weekly / activity
     /// - `avatarURL` = nil —— 推荐接口不返回 owner 头像，由 UnifiedRepoRow 用 owner login 拼
     /// - `openSSFScore` / `healthBadge` = nil —— 详情页才查，列表行不查
-    func asCardData() -> RepoCardViewData {
+    @MainActor
+    func asCardData(registry: StarredRegistry) -> RepoCardViewData {
         let (owner, repoName) = Self.splitFullName(fullName)
         return RepoCardViewData(
             ghRepoId: repoID,
@@ -36,7 +41,7 @@ extension RepoRecommendationItem {
             isArchived: archived,
             isFork: false,
             isPrivate: false,
-            isStarred: false,
+            isStarred: registry.contains(ghRepoId: repoID),
             badge: nil,
             weeklySources: [],
             weeklySourceLabel: nil,

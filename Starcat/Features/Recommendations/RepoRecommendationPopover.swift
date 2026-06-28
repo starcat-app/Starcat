@@ -11,7 +11,16 @@
 //  - 容器高度自适应（Q6 决策）：固定宽度 400pt，垂直方向 idealHeight 500pt / maxHeight 600pt
 //  - 顶部安静 header（Q8 决策）：图标 + 标题 + count 数字
 //  - empty/loading 跟主列表看齐（Q10 决策）：skeleton 用 `RepoRowSkeletonView`
-//  - 点击交互（Q7 决策）：单击替换详情，Cmd+点击打开 GitHub URL 在系统浏览器
+//  - 点击交互（v1.1 修订）：所有点击（单击 / Cmd+点击 / 中键）都走 `onOpen`——
+//    由 Scaffold 决定是开新 Starcat 窗（已 star）还是开浏览器 GitHub URL（非本地）。
+//    早期 Q7 的「单击 in-place / Cmd+开窗」拆分为已废弃，统一行为更简单。
+//
+//  v1.1 修订（2026-06-29）：
+//  - items 改为 `[(item, card, hit)]` 预转换三元组，由 Scaffold 在 popover builder 里
+//    用 `StarredRegistry` 一次性转好；popover 不再访问 registry / 不再 `asCardData()` 调用
+//  - UnifiedRepoRow 加 `showStarredCheckmark: true` —— 已 star 的推荐项显示绿 ✓（与
+//    Trending 列表完全同形）
+//  - onOpenInNewWindow 闭包删除（Q3 决策：单击/Cmd/中键 行为统一）
 //
 //  旧版本的 `RepoRecommendationCard` 自定义 layout 已删除（Q4 + 铁律 #1）。
 //
@@ -19,14 +28,26 @@
 import SwiftUI
 import AppKit
 
+/// 推荐卡片 popover 的单个 item 元组（item + 预转换 card + 预转换 hit）。
+///
+/// 在 Scaffold 的 popover builder 里一次性用 `StarredRegistry` 把 `RepoRecommendationItem`
+/// 转成 `RepoCardViewData`（含 `isStarred`），popover 内不再访问 registry / 不再调
+/// `asCardData()`，让 popover 保持「无副作用展示」的纯渲染状态。
+struct RecommendationCard: Identifiable {
+    let item: RepoRecommendationItem
+    let card: RepoCardViewData
+    let hit: SemanticSearchHit
+
+    var id: Int64 { item.repoID }
+}
+
 struct RepoRecommendationPopover: View {
-    let items: [RepoRecommendationItem]
+    let items: [RecommendationCard]
     let hasMore: Bool
     let isLoading: Bool
     let isLoadingMore: Bool
     let errorMessage: String?
     let onOpen: (RepoRecommendationItem) -> Void
-    let onOpenInNewWindow: (RepoRecommendationItem) -> Void
     let onLoadMore: () -> Void
 
     var body: some View {
@@ -90,8 +111,8 @@ struct RepoRecommendationPopover: View {
     private var cardList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
-                ForEach(items) { item in
-                    cardView(for: item)
+                ForEach(items) { recommendation in
+                    cardView(for: recommendation)
                 }
 
                 if let errorMessage, !errorMessage.isEmpty {
@@ -112,20 +133,21 @@ struct RepoRecommendationPopover: View {
     }
 
     @ViewBuilder
-    private func cardView(for item: RepoRecommendationItem) -> some View {
-        let card = item.asCardData()
-        let hit = item.asSemanticSearchHit()
-
+    private func cardView(for recommendation: RecommendationCard) -> some View {
         Button {
-            // Cmd+点击 = 新窗口（用系统浏览器打开 GitHub URL，与主列表的 Cmd+点击行为一致）
-            // 单击 = 替换当前详情（用 ViewModel.open 走「本地 starred → 切 Manage / 其它 → 浏览器」流程）
-            if NSEvent.modifierFlags.contains(.command) {
-                onOpenInNewWindow(item)
-            } else {
-                onOpen(item)
-            }
+            // v1.1 修订：所有点击（单击 / Cmd / 中键）都走 onOpen。
+            // Scaffold 在闭包里决定是开新 Starcat 窗（已 star）还是开浏览器
+            // GitHub URL（非本地），与主列表的 Cmd+点击「在系统浏览器打开」分流
+            // 在调用层完成，popover 不关心具体路由。
+            onOpen(recommendation.item)
         } label: {
-            UnifiedRepoRow(card: card, semanticHit: hit)
+            // showStarredCheckmark: true 让 UnifiedRepoRow 在已 star 的推荐项上
+            // 渲染绿色 ✓（与 Trending 列表完全同形）
+            UnifiedRepoRow(
+                card: recommendation.card,
+                semanticHit: recommendation.hit,
+                showStarredCheckmark: true
+            )
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()

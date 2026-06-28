@@ -18039,6 +18039,23 @@
         }
       }
     },
+    "search.mode.semantic.lockedSuffix" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI mode · Pro required"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 模式 · 需要 Pro"
+          }
+        }
+      }
+    },
     "search.mode.title" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -18052,6 +18069,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜索模式"
+          }
+        }
+      }
+    },
+    "search.paywall.semantic.upgrade" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Semantic Search is a Pro feature. Upgrade to search by meaning, not just keywords."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 语义搜索是 Pro 功能。升级后可按语义而非仅按关键词搜索。"
           }
         }
       }

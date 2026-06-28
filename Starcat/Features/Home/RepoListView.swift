@@ -989,6 +989,11 @@ struct RepoListView: View {
     private func smartSearchField(isDisabled: Bool = false) -> some View {
         @Bindable var vm = viewModel
         let historyRepository = dependencies.searchHistoryRepository
+        // 直接读 `dependencies.entitlementGate.isProUser`(EntitlementGate 是
+        // `@MainActor @Observable`),SwiftUI 通过访问追踪自动重渲染;
+        // Pro 状态变化(订阅过期/降级)会自动反映到 SmartSearchField 下拉,
+        // 由 SmartSearchField 内部的 .onChange(of: isProUser) 做 mode 回退 + 弹付费墙。
+        let isProUser = dependencies.entitlementGate.isProUser
         return SmartSearchField(
             text: $vm.searchQuery,
             mode: $vm.smartSearchMode,
@@ -1008,6 +1013,16 @@ struct RepoListView: View {
             },
             onOpenGlobalSearch: {
                 onOpenSearchCenter?()
+            },
+            isProUser: isProUser,
+            onRequestProUpgrade: {
+                // 与现有 paywallContext 写入对齐(line 657 / 660 / 718 / 1490):
+                // 给 .semanticSearch 弹付费墙,message 走 service 报的本地化错误文案,
+                // 即便此处文案与执行时报错不一致,用户也能从弹窗明确"是 .semantic 触发的"。
+                paywallContext = ProPaywallContext(
+                    feature: .semanticSearch,
+                    message: String.l10n("search.paywall.semantic.upgrade")
+                )
             },
             isDisabled: isDisabled,
             collapseToken: viewModel.selectedRepoID,
