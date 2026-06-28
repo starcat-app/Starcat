@@ -25924,13 +25924,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cached similar-repository results per repo (TTL 24h when non-empty, 1h when empty)."
+            "value" : "Cached similar-repository results per repo (TTL 7 days when non-empty, 1 hour when empty)."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按 repo 缓存的相似推荐结果（TTL：非空 24 小时，空 1 小时）。"
+            "value" : "按 repo 缓存的相似推荐结果（TTL：非空 7 天，空 1 小时）。"
           }
         }
       }

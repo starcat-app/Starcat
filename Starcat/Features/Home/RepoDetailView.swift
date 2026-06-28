@@ -877,24 +877,20 @@ struct WatchersMenu: View {
         // `.pressableHover()`，让用户感知 Watchers 数字是可点击的（点开下拉菜单）。
         .pressableHover()
         .help("repo.watch")
-        .simultaneousGesture(TapGesture().onEnded {
-            loadSubscriptionWhenUserOpensMenu()
-        })
-        .onAppear {
-            applyCachedSubscriptionState()
-        }
-        .onChange(of: repo.id) { _, _ in
-            applyCachedSubscriptionState()
+        // D-37（2026-06-29）：原来用 `.simultaneousGesture(TapGesture())` 想做"打开菜单才懒加载",
+        // 但 macOS Menu label 内部 button 优先消费 tap event,挂在外层的 .onEnded 在 Menu 上不可靠
+        // 触发,导致 fetchSubscription Task 永远不启动,watchState 永远停在 .loading。
+        // 改回 `.task(id: repo.id)`,cache 命中就跳过;跟工程内 9+ 个其他 section 同款 lifecycle。
+        // .task 在 view 离开 / repo 切换时会自动 cancel 旧任务,符合"切换 repo 不抢网络"原意。
+        .task(id: repo.id) {
+            if WatchSubscriptionSessionCache.state(for: repo.id) == nil {
+                await fetchSubscription()
+            } else {
+                applyCachedSubscriptionState()
+            }
         }
     }
     
-    private func loadSubscriptionWhenUserOpensMenu() {
-        if applyCachedSubscriptionState() {
-            return
-        }
-        Task { await fetchSubscription() }
-    }
-
     @discardableResult
     private func applyCachedSubscriptionState() -> Bool {
         if let cached = WatchSubscriptionSessionCache.state(for: repo.id) {

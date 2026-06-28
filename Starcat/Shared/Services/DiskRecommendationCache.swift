@@ -72,7 +72,8 @@ struct RecommendationCacheSnapshot: Codable, Sendable, Equatable {
     /// 计算规则（`Self.computeNextProbeAt`）：
     /// - `items.isEmpty` → `now + 1h`（推荐空了，可能是后端还没算 / 用户刚 star 新东西，
     ///   短 TTL 让下次进入能拿到新数据）；
-    /// - `!items.isEmpty` → `now + 24h`（有结果了就别每天刷，省 API）。
+    /// - `!items.isEmpty` → `now + 7d`（有结果了就别每天刷，省 API；推荐 embedding
+    ///   算过后基本稳定，一周重算一次足够）。
     let nextProbeAt: Date
 
     /// 推荐项列表（空数组 = 后端返回了空结果，不是错误状态）。
@@ -104,8 +105,8 @@ struct RecommendationCacheSnapshot: Codable, Sendable, Equatable {
     /// 一天内多次进入详情页能感知到"刚 star 的新东西被推荐了"。
     nonisolated static let shortTTL: TimeInterval = 1 * 60 * 60
 
-    /// 有结果长 TTL：24 小时。推荐 embedding 一旦算过基本稳定，每天刷一次足够。
-    nonisolated static let longTTL: TimeInterval = 24 * 60 * 60
+    /// 有结果长 TTL：7 天。推荐 embedding 一旦算过基本稳定，一周重算一次足够。
+    nonisolated static let longTTL: TimeInterval = 7 * 24 * 60 * 60
 }
 
 /// 推荐磁盘缓存（线程：所有公开方法 `@MainActor`）。
