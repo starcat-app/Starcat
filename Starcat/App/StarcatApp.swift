@@ -125,10 +125,12 @@ struct StarcatApp: App {
                 // 决定是否展示「AI 自动整理中 N/M」轻量行；设置页观察其触发结果展示
                 // 「运行状态」。调度器的 `start()` 由 HomeView 在 .task 里调。
                 .environment(dependencies.autoTidyScheduler)
+                #if DEBUG
                 .onReceive(NotificationCenter.default.publisher(for: DebugMenuCommands.debugProOverrideNotification)) { notification in
                     guard let active = notification.userInfo?[DebugMenuCommands.debugProOverrideActiveKey] as? Bool else { return }
                     dependencies.subscriptionManager.applyDebugProOverride(active: active)
                 }
+                #endif
                 .onAppear {
                     applyAppearance(dependencies.settings.appearanceMode)
                 }
