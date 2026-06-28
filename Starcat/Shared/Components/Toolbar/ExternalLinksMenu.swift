@@ -38,6 +38,7 @@ struct ExternalLinksMenu: View {
 
     let selection: ToolbarRepoSelection
     let codeFlowRepo: Repo?
+    let codebaseMemoryRepo: Repo?
     /// 由稳定的页面根视图承载 CodeFlow sheet；toolbar 组件只发送打开请求。
     ///
     /// 历史坑（dong4j 2026-06-14 验收反馈）：原本用 `@State isCodeFlowPresented: Bool`
@@ -56,25 +57,36 @@ struct ExternalLinksMenu: View {
     /// `AnyView` 重建时 presentation host 本身仍会被替换，关闭期间可能再次挂载。
     /// 因此由 `RepoListView` 持有 item 并在稳定根节点呈现，本组件不保存 sheet 状态。
     let onOpenCodeFlow: (Repo) -> Void
+    let onOpenCodebaseMemory: (Repo) -> Void
 
     init(
         selection: ToolbarRepoSelection,
         codeFlowRepo: Repo? = nil,
-        onOpenCodeFlow: @escaping (Repo) -> Void = { _ in }
+        codebaseMemoryRepo: Repo? = nil,
+        onOpenCodeFlow: @escaping (Repo) -> Void = { _ in },
+        onOpenCodebaseMemory: @escaping (Repo) -> Void = { _ in }
     ) {
         self.selection = selection
         self.codeFlowRepo = codeFlowRepo
+        self.codebaseMemoryRepo = codebaseMemoryRepo
         self.onOpenCodeFlow = onOpenCodeFlow
+        self.onOpenCodebaseMemory = onOpenCodebaseMemory
     }
 
     var body: some View {
         Group {
-            if codeFlowRepo != nil {
+            if codeFlowRepo != nil || codebaseMemoryRepo != nil {
                 FeaturedExternalLinksControl(
                     selection: selection,
                     onOpenCodeFlow: {
                         if let codeFlowRepo {
                             onOpenCodeFlow(codeFlowRepo)
+                        }
+                    },
+                    codebaseMemoryRepo: codebaseMemoryRepo,
+                    onOpenCodebaseMemory: {
+                        if let codebaseMemoryRepo {
+                            onOpenCodebaseMemory(codebaseMemoryRepo)
                         }
                     }
                 )
@@ -136,6 +148,8 @@ struct ExternalLinksMenu: View {
 private struct FeaturedExternalLinksControl: View {
     let selection: ToolbarRepoSelection
     let onOpenCodeFlow: () -> Void
+    let codebaseMemoryRepo: Repo?
+    let onOpenCodebaseMemory: () -> Void
 
     var body: some View {
         Menu {
@@ -146,6 +160,18 @@ private struct FeaturedExternalLinksControl: View {
                     Text("CodeFlow")
                 } icon: {
                     Image(systemName: "point.3.connected.trianglepath.dotted")
+                }
+            }
+
+            if codebaseMemoryRepo != nil {
+                Button {
+                    onOpenCodebaseMemory()
+                } label: {
+                    Label {
+                        Text("CodebaseMemory")
+                    } icon: {
+                        Image(systemName: "point.3.filled.connected.trianglepath.dotted")
+                    }
                 }
             }
 

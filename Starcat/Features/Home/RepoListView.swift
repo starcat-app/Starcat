@@ -71,6 +71,7 @@ struct RepoListView: View {
     /// toolbar spec 会通过 `AnyView` 频繁重建，sheet 必须由稳定的页面根节点承载。
     /// 否则关闭 CodeFlow 时 presentation host 被替换，窗口会短暂再次出现。
     @State private var codeFlowSheetRepo: Repo?
+    @State private var codebaseMemorySheetRepo: Repo?
     /// 分享入口已迁到 toolbar；结果 sheet 同样必须由稳定根节点承载，避免 toolbar
     /// 子树重建时 presentation host 被替换。
     @State private var shareSheetItem: RepoShareSheetItem?
@@ -141,6 +142,10 @@ struct RepoListView: View {
         }
         .sheet(item: $codeFlowSheetRepo) { repo in
             CodeFlowPanel(repo: repo)
+                .appSheetRootEnvironment(dependencies)
+        }
+        .sheet(item: $codebaseMemorySheetRepo) { repo in
+            CodebaseMemoryPanel(repo: repo)
                 .appSheetRootEnvironment(dependencies)
         }
         // W12 PR-4：切页面时主动 exit 非活跃 store，避免"切到 trending 时 weekly 还显示
@@ -623,7 +628,9 @@ struct RepoListView: View {
         ExternalLinksMenu(
             selection: selection,
             codeFlowRepo: codeFlowRepo,
-            onOpenCodeFlow: openCodeFlow(for:)
+            codebaseMemoryRepo: codeFlowRepo,
+            onOpenCodeFlow: openCodeFlow(for:),
+            onOpenCodebaseMemory: openCodebaseMemory(for:)
         )
         CloneMenu(selection: selection) { toastKey in
             toastMessage = toastKey
@@ -1503,6 +1510,16 @@ struct RepoListView: View {
             codeFlowSheetRepo = repo
         } catch {
             paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
+        }
+    }
+
+    /// CodebaseMemory 为 Pro 能力：与 CodeFlow 同款门控。
+    private func openCodebaseMemory(for repo: Repo) {
+        do {
+            try dependencies.entitlementGate.requirePro(.codebaseMemory)
+            codebaseMemorySheetRepo = repo
+        } catch {
+            paywallContext = ProPaywallContext(feature: .codebaseMemory, message: error.localizedDescription)
         }
     }
 }

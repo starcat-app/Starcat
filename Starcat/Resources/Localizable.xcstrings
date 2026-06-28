@@ -32424,6 +32424,23 @@
         }
       }
     },
+    "subscription.feature.codebaseMemory" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory 3D graph"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory 3D 代码图谱"
+          }
+        }
+      }
+    },
     "subscription.feature.mcpService" : {
       "extractionState" : "manual",
       "localizations" : {
