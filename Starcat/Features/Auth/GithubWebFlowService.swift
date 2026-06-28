@@ -118,7 +118,7 @@ actor GithubWebFlowService: GithubOAuthServiceProtocol {
         // 5. 保存到 actor 状态（actor 内部，外部无法访问）
         self.codeVerifier = verifier
         self.storedState = state
-        self.expiresAt = Date().addingTimeInterval(5 * 60)  // 5 分钟
+        self.expiresAt = Date().addingTimeInterval(15 * 60)  // 15 分钟，与 Device Flow 一致
 
         AppLog.auth.info("Web Flow: PKCE generated (verifier_len=\(verifier.count, privacy: .public), state_len=\(state.count, privacy: .public), expires_in=300s)")
 

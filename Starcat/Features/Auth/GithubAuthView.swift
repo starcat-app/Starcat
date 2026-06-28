@@ -67,6 +67,14 @@ struct GithubAuthView: View {
     /// 2026-06-29：「或选择其他登录方式」整体折叠组。默认 false，减少视觉噪音。
     @State private var isAlternativeExpanded: Bool = false
 
+    // 2026-06-29 倒计时（Web Flow + Device Flow 共享，两态互斥不会冲突）
+    /// 当前剩余秒数，Timer 每秒递减。
+    @State private var countdownSeconds: Int = 0
+    /// 倒计时截止时刻。进入 awaiting 态时设定，离开时清 nil。
+    @State private var countdownExpiresAt: Date?
+    /// 倒计时 Timer，view disappear 或 state 切走时 invalidate。
+    @State private var countdownTimer: Timer?
+
     // 2026-06-29 Device Flow spinner 条件显示
     /// 2026-06-29 dong4j 反馈："等待浏览器完成授权..." 在用户点 code 按钮前就显示，
     /// 但浏览器没打开时"等浏览器"是空话。改为只有用户点 code 按钮（`copyAndOpenBrowser`
@@ -246,11 +254,11 @@ struct GithubAuthView: View {
             .focusEffectDisabled()
             .accessibilityLabel(Text("authV2.alternative.divider"))
 
-            // 展开后才显示 PAT 折叠项 + Web Flow 入口
+            // 展开后显示 Web Flow 入口 + PAT 折叠项（PAT 放最后）
             if isAlternativeExpanded {
                 VStack(alignment: .leading, spacing: 10) {
-                    patDisclosure
                     webFlowRow
+                    patDisclosure
                 }
                 .padding(.top, 4)
             }
@@ -440,35 +448,60 @@ struct GithubAuthView: View {
     /// - code 卡片改全宽（与 cancel 按钮齐平），不再固定 248pt + 右侧 flex hint 双列布局
     /// 2026-06-29 Web Application Flow / PKCE 等待回调视图。
     ///
-    /// 与 `awaitingUserCodeView`（Device Flow）布局完全一致：
-    /// - 顶部 hero 图片轮播
-    /// - 进度指示（spinner + "等待完成 GitHub 授权..."）
+    /// 与 `awaitingUserCodeView`（Device Flow）布局一致：
+    /// - hero 图片轮播（card 顶部 contentSection 共享）
     /// - Cancel 按钮
+    /// - spinner + 倒计时 + 提示文案
     ///
-    /// 唯一区别：没有 user_code 卡片（Web Flow 不需要用户手动输 code，浏览器自动跳回）。
-    /// 关键约束：state 是 .awaitingWebCallback 时 sheet 切到该视图；用户点 Cancel → triggerWebFlowCancel
-    /// 调 AuthSession.cancelWebFlow()（暂未实现，先 TODO）。
+    /// 倒计时格式 MM:SS，零填充避免文本长度抖动（"09:45"→"08:44" 宽度不变）。
+    /// 从 `info.expiresAt` 反推剩余秒数，Timer 每秒递减。0 时不强制切 state——
+    /// handleWebFlowCallback 会在过期时独立拒绝回调。
     private func awaitingWebCallbackView(info: WebFlowStartInfo) -> some View {
         VStack(spacing: 24) {
-            // 2026-06-29：与 awaitingUserCodeView（Device Flow）布局完全对称——
-            //   - cancelButton（Cancel 调 cancelWebFlow 取消 Web Flow）
-            //   - spinner + "等待完成 GitHub 授权..."
-            //
-            // 唯一区别：没有 codeButton（Web Flow 不需要用户手动输 code，浏览器自动跳回
-            // starcat://callback 触发 .onOpenURL）。
-            // hero 图片轮播在 card 顶部由 contentSection 共享，所有态都展示，不在这里重复画。
             VStack(spacing: 10) {
                 cancelWebFlowButton
             }
 
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
+                Text(verbatim: formattedCountdown)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
                 Text("authV2.webflow.waitingHint")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .center)
         }
+        .onAppear { startCountdown(expiresAt: info.expiresAt) }
+        .onDisappear { stopCountdown() }
+    }
+
+    /// 倒计时显示格式：MM:SS，两位零填充。共享于 Web Flow + Device Flow。
+    private var formattedCountdown: String {
+        let m = countdownSeconds / 60
+        let s = countdownSeconds % 60
+        return String(format: "%02d:%02d", m, s)
+    }
+
+    /// 启动倒计时 Timer。从 `expiresAt` 开始每秒递减。
+    private func startCountdown(expiresAt: Date) {
+        countdownExpiresAt = expiresAt
+        countdownSeconds = max(0, Int(expiresAt.timeIntervalSinceNow))
+        countdownTimer?.invalidate()
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            DispatchQueue.main.async {
+                if countdownSeconds > 0 { countdownSeconds -= 1 }
+            }
+        }
+    }
+
+    /// 停止倒计时 Timer。
+    private func stopCountdown() {
+        countdownTimer?.invalidate()
+        countdownTimer = nil
+        countdownExpiresAt = nil
+        countdownSeconds = 0
     }
 
     /// Web Flow 专用的 Cancel 按钮：调 AuthSession.cancelWebFlow()
@@ -487,12 +520,15 @@ struct GithubAuthView: View {
                 cancelButton
             }
 
-            // 2026-06-29 改造：底部 spinner + "等待浏览器完成授权..." 改为条件显示，
+            // 2026-06-29 改造：底部 spinner + 倒计时 + "等待完成 GitHub 授权..."
             // 只有用户在 code 按钮上点了"复制并打开浏览器"（hasOpenedBrowser = true）才显示。
-            // 进入 awaitingCode 态但还没点 code 按钮时，浏览器没打开，"等浏览器"是空话。
+            // 倒计时格式 MM:SS 零填充，数字宽度不变，`monospacedDigit()` 保证文本宽度稳定。
             if hasOpenedBrowser {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
+                    Text(verbatim: formattedCountdown)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
                     Text("authV2.waitingHint")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -501,6 +537,12 @@ struct GithubAuthView: View {
                 .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
             }
         }
+        .onAppear {
+            // Device Flow 倒计时：info.expiresIn 是 GitHub 返回的总秒数（通常 900=15min），
+            // 从 view mount 时刻起算（view 在 beginDeviceFlow 返回后几乎立即出现，误差 <100ms）
+            startCountdown(expiresAt: Date().addingTimeInterval(info.expiresIn))
+        }
+        .onDisappear { stopCountdown() }
         // 兜底：state 重新进入 .awaitingUserCode（用户重新 signIn 或 cancel 后重试）→ 重置
         // hasOpenedBrowser，让 spinner 重新按"用户点 code 按钮后"才显示的语义生效。
         .onChange(of: authSession.state) { _, newState in

@@ -92,7 +92,7 @@ final class MockGithubOAuthService: GithubOAuthServiceProtocol, @unchecked Senda
         return WebFlowStartInfo(
             authorizationURL: authURL,
             state: state,
-            expiresAt: Date().addingTimeInterval(300)
+            expiresAt: Date().addingTimeInterval(15 * 60)  // 15 分钟，与 Device Flow 一致
         )
     }
 
