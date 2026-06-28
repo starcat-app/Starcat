@@ -63,6 +63,8 @@ struct RepoListView: View {
     var onShowBatchAIPanel: (() -> Void)?
     /// 全局搜索中心由 HomeView 承载；列表 toolbar 只负责触发，不持有浮层状态。
     var onOpenSearchCenter: (() -> Void)?
+    /// 覆盖式 Agent Workspace 由 HomeView 承载；列表 toolbar 只暴露入口。
+    var onOpenAgentWorkspace: (() -> Void)?
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
@@ -244,6 +246,14 @@ struct RepoListView: View {
                 currentBatchActionBar
             }
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        onOpenAgentWorkspace?()
+                    } label: {
+                        Label("Agent", systemImage: "sparkles")
+                    }
+                    .help("Open Agent Workspace")
+                }
                 ToolbarItem(placement: .primaryAction) {
                     AppStatusToolbarButton(
                         lastSyncedAt: lastSyncedAt,
