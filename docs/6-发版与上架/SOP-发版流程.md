@@ -329,4 +329,113 @@ git tag v0.1.1 && git push --tags
 
 ---
 
-*最后更新：2026-06-07*
+## 8. 封版后的 Bug 修复流程
+
+> 创建：2026-06-28
+> 适用场景：已通过 `release.sh` 打 tag 封版的版本（如 v1.0.0），发现代码 bug 需要修复。
+> 核心原则：**封版 ≠ 不可改**。未公开前按 §8.1 走；公开后按 §8.2 走。
+
+### 8.1 未上架场景（tag 可移动）
+
+> **适用判定**：vX.Y.Z 尚未在 App Store / TestFlight 对外发布，**且**未在 GitHub 公开 Release / 未通过 DMG 公开发放下载。
+> **本质**：tag 是「内部版本号」，未公开前可以原地「滑动」到修复后的 commit，不增加版本号。
+
+```bash
+# 0. 前提：main 当前 HEAD 在 vX.Y.Z tag 附近（或其后代）
+git checkout main
+git pull origin main
+git log --oneline -1 vX.Y.Z   # 确认 tag 当前指向
+
+# 1. 开修复分支（避免直接在 main 上 commit，便于回退）
+git checkout -b fix/vX.Y.Z-<short-desc>
+
+# 2. 修 + commit
+git commit -m "fix(starcat): ..."
+
+# 3. merge 回 main
+git checkout main
+git merge --ff-only fix/vX.Y.Z-<short-desc>
+
+# 4. 移动 tag 到新 commit（不增版本号！）
+git tag -d vX.Y.Z
+git tag -a vX.Y.Z -m "Release vX.Y.Z — <新 commit 的修复说明>"
+git push origin :refs/tags/vX.Y.Z
+git push origin vX.Y.Z
+
+# 5. 清理修复分支
+git branch -d fix/vX.Y.Z-<short-desc>
+```
+
+**风险与约束**：
+- 移动已 push 的 tag = force update，团队协作者需要 `git fetch --tags --force`
+- 若在 GitHub 上基于该 tag 创建过 Release / 附件 / 链接，移动后这些会指向新 commit（内容不同）
+- 因此**只在「未公开 Release + 未对外分发 DMG」时使用**
+
+### 8.2 已上架场景（必须开 release 分支）
+
+> **适用判定**：vX.Y.Z 已在 App Store / TestFlight 发布，或 DMG 公开下载链接已发出。
+> **本质**：不能动 vX.Y.Z tag（已下载用户校验和会错乱）。开长期维护的 release 分支，hotfix 走新版本号。
+
+```bash
+# 1. 从 vX.Y.Z tag 开 release 分支（长期保留，与 main / dev 并行）
+git checkout -b release/vX.Y.x vX.Y.Z
+git push -u origin release/vX.Y.x
+
+# 2. 修 + commit
+git commit -m "fix(starcat): ..."
+
+# 3. 打新版本 tag（递增 PATCH 位，X.Y.Z → X.Y.(Z+1)）
+git tag -a vX.Y.(Z+1) -m "Hotfix vX.Y.(Z+1) — <修复说明>"
+git push origin vX.Y.(Z+1)
+
+# 4. cherry-pick 回 main，让 main 也包含这个修复
+git checkout main
+git cherry-pick <commit-hash>
+git push origin main
+
+# 5. dev 上的 v(X.Y+1).0 是否需要这个修复？
+#    视情况：仅严重 bug 才 cherry-pick 到 dev，避免污染下一版开发线
+git checkout dev
+git cherry-pick <commit-hash>   # 或：git merge release/vX.Y.x
+
+# 6. release/vX.Y.x 分支长期保留
+```
+
+**为什么必须开 release 分支**：
+- 动 vX.Y.Z tag 会让已下载 vX.Y.Z 的用户校验和失败 / 自动更新错乱
+- vX.Y.(Z+1) / vX.Y.(Z+2) 走 release 分支，避免污染 main 上下一版的开发
+- cherry-pick 保证 main 不会「漏修」，下次封版时所有 hotfix 都已合入
+
+### 8.3 决策树
+
+```
+发现 vX.Y.Z bug？
+  │
+  ├── vX.Y.Z 是否已对外发布（满足任一即视为已发布）？
+  │     • App Store / TestFlight 已上架
+  │     • GitHub Release 公开（带 DMG 附件）
+  │     • DMG 公开发放下载链接
+  │     │
+  │     ├── 全部否 → §8.1 未上架：tag 移动（不开新版本号）
+  │     │
+  │     └── 任一为是 → §8.2 已上架：开 release/vX.Y.x → 修 → vX.Y.(Z+1) → cherry-pick 回 main
+  │
+  └── 修复后是否需要回 dev / main？
+        │
+        ├── §8.1：merge 回 main，main = vX.Y.Z 当前真值
+        └── §8.2：cherry-pick 到 main；dev 分支的下一版是否需要？
+              │
+              ├── 严重 bug → 在 dev 上 cherry-pick（或 merge release 分支到 dev）
+              └── 非严重   → 仅 main 持有修复，dev 下一版再统一处理
+```
+
+### 8.4 注意事项
+
+- **`release.sh` 在 §8.1 流程中不要跑**——它会拒绝覆盖已存在的 tag。手动 git tag 即可。
+- **§8.1 的 tag 移动会触发 `bump-version.sh` 的 plist 更新**——下次 build 的产物会自动反映新 commit 的 hash（build 号 = commit count，自动 +1）
+- **cherry-pick 可能冲突**：release 分支的 commit 与 main / dev 后续演进可能重叠，冲突时人工解决
+- **release 分支的命名严格 `release/vX.Y.x`**（X.Y 不变，x 留作未来命名扩展位），与 dev / main 长期并行
+
+---
+
+*最后更新：2026-06-28*
