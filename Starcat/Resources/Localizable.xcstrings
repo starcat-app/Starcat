@@ -24417,13 +24417,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search Cache"
+            "value" : "Search"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜索缓存"
+            "value" : "搜索"
           }
         }
       }
@@ -25876,13 +25876,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Image Cache (Kingfisher)"
+            "value" : "Images"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "图片缓存(Kingfisher)"
+            "value" : "图片"
           }
         }
       }
@@ -25944,13 +25944,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "README Cache"
+            "value" : "README"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "README 缓存"
+            "value" : "README"
           }
         }
       }
@@ -25995,13 +25995,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Translation Cache"
+            "value" : "Translations"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "翻译缓存"
+            "value" : "翻译"
           }
         }
       }
@@ -26063,13 +26063,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wiki Probe Cache"
+            "value" : "Wiki Probe"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wiki 探测缓存"
+            "value" : "Wiki 探测"
           }
         }
       }
