@@ -258,7 +258,10 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             await loadWikiLinks(for: repo)
         }
         .task(id: repo.id) {
-            await recommendationVM.loadInitial(repoID: repo.id, api: dependencies.recommendAPI)
+            await recommendationVM.loadInitial(
+                repoID: repo.id,
+                service: dependencies.recommendationContextService
+            )
         }
         .onChange(of: repo.id) { _, _ in
             withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
@@ -434,7 +437,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                         },
                         onLoadMore: {
                             Task {
-                                await recommendationVM.loadMore(api: dependencies.recommendAPI)
+                                await recommendationVM.loadMore(
+                                    service: dependencies.recommendationContextService
+                                )
                             }
                         }
                     )

@@ -607,6 +607,10 @@ private struct StorageSettingsTab: View {
     /// 结果按 owner/repo 落盘。注入 AI Chat system prompt 的 `{starcatResources}` 段。
     @State private var wikiCache = DiskWikiCache.shared
 
+    /// 推荐结果磁盘缓存（2026-06-29，与 wiki 同款形态）：按 repoID 落盘，
+    /// TTL 24h（有 items）/ 1h（空）。详情页 `RecommendationContextService` 读取 + 写盘。
+    @State private var recommendationCache = DiskRecommendationCache.shared
+
     /// HOM-70：AI 对话历史磁盘存储（按 repo 多 session）。
     /// 设置页 Tab 仅消费汇总数字 + "清除全部"入口，单 session 删除由对话窗口自己管理。
     @State private var chatHistoryStore = DiskChatHistoryStore.shared
@@ -615,7 +619,7 @@ private struct StorageSettingsTab: View {
     /// 单项缓存继续共用 confirmationDialog；"删除全部缓存"已经升级为危险区 sheet，
     /// 但保留 `.all` 作为执行分支，避免复制清理代码。
     private enum PendingAction: Identifiable {
-        case readme, image, archive, translation, anySearch, wiki, chatHistory, aiContext, codeFlow, all
+        case readme, image, archive, translation, anySearch, wiki, recommendation, chatHistory, aiContext, codeFlow, all
         var id: String {
             switch self {
             case .readme:       return "readme"
@@ -624,6 +628,7 @@ private struct StorageSettingsTab: View {
             case .translation:  return "translation"
             case .anySearch:    return "anySearch"
             case .wiki:         return "wiki"
+            case .recommendation: return "recommendation"
             case .chatHistory:  return "chatHistory"
             case .aiContext:    return "aiContext"
             case .codeFlow:     return "codeFlow"
@@ -638,6 +643,7 @@ private struct StorageSettingsTab: View {
             case .translation:  return String.l10n("settings.storage.clearTranslation.confirm")
             case .anySearch:    return String.l10n("settings.storage.clearAnySearch.confirm")
             case .wiki:         return String.l10n("settings.storage.clearWiki.confirm")
+            case .recommendation: return String.l10n("settings.storage.clearRecommendation.confirm")
             case .chatHistory:  return String.l10n("settings.storage.clearChatHistory.confirm")
             case .aiContext:    return String.l10n("settings.storage.clearAiContext.confirm")
             case .codeFlow:     return String.l10n("settings.storage.clearCodeFlow.confirm")
@@ -652,6 +658,7 @@ private struct StorageSettingsTab: View {
             case .translation:  return "settings.storage.clearTranslation.message"
             case .anySearch:    return "settings.storage.clearAnySearch.message"
             case .wiki:         return "settings.storage.clearWiki.message"
+            case .recommendation: return "settings.storage.clearRecommendation.message"
             case .chatHistory:  return "settings.storage.clearChatHistory.message"
             case .aiContext:    return "settings.storage.clearAiContext.message"
             case .codeFlow:     return "settings.storage.clearCodeFlow.message"
@@ -667,6 +674,7 @@ private struct StorageSettingsTab: View {
             && translationCache.itemCount == 0
             && anySearchCache.itemCount == 0
             && wikiCache.itemCount == 0
+            && recommendationCache.itemCount == 0
             && chatHistoryStore.sessionCount == 0
             && aiContextStorage.projectCount == 0
             && codeFlowStorage.projectCount == 0
@@ -748,6 +756,13 @@ private struct StorageSettingsTab: View {
                     isEmpty: wikiCache.itemCount == 0,
                     action: .wiki,
                     helpKey: "settings.storage.wiki.help"
+                )
+                usageRow(
+                    titleKey: "settings.storage.recommendation",
+                    usageText: recommendationUsageText,
+                    isEmpty: recommendationCache.itemCount == 0,
+                    action: .recommendation,
+                    helpKey: "settings.storage.recommendation.help"
                 )
                 usageRow(
                     titleKey: "settings.storage.chatHistory",
@@ -1010,6 +1025,9 @@ private struct StorageSettingsTab: View {
         case .wiki:
             do { try wikiCache.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
+        case .recommendation:
+            do { try recommendationCache.deleteEverything() }
+            catch { storageActionError = error.localizedDescription }
         case .chatHistory:
             do { try chatHistoryStore.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
@@ -1030,6 +1048,10 @@ private struct StorageSettingsTab: View {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
             do { try wikiCache.deleteEverything() }
+            catch {
+                if storageActionError == nil { storageActionError = error.localizedDescription }
+            }
+            do { try recommendationCache.deleteEverything() }
             catch {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
@@ -1066,6 +1088,7 @@ private struct StorageSettingsTab: View {
             translationCache.reload()
             anySearchCache.reload()
             wikiCache.reload()
+            recommendationCache.reload()
             chatHistoryStore.reload()
             aiContextStorage.reload()
             codeFlowStorage.reload()
@@ -1151,6 +1174,18 @@ private struct StorageSettingsTab: View {
             format: String.l10n("settings.storage.wikiUsageFormat"),
             wikiCache.itemCount,
             wikiCache.totalBytes.formattedByteSize
+        )
+    }
+
+    /// 推荐结果磁盘缓存用量行文案（与 wiki / translation / anySearch 同款视觉）。
+    private var recommendationUsageText: String {
+        if recommendationCache.itemCount == 0 {
+            return String.l10n("settings.storage.recommendation.empty")
+        }
+        return String(
+            format: String.l10n("settings.storage.recommendationUsageFormat"),
+            recommendationCache.itemCount,
+            recommendationCache.totalBytes.formattedByteSize
         )
     }
 

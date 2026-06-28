@@ -12,7 +12,12 @@
 import Foundation
 
 /// 单张相似仓库推荐卡片。
-struct RepoRecommendationItem: Decodable, Identifiable, Sendable, Equatable {
+///
+/// **2026-06-29 补 `Encodable`（→ `Codable`）**：`DiskRecommendationCache` 把整个
+/// `[RepoRecommendationItem]` 直接落盘，与 `DiskWikiCache` 给 `WikiStatusItem` 加
+/// `Encodable` 同款做法（详见 `DiskWikiCache.swift` 注释）。原始 DTO 仍只需
+/// server→client 单向解码，加上 `Encodable` 只是为了让 Codable 合成。
+struct RepoRecommendationItem: Codable, Identifiable, Sendable, Equatable {
     let repoID: Int64
     let fullName: String
     let description: String?

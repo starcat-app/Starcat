@@ -193,6 +193,17 @@ final class AppDependencies {
     /// 触发后台刷新；未来详情页 toolbar wiki popover 也接入这里。
     let wikiContextService: WikiContextService
 
+    /// 推荐结果磁盘 JSON 缓存（2026-06-29，与 `DiskWikiCache` 同款形态）。
+    /// shared singleton 保留默认，AppDependencies 引用同一实例，让设置页存储 Tab
+    /// 与 `RecommendationContextService` 共享同一份 `itemCount` / `totalBytes` 派生量。
+    let diskRecommendationCache: DiskRecommendationCache
+
+    /// 推荐 SWR 编排层（2026-06-29）：read-through cache + 同步刷新。
+    /// 与 wiki 不同的是不做"stale 返回旧值 + 后台刷"的 SWR（推荐是发现型能力，
+    /// stale 直接重新拉即可），由 `RepoRecommendationViewModel` 自己拼装
+    /// "先 cache 立刻渲染 + 异步 refresh" 流程。
+    let recommendationContextService: RecommendationContextService
+
     // MARK: - OpenSSF Scorecard
 
     /// OpenSSF Scorecard 公开 API 客户端（无鉴权）。
@@ -682,6 +693,14 @@ final class AppDependencies {
             fetcher: wikiAPIInstance
         )
 
+        // 2026-06-29：推荐磁盘缓存 + SWR 编排（与 wiki 同款形态）。`RecommendAPI` 已在
+        // 上方 init 阶段创建（self.recommendAPI），这里直接复用。
+        self.diskRecommendationCache = .shared
+        self.recommendationContextService = RecommendationContextService(
+            cache: .shared,
+            fetcher: recommendAPI
+        )
+
         // OpenSSF Scorecard：公开 API + 本地缓存 + 非阻塞 UI store。
         // 注意：这里不启动网络请求；HomeView 登录态门控负责启动后台 poller，
         // Health 相关入口只读本地库，避免把 OpenSSF 的缺失/慢响应带到前台动画里。
@@ -947,6 +966,9 @@ final class AppDependencies {
 
         do { try DiskWikiCache.shared.deleteEverything() }
         catch { AppLog.general.warning("Factory reset: Wiki cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
+
+        do { try DiskRecommendationCache.shared.deleteEverything() }
+        catch { AppLog.general.warning("Factory reset: Recommendation cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
 
         do { try DiskChatHistoryStore.shared.deleteEverything() }
         catch { AppLog.general.warning("Factory reset: chat history cleanup failed: \(error.localizedDescription, privacy: .public)") }
