@@ -6029,13 +6029,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Personal Access Token"
+            "value" : "Sign in with Token"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Personal Access Token"
+            "value" : "使用 Token 登录"
           }
         }
       }
@@ -6045,13 +6045,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Web Application Flow"
+            "value" : "Authorize via Browser"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Web Application Flow"
+            "value" : "网页授权登录"
           }
         }
       }
@@ -6061,13 +6061,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Available when the W6 backend is ready"
+            "value" : "Open browser to authorize GitHub, then return to Starcat automatically"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "W6 或后端就绪后开放"
+            "value" : "打开浏览器授权 GitHub，完成后自动返回 Starcat"
           }
         }
       }
@@ -6141,13 +6141,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Generate a token in GitHub → Settings → Developer settings → Personal access tokens, with public_repo and read:user scopes."
+            "value" : "Generate a token in GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic), with public_repo and read:user scopes."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请在 GitHub → Settings → Developer settings → Personal access tokens 生成 Token，勾选 public_repo 和 read:user 权限。"
+            "value" : "在 GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) 生成 Token，勾选 public_repo 和 read:user 权限。"
           }
         }
       }
@@ -6168,18 +6168,34 @@
         }
       }
     },
-    "authV2.pat.placeholder" : {
+    "authV2.pat.back" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Paste your Personal Access Token"
+            "value" : "Back"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "粘贴你的 Personal Access Token"
+            "value" : "返回"
+          }
+        }
+      }
+    },
+    "authV2.pat.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste your GitHub token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "粘贴你的 GitHub Token"
           }
         }
       }
@@ -6205,13 +6221,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in with this token"
+            "value" : "Sign in with Token"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用此 Token 登录"
+            "value" : "使用 Token 登录"
           }
         }
       }
