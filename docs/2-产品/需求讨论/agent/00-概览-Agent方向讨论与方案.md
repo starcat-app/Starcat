@@ -12,6 +12,9 @@
 > - [`12-回忆搜索-Agent方案.md`](12-回忆搜索-Agent方案.md)
 > - [`13-Untagged批量整理-Agent方案.md`](13-Untagged批量整理-Agent方案.md)
 > - [`14-Unread激活-Agent方案.md`](14-Unread激活-Agent方案.md)
+> - [`16-Agent底层平台技术方案.md`](16-Agent底层平台技术方案.md):统一 Agent Workspace / Runtime / Tool / Artifact 底层技术方案
+> - [`17-GitHubWeeklyReportAgent技术实现方案.md`](17-GitHubWeeklyReportAgent技术实现方案.md):首个内置 Agent 的工程落地方案
+> - [`18-SwiftAgentSDK调研报告.md`](18-SwiftAgentSDK调研报告.md):开源 Swift Agent SDK 实时调研与 runtime 选型建议
 > - [`../AI代理API设计.md`](../AI代理API设计.md):Starcat 现有 AI Proxy 协议
 > - [`../CLAUDE.md`](../CLAUDE.md):项目铁律与 UI 规范
 > - [`../功能清单.md`](../功能清单.md):P0/P1/P2 优先级矩阵
@@ -60,7 +63,7 @@ Starcat 已经是"GitHub Stars 管理 + 本地知识库"工具,2026 年大多数
 | 批量调度 | `BatchAIQueueService` 已有队列、限速、并发控制 | 多 tool 串行/并行的基础已就位 |
 | 付费墙 | `EntitlementGate` + `/api/v1/quota` 已落地 | agent 高消耗天然适合放 Pro 层 |
 | 配额消耗 | 单次 AI 调用 = 1 quota(见 `AI代理API设计.md`) | agent 一次 run 消耗 5~15 quota,需重新定义粒度 |
-| UI 容器 | `RepoAIWindowContentView` 已有 chat / streaming / i18n | agent UI 几乎可直接复用 |
+| UI 容器 | `RepoAIWindowContentView` 已有 repo 级 chat / streaming / i18n 经验 | 长期应独立建设 Agent Workspace,只借鉴流式与输入框经验 |
 | 保守策略铁律 | AI 输出**必须**用户确认才能写入(标签铁律) | agent 报告落地必须经过「预览 → 确认 → 写入」三段 |
 | 已规划端点 | `/summarize` `/tags` `/embed` `/search` `/quota` `/health` | 都没有 tool calling 维度,agent 是**新能力**,不是补全 |
 
@@ -154,7 +157,7 @@ protocol AgentTool {
 | Phase 2 | Sidebar 一级 **「Agent」** 入口，内分 **整理 / 发现 / 消化** 三 Tab |
 | 壳层 | 所有 run 共用进度、tool 步骤、报告渲染；详情页按钮 deep link 到 Agent 中心 |
 
-MVP 仍可复用 `RepoAIWindowContentView` 的流式能力；**不等于**长期只做 repo 级 AI 窗口。
+MVP 可借鉴 `RepoAIWindowContentView` 的流式输入和渲染经验；长期 UI 底座以 [`16-Agent底层平台技术方案.md`](16-Agent底层平台技术方案.md) 的覆盖式 Agent Workspace 为准。
 
 ---
 
