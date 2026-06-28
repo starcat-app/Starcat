@@ -30,7 +30,7 @@
 //  `ServiceHealthChecker` 基于本端点单步探测。
 //
 //  状态栏可用性约定（2026-06-21）：
-//  状态栏只需要知道 4 个 API 进程是否在线，因此走后端专门暴露的无鉴权 `GET /healthz`。
+//  状态栏只需要知道自建 API 进程是否在线，因此走后端专门暴露的无鉴权 `GET /healthz`。
 //  它不校验 API Key，也不替代设置页「测试连接」；两个入口语义分离，避免状态面板把
 //  “Key 错”误报成“服务不可用”。
 //
@@ -59,6 +59,8 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
     case sharing
     /// 外部文档站索引探测后端（GET /api/v1/wikis）。
     case wiki
+    /// 相似仓库推荐后端（GET /api/v1/repos/{repo_id}/recommendations）。
+    case recommend
 
     var id: String { rawValue }
 
@@ -69,6 +71,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .weekly:   return "STARCAT_PRODUCTION_API_KEY_WEEKLY"
         case .sharing:  return "STARCAT_PRODUCTION_API_KEY_SHARING"
         case .wiki:     return "STARCAT_PRODUCTION_API_KEY_WIKI"
+        case .recommend: return "STARCAT_PRODUCTION_API_KEY_RECOMMEND"
         }
     }
 
@@ -81,6 +84,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .weekly:   return "settings.services.weekly.title"
         case .sharing:  return "settings.services.sharing.title"
         case .wiki:     return "settings.services.wiki.title"
+        case .recommend: return "settings.services.recommend.title"
         }
     }
 
@@ -91,6 +95,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .weekly:   return "settings.services.weekly.description"
         case .sharing:  return "settings.services.sharing.description"
         case .wiki:     return "settings.services.wiki.description"
+        case .recommend: return "settings.services.recommend.description"
         }
     }
 
@@ -104,6 +109,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .weekly:   return "newspaper"
         case .sharing:  return "square.and.arrow.up"
         case .wiki:     return "book.pages"
+        case .recommend: return "point.3.connected.trianglepath.dotted"
         }
     }
 
@@ -115,6 +121,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .weekly:   return "#dea584" // Rust beige：与 ActivityCategory.weekly 完全一致
         case .sharing:  return "#3178c6" // TypeScript blue：与"分享 / 公开链接"的"链接蓝"语义一致
         case .wiki:     return "#8B5CF6" // Violet：与知识库 / 文档入口区分现有三个服务
+        case .recommend: return "#34D399" // Emerald：与"发现相似项目"的推荐语义区分现有服务
         }
     }
 
@@ -141,12 +148,13 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .weekly:   return URL(string: "https://github.com/dong4j/starcat-weekly-api")!
         case .sharing:  return URL(string: "https://github.com/dong4j/starcat-sharing-api")!
         case .wiki:     return URL(string: "https://github.com/dong4j/starcat-wiki-api")!
+        case .recommend: return URL(string: "https://github.com/dong4j/starcat-recommend-api")!
         }
     }
 
     /// 给定生效 baseURL 构造「测试连接」探测 URL（R-03 2026-06-11）。
     ///
-    /// R-03.1 起 4 个后端**统一**暴露 `GET /api/v1/ping`，由 BearerAuth middleware 保护。
+    /// R-03.1 起自建后端**统一**暴露 `GET /api/v1/ping`，由 BearerAuth middleware 保护。
     /// 200 = 服务可达 + Key 正确；401 = Key 错；其他 = 服务异常。
     ///
     /// 内部先调 `normalizedBaseURL(base)` 兜底「baseURL 末尾 `/` 或（仅 sharing）末尾 `/api`」
@@ -169,6 +177,8 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
             return AppEndpoints.appendPath(AppEndpoints.Sharing.Paths.ping, to: normalized)
         case .wiki:
             return AppEndpoints.appendPath(AppEndpoints.Wiki.Paths.ping, to: normalized)
+        case .recommend:
+            return AppEndpoints.appendPath(AppEndpoints.Recommend.Paths.ping, to: normalized)
         }
     }
 
@@ -187,6 +197,8 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
             return AppEndpoints.appendPath(AppEndpoints.Sharing.Paths.healthz, to: normalized)
         case .wiki:
             return AppEndpoints.appendPath(AppEndpoints.Wiki.Paths.healthz, to: normalized)
+        case .recommend:
+            return AppEndpoints.appendPath(AppEndpoints.Recommend.Paths.healthz, to: normalized)
         }
     }
 
@@ -259,7 +271,7 @@ extension ThirdPartyService {
     /// - 走 URLComponents 重组，避免 URL.init 把 `:5004/` 与 `:5004` 当两个等价但字符串
     ///   不同的 URL（后续 `absoluteString` 持久化 + UI 显示就会不一致）
     ///
-    /// 不接受 `file://` 等非 http 协议——四个服务都是 HTTP 后端，写 `file://` 一定是误输。
+    /// 不接受 `file://` 等非 http 协议——自建服务都是 HTTP 后端，写 `file://` 一定是误输。
     ///
     /// 注意：本方法是**服务无关**的通用归一化。服务感知的额外归一化（例如 sharing
     /// 剥末尾 `/api`）放在 `ThirdPartyService.normalizedBaseURL(_:)`，调用方在拿到

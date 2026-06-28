@@ -35,7 +35,7 @@ import SwiftUI
 
 /// `GET /api/v1/ping` 200 响应里 envelope `data` 段的结构。
 ///
-/// 与后端 `handler/ping.go` 的 `pingResponse` 对齐；四个 API 各自在路由注册时
+/// 与后端 `handler/ping.go` 的 `pingResponse` 对齐；各 API 在路由注册时
 /// 传入固定 service 名（`trending` / `weekly` / `sharing` / `wiki`）。
 struct ServicePingPayload: Decodable, Sendable, Equatable {
     let service: String

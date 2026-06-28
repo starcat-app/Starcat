@@ -7,7 +7,7 @@
 # 的第一个），写入 Configs/Secrets.xcconfig，供 Xcode 编译期注入 Info.plist。
 #
 # 与 fly-secrets-sync.sh 对称：后者推 Fly secrets，本脚本配 Starcat 客户端 baked-in。
-# 四个服务允许使用不同的 sk-starcat-... key。
+# 各服务允许使用不同的 sk-starcat-... key。
 #
 # 用法（Starcat 主仓库根目录）：
 #   bash scripts/sync-production-api-keys-from-env.sh
@@ -55,6 +55,7 @@ KEY_TRENDING="$(read_first_api_key "${SUPPORTS_DIR}/starcat-trending-api/.env")"
 KEY_WEEKLY="$(read_first_api_key "${SUPPORTS_DIR}/starcat-weekly-api/.env")"
 KEY_SHARING="$(read_first_api_key "${SUPPORTS_DIR}/starcat-sharing-api/.env")"
 KEY_WIKI="$(read_first_api_key "${SUPPORTS_DIR}/starcat-wiki-api/.env")"
+KEY_RECOMMEND="$(read_first_api_key "${SUPPORTS_DIR}/starcat-recommend-api/.env")"
 
 # 整文件重写，避免 sed 匹配 template 空行失败；注释行仅供人读，不参与编译逻辑。
 cat > "${CONFIG}" <<EOF
@@ -65,11 +66,13 @@ STARCAT_PRODUCTION_API_KEY_TRENDING = ${KEY_TRENDING}
 STARCAT_PRODUCTION_API_KEY_WEEKLY = ${KEY_WEEKLY}
 STARCAT_PRODUCTION_API_KEY_SHARING = ${KEY_SHARING}
 STARCAT_PRODUCTION_API_KEY_WIKI = ${KEY_WIKI}
+STARCAT_PRODUCTION_API_KEY_RECOMMEND = ${KEY_RECOMMEND}
 EOF
 
 echo "  ok STARCAT_PRODUCTION_API_KEY_TRENDING <- starcat-trending-api/.env"
 echo "  ok STARCAT_PRODUCTION_API_KEY_WEEKLY <- starcat-weekly-api/.env"
 echo "  ok STARCAT_PRODUCTION_API_KEY_SHARING <- starcat-sharing-api/.env"
 echo "  ok STARCAT_PRODUCTION_API_KEY_WIKI <- starcat-wiki-api/.env"
-echo "ok 四个服务的 production API key 已写入 Configs/Secrets.xcconfig"
+echo "  ok STARCAT_PRODUCTION_API_KEY_RECOMMEND <- starcat-recommend-api/.env"
+echo "ok 五个服务的 production API key 已写入 Configs/Secrets.xcconfig"
 echo "  下一步: xcodegen generate && 重新 build App（make run / make build-dmg）"

@@ -11,7 +11,7 @@
 //  ────────────────────────────────────────────────────────────────────────────
 //  ⚠️ 后端 byte-level 共享代码同步约定（supports/docs/R-01-总体设计.md §4.1）
 //  ────────────────────────────────────────────────────────────────────────────
-//  后端四个 API 都采用同一层 envelope 语义；各服务可以自治扩展 meta，但顶层
+//  自建后端 API 都采用同一层 envelope 语义；各服务可以自治扩展 meta，但顶层
 //  `schema_version + data/meta/error` 契约必须保持兼容。
 //
 //  本文件是该后端 schema 在 Swift 一侧的对应物，字段一旦动也要同步：
@@ -22,7 +22,7 @@
 //  ────────────────────────────────────────────────────────────────────────────
 //
 //  设计意图：
-//  - 让 trending / weekly / sharing / wiki 四个 API 用同一个泛型容器解码，前端零适配
+//  - 让自建 API 用同一个泛型容器解码，前端零适配
 //  - 顶层 `schemaVersion` + URL `/api/v1/*` 双重版本保护
 //  - 错误响应自动识别（4xx / 5xx 时后端也返回 envelope 形态的 ErrorEnvelope）
 //
@@ -97,7 +97,7 @@ enum StarcatEnvelopeSchema {
 
 /// `/api/v1/*` 响应里的可选 meta 段。
 ///
-/// 字段集是四个 API 的并集（设计文档 §3.2）；不用的 API 自动不输出（`omitempty`），
+/// 字段集是自建 API 的并集（设计文档 §3.2）；不用的 API 自动不输出（`omitempty`），
 /// 解码时一律走 `decodeIfPresent`，所有字段都可能 nil。
 struct StarcatEnvelopeMeta: Decodable, Sendable, Equatable {
     /// 当前页码（1-based）。
@@ -254,7 +254,7 @@ enum StarcatEnvelopeDecoder {
 
 // MARK: - 网络错误
 
-/// 四个自建后端 API 的统一网络错误。
+/// 自建后端 API 的统一网络错误。
 ///
 /// 之前每个 actor 各自有 `WeeklyAPIError` / `TrendingAPIError` / `ShareAPIError`，
 /// 改造后所有走 envelope 的端点都用本枚举，case 与后端 ErrorResponse 形态对齐。

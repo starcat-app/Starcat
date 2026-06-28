@@ -20,12 +20,13 @@
 
 // MARK: - R-01 自建后端 production 默认 API Key（每服务独立，Secrets.xcconfig 覆盖）
 //
-// trending / weekly / sharing / wiki 各自一条。默认空 = 该服务 BYOK-only。
+// trending / weekly / sharing / wiki / recommend 各自一条。默认空 = 该服务 BYOK-only。
 // 自动化：make setup-production-api-keys（从 supports/*/ .env 读取）
 STARCAT_PRODUCTION_API_KEY_TRENDING =
 STARCAT_PRODUCTION_API_KEY_WEEKLY =
 STARCAT_PRODUCTION_API_KEY_SHARING =
 STARCAT_PRODUCTION_API_KEY_WIKI =
+STARCAT_PRODUCTION_API_KEY_RECOMMEND =
 
 // MARK: - 引入私密配置（可选）
 //

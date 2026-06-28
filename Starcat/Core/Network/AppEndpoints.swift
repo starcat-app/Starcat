@@ -8,6 +8,7 @@
 //  `BaseURL + Paths.xxx` 形式登记，**禁止**在调用方文件里硬编码 path 字符串。
 //
 //  组织结构：每个后端服务一个嵌套 enum 命名空间（Weekly / Trending / Sharing / Wiki /
+//  Recommend /
 //  GitHubREST / GitHubOAuth），命名空间内含三件套：
 //    - `baseURL`        ：服务的 base URL；自建后端走 AppSettings 可热更新，固定端走 let。
 //    - `Paths`           ：path 常量目录（扁平命名，工厂方法处理 path 参数）。
@@ -25,8 +26,10 @@
 //    业务全 404（路径会少一段 `/api`）。现在统一与其它 3 个服务对齐：productionURL 不含
 //    `/api`，Paths 写绝对 `/api/v1/...`。历史用户已存的 `*/api` 后缀 baseURL 由
 //    `ThirdPartyService.normalizedBaseURL(_:)` 在保存阶段自动剥除，向后兼容。
-//  - v6（2026-06-21）：客户端状态栏新增 4 个 API 的 `/healthz` 可用性巡检；`ping` 仍只给
+//  - v6（2026-06-21）：客户端状态栏新增自建 API 的 `/healthz` 可用性巡检；`ping` 仍只给
 //    设置页「测试连接」做 API Key 校验，两个入口语义分开。
+//  - v7（2026-06-28）：新增 Recommend 自建后端，对齐 `/api/v1/ping`、`/healthz`
+//    与 `/api/v1/repos/{repo_id}/recommendations`。
 //
 //  非 REST 链接（GitHub 网页跳转、第三方装饰链接）**不**放本文件：
 //    - GitHub 网页跳转（github.com/{login}, github.com/{owner}/{repo} 等）→ `GitHubURLs.swift`
@@ -35,12 +38,12 @@
 //
 //  设计约束：
 //  - 自建后端的 `baseURL` getter 标 `@MainActor`（要读 `AppSettings.shared`），导致 actor init
-//    无法用它作 default 参数；四个 API 的 `init(baseURL:)` 都没有默认值，强制 DI/测试显式传。
+//    无法用它作 default 参数；自建 API 的 `init(baseURL:)` 都没有默认值，强制 DI/测试显式传。
 //  - 客户端「测试连接」走 `/api/v1/ping`，后端为此专门 expose 的 endpoint（R-03 2026-06-11），
 //    由 BearerAuth 保护。避免借用业务 endpoint 作 auth probe 的副作用（sharing 的 GET /share
 //    返 405、wiki 的 GET /wikis 缺参数返 400 等需要客户端特判的尴尬场景）。
 //    详见 ServiceHealthChecker.swift。
-//  - 客户端「状态栏服务可用性」走 `/healthz`，不带鉴权，只判断四个后端进程是否活着；
+//  - 客户端「状态栏服务可用性」走 `/healthz`，不带鉴权，只判断自建后端进程是否活着；
 //    详见 ServiceAvailabilityMonitor.swift。
 //  - `Paths.xxx` 全部以 `/` 开头，便于源码 grep 时直观；`url(_:)` 内部做 trim。
 //
@@ -203,6 +206,32 @@ enum AppEndpoints {
         }
     }
 
+    // MARK: - 自建后端 5/5：Recommend（相似仓库推荐）
+
+    /// 相似仓库推荐后端 endpoint 集合。
+    enum Recommend {
+        static let productionURL = URL(string: "https://starcat-recommend-api.fly.dev")!
+
+        @MainActor
+        static var baseURL: URL {
+            AppEndpoints.resolve(production: productionURL, service: .recommend)
+        }
+
+        enum Paths {
+            /// `GET /api/v1/repos/{repo_id}/recommendations?limit=&offset=` —— 相似仓库推荐。
+            static let repoRecommendations = "/api/v1/repos"
+            /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点。
+            static let ping = "/api/v1/ping"
+            /// `GET /healthz` —— 状态栏服务可用性巡检端点。
+            static let healthz = "/healthz"
+        }
+
+        @MainActor
+        static func url(_ path: String) -> URL {
+            appendPath(path, to: baseURL)
+        }
+    }
+
     // MARK: - GitHub REST API
 
     /// GitHub REST API endpoint 集合。baseURL 固定，所有 path 在 `Paths` 集中。
@@ -326,6 +355,7 @@ enum AppEndpoints {
         case .trending: return Trending.baseURL
         case .sharing:  return Sharing.baseURL
         case .wiki:     return Wiki.baseURL
+        case .recommend: return Recommend.baseURL
         }
     }
 
@@ -337,6 +367,7 @@ enum AppEndpoints {
         case .trending: return Trending.productionURL
         case .sharing:  return Sharing.productionURL
         case .wiki:     return Wiki.productionURL
+        case .recommend: return Recommend.productionURL
         }
     }
 
@@ -348,6 +379,7 @@ enum AppEndpoints {
         AppLog.network.info("endpoint.trending = \(Trending.baseURL.absoluteString, privacy: .public)")
         AppLog.network.info("endpoint.sharing  = \(Sharing.baseURL.absoluteString, privacy: .public)")
         AppLog.network.info("endpoint.wiki     = \(Wiki.baseURL.absoluteString, privacy: .public)")
+        AppLog.network.info("endpoint.recommend= \(Recommend.baseURL.absoluteString, privacy: .public)")
     }
 
     // MARK: - Private

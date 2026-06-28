@@ -40,7 +40,7 @@ import Foundation
 
 /// production 后端 fly.io 部署的默认 API Key（按服务从 `Info.plist` 读取）。
 ///
-/// 四个服务各自一条 xcconfig / plist 字段，允许 Fly 上 `API_KEYS` 白名单互不相同。
+/// 每个自建服务各自一条 xcconfig / plist 字段，允许 Fly 上 `API_KEYS` 白名单互不相同。
 /// 自动化写入：`make setup-production-api-keys`（读 supports/*/ .env）。
 enum StarcatAPIKeyDefaults {
 

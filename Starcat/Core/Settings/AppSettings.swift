@@ -1068,7 +1068,7 @@ final class AppSettings {
 
     // MARK: - 第三方服务 API Key（R-01 v1.2 2026-06-09 引入 / 2026-06-10 迁 Keychain）
     //
-    // 四个自建后端（trending / weekly / sharing / wiki）改造后强制 Bearer Token 鉴权，前端
+    // 自建后端（trending / weekly / sharing / wiki / recommend）改造后强制 Bearer Token 鉴权，前端
     // 必须在 Authorization 头里塞 `Bearer <api-key>`，否则任何 /api/v1/* 请求 401。
     //
     // 持久化方式（**2026-06-10 已迁 Keychain**）：

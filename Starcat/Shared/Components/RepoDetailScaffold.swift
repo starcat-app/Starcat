@@ -169,6 +169,12 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     @State private var wikiRepoKey: String?
     @State private var wikiLinks: [WikiLink] = []
 
+    /// 相似仓库推荐状态机。放在 Scaffold 层是因为推荐入口属于所有 repo 详情页的通用能力。
+    @State private var recommendationVM = RepoRecommendationViewModel()
+
+    /// 推荐列表 popover 展示状态。只有 `recommendationVM.items` 非空时才允许打开。
+    @State private var showsRecommendations = false
+
     // v2.2 修订（2026-06-16, dong4j）：原 `@State private var showSecurityScoreSheet`
     // 已下沉到 `RepoMetadataHeaderView` —— OpenSSF 入口图标从右上 trailing actions
     // 迁移到 hero `full_name` 同行，sheet state 跟随入口本地化，不再由 Scaffold 维护。
@@ -178,6 +184,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(HomeViewModel.self) private var homeViewModel
 
     /// 顶部面板折叠/展开动画。轻阻尼 spring，让 README WebView 让位时跟手。
     private var metadataPanelAnimation: Animation {
@@ -234,6 +241,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             body_(updateScrollReport)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .overlay(alignment: .bottomTrailing) {
+            recommendationOverlay
+        }
         // 根节点 tint：必须在 `CollapsibleRepoMetadataPanel` 外，否则 `.clipped()` 裁掉
         // 向上延伸；滚 README 折叠 hero 时同步淡出。
         .detailHeroTintBackground(
@@ -249,11 +259,15 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .task(id: wikiLookupKey(for: repo)) {
             await loadWikiLinks(for: repo)
         }
+        .task(id: repo.id) {
+            await recommendationVM.loadInitial(repoID: repo.id, api: dependencies.recommendAPI)
+        }
         .onChange(of: repo.id) { _, _ in
             withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
                 metadataPanelCollapseProgress = 0
                 readmeScrollOverflow = nil
             }
+            showsRecommendations = false
         }
         .onChange(of: metadataPanelHeight) { _, newHeight in
             guard metadataPanelCollapseProgress > 0 else { return }
@@ -263,6 +277,42 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             ) else { return }
             withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
                 metadataPanelCollapseProgress = 0
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var recommendationOverlay: some View {
+        if recommendationVM.hasItems {
+            RepoRecommendationFloatingButton(count: recommendationVM.items.count) {
+                showsRecommendations = true
+            }
+            .padding(.trailing, 24)
+            // README 的 cacheFooter 已经使用详情页右下角附近的刷新/翻译入口；推荐按钮上移，
+            // 避免和刷新语义重叠，同时仍保持在详情页内部的右下角。
+            .padding(.bottom, 72)
+            .popover(isPresented: $showsRecommendations, arrowEdge: .bottom) {
+                RepoRecommendationPopover(
+                    items: recommendationVM.items,
+                    hasMore: recommendationVM.hasMore,
+                    isLoadingMore: recommendationVM.isLoadingMore,
+                    errorMessage: recommendationVM.errorMessage,
+                    onOpen: { item in
+                        showsRecommendations = false
+                        Task {
+                            await recommendationVM.open(
+                                item,
+                                repoRepository: dependencies.repoRepository,
+                                homeViewModel: homeViewModel
+                            )
+                        }
+                    },
+                    onLoadMore: {
+                        Task {
+                            await recommendationVM.loadMore(api: dependencies.recommendAPI)
+                        }
+                    }
+                )
             }
         }
     }
