@@ -2,7 +2,7 @@
 //  IndexedSnapshot.swift
 //  Starcat
 //
-//  向量索引"上次进过模型的快照"结构（详见 `docs/详细设计/26-向量搜索改进.md`）。
+//  向量索引"上次进过模型的快照"结构（详见 `docs/3-设计/详细设计/26-向量搜索改进.md`）。
 //
 //  模块职责：
 //  - 替代旧 `content_hash` 方案，把"喂过 embedding 模型的内容"拆成 body / notes /

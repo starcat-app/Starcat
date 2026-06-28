@@ -123,7 +123,7 @@ final class ReadmeViewModel {
     /// 详情页 HTML 拉到（200 / 304）后触发的可选回调（**manage 路径 only**）。
     ///
     /// **2026-06-13 dong4j 补救 B 引入**。
-    /// 文档 `docs/详细设计/26-向量搜索改进.md` §6 关键流程表承诺的「详情页 README 拉到 →
+    /// 文档 `docs/3-设计/详细设计/26-向量搜索改进.md` §6 关键流程表承诺的「详情页 README 拉到 →
     /// 异步补 raw Markdown 落 `readmes.content` + 调 `refreshIndexIfChanged`」触发源，
     /// 之前 2026-06-12 落地时漏接，2026-06-13 通过本回调补齐。
     ///

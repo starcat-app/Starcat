@@ -4,7 +4,7 @@
 //
 //  用户搜索历史记录，对应 `search_history` 表。
 //
-//  设计要点（与 `docs/CloudKit数据同步设计.md` 对齐）：
+//  设计要点（与 `docs/2-产品/需求讨论/正式方案/CloudKit数据同步设计.md` 对齐）：
 //
 //  - **CloudKit-ready 字段**：`id` 用 UUID（不依赖数据库自增 PK，CloudKit recordID 友好）、
 //    所有时间戳走 ISO8601 字符串（`modifiedAt` 用于 LWW 冲突合并）、删除走 tombstone 机制

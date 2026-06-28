@@ -2,7 +2,7 @@
 //
 // 文件内容截断规则的**唯一信息源** —— Tier 0 / Tier 1 / 单文件上限的常量 + 截断函数。
 //
-// 决议来源：`docs/详细设计/27-RepoContextPacker设计.md` §22.9 Q8。
+// 决议来源：`docs/3-设计/详细设计/27-RepoContextPacker设计.md` §22.9 Q8。
 //
 // 5 个常量 + 1 个截断函数：
 //   1. tier0MaxBytes        — Tier 0 单文件 100KB 硬上限（超出降级 Tier 2）

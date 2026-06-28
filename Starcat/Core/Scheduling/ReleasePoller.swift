@@ -6,7 +6,7 @@
 //
 //  设计要点：
 //  - 使用 `NSBackgroundActivityScheduler`（macOS 原生 API），由系统在低负载、合适功耗的窗口期触发
-//      比 Timer 自调度更省电，符合 Apple 后台任务设计建议（见 docs/开发前问题清单 §xxx）
+//      比 Timer 自调度更省电，符合 Apple 后台任务设计建议（见 docs/1-立项/开发前问题清单 §xxx）
 //  - 默认间隔 4 小时（`tolerance` 30 分钟）；GitHub Release 发布频率远低于此，覆盖典型日常需求
 //  - 巡检入口委托给 `ReleaseMonitor.runOnce()`，本类只负责调度 + 通知派发 + 启停
 //  - App 取消所有订阅时不强制停止 scheduler（仍跑空巡）；订阅再开后立即生效

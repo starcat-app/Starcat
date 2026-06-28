@@ -14,7 +14,7 @@
 //  3. **产品上线后再恢复 v2+ 迁移**：v2-xxx / v3-xxx 等以追加形式注册到 registerAll，
 //     届时再启用 ALTER TABLE 迁移以保证已发布用户数据不丢。
 //  4. GRDB `DatabaseMigrator` 迁移名采用语义化字符串（"v1-initial"）。
-//  5. 不支持降级（见 `docs/开发前问题清单.md` §5.2）。
+//  5. 不支持降级（见 `docs/1-立项/开发前问题清单.md` §5.2）。
 //  6. 表创建顺序遵循外键依赖：先 repos / tags，再依赖它们的关联 / 缓存表。
 //  7. FTS5 触发器与 repos 表同步：外部内容模式 `content='repos', content_rowid='id'`
 //     + tokenize `unicode61 remove_diacritics 2`（CJK 按字切分、去重音符，不用 porter
@@ -509,7 +509,7 @@ enum DatabaseMigrations {
     /// CloudKit-ready 字段（W5 同步主线接入时使用）：
     /// - `id` UUID 字符串 → CloudKit recordName
     /// - `modified_at` ISO8601 → CloudKit LWW 时间戳
-    /// - 详细 schema 与冲突合并策略见 `docs/CloudKit数据同步设计.md` §2.x
+    /// - 详细 schema 与冲突合并策略见 `docs/2-产品/需求讨论/正式方案/CloudKit数据同步设计.md` §2.x
     ///
     /// 排序：UI 内存里按 `useCount × 0.5^(daysSinceLastUsed / 14)` 半衰期衰减；
     /// SQLite 不内置 pow()，全表只 50 条上限内存计算成本可忽略。
@@ -830,7 +830,7 @@ enum DatabaseMigrations {
 
     // MARK: - repo_embeddings / ai_summaries（AI 语义搜索 + 单仓智能化）
 
-    /// repo_embeddings：repo 语义向量缓存（详见 `docs/详细设计/26-向量搜索改进.md`）。
+    /// repo_embeddings：repo 语义向量缓存（详见 `docs/3-设计/详细设计/26-向量搜索改进.md`）。
     ///
     /// - SQLite BLOB 保存 Float32 向量，**不依赖 sqlite-vss / sqlite-vec 动态扩展**——
     ///   macOS 沙盒分发动态 SQLite extension 引入签名 / 加载路径 / App Review 风险；

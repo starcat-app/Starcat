@@ -131,9 +131,9 @@ cd /Users/dong4j/Developer/1.AI/ai-Incubator/Starcat && \
 
 ## 文档
 
-- [功能清单](docs/功能清单.md) - 完整功能规格
-- [功能实现总览](docs/工程进度/功能实现总览.md) - 主进度索引与工程债
-- [详细设计索引](docs/详细设计/README.md) - 技术设计文档入口
+- [功能清单](docs/1-立项/功能清单.md) - 完整功能规格
+- [功能实现总览](docs/功能实现总览.md) - 主进度索引与工程债
+- [详细设计索引](docs/3-设计/详细设计/README.md) - 技术设计文档入口
 - [Open Design UI 技能](docs/原型设计/Starcat-UI-SKILL.md) - UI 设计规范
 
 ## License

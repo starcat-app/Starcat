@@ -6,7 +6,7 @@
 //
 //  技术选择：
 //  - 底层使用 MacPaw/OpenAI 的 `OpenAIProtocol`，原因见
-//    `docs/详细设计/12-AI库选型调研.md`：协议化、可 mock、支持 OpenAI-compatible
+//    `docs/3-设计/详细设计/12-AI库选型调研.md`：协议化、可 mock、支持 OpenAI-compatible
 //    Base URL，并且已覆盖 chat / embeddings。
 //  - Starcat 业务层只依赖 `AIClientProtocol`，避免把第三方 SDK 类型扩散到 UI、
 //    Repository 或 ViewModel。

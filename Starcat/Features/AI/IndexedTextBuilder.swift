@@ -3,7 +3,7 @@
 //  Starcat
 //
 //  把 Repo / README / AI 摘要 / 用户笔记拼成 `IndexedSnapshot` 与最终喂模型的字符串。
-//  详见 `docs/详细设计/26-向量搜索改进.md` § 2 / 3.1。
+//  详见 `docs/3-设计/详细设计/26-向量搜索改进.md` § 2 / 3.1。
 //
 //  模块职责：
 //  - `buildSnapshot(repo:readme:summary:note:)` → 拼成结构化快照（落 `snapshot_json`）

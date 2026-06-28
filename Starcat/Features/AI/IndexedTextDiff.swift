@@ -2,7 +2,7 @@
 //  IndexedTextDiff.swift
 //  Starcat
 //
-//  判定向量索引是否需要重建的差分算法（决策 F2，详见 `docs/详细设计/26-向量搜索改进.md`）。
+//  判定向量索引是否需要重建的差分算法（决策 F2，详见 `docs/3-设计/详细设计/26-向量搜索改进.md`）。
 //
 //  模块职责：
 //  - 输入 `(old: IndexedSnapshot?, new: IndexedSnapshot, thresholds: DiffThresholds)`，

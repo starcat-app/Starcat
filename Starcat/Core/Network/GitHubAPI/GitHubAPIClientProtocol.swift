@@ -80,7 +80,7 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// 拉取 README 原始 Markdown 文本（决策 E3：按需懒补全）。
     ///
     /// 与 `readmeHTML` 并列、不替换。HTML 是 WebView 渲染主路径，Markdown 走"AI / 向量化按需补"
-    /// 路径，落到 `readmes.content`。详见 `docs/详细设计/26-向量搜索改进.md` § 3.2。
+    /// 路径，落到 `readmes.content`。详见 `docs/3-设计/详细设计/26-向量搜索改进.md` § 3.2。
     ///
     /// - Parameters:
     ///   - owner / repo: 仓库 owner 与 name

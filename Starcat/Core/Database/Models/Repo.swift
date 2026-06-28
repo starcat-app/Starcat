@@ -2,7 +2,7 @@
 //  Repo.swift
 //  Starcat
 //
-//  仓库元数据，对应 docs/详细设计/01-数据库设计.md 第 2.1 节 `repos` 表。
+//  仓库元数据，对应 docs/3-设计/详细设计/01-数据库设计.md 第 2.1 节 `repos` 表。
 //
 //  关键约束：
 //  - id 用 Int64（GitHub repo id 原生类型），与表 schema INTEGER PRIMARY KEY 一致

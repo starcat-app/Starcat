@@ -2,7 +2,7 @@
 //  RepoEmbedding.swift
 //  Starcat
 //
-//  AI 语义搜索的 SQLite 向量缓存模型（详见 `docs/详细设计/26-向量搜索改进.md`）。
+//  AI 语义搜索的 SQLite 向量缓存模型（详见 `docs/3-设计/详细设计/26-向量搜索改进.md`）。
 //
 //  模块职责：
 //  - 把 repo 的语义向量持久化到 `repo_embeddings` 表。

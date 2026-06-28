@@ -7,7 +7,7 @@
 //   - 单文件错误（非致命）= 单个奇葩文件读不出来 / NUL 字节探测发现 binary / Tier 0 超 100KB 等
 //     → **不抛**，走 `metadata.json.skippedFiles[]` 数组（reason 用 `SkipReason` 字符串常量）
 //
-// 决议来源：`docs/详细设计/27-RepoContextPacker设计.md` §22.4（Q3 / 分层错误处理）。
+// 决议来源：`docs/3-设计/详细设计/27-RepoContextPacker设计.md` §22.4（Q3 / 分层错误处理）。
 //
 // 本枚举共 11 个 case，**严格对应** §22.4 的「致命错误清单」。新增 case 必须：
 //   1. 确认是「致命」级别（pipeline 没法继续）

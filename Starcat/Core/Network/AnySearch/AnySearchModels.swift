@@ -78,7 +78,7 @@ struct AnySearchMetadata: Codable, Equatable, Sendable {
 /// - 该结构**不参与 JSON envelope 解码**，由 `AnySearchClient` 从
 ///   `HTTPURLResponse` header 单独读取并注入。
 /// - 429 错误响应理论上也带 reset header，但当前 client 抛 `.rateLimited`
-///   时未携带，v2 再扩展（见 `docs/详细设计/28-搜索增强最终方案.md`）。
+///   时未携带，v2 再扩展（见 `docs/3-设计/详细设计/28-搜索增强最终方案.md`）。
 struct AnySearchRateLimit: Codable, Equatable, Sendable {
     let limit: Int
     let remaining: Int

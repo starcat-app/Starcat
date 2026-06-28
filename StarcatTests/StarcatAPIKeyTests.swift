@@ -5,7 +5,7 @@
 //  验证 R-01 v1.2 自建后端 API Key 解析机制（hybrid 模型）。
 //
 //  对应实现：`Starcat/Core/Network/StarcatAPIKey.swift`
-//  对应文档：`docs/详细设计/18-三场景共用架构.md` v1.2 §6.4
+//  对应文档：`docs/3-设计/详细设计/18-三场景共用架构.md` v1.2 §6.4
 //
 //  覆盖路径：
 //   - StarcatAPIKeyDefaults.productionKeyOrNil：CI 期 Secrets.xcconfig 缺失 → nil

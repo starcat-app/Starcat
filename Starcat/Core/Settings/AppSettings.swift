@@ -734,7 +734,7 @@ final class AppSettings {
 
     // MARK: - AI 代码上下文（2026-06-13 引入，RepoContextPacker 客户端接入阶段 X1）
     //
-    // 3 个偏好字段对应 `docs/详细设计/27-RepoContextPacker设计.md` §0.3 X1：
+    // 3 个偏好字段对应 `docs/3-设计/详细设计/27-RepoContextPacker设计.md` §0.3 X1：
     //   1. aiRepoContextEnabled       —— 总开关（默认 true，启用 RepoContextPacker 注入 AI prompt）
     //   2. aiRepoContextTokenBudget   —— Token 预算（默认 8000，范围 4000-32000，控制 XML 体积）
     //   3. aiRepoContextTier1MaxLines —— 关键文件保留行数（默认 80，范围 40-200，对应 `TierTruncation.tier1MaxLines`）
@@ -902,7 +902,7 @@ final class AppSettings {
 
     // MARK: - AI 向量索引（2026-06-12 引入，决策 C2 / G / E3 落地）
     //
-    // 5 个偏好字段对应 `docs/详细设计/26-向量搜索改进.md` § 5：
+    // 5 个偏好字段对应 `docs/3-设计/详细设计/26-向量搜索改进.md` § 5：
     //   1. aiReadmeTruncateLength —— README 清洗后截断长度（决策 C2，默认 12000，范围 2000-32000）
     //   2. aiIndexPreset           —— 阈值预设（严格 / 标准 / 宽松 / 自定义，决策 G）
     //   3. aiIndexBodyDiffRatio    —— 主体行级 diff 阈值（默认 0.10 = 10%）

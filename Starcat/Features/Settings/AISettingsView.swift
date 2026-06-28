@@ -701,7 +701,7 @@ struct AISettingsTab: View {
         }
         .buttonStyle(.plain)
         // HOM-68 follow-up v10 (dong4j 反馈 2026-06-05 23:55)：项目强制规则
-        // (docs/详细设计/07-UI交互设计.md §1.2 + CLAUDE.md §UI Focus Ring)——
+        // (docs/3-设计/详细设计/07-UI交互设计.md §1.2 + CLAUDE.md §UI Focus Ring)——
         // 所有 .buttonStyle(.plain) Button 必须紧跟 .focusEffectDisabled()，否则
         // macOS 15+ 会在聚焦时套一个蓝色 focus ring，与项目暗色面板视觉冲突。
         .focusEffectDisabled()

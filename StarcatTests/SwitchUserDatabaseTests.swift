@@ -200,7 +200,7 @@ struct SwitchUserDatabaseTests {
     // 两个测试已删除——`AuthSession.restoreSessionIfAvailable()` 在测试 host 内
     // （`TestEnvironment.isRunning == true`）直接 early return，走不到 keychain 读取
     // 也就触发不到 onUserSessionChanged closure。这是项目级 Keychain 弹窗防护，
-    // 详见 docs/工程进度/2026-05-30-Keychain-临时绕过方案.md。
+    // 详见 docs/4-工程进度/踩坑与故障记录/2026-05-30-Keychain-临时绕过方案.md。
     // restore 路径的 hook 通过 code review 验证：见 AuthSession.swift 内 4 处
     // `await onUserSessionChanged?(...)` 调用点。
 

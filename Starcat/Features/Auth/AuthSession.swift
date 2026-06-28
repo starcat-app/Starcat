@@ -156,7 +156,7 @@ final class AuthSession {
     func restoreSessionIfAvailable() async {
         // 测试期跳过：ad-hoc 签名下 keychain.loadGithubToken() 会触发 ACL 授权弹窗，
         // 测试 host 无窗口接收 → 主线程 hang → testmanagerd 超时。
-        // 详见 docs/工程进度/2026-05-30-Keychain-临时绕过方案.md
+        // 详见 docs/4-工程进度/踩坑与故障记录/2026-05-30-Keychain-临时绕过方案.md
         if TestEnvironment.isRunning {
             AppLog.auth.info("restore: test host detected, skip session restore")
             return

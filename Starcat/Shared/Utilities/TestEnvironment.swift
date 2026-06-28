@@ -18,7 +18,7 @@
 //
 //  ⚠️ 临时债：等 Apple ID Team 签名 + keychain-access-groups entitlement 切回正轨后，
 //  本工具仍可保留（测试隔离是好实践），但 AuthSession 的守卫可以删掉。
-//  详见 docs/工程进度/2026-05-30-Keychain-临时绕过方案.md
+//  详见 docs/4-工程进度/踩坑与故障记录/2026-05-30-Keychain-临时绕过方案.md
 //
 
 import Foundation

@@ -15,7 +15,7 @@ import StoreKit
 /// - 本类是 Pro 订阅状态唯一真相源，业务代码不得直接遍历 `Transaction.currentEntitlements`；
 /// - AppSettings 只保留 `isProUser` 只读镜像，便于头像徽章等轻量 UI 继续工作；
 /// - v1 不做 App Store Server API 校验，原因记录在
-///   `docs/StoreKit订阅实施决策记录.md`。后续如果服务端要按订阅放行自建 AI 代理，
+///   `docs/2-产品/需求讨论/正式方案/StoreKit订阅实施决策记录.md`。后续如果服务端要按订阅放行自建 AI 代理，
 ///   可在本类刷新后追加远端同步，不需要改业务门控。
 @MainActor
 @Observable

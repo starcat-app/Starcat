@@ -4,7 +4,7 @@
 //
 //  Starcat 自建后端（trending / weekly / sharing / wiki）的 Bearer Token 解析中心。
 //
-//  对应文档：`docs/详细设计/18-三场景共用架构.md` v1.2 §6.4（Bearer Auth 注入）
+//  对应文档：`docs/3-设计/详细设计/18-三场景共用架构.md` v1.2 §6.4（Bearer Auth 注入）
 //
 //  ────────────────────────────────────────────────────────────────────────────
 //  API Key 生效优先级（hybrid 模型）

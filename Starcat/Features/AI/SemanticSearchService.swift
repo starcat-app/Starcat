@@ -2,7 +2,7 @@
 //  SemanticSearchService.swift
 //  Starcat
 //
-//  AI 语义搜索服务（详见 `docs/详细设计/26-向量搜索改进.md`）。
+//  AI 语义搜索服务（详见 `docs/3-设计/详细设计/26-向量搜索改进.md`）。
 //
 //  模块职责：
 //  - 把 repo 元数据 / README / AI 摘要 / 用户笔记拼成 `IndexedSnapshot`，调用 embedding API

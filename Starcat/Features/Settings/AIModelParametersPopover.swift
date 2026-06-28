@@ -44,7 +44,7 @@ struct AIModelParametersPopover: View {
         .padding(20)
         .frame(width: 420)
         // HOM-68 follow-up v10 (dong4j 反馈 2026-06-05 23:55)：
-        // docs/详细设计/07-UI交互设计.md §3.1——Popover 打开时 macOS 会把焦点自动
+        // docs/3-设计/详细设计/07-UI交互设计.md §3.1——Popover 打开时 macOS 会把焦点自动
         // 放到内部第一个可聚焦元素上。在 popover 根加 .focusEffectDisabled()，
         // 让 plain Button / Toggle / TextField 等 SwiftUI 一等控件不画 focus ring。
         .focusEffectDisabled()

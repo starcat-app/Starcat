@@ -201,7 +201,7 @@ extension RepoDetailHero {
 /// **不**在这里加 `.star` —— star/unstar 触发点是 hero stats 行的 ⭐/☆ chip
 /// （v1.0 §3.2.3 决策：避免 trailing actions 与 hero chip 双重入口造成混乱）。
 ///
-/// **v1.3 设计修订（详见 docs/详细设计/18-三场景共用架构.md §3.2.2 amendment）**：
+/// **v1.3 设计修订（详见 docs/3-设计/详细设计/18-三场景共用架构.md §3.2.2 amendment）**：
 /// 原设计 `.share(handler: () -> Void)` / `.ai(handler: () -> Void)` 携带 handler 入参，
 /// 但实现落地后 handler 是 dead 参数（4 个场景全传 `{}`），且 Scaffold 内部直接渲染
 /// 对应默认动作，没有外部注入点。

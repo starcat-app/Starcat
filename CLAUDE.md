@@ -18,7 +18,7 @@
 
 ## 🧭 主进度索引（每次开工前必读）
 
-**`docs/工程进度/功能实现总览.md`** 是本项目的【活文档主索引】，所有 P0/P1/P2 功能与重构债务都在那里以 checkbox 形式记录。
+**`docs/功能实现总览.md`** 是本项目的【活文档主索引】，所有 P0/P1/P2 功能与重构债务都在那里以 checkbox 形式记录。
 
 每次实现新功能时，必须：
 
@@ -35,6 +35,37 @@
 > ⚠️ **dong4j 在 2026-05-30 明确要求**：仅打勾 `[x]` 是不够的，必须有 `> 实现：...` 行。这是 Starcat 项目的硬性工作流约定，所有 AI 协作者必须遵守。
 >
 > 不要只看本文档（CLAUDE.md）做开发计划。**`功能实现总览.md` 才是单一信任源**。
+
+### 状态符号（与功能实现总览.md 同步）
+
+| 符号 | 含义 |
+|------|------|
+| `- [x]` | 已完成 |
+| `- [ ]` | 待开始 |
+| `- [~]` | 部分完成 / 进行中（手写非标准，正文加 ⚠️ 行注释） |
+| `✅` | 章节级完成 |
+| `⏳` | 章节级计划中 |
+| `⚠️` | 有技术债 / 临时方案 |
+| `❌` | 已决定不做 |
+
+### 4 条 AI 协作规范（2026-06-28 生效）
+
+1. **勾选完成项时**：
+   - checkbox 格式严格：`- [x] **功能名** — 简短描述 — `主要文件路径` — YYYY-MM-DD`
+   - 如写 `> 实现:`，必须 ≤ 200 字、一段话，只说「为什么 / 做了什么 / 关键约束」
+   - **不写**「涉及 N 文件 / 验证步骤 / 未做清单 / 反思 / dong4j 验收」几大段
+2. **新增章节时**：
+   - 章节标题**不带**日期、状态符号、周次
+   - 章节下**第一行**单独写「状态说明」，例如：`> 状态: 进行中(W6 / 9 项完成)`
+   - §0 不再加新子节，新功能条目加到 §3 / §4 / §5 对应章节
+3. **变更日志**：
+   - 必须在 `功能实现总览.md` §10 顶部加一行：`- YYYY-MM-DD HH:MM: 一句话描述`(≤ 80 字)
+   - 不带 emoji / 不带粗体 / 不写「涉及 N 文件 / 验证 / 反思 / 未做」
+4. **不要**：
+   - 在 `> 实现:` 写「涉及 N 文件 / 验证步骤 / 反思 / 未做」几大段
+   - 在章节标题里带 `(W?+)` / `(2026-MM-DD 新增)` / `✅ / ⏳` 状态符号
+   - 在 §0.x 写「0.5」「0.7」跳号（按时间倒序加新章节会导致跳号）
+   - 把测试详情、commit 详情、讨论沉淀写进 `> 实现:`
 
 ---
 
@@ -83,30 +114,32 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
 
 ## 文档结构
 
+> 2026-06-28 重整后,docs/ 按「文档生命周期」分目录(版本号只用于里程碑快照)。
+> 详细规范见 [`docs/0-总览/文档添加规范.md`](docs/0-总览/文档添加规范.md)。
+
 ```
 docs/
-├── 概要设计.md          # 技术选型方案、阶段规划
-├── 功能清单.md          # 功能优先级矩阵（P0/P1/P2，原表）
-├── 开发前问题清单.md     # 审查发现的问题及解决方案
-├── 需求分析.md          # 竞品分析、需求详述
-├── 调研报告.md          # 技术调研
-├── CloudKit数据同步设计.md
-├── AI代理API设计.md
-├── GitHub OAuth 设计.md
-├── 发版流程.md          # ⭐ 发版 SOP（git tag 自动驱动版本号）
-├── 工程进度/
-│   ├── 功能实现总览.md                          # ⭐ 主进度索引（活文档）
-│   ├── 2026-05-30-代码评审与进度清单.md
-│   └── 2026-05-30-Keychain-临时绕过方案.md
-└── 详细设计/
-    ├── 01-数据库设计.md
-    ├── 03-项目结构设计.md
-    ├── 04-技术选型.md
-    ├── 05-GitHub API设计.md
-    └── 06-核心模块设计.md
+├── 功能实现总览.md                        # ⭐ 主进度索引(活文档,根级突出)
+├── 0-总览/                                # 入口 + 规范
+├── 1-立项/                                # 立项期沉淀(永久参考)
+├── 2-产品/                                # 需求池 + 里程碑
+│   ├── 需求讨论/
+│   │   ├── v2-功能规划.md
+│   │   ├── 正式方案/                       # 已落地的方案
+│   │   ├── _archive/                       # 一次性需求初稿
+│   │   ├── agent/
+│   │   └── 推荐算法/
+│   └── 里程碑/                             # 阶段总结快照
+├── 3-设计/                                # 详细技术设计(滚动维护,带版本标签)
+│   └── 详细设计/
+├── 4-工程进度/                            # 阶段性回顾 + 踩坑 + 重构专项
+├── 5-规范/                                # 永久强制规范(UI / i18n / 开源致谢 等)
+├── 6-发版与上架/                          # 发版 SOP + 各版本快照
+├── 7-工具与脚本/                          # 工具型参考
+└── 8-原型设计/
 ```
 
-> 详细内容请查阅对应文档。
+> 各目录详细职责见 [`docs/0-总览/README.md`](docs/0-总览/README.md)。
 
 ---
 
@@ -122,7 +155,7 @@ docs/
 | 网络 | URLSession | GitHub REST API |
 | AI | BYOK / 自建代理 | Pro 订阅解锁 |
 
-> 详细技术选型见 `docs/详细设计/04-技术选型.md`
+> 详细技术选型见 `docs/3-设计/详细设计/04-技术选型.md`
 
 ---
 
@@ -161,7 +194,7 @@ docs/
 - 语义搜索（延后到 v1.2）
 - watchOS（价值待评估）
 
-> 完整功能清单见 `docs/功能清单.md`
+> 完整功能清单见 `docs/1-立项/功能清单.md`
 
 ---
 
@@ -171,22 +204,22 @@ docs/
 - 用户面向的内容遵循中文文档风格
 - 技术术语保留英文原文，可配中文解释
 - 代码必须添加必要注释；**较复杂的代码（actor / Concurrency / WKWebView delegate / URLProtocol / FTS5 / 三阶段 SWR 这类）必须写详细的"为什么 + 关键约束 + 已踩过的坑"级注释**，参考 `Starcat/Features/Home/ReadmeViewModel.swift` / `Starcat/Shared/Components/ReadmeWebView.swift` / `StarcatTests/URLProtocolStub.swift` 三份样板
-- **dong4j 是 Swift 初学者**：写新代码或解释已有代码时，遇到关键 Swift / SwiftUI / Concurrency / WebKit / GRDB 概念应主动提示去查 `docs/Swift 学习索引.md` 对应条目
+- **dong4j 是 Swift 初学者**：写新代码或解释已有代码时，遇到关键 Swift / SwiftUI / Concurrency / WebKit / GRDB 概念应主动提示去查 `docs/7-工具与脚本/Swift-学习索引.md` 对应条目
 - 详细开发规范见 `docs/` 各文档
 
 ### UI 颜色规范：适配明暗主题（强制，2026-06-14 起生效）
 
-文字 / 图标 `foregroundStyle` **只用 `.primary` 或 `.secondary`，禁止 `.tertiary`**。
-
-`.tertiary` 在浅色主题下对比度仅约 1.5:1（远低于 WCAG AA 4.5:1），文字图标在白底上几乎"灰糊"不可读。
-
-**唯一例外**：刻意弱化的装饰性图标占位（如队列未开始态 `Image("circle")`、未选中态视觉降级等），可以保留 `.tertiary`，但**必须**在代码注释里写明"故意弱化 + 产品意图"。
+> 单一信任源：[`docs/5-规范/UI-颜色规范.md`](docs/5-规范/UI-颜色规范.md)
+> 文字 / 图标 `foregroundStyle` **只用 `.primary` 或 `.secondary`，禁止 `.tertiary`**。
+> `.tertiary` 在浅色主题下对比度仅约 1.5:1（远低于 WCAG AA 4.5:1）。
+> 唯一例外:刻意弱化的装饰性图标占位,可在代码注释里写明"故意弱化 + 产品意图"后保留。
 
 ### UI 规范：Focus Ring 蓝框（强制）
 
-**所有**使用 `.buttonStyle(.plain)` 的 Button **必须**添加 `.focusEffectDisabled()`，禁用 macOS 默认的蓝色 focus ring。
+> 单一信任源：[`docs/5-规范/UI-Focus-Ring-规范.md`](docs/5-规范/UI-Focus-Ring-规范.md)
+> **所有**使用 `.buttonStyle(.plain)` 的 Button **必须**添加 `.focusEffectDisabled()`,禁用 macOS 默认的蓝色 focus ring。
 
-> ⚠️ 这是强制规则。任何新建或修改的 Button若遗漏 `.focusEffectDisabled()`，必须补上。
+> ⚠️ 这是强制规则。任何新建或修改的 Button若遗漏 `.focusEffectDisabled()`,必须补上。
 
 ```swift
 // ✅ 正确写法
@@ -214,192 +247,42 @@ Button { ... }
 
 ### UI 规范：Sheet 关闭图标（强制，2026-06-26 起生效）
 
-**所有**自定义 sheet / 浮层 / 面板 **header 右上角「关闭」** 必须走共享组件 `SheetCloseButton`（`Starcat/Shared/Components/SheetCloseButton.swift`），禁止各调用点手写样式。
-
-```swift
-// ✅ 正确写法
-SheetCloseButton { dismiss() }
-
-// 各 surface 尺寸不同：通过参数保留原占位，禁止改图标语义
-SheetCloseButton(
-    action: { dismiss() },
-    iconFont: .system(size: 16, weight: .medium),
-    frameSize: 26,
-    helpKey: "common.close"
-)
-```
-
-**视觉规格（单一信任源）**：
-- SF Symbol：`xmark.circle.fill`
-- `.symbolRenderingMode(.hierarchical)` + `.foregroundStyle(.secondary)`（明暗主题自动适配）
-- `.buttonStyle(.plain)` + `.focusEffectDisabled()`（组件内已封装）
-
-**不适用（禁止误用 `SheetCloseButton`）**：
-- 搜索框「清空内容」（语义是 clear，不是 close sheet）
-- destructive 红叉（如删除确认、错误态）
-- `StarsSyncButton` 同步中 hover 取消（`xmark.circle.fill` 有特殊交互语义）
-- 标签墙「清除选中」等 filter 清除操作
-
-**反例（必须避免）**：
-- ❌ 裸 `xmark`（无圆形底，hit area 与 macOS dismiss 惯例不一致）
-- ❌ `xmark.circle.fill` 不设 `hierarchical` / `secondary`（浅色主题下会变成实心黑圆，过重）
-- ❌ `.buttonStyle(.bordered)` 灰底关闭钮
-
-**参考实现**：`RepoHealthSheet`、`GitHubStarListEditorSheet`、`ShareCardSheet`、`RepoAIWindowContentView`
+> 单一信任源：[`docs/5-规范/UI-Sheet-关闭图标-规范.md`](docs/5-规范/UI-Sheet-关闭图标-规范.md)
+> 所有 sheet / 浮层 / 面板的右上角关闭按钮必须走 `SheetCloseButton` 共享组件,SF Symbol `xmark.circle.fill` + `.symbolRenderingMode(.hierarchical)` + `.secondary`。
 
 ### UI 规范：刷新图标（强制，2026-06-26 起生效）
 
-**所有**「刷新 / 重新拉取 / 同步列表」类 **icon-only 触发器** 必须走 `SyncIconButton`（`Starcat/Shared/Components/SyncIconButton.swift`），禁止各 surface 自绘 `arrow.clockwise` 或 loading 时换成 `ProgressView`。
-
-```swift
-// ✅ 正确写法（尺寸按原占位传入 font / frameSize）
-SyncIconButton(
-    isRefreshing: viewModel.isRefreshing,
-    disabled: viewModel.isRefreshing,
-    font: .caption,
-    frameSize: 18,
-    tooltip: String.l10n("activity.refresh")
-) {
-    Task { await viewModel.refresh() }
-}
-```
-
-**视觉与动效规格**：
-- SF Symbol：`arrow.triangle.2.circlepath`（与 Manage「同步于」旁、Sidebar「仓库分组」刷新同款）
-- **静止**：`.foregroundStyle(.secondary)`
-- **刷新中**：`.foregroundStyle(.accentColor)` + 线性 1s `repeatForever` 旋转（组件内 `rotationEffect` 实现）
-- **禁止**用 `ProgressView` 替代旋转中的图标
-- **禁止**用 `.symbolEffect(.rotate, value:)` / `.symbolEffect(.variableColor)` 做刷新动效（行为与预期不符，见 `SyncIconButton.swift` 文件头）
-
-**特殊场景**：
-- Manage 顶栏 **Stars 全量同步**（含 hover 取消 / rate limit）：用 `StarsSyncButton`（内部同款图标与旋转；同步中同样变 `.accentColor`）
-- 带文字的刷新行（如 Release「立即检查」）：图标仍用 `arrow.triangle.2.circlepath`，静止 `.secondary`、进行中 `.accentColor` + 旋转，与 `SyncIconButton` 同色同动效
-
-**不适用**：
-- 菜单项 `Label(..., systemImage: "arrow.clockwise")` 的「重新生成 / 恢复购买」等 **文案动作**（非 icon-only 刷新触发器）
-- 账户菜单「刷新个人信息」
-
-**反例（必须避免）**：
-- ❌ `arrow.clockwise` 做列表 / toolbar / sheet header 刷新
-- ❌ 刷新中只变 `ProgressView`、图标不转、不变蓝
-- ❌ 各页面 refresh 图标大小 / 颜色 / 动效不一致
-
-**参考实现**：`SidebarView`（仓库分组）、`RepoListView`（同步于）、`ActivityView`、`TrendingView`、`WeeklyContentView`、`RepoHealthSheet`、`SmartSearchField`（语义索引刷新）
-
-提交前自检：
-
-```bash
-# 新增 sheet header 关闭应出现 SheetCloseButton，而非裸 xmark
-rg 'Image\(systemName: "xmark"\)' --type swift Starcat/Features/
-
-# 刷新触发器不应再引入 arrow.clockwise（菜单 Label 除外，须注释说明非刷新触发器）
-rg 'arrow\.clockwise' --type swift Starcat/Features/
-```
+> 单一信任源：[`docs/5-规范/UI-刷新图标-规范.md`](docs/5-规范/UI-刷新图标-规范.md)
+> 所有 icon-only 刷新触发器必须走 `SyncIconButton`,SF Symbol `arrow.triangle.2.circlepath`,静止 `.secondary` / 刷新中 `.accentColor` + 旋转。
+> **禁止** `arrow.clockwise` / `ProgressView` / `.symbolEffect(.rotate, value:)`。
 
 ### UI 规范：禁止 Stepper（强制，2026-06-20 起生效）
 
-**禁止**在新 UI 中使用 SwiftUI `Stepper` 组件。
-
-数值输入一律用 `TextField` + 数字过滤 + 范围钳制（参考 `MCPSettingsView.mcpPortTextBinding`、`SearchCenterView.anySearchMaxResultsTextBinding`）。
-
-范围较大或需要连续调节时用 `Slider`（参考 `AISettingsView` 阈值滑杆）。
-
-**反例（必须避免）**：
-- ❌ `Stepper(value:in:step:)` 调端口 / 结果数 / 行数
-- ✅ `TextField` + binding 内 `filter(\.isNumber)` + `min(max(...))`
-
-提交前自检：
-
-```bash
-rg "Stepper\(" --type swift Starcat/   # 新增代码不应再引入 Stepper
-```
+> 单一信任源：[`docs/5-规范/UI-禁止Stepper-规范.md`](docs/5-规范/UI-禁止Stepper-规范.md)
+> 数值输入一律 `TextField` + 数字过滤 + 范围钳制;范围大时用 `Slider`。**禁止** `Stepper`。
 
 ### UI 规范：设置页按钮右对齐（强制，2026-06-21 起生效）
 
-**所有**设置页（Settings Tab / Sheet / Form Section）内的独立操作按钮必须**右对齐**。
-
-```swift
-// ✅ 正确写法
-Section {
-    HStack {
-        Spacer()
-        Button { ... } label: { ... }
-    }
-}
-
-// ❌ 错误写法：按钮左对齐
-Section {
-    Button { ... } label: { ... }
-}
-```
-
-**适用场景**（包括但不限于）：
-- 重置 / 清除 / 导出类按钮
-- 一次性操作按钮（如“重置引导”、“导出调试日志”）
-- 不属于表单填写的独立动作
-
-**不适用**：
-- Toggle / Picker 等表单控件（它们不是“按钮”）
-- 紧跟在文本输入框后的操作按钮（如端口重启、token 显示）
+> 单一信任源：[`docs/5-规范/UI-设置页按钮对齐-规范.md`](docs/5-规范/UI-设置页按钮对齐-规范.md)
+> 所有设置页内的独立操作按钮(重置/清除/导出/一次性动作)必须右对齐。
 
 ### 开源致谢同步规则（强制，2026-06-07 起生效）
 
-**任何**集成进 Starcat 的外部开源项目，**必须**在「关于页 → 开源致谢（Credits）」列表中追加一条对应的引用。
-
-> ⚠️ 这是强制规则。少加 / 漏加都视为不合规，提交前必须补齐。
-
-**适用范围**（只要满足任一条就算「集成」，必须登记）：
-1. **SPM 依赖**：在 `project.yml` 的 `packages:` 里新增的任何 package。
-2. **嵌入式资源**：把第三方仓库里的 SVG / 图标 / 图片 / 字体等素材复制进 `Starcat/Resources/Assets.xcassets/` 或其它资源目录。
-3. **生成代码**：用脚本（如 `scripts/generate_*.py`）从第三方数据源生成的 Swift 文件（典型例子：`LinguistLanguages.generated.swift` 来源 GitHub Linguist）。
-4. **Vendored 源码**：把第三方源码片段直接拷贝进 `Starcat/Shared/` 等目录使用（即便只用了一两个文件）。
-
-**登记位置**：`Starcat/Features/About/AboutView.swift` → `private struct AboutDependency` → `static let all`
-
-**单条记录必填字段**：
-- `name`：项目名（与官方仓库一致，如 `swift-markdown-ui`）
-- `license`：许可证名（`MIT` / `Apache 2.0` / `BSD-3-Clause` 等）
-- `copyright`：版权声明文本（保留官方 `LICENSE` 文件里的原文版权行）
-- `url`：项目源仓库地址（GitHub / GitLab 等）
-
-**新增第三方依赖时的检查流程**：
-1. 修改 `project.yml` 或新增嵌入资源 / 生成脚本之后，**立即**打开 `AboutView.swift` 追加 `AboutDependency` 条目。
-2. 验证许可证：从依赖仓库的 `LICENSE` 文件复制 `Copyright (c) ...` 那一行到 `copyright` 字段。
-3. 如果该依赖不允许商用 / 闭源分发（GPL / AGPL / SSPL 等 copyleft），先评估再集成，必要时记录到 `docs/开发前问题清单.md`。
-4. 跑一次 Starcat → About → 致谢页，肉眼确认列表里能看到、能点开源链接。
-
-**反例（必须避免）**：
-- ❌ 在 `project.yml` 加了新 SPM package，但忘了同步 `AboutDependency.all`
-- ❌ 把 Devicon / Linguist 这种「资源型开源项目」拷贝进 Assets，却不登记，因为它不在 SPM 里
-- ❌ 写了一份 `Foo.generated.swift` 数据来自第三方仓库，却不登记数据源
-- ❌ `copyright` 字段编造或留空 —— 必须取自上游 `LICENSE`
-
-> 与之配套的常驻提醒已在 `AboutView.swift` 顶部 `AboutDependency` 注释中复述，避免后续协作者只看代码不看文档时漏登记。
+> 单一信任源：[`docs/5-规范/开源致谢同步-规范.md`](docs/5-规范/开源致谢同步-规范.md)
+> 任何 SPM 依赖 / 嵌入式资源 / 生成代码 / vendored 源码都必须登记到 `Starcat/Features/About/AboutView.swift` 的 `AboutDependency.all`。
+> 登记字段:`name` / `license` / `copyright` / `url`(copyright 必须取自上游 `LICENSE`)。
 
 ### 国际化规范（i18n，强制）
 
-> ⚠️ **新增 / 修改任何国际化代码前，必读** [`docs/i18n军规.md`](docs/i18n军规.md)（单一信任源，含决策矩阵 / 5 大 root cause / 反例对照 / 实战参考文件）。
-
-**最小必知（违反任一项即不合规）**：
-
-1. **新代码禁止** `String(localized:)` 与 `NSLocalizedString`。返回 `String` 的本地化场景一律走 `String.l10n("key")`。
-2. SwiftUI `Text` / `Label` / `Button` 等接 `LocalizedStringKey` 的 view **直接写** `Text("key")`，不要套 `String.l10n`。
-3. **每个** `.sheet { }` / `.popover { }` 闭包内根视图、**每个**自建 `NSWindow` / `NSPanel` 的 hostingView 根，**必须**挂 `.appLocaleEnvironment()`。
-4. 任何 Foundation formatter（`RelativeDateTimeFormatter` / `Date.RelativeFormatStyle` / `DateFormatter` / `NumberFormatter`）默认走系统 locale，**必须**视图内 `@Environment(\.locale)` + `formatter.locale = locale`（或链式 `.locale(locale)`）显式注入。
-5. 字符串目录：`Starcat/Resources/Localizable.xcstrings`，新增 key **必须**同时填 en + zh-Hans 双语，命名 `{section}.{subsection}.{component}`，禁用 `_`。
-
-提交前自检：
-
-```bash
-rg "String\(localized:" --type swift Starcat/   # 必须只出现在注释里
-rg "NSLocalizedString"  --type swift Starcat/   # 必须只出现在注释里
-```
+> 单一信任源：[`docs/5-规范/国际化-规范.md`](docs/5-规范/国际化-规范.md) + [`docs/5-规范/i18n-军规.md`](docs/5-规范/i18n-军规.md)
+> 关键 5 条:`String.l10n` / `Text("key")` / `.appLocaleEnvironment()` / locale 注入 / `Localizable.xcstrings` 命名 `{section}.{subsection}.{component}`。
+> 自检:提交前 `rg "String\(localized:"` 与 `rg "NSLocalizedString"` 应只命中注释。
 
 ---
 
 ## 已解决的问题
 
-以下问题已在 `docs/开发前问题清单.md` 中确认解决方案：
+以下问题已在 `docs/1-立项/开发前问题清单.md` 中确认解决方案：
 
 - ✅ macOS 最低版本：15 Sequoia（兼容 Liquid Glass API）
 - ✅ Swift 版本：编译器 6.0 + 语言模式 5 + @Observable

@@ -9,7 +9,7 @@
 //
 //  历史记录：从 W4 (UserDefaults) 升级到 W5-ready GRDB SQLite + CloudKit-friendly
 //  字段（id UUID / modifiedAt LWW / useCount + 半衰期衰减排序）。详见
-//  `SearchHistoryRepositoryProtocol` 与 `docs/CloudKit数据同步设计.md` §2.x。
+//  `SearchHistoryRepositoryProtocol` 与 `docs/2-产品/需求讨论/正式方案/CloudKit数据同步设计.md` §2.x。
 //
 
 import Foundation

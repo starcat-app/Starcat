@@ -6,7 +6,7 @@
 //   - 致命错误 → 抛 `RepoContextPackerError`
 //   - 单文件错误 → skip 并把 `reason` 写入 `metadata.json.skippedFiles[]`
 //
-// 决议来源：`docs/详细设计/27-RepoContextPacker设计.md` §22.4（Q3 / 分层错误处理）。
+// 决议来源：`docs/3-设计/详细设计/27-RepoContextPacker设计.md` §22.4（Q3 / 分层错误处理）。
 //
 // **关键约束**：reason 是写入 `metadata.json` 的字符串，不能改！如果产品演进想改 reason 名字，
 // 必须在 §22.4 同步更新「reason 字符串 → 含义」对照表，否则旧 metadata 读不出来。

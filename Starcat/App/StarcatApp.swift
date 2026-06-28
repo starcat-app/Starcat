@@ -247,7 +247,7 @@ struct StarcatApp: App {
 
         // 测试期跳过 Keychain 自检：ad-hoc 签名 + ACL 不匹配会触发 GUI 授权弹窗，
         // 测试 host 主线程被对话框阻塞 → testmanagerd 永远连不上 App。
-        // 详见 docs/工程进度/2026-05-30-Keychain-临时绕过方案.md
+        // 详见 docs/4-工程进度/踩坑与故障记录/2026-05-30-Keychain-临时绕过方案.md
         if TestEnvironment.isRunning {
             AppLog.general.info("Test host detected, skipping Keychain self-check")
         } else {

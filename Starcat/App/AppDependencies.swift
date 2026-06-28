@@ -330,7 +330,7 @@ final class AppDependencies {
     ///
     /// 原本只在 `HomeView.init` 里 inline 给 manage 全局 VM 挂载，导致从 active /
     /// weekly 详情页进入已 star 仓库时不会触发 `refreshMarkdownIfNeeded` +
-    /// `refreshIndexIfChanged` —— 后者是文档 `docs/详细设计/26-向量搜索改进.md`
+    /// `refreshIndexIfChanged` —— 后者是文档 `docs/3-设计/详细设计/26-向量搜索改进.md`
     /// §6 关键流程表承诺的"详情页 README 拉到 → 异步补 raw markdown 落
     /// readmes.content + 视情况重建向量索引"触发源。manage 与 active 都走
     /// `loadInternal`（依赖同一 `readmes` 表 PK=repo_id），两者行为应一致；本工厂方法

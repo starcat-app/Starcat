@@ -159,7 +159,7 @@ struct AIModelListView: View {
             }
             .buttonStyle(.plain)
             // HOM-68 follow-up v10 (dong4j 反馈 2026-06-05 23:55)：项目强制规则
-            // (docs/详细设计/07-UI交互设计.md §1.2)——所有 .buttonStyle(.plain) 必
+            // (docs/3-设计/详细设计/07-UI交互设计.md §1.2)——所有 .buttonStyle(.plain) 必
             // 须紧跟 .focusEffectDisabled() 抑制 macOS 15+ 默认蓝色 focus ring。
             .focusEffectDisabled()
             .help("settings.ai.modelList.parametersHelp")

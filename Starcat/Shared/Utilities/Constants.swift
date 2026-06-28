@@ -67,7 +67,7 @@ enum AppConstants {
     /// 必须勾选 "Enable Device Flow"，否则 /login/device/code 返回 403。
     static let githubOAuthClientID = "Ov23li4suXj1nNsWtHHG"
 
-    /// OAuth scope，已最小化（见 docs/GitHub OAuth 设计.md）。
+    /// OAuth scope，已最小化（见 docs/2-产品/需求讨论/正式方案/GitHub OAuth 设计.md）。
     static let githubOAuthScopes = ["read:user", "public_repo", "user"]
 
     // MARK: - 网络

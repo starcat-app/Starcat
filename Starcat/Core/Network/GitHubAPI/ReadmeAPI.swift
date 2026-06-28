@@ -8,7 +8,7 @@
 //  - GET /repos/{owner}/{repo}/readme
 //    Accept: application/vnd.github.html  → 直接返回 GitHub 服务端渲染好的 HTML 片段
 //
-//  Phase 2 关键改动（2026-05-30，见 docs/详细设计/readme.md-渲染设计.md §12.2 / §13）：
+//  Phase 2 关键改动（2026-05-30，见 docs/3-设计/详细设计/readme.md-渲染设计.md §12.2 / §13）：
 //  把原 `fetchHTML(for:forceRefresh:)` 拆为：
 //  - `cachedReadme(for:)` 纯读本地（不发网络）
 //  - `refreshReadme(for:)` 走网络刷新（所有错误包到 `.failed`，不抛出）

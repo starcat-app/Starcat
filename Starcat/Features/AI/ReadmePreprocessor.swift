@@ -2,7 +2,7 @@
 //  ReadmePreprocessor.swift
 //  Starcat
 //
-//  README 清洗与截断工具（详见 `docs/详细设计/26-向量搜索改进.md`，决策 A3）。
+//  README 清洗与截断工具（详见 `docs/3-设计/详细设计/26-向量搜索改进.md`，决策 A3）。
 //
 //  模块职责：
 //  - 把 README（HTML 或原始 Markdown）清洗成 AI / embedding 可读的纯文本；
