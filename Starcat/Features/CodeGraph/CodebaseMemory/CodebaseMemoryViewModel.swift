@@ -45,7 +45,7 @@ final class CodebaseMemoryViewModel {
     private(set) var isLoadingBranches = false
     private(set) var versionStatus: VersionStatus = .unknown
     private(set) var storedProject: CodebaseMemoryStoredProject?
-    private(set) var steps: [CodebaseMemoryExecutionStep] = Self.emptySteps()
+    private(set) var steps: [CodebaseMemoryExecutionStep] = CodebaseMemoryViewModel.emptySteps()
     var selectedBranchName = "" {
         didSet { updateSelectionVersionStatus() }
     }
@@ -58,7 +58,6 @@ final class CodebaseMemoryViewModel {
     private let binaryResolver: CodebaseMemoryBinaryResolver
     private let extractor: CodebaseMemoryExtractor
     private let snapshotService: SharedSnapshotService
-    private let entitlementGate: EntitlementGate
 
     private var task: Task<Void, Never>?
     private var uiProcess: Process?
@@ -86,8 +85,7 @@ final class CodebaseMemoryViewModel {
         storage: CodebaseMemoryStorage = .shared,
         binaryResolver: CodebaseMemoryBinaryResolver? = nil,
         extractor: CodebaseMemoryExtractor = CodebaseMemoryExtractor(),
-        snapshotService: SharedSnapshotService = SharedSnapshotService(),
-        entitlementGate: EntitlementGate = .shared
+        snapshotService: SharedSnapshotService = SharedSnapshotService()
     ) {
         self.repo = repo
         self.runner = runner
@@ -95,7 +93,6 @@ final class CodebaseMemoryViewModel {
         self.binaryResolver = binaryResolver ?? CodebaseMemoryBinaryResolver(storage: storage)
         self.extractor = extractor
         self.snapshotService = snapshotService
-        self.entitlementGate = entitlementGate
         restoreCachedState()
     }
 
@@ -172,10 +169,7 @@ final class CodebaseMemoryViewModel {
             do {
                 // Step 0: 解析二进制（bundle → container 拷贝 + chmod）
                 setStep(id: .resolveBinary, status: .running)
-                guard requireCodebaseMemoryAccess() else {
-                    setStep(id: .resolveBinary, status: .failed, detail: "Pro required")
-                    return
-                }
+                // Pro check done in RepoListView.openCodebaseMemory() before sheet present
                 let binaryURL: URL
                 do {
                     binaryURL = try await binaryResolver.resolveExecutable()
@@ -322,20 +316,6 @@ final class CodebaseMemoryViewModel {
         }
         setStep(id: .openBrowser, status: .succeeded, detail: "localhost:\(port)")
         state = .succeeded
-    }
-
-    private func requireCodebaseMemoryAccess() -> Bool {
-        do {
-            try entitlementGate.requirePro(.codebaseMemory)
-            return true
-        } catch EntitlementGateError.requiresPro {
-            paywallContext = .codebaseMemory
-            state = .idle
-            return false
-        } catch {
-            state = .failed(message: error.localizedDescription)
-            return false
-        }
     }
 
     private func pickPort() -> Int {

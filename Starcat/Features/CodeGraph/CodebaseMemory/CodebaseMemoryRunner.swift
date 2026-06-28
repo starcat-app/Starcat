@@ -48,7 +48,6 @@ struct CodebaseMemoryIndexResult: Sendable, Equatable {
 ///
 /// 线程安全：所有 `activeProcesses` 访问仅在 Process.terminationHandler 修改。
 /// spawnIndex / spawnUI 在调用线程执行 `process.run()`。
-@MainActor
 final class CodebaseMemoryRunner {
 
     /// 活跃子进程追踪：(process, (repositoryFullName, startedAt))

@@ -89,7 +89,6 @@ struct IntegrationSettingsTab: View {
                         .foregroundStyle(.secondary)
                 }
             }
-        }
             Section("CodebaseMemory") {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("3D Code Graph", systemImage: "point.3.filled.connected.trianglepath.dotted")
@@ -110,16 +109,12 @@ struct IntegrationSettingsTab: View {
                     Spacer()
                     Button("settings.integration.codeFlow.outputDir.choose") { chooseCodebaseMemoryOutputDirectory() }
                         .fixedSize()
-                    Button {
-                        revealCodebaseMemoryOutputDirectory()
-                    } label: {
+                    Button { revealCodebaseMemoryOutputDirectory() } label: {
                         Image(systemName: "folder")
                     }
                     .help("settings.integration.codeFlow.outputDir.revealHelp")
                     .fixedSize()
-                    Button {
-                        resetCodebaseMemoryOutputDirectory()
-                    } label: {
+                    Button { resetCodebaseMemoryOutputDirectory() } label: {
                         Image(systemName: "arrow.counterclockwise")
                     }
                     .disabled(!codebaseMemoryStorage.hasCustomOutputDirectory)

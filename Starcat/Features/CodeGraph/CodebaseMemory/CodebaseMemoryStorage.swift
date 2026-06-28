@@ -141,7 +141,7 @@ struct CodebaseMemoryStoredProject: Identifiable, Equatable, Sendable {
 
     /// 递归目录总大小（字节）。metadata.json + source/ + .codebase-memory/ 等全部计入。
     var totalBytes: Int64 {
-        (try? Self.directorySize(of: directoryURL)) ?? 0
+        Int64((try? Self.directorySize(of: directoryURL)) ?? 0)
     }
 
     /// 最近活跃时间（UI 排序用）。

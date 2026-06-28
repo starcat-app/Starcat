@@ -340,7 +340,7 @@ struct CodebaseMemoryPanel: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            footerStatus
+            Text(footerStatus)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
