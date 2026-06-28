@@ -1716,64 +1716,9 @@ private struct SearchHistoryFlowLayout: Layout {
 
 // MARK: - Remote Repo Detail
 
-/// 搜索详情卡的语义色。light / dark 各一套 hex，避免亮色主题对比不足或暗色主题过艳。
-private enum SearchDetailSemanticColor {
-    case star
-    case fork
-    case issues
-    case branch
-    case language
-    case wikiDeepWiki
-    case wikiZread
-    case wikiCodeWiki
-    case actionStar
-    case actionAI
-    case actionGitHub
-
-    /// 亮色主题下的图标 / 前景色。
-    private var lightHex: UInt32 {
-        switch self {
-        case .star, .actionStar: return 0xD97706
-        case .fork: return 0x2563EB
-        case .issues: return 0xDC2626
-        case .branch: return 0x7C3AED
-        case .language: return 0x059669
-        case .wikiDeepWiki: return 0x4F46E5
-        case .wikiZread: return 0x0891B2
-        case .wikiCodeWiki: return 0x059669
-        case .actionAI: return 0x9333EA
-        case .actionGitHub: return 0x1F2937
-        }
-    }
-
-    /// 暗色主题下的图标 / 前景色（整体提亮一档，保证深色底可读）。
-    private var darkHex: UInt32 {
-        switch self {
-        case .star, .actionStar: return 0xFBBF24
-        case .fork: return 0x60A5FA
-        case .issues: return 0xF87171
-        case .branch: return 0xA78BFA
-        case .language: return 0x34D399
-        case .wikiDeepWiki: return 0x818CF8
-        case .wikiZread: return 0x22D3EE
-        case .wikiCodeWiki: return 0x34D399
-        case .actionAI: return 0xC084FC
-        case .actionGitHub: return 0xE5E7EB
-        }
-    }
-
-    func resolved(colorScheme: ColorScheme) -> Color {
-        Color.fromHex6(colorScheme == .dark ? darkHex : lightHex)
-    }
-
-    /// capsule 底色透明度：暗色主题略高，hover 时再抬一档。
-    func background(colorScheme: ColorScheme, hovered: Bool) -> Color {
-        let base = colorScheme == .dark ? 0.20 : 0.12
-        let hoverBoost = colorScheme == .dark ? 0.08 : 0.06
-        let opacity = hovered ? base + hoverBoost : base
-        return resolved(colorScheme: colorScheme).opacity(opacity)
-    }
-}
+// 注：原 `private enum SearchDetailSemanticColor` 已抽到
+// `Starcat/Shared/Components/DetailStats/StatSemanticColor.swift`(2026-06-29),
+// 详情页 stat(Forks / Watchers)和 SearchCenter 共享同一份语义色。
 
 /// 搜索详情卡底部操作 chip：图标 + 短标签 + capsule 底。
 /// 主操作（Star / Ask AI / GitHub）走 `semanticColor` 着色底；折叠菜单等中性操作保持灰底。
@@ -1783,7 +1728,7 @@ private struct SearchDetailActionChip: View {
     var titleKey: LocalizedStringKey?
     let helpKey: LocalizedStringKey
     /// 语义色；有值时图标 / 文字 / 底色同族着色。
-    var semanticColor: SearchDetailSemanticColor? = nil
+    var semanticColor: StatSemanticColor? = nil
     let action: () -> Void
 
     @State private var isHovered = false
@@ -2171,7 +2116,7 @@ private struct SearchRemoteRepoDetailView: View {
     private func statItem(
         systemImage: String,
         value: String,
-        iconColor: SearchDetailSemanticColor,
+        iconColor: StatSemanticColor,
         tooltipKey: LocalizedStringKey? = nil
     ) -> some View {
         let tint = iconColor.resolved(colorScheme: colorScheme)
@@ -2321,7 +2266,7 @@ private struct SearchRemoteRepoDetailView: View {
         .help(Text(verbatim: link.url.absoluteString))
     }
 
-    private func wikiSemanticColor(for source: WikiSource) -> SearchDetailSemanticColor {
+    private func wikiSemanticColor(for source: WikiSource) -> StatSemanticColor {
         switch source {
         case .deepWiki: return .wikiDeepWiki
         case .zread: return .wikiZread
