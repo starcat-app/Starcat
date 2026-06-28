@@ -96,6 +96,89 @@ enum HealthCheckOutcome: Equatable {
         case .networkError(let reason): return reason
         }
     }
+
+    /// ping 探测是否视为「健康」——用于设置页四服务汇总徽标。
+    var isHealthy: Bool {
+        if case .ok = self { return true }
+        return false
+    }
+}
+
+/// 设置页 Services Tab 顶部四服务 ping 汇总态。
+enum ServicesHealthSummary: Equatable {
+    case checking
+    case allOK
+    case partial(okCount: Int, total: Int)
+    case unavailable
+
+    /// 根据各服务 `HealthCheckOutcome` 与进行中的 probe 计算汇总。
+    ///
+    /// - `testableServices`：URL 校验可通过、允许发 ping 的服务（invalid URL 不参与汇总分母）。
+    static func compute(
+        testableServices: [ThirdPartyService],
+        results: [String: HealthCheckOutcome],
+        probingIDs: Set<String>
+    ) -> ServicesHealthSummary {
+        let total = testableServices.count
+        guard total > 0 else { return .allOK }
+
+        if !probingIDs.isEmpty {
+            return .checking
+        }
+
+        let outcomes = testableServices.compactMap { results[$0.id] }
+
+        // 进入 Tab 后四路并发尚未返回任何结果。
+        if outcomes.isEmpty {
+            return .checking
+        }
+
+        let okCount = outcomes.filter(\.isHealthy).count
+
+        // 个别结果被清空（reset / 尚未 re-probe）且当前无 probe 进行中：缺失项计入分母，
+        // 按已有结果汇总，避免顶部 pill 永远停在 Checking。
+        if outcomes.count < total {
+            if okCount == 0 { return .unavailable }
+            return .partial(okCount: okCount, total: total)
+        }
+
+        if okCount == total { return .allOK }
+        if okCount == 0 { return .unavailable }
+        return .partial(okCount: okCount, total: total)
+    }
+
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .checking: return "settings.services.summary.checking"
+        case .allOK: return "settings.services.summary.allOK"
+        case .partial: return "settings.services.summary.partialFormat"
+        case .unavailable: return "settings.services.summary.unavailable"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .checking: return "arrow.triangle.2.circlepath"
+        case .allOK: return "checkmark.circle.fill"
+        case .partial: return "exclamationmark.triangle.fill"
+        case .unavailable: return "xmark.circle.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .checking: return .secondary
+        case .allOK: return .green
+        case .partial: return .orange
+        case .unavailable: return .red
+        }
+    }
+
+    /// partial 态标题需 `%d/%d` 格式化。
+    var partialTitle: String? {
+        guard case .partial(let ok, let total) = self else { return nil }
+        return String(format: String.l10n("settings.services.summary.partialFormat"), ok, total)
+    }
 }
 
 /// 第三方后端服务的健康检查 actor。

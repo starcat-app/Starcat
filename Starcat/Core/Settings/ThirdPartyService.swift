@@ -144,29 +144,6 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Better Stack 公开 monitor uptime 徽标 SVG（设置页「当前生效: 内置服务」旁展示）。
-    ///
-    /// 仅 fly.io 内置端点有对应 monitor；用户自部署后不再展示，避免误导。
-    /// nil = 该服务尚未配置 monitor 徽标。
-    var betterStackMonitorBadgeURL: URL? {
-        switch self {
-        case .trending:
-            return URL(string: "https://uptime.betterstack.com/status-badges/v3/monitor/2qjx5.svg")!
-        case .weekly, .sharing, .wiki:
-            return nil
-        }
-    }
-
-    /// Better Stack 徽标点击跳转的状态页（带 `utm_source=status_badge` 追踪参数）。
-    var betterStackStatusLinkURL: URL? {
-        switch self {
-        case .trending:
-            return URL(string: "https://uptime.betteruptime.com/?utm_source=status_badge")!
-        case .weekly, .sharing, .wiki:
-            return nil
-        }
-    }
-
     /// 给定生效 baseURL 构造「测试连接」探测 URL（R-03 2026-06-11）。
     ///
     /// R-03.1 起 4 个后端**统一**暴露 `GET /api/v1/ping`，由 BearerAuth middleware 保护。
