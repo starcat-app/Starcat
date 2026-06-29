@@ -25,7 +25,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET_DIR="$PROJECT_ROOT/Starcat/Resources/Codebase"
 WORK_DIR="$(mktemp -d /tmp/codebase-fetch.XXXXXX)"
 REPO="DeusData/codebase-memory-mcp"
-ASSET="codebase-memory-mcp-darwin-arm64.tar.gz"
+ASSET="codebase-memory-mcp-ui-darwin-arm64.tar.gz"
 
 cleanup() {
     rm -rf "$WORK_DIR"
@@ -71,12 +71,17 @@ echo "    SHA-256 ok: $ACTUAL"
 # ── 4. 解压 + 重命名 + 权限 ──
 echo "==> extracting..."
 tar -xzf "$ASSET"
-if [ ! -f "codebase-memory-mcp" ]; then
+# UI variant 解压后名字可能是 codebase-memory-mcp-ui 或 codebase-memory-mcp
+if [ -f "codebase-memory-mcp-ui" ]; then
+    BIN_NAME="codebase-memory-mcp-ui"
+elif [ -f "codebase-memory-mcp" ]; then
+    BIN_NAME="codebase-memory-mcp"
+else
     echo "ERROR: codebase-memory-mcp binary not found after extraction"
     ls -la "$WORK_DIR"
     exit 1
 fi
-mv codebase-memory-mcp codebase.bin
+mv "$BIN_NAME" codebase.bin
 chmod 0755 codebase.bin
 echo "    binary size: $(stat -f%z codebase.bin) bytes"
 
