@@ -64,15 +64,24 @@ actor CodebaseMemoryBinaryResolver {
     func resolveExecutable() throws -> URL {
         let containerURL = try containerCodebaseURL()
 
-        // 已存在且可执行 → 直接返回
-        if fileManager.isExecutableFile(atPath: containerURL.path) {
-            return containerURL
-        }
-
-        // 从 bundle 拷贝
         guard let bundleURL = bundleCodebaseURL else {
             throw CodebaseMemoryError.binaryMissing
         }
+
+        // 比较 bundle 与 container 的文件大小，不同则重新拷贝（支持二进制更新）
+        let bundleSize = (try? fileManager.attributesOfItem(atPath: bundleURL.path)[.size] as? Int) ?? 0
+        let containerSize: Int
+        if fileManager.fileExists(atPath: containerURL.path) {
+            containerSize = (try? fileManager.attributesOfItem(atPath: containerURL.path)[.size] as? Int) ?? 0
+        } else {
+            containerSize = -1
+        }
+
+        if containerSize == bundleSize, fileManager.isExecutableFile(atPath: containerURL.path) {
+            return containerURL
+        }
+
+        // 大小不匹配或不可执行 → 重新从 bundle 拷贝
 
         // 确保 .bin/ 父目录存在
         try fileManager.createDirectory(
