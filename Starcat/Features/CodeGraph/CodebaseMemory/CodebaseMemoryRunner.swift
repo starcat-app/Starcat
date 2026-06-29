@@ -110,15 +110,10 @@ final class CodebaseMemoryRunner {
 
     // MARK: - UI 子进程入口
 
-    /// 用 `--ui=true --port=<N>` 启动长生命周期 UI 子进程。
+    /// 用 `--ui --port <N>` 启动长生命周期 UI 子进程。
     ///
-    /// - Parameters:
-    ///   - binaryURL: container 内可执行文件路径
-    ///   - port: 已探测确认可用的端口号
-    ///   - cacheDir: CBM_CACHE_DIR 指向的目录
-    ///   - repositoryFullName: 用于日志的 repo 标识（如 "owner/name"）
-    ///
-    /// - Returns: 已启动的 Process 实例（caller 负责后续终止）
+    /// 参数以空格分隔传给 Process（`--ui` 与 `true` 分离，`--port` 与数字分离），
+    /// 兼容不同 CLI 参数解析器。
     func startUI(
         binaryURL: URL,
         port: Int,
@@ -127,12 +122,27 @@ final class CodebaseMemoryRunner {
     ) throws -> Process {
         let process = Process()
         process.executableURL = binaryURL
-        process.arguments = ["--ui=true", "--port=\(port)"]
+        // 参数分开传递：部分 C CLI 解析不了 --key=value 格式
+        process.arguments = ["--ui", "true", "--port", "\(port)"]
         process.environment = ProcessInfo.processInfo.environment.merging([
             "CBM_CACHE_DIR": cacheDir.path
         ]) { _, new in new }
 
-        process.terminationHandler = { [weak self] _ in
+        // 捕获 stderr，方便排查启动失败原因
+        let stderrPipe = Pipe()
+        process.standardError = stderrPipe
+
+        process.terminationHandler = { [weak self] proc in
+            // 如果进程异常退出，把 stderr 落到 AppLog 方便排查
+            if proc.terminationStatus != 0 {
+                let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                let message = String(data: stderrData, encoding: .utf8) ?? ""
+                if !message.isEmpty {
+                    FileHandle.standardError.write(
+                        Data("[CodebaseMemory UI] exit=\(proc.terminationStatus): \(message)\n".utf8)
+                    )
+                }
+            }
             Task { @MainActor in
                 self?.pruneProcess(process)
             }

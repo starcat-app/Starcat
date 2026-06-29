@@ -263,6 +263,15 @@ final class CodebaseMemoryViewModel {
                     repositoryFullName: repo.fullName
                 )
                 uiProcess = proc
+
+                // 等待 web server 就绪（最多 8 秒，每秒探测一次）
+                let pageURL = URL(string: "http://127.0.0.1:\(port)/")!
+                let ready = await waitForServer(url: pageURL, timeout: 8)
+                if !ready {
+                    setStep(id: .startUI, status: .failed, detail: "server did not respond")
+                    state = .failed(message: CodebaseMemoryError.uiStartFailed(underlying: "server did not respond on port \(port)").localizedDescription)
+                    return
+                }
                 setStep(id: .startUI, status: .succeeded)
 
                 // Step 7: 保存 metadata
@@ -294,7 +303,6 @@ final class CodebaseMemoryViewModel {
                 _ = try storage.write(metadata: metadata, owner: repo.owner, name: repo.name)
 
                 // Step 8: 打开浏览器
-                let pageURL = URL(string: "http://127.0.0.1:\(port)/")!
                 openBrowser(port: port, url: pageURL)
             } catch is CancellationError {
                 restoreCachedState()
@@ -316,6 +324,22 @@ final class CodebaseMemoryViewModel {
         }
         setStep(id: .openBrowser, status: .succeeded, detail: "localhost:\(port)")
         state = .succeeded
+    }
+
+    /// 轮询等待 HTTP server 就绪，每秒探测一次，超时返回 false。
+    private func waitForServer(url: URL, timeout: Int) async -> Bool {
+        let deadline = Date().addingTimeInterval(TimeInterval(timeout))
+        while Date() < deadline {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 2
+            if let (_, response) = try? await URLSession.shared.data(for: request),
+               let http = response as? HTTPURLResponse,
+               http.statusCode < 500 {
+                return true
+            }
+            try? await Task.sleep(for: .seconds(1))
+        }
+        return false
     }
 
     private func pickPort() -> Int {
