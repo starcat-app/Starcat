@@ -93,7 +93,9 @@ final class CodebaseMemoryViewModel {
         self.binaryResolver = binaryResolver ?? CodebaseMemoryBinaryResolver(storage: storage)
         self.extractor = extractor
         self.snapshotService = snapshotService
-        restoreCachedState()
+        // 不在 init 跑 IO：macOS .sheet(item:) 复用 view + State,
+        // init 里的 restoreCachedState 只会跑一次(用旧 repo 数据)
+        // restoreCachedState() 移到 .task 由 SwiftUI 调起,每次 panel 显示都重查
     }
 
     // MARK: - Lifecycle
@@ -136,6 +138,15 @@ final class CodebaseMemoryViewModel {
         selectedBranchName = ""
         steps = Self.emptySteps()
         restoreCachedState()
+    }
+
+    /// Panel `.task` 调用: 每次 panel 显示都重查 cached state + branches。
+    /// 用于解决 macOS sheet 复用 view 导致 init 不重跑、cached state 停留在旧 repo 的问题。
+    func restoreCachedStateForCurrentRepo() {
+        restoreCachedState()
+        branches = []
+        isLoadingBranches = false
+        versionStatus = .unknown
     }
 
     func start() {

@@ -85,6 +85,8 @@ struct CodebaseMemoryPanel: View {
         .frame(width: 520)
         .task {
             guard requireAccess() else { return }
+            // 每次 panel 显示都重查 cached + branches, 避免 macOS sheet 复用 view 导致显示上一个 repo 的状态
+            viewModel.restoreCachedStateForCurrentRepo()
             await viewModel.prepare()
         }
         .sheet(item: $paywallContext) { context in
