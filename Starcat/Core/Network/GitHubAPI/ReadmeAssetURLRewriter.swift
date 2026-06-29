@@ -30,6 +30,8 @@
 //  `https://github.com/owner/logo.PNG` → 404。
 //
 //  - 完整 URL（http(s):// / data: / 协议相对 //） → 不动
+//  - GitHub 站点根路径 raw 图片（`/{owner}/{repo}/raw/{ref}/{path}`）
+//    → 改写为 `https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}`
 //  - 其余视作相对路径 → 拼到 `https://raw.githubusercontent.com/{owner}/{repo}/HEAD/`
 //    - HEAD 自动指向 default branch，无需额外查询 default branch
 //    - 去掉前导 `./` 与 `/`，与仓库根对齐
@@ -85,6 +87,7 @@ enum ReadmeAssetURLRewriter {
 
     /// 单个 `src` 的重写策略：
     /// - 绝对/协议相对/data URI/mailto/javascript 一律放过；
+    /// - GitHub 站点根路径 raw 图片改写为 raw.githubusercontent.com；
     /// - 其余视为相对路径，去掉前导 `./` 与 `/`，拼到 `rawBase`。
     ///
     /// 暴露为 `internal` 是为了单测能精确覆盖各种边界 src。
@@ -96,9 +99,32 @@ enum ReadmeAssetURLRewriter {
             || lower.hasPrefix("mailto:") || lower.hasPrefix("javascript:") {
             return trimmed
         }
+        if let githubRawURL = githubRootRawURL(from: trimmed) {
+            return githubRawURL
+        }
         var clean = Substring(trimmed)
         if clean.hasPrefix("./") { clean = clean.dropFirst(2) }
         while clean.hasPrefix("/") { clean = clean.dropFirst() }
         return rawBase + String(clean)
+    }
+
+    /// 识别 GitHub HTML 渲染结果里常见的站点根路径 raw 图片。
+    ///
+    /// 这种 URL 看起来像相对路径，但语义是 GitHub 站点路径：
+    /// `/javalin/javalin/raw/master/.github/img/javalin.png`。如果继续按仓库根相对路径拼接，
+    /// 会得到错误的 `.../HEAD/javalin/javalin/raw/master/...`，WebView 只能显示坏图占位。
+    private static func githubRootRawURL(from src: String) -> String? {
+        guard src.hasPrefix("/") else { return nil }
+
+        let parts = src.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count >= 5, parts[2].lowercased() == "raw" else { return nil }
+
+        let owner = parts[0]
+        let repo = parts[1]
+        let ref = parts[3]
+        let path = parts.dropFirst(4).joined(separator: "/")
+        guard !owner.isEmpty, !repo.isEmpty, !ref.isEmpty, !path.isEmpty else { return nil }
+
+        return "https://raw.githubusercontent.com/\(owner)/\(repo)/\(ref)/\(path)"
     }
 }

@@ -242,7 +242,7 @@ struct ReadmeAPI {
             return .failed(error)
         }
 
-        // 304 命中 → 仅 touch cached_at，返回更新过时间戳的 readme
+        // 304 命中 → touch cached_at，并对旧缓存补跑当前 HTML 修复规则。
         if raw.notModified {
             guard let cached = existing else {
                 // 极端 case：本地缓存被清掉但服务端仍 304 → 兜底无条件重拉
@@ -251,9 +251,20 @@ struct ReadmeAPI {
                 return await refreshUnconditional(repo: repo)
             }
             let now = Date()
-            try? await repository.touchCachedAt(repoId: repo.id, at: now)
             var refreshed = cached
             refreshed.cachedAt = ISO8601DateFormatter.shared.string(from: now)
+            if let html = refreshed.renderedHtml {
+                let repairedHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: repo.owner, repo: repo.name)
+                if repairedHtml != html {
+                    refreshed.renderedHtml = repairedHtml
+                    refreshed.size = repairedHtml.utf8.count
+                    try? await repository.upsert(refreshed)
+                } else {
+                    try? await repository.touchCachedAt(repoId: repo.id, at: now)
+                }
+            } else {
+                try? await repository.touchCachedAt(repoId: repo.id, at: now)
+            }
             await metrics.recordRefresh304()
             return .notModified(refreshed)
         }
@@ -367,7 +378,7 @@ struct ReadmeAPI {
             return .failed(error)
         }
 
-        // 第三步：304 → 仅 touch cached_at，返回更新过时间戳的 Readme
+        // 第三步：304 → touch cached_at，并对旧缓存补跑当前 HTML 修复规则。
         if raw.notModified {
             guard let cached = existing else {
                 // 极端 case：本地缓存被清掉但服务端仍 304 → 兜底无条件重拉
@@ -376,9 +387,20 @@ struct ReadmeAPI {
                 return await refreshTrendingUnconditional(owner: owner, repo: repo)
             }
             let now = Date()
-            try? await trendingRepository.touchCachedAt(fullName: fullName, at: now)
             var refreshed = cached
             refreshed.cachedAt = ISO8601DateFormatter.shared.string(from: now)
+            if let html = refreshed.renderedHtml {
+                let repairedHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: owner, repo: repo)
+                if repairedHtml != html {
+                    refreshed.renderedHtml = repairedHtml
+                    refreshed.size = repairedHtml.utf8.count
+                    try? await trendingRepository.upsert(refreshed)
+                } else {
+                    try? await trendingRepository.touchCachedAt(fullName: fullName, at: now)
+                }
+            } else {
+                try? await trendingRepository.touchCachedAt(fullName: fullName, at: now)
+            }
             await metrics.recordRefresh304()
             return .updated(Self.bridgeToReadme(refreshed))
         }
