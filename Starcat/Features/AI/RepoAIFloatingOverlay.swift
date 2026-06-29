@@ -40,8 +40,8 @@ struct RepoAIFloatingOverlay: View {
         static let collapsedHitWidth: CGFloat = 112
         static let collapsedHandleHeight: CGFloat = 4
         static let collapsedHandleWidth: CGFloat = 78
-        static let expandedMaxWidth: CGFloat = 550
-        static let expandedHeight: CGFloat = 650
+        static let expandedMaxWidth: CGFloat = 500
+        static let expandedHeight: CGFloat = 700
         static let maximizedInset: CGFloat = 16
         static let cornerRadius: CGFloat = 18
     }
