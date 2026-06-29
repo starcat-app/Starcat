@@ -86,55 +86,13 @@ mkdir -p "$TARGET_DIR"
 cp codebase "$TARGET_DIR/codebase"
 chmod 0755 "$TARGET_DIR/codebase"
 
-# ── 6. 写入 / 更新 UPSTREAM-README.md（如果不存在） ──
-if [ ! -f "$TARGET_DIR/UPSTREAM-README.md" ]; then
-    echo "    writing UPSTREAM-README.md (first time)..."
-    cat > "$TARGET_DIR/UPSTREAM-README.md" << 'UPEOF'
-# CodebaseMemory 上游 Provenance
-
-本目录的 `codebase` 二进制由 Starcat 从
-[DeusData/codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)
-打包进 App。
-
----
-
-## 许可
-
-MIT License © DeusData
-
----
-
-## 重命名说明
-
-上游二进制名 `codebase-memory-mcp` → Starcat 内统一改名为 `codebase`：
-- 短名，避免和"项目代码库(codebase)"语义混淆
-- 与 `starcat` / `starcat-mcp-stdio` 等其他 Starcat 自有二进制风格一致 — 不加文件扩展名
-
----
-
-## 完整性验证
-
-每次重新生成时用 `scripts/fetch-codebase-binary.sh` 自动执行：
-1. 从 GitHub releases 下载 tarball + checksums.txt
-2. sha256sum -c --strict 校验
-3. 解压 → 重命名 → chmod
-
----
-
-## 已知约束
-
-- 不调用 update 子命令 — 版本升级跟随 Starcat App Store 更新
-- 不下载任何外部二进制到运行时环境
-- CBM_CACHE_DIR 重定向到 sandbox container 内
-UPEOF
-fi
-
-# ── 7. 写入 STARCAT-INTEGRATION.md（自动生成，每次覆盖） ──
+# ── 6. 写入 CODEBASE-INTEGRATION.md（自动生成，每次覆盖） ──
 FINAL_SHA=$(shasum -a 256 "$TARGET_DIR/codebase" | awk '{print $1}')
-cat > "$TARGET_DIR/STARCAT-INTEGRATION.md" << EOF
+cat > "$TARGET_DIR/CODEBASE-INTEGRATION.md" << EOF
 # CodebaseMemory Integration
 
 - 上游: https://github.com/DeusData/codebase-memory-mcp
+- 许可: MIT License © DeusData
 - 版本: $VERSION
 - 二进制 SHA-256: \`$FINAL_SHA\`
 - 重新生成: \`./scripts/fetch-codebase-binary.sh\`
