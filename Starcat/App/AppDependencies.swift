@@ -491,7 +491,6 @@ final class AppDependencies {
         // 测试（init 加默认参数 nil 让旧测试无需改动）。
         let snapshotService = SharedSnapshotService()
         let repoContextStorage = RepoContextStorage.shared
-        let codebaseMemoryStorage = CodebaseMemoryStorage.shared
         let repoAIContextProvider = RepoAIContextProvider(
             snapshotService: snapshotService,
             storage: repoContextStorage,

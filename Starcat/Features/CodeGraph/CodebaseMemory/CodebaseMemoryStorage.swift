@@ -154,7 +154,7 @@ struct CodebaseMemoryStoredProject: Identifiable, Equatable, Sendable {
 
     /// 递归目录总大小（字节）。metadata.json + source/ + .codebase-memory/ 等全部计入。
     var totalBytes: Int64 {
-        Int64((try? Self.directorySize(of: directoryURL)) ?? 0)
+        Int64(Self.directorySize(of: directoryURL))
     }
 
     /// 最近活跃时间（UI 排序用）。
@@ -651,10 +651,7 @@ final class CodebaseMemoryStorage {
         newProject: CodebaseMemoryStoredProject,
         oldProject: CodebaseMemoryStoredProject?
     ) {
-        guard let base = summary ?? readSummary(root: root) else {
-            try? rebuildSummaryOnDisk(root: root)
-            return
-        }
+        let base = summary
         let projectCount = base.projectCount + (oldProject == nil ? 1 : 0)
         let totalBytes = base.totalBytes + (newProject.totalBytes - (oldProject?.totalBytes ?? 0))
         let countDelta = newProject.metadata.generation.generationCount
@@ -684,13 +681,10 @@ final class CodebaseMemoryStorage {
         removed: CodebaseMemoryStoredProject?
     ) {
         guard let removed else {
-            summary = (summary ?? .empty).withUpdatedAt(.now)
+            summary = summary.withUpdatedAt(.now)
             return
         }
-        guard let base = summary ?? readSummary(root: root) else {
-            try? rebuildSummaryOnDisk(root: root)
-            return
-        }
+        let base = summary
         let nextCount = max(0, base.projectCount - 1)
         let nextBytes = max(0, base.totalBytes - removed.totalBytes)
         let nextGen = max(0, base.totalGenerationCount - removed.metadata.generation.generationCount)

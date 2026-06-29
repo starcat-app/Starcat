@@ -2531,6 +2531,9 @@
         }
       }
     },
+    "Agent Workspace" : {
+
+    },
     "AI" : {
 
     },
@@ -5744,6 +5747,9 @@
         }
       }
     },
+    "Artifacts" : {
+
+    },
     "auth.copyCode" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8049,6 +8055,9 @@
           }
         }
       }
+    },
+    "Built-in Agents" : {
+
     },
     "cache.anySearch.error.applicationSupportUnavailable" : {
       "extractionState" : "manual",
@@ -13579,6 +13588,9 @@
         }
       }
     },
+    "P0 shows planning, data preparation, topic clustering, report drafting, and artifact creation." : {
+
+    },
     "packer.error.cancelled" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -17497,6 +17509,15 @@
           }
         }
       }
+    },
+    "Run an agent to generate Markdown or other artifacts." : {
+
+    },
+    "Run an agent to see each step here." : {
+
+    },
+    "Run built-in Starcat agents with visible steps and artifacts." : {
+
     },
     "search.anysearch.contentType.doc" : {
       "extractionState" : "manual",
@@ -32752,6 +32773,9 @@
         }
       }
     },
+    "Soon" : {
+
+    },
     "starAction.error.notAuthenticated" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34155,6 +34179,9 @@
           }
         }
       }
+    },
+    "Timeline" : {
+
     },
     "toolbar.codeFlow.subtitle" : {
       "extractionState" : "manual",

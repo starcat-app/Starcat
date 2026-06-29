@@ -54,7 +54,7 @@ enum WeeklySource: Decodable, Hashable, Sendable {
     var assetName: String {
         switch self {
         case .weekly: return "WeeklySources/ruanyf"
-        case .zread: return "WeeklySources/zread"
+        case .zread: return "WeeklySources/weekly-zread"
         case .discovery: return "WeeklySources/hackernews"
         case .unknown: return "questionmark.circle.fill"
         }

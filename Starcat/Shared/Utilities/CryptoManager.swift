@@ -64,7 +64,7 @@ final class CryptoManager: Sendable {
     /// 获取 macOS 硬件 UUID (IOPlatformUUID)。
     private func getHardwareUUID() -> String? {
         let matching = IOServiceMatching("IOPlatformExpertDevice")
-        let platformExpert = IOServiceGetMatchingService(kIOMasterPortDefault, matching)
+        let platformExpert = IOServiceGetMatchingService(kIOMainPortDefault, matching)
         guard platformExpert != 0 else { return nil }
         defer { IOObjectRelease(platformExpert) }
 

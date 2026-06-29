@@ -824,7 +824,7 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
 
     func deleteSession(owner _: String, repo _: String, sessionId: UUID) throws {
         guard let dbQueue else { return }
-        try dbQueue.write { db in
+        _ = try dbQueue.write { db in
             try ChatSessionSQLRow
                 .filter(Column("id") == sessionId.uuidString)
                 .deleteAll(db)
@@ -834,7 +834,7 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
 
     func deleteAllForRepo(owner: String, repo: String) throws {
         guard let dbQueue else { return }
-        try dbQueue.write { db in
+        _ = try dbQueue.write { db in
             try ChatSessionSQLRow
                 .filter(Column("owner") == owner && Column("repo") == repo)
                 .deleteAll(db)

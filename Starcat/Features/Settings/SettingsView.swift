@@ -1539,6 +1539,7 @@ private struct StorageResetAllDataSheet: View {
 ///
 /// SwiftUI 只表达用户意图；退出 / 重启是应用级 imperative 行为，集中在这个小 helper
 /// 里，避免 sheet 视图直接散落 `NSWorkspace` / `Process` 细节。
+@MainActor
 private enum StorageResetAppLifecycle {
     static func quit() {
         NSApplication.shared.terminate(nil)
@@ -1552,11 +1553,16 @@ private enum StorageResetAppLifecycle {
 
         NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, error in
             if let error {
-                AppLog.general.error("Restart Starcat failed via NSWorkspace: \(error.localizedDescription, privacy: .public)")
-                restartWithOpenCommand(appURL: appURL)
+                let message = error.localizedDescription
+                Task { @MainActor in
+                    AppLog.general.error("Restart Starcat failed via NSWorkspace: \(message, privacy: .public)")
+                    restartWithOpenCommand(appURL: appURL)
+                    quit()
+                }
+                return
             }
 
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 quit()
             }
         }
