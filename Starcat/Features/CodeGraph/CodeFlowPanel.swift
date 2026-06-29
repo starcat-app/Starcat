@@ -12,6 +12,7 @@ struct CodeFlowPanel: View {
     @Environment(AppDependencies.self) private var dependencies
     @State private var viewModel: CodeFlowViewModel
     @State private var showsDetails: Bool
+    @State private var isDetailsHeaderHovered = false
     @State private var paywallContext: ProPaywallContext?
     private let repo: Repo
 
@@ -19,7 +20,7 @@ struct CodeFlowPanel: View {
         self.repo = repo
         let viewModel = CodeFlowViewModel(repo: repo)
         _viewModel = State(initialValue: viewModel)
-        _showsDetails = State(initialValue: viewModel.storedProject != nil)
+        _showsDetails = State(initialValue: false)
     }
 
     var body: some View {
@@ -43,26 +44,7 @@ struct CodeFlowPanel: View {
                             .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                     }
 
-                    DisclosureGroup("codeFlow.panel.executionDetails", isExpanded: $showsDetails) {
-                        VStack(spacing: 0) {
-                            ForEach(Array(viewModel.steps.enumerated()), id: \.element.id) { index, step in
-                                executionRow(step)
-                                if index < viewModel.steps.count - 1 {
-                                    Divider().padding(.leading, 34)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-                    }
-                    .font(.callout)
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
-                    }
+                    executionDetailsCard
                 }
                 .padding(20)
             }
@@ -74,6 +56,9 @@ struct CodeFlowPanel: View {
         .frame(width: 520)
         .task {
             guard requireCodeFlowAccess() else { return }
+            // sheet host 复用时 `@State` ViewModel 不会随 init 参数重建；
+            // 每次展示都以当前 sheet item 的 repo 重新校准，避免 A/B 仓库串台。
+            viewModel.refreshRepo(repo: repo)
             await viewModel.prepare()
         }
         .sheet(item: $paywallContext) { context in
@@ -286,6 +271,69 @@ struct CodeFlowPanel: View {
             }
         }
         .padding(.vertical, 9)
+    }
+
+    /// 自定义展开卡片而不用 `DisclosureGroup`：macOS 默认 DisclosureGroup
+    /// 只有前置图标响应点击，这里需要整行标题都能展开/折叠，交互与 CodebaseMemory 对齐。
+    private var executionDetailsCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showsDetails.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(showsDetails ? 90 : 0))
+                        .animation(.easeInOut(duration: 0.18), value: showsDetails)
+                        .frame(width: 14)
+                    Text("codeFlow.panel.executionDetails")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .background(
+                isDetailsHeaderHovered ? Color.secondary.opacity(0.06) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 10)
+            )
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    isDetailsHeaderHovered = hovering
+                }
+            }
+
+            if showsDetails {
+                VStack(spacing: 0) {
+                    ForEach(Array(viewModel.steps.enumerated()), id: \.element.id) { index, step in
+                        executionRow(step)
+                        if index < viewModel.steps.count - 1 {
+                            Divider().padding(.leading, 34)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+                .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 12)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+        }
+        .animation(.easeInOut(duration: 0.2), value: showsDetails)
     }
 
     @ViewBuilder

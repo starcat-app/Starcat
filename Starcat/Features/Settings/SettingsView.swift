@@ -594,6 +594,8 @@ private struct StorageSettingsTab: View {
     /// CodeFlow 产物（精细化面板留在 IntegrationSettingsView，本 Tab 同 AI 上下文）。
     @State private var codeFlowStorage = CodeFlowStorage.shared
 
+    @State private var codebaseMemoryStorage = CodebaseMemoryStorage.shared
+
     /// 翻译磁盘缓存：`@MainActor @Observable` 单例，UI 直接读 `totalBytes` /
     /// `itemCount`。删除走默认 appSupport 路径，无 bookmark 等额外失败面，
     /// 失败极少；统一走 storageActionError。
@@ -607,6 +609,10 @@ private struct StorageSettingsTab: View {
     /// 结果按 owner/repo 落盘。注入 AI Chat system prompt 的 `{starcatResources}` 段。
     @State private var wikiCache = DiskWikiCache.shared
 
+    /// 推荐结果磁盘缓存（2026-06-29，与 wiki 同款形态）：按 repoID 落盘，
+    /// TTL 24h（有 items）/ 1h（空）。详情页 `RecommendationContextService` 读取 + 写盘。
+    @State private var recommendationCache = DiskRecommendationCache.shared
+
     /// HOM-70：AI 对话历史磁盘存储（按 repo 多 session）。
     /// 设置页 Tab 仅消费汇总数字 + "清除全部"入口，单 session 删除由对话窗口自己管理。
     @State private var chatHistoryStore = DiskChatHistoryStore.shared
@@ -615,7 +621,7 @@ private struct StorageSettingsTab: View {
     /// 单项缓存继续共用 confirmationDialog；"删除全部缓存"已经升级为危险区 sheet，
     /// 但保留 `.all` 作为执行分支，避免复制清理代码。
     private enum PendingAction: Identifiable {
-        case readme, image, archive, translation, anySearch, wiki, chatHistory, aiContext, codeFlow, all
+        case readme, image, archive, translation, anySearch, wiki, recommendation, chatHistory, aiContext, codeFlow, codebaseMemory, all
         var id: String {
             switch self {
             case .readme:       return "readme"
@@ -624,9 +630,11 @@ private struct StorageSettingsTab: View {
             case .translation:  return "translation"
             case .anySearch:    return "anySearch"
             case .wiki:         return "wiki"
+            case .recommendation: return "recommendation"
             case .chatHistory:  return "chatHistory"
             case .aiContext:    return "aiContext"
             case .codeFlow:     return "codeFlow"
+            case .codebaseMemory: return "codebaseMemory"
             case .all:          return "all"
             }
         }
@@ -638,9 +646,11 @@ private struct StorageSettingsTab: View {
             case .translation:  return String.l10n("settings.storage.clearTranslation.confirm")
             case .anySearch:    return String.l10n("settings.storage.clearAnySearch.confirm")
             case .wiki:         return String.l10n("settings.storage.clearWiki.confirm")
+            case .recommendation: return String.l10n("settings.storage.clearRecommendation.confirm")
             case .chatHistory:  return String.l10n("settings.storage.clearChatHistory.confirm")
             case .aiContext:    return String.l10n("settings.storage.clearAiContext.confirm")
             case .codeFlow:     return String.l10n("settings.storage.clearCodeFlow.confirm")
+            case .codebaseMemory: return String.l10n("settings.storage.clearCodebaseMemory.confirm")
             case .all:          return String.l10n("settings.storage.clearAll.confirm")
             }
         }
@@ -652,9 +662,11 @@ private struct StorageSettingsTab: View {
             case .translation:  return "settings.storage.clearTranslation.message"
             case .anySearch:    return "settings.storage.clearAnySearch.message"
             case .wiki:         return "settings.storage.clearWiki.message"
+            case .recommendation: return "settings.storage.clearRecommendation.message"
             case .chatHistory:  return "settings.storage.clearChatHistory.message"
             case .aiContext:    return "settings.storage.clearAiContext.message"
             case .codeFlow:     return "settings.storage.clearCodeFlow.message"
+            case .codebaseMemory: return "settings.storage.clearCodebaseMemory.message"
             case .all:          return "settings.storage.clearAll.message"
             }
         }
@@ -667,9 +679,11 @@ private struct StorageSettingsTab: View {
             && translationCache.itemCount == 0
             && anySearchCache.itemCount == 0
             && wikiCache.itemCount == 0
+            && recommendationCache.itemCount == 0
             && chatHistoryStore.sessionCount == 0
             && aiContextStorage.projectCount == 0
             && codeFlowStorage.projectCount == 0
+            && codebaseMemoryStorage.projectCount == 0
     }
 
     private var currentResetTarget: AppDataResetTarget? {
@@ -750,6 +764,13 @@ private struct StorageSettingsTab: View {
                     helpKey: "settings.storage.wiki.help"
                 )
                 usageRow(
+                    titleKey: "settings.storage.recommendation",
+                    usageText: recommendationUsageText,
+                    isEmpty: recommendationCache.itemCount == 0,
+                    action: .recommendation,
+                    helpKey: "settings.storage.recommendation.help"
+                )
+                usageRow(
                     titleKey: "settings.storage.chatHistory",
                     usageText: chatHistoryUsageText,
                     isEmpty: chatHistoryStore.sessionCount == 0,
@@ -767,6 +788,12 @@ private struct StorageSettingsTab: View {
                     usageText: codeFlowUsageText,
                     isEmpty: codeFlowStorage.projectCount == 0,
                     action: .codeFlow
+                )
+                usageRow(
+                    titleKey: "settings.storage.codebaseMemory",
+                    usageText: codebaseMemoryUsageText,
+                    isEmpty: codebaseMemoryStorage.projectCount == 0,
+                    action: .codebaseMemory
                 )
             }
 
@@ -821,6 +848,7 @@ private struct StorageSettingsTab: View {
             // Tab 出现时强制重扫描全部产物 / 缓存目录，让用户刚生成的内容立即可见。
             aiContextStorage.reload()
             codeFlowStorage.reload()
+            codebaseMemoryStorage.reload()
             translationCache.reload()
             anySearchCache.reload()
             chatHistoryStore.reload()
@@ -1010,6 +1038,9 @@ private struct StorageSettingsTab: View {
         case .wiki:
             do { try wikiCache.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
+        case .recommendation:
+            do { try recommendationCache.deleteEverything() }
+            catch { storageActionError = error.localizedDescription }
         case .chatHistory:
             do { try chatHistoryStore.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
@@ -1018,6 +1049,9 @@ private struct StorageSettingsTab: View {
             catch { storageActionError = error.localizedDescription }
         case .codeFlow:
             do { try codeFlowStorage.deleteAllProjects() }
+            catch { storageActionError = error.localizedDescription }
+        case .codebaseMemory:
+            do { try codebaseMemoryStorage.deleteAllProjects() }
             catch { storageActionError = error.localizedDescription }
         case .all:
             await cleaner.clearAll()
@@ -1033,6 +1067,10 @@ private struct StorageSettingsTab: View {
             catch {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
+            do { try recommendationCache.deleteEverything() }
+            catch {
+                if storageActionError == nil { storageActionError = error.localizedDescription }
+            }
             do { try chatHistoryStore.deleteEverything() }
             catch {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
@@ -1042,6 +1080,10 @@ private struct StorageSettingsTab: View {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
             do { try codeFlowStorage.deleteAllProjects() }
+            catch {
+                if storageActionError == nil { storageActionError = error.localizedDescription }
+            }
+            do { try codebaseMemoryStorage.deleteAllProjects() }
             catch {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
@@ -1066,9 +1108,11 @@ private struct StorageSettingsTab: View {
             translationCache.reload()
             anySearchCache.reload()
             wikiCache.reload()
+            recommendationCache.reload()
             chatHistoryStore.reload()
             aiContextStorage.reload()
             codeFlowStorage.reload()
+            codebaseMemoryStorage.reload()
             resetDidComplete = true
         } catch {
             storageActionError = error.localizedDescription
@@ -1154,6 +1198,18 @@ private struct StorageSettingsTab: View {
         )
     }
 
+    /// 推荐结果磁盘缓存用量行文案（与 wiki / translation / anySearch 同款视觉）。
+    private var recommendationUsageText: String {
+        if recommendationCache.itemCount == 0 {
+            return String.l10n("settings.storage.recommendation.empty")
+        }
+        return String(
+            format: String.l10n("settings.storage.recommendationUsageFormat"),
+            recommendationCache.itemCount,
+            recommendationCache.totalBytes.formattedByteSize
+        )
+    }
+
     /// AI 对话历史用量行文案：`X 场对话 · YY 个仓库 · ZZ KB`。空显示"未生成"。
     private var chatHistoryUsageText: String {
         if chatHistoryStore.sessionCount == 0 {
@@ -1189,6 +1245,18 @@ private struct StorageSettingsTab: View {
             format: String.l10n("settings.storage.codeFlowUsageFormat"),
             codeFlowStorage.projectCount,
             codeFlowStorage.totalBytes.formattedByteSize
+        )
+    }
+
+    /// CodebaseMemory 用量：同 CodeFlow 格式。
+    private var codebaseMemoryUsageText: String {
+        if codebaseMemoryStorage.projectCount == 0 {
+            return String.l10n("settings.storage.codeFlow.empty")
+        }
+        return String(
+            format: String.l10n("settings.storage.codeFlowUsageFormat"),
+            codebaseMemoryStorage.projectCount,
+            codebaseMemoryStorage.totalBytes.formattedByteSize
         )
     }
 }

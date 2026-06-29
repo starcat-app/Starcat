@@ -64,7 +64,9 @@ struct ActivityRepoDetailContent: View {
         ) {
             readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
         } onLogin: {
-            authSession.signIn()
+            // 2026-06-29：只弹登录 sheet，不强制走 Device Flow
+            // （让用户在 sheet 内可选 Device Flow / PAT，详见 AuthSession.requestLoginSheet 注释）
+            authSession.requestLoginSheet()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

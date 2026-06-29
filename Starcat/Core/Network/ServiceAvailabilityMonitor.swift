@@ -2,7 +2,7 @@
 //  ServiceAvailabilityMonitor.swift
 //  Starcat
 //
-//  状态栏使用的四个自建 API 可用性巡检。
+//  状态栏使用的自建 API 可用性巡检。
 //
 //  这里刻意不复用 `ServiceHealthChecker`：设置页「测试连接」要走带鉴权的 `/api/v1/ping`，
 //  用来验证 URL、服务类型与 API Key；状态栏只需要知道后端进程是否在线，因此走无鉴权
@@ -40,7 +40,7 @@ struct ServiceAvailabilityResult: Equatable, Identifiable {
     var isAvailable: Bool { status.isAvailable }
 }
 
-/// 四个服务最新结果的聚合摘要，供 toolbar / popover 直接渲染。
+/// 自建服务最新结果的聚合摘要，供 toolbar / popover 直接渲染。
 struct ServiceAvailabilitySummary: Equatable {
     let totalCount: Int
     let availableCount: Int
@@ -64,7 +64,7 @@ struct ServiceAvailabilitySummary: Equatable {
 /// 执行单次 `/healthz` 请求的 actor。
 ///
 /// actor 自身无持久状态，只负责 URLSession 调用与结果映射；这样 monitor 可以安全地用
-/// `withTaskGroup` 并发检查四个服务。
+/// `withTaskGroup` 并发检查自建服务。
 actor ServiceAvailabilityChecker {
     private static let timeout: TimeInterval = 5
 
@@ -185,7 +185,7 @@ final class ServiceAvailabilityMonitor {
         isChecking = false
     }
 
-    /// 立即并发检查四个 API。不会因为刚检查过而跳过。
+    /// 立即并发检查自建 API。不会因为刚检查过而跳过。
     func refreshNow() async {
         if let activeRefreshTask {
             await activeRefreshTask.value

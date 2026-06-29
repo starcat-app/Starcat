@@ -24,6 +24,16 @@ private struct SmartCollectionRuleEditorItem: Identifiable {
     let mode: SmartCollectionRuleEditorSheet.Mode
 }
 
+/// CodeFlow / CodebaseMemory sheet 每次打开都需要独立 identity。
+///
+/// macOS `.sheet(item:)` 可能复用旧 presentation host；如果直接用 `Repo` 做 item，
+/// Panel 内部的 `@State` ViewModel 会保留上一个 repo 的缓存状态。单独包一层 UUID，
+/// 让每次点击入口都强制生成全新的 sheet 内容树。
+private struct CodeGraphSheetItem: Identifiable {
+    let id = UUID()
+    let repo: Repo
+}
+
 struct RepoListView: View {
 
     private static let navigationBreadcrumbSeparator = " › "
@@ -72,7 +82,8 @@ struct RepoListView: View {
     @State private var toastMessage: String?
     /// toolbar spec 会通过 `AnyView` 频繁重建，sheet 必须由稳定的页面根节点承载。
     /// 否则关闭 CodeFlow 时 presentation host 被替换，窗口会短暂再次出现。
-    @State private var codeFlowSheetRepo: Repo?
+    @State private var codeFlowSheetItem: CodeGraphSheetItem?
+    @State private var codebaseMemorySheetItem: CodeGraphSheetItem?
     /// 分享入口已迁到 toolbar；结果 sheet 同样必须由稳定根节点承载，避免 toolbar
     /// 子树重建时 presentation host 被替换。
     @State private var shareSheetItem: RepoShareSheetItem?
@@ -141,8 +152,14 @@ struct RepoListView: View {
             )
             .appLocaleEnvironment()
         }
-        .sheet(item: $codeFlowSheetRepo) { repo in
-            CodeFlowPanel(repo: repo)
+        .sheet(item: $codeFlowSheetItem) { item in
+            CodeFlowPanel(repo: item.repo)
+                .id(item.id)
+                .appSheetRootEnvironment(dependencies)
+        }
+        .sheet(item: $codebaseMemorySheetItem) { item in
+            CodebaseMemoryPanel(repo: item.repo)
+                .id(item.id)
                 .appSheetRootEnvironment(dependencies)
         }
         // W12 PR-4：切页面时主动 exit 非活跃 store，避免"切到 trending 时 weekly 还显示
@@ -630,11 +647,15 @@ struct RepoListView: View {
         shareRepo: Repo,
         isShareAvailable: Bool
     ) -> some View {
+        let actionIdentity = toolbarActionIdentity(selection: selection, repo: codeFlowRepo)
         ExternalLinksMenu(
             selection: selection,
             codeFlowRepo: codeFlowRepo,
-            onOpenCodeFlow: openCodeFlow(for:)
+            codebaseMemoryRepo: codeFlowRepo,
+            onOpenCodeFlow: openCodeFlow(for:),
+            onOpenCodebaseMemory: openCodebaseMemory(for:)
         )
+        .id(actionIdentity)
         CloneMenu(selection: selection) { toastKey in
             toastMessage = toastKey
         }
@@ -647,6 +668,13 @@ struct RepoListView: View {
                 }
             )
         }
+    }
+
+    /// Toolbar 菜单由 AppKit 承载，SwiftUI 切换选中 repo 时可能复用旧 NSMenu action。
+    /// identity 必须包含当前 repo 快照，确保从 A 切到 B 后菜单闭包随选中项一起重建。
+    private func toolbarActionIdentity(selection: ToolbarRepoSelection, repo: Repo?) -> String {
+        let repoIdentity = repo.map { "\($0.id):\($0.fullName)" } ?? "none"
+        return "\(selection.fullName)|\(repoIdentity)"
     }
 
     /// Ephemeral repo 不持有 star 状态；传给分享流程前补齐真实状态，保持与旧 hero
@@ -999,6 +1027,11 @@ struct RepoListView: View {
     private func smartSearchField(isDisabled: Bool = false) -> some View {
         @Bindable var vm = viewModel
         let historyRepository = dependencies.searchHistoryRepository
+        // 直接读 `dependencies.entitlementGate.isProUser`(EntitlementGate 是
+        // `@MainActor @Observable`),SwiftUI 通过访问追踪自动重渲染;
+        // Pro 状态变化(订阅过期/降级)会自动反映到 SmartSearchField 下拉,
+        // 由 SmartSearchField 内部的 .onChange(of: isProUser) 做 mode 回退 + 弹付费墙。
+        let isProUser = dependencies.entitlementGate.isProUser
         return SmartSearchField(
             text: $vm.searchQuery,
             mode: $vm.smartSearchMode,
@@ -1018,6 +1051,16 @@ struct RepoListView: View {
             },
             onOpenGlobalSearch: {
                 onOpenSearchCenter?()
+            },
+            isProUser: isProUser,
+            onRequestProUpgrade: {
+                // 与现有 paywallContext 写入对齐(line 657 / 660 / 718 / 1490):
+                // 给 .semanticSearch 弹付费墙,message 走 service 报的本地化错误文案,
+                // 即便此处文案与执行时报错不一致,用户也能从弹窗明确"是 .semantic 触发的"。
+                paywallContext = ProPaywallContext(
+                    feature: .semanticSearch,
+                    message: String.l10n("search.paywall.semantic.upgrade")
+                )
             },
             isDisabled: isDisabled,
             collapseToken: viewModel.selectedRepoID,
@@ -1495,9 +1538,21 @@ struct RepoListView: View {
     private func openCodeFlow(for repo: Repo) {
         do {
             try dependencies.entitlementGate.requirePro(.codeFlow)
-            codeFlowSheetRepo = repo
+            AppLog.ui.info("Open CodeFlow sheet repo=\(repo.fullName, privacy: .public) id=\(repo.id, privacy: .public)")
+            codeFlowSheetItem = CodeGraphSheetItem(repo: repo)
         } catch {
             paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
+        }
+    }
+
+    /// CodebaseMemory 为 Pro 能力：与 CodeFlow 同款门控。
+    private func openCodebaseMemory(for repo: Repo) {
+        do {
+            try dependencies.entitlementGate.requirePro(.codebaseMemory)
+            AppLog.ui.info("Open CodebaseMemory sheet repo=\(repo.fullName, privacy: .public) id=\(repo.id, privacy: .public)")
+            codebaseMemorySheetItem = CodeGraphSheetItem(repo: repo)
+        } catch {
+            paywallContext = ProPaywallContext(feature: .codebaseMemory, message: error.localizedDescription)
         }
     }
 }

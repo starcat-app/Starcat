@@ -410,6 +410,7 @@
       }
     },
     "about.eula.term4.text" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -426,6 +427,7 @@
       }
     },
     "about.eula.term4.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -984,7 +986,42 @@
         }
       }
     },
+    "about.support.issues.detail" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Submit an issue or your request"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提交复现步骤、截图和 Console 日志"
+          }
+        }
+      }
+    },
+    "about.support.issues.title" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub Issues"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub Issues"
+          }
+        }
+      }
+    },
     "about.support.rate.action" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1017,6 +1054,7 @@
       }
     },
     "about.support.rate.help" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1044,40 +1082,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "给 Starcat 评分"
-          }
-        }
-      }
-    },
-    "about.support.issues.detail" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Submit an issue or your request"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "提交复现步骤、截图和 Console 日志"
-          }
-        }
-      }
-    },
-    "about.support.issues.title" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub Issues"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub Issues"
           }
         }
       }
@@ -1973,22 +1977,6 @@
         }
       }
     },
-    "activity.itemCountFormat" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d activities"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d 条活动"
-          }
-        }
-      }
-    },
     "activity.following.clear.action" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2268,6 +2256,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ star 了 %2$@"
+          }
+        }
+      }
+    },
+    "activity.itemCountFormat" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d activities"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 条活动"
           }
         }
       }
@@ -3270,6 +3275,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已复制 ✓"
+          }
+        }
+      }
+    },
+    "ai.assistant.inline.collapsed.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask AI about the current repository"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "询问当前仓库"
+          }
+        }
+      }
+    },
+    "ai.assistant.inline.collapsed.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask AI"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "问 AI"
+          }
+        }
+      }
+    },
+    "ai.assistant.inline.resize.maximize.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand within the detail pane"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在详情页内放大"
+          }
+        }
+      }
+    },
+    "ai.assistant.inline.resize.restore.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore compact size"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复紧凑尺寸"
           }
         }
       }
@@ -5992,6 +6065,121 @@
         }
       }
     },
+    "authV2.alternative.comingSoon" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coming soon"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即将推出"
+          }
+        }
+      }
+    },
+    "authV2.alternative.divider" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "or use another method"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "或选择其他方式"
+          }
+        }
+      }
+    },
+    "authV2.alternative.pat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in with Token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 Token 登录"
+          }
+        }
+      }
+    },
+    "authV2.alternative.webflow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Authorize via Browser"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网页授权登录"
+          }
+        }
+      }
+    },
+    "authV2.alternative.webflow.enabled" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in with browser"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用浏览器登录"
+          }
+        }
+      }
+    },
+    "authV2.alternative.webflow.tooltip" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open browser to authorize GitHub, then return to Starcat automatically"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开浏览器授权 GitHub，完成后自动返回 Starcat"
+          }
+        }
+      }
+    },
+    "authV2.cancelSignIn" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        }
+      }
+    },
     "authV2.codeCopied" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6176,6 +6364,170 @@
         }
       }
     },
+    "authV2.pat.back" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "返回"
+          }
+        }
+      }
+    },
+    "authV2.pat.error.insufficientScope" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token scope is insufficient. At least public_repo and read:user are required."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token 权限不足，至少需要 public_repo 和 read:user。"
+          }
+        }
+      }
+    },
+    "authV2.pat.error.invalidToken" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token is invalid, expired, or revoked. Please check and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token 无效、已过期或被撤销，请检查后重试。"
+          }
+        }
+      }
+    },
+    "authV2.pat.getToken" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get a token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "获取 Token"
+          }
+        }
+      }
+    },
+    "authV2.pat.getToken.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open GitHub token settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 GitHub Token 设置页"
+          }
+        }
+      }
+    },
+    "authV2.pat.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generate a token in GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic), with public_repo and read:user scopes."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) 生成 Token，勾选 public_repo 和 read:user 权限。"
+          }
+        }
+      }
+    },
+    "authV2.pat.hideToken" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏 Token"
+          }
+        }
+      }
+    },
+    "authV2.pat.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste your GitHub token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "粘贴你的 GitHub Token"
+          }
+        }
+      }
+    },
+    "authV2.pat.showToken" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示 Token"
+          }
+        }
+      }
+    },
+    "authV2.pat.submit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in with Token"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 Token 登录"
+          }
+        }
+      }
+    },
     "authV2.signedIn" : {
       "localizations" : {
         "en" : {
@@ -6213,13 +6565,29 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Waiting for authorization in your browser…"
+            "value" : "Waiting for you to complete GitHub authorization…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "等待浏览器完成授权…"
+            "value" : "等待完成 GitHub 授权…"
+          }
+        }
+      }
+    },
+    "authV2.webflow.waitingHint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for you to complete GitHub authorization…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待完成 GitHub 授权…"
           }
         }
       }
@@ -6368,86 +6736,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "批量打标签失败"
-          }
-        }
-      }
-    },
-    "batch.githubStarLists.move" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Move"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移动到"
-          }
-        }
-      }
-    },
-    "batch.githubStarLists.move.help" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Move selected repositories to another GitHub list"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将所选仓库移动到其他 GitHub 分组"
-          }
-        }
-      }
-    },
-    "batch.githubStarLists.move.processing" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Moving selected repositories..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在移动所选仓库..."
-          }
-        }
-      }
-    },
-    "batch.githubStarLists.move.summaryFormat" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Move: %1$d succeeded · %2$d failed"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移动：成功 %1$d / 失败 %2$d"
-          }
-        }
-      }
-    },
-    "batch.githubStarLists.noMoveTargets" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No target groups"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有可移动的目标分组"
           }
         }
       }
@@ -6650,6 +6938,88 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "退出多选（Esc）"
+          }
+        }
+      }
+    },
+    "batch.githubStarLists.move" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动到"
+          }
+        }
+      }
+    },
+    "batch.githubStarLists.move.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move selected repositories to another GitHub list"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将所选仓库移动到其他 GitHub 分组"
+          }
+        }
+      }
+    },
+    "batch.githubStarLists.move.processing" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moving selected repositories..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在移动所选仓库..."
+          }
+        }
+      }
+    },
+    "batch.githubStarLists.move.summaryFormat" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move: %1$d succeeded · %2$d failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动：成功 %1$d / 失败 %2$d"
+          }
+        }
+      }
+    },
+    "batch.githubStarLists.noMoveTargets" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No target groups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有可移动的目标分组"
           }
         }
       }
@@ -7748,6 +8118,23 @@
         }
       }
     },
+    "cache.recommendation.error.applicationSupportUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not locate the recommendation cache directory. Please retry or restart the app."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法定位推荐缓存目录，请重试或重启 App。"
+          }
+        }
+      }
+    },
     "cache.wiki.error.applicationSupportUnavailable" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7863,6 +8250,740 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "HTTPS"
+          }
+        }
+      }
+    },
+    "CodebaseMemory" : {
+
+    },
+    "codebaseMemory.error.archiveTooLargeFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The repository archive is too large: %1$d bytes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库存档过大：%1$d 字节"
+          }
+        }
+      }
+    },
+    "codebaseMemory.error.binaryMissing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory binary not found in the app bundle."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory 二进制未打包到 App 中。"
+          }
+        }
+      }
+    },
+    "codebaseMemory.error.binaryNotExecutable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory binary is not executable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory 二进制不可执行。"
+          }
+        }
+      }
+    },
+    "codebaseMemory.error.browserOpenFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to open the 3D graph in the browser."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法在浏览器中打开 3D 图谱。"
+          }
+        }
+      }
+    },
+    "codebaseMemory.error.emptyArchive" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The repository archive is empty."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库存档为空。"
+          }
+        }
+      }
+    },
+    "codebaseMemory.error.extractedTooLargeFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extracted directory is too large: %d bytes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解压目录过大：%d 字节"
+          }
+        }
+      }
+    },
+    "codebaseMemory.error.indexFailedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code indexing failed: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码索引失败：%@"
+          }
+        }
+      }
+    },
+    "codebaseMemory.error.invalidArgumentsFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid arguments: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "参数非法：%@"
+          }
+        }
+      }
+    },
+    "codebaseMemory.error.portExhausted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to find an available port for the 3D graph UI."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法找到可用端口来启动 3D 图谱 UI。"
+          }
+        }
+      }
+    },
+    "codebaseMemory.error.uiStartFailedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed to start the 3D graph UI: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法启动 3D 图谱 UI：%@"
+          }
+        }
+      }
+    },
+    "codebaseMemory.overview.download.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pinned-commit shared snapshot"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "固定 commit 共享快照"
+          }
+        }
+      }
+    },
+    "codebaseMemory.overview.download.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载仓库"
+          }
+        }
+      }
+    },
+    "codebaseMemory.overview.index.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extract source + tree-sitter parse"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解压源码并构建知识图谱"
+          }
+        }
+      }
+    },
+    "codebaseMemory.overview.index.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Index"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "构建索引"
+          }
+        }
+      }
+    },
+    "codebaseMemory.overview.launch.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start 3D graph server & open browser"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动 3D 图谱服务并打开浏览器"
+          }
+        }
+      }
+    },
+    "codebaseMemory.overview.launch.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Launch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动可视化"
+          }
+        }
+      }
+    },
+    "codebaseMemory.overview.prepare.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verify & resolve"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "验证二进制与解析分支"
+          }
+        }
+      }
+    },
+    "codebaseMemory.overview.prepare.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepare"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备环境"
+          }
+        }
+      }
+    },
+    "codebaseMemory.panel.branch.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Branch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分支"
+          }
+        }
+      }
+    },
+    "codebaseMemory.panel.executionDetails" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Execution Details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "执行详情"
+          }
+        }
+      }
+    },
+    "codebaseMemory.panel.openInBrowser" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in Browser"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在浏览器中打开"
+          }
+        }
+      }
+    },
+    "codebaseMemory.panel.regenerate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Re-generate"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新生成"
+          }
+        }
+      }
+    },
+    "codebaseMemory.panel.start" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始"
+          }
+        }
+      }
+    },
+    "codebaseMemory.panel.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory 3D Graph"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory 3D 代码图谱"
+          }
+        }
+      }
+    },
+    "codebaseMemory.status.downloading" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载中…"
+          }
+        }
+      }
+    },
+    "codebaseMemory.status.extracting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extracting…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解压中…"
+          }
+        }
+      }
+    },
+    "codebaseMemory.status.indexing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indexing…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "索引中…"
+          }
+        }
+      }
+    },
+    "codebaseMemory.status.ready" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ready"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "就绪"
+          }
+        }
+      }
+    },
+    "codebaseMemory.status.startingUI" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starting UI…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动 UI…"
+          }
+        }
+      }
+    },
+    "codebaseMemory.status.succeededFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generation %d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %d 次生成"
+          }
+        }
+      }
+    },
+    "codebaseMemory.step.download.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download Archive"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载存档"
+          }
+        }
+      }
+    },
+    "codebaseMemory.step.extract.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extract Source"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解压源码"
+          }
+        }
+      }
+    },
+    "codebaseMemory.step.index.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Index Repository"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "索引仓库"
+          }
+        }
+      }
+    },
+    "codebaseMemory.step.openBrowser.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Browser"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开浏览器"
+          }
+        }
+      }
+    },
+    "codebaseMemory.step.resolveBinary.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verify Binary"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "验证二进制"
+          }
+        }
+      }
+    },
+    "codebaseMemory.step.resolveRevision.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resolve Revision"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解析版本"
+          }
+        }
+      }
+    },
+    "codebaseMemory.step.startUI.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start UI Server"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动 UI 服务"
+          }
+        }
+      }
+    },
+    "codebaseMemory.storage.error.invalidBookmark" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The CodebaseMemory bookmark is no longer valid."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory 书签已失效。"
+          }
+        }
+      }
+    },
+    "codebaseMemory.storage.error.outputDirectoryUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The CodebaseMemory output directory is unavailable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory 输出目录不可用。"
+          }
+        }
+      }
+    },
+    "codebaseMemory.version.branchChangedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Branch changed: %1$@ → %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分支已变更：%1$@ → %2$@"
+          }
+        }
+      }
+    },
+    "codebaseMemory.version.checking" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "检查中…"
+          }
+        }
+      }
+    },
+    "codebaseMemory.version.current" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to date"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已是最新"
+          }
+        }
+      }
+    },
+    "codebaseMemory.version.updateAvailableFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New commits: %1$@ → %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有新提交：%1$@ → %2$@"
           }
         }
       }
@@ -10385,6 +11506,7 @@
       }
     },
     "general.reset" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10413,6 +11535,422 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存"
+          }
+        }
+      }
+    },
+    "githubStarLists.context.addTo" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add to..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加到..."
+          }
+        }
+      }
+    },
+    "githubStarLists.context.moveTo" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move to..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动到..."
+          }
+        }
+      }
+    },
+    "githubStarLists.context.noGroups" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No groups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无分组"
+          }
+        }
+      }
+    },
+    "githubStarLists.context.removeFromGroup" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移出分组"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.color" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "颜色"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.color.auto" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto color"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动颜色"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.delete.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This will delete the list on GitHub and remove its repository memberships."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这会在 GitHub 删除该分组，并移除其中的仓库关系。"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.delete.title" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Group?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除分组？"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Description"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "描述"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.name" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.name.placeholder" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name this group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为分组命名"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.private" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Private"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "私有"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.saving" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saving..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存中..."
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.title.create" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create Group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增分组"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.title.edit" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑分组"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.adminOption" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only organization members or outside collaborators may be able to request app approval."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有组织成员或外部协作者才可能申请 App 授权。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.githubOption" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can still change this list on GitHub."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你仍然可以在 GitHub 网页端手动操作。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.impact" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat cannot update this repository's list membership through the GitHub API."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 无法通过 GitHub API 修改该仓库的分组。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.message" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This repository belongs to an organization that restricts third-party OAuth App access. Starcat cannot update its GitHub list membership through the API. If you are only a starrer, you may not have a way to request approval; you can still change this list on GitHub."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该仓库所属组织限制了第三方 OAuth App 访问。Starcat 无法通过 GitHub API 修改它的分组。如果你只是普通 Star 用户，通常没有可申请授权的入口；你仍然可以在 GitHub 网页端手动操作。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.note" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is not a token scope issue or a local data error. It is GitHub's organization-level OAuth App policy, and ordinary starrers may not have an approval path."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这不是 token scope 或本地数据错误，而是 GitHub 组织级 OAuth App 策略；普通 Star 用户通常没有可申请授权的入口。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.reason" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The repository's organization restricts third-party OAuth App access."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该仓库所属组织限制了第三方 OAuth App 访问。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub blocked this group update because the repository belongs to a restricted organization."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该仓库属于受限组织，GitHub 拦截了这次分组更新。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub organization permission required"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要 GitHub 组织授权"
+          }
+        }
+      }
+    },
+    "githubStarLists.toast.failed" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed to update group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新分组失败"
+          }
+        }
+      }
+    },
+    "githubStarLists.toast.updated" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Group updated"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分组已更新"
           }
         }
       }
@@ -12506,6 +14044,7 @@
       }
     },
     "readme.loading" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13981,6 +15520,138 @@
         }
       }
     },
+    "repo.recommendations.archived" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archived"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已归档"
+          }
+        }
+      }
+    },
+    "repo.recommendations.countFormat" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d repos"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个仓库"
+          }
+        }
+      }
+    },
+    "repo.recommendations.empty.info" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommendations based on similarity scoring"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推荐基于相似度算法计算"
+          }
+        }
+      }
+    },
+    "repo.recommendations.empty.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No recommendations yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无推荐"
+          }
+        }
+      }
+    },
+    "repo.recommendations.loadingMore" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载中..."
+          }
+        }
+      }
+    },
+    "repo.recommendations.more" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多"
+          }
+        }
+      }
+    },
+    "repo.recommendations.open" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Similar repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相似仓库"
+          }
+        }
+      }
+    },
+    "repo.recommendations.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Similar repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相似仓库"
+          }
+        }
+      }
+    },
     "repo.share.button.help" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -14048,6 +15719,23 @@
         }
       }
     },
+    "repo.share.error.reason" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reason"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败原因"
+          }
+        }
+      }
+    },
     "repo.share.error.retry" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -14065,23 +15753,8 @@
         }
       }
     },
-    "repo.share.error.reason" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reason"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "失败原因"
-          }
-        }
-      }
-    },
     "repo.share.error.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -14132,6 +15805,7 @@
       }
     },
     "repo.share.success.copied" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -14198,6 +15872,7 @@
       }
     },
     "repo.share.success.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -17911,6 +19586,23 @@
         }
       }
     },
+    "search.mode.semantic.lockedSuffix" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI mode · Pro required"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 模式 · 需要 Pro"
+          }
+        }
+      }
+    },
     "search.mode.title" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -17924,6 +19616,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜索模式"
+          }
+        }
+      }
+    },
+    "search.paywall.semantic.upgrade" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Semantic Search is a Pro feature. Upgrade to search by meaning, not just keywords."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 语义搜索是 Pro 功能。升级后可按语义而非仅按关键词搜索。"
           }
         }
       }
@@ -18031,6 +19740,7 @@
       }
     },
     "search.semantic.indexing" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -18064,6 +19774,7 @@
       }
     },
     "search.semantic.refreshIndex" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -20580,23 +22291,6 @@
         }
       }
     },
-    "settings.diagnostics.export.successMessage" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Exported debug logs, reset diagnostic status"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已导出调试日志, 重置诊断状态"
-          }
-        }
-      }
-    },
     "settings.diagnostics.export.running" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -20627,6 +22321,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "导出"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.export.successMessage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exported debug logs, reset diagnostic status"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已导出调试日志, 重置诊断状态"
           }
         }
       }
@@ -20750,6 +22461,7 @@
       }
     },
     "settings.general.detailBehavior" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -20793,38 +22505,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭应用内动画"
-          }
-        }
-      }
-    },
-    "settings.general.openFirstDetailOnCategoryChange.help" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open the first item after switching lists."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切换列表后自动打开第一条。"
-          }
-        }
-      }
-    },
-    "settings.general.openFirstDetailOnCategoryChange.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open the first detail automatically"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自动打开第一条详情"
           }
         }
       }
@@ -20923,6 +22603,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "跟随系统"
+          }
+        }
+      }
+    },
+    "settings.general.openFirstDetailOnCategoryChange.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the first item after switching lists."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换列表后自动打开第一条。"
+          }
+        }
+      }
+    },
+    "settings.general.openFirstDetailOnCategoryChange.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the first detail automatically"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动打开第一条详情"
           }
         }
       }
@@ -21077,8 +22789,40 @@
         }
       }
     },
-    "settings.general.shortcuts.restoreDefault" : {
+    "settings.general.shortcuts.regularSearch.help" : {
       "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to record a new local search shortcut"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击录制新的常规搜索快捷键"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.regularSearch.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local Search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常规搜索"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.restoreDefault" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -21127,40 +22871,7 @@
         }
       }
     },
-    "settings.general.shortcuts.regularSearch.help" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Click to record a new local search shortcut"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点击录制新的常规搜索快捷键"
-          }
-        }
-      }
-    },
-    "settings.general.shortcuts.regularSearch.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Local Search"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "常规搜索"
-          }
-        }
-      }
-    },
     "settings.general.shortcuts.search.title" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -23023,7 +24734,6 @@
       }
     },
     "settings.services.apiKey" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -23057,6 +24767,7 @@
       }
     },
     "settings.services.apiKey.placeholder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -23274,87 +24985,42 @@
         }
       }
     },
-    "settings.services.summary.allOK" : {
+    "settings.services.recommend.description" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Status"
+            "value" : "Fetches similar repositories for the detail page recommendation card."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "状态"
+            "value" : "为详情页推荐卡片获取相似仓库。"
           }
         }
       }
     },
-    "settings.services.summary.checking" : {
+    "settings.services.recommend.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Checking…"
+            "value" : "Recommend API"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "检测中…"
-          }
-        }
-      }
-    },
-    "settings.services.summary.partialFormat" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d/%d OK"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d/%d 正常"
-          }
-        }
-      }
-    },
-    "settings.services.summary.unavailable" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unavailable"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不可用"
-          }
-        }
-      }
-    },
-    "settings.services.status" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Service Status"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务状态"
+            "value" : "推荐 API"
           }
         }
       }
     },
     "settings.services.reset.help" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -23436,6 +25102,89 @@
         }
       }
     },
+    "settings.services.status" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Service Status"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务状态"
+          }
+        }
+      }
+    },
+    "settings.services.summary.allOK" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "状态"
+          }
+        }
+      }
+    },
+    "settings.services.summary.checking" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "检测中…"
+          }
+        }
+      }
+    },
+    "settings.services.summary.partialFormat" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d/%d OK"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d/%d 正常"
+          }
+        }
+      }
+    },
+    "settings.services.summary.unavailable" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不可用"
+          }
+        }
+      }
+    },
     "settings.services.testConnection" : {
       "localizations" : {
         "en" : {
@@ -23504,7 +25253,6 @@
       }
     },
     "settings.services.url" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -23521,6 +25269,7 @@
       }
     },
     "settings.services.url.placeholder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -23999,13 +25748,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search Cache"
+            "value" : "Search"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜索缓存"
+            "value" : "搜索"
           }
         }
       }
@@ -24123,414 +25872,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "缓存用量"
-          }
-        }
-      }
-    },
-    "settings.storage.dangerZone" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Danger Zone"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "危险操作"
-          }
-        }
-      }
-    },
-    "settings.storage.loginRequired" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign in to manage storage."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登录后才能管理存储。"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear All Local Data"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清空所有本地数据"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.completed.detail" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Starcat has signed out locally and removed the selected user's local database, caches, generated files, settings, and local credentials. Restart Starcat, or quit and reopen it manually, then sign in again."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Starcat 已在本机退出登录，并移除当前用户的本地数据库、缓存、生成文件、设置和本机凭据。你可以重启 Starcat，或退出后手动重新打开应用，然后重新登录。"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.completed.message" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Restart Starcat and sign in again to rebuild local data."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重启 Starcat 并重新登录后会重新构建本地数据。"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.completed.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Local Data Cleared"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本地数据已清空"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.confirm" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear All Local Data"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清空所有本地数据"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.description" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Factory reset local Starcat data for the signed-in account. Use this only when local data corruption causes app issues."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将当前登录账号的 Starcat 本机数据恢复到首次安装状态。仅建议在本地数据异常导致应用问题时使用。"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.error.notAuthenticated" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign in before clearing local app data."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请先登录，再清空本机应用数据。"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.quit" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quit Starcat"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "退出 Starcat"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.resetting" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clearing local data..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在清空本地数据..."
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.restart" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Restart Starcat"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重启 Starcat"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.scope.caches" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Local README, image, ZIP, translation, search, wiki probe, and chat history caches."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本机 README、图片、ZIP、翻译、搜索、Wiki 探测和对话历史缓存。"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.scope.credentials" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Local encrypted credentials, including GitHub token, AI API keys, and service API keys."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本机加密凭据，包括 GitHub token、AI API Key 和服务 API Key。"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.scope.database" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The signed-in user's local SQLite database: repo cache, local notes, tags, status, and derived data."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前登录用户的本地 SQLite 数据库：仓库缓存、本地笔记、标签、状态和派生数据。"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.scope.generated" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Generated Code Context and CodeFlow files stored by Starcat."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Starcat 生成的 Code Context 与 CodeFlow 文件。"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.scope.remoteSafe" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remote GitHub stars, CloudKit data, backend service data, and App Store purchases are not modified."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不会修改远端 GitHub stars、CloudKit 数据、后端服务数据或 App Store 购买记录。"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.scope.settings" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Local settings such as general preferences, AI providers, service URLs, MCP, shortcuts, and notification toggles."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本机配置，包括通用偏好、AI 服务商、服务 URL、MCP、快捷键和通知开关。"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.scope.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This will delete:"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将删除以下本机数据："
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.sheet.subtitle" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This is a local factory reset for the current account. It cannot be undone."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除并重置当前账号的所有本地数据与配置，无法撤销。"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.sheet.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear All Local Data?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清空所有本地数据？"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.usernamePlaceholder" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub username"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub 用户名"
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.usernamePromptPrefix" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Type your GitHub username "
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "输入你的 GitHub 用户名 "
-          }
-        }
-      }
-    },
-    "settings.storage.resetAll.usernamePromptSuffix" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " to confirm."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " 后才能确认。"
           }
         }
       }
@@ -25147,6 +26488,40 @@
         }
       }
     },
+    "settings.storage.clearCodebaseMemory.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear all CodebaseMemory data?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除全部 CodebaseMemory 数据？"
+          }
+        }
+      }
+    },
+    "settings.storage.clearCodebaseMemory.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This will delete all 3D graph indexes and extracted source directories. Shared source ZIPs will not be deleted."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将删除所有 3D 图谱索引与解压源码目录。共享源码 ZIP 不会被删除。"
+          }
+        }
+      }
+    },
     "settings.storage.clearCodeFlow.confirm" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -25299,6 +26674,40 @@
         }
       }
     },
+    "settings.storage.clearRecommendation.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear recommendation cache?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确定清除推荐缓存？"
+          }
+        }
+      }
+    },
+    "settings.storage.clearRecommendation.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All cached similar-repository results will be removed. The next time you open a repo detail, recommendations will be fetched again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有缓存的相似推荐结果都会被删除。下次打开 repo 详情时会重新拉取推荐。"
+          }
+        }
+      }
+    },
     "settings.storage.clearTranslation" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -25401,6 +26810,23 @@
         }
       }
     },
+    "settings.storage.codebaseMemory" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory"
+          }
+        }
+      }
+    },
     "settings.storage.codeFlow" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -25452,19 +26878,36 @@
         }
       }
     },
+    "settings.storage.dangerZone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Danger Zone"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "危险操作"
+          }
+        }
+      }
+    },
     "settings.storage.image" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Image Cache (Kingfisher)"
+            "value" : "Images"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "图片缓存(Kingfisher)"
+            "value" : "图片"
           }
         }
       }
@@ -25520,19 +26963,36 @@
         }
       }
     },
+    "settings.storage.loginRequired" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to manage storage."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录后才能管理存储。"
+          }
+        }
+      }
+    },
     "settings.storage.readme" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "README Cache"
+            "value" : "README"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "README 缓存"
+            "value" : "README"
           }
         }
       }
@@ -25550,6 +27010,448 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d 条 · %@"
+          }
+        }
+      }
+    },
+    "settings.storage.recommendation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommendations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推荐"
+          }
+        }
+      }
+    },
+    "settings.storage.recommendation.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not cached"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未生成"
+          }
+        }
+      }
+    },
+    "settings.storage.recommendation.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cached similar-repository results per repo (TTL 7 days when non-empty, 1 hour when empty)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按 repo 缓存的相似推荐结果（TTL：非空 7 天，空 1 小时）。"
+          }
+        }
+      }
+    },
+    "settings.storage.recommendationUsageFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld items · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 项 · %@"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear All Local Data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清空所有本地数据"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.completed.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat has signed out locally and removed the selected user's local database, caches, generated files, settings, and local credentials. Restart Starcat, or quit and reopen it manually, then sign in again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 已在本机退出登录，并移除当前用户的本地数据库、缓存、生成文件、设置和本机凭据。你可以重启 Starcat，或退出后手动重新打开应用，然后重新登录。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.completed.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restart Starcat and sign in again to rebuild local data."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重启 Starcat 并重新登录后会重新构建本地数据。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.completed.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local Data Cleared"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地数据已清空"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear All Local Data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清空所有本地数据"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Factory reset local Starcat data for the signed-in account. Use this only when local data corruption causes app issues."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将当前登录账号的 Starcat 本机数据恢复到首次安装状态。仅建议在本地数据异常导致应用问题时使用。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.error.notAuthenticated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in before clearing local app data."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先登录，再清空本机应用数据。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.quit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quit Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出 Starcat"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.resetting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clearing local data..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在清空本地数据..."
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.restart" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restart Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重启 Starcat"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.caches" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local README, image, ZIP, translation, search, wiki probe, and chat history caches."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机 README、图片、ZIP、翻译、搜索、Wiki 探测和对话历史缓存。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.credentials" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local encrypted credentials, including GitHub token, AI API keys, and service API keys."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机加密凭据，包括 GitHub token、AI API Key 和服务 API Key。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.database" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The signed-in user's local SQLite database: repo cache, local notes, tags, status, and derived data."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前登录用户的本地 SQLite 数据库：仓库缓存、本地笔记、标签、状态和派生数据。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.generated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generated Code Context and CodeFlow files stored by Starcat."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 生成的 Code Context 与 CodeFlow 文件。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.remoteSafe" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote GitHub stars, CloudKit data, backend service data, and App Store purchases are not modified."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不会修改远端 GitHub stars、CloudKit 数据、后端服务数据或 App Store 购买记录。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local settings such as general preferences, AI providers, service URLs, MCP, shortcuts, and notification toggles."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机配置，包括通用偏好、AI 服务商、服务 URL、MCP、快捷键和通知开关。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.scope.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This will delete:"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将删除以下本机数据："
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.sheet.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is a local factory reset for the current account. It cannot be undone."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除并重置当前账号的所有本地数据与配置，无法撤销。"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.sheet.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear All Local Data?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清空所有本地数据？"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.usernamePlaceholder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub username"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub 用户名"
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.usernamePromptPrefix" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type your GitHub username "
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入你的 GitHub 用户名 "
+          }
+        }
+      }
+    },
+    "settings.storage.resetAll.usernamePromptSuffix" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " to confirm."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " 后才能确认。"
           }
         }
       }
@@ -25577,13 +27479,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Translation Cache"
+            "value" : "Translations"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "翻译缓存"
+            "value" : "翻译"
           }
         }
       }
@@ -25645,13 +27547,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wiki Probe Cache"
+            "value" : "Wiki Probe"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wiki 探测缓存"
+            "value" : "Wiki 探测"
           }
         }
       }
@@ -25708,6 +27610,7 @@
       }
     },
     "sharecard.action.close" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -25935,114 +27838,206 @@
         }
       }
     },
-    "sharecard.languages.empty" : {
+    "sharecard.dashboard.activityFacts" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No public repository language data yet."
+            "value" : "Activity Facts"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "暂无公开仓库语言数据。"
+            "value" : "活跃数据"
           }
         }
       }
     },
-    "sharecard.languages.loading" : {
+    "sharecard.dashboard.fact.activeDays" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading coding languages…"
+            "value" : "Active Days"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在加载开发语言…"
+            "value" : "活跃天数"
           }
         }
       }
     },
-    "sharecard.languages.title" : {
+    "sharecard.dashboard.fact.activeWeeks" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Top Languages"
+            "value" : "Active Weeks"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "主要开发语言"
+            "value" : "活跃周数"
           }
         }
       }
     },
-    "sharecard.social.emailPlaceholder" : {
+    "sharecard.dashboard.fact.bestDay" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Email not public"
+            "value" : "Best Day"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "邮箱未公开"
+            "value" : "最高单日"
           }
         }
       }
     },
-    "sharecard.social.homepagePlaceholder" : {
+    "sharecard.dashboard.fact.company" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Homepage not set"
+            "value" : "Company"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未设置主页"
+            "value" : "公司"
           }
         }
       }
     },
-    "sharecard.social.locationPlaceholder" : {
+    "sharecard.dashboard.fact.contributions" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Location not set"
+            "value" : "Contribs"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未设置位置"
+            "value" : "贡献"
           }
         }
       }
     },
-    "sharecard.social.socialPlaceholder" : {
+    "sharecard.dashboard.fact.email" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Social not set"
+            "value" : "Email"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未设置社交链接"
+            "value" : "邮箱"
+          }
+        }
+      }
+    },
+    "sharecard.dashboard.fact.github" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub"
+          }
+        }
+      }
+    },
+    "sharecard.dashboard.fact.location" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Location"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置"
+          }
+        }
+      }
+    },
+    "sharecard.dashboard.fact.x" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "X"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "X"
+          }
+        }
+      }
+    },
+    "sharecard.dashboard.metric.contributions" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contribs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "贡献"
+          }
+        }
+      }
+    },
+    "sharecard.dashboard.profileFacts" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profile Facts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主页信息"
           }
         }
       }
@@ -26234,6 +28229,56 @@
         }
       }
     },
+    "sharecard.languages.empty" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No public repository language data yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无公开仓库语言数据。"
+          }
+        }
+      }
+    },
+    "sharecard.languages.loading" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading coding languages…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加载开发语言…"
+          }
+        }
+      }
+    },
+    "sharecard.languages.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top Languages"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主要开发语言"
+          }
+        }
+      }
+    },
     "sharecard.savePanel.message" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -26285,194 +28330,70 @@
         }
       }
     },
-    "sharecard.dashboard.activityFacts" : {
+    "sharecard.social.emailPlaceholder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Activity Facts"
+            "value" : "Email not public"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "活跃数据"
+            "value" : "邮箱未公开"
           }
         }
       }
     },
-    "sharecard.dashboard.fact.activeDays" : {
+    "sharecard.social.homepagePlaceholder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Active Days"
+            "value" : "Homepage not set"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "活跃天数"
+            "value" : "未设置主页"
           }
         }
       }
     },
-    "sharecard.dashboard.fact.activeWeeks" : {
+    "sharecard.social.locationPlaceholder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Active Weeks"
+            "value" : "Location not set"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "活跃周数"
+            "value" : "未设置位置"
           }
         }
       }
     },
-    "sharecard.dashboard.fact.bestDay" : {
+    "sharecard.social.socialPlaceholder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Best Day"
+            "value" : "Social not set"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最高单日"
-          }
-        }
-      }
-    },
-    "sharecard.dashboard.fact.company" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Company"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "公司"
-          }
-        }
-      }
-    },
-    "sharecard.dashboard.fact.contributions" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Contribs"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "贡献"
-          }
-        }
-      }
-    },
-    "sharecard.dashboard.fact.email" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Email"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "邮箱"
-          }
-        }
-      }
-    },
-    "sharecard.dashboard.fact.github" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub"
-          }
-        }
-      }
-    },
-    "sharecard.dashboard.fact.location" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Location"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "位置"
-          }
-        }
-      }
-    },
-    "sharecard.dashboard.fact.x" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "X"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "X"
-          }
-        }
-      }
-    },
-    "sharecard.dashboard.metric.contributions" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Contribs"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "贡献"
-          }
-        }
-      }
-    },
-    "sharecard.dashboard.profileFacts" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Profile Facts"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "主页信息"
+            "value" : "未设置社交链接"
           }
         }
       }
@@ -26545,6 +28466,142 @@
         }
       }
     },
+    "sharecard.style.adventure" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adventure"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "草地冒险"
+          }
+        }
+      }
+    },
+    "sharecard.style.dashboard" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dashboard"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据看板"
+          }
+        }
+      }
+    },
+    "sharecard.style.idCard" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID Card"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID 卡"
+          }
+        }
+      }
+    },
+    "sharecard.style.magazine" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Magazine"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "杂志卡"
+          }
+        }
+      }
+    },
+    "sharecard.style.pass" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pass"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通行证"
+          }
+        }
+      }
+    },
+    "sharecard.style.poster" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poster"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "海报"
+          }
+        }
+      }
+    },
+    "sharecard.style.social" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Social"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "社交卡"
+          }
+        }
+      }
+    },
+    "sharecard.style.terminal" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "终端卡"
+          }
+        }
+      }
+    },
     "sharecard.subtitle" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -26562,151 +28619,25 @@
         }
       }
     },
-    "sharecard.style.dashboard" : {
+    "sharecard.theme.adventureFel" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dashboard"
+            "value" : "Fel"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "数据看板"
-          }
-        }
-      }
-    },
-    "sharecard.style.idCard" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ID Card"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ID 卡"
-          }
-        }
-      }
-    },
-    "sharecard.style.magazine" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Magazine"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "杂志卡"
-          }
-        }
-      }
-    },
-    "sharecard.style.adventure" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Adventure"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "草地冒险"
-          }
-        }
-      }
-    },
-    "sharecard.style.social" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Social"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "社交卡"
-          }
-        }
-      }
-    },
-    "sharecard.style.pass" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pass"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通行证"
-          }
-        }
-      }
-    },
-    "sharecard.style.poster" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poster"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "海报"
-          }
-        }
-      }
-    },
-    "sharecard.style.terminal" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Terminal"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "终端卡"
-          }
-        }
-      }
-    },
-    "sharecard.theme.adventureSunrise" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sunrise"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暖阳"
+            "value" : "邪焰"
           }
         }
       }
     },
     "sharecard.theme.adventureShadow" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -26722,18 +28653,19 @@
         }
       }
     },
-    "sharecard.theme.adventureFel" : {
+    "sharecard.theme.adventureSunrise" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fel"
+            "value" : "Sunrise"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "邪焰"
+            "value" : "暖阳"
           }
         }
       }
@@ -27139,406 +29071,6 @@
         }
       }
     },
-    "githubStarLists.editor.color" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Color"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "颜色"
-          }
-        }
-      }
-    },
-    "githubStarLists.editor.color.auto" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Auto color"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自动颜色"
-          }
-        }
-      }
-    },
-    "githubStarLists.context.addTo" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add to..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加到..."
-          }
-        }
-      }
-    },
-    "githubStarLists.context.moveTo" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Move to..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移动到..."
-          }
-        }
-      }
-    },
-    "githubStarLists.context.noGroups" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No groups"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无分组"
-          }
-        }
-      }
-    },
-    "githubStarLists.context.removeFromGroup" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove from Group"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移出分组"
-          }
-        }
-      }
-    },
-    "githubStarLists.editor.delete.message" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This will delete the list on GitHub and remove its repository memberships."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这会在 GitHub 删除该分组，并移除其中的仓库关系。"
-          }
-        }
-      }
-    },
-    "githubStarLists.editor.delete.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete Group?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除分组？"
-          }
-        }
-      }
-    },
-    "githubStarLists.editor.description" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Description"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "描述"
-          }
-        }
-      }
-    },
-    "githubStarLists.editor.name" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Name"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "名称"
-          }
-        }
-      }
-    },
-    "githubStarLists.editor.name.placeholder" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Name this group"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "为分组命名"
-          }
-        }
-      }
-    },
-    "githubStarLists.editor.private" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Private"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "私有"
-          }
-        }
-      }
-    },
-    "githubStarLists.editor.saving" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Saving..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存中..."
-          }
-        }
-      }
-    },
-    "githubStarLists.error.orgOAuthRestricted.message" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This repository belongs to an organization that restricts third-party OAuth App access. Starcat cannot update its GitHub list membership through the API. If you are only a starrer, you may not have a way to request approval; you can still change this list on GitHub."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "该仓库所属组织限制了第三方 OAuth App 访问。Starcat 无法通过 GitHub API 修改它的分组。如果你只是普通 Star 用户，通常没有可申请授权的入口；你仍然可以在 GitHub 网页端手动操作。"
-          }
-        }
-      }
-    },
-    "githubStarLists.error.orgOAuthRestricted.adminOption" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Only organization members or outside collaborators may be able to request app approval."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "只有组织成员或外部协作者才可能申请 App 授权。"
-          }
-        }
-      }
-    },
-    "githubStarLists.error.orgOAuthRestricted.githubOption" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You can still change this list on GitHub."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你仍然可以在 GitHub 网页端手动操作。"
-          }
-        }
-      }
-    },
-    "githubStarLists.error.orgOAuthRestricted.impact" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Starcat cannot update this repository's list membership through the GitHub API."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Starcat 无法通过 GitHub API 修改该仓库的分组。"
-          }
-        }
-      }
-    },
-    "githubStarLists.error.orgOAuthRestricted.note" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This is not a token scope issue or a local data error. It is GitHub's organization-level OAuth App policy, and ordinary starrers may not have an approval path."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这不是 token scope 或本地数据错误，而是 GitHub 组织级 OAuth App 策略；普通 Star 用户通常没有可申请授权的入口。"
-          }
-        }
-      }
-    },
-    "githubStarLists.error.orgOAuthRestricted.reason" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The repository's organization restricts third-party OAuth App access."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "该仓库所属组织限制了第三方 OAuth App 访问。"
-          }
-        }
-      }
-    },
-    "githubStarLists.error.orgOAuthRestricted.subtitle" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub blocked this group update because the repository belongs to a restricted organization."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "该仓库属于受限组织，GitHub 拦截了这次分组更新。"
-          }
-        }
-      }
-    },
-    "githubStarLists.error.orgOAuthRestricted.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub organization permission required"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要 GitHub 组织授权"
-          }
-        }
-      }
-    },
-    "githubStarLists.toast.failed" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Failed to update group"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更新分组失败"
-          }
-        }
-      }
-    },
-    "githubStarLists.toast.updated" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Group updated"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "分组已更新"
-          }
-        }
-      }
-    },
-    "githubStarLists.editor.title.create" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Create Group"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新增分组"
-          }
-        }
-      }
-    },
-    "githubStarLists.editor.title.edit" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edit Group"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "编辑分组"
-          }
-        }
-      }
-    },
     "sidebar.githubStarLists" : {
       "localizations" : {
         "en" : {
@@ -27587,23 +29119,8 @@
         }
       }
     },
-    "sidebar.githubStarLists.refresh" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sync repository groups"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "同步仓库分组"
-          }
-        }
-      }
-    },
     "sidebar.githubStarLists.fallback" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -27619,7 +29136,25 @@
         }
       }
     },
+    "sidebar.githubStarLists.refresh" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync repository groups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同步仓库分组"
+          }
+        }
+      }
+    },
     "sidebar.githubStarLists.ungrouped" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -29483,176 +31018,6 @@
         }
       }
     },
-    "smartCollections.systemRule.matchAll" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Match all of the following:"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "满足以下全部条件："
-          }
-        }
-      }
-    },
-    "smartCollections.systemRule.matchAny" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Match any of the following:"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "满足以下任一条件："
-          }
-        }
-      }
-    },
-    "smartCollections.systemRule.needsReview.archived" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Archived"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已归档"
-          }
-        }
-      }
-    },
-    "smartCollections.systemRule.needsReview.lowHealth" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Overall health score < 60 (when available)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "综合健康分 < 60（有数据时）"
-          }
-        }
-      }
-    },
-    "smartCollections.systemRule.needsReview.noLicense" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No license"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无 License"
-          }
-        }
-      }
-    },
-    "smartCollections.systemRule.needsReview.noTopics" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No GitHub topics"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无 GitHub Topics"
-          }
-        }
-      }
-    },
-    "smartCollections.systemRule.unmaintained.archived" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Archived"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已归档"
-          }
-        }
-      }
-    },
-    "smartCollections.systemRule.highValue.notArchived" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not archived"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未归档"
-          }
-        }
-      }
-    },
-    "smartCollections.systemRule.highValue.withHealth" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "With health data: Stars ≥ 1,000 and score ≥ 75"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "有健康度数据：Stars ≥ 1,000 且综合分 ≥ 75"
-          }
-        }
-      }
-    },
-    "smartCollections.systemRule.highValue.withoutHealth" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Without health data: Stars ≥ 5,000"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无健康度数据：Stars ≥ 5,000"
-          }
-        }
-      }
-    },
     "smartCollections.new.defaultName" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -29700,6 +31065,91 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未打标签"
+          }
+        }
+      }
+    },
+    "smartCollections.panel.backToCollection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to collection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "返回集合"
+          }
+        }
+      }
+    },
+    "smartCollections.panel.countFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld matching repos"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个匹配仓库"
+          }
+        }
+      }
+    },
+    "smartCollections.panel.noDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No description provided."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无描述。"
+          }
+        }
+      }
+    },
+    "smartCollections.panel.rules" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rules"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "规则"
+          }
+        }
+      }
+    },
+    "smartCollections.panel.rulesUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rule summary is unavailable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无可展示的规则摘要。"
           }
         }
       }
@@ -30792,91 +32242,6 @@
         }
       }
     },
-    "smartCollections.panel.backToCollection" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Back to collection"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "返回集合"
-          }
-        }
-      }
-    },
-    "smartCollections.panel.countFormat" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld matching repos"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 个匹配仓库"
-          }
-        }
-      }
-    },
-    "smartCollections.panel.noDescription" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No description provided."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无描述。"
-          }
-        }
-      }
-    },
-    "smartCollections.panel.rules" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rules"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "规则"
-          }
-        }
-      }
-    },
-    "smartCollections.panel.rulesUnavailable" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rule summary is unavailable."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无可展示的规则摘要。"
-          }
-        }
-      }
-    },
     "smartCollections.save.confirm" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30958,6 +32323,176 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "另存为自定义集合"
+          }
+        }
+      }
+    },
+    "smartCollections.systemRule.highValue.notArchived" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not archived"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未归档"
+          }
+        }
+      }
+    },
+    "smartCollections.systemRule.highValue.withHealth" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With health data: Stars ≥ 1,000 and score ≥ 75"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有健康度数据：Stars ≥ 1,000 且综合分 ≥ 75"
+          }
+        }
+      }
+    },
+    "smartCollections.systemRule.highValue.withoutHealth" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Without health data: Stars ≥ 5,000"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无健康度数据：Stars ≥ 5,000"
+          }
+        }
+      }
+    },
+    "smartCollections.systemRule.matchAll" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Match all of the following:"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "满足以下全部条件："
+          }
+        }
+      }
+    },
+    "smartCollections.systemRule.matchAny" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Match any of the following:"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "满足以下任一条件："
+          }
+        }
+      }
+    },
+    "smartCollections.systemRule.needsReview.archived" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archived"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已归档"
+          }
+        }
+      }
+    },
+    "smartCollections.systemRule.needsReview.lowHealth" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overall health score < 60 (when available)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "综合健康分 < 60（有数据时）"
+          }
+        }
+      }
+    },
+    "smartCollections.systemRule.needsReview.noLicense" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No license"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无 License"
+          }
+        }
+      }
+    },
+    "smartCollections.systemRule.needsReview.noTopics" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No GitHub topics"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无 GitHub Topics"
+          }
+        }
+      }
+    },
+    "smartCollections.systemRule.unmaintained.archived" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archived"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已归档"
           }
         }
       }
@@ -31240,7 +32775,7 @@
     "Starcat Pro" : {
 
     },
-    "starcat.app" : {
+    "starcat.ink" : {
 
     },
     "Stars" : {
@@ -31535,6 +33070,23 @@
         }
       }
     },
+    "subscription.feature.codebaseMemory" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory 3D graph"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CodebaseMemory 3D 代码图谱"
+          }
+        }
+      }
+    },
     "subscription.feature.codeFlow" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -31548,6 +33100,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "CodeFlow 代码图谱"
+          }
+        }
+      }
+    },
+    "subscription.feature.externalWiki" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "external wiki lookup"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部 Wiki 查阅"
           }
         }
       }
@@ -31633,6 +33202,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "项目健康度"
+          }
+        }
+      }
+    },
+    "subscription.feature.repoRecommendations" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "similar repo recommendations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相似仓库推荐"
           }
         }
       }
@@ -33318,6 +34904,9 @@
         }
       }
     },
+    "Tree-sitter index + browser-based 3D visualization" : {
+
+    },
     "trending.aiScore" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -34126,23 +35715,6 @@
         }
       }
     },
-    "weekly.filter.allLanguages" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All Languages"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All Languages"
-          }
-        }
-      }
-    },
     "weekly.filter.activity" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34194,6 +35766,23 @@
         }
       }
     },
+    "weekly.filter.activity.pushed90d" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pushed within 90 days"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90 天内有推送"
+          }
+        }
+      }
+    },
     "weekly.filter.activity.pushed365d" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34211,19 +35800,19 @@
         }
       }
     },
-    "weekly.filter.activity.pushed90d" : {
+    "weekly.filter.allLanguages" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pushed within 90 days"
+            "value" : "All Languages"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "90 天内有推送"
+            "value" : "All Languages"
           }
         }
       }
@@ -34381,91 +35970,6 @@
         }
       }
     },
-    "weekly.filter.stars" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stars"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "热度"
-          }
-        }
-      }
-    },
-    "weekly.filter.stars.all" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Any stars"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "全部热度"
-          }
-        }
-      }
-    },
-    "weekly.filter.stars.min100" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "≥ 100 Stars"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "≥ 100 Stars"
-          }
-        }
-      }
-    },
-    "weekly.filter.stars.min10k" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "≥ 10k Stars"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "≥ 10k Stars"
-          }
-        }
-      }
-    },
-    "weekly.filter.stars.min1k" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "≥ 1k Stars"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "≥ 1k Stars"
-          }
-        }
-      }
-    },
     "weekly.filter.source" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34513,6 +36017,91 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "阮一峰"
+          }
+        }
+      }
+    },
+    "weekly.filter.stars" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "热度"
+          }
+        }
+      }
+    },
+    "weekly.filter.stars.all" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Any stars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部热度"
+          }
+        }
+      }
+    },
+    "weekly.filter.stars.min1k" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "≥ 1k Stars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "≥ 1k Stars"
+          }
+        }
+      }
+    },
+    "weekly.filter.stars.min10k" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "≥ 10k Stars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "≥ 10k Stars"
+          }
+        }
+      }
+    },
+    "weekly.filter.stars.min100" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "≥ 100 Stars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "≥ 100 Stars"
           }
         }
       }

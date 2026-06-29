@@ -67,6 +67,20 @@ struct RepoAIWindowContentView: View {
 
     let repo: Repo
     let onClose: () -> Void
+    let onInlineResizeTapped: (() -> Void)?
+    let isInlineMaximized: Bool
+
+    init(
+        repo: Repo,
+        onClose: @escaping () -> Void,
+        onInlineResizeTapped: (() -> Void)? = nil,
+        isInlineMaximized: Bool = false
+    ) {
+        self.repo = repo
+        self.onClose = onClose
+        self.onInlineResizeTapped = onInlineResizeTapped
+        self.isInlineMaximized = isInlineMaximized
+    }
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var homeViewModel
@@ -267,6 +281,19 @@ struct RepoAIWindowContentView: View {
             .lineLimit(1)
 
             Spacer(minLength: 12)
+
+            if let onInlineResizeTapped {
+                Button(action: onInlineResizeTapped) {
+                    Image(systemName: isInlineMaximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(isInlineMaximized ? "ai.assistant.inline.resize.restore.help" : "ai.assistant.inline.resize.maximize.help")
+            }
 
             SheetCloseButton(
                 action: onClose,

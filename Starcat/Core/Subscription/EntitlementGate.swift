@@ -33,9 +33,15 @@ enum ProFeature: String, CaseIterable, Sendable {
     case tagCreation
     case cloudSync
     case codeFlow
+    /// Pro 功能：CodebaseMemory 3D 代码图谱（tree-sitter 索引 + 浏览器可视化）。
+    case codebaseMemory
     case repoHealth
     case mcpService
     case smartCollections
+    /// Pro 功能：外部 Wiki 查阅（详情页 hero action 区 Wiki 入口）。
+    case externalWiki
+    /// Pro 功能：相似仓库推荐（详情页 hero action 区推荐入口）。
+    case repoRecommendations
 
     var title: String {
         switch self {
@@ -51,9 +57,12 @@ enum ProFeature: String, CaseIterable, Sendable {
         case .tagCreation: return String.l10n("subscription.feature.tagCreation")
         case .cloudSync: return String.l10n("subscription.feature.cloudSync")
         case .codeFlow: return String.l10n("subscription.feature.codeFlow")
+        case .codebaseMemory: return String.l10n("subscription.feature.codebaseMemory")
         case .repoHealth: return String.l10n("subscription.feature.repoHealth")
         case .mcpService: return String.l10n("subscription.feature.mcpService")
         case .smartCollections: return String.l10n("subscription.feature.smartCollections")
+        case .externalWiki: return String.l10n("subscription.feature.externalWiki")
+        case .repoRecommendations: return String.l10n("subscription.feature.repoRecommendations")
         }
     }
 

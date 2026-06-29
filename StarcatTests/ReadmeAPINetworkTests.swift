@@ -6,7 +6,7 @@
 //
 //  覆盖 `refreshReadme(for:) async -> ReadmeRefreshResult` 4 个返回分支：
 //  - `.updated(Readme)`     ← 200 → upsert 到本地 + 返回新 Readme
-//  - `.notModified(Readme)` ← 304 → 仅 touch cached_at + 返回旧 Readme
+//  - `.notModified(Readme)` ← 304 → touch cached_at + 必要时修复旧 HTML + 返回 Readme
 //  - `.notFound`            ← 404 → 删除本地旧缓存 + 返回 notFound
 //  - `.failed(Error)`       ← transport / 5xx → 包到 .failed 不抛
 //
@@ -169,6 +169,30 @@ struct ReadmeAPINetworkTests {
         // 落库也被 touch
         let cached = try await readmeRepo.find(repoId: repo.id)
         #expect(cached?.cachedAt ?? "" > "2026-01-01T00:00:00Z")
+    }
+
+    @Test("refreshReadme: 304 命中时修复旧缓存里的 GitHub raw 图片路径")
+    func refresh304RepairsCachedRootRawImage() async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+        let oldHTML = #"<p><img src="/javalin/javalin/raw/master/.github/img/javalin.png" alt="Logo"></p>"#
+        try await readmeRepo.upsert(makeReadme(repoId: repo.id, html: oldHTML))
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            BytesResponse.notModified304(etag: "\"old-etag\"")
+        }
+
+        let result = await api.refreshReadme(for: repo)
+        guard case let .notModified(repaired) = result else {
+            Issue.record("期望 .notModified，实际: \(result)")
+            return
+        }
+
+        let expected = "https://raw.githubusercontent.com/javalin/javalin/master/.github/img/javalin.png"
+        #expect(repaired.renderedHtml?.contains(expected) == true)
+        #expect(repaired.renderedHtml?.contains(#"/javalin/javalin/raw/master/.github/img/javalin.png"#) == false)
+
+        let cached = try await readmeRepo.find(repoId: repo.id)
+        #expect(cached?.renderedHtml?.contains(expected) == true)
     }
 
     @Test("refreshReadme: 404 + 本地有旧缓存 → .notFound + 删除旧缓存")
@@ -453,6 +477,36 @@ struct ReadmeAPINetworkTests {
         let expectedRewritten = "https://raw.githubusercontent.com/octocat/hello/HEAD/logo.png"
         #expect(fetched?.renderedHtml?.contains(expectedRewritten) == true)
         #expect(fetched?.renderedHtml?.contains("./logo.png") == false)
+    }
+
+    @Test("refreshTrendingReadme: 304 命中时修复旧缓存里的 GitHub raw 图片路径")
+    func refreshTrending304RepairsCachedRootRawImage() async throws {
+        let (api, mock, _, _, db) = try await makeAPI()
+        let trendingRepo = TrendingReadmeRepository(database: db)
+        let oldHTML = #"<img src="/javalin/javalin/raw/master/.github/img/javalin.png" alt="Logo">"#
+        try await trendingRepo.upsert(TrendingReadme(
+            fullName: "javalin/javalin",
+            renderedHtml: oldHTML,
+            etag: "\"old-etag\"",
+            lastModified: nil,
+            cachedAt: "2026-01-01T00:00:00Z",
+            size: oldHTML.utf8.count
+        ))
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            BytesResponse.notModified304(etag: "\"old-etag\"")
+        }
+
+        let result = await api.refreshTrendingReadme(owner: "javalin", repo: "javalin")
+        guard case .updated = result else {
+            Issue.record("期望 .updated，实际: \(result)")
+            return
+        }
+
+        let expected = "https://raw.githubusercontent.com/javalin/javalin/master/.github/img/javalin.png"
+        let fetched = try await trendingRepo.find(fullName: "javalin/javalin")
+        #expect(fetched?.renderedHtml?.contains(expected) == true)
+        #expect(fetched?.renderedHtml?.contains(#"/javalin/javalin/raw/master/.github/img/javalin.png"#) == false)
     }
 
     @Test("prefetchTrending: cache 过期 → 走 refreshTrendingReadme")

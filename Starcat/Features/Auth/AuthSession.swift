@@ -15,6 +15,7 @@
 
 import Foundation
 import Observation
+import AppKit
 
 /// 登录态。
 enum AuthState: Equatable {
@@ -22,11 +23,23 @@ enum AuthState: Equatable {
     case unauthenticated
     /// Device Flow 已发起，等待用户在浏览器输 code。
     case awaitingUserCode(OAuthDeviceCodeInfo)
+    /// 2026-06-29 新增：**专用于 Web Application Flow（PKCE）**——已打开浏览器授权页，
+    /// 等待 GitHub 回调 `starcat://callback?code=...&state=...`。
+    /// 与 `.awaitingUserCode` 区别：Device Flow 让用户去浏览器输 code；Web Flow 让
+    /// 浏览器自动跳回 `starcat://callback` 触发 URL handler（见 `.onOpenURL`）。
+    case awaitingWebCallback(WebFlowStartInfo)
     /// 已登录。
     case authenticated(user: GitHubUserDTO)
 
     var isAuthenticated: Bool {
         if case .authenticated = self { return true }
+        return false
+    }
+
+    /// 2026-06-29：与 `isAuthenticated` 对称，方便调用方判断 Web Flow 中间态。
+    /// 用于测试 / Debug 时不用 `if case .awaitingWebCallback = state` 写一长串。
+    var isAwaitingWebCallback: Bool {
+        if case .awaitingWebCallback = self { return true }
         return false
     }
 
@@ -54,6 +67,20 @@ final class AuthSession {
 
     /// 是否处于登录进行中（用于禁用按钮、显示 Spinner）。
     var isAuthenticating: Bool = false
+
+    /// 2026-06-29：是否请求弹出登录 sheet。
+    ///
+    /// 与 `isAuthenticating` 的区别：
+    /// - `isAuthenticating` 是"已经在跑登录流程"（Device Flow 启动了），由 `signIn()` 设 true
+    /// - `shouldShowLoginSheet` 是"有用户希望登录，但还没选 flow"——只设 flag 不启动流程
+    ///
+    /// 调用方：11 个详情页的"未登录引导"调 `requestLoginSheet()`，让 ContentView 弹 sheet
+    /// 展示 idle 态的 `GithubAuthView`（含 Device Flow CTA + PAT 折叠区），用户在 sheet 内
+    /// 自己选 flow。
+    ///
+    /// 收尾路径（5 处）都清 flag：① runDeviceFlow 成功 emit .authenticated ② signInWithPAT
+    /// 成功 emit .authenticated ③ cancelSignIn ④ signOut ⑤ invalidateSession。
+    var shouldShowLoginSheet: Bool = false
 
     // MARK: - 依赖
 
@@ -232,12 +259,167 @@ final class AuthSession {
         }
     }
 
+    /// 2026-06-29：仅请求弹出登录 sheet，不预设走哪个 flow。
+    ///
+    /// 与 `signIn()` 的区别：
+    /// - `signIn()`：立刻启动 Device Flow（`isAuthenticating = true` + 后台 task 跑 beginDeviceFlow），
+    ///   sheet 弹出来已经是 awaitingUserCode 态
+    /// - `requestLoginSheet()`：**只**设 `shouldShowLoginSheet = true`，不启动任何 OAuth 流程。
+    ///   sheet 弹出来是 idle 态，含 Device Flow CTA + PAT 折叠区，让用户自己选
+    ///
+    /// 调用方：11 个详情页的"未登录引导"——用户点这些按钮时**没指定**走哪个 flow，
+    /// 应当给用户选择权，而不是被强制走 Device Flow。
+    ///
+    /// 守门：已经在登录态时（state == .authenticated）清 flag 并 return，避免无意义弹 sheet。
+    func requestLoginSheet() {
+        guard !state.isAuthenticated else { return }
+        shouldShowLoginSheet = true
+    }
+
+    // MARK: - Web Application Flow / PKCE（2026-06-29 新增）
+
+    /// 触发 Web Application Flow（PKCE 模式）登录。
+    ///
+    /// 与 Device Flow 区别：
+    /// - Device Flow：客户端轮询 `/login/oauth/access_token` 等用户授权
+    /// - Web Flow (PKCE)：客户端**不**轮询，依赖 macOS URL handler `starcat://callback`
+    ///   接收 GitHub 浏览器跳转回来的 code（用户在浏览器里点 Authorize 后 GitHub
+    ///   会跳到 `starcat://callback?code=...&state=...`）
+    ///
+    /// 流程：
+    /// ① 调 `oauthService.beginWebFlow()` 拿到 authorizationURL + state + expiresAt
+    /// ② emit `.awaitingWebCallback(info)`，UI 切到 awaitingWebCallbackView
+    /// ③ `NSWorkspace.open(info.authorizationURL)` 打开浏览器
+    /// ④（异步等）`.onOpenURL` 监听到 `starcat://callback` → `handleWebFlowCallback(url:)`
+    /// ⑤ handleWebFlowCallback 用 code 换 token + 落 Keychain + 拉 /user + emit .authenticated
+    func signInWithWebFlow() {
+        // 与 Device Flow 同款守门：一次只允许一个登录流程进行中
+        guard !isAuthenticating else { return }
+        isAuthenticating = true
+        lastError = nil
+        shouldShowLoginSheet = false  // Web Flow 主动触发（用户在登录页内点 Web Flow 入口）→ 清 flag
+
+        Task { [weak self] in
+            guard let self else { return }
+            await self.runWebFlow()
+        }
+    }
+
+    /// Web Flow 主流程：beginWebFlow → emit state → 打开浏览器 → 等回调。
+    /// 浏览器回调由 `.onOpenURL` 触发 `handleWebFlowCallback(url:)` 处理。
+    private func runWebFlow() async {
+        defer {
+            isAuthenticating = false
+        }
+        do {
+            let info = try await oauthService.beginWebFlow()
+            self.state = .awaitingWebCallback(info)
+            // 打开浏览器（authorization URL 已在 beginWebFlow 拼好）
+            NSWorkspace.shared.open(info.authorizationURL)
+            AppLog.auth.info("Web Flow: opened browser, waiting for starcat://callback")
+        } catch {
+            AppLog.auth.error("Web Flow: begin failed: \(error.localizedDescription, privacy: .public)")
+            self.lastError = error as? LocalizedError
+            self.state = .unauthenticated
+        }
+    }
+
+    /// 取消 Web Flow（用户在 awaitingWebCallback 态点 Cancel）。
+    func cancelWebFlow() {
+        // 复用 cancelSignIn 路径：isAuthenticating 守门 + state 切回 + 重置 actor
+        isAuthenticating = false
+        state = .unauthenticated
+        shouldShowLoginSheet = false
+        Task { await oauthService.resetWebFlow() }
+    }
+
+    /// 处理 `starcat://callback?code=...&state=...` 回调 URL。
+    ///
+    /// 入口：ContentView / StarcatApp 的 `.onOpenURL { url in authSession.handleWebFlowCallback(url: url) }`
+    ///
+    /// 行为：
+    /// 1. 校验当前 state 必须是 `.awaitingWebCallback`（否则忽略，避免误处理 Device Flow 路径
+    ///    或已登出态的回调）
+    /// 2. 校验 callback 的 state 必须匹配（防 CSRF）
+    /// 3. 校验未过期（expiresAt 之后）
+    /// 4. `oauthService.exchangeCodeForToken(code)` 换 token
+    /// 5. 落 Keychain + 拉 /user + emit `.authenticated(user)`
+    /// 6. 失败回滚：state 切回 .unauthenticated + lastError
+    func handleWebFlowCallback(url: URL) async {
+        // 1. URL 合法性校验：scheme == starcat && path == /callback
+        guard url.scheme == AppConstants.oauthCallbackScheme else { return }
+        guard url.host == "callback" else { return }
+
+        // 2. state 必须是 .awaitingWebCallback（防误处理：Device Flow / 登出后收到 URL）
+        guard case .awaitingWebCallback(let info) = state else {
+            AppLog.auth.warning("Web Flow callback ignored: state is not .awaitingWebCallback")
+            return
+        }
+
+        // 3. 解析 query
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let queryItems = components.queryItems else {
+            self.lastError = GithubOAuthError.unexpectedResponse(message: "Callback URL missing query items")
+            self.state = .unauthenticated
+            return
+        }
+        let code = queryItems.first(where: { $0.name == "code" })?.value ?? ""
+        let callbackState = queryItems.first(where: { $0.name == "state" })?.value ?? ""
+
+        // 4. 校验 state 一致（防 CSRF）
+        guard !callbackState.isEmpty, callbackState == info.state else {
+            AppLog.auth.warning("Web Flow callback: state mismatch (expected_prefix=\(info.state.prefix(8), privacy: .public), got=\(callbackState.prefix(8), privacy: .public))")
+            self.lastError = GithubOAuthError.unexpectedResponse(message: "OAuth state mismatch")
+            self.state = .unauthenticated
+            return
+        }
+
+        // 5. 校验未过期
+        guard Date() < info.expiresAt else {
+            AppLog.auth.warning("Web Flow callback: expired (expires_at=\(info.expiresAt, privacy: .public))")
+            self.lastError = GithubOAuthError.codeExpired
+            self.state = .unauthenticated
+            return
+        }
+
+        // 6. 校验 code 非空
+        guard !code.isEmpty else {
+            self.lastError = GithubOAuthError.unexpectedResponse(message: "Callback missing code")
+            self.state = .unauthenticated
+            return
+        }
+
+        // 7. 换 token + 落 Keychain + 拉 /user
+        do {
+            let token = try await oauthService.exchangeCodeForToken(code: code)
+            try keychain.storeGithubToken(token)
+
+            // 8. 拉 /user 验证
+            let user = try await apiClient.getCurrentUser()
+            await onUserSessionChanged?(user.id)
+            self.shouldShowLoginSheet = false
+            self.state = .authenticated(user: user)
+            userProfileService?.acceptFromAuth(user)
+            contributionService?.load(login: user.login)
+            developerLanguageService?.load(login: user.login)
+            AppLog.auth.info("Web Flow: success login=\(user.login, privacy: .public)")
+        } catch {
+            AppLog.auth.error("Web Flow: callback failed: \(error.localizedDescription, privacy: .public)")
+            // 失败回滚：清掉临时写入的 token（如果 storeGithubToken 成功过但后面失败）
+            try? keychain.deleteGithubToken()
+            self.lastError = error as? LocalizedError
+            self.state = .unauthenticated
+        }
+    }
+
     /// 取消进行中的登录。
     func cancelSignIn() {
         pollingTask?.cancel()
         pollingTask = nil
         isAuthenticating = false
         state = .unauthenticated
+        // 同步清 flag：用户点 X 关 sheet 时也要走这条路径
+        shouldShowLoginSheet = false
         Task { await oauthService.reset() }
     }
 
@@ -263,6 +445,8 @@ final class AuthSession {
             // 必须在 emit .authenticated 之前完成，否则 HomeView 观察到状态变化
             // 启动的 SyncManager 会把新账号 stars 写到老 DB。
             await onUserSessionChanged?(user.id)
+            // 2026-06-29：登录成功 → 同步清 shouldShowLoginSheet，sheet 自动 dismiss。
+            self.shouldShowLoginSheet = false
             self.state = .authenticated(user: user)
             // 让 UserProfileService 持久化这次 user，下次启动可以秒显
             userProfileService?.acceptFromAuth(user)
@@ -310,6 +494,8 @@ final class AuthSession {
         developerLanguageService?.reset(login: currentLogin)
         state = .unauthenticated
         lastError = nil
+        // 2026-06-29：登出 → 同步清 shouldShowLoginSheet
+        shouldShowLoginSheet = false
         // R-01：清空 StarredRegistry，避免下个用户登录看到上个用户的 star 状态
         onSignOut?()
         // 多账号 DB 隔离：DB 切到 _anonymous 占位库（同步 await，保证返回前 DB 已切换）
@@ -350,6 +536,8 @@ final class AuthSession {
         contributionService?.reset(login: currentLogin)
         developerLanguageService?.reset(login: currentLogin)
         state = .unauthenticated
+        // 2026-06-29：401 被动失效 → 同步清 shouldShowLoginSheet，让 sheet 自动 dismiss
+        shouldShowLoginSheet = false
         // 复用 network.error.unauthorized 文案（"未授权，请重新登录。"）在登录页提示用户。
         lastError = NetworkError.unauthorized
         // R-01：清空 StarredRegistry（与 token 同步失效）
@@ -384,6 +572,136 @@ final class AuthSession {
         if cur != user {
             state = .authenticated(user: user)
             AppLog.auth.debug("acceptRefreshedUser: state updated for login=\(user.login, privacy: .public)")
+        }
+    }
+
+    // MARK: - PAT 直接登录（2026-06-29 新增）
+
+    /// 用用户手动粘贴的 GitHub Personal Access Token 登录。
+    ///
+    /// 与 Device Flow (`signIn()` → `runDeviceFlow()`) 的区别：
+    /// - Device Flow 走"beginDeviceFlow → 轮询 token"两阶段，由 `oauthService` 协议包；
+    /// - PAT 直接输入**不**走 `oauthService`——用户已经把 token 拿到手了，只缺 GitHub
+    ///   端的 `/user` 校验。直接复用 `KeychainManager.storeGithubToken` + `getCurrentUser`
+    ///   即可，**不**新增 grant type、不动 `GithubOAuthServiceProtocol`。
+    ///
+    /// 状态机走"无中间态"——不发 `awaitingUserCode`，直接三段：
+    /// ① 临时把 token 写入 Keychain（让 `KeychainTokenProvider.currentToken()` 立刻可用）
+    /// ② `apiClient.getCurrentUser()` 校验
+    /// ③ 成功 → 切 `.authenticated(user)` + 触发 onUserSessionChanged + 让 service 加载；
+    ///    失败 → 回滚 Keychain（防下次启动 `restoreSessionIfAvailable` 误判为已登录）
+    ///    + `lastError` 标记 + 保持 `.unauthenticated`。
+    ///
+    /// 关键约束：
+    /// - 一次只允许一个登录流程进行中（与 `signIn()` 同样的 `isAuthenticating` 守门）。
+    /// - 不强制 token prefix（`ghp_*` / `github_pat_*` / `gho_*` 都接受）—— 校验交给
+    ///   GitHub 服务端 401，靠 `errorDescription` 提示用户。
+    /// - 任何失败路径（401 / 403 / 网络错）都必须回滚 Keychain，**不留垃圾 token**。
+    /// - `lastError` 区分 401 / 403 走 `GithubPATError` 让 UI 给出精准文案；网络错沿用
+    ///   `NetworkError.transport` 文案。
+    /// - 验证后 token 保留（不会因为后续 401 之外的错误丢掉 PAT）——只有失败路径才删。
+    func signInWithPAT(_ token: String) async {
+        // 与 signIn() 同款守门：一次只允许一个登录流程进行中。
+        // 用户在 PAT 折叠区连点两次「使用此 Token 登录」时，第二次 await 立刻返回。
+        guard !isAuthenticating else { return }
+        isAuthenticating = true
+        lastError = nil
+
+        // 阶段 1：临时写入 Keychain
+        // 复用 storeGithubToken，让 KeychainTokenProvider.currentToken() 立刻可用，
+        // 走 `GitHubAPIClient` 内部的 Authorization 注入路径。
+        do {
+            try keychain.storeGithubToken(token)
+            AppLog.auth.info("PAT sign-in: token written to Keychain (length=\(token.count, privacy: .public))")
+        } catch {
+            AppLog.auth.error("PAT sign-in: storeGithubToken failed: \(error.localizedDescription, privacy: .public)")
+            // Keychain 错误通常是 KeychainError（实现 LocalizedError），但 catch 块类型是 any Error，
+            // 这里走 `as? LocalizedError` 安全降级；cast 失败时 lastError 为 nil，UI 走兜底文案。
+            self.lastError = error as? LocalizedError
+            self.state = .unauthenticated
+            isAuthenticating = false
+            return
+        }
+
+        // 阶段 2：拉 /user 校验 + 阶段 3：成功/失败收尾
+        // 把所有 catch 集中到一个 do 块里，避免在每个 catch 里重复写 isAuthenticating = false。
+        do {
+            let user = try await apiClient.getCurrentUser()
+
+            // 成功路径——与 runDeviceFlow 尾段对称
+            // （多账号 DB 隔离 → 必须 await onUserSessionChanged 后再 emit .authenticated）
+            await onUserSessionChanged?(user.id)
+            // 2026-06-29：登录成功 → 同步清 shouldShowLoginSheet
+            self.shouldShowLoginSheet = false
+            self.state = .authenticated(user: user)
+            userProfileService?.acceptFromAuth(user)
+            contributionService?.load(login: user.login)
+            developerLanguageService?.load(login: user.login)
+            AppLog.auth.info("PAT sign-in: success login=\(user.login, privacy: .public)")
+            isAuthenticating = false
+        } catch NetworkError.unauthorized {
+            // 401：Token 无效 / 已过期 / 被撤销
+            rollbackPATToken()
+            self.lastError = GithubPATError.invalidToken
+            self.state = .unauthenticated
+            AppLog.auth.warning("PAT sign-in: 401 (token invalid/expired/revoked)")
+            isAuthenticating = false
+        } catch let NetworkError.clientError(statusCode: 403, _) {
+            // 403：scope 不足（典型：用户只勾 repo 没勾 public_repo）
+            // GitHub /user 在 scope 不足时返回 403 而不是 401，所以单独 catch。
+            rollbackPATToken()
+            self.lastError = GithubPATError.insufficientScope
+            self.state = .unauthenticated
+            AppLog.auth.warning("PAT sign-in: 403 (insufficient scope)")
+            isAuthenticating = false
+        } catch {
+            // 网络错 / 其它 4xx / 5xx：回滚 token + 透传 lastError 让 UI 显示原始原因
+            // NetworkError 已实现 LocalizedError，cast 几乎不会失败；cast 失败时 UI 走兜底文案。
+            rollbackPATToken()
+            self.lastError = error as? LocalizedError
+            self.state = .unauthenticated
+            AppLog.auth.error("PAT sign-in: failed: \(error.localizedDescription, privacy: .public)")
+            isAuthenticating = false
+        }
+    }
+
+    /// PAT 登录失败时回滚 Keychain 中的临时 token。
+    ///
+    /// 关键约束（与 runDeviceFlow 路径不同：Device Flow 成功后 token 也保留，
+    /// 失败时由 reset() 兜底；PAT 路径必须在每条 catch 里显式删掉，否则下次启动
+    /// `restoreSessionIfAvailable` 会用失效 token 调 /user → 401 → 误清掉其它状态。
+    ///
+    /// 失败容忍：delete 自身失败也不抛错（已经走到 catch 分支，状态机不能再坏）。
+    private func rollbackPATToken() {
+        do {
+            try keychain.deleteGithubToken()
+        } catch {
+            AppLog.auth.error("PAT sign-in: rollback deleteGithubToken failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+}
+
+// MARK: - PAT 登录错误（2026-06-29 新增）
+
+/// PAT 直接登录路径特有的错误类型。
+///
+/// 与 `NetworkError` 区分：本枚举专门表达"用户手动输入的 PAT 校验失败"——UI 层
+/// 可针对 `invalidToken` / `insufficientScope` 给出"重新粘贴 / 补勾 scope"等精准
+/// 引导，而不必从通用 `NetworkError.unauthorized` / `clientError(403)` 反推。
+///
+/// `Equatable` 让 `AuthSessionPATSignInTests` 可以直接 `#expect(patError == .invalidToken)`。
+enum GithubPATError: LocalizedError, Equatable {
+    /// 401：Token 无效、已过期或被撤销。
+    case invalidToken
+    /// 403：Token 有效但 scope 不足（典型场景：用户只勾了 `repo` 没勾 `public_repo`）。
+    case insufficientScope
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidToken:
+            return String.l10n("authV2.pat.error.invalidToken")
+        case .insufficientScope:
+            return String.l10n("authV2.pat.error.insufficientScope")
         }
     }
 }

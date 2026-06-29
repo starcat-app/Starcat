@@ -179,7 +179,8 @@ struct ActivityDetailScaffoldShell: View {
     /// 让 hero / 三段当帧拿到真值(不依赖父 View selectedActivityItem 重新派发)。
     private func handleStarTapped(repo: Repo) async throws {
         guard authSession.state.isAuthenticated else {
-            authSession.signIn()
+            // 2026-06-29：只弹登录 sheet，不强制走 Device Flow
+            authSession.requestLoginSheet()
             return
         }
         try await dependencies.starActionService.toggle(repo: repo)

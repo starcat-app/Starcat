@@ -60,8 +60,11 @@ help: ## 列出所有可用命令
 	@echo "  make deploy-nginx                上传 nginx 配置到 aliyun 并重载 nginx"
 	@echo ""
 
-run: ## 执行 scripts/run-debug.sh（先 kill 旧 Starcat，再 xcodegen + Debug 构建 + 启动）
+run: ## 沙盒环境
 	@bash scripts/run-debug.sh
+
+run-nonsandbox: ## 非沙盒环境
+	@bash scripts/run-debug-nosandbox.sh
 
 test: ## 跑全量单测（先 xcodegen 同步项目，再 xcodebuild test）
 	@echo "⚠️  提醒：跑测前请先关闭 Xcode IDE（Cmd+Q），否则会与 xcodebuild 抢 testmanagerd 导致挂起。"

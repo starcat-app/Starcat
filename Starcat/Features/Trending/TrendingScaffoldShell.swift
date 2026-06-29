@@ -197,7 +197,8 @@ struct TrendingScaffoldShell: View {
     /// (chip 内部 catch 后会调 AppLog.sync.error)。
     private func handleStarTapped(repo: Repo) async throws {
         guard authSession.state.isAuthenticated else {
-            authSession.signIn()
+            // 2026-06-29：只弹登录 sheet，不强制走 Device Flow
+            authSession.requestLoginSheet()
             return
         }
         try await dependencies.starActionService.toggle(repo: repo)

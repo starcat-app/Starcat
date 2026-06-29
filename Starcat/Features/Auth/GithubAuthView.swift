@@ -57,6 +57,30 @@ struct GithubAuthView: View {
     /// 任意新点击都会 cancel 上一个 task，让两种反馈互斥（用户改主意时不会再触发跳浏览器）。
     @State private var copyResetTask: Task<Void, Never>?
 
+    // 2026-06-29 PAT 直接输入视图状态
+    /// PAT 输入框文本。trim 后空串判定"未输入"。
+    @State private var patInput: String = ""
+    /// SecureField 明文 / 密文切换。默认 true（密文），点眼睛图标切到明文。
+    @State private var patIsSecure: Bool = true
+    /// 2026-06-29：是否正在展示 PAT 输入视图。true → derivedState 切到 .patInput。
+    @State private var showPATInput: Bool = false
+    /// 2026-06-29：「或选择其他登录方式」整体折叠组。默认 false，减少视觉噪音。
+    @State private var isAlternativeExpanded: Bool = false
+
+    // 2026-06-29 倒计时（Web Flow + Device Flow 共享，两态互斥不会冲突）
+    /// 当前剩余秒数，Timer 每秒递减。
+    @State private var countdownSeconds: Int = 0
+    /// 倒计时截止时刻。进入 awaiting 态时设定，离开时清 nil。
+    @State private var countdownExpiresAt: Date?
+    /// 倒计时 Timer，view disappear 或 state 切走时 invalidate。
+    @State private var countdownTimer: Timer?
+
+    // 2026-06-29 Device Flow spinner 条件显示
+    /// 2026-06-29 dong4j 反馈："等待浏览器完成授权..." 在用户点 code 按钮前就显示，
+    /// 但浏览器没打开时"等浏览器"是空话。改为只有用户点 code 按钮（`copyAndOpenBrowser`
+    /// 触发了打开浏览器）后才置 true。重新进入 awaitingCode / cancel / 重新 signIn 时重置。
+    @State private var hasOpenedBrowser: Bool = false
+
     /// 卡片宽度。参考图比例约 380pt 宽；macOS sheet 留外圈 padding 后给到 460pt 视觉舒适。
     private let cardWidth: CGFloat = 460
     /// hero 区高度。4 角圆角"独立插画卡"后做 horizontal 16pt 内缩，
@@ -152,6 +176,14 @@ struct GithubAuthView: View {
 
             stateSection
 
+            // 2026-06-29：idle / error 态下显示「其他登录方式」折叠区。
+            // connecting / awaitingCode / authenticated 态不显示——避免和 Device Flow UI 抢焦点。
+            if case .idle = derivedState {
+                alternativeSection
+            } else if case .error = derivedState {
+                alternativeSection
+            }
+
             if case .error = derivedState {
                 errorBanner
             }
@@ -163,28 +195,122 @@ struct GithubAuthView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// 按 derivedState 切换：CTA / 连接中 / 等待授权 / 已登录 / 错误占位。
+    /// 按 derivedState 切换：CTA / 连接中 / 等待授权 / PAT / 已登录 / 错误占位。
+    /// `.transition(.opacity)` + 外层 `.animation(.smooth, value: derivedState)` 让
+    /// idle ↔ PAT ↔ awaitingCode ↔ awaitingWebCallback 切换有淡入淡出动画。
     @ViewBuilder
     private var stateSection: some View {
         switch derivedState {
         case .idle, .error:
             continueWithGitHubButton
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
         case .connecting:
             connectingView
+                .transition(.opacity)
         case .awaitingCode(let info):
             awaitingUserCodeView(info: info)
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+        case .awaitingWebCallback(let info):
+            awaitingWebCallbackView(info: info)
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+        case .patInput:
+            patInputView
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
         case .authenticated:
             authenticatedView
+                .transition(.opacity)
         }
     }
 
     // MARK: - 状态视图
 
+    // MARK: - 其他登录方式（2026-06-29 新增）
+
+    /// "其他登录方式"折叠区。
+    ///
+    /// 包含两个子折叠项：
+    /// - **PAT 直接输入**：展开后是 SecureField + 提交按钮（可立即登录）
+    /// - **Web Application Flow**：W6 之前的占位，disabled + 「即将推出」徽章
+    ///
+    /// 设计要点：
+    /// 2026-06-29：「或选择其他登录方式」折叠组（默认折叠）。
+    ///
+    /// dong4j 要求**不要** DisclosureGroup 的 `>` chevron，改为纯 Button 点击整行
+    /// 展开/折叠——与 PAT 折叠项同款 `withAnimation(.easeInOut(0.18))`。
+    /// 默认折叠减少视觉噪音，用户需要非 Device Flow 登录时才展开。
+    private var alternativeSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // 可点击整行（分隔线 + "或选择其他方式" 文案）
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                    isAlternativeExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(height: 1)
+                    Text("authV2.alternative.divider")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(height: 1)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .accessibilityLabel(Text("authV2.alternative.divider"))
+
+            // 展开后显示两个按钮：Web Flow（tertiary 白底有边框）+ PAT（tertiary 白底有边框）
+            // 与主 CTA 蓝色 primary 按钮区分开，表明这些是"备选"登录方式
+            if isAlternativeExpanded {
+                VStack(alignment: .leading, spacing: 10) {
+                    // Web Application Flow（tertiary 按钮）
+                    bigButton(style: .tertiary, action: {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                            isAlternativeExpanded = false
+                        }
+                        authSession.signInWithWebFlow()
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "globe")
+                            Text("authV2.alternative.webflow")
+                                .fontWeight(.medium)
+                        }
+                    }
+
+                    // Personal Access Token（tertiary 按钮）
+                    bigButton(style: .tertiary, action: {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                            isAlternativeExpanded = false
+                            showPATInput = true
+                        }
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "person.badge.key")
+                            Text("authV2.alternative.pat")
+                                .fontWeight(.medium)
+                        }
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
+    }
+
     /// idle / error 态：全宽蓝色主按钮。
     private var continueWithGitHubButton: some View {
         bigButton(style: .primary, action: triggerContinue) {
-            Text("authV2.continueWithGitHub")
-                .fontWeight(.semibold)
+            HStack(spacing: 8) {
+                Image("github-auth")
+                    .resizable().aspectRatio(contentMode: .fit)
+                    .frame(width: 18, height: 18)
+                Text("authV2.continueWithGitHub")
+                    .fontWeight(.semibold)
+            }
         }
     }
 
@@ -215,6 +341,163 @@ struct GithubAuthView: View {
     ///   主流程已经有 code 主区 ZStack 切到 "已复制 ✓" 的反馈 + 底部 spinner + "等待授权" 提示，
     ///   右侧 hint 属于第 4 处同义提示，删掉减少视觉噪音
     /// - code 卡片改全宽（与 cancel 按钮齐平），不再固定 248pt + 右侧 flex hint 双列布局
+    /// 2026-06-29 Web Application Flow / PKCE 等待回调视图。
+    ///
+    /// 与 `awaitingUserCodeView`（Device Flow）布局一致：
+    /// - hero 图片轮播（card 顶部 contentSection 共享）
+    /// - Cancel 按钮
+    /// - spinner + 倒计时 + 提示文案
+    ///
+    /// 倒计时格式 MM:SS，零填充避免文本长度抖动（"09:45"→"08:44" 宽度不变）。
+    /// 从 `info.expiresAt` 反推剩余秒数，Timer 每秒递减。0 时不强制切 state——
+    /// handleWebFlowCallback 会在过期时独立拒绝回调。
+    private func awaitingWebCallbackView(info: WebFlowStartInfo) -> some View {
+        VStack(spacing: 24) {
+            VStack(spacing: 10) {
+                cancelWebFlowButton
+            }
+
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(verbatim: formattedCountdown)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Text("authV2.webflow.waitingHint")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .onAppear { startCountdown(expiresAt: info.expiresAt) }
+        .onDisappear { stopCountdown() }
+    }
+
+    /// 倒计时显示格式：MM:SS，两位零填充。共享于 Web Flow + Device Flow。
+    private var formattedCountdown: String {
+        let m = countdownSeconds / 60
+        let s = countdownSeconds % 60
+        return String(format: "%02d:%02d", m, s)
+    }
+
+    /// 启动倒计时 Timer。从 `expiresAt` 开始每秒递减。
+    private func startCountdown(expiresAt: Date) {
+        countdownExpiresAt = expiresAt
+        countdownSeconds = max(0, Int(expiresAt.timeIntervalSinceNow))
+        countdownTimer?.invalidate()
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            DispatchQueue.main.async {
+                if countdownSeconds > 0 { countdownSeconds -= 1 }
+            }
+        }
+    }
+
+    /// 停止倒计时 Timer。
+    private func stopCountdown() {
+        countdownTimer?.invalidate()
+        countdownTimer = nil
+        countdownExpiresAt = nil
+        countdownSeconds = 0
+    }
+
+    /// Web Flow 专用的 Cancel 按钮：调 AuthSession.cancelWebFlow()
+    ///（区别于 Device Flow 的 cancelButton 调 cancelSignIn）
+    private var cancelWebFlowButton: some View {
+        bigButton(style: .secondary, action: triggerWebFlowCancel) {
+            Text("authV2.cancelSignIn")
+                .fontWeight(.medium)
+        }
+    }
+
+    /// PAT 直接输入视图（与 Device Flow / Web Flow 同款卡片布局）。
+    ///
+    /// 布局：Back 按钮 + SecureField + 明文切换 + 提交按钮 + 帮助文案 + 获取 Token 链接。
+    /// 点 Back 回到 idle 态（showPATInput = false + 清 patInput）。
+    private var patInputView: some View {
+        VStack(spacing: 18) {
+            // Back 按钮（左对齐，小字，返回 idle）
+            HStack {
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                        showPATInput = false
+                        patInput = ""
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.caption.weight(.semibold))
+                        Text("authV2.pat.back")
+                            .font(.subheadline)
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                Spacer()
+            }
+
+            // SecureField + 显隐切换
+            HStack(spacing: 6) {
+                Group {
+                    if patIsSecure {
+                        SecureField("", text: $patInput, prompt: Text("authV2.pat.placeholder"))
+                    } else {
+                        TextField("", text: $patInput, prompt: Text("authV2.pat.placeholder"))
+                    }
+                }
+                .textFieldStyle(.roundedBorder)
+                .disabled(authSession.isAuthenticating)
+                .onSubmit(triggerPATSignIn)
+
+                Button {
+                    patIsSecure.toggle()
+                } label: {
+                    Image(systemName: patIsSecure ? "eye" : "eye.slash")
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .foregroundStyle(.secondary)
+                .help(patIsSecure ? "authV2.pat.showToken" : "authV2.pat.hideToken")
+                .disabled(authSession.isAuthenticating)
+            }
+
+            // 提交按钮（次按钮样式，与 Device Flow / Web Flow 按钮对齐）
+            bigButton(style: .secondary, action: triggerPATSignIn) {
+                Text("authV2.pat.submit")
+                    .fontWeight(.medium)
+            }
+            .disabled(authSession.isAuthenticating || patInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            // 帮助文案 + 获取 Token 外链
+            Text("authV2.pat.help")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                if let url = URL(string: "https://github.com/settings/tokens") {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.caption)
+                    Text("authV2.pat.getToken")
+                        .font(.caption)
+                }
+                .foregroundStyle(.blue)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(Text("authV2.pat.getToken.help"))
+
+            // Token 错误时显示红色 error banner（不退出 PAT 页面，用户可修改 Token 重试）
+            if authSession.lastError != nil {
+                errorBanner
+            }
+        }
+    }
+
     private func awaitingUserCodeView(info: OAuthDeviceCodeInfo) -> some View {
         VStack(spacing: 24) {
             VStack(spacing: 10) {
@@ -222,13 +505,35 @@ struct GithubAuthView: View {
                 cancelButton
             }
 
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("authV2.waitingHint")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            // 2026-06-29 改造：底部 spinner + 倒计时 + "等待完成 GitHub 授权..."
+            // 只有用户在 code 按钮上点了"复制并打开浏览器"（hasOpenedBrowser = true）才显示。
+            // 倒计时格式 MM:SS 零填充，数字宽度不变，`monospacedDigit()` 保证文本宽度稳定。
+            if hasOpenedBrowser {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(verbatim: formattedCountdown)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    Text("authV2.waitingHint")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
             }
-            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .onAppear {
+            // Device Flow 倒计时：info.expiresIn 是 GitHub 返回的总秒数（通常 900=15min），
+            // 从 view mount 时刻起算（view 在 beginDeviceFlow 返回后几乎立即出现，误差 <100ms）
+            startCountdown(expiresAt: Date().addingTimeInterval(info.expiresIn))
+        }
+        .onDisappear { stopCountdown() }
+        // 兜底：state 重新进入 .awaitingUserCode（用户重新 signIn 或 cancel 后重试）→ 重置
+        // hasOpenedBrowser，让 spinner 重新按"用户点 code 按钮后"才显示的语义生效。
+        .onChange(of: authSession.state) { _, newState in
+            if case .awaitingUserCode = newState {
+                hasOpenedBrowser = false
+            }
         }
     }
 
@@ -459,7 +764,9 @@ struct GithubAuthView: View {
     private var derivedState: DerivedState {
         switch authSession.state {
         case .unauthenticated:
-            if authSession.isAuthenticating {
+            if showPATInput {
+                return .patInput
+            } else if authSession.isAuthenticating {
                 return .connecting
             } else if authSession.lastError != nil {
                 return .error
@@ -468,6 +775,8 @@ struct GithubAuthView: View {
             }
         case .awaitingUserCode(let info):
             return .awaitingCode(info)
+        case .awaitingWebCallback(let info):
+            return .awaitingWebCallback(info)
         case .authenticated:
             return .authenticated
         }
@@ -481,13 +790,37 @@ struct GithubAuthView: View {
         authSession.signIn()
     }
 
+    /// 2026-06-29：点 PAT 提交按钮 / 输入框按回车 → 调 AuthSession.signInWithPAT。
+    ///
+    /// 守门：
+    /// - 输入框 trim 后空串 → 直接 return（按钮已 disabled，这里再兜一次防键盘回车）
+    /// - 已经有登录流程在进行（isAuthenticating）→ 直接 return
+    ///
+    /// 成功后 AuthSession.state 切到 .authenticated，由 ContentView 监听自动 dismiss sheet。
+    /// 失败时 AuthSession.lastError 被设置，本视图 `errorBanner` 自动渲染错误。
+    private func triggerPATSignIn() {
+        let trimmed = patInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !authSession.isAuthenticating else { return }
+        Task { await authSession.signInWithPAT(trimmed) }
+    }
+
     /// 点 Cancel：取消进行中的 Device Flow + 复位本地 copy 反馈状态。
     /// AuthSession.cancelSignIn() 把 state 切回 .unauthenticated，
     /// ContentView 检测 isAuthenticating = false 后 sheet 自动 dismiss。
     private func triggerCancel() {
         copyResetTask?.cancel()
         copyFeedback = .idle
+        // 2026-06-29：取消时同步重置 hasOpenedBrowser，避免下次重新 signIn 时残留 true
+        hasOpenedBrowser = false
         authSession.cancelSignIn()
+    }
+
+    /// 2026-06-29：Web Flow Cancel 按钮 action——调 AuthSession.cancelWebFlow()。
+    /// 区别于 Device Flow 的 triggerCancel：Web Flow 调 cancelWebFlow 走专门路径
+    ///（actor 内部 resetWebFlow 清 verifier/state），Device Flow 调 cancelSignIn 走轮询
+    /// 取消路径。两条路线的 actor reset 不同，必须分开调用。
+    private func triggerWebFlowCancel() {
+        authSession.cancelWebFlow()
     }
 
     /// 点 code 主区域：一键登录流程
@@ -498,10 +831,17 @@ struct GithubAuthView: View {
         copyToClipboard(info.userCode)
         copyResetTask?.cancel()
         copyFeedback = .copiedAndOpening
+        // 2026-06-29：标记"已触发开浏览器流程"——1.5s 后会真打开浏览器，
+        // 之后 Device Flow 后台轮询继续等用户在浏览器里授权。
+        // spinner 条件 `if hasOpenedBrowser` 在这里打开后一直显示，
+        // 直到 state 切到 .authenticated（成功）或 .unauthenticated（失败）。
+        hasOpenedBrowser = true
         copyResetTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled else { return }
             NSWorkspace.shared.open(info.verificationURI)
+            // 复制反馈的"✓ 已复制"1.5s 后消失，但 hasOpenedBrowser 保持 true，
+            // 让底部 spinner 继续显示直到 Device Flow 走完。
             copyFeedback = .idle
         }
     }
@@ -633,6 +973,12 @@ private enum DerivedState: Equatable {
     case idle
     case connecting
     case awaitingCode(OAuthDeviceCodeInfo)
+    /// 2026-06-29 新增：专用于 Web Application Flow（PKCE），与 `.awaitingCode` 同款
+    /// "等用户授权"语义，但实现是浏览器回调而不是输 code。
+    case awaitingWebCallback(WebFlowStartInfo)
+    /// 2026-06-29 新增：PAT 直接输入视图，与 Web Flow / Device Flow 同款卡片布局。
+    /// 用户点「其他登录方式」→ PAT 按钮后进入，含 SecureField + 提交 + 帮助文案。
+    case patInput
     case authenticated
     case error
 }

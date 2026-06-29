@@ -38,6 +38,7 @@ struct ExternalLinksMenu: View {
 
     let selection: ToolbarRepoSelection
     let codeFlowRepo: Repo?
+    let codebaseMemoryRepo: Repo?
     /// 由稳定的页面根视图承载 CodeFlow sheet；toolbar 组件只发送打开请求。
     ///
     /// 历史坑（dong4j 2026-06-14 验收反馈）：原本用 `@State isCodeFlowPresented: Bool`
@@ -56,28 +57,45 @@ struct ExternalLinksMenu: View {
     /// `AnyView` 重建时 presentation host 本身仍会被替换，关闭期间可能再次挂载。
     /// 因此由 `RepoListView` 持有 item 并在稳定根节点呈现，本组件不保存 sheet 状态。
     let onOpenCodeFlow: (Repo) -> Void
+    let onOpenCodebaseMemory: (Repo) -> Void
 
     init(
         selection: ToolbarRepoSelection,
         codeFlowRepo: Repo? = nil,
-        onOpenCodeFlow: @escaping (Repo) -> Void = { _ in }
+        codebaseMemoryRepo: Repo? = nil,
+        onOpenCodeFlow: @escaping (Repo) -> Void = { _ in },
+        onOpenCodebaseMemory: @escaping (Repo) -> Void = { _ in }
     ) {
         self.selection = selection
         self.codeFlowRepo = codeFlowRepo
+        self.codebaseMemoryRepo = codebaseMemoryRepo
         self.onOpenCodeFlow = onOpenCodeFlow
+        self.onOpenCodebaseMemory = onOpenCodebaseMemory
     }
 
     var body: some View {
+        let currentCodeFlowRepo = codeFlowRepo
+        let currentCodebaseMemoryRepo = codebaseMemoryRepo
+
         Group {
-            if codeFlowRepo != nil {
+            if codeFlowRepo != nil || codebaseMemoryRepo != nil {
                 FeaturedExternalLinksControl(
                     selection: selection,
                     onOpenCodeFlow: {
-                        if let codeFlowRepo {
-                            onOpenCodeFlow(codeFlowRepo)
+                        if let repo = currentCodeFlowRepo {
+                            AppLog.ui.info("Toolbar CodeFlow action selection=\(selection.fullName, privacy: .public) repo=\(repo.fullName, privacy: .public) id=\(repo.id, privacy: .public)")
+                            onOpenCodeFlow(repo)
+                        }
+                    },
+                    codebaseMemoryRepo: currentCodebaseMemoryRepo,
+                    onOpenCodebaseMemory: {
+                        if let repo = currentCodebaseMemoryRepo {
+                            AppLog.ui.info("Toolbar CodebaseMemory action selection=\(selection.fullName, privacy: .public) repo=\(repo.fullName, privacy: .public) id=\(repo.id, privacy: .public)")
+                            onOpenCodebaseMemory(repo)
                         }
                     }
                 )
+                .id(featuredControlIdentity)
             } else {
                 standardMenu
             }
@@ -127,6 +145,14 @@ struct ExternalLinksMenu: View {
             NSWorkspace.shared.open(url)
         }
     }
+
+    /// AppKit `Menu` 会跨 SwiftUI body 重算复用内部 action；identity 包含当前 repo
+    /// 快照，避免切换选中仓库后菜单项仍调用上一次 repo 的闭包。
+    private var featuredControlIdentity: String {
+        let codeFlowIdentity = codeFlowRepo.map { "\($0.id):\($0.fullName)" } ?? "none"
+        let codebaseIdentity = codebaseMemoryRepo.map { "\($0.id):\($0.fullName)" } ?? "none"
+        return "\(selection.fullName)|cf=\(codeFlowIdentity)|cb=\(codebaseIdentity)"
+    }
 }
 
 /// Manage 公共仓库使用的外链控制器。
@@ -136,6 +162,8 @@ struct ExternalLinksMenu: View {
 private struct FeaturedExternalLinksControl: View {
     let selection: ToolbarRepoSelection
     let onOpenCodeFlow: () -> Void
+    let codebaseMemoryRepo: Repo?
+    let onOpenCodebaseMemory: () -> Void
 
     var body: some View {
         Menu {
@@ -146,6 +174,18 @@ private struct FeaturedExternalLinksControl: View {
                     Text("CodeFlow")
                 } icon: {
                     Image(systemName: "point.3.connected.trianglepath.dotted")
+                }
+            }
+
+            if codebaseMemoryRepo != nil {
+                Button {
+                    onOpenCodebaseMemory()
+                } label: {
+                    Label {
+                        Text("CodebaseMemory")
+                    } icon: {
+                        Image(systemName: "point.3.filled.connected.trianglepath.dotted")
+                    }
                 }
             }
 

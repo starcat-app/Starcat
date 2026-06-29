@@ -69,6 +69,8 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     /// OpenSSF 是公开安全信号，所有详情页可见；Repo Health 是 Manage 专属 Pro 能力，
     /// 由 Scaffold 通过 `showsRepoHealthEntry` 明确放行。
     @Environment(AppDependencies.self) private var dependencies
+    /// Forks / Watchers 的语义色按 colorScheme 切换 —— 见 StatSemanticColor。
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showOpenSSFScoreSheet = false
     @State private var showRepoHealthSheet = false
     @State private var paywallContext: ProPaywallContext?
@@ -236,7 +238,14 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
                     NSWorkspace.shared.open(url)
                 }
             } label: {
-                RepoStatItem(label: "repo.forks", value: repo.forksCount, systemImage: "tuningfork", tint: .secondary)
+                // Forks 用 StatSemanticColor.fork 蓝(light/dark 双主题),
+                // 与 SearchCenter 详情卡 fork 配色同源,详情页与其他 stat 形成视觉差。
+                RepoStatItem(
+                    label: "repo.forks",
+                    value: repo.forksCount,
+                    systemImage: "tuningfork",
+                    tint: StatSemanticColor.fork.resolved(colorScheme: colorScheme)
+                )
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()

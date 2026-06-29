@@ -1716,64 +1716,9 @@ private struct SearchHistoryFlowLayout: Layout {
 
 // MARK: - Remote Repo Detail
 
-/// 搜索详情卡的语义色。light / dark 各一套 hex，避免亮色主题对比不足或暗色主题过艳。
-private enum SearchDetailSemanticColor {
-    case star
-    case fork
-    case issues
-    case branch
-    case language
-    case wikiDeepWiki
-    case wikiZread
-    case wikiCodeWiki
-    case actionStar
-    case actionAI
-    case actionGitHub
-
-    /// 亮色主题下的图标 / 前景色。
-    private var lightHex: UInt32 {
-        switch self {
-        case .star, .actionStar: return 0xD97706
-        case .fork: return 0x2563EB
-        case .issues: return 0xDC2626
-        case .branch: return 0x7C3AED
-        case .language: return 0x059669
-        case .wikiDeepWiki: return 0x4F46E5
-        case .wikiZread: return 0x0891B2
-        case .wikiCodeWiki: return 0x059669
-        case .actionAI: return 0x9333EA
-        case .actionGitHub: return 0x1F2937
-        }
-    }
-
-    /// 暗色主题下的图标 / 前景色（整体提亮一档，保证深色底可读）。
-    private var darkHex: UInt32 {
-        switch self {
-        case .star, .actionStar: return 0xFBBF24
-        case .fork: return 0x60A5FA
-        case .issues: return 0xF87171
-        case .branch: return 0xA78BFA
-        case .language: return 0x34D399
-        case .wikiDeepWiki: return 0x818CF8
-        case .wikiZread: return 0x22D3EE
-        case .wikiCodeWiki: return 0x34D399
-        case .actionAI: return 0xC084FC
-        case .actionGitHub: return 0xE5E7EB
-        }
-    }
-
-    func resolved(colorScheme: ColorScheme) -> Color {
-        Color.fromHex6(colorScheme == .dark ? darkHex : lightHex)
-    }
-
-    /// capsule 底色透明度：暗色主题略高，hover 时再抬一档。
-    func background(colorScheme: ColorScheme, hovered: Bool) -> Color {
-        let base = colorScheme == .dark ? 0.20 : 0.12
-        let hoverBoost = colorScheme == .dark ? 0.08 : 0.06
-        let opacity = hovered ? base + hoverBoost : base
-        return resolved(colorScheme: colorScheme).opacity(opacity)
-    }
-}
+// 注：原 `private enum SearchDetailSemanticColor` 已抽到
+// `Starcat/Shared/Components/DetailStats/StatSemanticColor.swift`(2026-06-29),
+// 详情页 stat(Forks / Watchers)和 SearchCenter 共享同一份语义色。
 
 /// 搜索详情卡底部操作 chip：图标 + 短标签 + capsule 底。
 /// 主操作（Star / Ask AI / GitHub）走 `semanticColor` 着色底；折叠菜单等中性操作保持灰底。
@@ -1783,7 +1728,7 @@ private struct SearchDetailActionChip: View {
     var titleKey: LocalizedStringKey?
     let helpKey: LocalizedStringKey
     /// 语义色；有值时图标 / 文字 / 底色同族着色。
-    var semanticColor: SearchDetailSemanticColor? = nil
+    var semanticColor: StatSemanticColor? = nil
     let action: () -> Void
 
     @State private var isHovered = false
@@ -1882,6 +1827,13 @@ private struct SearchRemoteRepoDetailView: View {
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
 
+    /// 搜索详情里的 CodeFlow sheet 也需要点击级 identity，避免 sheet-over-sheet
+    /// 复用 presentation host 时沿用上一次 repo 的 `@State` ViewModel。
+    private struct CodeFlowSheetItem: Identifiable {
+        let id = UUID()
+        let repo: Repo
+    }
+
     /// 已确认 indexed 的外部 wiki 链接（DeepWiki / ZRead / CodeWiki）。
     /// `.task(id: candidate.identity)` 触发 fetch，未收录 / 失败时保持空数组
     /// → 整行隐藏（与 `RepoWikiMenu` 的"未收录不占 UI"语义一致）。
@@ -1903,7 +1855,7 @@ private struct SearchRemoteRepoDetailView: View {
     ///
     /// 触发流程仍保留"先关 popover → DispatchQueue.main.async 后再赋值 item"
     /// 的时序，避免 popover 与 sheet 同帧 presentation 竞争。
-    @State private var codeFlowSheetRepo: Repo?
+    @State private var codeFlowSheetItem: CodeFlowSheetItem?
     @State private var paywallContext: ProPaywallContext?
 
     /// 卡片宽度。480pt 足以容纳 owner / repo 双行 + 头像 + 顶栏徽章；再窄
@@ -2171,7 +2123,7 @@ private struct SearchRemoteRepoDetailView: View {
     private func statItem(
         systemImage: String,
         value: String,
-        iconColor: SearchDetailSemanticColor,
+        iconColor: StatSemanticColor,
         tooltipKey: LocalizedStringKey? = nil
     ) -> some View {
         let tint = iconColor.resolved(colorScheme: colorScheme)
@@ -2321,7 +2273,7 @@ private struct SearchRemoteRepoDetailView: View {
         .help(Text(verbatim: link.url.absoluteString))
     }
 
-    private func wikiSemanticColor(for source: WikiSource) -> SearchDetailSemanticColor {
+    private func wikiSemanticColor(for source: WikiSource) -> StatSemanticColor {
         switch source {
         case .deepWiki: return .wikiDeepWiki
         case .zread: return .wikiZread
@@ -2431,8 +2383,9 @@ private struct SearchRemoteRepoDetailView: View {
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
-        .sheet(item: $codeFlowSheetRepo) { sheetRepo in
-            CodeFlowPanel(repo: sheetRepo)
+        .sheet(item: $codeFlowSheetItem) { item in
+            CodeFlowPanel(repo: item.repo)
+                .id(item.id)
                 .appSheetRootEnvironment(dependencies)
         }
     }
@@ -2549,7 +2502,8 @@ private struct SearchRemoteRepoDetailView: View {
     private func openCodeFlow(for repo: Repo) {
         do {
             try dependencies.entitlementGate.requirePro(.codeFlow)
-            codeFlowSheetRepo = repo
+            AppLog.ui.info("Search CodeFlow sheet repo=\(repo.fullName, privacy: .public) id=\(repo.id, privacy: .public)")
+            codeFlowSheetItem = CodeFlowSheetItem(repo: repo)
         } catch {
             paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
         }

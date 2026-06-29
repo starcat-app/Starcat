@@ -135,7 +135,7 @@ final class AppDependencies {
     /// 设置页"测试连接"按钮 → `await serviceHealthChecker.check(service:baseURL:)`。
     /// 独立 actor + 短超时（5s），不复用业务 API session。
     let serviceHealthChecker: ServiceHealthChecker
-    /// 状态栏四个自建 API 的 `/healthz` 可用性巡检。
+    /// 状态栏五个自建 API 的 `/healthz` 可用性巡检。
     /// 与 `serviceHealthChecker` 分开：前者只判断后端进程是否在线，后者校验 URL + API Key。
     let serviceAvailabilityMonitor: ServiceAvailabilityMonitor
 
@@ -180,6 +180,10 @@ final class AppDependencies {
     /// 构造期不发网络请求，因此保持非 optional；服务故障由每次请求独立降级。
     let wikiAPI: WikiAPI
 
+    /// 相似仓库推荐查询客户端。
+    /// 构造期不发网络请求；详情页按当前 repo id 懒加载推荐结果。
+    let recommendAPI: RecommendAPI
+
     /// Wiki 探测结果磁盘 JSON 缓存（2026-06-15）。
     /// 单进程单实例，与设置页 / `WikiContextService` 共用 observable 派生量。
     let diskWikiCache: DiskWikiCache
@@ -188,6 +192,17 @@ final class AppDependencies {
     /// 上层 `RepoAIChatViewModel.bootstrap` 通过它一次性拿"已知 wiki 链接"+ 顺手
     /// 触发后台刷新；未来详情页 toolbar wiki popover 也接入这里。
     let wikiContextService: WikiContextService
+
+    /// 推荐结果磁盘 JSON 缓存（2026-06-29，与 `DiskWikiCache` 同款形态）。
+    /// shared singleton 保留默认，AppDependencies 引用同一实例，让设置页存储 Tab
+    /// 与 `RecommendationContextService` 共享同一份 `itemCount` / `totalBytes` 派生量。
+    let diskRecommendationCache: DiskRecommendationCache
+
+    /// 推荐 SWR 编排层（2026-06-29）：read-through cache + 同步刷新。
+    /// 与 wiki 不同的是不做"stale 返回旧值 + 后台刷"的 SWR（推荐是发现型能力，
+    /// stale 直接重新拉即可），由 `RepoRecommendationViewModel` 自己拼装
+    /// "先 cache 立刻渲染 + 异步 refresh" 流程。
+    let recommendationContextService: RecommendationContextService
 
     // MARK: - OpenSSF Scorecard
 
@@ -366,7 +381,7 @@ final class AppDependencies {
     /// 否则后续 Repository 可能在错误路径上读写。这里向上抛出，由 `StarcatApp`
     /// 展示受控启动失败页，并保留诊断包导出入口。
     init() throws {
-        // 启动期记录四个自建后端 API 的实际 baseURL（DEBUG 会标 `[DEV]`，方便确认
+        // 启动期记录五个自建后端 API 的实际 baseURL（DEBUG 会标 `[DEV]`，方便确认
         // 当前到底打的是 fly.dev 生产端点还是 127.0.0.1 本地端点）。
         // 详见 `AppEndpoints.swift` 头注释里的"使用方式"。
         AppEndpoints.logResolvedEndpoints()
@@ -397,8 +412,12 @@ final class AppDependencies {
             AppLog.auth.info("Using MockGithubOAuthService (DEBUG)")
             oauth = MockGithubOAuthService()
         } else {
-            AppLog.auth.info("Using GithubDeviceFlowService")
-            oauth = GithubDeviceFlowService()
+            // 2026-06-29：生产装配用 CombinedGithubOAuthService 包装 Device Flow + Web Flow
+            // 两个 grant type。AuthSession 通过统一 protocol 访问，6 个方法按需路由到对应 actor。
+            // 之前直接用 GithubDeviceFlowService 会导致点 Web Flow 入口抛
+            // "Device Flow actor does not support Web Flow"。
+            AppLog.auth.info("Using CombinedGithubOAuthService (Device Flow + Web Flow)")
+            oauth = CombinedGithubOAuthService()
         }
         self.oauthService = oauth
 
@@ -472,6 +491,7 @@ final class AppDependencies {
         // 测试（init 加默认参数 nil 让旧测试无需改动）。
         let snapshotService = SharedSnapshotService()
         let repoContextStorage = RepoContextStorage.shared
+        let codebaseMemoryStorage = CodebaseMemoryStorage.shared
         let repoAIContextProvider = RepoAIContextProvider(
             snapshotService: snapshotService,
             storage: repoContextStorage,
@@ -661,6 +681,13 @@ final class AppDependencies {
         )
         self.wikiAPI = wikiAPIInstance
 
+        // Recommend 首期只做详情页单查，不在启动期请求。服务 URL / API Key 与其它
+        // 自建后端同样通过设置页热更新。
+        self.recommendAPI = RecommendAPI(
+            baseURL: AppEndpoints.Recommend.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .recommend)
+        )
+
         // 2026-06-15 v4.y：Wiki 磁盘缓存 + SWR 编排。装配顺序：
         // disk cache（只读 / 无网络）→ SWR service（依赖 cache + WikiAPI）。
         // shared singleton 保留默认，AppDependencies 引用同一实例，让设置页存储 Tab
@@ -669,6 +696,14 @@ final class AppDependencies {
         self.wikiContextService = WikiContextService(
             cache: .shared,
             fetcher: wikiAPIInstance
+        )
+
+        // 2026-06-29：推荐磁盘缓存 + SWR 编排（与 wiki 同款形态）。`RecommendAPI` 已在
+        // 上方 init 阶段创建（self.recommendAPI），这里直接复用。
+        self.diskRecommendationCache = .shared
+        self.recommendationContextService = RecommendationContextService(
+            cache: .shared,
+            fetcher: recommendAPI
         )
 
         // OpenSSF Scorecard：公开 API + 本地缓存 + 非阻塞 UI store。
@@ -937,6 +972,9 @@ final class AppDependencies {
         do { try DiskWikiCache.shared.deleteEverything() }
         catch { AppLog.general.warning("Factory reset: Wiki cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
 
+        do { try DiskRecommendationCache.shared.deleteEverything() }
+        catch { AppLog.general.warning("Factory reset: Recommendation cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
+
         do { try DiskChatHistoryStore.shared.deleteEverything() }
         catch { AppLog.general.warning("Factory reset: chat history cleanup failed: \(error.localizedDescription, privacy: .public)") }
 
@@ -945,6 +983,9 @@ final class AppDependencies {
 
         do { try CodeFlowStorage.shared.deleteAllProjects() }
         catch { AppLog.general.warning("Factory reset: CodeFlow cleanup failed: \(error.localizedDescription, privacy: .public)") }
+
+        do { try CodebaseMemoryStorage.shared.deleteAllProjects() }
+        catch { AppLog.general.warning("Factory reset: CodebaseMemory cleanup failed: \(error.localizedDescription, privacy: .public)") }
     }
 
     // MARK: - 第三方服务热更新（2026-06-08 新增）
@@ -968,6 +1009,7 @@ final class AppDependencies {
         case .weekly:   await weeklyAPI.updateBaseURL(target)
         case .sharing:  await shareAPI.updateBaseURL(target)
         case .wiki:     await wikiAPI.updateBaseURL(target)
+        case .recommend: await recommendAPI.updateBaseURL(target)
         }
 
         // 3) trending sidebar 语言列表跟随 baseURL 重拉（指向新地址的实际数据）。
@@ -1013,6 +1055,7 @@ final class AppDependencies {
         case .weekly:   await weeklyAPI.updateAPIKey(resolved)
         case .sharing:  await shareAPI.updateAPIKey(resolved)
         case .wiki:     await wikiAPI.updateAPIKey(resolved)
+        case .recommend: await recommendAPI.updateAPIKey(resolved)
         }
 
         // 4) trending API Key 改了 → 立刻用新 key 重拉一次语言列表。

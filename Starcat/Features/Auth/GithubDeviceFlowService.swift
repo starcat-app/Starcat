@@ -162,6 +162,21 @@ actor GithubDeviceFlowService: GithubOAuthServiceProtocol {
         pollInterval = 5
     }
 
+    // MARK: - Web Application Flow / PKCE（2026-06-29 新增，actor 边界 stub）
+
+    /// 2026-06-29 真实 PKCE 实现见 `GithubWebFlowService`。
+    /// 此处 stub 仅满足 protocol conformance，App 装配走的是
+    /// `MockGithubOAuthService`（单元测试）或 `GithubWebFlowService`（生产）。
+    /// Device Flow actor 不实现 Web Flow 协议——保留 stub 是为了让
+    /// `GithubDeviceFlowService` 仍可作为 protocol 一致性占位（不会在生产装配）。
+    func beginWebFlow() async throws -> WebFlowStartInfo {
+        throw GithubOAuthError.configurationMissing(reason: "Device Flow actor does not support Web Flow")
+    }
+    func exchangeCodeForToken(code: String) async throws -> String {
+        throw GithubOAuthError.configurationMissing(reason: "Device Flow actor does not support Web Flow")
+    }
+    func resetWebFlow() async { }
+
     // MARK: - 内部：单次轮询
 
     private enum PollResult {

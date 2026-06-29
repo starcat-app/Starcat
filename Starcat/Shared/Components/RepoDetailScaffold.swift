@@ -105,6 +105,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 /// R-01 详情页通用骨架。
 ///
@@ -169,6 +170,15 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     @State private var wikiRepoKey: String?
     @State private var wikiLinks: [WikiLink] = []
 
+    /// 相似仓库推荐状态机。放在 Scaffold 层是因为推荐入口属于所有 repo 详情页的通用能力。
+    @State private var recommendationVM = RepoRecommendationViewModel()
+
+    /// 推荐列表 popover 展示状态。只有 `recommendationVM.items` 非空时才允许打开。
+    @State private var showsRecommendations = false
+
+    /// Pro 付费墙展示上下文。Wiki / 推荐入口在已登录但非 Pro 时弹出付费墙。
+    @State private var proPaywallContext: ProPaywallContext?
+
     // v2.2 修订（2026-06-16, dong4j）：原 `@State private var showSecurityScoreSheet`
     // 已下沉到 `RepoMetadataHeaderView` —— OpenSSF 入口图标从右上 trailing actions
     // 迁移到 hero `full_name` 同行，sheet state 跟随入口本地化，不再由 Scaffold 维护。
@@ -177,7 +187,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     // 该状态曾给浮动刷新按钮用,现统一由 cacheFooter 内的 `readmeVM.isRefreshing` 驱动。
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(HomeViewModel.self) private var homeViewModel
 
     /// 顶部面板折叠/展开动画。轻阻尼 spring，让 README WebView 让位时跟手。
     private var metadataPanelAnimation: Animation {
@@ -249,11 +261,21 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .task(id: wikiLookupKey(for: repo)) {
             await loadWikiLinks(for: repo)
         }
+        .task(id: repo.id) {
+            await recommendationVM.loadInitial(
+                repoID: repo.id,
+                service: dependencies.recommendationContextService
+            )
+        }
+        .sheet(item: $proPaywallContext) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
+        }
         .onChange(of: repo.id) { _, _ in
             withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
                 metadataPanelCollapseProgress = 0
                 readmeScrollOverflow = nil
             }
+            showsRecommendations = false
         }
         .onChange(of: metadataPanelHeight) { _, newHeight in
             guard metadataPanelCollapseProgress > 0 else { return }
@@ -266,6 +288,10 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             }
         }
     }
+
+    // recommendationOverlay 已删除（v1.1 推荐按钮从右下角浮动迁到 hero trailing actions），
+    // 渲染逻辑迁到 `trailingActionsView` 内联。
+
 
     /// 接收 body 内部上报的滚动度量，换算成顶部面板折叠 progress。
     ///
@@ -286,14 +312,31 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             readmeScrollOverflow = overflow
         }
 
+        let stableScrollOverflow = Self.expandedScrollOverflow(
+            currentOverflow: readmeScrollOverflow,
+            panelHeight: metadataPanelHeight,
+            collapseProgress: metadataPanelCollapseProgress
+        )
         let canCollapse = Self.canCollapseHero(
-            scrollOverflow: readmeScrollOverflow,
+            scrollOverflow: stableScrollOverflow,
             panelHeight: metadataPanelHeight
         )
         let rawProgress = Self.metadataCollapseProgress(for: report.offsetY)
         let progress = canCollapse ? rawProgress : 0
         guard abs(progress - metadataPanelCollapseProgress) > 0.01 else { return }
         metadataPanelCollapseProgress = progress
+    }
+
+    /// 把 WebView 当前上报的余量折算回 Hero 展开态，避免折叠动作本身改变 `clientHeight`
+    /// 后让可折叠资格在边界 README 上反复翻转。
+    static func expandedScrollOverflow(
+        currentOverflow: CGFloat?,
+        panelHeight: CGFloat,
+        collapseProgress: CGFloat
+    ) -> CGFloat? {
+        guard let currentOverflow, panelHeight > 0 else { return currentOverflow }
+        let normalizedProgress = min(max(collapseProgress, 0), 1)
+        return currentOverflow + panelHeight * normalizedProgress
     }
 
     /// Hero 是否具备稳定折叠资格：余量未知或面板未测高时保守禁止；余量须 ≥ 面板高度。
@@ -369,7 +412,111 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 actionButton(for: action)
             }
             if !wikiLinks.isEmpty {
-                RepoWikiMenu(links: wikiLinks)
+                if dependencies.authSession.state.isAuthenticated {
+                    // 已登录：Pro 门控
+                    if dependencies.entitlementGate.isProUser {
+                        RepoWikiMenu(links: wikiLinks)
+                    } else {
+                        // 非 Pro：点击 Wiki 图标弹出付费墙
+                        Button {
+                            proPaywallContext = ProPaywallContext(feature: .externalWiki)
+                        } label: {
+                            WikiEntryIcon(size: 13)
+                                .frame(width: 28, height: 28)
+                                .background {
+                                    Capsule(style: .continuous)
+                                        .fill(WikiAccent.background(colorScheme: colorScheme))
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .pressableHover()
+                        .help(Text("wiki.menu.help"))
+                        .accessibilityLabel(Text("wiki.menu.title"))
+                        .fixedSize()
+                    }
+                } else {
+                    // 未登录：点击 Wiki 图标弹出登录 sheet
+                    Button {
+                        dependencies.authSession.requestLoginSheet()
+                    } label: {
+                        WikiEntryIcon(size: 13)
+                            .frame(width: 28, height: 28)
+                            .background {
+                                Capsule(style: .continuous)
+                                    .fill(WikiAccent.background(colorScheme: colorScheme))
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .pressableHover()
+                    .help(Text("wiki.menu.help"))
+                    .accessibilityLabel(Text("wiki.menu.title"))
+                    .fixedSize()
+                }
+            }
+            // 相似推荐入口（v1.1 从右下角浮动按钮迁到 hero trailing actions）。
+            // 位置：Wiki 菜单之后、剩余 actions（.ai 等）之前 —— 即 AI 按钮的左侧。
+            // 显示条件：recommendationVM.hasItems（保持旧浮动按钮的「有就显示、没有就不显示」契约）。
+            if recommendationVM.hasItems {
+                RepoRecommendButton(hasItems: true) {
+                    guard dependencies.authSession.state.isAuthenticated else {
+                        dependencies.authSession.requestLoginSheet()
+                        return
+                    }
+                    guard dependencies.entitlementGate.isProUser else {
+                        proPaywallContext = ProPaywallContext(feature: .repoRecommendations)
+                        return
+                    }
+                    showsRecommendations = true
+                }
+                .popover(isPresented: $showsRecommendations, arrowEdge: .bottom) {
+                    // v1.1 修订：在 popover builder 里用 `StarredRegistry` 一次性把
+                    // `RepoRecommendationItem` 转成 `RecommendationCard`（含 isStarred），
+                    // popover 内纯渲染不再访问 registry / 不调 `asCardData()`。
+                    let cards: [RecommendationCard] = recommendationVM.items.map { item in
+                        RecommendationCard(
+                            item: item,
+                            card: item.asCardData(registry: dependencies.starredRegistry),
+                            hit: item.asSemanticSearchHit()
+                        )
+                    }
+                    RepoRecommendationPopover(
+                        items: cards,
+                        hasMore: recommendationVM.hasMore,
+                        isLoading: recommendationVM.isLoading,
+                        isLoadingMore: recommendationVM.isLoadingMore,
+                        errorMessage: recommendationVM.errorMessage,
+                        onOpen: { item in
+                            showsRecommendations = false
+                            // v1.1 修订：所有点击（单击/Cmd/中键）都走这里。
+                            //   - 本地已 star → 走 `RepoDetailWindowController.show` 开新 Starcat 窗
+                            //     （与 AI 按钮开 AI 浮窗的体验一致；同 repo 重复点击不重开）
+                            //   - 非本地 / 未 star → NSWorkspace 打开 GitHub URL（fallback）
+                            // 新窗的好处：detail 不依赖 in-place 导航的 selectedRepo lookup，
+                            // 避免「切 selection 期间 selectedRepoID 被清」造成的卡加载体感。
+                            Task {
+                                if let localRepo = try? await dependencies.repoRepository.findById(item.repoID),
+                                   localRepo.isStarred {
+                                    RepoDetailWindowController.show(
+                                        repo: localRepo,
+                                        dependencies: dependencies,
+                                        homeViewModel: homeViewModel
+                                    )
+                                } else if let url = item.githubURL {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                        },
+                        onLoadMore: {
+                            Task {
+                                await recommendationVM.loadMore(
+                                    service: dependencies.recommendationContextService
+                                )
+                            }
+                        }
+                    )
+                }
             }
             ForEach(remainingActions) { action in
                 actionButton(for: action)
@@ -401,8 +548,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             EmptyView()
 
         case .ai:
-            // 复用现有 RepoAIOpenButton：内部通过 RepoAIWindowController 弹窗。
-            RepoAIOpenButton(repo: repo)
+            // AI 主入口已迁到 README 状态栏横条。旧独立窗口能力保留在
+            // RepoAIOpenButton / RepoAIWindowController 中，当前只隐藏 Hero 按钮入口。
+            EmptyView()
 
         case .weeklyIssue(let number, let url):
             Link(destination: url) {

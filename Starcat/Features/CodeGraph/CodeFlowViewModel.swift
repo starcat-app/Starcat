@@ -56,7 +56,9 @@ final class CodeFlowViewModel {
         didSet { updateSelectionVersionStatus() }
     }
 
-    private let repo: Repo
+    /// repo 由 sheet item 驱动；macOS sheet 可能复用 `@State` ViewModel，
+    /// 因此这里必须允许 `refreshRepo(repo:)` 在每次打开时重新校准当前仓库。
+    private var repo: Repo
     private let runner: CodeFlowRunner
     private var task: Task<Void, Never>?
 
@@ -69,6 +71,23 @@ final class CodeFlowViewModel {
     init(repo: Repo, runner: CodeFlowRunner = CodeFlowRunner()) {
         self.repo = repo
         self.runner = runner
+        // 不在 init 跑缓存 IO：`@State` 只初始化一次，sheet host 被复用时这里仍是旧 repo。
+        // Panel `.task` 会调用 `refreshRepo(repo:)`，用当前 sheet item 的 repo 重载状态。
+    }
+
+    /// 每次 Panel 显示时，用父级 sheet item 的 repo 重新校准 ViewModel。
+    /// 这是防止 A 仓库打开后再点 B 仓库仍显示 A 数据的最后一道保险。
+    func refreshRepo(repo: Repo) {
+        task?.cancel()
+        task = nil
+        self.repo = repo
+        storedProject = nil
+        branches = []
+        isLoadingBranches = false
+        versionStatus = .unknown
+        selectedBranchName = ""
+        steps = Self.emptySteps()
+        state = .idle
         restoreCachedState()
     }
 
@@ -240,11 +259,15 @@ final class CodeFlowViewModel {
                 state = .ready(pageURL: project.pageURL)
             } else {
                 storedProject = nil
+                selectedBranchName = ""
+                versionStatus = .unknown
                 state = .idle
                 steps = Self.emptySteps()
             }
         } catch {
             storedProject = nil
+            selectedBranchName = ""
+            versionStatus = .unknown
             state = .failed(message: error.localizedDescription)
             steps = Self.emptySteps()
         }

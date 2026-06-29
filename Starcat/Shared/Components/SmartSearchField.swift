@@ -35,6 +35,17 @@ struct SmartSearchField: View {
     let onRefreshSemanticIndex: () -> Void
     var onOpenGlobalSearch: (() -> Void)?
 
+    /// 当前用户是否为 Pro 订阅者。`.semantic` 是 Pro 能力(W6 拍板:菜单层先拦截,
+    /// service 内 `requirePro(.semanticSearch)` 再兜底做双层防御)。
+    /// 非 Pro 用户在下拉里仍能看到 `.semantic` 选项,但点击触发 `onRequestProUpgrade`
+    /// 弹付费墙 —— 这样既做了功能预告(免费用户清楚"Pro 解锁什么"),又不让非 Pro
+    /// 选了之后"提交没反应"的灰色体验出现。
+    var isProUser: Bool = true
+
+    /// 非 Pro 用户点击菜单中锁定的 `.semantic` 项时回调。组件不直接持有付费墙
+    /// 状态 —— 由 caller(RepoListView)注入,因为支付浮层通常需要读到 view tree 上下文。
+    var onRequestProUpgrade: (() -> Void)?
+
     /// W12 toolbar 专项 PR-2：禁用态。
     ///
     /// 设计动机：搜索框已扩到所有页面常驻显示，但 `.keyword` / `.semantic` 模式只对
@@ -140,6 +151,15 @@ struct SmartSearchField: View {
             guard !isDisabled else { return }
             expandAndFocusInput()
         }
+        // 2026-06-28 W6 拍板:用户在 Pro 态切到 .semantic 后失去 Pro(订阅过期/降级),
+        // 自动回退到 .keyword + 弹一次付费墙 —— 比"保留 .semantic 但提交时弹 paywall"UX 干净,
+        // 避免 mode 字段与 entitlement 不同步引发后续提交路径复杂分支。
+        // 只在 mode == .semantic 且 isProUser 刚翻成 false 时触发,避免重复弹。
+        .onChange(of: isProUser) { _, newValue in
+            guard !newValue, mode == .semantic else { return }
+            mode = .keyword
+            onRequestProUpgrade?()
+        }
         .onAppear {
             draftText = text
             isExpanded = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -167,11 +187,23 @@ struct SmartSearchField: View {
                         Label("search.mode.keyword", systemImage: SmartSearchMode.keyword.systemImage)
                     }
 
-                    Button {
-                        mode = .semantic
-                        expandAndFocusInput()
-                    } label: {
-                        Label("search.mode.semantic", systemImage: SmartSearchMode.semantic.systemImage)
+                    // .semantic 是 Pro 能力。非 Pro 用户仍能看到菜单项(功能预告),
+                    // 但点击改为触发付费墙回调,而不是写入 mode 后让提交时"静默失败"。
+                    // 用普通 Button + 锁标,不用 .disabled —— 禁用态 Menu item 完全不响应,
+                    // 无法把 click 转发到 caller 的 paywall 流程。
+                    if isProUser {
+                        Button {
+                            mode = .semantic
+                            expandAndFocusInput()
+                        } label: {
+                            Label("search.mode.semantic", systemImage: SmartSearchMode.semantic.systemImage)
+                        }
+                    } else {
+                        Button {
+                            onRequestProUpgrade?()
+                        } label: {
+                            lockedSemanticMenuLabel
+                        }
                     }
                 } label: {
                     ToolbarIcon("sparkle.magnifyingglass")
@@ -270,17 +302,40 @@ struct SmartSearchField: View {
                 Divider()
             }
 
-            Picker("search.mode.title", selection: $mode) {
-                ForEach(SmartSearchMode.allCases) { option in
-                    Label {
-                        Text(option.displayName)
-                    } icon: {
-                        Image(systemName: option.systemImage)
-                    }
-                    .tag(option)
+            // .keyword 项:任何用户都可点;与 mode 联动显示对勾。
+            Button {
+                mode = .keyword
+                expandAndFocusInput()
+            } label: {
+                pickerLabel(
+                    titleKey: SmartSearchMode.keyword.displayName,
+                    systemImage: SmartSearchMode.keyword.systemImage,
+                    isSelected: mode == .keyword
+                )
+            }
+
+            // .semantic 项:Pro 用户可点切换;非 Pro 用户看到锁标,点击触发付费墙回调。
+            // 不用 SwiftUI Picker 是因为 Picker 的 item 不能单独拦截"点击但不改 selection"
+            // —— 非 Pro 用户点了会把 mode 改成 .semantic,后续提交仍走 service 层兜底报错,
+            // 体感跟"提交没反应"一致。拆成两个 Button 才能让 .semantic 在非 Pro 时纯转发。
+            if isProUser {
+                Button {
+                    mode = .semantic
+                    expandAndFocusInput()
+                } label: {
+                    pickerLabel(
+                        titleKey: SmartSearchMode.semantic.displayName,
+                        systemImage: SmartSearchMode.semantic.systemImage,
+                        isSelected: mode == .semantic
+                    )
+                }
+            } else {
+                Button {
+                    onRequestProUpgrade?()
+                } label: {
+                    lockedSemanticMenuLabel
                 }
             }
-            .pickerStyle(.inline)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: mode.systemImage)
@@ -297,6 +352,47 @@ struct SmartSearchField: View {
         .focusEffectDisabled()
         .disabled(isDisabled)
         .help("search.mode.hint")
+    }
+
+    /// 模式菜单里的单行视图:标题 + 图标 + 选中态对勾。
+    /// SwiftUI 原生 Picker 在 inline 模式下自动渲染 "✓ Title" 行;改用手动 Button 后
+    /// 需要自己拼这个对齐样式,保持与折叠态 Menu、展开态 Picker 视觉一致。
+    private func pickerLabel(
+        titleKey: LocalizedStringKey,
+        systemImage: String,
+        isSelected: Bool
+    ) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .frame(width: 16)
+            Text(titleKey)
+            Spacer(minLength: 16)
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+        }
+    }
+
+    /// 锁定态的 .semantic 菜单行:左 Title + 图标,右 lock.fill 副标记。
+    ///
+    /// 用 Group 套 Label 是为了让 toolbar menu 和 macOS 系统 menu 都能正确渲染副标题
+    /// 区域(原生 Label 没有 trailing slot,需要在 label 里手动 HStack)。
+    private var lockedSemanticMenuLabel: some View {
+        HStack(spacing: 6) {
+            Image(systemName: SmartSearchMode.semantic.systemImage)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(SmartSearchMode.semantic.displayName)
+                Text("search.mode.semantic.lockedSuffix")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "lock.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var semanticRefreshButton: some View {

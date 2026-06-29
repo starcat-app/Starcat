@@ -230,7 +230,8 @@ struct RepoDetailView: View {
     /// 这不是失败语义)。
     private func handleStarTapped(repo: Repo) async throws {
         guard authSession.state.isAuthenticated else {
-            authSession.signIn()
+            // 2026-06-29：只弹登录 sheet，不强制走 Device Flow
+            authSession.requestLoginSheet()
             return
         }
         try await dependencies.starActionService.toggle(repo: repo)
@@ -804,6 +805,8 @@ private struct DateStatItem: View {
 struct WatchersMenu: View {
     let repo: Repo
     @Environment(AppDependencies.self) private var dependencies
+    /// Watchers 图标用 StatSemanticColor.watchers 紫色(light/dark 双主题)。
+    @Environment(\.colorScheme) private var colorScheme
     
     enum WatchState: Equatable {
         case loading
@@ -868,7 +871,7 @@ struct WatchersMenu: View {
                 }
             }
         } label: {
-            StatItem(label: "repo.watchers", value: repo.watchersCount, systemImage: "eye.fill", tint: .secondary)
+            StatItem(label: "repo.watchers", value: repo.watchersCount, systemImage: "eye.fill", tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
@@ -877,24 +880,20 @@ struct WatchersMenu: View {
         // `.pressableHover()`，让用户感知 Watchers 数字是可点击的（点开下拉菜单）。
         .pressableHover()
         .help("repo.watch")
-        .simultaneousGesture(TapGesture().onEnded {
-            loadSubscriptionWhenUserOpensMenu()
-        })
-        .onAppear {
-            applyCachedSubscriptionState()
-        }
-        .onChange(of: repo.id) { _, _ in
-            applyCachedSubscriptionState()
+        // D-37（2026-06-29）：原来用 `.simultaneousGesture(TapGesture())` 想做"打开菜单才懒加载",
+        // 但 macOS Menu label 内部 button 优先消费 tap event,挂在外层的 .onEnded 在 Menu 上不可靠
+        // 触发,导致 fetchSubscription Task 永远不启动,watchState 永远停在 .loading。
+        // 改回 `.task(id: repo.id)`,cache 命中就跳过;跟工程内 9+ 个其他 section 同款 lifecycle。
+        // .task 在 view 离开 / repo 切换时会自动 cancel 旧任务,符合"切换 repo 不抢网络"原意。
+        .task(id: repo.id) {
+            if WatchSubscriptionSessionCache.state(for: repo.id) == nil {
+                await fetchSubscription()
+            } else {
+                applyCachedSubscriptionState()
+            }
         }
     }
     
-    private func loadSubscriptionWhenUserOpensMenu() {
-        if applyCachedSubscriptionState() {
-            return
-        }
-        Task { await fetchSubscription() }
-    }
-
     @discardableResult
     private func applyCachedSubscriptionState() -> Bool {
         if let cached = WatchSubscriptionSessionCache.state(for: repo.id) {

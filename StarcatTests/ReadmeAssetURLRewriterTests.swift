@@ -91,6 +91,23 @@ struct ReadmeAssetURLRewriterTests {
         #expect(ReadmeAssetURLRewriter.rewriteOne("/logo.png", rawBase: rawBase) == rawBase + "logo.png")
     }
 
+    @Test("GitHub 根路径 raw 图片重写为 raw.githubusercontent.com")
+    func rewriteOne_githubRootRawPath() {
+        let rawBase = "https://raw.githubusercontent.com/alice/foo/HEAD/"
+        let src = "/javalin/javalin/raw/master/.github/img/javalin.png"
+        let expected = "https://raw.githubusercontent.com/javalin/javalin/master/.github/img/javalin.png"
+
+        #expect(ReadmeAssetURLRewriter.rewriteOne(src, rawBase: rawBase) == expected)
+    }
+
+    @Test("普通前导斜杠路径不误判为 GitHub raw 路径")
+    func rewriteOne_leadingSlashWithoutRawKeepsCurrentRepoRoot() {
+        let rawBase = "https://raw.githubusercontent.com/alice/foo/HEAD/"
+
+        #expect(ReadmeAssetURLRewriter.rewriteOne("/javalin/javalin/logo.png", rawBase: rawBase)
+            == rawBase + "javalin/javalin/logo.png")
+    }
+
     @Test("mailto: 和 javascript: 不重写")
     func rewriteOne_mailtoJS() {
         let rawBase = "https://raw.githubusercontent.com/alice/foo/HEAD/"

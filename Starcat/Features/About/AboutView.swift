@@ -895,7 +895,7 @@ private struct AboutDependency: Identifiable {
         ),
         AboutDependency(
             name: "MCP Swift SDK",
-            license: "Apache 2.0 / MIT",
+            license: "Apache-2.0 / MIT",
             copyright: "Copyright (c) 2024-2025 Model Context Protocol a Series of LF Projects, LLC.",
             url: URL(string: "https://github.com/modelcontextprotocol/swift-sdk")
         ),
@@ -927,14 +927,20 @@ private struct AboutDependency: Identifiable {
             url: URL(string: "https://github.com/braedonsaunders/codeflow")
         ),
         AboutDependency(
+            name: "CodebaseMemory",
+            license: "MIT",
+            copyright: "Copyright (c) 2025 DeusData",
+            url: URL(string: "https://github.com/DeusData/codebase-memory-mcp")
+        ),
+        AboutDependency(
             name: "Repomix",
             license: "MIT",
             copyright: "Copyright 2024 Kazuki Yamada",
             url: URL(string: "https://github.com/yamadashy/repomix")
         ),
         AboutDependency(
-            name: "OpenSSF Scorecard API",
-            license: "CDLA Permissive 2.0 (API data), Apache 2.0 (project)",
+            name: "OpenSSF",
+            license: "CDLA-2.0 / Apache-2.0",
             copyright: "Copyright 2020 OpenSSF Scorecard Authors",
             url: URL(string: "https://github.com/ossf/scorecard")
         ),

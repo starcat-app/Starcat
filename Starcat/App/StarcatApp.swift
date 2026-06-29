@@ -20,9 +20,11 @@ struct StarcatApp: App {
 
     /// macOS app 生命周期桥接。
     ///
-    /// SwiftUI WindowGroup 正常会自动创建主窗口；这里的 delegate 只负责前台应用形态
-    /// 与 Dock reopen 兜底，不承载业务状态，避免和 SwiftUI scene 生命周期打架。
-    @NSApplicationDelegateAdaptor(StarcatAppDelegate.self) private var appDelegate
+    /// `AppDelegate` 同时负责两类 AppKit 生命周期事件：
+    /// - Dock reopen / 前台激活兜底，避免用户关闭主窗口后再次点击 Dock 没反应。
+    /// - 早期注册 `kAEGetURL` handler，避免浏览器 OAuth callback 拉起第二个进程。
+    /// 保持单个 adaptor，避免两个 NSApplicationDelegate 互相覆盖生命周期回调。
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     /// 应用级依赖容器，必须在 init 中创建并通过 environment 传给 ContentView。
     ///
@@ -50,6 +52,7 @@ struct StarcatApp: App {
 
     init() {
         Self.bootstrap()
+
         // 注意：AppDependencies 是 @MainActor，App init 已在 main thread。
         do {
             _dependencies = State(initialValue: try AppDependencies())
@@ -73,9 +76,33 @@ struct StarcatApp: App {
         // 可接受的权衡，不要为了消除这点闪烁再回到 init() 里调 NSApp。
     }
 
+    /// 2026-06-29：处理从 macOS URL handler 进来的 `starcat://callback?code=...&state=...`。
+    /// `dependencies` 在 `init()` 失败时为 nil，此时收到 URL 也无法处理（没有 authSession）——
+    /// 直接忽略，让用户手动重新登录。
+    private func handleIncomingURL(_ url: URL) {
+        guard let session = dependencies?.authSession else {
+            AppLog.auth.warning("StarcatApp.handleIncomingURL: dependencies not ready, ignoring \(url.absoluteString, privacy: .public)")
+            return
+        }
+        Task { await session.handleWebFlowCallback(url: url) }
+    }
+
     var body: some Scene {
         WindowGroup("Starcat") {
             windowRoot
+                // 2026-06-29：监听 AppDelegate 转发过来的 starcat://callback URL。
+                // NSAppleEventManager handler 会消费 kAEGetURL 事件 → .onOpenURL 收不到 →
+                // 必须在 AppDelegate handler 里通过 NotificationCenter 显式转发。
+                .onReceive(NotificationCenter.default.publisher(for: AppDelegate.incomingURLNotification)) { notification in
+                    if let url = notification.object as? URL {
+                        handleIncomingURL(url)
+                    }
+                }
+                // 兜底：如果未来 NSAppleEventManager handler 被移除或有其他 URL 来源，
+                // .onOpenURL 仍作为 secondary handler 继续工作。
+                .onOpenURL { url in
+                    handleIncomingURL(url)
+                }
         }
         .commands {
             // 替换系统默认的"关于 Starcat"菜单项，打开自定义 SwiftUI 关于窗口。
@@ -131,10 +158,12 @@ struct StarcatApp: App {
                 // 决定是否展示「AI 自动整理中 N/M」轻量行；设置页观察其触发结果展示
                 // 「运行状态」。调度器的 `start()` 由 HomeView 在 .task 里调。
                 .environment(dependencies.autoTidyScheduler)
+                #if DEBUG
                 .onReceive(NotificationCenter.default.publisher(for: DebugMenuCommands.debugProOverrideNotification)) { notification in
                     guard let active = notification.userInfo?[DebugMenuCommands.debugProOverrideActiveKey] as? Bool else { return }
                     dependencies.subscriptionManager.applyDebugProOverride(active: active)
                 }
+                #endif
                 .onAppear {
                     applyAppearance(dependencies.settings.appearanceMode)
                 }
@@ -265,34 +294,6 @@ struct StarcatApp: App {
         }
 
         AppLog.general.info("Starcat bootstrap complete")
-    }
-}
-
-/// macOS 前台窗口激活兜底。
-///
-/// 约束：不要在这里创建 AppDependencies 或直接操作 SwiftUI 状态。delegate 只处理
-/// AppKit 层的应用激活事件，避免用户关闭主窗口后再次点击 Dock 图标仍停留在无窗口状态。
-final class StarcatAppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        activateMainWindowIfPossible()
-    }
-
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        activateMainWindowIfPossible()
-        return true
-    }
-
-    private func activateMainWindowIfPossible() {
-        DispatchQueue.main.async {
-            NSApp.activate(ignoringOtherApps: true)
-            NSApp.windows
-                .first { !$0.isMiniaturized }
-                .map { window in
-                    window.makeKeyAndOrderFront(nil)
-                    window.orderFrontRegardless()
-                }
-        }
     }
 }
 

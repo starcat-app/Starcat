@@ -86,6 +86,17 @@ targets:
     info:
       path: Starcat/Generated/Info.generated.plist
       properties:
+        # 2026-06-29：强制单实例。Web Flow 浏览器回调 starcat://callback 时，
+        # macOS 默认会启动新实例（如果 URL handler 还没准备好）+ 把 URL event
+        # 派发给新 + 老两个实例。老实例 actor 状态过期 + code 已被新实例消耗，
+        # 第二次 callback 会"Cannot decode token response"。
+        # 设 LSMultipleInstancesProhibited=true 让 macOS 只激活已存在实例不开新。
+        LSMultipleInstancesProhibited: true
+        # 2026-06-29：GitHub OAuth App Client Secret（Web Flow token 交换必需）。
+        # OAuth App 的 /login/oauth/access_token 要求同时带 client_secret + code_verifier
+        # （PKCE 保护 code 安全但不替代 client authentication）。本字段通过 xcconfig 注入，
+        # 不提交到 git。缺失时 Web Flow 退化为不可用提示。
+        STARCAT_OAUTH_CLIENT_SECRET: $(STARCAT_OAUTH_CLIENT_SECRET)
         CFBundleURLTypes:
           - CFBundleURLName: com.starcat.app
             CFBundleURLSchemes:
@@ -97,6 +108,7 @@ targets:
         STARCAT_PRODUCTION_API_KEY_WEEKLY: $(STARCAT_PRODUCTION_API_KEY_WEEKLY)
         STARCAT_PRODUCTION_API_KEY_SHARING: $(STARCAT_PRODUCTION_API_KEY_SHARING)
         STARCAT_PRODUCTION_API_KEY_WIKI: $(STARCAT_PRODUCTION_API_KEY_WIKI)
+        STARCAT_PRODUCTION_API_KEY_RECOMMEND: $(STARCAT_PRODUCTION_API_KEY_RECOMMEND)
     dependencies:
       - package: GRDB
       - package: KeychainAccess
