@@ -52,7 +52,8 @@ final class CodebaseMemoryViewModel {
 
     var paywallContext: ProPaywallContext?
 
-    /// repo 改为 var,让 refreshRepo(repo:) 能替换(否则 self.repo 永远是 init 时捕获的旧值)
+    /// repo 由 sheet item 驱动；Panel 重建后通常与 init 参数一致。
+    /// 仍保留可变字段，让 `refreshRepo(repo:)` 在 SwiftUI 复用 presentation host 时能做二次校准。
     private var repo: Repo
     private let runner: CodebaseMemoryRunner
     private let storage: CodebaseMemoryStorage
@@ -128,11 +129,7 @@ final class CodebaseMemoryViewModel {
     /// 当 Sheet 切换到不同 repo 时, 主动清空旧状态 + 按新 repo 重新查 cached。
     /// SwiftUI 在 .sheet(item:) 复用 State 时, init 不会重跑, 用此方法做兜底。
     func reloadForNewRepo() {
-        // 杀掉旧 UI 子进程(指向旧 repo 的 port)
-        if let proc = uiProcess, proc.isRunning {
-            proc.terminate()
-            uiProcess = nil
-        }
+        stopCurrentUI()
         branches = []
         isLoadingBranches = false
         versionStatus = .unknown
@@ -153,11 +150,7 @@ final class CodebaseMemoryViewModel {
     /// 真根因修复: Panel 的 @State repo 已更新, ViewModel 内部的 repo 字段也同步
     /// 替换, 然后按新 repo 重新查 storedProject + 清空 branches。
     func refreshRepo(repo: Repo) {
-        // 杀掉旧 UI 子进程(指向旧 repo 的端口 + 旧 source 目录)
-        if let proc = uiProcess, proc.isRunning {
-            proc.terminate()
-            uiProcess = nil
-        }
+        stopCurrentUI()
         // 新 repo 替换 init 时捕获的旧 repo
         self.repo = repo
         // 清空所有跟旧 repo 相关的状态, 然后用新 repo 重新查
@@ -172,13 +165,20 @@ final class CodebaseMemoryViewModel {
 
     func start() {
         task?.cancel()
-        if case .ready(let port, let pageURL) = state {
+        // `ready/succeeded` 只代表本次 ViewModel 持有一个仍在运行的 UI 进程。
+        // 历史 metadata 里的 lastUIPort 不能作为运行态依据，因为用户关闭窗口、
+        // App 重启或旧版本崩溃后，端口记录仍会留在磁盘上。
+        if case .ready(let port, let pageURL) = state,
+           let proc = uiProcess,
+           proc.isRunning {
             openBrowser(port: port, url: pageURL)
             return
         }
         if case .succeeded = state,
            let project = storedProject,
-           let port = project.metadata.lastUIPort {
+           let port = project.metadata.lastUIPort,
+           let proc = uiProcess,
+           proc.isRunning {
             let url = URL(string: "http://127.0.0.1:\(port)/")!
             openBrowser(port: port, url: url)
             return
@@ -188,11 +188,7 @@ final class CodebaseMemoryViewModel {
 
     func regenerate() {
         task?.cancel()
-        // 杀掉旧 UI 子进程
-        if let proc = uiProcess, proc.isRunning {
-            proc.terminate()
-            uiProcess = nil
-        }
+        stopCurrentUI()
         generate(removingExisting: true)
     }
 
@@ -238,27 +234,47 @@ final class CodebaseMemoryViewModel {
                 if !removingExisting,
                    let existing = try? storage.existingProject(owner: repo.owner, name: repo.name),
                    existing.metadata.sourceRevision.commitSHA == branch.commitSHA {
-                    // 全部跳过 → 直接 openBrowser
-                    steps.forEach { step in
-                        if step.id != .resolveBinary, step.id != .resolveRevision {
-                            setStep(id: step.id, status: .skipped)
+                    let root = try storage.outputRootURL()
+                    let outDir = storage.projectDirectory(root: root, owner: repo.owner, name: repo.name)
+                    let sourceURL = outDir.appendingPathComponent("source", isDirectory: true)
+                    let cacheDir = storage.projectCacheDirectory(root: root, owner: repo.owner, name: repo.name)
+                    if (try? await runner.verifiedProjectName(
+                        binaryURL: binaryURL,
+                        cacheDir: cacheDir,
+                        expectedSourceURL: sourceURL,
+                        repositoryFullName: repo.fullName
+                    )) != nil {
+                        // 全部跳过 → 直接 openBrowser
+                        steps.forEach { step in
+                            if step.id != .resolveBinary, step.id != .resolveRevision {
+                                setStep(id: step.id, status: .skipped)
+                            }
                         }
+                        let port = existing.metadata.lastUIPort ?? pickPort()
+                        let pageURL = URL(string: "http://127.0.0.1:\(port)/")!
+                        // 如果旧 UI 进程还在，直接打开；否则 start up
+                        if uiProcess == nil || uiProcess?.isRunning == false {
+                            state = .startingUI
+                            setStep(id: .startUI, status: .running, detail: "localhost:\(port)")
+                            let launched = try await runner.startVerifiedUI(
+                                binaryURL: binaryURL,
+                                port: port,
+                                cacheDir: cacheDir,
+                                repositoryFullName: repo.fullName,
+                                expectedSourceURL: sourceURL
+                            )
+                            uiProcess = launched.process
+                            setStep(id: .startUI, status: .succeeded)
+                        }
+                        guard uiProcess != nil else {
+                            state = .failed(message: CodebaseMemoryError.uiStartFailed(underlying: "missing UI process").localizedDescription)
+                            return
+                        }
+                        openBrowser(port: port, url: pageURL)
+                        return
                     }
-                    let port = existing.metadata.lastUIPort ?? pickPort()
-                    // 如果旧 UI 进程还在，直接打开；否则 start up
-                    if uiProcess == nil || uiProcess?.isRunning == false {
-                        state = .startingUI
-                        let cacheDir = try storage.outputRootURL().appendingPathComponent(".internal-cache")
-                        setStep(id: .startUI, status: .running, detail: "localhost:\(port)")
-                        let proc = try runner.startUI(
-                            binaryURL: binaryURL, port: port, cacheDir: cacheDir,
-                            repositoryFullName: repo.fullName
-                        )
-                        uiProcess = proc
-                        setStep(id: .startUI, status: .succeeded)
-                    }
-                    openBrowser(port: port, url: URL(string: "http://127.0.0.1:\(port)/")!)
-                    return
+                    // metadata 命中但 cache/db 与当前 repo 不匹配时，继续走完整生成管线。
+                    // 这是 Repo A/B 串台的关键防线，不能因为 metadata 存在就打开旧 UI。
                 }
 
                 try Task.checkCancellation()
@@ -288,7 +304,7 @@ final class CodebaseMemoryViewModel {
                 // Step 5: 索引
                 state = .indexing
                 setStep(id: .index, status: .running)
-                let cacheDir = root.appendingPathComponent(".internal-cache")
+                let cacheDir = storage.projectCacheDirectory(root: root, owner: repo.owner, name: repo.name)
                 let indexResult = try await runner.runIndex(
                     binaryURL: binaryURL, repoPath: source.sourceURL, cacheDir: cacheDir
                 )
@@ -306,20 +322,14 @@ final class CodebaseMemoryViewModel {
                 state = .startingUI
                 let port = pickPort()
                 setStep(id: .startUI, status: .running, detail: "localhost:\(port)")
-                let proc = try runner.startUI(
-                    binaryURL: binaryURL, port: port, cacheDir: cacheDir,
-                    repositoryFullName: repo.fullName
+                let launched = try await runner.startVerifiedUI(
+                    binaryURL: binaryURL,
+                    port: port,
+                    cacheDir: cacheDir,
+                    repositoryFullName: repo.fullName,
+                    expectedSourceURL: source.sourceURL
                 )
-                uiProcess = proc
-
-                // 等待 web server 就绪（最多 8 秒，每秒探测一次）
-                let pageURL = URL(string: "http://127.0.0.1:\(port)/")!
-                let ready = await waitForServer(url: pageURL, timeout: 8)
-                if !ready {
-                    setStep(id: .startUI, status: .failed, detail: "server did not respond")
-                    state = .failed(message: CodebaseMemoryError.uiStartFailed(underlying: "server did not respond on port \(port)").localizedDescription)
-                    return
-                }
+                uiProcess = launched.process
                 setStep(id: .startUI, status: .succeeded)
 
                 // Step 7: 保存 metadata
@@ -354,10 +364,11 @@ final class CodebaseMemoryViewModel {
                 storedProject = try? storage.existingProject(owner: repo.owner, name: repo.name)
 
                 // Step 8: 打开浏览器
-                openBrowser(port: port, url: pageURL)
+                openBrowser(port: port, url: launched.pageURL)
             } catch is CancellationError {
                 restoreCachedState()
             } catch {
+                stopCurrentUI()
                 markRunningStepFailed(error.localizedDescription)
                 state = .failed(message: error.localizedDescription)
             }
@@ -368,29 +379,22 @@ final class CodebaseMemoryViewModel {
 
     private func openBrowser(port: Int, url: URL) {
         setStep(id: .openBrowser, status: .running, detail: "localhost:\(port)")
-        guard NSWorkspace.shared.open(url) else {
-            setStep(id: .openBrowser, status: .failed, detail: "localhost:\(port)")
-            state = .failed(message: CodebaseMemoryError.browserOpenFailed.localizedDescription)
+        do {
+            try runner.openBrowser(url)
+        } catch {
+            setStep(id: .openBrowser, status: .failed, detail: error.localizedDescription)
+            state = .failed(message: error.localizedDescription)
             return
         }
         setStep(id: .openBrowser, status: .succeeded, detail: "localhost:\(port)")
         state = .succeeded
     }
 
-    /// 轮询等待 HTTP server 就绪，每秒探测一次，超时返回 false。
-    private func waitForServer(url: URL, timeout: Int) async -> Bool {
-        let deadline = Date().addingTimeInterval(TimeInterval(timeout))
-        while Date() < deadline {
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 2
-            if let (_, response) = try? await URLSession.shared.data(for: request),
-               let http = response as? HTTPURLResponse,
-               http.statusCode < 500 {
-                return true
-            }
-            try? await Task.sleep(for: .seconds(1))
+    private func stopCurrentUI() {
+        if let proc = uiProcess {
+            runner.stopUI(proc)
         }
-        return false
+        uiProcess = nil
     }
 
     private func pickPort() -> Int {
@@ -453,12 +457,11 @@ final class CodebaseMemoryViewModel {
             if let project = try storage.existingProject(owner: repo.owner, name: repo.name) {
                 storedProject = project
                 selectedBranchName = project.metadata.sourceRevision.branch
-                steps = project.metadata.lastIndexing.steps
-                if let port = project.metadata.lastUIPort {
-                    state = .ready(port: port, pageURL: URL(string: "http://127.0.0.1:\(port)/")!)
-                } else {
-                    state = .idle
-                }
+                steps = normalizedCachedSteps(project.metadata.lastIndexing.steps)
+                // metadata 只能证明索引产物存在，不能证明 UI server 还活着。
+                // 因此恢复缓存时保持 idle；用户点击打开时会重新写 per-repo
+                // config.json、拉起 codebase 长进程并等待端口真实监听。
+                state = .idle
             } else {
                 storedProject = nil
                 state = .idle
@@ -468,6 +471,17 @@ final class CodebaseMemoryViewModel {
             storedProject = nil
             state = .failed(message: error.localizedDescription)
             steps = Self.emptySteps()
+        }
+    }
+
+    private func normalizedCachedSteps(_ cachedSteps: [CodebaseMemoryExecutionStep]) -> [CodebaseMemoryExecutionStep] {
+        cachedSteps.map { step in
+            guard step.id == .startUI || step.id == .openBrowser else { return step }
+            var updated = step
+            updated.status = .pending
+            updated.detail = nil
+            updated.durationMilliseconds = nil
+            return updated
         }
     }
 

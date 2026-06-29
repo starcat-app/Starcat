@@ -24,6 +24,16 @@ private struct SmartCollectionRuleEditorItem: Identifiable {
     let mode: SmartCollectionRuleEditorSheet.Mode
 }
 
+/// CodebaseMemory sheet 每次打开都需要独立 identity。
+///
+/// macOS `.sheet(item:)` 可能复用旧 presentation host；如果直接用 `Repo` 做 item，
+/// `CodebaseMemoryPanel` 内部的 `@State` ViewModel 会保留上一个 repo 的缓存状态。
+/// 单独包一层 UUID，让每次点击入口都强制生成全新的 sheet 内容树。
+private struct CodebaseMemorySheetItem: Identifiable {
+    let id = UUID()
+    let repo: Repo
+}
+
 struct RepoListView: View {
 
     private static let navigationBreadcrumbSeparator = " › "
@@ -71,7 +81,7 @@ struct RepoListView: View {
     /// toolbar spec 会通过 `AnyView` 频繁重建，sheet 必须由稳定的页面根节点承载。
     /// 否则关闭 CodeFlow 时 presentation host 被替换，窗口会短暂再次出现。
     @State private var codeFlowSheetRepo: Repo?
-    @State private var codebaseMemorySheetRepo: Repo?
+    @State private var codebaseMemorySheetItem: CodebaseMemorySheetItem?
     /// 分享入口已迁到 toolbar；结果 sheet 同样必须由稳定根节点承载，避免 toolbar
     /// 子树重建时 presentation host 被替换。
     @State private var shareSheetItem: RepoShareSheetItem?
@@ -144,8 +154,9 @@ struct RepoListView: View {
             CodeFlowPanel(repo: repo)
                 .appSheetRootEnvironment(dependencies)
         }
-        .sheet(item: $codebaseMemorySheetRepo) { repo in
-            CodebaseMemoryPanel(repo: repo)
+        .sheet(item: $codebaseMemorySheetItem) { item in
+            CodebaseMemoryPanel(repo: item.repo)
+                .id(item.id)
                 .appSheetRootEnvironment(dependencies)
         }
         // W12 PR-4：切页面时主动 exit 非活跃 store，避免"切到 trending 时 weekly 还显示
@@ -1517,7 +1528,7 @@ struct RepoListView: View {
     private func openCodebaseMemory(for repo: Repo) {
         do {
             try dependencies.entitlementGate.requirePro(.codebaseMemory)
-            codebaseMemorySheetRepo = repo
+            codebaseMemorySheetItem = CodebaseMemorySheetItem(repo: repo)
         } catch {
             paywallContext = ProPaywallContext(feature: .codebaseMemory, message: error.localizedDescription)
         }

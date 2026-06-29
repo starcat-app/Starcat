@@ -373,12 +373,12 @@ final class CodebaseMemoryStorage {
         }
     }
 
-    /// 删除所有产物 + binary 缓存目录 + binary 容器副本。
+    /// 删除所有项目产物 + binary 容器副本。
     /// - 项目目录: `<root>/<owner>/<repo>/`
-    /// - binary 缓存: `<root>/.internal-cache/` (binary 的 .db 文件)
+    /// - 项目缓存: `<root>/<owner>/<repo>/.internal-cache/` 随项目目录一起删除
     /// - binary 副本: `<root>/.bin/codebase` (spawn 用)
     ///
-    /// 三者一并清空,确保下次"开始"会触发完整 index 而不是加载旧 db。
+    /// 项目缓存必须按 repo 隔离；否则浏览器 UI 可能继续读取上一个 repo 的 graph/config。
     func deleteAllProjects() throws {
         try withOutputRoot { root in
             let knownProjects = try scanProjects(root: root)
@@ -388,11 +388,6 @@ final class CodebaseMemoryStorage {
                 if (try? fileManager.contentsOfDirectory(atPath: ownerDirectory.path).isEmpty) == true {
                     try? fileManager.removeItem(at: ownerDirectory)
                 }
-            }
-            // 清掉 binary 内部缓存(binary db / config)
-            let internalCache = root.appendingPathComponent(".internal-cache", isDirectory: true)
-            if fileManager.fileExists(atPath: internalCache.path) {
-                try fileManager.removeItem(at: internalCache)
             }
             // 清掉 binary 容器副本(下次首次进入会自动从 bundle 重新拷贝 + chmod)
             let binDir = root.appendingPathComponent(".bin", isDirectory: true)
@@ -421,6 +416,15 @@ final class CodebaseMemoryStorage {
     func projectDirectory(root: URL, owner: String, name: String) -> URL {
         root.appendingPathComponent(owner, isDirectory: true)
             .appendingPathComponent(name, isDirectory: true)
+    }
+
+    /// 给定 owner/name 返回该项目专属的 codebase-memory 缓存目录。
+    ///
+    /// 该目录会存放 binary 的 graph db 与 UI config。必须放在项目目录内，而不是
+    /// `<root>/.internal-cache` 这类全局位置，否则打开 Repo B 时浏览器 UI 可能复用 Repo A 的状态。
+    func projectCacheDirectory(root: URL, owner: String, name: String) -> URL {
+        projectDirectory(root: root, owner: owner, name: name)
+            .appendingPathComponent(".internal-cache", isDirectory: true)
     }
 
     // MARK: - 内部：输出根解析
@@ -564,10 +568,10 @@ final class CodebaseMemoryStorage {
                 )
                 try? fileManager.removeItem(at: sourceSummary)
 
-                // 同步迁移 .internal-cache(binary db)和 .bin(codebase 容器副本)
-                // .bin 是 bundle 二进制的 chmod 0755 副本, 与 .internal-cache 都和项目目录同级
+                // 同步迁移 .bin(codebase 容器副本)。
+                // 项目级 .internal-cache 已经在各项目目录内, 会随项目目录一起复制。
                 // 复制即可, BinaryResolver 会校验大小并自动重新 chmod
-                let auxiliaryDirs = [".internal-cache", ".bin"]
+                let auxiliaryDirs = [".bin"]
                 for dirName in auxiliaryDirs {
                     let sourceAux = sourceRoot.appendingPathComponent(dirName, isDirectory: true)
                     let destAux = destinationRoot.appendingPathComponent(dirName, isDirectory: true)

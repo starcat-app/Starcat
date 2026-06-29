@@ -27,7 +27,7 @@ enum CodebaseMemoryError: LocalizedError, Sendable, Equatable {
     /// 端口探测失败（16 次随机全占满）。
     case portExhausted
     /// 系统浏览器打开失败。
-    case browserOpenFailed
+    case browserOpenFailed(underlying: String)
     /// 输入参数非法。
     case invalidArguments(String)
 
@@ -51,8 +51,8 @@ enum CodebaseMemoryError: LocalizedError, Sendable, Equatable {
             return String(format: String.l10n("codebaseMemory.error.uiStartFailedFormat"), message)
         case .portExhausted:
             return String.l10n("codebaseMemory.error.portExhausted")
-        case .browserOpenFailed:
-            return String.l10n("codebaseMemory.error.browserOpenFailed")
+        case .browserOpenFailed(let message):
+            return "\(String.l10n("codebaseMemory.error.browserOpenFailed")): \(message)"
         case .invalidArguments(let message):
             return String(format: String.l10n("codebaseMemory.error.invalidArgumentsFormat"), message)
         }

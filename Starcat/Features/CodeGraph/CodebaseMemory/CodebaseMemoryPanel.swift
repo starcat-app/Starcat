@@ -17,18 +17,20 @@ struct CodebaseMemoryPanel: View {
     @Environment(AppDependencies.self) private var dependencies
     @State private var viewModel: CodebaseMemoryViewModel
     @State private var showsDetails: Bool
+    @State private var isDetailsHeaderHovered = false
     @State private var paywallContext: ProPaywallContext?
 
-    /// 用 `@State` (不是 let) 让 repo 切换时重置 ViewModel。
-    @State private var repo: Repo
+    /// 当前 sheet 载荷中的 repo。
+    ///
+    /// 这里故意不用 `@State`：repo 是父级 sheet item 的输入，不是 Panel 自己拥有的可变状态。
+    /// 每次打开入口都会由 `CodebaseMemorySheetItem.id` 强制重建 Panel，避免旧 ViewModel 串到新 repo。
+    private let repo: Repo
 
     init(repo: Repo) {
         self.repo = repo
         let vm = CodebaseMemoryViewModel(repo: repo)
         _viewModel = State(initialValue: vm)
         _showsDetails = State(initialValue: vm.storedProject != nil)
-        // _repo 必须做 State wrapper, 用 let 会被 SwiftUI 忽略后续修改
-        self._repo = State(initialValue: repo)
     }
 
     var body: some View {
@@ -52,32 +54,7 @@ struct CodebaseMemoryPanel: View {
                             .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                     }
 
-                    DisclosureGroup(
-                        "codebaseMemory.panel.executionDetails",
-                        isExpanded: $showsDetails
-                    ) {
-                        VStack(spacing: 0) {
-                            ForEach(Array(viewModel.steps.enumerated()), id: \.element.id) { index, step in
-                                executionRow(step)
-                                if index < viewModel.steps.count - 1 {
-                                    Divider().padding(.leading, 34)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-                    }
-                    .font(.callout)
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        Color(nsColor: .controlBackgroundColor),
-                        in: RoundedRectangle(cornerRadius: 12)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
-                    }
+                    executionDetailsCard
                 }
                 .padding(14)
             }
@@ -88,7 +65,7 @@ struct CodebaseMemoryPanel: View {
         .frame(width: 520)
         .task {
             guard requireAccess() else { return }
-            // 用 @State 的 repo（每次 panel 显示时 SwiftUI 重新 assign）
+            // 即使 SwiftUI 复用 presentation host，也以当前 sheet item 的 repo 重新校准 ViewModel。
             viewModel.refreshRepo(repo: repo)
             await viewModel.prepare()
         }
@@ -292,6 +269,67 @@ struct CodebaseMemoryPanel: View {
 
     // MARK: - Execution Row（展开区每个步骤的详细信息）
 
+    private var executionDetailsCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showsDetails.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(showsDetails ? 90 : 0))
+                        .animation(.easeInOut(duration: 0.18), value: showsDetails)
+                        .frame(width: 14)
+                    Text("codebaseMemory.panel.executionDetails")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .background(
+                isDetailsHeaderHovered ? Color.secondary.opacity(0.06) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 10)
+            )
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    isDetailsHeaderHovered = hovering
+                }
+            }
+
+            if showsDetails {
+                VStack(spacing: 0) {
+                    ForEach(Array(viewModel.steps.enumerated()), id: \.element.id) { index, step in
+                        executionRow(step)
+                        if index < viewModel.steps.count - 1 {
+                            Divider().padding(.leading, 34)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 12)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+        }
+        .animation(.easeInOut(duration: 0.2), value: showsDetails)
+    }
+
     private func executionRow(_ step: CodebaseMemoryExecutionStep) -> some View {
         HStack(spacing: 8) {
             Group {
@@ -367,6 +405,9 @@ struct CodebaseMemoryPanel: View {
         case .ready, .succeeded:
             return "codebaseMemory.panel.openInBrowser"
         default:
+            if viewModel.storedProject != nil {
+                return "codebaseMemory.panel.openInBrowser"
+            }
             return "codebaseMemory.panel.start"
         }
     }
