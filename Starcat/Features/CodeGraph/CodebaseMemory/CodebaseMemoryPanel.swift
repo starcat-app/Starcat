@@ -67,7 +67,6 @@ struct CodebaseMemoryPanel: View {
             guard requireAccess() else { return }
             // 即使 SwiftUI 复用 presentation host，也以当前 sheet item 的 repo 重新校准 ViewModel。
             viewModel.refreshRepo(repo: repo)
-            showsDetails = viewModel.storedProject != nil
             await viewModel.prepare()
         }
         .sheet(item: $paywallContext) { context in

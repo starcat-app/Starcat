@@ -59,7 +59,6 @@ struct CodeFlowPanel: View {
             // sheet host 复用时 `@State` ViewModel 不会随 init 参数重建；
             // 每次展示都以当前 sheet item 的 repo 重新校准，避免 A/B 仓库串台。
             viewModel.refreshRepo(repo: repo)
-            showsDetails = viewModel.storedProject != nil
             await viewModel.prepare()
         }
         .sheet(item: $paywallContext) { context in
