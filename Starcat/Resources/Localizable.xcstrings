@@ -35684,6 +35684,40 @@
           }
         }
       }
+    },
+    "settings.storage.clearCodebaseMemory.confirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear all CodebaseMemory data?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除全部 CodebaseMemory 数据？"
+          }
+        }
+      }
+    },
+    "settings.storage.clearCodebaseMemory.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This will delete all 3D graph indexes and extracted source directories. Shared source ZIPs will not be deleted."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将删除所有 3D 图谱索引与解压源码目录。共享源码 ZIP 不会被删除。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

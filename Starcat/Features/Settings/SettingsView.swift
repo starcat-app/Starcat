@@ -650,7 +650,7 @@ private struct StorageSettingsTab: View {
             case .chatHistory:  return String.l10n("settings.storage.clearChatHistory.confirm")
             case .aiContext:    return String.l10n("settings.storage.clearAiContext.confirm")
             case .codeFlow:     return String.l10n("settings.storage.clearCodeFlow.confirm")
-            case .codebaseMemory: return String.l10n("settings.storage.clearCodeFlow.confirm")
+            case .codebaseMemory: return String.l10n("settings.storage.clearCodebaseMemory.confirm")
             case .all:          return String.l10n("settings.storage.clearAll.confirm")
             }
         }
@@ -666,7 +666,7 @@ private struct StorageSettingsTab: View {
             case .chatHistory:  return "settings.storage.clearChatHistory.message"
             case .aiContext:    return "settings.storage.clearAiContext.message"
             case .codeFlow:     return "settings.storage.clearCodeFlow.message"
-            case .codebaseMemory: return "settings.storage.clearCodeFlow.message"
+            case .codebaseMemory: return "settings.storage.clearCodebaseMemory.message"
             case .all:          return "settings.storage.clearAll.message"
             }
         }
