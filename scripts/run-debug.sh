@@ -57,6 +57,8 @@ echo "==> 签名摘要:"
 codesign -dv --verbose=2 "$APP_PATH" 2>&1 | sed -n '1,12p'
 echo "==> 当前模式: sandbox"
 echo "    preferences: ~/Library/Containers/com.starcat.app/Data/Library/Preferences/com.starcat.app.plist"
+echo "    data: ~/Library/Containers/com.starcat.app/Data"
+echo "    app support: ~/Library/Containers/com.starcat.app/Data/Library/Application Support/Starcat"
 echo "    app: $APP_PATH"
 
 open "$APP_PATH"
