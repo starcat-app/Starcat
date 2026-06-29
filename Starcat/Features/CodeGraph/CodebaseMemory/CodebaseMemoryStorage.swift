@@ -63,6 +63,19 @@ struct CodebaseMemoryExecutionStep: Codable, Equatable, Identifiable, Sendable {
     /// 步骤标识（与 ViewModel 的 7 个步骤对齐）。
     enum ID: String, Codable, CaseIterable, Sendable {
         case resolveBinary, resolveRevision, download, extract, index, startUI, openBrowser
+
+        /// 执行详情中的人类可读名称。
+        var displayTitle: String {
+            switch self {
+            case .resolveBinary: return String.l10n("codebaseMemory.step.resolveBinary.title")
+            case .resolveRevision: return String.l10n("codebaseMemory.step.resolveRevision.title")
+            case .download: return String.l10n("codebaseMemory.step.download.title")
+            case .extract: return String.l10n("codebaseMemory.step.extract.title")
+            case .index: return String.l10n("codebaseMemory.step.index.title")
+            case .startUI: return String.l10n("codebaseMemory.step.startUI.title")
+            case .openBrowser: return String.l10n("codebaseMemory.step.openBrowser.title")
+            }
+        }
     }
 
     let id: ID

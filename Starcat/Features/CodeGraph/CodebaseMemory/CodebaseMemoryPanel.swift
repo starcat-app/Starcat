@@ -50,7 +50,7 @@ struct CodebaseMemoryPanel: View {
                     }
 
                     DisclosureGroup(
-                        "codeFlow.panel.executionDetails",
+                        "codebaseMemory.panel.executionDetails",
                         isExpanded: $showsDetails
                     ) {
                         VStack(spacing: 0) {
@@ -131,7 +131,7 @@ struct CodebaseMemoryPanel: View {
 
     private var branchSection: some View {
         HStack(spacing: 8) {
-            Text("codeFlow.panel.branch.title")
+            Text("codebaseMemory.panel.branch.title")
                 .font(.callout)
             Spacer()
             if viewModel.isLoadingBranches {
@@ -163,24 +163,28 @@ struct CodebaseMemoryPanel: View {
         case .checking:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text("checking...").font(.caption).foregroundStyle(.secondary)
+                Text("codebaseMemory.version.checking")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         case .current:
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                Text("latest").font(.caption).foregroundStyle(.secondary)
+                Text("codebaseMemory.version.current")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         case .updateAvailable(let generated, let latest):
             Label(
-                String(format: String.l10n("codeFlow.version.updateAvailableFormat"), generated, latest),
+                String(format: String.l10n("codebaseMemory.version.updateAvailableFormat"), generated, latest),
                 systemImage: "arrow.triangle.2.circlepath"
             )
             .font(.caption)
             .foregroundStyle(.orange)
         case .branchChanged(let generated, let selected):
             Label(
-                "Branch changed: \(generated) → \(selected)",
+                String(format: String.l10n("codebaseMemory.version.branchChangedFormat"), generated, selected),
                 systemImage: "arrow.triangle.branch"
             )
             .font(.caption)
@@ -192,44 +196,32 @@ struct CodebaseMemoryPanel: View {
         }
     }
 
-    // MARK: - Overview Card
+    // MARK: - Overview Card（4 组精简摘要，展开区有详细步骤）
 
     private var overviewCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             overviewRow(
-                title: "Resolve Binary",
-                detail: "Copy & verify codebase executable",
-                statuses: [.resolveBinary]
+                titleKey: "codebaseMemory.overview.prepare.title",
+                detailKey: "codebaseMemory.overview.prepare.detail",
+                statuses: [.resolveBinary, .resolveRevision]
             )
             Divider().padding(.leading, 34)
             overviewRow(
-                title: String.l10n("codeFlow.overview.download.title"),
-                detail: String.l10n("codeFlow.overview.download.detail"),
-                statuses: [.resolveRevision, .download]
+                titleKey: "codebaseMemory.overview.download.title",
+                detailKey: "codebaseMemory.overview.download.detail",
+                statuses: [.download]
             )
             Divider().padding(.leading, 34)
             overviewRow(
-                title: "Extract Source",
-                detail: "Persistent extraction to project directory",
-                statuses: [.extract]
+                titleKey: "codebaseMemory.overview.index.title",
+                detailKey: "codebaseMemory.overview.index.detail",
+                statuses: [.extract, .index]
             )
             Divider().padding(.leading, 34)
             overviewRow(
-                title: "Index Repository",
-                detail: "Tree-sitter parse + Hybrid LSP analysis",
-                statuses: [.index]
-            )
-            Divider().padding(.leading, 34)
-            overviewRow(
-                title: "Start 3D Graph UI",
-                detail: "Launch local visualization server",
-                statuses: [.startUI]
-            )
-            Divider().padding(.leading, 34)
-            overviewRow(
-                title: String.l10n("codeFlow.overview.openBrowser.title"),
-                detail: "Open 3D code graph in the default browser",
-                statuses: [.openBrowser]
+                titleKey: "codebaseMemory.overview.launch.title",
+                detailKey: "codebaseMemory.overview.launch.detail",
+                statuses: [.startUI, .openBrowser]
             )
         }
         .padding(.horizontal, 14)
@@ -244,17 +236,17 @@ struct CodebaseMemoryPanel: View {
     }
 
     private func overviewRow(
-        title: String,
-        detail: String,
+        titleKey: LocalizedStringKey,
+        detailKey: LocalizedStringKey,
         statuses: [CodebaseMemoryExecutionStep.ID]
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 overviewStatusIcon(for: statuses)
-                Text(title).font(.callout.weight(.medium))
+                Text(titleKey).font(.callout.weight(.medium))
                 Spacer()
             }
-            Text(detail)
+            Text(detailKey)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 26)
@@ -293,7 +285,7 @@ struct CodebaseMemoryPanel: View {
         }
     }
 
-    // MARK: - Execution Row
+    // MARK: - Execution Row（展开区每个步骤的详细信息）
 
     private func executionRow(_ step: CodebaseMemoryExecutionStep) -> some View {
         HStack(spacing: 8) {
@@ -316,7 +308,7 @@ struct CodebaseMemoryPanel: View {
             .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(step.id.rawValue)
+                Text(step.id.displayTitle)
                     .font(.caption.weight(.medium))
                 if let detail = step.detail {
                     Text(detail)
@@ -379,18 +371,18 @@ struct CodebaseMemoryPanel: View {
         case .idle, .preparing:
             return ""
         case .downloading:
-            return String.l10n("codeFlow.runtime.downloadingZip")
+            return String.l10n("codebaseMemory.status.downloading")
         case .extracting:
-            return "Extracting..."
+            return String.l10n("codebaseMemory.status.extracting")
         case .indexing:
-            return "Indexing..."
+            return String.l10n("codebaseMemory.status.indexing")
         case .startingUI:
-            return "Starting..."
+            return String.l10n("codebaseMemory.status.startingUI")
         case .ready:
-            return "Ready"
+            return String.l10n("codebaseMemory.status.ready")
         case .succeeded:
             let gen = viewModel.storedProject?.metadata.generation.generationCount ?? 0
-            return "Generation \(gen)"
+            return String(format: String.l10n("codebaseMemory.status.succeededFormat"), gen)
         case .failed:
             return ""
         }
@@ -399,7 +391,6 @@ struct CodebaseMemoryPanel: View {
     // MARK: - Pro Gating
 
     private func requireAccess() -> Bool {
-        // requireCodebaseMemoryAccess() 内部已处理 Pro 检查
         if viewModel.paywallContext != nil {
             paywallContext = viewModel.paywallContext
             return false
