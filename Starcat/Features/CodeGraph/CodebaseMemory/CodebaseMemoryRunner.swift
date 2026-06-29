@@ -110,30 +110,46 @@ final class CodebaseMemoryRunner {
 
     // MARK: - UI 子进程入口
 
-    /// 用 `--ui --port <N>` 启动长生命周期 UI 子进程。
+    /// 先写 config（`--ui=true --port=N`），再启动 MCP 长进程（不带参数），
+    /// 长进程会从 config.json 读取 `ui_enabled`/`ui_port` 并自动启动 HTTP UI。
     ///
-    /// 参数以空格分隔传给 Process（`--ui` 与 `true` 分离，`--port` 与数字分离），
-    /// 兼容不同 CLI 参数解析器。
+    /// 分成两步是因为 `--ui=true` 只持久化配置然后退出，HTTP 服务器只在 MCP
+    /// stdio 长进程里启动。
     func startUI(
         binaryURL: URL,
         port: Int,
         cacheDir: URL,
         repositoryFullName: String
     ) throws -> Process {
+        // Step 1: 写入 ui 配置（一次性，立即退出）
+        let configProcess = Process()
+        configProcess.executableURL = binaryURL
+        configProcess.arguments = ["--ui=true", "--port=\(port)"]
+        configProcess.environment = ProcessInfo.processInfo.environment.merging([
+            "CBM_CACHE_DIR": cacheDir.path
+        ]) { _, new in new }
+        // stdin = /dev/null → 立即退出
+        configProcess.standardInput = FileHandle.nullDevice
+        try configProcess.run()
+        configProcess.waitUntilExit()
+
+        // Step 2: 启动 MCP 长进程（stdin 通过 Pipe 保持打开）
         let process = Process()
         process.executableURL = binaryURL
-        // 参数分开传递：部分 C CLI 解析不了 --key=value 格式
-        process.arguments = ["--ui", "true", "--port", "\(port)"]
+        // 不带 --ui 参数 — 从 config.json 自动读取
+        process.arguments = []
         process.environment = ProcessInfo.processInfo.environment.merging([
             "CBM_CACHE_DIR": cacheDir.path
         ]) { _, new in new }
 
-        // 捕获 stderr，方便排查启动失败原因
+        // stdin Pipe 保持打开，防止进程因 EOF 退出
+        let stdinPipe = Pipe()
+        process.standardInput = stdinPipe
+
         let stderrPipe = Pipe()
         process.standardError = stderrPipe
 
         process.terminationHandler = { [weak self] proc in
-            // 如果进程异常退出，把 stderr 落到 AppLog 方便排查
             if proc.terminationStatus != 0 {
                 let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
                 let message = String(data: stderrData, encoding: .utf8) ?? ""
