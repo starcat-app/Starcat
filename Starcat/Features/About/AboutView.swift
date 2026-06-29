@@ -927,6 +927,12 @@ private struct AboutDependency: Identifiable {
             url: URL(string: "https://github.com/braedonsaunders/codeflow")
         ),
         AboutDependency(
+            name: "CodebaseMemory (codebase-memory-mcp)",
+            license: "MIT",
+            copyright: "Copyright (c) 2025 DeusData",
+            url: URL(string: "https://github.com/DeusData/codebase-memory-mcp")
+        ),
+        AboutDependency(
             name: "Repomix",
             license: "MIT",
             copyright: "Copyright 2024 Kazuki Yamada",
