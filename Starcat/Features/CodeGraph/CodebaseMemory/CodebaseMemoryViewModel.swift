@@ -122,6 +122,22 @@ final class CodebaseMemoryViewModel {
         Task { await checkSelectedBranchVersion() }
     }
 
+    /// 当 Sheet 切换到不同 repo 时, 主动清空旧状态 + 按新 repo 重新查 cached。
+    /// SwiftUI 在 .sheet(item:) 复用 State 时, init 不会重跑, 用此方法做兜底。
+    func reloadForNewRepo() {
+        // 杀掉旧 UI 子进程(指向旧 repo 的 port)
+        if let proc = uiProcess, proc.isRunning {
+            proc.terminate()
+            uiProcess = nil
+        }
+        branches = []
+        isLoadingBranches = false
+        versionStatus = .unknown
+        selectedBranchName = ""
+        steps = Self.emptySteps()
+        restoreCachedState()
+    }
+
     func start() {
         task?.cancel()
         if case .ready(let port, let pageURL) = state {

@@ -94,6 +94,11 @@ struct CodebaseMemoryPanel: View {
         .onChange(of: viewModel.state) { _, state in
             if case .failed = state { showsDetails = true }
         }
+        // repo 变化时主动刷新 viewModel + 重新查 storedProject
+        // .id(repo.id) 在某些 macOS sheet 场景下被忽略, 这里加一道保险
+        .onChange(of: repo.id) { _, _ in
+            viewModel.reloadForNewRepo()
+        }
     }
 
     // MARK: - Header
