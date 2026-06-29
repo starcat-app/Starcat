@@ -1,0 +1,189 @@
+//
+//  RepoAIFloatingOverlay.swift
+//  Starcat
+//
+//  README 详情页内的 AI 对话浮层入口。
+//
+//  设计约束：
+//  - 不替换旧的独立 AI 窗口入口；这是详情页里的新增入口，用于验证“贴着 README 问 AI”
+//    的交互是否更自然。
+//  - 浮层只在右侧详情页区域内展开 / 最大化，避免跨列覆盖 repo 列表或 sidebar。
+//  - 点击外部不自动关闭；AI 流式输出时误关会打断阅读，所以关闭必须是显式动作。
+//
+
+import AppKit
+import SwiftUI
+
+/// 右侧详情页内的 AI 悬浮入口和两档面板容器。
+struct RepoAIFloatingOverlay: View {
+    let repo: Repo
+
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @State private var presentation: Presentation = .collapsed
+    @State private var escapeKeyMonitor: Any?
+
+    private enum Presentation: Equatable {
+        case collapsed
+        case expanded
+        case maximized
+
+        var isPanelVisible: Bool {
+            self != .collapsed
+        }
+    }
+
+    private enum Metrics {
+        static let horizontalInset: CGFloat = 24
+        static let collapsedBottomInset: CGFloat = 0
+        static let panelBottomInset: CGFloat = 34
+        static let collapsedHitHeight: CGFloat = 28
+        static let collapsedHitWidth: CGFloat = 112
+        static let collapsedHandleHeight: CGFloat = 4
+        static let collapsedHandleWidth: CGFloat = 78
+        static let expandedMaxWidth: CGFloat = 550
+        static let expandedHeight: CGFloat = 650
+        static let maximizedInset: CGFloat = 16
+        static let cornerRadius: CGFloat = 18
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                if presentation.isPanelVisible {
+                    panel(in: proxy.size)
+                        .transition(panelTransition)
+                        .zIndex(2)
+                } else {
+                    collapsedBar
+                        .frame(
+                            width: min(proxy.size.width - Metrics.horizontalInset * 2, Metrics.collapsedHitWidth),
+                            height: Metrics.collapsedHitHeight
+                        )
+                        .transition(collapsedTransition)
+                        .zIndex(1)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .padding(.horizontal, Metrics.horizontalInset)
+            .padding(.bottom, bottomInset)
+            .animation(overlayAnimation, value: presentation)
+        }
+        .allowsHitTesting(true)
+        .onExitCommand {
+            guard presentation.isPanelVisible else { return }
+            presentation = .collapsed
+        }
+        .onChange(of: presentation.isPanelVisible) { _, isVisible in
+            isVisible ? installEscapeKeyMonitor() : removeEscapeKeyMonitor()
+        }
+        .onDisappear {
+            removeEscapeKeyMonitor()
+        }
+        // repo 切换时直接清空临时会话与展示状态，确保新问题只绑定当前 repo。
+        .id(repo.id)
+    }
+
+    private var collapsedBar: some View {
+        Button {
+            presentation = .expanded
+        } label: {
+            Capsule(style: .continuous)
+                // 用 primary 语义色适配明暗主题：浅色下是深色横条，深色下自动反转为浅色横条。
+                .fill(Color.primary.opacity(0.72))
+                .frame(width: Metrics.collapsedHandleWidth, height: Metrics.collapsedHandleHeight)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("ai.assistant.inline.collapsed.help")
+    }
+
+    private func panel(in availableSize: CGSize) -> some View {
+        let isMaximized = presentation == .maximized
+        let width = panelWidth(in: availableSize, isMaximized: isMaximized)
+        let height = panelHeight(in: availableSize, isMaximized: isMaximized)
+
+        return RepoAIWindowContentView(
+            repo: repo,
+            onClose: { presentation = .collapsed },
+            onInlineResizeTapped: togglePanelSize,
+            isInlineMaximized: isMaximized
+        )
+        .frame(width: width, height: height)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Metrics.cornerRadius, style: .continuous))
+        .shadow(color: .black.opacity(0.18), radius: 22, x: 0, y: 12)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func panelWidth(in availableSize: CGSize, isMaximized: Bool) -> CGFloat {
+        let usableWidth = max(320, availableSize.width - Metrics.horizontalInset * 2)
+        if isMaximized {
+            return max(320, usableWidth - Metrics.maximizedInset * 2)
+        }
+        return min(usableWidth, Metrics.expandedMaxWidth)
+    }
+
+    private func panelHeight(in availableSize: CGSize, isMaximized: Bool) -> CGFloat {
+        let usableHeight = max(320, availableSize.height - Metrics.panelBottomInset - Metrics.maximizedInset)
+        if isMaximized {
+            return max(360, usableHeight)
+        }
+        return min(Metrics.expandedHeight, max(320, usableHeight))
+    }
+
+    private var bottomInset: CGFloat {
+        presentation.isPanelVisible ? Metrics.panelBottomInset : Metrics.collapsedBottomInset
+    }
+
+    private func togglePanelSize() {
+        presentation = presentation == .maximized ? .expanded : .maximized
+    }
+
+    private func installEscapeKeyMonitor() {
+        guard escapeKeyMonitor == nil else { return }
+        // `onExitCommand` 依赖 SwiftUI 焦点；AI 输入框底层是 AppKit NSTextView，
+        // 焦点进入输入框后 Esc 可能不会回到 SwiftUI。展开期间用本地 keyDown 监听兜底。
+        escapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 53 else { return event }
+            presentation = .collapsed
+            return nil
+        }
+    }
+
+    private func removeEscapeKeyMonitor() {
+        guard let escapeKeyMonitor else { return }
+        NSEvent.removeMonitor(escapeKeyMonitor)
+        self.escapeKeyMonitor = nil
+    }
+
+    private var overlayAnimation: Animation? {
+        reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.86)
+    }
+
+    private var panelTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        return .asymmetric(
+            insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.98, anchor: .bottom)),
+            removal: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.98, anchor: .bottom))
+        )
+    }
+
+    private var collapsedTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        return .opacity.combined(with: .scale(scale: 0.96, anchor: .bottom))
+    }
+}
+
+private extension View {
+    /// 详情页浮层的玻璃态容器。单独收口，避免后续调阴影 / 边框时改散在多处。
+    func glassPanel(cornerRadius: CGFloat, shadowOpacity: Double) -> some View {
+        background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+            .shadow(color: .black.opacity(shadowOpacity), radius: 18, x: 0, y: 10)
+    }
+}

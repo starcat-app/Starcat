@@ -10,7 +10,6 @@
 //  - Process.environment 不继承父进程 PATH（纯二进制路径 spawn）
 //  - 所有子进程生命周期由本 runner 统一管理（activeProcesses 数组 + terminationHandler）
 
-import AppKit
 import Darwin
 import Foundation
 
@@ -57,7 +56,6 @@ struct CodebaseMemoryCLIProject: Sendable, Equatable {
 /// 已通过启动前/启动后校验的 UI 进程上下文。
 struct CodebaseMemoryUIProcess {
     let process: Process
-    let projectName: String
     let pageURL: URL
 }
 
@@ -100,26 +98,17 @@ final class CodebaseMemoryRunner {
     /// 这是 Starcat 管控内置二进制进程的唯一推荐入口：
     /// 1. 停止本 Runner 仍持有的旧 UI 进程。
     /// 2. 清理 Starcat 旧版本遗留的 bundle/container 二进制进程。
-    /// 3. 启动前校验 cache 里只有当前 repo 的 project。
-    /// 4. 检查端口可用后启动 UI。
-    /// 5. 等待 HTTP server 响应。浏览器打开必须在端口可连通后立刻发生，
+    /// 3. 检查端口可用后启动 UI。
+    /// 4. 等待 HTTP server 响应。浏览器打开必须在端口可连通后立刻发生，
     ///    不能再被后续 CLI 校验挡住，否则用户会看到“启动 UI”长期卡住。
     func startVerifiedUI(
         binaryURL: URL,
         port: Int,
         cacheDir: URL,
-        repositoryFullName: String,
-        expectedSourceURL: URL
+        repositoryFullName: String
     ) async throws -> CodebaseMemoryUIProcess {
         stopAll()
         terminateStaleStarcatUIProcesses(binaryURL: binaryURL)
-
-        let projectName = try await verifiedProjectName(
-            binaryURL: binaryURL,
-            cacheDir: cacheDir,
-            expectedSourceURL: expectedSourceURL,
-            repositoryFullName: repositoryFullName
-        )
 
         if CodebaseMemoryPortAvailability.unavailableMessage(for: port) != nil {
             throw CodebaseMemoryError.portExhausted
@@ -143,10 +132,27 @@ final class CodebaseMemoryRunner {
                 )
             }
             try await waitForServer(process: process, port: port, timeout: 8)
-            return CodebaseMemoryUIProcess(process: process, projectName: projectName, pageURL: pageURL)
+            return CodebaseMemoryUIProcess(process: process, pageURL: pageURL)
         } catch {
             stopUI(process)
             throw error
+        }
+    }
+
+    /// 判断指定 repo 独立 cache 里是否已有项目 DB。
+    ///
+    /// 串台的根因是多个 repo 共用同一个 `.internal-cache`。现在隔离边界是
+    /// `<root>/<owner>/<repo>/.internal-cache`，这里不再启动前跑 CLI 校验阻塞 UI；
+    /// 只在 cached 快路径确认该目录里确实有项目 DB，缺失则回完整索引流程重建。
+    func hasIndexedProjectCache(cacheDir: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: cacheDir,
+            includingPropertiesForKeys: nil
+        ) else {
+            return false
+        }
+        return contents.contains {
+            $0.pathExtension == "db" && $0.lastPathComponent != "_config.db"
         }
     }
 
@@ -328,50 +334,6 @@ final class CodebaseMemoryRunner {
             )
         )
         return process
-    }
-
-    /// 用系统 `open` 命令把已监听的 localhost URL 交给默认浏览器。
-    ///
-    /// 相比直接调用 `NSWorkspace.shared.open`，`/usr/bin/open` 有明确退出码和 stderr，
-    /// 启动失败时可以把真实原因显示到执行详情里，避免用户只看到“打开浏览器”卡住。
-    func openBrowser(_ url: URL) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = [url.absoluteString]
-
-        let stderrPipe = Pipe()
-        process.standardError = stderrPipe
-        process.standardOutput = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            try openBrowserWithNSWorkspaceFallback(
-                url,
-                commandFailure: "open command failed to launch: \(error.localizedDescription)"
-            )
-            return
-        }
-
-        guard process.terminationStatus == 0 else {
-            let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let message = stderr.isEmpty ? "open exited with \(process.terminationStatus)" : stderr
-            try openBrowserWithNSWorkspaceFallback(url, commandFailure: message)
-            return
-        }
-    }
-
-    private func openBrowserWithNSWorkspaceFallback(_ url: URL, commandFailure: String) throws {
-        // App Store / Debug 签名环境对 `Process` 的限制可能不同；`NSWorkspace`
-        // 作为兜底只在 `open` 命令失败时使用，失败原因仍完整返回给执行详情。
-        guard NSWorkspace.shared.open(url) else {
-            throw CodebaseMemoryError.browserOpenFailed(
-                underlying: "\(commandFailure); NSWorkspace fallback returned false"
-            )
-        }
     }
 
     // MARK: - 停止

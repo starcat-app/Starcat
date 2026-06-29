@@ -531,8 +531,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             EmptyView()
 
         case .ai:
-            // 复用现有 RepoAIOpenButton：内部通过 RepoAIWindowController 弹窗。
-            RepoAIOpenButton(repo: repo)
+            // AI 主入口已迁到 README 状态栏横条。旧独立窗口能力保留在
+            // RepoAIOpenButton / RepoAIWindowController 中，当前只隐藏 Hero 按钮入口。
+            EmptyView()
 
         case .weeklyIssue(let number, let url):
             Link(destination: url) {

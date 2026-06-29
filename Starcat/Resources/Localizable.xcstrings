@@ -4056,6 +4056,74 @@
         }
       }
     },
+    "ai.assistant.inline.collapsed.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask AI about the current repository"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "询问当前仓库"
+          }
+        }
+      }
+    },
+    "ai.assistant.inline.collapsed.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask AI"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问 AI"
+          }
+        }
+      }
+    },
+    "ai.assistant.inline.resize.maximize.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expand within the detail pane"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在详情页内放大"
+          }
+        }
+      }
+    },
+    "ai.assistant.inline.resize.restore.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore compact size"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复紧凑尺寸"
+          }
+        }
+      }
+    },
     "ai.client.error.emptyResponse": {
       "extractionState": "manual",
       "localizations": {

@@ -99,5 +99,9 @@ struct ManageDetailContent: View {
             authSession.requestLoginSheet()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .bottom) {
+            // AI 对话新增为 README 详情页内入口；旧 Hero AI 按钮仍保留独立窗口逻辑。
+            RepoAIFloatingOverlay(repo: repo)
+        }
     }
 }

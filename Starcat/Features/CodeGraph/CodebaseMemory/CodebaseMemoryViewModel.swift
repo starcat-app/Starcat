@@ -235,15 +235,8 @@ final class CodebaseMemoryViewModel {
                    let existing = try? storage.existingProject(owner: repo.owner, name: repo.name),
                    existing.metadata.sourceRevision.commitSHA == branch.commitSHA {
                     let root = try storage.outputRootURL()
-                    let outDir = storage.projectDirectory(root: root, owner: repo.owner, name: repo.name)
-                    let sourceURL = outDir.appendingPathComponent("source", isDirectory: true)
                     let cacheDir = storage.projectCacheDirectory(root: root, owner: repo.owner, name: repo.name)
-                    if (try? await runner.verifiedProjectName(
-                        binaryURL: binaryURL,
-                        cacheDir: cacheDir,
-                        expectedSourceURL: sourceURL,
-                        repositoryFullName: repo.fullName
-                    )) != nil {
+                    if runner.hasIndexedProjectCache(cacheDir: cacheDir) {
                         // 全部跳过 → 直接 openBrowser
                         steps.forEach { step in
                             if step.id != .resolveBinary, step.id != .resolveRevision {
@@ -260,8 +253,7 @@ final class CodebaseMemoryViewModel {
                                 binaryURL: binaryURL,
                                 port: port,
                                 cacheDir: cacheDir,
-                                repositoryFullName: repo.fullName,
-                                expectedSourceURL: sourceURL
+                                repositoryFullName: repo.fullName
                             )
                             uiProcess = launched.process
                             setStep(id: .startUI, status: .succeeded)
@@ -273,8 +265,8 @@ final class CodebaseMemoryViewModel {
                         openBrowser(port: port, url: pageURL)
                         return
                     }
-                    // metadata 命中但 cache/db 与当前 repo 不匹配时，继续走完整生成管线。
-                    // 这是 Repo A/B 串台的关键防线，不能因为 metadata 存在就打开旧 UI。
+                    // metadata 命中但 per-repo cache 缺项目 DB 时，继续走完整生成管线。
+                    // 这是旧共享 cache 迁移到 repo 独立 cache 后的兜底，不能打开空/旧 UI。
                 }
 
                 try Task.checkCancellation()
@@ -326,8 +318,7 @@ final class CodebaseMemoryViewModel {
                     binaryURL: binaryURL,
                     port: port,
                     cacheDir: cacheDir,
-                    repositoryFullName: repo.fullName,
-                    expectedSourceURL: source.sourceURL
+                    repositoryFullName: repo.fullName
                 )
                 uiProcess = launched.process
                 setStep(id: .startUI, status: .succeeded)
@@ -379,11 +370,10 @@ final class CodebaseMemoryViewModel {
 
     private func openBrowser(port: Int, url: URL) {
         setStep(id: .openBrowser, status: .running, detail: "localhost:\(port)")
-        do {
-            try runner.openBrowser(url)
-        } catch {
-            setStep(id: .openBrowser, status: .failed, detail: error.localizedDescription)
-            state = .failed(message: error.localizedDescription)
+        guard NSWorkspace.shared.open(url) else {
+            let message = "NSWorkspace.open returned false"
+            setStep(id: .openBrowser, status: .failed, detail: message)
+            state = .failed(message: CodebaseMemoryError.browserOpenFailed(underlying: message).localizedDescription)
             return
         }
         setStep(id: .openBrowser, status: .succeeded, detail: "localhost:\(port)")
