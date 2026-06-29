@@ -373,7 +373,12 @@ final class CodebaseMemoryStorage {
         }
     }
 
-    /// 只删除项目子目录,保留用户主动选择的输出根目录本身。
+    /// 删除所有产物 + binary 缓存目录 + binary 容器副本。
+    /// - 项目目录: `<root>/<owner>/<repo>/`
+    /// - binary 缓存: `<root>/.internal-cache/` (binary 的 .db 文件)
+    /// - binary 副本: `<root>/.bin/codebase` (spawn 用)
+    ///
+    /// 三者一并清空,确保下次"开始"会触发完整 index 而不是加载旧 db。
     func deleteAllProjects() throws {
         try withOutputRoot { root in
             let knownProjects = try scanProjects(root: root)
@@ -383,6 +388,16 @@ final class CodebaseMemoryStorage {
                 if (try? fileManager.contentsOfDirectory(atPath: ownerDirectory.path).isEmpty) == true {
                     try? fileManager.removeItem(at: ownerDirectory)
                 }
+            }
+            // 清掉 binary 内部缓存(binary db / config)
+            let internalCache = root.appendingPathComponent(".internal-cache", isDirectory: true)
+            if fileManager.fileExists(atPath: internalCache.path) {
+                try fileManager.removeItem(at: internalCache)
+            }
+            // 清掉 binary 容器副本(下次首次进入会自动从 bundle 重新拷贝 + chmod)
+            let binDir = root.appendingPathComponent(".bin", isDirectory: true)
+            if fileManager.fileExists(atPath: binDir.path) {
+                try fileManager.removeItem(at: binDir)
             }
             writeSummary(.empty.withUpdatedAt(.now), root: root)
             summary = .empty.withUpdatedAt(.now)
@@ -548,6 +563,24 @@ final class CodebaseMemoryStorage {
                     CodebaseMemorySummary.filename, isDirectory: false
                 )
                 try? fileManager.removeItem(at: sourceSummary)
+
+                // 同步迁移 .internal-cache(binary db)和 .bin(codebase 容器副本)
+                // .bin 是 bundle 二进制的 chmod 0755 副本, 与 .internal-cache 都和项目目录同级
+                // 复制即可, BinaryResolver 会校验大小并自动重新 chmod
+                let auxiliaryDirs = [".internal-cache", ".bin"]
+                for dirName in auxiliaryDirs {
+                    let sourceAux = sourceRoot.appendingPathComponent(dirName, isDirectory: true)
+                    let destAux = destinationRoot.appendingPathComponent(dirName, isDirectory: true)
+                    guard fileManager.fileExists(atPath: sourceAux.path) else { continue }
+                    try fileManager.createDirectory(
+                        at: destAux.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    if fileManager.fileExists(atPath: destAux.path) {
+                        try fileManager.removeItem(at: destAux)
+                    }
+                    try fileManager.copyItem(at: sourceAux, to: destAux)
+                }
             }
         }
     }

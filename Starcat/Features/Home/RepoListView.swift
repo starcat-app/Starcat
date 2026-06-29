@@ -146,6 +146,7 @@ struct RepoListView: View {
         }
         .sheet(item: $codebaseMemorySheetRepo) { repo in
             CodebaseMemoryPanel(repo: repo)
+                .id(repo.id)   // 强制 SwiftUI 重新创建 Panel,避免 State 复用导致显示上一个 repo 的状态
                 .appSheetRootEnvironment(dependencies)
         }
         // W12 PR-4：切页面时主动 exit 非活跃 store，避免"切到 trending 时 weekly 还显示

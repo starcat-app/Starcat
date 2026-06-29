@@ -927,7 +927,7 @@ private struct AboutDependency: Identifiable {
             url: URL(string: "https://github.com/braedonsaunders/codeflow")
         ),
         AboutDependency(
-            name: "CodebaseMemory (codebase-memory-mcp)",
+            name: "CodebaseMemory",
             license: "MIT",
             copyright: "Copyright (c) 2025 DeusData",
             url: URL(string: "https://github.com/DeusData/codebase-memory-mcp")
@@ -939,7 +939,7 @@ private struct AboutDependency: Identifiable {
             url: URL(string: "https://github.com/yamadashy/repomix")
         ),
         AboutDependency(
-            name: "OpenSSF Scorecard API",
+            name: "OpenSSF",
             license: "CDLA-2.0 / Apache-2.0",
             copyright: "Copyright 2020 OpenSSF Scorecard Authors",
             url: URL(string: "https://github.com/ossf/scorecard")

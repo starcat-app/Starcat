@@ -302,6 +302,9 @@ final class CodebaseMemoryViewModel {
                 )
                 _ = try storage.write(metadata: metadata, owner: repo.owner, name: repo.name)
 
+                // 把写盘的 metadata 重新读回 storedProject, footerStatus 才能显示正确的 generationCount
+                storedProject = try? storage.existingProject(owner: repo.owner, name: repo.name)
+
                 // Step 8: 打开浏览器
                 openBrowser(port: port, url: pageURL)
             } catch is CancellationError {
