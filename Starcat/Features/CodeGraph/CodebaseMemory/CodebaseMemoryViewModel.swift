@@ -52,7 +52,8 @@ final class CodebaseMemoryViewModel {
 
     var paywallContext: ProPaywallContext?
 
-    private let repo: Repo
+    /// repo 改为 var,让 refreshRepo(repo:) 能替换(否则 self.repo 永远是 init 时捕获的旧值)
+    private var repo: Repo
     private let runner: CodebaseMemoryRunner
     private let storage: CodebaseMemoryStorage
     private let binaryResolver: CodebaseMemoryBinaryResolver
@@ -147,6 +148,26 @@ final class CodebaseMemoryViewModel {
         branches = []
         isLoadingBranches = false
         versionStatus = .unknown
+    }
+
+    /// 真根因修复: Panel 的 @State repo 已更新, ViewModel 内部的 repo 字段也同步
+    /// 替换, 然后按新 repo 重新查 storedProject + 清空 branches。
+    func refreshRepo(repo: Repo) {
+        // 杀掉旧 UI 子进程(指向旧 repo 的端口 + 旧 source 目录)
+        if let proc = uiProcess, proc.isRunning {
+            proc.terminate()
+            uiProcess = nil
+        }
+        // 新 repo 替换 init 时捕获的旧 repo
+        self.repo = repo
+        // 清空所有跟旧 repo 相关的状态, 然后用新 repo 重新查
+        branches = []
+        isLoadingBranches = false
+        versionStatus = .unknown
+        selectedBranchName = ""
+        steps = Self.emptySteps()
+        state = .idle
+        restoreCachedState()
     }
 
     func start() {

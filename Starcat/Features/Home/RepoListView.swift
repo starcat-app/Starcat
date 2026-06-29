@@ -146,7 +146,6 @@ struct RepoListView: View {
         }
         .sheet(item: $codebaseMemorySheetRepo) { repo in
             CodebaseMemoryPanel(repo: repo)
-                .id(repo.id)   // 强制 SwiftUI 重新创建 Panel,避免 State 复用导致显示上一个 repo 的状态
                 .appSheetRootEnvironment(dependencies)
         }
         // W12 PR-4：切页面时主动 exit 非活跃 store，避免"切到 trending 时 weekly 还显示
@@ -1515,16 +1514,10 @@ struct RepoListView: View {
     }
 
     /// CodebaseMemory 为 Pro 能力：与 CodeFlow 同款门控。
-    ///
-    /// 关键: 先 nil 再 set 新值, 触发 sheet 完整重建(解决 macOS .sheet(item:) 复用 view
-    /// 导致显示上一个 repo 状态的问题)。setTimeout 0 让 dismiss + present 是独立事件。
     private func openCodebaseMemory(for repo: Repo) {
         do {
             try dependencies.entitlementGate.requirePro(.codebaseMemory)
-            codebaseMemorySheetRepo = nil
-            DispatchQueue.main.async {
-                self.codebaseMemorySheetRepo = repo
-            }
+            codebaseMemorySheetRepo = repo
         } catch {
             paywallContext = ProPaywallContext(feature: .codebaseMemory, message: error.localizedDescription)
         }

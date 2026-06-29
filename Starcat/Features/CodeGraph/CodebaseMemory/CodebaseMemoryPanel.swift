@@ -19,13 +19,16 @@ struct CodebaseMemoryPanel: View {
     @State private var showsDetails: Bool
     @State private var paywallContext: ProPaywallContext?
 
-    private let repo: Repo
+    /// 用 `@State` (不是 let) 让 repo 切换时重置 ViewModel。
+    @State private var repo: Repo
 
     init(repo: Repo) {
         self.repo = repo
         let vm = CodebaseMemoryViewModel(repo: repo)
         _viewModel = State(initialValue: vm)
         _showsDetails = State(initialValue: vm.storedProject != nil)
+        // _repo 必须做 State wrapper, 用 let 会被 SwiftUI 忽略后续修改
+        self._repo = State(initialValue: repo)
     }
 
     var body: some View {
@@ -85,8 +88,8 @@ struct CodebaseMemoryPanel: View {
         .frame(width: 520)
         .task {
             guard requireAccess() else { return }
-            // 每次 panel 显示都重查 cached + branches, 避免 macOS sheet 复用 view 导致显示上一个 repo 的状态
-            viewModel.restoreCachedStateForCurrentRepo()
+            // 用 @State 的 repo（每次 panel 显示时 SwiftUI 重新 assign）
+            viewModel.refreshRepo(repo: repo)
             await viewModel.prepare()
         }
         .sheet(item: $paywallContext) { context in
@@ -95,11 +98,6 @@ struct CodebaseMemoryPanel: View {
         .onDisappear { viewModel.cancel() }
         .onChange(of: viewModel.state) { _, state in
             if case .failed = state { showsDetails = true }
-        }
-        // repo 变化时主动刷新 viewModel + 重新查 storedProject
-        // .id(repo.id) 在某些 macOS sheet 场景下被忽略, 这里加一道保险
-        .onChange(of: repo.id) { _, _ in
-            viewModel.reloadForNewRepo()
         }
     }
 
