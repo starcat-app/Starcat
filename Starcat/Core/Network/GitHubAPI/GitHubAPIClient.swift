@@ -47,7 +47,7 @@ struct KeychainTokenProvider: GitHubTokenProviding {
 /// W4-4 C2 新增 `etag`：服务端返回的 ETag（含双引号原样保留），
 /// 上层将其与 If-None-Match 配套使用做条件请求。
 /// 304 响应不会构造 APIResponse —— 会通过 `NetworkError.notModified(etag:)` 抛出。
-struct APIResponse<T> {
+struct APIResponse<T: Sendable>: Sendable {
     let value: T
     let linkHeader: LinkHeader
     let rateLimit: RateLimitInfo

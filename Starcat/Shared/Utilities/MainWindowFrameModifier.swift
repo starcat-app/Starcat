@@ -87,6 +87,7 @@ private struct MainWindowFrameModifier: ViewModifier {
 ///
 /// 约束：不要把这个 reader 放到 Settings 或其他独立窗口里，否则会复用同一个
 /// autosaveName，导致不同窗口互相覆盖 frame。当前挂在 `ContentView` 根节点。
+@MainActor
 private struct MainWindowFrameReader: NSViewRepresentable {
     let defaultSize: CGSize
     let contentMinSize: CGSize
@@ -112,16 +113,23 @@ private struct MainWindowFrameReader: NSViewRepresentable {
         context.coordinator.configure(window: nsView.window)
     }
 
+    static func dismantleNSView(_ nsView: WindowReaderView, coordinator: Coordinator) {
+        nsView.onMoveToWindow = nil
+        coordinator.removePersistenceObservers()
+    }
+
+    @MainActor
     final class Coordinator {
         var defaultSize: CGSize
         var contentMinSize: CGSize
         private var didConfigure = false
         private var persistenceObservers: [NSObjectProtocol] = []
 
-        deinit {
+        func removePersistenceObservers() {
             persistenceObservers.forEach {
                 NotificationCenter.default.removeObserver($0)
             }
+            persistenceObservers.removeAll()
         }
 
         init(defaultSize: CGSize, contentMinSize: CGSize) {
@@ -185,12 +193,13 @@ private struct MainWindowFrameReader: NSViewRepresentable {
         /// SwiftUI 首帧 layout 可能在 configure 之后再次改写 window frame；
         /// 延迟两轮恢复，抢在 NavigationSplitView 稳定布局之后写回 autosave。
         private func scheduleDeferredRestores(to window: NSWindow) {
-            DispatchQueue.main.async { [weak self, weak window] in
+            Task { @MainActor [weak self, weak window] in
                 guard let self, let window else { return }
                 self.restoreSavedFrame(to: window)
             }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self, weak window] in
+            Task { @MainActor [weak self, weak window] in
+                try? await Task.sleep(nanoseconds: 200_000_000)
                 guard let self, let window else { return }
                 self.restoreSavedFrame(to: window)
             }
@@ -206,7 +215,9 @@ private struct MainWindowFrameReader: NSViewRepresentable {
                     object: nil,
                     queue: .main
                 ) { [weak window] _ in
-                    window?.saveFrameIfNeeded()
+                    Task { @MainActor in
+                        window?.saveFrameIfNeeded()
+                    }
                 }
             )
 
@@ -216,7 +227,9 @@ private struct MainWindowFrameReader: NSViewRepresentable {
                     object: nil,
                     queue: .main
                 ) { [weak window] _ in
-                    window?.saveFrameIfNeeded()
+                    Task { @MainActor in
+                        window?.saveFrameIfNeeded()
+                    }
                 }
             )
         }
@@ -303,6 +316,7 @@ private struct MainWindowFrameReader: NSViewRepresentable {
     }
 }
 
+@MainActor
 private final class WindowReaderView: NSView {
     var onMoveToWindow: ((NSWindow?) -> Void)?
 
@@ -312,6 +326,7 @@ private final class WindowReaderView: NSView {
     }
 }
 
+@MainActor
 private extension NSWindow {
     /// 仅主窗口写入 autosave，避免误伤 Settings / sheet host。
     func saveFrameIfNeeded() {

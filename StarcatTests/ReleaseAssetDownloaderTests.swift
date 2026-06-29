@@ -66,9 +66,9 @@ struct ReleaseAssetDownloaderTests {
     func fallbackToAPIURL() async throws {
         URLProtocolStub.reset()
         let payload = Data("ok".utf8)
-        var callIndex = 0
+        let callCounter = LockedCallCounter()
         URLProtocolStub.requestHandler = { request in
-            callIndex += 1
+            let callIndex = callCounter.next()
             let status = callIndex == 1 ? 403 : 200
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -86,7 +86,7 @@ struct ReleaseAssetDownloaderTests {
         let downloader = makeDownloader()
         try await downloader.download(asset: sampleAsset(), to: destination)
 
-        #expect(callIndex == 2)
+        #expect(callCounter.value == 2)
         #expect(URLProtocolStub.receivedRequests.count == 2)
         #expect(
             URLProtocolStub.receivedRequests[1].value(forHTTPHeaderField: "Accept") == "application/octet-stream"
@@ -115,6 +115,22 @@ struct ReleaseAssetDownloaderTests {
         let downloader = makeDownloader()
         await #expect(throws: ReleaseAssetDownloadError.self) {
             try await downloader.download(asset: sampleAsset(), to: destination)
+        }
+    }
+}
+
+private final class LockedCallCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int {
+        lock.withLock { count }
+    }
+
+    func next() -> Int {
+        lock.withLock {
+            count += 1
+            return count
         }
     }
 }

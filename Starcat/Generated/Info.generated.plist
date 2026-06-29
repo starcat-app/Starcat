@@ -29,8 +29,6 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>LSMultipleInstancesProhibited</key>
-	<true/>
 	<key>STARCAT_OAUTH_CLIENT_SECRET</key>
 	<string>$(STARCAT_OAUTH_CLIENT_SECRET)</string>
 	<key>STARCAT_PRODUCTION_API_KEY_RECOMMEND</key>

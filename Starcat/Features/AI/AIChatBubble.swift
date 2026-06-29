@@ -19,16 +19,11 @@
 
 import SwiftUI
 
-struct AIChatBubble: View, Equatable {
+struct AIChatBubble: View {
 
     let message: ChatMessage
     let onEditUserMessage: (String) -> Void
     @Environment(\.starcatReduceMotion) private var reduceMotion
-
-    static func == (lhs: AIChatBubble, rhs: AIChatBubble) -> Bool {
-        // action 始终路由到同一个窗口输入框，真正决定气泡是否需要重绘的只有消息值。
-        lhs.message == rhs.message
-    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -254,13 +249,9 @@ struct AIChatBubble: View, Equatable {
 /// 与完成态 `AIChatBubble` 分开，原因是两者的性能约束不同：完成态只解析一次完整
 /// Markdown；流式态把已冻结 chunk 各自解析一次，当前增长尾部使用普通 Text。父视图
 /// 每次 revision 更新时，已有 chunk 通过 Equatable 跳过 body，避免全文重复 parse。
-struct AIStreamingChatBubble: View, Equatable {
+struct AIStreamingChatBubble: View {
     let snapshot: StreamingMarkdownSnapshot
     @Environment(\.starcatReduceMotion) private var reduceMotion
-
-    static func == (lhs: AIStreamingChatBubble, rhs: AIStreamingChatBubble) -> Bool {
-        lhs.snapshot == rhs.snapshot
-    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {

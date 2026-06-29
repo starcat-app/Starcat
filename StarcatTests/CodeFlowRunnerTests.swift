@@ -10,6 +10,7 @@ import Testing
 @testable import Starcat
 
 @Suite("CodeFlowRunner")
+@MainActor
 struct CodeFlowRunnerTests {
     @Test("自定义父目录会按集成名隔离，已选目标目录时不重复追加")
     func normalizesCustomOutputRoots() {

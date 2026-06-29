@@ -1228,7 +1228,7 @@ final class HomeViewModel {
                 // 改造后：repo fetch 与 fetchAllStatusMap()（全表，无参数）用 async let 并行启动。
                 //   理论上耗时取较慢者，最优情况能省掉 ~150ms。
                 //
-                // 并行使用 `async let` 而非 `Task { }`：
+                // status map 使用 `async let` 而非 `Task { }`：
                 //   - async let 是结构化并发，作用域结束自动等待 / 传播取消
                 //   - 与现有 race 防护（外层 Task.isCancelled 检查）天然兼容
                 //   - 不需要额外 cancel 管理
@@ -1326,10 +1326,9 @@ final class HomeViewModel {
                     }
                 }
 
-                async let fetchedAsync = fetchedTask()
                 async let statusMapAsync: [Int64: RepoStatus] = self.repoNoteRepository.fetchAllStatusMap()
 
-                let fetched = try await fetchedAsync
+                let fetched = try await fetchedTask()
                 fetchedStatusMap = (try? await statusMapAsync) ?? [:]
 
                 outcome = .success(fetched)
@@ -1688,10 +1687,9 @@ final class HomeViewModel {
                     }
                 }
 
-                async let fetchedAsync = fetchedTask()
                 async let statusMapAsync = self.repoNoteRepository.fetchAllStatusMap()
 
-                guard let fetched = try await fetchedAsync else { return }
+                guard let fetched = try await fetchedTask() else { return }
 
                 guard !Task.isCancelled else { return }
                 let statusMap = (try? await statusMapAsync) ?? [:]

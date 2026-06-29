@@ -16,7 +16,7 @@
 import Foundation
 
 /// Rate Limit 快照。
-struct RateLimitInfo: Equatable {
+struct RateLimitInfo: Equatable, Sendable {
     /// 当前窗口配额。
     let limit: Int?
     /// 剩余次数。

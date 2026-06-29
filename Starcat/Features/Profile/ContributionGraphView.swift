@@ -451,14 +451,13 @@ private extension Color {
     }
 }
 
-// MARK: - Sidebar 隔离宿主（Equatable）
+// MARK: - Sidebar 隔离宿主
 
 /// Sidebar 贡献草坪独立分区 — **与 Activity / Manage / Trending 选中态零耦合**。
 ///
 /// Activity 切分类时 `SidebarView` 会因 `currentActivityTintColor` 重算 body，但草坪只
-/// 订阅 `ContributionService` + 用户 login + snakeStyle 等；内层 `EquatableContributionGraphHost`
-/// 判等时不含任何 Activity 字段 → SwiftUI 跳过重渲染，`TimelineView` 与 `@State animator`
-/// 持续运行，蛇已吃格状态不会回弹。
+/// 订阅 `ContributionService` + 用户 login + snakeStyle 等；内层宿主不读取 Activity 字段，
+/// 避免把侧栏选中态传入草坪绘制边界。
 ///
 /// 固定 `.id("sidebar-contribution-graph")` 由 `SidebarView` 挂载，保证 SwiftUI identity 稳定。
 struct SidebarContributionGraphSection: View {
@@ -481,7 +480,6 @@ struct SidebarContributionGraphSection: View {
                 colorScheme: colorScheme,
                 localeID: locale.identifier
             )
-            .equatable()
             .padding(.horizontal, 14)
             .padding(.top, 4)
             // 2026-06-05 v3 follow-up：dong4j 反馈"管理/趋势/活动 再上移 1/3"。
@@ -498,12 +496,8 @@ struct SidebarContributionGraphSection: View {
     }
 }
 
-/// 贡献草坪 Equatable 宿主：仅当草坪快照变化时才允许 SwiftUI 重建子树。
-///
-/// 判等字段刻意**不包含** Activity tint / Sidebar selection —— 那些变化与草坪无关。
-/// `payload` 用 `totalContributions + weeks.count` 轻量比对，避免每帧对 53×7 格做深比较；
-/// 与 `ContributionGraphView.onChange(of: payload?.totalContributions)` 语义对齐。
-private struct EquatableContributionGraphHost: View, Equatable {
+/// 贡献草坪宿主：集中传入草坪渲染需要的外部状态，避免外层容器直接展开绘制细节。
+private struct EquatableContributionGraphHost: View {
 
     let login: String
     let payload: ContributionCalendarPayload?
@@ -512,17 +506,6 @@ private struct EquatableContributionGraphHost: View, Equatable {
     let snakeStyle: SnakeStyle
     let colorScheme: ColorScheme
     let localeID: String
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.login == rhs.login
-            && lhs.isLoading == rhs.isLoading
-            && lhs.lastFetchedAt == rhs.lastFetchedAt
-            && lhs.snakeStyle == rhs.snakeStyle
-            && lhs.colorScheme == rhs.colorScheme
-            && lhs.localeID == rhs.localeID
-            && lhs.payload?.totalContributions == rhs.payload?.totalContributions
-            && lhs.payload?.weeks.count == rhs.payload?.weeks.count
-    }
 
     var body: some View {
         ContributionGraphView(

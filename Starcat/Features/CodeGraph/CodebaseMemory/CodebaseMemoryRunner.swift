@@ -65,6 +65,7 @@ struct CodebaseMemoryUIProcess {
 ///
 /// 线程安全：所有 `activeProcesses` 访问仅在 Process.terminationHandler 修改。
 /// spawnIndex / spawnUI 在调用线程执行 `process.run()`。
+@MainActor
 final class CodebaseMemoryRunner {
 
     /// 活跃 UI 子进程追踪。
@@ -224,7 +225,7 @@ final class CodebaseMemoryRunner {
     }
 
     /// 纯函数版校验，方便单测覆盖 root_path mismatch 这类串台场景。
-    static func verifiedProjectName(
+    nonisolated static func verifiedProjectName(
         projects: [CodebaseMemoryCLIProject],
         expectedSourceURL: URL,
         repositoryFullName: String
@@ -529,7 +530,7 @@ final class CodebaseMemoryRunner {
         }
     }
 
-    private static func processErrorMessage(stderr: Data, fallback: String) -> String {
+    private nonisolated static func processErrorMessage(stderr: Data, fallback: String) -> String {
         let message = String(data: stderr, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return message.isEmpty ? fallback : message

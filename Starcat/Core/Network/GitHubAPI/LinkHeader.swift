@@ -14,7 +14,7 @@
 import Foundation
 
 /// 解析后的 Link 头。
-struct LinkHeader: Equatable {
+struct LinkHeader: Equatable, Sendable {
     /// 下一页页码（rel="next"），nil 表示无下一页（即当前是最后一页）。
     let nextPage: Int?
     /// 最后一页页码（rel="last"），nil 表示无法判定总页数（当前是最后一页时通常没有 last）。

@@ -195,6 +195,7 @@ struct CodebaseMemoryStoredProject: Identifiable, Equatable, Sendable {
 // MARK: - CodebaseMemoryStorage
 
 /// 文件系统是 CodebaseMemory 产物的单一真源；本类型不建立数据库镜像。
+@MainActor
 @Observable
 final class CodebaseMemoryStorage {
 

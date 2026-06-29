@@ -109,6 +109,10 @@ struct ReadmeWebView: NSViewRepresentable {
         loadIfNeeded(into: webView, context: context)
     }
 
+    static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        coordinator.removeScriptMessageHandler()
+    }
+
     // MARK: - Private
 
     /// 仅在 html 内容或主题变化时重新 loadHTML。
@@ -176,12 +180,6 @@ struct ReadmeWebView: NSViewRepresentable {
         /// 之后任何主框架导航（reload / meta refresh / 页内 location）都会被 cancel。
         var expectsInitialLoad: Bool = false
 
-        deinit {
-            userContentController?.removeScriptMessageHandler(forName: Self.scrollMessageName)
-        }
-
-        private static let scrollMessageName = "readmeScroll"
-
         /// 构造带滚动上报脚本的 content controller。
         ///
         /// 为什么不用 NSScrollView 观察：macOS `WKWebView` 没有公开 `scrollView` 属性，
@@ -200,9 +198,17 @@ struct ReadmeWebView: NSViewRepresentable {
                 forMainFrameOnly: true
             )
             controller.addUserScript(script)
-            controller.add(self, name: Self.scrollMessageName)
+            controller.add(self, name: ReadmeWebViewConstants.scrollMessageName)
             userContentController = controller
             return controller
+        }
+
+        /// Swift 6 下 `deinit` 是非隔离上下文，不能直接调用 MainActor 隔离的
+        /// `WKUserContentController.removeScriptMessageHandler`。SwiftUI 拆除 NSView 时会在
+        /// 主线程调用 `dismantleNSView`，这里集中做 WebKit handler 清理，避免循环持有。
+        func removeScriptMessageHandler() {
+            userContentController?.removeScriptMessageHandler(forName: ReadmeWebViewConstants.scrollMessageName)
+            userContentController = nil
         }
 
         private static let scrollReportingScript = """
@@ -236,7 +242,7 @@ struct ReadmeWebView: NSViewRepresentable {
                 if (Math.abs(y - lastY) < 1 && Math.abs(overflow - lastOverflow) < 1) { return; }
                 lastY = y;
                 lastOverflow = overflow;
-                window.webkit.messageHandlers.\(scrollMessageName).postMessage({
+                window.webkit.messageHandlers.\(ReadmeWebViewConstants.scrollMessageName).postMessage({
                     y: y,
                     scrollHeight: overflow + (window.innerHeight || document.documentElement.clientHeight || 0),
                     clientHeight: window.innerHeight || document.documentElement.clientHeight || 0
@@ -257,7 +263,7 @@ struct ReadmeWebView: NSViewRepresentable {
         """
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == Self.scrollMessageName else { return }
+            guard message.name == ReadmeWebViewConstants.scrollMessageName else { return }
             if let payload = message.body as? [String: Any],
                let yValue = payload["y"] as? NSNumber {
                 let scrollHeight = (payload["scrollHeight"] as? NSNumber).map { CGFloat(truncating: $0) }
@@ -282,7 +288,7 @@ struct ReadmeWebView: NSViewRepresentable {
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+            decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
         ) {
             guard let url = navigationAction.request.url else {
                 decisionHandler(.allow)
@@ -342,6 +348,10 @@ struct ReadmeWebView: NSViewRepresentable {
             AppLog.ui.error("ReadmeWebView didFailProvisional: \(error.localizedDescription, privacy: .public)")
         }
     }
+}
+
+private enum ReadmeWebViewConstants {
+    static let scrollMessageName = "readmeScroll"
 }
 
 /// 缓存键：HTML 片段 + 主题，用于 updateNSView 时判断是否需要重新 loadHTMLString。

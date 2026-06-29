@@ -251,18 +251,26 @@ struct RepoAIContextProvider {
         let tier1MaxLines = snapshot.tier1MaxLines
         let currentTierRulesVersion = TierRules.tierRulesVersion
 
-        if let existing = try? storage.existingProject(owner: repo.owner, repo: repo.name),
+        let cachedProject = try? await MainActor.run(resultType: RepoContextStoredProject?.self) {
+            try storage.existingProject(owner: repo.owner, repo: repo.name)
+        }
+        if let existing = cachedProject,
            existing.metadata.commitSha == branch.commitSHA,
            existing.metadata.tokenBudget == tokenBudget,
            // tier1MaxLines 可能为 nil（W7 扩字段前的旧 metadata）；按 80 兜底
            (existing.metadata.tier1MaxLines ?? 80) == tier1MaxLines,
            existing.metadata.tierRulesVersion == currentTierRulesVersion {
             // 命中缓存 → 刷新 lastAccessedAt 让 UI 列表能按"最近使用"排序
-            try? storage.touch(owner: repo.owner, repo: repo.name)
+            try? await MainActor.run {
+                try storage.touch(owner: repo.owner, repo: repo.name)
+            }
             // 2026-06-14 silent failure 修复：在 security scope 内读好 xml 再透传给 caller。
             // 读不到（外部删了 xml 文件 / 自选目录权限掉了）当作"缓存损坏"抛错，让外层
             // catch 把它分类成 .degraded，UI 显示 banner 而不是静默丢失。
-            guard let xml = try storage.loadContextXml(owner: repo.owner, repo: repo.name) else {
+            let cachedXML = try await MainActor.run(resultType: String?.self) {
+                try storage.loadContextXml(owner: repo.owner, repo: repo.name)
+            }
+            guard let xml = cachedXML else {
                 AppLog.ai.warning(
                     "[RepoAIContextProvider] cache hit but context.xml unreadable for \(repo.fullName, privacy: .public)"
                 )
@@ -287,7 +295,7 @@ struct RepoAIContextProvider {
         let packer = try RepoContextPacker(writer: DefaultContextWriter(storage: storage))
         // PackInput.outputBaseDir 在 storage 注入路径下被忽略，但字段是 non-optional，
         // 这里给一个语义清晰的默认（storage 的 root URL），不会被实际使用。
-        let outputBaseDir = (try? storage.outputRootURL()) ?? FileManager.default.temporaryDirectory
+        let outputBaseDir = (try? await MainActor.run { try storage.outputRootURL() }) ?? FileManager.default.temporaryDirectory
         let input = PackInput(
             zipURL: archive.url,
             owner: repo.owner,
@@ -308,14 +316,19 @@ struct RepoAIContextProvider {
         // 读回新写的 metadata.json 给 caller（Y2 footer 元信息透传）。
         // storage.write 内部已经回填了 contextXmlBytes + lastAccessedAt + generationCount，
         // 直接读 storage.existingProject(...) 拿最新版本最准确。
-        let stored = try? storage.existingProject(owner: repo.owner, repo: repo.name)
+        let stored = try? await MainActor.run {
+            try storage.existingProject(owner: repo.owner, repo: repo.name)
+        }
         let resolvedMetadata = stored?.metadata ?? makePlaceholderMetadata(
             input: input, output: output, tokenEstimatorVersion: TierRules.tokenEstimatorVersion
         )
         // 2026-06-14 silent failure 修复：与缓存命中路径同款 —— 在 security scope 内读好 xml
         // 再透传给 caller。packer 刚写完 xml 又立刻读，正常情况下必定成功；读不到说明
         // 存储层异常（极少触发），按"已降级"抛错让 UI 给出反馈而不是 silent failure。
-        guard let xml = try storage.loadContextXml(owner: repo.owner, repo: repo.name) else {
+        let generatedXML = try await MainActor.run(resultType: String?.self) {
+            try storage.loadContextXml(owner: repo.owner, repo: repo.name)
+        }
+        guard let xml = generatedXML else {
             AppLog.ai.error(
                 "[RepoAIContextProvider] packed but context.xml unreadable for \(repo.fullName, privacy: .public)"
             )

@@ -39,6 +39,7 @@ import AppKit
 /// QR NSImage），NSCache 容量 16 张足够覆盖分享卡所有主题 + 不同 sizePoints
 /// 调用方。NSImage 本身约 64×64×4 = 16KB，16 张约 256KB，内存代价可忽略。
 /// NSCache 自带线程安全 + 内存压力下自动清理，不必手动管理生命周期。
+@MainActor
 enum QRCodeGenerator {
 
     /// 进程级 QR 图缓存。

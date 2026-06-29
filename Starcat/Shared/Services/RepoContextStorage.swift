@@ -136,6 +136,7 @@ enum RepoContextStorageError: LocalizedError {
 }
 
 /// 文件系统是 RepoContextPacker 产物的单一真源；本类型不建立数据库镜像。
+@MainActor
 @Observable
 final class RepoContextStorage {
 

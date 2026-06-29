@@ -72,7 +72,9 @@ enum SharedSnapshotError: LocalizedError, Sendable {
 /// let archive = try await service.archiveIfNeeded(repo: repo, commitSHA: branch.commitSHA)
 /// // archive.url → 给 RepoContextPacker 当 zipURL
 /// ```
-struct SharedSnapshotService {
+/// `FileManager` 只是不可变依赖入口；调用方可能把本服务保存在 MainActor ViewModel 中，
+/// Swift 6 需要它能跨 async 边界传递，因此在服务边界局部声明 unchecked Sendable。
+struct SharedSnapshotService: @unchecked Sendable {
 
     /// ZIP 单文件大小上限（与 CodeFlow `CodeFlowRunner.maximumArchiveBytes` 保持一致）。
     static let maximumArchiveBytes = 100_000_000

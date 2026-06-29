@@ -34,13 +34,17 @@ struct RuntimeContextProviderTests {
     /// - 在 Asia/Shanghai (UTC+8) 是 15:42，仍是周一；
     /// - 在 America/New_York (UTC-4 夏令时) 是凌晨 03:42，仍是周一；
     /// - 方便派生「跨日 → 跨周几」的边界数据。
-    private static let fixedDate = ISO8601DateFormatter().date(from: "2026-06-15T07:42:33Z")!
+    private static var fixedDate: Date {
+        ISO8601DateFormatter().date(from: "2026-06-15T07:42:33Z")!
+    }
 
     /// 标准 mock infoDictionary，模拟 `Bundle.main.infoDictionary` 的真实形态。
-    private static let mockInfo: [String: Any] = [
-        "CFBundleShortVersionString": "1.2.3",
-        "CFBundleVersion": "456"
-    ]
+    private static var mockInfo: [String: Any] {
+        [
+            "CFBundleShortVersionString": "1.2.3",
+            "CFBundleVersion": "456"
+        ]
+    }
 
     // MARK: - UTC 时间精度
 

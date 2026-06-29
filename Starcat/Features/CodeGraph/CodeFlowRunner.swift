@@ -147,6 +147,7 @@ struct CodeFlowArchiveResult: Sendable {
     let bytes: Int64
 }
 
+@MainActor
 struct CodeFlowRunner {
 
     /// 100MB ZIP 上限——保留向后兼容（外部代码可能引用 `CodeFlowRunner.maximumArchiveBytes`）。
