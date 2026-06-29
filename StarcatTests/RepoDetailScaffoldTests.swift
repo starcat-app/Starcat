@@ -68,4 +68,37 @@ final class RepoDetailScaffoldTests: XCTestCase {
             panelHeight: 320
         ))
     }
+
+    // MARK: - expandedScrollOverflow
+
+    func testExpandedScrollOverflow_recoversExpandedHeroOverflow() throws {
+        // README 边界场景：Hero 折叠后 WebView 可视区变高，当前 overflow 会变小；
+        // 折算回展开态后，折叠资格不应因为布局反馈而反复翻转。
+        let recovered = RepoDetailScaffold<EmptyView, EmptyView>.expandedScrollOverflow(
+            currentOverflow: 120,
+            panelHeight: 320,
+            collapseProgress: 0.75
+        )
+        let unwrapped = try XCTUnwrap(recovered)
+
+        XCTAssertEqual(unwrapped, 360, accuracy: 0.001)
+        XCTAssertTrue(RepoDetailScaffold<EmptyView, EmptyView>.canCollapseHero(
+            scrollOverflow: unwrapped,
+            panelHeight: 320
+        ))
+    }
+
+    func testExpandedScrollOverflow_clampsCollapseProgress() throws {
+        let recovered = try XCTUnwrap(RepoDetailScaffold<EmptyView, EmptyView>.expandedScrollOverflow(
+            currentOverflow: 100,
+            panelHeight: 200,
+            collapseProgress: 1.5
+        ))
+
+        XCTAssertEqual(
+            recovered,
+            300,
+            accuracy: 0.001
+        )
+    }
 }

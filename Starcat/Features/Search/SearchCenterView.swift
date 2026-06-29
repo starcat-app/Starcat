@@ -1827,6 +1827,13 @@ private struct SearchRemoteRepoDetailView: View {
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
 
+    /// 搜索详情里的 CodeFlow sheet 也需要点击级 identity，避免 sheet-over-sheet
+    /// 复用 presentation host 时沿用上一次 repo 的 `@State` ViewModel。
+    private struct CodeFlowSheetItem: Identifiable {
+        let id = UUID()
+        let repo: Repo
+    }
+
     /// 已确认 indexed 的外部 wiki 链接（DeepWiki / ZRead / CodeWiki）。
     /// `.task(id: candidate.identity)` 触发 fetch，未收录 / 失败时保持空数组
     /// → 整行隐藏（与 `RepoWikiMenu` 的"未收录不占 UI"语义一致）。
@@ -1848,7 +1855,7 @@ private struct SearchRemoteRepoDetailView: View {
     ///
     /// 触发流程仍保留"先关 popover → DispatchQueue.main.async 后再赋值 item"
     /// 的时序，避免 popover 与 sheet 同帧 presentation 竞争。
-    @State private var codeFlowSheetRepo: Repo?
+    @State private var codeFlowSheetItem: CodeFlowSheetItem?
     @State private var paywallContext: ProPaywallContext?
 
     /// 卡片宽度。480pt 足以容纳 owner / repo 双行 + 头像 + 顶栏徽章；再窄
@@ -2376,8 +2383,9 @@ private struct SearchRemoteRepoDetailView: View {
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
-        .sheet(item: $codeFlowSheetRepo) { sheetRepo in
-            CodeFlowPanel(repo: sheetRepo)
+        .sheet(item: $codeFlowSheetItem) { item in
+            CodeFlowPanel(repo: item.repo)
+                .id(item.id)
                 .appSheetRootEnvironment(dependencies)
         }
     }
@@ -2494,7 +2502,8 @@ private struct SearchRemoteRepoDetailView: View {
     private func openCodeFlow(for repo: Repo) {
         do {
             try dependencies.entitlementGate.requirePro(.codeFlow)
-            codeFlowSheetRepo = repo
+            AppLog.ui.info("Search CodeFlow sheet repo=\(repo.fullName, privacy: .public) id=\(repo.id, privacy: .public)")
+            codeFlowSheetItem = CodeFlowSheetItem(repo: repo)
         } catch {
             paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
         }

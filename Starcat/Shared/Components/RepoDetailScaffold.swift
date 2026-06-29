@@ -312,14 +312,31 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             readmeScrollOverflow = overflow
         }
 
+        let stableScrollOverflow = Self.expandedScrollOverflow(
+            currentOverflow: readmeScrollOverflow,
+            panelHeight: metadataPanelHeight,
+            collapseProgress: metadataPanelCollapseProgress
+        )
         let canCollapse = Self.canCollapseHero(
-            scrollOverflow: readmeScrollOverflow,
+            scrollOverflow: stableScrollOverflow,
             panelHeight: metadataPanelHeight
         )
         let rawProgress = Self.metadataCollapseProgress(for: report.offsetY)
         let progress = canCollapse ? rawProgress : 0
         guard abs(progress - metadataPanelCollapseProgress) > 0.01 else { return }
         metadataPanelCollapseProgress = progress
+    }
+
+    /// 把 WebView 当前上报的余量折算回 Hero 展开态，避免折叠动作本身改变 `clientHeight`
+    /// 后让可折叠资格在边界 README 上反复翻转。
+    static func expandedScrollOverflow(
+        currentOverflow: CGFloat?,
+        panelHeight: CGFloat,
+        collapseProgress: CGFloat
+    ) -> CGFloat? {
+        guard let currentOverflow, panelHeight > 0 else { return currentOverflow }
+        let normalizedProgress = min(max(collapseProgress, 0), 1)
+        return currentOverflow + panelHeight * normalizedProgress
     }
 
     /// Hero 是否具备稳定折叠资格：余量未知或面板未测高时保守禁止；余量须 ≥ 面板高度。

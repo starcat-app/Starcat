@@ -74,22 +74,28 @@ struct ExternalLinksMenu: View {
     }
 
     var body: some View {
+        let currentCodeFlowRepo = codeFlowRepo
+        let currentCodebaseMemoryRepo = codebaseMemoryRepo
+
         Group {
             if codeFlowRepo != nil || codebaseMemoryRepo != nil {
                 FeaturedExternalLinksControl(
                     selection: selection,
                     onOpenCodeFlow: {
-                        if let codeFlowRepo {
-                            onOpenCodeFlow(codeFlowRepo)
+                        if let repo = currentCodeFlowRepo {
+                            AppLog.ui.info("Toolbar CodeFlow action selection=\(selection.fullName, privacy: .public) repo=\(repo.fullName, privacy: .public) id=\(repo.id, privacy: .public)")
+                            onOpenCodeFlow(repo)
                         }
                     },
-                    codebaseMemoryRepo: codebaseMemoryRepo,
+                    codebaseMemoryRepo: currentCodebaseMemoryRepo,
                     onOpenCodebaseMemory: {
-                        if let codebaseMemoryRepo {
-                            onOpenCodebaseMemory(codebaseMemoryRepo)
+                        if let repo = currentCodebaseMemoryRepo {
+                            AppLog.ui.info("Toolbar CodebaseMemory action selection=\(selection.fullName, privacy: .public) repo=\(repo.fullName, privacy: .public) id=\(repo.id, privacy: .public)")
+                            onOpenCodebaseMemory(repo)
                         }
                     }
                 )
+                .id(featuredControlIdentity)
             } else {
                 standardMenu
             }
@@ -138,6 +144,14 @@ struct ExternalLinksMenu: View {
         if let url {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    /// AppKit `Menu` 会跨 SwiftUI body 重算复用内部 action；identity 包含当前 repo
+    /// 快照，避免切换选中仓库后菜单项仍调用上一次 repo 的闭包。
+    private var featuredControlIdentity: String {
+        let codeFlowIdentity = codeFlowRepo.map { "\($0.id):\($0.fullName)" } ?? "none"
+        let codebaseIdentity = codebaseMemoryRepo.map { "\($0.id):\($0.fullName)" } ?? "none"
+        return "\(selection.fullName)|cf=\(codeFlowIdentity)|cb=\(codebaseIdentity)"
     }
 }
 
