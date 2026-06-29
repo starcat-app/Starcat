@@ -895,7 +895,7 @@ private struct AboutDependency: Identifiable {
         ),
         AboutDependency(
             name: "MCP Swift SDK",
-            license: "Apache 2.0 / MIT",
+            license: "Apache-2.0 / MIT",
             copyright: "Copyright (c) 2024-2025 Model Context Protocol a Series of LF Projects, LLC.",
             url: URL(string: "https://github.com/modelcontextprotocol/swift-sdk")
         ),
@@ -940,7 +940,7 @@ private struct AboutDependency: Identifiable {
         ),
         AboutDependency(
             name: "OpenSSF Scorecard API",
-            license: "CDLA Permissive 2.0 (API data), Apache 2.0 (project)",
+            license: "CDLA-2.0 / Apache-2.0",
             copyright: "Copyright 2020 OpenSSF Scorecard Authors",
             url: URL(string: "https://github.com/ossf/scorecard")
         ),
