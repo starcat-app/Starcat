@@ -76,18 +76,18 @@ if [ ! -f "codebase-memory-mcp" ]; then
     ls -la "$WORK_DIR"
     exit 1
 fi
-mv codebase-memory-mcp codebase
-chmod 0755 codebase
-echo "    binary size: $(stat -f%z codebase) bytes"
+mv codebase-memory-mcp codebase.bin
+chmod 0755 codebase.bin
+echo "    binary size: $(stat -f%z codebase.bin) bytes"
 
 # ── 5. 拷贝到 Bundle 资源目录 ──
 echo "==> installing to $TARGET_DIR..."
 mkdir -p "$TARGET_DIR"
-cp codebase "$TARGET_DIR/codebase"
-chmod 0755 "$TARGET_DIR/codebase"
+cp codebase.bin "$TARGET_DIR/codebase.bin"
+chmod 0755 "$TARGET_DIR/codebase.bin"
 
 # ── 6. 写入 CODEBASE-INTEGRATION.md（自动生成，每次覆盖） ──
-FINAL_SHA=$(shasum -a 256 "$TARGET_DIR/codebase" | awk '{print $1}')
+FINAL_SHA=$(shasum -a 256 "$TARGET_DIR/codebase.bin" | awk '{print $1}')
 cat > "$TARGET_DIR/CODEBASE-INTEGRATION.md" << EOF
 # CodebaseMemory Integration
 
@@ -102,8 +102,8 @@ EOF
 echo ""
 echo "✅ Done."
 echo "   版本:   $VERSION"
-echo "   路径:   $TARGET_DIR/codebase"
-echo "   大小:   $(stat -f%z "$TARGET_DIR/codebase") bytes"
+echo "   路径:   $TARGET_DIR/codebase.bin"
+echo "   大小:   $(stat -f%z "$TARGET_DIR/codebase.bin") bytes"
 echo "   SHA-256: $FINAL_SHA"
 echo ""
 echo "   下一步: xcodegen generate && xcodebuild -scheme Starcat build"

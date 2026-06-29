@@ -34,12 +34,13 @@ actor CodebaseMemoryBinaryResolver {
 
     // MARK: - Bundle 内资源路径
 
-    /// `Starcat.app/Contents/Resources/Codebase/codebase`
+    /// `Starcat.app/Contents/Resources/Codebase/codebase.bin`
+    /// Xcode 不会拷贝无扩展名的二进制文件到 bundle，所以必须用 .bin 扩展名。
     private var bundleCodebaseURL: URL? {
         if let fixed = fixedBundleCodebaseURL { return fixed }
         return Bundle.main.url(
             forResource: "codebase",
-            withExtension: nil,
+            withExtension: "bin",
             subdirectory: "Codebase"
         )
     }
