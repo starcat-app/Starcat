@@ -23,14 +23,14 @@ struct CodebaseMemoryPanel: View {
     /// 当前 sheet 载荷中的 repo。
     ///
     /// 这里故意不用 `@State`：repo 是父级 sheet item 的输入，不是 Panel 自己拥有的可变状态。
-    /// 每次打开入口都会由 `CodebaseMemorySheetItem.id` 强制重建 Panel，避免旧 ViewModel 串到新 repo。
+    /// 每次打开入口都会由 `CodeGraphSheetItem.id` 强制重建 Panel，避免旧 ViewModel 串到新 repo。
     private let repo: Repo
 
     init(repo: Repo) {
         self.repo = repo
         let vm = CodebaseMemoryViewModel(repo: repo)
         _viewModel = State(initialValue: vm)
-        _showsDetails = State(initialValue: vm.storedProject != nil)
+        _showsDetails = State(initialValue: false)
     }
 
     var body: some View {
@@ -67,6 +67,7 @@ struct CodebaseMemoryPanel: View {
             guard requireAccess() else { return }
             // 即使 SwiftUI 复用 presentation host，也以当前 sheet item 的 repo 重新校准 ViewModel。
             viewModel.refreshRepo(repo: repo)
+            showsDetails = viewModel.storedProject != nil
             await viewModel.prepare()
         }
         .sheet(item: $paywallContext) { context in
@@ -315,7 +316,7 @@ struct CodebaseMemoryPanel: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 10)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
