@@ -217,6 +217,8 @@ final class CodebaseMemoryStorage {
     private(set) var summary: CodebaseMemorySummary = .empty
     /// 最近一次操作失败的错误消息（UI 展示用）。
     private(set) var lastErrorMessage: String?
+    /// 自定义目录的 security-scoped bookmark 已失效或无法访问，需要用户重新授权。
+    private(set) var needsDirectoryReauthorization: Bool = false
     /// 递增版本号驱动 SwiftUI 重建 `.id(directoryConfigurationRevision)`。
     private(set) var directoryConfigurationRevision: Int = 0
 
@@ -274,11 +276,17 @@ final class CodebaseMemoryStorage {
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         )
-        let source = try resolveOutputRoot()
-        try migrateProjects(
-            from: source,
-            to: ResolvedOutputRoot(url: outputRoot, securityScopeURL: nil)
-        )
+        do {
+            let source = try resolveOutputRoot()
+            try migrateProjects(
+                from: source,
+                to: ResolvedOutputRoot(url: outputRoot, securityScopeURL: nil)
+            )
+        } catch {
+            guard Self.isDirectoryAuthorizationError(error) else { throw error }
+            // 旧 bookmark 已失效时，用户正在通过 NSOpenPanel 重新授权目录。此时不能
+            // 因为读不到旧授权就阻止保存新 bookmark；目标目录已经由本次选择确认可访问。
+        }
         defaults.set(data, forKey: Self.bookmarkKey)
         directoryConfigurationRevision += 1
         reload()
@@ -310,9 +318,11 @@ final class CodebaseMemoryStorage {
                 try loadOrRebuildSummary(root: root)
             }
             lastErrorMessage = nil
+            needsDirectoryReauthorization = false
         } catch {
             summary = .empty
             lastErrorMessage = error.localizedDescription
+            needsDirectoryReauthorization = Self.isDirectoryAuthorizationError(error)
         }
     }
 
@@ -322,9 +332,11 @@ final class CodebaseMemoryStorage {
                 try rebuildSummaryOnDisk(root: root)
             }
             lastErrorMessage = nil
+            needsDirectoryReauthorization = false
         } catch {
             summary = .empty
             lastErrorMessage = error.localizedDescription
+            needsDirectoryReauthorization = Self.isDirectoryAuthorizationError(error)
         }
     }
 
@@ -492,6 +504,14 @@ final class CodebaseMemoryStorage {
             if didStart { resolved.securityScopeURL?.stopAccessingSecurityScopedResource() }
         }
         return try operation(resolved.url)
+    }
+
+    private static func isDirectoryAuthorizationError(_ error: Error) -> Bool {
+        guard let storageError = error as? CodebaseMemoryStorageError else { return false }
+        switch storageError {
+        case .outputDirectoryUnavailable, .invalidBookmark:
+            return true
+        }
     }
 
     // MARK: - 内部：迁移

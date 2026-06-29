@@ -135,7 +135,9 @@ struct IntegrationSettingsTab: View {
                     Spacer()
                 }
 
-                if let message = codebaseMemoryStorage.lastErrorMessage {
+                if codebaseMemoryStorage.needsDirectoryReauthorization {
+                    codebaseMemoryReauthorizationPrompt
+                } else if let message = codebaseMemoryStorage.lastErrorMessage {
                     Label(message, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.red)
@@ -157,6 +159,30 @@ struct IntegrationSettingsTab: View {
             Button("common.ok") { actionError = nil }
         } message: {
             Text(actionError ?? String.l10n("common.unknownError"))
+        }
+    }
+
+    private var codebaseMemoryReauthorizationPrompt: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label {
+                Text(verbatim: "需要重新授权 CodebaseMemory 保存目录")
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+            }
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.red)
+            Text(verbatim: "当前目录授权已失效或无法访问。重新选择同一个目录即可恢复写入权限，已有索引数据不会被清除。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button {
+                    chooseCodebaseMemoryOutputDirectory()
+                } label: {
+                    Text(verbatim: "重新授权目录")
+                }
+                .buttonStyle(.borderedProminent)
+            }
         }
     }
 

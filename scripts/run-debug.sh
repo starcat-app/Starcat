@@ -1,53 +1,62 @@
 #!/usr/bin/env bash
 #
-# run-debug.sh — 本地 Debug 构建并启动 Starcat。
+# run-debug.sh — 本地 Debug 构建并启动 Starcat（沙箱模式）。
 #
-# 设计要点：
-# - 脚本位于 scripts/ 目录，但所有构建产物仍写到项目根的 build/DerivedData；
-# - 先根据脚本自身位置定位项目根，再 cd 过去执行 xcodegen / xcodebuild，避免调用者
-#   从其它目录手动执行时把 build/ 写到错误位置；
-# - 构建前先 kill 掉已在运行的 Starcat —— macOS `open` 命令对已运行的同 bundle id
-#   应用默认行为是 activate 而非 relaunch，会出现「代码改了但启动的还是旧进程」
-#   的诡异现象，对 Debug 迭代循环非常致命。
+# 这个入口用于验证 App Store / sandbox 真实行为：UserDefaults、security-scoped
+# bookmark、Keychain、NSWorkspace 等都应和 Xcode Run 保持同一权限模型。
+#
+# 关键约束：
+# - 使用 Apple Development 签名并保留 Starcat.entitlements。
+# - 显式关闭 ENABLE_DEBUG_DYLIB，避免再通过 deep ad-hoc re-sign 修复 open 启动。
+# - 绝不在构建后 `codesign --deep --sign -`，否则会清空 entitlements，变成非沙箱 app。
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-Sandbox"
+APP_PATH="$DERIVED_DATA/Build/Products/Debug/Starcat.app"
+
+# Personal Team 的 Team ID。后续如果换账号，可用环境变量覆盖：
+#   STARCAT_DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/run-debug.sh
+DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-6N2V7FYPJ8}"
 
 cd "$PROJECT_ROOT"
 
-# 关闭已在运行的 Starcat。
-# - `pkill -x Starcat` 精确匹配进程名，不会误伤包含 "Starcat" 字样的子进程
-#   （比如 Xcode 里 "Starcat.app/Contents/MacOS/Starcat" 的执行名就是 "Starcat"）；
-# - `|| true` —— pkill 在「没匹配到任何进程」时退出码为 1，配合 `set -e` 会让脚本中止，
-#   但「Starcat 没在跑」就是正常情况，不应视为错误；
-# - `2>/dev/null` 隐藏权限问题等噪声，关进程不是这个脚本的核心职责，失败也不阻塞构建。
 echo "==> 关闭已运行的 Starcat（如有）..."
 pkill -x Starcat 2>/dev/null || true
-
-# 给 LaunchServices / Dock 短暂时间回收旧进程的 bundle 注册，
-# 避免后续 `open` 撞上「正在退出但还没退出干净」的旧实例。
 sleep 0.3
 
+echo "==> 生成 Xcode 工程..."
 xcodegen generate
 
+echo "==> 构建 Starcat Debug（沙箱模式）..."
 xcodebuild \
   -scheme Starcat \
   -configuration Debug \
   -sdk macosx \
   -arch arm64 \
-  -derivedDataPath build/DerivedData \
+  -derivedDataPath "$DERIVED_DATA" \
+  DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM_ID" \
+  CODE_SIGN_IDENTITY="Apple Development" \
+  ENABLE_DEBUG_DYLIB=NO \
   build
 
-APP_PATH="$PROJECT_ROOT/build/DerivedData/Build/Products/Debug/Starcat.app"
+echo "==> 校验沙箱 entitlements..."
+ENTITLEMENTS="$(codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true)"
+if ! grep -q "com.apple.security.app-sandbox" <<<"$ENTITLEMENTS"; then
+  echo "ERROR: 沙箱 entitlement 缺失，拒绝启动。"
+  exit 1
+fi
+if ! grep -q "com.apple.security.files.user-selected.read-write" <<<"$ENTITLEMENTS"; then
+  echo "ERROR: user-selected read/write entitlement 缺失，拒绝启动。"
+  exit 1
+fi
 
-# Xcode Debug 默认启用 ENABLE_DEBUG_DYLIB：主二进制只留 stub，真实代码在
-# Starcat.debug.dylib。经 `open`/Finder 冷启动时，macOS 26+ 对 ad-hoc 签名的
-# debug dylib 校验更严，会 dyld abort（crash log: Library not loaded /
-# code signature ... not valid for use in process）。
-# 从 Xcode Run 不受影响；run-debug.sh 在 open 前对整个 .app deep ad-hoc 重签。
-echo "==> 对 Debug 产物 ad-hoc 重签（修复 debug.dylib 经 open 启动失败）..."
-codesign --force --deep --sign - "$APP_PATH"
+echo "==> 签名摘要:"
+codesign -dv --verbose=2 "$APP_PATH" 2>&1 | sed -n '1,12p'
+echo "==> 当前模式: sandbox"
+echo "    preferences: ~/Library/Containers/com.starcat.app/Data/Library/Preferences/com.starcat.app.plist"
+echo "    app: $APP_PATH"
 
 open "$APP_PATH"
