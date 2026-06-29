@@ -1515,10 +1515,16 @@ struct RepoListView: View {
     }
 
     /// CodebaseMemory 为 Pro 能力：与 CodeFlow 同款门控。
+    ///
+    /// 关键: 先 nil 再 set 新值, 触发 sheet 完整重建(解决 macOS .sheet(item:) 复用 view
+    /// 导致显示上一个 repo 状态的问题)。setTimeout 0 让 dismiss + present 是独立事件。
     private func openCodebaseMemory(for repo: Repo) {
         do {
             try dependencies.entitlementGate.requirePro(.codebaseMemory)
-            codebaseMemorySheetRepo = repo
+            codebaseMemorySheetRepo = nil
+            DispatchQueue.main.async {
+                self.codebaseMemorySheetRepo = repo
+            }
         } catch {
             paywallContext = ProPaywallContext(feature: .codebaseMemory, message: error.localizedDescription)
         }
