@@ -107,10 +107,12 @@ final class CodebaseMemoryRunner {
         cacheDir: URL,
         repositoryFullName: String
     ) async throws -> CodebaseMemoryUIProcess {
+        AppLog.ui.info("CodebaseMemory startVerifiedUI begin repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public) cache=\(cacheDir.path, privacy: .public) binary=\(binaryURL.path, privacy: .public)")
         stopAll()
         terminateStaleStarcatUIProcesses(binaryURL: binaryURL)
 
         if CodebaseMemoryPortAvailability.unavailableMessage(for: port) != nil {
+            AppLog.ui.error("CodebaseMemory startVerifiedUI port unavailable repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public)")
             throw CodebaseMemoryError.portExhausted
         }
 
@@ -124,6 +126,7 @@ final class CodebaseMemoryRunner {
 
         do {
             guard process.isRunning else {
+                AppLog.ui.error("CodebaseMemory UI process exited before readiness repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public)")
                 throw CodebaseMemoryError.uiStartFailed(
                     underlying: processStartupFailureMessage(
                         process: process,
@@ -132,8 +135,10 @@ final class CodebaseMemoryRunner {
                 )
             }
             try await waitForServer(process: process, port: port, timeout: 8)
+            AppLog.ui.info("CodebaseMemory startVerifiedUI ready repo=\(repositoryFullName, privacy: .public) pid=\(process.processIdentifier, privacy: .public) port=\(port, privacy: .public)")
             return CodebaseMemoryUIProcess(process: process, pageURL: pageURL)
         } catch {
+            AppLog.ui.error("CodebaseMemory startVerifiedUI failed repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
             stopUI(process)
             throw error
         }
@@ -253,6 +258,7 @@ final class CodebaseMemoryRunner {
         repositoryFullName: String
     ) throws -> Process {
         try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        AppLog.ui.info("CodebaseMemory startUI config repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public) cache=\(cacheDir.path, privacy: .public)")
 
         // Step 1: 写入 ui 配置（一次性，立即退出）
         let configProcess = Process()
@@ -268,6 +274,7 @@ final class CodebaseMemoryRunner {
         configProcess.standardError = configStderrPipe
         try configProcess.run()
         configProcess.waitUntilExit()
+        AppLog.ui.info("CodebaseMemory UI config exited repo=\(repositoryFullName, privacy: .public) status=\(configProcess.terminationStatus, privacy: .public)")
         if configProcess.terminationStatus != 0 {
             let stderrData = configStderrPipe.fileHandleForReading.readDataToEndOfFile()
             let message = Self.processErrorMessage(
@@ -308,6 +315,7 @@ final class CodebaseMemoryRunner {
         process.terminationHandler = { [weak self] proc in
             stdoutPipe.fileHandleForReading.readabilityHandler = nil
             stderrPipe.fileHandleForReading.readabilityHandler = nil
+            AppLog.ui.warning("CodebaseMemory UI process terminated repo=\(repositoryFullName, privacy: .public) pid=\(proc.processIdentifier, privacy: .public) status=\(proc.terminationStatus, privacy: .public)")
             if proc.terminationStatus != 0 {
                 let message = outputBuffer.diagnosticText()
                 if !message.isEmpty {
@@ -322,6 +330,7 @@ final class CodebaseMemoryRunner {
         }
 
         try process.run()
+        AppLog.ui.info("CodebaseMemory UI process spawned repo=\(repositoryFullName, privacy: .public) pid=\(process.processIdentifier, privacy: .public) port=\(port, privacy: .public)")
         activeProcesses.append(
             ManagedUIProcess(
                 process: process,

@@ -373,12 +373,13 @@ final class CodebaseMemoryStorage {
         }
     }
 
-    /// 删除所有项目产物 + binary 容器副本。
+    /// 删除所有项目产物。
     /// - 项目目录: `<root>/<owner>/<repo>/`
     /// - 项目缓存: `<root>/<owner>/<repo>/.internal-cache/` 随项目目录一起删除
-    /// - binary 副本: `<root>/.bin/codebase` (spawn 用)
     ///
     /// 项目缓存必须按 repo 隔离；否则浏览器 UI 可能继续读取上一个 repo 的 graph/config。
+    /// 内置 `codebase` 可执行副本不属于用户数据,由 `CodebaseMemoryBinaryResolver`
+    /// 放在 App 自己的 Application Support 缓存目录,这里不再删除。
     func deleteAllProjects() throws {
         try withOutputRoot { root in
             let knownProjects = try scanProjects(root: root)
@@ -388,11 +389,6 @@ final class CodebaseMemoryStorage {
                 if (try? fileManager.contentsOfDirectory(atPath: ownerDirectory.path).isEmpty) == true {
                     try? fileManager.removeItem(at: ownerDirectory)
                 }
-            }
-            // 清掉 binary 容器副本(下次首次进入会自动从 bundle 重新拷贝 + chmod)
-            let binDir = root.appendingPathComponent(".bin", isDirectory: true)
-            if fileManager.fileExists(atPath: binDir.path) {
-                try fileManager.removeItem(at: binDir)
             }
             writeSummary(.empty.withUpdatedAt(.now), root: root)
             summary = .empty.withUpdatedAt(.now)

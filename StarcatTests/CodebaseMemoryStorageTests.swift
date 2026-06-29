@@ -26,6 +26,19 @@ struct CodebaseMemoryStorageTests {
         #expect(cacheA != root.appendingPathComponent(".internal-cache", isDirectory: true))
     }
 
+    @Test("内置二进制 fallback 缓存不放在用户输出目录，避免被 sandbox/bookmark 权限影响")
+    func binaryFallbackCacheDirectoryIsAppOwned() async throws {
+        let outputRoot = URL(fileURLWithPath: "/tmp/starcat-codebase-memory", isDirectory: true)
+        let storage = CodebaseMemoryStorage(fileManager: .default, defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        storage.fixedRootURL = outputRoot
+        let resolver = CodebaseMemoryBinaryResolver(storage: storage)
+
+        let binaryURL = try await resolver.containerCodebaseURL()
+
+        #expect(binaryURL.path.hasSuffix("/Starcat/CodebaseMemory/bin/codebase"))
+        #expect(!binaryURL.standardizedFileURL.path.hasPrefix(outputRoot.standardizedFileURL.path))
+    }
+
     @Test("UI 启动前必须确认 cache 中的 project root 属于当前 repo")
     func verifiedProjectNameAcceptsCurrentRepoRoot() throws {
         let source = URL(fileURLWithPath: "/tmp/starcat-codebase-memory/owner/repo/source", isDirectory: true)

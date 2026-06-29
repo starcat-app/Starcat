@@ -165,13 +165,15 @@ final class CodebaseMemoryViewModel {
 
     func start() {
         task?.cancel()
+        AppLog.ui.info("CodebaseMemory start requested repo=\(self.repo.fullName, privacy: .public) state=\(String(describing: self.state), privacy: .public) stored=\(self.storedProject?.id ?? "nil", privacy: .public) uiRunning=\((self.uiProcess?.isRunning ?? false), privacy: .public)")
         // `ready/succeeded` 只代表本次 ViewModel 持有一个仍在运行的 UI 进程。
         // 历史 metadata 里的 lastUIPort 不能作为运行态依据，因为用户关闭窗口、
         // App 重启或旧版本崩溃后，端口记录仍会留在磁盘上。
         if case .ready(let port, let pageURL) = state,
            let proc = uiProcess,
            proc.isRunning {
-            openBrowser(port: port, url: pageURL)
+            AppLog.ui.info("CodebaseMemory opening existing ready UI repo=\(self.repo.fullName, privacy: .public) port=\(port, privacy: .public) url=\(pageURL.absoluteString, privacy: .public)")
+            task = Task { await openBrowser(port: port, url: pageURL) }
             return
         }
         if case .succeeded = state,
@@ -180,7 +182,8 @@ final class CodebaseMemoryViewModel {
            let proc = uiProcess,
            proc.isRunning {
             let url = URL(string: "http://127.0.0.1:\(port)/")!
-            openBrowser(port: port, url: url)
+            AppLog.ui.info("CodebaseMemory reopening succeeded UI repo=\(self.repo.fullName, privacy: .public) port=\(port, privacy: .public) url=\(url.absoluteString, privacy: .public)")
+            task = Task { await openBrowser(port: port, url: url) }
             return
         }
         generate(removingExisting: false)
@@ -236,6 +239,7 @@ final class CodebaseMemoryViewModel {
                    existing.metadata.sourceRevision.commitSHA == branch.commitSHA {
                     let root = try storage.outputRootURL()
                     let cacheDir = storage.projectCacheDirectory(root: root, owner: repo.owner, name: repo.name)
+                    AppLog.ui.info("CodebaseMemory cache-hit candidate repo=\(self.repo.fullName, privacy: .public) cache=\(cacheDir.path, privacy: .public) lastPort=\(existing.metadata.lastUIPort ?? -1, privacy: .public)")
                     if runner.hasIndexedProjectCache(cacheDir: cacheDir) {
                         // 全部跳过 → 直接 openBrowser
                         steps.forEach { step in
@@ -256,13 +260,14 @@ final class CodebaseMemoryViewModel {
                                 repositoryFullName: repo.fullName
                             )
                             uiProcess = launched.process
+                            AppLog.ui.info("CodebaseMemory cache-hit UI launched repo=\(self.repo.fullName, privacy: .public) pid=\(launched.process.processIdentifier, privacy: .public) port=\(port, privacy: .public)")
                             setStep(id: .startUI, status: .succeeded)
                         }
                         guard uiProcess != nil else {
                             state = .failed(message: CodebaseMemoryError.uiStartFailed(underlying: "missing UI process").localizedDescription)
                             return
                         }
-                        openBrowser(port: port, url: pageURL)
+                        await openBrowser(port: port, url: pageURL)
                         return
                     }
                     // metadata 命中但 per-repo cache 缺项目 DB 时，继续走完整生成管线。
@@ -297,6 +302,7 @@ final class CodebaseMemoryViewModel {
                 state = .indexing
                 setStep(id: .index, status: .running)
                 let cacheDir = storage.projectCacheDirectory(root: root, owner: repo.owner, name: repo.name)
+                AppLog.ui.info("CodebaseMemory indexing complete repo=\(self.repo.fullName, privacy: .public) cache=\(cacheDir.path, privacy: .public)")
                 let indexResult = try await runner.runIndex(
                     binaryURL: binaryURL, repoPath: source.sourceURL, cacheDir: cacheDir
                 )
@@ -321,6 +327,7 @@ final class CodebaseMemoryViewModel {
                     repositoryFullName: repo.fullName
                 )
                 uiProcess = launched.process
+                AppLog.ui.info("CodebaseMemory UI launched repo=\(self.repo.fullName, privacy: .public) pid=\(launched.process.processIdentifier, privacy: .public) port=\(port, privacy: .public) url=\(launched.pageURL.absoluteString, privacy: .public)")
                 setStep(id: .startUI, status: .succeeded)
 
                 // Step 7: 保存 metadata
@@ -355,7 +362,7 @@ final class CodebaseMemoryViewModel {
                 storedProject = try? storage.existingProject(owner: repo.owner, name: repo.name)
 
                 // Step 8: 打开浏览器
-                openBrowser(port: port, url: launched.pageURL)
+                await openBrowser(port: port, url: launched.pageURL)
             } catch is CancellationError {
                 restoreCachedState()
             } catch {
@@ -368,16 +375,57 @@ final class CodebaseMemoryViewModel {
 
     // MARK: - Private helpers
 
-    private func openBrowser(port: Int, url: URL) {
+    private func openBrowser(port: Int, url: URL) async {
+        AppLog.ui.info("CodebaseMemory openBrowser begin repo=\(self.repo.fullName, privacy: .public) port=\(port, privacy: .public) url=\(url.absoluteString, privacy: .public)")
         setStep(id: .openBrowser, status: .running, detail: "localhost:\(port)")
-        guard NSWorkspace.shared.open(url) else {
-            let message = "NSWorkspace.open returned false"
+        do {
+            try await openURLInDefaultBrowser(url)
+        } catch {
+            let message = error.localizedDescription
+            AppLog.ui.error("CodebaseMemory openBrowser failed repo=\(self.repo.fullName, privacy: .public) port=\(port, privacy: .public) error=\(message, privacy: .public)")
             setStep(id: .openBrowser, status: .failed, detail: message)
             state = .failed(message: CodebaseMemoryError.browserOpenFailed(underlying: message).localizedDescription)
             return
         }
         setStep(id: .openBrowser, status: .succeeded, detail: "localhost:\(port)")
         state = .succeeded
+        AppLog.ui.info("CodebaseMemory openBrowser succeeded repo=\(self.repo.fullName, privacy: .public) port=\(port, privacy: .public)")
+    }
+
+    /// 显式交给系统默认浏览器打开，并要求激活前台应用。
+    ///
+    /// 直接 `NSWorkspace.shared.open(url)` 在部分默认浏览器 / Launch Services 状态下只返回
+    /// “请求已提交”，但不会稳定拉起窗口。这里先解析默认浏览器，再用带 completion 的
+    /// API 获取明确结果；解析不到默认浏览器时才退回原始 open 作为兜底。
+    private func openURLInDefaultBrowser(_ url: URL) async throws {
+        let workspace = NSWorkspace.shared
+        guard let browserURL = workspace.urlForApplication(toOpen: url) else {
+            AppLog.ui.warning("CodebaseMemory browser app unresolved, fallback open url=\(url.absoluteString, privacy: .public)")
+            guard workspace.open(url) else {
+                throw CodebaseMemoryError.browserOpenFailed(underlying: "NSWorkspace.open returned false")
+            }
+            return
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+
+        AppLog.ui.info("CodebaseMemory opening browser url=\(url.absoluteString, privacy: .public) app=\(browserURL.path, privacy: .public)")
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            workspace.open(
+                [url],
+                withApplicationAt: browserURL,
+                configuration: configuration
+            ) { _, error in
+                if let error {
+                    AppLog.ui.error("CodebaseMemory browser open failed url=\(url.absoluteString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+                    continuation.resume(throwing: error)
+                } else {
+                    AppLog.ui.info("CodebaseMemory browser open handed off url=\(url.absoluteString, privacy: .public)")
+                    continuation.resume(returning: ())
+                }
+            }
+        }
     }
 
     private func stopCurrentUI() {
