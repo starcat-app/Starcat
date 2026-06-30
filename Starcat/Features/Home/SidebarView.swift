@@ -1080,8 +1080,8 @@ struct SidebarView: View {
         return exploreSelectableRow(
             isSelected: isSelected,
             action: { selectedDiscoveryTopic = code },
-            icon: topic == nil ? "square.grid.2x2" : "circle.fill",
-            iconColor: topic == nil ? .secondary : .accentColor.opacity(0.7),
+            icon: exploreTopicSystemImage(for: code),
+            iconColor: exploreTopicIconColor(for: code),
             count: dependencies.exploreCatalogStore.topicCount(for: code)
         ) {
             if let topic {
@@ -1114,6 +1114,27 @@ struct SidebarView: View {
         case "tools": return "explore.topic.tools"
         default: return nil
         }
+    }
+
+    private func exploreTopicSystemImage(for code: String?) -> String {
+        switch code {
+        case nil: return "square.grid.2x2"
+        case "ai": return "sparkles"
+        case "privacy": return "lock.shield"
+        case "networking": return "network"
+        case "media": return "play.rectangle"
+        case "social": return "person.2"
+        case "reading": return "book"
+        case "tools": return "wrench.and.screwdriver"
+        default:
+            // 后端 topic 可动态增加；未知分类保留通用圆点，避免空图标破坏侧栏行对齐。
+            return "circle.fill"
+        }
+    }
+
+    private func exploreTopicIconColor(for code: String?) -> Color {
+        // 已知分类使用中性色突出图标语义；未知动态分类继续用蓝点提示它来自后端扩展。
+        exploreTopicLocalizationKey(code ?? "") == nil && code != nil ? .accentColor.opacity(0.7) : .secondary
     }
 
     private func explorePlatformRow(_ platform: DiscoveryPlatformDTO?) -> some View {
