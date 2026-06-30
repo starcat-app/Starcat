@@ -302,6 +302,9 @@ struct HomeView: View {
                 AgentWorkspaceView {
                     showAgentWorkspace = false
                 }
+                // Agent 工作台是沉浸式覆盖层。隐藏 window toolbar 后必须主动吃掉
+                // titlebar safe area，否则系统仍会给顶部留出一整条空白。
+                .ignoresSafeArea(.container, edges: .top)
                 .transition(.opacity)
                 .zIndex(200)
             }
@@ -309,6 +312,7 @@ struct HomeView: View {
         // 弹出/关闭：纯淡入淡出，贴近 Spotlight / 命令面板；不再叠加 scale 弹入。
         .animation(reduceMotion ? nil : .easeOut(duration: 0.20), value: searchCenterViewModel.isPresented)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: showAgentWorkspace)
+        .preference(key: AgentWorkspaceActivePreferenceKey.self, value: showAgentWorkspace)
         // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
         .background {
             Button("") { searchCenterViewModel.present() }
