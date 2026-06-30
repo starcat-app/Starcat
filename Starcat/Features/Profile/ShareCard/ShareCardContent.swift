@@ -2199,13 +2199,11 @@ struct ShareCardContent: View {
         if let urlString = user.avatarUrl,
            !urlString.isEmpty,
            let url = URL(string: urlString) {
-            // 用 EquatableView wrapper：urlString 不变 → SwiftUI 跳过重渲染。
             CachedShareCardAvatar(
                 url: url,
                 placeholderBg: palette.cardBackgroundSecondary,
                 placeholderFg: palette.tertiaryText
             )
-            .equatable()
         } else {
             // 无 avatarUrl：渐变占位 + person 图标
             ZStack {
@@ -2407,33 +2405,14 @@ private struct DashboardFact: Identifiable {
     var id: String { "\(symbol)-\(value)" }
 }
 
-// MARK: - ID 卡大头像（Equatable 缓存）
+// MARK: - ID 卡大头像
 
-/// idCard 布局的 360×280 大头像 KFImage 容器，**仅按 URL 判等**。
-///
-/// 为什么需要单独包一层：
-/// - 主题切换时 palette 中所有 Color 字段会变（cardBackgroundSecondary、
-///   tertiaryText 等），外层 `ShareCardContent.body` 整棵 view tree 重新构造。
-/// - SwiftUI struct 视图本身重建是廉价的，但 KFImage 在 body 重算时会让内部
-///   `ImageBinder` 重新对 cache 命中的源图做 resample 缩到 360×280——这是
-///   主线程同步工作，叠加主题切换动画时帧抖动明显。
-/// - 用 `Equatable` + `.equatable()` 让 SwiftUI 在 url 没变时跳过整棵子树
-///   diff，KFImage 状态保留 → 零 resample。
-///
-/// 占位色（`placeholderBg` / `placeholderFg`）虽然存了但**不参与 ==**：
-/// - 只在 Kingfisher cache miss + 首次解码期间出现一瞬间
-/// - 之后画面就是已解码的头像图，占位色与否用户看不到
-/// - 用户切主题想"改色"→ 等图加载好之后切是预期路径；首次切（cache 还没好）
-///   即使占位不变也只闪一帧，体感无感
-private struct CachedShareCardAvatar: View, Equatable {
+/// idCard 布局的 360×280 大头像 KFImage 容器。
+/// 单独包一层是为了把 Kingfisher 加载和占位细节限制在头像内部。
+private struct CachedShareCardAvatar: View {
     let url: URL
     let placeholderBg: Color
     let placeholderFg: Color
-
-    /// 仅比较 URL：palette 颜色变化不触发重渲染（占位色滞后是可接受代价）。
-    static func == (lhs: CachedShareCardAvatar, rhs: CachedShareCardAvatar) -> Bool {
-        lhs.url == rhs.url
-    }
 
     var body: some View {
         KFImage(url)

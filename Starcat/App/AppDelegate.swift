@@ -35,6 +35,10 @@ import AppKit
 ///    `kAEGetURL` — 存在即声明"已有实例监听 URL scheme"，Launch Services 不开新进程
 /// 2. handler 内解析 URL → 通过 `NotificationCenter` 转发给 SwiftUI view 层
 ///    （`NSAppleEventManager` 会消费事件，导致 `.onOpenURL` 收不到——必须显式转发）
+///
+/// 这里也承接 Dock reopen / 前台激活兜底。SwiftUI 只能挂一个
+/// `NSApplicationDelegateAdaptor`，所以 AppKit 生命周期职责必须收敛在同一个 delegate，
+/// 避免 OAuth URL handler 与窗口重开逻辑互相覆盖。
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     static let incomingURLNotification = Notification.Name("starcat.incomingURL")
@@ -47,6 +51,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             andEventID: AEEventID(kAEGetURL)
         )
         AppLog.auth.info("AppDelegate: registered kAEGetURL handler (single-instance guard + NotificationCenter forward)")
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        activateMainWindowIfPossible()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        activateMainWindowIfPossible()
+        return true
     }
 
     @objc private func handleGetURLEvent(
@@ -62,5 +76,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppLog.auth.info("AppDelegate: forwarding URL via NotificationCenter: \(url.absoluteString, privacy: .public)")
         // post 到主队列，让 .onReceive 在同一次 run loop 里收到
         NotificationCenter.default.post(name: Self.incomingURLNotification, object: url)
+    }
+
+    /// Dock reopen 兜底只处理 AppKit 窗口层，不触碰 `AppDependencies` 或 SwiftUI 状态。
+    /// 这样用户关闭主窗口后再次点击 Dock 可以恢复已有窗口，同时不改变业务生命周期。
+    private func activateMainWindowIfPossible() {
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.windows
+                .first { !$0.isMiniaturized }
+                .map { window in
+                    window.makeKeyAndOrderFront(nil)
+                    window.orderFrontRegardless()
+                }
+        }
     }
 }

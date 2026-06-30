@@ -15,4 +15,3 @@ It helps developers organize large Stars libraries, read README files, track rel
 - AI summaries, tag suggestions, translation, and repo chat.
 - Similar repository recommendations.
 - Local-first workflow.
-

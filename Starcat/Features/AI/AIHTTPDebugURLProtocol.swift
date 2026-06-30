@@ -24,7 +24,7 @@ import Foundation
 /// Swift SDK 通常只暴露解码后的模型；当 LM Studio 返回格式与 OpenAI 官方格式存在细微
 /// 差异时，单看 `ChatResult` 不足以判断是服务商格式问题还是 SDK 解码问题。通过给
 /// `OpenAI` 注入带本 protocol 的 `URLSession`，可以在 SDK 解码前保存第一手响应。
-final class AIHTTPDebugURLProtocol: URLProtocol {
+final class AIHTTPDebugURLProtocol: URLProtocol, @unchecked Sendable {
 
     private static let handledKey = "Starcat.AIHTTPDebugURLProtocol.handled"
 

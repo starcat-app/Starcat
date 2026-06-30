@@ -2259,6 +2259,12 @@ private struct SettingsWindowCloseListener: NSViewRepresentable {
         (nsView as? ListenerView)?.onClose = onClose
     }
 
+    static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
+        guard let view = nsView as? ListenerView else { return }
+        view.onClose = nil
+        view.removeObserver()
+    }
+
     private final class ListenerView: NSView {
         var onClose: (() -> Void)?
         private var observer: NSObjectProtocol?
@@ -2272,15 +2278,14 @@ private struct SettingsWindowCloseListener: NSViewRepresentable {
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                self?.onClose?()
+                Task { @MainActor [weak self] in
+                    self?.onClose?()
+                }
             }
         }
 
-        deinit {
-            removeObserver()
-        }
-
-        private func removeObserver() {
+        @MainActor
+        fileprivate func removeObserver() {
             if let observer {
                 NotificationCenter.default.removeObserver(observer)
                 self.observer = nil

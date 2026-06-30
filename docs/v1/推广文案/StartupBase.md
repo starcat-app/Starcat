@@ -11,4 +11,3 @@ It helps developers sync Stars locally, read README files, add tags and notes, t
 The idea came from a common developer habit: starring interesting repos and rarely returning to them. Starcat tries to turn that passive collection into an active knowledge base.
 
 The long-term roadmap focuses on three workflows: organizing messy Stars, discovering better alternatives, and digesting saved repos through weekly summaries, release notes, and memory search.
-

@@ -195,6 +195,34 @@ struct ReadmeAPINetworkTests {
         #expect(cached?.renderedHtml?.contains(expected) == true)
     }
 
+    @Test("refreshReadme: 304 命中时修复子目录 README 旧缓存里的错误 raw HEAD 路径")
+    func refresh304RepairsCachedSubdirectoryReadmeRawImage() async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+        let oldHTML = #"""
+        <div id="readme" data-path=".github/README.md">
+          <img src="https://raw.githubusercontent.com/alice/foo/HEAD/img/javalin.png" alt="Logo">
+        </div>
+        """#
+        try await readmeRepo.upsert(makeReadme(repoId: repo.id, html: oldHTML))
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            BytesResponse.notModified304(etag: "\"old-etag\"")
+        }
+
+        let result = await api.refreshReadme(for: repo)
+        guard case let .notModified(repaired) = result else {
+            Issue.record("期望 .notModified，实际: \(result)")
+            return
+        }
+
+        let expected = "https://raw.githubusercontent.com/alice/foo/HEAD/.github/img/javalin.png"
+        #expect(repaired.renderedHtml?.contains(expected) == true)
+        #expect(repaired.renderedHtml?.contains(#"src="https://raw.githubusercontent.com/alice/foo/HEAD/img/javalin.png""#) == false)
+
+        let cached = try await readmeRepo.find(repoId: repo.id)
+        #expect(cached?.renderedHtml?.contains(expected) == true)
+    }
+
     @Test("refreshReadme: 404 + 本地有旧缓存 → .notFound + 删除旧缓存")
     func refresh404DeletesCache() async throws {
         let (api, mock, repo, readmeRepo, _) = try await makeAPI()
@@ -290,6 +318,26 @@ struct ReadmeAPINetworkTests {
         #expect(cached?.renderedHtml == "local")
     }
 
+    @Test("cachedReadme: 本地命中时修复子目录 README 旧缓存里的错误 raw HEAD 路径")
+    func cachedHitRepairsSubdirectoryReadmeRawImage() async throws {
+        let (api, _, repo, readmeRepo, _) = try await makeAPI()
+        let oldHTML = #"""
+        <div id="readme" data-path=".github/README.md">
+          <img src="https://raw.githubusercontent.com/alice/foo/HEAD/img/javalin.png" alt="Logo">
+        </div>
+        """#
+        try await readmeRepo.upsert(makeReadme(repoId: repo.id, html: oldHTML))
+
+        let cached = try await api.cachedReadme(for: repo)
+
+        let expected = "https://raw.githubusercontent.com/alice/foo/HEAD/.github/img/javalin.png"
+        #expect(cached?.renderedHtml?.contains(expected) == true)
+        #expect(cached?.renderedHtml?.contains(#"src="https://raw.githubusercontent.com/alice/foo/HEAD/img/javalin.png""#) == false)
+
+        let persisted = try await readmeRepo.find(repoId: repo.id)
+        #expect(persisted?.renderedHtml?.contains(expected) == true)
+    }
+
     @Test("cachedReadme: 本地未命中 → 返回 nil")
     func cachedMiss() async throws {
         let (api, _, repo, _, _) = try await makeAPI()
@@ -330,6 +378,34 @@ struct ReadmeAPINetworkTests {
         // trending 行应被清掉，避免双份存储
         let trendingRow = try await trendingRepo.find(fullName: repo.fullName)
         #expect(trendingRow == nil)
+    }
+
+    @Test("cachedReadme: trending promote 前修复子目录 README 图片路径")
+    func cachedTrendingPromoteRepairsSubdirectoryReadmeRawImage() async throws {
+        let (api, _, repo, readmeRepo, db) = try await makeAPI()
+        let trendingRepo = TrendingReadmeRepository(database: db)
+        let oldHTML = #"""
+        <div id="readme" data-path=".github/README.md">
+          <img src="https://raw.githubusercontent.com/alice/foo/HEAD/img/javalin.png" alt="Logo">
+        </div>
+        """#
+        try await trendingRepo.upsert(TrendingReadme(
+            fullName: repo.fullName,
+            renderedHtml: oldHTML,
+            etag: "\"trend-etag\"",
+            lastModified: nil,
+            cachedAt: "2026-06-14T00:00:00Z",
+            size: oldHTML.utf8.count
+        ))
+
+        let cached = try await api.cachedReadme(for: repo)
+
+        let expected = "https://raw.githubusercontent.com/alice/foo/HEAD/.github/img/javalin.png"
+        #expect(cached?.renderedHtml?.contains(expected) == true)
+        #expect(cached?.renderedHtml?.contains(#"src="https://raw.githubusercontent.com/alice/foo/HEAD/img/javalin.png""#) == false)
+
+        let manageRow = try await readmeRepo.find(repoId: repo.id)
+        #expect(manageRow?.renderedHtml?.contains(expected) == true)
     }
 
     @Test("cachedReadme: manage hit 直接返回，不查 trending")

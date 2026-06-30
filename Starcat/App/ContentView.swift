@@ -21,6 +21,9 @@ struct ContentView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     /// splash / 首次引导期间隐藏 window toolbar。
     @Environment(\.firstRunOnboardingActive) private var firstRunOnboardingActive
+    /// Agent Workspace 是主窗口沉浸式工作模式；打开时隐藏系统 window toolbar，
+    /// 避免底层 HomeView 的 toolbar 与 Agent 自己的 run header 同时出现。
+    @State private var agentWorkspaceActive: Bool = false
 
     /// 当用户主动点击"登录"按钮时（isAuthenticating = true）或 11 个详情页入口请求
     /// 弹登录 sheet 时（shouldShowLoginSheet = true）显示 GithubAuthView sheet。
@@ -72,7 +75,10 @@ struct ContentView: View {
         // 与 Sidebar / Repo detail 顶部渐变形成横向硬分界。各栏仍自行决定背景颜色，
         // 这里只移除系统 toolbar 的遮挡，不改变 toolbar item 的布局与交互。
         .toolbarBackground(.hidden, for: .windowToolbar)
-        .toolbarVisibility(firstRunOnboardingActive ? .hidden : .visible, for: .windowToolbar)
+        .toolbarVisibility(firstRunOnboardingActive || agentWorkspaceActive ? .hidden : .visible, for: .windowToolbar)
+        .onPreferenceChange(AgentWorkspaceActivePreferenceKey.self) { isActive in
+            agentWorkspaceActive = isActive
+        }
         .animation(reduceMotion ? nil : .smooth, value: authSession.state)
         // 2026-06-29：.onOpenURL 已移到 StarcatApp 顶层（更早注册 NSAppleEventManager，
         // 避免 view 还没 mount 时 URL event 丢失）。这里不再重复挂。
@@ -80,5 +86,17 @@ struct ContentView: View {
             GithubAuthView()
                 .appLocaleEnvironment()
         }
+    }
+}
+
+/// 子视图向 `ContentView` 回传 Agent 工作台是否正在覆盖主窗口。
+///
+/// 用 PreferenceKey 而不是把 `showAgentWorkspace` 提升到 App 级状态，是为了保持入口仍在
+/// `HomeView`/`RepoListView` 内部，同时让根视图能控制 window toolbar 可见性。
+struct AgentWorkspaceActivePreferenceKey: PreferenceKey {
+    static let defaultValue = false
+
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
     }
 }

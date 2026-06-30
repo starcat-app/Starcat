@@ -83,6 +83,7 @@ struct StarStatChipButton: View {
     @State private var showErrorFlash: Bool = false
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         Button {
@@ -105,10 +106,10 @@ struct StarStatChipButton: View {
                 iconOrSpinner
                 Text(count, format: .number)
                     .monospacedDigit()
-                    .font(.system(size: 14, weight: .medium))
+                    .font(interfaceScale.font(size: 14, weight: .medium))
             }
             Text("repo.stars")
-                .font(.system(size: 10))
+                .font(interfaceScale.font(size: 10))
                 .foregroundStyle(.secondary)
         }
         .foregroundStyle(showErrorFlash ? Color.red : Color.primary)
@@ -127,11 +128,11 @@ struct StarStatChipButton: View {
         } else if isStarred {
             Image(systemName: "star.fill")
                 .foregroundStyle(.yellow)
-                .font(.system(size: 14))
+                .font(interfaceScale.font(size: 14))
         } else {
             Image(systemName: "star")
                 .foregroundStyle(.secondary)
-                .font(.system(size: 14))
+                .font(interfaceScale.font(size: 14))
         }
     }
 

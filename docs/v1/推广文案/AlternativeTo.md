@@ -29,4 +29,3 @@ Key features:
 ## Categories
 
 Developer Tools, Bookmark Manager, GitHub Client, Knowledge Base, Productivity.
-

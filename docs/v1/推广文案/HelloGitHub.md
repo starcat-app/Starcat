@@ -11,4 +11,3 @@ Starcat 后续计划继续探索 Agent 化能力,包括批量整理未分类 sta
 ## 一句话
 
 把 GitHub Stars 变成真正能找回、能阅读、能分析的 macOS 本地知识库。
-

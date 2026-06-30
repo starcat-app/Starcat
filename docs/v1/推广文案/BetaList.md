@@ -17,4 +17,3 @@ Starcat is for developers who research open-source tools regularly and want thei
 - Full-text and semantic search.
 - AI repo summaries and tag suggestions.
 - Release tracking and similar repo recommendations.
-

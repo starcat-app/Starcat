@@ -94,9 +94,11 @@ struct AuthHeroCarouselView: View {
 
     private func startTimer() {
         stopTimer()  // 防御:onAppear 可能被多次调用(动画过程 / sheet 重新 present)
-        timer = Timer.scheduledTimer(withTimeInterval: switchInterval, repeats: true) { _ in
-            // Timer 回调默认在 main RunLoop,直接更新 @State 安全
-            currentIndex = (currentIndex + 1) % imageNames.count
+        timer = Timer.scheduledTimer(withTimeInterval: switchInterval, repeats: true) { [imageCount = imageNames.count] _ in
+            // Swift 6 下 Timer block 视为 @Sendable；显式切回 MainActor 后再写 @State。
+            Task { @MainActor in
+                currentIndex = (currentIndex + 1) % imageCount
+            }
         }
     }
 

@@ -185,11 +185,11 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
                 try db.execute(sql: "DELETE FROM weekly_bulk_languages")
 
                 for item in result.items {
-                    var record = WeeklyBulkRepoRecord.from(item, cachedAt: now)
+                    let record = WeeklyBulkRepoRecord.from(item, cachedAt: now)
                     try record.insert(db)
                 }
                 for (index, lang) in result.languages.enumerated() {
-                    var record = WeeklyBulkLanguageRecord(
+                    let record = WeeklyBulkLanguageRecord(
                         key: lang.key,
                         label: lang.label,
                         count: lang.count,
@@ -198,7 +198,7 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
                     try record.insert(db)
                 }
 
-                var meta = WeeklyBulkMetaRecord(
+                let meta = WeeklyBulkMetaRecord(
                     id: WeeklyBulkMetaRecord.singletonID,
                     etag: result.etag,
                     lastFetchedAt: ISO8601DateFormatter.shared.string(from: now),

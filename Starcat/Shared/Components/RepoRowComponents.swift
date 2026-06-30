@@ -44,6 +44,7 @@ public enum BadgeStyle {
 public struct LanguageBadge: View {
     let language: String
     let style: BadgeStyle
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     public init(language: String, style: BadgeStyle) {
         self.language = language
@@ -58,7 +59,7 @@ public struct LanguageBadge: View {
             // 颜色查表（上一行 LanguageColor.color）必须传 raw 名，
             // 文字显示走短名（"Jupyter Notebook" → "Jupyter"），详见 LanguageDisplayName。
             Text(LanguageDisplayName.shortened(for: language))
-                .font(style == .full ? .caption : .caption2)
+                .font(interfaceScale.font(size: style == .full ? 11 : 10))
                 .foregroundStyle(style == .full ? .primary : .secondary)
                 .lineLimit(1)
         }
@@ -80,6 +81,7 @@ public struct LanguageBadge: View {
 public struct StarsBadge: View {
     let count: Int
     let style: BadgeStyle
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     public init(count: Int, style: BadgeStyle) {
         self.count = count
@@ -89,10 +91,10 @@ public struct StarsBadge: View {
     public var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "star.fill")
-                .font(.system(size: style == .full ? 10 : 9))
+                .font(interfaceScale.font(size: style == .full ? 10 : 9))
                 .foregroundStyle(.yellow)
             Text(count.formattedShort)
-                .font(style == .full ? .caption : .caption2)
+                .font(interfaceScale.font(size: style == .full ? 11 : 10))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -121,6 +123,7 @@ public struct MetaBadge: View {
     let iconOnly: Bool
     /// icon-only 时 VoiceOver 播报文案；非 icon-only 时忽略。
     let accessibilityLabel: LocalizedStringKey?
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     public init(
         systemImage: String,
@@ -139,12 +142,12 @@ public struct MetaBadge: View {
     public var body: some View {
         HStack(spacing: 3) {
             Image(systemName: systemImage)
-                .font(.system(size: 9, weight: .medium))
+                .font(interfaceScale.font(size: 9, weight: .medium))
             if iconOnly {
                 EmptyView()
             } else {
                 Text(text)
-                    .font(.caption2)
+                    .font(interfaceScale.font(size: 10))
                     .lineLimit(1)
             }
         }
@@ -200,6 +203,7 @@ private struct MetaBadgeAccessibilityModifier: ViewModifier {
 ///   不会被这里的改动波及。
 public struct ArchivedBadge: View {
     let iconOnly: Bool
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     public init(iconOnly: Bool = false) {
         self.iconOnly = iconOnly
@@ -208,10 +212,10 @@ public struct ArchivedBadge: View {
     public var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "archivebox")
-                .font(.system(size: 9, weight: .medium))
+                .font(interfaceScale.font(size: 9, weight: .medium))
             if !iconOnly {
                 Text("repo.archived")
-                    .font(.caption2)
+                    .font(interfaceScale.font(size: 10))
                     .lineLimit(1)
             }
         }
@@ -231,6 +235,7 @@ public struct ArchivedBadge: View {
 /// 后续若有更完整的同步 / star 时间表达，可统一替换。
 public struct RelativeDateBadge: View {
     let date: Date
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     public init(date: Date) {
         self.date = date
@@ -239,9 +244,9 @@ public struct RelativeDateBadge: View {
     public var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "clock")
-                .font(.system(size: 9, weight: .medium))
+                .font(interfaceScale.font(size: 9, weight: .medium))
             Text(date, style: .relative)
-                .font(.caption2)
+                .font(interfaceScale.font(size: 10))
                 .lineLimit(1)
         }
         .foregroundStyle(.secondary)

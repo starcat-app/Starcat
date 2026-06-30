@@ -26,4 +26,3 @@ The longer-term roadmap is built around three developer workflows:
 - Digest: summarize weekly changes, release notes, and help users rediscover what they saved.
 
 For me, the interesting product question is how to make open-source research less scattered. GitHub, README files, release notes, AI summaries, notes, and personal context should not live in separate tabs forever.
-

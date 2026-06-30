@@ -80,8 +80,12 @@ struct HomeViewModelTagFilterTests {
     func sidebarItemIdsDistinct() {
         let t = SidebarItem.tag("swift")
         let l = SidebarItem.language("swift")
+        let all = SidebarItem.allLanguages
         #expect(t.id != l.id)
+        #expect(all.id != l.id)
         #expect(t.id == "tag.swift")
         #expect(l.id == "language.swift")
+        #expect(all.id == "language.all")
+        #expect(SidebarItem(persistedRawValue: all.persistedRawValue) == all)
     }
 }

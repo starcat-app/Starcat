@@ -15,4 +15,3 @@ Starcat syncs your GitHub Stars locally, renders README files, and lets AI work 
 - Translate README content.
 - Ask questions about the current repo.
 - Explore similar repositories and future alternative-discovery workflows.
-

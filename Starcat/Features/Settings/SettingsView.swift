@@ -195,6 +195,18 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                Picker("settings.general.interfaceScale", selection: $settings.interfaceScale) {
+                    ForEach(InterfaceScale.allCases) { scale in
+                        Text(scale.displayName).tag(scale)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text("settings.general.interfaceScale.description")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 // R-01 §3.1.1（2026-06-10 P1）：列表密度 Picker 已彻底移除——
                 // RepoListDensity 枚举本身也已删除（之前为保签名稳定保留单 case
                 // 是「自留技术债」，现在所有 row / skeleton 视图直接用 card 密度）。
@@ -1539,6 +1551,7 @@ private struct StorageResetAllDataSheet: View {
 ///
 /// SwiftUI 只表达用户意图；退出 / 重启是应用级 imperative 行为，集中在这个小 helper
 /// 里，避免 sheet 视图直接散落 `NSWorkspace` / `Process` 细节。
+@MainActor
 private enum StorageResetAppLifecycle {
     static func quit() {
         NSApplication.shared.terminate(nil)
@@ -1552,11 +1565,16 @@ private enum StorageResetAppLifecycle {
 
         NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, error in
             if let error {
-                AppLog.general.error("Restart Starcat failed via NSWorkspace: \(error.localizedDescription, privacy: .public)")
-                restartWithOpenCommand(appURL: appURL)
+                let message = error.localizedDescription
+                Task { @MainActor in
+                    AppLog.general.error("Restart Starcat failed via NSWorkspace: \(message, privacy: .public)")
+                    restartWithOpenCommand(appURL: appURL)
+                    quit()
+                }
+                return
             }
 
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 quit()
             }
         }

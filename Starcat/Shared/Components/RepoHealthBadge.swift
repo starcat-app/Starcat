@@ -22,15 +22,15 @@ import SwiftUI
 /// 渲染为 11pt gauge 图标 + 分数 + 等级 的紧凑胶囊。
 struct RepoHealthBadge: View {
     let data: RepoHealthBadgeData
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "gauge.with.dots.needle.67percent")
-                .font(.system(size: 11, weight: .semibold))
+                .font(interfaceScale.font(size: 11, weight: .semibold))
                 .foregroundStyle(tint)
             Text(verbatim: data.grade)
-                .font(.footnote)
-                .fontWeight(.bold)
+                .font(interfaceScale.font(size: 11, weight: .bold))
                 .foregroundStyle(tint)
         }
         .padding(.horizontal, 7)

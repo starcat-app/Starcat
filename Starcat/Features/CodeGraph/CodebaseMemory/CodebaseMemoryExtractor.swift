@@ -17,7 +17,9 @@ import CryptoKit
 import Foundation
 import ZIPFoundation
 
-struct CodebaseMemoryExtractor {
+/// `FileManager` 在 Swift 6 中不是 Sendable；本类型只保存不可变依赖入口，
+/// 重型 detached 解压任务会在任务内部创建独立 FileManager，避免跨线程共享该实例。
+struct CodebaseMemoryExtractor: @unchecked Sendable {
 
     /// 单次持久解压结果。
     struct ExtractedSource: Sendable {
@@ -84,7 +86,10 @@ struct CodebaseMemoryExtractor {
         //    allowUncontainedSymlinks: true — 复用 SourceZipExtractor §3 的踩坑决策
         do {
             try await Task.detached(priority: .userInitiated) {
-                try fm.unzipItem(
+                // 不捕获外层 FileManager：Swift 6 会把它视为跨并发边界的可变引用。
+                // 解压任务内部使用独立实例，避免阻塞调用方 actor 的同时保持文件操作局部化。
+                let workerFileManager = FileManager()
+                try workerFileManager.unzipItem(
                     at: zipURL,
                     to: sourceDir,
                     allowUncontainedSymlinks: true

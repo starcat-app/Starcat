@@ -38,4 +38,3 @@ I am still figuring out the right go-to-market path. Developer communities like 
 The biggest open question for me is pricing. AI-heavy workflows could be Pro, but the core value should probably remain usable without AI: search, tags, notes, README reading, and release tracking.
 
 If you have built paid developer tools before, I would be interested in how you drew the line between free utility and paid workflow automation.
-

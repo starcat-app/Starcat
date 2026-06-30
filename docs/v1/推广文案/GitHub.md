@@ -29,4 +29,3 @@ The next direction is Agent-powered repo research: batch organization, alternati
 ## Awesome List PR Text
 
 Starcat is a native macOS app for organizing and researching GitHub Stars. It combines local Stars sync, README reading, tags, notes, release tracking, search, AI summaries, and similar repo recommendations into one developer workflow.
-

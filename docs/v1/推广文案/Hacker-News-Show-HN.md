@@ -44,4 +44,3 @@ I would like feedback on two things:
 2. For repo research, would you rather have AI produce short summaries, comparison tables, or longer reports with citations?
 
 Happy to answer implementation questions.
-

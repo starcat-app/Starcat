@@ -13,4 +13,3 @@ Many developers use GitHub Stars as a lightweight research habit, but large Star
 ## Roadmap
 
 Starcat is moving toward three workflows: organizing messy Stars, discovering alternatives and similar repos, and digesting saved projects through weekly summaries, release notes, and memory search.
-

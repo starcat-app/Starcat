@@ -57,4 +57,3 @@ I launched Starcat today: a native macOS app that turns GitHub Stars into a sear
 Sync stars locally, read README files, add notes/tags, track releases, and ask AI about the repo you are viewing.
 
 Built for developers whose Stars became "I'll look at it later."
-

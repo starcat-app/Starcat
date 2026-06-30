@@ -27,6 +27,7 @@ import SwiftUI
 ///
 /// 三个槽位严格对应 `.toolbar { ... }` 内三个 `ToolbarItem(Group)`，
 /// 每个槽位为 nil 时该 ToolbarItem 整体不渲染，避免出现空 group 浪费空间。
+@MainActor
 struct PageToolbarSpec {
 
     /// 主操作组：filter / sort / multi-select 等左侧按钮。

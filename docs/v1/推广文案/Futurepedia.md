@@ -17,4 +17,3 @@ It turns GitHub Stars into a local knowledge base where developers can read READ
 ## AI Positioning
 
 Starcat's AI is contextual. It works with the repo you are viewing and does not automatically modify your knowledge base. Suggestions such as tags or notes remain user-confirmed.
-

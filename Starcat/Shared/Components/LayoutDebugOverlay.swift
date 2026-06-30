@@ -88,6 +88,12 @@ private struct WindowContentSizeReader: NSViewRepresentable {
         context.coordinator.attach(to: nsView.window)
     }
 
+    static func dismantleNSView(_ nsView: WindowContentSizeReaderView, coordinator: Coordinator) {
+        nsView.onMoveToWindow = nil
+        coordinator.attach(to: nil)
+    }
+
+    @MainActor
     final class Coordinator {
         private var size: Binding<CGSize?>
         private weak var window: NSWindow?
@@ -95,12 +101,6 @@ private struct WindowContentSizeReader: NSViewRepresentable {
 
         init(size: Binding<CGSize?>) {
             self.size = size
-        }
-
-        deinit {
-            if let resizeObserver {
-                NotificationCenter.default.removeObserver(resizeObserver)
-            }
         }
 
         func attach(to window: NSWindow?) {
@@ -125,7 +125,9 @@ private struct WindowContentSizeReader: NSViewRepresentable {
                 object: window,
                 queue: .main
             ) { [weak self, weak window] _ in
-                self?.updateSize(from: window)
+                Task { @MainActor [weak self, weak window] in
+                    self?.updateSize(from: window)
+                }
             }
 
             updateSize(from: window)
@@ -136,7 +138,7 @@ private struct WindowContentSizeReader: NSViewRepresentable {
             guard size.wrappedValue != newSize else { return }
             // updateNSView 期间直接写 @State 会触发 SwiftUI 的
             // "Modifying state during view update" 警告；投递到下一轮主队列即可。
-            DispatchQueue.main.async { [size] in
+            Task { @MainActor [size] in
                 guard size.wrappedValue != newSize else { return }
                 size.wrappedValue = newSize
             }
@@ -144,6 +146,7 @@ private struct WindowContentSizeReader: NSViewRepresentable {
     }
 }
 
+@MainActor
 private final class WindowContentSizeReaderView: NSView {
     var onMoveToWindow: ((NSWindow?) -> Void)?
 

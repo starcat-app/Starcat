@@ -11,4 +11,3 @@ The bigger vision is to help developers organize, discover, and digest open-sour
 ## Tags
 
 macOS, GitHub, developer tools, AI, productivity, open source.
-

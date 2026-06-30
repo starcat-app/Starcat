@@ -24,4 +24,3 @@ Starcat gives GitHub Stars a dedicated workspace on macOS:
 ## Best For
 
 Developers, indie hackers, open-source researchers, AI tool builders, and macOS users who want a native GitHub research tool.
-

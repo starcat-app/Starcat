@@ -145,9 +145,13 @@ struct ReadmeAPI {
     /// - Returns: 缓存命中返回 Readme（可能来自 manage 或 trending 表）；未命中 nil
     func cachedReadme(for repo: Repo) async throws -> Readme? {
         if let manageHit = try await repository.find(repoId: repo.id) {
+            let repaired = repairCachedReadmeIfNeeded(manageHit, owner: repo.owner, repo: repo.name)
+            if repaired.renderedHtml != manageHit.renderedHtml {
+                try? await repository.upsert(repaired)
+            }
             // HOM-201 P2-3:manage 表直接命中计入 cachedHit
             await metrics.recordCachedHit()
-            return manageHit
+            return repaired
         }
 
         guard !repo.fullName.isEmpty else { return nil }
@@ -162,7 +166,7 @@ struct ReadmeAPI {
         }
         guard let trending = trendingHit else { return nil }
 
-        let promoted = Readme(
+        var promoted = Readme(
             repoId: repo.id,
             // trending_readmes 没存 raw markdown,onHTMLLoaded 后续 backfill 走 readme_contents 表
             renderedHtml: trending.renderedHtml,
@@ -171,6 +175,7 @@ struct ReadmeAPI {
             cachedAt: trending.cachedAt,
             size: trending.size
         )
+        promoted = repairCachedReadmeIfNeeded(promoted, owner: repo.owner, repo: repo.name)
 
         do {
             try await repository.upsert(promoted)
@@ -184,6 +189,21 @@ struct ReadmeAPI {
         // HOM-201 P2-3:trending → manage promote 也算 cachedHit(本次不发网络)
         await metrics.recordCachedHit()
         return promoted
+    }
+
+    /// 读缓存时也补跑当前图片 URL 修复规则。
+    ///
+    /// 仅靠 200/304 刷新路径修复会漏掉 softTtl 内的旧缓存：详情页第一阶段会先把
+    /// cached HTML 上屏，若缓存仍新鲜则不会进入网络刷新。这里在 cache hit 边界做一次
+    /// cheap rewrite，确保 `.github/README.md` 这类旧错图不需要用户手动刷新才恢复。
+    private func repairCachedReadmeIfNeeded(_ readme: Readme, owner: String, repo: String) -> Readme {
+        guard let html = readme.renderedHtml else { return readme }
+        let repairedHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: owner, repo: repo)
+        guard repairedHtml != html else { return readme }
+        var repaired = readme
+        repaired.renderedHtml = repairedHtml
+        repaired.size = repairedHtml.utf8.count
+        return repaired
     }
 
     /// 走网络刷新 README HTML 并同步本地缓存。

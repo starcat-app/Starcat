@@ -107,7 +107,7 @@ struct SearchCenterView: View {
             // 去掉 scale 弹入：Spotlight / 命令面板典型是淡入 + 轻微位移，scale 容易显得「弹」。
             .transition(reduceMotion ? .opacity : .opacity)
         }
-        .onAppear { isSearchFocused = true }
+        .onAppear { focusSearchFieldOnAppear() }
         .sheet(item: $remoteDetailCandidate) { candidate in
             // 把 sort 模式一并传入：仅在 bestMatch 时才渲染匹配度，否则
             // score 字段对当前结果排序无解释力（按 stars / forks / updated
@@ -225,6 +225,16 @@ struct SearchCenterView: View {
         }
         .padding(.horizontal, 18)
         .frame(height: 58)
+    }
+
+    private func focusSearchFieldOnAppear() {
+        Task { @MainActor in
+            // SearchCenterView 作为 overlay 淡入时，首个 onAppear 可能早于 TextField
+            // 真正进入可接收 first responder 的窗口层级；让出一轮主线程后再申请焦点，
+            // 避免 SwiftUI 吞掉这次 focus 赋值，保证打开全局搜索后可直接输入。
+            await Task.yield()
+            isSearchFocused = true
+        }
     }
 
     private var scopePicker: some View {

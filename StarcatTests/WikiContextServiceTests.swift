@@ -30,24 +30,23 @@ private final class StubWikiFetcher: WikiStatusFetching, @unchecked Sendable {
     }
 
     func setItems(_ items: [WikiStatusItem]) {
-        lock.lock()
-        defer { lock.unlock() }
-        _items = items
+        lock.withLock {
+            _items = items
+        }
     }
 
     func fetchStatus(owner: String, repo: String) async throws -> [WikiStatusItem] {
-        lock.lock()
-        callCount += 1
-        let items = _items
-        let shouldThrow = _shouldThrow
-        lock.unlock()
+        let snapshot = lock.withLock {
+            callCount += 1
+            return (items: _items, shouldThrow: _shouldThrow)
+        }
 
         try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
 
-        if shouldThrow {
+        if snapshot.shouldThrow {
             throw URLError(.notConnectedToInternet)
         }
-        return items
+        return snapshot.items
     }
 }
 

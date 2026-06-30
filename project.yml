@@ -11,16 +11,17 @@ options:
   deploymentTarget:
     macOS: "15.0"
   developmentLanguage: zh-Hans
+  xcodeVersion: "26.5"
   createIntermediateGroups: true
   groupSortPosition: top
 
 # 全局 Build Settings：
-# - SWIFT_VERSION = 5.0：使用 Swift 5 语言模式，避开严格并发，渐进迁移（见开发前问题清单 5.x）
-# - SWIFT_STRICT_CONCURRENCY = minimal：编译器只在 @MainActor 等显式标注处检查
+# - SWIFT_VERSION = 6.0：使用 Swift 6 语言模式，让数据竞争检查成为编译期约束。
+# - SWIFT_STRICT_CONCURRENCY = complete：保持最严格并发检查，避免新代码绕过 Swift 6 迁移目标。
 settings:
   base:
-    SWIFT_VERSION: "5.0"
-    SWIFT_STRICT_CONCURRENCY: minimal
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
     ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_STYLE: Automatic
     # 注意：这两个值仅作 build settings 兜底，实际产物 Info.plist 会被
@@ -29,7 +30,7 @@ settings:
     #   - CFBundleShortVersionString   = 最新 git tag 去掉 v 前缀（无 tag 时保留这里的兜底值）
     # 发版流程：`git tag v0.x.y && git push --tags` 后 build，关于页 / Finder 简介就会自动跟上。
     CURRENT_PROJECT_VERSION: "1"
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "1.0.0"
     GENERATE_INFOPLIST_FILE: YES
     INFOPLIST_KEY_CFBundleDisplayName: Starcat
     INFOPLIST_KEY_LSMinimumSystemVersion: "15.0"
@@ -83,15 +84,17 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app
         CODE_SIGN_ENTITLEMENTS: Starcat/Starcat.entitlements
         INFOPLIST_KEY_CFBundleURLTypes: ""  # 由 entitlements + plist 增量在 info 段定义
+      configs:
+        Debug:
+          # Debug/test 必须允许多实例：xcodebuild test 会另外启动一个 test host，
+          # 如果本机已有 Starcat 正在运行，固定单实例会被 LaunchServices 拒绝。
+          INFOPLIST_KEY_LSMultipleInstancesProhibited: NO
+        Release:
+          # Release 保留单实例：Web Flow 浏览器回调 starcat://callback 时只激活现有实例。
+          INFOPLIST_KEY_LSMultipleInstancesProhibited: YES
     info:
       path: Starcat/Generated/Info.generated.plist
       properties:
-        # 2026-06-29：强制单实例。Web Flow 浏览器回调 starcat://callback 时，
-        # macOS 默认会启动新实例（如果 URL handler 还没准备好）+ 把 URL event
-        # 派发给新 + 老两个实例。老实例 actor 状态过期 + code 已被新实例消耗，
-        # 第二次 callback 会"Cannot decode token response"。
-        # 设 LSMultipleInstancesProhibited=true 让 macOS 只激活已存在实例不开新。
-        LSMultipleInstancesProhibited: true
         # 2026-06-29：GitHub OAuth App Client Secret（Web Flow token 交换必需）。
         # OAuth App 的 /login/oauth/access_token 要求同时带 client_secret + code_verifier
         # （PKCE 保护 code 安全但不替代 client authentication）。本字段通过 xcconfig 注入，
@@ -138,6 +141,9 @@ targets:
       - path: StarcatTests
     dependencies:
       - target: Starcat
+    configFiles:
+      Debug: Configs/Build.xcconfig
+      Release: Configs/Build.xcconfig
     settings:
       base:
         BUNDLE_LOADER: $(TEST_HOST)

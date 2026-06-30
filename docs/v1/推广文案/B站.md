@@ -21,4 +21,3 @@ Starcat 是一个 macOS 原生工具,用来把 GitHub Stars 变成可搜索、�
 ## 弹幕/评论引导
 
 你们现在怎么管理 GitHub Stars? 是直接放着不管,还是会定期整理?
-

@@ -2531,6 +2531,9 @@
         }
       }
     },
+    "Agent Workspace" : {
+
+    },
     "AI" : {
 
     },
@@ -5744,6 +5747,9 @@
         }
       }
     },
+    "Artifacts" : {
+
+    },
     "auth.copyCode" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8049,6 +8055,9 @@
           }
         }
       }
+    },
+    "Built-in Agents" : {
+
     },
     "cache.anySearch.error.applicationSupportUnavailable" : {
       "extractionState" : "manual",
@@ -13579,6 +13588,9 @@
         }
       }
     },
+    "P0 shows planning, data preparation, topic clustering, report drafting, and artifact creation." : {
+
+    },
     "packer.error.cancelled" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14837,6 +14849,22 @@
         }
       }
     },
+    "releases.row.hideAssetsFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide %d assets"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起 %d 个资产"
+          }
+        }
+      }
+    },
     "releases.row.collapseNotes" : {
       "localizations" : {
         "en" : {
@@ -14849,6 +14877,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "收起 Release 说明"
+          }
+        }
+      }
+    },
+    "releases.row.hideDetails" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起详情"
           }
         }
       }
@@ -14897,6 +14941,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "标记为未读"
+          }
+        }
+      }
+    },
+    "releases.row.viewAssetsFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View %d assets"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看 %d 个资产"
+          }
+        }
+      }
+    },
+    "releases.row.viewDetails" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看详情"
           }
         }
       }
@@ -15107,13 +15183,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Timeline"
+            "value" : "Releases"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "时间线"
+            "value" : "Releases 记录"
           }
         }
       }
@@ -17497,6 +17573,15 @@
           }
         }
       }
+    },
+    "Run an agent to generate Markdown or other artifacts." : {
+
+    },
+    "Run an agent to see each step here." : {
+
+    },
+    "Run built-in Starcat agents with visible steps and artifacts." : {
+
     },
     "search.anysearch.contentType.doc" : {
       "extractionState" : "manual",
@@ -22456,6 +22541,102 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择跟随系统、浅色或深色外观。"
+          }
+        }
+      }
+    },
+    "settings.general.interfaceScale" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text size"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "字号"
+          }
+        }
+      }
+    },
+    "settings.general.interfaceScale.compact" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compact"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "紧凑"
+          }
+        }
+      }
+    },
+    "settings.general.interfaceScale.comfortable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comfortable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "舒适"
+          }
+        }
+      }
+    },
+    "settings.general.interfaceScale.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjust Starcat-specific text size. Currently applies to the Agent workspace first."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调整 Starcat 内的文字大小；当前优先应用到 Agent 工作台。"
+          }
+        }
+      }
+    },
+    "settings.general.interfaceScale.large" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Large"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大字"
+          }
+        }
+      }
+    },
+    "settings.general.interfaceScale.standard" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standard"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标准"
           }
         }
       }
@@ -32752,6 +32933,9 @@
         }
       }
     },
+    "Soon" : {
+
+    },
     "starAction.error.notAuthenticated" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34155,6 +34339,9 @@
           }
         }
       }
+    },
+    "Timeline" : {
+
     },
     "toolbar.codeFlow.subtitle" : {
       "extractionState" : "manual",

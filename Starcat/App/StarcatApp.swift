@@ -18,12 +18,13 @@ import AppKit  // W4-5 D1 follow-up：NSApp.appearance 控制主题（preferredC
 @main
 struct StarcatApp: App {
 
-    // 2026-06-29：用 NSApplicationDelegateAdaptor 注入 URL event handler
-    // LSMultipleInstancesProhibited 只阻止 Finder/Dock 双开，不阻止 URL scheme
-    // 启动新实例。必须在 NSApplicationDelegate 里注册 NSAppleEventManager handler
-    // 拦截 kAEGetURL——在 Launch Services 决定"要不要开新进程"之前就把 URL event
-    // 消化掉，让它走已有实例的 authSession.handleWebFlowCallback。
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    /// macOS app 生命周期桥接。
+    ///
+    /// `AppDelegate` 同时负责两类 AppKit 生命周期事件：
+    /// - Dock reopen / 前台激活兜底，避免用户关闭主窗口后再次点击 Dock 没反应。
+    /// - 早期注册 `kAEGetURL` handler，避免浏览器 OAuth callback 拉起第二个进程。
+    /// 保持单个 adaptor，避免两个 NSApplicationDelegate 互相覆盖生命周期回调。
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     /// 应用级依赖容器，必须在 init 中创建并通过 environment 传给 ContentView。
     ///
@@ -216,6 +217,7 @@ struct StarcatApp: App {
         LaunchSplashContainer {
             ContentView()
                 .environment(\.locale, localeStore.selection.effectiveLocale)
+                .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
                 .id(localeStore.selection.rawValue)
         }
     }
@@ -231,6 +233,7 @@ struct StarcatApp: App {
     private var settingsRoot: some View {
         SettingsView()
             .environment(\.locale, localeStore.selection.effectiveLocale)
+            .environment(\.starcatInterfaceScale, dependencies?.settings.interfaceScale ?? .standard)
             .id(localeStore.selection.rawValue)
     }
 

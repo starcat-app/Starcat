@@ -137,12 +137,14 @@ public struct DefaultContextWriter: ContextWriting {
         storage: RepoContextStorage
     ) async throws -> PackOutput {
         do {
-            let stored = try storage.write(
-                xml: xml,
-                metadata: metadata,
-                owner: owner,
-                repo: repo
-            )
+            let stored = try await MainActor.run {
+                try storage.write(
+                    xml: xml,
+                    metadata: metadata,
+                    owner: owner,
+                    repo: repo
+                )
+            }
             return PackOutput(
                 contextURL: stored.contextURL,
                 metadataURL: stored.metadataURL,

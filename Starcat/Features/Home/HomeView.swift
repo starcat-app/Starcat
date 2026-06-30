@@ -81,6 +81,11 @@ struct HomeView: View {
     @State private var batchAIOptions: BatchAIQueueOptions = BatchAIQueueOptions()
     /// 当前需要展示的 Pro 付费墙上下文。由批量 AI 等主窗口入口触发。
     @State private var paywallContext: ProPaywallContext?
+    /// Agent Workspace 覆盖主窗口的显示状态。
+    ///
+    /// Agent 是一个长任务工作模式，不适合塞进 sheet；这里用主窗口覆盖层承载，
+    /// 让后续所有内置 Agent 共用同一套步骤时间线和 Artifact 预览。
+    @State private var showAgentWorkspace: Bool = false
 
     /// 三栏显示状态。
     ///
@@ -244,6 +249,9 @@ struct HomeView: View {
                 },
                 onOpenSearchCenter: {
                     searchCenterViewModel.present()
+                },
+                onOpenAgentWorkspace: {
+                    showAgentWorkspace = true
                 }
             )
                 .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
@@ -289,8 +297,22 @@ struct HomeView: View {
                 .zIndex(100)
             }
         }
+        .overlay {
+            if showAgentWorkspace {
+                AgentWorkspaceView {
+                    showAgentWorkspace = false
+                }
+                // Agent 工作台是沉浸式覆盖层。隐藏 window toolbar 后必须主动吃掉
+                // titlebar safe area，否则系统仍会给顶部留出一整条空白。
+                .ignoresSafeArea(.container, edges: .top)
+                .transition(.opacity)
+                .zIndex(200)
+            }
+        }
         // 弹出/关闭：纯淡入淡出，贴近 Spotlight / 命令面板；不再叠加 scale 弹入。
         .animation(reduceMotion ? nil : .easeOut(duration: 0.20), value: searchCenterViewModel.isPresented)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: showAgentWorkspace)
+        .preference(key: AgentWorkspaceActivePreferenceKey.self, value: showAgentWorkspace)
         // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
         .background {
             Button("") { searchCenterViewModel.present() }
@@ -1028,7 +1050,7 @@ struct HomeView: View {
         case .trending:
             // .trending 不是合法的 Manage 分类（属于 Trending 页），恢复时应回落 allStars
             return false
-        case .allStars, .untagged, .smartCollectionsHome, .smartCollection:
+        case .allStars, .untagged, .allLanguages, .smartCollectionsHome, .smartCollection:
             return true
         case .userSmartCollection(let id):
             return viewModel.userSmartCollections.contains { $0.id == id }

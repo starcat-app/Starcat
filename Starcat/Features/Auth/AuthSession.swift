@@ -351,7 +351,7 @@ final class AuthSession {
         guard url.host == "callback" else { return }
 
         // 2. state 必须是 .awaitingWebCallback（防误处理：Device Flow / 登出后收到 URL）
-        guard case .awaitingWebCallback(let info) = state else {
+        guard case let .awaitingWebCallback(info) = state else {
             AppLog.auth.warning("Web Flow callback ignored: state is not .awaitingWebCallback")
             return
         }
@@ -646,7 +646,7 @@ final class AuthSession {
             self.state = .unauthenticated
             AppLog.auth.warning("PAT sign-in: 401 (token invalid/expired/revoked)")
             isAuthenticating = false
-        } catch let NetworkError.clientError(statusCode: 403, _) {
+        } catch NetworkError.clientError(statusCode: 403, _) {
             // 403：scope 不足（典型：用户只勾 repo 没勾 public_repo）
             // GitHub /user 在 scope 不足时返回 403 而不是 401，所以单独 catch。
             rollbackPATToken()

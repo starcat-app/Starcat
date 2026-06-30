@@ -9,4 +9,3 @@ Starcat is an AI-assisted macOS app for researching GitHub repositories. It turn
 Starcat uses AI in the context of the repository you are viewing. It can summarize a repo, suggest tags, translate README content, and help you ask questions about project fit, usage, and risks.
 
 The roadmap includes deeper AI workflows such as alternative discovery, technical selection reports, weekly Stars summaries, and memory search over a user's own GitHub Stars.
-

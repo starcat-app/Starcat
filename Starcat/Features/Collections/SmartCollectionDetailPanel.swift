@@ -140,7 +140,6 @@ struct SmartCollectionDetailPanel: View {
                 spacing: Self.cardSpacing
             ) { item in
                 SmartCollectionRepoCard(item: item)
-                    .equatable()
                     .contentShape(Rectangle())
                     .onTapGesture {
                         viewModel.selectedRepoID = item.id
@@ -364,7 +363,7 @@ struct SmartCollectionDetailPanel: View {
 
 }
 
-private struct SmartCollectionRepoCard: View, Equatable {
+private struct SmartCollectionRepoCard: View {
     private static let sectionSpacing: CGFloat = 6
     private static let chipRowHeight: CGFloat = 18
     private static let chipRowSpacing: CGFloat = 4
@@ -372,10 +371,6 @@ private struct SmartCollectionRepoCard: View, Equatable {
     let item: SmartCollectionCardItem
 
     @Environment(\.locale) private var locale
-
-    static func == (lhs: SmartCollectionRepoCard, rhs: SmartCollectionRepoCard) -> Bool {
-        lhs.item == rhs.item
-    }
 
     private var repo: Repo { item.repo }
     private var status: RepoStatus { item.status }

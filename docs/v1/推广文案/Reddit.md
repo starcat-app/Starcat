@@ -47,4 +47,3 @@ The roadmap is more about repo research:
 - search your own stars with natural language.
 
 I would love feedback from people who use GitHub Stars heavily. How do you organize them today? What would make you actually go back and use what you starred?
-

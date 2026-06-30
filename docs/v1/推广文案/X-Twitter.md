@@ -34,8 +34,8 @@ The useful part is context: asking AI about the repo you are reading, generating
 
 5/ The roadmap is three workflows:
 
-Organize: clean up messy Stars.  
-Discover: find alternatives and similar repos.  
+Organize: clean up messy Stars.
+Discover: find alternatives and similar repos.
 Digest: turn saved repos into notes, weekly summaries, and release decisions.
 
 6/ I am keeping it local-first.
@@ -49,4 +49,3 @@ I built Starcat because my GitHub Stars became unmanageable.
 Native macOS app. Local Stars sync. README reader. Tags, notes, search, releases, AI summaries, and similar repo recommendations.
 
 The goal: turn Stars from "I'll look later" into a repo knowledge base.
-

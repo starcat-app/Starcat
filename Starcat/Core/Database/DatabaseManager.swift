@@ -265,6 +265,34 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
                 CREATE INDEX IF NOT EXISTS idx_smart_collections_sort
                 ON smart_collections(sort_order, created_at)
                 """)
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS github_star_lists (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    is_private BOOLEAN NOT NULL DEFAULT 0,
+                    color_hex TEXT NOT NULL,
+                    position INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT,
+                    updated_at TEXT,
+                    synced_at TEXT NOT NULL
+                )
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_github_star_lists_position
+                ON github_star_lists(position, name)
+                """)
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS repo_github_star_lists (
+                    repo_id INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+                    list_id TEXT NOT NULL REFERENCES github_star_lists(id) ON DELETE CASCADE,
+                    PRIMARY KEY (repo_id, list_id)
+                )
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_repo_github_star_lists_list
+                ON repo_github_star_lists(list_id)
+                """)
         }
     }
 

@@ -14,10 +14,9 @@ The bigger roadmap is to help developers organize messy Stars, discover better a
 
 ## Chapter Plan
 
-00:00 Why GitHub Stars become hard to use  
-00:40 Starcat main window and local Stars library  
-01:30 README, tags, notes, and Release tracking  
-02:20 AI summary and repo chat  
-03:10 Similar repo recommendations  
-03:50 Roadmap: organize, discover, digest  
-
+00:00 Why GitHub Stars become hard to use
+00:40 Starcat main window and local Stars library
+01:30 README, tags, notes, and Release tracking
+02:20 AI summary and repo chat
+03:10 Similar repo recommendations
+03:50 Roadmap: organize, discover, digest

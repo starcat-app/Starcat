@@ -352,10 +352,10 @@ public enum PackMetadataCoder {
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let raw = try container.decode(String.self)
-            if let date = lenientPlainFormatter.date(from: raw) {
+            if let date = makeLenientPlainFormatter().date(from: raw) {
                 return date
             }
-            if let date = lenientFractionalFormatter.date(from: raw) {
+            if let date = makeLenientFractionalFormatter().date(from: raw) {
                 return date
             }
             throw DecodingError.dataCorruptedError(
@@ -366,17 +366,17 @@ public enum PackMetadataCoder {
         return decoder
     }()
 
-    private static let lenientPlainFormatter: ISO8601DateFormatter = {
+    private static func makeLenientPlainFormatter() -> ISO8601DateFormatter {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
-    }()
+    }
 
-    private static let lenientFractionalFormatter: ISO8601DateFormatter = {
+    private static func makeLenientFractionalFormatter() -> ISO8601DateFormatter {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
-    }()
+    }
 }
 
 // MARK: - 10. PackStats（metadata.stats 子结构）

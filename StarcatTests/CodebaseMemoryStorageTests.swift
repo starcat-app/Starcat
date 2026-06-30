@@ -10,6 +10,7 @@ import Testing
 @testable import Starcat
 
 @Suite("CodebaseMemoryStorage")
+@MainActor
 struct CodebaseMemoryStorageTests {
 
     @Test("每个 repo 使用独立 internal cache，避免浏览器 UI 复用上一个项目状态")

@@ -740,7 +740,7 @@ private struct CreditsList: View {
 /// 用 max() 合并是因为一次 layout 中 GeometryReader 可能多次上报(尺寸抖动),
 /// 取最大值能稳定到最终内容高度而不是中间过渡值。
 private struct CreditsContentHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
+    static let defaultValue: CGFloat = 0
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())

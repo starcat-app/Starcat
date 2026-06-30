@@ -933,7 +933,7 @@ final class HomeViewModel {
     func makeRuleFromCurrentManageFilters() -> SmartCollectionRule? {
         let scope: SmartCollectionRule.Scope
         switch selection {
-        case .allStars:
+        case .allStars, .allLanguages:
             scope = .allStars
         case .untagged:
             scope = .untagged
@@ -1000,7 +1000,7 @@ final class HomeViewModel {
     /// High Value/Needs Review 等仍依赖额外上下文，继续走旧的全量派生路径。
     private func currentRepoListScopeForDatabasePaging() -> RepoListScope? {
         switch selection {
-        case .allStars:
+        case .allStars, .allLanguages:
             return .allStars
         case .untagged:
             return .untagged
@@ -1103,7 +1103,7 @@ final class HomeViewModel {
             switch selection {
             case .untagged, .tag, .smartCollectionsHome, .smartCollection, .userSmartCollection, .githubStarList, .githubStarListUngrouped:
                 selection = .allStars
-            case .allStars, .language, .trending:
+            case .allStars, .allLanguages, .language, .trending:
                 break
             }
         }
@@ -1228,7 +1228,7 @@ final class HomeViewModel {
                 // 改造后：repo fetch 与 fetchAllStatusMap()（全表，无参数）用 async let 并行启动。
                 //   理论上耗时取较慢者，最优情况能省掉 ~150ms。
                 //
-                // 并行使用 `async let` 而非 `Task { }`：
+                // status map 使用 `async let` 而非 `Task { }`：
                 //   - async let 是结构化并发，作用域结束自动等待 / 传播取消
                 //   - 与现有 race 防护（外层 Task.isCancelled 检查）天然兼容
                 //   - 不需要额外 cancel 管理
@@ -1265,7 +1265,7 @@ final class HomeViewModel {
                         switch self.selection {
                         case .trending:
                             repos = [] // Placeholder for W7 Trending
-                        case .allStars:
+                        case .allStars, .allLanguages:
                             repos = try await self.repository.fetchAllStarred()
                         case .untagged:
                             repos = try await self.repository.fetchUntagged()
@@ -1326,10 +1326,9 @@ final class HomeViewModel {
                     }
                 }
 
-                async let fetchedAsync = fetchedTask()
                 async let statusMapAsync: [Int64: RepoStatus] = self.repoNoteRepository.fetchAllStatusMap()
 
-                let fetched = try await fetchedAsync
+                let fetched = try await fetchedTask()
                 fetchedStatusMap = (try? await statusMapAsync) ?? [:]
 
                 outcome = .success(fetched)
@@ -1646,7 +1645,7 @@ final class HomeViewModel {
                     switch selection {
                     case .trending:
                         return nil
-                    case .allStars:
+                    case .allStars, .allLanguages:
                         return try await self.repository.fetchAllStarred()
                     case .untagged:
                         return try await self.repository.fetchUntagged()
@@ -1688,10 +1687,9 @@ final class HomeViewModel {
                     }
                 }
 
-                async let fetchedAsync = fetchedTask()
                 async let statusMapAsync = self.repoNoteRepository.fetchAllStatusMap()
 
-                guard let fetched = try await fetchedAsync else { return }
+                guard let fetched = try await fetchedTask() else { return }
 
                 guard !Task.isCancelled else { return }
                 let statusMap = (try? await statusMapAsync) ?? [:]
@@ -1968,6 +1966,8 @@ extension SidebarItem {
             return [.allStars, .untagged]
         case .allStars:
             return [.untagged, .smartCollectionsHome]
+        case .allLanguages:
+            return [.allStars, .untagged]
         case .untagged:
             return [.allStars]
         case .smartCollectionsHome:

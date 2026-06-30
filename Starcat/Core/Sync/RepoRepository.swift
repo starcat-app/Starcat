@@ -713,21 +713,27 @@ extension GRDBRepoRepository: Sendable {}
 // MARK: - ISO8601 helper
 
 extension ISO8601DateFormatter {
-    /// 共享实例，线程安全。
-    static let shared: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
+    /// 兼容既有 `.shared` 调用点的工厂属性。
+    ///
+    /// 注意：这里故意不是 stored singleton。`ISO8601DateFormatter` 是可变引用类型，
+    /// Swift 6 不允许把它作为全局共享状态暴露。保留 `.shared` 名称是为了控制迁移 diff，
+    /// 但每次访问都会创建独立实例，从根上避免跨线程共享 formatter。
+    static var shared: ISO8601DateFormatter {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }
 
     /// 解析 GitHub REST 返回的 ISO8601 时间字符串。
     ///
-    /// `shared` 带 `.withFractionalSeconds`,对不带毫秒的 `"2024-01-01T00:00:00Z"`
-    /// 会解析失败(Health 算分 / Search 相对时间等多处已踩坑)。
-    /// 双 try:先 fractional,再纯 internet date time。
+    /// Swift 6 下 `ISO8601DateFormatter` 不能作为全局 shared 暴露：它是可变引用类型，
+    /// 编译器无法证明跨线程共享安全。这里改为函数内局部 formatter，避免为一个轻量
+    /// helper 引入锁或 `@unchecked Sendable`。双 try:先 fractional,再纯 internet date time。
     static func githubDate(from raw: String?) -> Date? {
         guard let raw, !raw.isEmpty else { return nil }
-        if let date = shared.date(from: raw) { return date }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: raw) { return date }
         let fallback = ISO8601DateFormatter()
         fallback.formatOptions = [.withInternetDateTime]
         return fallback.date(from: raw)

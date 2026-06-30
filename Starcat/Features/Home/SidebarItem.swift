@@ -49,6 +49,7 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
 /// Week 3 提供三类：
 /// - All Stars：全部已 star 仓库
 /// - Untagged：未打任何标签的仓库
+/// - AllLanguages：Languages 分组内的全部语言入口，查询语义等同 All Stars，但在 UI 层归属语言分组
 /// - Language(String?)：按编程语言过滤；nil 代表无主语言（GitHub 的"Unknown"）
 ///
 /// Week 4+ 会扩展：Tag(id), SavedSearch(id)。
@@ -56,6 +57,7 @@ enum SidebarItem: Hashable, Identifiable {
     case trending
     case allStars
     case untagged
+    case allLanguages
     case smartCollectionsHome
     case smartCollection(SmartCollectionKind)
     case userSmartCollection(String)
@@ -74,6 +76,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "section.trending"
         case .allStars:                return "section.all"
         case .untagged:                return "section.untagged"
+        case .allLanguages:            return "language.all"
         case .smartCollectionsHome:    return "smartCollections.home"
         case .smartCollection(let kind): return "smartCollections.\(kind.rawValue)"
         case .userSmartCollection(let id): return "userSmartCollections.\(id)"
@@ -90,6 +93,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "trending.title"
         case .allStars:                return "sidebar.allRepos"
         case .untagged:                return "sidebar.untagged"
+        case .allLanguages:            return "trending.allLanguages"
         case .smartCollectionsHome:    return "smartCollections.title"
         case .smartCollection(let kind): return kind.titleKey
         case .userSmartCollection(let id): return LocalizedStringKey(id)
@@ -110,6 +114,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "trending.title"
         case .allStars:                return "sidebar.allRepos"
         case .untagged:                return "sidebar.untagged"
+        case .allLanguages:            return "trending.allLanguages"
         case .smartCollectionsHome:    return "smartCollections.title"
         case .smartCollection(let kind): return "smartCollections.\(kind.rawValue).title"
         case .userSmartCollection(let id): return id
@@ -126,6 +131,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .trending:                return "chart.line.uptrend.xyaxis"
         case .allStars:                return "star.fill"
         case .untagged:                return "tag.slash"
+        case .allLanguages:            return "globe"
         case .smartCollectionsHome:    return "line.3.horizontal.decrease.circle"
         case .smartCollection(let kind): return kind.systemImage
         case .userSmartCollection:     return "line.3.horizontal.decrease.circle"
@@ -181,10 +187,12 @@ extension SidebarItem {
     /// - `SidebarItem` 含关联值，无法直接用 Swift RawValue，这里用 `"type:payload"` 手编。
     /// - `.language(nil)`（GitHub 无主语言）编码成空 payload `"language:"`，解码时还原回 nil。
     /// - `.trending` 不是 Manage 分类，不应被持久化为"上次分类"，这里防御性折叠成 allStars。
+    /// - `.allLanguages` 查询语义等同 `.allStars`，但 UI 选中态属于 Languages 分组，需要独立落盘。
     var persistedRawValue: String {
         switch self {
         case .trending, .allStars: return "allStars"
         case .untagged:            return "untagged"
+        case .allLanguages:        return "allLanguages"
         case .smartCollectionsHome: return "smartCollectionsHome"
         case .smartCollection(let kind): return "smartCollection:\(kind.rawValue)"
         case .userSmartCollection(let id): return "userSmartCollection:\(id)"
@@ -202,6 +210,8 @@ extension SidebarItem {
     init(persistedRawValue raw: String) {
         if raw == "untagged" {
             self = .untagged
+        } else if raw == "allLanguages" {
+            self = .allLanguages
         } else if raw == "smartCollectionsHome" {
             self = .smartCollectionsHome
         } else if raw.hasPrefix("smartCollection:") {

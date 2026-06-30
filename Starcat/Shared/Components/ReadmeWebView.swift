@@ -9,8 +9,8 @@
 //     （已是渲染好的 GFM，含 anchor / code block / table / mermaid / 任务列表等）
 //  2. 包装一层带 GFM 主题 CSS 的完整 HTML（亮/暗自适应 prefers-color-scheme）
 //  3. 禁止页面自带 JavaScript：GitHub HTML 不需要页面脚本，关闭可减小攻击面。
-//     例外：注入一个 app-owned isolated user script，只用于把 window.scrollY 回传给 SwiftUI，
-//     让详情页能在 README 滚动时折叠顶部信息面板。
+//     例外：注入一个 app-owned isolated user script，只用于 README 阅读体验增强：
+//     滚动上报、图片加载态、图片点击预览；不执行 README 自带脚本。
 //  4. 图片相对路径重写：
 //     - GitHub 的 HTML render 端点对 Markdown `![]()` 会做 camo 代理重写，
 //       但对原生 HTML `<img src="./xx">` 不重写，原样吐回相对路径
@@ -109,6 +109,10 @@ struct ReadmeWebView: NSViewRepresentable {
         loadIfNeeded(into: webView, context: context)
     }
 
+    static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        coordinator.removeScriptMessageHandler()
+    }
+
     // MARK: - Private
 
     /// 仅在 html 内容或主题变化时重新 loadHTML。
@@ -176,40 +180,44 @@ struct ReadmeWebView: NSViewRepresentable {
         /// 之后任何主框架导航（reload / meta refresh / 页内 location）都会被 cancel。
         var expectsInitialLoad: Bool = false
 
-        deinit {
-            userContentController?.removeScriptMessageHandler(forName: Self.scrollMessageName)
-        }
-
-        private static let scrollMessageName = "readmeScroll"
-
-        /// 构造带滚动上报脚本的 content controller。
+        /// 构造带 README 阅读增强脚本的 content controller。
         ///
         /// 为什么不用 NSScrollView 观察：macOS `WKWebView` 没有公开 `scrollView` 属性，
         /// 并且不同 WebKit 版本的内部 NSView 子树并不稳定。直接从文档里监听 `scroll`
         /// 事件拿 `window.scrollY` 更接近真实阅读位置，也不会依赖私有 view class。
         ///
         /// 安全边界：
-        /// - user script 只读 `scrollY` 并 postMessage 一个数字，不读 README 内容。
+        /// - user script 只读滚动度量与图片 URL，不读取正文文本，也不把 README 内容回传 Swift。
         /// - HTML 文档里加了 CSP `script-src 'none'`，页面自带 `<script>` / inline handler 不执行。
         /// - message handler 只接收 Number，其余 body 直接忽略。
         func makeUserContentController() -> WKUserContentController {
             let controller = WKUserContentController()
             let script = WKUserScript(
-                source: Self.scrollReportingScript,
+                source: Self.readmeEnhancementScript,
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
             )
             controller.addUserScript(script)
-            controller.add(self, name: Self.scrollMessageName)
+            controller.add(self, name: ReadmeWebViewConstants.scrollMessageName)
             userContentController = controller
             return controller
         }
 
-        private static let scrollReportingScript = """
+        /// Swift 6 下 `deinit` 是非隔离上下文，不能直接调用 MainActor 隔离的
+        /// `WKUserContentController.removeScriptMessageHandler`。SwiftUI 拆除 NSView 时会在
+        /// 主线程调用 `dismantleNSView`，这里集中做 WebKit handler 清理，避免循环持有。
+        func removeScriptMessageHandler() {
+            userContentController?.removeScriptMessageHandler(forName: ReadmeWebViewConstants.scrollMessageName)
+            userContentController = nil
+        }
+
+        private static let readmeEnhancementScript = """
         (function() {
             var lastY = -1;
             var lastOverflow = -1;
             var ticking = false;
+            var previewOverlay = null;
+            var previewRemoveTimer = null;
 
             function currentY() {
                 return window.scrollY ||
@@ -236,11 +244,78 @@ struct ReadmeWebView: NSViewRepresentable {
                 if (Math.abs(y - lastY) < 1 && Math.abs(overflow - lastOverflow) < 1) { return; }
                 lastY = y;
                 lastOverflow = overflow;
-                window.webkit.messageHandlers.\(scrollMessageName).postMessage({
+                window.webkit.messageHandlers.\(ReadmeWebViewConstants.scrollMessageName).postMessage({
                     y: y,
                     scrollHeight: overflow + (window.innerHeight || document.documentElement.clientHeight || 0),
                     clientHeight: window.innerHeight || document.documentElement.clientHeight || 0
                 });
+            }
+
+            function closeImagePreview() {
+                if (!previewOverlay) { return; }
+                var overlay = previewOverlay;
+                previewOverlay = null;
+                overlay.classList.remove('readme-image-preview-open');
+                window.clearTimeout(previewRemoveTimer);
+                previewRemoveTimer = window.setTimeout(function() {
+                    if (overlay.parentNode) {
+                        overlay.parentNode.removeChild(overlay);
+                    }
+                }, 180);
+            }
+
+            function openImagePreview(image) {
+                var src = image.currentSrc || image.src;
+                if (!src) { return; }
+                closeImagePreview();
+
+                var overlay = document.createElement('div');
+                overlay.className = 'readme-image-preview';
+                overlay.setAttribute('role', 'button');
+                overlay.setAttribute('aria-label', 'Close image preview');
+
+                var previewImage = document.createElement('img');
+                previewImage.src = src;
+                previewImage.alt = image.alt || '';
+                previewImage.decoding = 'async';
+                overlay.appendChild(previewImage);
+
+                overlay.addEventListener('click', closeImagePreview);
+                document.body.appendChild(overlay);
+                previewOverlay = overlay;
+                window.requestAnimationFrame(function() {
+                    overlay.classList.add('readme-image-preview-open');
+                });
+            }
+
+            function enhanceImage(image) {
+                if (image.dataset.readmeEnhanced === 'true') { return; }
+                image.dataset.readmeEnhanced = 'true';
+                image.dataset.readmeZoomable = 'true';
+
+                function markLoaded() {
+                    image.classList.add('readme-image-loaded');
+                }
+
+                if (image.complete && image.naturalWidth > 0) {
+                    markLoaded();
+                } else {
+                    image.addEventListener('load', markLoaded, { once: true });
+                }
+
+                image.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openImagePreview(image);
+                });
+            }
+
+            function enhanceImages() {
+                document.body.classList.add('readme-js-ready');
+                var images = document.querySelectorAll('.markdown-body img');
+                for (var index = 0; index < images.length; index += 1) {
+                    enhanceImage(images[index]);
+                }
             }
 
             function schedule() {
@@ -249,15 +324,26 @@ struct ReadmeWebView: NSViewRepresentable {
                 window.requestAnimationFrame(report);
             }
 
-            window.addEventListener('scroll', schedule, { passive: true });
+            function scheduleAfterScroll() {
+                closeImagePreview();
+                schedule();
+            }
+
+            window.addEventListener('scroll', scheduleAfterScroll, { passive: true });
             window.addEventListener('resize', schedule, { passive: true });
+            window.addEventListener('keydown', function(event) {
+                if (event.key === 'Escape') {
+                    closeImagePreview();
+                }
+            });
             window.addEventListener('load', report);
+            enhanceImages();
             setTimeout(report, 0);
         })();
         """
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == Self.scrollMessageName else { return }
+            guard message.name == ReadmeWebViewConstants.scrollMessageName else { return }
             if let payload = message.body as? [String: Any],
                let yValue = payload["y"] as? NSNumber {
                 let scrollHeight = (payload["scrollHeight"] as? NSNumber).map { CGFloat(truncating: $0) }
@@ -282,7 +368,7 @@ struct ReadmeWebView: NSViewRepresentable {
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+            decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
         ) {
             guard let url = navigationAction.request.url else {
                 decisionHandler(.allow)
@@ -344,6 +430,10 @@ struct ReadmeWebView: NSViewRepresentable {
     }
 }
 
+private enum ReadmeWebViewConstants {
+    static let scrollMessageName = "readmeScroll"
+}
+
 /// 缓存键：HTML 片段 + 主题，用于 updateNSView 时判断是否需要重新 loadHTMLString。
 struct ReadmeKey: Equatable {
     let fragment: String
@@ -370,6 +460,8 @@ enum ReadmeCSS {
         --code-bg: #f6f8fa;
         --blockquote-fg: #59636e;
         --blockquote-border: #d0d7de;
+        --image-preview-bg: rgba(246, 248, 250, 0.86);
+        --image-preview-shadow: rgba(31, 35, 40, 0.24);
     }
     body.dark {
         --bg: #0d1117;
@@ -380,6 +472,8 @@ enum ReadmeCSS {
         --code-bg: #161b22;
         --blockquote-fg: #8b949e;
         --blockquote-border: #30363d;
+        --image-preview-bg: rgba(13, 17, 23, 0.88);
+        --image-preview-shadow: rgba(0, 0, 0, 0.42);
     }
     /*
      * 背景刻意设为 transparent：
@@ -483,6 +577,53 @@ enum ReadmeCSS {
         max-width: 100%;
         background: transparent;
         border-radius: 4px;
+        opacity: 1;
+        transition: opacity 180ms ease, filter 180ms ease, transform 180ms ease;
+    }
+    body.readme-js-ready .markdown-body img[data-readme-zoomable="true"] {
+        cursor: zoom-in;
+    }
+    body.readme-js-ready .markdown-body img:not(.readme-image-loaded) {
+        opacity: 0;
+        filter: blur(6px);
+        transform: translateY(2px);
+    }
+    body.readme-js-ready .markdown-body img.readme-image-loaded {
+        opacity: 1;
+        filter: blur(0);
+        transform: translateY(0);
+    }
+    .readme-image-preview {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+        background: var(--image-preview-bg);
+        -webkit-backdrop-filter: blur(10px);
+        backdrop-filter: blur(10px);
+        opacity: 0;
+        cursor: zoom-out;
+        transition: opacity 180ms ease;
+    }
+    .readme-image-preview-open {
+        opacity: 1;
+    }
+    .readme-image-preview img {
+        max-width: calc(100vw - 48px);
+        max-height: calc(100vh - 48px);
+        object-fit: contain;
+        border-radius: 8px;
+        box-shadow: 0 18px 60px var(--image-preview-shadow);
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .markdown-body img,
+        .readme-image-preview {
+            transition: none;
+        }
     }
     /* 水平线 */
     .markdown-body hr {

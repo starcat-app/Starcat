@@ -153,6 +153,7 @@ enum CodeFlowStorageError: LocalizedError {
 }
 
 /// 文件系统是 CodeFlow 生成物的单一真源；本类型不建立数据库镜像。
+@MainActor
 @Observable
 final class CodeFlowStorage {
     /// bookmark 授权目录与实际 `codeflow` 输出根必须分离，避免系统解析 bookmark 时

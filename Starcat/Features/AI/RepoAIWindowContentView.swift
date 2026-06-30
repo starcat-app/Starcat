@@ -1350,12 +1350,10 @@ struct RepoAIWindowContentView: View {
                                         message: message,
                                         onEditUserMessage: editUserMessage
                                     )
-                                    .equatable()
                                 }
 
                                 if let streaming = chat.streamingPresentation {
                                     AIStreamingChatBubble(snapshot: streaming)
-                                    .equatable()
                                 }
 
                                 // 对话底部"复制全部"区域：流式中（chat.isSending）暂时

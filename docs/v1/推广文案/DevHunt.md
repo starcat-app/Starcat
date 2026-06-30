@@ -15,4 +15,3 @@ The next step is deeper developer workflows: similar repo recommendations, alter
 - AI grounded in repo context.
 - User-confirmed writes for tags and notes.
 - Stable recommendation API boundary for future self-hosted recommendation providers.
-
