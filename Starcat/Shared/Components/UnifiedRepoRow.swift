@@ -122,6 +122,7 @@ struct UnifiedRepoRow: View {
     /// 渲染条件是 `showStarredCheckmark && card.isStarred` 双条件 AND——
     /// `card.isStarred` 仍由调用方派生(Manage 读 self,Trending/Weekly 走 registry)。
     let showStarredCheckmark: Bool
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     init(
         card: RepoCardViewData,
@@ -147,7 +148,7 @@ struct UnifiedRepoRow: View {
                     // fullName + 已 star ✓ 标记 + Fork 徽章
                     HStack(spacing: 4) {
                         Text(card.fullName)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(interfaceScale.font(size: 13, weight: .semibold))
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .layoutPriority(1)
@@ -157,7 +158,7 @@ struct UnifiedRepoRow: View {
                             // v1.8 修订(2026-06-10):双条件 AND——Manage 不传 showStarredCheckmark
                             // 默认 false 即不显;Trending / Weekly 显式传 true,再由 card.isStarred 决定单 row。
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(interfaceScale.font(size: 11, weight: .semibold))
                                 .foregroundStyle(Color.green)
                                 .accessibilityLabel(Text("repo.card.alreadyStarred"))
                         }
@@ -203,7 +204,7 @@ struct UnifiedRepoRow: View {
 
                     if let description = card.description, !description.isEmpty {
                         Text(description)
-                            .font(.system(size: 12))
+                            .font(interfaceScale.font(size: 12))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
@@ -274,7 +275,7 @@ struct UnifiedRepoRow: View {
             ZStack(alignment: .bottomTrailing) {
                 RemoteAvatar(urlString: RepoAvatarURL.from(owner: card.owner), size: 40)
                 Image(systemName: category.systemImage)
-                    .font(.system(size: 8, weight: .bold))
+                    .font(interfaceScale.font(size: 8, weight: .bold))
                     .foregroundStyle(.white)
                     .padding(3)
                     .background(Circle().fill(category.iconColor))
@@ -293,9 +294,9 @@ struct UnifiedRepoRow: View {
         case .trendingChange(let change):
             HStack(spacing: 3) {
                 Image(systemName: change >= 0 ? "arrow.up.right" : "arrow.down.right")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(interfaceScale.font(size: 9, weight: .bold))
                 Text("\(change >= 0 ? "+" : "")\(change.formattedShort)")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(interfaceScale.font(size: 11, weight: .semibold, design: .monospaced))
             }
             .foregroundStyle(change >= 0 ? Color.green : Color.red)
             .padding(.horizontal, 6)
@@ -315,9 +316,9 @@ struct UnifiedRepoRow: View {
             // 视觉行为同源问题，但 dong4j 本次未要求改 —— 留作后续。
             HStack(spacing: 4) {
                 Image(systemName: "newspaper")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(interfaceScale.font(size: 10, weight: .semibold))
                 Text("# \(number)")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(interfaceScale.font(size: 11, weight: .semibold, design: .monospaced))
             }
             .foregroundStyle(Self.weeklyChipTint)
             .padding(.horizontal, 6)
@@ -338,6 +339,7 @@ struct UnifiedRepoRow: View {
 private struct WeeklySourceInlineBadge: View {
     let sources: [WeeklySource]
     let label: String?
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         HStack(spacing: 4) {
@@ -348,7 +350,7 @@ private struct WeeklySourceInlineBadge: View {
             }
             if let label, !label.isEmpty {
                 Text(label)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(interfaceScale.font(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -367,7 +369,7 @@ private struct WeeklySourceInlineBadge: View {
         switch source {
         case .unknown:
             Image(systemName: source.assetName)
-                .font(.system(size: 9, weight: .semibold))
+                .font(interfaceScale.font(size: 9, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 16, height: 16)
                 .background(Circle().fill(Color(nsColor: .controlBackgroundColor)))
@@ -387,13 +389,14 @@ private struct WeeklySourceInlineBadge: View {
 
 private struct RepoCardInlineMetadataBadge: View {
     let metadata: RepoCardInlineMetadata
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: metadata.systemImage)
-                .font(.system(size: 9, weight: .semibold))
+                .font(interfaceScale.font(size: 9, weight: .semibold))
             Text(verbatim: metadata.text)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(interfaceScale.font(size: 10, weight: .semibold, design: .monospaced))
                 .lineLimit(1)
         }
         .foregroundStyle(.secondary)
@@ -428,13 +431,14 @@ private struct RepoCardInlineMetadataBadge: View {
 /// 一并迁移到 UnifiedRepoRow.swift（唯一调用方），保持单一真源。
 struct SemanticScoreBadge: View {
     let hit: SemanticSearchHit
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "sparkles")
-                .font(.system(size: 9, weight: .bold))
+                .font(interfaceScale.font(size: 9, weight: .bold))
             Text(scoreText)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(interfaceScale.font(size: 10, weight: .semibold, design: .monospaced))
         }
         .foregroundStyle(.purple)
         .padding(.horizontal, 6)
@@ -477,6 +481,7 @@ struct OpenSSFScoreBadge: View {
 
     let score: OpenSSFScoreBadgeData
     let size: Size
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     init(score: OpenSSFScoreBadgeData, size: Size = .compact) {
         self.score = score
@@ -504,13 +509,13 @@ struct OpenSSFScoreBadge: View {
     }
 
     private var textFont: Font {
-        size == .compact ? .caption2 : .footnote
+        interfaceScale.font(size: size == .compact ? 10 : 12)
     }
 
     var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "checkmark.shield.fill")
-                .font(.system(size: iconSize, weight: .semibold))
+                .font(interfaceScale.font(size: iconSize, weight: .semibold))
                 .foregroundStyle(Self.iridescentForeground)
             Text(verbatim: score.formattedScore)
                 .font(textFont)
@@ -551,6 +556,7 @@ struct OpenSSFScoreBadge: View {
 fileprivate struct RepoStatusChip: View {
 
     let status: RepoStatus
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         switch status {
@@ -570,9 +576,9 @@ fileprivate struct RepoStatusChip: View {
             // 高亮 —— 这是用户主动标的"重点 repo"，应该比 unread 更突出。
             HStack(spacing: 3) {
                 Image(systemName: "bookmark.fill")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(interfaceScale.font(size: 9, weight: .semibold))
                 Text("repo.status.using")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(interfaceScale.font(size: 11, weight: .semibold))
             }
             .foregroundStyle(Color.accentColor)
             .padding(.horizontal, 6)

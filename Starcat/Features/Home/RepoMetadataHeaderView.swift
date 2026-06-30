@@ -71,6 +71,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     @Environment(AppDependencies.self) private var dependencies
     /// Forks / Watchers 的语义色按 colorScheme 切换 —— 见 StatSemanticColor。
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var showOpenSSFScoreSheet = false
     @State private var showRepoHealthSheet = false
     @State private var paywallContext: ProPaywallContext?
@@ -124,8 +125,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 8) {
                     Text(repo.fullName)
-                        .font(.title2)
-                        .fontWeight(.semibold)
+                        .font(interfaceScale.font(size: 22, weight: .semibold))
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .textSelection(.enabled)
@@ -200,10 +200,10 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         let topicText = topics.isEmpty ? "N/A" : topics.joined(separator: "  ·  ")
         HStack(spacing: 6) {
             Text("repoTopics.label")
-                .font(.caption2)
+                .font(interfaceScale.font(size: 10))
                 .foregroundStyle(.secondary)
             Text(topicText)
-                .font(.caption)
+                .font(interfaceScale.font(size: 11))
                 .foregroundStyle(topics.isEmpty ? Color.secondary : Color.blue)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -216,7 +216,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     private var descriptionSection: some View {
         if let desc = repo.description, !desc.isEmpty {
             Text(desc)
-                .font(.body)
+                .font(interfaceScale.font(size: 13))
                 .textSelection(.enabled)
         }
     }
@@ -340,6 +340,7 @@ private struct RepoMetadataPanelHeightPreferenceKey: PreferenceKey {
 private struct RepoDetailHeaderSourceBadgeView: View {
     let badge: RepoDetailHeaderSourceBadge
     @Environment(\.openURL) private var openURL
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         Group {
@@ -369,12 +370,12 @@ private struct RepoDetailHeaderSourceBadgeView: View {
                 }
             } else if let systemImage = badge.systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(interfaceScale.font(size: 9, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
             if let label = badge.label, !label.isEmpty {
                 Text(label)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(interfaceScale.font(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -399,7 +400,7 @@ private struct RepoDetailHeaderSourceBadgeView: View {
         switch source {
         case .unknown:
             Image(systemName: source.assetName)
-                .font(.system(size: 9, weight: .semibold))
+                .font(interfaceScale.font(size: 9, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 18, height: 18)
                 .background(Circle().fill(Color(nsColor: .controlBackgroundColor)))
@@ -441,6 +442,7 @@ struct RepoAIOpenButton: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var viewModel
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         Button {
@@ -452,9 +454,9 @@ struct RepoAIOpenButton: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(interfaceScale.font(size: 13, weight: .semibold))
                 Text("AI")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(interfaceScale.font(size: 13, weight: .semibold))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -658,11 +660,12 @@ private struct RepoBadgeChip: View {
     let text: LocalizedStringKey
     let systemImage: String
     let tint: Color
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: systemImage).font(.caption2)
-            Text(text).font(.caption2)
+            Image(systemName: systemImage).font(interfaceScale.font(size: 10))
+            Text(text).font(interfaceScale.font(size: 10))
         }
         .padding(.horizontal, 6).padding(.vertical, 2)
         .background(tint.opacity(0.15), in: Capsule())
@@ -679,6 +682,7 @@ private struct OpenSSFInlineBadge: View {
     let onTap: () -> Void
 
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         let badge = dependencies.openSSFScoreStore.badge(for: repo.id)
@@ -702,7 +706,7 @@ private struct OpenSSFInlineBadge: View {
 
     private var fallbackBadge: some View {
         Image(systemName: "checkmark.shield.fill")
-            .font(.system(size: 11, weight: .semibold))
+            .font(interfaceScale.font(size: 11, weight: .semibold))
             .foregroundStyle(OpenSSFScoreBadge.iridescentForeground)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
@@ -731,6 +735,7 @@ private struct RepoHealthInlineBadge: View {
     let onTap: () -> Void
 
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         let badge = dependencies.repoHealthStore.badge(for: repo.id)
@@ -757,7 +762,7 @@ private struct RepoHealthInlineBadge: View {
     /// 列表场景不需要这种"占位"——`asCardData(healthBadge: nil)` 直接不显示 row badge。
     private var fallbackBadge: some View {
         Image(systemName: "gauge.with.dots.needle.67percent")
-            .font(.system(size: 11, weight: .semibold))
+            .font(interfaceScale.font(size: 11, weight: .semibold))
             .foregroundStyle(Self.healthForeground)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
@@ -789,11 +794,12 @@ private struct RepoRawBadgeChip: View {
     let text: String
     let systemImage: String
     let tint: Color
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: systemImage).font(.caption2)
-            Text(verbatim: text).font(.caption2)
+            Image(systemName: systemImage).font(interfaceScale.font(size: 10))
+            Text(verbatim: text).font(interfaceScale.font(size: 10))
         }
         .padding(.horizontal, 6).padding(.vertical, 2)
         .background(tint.opacity(0.15), in: Capsule())
@@ -806,19 +812,20 @@ private struct RepoStatItem: View {
     let value: Int
     let systemImage: String
     let tint: Color
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         VStack(alignment: .center, spacing: 2) {
             HStack(spacing: 4) {
                 Image(systemName: systemImage)
                     .foregroundStyle(tint)
-                    .font(.system(size: 14))
+                    .font(interfaceScale.font(size: 14))
                 Text(value, format: .number)
                     .monospacedDigit()
-                    .font(.system(size: 14, weight: .medium))
+                    .font(interfaceScale.font(size: 14, weight: .medium))
             }
             Text(label)
-                .font(.system(size: 10))
+                .font(interfaceScale.font(size: 10))
                 .foregroundStyle(.secondary)
         }
     }
@@ -828,6 +835,7 @@ private struct RepoDateStatItem: View {
     let label: LocalizedStringKey
     let value: String?
     let systemImage: String
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         // dong4j 2026-06-12 反馈:hero stats 行字号要统一。
@@ -840,14 +848,14 @@ private struct RepoDateStatItem: View {
             HStack(spacing: 4) {
                 Image(systemName: systemImage)
                     .foregroundStyle(.secondary)
-                    .font(.system(size: 14))
+                    .font(interfaceScale.font(size: 14))
                 Text(formattedDate)
                     .monospacedDigit()
                     .lineLimit(1)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(interfaceScale.font(size: 14, weight: .medium))
             }
             Text(label)
-                .font(.system(size: 10))
+                .font(interfaceScale.font(size: 10))
                 .foregroundStyle(.secondary)
         }
     }

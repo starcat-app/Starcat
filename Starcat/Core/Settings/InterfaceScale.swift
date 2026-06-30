@@ -12,8 +12,8 @@ import SwiftUI
 
 /// 用户可选的界面字号档位。
 ///
-/// 当前先供 Agent Workspace 使用。后续主界面接入时，应逐个页面验证布局，而不是
-/// 一次性把全站所有 `Font` 直接乘同一个比例。
+/// 当前用于 Agent Workspace 与主窗口核心三栏。后续继续接入新页面时，应逐个页面验证布局，
+/// 而不是一次性把全站所有 `Font` 直接乘同一个比例。
 enum InterfaceScale: String, CaseIterable, Identifiable {
     case compact
     case standard
@@ -54,3 +54,21 @@ extension EnvironmentValues {
     }
 }
 
+extension InterfaceScale {
+    /// 按当前界面字号档位缩放一个显式点值。
+    ///
+    /// 主界面已有大量手工调过的 `13pt / 12pt / 10pt` 点值；全局字号接入时应以
+    /// 这些现状作为 `.standard` 基线，再乘档位倍率。这样标准档完全保持当前主窗口视觉。
+    func scaled(_ pointSize: CGFloat) -> CGFloat {
+        pointSize * multiplier
+    }
+
+    /// 生成按界面字号档位缩放的 SwiftUI Font。
+    func font(
+        size pointSize: CGFloat,
+        weight: Font.Weight? = nil,
+        design: Font.Design = .default
+    ) -> Font {
+        Font.system(size: scaled(pointSize), weight: weight, design: design)
+    }
+}
