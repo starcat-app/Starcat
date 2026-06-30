@@ -329,6 +329,10 @@
       font-weight: 650;
     }
 
+    .metric.full {
+      grid-column: 1 / -1;
+    }
+
     .mock-panel {
       margin-top: 12px;
       border: 1px solid var(--border);
@@ -377,6 +381,55 @@
     .mock-textarea:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .param-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .param-field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .param-field label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .param-field input {
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      color: var(--text);
+      padding: 7px 10px;
+      outline: none;
+    }
+
+    .param-field input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .json-output {
+      width: 100%;
+      max-height: 360px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      color: var(--text);
+      padding: 12px;
+      font-family: "SF Mono", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
 
     .last-link {
@@ -566,7 +619,7 @@
         fallbackLabel: "Recommend",
         description: "相似仓库推荐服务",
         checks: ["health", "ping"],
-        stats: [{ label: "说明", type: "text", value: "推荐接口需要 repo_id；面板只检查服务与鉴权。" }],
+        stats: [{ label: "说明", type: "text", value: "可编辑 repo_id / limit / offset 后请求推荐接口并查看 JSON。" }],
         actions: []
       },
       discovery: {
@@ -618,6 +671,8 @@
     const configWarning = document.getElementById("configWarning");
     let sharingMockPayloadText = JSON.stringify(DEFAULT_SHARING_PAYLOAD, null, 2);
     let lastSharingURL = "";
+    let recommendParams = { repoId: "41881900", limit: "10", offset: "0" };
+    let recommendResultText = "尚未请求。";
 
     function config() {
       return window.STARCAT_ADMIN_CONFIG || { services: {} };
@@ -726,7 +781,8 @@
         }).join("");
         const metrics = (snapshot.metrics || spec.stats.map((item) => ({ name: item.label, value: "未刷新" }))).map((item) => {
           const isLong = String(item.value).length > 20;
-          return `<div class="metric ${isLong ? "long" : ""}">
+          const isFull = item.name === "说明";
+          return `<div class="metric ${isLong ? "long" : ""} ${isFull ? "full" : ""}">
             <div class="metric-name">${escapeHTML(item.name)}</div>
             <div class="metric-value">${escapeHTML(String(item.value))}</div>
           </div>`;
@@ -761,6 +817,7 @@
     }
 
     function renderServiceExtra(key) {
+      if (key === "recommend") return renderRecommendExtra();
       if (key !== "sharing") return "";
       const linkText = lastSharingURL
         ? `最近生成: <a href="${escapeHTML(lastSharingURL)}" target="_blank" rel="noreferrer">${escapeHTML(lastSharingURL)}</a>`
@@ -777,6 +834,34 @@
         </div>
         <textarea class="mock-textarea" data-sharing-payload spellcheck="false">${escapeHTML(sharingMockPayloadText)}</textarea>
         <div class="last-link">${linkText}</div>
+      </div>`;
+    }
+
+    function renderRecommendExtra() {
+      return `<div class="mock-panel">
+        <div class="mock-head">
+          <p class="mock-title">推荐接口参数，可直接使用，也可以先编辑再请求。</p>
+          <div class="mock-actions">
+            <button class="button primary" type="button" data-recommend-action="request">请求推荐并显示 JSON</button>
+            <button class="button" type="button" data-recommend-action="reset">重置参数</button>
+            <button class="button" type="button" data-recommend-action="copy" ${recommendResultText === "尚未请求。" ? "disabled" : ""}>复制 JSON</button>
+          </div>
+        </div>
+        <div class="param-grid">
+          <div class="param-field">
+            <label for="recommendRepoId">repo_id</label>
+            <input id="recommendRepoId" data-recommend-param="repoId" inputmode="numeric" value="${escapeHTML(recommendParams.repoId)}">
+          </div>
+          <div class="param-field">
+            <label for="recommendLimit">limit</label>
+            <input id="recommendLimit" data-recommend-param="limit" inputmode="numeric" value="${escapeHTML(recommendParams.limit)}">
+          </div>
+          <div class="param-field">
+            <label for="recommendOffset">offset</label>
+            <input id="recommendOffset" data-recommend-param="offset" inputmode="numeric" value="${escapeHTML(recommendParams.offset)}">
+          </div>
+        </div>
+        <pre class="json-output">${escapeHTML(recommendResultText)}</pre>
       </div>`;
     }
 
@@ -953,6 +1038,58 @@
       }
     }
 
+    function normalizedRecommendParams() {
+      const repoId = String(recommendParams.repoId || "").trim();
+      const limit = Number.parseInt(String(recommendParams.limit || "").trim(), 10);
+      const offset = Number.parseInt(String(recommendParams.offset || "").trim(), 10);
+      if (!repoId) throw new Error("repo_id 不能为空");
+      if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("limit 必须是 1-50 的整数");
+      if (!Number.isInteger(offset) || offset < 0) throw new Error("offset 必须是大于等于 0 的整数");
+      return { repoId, limit, offset };
+    }
+
+    async function requestRecommend() {
+      const cfg = serviceConfig("recommend");
+      if (!cfg.baseURL) {
+        log("Recommend 缺少 baseURL，无法请求推荐", "error");
+        return;
+      }
+      if (!cfg.apiKey) {
+        log("Recommend 缺少 apiKey，无法请求推荐", "error");
+        return;
+      }
+
+      let params;
+      try {
+        params = normalizedRecommendParams();
+      } catch (error) {
+        log(`Recommend 参数无效: ${error.message}`, "error");
+        return;
+      }
+
+      const path = `/api/v1/repos/${encodeURIComponent(params.repoId)}/recommendations?limit=${params.limit}&offset=${params.offset}`;
+      try {
+        const result = await requestJSON("recommend", path, "apiKey");
+        recommendResultText = JSON.stringify(result, null, 2);
+        log(`Recommend 请求完成: repo_id=${params.repoId} limit=${params.limit} offset=${params.offset}`);
+        render();
+      } catch (error) {
+        recommendResultText = `请求失败: ${error.message}`;
+        log(`Recommend 请求失败: ${error.message}`, "error");
+        render();
+      }
+    }
+
+    async function copyRecommendResult() {
+      if (!recommendResultText || recommendResultText === "尚未请求。") return;
+      try {
+        await navigator.clipboard.writeText(recommendResultText);
+        log("已复制 Recommend JSON");
+      } catch (error) {
+        log(`复制 Recommend JSON 失败: ${error.message}`, "error");
+      }
+    }
+
     async function refreshAll() {
       const button = document.getElementById("refreshAllButton");
       button.disabled = true;
@@ -998,6 +1135,22 @@
           copyLastSharingURL();
           return;
         }
+        const recommendAction = event.target.getAttribute("data-recommend-action");
+        if (recommendAction === "request") {
+          requestRecommend();
+          return;
+        }
+        if (recommendAction === "reset") {
+          recommendParams = { repoId: "41881900", limit: "10", offset: "0" };
+          recommendResultText = "尚未请求。";
+          render();
+          log("Recommend 参数已重置为模板");
+          return;
+        }
+        if (recommendAction === "copy") {
+          copyRecommendResult();
+          return;
+        }
 
         const refreshKey = event.target.getAttribute("data-refresh");
         if (refreshKey) {
@@ -1013,6 +1166,10 @@
       servicesGrid.addEventListener("input", (event) => {
         if (event.target.matches("[data-sharing-payload]")) {
           sharingMockPayloadText = event.target.value;
+        }
+        const recommendParam = event.target.getAttribute("data-recommend-param");
+        if (recommendParam) {
+          recommendParams = { ...recommendParams, [recommendParam]: event.target.value };
         }
       });
     }
