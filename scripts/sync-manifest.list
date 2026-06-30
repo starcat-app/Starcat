@@ -25,3 +25,9 @@ supports/backups/
 supports/AGENTS.md
 supports/CLAUDE.md
 supports/README.md
+supports/starcat-discovery-api/.env
+supports/starcat-recommend-api/.env
+supports/starcat-sharing-api/.env
+supports/starcat-treeding-api/.env
+supports/starcat-weekly-api/.env
+supports/starcat-wiki-api/.env

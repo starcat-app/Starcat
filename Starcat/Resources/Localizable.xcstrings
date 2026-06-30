@@ -10873,13 +10873,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Explore"
+            "value" : "Trending"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "探索"
+            "value" : "趋势"
           }
         }
       }
@@ -12708,13 +12708,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trending"
+            "value" : "Explore"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "趋势"
+            "value" : "探索"
           }
         }
       }
