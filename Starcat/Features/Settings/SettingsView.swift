@@ -770,7 +770,7 @@ private struct StorageSettingsTab: View {
                             await triggerReadmePrefetch(using: cleaner)
                         }
                     }
-                    .controlSize(.small)
+                    .controlSize(.regular)
                     .disabled(shouldDisableReadmePrefetchRunNow)
                 }
 
@@ -1013,7 +1013,7 @@ private struct StorageSettingsTab: View {
                 Spacer()
                 action()
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .controlSize(.regular)
                     .font(.headline)
                     .tint(buttonTint)
                     .foregroundStyle(buttonForeground)
@@ -1039,7 +1039,7 @@ private struct StorageSettingsTab: View {
                 Button("settings.storage.action.clear") {
                     pendingAction = action
                 }
-                .controlSize(.small)
+                .controlSize(.regular)
                 .disabled(shouldDisableStorageActions || isWorking || isEmpty)
             }
         } label: {
@@ -1079,7 +1079,7 @@ private struct StorageSettingsTab: View {
                 Button("settings.storage.action.clear") {
                     pendingAction = .archive
                 }
-                .controlSize(.small)
+                .controlSize(.regular)
                 .disabled(shouldDisableStorageActions || isWorking || stats.archiveCount == 0)
             }
         } label: {
