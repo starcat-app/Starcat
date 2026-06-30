@@ -1433,6 +1433,8 @@ struct RepoListView: View {
             return String.l10n("trending.title")
         case .allStars:
             return String.l10n("sidebar.allRepos")
+        case .allLanguages:
+            return String.l10n("trending.allLanguages")
         case .untagged:
             return String.l10n("sidebar.untagged")
         case .smartCollectionsHome:
@@ -1461,6 +1463,7 @@ struct RepoListView: View {
         switch viewModel.selection {
         case .trending:  return "chart.line.uptrend.xyaxis"
         case .allStars:  return "star"
+        case .allLanguages: return "globe"
         case .untagged:  return "tag.slash"
         case .smartCollectionsHome: return "line.3.horizontal.decrease.circle"
         case .smartCollection: return "tray"
@@ -1477,6 +1480,7 @@ struct RepoListView: View {
         switch viewModel.selection {
         case .trending:        return "empty.trendingUnavailable"
         case .allStars:        return "empty.noStars"
+        case .allLanguages:    return "empty.noStars"
         case .untagged:        return "empty.allTagged"
         case .smartCollectionsHome: return "smartCollections.empty.title"
         case .smartCollection: return "smartCollections.empty.collection"
@@ -1493,6 +1497,7 @@ struct RepoListView: View {
         switch viewModel.selection {
         case .trending:        return "empty.trendingComingSoon"
         case .allStars:        return "empty.syncPrompt"
+        case .allLanguages:    return "empty.syncPrompt"
         case .untagged:        return "empty.untaggedHint"
         case .smartCollectionsHome: return "smartCollections.empty.subtitle"
         case .smartCollection: return "smartCollections.empty.collectionSubtitle"

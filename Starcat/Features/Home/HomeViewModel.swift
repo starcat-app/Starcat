@@ -933,7 +933,7 @@ final class HomeViewModel {
     func makeRuleFromCurrentManageFilters() -> SmartCollectionRule? {
         let scope: SmartCollectionRule.Scope
         switch selection {
-        case .allStars:
+        case .allStars, .allLanguages:
             scope = .allStars
         case .untagged:
             scope = .untagged
@@ -1000,7 +1000,7 @@ final class HomeViewModel {
     /// High Value/Needs Review 等仍依赖额外上下文，继续走旧的全量派生路径。
     private func currentRepoListScopeForDatabasePaging() -> RepoListScope? {
         switch selection {
-        case .allStars:
+        case .allStars, .allLanguages:
             return .allStars
         case .untagged:
             return .untagged
@@ -1103,7 +1103,7 @@ final class HomeViewModel {
             switch selection {
             case .untagged, .tag, .smartCollectionsHome, .smartCollection, .userSmartCollection, .githubStarList, .githubStarListUngrouped:
                 selection = .allStars
-            case .allStars, .language, .trending:
+            case .allStars, .allLanguages, .language, .trending:
                 break
             }
         }
@@ -1265,7 +1265,7 @@ final class HomeViewModel {
                         switch self.selection {
                         case .trending:
                             repos = [] // Placeholder for W7 Trending
-                        case .allStars:
+                        case .allStars, .allLanguages:
                             repos = try await self.repository.fetchAllStarred()
                         case .untagged:
                             repos = try await self.repository.fetchUntagged()
@@ -1645,7 +1645,7 @@ final class HomeViewModel {
                     switch selection {
                     case .trending:
                         return nil
-                    case .allStars:
+                    case .allStars, .allLanguages:
                         return try await self.repository.fetchAllStarred()
                     case .untagged:
                         return try await self.repository.fetchUntagged()
@@ -1966,6 +1966,8 @@ extension SidebarItem {
             return [.allStars, .untagged]
         case .allStars:
             return [.untagged, .smartCollectionsHome]
+        case .allLanguages:
+            return [.allStars, .untagged]
         case .untagged:
             return [.allStars]
         case .smartCollectionsHome:

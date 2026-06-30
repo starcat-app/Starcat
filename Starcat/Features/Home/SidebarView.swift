@@ -448,6 +448,8 @@ struct SidebarView: View {
                 // List 内 row .transition 在 macOS 14+ 趋于稳定,与 chevron 旋转 + spring
                 // 节奏完全同步,接近 Xcode 文件树的体验。
                 Section {
+                    allLanguagesRow
+
                     if languagesExpanded {
                         ForEach(viewModel.languageStats) { stat in
                             languageRow(stat)
@@ -1154,6 +1156,34 @@ struct SidebarView: View {
         }
         .tag(item)
         // HOM-46 优化：hover 时预取相邻分类
+        .onHover { isHovering in
+            if isHovering {
+                for candidate in item.prefetchCandidates {
+                    viewModel.prefetch(selection: candidate)
+                }
+            }
+        }
+    }
+
+    /// Manage 的 Languages 分组总入口。
+    ///
+    /// 约束：`.language(nil)` 已表示 GitHub 无主语言，不能复用来表达"全部语言"；
+    /// 因此这里使用独立的 `.allLanguages`，查询语义等同 `.allStars`，但 UI 上留在
+    /// Languages 分组里，并且像 Trending 一样在分组折叠后仍然常驻。
+    private var allLanguagesRow: some View {
+        let item = SidebarItem.allLanguages
+        return Label {
+            HStack(spacing: 4) {
+                Text("trending.allLanguages")
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 4)
+            }
+        } icon: {
+            AllLanguagesIcon(size: 14)
+        }
+        .tag(item)
         .onHover { isHovering in
             if isHovering {
                 for candidate in item.prefetchCandidates {
