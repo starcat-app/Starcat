@@ -125,7 +125,7 @@ struct TrendingView: View {
         // 选中 repo 变化时，同步更新 selectedTrendingRepo 供右侧详情页使用
         .onChange(of: selectedRepoID) { _, newID in
             if let id = newID {
-                selectedTrendingRepo = viewModel.repos.first { $0.id == id }
+                selectedTrendingRepo = viewModel.displayedRepos.first { $0.id == id }
             } else {
                 selectedTrendingRepo = nil
             }
@@ -153,7 +153,8 @@ struct TrendingView: View {
     }
 
     private func applyTrendingDetailSelectionPolicy() {
-        guard !viewModel.repos.isEmpty else {
+        let visibleRepos = viewModel.displayedRepos
+        guard !visibleRepos.isEmpty else {
             clearTrendingDetailSelection()
             return
         }
@@ -162,11 +163,11 @@ struct TrendingView: View {
             return
         }
         if let id = selectedRepoID,
-           let repo = viewModel.repos.first(where: { $0.id == id }) {
+           let repo = visibleRepos.first(where: { $0.id == id }) {
             selectedTrendingRepo = repo
             return
         }
-        guard let first = viewModel.repos.first else {
+        guard let first = visibleRepos.first else {
             clearTrendingDetailSelection()
             return
         }
@@ -179,7 +180,7 @@ struct TrendingView: View {
             selectedTrendingRepo = nil
             return
         }
-        guard let repo = viewModel.repos.first(where: { $0.id == id }) else {
+        guard let repo = viewModel.displayedRepos.first(where: { $0.id == id }) else {
             clearTrendingDetailSelection()
             return
         }
@@ -188,30 +189,16 @@ struct TrendingView: View {
 
     // MARK: - Toolbar
 
-    /// 三段布局：周期 picker **真居中** / 刷新组（freshness 文本 + 刷新 icon）右上角浮动。
+    /// 顶部筛选栏：排序 + 时间范围合并为一个下拉菜单。
     ///
-    /// 顶栏外边距与 `WeeklyContentView.filterBar` / `ActivityView` 顶栏对齐：
-    /// horizontal 14、top 8、bottom 6（dong4j 2026-06-18 反馈 trending 顶栏过高）。
-    ///
-    /// 设计要点（2026-06-02 dong4j 反馈"应该固定周期切换组件"调整）：
-    /// - **周期 picker 真居中**（左右 Spacer 各占一半），与 toolbar 整体宽度对齐，
-    ///   不会因左右两侧内容长度变化而漂移位置
-    /// - **刷新组用 `.overlay(alignment: .trailing)` 浮动**：与 picker 布局**完全解耦**，
-    ///   新鲜度文本从"刚刚"变到"12 小时前"再到"3 天前"，picker 视觉位置岿然不动
-    /// - 新鲜度文字常驻显示，>20 小时变橙色提示陈旧（`isStale`，80% TTL 预警），无缓存时整组隐藏
-    /// - 刷新 icon 单独一个 Button，isRefreshing 时图标旋转动画
-    /// - 整组用 `.help()` 显示完整 tooltip "上次刷新于 X 月 Y 日 HH:MM"（精确时间，hover 才看）
-    ///
-    /// 为什么不用 HStack + Spacer：HStack 里 Spacer 与右侧组件协商空间会反向影响 picker 的
-    /// 视觉中心（picker 占满 maxWidth: 320 后 Spacer 才生效，但右侧组宽度变化时整体对齐方式
-    /// 仍跟着变）；用 ZStack/overlay 让两者**走两个独立 layout pass**，picker 永远居中。
+    /// 约束：趋势的今日 / 本周 / 本月不再使用分段 tab，避免 Explore 下不同模式的中栏控件
+    /// 形态割裂；菜单结构对齐 Activity / Weekly 的筛选下拉。
     private var toolbarView: some View {
-        HStack {
+        HStack(spacing: 10) {
+            trendingFilterMenu
+
             Spacer()
-            periodPicker
-            Spacer()
-        }
-        .overlay(alignment: .trailing) {
+
             HStack(spacing: 8) {
                 freshnessIndicator
                 refreshButton
@@ -222,14 +209,63 @@ struct TrendingView: View {
         .padding(.bottom, 6)
     }
 
-    private var periodPicker: some View {
-        @Bindable var vm = viewModel
+    private var trendingFilterMenu: some View {
+        Menu {
+            Section("trending.filter.period") {
+                ForEach(TrendingPeriod.allCases) { period in
+                    Button {
+                        clearTrendingDetailSelectionIfChanging(period != viewModel.selectedPeriod)
+                        viewModel.selectedPeriod = period
+                    } label: {
+                        filterMenuRow(
+                            title: period.localizedDisplayName,
+                            isSelected: period == viewModel.selectedPeriod
+                        )
+                    }
+                }
+            }
 
-        return PillSegmentedControl(
-            items: Array(TrendingPeriod.allCases),
-            selection: $vm.selectedPeriod,
-            title: \.displayName
-        )
+            Section("trending.filter.sort") {
+                ForEach(TrendingSortOption.allCases) { sort in
+                    Button {
+                        clearTrendingDetailSelectionIfChanging(sort != viewModel.selectedSort)
+                        viewModel.selectedSort = sort
+                        applyTrendingDetailSelectionPolicy()
+                    } label: {
+                        filterMenuRow(
+                            title: sort.localizedTitle,
+                            isSelected: sort == viewModel.selectedSort
+                        )
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .foregroundStyle(.secondary)
+                Text("trending.filter.title")
+                Text(verbatim: "\(viewModel.selectedPeriod.localizedDisplayName) · \(viewModel.selectedSort.localizedTitle)")
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private func filterMenuRow(title: String, isSelected: Bool) -> some View {
+        if isSelected {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
+        }
+    }
+
+    private func clearTrendingDetailSelectionIfChanging(_ isChanging: Bool) {
+        guard isChanging else { return }
+        clearTrendingDetailSelection()
     }
 
     /// "12 分钟前" 新鲜度提示。
@@ -317,7 +353,7 @@ struct TrendingView: View {
     /// index 只用于 row reveal 的短 stagger；id 仍来自 repo.id，保证 selection 与 row
     /// identity 跟原先 TrendingRepo.fullName 保持一致。
     private var indexedRepos: [IndexedTrendingRepo] {
-        viewModel.repos.enumerated().map { IndexedTrendingRepo(index: $0.offset, repo: $0.element) }
+        viewModel.displayedRepos.enumerated().map { IndexedTrendingRepo(index: $0.offset, repo: $0.element) }
     }
 
     /// 中栏 Trending 内容**三态过渡身份键**（loading / error / content）。
@@ -449,7 +485,7 @@ struct TrendingView: View {
         .background {
             let store = dependencies.trendingMultiSelectionStore
             Button {
-                let snapshots = viewModel.repos.map {
+                let snapshots = viewModel.displayedRepos.map {
                     SelectionSnapshot(ghRepoId: $0.ghRepoId, owner: $0.owner, name: $0.name)
                 }
                 store.selectAll(snapshots)

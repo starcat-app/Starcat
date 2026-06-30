@@ -48,6 +48,34 @@ enum TrendingCachePolicy: Sendable {
     case forceNetwork
 }
 
+/// Trending 中栏的本地排序方式。
+///
+/// `recommended` 保留 trending-api 返回顺序,也就是官方趋势榜原始排名；其它选项只对
+/// 当前已加载列表做本地排序,不改变缓存桶和远端请求参数。
+enum TrendingSortOption: String, CaseIterable, Identifiable {
+    case recommended
+    case starsDesc
+    case starsAsc
+    case nameAsc
+    case nameDesc
+    case updatedDesc
+    case updatedAsc
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .recommended: return String.l10n("trending.sort.recommended")
+        case .starsDesc: return String.l10n("trending.sort.starsDesc")
+        case .starsAsc: return String.l10n("trending.sort.starsAsc")
+        case .nameAsc: return String.l10n("trending.sort.nameAsc")
+        case .nameDesc: return String.l10n("trending.sort.nameDesc")
+        case .updatedDesc: return String.l10n("trending.sort.updatedDesc")
+        case .updatedAsc: return String.l10n("trending.sort.updatedAsc")
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class TrendingViewModel {
@@ -131,6 +159,14 @@ final class TrendingViewModel {
             guard oldValue != selectedLanguage else { return }
             // 语言切换同样切桶，按 TTL 决定（与 selectedPeriod 同款理由）
             Task { await reload(cachePolicy: .respectTTL) }
+        }
+    }
+
+    /// 当前中栏排序方式。默认保留 trending-api 返回顺序,即官方趋势榜原始排名。
+    var selectedSort: TrendingSortOption = .recommended {
+        didSet {
+            guard oldValue != selectedSort else { return }
+            reposRevision += 1
         }
     }
 
@@ -438,7 +474,37 @@ final class TrendingViewModel {
         return Array(ranked.prefix(3))
     }
 
+    /// 当前中栏实际展示的列表。
+    ///
+    /// `repos` 保存 API/缓存原始顺序,供推荐计算、身份对比和恢复官方 ranking 使用；
+    /// UI 统一读取 `displayedRepos`,避免排序状态污染底层缓存语义。
+    var displayedRepos: [TrendingRepo] {
+        switch selectedSort {
+        case .recommended:
+            return repos
+        case .starsDesc:
+            return repos.sorted { $0.starsCount > $1.starsCount }
+        case .starsAsc:
+            return repos.sorted { $0.starsCount < $1.starsCount }
+        case .nameAsc:
+            return repos.sorted { $0.fullName.localizedCaseInsensitiveCompare($1.fullName) == .orderedAscending }
+        case .nameDesc:
+            return repos.sorted { $0.fullName.localizedCaseInsensitiveCompare($1.fullName) == .orderedDescending }
+        case .updatedDesc:
+            return repos.sorted { trendingDate($0.updatedAt) > trendingDate($1.updatedAt) }
+        case .updatedAsc:
+            return repos.sorted { trendingDate($0.updatedAt) < trendingDate($1.updatedAt) }
+        }
+    }
+
     // MARK: - Private
+
+    private func trendingDate(_ text: String?) -> Date {
+        guard let text, let date = ISO8601DateFormatter.shared.date(from: text) else {
+            return .distantPast
+        }
+        return date
+    }
 
     /// 预计算所有 repo 的 AI 评分
     private func precomputeScores() {
