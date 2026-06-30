@@ -131,6 +131,12 @@ final class AppDependencies {
     /// 后端返空 / 不可达时 store 内部退化到 fallbackList，sidebar 始终能展示一组入口。
     let trendingLanguageStore: TrendingLanguageStore
 
+    /// 探索页发现 / 热门 / 新发布使用的目录元数据缓存。
+    ///
+    /// topics / platforms / languages 都来自 starcat-discovery-api，属于可重建公共目录；
+    /// 放在依赖容器中让 Sidebar 与中栏共用同一份会话缓存，避免重复网络请求。
+    let exploreCatalogStore: ExploreCatalogStore
+
     /// 第三方后端服务健康检查 actor（2026-06-08）。
     /// 设置页"测试连接"按钮 → `await serviceHealthChecker.check(service:baseURL:)`。
     /// 独立 actor + 短超时（5s），不复用业务 API session。
@@ -652,6 +658,15 @@ final class AppDependencies {
         // 由 HomeView `.task` 在首次进入时调 `reload()`，与 trending 列表的首屏入场时序一致。
         self.trendingLanguageStore = TrendingLanguageStore(api: trendingAPIInstance)
 
+        // starcat-discovery-api 客户端。发现 / 热门 / 新发布走独立后端服务；
+        // 现有 Trending 仍保持走 trending-api，降低迁移风险。
+        let discoveryAPIInstance = DiscoveryAPI(
+            baseURL: AppEndpoints.Discovery.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .discovery)
+        )
+        self.discoveryAPI = discoveryAPIInstance
+        self.exploreCatalogStore = ExploreCatalogStore(api: discoveryAPIInstance)
+
         // MUL-176：阮一峰周刊 API 客户端。端点走 `AppEndpoints.Weekly.baseURL`。
         // 用户在设置页改地址 → AppDependencies.setServiceURL 推送到本 actor 的
         // updateBaseURL，无需重启 App。
@@ -689,11 +704,6 @@ final class AppDependencies {
         self.recommendAPI = RecommendAPI(
             baseURL: AppEndpoints.Recommend.baseURL,
             apiKey: StarcatAPIKeyResolver.resolve(for: .recommend)
-        )
-
-        self.discoveryAPI = DiscoveryAPI(
-            baseURL: AppEndpoints.Discovery.baseURL,
-            apiKey: StarcatAPIKeyResolver.resolve(for: .discovery)
         )
 
         // 2026-06-15 v4.y：Wiki 磁盘缓存 + SWR 编排。装配顺序：
@@ -1029,6 +1039,9 @@ final class AppDependencies {
         } else if service == .weekly {
             weeklyLanguageStore.invalidate()
             await weeklyLanguageStore.reload()
+        } else if service == .discovery {
+            exploreCatalogStore.invalidate()
+            await exploreCatalogStore.reload(force: true)
         }
 
         // 状态栏服务状态走 `/healthz`，URL 改动后应立即重新检测，避免 toolbar 继续显示旧端点结果。
@@ -1075,6 +1088,9 @@ final class AppDependencies {
         } else if service == .weekly {
             weeklyLanguageStore.invalidate()
             await weeklyLanguageStore.reload()
+        } else if service == .discovery {
+            exploreCatalogStore.invalidate()
+            await exploreCatalogStore.reload(force: true)
         }
     }
 

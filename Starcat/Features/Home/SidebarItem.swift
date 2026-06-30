@@ -38,7 +38,7 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .manage:   return "folder"
-        case .trending: return "chart.line.uptrend.xyaxis"
+        case .trending: return "safari"
         case .activity: return "bell.badge"
         }
     }
@@ -90,7 +90,7 @@ enum SidebarItem: Hashable, Identifiable {
     /// 本地化显示名，用于 SwiftUI Text 自动查找翻译。
     var displayName: LocalizedStringKey {
         switch self {
-        case .trending:                return "trending.title"
+        case .trending:                return "nav.trending"
         case .allStars:                return "sidebar.allRepos"
         case .untagged:                return "sidebar.untagged"
         case .allLanguages:            return "trending.allLanguages"
@@ -111,7 +111,7 @@ enum SidebarItem: Hashable, Identifiable {
     /// 返回的是翻译 key，实际翻译由使用处处理。
     var displayNameKey: String {
         switch self {
-        case .trending:                return "trending.title"
+        case .trending:                return "nav.trending"
         case .allStars:                return "sidebar.allRepos"
         case .untagged:                return "sidebar.untagged"
         case .allLanguages:            return "trending.allLanguages"
@@ -128,7 +128,7 @@ enum SidebarItem: Hashable, Identifiable {
     /// SF Symbol 图标名（用于 Sidebar 行的前置图标）。
     var systemImage: String {
         switch self {
-        case .trending:                return "chart.line.uptrend.xyaxis"
+        case .trending:                return "safari"
         case .allStars:                return "star.fill"
         case .untagged:                return "tag.slash"
         case .allLanguages:            return "globe"

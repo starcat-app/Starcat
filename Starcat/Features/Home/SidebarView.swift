@@ -57,11 +57,19 @@ struct SidebarView: View {
     @State private var githubStarListsExpanded: Bool = false
     /// Trending 语言列表展开/收起状态。和 Manage 的 Languages 分开，避免互相影响。
     @State private var trendingLanguagesExpanded: Bool = true
+    /// Explore 发现模块主题分类展开/收起状态。
+    @State private var exploreTopicsExpanded: Bool = true
+    /// Explore 发现模块平台分类展开/收起状态。
+    @State private var explorePlatformsExpanded: Bool = true
     /// Activity 分类列表展开/收起状态。Activity 是独立 root，不能复用 Trending 的展开态。
     @State private var activityCategoriesExpanded: Bool = true
 
     @Binding var selectedPage: SidebarRootPage
+    @Binding var selectedExploreMode: ExploreMode
     @Binding var selectedTrendingLanguage: TrendingLanguage
+    @Binding var selectedDiscoveryLanguage: String?
+    @Binding var selectedDiscoveryTopic: String?
+    @Binding var selectedDiscoveryPlatform: String?
     @Binding var selectedActivityCategory: ActivityCategory
     @Binding var showTagManagement: Bool
     /// HOM-47：触发 Release 时间线 sheet。
@@ -385,10 +393,17 @@ struct SidebarView: View {
             }
             .listStyle(.sidebar)
         case .trending:
-            List(selection: $selectedTrendingLanguage) {
-                trendingSidebarContent
+            if selectedExploreMode == .trending {
+                List(selection: $selectedTrendingLanguage) {
+                    trendingSidebarContent
+                }
+                .listStyle(.sidebar)
+            } else {
+                List {
+                    exploreSidebarContent
+                }
+                .listStyle(.sidebar)
             }
-            .listStyle(.sidebar)
         case .activity:
             List(selection: $selectedActivityCategory) {
                 activitySidebarContent
@@ -467,6 +482,63 @@ struct SidebarView: View {
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var exploreSidebarContent: some View {
+        switch selectedExploreMode {
+        case .discover:
+            exploreDiscoverySidebarContent
+        case .popular, .newReleases:
+            exploreLanguageSidebarContent
+        case .trending:
+            trendingSidebarContent
+        }
+    }
+
+    @ViewBuilder
+    private var exploreDiscoverySidebarContent: some View {
+        Section {
+            exploreTopicRow(nil)
+
+            if exploreTopicsExpanded {
+                ForEach(dependencies.exploreCatalogStore.displayTopics) { topic in
+                    exploreTopicRow(topic)
+                        .transition(Self.disclosureRowTransition)
+                }
+            }
+        } header: {
+            exploreTopicSectionHeader
+        }
+
+        Section {
+            explorePlatformRow(nil)
+
+            if explorePlatformsExpanded {
+                ForEach(dependencies.exploreCatalogStore.displayPlatforms) { platform in
+                    explorePlatformRow(platform)
+                        .transition(Self.disclosureRowTransition)
+                }
+            }
+        } header: {
+            explorePlatformSectionHeader
+        }
+    }
+
+    @ViewBuilder
+    private var exploreLanguageSidebarContent: some View {
+        Section {
+            exploreLanguageRow(nil)
+
+            if trendingLanguagesExpanded {
+                ForEach(dependencies.exploreCatalogStore.displayLanguages) { language in
+                    exploreLanguageRow(language)
+                        .transition(Self.disclosureRowTransition)
+                }
+            }
+        } header: {
+            exploreLanguageSectionHeader
         }
     }
 
@@ -797,6 +869,93 @@ struct SidebarView: View {
         .help(disclosureHelp(isExpanded: languagesExpanded))
     }
 
+    private var exploreTopicSectionHeader: some View {
+        Button {
+            withAnimation(disclosureAnimation) {
+                exploreTopicsExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text("explore.sidebar.categories")
+                    .font(interfaceScale.font(size: 13))
+
+                Spacer(minLength: 8)
+
+                Text(dependencies.exploreCatalogStore.displayTopics.count.formatted())
+                    .font(interfaceScale.font(size: 11))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+
+                disclosureChevron(isExpanded: exploreTopicsExpanded)
+                    .frame(width: 20, height: 20)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(disclosureHelp(isExpanded: exploreTopicsExpanded))
+    }
+
+    private var explorePlatformSectionHeader: some View {
+        Button {
+            withAnimation(disclosureAnimation) {
+                explorePlatformsExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text("explore.sidebar.platforms")
+                    .font(interfaceScale.font(size: 13))
+
+                Spacer(minLength: 8)
+
+                Text(dependencies.exploreCatalogStore.displayPlatforms.count.formatted())
+                    .font(interfaceScale.font(size: 11))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+
+                disclosureChevron(isExpanded: explorePlatformsExpanded)
+                    .frame(width: 20, height: 20)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(disclosureHelp(isExpanded: explorePlatformsExpanded))
+    }
+
+    private var exploreLanguageSectionHeader: some View {
+        Button {
+            withAnimation(disclosureAnimation) {
+                trendingLanguagesExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text("sidebar.languages")
+                    .font(interfaceScale.font(size: 13))
+
+                Spacer(minLength: 8)
+
+                Text(dependencies.exploreCatalogStore.displayLanguages.count.formatted())
+                    .font(interfaceScale.font(size: 11))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+
+                disclosureChevron(isExpanded: trendingLanguagesExpanded)
+                    .frame(width: 20, height: 20)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(disclosureHelp(isExpanded: trendingLanguagesExpanded))
+    }
+
     private var trendingLanguageSectionHeader: some View {
         Button {
             withAnimation(disclosureAnimation) {
@@ -878,6 +1037,123 @@ struct SidebarView: View {
     // 列表展示 Swift 但点进去 0 条）。新实现走 `dependencies.trendingLanguageStore.displayList`，
     // 直接消费后端 `/api/v1/languages` 聚合接口的结果（含 `__uncategorized__` 项）。
     // 历史代码可在 git blame / commit `trending sidebar 切换到后端聚合接口` 之前的版本里找回。
+
+    private func exploreTopicRow(_ topic: DiscoveryTopicDTO?) -> some View {
+        let code = topic?.code
+        let isSelected = selectedDiscoveryTopic == code
+        return exploreSelectableRow(
+            isSelected: isSelected,
+            action: { selectedDiscoveryTopic = code },
+            icon: topic == nil ? "square.grid.2x2" : "circle.fill",
+            iconColor: topic == nil ? .secondary : .accentColor.opacity(0.7),
+            count: nil
+        ) {
+            if let topic {
+                Text(verbatim: topic.label)
+            } else {
+                Text("explore.allCategories")
+            }
+        }
+    }
+
+    private func explorePlatformRow(_ platform: DiscoveryPlatformDTO?) -> some View {
+        let code = platform?.code
+        let isSelected = selectedDiscoveryPlatform == code
+        return exploreSelectableRow(
+            isSelected: isSelected,
+            action: { selectedDiscoveryPlatform = code },
+            icon: platform?.systemName ?? "square.stack.3d.up",
+            iconColor: .secondary,
+            count: nil
+        ) {
+            if let platform {
+                Text(verbatim: platform.label)
+            } else {
+                Text("explore.allPlatforms")
+            }
+        }
+    }
+
+    private func exploreLanguageRow(_ language: DiscoveryLanguageDTO?) -> some View {
+        let key = language?.key
+        let isSelected = selectedDiscoveryLanguage == key
+        return exploreSelectableRow(
+            isSelected: isSelected,
+            action: { selectedDiscoveryLanguage = key },
+            icon: nil,
+            iconColor: .secondary,
+            count: (language?.count ?? 0) > 0 ? language?.count : nil
+        ) {
+            if let language {
+                HStack(spacing: 7) {
+                    exploreLanguageIcon(language)
+                    Text(verbatim: exploreLanguageTitle(language))
+                }
+            } else {
+                HStack(spacing: 7) {
+                    AllLanguagesIcon(size: 14)
+                    Text("explore.allLanguages")
+                }
+            }
+        }
+    }
+
+    private func exploreSelectableRow<Title: View>(
+        isSelected: Bool,
+        action: @escaping () -> Void,
+        icon: String?,
+        iconColor: Color,
+        count: Int?,
+        @ViewBuilder title: @escaping () -> Title
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if let icon {
+                    Image(systemName: icon)
+                        .font(interfaceScale.font(size: 13, weight: .semibold))
+                        .foregroundStyle(iconColor)
+                        .frame(width: 16)
+                }
+
+                title()
+                    .lineLimit(1)
+
+                Spacer(minLength: 4)
+
+                if let count {
+                    Text(count.formatted())
+                        .font(interfaceScale.font(size: 11))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+            .background(
+                isSelected ? Color.accentColor.opacity(0.14) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+
+    @ViewBuilder
+    private func exploreLanguageIcon(_ language: DiscoveryLanguageDTO) -> some View {
+        if language.key == TrendingLanguage.uncategorizedKey {
+            UncategorizedLanguageIcon(size: 14)
+        } else {
+            LanguageIconView(language: language.key, size: 14)
+        }
+    }
+
+    private func exploreLanguageTitle(_ language: DiscoveryLanguageDTO) -> String {
+        if language.key == TrendingLanguage.uncategorizedKey {
+            return String.l10n("trending.language.uncategorized")
+        }
+        return LanguageDisplayName.shortened(for: language.key)
+    }
 
     /// Trending 语言行。`count` 为 nil 时不展示行尾计数（fallbackList / All 行）。
     @ViewBuilder

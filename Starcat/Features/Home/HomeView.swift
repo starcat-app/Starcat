@@ -110,11 +110,25 @@ struct HomeView: View {
     /// Trending 页从左侧语言列表驱动的语言筛选。
     @State private var selectedTrendingLanguage: TrendingLanguage = .all
 
+    /// Explore 页二级模块。内部仍挂在 SidebarRootPage.trending 下，用户可见文案已升级为「探索」。
+    @State private var selectedExploreMode: ExploreMode = .discover
+
     /// Trending 当前选中的 repo ID（用于驱动 README 加载）。
     @State private var selectedTrendingRepoID: String?
 
     /// Trending 当前选中的 repo 完整数据（用于右侧详情页展示元信息）。
     @State private var selectedTrendingRepo: TrendingRepo?
+
+    /// Discovery API 三个模块（发现 / 热门 / 新发布）的左栏语言筛选。
+    @State private var selectedDiscoveryLanguage: String?
+    /// Discovery API 发现模块的主题筛选。
+    @State private var selectedDiscoveryTopic: String?
+    /// Discovery API 发现模块的平台筛选。
+    @State private var selectedDiscoveryPlatform: String?
+    /// Discovery API 当前选中的 repo ID。
+    @State private var selectedDiscoveryRepoID: Int64?
+    /// Discovery API 当前选中的完整 repo 数据，驱动右侧详情。
+    @State private var selectedDiscoveryRepo: DiscoveryRepoDTO?
 
     /// Manage 页面记住上次选择的分类（language / tag / allStars / untagged）。
     /// 切换到 Trending 再回来时恢复，避免用户丢失浏览上下文。
@@ -217,7 +231,11 @@ struct HomeView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(
                 selectedPage: $selectedSidebarPage,
+                selectedExploreMode: $selectedExploreMode,
                 selectedTrendingLanguage: $selectedTrendingLanguage,
+                selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
+                selectedDiscoveryTopic: $selectedDiscoveryTopic,
+                selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
                 selectedActivityCategory: $selectedActivityCategory,
                 showTagManagement: $showTagManagement,
                 showReleaseTimeline: $showReleaseTimeline,
@@ -239,9 +257,15 @@ struct HomeView: View {
                 trendingRepository: trendingRepository,
                 githubAPIClient: githubAPIClient,
                 selectedPage: selectedSidebarPage,
+                selectedExploreMode: $selectedExploreMode,
                 selectedTrendingLanguage: $selectedTrendingLanguage,
                 selectedTrendingRepoID: $selectedTrendingRepoID,
                 selectedTrendingRepo: $selectedTrendingRepo,
+                selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
+                selectedDiscoveryTopic: $selectedDiscoveryTopic,
+                selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
+                selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
+                selectedDiscoveryRepo: $selectedDiscoveryRepo,
                 selectedActivityCategory: $selectedActivityCategory,
                 selectedActivityItem: $selectedActivityItem,
                 showsAgentToolbarEntry: showsAgentToolbarEntry,
@@ -271,6 +295,8 @@ struct HomeView: View {
                 } else {
                     ActivityDetailView(item: selectedActivityItem)
                 }
+            } else if selectedSidebarPage == .trending, selectedExploreMode != .trending {
+                DiscoveryDetailView(item: selectedDiscoveryRepo)
             } else {
                 RepoDetailView(
                     selectedTrendingRepo: selectedTrendingRepo
@@ -632,6 +658,8 @@ struct HomeView: View {
             viewModel.selectedRepoID = nil
             selectedTrendingRepoID = nil
             selectedTrendingRepo = nil
+            selectedDiscoveryRepoID = nil
+            selectedDiscoveryRepo = nil
             selectedActivityItem = nil
             // MUL-176 followup：切走 Activity 时一并清掉周刊选中，避免下次回 Activity
             // 时右侧详情停留在上次的周刊项目上。
@@ -827,6 +855,7 @@ struct HomeView: View {
         // 而后端 `/api/v1/languages` 不依赖 GitHub OAuth，仅依赖 Bearer Auth（用户 API Key 已就位）。
         Task {
             await dependencies.trendingLanguageStore.reload()
+            await dependencies.exploreCatalogStore.reload()
         }
     }
 

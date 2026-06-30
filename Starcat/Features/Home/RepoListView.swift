@@ -57,11 +57,17 @@ struct RepoListView: View {
     var githubAPIClient: (any GitHubAPIClientProtocol)?
 
     let selectedPage: SidebarRootPage
+    @Binding var selectedExploreMode: ExploreMode
     @Binding var selectedTrendingLanguage: TrendingLanguage
     /// 当前选中的 Trending repo ID（用于卡片高亮和 README 加载）。
     @Binding var selectedTrendingRepoID: String?
     /// 当前选中的 Trending repo 完整数据（用于右侧详情页元信息展示）。
     @Binding var selectedTrendingRepo: TrendingRepo?
+    @Binding var selectedDiscoveryLanguage: String?
+    @Binding var selectedDiscoveryTopic: String?
+    @Binding var selectedDiscoveryPlatform: String?
+    @Binding var selectedDiscoveryRepoID: Int64?
+    @Binding var selectedDiscoveryRepo: DiscoveryRepoDTO?
     /// Activity 页当前分类。
     @Binding var selectedActivityCategory: ActivityCategory
     /// Activity 页当前选中项，驱动右侧详情。
@@ -168,6 +174,12 @@ struct RepoListView: View {
         // 底部多选栏"的视觉穿帮。同一时刻只允许一份处于 isActive，由本视图集中保证。
         .onChange(of: selectedPage) { _, newPage in
             exitInactiveMultiSelectStores(for: newPage, activityCategory: selectedActivityCategory)
+        }
+        .onChange(of: selectedExploreMode) { _, newMode in
+            if newMode != .trending {
+                let store = dependencies.trendingMultiSelectionStore
+                if store.isActive { store.exit() }
+            }
         }
         .onChange(of: selectedActivityCategory) { _, newCategory in
             // activity 内切换 weekly ↔ 其它子分类时，旧分类对应的 store 也要清空。
@@ -326,6 +338,9 @@ struct RepoListView: View {
             if weekly.isActive { weekly.exit() }
             if activity.isActive { activity.exit() }
         case .trending:
+            if selectedExploreMode != .trending, trending.isActive {
+                trending.exit()
+            }
             if manage.isActive { manage.exit() }
             if weekly.isActive { weekly.exit() }
             if activity.isActive { activity.exit() }
@@ -359,6 +374,9 @@ struct RepoListView: View {
         if let language = selectedTrendingRepo?.language, !language.isEmpty {
             return LanguageColor.color(for: language)
         }
+        if let language = selectedDiscoveryRepo?.language, !language.isEmpty {
+            return LanguageColor.color(for: language)
+        }
         if let item = selectedActivityItem {
             return item.accentColor
         }
@@ -387,7 +405,7 @@ struct RepoListView: View {
             }
         case .trending:
             let store = dependencies.trendingMultiSelectionStore
-            if store.isActive {
+            if selectedExploreMode == .trending, store.isActive {
                 RemoteBatchActionBar(store: store)
             }
         case .activity:
@@ -403,7 +421,7 @@ struct RepoListView: View {
     private var currentToolbarSpec: PageToolbarSpec {
         switch selectedPage {
         case .manage:    return makeManageToolbarSpec()
-        case .trending:  return makeTrendingToolbarSpec()
+        case .trending:  return selectedExploreMode == .trending ? makeTrendingToolbarSpec() : makeDiscoveryToolbarSpec()
         case .activity:  return makeActivityToolbarSpec()
         }
     }
@@ -454,6 +472,36 @@ struct RepoListView: View {
                 }
             )
         }()
+
+        return PageToolbarSpec(trailingPrimary: trailing)
+    }
+
+    /// Explore 的 Discovery 子模块 toolbar spec。
+    ///
+    /// 发现 / 热门 / 新发布列表项来自公共后端快照，首期不支持批量 star/unstar；
+    /// 选中单仓库时只暴露外链 / clone / 分享等与其它远端列表一致的安全动作。
+    @MainActor
+    private func makeDiscoveryToolbarSpec() -> PageToolbarSpec {
+        let registry = dependencies.starredRegistry
+
+        let trailing: AnyView? = selectedDiscoveryRepo.map { repo in
+            let isStarred = registry.contains(ghRepoId: repo.repoID)
+            let actionRepo = repo.toEphemeralRepo(isStarred: isStarred)
+            let selection = ToolbarRepoSelection.from(
+                repo: actionRepo,
+                isStarred: isStarred
+            )
+            return AnyView(
+                Group {
+                    selectedRepoToolbarActions(
+                        selection: selection,
+                        codeFlowRepo: actionRepo.isPrivate ? nil : actionRepo,
+                        shareRepo: actionRepo,
+                        isShareAvailable: isStarred
+                    )
+                }
+            )
+        }
 
         return PageToolbarSpec(trailingPrimary: trailing)
     }
@@ -793,19 +841,20 @@ struct RepoListView: View {
 
         Group {
             if selectedPage == .trending {
-                // HOM-54：Trending 页面
-                if let repo = trendingRepository, let githubAPIClient {
-                    TrendingView(
-                        repository: repo,
-                        githubAPIClient: githubAPIClient,
-                        selectedLanguage: $selectedTrendingLanguage,
-                        selectedRepoID: $selectedTrendingRepoID,
-                        selectedTrendingRepo: $selectedTrendingRepo,
-                        onRepoCountChange: { trendingRepoCount = $0 }
-                    )
-                } else {
-                    emptyState(systemImage: "chart.line.uptrend.xyaxis", title: "empty.trendingUnavailable", subtitle: "empty.trendingComingSoon")
-                }
+                ExploreView(
+                    trendingRepository: trendingRepository,
+                    githubAPIClient: githubAPIClient,
+                    selectedMode: $selectedExploreMode,
+                    selectedTrendingLanguage: $selectedTrendingLanguage,
+                    selectedTrendingRepoID: $selectedTrendingRepoID,
+                    selectedTrendingRepo: $selectedTrendingRepo,
+                    selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
+                    selectedDiscoveryTopic: $selectedDiscoveryTopic,
+                    selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
+                    selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
+                    selectedDiscoveryRepo: $selectedDiscoveryRepo,
+                    onRepoCountChange: { trendingRepoCount = $0 }
+                )
             } else if selectedPage == .activity {
                 ActivityView(
                     selectedCategory: $selectedActivityCategory,
@@ -999,7 +1048,10 @@ struct RepoListView: View {
     /// 仅 weekly ↔ 其它 数据源/根视图不同，保留 `"activity-weekly"` / `"activity-local"` 二分。
     private var contentStateKey: String {
         if selectedPage == .trending {
-            return "trending-\(selectedTrendingLanguage.id)"
+            if selectedExploreMode == .trending {
+                return "trending-\(selectedTrendingLanguage.id)"
+            }
+            return "explore-\(selectedExploreMode.id)"
         }
         if selectedPage == .activity {
             return selectedActivityCategory == .weekly ? "activity-weekly" : "activity-local"
@@ -1381,9 +1433,12 @@ struct RepoListView: View {
 
     private var navigationTitle: String {
         if selectedPage == .trending {
+            let leaf = selectedExploreMode == .trending
+                ? "\(selectedExploreMode.localizedTitle) · \(selectedTrendingLanguage.localizedDisplayName)"
+                : selectedExploreMode.localizedTitle
             return breadcrumbTitle(
-                root: String.l10n("trending.title"),
-                leaf: selectedTrendingLanguage.localizedDisplayName
+                root: String.l10n("nav.trending"),
+                leaf: leaf
             )
         }
         if selectedPage == .activity {
@@ -1434,7 +1489,7 @@ struct RepoListView: View {
     private func localizedTitle(for item: SidebarItem) -> String {
         switch item {
         case .trending:
-            return String.l10n("trending.title")
+            return String.l10n("nav.trending")
         case .allStars:
             return String.l10n("sidebar.allRepos")
         case .allLanguages:

@@ -10,7 +10,7 @@
 
 import Foundation
 
-struct DiscoveryRepoDTO: Decodable, Identifiable, Hashable {
+struct DiscoveryRepoDTO: Decodable, Identifiable, Hashable, Sendable {
     let repoID: Int64
     let fullName: String
     let owner: String
@@ -78,13 +78,13 @@ struct DiscoveryRepoDTO: Decodable, Identifiable, Hashable {
     }
 }
 
-struct DiscoverySignalDTO: Decodable, Hashable {
+struct DiscoverySignalDTO: Decodable, Hashable, Sendable {
     let code: String
     let label: String
     let value: String?
 }
 
-struct DiscoveryLanguageDTO: Decodable, Identifiable, Hashable {
+struct DiscoveryLanguageDTO: Decodable, Identifiable, Hashable, Sendable {
     let key: String
     let label: String
     let count: Int
@@ -92,14 +92,14 @@ struct DiscoveryLanguageDTO: Decodable, Identifiable, Hashable {
     var id: String { key }
 }
 
-struct DiscoveryTopicDTO: Decodable, Identifiable, Hashable {
+struct DiscoveryTopicDTO: Decodable, Identifiable, Hashable, Sendable {
     let code: String
     let label: String
 
     var id: String { code }
 }
 
-struct DiscoveryPlatformDTO: Decodable, Identifiable, Hashable {
+struct DiscoveryPlatformDTO: Decodable, Identifiable, Hashable, Sendable {
     let code: String
     let label: String
     let systemName: String?
@@ -113,7 +113,7 @@ struct DiscoveryPlatformDTO: Decodable, Identifiable, Hashable {
     }
 }
 
-struct DiscoveryPage: Equatable {
+struct DiscoveryPage: Equatable, Sendable {
     let items: [DiscoveryRepoDTO]
     let total: Int
     let page: Int
@@ -121,11 +121,108 @@ struct DiscoveryPage: Equatable {
     let nextPage: Int?
 }
 
-struct DiscoveryListQuery: Equatable, Hashable {
+struct DiscoveryListQuery: Equatable, Hashable, Sendable {
     var language: String?
     var platform: String?
     var topic: String?
     var sort: String?
     var page: Int = 1
     var limit: Int = 20
+}
+
+extension DiscoveryRepoDTO {
+
+    /// Discovery API 的列表 DTO 转成统一仓库卡片数据。
+    ///
+    /// Discovery endpoint 有自己的排名、平台和推荐原因语义，但列表卡片仍应复用
+    /// `UnifiedRepoRow`，因此只在这里做薄适配，不把 discovery 字段塞进共享 DTO。
+    @MainActor
+    func asCardData(
+        registry: StarredRegistry,
+        openSSFScore: OpenSSFScoreBadgeData? = nil,
+        healthBadge: RepoHealthBadgeData? = nil
+    ) -> RepoCardViewData {
+        RepoCardViewData(
+            ghRepoId: repoID,
+            fullName: fullName,
+            owner: owner,
+            repo: name,
+            avatarURL: ownerAvatar.flatMap(URL.init(string:)),
+            description: description,
+            language: language,
+            starsCount: stars,
+            forksCount: forks,
+            isArchived: isArchived,
+            isFork: isFork,
+            isPrivate: false,
+            isStarred: registry.contains(ghRepoId: repoID),
+            badge: nil,
+            weeklySources: [],
+            weeklySourceLabel: nil,
+            inlineMetadata: latestReleaseAt.map {
+                RepoCardInlineMetadata(systemImage: "shippingbox", text: $0)
+            },
+            readStatus: nil,
+            openSSFScore: openSSFScore,
+            healthBadge: healthBadge
+        )
+    }
+
+    /// 构造只用于详情页展示和 star 操作的临时 Repo。
+    ///
+    /// 关键约束：Discovery API 返回的是公共仓库快照，不能直接落入本地 `repos` 表。
+    /// Star 成功后仍由 `StarActionService` 通过 GitHub `/repos` 拉真值并写库。
+    func toEphemeralRepo(isStarred: Bool) -> Repo {
+        Repo(
+            id: repoID,
+            owner: owner,
+            name: name,
+            fullName: fullName,
+            description: description,
+            language: language,
+            starsCount: stars,
+            forksCount: forks,
+            watchersCount: watchers,
+            topics: topicsJSON,
+            license: licenseSpdx,
+            homepage: homepage,
+            htmlUrl: GitHubURLs.repo(owner: owner, repo: name).absoluteString,
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            isFork: isFork,
+            isArchived: isArchived,
+            isStarred: isStarred,
+            pushedAt: pushedAt,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            starredAt: nil,
+            cachedAt: nil,
+            ownerAvatar: ownerAvatar,
+            subscribersCount: subscribers,
+            defaultBranch: defaultBranch,
+            openIssuesCount: openIssues
+        )
+    }
+
+    var githubURL: URL {
+        GitHubURLs.repo(owner: owner, repo: name)
+    }
+
+    var latestReleaseWebURL: URL? {
+        latestReleaseURL.flatMap(URL.init(string:))
+    }
+
+    var latestReleaseDate: Date? {
+        latestReleaseAt.flatMap(ISO8601DateFormatter.shared.date(from:))
+    }
+
+    private var topicsJSON: String? {
+        guard !topics.isEmpty else { return nil }
+        guard let data = try? JSONEncoder().encode(topics),
+              let string = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return string
+    }
 }
