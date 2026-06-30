@@ -66,6 +66,8 @@ struct RepoListView: View {
     @Binding var selectedActivityCategory: ActivityCategory
     /// Activity 页当前选中项，驱动右侧详情。
     @Binding var selectedActivityItem: ActivityItem?
+    /// Agent 功能当前不随正式产品入口上线；Debug 菜单打开后才显示 toolbar 入口。
+    let showsAgentToolbarEntry: Bool
 
     /// HOM-52：Untagged 视图顶部 banner 的"启动整理 / 查看进度"回调。
     /// 这两个动作产生 sheet 由 HomeView 统一承载（避免 RepoListView 多持一个 @State）。
@@ -263,13 +265,15 @@ struct RepoListView: View {
                 currentBatchActionBar
             }
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        onOpenAgentWorkspace?()
-                    } label: {
-                        Label("Agent", systemImage: "sparkles")
+                if showsAgentToolbarEntry {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            onOpenAgentWorkspace?()
+                        } label: {
+                            Label("Agent", systemImage: "sparkles")
+                        }
+                        .help("Open Agent Workspace")
                     }
-                    .help("Open Agent Workspace")
                 }
                 ToolbarItem(placement: .primaryAction) {
                     AppStatusToolbarButton(

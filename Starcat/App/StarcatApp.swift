@@ -348,6 +348,16 @@ struct StarcatApp: App {
 						userInfo: [Self.debugProOverrideActiveKey: false]
 					)
 				}
+
+				Divider()
+
+				Toggle(
+					"Show Agent Toolbar Entry",
+					isOn: Binding(
+						get: { DebugFlags.agentToolbarEntry },
+						set: { DebugFlags.setAgentToolbarEntry($0) }
+					)
+				)
 			}
 		}
 	}

@@ -86,6 +86,11 @@ struct HomeView: View {
     /// Agent 是一个长任务工作模式，不适合塞进 sheet；这里用主窗口覆盖层承载，
     /// 让后续所有内置 Agent 共用同一套步骤时间线和 Artifact 预览。
     @State private var showAgentWorkspace: Bool = false
+    /// Agent 功能尚未进入正式上线面，toolbar 入口默认由 Debug 菜单隐藏。
+    ///
+    /// 这里用 HomeView 本地状态承接 `DebugFlags`，是因为 UserDefaults 写入不会自动触发
+    /// SwiftUI 刷新；Debug 菜单广播后更新该状态，RepoListView 的 toolbar 立即重建。
+    @State private var showsAgentToolbarEntry: Bool = DebugFlags.agentToolbarEntry
 
     /// 三栏显示状态。
     ///
@@ -239,6 +244,7 @@ struct HomeView: View {
                 selectedTrendingRepo: $selectedTrendingRepo,
                 selectedActivityCategory: $selectedActivityCategory,
                 selectedActivityItem: $selectedActivityItem,
+                showsAgentToolbarEntry: showsAgentToolbarEntry,
                 onStartBatchAI: {
                     // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
                     // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
@@ -313,6 +319,12 @@ struct HomeView: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.20), value: searchCenterViewModel.isPresented)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: showAgentWorkspace)
         .preference(key: AgentWorkspaceActivePreferenceKey.self, value: showAgentWorkspace)
+        .onReceive(NotificationCenter.default.publisher(for: DebugFlags.agentToolbarEntryDidChangeNotification)) { _ in
+            showsAgentToolbarEntry = DebugFlags.agentToolbarEntry
+            if !showsAgentToolbarEntry {
+                showAgentWorkspace = false
+            }
+        }
         // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
         .background {
             Button("") { searchCenterViewModel.present() }

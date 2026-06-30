@@ -58,6 +58,9 @@ import Foundation
 /// 这种方式持久化到 `~/Library/Containers/com.starcat.app/Data/Library/Preferences/com.starcat.app.plist`，
 /// 直接编辑那个 plist 文件也是一回事。
 enum DebugFlags {
+    static let agentToolbarEntryDidChangeNotification = Notification.Name("DebugFlags.agentToolbarEntryDidChange")
+
+    private static let agentToolbarEntryKey = "DebugAgentToolbarEntry"
 
     /// 是否在主窗口右上角显示布局尺寸 overlay（W × H 胶囊）。
     ///
@@ -83,6 +86,29 @@ enum DebugFlags {
         #else
         // Release 包永远关闭，避免把 AI 原始响应写入用户环境日志。
         return false
+        #endif
+    }
+
+    /// 是否显示尚未上线的 Agent toolbar 入口。
+    ///
+    /// Agent 工作台当前仍是开发期能力，默认隐藏主界面入口；通过 Debug 菜单临时打开，
+    /// 便于本机验证功能而不让未上线入口进入常规产品路径。Release 包永远关闭。
+    static var agentToolbarEntry: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: agentToolbarEntryKey)
+        #else
+        return false
+        #endif
+    }
+
+    /// 切换 Agent toolbar 入口并广播给已挂载的主窗口。
+    ///
+    /// UserDefaults 写入本身不会触发 SwiftUI 视图刷新；Debug 菜单切换后发通知，让
+    /// `HomeView` 立即更新本地状态，避免必须重启 App 才能看到入口变化。
+    static func setAgentToolbarEntry(_ isVisible: Bool) {
+        #if DEBUG
+        UserDefaults.standard.set(isVisible, forKey: agentToolbarEntryKey)
+        NotificationCenter.default.post(name: agentToolbarEntryDidChangeNotification, object: nil)
         #endif
     }
 }
