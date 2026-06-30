@@ -19,6 +19,8 @@ enum ReadmePrefetchServiceStatus: Equatable, Sendable {
     case coolingDown(until: Date)
     case waitingForRetry
     case completed(processed: Int, total: Int)
+    case allPrefetched(total: Int)
+    case noStarredRepos
     case disabled
 }
 
@@ -84,7 +86,7 @@ final class ReadmePrefetchService {
 
         resetRunCounters(total: candidates.count)
         guard !candidates.isEmpty else {
-            status = .completed(processed: 0, total: 0)
+            await updateEmptyCandidateStatus()
             lastRunAt = Date()
             return 0
         }
@@ -132,6 +134,31 @@ final class ReadmePrefetchService {
         notFound = 0
         failures = 0
         lastFailureKind = nil
+    }
+
+    /// 空候选项需要二次确认覆盖率。
+    ///
+    /// 候选为空并不等于“本轮检查 0/0”：也可能是所有 Star 仓库都已经具备 HTML + Markdown
+    /// 缓存。这里补一次轻量聚合查询，让手动“立即拉取”在全量完成时给出明确结果。
+    private func updateEmptyCandidateStatus() async {
+        do {
+            let summary = try await repository.coverageSummary()
+            processed = summary.prefetchedTotal
+            total = summary.starredTotal
+
+            if summary.starredTotal == 0 {
+                status = .noStarredRepos
+            } else if summary.isAllPrefetched {
+                status = .allPrefetched(total: summary.starredTotal)
+            } else {
+                status = .completed(processed: summary.prefetchedTotal, total: summary.starredTotal)
+            }
+        } catch {
+            failures += 1
+            status = .waitingForRetry
+            lastFailureKind = Self.errorKind(error)
+            AppLog.network.warning("README prefetch coverage query failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// 处理单个 repo。

@@ -120,6 +120,38 @@ struct ReadmePrefetchServiceTests {
         #expect(sut.service.lastFailureKind?.contains("readme_prefetch_states") == false)
     }
 
+    @Test("全部 Star 仓库已有 README 缓存时显示已全部拉取")
+    func allPrefetchedWhenCoverageMatchesStarredTotal() async throws {
+        let sut = try await makeSUT()
+        try await sut.db.insertRepoFixture(id: 6, owner: "alice", name: "done-a")
+        try await sut.db.insertRepoFixture(id: 7, owner: "alice", name: "done-b")
+
+        for id in [Int64(6), Int64(7)] {
+            try await sut.readmeRepository.upsert(Readme(
+                repoId: id,
+                renderedHtml: "<p>cached-\(id)</p>",
+                etag: "\"html-\(id)\"",
+                lastModified: nil,
+                cachedAt: ISO8601DateFormatter.shared.string(from: Date()),
+                size: "<p>cached-\(id)</p>".utf8.count
+            ))
+            try await sut.readmeRepository.upsertContent(
+                repoId: id,
+                content: "# cached-\(id)",
+                at: Date()
+            )
+        }
+
+        let processed = await sut.service.runBatch(limit: 10, delayBetweenRepos: 0)
+
+        #expect(processed == 0)
+        #expect(sut.api.readmeHTMLCalls.isEmpty)
+        #expect(sut.api.readmeMarkdownCalls.isEmpty)
+        #expect(sut.service.status == .allPrefetched(total: 2))
+        #expect(sut.service.processed == 2)
+        #expect(sut.service.total == 2)
+    }
+
     private func makeSUT() async throws -> (
         service: ReadmePrefetchService,
         prefetchRepository: ReadmePrefetchRepository,

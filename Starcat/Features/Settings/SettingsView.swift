@@ -1443,6 +1443,13 @@ private struct ReadmePrefetchSettingsStatusView<Action: View>: View {
                 service.markdownUpdated,
                 service.failures
             )
+        case .allPrefetched(let total):
+            return String(
+                format: String.l10n("settings.storage.readmePrefetch.allPrefetchedFormat"),
+                total
+            )
+        case .noStarredRepos:
+            return String.l10n("settings.storage.readmePrefetch.noStarredRepos")
         case .idle:
             if let lastRunAt = service.lastRunAt {
                 return String(
@@ -1467,6 +1474,10 @@ private struct ReadmePrefetchSettingsStatusView<Action: View>: View {
             return .orange
         case .completed:
             return .green
+        case .allPrefetched:
+            return .green
+        case .noStarredRepos:
+            return .secondary
         case .idle, .disabled:
             return .secondary
         }

@@ -372,6 +372,13 @@ private struct AppStatusPanel: View {
                 readmePrefetchService.markdownUpdated,
                 readmePrefetchService.failures
             )
+        case .allPrefetched(let total):
+            return String(
+                format: String.l10n("settings.storage.readmePrefetch.allPrefetchedFormat"),
+                total
+            )
+        case .noStarredRepos:
+            return String.l10n("settings.storage.readmePrefetch.noStarredRepos")
         case .idle:
             if let lastRunAt = readmePrefetchService.lastRunAt {
                 return String(format: String.l10n("toolbar.status.readmePrefetch.lastFormat"), relativePastDate(lastRunAt))
@@ -396,6 +403,7 @@ private struct AppStatusPanel: View {
         if readmePrefetchService.isRunning || readmePrefetchDraining || isReadmePrefetchCoolingDown || batchService.isRunning || batchService.isPaused {
             return .accentColor
         }
+        if isReadmePrefetchAllFetched { return .green }
         return .secondary
     }
 
@@ -446,6 +454,11 @@ private struct AppStatusPanel: View {
 
     private var isReadmePrefetchWaitingForRetry: Bool {
         if case .waitingForRetry = readmePrefetchService.status { return true }
+        return false
+    }
+
+    private var isReadmePrefetchAllFetched: Bool {
+        if case .allPrefetched = readmePrefetchService.status { return true }
         return false
     }
 

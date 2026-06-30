@@ -28099,6 +28099,40 @@
         }
       }
     },
+    "settings.storage.readmePrefetch.allPrefetchedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All READMEs fetched (%d repositories)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已全部拉取（%d 个仓库）"
+          }
+        }
+      }
+    },
+    "settings.storage.readmePrefetch.noStarredRepos" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No starred repositories yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无已 Star 仓库"
+          }
+        }
+      }
+    },
     "settings.storage.readmePrefetch.nextRunFormat" : {
       "extractionState" : "manual",
       "localizations" : {

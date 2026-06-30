@@ -13,6 +13,16 @@
 import Foundation
 import GRDB
 
+/// 当前 Star 仓库 README 预拉覆盖情况。
+struct ReadmePrefetchCoverageSummary: Equatable, Sendable {
+    let starredTotal: Int
+    let prefetchedTotal: Int
+
+    var isAllPrefetched: Bool {
+        starredTotal > 0 && prefetchedTotal >= starredTotal
+    }
+}
+
 /// README 后台预拉持久化层。
 struct ReadmePrefetchRepository: Sendable {
 
@@ -58,6 +68,37 @@ struct ReadmePrefetchRepository: Sendable {
                 LIMIT ?
                 """,
                 arguments: [nowISO, staleISO, safeLimit]
+            )
+        }
+    }
+
+    /// 统计当前 Star 仓库中已具备 HTML + raw Markdown 缓存的数量。
+    ///
+    /// `fetchCandidates` 只回答“本轮还有谁需要处理”，无法区分“没有候选项”是因为全部完成、
+    /// 暂无 Star，还是剩余仓库都在 retry 冷却中。设置页需要这个 summary 给出准确用户态状态。
+    func coverageSummary() async throws -> ReadmePrefetchCoverageSummary {
+        try await database.writer.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT
+                    COUNT(*) AS starred_total,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN rm.repo_id IS NOT NULL AND rc.repo_id IS NOT NULL THEN 1
+                            ELSE 0
+                        END
+                    ), 0) AS prefetched_total
+                FROM repos r
+                LEFT JOIN readmes rm ON rm.repo_id = r.id
+                LEFT JOIN readme_contents rc ON rc.repo_id = r.id
+                WHERE r.is_starred = 1
+                """
+            )
+
+            return ReadmePrefetchCoverageSummary(
+                starredTotal: row?["starred_total"] ?? 0,
+                prefetchedTotal: row?["prefetched_total"] ?? 0
             )
         }
     }
