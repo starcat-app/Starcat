@@ -35,8 +35,8 @@ protocol ReleaseRepositoryProtocol: Sendable {
     func fetch(forRepo repoId: Int64, limit: Int) async throws -> [ReleaseRecord]
 
     /// 时间线主查询：仅返回当前订阅且 is_subscribed=1 的 repo 的所有 Release。
-    /// 联表 repos + release_subscriptions，按 published_at desc 排序，limit 截断。
-    func fetchTimeline(limit: Int) async throws -> [ReleaseTimelineEntry]
+    /// 联表 repos + release_subscriptions，按 published_at desc 排序，limit / offset 分页。
+    func fetchTimeline(limit: Int, offset: Int) async throws -> [ReleaseTimelineEntry]
 
     /// 当前未读 release 总数（用于 Sidebar Badge）。
     /// 仅统计当前订阅 repo（is_subscribed=1）下的 is_read=0 行。
@@ -58,4 +58,12 @@ protocol ReleaseRepositoryProtocol: Sendable {
 
     /// 标记所有订阅下的 Release 为已读（时间线"全部已读"）。
     func markAllRead() async throws
+}
+
+extension ReleaseRepositoryProtocol {
+    /// 旧调用点默认读取第一页。分页视图使用带 offset 的重载，Activity 聚合等缓存快路径
+    /// 继续只关心“最新 N 条”，避免把无关模块一起卷入分页状态。
+    func fetchTimeline(limit: Int) async throws -> [ReleaseTimelineEntry] {
+        try await fetchTimeline(limit: limit, offset: 0)
+    }
 }

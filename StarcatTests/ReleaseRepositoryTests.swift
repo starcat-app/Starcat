@@ -136,6 +136,26 @@ struct ReleaseRepositoryTests {
         #expect(timeline.allSatisfy { $0.repo.id == 10 })
     }
 
+    @Test("fetchTimeline: limit + offset 分页保持全局时间倒序")
+    func fetchTimelinePaging() async throws {
+        let (repo, sub, db) = try makeRepos()
+        try await db.insertRepoFixture(id: 10)
+        try await sub.subscribe(repoId: 10, primingReleaseId: nil, primingTagName: nil)
+
+        try await repo.upsertMany([
+            makeRecord(id: 1, repoId: 10, tag: "v1.0", publishedAt: "2026-05-01T00:00:00Z"),
+            makeRecord(id: 2, repoId: 10, tag: "v2.0", publishedAt: "2026-06-01T00:00:00Z"),
+            makeRecord(id: 3, repoId: 10, tag: "v1.5", publishedAt: "2026-05-15T00:00:00Z"),
+            makeRecord(id: 4, repoId: 10, tag: "v0.9", publishedAt: "2026-04-01T00:00:00Z"),
+        ], isReadDefault: false)
+
+        let firstPage = try await repo.fetchTimeline(limit: 2, offset: 0)
+        let secondPage = try await repo.fetchTimeline(limit: 2, offset: 2)
+
+        #expect(firstPage.map(\.release.tagName) == ["v2.0", "v1.5"])
+        #expect(secondPage.map(\.release.tagName) == ["v1.0", "v0.9"])
+    }
+
     // MARK: - markRead / markAllRead
 
     @Test("markRead: 单条切换；markAllRead(forRepo:): 全部置已读")

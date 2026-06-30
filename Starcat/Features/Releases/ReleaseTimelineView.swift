@@ -27,6 +27,7 @@ struct ReleaseTimelineView: View {
     @Environment(\.dismiss) private var dismiss
     /// 2026-06-15:toast 出/收的 0.18s 滑入与「关闭应用内动画」联动跳过。
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     @State private var viewModel: ReleaseTimelineViewModel?
     @State private var copyToast: String?
@@ -76,16 +77,24 @@ struct ReleaseTimelineView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Label("releases.timeline.title", systemImage: "clock.arrow.circlepath")
-                .font(.headline)
+            HStack(spacing: 8) {
+                Image(systemName: "clock.arrow.circlepath")
+                Text("releases.timeline.title")
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .font(interfaceScale.font(size: 14, weight: .semibold))
+            // 标题是弹窗身份标识，不能在中英环境或大字号下被右侧工具压成两行。
+            .layoutPriority(2)
             if let vm = viewModel, vm.unreadCount > 0 {
                 Text(verbatim: "\(vm.unreadCount)")
-                    .font(.caption)
+                    .font(interfaceScale.font(size: 11, weight: .semibold))
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Color.accentColor.opacity(0.18), in: Capsule())
                     .foregroundStyle(Color.accentColor)
+                    .fixedSize(horizontal: true, vertical: false)
             }
-            Spacer()
+            Spacer(minLength: 8)
             assetFilterField
             // 立即检查：图标与 SidebarSyncButton（"全部仓库"右侧刷新图标）保持一致——
             // `arrow.triangle.2.circlepath` + 进行中线性 1s repeatForever 转圈，
@@ -96,12 +105,14 @@ struct ReleaseTimelineView: View {
             Button {
                 Task { await viewModel?.markAllRead() }
             } label: {
-                Label("releases.timeline.markAllRead", systemImage: "checkmark.circle")
-                    .font(.caption)
+                Image(systemName: "checkmark.circle")
+                    .font(interfaceScale.font(size: 13))
+                    .frame(width: 22, height: 22)
             }
             .buttonStyle(.borderless)
             .focusEffectDisabled()
             .disabled(viewModel?.entries.isEmpty == true)
+            .help("releases.timeline.markAllRead")
             SheetCloseButton(
                 action: { dismiss() },
                 iconFont: .title3,
@@ -116,16 +127,17 @@ struct ReleaseTimelineView: View {
         HStack(spacing: 4) {
             Image(systemName: "line.3.horizontal.decrease.circle")
                 .foregroundStyle(.secondary)
-                .font(.caption)
+                .font(interfaceScale.font(size: 11))
             TextField("releases.assetFilter.placeholder", text: $assetFilter)
                 .textFieldStyle(.plain)
-                .frame(width: 160)
-                .font(.caption)
+                .frame(minWidth: 96, idealWidth: 150, maxWidth: 170)
+                .font(interfaceScale.font(size: 11))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(.bar, in: RoundedRectangle(cornerRadius: 6))
         .help("releases.assetFilter.help")
+        .layoutPriority(1)
     }
 
     // MARK: - Content
@@ -156,10 +168,19 @@ struct ReleaseTimelineView: View {
                                 }
                             )
                             .id(entry.id)
+                            .onAppear {
+                                Task { await vm.loadMoreIfNeeded(currentEntry: entry) }
+                            }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
                             Divider()
                                 .padding(.leading, 16)
+                        }
+                        if vm.isLoadingMore {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
                         }
                     }
                     .scrollTargetLayout()
@@ -215,21 +236,20 @@ private struct ReleaseCheckNowButton: View {
     /// 转圈顺滑——直接对 `isChecking` 做 .rotationEffect 动画在状态切换瞬间会跳。
     @State private var rotation: Double = 0
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         Button(action: action) {
-            Label {
-                Text("releases.timeline.checkNow").font(.caption)
-            } icon: {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .rotationEffect(.degrees(rotation))
-                    .foregroundStyle(isChecking ? Color.accentColor : Color.secondary)
-            }
-            .font(.caption)
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(interfaceScale.font(size: 13))
+                .rotationEffect(.degrees(rotation))
+                .foregroundStyle(isChecking ? Color.accentColor : Color.secondary)
+                .frame(width: 22, height: 22)
         }
         .buttonStyle(.borderless)
         .focusEffectDisabled()
         .disabled(isChecking)
+        .help("releases.timeline.checkNow")
         .onAppear { updateRotation(isChecking: isChecking) }
         .onChange(of: isChecking) { _, newValue in
             updateRotation(isChecking: newValue)
@@ -262,9 +282,13 @@ private struct ReleaseCheckNowButton: View {
 @Observable
 final class ReleaseTimelineViewModel {
 
+    private static let pageSize = 20
+
     private(set) var entries: [ReleaseTimelineEntry] = []
     private(set) var unreadCount: Int = 0
     private(set) var isLoading: Bool = false
+    private(set) var isLoadingMore: Bool = false
+    private(set) var hasMore: Bool = true
     private(set) var isChecking: Bool = false
     private(set) var errorMessage: String?
 
@@ -284,12 +308,31 @@ final class ReleaseTimelineViewModel {
 
     func reload() async {
         isLoading = true
+        hasMore = true
         defer { isLoading = false }
         do {
-            async let entriesTask = releaseRepository.fetchTimeline(limit: 200)
+            async let entriesTask = releaseRepository.fetchTimeline(limit: Self.pageSize, offset: 0)
             async let countTask = releaseRepository.unreadCount()
-            entries = try await entriesTask
+            let page = try await entriesTask
+            entries = page
+            hasMore = page.count == Self.pageSize
             unreadCount = try await countTask
+            errorMessage = nil
+        } catch {
+            errorMessage = String.l10n("releases.timeline.error.loadFailed")
+        }
+    }
+
+    func loadMoreIfNeeded(currentEntry entry: ReleaseTimelineEntry) async {
+        guard hasMore, !isLoading, !isLoadingMore else { return }
+        guard entries.suffix(5).contains(where: { $0.id == entry.id }) else { return }
+
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        do {
+            let page = try await releaseRepository.fetchTimeline(limit: Self.pageSize, offset: entries.count)
+            entries.append(contentsOf: page)
+            hasMore = page.count == Self.pageSize
             errorMessage = nil
         } catch {
             errorMessage = String.l10n("releases.timeline.error.loadFailed")
@@ -307,7 +350,11 @@ final class ReleaseTimelineViewModel {
     func markRead(entry: ReleaseTimelineEntry, isRead: Bool) async {
         do {
             try await releaseRepository.markRead(releaseId: entry.release.id, isRead: isRead)
-            await reload()
+            if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+                entries[index].release.isRead = isRead
+            }
+            unreadCount = try await releaseRepository.unreadCount()
+            errorMessage = nil
         } catch {
             errorMessage = String.l10n("releases.timeline.error.markReadFailed")
         }
@@ -316,7 +363,13 @@ final class ReleaseTimelineViewModel {
     func markAllRead() async {
         do {
             try await releaseRepository.markAllRead()
-            await reload()
+            entries = entries.map { entry in
+                var updated = entry
+                updated.release.isRead = true
+                return updated
+            }
+            unreadCount = 0
+            errorMessage = nil
         } catch {
             errorMessage = String.l10n("releases.timeline.error.markAllReadFailed")
         }
@@ -330,6 +383,7 @@ private struct ReleaseTimelineRow: View {
     /// 2026-06-16:`RelativeDateTimeFormatter` 默认走系统 locale,需显式注入 SwiftUI
     /// `\.locale` 才会跟随 LocaleStore 切换;父级 `.sheet { }` 已挂 `appLocaleEnvironment()`。
     @Environment(\.locale) private var locale
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     let entry: ReleaseTimelineEntry
     let assetFilter: String
@@ -340,6 +394,8 @@ private struct ReleaseTimelineRow: View {
 
     /// Release notes 全文展开（点击摘要区切换）。
     @State private var isBodyExpanded = false
+    /// 资产数超过 3 个时默认折叠，避免长资产清单把时间线首屏挤满。
+    @State private var isAssetsExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -376,18 +432,18 @@ private struct ReleaseTimelineRow: View {
 
                 // repo 名称：升到 body.semibold，比 tag / 时间这些副信息明显大一档
                 Text(verbatim: entry.repo.fullName)
-                    .font(.body.weight(.semibold))
+                    .font(interfaceScale.font(size: 13, weight: .semibold))
                     .lineLimit(1)
 
                 // tag
                 Text(verbatim: entry.release.tagName)
-                    .font(.caption.monospaced())
+                    .font(interfaceScale.font(size: 11, weight: .semibold, design: .monospaced))
                     .padding(.horizontal, 6).padding(.vertical, 1)
                     .background(.bar, in: Capsule())
 
                 if entry.release.isPrerelease {
                     Text("releases.row.prerelease")
-                        .font(.caption2)
+                        .font(interfaceScale.font(size: 11, weight: .semibold))
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(Color.orange.opacity(0.18), in: Capsule())
                         .foregroundStyle(Color.orange)
@@ -397,7 +453,7 @@ private struct ReleaseTimelineRow: View {
 
                 if let date = relativeDate(entry.release.publishedAt) {
                     Text(verbatim: date)
-                        .font(.caption2)
+                        .font(interfaceScale.font(size: 11))
                         .foregroundStyle(.secondary)
                 }
 
@@ -405,7 +461,7 @@ private struct ReleaseTimelineRow: View {
                     onToggleRead(!entry.release.isRead)
                 } label: {
                     Image(systemName: entry.release.isRead ? "circle" : "checkmark.circle.fill")
-                        .font(.caption)
+                        .font(interfaceScale.font(size: 12))
                         .foregroundStyle(entry.release.isRead ? .secondary : Color.accentColor)
                 }
                 .buttonStyle(.borderless)
@@ -418,7 +474,7 @@ private struct ReleaseTimelineRow: View {
                     }
                 } label: {
                     Image(systemName: "arrow.up.right.square")
-                        .font(.caption)
+                        .font(interfaceScale.font(size: 12))
                 }
                 .buttonStyle(.borderless)
                 .focusEffectDisabled()
@@ -427,7 +483,7 @@ private struct ReleaseTimelineRow: View {
 
             if let title = entry.release.name, !title.isEmpty, title != entry.release.tagName {
                 Text(verbatim: title)
-                    .font(.callout)
+                    .font(interfaceScale.font(size: 13, weight: .medium))
                     .foregroundStyle(.primary)
             }
 
@@ -444,35 +500,18 @@ private struct ReleaseTimelineRow: View {
 
     @ViewBuilder
     private func notesSection(_ body: String) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Button {
-                pinAndToggleBody()
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(isBodyExpanded ? 90 : 0))
-                    .frame(width: 16, height: 16)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
+        VStack(alignment: .leading, spacing: 6) {
+            disclosureRow(
+                titleKey: isBodyExpanded ? "releases.row.hideDetails" : "releases.row.viewDetails",
+                isExpanded: isBodyExpanded,
+                action: pinAndToggleBody
+            )
             .help(isBodyExpanded ? Text("releases.row.collapseNotes") : Text("releases.row.expandNotes"))
-
             if isBodyExpanded {
                 Markdown(body)
+                    .font(interfaceScale.font(size: 12))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                Text(verbatim: body)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        pinAndToggleBody()
-                    }
-                    .help("releases.row.expandNotes")
             }
         }
     }
@@ -488,24 +527,88 @@ private struct ReleaseTimelineRow: View {
         let assets = filteredAssets
         if !assets.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text(String(format: String.l10n("releases.row.assetsCountFormat"), assets.count))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                if assets.count > 3 {
+                    disclosureRow(
+                        title: String(format: String.l10n(
+                            isAssetsExpanded ? "releases.row.hideAssetsFormat" : "releases.row.viewAssetsFormat"
+                        ), assets.count),
+                        isExpanded: isAssetsExpanded,
+                        action: pinAndToggleAssets
+                    )
+                } else {
+                    Text(String(format: String.l10n("releases.row.assetsCountFormat"), assets.count))
+                        .font(interfaceScale.font(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
 
-                ForEach(assets) { asset in
-                    ReleaseAssetRowView(asset: asset, layout: .compact, onCopyLink: onCopyAsset)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 2)
-                        .background(.bar.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+                if assets.count <= 3 || isAssetsExpanded {
+                    ForEach(assets) { asset in
+                        ReleaseAssetRowView(asset: asset, layout: .compact, onCopyLink: onCopyAsset)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 2)
+                            .background(.bar.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+                    }
                 }
             }
             .padding(.top, 6)
         } else if !assetFilter.isEmpty {
             // 用户在过滤但本条没匹配资产，给一个占位提示
             Text("releases.row.noMatchingAsset")
-                .font(.caption2)
+                .font(interfaceScale.font(size: 11))
                 .foregroundStyle(.secondary)
         }
+    }
+
+    @ViewBuilder
+    private func disclosureRow(
+        titleKey: LocalizedStringKey,
+        isExpanded: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        disclosureRow(title: nil, titleKey: titleKey, isExpanded: isExpanded, action: action)
+    }
+
+    @ViewBuilder
+    private func disclosureRow(
+        title: String,
+        isExpanded: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        disclosureRow(title: title, titleKey: nil, isExpanded: isExpanded, action: action)
+    }
+
+    private func disclosureRow(
+        title: String? = nil,
+        titleKey: LocalizedStringKey? = nil,
+        isExpanded: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(interfaceScale.font(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .frame(width: 16, height: 16)
+                if let title {
+                    Text(verbatim: title)
+                } else if let titleKey {
+                    Text(titleKey)
+                }
+                Spacer(minLength: 0)
+            }
+            .font(interfaceScale.font(size: 12, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+
+    private func pinAndToggleAssets() {
+        onPinScrollAnchor()
+        // 与 notes 展开同理：高度突变时只锚定，不做动画，避免 ScrollView 抖动。
+        isAssetsExpanded.toggle()
     }
 
     private var filteredAssets: [ReleaseAsset] {

@@ -27,6 +27,7 @@ struct ReleaseAssetRowView: View {
     var onCopyLink: ((String) -> Void)?
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var isDownloading = false
     @State private var downloadToast: String?
 
@@ -34,21 +35,21 @@ struct ReleaseAssetRowView: View {
         HStack(spacing: 8) {
             Image(systemName: ReleaseAssetIcon.systemName(for: asset.name))
                 .foregroundStyle(.secondary)
-                .font(layout == .compact ? .caption : nil)
+                .font(interfaceScale.font(size: layout == .compact ? 12 : 13))
                 .frame(width: layout == .compact ? 16 : 18)
 
             if layout == .compact {
                 Text(verbatim: asset.name)
-                    .font(.caption)
+                    .font(interfaceScale.font(size: 12, weight: .semibold))
                     .lineLimit(1)
             } else {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: asset.name)
-                        .font(.caption)
+                        .font(interfaceScale.font(size: 12, weight: .semibold))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(verbatim: formattedSize)
-                        .font(.caption2)
+                        .font(interfaceScale.font(size: 11))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -57,7 +58,7 @@ struct ReleaseAssetRowView: View {
 
             if layout == .compact {
                 Text(verbatim: formattedSize)
-                    .font(.caption2.monospaced())
+                    .font(interfaceScale.font(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
 
@@ -76,7 +77,7 @@ struct ReleaseAssetRowView: View {
                 onCopyLink(asset.browserDownloadUrl)
             } label: {
                 Label("releases.copyDownloadLink", systemImage: "doc.on.clipboard")
-                    .font(.caption2)
+                    .font(interfaceScale.font(size: 11))
                     .labelStyle(.iconOnly)
             }
             .buttonStyle(.borderless)
@@ -88,7 +89,7 @@ struct ReleaseAssetRowView: View {
                 tooltip: "releases.copyDownloadLink"
             ) { didCopy in
                 Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.clipboard")
-                    .font(layout == .compact ? .caption2 : nil)
+                    .font(interfaceScale.font(size: layout == .compact ? 11 : 12))
                     .foregroundStyle(didCopy ? Color.green : Color.primary)
                     .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
             }
@@ -103,7 +104,7 @@ struct ReleaseAssetRowView: View {
                     .controlSize(.small)
             } else {
                 Image(systemName: "arrow.down.circle")
-                    .font(layout == .compact ? .caption2 : nil)
+                    .font(interfaceScale.font(size: layout == .compact ? 11 : 12))
             }
         }
         .frame(width: 18, height: 18)

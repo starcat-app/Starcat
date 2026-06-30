@@ -78,7 +78,7 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
         }
     }
 
-    func fetchTimeline(limit: Int) async throws -> [ReleaseTimelineEntry] {
+    func fetchTimeline(limit: Int, offset: Int) async throws -> [ReleaseTimelineEntry] {
         try await database.writer.read { db in
             // 一次 JOIN 同时拿 release + repo，避免 N+1。
             // GRDB 不直接支持"一次 query 解码出两个 model"，这里用裸 SQL 拼成一行宽表，
@@ -94,8 +94,9 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
             WHERE release_subscriptions.is_subscribed = 1
             ORDER BY COALESCE(releases.published_at, releases.created_at_remote, releases.fetched_at) DESC
             LIMIT ?
+            OFFSET ?
             """
-            let rows = try Row.fetchAll(db, sql: sql, arguments: [limit])
+            let rows = try Row.fetchAll(db, sql: sql, arguments: [limit, offset])
             return try rows.map { row -> ReleaseTimelineEntry in
                 // 用 ReleaseRecord 的 KeyPath 解码：先把 release 字段抠出来，避开同名列冲突。
                 // GRDB 的 Row[String] 会按列别名匹配；releases.id 与 repos.id 同名时

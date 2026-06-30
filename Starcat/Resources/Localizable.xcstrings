@@ -14849,6 +14849,22 @@
         }
       }
     },
+    "releases.row.hideAssetsFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide %d assets"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起 %d 个资产"
+          }
+        }
+      }
+    },
     "releases.row.collapseNotes" : {
       "localizations" : {
         "en" : {
@@ -14861,6 +14877,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "收起 Release 说明"
+          }
+        }
+      }
+    },
+    "releases.row.hideDetails" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起详情"
           }
         }
       }
@@ -14909,6 +14941,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "标记为未读"
+          }
+        }
+      }
+    },
+    "releases.row.viewAssetsFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View %d assets"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看 %d 个资产"
+          }
+        }
+      }
+    },
+    "releases.row.viewDetails" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看详情"
           }
         }
       }
@@ -15119,13 +15183,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Timeline"
+            "value" : "Releases"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "时间线"
+            "value" : "Releases 记录"
           }
         }
       }
