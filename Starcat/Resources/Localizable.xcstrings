@@ -25166,6 +25166,38 @@
         }
       }
     },
+    "settings.services.discovery.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Provides Explore feeds, popular rankings, and new release rankings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提供探索发现流、热门榜单和新发布榜单。"
+          }
+        }
+      }
+    },
+    "settings.services.discovery.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discovery API"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "探索 API"
+          }
+        }
+      }
+    },
     "settings.services.recommend.description" : {
       "extractionState" : "stale",
       "localizations" : {

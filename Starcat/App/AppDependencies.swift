@@ -184,6 +184,10 @@ final class AppDependencies {
     /// 构造期不发网络请求；详情页按当前 repo id 懒加载推荐结果。
     let recommendAPI: RecommendAPI
 
+    /// 探索发现与榜单查询客户端。
+    /// 构造期不发网络请求；Explore 入口按用户筛选懒加载发现 / 热门 / 新发布数据。
+    let discoveryAPI: DiscoveryAPI
+
     /// Wiki 探测结果磁盘 JSON 缓存（2026-06-15）。
     /// 单进程单实例，与设置页 / `WikiContextService` 共用 observable 派生量。
     let diskWikiCache: DiskWikiCache
@@ -687,6 +691,11 @@ final class AppDependencies {
             apiKey: StarcatAPIKeyResolver.resolve(for: .recommend)
         )
 
+        self.discoveryAPI = DiscoveryAPI(
+            baseURL: AppEndpoints.Discovery.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .discovery)
+        )
+
         // 2026-06-15 v4.y：Wiki 磁盘缓存 + SWR 编排。装配顺序：
         // disk cache（只读 / 无网络）→ SWR service（依赖 cache + WikiAPI）。
         // shared singleton 保留默认，AppDependencies 引用同一实例，让设置页存储 Tab
@@ -1009,6 +1018,7 @@ final class AppDependencies {
         case .sharing:  await shareAPI.updateBaseURL(target)
         case .wiki:     await wikiAPI.updateBaseURL(target)
         case .recommend: await recommendAPI.updateBaseURL(target)
+        case .discovery: await discoveryAPI.updateBaseURL(target)
         }
 
         // 3) trending sidebar 语言列表跟随 baseURL 重拉（指向新地址的实际数据）。
@@ -1055,6 +1065,7 @@ final class AppDependencies {
         case .sharing:  await shareAPI.updateAPIKey(resolved)
         case .wiki:     await wikiAPI.updateAPIKey(resolved)
         case .recommend: await recommendAPI.updateAPIKey(resolved)
+        case .discovery: await discoveryAPI.updateAPIKey(resolved)
         }
 
         // 4) trending API Key 改了 → 立刻用新 key 重拉一次语言列表。

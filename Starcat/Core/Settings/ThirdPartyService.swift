@@ -61,6 +61,8 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
     case wiki
     /// 相似仓库推荐后端（GET /api/v1/repos/{repo_id}/recommendations）。
     case recommend
+    /// 探索发现后端（GET /api/v1/discovery/*）。
+    case discovery
 
     var id: String { rawValue }
 
@@ -72,6 +74,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .sharing:  return "STARCAT_PRODUCTION_API_KEY_SHARING"
         case .wiki:     return "STARCAT_PRODUCTION_API_KEY_WIKI"
         case .recommend: return "STARCAT_PRODUCTION_API_KEY_RECOMMEND"
+        case .discovery: return "STARCAT_PRODUCTION_API_KEY_DISCOVERY"
         }
     }
 
@@ -85,6 +88,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .sharing:  return "settings.services.sharing.title"
         case .wiki:     return "settings.services.wiki.title"
         case .recommend: return "settings.services.recommend.title"
+        case .discovery: return "settings.services.discovery.title"
         }
     }
 
@@ -96,6 +100,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .sharing:  return "settings.services.sharing.description"
         case .wiki:     return "settings.services.wiki.description"
         case .recommend: return "settings.services.recommend.description"
+        case .discovery: return "settings.services.discovery.description"
         }
     }
 
@@ -110,6 +115,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .sharing:  return "square.and.arrow.up"
         case .wiki:     return "book.pages"
         case .recommend: return "point.3.connected.trianglepath.dotted"
+        case .discovery: return "safari"
         }
     }
 
@@ -122,6 +128,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .sharing:  return "#3178c6" // TypeScript blue：与"分享 / 公开链接"的"链接蓝"语义一致
         case .wiki:     return "#8B5CF6" // Violet：与知识库 / 文档入口区分现有三个服务
         case .recommend: return "#34D399" // Emerald：与"发现相似项目"的推荐语义区分现有服务
+        case .discovery: return "#F59E0B" // Amber：探索入口用暖色，与推荐 emerald 区分
         }
     }
 
@@ -149,6 +156,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .sharing:  return URL(string: "https://github.com/dong4j/starcat-sharing-api")!
         case .wiki:     return URL(string: "https://github.com/dong4j/starcat-wiki-api")!
         case .recommend: return URL(string: "https://github.com/dong4j/starcat-recommend-api")!
+        case .discovery: return URL(string: "https://github.com/dong4j/starcat-discovery-api")!
         }
     }
 
@@ -179,6 +187,8 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
             return AppEndpoints.appendPath(AppEndpoints.Wiki.Paths.ping, to: normalized)
         case .recommend:
             return AppEndpoints.appendPath(AppEndpoints.Recommend.Paths.ping, to: normalized)
+        case .discovery:
+            return AppEndpoints.appendPath(AppEndpoints.Discovery.Paths.ping, to: normalized)
         }
     }
 
@@ -199,6 +209,8 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
             return AppEndpoints.appendPath(AppEndpoints.Wiki.Paths.healthz, to: normalized)
         case .recommend:
             return AppEndpoints.appendPath(AppEndpoints.Recommend.Paths.healthz, to: normalized)
+        case .discovery:
+            return AppEndpoints.appendPath(AppEndpoints.Discovery.Paths.healthz, to: normalized)
         }
     }
 

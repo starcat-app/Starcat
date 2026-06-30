@@ -8,7 +8,7 @@
 //  `BaseURL + Paths.xxx` 形式登记，**禁止**在调用方文件里硬编码 path 字符串。
 //
 //  组织结构：每个后端服务一个嵌套 enum 命名空间（Weekly / Trending / Sharing / Wiki /
-//  Recommend /
+//  Recommend / Discovery /
 //  GitHubREST / GitHubOAuth），命名空间内含三件套：
 //    - `baseURL`        ：服务的 base URL；自建后端走 AppSettings 可热更新，固定端走 let。
 //    - `Paths`           ：path 常量目录（扁平命名，工厂方法处理 path 参数）。
@@ -30,6 +30,7 @@
 //    设置页「测试连接」做 API Key 校验，两个入口语义分开。
 //  - v7（2026-06-28）：新增 Recommend 自建后端，对齐 `/api/v1/ping`、`/healthz`
 //    与 `/api/v1/repos/{repo_id}/recommendations`。
+//  - v8（2026-06-30）：新增 Discovery 自建后端，提供探索发现、热门和新发布接口。
 //
 //  非 REST 链接（GitHub 网页跳转、第三方装饰链接）**不**放本文件：
 //    - GitHub 网页跳转（github.com/{login}, github.com/{owner}/{repo} 等）→ `GitHubURLs.swift`
@@ -206,7 +207,7 @@ enum AppEndpoints {
         }
     }
 
-    // MARK: - 自建后端 5/5：Recommend（相似仓库推荐）
+    // MARK: - 自建后端 5/6：Recommend（相似仓库推荐）
 
     /// 相似仓库推荐后端 endpoint 集合。
     enum Recommend {
@@ -220,6 +221,44 @@ enum AppEndpoints {
         enum Paths {
             /// `GET /api/v1/repos/{repo_id}/recommendations?limit=&offset=` —— 相似仓库推荐。
             static let repoRecommendations = "/api/v1/repos"
+            /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点。
+            static let ping = "/api/v1/ping"
+            /// `GET /healthz` —— 状态栏服务可用性巡检端点。
+            static let healthz = "/healthz"
+        }
+
+        @MainActor
+        static func url(_ path: String) -> URL {
+            appendPath(path, to: baseURL)
+        }
+    }
+
+    // MARK: - 自建后端 6/6：Discovery（探索发现与榜单）
+
+    /// 探索发现后端 endpoint 集合。
+    enum Discovery {
+        static let productionURL = URL(string: "https://starcat-discovery-api.fly.dev")!
+
+        @MainActor
+        static var baseURL: URL {
+            AppEndpoints.resolve(production: productionURL, service: .discovery)
+        }
+
+        enum Paths {
+            /// `GET /api/v1/discovery/feed?platform=&topic=&language=&sort=&page=&limit=` —— 发现流。
+            static let feed = "/api/v1/discovery/feed"
+            /// `GET /api/v1/discovery/categories/most-popular?...` —— 热门榜单。
+            static let mostPopular = "/api/v1/discovery/categories/most-popular"
+            /// `GET /api/v1/discovery/categories/new-releases?...` —— 新发布榜单。
+            static let newReleases = "/api/v1/discovery/categories/new-releases"
+            /// `GET /api/v1/discovery/categories/trending?...` —— 新趋势候选，首期客户端不直接使用。
+            static let trending = "/api/v1/discovery/categories/trending"
+            /// `GET /api/v1/discovery/languages` —— Discovery 可用语言。
+            static let languages = "/api/v1/discovery/languages"
+            /// `GET /api/v1/discovery/topics` —— Discovery 主题元数据。
+            static let topics = "/api/v1/discovery/topics"
+            /// `GET /api/v1/discovery/platforms` —— Discovery 平台元数据。
+            static let platforms = "/api/v1/discovery/platforms"
             /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点。
             static let ping = "/api/v1/ping"
             /// `GET /healthz` —— 状态栏服务可用性巡检端点。
@@ -356,6 +395,7 @@ enum AppEndpoints {
         case .sharing:  return Sharing.baseURL
         case .wiki:     return Wiki.baseURL
         case .recommend: return Recommend.baseURL
+        case .discovery: return Discovery.baseURL
         }
     }
 
@@ -368,6 +408,7 @@ enum AppEndpoints {
         case .sharing:  return Sharing.productionURL
         case .wiki:     return Wiki.productionURL
         case .recommend: return Recommend.productionURL
+        case .discovery: return Discovery.productionURL
         }
     }
 
@@ -380,6 +421,7 @@ enum AppEndpoints {
         AppLog.network.info("endpoint.sharing  = \(Sharing.baseURL.absoluteString, privacy: .public)")
         AppLog.network.info("endpoint.wiki     = \(Wiki.baseURL.absoluteString, privacy: .public)")
         AppLog.network.info("endpoint.recommend= \(Recommend.baseURL.absoluteString, privacy: .public)")
+        AppLog.network.info("endpoint.discovery= \(Discovery.baseURL.absoluteString, privacy: .public)")
     }
 
     // MARK: - Private
