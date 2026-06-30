@@ -738,7 +738,7 @@
         stats: [
           { label: "Daily repos", type: "count", path: "/api/v1/stats", pick: "data.repos.daily", help: "来自 GET /api/v1/stats 的 data.repos.daily，直接从 SQLite COUNT(*) 得到，不受 /api/v1/repos 的 limit 影响。" },
           { label: "Languages", type: "count", path: "/api/v1/stats", pick: "data.languages", help: "来自 GET /api/v1/stats 的 data.languages，表示当前 trending repo 聚合出的语言分类数。" },
-          { label: "Users probe", type: "count", path: "/api/v1/users?sponsorable=true", pick: "data", help: "来自 GET /api/v1/users?sponsorable=true 的本次返回数组长度。users 当前按需抓取，不是持久化总量。" }
+          { label: "Users probe", type: "count", path: "/api/v1/users?since=daily&sponsorable=true", pick: "meta.total", help: "来自 GET /api/v1/users?since=daily&sponsorable=true 的 meta.total；users 当前按需实时抓取，不是持久化总量，也不代表历史累计用户数。" }
         ],
         actions: [
           { label: "同步 repos", path: "/internal/sync/repos", auth: "apiKey", confirm: false },
@@ -751,9 +751,9 @@
         description: "周刊 / zread / 聚合数据服务",
         checks: ["health", "ping"],
         stats: [
-          { label: "Repos", type: "count", path: "/api/v1/repos?page=1&page_size=1", pick: "meta.total" },
-          { label: "Languages", type: "count", path: "/api/v1/repos/languages", pick: "data" },
-          { label: "zread items", type: "count", path: "/api/v1/zread?week=this&limit=1", pick: "data.items" }
+          { label: "Repos", type: "count", path: "/api/v1/repos?page=1&page_size=1", pick: "meta.total", help: "来自 GET /api/v1/repos?page=1&page_size=1 的 meta.total；表示 weekly 聚合库中可用 repo 总量，不受 page_size=1 影响。" },
+          { label: "Languages", type: "count", path: "/api/v1/repos/languages", pick: "meta.total", help: "来自 GET /api/v1/repos/languages 的 meta.total；表示聚合 repo 当前可筛选语言数量。" },
+          { label: "zread items", type: "count", path: "/api/v1/repos?page=1&page_size=1&source=zread", pick: "meta.total", help: "来自 GET /api/v1/repos?page=1&page_size=1&source=zread 的 meta.total；zread 已合并进聚合 repo 列表，后端没有 /api/v1/zread 独立读取接口。" }
         ],
         actions: [
           { label: "同步 weekly", path: "/internal/sync/weekly", auth: "apiKey", confirm: false },
@@ -765,7 +765,7 @@
         fallbackLabel: "Wiki",
         description: "Wiki 索引探测服务",
         checks: ["health"],
-        stats: [{ label: "说明", type: "text", value: "Wiki 统计依赖 owner/repo 输入；本面板保留手动 admin 入口。" }],
+        stats: [{ label: "说明", type: "text", value: "Wiki 统计依赖 owner/repo 输入；请使用下方测试卡片探测单仓库或批量仓库。", help: "wiki-api 当前只有 GET /api/v1/wikis?owner=X&repo=Y 和 POST /api/v1/wikis/batch，没有全局总量统计接口。" }],
         actions: [
           { label: "触发 probe sync", path: "/internal/sync/probe", auth: "adminKey", confirm: false },
           { label: "刷新 owner", path: "/internal/refresh/owner", auth: "adminKey", confirm: true, bodyPrompt: "请输入 JSON body，例如：{\"owner\":\"apple\"}" }
@@ -783,9 +783,9 @@
         description: "探索发现 / 热门 / 新发布服务",
         checks: ["health", "ping"],
         stats: [
-          { label: "Summary repos", type: "count", path: "/api/v1/discovery/summary", pick: "data.total_repos" },
-          { label: "Languages", type: "count", path: "/api/v1/discovery/languages", pick: "data" },
-          { label: "Topics", type: "count", path: "/api/v1/discovery/topics", pick: "data" }
+          { label: "Feed repos", type: "count", path: "/api/v1/discovery/feed?limit=1", pick: "meta.total", help: "来自 GET /api/v1/discovery/feed?limit=1 的 meta.total；表示默认 discovery feed 命中的 repo 总量，不受 limit=1 影响。" },
+          { label: "Languages", type: "count", path: "/api/v1/discovery/languages", pick: "meta.total", help: "来自 GET /api/v1/discovery/languages 的 meta.total；表示 discovery catalog 当前语言 facet 数量。" },
+          { label: "Topics", type: "count", path: "/api/v1/discovery/topics", pick: "meta.total", help: "来自 GET /api/v1/discovery/topics 的 meta.total；表示 discovery 内置 topic facet 数量。" }
         ],
         actions: [
           { label: "轻同步 discovery", path: "/internal/sync/discovery?mode=incremental", auth: "adminKey", confirm: false },
@@ -821,6 +821,37 @@
       }
     };
 
+    const API_TEST_TEMPLATES = {
+      trending: {
+        title: "Trending 接口测试",
+        method: "GET",
+        path: "/api/v1/repos?since=daily&limit=10",
+        body: "",
+        result: "尚未请求。"
+      },
+      weekly: {
+        title: "Weekly 接口测试",
+        method: "GET",
+        path: "/api/v1/repos?page=1&page_size=10&source=zread",
+        body: "",
+        result: "尚未请求。"
+      },
+      wiki: {
+        title: "Wiki 接口测试",
+        method: "GET",
+        path: "/api/v1/wikis?owner=apple&repo=swift",
+        body: JSON.stringify({ repos: ["apple/swift"] }, null, 2),
+        result: "尚未请求。"
+      },
+      discovery: {
+        title: "Discovery 接口测试",
+        method: "GET",
+        path: "/api/v1/discovery/feed?limit=10",
+        body: "",
+        result: "尚未请求。"
+      }
+    };
+
     const state = new Map();
     const servicesGrid = document.getElementById("servicesGrid");
     const flyGrid = document.getElementById("flyGrid");
@@ -829,6 +860,7 @@
     const configWarning = document.getElementById("configWarning");
     let flySnapshots = new Map();
     let flySecretDraft = { app: "", name: "", value: "", result: "尚未设置。" };
+    let apiTestDrafts = new Map(Object.entries(API_TEST_TEMPLATES).map(([key, value]) => [key, cloneTemplate(value)]));
     let sharingMockPayloadText = JSON.stringify(DEFAULT_SHARING_PAYLOAD, null, 2);
     let lastSharingURL = "";
     let recommendParams = { repoId: "41881900", limit: "10", offset: "0" };
@@ -1163,6 +1195,7 @@
 
     function renderServiceExtra(key) {
       if (key === "recommend") return renderRecommendExtra();
+      if (API_TEST_TEMPLATES[key]) return renderApiTestExtra(key);
       if (key !== "sharing") return "";
       const linkText = lastSharingURL
         ? `最近生成: <a href="${escapeHTML(lastSharingURL)}" target="_blank" rel="noreferrer">${escapeHTML(lastSharingURL)}</a>`
@@ -1179,6 +1212,39 @@
         </div>
         <textarea class="mock-textarea" data-sharing-payload spellcheck="false">${escapeHTML(sharingMockPayloadText)}</textarea>
         <div class="last-link">${linkText}</div>
+      </div>`;
+    }
+
+    function renderApiTestExtra(key) {
+      const draft = apiTestDrafts.get(key);
+      const methods = ["GET", "POST"].map((method) => {
+        const selected = draft.method === method ? " selected" : "";
+        return `<option value="${method}"${selected}>${method}</option>`;
+      }).join("");
+      return `<div class="mock-panel">
+        <div class="mock-head">
+          <p class="mock-title">${escapeHTML(draft.title)}，可编辑 method / path / JSON body 后请求。</p>
+          <div class="mock-actions">
+            <button class="button primary" type="button" data-api-test-action="request" data-api-test-service="${escapeHTML(key)}">发送请求并显示 JSON</button>
+            <button class="button" type="button" data-api-test-action="reset" data-api-test-service="${escapeHTML(key)}">重置模板</button>
+            <button class="button" type="button" data-api-test-action="copy" data-api-test-service="${escapeHTML(key)}" ${draft.result === "尚未请求。" ? "disabled" : ""}>复制 JSON</button>
+          </div>
+        </div>
+        <div class="param-grid">
+          <div class="param-field">
+            <label for="${escapeHTML(key)}TestMethod">method</label>
+            <select id="${escapeHTML(key)}TestMethod" data-api-test-service="${escapeHTML(key)}" data-api-test-field="method">${methods}</select>
+          </div>
+          <div class="param-field">
+            <label for="${escapeHTML(key)}TestPath">path</label>
+            <input id="${escapeHTML(key)}TestPath" data-api-test-service="${escapeHTML(key)}" data-api-test-field="path" value="${escapeHTML(draft.path)}">
+          </div>
+          <div class="param-field">
+            <label for="${escapeHTML(key)}TestBody">JSON body</label>
+            <textarea class="fly-secret-value" id="${escapeHTML(key)}TestBody" data-api-test-service="${escapeHTML(key)}" data-api-test-field="body" spellcheck="false">${escapeHTML(draft.body)}</textarea>
+          </div>
+        </div>
+        <pre class="json-output">${escapeHTML(draft.result)}</pre>
       </div>`;
     }
 
@@ -1388,6 +1454,75 @@
       }
     }
 
+    function cloneTemplate(value) {
+      return JSON.parse(JSON.stringify(value));
+    }
+
+    function resetApiTest(key) {
+      apiTestDrafts.set(key, cloneTemplate(API_TEST_TEMPLATES[key]));
+      render();
+      log(`${SERVICES[key].fallbackLabel} 测试模板已重置`);
+    }
+
+    async function requestApiTest(key) {
+      const cfg = serviceConfig(key);
+      const spec = SERVICES[key];
+      const draft = apiTestDrafts.get(key);
+      if (!cfg.baseURL) {
+        log(`${spec.fallbackLabel} 缺少 baseURL，无法请求测试接口`, "error");
+        return;
+      }
+      if (!cfg.apiKey) {
+        log(`${spec.fallbackLabel} 缺少 apiKey，无法请求测试接口`, "error");
+        return;
+      }
+
+      const method = String(draft.method || "GET").toUpperCase();
+      const path = String(draft.path || "").trim();
+      if (!path.startsWith("/")) {
+        draft.result = "请求失败: path 必须以 / 开头";
+        render();
+        log(`${spec.fallbackLabel} 测试 path 无效`, "error");
+        return;
+      }
+
+      let body;
+      if (method !== "GET" && method !== "HEAD") {
+        const rawBody = String(draft.body || "").trim();
+        if (rawBody) {
+          try {
+            body = JSON.stringify(JSON.parse(rawBody));
+          } catch (error) {
+            draft.result = `请求失败: JSON body 无效: ${error.message}`;
+            render();
+            log(`${spec.fallbackLabel} 测试 JSON body 无效: ${error.message}`, "error");
+            return;
+          }
+        }
+      }
+
+      try {
+        const result = await requestJSON(key, path, "apiKey", { method, body });
+        draft.result = JSON.stringify(result, null, 2);
+        log(`${spec.fallbackLabel} 测试请求完成: ${method} ${path}`);
+      } catch (error) {
+        draft.result = `请求失败: ${error.message}`;
+        log(`${spec.fallbackLabel} 测试请求失败: ${error.message}`, "error");
+      }
+      render();
+    }
+
+    async function copyApiTestResult(key) {
+      const draft = apiTestDrafts.get(key);
+      if (!draft || !draft.result || draft.result === "尚未请求。") return;
+      try {
+        await navigator.clipboard.writeText(draft.result);
+        log(`已复制 ${SERVICES[key].fallbackLabel} 测试 JSON`);
+      } catch (error) {
+        log(`复制 ${SERVICES[key].fallbackLabel} 测试 JSON 失败: ${error.message}`, "error");
+      }
+    }
+
     function normalizedRecommendParams() {
       const repoId = String(recommendParams.repoId || "").trim();
       const limit = Number.parseInt(String(recommendParams.limit || "").trim(), 10);
@@ -1486,6 +1621,22 @@
           copyLastSharingURL();
           return;
         }
+        const apiTestAction = event.target.getAttribute("data-api-test-action");
+        const apiTestService = event.target.getAttribute("data-api-test-service");
+        if (apiTestAction && apiTestService) {
+          if (apiTestAction === "request") {
+            requestApiTest(apiTestService);
+            return;
+          }
+          if (apiTestAction === "reset") {
+            resetApiTest(apiTestService);
+            return;
+          }
+          if (apiTestAction === "copy") {
+            copyApiTestResult(apiTestService);
+            return;
+          }
+        }
         const recommendAction = event.target.getAttribute("data-recommend-action");
         if (recommendAction === "request") {
           requestRecommend();
@@ -1521,6 +1672,20 @@
         const recommendParam = event.target.getAttribute("data-recommend-param");
         if (recommendParam) {
           recommendParams = { ...recommendParams, [recommendParam]: event.target.value };
+        }
+        const apiTestService = event.target.getAttribute("data-api-test-service");
+        const apiTestField = event.target.getAttribute("data-api-test-field");
+        if (apiTestService && apiTestField && apiTestDrafts.has(apiTestService)) {
+          const draft = apiTestDrafts.get(apiTestService);
+          draft[apiTestField] = event.target.value;
+        }
+      });
+      servicesGrid.addEventListener("change", (event) => {
+        const apiTestService = event.target.getAttribute("data-api-test-service");
+        const apiTestField = event.target.getAttribute("data-api-test-field");
+        if (apiTestService && apiTestField && apiTestDrafts.has(apiTestService)) {
+          const draft = apiTestDrafts.get(apiTestService);
+          draft[apiTestField] = event.target.value;
         }
       });
       flySecretsPanel.addEventListener("click", (event) => {
