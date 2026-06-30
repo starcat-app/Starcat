@@ -39,10 +39,16 @@ struct ReadmePrefetchRepository: Sendable {
     /// 2. 已有 HTML 但缺 Markdown 的 repo 次之；
     /// 3. HTML 超过 soft TTL 的 repo 最后做条件刷新；
     /// 4. 同级按最近 star 优先，符合用户近期打开概率更高的直觉。
-    func fetchCandidates(now: Date, htmlStaleBefore: Date, limit: Int) async throws -> [Repo] {
+    func fetchCandidates(
+        now: Date,
+        htmlStaleBefore: Date,
+        limit: Int,
+        respectRetryCooldown: Bool = true
+    ) async throws -> [Repo] {
         let nowISO = ISO8601DateFormatter.shared.string(from: now)
         let staleISO = ISO8601DateFormatter.shared.string(from: htmlStaleBefore)
         let safeLimit = max(1, limit)
+        let cooldownGate = respectRetryCooldown ? 1 : 0
 
         return try await database.writer.read { db in
             try Repo.fetchAll(
@@ -54,7 +60,7 @@ struct ReadmePrefetchRepository: Sendable {
                 LEFT JOIN readme_contents rc ON rc.repo_id = r.id
                 LEFT JOIN readme_prefetch_states ps ON ps.repo_id = r.id
                 WHERE r.is_starred = 1
-                  AND (ps.next_retry_at IS NULL OR ps.next_retry_at <= ?)
+                  AND (? = 0 OR ps.next_retry_at IS NULL OR ps.next_retry_at <= ?)
                   AND (
                         rm.repo_id IS NULL
                      OR rc.repo_id IS NULL
@@ -67,7 +73,7 @@ struct ReadmePrefetchRepository: Sendable {
                   r.starred_at DESC
                 LIMIT ?
                 """,
-                arguments: [nowISO, staleISO, safeLimit]
+                arguments: [cooldownGate, nowISO, staleISO, safeLimit]
             )
         }
     }

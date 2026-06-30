@@ -1397,9 +1397,11 @@ private struct ReadmePrefetchSettingsStatusView<Action: View>: View {
                         ProgressView()
                             .controlSize(.small)
                     }
-                    Text(statusText(now: context.date))
-                        .foregroundStyle(statusTint(now: context.date))
-                        .multilineTextAlignment(.trailing)
+                    if isEnabled {
+                        Text(statusText(now: context.date))
+                            .foregroundStyle(statusTint(now: context.date))
+                            .multilineTextAlignment(.trailing)
+                    }
                     action()
                 }
             }
@@ -1437,10 +1439,9 @@ private struct ReadmePrefetchSettingsStatusView<Action: View>: View {
         case .completed(let processed, let total):
             return String(
                 format: String.l10n("toolbar.status.readmePrefetch.completedFormat"),
-                processed,
-                total,
                 service.htmlUpdated,
                 service.markdownUpdated,
+                service.notFound,
                 service.failures
             )
         case .allPrefetched(let total):

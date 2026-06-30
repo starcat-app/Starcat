@@ -67,7 +67,8 @@ final class ReadmePrefetchService {
     @discardableResult
     func runBatch(
         limit: Int = ReadmePrefetchService.defaultBatchLimit,
-        delayBetweenRepos: TimeInterval = ReadmePrefetchService.defaultDelayBetweenRepos
+        delayBetweenRepos: TimeInterval = ReadmePrefetchService.defaultDelayBetweenRepos,
+        respectRetryCooldown: Bool = true
     ) async -> Int {
         guard !isRunning else { return 0 }
 
@@ -75,7 +76,12 @@ final class ReadmePrefetchService {
         let staleBefore = now.addingTimeInterval(-ReadmeAPI.softTtl)
         let candidates: [Repo]
         do {
-            candidates = try await repository.fetchCandidates(now: now, htmlStaleBefore: staleBefore, limit: limit)
+            candidates = try await repository.fetchCandidates(
+                now: now,
+                htmlStaleBefore: staleBefore,
+                limit: limit,
+                respectRetryCooldown: respectRetryCooldown
+            )
         } catch {
             failures += 1
             status = .waitingForRetry

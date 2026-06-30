@@ -55,7 +55,7 @@ final class ReadmePrefetchPoller {
                     completion(.finished)
                     return
                 }
-                await self.performRefresh()
+                await self.performRefresh(respectRetryCooldown: true)
                 completion(.finished)
             }
         }
@@ -90,7 +90,7 @@ final class ReadmePrefetchPoller {
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled, let self else { return }
             nextRunAt = nil
-            await performRefresh()
+            await performRefresh(respectRetryCooldown: true)
         }
         AppLog.network.info("ReadmePrefetchPoller initial batch scheduled after \(Int(delay), privacy: .public)s")
     }
@@ -98,7 +98,7 @@ final class ReadmePrefetchPoller {
     @discardableResult
     func runNow() async -> Int {
         cancelScheduledInitialBatch()
-        return await performRefresh()
+        return await performRefresh(respectRetryCooldown: false)
     }
 
     /// 连续跑 README 预拉小批次。
@@ -106,10 +106,11 @@ final class ReadmePrefetchPoller {
     /// 设计约束：
     /// - 单批仍交给 `ReadmePrefetchService.runBatch` 控制上限和 repo 间隔；
     /// - 只有“本批刚好跑满上限”才继续下一批，避免空转查询；
+    /// - 手动触发首批会绕过 retry 冷却，后续连续批次恢复尊重冷却，避免重复打失败项；
     /// - 批间短 sleep 给前台 UI / SQLite / GitHub API 留出喘息窗口；
     /// - `isDraining` 是 poller 级互斥，覆盖“批间等待”窗口，避免手动按钮和系统调度重复启动。
     @discardableResult
-    private func performRefresh() async -> Int {
+    private func performRefresh(respectRetryCooldown: Bool) async -> Int {
         nextRunAt = nil
         guard !isDraining, !service.isRunning else {
             AppLog.network.info("ReadmePrefetchPoller skipped because previous refresh is still running")
@@ -120,8 +121,9 @@ final class ReadmePrefetchPoller {
         defer { isDraining = false }
 
         var accumulatedCount = 0
+        var currentRespectRetryCooldown = respectRetryCooldown
         while isRunning {
-            let count = await service.runBatch()
+            let count = await service.runBatch(respectRetryCooldown: currentRespectRetryCooldown)
             lastRunAt = Date()
             lastProcessedCount = count
             accumulatedCount += count
@@ -131,7 +133,11 @@ final class ReadmePrefetchPoller {
             AppLog.network.info(
                 "ReadmePrefetchPoller full batch processed; continuing after \(Int(Self.continuousBatchDelay), privacy: .public)s"
             )
+            nextRunAt = Date().addingTimeInterval(Self.continuousBatchDelay)
             try? await Task.sleep(nanoseconds: UInt64(Self.continuousBatchDelay * 1_000_000_000))
+            nextRunAt = nil
+            guard !Task.isCancelled else { break }
+            currentRespectRetryCooldown = true
         }
 
         return accumulatedCount

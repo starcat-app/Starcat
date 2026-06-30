@@ -152,6 +152,50 @@ struct ReadmePrefetchServiceTests {
         #expect(sut.service.total == 2)
     }
 
+    @Test("手动触发会绕过 retry 冷却处理剩余缺失仓库")
+    func manualBatchBypassesRetryCooldown() async throws {
+        let sut = try await makeSUT()
+        try await sut.db.insertRepoFixture(id: 8, owner: "alice", name: "retrying")
+        try await sut.prefetchRepository.upsert(ReadmePrefetchStateRecord(
+            repoId: 8,
+            htmlStatus: .failed,
+            markdownStatus: .skipped,
+            lastAttemptAt: ISO8601DateFormatter.shared.string(from: Date()),
+            nextRetryAt: ISO8601DateFormatter.shared.string(from: Date().addingTimeInterval(60 * 60)),
+            failureCount: 1,
+            lastErrorKind: "transport"
+        ))
+
+        sut.api.readmeHTMLHandler = { _, _, _, _ in
+            BytesResponse.ok(data: Data("<h1>retrying</h1>".utf8), etag: "\"html-retrying\"")
+        }
+        sut.api.readmeMarkdownHandler = { _, _, _, _ in
+            BytesResponse.ok(data: Data("# retrying".utf8), etag: "\"md-retrying\"")
+        }
+
+        let automaticProcessed = await sut.service.runBatch(limit: 1, delayBetweenRepos: 0)
+        #expect(automaticProcessed == 0)
+        #expect(sut.api.readmeHTMLCalls.isEmpty)
+        #expect(sut.service.status == .completed(processed: 0, total: 1))
+
+        let manualProcessed = await sut.service.runBatch(
+            limit: 1,
+            delayBetweenRepos: 0,
+            respectRetryCooldown: false
+        )
+
+        #expect(manualProcessed == 1)
+        #expect(sut.api.readmeHTMLCalls.count == 1)
+        #expect(sut.api.readmeMarkdownCalls.count == 1)
+        #expect(try await sut.readmeRepository.find(repoId: 8)?.renderedHtml == "<h1>retrying</h1>")
+        #expect(try await sut.readmeRepository.findContent(repoId: 8) == "# retrying")
+
+        let state = try await sut.prefetchRepository.state(repoId: 8)
+        #expect(state?.htmlStatus == .succeeded)
+        #expect(state?.markdownStatus == .succeeded)
+        #expect(state?.nextRetryAt == nil)
+    }
+
     private func makeSUT() async throws -> (
         service: ReadmePrefetchService,
         prefetchRepository: ReadmePrefetchRepository,
