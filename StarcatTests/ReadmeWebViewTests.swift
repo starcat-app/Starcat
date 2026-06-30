@@ -26,4 +26,17 @@ struct ReadmeWebViewTests {
         #expect(URL(string: "docs/guide.md", relativeTo: baseURL)?.absoluteURL.absoluteString
             == "https://github.com/alice/foo/blob/HEAD/docs/guide.md")
     }
+
+    @Test("README 文档包含图片预览样式且继续禁止页面脚本")
+    func assembleDocument_includesImagePreviewStylesAndKeepsPageScriptBlocked() {
+        let html = ReadmeWebView.assembleDocument(
+            fragment: #"<p><img src="https://example.com/logo.png" alt="Logo"></p>"#,
+            isDark: false
+        )
+
+        // 图片交互靠 app-owned WKUserScript 注入；README 页面自己的脚本仍由 CSP 禁止。
+        #expect(html.contains("script-src 'none'"))
+        #expect(html.contains(".readme-image-preview"))
+        #expect(html.contains("body.readme-js-ready .markdown-body img:not(.readme-image-loaded)"))
+    }
 }

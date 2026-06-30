@@ -25,6 +25,32 @@ struct ReadmeAssetURLRewriterTests {
         #expect(result.contains("https://raw.githubusercontent.com/alice/foo/HEAD/logo.png"))
     }
 
+    @Test("子目录 README 的相对图片按 data-path 所在目录重写")
+    func rewrite_relativePathUsesReadmeDataPathDirectory() {
+        let html = #"""
+        <div id="readme" data-path=".github/README.md">
+          <img src="img/javalin.png" alt="Logo">
+        </div>
+        """#
+        let result = ReadmeAssetURLRewriter.rewrite(in: html, owner: "javalin", repo: "javalin")
+
+        #expect(result.contains("https://raw.githubusercontent.com/javalin/javalin/HEAD/.github/img/javalin.png"))
+        #expect(!result.contains("https://raw.githubusercontent.com/javalin/javalin/HEAD/img/javalin.png"))
+    }
+
+    @Test("子目录 README 旧缓存里错误的 raw HEAD 根路径会被修复")
+    func rewrite_repairsWrongSameRepoHeadRawURLWithDataPathDirectory() {
+        let html = #"""
+        <div id="readme" data-path=".github/README.md">
+          <img src="https://raw.githubusercontent.com/javalin/javalin/HEAD/img/javalin.png" alt="Logo">
+        </div>
+        """#
+        let result = ReadmeAssetURLRewriter.rewrite(in: html, owner: "javalin", repo: "javalin")
+
+        #expect(result.contains("https://raw.githubusercontent.com/javalin/javalin/HEAD/.github/img/javalin.png"))
+        #expect(!result.contains(#"src="https://raw.githubusercontent.com/javalin/javalin/HEAD/img/javalin.png""#))
+    }
+
     @Test("绝对 URL 图片不重写")
     func rewrite_absoluteURL() {
         let html = #"<img src="https://example.com/logo.png" alt="logo">"#
