@@ -72,6 +72,7 @@ enum DatabaseMigrations {
             try createRepoNotes(db)
             try createReadmes(db)
             try createReadmeContents(db)
+            try createReadmePrefetchStates(db)
             try createSavedSearches(db)
             try createSmartCollections(db)
             try createSearchHistory(db)
@@ -475,6 +476,27 @@ enum DatabaseMigrations {
             t.column("cached_at", .text).notNull()
             t.column("size", .integer).notNull().defaults(to: 0)
         }
+    }
+
+    /// readme_prefetch_states:README 后台预拉调度状态。
+    ///
+    /// 这里只记录调度与失败冷却，不保存正文；正文仍分别落在 `readmes`(HTML) 和
+    /// `readme_contents`(raw Markdown)。这样设置页清理 README 缓存时不需要理解新的正文来源，
+    /// 后台任务也可以通过 `next_retry_at` 避免网络错误或 404 后反复打 GitHub。
+    private static func createReadmePrefetchStates(_ db: Database) throws {
+        try db.create(table: "readme_prefetch_states") { t in
+            t.column("repo_id", .integer).primaryKey()
+                .references("repos", column: "id", onDelete: .cascade)
+            t.column("html_status", .text).notNull().defaults(to: "pending")
+            t.column("markdown_status", .text).notNull().defaults(to: "pending")
+            t.column("last_attempt_at", .text)
+            t.column("next_retry_at", .text)
+            t.column("failure_count", .integer).notNull().defaults(to: 0)
+            t.column("last_error_kind", .text)
+        }
+
+        try db.create(index: "idx_readme_prefetch_retry", on: "readme_prefetch_states", columns: ["next_retry_at"])
+        try db.create(index: "idx_readme_prefetch_html_status", on: "readme_prefetch_states", columns: ["html_status"])
     }
 
     /// saved_searches：用户保存的搜索条件。`query` 存搜索过滤参数的 JSON 序列化。

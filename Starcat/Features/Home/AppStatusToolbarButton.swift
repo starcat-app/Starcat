@@ -59,6 +59,8 @@ struct AppStatusToolbarButton: View {
                 lastSyncedAt: lastSyncedAt,
                 syncState: syncManager.state,
                 syncProgress: syncManager.progress,
+                readmePrefetchService: dependencies.readmePrefetchService,
+                readmePrefetchEnabled: settings.readmePrefetchEnabled,
                 batchService: dependencies.batchAIQueueService,
                 mcpState: dependencies.mcpService.state,
                 mcpEnabled: settings.mcpServiceEnabled,
@@ -100,8 +102,10 @@ struct AppStatusToolbarButton: View {
 
     private var activeTaskCount: Int {
         let batch = dependencies.batchAIQueueService
-        guard batch.isRunning || batch.isPaused else { return 0 }
-        return max(0, batch.totalCount - batch.finishedCount)
+        let batchRemaining = (batch.isRunning || batch.isPaused) ? max(0, batch.totalCount - batch.finishedCount) : 0
+        let readme = dependencies.readmePrefetchService
+        let readmeRemaining = readme.isRunning ? max(0, readme.total - readme.processed) : 0
+        return batchRemaining + readmeRemaining
     }
 
     private var hasIssue: Bool {
@@ -162,6 +166,8 @@ private struct AppStatusPanel: View {
     let lastSyncedAt: Date?
     let syncState: SyncState
     let syncProgress: SyncProgress?
+    let readmePrefetchService: ReadmePrefetchService
+    let readmePrefetchEnabled: Bool
     let batchService: BatchAIQueueService
     let mcpState: StarcatMCPService.State
     let mcpEnabled: Bool
@@ -186,6 +192,13 @@ private struct AppStatusPanel: View {
                 title: "toolbar.status.sync.title",
                 subtitle: syncSubtitle,
                 accessory: { syncAccessory }
+            )
+            statusRow(
+                icon: readmePrefetchIcon,
+                tint: readmePrefetchTint,
+                title: "toolbar.status.readmePrefetch.title",
+                subtitle: readmePrefetchSubtitle,
+                accessory: { readmePrefetchAccessory }
             )
             statusRow(
                 icon: taskIcon,
@@ -327,6 +340,78 @@ private struct AppStatusPanel: View {
     @ViewBuilder
     private var syncAccessory: some View {
         if case .syncing = syncState {
+            ProgressView()
+                .controlSize(.small)
+        } else {
+            EmptyView()
+        }
+    }
+
+    private var readmePrefetchIcon: String {
+        switch readmePrefetchService.status {
+        case .running:
+            return "arrow.down.doc"
+        case .coolingDown:
+            return "timer"
+        case .completed, .idle:
+            return readmePrefetchEnabled ? "doc.richtext" : "pause.circle"
+        case .disabled:
+            return "pause.circle"
+        }
+    }
+
+    private var readmePrefetchTint: Color {
+        if !readmePrefetchEnabled { return .secondary }
+        if readmePrefetchService.failures > 0 { return .orange }
+        switch readmePrefetchService.status {
+        case .running, .coolingDown:
+            return .accentColor
+        case .completed, .idle:
+            return .green
+        case .disabled:
+            return .secondary
+        }
+    }
+
+    private var readmePrefetchSubtitle: String {
+        guard readmePrefetchEnabled else {
+            return String.l10n("toolbar.status.readmePrefetch.disabled")
+        }
+        switch readmePrefetchService.status {
+        case .running:
+            return String(
+                format: String.l10n("toolbar.status.readmePrefetch.progressFormat"),
+                readmePrefetchService.processed,
+                readmePrefetchService.total,
+                readmePrefetchService.failures
+            )
+        case .coolingDown(let until):
+            return String(
+                format: String.l10n("toolbar.status.readmePrefetch.coolingDownFormat"),
+                relativeFutureDate(until)
+            )
+        case .completed(let processed, let total):
+            return String(
+                format: String.l10n("toolbar.status.readmePrefetch.completedFormat"),
+                processed,
+                total,
+                readmePrefetchService.htmlUpdated,
+                readmePrefetchService.markdownUpdated,
+                readmePrefetchService.failures
+            )
+        case .idle:
+            if let lastRunAt = readmePrefetchService.lastRunAt {
+                return String(format: String.l10n("toolbar.status.readmePrefetch.lastFormat"), relativePastDate(lastRunAt))
+            }
+            return String.l10n("toolbar.status.readmePrefetch.waiting")
+        case .disabled:
+            return String.l10n("toolbar.status.readmePrefetch.disabled")
+        }
+    }
+
+    @ViewBuilder
+    private var readmePrefetchAccessory: some View {
+        if readmePrefetchService.isRunning {
             ProgressView()
                 .controlSize(.small)
         } else {

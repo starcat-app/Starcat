@@ -115,6 +115,8 @@ final class SyncManager {
     private let repository: any RepoRepositoryProtocol
     /// 系统通知入口。只在需要用户回来处理的失败态使用，普通同步完成不通知。
     private let notificationService: ReleaseNotificationService?
+    /// 匿名遥测入口。仅记录 sync 结果类别和粗粒度数量分桶，不包含用户 ID 或 repo 信息。
+    private let telemetryManager: TelemetryManager?
     /// C1：Rate Limit 退避时额外多等多少秒（吸收时钟漂移）。
     /// 默认 5；单测里传 0 让重试逻辑近乎瞬时完成。
     private let rateLimitBufferSeconds: TimeInterval
@@ -138,11 +140,13 @@ final class SyncManager {
         apiClient: any GitHubAPIClientProtocol,
         repository: any RepoRepositoryProtocol,
         notificationService: ReleaseNotificationService? = nil,
+        telemetryManager: TelemetryManager? = nil,
         rateLimitBufferSeconds: TimeInterval = 5
     ) {
         self.apiClient = apiClient
         self.repository = repository
         self.notificationService = notificationService
+        self.telemetryManager = telemetryManager
         self.rateLimitBufferSeconds = rateLimitBufferSeconds
     }
 
@@ -203,6 +207,7 @@ final class SyncManager {
         lastRunWroteRepos = false
         state = .syncing
         progress = SyncProgress(current: 0, total: nil, currentPage: 1)
+        telemetryManager?.track(.syncStarted)
 
         // C3：!force AND 本地有 lastSyncAt → 走增量;否则全量。
         // force 路径强制全量(供 unstar 兜底检测)。
@@ -286,6 +291,10 @@ final class SyncManager {
 
                     lastRunWroteRepos = false
                     state = .completed(at: Date())
+                    telemetryManager?.track(
+                        .syncFinished,
+                        properties: [.result: .string("not_modified")]
+                    )
                     runningTask = nil
                     return
                 }
@@ -377,6 +386,13 @@ final class SyncManager {
 
             lastRunWroteRepos = totalSynced > 0
             state = .completed(at: Date())
+            telemetryManager?.track(
+                .syncFinished,
+                properties: [
+                    .result: .string(totalSynced > 0 ? "updated" : "unchanged"),
+                    .repoCountBucket: .string(TelemetryBuckets.repoCountBucket(finalCount))
+                ]
+            )
             AppLog.sync.info("Sync complete (incremental=\(incrementalMode, privacy: .public)): wrote \(totalSynced, privacy: .public), local total \(finalCount, privacy: .public) in \(Int(Date().timeIntervalSince(syncStartedAt)), privacy: .public)s")
         } catch is CancellationError {
             state = .idle
@@ -387,6 +403,7 @@ final class SyncManager {
         } catch NetworkError.rateLimited(let retryAfter) {
             let retryAt = Date().addingTimeInterval(retryAfter)
             state = .rateLimited(retryAt: retryAt)
+            telemetryManager?.track(.syncFailed, properties: [.result: .string("rate_limited")])
             AppLog.sync.warning("Rate limited; retry at \(retryAt, privacy: .public)")
             await notificationService?.dispatchSyncIssue(
                 kind: .rateLimited,
@@ -403,6 +420,7 @@ final class SyncManager {
             )
         } catch NetworkError.unauthorized {
             state = .failed(message: String.l10n("sync.error.tokenExpired"))
+            telemetryManager?.track(.syncFailed, properties: [.result: .string("unauthorized")])
             AppLog.sync.error("Unauthorized during sync")
             await notificationService?.dispatchSyncIssue(
                 kind: .unauthorized,
@@ -423,6 +441,7 @@ final class SyncManager {
                 service: "GitHub"
             )
             state = .failed(message: friendly.message)
+            telemetryManager?.track(.syncFailed, properties: [.result: .string("failed")])
             AppLog.sync.error("Sync failed: \(error.localizedDescription, privacy: .public)")
             await notificationService?.dispatchSyncIssue(kind: .failed, message: friendly.message)
             friendly.record(category: "sync", operation: "github.fullSync", service: "github")
@@ -433,6 +452,7 @@ final class SyncManager {
                 service: "GitHub"
             )
             state = .failed(message: friendly.message)
+            telemetryManager?.track(.syncFailed, properties: [.result: .string("failed")])
             AppLog.sync.error("Sync failed (unknown): \(error.localizedDescription, privacy: .public)")
             await notificationService?.dispatchSyncIssue(kind: .failed, message: friendly.message)
             friendly.record(category: "sync", operation: "github.fullSync", service: "github")

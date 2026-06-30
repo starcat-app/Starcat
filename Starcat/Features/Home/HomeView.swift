@@ -182,7 +182,8 @@ struct HomeView: View {
         trendingRepository: any TrendingRepositoryProtocol,
         githubAPIClient: any GitHubAPIClientProtocol,
         readmeTranslationService: ReadmeTranslationService,
-        entitlementGate: EntitlementGate
+        entitlementGate: EntitlementGate,
+        telemetryManager: TelemetryManager? = nil
     ) {
         _viewModel = State(initialValue: HomeViewModel(
             repository: repository,
@@ -204,7 +205,8 @@ struct HomeView: View {
         _readmeVM = State(initialValue: ReadmeViewModel(
             api: readmeAPI,
             availability: readmeAvailability,
-            onHTMLLoaded: readmeOnHTMLLoaded
+            onHTMLLoaded: readmeOnHTMLLoaded,
+            telemetryManager: telemetryManager
         ))
         _translationVM = State(initialValue: ReadmeTranslationViewModel(service: readmeTranslationService))
         _searchCenterViewModel = State(initialValue: SearchCenterViewModel(
@@ -217,7 +219,8 @@ struct HomeView: View {
             includeWebInAll: {
                 AppSettings.shared.anySearchEnabled && AppSettings.shared.searchIncludeWebInAll
             },
-            entitlementGate: entitlementGate
+            entitlementGate: entitlementGate,
+            telemetryManager: telemetryManager
         ))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
             tagRepository: tagRepository,
@@ -228,84 +231,27 @@ struct HomeView: View {
     }
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(
-                selectedPage: $selectedSidebarPage,
-                selectedExploreMode: $selectedExploreMode,
-                selectedTrendingLanguage: $selectedTrendingLanguage,
-                selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
-                selectedDiscoveryTopic: $selectedDiscoveryTopic,
-                selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
-                selectedActivityCategory: $selectedActivityCategory,
-                showTagManagement: $showTagManagement,
-                showReleaseTimeline: $showReleaseTimeline,
-                onSelectRootPage: selectSidebarRootPage,
-                onShowBatchAIPanel: {
-                    showBatchAIPanel = true
-                },
-                // 2026-06-02 21:38：透传给 SidebarHeaderView 让头像背景的语言色在 Trending 页也能联动
-                currentTrendingRepo: selectedTrendingRepo,
-                // 2026-06-05：Activity 页没有统一 Repo 模型，直接透传 ActivityItem 收口后的 accent 色。
-                // 2026-06-11 D-29：weekly 分类没有 selectedActivityItem，单独走 weekly project 语言色派生路径,
-                // 让 sidebar 头像背景在 weekly 内切换 project 时也能跟着 GitHub 语言色联动,
-                // 与 manage / trending / activity-repo-backed 三家行为同构(详见 derivedActivityTintColor doc)。
-                currentActivityTintColor: derivedActivityTintColor
-            )
-                .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
+        navigationWithLifecycle
+    }
+
+    private var baseNavigation: AnyView {
+        // HomeView 的 modifier 链已经很长，新增后台任务监听后 Swift 6 容易在
+        // 巨型泛型链上 type-check 超时。分段 AnyView 只用于切断编译期泛型推断，
+        // 不改变三栏内容与状态流。
+        AnyView(NavigationSplitView(columnVisibility: $columnVisibility) {
+            sidebarColumn
         } content: {
-            RepoListView(
-                trendingRepository: trendingRepository,
-                githubAPIClient: githubAPIClient,
-                selectedPage: selectedSidebarPage,
-                selectedExploreMode: $selectedExploreMode,
-                selectedTrendingLanguage: $selectedTrendingLanguage,
-                selectedTrendingRepoID: $selectedTrendingRepoID,
-                selectedTrendingRepo: $selectedTrendingRepo,
-                selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
-                selectedDiscoveryTopic: $selectedDiscoveryTopic,
-                selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
-                selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
-                selectedDiscoveryRepo: $selectedDiscoveryRepo,
-                selectedActivityCategory: $selectedActivityCategory,
-                selectedActivityItem: $selectedActivityItem,
-                showsAgentToolbarEntry: showsAgentToolbarEntry,
-                onStartBatchAI: {
-                    // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
-                    // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
-                    showBatchAIOptions = true
-                },
-                onShowBatchAIPanel: {
-                    showBatchAIPanel = true
-                },
-                onOpenSearchCenter: {
-                    searchCenterViewModel.present()
-                },
-                onOpenAgentWorkspace: {
-                    showAgentWorkspace = true
-                }
-            )
-                .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
+            contentColumn
         } detail: {
-            if selectedSidebarPage == .activity {
-                if selectedActivityCategory == .weekly {
-                    // MUL-176 followup：weekly 分类右侧详情独立路由到 WeeklyDetailView，
-                    // 不复用 ActivityDetailView——weekly 项目没有本地 Repo 缓存，且要展示
-                    // 期号 / 周刊原文等专属字段（详情数据来自 WeeklySelectionService）。
-                    WeeklyDetailView(item: dependencies.weeklySelectionService.selectedItem)
-                } else {
-                    ActivityDetailView(item: selectedActivityItem)
-                }
-            } else if selectedSidebarPage == .trending, selectedExploreMode != .trending {
-                DiscoveryDetailView(item: selectedDiscoveryRepo)
-            } else {
-                RepoDetailView(
-                    selectedTrendingRepo: selectedTrendingRepo
-                )
-            }
+            detailColumn
         }
         .environment(viewModel)
         .environment(readmeVM)
-        .environment(translationVM)
+        .environment(translationVM))
+    }
+
+    private var navigationWithOverlays: AnyView {
+        AnyView(baseNavigation
         // 调试用：右上角浮动 W×H 胶囊，仅 DEBUG 包 + 设了 launch arg `-DebugLayoutOverlay YES` 时显示。
         // 详见 `Shared/Utilities/DebugFlags.swift` 的类型文档（含 Xcode Scheme / LLDB / defaults 三种切换方式）。
         .overlay(alignment: .topTrailing) {
@@ -360,14 +306,12 @@ struct HomeView: View {
                 )
                 .hidden()
         }
-        .sheet(isPresented: $showTagManagement, onDismiss: {
-            // W4 A6：标签管理 sheet 关闭后 → 刷新 Sidebar Tags 段 + 当前列表
-            // （用户可能在 sheet 里增删 / 合并标签，Sidebar 与列表都要跟着变）
-            Task {
-                await viewModel.refreshSidebar()
-                await viewModel.reloadItems(forceRefresh: true)
-            }
-        }) {
+        )
+    }
+
+    private var navigationWithSheets: AnyView {
+        AnyView(navigationWithOverlays
+        .sheet(isPresented: $showTagManagement, onDismiss: handleTagManagementDismissed) {
             TagManagementView(viewModel: tagMgmtVM)
                 .appSheetRootEnvironment(dependencies)
         }
@@ -404,6 +348,15 @@ struct HomeView: View {
         .sheet(item: homePaywallBinding) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
+        )
+    }
+
+    private var navigationWithLifecycle: AnyView {
+        navigationWithRoutingLifecycle
+    }
+
+    private var navigationWithStartupLifecycle: AnyView {
+        AnyView(navigationWithSheets
         // HOM-47：登录后启动后台 Release 轮询；登出时停。
         // 与 SyncManager 不同：Release Poller 自调度（NSBackgroundActivityScheduler），
         // 启动一次后由系统在后台触发；这里只负责启停门控。
@@ -415,19 +368,12 @@ struct HomeView: View {
         // - 测试 host 跳过（避免 `xcodebuild test` 触发后台任务 hang testmanagerd）。
         // - `start()` 内部对 `.running` 状态幂等，多次触发不会重启已在跑的任务。
         .onChange(of: authSession.state) { _, newState in
-            if newState.isAuthenticated {
-                dependencies.releasePoller.start()
-                dependencies.openSSFScorePoller.start()
-                dependencies.repoHealthPoller.start()
-                if !TestEnvironment.isRunning, settings.aiIndexAutoPrefetchEnabled {
-                    dependencies.semanticIndexBuilder.start()
-                }
-            } else {
-                dependencies.releasePoller.stop()
-                dependencies.openSSFScorePoller.stop()
-                dependencies.repoHealthPoller.stop()
-                dependencies.semanticIndexBuilder.cancel()
-            }
+            handleBackgroundPollersAuthChange(newState)
+        }
+        // README 预拉是独立于 AI 向量索引的后台任务：默认开启，但用户可以在设置页关闭。
+        // 开关只影响后台调度；详情页手动打开 repo 时仍走正常 SWR 加载链路。
+        .onChange(of: settings.readmePrefetchEnabled) { _, newValue in
+            applyReadmePrefetchSetting(newValue)
         }
         // 2026-06-13 dong4j 补救 A 配套：用户运行期切换「自动预拉」Toggle 即时生效。
         // 已登录态下勾选 Toggle → 立刻启动 Builder；取消勾选 → 立刻暂停。
@@ -475,12 +421,7 @@ struct HomeView: View {
         // 304 早退 / 失败 / page 1 dtos 空都不会让 firstPageWrittenAt 翻边沿（详见 SyncManager.swift）。
         // guard isAuthenticated 防御：理论上 SyncManager 不会在未登录态跑，但加一手避免账号切换瞬间误触。
         .onChange(of: syncManager.firstPageWrittenAt) { _, newValue in
-            guard newValue != nil, authSession.state.isAuthenticated else { return }
-            Task { @MainActor in
-                await viewModel.refreshSidebar()
-                await viewModel.reloadItems(forceRefresh: true)
-                applyManageDetailSelectionPolicy()
-            }
+            handleFirstPageWrittenChange(newValue)
         }
         // HOM-126：把同步状态变化转发给 AutoTidyScheduler，让它做"同步完成 → 自动整理"
         // 边沿触发判定。scheduler 内部会先 guard `autoTidySettings.triggerOnSync`，
@@ -496,83 +437,37 @@ struct HomeView: View {
         .onChange(of: settings.autoTidySettings) { _, _ in
             dependencies.autoTidyScheduler.reconfigure()
         }
+        )
+    }
+
+    private var navigationWithReadmeLifecycle: AnyView {
+        AnyView(navigationWithStartupLifecycle
         // 选中 repo 变化（含 nil）→ 驱动 README 加载 / 重置
         // 监听 selectedRepoID（Int64?）而非 selectedRepo（Repo? 派生）：
         // - Int64 是 value type，equality 100% 确定
         // - readmeVM 在 HomeView 已构造完成，不存在"@State 异步赋值"竞态
         // - 即便 RepoDetailView 因 nil 走 emptyState 被销毁，本 onChange 仍稳定触发
         .onChange(of: viewModel.selectedRepoID) { _, newID in
-            // R-07：外部赋值（SearchCenter / 详情页"上一篇下一篇"）可能选中 page > 1 的 repo。
-            // 这里集中调一次 ensureRepoVisible，让列表把 currentPage 推到含 repo 的位置 → 后续
-            // RepoListView 的 ScrollViewReader 才能 scrollTo（target row 已在 items 切片内）。
-            // 已在 items 内（用户点行触发的常态）时 no-op，无副作用。
-            if let id = newID {
-                viewModel.ensureRepoVisible(repoId: id)
-            }
-            if let repo = viewModel.selectedRepo {
-                readmeVM.load(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
-                // HOM-68：repo 变化时重置翻译态。源 HTML 尚未拿到，这里只重置 UI
-                // 占位；下方监听 `readmeVM.state` 会在 .loaded 时再补一次 prepare
-                // 让 cacheIsStale 计算到位。
-                translationVM.prepare(
-                    repo: repo,
-                    sourceHtml: nil,
-                    targetLanguage: settings.readmeTranslationLanguage
-                )
-            } else {
-                readmeVM.reset()
-                translationVM.prepare(
-                    repo: nil,
-                    sourceHtml: nil,
-                    targetLanguage: settings.readmeTranslationLanguage
-                )
-            }
+            handleSelectedRepoIDChange(newID)
         }
         // Trending repo 选中变化 → 驱动 Trending README 加载
         .onChange(of: selectedTrendingRepoID) { _, newID in
-            if let id = newID {
-                // id 格式是 "owner/repo"，需要拆分成 owner 和 repo
-                let parts = id.split(separator: "/", maxSplits: 1)
-                if parts.count == 2 {
-                    readmeVM.loadTrending(owner: String(parts[0]), repo: String(parts[1]), isLoggedIn: authSession.state.isAuthenticated)
-                }
-            } else {
-                readmeVM.reset()
-            }
-            // Trending repo 没有本地 Repo.id，HOM-68 第一版不为 trending 提供翻译入口
-            // （翻译缓存需要 repo_id 外键，trending 走独立 trending_readmes 表，
-            //  避免引入复杂的双写路径；用户切到 Manage 后再翻译即可）。这里只清状态。
-            translationVM.prepare(
-                repo: nil,
-                sourceHtml: nil,
-                targetLanguage: settings.readmeTranslationLanguage
-            )
+            handleTrendingRepoIDChange(newID)
         }
         // HOM-68：README 加载完成后把源 HTML 喂给翻译 VM，用于刷新 cacheIsStale。
         // 仅 Manage 详情页（selectedRepo 非 nil）需要，Trending 路径不接翻译入口。
         .onChange(of: readmeStateSignature) { _, _ in
-            guard let repo = viewModel.selectedRepo else { return }
-            if case .loaded(let html, _) = readmeVM.state {
-                translationVM.prepare(
-                    repo: repo,
-                    sourceHtml: html,
-                    targetLanguage: settings.readmeTranslationLanguage
-                )
-            }
+            refreshTranslationSourceIfNeeded()
         }
         // 用户在详情页切换目标语言 → 重新预载缓存并复位显示。
         .onChange(of: settings.readmeTranslationLanguage) { _, newLanguage in
-            guard let repo = viewModel.selectedRepo else { return }
-            let html: String? = {
-                if case .loaded(let value, _) = readmeVM.state { return value }
-                return nil
-            }()
-            translationVM.changeLanguage(
-                to: newLanguage,
-                repo: repo,
-                sourceHtml: html
-            )
+            handleReadmeTranslationLanguageChange(newLanguage)
         }
+        )
+    }
+
+    private var navigationWithRoutingLifecycle: AnyView {
+        AnyView(navigationWithReadmeLifecycle
         // 监听完整登录态变化：任何登录都立刻切 Manage、登出时回 Trending。
         //
         // 为什么监听整个 state 而非 isAuthenticated（Bool）：
@@ -584,42 +479,12 @@ struct HomeView: View {
         //        而 isAuthenticated 在 A→B 之间会经历 false 中间态，用 Bool 无法表达;
         //     ② 同时天然滤掉 .unauthenticated → .awaitingUserCode 等中间态（user.id 都是 nil）。
         .onChange(of: authSession.state) { oldState, newState in
-            let oldUserID = oldState.user?.id
-            let newUserID = newState.user?.id
-
-            // user id 没变（如 unauthenticated ↔ awaitingUserCode 中间态、authenticated(A) 内部刷新）
-            // → 不动任何业务状态，避免误清缓存导致 UI 无谓重渲。
-            guard oldUserID != newUserID else { return }
-
-            if let newUser = newState.user {
-                // 登录态变化统一走 `handleAuthenticatedEntry`（区分会话恢复 vs 真换账号）。
-                handleAuthenticatedEntry(oldUserID: oldUserID, user: newUser)
-            } else if oldUserID != nil {
-                lastActivatedUserID = nil
-                // 登出（newUserID == nil 且 oldUserID != nil）：保存当前 Manage selection（排除
-                // trending）, 强制切回 Trending 并清除选择 + 清缓存。
-                //
-                // 为什么登出也要 reset：D-30 把 DB 切到了 `_anonymous`，新 DB 是空的；
-                // 但 viewModel 内的 items / sidebar 计数还是 A 的，trending 视图不看这些字段,
-                // 看起来无害 —— 但如果用户登出后立即又点 sidebar 上的 "全部仓库" 之类的
-                // 入口（虽然该入口在未登录态下被隐藏，但防御性编程），残留数据会闪现。
-                if !viewModel.selection.isTrending {
-                    savedManageSelection = viewModel.selection
-                }
-                viewModel.resetAllStateForUserSwitch()
-                selectedSidebarPage = .trending
-                viewModel.selection = .trending
-                viewModel.selectedRepoID = nil
-            }
+            handleAuthRoutingChange(oldState: oldState, newState: newState)
         }
         // Manage 页分类变化 → 持久化为"上次分类"，供下次启动恢复。
         // 仅在 Manage 页且非 Trending 时记录，避免把 Trending 写成 Manage 分类。
         .onChange(of: viewModel.selection) { _, newSelection in
-            guard selectedSidebarPage == .manage, !newSelection.isTrending else { return }
-            savedManageSelection = newSelection
-            settings.lastManageSelectionRaw = newSelection.persistedRawValue
-            resetSmartCollectionRepoSelectionIfNeeded(for: newSelection)
-            applyManageDetailSelectionPolicy()
+            handleManageSelectionChange(newSelection)
         }
         .onChange(of: settings.smartSearchMode) { _, newMode in
             if viewModel.smartSearchMode != newMode {
@@ -640,61 +505,15 @@ struct HomeView: View {
         }
         // Manage ↔ Trending 切换时，记住各自的上次选择，切换回来时恢复
         .onChange(of: selectedSidebarPage) { oldPage, newPage in
-            // 保存旧页面的状态
-            switch oldPage {
-            case .manage:
-                // 只记录真实的 Manage 分类。启动期 default(.manage) → .task 改成 .trending
-                // 会让这里读到 .trending，必须排除，否则污染"上次分类"导致登录后恢复成 trending。
-                if !viewModel.selection.isTrending {
-                    savedManageSelection = viewModel.selection
-                }
-            case .trending:
-                savedTrendingLanguage = selectedTrendingLanguage
-            case .activity:
-                savedActivityCategory = selectedActivityCategory
-            }
-
-            // 清除所有 repo 选中状态，避免详情页显示残留
-            viewModel.selectedRepoID = nil
-            selectedTrendingRepoID = nil
-            selectedTrendingRepo = nil
-            selectedDiscoveryRepoID = nil
-            selectedDiscoveryRepo = nil
-            selectedActivityItem = nil
-            // MUL-176 followup：切走 Activity 时一并清掉周刊选中，避免下次回 Activity
-            // 时右侧详情停留在上次的周刊项目上。
-            dependencies.weeklySelectionService.clearSelection()
-
-            // 恢复新页面的状态
-            switch newPage {
-            case .manage:
-                // 如果当前 selection 是 .trending（从 Trending 页切过来时设置的），
-                // 恢复 Manage 上次的分类选择
-                if viewModel.selection.isTrending {
-                    viewModel.selection = savedManageSelection
-                }
-            case .trending:
-                // 确保 selection 标记为 trending，并恢复上次的语言选择
-                viewModel.selection = .trending
-                selectedTrendingLanguage = savedTrendingLanguage
-            case .activity:
-                selectedActivityCategory = savedActivityCategory
-            }
+            handleSidebarPageChange(oldPage: oldPage, newPage: newPage)
         }
         .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.browseTrendingNotification)) { _ in
             openTrendingFromFirstRunOnboarding()
         }
         .onChange(of: selectedActivityCategory) { _, newCategory in
-            guard selectedSidebarPage == .activity else { return }
-            savedActivityCategory = newCategory
-            settings.lastActivityCategoryRaw = newCategory.persistedRawValue
-            // Activity 分类切换先清空旧详情；是否在新列表稳定后自动选第一条由
-            // settings.openFirstDetailOnCategoryChange 统一决定。
-            selectedActivityItem = nil
-            dependencies.weeklySelectionService.clearSelection()
-            // 过渡期间仅抑制头像 tint 补间；草坪蛇不参与（见 SidebarAnimationCoordinator）。
-            dependencies.sidebarAnimationCoordinator.beginActivityCategoryTransition()
+            handleActivityCategoryChange(newCategory)
         }
+        )
     }
 
     /// 本地结果回到 Manage 并复用现有列表加载流程，确保列表与详情状态仍由
@@ -754,6 +573,10 @@ struct HomeView: View {
     }
 
     private func openSearchRepositoryAI(_ repo: Repo) {
+        dependencies.telemetryManager.track(
+            .aiPanelOpened,
+            properties: [.source: .string("search")]
+        )
         RepoAIWindowController.show(
             repo: repo,
             dependencies: dependencies,
@@ -769,6 +592,301 @@ struct HomeView: View {
                 AppLog.network.error("Search star toggle failed: \(error.localizedDescription, privacy: .public)")
             }
         }
+    }
+
+    private var sidebarColumn: some View {
+        SidebarView(
+            selectedPage: $selectedSidebarPage,
+            selectedExploreMode: $selectedExploreMode,
+            selectedTrendingLanguage: $selectedTrendingLanguage,
+            selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
+            selectedDiscoveryTopic: $selectedDiscoveryTopic,
+            selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
+            selectedActivityCategory: $selectedActivityCategory,
+            showTagManagement: $showTagManagement,
+            showReleaseTimeline: $showReleaseTimeline,
+            onSelectRootPage: selectSidebarRootPage,
+            onShowBatchAIPanel: {
+                showBatchAIPanel = true
+            },
+            // 2026-06-02 21:38：透传给 SidebarHeaderView 让头像背景的语言色在 Trending 页也能联动
+            currentTrendingRepo: selectedTrendingRepo,
+            // 2026-06-05：Activity 页没有统一 Repo 模型，直接透传 ActivityItem 收口后的 accent 色。
+            // 2026-06-11 D-29：weekly 分类没有 selectedActivityItem，单独走 weekly project 语言色派生路径,
+            // 让 sidebar 头像背景在 weekly 内切换 project 时也能跟着 GitHub 语言色联动,
+            // 与 manage / trending / activity-repo-backed 三家行为同构(详见 derivedActivityTintColor doc)。
+            currentActivityTintColor: derivedActivityTintColor
+        )
+        .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
+    }
+
+    private var contentColumn: some View {
+        RepoListView(
+            trendingRepository: trendingRepository,
+            githubAPIClient: githubAPIClient,
+            selectedPage: selectedSidebarPage,
+            selectedExploreMode: $selectedExploreMode,
+            selectedTrendingLanguage: $selectedTrendingLanguage,
+            selectedTrendingRepoID: $selectedTrendingRepoID,
+            selectedTrendingRepo: $selectedTrendingRepo,
+            selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
+            selectedDiscoveryTopic: $selectedDiscoveryTopic,
+            selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
+            selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
+            selectedDiscoveryRepo: $selectedDiscoveryRepo,
+            selectedActivityCategory: $selectedActivityCategory,
+            selectedActivityItem: $selectedActivityItem,
+            showsAgentToolbarEntry: showsAgentToolbarEntry,
+            onStartBatchAI: {
+                // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
+                // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
+                showBatchAIOptions = true
+            },
+            onShowBatchAIPanel: {
+                showBatchAIPanel = true
+            },
+            onOpenSearchCenter: {
+                searchCenterViewModel.present()
+            },
+            onOpenAgentWorkspace: {
+                showAgentWorkspace = true
+            }
+        )
+        .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
+    }
+
+    @ViewBuilder
+    private var detailColumn: some View {
+        if selectedSidebarPage == .activity {
+            if selectedActivityCategory == .weekly {
+                // MUL-176 followup：weekly 分类右侧详情独立路由到 WeeklyDetailView，
+                // 不复用 ActivityDetailView——weekly 项目没有本地 Repo 缓存，且要展示
+                // 期号 / 周刊原文等专属字段（详情数据来自 WeeklySelectionService）。
+                WeeklyDetailView(item: dependencies.weeklySelectionService.selectedItem)
+            } else {
+                ActivityDetailView(item: selectedActivityItem)
+            }
+        } else if selectedSidebarPage == .trending, selectedExploreMode != .trending {
+            DiscoveryDetailView(item: selectedDiscoveryRepo)
+        } else {
+            RepoDetailView(
+                selectedTrendingRepo: selectedTrendingRepo
+            )
+        }
+    }
+
+    private func handleBackgroundPollersAuthChange(_ newState: AuthState) {
+        if newState.isAuthenticated {
+            dependencies.releasePoller.start()
+            dependencies.openSSFScorePoller.start()
+            dependencies.repoHealthPoller.start()
+            startReadmePrefetchIfNeeded()
+            if !TestEnvironment.isRunning, settings.aiIndexAutoPrefetchEnabled {
+                dependencies.semanticIndexBuilder.start()
+            }
+        } else {
+            dependencies.releasePoller.stop()
+            dependencies.openSSFScorePoller.stop()
+            dependencies.repoHealthPoller.stop()
+            stopReadmePrefetch()
+            dependencies.semanticIndexBuilder.cancel()
+        }
+    }
+
+    private func handleFirstPageWrittenChange(_ newValue: Date?) {
+        guard newValue != nil, authSession.state.isAuthenticated else { return }
+        Task { @MainActor in
+            await viewModel.refreshSidebar()
+            await viewModel.reloadItems(forceRefresh: true)
+            applyManageDetailSelectionPolicy()
+        }
+    }
+
+    private func handleSelectedRepoIDChange(_ newID: Int64?) {
+        // R-07：外部赋值（SearchCenter / 详情页"上一篇下一篇"）可能选中 page > 1 的 repo。
+        // 这里集中调一次 ensureRepoVisible，让列表把 currentPage 推到含 repo 的位置 → 后续
+        // RepoListView 的 ScrollViewReader 才能 scrollTo（target row 已在 items 切片内）。
+        // 已在 items 内（用户点行触发的常态）时 no-op，无副作用。
+        if let id = newID {
+            dependencies.telemetryManager.track(
+                .repoDetailOpened,
+                properties: [.source: .string("manage")]
+            )
+            viewModel.ensureRepoVisible(repoId: id)
+        }
+        if let repo = viewModel.selectedRepo {
+            readmeVM.load(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
+            // HOM-68：repo 变化时重置翻译态。源 HTML 尚未拿到，这里只重置 UI
+            // 占位；下方监听 `readmeVM.state` 会在 .loaded 时再补一次 prepare
+            // 让 cacheIsStale 计算到位。
+            translationVM.prepare(
+                repo: repo,
+                sourceHtml: nil,
+                targetLanguage: settings.readmeTranslationLanguage
+            )
+        } else {
+            readmeVM.reset()
+            translationVM.prepare(
+                repo: nil,
+                sourceHtml: nil,
+                targetLanguage: settings.readmeTranslationLanguage
+            )
+        }
+    }
+
+    private func handleTrendingRepoIDChange(_ newID: String?) {
+        if let id = newID {
+            dependencies.telemetryManager.track(
+                .repoDetailOpened,
+                properties: [.source: .string("trending")]
+            )
+            // id 格式是 "owner/repo"，需要拆分成 owner 和 repo
+            let parts = id.split(separator: "/", maxSplits: 1)
+            if parts.count == 2 {
+                readmeVM.loadTrending(owner: String(parts[0]), repo: String(parts[1]), isLoggedIn: authSession.state.isAuthenticated)
+            }
+        } else {
+            readmeVM.reset()
+        }
+        // Trending repo 没有本地 Repo.id，HOM-68 第一版不为 trending 提供翻译入口
+        // （翻译缓存需要 repo_id 外键，trending 走独立 trending_readmes 表，
+        //  避免引入复杂的双写路径；用户切到 Manage 后再翻译即可）。这里只清状态。
+        translationVM.prepare(
+            repo: nil,
+            sourceHtml: nil,
+            targetLanguage: settings.readmeTranslationLanguage
+        )
+    }
+
+    private func refreshTranslationSourceIfNeeded() {
+        guard let repo = viewModel.selectedRepo else { return }
+        if case .loaded(let html, _) = readmeVM.state {
+            translationVM.prepare(
+                repo: repo,
+                sourceHtml: html,
+                targetLanguage: settings.readmeTranslationLanguage
+            )
+        }
+    }
+
+    private func handleReadmeTranslationLanguageChange(_ newLanguage: ReadmeTranslationLanguage) {
+        guard let repo = viewModel.selectedRepo else { return }
+        let html: String? = {
+            if case .loaded(let value, _) = readmeVM.state { return value }
+            return nil
+        }()
+        translationVM.changeLanguage(
+            to: newLanguage,
+            repo: repo,
+            sourceHtml: html
+        )
+    }
+
+    private func handleAuthRoutingChange(oldState: AuthState, newState: AuthState) {
+        let oldUserID = oldState.user?.id
+        let newUserID = newState.user?.id
+
+        // user id 没变（如 unauthenticated ↔ awaitingUserCode 中间态、authenticated(A) 内部刷新）
+        // → 不动任何业务状态，避免误清缓存导致 UI 无谓重渲。
+        guard oldUserID != newUserID else { return }
+
+        if let newUser = newState.user {
+            // 登录态变化统一走 `handleAuthenticatedEntry`（区分会话恢复 vs 真换账号）。
+            handleAuthenticatedEntry(oldUserID: oldUserID, user: newUser)
+        } else if oldUserID != nil {
+            lastActivatedUserID = nil
+            // 登出（newUserID == nil 且 oldUserID != nil）：保存当前 Manage selection（排除
+            // trending）, 强制切回 Trending 并清除选择 + 清缓存。
+            //
+            // 为什么登出也要 reset：D-30 把 DB 切到了 `_anonymous`，新 DB 是空的；
+            // 但 viewModel 内的 items / sidebar 计数还是 A 的，trending 视图不看这些字段,
+            // 看起来无害 —— 但如果用户登出后立即又点 sidebar 上的 "全部仓库" 之类的
+            // 入口（虽然该入口在未登录态下被隐藏，但防御性编程），残留数据会闪现。
+            if !viewModel.selection.isTrending {
+                savedManageSelection = viewModel.selection
+            }
+            viewModel.resetAllStateForUserSwitch()
+            selectedSidebarPage = .trending
+            viewModel.selection = .trending
+            viewModel.selectedRepoID = nil
+        }
+    }
+
+    private func handleManageSelectionChange(_ newSelection: SidebarItem) {
+        guard selectedSidebarPage == .manage, !newSelection.isTrending else { return }
+        savedManageSelection = newSelection
+        settings.lastManageSelectionRaw = newSelection.persistedRawValue
+        resetSmartCollectionRepoSelectionIfNeeded(for: newSelection)
+        applyManageDetailSelectionPolicy()
+    }
+
+    private func handleSidebarPageChange(oldPage: SidebarRootPage, newPage: SidebarRootPage) {
+        trackSidebarPageOpened(newPage)
+
+        // 保存旧页面的状态
+        switch oldPage {
+        case .manage:
+            // 只记录真实的 Manage 分类。启动期 default(.manage) → .task 改成 .trending
+            // 会让这里读到 .trending，必须排除，否则污染"上次分类"导致登录后恢复成 trending。
+            if !viewModel.selection.isTrending {
+                savedManageSelection = viewModel.selection
+            }
+        case .trending:
+            savedTrendingLanguage = selectedTrendingLanguage
+        case .activity:
+            savedActivityCategory = selectedActivityCategory
+        }
+
+        // 清除所有 repo 选中状态，避免详情页显示残留
+        viewModel.selectedRepoID = nil
+        selectedTrendingRepoID = nil
+        selectedTrendingRepo = nil
+        selectedDiscoveryRepoID = nil
+        selectedDiscoveryRepo = nil
+        selectedActivityItem = nil
+        // MUL-176 followup：切走 Activity 时一并清掉周刊选中，避免下次回 Activity
+        // 时右侧详情停留在上次的周刊项目上。
+        dependencies.weeklySelectionService.clearSelection()
+
+        // 恢复新页面的状态
+        switch newPage {
+        case .manage:
+            // 如果当前 selection 是 .trending（从 Trending 页切过来时设置的），
+            // 恢复 Manage 上次的分类选择
+            if viewModel.selection.isTrending {
+                viewModel.selection = savedManageSelection
+            }
+        case .trending:
+            // 确保 selection 标记为 trending，并恢复上次的语言选择
+            viewModel.selection = .trending
+            selectedTrendingLanguage = savedTrendingLanguage
+        case .activity:
+            selectedActivityCategory = savedActivityCategory
+        }
+    }
+
+    private func trackSidebarPageOpened(_ page: SidebarRootPage) {
+        switch page {
+        case .manage:
+            dependencies.telemetryManager.track(.manageOpened)
+        case .trending:
+            // 探索页沿用历史 `trending` root page，遥测事件使用用户可见的新语义。
+            dependencies.telemetryManager.track(.exploreOpened)
+        case .activity:
+            dependencies.telemetryManager.track(.activityOpened)
+        }
+    }
+
+    private func handleActivityCategoryChange(_ newCategory: ActivityCategory) {
+        guard selectedSidebarPage == .activity else { return }
+        savedActivityCategory = newCategory
+        settings.lastActivityCategoryRaw = newCategory.persistedRawValue
+        // Activity 分类切换先清空旧详情；是否在新列表稳定后自动选第一条由
+        // settings.openFirstDetailOnCategoryChange 统一决定。
+        selectedActivityItem = nil
+        dependencies.weeklySelectionService.clearSelection()
+        // 过渡期间仅抑制头像 tint 补间；草坪蛇不参与（见 SidebarAnimationCoordinator）。
+        dependencies.sidebarAnimationCoordinator.beginActivityCategoryTransition()
     }
 
     /// Sidebar 顶部 root page 切换入口。
@@ -822,6 +940,8 @@ struct HomeView: View {
         // 实际启动由上方 `.onChange(of: authSession.state)` 在恢复完成后触发。
         // 当用户重进 HomeView 时（已登录态稳定）则在这里直接启动。
         // `start()` 对 `.running` 幂等，与 onChange 路径不会双启。
+        startReadmePrefetchIfNeeded()
+
         if !TestEnvironment.isRunning,
            authSession.state.isAuthenticated,
            settings.aiIndexAutoPrefetchEnabled {
@@ -856,6 +976,43 @@ struct HomeView: View {
         Task {
             await dependencies.trendingLanguageStore.reload()
             await dependencies.exploreCatalogStore.reload()
+        }
+    }
+
+    /// README 预拉与 AI 语义索引是两条后台链路。这里单独封装预拉门控，
+    /// 避免把登录态、测试 host、用户开关散落在 SwiftUI modifier 链里。
+    private func startReadmePrefetchIfNeeded() {
+        guard !TestEnvironment.isRunning,
+              authSession.state.isAuthenticated,
+              settings.readmePrefetchEnabled else { return }
+        dependencies.readmePrefetchPoller.start()
+    }
+
+    /// 登出或关闭设置时停止调度器。已完成的本地 README 缓存保留；
+    /// 停止只表示不再继续后台消耗网络与 GitHub API 配额。
+    private func stopReadmePrefetch() {
+        dependencies.readmePrefetchPoller.stop()
+    }
+
+    /// 设置页 Toggle 的即时生效入口。未登录时只保存偏好，不提前启动后台任务；
+    /// 等登录态恢复后再由 `startReadmePrefetchIfNeeded()` 统一判断。
+    private func applyReadmePrefetchSetting(_ enabled: Bool) {
+        guard !TestEnvironment.isRunning,
+              authSession.state.isAuthenticated else { return }
+
+        if enabled {
+            dependencies.readmePrefetchPoller.start()
+        } else {
+            dependencies.readmePrefetchPoller.stop()
+        }
+    }
+
+    /// 标签管理 sheet 关闭后刷新 Sidebar 与当前列表。放在独立方法里能减少
+    /// `HomeView.body` 的闭包推断压力；行为仍保持 W4 A6 的原始约束。
+    private func handleTagManagementDismissed() {
+        Task {
+            await viewModel.refreshSidebar()
+            await viewModel.reloadItems(forceRefresh: true)
         }
     }
 
@@ -1052,7 +1209,11 @@ struct HomeView: View {
             viewModel.resetAllStateForUserSwitch()
         }
 
+        let wasAlreadyOnManage = selectedSidebarPage == .manage
         selectedSidebarPage = .manage
+        if wasAlreadyOnManage {
+            dependencies.telemetryManager.track(.manageOpened)
+        }
         viewModel.selection = savedManageSelection
 
         Task { @MainActor in

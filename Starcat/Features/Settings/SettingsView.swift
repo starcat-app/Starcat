@@ -147,6 +147,9 @@ struct SettingsView: View {
             default: break
             }
         }
+        .onAppear {
+            dependencies.telemetryManager.track(.settingsOpened)
+        }
     }
 
     private var generalTab: some View {
@@ -467,7 +470,9 @@ private struct DiagnosticsSettingsTab: View {
     @State private var exportError: String?
 
     var body: some View {
-        Form {
+        @Bindable var settings = settings
+
+        return Form {
             Section("settings.diagnostics.export.section") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .center, spacing: 12) {
@@ -507,6 +512,23 @@ private struct DiagnosticsSettingsTab: View {
                             .truncationMode(.middle)
                     }
                 }
+            }
+
+            Section("settings.diagnostics.telemetry.section") {
+                Toggle(isOn: $settings.telemetryEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.diagnostics.telemetry.enabled.title")
+                        Text("settings.diagnostics.telemetry.enabled.help")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Text("settings.diagnostics.telemetry.privacy")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section("settings.diagnostics.privacy.section") {
@@ -723,6 +745,15 @@ private struct StorageSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            Section("settings.storage.readmePrefetch.section") {
+                Toggle("settings.storage.readmePrefetch.enabled", isOn: $settings.readmePrefetchEnabled)
+                    .disabled(shouldDisableStorageActions)
+
+                Text("settings.storage.readmePrefetch.help")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("settings.storage.chatHistoryBackend.section") {

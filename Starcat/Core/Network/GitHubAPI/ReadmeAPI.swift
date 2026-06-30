@@ -466,6 +466,13 @@ struct ReadmeAPI {
     /// - Returns: `.updated(readme)` 表示落库成功；`.notFound` 表示 GitHub 没有该 README；
     ///   `.notModified` 表示已有 content / HTML 行不存在；`.failed(error)` 网络或落库失败。
     func refreshMarkdownIfNeeded(for repo: Repo) async -> ReadmeRefreshResult {
+        await inflightTracker.dedupeMarkdown(repoId: repo.id) {
+            await self.performRefreshMarkdownIfNeeded(for: repo)
+        }
+    }
+
+    /// `refreshMarkdownIfNeeded(for:)` 的真实实现，由 `ReadmeInflightTracker` 合并同 repo 并发请求。
+    private func performRefreshMarkdownIfNeeded(for repo: Repo) async -> ReadmeRefreshResult {
         let existing: Readme?
         do {
             existing = try await repository.find(repoId: repo.id)

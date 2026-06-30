@@ -64,6 +64,12 @@ actor ReadmeInflightTracker {
     /// trending 路径（PK = `owner/repo`）的在飞 Task 表。
     private var trendingInflight: [String: Task<ReadmeRefreshResult, Never>] = [:]
 
+    /// raw Markdown 路径（PK = `repo.id`）的在飞 Task 表。
+    ///
+    /// README 展示预拉、详情页 HTML loaded 回调、`SemanticIndexBuilder` 都可能在同一时间补
+    /// Markdown。Markdown 端点没有独立 ETag 状态，必须在进程内合并请求，避免重复烧 GitHub 配额。
+    private var markdownInflight: [Int64: Task<ReadmeRefreshResult, Never>] = [:]
+
     init() {}
 
     /// 对 manage 路径（按 `repoId`）做请求去重。
@@ -107,6 +113,24 @@ actor ReadmeInflightTracker {
         return await task.value
     }
 
+    /// 对 raw Markdown 路径（按 `repoId`）做请求去重。语义与 `dedupeManage` 对齐。
+    func dedupeMarkdown(
+        repoId: Int64,
+        operation: @escaping @Sendable () async -> ReadmeRefreshResult
+    ) async -> ReadmeRefreshResult {
+        if let existing = markdownInflight[repoId] {
+            return await existing.value
+        }
+
+        let task = Task<ReadmeRefreshResult, Never> { [weak self] in
+            let result = await operation()
+            await self?.clearMarkdown(repoId: repoId)
+            return result
+        }
+        markdownInflight[repoId] = task
+        return await task.value
+    }
+
     // MARK: - Private
 
     private func clearManage(repoId: Int64) {
@@ -115,5 +139,9 @@ actor ReadmeInflightTracker {
 
     private func clearTrending(fullName: String) {
         trendingInflight[fullName] = nil
+    }
+
+    private func clearMarkdown(repoId: Int64) {
+        markdownInflight[repoId] = nil
     }
 }
