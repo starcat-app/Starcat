@@ -581,6 +581,14 @@ final class AppSettings {
         didSet { persist(key: Keys.appearanceMode, value: appearanceMode.rawValue) }
     }
 
+    /// 应用内界面字号档位。默认 `.standard`。
+    ///
+    /// 设计约束：这是 Starcat 自己控制的信息密度档位，不等同于系统 Dynamic Type。
+    /// 各页面需要逐步接入并验证布局，避免一次性全站缩放破坏三栏信息密度。
+    var interfaceScale: InterfaceScale {
+        didSet { persist(key: Keys.interfaceScale, value: interfaceScale.rawValue) }
+    }
+
     /// 仓库列表排序（W4-4 D1）。默认 `.starredAtDesc`。
     var repoSortOption: RepoSortOption {
         didSet { persist(key: Keys.repoSortOption, value: repoSortOption.rawValue) }
@@ -1165,6 +1173,9 @@ final class AppSettings {
         let appearanceRaw = defaults.string(forKey: Keys.appearanceMode)
         self.appearanceMode = appearanceRaw.flatMap(AppearanceMode.init(rawValue:)) ?? .dark
 
+        let interfaceScaleRaw = defaults.string(forKey: Keys.interfaceScale)
+        self.interfaceScale = interfaceScaleRaw.flatMap(InterfaceScale.init(rawValue:)) ?? .standard
+
         // R-01 §3.1.1（2026-06-10 P1）：RepoListDensity 已删除，无需读取
         // settings.repoListDensity（旧持久化值在升级后会被 UserDefaults 自然忽略）。
 
@@ -1389,6 +1400,7 @@ final class AppSettings {
         customServiceAPIKeysCache.removeAll()
 
         appearanceMode = .dark
+        interfaceScale = .standard
         repoSortOption = .starredAtDesc
         hideArchived = false
         hideForks = false
@@ -1599,6 +1611,7 @@ final class AppSettings {
     /// 验证迁移路径。生产代码外部不应引用本枚举（语义对齐 SPM target 的 internal）。
     enum Keys {
         static let appearanceMode = "settings.appearanceMode"  // W4-5 D1
+        static let interfaceScale = "settings.general.interfaceScale.v1"  // 2026-06-30
         // R-01 §3.1.1（2026-06-10 P1）：repoListDensity key 已删除（RepoListDensity 枚举随 P1 整体清零）
         static let repoSortOption = "settings.repoSortOption"
         static let hideArchived = "settings.hideArchived"
@@ -1663,6 +1676,7 @@ final class AppSettings {
 
         static let resettableKeys: [String] = [
             appearanceMode,
+            interfaceScale,
             repoSortOption,
             hideArchived,
             hideForks,

@@ -12,6 +12,7 @@ import SwiftUI
 
 struct AgentWorkspaceView: View {
 
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var viewModel = AgentWorkspaceViewModel()
     let onClose: () -> Void
 
@@ -54,15 +55,15 @@ struct AgentWorkspaceView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Image(systemName: "sparkles.rectangle.stack")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(agentIconFont(size: 18, weight: .medium))
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 28, height: 28)
                     .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Agent")
-                        .font(.headline)
+                        .font(agentFont(.headline))
                     Text("任务工作台")
-                        .font(.caption)
+                        .font(agentFont(.caption))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -90,7 +91,7 @@ struct AgentWorkspaceView: View {
     private func agentSection(_ title: String, agents: [AgentDefinition]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(agentFont(.caption, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .padding(.horizontal, 4)
@@ -107,20 +108,20 @@ struct AgentWorkspaceView: View {
         } label: {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: agent.systemImage)
-                    .font(.system(size: 17, weight: .regular))
+                    .font(agentIconFont(size: 17, weight: .regular))
                     .frame(width: 22, height: 22)
                     .foregroundStyle(agent.id == viewModel.selectedAgentID ? Color.accentColor : Color.secondary)
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         Text(agent.title)
-                            .font(.subheadline.weight(.semibold))
+                            .font(agentFont(.subheadline, weight: .semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                         Spacer(minLength: 6)
                         if !agent.isEnabled {
                             Text("预告")
-                                .font(.caption2.weight(.medium))
+                                .font(agentFont(.caption2, weight: .medium))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
@@ -129,14 +130,14 @@ struct AgentWorkspaceView: View {
                     }
 
                     Text(agent.subtitle)
-                        .font(.caption)
+                        .font(agentFont(.caption))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
 
                     HStack(spacing: 4) {
                         ForEach(agent.capabilityLabels.prefix(3), id: \.self) { label in
                             Text(label)
-                                .font(.caption2)
+                                .font(agentFont(.caption2))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 2)
@@ -163,7 +164,7 @@ struct AgentWorkspaceView: View {
     private var historySection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("历史任务")
-                .font(.caption.weight(.semibold))
+                .font(agentFont(.caption, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .padding(.horizontal, 4)
@@ -180,11 +181,11 @@ struct AgentWorkspaceView: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.caption.weight(.medium))
+                    .font(agentFont(.caption, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(caption)
-                    .font(.caption)
+                    .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -218,13 +219,13 @@ struct AgentWorkspaceView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Text(viewModel.selectedAgent?.title ?? "Agent 工作台")
-                        .font(.title3.weight(.semibold))
+                        .font(agentFont(.title3, weight: .semibold))
                     Image(systemName: "chevron.down")
-                        .font(.caption.weight(.semibold))
+                        .font(agentFont(.caption, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
                 Text("统一 Run Surface · steps / tools / artifacts / confirmations")
-                    .font(.caption)
+                    .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
             }
 
@@ -253,7 +254,7 @@ struct AgentWorkspaceView: View {
             Image(systemName: icon)
             Text(text)
         }
-        .font(.caption)
+        .font(agentFont(.caption))
         .foregroundStyle(.secondary)
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
@@ -263,7 +264,7 @@ struct AgentWorkspaceView: View {
     private var contextBar: some View {
         HStack(spacing: 8) {
             Text("上下文")
-                .font(.caption.weight(.semibold))
+                .font(agentFont(.caption, weight: .semibold))
                 .foregroundStyle(.secondary)
             ForEach(contextChips, id: \.self) { chip in
                 contextChip(chip)
@@ -275,7 +276,7 @@ struct AgentWorkspaceView: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .font(.caption)
+            .font(agentFont(.caption))
             .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 18)
@@ -285,7 +286,7 @@ struct AgentWorkspaceView: View {
 
     private func contextChip(_ text: String) -> some View {
         Text(text)
-            .font(.caption)
+            .font(agentFont(.caption))
             .foregroundStyle(.primary)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
@@ -304,7 +305,7 @@ struct AgentWorkspaceView: View {
 
     private var userPromptBubble: some View {
         Text(viewModel.prompt.isEmpty ? "基于这些 repo 生成一期 AI Agent 专题周报，并标出值得继续研究的项目。" : viewModel.prompt)
-            .font(.body)
+            .font(agentFont(.body))
             .foregroundStyle(.primary)
             .textSelection(.enabled)
             .padding(.horizontal, 16)
@@ -318,12 +319,12 @@ struct AgentWorkspaceView: View {
             HStack(alignment: .center, spacing: 10) {
                 Image(systemName: "star.circle.fill")
                     .foregroundStyle(Color.accentColor)
-                    .font(.title2)
+                    .font(agentFont(.title2))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Starcat")
-                        .font(.headline)
+                        .font(agentFont(.headline))
                     Text(statusText)
-                        .font(.caption)
+                        .font(agentFont(.caption))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -387,7 +388,7 @@ struct AgentWorkspaceView: View {
 
             if let error = viewModel.errorMessage {
                 Text(error)
-                    .font(.callout)
+                    .font(agentFont(.callout))
                     .foregroundStyle(.red)
                     .padding(12)
                     .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
@@ -407,28 +408,28 @@ struct AgentWorkspaceView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: stepIcon(status))
                     .foregroundStyle(stepColor(status))
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(agentIconFont(size: 16, weight: .semibold))
                     .frame(width: 20)
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         Text(title)
-                            .font(.subheadline.weight(.semibold))
+                            .font(agentFont(.subheadline, weight: .semibold))
                             .foregroundStyle(.primary)
                         Text(kind)
-                            .font(.caption.weight(.medium))
+                            .font(agentFont(.caption, weight: .medium))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 5))
                     }
                     Text(detail)
-                        .font(.caption)
+                        .font(agentFont(.caption))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
+                    .font(agentFont(.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
 
@@ -446,7 +447,7 @@ struct AgentWorkspaceView: View {
 
     private func metaPill(_ text: String) -> some View {
         Text(text)
-            .font(.caption)
+            .font(agentFont(.caption))
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .padding(.horizontal, 8)
@@ -469,9 +470,9 @@ struct AgentWorkspaceView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Artifact Inspector")
-                        .font(.headline)
+                        .font(agentFont(.headline))
                     Text("同一套 renderer 承载报告、对比表、聚类、标签计划和引用答案。")
-                        .font(.caption)
+                        .font(agentFont(.caption))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -493,7 +494,7 @@ struct AgentWorkspaceView: View {
             HStack(spacing: 6) {
                 ForEach(artifactTabs, id: \.self) { tab in
                     Text(tab)
-                        .font(.caption.weight(tab == "结构化结果" ? .semibold : .regular))
+                        .font(agentFont(.caption, weight: tab == "结构化结果" ? .semibold : .regular))
                         .foregroundStyle(tab == "结构化结果" ? .primary : .secondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
@@ -527,9 +528,9 @@ struct AgentWorkspaceView: View {
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {
                         Text(artifact.title)
-                            .font(.subheadline.weight(.semibold))
+                            .font(agentFont(.subheadline, weight: .semibold))
                         Text(artifact.content)
-                            .font(.system(.caption, design: .monospaced))
+                            .font(agentFont(.caption, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                             .lineLimit(12)
@@ -551,9 +552,9 @@ struct AgentWorkspaceView: View {
     private func metricTile(_ value: String, _ label: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(.title3.weight(.semibold))
+                .font(agentFont(.title3, weight: .semibold))
             Text(label)
-                .font(.caption)
+                .font(agentFont(.caption))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -565,10 +566,10 @@ struct AgentWorkspaceView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(agentFont(.subheadline, weight: .semibold))
                 Spacer()
                 Text("推荐 \(score)")
-                    .font(.caption.weight(.semibold))
+                    .font(agentFont(.caption, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -576,7 +577,7 @@ struct AgentWorkspaceView: View {
             }
 
             Text(insight)
-                .font(.caption)
+                .font(agentFont(.caption))
                 .foregroundStyle(.secondary)
 
             VStack(spacing: 6) {
@@ -585,10 +586,10 @@ struct AgentWorkspaceView: View {
                         Image(systemName: "shippingbox")
                             .foregroundStyle(.secondary)
                         Text(repo)
-                            .font(.caption.weight(.medium))
+                            .font(agentFont(.caption, weight: .medium))
                         Spacer()
                         Text("已 star")
-                            .font(.caption)
+                            .font(agentFont(.caption))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -601,7 +602,7 @@ struct AgentWorkspaceView: View {
     private var actionPreview: some View {
         VStack(alignment: .leading, spacing: 9) {
             Text("待确认行动")
-                .font(.subheadline.weight(.semibold))
+                .font(agentFont(.subheadline, weight: .semibold))
             actionRow(icon: "tag", title: "建议创建 tag: ai-agent", caption: "确认后才写入")
             actionRow(icon: "square.and.arrow.down", title: "导出 Markdown artifact", caption: "本地文件，不自动上传")
             actionRow(icon: "arrow.clockwise", title: "局部重写「采用建议」段落", caption: "只重写 artifact 节点")
@@ -617,9 +618,9 @@ struct AgentWorkspaceView: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.caption.weight(.medium))
+                    .font(agentFont(.caption, weight: .medium))
                 Text(caption)
-                    .font(.caption)
+                    .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -631,7 +632,7 @@ struct AgentWorkspaceView: View {
     private var composer: some View {
         VStack(spacing: 8) {
             TextField("继续给 Agent 指令，或 @ 选择已 star repo，/ 调用技能与工具", text: $viewModel.prompt, axis: .vertical)
-                .font(.body)
+                .font(agentFont(.body))
                 .textFieldStyle(.plain)
                 .lineLimit(2...5)
                 .disabled(viewModel.isRunning)
@@ -652,7 +653,7 @@ struct AgentWorkspaceView: View {
                     viewModel.run()
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
+                        .font(agentFont(.title2))
                         .foregroundStyle(viewModel.isRunning ? .secondary : Color.accentColor)
                 }
                 .buttonStyle(.plain)
@@ -673,7 +674,7 @@ struct AgentWorkspaceView: View {
         .padding(.bottom, 8)
         .safeAreaInset(edge: .bottom) {
             Text("Agent 只在你确认后写入标签、状态或取消 star。")
-                .font(.caption)
+                .font(agentFont(.caption))
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 6)
         }
@@ -684,9 +685,9 @@ struct AgentWorkspaceView: View {
             Image(systemName: icon)
             Text(title)
             Image(systemName: "chevron.down")
-                .font(.caption.weight(.semibold))
+                .font(agentFont(.caption, weight: .semibold))
         }
-        .font(.caption)
+        .font(agentFont(.caption))
         .foregroundStyle(.primary)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -697,7 +698,7 @@ struct AgentWorkspaceView: View {
         Button {
         } label: {
             Image(systemName: icon)
-                .font(.caption)
+                .font(agentFont(.caption))
                 .frame(width: 26, height: 26)
         }
         .buttonStyle(.plain)
@@ -706,6 +707,69 @@ struct AgentWorkspaceView: View {
     }
 
     // MARK: - Helpers
+
+    private enum AgentFontRole {
+        case title2
+        case title3
+        case headline
+        case subheadline
+        case body
+        case callout
+        case caption
+        case caption2
+
+        /// macOS 桌面信息流的标准档字号基线。
+        ///
+        /// SwiftUI 的 `.font(.caption)` 这类语义字号不能直接乘倍率，所以 Agent 工作台
+        /// 先把少量会用到的字号收口到这里。后续主界面接入同一设置时，可以把这组
+        /// 基线提到共享 Typography，而不是每个页面各自猜一套数字。
+        var pointSize: CGFloat {
+            switch self {
+            case .title2:      return 22
+            case .title3:      return 20
+            case .headline:    return 13
+            case .subheadline: return 12
+            case .body:        return 13
+            case .callout:     return 12
+            case .caption:     return 11
+            case .caption2:    return 10
+            }
+        }
+    }
+
+    private func agentFont(
+        _ role: AgentFontRole,
+        weight: Font.Weight? = nil,
+        design: Font.Design = .default
+    ) -> Font {
+        Font.system(
+            size: role.pointSize * agentWorkspaceFontMultiplier,
+            weight: weight,
+            design: design
+        )
+    }
+
+    private func agentIconFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        Font.system(size: size * agentWorkspaceFontMultiplier, weight: weight)
+    }
+
+    /// Agent 工作台比普通三栏界面更依赖长文本扫读，因此在同一全局档位下主动放大一档。
+    ///
+    /// 经验判断：三栏主界面的 repo row 主标题约 13pt，Agent 的步骤说明 / 工具输出大量
+    /// 使用 caption/subheadline；若完全沿用全局 standard，会显得比主界面更小。这里把
+    /// standard 映射到之前 large 的 1.16，让 Agent 默认可读，同时保留用户继续放大的空间。
+    private var agentWorkspaceFontMultiplier: CGFloat {
+        switch interfaceScale {
+        case .compact:
+            return 1.08
+        case .standard:
+            return 1.16
+        case .comfortable:
+            return 1.24
+        case .large:
+            return 1.32
+        }
+    }
 
     private var statusText: String {
         switch viewModel.status {
