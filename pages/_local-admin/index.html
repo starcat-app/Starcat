@@ -162,6 +162,117 @@
       gap: 14px;
     }
 
+    .fly-section {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+      overflow: hidden;
+    }
+
+    .fly-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .fly-title {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.25;
+    }
+
+    .fly-subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .fly-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      padding: 16px;
+    }
+
+    .fly-secret-panel {
+      margin: 0 16px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      padding: 12px;
+    }
+
+    .fly-secret-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .fly-secret-title {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .fly-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      padding: 12px;
+      min-height: 170px;
+    }
+
+    .fly-card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .fly-app {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .fly-meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .fly-item {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 8px;
+      min-height: 54px;
+    }
+
+    .fly-item-name {
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 5px;
+    }
+
+    .fly-item-value {
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+
     .card {
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -411,7 +522,39 @@
       outline: none;
     }
 
+    .param-field select {
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      color: var(--text);
+      padding: 7px 10px;
+      outline: none;
+    }
+
+    .fly-secret-value {
+      width: 100%;
+      min-height: 84px;
+      resize: vertical;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      padding: 9px 10px;
+      font-family: "SF Mono", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      outline: none;
+    }
+
     .param-field input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .param-field select:focus,
+    .fly-secret-value:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-soft);
     }
@@ -505,6 +648,7 @@
       }
 
       .status-strip,
+      .fly-grid,
       .grid,
       .checks,
       .metrics {
@@ -549,6 +693,18 @@
       </div>
     </section>
 
+    <section class="fly-section" aria-label="Fly.io 监控面板">
+      <div class="fly-head">
+        <div>
+          <h2 class="fly-title">Fly.io Apps</h2>
+          <p class="fly-subtitle">读取 Machines API：machines / volumes / IP assignments / secrets。通过本地 /fly-api 代理避免浏览器 CORS。</p>
+        </div>
+        <button class="button" id="refreshFlyButton" type="button">刷新 Fly</button>
+      </div>
+      <div class="fly-grid" id="flyGrid"></div>
+      <div id="flySecretsPanel"></div>
+    </section>
+
     <section class="grid" id="servicesGrid" aria-label="服务列表"></section>
 
     <section class="log" aria-label="操作日志">
@@ -580,9 +736,9 @@
         description: "GitHub Trending 数据服务",
         checks: ["health", "ping"],
         stats: [
-          { label: "Daily repos", type: "count", path: "/api/v1/repos?since=daily&limit=1", pick: "meta.total" },
-          { label: "Languages", type: "count", path: "/api/v1/languages", pick: "data" },
-          { label: "Users probe", type: "count", path: "/api/v1/users?sponsorable=true", pick: "data" }
+          { label: "Daily repos", type: "count", path: "/api/v1/stats", pick: "data.repos.daily", help: "来自 GET /api/v1/stats 的 data.repos.daily，直接从 SQLite COUNT(*) 得到，不受 /api/v1/repos 的 limit 影响。" },
+          { label: "Languages", type: "count", path: "/api/v1/stats", pick: "data.languages", help: "来自 GET /api/v1/stats 的 data.languages，表示当前 trending repo 聚合出的语言分类数。" },
+          { label: "Users probe", type: "count", path: "/api/v1/users?sponsorable=true", pick: "data", help: "来自 GET /api/v1/users?sponsorable=true 的本次返回数组长度。users 当前按需抓取，不是持久化总量。" }
         ],
         actions: [
           { label: "同步 repos", path: "/internal/sync/repos", auth: "apiKey", confirm: false },
@@ -667,8 +823,12 @@
 
     const state = new Map();
     const servicesGrid = document.getElementById("servicesGrid");
+    const flyGrid = document.getElementById("flyGrid");
+    const flySecretsPanel = document.getElementById("flySecretsPanel");
     const logLines = document.getElementById("logLines");
     const configWarning = document.getElementById("configWarning");
+    let flySnapshots = new Map();
+    let flySecretDraft = { app: "", name: "", value: "", result: "尚未设置。" };
     let sharingMockPayloadText = JSON.stringify(DEFAULT_SHARING_PAYLOAD, null, 2);
     let lastSharingURL = "";
     let recommendParams = { repoId: "41881900", limit: "10", offset: "0" };
@@ -680,6 +840,10 @@
 
     function serviceConfig(key) {
       return (config().services || {})[key] || {};
+    }
+
+    function flyConfig() {
+      return config().fly || {};
     }
 
     function safeURL(baseURL, path) {
@@ -759,6 +923,86 @@
       return text || "ok";
     }
 
+    async function flyRequest(path, options = {}) {
+      const cfg = flyConfig();
+      const proxyBaseURL = cfg.proxyBaseURL === undefined ? "/fly-api" : cfg.proxyBaseURL;
+      const useProxy = Boolean(proxyBaseURL);
+      if (!useProxy && !cfg.apiToken) throw new Error("missing fly.apiToken");
+      const baseURL = (useProxy ? proxyBaseURL : (cfg.apiBaseURL || "https://api.machines.dev/v1")).replace(/\/+$/, "");
+      const response = await fetch(`${baseURL}${path}`, {
+        method: options.method || "GET",
+        headers: {
+          ...(useProxy ? {} : { Authorization: `Bearer ${cfg.apiToken}` }),
+          ...(options.body ? { "Content-Type": "application/json" } : {}),
+          ...(options.headers || {})
+        },
+        body: options.body
+      });
+      const text = await response.text();
+      let body = text;
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {
+        body = text;
+      }
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}${text ? `: ${text.slice(0, 160)}` : ""}`);
+      }
+      return body;
+    }
+
+    async function refreshFlyApp(appName) {
+      const snapshot = { status: "刷新中" };
+      flySnapshots.set(appName, snapshot);
+      renderFly();
+
+      try {
+        const [machines, volumes, ips, secretsResult] = await Promise.all([
+          flyRequest(`/apps/${encodeURIComponent(appName)}/machines`),
+          flyRequest(`/apps/${encodeURIComponent(appName)}/volumes`).catch((error) => ({ error })),
+          flyRequest(`/apps/${encodeURIComponent(appName)}/ip_assignments`).catch((error) => ({ error })),
+          flyRequest(`/apps/${encodeURIComponent(appName)}/secrets`).then((value) => ({ value })).catch((error) => ({ error }))
+        ]);
+        snapshot.machines = Array.isArray(machines) ? machines : [];
+        snapshot.volumes = Array.isArray(volumes) ? volumes : [];
+        snapshot.ips = Array.isArray(ips) ? ips : [];
+        if (secretsResult.error) {
+          snapshot.secretsError = secretsResult.error.message;
+        } else {
+          snapshot.secrets = Array.isArray(secretsResult.value) ? secretsResult.value : [];
+        }
+        snapshot.status = snapshot.machines.some((item) => item.state === "started") ? "正常" : "无运行机器";
+      } catch (error) {
+        snapshot.status = "失败";
+        snapshot.error = error.message;
+      }
+      flySnapshots.set(appName, snapshot);
+      renderFly();
+    }
+
+    async function refreshFly() {
+      const button = document.getElementById("refreshFlyButton");
+      const cfg = flyConfig();
+      const apps = cfg.apps || [];
+      if (!cfg.apiToken) {
+        log("Fly.io 缺少 fly.apiToken，跳过刷新", "warn");
+        renderFly();
+        return;
+      }
+      if (!apps.length) {
+        log("Fly.io 缺少 fly.apps，跳过刷新", "warn");
+        renderFly();
+        return;
+      }
+      button.disabled = true;
+      try {
+        await Promise.all(apps.map(refreshFlyApp));
+        log(`Fly.io 刷新完成: ${apps.length} apps`);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     function render() {
       const serviceEntries = Object.entries(SERVICES);
       servicesGrid.innerHTML = serviceEntries.map(([key, spec]) => {
@@ -782,7 +1026,8 @@
         const metrics = (snapshot.metrics || spec.stats.map((item) => ({ name: item.label, value: "未刷新" }))).map((item) => {
           const isLong = String(item.value).length > 20;
           const isFull = item.name === "说明";
-          return `<div class="metric ${isLong ? "long" : ""} ${isFull ? "full" : ""}">
+          const help = item.help ? ` title="${escapeHTML(item.help)}"` : "";
+          return `<div class="metric ${isLong ? "long" : ""} ${isFull ? "full" : ""}"${help}>
             <div class="metric-name">${escapeHTML(item.name)}</div>
             <div class="metric-value">${escapeHTML(String(item.value))}</div>
           </div>`;
@@ -814,6 +1059,106 @@
         </article>`;
       }).join("");
       updateOverview();
+    }
+
+    function renderFly() {
+      const cfg = flyConfig();
+      const apps = cfg.apps || [];
+      if (!flySecretDraft.app && apps.length) flySecretDraft.app = apps[0];
+      if (!apps.length) {
+        flyGrid.innerHTML = `<div class="fly-card"><p class="fly-app">未配置 Fly apps</p><p class="fly-subtitle">请在 config.js 的 fly.apps 中配置 app 名称。</p></div>`;
+        renderFlySecretsPanel();
+        return;
+      }
+
+      flyGrid.innerHTML = apps.map((appName) => {
+        const snapshot = flySnapshots.get(appName) || { status: "等待刷新" };
+        const machines = snapshot.machines || [];
+        const machine = machines[0] || {};
+        const guest = (machine.config && machine.config.guest) || {};
+        const volumeCount = Array.isArray(snapshot.volumes) ? snapshot.volumes.length : "-";
+        const ipCount = Array.isArray(snapshot.ips) ? snapshot.ips.length : "-";
+        const secretCount = Array.isArray(snapshot.secrets) ? snapshot.secrets.length : snapshot.secretsError ? "失败" : "-";
+        const stateText = machines.length
+          ? `${machines.filter((item) => item.state === "started").length}/${machines.length} started`
+          : snapshot.status;
+        return `<article class="fly-card">
+          <div class="fly-card-head">
+            <h3 class="fly-app">${escapeHTML(appName)}</h3>
+            <span class="pill">${escapeHTML(snapshot.status || "等待刷新")}</span>
+          </div>
+          <div class="fly-meta">
+            ${flyItem("Machines", stateText)}
+            ${flyItem("Region", machine.region || "-")}
+            ${flyItem("CPU", guest.cpus ? `${guest.cpus} ${guest.cpu_kind || "cpu"}` : "-")}
+            ${flyItem("Memory", guest.memory_mb ? `${guest.memory_mb} MB` : "-")}
+            ${flyItem("Volumes", volumeCount)}
+            ${flyItem("IPs", ipCount)}
+            ${flyItem("Secrets", secretCount)}
+            ${flyItem("Image", shortImage(machine.config && machine.config.image))}
+          </div>
+          ${snapshot.error ? `<p class="fly-subtitle">${escapeHTML(snapshot.error)}</p>` : ""}
+          ${snapshot.secretsError ? `<p class="fly-subtitle">Secrets: ${escapeHTML(snapshot.secretsError)}</p>` : ""}
+        </article>`;
+      }).join("");
+      renderFlySecretsPanel();
+    }
+
+    function renderFlySecretsPanel() {
+      const cfg = flyConfig();
+      const apps = cfg.apps || [];
+      const options = apps.map((appName) => {
+        const selected = appName === flySecretDraft.app ? " selected" : "";
+        return `<option value="${escapeHTML(appName)}"${selected}>${escapeHTML(appName)}</option>`;
+      }).join("");
+      flySecretsPanel.innerHTML = `<div class="fly-secret-panel">
+        <div class="fly-secret-head">
+          <p class="fly-secret-title">Secrets / 环境变量</p>
+          <button class="button" id="setFlySecretButton" type="button"${apps.length ? "" : " disabled"}>设置环境变量</button>
+        </div>
+        <div class="param-grid">
+          <div class="param-field">
+            <label for="flySecretApp">App</label>
+            <select id="flySecretApp"${apps.length ? "" : " disabled"}>${options}</select>
+          </div>
+          <div class="param-field">
+            <label for="flySecretName">变量名</label>
+            <input id="flySecretName" value="${escapeHTML(flySecretDraft.name)}" placeholder="API_KEYS">
+          </div>
+          <div class="param-field">
+            <label for="flySecretValue">变量值</label>
+            <textarea class="fly-secret-value" id="flySecretValue" placeholder="输入新值">${escapeHTML(flySecretDraft.value)}</textarea>
+          </div>
+        </div>
+        <pre class="json-output">${escapeHTML(flySecretDraft.result)}</pre>
+      </div>`;
+    }
+
+    function flyItem(name, value) {
+      return `<div class="fly-item">
+        <div class="fly-item-name">${escapeHTML(name)}</div>
+        <div class="fly-item-value">${escapeHTML(String(value))}</div>
+      </div>`;
+    }
+
+    function shortImage(value) {
+      if (!value) return "-";
+      const text = String(value);
+      return text.length > 26 ? `...${text.slice(-23)}` : text;
+    }
+
+    async function setFlySecret() {
+      if (!flySecretDraft.app) throw new Error("请选择 Fly app");
+      const name = flySecretDraft.name.trim();
+      if (!name) throw new Error("请输入变量名");
+      // Fly secrets 不支持读取明文；这里只提交新值，并显示 API 返回的版本 / digest 摘要。
+      const result = await flyRequest(`/apps/${encodeURIComponent(flySecretDraft.app)}/secrets/${encodeURIComponent(name)}`, {
+        method: "POST",
+        body: JSON.stringify({ value: flySecretDraft.value })
+      });
+      flySecretDraft.result = JSON.stringify(result, null, 2);
+      log(`Fly.io 已设置 ${flySecretDraft.app}.${name}`);
+      await refreshFlyApp(flySecretDraft.app);
     }
 
     function renderServiceExtra(key) {
@@ -916,16 +1261,21 @@
       }
 
       snapshot.metrics = [];
+      const statResponses = new Map();
       for (const stat of spec.stats) {
         if (stat.type === "text") {
-          snapshot.metrics.push({ name: stat.label, value: stat.value });
+          snapshot.metrics.push({ name: stat.label, value: stat.value, help: stat.help });
           continue;
         }
         try {
-          const json = await requestJSON(key, stat.path, "apiKey");
-          snapshot.metrics.push({ name: stat.label, value: summarizeValue(readPath(json, stat.pick)) });
+          let json = statResponses.get(stat.path);
+          if (!json) {
+            json = await requestJSON(key, stat.path, "apiKey");
+            statResponses.set(stat.path, json);
+          }
+          snapshot.metrics.push({ name: stat.label, value: summarizeValue(readPath(json, stat.pick)), help: stat.help });
         } catch (error) {
-          snapshot.metrics.push({ name: stat.label, value: "失败" });
+          snapshot.metrics.push({ name: stat.label, value: "失败", help: stat.help });
           log(`${spec.fallbackLabel} ${stat.label} 统计失败: ${error.message}`, "warn");
         }
       }
@@ -1111,6 +1461,7 @@
 
     function bindEvents() {
       document.getElementById("refreshAllButton").addEventListener("click", refreshAll);
+      document.getElementById("refreshFlyButton").addEventListener("click", refreshFly);
       document.getElementById("clearLogButton").addEventListener("click", () => {
         logLines.textContent = "等待操作...";
       });
@@ -1172,14 +1523,43 @@
           recommendParams = { ...recommendParams, [recommendParam]: event.target.value };
         }
       });
+      flySecretsPanel.addEventListener("click", (event) => {
+        if (event.target.id !== "setFlySecretButton") return;
+        const button = event.target;
+        button.disabled = true;
+        setFlySecret()
+          .catch((error) => {
+            flySecretDraft.result = `设置失败: ${error.message}`;
+            log(`Fly.io 设置环境变量失败: ${error.message}`, "error");
+            renderFly();
+          })
+          .finally(() => {
+            button.disabled = false;
+          });
+      });
+      flySecretsPanel.addEventListener("input", (event) => {
+        if (event.target.id === "flySecretName") {
+          flySecretDraft.name = event.target.value;
+        }
+        if (event.target.id === "flySecretValue") {
+          flySecretDraft.value = event.target.value;
+        }
+      });
+      flySecretsPanel.addEventListener("change", (event) => {
+        if (event.target.id === "flySecretApp") {
+          flySecretDraft.app = event.target.value;
+        }
+      });
     }
 
     if (!window.STARCAT_ADMIN_CONFIG) {
       configWarning.classList.add("show");
     }
     bindEvents();
+    renderFly();
     render();
     refreshAll().catch((error) => log(`刷新全部失败: ${error.message}`, "error"));
+    refreshFly().catch((error) => log(`Fly.io 刷新失败: ${error.message}`, "error"));
   </script>
 </body>
 </html>
