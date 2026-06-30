@@ -2,7 +2,7 @@
 
 > 本目录收录 Starcat 主仓库依赖的**独立后端服务**。每个子目录都是单独的 git 仓库、独立 GitHub 仓库、独立部署单元，**不**与主仓库 (`Starcat/`) 共享版本号或 CI。
 >
-> 共同约定：**默认端口互不冲突**（5001 / 5002），本地可同时启动。
+> 共同约定：**默认端口互不冲突**（5001-5006），本地可同时启动。
 
 ---
 
@@ -12,8 +12,12 @@
 |---|---|:---:|---|---|
 | [`starcat-sharing-api/`](./starcat-sharing-api/) | [`dong4j/starcat-sharing-api`](https://github.com/dong4j/starcat-sharing-api) | **5001** | AI 分享链接生成 + 公开分享页托管 | P0 |
 | [`starcat-trending-api/`](./starcat-trending-api/) | [`dong4j/starcat-trending-api`](https://github.com/dong4j/starcat-trending-api) | **5002** | GitHub Trending 页面爬虫 → REST API | P0 |
+| [`starcat-weekly-api/`](./starcat-weekly-api/) | [`dong4j/starcat-weekly-api`](https://github.com/dong4j/starcat-weekly-api) | **5003** | 周刊项目同步 + zread 趋势候选 | P0 |
+| [`starcat-wiki-api/`](./starcat-wiki-api/) | [`dong4j/starcat-wiki-api`](https://github.com/dong4j/starcat-wiki-api) | **5004** | DeepWiki / Zread / CodeWiki 收录探测 | P1 |
+| [`starcat-recommend-api/`](./starcat-recommend-api/) | [`dong4j/starcat-recommend-api`](https://github.com/dong4j/starcat-recommend-api) | **5005** | 相似仓库推荐 API | P1 |
+| [`starcat-discovery-api/`](./starcat-discovery-api/) | [`dong4j/starcat-discovery-api`](https://github.com/dong4j/starcat-discovery-api) | **5006** | 探索发现、热门、新发布榜单 | P1 |
 
-> 端口规范：5000 段是 macOS「ControlCenter」/ AirPlay 等系统服务保留段，5001/5002 留给人用，且两者相邻便于记忆。
+> 端口规范：5000 段是 macOS「ControlCenter」/ AirPlay 等系统服务保留段，Starcat 自建后端从 5001 起顺序分配。
 
 ---
 
@@ -76,7 +80,14 @@
 
 ## 🛠️ 本地开发
 
-### 一次性启动两个服务
+### 一次性启动全部服务
+
+```bash
+cd supports
+./start-all.sh
+```
+
+### 单独启动服务
 
 ```bash
 # Terminal A - Trending API
@@ -127,6 +138,7 @@ curl -X POST http://localhost:5001/api/share \
 | starcat-trending-api | https://starcat-trending-api.fly.dev |
 | starcat-weekly-api | https://starcat-weekly-api.fly.dev |
 | starcat-wiki-api | https://starcat-wiki-api.fly.dev |
+| starcat-recommend-api | https://starcat-recommend-api.fly.dev |
 | starcat-discovery-api | https://starcat-discovery-api.fly.dev |
 
 **环境变量清单 + 与 Starcat 客户端 API Key 对齐**：[`docs/fly-io-环境变量.md`](./docs/fly-io-环境变量.md)
@@ -182,6 +194,7 @@ sharing 生产环境 `BASE_URL` 须为公网 URL（默认 `https://starcat-shari
 - 各子仓库 README：
   - [`starcat-sharing-api/README.md`](./starcat-sharing-api/README.md)
   - [`starcat-trending-api/README.md`](./starcat-trending-api/README.md)
+  - [`starcat-recommend-api/README.md`](./starcat-recommend-api/README.md)
   - [`starcat-discovery-api/README.md`](./starcat-discovery-api/README.md)
 
 ---

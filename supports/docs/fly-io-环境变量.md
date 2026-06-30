@@ -13,6 +13,7 @@
 | `starcat-trending-api` | https://starcat-trending-api.fly.dev | 5002 | `/data` | `/data/trending.db` |
 | `starcat-weekly-api` | https://starcat-weekly-api.fly.dev | 5003 | `/data` | `/data/weekly.db` |
 | `starcat-wiki-api` | https://starcat-wiki-api.fly.dev | 5004 | `/data` | `/data/wiki.db` |
+| `starcat-recommend-api` | https://starcat-recommend-api.fly.dev | 5005 | — | — |
 | `starcat-discovery-api` | https://starcat-discovery-api.fly.dev | 5006 | `/data` | `/data/discovery.db` |
 
 Starcat 客户端默认 baseURL 与上表 `*.fly.dev` 对齐，见 `Starcat/Core/Network/AppEndpoints.swift`。
@@ -42,10 +43,10 @@ make fly-secrets-trending  # 只同步某一个
 make fly-secrets-list      # 查看已配置的 secret 名称
 make fly-health-all        # curl 全部 /healthz
 make fly-deploy-all        # 部署全部 App
-make fly-backup-all        # 备份全部 /data → supports/backups/
+make fly-backup-all        # 备份有状态 App 的 /data → supports/backups/
 make fly-backup-trending   # 只备份 trending
 make fly-restore-trending LOCAL_DB=./starcat-trending-api/trending.db
-make fly-wipe-data-all     # ⚠️ 清空全部 /data 卷（删库重建）
+make fly-wipe-data-all     # ⚠️ 清空有状态 App 的 /data 卷（删库重建）
 ```
 
 在 Starcat 主仓库根目录：
@@ -77,10 +78,10 @@ make setup-production-api-keys     # 从 supports 各 API .env 写入客户端 b
 
 ### 4.3 存储路径（Fly 生产固定值）
 
-| 变量 | sharing | trending | weekly | wiki | discovery |
-|------|---------|----------|--------|------|-----------|
-| `STORE_FILE` | `/data/sharing.db` | `/data/trending.db` | `/data/weekly.db` | `/data/wiki.db` | `/data/discovery.db` |
-| `REPO_DIR` | — | — | `/data/weekly-repo` | — | — |
+| 变量 | sharing | trending | weekly | wiki | recommend | discovery |
+|------|---------|----------|--------|------|-----------|-----------|
+| `STORE_FILE` | `/data/sharing.db` | `/data/trending.db` | `/data/weekly.db` | `/data/wiki.db` | — | `/data/discovery.db` |
+| `REPO_DIR` | — | — | `/data/weekly-repo` | — | — | — |
 
 `fly-secrets-sync.sh` 会**强制覆盖**为上表路径，避免把本地 `./trending.db` 同步上去。
 
@@ -161,7 +162,23 @@ cron 频率在代码内固定（daily/weekly/monthly 等），无需 Fly env。
 
 ---
 
-### 5.5 starcat-discovery-api
+### 5.5 starcat-recommend-api
+
+| 变量 | 级别 | 默认值 / Fly 生产值 | 说明 |
+|------|------|---------------------|------|
+| `PORT` | T | `5005` | |
+| `API_KEYS` | R | — | 客户端读取接口 Bearer 白名单 |
+| `SIMREPO_API_KEY` | R | — | SimRepo 上游只读 key，只允许放后端 |
+| `SIMREPO_ENDPOINT` | O | 内置 SimRepo Qdrant recommend endpoint | 如上游 endpoint 变更再显式配置 |
+| `CACHE_TTL_SUCCESS_SECONDS` | O | `604800` | 成功结果进程内缓存 TTL |
+| `CACHE_TTL_EMPTY_SECONDS` | O | `21600` | 空结果缓存 TTL |
+| `CACHE_TTL_ERROR_SECONDS` | O | `600` | 错误缓存 TTL |
+
+> recommend-api 当前无 SQLite 和 Fly volume，`fly-backup-*` / `fly-restore-*` / `fly-wipe-data-*` 不包含它。
+
+---
+
+### 5.6 starcat-discovery-api
 
 | 变量 | 级别 | 默认值 / Fly 生产值 | 说明 |
 |------|------|---------------------|------|
@@ -206,6 +223,11 @@ fly secrets set -a starcat-wiki-api \
   API_KEYS='sk-starcat-...' \
   STORE_FILE='/data/wiki.db'
 
+# recommend
+fly secrets set -a starcat-recommend-api \
+  API_KEYS='sk-starcat-...' \
+  SIMREPO_API_KEY='simrepo-readonly-key'
+
 # discovery
 fly secrets set -a starcat-discovery-api \
   API_KEYS='sk-starcat-...' \
@@ -236,6 +258,7 @@ fly secrets list -a starcat-trending-api
 | Weekly | `STARCAT_PRODUCTION_API_KEY_WEEKLY` | `supports/starcat-weekly-api/.env` |
 | Sharing | `STARCAT_PRODUCTION_API_KEY_SHARING` | `supports/starcat-sharing-api/.env` |
 | Wiki | `STARCAT_PRODUCTION_API_KEY_WIKI` | `supports/starcat-wiki-api/.env` |
+| Recommend | `STARCAT_PRODUCTION_API_KEY_RECOMMEND` | `supports/starcat-recommend-api/.env` |
 | Discovery | `STARCAT_PRODUCTION_API_KEY_DISCOVERY` | `supports/starcat-discovery-api/.env` |
 
 **开箱即用发版路径（推荐，全自动）**：
@@ -262,6 +285,7 @@ xcodegen generate && make run
 | Trending | `https://starcat-trending-api.fly.dev` |
 | Sharing | `https://starcat-sharing-api.fly.dev` |
 | Wiki | `https://starcat-wiki-api.fly.dev` |
+| Recommend | `https://starcat-recommend-api.fly.dev` |
 | Discovery | `https://starcat-discovery-api.fly.dev` |
 
 用户可在 **设置 → 服务** 覆盖 baseURL（自部署场景）；留空则用上表默认。
@@ -270,14 +294,14 @@ xcodegen generate && make run
 
 ## 8. 备份 `/data` 卷
 
-各 App 的 SQLite（及 weekly 的 `weekly-repo/`）都挂在容器 **`/data`**，对应 Fly Volume（见 §1 表）。
+有状态 App 的 SQLite（及 weekly 的 `weekly-repo/`）都挂在容器 **`/data`**，对应 Fly Volume（见 §1 表）。recommend-api 当前只有进程内缓存，不参与 `/data` 备份。
 
 ### 8.1 Makefile（推荐）
 
 ```bash
 cd supports
 make fly-backup-trending          # 只备份 trending
-make fly-backup-all               # 顺序备份全部 App
+make fly-backup-all               # 顺序备份有状态 App
 
 # 短暂停机后备份（SQLite 一致性更好，约 20–30s 不可用）
 FLY_BACKUP_STOP=1 make fly-backup-trending

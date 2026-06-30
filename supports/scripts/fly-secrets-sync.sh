@@ -11,6 +11,7 @@
 #   - 只读取「Fly 生产必须/建议配置」的 key，不 source 整个 .env（wiki 的
 #     PROBE_USER_AGENT 含括号，bash source 会 parse error）。
 #   - STORE_FILE / REPO_DIR 在 Fly 上强制覆盖为 /data/*（与 fly.toml volume 挂载一致）。
+#     recommend-api 无持久化卷，不同步 STORE_FILE。
 #   - sharing 的 BASE_URL 在 Fly 上强制为 https://starcat-sharing-api.fly.dev
 #     （本地 .env 常见 localhost，不能直接同步）。
 #   - trending / weekly 的 WIKI_API_URL 在 Fly 上强制为
@@ -23,6 +24,7 @@
 #   bash supports/scripts/fly-secrets-sync.sh starcat-trending-api
 #   bash supports/scripts/fly-secrets-sync.sh starcat-weekly-api
 #   bash supports/scripts/fly-secrets-sync.sh starcat-wiki-api
+#   bash supports/scripts/fly-secrets-sync.sh starcat-recommend-api
 #   bash supports/scripts/fly-secrets-sync.sh starcat-discovery-api
 #
 # 依赖：flyctl、各项目目录下已有 .env（从 .env.example 复制并填值）
@@ -132,6 +134,20 @@ case "$APP" in
     fly secrets set -a "$APP" \
       "API_KEYS=$API_KEYS" \
       "STORE_FILE=/data/wiki.db"
+    ;;
+  starcat-recommend-api)
+    API_KEYS="$(require_env_val API_KEYS)"
+    SIMREPO_API_KEY="$(require_env_val SIMREPO_API_KEY)"
+    args=(
+      "API_KEYS=$API_KEYS"
+      "SIMREPO_API_KEY=$SIMREPO_API_KEY"
+    )
+    for optional_key in SIMREPO_ENDPOINT CACHE_TTL_SUCCESS_SECONDS CACHE_TTL_EMPTY_SECONDS CACHE_TTL_ERROR_SECONDS; do
+      if optional_value="$(read_env_val "$optional_key" 2>/dev/null || true)" && [[ -n "$optional_value" ]]; then
+        args+=("${optional_key}=${optional_value}")
+      fi
+    done
+    fly secrets set -a "$APP" "${args[@]}"
     ;;
   starcat-discovery-api)
     API_KEYS="$(require_env_val API_KEYS)"

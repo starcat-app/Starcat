@@ -4,7 +4,7 @@
 # =============================================================================
 #
 # 用途：
-#   starcat-*-api 的 SQLite（及 weekly 的 weekly-repo 目录）都在容器
+#   有状态 starcat-*-api 的 SQLite（及 weekly 的 weekly-repo 目录）都在容器
 #   内 /data（fly.toml [[mounts]] destination）。本脚本通过 SSH 在远端打 tar 包
 #   再 SFTP 下载，避免手抄路径。
 #

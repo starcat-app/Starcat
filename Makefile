@@ -53,7 +53,7 @@ help: ## 列出所有可用命令
 	@echo "  make reset-all              聚合：reset-db + reset-anysearch-cache（故意不含 chat-cache）"
 	@echo "  make show-data              在 Finder 中打开沙盒 / 非沙盒两个 App Support 目录"
 	@echo "  make clean                  删除 build/ 目录（清掉 xcodebuild 的 DerivedData 与产物）"
-	@echo "  make start-supports         启动 supports/ 目录下的所有后端服务（trending / wiki / weekly / sharing / discovery）"
+	@echo "  make start-supports         启动 supports/ 目录下的所有后端服务（trending / wiki / weekly / sharing / recommend / discovery）"
 	@echo "  make sync-fly-secrets              从 supports 各 API .env 并行同步 secrets 到 Fly.io"
 	@echo "  make setup-production-api-keys    从 supports 各 API .env 写入 Configs/Secrets.xcconfig（每服务独立 key）"
 	@echo "  make deploy-pages                部署 pages/ 静态资源到 aliyun:/var/www/starcat/"

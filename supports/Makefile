@@ -10,11 +10,12 @@
 #   make fly-secrets-trending     # 只同步 trending
 #   make fly-status-all           # 查看全部 App 状态 + healthz
 #   make fly-deploy-all           # 部署全部 App（remote build）
-#   make fly-backup-trending      # 拉取 /data 卷到 supports/backups/
+#   make fly-backup-trending      # 拉取有状态服务 /data 卷到 supports/backups/
 #   make fly-restore-trending LOCAL_DB=./starcat-trending-api/trending.db
 # =============================================================================
 
-APIS := sharing trending weekly wiki discovery
+APIS := sharing trending weekly wiki recommend discovery
+STATEFUL_APIS := sharing trending weekly wiki discovery
 FLY_APPS := $(foreach s,$(APIS),starcat-$(s)-api)
 SCRIPTS := scripts
 FLY_SECRETS_SYNC := bash $(SCRIPTS)/fly-secrets-sync.sh
@@ -24,7 +25,8 @@ FLY_RESTORE_DATA := bash $(SCRIPTS)/fly-restore-data.sh
 .DEFAULT_GOAL := help
 
 .PHONY: help fly-secrets-list fly-secrets-all fly-status-all fly-health-all fly-deploy-all
-.PHONY: $(foreach s,$(APIS),fly-secrets-$(s) fly-deploy-$(s) fly-status-$(s) fly-wipe-data-$(s) fly-backup-$(s) fly-restore-$(s))
+.PHONY: $(foreach s,$(APIS),fly-secrets-$(s) fly-deploy-$(s) fly-status-$(s))
+.PHONY: $(foreach s,$(STATEFUL_APIS),fly-wipe-data-$(s) fly-backup-$(s) fly-restore-$(s))
 .PHONY: fly-backup-all
 
 help: ## 显示帮助
@@ -35,15 +37,16 @@ help: ## 显示帮助
 	@echo "  make fly-secrets-sharing    只同步 starcat-sharing-api"
 	@echo "  make fly-secrets-weekly     只同步 starcat-weekly-api"
 	@echo "  make fly-secrets-wiki       只同步 starcat-wiki-api"
+	@echo "  make fly-secrets-recommend  只同步 starcat-recommend-api"
 	@echo "  make fly-secrets-discovery  只同步 starcat-discovery-api"
 	@echo "  make fly-secrets-list       列出全部 App 已配置的 secret 名称（不含值）"
 	@echo "  make fly-status-all         fly status × 全部 App"
 	@echo "  make fly-health-all         curl /healthz × 全部 App"
 	@echo "  make fly-deploy-all         fly deploy --remote-only × 全部 App"
-	@echo "  make fly-backup-all         备份全部 App 的 /data → supports/backups/"
+	@echo "  make fly-backup-all         备份有状态 App 的 /data → supports/backups/"
 	@echo "  make fly-backup-trending    只备份 starcat-trending-api"
 	@echo "  make fly-restore-trending   本地库/备份 tar 覆盖 Fly /data（需 LOCAL_DB 或 RESTORE_ARCHIVE）"
-	@echo "  make fly-wipe-data-all      ⚠️  SSH 清空全部 App 的 /data 卷（删库重建）"
+	@echo "  make fly-wipe-data-all      ⚠️  SSH 清空有状态 App 的 /data 卷（删库重建）"
 	@echo ""
 	@echo "  FLY_BACKUP_STOP=1 make fly-backup-trending   短暂停机后备份（SQLite 更一致）"
 	@echo "  make fly-restore-trending LOCAL_DB=./starcat-trending-api/trending.db"
@@ -84,6 +87,9 @@ fly-secrets-weekly: ## 同步 starcat-weekly-api secrets
 fly-secrets-wiki: ## 同步 starcat-wiki-api secrets
 	$(FLY_SECRETS_SYNC) starcat-wiki-api
 
+fly-secrets-recommend: ## 同步 starcat-recommend-api secrets
+	$(FLY_SECRETS_SYNC) starcat-recommend-api
+
 fly-secrets-discovery: ## 同步 starcat-discovery-api secrets
 	$(FLY_SECRETS_SYNC) starcat-discovery-api
 
@@ -109,6 +115,9 @@ fly-status-weekly:
 
 fly-status-wiki:
 	@fly status -a starcat-wiki-api
+
+fly-status-recommend:
+	@fly status -a starcat-recommend-api
 
 fly-status-discovery:
 	@fly status -a starcat-discovery-api
@@ -136,12 +145,15 @@ fly-deploy-weekly:
 fly-deploy-wiki:
 	cd starcat-wiki-api && fly deploy --remote-only --ha=false
 
+fly-deploy-recommend:
+	cd starcat-recommend-api && fly deploy --remote-only --ha=false
+
 fly-deploy-discovery:
 	cd starcat-discovery-api && fly deploy --remote-only --ha=false
 
 # --- 备份持久化卷（/data → supports/backups/<app>/<timestamp>/）---
 
-fly-backup-all: $(foreach s,$(APIS),fly-backup-$(s)) ## 顺序备份全部 App /data
+fly-backup-all: $(foreach s,$(STATEFUL_APIS),fly-backup-$(s)) ## 顺序备份有状态 App /data
 	@echo "✓ 全部 backup 完成 → supports/backups/"
 
 fly-backup-sharing:
@@ -183,7 +195,7 @@ fly-restore-discovery:
 
 # --- 危险操作：清空持久化卷（SQLite + weekly-repo）---
 
-fly-wipe-data-all: $(foreach s,$(APIS),fly-wipe-data-$(s)) ## ⚠️ 清空全部 App /data
+fly-wipe-data-all: $(foreach s,$(STATEFUL_APIS),fly-wipe-data-$(s)) ## ⚠️ 清空有状态 App /data
 	@echo "✓ 全部 /data 已清空，请 fly machine restart 或等待自动重启"
 
 fly-wipe-data-sharing:
