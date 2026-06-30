@@ -33,7 +33,7 @@ final class ExploreDiscoveryViewModel {
     private var inFlightRequestID = UUID()
 
     func reload(
-        api: DiscoveryAPI,
+        repository: any DiscoveryRepositoryProtocol,
         mode: ExploreMode,
         language: String?,
         topic: String?,
@@ -47,29 +47,37 @@ final class ExploreDiscoveryViewModel {
         isRefreshing = showsRefreshIndicator
         loadError = nil
 
-        do {
-            let page = try await fetchPage(
-                api: api,
-                mode: mode,
-                language: language,
-                topic: topic,
-                platform: platform,
-                sort: sort,
-                page: 1
-            )
+        let query = makeQuery(
+            mode: mode,
+            language: language,
+            topic: topic,
+            platform: platform,
+            sort: sort,
+            page: 1
+        )
+
+        var didShowCachedPage = false
+        if !showsRefreshIndicator,
+           let cached = await repository.cachedPage(mode: mode.discoveryListMode, query: query) {
             guard inFlightRequestID == requestID else { return }
-            repos = page.items
-            total = page.total
-            nextPage = page.nextPage
-            lastRefreshedAt = Date()
-            reposRevision += 1
+            apply(cached)
+            didShowCachedPage = true
+            isLoading = false
+        }
+
+        do {
+            let cachedPage = try await repository.fetchPage(mode: mode.discoveryListMode, query: query)
+            guard inFlightRequestID == requestID else { return }
+            apply(cachedPage)
         } catch {
             guard inFlightRequestID == requestID else { return }
             loadError = error.localizedDescription
-            repos = []
-            total = 0
-            nextPage = nil
-            reposRevision += 1
+            if !didShowCachedPage {
+                repos = []
+                total = 0
+                nextPage = nil
+                reposRevision += 1
+            }
         }
 
         if inFlightRequestID == requestID {
@@ -79,7 +87,7 @@ final class ExploreDiscoveryViewModel {
     }
 
     func loadMoreIfNeeded(
-        api: DiscoveryAPI,
+        repository: any DiscoveryRepositoryProtocol,
         currentRepo: DiscoveryRepoDTO,
         mode: ExploreMode,
         language: String?,
@@ -95,8 +103,7 @@ final class ExploreDiscoveryViewModel {
         defer { isRefreshing = false }
 
         do {
-            let page = try await fetchPage(
-                api: api,
+            let query = makeQuery(
                 mode: mode,
                 language: language,
                 topic: topic,
@@ -104,9 +111,11 @@ final class ExploreDiscoveryViewModel {
                 sort: sort,
                 page: nextPage
             )
-            repos.append(contentsOf: page.items)
-            total = page.total
-            self.nextPage = page.nextPage
+            let cachedPage = try await repository.fetchPage(mode: mode.discoveryListMode, query: query)
+            repos.append(contentsOf: cachedPage.page.items)
+            total = cachedPage.page.total
+            self.nextPage = cachedPage.page.nextPage
+            lastRefreshedAt = cachedPage.cachedAt
             reposRevision += 1
         } catch {
             // 追加页失败不清空当前列表，只保留日志；用户仍可点击顶部刷新重试。
@@ -114,16 +123,15 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
-    private func fetchPage(
-        api: DiscoveryAPI,
+    private func makeQuery(
         mode: ExploreMode,
         language: String?,
         topic: String?,
         platform: String?,
         sort: ExploreSortOption,
         page: Int
-    ) async throws -> DiscoveryPage {
-        let query = DiscoveryListQuery(
+    ) -> DiscoveryListQuery {
+        DiscoveryListQuery(
             language: normalizedFilter(language),
             platform: normalizedFilter(platform),
             topic: normalizedFilter(topic),
@@ -131,18 +139,14 @@ final class ExploreDiscoveryViewModel {
             page: page,
             limit: Self.pageSize
         )
+    }
 
-        switch mode {
-        case .discover:
-            return try await api.fetchFeed(query: query)
-        case .popular:
-            return try await api.fetchMostPopular(query: query)
-        case .newReleases:
-            return try await api.fetchNewReleases(query: query)
-        case .trending:
-            assertionFailure("Trending keeps using TrendingViewModel")
-            return DiscoveryPage(items: [], total: 0, page: page, pageSize: Self.pageSize, nextPage: nil)
-        }
+    private func apply(_ cachedPage: DiscoveryCachedPage) {
+        repos = cachedPage.page.items
+        total = cachedPage.page.total
+        nextPage = cachedPage.page.nextPage
+        lastRefreshedAt = cachedPage.cachedAt
+        reposRevision += 1
     }
 
     private func normalizedFilter(_ value: String?) -> String? {

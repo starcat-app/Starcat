@@ -293,6 +293,93 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
                 CREATE INDEX IF NOT EXISTS idx_repo_github_star_lists_list
                 ON repo_github_star_lists(list_id)
                 """)
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS discovery_list_pages (
+                    cache_key TEXT NOT NULL,
+                    page INTEGER NOT NULL,
+                    total INTEGER NOT NULL DEFAULT 0,
+                    page_size INTEGER NOT NULL DEFAULT 20,
+                    next_page INTEGER,
+                    cached_at TEXT NOT NULL,
+                    PRIMARY KEY (cache_key, page)
+                )
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_discovery_list_pages_cached
+                ON discovery_list_pages(cached_at)
+                """)
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS discovery_list_items (
+                    cache_key TEXT NOT NULL,
+                    page INTEGER NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    repo_id INTEGER NOT NULL,
+                    full_name TEXT NOT NULL,
+                    owner TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    homepage TEXT,
+                    language TEXT,
+                    stars INTEGER NOT NULL DEFAULT 0,
+                    forks INTEGER NOT NULL DEFAULT 0,
+                    watchers INTEGER NOT NULL DEFAULT 0,
+                    subscribers INTEGER NOT NULL DEFAULT 0,
+                    open_issues INTEGER NOT NULL DEFAULT 0,
+                    owner_avatar TEXT,
+                    default_branch TEXT,
+                    license_spdx TEXT,
+                    topics_json TEXT NOT NULL DEFAULT '[]',
+                    platforms_json TEXT NOT NULL DEFAULT '[]',
+                    pushed_at TEXT,
+                    updated_at TEXT,
+                    created_at TEXT,
+                    is_archived INTEGER NOT NULL DEFAULT 0,
+                    is_fork INTEGER NOT NULL DEFAULT 0,
+                    latest_release_tag TEXT,
+                    latest_release_at TEXT,
+                    latest_release_url TEXT,
+                    release_download_count INTEGER NOT NULL DEFAULT 0,
+                    item_rank INTEGER,
+                    score DOUBLE,
+                    reasons_json TEXT NOT NULL DEFAULT '[]',
+                    signals_json TEXT NOT NULL DEFAULT '[]',
+                    cached_at TEXT NOT NULL,
+                    PRIMARY KEY (cache_key, page, repo_id)
+                )
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_discovery_list_items_lookup
+                ON discovery_list_items(cache_key, page, sort_order)
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_discovery_list_items_repo
+                ON discovery_list_items(repo_id)
+                """)
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS discovery_summary_modes (
+                    mode TEXT PRIMARY KEY,
+                    total INTEGER NOT NULL DEFAULT 0,
+                    generated_at TEXT,
+                    cached_at TEXT NOT NULL
+                )
+                """)
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS discovery_summary_facets (
+                    mode TEXT NOT NULL,
+                    facet TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    system_name TEXT,
+                    count INTEGER NOT NULL DEFAULT 0,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    cached_at TEXT NOT NULL,
+                    PRIMARY KEY (mode, facet, key)
+                )
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_discovery_summary_facets_lookup
+                ON discovery_summary_facets(mode, facet, sort_order)
+                """)
         }
     }
 

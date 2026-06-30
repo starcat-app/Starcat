@@ -51,6 +51,15 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable {
     var usesDiscoveryAPI: Bool {
         self != .trending
     }
+
+    var discoveryListMode: DiscoveryListMode {
+        switch self {
+        case .discover: return .discover
+        case .trending: return .trending
+        case .popular: return .popular
+        case .newReleases: return .newReleases
+        }
+    }
 }
 
 /// 发现 / 热门 / 新发布中栏筛选栏的排序选项。

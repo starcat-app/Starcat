@@ -505,9 +505,19 @@ struct SidebarView: View {
             },
             icon: mode.systemImage,
             iconColor: selectedExploreMode == mode ? .accentColor : .secondary,
-            count: nil
+            count: exploreModeCount(mode)
         ) {
             Text(mode.titleKey)
+        }
+    }
+
+    private func exploreModeCount(_ mode: ExploreMode) -> Int? {
+        switch mode {
+        case .trending:
+            let total = dependencies.trendingLanguageStore.displayList.reduce(0) { $0 + $1.count }
+            return total > 0 ? total : nil
+        case .discover, .popular, .newReleases:
+            return dependencies.exploreCatalogStore.total(for: mode)
         }
     }
 
@@ -558,7 +568,7 @@ struct SidebarView: View {
             exploreLanguageRow(nil)
 
             if trendingLanguagesExpanded {
-                ForEach(dependencies.exploreCatalogStore.displayLanguages) { language in
+                ForEach(dependencies.exploreCatalogStore.displayLanguages(for: selectedExploreMode)) { language in
                     exploreLanguageRow(language)
                         .transition(Self.disclosureRowTransition)
                 }
@@ -965,7 +975,7 @@ struct SidebarView: View {
 
                 Spacer(minLength: 8)
 
-                Text(dependencies.exploreCatalogStore.displayLanguages.count.formatted())
+                Text(dependencies.exploreCatalogStore.displayLanguages(for: selectedExploreMode).count.formatted())
                     .font(interfaceScale.font(size: 11))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -1072,7 +1082,7 @@ struct SidebarView: View {
             action: { selectedDiscoveryTopic = code },
             icon: topic == nil ? "square.grid.2x2" : "circle.fill",
             iconColor: topic == nil ? .secondary : .accentColor.opacity(0.7),
-            count: nil
+            count: dependencies.exploreCatalogStore.topicCount(for: code)
         ) {
             if let topic {
                 exploreTopicTitle(topic)
@@ -1114,7 +1124,7 @@ struct SidebarView: View {
             action: { selectedDiscoveryPlatform = code },
             icon: platform?.systemName ?? "square.stack.3d.up",
             iconColor: .secondary,
-            count: nil
+            count: dependencies.exploreCatalogStore.platformCount(for: code)
         ) {
             if let platform {
                 Text(verbatim: platform.label)
@@ -1132,7 +1142,7 @@ struct SidebarView: View {
             action: { selectedDiscoveryLanguage = key },
             icon: nil,
             iconColor: .secondary,
-            count: (language?.count ?? 0) > 0 ? language?.count : nil
+            count: dependencies.exploreCatalogStore.languageCount(for: key, mode: selectedExploreMode)
         ) {
             if let language {
                 HStack(spacing: 7) {

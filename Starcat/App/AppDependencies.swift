@@ -137,6 +137,12 @@ final class AppDependencies {
     /// 放在依赖容器中让 Sidebar 与中栏共用同一份会话缓存，避免重复网络请求。
     let exploreCatalogStore: ExploreCatalogStore
 
+    /// 探索发现与榜单客户端缓存仓库。
+    ///
+    /// 发现 / 热门 / 新发布的列表页和 Sidebar 汇总均走这里做 SQLite 本地缓存；
+    /// 当前“趋势”仍使用 `trendingRepository`，不从 discovery 新趋势候选切换数据源。
+    let discoveryRepository: any DiscoveryRepositoryProtocol
+
     /// 第三方后端服务健康检查 actor（2026-06-08）。
     /// 设置页"测试连接"按钮 → `await serviceHealthChecker.check(service:baseURL:)`。
     /// 独立 actor + 短超时（5s），不复用业务 API session。
@@ -665,7 +671,9 @@ final class AppDependencies {
             apiKey: StarcatAPIKeyResolver.resolve(for: .discovery)
         )
         self.discoveryAPI = discoveryAPIInstance
-        self.exploreCatalogStore = ExploreCatalogStore(api: discoveryAPIInstance)
+        let discoveryRepo = DiscoveryRepository(api: discoveryAPIInstance, database: db)
+        self.discoveryRepository = discoveryRepo
+        self.exploreCatalogStore = ExploreCatalogStore(repository: discoveryRepo)
 
         // MUL-176：阮一峰周刊 API 客户端。端点走 `AppEndpoints.Weekly.baseURL`。
         // 用户在设置页改地址 → AppDependencies.setServiceURL 推送到本 actor 的

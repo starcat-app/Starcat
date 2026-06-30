@@ -2,12 +2,12 @@
 //  ExploreCatalogStore.swift
 //  Starcat
 //
-//  探索页左栏元数据缓存。
+//  探索页左栏汇总缓存。
 //
 //  设计意图：
-//  - topics / platforms / languages 都是服务端可重建目录数据，不进入 SQLite；
+//  - topics / platforms / languages 及其 repo 数量来自 discovery summary；
 //  - SidebarView 和 ExploreView 共用这份会话级缓存，避免 sibling 视图各自拉网络；
-//  - 后端不可达时提供稳定兜底，让探索页仍能展示结构和空态。
+//  - 后端不可达时优先读 SQLite summary 缓存，再退回静态目录，保证探索页仍能展示结构。
 //
 
 import Foundation
@@ -17,9 +17,7 @@ import Observation
 @Observable
 final class ExploreCatalogStore {
 
-    private(set) var topics: [DiscoveryTopicDTO] = []
-    private(set) var platforms: [DiscoveryPlatformDTO] = []
-    private(set) var languages: [DiscoveryLanguageDTO] = []
+    private(set) var summary: DiscoverySummaryDTO?
     private(set) var loadState: LoadState = .idle
 
     enum LoadState: Equatable {
@@ -29,12 +27,12 @@ final class ExploreCatalogStore {
         case failed(String)
     }
 
-    private let api: DiscoveryAPI
+    private let repository: any DiscoveryRepositoryProtocol
     private var hasLoaded = false
     private var currentLoadTask: Task<Void, Never>?
 
-    init(api: DiscoveryAPI) {
-        self.api = api
+    init(repository: any DiscoveryRepositoryProtocol) {
+        self.repository = repository
     }
 
     func reload(force: Bool = false) async {
@@ -48,28 +46,28 @@ final class ExploreCatalogStore {
             self.loadState = .loading
 
             do {
-                async let fetchedTopics = self.api.fetchTopics()
-                async let fetchedPlatforms = self.api.fetchPlatforms()
-                async let fetchedLanguages = self.api.fetchLanguages()
+                if let cached = await self.repository.cachedSummary() {
+                    self.summary = cached
+                    self.hasLoaded = true
+                    self.loadState = .success
+                }
 
-                let (topics, platforms, languages) = try await (fetchedTopics, fetchedPlatforms, fetchedLanguages)
+                let summary = try await self.repository.fetchSummary()
                 guard !Task.isCancelled else { return }
 
-                if !topics.isEmpty {
-                    self.topics = topics
-                }
-                if !platforms.isEmpty {
-                    self.platforms = platforms
-                }
-                if !languages.isEmpty {
-                    self.languages = languages
-                }
+                self.summary = summary
                 self.hasLoaded = true
                 self.loadState = .success
             } catch {
                 guard !Task.isCancelled else { return }
-                self.loadState = .failed(error.localizedDescription)
-                AppLog.network.warning("Explore catalog load failed: \(error.localizedDescription, privacy: .public)")
+                if let cached = await self.repository.cachedSummary() {
+                    self.summary = cached
+                    self.hasLoaded = true
+                    self.loadState = .success
+                } else {
+                    self.loadState = .failed(error.localizedDescription)
+                    AppLog.network.warning("Explore summary load failed: \(error.localizedDescription, privacy: .public)")
+                }
             }
         }
         currentLoadTask = task
@@ -81,15 +79,64 @@ final class ExploreCatalogStore {
     }
 
     var displayTopics: [DiscoveryTopicDTO] {
-        topics.isEmpty ? Self.fallbackTopics : topics
+        let topics = summary?
+            .mode(.discover)?
+            .topics?
+            .map(\.asTopicDTO) ?? []
+        return topics.isEmpty ? Self.fallbackTopics : topics
     }
 
     var displayPlatforms: [DiscoveryPlatformDTO] {
-        platforms.isEmpty ? Self.fallbackPlatforms : platforms
+        let platforms = summary?
+            .mode(.discover)?
+            .platforms?
+            .map(\.asPlatformDTO) ?? []
+        return platforms.isEmpty ? Self.fallbackPlatforms : platforms
     }
 
-    var displayLanguages: [DiscoveryLanguageDTO] {
-        languages.isEmpty ? Self.fallbackLanguages : languages
+    func displayLanguages(for mode: ExploreMode) -> [DiscoveryLanguageDTO] {
+        let languages = summary?
+            .mode(mode.discoveryListMode)?
+            .languages?
+            .map(\.asLanguageDTO) ?? []
+        return languages.isEmpty ? Self.fallbackLanguages : languages
+    }
+
+    func total(for mode: ExploreMode) -> Int? {
+        summary?.mode(mode.discoveryListMode)?.total
+    }
+
+    func topicCount(for code: String?) -> Int? {
+        guard let code else {
+            return total(for: .discover)
+        }
+        return summary?
+            .mode(.discover)?
+            .topics?
+            .first { $0.key == code }?
+            .count
+    }
+
+    func platformCount(for code: String?) -> Int? {
+        guard let code else {
+            return total(for: .discover)
+        }
+        return summary?
+            .mode(.discover)?
+            .platforms?
+            .first { $0.key == code }?
+            .count
+    }
+
+    func languageCount(for key: String?, mode: ExploreMode) -> Int? {
+        guard let key else {
+            return total(for: mode)
+        }
+        return summary?
+            .mode(mode.discoveryListMode)?
+            .languages?
+            .first { $0.key == key }?
+            .count
     }
 
     static let fallbackTopics: [DiscoveryTopicDTO] = [

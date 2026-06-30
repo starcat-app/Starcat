@@ -253,6 +253,8 @@ enum AppEndpoints {
             static let newReleases = "/api/v1/discovery/categories/new-releases"
             /// `GET /api/v1/discovery/categories/trending?...` —— 新趋势候选，首期客户端不直接使用。
             static let trending = "/api/v1/discovery/categories/trending"
+            /// `GET /api/v1/discovery/summary` —— 探索 Sidebar 总量与筛选项计数。
+            static let summary = "/api/v1/discovery/summary"
             /// `GET /api/v1/discovery/languages` —— Discovery 可用语言。
             static let languages = "/api/v1/discovery/languages"
             /// `GET /api/v1/discovery/topics` —— Discovery 主题元数据。

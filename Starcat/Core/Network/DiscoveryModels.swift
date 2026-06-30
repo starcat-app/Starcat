@@ -10,7 +10,7 @@
 
 import Foundation
 
-struct DiscoveryRepoDTO: Decodable, Identifiable, Hashable, Sendable {
+struct DiscoveryRepoDTO: Codable, Identifiable, Hashable, Sendable {
     let repoID: Int64
     let fullName: String
     let owner: String
@@ -78,13 +78,13 @@ struct DiscoveryRepoDTO: Decodable, Identifiable, Hashable, Sendable {
     }
 }
 
-struct DiscoverySignalDTO: Decodable, Hashable, Sendable {
+struct DiscoverySignalDTO: Codable, Hashable, Sendable {
     let code: String
     let label: String
     let value: String?
 }
 
-struct DiscoveryLanguageDTO: Decodable, Identifiable, Hashable, Sendable {
+struct DiscoveryLanguageDTO: Codable, Identifiable, Hashable, Sendable {
     let key: String
     let label: String
     let count: Int
@@ -92,14 +92,14 @@ struct DiscoveryLanguageDTO: Decodable, Identifiable, Hashable, Sendable {
     var id: String { key }
 }
 
-struct DiscoveryTopicDTO: Decodable, Identifiable, Hashable, Sendable {
+struct DiscoveryTopicDTO: Codable, Identifiable, Hashable, Sendable {
     let code: String
     let label: String
 
     var id: String { code }
 }
 
-struct DiscoveryPlatformDTO: Decodable, Identifiable, Hashable, Sendable {
+struct DiscoveryPlatformDTO: Codable, Identifiable, Hashable, Sendable {
     let code: String
     let label: String
     let systemName: String?
@@ -121,6 +121,11 @@ struct DiscoveryPage: Equatable, Sendable {
     let nextPage: Int?
 }
 
+struct DiscoveryCachedPage: Sendable {
+    let page: DiscoveryPage
+    let cachedAt: Date
+}
+
 struct DiscoveryListQuery: Equatable, Hashable, Sendable {
     var language: String?
     var platform: String?
@@ -128,6 +133,87 @@ struct DiscoveryListQuery: Equatable, Hashable, Sendable {
     var sort: String?
     var page: Int = 1
     var limit: Int = 20
+}
+
+enum DiscoveryListMode: String, Codable, CaseIterable, Sendable {
+    case discover
+    case popular
+    case newReleases
+    case trending
+
+    var apiSummaryMode: String {
+        switch self {
+        case .discover: return "discover"
+        case .popular: return "popular"
+        case .newReleases: return "new_releases"
+        case .trending: return "trending"
+        }
+    }
+
+    init?(apiSummaryMode: String) {
+        switch apiSummaryMode {
+        case "discover":
+            self = .discover
+        case "popular":
+            self = .popular
+        case "new_releases":
+            self = .newReleases
+        case "trending":
+            self = .trending
+        default:
+            return nil
+        }
+    }
+}
+
+struct DiscoverySummaryDTO: Codable, Equatable, Sendable {
+    let modes: [DiscoveryModeSummaryDTO]
+    let generatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case modes
+        case generatedAt = "generated_at"
+    }
+
+    func mode(_ mode: DiscoveryListMode) -> DiscoveryModeSummaryDTO? {
+        modes.first { DiscoveryListMode(apiSummaryMode: $0.mode) == mode }
+    }
+}
+
+struct DiscoveryModeSummaryDTO: Codable, Equatable, Sendable {
+    let mode: String
+    let total: Int
+    let topics: [DiscoveryFacetCountDTO]?
+    let platforms: [DiscoveryFacetCountDTO]?
+    let languages: [DiscoveryFacetCountDTO]?
+}
+
+struct DiscoveryFacetCountDTO: Codable, Identifiable, Equatable, Hashable, Sendable {
+    let key: String
+    let label: String
+    let count: Int
+    let systemName: String?
+
+    var id: String { key }
+
+    enum CodingKeys: String, CodingKey {
+        case key
+        case label
+        case count
+        case systemName = "system_name"
+    }
+
+    var asTopicDTO: DiscoveryTopicDTO {
+        DiscoveryTopicDTO(code: key, label: label)
+    }
+
+    var asPlatformDTO: DiscoveryPlatformDTO {
+        DiscoveryPlatformDTO(code: key, label: label, systemName: systemName)
+    }
+
+    var asLanguageDTO: DiscoveryLanguageDTO {
+        DiscoveryLanguageDTO(key: key, label: label, count: count)
+    }
 }
 
 extension DiscoveryRepoDTO {

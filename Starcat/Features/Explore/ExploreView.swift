@@ -121,7 +121,7 @@ private struct ExploreDiscoveryListView: View {
             selectedRepo = nil
             viewModel.sortOption = currentSort
             await viewModel.reload(
-                api: dependencies.discoveryAPI,
+                repository: dependencies.discoveryRepository,
                 mode: mode,
                 language: mode == .discover ? nil : selectedLanguage,
                 topic: mode == .discover ? selectedTopic : nil,
@@ -168,7 +168,7 @@ private struct ExploreDiscoveryListView: View {
             ) {
                 Task {
                     await viewModel.reload(
-                        api: dependencies.discoveryAPI,
+                        repository: dependencies.discoveryRepository,
                         mode: mode,
                         language: mode == .discover ? nil : selectedLanguage,
                         topic: mode == .discover ? selectedTopic : nil,
@@ -244,7 +244,7 @@ private struct ExploreDiscoveryListView: View {
                 .onAppear {
                     Task {
                         await viewModel.loadMoreIfNeeded(
-                            api: dependencies.discoveryAPI,
+                            repository: dependencies.discoveryRepository,
                             currentRepo: repo,
                             mode: mode,
                             language: mode == .discover ? nil : selectedLanguage,
@@ -261,7 +261,7 @@ private struct ExploreDiscoveryListView: View {
         .scrollContentBackground(.hidden)
         .refreshable {
             await viewModel.reload(
-                api: dependencies.discoveryAPI,
+                repository: dependencies.discoveryRepository,
                 mode: mode,
                 language: mode == .discover ? nil : selectedLanguage,
                 topic: mode == .discover ? selectedTopic : nil,
@@ -338,7 +338,7 @@ private struct ExploreDiscoveryListView: View {
     }
 
     private func reportRepoCount() {
-        onRepoCountChange(viewModel.repos.count)
+        onRepoCountChange(viewModel.total)
     }
 }
 

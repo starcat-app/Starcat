@@ -49,6 +49,10 @@ actor DiscoveryAPI {
         try await fetchList(path: AppEndpoints.Discovery.Paths.newReleases, query: query)
     }
 
+    func fetchTrendingCandidate(query: DiscoveryListQuery = DiscoveryListQuery()) async throws -> DiscoveryPage {
+        try await fetchList(path: AppEndpoints.Discovery.Paths.trending, query: query)
+    }
+
     func fetchLanguages() async throws -> [DiscoveryLanguageDTO] {
         try await fetchMetadata(path: AppEndpoints.Discovery.Paths.languages)
     }
@@ -59,6 +63,17 @@ actor DiscoveryAPI {
 
     func fetchPlatforms() async throws -> [DiscoveryPlatformDTO] {
         try await fetchMetadata(path: AppEndpoints.Discovery.Paths.platforms)
+    }
+
+    func fetchSummary() async throws -> DiscoverySummaryDTO {
+        let url = AppEndpoints.appendPath(AppEndpoints.Discovery.Paths.summary, to: baseURL)
+        let (data, response) = try await performRequest(url: url)
+        return try StarcatEnvelopeDecoder.decode(
+            DiscoverySummaryDTO.self,
+            data: data,
+            response: response,
+            decoder: decoder
+        )
     }
 
     func updateBaseURL(_ url: URL) {

@@ -82,6 +82,11 @@ enum DatabaseMigrations {
             // 独立缓存表（与上面用户数据 / repos 缓存共享 repos 外键 cascade）
             try createTrendingRepos(db)
             try createTrendingReadmes(db)
+            // 探索发现缓存：公开服务端快照，可删除重建，不与用户 star/tag/note 数据耦合。
+            try createDiscoveryListPages(db)
+            try createDiscoveryListItems(db)
+            try createDiscoverySummaryModes(db)
+            try createDiscoverySummaryFacets(db)
             try createRepoEmbeddings(db)
             try createAISummaries(db)
             try createReleaseSubscriptions(db)
@@ -668,6 +673,100 @@ enum DatabaseMigrations {
         }
 
         try db.create(index: "idx_trending_readmes_cached", on: "trending_readmes", columns: ["cached_at"])
+    }
+
+    // MARK: - discovery_*（探索发现客户端本地缓存）
+
+    /// discovery_list_pages：按 mode + filter + sort + page 缓存分页元信息。
+    ///
+    /// `cache_key` 不包含 page，方便同一查询下多个 page 共用一个分桶；page 单独入 PK。
+    /// 列表项明细放在 `discovery_list_items`，两张表同 transaction 写入，避免 total 与 rows 不一致。
+    private static func createDiscoveryListPages(_ db: Database) throws {
+        try db.create(table: "discovery_list_pages") { t in
+            t.column("cache_key", .text).notNull()
+            t.column("page", .integer).notNull()
+            t.column("total", .integer).notNull().defaults(to: 0)
+            t.column("page_size", .integer).notNull().defaults(to: 20)
+            t.column("next_page", .integer)
+            t.column("cached_at", .text).notNull()
+            t.primaryKey(["cache_key", "page"])
+        }
+
+        try db.create(index: "idx_discovery_list_pages_cached", on: "discovery_list_pages", columns: ["cached_at"])
+    }
+
+    /// discovery_list_items：Discovery API 返回的公开仓库快照。
+    ///
+    /// 该表只用于探索页离线兜底与快速首屏，不参与 Manage/Starred 主数据。用户点击 Star 后，
+    /// 仍由 `StarActionService` 走 GitHub 真值写入 `repos`，避免公共榜单快照污染用户库。
+    private static func createDiscoveryListItems(_ db: Database) throws {
+        try db.create(table: "discovery_list_items") { t in
+            t.column("cache_key", .text).notNull()
+            t.column("page", .integer).notNull()
+            t.column("sort_order", .integer).notNull()
+            t.column("repo_id", .integer).notNull()
+            t.column("full_name", .text).notNull()
+            t.column("owner", .text).notNull()
+            t.column("name", .text).notNull()
+            t.column("description", .text)
+            t.column("homepage", .text)
+            t.column("language", .text)
+            t.column("stars", .integer).notNull().defaults(to: 0)
+            t.column("forks", .integer).notNull().defaults(to: 0)
+            t.column("watchers", .integer).notNull().defaults(to: 0)
+            t.column("subscribers", .integer).notNull().defaults(to: 0)
+            t.column("open_issues", .integer).notNull().defaults(to: 0)
+            t.column("owner_avatar", .text)
+            t.column("default_branch", .text)
+            t.column("license_spdx", .text)
+            t.column("topics_json", .text).notNull().defaults(to: "[]")
+            t.column("platforms_json", .text).notNull().defaults(to: "[]")
+            t.column("pushed_at", .text)
+            t.column("updated_at", .text)
+            t.column("created_at", .text)
+            t.column("is_archived", .integer).notNull().defaults(to: false)
+            t.column("is_fork", .integer).notNull().defaults(to: false)
+            t.column("latest_release_tag", .text)
+            t.column("latest_release_at", .text)
+            t.column("latest_release_url", .text)
+            t.column("release_download_count", .integer).notNull().defaults(to: 0)
+            t.column("item_rank", .integer)
+            t.column("score", .double)
+            t.column("reasons_json", .text).notNull().defaults(to: "[]")
+            t.column("signals_json", .text).notNull().defaults(to: "[]")
+            t.column("cached_at", .text).notNull()
+            t.primaryKey(["cache_key", "page", "repo_id"])
+        }
+
+        try db.create(index: "idx_discovery_list_items_lookup", on: "discovery_list_items", columns: ["cache_key", "page", "sort_order"])
+        try db.create(index: "idx_discovery_list_items_repo", on: "discovery_list_items", columns: ["repo_id"])
+    }
+
+    /// discovery_summary_modes：探索四个模式的 repo 总量缓存。
+    private static func createDiscoverySummaryModes(_ db: Database) throws {
+        try db.create(table: "discovery_summary_modes") { t in
+            t.column("mode", .text).primaryKey()
+            t.column("total", .integer).notNull().defaults(to: 0)
+            t.column("generated_at", .text)
+            t.column("cached_at", .text).notNull()
+        }
+    }
+
+    /// discovery_summary_facets：探索 Sidebar 各维度筛选项的 repo 计数缓存。
+    private static func createDiscoverySummaryFacets(_ db: Database) throws {
+        try db.create(table: "discovery_summary_facets") { t in
+            t.column("mode", .text).notNull()
+            t.column("facet", .text).notNull()
+            t.column("key", .text).notNull()
+            t.column("label", .text).notNull()
+            t.column("system_name", .text)
+            t.column("count", .integer).notNull().defaults(to: 0)
+            t.column("sort_order", .integer).notNull().defaults(to: 0)
+            t.column("cached_at", .text).notNull()
+            t.primaryKey(["mode", "facet", "key"])
+        }
+
+        try db.create(index: "idx_discovery_summary_facets_lookup", on: "discovery_summary_facets", columns: ["mode", "facet", "sort_order"])
     }
 
     // MARK: - weekly_bulk_*（R-06.4 客户端 bulk 缓存 / 渐进式 SWR 双轨制）

@@ -2,17 +2,12 @@
 //  ExploreDiscoveryViewModelTests.swift
 //  StarcatTests
 //
-//  探索页 Discovery API 列表状态机测试。
+//  探索页 Discovery 列表状态机测试。
 //
-//  覆盖目标：
-//  - 热门 / 新发布 / 发现模块走正确 endpoint 与 query；
-//  - 服务端分页 meta 能驱动 ViewModel 追加下一页；
-//  - Discovery 服务不可用时只影响探索列表，不留下过期列表状态。
-//
-//  测试基础设施：
-//  - 复用 `URLProtocolStub`，所有请求都落在测试 URLSession 内；
-//  - Suite 串行执行，避免 URLProtocolStub 的静态状态被并发测试串扰；
-//  - 不触碰 Keychain，也不依赖真实 starcat-discovery-api。
+//  覆盖目标:
+//  - ViewModel 把 mode / language / topic / platform / sort 转成 repository query;
+//  - 服务端分页 meta 能驱动 ViewModel 追加下一页;
+//  - 新筛选无缓存且远端失败时清空旧列表,避免展示不匹配的结果。
 //
 
 import Foundation
@@ -23,20 +18,14 @@ import Testing
 @MainActor
 struct ExploreDiscoveryViewModelTests {
 
-    private let baseURL = URL(string: "https://discovery.test.invalid")!
-
     @Test("热门列表透传语言和排序参数")
     func popularReloadPassesLanguageAndSortQuery() async throws {
-        let api = makeAPI()
+        let repository = FakeDiscoveryRepository()
+        await repository.enqueueFetch(Self.makeCachedPage(repoID: 101, owner: "apple", name: "swift-collections"))
         let viewModel = ExploreDiscoveryViewModel()
 
-        URLProtocolStub.requestHandler = { request in
-            let body = Self.makePageBody(repoID: 101, owner: "apple", name: "swift-collections")
-            return (Self.httpResponse(200, request.url!), body)
-        }
-
         await viewModel.reload(
-            api: api,
+            repository: repository,
             mode: .popular,
             language: "Swift",
             topic: nil,
@@ -49,46 +38,36 @@ struct ExploreDiscoveryViewModelTests {
         #expect(viewModel.nextPage == nil)
         #expect(viewModel.loadError == nil)
 
-        let request = try #require(URLProtocolStub.receivedRequests.first)
-        #expect(request.url?.path == "/api/v1/discovery/categories/most-popular")
-        let query = Self.queryItems(for: request)
-        #expect(query["language"] == "Swift")
-        #expect(query["sort"] == "stars")
-        #expect(query["page"] == "1")
-        #expect(query["limit"] == "20")
-        #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
+        let request = try #require(await repository.recordedRequests().first)
+        #expect(request.mode == .popular)
+        #expect(request.query.language == "Swift")
+        #expect(request.query.sort == "stars")
+        #expect(request.query.page == 1)
+        #expect(request.query.limit == 20)
     }
 
     @Test("分页 meta 驱动 loadMore 追加下一页")
     func loadMoreAppendsNextPageFromMeta() async throws {
-        let api = makeAPI()
+        let repository = FakeDiscoveryRepository()
+        await repository.enqueueFetch(Self.makeCachedPage(
+            repoID: 201,
+            owner: "swiftlang",
+            name: "swift-syntax",
+            total: 2,
+            nextPage: 2
+        ))
+        await repository.enqueueFetch(Self.makeCachedPage(
+            repoID: 202,
+            owner: "swiftlang",
+            name: "swift-format",
+            total: 2,
+            nextPage: nil,
+            page: 2
+        ))
         let viewModel = ExploreDiscoveryViewModel()
 
-        URLProtocolStub.requestHandler = { request in
-            let query = Self.queryItems(for: request)
-            if query["page"] == "2" {
-                let body = Self.makePageBody(
-                    repoID: 202,
-                    owner: "swiftlang",
-                    name: "swift-format",
-                    total: 2,
-                    nextPage: nil
-                )
-                return (Self.httpResponse(200, request.url!), body)
-            }
-
-            let body = Self.makePageBody(
-                repoID: 201,
-                owner: "swiftlang",
-                name: "swift-syntax",
-                total: 2,
-                nextPage: 2
-            )
-            return (Self.httpResponse(200, request.url!), body)
-        }
-
         await viewModel.reload(
-            api: api,
+            repository: repository,
             mode: .newReleases,
             language: "Swift",
             topic: nil,
@@ -100,7 +79,7 @@ struct ExploreDiscoveryViewModelTests {
         #expect(viewModel.nextPage == 2)
 
         await viewModel.loadMoreIfNeeded(
-            api: api,
+            repository: repository,
             currentRepo: firstRepo,
             mode: .newReleases,
             language: "Swift",
@@ -112,25 +91,21 @@ struct ExploreDiscoveryViewModelTests {
         #expect(viewModel.repos.map(\.fullName) == ["swiftlang/swift-syntax", "swiftlang/swift-format"])
         #expect(viewModel.total == 2)
         #expect(viewModel.nextPage == nil)
-        #expect(URLProtocolStub.receivedRequests.count == 2)
 
-        let secondRequest = try #require(URLProtocolStub.receivedRequests.last)
-        #expect(secondRequest.url?.path == "/api/v1/discovery/categories/new-releases")
-        #expect(Self.queryItems(for: secondRequest)["page"] == "2")
+        let requests = await repository.recordedRequests()
+        #expect(requests.count == 2)
+        #expect(requests.last?.mode == .newReleases)
+        #expect(requests.last?.query.page == 2)
     }
 
-    @Test("服务端错误时清空列表并记录可恢复错误")
-    func reloadServerErrorClearsListAndStoresError() async throws {
-        let api = makeAPI()
+    @Test("新筛选远端错误且无缓存时清空列表")
+    func reloadServerErrorWithoutCacheClearsListAndStoresError() async throws {
+        let repository = FakeDiscoveryRepository()
+        await repository.enqueueFetch(Self.makeCachedPage(repoID: 301, owner: "initial", name: "repo"))
         let viewModel = ExploreDiscoveryViewModel()
 
-        URLProtocolStub.requestHandler = { request in
-            let body = Self.makePageBody(repoID: 301, owner: "initial", name: "repo")
-            return (Self.httpResponse(200, request.url!), body)
-        }
-
         await viewModel.reload(
-            api: api,
+            repository: repository,
             mode: .discover,
             language: nil,
             topic: "ai",
@@ -140,25 +115,14 @@ struct ExploreDiscoveryViewModelTests {
 
         #expect(viewModel.repos.count == 1)
 
-        URLProtocolStub.requestHandler = { request in
-            let body = """
-            {
-              "schema_version": 1,
-              "error": {
-                "code": "INTERNAL_ERROR",
-                "message": "Discovery service unavailable"
-              }
-            }
-            """.data(using: .utf8)!
-            return (Self.httpResponse(503, request.url!), body)
-        }
+        await repository.setFetchError(FakeDiscoveryError.unavailable)
 
         await viewModel.reload(
-            api: api,
+            repository: repository,
             mode: .discover,
             language: nil,
-            topic: "ai",
-            platform: "macos",
+            topic: "privacy",
+            platform: "linux",
             sort: .recommended
         )
 
@@ -169,97 +133,133 @@ struct ExploreDiscoveryViewModelTests {
         #expect(!viewModel.isLoading)
         #expect(!viewModel.isRefreshing)
 
-        let failedRequest = try #require(URLProtocolStub.receivedRequests.last)
-        let query = Self.queryItems(for: failedRequest)
-        #expect(failedRequest.url?.path == "/api/v1/discovery/feed")
-        #expect(query["topic"] == "ai")
-        #expect(query["platform"] == "macos")
-        #expect(query["sort"] == nil)
+        let request = try #require(await repository.recordedRequests().last)
+        #expect(request.mode == .discover)
+        #expect(request.query.topic == "privacy")
+        #expect(request.query.platform == "linux")
+        #expect(request.query.sort == nil)
     }
 
-    private func makeAPI() -> DiscoveryAPI {
-        URLProtocolStub.reset()
-        return DiscoveryAPI(
-            baseURL: baseURL,
-            apiKey: "test-discovery-key",
-            session: URLProtocolStub.ephemeralSession()
-        )
-    }
-
-    private nonisolated static func httpResponse(_ statusCode: Int, _ url: URL) -> HTTPURLResponse {
-        HTTPURLResponse(
-            url: url,
-            statusCode: statusCode,
-            httpVersion: "HTTP/1.1",
-            headerFields: [:]
-        )!
-    }
-
-    private nonisolated static func queryItems(for request: URLRequest) -> [String: String] {
-        guard let url = request.url,
-              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return [:]
-        }
-        return Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).compactMap { item in
-            item.value.map { (item.name, $0) }
-        })
-    }
-
-    private nonisolated static func makePageBody(
+    private nonisolated static func makeCachedPage(
         repoID: Int64,
         owner: String,
         name: String,
         total: Int = 1,
-        nextPage: Int? = nil
-    ) -> Data {
+        nextPage: Int? = nil,
+        page: Int = 1
+    ) -> DiscoveryCachedPage {
         let fullName = "\(owner)/\(name)"
-        let nextPageJSON = nextPage.map(String.init) ?? "null"
-        return """
-        {
-          "schema_version": 1,
-          "data": [
-            {
-              "repo_id": \(repoID),
-              "full_name": "\(fullName)",
-              "owner": "\(owner)",
-              "name": "\(name)",
-              "description": "A repository for discovery tests.",
-              "homepage": null,
-              "language": "Swift",
-              "stars": 1000,
-              "forks": 100,
-              "watchers": 1000,
-              "subscribers": 20,
-              "open_issues": 5,
-              "owner_avatar": null,
-              "default_branch": "main",
-              "license_spdx": "MIT",
-              "topics": ["swift", "developer-tools"],
-              "platforms": ["macos"],
-              "pushed_at": "2026-06-29T00:00:00Z",
-              "updated_at": "2026-06-29T00:00:00Z",
-              "created_at": "2025-01-01T00:00:00Z",
-              "is_archived": false,
-              "is_fork": false,
-              "latest_release_tag": "1.0.0",
-              "latest_release_at": "2026-06-28T00:00:00Z",
-              "latest_release_url": "https://github.com/\(fullName)/releases/tag/1.0.0",
-              "release_download_count": 42,
-              "rank": 1,
-              "score": 98.5,
-              "reasons": ["Active repository"],
-              "signals": [
-                { "code": "release", "label": "Recent release", "value": "1.0.0" }
-              ]
-            }
-          ],
-          "meta": {
-            "page": 1,
-            "page_size": 20,
-            "total": \(total),
-            "next_page": \(nextPageJSON)
-          }
+        let repo = DiscoveryRepoDTO(
+            repoID: repoID,
+            fullName: fullName,
+            owner: owner,
+            name: name,
+            description: "A repository for discovery tests.",
+            homepage: nil,
+            language: "Swift",
+            stars: 1000,
+            forks: 100,
+            watchers: 1000,
+            subscribers: 20,
+            openIssues: 5,
+            ownerAvatar: nil,
+            defaultBranch: "main",
+            licenseSpdx: "MIT",
+            topics: ["swift", "developer-tools"],
+            platforms: ["macos"],
+            pushedAt: "2026-06-29T00:00:00Z",
+            updatedAt: "2026-06-29T00:00:00Z",
+            createdAt: "2025-01-01T00:00:00Z",
+            isArchived: false,
+            isFork: false,
+            latestReleaseTag: "1.0.0",
+            latestReleaseAt: "2026-06-28T00:00:00Z",
+            latestReleaseURL: "https://github.com/\(fullName)/releases/tag/1.0.0",
+            releaseDownloadCount: 42,
+            rank: 1,
+            score: 98.5,
+            reasons: ["Active repository"],
+            signals: [
+                DiscoverySignalDTO(code: "release", label: "Recent release", value: "1.0.0")
+            ]
+        )
+        let discoveryPage = DiscoveryPage(
+            items: [repo],
+            total: total,
+            page: page,
+            pageSize: 20,
+            nextPage: nextPage
+        )
+        return DiscoveryCachedPage(page: discoveryPage, cachedAt: Date())
+    }
+}
+
+private enum FakeDiscoveryError: Error {
+    case unavailable
+}
+
+private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
+
+    struct Request: Sendable {
+        let mode: DiscoveryListMode
+        let query: DiscoveryListQuery
+    }
+
+    private var cached: [String: DiscoveryCachedPage] = [:]
+    private var fetchQueue: [DiscoveryCachedPage] = []
+    private var requests: [Request] = []
+    private var fetchError: Error?
+
+    func cachedPage(mode: DiscoveryListMode, query: DiscoveryListQuery) async -> DiscoveryCachedPage? {
+        cached[key(mode: mode, query: query)]
+    }
+
+    func fetchPage(mode: DiscoveryListMode, query: DiscoveryListQuery) async throws -> DiscoveryCachedPage {
+        requests.append(Request(mode: mode, query: query))
+        if let fetchError {
+            throw fetchError
         }
-        """.data(using: .utf8)!
+        guard !fetchQueue.isEmpty else {
+            throw FakeDiscoveryError.unavailable
+        }
+        let page = fetchQueue.removeFirst()
+        cached[key(mode: mode, query: query)] = page
+        return page
+    }
+
+    func cachedSummary() async -> DiscoverySummaryDTO? {
+        nil
+    }
+
+    func fetchSummary() async throws -> DiscoverySummaryDTO {
+        DiscoverySummaryDTO(modes: [], generatedAt: nil)
+    }
+
+    func clearCache() async {
+        cached.removeAll()
+    }
+
+    func enqueueFetch(_ page: DiscoveryCachedPage) {
+        fetchQueue.append(page)
+    }
+
+    func setFetchError(_ error: Error?) {
+        fetchError = error
+    }
+
+    func recordedRequests() -> [Request] {
+        requests
+    }
+
+    private func key(mode: DiscoveryListMode, query: DiscoveryListQuery) -> String {
+        [
+            mode.rawValue,
+            query.language ?? "__all__",
+            query.platform ?? "__all__",
+            query.topic ?? "__all__",
+            query.sort ?? "__default__",
+            "\(query.page)",
+            "\(query.limit)"
+        ].joined(separator: "|")
     }
 }
