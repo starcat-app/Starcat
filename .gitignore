@@ -217,4 +217,7 @@ refer/
 .codegraph/
 supports/
 
+# CodebaseMemory 内置二进制由脚本下载并移动到资源目录，不进入 Git 历史。
+Starcat/Resources/Codebase/codebase
+
 !.claude/skills/macos-app-skills/build
