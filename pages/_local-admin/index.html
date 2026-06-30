@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Starcat Local Admin</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f8fb;
+      --surface: #ffffff;
+      --surface-soft: #f1f4f8;
+      --text: #152033;
+      --muted: #64748b;
+      --border: #d8dee8;
+      --accent: #2563eb;
+      --accent-soft: #e8f0ff;
+      --ok: #15803d;
+      --warn: #b45309;
+      --bad: #b91c1c;
+      --shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #10141d;
+        --surface: #171c27;
+        --surface-soft: #202737;
+        --text: #edf2f7;
+        --muted: #9aa7ba;
+        --border: #30394c;
+        --accent: #6ea8ff;
+        --accent-soft: #1b2c47;
+        --ok: #4ade80;
+        --warn: #facc15;
+        --bad: #fb7185;
+        --shadow: 0 14px 36px rgba(0, 0, 0, 0.25);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    .shell {
+      width: min(1360px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 28px 0 48px;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.15;
+      font-weight: 720;
+    }
+
+    .subtitle {
+      margin: 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .button {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      border-radius: 8px;
+      min-height: 34px;
+      padding: 7px 12px;
+      cursor: pointer;
+      transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+    }
+
+    .button:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .button.primary {
+      border-color: transparent;
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .button.danger {
+      color: var(--bad);
+    }
+
+    .button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      transform: none;
+    }
+
+    .status-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .stat {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .stat-label {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+
+    .stat-value {
+      margin-top: 8px;
+      font-size: 24px;
+      line-height: 1;
+      font-weight: 720;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .service-title {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.25;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--muted);
+      flex: 0 0 auto;
+    }
+
+    .dot.ok {
+      background: var(--ok);
+    }
+
+    .dot.warn {
+      background: var(--warn);
+    }
+
+    .dot.bad {
+      background: var(--bad);
+    }
+
+    .endpoint {
+      margin-top: 6px;
+      color: var(--muted);
+      font-family: "SF Mono", Consolas, monospace;
+      font-size: 12px;
+      word-break: break-all;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-soft);
+      min-height: 26px;
+      padding: 3px 9px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .card-body {
+      padding: 14px 16px 16px;
+    }
+
+    .checks {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .check {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      padding: 10px;
+      min-height: 70px;
+    }
+
+    .check-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .check-value {
+      font-size: 13px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    .check-value.ok {
+      color: var(--ok);
+    }
+
+    .check-value.warn {
+      color: var(--warn);
+    }
+
+    .check-value.bad {
+      color: var(--bad);
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .data-panel {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      padding: 12px;
+    }
+
+    .data-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 10px;
+      min-height: 68px;
+    }
+
+    .metric-name {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 7px;
+    }
+
+    .metric-value {
+      font-size: 20px;
+      line-height: 1.1;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .log {
+      margin-top: 18px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .log-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .log-title {
+      margin: 0;
+      font-size: 15px;
+    }
+
+    .log-lines {
+      max-height: 260px;
+      overflow: auto;
+      padding: 12px 16px;
+      font-family: "SF Mono", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--muted);
+      white-space: pre-wrap;
+    }
+
+    .config-warning {
+      display: none;
+      margin-bottom: 18px;
+      border: 1px solid rgba(180, 83, 9, 0.45);
+      border-radius: 8px;
+      background: rgba(180, 83, 9, 0.10);
+      padding: 12px 14px;
+      color: var(--warn);
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .config-warning.show {
+      display: block;
+    }
+
+    @media (max-width: 980px) {
+      .shell {
+        width: min(100vw - 24px, 760px);
+      }
+
+      header {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .header-actions {
+        justify-content: flex-start;
+      }
+
+      .status-strip,
+      .grid,
+      .checks,
+      .metrics {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <h1>Starcat Local Admin</h1>
+        <p class="subtitle">本地运维面板：查看 supports 服务健康状态、读取公开统计，并触发已存在的管理接口。真实 API Key 只从本目录的 config.js 读取。</p>
+      </div>
+      <div class="header-actions">
+        <button class="button" id="refreshAllButton" type="button">刷新全部</button>
+        <button class="button primary" id="openConfigButton" type="button">查看配置状态</button>
+      </div>
+    </header>
+
+    <section class="config-warning" id="configWarning">
+      未加载 <code>config.js</code>。请复制 <code>config.example.js</code> 为 <code>config.js</code> 并填入本地 baseURL 与 API Key。
+    </section>
+
+    <section class="status-strip" aria-label="服务概览">
+      <div class="stat">
+        <div class="stat-label">已配置服务</div>
+        <div class="stat-value" id="configuredCount">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Health OK</div>
+        <div class="stat-value" id="healthOkCount">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Ping OK</div>
+        <div class="stat-value" id="pingOkCount">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">最近刷新</div>
+        <div class="stat-value" id="lastRefresh">-</div>
+      </div>
+    </section>
+
+    <section class="grid" id="servicesGrid" aria-label="服务列表"></section>
+
+    <section class="log" aria-label="操作日志">
+      <div class="log-head">
+        <h2 class="log-title">操作日志</h2>
+        <button class="button" id="clearLogButton" type="button">清空</button>
+      </div>
+      <div class="log-lines" id="logLines">等待操作...</div>
+    </section>
+  </main>
+
+  <script src="./config.js"></script>
+  <script>
+    /*
+     * This panel deliberately stays frontend-only. It reads private endpoints
+     * from a local config file and calls existing Starcat admin APIs without
+     * adding a second source of truth for backend operations.
+     */
+    const SERVICES = {
+      sharing: {
+        fallbackLabel: "Sharing",
+        description: "分享短链服务",
+        checks: ["health"],
+        stats: [{ label: "说明", type: "text", value: "只提供 healthz；创建分享需要业务 payload，面板不构造测试数据。" }],
+        actions: []
+      },
+      trending: {
+        fallbackLabel: "Trending",
+        description: "GitHub Trending 数据服务",
+        checks: ["health", "ping"],
+        stats: [
+          { label: "Daily repos", type: "count", path: "/api/v1/repos?since=daily&limit=1", pick: "meta.total" },
+          { label: "Languages", type: "count", path: "/api/v1/languages", pick: "data" },
+          { label: "Users probe", type: "count", path: "/api/v1/users?sponsorable=true", pick: "data" }
+        ],
+        actions: [
+          { label: "同步 repos", path: "/internal/sync/repos", auth: "apiKey", confirm: false },
+          { label: "刷新 languages", path: "/internal/sync/languages", auth: "apiKey", confirm: false },
+          { label: "强制 enrich", path: "/internal/enrich/force", auth: "apiKey", confirm: true }
+        ]
+      },
+      weekly: {
+        fallbackLabel: "Weekly",
+        description: "周刊 / zread / 聚合数据服务",
+        checks: ["health", "ping"],
+        stats: [
+          { label: "Repos", type: "count", path: "/api/v1/repos?page=1&page_size=1", pick: "meta.total" },
+          { label: "Languages", type: "count", path: "/api/v1/repos/languages", pick: "data" },
+          { label: "zread items", type: "count", path: "/api/v1/zread?week=this&limit=1", pick: "data.items" }
+        ],
+        actions: [
+          { label: "同步 weekly", path: "/internal/sync/weekly", auth: "apiKey", confirm: false },
+          { label: "同步 zread", path: "/internal/sync/zread", auth: "apiKey", confirm: false },
+          { label: "重建聚合", path: "/internal/rebuild-aggregates", auth: "adminKey", confirm: true }
+        ]
+      },
+      wiki: {
+        fallbackLabel: "Wiki",
+        description: "Wiki 索引探测服务",
+        checks: ["health"],
+        stats: [{ label: "说明", type: "text", value: "Wiki 统计依赖 owner/repo 输入；本面板保留手动 admin 入口。" }],
+        actions: [
+          { label: "触发 probe sync", path: "/internal/sync/probe", auth: "adminKey", confirm: false },
+          { label: "刷新 owner", path: "/internal/refresh/owner", auth: "adminKey", confirm: true, bodyPrompt: "请输入 JSON body，例如：{\"owner\":\"apple\"}" }
+        ]
+      },
+      recommend: {
+        fallbackLabel: "Recommend",
+        description: "相似仓库推荐服务",
+        checks: ["health", "ping"],
+        stats: [{ label: "说明", type: "text", value: "推荐接口需要 repo_id；面板只检查服务与鉴权。" }],
+        actions: []
+      },
+      discovery: {
+        fallbackLabel: "Discovery",
+        description: "探索发现 / 热门 / 新发布服务",
+        checks: ["health", "ping"],
+        stats: [
+          { label: "Summary repos", type: "count", path: "/api/v1/discovery/summary", pick: "data.total_repos" },
+          { label: "Languages", type: "count", path: "/api/v1/discovery/languages", pick: "data" },
+          { label: "Topics", type: "count", path: "/api/v1/discovery/topics", pick: "data" }
+        ],
+        actions: [
+          { label: "轻同步 discovery", path: "/internal/sync/discovery?mode=incremental", auth: "adminKey", confirm: false },
+          { label: "全量 discovery", path: "/internal/sync/discovery?mode=full", auth: "adminKey", confirm: true },
+          { label: "候选诊断", method: "GET", path: "/internal/discovery/trending-candidates", auth: "adminKey", confirm: false, readOnly: true }
+        ]
+      }
+    };
+
+    const state = new Map();
+    const servicesGrid = document.getElementById("servicesGrid");
+    const logLines = document.getElementById("logLines");
+    const configWarning = document.getElementById("configWarning");
+
+    function config() {
+      return window.STARCAT_ADMIN_CONFIG || { services: {} };
+    }
+
+    function serviceConfig(key) {
+      return (config().services || {})[key] || {};
+    }
+
+    function safeURL(baseURL, path) {
+      const normalizedBase = String(baseURL || "").replace(/\/+$/, "");
+      const normalizedPath = String(path || "").startsWith("/") ? path : `/${path}`;
+      return `${normalizedBase}${normalizedPath}`;
+    }
+
+    function authHeaders(cfg, authName) {
+      const key = cfg[authName || "apiKey"];
+      return key ? { Authorization: `Bearer ${key}` } : {};
+    }
+
+    function log(message, level = "info") {
+      const now = new Date().toLocaleTimeString();
+      const prefix = level === "error" ? "ERR" : level === "warn" ? "WARN" : "INFO";
+      const current = logLines.textContent === "等待操作..." ? "" : `${logLines.textContent}\n`;
+      logLines.textContent = `${current}[${now}] ${prefix} ${message}`;
+      logLines.scrollTop = logLines.scrollHeight;
+    }
+
+    function readPath(source, path) {
+      if (!path) return source;
+      return path.split(".").reduce((value, key) => {
+        if (value == null) return undefined;
+        return value[key];
+      }, source);
+    }
+
+    function summarizeValue(value) {
+      if (Array.isArray(value)) return value.length;
+      if (typeof value === "number") return value.toLocaleString();
+      if (typeof value === "string") return value;
+      if (value && typeof value === "object") {
+        if (typeof value.total === "number") return value.total.toLocaleString();
+        if (typeof value.count === "number") return value.count.toLocaleString();
+        return Object.keys(value).length.toLocaleString();
+      }
+      return "-";
+    }
+
+    async function requestJSON(key, path, authName = "apiKey", options = {}) {
+      const cfg = serviceConfig(key);
+      if (!cfg.baseURL) throw new Error("missing baseURL");
+      const response = await fetch(safeURL(cfg.baseURL, path), {
+        method: options.method || "GET",
+        headers: {
+          ...authHeaders(cfg, authName),
+          ...(options.body ? { "Content-Type": "application/json" } : {}),
+          ...(options.headers || {})
+        },
+        body: options.body
+      });
+      const text = await response.text();
+      let body = text;
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {
+        body = text;
+      }
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}${text ? `: ${text.slice(0, 160)}` : ""}`);
+      }
+      return body;
+    }
+
+    async function requestText(key, path, authName = "apiKey", options = {}) {
+      const cfg = serviceConfig(key);
+      if (!cfg.baseURL) throw new Error("missing baseURL");
+      const response = await fetch(safeURL(cfg.baseURL, path), {
+        method: options.method || "GET",
+        headers: authHeaders(cfg, authName),
+        body: options.body
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(`${response.status} ${response.statusText}${text ? `: ${text.slice(0, 160)}` : ""}`);
+      return text || "ok";
+    }
+
+    function render() {
+      const serviceEntries = Object.entries(SERVICES);
+      servicesGrid.innerHTML = serviceEntries.map(([key, spec]) => {
+        const cfg = serviceConfig(key);
+        const snapshot = state.get(key) || {};
+        const dotClass = snapshot.level || "";
+        const label = cfg.label || spec.fallbackLabel;
+        const endpoint = cfg.baseURL || "未配置 baseURL";
+        const statusText = snapshot.status || "等待刷新";
+        const checks = ["health", "ping", "stats"].map((name) => {
+          const item = snapshot[name] || { label: name, value: spec.checks.includes(name) || name === "stats" ? "未运行" : "不适用", level: "" };
+          return `<div class="check">
+            <div class="check-label">${item.label}</div>
+            <div class="check-value ${item.level || ""}">${escapeHTML(item.value)}</div>
+          </div>`;
+        }).join("");
+        const actions = spec.actions.map((action, index) => {
+          const dangerClass = action.confirm ? " danger" : "";
+          return `<button class="button${dangerClass}" type="button" data-action="${key}:${index}">${escapeHTML(action.label)}</button>`;
+        }).join("");
+        const metrics = (snapshot.metrics || spec.stats.map((item) => ({ name: item.label, value: "未刷新" }))).map((item) => {
+          return `<div class="metric">
+            <div class="metric-name">${escapeHTML(item.name)}</div>
+            <div class="metric-value">${escapeHTML(String(item.value))}</div>
+          </div>`;
+        }).join("");
+
+        return `<article class="card" data-service="${key}">
+          <div class="card-head">
+            <div>
+              <h2 class="service-title"><span class="dot ${dotClass}"></span>${escapeHTML(label)}</h2>
+              <div class="endpoint">${escapeHTML(endpoint)}</div>
+            </div>
+            <span class="pill">${escapeHTML(statusText)}</span>
+          </div>
+          <div class="card-body">
+            <div class="checks">${checks}</div>
+            <div class="actions">
+              <button class="button" type="button" data-refresh="${key}">刷新</button>
+              ${actions}
+            </div>
+            <div class="data-panel">
+              <div class="data-title">
+                <span>${escapeHTML(spec.description)}</span>
+                <span>${cfg.apiKey ? "API key 已配置" : "API key 未配置"}</span>
+              </div>
+              <div class="metrics">${metrics}</div>
+            </div>
+          </div>
+        </article>`;
+      }).join("");
+      updateOverview();
+    }
+
+    function escapeHTML(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    async function refreshService(key) {
+      const spec = SERVICES[key];
+      const cfg = serviceConfig(key);
+      const snapshot = {
+        status: "刷新中",
+        level: "warn",
+        health: { label: "Health", value: "检查中", level: "warn" },
+        ping: { label: "Ping", value: spec.checks.includes("ping") ? "检查中" : "不适用", level: "" },
+        stats: { label: "Stats", value: "检查中", level: "warn" },
+        metrics: []
+      };
+      state.set(key, snapshot);
+      render();
+
+      if (!cfg.baseURL) {
+        snapshot.status = "未配置";
+        snapshot.level = "bad";
+        snapshot.health = { label: "Health", value: "缺少 baseURL", level: "bad" };
+        snapshot.ping = { label: "Ping", value: spec.checks.includes("ping") ? "跳过" : "不适用", level: spec.checks.includes("ping") ? "warn" : "" };
+        snapshot.stats = { label: "Stats", value: "跳过", level: "warn" };
+        state.set(key, snapshot);
+        render();
+        return;
+      }
+
+      try {
+        const health = await requestText(key, "/healthz", "apiKey");
+        snapshot.health = { label: "Health", value: String(health).slice(0, 80), level: "ok" };
+      } catch (error) {
+        snapshot.health = { label: "Health", value: error.message, level: "bad" };
+      }
+
+      if (spec.checks.includes("ping")) {
+        try {
+          await requestJSON(key, "/api/v1/ping", "apiKey");
+          snapshot.ping = { label: "Ping", value: "鉴权通过", level: "ok" };
+        } catch (error) {
+          snapshot.ping = { label: "Ping", value: error.message, level: "bad" };
+        }
+      }
+
+      snapshot.metrics = [];
+      for (const stat of spec.stats) {
+        if (stat.type === "text") {
+          snapshot.metrics.push({ name: stat.label, value: stat.value });
+          continue;
+        }
+        try {
+          const json = await requestJSON(key, stat.path, "apiKey");
+          snapshot.metrics.push({ name: stat.label, value: summarizeValue(readPath(json, stat.pick)) });
+        } catch (error) {
+          snapshot.metrics.push({ name: stat.label, value: "失败" });
+          log(`${spec.fallbackLabel} ${stat.label} 统计失败: ${error.message}`, "warn");
+        }
+      }
+
+      const failed = [snapshot.health, snapshot.ping].some((item) => item.level === "bad");
+      const partial = snapshot.metrics.some((item) => item.value === "失败");
+      snapshot.stats = { label: "Stats", value: partial ? "部分失败" : "已刷新", level: partial ? "warn" : "ok" };
+      snapshot.status = failed ? "异常" : partial ? "部分可用" : "正常";
+      snapshot.level = failed ? "bad" : partial ? "warn" : "ok";
+      state.set(key, snapshot);
+      render();
+      log(`${spec.fallbackLabel} 刷新完成: ${snapshot.status}`);
+    }
+
+    async function runAction(key, actionIndex) {
+      const spec = SERVICES[key];
+      const action = spec.actions[actionIndex];
+      const cfg = serviceConfig(key);
+      if (!cfg.baseURL) {
+        log(`${spec.fallbackLabel} 缺少 baseURL，无法执行 ${action.label}`, "error");
+        return;
+      }
+      if (!cfg[action.auth || "apiKey"]) {
+        log(`${spec.fallbackLabel} 缺少 ${action.auth || "apiKey"}，无法执行 ${action.label}`, "error");
+        return;
+      }
+      if (action.confirm && !window.confirm(`确认执行「${action.label}」？`)) return;
+
+      let body;
+      if (action.bodyPrompt) {
+        const input = window.prompt(action.bodyPrompt, "{}");
+        if (input == null) return;
+        body = input.trim() || "{}";
+        try {
+          JSON.parse(body);
+        } catch {
+          log(`${action.label} 的 JSON body 无效`, "error");
+          return;
+        }
+      }
+
+      try {
+        const method = action.method || "POST";
+        const result = action.readOnly
+          ? await requestJSON(key, action.path, action.auth, { method })
+          : await requestJSON(key, action.path, action.auth, { method, body });
+        log(`${spec.fallbackLabel} ${action.label} 成功: ${JSON.stringify(result).slice(0, 220)}`);
+        await refreshService(key);
+      } catch (error) {
+        log(`${spec.fallbackLabel} ${action.label} 失败: ${error.message}`, "error");
+      }
+    }
+
+    async function refreshAll() {
+      const button = document.getElementById("refreshAllButton");
+      button.disabled = true;
+      try {
+        await Promise.all(Object.keys(SERVICES).map(refreshService));
+        document.getElementById("lastRefresh").textContent = new Date().toLocaleTimeString();
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function updateOverview() {
+      const configured = Object.keys(SERVICES).filter((key) => serviceConfig(key).baseURL).length;
+      const snapshots = [...state.values()];
+      document.getElementById("configuredCount").textContent = configured;
+      document.getElementById("healthOkCount").textContent = snapshots.filter((item) => item.health && item.health.level === "ok").length;
+      document.getElementById("pingOkCount").textContent = snapshots.filter((item) => item.ping && item.ping.level === "ok").length;
+    }
+
+    function bindEvents() {
+      document.getElementById("refreshAllButton").addEventListener("click", refreshAll);
+      document.getElementById("clearLogButton").addEventListener("click", () => {
+        logLines.textContent = "等待操作...";
+      });
+      document.getElementById("openConfigButton").addEventListener("click", () => {
+        const cfg = config();
+        const serviceNames = Object.keys(cfg.services || {});
+        log(`配置服务: ${serviceNames.length ? serviceNames.join(", ") : "未加载 config.js"}`);
+      });
+      servicesGrid.addEventListener("click", (event) => {
+        const refreshKey = event.target.getAttribute("data-refresh");
+        if (refreshKey) {
+          refreshService(refreshKey);
+          return;
+        }
+        const actionValue = event.target.getAttribute("data-action");
+        if (actionValue) {
+          const [key, index] = actionValue.split(":");
+          runAction(key, Number(index));
+        }
+      });
+    }
+
+    if (!window.STARCAT_ADMIN_CONFIG) {
+      configWarning.classList.add("show");
+    }
+    bindEvents();
+    render();
+    refreshAll().catch((error) => log(`刷新全部失败: ${error.message}`, "error"));
+  </script>
+</body>
+</html>
