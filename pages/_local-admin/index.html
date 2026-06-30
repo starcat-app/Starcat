@@ -323,6 +323,70 @@
       overflow-wrap: anywhere;
     }
 
+    .metric.long .metric-value {
+      font-size: 14px;
+      line-height: 1.35;
+      font-weight: 650;
+    }
+
+    .mock-panel {
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 12px;
+    }
+
+    .mock-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .mock-title {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .mock-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .mock-textarea {
+      width: 100%;
+      min-height: 280px;
+      resize: vertical;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      color: var(--text);
+      padding: 12px;
+      font-family: "SF Mono", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.55;
+      outline: none;
+    }
+
+    .mock-textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .last-link {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+
     .log {
       margin-top: 18px;
       border: 1px solid var(--border);
@@ -455,7 +519,7 @@
         fallbackLabel: "Sharing",
         description: "分享短链服务",
         checks: ["health"],
-        stats: [{ label: "说明", type: "text", value: "只提供 healthz；创建分享需要业务 payload，面板不构造测试数据。" }],
+        stats: [{ label: "说明", type: "text", value: "可编辑 mock payload 后一键生成分享链接并打开。" }],
         actions: []
       },
       trending: {
@@ -522,10 +586,38 @@
       }
     };
 
+    const DEFAULT_SHARING_PAYLOAD = {
+      repo: {
+        full_name: "apple/swift",
+        description: "The Swift Programming Language",
+        language: "C++",
+        stars_count: 69000,
+        forks_count: 11000,
+        topics: ["swift", "compiler", "programming-language", "ios", "macos"],
+        homepage: "https://swift.org",
+        url: "https://github.com/apple/swift"
+      },
+      ai_summary: {
+        one_liner: "Swift 是 Apple 生态核心语言，兼顾系统级性能与现代开发体验。",
+        summary: "这是一个用于验证 Starcat 分享链路的本地 mock 数据。它覆盖 repo 基础信息、AI 摘要、平台、适用人群、优势、风险与推荐标签，字段完全匹配 sharing-api 当前的 snake_case 契约。",
+        platforms: ["macOS", "iOS", "Linux"],
+        suitable_for: ["Apple 平台开发者", "编译器学习者", "系统工具作者"],
+        strengths: ["官方维护，生态稳定", "类型安全与性能兼顾", "跨 Apple 平台体验一致"],
+        risks: ["仓库体量大，新贡献者上手成本较高", "部分底层实现需要编译器背景"],
+        suggested_tags: [
+          { name: "Swift", confidence: 0.98 },
+          { name: "Apple", confidence: 0.92 },
+          { name: "Compiler", confidence: 0.86 }
+        ]
+      }
+    };
+
     const state = new Map();
     const servicesGrid = document.getElementById("servicesGrid");
     const logLines = document.getElementById("logLines");
     const configWarning = document.getElementById("configWarning");
+    let sharingMockPayloadText = JSON.stringify(DEFAULT_SHARING_PAYLOAD, null, 2);
+    let lastSharingURL = "";
 
     function config() {
       return window.STARCAT_ADMIN_CONFIG || { services: {} };
@@ -633,7 +725,8 @@
           return `<button class="button${dangerClass}" type="button" data-action="${key}:${index}">${escapeHTML(action.label)}</button>`;
         }).join("");
         const metrics = (snapshot.metrics || spec.stats.map((item) => ({ name: item.label, value: "未刷新" }))).map((item) => {
-          return `<div class="metric">
+          const isLong = String(item.value).length > 20;
+          return `<div class="metric ${isLong ? "long" : ""}">
             <div class="metric-name">${escapeHTML(item.name)}</div>
             <div class="metric-value">${escapeHTML(String(item.value))}</div>
           </div>`;
@@ -659,11 +752,32 @@
                 <span>${cfg.apiKey ? "API key 已配置" : "API key 未配置"}</span>
               </div>
               <div class="metrics">${metrics}</div>
+              ${renderServiceExtra(key)}
             </div>
           </div>
         </article>`;
       }).join("");
       updateOverview();
+    }
+
+    function renderServiceExtra(key) {
+      if (key !== "sharing") return "";
+      const linkText = lastSharingURL
+        ? `最近生成: <a href="${escapeHTML(lastSharingURL)}" target="_blank" rel="noreferrer">${escapeHTML(lastSharingURL)}</a>`
+        : "最近生成: 暂无";
+
+      return `<div class="mock-panel">
+        <div class="mock-head">
+          <p class="mock-title">Mock payload，可直接使用，也可以先编辑再生成。</p>
+          <div class="mock-actions">
+            <button class="button primary" type="button" data-sharing-action="create">生成测试分享并打开</button>
+            <button class="button" type="button" data-sharing-action="reset">重置模板</button>
+            <button class="button" type="button" data-sharing-action="copy" ${lastSharingURL ? "" : "disabled"}>复制最近链接</button>
+          </div>
+        </div>
+        <textarea class="mock-textarea" data-sharing-payload spellcheck="false">${escapeHTML(sharingMockPayloadText)}</textarea>
+        <div class="last-link">${linkText}</div>
+      </div>`;
     }
 
     function escapeHTML(value) {
@@ -780,6 +894,65 @@
       }
     }
 
+    async function createSharingFromMock() {
+      const cfg = serviceConfig("sharing");
+      if (!cfg.baseURL) {
+        log("Sharing 缺少 baseURL，无法生成测试分享", "error");
+        return;
+      }
+      if (!cfg.apiKey) {
+        log("Sharing 缺少 apiKey，无法生成测试分享", "error");
+        return;
+      }
+
+      let payload;
+      try {
+        payload = JSON.parse(sharingMockPayloadText);
+      } catch (error) {
+        log(`Sharing mock JSON 无效: ${error.message}`, "error");
+        return;
+      }
+
+      // 在用户点击事件里先打开空白页，避免异步请求完成后被浏览器拦截弹窗。
+      const popup = window.open("about:blank", "_blank");
+
+      try {
+        const result = await requestJSON("sharing", "/api/v1/share", "apiKey", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        const shareURL = readPath(result, "data.share_url");
+        const shareID = readPath(result, "data.share_id");
+        if (!shareURL) {
+          if (popup) popup.close();
+          log(`Sharing 响应缺少 data.share_url: ${JSON.stringify(result).slice(0, 220)}`, "error");
+          return;
+        }
+
+        lastSharingURL = shareURL;
+        if (popup) {
+          popup.location.href = shareURL;
+        } else {
+          log("浏览器拦截了新窗口，请从日志中的链接手动打开。", "warn");
+        }
+        log(`Sharing 测试分享已生成: ${shareID || "unknown"} ${shareURL}`);
+        render();
+      } catch (error) {
+        if (popup) popup.close();
+        log(`Sharing 生成测试分享失败: ${error.message}`, "error");
+      }
+    }
+
+    async function copyLastSharingURL() {
+      if (!lastSharingURL) return;
+      try {
+        await navigator.clipboard.writeText(lastSharingURL);
+        log(`已复制 Sharing 最近链接: ${lastSharingURL}`);
+      } catch (error) {
+        log(`复制 Sharing 链接失败: ${error.message}`, "error");
+      }
+    }
+
     async function refreshAll() {
       const button = document.getElementById("refreshAllButton");
       button.disabled = true;
@@ -810,6 +983,22 @@
         log(`配置服务: ${serviceNames.length ? serviceNames.join(", ") : "未加载 config.js"}`);
       });
       servicesGrid.addEventListener("click", (event) => {
+        const sharingAction = event.target.getAttribute("data-sharing-action");
+        if (sharingAction === "create") {
+          createSharingFromMock();
+          return;
+        }
+        if (sharingAction === "reset") {
+          sharingMockPayloadText = JSON.stringify(DEFAULT_SHARING_PAYLOAD, null, 2);
+          render();
+          log("Sharing mock payload 已重置为模板");
+          return;
+        }
+        if (sharingAction === "copy") {
+          copyLastSharingURL();
+          return;
+        }
+
         const refreshKey = event.target.getAttribute("data-refresh");
         if (refreshKey) {
           refreshService(refreshKey);
@@ -819,6 +1008,11 @@
         if (actionValue) {
           const [key, index] = actionValue.split(":");
           runAction(key, Number(index));
+        }
+      });
+      servicesGrid.addEventListener("input", (event) => {
+        if (event.target.matches("[data-sharing-payload]")) {
+          sharingMockPayloadText = event.target.value;
         }
       });
     }
