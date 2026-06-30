@@ -105,6 +105,11 @@ final class SearchCenterViewModel {
         return page.hasNextPage
     }
 
+    var isLoadingGitHub: Bool {
+        guard case .loading = coordinator.status(for: .github) else { return false }
+        return true
+    }
+
     var githubResultSummary: String? {
         guard case .loaded(let page) = coordinator.status(for: .github), let total = page.totalCount else { return nil }
         if total > 1_000 {

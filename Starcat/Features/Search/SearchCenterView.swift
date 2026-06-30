@@ -381,12 +381,6 @@ struct SearchCenterView: View {
                 }
                 .buttonStyle(.bordered)
             }
-
-            if viewModel.canLoadMoreGitHub {
-                Button("search.github.loadMore") { Task { await viewModel.loadMoreGitHub() } }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-            }
         }
         .padding(12)
         .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -482,49 +476,57 @@ struct SearchCenterView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            List(Array(viewModel.candidates.enumerated()), id: \.element.id) { index, candidate in
-                // 这里不再用 Button:macOS SwiftUI 在 List 内的 Button + onHover
-                // 对「最末行紧贴 List 边界」存在 hit-test 缩水 bug,导致最底部一行 hover
-                // 不触发(safeAreaInset / contentShape 调整都修不彻底)。改成整行
-                // .contentShape(Rectangle()) + .onTapGesture/.onHover 后,hover 命中区域
-                // 由我们显式定义,不再受 List 内 Button 容器边界影响,所有行表现一致。
-                // 牺牲点:丢掉 Button 自带的 keyboard 触发(空格/回车)和 VoiceOver 的
-                // .isButton trait,所以下面用 .accessibilityAddTraits(.isButton) 补回语义,
-                // 而 Return 键打开仍由 body 顶层 .onKeyPress(.return) 处理,不受影响。
-                candidateRow(
-                    candidate,
-                    isSelected: index == viewModel.selectedIndex
-                )
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    activate(candidate)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityAddTraits(.isButton)
-                .accessibilityAction { activate(candidate) }
-                .contextMenu {
-                    if case .repository(let repository) = candidate {
-                        Button("search.contextMenu.openInGitHub") { onOpenURL(repository) }
-                        Button("search.contextMenu.copyURL") { onCopyURL(repository) }
-                        if let repo = repository.displayRepo {
-                            Divider()
-                            Button("search.contextMenu.aiSummary") { onOpenAI(repo) }
-                            if isStarred(repo.id) {
-                                Button("search.contextMenu.unstar") { onToggleStar(repo) }
-                            } else {
-                                Button("search.contextMenu.star") { onToggleStar(repo) }
+            List {
+                ForEach(Array(viewModel.candidates.enumerated()), id: \.element.id) { index, candidate in
+                    // 这里不再用 Button:macOS SwiftUI 在 List 内的 Button + onHover
+                    // 对「最末行紧贴 List 边界」存在 hit-test 缩水 bug,导致最底部一行 hover
+                    // 不触发(safeAreaInset / contentShape 调整都修不彻底)。改成整行
+                    // .contentShape(Rectangle()) + .onTapGesture/.onHover 后,hover 命中区域
+                    // 由我们显式定义,不再受 List 内 Button 容器边界影响,所有行表现一致。
+                    // 牺牲点:丢掉 Button 自带的 keyboard 触发(空格/回车)和 VoiceOver 的
+                    // .isButton trait,所以下面用 .accessibilityAddTraits(.isButton) 补回语义,
+                    // 而 Return 键打开仍由 body 顶层 .onKeyPress(.return) 处理,不受影响。
+                    candidateRow(
+                        candidate,
+                        isSelected: index == viewModel.selectedIndex
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        activate(candidate)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction { activate(candidate) }
+                    .contextMenu {
+                        if case .repository(let repository) = candidate {
+                            Button("search.contextMenu.openInGitHub") { onOpenURL(repository) }
+                            Button("search.contextMenu.copyURL") { onCopyURL(repository) }
+                            if let repo = repository.displayRepo {
+                                Divider()
+                                Button("search.contextMenu.aiSummary") { onOpenAI(repo) }
+                                if isStarred(repo.id) {
+                                    Button("search.contextMenu.unstar") { onToggleStar(repo) }
+                                } else {
+                                    Button("search.contextMenu.star") { onToggleStar(repo) }
+                                }
+                            }
+                        } else if case .reference(let reference) = candidate {
+                            Button("search.contextMenu.openInBrowser") { NSWorkspace.shared.open(reference.originalURL) }
+                            Button("search.contextMenu.copyURL") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(reference.originalURL.absoluteString, forType: .string)
                             }
                         }
-                    } else if case .reference(let reference) = candidate {
-                        Button("search.contextMenu.openInBrowser") { NSWorkspace.shared.open(reference.originalURL) }
-                        Button("search.contextMenu.copyURL") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(reference.originalURL.absoluteString, forType: .string)
-                        }
                     }
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
                 }
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+
+                if shouldShowGitHubLoadMoreRow {
+                    githubLoadMoreListRow
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
             }
             .listStyle(.inset)
             // List 在亮色主题默认绘制不透明白底，导致结果区与搜索浮层顶部的
@@ -725,7 +727,43 @@ struct SearchCenterView: View {
         return segments.first
     }
 
-    // MARK: - 搜索底部 footer（metadata + rate limit）
+    // MARK: - 搜索底部 footer（GitHub pagination + web metadata）
+
+    /// GitHub scope 的分页入口必须作为列表最后一行，而不是固定在面板底部。
+    /// 这样用户滚到当前页末尾时才会看到“查看更多”，追加下一页后入口自然跟到新末尾。
+    private var shouldShowGitHubLoadMoreRow: Bool {
+        viewModel.scope == .github
+            && !viewModel.lastSubmittedQuery.isEmpty
+            && !viewModel.candidates.isEmpty
+            && (viewModel.canLoadMoreGitHub || viewModel.isLoadingGitHub)
+    }
+
+    private var githubLoadMoreListRow: some View {
+        HStack {
+            Spacer()
+            Button {
+                Task { await viewModel.loadMoreGitHub() }
+            } label: {
+                HStack(spacing: 6) {
+                    if viewModel.isLoadingGitHub {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Text("search.github.loadMore")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.secondary.opacity(0.10), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .disabled(viewModel.isLoadingGitHub)
+            Spacer()
+        }
+        .padding(.vertical, 12)
+    }
 
     /// 浮层底部 footer。按 scope 分支渲染：
     ///

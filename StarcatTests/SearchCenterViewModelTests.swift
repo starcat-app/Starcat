@@ -51,12 +51,43 @@ struct SearchCenterViewModelTests {
         #expect(viewModel.candidates.first?.id == SearchCandidate.repository(candidate).id)
     }
 
-    private nonisolated static func makeCandidate() -> RepositoryCandidate {
+    @Test("GitHub 查看更多追加下一页结果")
+    func loadMoreGitHubAppendsNextPage() async throws {
+        let db = try InMemoryDatabaseManager()
+        let history = GRDBSearchHistoryRepository(database: db)
+        let provider = SearchCenterPagingStubProvider(
+            firstPageCandidate: Self.makeCandidate(id: 1, owner: "apple", name: "swift"),
+            secondPageCandidate: Self.makeCandidate(id: 2, owner: "swiftlang", name: "swift-format")
+        )
+        let coordinator = SearchCoordinator(providers: [provider])
+        let viewModel = SearchCenterViewModel(coordinator: coordinator, historyRepository: history)
+
+        viewModel.query = "swift"
+        viewModel.scope = .github
+        await viewModel.submit()
+
+        #expect(viewModel.currentGitHubPage == 1)
+        #expect(viewModel.canLoadMoreGitHub)
+        #expect(viewModel.candidates.count == 1)
+
+        await viewModel.loadMoreGitHub()
+
+        #expect(viewModel.currentGitHubPage == 2)
+        #expect(!viewModel.canLoadMoreGitHub)
+        #expect(viewModel.candidates.count == 2)
+    }
+
+    private nonisolated static func makeCandidate(
+        id: Int64 = 1,
+        owner: String = "apple",
+        name: String = "swift"
+    ) -> RepositoryCandidate {
+        let fullName = "\(owner)/\(name)"
         let card = RepoCardViewData(
-            ghRepoId: 1,
-            fullName: "apple/swift",
-            owner: "apple",
-            repo: "swift",
+            ghRepoId: id,
+            fullName: fullName,
+            owner: owner,
+            repo: name,
             avatarURL: nil,
             description: "Swift language",
             language: "C++",
@@ -75,7 +106,7 @@ struct SearchCenterViewModelTests {
             healthBadge: nil
         )
         return RepositoryCandidate(
-            identity: RepoIdentity(ghRepoID: 1, owner: "apple", name: "swift"),
+            identity: RepoIdentity(ghRepoID: id, owner: owner, name: name),
             card: card,
             sources: [.github],
             localRepo: nil,
@@ -94,6 +125,29 @@ private struct SearchCenterSessionStubProvider: SearchProvider {
             repositories: [candidate],
             references: [],
             totalCount: 1,
+            hasNextPage: false
+        )
+    }
+}
+
+private struct SearchCenterPagingStubProvider: SearchProvider {
+    let source: SearchSource = .github
+    let firstPageCandidate: RepositoryCandidate
+    let secondPageCandidate: RepositoryCandidate
+
+    func search(_ request: SearchRequest) async throws -> SearchProviderPage {
+        if request.page == 1 {
+            return SearchProviderPage(
+                repositories: [firstPageCandidate],
+                references: [],
+                totalCount: 2,
+                hasNextPage: true
+            )
+        }
+        return SearchProviderPage(
+            repositories: [secondPageCandidate],
+            references: [],
+            totalCount: 2,
             hasNextPage: false
         )
     }
