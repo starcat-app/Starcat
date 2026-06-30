@@ -1007,15 +1007,14 @@ struct HomeView: View {
         }
     }
 
-    /// `NSBackgroundActivityScheduler` 不保证注册后马上给时间片；用户开启预拉后需要能看到
-    /// 第一轮立即开始。这里仅在调度器从停止态变为启动态时触发一次，实际执行仍由 service
-    /// 的小批量、串行和 repo 间 sleep 控制，避免影响前台操作。
+    /// 启动调度器，并把首批 README 预拉延迟到启动稳定后。
+    ///
+    /// AuthSession 启动恢复会先用 cached profile 点亮 UI，真实 `/user` 校验和用户 DB 切换
+    /// 稍后完成；首批延迟能避开这个窗口，避免候选查询误失败。用户仍可在设置页点“立即拉取”。
     private func startReadmePrefetchAndKickFirstBatch() {
         let didStart = dependencies.readmePrefetchPoller.start()
         guard didStart else { return }
-        Task {
-            await dependencies.readmePrefetchPoller.runNow()
-        }
+        dependencies.readmePrefetchPoller.scheduleInitialBatch()
     }
 
     /// 标签管理 sheet 关闭后刷新 Sidebar 与当前列表。放在独立方法里能减少

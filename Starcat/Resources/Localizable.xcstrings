@@ -28048,6 +28048,74 @@
         }
       }
     },
+    "settings.storage.readmePrefetch.countdown.hoursMinutes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d hr %d min"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 小时 %d 分"
+          }
+        }
+      }
+    },
+    "settings.storage.readmePrefetch.countdown.minutesSeconds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d min %d s"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 分 %d 秒"
+          }
+        }
+      }
+    },
+    "settings.storage.readmePrefetch.countdown.seconds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d s"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 秒"
+          }
+        }
+      }
+    },
+    "settings.storage.readmePrefetch.nextRunFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next fetch in %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下次拉取 %@后"
+          }
+        }
+      }
+    },
     "settings.storage.readmePrefetch.runNow" : {
       "extractionState" : "manual",
       "localizations" : {

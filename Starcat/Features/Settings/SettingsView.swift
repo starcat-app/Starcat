@@ -763,7 +763,8 @@ private struct StorageSettingsTab: View {
 
                 ReadmePrefetchSettingsStatusView(
                     service: dependencies.readmePrefetchService,
-                    isEnabled: settings.readmePrefetchEnabled
+                    isEnabled: settings.readmePrefetchEnabled,
+                    nextRunAt: dependencies.readmePrefetchPoller.nextRunAt
                 ) {
                     Button("settings.storage.readmePrefetch.runNow") {
                         Task {
@@ -1382,30 +1383,40 @@ private struct ReadmePrefetchSettingsStatusView<Action: View>: View {
 
     let service: ReadmePrefetchService
     let isEnabled: Bool
+    let nextRunAt: Date?
     @ViewBuilder let action: () -> Action
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("settings.storage.readmePrefetch.status")
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 16)
-            HStack(spacing: 10) {
-                if service.isRunning {
-                    ProgressView()
-                        .controlSize(.small)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("settings.storage.readmePrefetch.status")
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 16)
+                HStack(spacing: 10) {
+                    if service.isRunning {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Text(statusText(now: context.date))
+                        .foregroundStyle(statusTint(now: context.date))
+                        .multilineTextAlignment(.trailing)
+                    action()
                 }
-                Text(statusText)
-                    .foregroundStyle(statusTint)
-                    .multilineTextAlignment(.trailing)
-                action()
             }
+            .font(.caption)
         }
-        .font(.caption)
     }
 
-    private var statusText: String {
+    private func statusText(now: Date) -> String {
         guard isEnabled else {
             return String.l10n("toolbar.status.readmePrefetch.disabled")
+        }
+
+        if let nextRunAt, nextRunAt > now, !service.isRunning {
+            return String(
+                format: String.l10n("settings.storage.readmePrefetch.nextRunFormat"),
+                countdownDuration(until: nextRunAt, now: now)
+            )
         }
 
         switch service.status {
@@ -1445,8 +1456,9 @@ private struct ReadmePrefetchSettingsStatusView<Action: View>: View {
         }
     }
 
-    private var statusTint: Color {
+    private func statusTint(now: Date) -> Color {
         if !isEnabled { return .secondary }
+        if let nextRunAt, nextRunAt > now, !service.isRunning { return .accentColor }
         if service.failures > 0 { return .orange }
         switch service.status {
         case .running, .coolingDown:
@@ -1458,6 +1470,28 @@ private struct ReadmePrefetchSettingsStatusView<Action: View>: View {
         case .idle, .disabled:
             return .secondary
         }
+    }
+
+    private func countdownDuration(until date: Date, now: Date) -> String {
+        let seconds = max(0, Int(ceil(date.timeIntervalSince(now))))
+        if seconds >= 3_600 {
+            return String(
+                format: String.l10n("settings.storage.readmePrefetch.countdown.hoursMinutes"),
+                seconds / 3_600,
+                (seconds % 3_600) / 60
+            )
+        }
+        if seconds >= 60 {
+            return String(
+                format: String.l10n("settings.storage.readmePrefetch.countdown.minutesSeconds"),
+                seconds / 60,
+                seconds % 60
+            )
+        }
+        return String(
+            format: String.l10n("settings.storage.readmePrefetch.countdown.seconds"),
+            seconds
+        )
     }
 }
 
