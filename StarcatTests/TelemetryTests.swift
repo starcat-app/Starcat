@@ -83,6 +83,28 @@ struct TelemetryTests {
         ])
     }
 
+    @Test("遥测后端失败不会向业务抛错")
+    func telemetryBackendFailureDoesNotBubbleToProductFlow() {
+        let settings = makeSettings()
+        settings.telemetryEnabled = true
+        let manager = TelemetryManager(
+            settings: settings,
+            client: ThrowingTelemetryClient(),
+            isBackendConfigured: true,
+            ignoresTestEnvironmentForUnitTests: true
+        )
+
+        manager.track(.appLaunched)
+    }
+
+    @Test("Aptabase App Key 先由 Starcat 校验,避免 SDK 打印原始错误 key")
+    func aptabaseAppKeyValidation() {
+        #expect(TelemetryConfiguration.isValidAptabaseAppKey("A-INVALID") == false)
+        #expect(TelemetryConfiguration.isValidAptabaseAppKey("A-ASIA-project") == false)
+        #expect(TelemetryConfiguration.isValidAptabaseAppKey("A-US-project") == true)
+        #expect(TelemetryConfiguration.isValidAptabaseAppKey("A-EU-project") == true)
+    }
+
     @Test("数量和耗时只输出粗粒度分桶")
     func telemetryBucketsAreCoarse() {
         #expect(TelemetryBuckets.repoCountBucket(42) == "lt_100")

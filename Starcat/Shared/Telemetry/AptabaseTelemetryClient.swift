@@ -18,7 +18,7 @@ struct AptabaseTelemetryClient: TelemetryClient {
         Aptabase.shared.initialize(appKey: appKey)
     }
 
-    func track(_ event: TelemetryEvent) {
+    func track(_ event: TelemetryEvent) throws {
         Aptabase.shared.trackEvent(event.name.rawValue, with: event.sdkProperties)
     }
 }

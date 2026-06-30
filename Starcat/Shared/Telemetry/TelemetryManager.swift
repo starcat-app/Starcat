@@ -54,7 +54,14 @@ final class TelemetryManager {
 
     func track(_ event: TelemetryEvent) {
         guard canSend else { return }
-        client.track(event)
+        do {
+            try client.track(event)
+        } catch {
+            // Telemetry must never affect product flows or surface user-visible
+            // errors. Backend misconfiguration and upload failures stay in the
+            // developer log only; users can continue using Starcat normally.
+            AppLog.general.debug("Telemetry event dropped: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private var canSend: Bool {
@@ -75,6 +82,19 @@ enum TelemetryConfiguration {
             return nil
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        guard !trimmed.isEmpty, isValidAptabaseAppKey(trimmed) else { return nil }
+        return trimmed
+    }
+
+    /// Aptabase keys are shaped as `<prefix>-<region>-<project>`.
+    ///
+    /// We validate before calling the SDK so invalid local configuration does
+    /// not make the SDK print the raw key in debug logs. Supported regions match
+    /// Aptabase Swift SDK 0.3.x hosts.
+    static func isValidAptabaseAppKey(_ value: String) -> Bool {
+        let parts = value.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3 else { return false }
+        guard ["US", "EU"].contains(String(parts[1])) else { return false }
+        return parts.allSatisfy { !$0.isEmpty }
     }
 }

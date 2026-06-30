@@ -11,12 +11,16 @@
 
 import Foundation
 
+enum TelemetryClientError: Error {
+    case invalidConfiguration
+}
+
 protocol TelemetryClient: Sendable {
-    func track(_ event: TelemetryEvent)
+    func track(_ event: TelemetryEvent) throws
 }
 
 struct NoopTelemetryClient: TelemetryClient {
-    func track(_ event: TelemetryEvent) {}
+    func track(_ event: TelemetryEvent) throws {}
 }
 
 final class SpyTelemetryClient: TelemetryClient, @unchecked Sendable {
@@ -29,9 +33,15 @@ final class SpyTelemetryClient: TelemetryClient, @unchecked Sendable {
         return storage
     }
 
-    func track(_ event: TelemetryEvent) {
+    func track(_ event: TelemetryEvent) throws {
         lock.lock()
         storage.append(event)
         lock.unlock()
+    }
+}
+
+struct ThrowingTelemetryClient: TelemetryClient {
+    func track(_ event: TelemetryEvent) throws {
+        throw TelemetryClientError.invalidConfiguration
     }
 }
