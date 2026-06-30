@@ -299,7 +299,7 @@ struct ServicesSettingsTab: View {
         await withTaskGroup(of: Void.self) { group in
             for service in testableServices {
                 group.addTask {
-                    await testConnection(for: service)
+                    await testConnection(for: service, retryTransientNetworkError: true)
                 }
             }
         }
@@ -354,7 +354,10 @@ struct ServicesSettingsTab: View {
         }
     }
 
-    private func testConnection(for service: ThirdPartyService) async {
+    private func testConnection(
+        for service: ThirdPartyService,
+        retryTransientNetworkError: Bool = false
+    ) async {
         probingServiceIDs.insert(service.id)
         defer { probingServiceIDs.remove(service.id) }
 
@@ -386,11 +389,23 @@ struct ServicesSettingsTab: View {
             probeKey = StarcatAPIKeyDefaults.productionKeyOrNil(for: service)
         }
 
-        let outcome = await dependencies.serviceHealthChecker.check(
+        var outcome = await dependencies.serviceHealthChecker.check(
             service: service,
             baseURL: baseURL,
             apiKey: probeKey
         )
+
+        // 只给进入设置页的自动检测一次轻量重试：fly.io 冷启动 / TLS 抖动 / timeout
+        // 常见于首轮并发探测；手动测试仍保持单次请求，避免用户等待时间被隐式拉长。
+        if retryTransientNetworkError, outcome.shouldRetryForAutomaticProbe, !Task.isCancelled {
+            outcome = await dependencies.serviceHealthChecker.check(
+                service: service,
+                baseURL: baseURL,
+                apiKey: probeKey
+            )
+        }
+
+        guard !outcome.isCancelledProbe, !Task.isCancelled else { return }
         healthResults[service.id] = outcome
     }
 
@@ -438,6 +453,7 @@ struct ServicesSettingsTab: View {
         case .unauthorized: return .red
         case .serverError: return .orange
         case .networkError: return .red
+        case .cancelled: return .secondary
         }
     }
 }

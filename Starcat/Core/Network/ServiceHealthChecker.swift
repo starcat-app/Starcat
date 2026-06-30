@@ -63,6 +63,9 @@ enum HealthCheckOutcome: Equatable {
     /// 完全连不上（DNS 失败 / 拒绝连接 / 超时 / SSL 握手失败 等）。
     /// `reason` 已是终端用户可读的字符串（来自 URLError.localizedDescription）。
     case networkError(reason: String)
+    /// SwiftUI `.task` / URLSession 主动取消，不代表服务不可用。
+    /// 这个状态只给调用方做控制流判断，不展示、不写诊断失败，避免页面生命周期取消污染结果。
+    case cancelled
 
     /// 给 UI 用的「健康图标」—— SF Symbol 名。
     var systemImage: String {
@@ -72,6 +75,7 @@ enum HealthCheckOutcome: Equatable {
         case .unauthorized: return "lock.trianglebadge.exclamationmark.fill"
         case .serverError: return "exclamationmark.triangle.fill"
         case .networkError: return "xmark.octagon.fill"
+        case .cancelled: return "xmark.circle"
         }
     }
 
@@ -83,6 +87,7 @@ enum HealthCheckOutcome: Equatable {
         case .unauthorized: return "settings.services.health.unauthorized"
         case .serverError: return "settings.services.health.serverError"
         case .networkError: return "settings.services.health.unreachable"
+        case .cancelled: return "settings.services.summary.checking"
         }
     }
 
@@ -94,12 +99,28 @@ enum HealthCheckOutcome: Equatable {
         case .unauthorized(let code): return "HTTP \(code)"
         case .serverError(let code): return "HTTP \(code)"
         case .networkError(let reason): return reason
+        case .cancelled: return ""
         }
     }
 
     /// ping 探测是否视为「健康」——用于设置页四服务汇总徽标。
     var isHealthy: Bool {
         if case .ok = self { return true }
+        return false
+    }
+
+    /// 自动探测可以轻量重试的瞬时失败。
+    ///
+    /// 手动测试不使用这个策略，保持“点一次测一次”的即时反馈；进入设置页的自动探测
+    /// 才用它吸收 fly.io 冷启动 / TLS 抖动 / 短暂 timeout。
+    var shouldRetryForAutomaticProbe: Bool {
+        if case .networkError = self { return true }
+        return false
+    }
+
+    /// 取消来自视图生命周期或 URLSession 主动取消，不应覆盖已有健康结果。
+    var isCancelledProbe: Bool {
+        if case .cancelled = self { return true }
         return false
     }
 }
@@ -274,10 +295,14 @@ actor ServiceHealthChecker {
                 recordOutcome(outcome, service: service)
                 return outcome
             }
+        } catch let urlError as URLError where urlError.code == .cancelled || Task.isCancelled {
+            return .cancelled
         } catch let urlError as URLError {
             let outcome = HealthCheckOutcome.networkError(reason: urlError.localizedDescription)
             recordOutcome(outcome, service: service)
             return outcome
+        } catch is CancellationError {
+            return .cancelled
         } catch {
             let outcome = HealthCheckOutcome.networkError(reason: error.localizedDescription)
             recordOutcome(outcome, service: service)
@@ -360,6 +385,8 @@ actor ServiceHealthChecker {
                 service: service.rawValue,
                 underlying: reason
             )
+        case .cancelled:
+            break
         }
     }
 }

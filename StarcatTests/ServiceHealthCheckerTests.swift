@@ -123,6 +123,18 @@ struct ServiceHealthCheckerTests {
         }
     }
 
+    @Test("请求被取消 → cancelled，不当作服务不可用")
+    func cancelledRequestReturnsCancelledOutcome() async {
+        let checker = makeChecker()
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { _ in
+            throw URLError(.cancelled)
+        }
+
+        let outcome = await checker.check(service: .weekly, baseURL: fakeBaseURL, apiKey: nil)
+        #expect(outcome == .cancelled)
+    }
+
     // MARK: - Authorization 头注入
 
     @Test("apiKey 非 nil 非空 → 请求带 Authorization: Bearer <key>")
