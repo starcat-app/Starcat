@@ -10025,7 +10025,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Contribution activity in the last year"
+            "value" : "Contribution activity"
           }
         },
         "zh-Hans" : {
@@ -10107,7 +10107,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld contributions in the last year"
+            "value" : "%lld contributions"
           }
         },
         "zh-Hans" : {
@@ -10672,6 +10672,118 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "全部平台"
+          }
+        }
+      }
+    },
+    "explore.topic.ai" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "人工智能"
+          }
+        }
+      }
+    },
+    "explore.topic.media" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Media"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "媒体"
+          }
+        }
+      }
+    },
+    "explore.topic.networking" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Networking"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网络"
+          }
+        }
+      }
+    },
+    "explore.topic.privacy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐私"
+          }
+        }
+      }
+    },
+    "explore.topic.reading" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "阅读"
+          }
+        }
+      }
+    },
+    "explore.topic.social" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Social"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "社交"
+          }
+        }
+      }
+    },
+    "explore.topic.tools" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tools"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工具"
           }
         }
       }
@@ -12674,7 +12786,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Manage"
+            "value" : "Starred"
           }
         },
         "zh-Hans" : {
@@ -28504,7 +28616,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld contributions in the last year"
+            "value" : "%lld contributions"
           }
         },
         "zh-Hans" : {
@@ -29858,7 +29970,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Languages"
+            "value" : "语言"
           }
         }
       }
@@ -29958,7 +30070,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Release"
+            "value" : "订阅发布"
           }
         }
       }
@@ -29975,7 +30087,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Followers"
+            "value" : "关注者"
           }
         }
       }
@@ -29992,7 +30104,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Following"
+            "value" : "正在关注"
           }
         }
       }
@@ -30009,7 +30121,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starred"
+            "value" : "星标"
           }
         }
       }
@@ -30058,7 +30170,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tags"
+            "value" : "标签"
           }
         }
       }
@@ -35618,7 +35730,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "All Languages"
+            "value" : "全部语言"
           }
         }
       }

@@ -5,7 +5,7 @@
 //  探索页中栏容器。
 //
 //  设计意图：
-//  - 顶部二级模块切换统一承载「发现 / 趋势 / 热门 / 新发布」；
+//  - 「发现 / 趋势 / 热门 / 新发布」是左侧探索入口下的子分类，中栏只渲染当前模式内容；
 //  - 趋势继续复用现有 TrendingView，保证 GitHub Trending 缓存、README 和批量操作不回归；
 //  - 发现 / 热门 / 新发布共用 Discovery 列表，筛选栏和分页逻辑保持一致。
 //
@@ -33,10 +33,7 @@ struct ExploreView: View {
     @State private var discoveryViewModel = ExploreDiscoveryViewModel()
 
     var body: some View {
-        VStack(spacing: 0) {
-            modeBar
-            Divider()
-
+        Group {
             switch selectedMode {
             case .trending:
                 trendingContent
@@ -61,21 +58,6 @@ struct ExploreView: View {
                 clearTrendingSelection()
             }
         }
-    }
-
-    private var modeBar: some View {
-        HStack {
-            Spacer()
-            PillSegmentedControl(
-                items: ExploreMode.allCases,
-                selection: $selectedMode,
-                title: \.titleKey
-            )
-            Spacer()
-        }
-        .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
-        .padding(.top, ManageListFilterBarMetrics.topPadding)
-        .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
     }
 
     @ViewBuilder

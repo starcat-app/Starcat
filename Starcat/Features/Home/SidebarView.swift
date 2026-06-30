@@ -395,11 +395,13 @@ struct SidebarView: View {
         case .trending:
             if selectedExploreMode == .trending {
                 List(selection: $selectedTrendingLanguage) {
-                    trendingSidebarContent
+                    exploreModeSidebarContent
+                    exploreSidebarContent
                 }
                 .listStyle(.sidebar)
             } else {
                 List {
+                    exploreModeSidebarContent
                     exploreSidebarContent
                 }
                 .listStyle(.sidebar)
@@ -482,6 +484,30 @@ struct SidebarView: View {
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var exploreModeSidebarContent: some View {
+        Section("nav.trending") {
+            ForEach(ExploreMode.allCases) { mode in
+                exploreModeRow(mode)
+            }
+        }
+    }
+
+    private func exploreModeRow(_ mode: ExploreMode) -> some View {
+        exploreSelectableRow(
+            isSelected: selectedExploreMode == mode,
+            action: {
+                guard selectedExploreMode != mode else { return }
+                selectedExploreMode = mode
+            },
+            icon: mode.systemImage,
+            iconColor: selectedExploreMode == mode ? .accentColor : .secondary,
+            count: nil
+        ) {
+            Text(mode.titleKey)
         }
     }
 
@@ -1049,10 +1075,34 @@ struct SidebarView: View {
             count: nil
         ) {
             if let topic {
-                Text(verbatim: topic.label)
+                exploreTopicTitle(topic)
             } else {
                 Text("explore.allCategories")
             }
+        }
+    }
+
+    @ViewBuilder
+    private func exploreTopicTitle(_ topic: DiscoveryTopicDTO) -> some View {
+        // Discovery topic code 是后端筛选契约；固定内置分类用本地化 key，
+        // 未知动态分类继续显示后端 label，避免把服务端数据误当成 String Catalog key。
+        if let key = exploreTopicLocalizationKey(topic.code) {
+            Text(key)
+        } else {
+            Text(verbatim: topic.label)
+        }
+    }
+
+    private func exploreTopicLocalizationKey(_ code: String) -> LocalizedStringKey? {
+        switch code {
+        case "ai": return "explore.topic.ai"
+        case "privacy": return "explore.topic.privacy"
+        case "networking": return "explore.topic.networking"
+        case "media": return "explore.topic.media"
+        case "social": return "explore.topic.social"
+        case "reading": return "explore.topic.reading"
+        case "tools": return "explore.topic.tools"
+        default: return nil
         }
     }
 
