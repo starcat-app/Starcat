@@ -612,6 +612,7 @@ private struct StorageSettingsTab: View {
     let readmeRepository: ReadmeRepository
 
     @State private var stats: CacheStatistics = .empty
+    @State private var statsRefreshTask: Task<Void, Never>?
     @State private var isWorking: Bool = false
     @State private var isResettingAllData: Bool = false
     /// 当前显示的确认弹窗类型；nil 表示不显示。
@@ -620,6 +621,7 @@ private struct StorageSettingsTab: View {
     @State private var resetTarget: AppDataResetTarget?
     @State private var resetDidComplete = false
     @State private var storageActionError: String?
+    @State private var isTriggeringReadmePrefetch = false
 
     /// AI 代码上下文产物（精细化面板已搬到 AISettingsView，本 Tab 仅消费汇总数字
     /// + "清除全部"入口）。`@Observable` 单例直接订阅，外部 storage 写入立即反映。
@@ -735,6 +737,14 @@ private struct StorageSettingsTab: View {
         isResettingAllData || !isLoggedIn
     }
 
+    private var shouldDisableReadmePrefetchRunNow: Bool {
+        shouldDisableStorageActions
+            || !settings.readmePrefetchEnabled
+            || dependencies.readmePrefetchService.isRunning
+            || dependencies.readmePrefetchPoller.isDraining
+            || isTriggeringReadmePrefetch
+    }
+
     var body: some View {
         let cleaner = CacheCleaner(readmeRepository: readmeRepository)
         @Bindable var settings = settings
@@ -750,6 +760,19 @@ private struct StorageSettingsTab: View {
             Section("settings.storage.readmePrefetch.section") {
                 Toggle("settings.storage.readmePrefetch.enabled", isOn: $settings.readmePrefetchEnabled)
                     .disabled(shouldDisableStorageActions)
+
+                ReadmePrefetchSettingsStatusView(
+                    service: dependencies.readmePrefetchService,
+                    isEnabled: settings.readmePrefetchEnabled
+                ) {
+                    Button("settings.storage.readmePrefetch.runNow") {
+                        Task {
+                            await triggerReadmePrefetch(using: cleaner)
+                        }
+                    }
+                    .controlSize(.small)
+                    .disabled(shouldDisableReadmePrefetchRunNow)
+                }
 
                 Text("settings.storage.readmePrefetch.help")
                     .font(.caption)
@@ -884,7 +907,17 @@ private struct StorageSettingsTab: View {
                 stats = .empty
                 return
             }
-            stats = await cleaner.loadStatistics()
+            await refreshCacheStatistics(using: cleaner)
+        }
+        .onChange(of: dependencies.readmePrefetchService.processed) { _, _ in
+            scheduleCacheStatisticsRefresh(using: cleaner)
+        }
+        .onChange(of: dependencies.readmePrefetchService.status) { _, _ in
+            scheduleCacheStatisticsRefresh(using: cleaner)
+        }
+        .onDisappear {
+            statsRefreshTask?.cancel()
+            statsRefreshTask = nil
         }
         .task(id: isLoggedIn) {
             guard isLoggedIn else { return }
@@ -1131,7 +1164,7 @@ private struct StorageSettingsTab: View {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
         }
-        stats = await cleaner.loadStatistics()
+        await refreshCacheStatistics(using: cleaner)
         isWorking = false
         pendingAction = nil
     }
@@ -1184,6 +1217,41 @@ private struct StorageSettingsTab: View {
     private func dismissResetCompletionSheet() {
         resetTarget = nil
         resetDidComplete = false
+    }
+
+    /// 立即刷新缓存用量。预拉后台任务会持续写入 readmes/readme_contents，设置页不能只在
+    /// 打开时读一次，否则用户会看到“预拉进行中但用量不变”的割裂状态。
+    private func refreshCacheStatistics(using cleaner: CacheCleaner) async {
+        stats = await cleaner.loadStatistics()
+    }
+
+    /// README 预拉每个 repo 完成都会推进进度；这里做轻量 debounce，避免设置页为每个
+    /// 进度 tick 都立即跑完整缓存统计，同时保证用户不需要关闭重开设置页才能看到数量变化。
+    private func scheduleCacheStatisticsRefresh(using cleaner: CacheCleaner) {
+        guard isLoggedIn else { return }
+        statsRefreshTask?.cancel()
+        statsRefreshTask = Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+            let snapshot = await cleaner.loadStatistics()
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                stats = snapshot
+            }
+        }
+    }
+
+    /// 手动触发一次 README 预拉，复用后台 poller 的单轮入口。
+    ///
+    /// 这里不绕过 `ReadmePrefetchService` 直接开跑：poller 已经有“上一轮未完成则跳过”的
+    /// 守卫，手动按钮和后台调度共享同一入口，避免并发重复拉取同一批 README。
+    @MainActor
+    private func triggerReadmePrefetch(using cleaner: CacheCleaner) async {
+        guard !shouldDisableReadmePrefetchRunNow else { return }
+        isTriggeringReadmePrefetch = true
+        defer { isTriggeringReadmePrefetch = false }
+        await dependencies.readmePrefetchPoller.runNow()
+        await refreshCacheStatistics(using: cleaner)
     }
 
     // MARK: - 用量文案
@@ -1301,6 +1369,95 @@ private struct StorageSettingsTab: View {
             codebaseMemoryStorage.projectCount,
             codebaseMemoryStorage.totalBytes.formattedByteSize
         )
+    }
+}
+
+/// Storage 页 README 预拉状态行。
+///
+/// 这里复用全局 `ReadmePrefetchService` 的可观察状态，而不是在设置页重新查库。原因是预拉
+/// 是后台调度行为，用户最关心的是“当前是否在跑 / 是否冷却 / 上轮结果”，这些都已经由
+/// service 聚合；设置页只做只读展示，避免打开设置时制造额外数据库负载。
+private struct ReadmePrefetchSettingsStatusView<Action: View>: View {
+    @Environment(\.locale) private var locale
+
+    let service: ReadmePrefetchService
+    let isEnabled: Bool
+    @ViewBuilder let action: () -> Action
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("settings.storage.readmePrefetch.status")
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 16)
+            HStack(spacing: 10) {
+                if service.isRunning {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Text(statusText)
+                    .foregroundStyle(statusTint)
+                    .multilineTextAlignment(.trailing)
+                action()
+            }
+        }
+        .font(.caption)
+    }
+
+    private var statusText: String {
+        guard isEnabled else {
+            return String.l10n("toolbar.status.readmePrefetch.disabled")
+        }
+
+        switch service.status {
+        case .running:
+            return String(
+                format: String.l10n("toolbar.status.readmePrefetch.progressFormat"),
+                service.processed,
+                service.total,
+                service.failures
+            )
+        case .coolingDown(let until):
+            return String(
+                format: String.l10n("toolbar.status.readmePrefetch.coolingDownFormat"),
+                RelativeTimeText.futureDeadline(until, locale: locale)
+            )
+        case .waitingForRetry:
+            return String.l10n("settings.storage.readmePrefetch.retrying")
+        case .completed(let processed, let total):
+            return String(
+                format: String.l10n("toolbar.status.readmePrefetch.completedFormat"),
+                processed,
+                total,
+                service.htmlUpdated,
+                service.markdownUpdated,
+                service.failures
+            )
+        case .idle:
+            if let lastRunAt = service.lastRunAt {
+                return String(
+                    format: String.l10n("toolbar.status.readmePrefetch.lastFormat"),
+                    RelativeTimeText.pastEvent(lastRunAt, locale: locale)
+                )
+            }
+            return String.l10n("toolbar.status.readmePrefetch.waiting")
+        case .disabled:
+            return String.l10n("toolbar.status.readmePrefetch.disabled")
+        }
+    }
+
+    private var statusTint: Color {
+        if !isEnabled { return .secondary }
+        if service.failures > 0 { return .orange }
+        switch service.status {
+        case .running, .coolingDown:
+            return .accentColor
+        case .waitingForRetry:
+            return .orange
+        case .completed:
+            return .green
+        case .idle, .disabled:
+            return .secondary
+        }
     }
 }
 

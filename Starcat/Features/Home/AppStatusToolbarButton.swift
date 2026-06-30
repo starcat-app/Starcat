@@ -61,6 +61,7 @@ struct AppStatusToolbarButton: View {
                 syncProgress: syncManager.progress,
                 readmePrefetchService: dependencies.readmePrefetchService,
                 readmePrefetchEnabled: settings.readmePrefetchEnabled,
+                readmePrefetchDraining: dependencies.readmePrefetchPoller.isDraining,
                 batchService: dependencies.batchAIQueueService,
                 mcpState: dependencies.mcpService.state,
                 mcpEnabled: settings.mcpServiceEnabled,
@@ -104,7 +105,9 @@ struct AppStatusToolbarButton: View {
         let batch = dependencies.batchAIQueueService
         let batchRemaining = (batch.isRunning || batch.isPaused) ? max(0, batch.totalCount - batch.finishedCount) : 0
         let readme = dependencies.readmePrefetchService
-        let readmeRemaining = readme.isRunning ? max(0, readme.total - readme.processed) : 0
+        let readmeRemaining = readme.isRunning
+            ? max(0, readme.total - readme.processed)
+            : (dependencies.readmePrefetchPoller.isDraining ? 1 : 0)
         return batchRemaining + readmeRemaining
     }
 
@@ -168,6 +171,7 @@ private struct AppStatusPanel: View {
     let syncProgress: SyncProgress?
     let readmePrefetchService: ReadmePrefetchService
     let readmePrefetchEnabled: Bool
+    let readmePrefetchDraining: Bool
     let batchService: BatchAIQueueService
     let mcpState: StarcatMCPService.State
     let mcpEnabled: Bool
@@ -192,13 +196,6 @@ private struct AppStatusPanel: View {
                 title: "toolbar.status.sync.title",
                 subtitle: syncSubtitle,
                 accessory: { syncAccessory }
-            )
-            statusRow(
-                icon: readmePrefetchIcon,
-                tint: readmePrefetchTint,
-                title: "toolbar.status.readmePrefetch.title",
-                subtitle: readmePrefetchSubtitle,
-                accessory: { readmePrefetchAccessory }
             )
             statusRow(
                 icon: taskIcon,
@@ -289,7 +286,7 @@ private struct AppStatusPanel: View {
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
@@ -347,32 +344,6 @@ private struct AppStatusPanel: View {
         }
     }
 
-    private var readmePrefetchIcon: String {
-        switch readmePrefetchService.status {
-        case .running:
-            return "arrow.down.doc"
-        case .coolingDown:
-            return "timer"
-        case .completed, .idle:
-            return readmePrefetchEnabled ? "doc.richtext" : "pause.circle"
-        case .disabled:
-            return "pause.circle"
-        }
-    }
-
-    private var readmePrefetchTint: Color {
-        if !readmePrefetchEnabled { return .secondary }
-        if readmePrefetchService.failures > 0 { return .orange }
-        switch readmePrefetchService.status {
-        case .running, .coolingDown:
-            return .accentColor
-        case .completed, .idle:
-            return .green
-        case .disabled:
-            return .secondary
-        }
-    }
-
     private var readmePrefetchSubtitle: String {
         guard readmePrefetchEnabled else {
             return String.l10n("toolbar.status.readmePrefetch.disabled")
@@ -390,6 +361,8 @@ private struct AppStatusPanel: View {
                 format: String.l10n("toolbar.status.readmePrefetch.coolingDownFormat"),
                 relativeFutureDate(until)
             )
+        case .waitingForRetry:
+            return String.l10n("settings.storage.readmePrefetch.retrying")
         case .completed(let processed, let total):
             return String(
                 format: String.l10n("toolbar.status.readmePrefetch.completedFormat"),
@@ -409,51 +382,71 @@ private struct AppStatusPanel: View {
         }
     }
 
-    @ViewBuilder
-    private var readmePrefetchAccessory: some View {
-        if readmePrefetchService.isRunning {
-            ProgressView()
-                .controlSize(.small)
-        } else {
-            EmptyView()
-        }
-    }
-
     private var taskIcon: String {
-        if batchService.isRunning { return "sparkles" }
+        if isReadmePrefetchWaitingForRetry || batchService.failedCount > 0 { return "exclamationmark.triangle.fill" }
+        if readmePrefetchService.isRunning || readmePrefetchDraining || batchService.isRunning {
+            return "clock.arrow.circlepath"
+        }
         if batchService.isPaused { return "pause.circle.fill" }
         return "tray"
     }
 
     private var taskTint: Color {
-        if batchService.failedCount > 0 { return .orange }
-        if batchService.isRunning || batchService.isPaused { return .accentColor }
+        if isReadmePrefetchWaitingForRetry || readmePrefetchService.failures > 0 || batchService.failedCount > 0 { return .orange }
+        if readmePrefetchService.isRunning || readmePrefetchDraining || isReadmePrefetchCoolingDown || batchService.isRunning || batchService.isPaused {
+            return .accentColor
+        }
         return .secondary
     }
 
     private var taskSubtitle: String {
-        guard batchService.totalCount > 0 else {
+        var lines: [String] = []
+        if shouldShowReadmePrefetchInTasks {
+            lines.append(String(format: String.l10n("toolbar.status.tasks.readmeFormat"), readmePrefetchSubtitle))
+        }
+        if batchService.totalCount > 0 {
+            lines.append(String(
+                format: String.l10n("toolbar.status.tasks.batchAIFormat"),
+                batchService.finishedCount,
+                batchService.totalCount,
+                batchService.failedCount
+            ))
+        }
+        guard !lines.isEmpty else {
             return String.l10n("toolbar.status.tasks.empty")
         }
-        return String(
-            format: String.l10n("toolbar.status.tasks.progressFormat"),
-            batchService.finishedCount,
-            batchService.totalCount,
-            batchService.failedCount
-        )
+        return lines.joined(separator: "\n")
     }
 
     @ViewBuilder
     private var taskAccessory: some View {
-        if batchService.totalCount > 0 {
-            Button("toolbar.status.tasks.open") {
-                onShowBatchAIPanel?()
+        HStack(spacing: 6) {
+            if readmePrefetchService.isRunning || readmePrefetchDraining {
+                ProgressView()
+                    .controlSize(.small)
             }
-            .controlSize(.small)
-            .focusEffectDisabled()
-        } else {
-            EmptyView()
+            if batchService.totalCount > 0 {
+                Button("toolbar.status.tasks.open") {
+                    onShowBatchAIPanel?()
+                }
+                .controlSize(.small)
+                .focusEffectDisabled()
+            }
         }
+    }
+
+    private var shouldShowReadmePrefetchInTasks: Bool {
+        readmePrefetchEnabled || readmePrefetchService.isRunning
+    }
+
+    private var isReadmePrefetchCoolingDown: Bool {
+        if case .coolingDown = readmePrefetchService.status { return true }
+        return false
+    }
+
+    private var isReadmePrefetchWaitingForRetry: Bool {
+        if case .waitingForRetry = readmePrefetchService.status { return true }
+        return false
     }
 
     private var serviceIcon: String {

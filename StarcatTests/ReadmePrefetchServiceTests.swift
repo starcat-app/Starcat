@@ -8,6 +8,7 @@
 //  - 缺缓存时补齐 HTML 与 raw Markdown；
 //  - 新鲜 HTML 不重复请求，只补缺失 Markdown；
 //  - GitHub rate limit 会进入冷却并停止本轮，避免后台任务抢占配额。
+//  - 候选查询这类底层错误不会把 SQL / GRDB 细节暴露给用户态状态。
 //
 
 import Foundation
@@ -99,6 +100,24 @@ struct ReadmePrefetchServiceTests {
         #expect(state?.markdownStatus == .skipped)
         #expect(state?.lastErrorKind == "rateLimited")
         #expect(state?.nextRetryAt != nil)
+    }
+
+    @Test("候选查询失败进入安全重试状态且不保留 SQL 文本")
+    func candidateQueryFailureUsesSafeRetryState() async throws {
+        let sut = try await makeSUT()
+        try await sut.db.insertRepoFixture(id: 5, owner: "alice", name: "schema")
+        try await sut.db.writer.write { db in
+            try db.execute(sql: "DROP TABLE readme_prefetch_states")
+        }
+
+        let processed = await sut.service.runBatch(limit: 1, delayBetweenRepos: 0)
+
+        #expect(processed == 0)
+        #expect(sut.api.readmeHTMLCalls.isEmpty)
+        #expect(sut.api.readmeMarkdownCalls.isEmpty)
+        #expect(sut.service.status == .waitingForRetry)
+        #expect(sut.service.lastFailureKind?.contains("SELECT") == false)
+        #expect(sut.service.lastFailureKind?.contains("readme_prefetch_states") == false)
     }
 
     private func makeSUT() async throws -> (

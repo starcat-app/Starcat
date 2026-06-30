@@ -17,6 +17,7 @@ enum ReadmePrefetchServiceStatus: Equatable, Sendable {
     case idle
     case running
     case coolingDown(until: Date)
+    case waitingForRetry
     case completed(processed: Int, total: Int)
     case disabled
 }
@@ -30,7 +31,7 @@ enum ReadmePrefetchServiceStatus: Equatable, Sendable {
 final class ReadmePrefetchService {
 
     nonisolated static let defaultBatchLimit = 50
-    nonisolated static let defaultDelayBetweenRepos: TimeInterval = 2
+    nonisolated static let defaultDelayBetweenRepos: TimeInterval = 3
     nonisolated static let notFoundRetryDelay: TimeInterval = 7 * 24 * 60 * 60
 
     private(set) var status: ReadmePrefetchServiceStatus = .idle
@@ -42,7 +43,9 @@ final class ReadmePrefetchService {
     private(set) var notFound: Int = 0
     private(set) var failures: Int = 0
     private(set) var lastRunAt: Date?
-    private(set) var lastError: String?
+    /// 仅用于日志 / 诊断排查的错误类别，不允许直接展示到用户界面。
+    /// 底层错误可能包含 SQL、路径、HTTP 细节；UI 只能展示固定的用户态状态文案。
+    private(set) var lastFailureKind: String?
 
     private let repository: ReadmePrefetchRepository
     private let readmeRepository: ReadmeRepository
@@ -73,7 +76,8 @@ final class ReadmePrefetchService {
             candidates = try await repository.fetchCandidates(now: now, htmlStaleBefore: staleBefore, limit: limit)
         } catch {
             failures += 1
-            lastError = error.localizedDescription
+            status = .waitingForRetry
+            lastFailureKind = Self.errorKind(error)
             AppLog.network.warning("README prefetch candidate query failed: \(error.localizedDescription, privacy: .public)")
             return 0
         }
@@ -127,7 +131,7 @@ final class ReadmePrefetchService {
         markdownUpdated = 0
         notFound = 0
         failures = 0
-        lastError = nil
+        lastFailureKind = nil
     }
 
     /// 处理单个 repo。
@@ -217,7 +221,7 @@ final class ReadmePrefetchService {
         now: Date
     ) async -> Bool {
         failures += 1
-        lastError = error.localizedDescription
+        lastFailureKind = Self.errorKind(error)
 
         if case .rateLimited(let retryAfter) = error as? NetworkError {
             let retryAt = now.addingTimeInterval(max(60, retryAfter))
@@ -284,7 +288,7 @@ final class ReadmePrefetchService {
             try await repository.upsert(record)
         } catch {
             failures += 1
-            lastError = error.localizedDescription
+            lastFailureKind = Self.errorKind(error)
             AppLog.network.warning("README prefetch state persist failed repoId=\(repoId, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
     }

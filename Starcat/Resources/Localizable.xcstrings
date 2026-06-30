@@ -28048,6 +28048,40 @@
         }
       }
     },
+    "settings.storage.readmePrefetch.runNow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fetch Now"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立即拉取"
+          }
+        }
+      }
+    },
+    "settings.storage.readmePrefetch.retrying" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temporarily unavailable. Starcat will retry automatically."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂时不可用，Starcat 会自动重试。"
+          }
+        }
+      }
+    },
     "settings.storage.readmePrefetch.help" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -28078,6 +28112,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "README 预拉"
+          }
+        }
+      }
+    },
+    "settings.storage.readmePrefetch.status" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current status"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前状态"
           }
         }
       }
@@ -36035,13 +36086,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No background queue is running."
+            "value" : "No background task is running."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前没有后台队列运行。"
+            "value" : "当前没有后台任务运行。"
+          }
+        }
+      }
+    },
+    "toolbar.status.tasks.batchAIFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI queue: %d/%d finished · %d failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 队列：%d/%d 已完成 · %d 失败"
           }
         }
       }
@@ -36076,6 +36144,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d/%d 已完成 · %d 失败"
+          }
+        }
+      }
+    },
+    "toolbar.status.tasks.readmeFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README prefetch: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README 预拉：%@"
           }
         }
       }

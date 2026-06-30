@@ -985,7 +985,7 @@ struct HomeView: View {
         guard !TestEnvironment.isRunning,
               authSession.state.isAuthenticated,
               settings.readmePrefetchEnabled else { return }
-        dependencies.readmePrefetchPoller.start()
+        startReadmePrefetchAndKickFirstBatch()
     }
 
     /// 登出或关闭设置时停止调度器。已完成的本地 README 缓存保留；
@@ -1001,9 +1001,20 @@ struct HomeView: View {
               authSession.state.isAuthenticated else { return }
 
         if enabled {
-            dependencies.readmePrefetchPoller.start()
+            startReadmePrefetchAndKickFirstBatch()
         } else {
             dependencies.readmePrefetchPoller.stop()
+        }
+    }
+
+    /// `NSBackgroundActivityScheduler` 不保证注册后马上给时间片；用户开启预拉后需要能看到
+    /// 第一轮立即开始。这里仅在调度器从停止态变为启动态时触发一次，实际执行仍由 service
+    /// 的小批量、串行和 repo 间 sleep 控制，避免影响前台操作。
+    private func startReadmePrefetchAndKickFirstBatch() {
+        let didStart = dependencies.readmePrefetchPoller.start()
+        guard didStart else { return }
+        Task {
+            await dependencies.readmePrefetchPoller.runNow()
         }
     }
 
