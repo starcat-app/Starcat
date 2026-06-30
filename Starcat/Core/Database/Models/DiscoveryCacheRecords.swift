@@ -254,3 +254,204 @@ struct DiscoverySummaryFacetRecord: Codable, FetchableRecord, PersistableRecord,
         DiscoveryFacetCountDTO(key: key, label: label, count: count, systemName: systemName)
     }
 }
+
+/// `discovery_bulk_repos` 表行映射。
+///
+/// bulk 表保存 discovery catalog 的完整公开快照；它与按页缓存表分开，避免 sort/filter
+/// 切换时继续被远端分页语义牵制。
+struct DiscoveryBulkRepoRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
+
+    static let databaseTableName = "discovery_bulk_repos"
+
+    var repoID: Int64
+    var fullName: String
+    var owner: String
+    var name: String
+    var description: String?
+    var homepage: String?
+    var language: String?
+    var stars: Int
+    var forks: Int
+    var watchers: Int
+    var subscribers: Int
+    var openIssues: Int
+    var ownerAvatar: String?
+    var defaultBranch: String?
+    var licenseSpdx: String?
+    var topicsJSON: String
+    var platformsJSON: String
+    var pushedAt: String?
+    var updatedAt: String?
+    var createdAt: String?
+    var isArchived: Bool
+    var isFork: Bool
+    var latestReleaseTag: String?
+    var latestReleaseAt: String?
+    var latestReleaseURL: String?
+    var releaseDownloadCount: Int
+    var itemRank: Int?
+    var score: Double?
+    var trendingScore: Double
+    var popularityScore: Double
+    var releaseScore: Double
+    var discoveryScore: Double
+    var searchScore: Double
+    var reasonsJSON: String
+    var signalsJSON: String
+    var cachedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case repoID = "repo_id"
+        case fullName = "full_name"
+        case owner
+        case name
+        case description
+        case homepage
+        case language
+        case stars
+        case forks
+        case watchers
+        case subscribers
+        case openIssues = "open_issues"
+        case ownerAvatar = "owner_avatar"
+        case defaultBranch = "default_branch"
+        case licenseSpdx = "license_spdx"
+        case topicsJSON = "topics_json"
+        case platformsJSON = "platforms_json"
+        case pushedAt = "pushed_at"
+        case updatedAt = "updated_at"
+        case createdAt = "created_at"
+        case isArchived = "is_archived"
+        case isFork = "is_fork"
+        case latestReleaseTag = "latest_release_tag"
+        case latestReleaseAt = "latest_release_at"
+        case latestReleaseURL = "latest_release_url"
+        case releaseDownloadCount = "release_download_count"
+        case itemRank = "item_rank"
+        case score
+        case trendingScore = "trending_score"
+        case popularityScore = "popularity_score"
+        case releaseScore = "release_score"
+        case discoveryScore = "discovery_score"
+        case searchScore = "search_score"
+        case reasonsJSON = "reasons_json"
+        case signalsJSON = "signals_json"
+        case cachedAt = "cached_at"
+    }
+
+    func toDomain() -> DiscoveryRepoDTO {
+        var dto = DiscoveryRepoDTO(
+            repoID: repoID,
+            fullName: fullName,
+            owner: owner,
+            name: name,
+            description: description,
+            homepage: homepage,
+            language: language,
+            stars: stars,
+            forks: forks,
+            watchers: watchers,
+            subscribers: subscribers,
+            openIssues: openIssues,
+            ownerAvatar: ownerAvatar,
+            defaultBranch: defaultBranch,
+            licenseSpdx: licenseSpdx,
+            topics: Self.decode([String].self, from: topicsJSON) ?? [],
+            platforms: Self.decode([String].self, from: platformsJSON) ?? [],
+            pushedAt: pushedAt,
+            updatedAt: updatedAt,
+            createdAt: createdAt,
+            isArchived: isArchived,
+            isFork: isFork,
+            latestReleaseTag: latestReleaseTag,
+            latestReleaseAt: latestReleaseAt,
+            latestReleaseURL: latestReleaseURL,
+            releaseDownloadCount: releaseDownloadCount,
+            rank: itemRank,
+            score: score,
+            reasons: Self.decode([String].self, from: reasonsJSON) ?? [],
+            signals: Self.decode([DiscoverySignalDTO].self, from: signalsJSON) ?? []
+        )
+        dto.trendingScore = trendingScore
+        dto.popularityScore = popularityScore
+        dto.releaseScore = releaseScore
+        dto.discoveryScore = discoveryScore
+        dto.searchScore = searchScore
+        return dto
+    }
+
+    static func from(_ dto: DiscoveryRepoDTO, cachedAt: Date) -> DiscoveryBulkRepoRecord {
+        DiscoveryBulkRepoRecord(
+            repoID: dto.repoID,
+            fullName: dto.fullName,
+            owner: dto.owner,
+            name: dto.name,
+            description: dto.description,
+            homepage: dto.homepage,
+            language: dto.language,
+            stars: dto.stars,
+            forks: dto.forks,
+            watchers: dto.watchers,
+            subscribers: dto.subscribers,
+            openIssues: dto.openIssues,
+            ownerAvatar: dto.ownerAvatar,
+            defaultBranch: dto.defaultBranch,
+            licenseSpdx: dto.licenseSpdx,
+            topicsJSON: encode(dto.topics),
+            platformsJSON: encode(dto.platforms),
+            pushedAt: dto.pushedAt,
+            updatedAt: dto.updatedAt,
+            createdAt: dto.createdAt,
+            isArchived: dto.isArchived,
+            isFork: dto.isFork,
+            latestReleaseTag: dto.latestReleaseTag,
+            latestReleaseAt: dto.latestReleaseAt,
+            latestReleaseURL: dto.latestReleaseURL,
+            releaseDownloadCount: dto.releaseDownloadCount,
+            itemRank: dto.rank,
+            score: dto.score,
+            trendingScore: dto.trendingScore ?? 0,
+            popularityScore: dto.popularityScore ?? 0,
+            releaseScore: dto.releaseScore ?? 0,
+            discoveryScore: dto.discoveryScore ?? dto.score ?? 0,
+            searchScore: dto.searchScore ?? Double(dto.stars),
+            reasonsJSON: encode(dto.reasons),
+            signalsJSON: encode(dto.signals),
+            cachedAt: ISO8601DateFormatter.shared.string(from: cachedAt)
+        )
+    }
+
+    private static func encode<T: Encodable>(_ value: T) -> String {
+        guard let data = try? JSONEncoder().encode(value),
+              let string = String(data: data, encoding: .utf8) else {
+            return "[]"
+        }
+        return string
+    }
+
+    private static func decode<T: Decodable>(_ type: T.Type, from string: String) -> T? {
+        guard let data = string.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(T.self, from: data)
+    }
+}
+
+/// `discovery_bulk_meta` 单行表行映射（PK = "singleton"）。
+struct DiscoveryBulkMetaRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
+
+    static let databaseTableName = "discovery_bulk_meta"
+    static let singletonID = "singleton"
+
+    var id: String
+    var etag: String?
+    var lastFetchedAt: String
+    var generatedAt: String?
+    var total: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case etag
+        case lastFetchedAt = "last_fetched_at"
+        case generatedAt = "generated_at"
+        case total
+    }
+}

@@ -16,6 +16,8 @@ import GRDB
 protocol DiscoveryRepositoryProtocol: Sendable {
     func cachedPage(mode: DiscoveryListMode, query: DiscoveryListQuery) async -> DiscoveryCachedPage?
     func fetchPage(mode: DiscoveryListMode, query: DiscoveryListQuery) async throws -> DiscoveryCachedPage
+    func cachedBulk() async -> DiscoveryBulkCachedSnapshot?
+    func fetchBulk() async throws -> DiscoveryBulkResult
     func cachedSummary() async -> DiscoverySummaryDTO?
     func fetchSummary() async throws -> DiscoverySummaryDTO
     func clearCache() async
@@ -80,41 +82,66 @@ actor DiscoveryRepository: DiscoveryRepositoryProtocol {
         }
     }
 
+    func cachedBulk() async -> DiscoveryBulkCachedSnapshot? {
+        do {
+            return try await database.writer.read { db -> DiscoveryBulkCachedSnapshot? in
+                guard let meta = try DiscoveryBulkMetaRecord
+                    .filter(Column("id") == DiscoveryBulkMetaRecord.singletonID)
+                    .fetchOne(db)
+                else {
+                    return nil
+                }
+                guard let lastFetchedAt = ISO8601DateFormatter.shared.date(from: meta.lastFetchedAt) else {
+                    AppLog.network.warning(
+                        "Discovery bulk cache has invalid last_fetched_at: \(meta.lastFetchedAt, privacy: .public)"
+                    )
+                    return nil
+                }
+                let records = try DiscoveryBulkRepoRecord
+                    .order(Column("discovery_score").desc, Column("stars").desc, Column("repo_id").desc)
+                    .fetchAll(db)
+                guard !records.isEmpty else { return nil }
+
+                let summary = try Self.readSummary(db: db) ?? DiscoverySummaryDTO(modes: [], generatedAt: meta.generatedAt)
+                return DiscoveryBulkCachedSnapshot(
+                    repos: records.map { $0.toDomain() },
+                    summary: summary,
+                    etag: meta.etag,
+                    lastFetchedAt: lastFetchedAt,
+                    generatedAt: meta.generatedAt,
+                    total: meta.total
+                )
+            }
+        } catch {
+            AppLog.network.warning("Discovery cachedBulk read failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    func fetchBulk() async throws -> DiscoveryBulkResult {
+        do {
+            let result = try await api.fetchBulk()
+            try await save(bulk: result, cachedAt: Date())
+            return result
+        } catch {
+            if let cached = await cachedBulk(), !cached.repos.isEmpty {
+                AppLog.network.warning("Discovery bulk network failed, falling back to cache (\(cached.repos.count) repos): \(error.localizedDescription, privacy: .public)")
+                return DiscoveryBulkResult(
+                    repos: cached.repos,
+                    summary: cached.summary,
+                    etag: cached.etag,
+                    generatedAt: cached.generatedAt,
+                    total: cached.total
+                )
+            }
+            throw error
+        }
+    }
+
     func cachedSummary() async -> DiscoverySummaryDTO? {
         do {
-            return try await database.writer.read { db -> DiscoverySummaryDTO? in
-                let modeRecords = try DiscoverySummaryModeRecord
-                    .fetchAll(db)
-                guard !modeRecords.isEmpty else { return nil }
-
-                let facetRecords = try DiscoverySummaryFacetRecord
-                    .order(Column("mode").asc, Column("facet").asc, Column("sort_order").asc)
-                    .fetchAll(db)
-                let facetsByMode = Dictionary(grouping: facetRecords, by: \.mode)
-                let modeOrder = ["discover", "popular", "new_releases", "trending"]
-                let sortedModes = modeRecords.sorted { lhs, rhs in
-                    let lhsIndex = modeOrder.firstIndex(of: lhs.mode) ?? Int.max
-                    let rhsIndex = modeOrder.firstIndex(of: rhs.mode) ?? Int.max
-                    if lhsIndex == rhsIndex {
-                        return lhs.mode < rhs.mode
-                    }
-                    return lhsIndex < rhsIndex
-                }
-
-                let modes = sortedModes.map { modeRecord in
-                    let facets = facetsByMode[modeRecord.mode] ?? []
-                    return DiscoveryModeSummaryDTO(
-                        mode: modeRecord.mode,
-                        total: modeRecord.total,
-                        topics: facets.filter { $0.facet == "topics" }.map(\.toFacetDTO),
-                        platforms: facets.filter { $0.facet == "platforms" }.map(\.toFacetDTO),
-                        languages: facets.filter { $0.facet == "languages" }.map(\.toFacetDTO)
-                    )
-                }
-                return DiscoverySummaryDTO(
-                    modes: modes,
-                    generatedAt: sortedModes.first?.generatedAt
-                )
+            return try await database.writer.read { db in
+                try Self.readSummary(db: db)
             }
         } catch {
             AppLog.network.warning("Discovery cachedSummary read failed: \(error.localizedDescription, privacy: .public)")
@@ -141,6 +168,8 @@ actor DiscoveryRepository: DiscoveryRepositoryProtocol {
             try await database.writer.write { db in
                 try db.execute(sql: "DELETE FROM discovery_list_items")
                 try db.execute(sql: "DELETE FROM discovery_list_pages")
+                try db.execute(sql: "DELETE FROM discovery_bulk_repos")
+                try db.execute(sql: "DELETE FROM discovery_bulk_meta")
                 try db.execute(sql: "DELETE FROM discovery_summary_facets")
                 try db.execute(sql: "DELETE FROM discovery_summary_modes")
             }
@@ -225,6 +254,32 @@ actor DiscoveryRepository: DiscoveryRepositoryProtocol {
         }
     }
 
+    private func save(bulk: DiscoveryBulkResult, cachedAt: Date) async throws {
+        let cachedAtString = ISO8601DateFormatter.shared.string(from: cachedAt)
+        try await database.writer.write { db in
+            try db.execute(sql: "DELETE FROM discovery_bulk_repos")
+            try db.execute(sql: "DELETE FROM discovery_bulk_meta")
+            try db.execute(sql: "DELETE FROM discovery_summary_facets")
+            try db.execute(sql: "DELETE FROM discovery_summary_modes")
+
+            for repo in bulk.repos {
+                let record = DiscoveryBulkRepoRecord.from(repo, cachedAt: cachedAt)
+                try record.insert(db)
+            }
+
+            try Self.save(summary: bulk.summary, cachedAtString: cachedAtString, db: db)
+
+            let meta = DiscoveryBulkMetaRecord(
+                id: DiscoveryBulkMetaRecord.singletonID,
+                etag: bulk.etag,
+                lastFetchedAt: cachedAtString,
+                generatedAt: bulk.generatedAt,
+                total: bulk.total
+            )
+            try meta.save(db)
+        }
+    }
+
     private static func insertFacets(
         _ facets: [DiscoveryFacetCountDTO],
         mode: String,
@@ -245,6 +300,56 @@ actor DiscoveryRepository: DiscoveryRepositoryProtocol {
             )
             try record.insert(db)
         }
+    }
+
+    private static func save(summary: DiscoverySummaryDTO, cachedAtString: String, db: Database) throws {
+        for mode in summary.modes {
+            let modeRecord = DiscoverySummaryModeRecord(
+                mode: mode.mode,
+                total: mode.total,
+                generatedAt: summary.generatedAt,
+                cachedAt: cachedAtString
+            )
+            try modeRecord.insert(db)
+
+            try insertFacets(mode.topics ?? [], mode: mode.mode, facet: "topics", cachedAt: cachedAtString, db: db)
+            try insertFacets(mode.platforms ?? [], mode: mode.mode, facet: "platforms", cachedAt: cachedAtString, db: db)
+            try insertFacets(mode.languages ?? [], mode: mode.mode, facet: "languages", cachedAt: cachedAtString, db: db)
+        }
+    }
+
+    private static func readSummary(db: Database) throws -> DiscoverySummaryDTO? {
+        let modeRecords = try DiscoverySummaryModeRecord.fetchAll(db)
+        guard !modeRecords.isEmpty else { return nil }
+
+        let facetRecords = try DiscoverySummaryFacetRecord
+            .order(Column("mode").asc, Column("facet").asc, Column("sort_order").asc)
+            .fetchAll(db)
+        let facetsByMode = Dictionary(grouping: facetRecords, by: \.mode)
+        let modeOrder = ["discover", "popular", "new_releases", "trending"]
+        let sortedModes = modeRecords.sorted { lhs, rhs in
+            let lhsIndex = modeOrder.firstIndex(of: lhs.mode) ?? Int.max
+            let rhsIndex = modeOrder.firstIndex(of: rhs.mode) ?? Int.max
+            if lhsIndex == rhsIndex {
+                return lhs.mode < rhs.mode
+            }
+            return lhsIndex < rhsIndex
+        }
+
+        let modes = sortedModes.map { modeRecord in
+            let facets = facetsByMode[modeRecord.mode] ?? []
+            return DiscoveryModeSummaryDTO(
+                mode: modeRecord.mode,
+                total: modeRecord.total,
+                topics: facets.filter { $0.facet == "topics" }.map(\.toFacetDTO),
+                platforms: facets.filter { $0.facet == "platforms" }.map(\.toFacetDTO),
+                languages: facets.filter { $0.facet == "languages" }.map(\.toFacetDTO)
+            )
+        }
+        return DiscoverySummaryDTO(
+            modes: modes,
+            generatedAt: sortedModes.first?.generatedAt
+        )
     }
 
     private static func cacheKey(mode: DiscoveryListMode, query: DiscoveryListQuery) -> String {

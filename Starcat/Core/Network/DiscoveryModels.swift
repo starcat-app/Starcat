@@ -39,6 +39,11 @@ struct DiscoveryRepoDTO: Codable, Identifiable, Hashable, Sendable {
     let releaseDownloadCount: Int
     let rank: Int?
     let score: Double?
+    var trendingScore: Double? = nil
+    var popularityScore: Double? = nil
+    var releaseScore: Double? = nil
+    var discoveryScore: Double? = nil
+    var searchScore: Double? = nil
     let reasons: [String]
     let signals: [DiscoverySignalDTO]
 
@@ -73,6 +78,11 @@ struct DiscoveryRepoDTO: Codable, Identifiable, Hashable, Sendable {
         case releaseDownloadCount = "release_download_count"
         case rank
         case score
+        case trendingScore = "trending_score"
+        case popularityScore = "popularity_score"
+        case releaseScore = "release_score"
+        case discoveryScore = "discovery_score"
+        case searchScore = "search_score"
         case reasons
         case signals
     }
@@ -124,6 +134,28 @@ struct DiscoveryPage: Equatable, Sendable {
 struct DiscoveryCachedPage: Sendable {
     let page: DiscoveryPage
     let cachedAt: Date
+}
+
+struct DiscoveryBulkCachedSnapshot: Sendable {
+    let repos: [DiscoveryRepoDTO]
+    let summary: DiscoverySummaryDTO
+    let etag: String?
+    let lastFetchedAt: Date
+    let generatedAt: String?
+    let total: Int
+}
+
+struct DiscoveryBulkResult: Sendable {
+    let repos: [DiscoveryRepoDTO]
+    let summary: DiscoverySummaryDTO
+    let etag: String?
+    let generatedAt: String?
+    let total: Int
+}
+
+struct DiscoveryBulkDataDTO: Codable, Equatable, Sendable {
+    let repos: [DiscoveryRepoDTO]
+    let summary: DiscoverySummaryDTO
 }
 
 struct DiscoveryListQuery: Equatable, Hashable, Sendable {

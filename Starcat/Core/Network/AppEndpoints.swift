@@ -255,6 +255,8 @@ enum AppEndpoints {
             static let trending = "/api/v1/discovery/categories/trending"
             /// `GET /api/v1/discovery/summary` —— 探索 Sidebar 总量与筛选项计数。
             static let summary = "/api/v1/discovery/summary"
+            /// `GET /api/v1/discovery/bulk` —— 发现 / 热门 / 新发布本地优先全量快照。
+            static let bulk = "/api/v1/discovery/bulk"
             /// `GET /api/v1/discovery/languages` —— Discovery 可用语言。
             static let languages = "/api/v1/discovery/languages"
             /// `GET /api/v1/discovery/topics` —— Discovery 主题元数据。

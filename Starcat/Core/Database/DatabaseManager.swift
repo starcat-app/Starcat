@@ -380,6 +380,83 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
                 CREATE INDEX IF NOT EXISTS idx_discovery_summary_facets_lookup
                 ON discovery_summary_facets(mode, facet, sort_order)
                 """)
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS discovery_bulk_repos (
+                    repo_id INTEGER PRIMARY KEY,
+                    full_name TEXT NOT NULL,
+                    owner TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    homepage TEXT,
+                    language TEXT,
+                    stars INTEGER NOT NULL DEFAULT 0,
+                    forks INTEGER NOT NULL DEFAULT 0,
+                    watchers INTEGER NOT NULL DEFAULT 0,
+                    subscribers INTEGER NOT NULL DEFAULT 0,
+                    open_issues INTEGER NOT NULL DEFAULT 0,
+                    owner_avatar TEXT,
+                    default_branch TEXT,
+                    license_spdx TEXT,
+                    topics_json TEXT NOT NULL DEFAULT '[]',
+                    platforms_json TEXT NOT NULL DEFAULT '[]',
+                    pushed_at TEXT,
+                    updated_at TEXT,
+                    created_at TEXT,
+                    is_archived INTEGER NOT NULL DEFAULT 0,
+                    is_fork INTEGER NOT NULL DEFAULT 0,
+                    latest_release_tag TEXT,
+                    latest_release_at TEXT,
+                    latest_release_url TEXT,
+                    release_download_count INTEGER NOT NULL DEFAULT 0,
+                    item_rank INTEGER,
+                    score DOUBLE,
+                    trending_score DOUBLE NOT NULL DEFAULT 0,
+                    popularity_score DOUBLE NOT NULL DEFAULT 0,
+                    release_score DOUBLE NOT NULL DEFAULT 0,
+                    discovery_score DOUBLE NOT NULL DEFAULT 0,
+                    search_score DOUBLE NOT NULL DEFAULT 0,
+                    reasons_json TEXT NOT NULL DEFAULT '[]',
+                    signals_json TEXT NOT NULL DEFAULT '[]',
+                    cached_at TEXT NOT NULL
+                )
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_discovery_bulk_language
+                ON discovery_bulk_repos(language)
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_discovery_bulk_stars
+                ON discovery_bulk_repos(stars)
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_discovery_bulk_updated
+                ON discovery_bulk_repos(updated_at)
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_discovery_bulk_release
+                ON discovery_bulk_repos(latest_release_at)
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_discovery_bulk_discovery_score
+                ON discovery_bulk_repos(discovery_score)
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_discovery_bulk_popularity_score
+                ON discovery_bulk_repos(popularity_score)
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_discovery_bulk_release_score
+                ON discovery_bulk_repos(release_score)
+                """)
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS discovery_bulk_meta (
+                    id TEXT PRIMARY KEY,
+                    etag TEXT,
+                    last_fetched_at TEXT NOT NULL,
+                    generated_at TEXT,
+                    total INTEGER NOT NULL DEFAULT 0
+                )
+                """)
         }
     }
 

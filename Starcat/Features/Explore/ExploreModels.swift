@@ -67,9 +67,17 @@ enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable {
     case recommended
     case popular
     case stars
+    case starsAscending
     case activity
     case release
+    case releaseDate
+    case releaseDateAscending
     case updated
+    case updatedAscending
+    case created
+    case createdAscending
+    case nameAsc
+    case nameDesc
 
     var id: String { rawValue }
 
@@ -78,9 +86,17 @@ enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable {
         case .recommended: return "explore.sort.recommended"
         case .popular: return "explore.sort.popular"
         case .stars: return "explore.sort.stars"
+        case .starsAscending: return "explore.sort.starsAscending"
         case .activity: return "explore.sort.activity"
         case .release: return "explore.sort.release"
+        case .releaseDate: return "explore.sort.releaseDate"
+        case .releaseDateAscending: return "explore.sort.releaseDateAscending"
         case .updated: return "explore.sort.updated"
+        case .updatedAscending: return "explore.sort.updatedAscending"
+        case .created: return "explore.sort.created"
+        case .createdAscending: return "explore.sort.createdAscending"
+        case .nameAsc: return "explore.sort.nameAsc"
+        case .nameDesc: return "explore.sort.nameDesc"
         }
     }
 
@@ -91,25 +107,57 @@ enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable {
             return nil
         case .stars:
             return "stars"
+        case .starsAscending:
+            return "stars_asc"
         case .activity:
             return "activity"
         case .updated:
-            return "updated"
+            return "updated_desc"
+        case .updatedAscending:
+            return "updated_asc"
+        case .created:
+            return "created_desc"
+        case .createdAscending:
+            return "created_asc"
+        case .nameAsc:
+            return "name_asc"
+        case .nameDesc:
+            return "name_desc"
+        case .releaseDate:
+            return "release_desc"
+        case .releaseDateAscending:
+            return "release_asc"
         }
     }
 
     static func options(for mode: ExploreMode) -> [ExploreSortOption] {
         switch mode {
         case .discover:
-            // 发现流由后端 discovery_score 控制，首期不暴露伪排序，避免 UI 承诺后端不支持的行为。
-            return [.recommended]
+            return commonOptions(defaultOption: .recommended)
         case .popular:
-            return [.popular, .stars, .activity]
+            return commonOptions(defaultOption: .popular)
         case .newReleases:
-            return [.release, .stars, .updated]
+            return [.release, .releaseDate, .releaseDateAscending] + commonOptions(defaultOption: nil)
         case .trending:
             return []
         }
+    }
+
+    private static func commonOptions(defaultOption: ExploreSortOption?) -> [ExploreSortOption] {
+        let common: [ExploreSortOption] = [
+            .nameAsc,
+            .nameDesc,
+            .stars,
+            .starsAscending,
+            .updated,
+            .updatedAscending,
+            .created,
+            .createdAscending
+        ]
+        if let defaultOption {
+            return [defaultOption] + common
+        }
+        return common
     }
 
     static func defaultOption(for mode: ExploreMode) -> ExploreSortOption {

@@ -76,6 +76,27 @@ actor DiscoveryAPI {
         )
     }
 
+    /// 拉取 discovery bulk endpoint。
+    ///
+    /// 与 Weekly bulk 同款：客户端拿到完整公开 catalog 后在本地 SQLite 做筛选、排序和分页。
+    /// 这里不做 conditional GET；是否发请求由 Repository/ViewModel 的 TTL 负责。
+    func fetchBulk() async throws -> DiscoveryBulkResult {
+        let url = AppEndpoints.appendPath(AppEndpoints.Discovery.Paths.bulk, to: baseURL)
+        let (data, response) = try await performRequest(url: url)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw StarcatEnvelopeNetworkError.transport(URLError(.badServerResponse))
+        }
+        let envelope = try decodeEnvelope(DiscoveryBulkDataDTO.self, data: data, response: response)
+        return DiscoveryBulkResult(
+            repos: envelope.data.repos,
+            summary: envelope.data.summary,
+            etag: http.value(forHTTPHeaderField: "ETag"),
+            generatedAt: envelope.meta?.generatedAt,
+            total: envelope.meta?.total ?? envelope.data.repos.count
+        )
+    }
+
     func updateBaseURL(_ url: URL) {
         baseURL = url
     }

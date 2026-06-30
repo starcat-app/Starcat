@@ -143,14 +143,30 @@ private struct ExploreDiscoveryListView: View {
 
     private var filterBar: some View {
         HStack(spacing: 10) {
-            Picker(selection: sortBinding) {
-                ForEach(ExploreSortOption.options(for: mode)) { option in
-                    Text(option.titleKey).tag(option)
+            Menu {
+                Section("explore.filter.sort") {
+                    ForEach(ExploreSortOption.options(for: mode)) { option in
+                        Button {
+                            sortBinding.wrappedValue = option
+                        } label: {
+                            filterMenuRow(
+                                title: option.titleKey,
+                                isSelected: option == currentSort
+                            )
+                        }
+                    }
                 }
             } label: {
-                Text("list.sort")
+                HStack(spacing: 6) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .foregroundStyle(.secondary)
+                    Text("explore.filter.title")
+                    Text(currentSort.titleKey)
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            .pickerStyle(.menu)
             .fixedSize()
 
             Spacer()
@@ -184,6 +200,15 @@ private struct ExploreDiscoveryListView: View {
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
         .padding(.top, ManageListFilterBarMetrics.topPadding)
         .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
+    }
+
+    @ViewBuilder
+    private func filterMenuRow(title: LocalizedStringKey, isSelected: Bool) -> some View {
+        if isSelected {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
+        }
     }
 
     private var sortBinding: Binding<ExploreSortOption> {

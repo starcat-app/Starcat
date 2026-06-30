@@ -11044,6 +11044,38 @@
         }
       }
     },
+    "explore.filter.sort" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sort"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "排序"
+          }
+        }
+      }
+    },
+    "explore.filter.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filter"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "筛选"
+          }
+        }
+      }
+    },
     "explore.sort.activity" : {
       "localizations" : {
         "en" : {
@@ -11056,6 +11088,70 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "活跃度"
+          }
+        }
+      }
+    },
+    "explore.sort.created" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Created (Newest)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建时间（最近优先）"
+          }
+        }
+      }
+    },
+    "explore.sort.createdAscending" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Created (Oldest)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建时间（最早优先）"
+          }
+        }
+      }
+    },
+    "explore.sort.nameAsc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name A-Z"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称 A→Z"
+          }
+        }
+      }
+    },
+    "explore.sort.nameDesc" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name Z-A"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称 Z→A"
           }
         }
       }
@@ -11097,13 +11193,45 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Release"
+            "value" : "Release Recommendation"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最新发布"
+            "value" : "发布推荐"
+          }
+        }
+      }
+    },
+    "explore.sort.releaseDate" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release Time (Newest)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发布时间（最近优先）"
+          }
+        }
+      }
+    },
+    "explore.sort.releaseDateAscending" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release Time (Oldest)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发布时间（最早优先）"
           }
         }
       }
@@ -11113,13 +11241,29 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stars"
+            "value" : "Stars (High to Low)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stars"
+            "value" : "Stars 数（高→低）"
+          }
+        }
+      }
+    },
+    "explore.sort.starsAscending" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stars (Low to High)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stars 数（低→高）"
           }
         }
       }
@@ -11129,13 +11273,29 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Updated"
+            "value" : "Updated (Newest)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最近更新"
+            "value" : "更新时间（最近优先）"
+          }
+        }
+      }
+    },
+    "explore.sort.updatedAscending" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Updated (Oldest)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新时间（最早优先）"
           }
         }
       }

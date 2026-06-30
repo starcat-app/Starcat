@@ -4,10 +4,10 @@
 //
 //  探索页 Discovery 列表状态机测试。
 //
-//  覆盖目标:
-//  - ViewModel 把 mode / language / topic / platform / sort 转成 repository query;
-//  - 服务端分页 meta 能驱动 ViewModel 追加下一页;
-//  - 新筛选无缓存且远端失败时清空旧列表,避免展示不匹配的结果。
+//  覆盖目标：
+//  - ViewModel 使用 bulk 快照在本地完成筛选和排序；
+//  - 分页追加只增长本地切片，不再走远端分页接口；
+//  - 无 bulk 缓存且远端失败时清空列表，避免展示不匹配结果。
 //
 
 import Foundation
@@ -18,10 +18,14 @@ import Testing
 @MainActor
 struct ExploreDiscoveryViewModelTests {
 
-    @Test("热门列表透传语言和排序参数")
-    func popularReloadPassesLanguageAndSortQuery() async throws {
+    @Test("热门列表基于 bulk 本地过滤语言和排序")
+    func popularReloadFiltersAndSortsLocalBulk() async throws {
         let repository = FakeDiscoveryRepository()
-        await repository.enqueueFetch(Self.makeCachedPage(repoID: 101, owner: "apple", name: "swift-collections"))
+        await repository.enqueueBulk(Self.makeBulkResult(repos: [
+            Self.makeRepo(repoID: 101, owner: "apple", name: "swift-a", language: "Swift", stars: 100, popularityScore: 0.1),
+            Self.makeRepo(repoID: 102, owner: "apple", name: "swift-b", language: "Swift", stars: 200, popularityScore: 0.9),
+            Self.makeRepo(repoID: 103, owner: "golang", name: "go", language: "Go", stars: 1000, popularityScore: 1.0)
+        ]))
         let viewModel = ExploreDiscoveryViewModel()
 
         await viewModel.reload(
@@ -30,78 +34,68 @@ struct ExploreDiscoveryViewModelTests {
             language: "Swift",
             topic: nil,
             platform: nil,
-            sort: .stars
+            sort: .popular
         )
 
-        #expect(viewModel.repos.count == 1)
-        #expect(viewModel.total == 1)
+        #expect(viewModel.repos.map(\.fullName) == ["apple/swift-b", "apple/swift-a"])
+        #expect(viewModel.total == 2)
         #expect(viewModel.nextPage == nil)
         #expect(viewModel.loadError == nil)
-
-        let request = try #require(await repository.recordedRequests().first)
-        #expect(request.mode == .popular)
-        #expect(request.query.language == "Swift")
-        #expect(request.query.sort == "stars")
-        #expect(request.query.page == 1)
-        #expect(request.query.limit == 20)
+        #expect(await repository.fetchBulkCount() == 1)
+        #expect(await repository.fetchPageCount() == 0)
     }
 
-    @Test("分页 meta 驱动 loadMore 追加下一页")
-    func loadMoreAppendsNextPageFromMeta() async throws {
+    @Test("本地分页 meta 驱动 loadMore 追加下一页")
+    func loadMoreAppendsNextLocalPage() async throws {
         let repository = FakeDiscoveryRepository()
-        await repository.enqueueFetch(Self.makeCachedPage(
-            repoID: 201,
-            owner: "swiftlang",
-            name: "swift-syntax",
-            total: 2,
-            nextPage: 2
-        ))
-        await repository.enqueueFetch(Self.makeCachedPage(
-            repoID: 202,
-            owner: "swiftlang",
-            name: "swift-format",
-            total: 2,
-            nextPage: nil,
-            page: 2
-        ))
+        let repos = (1...25).map { index in
+            Self.makeRepo(
+                repoID: Int64(200 + index),
+                owner: "page",
+                name: "repo-\(String(format: "%02d", index))",
+                language: "Swift",
+                stars: 100 - index,
+                popularityScore: Double(100 - index)
+            )
+        }
+        await repository.enqueueBulk(Self.makeBulkResult(repos: repos))
         let viewModel = ExploreDiscoveryViewModel()
 
         await viewModel.reload(
             repository: repository,
-            mode: .newReleases,
+            mode: .popular,
             language: "Swift",
             topic: nil,
             platform: nil,
-            sort: .release
+            sort: .popular
         )
 
-        let firstRepo = try #require(viewModel.repos.first)
+        #expect(viewModel.repos.count == 20)
         #expect(viewModel.nextPage == 2)
+        let triggerRepo = try #require(viewModel.repos.last)
 
         await viewModel.loadMoreIfNeeded(
             repository: repository,
-            currentRepo: firstRepo,
-            mode: .newReleases,
+            currentRepo: triggerRepo,
+            mode: .popular,
             language: "Swift",
             topic: nil,
             platform: nil,
-            sort: .release
+            sort: .popular
         )
 
-        #expect(viewModel.repos.map(\.fullName) == ["swiftlang/swift-syntax", "swiftlang/swift-format"])
-        #expect(viewModel.total == 2)
+        #expect(viewModel.repos.count == 25)
+        #expect(viewModel.total == 25)
         #expect(viewModel.nextPage == nil)
-
-        let requests = await repository.recordedRequests()
-        #expect(requests.count == 2)
-        #expect(requests.last?.mode == .newReleases)
-        #expect(requests.last?.query.page == 2)
+        #expect(await repository.fetchPageCount() == 0)
     }
 
-    @Test("新筛选远端错误且无缓存时清空列表")
+    @Test("新筛选远端错误且无 bulk 缓存时清空列表")
     func reloadServerErrorWithoutCacheClearsListAndStoresError() async throws {
         let repository = FakeDiscoveryRepository()
-        await repository.enqueueFetch(Self.makeCachedPage(repoID: 301, owner: "initial", name: "repo"))
+        await repository.enqueueBulk(Self.makeBulkResult(repos: [
+            Self.makeRepo(repoID: 301, owner: "initial", name: "repo", topics: ["ai"], platforms: ["macos"])
+        ]))
         let viewModel = ExploreDiscoveryViewModel()
 
         await viewModel.reload(
@@ -115,6 +109,7 @@ struct ExploreDiscoveryViewModelTests {
 
         #expect(viewModel.repos.count == 1)
 
+        await repository.clearCache()
         await repository.setFetchError(FakeDiscoveryError.unavailable)
 
         await viewModel.reload(
@@ -132,32 +127,40 @@ struct ExploreDiscoveryViewModelTests {
         #expect(viewModel.loadError?.isEmpty == false)
         #expect(!viewModel.isLoading)
         #expect(!viewModel.isRefreshing)
-
-        let request = try #require(await repository.recordedRequests().last)
-        #expect(request.mode == .discover)
-        #expect(request.query.topic == "privacy")
-        #expect(request.query.platform == "linux")
-        #expect(request.query.sort == nil)
     }
 
-    private nonisolated static func makeCachedPage(
+    private nonisolated static func makeBulkResult(repos: [DiscoveryRepoDTO]) -> DiscoveryBulkResult {
+        DiscoveryBulkResult(
+            repos: repos,
+            summary: DiscoverySummaryDTO(modes: [], generatedAt: "2026-06-30T10:00:00Z"),
+            etag: "W/test",
+            generatedAt: "2026-06-30T10:00:00Z",
+            total: repos.count
+        )
+    }
+
+    private nonisolated static func makeRepo(
         repoID: Int64,
         owner: String,
         name: String,
-        total: Int = 1,
-        nextPage: Int? = nil,
-        page: Int = 1
-    ) -> DiscoveryCachedPage {
+        language: String = "Swift",
+        stars: Int = 1000,
+        topics: [String] = ["tools"],
+        platforms: [String] = ["macos"],
+        popularityScore: Double = 1,
+        discoveryScore: Double = 1,
+        releaseScore: Double = 1
+    ) -> DiscoveryRepoDTO {
         let fullName = "\(owner)/\(name)"
-        let repo = DiscoveryRepoDTO(
+        var repo = DiscoveryRepoDTO(
             repoID: repoID,
             fullName: fullName,
             owner: owner,
             name: name,
             description: "A repository for discovery tests.",
             homepage: nil,
-            language: "Swift",
-            stars: 1000,
+            language: language,
+            stars: stars,
             forks: 100,
             watchers: 1000,
             subscribers: 20,
@@ -165,8 +168,8 @@ struct ExploreDiscoveryViewModelTests {
             ownerAvatar: nil,
             defaultBranch: "main",
             licenseSpdx: "MIT",
-            topics: ["swift", "developer-tools"],
-            platforms: ["macos"],
+            topics: topics,
+            platforms: platforms,
             pushedAt: "2026-06-29T00:00:00Z",
             updatedAt: "2026-06-29T00:00:00Z",
             createdAt: "2025-01-01T00:00:00Z",
@@ -177,20 +180,18 @@ struct ExploreDiscoveryViewModelTests {
             latestReleaseURL: "https://github.com/\(fullName)/releases/tag/1.0.0",
             releaseDownloadCount: 42,
             rank: 1,
-            score: 98.5,
+            score: discoveryScore,
             reasons: ["Active repository"],
             signals: [
                 DiscoverySignalDTO(code: "release", label: "Recent release", value: "1.0.0")
             ]
         )
-        let discoveryPage = DiscoveryPage(
-            items: [repo],
-            total: total,
-            page: page,
-            pageSize: 20,
-            nextPage: nextPage
-        )
-        return DiscoveryCachedPage(page: discoveryPage, cachedAt: Date())
+        repo.popularityScore = popularityScore
+        repo.discoveryScore = discoveryScore
+        repo.releaseScore = releaseScore
+        repo.trendingScore = popularityScore
+        repo.searchScore = Double(stars)
+        return repo
     }
 }
 
@@ -200,66 +201,70 @@ private enum FakeDiscoveryError: Error {
 
 private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
 
-    struct Request: Sendable {
-        let mode: DiscoveryListMode
-        let query: DiscoveryListQuery
-    }
-
-    private var cached: [String: DiscoveryCachedPage] = [:]
-    private var fetchQueue: [DiscoveryCachedPage] = []
-    private var requests: [Request] = []
+    private var cached: DiscoveryBulkCachedSnapshot?
+    private var fetchQueue: [DiscoveryBulkResult] = []
     private var fetchError: Error?
+    private var bulkFetches = 0
+    private var pageFetches = 0
 
     func cachedPage(mode: DiscoveryListMode, query: DiscoveryListQuery) async -> DiscoveryCachedPage? {
-        cached[key(mode: mode, query: query)]
+        nil
     }
 
     func fetchPage(mode: DiscoveryListMode, query: DiscoveryListQuery) async throws -> DiscoveryCachedPage {
-        requests.append(Request(mode: mode, query: query))
+        pageFetches += 1
+        throw FakeDiscoveryError.unavailable
+    }
+
+    func cachedBulk() async -> DiscoveryBulkCachedSnapshot? {
+        cached
+    }
+
+    func fetchBulk() async throws -> DiscoveryBulkResult {
+        bulkFetches += 1
         if let fetchError {
             throw fetchError
         }
         guard !fetchQueue.isEmpty else {
             throw FakeDiscoveryError.unavailable
         }
-        let page = fetchQueue.removeFirst()
-        cached[key(mode: mode, query: query)] = page
-        return page
+        let result = fetchQueue.removeFirst()
+        cached = DiscoveryBulkCachedSnapshot(
+            repos: result.repos,
+            summary: result.summary,
+            etag: result.etag,
+            lastFetchedAt: Date(),
+            generatedAt: result.generatedAt,
+            total: result.total
+        )
+        return result
     }
 
     func cachedSummary() async -> DiscoverySummaryDTO? {
-        nil
+        cached?.summary
     }
 
     func fetchSummary() async throws -> DiscoverySummaryDTO {
-        DiscoverySummaryDTO(modes: [], generatedAt: nil)
+        cached?.summary ?? DiscoverySummaryDTO(modes: [], generatedAt: nil)
     }
 
     func clearCache() async {
-        cached.removeAll()
+        cached = nil
     }
 
-    func enqueueFetch(_ page: DiscoveryCachedPage) {
-        fetchQueue.append(page)
+    func enqueueBulk(_ result: DiscoveryBulkResult) {
+        fetchQueue.append(result)
     }
 
     func setFetchError(_ error: Error?) {
         fetchError = error
     }
 
-    func recordedRequests() -> [Request] {
-        requests
+    func fetchBulkCount() -> Int {
+        bulkFetches
     }
 
-    private func key(mode: DiscoveryListMode, query: DiscoveryListQuery) -> String {
-        [
-            mode.rawValue,
-            query.language ?? "__all__",
-            query.platform ?? "__all__",
-            query.topic ?? "__all__",
-            query.sort ?? "__default__",
-            "\(query.page)",
-            "\(query.limit)"
-        ].joined(separator: "|")
+    func fetchPageCount() -> Int {
+        pageFetches
     }
 }

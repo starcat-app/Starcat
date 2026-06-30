@@ -87,6 +87,8 @@ enum DatabaseMigrations {
             try createDiscoveryListItems(db)
             try createDiscoverySummaryModes(db)
             try createDiscoverySummaryFacets(db)
+            try createDiscoveryBulkRepos(db)
+            try createDiscoveryBulkMeta(db)
             try createRepoEmbeddings(db)
             try createAISummaries(db)
             try createReleaseSubscriptions(db)
@@ -767,6 +769,70 @@ enum DatabaseMigrations {
         }
 
         try db.create(index: "idx_discovery_summary_facets_lookup", on: "discovery_summary_facets", columns: ["mode", "facet", "sort_order"])
+    }
+
+    /// discovery_bulk_repos：Discovery bulk endpoint 返回的全量公开仓库快照。
+    ///
+    /// 与 Weekly bulk 同款，客户端拿到完整 catalog 后，本地完成发现 / 热门 / 新发布的
+    /// sort / filter / page，不再为每个排序组合维护一份远端分页缓存。
+    private static func createDiscoveryBulkRepos(_ db: Database) throws {
+        try db.create(table: "discovery_bulk_repos") { t in
+            t.column("repo_id", .integer).primaryKey()
+            t.column("full_name", .text).notNull()
+            t.column("owner", .text).notNull()
+            t.column("name", .text).notNull()
+            t.column("description", .text)
+            t.column("homepage", .text)
+            t.column("language", .text)
+            t.column("stars", .integer).notNull().defaults(to: 0)
+            t.column("forks", .integer).notNull().defaults(to: 0)
+            t.column("watchers", .integer).notNull().defaults(to: 0)
+            t.column("subscribers", .integer).notNull().defaults(to: 0)
+            t.column("open_issues", .integer).notNull().defaults(to: 0)
+            t.column("owner_avatar", .text)
+            t.column("default_branch", .text)
+            t.column("license_spdx", .text)
+            t.column("topics_json", .text).notNull().defaults(to: "[]")
+            t.column("platforms_json", .text).notNull().defaults(to: "[]")
+            t.column("pushed_at", .text)
+            t.column("updated_at", .text)
+            t.column("created_at", .text)
+            t.column("is_archived", .integer).notNull().defaults(to: false)
+            t.column("is_fork", .integer).notNull().defaults(to: false)
+            t.column("latest_release_tag", .text)
+            t.column("latest_release_at", .text)
+            t.column("latest_release_url", .text)
+            t.column("release_download_count", .integer).notNull().defaults(to: 0)
+            t.column("item_rank", .integer)
+            t.column("score", .double)
+            t.column("trending_score", .double).notNull().defaults(to: 0)
+            t.column("popularity_score", .double).notNull().defaults(to: 0)
+            t.column("release_score", .double).notNull().defaults(to: 0)
+            t.column("discovery_score", .double).notNull().defaults(to: 0)
+            t.column("search_score", .double).notNull().defaults(to: 0)
+            t.column("reasons_json", .text).notNull().defaults(to: "[]")
+            t.column("signals_json", .text).notNull().defaults(to: "[]")
+            t.column("cached_at", .text).notNull()
+        }
+
+        try db.create(index: "idx_discovery_bulk_language", on: "discovery_bulk_repos", columns: ["language"])
+        try db.create(index: "idx_discovery_bulk_stars", on: "discovery_bulk_repos", columns: ["stars"])
+        try db.create(index: "idx_discovery_bulk_updated", on: "discovery_bulk_repos", columns: ["updated_at"])
+        try db.create(index: "idx_discovery_bulk_release", on: "discovery_bulk_repos", columns: ["latest_release_at"])
+        try db.create(index: "idx_discovery_bulk_discovery_score", on: "discovery_bulk_repos", columns: ["discovery_score"])
+        try db.create(index: "idx_discovery_bulk_popularity_score", on: "discovery_bulk_repos", columns: ["popularity_score"])
+        try db.create(index: "idx_discovery_bulk_release_score", on: "discovery_bulk_repos", columns: ["release_score"])
+    }
+
+    /// discovery_bulk_meta：bulk cache 元信息单行表（PK = "singleton"）。
+    private static func createDiscoveryBulkMeta(_ db: Database) throws {
+        try db.create(table: "discovery_bulk_meta") { t in
+            t.column("id", .text).primaryKey()
+            t.column("etag", .text)
+            t.column("last_fetched_at", .text).notNull()
+            t.column("generated_at", .text)
+            t.column("total", .integer).notNull().defaults(to: 0)
+        }
     }
 
     // MARK: - weekly_bulk_*（R-06.4 客户端 bulk 缓存 / 渐进式 SWR 双轨制）
