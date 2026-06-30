@@ -140,15 +140,19 @@ final class ReadmeViewModel {
     /// **为何 trending 路径不调**：trending repo 多为 ephemeral（用户没 star），不属于本地
     /// 库的 readmes 表 / repo_embeddings 表，补 markdown / 触发向量重建都无意义。
     private let onHTMLLoaded: ((Repo) -> Void)?
+    /// 匿名遥测入口。仅在 manage 路径 README HTML 成功上屏后记录事件，不带 repo 信息。
+    private let telemetryManager: TelemetryManager?
 
     init(
         api: ReadmeAPI,
         availability: ReadmeAvailability,
-        onHTMLLoaded: ((Repo) -> Void)? = nil
+        onHTMLLoaded: ((Repo) -> Void)? = nil,
+        telemetryManager: TelemetryManager? = nil
     ) {
         self.api = api
         self.availability = availability
         self.onHTMLLoaded = onHTMLLoaded
+        self.telemetryManager = telemetryManager
     }
 
     // MARK: - Actions
@@ -397,6 +401,7 @@ final class ReadmeViewModel {
             
             self.isRefreshing = true
             defer { self.isRefreshing = false }
+            var didTrackReadmeOpened = false
 
             // 第一阶段：读本地缓存
             //
@@ -418,6 +423,7 @@ final class ReadmeViewModel {
             if let c = cached, let html = c.renderedHtml, !html.isEmpty {
                 let cachedAt = Self.parseISO8601(c.cachedAt) ?? Date()
                 self.state = .loaded(html: html, cachedAt: cachedAt)
+                self.trackReadmeOpenedOnce(&didTrackReadmeOpened)
                 // 阅读状态 v2：缓存命中即视为"已加载"，派发事件让笔记段升级 unread → read。
                 self.postReadmeLoaded(repoId: requestedId)
                 // 2026-06-13 dong4j 补救 B：cache 命中分支也触发——高频路径（用户重复打开
@@ -465,6 +471,7 @@ final class ReadmeViewModel {
                 if let html = readme.renderedHtml, !html.isEmpty {
                     let cachedAt = Self.parseISO8601(readme.cachedAt) ?? Date()
                     self.state = .loaded(html: html, cachedAt: cachedAt)
+                    self.trackReadmeOpenedOnce(&didTrackReadmeOpened)
                     // 阅读状态 v2：网络刷新成功，再 post 一次（幂等：repository 端
                     // markAsReadIfNeeded 对 read/using 行 no-op，不会重复升级）。
                     self.postReadmeLoaded(repoId: requestedId)
@@ -483,6 +490,7 @@ final class ReadmeViewModel {
                 if let html = readme.renderedHtml, !html.isEmpty {
                     let cachedAt = Self.parseISO8601(readme.cachedAt) ?? Date()
                     self.state = .loaded(html: html, cachedAt: cachedAt)
+                    self.trackReadmeOpenedOnce(&didTrackReadmeOpened)
                     // 304 路径同样视为"加载完成"事件；与上方两处幂等。
                     self.postReadmeLoaded(repoId: requestedId)
                     // 2026-06-13 补救 B：304 路径也触发——HTML 没变但 `readmes.content`
@@ -531,6 +539,13 @@ final class ReadmeViewModel {
             object: nil,
             userInfo: ["repoId": repoId]
         )
+    }
+
+    /// 同一次 load 周期只记录一次，避免 cache 命中后后台 304 再重复计数。
+    private func trackReadmeOpenedOnce(_ didTrack: inout Bool) {
+        guard !didTrack else { return }
+        didTrack = true
+        telemetryManager?.track(.readmeOpened)
     }
 
     /// 判断"未登录时 GitHub 拒绝请求"的错误——若是，UI 应引导登录而非展示原始报错。

@@ -145,6 +145,7 @@ struct StarcatApp: App {
                 .environment(dependencies.authSession)
                 .environment(dependencies.syncManager)
                 .environment(dependencies.settings)
+                .environment(dependencies.telemetryManager)
                 .environment(dependencies.subscriptionManager)
                 .environment(dependencies.entitlementGate)
                 // HOM-PROFILE 2026-06-05：贡献草坪服务，Sidebar 直接消费 @Observable 实例。
@@ -166,6 +167,8 @@ struct StarcatApp: App {
                 #endif
                 .onAppear {
                     applyAppearance(dependencies.settings.appearanceMode)
+                    MetricKitReporter.shared.start()
+                    dependencies.telemetryManager.track(.appLaunched)
                 }
                 .onChange(of: dependencies.settings.appearanceMode) { _, newMode in
                     applyAppearance(newMode)
@@ -189,6 +192,7 @@ struct StarcatApp: App {
                 .environment(dependencies)        // W4-4 D4：StorageSettingsTab 需要 readmeRepository
                 .environment(dependencies.authSession)
                 .environment(dependencies.settings)
+                .environment(dependencies.telemetryManager)
                 .environment(dependencies.subscriptionManager)
                 .environment(dependencies.entitlementGate)
                 // HOM-126：AI 设置「自动整理」分组的「立刻手动触发一次」按钮直接
@@ -267,6 +271,12 @@ struct StarcatApp: App {
     // MARK: - Bootstrap
 
     private static func bootstrap() {
+        PerformanceTracer.shared.trace(.appBootstrap) {
+            bootstrapBody()
+        }
+    }
+
+    private static func bootstrapBody() {
         // 2026-06-16 root cause #2 修复:把 `Bundle.main` 的 ISA 换成
         // `LocalizedBundle`,让所有 `String(localized:)` / `NSLocalizedString(...)`
         // 调用都跟随 `LocaleStore.shared.selection` 实时切换,而非锁定系统 locale。

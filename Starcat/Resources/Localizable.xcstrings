@@ -23197,6 +23197,74 @@
         }
       }
     },
+    "settings.diagnostics.telemetry.enabled.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send allowlisted, anonymous product events and coarse performance buckets. Starcat never sends repository names, search text, notes, README bodies, prompts, responses, API keys, tokens, or local paths."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送白名单内的匿名产品事件与粗粒度性能分桶。Starcat 不会发送仓库名、搜索词、笔记、README 正文、prompt、回复、API Key、token 或本地路径。"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.telemetry.enabled.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share anonymous usage data and performance summaries"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许发送匿名使用数据与性能摘要"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.telemetry.privacy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MetricKit payloads are stored locally as diagnostic summaries in this version; they are not uploaded."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前版本只把 MetricKit payload 记录为本地诊断摘要，不上传原始数据。"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.telemetry.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anonymous Telemetry"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匿名遥测"
+          }
+        }
+      }
+    },
     "settings.diagnostics.title" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -27959,6 +28027,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d 条 · %@"
+          }
+        }
+      }
+    },
+    "settings.storage.readmePrefetch.enabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prefetch starred repository READMEs in the background"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "后台预拉已 Star 仓库 README"
+          }
+        }
+      }
+    },
+    "settings.storage.readmePrefetch.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat slowly fills missing README HTML and raw Markdown caches while signed in. It runs in small batches and backs off on network errors."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录后 Starcat 会慢速补齐缺失的 README HTML 与原始 Markdown 缓存；任务小批量执行，遇到网络错误会自动退避。"
+          }
+        }
+      }
+    },
+    "settings.storage.readmePrefetch.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README Prefetch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README 预拉"
           }
         }
       }
@@ -35481,6 +35600,125 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Starcat 状态"
+          }
+        }
+      }
+    },
+    "toolbar.status.readmePrefetch.completedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checked %d / %d, HTML %d, Markdown %d, failed %d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已检查 %d / %d，HTML %d，Markdown %d，失败 %d"
+          }
+        }
+      }
+    },
+    "toolbar.status.readmePrefetch.coolingDownFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cooling down until %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "冷却至 %@"
+          }
+        }
+      }
+    },
+    "toolbar.status.readmePrefetch.disabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disabled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已关闭"
+          }
+        }
+      }
+    },
+    "toolbar.status.readmePrefetch.lastFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last checked %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次检查 %@"
+          }
+        }
+      }
+    },
+    "toolbar.status.readmePrefetch.progressFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Processing %d / %d, failed %d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "处理中 %d / %d，失败 %d"
+          }
+        }
+      }
+    },
+    "toolbar.status.readmePrefetch.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README Prefetch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README 预拉"
+          }
+        }
+      }
+    },
+    "toolbar.status.readmePrefetch.waiting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for the next background window"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待下一次后台调度"
           }
         }
       }

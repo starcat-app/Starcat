@@ -49,17 +49,20 @@ final class SearchCenterViewModel {
     private let historyRepository: any SearchHistoryRepositoryProtocol
     private let includeWebInAll: () -> Bool
     private let entitlementGate: EntitlementGate?
+    private let telemetryManager: TelemetryManager?
 
     init(
         coordinator: SearchCoordinator,
         historyRepository: any SearchHistoryRepositoryProtocol,
         includeWebInAll: @escaping () -> Bool = { false },
-        entitlementGate: EntitlementGate? = nil
+        entitlementGate: EntitlementGate? = nil,
+        telemetryManager: TelemetryManager? = nil
     ) {
         self.coordinator = coordinator
         self.historyRepository = historyRepository
         self.includeWebInAll = includeWebInAll
         self.entitlementGate = entitlementGate
+        self.telemetryManager = telemetryManager
 
         // 历史加载放在 `present()` 触发，不在 init 做。
         //
@@ -203,6 +206,10 @@ final class SearchCenterViewModel {
         await reloadHistory()
         selectedIndex = nil
         currentGitHubPage = 1
+        telemetryManager?.track(
+            .searchPerformed,
+            properties: [.source: .string(request.scope.rawValue)]
+        )
         await coordinator.search(request)
         clampSelection()
     }

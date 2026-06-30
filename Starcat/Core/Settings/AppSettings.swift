@@ -849,6 +849,17 @@ final class AppSettings {
         didSet { persistBool(key: Keys.mcpIssueNotificationsEnabled, value: mcpIssueNotificationsEnabled) }
     }
 
+    // MARK: - 诊断 / 匿名遥测（2026-06-30）
+
+    /// 是否允许发送匿名使用数据与性能摘要。默认关闭。
+    ///
+    /// Starcat 是本地优先工具，本开关只放行 allowlist 事件和粗粒度分桶；仓库名、
+    /// 搜索词、README、笔记、AI prompt/response、token、API key、本地路径都不允许进入
+    /// `TelemetryEvent` schema。MetricKit 首版也只写本地诊断摘要，不上传原始 payload。
+    var telemetryEnabled: Bool {
+        didSet { persistBool(key: Keys.telemetryEnabled, value: telemetryEnabled) }
+    }
+
     // MARK: - MCP Service（2026-06-20）
 
     /// 本机 MCP Service 总开关。
@@ -954,6 +965,14 @@ final class AppSettings {
     /// 旧向量保留可读，搜索不中断。
     var aiIndexAutoPrefetchEnabled: Bool {
         didSet { persistBool(key: Keys.aiIndexAutoPrefetchEnabled, value: aiIndexAutoPrefetchEnabled) }
+    }
+
+    /// 是否启用 README 后台预拉。
+    ///
+    /// 默认开启：该任务只处理本地已 star 仓库，单轮限量 + 串行 + 退避冷却，不参与 AI 向量索引，
+    /// 目标是让详情页命中本地 HTML / Markdown 缓存，减少用户点开 repo 时的等待。
+    var readmePrefetchEnabled: Bool {
+        didSet { persistBool(key: Keys.readmePrefetchEnabled, value: readmePrefetchEnabled) }
     }
 
     /// AI 语义搜索结果过滤阈值（2026-06-13 dong4j 需求 HOM-197）。
@@ -1314,6 +1333,7 @@ final class AppSettings {
         self.batchAINotificationsEnabled = defaults.object(forKey: Keys.batchAINotificationsEnabled) as? Bool ?? true
         self.syncIssueNotificationsEnabled = defaults.object(forKey: Keys.syncIssueNotificationsEnabled) as? Bool ?? true
         self.mcpIssueNotificationsEnabled = defaults.object(forKey: Keys.mcpIssueNotificationsEnabled) as? Bool ?? true
+        self.telemetryEnabled = defaults.object(forKey: Keys.telemetryEnabled) as? Bool ?? false
         self.mcpServiceEnabled = defaults.object(forKey: Keys.mcpServiceEnabled) as? Bool ?? false
         let storedMCPPort = defaults.object(forKey: Keys.mcpServicePort) as? Int ?? Self.defaultMCPServicePort
         self.mcpServicePort = (1024...65535).contains(storedMCPPort) ? storedMCPPort : Self.defaultMCPServicePort
@@ -1337,6 +1357,7 @@ final class AppSettings {
         let notesRatioRaw = defaults.object(forKey: Keys.aiIndexNotesDiffRatio) as? Double
         self.aiIndexNotesDiffRatio = notesRatioRaw ?? DiffThresholds.default.notesDiffRatio
         self.aiIndexAutoPrefetchEnabled = defaults.object(forKey: Keys.aiIndexAutoPrefetchEnabled) as? Bool ?? false
+        self.readmePrefetchEnabled = defaults.object(forKey: Keys.readmePrefetchEnabled) as? Bool ?? true
         // HOM-197：语义搜索过滤阈值默认 0.75；老用户首启缺 key 走默认。
         let semScoreRaw = defaults.object(forKey: Keys.aiSemanticSearchScoreThreshold) as? Double
         self.aiSemanticSearchScoreThreshold = semScoreRaw ?? 0.75
@@ -1451,6 +1472,7 @@ final class AppSettings {
         batchAINotificationsEnabled = true
         syncIssueNotificationsEnabled = true
         mcpIssueNotificationsEnabled = true
+        telemetryEnabled = false
         mcpServiceEnabled = false
         mcpServicePort = Self.defaultMCPServicePort
         mcpExposePrivateNotes = false
@@ -1462,6 +1484,7 @@ final class AppSettings {
         aiReadmeTruncateLength = ReadmePreprocessor.defaultMaxLength
         applyAIIndexPreset(.standard)
         aiIndexAutoPrefetchEnabled = false
+        readmePrefetchEnabled = true
         aiSemanticSearchScoreThreshold = 0.75
         customServiceURLs = [:]
     }
@@ -1649,6 +1672,7 @@ final class AppSettings {
         static let batchAINotificationsEnabled = "settings.notifications.batchAI.enabled.v1"
         static let syncIssueNotificationsEnabled = "settings.notifications.syncIssues.enabled.v1"
         static let mcpIssueNotificationsEnabled = "settings.notifications.mcpIssues.enabled.v1"
+        static let telemetryEnabled = "settings.telemetry.enabled.v1"
         static let mcpServiceEnabled = "settings.mcp.enabled.v1"
         static let mcpServicePort = "settings.mcp.port.v1"
         static let mcpExposePrivateNotes = "settings.mcp.exposePrivateNotes.v1"
@@ -1667,6 +1691,7 @@ final class AppSettings {
         static let aiIndexBodyDiffRatio = "settings.ai.index.bodyDiffRatio.v1"
         static let aiIndexNotesDiffRatio = "settings.ai.index.notesDiffRatio.v1"
         static let aiIndexAutoPrefetchEnabled = "settings.ai.index.autoPrefetchEnabled.v1"
+        static let readmePrefetchEnabled = "settings.readme.prefetch.enabled.v1"
         // HOM-197（2026-06-13 dong4j）：AI 语义搜索过滤阈值，默认 0.75。
         static let aiSemanticSearchScoreThreshold = "settings.ai.semanticSearch.scoreThreshold.v1"
         // 2026-06-13 RepoContextPacker 客户端接入（3 个字段，§0.3 X1）
@@ -1713,6 +1738,7 @@ final class AppSettings {
             batchAINotificationsEnabled,
             syncIssueNotificationsEnabled,
             mcpIssueNotificationsEnabled,
+            telemetryEnabled,
             mcpServiceEnabled,
             mcpServicePort,
             mcpExposePrivateNotes,
@@ -1727,6 +1753,7 @@ final class AppSettings {
             aiIndexBodyDiffRatio,
             aiIndexNotesDiffRatio,
             aiIndexAutoPrefetchEnabled,
+            readmePrefetchEnabled,
             aiSemanticSearchScoreThreshold,
             aiRepoContextEnabled,
             aiRepoContextTokenBudget,

@@ -80,6 +80,9 @@ BuddyBuild/
 CircleCI/
 Travis/
 
+# Starcat local-only admin panel secrets
+pages/_local-admin/config.js
+
 # Linux
 *~
 

@@ -39,6 +39,8 @@ final class AppDependencies {
     let repoRepository: any RepoRepositoryProtocol
     /// Week 3 引入：用户偏好（列表密度等）。
     let settings: AppSettings
+    /// 匿名遥测协调器。业务层只依赖本对象，不直接接触 Aptabase / MetricKit。
+    let telemetryManager: TelemetryManager
     /// StoreKit 2 订阅协调器。它是 Pro 权益的单一真相源。
     let subscriptionManager: SubscriptionManager
     /// 统一 Pro 门控服务。业务层通过它判断是否放行，而不是直接读 `settings.isProUser`。
@@ -67,6 +69,12 @@ final class AppDependencies {
     /// 都在 `ReadmeAPI` 内 record;Settings 调试段 / AppLog 周期 flush 都可以读
     /// `snapshot()` 拿当前累计值。详见 `ReadmeMetrics.swift`。
     let readmeMetrics: ReadmeMetrics
+    /// README 后台预拉状态 Repository。只保存调度状态，不保存 README 正文。
+    let readmePrefetchRepository: ReadmePrefetchRepository
+    /// README 后台预拉服务。负责温和补齐已 star 仓库 HTML + raw Markdown 缓存。
+    let readmePrefetchService: ReadmePrefetchService
+    /// README 后台预拉调度器。登录态 + 设置开关开启时由 HomeView 启动。
+    let readmePrefetchPoller: ReadmePrefetchPoller
     /// W4 Batch A1 引入：标签 CRUD。
     let tagRepository: any TagRepositoryProtocol
     /// W4 Batch A1 引入：repo ↔ tag 关联 + 批量打标签。
@@ -462,9 +470,22 @@ final class AppDependencies {
         self.repoRepository = repo
         let settings = AppSettings.shared
         self.settings = settings
+        let telemetry = TelemetryManager(settings: settings)
+        if !TestEnvironment.isRunning, let appKey = TelemetryConfiguration.aptabaseAppKey {
+            telemetry.configure(
+                client: AptabaseTelemetryClient(appKey: appKey),
+                isBackendConfigured: true
+            )
+        }
+        self.telemetryManager = telemetry
         let notificationService = ReleaseNotificationService(settings: settings)
         self.releaseNotificationService = notificationService
-        self.syncManager = SyncManager(apiClient: api, repository: repo, notificationService: notificationService)
+        self.syncManager = SyncManager(
+            apiClient: api,
+            repository: repo,
+            notificationService: notificationService,
+            telemetryManager: telemetry
+        )
         let subscriptions = SubscriptionManager(settings: settings)
         self.subscriptionManager = subscriptions
         self.entitlementGate = EntitlementGate(
@@ -493,6 +514,15 @@ final class AppDependencies {
             inflightTracker: inflightTracker,
             metrics: metrics
         )
+        let readmePrefetchRepo = ReadmePrefetchRepository(database: db)
+        self.readmePrefetchRepository = readmePrefetchRepo
+        let readmePrefetchService = ReadmePrefetchService(
+            repository: readmePrefetchRepo,
+            readmeRepository: readmeRepo,
+            readmeAPI: self.readmeAPI
+        )
+        self.readmePrefetchService = readmePrefetchService
+        self.readmePrefetchPoller = ReadmePrefetchPoller(service: readmePrefetchService)
         // HOM-201 P0-2：跨 VM 共享的 404 短路状态容器。无依赖、无 IO，构造即用。
         self.readmeAvailability = ReadmeAvailability()
 

@@ -446,6 +446,10 @@ struct RepoAIOpenButton: View {
 
     var body: some View {
         Button {
+            dependencies.telemetryManager.track(
+                .aiPanelOpened,
+                properties: [.source: .string("detail")]
+            )
             RepoAIWindowController.show(
                 repo: repo,
                 dependencies: dependencies,

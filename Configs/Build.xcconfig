@@ -29,6 +29,12 @@ STARCAT_PRODUCTION_API_KEY_WIKI =
 STARCAT_PRODUCTION_API_KEY_RECOMMEND =
 STARCAT_PRODUCTION_API_KEY_DISCOVERY =
 
+// MARK: - 匿名遥测（Aptabase）
+
+// Aptabase App Key。默认空 = 后端未配置，App 内遥测保持 no-op。
+// 即使配置了 key，仍必须由用户在「设置 → 诊断」开启匿名遥测开关才会发送事件。
+STARCAT_APTABASE_APP_KEY =
+
 // MARK: - GitHub OAuth（Web Application Flow）
 
 // GitHub OAuth App Client Secret。Web Flow token 交换时 /login/oauth/access_token

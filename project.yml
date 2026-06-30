@@ -64,6 +64,9 @@ packages:
   MCPSwiftSDK:
     url: https://github.com/modelcontextprotocol/swift-sdk
     from: "0.12.1"
+  Aptabase:
+    url: https://github.com/aptabase/aptabase-swift
+    from: "0.3.0"
 
 targets:
   Starcat:
@@ -113,6 +116,8 @@ targets:
         STARCAT_PRODUCTION_API_KEY_WIKI: $(STARCAT_PRODUCTION_API_KEY_WIKI)
         STARCAT_PRODUCTION_API_KEY_RECOMMEND: $(STARCAT_PRODUCTION_API_KEY_RECOMMEND)
         STARCAT_PRODUCTION_API_KEY_DISCOVERY: $(STARCAT_PRODUCTION_API_KEY_DISCOVERY)
+        # 匿名产品事件后端。留空时遥测保持 no-op；用户开关关闭时也不会发送。
+        STARCAT_APTABASE_APP_KEY: $(STARCAT_APTABASE_APP_KEY)
     dependencies:
       - package: GRDB
       - package: KeychainAccess
@@ -123,6 +128,7 @@ targets:
       - package: ZIPFoundation
       - package: MCPSwiftSDK
         product: MCP
+      - package: Aptabase
     # 在所有 build phase 跑完之后、codesign 之前执行：
     # 用 git 元数据改写产物 Info.plist 的 CFBundleVersion / CFBundleShortVersionString。
     # 详见 scripts/bump-version.sh 文件头注释。
