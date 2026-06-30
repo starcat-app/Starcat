@@ -56,6 +56,7 @@ KEY_WEEKLY="$(read_first_api_key "${SUPPORTS_DIR}/starcat-weekly-api/.env")"
 KEY_SHARING="$(read_first_api_key "${SUPPORTS_DIR}/starcat-sharing-api/.env")"
 KEY_WIKI="$(read_first_api_key "${SUPPORTS_DIR}/starcat-wiki-api/.env")"
 KEY_RECOMMEND="$(read_first_api_key "${SUPPORTS_DIR}/starcat-recommend-api/.env")"
+KEY_DISCOVERY="$(read_first_api_key "${SUPPORTS_DIR}/starcat-discovery-api/.env")"
 
 # 整文件重写，避免 sed 匹配 template 空行失败；注释行仅供人读，不参与编译逻辑。
 cat > "${CONFIG}" <<EOF
@@ -67,6 +68,7 @@ STARCAT_PRODUCTION_API_KEY_WEEKLY = ${KEY_WEEKLY}
 STARCAT_PRODUCTION_API_KEY_SHARING = ${KEY_SHARING}
 STARCAT_PRODUCTION_API_KEY_WIKI = ${KEY_WIKI}
 STARCAT_PRODUCTION_API_KEY_RECOMMEND = ${KEY_RECOMMEND}
+STARCAT_PRODUCTION_API_KEY_DISCOVERY = ${KEY_DISCOVERY}
 EOF
 
 echo "  ok STARCAT_PRODUCTION_API_KEY_TRENDING <- starcat-trending-api/.env"
@@ -74,5 +76,6 @@ echo "  ok STARCAT_PRODUCTION_API_KEY_WEEKLY <- starcat-weekly-api/.env"
 echo "  ok STARCAT_PRODUCTION_API_KEY_SHARING <- starcat-sharing-api/.env"
 echo "  ok STARCAT_PRODUCTION_API_KEY_WIKI <- starcat-wiki-api/.env"
 echo "  ok STARCAT_PRODUCTION_API_KEY_RECOMMEND <- starcat-recommend-api/.env"
-echo "ok 五个服务的 production API key 已写入 Configs/Secrets.xcconfig"
+echo "  ok STARCAT_PRODUCTION_API_KEY_DISCOVERY <- starcat-discovery-api/.env"
+echo "ok 各服务的 production API key 已写入 Configs/Secrets.xcconfig"
 echo "  下一步: xcodegen generate && 重新 build App（make run / make build-dmg）"
