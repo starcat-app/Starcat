@@ -363,13 +363,12 @@ private struct AppStatusPanel: View {
             )
         case .waitingForRetry:
             return String.l10n("settings.storage.readmePrefetch.retrying")
-        case .completed(let processed, let total):
+        case .completed:
             return String(
                 format: String.l10n("toolbar.status.readmePrefetch.completedFormat"),
-                processed,
-                total,
                 readmePrefetchService.htmlUpdated,
                 readmePrefetchService.markdownUpdated,
+                readmePrefetchService.notFound,
                 readmePrefetchService.failures
             )
         case .allPrefetched(let total):

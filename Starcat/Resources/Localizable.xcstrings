@@ -35763,13 +35763,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Checked %d / %d, HTML %d, Markdown %d, failed %d"
+            "value" : "HTML %d · MD %d · none %d · failed %d"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已检查 %d / %d，HTML %d，Markdown %d，失败 %d"
+            "value" : "HTML %d · MD %d · 无 %d · 失败 %d"
           }
         }
       }

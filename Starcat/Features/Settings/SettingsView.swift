@@ -1436,7 +1436,7 @@ private struct ReadmePrefetchSettingsStatusView<Action: View>: View {
             )
         case .waitingForRetry:
             return String.l10n("settings.storage.readmePrefetch.retrying")
-        case .completed(let processed, let total):
+        case .completed:
             return String(
                 format: String.l10n("toolbar.status.readmePrefetch.completedFormat"),
                 service.htmlUpdated,
