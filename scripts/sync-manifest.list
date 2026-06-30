@@ -1,0 +1,27 @@
+# 显式同步清单（每行一个路径/glob，相对仓库根目录）
+#
+# 用法：
+#   - 添加一行 = 两台机器（MBP / Studio）都同步
+#   - 删一行   = 都不再同步
+#   - 行首 #   = 注释（忽略）
+#
+# 约束：
+#   - 不应包含 .DS_Store / .build/ / .codegraph/ 等（见 sync-exclude.list）
+#   - 不应包含 supports/**/*-api/（独立 git 仓库，由本仓库的 6 个 starcat-*-api
+#     服务各自维护，不通过本脚本同步）
+
+# === 决策 3c：含明文密钥的关键文件（同步后对端 chmod 600） ===
+Configs/Secrets.xcconfig
+notes.md
+.claude/settings.local.json
+
+# === 决策 4c + 1：supports/ 下的子项（**/*-api/ 由 exclude 兜底排除） ===
+supports/.claude
+supports/docs/
+supports/Makefile
+supports/start-all.sh
+supports/scripts/
+supports/backups/
+supports/AGENTS.md
+supports/CLAUDE.md
+supports/README.md

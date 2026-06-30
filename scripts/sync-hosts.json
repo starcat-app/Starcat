@@ -1,0 +1,17 @@
+{
+  "_comment": "复制为 scripts/sync-hosts.json 后填真实值（sync-hosts.json 不进 git，已被 .gitignore 排除）。",
+  "_layout": {
+    "<alias>": {
+      "ssh": "user@host 或 ~/.ssh/config 里的 Host 别名",
+      "remote_path": "对端仓库的绝对路径（~ 会展开）"
+    }
+  },
+  "studio": {
+    "ssh": "studio",
+    "remote_path": "~/Developer/1.AI/ai-incubator/Starcat"
+  },
+  "mbp": {
+    "ssh": "mbp",
+    "remote_path": "~/Developer/1.AI/ai-incubator/Starcat"
+  }
+}

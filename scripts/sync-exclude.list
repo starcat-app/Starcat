@@ -1,0 +1,27 @@
+# 排除规则（rsync --exclude-from，兜底用）
+#
+# 关键约束：rsync 的 exclude 只对目录递归生效，对单文件完全无效。所以显式清单
+# （sync-manifest.list）里写单文件路径时，写错也拦不住——这是为什么 manifest
+# 注释里强调"不应包含这些路径"。exclude 列表主要保护目录类条目。
+
+# === 决策 4c：所有以 -api 结尾的独立 git 仓库 ===
+**/*-api/
+
+# === 系统 / 构建 / 本地索引（绝不同步） ===
+.DS_Store
+**/.DS_Store
+**/.idea/
+**/node_modules/
+**/__pycache__/
+**/.build/
+**/build/
+**/.swiftpm/
+**/DerivedData/
+**/xcuserdata/
+**/*.xcuserstate
+**/*.xcuserdatad/
+**/*.xcresult
+**/TestResults.xcresult/
+**/.codegraph/
+Starcat.xcodeproj/
+Starcat/Resources/Codebase/codebase.bin*
