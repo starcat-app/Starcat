@@ -22,9 +22,10 @@ struct ExploreDiscoveryViewModelTests {
     func popularReloadFiltersAndSortsLocalBulk() async throws {
         let repository = FakeDiscoveryRepository()
         await repository.enqueueBulk(Self.makeBulkResult(repos: [
-            Self.makeRepo(repoID: 101, owner: "apple", name: "swift-a", language: "Swift", stars: 100, popularityScore: 0.1),
-            Self.makeRepo(repoID: 102, owner: "apple", name: "swift-b", language: "Swift", stars: 200, popularityScore: 0.9),
-            Self.makeRepo(repoID: 103, owner: "golang", name: "go", language: "Go", stars: 1000, popularityScore: 1.0)
+            Self.makeRepo(repoID: 101, owner: "apple", name: "swift-a", language: "Swift", stars: 100, popularityScore: 0.1, categoryRanks: ["popular": 2]),
+            Self.makeRepo(repoID: 102, owner: "apple", name: "swift-b", language: "Swift", stars: 200, popularityScore: 0.9, categoryRanks: ["popular": 1]),
+            Self.makeRepo(repoID: 103, owner: "golang", name: "go", language: "Go", stars: 1000, popularityScore: 1.0, categoryRanks: ["popular": 3]),
+            Self.makeRepo(repoID: 104, owner: "apple", name: "swift-c", language: "Swift", stars: 300, popularityScore: 1.0, categories: [])
         ]))
         let viewModel = ExploreDiscoveryViewModel()
 
@@ -55,7 +56,8 @@ struct ExploreDiscoveryViewModelTests {
                 name: "repo-\(String(format: "%02d", index))",
                 language: "Swift",
                 stars: 100 - index,
-                popularityScore: Double(100 - index)
+                popularityScore: Double(100 - index),
+                categoryRanks: ["popular": index]
             )
         }
         await repository.enqueueBulk(Self.makeBulkResult(repos: repos))
@@ -88,6 +90,29 @@ struct ExploreDiscoveryViewModelTests {
         #expect(viewModel.total == 25)
         #expect(viewModel.nextPage == nil)
         #expect(await repository.fetchPageCount() == 0)
+    }
+
+    @Test("新发布列表只展示 new_releases 归属仓库")
+    func newReleasesFiltersByCategoryMembership() async throws {
+        let repository = FakeDiscoveryRepository()
+        await repository.enqueueBulk(Self.makeBulkResult(repos: [
+            Self.makeRepo(repoID: 401, owner: "release", name: "new-a", language: "Swift", releaseScore: 0.1, categories: ["new_releases"], categoryRanks: ["new_releases": 2]),
+            Self.makeRepo(repoID: 402, owner: "release", name: "new-b", language: "Swift", releaseScore: 0.9, categories: ["new_releases"], categoryRanks: ["new_releases": 1]),
+            Self.makeRepo(repoID: 403, owner: "release", name: "old", language: "Swift", releaseScore: 1.0, categories: ["popular"], categoryRanks: ["popular": 1])
+        ]))
+        let viewModel = ExploreDiscoveryViewModel()
+
+        await viewModel.reload(
+            repository: repository,
+            mode: .newReleases,
+            language: "Swift",
+            topic: nil,
+            platform: nil,
+            sort: .release
+        )
+
+        #expect(viewModel.repos.map(\.fullName) == ["release/new-b", "release/new-a"])
+        #expect(viewModel.total == 2)
     }
 
     @Test("新筛选远端错误且无 bulk 缓存时清空列表")
@@ -149,7 +174,9 @@ struct ExploreDiscoveryViewModelTests {
         platforms: [String] = ["macos"],
         popularityScore: Double = 1,
         discoveryScore: Double = 1,
-        releaseScore: Double = 1
+        releaseScore: Double = 1,
+        categories: [String] = ["popular"],
+        categoryRanks: [String: Int] = ["popular": 1]
     ) -> DiscoveryRepoDTO {
         let fullName = "\(owner)/\(name)"
         var repo = DiscoveryRepoDTO(
@@ -184,7 +211,9 @@ struct ExploreDiscoveryViewModelTests {
             reasons: ["Active repository"],
             signals: [
                 DiscoverySignalDTO(code: "release", label: "Recent release", value: "1.0.0")
-            ]
+            ],
+            categories: categories,
+            categoryRanks: categoryRanks
         )
         repo.popularityScore = popularityScore
         repo.discoveryScore = discoveryScore

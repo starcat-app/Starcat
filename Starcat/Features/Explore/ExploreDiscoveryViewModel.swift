@@ -67,7 +67,8 @@ final class ExploreDiscoveryViewModel {
             )
             didShowCachedBulk = true
             isLoading = false
-            if isCacheFresh(at: cached.lastFetchedAt) {
+            if isCacheFresh(at: cached.lastFetchedAt),
+               Self.isCachedBulkUsable(cached, for: mode) {
                 isRefreshing = false
                 return
             }
@@ -180,7 +181,18 @@ final class ExploreDiscoveryViewModel {
             if let platform = normalizedFilter(platform) {
                 filtered = filtered.filter { $0.platforms.contains(platform) }
             }
-        case .popular, .newReleases:
+        case .popular:
+            filtered = filtered.filter { $0.categories.contains(Self.categoryCode(for: mode)) }
+            if let language = normalizedFilter(language) {
+                filtered = filtered.filter { repo in
+                    if language == TrendingLanguage.uncategorizedKey {
+                        return (repo.language ?? "").isEmpty
+                    }
+                    return repo.language?.caseInsensitiveCompare(language) == .orderedSame
+                }
+            }
+        case .newReleases:
+            filtered = filtered.filter { $0.categories.contains(Self.categoryCode(for: mode)) }
             if let language = normalizedFilter(language) {
                 filtered = filtered.filter { repo in
                     if language == TrendingLanguage.uncategorizedKey {
@@ -209,10 +221,16 @@ final class ExploreDiscoveryViewModel {
         case .recommended:
             return scoreSorter(\.discoveryScore)
         case .popular:
+            if mode == .popular {
+                return categoryRankSorter(category: categoryCode(for: mode), fallback: scoreSorter(\.popularityScore))
+            }
             return scoreSorter(\.popularityScore)
         case .activity:
             return scoreSorter(\.trendingScore)
         case .release:
+            if mode == .newReleases {
+                return categoryRankSorter(category: categoryCode(for: mode), fallback: scoreSorter(\.releaseScore))
+            }
             return scoreSorter(\.releaseScore)
         case .nameAsc:
             return { lhs, rhs in
@@ -261,6 +279,22 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
+    private static func categoryRankSorter(
+        category: String,
+        fallback: @escaping (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool
+    ) -> (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool {
+        { lhs, rhs in
+            let lhsRank = lhs.categoryRanks[category]
+            let rhsRank = rhs.categoryRanks[category]
+            if let lhsRank, let rhsRank, lhsRank != rhsRank {
+                return lhsRank < rhsRank
+            }
+            if lhsRank != nil { return true }
+            if rhsRank != nil { return false }
+            return fallback(lhs, rhs)
+        }
+    }
+
     private static func dateStringSorter(
         _ value: @escaping (DiscoveryRepoDTO) -> String?,
         ascending: Bool,
@@ -294,12 +328,43 @@ final class ExploreDiscoveryViewModel {
         case .newReleases:
             return repo.releaseScore ?? repo.score ?? 0
         case .trending:
+            // 趋势模式不应进入 ExploreDiscoveryViewModel；这里保留兜底只为防止未来误传
+            // 导致排序崩溃，正式 UI 仍由 TrendingView + starcat-trending-api 承载。
             return repo.trendingScore ?? repo.score ?? 0
         }
     }
 
     private func isCacheFresh(at lastFetchedAt: Date) -> Bool {
         Date().timeIntervalSince(lastFetchedAt) < Self.bulkTTL
+    }
+
+    private static func isCachedBulkUsable(_ snapshot: DiscoveryBulkCachedSnapshot, for mode: ExploreMode) -> Bool {
+        switch mode {
+        case .popular, .newReleases:
+            let category = categoryCode(for: mode)
+            if snapshot.repos.contains(where: { $0.categories.contains(category) }) {
+                return true
+            }
+            guard let discoveryMode = mode.discoveryListMode else { return false }
+            return snapshot.summary.mode(discoveryMode)?.total == 0
+        case .discover:
+            return true
+        case .trending:
+            return false
+        }
+    }
+
+    private static func categoryCode(for mode: ExploreMode) -> String {
+        switch mode {
+        case .discover:
+            return "discover"
+        case .trending:
+            return ""
+        case .popular:
+            return "popular"
+        case .newReleases:
+            return "new_releases"
+        }
     }
 
     private func normalizedFilter(_ value: String?) -> String? {

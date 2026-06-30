@@ -339,8 +339,11 @@ struct DiscoveryBulkRepoRecord: Codable, FetchableRecord, PersistableRecord, Equ
         case cachedAt = "cached_at"
     }
 
-    func toDomain() -> DiscoveryRepoDTO {
-        var dto = DiscoveryRepoDTO(
+    func toDomain(
+        categories: [String] = [],
+        categoryRanks: [String: Int] = [:]
+    ) -> DiscoveryRepoDTO {
+        DiscoveryRepoDTO(
             repoID: repoID,
             fullName: fullName,
             owner: owner,
@@ -369,15 +372,16 @@ struct DiscoveryBulkRepoRecord: Codable, FetchableRecord, PersistableRecord, Equ
             releaseDownloadCount: releaseDownloadCount,
             rank: itemRank,
             score: score,
+            trendingScore: trendingScore,
+            popularityScore: popularityScore,
+            releaseScore: releaseScore,
+            discoveryScore: discoveryScore,
+            searchScore: searchScore,
             reasons: Self.decode([String].self, from: reasonsJSON) ?? [],
-            signals: Self.decode([DiscoverySignalDTO].self, from: signalsJSON) ?? []
+            signals: Self.decode([DiscoverySignalDTO].self, from: signalsJSON) ?? [],
+            categories: categories,
+            categoryRanks: categoryRanks
         )
-        dto.trendingScore = trendingScore
-        dto.popularityScore = popularityScore
-        dto.releaseScore = releaseScore
-        dto.discoveryScore = discoveryScore
-        dto.searchScore = searchScore
-        return dto
     }
 
     static func from(_ dto: DiscoveryRepoDTO, cachedAt: Date) -> DiscoveryBulkRepoRecord {
@@ -432,6 +436,27 @@ struct DiscoveryBulkRepoRecord: Codable, FetchableRecord, PersistableRecord, Equ
     private static func decode<T: Decodable>(_ type: T.Type, from string: String) -> T? {
         guard let data = string.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(T.self, from: data)
+    }
+}
+
+/// `discovery_bulk_category_memberships` 表行映射。
+///
+/// 这张表只保存 bulk 快照里每个 repo 进入哪些探索子模块，以及该子模块里的全量 rank。
+/// 客户端筛选热门 / 新发布时只看这里，避免把同一 catalog 误当成多个榜单。
+struct DiscoveryBulkCategoryMembershipRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
+
+    static let databaseTableName = "discovery_bulk_category_memberships"
+
+    var repoID: Int64
+    var category: String
+    var itemRank: Int?
+    var cachedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case repoID = "repo_id"
+        case category
+        case itemRank = "item_rank"
+        case cachedAt = "cached_at"
     }
 }
 

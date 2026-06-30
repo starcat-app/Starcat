@@ -88,6 +88,7 @@ enum DatabaseMigrations {
             try createDiscoverySummaryModes(db)
             try createDiscoverySummaryFacets(db)
             try createDiscoveryBulkRepos(db)
+            try createDiscoveryBulkCategoryMemberships(db)
             try createDiscoveryBulkMeta(db)
             try createRepoEmbeddings(db)
             try createAISummaries(db)
@@ -822,6 +823,22 @@ enum DatabaseMigrations {
         try db.create(index: "idx_discovery_bulk_discovery_score", on: "discovery_bulk_repos", columns: ["discovery_score"])
         try db.create(index: "idx_discovery_bulk_popularity_score", on: "discovery_bulk_repos", columns: ["popularity_score"])
         try db.create(index: "idx_discovery_bulk_release_score", on: "discovery_bulk_repos", columns: ["release_score"])
+    }
+
+    /// discovery_bulk_category_memberships：bulk repo 与探索子模块的归属关系。
+    ///
+    /// 归属关系来自 discovery-api 的 `category_rankings`，单独成表是为了不把
+    /// "热门 / 新发布 / 趋势" 这种榜单维度塞回仓库基础快照。
+    private static func createDiscoveryBulkCategoryMemberships(_ db: Database) throws {
+        try db.create(table: "discovery_bulk_category_memberships") { t in
+            t.column("repo_id", .integer).notNull()
+            t.column("category", .text).notNull()
+            t.column("item_rank", .integer)
+            t.column("cached_at", .text).notNull()
+            t.primaryKey(["repo_id", "category"])
+        }
+
+        try db.create(index: "idx_discovery_bulk_category_lookup", on: "discovery_bulk_category_memberships", columns: ["category", "item_rank"])
     }
 
     /// discovery_bulk_meta：bulk cache 元信息单行表（PK = "singleton"）。

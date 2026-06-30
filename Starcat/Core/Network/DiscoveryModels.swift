@@ -46,6 +46,8 @@ struct DiscoveryRepoDTO: Codable, Identifiable, Hashable, Sendable {
     var searchScore: Double? = nil
     let reasons: [String]
     let signals: [DiscoverySignalDTO]
+    let categories: [String]
+    let categoryRanks: [String: Int]
 
     var id: Int64 { repoID }
 
@@ -85,6 +87,127 @@ struct DiscoveryRepoDTO: Codable, Identifiable, Hashable, Sendable {
         case searchScore = "search_score"
         case reasons
         case signals
+        case categories
+        case categoryRanks = "category_ranks"
+    }
+
+    init(
+        repoID: Int64,
+        fullName: String,
+        owner: String,
+        name: String,
+        description: String?,
+        homepage: String?,
+        language: String?,
+        stars: Int,
+        forks: Int,
+        watchers: Int,
+        subscribers: Int,
+        openIssues: Int,
+        ownerAvatar: String?,
+        defaultBranch: String?,
+        licenseSpdx: String?,
+        topics: [String],
+        platforms: [String],
+        pushedAt: String?,
+        updatedAt: String?,
+        createdAt: String?,
+        isArchived: Bool,
+        isFork: Bool,
+        latestReleaseTag: String?,
+        latestReleaseAt: String?,
+        latestReleaseURL: String?,
+        releaseDownloadCount: Int,
+        rank: Int?,
+        score: Double?,
+        trendingScore: Double? = nil,
+        popularityScore: Double? = nil,
+        releaseScore: Double? = nil,
+        discoveryScore: Double? = nil,
+        searchScore: Double? = nil,
+        reasons: [String],
+        signals: [DiscoverySignalDTO],
+        categories: [String] = [],
+        categoryRanks: [String: Int] = [:]
+    ) {
+        self.repoID = repoID
+        self.fullName = fullName
+        self.owner = owner
+        self.name = name
+        self.description = description
+        self.homepage = homepage
+        self.language = language
+        self.stars = stars
+        self.forks = forks
+        self.watchers = watchers
+        self.subscribers = subscribers
+        self.openIssues = openIssues
+        self.ownerAvatar = ownerAvatar
+        self.defaultBranch = defaultBranch
+        self.licenseSpdx = licenseSpdx
+        self.topics = topics
+        self.platforms = platforms
+        self.pushedAt = pushedAt
+        self.updatedAt = updatedAt
+        self.createdAt = createdAt
+        self.isArchived = isArchived
+        self.isFork = isFork
+        self.latestReleaseTag = latestReleaseTag
+        self.latestReleaseAt = latestReleaseAt
+        self.latestReleaseURL = latestReleaseURL
+        self.releaseDownloadCount = releaseDownloadCount
+        self.rank = rank
+        self.score = score
+        self.trendingScore = trendingScore
+        self.popularityScore = popularityScore
+        self.releaseScore = releaseScore
+        self.discoveryScore = discoveryScore
+        self.searchScore = searchScore
+        self.reasons = reasons
+        self.signals = signals
+        self.categories = categories
+        self.categoryRanks = categoryRanks
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        repoID = try container.decode(Int64.self, forKey: .repoID)
+        fullName = try container.decode(String.self, forKey: .fullName)
+        owner = try container.decode(String.self, forKey: .owner)
+        name = try container.decode(String.self, forKey: .name)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
+        language = try container.decodeIfPresent(String.self, forKey: .language)
+        stars = try container.decode(Int.self, forKey: .stars)
+        forks = try container.decode(Int.self, forKey: .forks)
+        watchers = try container.decode(Int.self, forKey: .watchers)
+        subscribers = try container.decode(Int.self, forKey: .subscribers)
+        openIssues = try container.decode(Int.self, forKey: .openIssues)
+        ownerAvatar = try container.decodeIfPresent(String.self, forKey: .ownerAvatar)
+        defaultBranch = try container.decodeIfPresent(String.self, forKey: .defaultBranch)
+        licenseSpdx = try container.decodeIfPresent(String.self, forKey: .licenseSpdx)
+        topics = try container.decodeIfPresent([String].self, forKey: .topics) ?? []
+        platforms = try container.decodeIfPresent([String].self, forKey: .platforms) ?? []
+        pushedAt = try container.decodeIfPresent(String.self, forKey: .pushedAt)
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+        isArchived = try container.decode(Bool.self, forKey: .isArchived)
+        isFork = try container.decode(Bool.self, forKey: .isFork)
+        latestReleaseTag = try container.decodeIfPresent(String.self, forKey: .latestReleaseTag)
+        latestReleaseAt = try container.decodeIfPresent(String.self, forKey: .latestReleaseAt)
+        latestReleaseURL = try container.decodeIfPresent(String.self, forKey: .latestReleaseURL)
+        releaseDownloadCount = try container.decode(Int.self, forKey: .releaseDownloadCount)
+        rank = try container.decodeIfPresent(Int.self, forKey: .rank)
+        score = try container.decodeIfPresent(Double.self, forKey: .score)
+        trendingScore = try container.decodeIfPresent(Double.self, forKey: .trendingScore)
+        popularityScore = try container.decodeIfPresent(Double.self, forKey: .popularityScore)
+        releaseScore = try container.decodeIfPresent(Double.self, forKey: .releaseScore)
+        discoveryScore = try container.decodeIfPresent(Double.self, forKey: .discoveryScore)
+        searchScore = try container.decodeIfPresent(Double.self, forKey: .searchScore)
+        reasons = try container.decodeIfPresent([String].self, forKey: .reasons) ?? []
+        signals = try container.decodeIfPresent([DiscoverySignalDTO].self, forKey: .signals) ?? []
+        categories = try container.decodeIfPresent([String].self, forKey: .categories) ?? []
+        categoryRanks = try container.decodeIfPresent([String: Int].self, forKey: .categoryRanks) ?? [:]
     }
 }
 
@@ -171,14 +294,12 @@ enum DiscoveryListMode: String, Codable, CaseIterable, Sendable {
     case discover
     case popular
     case newReleases
-    case trending
 
     var apiSummaryMode: String {
         switch self {
         case .discover: return "discover"
         case .popular: return "popular"
         case .newReleases: return "new_releases"
-        case .trending: return "trending"
         }
     }
 
@@ -190,8 +311,6 @@ enum DiscoveryListMode: String, Codable, CaseIterable, Sendable {
             self = .popular
         case "new_releases":
             self = .newReleases
-        case "trending":
-            self = .trending
         default:
             return nil
         }

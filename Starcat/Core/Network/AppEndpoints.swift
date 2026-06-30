@@ -251,8 +251,6 @@ enum AppEndpoints {
             static let mostPopular = "/api/v1/discovery/categories/most-popular"
             /// `GET /api/v1/discovery/categories/new-releases?...` —— 新发布榜单。
             static let newReleases = "/api/v1/discovery/categories/new-releases"
-            /// `GET /api/v1/discovery/categories/trending?...` —— 新趋势候选，首期客户端不直接使用。
-            static let trending = "/api/v1/discovery/categories/trending"
             /// `GET /api/v1/discovery/summary` —— 探索 Sidebar 总量与筛选项计数。
             static let summary = "/api/v1/discovery/summary"
             /// `GET /api/v1/discovery/bulk` —— 发现 / 热门 / 新发布本地优先全量快照。

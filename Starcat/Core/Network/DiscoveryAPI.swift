@@ -49,10 +49,6 @@ actor DiscoveryAPI {
         try await fetchList(path: AppEndpoints.Discovery.Paths.newReleases, query: query)
     }
 
-    func fetchTrendingCandidate(query: DiscoveryListQuery = DiscoveryListQuery()) async throws -> DiscoveryPage {
-        try await fetchList(path: AppEndpoints.Discovery.Paths.trending, query: query)
-    }
-
     func fetchLanguages() async throws -> [DiscoveryLanguageDTO] {
         try await fetchMetadata(path: AppEndpoints.Discovery.Paths.languages)
     }

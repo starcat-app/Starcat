@@ -95,15 +95,19 @@ final class ExploreCatalogStore {
     }
 
     func displayLanguages(for mode: ExploreMode) -> [DiscoveryLanguageDTO] {
+        guard let discoveryMode = mode.discoveryListMode else {
+            return Self.fallbackLanguages
+        }
         let languages = summary?
-            .mode(mode.discoveryListMode)?
+            .mode(discoveryMode)?
             .languages?
             .map(\.asLanguageDTO) ?? []
         return languages.isEmpty ? Self.fallbackLanguages : languages
     }
 
     func total(for mode: ExploreMode) -> Int? {
-        summary?.mode(mode.discoveryListMode)?.total
+        guard let discoveryMode = mode.discoveryListMode else { return nil }
+        return summary?.mode(discoveryMode)?.total
     }
 
     func topicCount(for code: String?) -> Int? {
@@ -129,11 +133,14 @@ final class ExploreCatalogStore {
     }
 
     func languageCount(for key: String?, mode: ExploreMode) -> Int? {
+        guard let discoveryMode = mode.discoveryListMode else {
+            return nil
+        }
         guard let key else {
             return total(for: mode)
         }
         return summary?
-            .mode(mode.discoveryListMode)?
+            .mode(discoveryMode)?
             .languages?
             .first { $0.key == key }?
             .count

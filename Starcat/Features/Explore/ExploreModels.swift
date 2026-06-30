@@ -52,10 +52,12 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable {
         self != .trending
     }
 
-    var discoveryListMode: DiscoveryListMode {
+    /// Starcat 正式 discovery 服务只承载发现 / 热门 / 新发布。
+    /// 趋势继续走 starcat-trending-api，不能映射到 discovery-api 的候选 trending。
+    var discoveryListMode: DiscoveryListMode? {
         switch self {
         case .discover: return .discover
-        case .trending: return .trending
+        case .trending: return nil
         case .popular: return .popular
         case .newReleases: return .newReleases
         }

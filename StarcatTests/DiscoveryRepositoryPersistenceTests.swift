@@ -81,11 +81,13 @@ struct DiscoveryRepositoryPersistenceTests {
         let fetched = try await repository.fetchBulk()
         #expect(fetched.repos.first?.fullName == "bulk/repo")
         #expect(fetched.repos.first?.popularityScore == 8.5)
+        #expect(fetched.repos.first?.categories == ["popular", "new_releases"])
         #expect(fetched.summary.mode(.discover)?.total == 1)
 
         let cached = try #require(await repository.cachedBulk())
         #expect(cached.repos.first?.repoID == 601)
         #expect(cached.repos.first?.releaseScore == 7.5)
+        #expect(cached.repos.first?.categoryRanks["new_releases"] == 2)
         #expect(cached.summary.mode(.popular)?.languages?.first?.key == "Swift")
         #expect(cached.etag == "W/bulk-test")
     }
@@ -218,6 +220,8 @@ struct DiscoveryRepositoryPersistenceTests {
                 "release_score": 7.5,
                 "discovery_score": 9.5,
                 "search_score": 1000,
+                "categories": ["popular", "new_releases"],
+                "category_ranks": { "popular": 1, "new_releases": 2 },
                 "reasons": ["popular"],
                 "signals": [
                   { "code": "release", "label": "Recent release", "value": "1.0.0" }

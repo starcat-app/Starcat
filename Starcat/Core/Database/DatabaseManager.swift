@@ -449,6 +449,19 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
                 ON discovery_bulk_repos(release_score)
                 """)
             try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS discovery_bulk_category_memberships (
+                    repo_id INTEGER NOT NULL,
+                    category TEXT NOT NULL,
+                    item_rank INTEGER,
+                    cached_at TEXT NOT NULL,
+                    PRIMARY KEY (repo_id, category)
+                )
+                """)
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS idx_discovery_bulk_category_lookup
+                ON discovery_bulk_category_memberships(category, item_rank)
+                """)
+            try db.execute(sql: """
                 CREATE TABLE IF NOT EXISTS discovery_bulk_meta (
                     id TEXT PRIMARY KEY,
                     etag TEXT,

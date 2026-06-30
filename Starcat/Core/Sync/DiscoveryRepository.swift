@@ -101,10 +101,23 @@ actor DiscoveryRepository: DiscoveryRepositoryProtocol {
                     .order(Column("discovery_score").desc, Column("stars").desc, Column("repo_id").desc)
                     .fetchAll(db)
                 guard !records.isEmpty else { return nil }
+                let categoryRecords = try DiscoveryBulkCategoryMembershipRecord.fetchAll(db)
+                let categoriesByRepoID = Dictionary(grouping: categoryRecords, by: \.repoID)
 
                 let summary = try Self.readSummary(db: db) ?? DiscoverySummaryDTO(modes: [], generatedAt: meta.generatedAt)
                 return DiscoveryBulkCachedSnapshot(
-                    repos: records.map { $0.toDomain() },
+                    repos: records.map { record in
+                        let memberships = categoriesByRepoID[record.repoID] ?? []
+                        return record.toDomain(
+                            categories: memberships.map(\.category),
+                            categoryRanks: Dictionary(
+                                uniqueKeysWithValues: memberships.compactMap { membership in
+                                    guard let rank = membership.itemRank else { return nil }
+                                    return (membership.category, rank)
+                                }
+                            )
+                        )
+                    },
                     summary: summary,
                     etag: meta.etag,
                     lastFetchedAt: lastFetchedAt,
@@ -168,6 +181,7 @@ actor DiscoveryRepository: DiscoveryRepositoryProtocol {
             try await database.writer.write { db in
                 try db.execute(sql: "DELETE FROM discovery_list_items")
                 try db.execute(sql: "DELETE FROM discovery_list_pages")
+                try db.execute(sql: "DELETE FROM discovery_bulk_category_memberships")
                 try db.execute(sql: "DELETE FROM discovery_bulk_repos")
                 try db.execute(sql: "DELETE FROM discovery_bulk_meta")
                 try db.execute(sql: "DELETE FROM discovery_summary_facets")
@@ -186,8 +200,6 @@ actor DiscoveryRepository: DiscoveryRepositoryProtocol {
             return try await api.fetchMostPopular(query: query)
         case .newReleases:
             return try await api.fetchNewReleases(query: query)
-        case .trending:
-            return try await api.fetchTrendingCandidate(query: query)
         }
     }
 
@@ -258,6 +270,7 @@ actor DiscoveryRepository: DiscoveryRepositoryProtocol {
         let cachedAtString = ISO8601DateFormatter.shared.string(from: cachedAt)
         try await database.writer.write { db in
             try db.execute(sql: "DELETE FROM discovery_bulk_repos")
+            try db.execute(sql: "DELETE FROM discovery_bulk_category_memberships")
             try db.execute(sql: "DELETE FROM discovery_bulk_meta")
             try db.execute(sql: "DELETE FROM discovery_summary_facets")
             try db.execute(sql: "DELETE FROM discovery_summary_modes")
@@ -265,6 +278,15 @@ actor DiscoveryRepository: DiscoveryRepositoryProtocol {
             for repo in bulk.repos {
                 let record = DiscoveryBulkRepoRecord.from(repo, cachedAt: cachedAt)
                 try record.insert(db)
+                for category in repo.categories {
+                    let membership = DiscoveryBulkCategoryMembershipRecord(
+                        repoID: repo.repoID,
+                        category: category,
+                        itemRank: repo.categoryRanks[category],
+                        cachedAt: cachedAtString
+                    )
+                    try membership.insert(db)
+                }
             }
 
             try Self.save(summary: bulk.summary, cachedAtString: cachedAtString, db: db)
