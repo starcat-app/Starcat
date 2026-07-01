@@ -139,6 +139,32 @@ struct CompanionContextProviderTests {
         #expect(context.openssf?.scoreDate == "2026-06-30")
     }
 
+    @Test("cached wiki links are exposed with English titles")
+    func cachedWikiLinksAreExposed() async throws {
+        let deepWikiURL = try #require(URL(string: "https://deepwiki.com/apple/swift"))
+        let zreadURL = try #require(URL(string: "https://zread.ai/apple/swift"))
+        let provider = CompanionContextProvider(
+            lookupRepo: { _, _ in nil },
+            lookupWikiLinks: { owner, repo in
+                #expect(owner == "apple")
+                #expect(repo == "swift")
+                return [
+                    WikiLink(source: .deepWiki, url: deepWikiURL),
+                    WikiLink(source: .zread, url: zreadURL)
+                ]
+            }
+        )
+
+        let context = try await provider.context(owner: "apple", repo: "swift")
+
+        #expect(context.wikiLinks.map { $0.source } == ["deepwiki", "zread"])
+        #expect(context.wikiLinks.map { $0.title } == ["DeepWiki", "ZRead"])
+        #expect(context.wikiLinks.map { $0.url } == [
+            "https://deepwiki.com/apple/swift",
+            "https://zread.ai/apple/swift"
+        ])
+    }
+
     @Test("missing or failed signal cache is omitted")
     func failedSignalsAreOmitted() async throws {
         let repo = makeRepo(isStarred: true)
