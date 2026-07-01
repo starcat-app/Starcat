@@ -40,6 +40,11 @@ Companion token 只授权本机 loopback 接口, 不等同于 GitHub token、AI 
 | 文件 | 说明 |
 |---|---|
 | `manifest.json` | Chrome MV3 入口声明。 |
+| `LICENSE` | 开源许可证。 |
+| `PRIVACY.md` | 隐私与数据边界说明。 |
+| `SECURITY.md` | 安全边界与漏洞反馈说明。 |
+| `CONTRIBUTING.md` | 本地开发与贡献约定。 |
+| `CHANGELOG.md` | 版本变更记录。 |
 | `src/shared/shared.js` | 配置读写、GitHub repo URL 解析、本机 API client。 |
 | `src/options/` | 端口、token 配置与连接测试页。 |
 | `src/content/` | GitHub repo 页面板注入与渲染。 |
