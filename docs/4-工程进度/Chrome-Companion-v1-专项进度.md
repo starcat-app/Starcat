@@ -45,7 +45,8 @@
 
 - [x] `CompanionModels`: repo-context DTO。— 2026-07-01
   > 实现: 新增 ping 与 repo-context Codable DTO, 统一用 snake_case JSON 契约, 并补充 DTO 编码形状测试。
-- [ ] `CompanionContextProvider`: 聚合 Repo / Recommendations / Wiki / Notes / Health / OpenSSF / Actions。
+- [x] `CompanionContextProvider`: 聚合 Repo / Recommendations / Wiki / Notes / Health / OpenSSF / Actions。— 2026-07-01
+  > 实现: 先落地 repo-context 聚合入口、GitHub owner/repo 校验、本地 Repo 映射与空分组 DTO, 后续按推荐/Wiki/Notes/Signals 分组补齐数据源。
 - [ ] 推荐: 复用 `RecommendationContextService` / `RecommendAPI`, 分组级降级。
 - [ ] Wiki: 复用 `WikiAPI`, 只返回 indexed links。
 - [ ] Notes: 已 star repo 返回 editable note。
