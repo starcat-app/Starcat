@@ -23,6 +23,7 @@ import SwiftUI
 struct RepoHealthBadge: View {
     let data: RepoHealthBadgeData
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 3) {
@@ -54,7 +55,7 @@ struct RepoHealthBadge: View {
     }
 
     private var tint: Color {
-        RepoHealthTint.color(grade: data.grade)
+        RepoHealthTint.color(grade: data.grade, colorScheme: colorScheme)
     }
 }
 
@@ -62,24 +63,25 @@ struct RepoHealthBadge: View {
 ///
 /// 小型 badge 与项目健康度窗口必须共享这里的映射，避免列表里可读、窗口里仍偏浅。
 enum RepoHealthTint {
-    /// C/D 档在浅色主题下不能直接用系统 `.yellow`，否则文字与浅色卡片背景对比度偏低。
-    private static let readableAmber = Color(red: 0.74, green: 0.43, blue: 0.00)
-
     /// 所有等级颜色都在这里显式声明，后续只改这一处即可同步所有 health 展示。
-    static func color(grade: String) -> Color {
+    static func color(grade: String, colorScheme: ColorScheme) -> Color {
         switch grade {
-        case "A", "B":
-            return .green
-        case "C", "D":
-            return readableAmber
+        case "A":
+            return resolved(light: 0x16803C, dark: 0x4ADE80, colorScheme: colorScheme)
+        case "B":
+            return resolved(light: 0x2E7D8A, dark: 0x5DD4E8, colorScheme: colorScheme)
+        case "C":
+            return resolved(light: 0xA16207, dark: 0xFACC15, colorScheme: colorScheme)
+        case "D":
+            return resolved(light: 0xC2410C, dark: 0xFB923C, colorScheme: colorScheme)
         default:
-            return .red
+            return resolved(light: 0xB91C1C, dark: 0xF87171, colorScheme: colorScheme)
         }
     }
 
     /// 分数展示也先归一到等级，再复用同一张颜色表，避免窗口与 badge 规则漂移。
-    static func color(score: Double) -> Color {
-        color(grade: grade(for: score))
+    static func color(score: Double, colorScheme: ColorScheme) -> Color {
+        color(grade: grade(for: score), colorScheme: colorScheme)
     }
 
     private static func grade(for score: Double) -> String {
@@ -90,5 +92,10 @@ enum RepoHealthTint {
         case 60..<70: return "D"
         default: return "E"
         }
+    }
+
+    /// light/dark 必须成对声明，避免系统色在浅色主题下过浅或暗色主题下过艳。
+    private static func resolved(light: UInt32, dark: UInt32, colorScheme: ColorScheme) -> Color {
+        Color.fromHex6(colorScheme == .dark ? dark : light)
     }
 }

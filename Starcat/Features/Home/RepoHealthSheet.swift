@@ -27,6 +27,7 @@ struct RepoHealthSheet: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
     @State private var didRequestInitialSnapshot = false
     /// 评分规则 popover（2026-06-21 v5）——与 OpenSSF 行 popover 同一交互模型。
     @State private var isRulesPopoverPresented = false
@@ -594,7 +595,7 @@ struct RepoHealthSheet: View {
     }
 
     private func healthTint(_ score: Double) -> Color {
-        RepoHealthTint.color(score: score)
+        RepoHealthTint.color(score: score, colorScheme: colorScheme)
     }
 
     private func formattedDate(_ date: Date) -> String {
