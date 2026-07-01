@@ -781,6 +781,19 @@ final class HomeViewModel {
         }
     }
 
+    /// 外部场景（Search / Explore / Activity）完成 Star/Unstar 后的统一刷新入口。
+    ///
+    /// Explore 会把 `selection` 切到 `.trending`，这时直接调用 `reloadItems()` 只会刷新
+    /// Trending 占位列表，切回 Starred 时仍可能命中旧的 Manage 缓存。这里先清掉所有
+    /// Star 派生列表缓存；如果当前 selection 仍是 Manage 范畴，再立即重拉当前列表。
+    func refreshAfterExternalStarChange() async {
+        listCache.removeAll()
+        await refreshSidebar()
+
+        guard !selection.isTrending else { return }
+        await reloadItems(forceRefresh: true)
+    }
+
     func userSmartCollection(id: String) -> UserSmartCollection? {
         userSmartCollections.first { $0.id == id }
     }

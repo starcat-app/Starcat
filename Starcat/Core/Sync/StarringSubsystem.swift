@@ -315,8 +315,7 @@ final class StarActionService {
     // ```swift
     // guard isAuthenticated else { signIn(); return }
     // try await dependencies.starActionService.toggle(repo: repo)
-    // await homeViewModel.refreshSidebar()
-    // await homeViewModel.reloadItems(forceRefresh: true)
+    // await homeViewModel.refreshAfterExternalStarChange()
     // ```
     //
     // ## 关键约束

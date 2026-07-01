@@ -16,7 +16,7 @@ struct SearchCenterView: View {
     let onOpenURL: (RepositoryCandidate) -> Void
     let onCopyURL: (RepositoryCandidate) -> Void
     let onOpenAI: (Repo) -> Void
-    let onToggleStar: (Repo) -> Void
+    let onToggleStar: (Repo) async throws -> Bool
     let isStarred: (Int64) -> Bool
     let isGitHubAuthenticated: Bool
 
@@ -117,7 +117,10 @@ struct SearchCenterView: View {
                 isCurrentSortBestMatch: viewModel.githubFilters.sort == .bestMatch,
                 isStarred: candidate.displayRepo.map { isStarred($0.id) } ?? false,
                 onToggleStar: {
-                    if let repo = candidate.displayRepo { onToggleStar(repo) }
+                    guard let repo = candidate.displayRepo else {
+                        return false
+                    }
+                    return try await onToggleStar(repo)
                 },
                 onOpenAI: {
                     if let repo = candidate.displayRepo { onOpenAI(repo) }
@@ -505,9 +508,9 @@ struct SearchCenterView: View {
                                 Divider()
                                 Button("search.contextMenu.aiSummary") { onOpenAI(repo) }
                                 if isStarred(repo.id) {
-                                    Button("search.contextMenu.unstar") { onToggleStar(repo) }
+                                    Button("search.contextMenu.unstar") { toggleStarFromContextMenu(repo) }
                                 } else {
-                                    Button("search.contextMenu.star") { onToggleStar(repo) }
+                                    Button("search.contextMenu.star") { toggleStarFromContextMenu(repo) }
                                 }
                             }
                         } else if case .reference(let reference) = candidate {
@@ -965,6 +968,16 @@ struct SearchCenterView: View {
             remoteDetailCandidate = repository
         } else {
             onOpenCandidate(candidate)
+        }
+    }
+
+    private func toggleStarFromContextMenu(_ repo: Repo) {
+        Task {
+            do {
+                _ = try await onToggleStar(repo)
+            } catch {
+                AppLog.network.error("Search context menu star toggle failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 
@@ -1857,7 +1870,7 @@ private struct SearchRemoteRepoDetailView: View {
     let candidate: RepositoryCandidate
     let isCurrentSortBestMatch: Bool
     let isStarred: Bool
-    let onToggleStar: () -> Void
+    let onToggleStar: () async throws -> Bool
     let onOpenAI: () -> Void
     let onOpenInGitHub: () -> Void
     /// 复制仓库 HTML URL（走宿主回调，宿主可叠加 toast / 日志）。
@@ -1886,6 +1899,11 @@ private struct SearchRemoteRepoDetailView: View {
     /// `.task(id: candidate.identity)` 触发 fetch，未收录 / 失败时保持空数组
     /// → 整行隐藏（与 `RepoWikiMenu` 的"未收录不占 UI"语义一致）。
     @State private var wikiLinks: [WikiLink] = []
+    /// 搜索详情不是本地 Repo 详情页，打开 sheet 时拿到的 `isStarred` 是一次性快照。
+    /// Star/Unstar 成功后用本地覆盖值驱动按钮状态，避免用户需要关掉弹窗再打开才看到变化。
+    @State private var starredOverride: Bool?
+    /// 防止连续点击 Star chip 叠加两次 GitHub 写操作。
+    @State private var isStarToggleInFlight = false
 
     /// 折叠菜单 popover 显隐。点 ··· 触发；菜单项点击后置 false 关闭。
     @State private var isOverflowPresented = false
@@ -1912,6 +1930,10 @@ private struct SearchRemoteRepoDetailView: View {
 
     /// 头像直径。与 `RepoMetadataHeaderView` 的 hero 头像保持一致视觉档次。
     private static let avatarSize: CGFloat = 44
+
+    private var effectiveIsStarred: Bool {
+        starredOverride ?? isStarred
+    }
 
     var body: some View {
         Group {
@@ -2372,11 +2394,11 @@ private struct SearchRemoteRepoDetailView: View {
     private func actionRow(repo: Repo) -> some View {
         HStack(spacing: 8) {
             SearchDetailActionChip(
-                systemImage: isStarred ? "star.fill" : "star",
-                titleKey: isStarred ? "search.detail.action.unstar" : "search.detail.action.star",
-                helpKey: isStarred ? "search.detail.action.unstar" : "search.detail.action.star",
+                systemImage: effectiveIsStarred ? "star.fill" : "star",
+                titleKey: effectiveIsStarred ? "search.detail.action.unstar" : "search.detail.action.star",
+                helpKey: effectiveIsStarred ? "search.detail.action.unstar" : "search.detail.action.star",
                 semanticColor: .actionStar,
-                action: onToggleStar
+                action: toggleStar
             )
             SearchDetailActionChip(
                 systemImage: "sparkles",
@@ -2396,6 +2418,19 @@ private struct SearchRemoteRepoDetailView: View {
             Spacer(minLength: 0)
 
             overflowMenu(repo: repo)
+        }
+    }
+
+    private func toggleStar() {
+        guard !isStarToggleInFlight else { return }
+        isStarToggleInFlight = true
+        Task { @MainActor in
+            defer { isStarToggleInFlight = false }
+            do {
+                starredOverride = try await onToggleStar()
+            } catch {
+                AppLog.network.error("Search detail star toggle failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 

@@ -584,14 +584,11 @@ struct HomeView: View {
         )
     }
 
-    private func toggleSearchRepositoryStar(_ repo: Repo) {
-        Task {
-            do {
-                try await dependencies.starActionService.toggle(repo: repo)
-            } catch {
-                AppLog.network.error("Search star toggle failed: \(error.localizedDescription, privacy: .public)")
-            }
-        }
+    private func toggleSearchRepositoryStar(_ repo: Repo) async throws -> Bool {
+        try await dependencies.starActionService.toggle(repo: repo)
+        await viewModel.refreshAfterExternalStarChange()
+        applyManageDetailSelectionPolicy()
+        return dependencies.starredRegistry.contains(ghRepoId: repo.id)
     }
 
     private var sidebarColumn: some View {

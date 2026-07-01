@@ -191,7 +191,6 @@ struct ActivityDetailScaffoldShell: View {
         updated.isStarred = nowStarred
         displayRepo = updated
 
-        await homeViewModel.refreshSidebar()
-        await homeViewModel.reloadItems(forceRefresh: true)
+        await homeViewModel.refreshAfterExternalStarChange()
     }
 }

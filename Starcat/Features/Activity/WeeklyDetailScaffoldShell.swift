@@ -363,8 +363,7 @@ struct WeeklyDetailScaffoldShell: View {
         updated.isStarred = nowStarred
         displayRepo = updated
 
-        await homeViewModel.refreshSidebar()
-        await homeViewModel.reloadItems(forceRefresh: true)
+        await homeViewModel.refreshAfterExternalStarChange()
         await resolveRepo(for: item)
     }
 }

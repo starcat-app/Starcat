@@ -112,8 +112,7 @@ private struct DiscoveryScaffoldShell: View {
         updated.isStarred = dependencies.starredRegistry.contains(ghRepoId: repo.id)
         displayRepo = updated
 
-        await homeViewModel.refreshSidebar()
-        await homeViewModel.reloadItems(forceRefresh: true)
+        await homeViewModel.refreshAfterExternalStarChange()
         await resolveRepo()
         loadReadmeIfNeeded()
     }

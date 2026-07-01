@@ -118,8 +118,7 @@ struct ActivityReleaseDetailScaffoldShell: View {
         updated.isStarred = nowStarred
         displayRepo = updated
 
-        await homeViewModel.refreshSidebar()
-        await homeViewModel.reloadItems(forceRefresh: true)
+        await homeViewModel.refreshAfterExternalStarChange()
     }
 
     static func releaseDate(_ release: ReleaseRecord) -> Date? {
