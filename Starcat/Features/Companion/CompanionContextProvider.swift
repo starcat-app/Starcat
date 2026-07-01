@@ -17,10 +17,14 @@ enum CompanionContextError: Error, Equatable {
 struct CompanionContextProvider {
     private let lookupRepo: @Sendable (String, String) async throws -> Repo?
     private let lookupNote: @Sendable (Int64) async throws -> RepoNote?
+    private let lookupHealth: @Sendable (Int64) async throws -> RepoHealthSnapshot?
+    private let lookupOpenSSF: @Sendable (Int64) async throws -> OpenSSFScoreRecord?
 
     init(
         repoRepository: any RepoRepositoryProtocol,
-        noteRepository: (any RepoNoteRepositoryProtocol)? = nil
+        noteRepository: (any RepoNoteRepositoryProtocol)? = nil,
+        healthRepository: (any RepoHealthRepositoryProtocol)? = nil,
+        openSSFRepository: (any OpenSSFScoreRepositoryProtocol)? = nil
     ) {
         lookupRepo = { owner, name in
             try await repoRepository.findByOwnerName(owner: owner, name: name)
@@ -28,15 +32,25 @@ struct CompanionContextProvider {
         lookupNote = { repoID in
             try await noteRepository?.find(repoId: repoID)
         }
+        lookupHealth = { repoID in
+            try await healthRepository?.snapshot(for: repoID)
+        }
+        lookupOpenSSF = { repoID in
+            try await openSSFRepository?.record(for: repoID)
+        }
     }
 
     /// 测试专用注入点。用闭包替代假 Repository, 避免为了一个查询实现整套协议。
     init(
         lookupRepo: @escaping @Sendable (String, String) async throws -> Repo?,
-        lookupNote: @escaping @Sendable (Int64) async throws -> RepoNote? = { _ in nil }
+        lookupNote: @escaping @Sendable (Int64) async throws -> RepoNote? = { _ in nil },
+        lookupHealth: @escaping @Sendable (Int64) async throws -> RepoHealthSnapshot? = { _ in nil },
+        lookupOpenSSF: @escaping @Sendable (Int64) async throws -> OpenSSFScoreRecord? = { _ in nil }
     ) {
         self.lookupRepo = lookupRepo
         self.lookupNote = lookupNote
+        self.lookupHealth = lookupHealth
+        self.lookupOpenSSF = lookupOpenSSF
     }
 
     func context(owner rawOwner: String, repo rawRepo: String) async throws -> CompanionRepoContextResponse {
@@ -48,19 +62,42 @@ struct CompanionContextProvider {
 
         let localRepo = try await lookupRepo(owner, name)
         let note = try await noteDTO(for: localRepo)
+        let health = try await healthDTO(for: localRepo)
+        let openssf = try await openSSFDTO(for: localRepo)
         return CompanionRepoContextResponse(
             schemaVersion: 1,
             repo: Self.repoDTO(owner: owner, name: name, localRepo: localRepo),
             recommendations: [],
             wikiLinks: [],
             note: note,
-            health: nil,
-            openssf: nil,
+            health: health,
+            openssf: openssf,
             actions: CompanionActionsDTO(
                 openInStarcat: localRepo != nil,
                 codeflow: localRepo != nil,
                 codebase: localRepo != nil
             )
+        )
+    }
+
+    private func healthDTO(for repo: Repo?) async throws -> CompanionHealthDTO? {
+        guard let repo else { return nil }
+        guard let snapshot = try await lookupHealth(repo.id),
+              snapshot.badgeData != nil else { return nil }
+        return CompanionHealthDTO(
+            score: snapshot.overallScore,
+            grade: snapshot.grade,
+            computedAt: snapshot.computedAt
+        )
+    }
+
+    private func openSSFDTO(for repo: Repo?) async throws -> CompanionOpenSSFDTO? {
+        guard let repo else { return nil }
+        guard let record = try await lookupOpenSSF(repo.id),
+              let badge = record.badgeData else { return nil }
+        return CompanionOpenSSFDTO(
+            score: badge.score,
+            scoreDate: record.scoreDate
         )
     }
 

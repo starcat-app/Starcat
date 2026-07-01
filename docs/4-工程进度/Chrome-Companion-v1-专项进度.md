@@ -53,7 +53,8 @@
 - [ ] Wiki: 复用 `WikiAPI`, 只返回 indexed links。
 - [x] Notes: 已 star repo 返回 editable note。— 2026-07-01
   > 实现: provider 注入 note lookup, 仅本地已 star 的 repo 读取私人笔记并返回 editable note, unstarred/unknown repo 不暴露笔记内容。
-- [ ] Health / OpenSSF: 只读缓存, 不在 GitHub 页面请求中强制刷新。
+- [x] Health / OpenSSF: 只读缓存, 不在 GitHub 页面请求中强制刷新。— 2026-07-01
+  > 实现: provider 注入 Health/OpenSSF 缓存读取闭包, 只返回已有成功缓存, 缺失或失败态静默省略, 不触发网络刷新。
 - [ ] 单测: 局部失败不影响其他分组。
 
 ## 5. PR-3: notes 写入与打开动作

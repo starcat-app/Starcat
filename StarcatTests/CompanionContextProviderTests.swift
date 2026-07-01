@@ -94,6 +94,88 @@ struct CompanionContextProviderTests {
         #expect(context.note == nil)
     }
 
+    @Test("cached health and OpenSSF are exposed without refresh")
+    func cachedSignalsAreExposed() async throws {
+        let repo = makeRepo(isStarred: true)
+        let provider = CompanionContextProvider(
+            lookupRepo: { _, _ in repo },
+            lookupHealth: { repoID in
+                #expect(repoID == 44_838_949)
+                return RepoHealthSnapshot(
+                    repoId: repoID,
+                    overallScore: 82,
+                    grade: "B",
+                    maintenanceScore: 80,
+                    popularityScore: 90,
+                    qualityScore: 76,
+                    securityScore: 84,
+                    payloadJSON: "{}",
+                    computedAt: "2026-07-01T10:00:00Z",
+                    staleAfter: "2026-07-02T10:00:00Z",
+                    fetchStatus: .success,
+                    lastError: nil
+                )
+            },
+            lookupOpenSSF: { repoID in
+                #expect(repoID == 44_838_949)
+                return OpenSSFScoreRecord(
+                    repoId: repoID,
+                    fetchStatus: .success,
+                    aggregateScore: 7.4,
+                    checksJSON: nil,
+                    scoreDate: "2026-06-30",
+                    fetchedAt: "2026-07-01T10:00:00Z",
+                    lastError: nil
+                )
+            }
+        )
+
+        let context = try await provider.context(owner: "apple", repo: "swift")
+
+        #expect(context.health?.score == 82)
+        #expect(context.health?.grade == "B")
+        #expect(context.health?.computedAt == "2026-07-01T10:00:00Z")
+        #expect(context.openssf?.score == 7.4)
+        #expect(context.openssf?.scoreDate == "2026-06-30")
+    }
+
+    @Test("missing or failed signal cache is omitted")
+    func failedSignalsAreOmitted() async throws {
+        let repo = makeRepo(isStarred: true)
+        let provider = CompanionContextProvider(
+            lookupRepo: { _, _ in repo },
+            lookupHealth: { repoID in
+                RepoHealthSnapshot(
+                    repoId: repoID,
+                    overallScore: 0,
+                    grade: "F",
+                    maintenanceScore: 0,
+                    popularityScore: 0,
+                    qualityScore: 0,
+                    securityScore: 0,
+                    payloadJSON: "{}",
+                    computedAt: "2026-07-01T10:00:00Z",
+                    staleAfter: "2026-07-02T10:00:00Z",
+                    fetchStatus: .failed,
+                    lastError: "network"
+                )
+            },
+            lookupOpenSSF: { repoID in
+                OpenSSFScoreRecord.failure(
+                    repoId: repoID,
+                    status: .networkError,
+                    message: "network",
+                    fetchedAt: Date(timeIntervalSince1970: 0)
+                )
+            }
+        )
+
+        let context = try await provider.context(owner: "apple", repo: "swift")
+
+        #expect(context.health == nil)
+        #expect(context.openssf == nil)
+    }
+
     @Test("invalid owner or repo is rejected")
     func invalidRepoPath() async throws {
         let provider = CompanionContextProvider { _, _ in nil }
