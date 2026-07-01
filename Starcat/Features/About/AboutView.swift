@@ -951,6 +951,60 @@ private struct AboutDependency: Identifiable {
             url: URL(string: "https://github.com/ossf/scorecard")
         ),
 
+        // MARK: Starcat 支撑服务 / 浏览器插件
+        //
+        // supports/ 下的独立 API 与浏览器插件虽然不是 App 内 SPM 依赖，但已经作为 Starcat
+        // 功能链路的一部分交付或随仓库分发；按开源致谢同步规则在这里集中登记。
+
+        AboutDependency(
+            name: "starcat-sharing-api",
+            license: "MIT",
+            copyright: "Copyright (c) 2026 dong4j",
+            url: URL(string: "https://github.com/dong4j/starcat-sharing-api")
+        ),
+        AboutDependency(
+            name: "starcat-trending-api",
+            license: "MIT",
+            copyright: "Copyright (c) 2023 Edgar Xie",
+            url: URL(string: "https://github.com/dong4j/starcat-trending-api")
+        ),
+        AboutDependency(
+            name: "starcat-weekly-api",
+            license: "MIT",
+            copyright: "Copyright (c) 2026 dong4j",
+            url: URL(string: "https://github.com/dong4j/starcat-weekly-api")
+        ),
+        AboutDependency(
+            name: "starcat-wiki-api",
+            license: "MIT",
+            copyright: "Copyright (c) 2026 dong4j",
+            url: URL(string: "https://github.com/dong4j/starcat-wiki-api")
+        ),
+        AboutDependency(
+            name: "starcat-recommend-api",
+            license: "MIT",
+            copyright: "Copyright (c) 2026 dong4j",
+            url: URL(string: "https://github.com/dong4j/starcat-recommend-api")
+        ),
+        AboutDependency(
+            name: "starcat-discovery-api",
+            license: "MIT",
+            copyright: "Copyright (c) 2026 dong4j",
+            url: URL(string: "https://github.com/dong4j/starcat-discovery-api")
+        ),
+        AboutDependency(
+            name: "starcat-chrome-plugin",
+            license: "MIT",
+            copyright: "Copyright (c) 2026 dong4j",
+            url: URL(string: "https://github.com/dong4j/starcat-chrome-plugin")
+        ),
+        AboutDependency(
+            name: "starcat-safari-plugin",
+            license: "MIT",
+            copyright: "Copyright (c) 2026 dong4j",
+            url: URL(string: "https://github.com/dong4j/starcat-safari-plugin")
+        ),
+
         // MARK: 第三方品牌标识（非开源代码，但仍登记以保持透明）
         //
         // 外部来源品牌 logo 嵌入在 `Assets.xcassets/WikiSources/`（Wiki 菜单）与
