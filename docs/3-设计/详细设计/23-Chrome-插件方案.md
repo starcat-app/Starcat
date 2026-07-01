@@ -90,19 +90,19 @@ Starcat/Features/Companion/
 
 ### 4.2 启动策略
 
-v1 建议默认不暴露在普通设置页, 先挂在 Debug 或 feature flag 下。
+本机插件服务统一放在 Starcat 设置页:
 
-原因:
+```text
+Settings → Integrations → Browser Plugin
+```
 
-1. Chrome 插件尚未发布。
-2. 本机 HTTP 服务属于新攻击面。
-3. 需要先验证 GitHub DOM 注入稳定性。
+入口命名为 Browser Plugin, 不写死 Chrome。后续 Safari Extension 复用同一套本机 API、端口与 token。
 
 启动规则:
 
 ```swift
 guard !TestEnvironment.isRunning else { return }
-guard settings.companionEnabled else { return }
+guard configuration.isEnabled else { return }
 server.start()
 ```
 
@@ -115,11 +115,11 @@ server.start()
 | 字段 | 存储 | 说明 |
 |---|---|---|
 | `port` | UserDefaults | 默认 5051, 自动尝试 5051...5060 |
-| `token` | AES-GCM 凭证文件 | Companion 专用 bearer token |
-| `enabled` | UserDefaults | Debug/feature flag 阶段默认 false |
+| `token` | AES-GCM 凭证文件 | Browser Plugin 专用 bearer token |
+| `enabled` | UserDefaults | 设置页开关, 默认 false |
 | `serverStatus` | 内存状态 | `stopped/starting/running/failed` |
 
-Companion token 不复用 GitHub Token、AI Key 或服务 API Key。
+Plugin token 不复用 GitHub Token、AI Key 或服务 API Key。
 
 ## 5. 本机 API
 
@@ -646,7 +646,7 @@ rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
 - CompanionLocalServer
 - CompanionRequestParser
 - `/ping`
-- Settings Debug 入口
+- Settings → Integrations → Browser Plugin 入口
 - parser/auth/origin 单测
 
 ### PR-2 repo-context 聚合

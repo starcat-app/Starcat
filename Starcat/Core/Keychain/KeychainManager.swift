@@ -67,10 +67,10 @@ protocol KeychainManaging: Sendable {
     func loadServiceAPIKey(forService serviceID: String) throws -> String?
     func deleteServiceAPIKey(forService serviceID: String) throws
 
-    /// Chrome Companion 本机 HTTP Bearer Token。
+    /// Browser Plugin 本机 HTTP Bearer Token。
     ///
     /// 与 GitHub Token / AI Key / 服务 API Key 使用同一加密文件, 但必须独立命名。
-    /// Companion Token 只授权 loopback 本机接口, 不具备任何远端服务访问能力。
+    /// Plugin Token 只授权 loopback 本机接口, 不具备任何远端服务访问能力。
     func storeCompanionToken(_ token: String) throws
     func loadCompanionToken() throws -> String?
     func deleteCompanionToken() throws

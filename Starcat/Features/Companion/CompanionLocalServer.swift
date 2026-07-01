@@ -2,11 +2,11 @@
 //  CompanionLocalServer.swift
 //  Starcat
 //
-//  Chrome Companion 本机 HTTP 服务骨架。
+//  Browser Plugin 本机 HTTP 服务骨架。
 //
 //  关键约束:
 //  - 只绑定 IPv4 loopback, 不向局域网暴露 Starcat 私人数据;
-//  - 所有业务请求必须通过 Companion Bearer Token;
+//  - 所有业务请求必须通过 Browser Plugin Bearer Token;
 //  - CORS Private Network Access 预检不要求 token, 但仍限制 Origin;
 //  - 当前文件只实现 ping 与通用安全外壳, repo-context/notes/actions 后续增量接入。
 //

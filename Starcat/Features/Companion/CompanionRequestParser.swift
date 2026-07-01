@@ -2,7 +2,7 @@
 //  CompanionRequestParser.swift
 //  Starcat
 //
-//  Chrome Companion 本机 HTTP 服务的最小请求解析器。
+//  Browser Plugin 本机 HTTP 服务的最小请求解析器。
 //
 //  设计约束:
 //  - 本服务只服务 loopback 上的 Chrome 插件, 不需要实现完整 HTTP server 语义;

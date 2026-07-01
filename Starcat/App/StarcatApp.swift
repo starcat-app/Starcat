@@ -370,19 +370,6 @@ struct StarcatApp: App {
                             set: { DebugFlags.setAgentToolbarEntry($0) }
                         )
                     )
-
-                    Toggle(
-                        "Enable Chrome Companion Local Server",
-                        isOn: Binding(
-                            get: { DebugFlags.companionLocalServer },
-                            set: { isEnabled in
-                                DebugFlags.setCompanionLocalServer(isEnabled)
-                                let configuration = CompanionConfiguration()
-                                configuration.isEnabled = isEnabled
-                                CompanionServiceBootstrapper.apply(configuration: configuration)
-                            }
-                        )
-                    )
                 }
             }
         }

@@ -103,10 +103,10 @@ enum DebugFlags {
         #endif
     }
 
-    /// 是否允许启动 Chrome Companion 本机服务。
+    /// 是否允许启动旧版 Companion 调试开关。
     ///
-    /// Companion 仍处在开发期, 所以采用 Debug flag + CompanionConfiguration.isEnabled
-    /// 双门控。这样 Release 包永远不开, Debug 包也必须由开发者明确打开。
+    /// Browser Plugin Service 已迁到 Settings → Integrations, 这里仅保留旧偏好读取能力,
+    /// 避免历史 Debug 菜单状态造成 UserDefaults key 复用问题。
     static var companionLocalServer: Bool {
         #if DEBUG
         return UserDefaults.standard.bool(forKey: companionLocalServerKey)

@@ -18,6 +18,8 @@ struct IntegrationSettingsTab: View {
     @State private var anySearchAPIKey: String = ""
     @State private var showAnySearchAPIKey: Bool = false
     @State private var anySearchAPIKeyTestState: AnySearchAPIKeyTestState = .idle
+    @State private var pluginConfiguration = CompanionConfiguration()
+    @State private var pluginTokenCopied = false
     // HOM-68 v3 (2026-06-15)：CodeFlow"一键清除"按钮搬到 存储 Tab → 缓存用量。
     // 本 Tab 仅保留"精细化操作"（输出目录配置、单项目预览/打开/删除）。
     // → 与 AISettingsView.repoContextManageStorageRow 同款职责划分。
@@ -28,6 +30,7 @@ struct IntegrationSettingsTab: View {
 
     var body: some View {
         Form {
+            browserPluginSection
             anySearchSection
             Section("CodeFlow") {
                 VStack(alignment: .leading, spacing: 5) {
@@ -152,6 +155,11 @@ struct IntegrationSettingsTab: View {
         .task { storage.reload() }
         .task { codebaseMemoryStorage.reload() }
         .task { anySearchAPIKey = settings.anySearchAPIKey() ?? "" }
+        .task {
+            if pluginConfiguration.isEnabled {
+                CompanionServiceBootstrapper.apply(configuration: pluginConfiguration)
+            }
+        }
         .alert("settings.integration.codeFlow.actionFailedTitle", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -159,6 +167,111 @@ struct IntegrationSettingsTab: View {
             Button("common.ok") { actionError = nil }
         } message: {
             Text(actionError ?? String.l10n("common.unknownError"))
+        }
+    }
+
+    private var browserPluginSection: some View {
+        Section("settings.integration.browserPlugin.title") {
+            VStack(alignment: .leading, spacing: 5) {
+                Label("settings.integration.browserPlugin.header", systemImage: "puzzlepiece.extension")
+                    .font(.headline)
+                Text("settings.integration.browserPlugin.subtitle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Toggle(
+                "settings.integration.browserPlugin.enabled",
+                isOn: Binding(
+                    get: { pluginConfiguration.isEnabled },
+                    set: { isEnabled in
+                        pluginConfiguration.isEnabled = isEnabled
+                        CompanionServiceBootstrapper.apply(configuration: pluginConfiguration)
+                    }
+                )
+            )
+
+            VStack(alignment: .leading, spacing: 8) {
+                pluginInfoRow(
+                    titleKey: "settings.integration.browserPlugin.status",
+                    value: pluginStatusText
+                )
+                pluginInfoRow(
+                    titleKey: "settings.integration.browserPlugin.endpoint",
+                    value: "http://127.0.0.1:\(pluginConfiguration.port)/plugin/v1"
+                )
+                pluginInfoRow(
+                    titleKey: "settings.integration.browserPlugin.token",
+                    value: maskedPluginToken
+                )
+            }
+
+            HStack(spacing: 8) {
+                if pluginTokenCopied {
+                    Label("settings.integration.browserPlugin.tokenCopied", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+                Spacer()
+                Button("settings.integration.browserPlugin.copyToken") {
+                    copyPluginToken()
+                }
+                Button("settings.integration.browserPlugin.resetToken") {
+                    resetPluginToken()
+                }
+            }
+
+            Text("settings.integration.browserPlugin.description")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var maskedPluginToken: String {
+        let token = pluginConfiguration.token
+        guard token.count > 12 else { return String(repeating: "•", count: max(token.count, 8)) }
+        return "\(token.prefix(6))••••••\(token.suffix(6))"
+    }
+
+    private var pluginStatusText: String {
+        switch pluginConfiguration.serverStatus {
+        case .stopped:
+            return String.l10n("settings.integration.browserPlugin.status.stopped")
+        case .starting:
+            return String.l10n("settings.integration.browserPlugin.status.starting")
+        case .running:
+            return String.l10n("settings.integration.browserPlugin.status.running")
+        case .failed:
+            return String.l10n("settings.integration.browserPlugin.status.failed")
+        }
+    }
+
+    private func pluginInfoRow(titleKey: LocalizedStringKey, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(titleKey)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 88, alignment: .leading)
+            Text(verbatim: value)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+        }
+    }
+
+    private func copyPluginToken() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(pluginConfiguration.token, forType: .string)
+        pluginTokenCopied = true
+    }
+
+    private func resetPluginToken() {
+        pluginConfiguration.resetToken()
+        copyPluginToken()
+        if pluginConfiguration.isEnabled {
+            CompanionServiceBootstrapper.apply(configuration: pluginConfiguration)
         }
     }
 

@@ -2,7 +2,7 @@
 //  CompanionNoteWriter.swift
 //  Starcat
 //
-//  Chrome Companion 私人笔记写入服务。
+//  Browser Plugin 私人笔记写入服务。
 //
 //  写入必须留在 Starcat App 内执行, Chrome 插件只提交 owner/repo/content。这里统一校验
 //  repo 是否存在、是否仍被当前用户 star, 再调用 RepoNoteRepository.updateContent。该方法

@@ -2,11 +2,11 @@
 //  CompanionConfiguration.swift
 //  Starcat
 //
-//  Chrome Companion 本机配对配置。
+//  Browser Plugin 本机配对配置。
 //
 //  设计约束:
 //  - token 是本机 HTTP Bearer 凭证, 只授权 loopback API, 不能复用 GitHub/AI/服务 Key;
-//  - port 与 enabled 不是秘密, 使用 UserDefaults 便于 Debug 开关和测试注入;
+//  - port 与 enabled 不是秘密, 使用 UserDefaults 便于设置页和测试注入;
 //  - token 生成后写入 Starcat 现有 AES-GCM 凭证文件, 插件只能由用户手动复制;
 //  - 默认 disabled, 避免未发布插件能力在普通用户环境中无意开启本机服务。
 //

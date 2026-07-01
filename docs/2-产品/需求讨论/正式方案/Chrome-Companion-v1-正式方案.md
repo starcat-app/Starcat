@@ -205,7 +205,7 @@ Authorization: Bearer <companion-token>
 
 第一版使用手动配对:
 
-1. Starcat Settings 显示端口和 Companion Token。
+1. Starcat Settings → Integrations → Browser Plugin 显示端口和 Plugin Token。
 2. 用户安装 Chrome 插件。
 3. 用户在插件 Options 中填入端口和 token。
 4. 插件点击 Test Connection 调 `/plugin/v1/ping`。

@@ -2,7 +2,7 @@
 //  CompanionModels.swift
 //  Starcat
 //
-//  Chrome Companion 本机 API DTO。
+//  Browser Plugin 本机 API DTO。
 //
 //  这些类型是 Starcat App 与 Chrome 插件之间的稳定 JSON 契约。字段保持 Swift
 //  camelCase, 由 `CompanionLocalServer` 统一编码成 snake_case, 避免每个 DTO 都手写

@@ -2,7 +2,7 @@
 //  CompanionActionHandler.swift
 //  Starcat
 //
-//  Chrome Companion 打开动作处理。
+//  Browser Plugin 打开动作处理。
 //
 //  本机 HTTP 服务不能直接持有 SwiftUI sheet 状态, 否则会把网络层和页面生命周期绑死。
 //  这里拆成两层: Handler 做请求校验与 repo 查找, Dispatcher 只在 MainActor 上发布

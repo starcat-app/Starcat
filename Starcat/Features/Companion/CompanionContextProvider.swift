@@ -2,7 +2,7 @@
 //  CompanionContextProvider.swift
 //  Starcat
 //
-//  Chrome Companion repo-context 聚合入口。
+//  Browser Plugin repo-context 聚合入口。
 //
 //  当前先完成请求校验与 Repo 基础信息映射。推荐、Wiki、Notes、Health、OpenSSF
 //  后续按分组增量接入, 但对外 DTO 契约从第一步就固定下来。
