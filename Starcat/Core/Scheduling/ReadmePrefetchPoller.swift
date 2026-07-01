@@ -18,8 +18,8 @@ import Foundation
 final class ReadmePrefetchPoller {
     nonisolated static let defaultInterval: TimeInterval = 60 * 60
     nonisolated static let defaultTolerance: TimeInterval = 15 * 60
-    nonisolated static let defaultInitialBatchDelay: TimeInterval = 10 * 60
-    nonisolated static let continuousBatchDelay: TimeInterval = 30
+    nonisolated static let defaultInitialBatchDelay: TimeInterval = 5 * 60
+    nonisolated static let continuousBatchDelay: TimeInterval = 5
 
     private let service: ReadmePrefetchService
     private var scheduler: NSBackgroundActivityScheduler?
@@ -75,11 +75,10 @@ final class ReadmePrefetchPoller {
         AppLog.network.info("ReadmePrefetchPoller stopped")
     }
 
-    /// 安排启动后的首批预拉。
+    /// 安排 stars 同步完成后的首批预拉。
     ///
-    /// 登录恢复时 AuthSession 会先用 cached profile 让 UI 秒开，真实 `/user` 校验和用户 DB
-    /// 切换稍后完成。首批预拉延迟执行，避免在 DB 尚未切稳时查询候选项并把 UI 误置为
-    /// “暂时不可用”。用户仍可通过设置页“立即拉取”绕过等待。
+    /// 新用户首次登录时 stars 会分页写入本地库；README 预拉必须等这条链路完成后再延迟
+    /// 启动，避免候选查询只看到部分 stars。用户仍可通过设置页“立即拉取”绕过等待。
     func scheduleInitialBatch(after delay: TimeInterval = ReadmePrefetchPoller.defaultInitialBatchDelay) {
         guard isRunning, !isDraining, !service.isRunning else { return }
         cancelScheduledInitialBatch()

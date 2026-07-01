@@ -940,6 +940,8 @@ struct HomeView: View {
         // 实际启动由上方 `.onChange(of: authSession.state)` 在恢复完成后触发。
         // 当用户重进 HomeView 时（已登录态稳定）则在这里直接启动。
         // `start()` 对 `.running` 幂等，与 onChange 路径不会双启。
+        // 首批 README 预拉不在这里安排：新用户首次登录后 stars 仍可能在分页同步，
+        // 必须等 SyncManager 完整完成后再延迟启动候选查询。
         startReadmePrefetchIfNeeded()
 
         if !TestEnvironment.isRunning,
@@ -981,11 +983,14 @@ struct HomeView: View {
 
     /// README 预拉与 AI 语义索引是两条后台链路。这里单独封装预拉门控，
     /// 避免把登录态、测试 host、用户开关散落在 SwiftUI modifier 链里。
+    ///
+    /// 本方法只启动系统调度器，不安排首批延迟任务；首批由
+    /// `scheduleReadmeInitialBatchAfterStarsSync()` 在 stars 同步完成后触发。
     private func startReadmePrefetchIfNeeded() {
         guard !TestEnvironment.isRunning,
               authSession.state.isAuthenticated,
               settings.readmePrefetchEnabled else { return }
-        startReadmePrefetchAndKickFirstBatch()
+        dependencies.readmePrefetchPoller.start()
     }
 
     /// 登出或关闭设置时停止调度器。已完成的本地 README 缓存保留；
@@ -1001,19 +1006,25 @@ struct HomeView: View {
               authSession.state.isAuthenticated else { return }
 
         if enabled {
-            startReadmePrefetchAndKickFirstBatch()
+            dependencies.readmePrefetchPoller.start()
+            scheduleReadmeInitialBatchAfterStarsSync()
         } else {
             dependencies.readmePrefetchPoller.stop()
         }
     }
 
-    /// 启动调度器，并把首批 README 预拉延迟到启动稳定后。
+    /// stars 同步完成后，再把首批 README 预拉延迟到启动稳定后。
     ///
-    /// AuthSession 启动恢复会先用 cached profile 点亮 UI，真实 `/user` 校验和用户 DB 切换
-    /// 稍后完成；首批延迟能避开这个窗口，避免候选查询误失败。用户仍可在设置页点“立即拉取”。
-    private func startReadmePrefetchAndKickFirstBatch() {
-        let didStart = dependencies.readmePrefetchPoller.start()
-        guard didStart else { return }
+    /// AuthSession 登录态只代表 token 可用，不代表用户的 stars 已经全部分页写入本地库。新用户首次
+    /// 登录时 SyncManager 可能仍在同步后续页；如果 README 预拉提前查候选项，会只覆盖部分 stars。
+    /// 因此首批延迟任务统一挂在 `.completed` 之后，既保证数据完整，又保留 5 分钟缓冲避免抢前台资源。
+    private func scheduleReadmeInitialBatchAfterStarsSync() {
+        guard !TestEnvironment.isRunning,
+              authSession.state.isAuthenticated,
+              settings.readmePrefetchEnabled,
+              case .completed = syncManager.state else { return }
+
+        dependencies.readmePrefetchPoller.start()
         dependencies.readmePrefetchPoller.scheduleInitialBatch()
     }
 
@@ -1078,6 +1089,7 @@ struct HomeView: View {
 
     private func reloadAfterSyncIfNeeded() async {
         guard case .completed = syncManager.state else { return }
+        scheduleReadmeInitialBatchAfterStarsSync()
         if case .authenticated(let user) = authSession.state {
             await syncGitHubStarListsAndRefreshSidebar(login: user.login)
         } else {

@@ -32,8 +32,8 @@ enum ReadmePrefetchServiceStatus: Equatable, Sendable {
 @Observable
 final class ReadmePrefetchService {
 
-    nonisolated static let defaultBatchLimit = 50
-    nonisolated static let defaultDelayBetweenRepos: TimeInterval = 3
+    nonisolated static let defaultBatchLimit = 100
+    nonisolated static let defaultDelayBetweenRepos: TimeInterval = 1
     nonisolated static let notFoundRetryDelay: TimeInterval = 7 * 24 * 60 * 60
 
     private(set) var status: ReadmePrefetchServiceStatus = .idle
