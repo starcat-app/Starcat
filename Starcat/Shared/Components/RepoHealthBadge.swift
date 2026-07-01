@@ -6,7 +6,7 @@
 //
 //  设计要点：
 //  - 视觉风格与 OpenSSFScoreBadge 对齐：图标 + 分数 + 等级 + 彩色背景 + 细描边。
-//  - 颜色由 score 自动派生（绿 >=80 / 黄 >=60 / 红 <60），保持"分数 = 颜色"映射一致。
+//  - 颜色由 RepoHealthTint 自动派生；C/D 档使用更深的 amber，避免浅色主题下系统黄对比度不足。
 //  - 不带交互：列表场景仅展示；详情页如需点击进 health sheet，由调用方在外层套 Button。
 //
 //  v1.0（2026-06-21，dong4j 反馈"列表 row 也加 Health badge"）：
@@ -53,11 +53,42 @@ struct RepoHealthBadge: View {
         )
     }
 
-    /// 颜色随分数变化：>=80 绿 / >=60 黄 / 其余红。
-    /// 与 RepoHealthSheet.healthTint 完全一致，保持"分数 ↔ 颜色"映射统一。
     private var tint: Color {
-        if data.score >= 80 { return .green }
-        if data.score >= 60 { return .yellow }
-        return .red
+        RepoHealthTint.color(grade: data.grade)
+    }
+}
+
+/// Repo Health 的统一语义色。
+///
+/// 小型 badge 与项目健康度窗口必须共享这里的映射，避免列表里可读、窗口里仍偏浅。
+enum RepoHealthTint {
+    /// C/D 档在浅色主题下不能直接用系统 `.yellow`，否则文字与浅色卡片背景对比度偏低。
+    private static let readableAmber = Color(red: 0.74, green: 0.43, blue: 0.00)
+
+    /// 所有等级颜色都在这里显式声明，后续只改这一处即可同步所有 health 展示。
+    static func color(grade: String) -> Color {
+        switch grade {
+        case "A", "B":
+            return .green
+        case "C", "D":
+            return readableAmber
+        default:
+            return .red
+        }
+    }
+
+    /// 分数展示也先归一到等级，再复用同一张颜色表，避免窗口与 badge 规则漂移。
+    static func color(score: Double) -> Color {
+        color(grade: grade(for: score))
+    }
+
+    private static func grade(for score: Double) -> String {
+        switch score {
+        case 90...: return "A"
+        case 80..<90: return "B"
+        case 70..<80: return "C"
+        case 60..<70: return "D"
+        default: return "E"
+        }
     }
 }
