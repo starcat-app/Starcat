@@ -49,10 +49,15 @@ enum CompanionServiceBootstrapper {
             repoRepository: dependencies.repoRepository,
             noteRepository: dependencies.repoNoteRepository
         )
+        let actionHandler = CompanionActionHandler(
+            repoRepository: dependencies.repoRepository,
+            dispatcher: dependencies.companionActionDispatcher
+        )
         let nextServer = CompanionLocalServer(
             configuration: configuration,
             contextProvider: provider,
-            noteWriter: noteWriter
+            noteWriter: noteWriter,
+            actionHandler: actionHandler
         )
         server?.stop()
         server = nextServer

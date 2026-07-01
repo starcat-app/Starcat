@@ -72,8 +72,10 @@
   > 实现: CompanionNoteWriter 在写库前校验 content.count, 超限返回 content_too_large。
 - [x] 保存规则: 保留原有 `repo_notes.status`。— 2026-07-01
   > 实现: 保存仍走 RepoNoteRepository.updateContent, 只改 content 与 edited_at, 不覆盖 status。
-- [ ] `POST /local/v1/actions/open`: `open-repo` / `codeflow` / `codebase`。
-- [ ] 单测: action route。
+- [x] `POST /local/v1/actions/open`: `open-repo` / `codeflow` / `codebase`。— 2026-07-01
+  > 实现: 新增 CompanionActionHandler 与 MainActor dispatcher, HTTP 层只校验 repo 并投递动作, CodeFlow/Codebase 复用 RepoListView 现有 sheet 门控。
+- [x] 单测: action route。— 2026-07-01
+  > 实现: LocalServer 测试覆盖 action route 成功响应与未 star 拒绝, handler 通过记录器验证 codeflow 投递目标 repo。
 - [x] 单测: note save / 未 star 拒绝。— 2026-07-01
   > 实现: 新增 CompanionNoteWriterTests 与 LocalServer PATCH notes 覆盖, 验证保存、未 star 拒绝、缺失 repo 与超长内容拒绝。
 

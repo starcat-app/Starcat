@@ -170,6 +170,9 @@ struct RepoListView: View {
                 .id(item.id)
                 .appSheetRootEnvironment(dependencies)
         }
+        .onChange(of: dependencies.companionActionDispatcher.pendingRequest) { _, request in
+            handleCompanionActionRequest(request)
+        }
         // W12 PR-4：切页面时主动 exit 非活跃 store，避免"切到 trending 时 weekly 还显示
         // 底部多选栏"的视觉穿帮。同一时刻只允许一份处于 isActive，由本视图集中保证。
         .onChange(of: selectedPage) { _, newPage in
@@ -1618,6 +1621,20 @@ struct RepoListView: View {
         } catch {
             paywallContext = ProPaywallContext(feature: .codebaseMemory, message: error.localizedDescription)
         }
+    }
+
+    /// Chrome Companion 的 action route 运行在本机 HTTP 服务中; UI 呈现仍由页面根视图负责。
+    /// 这里复用 toolbar 的门控与 sheet 承载逻辑, 避免多出一套 CodeFlow/Codebase 打开路径。
+    private func handleCompanionActionRequest(_ request: CompanionActionDispatcher.Request?) {
+        guard let request else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        switch request.kind {
+        case .codeflow:
+            openCodeFlow(for: request.repo)
+        case .codebase:
+            openCodebaseMemory(for: request.repo)
+        }
+        dependencies.companionActionDispatcher.pendingRequest = nil
     }
 }
 

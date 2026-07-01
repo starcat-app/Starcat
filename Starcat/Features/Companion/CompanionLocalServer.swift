@@ -19,6 +19,7 @@ final class CompanionLocalServer {
     private let configuration: CompanionConfiguration
     private let contextProvider: CompanionContextProvider
     private let noteWriter: CompanionNoteWriter?
+    private let actionHandler: CompanionActionHandler?
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "com.starcat.companion.local-server")
     private static let jsonEncoder: JSONEncoder = {
@@ -35,11 +36,13 @@ final class CompanionLocalServer {
     init(
         configuration: CompanionConfiguration,
         contextProvider: CompanionContextProvider = CompanionContextProvider { _, _ in nil },
-        noteWriter: CompanionNoteWriter? = nil
+        noteWriter: CompanionNoteWriter? = nil,
+        actionHandler: CompanionActionHandler? = nil
     ) {
         self.configuration = configuration
         self.contextProvider = contextProvider
         self.noteWriter = noteWriter
+        self.actionHandler = actionHandler
     }
 
     func start() {
@@ -149,6 +152,8 @@ final class CompanionLocalServer {
             return await repoContextResponse(request: request, origin: origin)
         case ("PATCH", "/local/v1/notes"):
             return await saveNoteResponse(request: request, origin: origin)
+        case ("POST", "/local/v1/actions/open"):
+            return await openActionResponse(request: request, origin: origin)
         default:
             return response(status: 404, body: ["error": "not_found"], origin: origin)
         }
@@ -191,6 +196,33 @@ final class CompanionLocalServer {
         } catch CompanionNoteWriteError.repoNotFound {
             return response(status: 404, body: ["error": "repo_not_found"], origin: origin)
         } catch CompanionNoteWriteError.repoNotStarred {
+            return response(status: 403, body: ["error": "repo_not_starred"], origin: origin)
+        } catch {
+            return response(status: 500, body: ["error": "internal_error"], origin: origin)
+        }
+    }
+
+    private func openActionResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
+        guard let actionHandler else {
+            return response(status: 500, body: ["error": "internal_error"], origin: origin)
+        }
+        let payload: CompanionOpenActionRequest
+        do {
+            payload = try Self.jsonDecoder.decode(CompanionOpenActionRequest.self, from: request.body)
+        } catch {
+            return response(status: 400, body: ["error": "bad_json"], origin: origin)
+        }
+
+        do {
+            try await actionHandler.open(owner: payload.owner, repo: payload.repo, action: payload.action)
+            return response(
+                status: 200,
+                body: CompanionOpenActionResponse(schemaVersion: 1, status: "ok", action: payload.action),
+                origin: origin
+            )
+        } catch CompanionActionError.repoNotFound {
+            return response(status: 404, body: ["error": "repo_not_found"], origin: origin)
+        } catch CompanionActionError.repoNotStarred {
             return response(status: 403, body: ["error": "repo_not_starred"], origin: origin)
         } catch {
             return response(status: 500, body: ["error": "internal_error"], origin: origin)

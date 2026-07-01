@@ -31,6 +31,16 @@ struct CompanionLocalServerTests {
         )
     }
 
+    private func makeServer(actionHandler: CompanionActionHandler) throws -> CompanionLocalServer {
+        let keychain = InMemoryKeychain()
+        try keychain.storeCompanionToken("test-token")
+        let defaults = try #require(UserDefaults(suiteName: "CompanionLocalServerTests.\(UUID().uuidString)"))
+        return CompanionLocalServer(
+            configuration: CompanionConfiguration(secureStore: keychain, defaults: defaults),
+            actionHandler: actionHandler
+        )
+    }
+
     @Test("GET /local/v1/ping 带 token 返回 200")
     func pingReturnsOK() async throws {
         let server = try makeServer()
@@ -190,6 +200,49 @@ struct CompanionLocalServerTests {
         #expect(bodyString(response).contains("repo_not_starred"))
     }
 
+    @Test("POST /local/v1/actions/open 打开 codeflow")
+    func postActionOpenCodeFlow() async throws {
+        let recorder = CompanionActionRecorder()
+        let handler = CompanionActionHandler(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: true) },
+            requestCodeFlow: { repo in
+                recorder.record(.codeflow, repo: repo)
+            }
+        )
+        let server = try makeServer(actionHandler: handler)
+        let response = await server.handle(request("""
+        POST /local/v1/actions/open HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","action":"codeflow"}
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(bodyString(response).contains("\"action\":\"codeflow\""))
+        let event = recorder.value
+        #expect(event?.action == .codeflow)
+        #expect(event?.repo.fullName == "apple/swift")
+    }
+
+    @Test("POST /local/v1/actions/open 未 star repo 返回 403")
+    func postActionRejectsUnstarredRepo() async throws {
+        let handler = CompanionActionHandler(
+            lookupRepo: { _, _ in Self.makeRepo(isStarred: false) }
+        )
+        let server = try makeServer(actionHandler: handler)
+        let response = await server.handle(request("""
+        POST /local/v1/actions/open HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        Content-Type: application/json\r
+        \r
+        {"owner":"apple","repo":"swift","action":"codebase"}
+        """))
+
+        #expect(statusCode(response) == 403)
+        #expect(bodyString(response).contains("repo_not_starred"))
+    }
+
     private func request(_ raw: String) -> Data {
         Data(raw.utf8)
     }
@@ -247,5 +300,14 @@ struct CompanionLocalServerTests {
             starredAt: nil,
             cachedAt: nil
         )
+    }
+}
+
+@MainActor
+private final class CompanionActionRecorder {
+    private(set) var value: (action: CompanionActionDispatcher.Request.Kind, repo: Repo)?
+
+    func record(_ action: CompanionActionDispatcher.Request.Kind, repo: Repo) {
+        value = (action, repo)
     }
 }

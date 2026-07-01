@@ -45,6 +45,8 @@ final class AppDependencies {
     let subscriptionManager: SubscriptionManager
     /// 统一 Pro 门控服务。业务层通过它判断是否放行，而不是直接读 `settings.isProUser`。
     let entitlementGate: EntitlementGate
+    /// Chrome Companion 触发 App 内 UI 动作的 MainActor 事件总线。
+    let companionActionDispatcher: CompanionActionDispatcher
     /// 本机 MCP Service。Pro 用户可开启，让本机 Agent 通过 MCP 读取 Starcat 上下文。
     let mcpService: StarcatMCPService
     /// Week 4 引入：README 缓存 Repository。
@@ -498,6 +500,7 @@ final class AppDependencies {
                 session?.state.user?.id
             }
         )
+        self.companionActionDispatcher = CompanionActionDispatcher()
 
         // Week 4 新增：README 子系统
         let readmeRepo = ReadmeRepository(database: db)
