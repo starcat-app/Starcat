@@ -34,6 +34,7 @@ struct CompanionRepoContextResponse: Codable, Equatable {
     let health: CompanionHealthDTO?
     let openssf: CompanionOpenSSFDTO?
     let actions: CompanionActionsDTO
+    let entitlement: CompanionEntitlementDTO
 }
 
 struct CompanionRepoDTO: Codable, Equatable {
@@ -110,4 +111,8 @@ struct CompanionActionsDTO: Codable, Equatable {
     let openInStarcat: Bool
     let codeflow: Bool
     let codebase: Bool
+}
+
+struct CompanionEntitlementDTO: Codable, Equatable {
+    let isPro: Bool
 }

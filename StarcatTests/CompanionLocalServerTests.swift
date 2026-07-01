@@ -66,12 +66,27 @@ struct CompanionLocalServerTests {
         #expect(bodyString(response).contains("unauthorized"))
     }
 
-    @Test("非 extension origin 返回 403")
-    func forbiddenOrigin() async throws {
+    @Test("GitHub 页面 Origin 带 token 可访问")
+    func githubOriginReturnsOK() async throws {
         let server = try makeServer()
         let response = await server.handle(request("""
         GET /plugin/v1/ping HTTP/1.1\r
         Origin: https://github.com\r
+        Authorization: Bearer test-token\r
+        \r
+
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(header(response, "Access-Control-Allow-Origin") == "https://github.com")
+    }
+
+    @Test("非 GitHub Web Origin 返回 403")
+    func forbiddenWebOrigin() async throws {
+        let server = try makeServer()
+        let response = await server.handle(request("""
+        GET /plugin/v1/ping HTTP/1.1\r
+        Origin: https://example.com\r
         Authorization: Bearer test-token\r
         \r
 
@@ -91,6 +106,23 @@ struct CompanionLocalServerTests {
         """))
 
         #expect(statusCode(response) == 204)
+        #expect(header(response, "Access-Control-Allow-Private-Network") == "true")
+    }
+
+    @Test("OPTIONS 预检允许 GitHub 页面 Origin")
+    func optionsAllowsGitHubOrigin() async throws {
+        let server = try makeServer()
+        let response = await server.handle(request("""
+        OPTIONS /plugin/v1/repo-context?owner=microsoft&repo=vscode HTTP/1.1\r
+        Origin: https://github.com\r
+        Access-Control-Request-Method: GET\r
+        Access-Control-Request-Headers: authorization,content-type\r
+        \r
+
+        """))
+
+        #expect(statusCode(response) == 204)
+        #expect(header(response, "Access-Control-Allow-Origin") == "https://github.com")
         #expect(header(response, "Access-Control-Allow-Private-Network") == "true")
     }
 

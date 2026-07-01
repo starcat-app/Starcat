@@ -21,6 +21,7 @@ struct CompanionContextProvider {
     private let lookupOpenSSF: @Sendable (Int64) async throws -> OpenSSFScoreRecord?
     private let lookupWikiLinks: @Sendable (String, String) async -> [WikiLink]
     private let lookupRecommendations: @Sendable (Int64) async throws -> [RepoRecommendationItem]
+    private let isProUser: @Sendable () async -> Bool
 
     init(
         repoRepository: any RepoRepositoryProtocol,
@@ -28,7 +29,8 @@ struct CompanionContextProvider {
         healthRepository: (any RepoHealthRepositoryProtocol)? = nil,
         openSSFRepository: (any OpenSSFScoreRepositoryProtocol)? = nil,
         wikiContextService: WikiContextService? = nil,
-        recommendationContextService: RecommendationContextService? = nil
+        recommendationContextService: RecommendationContextService? = nil,
+        entitlementGate: EntitlementGate? = nil
     ) {
         lookupRepo = { owner, name in
             try await repoRepository.findByOwnerName(owner: owner, name: name)
@@ -43,8 +45,16 @@ struct CompanionContextProvider {
             try await openSSFRepository?.record(for: repoID)
         }
         lookupWikiLinks = { owner, name in
-            await MainActor.run {
-                wikiContextService?.cachedLinks(owner: owner, repo: name) ?? []
+            guard let wikiContextService else { return [] }
+            let cached = await MainActor.run {
+                let cached = wikiContextService.cachedLinks(owner: owner, repo: name)
+                return cached.isEmpty ? nil : cached
+            }
+            if let cached { return cached }
+            do {
+                return try await wikiContextService.refresh(owner: owner, repo: name)
+            } catch {
+                return []
             }
         }
         lookupRecommendations = { repoID in
@@ -53,6 +63,11 @@ struct CompanionContextProvider {
                 return cached.items
             }
             return try await recommendationContextService.refresh(repoID: repoID).items
+        }
+        isProUser = {
+            await MainActor.run {
+                entitlementGate?.isProUser ?? false
+            }
         }
     }
 
@@ -63,7 +78,8 @@ struct CompanionContextProvider {
         lookupHealth: @escaping @Sendable (Int64) async throws -> RepoHealthSnapshot? = { _ in nil },
         lookupOpenSSF: @escaping @Sendable (Int64) async throws -> OpenSSFScoreRecord? = { _ in nil },
         lookupWikiLinks: @escaping @Sendable (String, String) async -> [WikiLink] = { _, _ in [] },
-        lookupRecommendations: @escaping @Sendable (Int64) async throws -> [RepoRecommendationItem] = { _ in [] }
+        lookupRecommendations: @escaping @Sendable (Int64) async throws -> [RepoRecommendationItem] = { _ in [] },
+        isProUser: @escaping @Sendable () async -> Bool = { true }
     ) {
         self.lookupRepo = lookupRepo
         self.lookupNote = lookupNote
@@ -71,6 +87,7 @@ struct CompanionContextProvider {
         self.lookupOpenSSF = lookupOpenSSF
         self.lookupWikiLinks = lookupWikiLinks
         self.lookupRecommendations = lookupRecommendations
+        self.isProUser = isProUser
     }
 
     func context(owner rawOwner: String, repo rawRepo: String) async throws -> CompanionRepoContextResponse {
@@ -81,12 +98,17 @@ struct CompanionContextProvider {
         }
 
         let localRepo = try await lookupRepo(owner, name)
+        let hasProEntitlement = await isProUser()
         let note = await noteDTO(for: localRepo)
-        let health = await healthDTO(for: localRepo)
-        let openssf = await openSSFDTO(for: localRepo)
-        let wikiLinks = await wikiLinkDTOs(owner: owner, name: name)
-        let recommendations = await recommendationDTOs(for: localRepo)
-        let canOpenLocalActions = localRepo?.isStarred == true
+        // Companion API is reachable from the browser extension, so Pro-only data
+        // is cut at the local API boundary instead of relying on content-script UI
+        // hiding. Private notes remain available for starred repos because they are
+        // first-party local data, not one of the paid external insight surfaces.
+        let health = hasProEntitlement ? await healthDTO(for: localRepo) : nil
+        let openssf = hasProEntitlement ? await openSSFDTO(for: localRepo) : nil
+        let wikiLinks = hasProEntitlement ? await wikiLinkDTOs(owner: owner, name: name) : []
+        let recommendations = hasProEntitlement ? await recommendationDTOs(for: localRepo) : []
+        let canOpenLocalActions = localRepo?.isStarred == true && hasProEntitlement
         return CompanionRepoContextResponse(
             schemaVersion: 1,
             repo: Self.repoDTO(owner: owner, name: name, localRepo: localRepo),
@@ -99,7 +121,8 @@ struct CompanionContextProvider {
                 openInStarcat: canOpenLocalActions,
                 codeflow: canOpenLocalActions,
                 codebase: canOpenLocalActions
-            )
+            ),
+            entitlement: CompanionEntitlementDTO(isPro: hasProEntitlement)
         )
     }
 

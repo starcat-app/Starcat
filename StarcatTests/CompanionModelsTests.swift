@@ -43,13 +43,15 @@ struct CompanionModelsTests {
             note: CompanionNoteDTO(editable: true, content: "note", editedAt: "2026-07-01T10:00:00Z"),
             health: CompanionHealthDTO(score: 82, grade: "B", computedAt: "2026-07-01T10:00:00Z"),
             openssf: CompanionOpenSSFDTO(score: 7.4, scoreDate: "2026-06-30"),
-            actions: CompanionActionsDTO(openInStarcat: true, codeflow: true, codebase: true)
+            actions: CompanionActionsDTO(openInStarcat: true, codeflow: true, codebase: true),
+            entitlement: CompanionEntitlementDTO(isPro: true)
         )
 
         let data = try CompanionJSONTestEncoder.encode(response)
         let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let repo = try #require(object["repo"] as? [String: Any])
         let actions = try #require(object["actions"] as? [String: Any])
+        let entitlement = try #require(object["entitlement"] as? [String: Any])
 
         #expect(repo["full_name"] as? String == "apple/swift")
         #expect(repo["repo_id"] as? Int == 44_838_949)
@@ -58,6 +60,7 @@ struct CompanionModelsTests {
         #expect(repo["is_starred"] as? Bool == true)
         #expect(object["wiki_links"] is [[String: Any]])
         #expect(actions["open_in_starcat"] as? Bool == true)
+        #expect(entitlement["is_pro"] as? Bool == true)
     }
 }
 

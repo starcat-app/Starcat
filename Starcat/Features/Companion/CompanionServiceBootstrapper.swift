@@ -38,7 +38,8 @@ enum CompanionServiceBootstrapper {
             healthRepository: dependencies.repoHealthRepository,
             openSSFRepository: dependencies.openSSFScoreRepository,
             wikiContextService: dependencies.wikiContextService,
-            recommendationContextService: dependencies.recommendationContextService
+            recommendationContextService: dependencies.recommendationContextService,
+            entitlementGate: dependencies.entitlementGate
         )
         let noteWriter = CompanionNoteWriter(
             repoRepository: dependencies.repoRepository,
@@ -46,7 +47,8 @@ enum CompanionServiceBootstrapper {
         )
         let actionHandler = CompanionActionHandler(
             repoRepository: dependencies.repoRepository,
-            dispatcher: dependencies.companionActionDispatcher
+            dispatcher: dependencies.companionActionDispatcher,
+            entitlementGate: dependencies.entitlementGate
         )
         let nextServer = CompanionLocalServer(
             configuration: configuration,

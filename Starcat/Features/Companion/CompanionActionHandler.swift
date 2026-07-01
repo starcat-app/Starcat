@@ -22,6 +22,7 @@ enum CompanionActionError: Error, Equatable {
     case invalidAction
     case repoNotFound
     case repoNotStarred
+    case requiresPro(ProFeature)
 }
 
 @MainActor
@@ -54,10 +55,12 @@ struct CompanionActionHandler {
     private let openURL: @MainActor @Sendable (URL) -> Void
     private let requestCodeFlow: @MainActor @Sendable (Repo) -> Void
     private let requestCodebase: @MainActor @Sendable (Repo) -> Void
+    private let isProUser: @Sendable () async -> Bool
 
     init(
         repoRepository: any RepoRepositoryProtocol,
-        dispatcher: CompanionActionDispatcher
+        dispatcher: CompanionActionDispatcher,
+        entitlementGate: EntitlementGate? = nil
     ) {
         self.init(
             lookupRepo: { owner, name in
@@ -71,6 +74,11 @@ struct CompanionActionHandler {
             },
             requestCodebase: { repo in
                 dispatcher.requestCodebase(for: repo)
+            },
+            isProUser: {
+                await MainActor.run {
+                    entitlementGate?.isProUser ?? false
+                }
             }
         )
     }
@@ -79,12 +87,14 @@ struct CompanionActionHandler {
         lookupRepo: @escaping @Sendable (String, String) async throws -> Repo?,
         openURL: @escaping @MainActor @Sendable (URL) -> Void = { _ in },
         requestCodeFlow: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
-        requestCodebase: @escaping @MainActor @Sendable (Repo) -> Void = { _ in }
+        requestCodebase: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
+        isProUser: @escaping @Sendable () async -> Bool = { true }
     ) {
         self.lookupRepo = lookupRepo
         self.openURL = openURL
         self.requestCodeFlow = requestCodeFlow
         self.requestCodebase = requestCodebase
+        self.isProUser = isProUser
     }
 
     func open(owner: String, repo name: String, action: CompanionOpenAction) async throws {
@@ -100,8 +110,10 @@ struct CompanionActionHandler {
             let url = URL(string: repo.htmlUrl) ?? GitHubURLs.repo(owner: repo.owner, repo: repo.name)
             await openURL(url)
         case .codeflow:
+            guard await isProUser() else { throw CompanionActionError.requiresPro(.codeFlow) }
             await requestCodeFlow(repo)
         case .codebase:
+            guard await isProUser() else { throw CompanionActionError.requiresPro(.codebaseMemory) }
             await requestCodebase(repo)
         }
     }

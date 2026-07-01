@@ -33,6 +33,7 @@ struct CompanionContextProviderTests {
         #expect(context.health == nil)
         #expect(context.openssf == nil)
         #expect(context.actions.openInStarcat == false)
+        #expect(context.entitlement.isPro == true)
     }
 
     @Test("known local repo maps Starcat fields")
@@ -53,6 +54,53 @@ struct CompanionContextProviderTests {
         #expect(context.actions.openInStarcat == true)
         #expect(context.actions.codeflow == true)
         #expect(context.actions.codebase == true)
+        #expect(context.entitlement.isPro == true)
+    }
+
+    @Test("non-Pro context keeps local notes but cuts paid insight data at source")
+    func nonProContextCutsPaidInsightData() async throws {
+        let repo = makeRepo(isStarred: true)
+        let provider = CompanionContextProvider(
+            lookupRepo: { _, _ in repo },
+            lookupNote: { repoID in
+                RepoNote(
+                    repoId: repoID,
+                    content: "free local note",
+                    status: RepoStatus.unread.rawValue,
+                    isAIGenerated: false,
+                    editedAt: nil
+                )
+            },
+            lookupHealth: { _ in
+                Issue.record("non-Pro context must not read Health")
+                return nil
+            },
+            lookupOpenSSF: { _ in
+                Issue.record("non-Pro context must not read OpenSSF")
+                return nil
+            },
+            lookupWikiLinks: { _, _ in
+                Issue.record("non-Pro context must not read Wiki links")
+                return []
+            },
+            lookupRecommendations: { _ in
+                Issue.record("non-Pro context must not read recommendations")
+                return []
+            },
+            isProUser: { false }
+        )
+
+        let context = try await provider.context(owner: "apple", repo: "swift")
+
+        #expect(context.entitlement.isPro == false)
+        #expect(context.note?.content == "free local note")
+        #expect(context.recommendations.isEmpty)
+        #expect(context.wikiLinks.isEmpty)
+        #expect(context.health == nil)
+        #expect(context.openssf == nil)
+        #expect(context.actions.openInStarcat == false)
+        #expect(context.actions.codeflow == false)
+        #expect(context.actions.codebase == false)
     }
 
     @Test("starred repo returns editable private note")
@@ -244,7 +292,8 @@ struct CompanionContextProviderTests {
         let context = try await provider.context(owner: "apple", repo: "swift")
 
         #expect(context.repo.knownToStarcat == true)
-        #expect(context.note == nil)
+        #expect(context.note?.editable == true)
+        #expect(context.note?.content == "")
         #expect(context.health == nil)
         #expect(context.openssf == nil)
         #expect(context.recommendations.count == 1)
