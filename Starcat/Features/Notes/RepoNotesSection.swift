@@ -121,6 +121,23 @@ struct RepoNotesSection: View {
                 await viewModel?.markAsReadIfNeeded(repoId: repo.id)
             }
         }
+        // Browser Plugin / MCP 等外部入口写入 notes 后，repository 会发出正文变更通知。
+        // 当前视图没有本地未保存输入时直接同步，避免用户还要手动刷新详情页；如果本地正在编辑，
+        // 以当前输入为准，避免外部更新覆盖用户尚未落库的内容。
+        .task(id: repo.id) {
+            let stream = NotificationCenter.default.notifications(named: .repoNoteContentDidChange)
+            for await note in stream {
+                guard !Task.isCancelled else { break }
+                guard let payloadId = note.userInfo?["repoId"] as? Int64,
+                      payloadId == repo.id,
+                      !hasUnsavedChanges else { continue }
+                let content = note.userInfo?["content"] as? String ?? ""
+                let editedAt = note.userInfo?["editedAt"] as? String
+                viewModel?.applyExternalContent(repoId: repo.id, content: content, editedAt: editedAt)
+                editingContent = content
+                saveState = .idle
+            }
+        }
         // 文本变化 → 标记 dirty → 进入下方 debounce 流程
         .onChange(of: editingContent) { _, _ in
             guard viewModel != nil else { return }
@@ -496,6 +513,18 @@ final class RepoNotesSectionViewModel {
         } catch {
             errorMessage = "repo.notes.saveContentFailed"
         }
+    }
+
+    func applyExternalContent(repoId: Int64, content: String, editedAt: String?) {
+        let normalized: String? = content.isEmpty ? nil : content
+        note = RepoNote(
+            repoId: repoId,
+            content: normalized,
+            status: note?.status ?? RepoStatus.unread.rawValue,
+            isAIGenerated: note?.isAIGenerated ?? false,
+            editedAt: editedAt ?? note?.editedAt
+        )
+        errorMessage = nil
     }
 }
 
