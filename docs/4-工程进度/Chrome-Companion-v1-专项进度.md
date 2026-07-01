@@ -1,0 +1,77 @@
+# Chrome Companion v1 专项进度
+
+> 状态: 进行中
+> 创建: 2026-07-01
+> 需求讨论: `docs/2-产品/需求讨论/Chrome-Companion-v1-精简版需求讨论.md`
+> 正式方案: `docs/2-产品/需求讨论/正式方案/Chrome-Companion-v1-正式方案.md`
+> 详细设计: `docs/3-设计/详细设计/23-Chrome-插件方案.md`
+
+## 1. 目标
+
+实现 Chrome Companion v1, 只做 GitHub repo 页上的 Starcat 上下文增强:
+
+1. 相似仓库推荐。
+2. Wiki 入口。
+3. 私人笔记读取与保存。
+4. Health / OpenSSF 分数。
+5. CodeFlow / Codebase 入口。
+
+## 2. 不做范围
+
+- [x] 不合并 `901efc38` 的旧 Chrome Companion 提交 — 2026-07-01
+  > 实现: v1 方案已改为重写, 只复用产品启发, 不继承旧提交中的 Capture/AI Summary/Release badge/右键菜单等大而全能力。
+- [ ] 不做 Inbox / Capture。
+- [ ] 不做 AI Summary 触发。
+- [ ] 不做 Release unread badge。
+- [ ] 不做右键菜单。
+- [ ] 不做插件直连 GitHub API / Starcat 后端 / OpenSSF / AI provider。
+
+## 3. PR-1: Starcat 本机服务骨架
+
+- [ ] `CompanionConfiguration`: token / port / enabled / status。
+- [ ] `CompanionRequestParser`: HTTP request 解析, 重复 query/header 不崩溃。
+- [ ] `CompanionLocalServer`: loopback only + Bearer auth + Origin 限制。
+- [ ] `/local/v1/ping`: 插件 Options 连接测试。
+- [ ] Debug / feature flag 启动门控, 测试 host 跳过。
+- [ ] 单测: parser / auth / origin / ping。
+
+## 4. PR-2: repo-context 聚合
+
+- [ ] `CompanionModels`: repo-context DTO。
+- [ ] `CompanionContextProvider`: 聚合 Repo / Recommendations / Wiki / Notes / Health / OpenSSF / Actions。
+- [ ] 推荐: 复用 `RecommendationContextService` / `RecommendAPI`, 分组级降级。
+- [ ] Wiki: 复用 `WikiAPI`, 只返回 indexed links。
+- [ ] Notes: 已 star repo 返回 editable note。
+- [ ] Health / OpenSSF: 只读缓存, 不在 GitHub 页面请求中强制刷新。
+- [ ] 单测: 局部失败不影响其他分组。
+
+## 5. PR-3: notes 写入与打开动作
+
+- [ ] `PATCH /local/v1/notes`: 保存私人笔记。
+- [ ] 保存规则: repo 必须存在且 `isStarred == true`。
+- [ ] 保存规则: 最大 20000 字符。
+- [ ] 保存规则: 保留原有 `repo_notes.status`。
+- [ ] `POST /local/v1/actions/open`: `open-repo` / `codeflow` / `codebase`。
+- [ ] 单测: note save / 未 star 拒绝 / action route。
+
+## 6. PR-4: Chrome Extension
+
+- [ ] `extensions/starcat-companion/manifest.json`。
+- [ ] `options.html/js/css`: 端口 + token + Test Connection。
+- [ ] `shared.js`: connection / Starcat client / repo parser。
+- [ ] `content-script.js/css`: GitHub repo 页注入 Starcat 面板。
+- [ ] debounce + in-flight 去重 + 未配置 token 冷却。
+- [ ] 面板分组: Similar / Wiki / Notes / Signals / Actions。
+- [ ] 手测: App 未运行 / token 错误 / 正确配对 / 保存笔记 / 打开 CodeFlow/Codebase。
+
+## 7. 验证记录
+
+- [ ] `rtk git diff --check`
+- [ ] `rtk xcodegen generate`
+- [ ] `rtk jq empty Starcat/Resources/Localizable.xcstrings`
+- [ ] Companion 定向单测
+- [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build`
+
+## 8. 变更记录
+
+- 2026-07-01: 建立 Chrome Companion v1 专项进度, 明确重写路线与 PR 切分。
