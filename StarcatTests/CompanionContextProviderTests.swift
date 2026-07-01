@@ -214,6 +214,39 @@ struct CompanionContextProviderTests {
         #expect(context.recommendations.isEmpty)
     }
 
+    @Test("note and signal failures are isolated")
+    func noteAndSignalFailuresAreIsolated() async throws {
+        let repo = makeRepo(isStarred: true)
+        let provider = CompanionContextProvider(
+            lookupRepo: { _, _ in repo },
+            lookupNote: { _ in throw FixtureError.expectedFailure },
+            lookupHealth: { _ in throw FixtureError.expectedFailure },
+            lookupOpenSSF: { _ in throw FixtureError.expectedFailure },
+            lookupRecommendations: { _ in [
+                RepoRecommendationItem(
+                    repoID: 1,
+                    fullName: "owner/repo",
+                    description: nil,
+                    language: nil,
+                    stars: 1,
+                    forks: 0,
+                    archived: false,
+                    score: 0.9,
+                    source: "simrepo",
+                    reasons: []
+                )
+            ] }
+        )
+
+        let context = try await provider.context(owner: "apple", repo: "swift")
+
+        #expect(context.repo.knownToStarcat == true)
+        #expect(context.note == nil)
+        #expect(context.health == nil)
+        #expect(context.openssf == nil)
+        #expect(context.recommendations.count == 1)
+    }
+
     @Test("missing or failed signal cache is omitted")
     func failedSignalsAreOmitted() async throws {
         let repo = makeRepo(isStarred: true)

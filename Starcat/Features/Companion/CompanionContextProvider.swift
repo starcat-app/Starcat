@@ -81,9 +81,9 @@ struct CompanionContextProvider {
         }
 
         let localRepo = try await lookupRepo(owner, name)
-        let note = try await noteDTO(for: localRepo)
-        let health = try await healthDTO(for: localRepo)
-        let openssf = try await openSSFDTO(for: localRepo)
+        let note = await noteDTO(for: localRepo)
+        let health = await healthDTO(for: localRepo)
+        let openssf = await openSSFDTO(for: localRepo)
         let wikiLinks = await wikiLinkDTOs(owner: owner, name: name)
         let recommendations = await recommendationDTOs(for: localRepo)
         return CompanionRepoContextResponse(
@@ -134,9 +134,9 @@ struct CompanionContextProvider {
         }
     }
 
-    private func healthDTO(for repo: Repo?) async throws -> CompanionHealthDTO? {
+    private func healthDTO(for repo: Repo?) async -> CompanionHealthDTO? {
         guard let repo else { return nil }
-        guard let snapshot = try await lookupHealth(repo.id),
+        guard let snapshot = try? await lookupHealth(repo.id),
               snapshot.badgeData != nil else { return nil }
         return CompanionHealthDTO(
             score: snapshot.overallScore,
@@ -145,9 +145,9 @@ struct CompanionContextProvider {
         )
     }
 
-    private func openSSFDTO(for repo: Repo?) async throws -> CompanionOpenSSFDTO? {
+    private func openSSFDTO(for repo: Repo?) async -> CompanionOpenSSFDTO? {
         guard let repo else { return nil }
-        guard let record = try await lookupOpenSSF(repo.id),
+        guard let record = try? await lookupOpenSSF(repo.id),
               let badge = record.badgeData else { return nil }
         return CompanionOpenSSFDTO(
             score: badge.score,
@@ -155,9 +155,9 @@ struct CompanionContextProvider {
         )
     }
 
-    private func noteDTO(for repo: Repo?) async throws -> CompanionNoteDTO? {
+    private func noteDTO(for repo: Repo?) async -> CompanionNoteDTO? {
         guard let repo, repo.isStarred else { return nil }
-        let note = try await lookupNote(repo.id)
+        let note = try? await lookupNote(repo.id)
         return CompanionNoteDTO(
             editable: true,
             content: note?.content ?? "",
