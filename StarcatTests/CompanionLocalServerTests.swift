@@ -41,11 +41,11 @@ struct CompanionLocalServerTests {
         )
     }
 
-    @Test("GET /local/v1/ping 带 token 返回 200")
+    @Test("GET /plugin/v1/ping 带 token 返回 200")
     func pingReturnsOK() async throws {
         let server = try makeServer()
         let response = await server.handle(request("""
-        GET /local/v1/ping HTTP/1.1\r
+        GET /plugin/v1/ping HTTP/1.1\r
         Origin: chrome-extension://abc\r
         Authorization: Bearer test-token\r
         \r
@@ -60,7 +60,7 @@ struct CompanionLocalServerTests {
     @Test("缺 token 返回 401")
     func missingTokenReturnsUnauthorized() async throws {
         let server = try makeServer()
-        let response = await server.handle(request("GET /local/v1/ping HTTP/1.1\r\n\r\n"))
+        let response = await server.handle(request("GET /plugin/v1/ping HTTP/1.1\r\n\r\n"))
 
         #expect(statusCode(response) == 401)
         #expect(bodyString(response).contains("unauthorized"))
@@ -70,7 +70,7 @@ struct CompanionLocalServerTests {
     func forbiddenOrigin() async throws {
         let server = try makeServer()
         let response = await server.handle(request("""
-        GET /local/v1/ping HTTP/1.1\r
+        GET /plugin/v1/ping HTTP/1.1\r
         Origin: https://github.com\r
         Authorization: Bearer test-token\r
         \r
@@ -84,7 +84,7 @@ struct CompanionLocalServerTests {
     func optionsDoesNotRequireToken() async throws {
         let server = try makeServer()
         let response = await server.handle(request("""
-        OPTIONS /local/v1/ping HTTP/1.1\r
+        OPTIONS /plugin/v1/ping HTTP/1.1\r
         Origin: chrome-extension://abc\r
         \r
 
@@ -98,7 +98,7 @@ struct CompanionLocalServerTests {
     func unknownPathReturnsNotFound() async throws {
         let server = try makeServer()
         let response = await server.handle(request("""
-        GET /local/v1/missing HTTP/1.1\r
+        GET /plugin/v1/missing HTTP/1.1\r
         Authorization: Bearer test-token\r
         \r
 
@@ -107,7 +107,7 @@ struct CompanionLocalServerTests {
         #expect(statusCode(response) == 404)
     }
 
-    @Test("GET /local/v1/repo-context 返回 provider 上下文")
+    @Test("GET /plugin/v1/repo-context 返回 provider 上下文")
     func repoContextReturnsProviderPayload() async throws {
         let keychain = InMemoryKeychain()
         try keychain.storeCompanionToken("test-token")
@@ -122,7 +122,7 @@ struct CompanionLocalServerTests {
         )
 
         let response = await server.handle(request("""
-        GET /local/v1/repo-context?owner=apple&repo=swift HTTP/1.1\r
+        GET /plugin/v1/repo-context?owner=apple&repo=swift HTTP/1.1\r
         Origin: chrome-extension://abc\r
         Authorization: Bearer test-token\r
         \r
@@ -134,11 +134,11 @@ struct CompanionLocalServerTests {
         #expect(bodyString(response).contains("\"known_to_starcat\":false"))
     }
 
-    @Test("GET /local/v1/repo-context 缺 owner/repo 返回 400")
+    @Test("GET /plugin/v1/repo-context 缺 owner/repo 返回 400")
     func repoContextRequiresOwnerAndRepo() async throws {
         let server = try makeServer()
         let response = await server.handle(request("""
-        GET /local/v1/repo-context?owner=apple HTTP/1.1\r
+        GET /plugin/v1/repo-context?owner=apple HTTP/1.1\r
         Authorization: Bearer test-token\r
         \r
 
@@ -148,7 +148,7 @@ struct CompanionLocalServerTests {
         #expect(bodyString(response).contains("missing_repo"))
     }
 
-    @Test("PATCH /local/v1/notes 保存私人笔记")
+    @Test("PATCH /plugin/v1/notes 保存私人笔记")
     func patchNotesSavesPrivateNote() async throws {
         let writer = CompanionNoteWriter(
             lookupRepo: { _, _ in Self.makeRepo(isStarred: true) },
@@ -168,7 +168,7 @@ struct CompanionLocalServerTests {
         )
         let server = try makeServer(noteWriter: writer)
         let response = await server.handle(request("""
-        PATCH /local/v1/notes HTTP/1.1\r
+        PATCH /plugin/v1/notes HTTP/1.1\r
         Authorization: Bearer test-token\r
         Content-Type: application/json\r
         \r
@@ -180,7 +180,7 @@ struct CompanionLocalServerTests {
         #expect(bodyString(response).contains("\"content\":\"hello\""))
     }
 
-    @Test("PATCH /local/v1/notes 未 star repo 返回 403")
+    @Test("PATCH /plugin/v1/notes 未 star repo 返回 403")
     func patchNotesRejectsUnstarredRepo() async throws {
         let writer = CompanionNoteWriter(
             lookupRepo: { _, _ in Self.makeRepo(isStarred: false) },
@@ -189,7 +189,7 @@ struct CompanionLocalServerTests {
         )
         let server = try makeServer(noteWriter: writer)
         let response = await server.handle(request("""
-        PATCH /local/v1/notes HTTP/1.1\r
+        PATCH /plugin/v1/notes HTTP/1.1\r
         Authorization: Bearer test-token\r
         Content-Type: application/json\r
         \r
@@ -200,7 +200,7 @@ struct CompanionLocalServerTests {
         #expect(bodyString(response).contains("repo_not_starred"))
     }
 
-    @Test("POST /local/v1/actions/open 打开 codeflow")
+    @Test("POST /plugin/v1/actions/open 打开 codeflow")
     func postActionOpenCodeFlow() async throws {
         let recorder = CompanionActionRecorder()
         let handler = CompanionActionHandler(
@@ -211,7 +211,7 @@ struct CompanionLocalServerTests {
         )
         let server = try makeServer(actionHandler: handler)
         let response = await server.handle(request("""
-        POST /local/v1/actions/open HTTP/1.1\r
+        POST /plugin/v1/actions/open HTTP/1.1\r
         Authorization: Bearer test-token\r
         Content-Type: application/json\r
         \r
@@ -225,14 +225,14 @@ struct CompanionLocalServerTests {
         #expect(event?.repo.fullName == "apple/swift")
     }
 
-    @Test("POST /local/v1/actions/open 未 star repo 返回 403")
+    @Test("POST /plugin/v1/actions/open 未 star repo 返回 403")
     func postActionRejectsUnstarredRepo() async throws {
         let handler = CompanionActionHandler(
             lookupRepo: { _, _ in Self.makeRepo(isStarred: false) }
         )
         let server = try makeServer(actionHandler: handler)
         let response = await server.handle(request("""
-        POST /local/v1/actions/open HTTP/1.1\r
+        POST /plugin/v1/actions/open HTTP/1.1\r
         Authorization: Bearer test-token\r
         Content-Type: application/json\r
         \r

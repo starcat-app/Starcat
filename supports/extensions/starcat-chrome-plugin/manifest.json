@@ -11,10 +11,10 @@
   "content_scripts": [
     {
       "matches": ["https://github.com/*"],
-      "js": ["shared.js", "content-script.js"],
-      "css": ["content-script.css"],
+      "js": ["src/shared/shared.js", "src/content/content-script.js"],
+      "css": ["src/content/content-script.css"],
       "run_at": "document_idle"
     }
   ],
-  "options_page": "options.html"
+  "options_page": "src/options/options.html"
 }

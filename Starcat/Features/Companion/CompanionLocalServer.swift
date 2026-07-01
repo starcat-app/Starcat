@@ -142,17 +142,17 @@ final class CompanionLocalServer {
         }
 
         switch (request.method, request.path) {
-        case ("GET", "/local/v1/ping"):
+        case ("GET", "/plugin/v1/ping"):
             return response(
                 status: 200,
                 body: CompanionPingResponse.ok,
                 origin: origin
             )
-        case ("GET", "/local/v1/repo-context"):
+        case ("GET", "/plugin/v1/repo-context"):
             return await repoContextResponse(request: request, origin: origin)
-        case ("PATCH", "/local/v1/notes"):
+        case ("PATCH", "/plugin/v1/notes"):
             return await saveNoteResponse(request: request, origin: origin)
-        case ("POST", "/local/v1/actions/open"):
+        case ("POST", "/plugin/v1/actions/open"):
             return await openActionResponse(request: request, origin: origin)
         default:
             return response(status: 404, body: ["error": "not_found"], origin: origin)

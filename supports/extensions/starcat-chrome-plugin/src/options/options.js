@@ -1,7 +1,7 @@
 /*
  * Options page controller.
  *
- * The test button only calls /local/v1/ping. It does not fetch GitHub data or
+ * The test button only calls /plugin/v1/ping. It does not fetch GitHub data or
  * trigger Starcat business actions, so users can safely validate pairing.
  */
 

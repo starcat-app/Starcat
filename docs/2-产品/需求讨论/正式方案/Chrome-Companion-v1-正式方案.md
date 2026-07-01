@@ -185,7 +185,7 @@ github.com/issues
 插件只与 Starcat 本机服务通信:
 
 ```text
-http://127.0.0.1:{port}/local/v1/...
+http://127.0.0.1:{port}/plugin/v1/...
 ```
 
 所有接口必须带:
@@ -208,7 +208,7 @@ Authorization: Bearer <companion-token>
 1. Starcat Settings 显示端口和 Companion Token。
 2. 用户安装 Chrome 插件。
 3. 用户在插件 Options 中填入端口和 token。
-4. 插件点击 Test Connection 调 `/local/v1/ping`。
+4. 插件点击 Test Connection 调 `/plugin/v1/ping`。
 5. 成功后开始在 GitHub 页面注入 Starcat 面板。
 
 暂不做自动发现、二维码配对、Native Messaging。

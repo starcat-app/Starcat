@@ -15,7 +15,7 @@ Starcat Chrome Plugin 是 Starcat 的 GitHub 页面增强插件。它只在 GitH
 1. 在 Chrome 打开 `chrome://extensions/`。
 2. 开启 Developer mode。
 3. 点击 Load unpacked。
-4. 选择本目录: `extensions/starcat-chrome-plugin`。
+4. 选择本目录: `supports/extensions/starcat-chrome-plugin`。
 5. 打开插件 Options, 填入 Starcat Companion 本机服务端口和 bearer token。
 6. 点击 Test Connection。
 
@@ -24,7 +24,7 @@ Starcat Chrome Plugin 是 Starcat 的 GitHub 页面增强插件。它只在 GitH
 插件只通过 Starcat App 暴露的本机 HTTP 服务通信:
 
 ```text
-http://127.0.0.1:{port}/local/v1
+http://127.0.0.1:{port}/plugin/v1
 ```
 
 所有业务请求都需要:
@@ -39,16 +39,16 @@ Companion token 只授权本机 loopback 接口, 不等同于 GitHub token、AI 
 
 | 文件 | 说明 |
 |---|---|
-| `manifest.json` | Chrome MV3 manifest。 |
-| `shared.js` | 配置读写、GitHub repo URL 解析、本机 API client。 |
-| `options.html` / `options.js` / `options.css` | 端口、token 配置与连接测试页。 |
-| `content-script.js` / `content-script.css` | GitHub repo 页面板注入与渲染。 |
+| `manifest.json` | Chrome MV3 入口声明。 |
+| `src/shared/shared.js` | 配置读写、GitHub repo URL 解析、本机 API client。 |
+| `src/options/` | 端口、token 配置与连接测试页。 |
+| `src/content/` | GitHub repo 页面板注入与渲染。 |
 
 ## 验证
 
 ```bash
-python3 -m json.tool extensions/starcat-chrome-plugin/manifest.json >/dev/null
-node --check extensions/starcat-chrome-plugin/shared.js
-node --check extensions/starcat-chrome-plugin/options.js
-node --check extensions/starcat-chrome-plugin/content-script.js
+python3 -m json.tool supports/extensions/starcat-chrome-plugin/manifest.json >/dev/null
+node --check supports/extensions/starcat-chrome-plugin/src/shared/shared.js
+node --check supports/extensions/starcat-chrome-plugin/src/options/options.js
+node --check supports/extensions/starcat-chrome-plugin/src/content/content-script.js
 ```

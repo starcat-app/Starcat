@@ -49,7 +49,7 @@ GitHub repo page
   ↓ content-script 解析 owner/repo
 Chrome Extension
   ↓ Bearer token
-http://127.0.0.1:{port}/local/v1/repo-context?owner=&repo=
+http://127.0.0.1:{port}/plugin/v1/repo-context?owner=&repo=
   ↓
 Starcat CompanionLocalServer
   ├── RepoRepository
@@ -148,7 +148,7 @@ Origin 策略:
 - `chrome-extension://...`: 允许。
 - 其他 Origin: 403。
 
-### 5.2 `GET /local/v1/ping`
+### 5.2 `GET /plugin/v1/ping`
 
 用于插件 Options 测试连接。
 
@@ -163,7 +163,7 @@ Origin 策略:
 }
 ```
 
-### 5.3 `GET /local/v1/repo-context?owner=&repo=`
+### 5.3 `GET /plugin/v1/repo-context?owner=&repo=`
 
 核心聚合接口。
 
@@ -235,7 +235,7 @@ Origin 策略:
 - Wiki 接口失败不影响其他分组。
 - Health 缓存缺失时不强制前台刷新。
 
-### 5.4 `PATCH /local/v1/notes`
+### 5.4 `PATCH /plugin/v1/notes`
 
 保存私人笔记。
 
@@ -280,7 +280,7 @@ Origin 策略:
 | repo 未 star | 409 |
 | content 超长 | 413 |
 
-### 5.5 `POST /local/v1/actions/open`
+### 5.5 `POST /plugin/v1/actions/open`
 
 让 Starcat App 打开对应能力。
 
@@ -408,14 +408,19 @@ repo exists && repo.isStarred == true
 ### 7.1 目录结构
 
 ```text
-extensions/starcat-chrome-plugin/
+supports/extensions/starcat-chrome-plugin/
   manifest.json
-  content-script.js
-  content-script.css
-  shared.js
-  options.html
-  options.js
-  options.css
+  README.md
+  src/
+    content/
+      content-script.js
+      content-script.css
+    shared/
+      shared.js
+    options/
+      options.html
+      options.js
+      options.css
 ```
 
 v1 不需要 popup 和 service-worker。原因:
@@ -440,12 +445,12 @@ v1 不需要 popup 和 service-worker。原因:
   "content_scripts": [
     {
       "matches": ["https://github.com/*"],
-      "js": ["content-script.js"],
-      "css": ["content-script.css"],
+      "js": ["src/shared/shared.js", "src/content/content-script.js"],
+      "css": ["src/content/content-script.css"],
       "run_at": "document_idle"
     }
   ],
-  "options_page": "options.html"
+  "options_page": "src/options/options.html"
 }
 ```
 
@@ -572,7 +577,7 @@ NWParameters.tcp.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port:
 v1 只有一个写入接口:
 
 ```text
-PATCH /local/v1/notes
+PATCH /plugin/v1/notes
 ```
 
 写入前必须确认:

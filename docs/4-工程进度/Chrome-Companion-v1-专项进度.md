@@ -34,7 +34,7 @@
   > 实现: 新增纯 Swift parser 与单测, query 重复 key 返回显式错误, header 重复保留 first value, 为本机服务安全解析打底。
 - [x] `CompanionLocalServer`: loopback only + Bearer auth + Origin 限制。— 2026-07-01
   > 实现: 新增本机服务骨架, Network.framework 只绑定 IPv4 loopback, handler 层统一做 Bearer 与 extension Origin 校验。
-- [x] `/local/v1/ping`: 插件 Options 连接测试。— 2026-07-01
+- [x] `/plugin/v1/ping`: 插件 Options 连接测试。— 2026-07-01
   > 实现: 新增最小 ping 响应与 CORS Private Network Access 预检响应, 供后续插件 Options 做连接验证。
 - [x] Debug / feature flag 启动门控, 测试 host 跳过。— 2026-07-01
   > 实现: 新增 DEBUG-only bootstrapper 与 Debug 菜单开关, 启动前先跳过测试 host, 再检查 Debug flag 与 Companion enabled 双门控。
@@ -47,7 +47,7 @@
   > 实现: 新增 ping 与 repo-context Codable DTO, 统一用 snake_case JSON 契约, 并补充 DTO 编码形状测试。
 - [x] `CompanionContextProvider`: 聚合 Repo / Recommendations / Wiki / Notes / Health / OpenSSF / Actions。— 2026-07-01
   > 实现: 先落地 repo-context 聚合入口、GitHub owner/repo 校验、本地 Repo 映射与空分组 DTO, 后续按推荐/Wiki/Notes/Signals 分组补齐数据源。
-- [x] `GET /local/v1/repo-context`: 接入本机服务 route。— 2026-07-01
+- [x] `GET /plugin/v1/repo-context`: 接入本机服务 route。— 2026-07-01
   > 实现: 本机服务新增 repo-context route, 复用 provider 做 owner/repo 校验与 DTO 编码, 缺参或非法参数返回 400。
 - [x] 生产依赖注入: 本机服务使用 Starcat AppDependencies。— 2026-07-01
   > 实现: AppDependencies 初始化成功后注入 bootstrapper, 本机服务启动时组装完整 CompanionContextProvider, 避免空 provider 上线。
@@ -64,7 +64,7 @@
 
 ## 5. PR-3: notes 写入与打开动作
 
-- [x] `PATCH /local/v1/notes`: 保存私人笔记。— 2026-07-01
+- [x] `PATCH /plugin/v1/notes`: 保存私人笔记。— 2026-07-01
   > 实现: 本机服务新增 notes PATCH route, 解码 owner/repo/content 后委托 CompanionNoteWriter 保存并返回最新 note DTO。
 - [x] 保存规则: repo 必须存在且 `isStarred == true`。— 2026-07-01
   > 实现: CompanionNoteWriter 先通过 RepoRepository 查本地 repo, 未命中返回 404, 已取消 star 返回 403。
@@ -72,7 +72,7 @@
   > 实现: CompanionNoteWriter 在写库前校验 content.count, 超限返回 content_too_large。
 - [x] 保存规则: 保留原有 `repo_notes.status`。— 2026-07-01
   > 实现: 保存仍走 RepoNoteRepository.updateContent, 只改 content 与 edited_at, 不覆盖 status。
-- [x] `POST /local/v1/actions/open`: `open-repo` / `codeflow` / `codebase`。— 2026-07-01
+- [x] `POST /plugin/v1/actions/open`: `open-repo` / `codeflow` / `codebase`。— 2026-07-01
   > 实现: 新增 CompanionActionHandler 与 MainActor dispatcher, HTTP 层只校验 repo 并投递动作, CodeFlow/Codebase 复用 RepoListView 现有 sheet 门控。
 - [x] 单测: action route。— 2026-07-01
   > 实现: LocalServer 测试覆盖 action route 成功响应与未 star 拒绝, handler 通过记录器验证 codeflow 投递目标 repo。
@@ -81,10 +81,10 @@
 
 ## 6. PR-4: Chrome Extension
 
-- [x] `extensions/starcat-chrome-plugin/manifest.json`。— 2026-07-01
+- [x] `supports/extensions/starcat-chrome-plugin/manifest.json`。— 2026-07-01
   > 实现: 新增 MV3 manifest, 仅声明 storage、GitHub 页面与 127.0.0.1 host 权限, 不引入 popup/service-worker。
 - [x] `options.html/js/css`: 端口 + token + Test Connection。— 2026-07-01
-  > 实现: 新增 Options 配对页, 保存 Companion 端口与 bearer token, Test Connection 只调用 `/local/v1/ping`。
+  > 实现: 新增 Options 配对页, 保存 Companion 端口与 bearer token, Test Connection 只调用 `/plugin/v1/ping`。
 - [x] `shared.js`: connection / Starcat client / repo parser。— 2026-07-01
   > 实现: shared.js 封装配置读写、GitHub repo URL 解析、ping/repo-context/notes/actions 本机 API client。
 - [x] `content-script.js/css`: GitHub repo 页注入 Starcat 面板。— 2026-07-01

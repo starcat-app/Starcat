@@ -125,20 +125,20 @@
 
     return {
       ping() {
-        return request("/local/v1/ping");
+        return request("/plugin/v1/ping");
       },
       repoContext(repo) {
         const params = new URLSearchParams({ owner: repo.owner, repo: repo.repo });
-        return request(`/local/v1/repo-context?${params.toString()}`);
+        return request(`/plugin/v1/repo-context?${params.toString()}`);
       },
       saveNote(repo, content) {
-        return request("/local/v1/notes", {
+        return request("/plugin/v1/notes", {
           method: "PATCH",
           body: JSON.stringify({ owner: repo.owner, repo: repo.repo, content })
         });
       },
       openAction(repo, action) {
-        return request("/local/v1/actions/open", {
+        return request("/plugin/v1/actions/open", {
           method: "POST",
           body: JSON.stringify({ owner: repo.owner, repo: repo.repo, action })
         });
