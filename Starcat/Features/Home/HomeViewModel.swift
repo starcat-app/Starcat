@@ -366,6 +366,8 @@ final class HomeViewModel {
     private(set) var githubStarListUngroupedCount: Int = 0
     /// 用户自定义智能集合。内置集合由 `SmartCollectionKind` 提供，不入库。
     private(set) var userSmartCollections: [UserSmartCollection] = []
+    /// Release 时间线入口右侧计数：只统计当前激活订阅，已取消订阅的保留行不计入。
+    private(set) var releaseSubscriptionCount: Int = 0
 
     // MARK: - HOM-179：标签墙多选过滤
 
@@ -559,6 +561,7 @@ final class HomeViewModel {
     /// 可选是为了不破坏既有单测构造；缺失时集合按 repo 元数据保守降级。
     private let repoHealthRepository: (any RepoHealthRepositoryProtocol)?
     private let releaseRepository: (any ReleaseRepositoryProtocol)?
+    private let releaseSubscriptionRepository: (any ReleaseSubscriptionRepositoryProtocol)?
     private let openSSFScoreRepository: (any OpenSSFScoreRepositoryProtocol)?
     private let smartCollectionRepository: (any SmartCollectionRepositoryProtocol)?
 
@@ -596,6 +599,7 @@ final class HomeViewModel {
         repoNoteRepository: any RepoNoteRepositoryProtocol,
         repoHealthRepository: (any RepoHealthRepositoryProtocol)? = nil,
         releaseRepository: (any ReleaseRepositoryProtocol)? = nil,
+        releaseSubscriptionRepository: (any ReleaseSubscriptionRepositoryProtocol)? = nil,
         openSSFScoreRepository: (any OpenSSFScoreRepositoryProtocol)? = nil,
         smartCollectionRepository: (any SmartCollectionRepositoryProtocol)? = nil,
         semanticSearchService: SemanticSearchService? = nil
@@ -607,6 +611,7 @@ final class HomeViewModel {
         self.repoNoteRepository = repoNoteRepository
         self.repoHealthRepository = repoHealthRepository
         self.releaseRepository = releaseRepository
+        self.releaseSubscriptionRepository = releaseSubscriptionRepository
         self.openSSFScoreRepository = openSSFScoreRepository
         self.smartCollectionRepository = smartCollectionRepository
         self.semanticSearchService = semanticSearchService
@@ -693,6 +698,7 @@ final class HomeViewModel {
         githubStarListCounts = [:]
         githubStarListUngroupedCount = 0
         userSmartCollections = []
+        releaseSubscriptionCount = 0
 
         selectedRepoID = nil
         shouldScrollSelectedRepoIntoView = false
@@ -750,6 +756,7 @@ final class HomeViewModel {
             async let githubListCountsResult = fetchGitHubStarListCounts()
             async let githubUngroupedCountResult = fetchGitHubStarListUngroupedCount()
             async let smartCollectionsResult = fetchUserSmartCollections()
+            async let releaseSubscriptionCountResult = fetchReleaseSubscriptionCount()
             // HOM-179：一并刷新 repo→tagIds 映射，让 selectedTagIds 多选过滤实时生效。
             // 与 sidebar 其他统计同步刷新，避免新增/删除 tag 后 wall 多选还按旧映射过滤。
             async let tagAssignmentsResult = repoTagRepository.fetchAllTagAssignments()
@@ -763,6 +770,7 @@ final class HomeViewModel {
             self.githubStarListCounts = try await githubListCountsResult
             self.githubStarListUngroupedCount = try await githubUngroupedCountResult
             self.userSmartCollections = try await smartCollectionsResult
+            self.releaseSubscriptionCount = try await releaseSubscriptionCountResult
             let assignments = try await tagAssignmentsResult
             self.repoTagsMap = assignments.mapValues { Set($0.map(\.id)) }
 
@@ -992,6 +1000,11 @@ final class HomeViewModel {
     private func fetchGitHubStarListUngroupedCount() async throws -> Int {
         guard let githubStarListRepository else { return 0 }
         return try await githubStarListRepository.ungroupedRepoCount()
+    }
+
+    private func fetchReleaseSubscriptionCount() async throws -> Int {
+        guard let releaseSubscriptionRepository else { return 0 }
+        return try await releaseSubscriptionRepository.fetchActive().count
     }
 
     private func fetchUserSmartCollectionRule(id: String) async throws -> SmartCollectionRule {

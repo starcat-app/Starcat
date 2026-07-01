@@ -277,6 +277,7 @@ final class RepoReleaseSectionViewModel {
 
             try await subscriptionRepository.subscribe(repoId: repoId, primingReleaseId: primingId, primingTagName: primingTag)
             try await releaseRepository.upsertMany(records, isReadDefault: true)
+            NotificationCenter.default.post(name: .releaseSubscriptionDidChange, object: nil)
 
             // 主动请求一次通知授权（首次订阅时弹系统对话框）
             await notificationService.ensureAuthorized()
@@ -286,6 +287,7 @@ final class RepoReleaseSectionViewModel {
             // 仓库无 Release：仍允许订阅（未来作者发布会被识别为新）
             do {
                 try await subscriptionRepository.subscribe(repoId: repoId, primingReleaseId: nil, primingTagName: nil)
+                NotificationCenter.default.post(name: .releaseSubscriptionDidChange, object: nil)
                 await notificationService.ensureAuthorized()
                 await loadFor(repo: makeRepoStub(id: repoId, owner: owner, name: repoName))
             } catch {
@@ -303,6 +305,7 @@ final class RepoReleaseSectionViewModel {
         defer { isMutating = false }
         do {
             try await subscriptionRepository.unsubscribe(repoId: repoId)
+            NotificationCenter.default.post(name: .releaseSubscriptionDidChange, object: nil)
             // 重新读一次 → subscription.isSubscribed = false（行保留）
             self.subscription = try await subscriptionRepository.find(repoId: repoId)
         } catch {

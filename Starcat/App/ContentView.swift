@@ -53,6 +53,7 @@ struct ContentView: View {
             repoNoteRepository: dependencies.repoNoteRepository,
             repoHealthRepository: dependencies.repoHealthRepository,
             releaseRepository: dependencies.releaseRepository,
+            releaseSubscriptionRepository: dependencies.releaseSubscriptionRepository,
             openSSFScoreRepository: dependencies.openSSFScoreRepository,
             smartCollectionRepository: dependencies.smartCollectionRepository,
             searchHistoryRepository: dependencies.searchHistoryRepository,

@@ -175,6 +175,7 @@ struct HomeView: View {
         repoNoteRepository: any RepoNoteRepositoryProtocol,
         repoHealthRepository: (any RepoHealthRepositoryProtocol)? = nil,
         releaseRepository: (any ReleaseRepositoryProtocol)? = nil,
+        releaseSubscriptionRepository: (any ReleaseSubscriptionRepositoryProtocol)? = nil,
         openSSFScoreRepository: (any OpenSSFScoreRepositoryProtocol)? = nil,
         smartCollectionRepository: (any SmartCollectionRepositoryProtocol)? = nil,
         searchHistoryRepository: any SearchHistoryRepositoryProtocol,
@@ -193,6 +194,7 @@ struct HomeView: View {
             repoNoteRepository: repoNoteRepository,
             repoHealthRepository: repoHealthRepository,
             releaseRepository: releaseRepository,
+            releaseSubscriptionRepository: releaseSubscriptionRepository,
             openSSFScoreRepository: openSSFScoreRepository,
             smartCollectionRepository: smartCollectionRepository,
             semanticSearchService: semanticSearchService
@@ -393,6 +395,9 @@ struct HomeView: View {
         }
         .task {
             await bootstrapHome()
+        }
+        .task {
+            await observeReleaseSubscriptionChanges()
         }
         // selection 变化 → 重新加载列表
         .task(id: viewModel.selection) {
@@ -1099,6 +1104,18 @@ struct HomeView: View {
 
     private func syncSmartSearchModeToSettings() {
         settings.smartSearchMode = viewModel.smartSearchMode
+    }
+
+    /// 监听详情页 Release 订阅状态变化，只刷新 Sidebar 统计。
+    ///
+    /// 订阅入口在详情页组件内，和 Sidebar 没有直接 binding；用轻量通知可以避免把
+    /// HomeViewModel 传进 Release 组件，同时不触发中栏列表重载。
+    private func observeReleaseSubscriptionChanges() async {
+        let stream = NotificationCenter.default.notifications(named: .releaseSubscriptionDidChange)
+        for await _ in stream {
+            guard !Task.isCancelled else { break }
+            await viewModel.refreshSidebar()
+        }
     }
 
     private func reloadAfterSyncIfNeeded() async {

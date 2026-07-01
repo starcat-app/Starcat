@@ -57,3 +57,14 @@ struct ReleaseSubscription: Codable, FetchableRecord, MutablePersistableRecord, 
         case modifiedAt = "modified_at"
     }
 }
+
+// MARK: - Notification.Name
+
+extension Notification.Name {
+
+    /// Release 订阅状态变更事件。
+    ///
+    /// 只在用户主动订阅 / 取消订阅成功后发射，用来让 Sidebar 的订阅总数即时刷新。
+    /// 后台轮询只更新游标，不改变 `isSubscribed`，因此不需要发射这个通知。
+    static let releaseSubscriptionDidChange = Notification.Name("StarcatReleaseSubscriptionDidChange")
+}

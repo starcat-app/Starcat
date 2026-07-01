@@ -1367,9 +1367,24 @@ struct SidebarView: View {
             showReleaseTimeline = true
         } label: {
             Label {
-                Text("sidebar.releaseTimeline")
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 4) {
+                    Text("sidebar.releaseTimeline")
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Spacer(minLength: 4)
+
+                    HStack(spacing: 4) {
+                        Spacer(minLength: 0)
+
+                        Text(viewModel.releaseSubscriptionCount.formatted())
+                            .font(interfaceScale.font(size: 11))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
+                    .frame(width: Self.trailingFixedWidth, alignment: .trailing)
+                }
             } icon: {
                 Image(systemName: "shippingbox.fill")
             }
