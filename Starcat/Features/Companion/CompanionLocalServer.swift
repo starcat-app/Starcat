@@ -293,9 +293,11 @@ final class CompanionLocalServer {
     private func isAllowedOrigin(_ origin: String?) -> Bool {
         guard let origin else { return true }
         // Content script 在 GitHub 页面上下文里发起 loopback fetch 时，浏览器预检
-        // 使用页面 Origin（https://github.com），不是 chrome-extension://。这里只放开
-        // GitHub 页面和扩展自身；真正业务请求仍必须通过 Bearer token。
-        return origin.hasPrefix("chrome-extension://") || origin == "https://github.com"
+        // 使用页面 Origin（https://github.com），不是固定扩展 Origin。这里放开
+        // GitHub 页面、Chrome 扩展和 Safari WebExtension；真正业务请求仍必须通过 Bearer token。
+        return origin.hasPrefix("chrome-extension://")
+            || origin.hasPrefix("safari-web-extension://")
+            || origin == "https://github.com"
     }
 
     private func response(status: Int, body: some Encodable, origin: String?) -> Data {

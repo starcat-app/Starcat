@@ -81,6 +81,21 @@ struct CompanionLocalServerTests {
         #expect(header(response, "Access-Control-Allow-Origin") == "https://github.com")
     }
 
+    @Test("Safari WebExtension Origin 带 token 可访问")
+    func safariExtensionOriginReturnsOK() async throws {
+        let server = try makeServer()
+        let response = await server.handle(request("""
+        GET /plugin/v1/ping HTTP/1.1\r
+        Origin: safari-web-extension://abc\r
+        Authorization: Bearer test-token\r
+        \r
+
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(header(response, "Access-Control-Allow-Origin") == "safari-web-extension://abc")
+    }
+
     @Test("非 GitHub Web Origin 返回 403")
     func forbiddenWebOrigin() async throws {
         let server = try makeServer()
