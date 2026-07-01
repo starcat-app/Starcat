@@ -17,8 +17,10 @@ Starcat Chrome Plugin 是 Starcat 的 GitHub 页面增强插件。它只在 GitH
 3. 点击 Load unpacked。
 4. 选择本目录: `supports/extensions/starcat-chrome-plugin`。
 5. 在 Starcat 打开 Settings → Integrations → Browser Plugin, 启用服务并复制 token。
-6. 打开插件 Options, 填入 endpoint 端口和 bearer token。
-7. 点击 Test Connection。
+6. 左键点击工具栏里的 Starcat 插件图标, 在弹窗中填入 endpoint 端口和 bearer token。
+7. 点击 Test。
+
+完整配置页仍可从弹窗中的 Open full options 打开。
 
 ## 通信边界
 
@@ -47,6 +49,7 @@ Companion token 只授权本机 loopback 接口, 不等同于 GitHub token、AI 
 | `CONTRIBUTING.md` | 本地开发与贡献约定。 |
 | `CHANGELOG.md` | 版本变更记录。 |
 | `src/shared/shared.js` | 配置读写、GitHub repo URL 解析、本机 API client。 |
+| `src/popup/` | 左键点击插件图标时显示的快速配对弹窗。 |
 | `src/options/` | 端口、token 配置与连接测试页。 |
 | `src/content/` | GitHub repo 页面板注入与渲染。 |
 
@@ -55,6 +58,7 @@ Companion token 只授权本机 loopback 接口, 不等同于 GitHub token、AI 
 ```bash
 python3 -m json.tool supports/extensions/starcat-chrome-plugin/manifest.json >/dev/null
 node --check supports/extensions/starcat-chrome-plugin/src/shared/shared.js
+node --check supports/extensions/starcat-chrome-plugin/src/popup/popup.js
 node --check supports/extensions/starcat-chrome-plugin/src/options/options.js
 node --check supports/extensions/starcat-chrome-plugin/src/content/content-script.js
 ```

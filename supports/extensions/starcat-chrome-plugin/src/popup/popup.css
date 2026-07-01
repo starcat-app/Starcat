@@ -1,0 +1,112 @@
+:root {
+  color-scheme: light dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  width: 340px;
+  margin: 0;
+  color: CanvasText;
+  background: Canvas;
+}
+
+.popup {
+  box-sizing: border-box;
+  padding: 16px;
+}
+
+.header {
+  margin-bottom: 14px;
+}
+
+.header h1 {
+  margin: 0 0 5px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.header p {
+  margin: 0;
+  color: color-mix(in srgb, CanvasText 68%, Canvas);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.form {
+  display: grid;
+  gap: 11px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, CanvasText 18%, Canvas);
+  border-radius: 6px;
+  color: CanvasText;
+  background: Canvas;
+  font: inherit;
+  font-weight: 400;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, CanvasText 18%, Canvas);
+  border-radius: 6px;
+  color: CanvasText;
+  background: Canvas;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+button.primary {
+  color: white;
+  border-color: #0969da;
+  background: #0969da;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.status {
+  min-height: 16px;
+  margin: 0;
+  color: color-mix(in srgb, CanvasText 68%, Canvas);
+  font-size: 12px;
+}
+
+.status[data-tone="success"] {
+  color: #1a7f37;
+}
+
+.status[data-tone="error"] {
+  color: #cf222e;
+}
+
+.link-button {
+  justify-self: start;
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  color: #0969da;
+  background: transparent;
+}

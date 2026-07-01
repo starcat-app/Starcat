@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Starcat Companion",
+  "name": "Starcat Browser Plugin",
   "description": "Show Starcat context on GitHub repository pages.",
   "version": "0.1.0",
   "permissions": ["storage"],
@@ -16,5 +16,9 @@
       "run_at": "document_idle"
     }
   ],
+  "action": {
+    "default_title": "Starcat Browser Plugin",
+    "default_popup": "src/popup/popup.html"
+  },
   "options_page": "src/options/options.html"
 }
