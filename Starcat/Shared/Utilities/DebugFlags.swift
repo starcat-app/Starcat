@@ -60,9 +60,11 @@ import Foundation
 enum DebugFlags {
     static let agentToolbarEntryDidChangeNotification = Notification.Name("DebugFlags.agentToolbarEntryDidChange")
     static let companionLocalServerDidChangeNotification = Notification.Name("DebugFlags.companionLocalServerDidChange")
+    static let debugProOverrideDidChangeNotification = Notification.Name("DebugFlags.debugProOverrideDidChange")
 
     private static let agentToolbarEntryKey = "DebugAgentToolbarEntry"
     private static let companionLocalServerKey = "DebugCompanionLocalServer"
+    private static let debugProOverrideKey = "DebugProOverride"
 
     /// 是否在主窗口右上角显示布局尺寸 overlay（W × H 胶囊）。
     ///
@@ -103,6 +105,18 @@ enum DebugFlags {
         #endif
     }
 
+    /// 是否用本地 Debug 开关强制激活 Pro entitlement。
+    ///
+    /// 这是开发期验证 Pro 门控用的本机覆盖，不代表真实 StoreKit 订阅状态；放在
+    /// DebugFlags 里持久化，是为了让菜单勾选状态和下次启动后的运行期 entitlement 对齐。
+    static var debugProOverride: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: debugProOverrideKey)
+        #else
+        return false
+        #endif
+    }
+
     /// 是否允许启动旧版 Companion 调试开关。
     ///
     /// Browser Plugin Service 已迁到 Settings → Integrations, 这里仅保留旧偏好读取能力,
@@ -123,6 +137,17 @@ enum DebugFlags {
         #if DEBUG
         UserDefaults.standard.set(isVisible, forKey: agentToolbarEntryKey)
         NotificationCenter.default.post(name: agentToolbarEntryDidChangeNotification, object: nil)
+        #endif
+    }
+
+    /// 切换 Debug Pro 覆盖并广播给已经创建的 `SubscriptionManager`。
+    ///
+    /// StoreKit entitlement 是运行期状态，单纯写 UserDefaults 不会改变当前窗口的 Pro 门控；
+    /// 因此这里和 Agent toolbar 一样发通知，让 App 层立即同步菜单状态到订阅管理器。
+    static func setDebugProOverride(_ isActive: Bool) {
+        #if DEBUG
+        UserDefaults.standard.set(isActive, forKey: debugProOverrideKey)
+        NotificationCenter.default.post(name: debugProOverrideDidChangeNotification, object: nil)
         #endif
     }
 

@@ -162,12 +162,14 @@ struct StarcatApp: App {
                 // 「运行状态」。调度器的 `start()` 由 HomeView 在 .task 里调。
                 .environment(dependencies.autoTidyScheduler)
                 #if DEBUG
-                .onReceive(NotificationCenter.default.publisher(for: DebugMenuCommands.debugProOverrideNotification)) { notification in
-                    guard let active = notification.userInfo?[DebugMenuCommands.debugProOverrideActiveKey] as? Bool else { return }
-                    dependencies.subscriptionManager.applyDebugProOverride(active: active)
+                .onReceive(NotificationCenter.default.publisher(for: DebugFlags.debugProOverrideDidChangeNotification)) { _ in
+                    dependencies.subscriptionManager.applyDebugProOverride(active: DebugFlags.debugProOverride)
                 }
                 #endif
                 .onAppear {
+                    #if DEBUG
+                    dependencies.subscriptionManager.applyDebugProOverride(active: DebugFlags.debugProOverride)
+                    #endif
                     applyAppearance(dependencies.settings.appearanceMode)
                     MetricKitReporter.shared.start()
                     dependencies.telemetryManager.track(.appLaunched)
@@ -328,11 +330,6 @@ struct StarcatApp: App {
 /// 当前只有一个 disabled 占位项，避免空 `CommandMenu` 在某些 SwiftUI 版本下
 /// 不渲染菜单栏标题——加入第一个真功能时移除占位。
 	struct DebugMenuCommands: Commands {
-		/// 通知 `StarcatApp.contentRoot` 切换 Pro 调试覆盖。
-		static let debugProOverrideNotification = Notification.Name("DebugMenuCommands.debugProOverride")
-		/// userInfo key：Bool，true = 激活，false = 重置。
-		static let debugProOverrideActiveKey = "active"
-
 		var body: some Commands {
 			CommandMenu("Debug") {
 				Button("Replay First-Run Onboarding") {
@@ -345,21 +342,13 @@ struct StarcatApp: App {
 
 				Divider()
 
-				Button("Activate Pro (Debug)") {
-					NotificationCenter.default.post(
-						name: Self.debugProOverrideNotification,
-						object: nil,
-						userInfo: [Self.debugProOverrideActiveKey: true]
-					)
-				}
-
-				Button("Reset Pro (Debug)") {
-					NotificationCenter.default.post(
-						name: Self.debugProOverrideNotification,
-						object: nil,
-						userInfo: [Self.debugProOverrideActiveKey: false]
-					)
-				}
+                    Toggle(
+                        "Activate Pro (Debug)",
+                        isOn: Binding(
+                            get: { DebugFlags.debugProOverride },
+                            set: { DebugFlags.setDebugProOverride($0) }
+                        )
+                    )
 
 				Divider()
 

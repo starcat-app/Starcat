@@ -56,6 +56,12 @@ final class SubscriptionManager: ProEntitlementProviding {
             return
         }
 
+        #if DEBUG
+        if DebugFlags.debugProOverride {
+            applyDebugProOverride(active: true)
+        }
+        #endif
+
         if startTransactionListener {
             start()
         }
@@ -168,6 +174,13 @@ final class SubscriptionManager: ProEntitlementProviding {
             entitlement = .testEnvironment
             return
         }
+
+        #if DEBUG
+        guard !DebugFlags.debugProOverride else {
+            applyDebugProOverride(active: true)
+            return
+        }
+        #endif
 
         var best: Transaction?
         for await result in Transaction.currentEntitlements {
