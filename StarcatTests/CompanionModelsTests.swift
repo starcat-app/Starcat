@@ -20,7 +20,7 @@ struct CompanionModelsTests {
         #expect(object["schema_version"] as? Int == 1)
         #expect(object["status"] as? String == "ok")
         #expect(object["app"] as? String == "Starcat")
-        #expect(object["capabilities"] as? [String] == ["repo-context", "notes", "actions"])
+        #expect(object["capabilities"] as? [String] == ["repo-context", "notes", "actions", "events"])
     }
 
     @Test("repo-context response keeps snake_case contract")
@@ -61,6 +61,26 @@ struct CompanionModelsTests {
         #expect(object["wiki_links"] is [[String: Any]])
         #expect(actions["open_in_starcat"] as? Bool == true)
         #expect(entitlement["is_pro"] as? Bool == true)
+    }
+
+    @Test("event envelope keeps snake_case contract")
+    func eventEnvelopeEncodingShape() throws {
+        let event = CompanionEventEnvelope(
+            schemaVersion: 1,
+            type: "note.updated",
+            repoID: 44_838_949,
+            note: CompanionNoteDTO(editable: true, content: "live note", editedAt: "2026-07-01T10:00:00Z")
+        )
+
+        let data = try CompanionJSONTestEncoder.encode(event)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let note = try #require(object["note"] as? [String: Any])
+
+        #expect(object["schema_version"] as? Int == 1)
+        #expect(object["type"] as? String == "note.updated")
+        #expect(object["repo_id"] as? Int == 44_838_949)
+        #expect(note["content"] as? String == "live note")
+        #expect(note["edited_at"] as? String == "2026-07-01T10:00:00Z")
     }
 }
 

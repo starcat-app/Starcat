@@ -126,4 +126,18 @@ extension Notification.Name {
     /// 同理 —— 详情页（`RepoNotesSection`）和主列表（`RepoListView`）的 environment
     /// 链不直达，单纯为这个轻量信号挂 environment binding 过度工程。
     static let repoStatusDidChange = Notification.Name("StarcatRepoStatusDidChange")
+
+    /// 仓库私有笔记正文变更事件。
+    ///
+    /// **发射时机**：`RepoNoteRepository.updateContent(...)` / `upsert(...)` 完成落库后。
+    /// 这个事件只传本地 repo.id 与落库后的正文，不携带 token、README、AI prompt 等敏感上下文。
+    ///
+    /// **userInfo**：
+    /// - `"repoId": Int64`       —— 变更对应的 `repos.id`
+    /// - `"content": String`     —— 空笔记用空字符串表示
+    /// - `"editedAt": String?`   —— 落库时间 ISO-8601 字符串
+    ///
+    /// **订阅方**：`CompanionEventHub`，用于把 Starcat 内部笔记变更轻量推送到
+    /// Browser Plugin 已打开的 GitHub 页面，避免用户手动刷新页面。
+    static let repoNoteContentDidChange = Notification.Name("StarcatRepoNoteContentDidChange")
 }

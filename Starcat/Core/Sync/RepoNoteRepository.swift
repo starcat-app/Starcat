@@ -135,6 +135,11 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
             var copy = note
             try copy.upsert(db)
         }
+        postContentDidChange(
+            repoId: note.repoId,
+            content: note.content,
+            editedAt: note.editedAt
+        )
     }
 
     /// 仅更新 content；行不存在则创建一行（status="unread"，is_ai_generated=0）。
@@ -154,6 +159,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                 arguments: [repoId, content, nowISO]
             )
         }
+        postContentDidChange(repoId: repoId, content: content, editedAt: nowISO)
     }
 
     /// 仅更新 status；行不存在则创建一行（content=NULL）。editedAt 自动设为 now。
@@ -196,5 +202,20 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                 arguments: [repoId, nowISO]
             )
         }
+    }
+
+    private func postContentDidChange(repoId: Int64, content: String?, editedAt: String?) {
+        var userInfo: [String: Any] = [
+            "repoId": repoId,
+            "content": content ?? ""
+        ]
+        if let editedAt {
+            userInfo["editedAt"] = editedAt
+        }
+        NotificationCenter.default.post(
+            name: .repoNoteContentDidChange,
+            object: nil,
+            userInfo: userInfo
+        )
     }
 }

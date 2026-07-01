@@ -20,6 +20,7 @@ final class CompanionLocalServer {
     private let contextProvider: CompanionContextProvider
     private let noteWriter: CompanionNoteWriter?
     private let actionHandler: CompanionActionHandler?
+    private let eventHub: CompanionEventHub
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "com.starcat.companion.local-server")
     private static let jsonEncoder: JSONEncoder = {
@@ -37,12 +38,14 @@ final class CompanionLocalServer {
         configuration: CompanionConfiguration,
         contextProvider: CompanionContextProvider = CompanionContextProvider { _, _ in nil },
         noteWriter: CompanionNoteWriter? = nil,
-        actionHandler: CompanionActionHandler? = nil
+        actionHandler: CompanionActionHandler? = nil,
+        eventHub: CompanionEventHub? = nil
     ) {
         self.configuration = configuration
         self.contextProvider = contextProvider
         self.noteWriter = noteWriter
         self.actionHandler = actionHandler
+        self.eventHub = eventHub ?? CompanionEventHub()
     }
 
     func start() {
@@ -112,6 +115,9 @@ final class CompanionLocalServer {
                 return
             }
             Task { @MainActor in
+                if await self.handleEventStreamIfNeeded(data, connection: connection) {
+                    return
+                }
                 let response = await self.handle(data)
                 connection.send(content: response, completion: .contentProcessed { _ in
                     connection.cancel()
@@ -150,6 +156,8 @@ final class CompanionLocalServer {
             )
         case ("GET", "/plugin/v1/repo-context"):
             return await repoContextResponse(request: request, origin: origin)
+        case ("GET", "/plugin/v1/events"):
+            return response(status: 426, body: ["error": "stream_required"], origin: origin)
         case ("PATCH", "/plugin/v1/notes"):
             return await saveNoteResponse(request: request, origin: origin)
         case ("POST", "/plugin/v1/actions/open"):
@@ -157,6 +165,57 @@ final class CompanionLocalServer {
         default:
             return response(status: 404, body: ["error": "not_found"], origin: origin)
         }
+    }
+
+    private func handleEventStreamIfNeeded(_ data: Data, connection: NWConnection) async -> Bool {
+        let request: CompanionHTTPRequest
+        do {
+            request = try CompanionRequestParser.parse(data)
+        } catch {
+            return false
+        }
+        guard request.method == "GET", request.path == "/plugin/v1/events" else {
+            return false
+        }
+
+        let origin = request.headers["origin"]
+        guard isAllowedOrigin(origin) else {
+            connection.send(content: response(status: 403, body: ["error": "origin_forbidden"], origin: nil), completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+            return true
+        }
+        guard request.headers["authorization"] == "Bearer \(configuration.token)" else {
+            connection.send(content: response(status: 401, body: ["error": "unauthorized"], origin: origin), completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+            return true
+        }
+
+        let repoID = request.query["repo_id"].flatMap(Int64.init)
+        let headers = eventStreamHeaders(origin: origin)
+        connection.send(content: headers, completion: .contentProcessed { error in
+            if error != nil {
+                connection.cancel()
+            }
+        })
+        connection.send(content: Data(": connected\n\n".utf8), completion: .contentProcessed { _ in })
+
+        let clientID = eventHub.addClient(repoID: repoID) { [weak connection] event in
+            guard let connection else { return }
+            let data = Self.eventStreamData(for: event)
+            connection.send(content: data, completion: .contentProcessed { _ in })
+        }
+        connection.stateUpdateHandler = { [weak self] state in
+            guard case .cancelled = state else {
+                if case .failed = state {
+                    Task { @MainActor in self?.eventHub.removeClient(clientID) }
+                }
+                return
+            }
+            Task { @MainActor in self?.eventHub.removeClient(clientID) }
+        }
+        return true
     }
 
     private func repoContextResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
@@ -248,6 +307,7 @@ final class CompanionLocalServer {
         let reason: String = switch status {
         case 200: "OK"
         case 204: "No Content"
+        case 426: "Upgrade Required"
         case 400: "Bad Request"
         case 401: "Unauthorized"
         case 403: "Forbidden"
@@ -271,5 +331,27 @@ final class CompanionLocalServer {
         var response = Data((headers.joined(separator: "\r\n") + "\r\n\r\n").utf8)
         response.append(bodyData)
         return response
+    }
+
+    private func eventStreamHeaders(origin: String?) -> Data {
+        var headers = [
+            "HTTP/1.1 200 OK",
+            "Content-Type: text/event-stream; charset=utf-8",
+            "Cache-Control: no-cache",
+            "Access-Control-Allow-Headers: Authorization, Content-Type",
+            "Access-Control-Allow-Methods: GET, PATCH, POST, OPTIONS",
+            "Access-Control-Allow-Private-Network: true",
+            "Connection: keep-alive"
+        ]
+        if let origin {
+            headers.append("Access-Control-Allow-Origin: \(origin)")
+        }
+        return Data((headers.joined(separator: "\r\n") + "\r\n\r\n").utf8)
+    }
+
+    private static func eventStreamData(for event: CompanionEventEnvelope) -> Data {
+        let data = (try? jsonEncoder.encode(event)) ?? Data("{}".utf8)
+        let payload = String(data: data, encoding: .utf8) ?? "{}"
+        return Data("event: \(event.type)\ndata: \(payload)\n\n".utf8)
     }
 }

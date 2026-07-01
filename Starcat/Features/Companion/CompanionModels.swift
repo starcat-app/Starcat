@@ -21,7 +21,7 @@ struct CompanionPingResponse: Codable, Equatable {
         schemaVersion: 1,
         status: "ok",
         app: "Starcat",
-        capabilities: ["repo-context", "notes", "actions"]
+        capabilities: ["repo-context", "notes", "actions", "events"]
     )
 }
 
@@ -80,6 +80,13 @@ struct CompanionNoteSaveResponse: Codable, Equatable {
     let schemaVersion: Int
     let status: String
     let note: CompanionNoteDTO
+}
+
+struct CompanionEventEnvelope: Codable, Equatable {
+    let schemaVersion: Int
+    let type: String
+    let repoID: Int64?
+    let note: CompanionNoteDTO?
 }
 
 struct CompanionOpenActionRequest: Codable, Equatable {
