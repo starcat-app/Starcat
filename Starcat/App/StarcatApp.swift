@@ -55,8 +55,10 @@ struct StarcatApp: App {
 
         // 注意：AppDependencies 是 @MainActor，App init 已在 main thread。
         do {
-            _dependencies = State(initialValue: try AppDependencies())
+            let resolvedDependencies = try AppDependencies()
+            _dependencies = State(initialValue: resolvedDependencies)
             _startupError = State(initialValue: nil)
+            CompanionServiceBootstrapper.startFromStoredConfiguration(dependencies: resolvedDependencies)
         } catch {
             let friendly = UserFacingError.map(error, operation: String.l10n("diagnostics.operation.startup"), service: "Starcat")
             friendly.record(level: .critical, category: "startup", operation: "appDependencies")
@@ -304,10 +306,6 @@ struct StarcatApp: App {
                 AppLog.keychain.error("Keychain self-check failed: \(error.localizedDescription, privacy: .public)")
             }
         }
-
-        // Chrome Companion 仍是未发布能力, 启动入口只在 DEBUG flag 显式开启时生效。
-        // Bootstrapper 内部会先检查测试环境, 避免测试 host 因读取 token 触发 Keychain GUI 授权。
-        CompanionServiceBootstrapper.startFromStoredConfiguration()
 
         AppLog.general.info("Starcat bootstrap complete")
     }

@@ -49,6 +49,8 @@
   > 实现: 先落地 repo-context 聚合入口、GitHub owner/repo 校验、本地 Repo 映射与空分组 DTO, 后续按推荐/Wiki/Notes/Signals 分组补齐数据源。
 - [x] `GET /local/v1/repo-context`: 接入本机服务 route。— 2026-07-01
   > 实现: 本机服务新增 repo-context route, 复用 provider 做 owner/repo 校验与 DTO 编码, 缺参或非法参数返回 400。
+- [x] 生产依赖注入: 本机服务使用 Starcat AppDependencies。— 2026-07-01
+  > 实现: AppDependencies 初始化成功后注入 bootstrapper, 本机服务启动时组装完整 CompanionContextProvider, 避免空 provider 上线。
 - [x] 推荐: 复用 `RecommendationContextService` / `RecommendAPI`, 分组级降级。— 2026-07-01
   > 实现: provider 接入推荐 lookup, 生产路径 cache first/miss refresh, 输出最多 5 条推荐; 推荐失败只降级该分组为空。
 - [x] Wiki: 复用 `WikiContextService` 缓存, 只返回 indexed links。— 2026-07-01
