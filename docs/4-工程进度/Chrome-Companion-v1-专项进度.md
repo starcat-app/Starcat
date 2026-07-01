@@ -36,8 +36,10 @@
   > 实现: 新增本机服务骨架, Network.framework 只绑定 IPv4 loopback, handler 层统一做 Bearer 与 extension Origin 校验。
 - [x] `/local/v1/ping`: 插件 Options 连接测试。— 2026-07-01
   > 实现: 新增最小 ping 响应与 CORS Private Network Access 预检响应, 供后续插件 Options 做连接验证。
-- [ ] Debug / feature flag 启动门控, 测试 host 跳过。
-- [ ] 单测: parser / auth / origin / ping。
+- [x] Debug / feature flag 启动门控, 测试 host 跳过。— 2026-07-01
+  > 实现: 新增 DEBUG-only bootstrapper 与 Debug 菜单开关, 启动前先跳过测试 host, 再检查 Debug flag 与 Companion enabled 双门控。
+- [x] 单测: parser / auth / origin / ping。— 2026-07-01
+  > 实现: PR-1 已覆盖 parser、token auth、Origin 限制、PNA 预检和 ping 响应, 作为后续 repo-context/notes/actions 的回归基线。
 
 ## 4. PR-2: repo-context 聚合
 

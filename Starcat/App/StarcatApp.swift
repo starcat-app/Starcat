@@ -305,6 +305,10 @@ struct StarcatApp: App {
             }
         }
 
+        // Chrome Companion 仍是未发布能力, 启动入口只在 DEBUG flag 显式开启时生效。
+        // Bootstrapper 内部会先检查测试环境, 避免测试 host 因读取 token 触发 Keychain GUI 授权。
+        CompanionServiceBootstrapper.startFromStoredConfiguration()
+
         AppLog.general.info("Starcat bootstrap complete")
     }
 }
@@ -361,14 +365,27 @@ struct StarcatApp: App {
 
 				Divider()
 
-				Toggle(
-					"Show Agent Toolbar Entry",
-					isOn: Binding(
-						get: { DebugFlags.agentToolbarEntry },
-						set: { DebugFlags.setAgentToolbarEntry($0) }
-					)
-				)
-			}
-		}
-	}
+                    Toggle(
+                        "Show Agent Toolbar Entry",
+                        isOn: Binding(
+                            get: { DebugFlags.agentToolbarEntry },
+                            set: { DebugFlags.setAgentToolbarEntry($0) }
+                        )
+                    )
+
+                    Toggle(
+                        "Enable Chrome Companion Local Server",
+                        isOn: Binding(
+                            get: { DebugFlags.companionLocalServer },
+                            set: { isEnabled in
+                                DebugFlags.setCompanionLocalServer(isEnabled)
+                                let configuration = CompanionConfiguration()
+                                configuration.isEnabled = isEnabled
+                                CompanionServiceBootstrapper.apply(configuration: configuration)
+                            }
+                        )
+                    )
+                }
+            }
+        }
 #endif

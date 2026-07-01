@@ -59,8 +59,10 @@ import Foundation
 /// 直接编辑那个 plist 文件也是一回事。
 enum DebugFlags {
     static let agentToolbarEntryDidChangeNotification = Notification.Name("DebugFlags.agentToolbarEntryDidChange")
+    static let companionLocalServerDidChangeNotification = Notification.Name("DebugFlags.companionLocalServerDidChange")
 
     private static let agentToolbarEntryKey = "DebugAgentToolbarEntry"
+    private static let companionLocalServerKey = "DebugCompanionLocalServer"
 
     /// 是否在主窗口右上角显示布局尺寸 overlay（W × H 胶囊）。
     ///
@@ -101,6 +103,18 @@ enum DebugFlags {
         #endif
     }
 
+    /// 是否允许启动 Chrome Companion 本机服务。
+    ///
+    /// Companion 仍处在开发期, 所以采用 Debug flag + CompanionConfiguration.isEnabled
+    /// 双门控。这样 Release 包永远不开, Debug 包也必须由开发者明确打开。
+    static var companionLocalServer: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: companionLocalServerKey)
+        #else
+        return false
+        #endif
+    }
+
     /// 切换 Agent toolbar 入口并广播给已挂载的主窗口。
     ///
     /// UserDefaults 写入本身不会触发 SwiftUI 视图刷新；Debug 菜单切换后发通知，让
@@ -109,6 +123,14 @@ enum DebugFlags {
         #if DEBUG
         UserDefaults.standard.set(isVisible, forKey: agentToolbarEntryKey)
         NotificationCenter.default.post(name: agentToolbarEntryDidChangeNotification, object: nil)
+        #endif
+    }
+
+    /// 切换 Companion 本机服务调试开关并广播给 Debug 菜单动作。
+    static func setCompanionLocalServer(_ isEnabled: Bool) {
+        #if DEBUG
+        UserDefaults.standard.set(isEnabled, forKey: companionLocalServerKey)
+        NotificationCenter.default.post(name: companionLocalServerDidChangeNotification, object: nil)
         #endif
     }
 }
