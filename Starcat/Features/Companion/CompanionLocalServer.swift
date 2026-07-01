@@ -17,6 +17,7 @@ import Network
 @MainActor
 final class CompanionLocalServer {
     private let configuration: CompanionConfiguration
+    private let contextProvider: CompanionContextProvider
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "com.starcat.companion.local-server")
     private static let jsonEncoder: JSONEncoder = {
@@ -25,8 +26,12 @@ final class CompanionLocalServer {
         return encoder
     }()
 
-    init(configuration: CompanionConfiguration) {
+    init(
+        configuration: CompanionConfiguration,
+        contextProvider: CompanionContextProvider = CompanionContextProvider { _, _ in nil }
+    ) {
         self.configuration = configuration
+        self.contextProvider = contextProvider
     }
 
     func start() {
@@ -96,7 +101,7 @@ final class CompanionLocalServer {
                 return
             }
             Task { @MainActor in
-                let response = self.handle(data)
+                let response = await self.handle(data)
                 connection.send(content: response, completion: .contentProcessed { _ in
                     connection.cancel()
                 })
@@ -104,7 +109,7 @@ final class CompanionLocalServer {
         }
     }
 
-    func handle(_ data: Data) -> Data {
+    func handle(_ data: Data) async -> Data {
         let request: CompanionHTTPRequest
         do {
             request = try CompanionRequestParser.parse(data)
@@ -132,8 +137,24 @@ final class CompanionLocalServer {
                 body: CompanionPingResponse.ok,
                 origin: origin
             )
+        case ("GET", "/local/v1/repo-context"):
+            return await repoContextResponse(request: request, origin: origin)
         default:
             return response(status: 404, body: ["error": "not_found"], origin: origin)
+        }
+    }
+
+    private func repoContextResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
+        guard let owner = request.query["owner"], let repo = request.query["repo"] else {
+            return response(status: 400, body: ["error": "missing_repo"], origin: origin)
+        }
+        do {
+            let context = try await contextProvider.context(owner: owner, repo: repo)
+            return response(status: 200, body: context, origin: origin)
+        } catch CompanionContextError.invalidRepoPath {
+            return response(status: 400, body: ["error": "invalid_repo"], origin: origin)
+        } catch {
+            return response(status: 500, body: ["error": "internal_error"], origin: origin)
         }
     }
 
@@ -155,6 +176,7 @@ final class CompanionLocalServer {
         case 401: "Unauthorized"
         case 403: "Forbidden"
         case 404: "Not Found"
+        case 500: "Internal Server Error"
         default: "Internal Server Error"
         }
         var headers = [

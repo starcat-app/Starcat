@@ -22,9 +22,9 @@ struct CompanionLocalServerTests {
     }
 
     @Test("GET /local/v1/ping 带 token 返回 200")
-    func pingReturnsOK() throws {
+    func pingReturnsOK() async throws {
         let server = try makeServer()
-        let response = server.handle(request("""
+        let response = await server.handle(request("""
         GET /local/v1/ping HTTP/1.1\r
         Origin: chrome-extension://abc\r
         Authorization: Bearer test-token\r
@@ -38,18 +38,18 @@ struct CompanionLocalServerTests {
     }
 
     @Test("缺 token 返回 401")
-    func missingTokenReturnsUnauthorized() throws {
+    func missingTokenReturnsUnauthorized() async throws {
         let server = try makeServer()
-        let response = server.handle(request("GET /local/v1/ping HTTP/1.1\r\n\r\n"))
+        let response = await server.handle(request("GET /local/v1/ping HTTP/1.1\r\n\r\n"))
 
         #expect(statusCode(response) == 401)
         #expect(bodyString(response).contains("unauthorized"))
     }
 
     @Test("非 extension origin 返回 403")
-    func forbiddenOrigin() throws {
+    func forbiddenOrigin() async throws {
         let server = try makeServer()
-        let response = server.handle(request("""
+        let response = await server.handle(request("""
         GET /local/v1/ping HTTP/1.1\r
         Origin: https://github.com\r
         Authorization: Bearer test-token\r
@@ -61,9 +61,9 @@ struct CompanionLocalServerTests {
     }
 
     @Test("OPTIONS 预检通过 Origin 校验但不要求 token")
-    func optionsDoesNotRequireToken() throws {
+    func optionsDoesNotRequireToken() async throws {
         let server = try makeServer()
-        let response = server.handle(request("""
+        let response = await server.handle(request("""
         OPTIONS /local/v1/ping HTTP/1.1\r
         Origin: chrome-extension://abc\r
         \r
@@ -75,9 +75,9 @@ struct CompanionLocalServerTests {
     }
 
     @Test("未知路径返回 404")
-    func unknownPathReturnsNotFound() throws {
+    func unknownPathReturnsNotFound() async throws {
         let server = try makeServer()
-        let response = server.handle(request("""
+        let response = await server.handle(request("""
         GET /local/v1/missing HTTP/1.1\r
         Authorization: Bearer test-token\r
         \r
@@ -85,6 +85,47 @@ struct CompanionLocalServerTests {
         """))
 
         #expect(statusCode(response) == 404)
+    }
+
+    @Test("GET /local/v1/repo-context 返回 provider 上下文")
+    func repoContextReturnsProviderPayload() async throws {
+        let keychain = InMemoryKeychain()
+        try keychain.storeCompanionToken("test-token")
+        let defaults = try #require(UserDefaults(suiteName: "CompanionLocalServerTests.\(UUID().uuidString)"))
+        let server = CompanionLocalServer(
+            configuration: CompanionConfiguration(secureStore: keychain, defaults: defaults),
+            contextProvider: CompanionContextProvider { owner, repo in
+                #expect(owner == "apple")
+                #expect(repo == "swift")
+                return nil
+            }
+        )
+
+        let response = await server.handle(request("""
+        GET /local/v1/repo-context?owner=apple&repo=swift HTTP/1.1\r
+        Origin: chrome-extension://abc\r
+        Authorization: Bearer test-token\r
+        \r
+
+        """))
+
+        #expect(statusCode(response) == 200)
+        #expect(bodyString(response).contains("\"full_name\":\"apple\\/swift\""))
+        #expect(bodyString(response).contains("\"known_to_starcat\":false"))
+    }
+
+    @Test("GET /local/v1/repo-context 缺 owner/repo 返回 400")
+    func repoContextRequiresOwnerAndRepo() async throws {
+        let server = try makeServer()
+        let response = await server.handle(request("""
+        GET /local/v1/repo-context?owner=apple HTTP/1.1\r
+        Authorization: Bearer test-token\r
+        \r
+
+        """))
+
+        #expect(statusCode(response) == 400)
+        #expect(bodyString(response).contains("missing_repo"))
     }
 
     private func request(_ raw: String) -> Data {
