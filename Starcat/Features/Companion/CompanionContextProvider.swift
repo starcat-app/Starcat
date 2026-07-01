@@ -16,16 +16,27 @@ enum CompanionContextError: Error, Equatable {
 
 struct CompanionContextProvider {
     private let lookupRepo: @Sendable (String, String) async throws -> Repo?
+    private let lookupNote: @Sendable (Int64) async throws -> RepoNote?
 
-    init(repoRepository: any RepoRepositoryProtocol) {
+    init(
+        repoRepository: any RepoRepositoryProtocol,
+        noteRepository: (any RepoNoteRepositoryProtocol)? = nil
+    ) {
         lookupRepo = { owner, name in
             try await repoRepository.findByOwnerName(owner: owner, name: name)
+        }
+        lookupNote = { repoID in
+            try await noteRepository?.find(repoId: repoID)
         }
     }
 
     /// 测试专用注入点。用闭包替代假 Repository, 避免为了一个查询实现整套协议。
-    init(lookupRepo: @escaping @Sendable (String, String) async throws -> Repo?) {
+    init(
+        lookupRepo: @escaping @Sendable (String, String) async throws -> Repo?,
+        lookupNote: @escaping @Sendable (Int64) async throws -> RepoNote? = { _ in nil }
+    ) {
         self.lookupRepo = lookupRepo
+        self.lookupNote = lookupNote
     }
 
     func context(owner rawOwner: String, repo rawRepo: String) async throws -> CompanionRepoContextResponse {
@@ -36,12 +47,13 @@ struct CompanionContextProvider {
         }
 
         let localRepo = try await lookupRepo(owner, name)
+        let note = try await noteDTO(for: localRepo)
         return CompanionRepoContextResponse(
             schemaVersion: 1,
             repo: Self.repoDTO(owner: owner, name: name, localRepo: localRepo),
             recommendations: [],
             wikiLinks: [],
-            note: nil,
+            note: note,
             health: nil,
             openssf: nil,
             actions: CompanionActionsDTO(
@@ -49,6 +61,16 @@ struct CompanionContextProvider {
                 codeflow: localRepo != nil,
                 codebase: localRepo != nil
             )
+        )
+    }
+
+    private func noteDTO(for repo: Repo?) async throws -> CompanionNoteDTO? {
+        guard let repo, repo.isStarred else { return nil }
+        let note = try await lookupNote(repo.id)
+        return CompanionNoteDTO(
+            editable: true,
+            content: note?.content ?? "",
+            editedAt: note?.editedAt
         )
     }
 

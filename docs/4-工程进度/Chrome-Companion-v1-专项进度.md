@@ -51,7 +51,8 @@
   > 实现: 本机服务新增 repo-context route, 复用 provider 做 owner/repo 校验与 DTO 编码, 缺参或非法参数返回 400。
 - [ ] 推荐: 复用 `RecommendationContextService` / `RecommendAPI`, 分组级降级。
 - [ ] Wiki: 复用 `WikiAPI`, 只返回 indexed links。
-- [ ] Notes: 已 star repo 返回 editable note。
+- [x] Notes: 已 star repo 返回 editable note。— 2026-07-01
+  > 实现: provider 注入 note lookup, 仅本地已 star 的 repo 读取私人笔记并返回 editable note, unstarred/unknown repo 不暴露笔记内容。
 - [ ] Health / OpenSSF: 只读缓存, 不在 GitHub 页面请求中强制刷新。
 - [ ] 单测: 局部失败不影响其他分组。
 

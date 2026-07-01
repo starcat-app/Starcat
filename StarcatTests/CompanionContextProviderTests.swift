@@ -52,6 +52,48 @@ struct CompanionContextProviderTests {
         #expect(context.actions.codebase == true)
     }
 
+    @Test("starred repo returns editable private note")
+    func starredRepoReturnsEditableNote() async throws {
+        let repo = makeRepo(isStarred: true)
+        let provider = CompanionContextProvider(
+            lookupRepo: { _, _ in repo },
+            lookupNote: { repoID in
+                #expect(repoID == 44_838_949)
+                return RepoNote(
+                    repoId: repoID,
+                    content: "private note",
+                    status: RepoStatus.using.rawValue,
+                    isAIGenerated: false,
+                    editedAt: "2026-07-01T10:00:00Z"
+                )
+            }
+        )
+
+        let context = try await provider.context(owner: "apple", repo: "swift")
+
+        #expect(context.note?.editable == true)
+        #expect(context.note?.content == "private note")
+        #expect(context.note?.editedAt == "2026-07-01T10:00:00Z")
+    }
+
+    @Test("unstarred local repo does not expose private note")
+    func unstarredRepoHidesPrivateNote() async throws {
+        let repo = makeRepo(isStarred: false)
+        let provider = CompanionContextProvider(
+            lookupRepo: { _, _ in repo },
+            lookupNote: { _ in
+                Issue.record("unstarred repo must not read note content")
+                return nil
+            }
+        )
+
+        let context = try await provider.context(owner: "apple", repo: "swift")
+
+        #expect(context.repo.knownToStarcat == true)
+        #expect(context.repo.isStarred == false)
+        #expect(context.note == nil)
+    }
+
     @Test("invalid owner or repo is rejected")
     func invalidRepoPath() async throws {
         let provider = CompanionContextProvider { _, _ in nil }
