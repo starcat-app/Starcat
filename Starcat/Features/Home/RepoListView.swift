@@ -1254,8 +1254,14 @@ struct RepoListView: View {
             .task {
                 await viewModel.observeRepoStatusChanges()
             }
-            .task(id: viewModel.itemsRevision) {
+            .task(id: viewModel.items.map(\.id)) {
                 await reloadVisibleBadgeCaches(forceReload: false)
+            }
+            .task {
+                await observeRepoHealthBadgeChanges()
+            }
+            .task {
+                await observeOpenSSFScoreChanges()
             }
             // Stars 同步和 Health 后台预热都会先写 SQLite；列表行同步读 Store 内存缓存。
             // 因此这些后台边沿完成后要强制重读当前 rows，否则卡片会停在旧内存状态。
@@ -1325,8 +1331,36 @@ struct RepoListView: View {
     private func reloadVisibleBadgeCaches(forceReload: Bool) async {
         let repoIDs = viewModel.items.map(\.id)
         guard !repoIDs.isEmpty else { return }
+        await reloadBadgeCaches(for: repoIDs, forceReload: forceReload)
+    }
+
+    @MainActor
+    private func reloadBadgeCaches(for repoIDs: [Int64], forceReload: Bool) async {
+        guard !repoIDs.isEmpty else { return }
         await dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs, forceReload: forceReload)
         await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs, forceReload: forceReload)
+    }
+
+    @MainActor
+    private func observeRepoHealthBadgeChanges() async {
+        let stream = NotificationCenter.default.notifications(named: .repoHealthSnapshotDidChange)
+        for await note in stream {
+            guard !Task.isCancelled else { break }
+            guard let repoID = note.userInfo?["repoId"] as? Int64 else { continue }
+            guard viewModel.items.contains(where: { $0.id == repoID }) else { continue }
+            await dependencies.repoHealthStore.loadCachedSnapshots(for: [repoID], forceReload: true)
+        }
+    }
+
+    @MainActor
+    private func observeOpenSSFScoreChanges() async {
+        let stream = NotificationCenter.default.notifications(named: .openSSFScoreDidChange)
+        for await note in stream {
+            guard !Task.isCancelled else { break }
+            guard let repoID = note.userInfo?["repoId"] as? Int64 else { continue }
+            guard viewModel.items.contains(where: { $0.id == repoID }) else { continue }
+            await dependencies.openSSFScoreStore.loadCachedScores(for: [repoID], forceReload: true)
+        }
     }
 
     @ViewBuilder

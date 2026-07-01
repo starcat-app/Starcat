@@ -75,3 +75,11 @@ struct RepoHealthBadgeData: Hashable, Sendable {
         Int(score.rounded())
     }
 }
+
+extension Notification.Name {
+    /// Repo Health 派生缓存写入后发射，列表只用它重读对应 badge 缓存。
+    ///
+    /// userInfo:
+    /// - `"repoId": Int64` —— 已更新的 repo id。
+    static let repoHealthSnapshotDidChange = Notification.Name("StarcatRepoHealthSnapshotDidChange")
+}

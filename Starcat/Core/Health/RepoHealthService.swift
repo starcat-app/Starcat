@@ -85,6 +85,7 @@ actor RepoHealthService {
             openSSF: try? await openSSF
         )
         try await repository.upsert(snapshot)
+        postSnapshotDidChange(repoId: snapshot.repoId)
         return snapshot
     }
 
@@ -159,7 +160,16 @@ actor RepoHealthService {
             openSSF: openSSF
         )
         try await repository.upsert(snapshot)
+        postSnapshotDidChange(repoId: snapshot.repoId)
         return snapshot
+    }
+
+    private nonisolated func postSnapshotDidChange(repoId: Int64) {
+        NotificationCenter.default.post(
+            name: .repoHealthSnapshotDidChange,
+            object: nil,
+            userInfo: ["repoId": repoId]
+        )
     }
 
     private func refreshLatestReleaseSignal(repo: Repo) async -> ReleaseRecord? {

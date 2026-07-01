@@ -92,3 +92,11 @@ struct OpenSSFScoreBadgeData: Hashable, Sendable {
         String(format: "%.1f", score)
     }
 }
+
+extension Notification.Name {
+    /// OpenSSF Scorecard 缓存写入后发射，列表只用它重读对应 badge 缓存。
+    ///
+    /// userInfo:
+    /// - `"repoId": Int64` —— 已更新的 repo id。
+    static let openSSFScoreDidChange = Notification.Name("StarcatOpenSSFScoreDidChange")
+}

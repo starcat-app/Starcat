@@ -81,6 +81,11 @@ actor OpenSSFScoreService {
                 )
             }
             try await repository.upsert(record)
+            NotificationCenter.default.post(
+                name: .openSSFScoreDidChange,
+                object: nil,
+                userInfo: ["repoId": record.repoId]
+            )
             return record
         }
 
