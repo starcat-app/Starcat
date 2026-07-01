@@ -408,7 +408,7 @@ repo exists && repo.isStarred == true
 ### 7.1 目录结构
 
 ```text
-extensions/starcat-companion/
+extensions/starcat-chrome-plugin/
   manifest.json
   content-script.js
   content-script.css

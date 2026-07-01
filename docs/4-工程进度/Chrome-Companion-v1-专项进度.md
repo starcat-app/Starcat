@@ -81,7 +81,7 @@
 
 ## 6. PR-4: Chrome Extension
 
-- [x] `extensions/starcat-companion/manifest.json`。— 2026-07-01
+- [x] `extensions/starcat-chrome-plugin/manifest.json`。— 2026-07-01
   > 实现: 新增 MV3 manifest, 仅声明 storage、GitHub 页面与 127.0.0.1 host 权限, 不引入 popup/service-worker。
 - [x] `options.html/js/css`: 端口 + token + Test Connection。— 2026-07-01
   > 实现: 新增 Options 配对页, 保存 Companion 端口与 bearer token, Test Connection 只调用 `/local/v1/ping`。
