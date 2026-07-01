@@ -1,0 +1,103 @@
+:root {
+  color-scheme: light dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  color: CanvasText;
+  background: Canvas;
+}
+
+.page {
+  width: min(560px, calc(100vw - 40px));
+  margin: 40px auto;
+}
+
+.header {
+  margin-bottom: 18px;
+}
+
+.header h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 650;
+}
+
+.header p {
+  margin: 0;
+  color: color-mix(in srgb, CanvasText 68%, Canvas);
+  font-size: 14px;
+}
+
+.panel {
+  border: 1px solid color-mix(in srgb, CanvasText 14%, Canvas);
+  border-radius: 8px;
+  padding: 18px;
+  background: color-mix(in srgb, CanvasText 3%, Canvas);
+}
+
+.field {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, CanvasText 18%, Canvas);
+  border-radius: 6px;
+  color: CanvasText;
+  background: Canvas;
+  font: inherit;
+  font-weight: 400;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, CanvasText 18%, Canvas);
+  border-radius: 6px;
+  color: CanvasText;
+  background: Canvas;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:first-child {
+  color: white;
+  border-color: #0969da;
+  background: #0969da;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.status {
+  min-height: 18px;
+  margin: 14px 0 0;
+  color: color-mix(in srgb, CanvasText 68%, Canvas);
+  font-size: 13px;
+}
+
+.status[data-tone="success"] {
+  color: #1a7f37;
+}
+
+.status[data-tone="error"] {
+  color: #cf222e;
+}

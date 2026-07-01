@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Starcat Companion",
+  "description": "Show Starcat context on GitHub repository pages.",
+  "version": "0.1.0",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://github.com/*",
+    "http://127.0.0.1:*/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["shared.js", "content-script.js"],
+      "css": ["content-script.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html"
+}

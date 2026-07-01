@@ -81,9 +81,12 @@
 
 ## 6. PR-4: Chrome Extension
 
-- [ ] `extensions/starcat-companion/manifest.json`。
-- [ ] `options.html/js/css`: 端口 + token + Test Connection。
-- [ ] `shared.js`: connection / Starcat client / repo parser。
+- [x] `extensions/starcat-companion/manifest.json`。— 2026-07-01
+  > 实现: 新增 MV3 manifest, 仅声明 storage、GitHub 页面与 127.0.0.1 host 权限, 不引入 popup/service-worker。
+- [x] `options.html/js/css`: 端口 + token + Test Connection。— 2026-07-01
+  > 实现: 新增 Options 配对页, 保存 Companion 端口与 bearer token, Test Connection 只调用 `/local/v1/ping`。
+- [x] `shared.js`: connection / Starcat client / repo parser。— 2026-07-01
+  > 实现: shared.js 封装配置读写、GitHub repo URL 解析、ping/repo-context/notes/actions 本机 API client。
 - [ ] `content-script.js/css`: GitHub repo 页注入 Starcat 面板。
 - [ ] debounce + in-flight 去重 + 未配置 token 冷却。
 - [ ] 面板分组: Similar / Wiki / Notes / Signals / Actions。
