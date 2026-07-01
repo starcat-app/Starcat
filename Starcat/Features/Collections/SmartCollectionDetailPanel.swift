@@ -83,7 +83,6 @@ struct SmartCollectionDetailPanel: View {
                     .padding(.top, 12)
                     .padding(.bottom, Self.masonryOuterPadding)
             }
-            .scrollIndicators(.visible)
             .detailScrollViewStyle()
         }
         // 与 Manage `RepoDetailScaffold` 同构：标题进 navigation chrome，避免 ScrollView 顶穿透明 toolbar。
