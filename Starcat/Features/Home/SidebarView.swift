@@ -581,7 +581,7 @@ struct SidebarView: View {
     @ViewBuilder
     private var trendingSidebarContent: some View {
         Section {
-            trendingLanguageRow(.all, count: nil)
+            trendingLanguageRow(.all, count: exploreModeCount(.trending))
 
             if trendingLanguagesExpanded {
                 // 2026-06-11 改造：列表数据从后端 `/api/v1/languages` 聚合而来（含 __uncategorized__）。
@@ -1536,6 +1536,16 @@ struct SidebarView: View {
                     .truncationMode(.tail)
 
                 Spacer(minLength: 4)
+
+                HStack(spacing: 4) {
+                    Spacer(minLength: 0)
+                    Text(viewModel.totalCount.formatted())
+                        .font(interfaceScale.font(size: 11))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+                .frame(width: Self.trailingFixedWidth, alignment: .trailing)
             }
         } icon: {
             AllLanguagesIcon(size: 14)
