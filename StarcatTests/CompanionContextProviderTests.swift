@@ -11,6 +11,9 @@ import Testing
 
 @Suite("CompanionContextProvider")
 struct CompanionContextProviderTests {
+    private enum FixtureError: Error {
+        case expectedFailure
+    }
 
     @Test("unknown repo returns stable empty context")
     func unknownRepoContext() async throws {
@@ -163,6 +166,52 @@ struct CompanionContextProviderTests {
             "https://deepwiki.com/apple/swift",
             "https://zread.ai/apple/swift"
         ])
+    }
+
+    @Test("recommendations are mapped and limited")
+    func recommendationsAreMappedAndLimited() async throws {
+        let repo = makeRepo(isStarred: true)
+        let provider = CompanionContextProvider(
+            lookupRepo: { _, _ in repo },
+            lookupRecommendations: { repoID in
+                #expect(repoID == 44_838_949)
+                return (0..<6).map { index in
+                    RepoRecommendationItem(
+                        repoID: Int64(index + 1),
+                        fullName: "owner\(index)/repo\(index)",
+                        description: "description \(index)",
+                        language: "Swift",
+                        stars: 100 + index,
+                        forks: 10,
+                        archived: false,
+                        score: 0.9 - Double(index) * 0.01,
+                        source: "simrepo",
+                        reasons: ["similar users", "shared topics"]
+                    )
+                }
+            }
+        )
+
+        let context = try await provider.context(owner: "apple", repo: "swift")
+
+        #expect(context.recommendations.count == 5)
+        #expect(context.recommendations.first?.repoID == 1)
+        #expect(context.recommendations.first?.fullName == "owner0/repo0")
+        #expect(context.recommendations.first?.reason == "similar users")
+    }
+
+    @Test("recommendation failure degrades to empty group")
+    func recommendationFailureIsIsolated() async throws {
+        let repo = makeRepo(isStarred: true)
+        let provider = CompanionContextProvider(
+            lookupRepo: { _, _ in repo },
+            lookupRecommendations: { _ in throw FixtureError.expectedFailure }
+        )
+
+        let context = try await provider.context(owner: "apple", repo: "swift")
+
+        #expect(context.repo.knownToStarcat == true)
+        #expect(context.recommendations.isEmpty)
     }
 
     @Test("missing or failed signal cache is omitted")

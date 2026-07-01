@@ -20,13 +20,15 @@ struct CompanionContextProvider {
     private let lookupHealth: @Sendable (Int64) async throws -> RepoHealthSnapshot?
     private let lookupOpenSSF: @Sendable (Int64) async throws -> OpenSSFScoreRecord?
     private let lookupWikiLinks: @Sendable (String, String) async -> [WikiLink]
+    private let lookupRecommendations: @Sendable (Int64) async throws -> [RepoRecommendationItem]
 
     init(
         repoRepository: any RepoRepositoryProtocol,
         noteRepository: (any RepoNoteRepositoryProtocol)? = nil,
         healthRepository: (any RepoHealthRepositoryProtocol)? = nil,
         openSSFRepository: (any OpenSSFScoreRepositoryProtocol)? = nil,
-        wikiContextService: WikiContextService? = nil
+        wikiContextService: WikiContextService? = nil,
+        recommendationContextService: RecommendationContextService? = nil
     ) {
         lookupRepo = { owner, name in
             try await repoRepository.findByOwnerName(owner: owner, name: name)
@@ -45,6 +47,13 @@ struct CompanionContextProvider {
                 wikiContextService?.cachedLinks(owner: owner, repo: name) ?? []
             }
         }
+        lookupRecommendations = { repoID in
+            guard let recommendationContextService else { return [] }
+            if let cached = await MainActor.run(body: { recommendationContextService.cachedSnapshot(repoID: repoID) }) {
+                return cached.items
+            }
+            return try await recommendationContextService.refresh(repoID: repoID).items
+        }
     }
 
     /// 测试专用注入点。用闭包替代假 Repository, 避免为了一个查询实现整套协议。
@@ -53,13 +62,15 @@ struct CompanionContextProvider {
         lookupNote: @escaping @Sendable (Int64) async throws -> RepoNote? = { _ in nil },
         lookupHealth: @escaping @Sendable (Int64) async throws -> RepoHealthSnapshot? = { _ in nil },
         lookupOpenSSF: @escaping @Sendable (Int64) async throws -> OpenSSFScoreRecord? = { _ in nil },
-        lookupWikiLinks: @escaping @Sendable (String, String) async -> [WikiLink] = { _, _ in [] }
+        lookupWikiLinks: @escaping @Sendable (String, String) async -> [WikiLink] = { _, _ in [] },
+        lookupRecommendations: @escaping @Sendable (Int64) async throws -> [RepoRecommendationItem] = { _ in [] }
     ) {
         self.lookupRepo = lookupRepo
         self.lookupNote = lookupNote
         self.lookupHealth = lookupHealth
         self.lookupOpenSSF = lookupOpenSSF
         self.lookupWikiLinks = lookupWikiLinks
+        self.lookupRecommendations = lookupRecommendations
     }
 
     func context(owner rawOwner: String, repo rawRepo: String) async throws -> CompanionRepoContextResponse {
@@ -74,10 +85,11 @@ struct CompanionContextProvider {
         let health = try await healthDTO(for: localRepo)
         let openssf = try await openSSFDTO(for: localRepo)
         let wikiLinks = await wikiLinkDTOs(owner: owner, name: name)
+        let recommendations = await recommendationDTOs(for: localRepo)
         return CompanionRepoContextResponse(
             schemaVersion: 1,
             repo: Self.repoDTO(owner: owner, name: name, localRepo: localRepo),
-            recommendations: [],
+            recommendations: recommendations,
             wikiLinks: wikiLinks,
             note: note,
             health: health,
@@ -88,6 +100,27 @@ struct CompanionContextProvider {
                 codebase: localRepo != nil
             )
         )
+    }
+
+    private func recommendationDTOs(for repo: Repo?) async -> [CompanionRecommendationDTO] {
+        guard let repo, repo.id > 0 else { return [] }
+        do {
+            return try await lookupRecommendations(repo.id)
+                .prefix(5)
+                .map { item in
+                    CompanionRecommendationDTO(
+                        repoID: item.repoID,
+                        fullName: item.fullName,
+                        description: item.description,
+                        language: item.language,
+                        stars: item.stars,
+                        score: item.score,
+                        reason: item.reasons.first
+                    )
+                }
+        } catch {
+            return []
+        }
     }
 
     private func wikiLinkDTOs(owner: String, name: String) async -> [CompanionWikiLinkDTO] {
