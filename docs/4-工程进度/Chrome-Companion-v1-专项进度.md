@@ -95,7 +95,18 @@
   > 实现: 面板按返回数据渲染 Similar、Wiki、Notes、Signals、Actions, 笔记保存走 PATCH notes, 动作按钮走 actions/open。
 - [ ] 手测: App 未运行 / token 错误 / 正确配对 / 保存笔记 / 打开 CodeFlow/Codebase。
 
-## 7. 验证记录
+## 7. PR-5: Safari WebExtension
+
+- [x] `supports/extensions/starcat-safari-plugin/manifest.json`。— 2026-07-01
+  > 实现: 新增可本地加载的 Safari WebExtension MV3 manifest, 复用 GitHub 页面与 127.0.0.1 host 权限, 使用 Starcat AppIcon 图标。
+- [x] Safari 源码包开源文件。— 2026-07-01
+  > 实现: 补齐 README、MIT LICENSE、PRIVACY、SECURITY、CONTRIBUTING、CHANGELOG, 明确只存本地服务地址和 Companion token。
+- [x] `shared.js`: browser/chrome API 兼容。— 2026-07-01
+  > 实现: Safari 包内统一通过 `StarcatCompanion.extensionAPI` 访问 storage、runtime、getURL 和 options page, 优先 browser API 并回退 chrome API。
+- [x] Starcat 本机服务允许 Safari WebExtension Origin。— 2026-07-01
+  > 实现: CompanionLocalServer Origin 白名单补 `safari-web-extension://`, 同时保留 GitHub 页面 Origin 和 Chrome extension Origin 的 Bearer token 约束。
+
+## 8. 验证记录
 
 - [x] `rtk git diff --check` — 2026-07-01
 - [x] `rtk xcodegen generate` — 2026-07-01
@@ -103,6 +114,7 @@
 - [x] Companion 定向单测 — 2026-07-01
 - [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build` — 2026-07-01
 
-## 8. 变更记录
+## 9. 变更记录
 
+- 2026-07-01: Safari WebExtension 源码包落地, 复用 Browser Plugin 本机 API。
 - 2026-07-01: 建立 Chrome Companion v1 专项进度, 明确重写路线与 PR 切分。
