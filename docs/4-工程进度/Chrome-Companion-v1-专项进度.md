@@ -43,7 +43,8 @@
 
 ## 4. PR-2: repo-context 聚合
 
-- [ ] `CompanionModels`: repo-context DTO。
+- [x] `CompanionModels`: repo-context DTO。— 2026-07-01
+  > 实现: 新增 ping 与 repo-context Codable DTO, 统一用 snake_case JSON 契约, 并补充 DTO 编码形状测试。
 - [ ] `CompanionContextProvider`: 聚合 Repo / Recommendations / Wiki / Notes / Health / OpenSSF / Actions。
 - [ ] 推荐: 复用 `RecommendationContextService` / `RecommendAPI`, 分组级降级。
 - [ ] Wiki: 复用 `WikiAPI`, 只返回 indexed links。

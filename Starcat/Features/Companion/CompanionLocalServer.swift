@@ -19,6 +19,11 @@ final class CompanionLocalServer {
     private let configuration: CompanionConfiguration
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "com.starcat.companion.local-server")
+    private static let jsonEncoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        return encoder
+    }()
 
     init(configuration: CompanionConfiguration) {
         self.configuration = configuration
@@ -124,12 +129,7 @@ final class CompanionLocalServer {
         case ("GET", "/local/v1/ping"):
             return response(
                 status: 200,
-                body: [
-                    "schema_version": "1",
-                    "status": "ok",
-                    "app": "Starcat",
-                    "capabilities": "repo-context,notes,actions"
-                ],
+                body: CompanionPingResponse.ok,
                 origin: origin
             )
         default:
@@ -142,8 +142,8 @@ final class CompanionLocalServer {
         return origin.hasPrefix("chrome-extension://")
     }
 
-    private func response(status: Int, body: [String: String], origin: String?) -> Data {
-        let bodyData = (try? JSONEncoder().encode(body)) ?? Data("{}".utf8)
+    private func response(status: Int, body: some Encodable, origin: String?) -> Data {
+        let bodyData = (try? Self.jsonEncoder.encode(body)) ?? Data("{}".utf8)
         return response(status: status, bodyData: bodyData, origin: origin)
     }
 
