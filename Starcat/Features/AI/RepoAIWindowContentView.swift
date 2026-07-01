@@ -96,6 +96,7 @@ struct RepoAIWindowContentView: View {
     /// 2026-06-15:摘要 / chat panel 切换、tail follow toggle 等多处
     /// 0.2-0.3s 隐式动画在「关闭应用内动画」时全部跳过。
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
@@ -216,7 +217,9 @@ struct RepoAIWindowContentView: View {
                     .transition(.opacity)
             }
         }
-        .background(Color.clear)
+        // AI 窗口外层仍由 NSVisualEffectView 负责圆角和阴影；浅色主题下补一层系统窗口底色，
+        // 避免 `.behindWindow` 采样主窗内容后把整个面板压成灰色。深色主题保留原玻璃态。
+        .background(colorScheme == .light ? Color(nsColor: .windowBackgroundColor) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
