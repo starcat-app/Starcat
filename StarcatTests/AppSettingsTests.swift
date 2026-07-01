@@ -54,6 +54,7 @@ struct AppSettingsTests {
         settings.chatHistoryStorageKind = .sqlite
         settings.anySearchEnabled = true
         settings.notificationsEnabled = false
+        settings.hideDockIcon = true
         settings.mcpServiceEnabled = true
         settings.mcpServicePort = 7777
         settings.mcpAllowDestructiveWrites = true
@@ -75,6 +76,7 @@ struct AppSettingsTests {
         #expect(settings.chatHistoryStorageKind == .jsonFiles)
         #expect(settings.anySearchEnabled == false)
         #expect(settings.notificationsEnabled == true)
+        #expect(settings.hideDockIcon == false)
         #expect(settings.mcpServiceEnabled == false)
         #expect(settings.mcpServicePort == AppSettings.defaultMCPServicePort)
         #expect(settings.mcpAllowDestructiveWrites == false)
@@ -83,6 +85,18 @@ struct AppSettingsTests {
         #expect(settings.anySearchAPIKey() == nil)
         #expect(settings.isProUser == false)
         #expect(keychain.snapshot.isEmpty)
+    }
+
+    @Test("macOS 集成: 隐藏 Dock 图标默认关闭并持久化")
+    func hideDockIconPersists() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.hideDockIcon == false)
+
+        settings.hideDockIcon = true
+
+        let restored = AppSettings(defaults: defaults)
+        #expect(restored.hideDockIcon == true)
     }
 
     // MARK: - W4-4 D1：排序偏好

@@ -420,6 +420,18 @@ struct SettingsView: View {
                 }
             }
 
+            Section("settings.general.macOSIntegration") {
+                Toggle(isOn: $settings.hideDockIcon) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.general.hideDockIcon.title")
+                        Text("settings.general.hideDockIcon.help")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
             Section("settings.general.other") {
                 HStack {
                     Spacer()

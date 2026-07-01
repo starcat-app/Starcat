@@ -54,12 +54,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        activateMainWindowIfPossible()
+        Self.applyActivationPolicy(hideDockIcon: AppSettings.shared.hideDockIcon)
+        Self.activateMainWindowIfPossible()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        activateMainWindowIfPossible()
+        Self.activateMainWindowIfPossible()
         return true
     }
 
@@ -80,7 +80,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Dock reopen 兜底只处理 AppKit 窗口层，不触碰 `AppDependencies` 或 SwiftUI 状态。
     /// 这样用户关闭主窗口后再次点击 Dock 可以恢复已有窗口，同时不改变业务生命周期。
-    private func activateMainWindowIfPossible() {
+    /// 根据用户偏好切换 Dock 图标显隐。
+    ///
+    /// `.accessory` 会隐藏 Dock 和 Cmd+Tab 入口，因此菜单栏 `NSStatusItem` 必须常驻，
+    /// 否则用户关闭主窗口后缺少可发现的恢复路径。
+    static func applyActivationPolicy(hideDockIcon: Bool) {
+        NSApp.setActivationPolicy(hideDockIcon ? .accessory : .regular)
+    }
+
+    /// 恢复并激活主窗口。Dock reopen 和菜单栏左键共用这条路径，避免出现两套
+    /// “打开主窗口”语义。
+    static func activateMainWindowIfPossible() {
         DispatchQueue.main.async {
             NSApp.activate(ignoringOtherApps: true)
             NSApp.windows

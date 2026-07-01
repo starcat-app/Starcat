@@ -816,6 +816,15 @@ final class AppSettings {
         didSet { persistBool(key: Keys.disableAnimations, value: disableAnimations) }
     }
 
+    /// 隐藏 Dock 图标，让 Starcat 以菜单栏常驻入口为主。
+    ///
+    /// 默认 false：Starcat 仍是普通窗口应用，避免首次安装后用户找不到主入口。
+    /// 开启后由 AppKit 切到 `.accessory`；菜单栏图标始终保留，作为恢复主窗口
+    /// 和退出应用的固定入口。
+    var hideDockIcon: Bool {
+        didSet { persistBool(key: Keys.hideDockIcon, value: hideDockIcon) }
+    }
+
     /// 开启后 AI 多行输入必须按 Command+Return 才发送；普通 Return 始终换行。
     var aiChatRequiresCommandReturn: Bool {
         didSet { persistBool(key: Keys.aiChatRequiresCommandReturn, value: aiChatRequiresCommandReturn) }
@@ -1316,6 +1325,7 @@ final class AppSettings {
         // 2026-06-15:无障碍——「关闭应用内动画」用户偏好。
         // 缺失值时默认 false(动画全开),老用户首启不受影响。
         self.disableAnimations = defaults.object(forKey: Keys.disableAnimations) as? Bool ?? false
+        self.hideDockIcon = defaults.object(forKey: Keys.hideDockIcon) as? Bool ?? false
         self.aiChatRequiresCommandReturn = defaults.object(forKey: Keys.aiChatRequiresCommandReturn) as? Bool ?? false
         let storedSearchShortcut = Self.decodeJSON(
             KeyboardShortcutConfiguration.self,
@@ -1473,6 +1483,7 @@ final class AppSettings {
         snakeStyle = SnakeStyle.default
         readmeTranslationLanguage = .defaultForCurrentLocale()
         disableAnimations = false
+        hideDockIcon = false
         aiChatRequiresCommandReturn = false
         globalSearchShortcut = .globalSearchDefault
         regularSearchShortcut = .regularSearchDefault
@@ -1673,6 +1684,7 @@ final class AppSettings {
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
         static let isProUser = "settings.pro.isProUser"  // HOM-151
         static let disableAnimations = "settings.general.disableAnimations.v1"  // 2026-06-15
+        static let hideDockIcon = "settings.general.hideDockIcon.v1"  // 2026-07-02
         static let aiChatRequiresCommandReturn = "settings.general.shortcuts.aiCommandReturn.v1"
         static let globalSearchShortcut = "settings.general.shortcuts.globalSearch.v1"
         static let regularSearchShortcut = "settings.general.shortcuts.regularSearch.v1"
@@ -1739,6 +1751,7 @@ final class AppSettings {
             readmeTranslationLanguage,
             isProUser,
             disableAnimations,
+            hideDockIcon,
             aiChatRequiresCommandReturn,
             globalSearchShortcut,
             regularSearchShortcut,

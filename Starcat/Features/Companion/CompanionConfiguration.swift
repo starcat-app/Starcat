@@ -31,6 +31,9 @@ final class CompanionConfiguration {
 
     static let defaultPort: UInt16 = 5051
     static let allowedPortRange: ClosedRange<Int> = 5051...5060
+    /// 进程级配置实例。设置页和菜单栏入口必须观察同一份对象，否则从菜单栏切换
+    /// Browser Plugin Service 后，设置页会继续显示旧状态。
+    static let shared = CompanionConfiguration()
 
     private let secureStore: any KeychainManaging
     private let defaults: UserDefaults

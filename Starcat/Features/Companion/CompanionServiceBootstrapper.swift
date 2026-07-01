@@ -21,7 +21,7 @@ enum CompanionServiceBootstrapper {
     static func startFromStoredConfiguration(dependencies: AppDependencies) {
         self.dependencies = dependencies
         guard !TestEnvironment.isRunning else { return }
-        apply(configuration: CompanionConfiguration())
+        apply(configuration: .shared)
     }
 
     /// 设置页运行期调用。这里接收外部配置对象, 让 UI 能观察同一份 status / port。

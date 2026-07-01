@@ -18,7 +18,7 @@ struct IntegrationSettingsTab: View {
     @State private var anySearchAPIKey: String = ""
     @State private var showAnySearchAPIKey: Bool = false
     @State private var anySearchAPIKeyTestState: AnySearchAPIKeyTestState = .idle
-    @State private var pluginConfiguration = CompanionConfiguration()
+    @State private var pluginConfiguration = CompanionConfiguration.shared
     @State private var pluginTokenCopied = false
     // HOM-68 v3 (2026-06-15)：CodeFlow"一键清除"按钮搬到 存储 Tab → 缓存用量。
     // 本 Tab 仅保留"精细化操作"（输出目录配置、单项目预览/打开/删除）。

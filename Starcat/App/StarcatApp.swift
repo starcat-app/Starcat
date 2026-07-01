@@ -170,12 +170,17 @@ struct StarcatApp: App {
                     #if DEBUG
                     dependencies.subscriptionManager.applyDebugProOverride(active: DebugFlags.debugProOverride)
                     #endif
+                    StatusBarController.shared.configure(dependencies: dependencies)
+                    AppDelegate.applyActivationPolicy(hideDockIcon: dependencies.settings.hideDockIcon)
                     applyAppearance(dependencies.settings.appearanceMode)
                     MetricKitReporter.shared.start()
                     dependencies.telemetryManager.track(.appLaunched)
                 }
                 .onChange(of: dependencies.settings.appearanceMode) { _, newMode in
                     applyAppearance(newMode)
+                }
+                .onChange(of: dependencies.settings.hideDockIcon) { _, hideDockIcon in
+                    AppDelegate.applyActivationPolicy(hideDockIcon: hideDockIcon)
                 }
                 .animation(dependencies.settings.disableAnimations ? nil : .easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
         } else {
