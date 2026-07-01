@@ -86,6 +86,7 @@ struct CompanionContextProvider {
         let openssf = await openSSFDTO(for: localRepo)
         let wikiLinks = await wikiLinkDTOs(owner: owner, name: name)
         let recommendations = await recommendationDTOs(for: localRepo)
+        let canOpenLocalActions = localRepo?.isStarred == true
         return CompanionRepoContextResponse(
             schemaVersion: 1,
             repo: Self.repoDTO(owner: owner, name: name, localRepo: localRepo),
@@ -95,9 +96,9 @@ struct CompanionContextProvider {
             health: health,
             openssf: openssf,
             actions: CompanionActionsDTO(
-                openInStarcat: localRepo != nil,
-                codeflow: localRepo != nil,
-                codebase: localRepo != nil
+                openInStarcat: canOpenLocalActions,
+                codeflow: canOpenLocalActions,
+                codebase: canOpenLocalActions
             )
         )
     }

@@ -95,6 +95,9 @@ struct CompanionContextProviderTests {
         #expect(context.repo.knownToStarcat == true)
         #expect(context.repo.isStarred == false)
         #expect(context.note == nil)
+        #expect(context.actions.openInStarcat == false)
+        #expect(context.actions.codeflow == false)
+        #expect(context.actions.codebase == false)
     }
 
     @Test("cached health and OpenSSF are exposed without refresh")
