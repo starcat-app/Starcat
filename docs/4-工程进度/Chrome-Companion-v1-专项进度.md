@@ -87,9 +87,12 @@
   > 实现: 新增 Options 配对页, 保存 Companion 端口与 bearer token, Test Connection 只调用 `/local/v1/ping`。
 - [x] `shared.js`: connection / Starcat client / repo parser。— 2026-07-01
   > 实现: shared.js 封装配置读写、GitHub repo URL 解析、ping/repo-context/notes/actions 本机 API client。
-- [ ] `content-script.js/css`: GitHub repo 页注入 Starcat 面板。
-- [ ] debounce + in-flight 去重 + 未配置 token 冷却。
-- [ ] 面板分组: Similar / Wiki / Notes / Signals / Actions。
+- [x] `content-script.js/css`: GitHub repo 页注入 Starcat 面板。— 2026-07-01
+  > 实现: content script 解析 GitHub repo URL, 优先注入 README 上方, 找不到 README 时降级到 sidebar/main, CSS 跟随 GitHub 变量适配明暗主题。
+- [x] debounce + in-flight 去重 + 未配置 token 冷却。— 2026-07-01
+  > 实现: MutationObserver 只触发 500ms debounce, repo-context 按 fullName 做 60s 缓存和 in-flight 合并, 未配置 token 时进入 60s 冷却。
+- [x] 面板分组: Similar / Wiki / Notes / Signals / Actions。— 2026-07-01
+  > 实现: 面板按返回数据渲染 Similar、Wiki、Notes、Signals、Actions, 笔记保存走 PATCH notes, 动作按钮走 actions/open。
 - [ ] 手测: App 未运行 / token 错误 / 正确配对 / 保存笔记 / 打开 CodeFlow/Codebase。
 
 ## 7. 验证记录
