@@ -97,11 +97,11 @@
 
 ## 7. 验证记录
 
-- [ ] `rtk git diff --check`
-- [ ] `rtk xcodegen generate`
-- [ ] `rtk jq empty Starcat/Resources/Localizable.xcstrings`
-- [ ] Companion 定向单测
-- [ ] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build`
+- [x] `rtk git diff --check` — 2026-07-01
+- [x] `rtk xcodegen generate` — 2026-07-01
+- [x] `rtk jq empty Starcat/Resources/Localizable.xcstrings` — 2026-07-01
+- [x] Companion 定向单测 — 2026-07-01
+- [x] `rtk xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build` — 2026-07-01
 
 ## 8. 变更记录
 
