@@ -34,11 +34,11 @@ final class RepoHealthStore {
         loadingRepoIDs.contains(repoId)
     }
 
-    func loadCachedSnapshots(for repoIds: [Int64]) async {
-        let missing = repoIds.filter { snapshots[$0] == nil }
-        guard !missing.isEmpty else { return }
+    func loadCachedSnapshots(for repoIds: [Int64], forceReload: Bool = false) async {
+        let targetIDs = forceReload ? repoIds : repoIds.filter { snapshots[$0] == nil }
+        guard !targetIDs.isEmpty else { return }
         do {
-            let fetched = try await service.cachedSnapshots(for: missing)
+            let fetched = try await service.cachedSnapshots(for: targetIDs)
             guard !fetched.isEmpty else { return }
             // 批量加载用于列表/详情首屏，必须一次性替换字典，避免每条快照都触发
             // Observation invalidation，放大 SwiftUI 重绘成本。

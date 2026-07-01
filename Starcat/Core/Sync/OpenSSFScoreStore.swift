@@ -36,11 +36,11 @@ final class OpenSSFScoreStore {
         loadingRepoIDs.contains(repoId)
     }
 
-    func loadCachedScores(for repoIds: [Int64]) async {
-        let missing = repoIds.filter { records[$0] == nil }
-        guard !missing.isEmpty else { return }
+    func loadCachedScores(for repoIds: [Int64], forceReload: Bool = false) async {
+        let targetIDs = forceReload ? repoIds : repoIds.filter { records[$0] == nil }
+        guard !targetIDs.isEmpty else { return }
         do {
-            let fetched = try await service.cachedRecords(for: missing)
+            let fetched = try await service.cachedRecords(for: targetIDs)
             guard !fetched.isEmpty else { return }
             // 列表行都会同步读取 badge；逐条写 records 会让很多 row 连续重算。
             // 这里先合并再一次性赋值，把缓存加载压成一次可观察状态变更。

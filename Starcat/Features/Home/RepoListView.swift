@@ -1255,12 +1255,22 @@ struct RepoListView: View {
                 await viewModel.observeRepoStatusChanges()
             }
             .task(id: viewModel.itemsRevision) {
-                await dependencies.openSSFScoreStore.loadCachedScores(for: viewModel.items.map(\.id))
+                await reloadVisibleBadgeCaches(forceReload: false)
             }
-            // Repo Health 健康度缓存预加载(2026-06-21 接入,与 OpenSSF 对称):
-            // 让 Manage 列表第一屏渲染前就拿到缓存,health badge 即时显示。
-            .task(id: viewModel.itemsRevision) {
-                await dependencies.repoHealthStore.loadCachedSnapshots(for: viewModel.items.map(\.id))
+            // Stars 同步和 Health 后台预热都会先写 SQLite；列表行同步读 Store 内存缓存。
+            // 因此这些后台边沿完成后要强制重读当前 rows，否则卡片会停在旧内存状态。
+            .task(id: syncManager.state) {
+                guard case .completed = syncManager.state else { return }
+                await reloadVisibleBadgeCaches(forceReload: true)
+            }
+            .task(id: dependencies.repoHealthPoller.lastRunAt) {
+                guard dependencies.repoHealthPoller.lastRunAt != nil else { return }
+                await reloadVisibleBadgeCaches(forceReload: true)
+            }
+            .task(id: dependencies.initialWarmupCoordinator.job?.updatedAt) {
+                guard let phase = dependencies.initialWarmupCoordinator.job?.phase,
+                      phase == .health || phase == .completed else { return }
+                await reloadVisibleBadgeCaches(forceReload: true)
             }
             // 仅外部导航（SearchCenter / 命令面板）滚到目标行；列表行点击不写
             // `shouldScrollSelectedRepoIntoView`，避免 scrollTo(.center) 错位到下一卡片。
@@ -1309,6 +1319,14 @@ struct RepoListView: View {
                 }
             }
         }
+    }
+
+    @MainActor
+    private func reloadVisibleBadgeCaches(forceReload: Bool) async {
+        let repoIDs = viewModel.items.map(\.id)
+        guard !repoIDs.isEmpty else { return }
+        await dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs, forceReload: forceReload)
+        await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs, forceReload: forceReload)
     }
 
     @ViewBuilder
