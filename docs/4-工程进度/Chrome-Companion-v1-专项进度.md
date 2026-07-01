@@ -32,8 +32,10 @@
   > 实现: 新增 Companion 专用 token 存储、端口和 enabled 持久化配置, 默认关闭本机服务入口, 避免未发布能力默认暴露。
 - [x] `CompanionRequestParser`: HTTP request 解析, 重复 query/header 不崩溃。— 2026-07-01
   > 实现: 新增纯 Swift parser 与单测, query 重复 key 返回显式错误, header 重复保留 first value, 为本机服务安全解析打底。
-- [ ] `CompanionLocalServer`: loopback only + Bearer auth + Origin 限制。
-- [ ] `/local/v1/ping`: 插件 Options 连接测试。
+- [x] `CompanionLocalServer`: loopback only + Bearer auth + Origin 限制。— 2026-07-01
+  > 实现: 新增本机服务骨架, Network.framework 只绑定 IPv4 loopback, handler 层统一做 Bearer 与 extension Origin 校验。
+- [x] `/local/v1/ping`: 插件 Options 连接测试。— 2026-07-01
+  > 实现: 新增最小 ping 响应与 CORS Private Network Access 预检响应, 供后续插件 Options 做连接验证。
 - [ ] Debug / feature flag 启动门控, 测试 host 跳过。
 - [ ] 单测: parser / auth / origin / ping。
 
