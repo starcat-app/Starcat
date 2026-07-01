@@ -29,7 +29,8 @@
 ## 3. PR-1: Starcat 本机服务骨架
 
 - [ ] `CompanionConfiguration`: token / port / enabled / status。
-- [ ] `CompanionRequestParser`: HTTP request 解析, 重复 query/header 不崩溃。
+- [x] `CompanionRequestParser`: HTTP request 解析, 重复 query/header 不崩溃。— 2026-07-01
+  > 实现: 新增纯 Swift parser 与单测, query 重复 key 返回显式错误, header 重复保留 first value, 为本机服务安全解析打底。
 - [ ] `CompanionLocalServer`: loopback only + Bearer auth + Origin 限制。
 - [ ] `/local/v1/ping`: 插件 Options 连接测试。
 - [ ] Debug / feature flag 启动门控, 测试 host 跳过。
