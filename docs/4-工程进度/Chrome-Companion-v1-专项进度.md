@@ -28,7 +28,8 @@
 
 ## 3. PR-1: Starcat 本机服务骨架
 
-- [ ] `CompanionConfiguration`: token / port / enabled / status。
+- [x] `CompanionConfiguration`: token / port / enabled / status。— 2026-07-01
+  > 实现: 新增 Companion 专用 token 存储、端口和 enabled 持久化配置, 默认关闭本机服务入口, 避免未发布能力默认暴露。
 - [x] `CompanionRequestParser`: HTTP request 解析, 重复 query/header 不崩溃。— 2026-07-01
   > 实现: 新增纯 Swift parser 与单测, query 重复 key 返回显式错误, header 重复保留 first value, 为本机服务安全解析打底。
 - [ ] `CompanionLocalServer`: loopback only + Bearer auth + Origin 限制。

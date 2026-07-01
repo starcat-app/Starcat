@@ -77,6 +77,20 @@ final class InMemoryKeychain: KeychainManaging, @unchecked Sendable {
         setValue(nil, forKey: "service_api_key::\(serviceID)")
     }
 
+    // MARK: - Chrome Companion Token
+
+    func storeCompanionToken(_ token: String) throws {
+        setValue(token, forKey: "companion_bearer_token")
+    }
+
+    func loadCompanionToken() throws -> String? {
+        value(forKey: "companion_bearer_token")
+    }
+
+    func deleteCompanionToken() throws {
+        setValue(nil, forKey: "companion_bearer_token")
+    }
+
     func deleteAllCredentials() throws {
         reset()
     }
