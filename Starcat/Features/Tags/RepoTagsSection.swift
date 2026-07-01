@@ -173,6 +173,9 @@ final class RepoTagsSectionViewModel {
         do {
             try await repoTagRepository.setTags(repoId: repoId, tagIds: Array(tagIds))
             await loadFor(repoId: repoId)
+            if !tagIds.isEmpty {
+                NotificationCenter.default.post(name: .gettingStartedDidOrganizeRepo, object: nil)
+            }
             onTagsChanged?()
         } catch {
             errorMessage = String(format: String.l10n("repoTags.error.saveFailedFormat"), error.localizedDescription)

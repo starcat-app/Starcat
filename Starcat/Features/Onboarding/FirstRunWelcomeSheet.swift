@@ -36,8 +36,10 @@ enum FirstRunOnboardingPreferences {
     }
 
     /// 重看首次引导：清标记并重置展示状态（Debug 菜单 / 设置页均可触发）。
+    @MainActor
     static func resetForDebugReplay() {
         UserDefaults.standard.removeObject(forKey: hasCompletedKey)
+        GettingStartedProgressStore.resetPersistedState()
     }
 
     /// 重看首次引导时广播；`LaunchSplashContainer` 监听并 present overlay。

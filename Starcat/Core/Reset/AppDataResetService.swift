@@ -107,6 +107,9 @@ final class AppDataResetService {
         let exactKeys: Set<String> = [
             "AppLocaleOverride",
             "onboarding.hasCompletedStepGuide",
+            "onboarding.gettingStarted.completedSteps.v1",
+            "onboarding.gettingStarted.dismissed.v1",
+            "onboarding.gettingStarted.collapsed.v1",
             "launchSplash.hasCompletedColdStart",
             "settings.ai.lastSelectedProfileID",
             "DebugLayoutOverlay",

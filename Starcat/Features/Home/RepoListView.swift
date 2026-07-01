@@ -17,6 +17,7 @@
 
 import SwiftUI
 import AppKit
+import TipKit
 
 /// 规则编辑器 Sheet 载荷（`sheet(item:)` 避免首帧空白 sheet）。
 private struct SmartCollectionRuleEditorItem: Identifiable {
@@ -1099,6 +1100,7 @@ struct RepoListView: View {
                 viewModel.submitSearch(query)
                 let submitted = query.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !submitted.isEmpty {
+                    NotificationCenter.default.post(name: .gettingStartedDidUseSearch, object: nil)
                     Task {
                         try? await historyRepository.record(submitted)
                         await reloadToolbarSearchHistory()
@@ -1132,6 +1134,7 @@ struct RepoListView: View {
                 Task { await removeToolbarSearchHistory(entry) }
             }
         )
+        .popoverTip(GettingStartedTips.search)
         .onAppear {
             if viewModel.smartSearchMode != settings.smartSearchMode {
                 viewModel.smartSearchMode = settings.smartSearchMode

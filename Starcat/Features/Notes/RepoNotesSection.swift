@@ -360,6 +360,9 @@ struct RepoNotesSection: View {
         await vm.saveContent(repoId: repo.id, content: editingContent)
         hasUnsavedChanges = false
         saveState = .saved
+        if vm.errorMessage == nil, !editingContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            NotificationCenter.default.post(name: .gettingStartedDidOrganizeRepo, object: nil)
+        }
         scheduleSemanticIndexRefresh()
     }
 

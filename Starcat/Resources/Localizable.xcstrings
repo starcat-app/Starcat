@@ -13688,6 +13688,486 @@
         }
       }
     },
+    "gettingStarted.collapse" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse checklist"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起清单"
+          }
+        }
+      }
+    },
+    "gettingStarted.dismiss" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide getting started"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏开始使用清单"
+          }
+        }
+      }
+    },
+    "gettingStarted.expand" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand checklist"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展开清单"
+          }
+        }
+      }
+    },
+    "gettingStarted.progressFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld of %lld completed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已完成 %lld / %lld"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.ai.action" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open AI"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 AI"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.ai.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open AI for the selected repo to summarize and ask questions."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为当前仓库打开 AI，总结项目并继续提问。"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.ai.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try AI summary"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "试用 AI 摘要"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.organize.action" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open repo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开详情"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.organize.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a tag or private note so the repo becomes easier to find later."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加标签或私有笔记，让以后更容易找回。"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.organize.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organize one repo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整理一个仓库"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.search.action" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开搜索"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.search.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use search when you remember what a project does, not its exact name."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当你只记得用途、不记得名字时，用搜索找回它。"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.search.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "试一次搜索"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.select.action" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择仓库"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.select.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a repo to read its README, metadata, tags, and notes."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择仓库查看 README、元信息、标签和笔记。"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.select.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open a repository"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开一个仓库"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.signIn.action" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "去登录"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.signIn.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect your GitHub account so Starcat can read your Stars."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接 GitHub 账号，让 Starcat 读取你的 Stars。"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.signIn.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to GitHub"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录 GitHub"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.sync.action" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始同步"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.sync.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pull your starred repositories into the local library."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把已收藏仓库拉到本地资料库。"
+          }
+        }
+      }
+    },
+    "gettingStarted.step.sync.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync your Stars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同步 Stars"
+          }
+        }
+      }
+    },
+    "gettingStarted.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A short checklist for your first useful library."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟着这几步，先把收藏库跑起来。"
+          }
+        }
+      }
+    },
+    "gettingStarted.tip.ai.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open AI to summarize the selected repo and continue with follow-up questions."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 AI 可以总结当前仓库，并继续追问细节。"
+          }
+        }
+      }
+    },
+    "gettingStarted.tip.ai.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Understand before you keep"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收藏前先读懂"
+          }
+        }
+      }
+    },
+    "gettingStarted.tip.search.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use the list search for the current library, or open global search for a wider lookup."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前列表用这里搜索；需要更大范围时再打开全局搜索。"
+          }
+        }
+      }
+    },
+    "gettingStarted.tip.search.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find repos faster"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更快找回仓库"
+          }
+        }
+      }
+    },
+    "gettingStarted.tip.sync.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync Stars after signing in to bring the latest GitHub changes into Starcat."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录后同步 Stars，把 GitHub 上的最新收藏变化带回 Starcat。"
+          }
+        }
+      }
+    },
+    "gettingStarted.tip.sync.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep your library fresh"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保持资料库更新"
+          }
+        }
+      }
+    },
+    "gettingStarted.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start with Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始使用 Starcat"
+          }
+        }
+      }
+    },
     "onboarding.action.browseTrending" : {
       "localizations" : {
         "en" : {

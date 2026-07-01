@@ -12,6 +12,7 @@
 //
 
 import SwiftUI
+import TipKit
 import AppKit
 
 /// repo 详情顶部元信息内容。
@@ -446,6 +447,7 @@ struct RepoAIOpenButton: View {
 
     var body: some View {
         Button {
+            NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
             dependencies.telemetryManager.track(
                 .aiPanelOpened,
                 properties: [.source: .string("detail")]
@@ -477,6 +479,7 @@ struct RepoAIOpenButton: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pressableHover()
+        .popoverTip(GettingStartedTips.ai)
         .help("ai.assistant.openButton.help")
     }
 }

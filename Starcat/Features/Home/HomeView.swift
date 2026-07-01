@@ -86,6 +86,8 @@ struct HomeView: View {
     /// Agent 是一个长任务工作模式，不适合塞进 sheet；这里用主窗口覆盖层承载，
     /// 让后续所有内置 Agent 共用同一套步骤时间线和 Artifact 预览。
     @State private var showAgentWorkspace: Bool = false
+    /// 主界面首次操作清单。它是本机 UI 教程状态，不进入 AppDependencies，避免变成业务数据。
+    @State private var gettingStartedStore = GettingStartedProgressStore()
     /// Agent 功能尚未进入正式上线面，toolbar 入口默认由 Debug 菜单隐藏。
     ///
     /// 这里用 HomeView 本地状态承接 `DebugFlags`，是因为 UserDefaults 写入不会自动触发
@@ -260,6 +262,37 @@ struct HomeView: View {
             if DebugFlags.layoutOverlay {
                 LayoutDebugOverlay()
             }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            GettingStartedChecklistView(
+                store: gettingStartedStore,
+                isSignedIn: authSession.state.isAuthenticated,
+                hasSyncedStars: gettingStartedStore.isCompleted(.syncStars) || viewModel.totalCount > 0,
+                hasSelectedRepo: viewModel.selectedRepoID != nil,
+                canSelectRepo: selectedSidebarPage == .manage && !viewModel.items.isEmpty,
+                onSignIn: {
+                    authSession.requestLoginSheet()
+                },
+                onSyncStars: {
+                    guard let user = authSession.state.user else {
+                        authSession.requestLoginSheet()
+                        return
+                    }
+                    syncManager.performFullSync(userID: user.id, force: true)
+                },
+                onSelectRepo: {
+                    selectFirstRepoForGettingStarted()
+                },
+                onOpenSearch: {
+                    searchCenterViewModel.present()
+                },
+                onOpenAI: {
+                    openSelectedRepoAIForGettingStarted()
+                }
+            )
+            .padding(.trailing, 18)
+            .padding(.bottom, 18)
+            .zIndex(80)
         }
         .overlay {
             if searchCenterViewModel.isPresented {
@@ -436,6 +469,9 @@ struct HomeView: View {
         // syncManager.state 真正变化的边沿触发。
         .onChange(of: syncManager.state) { _, newState in
             dependencies.autoTidyScheduler.notifySyncStateChanged(newState)
+            if case .completed = newState {
+                gettingStartedStore.markCompleted(.syncStars)
+            }
         }
         // HOM-126：用户在 Settings 切换「定时」/触发开关后，让 scheduler 重新装载
         // 定时器与监听。settings.autoTidySettings 是结构体，赋值替换即触发 .onChange。
@@ -453,6 +489,9 @@ struct HomeView: View {
         // - readmeVM 在 HomeView 已构造完成，不存在"@State 异步赋值"竞态
         // - 即便 RepoDetailView 因 nil 走 emptyState 被销毁，本 onChange 仍稳定触发
         .onChange(of: viewModel.selectedRepoID) { _, newID in
+            if newID != nil {
+                gettingStartedStore.markCompleted(.selectRepo)
+            }
             handleSelectedRepoIDChange(newID)
         }
         // Trending repo 选中变化 → 驱动 Trending README 加载
@@ -484,6 +523,9 @@ struct HomeView: View {
         //        而 isAuthenticated 在 A→B 之间会经历 false 中间态，用 Bool 无法表达;
         //     ② 同时天然滤掉 .unauthenticated → .awaitingUserCode 等中间态（user.id 都是 nil）。
         .onChange(of: authSession.state) { oldState, newState in
+            if newState.isAuthenticated {
+                gettingStartedStore.markCompleted(.signIn)
+            }
             handleAuthRoutingChange(oldState: oldState, newState: newState)
         }
         // Manage 页分类变化 → 持久化为"上次分类"，供下次启动恢复。
@@ -514,6 +556,18 @@ struct HomeView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.browseTrendingNotification)) { _ in
             openTrendingFromFirstRunOnboarding()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.debugReplayNotification)) { _ in
+            gettingStartedStore.reset()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOrganizeRepo)) { _ in
+            gettingStartedStore.markCompleted(.organizeRepo)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidUseSearch)) { _ in
+            gettingStartedStore.markCompleted(.useSearch)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOpenAI)) { _ in
+            gettingStartedStore.markCompleted(.useAI)
         }
         .onChange(of: selectedActivityCategory) { _, newCategory in
             handleActivityCategoryChange(newCategory)
@@ -578,6 +632,7 @@ struct HomeView: View {
     }
 
     private func openSearchRepositoryAI(_ repo: Repo) {
+        NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
         dependencies.telemetryManager.track(
             .aiPanelOpened,
             properties: [.source: .string("search")]
@@ -587,6 +642,29 @@ struct HomeView: View {
             dependencies: dependencies,
             homeViewModel: viewModel
         )
+    }
+
+    /// 开始使用清单里的「选择仓库」只做最小导航：切回 Manage，并选中当前页第一条。
+    /// 不强制刷新列表，避免用户已经在某个过滤条件下浏览时被突兀打断。
+    private func selectFirstRepoForGettingStarted() {
+        if selectedSidebarPage != .manage {
+            selectedSidebarPage = .manage
+        }
+        if viewModel.selection.isTrending {
+            viewModel.selection = savedManageSelection
+        }
+        guard viewModel.selectedRepoID == nil, let first = viewModel.items.first else { return }
+        viewModel.shouldScrollSelectedRepoIntoView = true
+        viewModel.selectedRepoID = first.id
+    }
+
+    /// 开始使用清单里的 AI 入口复用当前选中仓库，不创建新的 AI 专用流程。
+    private func openSelectedRepoAIForGettingStarted() {
+        guard let repo = viewModel.selectedRepo else {
+            selectFirstRepoForGettingStarted()
+            return
+        }
+        openSearchRepositoryAI(repo)
     }
 
     private func toggleSearchRepositoryStar(_ repo: Repo) async throws -> Bool {
