@@ -62,6 +62,8 @@ struct AppStatusToolbarButton: View {
                 readmePrefetchService: dependencies.readmePrefetchService,
                 readmePrefetchEnabled: settings.readmePrefetchEnabled,
                 readmePrefetchDraining: dependencies.readmePrefetchPoller.isDraining,
+                initialWarmupCoordinator: dependencies.initialWarmupCoordinator,
+                repoHealthPoller: dependencies.repoHealthPoller,
                 batchService: dependencies.batchAIQueueService,
                 mcpState: dependencies.mcpService.state,
                 mcpEnabled: settings.mcpServiceEnabled,
@@ -108,11 +110,25 @@ struct AppStatusToolbarButton: View {
         let readmeRemaining = readme.isRunning
             ? max(0, readme.total - readme.processed)
             : (dependencies.readmePrefetchPoller.isDraining ? 1 : 0)
-        return batchRemaining + readmeRemaining
+        let warmup = dependencies.initialWarmupCoordinator
+        let warmupRemaining: Int
+        if warmup.isActive, let job = warmup.job {
+            warmupRemaining = max(0, job.readmeTotal - job.readmeCovered) + max(0, job.healthTotal - job.healthCovered)
+        } else {
+            warmupRemaining = warmup.isRunning ? 1 : 0
+        }
+        let health = dependencies.repoHealthPoller
+        let healthRemaining = health.isRefreshing
+            ? max(1, health.refreshTotal - health.refreshProcessed)
+            : 0
+        return batchRemaining + readmeRemaining + warmupRemaining + healthRemaining
     }
 
     private var hasIssue: Bool {
-        diagnosticSummary.issueCount > 0 || isMCPFailed || dependencies.serviceAvailabilityMonitor.summary.hasIssue
+        diagnosticSummary.issueCount > 0
+            || isMCPFailed
+            || dependencies.serviceAvailabilityMonitor.summary.hasIssue
+            || dependencies.initialWarmupCoordinator.job?.phase == .paused
     }
 
     private var isMCPFailed: Bool {
@@ -172,6 +188,8 @@ private struct AppStatusPanel: View {
     let readmePrefetchService: ReadmePrefetchService
     let readmePrefetchEnabled: Bool
     let readmePrefetchDraining: Bool
+    let initialWarmupCoordinator: InitialRepoWarmupCoordinator
+    let repoHealthPoller: RepoHealthPoller
     let batchService: BatchAIQueueService
     let mcpState: StarcatMCPService.State
     let mcpEnabled: Bool
@@ -389,8 +407,8 @@ private struct AppStatusPanel: View {
     }
 
     private var taskIcon: String {
-        if isReadmePrefetchWaitingForRetry || batchService.failedCount > 0 { return "exclamationmark.triangle.fill" }
-        if readmePrefetchService.isRunning || readmePrefetchDraining || batchService.isRunning {
+        if isInitialWarmupPaused || isReadmePrefetchWaitingForRetry || batchService.failedCount > 0 { return "exclamationmark.triangle.fill" }
+        if initialWarmupCoordinator.isRunning || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchDraining || batchService.isRunning {
             return "clock.arrow.circlepath"
         }
         if batchService.isPaused { return "pause.circle.fill" }
@@ -398,18 +416,24 @@ private struct AppStatusPanel: View {
     }
 
     private var taskTint: Color {
-        if isReadmePrefetchWaitingForRetry || readmePrefetchService.failures > 0 || batchService.failedCount > 0 { return .orange }
-        if readmePrefetchService.isRunning || readmePrefetchDraining || isReadmePrefetchCoolingDown || batchService.isRunning || batchService.isPaused {
+        if isInitialWarmupPaused || isReadmePrefetchWaitingForRetry || readmePrefetchService.failures > 0 || batchService.failedCount > 0 { return .orange }
+        if initialWarmupCoordinator.isRunning || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchDraining || isReadmePrefetchCoolingDown || batchService.isRunning || batchService.isPaused {
             return .accentColor
         }
-        if isReadmePrefetchAllFetched { return .green }
+        if initialWarmupCoordinator.isCompleted || isReadmePrefetchAllFetched { return .green }
         return .secondary
     }
 
     private var taskSubtitle: String {
         var lines: [String] = []
+        if initialWarmupCoordinator.isActive || initialWarmupCoordinator.isCompleted {
+            lines.append(initialWarmupSubtitle)
+        }
         if shouldShowReadmePrefetchInTasks {
             lines.append(String(format: String.l10n("toolbar.status.tasks.readmeFormat"), readmePrefetchSubtitle))
+        }
+        if shouldShowRepoHealthInTasks {
+            lines.append(repoHealthSubtitle)
         }
         if batchService.totalCount > 0 {
             lines.append(String(
@@ -428,7 +452,7 @@ private struct AppStatusPanel: View {
     @ViewBuilder
     private var taskAccessory: some View {
         HStack(spacing: 6) {
-            if readmePrefetchService.isRunning || readmePrefetchDraining {
+            if initialWarmupCoordinator.isRunning || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchDraining {
                 ProgressView()
                     .controlSize(.small)
             }
@@ -443,7 +467,80 @@ private struct AppStatusPanel: View {
     }
 
     private var shouldShowReadmePrefetchInTasks: Bool {
-        readmePrefetchEnabled || readmePrefetchService.isRunning
+        (readmePrefetchEnabled || readmePrefetchService.isRunning) && !initialWarmupCoordinator.isActive
+    }
+
+    private var shouldShowRepoHealthInTasks: Bool {
+        repoHealthPoller.isRefreshing || repoHealthPoller.lastRunAt != nil
+    }
+
+    private var repoHealthSubtitle: String {
+        if repoHealthPoller.isRefreshing {
+            return String(
+                format: String.l10n("toolbar.status.tasks.repoHealthProgressFormat"),
+                repoHealthPoller.refreshProcessed,
+                repoHealthPoller.refreshTotal
+            )
+        }
+        if let lastRunAt = repoHealthPoller.lastRunAt {
+            return String(
+                format: String.l10n("toolbar.status.tasks.repoHealthLastFormat"),
+                repoHealthPoller.lastRefreshCount,
+                relativePastDate(lastRunAt)
+            )
+        }
+        return String.l10n("toolbar.status.tasks.repoHealthWaiting")
+    }
+
+    private var initialWarmupSubtitle: String {
+        guard let job = initialWarmupCoordinator.job else {
+            return String.l10n("toolbar.status.initialWarmup.waiting")
+        }
+
+        switch job.phase {
+        case .waiting:
+            if let scheduled = job.scheduledAt.flatMap({ ISO8601DateFormatter.shared.date(from: $0) }) {
+                return String(
+                    format: String.l10n("toolbar.status.initialWarmup.scheduledFormat"),
+                    relativeFutureDate(scheduled)
+                )
+            }
+            return String.l10n("toolbar.status.initialWarmup.waiting")
+        case .readme:
+            return String(
+                format: String.l10n("toolbar.status.initialWarmup.progressFormat"),
+                job.readmeCovered,
+                job.readmeTotal,
+                job.healthCovered,
+                job.healthTotal
+            )
+        case .health:
+            return String(
+                format: String.l10n("toolbar.status.initialWarmup.progressFormat"),
+                job.readmeCovered,
+                job.readmeTotal,
+                job.healthCovered,
+                job.healthTotal
+            )
+        case .paused:
+            if job.lastErrorKind == "rateLimited", let retry = job.nextRetryAt.flatMap({ ISO8601DateFormatter.shared.date(from: $0) }) {
+                return String(
+                    format: String.l10n("toolbar.status.initialWarmup.rateLimitedFormat"),
+                    relativeFutureDate(retry)
+                )
+            }
+            if let retry = job.nextRetryAt.flatMap({ ISO8601DateFormatter.shared.date(from: $0) }) {
+                return String(
+                    format: String.l10n("toolbar.status.initialWarmup.pausedFormat"),
+                    relativeFutureDate(retry)
+                )
+            }
+            return String.l10n("toolbar.status.initialWarmup.paused")
+        case .completed:
+            return String.l10n("toolbar.status.initialWarmup.completed")
+        case .disabled:
+            return String.l10n("toolbar.status.readmePrefetch.disabled")
+        }
     }
 
     private var isReadmePrefetchCoolingDown: Bool {
@@ -459,6 +556,10 @@ private struct AppStatusPanel: View {
     private var isReadmePrefetchAllFetched: Bool {
         if case .allPrefetched = readmePrefetchService.status { return true }
         return false
+    }
+
+    private var isInitialWarmupPaused: Bool {
+        initialWarmupCoordinator.job?.phase == .paused
     }
 
     private var serviceIcon: String {

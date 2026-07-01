@@ -23,6 +23,11 @@ struct ReadmePrefetchCoverageSummary: Equatable, Sendable {
     }
 }
 
+/// 当前 README 预拉剩余候选的最早重试时间。
+struct ReadmePrefetchRetrySummary: Equatable, Sendable {
+    let nextRetryAt: Date?
+}
+
 /// README 后台预拉持久化层。
 struct ReadmePrefetchRepository: Sendable {
 
@@ -78,10 +83,14 @@ struct ReadmePrefetchRepository: Sendable {
         }
     }
 
-    /// 统计当前 Star 仓库中已具备 HTML + raw Markdown 缓存的数量。
+    /// 统计当前 Star 仓库中已被 README 预拉覆盖的数量。
     ///
     /// `fetchCandidates` 只回答“本轮还有谁需要处理”，无法区分“没有候选项”是因为全部完成、
     /// 暂无 Star，还是剩余仓库都在 retry 冷却中。设置页需要这个 summary 给出准确用户态状态。
+    ///
+    /// 覆盖口径包含 notFound：部分 GitHub 仓库天然没有 README，如果只把 HTML + Markdown
+    /// 都存在算完成，首次预热会被这些 repo 永久卡住。notFound 仍保留在
+    /// `readme_prefetch_states` 中，普通清理 README 缓存不会抹掉这个结论。
     func coverageSummary() async throws -> ReadmePrefetchCoverageSummary {
         try await database.writer.read { db in
             let row = try Row.fetchOne(
@@ -92,12 +101,14 @@ struct ReadmePrefetchRepository: Sendable {
                     COALESCE(SUM(
                         CASE
                             WHEN rm.repo_id IS NOT NULL AND rc.repo_id IS NOT NULL THEN 1
+                            WHEN ps.html_status = 'notFound' OR ps.markdown_status = 'notFound' THEN 1
                             ELSE 0
                         END
                     ), 0) AS prefetched_total
                 FROM repos r
                 LEFT JOIN readmes rm ON rm.repo_id = r.id
                 LEFT JOIN readme_contents rc ON rc.repo_id = r.id
+                LEFT JOIN readme_prefetch_states ps ON ps.repo_id = r.id
                 WHERE r.is_starred = 1
                 """
             )
@@ -106,6 +117,40 @@ struct ReadmePrefetchRepository: Sendable {
                 starredTotal: row?["starred_total"] ?? 0,
                 prefetchedTotal: row?["prefetched_total"] ?? 0
             )
+        }
+    }
+
+    /// 查找当前未覆盖 README 候选中最早可重试时间。
+    ///
+    /// coordinator 在“没有可跑候选但覆盖率未满”时调用它决定暂停到什么时候。
+    /// 如果返回 nil，说明没有持久化冷却时间，调用方应使用保守的短延迟兜底。
+    func nextRetryForPendingCandidates(now: Date, htmlStaleBefore: Date) async throws -> Date? {
+        let nowISO = ISO8601DateFormatter.shared.string(from: now)
+        let staleISO = ISO8601DateFormatter.shared.string(from: htmlStaleBefore)
+
+        return try await database.writer.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT MIN(ps.next_retry_at) AS next_retry_at
+                FROM repos r
+                LEFT JOIN readmes rm ON rm.repo_id = r.id
+                LEFT JOIN readme_contents rc ON rc.repo_id = r.id
+                LEFT JOIN readme_prefetch_states ps ON ps.repo_id = r.id
+                WHERE r.is_starred = 1
+                  AND ps.next_retry_at IS NOT NULL
+                  AND ps.next_retry_at > ?
+                  AND (
+                        rm.repo_id IS NULL
+                     OR rc.repo_id IS NULL
+                     OR rm.cached_at <= ?
+                  )
+                  AND NOT (ps.html_status = 'notFound' OR ps.markdown_status = 'notFound')
+                """,
+                arguments: [nowISO, staleISO]
+            )
+            let value: String? = row?["next_retry_at"]
+            return value.flatMap { ISO8601DateFormatter.shared.date(from: $0) }
         }
     }
 

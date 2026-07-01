@@ -73,6 +73,7 @@ enum DatabaseMigrations {
             try createReadmes(db)
             try createReadmeContents(db)
             try createReadmePrefetchStates(db)
+            try createInitialWarmupJobs(db)
             try createSavedSearches(db)
             try createSmartCollections(db)
             try createSearchHistory(db)
@@ -497,6 +498,30 @@ enum DatabaseMigrations {
 
         try db.create(index: "idx_readme_prefetch_retry", on: "readme_prefetch_states", columns: ["next_retry_at"])
         try db.create(index: "idx_readme_prefetch_html_status", on: "readme_prefetch_states", columns: ["html_status"])
+    }
+
+    /// initial_warmup_jobs：新用户首次 starred 全量同步后的 README / Health 预热作业。
+    ///
+    /// 本表只保存“作业阶段 + 恢复点 + 当前覆盖率”，不保存 repo 队列。原因是 starred
+    /// 仓库集合会随同步、取消 star、清理缓存变化；每批从当前 DB 事实重新查询候选，应用
+    /// 关闭或崩溃后才能准确恢复。
+    private static func createInitialWarmupJobs(_ db: Database) throws {
+        try db.create(table: "initial_warmup_jobs") { t in
+            t.column("user_id", .integer).primaryKey()
+            t.column("phase", .text).notNull()
+            t.column("scheduled_at", .text)
+            t.column("started_at", .text)
+            t.column("completed_at", .text)
+            t.column("next_retry_at", .text)
+            t.column("last_error_kind", .text)
+            t.column("readme_covered", .integer).notNull().defaults(to: 0)
+            t.column("readme_total", .integer).notNull().defaults(to: 0)
+            t.column("health_covered", .integer).notNull().defaults(to: 0)
+            t.column("health_total", .integer).notNull().defaults(to: 0)
+            t.column("updated_at", .text).notNull()
+        }
+
+        try db.create(index: "idx_initial_warmup_phase_retry", on: "initial_warmup_jobs", columns: ["phase", "next_retry_at"])
     }
 
     /// saved_searches：用户保存的搜索条件。`query` 存搜索过滤参数的 JSON 序列化。

@@ -75,6 +75,10 @@ final class AppDependencies {
     let readmePrefetchService: ReadmePrefetchService
     /// README 后台预拉调度器。登录态 + 设置开关开启时由 HomeView 启动。
     let readmePrefetchPoller: ReadmePrefetchPoller
+    /// 首次 starred 全量同步完成后的 README / Repo Health 预热作业状态 Repository。
+    let initialWarmupJobRepository: InitialWarmupJobRepository
+    /// 首次 README / Repo Health 预热协调器。负责跨启动恢复与状态窗口进度。
+    let initialWarmupCoordinator: InitialRepoWarmupCoordinator
     /// W4 Batch A1 引入：标签 CRUD。
     let tagRepository: any TagRepositoryProtocol
     /// W4 Batch A1 引入：repo ↔ tag 关联 + 批量打标签。
@@ -516,6 +520,8 @@ final class AppDependencies {
         )
         let readmePrefetchRepo = ReadmePrefetchRepository(database: db)
         self.readmePrefetchRepository = readmePrefetchRepo
+        let initialWarmupJobRepo = InitialWarmupJobRepository(database: db)
+        self.initialWarmupJobRepository = initialWarmupJobRepo
         let readmePrefetchService = ReadmePrefetchService(
             repository: readmePrefetchRepo,
             readmeRepository: readmeRepo,
@@ -814,6 +820,12 @@ final class AppDependencies {
         self.repoHealthService = healthService
         self.repoHealthStore = RepoHealthStore(service: healthService)
         self.repoHealthPoller = RepoHealthPoller(service: healthService)
+        self.initialWarmupCoordinator = InitialRepoWarmupCoordinator(
+            jobRepository: initialWarmupJobRepo,
+            readmePrefetchRepository: readmePrefetchRepo,
+            readmePrefetchService: readmePrefetchService,
+            repoHealthService: healthService
+        )
 
         // Activity 公告与关注 PR-1（2026-06-16）：纯本地 CRUD Repository，不接网络。
         // PR-2/PR-3 在外层 ActivityViewModel 里组合「GitHub Events API + RSS + Security Advisory」

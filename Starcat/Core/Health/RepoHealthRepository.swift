@@ -17,6 +17,17 @@ protocol RepoHealthRepositoryProtocol: Sendable {
     func snapshots(for repoIds: [Int64]) async throws -> [Int64: RepoHealthSnapshot]
     func upsert(_ snapshot: RepoHealthSnapshot) async throws
     func staleStarredRepos(now: Date, limit: Int) async throws -> [Repo]
+    func missingSnapshotStarredRepos(limit: Int) async throws -> [Repo]
+    func coverageSummary() async throws -> RepoHealthCoverageSummary
+}
+
+struct RepoHealthCoverageSummary: Equatable, Sendable {
+    let starredTotal: Int
+    let snapshotTotal: Int
+
+    var isAllCovered: Bool {
+        starredTotal > 0 && snapshotTotal >= starredTotal
+    }
 }
 
 struct GRDBRepoHealthRepository: RepoHealthRepositoryProtocol, Sendable {
@@ -67,5 +78,44 @@ struct GRDBRepoHealthRepository: RepoHealthRepositoryProtocol, Sendable {
             )
         }
     }
-}
 
+    func missingSnapshotStarredRepos(limit: Int) async throws -> [Repo] {
+        let safeLimit = max(1, limit)
+        return try await database.writer.read { db in
+            try Repo.fetchAll(
+                db,
+                sql: """
+                SELECT repos.*
+                FROM repos
+                LEFT JOIN repo_health_snapshots h ON h.repo_id = repos.id
+                WHERE repos.is_starred = 1
+                  AND h.repo_id IS NULL
+                ORDER BY repos.starred_at DESC
+                LIMIT ?
+                """,
+                arguments: [safeLimit]
+            )
+        }
+    }
+
+    func coverageSummary() async throws -> RepoHealthCoverageSummary {
+        try await database.writer.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT
+                    COUNT(*) AS starred_total,
+                    COALESCE(SUM(CASE WHEN h.repo_id IS NULL THEN 0 ELSE 1 END), 0) AS snapshot_total
+                FROM repos
+                LEFT JOIN repo_health_snapshots h ON h.repo_id = repos.id
+                WHERE repos.is_starred = 1
+                """
+            )
+
+            return RepoHealthCoverageSummary(
+                starredTotal: row?["starred_total"] ?? 0,
+                snapshotTotal: row?["snapshot_total"] ?? 0
+            )
+        }
+    }
+}

@@ -28156,13 +28156,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fetch Now"
+            "value" : "Fetch Missing READMEs"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "立即拉取"
+            "value" : "立即补齐 README"
           }
         }
       }
@@ -35757,6 +35757,125 @@
         }
       }
     },
+    "toolbar.status.initialWarmup.completed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Initial warmup completed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首次预热已完成"
+          }
+        }
+      }
+    },
+    "toolbar.status.initialWarmup.paused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Initial warmup is paused"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首次预热已暂停"
+          }
+        }
+      }
+    },
+    "toolbar.status.initialWarmup.pausedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Initial warmup paused, retry %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首次预热暂停，%@重试"
+          }
+        }
+      }
+    },
+    "toolbar.status.initialWarmup.progressFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Initial warmup · README %d/%d · Health %d/%d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首次数据预热 · README %d/%d · Health %d/%d"
+          }
+        }
+      }
+    },
+    "toolbar.status.initialWarmup.rateLimitedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Initial warmup waiting for GitHub rate limit, retry %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首次预热等待 GitHub 限流恢复，%@重试"
+          }
+        }
+      }
+    },
+    "toolbar.status.initialWarmup.scheduledFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Initial warmup starts %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首次预热将在 %@ 开始"
+          }
+        }
+      }
+    },
+    "toolbar.status.initialWarmup.waiting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Initial warmup is waiting"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首次预热等待中"
+          }
+        }
+      }
+    },
     "toolbar.status.readmePrefetch.completedFormat" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -36263,6 +36382,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "README 预拉：%@"
+          }
+        }
+      }
+    },
+    "toolbar.status.tasks.repoHealthLastFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repo Health: refreshed %d repos %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repo Health：上次刷新 %d 个，%@"
+          }
+        }
+      }
+    },
+    "toolbar.status.tasks.repoHealthProgressFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repo Health: refreshing %d / %d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repo Health：刷新中 %d / %d"
+          }
+        }
+      }
+    },
+    "toolbar.status.tasks.repoHealthWaiting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repo Health is waiting"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repo Health 等待中"
           }
         }
       }

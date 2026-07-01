@@ -742,6 +742,7 @@ private struct StorageSettingsTab: View {
             || !settings.readmePrefetchEnabled
             || dependencies.readmePrefetchService.isRunning
             || dependencies.readmePrefetchPoller.isDraining
+            || dependencies.initialWarmupCoordinator.isRunning
             || isTriggeringReadmePrefetch
     }
 
@@ -1242,16 +1243,18 @@ private struct StorageSettingsTab: View {
         }
     }
 
-    /// 手动触发一次 README 预拉，复用后台 poller 的单轮入口。
+    /// 手动触发一次 README 补齐，只处理 README，不触发 Repo Health 首次计算。
     ///
-    /// 这里不绕过 `ReadmePrefetchService` 直接开跑：poller 已经有“上一轮未完成则跳过”的
-    /// 守卫，手动按钮和后台调度共享同一入口，避免并发重复拉取同一批 README。
+    /// 这里走 `InitialRepoWarmupCoordinator.runReadmeNow`，而不是直接调用 poller：
+    /// 设置页按钮的产品语义是“立即补齐 README”，可以用于首次 warmup 前手动提前补，
+    /// 也可以用于用户清理 README 缓存后的普通补漏，但不应该顺手启动 Health 计算。
     @MainActor
     private func triggerReadmePrefetch(using cleaner: CacheCleaner) async {
         guard !shouldDisableReadmePrefetchRunNow else { return }
+        guard let userID = authSession.state.user?.id else { return }
         isTriggeringReadmePrefetch = true
         defer { isTriggeringReadmePrefetch = false }
-        await dependencies.readmePrefetchPoller.runNow()
+        await dependencies.initialWarmupCoordinator.runReadmeNow(userID: userID)
         await refreshCacheStatistics(using: cleaner)
     }
 

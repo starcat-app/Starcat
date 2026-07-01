@@ -88,9 +88,14 @@ actor RepoHealthService {
         return snapshot
     }
 
-    func refreshStaleStarredRepos(limit: Int, delayBetweenRepos: TimeInterval = 0) async -> Int {
+    func refreshStaleStarredRepos(
+        limit: Int,
+        delayBetweenRepos: TimeInterval = 0,
+        progress: (@Sendable (_ processed: Int, _ total: Int) async -> Void)? = nil
+    ) async -> Int {
         do {
             let repos = try await repository.staleStarredRepos(now: Date(), limit: limit)
+            await progress?(0, repos.count)
             var refreshed = 0
             for (index, repo) in repos.enumerated() {
                 guard !Task.isCancelled else { break }
@@ -100,6 +105,7 @@ actor RepoHealthService {
                 } catch {
                     AppLog.general.warning("RepoHealth background refresh failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
                 }
+                await progress?(index + 1, repos.count)
 
                 if index < repos.count - 1, delayBetweenRepos > 0 {
                     try? await Task.sleep(nanoseconds: UInt64(delayBetweenRepos * 1_000_000_000))
@@ -110,6 +116,38 @@ actor RepoHealthService {
             AppLog.general.warning("RepoHealth stale repo query failed: \(error.localizedDescription, privacy: .public)")
             return 0
         }
+    }
+
+    /// 首次预热入口：只补齐还没有 Health 快照的 starred repo。
+    ///
+    /// 与 `refreshStaleStarredRepos` 分开，是为了让“新用户首次可用”不被 24h stale 刷新放大；
+    /// 已有分数的过期重算仍交给周期性 poller，首次 warmup 只负责把空白 badge 尽快补上。
+    func refreshMissingSnapshotStarredRepos(limit: Int, delayBetweenRepos: TimeInterval = 0) async -> Int {
+        do {
+            let repos = try await repository.missingSnapshotStarredRepos(limit: limit)
+            var refreshed = 0
+            for (index, repo) in repos.enumerated() {
+                guard !Task.isCancelled else { break }
+                do {
+                    _ = try await refresh(repo: repo)
+                    refreshed += 1
+                } catch {
+                    AppLog.general.warning("RepoHealth initial warmup failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                }
+
+                if index < repos.count - 1, delayBetweenRepos > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(delayBetweenRepos * 1_000_000_000))
+                }
+            }
+            return refreshed
+        } catch {
+            AppLog.general.warning("RepoHealth missing snapshot query failed: \(error.localizedDescription, privacy: .public)")
+            return 0
+        }
+    }
+
+    func coverageSummary() async throws -> RepoHealthCoverageSummary {
+        try await repository.coverageSummary()
     }
 
     private func makeAndPersistSnapshot(repo: Repo) async throws -> RepoHealthSnapshot {
