@@ -7,19 +7,21 @@
  */
 window.STARCAT_ADMIN_CONFIG = {
   fly: {
-    // Browser requests go through the local-only proxy in server.mjs to avoid
-    // Fly Machines API CORS failures.
+    // Fly token is used only by the local server.mjs when applying selected
+    // supports/*/.env values to Fly secrets.
     proxyBaseURL: "/fly-api",
     apiBaseURL: "https://api.machines.dev/v1",
     apiToken: "FlyV1 your-personal-access-token",
-    apps: [
-      "starcat-sharing-api",
-      "starcat-trending-api",
-      "starcat-weekly-api",
-      "starcat-wiki-api",
-      "starcat-recommend-api",
-      "starcat-discovery-api"
-    ]
+    // Optional. If omitted, the local server falls back to the standard
+    // starcat-<service>-api app names.
+    apps: {
+      sharing: "starcat-sharing-api",
+      trending: "starcat-trending-api",
+      weekly: "starcat-weekly-api",
+      wiki: "starcat-wiki-api",
+      recommend: "starcat-recommend-api",
+      discovery: "starcat-discovery-api"
+    }
   },
   services: {
     sharing: {

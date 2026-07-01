@@ -4,7 +4,8 @@
  * Why this exists:
  * Fly Machines API does not expose browser CORS headers, so the static admin
  * page cannot call https://api.machines.dev directly. This tiny local server
- * serves the panel and proxies /fly-api/* to Fly with the token from config.js.
+ * serves the panel, reads local service .env files, and applies selected
+ * variables to Fly secrets using the token from config.js.
  */
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -17,6 +18,25 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const defaultPort = 8080;
 const port = Number.parseInt(readArg("--port") || process.env.PORT || String(defaultPort), 10);
+const repoRoot = path.resolve(__dirname, "..", "..");
+
+const serviceEnvPaths = {
+  sharing: "supports/starcat-sharing-api/.env",
+  trending: "supports/starcat-trending-api/.env",
+  weekly: "supports/starcat-weekly-api/.env",
+  wiki: "supports/starcat-wiki-api/.env",
+  recommend: "supports/starcat-recommend-api/.env",
+  discovery: "supports/starcat-discovery-api/.env"
+};
+
+const defaultFlyApps = {
+  sharing: "starcat-sharing-api",
+  trending: "starcat-trending-api",
+  weekly: "starcat-weekly-api",
+  wiki: "starcat-wiki-api",
+  recommend: "starcat-recommend-api",
+  discovery: "starcat-discovery-api"
+};
 
 const mimeTypes = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -35,6 +55,14 @@ createServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1"}`);
     if (url.pathname === "/fly-api" || url.pathname.startsWith("/fly-api/")) {
       await proxyFlyRequest(req, res, url);
+      return;
+    }
+    if (url.pathname === "/local-env") {
+      await readLocalEnv(req, res, url);
+      return;
+    }
+    if (url.pathname === "/fly-env/apply") {
+      await applyFlyEnv(req, res);
       return;
     }
     await serveStaticFile(res, url.pathname);
@@ -121,6 +149,144 @@ async function proxyFlyRequest(req, res, localURL) {
   });
   res.end(body);
   console.log(`${req.method} ${localURL.pathname}${localURL.search} -> ${response.status}`);
+}
+
+async function readLocalEnv(req, res, localURL) {
+  if (req.method !== "GET") {
+    writeJSON(res, 405, { error: "method not allowed" });
+    return;
+  }
+  const service = localURL.searchParams.get("service") || "";
+  const envPath = serviceEnvPaths[service];
+  if (!envPath) {
+    writeJSON(res, 400, { error: `unknown service: ${service}` });
+    return;
+  }
+
+  const absolutePath = path.resolve(repoRoot, envPath);
+  if (!absolutePath.startsWith(`${repoRoot}${path.sep}`)) {
+    writeJSON(res, 403, { error: "forbidden env path" });
+    return;
+  }
+  if (!existsSync(absolutePath)) {
+    writeJSON(res, 404, { service, envPath, variables: [], error: ".env not found" });
+    return;
+  }
+
+  const source = await readFile(absolutePath, "utf8");
+  writeJSON(res, 200, {
+    service,
+    envPath,
+    variables: parseEnv(source)
+  });
+}
+
+async function applyFlyEnv(req, res) {
+  if (req.method === "OPTIONS") {
+    writeJSON(res, 204, {});
+    return;
+  }
+  if (req.method !== "POST") {
+    writeJSON(res, 405, { error: "method not allowed" });
+    return;
+  }
+
+  const payload = JSON.parse((await readRequestBody(req)).toString("utf8") || "{}");
+  const service = String(payload.service || "");
+  const appName = String(payload.app || flyAppForService((await loadConfig()).fly || {}, service));
+  const variables = Array.isArray(payload.variables) ? payload.variables : [];
+  if (!serviceEnvPaths[service]) {
+    writeJSON(res, 400, { error: `unknown service: ${service}` });
+    return;
+  }
+  if (!appName) {
+    writeJSON(res, 400, { error: `missing fly app for service: ${service}` });
+    return;
+  }
+  if (!variables.length) {
+    writeJSON(res, 400, { error: "no variables selected" });
+    return;
+  }
+
+  const cfg = await loadConfig();
+  const fly = cfg.fly || {};
+  if (!fly.apiToken) {
+    writeJSON(res, 500, { error: "missing fly.apiToken in config.js" });
+    return;
+  }
+
+  const apiBaseURL = String(fly.apiBaseURL || "https://api.machines.dev/v1").replace(/\/+$/, "");
+  const results = [];
+  for (const item of variables) {
+    const name = String(item.name || "").trim();
+    const value = item.value == null ? "" : String(item.value);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      results.push({ name, ok: false, error: "invalid env name" });
+      continue;
+    }
+
+    const targetURL = `${apiBaseURL}/apps/${encodeURIComponent(appName)}/secrets/${encodeURIComponent(name)}`;
+    try {
+      const response = await fetch(targetURL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${fly.apiToken}`,
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ value })
+      });
+      const text = await response.text();
+      let body = text;
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {
+        body = text;
+      }
+      results.push({ name, ok: response.ok, status: response.status, body: response.ok ? body : undefined, error: response.ok ? undefined : body });
+    } catch (error) {
+      results.push({ name, ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  const ok = results.every((item) => item.ok);
+  writeJSON(res, ok ? 200 : 207, { service, app: appName, results });
+}
+
+function parseEnv(source) {
+  const variables = [];
+  for (const rawLine of source.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const normalized = line.startsWith("export ") ? line.slice(7).trim() : line;
+    const separator = normalized.indexOf("=");
+    if (separator <= 0) continue;
+    const name = normalized.slice(0, separator).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) continue;
+    variables.push({
+      name,
+      value: unquoteEnvValue(normalized.slice(separator + 1).trim())
+    });
+  }
+  return variables;
+}
+
+function unquoteEnvValue(value) {
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1).replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+  }
+  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function flyAppForService(fly, service) {
+  const apps = fly.apps || {};
+  if (Array.isArray(apps)) {
+    return apps.find((app) => app === defaultFlyApps[service] || String(app).includes(`-${service}-`)) || defaultFlyApps[service] || "";
+  }
+  return apps[service] || defaultFlyApps[service] || "";
 }
 
 async function loadConfig() {

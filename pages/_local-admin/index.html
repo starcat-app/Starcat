@@ -162,53 +162,15 @@
       gap: 14px;
     }
 
-    .fly-section {
+    .fly-env-panel {
+      margin-top: 12px;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: var(--surface);
-      box-shadow: var(--shadow);
-      margin-bottom: 18px;
-      overflow: hidden;
-    }
-
-    .fly-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 16px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .fly-title {
-      margin: 0;
-      font-size: 17px;
-      line-height: 1.25;
-    }
-
-    .fly-subtitle {
-      margin: 6px 0 0;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.5;
-    }
-
-    .fly-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-      padding: 16px;
-    }
-
-    .fly-secret-panel {
-      margin: 0 16px 16px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface-soft);
       padding: 12px;
     }
 
-    .fly-secret-head {
+    .fly-env-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -216,61 +178,63 @@
       margin-bottom: 12px;
     }
 
-    .fly-secret-title {
+    .fly-env-title {
       margin: 0;
       color: var(--muted);
       font-size: 12px;
       line-height: 1.4;
     }
 
-    .fly-card {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface-soft);
-      padding: 12px;
-      min-height: 170px;
+    .fly-env-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
     }
 
-    .fly-card-head {
+    .fly-env-actions {
       display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .fly-env-table {
+      display: grid;
       gap: 8px;
       margin-bottom: 10px;
     }
 
-    .fly-app {
-      margin: 0;
-      font-size: 14px;
-      line-height: 1.35;
+    .fly-env-row {
+      display: grid;
+      grid-template-columns: 28px minmax(130px, 0.4fr) minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+    }
+
+    .fly-env-name {
+      color: var(--muted);
+      font-size: 12px;
       overflow-wrap: anywhere;
     }
 
-    .fly-meta {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
+    .fly-env-empty {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
     }
 
-    .fly-item {
+    .fly-env-value {
+      width: 100%;
+      min-height: 36px;
       border: 1px solid var(--border);
       border-radius: 8px;
-      background: var(--surface);
-      padding: 8px;
-      min-height: 54px;
-    }
-
-    .fly-item-name {
-      color: var(--muted);
-      font-size: 11px;
-      margin-bottom: 5px;
-    }
-
-    .fly-item-value {
-      font-size: 13px;
-      font-weight: 700;
-      line-height: 1.3;
-      overflow-wrap: anywhere;
+      background: var(--surface-soft);
+      color: var(--text);
+      padding: 7px 10px;
+      outline: none;
     }
 
     .card {
@@ -444,29 +408,6 @@
       grid-column: 1 / -1;
     }
 
-    .mock-panel {
-      margin-top: 12px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface);
-      padding: 12px;
-    }
-
-    .mock-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 10px;
-    }
-
-    .mock-title {
-      margin: 0;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.4;
-    }
-
     .mock-actions {
       display: flex;
       gap: 8px;
@@ -474,22 +415,116 @@
       justify-content: flex-end;
     }
 
-    .mock-textarea {
+    .api-console {
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 12px;
+    }
+
+    .api-console-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .api-console-title {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .api-request-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 10px;
+    }
+
+    .api-endpoint-select {
       width: 100%;
-      min-height: 280px;
+      min-height: 38px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      color: var(--text);
+      padding: 8px 10px;
+      outline: none;
+    }
+
+    .api-send {
+      min-height: 38px;
+      padding-inline: 18px;
+    }
+
+    .api-description {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .api-param-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .api-param-field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .api-param-field label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .api-param-field input,
+    .api-param-field select {
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      color: var(--text);
+      padding: 7px 10px;
+      outline: none;
+    }
+
+    .api-body-label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .api-body {
+      width: 100%;
+      min-height: 112px;
       resize: vertical;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: var(--surface-soft);
       color: var(--text);
-      padding: 12px;
+      padding: 10px;
       font-family: "SF Mono", Consolas, monospace;
       font-size: 12px;
-      line-height: 1.55;
+      line-height: 1.5;
       outline: none;
+      margin-bottom: 10px;
     }
 
-    .mock-textarea:focus {
+    .api-endpoint-select:focus,
+    .api-param-field input:focus,
+    .api-param-field select:focus,
+    .api-body:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-soft);
     }
@@ -533,28 +568,13 @@
       outline: none;
     }
 
-    .fly-secret-value {
-      width: 100%;
-      min-height: 84px;
-      resize: vertical;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface);
-      color: var(--text);
-      padding: 9px 10px;
-      font-family: "SF Mono", Consolas, monospace;
-      font-size: 12px;
-      line-height: 1.5;
-      outline: none;
-    }
-
     .param-field input:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-soft);
     }
 
     .param-field select:focus,
-    .fly-secret-value:focus {
+    .fly-env-value:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-soft);
     }
@@ -581,6 +601,19 @@
       font-size: 12px;
       line-height: 1.45;
       overflow-wrap: anywhere;
+    }
+
+    .api-result-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .api-result-actions .last-link {
+      margin: 0;
+      flex: 1 1 260px;
     }
 
     .log {
@@ -648,11 +681,17 @@
       }
 
       .status-strip,
-      .fly-grid,
       .grid,
       .checks,
-      .metrics {
+      .metrics,
+      .api-request-row,
+      .api-param-grid,
+      .fly-env-row {
         grid-template-columns: 1fr;
+      }
+
+      .api-send {
+        width: 100%;
       }
     }
   </style>
@@ -693,18 +732,6 @@
       </div>
     </section>
 
-    <section class="fly-section" aria-label="Fly.io 监控面板">
-      <div class="fly-head">
-        <div>
-          <h2 class="fly-title">Fly.io Apps</h2>
-          <p class="fly-subtitle">读取 Machines API：machines / volumes / IP assignments / secrets。通过本地 /fly-api 代理避免浏览器 CORS。</p>
-        </div>
-        <button class="button" id="refreshFlyButton" type="button">刷新 Fly</button>
-      </div>
-      <div class="fly-grid" id="flyGrid"></div>
-      <div id="flySecretsPanel"></div>
-    </section>
-
     <section class="grid" id="servicesGrid" aria-label="服务列表"></section>
 
     <section class="log" aria-label="操作日志">
@@ -727,8 +754,11 @@
       sharing: {
         fallbackLabel: "Sharing",
         description: "分享短链服务",
-        checks: ["health"],
-        stats: [{ label: "说明", type: "text", value: "可编辑 mock payload 后一键生成分享链接并打开。" }],
+        checks: ["health", "ping"],
+        stats: [
+          { label: "Total shares", type: "count", path: "/internal/stats", pick: "data.total_shares", help: "来自 GET /internal/stats 的 data.total_shares，直接 SELECT COUNT(*) FROM shares，表示当前已创建分享链接总数。" },
+          { label: "说明", type: "text", value: "在 API Console 选择 POST /api/v1/share，可编辑 JSON body 后生成分享链接。", help: "Sharing 正式数据由 POST /api/v1/share 创建，返回 data.share_url / data.share_id；生成后面板会提供打开与复制最近链接。" }
+        ],
         actions: []
       },
       trending: {
@@ -736,8 +766,9 @@
         description: "GitHub Trending 数据服务",
         checks: ["health", "ping"],
         stats: [
-          { label: "Daily repos", type: "count", path: "/api/v1/stats", pick: "data.repos.daily", help: "来自 GET /api/v1/stats 的 data.repos.daily，直接从 SQLite COUNT(*) 得到，不受 /api/v1/repos 的 limit 影响。" },
-          { label: "Languages", type: "count", path: "/api/v1/stats", pick: "data.languages", help: "来自 GET /api/v1/stats 的 data.languages，表示当前 trending repo 聚合出的语言分类数。" },
+          { label: "Daily repos", type: "count", path: "/internal/stats", pick: "data.repos.daily", help: "来自 GET /internal/stats 的 data.repos.daily，直接从 SQLite COUNT(*) 得到，不受 /api/v1/repos 的 limit 影响。" },
+          { label: "Total repos", type: "count", path: "/internal/stats", pick: "data.repos.total", help: "来自 GET /internal/stats 的 data.repos.total，等于 daily + weekly + monthly 三个桶的真实 DB 计数之和。" },
+          { label: "Languages", type: "count", path: "/internal/stats", pick: "data.languages", help: "来自 GET /internal/stats 的 data.languages，表示当前 trending repo 聚合出的语言分类数。" },
           { label: "Users probe", type: "count", path: "/api/v1/users?since=daily&sponsorable=true", pick: "meta.total", help: "来自 GET /api/v1/users?since=daily&sponsorable=true 的 meta.total；users 当前按需实时抓取，不是持久化总量，也不代表历史累计用户数。" }
         ],
         actions: [
@@ -764,7 +795,7 @@
       wiki: {
         fallbackLabel: "Wiki",
         description: "Wiki 索引探测服务",
-        checks: ["health"],
+        checks: ["health", "ping"],
         stats: [{ label: "说明", type: "text", value: "Wiki 统计依赖 owner/repo 输入；请使用下方测试卡片探测单仓库或批量仓库。", help: "wiki-api 当前只有 GET /api/v1/wikis?owner=X&repo=Y 和 POST /api/v1/wikis/batch，没有全局总量统计接口。" }],
         actions: [
           { label: "触发 probe sync", path: "/internal/sync/probe", auth: "adminKey", confirm: false },
@@ -783,9 +814,10 @@
         description: "探索发现 / 热门 / 新发布服务",
         checks: ["health", "ping"],
         stats: [
-          { label: "Feed repos", type: "count", path: "/api/v1/discovery/feed?limit=1", pick: "meta.total", help: "来自 GET /api/v1/discovery/feed?limit=1 的 meta.total；表示默认 discovery feed 命中的 repo 总量，不受 limit=1 影响。" },
-          { label: "Languages", type: "count", path: "/api/v1/discovery/languages", pick: "meta.total", help: "来自 GET /api/v1/discovery/languages 的 meta.total；表示 discovery catalog 当前语言 facet 数量。" },
-          { label: "Topics", type: "count", path: "/api/v1/discovery/topics", pick: "meta.total", help: "来自 GET /api/v1/discovery/topics 的 meta.total；表示 discovery 内置 topic facet 数量。" }
+          { label: "Discover repos", type: "count", path: "/api/v1/discovery/summary", pick: "data.modes[mode=discover].total", help: "来自 GET /api/v1/discovery/summary 的 data.modes[mode=discover].total；对应 Starcat 客户端发现模式总量。" },
+          { label: "Popular repos", type: "count", path: "/api/v1/discovery/summary", pick: "data.modes[mode=popular].total", help: "来自 GET /api/v1/discovery/summary 的 data.modes[mode=popular].total；对应 Starcat 客户端热门模式总量。" },
+          { label: "New releases", type: "count", path: "/api/v1/discovery/summary", pick: "data.modes[mode=new_releases].total", help: "来自 GET /api/v1/discovery/summary 的 data.modes[mode=new_releases].total；对应 Starcat 客户端新发布模式总量。" },
+          { label: "Topics", type: "count", path: "/api/v1/discovery/topics", pick: "meta.total", help: "来自 GET /api/v1/discovery/topics 的 meta.total；这是主题定义数量，不是 repo 统计。" }
         ],
         actions: [
           { label: "轻同步 discovery", path: "/internal/sync/discovery?mode=incremental", auth: "adminKey", confirm: false },
@@ -821,50 +853,100 @@
       }
     };
 
-    const API_TEST_TEMPLATES = {
-      trending: {
-        title: "Trending 接口测试",
-        method: "GET",
-        path: "/api/v1/repos?since=daily&limit=10",
-        body: "",
-        result: "尚未请求。"
-      },
-      weekly: {
-        title: "Weekly 接口测试",
-        method: "GET",
-        path: "/api/v1/repos?page=1&page_size=10&source=zread",
-        body: "",
-        result: "尚未请求。"
-      },
-      wiki: {
-        title: "Wiki 接口测试",
-        method: "GET",
-        path: "/api/v1/wikis?owner=apple&repo=swift",
-        body: JSON.stringify({ repos: ["apple/swift"] }, null, 2),
-        result: "尚未请求。"
-      },
-      discovery: {
-        title: "Discovery 接口测试",
-        method: "GET",
-        path: "/api/v1/discovery/feed?limit=10",
-        body: "",
-        result: "尚未请求。"
-      }
+    const API_ENDPOINTS = {
+      sharing: [
+        { method: "GET", path: "/internal/stats", description: "读取分享链接总量；本地 admin 面板真实统计。", auth: "apiKey" },
+        { method: "POST", path: "/api/v1/share", description: "创建分享链接；用于验证 Starcat sharing 主流程。", auth: "apiKey", bodyTemplate: DEFAULT_SHARING_PAYLOAD },
+        { method: "GET", path: "/api/v1/ping", description: "验证 sharing-api 服务可达且 API key 有效。", auth: "apiKey" }
+      ],
+      trending: [
+        { method: "GET", path: "/internal/stats", description: "读取真实 trending 统计；不受 /api/v1/repos limit 钳制影响。", auth: "apiKey" },
+        { method: "GET", path: "/api/v1/repos", description: "查询 GitHub Trending 仓库列表；since/lang/limit 控制筛选。", auth: "apiKey", params: [
+          { name: "since", in: "query", default: "daily", options: ["daily", "weekly", "monthly"] },
+          { name: "lang", in: "query", default: "" },
+          { name: "limit", in: "query", default: "10" }
+        ] },
+        { method: "GET", path: "/api/v1/languages", description: "查询基于实际 repo 聚合出的语言列表。", auth: "apiKey" },
+        { method: "GET", path: "/api/v1/users", description: "实时抓取 GitHub Trending developers，不落库。", auth: "apiKey", params: [
+          { name: "since", in: "query", default: "daily", options: ["daily", "weekly", "monthly"] },
+          { name: "lang", in: "query", default: "" },
+          { name: "sponsorable", in: "query", default: "true", options: ["", "true"] }
+        ] },
+        { method: "POST", path: "/internal/sync/repos", description: "手动同步 daily/weekly/monthly repos。", auth: "apiKey" },
+        { method: "POST", path: "/internal/sync/languages", description: "刷新语言聚合。", auth: "apiKey" },
+        { method: "POST", path: "/internal/enrich/force", description: "强制重置并重新 enrich，属于破坏性运维操作。", auth: "apiKey" }
+      ],
+      weekly: [
+        { method: "GET", path: "/api/v1/repos", description: "查询 weekly 聚合 repo 列表；source 可筛选 weekly/zread/discovery。", auth: "apiKey", params: [
+          { name: "source", in: "query", default: "zread", options: ["", "weekly", "zread", "discovery"] },
+          { name: "page", in: "query", default: "1" },
+          { name: "page_size", in: "query", default: "10" },
+          { name: "lang", in: "query", default: "" },
+          { name: "sort", in: "query", default: "latest_event_at", options: ["latest_event_at", "stars", "pushed_at"] },
+          { name: "order", in: "query", default: "desc", options: ["desc", "asc"] }
+        ] },
+        { method: "GET", path: "/api/v1/repos/languages", description: "查询 weekly 聚合 repo 的语言 facet。", auth: "apiKey" },
+        { method: "GET", path: "/api/v1/repos/bulk", description: "Starcat weekly 客户端全量快照接口。", auth: "apiKey" },
+        { method: "POST", path: "/internal/sync/weekly", description: "手动同步阮一峰周刊。", auth: "apiKey" },
+        { method: "POST", path: "/internal/sync/zread", description: "手动同步 zread 周 trending。", auth: "apiKey" },
+        { method: "POST", path: "/internal/rebuild-aggregates", description: "重建 weekly 聚合表。", auth: "adminKey" }
+      ],
+      wiki: [
+        { method: "GET", path: "/api/v1/wikis", description: "单仓库 Wiki 探测；返回 deepwiki/codewiki/zread 状态。", auth: "apiKey", params: [
+          { name: "owner", in: "query", default: "apple" },
+          { name: "repo", in: "query", default: "swift" }
+        ] },
+        { method: "POST", path: "/api/v1/wikis/batch", description: "批量 Wiki 探测；最多 50 个 owner/repo。", auth: "apiKey", bodyTemplate: { repos: ["facebook/react", "apple/swift"] } },
+        { method: "GET", path: "/api/v1/ping", description: "验证 wiki-api 服务可达且 API key 有效。", auth: "apiKey" },
+        { method: "POST", path: "/internal/sync/probe", description: "手动触发 probe 同步。", auth: "adminKey" },
+        { method: "POST", path: "/internal/refresh/owner", description: "刷新指定 owner 的 Wiki 探测。", auth: "adminKey", bodyTemplate: { owner: "apple" } }
+      ],
+      recommend: [
+        { method: "GET", path: "/api/v1/repos/{repo_id}/recommendations", description: "查询相似仓库推荐结果。", auth: "apiKey", params: [
+          { name: "repo_id", in: "path", default: "41881900" },
+          { name: "limit", in: "query", default: "10" },
+          { name: "offset", in: "query", default: "0" }
+        ] },
+        { method: "GET", path: "/api/v1/ping", description: "验证 recommend-api 服务可达且 API key 有效。", auth: "apiKey" }
+      ],
+      discovery: [
+        { method: "GET", path: "/api/v1/discovery/summary", description: "Starcat Sidebar 汇总；返回 discover/popular/new_releases 三个 mode 总量。", auth: "apiKey" },
+        { method: "GET", path: "/api/v1/discovery/bulk", description: "Starcat Discovery 正式主链路全量快照。", auth: "apiKey" },
+        { method: "GET", path: "/api/v1/discovery/feed", description: "发现流列表。", auth: "apiKey", params: [
+          { name: "page", in: "query", default: "1" },
+          { name: "limit", in: "query", default: "10" },
+          { name: "topic", in: "query", default: "" },
+          { name: "platform", in: "query", default: "" },
+          { name: "language", in: "query", default: "" },
+          { name: "sort", in: "query", default: "" }
+        ] },
+        { method: "GET", path: "/api/v1/discovery/categories/most-popular", description: "热门榜列表。", auth: "apiKey", params: [
+          { name: "page", in: "query", default: "1" },
+          { name: "limit", in: "query", default: "10" },
+          { name: "sort", in: "query", default: "" }
+        ] },
+        { method: "GET", path: "/api/v1/discovery/categories/new-releases", description: "新发布榜列表。", auth: "apiKey", params: [
+          { name: "page", in: "query", default: "1" },
+          { name: "limit", in: "query", default: "10" },
+          { name: "sort", in: "query", default: "" }
+        ] },
+        { method: "GET", path: "/api/v1/discovery/languages", description: "Discovery 语言 facet。", auth: "apiKey" },
+        { method: "GET", path: "/api/v1/discovery/topics", description: "Discovery topic 定义，不是 repo 数。", auth: "apiKey" },
+        { method: "GET", path: "/api/v1/discovery/platforms", description: "Discovery platform 定义。", auth: "apiKey" },
+        { method: "POST", path: "/internal/sync/discovery", description: "手动同步 discovery 数据。", auth: "adminKey", params: [
+          { name: "mode", in: "query", default: "incremental", options: ["incremental", "full"] }
+        ] },
+        { method: "GET", path: "/internal/discovery/trending-candidates", description: "新版趋势候选诊断接口。", auth: "adminKey" }
+      ]
     };
 
     const state = new Map();
     const servicesGrid = document.getElementById("servicesGrid");
-    const flyGrid = document.getElementById("flyGrid");
-    const flySecretsPanel = document.getElementById("flySecretsPanel");
     const logLines = document.getElementById("logLines");
     const configWarning = document.getElementById("configWarning");
-    let flySnapshots = new Map();
-    let flySecretDraft = { app: "", name: "", value: "", result: "尚未设置。" };
-    let apiTestDrafts = new Map(Object.entries(API_TEST_TEMPLATES).map(([key, value]) => [key, cloneTemplate(value)]));
-    let sharingMockPayloadText = JSON.stringify(DEFAULT_SHARING_PAYLOAD, null, 2);
+    let apiConsoleDrafts = new Map(Object.keys(API_ENDPOINTS).map((key) => [key, makeConsoleDraft(key, 0)]));
+    let flyEnvDrafts = new Map(Object.keys(SERVICES).map((key) => [key, makeFlyEnvDraft(key)]));
     let lastSharingURL = "";
-    let recommendParams = { repoId: "41881900", limit: "10", offset: "0" };
-    let recommendResultText = "尚未请求。";
 
     function config() {
       return window.STARCAT_ADMIN_CONFIG || { services: {} };
@@ -901,6 +983,13 @@
       if (!path) return source;
       return path.split(".").reduce((value, key) => {
         if (value == null) return undefined;
+        const match = key.match(/^([^\[\]]+)\[([^=\]]+)=([^\]]+)\]$/);
+        if (match) {
+          const [, arrayKey, filterKey, filterValue] = match;
+          const items = value[arrayKey];
+          if (!Array.isArray(items)) return undefined;
+          return items.find((item) => String(item && item[filterKey]) === filterValue);
+        }
         return value[key];
       }, source);
     }
@@ -955,16 +1044,10 @@
       return text || "ok";
     }
 
-    async function flyRequest(path, options = {}) {
-      const cfg = flyConfig();
-      const proxyBaseURL = cfg.proxyBaseURL === undefined ? "/fly-api" : cfg.proxyBaseURL;
-      const useProxy = Boolean(proxyBaseURL);
-      if (!useProxy && !cfg.apiToken) throw new Error("missing fly.apiToken");
-      const baseURL = (useProxy ? proxyBaseURL : (cfg.apiBaseURL || "https://api.machines.dev/v1")).replace(/\/+$/, "");
-      const response = await fetch(`${baseURL}${path}`, {
+    async function localAdminJSON(path, options = {}) {
+      const response = await fetch(path, {
         method: options.method || "GET",
         headers: {
-          ...(useProxy ? {} : { Authorization: `Bearer ${cfg.apiToken}` }),
           ...(options.body ? { "Content-Type": "application/json" } : {}),
           ...(options.headers || {})
         },
@@ -983,56 +1066,89 @@
       return body;
     }
 
-    async function refreshFlyApp(appName) {
-      const snapshot = { status: "刷新中" };
-      flySnapshots.set(appName, snapshot);
-      renderFly();
-
-      try {
-        const [machines, volumes, ips, secretsResult] = await Promise.all([
-          flyRequest(`/apps/${encodeURIComponent(appName)}/machines`),
-          flyRequest(`/apps/${encodeURIComponent(appName)}/volumes`).catch((error) => ({ error })),
-          flyRequest(`/apps/${encodeURIComponent(appName)}/ip_assignments`).catch((error) => ({ error })),
-          flyRequest(`/apps/${encodeURIComponent(appName)}/secrets`).then((value) => ({ value })).catch((error) => ({ error }))
-        ]);
-        snapshot.machines = Array.isArray(machines) ? machines : [];
-        snapshot.volumes = Array.isArray(volumes) ? volumes : [];
-        snapshot.ips = Array.isArray(ips) ? ips : [];
-        if (secretsResult.error) {
-          snapshot.secretsError = secretsResult.error.message;
-        } else {
-          snapshot.secrets = Array.isArray(secretsResult.value) ? secretsResult.value : [];
-        }
-        snapshot.status = snapshot.machines.some((item) => item.state === "started") ? "正常" : "无运行机器";
-      } catch (error) {
-        snapshot.status = "失败";
-        snapshot.error = error.message;
-      }
-      flySnapshots.set(appName, snapshot);
-      renderFly();
+    function defaultFlyApp(key) {
+      return `starcat-${key}-api`;
     }
 
-    async function refreshFly() {
-      const button = document.getElementById("refreshFlyButton");
-      const cfg = flyConfig();
-      const apps = cfg.apps || [];
-      if (!cfg.apiToken) {
-        log("Fly.io 缺少 fly.apiToken，跳过刷新", "warn");
-        renderFly();
-        return;
+    function flyAppForService(key) {
+      const apps = flyConfig().apps || {};
+      if (Array.isArray(apps)) {
+        return apps.find((app) => app === defaultFlyApp(key) || String(app).includes(`-${key}-`)) || defaultFlyApp(key);
       }
-      if (!apps.length) {
-        log("Fly.io 缺少 fly.apps，跳过刷新", "warn");
-        renderFly();
-        return;
-      }
-      button.disabled = true;
+      return apps[key] || defaultFlyApp(key);
+    }
+
+    function makeFlyEnvDraft(key) {
+      return {
+        app: flyAppForService(key),
+        envPath: "",
+        status: "未读取",
+        variables: [],
+        selected: {},
+        result: "尚未设置。"
+      };
+    }
+
+    async function loadFlyEnv(key) {
+      const draft = flyEnvDrafts.get(key) || makeFlyEnvDraft(key);
+      draft.status = "读取中";
+      flyEnvDrafts.set(key, draft);
+      render();
       try {
-        await Promise.all(apps.map(refreshFlyApp));
-        log(`Fly.io 刷新完成: ${apps.length} apps`);
-      } finally {
-        button.disabled = false;
+        const result = await localAdminJSON(`/local-env?service=${encodeURIComponent(key)}`);
+        draft.envPath = result.envPath || "";
+        draft.variables = (result.variables || []).map((item) => ({
+          name: item.name,
+          value: item.value == null ? "" : String(item.value)
+        }));
+        draft.selected = Object.fromEntries(draft.variables.map((item) => [item.name, draft.selected[item.name] !== false]));
+        draft.status = draft.variables.length ? `已读取 ${draft.variables.length} 项` : "无变量";
+        draft.result = result.error || draft.result;
+        log(`${SERVICES[key].fallbackLabel} Fly Env 已读取: ${draft.envPath || "无 .env"}`);
+      } catch (error) {
+        draft.status = "读取失败";
+        draft.result = `读取失败: ${error.message}`;
+        log(`${SERVICES[key].fallbackLabel} Fly Env 读取失败: ${error.message}`, "error");
       }
+      render();
+    }
+
+    async function loadAllFlyEnv() {
+      await Promise.all(Object.keys(SERVICES).map(loadFlyEnv));
+    }
+
+    function selectedFlyVariables(key, mode) {
+      const draft = flyEnvDrafts.get(key);
+      if (!draft) return [];
+      return draft.variables
+        .filter((item) => mode === "all" || draft.selected[item.name])
+        .filter((item) => item.name);
+    }
+
+    async function applyFlyEnv(key, mode) {
+      const draft = flyEnvDrafts.get(key);
+      if (!draft) return;
+      const variables = selectedFlyVariables(key, mode);
+      if (!variables.length) {
+        draft.result = "没有选中的变量。";
+        render();
+        return;
+      }
+      draft.result = "设置中...";
+      render();
+      try {
+        const result = await localAdminJSON("/fly-env/apply", {
+          method: "POST",
+          body: JSON.stringify({ service: key, app: draft.app, variables })
+        });
+        draft.result = JSON.stringify(result, null, 2);
+        const successCount = (result.results || []).filter((item) => item.ok).length;
+        log(`${SERVICES[key].fallbackLabel} Fly Env 已设置 ${successCount}/${variables.length} 项到 ${result.app || draft.app}`);
+      } catch (error) {
+        draft.result = `设置失败: ${error.message}`;
+        log(`${SERVICES[key].fallbackLabel} Fly Env 设置失败: ${error.message}`, "error");
+      }
+      render();
     }
 
     function render() {
@@ -1093,187 +1209,99 @@
       updateOverview();
     }
 
-    function renderFly() {
-      const cfg = flyConfig();
-      const apps = cfg.apps || [];
-      if (!flySecretDraft.app && apps.length) flySecretDraft.app = apps[0];
-      if (!apps.length) {
-        flyGrid.innerHTML = `<div class="fly-card"><p class="fly-app">未配置 Fly apps</p><p class="fly-subtitle">请在 config.js 的 fly.apps 中配置 app 名称。</p></div>`;
-        renderFlySecretsPanel();
-        return;
-      }
-
-      flyGrid.innerHTML = apps.map((appName) => {
-        const snapshot = flySnapshots.get(appName) || { status: "等待刷新" };
-        const machines = snapshot.machines || [];
-        const machine = machines[0] || {};
-        const guest = (machine.config && machine.config.guest) || {};
-        const volumeCount = Array.isArray(snapshot.volumes) ? snapshot.volumes.length : "-";
-        const ipCount = Array.isArray(snapshot.ips) ? snapshot.ips.length : "-";
-        const secretCount = Array.isArray(snapshot.secrets) ? snapshot.secrets.length : snapshot.secretsError ? "失败" : "-";
-        const stateText = machines.length
-          ? `${machines.filter((item) => item.state === "started").length}/${machines.length} started`
-          : snapshot.status;
-        return `<article class="fly-card">
-          <div class="fly-card-head">
-            <h3 class="fly-app">${escapeHTML(appName)}</h3>
-            <span class="pill">${escapeHTML(snapshot.status || "等待刷新")}</span>
-          </div>
-          <div class="fly-meta">
-            ${flyItem("Machines", stateText)}
-            ${flyItem("Region", machine.region || "-")}
-            ${flyItem("CPU", guest.cpus ? `${guest.cpus} ${guest.cpu_kind || "cpu"}` : "-")}
-            ${flyItem("Memory", guest.memory_mb ? `${guest.memory_mb} MB` : "-")}
-            ${flyItem("Volumes", volumeCount)}
-            ${flyItem("IPs", ipCount)}
-            ${flyItem("Secrets", secretCount)}
-            ${flyItem("Image", shortImage(machine.config && machine.config.image))}
-          </div>
-          ${snapshot.error ? `<p class="fly-subtitle">${escapeHTML(snapshot.error)}</p>` : ""}
-          ${snapshot.secretsError ? `<p class="fly-subtitle">Secrets: ${escapeHTML(snapshot.secretsError)}</p>` : ""}
-        </article>`;
-      }).join("");
-      renderFlySecretsPanel();
-    }
-
-    function renderFlySecretsPanel() {
-      const cfg = flyConfig();
-      const apps = cfg.apps || [];
-      const options = apps.map((appName) => {
-        const selected = appName === flySecretDraft.app ? " selected" : "";
-        return `<option value="${escapeHTML(appName)}"${selected}>${escapeHTML(appName)}</option>`;
-      }).join("");
-      flySecretsPanel.innerHTML = `<div class="fly-secret-panel">
-        <div class="fly-secret-head">
-          <p class="fly-secret-title">Secrets / 环境变量</p>
-          <button class="button" id="setFlySecretButton" type="button"${apps.length ? "" : " disabled"}>设置环境变量</button>
-        </div>
-        <div class="param-grid">
-          <div class="param-field">
-            <label for="flySecretApp">App</label>
-            <select id="flySecretApp"${apps.length ? "" : " disabled"}>${options}</select>
-          </div>
-          <div class="param-field">
-            <label for="flySecretName">变量名</label>
-            <input id="flySecretName" value="${escapeHTML(flySecretDraft.name)}" placeholder="API_KEYS">
-          </div>
-          <div class="param-field">
-            <label for="flySecretValue">变量值</label>
-            <textarea class="fly-secret-value" id="flySecretValue" placeholder="输入新值">${escapeHTML(flySecretDraft.value)}</textarea>
-          </div>
-        </div>
-        <pre class="json-output">${escapeHTML(flySecretDraft.result)}</pre>
-      </div>`;
-    }
-
-    function flyItem(name, value) {
-      return `<div class="fly-item">
-        <div class="fly-item-name">${escapeHTML(name)}</div>
-        <div class="fly-item-value">${escapeHTML(String(value))}</div>
-      </div>`;
-    }
-
-    function shortImage(value) {
-      if (!value) return "-";
-      const text = String(value);
-      return text.length > 26 ? `...${text.slice(-23)}` : text;
-    }
-
-    async function setFlySecret() {
-      if (!flySecretDraft.app) throw new Error("请选择 Fly app");
-      const name = flySecretDraft.name.trim();
-      if (!name) throw new Error("请输入变量名");
-      // Fly secrets 不支持读取明文；这里只提交新值，并显示 API 返回的版本 / digest 摘要。
-      const result = await flyRequest(`/apps/${encodeURIComponent(flySecretDraft.app)}/secrets/${encodeURIComponent(name)}`, {
-        method: "POST",
-        body: JSON.stringify({ value: flySecretDraft.value })
-      });
-      flySecretDraft.result = JSON.stringify(result, null, 2);
-      log(`Fly.io 已设置 ${flySecretDraft.app}.${name}`);
-      await refreshFlyApp(flySecretDraft.app);
-    }
-
     function renderServiceExtra(key) {
-      if (key === "recommend") return renderRecommendExtra();
-      if (API_TEST_TEMPLATES[key]) return renderApiTestExtra(key);
-      if (key !== "sharing") return "";
-      const linkText = lastSharingURL
-        ? `最近生成: <a href="${escapeHTML(lastSharingURL)}" target="_blank" rel="noreferrer">${escapeHTML(lastSharingURL)}</a>`
-        : "最近生成: 暂无";
-
-      return `<div class="mock-panel">
-        <div class="mock-head">
-          <p class="mock-title">Mock payload，可直接使用，也可以先编辑再生成。</p>
-          <div class="mock-actions">
-            <button class="button primary" type="button" data-sharing-action="create">生成测试分享并打开</button>
-            <button class="button" type="button" data-sharing-action="reset">重置模板</button>
-            <button class="button" type="button" data-sharing-action="copy" ${lastSharingURL ? "" : "disabled"}>复制最近链接</button>
-          </div>
-        </div>
-        <textarea class="mock-textarea" data-sharing-payload spellcheck="false">${escapeHTML(sharingMockPayloadText)}</textarea>
-        <div class="last-link">${linkText}</div>
-      </div>`;
+      if (API_ENDPOINTS[key]) return `${renderApiConsole(key)}${renderFlyEnvPanel(key)}`;
+      return "";
     }
 
-    function renderApiTestExtra(key) {
-      const draft = apiTestDrafts.get(key);
-      const methods = ["GET", "POST"].map((method) => {
-        const selected = draft.method === method ? " selected" : "";
-        return `<option value="${method}"${selected}>${method}</option>`;
+    function renderFlyEnvPanel(key) {
+      const draft = flyEnvDrafts.get(key) || makeFlyEnvDraft(key);
+      const rows = draft.variables.map((item) => {
+        const checked = draft.selected[item.name] !== false ? " checked" : "";
+        return `<div class="fly-env-row">
+          <input type="checkbox" data-fly-env-service="${escapeHTML(key)}" data-fly-env-check="${escapeHTML(item.name)}"${checked} aria-label="选择 ${escapeHTML(item.name)}">
+          <div class="fly-env-name">${escapeHTML(item.name)}</div>
+          <input class="fly-env-value" type="text" data-fly-env-service="${escapeHTML(key)}" data-fly-env-name="${escapeHTML(item.name)}" value="${escapeHTML(item.value)}">
+        </div>`;
       }).join("");
-      return `<div class="mock-panel">
-        <div class="mock-head">
-          <p class="mock-title">${escapeHTML(draft.title)}，可编辑 method / path / JSON body 后请求。</p>
-          <div class="mock-actions">
-            <button class="button primary" type="button" data-api-test-action="request" data-api-test-service="${escapeHTML(key)}">发送请求并显示 JSON</button>
-            <button class="button" type="button" data-api-test-action="reset" data-api-test-service="${escapeHTML(key)}">重置模板</button>
-            <button class="button" type="button" data-api-test-action="copy" data-api-test-service="${escapeHTML(key)}" ${draft.result === "尚未请求。" ? "disabled" : ""}>复制 JSON</button>
+      return `<div class="fly-env-panel">
+        <div class="fly-env-head">
+          <div>
+            <p class="fly-env-title">Fly Env</p>
+            <p class="fly-env-meta">app: ${escapeHTML(draft.app || "-")} · source: ${escapeHTML(draft.envPath || "supports/<service>/.env")} · ${escapeHTML(draft.status)}</p>
+          </div>
+          <div class="fly-env-actions">
+            <button class="button" type="button" data-fly-env-action="reload" data-fly-env-service="${escapeHTML(key)}">从 .env 重新读取</button>
+            <button class="button" type="button" data-fly-env-action="apply-selected" data-fly-env-service="${escapeHTML(key)}" ${draft.variables.length ? "" : "disabled"}>设置选中变量</button>
+            <button class="button" type="button" data-fly-env-action="apply-all" data-fly-env-service="${escapeHTML(key)}" ${draft.variables.length ? "" : "disabled"}>设置全部变量</button>
           </div>
         </div>
-        <div class="param-grid">
-          <div class="param-field">
-            <label for="${escapeHTML(key)}TestMethod">method</label>
-            <select id="${escapeHTML(key)}TestMethod" data-api-test-service="${escapeHTML(key)}" data-api-test-field="method">${methods}</select>
-          </div>
-          <div class="param-field">
-            <label for="${escapeHTML(key)}TestPath">path</label>
-            <input id="${escapeHTML(key)}TestPath" data-api-test-service="${escapeHTML(key)}" data-api-test-field="path" value="${escapeHTML(draft.path)}">
-          </div>
-          <div class="param-field">
-            <label for="${escapeHTML(key)}TestBody">JSON body</label>
-            <textarea class="fly-secret-value" id="${escapeHTML(key)}TestBody" data-api-test-service="${escapeHTML(key)}" data-api-test-field="body" spellcheck="false">${escapeHTML(draft.body)}</textarea>
-          </div>
-        </div>
+        ${rows ? `<div class="fly-env-table">${rows}</div>` : `<p class="fly-env-empty">暂无变量。请确认本地 supports 目录下对应服务存在 .env。</p>`}
         <pre class="json-output">${escapeHTML(draft.result)}</pre>
       </div>`;
     }
 
-    function renderRecommendExtra() {
-      return `<div class="mock-panel">
-        <div class="mock-head">
-          <p class="mock-title">推荐接口参数，可直接使用，也可以先编辑再请求。</p>
+    function renderApiConsole(key) {
+      const draft = apiConsoleDrafts.get(key) || makeConsoleDraft(key, 0);
+      const endpoint = endpointForDraft(key, draft);
+      const endpointOptions = (API_ENDPOINTS[key] || []).map((item, index) => {
+        const selected = index === draft.endpointIndex ? " selected" : "";
+        return `<option value="${index}"${selected}>${escapeHTML(item.method)} ${escapeHTML(item.path)}</option>`;
+      }).join("");
+      const params = renderConsoleParams(key, endpoint, draft);
+      return `<div class="api-console">
+        <div class="api-console-head">
+          <p class="api-console-title">API Console</p>
           <div class="mock-actions">
-            <button class="button primary" type="button" data-recommend-action="request">请求推荐并显示 JSON</button>
-            <button class="button" type="button" data-recommend-action="reset">重置参数</button>
-            <button class="button" type="button" data-recommend-action="copy" ${recommendResultText === "尚未请求。" ? "disabled" : ""}>复制 JSON</button>
+            <button class="button" type="button" data-api-console-action="reset" data-api-console-service="${escapeHTML(key)}">重置</button>
+            <button class="button" type="button" data-api-console-action="copy" data-api-console-service="${escapeHTML(key)}" ${draft.result === "尚未请求。" ? "disabled" : ""}>复制 JSON</button>
           </div>
         </div>
-        <div class="param-grid">
-          <div class="param-field">
-            <label for="recommendRepoId">repo_id</label>
-            <input id="recommendRepoId" data-recommend-param="repoId" inputmode="numeric" value="${escapeHTML(recommendParams.repoId)}">
+        <div class="api-request-row">
+          <div class="api-param-field">
+            <label for="${escapeHTML(key)}ApiEndpoint">endpoint</label>
+            <select class="api-endpoint-select" id="${escapeHTML(key)}ApiEndpoint" data-api-console-service="${escapeHTML(key)}" data-api-console-field="endpointIndex">${endpointOptions}</select>
           </div>
-          <div class="param-field">
-            <label for="recommendLimit">limit</label>
-            <input id="recommendLimit" data-recommend-param="limit" inputmode="numeric" value="${escapeHTML(recommendParams.limit)}">
-          </div>
-          <div class="param-field">
-            <label for="recommendOffset">offset</label>
-            <input id="recommendOffset" data-recommend-param="offset" inputmode="numeric" value="${escapeHTML(recommendParams.offset)}">
-          </div>
+          <button class="button primary api-send" type="button" data-api-console-action="send" data-api-console-service="${escapeHTML(key)}">Send</button>
         </div>
-        <pre class="json-output">${escapeHTML(recommendResultText)}</pre>
+        <p class="api-description">${escapeHTML(endpoint.description || "")}</p>
+        ${params ? `<div class="api-param-grid">${params}</div>` : ""}
+        <label class="api-body-label" for="${escapeHTML(key)}ApiBody">JSON body</label>
+        <textarea class="api-body" id="${escapeHTML(key)}ApiBody" data-api-console-service="${escapeHTML(key)}" data-api-console-field="body" spellcheck="false">${escapeHTML(draft.body)}</textarea>
+        <pre class="json-output">${escapeHTML(draft.result)}</pre>
+        ${renderApiResultActions(key, endpoint)}
       </div>`;
+    }
+
+    function renderApiResultActions(key, endpoint) {
+      if (key !== "sharing" || endpoint.path !== "/api/v1/share" || !lastSharingURL) return "";
+      return `<div class="api-result-actions">
+        <p class="last-link">最近生成: <a href="${escapeHTML(lastSharingURL)}" target="_blank" rel="noreferrer">${escapeHTML(lastSharingURL)}</a></p>
+        <button class="button" type="button" data-api-console-action="open-share" data-api-console-service="sharing">打开最近链接</button>
+        <button class="button" type="button" data-api-console-action="copy-share" data-api-console-service="sharing">复制链接</button>
+      </div>`;
+    }
+
+    function renderConsoleParams(key, endpoint, draft) {
+      return (endpoint.params || []).map((param) => {
+        const value = draft.params[param.name] ?? "";
+        const label = `${param.in === "path" ? "path" : "query"}: ${param.name}`;
+        if (param.options) {
+          const options = param.options.map((option) => {
+            const selected = String(option) === String(value) ? " selected" : "";
+            const title = option === "" ? "(empty)" : option;
+            return `<option value="${escapeHTML(option)}"${selected}>${escapeHTML(title)}</option>`;
+          }).join("");
+          return `<div class="api-param-field">
+            <label>${escapeHTML(label)}</label>
+            <select data-api-console-service="${escapeHTML(key)}" data-api-console-param="${escapeHTML(param.name)}">${options}</select>
+          </div>`;
+        }
+        return `<div class="api-param-field">
+          <label>${escapeHTML(label)}</label>
+          <input data-api-console-service="${escapeHTML(key)}" data-api-console-param="${escapeHTML(param.name)}" value="${escapeHTML(value)}">
+        </div>`;
+      }).join("");
     }
 
     function escapeHTML(value) {
@@ -1395,53 +1423,66 @@
       }
     }
 
-    async function createSharingFromMock() {
-      const cfg = serviceConfig("sharing");
-      if (!cfg.baseURL) {
-        log("Sharing 缺少 baseURL，无法生成测试分享", "error");
-        return;
-      }
-      if (!cfg.apiKey) {
-        log("Sharing 缺少 apiKey，无法生成测试分享", "error");
-        return;
-      }
+    function endpointForDraft(key, draft) {
+      const endpoints = API_ENDPOINTS[key] || [];
+      return endpoints[draft.endpointIndex] || endpoints[0] || {};
+    }
 
-      let payload;
-      try {
-        payload = JSON.parse(sharingMockPayloadText);
-      } catch (error) {
-        log(`Sharing mock JSON 无效: ${error.message}`, "error");
-        return;
+    function bodyString(value) {
+      if (value == null || value === "") return "";
+      if (typeof value === "string") return value;
+      return JSON.stringify(value, null, 2);
+    }
+
+    function makeConsoleDraft(key, endpointIndex) {
+      const endpoint = (API_ENDPOINTS[key] || [])[endpointIndex] || {};
+      const params = {};
+      for (const param of endpoint.params || []) {
+        params[param.name] = param.default || "";
       }
+      return {
+        endpointIndex,
+        params,
+        body: bodyString(endpoint.bodyTemplate),
+        result: "尚未请求。"
+      };
+    }
 
-      // 在用户点击事件里先打开空白页，避免异步请求完成后被浏览器拦截弹窗。
-      const popup = window.open("about:blank", "_blank");
+    function resetApiConsole(key) {
+      apiConsoleDrafts.set(key, makeConsoleDraft(key, 0));
+      render();
+      log(`${SERVICES[key].fallbackLabel} 测试模板已重置`);
+    }
 
-      try {
-        const result = await requestJSON("sharing", "/api/v1/share", "apiKey", {
-          method: "POST",
-          body: JSON.stringify(payload)
-        });
-        const shareURL = readPath(result, "data.share_url");
-        const shareID = readPath(result, "data.share_id");
-        if (!shareURL) {
-          if (popup) popup.close();
-          log(`Sharing 响应缺少 data.share_url: ${JSON.stringify(result).slice(0, 220)}`, "error");
-          return;
+    function selectApiEndpoint(key, endpointIndex) {
+      apiConsoleDrafts.set(key, makeConsoleDraft(key, endpointIndex));
+      render();
+      log(`${SERVICES[key].fallbackLabel} API Console 已切换接口`);
+    }
+
+    function buildConsolePath(endpoint, draft) {
+      let path = endpoint.path || "/";
+      const query = new URLSearchParams();
+      for (const param of endpoint.params || []) {
+        const value = draft.params[param.name] ?? "";
+        if (param.in === "path") {
+          path = path.replace(`{${param.name}}`, encodeURIComponent(value));
+        } else if (value !== "") {
+          query.set(param.name, value);
         }
-
-        lastSharingURL = shareURL;
-        if (popup) {
-          popup.location.href = shareURL;
-        } else {
-          log("浏览器拦截了新窗口，请从日志中的链接手动打开。", "warn");
-        }
-        log(`Sharing 测试分享已生成: ${shareID || "unknown"} ${shareURL}`);
-        render();
-      } catch (error) {
-        if (popup) popup.close();
-        log(`Sharing 生成测试分享失败: ${error.message}`, "error");
       }
+      const queryString = query.toString();
+      return queryString ? `${path}?${queryString}` : path;
+    }
+
+    function shareURLFromResult(result) {
+      return readPath(result, "data.share_url") || readPath(result, "share_url") || "";
+    }
+
+    function openLastSharingURL() {
+      if (!lastSharingURL) return;
+      window.open(lastSharingURL, "_blank", "noreferrer");
+      log(`已打开 Sharing 最近链接: ${lastSharingURL}`);
     }
 
     async function copyLastSharingURL() {
@@ -1454,31 +1495,23 @@
       }
     }
 
-    function cloneTemplate(value) {
-      return JSON.parse(JSON.stringify(value));
-    }
-
-    function resetApiTest(key) {
-      apiTestDrafts.set(key, cloneTemplate(API_TEST_TEMPLATES[key]));
-      render();
-      log(`${SERVICES[key].fallbackLabel} 测试模板已重置`);
-    }
-
-    async function requestApiTest(key) {
+    async function sendApiConsole(key) {
       const cfg = serviceConfig(key);
       const spec = SERVICES[key];
-      const draft = apiTestDrafts.get(key);
+      const draft = apiConsoleDrafts.get(key);
+      const endpoint = endpointForDraft(key, draft);
       if (!cfg.baseURL) {
         log(`${spec.fallbackLabel} 缺少 baseURL，无法请求测试接口`, "error");
         return;
       }
-      if (!cfg.apiKey) {
-        log(`${spec.fallbackLabel} 缺少 apiKey，无法请求测试接口`, "error");
+      const authName = endpoint.auth || "apiKey";
+      if (!cfg[authName]) {
+        log(`${spec.fallbackLabel} 缺少 ${authName}，无法请求测试接口`, "error");
         return;
       }
 
-      const method = String(draft.method || "GET").toUpperCase();
-      const path = String(draft.path || "").trim();
+      const method = String(endpoint.method || "GET").toUpperCase();
+      const path = buildConsolePath(endpoint, draft);
       if (!path.startsWith("/")) {
         draft.result = "请求失败: path 必须以 / 开头";
         render();
@@ -1502,76 +1535,26 @@
       }
 
       try {
-        const result = await requestJSON(key, path, "apiKey", { method, body });
+        const result = await requestJSON(key, path, authName, { method, body });
+        const shareURL = key === "sharing" && endpoint.path === "/api/v1/share" ? shareURLFromResult(result) : "";
+        if (shareURL) lastSharingURL = shareURL;
         draft.result = JSON.stringify(result, null, 2);
-        log(`${spec.fallbackLabel} 测试请求完成: ${method} ${path}`);
+        log(`${spec.fallbackLabel} API Console 请求完成: ${method} ${path}`);
       } catch (error) {
         draft.result = `请求失败: ${error.message}`;
-        log(`${spec.fallbackLabel} 测试请求失败: ${error.message}`, "error");
+        log(`${spec.fallbackLabel} API Console 请求失败: ${error.message}`, "error");
       }
       render();
     }
 
-    async function copyApiTestResult(key) {
-      const draft = apiTestDrafts.get(key);
+    async function copyApiConsoleResult(key) {
+      const draft = apiConsoleDrafts.get(key);
       if (!draft || !draft.result || draft.result === "尚未请求。") return;
       try {
         await navigator.clipboard.writeText(draft.result);
-        log(`已复制 ${SERVICES[key].fallbackLabel} 测试 JSON`);
+        log(`已复制 ${SERVICES[key].fallbackLabel} API Console JSON`);
       } catch (error) {
-        log(`复制 ${SERVICES[key].fallbackLabel} 测试 JSON 失败: ${error.message}`, "error");
-      }
-    }
-
-    function normalizedRecommendParams() {
-      const repoId = String(recommendParams.repoId || "").trim();
-      const limit = Number.parseInt(String(recommendParams.limit || "").trim(), 10);
-      const offset = Number.parseInt(String(recommendParams.offset || "").trim(), 10);
-      if (!repoId) throw new Error("repo_id 不能为空");
-      if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("limit 必须是 1-50 的整数");
-      if (!Number.isInteger(offset) || offset < 0) throw new Error("offset 必须是大于等于 0 的整数");
-      return { repoId, limit, offset };
-    }
-
-    async function requestRecommend() {
-      const cfg = serviceConfig("recommend");
-      if (!cfg.baseURL) {
-        log("Recommend 缺少 baseURL，无法请求推荐", "error");
-        return;
-      }
-      if (!cfg.apiKey) {
-        log("Recommend 缺少 apiKey，无法请求推荐", "error");
-        return;
-      }
-
-      let params;
-      try {
-        params = normalizedRecommendParams();
-      } catch (error) {
-        log(`Recommend 参数无效: ${error.message}`, "error");
-        return;
-      }
-
-      const path = `/api/v1/repos/${encodeURIComponent(params.repoId)}/recommendations?limit=${params.limit}&offset=${params.offset}`;
-      try {
-        const result = await requestJSON("recommend", path, "apiKey");
-        recommendResultText = JSON.stringify(result, null, 2);
-        log(`Recommend 请求完成: repo_id=${params.repoId} limit=${params.limit} offset=${params.offset}`);
-        render();
-      } catch (error) {
-        recommendResultText = `请求失败: ${error.message}`;
-        log(`Recommend 请求失败: ${error.message}`, "error");
-        render();
-      }
-    }
-
-    async function copyRecommendResult() {
-      if (!recommendResultText || recommendResultText === "尚未请求。") return;
-      try {
-        await navigator.clipboard.writeText(recommendResultText);
-        log("已复制 Recommend JSON");
-      } catch (error) {
-        log(`复制 Recommend JSON 失败: ${error.message}`, "error");
+        log(`复制 ${SERVICES[key].fallbackLabel} API Console JSON 失败: ${error.message}`, "error");
       }
     }
 
@@ -1596,7 +1579,6 @@
 
     function bindEvents() {
       document.getElementById("refreshAllButton").addEventListener("click", refreshAll);
-      document.getElementById("refreshFlyButton").addEventListener("click", refreshFly);
       document.getElementById("clearLogButton").addEventListener("click", () => {
         logLines.textContent = "等待操作...";
       });
@@ -1606,54 +1588,46 @@
         log(`配置服务: ${serviceNames.length ? serviceNames.join(", ") : "未加载 config.js"}`);
       });
       servicesGrid.addEventListener("click", (event) => {
-        const sharingAction = event.target.getAttribute("data-sharing-action");
-        if (sharingAction === "create") {
-          createSharingFromMock();
-          return;
-        }
-        if (sharingAction === "reset") {
-          sharingMockPayloadText = JSON.stringify(DEFAULT_SHARING_PAYLOAD, null, 2);
-          render();
-          log("Sharing mock payload 已重置为模板");
-          return;
-        }
-        if (sharingAction === "copy") {
-          copyLastSharingURL();
-          return;
-        }
-        const apiTestAction = event.target.getAttribute("data-api-test-action");
-        const apiTestService = event.target.getAttribute("data-api-test-service");
-        if (apiTestAction && apiTestService) {
-          if (apiTestAction === "request") {
-            requestApiTest(apiTestService);
+        const apiConsoleAction = event.target.getAttribute("data-api-console-action");
+        const apiConsoleService = event.target.getAttribute("data-api-console-service");
+        if (apiConsoleAction && apiConsoleService) {
+          if (apiConsoleAction === "send") {
+            sendApiConsole(apiConsoleService);
             return;
           }
-          if (apiTestAction === "reset") {
-            resetApiTest(apiTestService);
+          if (apiConsoleAction === "reset") {
+            resetApiConsole(apiConsoleService);
             return;
           }
-          if (apiTestAction === "copy") {
-            copyApiTestResult(apiTestService);
+          if (apiConsoleAction === "copy") {
+            copyApiConsoleResult(apiConsoleService);
+            return;
+          }
+          if (apiConsoleAction === "open-share") {
+            openLastSharingURL();
+            return;
+          }
+          if (apiConsoleAction === "copy-share") {
+            copyLastSharingURL();
             return;
           }
         }
-        const recommendAction = event.target.getAttribute("data-recommend-action");
-        if (recommendAction === "request") {
-          requestRecommend();
-          return;
+        const flyEnvAction = event.target.getAttribute("data-fly-env-action");
+        const flyEnvService = event.target.getAttribute("data-fly-env-service");
+        if (flyEnvAction && flyEnvService) {
+          if (flyEnvAction === "reload") {
+            loadFlyEnv(flyEnvService);
+            return;
+          }
+          if (flyEnvAction === "apply-selected") {
+            applyFlyEnv(flyEnvService, "selected");
+            return;
+          }
+          if (flyEnvAction === "apply-all") {
+            applyFlyEnv(flyEnvService, "all");
+            return;
+          }
         }
-        if (recommendAction === "reset") {
-          recommendParams = { repoId: "41881900", limit: "10", offset: "0" };
-          recommendResultText = "尚未请求。";
-          render();
-          log("Recommend 参数已重置为模板");
-          return;
-        }
-        if (recommendAction === "copy") {
-          copyRecommendResult();
-          return;
-        }
-
         const refreshKey = event.target.getAttribute("data-refresh");
         if (refreshKey) {
           refreshService(refreshKey);
@@ -1666,53 +1640,42 @@
         }
       });
       servicesGrid.addEventListener("input", (event) => {
-        if (event.target.matches("[data-sharing-payload]")) {
-          sharingMockPayloadText = event.target.value;
+        const apiConsoleService = event.target.getAttribute("data-api-console-service");
+        const apiConsoleParam = event.target.getAttribute("data-api-console-param");
+        const apiConsoleField = event.target.getAttribute("data-api-console-field");
+        if (apiConsoleService && apiConsoleParam && apiConsoleDrafts.has(apiConsoleService)) {
+          const draft = apiConsoleDrafts.get(apiConsoleService);
+          draft.params[apiConsoleParam] = event.target.value;
         }
-        const recommendParam = event.target.getAttribute("data-recommend-param");
-        if (recommendParam) {
-          recommendParams = { ...recommendParams, [recommendParam]: event.target.value };
+        if (apiConsoleService && apiConsoleField === "body" && apiConsoleDrafts.has(apiConsoleService)) {
+          const draft = apiConsoleDrafts.get(apiConsoleService);
+          draft.body = event.target.value;
         }
-        const apiTestService = event.target.getAttribute("data-api-test-service");
-        const apiTestField = event.target.getAttribute("data-api-test-field");
-        if (apiTestService && apiTestField && apiTestDrafts.has(apiTestService)) {
-          const draft = apiTestDrafts.get(apiTestService);
-          draft[apiTestField] = event.target.value;
+        const flyEnvService = event.target.getAttribute("data-fly-env-service");
+        const flyEnvName = event.target.getAttribute("data-fly-env-name");
+        if (flyEnvService && flyEnvName && flyEnvDrafts.has(flyEnvService)) {
+          const draft = flyEnvDrafts.get(flyEnvService);
+          const variable = draft.variables.find((item) => item.name === flyEnvName);
+          if (variable) variable.value = event.target.value;
         }
       });
       servicesGrid.addEventListener("change", (event) => {
-        const apiTestService = event.target.getAttribute("data-api-test-service");
-        const apiTestField = event.target.getAttribute("data-api-test-field");
-        if (apiTestService && apiTestField && apiTestDrafts.has(apiTestService)) {
-          const draft = apiTestDrafts.get(apiTestService);
-          draft[apiTestField] = event.target.value;
+        const apiConsoleService = event.target.getAttribute("data-api-console-service");
+        const apiConsoleField = event.target.getAttribute("data-api-console-field");
+        const apiConsoleParam = event.target.getAttribute("data-api-console-param");
+        if (apiConsoleService && apiConsoleField === "endpointIndex") {
+          selectApiEndpoint(apiConsoleService, Number(event.target.value));
+          return;
         }
-      });
-      flySecretsPanel.addEventListener("click", (event) => {
-        if (event.target.id !== "setFlySecretButton") return;
-        const button = event.target;
-        button.disabled = true;
-        setFlySecret()
-          .catch((error) => {
-            flySecretDraft.result = `设置失败: ${error.message}`;
-            log(`Fly.io 设置环境变量失败: ${error.message}`, "error");
-            renderFly();
-          })
-          .finally(() => {
-            button.disabled = false;
-          });
-      });
-      flySecretsPanel.addEventListener("input", (event) => {
-        if (event.target.id === "flySecretName") {
-          flySecretDraft.name = event.target.value;
+        if (apiConsoleService && apiConsoleParam && apiConsoleDrafts.has(apiConsoleService)) {
+          const draft = apiConsoleDrafts.get(apiConsoleService);
+          draft.params[apiConsoleParam] = event.target.value;
         }
-        if (event.target.id === "flySecretValue") {
-          flySecretDraft.value = event.target.value;
-        }
-      });
-      flySecretsPanel.addEventListener("change", (event) => {
-        if (event.target.id === "flySecretApp") {
-          flySecretDraft.app = event.target.value;
+        const flyEnvService = event.target.getAttribute("data-fly-env-service");
+        const flyEnvCheck = event.target.getAttribute("data-fly-env-check");
+        if (flyEnvService && flyEnvCheck && flyEnvDrafts.has(flyEnvService)) {
+          const draft = flyEnvDrafts.get(flyEnvService);
+          draft.selected[flyEnvCheck] = event.target.checked;
         }
       });
     }
@@ -1721,10 +1684,9 @@
       configWarning.classList.add("show");
     }
     bindEvents();
-    renderFly();
     render();
     refreshAll().catch((error) => log(`刷新全部失败: ${error.message}`, "error"));
-    refreshFly().catch((error) => log(`Fly.io 刷新失败: ${error.message}`, "error"));
+    loadAllFlyEnv().catch((error) => log(`Fly Env 读取失败: ${error.message}`, "error"));
   </script>
 </body>
 </html>
