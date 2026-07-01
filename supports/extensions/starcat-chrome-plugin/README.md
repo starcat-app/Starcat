@@ -16,8 +16,9 @@ Starcat Chrome Plugin 是 Starcat 的 GitHub 页面增强插件。它只在 GitH
 2. 开启 Developer mode。
 3. 点击 Load unpacked。
 4. 选择本目录: `supports/extensions/starcat-chrome-plugin`。
-5. 打开插件 Options, 填入 Starcat Companion 本机服务端口和 bearer token。
-6. 点击 Test Connection。
+5. 在 Starcat 打开 Settings → Integrations → Browser Plugin, 启用服务并复制 token。
+6. 打开插件 Options, 填入 endpoint 端口和 bearer token。
+7. 点击 Test Connection。
 
 ## 通信边界
 
