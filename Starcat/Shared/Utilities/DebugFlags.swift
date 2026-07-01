@@ -62,9 +62,9 @@ enum DebugFlags {
     static let companionLocalServerDidChangeNotification = Notification.Name("DebugFlags.companionLocalServerDidChange")
     static let debugProOverrideDidChangeNotification = Notification.Name("DebugFlags.debugProOverrideDidChange")
 
-    private static let agentToolbarEntryKey = "DebugAgentToolbarEntry"
+    static let agentToolbarEntryKey = "DebugAgentToolbarEntry"
     private static let companionLocalServerKey = "DebugCompanionLocalServer"
-    private static let debugProOverrideKey = "DebugProOverride"
+    static let debugProOverrideKey = "DebugProOverride"
 
     /// 是否在主窗口右上角显示布局尺寸 overlay（W × H 胶囊）。
     ///

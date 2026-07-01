@@ -330,6 +330,9 @@ struct StarcatApp: App {
 /// 当前只有一个 disabled 占位项，避免空 `CommandMenu` 在某些 SwiftUI 版本下
 /// 不渲染菜单栏标题——加入第一个真功能时移除占位。
 	struct DebugMenuCommands: Commands {
+        @AppStorage(DebugFlags.debugProOverrideKey) private var debugProOverride = false
+        @AppStorage(DebugFlags.agentToolbarEntryKey) private var agentToolbarEntry = false
+
 		var body: some Commands {
 			CommandMenu("Debug") {
 				Button("Replay First-Run Onboarding") {
@@ -345,8 +348,11 @@ struct StarcatApp: App {
                     Toggle(
                         "Activate Pro",
                         isOn: Binding(
-                            get: { DebugFlags.debugProOverride },
-                            set: { DebugFlags.setDebugProOverride($0) }
+                            get: { debugProOverride },
+                            set: { newValue in
+                                debugProOverride = newValue
+                                DebugFlags.setDebugProOverride(newValue)
+                            }
                         )
                     )
 
@@ -355,8 +361,11 @@ struct StarcatApp: App {
                     Toggle(
                         "Show Agent Toolbar Entry",
                         isOn: Binding(
-                            get: { DebugFlags.agentToolbarEntry },
-                            set: { DebugFlags.setAgentToolbarEntry($0) }
+                            get: { agentToolbarEntry },
+                            set: { newValue in
+                                agentToolbarEntry = newValue
+                                DebugFlags.setAgentToolbarEntry(newValue)
+                            }
                         )
                     )
                 }
