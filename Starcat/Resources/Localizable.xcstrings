@@ -26895,6 +26895,23 @@
         }
       }
     },
+    "settings.sort.healthScoreDesc" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health Score (High→Low)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health 分(高→低)"
+          }
+        }
+      }
+    },
     "settings.sort.updatedAsc" : {
       "extractionState" : "stale",
       "localizations" : {

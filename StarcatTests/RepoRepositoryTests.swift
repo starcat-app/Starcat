@@ -507,6 +507,53 @@ struct RepoRepositoryTests {
         #expect(try await repo.fetchListCount(scope: .githubStarList("list-1"), filters: .empty) == 2)
     }
 
+    @Test("DB Paging: Health 排序按分数倒序且无分数排最后")
+    func listPageSortsByHealthScoreDescending() async throws {
+        let (repo, db) = try makeRepo()
+        let healthRepo = GRDBRepoHealthRepository(database: db)
+        try await db.insertRepoFixture(id: 1, owner: "octo", name: "low", starredAt: "2026-06-26T03:00:00Z")
+        try await db.insertRepoFixture(id: 2, owner: "octo", name: "missing", starredAt: "2026-06-26T04:00:00Z")
+        try await db.insertRepoFixture(id: 3, owner: "octo", name: "high", starredAt: "2026-06-26T02:00:00Z")
+
+        let computedAt = "2026-07-01T12:00:00.000Z"
+        let staleAfter = "2026-08-01T12:00:00.000Z"
+        for (repoId, score) in [(Int64(1), 55.0), (Int64(3), 91.0)] {
+            try await healthRepo.upsert(
+                RepoHealthSnapshot(
+                    repoId: repoId,
+                    overallScore: score,
+                    grade: "B",
+                    maintenanceScore: score,
+                    popularityScore: score,
+                    qualityScore: score,
+                    securityScore: score,
+                    payloadJSON: "{}",
+                    computedAt: computedAt,
+                    staleAfter: staleAfter,
+                    fetchStatus: .success,
+                    lastError: nil
+                )
+            )
+        }
+
+        let page = try await repo.fetchListPage(
+            scope: .allStars,
+            filters: .empty,
+            sort: .healthScoreDesc,
+            limit: 10,
+            offset: 0
+        )
+        let ids = try await repo.fetchListIDs(
+            scope: .allStars,
+            filters: .empty,
+            sort: .healthScoreDesc
+        )
+
+        // id=2 的 starred_at 最新，但没有 health 快照；Health 排序必须把它放到有分数仓库之后。
+        #expect(page.map(\.id) == [3, 1, 2])
+        #expect(ids == [3, 1, 2])
+    }
+
     @Test("DB Paging: GitHub Star List 未分组 scope 返回没有任何 list 的 starred repo")
     func githubStarListUngroupedScopeReturnsReposWithoutLists() async throws {
         let (repo, db) = try makeRepo()

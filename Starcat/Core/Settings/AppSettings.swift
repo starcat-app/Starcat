@@ -95,6 +95,8 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
     case updatedDesc
     /// 最早 push 在前。
     case updatedAsc
+    /// 健康分高→低；无健康分的仓库排到末尾。
+    case healthScoreDesc
 
     var id: String { rawValue }
 
@@ -109,6 +111,7 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
         case .starsAsc:      return String.l10n("settings.sort.starsAsc")
         case .updatedDesc:   return String.l10n("settings.sort.updatedDesc")
         case .updatedAsc:    return String.l10n("settings.sort.updatedAsc")
+        case .healthScoreDesc: return String.l10n("settings.sort.healthScoreDesc")
         }
     }
 
@@ -123,6 +126,7 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
         case .starsAsc:      return "settings.sort.starsAsc"
         case .updatedDesc:   return "settings.sort.updatedDesc"
         case .updatedAsc:    return "settings.sort.updatedAsc"
+        case .healthScoreDesc: return "settings.sort.healthScoreDesc"
         }
     }
 
@@ -133,6 +137,7 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
         case .nameAsc, .nameDesc:           return "textformat"
         case .starsDesc, .starsAsc:         return "star.fill"
         case .updatedDesc, .updatedAsc:     return "clock.arrow.circlepath"
+        case .healthScoreDesc:              return "gauge.with.dots.needle.67percent"
         }
     }
 
@@ -167,6 +172,10 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
             let av = a.pushedAt ?? "\u{FFFD}"
             let bv = b.pushedAt ?? "\u{FFFD}"
             return av < bv
+        case .healthScoreDesc:
+            // Health 排序依赖 repo_health_snapshots，纯 Repo comparator 拿不到分数。
+            // 真正排序由 HomeViewModel / RepoRepository SQL 处理；这里给调用方一个稳定 fallback。
+            return RepoSortOption.starredAtDesc.comparator(a, b)
         }
     }
 }

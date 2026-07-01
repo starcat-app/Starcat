@@ -445,7 +445,7 @@ struct GRDBRepoRepository {
         offset: Int?,
         includeOrderBy: Bool = true
     ) -> (sql: String, arguments: StatementArguments) {
-        let joins: [String] = []
+        var joins: [String] = []
         var whereClauses: [String] = ["r.is_starred = 1"]
         var args: [any DatabaseValueConvertible] = []
 
@@ -528,6 +528,10 @@ struct GRDBRepoRepository {
             args.append(contentsOf: tagIDs)
         }
 
+        if sort == .healthScoreDesc {
+            joins.append("LEFT JOIN repo_health_snapshots h_sort ON h_sort.repo_id = r.id")
+        }
+
         let orderBy: String
         switch sort {
         case .starredAtDesc:
@@ -546,6 +550,8 @@ struct GRDBRepoRepository {
             orderBy = "r.pushed_at DESC, r.id DESC"
         case .updatedAsc:
             orderBy = "r.pushed_at IS NULL ASC, r.pushed_at ASC, r.id ASC"
+        case .healthScoreDesc:
+            orderBy = "h_sort.repo_id IS NULL ASC, h_sort.overall_score DESC, r.starred_at DESC, r.id DESC"
         }
 
         var sql = """

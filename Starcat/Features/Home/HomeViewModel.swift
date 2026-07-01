@@ -400,6 +400,10 @@ final class HomeViewModel {
     /// - 与现有 `statusMap` 走的"全表加载到字典 + applyView 过滤"路径完全一致
     private var repoTagsMap: [Int64: Set<String>] = [:]
 
+    /// Health 排序用的本地快照缓存，只在用户选择 health 排序时读取。
+    /// 普通列表仍走既有排序路径，避免每次切分类都额外查 repo_health_snapshots。
+    private var healthSortSnapshots: [Int64: RepoHealthSnapshot] = [:]
+
     // MARK: - 多选模式
     //
     // W12 toolbar PR-5（2026-06-12）：原 W4 A5 的 `isMultiSelectMode` / `multiSelectedRepoIDs`
@@ -733,7 +737,14 @@ final class HomeViewModel {
     /// 智能集合/语义搜索等复杂路径仍走旧的内存派生。
     private func reloadOrApplyCurrentManageView() {
         guard let scope = currentRepoListScopeForDatabasePaging(), !isSearching else {
-            applyView()
+            currentListActionTask?.cancel()
+            let task = Task { [weak self] in
+                guard let self else { return }
+                await self.refreshHealthSortSnapshotsIfNeeded(for: self.rawItems)
+                guard !Task.isCancelled else { return }
+                self.applyView()
+            }
+            currentListActionTask = task
             return
         }
         let task = Task { [weak self] in
@@ -1210,6 +1221,9 @@ final class HomeViewModel {
             AppLog.ui.notice("[switch-cat] T2 cache HIT, items=\(cached!.rawItems.count) +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
             #endif
             // 有缓存：立即用缓存数据填充 UI，同时后台刷新
+            if sortOption == .healthScoreDesc {
+                await refreshHealthSortSnapshotsIfNeeded(for: cached!.rawItems)
+            }
             loadFromCache(cached!)
             if !forceRefresh && !cached!.isExpired {
                 // 普通 Manage 分类切换的事实源就是内存缓存。这里直接返回，避免马上再跑一次
@@ -1377,6 +1391,7 @@ final class HomeViewModel {
             case .success(let result):
                 let fetched = result.repos
                 self.semanticHitMap = result.semanticHitMap
+                await self.refreshHealthSortSnapshotsIfNeeded(for: fetched)
                 // 更新缓存（无论 UI 是否需要重渲染，都用最新数据替换 cache entry，
                 // 让下次切回这个分类时拿到 freshest 数据）
                 if shouldUseListCache {
@@ -1851,9 +1866,48 @@ final class HomeViewModel {
             && smartSearchMode == .semantic
             && !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if !isSemanticSearching && !userCollectionSemanticSearch {
-            view.sort(by: sortOption.comparator)
+            if sortOption == .healthScoreDesc {
+                view.sort(by: healthScoreComparator)
+            } else {
+                view.sort(by: sortOption.comparator)
+            }
         }
         return view
+    }
+
+    private func refreshHealthSortSnapshotsIfNeeded(for repos: [Repo]) async {
+        guard sortOption == .healthScoreDesc else { return }
+        guard let repoHealthRepository else {
+            healthSortSnapshots = [:]
+            return
+        }
+        let ids = repos.map(\.id)
+        guard !ids.isEmpty else {
+            healthSortSnapshots = [:]
+            return
+        }
+        do {
+            healthSortSnapshots = try await repoHealthRepository.snapshots(for: ids)
+        } catch {
+            AppLog.database.warning("Health sort snapshot load failed: \(error.localizedDescription, privacy: .public)")
+            healthSortSnapshots = [:]
+        }
+    }
+
+    private func healthScoreComparator(_ a: Repo, _ b: Repo) -> Bool {
+        let av = healthSortSnapshots[a.id]?.overallScore
+        let bv = healthSortSnapshots[b.id]?.overallScore
+        switch (av, bv) {
+        case let (aScore?, bScore?):
+            if aScore != bScore { return aScore > bScore }
+            return RepoSortOption.starredAtDesc.comparator(a, b)
+        case (_?, nil):
+            return true
+        case (nil, _?):
+            return false
+        case (nil, nil):
+            return RepoSortOption.starredAtDesc.comparator(a, b)
+        }
     }
 
     /// R-07：切片调用方意图，决定是否 bump itemsRevision。
